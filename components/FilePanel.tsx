@@ -17,6 +17,24 @@ import { MagicMovePanel } from './MagicMovePanel';
 import { RichMarkdownPanel } from './RichMarkdownPanel';
 import type { FileAnalysis } from '@/utils/ast-service';
 import { importFold } from '@/utils/import-fold';
+
+export interface MovedRange {
+  side: 'add' | 'del';
+  start: number;
+  end: number;
+  other: string;
+  name: string;
+}
+
+function moveMatches(r: MovedRange, line: DiffLine): boolean {
+  return r.side === 'del'
+    ? line.type === 'DELETION' &&
+        line.left! >= r.start &&
+        line.left! <= r.end
+    : line.type === 'ADDITION' &&
+        line.right! >= r.start &&
+        line.right! <= r.end;
+}
 import {
   countableLines,
   fileFullySeen,
@@ -43,6 +61,9 @@ export function FilePanel(props: {
   analysis?: FileAnalysis;
   /** Enclosing declaration chain for the row pinned at viewport top. */
   stickyScope?: string;
+  /** Moved-code ranges in this file (blob line numbers per side). */
+  moved?: MovedRange[];
+  onJumpToFile?: (path: string) => void;
 }) {
   let section!: HTMLElement;
   const [animating, setAnimating] = createSignal(false);
@@ -220,11 +241,37 @@ export function FilePanel(props: {
                         </td>
                       </tr>
                     </Show>
+                    <Show
+                      when={props.moved?.find(
+                        (r) =>
+                          moveMatches(r, line) &&
+                          (r.side === 'del'
+                            ? line.left === r.start
+                            : line.right === r.start),
+                      )}
+                    >
+                      {(range) => (
+                        <tr class="hihyou-line hihyou-move-row">
+                          <td class="num" colspan="2" />
+                          <td
+                            class="code hihyou-move-notice"
+                            onClick={() => props.onJumpToFile?.(range().other)}
+                          >
+                            ⇄ {range().name || 'code'} moved{' '}
+                            {range().side === 'del' ? 'to' : 'from'}{' '}
+                            {range().other}
+                          </td>
+                        </tr>
+                      )}
+                    </Show>
                     <Show when={!hiddenByFold(i())}>
                       <DiffRow
                         line={line}
                         idx={i()}
                         seen={() => isLineSeen(props.seen, line)}
+                        moved={
+                          !!props.moved?.some((r) => moveMatches(r, line))
+                        }
                       />
                     </Show>
                     <Show when={threads.length > 0}>
@@ -257,7 +304,12 @@ function escapeHtml(text: string): string {
 
 // A line never changes shape after render, so branching on type here
 // (outside JSX reactivity) is safe; only seen-ness is reactive.
-function DiffRow(props: { line: DiffLine; idx: number; seen: () => boolean }) {
+function DiffRow(props: {
+  line: DiffLine;
+  idx: number;
+  seen: () => boolean;
+  moved?: boolean;
+}) {
   const l = props.line;
   if (l.type === 'HUNK') {
     return (
@@ -272,7 +324,7 @@ function DiffRow(props: { line: DiffLine; idx: number; seen: () => boolean }) {
   return (
     <tr
       class={`hihyou-line ${cls}`}
-      classList={{ 'hihyou-seen': props.seen() }}
+      classList={{ 'hihyou-seen': props.seen(), 'hihyou-moved': props.moved }}
       data-idx={props.idx}
     >
       <td class="num">{l.type === 'ADDITION' ? '' : l.left}</td>

@@ -1,6 +1,7 @@
 import {
   For,
   Show,
+  createEffect,
   createSignal,
   onCleanup,
   onMount,
@@ -23,8 +24,10 @@ import {
   validateSeen,
   type SeenState,
 } from '@/utils/seen-hunks';
-import { analyzeBlob } from '@/utils/ast-client';
+import { analyzeBlob, declHashesBlob } from '@/utils/ast-client';
 import { scopeChainAt, type FileAnalysis } from '@/utils/ast-service';
+import { matchMoves, type DeclHash, type MoveBlock } from '@/utils/moved-code';
+import { isLineSeen } from '@/utils/seen-hunks';
 import { loadSeenState, prKey, saveSeenState } from '@/utils/seen-store';
 import { seenCount } from '@/utils/seen-hunks';
 import { resolveStack, type StackEntry } from '@/utils/pr-stack';
@@ -287,6 +290,105 @@ function PayloadView(props: {
     );
   });
 
+  // ── Moved-code detection: hash top-level declarations of the old and
+  // new blobs of changed files, match disappeared -> appeared. ──
+  const [moves, setMoves] = createSignal<MoveBlock[]>([]);
+  onMount(() => {
+    if (payload.diffSummaries.length > 60) return;
+    void (async () => {
+      const olds: Record<string, DeclHash[]> = {};
+      const news: Record<string, DeclHash[]> = {};
+      await Promise.all(
+        payload.diffContents.map(async (c) => {
+          if (!c.diffLines?.length) return;
+          const hasDel = c.diffLines.some((l) => l.type === 'DELETION');
+          const hasAdd = c.diffLines.some((l) => l.type === 'ADDITION');
+          if (hasDel && c.oldTreeEntry) {
+            const h = await declHashesBlob(
+              pr.owner,
+              pr.repo,
+              c.oldCommitOid,
+              c.oldTreeEntry.path,
+            );
+            if (h?.length) olds[c.path] = h;
+          }
+          if (hasAdd && c.newTreeEntry) {
+            const h = await declHashesBlob(
+              pr.owner,
+              pr.repo,
+              c.newCommitOid,
+              c.path,
+            );
+            if (h?.length) news[c.path] = h;
+          }
+        }),
+      );
+      const found = matchMoves(olds, news);
+      if (found.length) setMoves(found);
+    })();
+  });
+  const movedFor = (path: string) =>
+    moves().flatMap((m) => [
+      ...(m.fromPath === path
+        ? [
+            {
+              side: 'del' as const,
+              start: m.fromStart,
+              end: m.fromEnd,
+              other: m.toPath,
+              name: m.name,
+            },
+          ]
+        : []),
+      ...(m.toPath === path
+        ? [
+            {
+              side: 'add' as const,
+              start: m.toStart,
+              end: m.toEnd,
+              other: m.fromPath,
+              name: m.name,
+            },
+          ]
+        : []),
+    ]);
+
+  // Identical moved code inherits seen state: fully-seen source deletions
+  // mark the target's additions seen.
+  createEffect(() => {
+    if (!seenEnabled || !seenLoaded() || !moves().length) return;
+    const next = { ...seen() };
+    let changed = false;
+    for (const m of moves()) {
+      const src = contentFor(m.fromPath)?.diffLines;
+      const dst = contentFor(m.toPath)?.diffLines;
+      if (!src || !dst) continue;
+      const srcRows = src.filter(
+        (l) =>
+          l.type === 'DELETION' && l.left! >= m.fromStart && l.left! <= m.fromEnd,
+      );
+      if (
+        !srcRows.length ||
+        !srcRows.every((l) => isLineSeen(next[m.fromPath], l))
+      ) {
+        continue;
+      }
+      const dstRows = dst.filter(
+        (l) =>
+          l.type === 'ADDITION' && l.right! >= m.toStart && l.right! <= m.toEnd,
+      );
+      if (
+        !dstRows.length ||
+        dstRows.every((l) => isLineSeen(next[m.toPath], l))
+      ) {
+        continue;
+      }
+      next[m.toPath] = markLinesSeen(next[m.toPath], dstRows);
+      changed = true;
+    }
+    if (changed) persist(next);
+  });
+
   const fullySeenFiles = () =>
     payload.diffSummaries.filter((s) =>
       fileFullySeen(seen()[s.path], contentFor(s.path)?.diffLines ?? []),
@@ -371,6 +473,8 @@ function PayloadView(props: {
                 animate={animFor(summary.path)}
                 analysis={analysesMap()[summary.path]}
                 stickyScope={stickyScopes()[summary.path]}
+                moved={movedFor(summary.path)}
+                onJumpToFile={treeApi.onOpenFile}
                 summary={summary}
                 content={contentFor(summary.path)}
                 getThread={(id) => payload.markers?.threads?.[id]}

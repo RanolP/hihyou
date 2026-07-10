@@ -4,7 +4,11 @@
  */
 
 import { astMessaging } from './ast-rpc';
-import type { FileAnalysis, SemanticHunk } from './ast-service';
+import type {
+  DeclHashInfo,
+  FileAnalysis,
+  SemanticHunk,
+} from './ast-service';
 import { grammarForPath } from './ast-service';
 import { fetchRawBlob } from './github-changes';
 
@@ -54,6 +58,38 @@ export function analyzeBlob(
       text && text.length <= MAX_BLOB ? analyzeFile(path, text) : null,
     );
     blobAnalyses.set(key, result);
+  }
+  return result;
+}
+
+const declHashCache = new Map<string, Promise<DeclHashInfo[] | null>>();
+
+/** Top-level declaration hashes for a blob (moved-code detection). */
+export function declHashesBlob(
+  owner: string,
+  repo: string,
+  oid: string,
+  path: string,
+): Promise<DeclHashInfo[] | null> {
+  const seeded = (
+    globalThis as {
+      __hihyouSeededDeclHashes?: Record<string, DeclHashInfo[]>;
+    }
+  ).__hihyouSeededDeclHashes?.[`${oid}:${path}`];
+  if (seeded) return Promise.resolve(seeded);
+  if (backendDead || !grammarForPath(path)) return Promise.resolve(null);
+  const key = `${oid}:${path}`;
+  let result = declHashCache.get(key);
+  if (!result) {
+    result = fetchRawBlob(owner, repo, oid, path).then((text) =>
+      text && text.length <= MAX_BLOB
+        ? astMessaging.sendMessage('declHashes', { path, text }).catch(() => {
+            backendDead = true;
+            return null;
+          })
+        : null,
+    );
+    declHashCache.set(key, result);
   }
   return result;
 }

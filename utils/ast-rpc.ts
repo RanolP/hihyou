@@ -4,7 +4,11 @@
  */
 
 import { defineExtensionMessaging } from '@webext-core/messaging';
-import type { FileAnalysis, SemanticHunk } from './ast-service';
+import type {
+  DeclHashInfo,
+  FileAnalysis,
+  SemanticHunk,
+} from './ast-service';
 
 interface ProtocolMap {
   parseFile(data: { path: string; text: string }): FileAnalysis | null;
@@ -13,6 +17,7 @@ interface ProtocolMap {
     oldText: string;
     newText: string;
   }): SemanticHunk[] | null;
+  declHashes(data: { path: string; text: string }): DeclHashInfo[] | null;
 }
 
 export const astMessaging = defineExtensionMessaging<ProtocolMap>();

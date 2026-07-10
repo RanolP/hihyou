@@ -414,6 +414,24 @@
   color: var(--fgColor-accent, #0969da);
 }
 
+.hihyou-line.hihyou-moved td.code,
+.hihyou-line.hihyou-moved td.num {
+  opacity: 0.55;
+}
+.hihyou-line.hihyou-moved td.code {
+  border-left: 2px solid var(--fgColor-done, #8250df);
+}
+
+.hihyou-move-notice {
+  cursor: pointer;
+  color: var(--fgColor-done, #8250df);
+  background: var(--bgColor-done-muted, rgba(130, 80, 223, 0.1));
+  font-style: italic;
+}
+.hihyou-move-notice:hover {
+  text-decoration: underline;
+}
+
 .hihyou-view-toggle {
   cursor: pointer;
   background: none;

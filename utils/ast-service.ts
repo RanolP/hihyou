@@ -238,6 +238,33 @@ export function structuralDiffTrees(
   return hunks;
 }
 
+export interface DeclHashInfo {
+  name: string;
+  kind: string;
+  start: number;
+  end: number;
+  hash: string;
+  size: number;
+}
+
+/** Normalized-token hashes of top-level declarations (moved-code input). */
+export function declHashes(root: Node): DeclHashInfo[] {
+  return topLevelDecls(root).map((d) => {
+    let h = 5381;
+    for (let i = 0; i < d.norm.length; i++) {
+      h = ((h << 5) + h + d.norm.charCodeAt(i)) | 0;
+    }
+    return {
+      name: d.name,
+      kind: d.kind,
+      start: d.range.start,
+      end: d.range.end,
+      hash: (h >>> 0).toString(36),
+      size: d.norm.length,
+    };
+  });
+}
+
 /** Smallest scope containing the line, or the chain outside-in. */
 export function scopeChainAt(
   scopes: ScopeRange[],

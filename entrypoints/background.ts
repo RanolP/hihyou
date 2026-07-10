@@ -2,6 +2,7 @@ import { Language, Parser } from 'web-tree-sitter';
 import { astMessaging } from '@/utils/ast-rpc';
 import {
   analyzeTree,
+  declHashes,
   grammarForPath,
   structuralDiffTrees,
 } from '@/utils/ast-service';
@@ -72,6 +73,22 @@ export default defineBackground(() => {
       return hunks;
     } catch (err) {
       console.warn('[hihyou] structuralDiff failed:', data.path, err);
+      return null;
+    }
+  });
+
+  astMessaging.onMessage('declHashes', async ({ data }) => {
+    try {
+      const parser = await parserFor(data.path);
+      if (!parser) return null;
+      const tree = parser.parse(data.text);
+      if (!tree) return null;
+      const hashes = declHashes(tree.rootNode);
+      tree.delete();
+      parser.delete();
+      return hashes;
+    } catch (err) {
+      console.warn('[hihyou] declHashes failed:', data.path, err);
       return null;
     }
   });
