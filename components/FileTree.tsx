@@ -1,5 +1,10 @@
-import { createEffect, onCleanup, onMount } from 'solid-js';
-import type { FileTreeRowDecoration, GitStatus, GitStatusEntry } from '@pierre/trees';
+import { onCleanup, onMount } from 'solid-js';
+import '@/utils/custom-elements-shim';
+import {
+  FileTree as PierreFileTree,
+  type GitStatus,
+  type GitStatusEntry,
+} from '@pierre/trees';
 import type { DiffSummary } from '@/utils/github-changes';
 
 export interface FileTreeApi {
@@ -19,75 +24,36 @@ const GIT_STATUS: Record<string, GitStatus> = {
   RENAMED: 'renamed',
 };
 
-/**
- * Changed-files sidebar rendered with @pierre/trees (trees.software).
- * The tree lives in an extension-page iframe: isolated worlds have no
- * customElements, which the library requires. postMessage both ways.
- */
+/** Changed-files sidebar rendered with @pierre/trees (trees.software). */
 export function FileTree(props: { paths: string[]; api: FileTreeApi }) {
-  let iframe!: HTMLIFrameElement;
+  let host!: HTMLDivElement;
 
-  const decorations = (): Record<string, FileTreeRowDecoration | null> =>
-    Object.fromEntries(
-      props.paths.map((path) => {
-        if (!props.api.seenEnabled) return [path, null];
-        const level = props.api.seenLevel(path);
-        return [
-          path,
-          level === 'full'
-            ? { text: '✓', title: 'Seen' }
-            : level === 'partial'
-              ? { text: '◐', title: 'Partially seen' }
-              : null,
-        ];
-      }),
-    );
-
-  const sendInit = () => {
+  onMount(() => {
     const gitStatus = props.paths.flatMap<GitStatusEntry>((path) => {
       const status = GIT_STATUS[props.api.summaryFor(path)?.changeType ?? ''];
       return status ? [{ path, status }] : [];
     });
-    iframe.contentWindow?.postMessage(
-      {
-        type: 'hihyou:tree-init',
-        paths: props.paths,
-        gitStatus,
-        decorations: decorations(),
-        dark: document.documentElement.getAttribute('data-color-mode') !== 'light',
+    const tree = new PierreFileTree({
+      paths: props.paths,
+      flattenEmptyDirectories: true,
+      initialExpansion: 'open',
+      search: true,
+      stickyFolders: true,
+      gitStatus,
+      onSelectionChange: (selected) => {
+        if (selected[0]) props.api.onOpenFile(selected[0]);
       },
-      '*',
-    );
-  };
-
-  onMount(() => {
-    const onMessage = (e: MessageEvent) => {
-      if (e.source !== iframe.contentWindow) return;
-      const msg = e.data as { type?: string; path?: string } | null;
-      if (msg?.type === 'hihyou:tree-ready') sendInit();
-      else if (msg?.type === 'hihyou:tree-open' && msg.path) {
-        props.api.onOpenFile(msg.path);
-      }
-    };
-    window.addEventListener('message', onMessage);
-    onCleanup(() => window.removeEventListener('message', onMessage));
+      renderRowDecoration: ({ item }) => {
+        if (item.kind !== 'file' || !props.api.seenEnabled) return null;
+        const level = props.api.seenLevel(item.path);
+        if (level === 'full') return { text: '✓', title: 'Seen' };
+        if (level === 'partial') return { text: '◐', title: 'Partially seen' };
+        return null;
+      },
+    });
+    tree.render({ containerWrapper: host });
+    onCleanup(() => tree.unmount());
   });
 
-  // Seen state changes repaint the tree's decorations.
-  createEffect(() => {
-    const payload = decorations();
-    iframe.contentWindow?.postMessage(
-      { type: 'hihyou:tree-seen', decorations: payload },
-      '*',
-    );
-  });
-
-  return (
-    <iframe
-      class="hihyou-tree"
-      title="Changed files"
-      ref={iframe}
-      src={browser.runtime.getURL('/tree.html')}
-    />
-  );
+  return <nav class="hihyou-tree" aria-label="Changed files" ref={host} />;
 }

@@ -25,12 +25,5 @@ export default defineConfig({
       'https://registry.npmjs.org/*',
       'https://playgroundcdn.typescriptlang.org/*',
     ],
-    // The file-tree page is embedded as an iframe on github.com.
-    web_accessible_resources: [
-      {
-        resources: ['tree.html', 'chunks/*', 'assets/*'],
-        matches: ['https://github.com/*'],
-      },
-    ],
   },
 });

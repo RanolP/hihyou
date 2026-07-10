@@ -144,7 +144,27 @@ export function FilePanel(props: {
         (!!props.seenEnabled &&
           !lines().length &&
           props.summary.markedAsViewed);
-  const toggleCollapsed = () => setManualOpen(collapsed());
+
+  // Folding while scrolled inside the file would leave the viewport on
+  // unrelated content; align the folded header to the sticky top.
+  // (scrollIntoView + scroll-margin-top: the document shrinks on fold, so
+  // manual scroll math gets clamped.)
+  const scrolledInside = () => {
+    const top =
+      parseInt(
+        getComputedStyle(section).getPropertyValue('--hihyou-top'),
+        10,
+      ) || 0;
+    return section.getBoundingClientRect().top < top;
+  };
+  const alignToTop = () =>
+    queueMicrotask(() => section.scrollIntoView({ block: 'start' }));
+  const toggleCollapsed = () => {
+    const folding = !collapsed();
+    const inside = scrolledInside();
+    setManualOpen(collapsed());
+    if (folding && inside) alignToTop();
+  };
 
   const isMarkdown = /\.(md|markdown)$/i.test(props.summary.path);
   // Markdown defaults to the rendered tracked-changes view.
@@ -257,9 +277,11 @@ export function FilePanel(props: {
               <input
                 type="checkbox"
                 checked={fileFullySeen(props.seen, lines())}
-                onChange={(e) =>
-                  props.onToggleAllSeen?.(e.currentTarget.checked)
-                }
+                onChange={(e) => {
+                  const inside = scrolledInside();
+                  props.onToggleAllSeen?.(e.currentTarget.checked);
+                  if (e.currentTarget.checked && inside) alignToTop();
+                }}
               />
               seen
             </label>

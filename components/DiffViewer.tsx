@@ -154,6 +154,11 @@ function PayloadView(props: {
     void loadSeenState(seenKey).then((s) => {
       setSeen(s);
       setSeenLoaded(true);
+      // Panels mounted before storage resolved already ran their
+      // content-ready hook; reconcile them now.
+      for (const c of payload.diffContents) {
+        if (c.diffLines?.length) reconcileViewed(c.path, c.diffLines);
+      }
     });
   }
   // GitHub's per-file "Viewed" flag, kept in both directions: their flag
@@ -192,6 +197,25 @@ function PayloadView(props: {
         : clearLinesSeen(seen()[path], lines),
     });
   };
+  /**
+   * Reconcile with GitHub's Viewed flag: adopt theirs as fully seen, and
+   * push ours when the file is fully seen locally but unviewed there.
+   * Meaningless before stored seen state resolves.
+   */
+  const reconcileViewed = (path: string, lines: DiffLine[]) => {
+    if (!seenEnabled || !seenLoaded()) return;
+    const full = fileFullySeen(seen()[path], lines);
+    if (viewed()[path] && !full) {
+      persist({
+        ...seen(),
+        [path]: markLinesSeen(seen()[path], countableLines(lines)),
+      });
+    } else if (!viewed()[path] && full) {
+      setViewed({ ...viewed(), [path]: true });
+      void setFileViewed(pr, path, true);
+    }
+  };
+
   /** A later commit touching a seen range invalidates it (hash mismatch). */
   const validateFile = (path: string, lines: DiffLine[]) => {
     prefetchAnalysis(path);
@@ -200,17 +224,7 @@ function PayloadView(props: {
       const { state, changed } = validateSeen(fileState, lines);
       if (changed) persist({ ...seen(), [path]: state });
     }
-    // GitHub already has this file marked Viewed → adopt as fully seen.
-    if (
-      seenEnabled &&
-      viewed()[path] &&
-      !fileFullySeen(seen()[path], lines)
-    ) {
-      persist({
-        ...seen(),
-        [path]: markLinesSeen(seen()[path], countableLines(lines)),
-      });
-    }
+    reconcileViewed(path, lines);
   };
 
   // Background AST analysis of the new-side blob (scope snapping for `s`,
@@ -335,6 +349,17 @@ function PayloadView(props: {
     }
     persist(next);
     sel.removeAllRanges();
+    // Marking may fold a now-fully-seen file; keep its header in view.
+    const folded = [...byPath.keys()].find((p) =>
+      fileFullySeen(next[p], contentFor(p)?.diffLines ?? []),
+    );
+    if (folded) {
+      queueMicrotask(() =>
+        document
+          .querySelector(`.hihyou-file[data-path="${CSS.escape(folded)}"]`)
+          ?.scrollIntoView({ block: 'start' }),
+      );
+    }
   };
   onMount(() => {
     window.addEventListener('keydown', onKeyDown, { capture: true });

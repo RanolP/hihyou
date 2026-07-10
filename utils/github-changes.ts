@@ -229,6 +229,8 @@ export async function setFileViewed(
         Accept: 'application/json',
         'Content-Type': 'application/json',
         'X-Requested-With': 'XMLHttpRequest',
+        // GitHub's CSRF gate for React-app fetches; 422 without it.
+        'GitHub-Verified-Fetch': 'true',
       },
       body: JSON.stringify(
         viewed ? { path, viewed: 'viewed' } : { path, _method: 'delete' },
