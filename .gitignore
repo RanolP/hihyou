@@ -27,3 +27,6 @@ web-ext.config.ts
 
 # generated wasm assets
 apps/extension/public/ts-wasm/
+
+# personal working queue, not repo content
+ISSUE_QUEUE.md
