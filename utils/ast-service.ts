@@ -119,6 +119,14 @@ export function analyzeTree(root: Node): FileAnalysis {
       if (tag && args?.type === 'template_string') {
         analysis.injectionRanges.push({ ...lineRange(args), lang: tag });
       }
+    } else if (
+      type === 'template_string' &&
+      node.parent?.type !== 'call_expression' &&
+      node.endPosition.row - node.startPosition.row >= 2
+    ) {
+      // Untagged multiline literal: language decided by heuristics on the
+      // rendered lines ('auto').
+      analysis.injectionRanges.push({ ...lineRange(node), lang: 'auto' });
     }
     for (const child of node.namedChildren) {
       if (child) visit(child);

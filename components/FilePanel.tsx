@@ -17,6 +17,8 @@ import { MagicMovePanel } from './MagicMovePanel';
 import { RichMarkdownPanel } from './RichMarkdownPanel';
 import type { FileAnalysis } from '@/utils/ast-service';
 import { importFold } from '@/utils/import-fold';
+import { scoreInjectionLang } from '@/utils/injection-heuristic';
+import { currentShikiTheme, getHighlighter } from '@/utils/highlight';
 
 export interface MovedRange {
   side: 'add' | 'del';
@@ -133,6 +135,53 @@ export function FilePanel(props: {
   const isMarkdown = /\.(md|markdown)$/i.test(props.summary.path);
   // Markdown defaults to the rendered tracked-changes view.
   const [rich, setRich] = createSignal(isMarkdown);
+
+  // Literal language injection: re-highlight lines inside css/html
+  // template literals with shiki (nested language, not the host's).
+  const [injHtml, setInjHtml] = createSignal<Record<number, string>>({});
+  createEffect(() => {
+    const ranges = props.analysis?.injectionRanges;
+    const ls = props.content?.diffLines;
+    if (!ranges?.length || !ls?.length) return;
+    void (async () => {
+      const highlighter = await getHighlighter();
+      const theme = currentShikiTheme();
+      const map: Record<number, string> = {};
+      for (const r of ranges) {
+        // Interior lines only — the backtick lines stay host-highlighted.
+        const rows = ls
+          .map((l, i) => ({ l, i }))
+          .filter(
+            ({ l }) =>
+              l.type !== 'HUNK' &&
+              l.right !== undefined &&
+              l.right > r.start &&
+              l.right < r.end,
+          );
+        if (!rows.length) continue;
+        const lang =
+          r.lang === 'auto'
+            ? scoreInjectionLang(rows.map(({ l }) => l.text.slice(1)))
+            : r.lang;
+        if (!lang || !['css', 'html'].includes(lang)) continue;
+        for (const { l, i } of rows) {
+          try {
+            const full = highlighter.codeToHtml(l.text.slice(1), {
+              lang,
+              theme,
+            });
+            const inner = full
+              .replace(/^[\s\S]*?<code[^>]*>/, '')
+              .replace(/<\/code>[\s\S]*$/, '');
+            map[i] = escapeHtml(l.text[0] ?? ' ') + inner;
+          } catch {
+            /* keep host highlighting */
+          }
+        }
+      }
+      if (Object.keys(map).length) setInjHtml(map);
+    })();
+  });
 
   // Import block folds by default; changed lines inside keep it folded
   // but are called out in the notice.
@@ -272,6 +321,7 @@ export function FilePanel(props: {
                         moved={
                           !!props.moved?.some((r) => moveMatches(r, line))
                         }
+                        overrideHtml={() => injHtml()[i()]}
                       />
                     </Show>
                     <Show when={threads.length > 0}>
@@ -309,6 +359,8 @@ function DiffRow(props: {
   idx: number;
   seen: () => boolean;
   moved?: boolean;
+  /** Nested-language re-highlight (literal injection). */
+  overrideHtml?: () => string | undefined;
 }) {
   const l = props.line;
   if (l.type === 'HUNK') {
@@ -330,7 +382,10 @@ function DiffRow(props: {
       <td class="num">{l.type === 'ADDITION' ? '' : l.left}</td>
       <td class="num">{l.type === 'DELETION' ? '' : l.right}</td>
       {/* GitHub's html is the full line incl. the +/-/space marker. */}
-      <td class="code" innerHTML={l.html || escapeHtml(l.text)} />
+      <td
+        class="code"
+        innerHTML={props.overrideHtml?.() ?? (l.html || escapeHtml(l.text))}
+      />
     </tr>
   );
 }
