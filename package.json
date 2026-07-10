@@ -12,10 +12,11 @@
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
     "compile": "tsc --noEmit",
-    "check": "node utils/pr-location.check.ts && node utils/seen-hunks.check.ts && node utils/file-tree.check.ts && node utils/prose-diff.check.ts && node utils/ast-service.check.ts && node utils/import-fold.check.ts && node utils/moved-code.check.ts && node utils/injection-heuristic.check.ts && node utils/ts-env.check.ts",
+    "check": "node utils/pr-location.check.ts && node utils/seen-hunks.check.ts && node utils/prose-diff.check.ts && node utils/ast-service.check.ts && node utils/import-fold.check.ts && node utils/moved-code.check.ts && node utils/injection-heuristic.check.ts && node utils/ts-env.check.ts",
     "postinstall": "wxt prepare && node scripts/copy-wasm.mjs"
   },
   "dependencies": {
+    "@pierre/trees": "1.0.0-beta.5",
     "@shikijs/langs": "^4.3.1",
     "@shikijs/themes": "^4.3.1",
     "@typescript/vfs": "^1.6.4",

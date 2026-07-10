@@ -137,7 +137,13 @@ export function FilePanel(props: {
     !!props.seenEnabled && fileFullySeen(props.seen, lines());
   const [manualOpen, setManualOpen] = createSignal<boolean | null>(null);
   const collapsed = () =>
-    manualOpen() !== null ? !manualOpen() : fullySeen();
+    manualOpen() !== null
+      ? !manualOpen()
+      : fullySeen() ||
+        // Content not loaded yet but GitHub has it marked Viewed.
+        (!!props.seenEnabled &&
+          !lines().length &&
+          props.summary.markedAsViewed);
   const toggleCollapsed = () => setManualOpen(collapsed());
 
   const isMarkdown = /\.(md|markdown)$/i.test(props.summary.path);

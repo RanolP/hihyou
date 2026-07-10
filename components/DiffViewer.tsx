@@ -29,7 +29,8 @@ import { scopeChainAt, type FileAnalysis } from '@/utils/ast-service';
 import { matchMoves, type DeclHash, type MoveBlock } from '@/utils/moved-code';
 import { isLineSeen } from '@/utils/seen-hunks';
 import { loadSeenState, prKey, saveSeenState } from '@/utils/seen-store';
-import { seenCount } from '@/utils/seen-hunks';
+import { countableLines, seenCount } from '@/utils/seen-hunks';
+import { setFileViewed } from '@/utils/github-changes';
 import { resolveStack, type StackEntry } from '@/utils/pr-stack';
 import { CommitStrip } from './CommitStrip';
 import { FilePanel } from './FilePanel';
@@ -155,9 +156,28 @@ function PayloadView(props: {
       setSeenLoaded(true);
     });
   }
+  // GitHub's per-file "Viewed" flag, kept in both directions: their flag
+  // seeds our seen state; our fully-seen transitions call file_review.
+  const [viewed, setViewed] = createSignal<Record<string, boolean>>(
+    Object.fromEntries(
+      payload.diffSummaries.map((s) => [s.path, s.markedAsViewed]),
+    ),
+  );
   const persist = (next: SeenState) => {
+    const prev = seen();
     setSeen(next);
     void saveSeenState(seenKey, next);
+    if (!seenEnabled) return;
+    for (const path of Object.keys(next)) {
+      if (next[path] === prev[path]) continue;
+      const lines = contentFor(path)?.diffLines;
+      if (!lines?.length) continue;
+      const full = fileFullySeen(next[path], lines);
+      if (full !== !!viewed()[path]) {
+        setViewed({ ...viewed(), [path]: full });
+        void setFileViewed(pr, path, full);
+      }
+    }
   };
 
   const markLines = (path: string, lines: DiffLine[]) => {
@@ -176,9 +196,21 @@ function PayloadView(props: {
   const validateFile = (path: string, lines: DiffLine[]) => {
     prefetchAnalysis(path);
     const fileState = seen()[path];
-    if (!fileState) return;
-    const { state, changed } = validateSeen(fileState, lines);
-    if (changed) persist({ ...seen(), [path]: state });
+    if (fileState) {
+      const { state, changed } = validateSeen(fileState, lines);
+      if (changed) persist({ ...seen(), [path]: state });
+    }
+    // GitHub already has this file marked Viewed → adopt as fully seen.
+    if (
+      seenEnabled &&
+      viewed()[path] &&
+      !fileFullySeen(seen()[path], lines)
+    ) {
+      persist({
+        ...seen(),
+        [path]: markLinesSeen(seen()[path], countableLines(lines)),
+      });
+    }
   };
 
   // Background AST analysis of the new-side blob (scope snapping for `s`,
@@ -447,6 +479,7 @@ function PayloadView(props: {
       const lines = contentFor(path)?.diffLines;
       const fileState = seen()[path];
       if (!lines?.length) {
+        if (viewed()[path]) return 'full';
         return fileState && (fileState.L.length || fileState.R.length)
           ? 'partial'
           : 'none';
@@ -459,17 +492,6 @@ function PayloadView(props: {
       const el = digest && document.getElementById(`hihyou-${digest}`);
       if (el) el.scrollIntoView({ block: 'start' });
       requestContent(path);
-    },
-    onSetSeen: (paths, checked) => {
-      const next = { ...seen() };
-      for (const path of paths) {
-        const lines = contentFor(path)?.diffLines;
-        if (!lines?.length) continue;
-        next[path] = checked
-          ? markLinesSeen(next[path], lines)
-          : clearLinesSeen(next[path], lines);
-      }
-      persist(next);
     },
   };
 

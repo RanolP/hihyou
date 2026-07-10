@@ -134,15 +134,5 @@ export default defineContentScript({
       }
     }, 1000);
 
-    // Dev self-reload: `window.postMessage({type: 'hihyou:reload'})` makes the
-    // background re-read the unpacked extension from disk.
-    ctx.addEventListener(window, 'message', (e) => {
-      if (
-        e.source === window &&
-        (e.data as { type?: string })?.type === 'hihyou:reload'
-      ) {
-        browser.runtime.sendMessage({ type: 'hihyou:reload' }).catch(() => {});
-      }
-    });
   },
 });

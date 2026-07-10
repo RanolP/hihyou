@@ -212,6 +212,32 @@ export async function fetchDiffEntries(
   return res.json();
 }
 
+/**
+ * GitHub's per-file "Viewed" flag (what the native checkbox toggles).
+ * Discovered live: POST marks, DELETE (with _method) unmarks.
+ */
+export async function setFileViewed(
+  pr: { owner: string; repo: string; number: number },
+  path: string,
+  viewed: boolean,
+): Promise<boolean> {
+  const res = await fetch(
+    `/${pr.owner}/${pr.repo}/pull/${pr.number}/file_review`,
+    {
+      method: viewed ? 'POST' : 'DELETE',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      body: JSON.stringify(
+        viewed ? { path, viewed: 'viewed' } : { path, _method: 'delete' },
+      ),
+    },
+  );
+  return res.ok;
+}
+
 /** Full file content at a commit, using the viewer's GitHub session. */
 export async function fetchRawBlob(
   owner: string,
