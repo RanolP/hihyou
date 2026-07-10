@@ -64,17 +64,6 @@ assert.ok(scopeNames.includes('function:shout'));
 assert.equal(analysis.injectionRanges.length, 1);
 assert.equal(analysis.injectionRanges[0].lang, 'css');
 
-// Ancestor chain at a position: innermost first, method reachable,
-// whole file excluded.
-{
-  const { nodeChainAt } = await import('./ast-service.ts');
-  const read = analysis.scopeRanges.find((s) => s.name === 'read')!;
-  const chain = nodeChainAt(tree.rootNode, read.start + 1, 6);
-  assert.ok(chain.length > 0);
-  assert.ok(chain[0].end - chain[0].start <= read.end - read.start);
-  assert.ok(chain.some((r) => r.start === read.start && r.end === read.end));
-}
-
 // Scope chain at a line inside Box.read: class then method.
 const chain = scopeChainAt(analysis.scopeRanges, 14);
 assert.deepEqual(

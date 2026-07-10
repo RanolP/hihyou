@@ -23,10 +23,9 @@ import {
   validateSeen,
   type SeenState,
 } from '@/utils/seen-hunks';
-import { analyzeBlob, declHashesBlob, pickNodeAt } from '@/utils/ast-client';
+import { analyzeBlob, declHashesBlob } from '@/utils/ast-client';
 import { scopeChainAt, type FileAnalysis } from '@/utils/ast-service';
 import { matchMoves, type DeclHash, type MoveBlock } from '@/utils/moved-code';
-import { rowInPick, type PickedRange } from '@/utils/pick';
 import { whitespaceOnlyRows } from '@/utils/patch';
 
 import { isLineSeen } from '@/utils/seen-hunks';
@@ -307,104 +306,6 @@ function PayloadView(props: {
     });
   });
 
-  // Click a line to pick the tiniest enclosing node (blue tint); `a`
-  // marks the exact selection (or the pick) as applied. Never oversized.
-  // Deletion rows pick against the old blob (side L), others the new (R).
-  const [picked, setPicked] = createSignal<
-    ({ path: string } & PickedRange) | null
-  >(null);
-  let pickToken = 0;
-  let pickChain: {
-    key: string;
-    chain: { start: number; end: number }[];
-    index: number;
-  } | null = null;
-  const onPickClick = (e: MouseEvent) => {
-    if (!seenEnabled) return;
-    const target = e.target as HTMLElement;
-    if (!target.closest) return;
-    if (target.closest('a, button, input, label, .hihyou-thread-cell')) return;
-    const tr = target.closest<HTMLElement>('tr.hihyou-line[data-idx]');
-    const cell = target.closest<HTMLElement>('td.code');
-    const path = target.closest<HTMLElement>('.hihyou-file')?.dataset.path;
-    if (!tr || !path) return;
-    const sel = window.getSelection();
-    if (sel && !sel.isCollapsed) return; // a real text selection wins
-    const line = contentFor(path)?.diffLines?.[Number(tr.dataset.idx)];
-    const n = line?.right ?? line?.left;
-    if (!line || line.type === 'HUNK' || n === undefined) return;
-    const token = ++pickToken;
-    const { clientX, clientY } = e;
-    void (async () => {
-      // True tiniest node at the exact click position — declaration
-      // scopes alone can't select children inside a function. Deletions
-      // resolve against the OLD blob at their left line.
-      const content = contentFor(path);
-      const isDeletion = line.type === 'DELETION';
-      const side: 'L' | 'R' = isDeletion ? 'L' : 'R';
-      const blobLine = isDeletion ? line.left : line.right;
-      const oid = isDeletion ? content?.oldCommitOid : content?.newCommitOid;
-      const blobPath = isDeletion
-        ? (content?.oldTreeEntry?.path ?? path)
-        : path;
-      let range: { start: number; end: number } | null = null;
-      const spotKey = `${path}:${side}:${blobLine}`;
-      if (pickChain && pickChain.key === spotKey) {
-        // Same spot again: expand outward through the ancestor chain.
-        pickChain.index++;
-        if (pickChain.index >= pickChain.chain.length) {
-          pickChain = null;
-          setPicked(null);
-          return;
-        }
-        const r = pickChain.chain[pickChain.index];
-        setPicked({ path, side, start: r.start, end: r.end });
-        return;
-      }
-      if (blobLine !== undefined && oid && cell) {
-        const caret = document.caretPositionFromPoint?.(clientX, clientY);
-        let col = 0;
-        if (caret && cell.contains(caret.offsetNode)) {
-          const r = document.createRange();
-          r.setStart(cell, 0);
-          r.setEnd(caret.offsetNode, caret.offset);
-          col = Math.max(0, r.toString().length - 1);
-        }
-        const chain = await pickNodeAt(
-          pr.owner,
-          pr.repo,
-          oid,
-          blobPath,
-          blobLine,
-          col,
-        );
-        if (chain?.length) {
-          pickChain = { key: spotKey, chain, index: 0 };
-          range = chain[0];
-        }
-      }
-      if (token !== pickToken) return;
-      if (!range && !isDeletion) {
-        // New-side declaration scopes as a coarse fallback.
-        const tiniest = (analyses.get(path)?.scopeRanges ?? [])
-          .filter((s) => s.start <= n && n <= s.end)
-          .sort((a, b) => a.end - a.start - (b.end - b.start))[0];
-        if (tiniest) range = { start: tiniest.start, end: tiniest.end };
-      }
-      range ??= { start: blobLine ?? n, end: blobLine ?? n };
-      const cur = picked();
-      setPicked(
-        cur &&
-          cur.path === path &&
-          cur.side === side &&
-          cur.start === range.start &&
-          cur.end === range.end
-          ? null
-          : { path, side, start: range.start, end: range.end },
-      );
-    })();
-  };
-
   const onKeyDown = (e: KeyboardEvent) => {
     if (!seenEnabled || e.key !== 'a' || e.metaKey || e.ctrlKey || e.altKey)
       return;
@@ -454,13 +355,6 @@ function PayloadView(props: {
           }
         });
       }
-    } else {
-      const p = picked();
-      if (p) {
-        (contentFor(p.path)?.diffLines ?? []).forEach((l, idx) => {
-          if (rowInPick(l, p)) remember(p.path, l, idx);
-        });
-      }
     }
     if (!byPath.size) return;
     e.preventDefault();
@@ -471,8 +365,6 @@ function PayloadView(props: {
       next[path] = markLinesSeen(next[path], lines);
     }
     persist(next);
-    setPicked(null);
-    pickChain = null;
     sel?.removeAllRanges();
     // Marking may fold a now-fully-seen file; keep its header in view.
     const folded = [...byPath.keys()].find((p) =>
@@ -488,10 +380,8 @@ function PayloadView(props: {
   };
   onMount(() => {
     window.addEventListener('keydown', onKeyDown, { capture: true });
-    document.addEventListener('click', onPickClick);
     onCleanup(() => {
       window.removeEventListener('keydown', onKeyDown, { capture: true });
-      document.removeEventListener('click', onPickClick);
     });
   });
 
@@ -706,9 +596,6 @@ function PayloadView(props: {
                 analysis={analysesMap()[summary.path]}
                 stickyScope={stickyScopes()[summary.path]}
                 moved={movedFor(summary.path)}
-                picked={
-                  picked()?.path === summary.path ? picked()! : undefined
-                }
                 onJumpToFile={treeApi.onOpenFile}
                 summary={summary}
                 content={contentFor(summary.path)}

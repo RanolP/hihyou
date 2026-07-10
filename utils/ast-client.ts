@@ -112,26 +112,6 @@ function blobText(
   return p;
 }
 
-/** Ancestor chain (innermost first) at a blob position. */
-export async function pickNodeAt(
-  owner: string,
-  repo: string,
-  oid: string,
-  path: string,
-  line: number,
-  col: number,
-): Promise<LineRange[] | null> {
-  if (backendDead || !grammarForPath(path)) return null;
-  const text = await blobText(owner, repo, oid, path);
-  if (!text || text.length > MAX_BLOB) return null;
-  return astMessaging
-    .sendMessage('pickNode', { path, text, line, col })
-    .catch(() => {
-      backendDead = true;
-      return null;
-    });
-}
-
 export function structuralDiff(
   path: string,
   oldText: string,

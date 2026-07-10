@@ -273,33 +273,6 @@ export function declHashes(root: Node): DeclHashInfo[] {
   });
 }
 
-/**
- * Ancestor chain at a position, innermost first: the smallest named node
- * under the cursor, then each strictly-larger enclosing range (whole-file
- * root excluded, capped). Repeated clicks walk outward through this.
- */
-export function nodeChainAt(
-  root: Node,
-  line: number,
-  col: number,
-  cap = 8,
-): LineRange[] {
-  let node: Node | null = root.namedDescendantForPosition({
-    row: line - 1,
-    column: Math.max(0, col),
-  });
-  const chain: LineRange[] = [];
-  while (node && node.id !== root.id && chain.length < cap) {
-    const range = lineRange(node);
-    const last = chain[chain.length - 1];
-    if (!last || last.start !== range.start || last.end !== range.end) {
-      chain.push(range);
-    }
-    node = node.parent;
-  }
-  return chain;
-}
-
 /** Smallest scope containing the line, or the chain outside-in. */
 export function scopeChainAt(
   scopes: ScopeRange[],

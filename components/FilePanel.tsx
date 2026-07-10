@@ -19,7 +19,6 @@ import type { FileAnalysis } from '@/utils/ast-service';
 import { importFold } from '@/utils/import-fold';
 import { scoreInjectionLang } from '@/utils/injection-heuristic';
 import { currentShikiTheme, getHighlighter } from '@/utils/highlight';
-import { rowInPick, type PickedRange } from '@/utils/pick';
 
 export interface MovedRange {
   side: 'add' | 'del';
@@ -66,8 +65,6 @@ export function FilePanel(props: {
   stickyScope?: string;
   /** Moved-code ranges in this file (blob line numbers per side). */
   moved?: MovedRange[];
-  /** Click-picked node range (side-aware blob lines), blue-tinted. */
-  picked?: PickedRange;
   onJumpToFile?: (path: string) => void;
 }) {
   let section!: HTMLElement;
@@ -374,9 +371,6 @@ export function FilePanel(props: {
                         moved={
                           !!props.moved?.some((r) => moveMatches(r, line))
                         }
-                        picked={() =>
-                          !!props.picked && rowInPick(line, props.picked)
-                        }
                         overrideHtml={() => injHtml()[i()]}
                       />
                     </Show>
@@ -415,7 +409,6 @@ function DiffRow(props: {
   idx: number;
   seen: () => boolean;
   moved?: boolean;
-  picked?: () => boolean;
   /** Nested-language re-highlight (literal injection). */
   overrideHtml?: () => string | undefined;
 }) {
@@ -436,7 +429,6 @@ function DiffRow(props: {
       classList={{
         'hihyou-seen': props.seen(),
         'hihyou-moved': props.moved,
-        'hihyou-picked': !!props.picked?.(),
       }}
       data-idx={props.idx}
     >

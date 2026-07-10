@@ -321,15 +321,6 @@
   padding-left: 12px;
 }
 
-/* Click-picked node awaiting `a`: blue tint. */
-.hihyou-line.hihyou-picked td.code,
-.hihyou-line.hihyou-picked td.num {
-  background-image: linear-gradient(
-    color-mix(in srgb, var(--fgColor-accent, #0969da) 16%, transparent),
-    color-mix(in srgb, var(--fgColor-accent, #0969da) 16%, transparent)
-  );
-}
-
 /* Applied = the view shows the post-apply state: removals removed,
    additions rendered as plain code with a thin landed-edge. */
 .hihyou-line.hihyou-seen.del {

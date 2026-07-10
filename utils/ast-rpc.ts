@@ -19,13 +19,6 @@ interface ProtocolMap {
     newText: string;
   }): SemanticHunk[] | null;
   declHashes(data: { path: string; text: string }): DeclHashInfo[] | null;
-  /** Ancestor chain (innermost first) at a (1-based line, 0-based col). */
-  pickNode(data: {
-    path: string;
-    text: string;
-    line: number;
-    col: number;
-  }): LineRange[] | null;
   /**
    * Quick info at a position of the file's new blob. Returns the hover
    * text, 'NEED_PROJECT' when the worker wants the lockfile resent, or
