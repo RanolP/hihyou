@@ -140,6 +140,31 @@
   background: var(--diffBlob-hunkNum-bgColor, #c6e6ff);
 }
 
+.hihyou-line.hihyou-seen td.code,
+.hihyou-line.hihyou-seen td.num {
+  opacity: 0.4;
+}
+
+.hihyou-seen-progress {
+  color: var(--fgColor-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.hihyou-seen-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  color: var(--fgColor-muted);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans',
+    Helvetica, Arial, sans-serif;
+}
+
+.hihyou-progress {
+  color: var(--fgColor-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .hihyou-thread-cell {
   padding: 8px;
   max-width: 900px;

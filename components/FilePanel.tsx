@@ -5,6 +5,13 @@ import type {
   DiffSummary,
   ReviewThread,
 } from '@/utils/github-changes';
+import {
+  countableLines,
+  fileFullySeen,
+  isLineSeen,
+  seenCount,
+  type FileSeenState,
+} from '@/utils/seen-hunks';
 import { ThreadCard } from './ThreadCard';
 
 export function FilePanel(props: {
@@ -13,6 +20,11 @@ export function FilePanel(props: {
   getThread?: (id: string) => ReviewThread | undefined;
   /** Called when the panel nears the viewport and has no content yet. */
   onNearViewport?: () => void;
+  seen?: FileSeenState;
+  seenEnabled?: boolean;
+  onToggleAllSeen?: (checked: boolean) => void;
+  /** Fires once when diff lines become available (seen invalidation). */
+  onContentReady?: (lines: DiffLine[]) => void;
 }) {
   let section!: HTMLElement;
 
@@ -29,6 +41,15 @@ export function FilePanel(props: {
       if (props.content) observer.disconnect();
     });
     onCleanup(() => observer.disconnect());
+  });
+
+  let validated = false;
+  createEffect(() => {
+    const lines = props.content?.diffLines;
+    if (lines?.length && !validated) {
+      validated = true;
+      props.onContentReady?.(lines);
+    }
   });
 
   const note = () => {
@@ -59,11 +80,15 @@ export function FilePanel(props: {
       .filter((t): t is ReviewThread => !!t);
   };
 
+  const lines = () => props.content?.diffLines ?? [];
+  const showSeenUi = () => props.seenEnabled && lines().length > 0;
+
   return (
     <section
       ref={section}
       class="hihyou-file"
       id={`hihyou-${props.summary.pathDigest}`}
+      data-path={props.summary.path}
     >
       <header class="hihyou-file-header">
         <span class="hihyou-file-path">
@@ -84,6 +109,21 @@ export function FilePanel(props: {
               {props.summary.changeType.toLowerCase()}
             </span>
           </Show>
+          <Show when={showSeenUi()}>
+            <span class="hihyou-seen-progress">
+              {seenCount(props.seen, lines())}/{countableLines(lines()).length}
+            </span>
+            <label class="hihyou-seen-toggle" title="Mark whole file as seen">
+              <input
+                type="checkbox"
+                checked={fileFullySeen(props.seen, lines())}
+                onChange={(e) =>
+                  props.onToggleAllSeen?.(e.currentTarget.checked)
+                }
+              />
+              seen
+            </label>
+          </Show>
         </span>
       </header>
       <Show
@@ -93,11 +133,15 @@ export function FilePanel(props: {
         <table class="hihyou-diff">
           <tbody>
             <For each={props.content!.diffLines}>
-              {(line) => {
+              {(line, i) => {
                 const threads = threadsAt(line);
                 return (
                   <>
-                    <DiffRow line={line} />
+                    <DiffRow
+                      line={line}
+                      idx={i()}
+                      seen={() => isLineSeen(props.seen, line)}
+                    />
                     <Show when={threads.length > 0}>
                       <tr class="hihyou-thread-row">
                         <td class="num" colspan="2" />
@@ -127,8 +171,8 @@ function escapeHtml(text: string): string {
 }
 
 // A line never changes shape after render, so branching on type here
-// (outside JSX reactivity) is safe.
-function DiffRow(props: { line: DiffLine }) {
+// (outside JSX reactivity) is safe; only seen-ness is reactive.
+function DiffRow(props: { line: DiffLine; idx: number; seen: () => boolean }) {
   const l = props.line;
   if (l.type === 'HUNK') {
     return (
@@ -141,7 +185,11 @@ function DiffRow(props: { line: DiffLine }) {
   const cls =
     l.type === 'ADDITION' ? 'add' : l.type === 'DELETION' ? 'del' : 'ctx';
   return (
-    <tr class={`hihyou-line ${cls}`}>
+    <tr
+      class={`hihyou-line ${cls}`}
+      classList={{ 'hihyou-seen': props.seen() }}
+      data-idx={props.idx}
+    >
       <td class="num">{l.type === 'ADDITION' ? '' : l.left}</td>
       <td class="num">{l.type === 'DELETION' ? '' : l.right}</td>
       {/* GitHub's html is the full line incl. the +/-/space marker. */}
