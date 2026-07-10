@@ -6,7 +6,7 @@ import {
   analyzeTree,
   declHashes,
   grammarForPath,
-  nodeRangeAt,
+  nodeChainAt,
   structuralDiffTrees,
 } from '@/utils/ast-service';
 import {
@@ -156,32 +156,13 @@ export default defineBackground(() => {
       if (!parser) return null;
       const tree = parser.parse(data.text);
       if (!tree) return null;
-      const range = nodeRangeAt(tree.rootNode, data.line, data.col);
+      const range = nodeChainAt(tree.rootNode, data.line, data.col);
       tree.delete();
       parser.delete();
       return range;
     } catch (err) {
       console.warn('[hihyou] pickNode failed:', data.path, err);
       return null;
-    }
-  });
-
-  // "Apply" means really applying the git diff: forward the patch to the
-  // local daemon (scripts/apply-server.mjs) running in the target repo.
-  astMessaging.onMessage('applyPatch', async ({ data }) => {
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 2000);
-      const res = await fetch('http://127.0.0.1:48917/apply', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ patch: data.patch }),
-        signal: controller.signal,
-      });
-      clearTimeout(timer);
-      return (await res.json()) as { ok: boolean; detail?: string };
-    } catch {
-      return { ok: false, detail: 'daemon unreachable' };
     }
   });
 

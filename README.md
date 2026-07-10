@@ -39,16 +39,14 @@ that takes over the PR "changes" view in place.
 
 ## Applying hunks locally
 
-`a` really applies the selection/pick as a git diff. Run the daemon in the
-repo you're reviewing against:
-
-```sh
-node scripts/apply-server.mjs /path/to/checkout   # 127.0.0.1:48917
-```
-
-Select rows (or click to pick a node) and press `a`: the patch is applied
-to that working tree via `git apply` and the rows get the green applied
-mark. Without the daemon the patch lands on your clipboard instead.
+`a` really applies the selection/pick as a git diff — entirely in the
+browser. On first apply per repo, pick your local checkout folder (File
+System Access API); the grant is remembered. Select rows (or click to pick
+a node — repeated clicks expand outward through the AST) and press `a`:
+the change is verified against the file and written to your working tree,
+and the rows get the green applied mark. If anything mismatches, the
+unified diff lands on your clipboard instead. Whitespace-only changes are
+marked applied automatically.
 
 ## Development
 

@@ -27,8 +27,14 @@ import { analyzeBlob, declHashesBlob, pickNodeAt } from '@/utils/ast-client';
 import { scopeChainAt, type FileAnalysis } from '@/utils/ast-service';
 import { matchMoves, type DeclHash, type MoveBlock } from '@/utils/moved-code';
 import { rowInPick, type PickedRange } from '@/utils/pick';
-import { buildPatch, patchRowSpan } from '@/utils/patch';
-import { applyPatchLocally } from '@/utils/ast-client';
+import {
+  applyGroupsToText,
+  buildPatch,
+  changedGroups,
+  patchRowSpan,
+  whitespaceOnlyRows,
+} from '@/utils/patch';
+import { getRepoDir, readRepoFile, writeRepoFile } from '@/utils/fs-apply';
 
 let toastEl: HTMLDivElement | null = null;
 let toastTimer = 0;
@@ -246,6 +252,16 @@ function PayloadView(props: {
       const { state, changed } = validateSeen(fileState, lines);
       if (changed) persist({ ...seen(), [path]: state });
     }
+    // Whitespace-only del/add pairs are always considered applied.
+    const wsRows = whitespaceOnlyRows(lines).filter(
+      (l) => !isLineSeen(seen()[path], l as DiffLine),
+    );
+    if (seenEnabled && seenLoaded() && wsRows.length) {
+      persist({
+        ...seen(),
+        [path]: markLinesSeen(seen()[path], wsRows as DiffLine[]),
+      });
+    }
     reconcileViewed(path, lines);
   };
 
@@ -321,6 +337,11 @@ function PayloadView(props: {
     ({ path: string } & PickedRange) | null
   >(null);
   let pickToken = 0;
+  let pickChain: {
+    key: string;
+    chain: { start: number; end: number }[];
+    index: number;
+  } | null = null;
   const onPickClick = (e: MouseEvent) => {
     if (!seenEnabled) return;
     const target = e.target as HTMLElement;
@@ -350,6 +371,19 @@ function PayloadView(props: {
         ? (content?.oldTreeEntry?.path ?? path)
         : path;
       let range: { start: number; end: number } | null = null;
+      const spotKey = `${path}:${side}:${blobLine}`;
+      if (pickChain && pickChain.key === spotKey) {
+        // Same spot again: expand outward through the ancestor chain.
+        pickChain.index++;
+        if (pickChain.index >= pickChain.chain.length) {
+          pickChain = null;
+          setPicked(null);
+          return;
+        }
+        const r = pickChain.chain[pickChain.index];
+        setPicked({ path, side, start: r.start, end: r.end });
+        return;
+      }
       if (blobLine !== undefined && oid && cell) {
         const caret = document.caretPositionFromPoint?.(clientX, clientY);
         let col = 0;
@@ -359,7 +393,7 @@ function PayloadView(props: {
           r.setEnd(caret.offsetNode, caret.offset);
           col = Math.max(0, r.toString().length - 1);
         }
-        range = await pickNodeAt(
+        const chain = await pickNodeAt(
           pr.owner,
           pr.repo,
           oid,
@@ -367,6 +401,10 @@ function PayloadView(props: {
           blobLine,
           col,
         );
+        if (chain?.length) {
+          pickChain = { key: spotKey, chain, index: 0 };
+          range = chain[0];
+        }
       }
       if (token !== pickToken) return;
       if (!range && !isDeletion) {
@@ -457,31 +495,38 @@ function PayloadView(props: {
     }
     persist(next);
     setPicked(null);
+    pickChain = null;
     sel?.removeAllRanges();
-    // "Apply" means really applying the git diff: send each file's patch
-    // to the local daemon; fall back to the clipboard.
+    // "Apply" means really applying the git diff — in the browser, via a
+    // once-granted directory handle to the local checkout.
     void (async () => {
       for (const [path, idxSet] of byPathIdx) {
         const content = contentFor(path);
         const lines = content?.diffLines;
         if (!lines) continue;
-        const patch = buildPatch(
-          content.oldTreeEntry?.path ?? null,
-          path,
-          patchRowSpan(lines, idxSet),
-        );
-        if (!patch) continue;
-        const result = await applyPatchLocally(patch);
-        if (result.ok) {
+        const span = patchRowSpan(lines, idxSet);
+        const groups = changedGroups(span);
+        if (!groups.length) continue;
+        try {
+          const dir = await getRepoDir(`${pr.owner}/${pr.repo}`);
+          const text = await readRepoFile(dir, path);
+          const result = applyGroupsToText(text, groups);
+          if (!result.ok) throw new Error(result.detail);
+          await writeRepoFile(dir, path, result.text);
           showToast(`applied to working tree: ${path.split('/').pop()}`);
-        } else {
+        } catch (err) {
+          const patch = buildPatch(content.oldTreeEntry?.path ?? null, path, span);
+          const reason =
+            err instanceof Error ? err.message : 'apply failed';
           try {
-            await navigator.clipboard.writeText(patch);
-            showToast(
-              `daemon: ${result.detail ?? 'failed'} — patch copied to clipboard`,
-            );
+            if (patch) {
+              await navigator.clipboard.writeText(patch);
+              showToast(`${reason} — patch copied to clipboard`);
+            } else {
+              showToast(reason);
+            }
           } catch {
-            showToast(`apply failed: ${result.detail ?? 'unknown'}`);
+            showToast(`apply failed: ${reason}`);
           }
         }
       }

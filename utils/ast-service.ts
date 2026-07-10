@@ -274,25 +274,30 @@ export function declHashes(root: Node): DeclHashInfo[] {
 }
 
 /**
- * Tiniest meaningful node at a position: the innermost node under the
- * cursor, climbed to the first ancestor that spans multiple lines (a
- * single-line pick is already covered by plain line selection). Null when
- * only the whole file would qualify.
+ * Ancestor chain at a position, innermost first: the smallest named node
+ * under the cursor, then each strictly-larger enclosing range (whole-file
+ * root excluded, capped). Repeated clicks walk outward through this.
  */
-export function nodeRangeAt(
+export function nodeChainAt(
   root: Node,
   line: number,
   col: number,
-): LineRange | null {
-  let node: Node | null = root.descendantForPosition({
+  cap = 8,
+): LineRange[] {
+  let node: Node | null = root.namedDescendantForPosition({
     row: line - 1,
     column: Math.max(0, col),
   });
-  while (node && node.startPosition.row === node.endPosition.row) {
+  const chain: LineRange[] = [];
+  while (node && node.id !== root.id && chain.length < cap) {
+    const range = lineRange(node);
+    const last = chain[chain.length - 1];
+    if (!last || last.start !== range.start || last.end !== range.end) {
+      chain.push(range);
+    }
     node = node.parent;
   }
-  if (!node || node.id === root.id) return null;
-  return lineRange(node);
+  return chain;
 }
 
 /** Smallest scope containing the line, or the chain outside-in. */

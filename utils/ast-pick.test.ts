@@ -2,7 +2,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { Language, Parser } from 'web-tree-sitter';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { nodeRangeAt } from './ast-service';
+import { nodeChainAt } from './ast-service';
 
 // The exact reported scenario: clicking a deleted row inside
 // wireVibeInfra must pick the { ... } type-literal node, not the function.
@@ -49,33 +49,29 @@ beforeAll(async () => {
 });
 
 describe('nodeRangeAt (tiniest multiline node at cursor)', () => {
-  it('deleted `defineAction: TypedDefineAction<M>;` picks the type literal, not the function', () => {
+  it('deleted `defineAction: TypedDefineAction<M>;` chain: line first, then the type literal, then the function', () => {
     const tree = parser.parse(OLD_TEXT)!;
-    // line 4, a column inside `TypedDefineAction`
-    const range = nodeRangeAt(tree.rootNode, 4, 18);
-    // the `{ defineAction...; defineApp...; }` return-type block: lines 3-6
-    expect(range).toEqual({ start: 3, end: 6 });
+    const chain = nodeChainAt(tree.rootNode, 4, 18)!;
+    // innermost pick is the property line itself
+    expect(chain[0]).toEqual({ start: 4, end: 4 });
+    // expanding reaches the { ... } type literal before the function
+    const typeLiteral = chain.findIndex((r) => r.start === 3 && r.end === 6);
+    const fn = chain.findIndex((r) => r.start === 1 && r.end === 11);
+    expect(typeLiteral).toBeGreaterThan(-1);
+    expect(fn === -1 || fn > typeLiteral).toBe(true);
   });
 
-  it('added `defineAction: createDefineAction...` picks the return object literal', () => {
+  it('added `defineAction: createDefineAction...` chain reaches the return object', () => {
     const tree = parser.parse(NEW_TEXT)!;
-    const range = nodeRangeAt(tree.rootNode, 8, 8);
-    // the returned `{ ... }` object: lines 7-10
-    expect(range).toEqual({ start: 7, end: 10 });
+    const chain = nodeChainAt(tree.rootNode, 8, 8)!;
+    expect(chain[0].start).toBe(8);
+    expect(chain.some((r) => r.start === 7 && r.end === 10)).toBe(true);
   });
 
-  it('clicking the signature picks the whole function, and never the file', () => {
+  it('the chain never includes the whole file', () => {
     const tree = parser.parse(NEW_TEXT)!;
-    expect(nodeRangeAt(tree.rootNode, 1, 20)).toEqual({ start: 1, end: 11 });
-    expect(nodeRangeAt(tree.rootNode, 1, 0)).not.toBeNull();
-  });
-
-  it('column matters: the manifest parameter line picks the parameter list region', () => {
-    const tree = parser.parse(NEW_TEXT)!;
-    const range = nodeRangeAt(tree.rootNode, 2, 4)!;
-    // formal parameters span lines 1-3; must be tighter than the function
-    expect(range.end - range.start).toBeLessThan(10);
-    expect(range.start).toBeLessThanOrEqual(2);
-    expect(range.end).toBeGreaterThanOrEqual(2);
+    const chain = nodeChainAt(tree.rootNode, 1, 20)!;
+    expect(chain.length).toBeGreaterThan(0);
+    expect(chain.some((r) => r.start === 1 && r.end === 11)).toBe(true);
   });
 });

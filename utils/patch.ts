@@ -65,6 +65,67 @@ export function buildPatch(
   return out;
 }
 
+/** Hunk groups that actually change something. */
+export function changedGroups(rows: PatchRow[]): PatchRow[][] {
+  return splitHunks(rows).filter((g) =>
+    g.some((r) => r.type === 'ADDITION' || r.type === 'DELETION'),
+  );
+}
+
+/**
+ * Apply hunk groups to file text in memory (what `git apply` would do),
+ * verifying old-side content first. Groups apply bottom-up so earlier
+ * line numbers stay valid.
+ */
+export function applyGroupsToText(
+  text: string,
+  groups: PatchRow[][],
+): { ok: true; text: string } | { ok: false; detail: string } {
+  const lines = text.split('\n');
+  const anchored = groups.map((g) => ({
+    g,
+    start: g.find((r) => r.type !== 'ADDITION')?.left,
+  }));
+  if (anchored.some((a) => a.start === undefined)) {
+    return { ok: false, detail: 'hunk without old-side anchor' };
+  }
+  anchored.sort((a, b) => b.start! - a.start!);
+  for (const { g, start } of anchored) {
+    const oldRows = g.filter((r) => r.type !== 'ADDITION');
+    for (let i = 0; i < oldRows.length; i++) {
+      if (lines[start! - 1 + i] !== oldRows[i].text.slice(1)) {
+        return { ok: false, detail: `content mismatch at line ${start! + i}` };
+      }
+    }
+    const newTexts = g
+      .filter((r) => r.type !== 'DELETION')
+      .map((r) => r.text.slice(1));
+    lines.splice(start! - 1, oldRows.length, ...newTexts);
+  }
+  return { ok: true, text: lines.join('\n') };
+}
+
+/** Deletion/addition pairs differing only in whitespace (always applied). */
+export function whitespaceOnlyRows(rows: PatchRow[]): PatchRow[] {
+  const out: PatchRow[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].type !== 'DELETION') continue;
+    const dels: PatchRow[] = [];
+    while (rows[i]?.type === 'DELETION') dels.push(rows[i++]);
+    const adds: PatchRow[] = [];
+    while (rows[i]?.type === 'ADDITION') adds.push(rows[i++]);
+    i--;
+    if (dels.length !== adds.length) continue;
+    const strip = (r: PatchRow) => r.text.slice(1).replace(/\s+/g, '');
+    for (let j = 0; j < dels.length; j++) {
+      if (strip(dels[j]) === strip(adds[j]) && strip(dels[j]).length > 0) {
+        out.push(dels[j], adds[j]);
+      }
+    }
+  }
+  return out;
+}
+
 /**
  * Expand selected row indices to an applyable region: the contiguous span
  * between the first and last selected row, plus up to `margin` context

@@ -64,17 +64,15 @@ assert.ok(scopeNames.includes('function:shout'));
 assert.equal(analysis.injectionRanges.length, 1);
 assert.equal(analysis.injectionRanges[0].lang, 'css');
 
-// Tiniest node at a position: inside read()'s body the first multiline
-// ancestor is the method itself, not the class or the file.
+// Ancestor chain at a position: innermost first, method reachable,
+// whole file excluded.
 {
-  const { nodeRangeAt } = await import('./ast-service.ts');
+  const { nodeChainAt } = await import('./ast-service.ts');
   const read = analysis.scopeRanges.find((s) => s.name === 'read')!;
-  const picked = nodeRangeAt(tree.rootNode, read.start + 1, 6);
-  assert.deepEqual(picked, { start: read.start, end: read.end });
-  // Clicking a single-line class field picks the class body, not the file.
-  const box = analysis.scopeRanges.find((s) => s.name === 'Box')!;
-  const field = nodeRangeAt(tree.rootNode, box.start + 1, 4);
-  assert.ok(field && field.start >= box.start && field.end <= box.end);
+  const chain = nodeChainAt(tree.rootNode, read.start + 1, 6);
+  assert.ok(chain.length > 0);
+  assert.ok(chain[0].end - chain[0].start <= read.end - read.start);
+  assert.ok(chain.some((r) => r.start === read.start && r.end === read.end));
 }
 
 // Scope chain at a line inside Box.read: class then method.

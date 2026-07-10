@@ -3,7 +3,14 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { buildPatch, patchRowSpan, type PatchRow } from './patch';
+import {
+  applyGroupsToText,
+  buildPatch,
+  changedGroups,
+  patchRowSpan,
+  whitespaceOnlyRows,
+  type PatchRow,
+} from './patch';
 
 const ctx = (left: number, right: number, s: string): PatchRow => ({
   type: 'CONTEXT',
@@ -92,5 +99,40 @@ describe('patchRowSpan', () => {
     ];
     const span = patchRowSpan(lines, new Set([3, 4]), 1);
     expect(span.map((r) => r.text)).toEqual([' b', '-c', '+C', ' d']);
+  });
+});
+
+describe('applyGroupsToText (in-browser apply)', () => {
+  it('matches what git apply produces', () => {
+    const oldContent = 'one\ntwo\nthree\nfour\nfive\n';
+    const rows = [
+      ctx(1, 1, 'one'),
+      del(2, 1, 'two'),
+      add(2, 'TWO'),
+      add(3, 'TWO.5'),
+      ctx(3, 4, 'three'),
+    ];
+    const viaGit = gitApply(oldContent, buildPatch('file.ts', 'file.ts', rows)!);
+    const inBrowser = applyGroupsToText(oldContent, changedGroups(rows));
+    expect(inBrowser).toEqual({ ok: true, text: viaGit });
+  });
+
+  it('rejects on content mismatch instead of corrupting', () => {
+    const rows = [del(1, 0, 'expected-old-line')];
+    const res = applyGroupsToText('actual different\n', changedGroups(rows));
+    expect(res.ok).toBe(false);
+  });
+});
+
+describe('whitespaceOnlyRows', () => {
+  it('finds del/add pairs differing only in whitespace', () => {
+    const rows = [
+      del(1, 0, 'const a=1;'),
+      add(1, 'const a = 1;'),
+      del(2, 1, 'real change'),
+      add(2, 'different content'),
+    ];
+    const ws = whitespaceOnlyRows(rows);
+    expect(ws.map((r) => r.text)).toEqual(['-const a=1;', '+const a = 1;']);
   });
 });

@@ -23,8 +23,6 @@ export default defineConfig({
     host_permissions: [
       'https://registry.npmjs.org/*',
       'https://playgroundcdn.typescriptlang.org/*',
-      // Local apply daemon (scripts/apply-server.mjs).
-      'http://127.0.0.1/*',
     ],
     // Patch fallback when the daemon isn't running.
     permissions: ['storage', 'clipboardWrite'],

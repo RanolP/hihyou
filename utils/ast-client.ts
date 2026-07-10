@@ -112,7 +112,7 @@ function blobText(
   return p;
 }
 
-/** Tiniest multiline node at a position of the new-side blob. */
+/** Ancestor chain (innermost first) at a blob position. */
 export async function pickNodeAt(
   owner: string,
   repo: string,
@@ -120,7 +120,7 @@ export async function pickNodeAt(
   path: string,
   line: number,
   col: number,
-): Promise<LineRange | null> {
+): Promise<LineRange[] | null> {
   if (backendDead || !grammarForPath(path)) return null;
   const text = await blobText(owner, repo, oid, path);
   if (!text || text.length > MAX_BLOB) return null;
@@ -130,17 +130,6 @@ export async function pickNodeAt(
       backendDead = true;
       return null;
     });
-}
-
-/** Really apply a unified diff via the local daemon (through the SW). */
-export async function applyPatchLocally(
-  patch: string,
-): Promise<{ ok: boolean; detail?: string }> {
-  try {
-    return await astMessaging.sendMessage('applyPatch', { patch });
-  } catch {
-    return { ok: false, detail: 'extension backend unavailable' };
-  }
 }
 
 export function structuralDiff(

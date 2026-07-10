@@ -19,20 +19,18 @@ interface ProtocolMap {
     newText: string;
   }): SemanticHunk[] | null;
   declHashes(data: { path: string; text: string }): DeclHashInfo[] | null;
-  /** Tiniest multiline node at a (1-based line, 0-based col) position. */
+  /** Ancestor chain (innermost first) at a (1-based line, 0-based col). */
   pickNode(data: {
     path: string;
     text: string;
     line: number;
     col: number;
-  }): LineRange | null;
+  }): LineRange[] | null;
   /**
    * Quick info at a position of the file's new blob. Returns the hover
    * text, 'NEED_PROJECT' when the worker wants the lockfile resent, or
    * null. lockfileText: undefined = not sent, null = repo has none.
    */
-  /** Apply a unified diff via the local hihyou apply daemon. */
-  applyPatch(data: { patch: string }): { ok: boolean; detail?: string };
   tsHover(data: {
     cacheKey: string;
     repoFilePath: string;
