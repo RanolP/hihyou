@@ -12,6 +12,7 @@
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
     "compile": "tsc --noEmit",
+    "test": "vitest run",
     "check": "node utils/pr-location.check.ts && node utils/seen-hunks.check.ts && node utils/prose-diff.check.ts && node utils/ast-service.check.ts && node utils/import-fold.check.ts && node utils/moved-code.check.ts && node utils/injection-heuristic.check.ts && node utils/ts-env.check.ts",
     "postinstall": "wxt prepare && node scripts/copy-wasm.mjs"
   },
@@ -33,6 +34,7 @@
     "@vscode/tree-sitter-wasm": "^0.3.1",
     "@wxt-dev/module-solid": "^1.1.4",
     "typescript": "^5.9.3",
+    "vitest": "^4.1.10",
     "wxt": "^0.20.27"
   },
   "pnpm": {

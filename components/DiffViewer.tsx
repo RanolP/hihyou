@@ -26,6 +26,7 @@ import {
 import { analyzeBlob, declHashesBlob, pickNodeAt } from '@/utils/ast-client';
 import { scopeChainAt, type FileAnalysis } from '@/utils/ast-service';
 import { matchMoves, type DeclHash, type MoveBlock } from '@/utils/moved-code';
+import { rowInPick, type PickedRange } from '@/utils/pick';
 import { isLineSeen } from '@/utils/seen-hunks';
 import { loadSeenState, prKey, saveSeenState } from '@/utils/seen-store';
 import { countableLines, seenCount } from '@/utils/seen-hunks';
@@ -296,11 +297,10 @@ function PayloadView(props: {
 
   // Click a line to pick the tiniest enclosing node (blue tint); `a`
   // marks the exact selection (or the pick) as applied. Never oversized.
-  const [picked, setPicked] = createSignal<{
-    path: string;
-    start: number;
-    end: number;
-  } | null>(null);
+  // Deletion rows pick against the old blob (side L), others the new (R).
+  const [picked, setPicked] = createSignal<
+    ({ path: string } & PickedRange) | null
+  >(null);
   let pickToken = 0;
   const onPickClick = (e: MouseEvent) => {
     if (!seenEnabled) return;
@@ -319,10 +319,19 @@ function PayloadView(props: {
     const token = ++pickToken;
     const { clientX, clientY } = e;
     void (async () => {
-      // True tiniest node at the exact click position (new-side blob) —
-      // declaration scopes alone can't select children inside a function.
+      // True tiniest node at the exact click position — declaration
+      // scopes alone can't select children inside a function. Deletions
+      // resolve against the OLD blob at their left line.
+      const content = contentFor(path);
+      const isDeletion = line.type === 'DELETION';
+      const side: 'L' | 'R' = isDeletion ? 'L' : 'R';
+      const blobLine = isDeletion ? line.left : line.right;
+      const oid = isDeletion ? content?.oldCommitOid : content?.newCommitOid;
+      const blobPath = isDeletion
+        ? (content?.oldTreeEntry?.path ?? path)
+        : path;
       let range: { start: number; end: number } | null = null;
-      if (line.right !== undefined && line.type !== 'DELETION' && cell) {
+      if (blobLine !== undefined && oid && cell) {
         const caret = document.caretPositionFromPoint?.(clientX, clientY);
         let col = 0;
         if (caret && cell.contains(caret.offsetNode)) {
@@ -331,35 +340,33 @@ function PayloadView(props: {
           r.setEnd(caret.offsetNode, caret.offset);
           col = Math.max(0, r.toString().length - 1);
         }
-        const oid = contentFor(path)?.newCommitOid;
-        if (oid) {
-          range = await pickNodeAt(
-            pr.owner,
-            pr.repo,
-            oid,
-            path,
-            line.right,
-            col,
-          );
-        }
+        range = await pickNodeAt(
+          pr.owner,
+          pr.repo,
+          oid,
+          blobPath,
+          blobLine,
+          col,
+        );
       }
       if (token !== pickToken) return;
-      if (!range) {
+      if (!range && !isDeletion) {
+        // New-side declaration scopes as a coarse fallback.
         const tiniest = (analyses.get(path)?.scopeRanges ?? [])
           .filter((s) => s.start <= n && n <= s.end)
           .sort((a, b) => a.end - a.start - (b.end - b.start))[0];
-        range = tiniest
-          ? { start: tiniest.start, end: tiniest.end }
-          : { start: n, end: n };
+        if (tiniest) range = { start: tiniest.start, end: tiniest.end };
       }
+      range ??= { start: blobLine ?? n, end: blobLine ?? n };
       const cur = picked();
       setPicked(
         cur &&
           cur.path === path &&
+          cur.side === side &&
           cur.start === range.start &&
           cur.end === range.end
           ? null
-          : { path, start: range.start, end: range.end },
+          : { path, side, start: range.start, end: range.end },
       );
     })();
   };
@@ -412,12 +419,8 @@ function PayloadView(props: {
     } else {
       const p = picked();
       if (p) {
-        const rows = (contentFor(p.path)?.diffLines ?? []).filter(
-          (l) =>
-            l.type !== 'HUNK' &&
-            l.right !== undefined &&
-            l.right >= p.start &&
-            l.right <= p.end,
+        const rows = (contentFor(p.path)?.diffLines ?? []).filter((l) =>
+          rowInPick(l, p),
         );
         if (rows.length) byPath.set(p.path, rows);
       }
