@@ -9,9 +9,9 @@ import type {
   FileAnalysis,
   LineRange,
   SemanticHunk,
-} from './ast-service';
-import { grammarForPath } from './ast-service';
-import { fetchRawBlob } from './github-changes';
+} from '@hihyou/diff-engine/ast-service';
+import { grammarForPath } from '@hihyou/diff-engine/ast-service';
+import { fetchRawBlob } from '@hihyou/github/github-changes';
 
 let backendDead = false;
 const analyses = new Map<string, Promise<FileAnalysis | null>>();

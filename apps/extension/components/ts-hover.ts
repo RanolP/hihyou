@@ -6,8 +6,8 @@
  */
 
 import { astMessaging } from '@/utils/ast-rpc';
-import { fetchRawBlob, type DiffContent } from '@/utils/github-changes';
-import type { PrLocation } from '@/utils/pr-location';
+import { fetchRawBlob, type DiffContent } from '@hihyou/github/github-changes';
+import type { PrLocation } from '@hihyou/github/pr-location';
 
 export interface TsHoverOptions {
   pr: PrLocation;

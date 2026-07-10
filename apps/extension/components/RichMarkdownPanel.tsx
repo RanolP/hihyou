@@ -1,8 +1,8 @@
 import { Show, createResource } from 'solid-js';
 import { marked } from 'marked';
-import { fetchRawBlob, type DiffContent } from '@/utils/github-changes';
-import { diffBlocks, type BlockSeg } from '@/utils/prose-diff';
-import type { PrLocation } from '@/utils/pr-location';
+import { fetchRawBlob, type DiffContent } from '@hihyou/github/github-changes';
+import { diffBlocks, type BlockSeg } from '@hihyou/diff-engine/prose-diff';
+import type { PrLocation } from '@hihyou/github/pr-location';
 
 function toBlocks(markdown: string): BlockSeg[] {
   if (!markdown) return [];

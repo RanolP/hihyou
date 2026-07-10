@@ -5,7 +5,7 @@ import {
   type GitStatus,
   type GitStatusEntry,
 } from '@pierre/trees';
-import type { DiffSummary } from '@/utils/github-changes';
+import type { DiffSummary } from '@hihyou/github/github-changes';
 
 export interface FileTreeApi {
   /** 'full' | 'partial' | 'none' seen coverage for one file. */

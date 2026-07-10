@@ -1,5 +1,5 @@
 import { For, Show } from 'solid-js';
-import type { ReviewThread } from '@/utils/github-changes';
+import type { ReviewThread } from '@hihyou/github/github-changes';
 
 export function ThreadCard(props: { thread: ReviewThread }) {
   const comments = () =>

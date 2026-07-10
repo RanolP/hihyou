@@ -9,7 +9,7 @@ import type {
   FileAnalysis,
   LineRange,
   SemanticHunk,
-} from './ast-service';
+} from '@hihyou/diff-engine/ast-service';
 
 interface ProtocolMap {
   parseFile(data: { path: string; text: string }): FileAnalysis | null;

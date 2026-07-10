@@ -4,12 +4,12 @@ import {
   createMagicMoveMachine,
 } from 'shiki-magic-move/core';
 import { MagicMoveRenderer } from 'shiki-magic-move/renderer';
-import { fetchRawBlob } from '@/utils/github-changes';
+import { fetchRawBlob } from '@hihyou/github/github-changes';
 import {
   currentShikiTheme,
   getHighlighter,
   langForPath,
-} from '@/utils/highlight';
+} from '@hihyou/diff-engine/highlight';
 
 const MAX_BYTES = 120_000;
 const MAX_LINES = 800;

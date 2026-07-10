@@ -10,30 +10,24 @@ importers:
 
   apps/extension:
     dependencies:
+      '@hihyou/diff-engine':
+        specifier: workspace:*
+        version: link:../../packages/diff-engine
+      '@hihyou/github':
+        specifier: workspace:*
+        version: link:../../packages/github
       '@pierre/trees':
         specifier: 1.0.0-beta.5
         version: 1.0.0-beta.5(@shikijs/themes@4.3.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(shiki@4.3.1)
-      '@shikijs/langs':
-        specifier: ^4.3.1
-        version: 4.3.1
-      '@shikijs/themes':
-        specifier: ^4.3.1
-        version: 4.3.1
       '@typescript/vfs':
         specifier: ^1.6.4
         version: 1.6.4(typescript@5.9.3)
       '@webext-core/messaging':
         specifier: ^3.0.2
         version: 3.0.2
-      diff:
-        specifier: ^9.0.0
-        version: 9.0.0
       marked:
         specifier: ^18.0.6
         version: 18.0.6
-      shiki:
-        specifier: ^4.3.1
-        version: 4.3.1
       shiki-magic-move:
         specifier: ^1.4.0
         version: 1.4.0(react@19.2.7)(shiki@4.3.1)(solid-js@1.9.14)
@@ -43,9 +37,6 @@ importers:
       web-tree-sitter:
         specifier: ^0.26.10
         version: 0.26.10
-      yaml:
-        specifier: ^2.9.0
-        version: 2.9.0
     devDependencies:
       '@vscode/tree-sitter-wasm':
         specifier: ^0.3.1
@@ -56,12 +47,55 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
-      vitest:
-        specifier: ^4.1.10
-        version: 4.1.10(@types/node@26.1.1)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.27.7)(jiti@2.7.0)(yaml@2.9.0))
       wxt:
         specifier: ^0.20.27
         version: 0.20.27(@types/node@26.1.1)(jiti@2.7.0)(rolldown@1.1.5)(yaml@2.9.0)
+
+  packages/diff-engine:
+    dependencies:
+      '@shikijs/langs':
+        specifier: ^4.3.1
+        version: 4.3.1
+      '@shikijs/themes':
+        specifier: ^4.3.1
+        version: 4.3.1
+      '@typescript/vfs':
+        specifier: ^1.6.4
+        version: 1.6.4(typescript@5.9.3)
+      diff:
+        specifier: ^9.0.0
+        version: 9.0.0
+      shiki:
+        specifier: ^4.3.1
+        version: 4.3.1
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      web-tree-sitter:
+        specifier: ^0.26.10
+        version: 0.26.10
+      yaml:
+        specifier: ^2.9.0
+        version: 2.9.0
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      '@vscode/tree-sitter-wasm':
+        specifier: ^0.3.1
+        version: 0.3.1
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@8.1.4(@types/node@24.13.3)(esbuild@0.27.7)(jiti@2.7.0)(yaml@2.9.0))
+
+  packages/github:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
 
 packages:
 
@@ -601,6 +635,9 @@ packages:
 
   '@types/minimatch@3.0.5':
     resolution: {integrity: sha512-Klz949h02Gz2uZCMGwDUSDS1YBlTdDDgbWHi+81l29tQALUtvz4rAYi5uoVhE5Lagoq6DeqAUlbrHvW/mXDgdQ==}
+
+  '@types/node@24.13.3':
+    resolution: {integrity: sha512-Dh8vAsV36ig5wa9OX4pXvMc9D3Veibfw2wix0CUwYODLD8nkj9UsLjASr49nPg+2eKzxhBV+v7L8pXvT4e639Q==}
 
   '@types/node@26.1.1':
     resolution: {integrity: sha512-nxAkRSVkN1Y0JC1W8ky/fTfkGsMmcrRsbx+3XoZE+rMOX71kLYTV7fLXpqud1GpbpP5TuffXFqfX7fH2GgZREw==}
@@ -2042,6 +2079,9 @@ packages:
   uhyphen@0.2.0:
     resolution: {integrity: sha512-qz3o9CHXmJJPGBdqzab7qAYuW8kQGKNEuoHFYrBwV6hWIMcpAmxDLXojcHfFr9US1Pe6zUswEIJIbLI610fuqA==}
 
+  undici-types@7.18.2:
+    resolution: {integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==}
+
   undici-types@8.3.0:
     resolution: {integrity: sha512-j375ScV60dom+YkPFIfTLcOiPxkN/buHz5GobjLhixFuANaNs3C9l4GmrWqejgXWJ7BbJcFYpTEUkS1Ge8bpZQ==}
 
@@ -2808,9 +2848,14 @@ snapshots:
 
   '@types/minimatch@3.0.5': {}
 
+  '@types/node@24.13.3':
+    dependencies:
+      undici-types: 7.18.2
+
   '@types/node@26.1.1':
     dependencies:
       undici-types: 8.3.0
+    optional: true
 
   '@types/unist@3.0.3': {}
 
@@ -2834,13 +2879,13 @@ snapshots:
       chai: 6.2.2
       tinyrainbow: 3.1.0
 
-  '@vitest/mocker@4.1.10(vite@8.1.4(@types/node@26.1.1)(esbuild@0.27.7)(jiti@2.7.0)(yaml@2.9.0))':
+  '@vitest/mocker@4.1.10(vite@8.1.4(@types/node@24.13.3)(esbuild@0.27.7)(jiti@2.7.0)(yaml@2.9.0))':
     dependencies:
       '@vitest/spy': 4.1.10
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      vite: 8.1.4(@types/node@26.1.1)(esbuild@0.27.7)(jiti@2.7.0)(yaml@2.9.0)
+      vite: 8.1.4(@types/node@24.13.3)(esbuild@0.27.7)(jiti@2.7.0)(yaml@2.9.0)
 
   '@vitest/pretty-format@4.1.10':
     dependencies:
@@ -3048,7 +3093,7 @@ snapshots:
 
   chrome-launcher@1.2.0:
     dependencies:
-      '@types/node': 26.1.1
+      '@types/node': 24.13.3
       escape-string-regexp: 4.0.0
       is-wsl: 2.2.0
       lighthouse-logger: 2.0.2
@@ -4182,7 +4227,10 @@ snapshots:
 
   uhyphen@0.2.0: {}
 
-  undici-types@8.3.0: {}
+  undici-types@7.18.2: {}
+
+  undici-types@8.3.0:
+    optional: true
 
   unimport@6.3.0(esbuild@0.27.7)(rolldown@1.1.5)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.27.7)(jiti@2.7.0)(yaml@2.9.0)):
     dependencies:
@@ -4319,6 +4367,20 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  vite@8.1.4(@types/node@24.13.3)(esbuild@0.27.7)(jiti@2.7.0)(yaml@2.9.0):
+    dependencies:
+      lightningcss: 1.32.0
+      picomatch: 4.0.5
+      postcss: 8.5.16
+      rolldown: 1.1.5
+      tinyglobby: 0.2.17
+    optionalDependencies:
+      '@types/node': 24.13.3
+      esbuild: 0.27.7
+      fsevents: 2.3.3
+      jiti: 2.7.0
+      yaml: 2.9.0
+
   vite@8.1.4(@types/node@26.1.1)(esbuild@0.27.7)(jiti@2.7.0)(yaml@2.9.0):
     dependencies:
       lightningcss: 1.32.0
@@ -4337,10 +4399,10 @@ snapshots:
     optionalDependencies:
       vite: 8.1.4(@types/node@26.1.1)(esbuild@0.27.7)(jiti@2.7.0)(yaml@2.9.0)
 
-  vitest@4.1.10(@types/node@26.1.1)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.27.7)(jiti@2.7.0)(yaml@2.9.0)):
+  vitest@4.1.10(@types/node@24.13.3)(vite@8.1.4(@types/node@24.13.3)(esbuild@0.27.7)(jiti@2.7.0)(yaml@2.9.0)):
     dependencies:
       '@vitest/expect': 4.1.10
-      '@vitest/mocker': 4.1.10(vite@8.1.4(@types/node@26.1.1)(esbuild@0.27.7)(jiti@2.7.0)(yaml@2.9.0))
+      '@vitest/mocker': 4.1.10(vite@8.1.4(@types/node@24.13.3)(esbuild@0.27.7)(jiti@2.7.0)(yaml@2.9.0))
       '@vitest/pretty-format': 4.1.10
       '@vitest/runner': 4.1.10
       '@vitest/snapshot': 4.1.10
@@ -4357,10 +4419,10 @@ snapshots:
       tinyexec: 1.2.4
       tinyglobby: 0.2.17
       tinyrainbow: 3.1.0
-      vite: 8.1.4(@types/node@26.1.1)(esbuild@0.27.7)(jiti@2.7.0)(yaml@2.9.0)
+      vite: 8.1.4(@types/node@24.13.3)(esbuild@0.27.7)(jiti@2.7.0)(yaml@2.9.0)
       why-is-node-running: 2.3.0
     optionalDependencies:
-      '@types/node': 26.1.1
+      '@types/node': 24.13.3
     transitivePeerDependencies:
       - msw
 

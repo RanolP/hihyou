@@ -11,14 +11,14 @@ import type {
   DiffLine,
   DiffSummary,
   ReviewThread,
-} from '@/utils/github-changes';
-import type { PrLocation } from '@/utils/pr-location';
+} from '@hihyou/github/github-changes';
+import type { PrLocation } from '@hihyou/github/pr-location';
 import { MagicMovePanel } from './MagicMovePanel';
 import { RichMarkdownPanel } from './RichMarkdownPanel';
-import type { FileAnalysis } from '@/utils/ast-service';
-import { importFold } from '@/utils/import-fold';
-import { scoreInjectionLang } from '@/utils/injection-heuristic';
-import { currentShikiTheme, getHighlighter } from '@/utils/highlight';
+import type { FileAnalysis } from '@hihyou/diff-engine/ast-service';
+import { importFold } from '@hihyou/diff-engine/import-fold';
+import { scoreInjectionLang } from '@hihyou/diff-engine/injection-heuristic';
+import { currentShikiTheme, getHighlighter } from '@hihyou/diff-engine/highlight';
 
 export interface MovedRange {
   side: 'add' | 'del';
@@ -43,7 +43,7 @@ import {
   isLineSeen,
   seenCount,
   type FileSeenState,
-} from '@/utils/seen-hunks';
+} from '@hihyou/diff-engine/seen-hunks';
 import { ThreadCard } from './ThreadCard';
 
 export function FilePanel(props: {

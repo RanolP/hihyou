@@ -1,0 +1,30 @@
+{
+  "name": "@hihyou/diff-engine",
+  "description": "Pure diff-analysis logic: AST hunks, seen-state math, moved code, prose diff, highlighting, TS hover env",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "compile": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "node src/seen-hunks.check.ts && node src/prose-diff.check.ts && node src/ast-service.check.ts && node src/import-fold.check.ts && node src/moved-code.check.ts && node src/injection-heuristic.check.ts && node src/ts-env.check.ts"
+  },
+  "dependencies": {
+    "@shikijs/langs": "^4.3.1",
+    "@shikijs/themes": "^4.3.1",
+    "@typescript/vfs": "^1.6.4",
+    "diff": "^9.0.0",
+    "shiki": "^4.3.1",
+    "typescript": "^5.9.3",
+    "web-tree-sitter": "^0.26.10",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@vscode/tree-sitter-wasm": "^0.3.1",
+    "vitest": "^4.1.10"
+  }
+}

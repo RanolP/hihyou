@@ -1,6 +1,6 @@
 import { For, Show } from 'solid-js';
-import type { PrLocation } from '@/utils/pr-location';
-import type { StackEntry } from '@/utils/pr-stack';
+import type { PrLocation } from '@hihyou/github/pr-location';
+import type { StackEntry } from '@hihyou/github/pr-stack';
 
 interface FlatCommit {
   entry: StackEntry;

@@ -14,25 +14,25 @@ import {
   type ChangesPayload,
   type DiffContent,
   type DiffLine,
-} from '@/utils/github-changes';
-import type { PrLocation } from '@/utils/pr-location';
+} from '@hihyou/github/github-changes';
+import type { PrLocation } from '@hihyou/github/pr-location';
 import {
   clearLinesSeen,
   fileFullySeen,
   markLinesSeen,
   validateSeen,
   type SeenState,
-} from '@/utils/seen-hunks';
+} from '@hihyou/diff-engine/seen-hunks';
 import { analyzeBlob, declHashesBlob } from '@/utils/ast-client';
-import { scopeChainAt, type FileAnalysis } from '@/utils/ast-service';
-import { matchMoves, type DeclHash, type MoveBlock } from '@/utils/moved-code';
-import { whitespaceOnlyRows } from '@/utils/patch';
+import { scopeChainAt, type FileAnalysis } from '@hihyou/diff-engine/ast-service';
+import { matchMoves, type DeclHash, type MoveBlock } from '@hihyou/diff-engine/moved-code';
+import { whitespaceOnlyRows } from '@hihyou/diff-engine/patch';
 
-import { isLineSeen } from '@/utils/seen-hunks';
+import { isLineSeen } from '@hihyou/diff-engine/seen-hunks';
 import { loadSeenState, prKey, saveSeenState } from '@/utils/seen-store';
-import { countableLines, seenCount } from '@/utils/seen-hunks';
-import { setFileViewed } from '@/utils/github-changes';
-import { resolveStack, type StackEntry } from '@/utils/pr-stack';
+import { countableLines, seenCount } from '@hihyou/diff-engine/seen-hunks';
+import { setFileViewed } from '@hihyou/github/github-changes';
+import { resolveStack, type StackEntry } from '@hihyou/github/pr-stack';
 import { CommitStrip } from './CommitStrip';
 import { FilePanel } from './FilePanel';
 import { installTsHover } from './ts-hover';

@@ -7,8 +7,8 @@ import 'shiki-magic-move/style.css';
 import {
   fetchChangesPayload,
   readEmbeddedChangesPayload,
-} from '@/utils/github-changes';
-import { parsePrLocation } from '@/utils/pr-location';
+} from '@hihyou/github/github-changes';
+import { parsePrLocation } from '@hihyou/github/pr-location';
 import {
   ROOT_CLASS,
   releaseTakeover,

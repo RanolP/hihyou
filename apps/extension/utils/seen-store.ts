@@ -3,8 +3,8 @@
  * available; falls back to localStorage (e.g. the dev-injected build).
  */
 
-import type { PrLocation } from './pr-location';
-import type { SeenState } from './seen-hunks';
+import type { PrLocation } from '@hihyou/github/pr-location';
+import type { SeenState } from '@hihyou/diff-engine/seen-hunks';
 
 export function prKey(pr: PrLocation): string {
   return `hihyou:seen:${pr.owner}/${pr.repo}#${pr.number}`;

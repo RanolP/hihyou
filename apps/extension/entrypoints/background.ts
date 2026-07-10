@@ -9,20 +9,20 @@ import {
   declHashes,
   grammarForPath,
   structuralDiffTrees,
-} from '@/utils/ast-service';
+} from '@hihyou/diff-engine/ast-service';
 import {
   importerForPath,
   lockfileImporterDirs,
   resolveLockfileDeps,
-} from '@/utils/pnpm-lock';
-import { extractTypesFromTarball } from '@/utils/tarball';
+} from '@hihyou/diff-engine/pnpm-lock';
+import { extractTypesFromTarball } from '@hihyou/diff-engine/tarball';
 import {
   COMPILER_OPTIONS,
   buildEnv,
   hoverAt,
   importedPackages,
   type DepFiles,
-} from '@/utils/ts-env';
+} from '@hihyou/diff-engine/ts-env';
 
 let parserReady: Promise<void> | null = null;
 const languages = new Map<string, Promise<Language | null>>();
