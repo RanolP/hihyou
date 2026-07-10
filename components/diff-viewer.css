@@ -18,6 +18,14 @@
   padding: 0 16px 16px;
 }
 
+.hihyou-top {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: var(--bgColor-default);
+  border-bottom: 1px solid var(--borderColor-muted, var(--borderColor-default));
+}
+
 .hihyou-bar {
   display: flex;
   align-items: center;
@@ -59,8 +67,18 @@
   border-bottom: 1px solid var(--borderColor-default);
   font-size: 12px;
   position: sticky;
-  top: 0;
+  top: var(--hihyou-top, 0px);
   z-index: 1;
+}
+
+.hihyou-file-chevron {
+  background: none;
+  border: 0;
+  padding: 0 2px;
+  color: var(--fgColor-muted);
+  font: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
 .hihyou-file-path {
@@ -68,6 +86,8 @@
     monospace;
   font-weight: 600;
   word-break: break-all;
+  cursor: pointer;
+  flex: 1;
 }
 .hihyou-file-oldpath {
   color: var(--fgColor-muted);
@@ -208,9 +228,9 @@
 
 .hihyou-tree {
   position: sticky;
-  top: 12px;
+  top: calc(var(--hihyou-top, 0px) + 12px);
   width: 280px;
-  max-height: calc(100vh - 24px);
+  max-height: calc(100vh - var(--hihyou-top, 0px) - 24px);
   overflow-y: auto;
   flex-shrink: 0;
   font-size: 13px;
@@ -393,7 +413,7 @@
 
 .hihyou-scope-bar {
   position: sticky;
-  top: 33px;
+  top: calc(var(--hihyou-top, 0px) + 33px);
   z-index: 1;
   padding: 3px 12px;
   background: var(--bgColor-muted);

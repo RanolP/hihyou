@@ -13,6 +13,7 @@ export default defineConfig({
   manifest: {
     name: 'hihyou',
     description: '批評 — an alternative GitHub code review experience',
+    permissions: ['storage'],
     // The background service worker hosts web-tree-sitter (github.com's
     // page CSP blocks WASM in content scripts).
     content_security_policy: {

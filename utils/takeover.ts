@@ -50,9 +50,11 @@ export function waitForMount(timeoutMs = 15_000): Promise<TakeoverMount | null> 
 
 /** `native = true` shows GitHub's viewer, `false` shows hihyou's. */
 export function setNativeView(native: boolean): void {
-  document
-    .getElementById(CONTAINER_ID)
-    ?.setAttribute('data-hihyou', native ? 'off' : 'on');
+  const el = document.getElementById(CONTAINER_ID);
+  const want = native ? 'off' : 'on';
+  if (el && el.getAttribute('data-hihyou') !== want) {
+    el.setAttribute('data-hihyou', want);
+  }
 }
 
 export function releaseTakeover(): void {

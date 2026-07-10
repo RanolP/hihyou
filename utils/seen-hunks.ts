@@ -184,8 +184,14 @@ export function markAllSeen(lines: SeenLine[]): FileSeenState {
   return markLinesSeen(undefined, lines);
 }
 
+/**
+ * Only changed rows count toward progress and "fully seen" — unchanged
+ * context is rendered but never owed a review.
+ */
 export function countableLines(lines: SeenLine[]): SeenLine[] {
-  return lines.filter((l) => rowSide(l) !== null);
+  return lines.filter(
+    (l) => l.type === 'ADDITION' || l.type === 'DELETION',
+  );
 }
 
 export function seenCount(

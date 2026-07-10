@@ -46,12 +46,18 @@ assert.ok(!isLineSeen(state, hunk), 'hunk rows are never seen');
 const split = markLinesSeen(undefined, [ctx(1, ' x'), ctx(5, ' y')]);
 assert.equal(split.R.length, 2);
 
-// seen count + fully seen + mark all.
+// seen count + fully seen count only changed rows (context is not owed
+// a review): del10 + add11 + add12 = 3 of 3.
 assert.equal(seenCount(state, lines), 3);
-assert.ok(!fileFullySeen(state, lines));
+assert.ok(
+  fileFullySeen(state, lines),
+  'all changed rows seen = fully seen, context ignored',
+);
+const partial = markLinesSeen(undefined, [lines[3]]);
+assert.ok(!fileFullySeen(partial, lines));
 const all = markAllSeen(lines);
 assert.ok(fileFullySeen(all, lines));
-assert.equal(seenCount(all, lines), 5);
+assert.equal(seenCount(all, lines), 3);
 
 // Validation keeps hunks whose content is unchanged...
 let v = validateSeen(state, lines);

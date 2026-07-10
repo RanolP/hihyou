@@ -121,6 +121,19 @@ export default defineContentScript({
       onNavigate(newUrl),
     );
 
+    // React hydration (and later re-renders) can drop our foreign root or
+    // wipe the visibility attribute — the content script runs at
+    // document_idle, often mid-hydration. Watch and remount.
+    ctx.setInterval(() => {
+      if (!data()) return;
+      if (!rootEl?.isConnected) {
+        lastHandledHref = null;
+        void onNavigate(new URL(location.href));
+      } else {
+        setNativeView(native());
+      }
+    }, 1000);
+
     // Dev self-reload: `window.postMessage({type: 'hihyou:reload'})` makes the
     // background re-read the unpacked extension from disk.
     ctx.addEventListener(window, 'message', (e) => {

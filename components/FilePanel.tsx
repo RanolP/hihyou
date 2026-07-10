@@ -132,6 +132,14 @@ export function FilePanel(props: {
   const lines = () => props.content?.diffLines ?? [];
   const showSeenUi = () => props.seenEnabled && lines().length > 0;
 
+  // Fully-reviewed files fold away; the chevron/path reopens them.
+  const fullySeen = () =>
+    !!props.seenEnabled && fileFullySeen(props.seen, lines());
+  const [manualOpen, setManualOpen] = createSignal<boolean | null>(null);
+  const collapsed = () =>
+    manualOpen() !== null ? !manualOpen() : fullySeen();
+  const toggleCollapsed = () => setManualOpen(collapsed());
+
   const isMarkdown = /\.(md|markdown)$/i.test(props.summary.path);
   // Markdown defaults to the rendered tracked-changes view.
   const [rich, setRich] = createSignal(isMarkdown);
@@ -201,7 +209,14 @@ export function FilePanel(props: {
       data-path={props.summary.path}
     >
       <header class="hihyou-file-header">
-        <span class="hihyou-file-path">
+        <button
+          class="hihyou-file-chevron"
+          title={collapsed() ? 'Expand file' : 'Collapse file'}
+          onClick={toggleCollapsed}
+        >
+          {collapsed() ? '▸' : '▾'}
+        </button>
+        <span class="hihyou-file-path" onClick={toggleCollapsed}>
           <Show when={props.summary.changeType === 'RENAMED' && oldPath()}>
             <span class="hihyou-file-oldpath">{oldPath()} → </span>
           </Show>
@@ -245,12 +260,16 @@ export function FilePanel(props: {
           </Show>
         </span>
       </header>
-      <Show when={props.stickyScope}>
+      <Show when={props.stickyScope && !collapsed()}>
         <div class="hihyou-scope-bar">{props.stickyScope}</div>
       </Show>
       <Show
-        when={!note()}
-        fallback={<div class="hihyou-file-note">{note()}</div>}
+        when={!note() && !collapsed()}
+        fallback={
+          <Show when={!collapsed()}>
+            <div class="hihyou-file-note">{note()}</div>
+          </Show>
+        }
       >
         <Show when={rich()}>
           <RichMarkdownPanel pr={props.pr} content={props.content!} />

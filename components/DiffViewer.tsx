@@ -206,7 +206,12 @@ function PayloadView(props: {
     let timer = 0;
     const update = () => {
       timer = 0;
-      const probe = document.elementFromPoint(window.innerWidth / 2, 48);
+      const topH =
+        viewerEl && getComputedStyle(viewerEl).getPropertyValue('--hihyou-top');
+      const probe = document.elementFromPoint(
+        window.innerWidth / 2,
+        (parseInt(topH || '0', 10) || 0) + 44,
+      );
       const row = probe?.closest<HTMLElement>('tr[data-idx]');
       const file = probe?.closest<HTMLElement>('.hihyou-file');
       const path = file?.dataset.path;
@@ -255,10 +260,9 @@ function PayloadView(props: {
       scopeNode instanceof Element ? scopeNode : scopeNode.parentElement;
     if (!scope?.closest('.hihyou-root') && !scope?.querySelector('.hihyou-file'))
       return;
+    const searchRoot = scope.closest('.hihyou-root') ?? scope;
     const byPath = new Map<string, DiffLine[]>();
-    for (const tr of (scope.closest('.hihyou-root') ?? scope).querySelectorAll(
-      'tr.hihyou-line[data-idx]',
-    )) {
+    for (const tr of searchRoot.querySelectorAll('tr.hihyou-line[data-idx]')) {
       if (!range.intersectsNode(tr)) continue;
       const path = tr
         .closest<HTMLElement>('.hihyou-file')
@@ -268,6 +272,22 @@ function PayloadView(props: {
         contentFor(path)?.diffLines?.[Number((tr as HTMLElement).dataset.idx)];
       if (!line) continue;
       (byPath.get(path) ?? byPath.set(path, []).get(path)!).push(line);
+    }
+    // Rich (rendered) views have no diff rows: a selection there marks the
+    // whole file's changed lines as read.
+    for (const prose of searchRoot.querySelectorAll('.hihyou-prose')) {
+      if (!range.intersectsNode(prose)) continue;
+      const path = prose
+        .closest<HTMLElement>('.hihyou-file')
+        ?.getAttribute('data-path');
+      const allLines = path && contentFor(path)?.diffLines;
+      if (!path || !allLines || byPath.has(path)) continue;
+      byPath.set(
+        path,
+        allLines.filter(
+          (l) => l.type === 'ADDITION' || l.type === 'DELETION',
+        ),
+      );
     }
     if (!byPath.size) return;
     e.preventDefault();
@@ -453,9 +473,23 @@ function PayloadView(props: {
     },
   };
 
+  let viewerEl!: HTMLDivElement;
+  let topEl!: HTMLDivElement;
+  onMount(() => {
+    // File headers stick right below the hihyou top bar; its height is
+    // dynamic (commit strip wraps/loads async), so track it in a CSS var.
+    const sync = () =>
+      viewerEl.style.setProperty('--hihyou-top', `${topEl.offsetHeight}px`);
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(topEl);
+    onCleanup(() => ro.disconnect());
+  });
+
   return (
-    <div class="hihyou-viewer">
-      <div class="hihyou-bar">
+    <div class="hihyou-viewer" ref={viewerEl}>
+      <div class="hihyou-top" ref={topEl}>
+        <div class="hihyou-bar">
         <strong>批評 hihyou</strong>
         <span>{payload.diffSummaries.length} files</span>
         <span class="hihyou-add">+{totals.added}</span>
@@ -469,8 +503,9 @@ function PayloadView(props: {
             {fullySeenFiles()}/{payload.diffSummaries.length} files seen
           </span>
         </Show>
+        </div>
+        <CommitStrip stack={stack()} pr={pr} onNavigate={props.onNavigate} />
       </div>
-      <CommitStrip stack={stack()} pr={pr} onNavigate={props.onNavigate} />
       <div class="hihyou-body">
         <FileTree
           paths={payload.diffSummaries.map((s) => s.path)}
