@@ -132,6 +132,17 @@ export async function pickNodeAt(
     });
 }
 
+/** Really apply a unified diff via the local daemon (through the SW). */
+export async function applyPatchLocally(
+  patch: string,
+): Promise<{ ok: boolean; detail?: string }> {
+  try {
+    return await astMessaging.sendMessage('applyPatch', { patch });
+  } catch {
+    return { ok: false, detail: 'extension backend unavailable' };
+  }
+}
+
 export function structuralDiff(
   path: string,
   oldText: string,

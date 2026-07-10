@@ -27,6 +27,25 @@ import { analyzeBlob, declHashesBlob, pickNodeAt } from '@/utils/ast-client';
 import { scopeChainAt, type FileAnalysis } from '@/utils/ast-service';
 import { matchMoves, type DeclHash, type MoveBlock } from '@/utils/moved-code';
 import { rowInPick, type PickedRange } from '@/utils/pick';
+import { buildPatch, patchRowSpan } from '@/utils/patch';
+import { applyPatchLocally } from '@/utils/ast-client';
+
+let toastEl: HTMLDivElement | null = null;
+let toastTimer = 0;
+function showToast(text: string) {
+  if (!toastEl) {
+    toastEl = document.createElement('div');
+    toastEl.className = 'hihyou-toast';
+    document.body.append(toastEl);
+  }
+  toastEl.textContent = text;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(
+    () => toastEl?.classList.remove('show'),
+    3000,
+  );
+}
 import { isLineSeen } from '@/utils/seen-hunks';
 import { loadSeenState, prKey, saveSeenState } from '@/utils/seen-store';
 import { countableLines, seenCount } from '@/utils/seen-hunks';
@@ -377,6 +396,13 @@ function PayloadView(props: {
     const active = e.target as HTMLElement | null;
     if (active?.closest?.('input, textarea, [contenteditable]')) return;
     const byPath = new Map<string, DiffLine[]>();
+    const byPathIdx = new Map<string, Set<number>>();
+    const remember = (path: string, line: DiffLine, idx: number) => {
+      (byPath.get(path) ?? byPath.set(path, []).get(path)!).push(line);
+      (byPathIdx.get(path) ?? byPathIdx.set(path, new Set()).get(path)!).add(
+        idx,
+      );
+    };
     const sel = window.getSelection();
     if (sel?.rangeCount && !sel.isCollapsed) {
       const range = sel.getRangeAt(0);
@@ -393,12 +419,10 @@ function PayloadView(props: {
           .closest<HTMLElement>('.hihyou-file')
           ?.getAttribute('data-path');
         if (!path) continue;
-        const line =
-          contentFor(path)?.diffLines?.[
-            Number((tr as HTMLElement).dataset.idx)
-          ];
+        const idx = Number((tr as HTMLElement).dataset.idx);
+        const line = contentFor(path)?.diffLines?.[idx];
         if (!line) continue;
-        (byPath.get(path) ?? byPath.set(path, []).get(path)!).push(line);
+        remember(path, line, idx);
       }
       // Rich (rendered) views have no diff rows: a selection there marks
       // the whole file's changed lines as applied.
@@ -409,20 +433,18 @@ function PayloadView(props: {
           ?.getAttribute('data-path');
         const allLines = path && contentFor(path)?.diffLines;
         if (!path || !allLines || byPath.has(path)) continue;
-        byPath.set(
-          path,
-          allLines.filter(
-            (l) => l.type === 'ADDITION' || l.type === 'DELETION',
-          ),
-        );
+        allLines.forEach((l, idx) => {
+          if (l.type === 'ADDITION' || l.type === 'DELETION') {
+            remember(path, l, idx);
+          }
+        });
       }
     } else {
       const p = picked();
       if (p) {
-        const rows = (contentFor(p.path)?.diffLines ?? []).filter((l) =>
-          rowInPick(l, p),
-        );
-        if (rows.length) byPath.set(p.path, rows);
+        (contentFor(p.path)?.diffLines ?? []).forEach((l, idx) => {
+          if (rowInPick(l, p)) remember(p.path, l, idx);
+        });
       }
     }
     if (!byPath.size) return;
@@ -436,6 +458,34 @@ function PayloadView(props: {
     persist(next);
     setPicked(null);
     sel?.removeAllRanges();
+    // "Apply" means really applying the git diff: send each file's patch
+    // to the local daemon; fall back to the clipboard.
+    void (async () => {
+      for (const [path, idxSet] of byPathIdx) {
+        const content = contentFor(path);
+        const lines = content?.diffLines;
+        if (!lines) continue;
+        const patch = buildPatch(
+          content.oldTreeEntry?.path ?? null,
+          path,
+          patchRowSpan(lines, idxSet),
+        );
+        if (!patch) continue;
+        const result = await applyPatchLocally(patch);
+        if (result.ok) {
+          showToast(`applied to working tree: ${path.split('/').pop()}`);
+        } else {
+          try {
+            await navigator.clipboard.writeText(patch);
+            showToast(
+              `daemon: ${result.detail ?? 'failed'} — patch copied to clipboard`,
+            );
+          } catch {
+            showToast(`apply failed: ${result.detail ?? 'unknown'}`);
+          }
+        }
+      }
+    })();
     // Marking may fold a now-fully-seen file; keep its header in view.
     const folded = [...byPath.keys()].find((p) =>
       fileFullySeen(next[p], contentFor(p)?.diffLines ?? []),

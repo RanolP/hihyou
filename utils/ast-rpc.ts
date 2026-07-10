@@ -31,6 +31,8 @@ interface ProtocolMap {
    * text, 'NEED_PROJECT' when the worker wants the lockfile resent, or
    * null. lockfileText: undefined = not sent, null = repo has none.
    */
+  /** Apply a unified diff via the local hihyou apply daemon. */
+  applyPatch(data: { patch: string }): { ok: boolean; detail?: string };
   tsHover(data: {
     cacheKey: string;
     repoFilePath: string;

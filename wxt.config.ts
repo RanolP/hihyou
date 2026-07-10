@@ -13,7 +13,6 @@ export default defineConfig({
   manifest: {
     name: 'hihyou',
     description: '批評 — an alternative GitHub code review experience',
-    permissions: ['storage'],
     // The background service worker hosts web-tree-sitter (github.com's
     // page CSP blocks WASM in content scripts).
     content_security_policy: {
@@ -24,6 +23,10 @@ export default defineConfig({
     host_permissions: [
       'https://registry.npmjs.org/*',
       'https://playgroundcdn.typescriptlang.org/*',
+      // Local apply daemon (scripts/apply-server.mjs).
+      'http://127.0.0.1/*',
     ],
+    // Patch fallback when the daemon isn't running.
+    permissions: ['storage', 'clipboardWrite'],
   },
 });

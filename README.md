@@ -37,6 +37,19 @@ that takes over the PR "changes" view in place.
   from `pnpm-lock.yaml` at the reviewed commit, pulls `.d.ts` from npm
   tarballs into a virtual TS environment, and serves quick-info popovers.
 
+## Applying hunks locally
+
+`a` really applies the selection/pick as a git diff. Run the daemon in the
+repo you're reviewing against:
+
+```sh
+node scripts/apply-server.mjs /path/to/checkout   # 127.0.0.1:48917
+```
+
+Select rows (or click to pick a node) and press `a`: the patch is applied
+to that working tree via `git apply` and the rows get the green applied
+mark. Without the daemon the patch lands on your clipboard instead.
+
 ## Development
 
 ```sh

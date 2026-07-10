@@ -166,6 +166,25 @@ export default defineBackground(() => {
     }
   });
 
+  // "Apply" means really applying the git diff: forward the patch to the
+  // local daemon (scripts/apply-server.mjs) running in the target repo.
+  astMessaging.onMessage('applyPatch', async ({ data }) => {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 2000);
+      const res = await fetch('http://127.0.0.1:48917/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ patch: data.patch }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      return (await res.json()) as { ok: boolean; detail?: string };
+    } catch {
+      return { ok: false, detail: 'daemon unreachable' };
+    }
+  });
+
   astMessaging.onMessage('tsHover', async ({ data }) => {
     try {
       if (data.lockfileText !== undefined) {
