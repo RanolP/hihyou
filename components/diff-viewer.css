@@ -59,7 +59,9 @@
   border-radius: 6px;
   margin-bottom: 16px;
   background: var(--bgColor-default);
-  overflow: hidden;
+  /* clip, not hidden: overflow:hidden makes the section the sticky
+     containing block and the file header stops pinning to the viewport */
+  overflow: clip;
   scroll-margin-top: calc(var(--hihyou-top, 0px) + 8px);
 }
 

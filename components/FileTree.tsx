@@ -60,9 +60,16 @@ export function FileTree(props: {
           title: level === 'full' ? 'Seen — click to unmark' : 'Mark as seen',
         };
       },
-      // Seen checkbox sits after the item name, pushed to the right edge.
+      // Seen checkbox goes at the far right edge, AFTER the git-status
+      // letter: the git section becomes the right-pushed group and the
+      // decoration (normally the flexible middle spacer) tucks in last.
       unsafeCSS: `
-        [data-item-section="decoration"] { justify-content: flex-end; }
+        [data-item-section="git"] { order: 1; margin-left: auto; }
+        [data-item-section="decoration"] {
+          order: 2;
+          flex: 0 0 auto;
+          margin-left: 6px;
+        }
         [data-item-section="decoration"] > * {
           cursor: pointer;
           padding: 0 2px;
