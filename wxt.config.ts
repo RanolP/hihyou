@@ -3,6 +3,8 @@ import { defineConfig } from 'wxt';
 // See https://wxt.dev/api/config.html
 export default defineConfig({
   modules: ['@wxt-dev/module-solid'],
+  // Explicit imports only — the real dependency graph must be greppable.
+  imports: false,
   // Escape non-ASCII in emitted JS: Chrome refuses content scripts it
   // considers non-UTF-8, and ASCII output is immune (also survives
   // partial Syncthing syncs of multibyte sequences).

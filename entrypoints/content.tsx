@@ -1,8 +1,14 @@
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
+import { defineContentScript } from 'wxt/utils/define-content-script';
 import { DiffViewer, type ViewerData } from '@/components/DiffViewer';
 import '@/components/diff-viewer.css';
 import 'shiki-magic-move/style.css';
+import {
+  fetchChangesPayload,
+  readEmbeddedChangesPayload,
+} from '@/utils/github-changes';
+import { parsePrLocation } from '@/utils/pr-location';
 import {
   ROOT_CLASS,
   releaseTakeover,

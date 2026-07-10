@@ -1,6 +1,8 @@
 import ts from 'typescript';
 import { createDefaultMapFromCDN } from '@typescript/vfs';
 import { Language, Parser } from 'web-tree-sitter';
+import { browser } from 'wxt/browser';
+import { defineBackground } from 'wxt/utils/define-background';
 import { astMessaging } from '@/utils/ast-rpc';
 import {
   analyzeTree,
