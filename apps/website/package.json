@@ -1,0 +1,23 @@
+{
+  "name": "@hihyou/website",
+  "description": "hihyou promotion website (Astro + Solid islands)",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "compile": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@astrojs/solid-js": "^5.0.0",
+    "@hihyou/diff-viewer": "workspace:*",
+    "@hihyou/github": "workspace:*",
+    "astro": "^5.0.0",
+    "solid-js": "^1.9.11"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

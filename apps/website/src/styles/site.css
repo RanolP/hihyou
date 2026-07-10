@@ -1,0 +1,133 @@
+/* GitHub Primer variables the diff viewer expects, both color schemes. */
+:root {
+  color-scheme: light dark;
+
+  --fgColor-default: #1f2328;
+  --fgColor-muted: #59636e;
+  --fgColor-accent: #0969da;
+  --fgColor-success: #1a7f37;
+  --fgColor-danger: #d1242f;
+  --fgColor-attention: #9a6700;
+  --fgColor-done: #8250df;
+  --fgColor-onEmphasis: #ffffff;
+  --bgColor-default: #ffffff;
+  --bgColor-muted: #f6f8fa;
+  --bgColor-emphasis: #25292e;
+  --bgColor-accent-emphasis: #0969da;
+  --bgColor-done-muted: #fbefff;
+  --borderColor-default: #d1d9e0;
+  --borderColor-muted: #d1d9e0b3;
+  --borderColor-attention-emphasis: #bf8700;
+  --borderColor-danger-emphasis: #cf222e;
+  --borderColor-success-emphasis: #1a7f37;
+  --diffBlob-additionLine-bgColor: #dafbe1;
+  --diffBlob-additionNum-bgColor: #aceebb;
+  --diffBlob-deletionLine-bgColor: #ffebe9;
+  --diffBlob-deletionNum-bgColor: #ffcecb;
+  --diffBlob-hunkLine-bgColor: #ddf4ff;
+  --diffBlob-hunkNum-bgColor: #b6e3ff;
+  --shadow-floating-small: 0 3px 6px rgba(140, 149, 159, 0.15);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fgColor-default: #f0f6fc;
+    --fgColor-muted: #9198a1;
+    --fgColor-accent: #4493f8;
+    --fgColor-success: #3fb950;
+    --fgColor-danger: #f85149;
+    --fgColor-attention: #d29922;
+    --fgColor-done: #ab7df8;
+    --fgColor-onEmphasis: #ffffff;
+    --bgColor-default: #0d1117;
+    --bgColor-muted: #151b23;
+    --bgColor-emphasis: #3d444d;
+    --bgColor-accent-emphasis: #1f6feb;
+    --bgColor-done-muted: rgba(171, 125, 248, 0.15);
+    --borderColor-default: #3d444d;
+    --borderColor-muted: rgba(61, 68, 77, 0.7);
+    --borderColor-attention-emphasis: #9e6a03;
+    --borderColor-danger-emphasis: #da3633;
+    --borderColor-success-emphasis: #238636;
+    --diffBlob-additionLine-bgColor: rgba(46, 160, 67, 0.15);
+    --diffBlob-additionNum-bgColor: rgba(63, 185, 80, 0.3);
+    --diffBlob-deletionLine-bgColor: rgba(248, 81, 73, 0.1);
+    --diffBlob-deletionNum-bgColor: rgba(248, 81, 73, 0.3);
+    --diffBlob-hunkLine-bgColor: rgba(56, 139, 253, 0.1);
+    --diffBlob-hunkNum-bgColor: rgba(56, 139, 253, 0.4);
+    --shadow-floating-small: 0 3px 6px #010409;
+  }
+}
+
+/* GitHub's syntax classes, used inside the fixture's pre-highlighted rows. */
+.pl-k { color: #cf222e; }
+.pl-c1, .pl-s1 .pl-v { color: #0550ae; }
+.pl-s, .pl-pds { color: #0a3069; }
+.pl-c { color: #59636e; }
+.pl-en { color: #6639ba; }
+.pl-e, .pl-v { color: #953800; }
+.pl-smi { color: #1f2328; }
+.pl-ent { color: #116329; }
+@media (prefers-color-scheme: dark) {
+  .pl-k { color: #ff7b72; }
+  .pl-c1, .pl-s1 .pl-v { color: #79c0ff; }
+  .pl-s, .pl-pds { color: #a5d6ff; }
+  .pl-c { color: #8b949e; }
+  .pl-en { color: #d2a8ff; }
+  .pl-e, .pl-v { color: #ffa657; }
+  .pl-smi { color: #f0f6fc; }
+  .pl-ent { color: #7ee787; }
+}
+
+/* ── Page ── */
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bgColor-default);
+  color: var(--fgColor-default);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans',
+    Helvetica, Arial, sans-serif;
+  line-height: 1.55;
+}
+main { max-width: 1080px; margin: 0 auto; padding: 0 24px 96px; }
+
+.hero { padding: 88px 0 40px; text-align: center; }
+.hero h1 { font-size: 56px; margin: 0; letter-spacing: -0.02em; }
+.hero h1 .kanji { color: var(--fgColor-accent); }
+.hero p.tagline {
+  font-size: 20px;
+  color: var(--fgColor-muted);
+  max-width: 640px;
+  margin: 16px auto 0;
+}
+
+.features {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+  margin: 48px 0;
+  padding: 0;
+  list-style: none;
+}
+.features li {
+  border: 1px solid var(--borderColor-default);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--bgColor-muted);
+}
+.features h3 { margin: 0 0 6px; font-size: 15px; }
+.features p { margin: 0; font-size: 14px; color: var(--fgColor-muted); }
+
+.demo-section h2 { font-size: 28px; margin: 56px 0 8px; }
+.demo-section > p { color: var(--fgColor-muted); margin: 0 0 16px; }
+.demo-frame {
+  border: 1px solid var(--borderColor-default);
+  border-radius: 8px;
+  max-height: 680px;
+  overflow: auto;
+  /* Sticky headers inside the viewer stick to this frame, not the page. */
+  position: relative;
+}
+
+/* Extension-only floating toggle; meaningless on the website. */
+.demo-root ~ .hihyou-pill, .hihyou-pill { display: none; }

@@ -1,0 +1,105 @@
+---
+import { DiffDemo } from '../components/DiffDemo';
+import '../styles/site.css';
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>hihyou (批評) — an alternative GitHub code review experience</title>
+    <meta
+      name="description"
+      content="A browser extension that takes over the GitHub PR changes view: hunk-level seen state, AST-aware picking, moved-code detection, TS hover, and more."
+    />
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <h1><span class="kanji">批評</span> hihyou</h1>
+        <p class="tagline">
+          An alternative GitHub code review experience — a browser extension
+          that takes over the PR "changes" view in place and rebuilds it
+          around actually applying the review.
+        </p>
+      </section>
+
+      <ul class="features">
+        <li>
+          <h3>Viewer takeover</h3>
+          <p>
+            Renders every file's diff itself from GitHub's own route payload;
+            the PR header and tabs stay native, and a floating 批評 pill
+            toggles back at any time.
+          </p>
+        </li>
+        <li>
+          <h3>Hunk-level seen state</h3>
+          <p>
+            Drag across lines and press <code>s</code>: seen hunks anchor as
+            content hashes and dim. A later commit touching the range
+            invalidates them automatically.
+          </p>
+        </li>
+        <li>
+          <h3>Apply hunks locally</h3>
+          <p>
+            <code>a</code> applies the selection as a git diff to your local
+            checkout — entirely in the browser via the File System Access
+            API, verified against the file first.
+          </p>
+        </li>
+        <li>
+          <h3>AST core</h3>
+          <p>
+            web-tree-sitter in the background worker: scope snapping, sticky
+            scope headers, import folding, structural diff, and moved-code
+            detection that inherits seen state.
+          </p>
+        </li>
+        <li>
+          <h3>Commit timeline + stacked PRs</h3>
+          <p>
+            A commit strip with prev/next navigation; stacked PRs flatten
+            into one sequence, and commit navigation morphs code with
+            shiki-magic-move.
+          </p>
+        </li>
+        <li>
+          <h3>Twoslash TS hover</h3>
+          <p>
+            Quick-info popovers typed against the exact dependency versions
+            in the repo's pnpm-lock at the reviewed commit, with .d.ts pulled
+            from npm tarballs.
+          </p>
+        </li>
+        <li>
+          <h3>Rich markdown diff</h3>
+          <p>
+            .md files render as prose with word-level ins/del tracked
+            changes; toggle back to the source diff per file.
+          </p>
+        </li>
+        <li>
+          <h3>Inline review threads</h3>
+          <p>
+            Existing line-anchored comment threads render under their lines,
+            resolved ones collapsed.
+          </p>
+        </li>
+      </ul>
+
+      <section class="demo-section">
+        <h2>Try the viewer</h2>
+        <p>
+          The real <code>@hihyou/diff-viewer</code> over a captured payload
+          (wxt-dev/wxt#2464). Click the tree, fold files, drag-select lines
+          and press <code>s</code> to mark them applied.
+        </p>
+        <div class="demo-frame">
+          <DiffDemo client:only="solid-js" />
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
