@@ -9,7 +9,7 @@
  */
 
 export interface DiffLine {
-  /** 'context' | 'addition' | 'deletion' | 'hunk' | 'injected_context' ... */
+  /** 'CONTEXT' | 'ADDITION' | 'DELETION' | 'HUNK' | 'INJECTED_CONTEXT' ... */
   type: string;
   blobLineNumber: number;
   text: string;
@@ -38,6 +38,19 @@ export interface DiffContent {
   linesAdded: number;
   linesDeleted: number;
   linesChanged: number;
+  path: string;
+  pathDigest: string;
+  status?: string;
+  truncatedReason?: string | null;
+  /** Client-side marker: lazy fetch came back without this path. */
+  unavailable?: boolean;
+}
+
+export interface Comparison {
+  fullDiff: { baseOid: string; headOid: string };
+  /** Set on commit/range-scoped views. */
+  selectedRange: { baseOid: string; headOid: string } | null;
+  viewing: string;
 }
 
 export interface DiffSummary {
@@ -60,7 +73,9 @@ export interface CommitInfo {
 export interface ChangesPayload {
   isSingleFileMode: boolean;
   commits: CommitInfo[];
+  comparison: Comparison;
   diffSummaries: DiffSummary[];
+  /** May cover only a prefix of diffSummaries on large PRs. */
   diffContents: DiffContent[];
   /** Present on commit/range-scoped views. */
   commit?: CommitInfo;
@@ -97,6 +112,41 @@ export async function fetchChangesPayload(
     return null;
   }
   return pickChangesRoute((await res.json()).payload ?? {});
+}
+
+/** The `range` query param GitHub's app sends to `page_data/diff_entries`. */
+export function comparisonRangeParam(comparison: Comparison): string {
+  const r = comparison.selectedRange;
+  return r ? `${r.baseOid}..${r.headOid}` : comparison.fullDiff.headOid;
+}
+
+/**
+ * Lazy per-file diff contents. On large PRs (`linesChangedLimitExceeded`)
+ * the payload only inlines the first few files; GitHub's app fetches the
+ * rest per-path from this endpoint as they scroll into view.
+ */
+export async function fetchDiffEntries(
+  pr: { owner: string; repo: string; number: number },
+  range: string,
+  paths: string[],
+): Promise<DiffContent[]> {
+  const params = new URLSearchParams({
+    paths: paths.join(','),
+    ctx: Array(paths.length).fill('').join(':'),
+    w: '0',
+    range,
+  });
+  const res = await fetch(
+    `/${pr.owner}/${pr.repo}/pull/${pr.number}/page_data/diff_entries?${params}`,
+    {
+      headers: {
+        Accept: 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+    },
+  );
+  if (!res.ok) return [];
+  return res.json();
 }
 
 /** Full file content at a commit, using the viewer's GitHub session. */
