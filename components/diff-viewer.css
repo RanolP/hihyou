@@ -391,6 +391,48 @@
   margin-bottom: 8px;
 }
 
+.hihyou-view-toggle {
+  cursor: pointer;
+  background: none;
+  font: inherit;
+}
+
+.hihyou-prose {
+  padding: 16px 24px;
+  max-width: 900px;
+  font-size: 14px;
+}
+.hihyou-prose ins {
+  background: var(--diffBlob-additionLine-bgColor, #e6ffec);
+  color: var(--fgColor-default);
+  text-decoration: none;
+  border-radius: 2px;
+}
+.hihyou-prose del {
+  background: var(--diffBlob-deletionLine-bgColor, #ffebe9);
+  color: var(--fgColor-muted);
+  text-decoration: line-through;
+  border-radius: 2px;
+}
+.hihyou-prose > div {
+  border-left: 3px solid transparent;
+  padding-left: 12px;
+  margin-left: -15px;
+}
+.hihyou-prose > .hihyou-prose-changed {
+  border-left-color: var(--borderColor-attention-emphasis, #bf8700);
+}
+.hihyou-prose > .hihyou-prose-added {
+  border-left-color: var(--borderColor-success-emphasis, #1f883d);
+}
+.hihyou-prose > .hihyou-prose-removed {
+  border-left-color: var(--borderColor-danger-emphasis, #cf222e);
+}
+.hihyou-prose > div > * {
+  margin-top: 0;
+  margin-bottom: 12px;
+}
+
 .hihyou-magic {
   padding: 8px 12px;
   overflow-x: auto;

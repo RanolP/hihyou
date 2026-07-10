@@ -14,6 +14,7 @@ import type {
 } from '@/utils/github-changes';
 import type { PrLocation } from '@/utils/pr-location';
 import { MagicMovePanel } from './MagicMovePanel';
+import { RichMarkdownPanel } from './RichMarkdownPanel';
 import {
   countableLines,
   fileFullySeen,
@@ -103,6 +104,10 @@ export function FilePanel(props: {
   const lines = () => props.content?.diffLines ?? [];
   const showSeenUi = () => props.seenEnabled && lines().length > 0;
 
+  const isMarkdown = /\.(md|markdown)$/i.test(props.summary.path);
+  // Markdown defaults to the rendered tracked-changes view.
+  const [rich, setRich] = createSignal(isMarkdown);
+
   return (
     <section
       ref={section}
@@ -129,6 +134,15 @@ export function FilePanel(props: {
               {props.summary.changeType.toLowerCase()}
             </span>
           </Show>
+          <Show when={isMarkdown && !note()}>
+            <button
+              class="hihyou-badge hihyou-view-toggle"
+              title="Toggle rendered / source diff"
+              onClick={() => setRich((v) => !v)}
+            >
+              {rich() ? 'source' : 'rich'}
+            </button>
+          </Show>
           <Show when={showSeenUi()}>
             <span class="hihyou-seen-progress">
               {seenCount(props.seen, lines())}/{countableLines(lines()).length}
@@ -150,7 +164,10 @@ export function FilePanel(props: {
         when={!note()}
         fallback={<div class="hihyou-file-note">{note()}</div>}
       >
-        <Show when={animating()}>
+        <Show when={rich()}>
+          <RichMarkdownPanel pr={props.pr} content={props.content!} />
+        </Show>
+        <Show when={animating() && !rich()}>
           <MagicMovePanel
             owner={props.pr.owner}
             repo={props.pr.repo}
@@ -160,7 +177,10 @@ export function FilePanel(props: {
             onDone={() => setAnimating(false)}
           />
         </Show>
-        <table class="hihyou-diff" style={{ display: animating() ? 'none' : undefined }}>
+        <table
+          class="hihyou-diff"
+          style={{ display: animating() || rich() ? 'none' : undefined }}
+        >
           <tbody>
             <For each={props.content!.diffLines}>
               {(line, i) => {

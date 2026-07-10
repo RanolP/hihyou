@@ -17,6 +17,8 @@
   "dependencies": {
     "@shikijs/langs": "^4.3.1",
     "@shikijs/themes": "^4.3.1",
+    "diff": "^9.0.0",
+    "marked": "^18.0.6",
     "shiki": "^4.3.1",
     "shiki-magic-move": "^1.4.0",
     "solid-js": "^1.9.11"
