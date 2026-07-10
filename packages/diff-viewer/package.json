@@ -1,0 +1,25 @@
+{
+  "name": "@hihyou/diff-viewer",
+  "description": "The hihyou diff viewer (Solid UI). All I/O enters via ViewerPorts.",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./diff-viewer.css": "./src/diff-viewer.css"
+  },
+  "scripts": {
+    "compile": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hihyou/diff-engine": "workspace:*",
+    "@hihyou/github": "workspace:*",
+    "@pierre/trees": "1.0.0-beta.5",
+    "marked": "^18.0.6",
+    "shiki-magic-move": "^1.4.0",
+    "solid-js": "^1.9.11"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

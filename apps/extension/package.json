@@ -16,11 +16,10 @@
   },
   "dependencies": {
     "@hihyou/diff-engine": "workspace:*",
+    "@hihyou/diff-viewer": "workspace:*",
     "@hihyou/github": "workspace:*",
-    "@pierre/trees": "1.0.0-beta.5",
     "@typescript/vfs": "^1.6.4",
     "@webext-core/messaging": "^3.0.2",
-    "marked": "^18.0.6",
     "shiki-magic-move": "^1.4.0",
     "solid-js": "^1.9.11",
     "web-tree-sitter": "^0.26.10"

@@ -5,14 +5,16 @@
  * commit. Degrades silently without the SW backend.
  */
 
-import { astMessaging } from '@/utils/ast-rpc';
-import { fetchRawBlob, type DiffContent } from '@hihyou/github/github-changes';
+import type { DiffContent } from '@hihyou/github/github-changes';
 import type { PrLocation } from '@hihyou/github/pr-location';
+import type { AstClient, ViewerPorts } from './ports';
 
 export interface TsHoverOptions {
   pr: PrLocation;
   headOid: string;
   contentFor: (path: string) => DiffContent | undefined;
+  tsHover: AstClient['tsHover'];
+  fetchRawBlob: ViewerPorts['fetchRawBlob'];
 }
 
 const TS_FILE = /\.(ts|tsx|mts|cts)$/;
@@ -31,14 +33,14 @@ export function installTsHover(opts: TsHoverOptions): () => void {
     if (!p) {
       const oid = opts.contentFor(path)?.newCommitOid;
       p = oid
-        ? fetchRawBlob(opts.pr.owner, opts.pr.repo, oid, path)
+        ? opts.fetchRawBlob(opts.pr.owner, opts.pr.repo, oid, path)
         : Promise.resolve(null);
       blobTexts.set(path, p);
     }
     return p;
   };
   const getLockfile = () => {
-    lockfilePromise ??= fetchRawBlob(
+    lockfilePromise ??= opts.fetchRawBlob(
       opts.pr.owner,
       opts.pr.repo,
       opts.headOid,
@@ -90,7 +92,7 @@ export function installTsHover(opts: TsHoverOptions): () => void {
     if (!fileText) return;
     try {
       const request = async (lockfileText?: string | null) =>
-        astMessaging.sendMessage('tsHover', {
+        opts.tsHover({
           cacheKey,
           repoFilePath: path,
           fileName: `/${path.split('/').pop()}`,

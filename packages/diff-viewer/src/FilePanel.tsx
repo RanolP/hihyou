@@ -44,10 +44,12 @@ import {
   seenCount,
   type FileSeenState,
 } from '@hihyou/diff-engine/seen-hunks';
+import type { ViewerPorts } from './ports';
 import { ThreadCard } from './ThreadCard';
 
 export function FilePanel(props: {
   pr: PrLocation;
+  fetchRawBlob: ViewerPorts['fetchRawBlob'];
   summary: DiffSummary;
   content: DiffContent | undefined;
   getThread?: (id: string) => ReviewThread | undefined;
@@ -303,12 +305,17 @@ export function FilePanel(props: {
         }
       >
         <Show when={rich()}>
-          <RichMarkdownPanel pr={props.pr} content={props.content!} />
+          <RichMarkdownPanel
+            pr={props.pr}
+            content={props.content!}
+            fetchRawBlob={props.fetchRawBlob}
+          />
         </Show>
         <Show when={animating() && !rich()}>
           <MagicMovePanel
             owner={props.pr.owner}
             repo={props.pr.repo}
+            fetchRawBlob={props.fetchRawBlob}
             path={props.summary.path}
             fromOid={props.animate!.fromOid}
             toOid={props.animate!.toOid}

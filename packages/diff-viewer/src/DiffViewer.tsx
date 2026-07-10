@@ -10,7 +10,6 @@ import {
 import { Portal } from 'solid-js/web';
 import {
   comparisonRangeParam,
-  fetchDiffEntries,
   type ChangesPayload,
   type DiffContent,
   type DiffLine,
@@ -23,18 +22,16 @@ import {
   validateSeen,
   type SeenState,
 } from '@hihyou/diff-engine/seen-hunks';
-import { analyzeBlob, declHashesBlob } from '@/utils/ast-client';
 import { scopeChainAt, type FileAnalysis } from '@hihyou/diff-engine/ast-service';
 import { matchMoves, type DeclHash, type MoveBlock } from '@hihyou/diff-engine/moved-code';
 import { whitespaceOnlyRows } from '@hihyou/diff-engine/patch';
 
 import { isLineSeen } from '@hihyou/diff-engine/seen-hunks';
-import { loadSeenState, prKey, saveSeenState } from '@/utils/seen-store';
 import { countableLines, seenCount } from '@hihyou/diff-engine/seen-hunks';
-import { setFileViewed } from '@hihyou/github/github-changes';
-import { resolveStack, type StackEntry } from '@hihyou/github/pr-stack';
+import type { StackEntry } from '@hihyou/github/pr-stack';
 import { CommitStrip } from './CommitStrip';
 import { FilePanel } from './FilePanel';
+import type { ViewerPorts } from './ports';
 import { installTsHover } from './ts-hover';
 import { FileTree, type FileTreeApi } from './FileTree';
 
@@ -47,6 +44,7 @@ export function DiffViewer(props: {
   data: Accessor<ViewerData | null>;
   prev: Accessor<ViewerData | null>;
   native: Accessor<boolean>;
+  ports: ViewerPorts;
   onToggleNative: () => void;
   onNavigate: (url: string) => void;
 }) {
@@ -67,6 +65,7 @@ export function DiffViewer(props: {
           <PayloadView
             data={d}
             prev={props.prev()}
+            ports={props.ports}
             onNavigate={props.onNavigate}
           />
         )}
@@ -79,9 +78,11 @@ export function DiffViewer(props: {
 function PayloadView(props: {
   data: ViewerData;
   prev: ViewerData | null;
+  ports: ViewerPorts;
   onNavigate: (url: string) => void;
 }) {
   const { pr, payload } = props.data;
+  const ports = props.ports;
 
   // Commit-nav animation: same PR, different comparison head.
   const prev = props.prev;
@@ -121,7 +122,7 @@ function PayloadView(props: {
     const paths = queue;
     queue = [];
     if (!paths.length) return;
-    const entries = await fetchDiffEntries(
+    const entries = await ports.fetchDiffEntries(
       pr,
       comparisonRangeParam(payload.comparison),
       paths,
@@ -148,11 +149,10 @@ function PayloadView(props: {
 
   // ── Seen state (full-PR view only: line anchors are head-blob numbers) ──
   const seenEnabled = !pr.range;
-  const seenKey = prKey(pr);
   const [seen, setSeen] = createSignal<SeenState>({});
   const [seenLoaded, setSeenLoaded] = createSignal(false);
   if (seenEnabled) {
-    void loadSeenState(seenKey).then((s) => {
+    void ports.seenStore.load(pr).then((s) => {
       setSeen(s);
       setSeenLoaded(true);
       setSeenVersion((v) => v + 1);
@@ -175,7 +175,7 @@ function PayloadView(props: {
     const prev = seen();
     setSeen(next);
     setSeenVersion((v) => v + 1);
-    void saveSeenState(seenKey, next);
+    void ports.seenStore.save(pr, next);
     if (!seenEnabled) return;
     for (const path of Object.keys(next)) {
       if (next[path] === prev[path]) continue;
@@ -184,7 +184,7 @@ function PayloadView(props: {
       const full = fileFullySeen(next[path], lines);
       if (full !== !!viewed()[path]) {
         setViewed({ ...viewed(), [path]: full });
-        void setFileViewed(pr, path, full);
+        void ports.setFileViewed(pr, path, full);
       }
     }
   };
@@ -216,7 +216,7 @@ function PayloadView(props: {
       });
     } else if (!viewed()[path] && full) {
       setViewed({ ...viewed(), [path]: true });
-      void setFileViewed(pr, path, true);
+      void ports.setFileViewed(pr, path, true);
     }
   };
 
@@ -252,7 +252,7 @@ function PayloadView(props: {
   const prefetchAnalysis = (path: string) => {
     const oid = contentFor(path)?.newCommitOid;
     if (!oid || analysesMap()[path]) return;
-    void analyzeBlob(pr.owner, pr.repo, oid, path).then((a) => {
+    void ports.ast.analyzeBlob(pr.owner, pr.repo, oid, path).then((a) => {
       if (a) setAnalysesMap({ ...analysesMap(), [path]: a });
     });
   };
@@ -399,7 +399,7 @@ function PayloadView(props: {
           const hasDel = c.diffLines.some((l) => l.type === 'DELETION');
           const hasAdd = c.diffLines.some((l) => l.type === 'ADDITION');
           if (hasDel && c.oldTreeEntry) {
-            const h = await declHashesBlob(
+            const h = await ports.ast.declHashesBlob(
               pr.owner,
               pr.repo,
               c.oldCommitOid,
@@ -408,7 +408,7 @@ function PayloadView(props: {
             if (h?.length) olds[c.path] = h;
           }
           if (hasAdd && c.newTreeEntry) {
-            const h = await declHashesBlob(
+            const h = await ports.ast.declHashesBlob(
               pr.owner,
               pr.repo,
               c.newCommitOid,
@@ -490,6 +490,8 @@ function PayloadView(props: {
       pr,
       headOid: payload.comparison.fullDiff.headOid,
       contentFor,
+      tsHover: (req) => ports.ast.tsHover(req),
+      fetchRawBlob: ports.fetchRawBlob,
     });
     onCleanup(uninstall);
   });
@@ -509,7 +511,7 @@ function PayloadView(props: {
       isCurrent: true,
     },
   ]);
-  void resolveStack(pr, payload).then((entries) => {
+  void ports.resolveStack(pr, payload).then((entries) => {
     if (entries.length > 1) setStack(entries);
   });
 
@@ -592,6 +594,7 @@ function PayloadView(props: {
             {(summary) => (
               <FilePanel
                 pr={pr}
+                fetchRawBlob={ports.fetchRawBlob}
                 animate={animFor(summary.path)}
                 analysis={analysesMap()[summary.path]}
                 stickyScope={stickyScopes()[summary.path]}

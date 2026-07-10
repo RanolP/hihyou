@@ -1,5 +1,4 @@
 import { createEffect, onCleanup, onMount } from 'solid-js';
-import '@/utils/custom-elements-shim';
 import {
   FileTree as PierreFileTree,
   type GitStatus,

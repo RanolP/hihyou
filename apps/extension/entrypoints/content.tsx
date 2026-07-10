@@ -1,8 +1,11 @@
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { defineContentScript } from 'wxt/utils/define-content-script';
-import { DiffViewer, type ViewerData } from '@/components/DiffViewer';
-import '@/components/diff-viewer.css';
+// Isolated-world hack; must run before '@pierre/trees' loads (inside
+// DiffViewer's module graph), so this import stays above it.
+import '@/src/custom-elements-shim';
+import { DiffViewer, type ViewerData } from '@hihyou/diff-viewer';
+import '@hihyou/diff-viewer/diff-viewer.css';
 import 'shiki-magic-move/style.css';
 import {
   fetchChangesPayload,
@@ -14,7 +17,8 @@ import {
   releaseTakeover,
   setNativeView,
   waitForMount,
-} from '@/utils/takeover';
+} from '@/src/takeover';
+import { extensionPorts } from '@/src/viewer-ports';
 
 export default defineContentScript({
   matches: ['https://github.com/*'],
@@ -103,6 +107,7 @@ export default defineContentScript({
               data={data}
               prev={prevData}
               native={native}
+              ports={extensionPorts}
               onToggleNative={toggleNative}
               onNavigate={softNavigate}
             />

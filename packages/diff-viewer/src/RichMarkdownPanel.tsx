@@ -1,8 +1,9 @@
 import { Show, createResource } from 'solid-js';
 import { marked } from 'marked';
-import { fetchRawBlob, type DiffContent } from '@hihyou/github/github-changes';
+import type { DiffContent } from '@hihyou/github/github-changes';
 import { diffBlocks, type BlockSeg } from '@hihyou/diff-engine/prose-diff';
 import type { PrLocation } from '@hihyou/github/pr-location';
+import type { ViewerPorts } from './ports';
 
 function toBlocks(markdown: string): BlockSeg[] {
   if (!markdown) return [];
@@ -22,6 +23,7 @@ function toBlocks(markdown: string): BlockSeg[] {
 export function RichMarkdownPanel(props: {
   pr: PrLocation;
   content: DiffContent;
+  fetchRawBlob: ViewerPorts['fetchRawBlob'];
 }) {
   const [html] = createResource(async () => {
     const c = props.content;
@@ -29,10 +31,10 @@ export function RichMarkdownPanel(props: {
     const newPath = c.newTreeEntry?.path ?? c.path;
     const [oldText, newText] = await Promise.all([
       oldPath
-        ? fetchRawBlob(props.pr.owner, props.pr.repo, c.oldCommitOid, oldPath)
+        ? props.fetchRawBlob(props.pr.owner, props.pr.repo, c.oldCommitOid, oldPath)
         : '',
       c.newTreeEntry
-        ? fetchRawBlob(props.pr.owner, props.pr.repo, c.newCommitOid, newPath)
+        ? props.fetchRawBlob(props.pr.owner, props.pr.repo, c.newCommitOid, newPath)
         : '',
     ]);
     if (oldText === null || newText === null) throw new Error('blob fetch failed');

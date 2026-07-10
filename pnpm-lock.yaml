@@ -13,21 +13,18 @@ importers:
       '@hihyou/diff-engine':
         specifier: workspace:*
         version: link:../../packages/diff-engine
+      '@hihyou/diff-viewer':
+        specifier: workspace:*
+        version: link:../../packages/diff-viewer
       '@hihyou/github':
         specifier: workspace:*
         version: link:../../packages/github
-      '@pierre/trees':
-        specifier: 1.0.0-beta.5
-        version: 1.0.0-beta.5(@shikijs/themes@4.3.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(shiki@4.3.1)
       '@typescript/vfs':
         specifier: ^1.6.4
         version: 1.6.4(typescript@5.9.3)
       '@webext-core/messaging':
         specifier: ^3.0.2
         version: 3.0.2
-      marked:
-        specifier: ^18.0.6
-        version: 18.0.6
       shiki-magic-move:
         specifier: ^1.4.0
         version: 1.4.0(react@19.2.7)(shiki@4.3.1)(solid-js@1.9.14)
@@ -87,6 +84,31 @@ importers:
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@24.13.3)(vite@8.1.4(@types/node@24.13.3)(esbuild@0.27.7)(jiti@2.7.0)(yaml@2.9.0))
+
+  packages/diff-viewer:
+    dependencies:
+      '@hihyou/diff-engine':
+        specifier: workspace:*
+        version: link:../diff-engine
+      '@hihyou/github':
+        specifier: workspace:*
+        version: link:../github
+      '@pierre/trees':
+        specifier: 1.0.0-beta.5
+        version: 1.0.0-beta.5(@shikijs/themes@4.3.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(shiki@4.3.1)
+      marked:
+        specifier: ^18.0.6
+        version: 18.0.6
+      shiki-magic-move:
+        specifier: ^1.4.0
+        version: 1.4.0(react@19.2.7)(shiki@4.3.1)(solid-js@1.9.14)
+      solid-js:
+        specifier: ^1.9.11
+        version: 1.9.14
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
 
   packages/github:
     devDependencies:

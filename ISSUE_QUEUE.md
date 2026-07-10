@@ -3,3 +3,4 @@
 - the breadcrumb flickers
 - "add comment in range" feature shall exists
 - expand button (skipped area) shall work
+- THere's still no AST based diffing analysis. get difftastic algorithm. Make e2e verified.

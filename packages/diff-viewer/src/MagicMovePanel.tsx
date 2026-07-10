@@ -4,12 +4,12 @@ import {
   createMagicMoveMachine,
 } from 'shiki-magic-move/core';
 import { MagicMoveRenderer } from 'shiki-magic-move/renderer';
-import { fetchRawBlob } from '@hihyou/github/github-changes';
 import {
   currentShikiTheme,
   getHighlighter,
   langForPath,
 } from '@hihyou/diff-engine/highlight';
+import type { ViewerPorts } from './ports';
 
 const MAX_BYTES = 120_000;
 const MAX_LINES = 800;
@@ -24,6 +24,7 @@ export function MagicMovePanel(props: {
   path: string;
   fromOid: string;
   toOid: string;
+  fetchRawBlob: ViewerPorts['fetchRawBlob'];
   onDone: () => void;
 }) {
   let container!: HTMLDivElement;
@@ -33,8 +34,8 @@ export function MagicMovePanel(props: {
       const lang = langForPath(props.path);
       if (!lang) return props.onDone();
       const [oldText, newText] = await Promise.all([
-        fetchRawBlob(props.owner, props.repo, props.fromOid, props.path),
-        fetchRawBlob(props.owner, props.repo, props.toOid, props.path),
+        props.fetchRawBlob(props.owner, props.repo, props.fromOid, props.path),
+        props.fetchRawBlob(props.owner, props.repo, props.toOid, props.path),
       ]);
       if (
         !oldText ||
