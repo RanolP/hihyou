@@ -330,20 +330,17 @@
   );
 }
 
-/* "Applied" treatment: a success edge + check tint, not a grey-out —
-   marking means "I applied this hunk", not "ignore this". */
-.hihyou-line.hihyou-seen td.code,
-.hihyou-line.hihyou-seen td.num {
-  opacity: 0.88;
+/* Applied = the view shows the post-apply state: removals removed,
+   additions rendered as plain code with a thin landed-edge. */
+.hihyou-line.hihyou-seen.del {
+  display: none;
+}
+.hihyou-line.hihyou-seen.add td.code,
+.hihyou-line.hihyou-seen.add td.num {
+  background: var(--bgColor-default);
 }
 .hihyou-line.hihyou-seen td.num:first-child {
   box-shadow: inset 3px 0 var(--fgColor-success, #1a7f37);
-}
-.hihyou-line.hihyou-seen td.code {
-  background-image: linear-gradient(
-    color-mix(in srgb, var(--fgColor-success, #1a7f37) 7%, transparent),
-    color-mix(in srgb, var(--fgColor-success, #1a7f37) 7%, transparent)
-  );
 }
 
 .hihyou-seen-progress {
@@ -552,29 +549,6 @@
   white-space: pre-wrap;
   box-shadow: var(--shadow-floating-small, 0 3px 6px rgba(0, 0, 0, 0.3));
   pointer-events: none;
-}
-
-.hihyou-toast {
-  position: fixed;
-  left: 50%;
-  bottom: 56px;
-  transform: translateX(-50%) translateY(8px);
-  z-index: 10001;
-  padding: 8px 16px;
-  border-radius: 6px;
-  background: var(--bgColor-emphasis, #24292f);
-  color: var(--fgColor-onEmphasis, #fff);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-size: 13px;
-  opacity: 0;
-  pointer-events: none;
-  transition:
-    opacity 0.2s,
-    transform 0.2s;
-}
-.hihyou-toast.show {
-  opacity: 1;
-  transform: translateX(-50%);
 }
 
 .hihyou-pill {

@@ -27,31 +27,8 @@ import { analyzeBlob, declHashesBlob, pickNodeAt } from '@/utils/ast-client';
 import { scopeChainAt, type FileAnalysis } from '@/utils/ast-service';
 import { matchMoves, type DeclHash, type MoveBlock } from '@/utils/moved-code';
 import { rowInPick, type PickedRange } from '@/utils/pick';
-import {
-  applyGroupsToText,
-  buildPatch,
-  changedGroups,
-  patchRowSpan,
-  whitespaceOnlyRows,
-} from '@/utils/patch';
-import { getRepoDir, readRepoFile, writeRepoFile } from '@/utils/fs-apply';
+import { whitespaceOnlyRows } from '@/utils/patch';
 
-let toastEl: HTMLDivElement | null = null;
-let toastTimer = 0;
-function showToast(text: string) {
-  if (!toastEl) {
-    toastEl = document.createElement('div');
-    toastEl.className = 'hihyou-toast';
-    document.body.append(toastEl);
-  }
-  toastEl.textContent = text;
-  toastEl.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(
-    () => toastEl?.classList.remove('show'),
-    3000,
-  );
-}
 import { isLineSeen } from '@/utils/seen-hunks';
 import { loadSeenState, prKey, saveSeenState } from '@/utils/seen-store';
 import { countableLines, seenCount } from '@/utils/seen-hunks';
@@ -497,40 +474,6 @@ function PayloadView(props: {
     setPicked(null);
     pickChain = null;
     sel?.removeAllRanges();
-    // "Apply" means really applying the git diff — in the browser, via a
-    // once-granted directory handle to the local checkout.
-    void (async () => {
-      for (const [path, idxSet] of byPathIdx) {
-        const content = contentFor(path);
-        const lines = content?.diffLines;
-        if (!lines) continue;
-        const span = patchRowSpan(lines, idxSet);
-        const groups = changedGroups(span);
-        if (!groups.length) continue;
-        try {
-          const dir = await getRepoDir(`${pr.owner}/${pr.repo}`);
-          const text = await readRepoFile(dir, path);
-          const result = applyGroupsToText(text, groups);
-          if (!result.ok) throw new Error(result.detail);
-          await writeRepoFile(dir, path, result.text);
-          showToast(`applied to working tree: ${path.split('/').pop()}`);
-        } catch (err) {
-          const patch = buildPatch(content.oldTreeEntry?.path ?? null, path, span);
-          const reason =
-            err instanceof Error ? err.message : 'apply failed';
-          try {
-            if (patch) {
-              await navigator.clipboard.writeText(patch);
-              showToast(`${reason} — patch copied to clipboard`);
-            } else {
-              showToast(reason);
-            }
-          } catch {
-            showToast(`apply failed: ${reason}`);
-          }
-        }
-      }
-    })();
     // Marking may fold a now-fully-seen file; keep its header in view.
     const folded = [...byPath.keys()].find((p) =>
       fileFullySeen(next[p], contentFor(p)?.diffLines ?? []),

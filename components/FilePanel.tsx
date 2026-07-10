@@ -442,10 +442,16 @@ function DiffRow(props: {
     >
       <td class="num">{l.type === 'ADDITION' ? '' : l.left}</td>
       <td class="num">{l.type === 'DELETION' ? '' : l.right}</td>
-      {/* GitHub's html is the full line incl. the +/-/space marker. */}
+      {/* GitHub's html is the full line incl. the +/-/space marker;
+          applied additions render as plain code (marker stripped). */}
       <td
         class="code"
-        innerHTML={props.overrideHtml?.() ?? (l.html || escapeHtml(l.text))}
+        innerHTML={(() => {
+          const html = props.overrideHtml?.() ?? (l.html || escapeHtml(l.text));
+          return props.seen() && l.type === 'ADDITION' && html.startsWith('+')
+            ? html.slice(1)
+            : html;
+        })()}
       />
     </tr>
   );
