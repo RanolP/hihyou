@@ -391,6 +391,29 @@
   margin-bottom: 8px;
 }
 
+.hihyou-scope-bar {
+  position: sticky;
+  top: 33px;
+  z-index: 1;
+  padding: 3px 12px;
+  background: var(--bgColor-muted);
+  border-bottom: 1px solid var(--borderColor-muted, var(--borderColor-default));
+  color: var(--fgColor-muted);
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
+    monospace;
+  font-size: 11px;
+}
+
+.hihyou-fold-notice {
+  cursor: pointer;
+  color: var(--fgColor-muted);
+  background: var(--bgColor-muted);
+  font-style: italic;
+}
+.hihyou-fold-notice:hover {
+  color: var(--fgColor-accent, #0969da);
+}
+
 .hihyou-view-toggle {
   cursor: pointer;
   background: none;

@@ -24,7 +24,7 @@ import {
   type SeenState,
 } from '@/utils/seen-hunks';
 import { analyzeBlob } from '@/utils/ast-client';
-import type { FileAnalysis } from '@/utils/ast-service';
+import { scopeChainAt, type FileAnalysis } from '@/utils/ast-service';
 import { loadSeenState, prKey, saveSeenState } from '@/utils/seen-store';
 import { seenCount } from '@/utils/seen-hunks';
 import { resolveStack, type StackEntry } from '@/utils/pr-stack';
@@ -179,14 +179,63 @@ function PayloadView(props: {
 
   // Background AST analysis of the new-side blob (scope snapping for `s`,
   // sticky scopes, import folding). No-op when the SW backend is absent.
-  const analyses = new Map<string, FileAnalysis>();
+  const [analysesMap, setAnalysesMap] = createSignal<
+    Record<string, FileAnalysis>
+  >({});
+  const analyses = {
+    get: (path: string): FileAnalysis | undefined => analysesMap()[path],
+  };
   const prefetchAnalysis = (path: string) => {
     const oid = contentFor(path)?.newCommitOid;
-    if (!oid || analyses.has(path)) return;
+    if (!oid || analysesMap()[path]) return;
     void analyzeBlob(pr.owner, pr.repo, oid, path).then((a) => {
-      if (a) analyses.set(path, a);
+      if (a) setAnalysesMap({ ...analysesMap(), [path]: a });
     });
   };
+
+  // Sticky scope chain: which declaration chain encloses the diff row at
+  // the top of the viewport (just below the sticky file header).
+  const [stickyScopes, setStickyScopes] = createSignal<
+    Record<string, string>
+  >({});
+  onMount(() => {
+    let timer = 0;
+    const update = () => {
+      timer = 0;
+      const probe = document.elementFromPoint(window.innerWidth / 2, 48);
+      const row = probe?.closest<HTMLElement>('tr[data-idx]');
+      const file = probe?.closest<HTMLElement>('.hihyou-file');
+      const path = file?.dataset.path;
+      if (!row || !path) {
+        if (Object.keys(stickyScopes()).length) setStickyScopes({});
+        return;
+      }
+      const line = contentFor(path)?.diffLines?.[Number(row.dataset.idx)];
+      const n = line?.right ?? line?.left;
+      const scopes = analyses.get(path)?.scopeRanges;
+      if (n === undefined || !scopes) {
+        if (Object.keys(stickyScopes()).length) setStickyScopes({});
+        return;
+      }
+      const chain = scopeChainAt(scopes, n)
+        .filter((s) => s.start < n && s.name)
+        .map((s) => s.name)
+        .join(' › ');
+      const next = chain ? { [path]: chain } : {};
+      if (JSON.stringify(next) !== JSON.stringify(stickyScopes())) {
+        setStickyScopes(next);
+      }
+    };
+    // setTimeout, not rAF: rAF freezes in background tabs.
+    const onScroll = () => {
+      if (!timer) timer = window.setTimeout(update, 80);
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onCleanup(() => {
+      window.removeEventListener('scroll', onScroll);
+      clearTimeout(timer);
+    });
+  });
 
   // Drag a selection across diff rows, press `s` → mark seen.
   const onKeyDown = (e: KeyboardEvent) => {
@@ -320,6 +369,8 @@ function PayloadView(props: {
               <FilePanel
                 pr={pr}
                 animate={animFor(summary.path)}
+                analysis={analysesMap()[summary.path]}
+                stickyScope={stickyScopes()[summary.path]}
                 summary={summary}
                 content={contentFor(summary.path)}
                 getThread={(id) => payload.markers?.threads?.[id]}

@@ -12,7 +12,7 @@
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
     "compile": "tsc --noEmit",
-    "check": "node utils/pr-location.check.ts && node utils/seen-hunks.check.ts && node utils/file-tree.check.ts && node utils/prose-diff.check.ts && node utils/ast-service.check.ts",
+    "check": "node utils/pr-location.check.ts && node utils/seen-hunks.check.ts && node utils/file-tree.check.ts && node utils/prose-diff.check.ts && node utils/ast-service.check.ts && node utils/import-fold.check.ts",
     "postinstall": "wxt prepare && node scripts/copy-wasm.mjs"
   },
   "dependencies": {

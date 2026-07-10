@@ -40,6 +40,12 @@ export function analyzeBlob(
   oid: string,
   path: string,
 ): Promise<FileAnalysis | null> {
+  // Dev seam: seeded analyses stand in for the SW backend in page-injected
+  // builds (WASM is CSP-blocked there).
+  const seeded = (
+    globalThis as { __hihyouSeededAnalyses?: Record<string, FileAnalysis> }
+  ).__hihyouSeededAnalyses?.[path];
+  if (seeded) return Promise.resolve(seeded);
   if (backendDead || !grammarForPath(path)) return Promise.resolve(null);
   const key = `${oid}:${path}`;
   let result = blobAnalyses.get(key);

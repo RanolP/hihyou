@@ -15,6 +15,8 @@ import type {
 import type { PrLocation } from '@/utils/pr-location';
 import { MagicMovePanel } from './MagicMovePanel';
 import { RichMarkdownPanel } from './RichMarkdownPanel';
+import type { FileAnalysis } from '@/utils/ast-service';
+import { importFold } from '@/utils/import-fold';
 import {
   countableLines,
   fileFullySeen,
@@ -38,6 +40,9 @@ export function FilePanel(props: {
   onContentReady?: (lines: DiffLine[]) => void;
   /** Commit-nav animation: morph fromOid -> toOid blob before the diff. */
   animate?: { fromOid: string; toOid: string };
+  analysis?: FileAnalysis;
+  /** Enclosing declaration chain for the row pinned at viewport top. */
+  stickyScope?: string;
 }) {
   let section!: HTMLElement;
   const [animating, setAnimating] = createSignal(false);
@@ -108,6 +113,16 @@ export function FilePanel(props: {
   // Markdown defaults to the rendered tracked-changes view.
   const [rich, setRich] = createSignal(isMarkdown);
 
+  // Import block folds by default; changed lines inside keep it folded
+  // but are called out in the notice.
+  const fold = () =>
+    props.analysis ? importFold(lines(), props.analysis.importRanges) : null;
+  const [importsOpen, setImportsOpen] = createSignal(false);
+  const hiddenByFold = (idx: number) => {
+    const f = fold();
+    return !!f && !importsOpen() && idx >= f.startIdx && idx <= f.endIdx;
+  };
+
   return (
     <section
       ref={section}
@@ -160,6 +175,9 @@ export function FilePanel(props: {
           </Show>
         </span>
       </header>
+      <Show when={props.stickyScope}>
+        <div class="hihyou-scope-bar">{props.stickyScope}</div>
+      </Show>
       <Show
         when={!note()}
         fallback={<div class="hihyou-file-note">{note()}</div>}
@@ -187,11 +205,28 @@ export function FilePanel(props: {
                 const threads = threadsAt(line);
                 return (
                   <>
-                    <DiffRow
-                      line={line}
-                      idx={i()}
-                      seen={() => isLineSeen(props.seen, line)}
-                    />
+                    <Show when={fold() && i() === fold()!.startIdx}>
+                      <tr class="hihyou-line hihyou-fold-row">
+                        <td class="num" colspan="2" />
+                        <td
+                          class="code hihyou-fold-notice"
+                          onClick={() => setImportsOpen((v) => !v)}
+                        >
+                          {importsOpen() ? '▾' : '▸'} {fold()!.total} import
+                          lines {importsOpen() ? '' : 'hidden'}
+                          {fold()!.changed > 0
+                            ? ` (${fold()!.changed} changed)`
+                            : ''}
+                        </td>
+                      </tr>
+                    </Show>
+                    <Show when={!hiddenByFold(i())}>
+                      <DiffRow
+                        line={line}
+                        idx={i()}
+                        seen={() => isLineSeen(props.seen, line)}
+                      />
+                    </Show>
                     <Show when={threads.length > 0}>
                       <tr class="hihyou-thread-row">
                         <td class="num" colspan="2" />
