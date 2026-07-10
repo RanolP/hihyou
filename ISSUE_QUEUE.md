@@ -1,0 +1,5 @@
+- folder shall be checked if all children checked
+- removed file shall be able to view content (and counted as read)
+- the breadcrumb flickers
+- "add comment in range" feature shall exists
+- expand button (skipped area) shall work

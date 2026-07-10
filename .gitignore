@@ -26,4 +26,4 @@ web-ext.config.ts
 *.sw?
 
 # generated wasm assets
-public/ts-wasm/
+apps/extension/public/ts-wasm/
