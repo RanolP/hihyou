@@ -23,7 +23,9 @@ import {
   type SeenState,
 } from '@/utils/seen-hunks';
 import { loadSeenState, prKey, saveSeenState } from '@/utils/seen-store';
+import { seenCount } from '@/utils/seen-hunks';
 import { FilePanel } from './FilePanel';
+import { FileTree, type FileTreeApi } from './FileTree';
 
 export interface ViewerData {
   pr: PrLocation;
@@ -189,6 +191,40 @@ function PayloadView(props: { data: ViewerData }) {
       fileFullySeen(seen()[s.path], contentFor(s.path)?.diffLines ?? []),
     ).length;
 
+  const summaryByPath = new Map(payload.diffSummaries.map((s) => [s.path, s]));
+  const treeApi: FileTreeApi = {
+    seenEnabled,
+    summaryFor: (path) => summaryByPath.get(path),
+    seenLevel: (path) => {
+      const lines = contentFor(path)?.diffLines;
+      const fileState = seen()[path];
+      if (!lines?.length) {
+        return fileState && (fileState.L.length || fileState.R.length)
+          ? 'partial'
+          : 'none';
+      }
+      if (fileFullySeen(fileState, lines)) return 'full';
+      return seenCount(fileState, lines) > 0 ? 'partial' : 'none';
+    },
+    onOpenFile: (path) => {
+      const digest = summaryByPath.get(path)?.pathDigest;
+      const el = digest && document.getElementById(`hihyou-${digest}`);
+      if (el) el.scrollIntoView({ block: 'start' });
+      requestContent(path);
+    },
+    onSetSeen: (paths, checked) => {
+      const next = { ...seen() };
+      for (const path of paths) {
+        const lines = contentFor(path)?.diffLines;
+        if (!lines?.length) continue;
+        next[path] = checked
+          ? markLinesSeen(next[path], lines)
+          : clearLinesSeen(next[path], lines);
+      }
+      persist(next);
+    },
+  };
+
   return (
     <div class="hihyou-viewer">
       <div class="hihyou-bar">
@@ -206,20 +242,30 @@ function PayloadView(props: { data: ViewerData }) {
           </span>
         </Show>
       </div>
-      <For each={payload.diffSummaries}>
-        {(summary) => (
-          <FilePanel
-            summary={summary}
-            content={contentFor(summary.path)}
-            getThread={(id) => payload.markers?.threads?.[id]}
-            onNearViewport={() => requestContent(summary.path)}
-            seen={seenEnabled ? seen()[summary.path] : undefined}
-            seenEnabled={seenEnabled && seenLoaded()}
-            onToggleAllSeen={(checked) => toggleFileSeen(summary.path, checked)}
-            onContentReady={(lines) => validateFile(summary.path, lines)}
-          />
-        )}
-      </For>
+      <div class="hihyou-body">
+        <FileTree
+          paths={payload.diffSummaries.map((s) => s.path)}
+          api={treeApi}
+        />
+        <div class="hihyou-panels">
+          <For each={payload.diffSummaries}>
+            {(summary) => (
+              <FilePanel
+                summary={summary}
+                content={contentFor(summary.path)}
+                getThread={(id) => payload.markers?.threads?.[id]}
+                onNearViewport={() => requestContent(summary.path)}
+                seen={seenEnabled ? seen()[summary.path] : undefined}
+                seenEnabled={seenEnabled && seenLoaded()}
+                onToggleAllSeen={(checked) =>
+                  toggleFileSeen(summary.path, checked)
+                }
+                onContentReady={(lines) => validateFile(summary.path, lines)}
+              />
+            )}
+          </For>
+        </div>
+      </div>
     </div>
   );
 }
