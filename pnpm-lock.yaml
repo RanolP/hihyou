@@ -14,6 +14,9 @@ importers:
       '@shikijs/themes':
         specifier: ^4.3.1
         version: 4.3.1
+      '@webext-core/messaging':
+        specifier: ^3.0.2
+        version: 3.0.2
       diff:
         specifier: ^9.0.0
         version: 9.0.0
@@ -29,7 +32,13 @@ importers:
       solid-js:
         specifier: ^1.9.11
         version: 1.9.14
+      web-tree-sitter:
+        specifier: ^0.26.10
+        version: 0.26.10
     devDependencies:
+      '@vscode/tree-sitter-wasm':
+        specifier: ^0.3.1
+        version: 0.3.1
       '@wxt-dev/module-solid':
         specifier: ^1.1.4
         version: 1.1.4(solid-js@1.9.14)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.27.7)(jiti@2.7.0))(wxt@0.20.27(@types/node@26.1.1)(jiti@2.7.0)(rolldown@1.1.5))
@@ -54,6 +63,9 @@ packages:
     peerDependenciesMeta:
       rollup:
         optional: true
+
+  '@aklinker1/zero-serialize-error@1.0.2':
+    resolution: {integrity: sha512-hGVkgFqb8Zs80JJ7MOSCGQXH2SyWfwnJwOl8Qpp1lUdkp5T7GTf8QrAMib42Hnzx6HtnNYdmNaSSg4MQy+MDRQ==}
 
   '@babel/code-frame@7.29.7':
     resolution: {integrity: sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw==}
@@ -553,6 +565,9 @@ packages:
   '@ungap/structured-clone@1.3.2':
     resolution: {integrity: sha512-5jsZFwgR5rTdKwidH9Qmat75RKwqfpKlWWB1frDkljN127mwqBu8K0PYo7/hFpF03IEJpfVPpCQDY/eDx3iHvA==}
 
+  '@vscode/tree-sitter-wasm@0.3.1':
+    resolution: {integrity: sha512-RJFoomET6FajjG511fmQxeBQfU6M24a0aFZPqpid+ttIxanWf1VGytBG0UmsGjt07qmIPJS8U31D+aecuCucsQ==}
+
   '@webext-core/fake-browser@1.5.2':
     resolution: {integrity: sha512-nkDQwOJ23X5Q7cEtN6LRuBtVFf1KVOFi5GoQAro0lzqdh59F5E+K350j1isbnqYbzsXRh1NJtboudIcHfZtvOQ==}
 
@@ -561,6 +576,9 @@ packages:
 
   '@webext-core/match-patterns@1.1.0':
     resolution: {integrity: sha512-vebVVbcOyva4jyvljIzRJwjFi/OKMLr96LIIxiPeXfA38gE4Z3+H6Y9DwRmn7pWErJGNNHU6XOhOb5ZwicGs7Q==}
+
+  '@webext-core/messaging@3.0.2':
+    resolution: {integrity: sha512-tUeF0s+3d/Am6jKuXpET973ZatN3sD3mp6Fy/3GYzIQG3TQbc1Ia9I4x7lwysLSL4teroMVkoyFwafmbrGn/WA==}
 
   '@wxt-dev/browser@0.1.43':
     resolution: {integrity: sha512-RMB0zgfe7uuiTp18s9taLeKXoOCLBV418797dnEggiMWmM1JDJekiLtlvrNc6QeZg+amDBy2/KKYuQB2kh/K9A==}
@@ -2062,6 +2080,12 @@ packages:
     resolution: {integrity: sha512-rQicL7OwuqWdQWI33JkSXKcp7cuv1mJG8u3jRQwx/8aDsmhbTHs9ZRmNYOL+LX0wX8edIEQX8jj4bB60GoXtKA==}
     engines: {node: '>=18.0.0', npm: '>=8.0.0'}
 
+  web-tree-sitter@0.26.10:
+    resolution: {integrity: sha512-vengBGYS7FpAerkR3o04oBL4L8MkVmjawK50AFBu7v0HZBkmF9ZavPGKoXLSSmRhp7T/YgsJ7joAS3yAxHPEqQ==}
+
+  webextension-polyfill@0.12.0:
+    resolution: {integrity: sha512-97TBmpoWJEE+3nFBQ4VocyCdLKfw54rFaJ6EVQYLBCXqCIpLSZkwGgASpv4oPt9gdKCJ80RJlcmNzNn008Ag6Q==}
+
   webpack-virtual-modules@0.6.2:
     resolution: {integrity: sha512-66/V2i5hQanC51vBQKPH4aI8NMAcBW59FVBs+rC7eGHupMyfn34q7rZIE+ETlJ+XTevqfUhVVBgSUNSW2flEUQ==}
 
@@ -2162,6 +2186,8 @@ snapshots:
       picomatch: 2.3.2
       source-map: 0.7.6
       yargs: 17.7.3
+
+  '@aklinker1/zero-serialize-error@1.0.2': {}
 
   '@babel/code-frame@7.29.7':
     dependencies:
@@ -2581,6 +2607,8 @@ snapshots:
 
   '@ungap/structured-clone@1.3.2': {}
 
+  '@vscode/tree-sitter-wasm@0.3.1': {}
+
   '@webext-core/fake-browser@1.5.2':
     dependencies:
       '@types/webextension-polyfill': 0.12.5
@@ -2591,6 +2619,11 @@ snapshots:
       is-potential-custom-element-name: 1.0.1
 
   '@webext-core/match-patterns@1.1.0': {}
+
+  '@webext-core/messaging@3.0.2':
+    dependencies:
+      '@aklinker1/zero-serialize-error': 1.0.2
+      webextension-polyfill: 0.12.0
 
   '@wxt-dev/browser@0.1.43':
     dependencies:
@@ -4041,6 +4074,10 @@ snapshots:
       zip-dir: 2.0.0
     transitivePeerDependencies:
       - supports-color
+
+  web-tree-sitter@0.26.10: {}
+
+  webextension-polyfill@0.12.0: {}
 
   webpack-virtual-modules@0.6.2: {}
 

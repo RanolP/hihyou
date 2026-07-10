@@ -196,6 +196,47 @@ export function seenCount(
   return countableLines(lines).filter((l) => isLineSeen(state, l)).length;
 }
 
+/**
+ * Semantic regrouping (M7): expand a selection so it covers the whole
+ * enclosing declaration(s) — a hunk becomes "the changed declaration".
+ * Rows are anchored by their right-side coordinate (deletion rows carry
+ * the adjacent right number), so everything rendered inside the scope is
+ * included. Oversized scopes are left alone.
+ */
+export function expandSelectionToScopes(
+  selected: SeenLine[],
+  allLines: SeenLine[],
+  scopes: { start: number; end: number }[],
+  maxScopeLines = 120,
+): SeenLine[] {
+  const chosen: { start: number; end: number }[] = [];
+  for (const line of selected) {
+    const n = line.right;
+    if (n === undefined) continue;
+    const smallest = scopes
+      .filter(
+        (s) =>
+          s.start <= n && n <= s.end && s.end - s.start + 1 <= maxScopeLines,
+      )
+      .sort((a, b) => a.end - a.start - (b.end - b.start))[0];
+    if (
+      smallest &&
+      !chosen.some((c) => c.start === smallest.start && c.end === smallest.end)
+    ) {
+      chosen.push(smallest);
+    }
+  }
+  if (!chosen.length) return selected;
+  const out = new Set(selected);
+  for (const line of allLines) {
+    if (line.type === 'HUNK' || line.right === undefined) continue;
+    if (chosen.some((c) => c.start <= line.right! && line.right! <= c.end)) {
+      out.add(line);
+    }
+  }
+  return [...out];
+}
+
 export function fileFullySeen(
   state: FileSeenState | undefined,
   lines: SeenLine[],

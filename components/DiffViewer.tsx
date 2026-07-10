@@ -17,11 +17,14 @@ import {
 import type { PrLocation } from '@/utils/pr-location';
 import {
   clearLinesSeen,
+  expandSelectionToScopes,
   fileFullySeen,
   markLinesSeen,
   validateSeen,
   type SeenState,
 } from '@/utils/seen-hunks';
+import { analyzeBlob } from '@/utils/ast-client';
+import type { FileAnalysis } from '@/utils/ast-service';
 import { loadSeenState, prKey, saveSeenState } from '@/utils/seen-store';
 import { seenCount } from '@/utils/seen-hunks';
 import { resolveStack, type StackEntry } from '@/utils/pr-stack';
@@ -167,10 +170,22 @@ function PayloadView(props: {
   };
   /** A later commit touching a seen range invalidates it (hash mismatch). */
   const validateFile = (path: string, lines: DiffLine[]) => {
+    prefetchAnalysis(path);
     const fileState = seen()[path];
     if (!fileState) return;
     const { state, changed } = validateSeen(fileState, lines);
     if (changed) persist({ ...seen(), [path]: state });
+  };
+
+  // Background AST analysis of the new-side blob (scope snapping for `s`,
+  // sticky scopes, import folding). No-op when the SW backend is absent.
+  const analyses = new Map<string, FileAnalysis>();
+  const prefetchAnalysis = (path: string) => {
+    const oid = contentFor(path)?.newCommitOid;
+    if (!oid || analyses.has(path)) return;
+    void analyzeBlob(pr.owner, pr.repo, oid, path).then((a) => {
+      if (a) analyses.set(path, a);
+    });
   };
 
   // Drag a selection across diff rows, press `s` → mark seen.
@@ -206,7 +221,12 @@ function PayloadView(props: {
     e.stopPropagation();
     const next = { ...seen() };
     for (const [path, lines] of byPath) {
-      next[path] = markLinesSeen(next[path], lines);
+      const scopes = analyses.get(path)?.scopeRanges;
+      const allLines = contentFor(path)?.diffLines ?? [];
+      const expanded = scopes?.length
+        ? expandSelectionToScopes(lines, allLines, scopes)
+        : lines;
+      next[path] = markLinesSeen(next[path], expanded);
     }
     persist(next);
     sel.removeAllRanges();

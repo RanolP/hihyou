@@ -80,4 +80,42 @@ assert.equal(seenCount(cleared, lines), 0);
 const twice = markLinesSeen(state, [lines[3], lines[4]]);
 assert.equal(twice.R.length, state.R.length);
 
+// Scope expansion: selecting one line inside a declaration marks the whole
+// declaration's rendered rows.
+{
+  const { expandSelectionToScopes } = await import('./seen-hunks.ts');
+  const all = [
+    ctx(10, ' fn start'),
+    add(11, '+body a'),
+    add(12, '+body b'),
+    ctx(13, ' fn end'),
+    ctx(30, ' elsewhere'),
+  ];
+  const expanded = expandSelectionToScopes(
+    [all[1]],
+    all,
+    [{ start: 10, end: 13 }],
+  );
+  assert.equal(expanded.length, 4, 'whole scope rows included');
+  assert.ok(!expanded.some((l) => l.right === 30));
+
+  // Oversized scopes are ignored.
+  const untouched = expandSelectionToScopes(
+    [all[1]],
+    all,
+    [{ start: 1, end: 500 }],
+  );
+  assert.equal(untouched.length, 1);
+
+  // Deletion rows inside the scope come along via their right anchor.
+  const withDel = [ctx(10, ' a'), del(10, '-x'), add(11, '+y'), ctx(12, ' b')];
+  withDel[1].right = 10;
+  const exp2 = expandSelectionToScopes(
+    [withDel[2]],
+    withDel,
+    [{ start: 10, end: 12 }],
+  );
+  assert.equal(exp2.length, 4);
+}
+
 console.log('seen-hunks: all checks passed');

@@ -1,0 +1,67 @@
+/**
+ * Content-script client for the background AST service. Degrades to null
+ * when the service worker isn't reachable (e.g. the injected dev build).
+ */
+
+import { astMessaging } from './ast-rpc';
+import type { FileAnalysis, SemanticHunk } from './ast-service';
+import { grammarForPath } from './ast-service';
+import { fetchRawBlob } from './github-changes';
+
+let backendDead = false;
+const analyses = new Map<string, Promise<FileAnalysis | null>>();
+
+export function analyzeFile(
+  path: string,
+  text: string,
+): Promise<FileAnalysis | null> {
+  if (backendDead || !grammarForPath(path)) return Promise.resolve(null);
+  const key = `${path}:${text.length}`;
+  let result = analyses.get(key);
+  if (!result) {
+    result = astMessaging
+      .sendMessage('parseFile', { path, text })
+      .catch(() => {
+        backendDead = true;
+        return null;
+      });
+    analyses.set(key, result);
+  }
+  return result;
+}
+
+const MAX_BLOB = 400_000;
+const blobAnalyses = new Map<string, Promise<FileAnalysis | null>>();
+
+/** Analyze a file's new-side blob at a commit, cached per oid+path. */
+export function analyzeBlob(
+  owner: string,
+  repo: string,
+  oid: string,
+  path: string,
+): Promise<FileAnalysis | null> {
+  if (backendDead || !grammarForPath(path)) return Promise.resolve(null);
+  const key = `${oid}:${path}`;
+  let result = blobAnalyses.get(key);
+  if (!result) {
+    result = fetchRawBlob(owner, repo, oid, path).then((text) =>
+      text && text.length <= MAX_BLOB ? analyzeFile(path, text) : null,
+    );
+    blobAnalyses.set(key, result);
+  }
+  return result;
+}
+
+export function structuralDiff(
+  path: string,
+  oldText: string,
+  newText: string,
+): Promise<SemanticHunk[] | null> {
+  if (backendDead || !grammarForPath(path)) return Promise.resolve(null);
+  return astMessaging
+    .sendMessage('structuralDiff', { path, oldText, newText })
+    .catch(() => {
+      backendDead = true;
+      return null;
+    });
+}
