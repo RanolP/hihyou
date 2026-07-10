@@ -65,6 +65,8 @@ export function FilePanel(props: {
   stickyScope?: string;
   /** Moved-code ranges in this file (blob line numbers per side). */
   moved?: MovedRange[];
+  /** Click-picked node range (right-side lines), blue-tinted. */
+  picked?: { start: number; end: number };
   onJumpToFile?: (path: string) => void;
 }) {
   let section!: HTMLElement;
@@ -273,7 +275,10 @@ export function FilePanel(props: {
             <span class="hihyou-seen-progress">
               {seenCount(props.seen, lines())}/{countableLines(lines()).length}
             </span>
-            <label class="hihyou-seen-toggle" title="Mark whole file as seen">
+            <label
+              class="hihyou-seen-toggle"
+              title="Mark whole file as applied"
+            >
               <input
                 type="checkbox"
                 checked={fileFullySeen(props.seen, lines())}
@@ -283,7 +288,7 @@ export function FilePanel(props: {
                   if (e.currentTarget.checked && inside) alignToTop();
                 }}
               />
-              seen
+              applied
             </label>
           </Show>
         </span>
@@ -368,6 +373,13 @@ export function FilePanel(props: {
                         moved={
                           !!props.moved?.some((r) => moveMatches(r, line))
                         }
+                        picked={() =>
+                          !!props.picked &&
+                          line.type !== 'HUNK' &&
+                          line.right !== undefined &&
+                          line.right >= props.picked.start &&
+                          line.right <= props.picked.end
+                        }
                         overrideHtml={() => injHtml()[i()]}
                       />
                     </Show>
@@ -406,6 +418,7 @@ function DiffRow(props: {
   idx: number;
   seen: () => boolean;
   moved?: boolean;
+  picked?: () => boolean;
   /** Nested-language re-highlight (literal injection). */
   overrideHtml?: () => string | undefined;
 }) {
@@ -423,7 +436,11 @@ function DiffRow(props: {
   return (
     <tr
       class={`hihyou-line ${cls}`}
-      classList={{ 'hihyou-seen': props.seen(), 'hihyou-moved': props.moved }}
+      classList={{
+        'hihyou-seen': props.seen(),
+        'hihyou-moved': props.moved,
+        'hihyou-picked': !!props.picked?.(),
+      }}
       data-idx={props.idx}
     >
       <td class="num">{l.type === 'ADDITION' ? '' : l.left}</td>

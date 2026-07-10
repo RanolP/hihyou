@@ -57,7 +57,8 @@ export function FileTree(props: {
         const level = props.api.seenLevel(item.path);
         return {
           text: CHECKBOX[level],
-          title: level === 'full' ? 'Seen — click to unmark' : 'Mark as seen',
+          title:
+            level === 'full' ? 'Applied — click to unmark' : 'Mark as applied',
         };
       },
       // Seen checkbox goes at the far right edge, AFTER the git-status

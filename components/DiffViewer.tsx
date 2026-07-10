@@ -18,7 +18,6 @@ import {
 import type { PrLocation } from '@/utils/pr-location';
 import {
   clearLinesSeen,
-  expandSelectionToScopes,
   fileFullySeen,
   markLinesSeen,
   validateSeen,
@@ -295,63 +294,112 @@ function PayloadView(props: {
     });
   });
 
-  // Drag a selection across diff rows, press `s` → mark seen.
-  const onKeyDown = (e: KeyboardEvent) => {
-    if (!seenEnabled || e.key !== 's' || e.metaKey || e.ctrlKey || e.altKey)
-      return;
-    if ((e.target as HTMLElement).closest('input, textarea, [contenteditable]'))
-      return;
+  // Click a line to pick the tiniest enclosing node (blue tint); `a`
+  // marks the exact selection (or the pick) as applied. Never oversized.
+  const [picked, setPicked] = createSignal<{
+    path: string;
+    start: number;
+    end: number;
+  } | null>(null);
+  const onPickClick = (e: MouseEvent) => {
+    if (!seenEnabled) return;
+    const target = e.target as HTMLElement;
+    if (!target.closest) return;
+    if (target.closest('a, button, input, label, .hihyou-thread-cell')) return;
+    const tr = target.closest<HTMLElement>('tr.hihyou-line[data-idx]');
+    const path = target.closest<HTMLElement>('.hihyou-file')?.dataset.path;
+    if (!tr || !path) return;
     const sel = window.getSelection();
-    if (!sel?.rangeCount || sel.isCollapsed) return;
-    const range = sel.getRangeAt(0);
-    const scopeNode = range.commonAncestorContainer;
-    const scope =
-      scopeNode instanceof Element ? scopeNode : scopeNode.parentElement;
-    if (!scope?.closest('.hihyou-root') && !scope?.querySelector('.hihyou-file'))
+    if (sel && !sel.isCollapsed) return; // a real text selection wins
+    const line = contentFor(path)?.diffLines?.[Number(tr.dataset.idx)];
+    const n = line?.right ?? line?.left;
+    if (!line || line.type === 'HUNK' || n === undefined) return;
+    const tiniest = (analyses.get(path)?.scopeRanges ?? [])
+      .filter((s) => s.start <= n && n <= s.end)
+      .sort((a, b) => a.end - a.start - (b.end - b.start))[0];
+    const range = tiniest
+      ? { start: tiniest.start, end: tiniest.end }
+      : { start: n, end: n };
+    const cur = picked();
+    setPicked(
+      cur &&
+        cur.path === path &&
+        cur.start === range.start &&
+        cur.end === range.end
+        ? null
+        : { path, ...range },
+    );
+  };
+
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (!seenEnabled || e.key !== 'a' || e.metaKey || e.ctrlKey || e.altKey)
       return;
-    const searchRoot = scope.closest('.hihyou-root') ?? scope;
+    const active = e.target as HTMLElement | null;
+    if (active?.closest?.('input, textarea, [contenteditable]')) return;
     const byPath = new Map<string, DiffLine[]>();
-    for (const tr of searchRoot.querySelectorAll('tr.hihyou-line[data-idx]')) {
-      if (!range.intersectsNode(tr)) continue;
-      const path = tr
-        .closest<HTMLElement>('.hihyou-file')
-        ?.getAttribute('data-path');
-      if (!path) continue;
-      const line =
-        contentFor(path)?.diffLines?.[Number((tr as HTMLElement).dataset.idx)];
-      if (!line) continue;
-      (byPath.get(path) ?? byPath.set(path, []).get(path)!).push(line);
-    }
-    // Rich (rendered) views have no diff rows: a selection there marks the
-    // whole file's changed lines as read.
-    for (const prose of searchRoot.querySelectorAll('.hihyou-prose')) {
-      if (!range.intersectsNode(prose)) continue;
-      const path = prose
-        .closest<HTMLElement>('.hihyou-file')
-        ?.getAttribute('data-path');
-      const allLines = path && contentFor(path)?.diffLines;
-      if (!path || !allLines || byPath.has(path)) continue;
-      byPath.set(
-        path,
-        allLines.filter(
-          (l) => l.type === 'ADDITION' || l.type === 'DELETION',
-        ),
-      );
+    const sel = window.getSelection();
+    if (sel?.rangeCount && !sel.isCollapsed) {
+      const range = sel.getRangeAt(0);
+      const scopeNode = range.commonAncestorContainer;
+      const scope =
+        scopeNode instanceof Element ? scopeNode : scopeNode.parentElement;
+      const searchRoot = scope?.closest('.hihyou-root') ?? scope;
+      if (!searchRoot) return;
+      for (const tr of searchRoot.querySelectorAll(
+        'tr.hihyou-line[data-idx]',
+      )) {
+        if (!range.intersectsNode(tr)) continue;
+        const path = tr
+          .closest<HTMLElement>('.hihyou-file')
+          ?.getAttribute('data-path');
+        if (!path) continue;
+        const line =
+          contentFor(path)?.diffLines?.[
+            Number((tr as HTMLElement).dataset.idx)
+          ];
+        if (!line) continue;
+        (byPath.get(path) ?? byPath.set(path, []).get(path)!).push(line);
+      }
+      // Rich (rendered) views have no diff rows: a selection there marks
+      // the whole file's changed lines as applied.
+      for (const prose of searchRoot.querySelectorAll('.hihyou-prose')) {
+        if (!range.intersectsNode(prose)) continue;
+        const path = prose
+          .closest<HTMLElement>('.hihyou-file')
+          ?.getAttribute('data-path');
+        const allLines = path && contentFor(path)?.diffLines;
+        if (!path || !allLines || byPath.has(path)) continue;
+        byPath.set(
+          path,
+          allLines.filter(
+            (l) => l.type === 'ADDITION' || l.type === 'DELETION',
+          ),
+        );
+      }
+    } else {
+      const p = picked();
+      if (p) {
+        const rows = (contentFor(p.path)?.diffLines ?? []).filter(
+          (l) =>
+            l.type !== 'HUNK' &&
+            l.right !== undefined &&
+            l.right >= p.start &&
+            l.right <= p.end,
+        );
+        if (rows.length) byPath.set(p.path, rows);
+      }
     }
     if (!byPath.size) return;
     e.preventDefault();
     e.stopPropagation();
     const next = { ...seen() };
     for (const [path, lines] of byPath) {
-      const scopes = analyses.get(path)?.scopeRanges;
-      const allLines = contentFor(path)?.diffLines ?? [];
-      const expanded = scopes?.length
-        ? expandSelectionToScopes(lines, allLines, scopes)
-        : lines;
-      next[path] = markLinesSeen(next[path], expanded);
+      // Exactly what was selected/picked — never expanded.
+      next[path] = markLinesSeen(next[path], lines);
     }
     persist(next);
-    sel.removeAllRanges();
+    setPicked(null);
+    sel?.removeAllRanges();
     // Marking may fold a now-fully-seen file; keep its header in view.
     const folded = [...byPath.keys()].find((p) =>
       fileFullySeen(next[p], contentFor(p)?.diffLines ?? []),
@@ -366,9 +414,11 @@ function PayloadView(props: {
   };
   onMount(() => {
     window.addEventListener('keydown', onKeyDown, { capture: true });
-    onCleanup(() =>
-      window.removeEventListener('keydown', onKeyDown, { capture: true }),
-    );
+    document.addEventListener('click', onPickClick);
+    onCleanup(() => {
+      window.removeEventListener('keydown', onKeyDown, { capture: true });
+      document.removeEventListener('click', onPickClick);
+    });
   });
 
   // ── Moved-code detection: hash top-level declarations of the old and
@@ -561,7 +611,7 @@ function PayloadView(props: {
         </Show>
         <Show when={seenEnabled && seenLoaded()}>
           <span class="hihyou-progress">
-            {fullySeenFiles()}/{payload.diffSummaries.length} files seen
+            {fullySeenFiles()}/{payload.diffSummaries.length} files applied
           </span>
         </Show>
         </div>
@@ -582,6 +632,9 @@ function PayloadView(props: {
                 analysis={analysesMap()[summary.path]}
                 stickyScope={stickyScopes()[summary.path]}
                 moved={movedFor(summary.path)}
+                picked={
+                  picked()?.path === summary.path ? picked()! : undefined
+                }
                 onJumpToFile={treeApi.onOpenFile}
                 summary={summary}
                 content={contentFor(summary.path)}
