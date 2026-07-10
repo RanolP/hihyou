@@ -23,7 +23,7 @@ import {
   validateSeen,
   type SeenState,
 } from '@/utils/seen-hunks';
-import { analyzeBlob, declHashesBlob } from '@/utils/ast-client';
+import { analyzeBlob, declHashesBlob, pickNodeAt } from '@/utils/ast-client';
 import { scopeChainAt, type FileAnalysis } from '@/utils/ast-service';
 import { matchMoves, type DeclHash, type MoveBlock } from '@/utils/moved-code';
 import { isLineSeen } from '@/utils/seen-hunks';
@@ -301,12 +301,14 @@ function PayloadView(props: {
     start: number;
     end: number;
   } | null>(null);
+  let pickToken = 0;
   const onPickClick = (e: MouseEvent) => {
     if (!seenEnabled) return;
     const target = e.target as HTMLElement;
     if (!target.closest) return;
     if (target.closest('a, button, input, label, .hihyou-thread-cell')) return;
     const tr = target.closest<HTMLElement>('tr.hihyou-line[data-idx]');
+    const cell = target.closest<HTMLElement>('td.code');
     const path = target.closest<HTMLElement>('.hihyou-file')?.dataset.path;
     if (!tr || !path) return;
     const sel = window.getSelection();
@@ -314,21 +316,52 @@ function PayloadView(props: {
     const line = contentFor(path)?.diffLines?.[Number(tr.dataset.idx)];
     const n = line?.right ?? line?.left;
     if (!line || line.type === 'HUNK' || n === undefined) return;
-    const tiniest = (analyses.get(path)?.scopeRanges ?? [])
-      .filter((s) => s.start <= n && n <= s.end)
-      .sort((a, b) => a.end - a.start - (b.end - b.start))[0];
-    const range = tiniest
-      ? { start: tiniest.start, end: tiniest.end }
-      : { start: n, end: n };
-    const cur = picked();
-    setPicked(
-      cur &&
-        cur.path === path &&
-        cur.start === range.start &&
-        cur.end === range.end
-        ? null
-        : { path, ...range },
-    );
+    const token = ++pickToken;
+    const { clientX, clientY } = e;
+    void (async () => {
+      // True tiniest node at the exact click position (new-side blob) —
+      // declaration scopes alone can't select children inside a function.
+      let range: { start: number; end: number } | null = null;
+      if (line.right !== undefined && line.type !== 'DELETION' && cell) {
+        const caret = document.caretPositionFromPoint?.(clientX, clientY);
+        let col = 0;
+        if (caret && cell.contains(caret.offsetNode)) {
+          const r = document.createRange();
+          r.setStart(cell, 0);
+          r.setEnd(caret.offsetNode, caret.offset);
+          col = Math.max(0, r.toString().length - 1);
+        }
+        const oid = contentFor(path)?.newCommitOid;
+        if (oid) {
+          range = await pickNodeAt(
+            pr.owner,
+            pr.repo,
+            oid,
+            path,
+            line.right,
+            col,
+          );
+        }
+      }
+      if (token !== pickToken) return;
+      if (!range) {
+        const tiniest = (analyses.get(path)?.scopeRanges ?? [])
+          .filter((s) => s.start <= n && n <= s.end)
+          .sort((a, b) => a.end - a.start - (b.end - b.start))[0];
+        range = tiniest
+          ? { start: tiniest.start, end: tiniest.end }
+          : { start: n, end: n };
+      }
+      const cur = picked();
+      setPicked(
+        cur &&
+          cur.path === path &&
+          cur.start === range.start &&
+          cur.end === range.end
+          ? null
+          : { path, start: range.start, end: range.end },
+      );
+    })();
   };
 
   const onKeyDown = (e: KeyboardEvent) => {

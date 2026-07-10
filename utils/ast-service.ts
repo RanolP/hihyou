@@ -273,6 +273,28 @@ export function declHashes(root: Node): DeclHashInfo[] {
   });
 }
 
+/**
+ * Tiniest meaningful node at a position: the innermost node under the
+ * cursor, climbed to the first ancestor that spans multiple lines (a
+ * single-line pick is already covered by plain line selection). Null when
+ * only the whole file would qualify.
+ */
+export function nodeRangeAt(
+  root: Node,
+  line: number,
+  col: number,
+): LineRange | null {
+  let node: Node | null = root.descendantForPosition({
+    row: line - 1,
+    column: Math.max(0, col),
+  });
+  while (node && node.startPosition.row === node.endPosition.row) {
+    node = node.parent;
+  }
+  if (!node || node.id === root.id) return null;
+  return lineRange(node);
+}
+
 /** Smallest scope containing the line, or the chain outside-in. */
 export function scopeChainAt(
   scopes: ScopeRange[],

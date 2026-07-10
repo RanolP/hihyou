@@ -6,6 +6,7 @@ import {
   analyzeTree,
   declHashes,
   grammarForPath,
+  nodeRangeAt,
   structuralDiffTrees,
 } from '@/utils/ast-service';
 import {
@@ -145,6 +146,22 @@ export default defineBackground(() => {
       return hashes;
     } catch (err) {
       console.warn('[hihyou] declHashes failed:', data.path, err);
+      return null;
+    }
+  });
+
+  astMessaging.onMessage('pickNode', async ({ data }) => {
+    try {
+      const parser = await parserFor(data.path);
+      if (!parser) return null;
+      const tree = parser.parse(data.text);
+      if (!tree) return null;
+      const range = nodeRangeAt(tree.rootNode, data.line, data.col);
+      tree.delete();
+      parser.delete();
+      return range;
+    } catch (err) {
+      console.warn('[hihyou] pickNode failed:', data.path, err);
       return null;
     }
   });

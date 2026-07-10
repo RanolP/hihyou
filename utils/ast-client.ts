@@ -7,6 +7,7 @@ import { astMessaging } from './ast-rpc';
 import type {
   DeclHashInfo,
   FileAnalysis,
+  LineRange,
   SemanticHunk,
 } from './ast-service';
 import { grammarForPath } from './ast-service';
@@ -92,6 +93,43 @@ export function declHashesBlob(
     declHashCache.set(key, result);
   }
   return result;
+}
+
+const blobTextCache = new Map<string, Promise<string | null>>();
+
+function blobText(
+  owner: string,
+  repo: string,
+  oid: string,
+  path: string,
+): Promise<string | null> {
+  const key = `${oid}:${path}`;
+  let p = blobTextCache.get(key);
+  if (!p) {
+    p = fetchRawBlob(owner, repo, oid, path);
+    blobTextCache.set(key, p);
+  }
+  return p;
+}
+
+/** Tiniest multiline node at a position of the new-side blob. */
+export async function pickNodeAt(
+  owner: string,
+  repo: string,
+  oid: string,
+  path: string,
+  line: number,
+  col: number,
+): Promise<LineRange | null> {
+  if (backendDead || !grammarForPath(path)) return null;
+  const text = await blobText(owner, repo, oid, path);
+  if (!text || text.length > MAX_BLOB) return null;
+  return astMessaging
+    .sendMessage('pickNode', { path, text, line, col })
+    .catch(() => {
+      backendDead = true;
+      return null;
+    });
 }
 
 export function structuralDiff(
