@@ -50,16 +50,25 @@ marked applied automatically.
 
 ## Development
 
+A pnpm monorepo: `apps/extension` (WXT extension), `apps/website` (Astro promo
+site with a live viewer demo), and shared packages `@hihyou/diff-engine`
+(pure analysis), `@hihyou/diff-viewer` (Solid UI, I/O injected via ports),
+`@hihyou/github` (all GitHub coupling). See `AGENTS.md` for the full map.
+
 ```sh
-pnpm install        # also copies tree-sitter wasm into public/ts-wasm
-pnpm dev            # or: pnpm build && load .output/chrome-mv3 unpacked
-pnpm compile        # typecheck
+pnpm install        # also copies tree-sitter wasm into apps/extension/public/ts-wasm
+pnpm dev            # extension dev server; or: pnpm build && load
+                    #   apps/extension/.output/chrome-mv3 unpacked
+pnpm compile        # typecheck every package
 pnpm check          # node self-checks for all pure logic modules
+pnpm test           # vitest where defined
+
+pnpm --filter @hihyou/website dev   # the promo site + demo
 ```
 
 Dev self-reload: with the unpacked extension loaded, run
 `window.postMessage({ type: 'hihyou:reload' }, '*')` on any github.com page —
 the background worker reloads the extension from disk.
 
-All GitHub coupling (payload shapes, endpoints, DOM anchors) lives in
-`utils/github-changes.ts` + `utils/takeover.ts`.
+All GitHub coupling (payload shapes, endpoints) lives in the
+`@hihyou/github` package; DOM anchors in `apps/extension/src/takeover.ts`.
