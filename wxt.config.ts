@@ -3,6 +3,13 @@ import { defineConfig } from 'wxt';
 // See https://wxt.dev/api/config.html
 export default defineConfig({
   modules: ['@wxt-dev/module-solid'],
+  // Escape non-ASCII in emitted JS: Chrome refuses content scripts it
+  // considers non-UTF-8, and ASCII output is immune (also survives
+  // partial Syncthing syncs of multibyte sequences).
+  vite: () => ({
+    esbuild: { charset: 'ascii' },
+    build: { target: 'es2020' },
+  }),
   manifest: {
     name: 'hihyou',
     description: '批評 — an alternative GitHub code review experience',
