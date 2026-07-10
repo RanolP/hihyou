@@ -154,6 +154,7 @@ function PayloadView(props: {
     void loadSeenState(seenKey).then((s) => {
       setSeen(s);
       setSeenLoaded(true);
+      setSeenVersion((v) => v + 1);
       // Panels mounted before storage resolved already ran their
       // content-ready hook; reconcile them now.
       for (const c of payload.diffContents) {
@@ -168,9 +169,11 @@ function PayloadView(props: {
       payload.diffSummaries.map((s) => [s.path, s.markedAsViewed]),
     ),
   );
+  const [seenVersion, setSeenVersion] = createSignal(0);
   const persist = (next: SeenState) => {
     const prev = seen();
     setSeen(next);
+    setSeenVersion((v) => v + 1);
     void saveSeenState(seenKey, next);
     if (!seenEnabled) return;
     for (const path of Object.keys(next)) {
@@ -518,6 +521,17 @@ function PayloadView(props: {
       if (el) el.scrollIntoView({ block: 'start' });
       requestContent(path);
     },
+    onSetSeen: (paths, checked) => {
+      const next = { ...seen() };
+      for (const path of paths) {
+        const lines = contentFor(path)?.diffLines;
+        if (!lines?.length) continue;
+        next[path] = checked
+          ? markLinesSeen(next[path], lines)
+          : clearLinesSeen(next[path], lines);
+      }
+      persist(next);
+    },
   };
 
   let viewerEl!: HTMLDivElement;
@@ -557,6 +571,7 @@ function PayloadView(props: {
         <FileTree
           paths={payload.diffSummaries.map((s) => s.path)}
           api={treeApi}
+          seenVersion={seenVersion()}
         />
         <div class="hihyou-panels">
           <For each={payload.diffSummaries}>

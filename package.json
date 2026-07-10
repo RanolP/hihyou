@@ -8,7 +8,7 @@
     "dev": "wxt",
     "dev:firefox": "wxt -b firefox",
     "build": "wxt build && node scripts/ascii-escape.mjs",
-    "build:firefox": "wxt build -b firefox",
+    "build:firefox": "wxt build -b firefox && node scripts/ascii-escape.mjs",
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
     "compile": "tsc --noEmit",
