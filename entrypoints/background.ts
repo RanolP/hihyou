@@ -1,3 +1,5 @@
+import ts from 'typescript';
+import { createDefaultMapFromCDN } from '@typescript/vfs';
 import { Language, Parser } from 'web-tree-sitter';
 import { astMessaging } from '@/utils/ast-rpc';
 import {
@@ -6,9 +8,63 @@ import {
   grammarForPath,
   structuralDiffTrees,
 } from '@/utils/ast-service';
+import {
+  importerForPath,
+  lockfileImporterDirs,
+  resolveLockfileDeps,
+} from '@/utils/pnpm-lock';
+import { extractTypesFromTarball } from '@/utils/tarball';
+import {
+  COMPILER_OPTIONS,
+  buildEnv,
+  hoverAt,
+  importedPackages,
+  type DepFiles,
+} from '@/utils/ts-env';
 
 let parserReady: Promise<void> | null = null;
 const languages = new Map<string, Promise<Language | null>>();
+
+// ── Twoslash TS intelligence (M13) ──
+let libsPromise: Promise<Map<string, string>> | null = null;
+function getLibs(): Promise<Map<string, string>> {
+  libsPromise ??= createDefaultMapFromCDN(
+    { target: COMPILER_OPTIONS.target },
+    ts.version,
+    false,
+    ts,
+  );
+  return libsPromise;
+}
+/** cacheKey (owner/repo@oid) → lockfile text (or null: repo has none). */
+const projects = new Map<string, string | null>();
+const depTypesCache = new Map<
+  string,
+  Promise<Record<string, string> | null>
+>();
+const envCache = new Map<string, ReturnType<typeof buildEnv>>();
+
+function fetchDepTypes(
+  name: string,
+  version: string,
+): Promise<Record<string, string> | null> {
+  const key = `${name}@${version}`;
+  let result = depTypesCache.get(key);
+  if (!result) {
+    const base = name.split('/').pop();
+    result = fetch(
+      `https://registry.npmjs.org/${name}/-/${base}-${version}.tgz`,
+    )
+      .then(async (res) =>
+        res.ok
+          ? extractTypesFromTarball(new Uint8Array(await res.arrayBuffer()))
+          : null,
+      )
+      .catch(() => null);
+    depTypesCache.set(key, result);
+  }
+  return result;
+}
 
 function loadLanguage(grammar: string): Promise<Language | null> {
   let lang = languages.get(grammar);
@@ -89,6 +145,47 @@ export default defineBackground(() => {
       return hashes;
     } catch (err) {
       console.warn('[hihyou] declHashes failed:', data.path, err);
+      return null;
+    }
+  });
+
+  astMessaging.onMessage('tsHover', async ({ data }) => {
+    try {
+      if (data.lockfileText !== undefined) {
+        projects.set(data.cacheKey, data.lockfileText);
+      } else if (!projects.has(data.cacheKey)) {
+        return 'NEED_PROJECT';
+      }
+      const lockfileText = projects.get(data.cacheKey) ?? null;
+      const envKey = `${data.cacheKey}:${data.fileName}:${data.fileText.length}`;
+      let env = envCache.get(envKey);
+      if (!env) {
+        const deps: DepFiles = {};
+        if (lockfileText) {
+          const dirs = lockfileImporterDirs(lockfileText);
+          const resolved = resolveLockfileDeps(
+            lockfileText,
+            importerForPath(dirs, data.repoFilePath),
+          );
+          const wanted = importedPackages(data.fileText)
+            .filter((n) => resolved[n])
+            .slice(0, 8);
+          await Promise.all(
+            wanted.map(async (name) => {
+              const files = await fetchDepTypes(name, resolved[name]);
+              if (files) deps[name] = files;
+            }),
+          );
+        }
+        env = buildEnv(await getLibs(), data.fileName, data.fileText, deps);
+        envCache.set(envKey, env);
+        if (envCache.size > 4) {
+          envCache.delete(envCache.keys().next().value!);
+        }
+      }
+      return hoverAt(env, data.fileName, data.fileText, data.line, data.col);
+    } catch (err) {
+      console.warn('[hihyou] tsHover failed:', err);
       return null;
     }
   });

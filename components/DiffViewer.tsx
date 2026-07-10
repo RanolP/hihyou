@@ -33,6 +33,7 @@ import { seenCount } from '@/utils/seen-hunks';
 import { resolveStack, type StackEntry } from '@/utils/pr-stack';
 import { CommitStrip } from './CommitStrip';
 import { FilePanel } from './FilePanel';
+import { installTsHover } from './ts-hover';
 import { FileTree, type FileTreeApi } from './FileTree';
 
 export interface ViewerData {
@@ -387,6 +388,16 @@ function PayloadView(props: {
       changed = true;
     }
     if (changed) persist(next);
+  });
+
+  // ── TS hover intelligence (M13) ──
+  onMount(() => {
+    const uninstall = installTsHover({
+      pr,
+      headOid: payload.comparison.fullDiff.headOid,
+      contentFor,
+    });
+    onCleanup(uninstall);
   });
 
   const fullySeenFiles = () =>

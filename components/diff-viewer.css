@@ -488,6 +488,26 @@
   white-space: pre;
 }
 
+.hihyou-ts-hover {
+  position: fixed;
+  z-index: 10000;
+  max-width: 480px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 8px 12px;
+  border: 1px solid var(--borderColor-default);
+  border-radius: 6px;
+  background: var(--bgColor-emphasis, #24292f);
+  color: var(--fgColor-onEmphasis, #fff);
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
+    monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  box-shadow: var(--shadow-floating-small, 0 3px 6px rgba(0, 0, 0, 0.3));
+  pointer-events: none;
+}
+
 .hihyou-pill {
   position: fixed;
   right: 16px;

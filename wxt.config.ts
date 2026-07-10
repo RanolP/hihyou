@@ -12,5 +12,10 @@ export default defineConfig({
       extension_pages:
         "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';",
     },
+    // M13: npm tarballs + TS lib files fetched by the service worker.
+    host_permissions: [
+      'https://registry.npmjs.org/*',
+      'https://playgroundcdn.typescriptlang.org/*',
+    ],
   },
 });

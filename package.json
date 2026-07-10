@@ -12,19 +12,21 @@
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
     "compile": "tsc --noEmit",
-    "check": "node utils/pr-location.check.ts && node utils/seen-hunks.check.ts && node utils/file-tree.check.ts && node utils/prose-diff.check.ts && node utils/ast-service.check.ts && node utils/import-fold.check.ts && node utils/moved-code.check.ts && node utils/injection-heuristic.check.ts",
+    "check": "node utils/pr-location.check.ts && node utils/seen-hunks.check.ts && node utils/file-tree.check.ts && node utils/prose-diff.check.ts && node utils/ast-service.check.ts && node utils/import-fold.check.ts && node utils/moved-code.check.ts && node utils/injection-heuristic.check.ts && node utils/ts-env.check.ts",
     "postinstall": "wxt prepare && node scripts/copy-wasm.mjs"
   },
   "dependencies": {
     "@shikijs/langs": "^4.3.1",
     "@shikijs/themes": "^4.3.1",
+    "@typescript/vfs": "^1.6.4",
     "@webext-core/messaging": "^3.0.2",
     "diff": "^9.0.0",
     "marked": "^18.0.6",
     "shiki": "^4.3.1",
     "shiki-magic-move": "^1.4.0",
     "solid-js": "^1.9.11",
-    "web-tree-sitter": "^0.26.10"
+    "web-tree-sitter": "^0.26.10",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@vscode/tree-sitter-wasm": "^0.3.1",
