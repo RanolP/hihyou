@@ -1,9 +1,16 @@
 import { For, Show, createEffect, onCleanup, onMount } from 'solid-js';
-import type { DiffContent, DiffLine, DiffSummary } from '@/utils/github-changes';
+import type {
+  DiffContent,
+  DiffLine,
+  DiffSummary,
+  ReviewThread,
+} from '@/utils/github-changes';
+import { ThreadCard } from './ThreadCard';
 
 export function FilePanel(props: {
   summary: DiffSummary;
   content: DiffContent | undefined;
+  getThread?: (id: string) => ReviewThread | undefined;
   /** Called when the panel nears the viewport and has no content yet. */
   onNearViewport?: () => void;
 }) {
@@ -35,6 +42,22 @@ export function FilePanel(props: {
     return null;
   };
   const oldPath = () => props.content?.oldTreeEntry?.path;
+
+  const threadsAt = (l: DiffLine): ReviewThread[] => {
+    const mm = props.summary.markersMap;
+    const get = props.getThread;
+    if (!mm || !get || l.type === 'HUNK') return [];
+    const keys =
+      l.type === 'DELETION'
+        ? [`L${l.left}`]
+        : l.type === 'ADDITION'
+          ? [`R${l.right}`]
+          : [`L${l.left}`, `R${l.right}`];
+    return keys
+      .flatMap((k) => mm[k]?.threads ?? [])
+      .map((t) => get(String(t.id)))
+      .filter((t): t is ReviewThread => !!t);
+  };
 
   return (
     <section
@@ -70,7 +93,24 @@ export function FilePanel(props: {
         <table class="hihyou-diff">
           <tbody>
             <For each={props.content!.diffLines}>
-              {(line) => <DiffRow line={line} />}
+              {(line) => {
+                const threads = threadsAt(line);
+                return (
+                  <>
+                    <DiffRow line={line} />
+                    <Show when={threads.length > 0}>
+                      <tr class="hihyou-thread-row">
+                        <td class="num" colspan="2" />
+                        <td class="hihyou-thread-cell">
+                          <For each={threads}>
+                            {(thread) => <ThreadCard thread={thread} />}
+                          </For>
+                        </td>
+                      </tr>
+                    </Show>
+                  </>
+                );
+              }}
             </For>
           </tbody>
         </table>

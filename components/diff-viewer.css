@@ -140,6 +140,77 @@
   background: var(--diffBlob-hunkNum-bgColor, #c6e6ff);
 }
 
+.hihyou-thread-cell {
+  padding: 8px;
+  max-width: 900px;
+}
+
+.hihyou-thread {
+  border: 1px solid var(--borderColor-default);
+  border-radius: 6px;
+  background: var(--bgColor-default);
+  overflow: hidden;
+}
+.hihyou-thread + .hihyou-thread {
+  margin-top: 8px;
+}
+
+.hihyou-comment {
+  padding: 8px 12px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans',
+    Helvetica, Arial, sans-serif;
+}
+.hihyou-comment + .hihyou-comment {
+  border-top: 1px solid var(--borderColor-muted, var(--borderColor-default));
+}
+
+.hihyou-comment-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+
+.hihyou-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+}
+
+.hihyou-comment-time {
+  color: var(--fgColor-muted);
+}
+
+.hihyou-pending {
+  border-color: var(--borderColor-attention-emphasis, #bf8700);
+  color: var(--fgColor-attention, #9a6700);
+}
+
+.hihyou-comment-body {
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: normal;
+}
+.hihyou-comment-body pre {
+  overflow-x: auto;
+}
+
+.hihyou-thread-collapsed > summary {
+  cursor: pointer;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans',
+    Helvetica, Arial, sans-serif;
+  color: var(--fgColor-muted);
+  border: 1px solid var(--borderColor-default);
+  border-radius: 6px;
+  background: var(--bgColor-muted);
+}
+.hihyou-thread-collapsed[open] > summary {
+  margin-bottom: 8px;
+}
+
 .hihyou-pill {
   position: fixed;
   right: 16px;

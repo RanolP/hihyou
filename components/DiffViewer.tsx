@@ -104,6 +104,7 @@ function PayloadView(props: { data: ViewerData }) {
           <FilePanel
             summary={summary}
             content={contentFor(summary.path)}
+            getThread={(id) => payload.markers?.threads?.[id]}
             onNearViewport={() => requestContent(summary.path)}
           />
         )}

@@ -62,6 +62,48 @@ export interface DiffSummary {
   linesAdded: number;
   linesDeleted: number;
   linesChanged: number;
+  /**
+   * Line-anchored review markers, keyed by side+line (`R102` = right/new
+   * side line 102, `L45` = left/old side).
+   */
+  markersMap?: Record<string, MarkerEntry>;
+}
+
+export interface MarkerEntry {
+  threads: { id: number | string }[];
+  annotations: unknown[];
+  /** Context line range of the comment anchor. */
+  ctx?: [number, number];
+}
+
+export interface ReviewCommentData {
+  author: { login: string; avatarUrl: string };
+  authorAssociation: string;
+  body: string;
+  bodyHTML: string;
+  createdAt: string;
+  databaseId: number;
+  id: string;
+  isHidden: boolean;
+  state: string;
+  viewerCanDelete: boolean;
+  [key: string]: unknown;
+}
+
+export interface ReviewThread {
+  id: string;
+  subjectType: string;
+  isResolved: boolean;
+  resolvedBy?: string | null;
+  viewerCanReply: boolean;
+  commentsData: { comments: ReviewCommentData[] };
+  pullRequestReviewId: number;
+}
+
+export interface Markers {
+  threads: Record<string, ReviewThread>;
+  annotations: Record<string, unknown>;
+  [key: string]: unknown;
 }
 
 export interface CommitInfo {
@@ -79,6 +121,7 @@ export interface ChangesPayload {
   diffContents: DiffContent[];
   /** Present on commit/range-scoped views. */
   commit?: CommitInfo;
+  markers: Markers;
   virtualizeDiffEntries: boolean;
   [key: string]: unknown;
 }
