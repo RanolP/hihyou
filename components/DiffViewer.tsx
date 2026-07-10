@@ -24,6 +24,8 @@ import {
 } from '@/utils/seen-hunks';
 import { loadSeenState, prKey, saveSeenState } from '@/utils/seen-store';
 import { seenCount } from '@/utils/seen-hunks';
+import { resolveStack, type StackEntry } from '@/utils/pr-stack';
+import { CommitStrip } from './CommitStrip';
 import { FilePanel } from './FilePanel';
 import { FileTree, type FileTreeApi } from './FileTree';
 
@@ -191,6 +193,20 @@ function PayloadView(props: { data: ViewerData }) {
       fileFullySeen(seen()[s.path], contentFor(s.path)?.diffLines ?? []),
     ).length;
 
+  // Commit strip: current PR's commits immediately; stacked-PR chain
+  // (base branch != default branch) fills in asynchronously.
+  const [stack, setStack] = createSignal<StackEntry[]>([
+    {
+      number: pr.number,
+      title: payload.pullRequest?.title ?? '',
+      commits: payload.commits,
+      isCurrent: true,
+    },
+  ]);
+  void resolveStack(pr, payload).then((entries) => {
+    if (entries.length > 1) setStack(entries);
+  });
+
   const summaryByPath = new Map(payload.diffSummaries.map((s) => [s.path, s]));
   const treeApi: FileTreeApi = {
     seenEnabled,
@@ -242,6 +258,7 @@ function PayloadView(props: { data: ViewerData }) {
           </span>
         </Show>
       </div>
+      <CommitStrip stack={stack()} pr={pr} />
       <div class="hihyou-body">
         <FileTree
           paths={payload.diffSummaries.map((s) => s.path)}

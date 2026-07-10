@@ -140,6 +140,61 @@
   background: var(--diffBlob-hunkNum-bgColor, #c6e6ff);
 }
 
+.hihyou-commits {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 8px;
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
+    monospace;
+  font-size: 11px;
+}
+
+.hihyou-commit-scroll {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.hihyou-commit-chip {
+  padding: 2px 8px;
+  border: 1px solid var(--borderColor-default);
+  border-radius: 999px;
+  color: var(--fgColor-default);
+  text-decoration: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.hihyou-commit-chip:hover {
+  background: var(--bgColor-muted);
+  text-decoration: none;
+}
+.hihyou-commit-chip.active {
+  background: var(--bgColor-accent-emphasis, #0969da);
+  border-color: var(--bgColor-accent-emphasis, #0969da);
+  color: var(--fgColor-onEmphasis, #fff);
+}
+.hihyou-commit-chip.foreign {
+  opacity: 0.65;
+}
+.hihyou-commit-chip.nav.disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.hihyou-commit-boundary {
+  padding: 2px 6px;
+  color: var(--fgColor-muted);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.hihyou-commit-boundary.current {
+  color: var(--fgColor-default);
+}
+
 .hihyou-body {
   display: flex;
   gap: 16px;

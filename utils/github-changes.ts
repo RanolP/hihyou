@@ -108,7 +108,25 @@ export interface Markers {
 
 export interface CommitInfo {
   oid: string;
-  parents?: { oid: string }[];
+  shortOid: string;
+  messageHeadline: string;
+  actorLogin: string;
+  createdAt: string;
+}
+
+export interface PullRequestInfo {
+  number: number;
+  title: string;
+  baseBranch: string;
+  headBranch: string;
+  state: string;
+  [key: string]: unknown;
+}
+
+export interface RepositoryInfo {
+  defaultBranch: string;
+  name: string;
+  ownerLogin: string;
   [key: string]: unknown;
 }
 
@@ -121,6 +139,8 @@ export interface ChangesPayload {
   diffContents: DiffContent[];
   /** Present on commit/range-scoped views. */
   commit?: CommitInfo;
+  pullRequest?: PullRequestInfo;
+  repository?: RepositoryInfo;
   markers: Markers;
   virtualizeDiffEntries: boolean;
   [key: string]: unknown;
