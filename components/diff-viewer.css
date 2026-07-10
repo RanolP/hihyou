@@ -391,6 +391,20 @@
   margin-bottom: 8px;
 }
 
+.hihyou-magic {
+  padding: 8px 12px;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
+    monospace;
+  font-size: 12px;
+  line-height: 20px;
+  tab-size: 8;
+  background: var(--bgColor-default);
+}
+.hihyou-magic .shiki-magic-move-container {
+  white-space: pre;
+}
+
 .hihyou-pill {
   position: fixed;
   right: 16px;

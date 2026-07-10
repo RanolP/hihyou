@@ -2,6 +2,7 @@ import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { DiffViewer, type ViewerData } from '@/components/DiffViewer';
 import '@/components/diff-viewer.css';
+import 'shiki-magic-move/style.css';
 import {
   ROOT_CLASS,
   releaseTakeover,
@@ -16,8 +17,13 @@ export default defineContentScript({
     // React app soft-navigates between commits and leaves it stale.
     let initialLoad = true;
     let navToken = 0;
+    let lastHandledHref: string | null = null;
+    // Our own soft navigations bypass GitHub's router, leaving the hidden
+    // native view stale; reload if the user toggles back to it.
+    let nativeStale = false;
 
     const [data, setData] = createSignal<ViewerData | null>(null);
+    const [prevData, setPrevData] = createSignal<ViewerData | null>(null);
     const [native, setNative] = createSignal(false);
     let rootEl: HTMLElement | null = null;
     let dispose: (() => void) | null = null;
@@ -28,19 +34,32 @@ export default defineContentScript({
       rootEl?.remove();
       rootEl = null;
       setData(null);
+      setPrevData(null);
       releaseTakeover();
     };
 
     const toggleNative = () => {
       const next = !native();
+      if (next && nativeStale) {
+        location.reload();
+        return;
+      }
       setNative(next);
       setNativeView(next);
     };
 
+    const softNavigate = (url: string) => {
+      history.pushState(null, '', url);
+      nativeStale = true;
+      void onNavigate(new URL(location.href));
+    };
+
     const onNavigate = async (url: URL) => {
+      if (url.href === lastHandledHref && data()) return;
       const token = ++navToken;
       const pr = parsePrLocation(url);
       if (!pr || (pr.view !== 'changes' && pr.view !== 'files')) {
+        lastHandledHref = null;
         teardown();
         return;
       }
@@ -74,12 +93,20 @@ export default defineContentScript({
         mount.host.append(rootEl);
         dispose = render(
           () => (
-            <DiffViewer data={data} native={native} onToggleNative={toggleNative} />
+            <DiffViewer
+              data={data}
+              prev={prevData}
+              native={native}
+              onToggleNative={toggleNative}
+              onNavigate={softNavigate}
+            />
           ),
           rootEl,
         );
       }
       setNativeView(native());
+      lastHandledHref = url.href;
+      setPrevData(data());
       setData({ pr, payload });
       console.log(
         `[hihyou] ${payload.diffSummaries.length} files, ` +

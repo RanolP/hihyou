@@ -10,7 +10,14 @@ interface FlatCommit {
   url: string;
 }
 
-export function CommitStrip(props: { stack: StackEntry[]; pr: PrLocation }) {
+export function CommitStrip(props: {
+  stack: StackEntry[];
+  pr: PrLocation;
+  /** Soft in-place navigation; plain href navigation as fallback. */
+  onNavigate?: (url: string) => void;
+}) {
+  const commitUrl = (entry: StackEntry, oid: string) =>
+    `/${props.pr.owner}/${props.pr.repo}/pull/${entry.number}/changes/${oid}`;
   const flat = (): FlatCommit[] =>
     props.stack.flatMap((entry) =>
       entry.commits.map((c) => ({
@@ -18,7 +25,7 @@ export function CommitStrip(props: { stack: StackEntry[]; pr: PrLocation }) {
         oid: c.oid,
         shortOid: c.shortOid,
         title: `${c.messageHeadline} — ${c.actorLogin}`,
-        url: `/${props.pr.owner}/${props.pr.repo}/pull/${entry.number}/changes/${c.oid}`,
+        url: commitUrl(entry, c.oid),
       })),
     );
   const activeIndex = () => {
@@ -30,6 +37,14 @@ export function CommitStrip(props: { stack: StackEntry[]; pr: PrLocation }) {
   };
   const allUrl = () =>
     `/${props.pr.owner}/${props.pr.repo}/pull/${props.pr.number}/changes`;
+  const isActive = (oid: string) =>
+    oid === props.pr.range || !!props.pr.range?.endsWith(`..${oid}`);
+  const go = (e: MouseEvent, url: string | undefined) => {
+    if (!url || !props.onNavigate || e.metaKey || e.ctrlKey || e.shiftKey)
+      return;
+    e.preventDefault();
+    props.onNavigate(url);
+  };
 
   return (
     <div class="hihyou-commits">
@@ -37,6 +52,7 @@ export function CommitStrip(props: { stack: StackEntry[]; pr: PrLocation }) {
         class="hihyou-commit-chip all"
         classList={{ active: activeIndex() === -1 }}
         href={allUrl()}
+        onClick={(e) => go(e, allUrl())}
       >
         All
       </a>
@@ -44,6 +60,9 @@ export function CommitStrip(props: { stack: StackEntry[]; pr: PrLocation }) {
         class="hihyou-commit-chip nav"
         classList={{ disabled: activeIndex() <= 0 }}
         href={activeIndex() > 0 ? flat()[activeIndex() - 1].url : undefined}
+        onClick={(e) =>
+          go(e, activeIndex() > 0 ? flat()[activeIndex() - 1].url : undefined)
+        }
         title="Previous commit"
       >
         ‹
@@ -55,6 +74,14 @@ export function CommitStrip(props: { stack: StackEntry[]; pr: PrLocation }) {
           activeIndex() < flat().length - 1
             ? flat()[activeIndex() + 1].url
             : undefined
+        }
+        onClick={(e) =>
+          go(
+            e,
+            activeIndex() < flat().length - 1
+              ? flat()[activeIndex() + 1].url
+              : undefined,
+          )
         }
         title="Next commit"
       >
@@ -78,12 +105,15 @@ export function CommitStrip(props: { stack: StackEntry[]; pr: PrLocation }) {
                   <a
                     class="hihyou-commit-chip"
                     classList={{
-                      active:
-                        c.oid === props.pr.range ||
-                        !!props.pr.range?.endsWith(`..${c.oid}`),
+                      active: isActive(c.oid),
                       foreign: !entry.isCurrent,
                     }}
-                    href={`/${props.pr.owner}/${props.pr.repo}/pull/${entry.number}/changes/${c.oid}`}
+                    href={commitUrl(entry, c.oid)}
+                    onClick={(e) =>
+                      entry.isCurrent
+                        ? go(e, commitUrl(entry, c.oid))
+                        : undefined
+                    }
                     title={`${c.messageHeadline} — ${c.actorLogin}`}
                   >
                     {c.shortOid.slice(0, 7)}

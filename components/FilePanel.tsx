@@ -1,10 +1,19 @@
-import { For, Show, createEffect, onCleanup, onMount } from 'solid-js';
+import {
+  For,
+  Show,
+  createEffect,
+  createSignal,
+  onCleanup,
+  onMount,
+} from 'solid-js';
 import type {
   DiffContent,
   DiffLine,
   DiffSummary,
   ReviewThread,
 } from '@/utils/github-changes';
+import type { PrLocation } from '@/utils/pr-location';
+import { MagicMovePanel } from './MagicMovePanel';
 import {
   countableLines,
   fileFullySeen,
@@ -15,6 +24,7 @@ import {
 import { ThreadCard } from './ThreadCard';
 
 export function FilePanel(props: {
+  pr: PrLocation;
   summary: DiffSummary;
   content: DiffContent | undefined;
   getThread?: (id: string) => ReviewThread | undefined;
@@ -25,8 +35,18 @@ export function FilePanel(props: {
   onToggleAllSeen?: (checked: boolean) => void;
   /** Fires once when diff lines become available (seen invalidation). */
   onContentReady?: (lines: DiffLine[]) => void;
+  /** Commit-nav animation: morph fromOid -> toOid blob before the diff. */
+  animate?: { fromOid: string; toOid: string };
 }) {
   let section!: HTMLElement;
+  const [animating, setAnimating] = createSignal(false);
+
+  onMount(() => {
+    if (!props.animate) return;
+    const rect = section.getBoundingClientRect();
+    const near = rect.top < window.innerHeight + 200 && rect.bottom > -200;
+    if (near) setAnimating(true);
+  });
 
   onMount(() => {
     if (props.content || !props.onNearViewport) return;
@@ -130,7 +150,17 @@ export function FilePanel(props: {
         when={!note()}
         fallback={<div class="hihyou-file-note">{note()}</div>}
       >
-        <table class="hihyou-diff">
+        <Show when={animating()}>
+          <MagicMovePanel
+            owner={props.pr.owner}
+            repo={props.pr.repo}
+            path={props.summary.path}
+            fromOid={props.animate!.fromOid}
+            toOid={props.animate!.toOid}
+            onDone={() => setAnimating(false)}
+          />
+        </Show>
+        <table class="hihyou-diff" style={{ display: animating() ? 'none' : undefined }}>
           <tbody>
             <For each={props.content!.diffLines}>
               {(line, i) => {

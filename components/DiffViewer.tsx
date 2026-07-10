@@ -36,8 +36,10 @@ export interface ViewerData {
 
 export function DiffViewer(props: {
   data: Accessor<ViewerData | null>;
+  prev: Accessor<ViewerData | null>;
   native: Accessor<boolean>;
   onToggleNative: () => void;
+  onNavigate: (url: string) => void;
 }) {
   return (
     <>
@@ -52,15 +54,43 @@ export function DiffViewer(props: {
         </button>
       </Portal>
       <Show when={props.data()} keyed>
-        {(d) => <PayloadView data={d} />}
+        {(d) => (
+          <PayloadView
+            data={d}
+            prev={props.prev()}
+            onNavigate={props.onNavigate}
+          />
+        )}
       </Show>
     </>
   );
 }
 
 /** One rendered payload; recreated per navigation via the keyed Show. */
-function PayloadView(props: { data: ViewerData }) {
+function PayloadView(props: {
+  data: ViewerData;
+  prev: ViewerData | null;
+  onNavigate: (url: string) => void;
+}) {
   const { pr, payload } = props.data;
+
+  // Commit-nav animation: same PR, different comparison head.
+  const prev = props.prev;
+  const prevContentByPath =
+    prev &&
+    prev.pr.owner === pr.owner &&
+    prev.pr.repo === pr.repo &&
+    prev.pr.number === pr.number &&
+    prev.pr.range !== pr.range
+      ? new Map(prev.payload.diffContents.map((c) => [c.path, c]))
+      : null;
+  const animFor = (path: string) => {
+    const from = prevContentByPath?.get(path);
+    const to = payload.diffContents.find((c) => c.path === path);
+    if (!from?.newCommitOid || !to?.newCommitOid) return undefined;
+    if (from.newCommitOid === to.newCommitOid) return undefined;
+    return { fromOid: from.newCommitOid, toOid: to.newCommitOid };
+  };
   const totals = payload.diffSummaries.reduce(
     (acc, s) => ({
       added: acc.added + s.linesAdded,
@@ -258,7 +288,7 @@ function PayloadView(props: { data: ViewerData }) {
           </span>
         </Show>
       </div>
-      <CommitStrip stack={stack()} pr={pr} />
+      <CommitStrip stack={stack()} pr={pr} onNavigate={props.onNavigate} />
       <div class="hihyou-body">
         <FileTree
           paths={payload.diffSummaries.map((s) => s.path)}
@@ -268,6 +298,8 @@ function PayloadView(props: { data: ViewerData }) {
           <For each={payload.diffSummaries}>
             {(summary) => (
               <FilePanel
+                pr={pr}
+                animate={animFor(summary.path)}
                 summary={summary}
                 content={contentFor(summary.path)}
                 getThread={(id) => payload.markers?.threads?.[id]}
