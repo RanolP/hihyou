@@ -10,7 +10,9 @@ import { jsonLanguageFor } from "./index.js";
 // Byte parity with prettier 3.9.9 at its defaults. Not covered, because prettier's comment handlers move
 // tokens there: a comment between a key and its value (`{"a": // c\n1}`), and a block comment between an
 // array item and its comma on a broken line. Nor is an exponent with a `+` (`1e+5`): tree-sitter-json 0.24.8
-// rejects it, so its list keeps the source text.
+// rejects it, so its list keeps the source text. Nor, as `divergences` below pins, a trailing comma (tree-sitter
+// repairs it, so its list keeps the source text, where prettier drops the comma) or a JSDoc-style block comment
+// (prettier re-indents its ` *` lines).
 
 const parser = createSyntaxParser({ locateGrammar: nodeGrammarLocator });
 
@@ -106,14 +108,45 @@ function corpus(): [string, string][] {
   ];
 }
 
+async function ours(path: string, text: string) {
+  const tree = await parser.parse("json", text);
+  const root = tree.nodes[0];
+  if (!root) throw new Error("empty tree");
+  const out = format(root, text, jsonLanguageFor(path));
+  if (!out.ok) throw new Error(`${out.reason}: ${out.detail}`);
+  return out.text;
+}
+
 describe("a JSON file lays out byte-identical to prettier 3.9.9, so the reviewer sees the layout their tools write", () => {
   it.each(corpus())("%s", async (path, text) => {
-    const expected = await prettier.format(text, { filepath: path });
-    const tree = await parser.parse("json", text);
-    const root = tree.nodes[0];
-    if (!root) throw new Error("empty tree");
-    const out = format(root, text, jsonLanguageFor(path));
-    if (!out.ok) throw new Error(`${out.reason}: ${out.detail}`);
-    expect(out.text).toBe(expected);
+    expect(await ours(path, text)).toBe(
+      await prettier.format(text, { filepath: path }),
+    );
+  });
+});
+
+// Input, then today's output, which differs from prettier's.
+const divergences: [string, string, string][] = [
+  // tree-sitter-json inserts a missing value after the comma, so the list keeps its source text.
+  ["trailing-comma-array.json", "[1,2,]", "[1,2,]\n"],
+  ["trailing-comma-array.jsonc", "[\n  1,\n  2,\n]", "[\n  1,\n  2,\n]\n"],
+  // tree-sitter-json wraps the comma in an ERROR, so the inner object keeps its source text.
+  [
+    "tsconfig.json",
+    '{"compilerOptions": {"strict": true,}, "include": ["src"]}',
+    '{ "compilerOptions": {"strict": true,}, "include": ["src"] }\n',
+  ],
+  // Prettier re-indents a block comment whose lines all start with `*`; its source text stays here.
+  [
+    "jsdoc.json",
+    '/**\n   * doc\n   */\n{"a":1}',
+    '/**\n   * doc\n   */\n{ "a": 1 }\n',
+  ],
+];
+
+describe("a known gap from prettier stays pinned, so closing one shows up as a test change", () => {
+  it.each(divergences)("%s", async (path, text, pinned) => {
+    expect(await ours(path, text)).toBe(pinned);
+    expect(await prettier.format(text, { filepath: path })).not.toBe(pinned);
   });
 });
