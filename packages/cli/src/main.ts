@@ -40,6 +40,18 @@ async function main() {
     source,
     createFormatter({ ruffWasm: nodeRuffWasm }),
   );
+  if (process.stdout.isTTY && process.stdin.isTTY) {
+    // Loaded only here so piped output never pays for React.
+    const [{ render }, { createElement }, { App }] = await Promise.all([
+      import("ink"),
+      import("react"),
+      import("./tui/app.js"),
+    ]);
+    await render(createElement(App, { doc, load }), {
+      alternateScreen: true,
+    }).waitUntilExit();
+    return;
+  }
   for await (const line of renderPlain(doc, load))
     if (!process.stdout.write(`${line}\n`))
       await new Promise((resolve) => process.stdout.once("drain", resolve));
