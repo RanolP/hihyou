@@ -25,7 +25,11 @@ const rules = (h: Helpers<typeof grammar>) => ({
   array: h.list({ open: "[", close: "]", sep: ",", blankLines: "ifBroken" }),
   pair: h.seq(h.field("key"), ":", h.space, h.field("value")),
 });
-const plain = defineLanguage(grammar, { lineComment: "//" }, rules);
+const plain = defineLanguage(
+  grammar,
+  { lineComments: { comment: "//" } },
+  rules,
+);
 
 async function run(text: string, language = plain) {
   const tree = await parser.parse("json", text);
@@ -52,10 +56,14 @@ describe("format", () => {
   });
 
   it("a rule that drops a token returns the input unformatted, instead of a layout that hides code", async () => {
-    const dropsColon = defineLanguage(grammar, { lineComment: "//" }, (h) => ({
-      ...rules(h),
-      pair: h.seq(h.field("key"), h.space, h.field("value")),
-    }));
+    const dropsColon = defineLanguage(
+      grammar,
+      { lineComments: { comment: "//" } },
+      (h) => ({
+        ...rules(h),
+        pair: h.seq(h.field("key"), h.space, h.field("value")),
+      }),
+    );
     const text = '{"a":1}';
     expect(await run(text, dropsColon)).toMatchObject({
       ok: false,
@@ -65,13 +73,17 @@ describe("format", () => {
   });
 
   it("a rule that prints a token twice returns the input unformatted, instead of a layout that invents code", async () => {
-    const repeats = defineLanguage(grammar, { lineComment: "//" }, (h) => ({
-      ...rules(h),
-      number: (node, ctx) => [
-        token(node, ctx.source.slice(node.start, node.end)),
-        token(node, ctx.source.slice(node.start, node.end)),
-      ],
-    }));
+    const repeats = defineLanguage(
+      grammar,
+      { lineComments: { comment: "//" } },
+      (h) => ({
+        ...rules(h),
+        number: (node, ctx) => [
+          token(node, ctx.source.slice(node.start, node.end)),
+          token(node, ctx.source.slice(node.start, node.end)),
+        ],
+      }),
+    );
     expect(await run("[1]", repeats)).toMatchObject({
       ok: false,
       reason: "token-mismatch",
@@ -79,10 +91,14 @@ describe("format", () => {
   });
 
   it("a rule that swaps two fields returns the input unformatted, instead of a layout that shows code that does not exist", async () => {
-    const swaps = defineLanguage(grammar, { lineComment: "//" }, (h) => ({
-      ...rules(h),
-      pair: h.seq(h.field("value"), ":", h.space, h.field("key")),
-    }));
+    const swaps = defineLanguage(
+      grammar,
+      { lineComments: { comment: "//" } },
+      (h) => ({
+        ...rules(h),
+        pair: h.seq(h.field("value"), ":", h.space, h.field("key")),
+      }),
+    );
     const text = '{"a":1}';
     expect(await run(text, swaps)).toMatchObject({
       ok: false,
@@ -107,7 +123,7 @@ describe("format", () => {
   });
 
   it("a rule table naming a kind the grammar lacks fails typecheck", () => {
-    defineLanguage(grammar, { lineComment: "//" }, (h) => ({
+    defineLanguage(grammar, { lineComments: { comment: "//" } }, (h) => ({
       ...rules(h),
       // @ts-expect-error: `objekt` is not a kind of this grammar
       objekt: h.verbatim(),

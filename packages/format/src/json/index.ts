@@ -19,7 +19,7 @@ const number: Rule = (node, ctx) =>
   token(node, printNumber(ctx.source.slice(node.start, node.end)));
 
 const fitting = (trailingSep: boolean) =>
-  defineLanguage(grammar, { lineComment: "//" }, (h) => ({
+  defineLanguage(grammar, { lineComments: { comment: "//" } }, (h) => ({
     document: h.block(),
     object: h.list({
       open: "{",
@@ -54,7 +54,7 @@ export const jsonc = fitting(true);
 /** JSON as prettier's `json-stringify` parser prints it, like `JSON.stringify(value, null, 2)`: every list broken. */
 export const jsonStringify = defineLanguage(
   grammar,
-  { lineComment: "//" },
+  { lineComments: { comment: "//" } },
   (h) => ({
     document: h.block(),
     object: h.list({

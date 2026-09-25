@@ -36,6 +36,7 @@ export interface Grammar {
 type KindOf<G extends Grammar> = G["kinds"][number];
 type TokenOf<G extends Grammar> = G["tokens"][number];
 type FieldOf<G extends Grammar> = G["fields"][number];
+type CommentOf<G extends Grammar> = G["comments"][number];
 
 export interface Ctx {
   readonly source: string;
@@ -65,7 +66,17 @@ export interface Language {
   readonly rules: ReadonlyMap<string, Rule>;
   readonly lists: ReadonlySet<Rule>;
   readonly comments: ReadonlySet<string>;
-  readonly lineComment: string;
+  /** Comment kinds that run to the end of the line, each with the prefix that marks it (see `LanguageOptions`). */
+  readonly lineComments: ReadonlyMap<string, string>;
+}
+
+export interface LanguageOptions<G extends Grammar> {
+  /**
+   * The comment kinds that run to the end of the line, so code never follows one on its line. A kind maps to the
+   * prefix its line comments start with, because one kind can hold both forms (tree-sitter-json's `comment` is
+   * `// ...` and `/* ... *\/`); `""` makes every comment of the kind a line comment (Python's `#`).
+   */
+  readonly lineComments: { readonly [K in CommentOf<G>]?: string };
 }
 
 export interface ListOptions<G extends Grammar> {
@@ -116,7 +127,7 @@ export function defineLanguage<
   T extends RuleTable<G, T>,
 >(
   grammar: G,
-  options: { lineComment: string },
+  options: LanguageOptions<G>,
   define: (h: Helpers<G>) => T & { [K in KindOf<G>]?: Rule },
 ): Language {
   const lists = new Set<Rule>();
@@ -140,7 +151,12 @@ export function defineLanguage<
     rules,
     lists,
     comments: new Set(grammar.comments),
-    lineComment: options.lineComment,
+    lineComments: new Map(
+      grammar.comments.flatMap((kind: CommentOf<G>): [string, string][] => {
+        const prefix = options.lineComments[kind];
+        return prefix === undefined ? [] : [[kind, prefix]];
+      }),
+    ),
   };
 }
 

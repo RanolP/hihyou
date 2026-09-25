@@ -7,6 +7,7 @@ export {
   type Grammar,
   type Helpers,
   type Language,
+  type LanguageOptions,
   type ListOptions,
   type Rule,
   type SeqPart,

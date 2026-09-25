@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "gen:grammar": "node src/gen-grammar.node.ts json tree-sitter-json && biome format --write src/json/grammar.ts"
+    "gen:grammar": "node src/gen-grammar.node.ts json tree-sitter-json --comments comment && biome format --write src/json/grammar.ts"
   },
   "exports": {
     ".": {

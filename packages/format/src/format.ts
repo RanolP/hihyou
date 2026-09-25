@@ -41,8 +41,10 @@ export function format(
 ): Formatted {
   try {
     const isComment = (n: FormatNode) => language.comments.has(n.kind);
-    const isLine = (n: FormatNode) =>
-      source.startsWith(language.lineComment, n.start);
+    const isLine = (n: FormatNode) => {
+      const prefix = language.lineComments.get(n.kind);
+      return prefix !== undefined && source.startsWith(prefix, n.start);
+    };
     const comments = attachComments(root, source, isComment);
     const commentToken = (c: FormatNode) => {
       const t = source.slice(c.start, c.end);
