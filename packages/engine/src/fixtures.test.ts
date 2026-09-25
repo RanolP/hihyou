@@ -60,6 +60,18 @@ describe("fixtures", () => {
     ]);
   });
 
+  it("operator-change: `<` to `<=` is one update of the operator, not a delete plus an insert", async () => {
+    const file = await onlyFile("operator-change");
+    expect(file.edits).toEqual([
+      expect.objectContaining({
+        kind: "update",
+        node: "<",
+        old: { start: { line: 2, column: 30 }, end: { line: 2, column: 31 } },
+        new: { start: { line: 2, column: 30 }, end: { line: 2, column: 32 } },
+      }),
+    ]);
+  });
+
   it("jsx-text-reflow: re-wrapping JSX text across lines and collapsing its spaces yields zero edits, not a jsx_text update", async () => {
     const file = await onlyFile("jsx-text-reflow");
     expect(file).toMatchObject({ language: "tsx", diffMode: "ast" });

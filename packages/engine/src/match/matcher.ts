@@ -216,6 +216,18 @@ export function match(
         const q = onceB.get(kind);
         if (p && q) linkAndRecover(p, q);
       }
+      // A literal token's kind is its text, so `<` and `<=` never share one; filling the same role in the
+      // same place (the `operator` of one binary expression) makes them one token that changed.
+      for (const [p, q] of unmatchedPairs(
+        (p, q) =>
+          !p.named &&
+          !q.named &&
+          p.children.length === 0 &&
+          q.children.length === 0 &&
+          p.field !== undefined &&
+          p.field === q.field,
+      ))
+        link(p, q);
     }
   };
 
