@@ -57,23 +57,45 @@ export function check(
   normalize: Normalize,
   isComment: (n: FormatNode) => boolean,
 ): string | undefined {
-  const printed = new Set<FormatNode>();
-  for (const { token: t } of placed) if (!t.synthetic) printed.add(t.node);
+  // The printed source nodes by start offset: output order is source order but for the few comments a rule
+  // moves, so this is usually sorted already. A tree walk in preorder asks about nodes by growing start, so
+  // one cursor answers "was this node printed" without hashing every node of a large file.
+  const printed: FormatNode[] = [];
+  for (const { token: t } of placed) if (!t.synthetic) printed.push(t.node);
+  if (!sortedByStart(printed)) printed.sort((x, y) => x.start - y.start);
+  let cursor = 0;
+  const isPrinted = (n: FormatNode) => {
+    while (
+      cursor < printed.length &&
+      (printed[cursor] as FormatNode).start < n.start
+    )
+      cursor++;
+    for (let i = cursor; i < printed.length; i++) {
+      const p = printed[i] as FormatNode;
+      if (p.start !== n.start) break;
+      if (p === n) return true;
+    }
+    return false;
+  };
 
   // The input's code tokens, in source order: each node a rule printed whole, else each leaf. Comments are
   // left to the coverage check, because prettier moves them (a trailing comment past a comma).
   const input: Lexeme[] = [];
+  const inputPrinted: boolean[] = [];
   const stack = [root];
   for (let n = stack.pop(); n; n = stack.pop()) {
     if (isComment(n)) continue;
-    if (printed.has(n) || n.children.length === 0) {
-      if (n.end > n.start)
+    const whole = isPrinted(n);
+    if (whole || n.children.length === 0) {
+      if (n.end > n.start) {
         input.push({
           node: n,
           text: source.slice(n.start, n.end),
           at: n.start,
           synthetic: false,
         });
+        inputPrinted.push(whole);
+      }
       continue;
     }
     for (let i = n.children.length - 1; i >= 0; i--) {
@@ -81,41 +103,50 @@ export function check(
       if (c) stack.push(c);
     }
   }
-  const output: Lexeme[] = placed.flatMap(({ token: t, at }) =>
-    t.text === "" || (!t.synthetic && isComment(t.node))
-      ? []
-      : [{ node: t.node, text: t.text, at, synthetic: t.synthetic === true }],
-  );
+  const output: Lexeme[] = [];
+  for (const { token: t, at } of placed)
+    if (t.text !== "" && (t.synthetic || !isComment(t.node)))
+      output.push({
+        node: t.node,
+        text: t.text,
+        at,
+        synthetic: t.synthetic === true,
+      });
 
   const inForms = forms(input, source, normalize);
   const outForms = forms(output, text, normalize);
-  const inKept = input.filter((_, i) => inForms[i] !== undefined);
-  const outKept = output.filter((_, i) => outForms[i] !== undefined);
-  const inKeptForms = inForms.filter((f) => f !== undefined);
-  const outKeptForms = outForms.filter((f) => f !== undefined);
-  for (let i = 0; i < Math.max(inKept.length, outKept.length); i++) {
-    const s = inKept[i];
-    const o = outKept[i];
-    if (!o) return s && `input ${describe(s)} is missing from the output`;
-    if (!s) return `output ${describe(o)} matches no input token`;
-    if (o.synthetic)
-      return `inserted ${describe(o)} is not optional where it stands (normalized to ${JSON.stringify(outKeptForms[i])})`;
-    if (o.node !== s.node)
-      return `output ${describe(o)} stands where input ${describe(s)} was`;
-    if (outKeptForms[i] !== inKeptForms[i])
-      return `input ${describe(s)} printed as "${o.text}", which means ${JSON.stringify(outKeptForms[i])}, not ${JSON.stringify(inKeptForms[i])}`;
+  // Walks the tokens each side keeps (a defined form) in step.
+  for (let i = 0, o = 0; ; i++, o++) {
+    while (i < input.length && inForms[i] === undefined) i++;
+    while (o < output.length && outForms[o] === undefined) o++;
+    const s = input[i];
+    const out = output[o];
+    if (!out) {
+      if (s) return `input ${describe(s)} is missing from the output`;
+      break;
+    }
+    if (!s) return `output ${describe(out)} matches no input token`;
+    if (out.synthetic)
+      return `inserted ${describe(out)} is not optional where it stands (normalized to ${JSON.stringify(outForms[o])})`;
+    if (out.node !== s.node)
+      return `output ${describe(out)} stands where input ${describe(s)} was`;
+    if (outForms[o] !== inForms[i])
+      return `input ${describe(s)} printed as "${out.text}", which means ${JSON.stringify(outForms[o])}, not ${JSON.stringify(inForms[i])}`;
   }
 
   // Normalizing drops nothing from the page: an input token normalized away must still be printed or be
   // optional, and every other input character (comments included) printed once.
-  const ranges = placed.flatMap(
-    ({ token: t }): (readonly [number, number])[] =>
-      t.synthetic ? [] : [[t.node.start, t.node.end]],
-  );
+  const optional: FormatNode[] = [];
   for (const [i, l] of input.entries())
-    if (inForms[i] === undefined && !printed.has(l.node))
-      ranges.push([l.node.start, l.node.end]);
-  return coverage(source, ranges);
+    if (inForms[i] === undefined && !inputPrinted[i]) optional.push(l.node);
+  return coverage(source, printed, optional);
+}
+
+function sortedByStart(nodes: readonly FormatNode[]): boolean {
+  for (let i = 1; i < nodes.length; i++)
+    if ((nodes[i] as FormatNode).start < (nodes[i - 1] as FormatNode).start)
+      return false;
+  return true;
 }
 
 function forms(
@@ -135,23 +166,44 @@ const describe = (l: Lexeme) =>
   `"${l.text}" at ${l.at}${l.synthetic ? " (synthetic)" : ""}`;
 
 /**
- * Checks that `ranges` cover every non-blank character of the input exactly once: a dropped token leaves a
- * gap, a repeated one (or a node printed along with its own child) overlaps. Tree-sitter puts every character
- * outside whitespace into some leaf, so this is "each leaf printed once" without walking the tree.
+ * Checks that the ranges of `printed` and `optional` (each sorted by start) cover every non-blank character of
+ * the input exactly once: a dropped token leaves a gap, a repeated one (or a node printed along with its own
+ * child) overlaps. Tree-sitter puts every character outside whitespace into some leaf, so this is "each leaf
+ * printed once" without walking the tree. On a tie `printed` goes first.
  */
 function coverage(
   source: string,
-  ranges: (readonly [number, number])[],
+  printed: readonly FormatNode[],
+  optional: readonly FormatNode[],
 ): string | undefined {
-  // Output order is source order but for the few comments a rule moves, so this sort is near linear.
-  ranges.sort((x, y) => x[0] - y[0]);
   let covered = 0;
-  for (const [start, end] of ranges) {
-    if (start < covered) return `input at ${start} printed twice`;
-    if (/\S/.test(source.slice(covered, start)))
+  for (let p = 0, o = 0; p < printed.length || o < optional.length; ) {
+    const a = printed[p];
+    const b = optional[o];
+    let n: FormatNode;
+    if (a && (!b || a.start <= b.start)) {
+      n = a;
+      p++;
+    } else {
+      n = b as FormatNode;
+      o++;
+    }
+    if (n.start < covered) return `input at ${n.start} printed twice`;
+    if (hasNonBlank(source, covered, n.start))
       return `input at ${covered} dropped`;
-    covered = end;
+    covered = n.end;
   }
-  if (/\S/.test(source.slice(covered))) return `input at ${covered} dropped`;
+  if (hasNonBlank(source, covered, source.length))
+    return `input at ${covered} dropped`;
   return undefined;
+}
+
+/** `/\S/.test(source.slice(from, to))`, without the slice. */
+function hasNonBlank(source: string, from: number, to: number): boolean {
+  for (let i = from; i < to; i++) {
+    const c = source.charCodeAt(i);
+    if (c === 32 || (c >= 9 && c <= 13)) continue;
+    if (c < 128 || !/\s/.test(source.charAt(i))) return true;
+  }
+  return false;
 }
