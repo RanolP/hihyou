@@ -42,6 +42,10 @@ export async function* renderPlain(
       yield `${fileHeader(file)} (folded: ${folded})`;
       continue;
     }
+    if (file.error !== undefined) {
+      yield `${fileHeader(file)} (error: ${file.error})`;
+      continue;
+    }
     let view: FileView;
     try {
       view = await load(index);

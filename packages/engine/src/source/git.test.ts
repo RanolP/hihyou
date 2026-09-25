@@ -165,6 +165,31 @@ describe("git source", () => {
     ]);
   });
 
+  it("a blob missing from the object store makes only its own file an error entry; the rest of the commit still builds", async () => {
+    git("checkout", "-q", "-b", "corrupt", "main");
+    write("lost.ts", "export const lost = true;\n");
+    write("app.ts", "export const retries = 9;\n");
+    git("add", ".");
+    git("commit", "-q", "-m", "lose a blob");
+    const blob = git("rev-parse", "HEAD:lost.ts");
+    git("checkout", "-q", "main");
+    unlinkSync(join(dir, ".git", "objects", blob.slice(0, 2), blob.slice(2)));
+
+    const vcs = gitVcs(dir);
+    const doc = await buildReviewDoc(
+      vcsFileSource(vcs, await diffsetFromCommit(vcs, "corrupt")),
+      { parser },
+    );
+    expect(doc.files).toEqual([
+      expect.objectContaining({ path: "app.ts", diffMode: "ast" }),
+      expect.objectContaining({
+        path: "lost.ts",
+        diffMode: "error",
+        error: expect.stringContaining(blob),
+      }),
+    ]);
+  });
+
   it("a revision id shaped like an option is rejected before git runs, so it cannot make git write a file", async () => {
     const vcs = gitVcs(dir);
     const sha = git("rev-parse", "main");

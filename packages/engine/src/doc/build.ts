@@ -39,7 +39,10 @@ export interface BuildOptions {
 const defaults = { maxChars: 500_000, maxNodes: 50_000, maxErrorRatio: 0.1 };
 const concurrency = 8;
 
-/** Rejects, naming the file, when any one file cannot be read or diffed. */
+/**
+ * A file that cannot be read or diffed becomes an `error` entry naming the cause, and the rest still build.
+ * Rejects only when the list of changes itself cannot be read.
+ */
 export async function buildReviewDoc(
   source: FileSource,
   opts: BuildOptions,
@@ -53,10 +56,15 @@ export async function buildReviewDoc(
       try {
         files[i] = await diffFile(source, change, opts);
       } catch (error) {
-        throw new Error(
-          `${change.path}: ${error instanceof Error ? error.message : String(error)}`,
-          { cause: error },
-        );
+        files[i] = {
+          path: change.path,
+          ...(change.oldPath !== undefined && { oldPath: change.oldPath }),
+          status: change.status,
+          language: languageForPath(change.path) ?? null,
+          diffMode: "error",
+          error: error instanceof Error ? error.message : String(error),
+          edits: [],
+        };
       }
     }
   };

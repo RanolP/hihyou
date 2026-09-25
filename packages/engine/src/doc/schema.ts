@@ -2,7 +2,7 @@ import { z } from "zod";
 import { LanguageId } from "../parse/languages.js";
 import { Diffset, FileStatus } from "../source/file-source.js";
 
-export const schemaVersion = 1;
+export const schemaVersion = 2;
 
 /** 1-based line, and 1-based column in UTF-16 code units, so a viewer maps straight to a GitHub line anchor. */
 export const Position = z.object({
@@ -27,8 +27,11 @@ export const Edit = z.discriminatedUnion("kind", [
 ]);
 export type Edit = z.infer<typeof Edit>;
 
-/** `submodule`: the entry pins another repository's revision; there is no content to diff. */
-export const DiffMode = z.enum(["ast", "line", "binary", "submodule"]);
+/**
+ * `submodule`: the entry pins another repository's revision; there is no content to diff.
+ * `error`: the file could not be read or diffed; `FileDiff.error` says why, and the other files still build.
+ */
+export const DiffMode = z.enum(["ast", "line", "binary", "submodule", "error"]);
 /** `undecodable`: bytes that differ but are not valid UTF-8, so the file is shown as binary rather than mis-decoded. */
 export const FallbackReason = z.enum([
   "unsupported-language",
@@ -46,6 +49,8 @@ export const FileDiff = z.object({
   diffMode: DiffMode,
   /** Why the file got line or binary mode instead of ast mode. */
   fallbackReason: FallbackReason.optional(),
+  /** Set exactly when `diffMode` is `error`. */
+  error: z.string().optional(),
   /**
    * Whitespace is never content: it produces an edit only where the syntax makes it matter (splitting or
    * joining tokens, or indentation in Python, YAML and Makefiles), so re-indenting or re-wrapping leaves this empty.

@@ -104,7 +104,7 @@ describe("line mode compares tokens, so whitespace counts only where syntax give
 });
 
 describe("failures", () => {
-  it("a file that cannot be read rejects the build with that file's path, not an anonymous error", async () => {
+  it("one unreadable file becomes an error entry carrying the cause, and the other files still get their edits", async () => {
     const inner = memorySource(
       { "ok.ts": "1;\n", "broken.ts": "1;\n" },
       { "ok.ts": "2;\n", "broken.ts": "2;\n" },
@@ -116,8 +116,21 @@ describe("failures", () => {
           ? Promise.reject(new Error("object missing"))
           : inner.read(side, path),
     };
-    await expect(buildReviewDoc(source, { parser })).rejects.toThrow(
-      "broken.ts: object missing",
-    );
+    const doc = await buildReviewDoc(source, { parser });
+    expect(doc.files).toEqual([
+      {
+        path: "broken.ts",
+        status: "modified",
+        language: "typescript",
+        diffMode: "error",
+        error: "object missing",
+        edits: [],
+      },
+      expect.objectContaining({
+        path: "ok.ts",
+        diffMode: "ast",
+        edits: [expect.objectContaining({ kind: "update" })],
+      }),
+    ]);
   });
 });

@@ -52,9 +52,17 @@ export function App({ doc, load, size }: Props) {
 
   const shownFile = current?.file;
   const shownIndex = current?.index;
-  const error = failed?.index === shownIndex ? failed?.message : undefined;
+  const error =
+    shownFile?.error ??
+    (failed?.index === shownIndex ? failed?.message : undefined);
   useEffect(() => {
-    if (!shownFile || shownIndex === undefined || foldReason(shownFile)) return;
+    if (
+      !shownFile ||
+      shownIndex === undefined ||
+      foldReason(shownFile) ||
+      shownFile.error !== undefined
+    )
+      return;
     let live = true;
     load(shownIndex).then(
       (v) => live && setLoaded({ index: shownIndex, view: v }),

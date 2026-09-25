@@ -4,7 +4,7 @@ import { renderPlain } from "./plain.js";
 
 it("folded binary and submodule files print one line and are never read, so an unreadable entry cannot fail the output", async () => {
   const doc: ReviewDoc = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     diffset: { base: "a".repeat(40), head: "b".repeat(40) },
     files: [
       {
@@ -49,7 +49,7 @@ it("a file that fails to load prints its error inline and the files after it sti
     ],
   });
   const doc: ReviewDoc = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     diffset: { base: "a".repeat(40), head: "b".repeat(40) },
     files: [file("bad.txt"), file("good.txt")],
   };
@@ -71,4 +71,27 @@ it("a file that fails to load prints its error inline and the files after it sti
     "A bad.txt  [line: unsupported-language, 1 edit] (error: read failed)",
   );
   expect(lines.at(-1)).toBe("          1 + hi");
+});
+
+it("a file the engine could not read prints its error, instead of being folded away as a zero-edit change", async () => {
+  const doc: ReviewDoc = {
+    schemaVersion: 2,
+    diffset: { base: "a".repeat(40), head: "b".repeat(40) },
+    files: [
+      {
+        path: "lost.ts",
+        status: "modified",
+        language: "typescript",
+        diffMode: "error",
+        error: "bad object",
+        edits: [],
+      },
+    ],
+  };
+  const lines: string[] = [];
+  for await (const line of renderPlain(doc, () => {
+    throw new Error("error file was read");
+  }))
+    lines.push(line);
+  expect(lines).toContain("M lost.ts  [error, 0 edits] (error: bad object)");
 });
