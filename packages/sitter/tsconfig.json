@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    // No node types: the runtime must run unchanged in the browser. Build tooling lives in tsconfig.node.json.
+    "types": []
+  },
+  "include": ["src"],
+  "exclude": ["src/**/*.node.ts", "src/**/*.test.ts"]
+}
