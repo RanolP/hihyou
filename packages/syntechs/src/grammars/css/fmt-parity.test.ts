@@ -3,7 +3,8 @@ import { join } from "node:path";
 import * as prettier from "prettier";
 import { describe, expect, it } from "vitest";
 import { parse } from "../../core/index.js";
-import { type CssOptions, formatCss } from "./fmt.js";
+import { format } from "../../fmt/format.js";
+import { type CssOptions, css } from "./fmt.js";
 import { language } from "./index.js";
 
 // Byte parity with prettier 3.9.9, under its defaults and under a set a person would write in a `.prettierrc`.
@@ -11,7 +12,7 @@ import { language } from "./index.js";
 // text), a block comment inside a value (the core attaches it to the value before it, so it never moves to
 // the next line the way prettier's fill does), and an empty file.
 
-const optionSets: [string, CssOptions][] = [
+const optionSets: [string, Partial<CssOptions>][] = [
   ["defaults", {}],
   [
     "singleQuote, tabWidth 4, printWidth 100",
@@ -106,14 +107,14 @@ const corpusDir = join(import.meta.dirname, "../../../corpus");
 const corpusFiles = ["normalize.css", "animate.css", "bootstrap.css"];
 const present = corpusFiles.every((f) => existsSync(join(corpusDir, f)));
 
-function ours(text: string, options: CssOptions) {
+function ours(text: string, options: Partial<CssOptions>) {
   const root = parse(language, text).nodes[0];
   if (!root) throw new Error("empty tree");
-  const out = formatCss(root, text, options);
+  const out = format(root, text, css, options);
   if (!out.ok) throw new Error(`${out.reason}: ${out.detail}`);
   return out.text;
 }
-const theirs = (text: string, options: CssOptions) =>
+const theirs = (text: string, options: Partial<CssOptions>) =>
   prettier.format(text, { filepath: "x.css", ...options });
 
 describe.each(optionSets)(
@@ -130,7 +131,7 @@ const chunks = (s: string) => s.split(/\n(?=[^\s}])/);
 
 // The fetched corpus is gitignored, so this runs where `fetch-corpus.sh` has run. Each count is pinned exactly:
 // a regression lowers it, and closing a gap raises it, which shows up as a test change.
-const ratchet: [string, CssOptions, string, number, number][] = [
+const ratchet: [string, Partial<CssOptions>, string, number, number][] = [
   ["defaults", {}, "normalize.css", 96, 96],
   ["defaults", {}, "animate.css", 328, 328],
   ["defaults", {}, "bootstrap.css", 1638, 1641],
@@ -174,7 +175,7 @@ describe.skipIf(!present)(
 );
 
 // Input, options, then today's output, which differs from prettier's.
-const divergences: [string, string, CssOptions, string][] = [
+const divergences: [string, string, Partial<CssOptions>, string][] = [
   // tree-sitter-css reads `@page :first` as an ERROR, so the rule keeps its source text.
   ["page-pseudo", "@page :first{margin:1in}", {}, "@page :first{margin:1in}\n"],
   // An empty declaration is an ERROR, so the whole block keeps its source text.
