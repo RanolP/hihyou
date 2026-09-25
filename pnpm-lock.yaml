@@ -184,6 +184,12 @@ importers:
       '@hihyou/engine':
         specifier: workspace:*
         version: link:../engine
+      '@hihyou/present':
+        specifier: workspace:*
+        version: link:../present
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
 
   packages/engine:
     dependencies:

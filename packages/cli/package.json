@@ -3,14 +3,12 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": {
-    ".": {
-      "@hihyou/source": "./src/index.ts",
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    }
+  "bin": {
+    "hihyou": "./dist/main.js"
   },
   "dependencies": {
-    "@hihyou/engine": "workspace:*"
+    "@hihyou/engine": "workspace:*",
+    "@hihyou/present": "workspace:*",
+    "zod": "4.6.5"
   }
 }
