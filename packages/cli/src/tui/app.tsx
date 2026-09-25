@@ -12,7 +12,6 @@ import { movePointer, unformattedNote } from "../plain.js";
 import {
   editCount,
   fileLabel,
-  foldReason,
   statusLetter,
   type ViewLoader,
 } from "../review.js";
@@ -36,11 +35,11 @@ export function App({ doc, load, size }: Props) {
   const [loaded, setLoaded] = useState<{ index: number; view: FileView }>();
   const [failed, setFailed] = useState<{ index: number; message: string }>();
 
-  const folded = doc.files.filter((f) => foldReason(f)).length;
+  const folded = doc.files.filter((f) => f.fold).length;
   // Doc order is kept; folded files either disappear or stay in place, dimmed.
   const listed = doc.files
     .map((file, index) => ({ file, index }))
-    .filter(({ file }) => showFolded || !foldReason(file));
+    .filter(({ file }) => showFolded || !file.fold);
   const current = listed[Math.min(selected, listed.length - 1)];
   const view =
     current && loaded?.index === current.index ? loaded.view : undefined;
@@ -59,7 +58,7 @@ export function App({ doc, load, size }: Props) {
     if (
       !shownFile ||
       shownIndex === undefined ||
-      foldReason(shownFile) ||
+      shownFile.fold ||
       shownFile.error !== undefined
     )
       return;
@@ -137,7 +136,7 @@ export function App({ doc, load, size }: Props) {
           {listed
             .slice(firstListed, firstListed + listRows)
             .map(({ file, index }) => {
-              const reason = foldReason(file);
+              const reason = file.fold;
               return (
                 <Text
                   key={index}
@@ -166,8 +165,8 @@ export function App({ doc, load, size }: Props) {
           </Text>
           {error ? (
             <Text color="red">{error}</Text>
-          ) : current && foldReason(current.file) ? (
-            <Text dimColor>folded: {foldReason(current.file)}</Text>
+          ) : current?.file.fold ? (
+            <Text dimColor>folded: {current.file.fold}</Text>
           ) : !view ? (
             <Text dimColor>loading...</Text>
           ) : (

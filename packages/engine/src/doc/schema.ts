@@ -41,6 +41,25 @@ export const FallbackReason = z.enum([
 ]);
 export type FallbackReason = z.infer<typeof FallbackReason>;
 
+/**
+ * Why a viewer shows the file collapsed. `generated`, `lockfile` and `snapshot`: a tool wrote it. `format-only`:
+ * its text changed but its syntax did not. `moved`: every edit is a move. `renamed` and `copied`: the content
+ * came across unchanged. `empty`: an added or deleted file with no content.
+ */
+export const FoldReason = z.enum([
+  "generated",
+  "lockfile",
+  "snapshot",
+  "binary",
+  "submodule",
+  "format-only",
+  "moved",
+  "renamed",
+  "copied",
+  "empty",
+]);
+export type FoldReason = z.infer<typeof FoldReason>;
+
 export const FileDiff = z.object({
   path: z.string(),
   oldPath: z.string().optional(),
@@ -51,6 +70,8 @@ export const FileDiff = z.object({
   fallbackReason: FallbackReason.optional(),
   /** Set exactly when `diffMode` is `error`. */
   error: z.string().optional(),
+  /** Absent when the file has something to review. */
+  fold: FoldReason.optional(),
   /**
    * Whitespace is never content: it produces an edit only where the syntax makes it matter (splitting or
    * joining tokens, or indentation in Python, YAML and Makefiles), so re-indenting or re-wrapping leaves this empty.

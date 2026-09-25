@@ -33,16 +33,6 @@ export function viewLoader(
   };
 }
 
-/** Why a file starts collapsed, or undefined when it has something to review. */
-export function foldReason(file: FileDiff): string | undefined {
-  if (file.diffMode === "binary" || file.diffMode === "submodule")
-    return file.diffMode;
-  if (file.edits.length > 0 || file.diffMode === "error") return undefined;
-  if (file.status === "renamed") return "rename only";
-  if (file.status === "modified") return "whitespace only";
-  return "empty file";
-}
-
 export const statusLetter: Record<FileDiff["status"], string> = {
   added: "A",
   deleted: "D",

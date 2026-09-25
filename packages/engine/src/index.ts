@@ -4,6 +4,7 @@ export {
   Edit,
   FallbackReason,
   FileDiff,
+  FoldReason,
   Position,
   Range,
   ReviewDoc,

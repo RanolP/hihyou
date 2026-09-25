@@ -14,6 +14,7 @@ import {
   isBinary,
   sameBytes,
 } from "../source/file-source.js";
+import { foldReason, producedBy } from "./fold.js";
 import {
   type Edit,
   type FallbackReason,
@@ -77,6 +78,18 @@ async function diffFile(
   change: ChangedFile,
   opts: BuildOptions,
 ): Promise<FileDiff> {
+  const f = await diffContent(source, change, opts);
+  const fold = foldReason(f, producedBy(change.path, f.text));
+  const { text: _, ...file } = f;
+  return fold ? { ...file, fold } : file;
+}
+
+/** The file's diff, and the text that tells whether a tool produced it (head, or base for a deleted file). */
+async function diffContent(
+  source: FileSource,
+  change: ChangedFile,
+  opts: BuildOptions,
+): Promise<Omit<FileDiff, "fold"> & { text?: string }> {
   const { maxChars, maxNodes, maxErrorRatio } = { ...defaults, ...opts };
   const file = {
     path: change.path,
@@ -106,11 +119,13 @@ async function diffFile(
     };
 
   const [oldText, newText] = texts;
+  const text = change.status === "deleted" ? oldText : newText;
   const toDoc = (raw: RawEdit[]) => toEdits(raw, oldText, newText);
-  const line = (fallbackReason: FallbackReason): FileDiff => ({
+  const line = (fallbackReason: FallbackReason) => ({
     ...file,
+    text,
     language,
-    diffMode: "line",
+    diffMode: "line" as const,
     fallbackReason,
     edits: toDoc(lineDiff(oldText, newText, indentIsSyntax(change.path))),
   });
@@ -138,6 +153,7 @@ async function diffFile(
   }
   return {
     ...file,
+    text,
     language,
     diffMode: "ast",
     edits: toDoc(editScript(mapping)),

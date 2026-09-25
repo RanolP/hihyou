@@ -12,6 +12,7 @@ it("folded binary and submodule files print one line and are never read, so an u
         status: "added",
         language: null,
         diffMode: "binary",
+        fold: "binary",
         edits: [],
       },
       {
@@ -19,6 +20,7 @@ it("folded binary and submodule files print one line and are never read, so an u
         status: "modified",
         language: null,
         diffMode: "submodule",
+        fold: "submodule",
         edits: [],
       },
     ],

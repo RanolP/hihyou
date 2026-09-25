@@ -43,13 +43,18 @@ async function onlyFile(name: string): Promise<FileDiff> {
 describe("fixtures", () => {
   it("reformat-only: whitespace and line-break changes yield zero edits, not content changes", async () => {
     const file = await onlyFile("reformat-only");
-    expect(file).toMatchObject({ status: "modified", diffMode: "ast" });
+    expect(file).toMatchObject({
+      status: "modified",
+      diffMode: "ast",
+      fold: "format-only",
+    });
     expect(file.edits).toEqual([]);
   });
 
   it("leaf-update: a changed literal is one update, not a delete plus an insert", async () => {
     const file = await onlyFile("leaf-update");
     expect(file.diffMode).toBe("ast");
+    expect(file.fold).toBeUndefined();
     expect(file.edits).toEqual([
       {
         kind: "update",
@@ -67,6 +72,7 @@ describe("fixtures", () => {
       path: "src/text/slug.ts",
       oldPath: "src/slug.ts",
       edits: [],
+      fold: "renamed",
     });
   });
 
@@ -88,8 +94,9 @@ describe("fixtures", () => {
     expect(file.edits).toEqual([]);
   });
 
-  it("reorder-functions: swapping two functions is a move, not delete+insert of whole bodies", async () => {
+  it("reorder-functions: swapping two functions is a move, not delete+insert of whole bodies, and folds as moved", async () => {
     const file = await onlyFile("reorder-functions");
+    expect(file.fold).toBe("moved");
     expect(file.edits).toEqual([
       expect.objectContaining({ kind: "move", node: "function_declaration" }),
     ]);

@@ -9,7 +9,6 @@ import {
 import {
   editCount,
   fileLabel,
-  foldReason,
   statusLetter,
   type ViewLoader,
 } from "./review.js";
@@ -37,9 +36,8 @@ export async function* renderPlain(
   yield legend;
   for (const [index, file] of doc.files.entries()) {
     yield "";
-    const folded = foldReason(file);
-    if (folded) {
-      yield `${fileHeader(file)} (folded: ${folded})`;
+    if (file.fold) {
+      yield `${fileHeader(file)} (folded: ${file.fold})`;
       continue;
     }
     if (file.error !== undefined) {

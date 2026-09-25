@@ -160,6 +160,7 @@ describe("git source", () => {
         status: "added",
         language: null,
         diffMode: "submodule",
+        fold: "submodule",
         edits: [],
       },
     ]);
