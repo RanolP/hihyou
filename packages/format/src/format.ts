@@ -81,11 +81,9 @@ export function format(
     const doc: Doc = [ctx.print(root), hardline];
     const { text, placed } = print(doc, settings);
 
-    const emitted = new Map<FormatNode, number>();
     const anchors: Anchor[] = [];
     for (const { token: t, at } of placed) {
-      emitted.set(t.node, (emitted.get(t.node) ?? 0) + 1);
-      if (text.slice(at, at + t.text.length) !== t.text)
+      if (!text.startsWith(t.text, at))
         return mismatch(
           source,
           `token at ${t.node.start} printed out of place`,
@@ -95,7 +93,7 @@ export function format(
         to: [at, at + t.text.length],
       });
     }
-    const problem = coverage(root, emitted);
+    const problem = coverage(source, anchors);
     if (problem) return mismatch(source, problem);
     return { ok: true, text, anchors };
   } catch (e) {
@@ -115,30 +113,21 @@ const mismatch = (source: string, detail: string): Formatted => ({
   detail,
 });
 
-/** Checks that every leaf is emitted exactly once, where one token for a node covers its whole subtree. */
-function coverage(
-  root: FormatNode,
-  emitted: Map<FormatNode, number>,
-): string | undefined {
-  const stack = [root];
-  for (let node = stack.pop(); node; node = stack.pop()) {
-    const count = emitted.get(node) ?? 0;
-    if (count > 1)
-      return `${node.kind} at ${node.start} printed ${count} times`;
-    if (count === 1) {
-      const inner = [...node.children];
-      for (let n = inner.pop(); n; n = inner.pop()) {
-        if (emitted.has(n))
-          return `${n.kind} at ${n.start} printed twice, inside ${node.kind}`;
-        inner.push(...n.children);
-      }
-      continue;
-    }
-    if (node.children.length === 0) {
-      if (node.end > node.start) return `${node.kind} at ${node.start} dropped`;
-      continue;
-    }
-    stack.push(...node.children);
+/**
+ * Checks that the printed tokens cover every non-blank character of the input exactly once: a dropped token
+ * leaves a gap, a repeated one (or a node printed along with its own child) overlaps. Tree-sitter puts every
+ * character outside whitespace into some leaf, so this is "each leaf printed once" without walking the tree.
+ */
+function coverage(source: string, anchors: Anchor[]): string | undefined {
+  // Output order is source order but for the few comments a rule moves, so this sort is near linear.
+  const ranges = anchors.map((a) => a.from).sort((x, y) => x[0] - y[0]);
+  let covered = 0;
+  for (const [start, end] of ranges) {
+    if (start < covered) return `input at ${start} printed twice`;
+    if (/\S/.test(source.slice(covered, start)))
+      return `input at ${covered} dropped`;
+    covered = end;
   }
+  if (/\S/.test(source.slice(covered))) return `input at ${covered} dropped`;
   return undefined;
 }

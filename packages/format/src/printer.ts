@@ -43,6 +43,8 @@ function propagateBreaks(doc: Doc): boolean {
       return propagateBreaks(d.contents);
     case "fill":
       return propagateBreaks(d.parts);
+    case "ifBreak":
+      return propagateBreaks([d.broken, d.flat]);
     case "token":
     case "text":
     case "line":
@@ -62,6 +64,7 @@ function fits(
   rest: readonly Cmd[],
   width: number,
   mustBeFlat: boolean,
+  groupModes: ReadonlyMap<Group, Mode>,
 ): boolean {
   let restIdx = rest.length;
   let pendingSpace = false;
@@ -105,6 +108,11 @@ function fits(
         if (mode === BREAK || d.hard) return true;
         if (!d.soft) pendingSpace = true;
         break;
+      case "ifBreak": {
+        const m = d.group ? (groupModes.get(d.group) ?? FLAT) : mode;
+        cmds.push({ mode, doc: m === BREAK ? d.broken : d.flat });
+        break;
+      }
       case "lineSuffix":
       case "breakParent":
         break;
@@ -128,6 +136,7 @@ export function print(
   const cmds: Cmd[] = [{ indent: 0, mode: BREAK, doc }];
   let remeasure = false;
   const suffixes: Cmd[] = [];
+  const groupModes = new Map<Group, Mode>();
   const write = (s: string) => {
     out.push(s);
     length += s.length;
@@ -199,6 +208,11 @@ export function print(
         );
         column = indent * layout.indentWidth;
         break;
+      case "ifBreak": {
+        const m = d.group ? (groupModes.get(d.group) ?? FLAT) : mode;
+        cmds.push({ indent, mode, doc: m === BREAK ? d.broken : d.flat });
+        break;
+      }
       case "lineSuffix":
         suffixes.push({ indent, mode, doc: d.contents });
         break;
@@ -212,13 +226,17 @@ export function print(
 
   function printGroup(g: Group, indent: number, mode: Mode) {
     if (mode === FLAT && !remeasure) {
-      cmds.push({ indent, mode: g.break ? BREAK : FLAT, doc: g.contents });
+      const m = g.break ? BREAK : FLAT;
+      groupModes.set(g, m);
+      cmds.push({ indent, mode: m, doc: g.contents });
       return;
     }
     remeasure = false;
     const flat: Cmd = { indent, mode: FLAT, doc: g.contents };
     const fitsFlat =
-      !g.break && fits(flat, cmds, layout.lineWidth - column, false);
+      !g.break &&
+      fits(flat, cmds, layout.lineWidth - column, false, groupModes);
+    groupModes.set(g, fitsFlat ? FLAT : BREAK);
     cmds.push(fitsFlat ? flat : { indent, mode: BREAK, doc: g.contents });
   }
 
@@ -232,7 +250,7 @@ export function print(
     if (content === undefined) return;
     const flat = (doc: Doc): Cmd => ({ indent, mode: FLAT, doc });
     const broken = (doc: Doc): Cmd => ({ indent, mode: BREAK, doc });
-    const contentFits = fits(flat(content), [], width, true);
+    const contentFits = fits(flat(content), [], width, true, groupModes);
     if (separator === undefined) {
       cmds.push(contentFits ? flat(content) : broken(content));
       return;
@@ -245,7 +263,7 @@ export function print(
       return;
     }
     cmds.push({ indent, mode, doc: { ...f, from: from + 2 } });
-    if (fits(flat([content, separator, second]), [], width, true))
+    if (fits(flat([content, separator, second]), [], width, true, groupModes))
       cmds.push(flat(separator), flat(content));
     else if (contentFits) cmds.push(broken(separator), flat(content));
     else cmds.push(broken(separator), broken(content));

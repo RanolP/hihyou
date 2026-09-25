@@ -40,6 +40,10 @@ export function attachComments(
 
   const stack = [root];
   for (let node = stack.pop(); node; node = stack.pop()) {
+    if (!node.children.some(isComment)) {
+      for (const c of node.children) stack.push(c);
+      continue;
+    }
     const comments: {
       comment: FormatNode;
       preceding: FormatNode | undefined;

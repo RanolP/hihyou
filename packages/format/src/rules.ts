@@ -5,6 +5,7 @@ import {
   fill,
   group,
   hardline,
+  ifBreak,
   indent,
   join,
   line,
@@ -84,6 +85,8 @@ export interface ListOptions<G extends Grammar> {
   blankLines: "force" | "ifBroken";
   /** "always" breaks every non-empty list, one item per line (prettier's json-stringify). */
   expand?: "fit" | "always";
+  /** A separator after the last item when the list breaks (prettier's `trailingComma` in JSONC). */
+  trailingSep?: boolean;
 }
 
 export type SeqPart<G extends Grammar> =
@@ -219,7 +222,19 @@ function listRule(o: ListOptions<Grammar>): Rule {
       !always &&
       ctx.settings.maxBlankLines > 0 &&
       isNextLineEmpty(ctx.source, item.end);
-    const sep = (item: FormatNode) => tok(o.sep, item.end);
+    // Each item's separator, found in one pass: a lookup per item would be quadratic in a lockfile's objects.
+    const seps = new Map<FormatNode, FormatNode>();
+    const isItem = new Set(items);
+    let previous: FormatNode | undefined;
+    for (const c of node.children) {
+      if (isItem.has(c)) previous = c;
+      else if (previous && !c.named && c.kind === o.sep && !seps.has(previous))
+        seps.set(previous, c);
+    }
+    const sep = (item: FormatNode) => {
+      const c = seps.get(item);
+      return c ? token(c, slice(c, ctx)) : [];
+    };
 
     const fillKinds = o.fillIfAll;
     const concise =
@@ -232,12 +247,19 @@ function listRule(o: ListOptions<Grammar>): Rule {
           !ctx.hasComment(item, "trailingSameLine"),
       );
 
+    const contents: Doc[] = [];
+    const listGroup = group(contents, shouldBreak);
+    // A fill prints its items flat even in a broken list, so its trailing separator asks the list itself.
+    const trailing = o.trailingSep
+      ? ifBreak(text(o.sep), [], concise ? listGroup : undefined)
+      : [];
+
     let body: Doc;
     if (concise) {
       const parts: Doc[] = [];
       for (const [i, item] of items.entries()) {
         const next = items[i + 1];
-        parts.push(next ? [ctx.print(item), sep(item)] : ctx.print(item));
+        parts.push([ctx.print(item), next ? sep(item) : trailing]);
         if (next)
           parts.push(
             blankAfter(item)
@@ -251,7 +273,7 @@ function listRule(o: ListOptions<Grammar>): Rule {
     } else {
       body = items.map((item, i) => {
         const printed = o.groupItems ? group(ctx.print(item)) : ctx.print(item);
-        if (i === items.length - 1) return printed;
+        if (i === items.length - 1) return [printed, trailing];
         const blank = blankAfter(item)
           ? o.blankLines === "force"
             ? hardline
@@ -261,7 +283,8 @@ function listRule(o: ListOptions<Grammar>): Rule {
       });
     }
     const pad = o.pad && ctx.settings.bracketSpacing ? line : softline;
-    return group([open, indent([pad, body]), pad, close], shouldBreak);
+    contents.push(open, indent([pad, body]), pad, close);
+    return listGroup;
   };
 }
 

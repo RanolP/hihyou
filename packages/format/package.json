@@ -3,11 +3,19 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "scripts": {
+    "gen:grammar": "node src/gen-grammar.node.ts json tree-sitter-json && biome format --write src/json/grammar.ts"
+  },
   "exports": {
     ".": {
       "@hihyou/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./json": {
+      "@hihyou/source": "./src/json/index.ts",
+      "types": "./dist/json/index.d.ts",
+      "default": "./dist/json/index.js"
     }
   },
   "dependencies": {

@@ -15,6 +15,7 @@ export type Doc =
   | Fill
   | LineSuffix
   | BreakParent
+  | IfBreak
   | readonly Doc[];
 
 /**
@@ -59,6 +60,13 @@ export interface LineSuffix {
   readonly k: "lineSuffix";
   readonly contents: Doc;
 }
+/** `broken` when `group` (by default the innermost enclosing group) is printed broken, else `flat`. */
+export interface IfBreak {
+  readonly k: "ifBreak";
+  readonly broken: Doc;
+  readonly flat: Doc;
+  readonly group: Group | undefined;
+}
 /** Forces every enclosing group to break. */
 export interface BreakParent {
   readonly k: "breakParent";
@@ -88,6 +96,13 @@ export const fill = (parts: readonly Doc[]): Fill => ({ k: "fill", parts });
 export const lineSuffix = (contents: Doc): LineSuffix => ({
   k: "lineSuffix",
   contents,
+});
+
+export const ifBreak = (broken: Doc, flat: Doc = [], of?: Group): IfBreak => ({
+  k: "ifBreak",
+  broken,
+  flat,
+  group: of,
 });
 
 export function join(separator: Doc, docs: readonly Doc[]): Doc[] {
