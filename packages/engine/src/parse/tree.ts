@@ -11,6 +11,8 @@ export interface SyntaxNode {
   named: boolean;
   /** The node's role in its parent, as the grammar names it (`condition`, `operator`, `parameters`), if it has one. */
   field: string | undefined;
+  /** A zero-width node the parser inserted to recover from a syntax error, such as a value after a trailing comma. */
+  missing: boolean;
   /**
    * Token text for leaves, "" for inner nodes. Comments and JSX text carry prose, so their whitespace runs
    * collapse to one space; JSX text that is only layout whitespace does not appear in the tree at all.

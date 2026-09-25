@@ -71,6 +71,7 @@ function toSyntaxTree(cursor: Cursor, text: string): SyntaxTree {
       kind: cursor.nodeType,
       named: cursor.nodeIsNamed,
       field: cursor.currentFieldName ?? undefined,
+      missing: cursor.nodeIsMissing,
       label: "",
       start: cursor.startIndex,
       end: cursor.endIndex,

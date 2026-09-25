@@ -96,6 +96,11 @@ describe("format", () => {
     expect(out).toMatchObject({ ok: true, text: '[{"a":1,,  "b":2}, 3]\n' });
   });
 
+  it("a value the parser invented is not printed as an item, so `[1,2,]` never shows as `[1, 2, ]`", async () => {
+    expect(await run("[1,2,]")).toMatchObject({ ok: true, text: "[1,2,]\n" });
+    expect(await run('{"a":1')).toMatchObject({ ok: true, text: '{"a":1\n' });
+  });
+
   it("a comment inside an empty list survives, instead of vanishing with the list's items", async () => {
     const out = await run("[ // none\n]");
     expect(out).toMatchObject({ ok: true, text: "[\n  // none\n]\n" });

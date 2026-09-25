@@ -7,6 +7,11 @@ export interface FormatNode {
   /** False for anonymous tokens the grammar spells literally (punctuation, keywords). */
   readonly named: boolean;
   readonly field: string | undefined;
+  /**
+   * Inserted by the parser to recover from a syntax error, so it stands for no source text. Zero width alone
+   * does not tell: a TypeScript statement's semicolon can be zero width and still real.
+   */
+  readonly missing: boolean;
   readonly start: number;
   readonly end: number;
   readonly children: readonly FormatNode[];
