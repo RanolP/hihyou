@@ -1,11 +1,11 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { createSyntaxParser } from "@hihyou/engine";
-import { nodeGrammarLocator } from "@hihyou/engine/node";
 import * as prettier from "prettier";
 import { describe, expect, it } from "vitest";
-import { format } from "../format.js";
-import { jsonLanguageFor } from "./index.js";
+import { parse } from "../../core/index.js";
+import { format } from "../../fmt/format.js";
+import { jsonLanguageFor } from "./fmt.js";
+import { language } from "./index.js";
 
 // Byte parity with prettier 3.9.9 at its defaults. Not covered, because prettier's comment handlers move
 // tokens there: a comment between a key and its value (`{"a": // c\n1}`), and a block comment between an
@@ -13,8 +13,6 @@ import { jsonLanguageFor } from "./index.js";
 // rejects it, so its list keeps the source text. Nor, as `divergences` below pins, a trailing comma (tree-sitter
 // repairs it, so its list keeps the source text, where prettier drops the comma) or a JSDoc-style block comment
 // (prettier re-indents its ` *` lines).
-
-const parser = createSyntaxParser({ locateGrammar: nodeGrammarLocator });
 
 const numbers = (n: number) =>
   `[${Array.from({ length: n }, (_, i) => i * 37).join(",")}]`;
@@ -109,8 +107,7 @@ function corpus(): [string, string][] {
 }
 
 async function ours(path: string, text: string) {
-  const tree = await parser.parse("json", text);
-  const root = tree.nodes[0];
+  const root = parse(language, text).nodes[0];
   if (!root) throw new Error("empty tree");
   const out = format(root, text, jsonLanguageFor(path));
   if (!out.ok) throw new Error(`${out.reason}: ${out.detail}`);

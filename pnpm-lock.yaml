@@ -231,28 +231,6 @@ importers:
         specifier: 4.6.5
         version: 4.6.5
 
-  packages/format:
-    dependencies:
-      emoji-regex:
-        specifier: 10.6.0
-        version: 10.6.0
-      get-east-asian-width:
-        specifier: 1.6.0
-        version: 1.6.0
-      narrow-emojis:
-        specifier: 0.0.3
-        version: 0.0.3
-      syntechs:
-        specifier: workspace:*
-        version: link:../syntechs
-    devDependencies:
-      '@hihyou/engine':
-        specifier: workspace:*
-        version: link:../engine
-      prettier:
-        specifier: 3.9.9
-        version: 3.9.9
-
   packages/github:
     dependencies:
       '@hihyou/engine':
@@ -287,10 +265,23 @@ importers:
         version: 3.9.9
 
   packages/syntechs:
+    dependencies:
+      emoji-regex:
+        specifier: 10.6.0
+        version: 10.6.0
+      get-east-asian-width:
+        specifier: 1.6.0
+        version: 1.6.0
+      narrow-emojis:
+        specifier: 0.0.3
+        version: 0.0.3
     devDependencies:
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
+      prettier:
+        specifier: 3.9.9
+        version: 3.9.9
       tree-sitter-css:
         specifier: 0.25.0
         version: 0.25.0

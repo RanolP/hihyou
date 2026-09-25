@@ -1,11 +1,10 @@
-import { createSyntaxParser } from "@hihyou/engine";
-import { nodeGrammarLocator } from "@hihyou/engine/node";
 import { describe, expect, it } from "vitest";
+import { parse } from "../core/index.js";
+import { language as jsonParser } from "../grammars/json/index.js";
 import { text, token } from "./doc.js";
 import { format } from "./format.js";
 import { defineLanguage, type Helpers } from "./rules.js";
 
-const parser = createSyntaxParser({ locateGrammar: nodeGrammarLocator });
 const grammar = {
   kinds: ["document", "object", "pair", "array", "string", "number", "comment"],
   tokens: ["{", "}", "[", "]", ",", ":"],
@@ -33,8 +32,7 @@ const plain = defineLanguage(
 );
 
 async function run(text: string, language = plain) {
-  const tree = await parser.parse("json", text);
-  const root = tree.nodes[0];
+  const root = parse(jsonParser, text).nodes[0];
   if (!root) throw new Error("empty tree");
   return format(root, text, language);
 }

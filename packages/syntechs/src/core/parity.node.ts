@@ -30,7 +30,7 @@ function describeSyntax(tree: SyntaxTree): string[] {
   return [
     ...tree.nodes.map(
       (n, i) =>
-        `${i === n.id ? n.id : `${i}!=${n.id}`} ${n.kind}${n.named ? "" : "(anon)"} ${n.start}-${n.end} ${n.field ?? "-"} p${n.parent?.id ?? "-"} h${n.height} s${n.size} ${JSON.stringify(n.label)}`,
+        `${i === n.id ? n.id : `${i}!=${n.id}`} ${n.kind}${n.named ? "" : "(anon)"} ${n.start}-${n.end} ${n.field ?? "-"}${n.missing ? " MISSING" : ""} p${n.parent?.id ?? "-"} h${n.height} s${n.size} ${JSON.stringify(n.label)}`,
     ),
     `errorChars ${tree.errorChars}`,
   ];
@@ -48,7 +48,6 @@ function reference(parser: WasmParser, text: string): Walk {
   const lines: string[] = [];
   const raw: RawTree = {
     nodes: [],
-    missing: new Set(),
     layout: new Set(),
     errorChars: 0,
   };
@@ -64,6 +63,7 @@ function reference(parser: WasmParser, text: string): Walk {
       kind: c.nodeType,
       named: c.nodeIsNamed,
       field: c.currentFieldName ?? undefined,
+      missing: c.nodeIsMissing,
       label: "",
       start: c.startIndex,
       end: c.endIndex,
@@ -112,7 +112,7 @@ function ours(lang: Language, text: string): Walk {
   const lines = raw.nodes.map((n) => {
     const depth = n.parent ? (depthOf.get(n.parent) as number) + 1 : 0;
     depthOf.set(n, depth);
-    return `${depth} ${n.kind}${n.named ? "" : "(anon)"}${raw.missing.has(n) ? "(MISSING)" : ""} ${n.start}-${n.end}${n.field ? ` ${n.field}:` : ""}`;
+    return `${depth} ${n.kind}${n.named ? "" : "(anon)"}${n.missing ? "(MISSING)" : ""} ${n.start}-${n.end}${n.field ? ` ${n.field}:` : ""}`;
   });
   return { lines, syntax: describeSyntax(syntaxTree(raw)) };
 }

@@ -12,11 +12,22 @@ import {
 } from "./language.js";
 import type { Subtree } from "./subtree.js";
 
+/** Plain-object syntax tree, materialized once so its readers never cross into the parser. Offsets are UTF-16 code units into the source text. */
 export interface SyntaxNode {
+  /** Preorder index; a node's descendants are exactly ids `id + 1 .. id + size - 1`. */
   id: number;
   kind: string;
+  /** False for anonymous tokens the grammar spells literally (punctuation, keywords); they carry no meaning of their own. */
   named: boolean;
+  /** The node's role in its parent, as the grammar names it (`condition`, `operator`, `parameters`), if it has one. */
   field: string | undefined;
+  /** A zero-width node the parser inserted to recover from a syntax error, such as a value after a trailing comma. */
+  missing: boolean;
+  /**
+   * Token text for leaves, "" for inner nodes. Comments and JSX text carry prose, so their whitespace runs
+   * collapse to one space; JSX text that is only layout whitespace does not appear in the tree at all.
+   * Whitespace between tokens never appears in a tree, so it never takes part in a diff.
+   */
   label: string;
   start: number;
   end: number;
@@ -27,15 +38,17 @@ export interface SyntaxNode {
 }
 
 export interface SyntaxTree {
+  /** Preorder; `nodes[0]` is the root. */
   nodes: SyntaxNode[];
+  /** Characters covered by ERROR nodes, for the caller's parse-error threshold. */
   errorChars: number;
+  /** `nodes[id]`, throwing when `id` is not in this tree. */
   node(id: number): SyntaxNode;
 }
 
-/** The walk before layout-only JSX text is dropped; `missing` holds the nodes tree-sitter inserted. */
+/** The walk before layout-only JSX text is dropped. */
 export interface RawTree {
   nodes: SyntaxNode[];
-  missing: Set<SyntaxNode>;
   layout: Set<SyntaxNode>;
   errorChars: number;
 }
@@ -71,7 +84,6 @@ function fieldFor(
 
 export function walkTree(lang: Language, root: Subtree, text: string): RawTree {
   const nodes: SyntaxNode[] = [];
-  const missing = new Set<SyntaxNode>();
   const layout = new Set<SyntaxNode>();
   let errorChars = 0;
 
@@ -92,6 +104,7 @@ export function walkTree(lang: Language, root: Subtree, text: string): RawTree {
           ? (symbolFlags(lang, alias) & FLAG_NAMED) !== 0
           : tree.named,
       field: field === 0 ? undefined : lang.fieldNames[field],
+      missing: tree.isMissing,
       label: "",
       start,
       end: start + tree.size,
@@ -102,7 +115,6 @@ export function walkTree(lang: Language, root: Subtree, text: string): RawTree {
     };
     nodes.push(node);
     parent?.children.push(node);
-    if (tree.isMissing) missing.add(node);
     if (kind === "ERROR" && !insideError(parent))
       errorChars += node.end - node.start;
     return node;
@@ -181,7 +193,7 @@ export function walkTree(lang: Language, root: Subtree, text: string): RawTree {
       });
     }
   }
-  return { nodes, missing, layout, errorChars };
+  return { nodes, layout, errorChars };
 }
 
 export function syntaxTree(raw: RawTree): SyntaxTree {

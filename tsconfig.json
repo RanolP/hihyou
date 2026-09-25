@@ -7,8 +7,6 @@
     { "path": "packages/syntechs/tsconfig.node.json" },
     { "path": "packages/present" },
     { "path": "packages/present/tsconfig.node.json" },
-    { "path": "packages/format" },
-    { "path": "packages/format/tsconfig.node.json" },
     { "path": "packages/cli" },
     { "path": "packages/ui" },
     { "path": "packages/gui" },

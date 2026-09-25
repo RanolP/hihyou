@@ -17,14 +17,30 @@
       "types": "./dist/compiler/index.d.ts",
       "default": "./dist/compiler/index.js"
     },
+    "./fmt": {
+      "@hihyou/source": "./src/fmt/index.ts",
+      "types": "./dist/fmt/index.d.ts",
+      "default": "./dist/fmt/index.js"
+    },
     "./grammars/*": {
       "@hihyou/source": "./src/grammars/*/index.ts",
       "types": "./dist/grammars/*/index.d.ts",
       "default": "./dist/grammars/*/index.js"
+    },
+    "./grammars/*/fmt": {
+      "@hihyou/source": "./src/grammars/*/fmt.ts",
+      "types": "./dist/grammars/*/fmt.d.ts",
+      "default": "./dist/grammars/*/fmt.js"
     }
+  },
+  "dependencies": {
+    "emoji-regex": "10.6.0",
+    "get-east-asian-width": "1.6.0",
+    "narrow-emojis": "0.0.3"
   },
   "devDependencies": {
     "esbuild": "0.28.2",
+    "prettier": "3.9.9",
     "tree-sitter-css": "0.25.0",
     "tree-sitter-javascript": "0.25.0",
     "tree-sitter-json": "0.24.8",
