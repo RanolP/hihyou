@@ -1,5 +1,6 @@
 import { attachComments } from "./comments.js";
 import { type Doc, hardline, token } from "./doc.js";
+import type { EndOfLine } from "./options.js";
 import { print } from "./printer.js";
 import {
   type Ctx,
@@ -7,7 +8,6 @@ import {
   printWithComments,
   type Rule,
 } from "./rules.js";
-import { defaultSettings, type Settings } from "./settings.js";
 import { hasNewlineInRange } from "./text.js";
 import type { FormatNode } from "./tree.js";
 
@@ -29,17 +29,20 @@ export type Formatted =
     };
 
 /**
- * Lays out the tree of `source` by `language`'s rules and the reviewer's `settings`. Every token of the input
- * appears exactly once in the output, and `anchors` says where; if the rules break that, the input comes back
- * unformatted with the reason, never a formatting that hides or invents code.
+ * Lays out the tree of `source` by `language`'s rules, with `options` (by the names the language's own tool
+ * uses) over the language's defaults. Every token of the input appears exactly once in the output, and
+ * `anchors` says where; if the rules break that, the input comes back unformatted with the reason, never a
+ * formatting that hides or invents code.
  */
-export function format(
+export function format<O>(
   root: FormatNode,
   source: string,
-  language: Language,
-  settings: Settings = defaultSettings,
+  language: Language<O>,
+  options: Partial<O> = {},
 ): Formatted {
   try {
+    const resolved: O = { ...language.defaults, ...options };
+    const settings = language.settings(resolved);
     const isComment = (n: FormatNode) => language.comments.has(n.kind);
     const isLine = (n: FormatNode) => {
       const prefix = language.lineComments.get(n.kind);
@@ -53,9 +56,9 @@ export function format(
     const fallback: Rule = (node) =>
       token(node, source.slice(node.start, node.end));
 
-    const ctx: Ctx = {
+    const ctx: Ctx<O> = {
       source,
-      settings,
+      options: resolved,
       print(node, args) {
         // A node holding a parse error, or a node the parser invented to recover from one, has no reliable
         // structure (which comma belongs to which item?), so it keeps its source text; the nodes around it
@@ -112,7 +115,7 @@ export function format(
     }
     const problem = coverage(source, anchors);
     if (problem) return mismatch(source, problem);
-    return { ok: true, text, anchors };
+    return withEndOfLine(text, anchors, endOfLine(settings.endOfLine, source));
   } catch (e) {
     return {
       ok: false,
@@ -121,6 +124,44 @@ export function format(
       detail: e instanceof Error ? e.message : String(e),
     };
   }
+}
+
+// Prettier's guessEndOfLine (common/end-of-line.js); ruff's `auto` also takes the first line ending.
+function endOfLine(eol: EndOfLine, source: string): string {
+  if (eol === "auto") {
+    const cr = source.indexOf("\r");
+    eol = cr === -1 ? "lf" : source.charAt(cr + 1) === "\n" ? "crlf" : "cr";
+  }
+  return { lf: "\n", crlf: "\r\n", cr: "\r" }[eol];
+}
+
+/**
+ * Writes every line break of `text` as `eol`, those inside tokens too (a block comment's), as prettier does by
+ * normalizing its input, and moves each anchor's output range with its text.
+ */
+function withEndOfLine(
+  text: string,
+  anchors: Anchor[],
+  eol: string,
+): Formatted {
+  const breaks = [...text.matchAll(/\r\n?|\n/g)].filter((m) => m[0] !== eol);
+  if (breaks.length === 0) return { ok: true, text, anchors };
+  // Anchors run in output order, so their offsets only grow and one pass over the breaks moves them all.
+  let next = 0;
+  let shift = 0;
+  const moved = (at: number) => {
+    for (let b = breaks[next]; b && b.index < at; b = breaks[++next])
+      shift += eol.length - b[0].length;
+    return at + shift;
+  };
+  return {
+    ok: true,
+    text: text.replace(/\r\n?|\n/g, eol),
+    anchors: anchors.map((a) => ({
+      ...a,
+      to: [moved(a.to[0]), moved(a.to[1])],
+    })),
+  };
 }
 
 const mismatch = (source: string, detail: string): Formatted => ({

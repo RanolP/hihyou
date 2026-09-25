@@ -4,7 +4,7 @@ import * as prettier from "prettier";
 import { describe, expect, it } from "vitest";
 import { parse } from "../../core/index.js";
 import { format } from "../../fmt/format.js";
-import { jsonLanguageFor } from "./fmt.js";
+import { type JsonOptions, jsonLanguageFor } from "./fmt.js";
 import { language } from "./index.js";
 
 // Byte parity with prettier 3.9.9 at its defaults. Not covered, because prettier's comment handlers move
@@ -106,10 +106,14 @@ function corpus(): [string, string][] {
   ];
 }
 
-async function ours(path: string, text: string) {
+async function ours(
+  path: string,
+  text: string,
+  options: Partial<JsonOptions> = {},
+) {
   const root = parse(language, text).nodes[0];
   if (!root) throw new Error("empty tree");
-  const out = format(root, text, jsonLanguageFor(path));
+  const out = format(root, text, jsonLanguageFor(path), options);
   if (!out.ok) throw new Error(`${out.reason}: ${out.detail}`);
   return out.text;
 }
@@ -118,6 +122,33 @@ describe("a JSON file lays out byte-identical to prettier 3.9.9, so the reviewer
   it.each(corpus())("%s", async (path, text) => {
     expect(await ours(path, text)).toBe(
       await prettier.format(text, { filepath: path }),
+    );
+  });
+});
+
+const nested = `{"a":{"b":1},"c":[${numbers(30)}, "x"],\n"d":{\n"e":[1,2]}}`;
+const withOptions: [string, string, Partial<JsonOptions>][] = [
+  ["x.json", numbers(30), { printWidth: 40 }],
+  ["x.json", nested, { printWidth: 120 }],
+  ["x.json", nested, { tabWidth: 4 }],
+  ["x.json", nested, { useTabs: true }],
+  ["x.json", nested, { useTabs: true, tabWidth: 8, printWidth: 40 }],
+  ["x.json", nested, { endOfLine: "crlf" }],
+  ["x.json", nested, { endOfLine: "cr" }],
+  ["x.json", nested.replaceAll("\n", "\r\n"), { endOfLine: "auto" }],
+  ["x.json", "/* a\r\n b */\r\n{}", { endOfLine: "lf" }],
+  ["x.jsonc", "// a\n/* b\n c */\n{}", { endOfLine: "crlf" }],
+  ["x.json", nested, { bracketSpacing: false }],
+  ["x.json", nested, { objectWrap: "collapse" }],
+  ["x.jsonc", nested, { trailingComma: "none" }],
+  ["x.jsonc", nested, { trailingComma: "es5" }],
+  ["package.json", nested, { bracketSpacing: false, objectWrap: "collapse" }],
+];
+
+describe("a prettier option lays out as prettier applies it to JSON, so a repo's .prettierrc shows as its tools write", () => {
+  it.each(withOptions)("%s %j %j", async (path, text, options) => {
+    expect(await ours(path, text, options)).toBe(
+      await prettier.format(text, { filepath: path, ...options }),
     );
   });
 });

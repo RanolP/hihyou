@@ -14,7 +14,7 @@ import {
   text,
   token,
 } from "./doc.js";
-import type { Settings } from "./settings.js";
+import type { Settings } from "./options.js";
 import {
   hasNewline,
   hasNewlineInRange,
@@ -45,9 +45,11 @@ type CommentOf<G extends Grammar> = G["comments"][number];
 /** What a rule passes down to the rule of a child it prints, as prettier's `print(path, args)` does. */
 export type PrintArgs = Readonly<Record<string, unknown>>;
 
-export interface Ctx {
+/** `O` is the language's options type (see `LanguageSpec`). */
+export interface Ctx<O = unknown> {
   readonly source: string;
-  readonly settings: Settings;
+  /** The options this call formats with: the language's defaults overridden by the caller's. */
+  readonly options: O;
   /** `node` as its rule prints it, with the comments attached to it; `args` reach that rule. */
   print(node: FormatNode, args?: PrintArgs): Doc;
   /** The children that carry meaning: named, and not comments. */
@@ -70,21 +72,31 @@ export interface Ctx {
  * Prints one node. Rules are plain functions; the helpers below build the common shapes. `F` is the fields the
  * rule reads, so that a rule table can check them against the kind the rule is for.
  */
-export interface Rule<F extends string = never> {
-  (node: FormatNode, ctx: Ctx, args?: PrintArgs): Doc;
+export interface Rule<F extends string = never, O = unknown> {
+  (node: FormatNode, ctx: Ctx<O>, args?: PrintArgs): Doc;
   /** Type-only, never set: carries `F`, which a function type alone would not. */
   readonly reads?: readonly F[];
 }
 
-export interface Language {
-  readonly rules: ReadonlyMap<string, Rule<string>>;
-  readonly lists: ReadonlySet<Rule<string>>;
+export interface Language<O = unknown> {
+  readonly rules: ReadonlyMap<string, Rule<string, O>>;
+  readonly lists: ReadonlySet<Rule<string, O>>;
   readonly comments: ReadonlySet<string>;
-  /** Comment kinds that run to the end of the line, each with the prefix that marks it (see `LanguageOptions`). */
+  /** Comment kinds that run to the end of the line, each with the prefix that marks it (see `LanguageSpec`). */
   readonly lineComments: ReadonlyMap<string, string>;
+  readonly defaults: O;
+  settings(options: O): Settings;
 }
 
-export interface LanguageOptions<G extends Grammar> {
+/**
+ * What a language declares besides its rules. `O` is its options type, named as the tool its users configure
+ * names them (prettier's `printWidth`, ruff's `line-length`), so resolved config passes through unchanged.
+ */
+export interface LanguageSpec<G extends Grammar, O> {
+  /** Every option's value when the caller gives none: the tool's own defaults. */
+  readonly defaults: O;
+  /** The layout the core applies for `options`; `prettierSettings` and `ruffSettings` cover the two families. */
+  readonly settings: (options: O) => Settings;
   /**
    * The comment kinds that run to the end of the line, so code never follows one on its line. A kind maps to the
    * prefix its line comments start with, because one kind can hold both forms (tree-sitter-json's `comment` is
@@ -93,14 +105,17 @@ export interface LanguageOptions<G extends Grammar> {
   readonly lineComments: { readonly [K in CommentOf<G>]?: string };
 }
 
-export interface ListOptions<G extends Grammar> {
+/** A list setting fixed by the rule, or read from the options of each call. */
+export type ByOptions<O, T> = T | ((options: O) => T);
+
+export interface ListOptions<G extends Grammar, O> {
   open: TokenOf<G>;
   close: TokenOf<G>;
   sep: TokenOf<G>;
-  /** A space inside the brackets on one line when the reviewer wants `bracketSpacing`. */
-  pad?: boolean;
-  /** Honour the reviewer's `keepExpanded`: stay broken when the input broke after the opening bracket. */
-  keepExpanded?: boolean;
+  /** A space inside the brackets on one line (prettier's `bracketSpacing`). */
+  pad?: ByOptions<O, boolean>;
+  /** Stay broken when the input broke after the opening bracket (prettier's `objectWrap: "preserve"`). */
+  keepExpanded?: ByOptions<O, boolean>;
   /** Pack items several to a line when every item is one of these kinds (prettier's number arrays). */
   fillIfAll?: readonly KindOf<G>[];
   /** Break when 2+ items are all lists of one kind with 2+ items each (prettier's matrix rule). */
@@ -112,7 +127,7 @@ export interface ListOptions<G extends Grammar> {
   /** "always" breaks every non-empty list, one item per line (prettier's json-stringify). */
   expand?: "fit" | "always";
   /** A separator after the last item when the list breaks (prettier's `trailingComma` in JSONC). */
-  trailingSep?: boolean;
+  trailingSep?: ByOptions<O, boolean>;
 }
 
 /**
@@ -131,8 +146,8 @@ type FieldIn<P> = P extends { readonly field: infer F extends string }
   ? F
   : never;
 
-export interface Helpers<G extends Grammar> {
-  list(options: ListOptions<G>): Rule;
+export interface Helpers<G extends Grammar, O> {
+  list(options: ListOptions<G, O>): Rule<never, O>;
   /** The parts in this order, as one group. */
   seq<const P extends readonly SeqPart<G>[]>(
     ...parts: P
@@ -148,20 +163,23 @@ export interface Helpers<G extends Grammar> {
  * A rule table whose every key is a kind of `G`, with a rule that reads only that kind's fields: a returned
  * object literal is not checked for excess keys, and a rule's own type does not know which kind it is for.
  */
-type RuleTable<G extends Grammar, T> = {
-  [K in keyof T]: K extends KindOf<G> ? Rule<FieldsOf<G, K>> : never;
+type RuleTable<G extends Grammar, T, O> = {
+  [K in keyof T]: K extends KindOf<G> ? Rule<FieldsOf<G, K>, O> : never;
 };
 
 export function defineLanguage<
   const G extends Grammar,
-  T extends RuleTable<G, T>,
+  O,
+  T extends RuleTable<G, T, O>,
 >(
   grammar: G,
-  options: LanguageOptions<G>,
-  define: (h: Helpers<G>) => T & { [K in KindOf<G>]?: Rule<FieldsOf<G, K>> },
-): Language {
-  const lists = new Set<Rule<string>>();
-  const helpers: Helpers<G> = {
+  spec: LanguageSpec<G, O>,
+  define: (
+    h: Helpers<G, O>,
+  ) => T & { [K in KindOf<G>]?: Rule<FieldsOf<G, K>, O> },
+): Language<O> {
+  const lists = new Set<Rule<string, O>>();
+  const helpers: Helpers<G, O> = {
     list(o) {
       const rule = listRule(o);
       lists.add(rule);
@@ -173,8 +191,8 @@ export function defineLanguage<
     field: (field) => ({ field }),
     space: { space: true },
   };
-  const table: Partial<Record<string, Rule<string>>> = define(helpers);
-  const rules = new Map<string, Rule<string>>();
+  const table: Partial<Record<string, Rule<string, O>>> = define(helpers);
+  const rules = new Map<string, Rule<string, O>>();
   for (const [kind, rule] of Object.entries(table))
     if (rule) rules.set(kind, rule);
   return {
@@ -183,10 +201,12 @@ export function defineLanguage<
     comments: new Set(grammar.comments),
     lineComments: new Map(
       grammar.comments.flatMap((kind: CommentOf<G>): [string, string][] => {
-        const prefix = options.lineComments[kind];
+        const prefix = spec.lineComments[kind];
         return prefix === undefined ? [] : [[kind, prefix]];
       }),
     ),
+    defaults: spec.defaults,
+    settings: spec.settings,
   };
 }
 
@@ -230,8 +250,10 @@ function seqRule(parts: readonly SeqPart<Grammar>[]): Rule {
 }
 
 // Prettier's array and object printers (language-js/print/array.js, object.js), as one parameterized helper.
-function listRule(o: ListOptions<Grammar>): Rule {
+function listRule<O>(o: ListOptions<Grammar, O>): Rule<never, O> {
   const fillKinds: ReadonlySet<string> = new Set(o.fillIfAll);
+  const read = (v: ByOptions<O, boolean> | undefined, options: O) =>
+    typeof v === "function" ? v(options) : v === true;
   return (node, ctx) => {
     const tok = (kind: string, from: number) => {
       const c = node.children.find(
@@ -257,8 +279,7 @@ function listRule(o: ListOptions<Grammar>): Rule {
     const always = o.expand === "always";
     const shouldBreak =
       always ||
-      (o.keepExpanded === true &&
-        ctx.settings.keepExpanded &&
+      (read(o.keepExpanded, ctx.options) &&
         hasNewlineInRange(ctx.source, node.start, first.start)) ||
       (o.breakNestedLists === true &&
         items.length > 1 &&
@@ -270,9 +291,7 @@ function listRule(o: ListOptions<Grammar>): Rule {
         )) ||
       ctx.hasDanglingLineComment(node);
     const blankAfter = (item: FormatNode) =>
-      !always &&
-      ctx.settings.maxBlankLines > 0 &&
-      isNextLineEmpty(ctx.source, item.end);
+      !always && isNextLineEmpty(ctx.source, item.end);
     // Each item's separator, found in one pass: a lookup per item would be quadratic in a lockfile's objects.
     const seps = new Map<FormatNode, FormatNode>();
     const isItem = new Set(items);
@@ -298,7 +317,7 @@ function listRule(o: ListOptions<Grammar>): Rule {
     const contents: Doc[] = [];
     const listGroup = group(contents, shouldBreak);
     // A fill prints its items flat even in a broken list, so its trailing separator asks the list itself.
-    const trailing = o.trailingSep
+    const trailing = read(o.trailingSep, ctx.options)
       ? ifBreak(text(o.sep), [], concise ? listGroup : undefined)
       : [];
 
@@ -327,7 +346,7 @@ function listRule(o: ListOptions<Grammar>): Rule {
             : [];
           return [printed, sep(item), line, blank];
         });
-    const pad = o.pad && ctx.settings.bracketSpacing ? line : softline;
+    const pad = read(o.pad, ctx.options) ? line : softline;
     contents.push(open, indent([pad, body]), pad, close);
     return listGroup;
   };

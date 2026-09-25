@@ -1,6 +1,26 @@
 import { token } from "../../fmt/doc.js";
+import {
+  type PrettierOptions,
+  prettierDefaults,
+  prettierSettings,
+} from "../../fmt/options.js";
 import { defineLanguage, type Rule } from "../../fmt/rules.js";
 import { grammar } from "./bundle.js";
+
+/**
+ * The prettier options its JSON printers read (prettier 3.9.9 ignores `singleQuote` and `quoteProps` there);
+ * `trailingComma` only for `jsonc`, `bracketSpacing` and `objectWrap` not for `json-stringify`.
+ */
+export interface JsonOptions extends PrettierOptions {
+  trailingComma: "all" | "es5" | "none";
+}
+
+const defaults: JsonOptions = { ...prettierDefaults, trailingComma: "all" };
+const spec = {
+  lineComments: { comment: "//" },
+  defaults,
+  settings: prettierSettings,
+};
 
 // Prettier's number normalization (utilities/print-number.js): lower case, no redundant exponent sign,
 // zeroes or dot, and a leading digit.
@@ -19,16 +39,16 @@ const number: Rule = (node, ctx) =>
   token(node, printNumber(ctx.source.slice(node.start, node.end)));
 
 const fitting = (trailingSep: boolean) =>
-  defineLanguage(grammar, { lineComments: { comment: "//" } }, (h) => ({
+  defineLanguage(grammar, spec, (h) => ({
     document: h.block(),
     object: h.list({
       open: "{",
       close: "}",
       sep: ",",
-      pad: true,
-      keepExpanded: true,
+      pad: (o) => o.bracketSpacing,
+      keepExpanded: (o) => o.objectWrap === "preserve",
       blankLines: "force",
-      trailingSep,
+      trailingSep: (o) => trailingSep && o.trailingComma !== "none",
     }),
     array: h.list({
       open: "[",
@@ -38,7 +58,7 @@ const fitting = (trailingSep: boolean) =>
       breakNestedLists: true,
       groupItems: true,
       blankLines: "ifBroken",
-      trailingSep,
+      trailingSep: (o) => trailingSep && o.trailingComma !== "none",
     }),
     pair: h.seq(h.field("key"), ":", h.space, h.field("value")),
     string: h.verbatim(),
@@ -48,33 +68,29 @@ const fitting = (trailingSep: boolean) =>
 /** JSON as prettier's `json` parser prints it: lists fit on a line when they can, comments allowed. */
 export const json = fitting(false);
 /** JSON with Comments (`.jsonc`, VS Code and Sublime settings) as prettier's `jsonc` parser prints it: like
- * `json`, plus a trailing comma in every broken list. */
+ * `json`, plus a trailing comma in every broken list unless `trailingComma` is `none`. */
 export const jsonc = fitting(true);
 
 /** JSON as prettier's `json-stringify` parser prints it, like `JSON.stringify(value, null, 2)`: every list broken. */
-export const jsonStringify = defineLanguage(
-  grammar,
-  { lineComments: { comment: "//" } },
-  (h) => ({
-    document: h.block(),
-    object: h.list({
-      open: "{",
-      close: "}",
-      sep: ",",
-      blankLines: "force",
-      expand: "always",
-    }),
-    array: h.list({
-      open: "[",
-      close: "]",
-      sep: ",",
-      blankLines: "ifBroken",
-      expand: "always",
-    }),
-    pair: h.seq(h.field("key"), ":", h.space, h.field("value")),
-    string: h.verbatim(),
+export const jsonStringify = defineLanguage(grammar, spec, (h) => ({
+  document: h.block(),
+  object: h.list({
+    open: "{",
+    close: "}",
+    sep: ",",
+    blankLines: "force",
+    expand: "always",
   }),
-);
+  array: h.list({
+    open: "[",
+    close: "]",
+    sep: ",",
+    blankLines: "ifBroken",
+    expand: "always",
+  }),
+  pair: h.seq(h.field("key"), ":", h.space, h.field("value")),
+  string: h.verbatim(),
+}));
 
 /**
  * The language prettier 3.9.9 picks for a file name: `json-stringify` for the files npm and composer rewrite,
