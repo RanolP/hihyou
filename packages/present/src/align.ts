@@ -4,8 +4,8 @@ import { diffArrays } from "diff";
 export interface Alignment {
   /** The formatted span covering the same tokens as the original span `[start, end)`. */
   range(start: number, end: number): [number, number];
-  /** The original offset of the first token at or after a formatted offset, or undefined past the last token. */
-  original(offset: number): number | undefined;
+  /** The original offset of the first formatted character in `[start, end)` that the original also has; undefined when the formatter inserted them all. */
+  original(start: number, end: number): number | undefined;
 }
 
 /**
@@ -62,14 +62,12 @@ export function align(
       const from = startOf(first);
       return [from, Math.max(from, endOf(last))];
     },
-    original(offset) {
-      const k = lowerBound(b.offsets, offset);
-      if (k >= b.chars.length) return undefined;
-      for (let m = k; m < b.chars.length; m++) {
-        const partner = bToA[m] ?? -1;
-        if (partner >= 0) return a.offsets[partner];
-      }
-      for (let m = k - 1; m >= 0; m--) {
+    original(start, end) {
+      for (
+        let m = lowerBound(b.offsets, start);
+        (b.offsets[m] ?? Infinity) < end;
+        m++
+      ) {
         const partner = bToA[m] ?? -1;
         if (partner >= 0) return a.offsets[partner];
       }
@@ -105,7 +103,7 @@ function solid(text: string): { chars: string[]; offsets: number[] } {
   const chars: string[] = [];
   const offsets: number[] = [];
   for (let i = 0; i < text.length; i++) {
-    const c = text[i] as string;
+    const c = text.charAt(i);
     if (isSpace(c)) continue;
     chars.push(c);
     offsets.push(i);
@@ -119,10 +117,10 @@ const isQuote = (c: string) => c === '"' || c === "'" || c === "`";
 /** From `at`, moves in `step` direction past whitespace; backward, returns the offset just past the last solid char. */
 function skipSpace(text: string, at: number, step: 1 | -1): number {
   if (step === 1) {
-    while (at < text.length && isSpace(text[at] as string)) at++;
+    while (at < text.length && isSpace(text.charAt(at))) at++;
     return at;
   }
-  while (at > 0 && isSpace(text[at - 1] as string)) at--;
+  while (at > 0 && isSpace(text.charAt(at - 1))) at--;
   return at;
 }
 
@@ -132,7 +130,7 @@ function lowerBound(sorted: number[], x: number): number {
   let hi = sorted.length;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
-    if ((sorted[mid] as number) < x) lo = mid + 1;
+    if ((sorted[mid] ?? Infinity) < x) lo = mid + 1;
     else hi = mid;
   }
   return lo;

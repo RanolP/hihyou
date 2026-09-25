@@ -17,6 +17,25 @@ describe("createFormatter", () => {
     });
   });
 
+  it("a failed WASM load is retried on the next Python file instead of failing every later file", async () => {
+    let calls = 0;
+    const flaky = createFormatter({
+      ruffWasm: () =>
+        ++calls === 1
+          ? Promise.reject(new Error("offline"))
+          : readFile(wasmPath),
+    });
+    expect(await flaky.format("a.py", "x=1\n")).toMatchObject({
+      ok: false,
+      reason: "formatter-error",
+      message: "offline",
+    });
+    expect(await flaky.format("a.py", "x=1\n")).toEqual({
+      ok: true,
+      text: "x = 1\n",
+    });
+  });
+
   it("broken code comes back as a formatter error instead of rejecting the whole view", async () => {
     const result = await formatter.format("broken.ts", "const = ;\n");
     expect(result).toMatchObject({ ok: false, reason: "formatter-error" });

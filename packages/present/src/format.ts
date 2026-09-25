@@ -17,14 +17,12 @@ export interface Formatter {
 
 export interface FormatterOptions {
   /**
-   * Bytes of `@astral-sh/ruff-wasm-web/ruff_wasm_bg.wasm`, supplied by the host because only it knows
-   * where the file lives (a bundled asset, an extension URL, or a path on disk). Called at most once,
-   * on the first Python file.
+   * `@astral-sh/ruff-wasm-web/ruff_wasm_bg.wasm`, supplied by the host because only it knows where the
+   * file lives (a bundled asset, an extension URL, or a path on disk). A `fetch` Response compiles while
+   * it downloads. Called on the first Python file, and again only if that load failed.
    */
-  ruffWasm: () => Promise<BufferSource>;
+  ruffWasm: () => Promise<Response | BufferSource>;
 }
-
-type BufferSource = ArrayBuffer | ArrayBufferView;
 
 const prettierExtensions = new Set([
   ".ts",
@@ -47,11 +45,16 @@ const ruffExtensions = new Set([".py", ".pyi"]);
 
 export function createFormatter({ ruffWasm }: FormatterOptions): Formatter {
   // Loaded on first use: prettier's plugins weigh about 2 MB and ruff about 11 MB.
-  let prettier: Promise<(path: string, text: string) => Promise<string>>;
-  let ruff: Promise<(text: string) => string>;
+  let prettier:
+    | Promise<(path: string, text: string) => Promise<string>>
+    | undefined;
+  let ruff: Promise<(text: string) => string> | undefined;
 
   const loadPrettier = async () => {
-    const [{ format }, ...plugins] = await Promise.all([
+    const [{ format }, ...plugins]: [
+      typeof import("prettier/standalone"),
+      ...Plugin[],
+    ] = await Promise.all([
       import("prettier/standalone"),
       import("prettier/plugins/estree"),
       import("prettier/plugins/typescript"),
@@ -61,11 +64,12 @@ export function createFormatter({ ruffWasm }: FormatterOptions): Formatter {
       import("prettier/plugins/markdown"),
     ]);
     return (filepath: string, text: string) =>
-      format(text, { filepath, plugins: plugins as Plugin[] });
+      format(text, { filepath, plugins });
   };
   const loadRuff = async () => {
     const wasm = await import("@astral-sh/ruff-wasm-web");
-    wasm.initSync({ module: await ruffWasm() });
+    // Async: browsers refuse to compile a module this large synchronously on the main thread.
+    await wasm.default({ module_or_path: await ruffWasm() });
     const workspace = new wasm.Workspace(
       wasm.Workspace.defaultSettings(),
       wasm.PositionEncoding.Utf16,
@@ -78,11 +82,17 @@ export function createFormatter({ ruffWasm }: FormatterOptions): Formatter {
       const ext = extension(path);
       try {
         if (prettierExtensions.has(ext)) {
-          prettier ??= loadPrettier();
+          prettier ??= loadPrettier().catch((error: unknown) => {
+            prettier = undefined;
+            throw error;
+          });
           return { ok: true, text: await (await prettier)(path, text) };
         }
         if (ruffExtensions.has(ext)) {
-          ruff ??= loadRuff();
+          ruff ??= loadRuff().catch((error: unknown) => {
+            ruff = undefined;
+            throw error;
+          });
           return { ok: true, text: (await ruff)(text) };
         }
       } catch (error) {

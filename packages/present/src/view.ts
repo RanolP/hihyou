@@ -23,17 +23,21 @@ export interface ViewLine {
   highlights: Highlight[];
 }
 
-export type SideView = { lines: ViewLine[] } & (
+/** `other-side-unformatted`: this side would format, but the other could not, and a formatted side against a raw one shows the formatter's rewrites as changes. */
+export type SideStatus =
   | { formatted: true }
-  | { formatted: false; reason: Unformatted; message?: string }
-);
+  | {
+      formatted: false;
+      reason: Unformatted | "other-side-unformatted";
+      message?: string;
+    };
+
+export type SideView = { lines: ViewLine[] } & SideStatus;
 
 /** Indices into the sides' `lines`. */
-export interface Row {
-  old?: number;
-  new?: number;
-  changed: boolean;
-}
+export type Row =
+  | { old: number; new?: number; changed: boolean }
+  | { old?: number; new: number; changed: boolean };
 
 export interface FileView {
   old: SideView;
@@ -50,10 +54,16 @@ export async function presentFile(
   texts: { old: string; new: string },
   formatter: Formatter,
 ): Promise<FileView> {
-  const [oldSide, newSide] = await Promise.all([
+  let [oldSide, newSide] = await Promise.all([
     side(file.oldPath ?? file.path, texts.old, formatter),
     side(file.path, texts.new, formatter),
   ]);
+  if (oldSide.status.formatted !== newSide.status.formatted) {
+    if (oldSide.status.formatted && oldSide.original !== "")
+      oldSide = asOriginal(oldSide);
+    if (newSide.status.formatted && newSide.original !== "")
+      newSide = asOriginal(newSide);
+  }
   const oldView = view(oldSide);
   const newView = view(newSide);
   file.edits.forEach((edit, index) => {
@@ -100,14 +110,12 @@ interface Side {
   text: string;
   starts: number[];
   alignment: Alignment;
-  status:
-    | { formatted: true }
-    | { formatted: false; reason: Unformatted; message?: string };
+  status: SideStatus;
 }
 
 const identity: Alignment = {
   range: (start, end) => [start, end],
-  original: (offset) => offset,
+  original: (start) => start,
 };
 
 async function side(
@@ -141,6 +149,16 @@ async function side(
   return make(result.text, alignment, { formatted: true });
 }
 
+function asOriginal(s: Side): Side {
+  return {
+    ...s,
+    text: s.original,
+    starts: s.originalStarts,
+    alignment: identity,
+    status: { formatted: false, reason: "other-side-unformatted" },
+  };
+}
+
 function view(s: Side): SideView {
   if (s.text === "") return { lines: [], ...s.status };
   const originalLineAt = lineAt(s.originalStarts);
@@ -150,7 +168,7 @@ function view(s: Side): SideView {
     const line: ViewLine = { text, highlights: [] };
     if (!s.status.formatted) line.originalLine = i + 1;
     else if (/\S/.test(text)) {
-      const at = s.alignment.original(start);
+      const at = s.alignment.original(start, end);
       if (at !== undefined) line.originalLine = originalLineAt(at);
     }
     return line;
@@ -205,7 +223,7 @@ function lineAt(starts: number[]): (offset: number) => number {
     let hi = starts.length - 1;
     while (lo < hi) {
       const mid = (lo + hi + 1) >> 1;
-      if ((starts[mid] as number) <= offset) lo = mid;
+      if ((starts[mid] ?? Infinity) <= offset) lo = mid;
       else hi = mid - 1;
     }
     return lo + 1;
@@ -241,11 +259,13 @@ function splitRows(unified: Row[]): Row[] {
   const flush = () => {
     for (let k = 0; k < Math.max(olds.length, news.length); k++) {
       const [o, n] = [olds[k], news[k]];
-      rows.push({
-        ...(o !== undefined && { old: o }),
-        ...(n !== undefined && { new: n }),
-        changed: true,
-      });
+      if (o !== undefined)
+        rows.push({
+          old: o,
+          ...(n !== undefined && { new: n }),
+          changed: true,
+        });
+      else if (n !== undefined) rows.push({ new: n, changed: true });
     }
     olds = [];
     news = [];

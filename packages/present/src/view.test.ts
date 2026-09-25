@@ -77,6 +77,21 @@ describe("presentFile", () => {
     expect(pointers(view.new)).toContain(move.old.start.line);
     expect(pointers(view.old)).toContain(move.new.start.line);
   });
+
+  it("when only one side formats, both are shown as committed so the formatter's rewrites do not appear as changes", async () => {
+    const before = "const x = {a:1}\nconst y = 2\n";
+    const after = "const x = {a:1}\nconst y = (\n";
+    const { view } = await present("p.ts", before, after);
+    expect(view.new).toMatchObject({
+      formatted: false,
+      reason: "formatter-error",
+    });
+    expect(view.old).toMatchObject({
+      formatted: false,
+      reason: "other-side-unformatted",
+    });
+    expect(view.unified[0]).toEqual({ old: 0, new: 0, changed: false });
+  });
 });
 
 describe("align", () => {
@@ -88,5 +103,12 @@ describe("align", () => {
   it("a whitespace-only span becomes a point before the next token rather than an inverted range", () => {
     const alignment = align("a  b\n", "a b\n");
     expect(alignment?.range(1, 3)).toEqual([2, 2]);
+  });
+
+  it("a line holding only characters the formatter inserted has no original line, rather than borrowing a neighbour's", () => {
+    const alignment = align("a\nb\n", "a\n(\nb\n)\n");
+    expect(alignment?.original(2, 4)).toBeUndefined();
+    expect(alignment?.original(6, 8)).toBeUndefined();
+    expect(alignment?.original(4, 6)).toBe(2);
   });
 });

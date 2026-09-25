@@ -1,4 +1,4 @@
-import type { FileDiff, ReviewDoc } from "@hihyou/engine";
+import type { ReviewDoc } from "@hihyou/engine";
 import {
   type FileView,
   type HighlightKind,
@@ -16,16 +16,6 @@ import {
   statusLetter,
   type ViewLoader,
 } from "../review.js";
-
-const colours: Record<HighlightKind, string> = {
-  delete: "red",
-  insert: "green",
-  update: "yellow",
-  move: "magenta",
-};
-
-export const hint =
-  "j/k move  tab switch pane  n/p next/prev edit  s split/unified  f folded  q quit";
 
 interface Props {
   doc: ReviewDoc;
@@ -60,26 +50,31 @@ export function App({ doc, load, size }: Props) {
     [view, displayRows],
   );
 
-  const index = current?.index;
-  const error = failed?.index === index ? failed?.message : undefined;
+  const shownFile = current?.file;
+  const shownIndex = current?.index;
+  const error = failed?.index === shownIndex ? failed?.message : undefined;
   useEffect(() => {
-    if (index === undefined || foldReason(doc.files[index] as FileDiff)) return;
+    if (!shownFile || shownIndex === undefined || foldReason(shownFile)) return;
     let live = true;
-    load(index).then(
-      (v) => live && setLoaded({ index, view: v }),
+    load(shownIndex).then(
+      (v) => live && setLoaded({ index: shownIndex, view: v }),
       (e: unknown) =>
         live &&
         setFailed({
-          index,
+          index: shownIndex,
           message: e instanceof Error ? e.message : String(e),
         }),
     );
     return () => {
       live = false;
     };
-  }, [doc, index, load]);
+  }, [shownFile, shownIndex, load]);
 
   const bodyHeight = Math.max(3, rows - 3);
+  const foldedRow = !showFolded && folded > 0;
+  // Inside the border, less the "N folded" row; the window ends on the selected file once it scrolls.
+  const listRows = Math.max(1, bodyHeight - 2 - (foldedRow ? 1 : 0));
+  const firstListed = Math.max(0, selected - listRows + 1);
   const diffHeight = bodyHeight - 1;
   const scrollTo = (row: number) =>
     setTop(Math.max(0, Math.min(row, displayRows.length - 1)));
@@ -132,10 +127,7 @@ export function App({ doc, load, size }: Props) {
           borderColor={focus === "files" ? "cyan" : "gray"}
         >
           {listed
-            .slice(
-              Math.max(0, selected - (bodyHeight - 3)),
-              Math.max(0, selected - (bodyHeight - 3)) + bodyHeight - 3,
-            )
+            .slice(firstListed, firstListed + listRows)
             .map(({ file, index }) => {
               const reason = foldReason(file);
               return (
@@ -152,9 +144,7 @@ export function App({ doc, load, size }: Props) {
                 </Text>
               );
             })}
-          {!showFolded && folded > 0 && (
-            <Text dimColor>{folded} folded (f to show)</Text>
-          )}
+          {foldedRow && <Text dimColor>{folded} folded (f to show)</Text>}
         </Box>
         <Box
           width={diffWidth}
@@ -271,3 +261,13 @@ function editStarts(view: FileView, rows: Row[]): number[] {
   });
   return starts;
 }
+
+const hint =
+  "j/k move  tab switch pane  n/p next/prev edit  s split/unified  f folded  q quit";
+
+const colours: Record<HighlightKind, string> = {
+  delete: "red",
+  insert: "green",
+  update: "yellow",
+  move: "magenta",
+};

@@ -4,7 +4,8 @@
     "rootDir": "src",
     "outDir": "dist",
     // No node types: viewers run this in a browser with no server. Node-only code lives in tsconfig.node.json.
-    "types": []
+    "types": [],
+    "lib": ["ES2023", "DOM"]
   },
   "include": ["src"],
   "exclude": ["src/node.ts", "src/**/*.node.ts", "src/**/*.test.ts"],

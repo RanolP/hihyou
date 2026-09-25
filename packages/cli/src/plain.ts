@@ -42,7 +42,13 @@ export async function* renderPlain(
       yield `${fileHeader(file)} (folded: ${folded})`;
       continue;
     }
-    const view = await load(index);
+    let view: FileView;
+    try {
+      view = await load(index);
+    } catch (error) {
+      yield `${fileHeader(file)} (error: ${error instanceof Error ? error.message : String(error)})`;
+      continue;
+    }
     yield [fileHeader(file), unformattedNote(view)].filter(Boolean).join(" ");
     yield* hunks(view);
   }
@@ -89,8 +95,9 @@ function* hunks(view: FileView): Generator<string> {
     skipped = false;
     const oldLine = row.old === undefined ? undefined : view.old.lines[row.old];
     const newLine = row.new === undefined ? undefined : view.new.lines[row.new];
+    const line = newLine ?? oldLine;
+    if (!line) continue;
     const sign = !row.changed ? " " : oldLine ? "-" : "+";
-    const line = (newLine ?? oldLine) as ViewLine;
     yield `${gutter(oldLine)} ${gutter(newLine)} ${sign} ${renderLine(line, newLine ? "new" : "old")}`;
   }
 }
