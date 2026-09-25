@@ -494,6 +494,10 @@ function translateLexer(
     .replace(
       /set_contains\((\w+), \d+, lookahead\)/g,
       "setContains($1, lookahead)",
+    )
+    // C octal literals (tree-sitter-python writes NUL as `00`), which TS rejects.
+    .replace(/(?<![\w.])0([0-7]+)\b/g, (_, o: string) =>
+      String(Number.parseInt(o, 8)),
     );
   const bad = out.match(
     /.*(lexer->|[A-Z_]{4,}\(|\bgoto\b|\?|'|\(int32_t\)|\(uint).*/,

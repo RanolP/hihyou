@@ -3,6 +3,7 @@ import type { GrammarName } from "./corpus.node.js";
 import { language as css } from "./generated/css.js";
 import { language as javascript } from "./generated/javascript.js";
 import { language as json } from "./generated/json.js";
+import { language as python } from "./generated/python.js";
 import { language as tsx } from "./generated/tsx.js";
 import { language as typescript } from "./generated/typescript.js";
 import type { Language } from "./language.js";
@@ -54,6 +55,14 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
     [
       "const a = <A<T> b={1} {...c}>\n  text {d}\n  <>frag</>\n</A>\nconst g = <T,>(x: T) => x\n",
       "const b = <div>unclosed {x</div>\n",
+    ],
+  ],
+  python: [
+    python,
+    [
+      // Indent and dedent around comments, line continuations, f-strings with {{ escapes, raw and bytes strings.
+      'def f(a,\n      b):\n    if a:\n        return b\n  # odd comment\n    x = 1 \\\n        + 2\n    return f"{a!r:>{b}} {{lit}}" + rb"\\q" + b"\\N" + """\ntriple "" x"""\n\nclass C:\n\tpass\n',
+      "def g(:\n    x = [1, 2\ny = 'unterminated\n  z = f'{a'\n",
     ],
   ],
 };
