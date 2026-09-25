@@ -1,0 +1,20 @@
+{
+  "name": "@hihyou/format",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "@hihyou/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "get-east-asian-width": "1.7.0"
+  },
+  "devDependencies": {
+    "@hihyou/engine": "workspace:*",
+    "prettier": "3.9.9"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    // No node types: the core must run unchanged in the browser. Node-only code lives in tsconfig.node.json.
+    "types": []
+  },
+  "include": ["src"],
+  "exclude": ["src/node.ts", "src/**/*.node.ts", "src/**/*.test.ts"]
+}
