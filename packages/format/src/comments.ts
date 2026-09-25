@@ -56,11 +56,9 @@ export function attachComments(
         stack.push(c);
         continue;
       }
-      let following: FormatNode | undefined;
-      for (let j = i + 1; j < node.children.length && !following; j++) {
-        const n = node.children[j] as FormatNode;
-        if (n.named && !isComment(n)) following = n;
-      }
+      const following = node.children.find(
+        (n, j) => j > i && n.named && !isComment(n),
+      );
       comments.push({ comment: c, preceding, following });
     }
 
@@ -70,10 +68,10 @@ export function attachComments(
       if (!first?.preceding || !first.following) return;
       let gapEnd = first.following.start;
       let firstLeading = ties.length;
-      for (; firstLeading > 0; firstLeading--) {
-        const tie = ties[firstLeading - 1] as (typeof ties)[number];
+      for (const tie of ties.toReversed()) {
         if (!sameLineGap(tie.comment.end, gapEnd)) break;
         gapEnd = tie.comment.start;
+        firstLeading--;
       }
       for (const [i, tie] of ties.entries()) {
         if (i < firstLeading) at(first.preceding).trailing.push(tie.comment);
@@ -86,8 +84,9 @@ export function attachComments(
       // A run of comments on one line counts as one: its first decides "own line", its last "end of line".
       let start = comment.start;
       for (let j = i - 1; preceding && j >= 0; j--) {
-        const prev = comments[j] as (typeof comments)[number];
+        const prev = comments[j];
         if (
+          !prev ||
           prev.preceding !== preceding ||
           !sameLineGap(prev.comment.end, start)
         )
@@ -96,8 +95,9 @@ export function attachComments(
       }
       let end = comment.end;
       for (let j = i + 1; following && j < comments.length; j++) {
-        const next = comments[j] as (typeof comments)[number];
+        const next = comments[j];
         if (
+          !next ||
           next.following !== following ||
           !sameLineGap(end, next.comment.start)
         )

@@ -1,4 +1,4 @@
-import type { Doc, Fill, Group, Token } from "./doc.js";
+import { type Doc, type Fill, type Group, isDocs, type Token } from "./doc.js";
 import { textWidth } from "./width.js";
 
 export interface Layout {
@@ -17,21 +17,16 @@ const BREAK = 0;
 const FLAT = 1;
 type Mode = typeof BREAK | typeof FLAT;
 type Cmd = { indent: number; mode: Mode; doc: Doc };
-type Node = Exclude<Doc, readonly Doc[]>;
 
 function unknownDoc(d: never): never {
-  throw new Error(`unknown doc kind ${(d as Node).k}`);
+  throw new Error(`unknown doc ${JSON.stringify(d)}`);
 }
 
 /** Marks every group that holds a hard break, directly or through a nested broken group, as broken. */
-function propagateBreaks(doc: Doc): boolean {
-  if (Array.isArray(doc)) {
-    let broken = false;
-    for (const d of doc as readonly Doc[])
-      broken = propagateBreaks(d) || broken;
-    return broken;
-  }
-  const d = doc as Node;
+function propagateBreaks(d: Doc): boolean {
+  // Every part is visited, not only up to the first break: each nested group needs its own mark.
+  if (isDocs(d))
+    return d.reduce((broken, part) => propagateBreaks(part) || broken, false);
   switch (d.k) {
     case "breakParent":
       return true;
@@ -70,19 +65,13 @@ function fits(
   let pendingSpace = false;
   const cmds: { mode: Mode; doc: Doc }[] = [next];
   while (width >= 0) {
-    const cmd = cmds.pop();
-    if (!cmd) {
-      if (restIdx === 0) return true;
-      cmds.push(rest[--restIdx] as Cmd);
+    const cmd = cmds.pop() ?? (restIdx > 0 ? rest[--restIdx] : undefined);
+    if (!cmd) return true;
+    const { mode, doc: d } = cmd;
+    if (isDocs(d)) {
+      for (const part of d.toReversed()) cmds.push({ mode, doc: part });
       continue;
     }
-    const { mode, doc } = cmd;
-    if (Array.isArray(doc)) {
-      for (let i = doc.length - 1; i >= 0; i--)
-        cmds.push({ mode, doc: (doc as readonly Doc[])[i] as Doc });
-      continue;
-    }
-    const d = doc as Node;
     switch (d.k) {
       case "token":
       case "text":
@@ -97,8 +86,8 @@ function fits(
         cmds.push({ mode, doc: d.contents });
         break;
       case "fill":
-        for (let i = d.parts.length - 1; i >= (d.from ?? 0); i--)
-          cmds.push({ mode, doc: d.parts[i] as Doc });
+        for (const part of d.parts.slice(d.from ?? 0).reverse())
+          cmds.push({ mode, doc: part });
         break;
       case "group":
         if (mustBeFlat && d.break) return false;
@@ -163,13 +152,11 @@ export function print(
       cmd = cmds.pop();
     }
     if (!cmd) break;
-    const { indent, mode, doc } = cmd;
-    if (Array.isArray(doc)) {
-      for (let i = doc.length - 1; i >= 0; i--)
-        cmds.push({ indent, mode, doc: (doc as readonly Doc[])[i] as Doc });
+    const { indent, mode, doc: d } = cmd;
+    if (isDocs(d)) {
+      for (const part of d.toReversed()) cmds.push({ indent, mode, doc: part });
       continue;
     }
-    const d = doc as Node;
     switch (d.k) {
       case "token":
         placed.push({ token: d, at: length });

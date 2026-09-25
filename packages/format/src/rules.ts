@@ -181,6 +181,7 @@ function seqRule(parts: readonly SeqPart<Grammar>[]): Rule {
 
 // Prettier's array and object printers (language-js/print/array.js, object.js), as one parameterized helper.
 function listRule(o: ListOptions<Grammar>): Rule {
+  const fillKinds: ReadonlySet<string> = new Set(o.fillIfAll);
   return (node, ctx) => {
     const tok = (kind: string, from: number) => {
       const c = node.children.find(
@@ -236,15 +237,12 @@ function listRule(o: ListOptions<Grammar>): Rule {
       return c ? token(c, slice(c, ctx)) : [];
     };
 
-    const fillKinds = o.fillIfAll;
     const concise =
       !always &&
-      fillKinds !== undefined &&
       items.length > 1 &&
       items.every(
         (item) =>
-          (fillKinds as readonly string[]).includes(item.kind) &&
-          !ctx.hasComment(item, "trailingSameLine"),
+          fillKinds.has(item.kind) && !ctx.hasComment(item, "trailingSameLine"),
       );
 
     const contents: Doc[] = [];

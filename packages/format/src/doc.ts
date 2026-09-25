@@ -105,6 +105,9 @@ export const ifBreak = (broken: Doc, flat: Doc = [], of?: Group): IfBreak => ({
   group: of,
 });
 
+/** `Array.isArray` narrows to `any[]`, which leaves a `readonly Doc[]` inside the union; this narrows both ways. */
+export const isDocs = (d: Doc): d is readonly Doc[] => Array.isArray(d);
+
 export function join(separator: Doc, docs: readonly Doc[]): Doc[] {
   const out: Doc[] = [];
   for (const [i, d] of docs.entries()) {
