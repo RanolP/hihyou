@@ -206,7 +206,7 @@ function insideError(node: SyntaxNode | undefined): boolean {
 }
 
 /** JSX text as JSX evaluates it, whitespace runs collapsed; "" means layout only. Mirrors packages/engine. */
-function jsxText(token: string): string {
+export function jsxText(token: string): string {
   const lines = token.split(/\r\n|\n|\r/);
   return lines
     .map((line, i) => {

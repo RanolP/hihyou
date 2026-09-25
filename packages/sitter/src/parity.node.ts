@@ -1,5 +1,6 @@
 // Parity with web-tree-sitter 0.27: every visible node's type, range, field, named, isMissing and isError,
-// in preorder with depth. Usage: node dist/parity.node.js [grammar...] [--show N]
+// in preorder with depth; then, once those agree, the `SyntaxTree` hihyou consumes (labels, layout-only JSX
+// text dropped, height, size) and its errorChars. Usage: node dist/parity.node.js [grammar...] [--show N]
 
 import type { Parser as WasmParser } from "web-tree-sitter";
 import {
@@ -12,44 +13,121 @@ import {
 } from "./corpus.node.js";
 import { parseRaw } from "./index.js";
 import type { Language } from "./language.js";
+import {
+  jsxText,
+  type RawTree,
+  type SyntaxNode,
+  type SyntaxTree,
+  syntaxTree,
+} from "./tree.js";
 
-function reference(parser: WasmParser, text: string): string[] {
+interface Walk {
+  lines: string[];
+  syntax: string[];
+}
+
+function describeSyntax(tree: SyntaxTree): string[] {
+  return [
+    ...tree.nodes.map(
+      (n, i) =>
+        `${i === n.id ? n.id : `${i}!=${n.id}`} ${n.kind}${n.named ? "" : "(anon)"} ${n.start}-${n.end} ${n.field ?? "-"} p${n.parent?.id ?? "-"} h${n.height} s${n.size} ${JSON.stringify(n.label)}`,
+    ),
+    `errorChars ${tree.errorChars}`,
+  ];
+}
+
+/**
+ * The cursor walk packages/engine does over web-tree-sitter, rebuilt here so the reference SyntaxTree shares
+ * no walk, label, errorChars or height/size code with the port. Only `jsxText` and the layout-leaf removal
+ * inside `syntaxTree` are shared.
+ */
+function reference(parser: WasmParser, text: string): Walk {
   const tree = parser.parse(text);
   if (!tree) throw new Error("web-tree-sitter returned no tree");
   const c = tree.walk();
-  const out: string[] = [];
+  const lines: string[] = [];
+  const raw: RawTree = {
+    nodes: [],
+    missing: new Set(),
+    layout: new Set(),
+    errorChars: 0,
+  };
+  let parent: SyntaxNode | undefined;
   let depth = 0;
+  let errorDepth = 0;
   for (;;) {
-    out.push(
+    lines.push(
       `${depth} ${c.nodeType}${c.nodeIsNamed ? "" : "(anon)"}${c.nodeIsMissing ? "(MISSING)" : ""} ${c.startIndex}-${c.endIndex}${c.currentFieldName ? ` ${c.currentFieldName}:` : ""}`,
     );
+    const node: SyntaxNode = {
+      id: raw.nodes.length,
+      kind: c.nodeType,
+      named: c.nodeIsNamed,
+      field: c.currentFieldName ?? undefined,
+      label: "",
+      start: c.startIndex,
+      end: c.endIndex,
+      parent,
+      children: [],
+      height: 1,
+      size: 1,
+    };
+    raw.nodes.push(node);
+    parent?.children.push(node);
+    if (node.kind === "ERROR" && errorDepth === 0)
+      raw.errorChars += node.end - node.start;
     if (c.gotoFirstChild()) {
+      if (node.kind === "ERROR") errorDepth++;
+      parent = node;
       depth++;
       continue;
     }
+    const token = text.slice(node.start, node.end);
+    if (node.kind.includes("comment")) node.label = token.replace(/\s+/g, " ");
+    else if (node.kind === "jsx_text") {
+      node.label = jsxText(token);
+      if (node.label === "") raw.layout.add(node);
+    } else node.label = token;
     while (!c.gotoNextSibling()) {
-      if (!c.gotoParent()) {
+      if (!c.gotoParent() || !parent) {
         c.delete();
         tree.delete();
-        return out;
+        for (const n of raw.nodes.toReversed())
+          if (n.parent) {
+            n.parent.height = Math.max(n.parent.height, n.height + 1);
+            n.parent.size += n.size;
+          }
+        return { lines, syntax: describeSyntax(syntaxTree(raw)) };
       }
+      if (parent.kind === "ERROR") errorDepth--;
+      parent = parent.parent;
       depth--;
     }
   }
 }
 
-function ours(lang: Language, text: string): string[] {
+function ours(lang: Language, text: string): Walk {
   const raw = parseRaw(lang, text);
   const depthOf = new Map<unknown, number>();
-  return raw.nodes.map((n) => {
+  const lines = raw.nodes.map((n) => {
     const depth = n.parent ? (depthOf.get(n.parent) as number) + 1 : 0;
     depthOf.set(n, depth);
     return `${depth} ${n.kind}${n.named ? "" : "(anon)"}${raw.missing.has(n) ? "(MISSING)" : ""} ${n.start}-${n.end}${n.field ? ` ${n.field}:` : ""}`;
   });
+  return { lines, syntax: describeSyntax(syntaxTree(raw)) };
+}
+
+/** The first index where the lists differ, or -1 when they are identical. */
+function firstDifference(a: string[], b: string[]): number {
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  return i === a.length && i === b.length ? -1 : i;
 }
 
 interface Divergence {
   input: Input;
+  /** `nodes`: the per-node lines differ. `syntaxTree`: those agree, but the SyntaxTree or errorChars do not. */
+  stage: "nodes" | "syntaxTree";
   index: number;
   expected: string[];
   actual: string[];
@@ -76,32 +154,49 @@ export async function checkParity(
   const divergences: Divergence[] = [];
   for (const input of inputs) {
     const expected = reference(wasm, input.text);
-    nodes += expected.length;
-    if (expected.some((l) => l.includes(" ERROR ") || l.includes("(MISSING)")))
+    nodes += expected.lines.length;
+    if (
+      expected.lines.some(
+        (l) => l.includes(" ERROR ") || l.includes("(MISSING)"),
+      )
+    )
       withErrors++;
-    let actual: string[];
+    let actual: Walk;
     try {
       actual = ours(lang, input.text);
     } catch (e) {
       divergences.push({
         input,
+        stage: "nodes",
         index: 0,
-        expected,
+        expected: expected.lines,
         actual: [],
         error: e instanceof Error ? (e.stack ?? e.message) : String(e),
       });
       continue;
     }
-    let i = 0;
-    while (
-      i < expected.length &&
-      i < actual.length &&
-      expected[i] === actual[i]
-    )
-      i++;
-    nodesSame += i;
-    if (i === expected.length && i === actual.length) same++;
-    else divergences.push({ input, index: i, expected, actual });
+    const i = firstDifference(expected.lines, actual.lines);
+    nodesSame += i < 0 ? expected.lines.length : i;
+    if (i >= 0) {
+      divergences.push({
+        input,
+        stage: "nodes",
+        index: i,
+        expected: expected.lines,
+        actual: actual.lines,
+      });
+      continue;
+    }
+    const j = firstDifference(expected.syntax, actual.syntax);
+    if (j < 0) same++;
+    else
+      divergences.push({
+        input,
+        stage: "syntaxTree",
+        index: j,
+        expected: expected.syntax,
+        actual: actual.syntax,
+      });
   }
   wasm.delete();
   return { same, nodes, nodesSame, withErrors, divergences };
@@ -125,7 +220,7 @@ async function main(): Promise<void> {
     );
     for (const d of r.divergences.slice(0, show)) {
       console.log(
-        `  ${d.input.name} (${d.input.text.length} chars): first divergence at node ${d.index}`,
+        `  ${d.input.name} (${d.input.text.length} chars): first ${d.stage} divergence at line ${d.index}`,
       );
       if (d.error) {
         console.log(

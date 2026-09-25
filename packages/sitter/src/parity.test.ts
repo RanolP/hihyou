@@ -9,8 +9,10 @@ import { language as typescript } from "./generated/typescript.js";
 import type { Language } from "./language.js";
 import { checkParity } from "./parity.node.js";
 
-// Small inputs that exercise the lexer, the tables and error recovery (MISSING insertion, ERROR wrapping).
-// The fetched corpus runs through `node dist/parity.node.js`; this keeps a regression visible in `pnpm test`.
+// Small inputs that exercise the lexer, the tables and error recovery (MISSING insertion, ERROR wrapping,
+// `recover`, `condenseStack`, stack `popError`/merging), each compared with web-tree-sitter on its nodes, its
+// SyntaxTree and its errorChars. The corpus is gitignored, so these committed cases are what CI checks; the
+// fetched corpus runs through `node dist/parity.node.js`.
 // Generated modules are imported statically: vitest cannot resolve a template dynamic import to a .ts file.
 const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
   json: [
@@ -21,6 +23,14 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
       '{"a": {"b": [1, 2}',
       '[1, 2 3, "x\\q", @, ]',
       "",
+      // Recovery that skips a stray comma and then closes an array and an object that never closed.
+      '{"a": [1,, }',
+      // Several recoveries in one object: missing colons and a key with no value, costed against each other.
+      '{"a" 1 "b" 2 "c"}',
+      // MISSING insertion down a chain of unclosed containers at end of input.
+      '[[[{"a": [{"b":',
+      // Garbage before and after a value: ERROR at the root, errorChars counted once for nested ERRORs.
+      '}} x {"a": 1} ]] y',
     ],
   ],
   css: [
@@ -30,6 +40,12 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
       "a { color: red; b:hover { x: 1 } }\n/* c */ @import url(x.css);",
       "a { color: ; } b { : red } c:",
       "a:hover /* { */ { x: y }",
+      // An unclosed block at end of input: MISSING `}` after a declaration with no `;`.
+      "a { color: red",
+      // An unclosed at-rule wrapping an unclosed rule, then stray closers.
+      "@media screen { a { b: c }\n}} d { e: f }",
+      // The descendant-operator scanner before a pseudo-class that is really a declaration.
+      "a b:hover { c: d } e f:g; h",
     ],
   ],
   javascript: [
@@ -40,6 +56,16 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
       "let a = b\n++c\nconst t = `x${a}y\\n`\nconst r = a / 2 / 3, s = /re[/]g/.test(t)\nx = a ? .5 : b?.c\n<!-- old\nconst j = <div>\n  hi {a} &amp; <b/>\n</div>\nif (a) b\nelse c\nfor (const k in o) {}\n",
       "function f( { return 1 }\nclass { #x = 1; static { y() } }\nconst o = { a: 1,, b }",
       "a\ninstanceof B\na\nin b\n/* c\n */ d",
+      // U+0363 is alphabetic to JS but not to musl: `in` stays a keyword, as in web-tree-sitter.
+      "a\nin\u0363 b",
+      // U+0660 is alphabetic to musl only: `in٠` is one identifier, so no semicolon is inserted.
+      "a\nin\u0660 b\na\ninstanceof\u0660 c",
+      // An unclosed template substitution runs the template-chars scanner into end of input.
+      "const t = `a${b + `c${d`\n",
+      // ASI branches: a newline before `(`, `[`, `++`, `-`, `.`, `?`, `!=` and a `return` with no value.
+      "a\n(b)\nc\n[d]\ne\n++f\ng\n-h\ni\n.j\nk\n? l : m\nn\n!= o\nfunction p() { return\nq }\n",
+      // Recovery inside nested statements: an unclosed condition and a stray `else`.
+      "if (a { b } else }\nwhile (c) { d(\n",
     ],
   ],
   typescript: [
@@ -48,6 +74,13 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
       // Optional `?:` vs ternary, object-pattern annotations, signatures without bodies, generics vs `<`.
       "type F = ({a}: {a: number}) => number\ninterface I { x?: string; m(a?, b?): void }\nfunction f(a: number): void\nfunction f(a) {}\nconst y = a ? b : c\nconst z = f<T>(1) < 2\nabstract class C<T extends {}> implements I { private readonly x?: T; }\n",
       "let x: = 1\nfunction g(a: , b) { return }\nenum E { A = 1,, B }\n",
+      // musl's iswalpha, not \p{Alphabetic}, decides whether `in`/`instanceof` end at the next character.
+      "a\nin\u0363 b\na\nin\u0660 b",
+      // An unclosed template literal: template chars reach end of input inside a substitution.
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: TypeScript source under test, not a template.
+      "let s = `x${y}` + `unterminated ${z",
+      // Function-signature ASI inside a class body, and a broken generic parameter list.
+      "class C { m(): void\n  n() {} }\nfunction f<T(a: T): {\n",
     ],
   ],
   tsx: [
@@ -55,6 +88,10 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
     [
       "const a = <A<T> b={1} {...c}>\n  text {d}\n  <>frag</>\n</A>\nconst g = <T,>(x: T) => x\n",
       "const b = <div>unclosed {x</div>\n",
+      // An unclosed template inside a JSX expression, then a mismatched closing tag.
+      "const c = <div>{`a${</span>\n",
+      // Multi-line JSX text becomes one collapsed label in the SyntaxTree; `in٠` stays one identifier.
+      "const d = <a>\n  <b/>\n  x  y\n</a>\na\nin\u0660 b",
     ],
   ],
   python: [
@@ -63,6 +100,14 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
       // Indent and dedent around comments, line continuations, f-strings with {{ escapes, raw and bytes strings.
       'def f(a,\n      b):\n    if a:\n        return b\n  # odd comment\n    x = 1 \\\n        + 2\n    return f"{a!r:>{b}} {{lit}}" + rb"\\q" + b"\\N" + """\ntriple "" x"""\n\nclass C:\n\tpass\n',
       "def g(:\n    x = [1, 2\ny = 'unterminated\n  z = f'{a'\n",
+      // A broken parameter list followed by a dedent to a column no open block started at.
+      "def f(:\n  x\n y\n",
+      // A dedent mismatch inside nested blocks, then a return to the outer level.
+      "if a:\n    if b:\n        c\n      d\n    e\nf\n",
+      // An open bracket spanning a dedent: the scanner must not emit INDENT/DEDENT inside it.
+      "class C:\n    def f(self):\n        return (\n    x = 1\n",
+      // Tabs and spaces mixed, and an unterminated f-string replacement field.
+      'if a:\n\tb\n        c\nd = f"{e"\n',
     ],
   ],
 };
@@ -80,7 +125,7 @@ for (const [grammar, [lang, texts]] of Object.entries(CASES) as [
     expect(
       r.divergences.map(
         (d) =>
-          `${d.input.name} at ${d.index}: ${d.expected[d.index]} vs ${d.actual[d.index]}`,
+          `${d.input.name} ${d.stage} at ${d.index}: ${d.expected[d.index]} vs ${d.actual[d.index]}${d.error ? ` threw ${d.error}` : ""}`,
       ),
     ).toEqual([]);
   });
