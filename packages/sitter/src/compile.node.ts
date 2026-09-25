@@ -25,7 +25,8 @@ export const GRAMMARS: Record<string, { src: string; scanner?: string }> = {
     src: "tree-sitter-typescript/typescript/src",
     scanner: "typescript",
   },
-  tsx: { src: "tree-sitter-typescript/tsx/src", scanner: "tsx" },
+  // Both dialects include the same common/scanner.h.
+  tsx: { src: "tree-sitter-typescript/tsx/src", scanner: "typescript" },
   python: { src: "tree-sitter-python/src", scanner: "python" },
 };
 
