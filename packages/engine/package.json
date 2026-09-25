@@ -8,6 +8,21 @@
       "@hihyou/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./node": {
+      "@hihyou/source": "./src/node.ts",
+      "types": "./dist/node.d.ts",
+      "default": "./dist/node.js"
     }
+  },
+  "dependencies": {
+    "diff": "9.0.0",
+    "tree-sitter-css": "0.25.0",
+    "tree-sitter-javascript": "0.25.0",
+    "tree-sitter-json": "0.24.8",
+    "tree-sitter-python": "0.25.0",
+    "tree-sitter-typescript": "0.23.2",
+    "web-tree-sitter": "0.27.0",
+    "zod": "4.6.5"
   }
 }

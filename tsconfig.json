@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "packages/engine" },
+    { "path": "packages/engine/tsconfig.node.json" },
     { "path": "packages/cli" },
     { "path": "packages/ui" },
     { "path": "packages/gui" },

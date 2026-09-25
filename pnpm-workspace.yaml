@@ -1,2 +1,9 @@
 packages:
   - packages/*
+# Grammar packages ship prebuilt .wasm; their native node bindings are unused.
+allowBuilds:
+  tree-sitter-css: false
+  tree-sitter-javascript: false
+  tree-sitter-json: false
+  tree-sitter-python: false
+  tree-sitter-typescript: false
