@@ -69,7 +69,8 @@ function fits(
     if (!cmd) return true;
     const { mode, doc: d } = cmd;
     if (isDocs(d)) {
-      for (const part of d.toReversed()) cmds.push({ mode, doc: part });
+      for (let i = d.length - 1; i >= 0; i--)
+        cmds.push({ mode, doc: d[i] as Doc });
       continue;
     }
     switch (d.k) {
@@ -86,8 +87,8 @@ function fits(
         cmds.push({ mode, doc: d.contents });
         break;
       case "fill":
-        for (const part of d.parts.slice(d.from ?? 0).reverse())
-          cmds.push({ mode, doc: part });
+        for (let i = d.parts.length - 1; i >= (d.from ?? 0); i--)
+          cmds.push({ mode, doc: d.parts[i] as Doc });
         break;
       case "group":
         if (mustBeFlat && d.break) return false;
@@ -118,7 +119,10 @@ export function print(
   layout: Layout,
 ): { text: string; placed: Placed[] } {
   propagateBreaks(doc);
+  // Finished lines, each followed by its line break; the line being printed is `current`, so a line end trims
+  // one string instead of walking back over the pieces of the line.
   const out: string[] = [];
+  let current = "";
   let length = 0;
   let column = 0;
   const placed: Placed[] = [];
@@ -127,21 +131,17 @@ export function print(
   const suffixes: Cmd[] = [];
   const groupModes = new Map<Group, Mode>();
   const write = (s: string) => {
-    out.push(s);
+    current += s;
     length += s.length;
     column += textWidth(s);
   };
   // Trailing spaces and tabs go when a line ends; tokens never end in either, so no placement moves.
   const trimLineEnd = () => {
-    for (let last = out.at(-1); last !== undefined; last = out.at(-1)) {
-      const trimmed = last.replace(/[ \t]+$/, "");
-      length -= last.length - trimmed.length;
-      if (trimmed !== "") {
-        out[out.length - 1] = trimmed;
-        return;
-      }
-      out.pop();
-    }
+    let end = current.length;
+    for (let c = current.charCodeAt(end - 1); c === 32 || c === 9; )
+      c = current.charCodeAt(--end - 1);
+    length -= current.length - end;
+    current = current.slice(0, end);
   };
 
   for (;;) {
@@ -154,7 +154,8 @@ export function print(
     if (!cmd) break;
     const { indent, mode, doc: d } = cmd;
     if (isDocs(d)) {
-      for (const part of d.toReversed()) cmds.push({ indent, mode, doc: part });
+      for (let i = d.length - 1; i >= 0; i--)
+        cmds.push({ indent, mode, doc: d[i] as Doc });
       continue;
     }
     switch (d.k) {
@@ -187,7 +188,9 @@ export function print(
           break;
         }
         trimLineEnd();
-        write("\n");
+        out.push(current, "\n");
+        current = "";
+        length += 1;
         write(
           layout.useTabs
             ? "\t".repeat(indent)
@@ -209,6 +212,7 @@ export function print(
         unknownDoc(d);
     }
   }
+  out.push(current);
   return { text: out.join(""), placed };
 
   function printGroup(g: Group, indent: number, mode: Mode) {
