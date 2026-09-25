@@ -1,7 +1,7 @@
 import { createSyntaxParser } from "@hihyou/engine";
 import { nodeGrammarLocator } from "@hihyou/engine/node";
 import { describe, expect, it } from "vitest";
-import { token } from "./doc.js";
+import { text, token } from "./doc.js";
 import { format } from "./format.js";
 import { defineLanguage, type Helpers } from "./rules.js";
 
@@ -9,7 +9,8 @@ const parser = createSyntaxParser({ locateGrammar: nodeGrammarLocator });
 const grammar = {
   kinds: ["document", "object", "pair", "array", "string", "number", "comment"],
   tokens: ["{", "}", "[", "]", ",", ":"],
-  fields: ["key", "value"],
+  // `body` is not tree-sitter-json's: it gives the typecheck test a field that exists on a kind other than `pair`.
+  fields: { pair: ["key", "value"], document: ["body"] },
   comments: ["comment"],
 } as const;
 
@@ -128,5 +129,48 @@ describe("format", () => {
       // @ts-expect-error: `objekt` is not a kind of this grammar
       objekt: h.verbatim(),
     }));
+  });
+
+  it("a seq reading a field its kind lacks fails typecheck, instead of printing nothing for it at run time", () => {
+    defineLanguage(grammar, { lineComments: { comment: "//" } }, (h) => ({
+      ...rules(h),
+      // @ts-expect-error: `body` is a field of `document`, not of `pair`
+      pair: h.seq(h.field("body")),
+    }));
+  });
+
+  it("a seq reaches children in no field by kind or by position, so such a child is printed rather than dropped", async () => {
+    const byKind = defineLanguage(
+      grammar,
+      { lineComments: { comment: "//" } },
+      (h) => ({ ...rules(h), document: h.seq({ kind: "object" }) }),
+    );
+    const byPosition = defineLanguage(
+      grammar,
+      { lineComments: { comment: "//" } },
+      (h) => ({ ...rules(h), document: h.seq({ nth: 0 }) }),
+    );
+    for (const language of [byKind, byPosition])
+      expect(await run('{"a" :1}', language)).toMatchObject({
+        ok: true,
+        text: '{ "a": 1 }\n',
+      });
+  });
+
+  it("args a rule passes to `print` reach the child's rule, so a parent can steer how a child prints", async () => {
+    const marks = defineLanguage(
+      grammar,
+      { lineComments: { comment: "//" } },
+      (h) => ({
+        ...rules(h),
+        document: (node, ctx) =>
+          ctx.items(node).map((n) => ctx.print(n, { mark: "!" })),
+        number: (node, ctx, args) => [
+          token(node, ctx.source.slice(node.start, node.end)),
+          text(String(args?.["mark"] ?? "")),
+        ],
+      }),
+    );
+    expect(await run("1", marks)).toMatchObject({ ok: true, text: "1!\n" });
   });
 });

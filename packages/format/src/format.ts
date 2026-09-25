@@ -56,7 +56,7 @@ export function format(
     const ctx: Ctx = {
       source,
       settings,
-      print(node) {
+      print(node, args) {
         // A node holding a parse error, or a node the parser invented to recover from one, has no reliable
         // structure (which comma belongs to which item?), so it keeps its source text; the nodes around it
         // still format.
@@ -64,7 +64,13 @@ export function format(
           (c) => c.kind === "ERROR" || c.missing,
         );
         const rule = (!broken && language.rules.get(node.kind)) || fallback;
-        return printWithComments(node, rule(node, ctx), comments, ctx, isLine);
+        return printWithComments(
+          node,
+          rule(node, ctx, args),
+          comments,
+          ctx,
+          isLine,
+        );
       },
       items: (node) => node.children.filter((c) => c.named && !isComment(c)),
       dangling: (node) => comments.dangling(node).map(commentToken),

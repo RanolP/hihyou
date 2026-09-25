@@ -9,6 +9,7 @@ export {
   type Language,
   type LanguageOptions,
   type ListOptions,
+  type PrintArgs,
   type Rule,
   type SeqPart,
 } from "./rules.js";

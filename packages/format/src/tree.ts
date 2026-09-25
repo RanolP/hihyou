@@ -12,6 +12,8 @@ export interface FormatNode {
    * does not tell: a TypeScript statement's semicolon can be zero width and still real.
    */
   readonly missing: boolean;
+  /** The enclosing node; undefined at the root. */
+  readonly parent: FormatNode | undefined;
   readonly start: number;
   readonly end: number;
   readonly children: readonly FormatNode[];

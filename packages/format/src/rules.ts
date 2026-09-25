@@ -29,20 +29,27 @@ export interface Grammar {
   readonly kinds: readonly string[];
   /** Anonymous tokens: punctuation and keywords. */
   readonly tokens: readonly string[];
-  readonly fields: readonly string[];
-  /** Named kinds the parser may place anywhere (tree-sitter's extras); for these grammars, comments. */
+  /** Each kind's fields; a kind without fields is absent. */
+  readonly fields: { readonly [kind: string]: readonly string[] };
+  /** The extras that are comments, which the formatter places as prettier places comments. */
   readonly comments: readonly string[];
 }
 type KindOf<G extends Grammar> = G["kinds"][number];
 type TokenOf<G extends Grammar> = G["tokens"][number];
-type FieldOf<G extends Grammar> = G["fields"][number];
+type FieldsOf<G extends Grammar, K> = K extends keyof G["fields"]
+  ? G["fields"][K][number]
+  : never;
+type FieldOf<G extends Grammar> = FieldsOf<G, keyof G["fields"]>;
 type CommentOf<G extends Grammar> = G["comments"][number];
+
+/** What a rule passes down to the rule of a child it prints, as prettier's `print(path, args)` does. */
+export type PrintArgs = Readonly<Record<string, unknown>>;
 
 export interface Ctx {
   readonly source: string;
   readonly settings: Settings;
-  /** `node` as its rule prints it, with the comments attached to it. */
-  print(node: FormatNode): Doc;
+  /** `node` as its rule prints it, with the comments attached to it; `args` reach that rule. */
+  print(node: FormatNode, args?: PrintArgs): Doc;
   /** The children that carry meaning: named, and not comments. */
   items(node: FormatNode): FormatNode[];
   /** Comments inside `node` next to none of its items, printed one per line. */
@@ -59,12 +66,19 @@ export interface Ctx {
   isList(node: FormatNode): boolean;
 }
 
-/** Prints one node. Rules are plain functions; the helpers below build the common shapes. */
-export type Rule = (node: FormatNode, ctx: Ctx) => Doc;
+/**
+ * Prints one node. Rules are plain functions; the helpers below build the common shapes. `F` is the fields the
+ * rule reads, so that a rule table can check them against the kind the rule is for.
+ */
+export interface Rule<F extends string = never> {
+  (node: FormatNode, ctx: Ctx, args?: PrintArgs): Doc;
+  /** Type-only, never set: carries `F`, which a function type alone would not. */
+  readonly reads?: readonly F[];
+}
 
 export interface Language {
-  readonly rules: ReadonlyMap<string, Rule>;
-  readonly lists: ReadonlySet<Rule>;
+  readonly rules: ReadonlyMap<string, Rule<string>>;
+  readonly lists: ReadonlySet<Rule<string>>;
   readonly comments: ReadonlySet<string>;
   /** Comment kinds that run to the end of the line, each with the prefix that marks it (see `LanguageOptions`). */
   readonly lineComments: ReadonlyMap<string, string>;
@@ -101,25 +115,41 @@ export interface ListOptions<G extends Grammar> {
   trailingSep?: boolean;
 }
 
+/**
+ * One slot of a `seq`, each taking the first child not yet taken that it matches: an anonymous token by its text,
+ * a child in a field, the first named child of a kind (for children in no field, such as the expression of a
+ * `return_statement`), or the `nth` item (counted as `Ctx.items` counts, from 0). `space` prints a space.
+ */
 export type SeqPart<G extends Grammar> =
   | TokenOf<G>
   | { readonly field: FieldOf<G> }
+  | { readonly kind: KindOf<G> }
+  | { readonly nth: number }
   | { readonly space: true };
+
+type FieldIn<P> = P extends { readonly field: infer F extends string }
+  ? F
+  : never;
 
 export interface Helpers<G extends Grammar> {
   list(options: ListOptions<G>): Rule;
-  /** The named tokens and fields in this order, as one group. */
-  seq(...parts: SeqPart<G>[]): Rule;
+  /** The parts in this order, as one group. */
+  seq<const P extends readonly SeqPart<G>[]>(
+    ...parts: P
+  ): Rule<FieldIn<P[number]>>;
   /** Each item on its own line. */
   block(): Rule;
   verbatim(): Rule;
-  field(name: FieldOf<G>): { readonly field: FieldOf<G> };
+  field<F extends FieldOf<G>>(name: F): { readonly field: F };
   readonly space: { readonly space: true };
 }
 
-/** A rule table whose every key is a kind of `G`: a returned object literal is not checked for excess keys. */
+/**
+ * A rule table whose every key is a kind of `G`, with a rule that reads only that kind's fields: a returned
+ * object literal is not checked for excess keys, and a rule's own type does not know which kind it is for.
+ */
 type RuleTable<G extends Grammar, T> = {
-  [K in keyof T]: K extends KindOf<G> ? Rule : never;
+  [K in keyof T]: K extends KindOf<G> ? Rule<FieldsOf<G, K>> : never;
 };
 
 export function defineLanguage<
@@ -128,9 +158,9 @@ export function defineLanguage<
 >(
   grammar: G,
   options: LanguageOptions<G>,
-  define: (h: Helpers<G>) => T & { [K in KindOf<G>]?: Rule },
+  define: (h: Helpers<G>) => T & { [K in KindOf<G>]?: Rule<FieldsOf<G, K>> },
 ): Language {
-  const lists = new Set<Rule>();
+  const lists = new Set<Rule<string>>();
   const helpers: Helpers<G> = {
     list(o) {
       const rule = listRule(o);
@@ -143,8 +173,8 @@ export function defineLanguage<
     field: (field) => ({ field }),
     space: { space: true },
   };
-  const table: Partial<Record<string, Rule>> = define(helpers);
-  const rules = new Map<string, Rule>();
+  const table: Partial<Record<string, Rule<string>>> = define(helpers);
+  const rules = new Map<string, Rule<string>>();
   for (const [kind, rule] of Object.entries(table))
     if (rule) rules.set(kind, rule);
   return {
@@ -176,15 +206,19 @@ const blockRule: Rule = (node, ctx) => [
 function seqRule(parts: readonly SeqPart<Grammar>[]): Rule {
   return (node, ctx) => {
     const used = new Set<FormatNode>();
+    const items = ctx.items(node);
+    const matches = (part: Exclude<SeqPart<Grammar>, { space: true }>) =>
+      typeof part === "string"
+        ? (c: FormatNode) => !c.named && c.kind === part
+        : "field" in part
+          ? (c: FormatNode) => c.field === part.field
+          : "kind" in part
+            ? (c: FormatNode) => c.named && c.kind === part.kind
+            : (c: FormatNode) => c === items[part.nth];
     const docs = parts.map((part): Doc => {
       if (typeof part === "object" && "space" in part) return text(" ");
-      const child = node.children.find(
-        (c) =>
-          !used.has(c) &&
-          (typeof part === "string"
-            ? !c.named && c.kind === part
-            : c.field === part.field),
-      );
+      const isPart = matches(part);
+      const child = node.children.find((c) => !used.has(c) && isPart(c));
       if (!child) return [];
       used.add(child);
       return typeof part === "string"

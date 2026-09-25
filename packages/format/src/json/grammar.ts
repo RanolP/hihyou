@@ -15,6 +15,8 @@ export const grammar = {
     "true",
   ],
   tokens: ['"', ",", ":", "[", "]", "{", "}"],
-  fields: ["key", "value"],
+  fields: {
+    pair: ["key", "value"],
+  },
   comments: ["comment"],
 } as const;

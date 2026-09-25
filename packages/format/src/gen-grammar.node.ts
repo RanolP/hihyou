@@ -55,10 +55,20 @@ for (const c of comments)
       `${c} is not an extra of ${grammarPath}, so the parser cannot place it anywhere; its extras are ${[...extraKinds].join(", ")}`,
     );
 
+const fields = Object.fromEntries(
+  nodeTypes
+    .filter((t) => t.named && !t.subtypes && t.fields)
+    .map((t): [string, string[]] => [
+      t.type,
+      sorted(Object.keys(t.fields ?? {})),
+    ])
+    .filter(([, fs]) => fs.length > 0)
+    .sort(([a], [b]) => (a < b ? -1 : 1)),
+);
 const grammar = {
   kinds,
   tokens: sorted(nodeTypes.filter((t) => !t.named).map((t) => t.type)),
-  fields: sorted(nodeTypes.flatMap((t) => Object.keys(t.fields ?? {}))),
+  fields,
   comments,
 };
 
