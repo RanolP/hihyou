@@ -46,14 +46,15 @@ export interface Ctx {
   items(node: FormatNode): FormatNode[];
   /** Comments inside `node` next to none of its items, printed one per line. */
   dangling(node: FormatNode): Doc[];
-  /** Whether a line comment is among the dangling comments of `node`. */
   hasDanglingLineComment(node: FormatNode): boolean;
-  /** Whether `node` has a leading line comment (`leading`) or a trailing line comment on its own line. */
+  /**
+   * Whether `node` has a leading line comment (`leadingLine`), or a trailing line comment on the line where
+   * `node` starts (`trailingSameLine`).
+   */
   hasComment(
     node: FormatNode,
     where: "leadingLine" | "trailingSameLine",
   ): boolean;
-  /** Whether `node`'s kind is printed by a `list` rule. */
   isList(node: FormatNode): boolean;
 }
 
@@ -100,7 +101,6 @@ export interface Helpers<G extends Grammar> {
   seq(...parts: SeqPart<G>[]): Rule;
   /** Each item on its own line. */
   block(): Rule;
-  /** The source text unchanged. */
   verbatim(): Rule;
   field(name: FieldOf<G>): { readonly field: FieldOf<G> };
   readonly space: { readonly space: true };
@@ -252,34 +252,31 @@ function listRule(o: ListOptions<Grammar>): Rule {
       ? ifBreak(text(o.sep), [], concise ? listGroup : undefined)
       : [];
 
-    let body: Doc;
-    if (concise) {
-      const parts: Doc[] = [];
-      for (const [i, item] of items.entries()) {
-        const next = items[i + 1];
-        parts.push([ctx.print(item), next ? sep(item) : trailing]);
-        if (next)
-          parts.push(
-            blankAfter(item)
+    const body: Doc = concise
+      ? fill(
+          items.flatMap((item, i): Doc[] => {
+            const next = items[i + 1];
+            if (!next) return [[ctx.print(item), trailing]];
+            const separator = blankAfter(item)
               ? [hardline, hardline]
               : ctx.hasComment(next, "leadingLine")
                 ? hardline
-                : line,
-          );
-      }
-      body = fill(parts);
-    } else {
-      body = items.map((item, i) => {
-        const printed = o.groupItems ? group(ctx.print(item)) : ctx.print(item);
-        if (i === items.length - 1) return [printed, trailing];
-        const blank = blankAfter(item)
-          ? o.blankLines === "force"
-            ? hardline
-            : softline
-          : [];
-        return [printed, sep(item), line, blank];
-      });
-    }
+                : line;
+            return [[ctx.print(item), sep(item)], separator];
+          }),
+        )
+      : items.map((item, i) => {
+          const printed = o.groupItems
+            ? group(ctx.print(item))
+            : ctx.print(item);
+          if (i === items.length - 1) return [printed, trailing];
+          const blank = blankAfter(item)
+            ? o.blankLines === "force"
+              ? hardline
+              : softline
+            : [];
+          return [printed, sep(item), line, blank];
+        });
     const pad = o.pad && ctx.settings.bracketSpacing ? line : softline;
     contents.push(open, indent([pad, body]), pad, close);
     return listGroup;
@@ -303,42 +300,47 @@ export function printWithComments(
   };
 
   const leading = attached.leading.map((c): Doc => {
-    let after: Doc = hardline;
-    if (!isLine(c))
-      after = hasNewline(source, c.end)
-        ? hasNewline(source, c.start, true)
+    const after = isLine(c)
+      ? hardline
+      : !hasNewline(source, c.end)
+        ? text(" ")
+        : hasNewline(source, c.start, true)
           ? hardline
-          : line
-        : text(" ");
-    let i = c.end;
-    while (source.charAt(i) === " " || source.charAt(i) === "\t") i++;
-    const blank = /^\r?\n[ \t]*(\r?\n)/.test(source.slice(i));
+          : line;
+    const blank = /^[ \t]*\r?\n[ \t]*\r?\n/.test(source.slice(c.end));
     return [comment(c), after, blank ? hardline : []];
   });
 
-  let previous: { line: boolean; suffix: boolean } | undefined;
+  type Previous = { line: boolean; suffix: boolean };
+  // `suffix`: printed at the end of the line, where the next trailing comment must follow it.
+  const place = (
+    c: FormatNode,
+    lineComment: boolean,
+    previous: Previous | undefined,
+  ): { doc: Doc; suffix: boolean } =>
+    (previous?.suffix && !previous.line) || hasNewline(source, c.start, true)
+      ? {
+          doc: lineSuffix([
+            hardline,
+            isPreviousLineEmpty(source, c.start) ? hardline : [],
+            comment(c),
+          ]),
+          suffix: true,
+        }
+      : lineComment || previous?.suffix
+        ? {
+            doc: [
+              lineSuffix([text(" "), comment(c)]),
+              lineComment ? breakParent : [],
+            ],
+            suffix: true,
+          }
+        : { doc: [text(" "), comment(c)], suffix: false };
+
+  let previous: Previous | undefined;
   const trailing = attached.trailing.map((c): Doc => {
     const lineComment = isLine(c);
-    let doc: Doc;
-    let suffix = true;
-    if (
-      (previous?.suffix && !previous.line) ||
-      hasNewline(source, c.start, true)
-    ) {
-      doc = lineSuffix([
-        hardline,
-        isPreviousLineEmpty(source, c.start) ? hardline : [],
-        comment(c),
-      ]);
-    } else if (lineComment || previous?.suffix) {
-      doc = [
-        lineSuffix([text(" "), comment(c)]),
-        lineComment ? breakParent : [],
-      ];
-    } else {
-      doc = [text(" "), comment(c)];
-      suffix = false;
-    }
+    const { doc, suffix } = place(c, lineComment, previous);
     previous = { line: lineComment, suffix };
     return doc;
   });
