@@ -1,6 +1,11 @@
 import type { Language } from "./language.js";
 import { parseSubtree } from "./parser.js";
-import { type RawTree, type SyntaxTree, syntaxTree, walkTree } from "./tree.js";
+import {
+  type RawTree,
+  type SyntaxTree,
+  visibleTree,
+  walkTree,
+} from "./tree.js";
 
 export {
   type GrammarMeta,
@@ -9,11 +14,16 @@ export {
   loadLanguage,
 } from "./language.js";
 export type { ExternalScanner, Lexer } from "./lexer.js";
-export type { RawTree, SyntaxNode, SyntaxTree } from "./tree.js";
+export {
+  type RawTree,
+  type SyntaxNode,
+  type SyntaxTree,
+  syntaxTree,
+} from "./tree.js";
 
-/** Parses `text` in the engine's SyntaxTree shape: what packages/engine builds from web-tree-sitter. */
+/** Parses `text` into the SyntaxTree that packages/engine diffs: the visible nodes, layout-only JSX text dropped. */
 export function parse(lang: Language, text: string): SyntaxTree {
-  return syntaxTree(parseRaw(lang, text));
+  return visibleTree(parseRaw(lang, text));
 }
 
 /** The visible tree before layout-only JSX text is dropped, with the MISSING nodes marked. */

@@ -4,14 +4,13 @@ import {
   type FileDiff,
   memorySource,
 } from "@hihyou/engine";
-import { nodeGrammarLocator } from "@hihyou/engine/node";
 import { describe, expect, it } from "vitest";
 import { align } from "./align.js";
 import { createFormatter } from "./format.js";
 import { nodeRuffWasm } from "./node.js";
 import { presentFile, type SideView, segments } from "./view.js";
 
-const parser = createSyntaxParser({ locateGrammar: nodeGrammarLocator });
+const parser = createSyntaxParser();
 const formatter = createFormatter({ ruffWasm: nodeRuffWasm });
 
 async function present(path: string, before: string, after: string) {

@@ -1,3 +1,4 @@
+import { syntaxTree } from "syntechs/core";
 import {
   type Claimed,
   defaultMatchOptions,
@@ -9,7 +10,7 @@ import {
   match,
   type RawEdit,
 } from "syntechs/diff";
-import { type SyntaxNode, type SyntaxTree, syntaxTree } from "../parse/tree.js";
+import type { SyntaxNode, SyntaxTree } from "../parse/tree.js";
 
 /**
  * An edit whose `old` lies in file `from`'s base text and whose `new` in file `to`'s head text,

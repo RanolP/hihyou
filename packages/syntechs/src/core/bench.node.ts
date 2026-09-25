@@ -51,7 +51,7 @@ interface Node {
   size: number;
 }
 
-/** What packages/engine does with web-tree-sitter: parse, then one cursor walk into plain objects. */
+/** What packages/engine did with web-tree-sitter before syntechs: parse, then one cursor walk into plain objects. */
 function wasmTree(parser: WasmParser, text: string): Node[] {
   const tree = parser.parse(text);
   if (!tree) throw new Error("no tree");

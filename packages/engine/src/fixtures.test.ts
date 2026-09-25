@@ -3,12 +3,11 @@ import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildReviewDoc } from "./doc/build.js";
 import { type FileDiff, ReviewDoc } from "./doc/schema.js";
-import { nodeGrammarLocator } from "./parse/grammars.node.js";
 import { createSyntaxParser } from "./parse/parser.js";
 import { memorySource } from "./source/memory.js";
 
 const fixtures = join(import.meta.dirname, "..", "fixtures");
-const parser = createSyntaxParser({ locateGrammar: nodeGrammarLocator });
+const parser = createSyntaxParser();
 
 function tree(dir: string): Record<string, string> {
   const files = readdirSync(dir, {

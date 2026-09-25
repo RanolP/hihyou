@@ -18,7 +18,7 @@ import {
   type RawTree,
   type SyntaxNode,
   type SyntaxTree,
-  syntaxTree,
+  visibleTree,
 } from "./tree.js";
 
 interface Walk {
@@ -39,7 +39,7 @@ function describeSyntax(tree: SyntaxTree): string[] {
 /**
  * The cursor walk packages/engine does over web-tree-sitter, rebuilt here so the reference SyntaxTree shares
  * no walk, label, errorChars or height/size code with the port. Only `jsxText` and the layout-leaf removal
- * inside `syntaxTree` are shared.
+ * inside `visibleTree` are shared.
  */
 function reference(parser: WasmParser, text: string): Walk {
   const tree = parser.parse(text);
@@ -97,7 +97,7 @@ function reference(parser: WasmParser, text: string): Walk {
             n.parent.height = Math.max(n.parent.height, n.height + 1);
             n.parent.size += n.size;
           }
-        return { lines, syntax: describeSyntax(syntaxTree(raw)) };
+        return { lines, syntax: describeSyntax(visibleTree(raw)) };
       }
       if (parent.kind === "ERROR") errorDepth--;
       parent = parent.parent;
@@ -114,7 +114,7 @@ function ours(lang: Language, text: string): Walk {
     depthOf.set(n, depth);
     return `${depth} ${n.kind}${n.named ? "" : "(anon)"}${n.missing ? "(MISSING)" : ""} ${n.start}-${n.end}${n.field ? ` ${n.field}:` : ""}`;
   });
-  return { lines, syntax: describeSyntax(syntaxTree(raw)) };
+  return { lines, syntax: describeSyntax(visibleTree(raw)) };
 }
 
 /** The first index where the lists differ, or -1 when they are identical. */

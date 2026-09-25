@@ -3,7 +3,6 @@ import {
   createSyntaxParser,
   memorySource,
 } from "@hihyou/engine";
-import { nodeGrammarLocator } from "@hihyou/engine/node";
 import { createFormatter } from "@hihyou/present";
 import { nodeRuffWasm } from "@hihyou/present/node";
 import { render } from "ink-testing-library";
@@ -16,7 +15,7 @@ type Tree = Record<string, string | Uint8Array>;
 async function fixture(before: Tree, after: Tree) {
   const source = memorySource(before, after);
   const doc = await buildReviewDoc(source, {
-    parser: createSyntaxParser({ locateGrammar: nodeGrammarLocator }),
+    parser: createSyntaxParser(),
   });
   const load = viewLoader(
     doc,

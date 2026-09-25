@@ -5,7 +5,7 @@ import {
   createSyntaxParser,
   vcsFileSource,
 } from "@hihyou/engine";
-import { gitVcs, nodeGrammarLocator } from "@hihyou/engine/node";
+import { gitVcs } from "@hihyou/engine/node";
 import { createFormatter } from "@hihyou/present";
 import { nodeRuffWasm } from "@hihyou/present/node";
 import { exec } from "./exec.js";
@@ -29,7 +29,7 @@ async function main() {
   const vcs = gitVcs(process.cwd());
   const source = vcsFileSource(vcs, await resolveTarget(target, vcs, exec));
   const doc = await buildReviewDoc(source, {
-    parser: createSyntaxParser({ locateGrammar: nodeGrammarLocator }),
+    parser: createSyntaxParser(),
   });
   if (values.json) {
     process.stdout.write(`${JSON.stringify(doc, null, 2)}\n`);

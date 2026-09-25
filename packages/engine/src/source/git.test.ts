@@ -10,7 +10,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildReviewDoc } from "../doc/build.js";
-import { nodeGrammarLocator } from "../parse/grammars.node.js";
 import { createSyntaxParser } from "../parse/parser.js";
 import { gitVcs } from "./git.node.js";
 import {
@@ -21,7 +20,7 @@ import {
   vcsFileSource,
 } from "./vcs.js";
 
-const parser = createSyntaxParser({ locateGrammar: nodeGrammarLocator });
+const parser = createSyntaxParser();
 const renamedBody = `def greet(name):\n    message = "hello " + name\n    print(message)\n    return message\n`;
 let dir: string;
 const git = (...args: string[]) =>

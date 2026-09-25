@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { nodeGrammarLocator } from "../parse/grammars.node.js";
 import { createSyntaxParser } from "../parse/parser.js";
 import type { FileSource } from "../source/file-source.js";
 import { memorySource } from "../source/memory.js";
 import { buildReviewDoc } from "./build.js";
 import type { FileDiff } from "./schema.js";
 
-const parser = createSyntaxParser({ locateGrammar: nodeGrammarLocator });
+const parser = createSyntaxParser();
 
 async function diff(
   path: string,

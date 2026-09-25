@@ -196,11 +196,19 @@ export function walkTree(lang: Language, root: Subtree, text: string): RawTree {
   return { nodes, layout, errorChars };
 }
 
-export function syntaxTree(raw: RawTree): SyntaxTree {
-  const nodes = withoutLeaves(raw.nodes, raw.layout);
+/** The tree without the layout-only JSX text the walk collected. */
+export function visibleTree(raw: RawTree): SyntaxTree {
+  return syntaxTree(withoutLeaves(raw.nodes, raw.layout), raw.errorChars);
+}
+
+/** Wraps preorder `nodes` whose ids are their indices, such as a subtree copied out with its ids rebased. */
+export function syntaxTree(
+  nodes: SyntaxNode[],
+  errorChars: number,
+): SyntaxTree {
   return {
     nodes,
-    errorChars: raw.errorChars,
+    errorChars,
     node(id) {
       const n = nodes[id];
       if (!n)

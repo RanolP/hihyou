@@ -16,11 +16,7 @@ export {
   schemaVersion,
 } from "./doc/schema.js";
 export { LanguageId, languageForPath } from "./parse/languages.js";
-export {
-  createSyntaxParser,
-  type GrammarLocator,
-  type SyntaxParserOptions,
-} from "./parse/parser.js";
+export { createSyntaxParser } from "./parse/parser.js";
 export type { SyntaxParser } from "./parse/tree.js";
 export {
   type ChangedFile,
