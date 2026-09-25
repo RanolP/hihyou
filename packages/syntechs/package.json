@@ -3,11 +3,19 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "scripts": {
+    "generate": "node generate.mjs"
+  },
   "exports": {
     "./core": {
       "@hihyou/source": "./src/core/index.ts",
       "types": "./dist/core/index.d.ts",
       "default": "./dist/core/index.js"
+    },
+    "./compiler": {
+      "@hihyou/source": "./src/compiler/index.ts",
+      "types": "./dist/compiler/index.d.ts",
+      "default": "./dist/compiler/index.js"
     },
     "./grammars/*": {
       "@hihyou/source": "./src/grammars/*/index.ts",

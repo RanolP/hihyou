@@ -79,11 +79,7 @@ function repoFiles(grammar: GrammarName): string[] {
   });
   return out
     .split("\n")
-    .filter(
-      (f) =>
-        EXTENSIONS[grammar].some((e) => f.endsWith(e)) &&
-        !/\/grammars\/[^/]+\/index\.ts$/.test(f),
-    )
+    .filter((f) => EXTENSIONS[grammar].some((e) => f.endsWith(e)))
     .map((f) => join(repoRoot, f));
 }
 

@@ -1,6 +1,6 @@
+import { grammar } from "syntechs/grammars/json";
 import { token } from "../doc.js";
 import { defineLanguage, type Rule } from "../rules.js";
-import { grammar } from "./grammar.js";
 
 // Prettier's number normalization (utilities/print-number.js): lower case, no redundant exponent sign,
 // zeroes or dot, and a leading digit.

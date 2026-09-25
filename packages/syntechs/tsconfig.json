@@ -4,7 +4,9 @@
     "rootDir": "src",
     "outDir": "dist",
     // No node types: the runtime must run unchanged in the browser. Build tooling lives in tsconfig.node.json.
-    "types": []
+    "types": [],
+    // The language bundles are plain JS modules, so any host loads them without a TypeScript step.
+    "allowJs": true
   },
   "include": ["src"],
   "exclude": ["src/**/*.node.ts", "src/**/*.test.ts"]

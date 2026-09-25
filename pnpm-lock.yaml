@@ -242,6 +242,9 @@ importers:
       narrow-emojis:
         specifier: 0.0.3
         version: 0.0.3
+      syntechs:
+        specifier: workspace:*
+        version: link:../syntechs
     devDependencies:
       '@hihyou/engine':
         specifier: workspace:*

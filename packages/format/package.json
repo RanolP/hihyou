@@ -3,9 +3,6 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "scripts": {
-    "gen:grammar": "node src/gen-grammar.node.ts json tree-sitter-json --comments comment && biome format --write src/json/grammar.ts"
-  },
   "exports": {
     ".": {
       "@hihyou/source": "./src/index.ts",
@@ -21,7 +18,8 @@
   "dependencies": {
     "emoji-regex": "10.6.0",
     "get-east-asian-width": "1.6.0",
-    "narrow-emojis": "0.0.3"
+    "narrow-emojis": "0.0.3",
+    "syntechs": "workspace:*"
   },
   "devDependencies": {
     "@hihyou/engine": "workspace:*",

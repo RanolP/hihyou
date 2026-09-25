@@ -2,7 +2,12 @@ import type { Language } from "./language.js";
 import { parseSubtree } from "./parser.js";
 import { type RawTree, type SyntaxTree, syntaxTree, walkTree } from "./tree.js";
 
-export type { Language } from "./language.js";
+export {
+  type GrammarMeta,
+  type Language,
+  type LexFn,
+  loadLanguage,
+} from "./language.js";
 export type { ExternalScanner, Lexer } from "./lexer.js";
 export type { RawTree, SyntaxNode, SyntaxTree } from "./tree.js";
 
