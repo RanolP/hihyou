@@ -60,6 +60,12 @@ describe("fixtures", () => {
     ]);
   });
 
+  it("jsx-text-reflow: re-wrapping JSX text across lines and collapsing its spaces yields zero edits, not a jsx_text update", async () => {
+    const file = await onlyFile("jsx-text-reflow");
+    expect(file).toMatchObject({ language: "tsx", diffMode: "ast" });
+    expect(file.edits).toEqual([]);
+  });
+
   it("reorder-functions: swapping two functions is a move, not delete+insert of whole bodies", async () => {
     const file = await onlyFile("reorder-functions");
     expect(file.edits).toEqual([

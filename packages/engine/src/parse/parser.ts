@@ -63,12 +63,14 @@ type Cursor = ReturnType<NonNullable<ReturnType<Parser["parse"]>>["walk"]>;
 
 function toSyntaxTree(cursor: Cursor, text: string): SyntaxTree {
   const nodes: SyntaxNode[] = [];
+  const layout = new Set<SyntaxNode>();
   let errorChars = 0;
   const open = (parent: SyntaxNode | undefined): SyntaxNode => {
     const node: SyntaxNode = {
       id: nodes.length,
       kind: cursor.nodeType,
       named: cursor.nodeIsNamed,
+      field: cursor.currentFieldName ?? undefined,
       label: "",
       start: cursor.startIndex,
       end: cursor.endIndex,
@@ -86,11 +88,14 @@ function toSyntaxTree(cursor: Cursor, text: string): SyntaxTree {
   const close = (node: SyntaxNode) => {
     if (node.children.length === 0) {
       const token = text.slice(node.start, node.end);
-      // A comment is the one token whose inner whitespace is layout, not content (re-indenting a doc block).
-      // Whitespace inside strings stays significant.
-      node.label = node.kind.includes("comment")
-        ? token.replace(/\s+/g, " ")
-        : token;
+      // Comments and JSX text are the tokens whose inner whitespace is layout, not content (re-indenting a
+      // doc block, re-wrapping a paragraph). Whitespace inside strings stays significant.
+      if (node.kind.includes("comment"))
+        node.label = token.replace(/\s+/g, " ");
+      else if (node.kind === "jsx_text") {
+        node.label = jsxText(token);
+        if (node.label === "") layout.add(node);
+      } else node.label = token;
     }
     for (const c of node.children) {
       node.height = Math.max(node.height, c.height + 1);
@@ -113,13 +118,53 @@ function toSyntaxTree(cursor: Cursor, text: string): SyntaxTree {
           break;
         }
         if (!cursor.gotoParent() || !node.parent)
-          return syntaxTree(nodes, errorChars);
+          return syntaxTree(withoutLeaves(nodes, layout), errorChars);
         node = node.parent;
       }
     }
   } finally {
     cursor.delete();
   }
+}
+
+/**
+ * JSX text as JSX evaluates it (lines trimmed where they meet a line break, blank lines dropped, the rest
+ * joined by one space), with the remaining whitespace runs collapsed as HTML renders them. "" means the text
+ * is only layout between elements.
+ */
+function jsxText(token: string): string {
+  const lines = token.split(/\r\n|\n|\r/);
+  return lines
+    .map((line, i) => {
+      let t = line;
+      if (i > 0) t = t.trimStart();
+      if (i < lines.length - 1) t = t.trimEnd();
+      return t;
+    })
+    .filter((t) => t !== "")
+    .join(" ")
+    .replace(/\s+/g, " ");
+}
+
+/** The tree without the given leaves, re-numbered in preorder with sizes and heights recomputed. */
+function withoutLeaves(
+  nodes: SyntaxNode[],
+  drop: Set<SyntaxNode>,
+): SyntaxNode[] {
+  if (drop.size === 0) return nodes;
+  const kept = nodes.filter((n) => !drop.has(n));
+  for (const [id, n] of kept.entries()) {
+    n.id = id;
+    n.children = n.children.filter((c) => !drop.has(c));
+    n.height = 1;
+    n.size = 1;
+  }
+  for (const n of kept.toReversed())
+    for (const c of n.children) {
+      n.height = Math.max(n.height, c.height + 1);
+      n.size += c.size;
+    }
+  return kept;
 }
 
 function insideError(node: SyntaxNode | undefined): boolean {

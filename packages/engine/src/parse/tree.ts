@@ -9,8 +9,11 @@ export interface SyntaxNode {
   kind: string;
   /** False for anonymous tokens the grammar spells literally (punctuation, keywords); they carry no meaning of their own. */
   named: boolean;
+  /** The node's role in its parent, as the grammar names it (`condition`, `operator`, `parameters`), if it has one. */
+  field: string | undefined;
   /**
-   * Token text for leaves (comments with whitespace runs collapsed), "" for inner nodes.
+   * Token text for leaves, "" for inner nodes. Comments and JSX text carry prose, so their whitespace runs
+   * collapse to one space; JSX text that is only layout whitespace does not appear in the tree at all.
    * Whitespace between tokens never appears in a tree, so it never takes part in a diff.
    */
   label: string;
