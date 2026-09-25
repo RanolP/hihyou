@@ -1,0 +1,4 @@
+{
+  "name": "b",
+  "scripts": { "build": "tsc -b", "test": "vitest run" }
+}

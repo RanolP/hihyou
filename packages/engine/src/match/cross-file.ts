@@ -21,7 +21,11 @@ export type CrossEdit = {
   whole?: true;
 };
 
-/** Below this many nodes a subtree is too common (`return null;`) to claim that it moved. */
+/**
+ * Below this many nodes a subtree is too common (`return null;`) to claim that it moved. Only declarations
+ * (nodes with a name) are candidates: `size` counts punctuation, so a JSON pair or an import line clears
+ * this bar, and pairing those across files reports noise as moves.
+ */
 const minMoveSize = 8;
 
 /**
@@ -60,7 +64,8 @@ export function crossFileMoves(
               n.parent &&
               n.named &&
               n.size >= minMoveSize &&
-              table[n.id] === -1,
+              table[n.id] === -1 &&
+              nameOf(n) !== undefined,
           )
           .map((n) => ({ file, n }));
       })

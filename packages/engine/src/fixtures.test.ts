@@ -169,6 +169,48 @@ describe("fixtures", () => {
     expect(guard?.risk.score).toBeGreaterThan(format?.risk.score ?? 0);
   });
 
+  it("cross-file-guard-move: an auth guard moved from one endpoint to another leaves both files unfolded, so the endpoint that lost its check is not hidden as a move", async () => {
+    const doc = await fixture("cross-file-guard-move");
+    expect(doc.files.map((f) => [f.path, f.fold])).toEqual([
+      ["api/delete.ts", undefined],
+      ["api/read.ts", undefined],
+    ]);
+  });
+
+  for (const name of ["signature-overlap", "signature-overlap-swapped"])
+    it(`${name}: a call inside another signature's default never lands in two groups nor rejects the build, whichever function is declared first`, async () => {
+      const doc = await fixture(name);
+      const ids = doc.groups.flatMap((g) => g.edits);
+      expect(new Set(ids).size).toBe(ids.length);
+      for (const g of doc.groups) expect(g.edits.length).toBeGreaterThan(0);
+      expect(doc.files.flatMap((f) => f.edits).length).toBeGreaterThan(0);
+    });
+
+  for (const name of ["json-pair-move", "import-move"])
+    it(`${name}: a JSON pair or an import line moved between files is not reported as a move`, async () => {
+      const doc = await fixture(name);
+      expect(doc.groups.filter((g) => g.kind === "move")).toEqual([]);
+      for (const f of doc.files) expect(f.fold).toBeUndefined();
+    });
+
+  it("signature-foreign-call: a call to a same-named function imported from a package stays out of the local function's signature group", async () => {
+    const doc = await fixture("signature-foreign-call");
+    const idsOf = (path: string) =>
+      doc.files.find((f) => f.path === path)?.edits.map((e) => e.id) ?? [];
+    const [group] = doc.groups;
+    expect(doc.groups).toHaveLength(1);
+    expect(group).toMatchObject({ kind: "signature", name: "pad" });
+    for (const id of idsOf("table.ts")) expect(group?.edits).toContain(id);
+    for (const id of idsOf("other.ts")) expect(group?.edits).not.toContain(id);
+  });
+
+  it("unrelated-renames: the same local renamed alike in two unlinked files is two rename groups, not one cross-file rename", async () => {
+    const doc = await fixture("unrelated-renames");
+    expect(doc.groups.map((g) => g.kind === "rename-symbol" && g.path)).toEqual(
+      ["x.ts", "y.ts"],
+    );
+  });
+
   it("operator-change: `<` to `<=` is one update of the operator, not a delete plus an insert", async () => {
     const file = await onlyFile("operator-change");
     expect(file.edits).toEqual([

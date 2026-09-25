@@ -23,6 +23,7 @@ import {
   type Edit,
   type FallbackReason,
   type FileDiff,
+  type Group,
   type Position,
   type ReviewDoc,
   schemaVersion,
@@ -89,9 +90,9 @@ export async function buildReviewDoc(
     if ("old" in c.edit) located[c.from]?.push(c);
     if ("new" in c.edit) located[c.to]?.push(c);
   }
-  const { edits, ids } = toDocEdits(analyses, located);
-  const files = edits.map((edits, i): FileDiff => {
-    const { file, text } = analyses[i] as Analysis;
+  const { edits: docEdits, ids } = toDocEdits(analyses, located);
+  const files = analyses.map(({ file, text }, i): FileDiff => {
+    const edits = docEdits[i] ?? [];
     const fold = foldReason({ ...file, edits }, producedBy(file.path, text));
     const risk = riskOf(
       file.diffMode === "error"
@@ -100,11 +101,15 @@ export async function buildReviewDoc(
     );
     return { ...file, ...(fold && { fold }), edits, risk };
   });
-  const groups = groupEdits(
-    analyses.map((a) => a.file),
-    located,
-    ids,
-  );
+  // Groups are an overlay on complete per-file edits; a fault in grouping loses the overlay, never the review.
+  let groups: Group[] = [];
+  try {
+    groups = groupEdits(
+      analyses.map((a) => a.file),
+      located,
+      ids,
+    );
+  } catch {}
   files.sort(
     (p, q) =>
       Number(p.fold !== undefined) - Number(q.fold !== undefined) ||

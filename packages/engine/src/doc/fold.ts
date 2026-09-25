@@ -52,8 +52,14 @@ export function foldReason(
   if (produced) return produced;
   if (file.diffMode === "binary" || file.diffMode === "submodule")
     return file.diffMode;
+  // A move across files can carry behaviour away (a guard leaving one function for another), so only
+  // moves inside the file fold.
   if (file.edits.length > 0)
-    return file.edits.every((e) => e.kind === "move") ? "moved" : undefined;
+    return file.edits.every(
+      (e) => e.kind === "move" && e.from === undefined && e.to === undefined,
+    )
+      ? "moved"
+      : undefined;
   switch (file.status) {
     case "renamed":
     case "copied":
