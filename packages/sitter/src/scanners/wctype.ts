@@ -1,8 +1,8 @@
-// The <wctype.h> the grammar scanners call. web-tree-sitter links them against musl (tree-sitter's
-// wasm-stdlib), so whitespace is musl's exact set. Alphabetic and case use the JS engine's Unicode tables,
-// which can differ from musl's older tables on rare code points; ASCII and common scripts agree.
-
-const ALPHA = /\p{Alphabetic}/u;
+// The <wctype.h> the grammar scanners call. web-tree-sitter links them against musl, whose alphabetic set
+// differs from JS Unicode properties (musl counts U+0660 as alphabetic and U+0363 as not), so each function
+// reproduces musl exactly; wctype.test.ts checks every code point against web-tree-sitter.wasm.
+import { setContains } from "../language.js";
+import { MUSL_ALPHA } from "./musl-alpha.js";
 
 export function iswspace(c: number): boolean {
   return (
@@ -22,9 +22,7 @@ export function iswdigit(c: number): boolean {
 }
 
 export function iswalpha(c: number): boolean {
-  if (c < 128) return (c >= 65 && c <= 90) || (c >= 97 && c <= 122);
-  if (c >= 0x20000) return c < 0x2fffe;
-  return ALPHA.test(String.fromCodePoint(c));
+  return setContains(MUSL_ALPHA, c);
 }
 
 export function iswalnum(c: number): boolean {

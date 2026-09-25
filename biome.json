@@ -6,7 +6,8 @@
       "**",
       "!packages/engine/fixtures",
       "!research",
-      "!packages/sitter/src/generated"
+      "!packages/sitter/src/generated",
+      "!packages/sitter/src/scanners/musl-alpha.ts"
     ]
   },
   "formatter": { "indentStyle": "space" },
