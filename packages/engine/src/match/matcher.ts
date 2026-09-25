@@ -268,8 +268,14 @@ export function match(
   return { a, b, src, dst };
 }
 
-/** Equal ids iff the subtrees are isomorphic: same kinds, same token labels, same shape. Exact, no hash collisions. */
-function isoIds(tree: SyntaxTree, intern: Map<string, number>): Int32Array {
+/**
+ * Equal ids iff the subtrees are isomorphic: same kinds, same token labels, same shape. Exact, no hash collisions.
+ * Trees numbered through one shared `intern` compare across files.
+ */
+export function isoIds(
+  tree: SyntaxTree,
+  intern: Map<string, number>,
+): Int32Array {
   const ids = new Int32Array(tree.nodes.length);
   for (const n of tree.nodes.toReversed()) {
     const key = `${n.kind}\0${n.label}\0${n.children.map((c) => ids[c.id]).join(",")}`;

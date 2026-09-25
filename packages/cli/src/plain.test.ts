@@ -46,6 +46,7 @@ it("a file that fails to load prints its error inline and the files after it sti
     edits: [
       {
         kind: "insert",
+        id: 0,
         new: { start: { line: 1, column: 1 }, end: { line: 1, column: 3 } },
       },
     ],

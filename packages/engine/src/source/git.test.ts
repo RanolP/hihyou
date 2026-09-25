@@ -111,6 +111,7 @@ describe("git source", () => {
     expect(byPath["notes.md"]?.edits).toEqual([
       {
         kind: "delete",
+        id: expect.any(Number),
         old: { start: { line: 1, column: 1 }, end: { line: 1, column: 10 } },
       },
     ]);

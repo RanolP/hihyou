@@ -15,15 +15,35 @@ export type Position = z.infer<typeof Position>;
 export const Range = z.object({ start: Position, end: Position });
 export type Range = z.infer<typeof Range>;
 
-/** `node` is the tree-sitter node kind the edit applies to; absent in line mode. */
-const node = z.string().optional();
+/**
+ * `id` is unique in the doc; an edit spanning two files appears in both under the same id, so groups refer to it once.
+ * `node` is the tree-sitter node kind the edit applies to; absent in line mode.
+ */
+const common = { id: z.int().min(0), node: z.string().optional() };
+/**
+ * Set only when that side of the edit lies in another file: `from` is its base path, `to` its head path.
+ * A viewer marks only the side in its own file.
+ */
+const across = { from: z.string().optional(), to: z.string().optional() };
 export const Edit = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("insert"), new: Range, node }),
-  z.object({ kind: z.literal("delete"), old: Range, node }),
+  z.object({ kind: z.literal("insert"), new: Range, ...common }),
+  z.object({ kind: z.literal("delete"), old: Range, ...common }),
   /** A token whose text changed in place. */
-  z.object({ kind: z.literal("update"), old: Range, new: Range, node }),
-  /** A node that changed parent or order; edits inside it are reported separately. */
-  z.object({ kind: z.literal("move"), old: Range, new: Range, node }),
+  z.object({
+    kind: z.literal("update"),
+    old: Range,
+    new: Range,
+    ...common,
+    ...across,
+  }),
+  /** A node that changed parent or order, or moved to another file; edits inside it are reported separately. */
+  z.object({
+    kind: z.literal("move"),
+    old: Range,
+    new: Range,
+    ...common,
+    ...across,
+  }),
 ]);
 export type Edit = z.infer<typeof Edit>;
 

@@ -58,6 +58,7 @@ describe("fixtures", () => {
     expect(file.edits).toEqual([
       {
         kind: "update",
+        id: 0,
         node: "number",
         old: { start: { line: 2, column: 19 }, end: { line: 2, column: 20 } },
         new: { start: { line: 2, column: 19 }, end: { line: 2, column: 20 } },
@@ -73,6 +74,31 @@ describe("fixtures", () => {
       oldPath: "src/slug.ts",
       edits: [],
       fold: "renamed",
+    });
+  });
+
+  it("cross-file-move: functions moved to another file are moves shared by both files under one id, and one edited on the way adds only its inner update, not a delete here and an insert there", async () => {
+    const doc = await fixture("cross-file-move");
+    const summary = (f: FileDiff | undefined) =>
+      f?.edits.map((e) => ({
+        id: e.id,
+        kind: e.kind,
+        node: e.node,
+        other: e.kind === "update" || e.kind === "move" ? (e.from ?? e.to) : "",
+      }));
+    const [text, util] = doc.files;
+    expect(text?.path).toBe("src/text.ts");
+    expect(summary(text)).toEqual([
+      { id: 0, kind: "move", node: "export_statement", other: "src/util.ts" },
+      { id: 1, kind: "move", node: "export_statement", other: "src/util.ts" },
+      { id: 2, kind: "update", node: "number", other: "src/util.ts" },
+    ]);
+    expect(summary(util)).toEqual(
+      summary(text)?.map((e) => ({ ...e, other: "src/text.ts" })),
+    );
+    expect(text?.edits[2]).toMatchObject({
+      old: { start: { line: 12, column: 46 } },
+      new: { start: { line: 8, column: 46 } },
     });
   });
 
@@ -112,10 +138,12 @@ describe("fixtures", () => {
     expect(file.edits).toEqual([
       {
         kind: "delete",
+        id: 0,
         old: { start: { line: 4, column: 1 }, end: { line: 4, column: 21 } },
       },
       {
         kind: "insert",
+        id: 1,
         new: { start: { line: 4, column: 1 }, end: { line: 4, column: 25 } },
       },
     ]);

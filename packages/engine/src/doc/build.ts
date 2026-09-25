@@ -1,7 +1,9 @@
+import { type CrossEdit, crossFileMoves } from "../match/cross-file.js";
 import { editScript, type RawEdit, type Span } from "../match/edit-script.js";
 import { indentIsSyntax, lineDiff } from "../match/line-diff.js";
 import {
   defaultMatchOptions,
+  type Mapping,
   MatchBudgetExceeded,
   type MatchOptions,
   match,
@@ -49,47 +51,68 @@ export async function buildReviewDoc(
   opts: BuildOptions,
 ): Promise<ReviewDoc> {
   const changes = await source.listChanges();
-  const files: FileDiff[] = new Array(changes.length);
+  const analyses: Analysis[] = new Array(changes.length);
   // One iterator shared by every worker hands each file to exactly one of them.
   const queue = changes.entries();
   const worker = async () => {
     for (const [i, change] of queue) {
       try {
-        files[i] = await diffFile(source, change, opts);
+        analyses[i] = await analyze(source, change, opts);
       } catch (error) {
-        files[i] = {
-          path: change.path,
-          ...(change.oldPath !== undefined && { oldPath: change.oldPath }),
-          status: change.status,
-          language: languageForPath(change.path) ?? null,
-          diffMode: "error",
-          error: error instanceof Error ? error.message : String(error),
-          edits: [],
+        analyses[i] = {
+          file: {
+            path: change.path,
+            ...(change.oldPath !== undefined && { oldPath: change.oldPath }),
+            status: change.status,
+            language: languageForPath(change.path) ?? null,
+            diffMode: "error",
+            error: error instanceof Error ? error.message : String(error),
+          },
         };
       }
     }
   };
   await Promise.all(Array.from({ length: concurrency }, worker));
+
+  const cross = crossFileMoves(
+    analyses.map((a) => a.mapping),
+    opts.match ?? defaultMatchOptions,
+  );
+  const located: CrossEdit[][] = analyses.map((a, i) =>
+    (a.mapping ? editScript(a.mapping, cross.claimed[i]) : (a.raw ?? [])).map(
+      (edit) => ({ edit, from: i, to: i }),
+    ),
+  );
+  for (const c of cross.edits) {
+    if ("old" in c.edit) located[c.from]?.push(c);
+    if ("new" in c.edit) located[c.to]?.push(c);
+  }
+  const files = toDocEdits(analyses, located).map((edits, i): FileDiff => {
+    const { file, text } = analyses[i] as Analysis;
+    const fold = foldReason({ ...file, edits }, producedBy(file.path, text));
+    return { ...file, ...(fold && { fold }), edits };
+  });
   return { schemaVersion, diffset: source.diffset, files };
 }
 
-async function diffFile(
-  source: FileSource,
-  change: ChangedFile,
-  opts: BuildOptions,
-): Promise<FileDiff> {
-  const f = await diffContent(source, change, opts);
-  const fold = foldReason(f, producedBy(change.path, f.text));
-  const { text: _, ...file } = f;
-  return fold ? { ...file, fold } : file;
+/** One file's diff before cross-file matching, keeping what that matching and the doc edits need. */
+interface Analysis {
+  file: Omit<FileDiff, "edits" | "fold">;
+  /** Both sides' text; absent when the file has no text to diff. */
+  texts?: [string, string];
+  /** The text that tells whether a tool produced the file: head, or base for a deleted file. */
+  text?: string;
+  /** Set in ast mode. */
+  mapping?: Mapping;
+  /** Set in line mode. */
+  raw?: RawEdit[];
 }
 
-/** The file's diff, and the text that tells whether a tool produced it (head, or base for a deleted file). */
-async function diffContent(
+async function analyze(
   source: FileSource,
   change: ChangedFile,
   opts: BuildOptions,
-): Promise<Omit<FileDiff, "fold"> & { text?: string }> {
+): Promise<Analysis> {
   const { maxChars, maxNodes, maxErrorRatio } = { ...defaults, ...opts };
   const file = {
     path: change.path,
@@ -97,7 +120,7 @@ async function diffContent(
     status: change.status,
   };
   if (change.submodule)
-    return { ...file, language: null, diffMode: "submodule", edits: [] };
+    return { file: { ...file, language: null, diffMode: "submodule" } };
   const language: LanguageId | null = languageForPath(change.path) ?? null;
   const empty = new Uint8Array();
   const [oldBytes, newBytes] = await Promise.all([
@@ -107,27 +130,25 @@ async function diffContent(
     change.status === "deleted" ? empty : source.read("head", change.path),
   ]);
   if (isBinary(oldBytes) || isBinary(newBytes))
-    return { ...file, language, diffMode: "binary", edits: [] };
+    return { file: { ...file, language, diffMode: "binary" } };
   const texts = decode(oldBytes, newBytes);
   if (!texts)
     return {
-      ...file,
-      language,
-      diffMode: "binary",
-      fallbackReason: "undecodable",
-      edits: [],
+      file: {
+        ...file,
+        language,
+        diffMode: "binary",
+        fallbackReason: "undecodable",
+      },
     };
 
   const [oldText, newText] = texts;
   const text = change.status === "deleted" ? oldText : newText;
-  const toDoc = (raw: RawEdit[]) => toEdits(raw, oldText, newText);
-  const line = (fallbackReason: FallbackReason) => ({
-    ...file,
+  const line = (fallbackReason: FallbackReason): Analysis => ({
+    file: { ...file, language, diffMode: "line", fallbackReason },
+    texts,
     text,
-    language,
-    diffMode: "line" as const,
-    fallbackReason,
-    edits: toDoc(lineDiff(oldText, newText, indentIsSyntax(change.path))),
+    raw: lineDiff(oldText, newText, indentIsSyntax(change.path)),
   });
 
   if (!language) return line("unsupported-language");
@@ -144,20 +165,14 @@ async function diffContent(
     b.errorChars > maxErrorRatio * newText.length
   )
     return line("parse-error");
-  let mapping: ReturnType<typeof match>;
+  let mapping: Mapping;
   try {
     mapping = match(a, b, opts.match ?? defaultMatchOptions);
   } catch (error) {
     if (error instanceof MatchBudgetExceeded) return line("too-large");
     throw error;
   }
-  return {
-    ...file,
-    text,
-    language,
-    diffMode: "ast",
-    edits: toDoc(editScript(mapping)),
-  };
+  return { file: { ...file, language, diffMode: "ast" }, texts, text, mapping };
 }
 
 /** Both sides as UTF-8 text, or undefined when they differ and either is not valid UTF-8. */
@@ -177,32 +192,60 @@ function decode(
   }
 }
 
-function toEdits(raw: RawEdit[], oldText: string, newText: string): Edit[] {
-  const oldPos = positions(oldText);
-  const newPos = positions(newText);
-  const range = (at: (offset: number) => Position, s: Span) => ({
-    start: at(s.start),
-    end: at(s.end),
+/**
+ * Each file's edits in document order, with line/column ranges. An edit spanning two files appears in
+ * both under one id, and names the other file on the side that lies there.
+ */
+function toDocEdits(analyses: Analysis[], located: CrossEdit[][]): Edit[][] {
+  const cache = new Map<string, (offset: number) => Position>();
+  const range = (file: number, side: 0 | 1, s: Span) => {
+    const key = `${file}:${side}`;
+    let at = cache.get(key);
+    if (!at) {
+      at = positions(analyses[file]?.texts?.[side] ?? "");
+      cache.set(key, at);
+    }
+    return { start: at(s.start), end: at(s.end) };
+  };
+  const ids = new Map<CrossEdit, number>();
+  return located.map((list, i) => {
+    const here = ({ edit, to }: CrossEdit) =>
+      "new" in edit && to === i
+        ? edit.new.start
+        : "old" in edit
+          ? edit.old.start
+          : 0;
+    return list
+      .toSorted((p, q) => here(p) - here(q))
+      .map((l): Edit => {
+        let id = ids.get(l);
+        if (id === undefined) {
+          id = ids.size;
+          ids.set(l, id);
+        }
+        const { edit: e, from, to } = l;
+        const common = { id, ...(e.node !== undefined && { node: e.node }) };
+        switch (e.kind) {
+          case "insert":
+            return { kind: e.kind, new: range(to, 1, e.new), ...common };
+          case "delete":
+            return { kind: e.kind, old: range(from, 0, e.old), ...common };
+          default: {
+            const fromFile = analyses[from]?.file;
+            const toFile = analyses[to]?.file;
+            return {
+              kind: e.kind,
+              old: range(from, 0, e.old),
+              new: range(to, 1, e.new),
+              ...common,
+              ...(from !== i &&
+                fromFile && { from: fromFile.oldPath ?? fromFile.path }),
+              ...(to !== i && toFile && { to: toFile.path }),
+            };
+          }
+        }
+      });
   });
-  const anchor = (e: RawEdit) => ("new" in e ? e.new.start : e.old.start);
-  return raw
-    .toSorted((p, q) => anchor(p) - anchor(q))
-    .map((e): Edit => {
-      const node = e.node === undefined ? {} : { node: e.node };
-      switch (e.kind) {
-        case "insert":
-          return { kind: e.kind, new: range(newPos, e.new), ...node };
-        case "delete":
-          return { kind: e.kind, old: range(oldPos, e.old), ...node };
-        default:
-          return {
-            kind: e.kind,
-            old: range(oldPos, e.old),
-            new: range(newPos, e.new),
-            ...node,
-          };
-      }
-    });
 }
 
 function positions(text: string): (offset: number) => Position {
