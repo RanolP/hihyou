@@ -18,6 +18,8 @@ export type Doc =
   | IfBreak
   | Align
   | LineSuffixBoundary
+  | BestFitting
+  | BestFitParenthesize
   | readonly Doc[];
 
 /**
@@ -32,9 +34,10 @@ export interface Token {
   readonly text: string;
   readonly synthetic?: true;
   /**
-   * Its line breaks are prettier's literal lines (a template literal's text): the column restarts at 0 after each
-   * one, and a width check ends at the first. Otherwise the whole text counts toward one line, as prettier counts a
-   * multi-line comment.
+   * Its line breaks are prettier's literal lines (a template literal's text, ruff's triple-quoted string): the
+   * column restarts at 0 after each one, and a width check ends at the first unless it measures every line, when
+   * the last line starts the next. Otherwise the whole text counts toward one line, as prettier counts a
+   * multi-line comment. It breaks no group around it; a caller that wants that adds a `breakParent`.
    */
   readonly literal?: boolean;
 }
@@ -75,6 +78,8 @@ export interface Fill {
 export interface LineSuffix {
   readonly k: "lineSuffix";
   readonly contents: Doc;
+  /** Columns counted against the line now although the contents print later: how ruff keeps a trailing comment within the width. */
+  readonly reserved?: number;
 }
 /** `broken` when `group` (by default the innermost enclosing group) is printed broken, else `flat`. */
 export interface IfBreak {
@@ -92,6 +97,25 @@ export interface Align {
 /** Flushes pending line suffixes with a line break here, so a trailing comment never swallows what follows. */
 export interface LineSuffixBoundary {
   readonly k: "lineSuffixBoundary";
+}
+/**
+ * Ruff's `best_fitting`: the first variant, but the last, that fits printed flat; else the last, printed broken.
+ * `allLines` measures every line a variant spans rather than only the first. A break inside breaks no group around.
+ */
+export interface BestFitting {
+  readonly k: "bestFitting";
+  readonly variants: readonly Doc[];
+  readonly allLines: boolean;
+}
+/**
+ * Ruff's `best_fit_parenthesize`: `contents` flat if it fits; else between `open` and `close` on lines of its own,
+ * if every line then fits; else `contents` bare, each group in it measuring itself.
+ */
+export interface BestFitParenthesize {
+  readonly k: "bestFitParenthesize";
+  readonly open: Token;
+  readonly contents: Doc;
+  readonly close: Token;
 }
 /** Forces every enclosing group to break. */
 export interface BreakParent {
@@ -157,6 +181,21 @@ export const fill = (parts: readonly Doc[]): Fill => ({ k: "fill", parts });
 export const lineSuffix = (contents: Doc): LineSuffix => ({
   k: "lineSuffix",
   contents,
+});
+
+export const bestFitting = (
+  variants: readonly Doc[],
+  allLines = false,
+): BestFitting => ({ k: "bestFitting", variants, allLines });
+export const bestFitParenthesize = (
+  open: Token,
+  contents: Doc,
+  close: Token,
+): BestFitParenthesize => ({
+  k: "bestFitParenthesize",
+  open,
+  contents,
+  close,
 });
 
 export const ifBreak = (broken: Doc, flat: Doc = [], of?: Group): IfBreak => ({

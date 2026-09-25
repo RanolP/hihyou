@@ -177,7 +177,8 @@ export function flatten(doc: Doc): Doc | undefined {
         return walk(d.flat);
       case "lineSuffix":
         return { ...d, contents: walk(d.contents) };
-      case "lineSuffixBoundary":
+      // Ruff's layouts, which a JavaScript doc never holds.
+      default:
         return d;
     }
   };

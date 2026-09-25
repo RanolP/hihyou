@@ -1,4 +1,13 @@
-import { type Doc, type Fill, type Group, isDocs, type Token } from "./doc.js";
+import {
+  type BestFitParenthesize,
+  type BestFitting,
+  type Doc,
+  type Fill,
+  type Group,
+  hardline,
+  isDocs,
+  type Token,
+} from "./doc.js";
 import { textWidth } from "./width.js";
 
 export interface Layout {
@@ -22,6 +31,9 @@ interface Indentation {
   readonly value: string;
   readonly length: number;
   readonly queue: readonly (number | string | "indent")[];
+  /** This indentation one indent deeper under `indentedIn`, built once: the printer and every width check step into it. */
+  indented?: Indentation;
+  indentedIn?: Layout;
 }
 type Cmd = { indent: Indentation; mode: Mode; doc: Doc };
 
@@ -34,6 +46,8 @@ function deeper(
   step: number | string | "indent",
   layout: Layout,
 ): Indentation {
+  if (step === "indent" && from.indentedIn === layout && from.indented)
+    return from.indented;
   const queue =
     typeof step === "number" && step < 0
       ? from.queue.slice(0, -1)
@@ -75,8 +89,25 @@ function deeper(
     }
   }
   flushSpaces();
-  return { value, length, queue };
+  const next: Indentation = { value, length, queue };
+  if (step === "indent") {
+    from.indented = next;
+    from.indentedIn = layout;
+  }
+  return next;
 }
+
+/** Prettier's align: `-Infinity` back to the root, nothing for `0` or `""`, else one alignment step deeper. */
+const aligned = (
+  from: Indentation,
+  n: number | string,
+  layout: Layout,
+): Indentation =>
+  n === Number.NEGATIVE_INFINITY
+    ? ROOT
+    : n === 0 || n === ""
+      ? from
+      : deeper(from, n, layout);
 
 function unknownDoc(d: never): never {
   throw new Error(`unknown doc ${JSON.stringify(d)}`);
@@ -117,6 +148,13 @@ function propagateBreaks(d: Doc, seen: Set<Group> = new Set()): boolean {
       const broken = propagateBreaks(d.broken, seen);
       return propagateBreaks(d.flat, seen) || broken;
     }
+    // A variant's breaks are its own: the choice among variants is what decides whether the line breaks.
+    case "bestFitting":
+      propagateBreaks(d.variants, seen);
+      return false;
+    case "bestFitParenthesize":
+      propagateBreaks(d.contents, seen);
+      return false;
     case "token":
     case "text":
     case "line":
@@ -131,25 +169,32 @@ function propagateBreaks(d: Doc, seen: Set<Group> = new Set()): boolean {
  * Whether `next` fits in `width` columns up to its first line break; when `next` runs out, the enclosing
  * `rest` commands are measured too, in their own modes. `mustBeFlat` rejects any already-broken group.
  * A space from a line counts only once text follows it, as it would be trimmed at a line end.
+ * With `allLines`, every line `next` breaks into is measured, not only the first.
  */
 function fits(
-  next: { mode: Mode; doc: Doc },
+  next: Cmd,
   rest: readonly Cmd[],
   width: number,
   mustBeFlat: boolean,
   groupModes: ReadonlyMap<Group, Mode>,
-  hasLineSuffix = false,
+  layout: Layout,
+  hasLineSuffix: boolean,
+  allLines = false,
 ): boolean {
   let restIdx = rest.length;
   let pendingSpace = false;
-  const cmds: { mode: Mode; doc: Doc }[] = [next];
+  type Measured = Cmd & { all: boolean };
+  const cmds: Measured[] = [{ ...next, all: allLines }];
   while (width >= 0) {
-    const cmd = cmds.pop() ?? (restIdx > 0 ? rest[--restIdx] : undefined);
+    const cmd =
+      cmds.pop() ??
+      (restIdx > 0 ? { ...(rest[--restIdx] as Cmd), all: false } : undefined);
     if (!cmd) return true;
-    const { mode, doc: d } = cmd;
+    const { indent, mode, doc: d, all } = cmd;
+    const push = (doc: Doc, m = mode, i = indent, a = all) =>
+      cmds.push({ indent: i, mode: m, doc, all: a });
     if (isDocs(d)) {
-      for (let i = d.length - 1; i >= 0; i--)
-        cmds.push({ mode, doc: d[i] as Doc });
+      for (const part of d.toReversed()) push(part);
       continue;
     }
     switch (d.k) {
@@ -160,38 +205,59 @@ function fits(
           width -= 1;
           pendingSpace = false;
         }
-        const nl = d.k === "token" && d.literal ? d.text.indexOf("\n") : -1;
-        if (nl !== -1) return width - textWidth(d.text.slice(0, nl)) >= 0;
-        width -= textWidth(d.text);
+        const newline =
+          d.k === "token" && d.literal ? d.text.indexOf("\n") : -1;
+        if (newline < 0) {
+          width -= textWidth(d.text);
+          break;
+        }
+        width -= textWidth(d.text.slice(0, newline));
+        if (!all) return width >= 0;
+        width =
+          layout.lineWidth -
+          textWidth(d.text.slice(d.text.lastIndexOf("\n") + 1));
         break;
       }
       case "indent":
+        push(d.contents, mode, deeper(indent, "indent", layout));
+        break;
       case "align":
-        cmds.push({ mode, doc: d.contents });
+        push(d.contents, mode, aligned(indent, d.n, layout));
         break;
       case "fill":
-        for (let i = d.parts.length - 1; i >= (d.from ?? 0); i--)
-          cmds.push({ mode, doc: d.parts[i] as Doc });
+        for (const part of d.parts.slice(d.from ?? 0).reverse()) push(part);
         break;
       case "group":
         if (mustBeFlat && d.break) return false;
-        cmds.push({
-          mode: d.break ? BREAK : mode,
-          doc:
-            ((d.break || mode === BREAK) && d.expandedStates?.at(-1)) ||
+        push(
+          ((d.break || mode === BREAK) && d.expandedStates?.at(-1)) ||
             d.contents,
-        });
+          d.break ? BREAK : mode,
+        );
         break;
       case "line":
-        if (mode === BREAK || d.hard) return true;
-        if (!d.soft) pendingSpace = true;
+        if (mode === FLAT && !d.hard) {
+          if (!d.soft) pendingSpace = true;
+          break;
+        }
+        if (mode === FLAT || !all) return true;
+        width = layout.lineWidth - indent.length;
+        pendingSpace = false;
         break;
       case "ifBreak": {
         const m = d.group ? (groupModes.get(d.group) ?? FLAT) : mode;
-        cmds.push({ mode, doc: m === BREAK ? d.broken : d.flat });
+        push(m === BREAK ? d.broken : d.flat);
         break;
       }
+      case "bestFitting":
+        if (mode === FLAT) push(d.variants[0] ?? [], mode, indent, d.allLines);
+        else push(d.variants.at(-1) ?? []);
+        break;
+      case "bestFitParenthesize":
+        push(d.contents);
+        break;
       case "lineSuffix":
+        width -= d.reserved ?? 0;
         hasLineSuffix = true;
         break;
       case "lineSuffixBoundary":
@@ -279,12 +345,7 @@ export function print(
         break;
       case "align":
         cmds.push({
-          indent:
-            d.n === Number.NEGATIVE_INFINITY
-              ? ROOT
-              : d.n === 0 || d.n === ""
-                ? indent
-                : deeper(indent, d.n, layout),
+          indent: aligned(indent, d.n, layout),
           mode,
           doc: d.contents,
         });
@@ -321,6 +382,13 @@ export function print(
       }
       case "lineSuffix":
         suffixes.push({ indent, mode, doc: d.contents });
+        column += d.reserved ?? 0;
+        break;
+      case "bestFitting":
+        printBestFitting(d, indent, mode);
+        break;
+      case "bestFitParenthesize":
+        printBestFitParenthesize(d, indent, mode);
         break;
       case "lineSuffixBoundary":
         if (suffixes.length > 0) cmds.push({ indent, mode, doc: hardLine });
@@ -347,17 +415,94 @@ export function print(
     const width = layout.lineWidth - column;
     const suffix = suffixes.length > 0;
     const flat: Cmd = { indent, mode: FLAT, doc: g.contents };
-    if (!g.break && fits(flat, cmds, width, false, groupModes, suffix))
+    if (!g.break && fits(flat, cmds, width, false, groupModes, layout, suffix))
       return flat;
     const states = g.expandedStates;
     if (!states) return { indent, mode: BREAK, doc: g.contents };
     if (!g.break)
       for (const state of states.slice(1, -1)) {
         const candidate: Cmd = { indent, mode: FLAT, doc: state };
-        if (fits(candidate, cmds, width, false, groupModes, suffix))
+        if (fits(candidate, cmds, width, false, groupModes, layout, suffix))
           return candidate;
       }
     return { indent, mode: BREAK, doc: states.at(-1) ?? g.contents };
+  }
+
+  function printBestFitting(b: BestFitting, indent: Indentation, mode: Mode) {
+    const last = b.variants.length - 1;
+    if (mode === FLAT && !remeasure) {
+      cmds.push({ indent, mode: FLAT, doc: b.variants[0] ?? [] });
+      return;
+    }
+    remeasure = false;
+    const width = layout.lineWidth - column;
+    for (const variant of b.variants.slice(0, last)) {
+      const flat: Cmd = { indent, mode: FLAT, doc: variant };
+      if (
+        fits(
+          flat,
+          cmds,
+          width,
+          false,
+          groupModes,
+          layout,
+          suffixes.length > 0,
+          b.allLines,
+        )
+      ) {
+        cmds.push(flat);
+        return;
+      }
+    }
+    cmds.push({ indent, mode: BREAK, doc: b.variants[last] ?? [] });
+  }
+
+  function printBestFitParenthesize(
+    b: BestFitParenthesize,
+    indent: Indentation,
+    mode: Mode,
+  ) {
+    const flat: Cmd = { indent, mode: FLAT, doc: b.contents };
+    if (mode === FLAT && !remeasure) {
+      cmds.push(flat);
+      return;
+    }
+    remeasure = false;
+    const width = layout.lineWidth - column;
+    if (
+      fits(flat, cmds, width, false, groupModes, layout, suffixes.length > 0)
+    ) {
+      cmds.push(flat);
+      return;
+    }
+    const wrapped: Cmd = {
+      indent,
+      mode: BREAK,
+      doc: [
+        b.open,
+        { k: "indent", contents: [hardline, b.contents] },
+        hardline,
+        b.close,
+      ],
+    };
+    if (
+      fits(
+        wrapped,
+        cmds,
+        width,
+        false,
+        groupModes,
+        layout,
+        suffixes.length > 0,
+        true,
+      )
+    ) {
+      cmds.push(wrapped);
+      return;
+    }
+    // Bare after all, but each group inside measures itself rather than printing flat on trust.
+    remeasure = true;
+    cmds.push(flat);
   }
 
   // Prettier's fill: a separator breaks unless the content before and after it fit on the line together.
@@ -377,6 +522,7 @@ export function print(
       width,
       true,
       groupModes,
+      layout,
       suffix,
     );
     if (separator === undefined) {
@@ -398,6 +544,7 @@ export function print(
         width,
         true,
         groupModes,
+        layout,
         suffix,
       )
     )
