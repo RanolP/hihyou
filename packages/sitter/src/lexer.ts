@@ -75,6 +75,11 @@ export class Lexer {
     this.readLookahead();
   }
 
+  /** The whole input is the one included range, so its only start is offset 0. */
+  isAtIncludedRangeStart(): boolean {
+    return this.pos === 0;
+  }
+
   markEnd(): void {
     this.tokenEnd = this.pos;
     this.tokenEndRow = this.row;

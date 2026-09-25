@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import type { GrammarName } from "./corpus.node.js";
 import { language as css } from "./generated/css.js";
+import { language as javascript } from "./generated/javascript.js";
 import { language as json } from "./generated/json.js";
 import type { Language } from "./language.js";
 import { checkParity } from "./parity.node.js";
@@ -26,6 +27,16 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
       "a { color: red; b:hover { x: 1 } }\n/* c */ @import url(x.css);",
       "a { color: ; } b { : red } c:",
       "a:hover /* { */ { x: y }",
+    ],
+  ],
+  javascript: [
+    javascript,
+    [
+      // Automatic semicolons, template chars, regex vs division, ternary `?` vs `?.`, JSX text, HTML comments.
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: JavaScript source under test, not a template.
+      "let a = b\n++c\nconst t = `x${a}y\\n`\nconst r = a / 2 / 3, s = /re[/]g/.test(t)\nx = a ? .5 : b?.c\n<!-- old\nconst j = <div>\n  hi {a} &amp; <b/>\n</div>\nif (a) b\nelse c\nfor (const k in o) {}\n",
+      "function f( { return 1 }\nclass { #x = 1; static { y() } }\nconst o = { a: 1,, b }",
+      "a\ninstanceof B\na\nin b\n/* c\n */ d",
     ],
   ],
 };
