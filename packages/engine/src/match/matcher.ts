@@ -12,12 +12,33 @@ export const defaultMatchOptions: MatchOptions = { minHeight: 2, minDice: 0.5 };
 
 const maxAmbiguousPairs = 10_000;
 
+/**
+ * Descendants the similarity scoring may visit in one `match`. The bottom-up phase is cubic on deep
+ * nesting (a long method chain), so past this the caller gets `MatchBudgetExceeded` instead of a stall.
+ */
+const maxDiceWork = 200_000_000;
+
+export class MatchBudgetExceeded extends Error {
+  constructor() {
+    super(`tree matching exceeded its budget of ${maxDiceWork} dice steps`);
+    this.name = "MatchBudgetExceeded";
+  }
+}
+
 /** A one-to-one node mapping between old tree `a` and new tree `b`, by preorder id; -1 means unmatched. */
 export interface Mapping {
   a: SyntaxTree;
   b: SyntaxTree;
   src: Int32Array;
   dst: Int32Array;
+}
+
+/** `ids[n.id]` for a per-node table such as `Mapping.src`, throwing when `n` is not from the tree it was sized for. */
+export function idOf(ids: Int32Array, n: SyntaxNode): number {
+  const id = ids[n.id];
+  if (id === undefined)
+    throw new RangeError(`node ${n.id} is outside a ${ids.length}-node table`);
+  return id;
 }
 
 /** GumTree (Falleri et al. 2014): greedy top-down isomorphic subtrees, then bottom-up container matching with recovery. */
@@ -31,7 +52,6 @@ export function match(
   const isoB = isoIds(b, intern);
   const src = new Int32Array(a.nodes.length).fill(-1);
   const dst = new Int32Array(b.nodes.length).fill(-1);
-  const nodeB = (id: number) => b.nodes[id] as SyntaxNode;
 
   const link = (x: SyntaxNode, y: SyntaxNode) => {
     src[x.id] = y.id;
@@ -44,15 +64,19 @@ export function match(
       dst[y.id + k] = x.id + k;
     }
   };
+  let diceWork = 0;
   const dice = (
     x: SyntaxNode | undefined,
     y: SyntaxNode | undefined,
   ): number => {
     if (!x || !y || x.size + y.size <= 2) return 0;
+    diceWork += x.size;
+    if (diceWork > maxDiceWork) throw new MatchBudgetExceeded();
     let common = 0;
+    // An indexed loop: iterating a subarray view here is several times slower, and this is the hot path.
     for (let i = x.id + 1; i < x.id + x.size; i++) {
-      const p = src[i] as number;
-      if (p > y.id && p < y.id + y.size) common++;
+      const p = src[i];
+      if (p !== undefined && p > y.id && p < y.id + y.size) common++;
     }
     return (2 * common) / (x.size + y.size - 2);
   };
@@ -60,8 +84,8 @@ export function match(
   // Top-down.
   const qa = new HeightQueue();
   const qb = new HeightQueue();
-  qa.push(a.nodes[0] as SyntaxNode);
-  qb.push(b.nodes[0] as SyntaxNode);
+  qa.push(a.node(0));
+  qb.push(b.node(0));
   const ambiguous: [SyntaxNode, SyntaxNode][] = [];
   for (;;) {
     const ha = qa.peekMax();
@@ -73,23 +97,26 @@ export function match(
       continue;
     }
     const groups = new Map<number, { xs: SyntaxNode[]; ys: SyntaxNode[] }>();
-    const group = (iso: number) => {
-      let g = groups.get(iso);
+    const group = (isoId: number) => {
+      let g = groups.get(isoId);
       if (!g) {
         g = { xs: [], ys: [] };
-        groups.set(iso, g);
+        groups.set(isoId, g);
       }
       return g;
     };
-    for (const x of qa.pop()) group(isoA[x.id] as number).xs.push(x);
-    for (const y of qb.pop()) group(isoB[y.id] as number).ys.push(y);
+    for (const x of qa.pop()) group(idOf(isoA, x)).xs.push(x);
+    for (const y of qb.pop()) group(idOf(isoB, y)).ys.push(y);
     for (const { xs, ys } of groups.values()) {
-      if (xs.length === 1 && ys.length === 1)
-        linkSubtree(xs[0] as SyntaxNode, ys[0] as SyntaxNode);
+      const [x] = xs;
+      const [y] = ys;
+      if (x && y && xs.length === 1 && ys.length === 1) linkSubtree(x, y);
       else if (xs.length * ys.length > maxAmbiguousPairs) {
         // Too many identical copies to rank pairwise (e.g. thousands of `i++`); pair them in document order.
-        for (let k = 0; k < Math.min(xs.length, ys.length); k++)
-          linkSubtree(xs[k] as SyntaxNode, ys[k] as SyntaxNode);
+        for (const [k, x] of xs.entries()) {
+          const y = ys[k];
+          if (y) linkSubtree(x, y);
+        }
       } else if (xs.length > 0 && ys.length > 0)
         for (const x of xs) for (const y of ys) ambiguous.push([x, y]);
       else {
@@ -98,9 +125,48 @@ export function match(
       }
     }
   }
-  // Several identical copies: prefer the pair whose parents already agree, then the closest sibling position.
+
+  // Several identical copies. Copies under one parent pair keep their order: an LCS over the parents'
+  // children pairs them, so deleting one of `a(); a(); b(); a();` deletes that copy instead of moving
+  // another across `b()`. Pairs still left (across parents) prefer parents that already agree, then
+  // the closest sibling position.
+  const byParents = new Map<
+    SyntaxNode,
+    Map<SyntaxNode, Map<SyntaxNode, Set<SyntaxNode>>>
+  >();
+  const entry = <K, V>(m: Map<K, V>, k: K, make: () => V): V => {
+    let v = m.get(k);
+    if (v === undefined) {
+      v = make();
+      m.set(k, v);
+    }
+    return v;
+  };
+  for (const [x, y] of ambiguous) {
+    if (!x.parent || !y.parent) continue;
+    const forX = entry(byParents, x.parent, () => new Map());
+    const candidates = entry(forX, y.parent, () => new Map());
+    entry(candidates, x, () => new Set()).add(y);
+  }
+  const parentPairs = [...byParents].flatMap(([px, forX]) =>
+    [...forX].map(([py, candidates]) => ({
+      px,
+      py,
+      candidates,
+      d: dice(px, py),
+    })),
+  );
+  for (const { px, py, candidates } of parentPairs.sort((p, q) => q.d - p.d)) {
+    const pairs = commonPairs(px.children, py.children, (p, q) =>
+      src[p.id] !== -1 || dst[q.id] !== -1
+        ? src[p.id] === q.id
+        : (candidates.get(p)?.has(q) ?? false),
+    );
+    for (const [p, q] of pairs) if (src[p.id] === -1) linkSubtree(p, q);
+  }
   const siblingIndex = (n: SyntaxNode) => n.parent?.children.indexOf(n) ?? 0;
   ambiguous
+    .filter(([x, y]) => src[x.id] === -1 && dst[y.id] === -1)
     .map(([x, y]) => ({
       x,
       y,
@@ -112,46 +178,52 @@ export function match(
       if (src[x.id] === -1 && dst[y.id] === -1) linkSubtree(x, y);
     });
 
-  // Recovery inside a newly matched container pair: pair up its still-unmatched children.
-  const recover = (x: SyntaxNode, y: SyntaxNode) => {
-    // Already-matched children stay in the sequences as anchors equal only to their partner,
-    // so a repeated token (a comma) cannot pair across them and show an inserted sibling's neighbours as moved.
-    const unmatchedPairs = (eq: (p: SyntaxNode, q: SyntaxNode) => boolean) =>
-      commonPairs(x.children, y.children, (p, q) =>
-        src[p.id] !== -1 || dst[q.id] !== -1 ? src[p.id] === q.id : eq(p, q),
-      ).filter(([p]) => src[p.id] === -1);
-    for (const [p, q] of unmatchedPairs((p, q) => isoA[p.id] === isoB[q.id]))
-      linkSubtree(p, q);
-    for (const [p, q] of unmatchedPairs(
-      (p, q) => p.kind === q.kind && p.label === q.label,
-    )) {
+  // Recovery inside a newly matched container pair: pair up its still-unmatched children, then theirs.
+  // A worklist instead of recursion, so deep nesting cannot overflow the JS stack; the order is free
+  // because recovering one pair only links nodes inside that pair's own subtrees.
+  const recover = (root: SyntaxNode, rootB: SyntaxNode) => {
+    const pending: [SyntaxNode, SyntaxNode][] = [[root, rootB]];
+    const linkAndRecover = (p: SyntaxNode, q: SyntaxNode) => {
       link(p, q);
-      recover(p, q);
-    }
-    // Kinds that occur once on each side pair up even when labels differ; this is how a changed literal becomes an update.
-    const xs = x.children.filter((c) => src[c.id] === -1);
-    const ys = y.children.filter((c) => dst[c.id] === -1);
-    const once = <T extends SyntaxNode>(ns: T[]) => {
-      const byKind = new Map<string, T | null>();
-      for (const n of ns) byKind.set(n.kind, byKind.has(n.kind) ? null : n);
-      return byKind;
+      pending.push([p, q]);
     };
-    const onceB = once(ys);
-    for (const [kind, p] of once(xs)) {
-      const q = onceB.get(kind);
-      if (p && q) {
-        link(p, q);
-        recover(p, q);
+    for (let next = pending.pop(); next; next = pending.pop()) {
+      const [x, y] = next;
+      // Already-matched children stay in the sequences as anchors equal only to their partner,
+      // so a repeated token (a comma) cannot pair across them and show an inserted sibling's neighbours as moved.
+      const unmatchedPairs = (eq: (p: SyntaxNode, q: SyntaxNode) => boolean) =>
+        commonPairs(x.children, y.children, (p, q) =>
+          src[p.id] !== -1 || dst[q.id] !== -1 ? src[p.id] === q.id : eq(p, q),
+        ).filter(([p]) => src[p.id] === -1);
+      for (const [p, q] of unmatchedPairs(
+        (p, q) => idOf(isoA, p) === idOf(isoB, q),
+      ))
+        linkSubtree(p, q);
+      for (const [p, q] of unmatchedPairs(
+        (p, q) => p.kind === q.kind && p.label === q.label,
+      ))
+        linkAndRecover(p, q);
+      // Kinds that occur once on each side pair up even when labels differ; this is how a changed literal becomes an update.
+      const xs = x.children.filter((c) => src[c.id] === -1);
+      const ys = y.children.filter((c) => dst[c.id] === -1);
+      const once = <T extends SyntaxNode>(ns: T[]) => {
+        const byKind = new Map<string, T | null>();
+        for (const n of ns) byKind.set(n.kind, byKind.has(n.kind) ? null : n);
+        return byKind;
+      };
+      const onceB = once(ys);
+      for (const [kind, p] of once(xs)) {
+        const q = onceB.get(kind);
+        if (p && q) linkAndRecover(p, q);
       }
     }
   };
 
   // Bottom-up, visiting descendants before ancestors (reverse preorder).
-  for (let i = a.nodes.length - 1; i >= 0; i--) {
-    const x = a.nodes[i] as SyntaxNode;
+  for (const x of a.nodes.toReversed()) {
     if (src[x.id] !== -1 || x.children.length === 0) continue;
     if (!x.parent) {
-      const root = nodeB(0);
+      const root = b.node(0);
       if (dst[0] === -1 && root.kind === x.kind) {
         link(x, root);
         recover(x, root);
@@ -163,9 +235,9 @@ export function match(
     let best: SyntaxNode | undefined;
     let bestDice = opts.minDice;
     for (let d = x.id + 1; d < x.id + x.size; d++) {
-      const p = src[d] as number;
-      if (p === -1) continue;
-      for (let y = nodeB(p).parent; y && !seen.has(y.id); y = y.parent) {
+      const p = src[d];
+      if (p === undefined || p === -1) continue;
+      for (let y = b.node(p).parent; y && !seen.has(y.id); y = y.parent) {
         seen.add(y.id);
         if (y.kind !== x.kind || dst[y.id] !== -1) continue;
         const s = dice(x, y);
@@ -187,15 +259,14 @@ export function match(
 /** Equal ids iff the subtrees are isomorphic: same kinds, same token labels, same shape. Exact, no hash collisions. */
 function isoIds(tree: SyntaxTree, intern: Map<string, number>): Int32Array {
   const ids = new Int32Array(tree.nodes.length);
-  for (let i = tree.nodes.length - 1; i >= 0; i--) {
-    const n = tree.nodes[i] as SyntaxNode;
+  for (const n of tree.nodes.toReversed()) {
     const key = `${n.kind}\0${n.label}\0${n.children.map((c) => ids[c.id]).join(",")}`;
     let id = intern.get(key);
     if (id === undefined) {
       id = intern.size;
       intern.set(key, id);
     }
-    ids[i] = id;
+    ids[n.id] = id;
   }
   return ids;
 }

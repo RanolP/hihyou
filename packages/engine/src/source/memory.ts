@@ -1,4 +1,4 @@
-import type { ChangedFile, FileSource } from "./file-source.js";
+import { type ChangedFile, type FileSource, sameBytes } from "./file-source.js";
 
 type Tree = Record<string, string | Uint8Array>;
 
@@ -7,8 +7,6 @@ export function memorySource(before: Tree, after: Tree): FileSource {
   const encoder = new TextEncoder();
   const bytes = (v: string | Uint8Array) =>
     typeof v === "string" ? encoder.encode(v) : v;
-  const same = (a: Uint8Array, b: Uint8Array) =>
-    a.length === b.length && a.every((x, i) => x === b[i]);
 
   return {
     diffset: { base: "before", head: "after" },
@@ -21,7 +19,7 @@ export function memorySource(before: Tree, after: Tree): FileSource {
         const a = after[path];
         if (b === undefined) changes.push({ status: "added", path });
         else if (a === undefined) changes.push({ status: "deleted", path });
-        else if (!same(bytes(b), bytes(a)))
+        else if (!sameBytes(bytes(b), bytes(a)))
           changes.push({ status: "modified", path });
       }
       return changes;

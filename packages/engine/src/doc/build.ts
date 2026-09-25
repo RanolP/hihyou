@@ -1,7 +1,8 @@
 import { editScript, type RawEdit, type Span } from "../match/edit-script.js";
-import { lineDiff } from "../match/line-diff.js";
+import { indentIsSyntax, lineDiff } from "../match/line-diff.js";
 import {
   defaultMatchOptions,
+  MatchBudgetExceeded,
   type MatchOptions,
   match,
 } from "../match/matcher.js";
@@ -11,6 +12,7 @@ import {
   type ChangedFile,
   type FileSource,
   isBinary,
+  sameBytes,
 } from "../source/file-source.js";
 import {
   type Edit,
@@ -23,7 +25,10 @@ import {
 
 export interface BuildOptions {
   parser: SyntaxParser;
-  /** Past either limit a file gets line mode: the matcher is O(n²) in the worst case. */
+  /**
+   * Past either limit a file gets line mode before it is parsed. The matcher's own work budget
+   * catches what slips under them, since its bottom-up phase is cubic on deeply nested input.
+   */
   maxChars?: number;
   maxNodes?: number;
   /** Share of a side's text inside ERROR nodes past which the tree is too broken to diff structurally. */
@@ -34,16 +39,26 @@ export interface BuildOptions {
 const defaults = { maxChars: 500_000, maxNodes: 50_000, maxErrorRatio: 0.1 };
 const concurrency = 8;
 
+/** Rejects, naming the file, when any one file cannot be read or diffed. */
 export async function buildReviewDoc(
   source: FileSource,
   opts: BuildOptions,
 ): Promise<ReviewDoc> {
   const changes = await source.listChanges();
   const files: FileDiff[] = new Array(changes.length);
-  let next = 0;
+  // One iterator shared by every worker hands each file to exactly one of them.
+  const queue = changes.entries();
   const worker = async () => {
-    for (let i = next++; i < changes.length; i = next++)
-      files[i] = await diffFile(source, changes[i] as ChangedFile, opts);
+    for (const [i, change] of queue) {
+      try {
+        files[i] = await diffFile(source, change, opts);
+      } catch (error) {
+        throw new Error(
+          `${change.path}: ${error instanceof Error ? error.message : String(error)}`,
+          { cause: error },
+        );
+      }
+    }
   };
   await Promise.all(Array.from({ length: concurrency }, worker));
   return { schemaVersion, diffset: source.diffset, files };
@@ -55,13 +70,14 @@ async function diffFile(
   opts: BuildOptions,
 ): Promise<FileDiff> {
   const { maxChars, maxNodes, maxErrorRatio } = { ...defaults, ...opts };
-  const language: LanguageId | null = languageForPath(change.path) ?? null;
   const file = {
     path: change.path,
     ...(change.oldPath !== undefined && { oldPath: change.oldPath }),
     status: change.status,
-    language,
   };
+  if (change.submodule)
+    return { ...file, language: null, diffMode: "submodule", edits: [] };
+  const language: LanguageId | null = languageForPath(change.path) ?? null;
   const empty = new Uint8Array();
   const [oldBytes, newBytes] = await Promise.all([
     change.status === "added"
@@ -70,17 +86,25 @@ async function diffFile(
     change.status === "deleted" ? empty : source.read("head", change.path),
   ]);
   if (isBinary(oldBytes) || isBinary(newBytes))
-    return { ...file, diffMode: "binary", edits: [] };
+    return { ...file, language, diffMode: "binary", edits: [] };
+  const texts = decode(oldBytes, newBytes);
+  if (!texts)
+    return {
+      ...file,
+      language,
+      diffMode: "binary",
+      fallbackReason: "undecodable",
+      edits: [],
+    };
 
-  const decoder = new TextDecoder();
-  const oldText = decoder.decode(oldBytes);
-  const newText = decoder.decode(newBytes);
+  const [oldText, newText] = texts;
   const toDoc = (raw: RawEdit[]) => toEdits(raw, oldText, newText);
   const line = (fallbackReason: FallbackReason): FileDiff => ({
     ...file,
+    language,
     diffMode: "line",
     fallbackReason,
-    edits: toDoc(lineDiff(oldText, newText)),
+    edits: toDoc(lineDiff(oldText, newText, indentIsSyntax(change.path))),
   });
 
   if (!language) return line("unsupported-language");
@@ -97,11 +121,36 @@ async function diffFile(
     b.errorChars > maxErrorRatio * newText.length
   )
     return line("parse-error");
+  let mapping: ReturnType<typeof match>;
+  try {
+    mapping = match(a, b, opts.match ?? defaultMatchOptions);
+  } catch (error) {
+    if (error instanceof MatchBudgetExceeded) return line("too-large");
+    throw error;
+  }
   return {
     ...file,
+    language,
     diffMode: "ast",
-    edits: toDoc(editScript(match(a, b, opts.match ?? defaultMatchOptions))),
+    edits: toDoc(editScript(mapping)),
   };
+}
+
+/** Both sides as UTF-8 text, or undefined when they differ and either is not valid UTF-8. */
+function decode(
+  oldBytes: Uint8Array,
+  newBytes: Uint8Array,
+): [string, string] | undefined {
+  try {
+    const strict = new TextDecoder("utf-8", { fatal: true });
+    return [strict.decode(oldBytes), strict.decode(newBytes)];
+  } catch (error) {
+    if (!(error instanceof TypeError)) throw error;
+    // A lossy decoding maps distinct bytes to one replacement character, so it is safe only when nothing changed.
+    if (!sameBytes(oldBytes, newBytes)) return undefined;
+    const lossy = new TextDecoder();
+    return [lossy.decode(oldBytes), lossy.decode(newBytes)];
+  }
 }
 
 function toEdits(raw: RawEdit[], oldText: string, newText: string): Edit[] {
@@ -137,13 +186,18 @@ function positions(text: string): (offset: number) => Position {
   for (let i = text.indexOf("\n"); i !== -1; i = text.indexOf("\n", i + 1))
     starts.push(i + 1);
   return (offset) => {
+    // The last line start at or before `offset`.
     let lo = 0;
+    let loStart = 0;
     let hi = starts.length - 1;
     while (lo < hi) {
       const mid = (lo + hi + 1) >> 1;
-      if ((starts[mid] as number) <= offset) lo = mid;
-      else hi = mid - 1;
+      const start = starts[mid];
+      if (start !== undefined && start <= offset) {
+        lo = mid;
+        loStart = start;
+      } else hi = mid - 1;
     }
-    return { line: lo + 1, column: offset - (starts[lo] as number) + 1 };
+    return { line: lo + 1, column: offset - loStart + 1 };
   };
 }

@@ -1,7 +1,20 @@
 import { z } from "zod";
 
+export const LanguageId = z.enum([
+  "typescript",
+  "tsx",
+  "javascript",
+  "json",
+  "python",
+  "css",
+]);
+export type LanguageId = z.infer<typeof LanguageId>;
+
 /** `wasm` is a module specifier into the npm package that ships the grammar, for the host to resolve. */
-const registry = {
+const registry: Record<
+  LanguageId,
+  { extensions: readonly string[]; wasm: string }
+> = {
   typescript: {
     extensions: [".ts", ".mts", ".cts"],
     wasm: "tree-sitter-typescript/tree-sitter-typescript.wasm",
@@ -23,22 +36,13 @@ const registry = {
     wasm: "tree-sitter-python/tree-sitter-python.wasm",
   },
   css: { extensions: [".css"], wasm: "tree-sitter-css/tree-sitter-css.wasm" },
-} as const;
-
-export const LanguageId = z.enum(
-  Object.keys(registry) as [keyof typeof registry],
-);
-export type LanguageId = z.infer<typeof LanguageId>;
+};
 
 export function languageForPath(path: string): LanguageId | undefined {
   const dot = path.lastIndexOf(".");
   if (dot <= path.lastIndexOf("/")) return undefined;
   const ext = path.slice(dot).toLowerCase();
-  for (const [id, { extensions }] of Object.entries(registry)) {
-    if ((extensions as readonly string[]).includes(ext))
-      return id as LanguageId;
-  }
-  return undefined;
+  return LanguageId.options.find((id) => registry[id].extensions.includes(ext));
 }
 
 export function grammarWasm(lang: LanguageId): string {

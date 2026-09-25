@@ -1,5 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -48,6 +54,18 @@ beforeAll(() => {
   write("feature.json", '{ "on": true }\n');
   git("add", ".");
   git("commit", "-q", "-m", "feature work");
+
+  // A submodule bump, recorded as a gitlink entry without cloning anything.
+  git("checkout", "-q", "-b", "bump", "main");
+  git(
+    "update-index",
+    "--add",
+    "--cacheinfo",
+    "160000,1234567890abcdef1234567890abcdef12345678,vendor/lib",
+  );
+  write("app.ts", "export const retries = 7;\n");
+  git("add", "app.ts");
+  git("commit", "-q", "-m", "bump submodule");
   git("checkout", "-q", "main");
 });
 
@@ -127,5 +145,36 @@ describe("git source", () => {
     expect(doc.files.map((f) => [f.path, f.status])).toEqual([
       ["feature.json", "added"],
     ]);
+  });
+
+  it("a submodule bump is reported as a submodule entry without reading it, instead of failing the whole review", async () => {
+    const vcs = gitVcs(dir);
+    const doc = await buildReviewDoc(
+      vcsFileSource(vcs, await diffsetFromCommit(vcs, "bump")),
+      { parser },
+    );
+    expect(doc.files).toEqual([
+      expect.objectContaining({ path: "app.ts", diffMode: "ast" }),
+      {
+        path: "vendor/lib",
+        status: "added",
+        language: null,
+        diffMode: "submodule",
+        edits: [],
+      },
+    ]);
+  });
+
+  it("a revision id shaped like an option is rejected before git runs, so it cannot make git write a file", async () => {
+    const vcs = gitVcs(dir);
+    const sha = git("rev-parse", "main");
+    const out = join(dir, "..", `${dir.split(/[\\/]/).at(-1)}-injected.txt`);
+    const bad = `--output=${out}`;
+    await expect(vcs.changes(bad, sha)).rejects.toThrow(JSON.stringify(bad));
+    await expect(vcs.changes(sha, bad)).rejects.toThrow(JSON.stringify(bad));
+    await expect(vcs.parents(bad)).rejects.toThrow(JSON.stringify(bad));
+    await expect(vcs.mergeBase(sha, bad)).rejects.toThrow(JSON.stringify(bad));
+    await expect(vcs.read(bad, "app.ts")).rejects.toThrow(JSON.stringify(bad));
+    expect(existsSync(out)).toBe(false);
   });
 });

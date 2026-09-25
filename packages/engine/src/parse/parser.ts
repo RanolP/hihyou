@@ -1,6 +1,11 @@
 import { Language, Parser } from "web-tree-sitter";
 import { grammarWasm, type LanguageId } from "./languages.js";
-import type { SyntaxNode, SyntaxParser, SyntaxTree } from "./tree.js";
+import {
+  type SyntaxNode,
+  type SyntaxParser,
+  type SyntaxTree,
+  syntaxTree,
+} from "./tree.js";
 
 /** Returns the grammar's WASM bytes, or a URL/path web-tree-sitter can fetch. `wasm` is from the registry. */
 export type GrammarLocator = (
@@ -63,6 +68,7 @@ function toSyntaxTree(cursor: Cursor, text: string): SyntaxTree {
     const node: SyntaxNode = {
       id: nodes.length,
       kind: cursor.nodeType,
+      named: cursor.nodeIsNamed,
       label: "",
       start: cursor.startIndex,
       end: cursor.endIndex,
@@ -106,7 +112,8 @@ function toSyntaxTree(cursor: Cursor, text: string): SyntaxTree {
           node = open(node.parent);
           break;
         }
-        if (!cursor.gotoParent() || !node.parent) return { nodes, errorChars };
+        if (!cursor.gotoParent() || !node.parent)
+          return syntaxTree(nodes, errorChars);
         node = node.parent;
       }
     }

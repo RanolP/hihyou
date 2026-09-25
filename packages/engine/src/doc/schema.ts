@@ -27,11 +27,14 @@ export const Edit = z.discriminatedUnion("kind", [
 ]);
 export type Edit = z.infer<typeof Edit>;
 
-export const DiffMode = z.enum(["ast", "line", "binary"]);
+/** `submodule`: the entry pins another repository's revision; there is no content to diff. */
+export const DiffMode = z.enum(["ast", "line", "binary", "submodule"]);
+/** `undecodable`: bytes that differ but are not valid UTF-8, so the file is shown as binary rather than mis-decoded. */
 export const FallbackReason = z.enum([
   "unsupported-language",
   "too-large",
   "parse-error",
+  "undecodable",
 ]);
 export type FallbackReason = z.infer<typeof FallbackReason>;
 
@@ -41,9 +44,12 @@ export const FileDiff = z.object({
   status: FileStatus,
   language: LanguageId.nullable(),
   diffMode: DiffMode,
-  /** Why the file got line mode instead of ast mode. */
+  /** Why the file got line or binary mode instead of ast mode. */
   fallbackReason: FallbackReason.optional(),
-  /** Whitespace never produces an edit, so a whitespace-only change leaves this empty. */
+  /**
+   * Whitespace is never content: it produces an edit only where the syntax makes it matter (splitting or
+   * joining tokens, or indentation in Python, YAML and Makefiles), so re-indenting or re-wrapping leaves this empty.
+   */
   edits: z.array(Edit),
 });
 export type FileDiff = z.infer<typeof FileDiff>;

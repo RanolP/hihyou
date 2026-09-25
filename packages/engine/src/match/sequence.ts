@@ -1,51 +1,50 @@
 import { diffArrays } from "diff";
 
 /** Pairs of equal elements along a longest common subsequence (Myers diff, so O(ND) rather than O(NM)). */
-export function commonPairs<A, B>(
-  xs: A[],
-  ys: B[],
-  eq: (x: A, y: B) => boolean,
-): [A, B][] {
-  // diffArrays compares elements of one type; old indices >= 0 and new indices < 0 let each side keep its own.
-  const changes = diffArrays(
-    xs.map((_, i) => i),
-    ys.map((_, j) => -1 - j),
-    {
-      comparator: (p, q) =>
-        p >= 0
-          ? eq(xs[p] as A, ys[-1 - q] as B)
-          : eq(xs[q] as A, ys[-1 - p] as B),
-    },
-  );
-  const pairs: [A, B][] = [];
-  let i = 0;
-  let j = 0;
-  for (const c of changes) {
-    const n = c.count ?? c.value.length;
-    if (c.added) j += n;
-    else if (c.removed) i += n;
-    else for (let k = 0; k < n; k++) pairs.push([xs[i++] as A, ys[j++] as B]);
+export function commonPairs<T>(
+  xs: T[],
+  ys: T[],
+  eq: (x: T, y: T) => boolean,
+): [T, T][] {
+  // diffArrays calls the comparator as (old, new), and a common run's value holds the new-side elements;
+  // the old side's are the next ones in `xs`, since removed and common runs consume it in order.
+  const old = xs.values();
+  const pairs: [T, T][] = [];
+  for (const c of diffArrays(xs, ys, { comparator: eq })) {
+    if (c.added) continue;
+    for (const y of c.value) {
+      const x = old.next();
+      if (x.done)
+        throw new Error(
+          `commonPairs: diff consumed more than the ${xs.length} old elements`,
+        );
+      if (!c.removed) pairs.push([x.value, y]);
+    }
   }
   return pairs;
 }
 
+interface Tail {
+  index: number;
+  value: number;
+  prev: Tail | undefined;
+}
+
 /** Indices (into `xs`) of one longest strictly increasing subsequence. */
 export function longestIncreasing(xs: number[]): Set<number> {
-  const tails: number[] = [];
-  const prev = new Array<number>(xs.length).fill(-1);
-  for (let i = 0; i < xs.length; i++) {
-    const x = xs[i] as number;
+  // tails[k] ends the smallest-valued increasing run of length k + 1 seen so far.
+  const tails: Tail[] = [];
+  for (const [index, value] of xs.entries()) {
     let lo = 0;
     let hi = tails.length;
     while (lo < hi) {
       const mid = (lo + hi) >> 1;
-      if ((xs[tails[mid] as number] as number) < x) lo = mid + 1;
+      if ((tails[mid]?.value ?? Infinity) < value) lo = mid + 1;
       else hi = mid;
     }
-    if (lo > 0) prev[i] = tails[lo - 1] as number;
-    tails[lo] = i;
+    tails[lo] = { index, value, prev: tails[lo - 1] };
   }
   const keep = new Set<number>();
-  for (let i = tails.at(-1) ?? -1; i >= 0; i = prev[i] as number) keep.add(i);
+  for (let t = tails.at(-1); t; t = t.prev) keep.add(t.index);
   return keep;
 }

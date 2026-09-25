@@ -19,6 +19,8 @@ export interface ChangedFile {
   path: string;
   /** Base-side path, set only for a renamed file. */
   oldPath?: string;
+  /** The entry pins a revision of another repository (a git submodule) instead of holding content; it is never read. */
+  submodule?: boolean;
 }
 
 export type Side = "base" | "head";
@@ -33,4 +35,8 @@ export interface FileSource {
 /** Same heuristic as git: a NUL byte in the first 8000 bytes. */
 export function isBinary(bytes: Uint8Array): boolean {
   return bytes.subarray(0, 8000).includes(0);
+}
+
+export function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  return a.length === b.length && a.every((x, i) => x === b[i]);
 }

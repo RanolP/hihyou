@@ -1,5 +1,5 @@
 import type { SyntaxNode } from "../parse/tree.js";
-import type { Mapping } from "./matcher.js";
+import { idOf, type Mapping } from "./matcher.js";
 import { longestIncreasing } from "./sequence.js";
 
 /** Half-open UTF-16 offset range into one side's text. */
@@ -16,11 +16,13 @@ export type RawEdit =
 /**
  * Edits implied by a mapping. Inserts and deletes are reported at their outermost node only,
  * and a move only where the node itself changed place, not for everything carried along with it.
+ * Anonymous tokens (punctuation, keywords) are never reported as moved: they only follow the named
+ * nodes around them, so swapping `f(a, b)` to `f(b, a)` moves an argument, not the comma.
  */
 export function editScript({ a, b, src, dst }: Mapping): RawEdit[] {
   const edits: RawEdit[] = [];
   const span = (n: SyntaxNode): Span => ({ start: n.start, end: n.end });
-  const partner = (x: SyntaxNode) => b.nodes[src[x.id] as number] as SyntaxNode;
+  const partner = (x: SyntaxNode) => b.node(idOf(src, x));
 
   for (const x of a.nodes) {
     if (src[x.id] === -1) {
@@ -35,26 +37,22 @@ export function editScript({ a, b, src, dst }: Mapping): RawEdit[] {
       x.label !== y.label
     )
       edits.push({ kind: "update", old: span(x), new: span(y), node: x.kind });
-    if (x.parent && (!y.parent || src[x.parent.id] !== y.parent.id))
+    if (x.named && x.parent && (!y.parent || src[x.parent.id] !== y.parent.id))
       edits.push({ kind: "move", old: span(x), new: span(y), node: x.kind });
 
     // Reordering among children that stayed under the same parent: whatever falls outside the longest in-order run moved.
-    const stayed = x.children.filter(
-      (c) => src[c.id] !== -1 && partner(c).parent === y,
-    );
+    const stayed = x.children
+      .filter((c) => c.named && src[c.id] !== -1)
+      .map((c) => ({ c, p: partner(c) }))
+      .filter(({ p }) => p.parent === y);
     if (stayed.length < 2) continue;
     const position = new Map(y.children.map((c, i) => [c, i]));
-    const order = stayed.map((c) => position.get(partner(c)) as number);
-    const kept = longestIncreasing(order);
-    stayed.forEach((c, i) => {
+    const kept = longestIncreasing(
+      stayed.map(({ p }) => position.get(p) ?? -1),
+    );
+    for (const [i, { c, p }] of stayed.entries())
       if (!kept.has(i))
-        edits.push({
-          kind: "move",
-          old: span(c),
-          new: span(partner(c)),
-          node: c.kind,
-        });
-    });
+        edits.push({ kind: "move", old: span(c), new: span(p), node: c.kind });
   }
   for (const y of b.nodes) {
     if (

@@ -123,6 +123,25 @@ describe("fixtures", () => {
     ]);
   });
 
+  it("remove-duplicate-sibling: deleting one of several identical statements is one delete of a copy, not a move across b() plus a delete of the last copy", async () => {
+    const file = await onlyFile("remove-duplicate-sibling");
+    expect(file.edits).toHaveLength(1);
+    expect(file.edits[0]).toMatchObject({
+      kind: "delete",
+      node: "expression_statement",
+    });
+    expect(
+      file.edits[0]?.kind === "delete" && file.edits[0].old.start.line,
+    ).toBeLessThanOrEqual(2);
+  });
+
+  it("swap-arguments: swapping two arguments moves one argument and never reports the comma as moved", async () => {
+    const file = await onlyFile("swap-arguments");
+    expect(file.edits).toEqual([
+      expect.objectContaining({ kind: "move", node: "identifier" }),
+    ]);
+  });
+
   it("ReviewDoc round-trips through its zod schema without losing or rejecting any field", async () => {
     const docs = await Promise.all(readdirSync(fixtures).map(fixture));
     for (const doc of docs) {
