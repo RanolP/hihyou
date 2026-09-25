@@ -6,7 +6,6 @@ import {
   ancestry,
   calleeOf,
   functionName,
-  isExported,
   isIdentifier,
   signatureOwner,
 } from "./syntax-context.js";
@@ -94,29 +93,24 @@ export function groupEdits(
     );
   }
 
-  // Renames are bucketed per file, and two files' buckets join only when an import links them, or when
-  // one declares the name exported and the other only uses it, so unrelated locals renamed alike stay apart.
+  // Renames are bucketed per file, and two files' buckets join only where an import names the other file,
+  // so unrelated locals renamed alike stay apart. A property name (`body.data`) belongs to whatever object
+  // it is read from, never to a symbol, so it joins no rename.
   const renames = new Map<string, Map<number, Member[]>>();
   for (const m of free()) {
     const { edit } = m.c;
     if (edit.kind !== "update" || !edit.a || !edit.b) continue;
     if (!isIdentifier(edit.a) || !isIdentifier(edit.b)) continue;
-    if (edit.a.label === edit.b.label) continue;
+    if (edit.a.label === edit.b.label || isProperty(edit.b)) continue;
     const key = `${edit.a.label}\0${edit.b.label}`;
     const perFile = renames.get(key) ?? new Map<number, Member[]>();
     renames.set(key, perFile);
     const file = home(m);
     perFile.set(file, [...(perFile.get(file) ?? []), m]);
   }
-  const specifier = (n: SyntaxNode | undefined) =>
-    /specifier$/.test(n?.parent?.kind ?? "");
   const declares = (m: Member) => {
     const n = node(m.c);
     return n?.field === "name" && !specifier(n);
-  };
-  const exportedDecl = (m: Member) => {
-    const decl = node(m.c)?.parent;
-    return declares(m) && decl !== undefined && isExported(decl);
   };
   for (const [key, perFile] of renames) {
     const [from = "", to = ""] = key.split("\0");
@@ -136,10 +130,6 @@ export function groupEdits(
         );
         if (x !== undefined) break;
       }
-      if (x === undefined && !ms.some(declares))
-        x = [...perFile].find(
-          ([f, fm]) => f !== y && fm.some(exportedDecl),
-        )?.[0];
       if (x !== undefined) root.set(find(y), find(x));
     }
     const joined = new Map<number, Member[]>();
@@ -182,13 +172,20 @@ export function groupEdits(
   for (const { file, name, members } of signatures.values()) {
     const calls = free().filter((m) => {
       const n = node(m.c);
-      if (inSignature.has(m) || !n || calleeOf(n) !== name) return false;
+      const callee = n && calleeOf(n);
+      if (inSignature.has(m) || !n || callee?.name !== name) return false;
       const at = home(m);
       if (at === file) return true;
-      const target = importKey(sidePath(m, file));
+      // `pad(...)` needs `pad` imported from the declaring file; `P.pad(...)` needs `P` to be its namespace.
+      const { object } = callee;
+      if (object && object.children.length > 0) return false;
       const root = [...ancestry(n)].at(-1);
       return (
-        root !== undefined && importsName(root, sidePath(m, at), name, target)
+        root !== undefined &&
+        imports(root, sidePath(m, at), importKey(sidePath(m, file)), {
+          binding: object ? object.label : name,
+          namespace: object !== undefined,
+        })
       );
     });
     if (calls.length === 0) continue;
@@ -212,9 +209,30 @@ export function groupEdits(
     );
 }
 
-/** A module path with its extension and a trailing `/index` dropped, as an import names it. */
+/** A module path with its extension and a trailing `/index` or `/__init__` dropped, as an import names it. */
 function importKey(path: string): string {
-  return path.replace(/\.[^./]+$/, "").replace(/\/index$/, "");
+  return path.replace(/\.[^./]+$/, "").replace(/\/(index|__init__)$/, "");
+}
+
+/** A name listed in an import or re-export: `{ pad }`, `export { pad }`, Python's `from .x import pad`. */
+function specifier(n: SyntaxNode | undefined): boolean {
+  const p = n?.parent;
+  if (!p) return false;
+  if (/specifier$/.test(p.kind)) return true;
+  return (
+    p.kind === "dotted_name" &&
+    p.field !== "module_name" &&
+    /^(import_from_statement|aliased_import)$/.test(p.parent?.kind ?? "")
+  );
+}
+
+/** A name looked up on an object (`body.data`, Python `body.data`), as against a variable of its own. */
+function isProperty(n: SyntaxNode): boolean {
+  return (
+    n.kind === "property_identifier" ||
+    n.field === "property" ||
+    n.field === "attribute"
+  );
 }
 
 /** The module a relative import specifier names, as an `importKey`; undefined for a package import. */
@@ -228,9 +246,23 @@ function resolveImport(importer: string, spec: string): string | undefined {
   return importKey(parts.join("/"));
 }
 
-/** The module named by the import or re-export statement holding `n`, as an `importKey`. */
+const importKinds = /^(import_statement|import_from_statement)$/;
+
+/**
+ * The module named by the import or re-export statement holding `n`, as an `importKey`: a JS/TS `source`
+ * string, or a Python relative `module_name` (`.pad` is a sibling, `..x` in the parent package).
+ */
 function importedFrom(n: SyntaxNode, importer: string): string | undefined {
   for (const p of ancestry(n)) {
+    if (p.kind === "import_from_statement") {
+      const module = p.children.find((c) => c.field === "module_name");
+      if (module?.kind !== "relative_import") return undefined;
+      const [prefix, dotted] = module.children;
+      const dots = prefix?.children.length ?? 0;
+      const up = dots <= 1 ? "./" : "../".repeat(dots - 1);
+      const parts = dotted?.children.filter(isIdentifier).map((c) => c.label);
+      return resolveImport(importer, up + (parts ?? []).join("/"));
+    }
     if (!/^(import|export)_statement$/.test(p.kind)) continue;
     const spec = p.children
       .find((c) => c.field === "source")
@@ -240,23 +272,29 @@ function importedFrom(n: SyntaxNode, importer: string): string | undefined {
   return undefined;
 }
 
-/** Whether the module at `root` imports `name` from the module `target`. */
-function importsName(
+/**
+ * Whether the module at `root` binds `binding` by a top-level import from the module `target`: as a
+ * namespace (`import * as P`) when `namespace` is set, else as a name (`import { pad }`, `from .x import pad`).
+ * An aliased import binds its alias only.
+ */
+function imports(
   root: SyntaxNode,
   importer: string,
-  name: string,
   target: string,
+  { binding, namespace }: { binding: string; namespace: boolean },
 ): boolean {
-  const names = (n: SyntaxNode): boolean =>
-    n.field !== "source" &&
-    (n.children.length === 0
-      ? isIdentifier(n) && n.label === name
-      : n.children.some(names));
+  const binds = (n: SyntaxNode, inNamespace: boolean): boolean => {
+    if (n.field === "source" || n.field === "module_name") return false;
+    const ns = inNamespace || n.kind === "namespace_import";
+    if (n.children.length === 0)
+      return ns === namespace && isIdentifier(n) && n.label === binding;
+    const alias = n.children.find((c) => c.field === "alias");
+    return alias ? binds(alias, ns) : n.children.some((c) => binds(c, ns));
+  };
   return root.children.some(
     (s) =>
-      s.kind === "import_statement" &&
-      s.children[0] !== undefined &&
-      importedFrom(s.children[0], importer) === target &&
-      names(s),
+      importKinds.test(s.kind) &&
+      importedFrom(s, importer) === target &&
+      binds(s, false),
   );
 }

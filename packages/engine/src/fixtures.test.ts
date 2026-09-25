@@ -169,21 +169,67 @@ describe("fixtures", () => {
     expect(guard?.risk.score).toBeGreaterThan(format?.risk.score ?? 0);
   });
 
-  it("cross-file-guard-move: an auth guard moved from one endpoint to another leaves both files unfolded, so the endpoint that lost its check is not hidden as a move", async () => {
+  it("cross-file-guard-move: an auth guard moved from one endpoint to another is one move, and it leaves both files unfolded, so the endpoint that lost its check is not hidden", async () => {
     const doc = await fixture("cross-file-guard-move");
+    expect(doc.groups).toEqual([
+      expect.objectContaining({ kind: "move", fromPath: "api/delete.ts" }),
+    ]);
     expect(doc.files.map((f) => [f.path, f.fold])).toEqual([
       ["api/delete.ts", undefined],
       ["api/read.ts", undefined],
     ]);
   });
 
-  for (const name of ["signature-overlap", "signature-overlap-swapped"])
-    it(`${name}: a call inside another signature's default never lands in two groups nor rejects the build, whichever function is declared first`, async () => {
+  it("exported-function-move: an exported function moved verbatim to another file is one move, and neither file folds", async () => {
+    const doc = await fixture("exported-function-move");
+    expect(doc.groups).toEqual([
+      expect.objectContaining({
+        kind: "move",
+        fromPath: "a.ts",
+        toPath: "b.ts",
+        names: ["clamp"],
+      }),
+    ]);
+    for (const f of doc.files) expect(f.fold).toBeUndefined();
+  });
+
+  it("decorated-move: a decorated Python function moved and edited on the way moves whole with its decorator, not as a moved def beside a deleted and an inserted decorator", async () => {
+    const doc = await fixture("decorated-move");
+    const moves = doc.files.flatMap((f) =>
+      f.edits.filter((e) => e.kind === "move"),
+    );
+    expect(new Set(moves.map((e) => e.node))).toEqual(
+      new Set(["decorated_definition"]),
+    );
+    expect(doc.groups).toEqual([
+      expect.objectContaining({ kind: "move", names: ["load"] }),
+    ]);
+    for (const f of doc.files)
+      expect(f.edits.filter((e) => e.kind === "delete")).toEqual([]);
+  });
+
+  for (const [name, fLine] of [
+    ["signature-overlap", 5],
+    ["signature-overlap-swapped", 1],
+  ] as const)
+    it(`${name}: an argument added to a call in f's parameter default joins f's signature group with f's imported call, never g's too, whichever function is declared first`, async () => {
       const doc = await fixture(name);
+      const a = doc.files.find((f) => f.path === "a.ts");
+      const b = doc.files.find((f) => f.path === "b.ts");
+      const inF = (a?.edits ?? [])
+        .filter((e) => "new" in e && e.new.start.line === fLine)
+        .map((e) => e.id);
+      expect(inF).toHaveLength(2);
+      expect(doc.groups).toEqual([
+        expect.objectContaining({
+          kind: "signature",
+          name: "f",
+          path: "a.ts",
+          edits: [...inF, ...(b?.edits ?? []).map((e) => e.id)],
+        }),
+      ]);
       const ids = doc.groups.flatMap((g) => g.edits);
       expect(new Set(ids).size).toBe(ids.length);
-      for (const g of doc.groups) expect(g.edits.length).toBeGreaterThan(0);
-      expect(doc.files.flatMap((f) => f.edits).length).toBeGreaterThan(0);
     });
 
   for (const name of ["json-pair-move", "import-move"])
@@ -193,22 +239,52 @@ describe("fixtures", () => {
       for (const f of doc.files) expect(f.fold).toBeUndefined();
     });
 
-  it("signature-foreign-call: a call to a same-named function imported from a package stays out of the local function's signature group", async () => {
-    const doc = await fixture("signature-foreign-call");
-    const idsOf = (path: string) =>
-      doc.files.find((f) => f.path === path)?.edits.map((e) => e.id) ?? [];
-    const [group] = doc.groups;
-    expect(doc.groups).toHaveLength(1);
-    expect(group).toMatchObject({ kind: "signature", name: "pad" });
-    for (const id of idsOf("table.ts")) expect(group?.edits).toContain(id);
-    for (const id of idsOf("other.ts")) expect(group?.edits).not.toContain(id);
-  });
+  for (const [name, dir] of [
+    ["signature-foreign-call", ""],
+    ["signature-foreign-call-python", "pkg/"],
+    ["signature-namespace-import", ""],
+  ] as const)
+    it(`${name}: a call through an import of the declaring file joins its signature group, and a same-named call imported from a package stays out`, async () => {
+      const doc = await fixture(name);
+      // Only line 1 of pad is its signature; line 2 is its body.
+      const idsOf = (stem: string, line?: number) =>
+        doc.files
+          .find((f) => f.path.startsWith(`${dir}${stem}.`))
+          ?.edits.filter(
+            (e) =>
+              line === undefined || ("new" in e && e.new.start.line === line),
+          )
+          .map((e) => e.id) ?? [];
+      expect(idsOf("table").length).toBeGreaterThan(0);
+      expect(doc.groups).toEqual([
+        expect.objectContaining({
+          kind: "signature",
+          name: "pad",
+          edits: [...idsOf("pad", 1), ...idsOf("table")].toSorted(
+            (p, q) => p - q,
+          ),
+        }),
+      ]);
+    });
 
   it("unrelated-renames: the same local renamed alike in two unlinked files is two rename groups, not one cross-file rename", async () => {
     const doc = await fixture("unrelated-renames");
     expect(doc.groups.map((g) => g.kind === "rename-symbol" && g.path)).toEqual(
       ["x.ts", "y.ts"],
     );
+  });
+
+  it("property-rename: an exported variable renamed in one file does not absorb a same-named property renamed in a file that never imports it", async () => {
+    const doc = await fixture("property-rename");
+    const x = doc.files.find((f) => f.path === "x.ts");
+    expect(doc.groups).toEqual([
+      expect.objectContaining({
+        kind: "rename-symbol",
+        from: "data",
+        to: "items",
+        edits: x?.edits.map((e) => e.id),
+      }),
+    ]);
   });
 
   it("operator-change: `<` to `<=` is one update of the operator, not a delete plus an insert", async () => {

@@ -8,6 +8,7 @@ declare global {
   class TextEncoder {
     encode(input?: string): Uint8Array;
   }
+  var console: { error(...data: unknown[]): void };
 }
 
 export {};

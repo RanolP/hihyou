@@ -21,12 +21,14 @@ export type CrossEdit = {
   whole?: true;
 };
 
-/**
- * Below this many nodes a subtree is too common (`return null;`) to claim that it moved. Only declarations
- * (nodes with a name) are candidates: `size` counts punctuation, so a JSON pair or an import line clears
- * this bar, and pairing those across files reports noise as moves.
- */
+/** Below this many nodes a subtree is too common (`return null;`) to claim that it moved. */
 const minMoveSize = 8;
+
+/**
+ * Import lines clear `minMoveSize` on punctuation alone, and the same import turns up in many files, so
+ * pairing them across files reports noise as moves.
+ */
+const importKinds = /^(import_statement|import_from_statement)$/;
 
 /**
  * Pairs code deleted from one file with code inserted into another, so a declaration that moved
@@ -65,7 +67,7 @@ export function crossFileMoves(
               n.named &&
               n.size >= minMoveSize &&
               table[n.id] === -1 &&
-              nameOf(n) !== undefined,
+              !inImport(n),
           )
           .map((n) => ({ file, n }));
       })
@@ -181,13 +183,22 @@ export function crossFileMoves(
   return { claimed, edits };
 }
 
-/** The name a declaration introduces: its `name` field, through an `export` or a single `const x = ...`. */
+function inImport(n: SyntaxNode): boolean {
+  for (let p: SyntaxNode | undefined = n; p; p = p.parent)
+    if (importKinds.test(p.kind)) return true;
+  return false;
+}
+
+/**
+ * The name a declaration introduces: its `name` field, through an `export` (default or not), a Python
+ * decorator, or a single `const x = ...`.
+ */
 export function nameOf(n: SyntaxNode): string | undefined {
   const named = n.children.filter((c) => c.named);
   const name = named.find((c) => c.field === "name");
   if (name) return name.children.length === 0 ? name.label : undefined;
   const inner =
-    named.find((c) => c.field === "declaration") ??
+    named.find((c) => c.field === "declaration" || c.field === "definition") ??
     (named.length === 1 ? named[0] : undefined);
   return inner ? nameOf(inner) : undefined;
 }

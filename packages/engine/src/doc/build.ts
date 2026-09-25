@@ -77,8 +77,9 @@ export async function buildReviewDoc(
   };
   await Promise.all(Array.from({ length: concurrency }, worker));
 
+  // JSON is data, not code: a key or a block of config repeated in another file did not move there.
   const cross = crossFileMoves(
-    analyses.map((a) => a.mapping),
+    analyses.map((a) => (a.file.language === "json" ? undefined : a.mapping)),
     opts.match ?? defaultMatchOptions,
   );
   const located: CrossEdit[][] = analyses.map((a, i) =>
@@ -109,7 +110,9 @@ export async function buildReviewDoc(
       located,
       ids,
     );
-  } catch {}
+  } catch (error) {
+    console.error("groupEdits failed; groups dropped", error);
+  }
   files.sort(
     (p, q) =>
       Number(p.fold !== undefined) - Number(q.fold !== undefined) ||

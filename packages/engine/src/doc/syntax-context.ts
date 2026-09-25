@@ -55,19 +55,27 @@ export function isIdentifier(n: SyntaxNode): boolean {
   return n.named && n.children.length === 0 && /identifier$/.test(n.kind);
 }
 
-/** The name of the function called where `n` sits among a call's arguments, if it does. */
-export function calleeOf(n: SyntaxNode): string | undefined {
+/**
+ * The function called where `n` sits among a call's arguments, if it does: its name, and for a member
+ * call (`P.pad(...)`) the expression it is looked up on.
+ */
+export function calleeOf(
+  n: SyntaxNode,
+): { name: string; object?: SyntaxNode } | undefined {
   for (const p of ancestry(n)) {
     if (p.field !== "arguments" || !p.parent) continue;
     const fn = p.parent.children.find(
       (c) => c.field === "function" || c.field === "constructor",
     );
     if (!fn) return undefined;
-    if (fn.children.length === 0) return fn.label;
+    if (fn.children.length === 0) return { name: fn.label };
     const member = fn.children.find(
       (c) => c.field === "property" || c.field === "attribute",
     );
-    return member?.children.length === 0 ? member.label : undefined;
+    const object = fn.children.find((c) => c.field === "object");
+    return member?.children.length === 0
+      ? { name: member.label, ...(object && { object }) }
+      : undefined;
   }
   return undefined;
 }
