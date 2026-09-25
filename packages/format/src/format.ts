@@ -21,7 +21,7 @@ export type Formatted =
   | { ok: true; text: string; anchors: Anchor[] }
   | {
       ok: false;
-      /** `token-mismatch`: the rules dropped or repeated a source token, so the output would misstate the code. */
+      /** `token-mismatch`: the rules dropped, repeated or reordered a source token, so the output would misstate the code. */
       reason: "token-mismatch" | "formatter-error";
       /** The input, unchanged. */
       text: string;
@@ -82,12 +82,18 @@ export function format(
     const { text, placed } = print(doc, settings);
 
     const anchors: Anchor[] = [];
+    // Code tokens must come out in source order, or a rule that swaps two fields shows code that does not
+    // exist; comments are exempt because prettier moves them (a trailing comment past a comma).
+    let codeEnd = 0;
     for (const { token: t, at } of placed) {
-      if (!text.startsWith(t.text, at))
-        return mismatch(
-          source,
-          `token at ${t.node.start} printed out of place`,
-        );
+      if (!isComment(t.node)) {
+        if (t.node.start < codeEnd)
+          return mismatch(
+            source,
+            `token at ${t.node.start} printed out of order`,
+          );
+        codeEnd = t.node.end;
+      }
       anchors.push({
         from: [t.node.start, t.node.end],
         to: [at, at + t.text.length],

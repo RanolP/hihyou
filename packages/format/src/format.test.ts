@@ -78,6 +78,19 @@ describe("format", () => {
     });
   });
 
+  it("a rule that swaps two fields returns the input unformatted, instead of a layout that shows code that does not exist", async () => {
+    const swaps = defineLanguage(grammar, { lineComment: "//" }, (h) => ({
+      ...rules(h),
+      pair: h.seq(h.field("value"), ":", h.space, h.field("key")),
+    }));
+    const text = '{"a":1}';
+    expect(await run(text, swaps)).toMatchObject({
+      ok: false,
+      reason: "token-mismatch",
+      text,
+    });
+  });
+
   it("an unparsable region is kept verbatim rather than rejected, so the rest of the file still formats", async () => {
     const out = await run('[{"a":1,,  "b":2},   3]');
     expect(out).toMatchObject({ ok: true, text: '[{"a":1,,  "b":2}, 3]\n' });
