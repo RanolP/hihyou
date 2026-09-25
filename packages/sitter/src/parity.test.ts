@@ -3,6 +3,8 @@ import type { GrammarName } from "./corpus.node.js";
 import { language as css } from "./generated/css.js";
 import { language as javascript } from "./generated/javascript.js";
 import { language as json } from "./generated/json.js";
+import { language as tsx } from "./generated/tsx.js";
+import { language as typescript } from "./generated/typescript.js";
 import type { Language } from "./language.js";
 import { checkParity } from "./parity.node.js";
 
@@ -37,6 +39,21 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
       "let a = b\n++c\nconst t = `x${a}y\\n`\nconst r = a / 2 / 3, s = /re[/]g/.test(t)\nx = a ? .5 : b?.c\n<!-- old\nconst j = <div>\n  hi {a} &amp; <b/>\n</div>\nif (a) b\nelse c\nfor (const k in o) {}\n",
       "function f( { return 1 }\nclass { #x = 1; static { y() } }\nconst o = { a: 1,, b }",
       "a\ninstanceof B\na\nin b\n/* c\n */ d",
+    ],
+  ],
+  typescript: [
+    typescript,
+    [
+      // Optional `?:` vs ternary, object-pattern annotations, signatures without bodies, generics vs `<`.
+      "type F = ({a}: {a: number}) => number\ninterface I { x?: string; m(a?, b?): void }\nfunction f(a: number): void\nfunction f(a) {}\nconst y = a ? b : c\nconst z = f<T>(1) < 2\nabstract class C<T extends {}> implements I { private readonly x?: T; }\n",
+      "let x: = 1\nfunction g(a: , b) { return }\nenum E { A = 1,, B }\n",
+    ],
+  ],
+  tsx: [
+    tsx,
+    [
+      "const a = <A<T> b={1} {...c}>\n  text {d}\n  <>frag</>\n</A>\nconst g = <T,>(x: T) => x\n",
+      "const b = <div>unclosed {x</div>\n",
     ],
   ],
 };

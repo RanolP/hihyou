@@ -59,7 +59,7 @@ const FETCHED: Record<GrammarName, string[]> = {
     join(benchInputs, "scanner.ts"),
     join(benchInputs, "checker.ts"),
   ],
-  tsx: [],
+  tsx: ["App.tsx", "LayerUI.tsx"].map((f) => join(corpusDir, f)),
   python: [
     join(benchInputs, "argparse.py"),
     ...["typing.py", "dataclasses.py", "base_events.py"].map((f) =>
