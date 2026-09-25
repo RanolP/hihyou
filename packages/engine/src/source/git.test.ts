@@ -163,6 +163,7 @@ describe("git source", () => {
         diffMode: "submodule",
         fold: "submodule",
         edits: [],
+        risk: { score: 0, reasons: [] },
       },
     ]);
   });
@@ -207,13 +208,14 @@ describe("git source", () => {
       vcsFileSource(vcs, await diffsetFromCommit(vcs, "corrupt")),
       { parser },
     );
+    // The file that could not be diffed ranks first: nothing about it has been reviewed.
     expect(doc.files).toEqual([
-      expect.objectContaining({ path: "app.ts", diffMode: "ast" }),
       expect.objectContaining({
         path: "hello.py",
         diffMode: "error",
         error: expect.stringContaining(blob),
       }),
+      expect.objectContaining({ path: "app.ts", diffMode: "ast" }),
     ]);
   });
 

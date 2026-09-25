@@ -45,7 +45,7 @@ export function producedBy(
 
 /** Why a reviewer can skip the file by default, or undefined when it has something to read. */
 export function foldReason(
-  file: Omit<FileDiff, "fold">,
+  file: Omit<FileDiff, "fold" | "risk">,
   produced: ReturnType<typeof producedBy>,
 ): FoldReason | undefined {
   if (file.diffMode === "error") return undefined;

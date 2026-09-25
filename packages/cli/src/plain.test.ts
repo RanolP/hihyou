@@ -2,6 +2,8 @@ import type { FileDiff, ReviewDoc } from "@hihyou/engine";
 import { expect, it } from "vitest";
 import { renderPlain } from "./plain.js";
 
+const risk = { score: 0, reasons: [] };
+
 it("folded binary and submodule files print one line and are never read, so an unreadable entry cannot fail the output", async () => {
   const doc: ReviewDoc = {
     schemaVersion: 2,
@@ -14,6 +16,7 @@ it("folded binary and submodule files print one line and are never read, so an u
         diffMode: "binary",
         fold: "binary",
         edits: [],
+        risk,
       },
       {
         path: "vendor/lib",
@@ -22,6 +25,7 @@ it("folded binary and submodule files print one line and are never read, so an u
         diffMode: "submodule",
         fold: "submodule",
         edits: [],
+        risk,
       },
     ],
   };
@@ -50,6 +54,7 @@ it("a file that fails to load prints its error inline and the files after it sti
         new: { start: { line: 1, column: 1 }, end: { line: 1, column: 3 } },
       },
     ],
+    risk,
   });
   const doc: ReviewDoc = {
     schemaVersion: 2,
@@ -88,6 +93,7 @@ it("a file the engine could not read prints its error, instead of being folded a
         diffMode: "error",
         error: "bad object",
         edits: [],
+        risk,
       },
     ],
   };

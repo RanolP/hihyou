@@ -80,6 +80,43 @@ export const FoldReason = z.enum([
 ]);
 export type FoldReason = z.infer<typeof FoldReason>;
 
+/**
+ * A structural cue that a change needs a careful read. `condition`: inside an `if`/`while`/ternary condition.
+ * `operator`: an operator or keyword token changed. `error-handling`: inside try/catch/finally/throw/raise.
+ * `exported-api`: the name, parameters or return type of an exported declaration, or a whole export.
+ * `line-mode`: an edit in a file diffed by lines, so nothing more is known about it. `error`: the file could not be diffed.
+ */
+export const RiskSignal = z.enum([
+  "condition",
+  "operator",
+  "error-handling",
+  "exported-api",
+  "removed-code",
+  "added-code",
+  "literal",
+  "line-mode",
+  "error",
+  "moved",
+  "renamed",
+  "comment",
+]);
+export type RiskSignal = z.infer<typeof RiskSignal>;
+
+/** `count` edits showed `signal`, worth `points`: the signal's weight times `count`, capped per signal. */
+export const RiskReason = z.object({
+  signal: RiskSignal,
+  count: z.int().min(1),
+  points: z.number().min(0),
+});
+export type RiskReason = z.infer<typeof RiskReason>;
+
+/** `score` is the sum of the reasons' points; reasons are ordered by points, highest first. */
+export const Risk = z.object({
+  score: z.number().min(0),
+  reasons: z.array(RiskReason),
+});
+export type Risk = z.infer<typeof Risk>;
+
 export const FileDiff = z.object({
   path: z.string(),
   oldPath: z.string().optional(),
@@ -97,9 +134,14 @@ export const FileDiff = z.object({
    * joining tokens, or indentation in Python, YAML and Makefiles), so re-indenting or re-wrapping leaves this empty.
    */
   edits: z.array(Edit),
+  /** Computed for folded files too; folding and risk are independent. */
+  risk: Risk,
 });
 export type FileDiff = z.infer<typeof FileDiff>;
 
+/**
+ * Files are ordered for review: unfolded before folded, then by risk score, highest first, then by path.
+ */
 export const ReviewDoc = z.object({
   schemaVersion: z.literal(schemaVersion),
   diffset: Diffset,

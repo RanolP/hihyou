@@ -153,6 +153,10 @@ describe("failures", () => {
         diffMode: "error",
         error: "object missing",
         edits: [],
+        risk: {
+          score: 20,
+          reasons: [{ signal: "error", count: 1, points: 20 }],
+        },
       },
       expect.objectContaining({
         path: "ok.ts",

@@ -17,6 +17,7 @@ import {
   sameBytes,
 } from "../source/file-source.js";
 import { foldReason, producedBy } from "./fold.js";
+import { riskOf, signalsOf } from "./risk.js";
 import {
   type Edit,
   type FallbackReason,
@@ -87,17 +88,29 @@ export async function buildReviewDoc(
     if ("old" in c.edit) located[c.from]?.push(c);
     if ("new" in c.edit) located[c.to]?.push(c);
   }
-  const files = toDocEdits(analyses, located).map((edits, i): FileDiff => {
+  const { edits } = toDocEdits(analyses, located);
+  const files = edits.map((edits, i): FileDiff => {
     const { file, text } = analyses[i] as Analysis;
     const fold = foldReason({ ...file, edits }, producedBy(file.path, text));
-    return { ...file, ...(fold && { fold }), edits };
+    const risk = riskOf(
+      file.diffMode === "error"
+        ? [["error"]]
+        : (located[i] ?? []).map((l) => signalsOf(l.edit)),
+    );
+    return { ...file, ...(fold && { fold }), edits, risk };
   });
+  files.sort(
+    (p, q) =>
+      Number(p.fold !== undefined) - Number(q.fold !== undefined) ||
+      q.risk.score - p.risk.score ||
+      (p.path < q.path ? -1 : p.path > q.path ? 1 : 0),
+  );
   return { schemaVersion, diffset: source.diffset, files };
 }
 
 /** One file's diff before cross-file matching, keeping what that matching and the doc edits need. */
 interface Analysis {
-  file: Omit<FileDiff, "edits" | "fold">;
+  file: Omit<FileDiff, "edits" | "fold" | "risk">;
   /** Both sides' text; absent when the file has no text to diff. */
   texts?: [string, string];
   /** The text that tells whether a tool produced the file: head, or base for a deleted file. */
@@ -196,7 +209,10 @@ function decode(
  * Each file's edits in document order, with line/column ranges. An edit spanning two files appears in
  * both under one id, and names the other file on the side that lies there.
  */
-function toDocEdits(analyses: Analysis[], located: CrossEdit[][]): Edit[][] {
+function toDocEdits(
+  analyses: Analysis[],
+  located: CrossEdit[][],
+): { edits: Edit[][]; ids: Map<CrossEdit, number> } {
   const cache = new Map<string, (offset: number) => Position>();
   const range = (file: number, side: 0 | 1, s: Span) => {
     const key = `${file}:${side}`;
@@ -208,7 +224,7 @@ function toDocEdits(analyses: Analysis[], located: CrossEdit[][]): Edit[][] {
     return { start: at(s.start), end: at(s.end) };
   };
   const ids = new Map<CrossEdit, number>();
-  return located.map((list, i) => {
+  const edits = located.map((list, i) => {
     const here = ({ edit, to }: CrossEdit) =>
       "new" in edit && to === i
         ? edit.new.start
@@ -246,6 +262,7 @@ function toDocEdits(analyses: Analysis[], located: CrossEdit[][]): Edit[][] {
         }
       });
   });
+  return { edits, ids };
 }
 
 function positions(text: string): (offset: number) => Position {

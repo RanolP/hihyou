@@ -8,6 +8,9 @@ export {
   Position,
   Range,
   ReviewDoc,
+  Risk,
+  RiskReason,
+  RiskSignal,
   schemaVersion,
 } from "./doc/schema.js";
 export { defaultMatchOptions, type MatchOptions } from "./match/matcher.js";

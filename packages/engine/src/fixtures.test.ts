@@ -102,6 +102,21 @@ describe("fixtures", () => {
     });
   });
 
+  it("risk-order: a changed comparison in a condition ranks above a renamed local, with both reasons named, whatever the path order", async () => {
+    const doc = await fixture("risk-order");
+    expect(doc.files.map((f) => f.path)).toEqual([
+      "src/guard.ts",
+      "src/format.ts",
+    ]);
+    const [guard, format] = doc.files;
+    expect(guard?.risk.reasons.map((r) => r.signal)).toEqual([
+      "condition",
+      "operator",
+    ]);
+    expect(format?.risk.reasons.map((r) => r.signal)).toEqual(["renamed"]);
+    expect(guard?.risk.score).toBeGreaterThan(format?.risk.score ?? 0);
+  });
+
   it("operator-change: `<` to `<=` is one update of the operator, not a delete plus an insert", async () => {
     const file = await onlyFile("operator-change");
     expect(file.edits).toEqual([
