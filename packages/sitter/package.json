@@ -8,6 +8,11 @@
       "@hihyou/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./grammars/*": {
+      "@hihyou/source": "./src/generated/*.ts",
+      "types": "./dist/generated/*.d.ts",
+      "default": "./dist/generated/*.js"
     }
   },
   "devDependencies": {
