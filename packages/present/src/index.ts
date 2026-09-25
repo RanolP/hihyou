@@ -7,6 +7,16 @@ export {
   type Unformatted,
 } from "./format.js";
 export {
+  createFormatConfigResolver,
+  type DiscoveredConfig,
+  type FormatConfigResolver,
+  mergeOptions,
+  type PrettierOptions,
+  prettierDefaults,
+  type RuffOptions,
+  ruffDefaults,
+} from "./format-config.js";
+export {
   type FileView,
   type Highlight,
   type HighlightKind,

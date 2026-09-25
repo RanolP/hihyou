@@ -19,6 +19,13 @@
     "@astral-sh/ruff-wasm-web": "0.16.8",
     "@hihyou/engine": "workspace:*",
     "diff": "9.0.0",
-    "prettier": "3.9.9"
+    "json5": "2.2.3",
+    "picomatch": "4.0.7",
+    "prettier": "3.9.9",
+    "smol-toml": "1.9.0",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@types/picomatch": "4.0.3"
   }
 }
