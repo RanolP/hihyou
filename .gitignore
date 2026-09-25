@@ -3,3 +3,5 @@ dist/
 *.tsbuildinfo
 coverage/
 .claude/
+research/parser-bench/inputs/
+research/parser-bench/bulk/bulk.wasm
