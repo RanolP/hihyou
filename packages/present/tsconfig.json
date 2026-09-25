@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    // No node types: viewers run this in a browser with no server. Node-only code lives in tsconfig.node.json.
+    "types": []
+  },
+  "include": ["src"],
+  "exclude": ["src/node.ts", "src/**/*.node.ts", "src/**/*.test.ts"],
+  "references": [{ "path": "../engine" }]
+}

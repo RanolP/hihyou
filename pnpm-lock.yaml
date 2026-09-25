@@ -230,6 +230,21 @@ importers:
         specifier: workspace:*
         version: link:../ui
 
+  packages/present:
+    dependencies:
+      '@astral-sh/ruff-wasm-web':
+        specifier: 0.16.8
+        version: 0.16.8
+      '@hihyou/engine':
+        specifier: workspace:*
+        version: link:../engine
+      diff:
+        specifier: 9.0.0
+        version: 9.0.0
+      prettier:
+        specifier: 3.9.9
+        version: 3.9.9
+
   packages/ui:
     dependencies:
       '@hihyou/engine':
@@ -237,6 +252,9 @@ importers:
         version: link:../engine
 
 packages:
+
+  '@astral-sh/ruff-wasm-web@0.16.8':
+    resolution: {integrity: sha512-yTGMnj7pa7OwlhruYVyVaz0CmwFvKkwOnEF0NlmaATFXKSDZ3gT3/VVhHU7eNzLvZV5mthZPLDMJ5XWAYj/7xg==}
 
   '@biomejs/biome@2.5.14':
     resolution: {integrity: sha512-0FabLIjd4M/dm8VFI86RMaLLdgepzbdfiAL2R8cr7V81OYYrP1w7Z73KfAwPK5h9SrEBXTzNG2y+mBwPo9xRnw==}
@@ -698,6 +716,11 @@ packages:
     resolution: {integrity: sha512-RRuzqDtt5Y9h3quz5hWhK+TPnsmVs6WwSU6LkJMeY4HstUEDuYTG8UJSdawMRzmzAtV+KEoG8N3Qg2qLy5vM/A==}
     engines: {node: ^10 || ^12 || >=14}
 
+  prettier@3.9.9:
+    resolution: {integrity: sha512-Z/CJHIkdujO/OtN7nXUii0Rf3VT5SRuhjBA82Xvu2XhBUgX3nhP67T0LHceBdQLex7OOFGTox+Q5Yg8Jk2Qivg==}
+    engines: {node: '>=14'}
+    hasBin: true
+
   rolldown@1.2.10:
     resolution: {integrity: sha512-OxkA08pSryMK7B3XiFA09B4OJ1xJMPgIYCBMY2xchzpqgBGsV1o0DetPAE+Sl3N3L4oCPiEzmHVSOj7iR04Zog==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -880,6 +903,8 @@ packages:
     resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
 
 snapshots:
+
+  '@astral-sh/ruff-wasm-web@0.16.8': {}
 
   '@biomejs/biome@2.5.14':
     optionalDependencies:
@@ -1151,6 +1176,8 @@ snapshots:
       nanoid: 3.3.19
       picocolors: 1.1.1
       source-map-js: 1.2.1
+
+  prettier@3.9.9: {}
 
   rolldown@1.2.10:
     dependencies:
