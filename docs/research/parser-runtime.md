@@ -258,18 +258,20 @@ What was built:
 
 ### Parity
 
-Every input's tree was compared against a web-tree-sitter cursor walk. The comparison covers each node's kind, whether it is named, whether it is MISSING, its start and end, and its field name, in preorder. The corpus is each grammar's own test corpus plus real files, and most inputs deliberately contain errors.
+Every input's tree was compared against a web-tree-sitter cursor walk. The comparison covers each node's kind, whether it is named, whether it is MISSING, its start and end, and its field name, in preorder. Once those agree, it also compares the `SyntaxTree` hihyou consumes, rebuilt from the cursor the way `packages/engine` does: each node's label, parent, height and size, and the tree's `errorChars`. The corpus is each grammar's own test corpus plus real files, and most inputs deliberately contain errors.
 
 | grammar | inputs identical | nodes compared | inputs with ERROR/MISSING |
 |---|---|---|---|
-| JSON | 546/546 | 724,816 | 433 |
+| JSON | 609/609 | 731,844 | 486 |
 | CSS | 63/63 | 154,474 | 61 |
 | JavaScript | 168/168 | 261,161 | 151 |
-| TypeScript | 1512/1512 | 1,572,228 | 1235 |
+| TypeScript | 1638/1638 | 1,670,571 | 1337 |
 | TSX | 54/54 | 99,232 | 46 |
 | Python | 126/126 | 110,140 | 108 |
 
-As a check that divergences are detectable, comparing the JSON tables against the CSS wasm reports a divergence at node 0. `pnpm test` keeps a small parity case set per grammar, broken inputs included.
+As a check that divergences are detectable, comparing the JSON tables against the CSS wasm reports a divergence at node 0. The corpus is fetched, not committed, so `pnpm test` runs its own committed parity cases per grammar against web-tree-sitter. Most are broken inputs that force error recovery, Python dedent mismatches, unclosed templates and ASI branches.
+
+The corpus alone did not prove Unicode parity. Before `iswalpha` used musl's table, a sweep of `"a\nin" + c + " b"` over every non-surrogate code point from U+0080 to U+1FFFF diverged from web-tree-sitter on 6,704 of 128,896 code points in JavaScript, TypeScript and TSX. For example, U+0363 is alphabetic to JavaScript's `\p{Alphabetic}` but not to musl, and U+0660 is the reverse. No corpus input contained such a code point. `wctype.node.ts` now reads musl's `iswalpha` out of `web-tree-sitter.wasm` into a committed range table. After the fix, that sweep, the same sweep after `instanceof`, and whitespace and `iswalnum` sweeps for the JavaScript and CSS scanners all report 0 divergences. `wctype.test.ts` keeps it that way: it checks `iswalpha`, `iswalnum`, `iswdigit` and `iswspace` against the wasm exports on every code point up to U+10FFFF.
 
 ### Speed (parse + materialize, warm median of 15, ms)
 
@@ -313,14 +315,14 @@ Cold start is the median of 7 fresh processes, from loading the grammar through 
   - queries, and the Node API beyond the `SyntaxTree` shape hihyou consumes.
 
   hihyou diffs two complete snapshots, so none of these is on its path today.
-- **Unicode classification.** `wctype.ts` mirrors musl's `iswspace` exactly. `iswalpha` and case mapping use JS Unicode tables, so a rare code point may be classified differently from web-tree-sitter's musl build. No corpus input exercised such a code point.
+- **Rare recovery branches.** `pnpm test` reaches `recover`, `condenseStack` and the stack's `popError` and link merging, but not the cap that drops stack versions past `MAX_VERSION_COUNT`. `breakdownTopOfStack` runs but never breaks a subtree down: a pending entry needs a non-leaf lookahead, which only subtree reuse in incremental reparse supplies, and that is not ported.
 - **Scanner buffer limit.** The case where a scanner's serialized state exceeds the 1024-byte buffer follows the C code, but no input reached it.
 - **Performance.** The performance gap is not profiled. The port mirrors C's data layout and has no JS-specific tuning yet.
 - **Engine wiring.** `packages/engine` still uses web-tree-sitter.
 
 ### Recommendation
 
-Adopt the pure-TS runtime. It meets the new hard constraints that A and B cannot: no wasm, and it runs in a browser with no server. It does so with node-for-node parity on 2,469 inputs across six grammars.
+Adopt the pure-TS runtime. It meets the new hard constraints that A and B cannot: no wasm, and it runs in a browser with no server. It does so with node-for-node parity on 2,658 inputs across six grammars, and on every code point the scanners classify.
 
 The costs:
 
