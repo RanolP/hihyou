@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { align } from "./align.js";
 import { createFormatter } from "./format.js";
 import { nodeRuffWasm } from "./node.js";
-import { presentFile, type SideView } from "./view.js";
+import { presentFile, type SideView, segments } from "./view.js";
 
 const parser = createSyntaxParser({ locateGrammar: nodeGrammarLocator });
 const formatter = createFormatter({ ruffWasm: nodeRuffWasm });
@@ -78,6 +78,35 @@ describe("presentFile", () => {
     expect(pointers(view.old)).toContain(move.new.start.line);
   });
 
+  it("a function moved to another file is marked only on this file's side, pointing at the other file, instead of highlighting unrelated text at the foreign range", async () => {
+    const fn = "export function f(a: number): number {\n  return a + 1;\n}\n";
+    const notes = "// one\n// two\n// three\n// four\n// five\n";
+    const before = { "a.ts": `const keep = 1;\n\n${fn}`, "b.ts": notes };
+    const after = { "a.ts": "const keep = 1;\n", "b.ts": `${notes}${fn}` };
+    const doc = await buildReviewDoc(memorySource(before, after), { parser });
+    const [a, b] = doc.files as [FileDiff, FileDiff];
+    const pointers = (v: SideView) =>
+      v.lines.flatMap((l) =>
+        l.highlights.flatMap((h) =>
+          h.peerLine === undefined ? [] : [`${h.peerPath}:${h.peerLine}`],
+        ),
+      );
+    const viewA = await presentFile(
+      a,
+      { old: before["a.ts"], new: after["a.ts"] },
+      formatter,
+    );
+    expect(highlighted(viewA.new)).toEqual([]);
+    expect(pointers(viewA.old)).toEqual(["b.ts:6"]);
+    const viewB = await presentFile(
+      b,
+      { old: before["b.ts"], new: after["b.ts"] },
+      formatter,
+    );
+    expect(highlighted(viewB.old)).toEqual([]);
+    expect(pointers(viewB.new)).toEqual(["a.ts:3"]);
+  });
+
   it("when only one side formats, both are shown as committed so the formatter's rewrites do not appear as changes", async () => {
     const before = "const x = {a:1}\nconst y = 2\n";
     const after = "const x = {a:1}\nconst y = (\n";
@@ -91,6 +120,23 @@ describe("presentFile", () => {
       reason: "other-side-unformatted",
     });
     expect(view.unified[0]).toEqual({ old: 0, new: 0, changed: false });
+  });
+});
+
+describe("segments", () => {
+  it("a function moved into an inserted `export` shows as moved inside the one inserted keyword, not as all inserted", () => {
+    const text = "export function f() {}";
+    const line = {
+      text,
+      highlights: [
+        { kind: "insert" as const, from: 0, to: text.length, edit: 0 },
+        { kind: "move" as const, from: 7, to: text.length, edit: 1 },
+      ],
+    };
+    expect(segments(line)).toEqual([
+      { text: "export ", kind: "insert" },
+      { text: "function f() {}", kind: "move" },
+    ]);
   });
 });
 

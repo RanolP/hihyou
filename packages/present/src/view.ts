@@ -14,6 +14,8 @@ export interface Highlight {
   edit: number;
   /** For a move, the original line of the other side; set only on the line where the edit begins. */
   peerLine?: number;
+  /** For a move to or from another file, that file's path; set with `peerLine`. */
+  peerPath?: string;
 }
 
 export interface ViewLine {
@@ -66,31 +68,46 @@ export async function presentFile(
   }
   const oldView = view(oldSide);
   const newView = view(newSide);
+  // A side that lies in another file (`from`/`to`) is that file's to show.
   file.edits.forEach((edit, index) => {
-    if ("old" in edit)
+    const across: { from?: string | undefined; to?: string | undefined } =
+      edit.kind === "update" || edit.kind === "move" ? edit : {};
+    if ("old" in edit && across.from === undefined)
       mark(oldView, oldSide, edit.old, {
         kind: edit.kind,
         edit: index,
-        ...(edit.kind === "move" && { peerLine: edit.new.start.line }),
+        ...(edit.kind === "move" && {
+          peerLine: edit.new.start.line,
+          ...(across.to !== undefined && { peerPath: across.to }),
+        }),
       });
-    if ("new" in edit)
+    if ("new" in edit && across.to === undefined)
       mark(newView, newSide, edit.new, {
         kind: edit.kind,
         edit: index,
-        ...(edit.kind === "move" && { peerLine: edit.old.start.line }),
+        ...(edit.kind === "move" && {
+          peerLine: edit.old.start.line,
+          ...(across.from !== undefined && { peerPath: across.from }),
+        }),
       });
   });
   const unified = unifiedRows(oldView.lines, newView.lines);
   return { old: oldView, new: newView, unified, split: splitRows(unified) };
 }
 
-/** A line cut into runs of one highlight kind each; where a move contains inner edits, the inner edit wins. */
+/**
+ * A line cut into runs of one highlight kind each. Where highlights nest, the narrower one wins: an edit inside
+ * a moved function shows as that edit, and a function moved into an inserted `export` shows as moved.
+ * At equal width the move gives way to the edit on the same range.
+ */
 export function segments(
   line: ViewLine,
 ): { text: string; kind?: HighlightKind }[] {
   const kinds: (HighlightKind | undefined)[] = new Array(line.text.length);
   const ordered = line.highlights.toSorted(
-    (p, q) => Number(q.kind === "move") - Number(p.kind === "move"),
+    (p, q) =>
+      q.to - q.from - (p.to - p.from) ||
+      Number(q.kind === "move") - Number(p.kind === "move"),
   );
   for (const h of ordered) kinds.fill(h.kind, h.from, h.to);
   const out: { text: string; kind?: HighlightKind }[] = [];

@@ -120,7 +120,8 @@ function renderLine(line: ViewLine, side: "old" | "new"): string {
 }
 
 export function movePointer(line: ViewLine, side: "old" | "new"): string {
-  const peer = line.highlights.find((h) => h.peerLine !== undefined)?.peerLine;
-  if (peer === undefined) return "";
-  return side === "new" ? `  (moved from L${peer})` : `  (moved to L${peer})`;
+  const peer = line.highlights.find((h) => h.peerLine !== undefined);
+  if (peer?.peerLine === undefined) return "";
+  const at = `${peer.peerPath ? `${peer.peerPath}:` : ""}L${peer.peerLine}`;
+  return side === "new" ? `  (moved from ${at})` : `  (moved to ${at})`;
 }
