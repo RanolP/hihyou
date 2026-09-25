@@ -28,31 +28,3 @@ export function iswalpha(c: number): boolean {
 export function iswalnum(c: number): boolean {
   return iswdigit(c) || iswalpha(c);
 }
-
-export function iswxdigit(c: number): boolean {
-  return iswdigit(c) || ((c | 32) >= 97 && (c | 32) <= 102);
-}
-
-function caseMap(c: number, upper: boolean): number {
-  if (c >= 0x20000) return c;
-  const s = String.fromCodePoint(c);
-  const m = upper ? s.toUpperCase() : s.toLowerCase();
-  const r = m.codePointAt(0) as number;
-  return m.length === String.fromCodePoint(r).length ? r : c;
-}
-
-export function towlower(c: number): number {
-  return c < 128 ? (c >= 65 && c <= 90 ? c + 32 : c) : caseMap(c, false);
-}
-
-export function towupper(c: number): number {
-  return c < 128 ? (c >= 97 && c <= 122 ? c - 32 : c) : caseMap(c, true);
-}
-
-export function iswupper(c: number): boolean {
-  return towlower(c) !== c;
-}
-
-export function iswlower(c: number): boolean {
-  return towupper(c) !== c;
-}
