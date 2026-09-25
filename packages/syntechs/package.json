@@ -45,6 +45,7 @@
     "narrow-emojis": "0.0.3"
   },
   "devDependencies": {
+    "@astral-sh/ruff-wasm-web": "0.16.8",
     "@dprint/formatter": "0.5.1",
     "@dprint/json": "0.24.0",
     "@dprint/typescript": "0.96.1",
