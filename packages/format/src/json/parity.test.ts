@@ -43,6 +43,14 @@ const edgeCases: [string, string][] = [
   ["strings.json", '["\\u00e9\\/x","tab\\t","quote\\""]'],
   ["unicode.json", `{"한국어":"${"값".repeat(30)}","e":"😀😀"}`],
   ["unicode-fit.json", `{"k":"${"값".repeat(34)}"}`],
+  // One string per width class, each sized so that a wrong width moves it across the 80th column: a text-style
+  // emoji prettier counts as 2 (✌), a narrow emoji it counts as 1 (©), Tangut (1 in the width table prettier
+  // bundles, 2 in newer ones), fullwidth Latin, and a combining accent (0).
+  ["width-emoji-text-style.json", `{"k":"${"✌".repeat(35)}"}`],
+  ["width-emoji-narrow.json", `{"k":"${"©".repeat(69)}"}`],
+  ["width-tangut.json", `{"k":"${"\u{17000}".repeat(69)}"}`],
+  ["width-fullwidth.json", `{"k":"${"Ａ".repeat(35)}"}`],
+  ["width-combining.json", `{"k":"${"é".repeat(69)}"}`],
   ["deep.json", '{"a":{"b":{"c":{"d":[1,{"e":null,"f":true,"g":false}]}}}}'],
   ["scalar.json", "  42  "],
   ["line-comment.jsonc", '{\n  // lead\n  "a": 1, // trail\n  "b": 2\n}'],

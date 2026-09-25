@@ -1,17 +1,21 @@
+import emojiRegex from "emoji-regex";
 import { eastAsianWidth } from "get-east-asian-width";
+import { isNarrowEmojiCharacter } from "narrow-emojis";
 
-// biome-ignore lint/complexity/useRegexLiterals: the `v` flag is ES2024 syntax and the package targets ES2023.
-const emoji = new RegExp("\\p{RGI_Emoji}", "gv");
 const nonAscii = /[^\x20-\x7F]/;
 
-/** Terminal columns `text` occupies, as prettier measures them: wide and fullwidth characters and emoji take 2. */
+/**
+ * Terminal columns `text` occupies, measured as prettier 3.9.9's getStringWidth measures them, with the
+ * versions of its width tables it bundles: wide and fullwidth characters and most emoji take 2.
+ */
 export function textWidth(text: string): number {
   if (!nonAscii.test(text)) return text.length;
   let width = 0;
-  for (const char of text.replace(emoji, () => {
-    width += 2;
+  const rest = text.replace(emojiRegex(), (emoji) => {
+    width += isNarrowEmojiCharacter(emoji) ? 1 : 2;
     return "";
-  })) {
+  });
+  for (const char of rest) {
     const cp = char.codePointAt(0) ?? 0;
     if (cp <= 0x1f || (cp >= 0x7f && cp <= 0x9f)) continue;
     if (cp >= 0x300 && cp <= 0x36f) continue;
