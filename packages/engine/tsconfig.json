@@ -7,5 +7,6 @@
     "types": []
   },
   "include": ["src"],
-  "exclude": ["src/node.ts", "src/**/*.node.ts", "src/**/*.test.ts"]
+  "exclude": ["src/node.ts", "src/**/*.node.ts", "src/**/*.test.ts"],
+  "references": [{ "path": "../syntechs" }]
 }

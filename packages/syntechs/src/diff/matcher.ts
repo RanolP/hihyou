@@ -1,4 +1,4 @@
-import type { SyntaxNode, SyntaxTree } from "../parse/tree.js";
+import type { SyntaxNode, SyntaxTree } from "../core/tree.js";
 import { commonPairs } from "./sequence.js";
 
 export interface MatchOptions {

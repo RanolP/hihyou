@@ -1,4 +1,4 @@
-import type { SyntaxNode, SyntaxTree } from "../parse/tree.js";
+import type { SyntaxNode, SyntaxTree } from "../core/tree.js";
 import { idOf, type Mapping } from "./matcher.js";
 import { longestIncreasing } from "./sequence.js";
 

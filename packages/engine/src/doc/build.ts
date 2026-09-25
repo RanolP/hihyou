@@ -1,13 +1,15 @@
-import { type CrossEdit, crossFileMoves } from "../match/cross-file.js";
-import { editScript, type RawEdit, type Span } from "../match/edit-script.js";
-import { indentIsSyntax, lineDiff } from "../match/line-diff.js";
 import {
   defaultMatchOptions,
+  editScript,
+  lineDiff,
   type Mapping,
   MatchBudgetExceeded,
   type MatchOptions,
   match,
-} from "../match/matcher.js";
+  type RawEdit,
+  type Span,
+} from "syntechs/diff";
+import { type CrossEdit, crossFileMoves } from "../match/cross-file.js";
 import { type LanguageId, languageForPath } from "../parse/languages.js";
 import type { SyntaxParser } from "../parse/tree.js";
 import {
@@ -298,4 +300,10 @@ function positions(text: string): (offset: number) => Position {
     }
     return { line: lo + 1, column: offset - loStart + 1 };
   };
+}
+
+/** Formats whose indentation is syntax, so re-indenting a line changes it: Python, YAML and Makefiles. */
+function indentIsSyntax(path: string): boolean {
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  return /\.(?:pyi?|ya?ml|mk)$|^(?:gnu)?makefile$/i.test(name);
 }

@@ -2,7 +2,7 @@ import { diffArrays } from "diff";
 import type { RawEdit, Span } from "./edit-script.js";
 
 interface Line extends Span {
-  /** The line's tokens, led by its indentation depth where indentation is syntax; blank lines have none and drop out. */
+  /** The line's tokens, led by its indentation depth where the caller says indentation is syntax; blank lines have none and drop out. */
   key: string;
 }
 
@@ -11,12 +11,6 @@ interface Line extends Span {
 // A quote right after a word character is an apostrophe (`don't`), not the start of a string.
 const token =
   /(?<![\p{L}\p{N}_])(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|[\p{L}\p{N}_]+|[^\s\p{L}\p{N}_]/gu;
-
-/** Formats whose indentation is syntax, so re-indenting a line changes it: Python, YAML and Makefiles. */
-export function indentIsSyntax(path: string): boolean {
-  const name = path.slice(path.lastIndexOf("/") + 1);
-  return /\.(?:pyi?|ya?ml|mk)$|^(?:gnu)?makefile$/i.test(name);
-}
 
 function indentDepth(line: string): number {
   let depth = 0;

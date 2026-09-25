@@ -1,4 +1,4 @@
-import type { RawEdit } from "../match/edit-script.js";
+import type { RawEdit } from "syntechs/diff";
 import type { SyntaxNode } from "../parse/tree.js";
 import type { Risk, RiskSignal } from "./schema.js";
 import {

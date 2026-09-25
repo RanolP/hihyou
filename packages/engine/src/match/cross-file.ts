@@ -1,13 +1,15 @@
-import { type SyntaxNode, type SyntaxTree, syntaxTree } from "../parse/tree.js";
-import { type Claimed, editScript, type RawEdit } from "./edit-script.js";
 import {
+  type Claimed,
   defaultMatchOptions,
+  editScript,
   isoIds,
   type Mapping,
   MatchBudgetExceeded,
   type MatchOptions,
   match,
-} from "./matcher.js";
+  type RawEdit,
+} from "syntechs/diff";
+import { type SyntaxNode, type SyntaxTree, syntaxTree } from "../parse/tree.js";
 
 /**
  * An edit whose `old` lies in file `from`'s base text and whose `new` in file `to`'s head text,

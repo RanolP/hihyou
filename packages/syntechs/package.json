@@ -17,6 +17,11 @@
       "types": "./dist/compiler/index.d.ts",
       "default": "./dist/compiler/index.js"
     },
+    "./diff": {
+      "@hihyou/source": "./src/diff/index.ts",
+      "types": "./dist/diff/index.d.ts",
+      "default": "./dist/diff/index.js"
+    },
     "./fmt": {
       "@hihyou/source": "./src/fmt/index.ts",
       "types": "./dist/fmt/index.d.ts",
@@ -34,6 +39,7 @@
     }
   },
   "dependencies": {
+    "diff": "9.0.0",
     "emoji-regex": "10.6.0",
     "get-east-asian-width": "1.6.0",
     "narrow-emojis": "0.0.3"

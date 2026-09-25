@@ -16,7 +16,7 @@
     }
   },
   "dependencies": {
-    "diff": "9.0.0",
+    "syntechs": "workspace:*",
     "tree-sitter-css": "0.25.0",
     "tree-sitter-javascript": "0.25.0",
     "tree-sitter-json": "0.24.8",

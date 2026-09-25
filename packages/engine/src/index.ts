@@ -1,3 +1,4 @@
+export { defaultMatchOptions, type MatchOptions } from "syntechs/diff";
 export { type BuildOptions, buildReviewDoc } from "./doc/build.js";
 export {
   DiffMode,
@@ -14,7 +15,6 @@ export {
   RiskSignal,
   schemaVersion,
 } from "./doc/schema.js";
-export { defaultMatchOptions, type MatchOptions } from "./match/matcher.js";
 export { LanguageId, languageForPath } from "./parse/languages.js";
 export {
   createSyntaxParser,
