@@ -165,13 +165,38 @@ describe("git source", () => {
     ]);
   });
 
+  it("a copied file is reported as a copy of its source and diffed against it, not as a whole new file", async () => {
+    git("checkout", "-q", "-b", "copy", "main");
+    write("hello.py", `${renamedBody}\ngreet("world")\n`);
+    write("hi.py", renamedBody.replace('"hello "', '"hi "'));
+    git("add", ".");
+    git("commit", "-q", "-m", "copy greet");
+    git("checkout", "-q", "main");
+
+    const vcs = gitVcs(dir);
+    const doc = await buildReviewDoc(
+      vcsFileSource(vcs, await diffsetFromCommit(vcs, "copy")),
+      { parser },
+    );
+    const hi = doc.files.find((f) => f.path === "hi.py");
+    expect(hi).toMatchObject({
+      status: "copied",
+      oldPath: "hello.py",
+      diffMode: "ast",
+    });
+    expect(hi?.edits).toEqual([
+      expect.objectContaining({ kind: "update", node: "string_content" }),
+    ]);
+  });
+
   it("a blob missing from the object store makes only its own file an error entry; the rest of the commit still builds", async () => {
+    // Only modified files: rename and copy detection would read an added file's blob while listing changes.
     git("checkout", "-q", "-b", "corrupt", "main");
-    write("lost.ts", "export const lost = true;\n");
+    write("hello.py", `${renamedBody}# lost\n`);
     write("app.ts", "export const retries = 9;\n");
     git("add", ".");
     git("commit", "-q", "-m", "lose a blob");
-    const blob = git("rev-parse", "HEAD:lost.ts");
+    const blob = git("rev-parse", "HEAD:hello.py");
     git("checkout", "-q", "main");
     unlinkSync(join(dir, ".git", "objects", blob.slice(0, 2), blob.slice(2)));
 
@@ -183,7 +208,7 @@ describe("git source", () => {
     expect(doc.files).toEqual([
       expect.objectContaining({ path: "app.ts", diffMode: "ast" }),
       expect.objectContaining({
-        path: "lost.ts",
+        path: "hello.py",
         diffMode: "error",
         error: expect.stringContaining(blob),
       }),

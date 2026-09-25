@@ -76,6 +76,7 @@ export function gitVcs(cwd: string): Vcs {
             "--raw",
             "-z",
             "-M",
+            "-C",
             "--no-abbrev",
             "--end-of-options",
             await treeish(base),
@@ -121,22 +122,23 @@ function parseRawDiff(out: string): RawEntry[] {
     const a = fields[i++] ?? "";
     const b = code === "R" || code === "C" ? (fields[i++] ?? "") : a;
     const submodule = oldMode === gitlinkMode || newMode === gitlinkMode;
-    // A copy leaves its source untouched, so the reviewer sees only a new file.
     const change: ChangedFile =
       code === "R"
         ? { status: "renamed", path: b, oldPath: a }
-        : code === "C" || code === "A"
-          ? { status: "added", path: b }
-          : code === "D"
-            ? { status: "deleted", path: a }
-            : { status: "modified", path: a };
+        : code === "C"
+          ? { status: "copied", path: b, oldPath: a }
+          : code === "A"
+            ? { status: "added", path: b }
+            : code === "D"
+              ? { status: "deleted", path: a }
+              : { status: "modified", path: a };
     if (submodule) {
       entries.push({ change: { ...change, submodule } });
       continue;
     }
     entries.push({
       change,
-      ...(code !== "A" && code !== "C" && oldId && { oldBlob: oldId }),
+      ...(code !== "A" && oldId && { oldBlob: oldId }),
       ...(code !== "D" && newId && { newBlob: newId }),
     });
   }

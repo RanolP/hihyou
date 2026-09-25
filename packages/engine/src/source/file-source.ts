@@ -10,14 +10,21 @@ export const Diffset = z.object({
 });
 export type Diffset = z.infer<typeof Diffset>;
 
-export const FileStatus = z.enum(["added", "deleted", "modified", "renamed"]);
+/** `copied`: a new file the VCS found to be a copy of `oldPath`, which still exists; it is diffed against that source. */
+export const FileStatus = z.enum([
+  "added",
+  "deleted",
+  "modified",
+  "renamed",
+  "copied",
+]);
 export type FileStatus = z.infer<typeof FileStatus>;
 
 export interface ChangedFile {
   status: FileStatus;
   /** Head-side path, or the base-side path for a deleted file. */
   path: string;
-  /** Base-side path, set only for a renamed file. */
+  /** Base-side path, set only for a renamed or copied file. */
   oldPath?: string;
   /** The entry pins a revision of another repository (a git submodule) instead of holding content; it is never read. */
   submodule?: boolean;

@@ -48,6 +48,7 @@ export const statusLetter: Record<FileDiff["status"], string> = {
   deleted: "D",
   modified: "M",
   renamed: "R",
+  copied: "C",
 };
 
 export function fileLabel(file: FileDiff): string {

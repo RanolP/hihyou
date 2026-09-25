@@ -60,6 +60,16 @@ describe("fixtures", () => {
     ]);
   });
 
+  it("file-rename: a file moved to another directory unchanged is one rename with no edits, not a delete plus an add", async () => {
+    const file = await onlyFile("file-rename");
+    expect(file).toMatchObject({
+      status: "renamed",
+      path: "src/text/slug.ts",
+      oldPath: "src/slug.ts",
+      edits: [],
+    });
+  });
+
   it("operator-change: `<` to `<=` is one update of the operator, not a delete plus an insert", async () => {
     const file = await onlyFile("operator-change");
     expect(file.edits).toEqual([
