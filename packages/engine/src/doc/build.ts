@@ -17,6 +17,7 @@ import {
   sameBytes,
 } from "../source/file-source.js";
 import { foldReason, producedBy } from "./fold.js";
+import { groupEdits } from "./groups.js";
 import { riskOf, signalsOf } from "./risk.js";
 import {
   type Edit,
@@ -88,7 +89,7 @@ export async function buildReviewDoc(
     if ("old" in c.edit) located[c.from]?.push(c);
     if ("new" in c.edit) located[c.to]?.push(c);
   }
-  const { edits } = toDocEdits(analyses, located);
+  const { edits, ids } = toDocEdits(analyses, located);
   const files = edits.map((edits, i): FileDiff => {
     const { file, text } = analyses[i] as Analysis;
     const fold = foldReason({ ...file, edits }, producedBy(file.path, text));
@@ -99,13 +100,18 @@ export async function buildReviewDoc(
     );
     return { ...file, ...(fold && { fold }), edits, risk };
   });
+  const groups = groupEdits(
+    analyses.map((a) => a.file),
+    located,
+    ids,
+  );
   files.sort(
     (p, q) =>
       Number(p.fold !== undefined) - Number(q.fold !== undefined) ||
       q.risk.score - p.risk.score ||
       (p.path < q.path ? -1 : p.path > q.path ? 1 : 0),
   );
-  return { schemaVersion, diffset: source.diffset, files };
+  return { schemaVersion, diffset: source.diffset, files, groups };
 }
 
 /** One file's diff before cross-file matching, keeping what that matching and the doc edits need. */

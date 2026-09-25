@@ -28,6 +28,7 @@ it("folded binary and submodule files print one line and are never read, so an u
         risk,
       },
     ],
+    groups: [],
   };
   const lines: string[] = [];
   for await (const line of renderPlain(doc, () => {
@@ -60,6 +61,7 @@ it("a file that fails to load prints its error inline and the files after it sti
     schemaVersion: 2,
     diffset: { base: "a".repeat(40), head: "b".repeat(40) },
     files: [file("bad.txt"), file("good.txt")],
+    groups: [],
   };
   const lines: string[] = [];
   for await (const line of renderPlain(doc, async (index) => {
@@ -96,6 +98,7 @@ it("a file the engine could not read prints its error, instead of being folded a
         risk,
       },
     ],
+    groups: [],
   };
   const lines: string[] = [];
   for await (const line of renderPlain(doc, () => {

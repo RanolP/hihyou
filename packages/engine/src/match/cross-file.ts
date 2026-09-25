@@ -12,8 +12,14 @@ import {
 /**
  * An edit whose `old` lies in file `from`'s base text and whose `new` in file `to`'s head text,
  * by index into the list given to `crossFileMoves`. An insert has only `to`, a delete only `from`.
+ * `whole` marks the move of a declaration itself, as against the edits made inside it on the way.
  */
-export type CrossEdit = { edit: RawEdit; from: number; to: number };
+export type CrossEdit = {
+  edit: RawEdit;
+  from: number;
+  to: number;
+  whole?: true;
+};
 
 /** Below this many nodes a subtree is too common (`return null;`) to claim that it moved. */
 const minMoveSize = 8;
@@ -86,6 +92,7 @@ export function crossFileMoves(
   const move = (x: Candidate, y: Candidate): CrossEdit => ({
     from: x.file,
     to: y.file,
+    whole: true,
     edit: {
       kind: "move",
       old: { start: x.n.start, end: x.n.end },

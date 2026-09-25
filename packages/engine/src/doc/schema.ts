@@ -139,12 +139,53 @@ export const FileDiff = z.object({
 });
 export type FileDiff = z.infer<typeof FileDiff>;
 
+/** Edit ids; an edit belongs to at most one group. */
+const groupEdits = { edits: z.array(z.int().min(0)), risk: Risk };
+/**
+ * Edits across files that make one change together. `rename-symbol`: one identifier renamed everywhere,
+ * `path` naming the file that declares it. `move`: declarations moved from one file to another, with the
+ * edits made on the way. `rename-file`: a file renamed or copied, with the import paths updated to follow it.
+ * `signature`: the parameters or return type of `name` declared in `path`, and the arguments at its calls.
+ */
+export const Group = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("rename-symbol"),
+    from: z.string(),
+    to: z.string(),
+    path: z.string(),
+    ...groupEdits,
+  }),
+  z.object({
+    kind: z.literal("move"),
+    fromPath: z.string(),
+    toPath: z.string(),
+    names: z.array(z.string()),
+    ...groupEdits,
+  }),
+  z.object({
+    kind: z.literal("rename-file"),
+    fromPath: z.string(),
+    toPath: z.string(),
+    copy: z.boolean(),
+    ...groupEdits,
+  }),
+  z.object({
+    kind: z.literal("signature"),
+    name: z.string(),
+    path: z.string(),
+    ...groupEdits,
+  }),
+]);
+export type Group = z.infer<typeof Group>;
+
 /**
  * Files are ordered for review: unfolded before folded, then by risk score, highest first, then by path.
+ * Groups are ordered by risk score, highest first.
  */
 export const ReviewDoc = z.object({
   schemaVersion: z.literal(schemaVersion),
   diffset: Diffset,
   files: z.array(FileDiff),
+  groups: z.array(Group),
 });
 export type ReviewDoc = z.infer<typeof ReviewDoc>;

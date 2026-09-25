@@ -100,6 +100,58 @@ describe("fixtures", () => {
       old: { start: { line: 12, column: 46 } },
       new: { start: { line: 8, column: 46 } },
     });
+    expect(doc.groups).toEqual([
+      expect.objectContaining({
+        kind: "move",
+        fromPath: "src/util.ts",
+        toPath: "src/text.ts",
+        names: ["slugify", "truncate"],
+        edits: [0, 1, 2],
+      }),
+    ]);
+  });
+
+  it("identifier-rename: a function renamed at its declaration, import and calls in two files is one rename group, not four unrelated updates", async () => {
+    const doc = await fixture("identifier-rename");
+    const ids = doc.files.flatMap((f) => f.edits.map((e) => e.id));
+    expect(ids).toHaveLength(4);
+    expect(doc.groups).toEqual([
+      expect.objectContaining({
+        kind: "rename-symbol",
+        from: "total",
+        to: "sumAll",
+        path: "src/cart.ts",
+        edits: ids.toSorted((p, q) => p - q),
+      }),
+    ]);
+  });
+
+  it("signature-change: a parameter added to an exported function is grouped with the argument added at its call in another file", async () => {
+    const doc = await fixture("signature-change");
+    const table = doc.files.find((f) => f.path === "src/table.ts");
+    const [group] = doc.groups;
+    expect(group).toMatchObject({
+      kind: "signature",
+      name: "padStart",
+      path: "src/pad.ts",
+    });
+    expect(table?.edits.length).toBeGreaterThan(0);
+    for (const e of table?.edits ?? []) expect(group?.edits).toContain(e.id);
+    expect(group?.risk.reasons[0]?.signal).toBe("exported-api");
+  });
+
+  it("file-rename-import: a renamed file is grouped with the import path updated to follow it", async () => {
+    const doc = await fixture("file-rename-import");
+    const post = doc.files.find((f) => f.path === "src/post.ts");
+    expect(doc.groups).toEqual([
+      expect.objectContaining({
+        kind: "rename-file",
+        fromPath: "src/slug.ts",
+        toPath: "src/text/slug.ts",
+        copy: false,
+        edits: post?.edits.map((e) => e.id),
+      }),
+    ]);
   });
 
   it("risk-order: a changed comparison in a condition ranks above a renamed local, with both reasons named, whatever the path order", async () => {

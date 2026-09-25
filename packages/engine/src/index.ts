@@ -5,6 +5,7 @@ export {
   FallbackReason,
   FileDiff,
   FoldReason,
+  Group,
   Position,
   Range,
   ReviewDoc,
