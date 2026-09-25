@@ -2,6 +2,8 @@
 
 ## Recommendation
 
+> Superseded on 2026-09-25: the user ruled out wasm. The pure-TS runtime now exists and has been measured. See the section dated 2026-09-25 at the end of this document.
+
 Ship option B now: build the tree-sitter C runtime and the grammars into our own wasm module, which has one export that serializes the whole tree into a `Uint32Array`, and put it behind the `parse/` interface. Do not re-implement tree-sitter in TS yet. Keep option C (a pure-TS runtime running on tables tree-sitter generated) as a later, optional stage, and scope it to grammars without an external scanner, with B as the fallback.
 
 The top three reasons, each backed by measurements further down:
@@ -243,3 +245,87 @@ Person-week figures are inference from the code sizes above and from gotreesitte
 - The pure-TS happy path beats tree-sitter-in-wasm by 3.4x on identical tables. The runtime's generality, not the wasm boundary, is what makes wasm parsing slow.
 - Our own zig-built runtime parses up to 46% slower than emscripten's build of the same C (on JSON). Allocator and flag tuning is open work for stage 1.
 - Calling web-tree-sitter's `Language.load` twice on the same grammar bytes in one process broke later parses with "null function or function signature mismatch". Loading each grammar once avoids it. I did not isolate the cause.
+
+## 2026-09-25: the pure-TS runtime built and measured (`packages/sitter`)
+
+The brief changed: "i said no wasm at all. why don't implement and compare?" and "we may run on browser without any server." That rules out options A and B for the shipped product, so I built option C and measured it against web-tree-sitter 0.27. web-tree-sitter now serves only as the reference.
+
+What was built:
+
+- **Runtime.** A faithful port of tree-sitter's `parser.c`, `stack.c` and `subtree.c`, in about 2.8k lines of TypeScript. It covers GLR stack splitting and merging, cost-based error recovery (MISSING insertion, ERROR wrapping, skipping), keywords, aliases, fields and external scanners. Positions are UTF-16 code units, so byte offsets are 2x units. It is browser-safe: Node APIs appear only in the `*.node.ts` build tooling.
+- **Table compiler.** `compile.node.ts` compiles each grammar's `parser.c` into a TypeScript module under `src/generated/`, lexer functions included. The output is committed, because it is a pure function of the grammar versions in the lockfile.
+- **Scanners.** CSS, JavaScript, TypeScript/TSX (one shared scanner) and Python are ported by hand. The Python scanner serializes its state byte for byte as the C scanner does.
+
+### Parity
+
+Every input's tree was compared against a web-tree-sitter cursor walk. The comparison covers each node's kind, whether it is named, whether it is MISSING, its start and end, and its field name, in preorder. The corpus is each grammar's own test corpus plus real files, and most inputs deliberately contain errors.
+
+| grammar | inputs identical | nodes compared | inputs with ERROR/MISSING |
+|---|---|---|---|
+| JSON | 546/546 | 724,816 | 433 |
+| CSS | 63/63 | 154,474 | 61 |
+| JavaScript | 168/168 | 261,161 | 151 |
+| TypeScript | 1512/1512 | 1,572,228 | 1235 |
+| TSX | 54/54 | 99,232 | 46 |
+| Python | 126/126 | 110,140 | 108 |
+
+As a check that divergences are detectable, comparing the JSON tables against the CSS wasm reports a divergence at node 0. `pnpm test` keeps a small parity case set per grammar, broken inputs included.
+
+### Speed (parse + materialize, warm median of 15, ms)
+
+The wasm side walks the tree the way `packages/engine` does, so its numbers are lower than the A column above, which read more per node.
+
+| grammar | input | ours | web-tree-sitter | ours / wts |
+|---|---|---|---|---|
+| JSON | big.json (3.1 MB) | 427.5 | 354.1 | 1.21x |
+| JSON | package-lock.json | 38.8 | 37.5 | 1.04x |
+| CSS | bootstrap.css | 66.1 | 50.1 | 1.32x |
+| CSS | normalize.css | 0.4 | 0.6 | 0.64x |
+| CSS | animate.css | 24.1 | 19.8 | 1.22x |
+| JavaScript | lodash.js | 86.9 | 60.8 | 1.43x |
+| JavaScript | jquery.js | 88.3 | 58.0 | 1.52x |
+| TypeScript | scanner.ts | 58.6 | 39.5 | 1.49x |
+| TypeScript | checker.ts | 738.1 | 578.5 | 1.28x |
+| TSX | excalidraw App.tsx | 79.8 | 53.3 | 1.50x |
+| TSX | excalidraw LayerUI.tsx | 3.2 | 3.7 | 0.85x |
+| Python | argparse.py | 22.3 | 18.6 | 1.20x |
+| Python | typing.py | 26.0 | 22.2 | 1.17x |
+| Python | dataclasses.py | 13.4 | 19.3 | 0.70x |
+| Python | base_events.py | 15.6 | 13.7 | 1.14x |
+
+### Cold start and size
+
+Cold start is the median of 7 fresh processes, from loading the grammar through the first parse. Sizes are esbuild min+gzip of the runtime plus one grammar. For web-tree-sitter, the size is its JS (75 KB min), plus the runtime wasm (205 KB), plus the grammar wasm, all gzipped.
+
+| grammar | cold, ours (ms) | cold, wts (ms) | ours, min | ours, gzip | wts, gzip |
+|---|---|---|---|---|---|
+| JSON | 3.5 | 8.9 | 35 KB | 11 KB | 103 KB |
+| CSS | 9.9 | 10.6 | 132 KB | 27 KB | 122 KB |
+| JavaScript | 12.4 | 12.5 | 333 KB | 61 KB | 150 KB |
+| TypeScript | 17.1 | 11.8 | 902 KB | 162 KB | 237 KB |
+| TSX | 17.2 | 11.8 | 919 KB | 164 KB | 240 KB |
+| Python | 10.8 | 10.5 | 394 KB | 82 KB | 168 KB |
+
+### What is not ported or not verified
+
+- **Not ported:**
+  - incremental reparse (`edit`, subtree reuse), balancing, and included ranges;
+  - queries, and the Node API beyond the `SyntaxTree` shape hihyou consumes.
+
+  hihyou diffs two complete snapshots, so none of these is on its path today.
+- **Unicode classification.** `wctype.ts` mirrors musl's `iswspace` exactly. `iswalpha` and case mapping use JS Unicode tables, so a rare code point may be classified differently from web-tree-sitter's musl build. No corpus input exercised such a code point.
+- **Scanner buffer limit.** The case where a scanner's serialized state exceeds the 1024-byte buffer follows the C code, but no input reached it.
+- **Performance.** The performance gap is not profiled. The port mirrors C's data layout and has no JS-specific tuning yet.
+- **Engine wiring.** `packages/engine` still uses web-tree-sitter.
+
+### Recommendation
+
+Adopt the pure-TS runtime. It meets the new hard constraints that A and B cannot: no wasm, and it runs in a browser with no server. It does so with node-for-node parity on 2,469 inputs across six grammars.
+
+The costs:
+
+- **Warm parse.** 1.0–1.5x slower warm on large files, and faster on several small ones.
+- **Cold start.** Equal or faster cold start, except TypeScript/TSX, at 17 ms against 12 ms.
+- **Size.** Smaller over the wire for every grammar: 162 KB gzipped for TypeScript, against 237 KB for web-tree-sitter.
+
+The earlier fear that parity would cost gotreesitter-scale effort did not hold. Porting the C runtime file by file, rather than re-deriving its behavior, reached parity in about 2.8k lines plus roughly 250 lines per scanner. A new grammar costs one run of the table compiler, plus a hand port if it has a scanner.
