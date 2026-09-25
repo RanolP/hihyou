@@ -88,12 +88,18 @@ export interface LineSuffix {
   /** Columns counted against the line now although the contents print later: how ruff keeps a trailing comment within the width. */
   readonly reserved?: number;
 }
+/**
+ * What an `ifBreak` or `fitsExpanded` can follow: a group, or a `bestFitParenthesize`, which counts as broken
+ * when it wraps its contents in parentheses (ruff gives both a group id).
+ */
+export type GroupRef = Group | BestFitParenthesize;
+
 /** `broken` when `group` (by default the innermost enclosing group) is printed broken, else `flat`. */
 export interface IfBreak {
   readonly k: "ifBreak";
   readonly broken: Doc;
   readonly flat: Doc;
-  readonly group: Group | undefined;
+  readonly group: GroupRef | undefined;
 }
 /** Indents `contents` by `n` spaces (or by the string `n`) past the enclosing indentation, as prettier's align; `-Infinity` returns to the root indentation (prettier's dedentToRoot). */
 export interface Align {
@@ -132,7 +138,7 @@ export interface BestFitParenthesize {
 export interface FitsExpanded {
   readonly k: "fitsExpanded";
   readonly contents: Doc;
-  readonly whenFlat: Group | undefined;
+  readonly whenFlat: GroupRef | undefined;
   /** Set by the printer: `contents` holds a hard break. */
   expands?: boolean;
 }
@@ -219,14 +225,18 @@ export const bestFitParenthesize = (
 
 export const fitsExpanded = (
   contents: Doc,
-  whenFlat?: Group,
+  whenFlat?: GroupRef,
 ): FitsExpanded => ({
   k: "fitsExpanded",
   contents,
   whenFlat,
 });
 
-export const ifBreak = (broken: Doc, flat: Doc = [], of?: Group): IfBreak => ({
+export const ifBreak = (
+  broken: Doc,
+  flat: Doc = [],
+  of?: GroupRef,
+): IfBreak => ({
   k: "ifBreak",
   broken,
   flat,

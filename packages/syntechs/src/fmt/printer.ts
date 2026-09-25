@@ -4,6 +4,7 @@ import {
   type Doc,
   type Fill,
   type Group,
+  type GroupRef,
   hardline,
   isDocs,
   type Token,
@@ -183,7 +184,7 @@ function fits(
   rest: readonly Cmd[],
   width: number,
   mustBeFlat: boolean,
-  groupModes: ReadonlyMap<Group, Mode>,
+  groupModes: ReadonlyMap<GroupRef, Mode>,
   layout: Layout,
   hasLineSuffix: boolean,
   allLines = false,
@@ -321,7 +322,7 @@ export function print(
   const cmds: Cmd[] = [{ indent: ROOT, mode: BREAK, doc }];
   let remeasure = false;
   const suffixes: Cmd[] = [];
-  const groupModes = new Map<Group, Mode>();
+  const groupModes = new Map<GroupRef, Mode>();
   const endLine = () => {
     out.push(current, "\n");
     current = "";
@@ -506,6 +507,7 @@ export function print(
     mode: Mode,
   ) {
     const flat: Cmd = { indent, mode: FLAT, doc: b.contents };
+    groupModes.set(b, FLAT);
     if (mode === FLAT && !remeasure) {
       cmds.push(flat);
       return;
@@ -518,6 +520,7 @@ export function print(
       cmds.push(flat);
       return;
     }
+    groupModes.set(b, BREAK);
     const wrapped: Cmd = {
       indent,
       mode: BREAK,
@@ -543,6 +546,7 @@ export function print(
       cmds.push(wrapped);
       return;
     }
+    groupModes.set(b, FLAT);
     // Bare after all, but each group inside measures itself rather than printing flat on trust.
     remeasure = true;
     cmds.push(flat);
