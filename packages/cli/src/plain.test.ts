@@ -107,3 +107,54 @@ it("a file the engine could not read prints its error, instead of being folded a
     lines.push(line);
   expect(lines).toContain("M lost.ts  [error, 0 edits] (error: bad object)");
 });
+
+it("changes across files print before the files, and every header states its risk with the reasons, so the order can be checked", async () => {
+  const doc: ReviewDoc = {
+    schemaVersion: 2,
+    diffset: { base: "a".repeat(40), head: "b".repeat(40) },
+    files: [
+      {
+        path: "src/text.ts",
+        status: "added",
+        language: "typescript",
+        diffMode: "ast",
+        fold: "moved",
+        edits: [],
+        risk: { score: 1, reasons: [{ signal: "moved", count: 1, points: 1 }] },
+      },
+    ],
+    groups: [
+      {
+        kind: "move",
+        fromPath: "src/util.ts",
+        toPath: "src/text.ts",
+        names: ["slugify"],
+        edits: [0],
+        risk: { score: 1, reasons: [{ signal: "moved", count: 1, points: 1 }] },
+      },
+      {
+        kind: "rename-symbol",
+        from: "total",
+        to: "sumAll",
+        path: "src/cart.ts",
+        edits: [1, 2],
+        risk: {
+          score: 2,
+          reasons: [{ signal: "renamed", count: 2, points: 2 }],
+        },
+      },
+    ],
+  };
+  const lines: string[] = [];
+  for await (const line of renderPlain(doc, () => {
+    throw new Error("folded file was read");
+  }))
+    lines.push(line);
+  expect(lines.slice(3)).toEqual([
+    "2 changes across files, riskiest first:",
+    "  move slugify: src/util.ts -> src/text.ts, 1 edit  risk 1 (moved +1)",
+    "  rename total -> sumAll (declared in src/cart.ts), 2 edits  risk 2 (2x renamed +2)",
+    "",
+    "A src/text.ts  [ast, 0 edits] risk 1 (moved +1) (folded: moved)",
+  ]);
+});

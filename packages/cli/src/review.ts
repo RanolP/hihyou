@@ -1,4 +1,10 @@
-import type { FileDiff, FileSource, ReviewDoc } from "@hihyou/engine";
+import type {
+  FileDiff,
+  FileSource,
+  Group,
+  ReviewDoc,
+  Risk,
+} from "@hihyou/engine";
 import { type FileView, type Formatter, presentFile } from "@hihyou/present";
 
 /** Loads one file's formatted view; each file is read and formatted at most once. */
@@ -46,5 +52,36 @@ export function fileLabel(file: FileDiff): string {
 }
 
 export function editCount(file: FileDiff): string {
-  return `${file.edits.length} edit${file.edits.length === 1 ? "" : "s"}`;
+  return count(file.edits.length);
+}
+
+const count = (n: number) => `${n} edit${n === 1 ? "" : "s"}`;
+
+/** `risk 14 (exported-api +10, literal +2, 2x moved +2)`; empty for a file with no risk. */
+export function riskLabel(risk: Risk): string {
+  if (risk.score === 0) return "";
+  const reasons = risk.reasons.map(
+    (r) => `${r.count > 1 ? `${r.count}x ` : ""}${r.signal} +${r.points}`,
+  );
+  return `risk ${risk.score} (${reasons.join(", ")})`;
+}
+
+export function groupLabel(group: Group): string {
+  const edits = count(group.edits.length);
+  switch (group.kind) {
+    case "rename-symbol":
+      return `rename ${group.from} -> ${group.to} (declared in ${group.path}), ${edits}`;
+    case "move":
+      return `move ${group.names.join(", ") || "code"}: ${group.fromPath} -> ${group.toPath}, ${edits}`;
+    case "rename-file":
+      return `${group.copy ? "copy" : "rename"} ${group.fromPath} -> ${group.toPath}, ${edits}`;
+    case "signature":
+      return `signature of ${group.name} in ${group.path}, ${edits}`;
+  }
+}
+
+/** The groups holding any of `file`'s edits, in doc order. */
+export function groupsOf(doc: ReviewDoc, file: FileDiff): Group[] {
+  const ids = new Set(file.edits.map((e) => e.id));
+  return doc.groups.filter((g) => g.edits.some((id) => ids.has(id)));
 }

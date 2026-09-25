@@ -101,3 +101,28 @@ it("moving past the bottom of the file list scrolls it so the selected file stay
   expect(frame).toContain("1 folded (f to show)");
   app.unmount();
 });
+
+it("the riskier file is selected first, and the header names its risk reasons and the cross-file rename its edits belong to", async () => {
+  const app = await fixture(
+    {
+      "a.ts": "export function total(n: number) {\n  return n;\n}\n",
+      "b.ts": 'import { total } from "./a";\nexport const t = total(1);\n',
+      "c.ts":
+        "export function f(x: number) {\n  if (x < 1) return 0;\n  return x;\n}\n",
+    },
+    {
+      "a.ts": "export function sumAll(n: number) {\n  return n;\n}\n",
+      "b.ts": 'import { sumAll } from "./a";\nexport const t = sumAll(1);\n',
+      "c.ts":
+        "export function f(x: number) {\n  if (x <= 1) return 0;\n  return x;\n}\n",
+    },
+  );
+  const frame = await until(
+    app.lastFrame,
+    "risk 14 (condition +8, operator +6)",
+  );
+  expect(frame).toMatch(/c\.ts[^\n]*\n[^\n]*risk 14/);
+  app.stdin.write("j");
+  await until(app.lastFrame, "in: rename total -> sumAll (declared in a.ts)");
+  app.unmount();
+});

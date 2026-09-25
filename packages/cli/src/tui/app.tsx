@@ -1,4 +1,4 @@
-import type { ReviewDoc } from "@hihyou/engine";
+import type { FileDiff, ReviewDoc } from "@hihyou/engine";
 import {
   type FileView,
   type HighlightKind,
@@ -12,6 +12,9 @@ import { movePointer, unformattedNote } from "../plain.js";
 import {
   editCount,
   fileLabel,
+  groupLabel,
+  groupsOf,
+  riskLabel,
   statusLetter,
   type ViewLoader,
 } from "../review.js";
@@ -147,7 +150,7 @@ export function App({ doc, load, size }: Props) {
                   {statusLetter[file.status]} {fileLabel(file)}{" "}
                   {reason
                     ? `(${reason})`
-                    : `${file.diffMode} ${editCount(file)}`}
+                    : `${file.diffMode} ${editCount(file)}${file.risk.score ? ` r${file.risk.score}` : ""}`}
                 </Text>
               );
             })}
@@ -163,6 +166,9 @@ export function App({ doc, load, size }: Props) {
             {current ? fileLabel(current.file) : "no files"}{" "}
             <Text dimColor>{view ? unformattedNote(view) : ""}</Text>
           </Text>
+          <Text wrap="truncate" color="yellow">
+            {current ? contextLine(doc, current.file) : ""}
+          </Text>
           {error ? (
             <Text color="red">{error}</Text>
           ) : current?.file.fold ? (
@@ -170,7 +176,7 @@ export function App({ doc, load, size }: Props) {
           ) : !view ? (
             <Text dimColor>loading...</Text>
           ) : (
-            displayRows.slice(top, top + diffHeight - 2).map((row, i) => (
+            displayRows.slice(top, top + diffHeight - 3).map((row, i) => (
               <RowLine
                 // biome-ignore lint/suspicious/noArrayIndexKey: rows are positional
                 key={top + i}
@@ -267,6 +273,18 @@ function editStarts(view: FileView, rows: Row[]): number[] {
         }
   });
   return starts;
+}
+
+/**
+ * The changes across files the file's edits belong to, then why it ranks where it does; groups come first
+ * since the list already shows the score, and a narrow pane truncates the end.
+ */
+function contextLine(doc: ReviewDoc, file: FileDiff): string {
+  const parts = [
+    ...groupsOf(doc, file).map((g) => `in: ${groupLabel(g)}`),
+    riskLabel(file.risk),
+  ].filter(Boolean);
+  return parts.length ? parts.join("  ·  ") : " ";
 }
 
 const hint =

@@ -9,6 +9,8 @@ import {
 import {
   editCount,
   fileLabel,
+  groupLabel,
+  riskLabel,
   statusLetter,
   type ViewLoader,
 } from "./review.js";
@@ -34,6 +36,12 @@ export async function* renderPlain(
   const short = (id: string) => id.slice(0, 12);
   yield `diffset ${short(doc.diffset.base)}..${short(doc.diffset.head)}, ${doc.files.length} files`;
   yield legend;
+  if (doc.groups.length > 0) {
+    yield "";
+    yield `${doc.groups.length} change${doc.groups.length === 1 ? "" : "s"} across files, riskiest first:`;
+    for (const g of doc.groups)
+      yield `  ${[groupLabel(g), riskLabel(g.risk)].filter(Boolean).join("  ")}`;
+  }
   for (const [index, file] of doc.files.entries()) {
     yield "";
     if (file.fold) {
@@ -58,7 +66,8 @@ export async function* renderPlain(
 
 export function fileHeader(file: FileDiff): string {
   const fallback = file.fallbackReason ? `: ${file.fallbackReason}` : "";
-  return `${statusLetter[file.status]} ${fileLabel(file)}  [${file.diffMode}${fallback}, ${editCount(file)}]`;
+  const risk = riskLabel(file.risk);
+  return `${statusLetter[file.status]} ${fileLabel(file)}  [${file.diffMode}${fallback}, ${editCount(file)}]${risk && ` ${risk}`}`;
 }
 
 /** Says which side is shown as committed rather than formatted, and why. */
