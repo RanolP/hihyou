@@ -1,0 +1,17 @@
+{
+  "name": "@hihyou/gui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "@hihyou/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@hihyou/engine": "workspace:*",
+    "@hihyou/ui": "workspace:*"
+  }
+}
