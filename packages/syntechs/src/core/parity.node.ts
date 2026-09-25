@@ -1,6 +1,6 @@
 // Parity with web-tree-sitter 0.27: every visible node's type, range, field, named, isMissing and isError,
 // in preorder with depth; then, once those agree, the `SyntaxTree` hihyou consumes (labels, layout-only JSX
-// text dropped, height, size) and its errorChars. Usage: node dist/parity.node.js [grammar...] [--show N]
+// text dropped, height, size) and its errorChars. Usage: node packages/syntechs/dist/core/parity.node.js [grammar...] [--show N]
 
 import type { Parser as WasmParser } from "web-tree-sitter";
 import {

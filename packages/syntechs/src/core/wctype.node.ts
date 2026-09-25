@@ -1,7 +1,7 @@
 // musl's <wctype.h>, read straight out of web-tree-sitter.wasm: the grammar wasm modules import iswalpha,
 // iswspace and iswalnum from it, so its answers are the ones the C scanners see. Running this file writes
-// src/scanners/musl-alpha.ts, the iswalpha set as sorted inclusive ranges for `setContains`.
-// Run after `pnpm typecheck`: node packages/sitter/dist/wctype.node.js
+// src/core/musl-alpha.ts, the iswalpha set as sorted inclusive ranges for `setContains`.
+// Run after `pnpm typecheck`: node packages/syntechs/dist/core/wctype.node.js
 import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
@@ -82,8 +82,8 @@ function main(): void {
   for (let i = 0; i < ranges.length; i += 16)
     lines.push(`  ${ranges.slice(i, i + 16).join(",")},`);
   const out = join(
-    resolve(import.meta.dirname, ".."),
-    "src/scanners/musl-alpha.ts",
+    resolve(import.meta.dirname, "../.."),
+    "src/core/musl-alpha.ts",
   );
   writeFileSync(
     out,

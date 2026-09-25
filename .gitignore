@@ -5,4 +5,4 @@ coverage/
 .claude/
 research/parser-bench/inputs/
 research/parser-bench/bulk/bulk.wasm
-packages/sitter/corpus/
+packages/syntechs/corpus/

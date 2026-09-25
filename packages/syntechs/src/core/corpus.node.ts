@@ -11,7 +11,7 @@ import {
 import type { Language } from "./language.js";
 
 const require = createRequire(import.meta.url);
-export const pkgRoot = resolve(import.meta.dirname, "..");
+export const pkgRoot = resolve(import.meta.dirname, "../..");
 export const repoRoot = resolve(pkgRoot, "../..");
 const benchInputs = join(repoRoot, "research/parser-bench/inputs");
 const corpusDir = join(pkgRoot, "corpus");
@@ -82,7 +82,7 @@ function repoFiles(grammar: GrammarName): string[] {
     .filter(
       (f) =>
         EXTENSIONS[grammar].some((e) => f.endsWith(e)) &&
-        !f.includes("/generated/"),
+        !/\/grammars\/[^/]+\/index\.ts$/.test(f),
     )
     .map((f) => join(repoRoot, f));
 }
@@ -91,7 +91,7 @@ export function benchFiles(grammar: GrammarName): Input[] {
   const missing = FETCHED[grammar].filter((f) => !existsSync(f));
   if (missing.length > 0) {
     throw new Error(
-      `missing inputs, run research/parser-bench/fetch-inputs.sh and packages/sitter/fetch-corpus.sh: ${missing.join(", ")}`,
+      `missing inputs, run research/parser-bench/fetch-inputs.sh and packages/syntechs/fetch-corpus.sh: ${missing.join(", ")}`,
     );
   }
   return FETCHED[grammar].map((f) => ({
@@ -178,7 +178,7 @@ export function corpus(grammar: GrammarName): Input[] {
 }
 
 export async function loadGenerated(grammar: GrammarName): Promise<Language> {
-  const mod = (await import(`./generated/${grammar}.js`)) as {
+  const mod = (await import(`../grammars/${grammar}/index.js`)) as {
     language: Language;
   };
   return mod.language;

@@ -1,5 +1,5 @@
 // Port of tree-sitter v0.27.0 lib/src/language.{h,c}: parse-table lookups over the tables a generated grammar
-// module (src/generated/*.ts, written by compile.node.ts) decodes at load time.
+// module (src/grammars/*/, written by compiler/compile.node.ts) decodes at load time.
 import type { ExternalScanner, Lexer } from "./lexer.js";
 
 export const SYM_END = 0;

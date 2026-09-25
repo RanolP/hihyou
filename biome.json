@@ -6,8 +6,8 @@
       "**",
       "!packages/engine/fixtures",
       "!research",
-      "!packages/sitter/src/generated",
-      "!packages/sitter/src/scanners/musl-alpha.ts"
+      "!packages/syntechs/src/grammars/*/index.ts",
+      "!packages/syntechs/src/core/musl-alpha.ts"
     ]
   },
   "formatter": { "indentStyle": "space" },

@@ -283,7 +283,7 @@ importers:
         specifier: 3.9.9
         version: 3.9.9
 
-  packages/sitter:
+  packages/syntechs:
     devDependencies:
       esbuild:
         specifier: 0.28.2

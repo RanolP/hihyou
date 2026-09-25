@@ -1,18 +1,18 @@
 {
-  "name": "@hihyou/sitter",
+  "name": "syntechs",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "exports": {
-    ".": {
-      "@hihyou/source": "./src/index.ts",
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+    "./core": {
+      "@hihyou/source": "./src/core/index.ts",
+      "types": "./dist/core/index.d.ts",
+      "default": "./dist/core/index.js"
     },
     "./grammars/*": {
-      "@hihyou/source": "./src/generated/*.ts",
-      "types": "./dist/generated/*.d.ts",
-      "default": "./dist/generated/*.js"
+      "@hihyou/source": "./src/grammars/*/index.ts",
+      "types": "./dist/grammars/*/index.d.ts",
+      "default": "./dist/grammars/*/index.js"
     }
   },
   "devDependencies": {

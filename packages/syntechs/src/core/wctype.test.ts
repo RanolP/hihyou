@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { iswalnum, iswalpha, iswdigit, iswspace } from "./scanners/wctype.js";
+import { iswalnum, iswalpha, iswdigit, iswspace } from "./wctype.js";
 import { loadMuslWctype, MAX_CODE_POINT } from "./wctype.node.js";
 
 // Catches a scanner classifying a code point differently from the musl build web-tree-sitter runs, which

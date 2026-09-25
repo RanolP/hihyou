@@ -1,5 +1,5 @@
-import { parse } from "@hihyou/sitter";
-import { language as json } from "@hihyou/sitter/grammars/json";
+import { parse } from "syntechs/core";
+import { language as json } from "syntechs/grammars/json";
 import { expect, test } from "vitest";
 
 // Catches the `./grammars/*` subpath export breaking, which leaves consumers no way to obtain a Language.

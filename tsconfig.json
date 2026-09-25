@@ -3,8 +3,8 @@
   "references": [
     { "path": "packages/engine" },
     { "path": "packages/engine/tsconfig.node.json" },
-    { "path": "packages/sitter" },
-    { "path": "packages/sitter/tsconfig.node.json" },
+    { "path": "packages/syntechs" },
+    { "path": "packages/syntechs/tsconfig.node.json" },
     { "path": "packages/present" },
     { "path": "packages/present/tsconfig.node.json" },
     { "path": "packages/format" },

@@ -1,7 +1,7 @@
 // Port of tree-sitter-javascript 0.25.0 src/scanner.c. Stateless.
 
-import type { ExternalScanner, Lexer } from "../lexer.js";
-import { iswalpha, iswdigit, iswspace } from "./wctype.js";
+import type { ExternalScanner, Lexer } from "../../core/lexer.js";
+import { iswalpha, iswdigit, iswspace } from "../../core/wctype.js";
 
 const AUTOMATIC_SEMICOLON = 0;
 const TEMPLATE_CHARS = 1;

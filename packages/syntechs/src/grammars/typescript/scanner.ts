@@ -1,8 +1,8 @@
 // Port of tree-sitter-typescript 0.23.2 common/scanner.h, shared by the typescript and tsx grammars. Stateless.
 // It differs from the JavaScript scanner in automatic semicolons, the ternary `?` and comment handling.
 
-import type { ExternalScanner, Lexer } from "../lexer.js";
-import { iswalpha, iswdigit, iswspace } from "./wctype.js";
+import type { ExternalScanner, Lexer } from "../../core/lexer.js";
+import { iswalpha, iswdigit, iswspace } from "../../core/wctype.js";
 
 const AUTOMATIC_SEMICOLON = 0;
 const TEMPLATE_CHARS = 1;

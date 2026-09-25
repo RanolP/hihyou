@@ -1,11 +1,11 @@
 import { expect, test } from "vitest";
+import { language as css } from "../grammars/css/index.js";
+import { language as javascript } from "../grammars/javascript/index.js";
+import { language as json } from "../grammars/json/index.js";
+import { language as python } from "../grammars/python/index.js";
+import { language as tsx } from "../grammars/tsx/index.js";
+import { language as typescript } from "../grammars/typescript/index.js";
 import type { GrammarName } from "./corpus.node.js";
-import { language as css } from "./generated/css.js";
-import { language as javascript } from "./generated/javascript.js";
-import { language as json } from "./generated/json.js";
-import { language as python } from "./generated/python.js";
-import { language as tsx } from "./generated/tsx.js";
-import { language as typescript } from "./generated/typescript.js";
 import type { Language } from "./language.js";
 import { checkParity } from "./parity.node.js";
 

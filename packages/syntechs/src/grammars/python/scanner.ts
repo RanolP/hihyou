@@ -1,7 +1,7 @@
 // Port of tree-sitter-python 0.25.0 src/scanner.c: the indent stack and the open string delimiters,
 // serialized byte for byte as the C scanner does so the parser's state comparisons agree.
 
-import type { ExternalScanner, Lexer } from "../lexer.js";
+import type { ExternalScanner, Lexer } from "../../core/lexer.js";
 
 const NEWLINE = 0;
 const INDENT = 1;

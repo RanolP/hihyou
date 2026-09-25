@@ -1,5 +1,5 @@
 // This runtime against web-tree-sitter 0.27, both producing the engine's SyntaxTree.
-// Usage: node dist/bench.node.js [grammar...]    (warm parse, cold start, min+gzip size)
+// Usage: node packages/syntechs/dist/core/bench.node.js [grammar...]    (warm parse, cold start, min+gzip size)
 
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -178,7 +178,7 @@ async function minGzip(entry: string): Promise<{ min: number; gz: number }> {
 
 async function size(grammar: GrammarName): Promise<void> {
   const ours = await minGzip(
-    `export { parse } from "./index.ts"; export { language } from "./generated/${grammar}.ts";`,
+    `export { parse } from "./core/index.ts"; export { language } from "./grammars/${grammar}/index.ts";`,
   );
   const js = await minGzip(
     `export { Parser, Language } from "web-tree-sitter";`,
