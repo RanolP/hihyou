@@ -1,0 +1,60 @@
+// The <wctype.h> the grammar scanners call. web-tree-sitter links them against musl (tree-sitter's
+// wasm-stdlib), so whitespace is musl's exact set. Alphabetic and case use the JS engine's Unicode tables,
+// which can differ from musl's older tables on rare code points; ASCII and common scripts agree.
+
+const ALPHA = /\p{Alphabetic}/u;
+
+export function iswspace(c: number): boolean {
+  return (
+    (c >= 9 && c <= 13) ||
+    c === 32 ||
+    c === 0x85 ||
+    (c >= 0x2000 && c <= 0x200a && c !== 0x2007) ||
+    c === 0x2028 ||
+    c === 0x2029 ||
+    c === 0x205f ||
+    c === 0x3000
+  );
+}
+
+export function iswdigit(c: number): boolean {
+  return c >= 48 && c <= 57;
+}
+
+export function iswalpha(c: number): boolean {
+  if (c < 128) return (c >= 65 && c <= 90) || (c >= 97 && c <= 122);
+  if (c >= 0x20000) return c < 0x2fffe;
+  return ALPHA.test(String.fromCodePoint(c));
+}
+
+export function iswalnum(c: number): boolean {
+  return iswdigit(c) || iswalpha(c);
+}
+
+export function iswxdigit(c: number): boolean {
+  return iswdigit(c) || ((c | 32) >= 97 && (c | 32) <= 102);
+}
+
+function caseMap(c: number, upper: boolean): number {
+  if (c >= 0x20000) return c;
+  const s = String.fromCodePoint(c);
+  const m = upper ? s.toUpperCase() : s.toLowerCase();
+  const r = m.codePointAt(0) as number;
+  return m.length === String.fromCodePoint(r).length ? r : c;
+}
+
+export function towlower(c: number): number {
+  return c < 128 ? (c >= 65 && c <= 90 ? c + 32 : c) : caseMap(c, false);
+}
+
+export function towupper(c: number): number {
+  return c < 128 ? (c >= 97 && c <= 122 ? c - 32 : c) : caseMap(c, true);
+}
+
+export function iswupper(c: number): boolean {
+  return towlower(c) !== c;
+}
+
+export function iswlower(c: number): boolean {
+  return towupper(c) !== c;
+}

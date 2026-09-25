@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import type { GrammarName } from "./corpus.node.js";
+import { language as css } from "./generated/css.js";
 import { language as json } from "./generated/json.js";
 import type { Language } from "./language.js";
 import { checkParity } from "./parity.node.js";
@@ -16,6 +17,15 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
       '{"a": {"b": [1, 2}',
       '[1, 2 3, "x\\q", @, ]',
       "",
+    ],
+  ],
+  css: [
+    css,
+    [
+      "a b > c:hover::before, #x .y[z='1'] { color: red !important; margin: 0 auto; }\n@media (min-width: 10px) { a:not(.b) { top: calc(1px + 2%); } }\n",
+      "a { color: red; b:hover { x: 1 } }\n/* c */ @import url(x.css);",
+      "a { color: ; } b { : red } c:",
+      "a:hover /* { */ { x: y }",
     ],
   ],
 };
