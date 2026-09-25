@@ -1,3 +1,4 @@
+import { check } from "./check.js";
 import { attachComments } from "./comments.js";
 import { type Doc, hardline, token } from "./doc.js";
 import type { EndOfLine } from "./options.js";
@@ -11,17 +12,25 @@ import {
 import { hasNewlineInRange } from "./text.js";
 import type { FormatNode } from "./tree.js";
 
-/** Where one source token (`from`, in the input) landed (`to`, in the output), as UTF-16 [start, end). */
+/**
+ * Where one source token (`from`, in the input) landed (`to`, in the output), as UTF-16 [start, end). A
+ * respelled token (`'a'` printed as `"a"`) keeps its node's range; a `synthetic` one (an inserted `;`) has the
+ * range of the node it anchors to, and no text there is its own.
+ */
 export interface Anchor {
   from: readonly [number, number];
   to: readonly [number, number];
+  synthetic?: true;
 }
 
 export type Formatted =
   | { ok: true; text: string; anchors: Anchor[] }
   | {
       ok: false;
-      /** `token-mismatch`: the rules dropped, repeated or reordered a source token, so the output would misstate the code. */
+      /**
+       * `token-mismatch`: the rules dropped, repeated, reordered, changed the meaning of or invented a source
+       * token (as the language's `normalize` judges meaning), so the output would misstate the code.
+       */
       reason: "token-mismatch" | "formatter-error";
       /** The input, unchanged. */
       text: string;
@@ -95,26 +104,28 @@ export function format<O>(
     const doc: Doc = [ctx.print(root), hardline];
     const { text, placed } = print(doc, settings);
 
-    const anchors: Anchor[] = [];
-    // Code tokens must come out in source order, or a rule that swaps two fields shows code that does not
-    // exist; comments are exempt because prettier moves them (a trailing comment past a comma).
-    let codeEnd = 0;
-    for (const { token: t, at } of placed) {
-      if (!isComment(t.node)) {
-        if (t.node.start < codeEnd)
-          return mismatch(
-            source,
-            `token at ${t.node.start} printed out of order`,
-          );
-        codeEnd = t.node.end;
-      }
-      anchors.push({
+    const problem = check(
+      root,
+      source,
+      text,
+      placed,
+      language.normalize,
+      isComment,
+    );
+    if (problem)
+      return {
+        ok: false,
+        reason: "token-mismatch",
+        text: source,
+        detail: problem,
+      };
+    const anchors = placed.map(
+      ({ token: t, at }): Anchor => ({
         from: [t.node.start, t.node.end],
         to: [at, at + t.text.length],
-      });
-    }
-    const problem = coverage(source, anchors);
-    if (problem) return mismatch(source, problem);
+        ...(t.synthetic && { synthetic: true }),
+      }),
+    );
     return withEndOfLine(text, anchors, endOfLine(settings.endOfLine, source));
   } catch (e) {
     return {
@@ -162,30 +173,4 @@ function withEndOfLine(
       to: [moved(a.to[0]), moved(a.to[1])],
     })),
   };
-}
-
-const mismatch = (source: string, detail: string): Formatted => ({
-  ok: false,
-  reason: "token-mismatch",
-  text: source,
-  detail,
-});
-
-/**
- * Checks that the printed tokens cover every non-blank character of the input exactly once: a dropped token
- * leaves a gap, a repeated one (or a node printed along with its own child) overlaps. Tree-sitter puts every
- * character outside whitespace into some leaf, so this is "each leaf printed once" without walking the tree.
- */
-function coverage(source: string, anchors: Anchor[]): string | undefined {
-  // Output order is source order but for the few comments a rule moves, so this sort is near linear.
-  const ranges = anchors.map((a) => a.from).sort((x, y) => x[0] - y[0]);
-  let covered = 0;
-  for (const [start, end] of ranges) {
-    if (start < covered) return `input at ${start} printed twice`;
-    if (/\S/.test(source.slice(covered, start)))
-      return `input at ${covered} dropped`;
-    covered = end;
-  }
-  if (/\S/.test(source.slice(covered))) return `input at ${covered} dropped`;
-  return undefined;
 }

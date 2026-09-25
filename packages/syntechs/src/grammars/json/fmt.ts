@@ -1,3 +1,4 @@
+import { decimalValue, type Normalize } from "../../fmt/check.js";
 import { token } from "../../fmt/doc.js";
 import {
   type PrettierOptions,
@@ -16,10 +17,21 @@ export interface JsonOptions extends PrettierOptions {
 }
 
 const defaults: JsonOptions = { ...prettierDefaults, trailingComma: "all" };
+
+// A number means its value, whatever its spelling, and a comma before a closing bracket (jsonc's trailing
+// comma) means nothing.
+const normalize: Normalize = (lexemes) =>
+  lexemes.map((l, i) => {
+    const next = lexemes[i + 1]?.text;
+    if (l.text === "," && (next === "]" || next === "}")) return undefined;
+    return l.node.kind === "number" ? (decimalValue(l.text) ?? l.text) : l.text;
+  });
+
 const spec = {
   lineComments: { comment: "//" },
   defaults,
   settings: prettierSettings,
+  normalize,
 };
 
 // Prettier's number normalization (utilities/print-number.js): lower case, no redundant exponent sign,

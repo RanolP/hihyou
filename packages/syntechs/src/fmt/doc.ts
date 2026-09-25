@@ -19,13 +19,16 @@ export type Doc =
   | readonly Doc[];
 
 /**
- * A source token, printed as `text`: usually its source slice, but a rule may normalize it (a number's case, a
- * comment's trailing spaces). Either way the node's range is where it came from.
+ * A source token, printed as `text`: usually its source slice, but a rule may respell it (a number's case, a
+ * string's quotes), and the language's `normalize` decides whether the meaning held. Either way the node's
+ * range is where it came from. A `synthetic` token is one a rule inserted (a trailing `,`, a `;`), which
+ * `normalize` must declare optional; its node is the source node it sits next to.
  */
 export interface Token {
   readonly k: "token";
   readonly node: FormatNode;
   readonly text: string;
+  readonly synthetic?: true;
 }
 /** Text the formatter synthesizes, such as a space; it maps to no input range. */
 export interface Text {
@@ -85,6 +88,13 @@ export const token = (node: FormatNode, text: string): Token => ({
   k: "token",
   node,
   text,
+});
+/** A token no source token stands for, anchored to `anchor`, the nearest source node. */
+export const synthetic = (anchor: FormatNode, text: string): Token => ({
+  k: "token",
+  node: anchor,
+  text,
+  synthetic: true,
 });
 export const group = (contents: Doc, shouldBreak = false): Group => ({
   k: "group",

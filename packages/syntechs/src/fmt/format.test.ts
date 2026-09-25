@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "../core/index.js";
 import { language as jsonParser } from "../grammars/json/index.js";
-import { text, token } from "./doc.js";
+import type { Normalize } from "./check.js";
+import { synthetic, text, token } from "./doc.js";
 import { format } from "./format.js";
 import {
   type PrettierOptions,
@@ -115,6 +116,79 @@ describe("format", () => {
       ok: false,
       reason: "token-mismatch",
       text,
+    });
+  });
+
+  it("two tokens that trade texts in place return the input unformatted, though each still covers its own range", async () => {
+    const trades = defineLanguage(grammar, spec, (h) => ({
+      ...rules(h),
+      number: (node) => token(node, node.start === 1 ? "2" : "1"),
+    }));
+    expect(await run("[1,2]", trades)).toMatchObject({
+      ok: false,
+      reason: "token-mismatch",
+    });
+  });
+
+  // A string means its cooked value, so a respelling must keep that value.
+  const cooked: Normalize = (lexemes) =>
+    lexemes.map((l) =>
+      l.node.kind === "string" ? `s:${JSON.parse(l.text)}` : l.text,
+    );
+  const respells = (to: (source: string) => string) =>
+    defineLanguage(grammar, { ...spec, normalize: cooked }, (h) => ({
+      ...rules(h),
+      string: (node, ctx) =>
+        token(node, to(ctx.source.slice(node.start, node.end))),
+    }));
+
+  it("a respelling that changes a string's cooked value returns the input unformatted, instead of a stylistic change that edits data", async () => {
+    expect(
+      await run(
+        '["a"]',
+        respells(() => '"b"'),
+      ),
+    ).toMatchObject({
+      ok: false,
+      reason: "token-mismatch",
+    });
+  });
+
+  it("a respelling with the same cooked value is accepted and keeps its node's anchor, so a style option like singleQuote can apply", async () => {
+    const out = await run(
+      '["\\u0061"]',
+      respells((s) => JSON.stringify(JSON.parse(s))),
+    );
+    expect(out).toMatchObject({ ok: true, text: '["a"]\n' });
+    expect(out.ok && out.anchors).toContainEqual({ from: [1, 9], to: [1, 4] });
+  });
+
+  const semis = (normalize?: Normalize) =>
+    defineLanguage(
+      grammar,
+      { ...spec, ...(normalize && { normalize }) },
+      (h) => ({
+        ...rules(h),
+        pair: (node, ctx) => [rules(h).pair(node, ctx), synthetic(node, ";")],
+      }),
+    );
+
+  it("an inserted token the language calls optional is accepted and anchored as synthetic to its node, so an added `;` maps back", async () => {
+    const dropsSemis: Normalize = (lexemes) =>
+      lexemes.map((l) => (l.text === ";" ? undefined : l.text));
+    const out = await run('{"a":1}', semis(dropsSemis));
+    expect(out).toMatchObject({ ok: true, text: '{ "a": 1; }\n' });
+    expect(out.ok && out.anchors).toContainEqual({
+      from: [1, 6],
+      to: [8, 9],
+      synthetic: true,
+    });
+  });
+
+  it("an inserted token the language does not call optional returns the input unformatted, instead of inventing code", async () => {
+    expect(await run('{"a":1}', semis())).toMatchObject({
+      ok: false,
+      reason: "token-mismatch",
     });
   });
 

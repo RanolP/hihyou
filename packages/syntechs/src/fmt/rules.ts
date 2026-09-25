@@ -1,3 +1,4 @@
+import { identity, type Normalize } from "./check.js";
 import type { Comments } from "./comments.js";
 import {
   breakParent,
@@ -11,6 +12,7 @@ import {
   line,
   lineSuffix,
   softline,
+  synthetic,
   text,
   token,
 } from "./doc.js";
@@ -86,6 +88,7 @@ export interface Language<O = unknown> {
   readonly lineComments: ReadonlyMap<string, string>;
   readonly defaults: O;
   settings(options: O): Settings;
+  readonly normalize: Normalize;
 }
 
 /**
@@ -97,6 +100,11 @@ export interface LanguageSpec<G extends Grammar, O> {
   readonly defaults: O;
   /** The layout the core applies for `options`; `prettierSettings` and `ruffSettings` cover the two families. */
   readonly settings: (options: O) => Settings;
+  /**
+   * What the self-check compares instead of raw token text, so that rules may respell, insert and drop tokens
+   * without changing meaning. The default compares text as is, which rejects any respelling.
+   */
+  readonly normalize?: Normalize;
   /**
    * The comment kinds that run to the end of the line, so code never follows one on its line. A kind maps to the
    * prefix its line comments start with, because one kind can hold both forms (tree-sitter-json's `comment` is
@@ -126,7 +134,10 @@ export interface ListOptions<G extends Grammar, O> {
   blankLines: "force" | "ifBroken";
   /** "always" breaks every non-empty list, one item per line (prettier's json-stringify). */
   expand?: "fit" | "always";
-  /** A separator after the last item when the list breaks (prettier's `trailingComma` in JSONC). */
+  /**
+   * A separator after the last item when the list breaks (prettier's `trailingComma` in JSONC), inserted as a
+   * synthetic token after the last item, which the language's `normalize` must declare optional.
+   */
   trailingSep?: ByOptions<O, boolean>;
 }
 
@@ -207,6 +218,7 @@ export function defineLanguage<
     ),
     defaults: spec.defaults,
     settings: spec.settings,
+    normalize: spec.normalize ?? identity,
   };
 }
 
@@ -317,8 +329,9 @@ function listRule<O>(o: ListOptions<Grammar, O>): Rule<never, O> {
     const contents: Doc[] = [];
     const listGroup = group(contents, shouldBreak);
     // A fill prints its items flat even in a broken list, so its trailing separator asks the list itself.
+    const last = items.at(-1) ?? first;
     const trailing = read(o.trailingSep, ctx.options)
-      ? ifBreak(text(o.sep), [], concise ? listGroup : undefined)
+      ? ifBreak(synthetic(last, o.sep), [], concise ? listGroup : undefined)
       : [];
 
     const body: Doc = concise
