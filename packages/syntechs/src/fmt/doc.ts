@@ -20,6 +20,7 @@ export type Doc =
   | LineSuffixBoundary
   | BestFitting
   | BestFitParenthesize
+  | FitsExpanded
   | readonly Doc[];
 
 /**
@@ -51,6 +52,12 @@ export interface Line {
   readonly k: "line";
   readonly soft: boolean;
   readonly hard: boolean;
+  /**
+   * Ruff's line: when it breaks on a line that is still empty it prints nothing, so breaks never stack up into
+   * blank lines; `blank` then adds exactly one empty line.
+   */
+  readonly collapse?: boolean;
+  readonly blank?: boolean;
 }
 /** Printed flat when it fits in the remaining width, else broken. */
 export interface Group {
@@ -116,6 +123,18 @@ export interface BestFitParenthesize {
   readonly open: Token;
   readonly contents: Doc;
   readonly close: Token;
+}
+/**
+ * Ruff's `fits_expanded`: while `whenFlat` (or, without it, always) is printed flat, the group measuring this
+ * counts only the text before and after it, as if `contents` were broken over lines of any width. A break
+ * inside does not break the groups around; it makes the measure fail when the condition does not hold.
+ */
+export interface FitsExpanded {
+  readonly k: "fitsExpanded";
+  readonly contents: Doc;
+  readonly whenFlat: Group | undefined;
+  /** Set by the printer: `contents` holds a hard break. */
+  expands?: boolean;
 }
 /** Forces every enclosing group to break. */
 export interface BreakParent {
@@ -196,6 +215,15 @@ export const bestFitParenthesize = (
   open,
   contents,
   close,
+});
+
+export const fitsExpanded = (
+  contents: Doc,
+  whenFlat?: Group,
+): FitsExpanded => ({
+  k: "fitsExpanded",
+  contents,
+  whenFlat,
 });
 
 export const ifBreak = (broken: Doc, flat: Doc = [], of?: Group): IfBreak => ({

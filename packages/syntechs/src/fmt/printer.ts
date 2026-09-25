@@ -115,23 +115,28 @@ function unknownDoc(d: never): never {
 
 /**
  * Marks every group that holds a hard break, directly or through a nested broken group, as broken. A conditional
- * group is only walked, never marked: which of its states breaks is the printer's choice. `seen` visits a group
- * shared between states once.
+ * group is only walked, never marked: which of its states breaks is the printer's choice. A doc may share a part
+ * between both branches of an `ifBreak` or between states, so each part is visited once, not once per path to it.
  */
-function propagateBreaks(d: Doc, seen: Set<Group> = new Set()): boolean {
+function propagateBreaks(d: Doc, seen = new Map<Doc, boolean>()): boolean {
+  const known = seen.get(d);
+  if (known !== undefined) return known;
+  const result = propagate(d, seen);
+  seen.set(d, result);
+  return result;
+}
+
+function propagate(d: Doc, seen: Map<Doc, boolean>): boolean {
   // Every part is visited, not only up to the first break: each nested group needs its own mark.
-  if (isDocs(d)) {
-    let broken = false;
-    for (let i = 0; i < d.length; i++)
-      if (propagateBreaks(d[i] as Doc, seen)) broken = true;
-    return broken;
-  }
+  if (isDocs(d))
+    return d.reduce(
+      (broken, part) => propagateBreaks(part, seen) || broken,
+      false,
+    );
   switch (d.k) {
     case "breakParent":
       return true;
     case "group":
-      if (seen.has(d)) return d.break;
-      seen.add(d);
       if (d.expandedStates) {
         for (const state of d.expandedStates) propagateBreaks(state, seen);
         return d.break;
@@ -144,10 +149,8 @@ function propagateBreaks(d: Doc, seen: Set<Group> = new Set()): boolean {
       return propagateBreaks(d.contents, seen);
     case "fill":
       return propagateBreaks(d.parts, seen);
-    case "ifBreak": {
-      const broken = propagateBreaks(d.broken, seen);
-      return propagateBreaks(d.flat, seen) || broken;
-    }
+    case "ifBreak":
+      return propagateBreaks([d.broken, d.flat], seen);
     // A variant's breaks are its own: the choice among variants is what decides whether the line breaks.
     case "bestFitting":
       propagateBreaks(d.variants, seen);
@@ -155,11 +158,15 @@ function propagateBreaks(d: Doc, seen: Set<Group> = new Set()): boolean {
     case "bestFitParenthesize":
       propagateBreaks(d.contents, seen);
       return false;
+    case "fitsExpanded":
+      d.expands = propagateBreaks(d.contents, seen);
+      return false;
     case "token":
     case "text":
-    case "line":
     case "lineSuffixBoundary":
       return false;
+    case "line":
+      return d.hard && d.collapse === true;
     default:
       return unknownDoc(d);
   }
@@ -183,15 +190,22 @@ function fits(
 ): boolean {
   let restIdx = rest.length;
   let pendingSpace = false;
-  type Measured = Cmd & { all: boolean };
-  const cmds: Measured[] = [{ ...next, all: allLines }];
-  while (width >= 0) {
+  // How many lines count: the first, all, or all with any width (inside `fitsExpanded`, only the text around it).
+  type Measure = typeof FIRST_LINE | typeof ALL_LINES | typeof OVERFLOW;
+  type Measured = Cmd & { all: Measure };
+  const cmds: Measured[] = [
+    { ...next, all: allLines ? ALL_LINES : FIRST_LINE },
+  ];
+  if (width < 0) return false;
+  for (;;) {
     const cmd =
       cmds.pop() ??
-      (restIdx > 0 ? { ...(rest[--restIdx] as Cmd), all: false } : undefined);
+      (restIdx > 0
+        ? { ...(rest[--restIdx] as Cmd), all: FIRST_LINE }
+        : undefined);
     if (!cmd) return true;
     const { indent, mode, doc: d, all } = cmd;
-    const push = (doc: Doc, m = mode, i = indent, a = all) =>
+    const push = (doc: Doc, m = mode, i = indent, a: Measure = all) =>
       cmds.push({ indent: i, mode: m, doc, all: a });
     if (isDocs(d)) {
       for (const part of d.toReversed()) push(part);
@@ -212,12 +226,19 @@ function fits(
           break;
         }
         width -= textWidth(d.text.slice(0, newline));
-        if (!all) return width >= 0;
+        if (all === FIRST_LINE) return width >= 0;
         width =
           layout.lineWidth -
           textWidth(d.text.slice(d.text.lastIndexOf("\n") + 1));
         break;
       }
+      case "fitsExpanded":
+        if (mode === BREAK) push(d.contents);
+        else if (!d.whenFlat || (groupModes.get(d.whenFlat) ?? FLAT) === FLAT)
+          push(d.contents, BREAK, indent, OVERFLOW);
+        else if (d.expands) return false;
+        else push(d.contents);
+        break;
       case "indent":
         push(d.contents, mode, deeper(indent, "indent", layout));
         break;
@@ -240,7 +261,7 @@ function fits(
           if (!d.soft) pendingSpace = true;
           break;
         }
-        if (mode === FLAT || !all) return true;
+        if (mode === FLAT || all === FIRST_LINE) return true;
         width = layout.lineWidth - indent.length;
         pendingSpace = false;
         break;
@@ -250,7 +271,13 @@ function fits(
         break;
       }
       case "bestFitting":
-        if (mode === FLAT) push(d.variants[0] ?? [], mode, indent, d.allLines);
+        if (mode === FLAT)
+          push(
+            d.variants[0] ?? [],
+            mode,
+            indent,
+            d.allLines ? ALL_LINES : FIRST_LINE,
+          );
         else push(d.variants.at(-1) ?? []);
         break;
       case "bestFitParenthesize":
@@ -268,9 +295,13 @@ function fits(
       default:
         unknownDoc(d);
     }
+    if (width < 0 && all !== OVERFLOW) return false;
   }
-  return false;
 }
+
+const FIRST_LINE = 0;
+const ALL_LINES = 1;
+const OVERFLOW = 2;
 
 /** Prints `doc` as prettier's printer would, returning the text and where each source token was placed. */
 export function print(
@@ -284,11 +315,18 @@ export function print(
   let current = "";
   let length = 0;
   let column = 0;
+  // Where the text of the current line starts, after its indentation.
+  let lineStart = 0;
   const placed: Placed[] = [];
   const cmds: Cmd[] = [{ indent: ROOT, mode: BREAK, doc }];
   let remeasure = false;
   const suffixes: Cmd[] = [];
   const groupModes = new Map<Group, Mode>();
+  const endLine = () => {
+    out.push(current, "\n");
+    current = "";
+    length += 1;
+  };
   const write = (s: string) => {
     current += s;
     length += s.length;
@@ -369,11 +407,16 @@ export function print(
           break;
         }
         trimLineEnd();
-        out.push(current, "\n");
-        current = "";
-        length += 1;
+        if (!d.collapse || length > lineStart) endLine();
+        if (d.blank) endLine();
         write(indent.value);
         column = indent.length;
+        lineStart = length;
+        break;
+      case "fitsExpanded":
+        if (!d.whenFlat || (groupModes.get(d.whenFlat) ?? FLAT) === FLAT)
+          remeasure = true;
+        cmds.push({ indent, mode, doc: d.contents });
         break;
       case "ifBreak": {
         const m = d.group ? (groupModes.get(d.group) ?? FLAT) : mode;
