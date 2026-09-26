@@ -16,7 +16,6 @@
     "format:check": "oxfmt --check"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.14",
     "@types/node": "26.6.2",
     "oxfmt": "0.70.0",
     "oxlint": "1.85.0",
