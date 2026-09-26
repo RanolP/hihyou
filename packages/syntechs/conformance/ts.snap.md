@@ -1,11 +1,219 @@
-ts compatibility: not implemented
+ts compatibility: 459/653 (70.29%), 32 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
 - oxfmt 0.70.0: 490/653 (75.04%)
-- dprint dprint-plugin-typescript 0.96.1: 170/653 (26.03%)
+- dprint dprint-plugin-typescript 0.96.1: 167/653 (25.57%)
 
 Fixtures: prettier 3.9.9 tests/format/{typescript,jsx} (recursive), every spec call listing parser `typescript` or `babel-ts` or `oxc-ts`, expected output from its __snapshots__.
+
+# Failed
+
+Printed, but not as the reference prints it. A run is one option set of the fixture's spec.
+
+| Fixture | Runs passed | Match ratio |
+| :------ | :---------: | :---------: |
+| typescript/argument-expansion/arrow-with-return-type.ts | 0/1 | 77.78% |
+| typescript/arrow/comments.ts | 0/2 | 44.44% |
+| typescript/arrow/comments/issue-11100.ts | 0/1 | 42.86% |
+| typescript/as/as-const/as-const.ts | 0/1 | 90.91% |
+| typescript/as/comments/18160.ts | 0/1 | 81.25% |
+| typescript/assignment/issue-10848.tsx | 0/1 | 79.73% |
+| typescript/assignment/lone-arg.ts | 0/1 | 41.18% |
+| typescript/binary-expressions/chain-expression.ts | 0/1 | 76.47% |
+| typescript/call/callee-comments.ts | 0/1 | 69.44% |
+| typescript/cast/assert-and-assign.ts | 0/1 | 50.00% |
+| typescript/chain-expression/call-expression.ts | 0/1 | 98.57% |
+| typescript/chain-expression/issue-15785-1.ts | 0/1 | 66.67% |
+| typescript/chain-expression/issue-15785-2.ts | 0/1 | 77.78% |
+| typescript/chain-expression/member-chain.ts | 0/1 | 69.70% |
+| typescript/chain-expression/member-expression.ts | 0/1 | 98.63% |
+| typescript/chain-expression/test2.ts | 0/1 | 80.00% |
+| typescript/class/declare-field.ts | 0/1 | 75.00% |
+| typescript/class/empty-method-body.ts | 0/1 | 83.33% |
+| typescript/class-and-interface/heritage-break/member-expression-like.ts | 0/1 | 75.00% |
+| typescript/comments/10260.ts | 0/1 | 4.76% |
+| typescript/comments/11662.ts | 0/1 | 0.00% |
+| typescript/comments/16065.ts | 0/1 | 81.82% |
+| typescript/comments/16121.ts | 0/1 | 85.71% |
+| typescript/comments/16889.ts | 0/1 | 97.39% |
+| typescript/comments/after-jsx-generic.tsx | 0/1 | 85.71% |
+| typescript/comments/declare_function.ts | 0/1 | 83.33% |
+| typescript/comments/jsx.tsx | 0/1 | 20.00% |
+| typescript/comments/method_types.ts | 0/1 | 74.36% |
+| typescript/comments/methods.ts | 0/1 | 97.96% |
+| typescript/comments/type-literals.ts | 0/1 | 89.66% |
+| typescript/comments/union.ts | 0/1 | 36.84% |
+| typescript/comments/first-argument/first-argument.ts | 0/1 | 65.45% |
+| typescript/compiler/declareDottedModuleName.ts | 0/1 | 71.43% |
+| typescript/compiler/indexSignatureWithInitializer.ts | 0/1 | 87.50% |
+| typescript/conditional-types/infer-type.ts | 1/2 | 54.76% |
+| typescript/conditional-types/nested-in-condition.ts | 0/2 | 24.89% |
+| typescript/conditional-types/new-ternary-spec.ts | 1/2 | 60.67% |
+| typescript/conditional-types/parentheses.ts | 0/2 | 50.45% |
+| typescript/conformance/classes/classDeclarations/classAbstractKeyword/classAbstractMixedWithModifiers.ts | 0/1 | 13.33% |
+| typescript/conformance/classes/classDeclarations/classAbstractKeyword/classAbstractSingleLineDecl.ts | 0/1 | 66.67% |
+| typescript/conformance/classes/classDeclarations/classAbstractKeyword/classAbstractWithInterface.ts | 0/1 | 0.00% |
+| typescript/conformance/classes/constructorDeclarations/constructorParameters/constructorParameterProperties2.ts | 0/1 | 93.75% |
+| typescript/conformance/classes/constructorDeclarations/constructorParameters/readonlyInConstructorParameters.ts | 0/1 | 92.31% |
+| typescript/conformance/types/interfaceDeclaration/interfaceDeclaration.ts | 0/1 | 80.00% |
+| typescript/conformance/types/moduleDeclaration/kind-detection.ts | 0/1 | 0.00% |
+| typescript/custom/abstract/abstractNewlineHandling.ts | 0/1 | 86.96% |
+| typescript/custom/abstract/abstractProperties.ts | 0/1 | 25.00% |
+| typescript/decorator-auto-accessors/decorator-auto-accessors-new-line.ts | 0/1 | 76.92% |
+| typescript/decorator-auto-accessors/no-semi/decorator-auto-accessor-like-property-name.ts | 0/1 | 75.00% |
+| typescript/definite/definite.ts | 0/1 | 85.71% |
+| typescript/definite/without-annotation.ts | 0/1 | 91.67% |
+| typescript/end-of-line/multiline.ts | 0/3 | 71.43% |
+| typescript/explicit-resource-management/await-using-with-type-declaration.ts | 0/1 | 66.67% |
+| typescript/explicit-resource-management/using-with-type-declaration.ts | 0/1 | 66.67% |
+| typescript/export/comment.ts | 0/1 | 50.00% |
+| typescript/export/export-type-star-from-2.ts | 0/1 | 66.67% |
+| typescript/export/export-type-star-from.ts | 0/1 | 0.00% |
+| typescript/import-require/comments.ts | 0/1 | 70.00% |
+| typescript/import-require/type-imports.ts | 0/1 | 56.00% |
+| typescript/import-type/import-type.ts | 0/2 | 87.10% |
+| typescript/import-type/long-module-name/long-module-name.ts | 0/1 | 40.00% |
+| typescript/instantiation-expression/logical-expr.ts | 0/1 | 91.67% |
+| typescript/interface/ignore.ts | 0/2 | 86.79% |
+| typescript/interface2/comments-ts-only/18278.ts | 0/1 | 82.61% |
+| typescript/intersection/intersection-parens.ts | 0/3 | 89.01% |
+| typescript/intersection/consistent-with-flow/intersection-parens.ts | 0/1 | 93.02% |
+| typescript/intersection/consistent-with-flow/single-member.ts | 0/1 | 46.32% |
+| typescript/keyword-types/conditional-types.ts | 0/1 | 62.50% |
+| typescript/last-argument-expansion/decorated-function.tsx | 0/1 | 75.21% |
+| typescript/mapped-type/issue-11098.ts | 0/1 | 87.13% |
+| typescript/method-chain/comment.ts | 0/1 | 0.00% |
+| typescript/module/global.ts | 0/1 | 38.10% |
+| typescript/new/with-member-expression.ts | 0/1 | 88.00% |
+| typescript/non-null/braces.ts | 0/1 | 94.12% |
+| typescript/object-type/empty/empty.ts | 0/2 | 84.48% |
+| typescript/parentheses/await.ts | 0/1 | 66.67% |
+| typescript/property-signature/consistent-with-flow/comments.ts | 0/1 | 80.00% |
+| typescript/property-signature/consistent-with-flow/union.ts | 0/1 | 75.00% |
+| typescript/satisfies-operators/expression-statement.ts | 0/2 | 83.78% |
+| typescript/satisfies-operators/lhs.ts | 0/2 | 90.00% |
+| typescript/template-literals/expressions.ts | 0/1 | 0.00% |
+| typescript/template-literals/member-expression.ts | 0/1 | 57.14% |
+| typescript/ternaries/indent.ts | 0/1 | 95.80% |
+| typescript/test-declarations/test_declarations.ts | 0/2 | 50.00% |
+| typescript/trailing-comma/trailing.ts | 2/3 | 97.78% |
+| typescript/tsx/attribute-blank-lines.tsx | 0/1 | 50.00% |
+| typescript/tsx/member-expression.tsx | 0/1 | 40.00% |
+| typescript/tsx/optional-chaining.tsx | 0/1 | 15.38% |
+| typescript/tsx/react.tsx | 0/1 | 40.00% |
+| typescript/tsx/url.tsx | 0/1 | 58.06% |
+| typescript/type-arguments-bit-shift-left-like/4.ts | 0/1 | 0.00% |
+| typescript/type-parameters-arguments/18041.ts | 0/1 | 45.71% |
+| typescript/type-parameters-arguments/const.ts | 0/1 | 90.63% |
+| typescript/type-parameters-arguments/constraints-and-default-2.ts | 0/1 | 96.83% |
+| typescript/type-parameters-arguments/long-function-arg.ts | 0/1 | 18.18% |
+| typescript/type-parameters-arguments/tagged-template-expression.ts | 0/1 | 75.00% |
+| typescript/type-parameters-arguments/consistent/simple-types.ts | 0/1 | 28.57% |
+| typescript/type-parameters-arguments/consistent/template-literal-types.ts | 0/1 | 0.00% |
+| typescript/type-parameters-arguments/consistent/typescript-only.ts | 0/1 | 70.59% |
+| typescript/type-parameters-arguments/print-width-120/issue-7542.tsx | 0/1 | 88.89% |
+| typescript/union/10599.ts | 0/1 | 87.50% |
+| typescript/union/13080.ts | 0/1 | 42.86% |
+| typescript/union/5849.ts | 0/1 | 87.88% |
+| typescript/union/7725.ts | 0/1 | 52.94% |
+| typescript/union/union-parens.ts | 0/1 | 97.20% |
+| typescript/union/comments/18106.ts | 0/1 | 74.16% |
+| typescript/union/comments/18379.ts | 0/1 | 54.17% |
+| typescript/union/comments/18389.ts | 0/1 | 76.92% |
+| typescript/union/consistent-with-flow/18819.ts | 0/1 | 66.67% |
+| typescript/union/consistent-with-flow/comment.ts | 0/1 | 87.50% |
+| typescript/union/consistent-with-flow/function-type-param.ts | 0/1 | 90.00% |
+| typescript/union/consistent-with-flow/leading-comments.ts | 0/1 | 78.26% |
+| typescript/union/consistent-with-flow/prettier-ignore.ts | 0/1 | 40.00% |
+| typescript/union/consistent-with-flow/single-type.ts | 0/1 | 19.64% |
+| typescript/union/single-type/single-type-2.ts | 0/1 | 61.11% |
+| typescript/union/single-type/single-type.ts | 0/1 | 0.00% |
+| typescript/webhost/webtsc.ts | 0/1 | 99.08% |
+| jsx/attribute-blank-lines/attribute-blank-lines.js | 0/2 | 57.29% |
+| jsx/comments/eslint-disable.js | 0/1 | 0.00% |
+| jsx/comments/in-attributes.js | 0/1 | 23.26% |
+| jsx/comments/in-tags.js | 0/1 | 90.91% |
+| jsx/comments/jsx-tag-comment-after-prop.js | 0/1 | 36.36% |
+| jsx/comments/like-a-comment-in-jsx-text.js | 0/1 | 0.00% |
+| jsx/deprecated-jsx-bracket-same-line-option/jsx.js | 1/4 | 88.16% |
+| jsx/escape/nbsp.js | 0/1 | 70.00% |
+| jsx/expression-with-types/expression.js | 0/4 | 85.71% |
+| jsx/fragment/fragment.js | 0/1 | 88.73% |
+| jsx/ignore/jsx_ignore.js | 0/1 | 68.52% |
+| jsx/ignore/spread.js | 0/1 | 42.11% |
+| jsx/jsx/array-iter.js | 0/4 | 26.56% |
+| jsx/jsx/arrow.js | 0/4 | 29.63% |
+| jsx/jsx/attr-comments.js | 0/4 | 87.10% |
+| jsx/jsx/await.js | 0/4 | 20.69% |
+| jsx/jsx/expression.js | 0/4 | 60.43% |
+| jsx/jsx/flow_fix_me.js | 0/4 | 0.00% |
+| jsx/jsx/html_escape.js | 2/4 | 66.67% |
+| jsx/jsx/hug.js | 0/4 | 47.06% |
+| jsx/jsx/logical-expression.js | 0/4 | 37.50% |
+| jsx/jsx/object-property.js | 0/4 | 52.00% |
+| jsx/jsx/open-break.js | 0/4 | 33.33% |
+| jsx/jsx/parens.js | 0/4 | 57.89% |
+| jsx/jsx/quotes.js | 0/4 | 64.29% |
+| jsx/jsx/regex.js | 0/4 | 50.00% |
+| jsx/jsx/return-statement.js | 0/4 | 74.47% |
+| jsx/jsx/spacing.js | 0/4 | 40.00% |
+| jsx/jsx/template-literal-in-attr.js | 0/4 | 33.33% |
+| jsx/last-line/last_line.js | 1/2 | 92.11% |
+| jsx/last-line/single_prop_multiline_string.js | 0/2 | 22.88% |
+| jsx/multiline-assign/test.js | 0/1 | 34.62% |
+| jsx/newlines/test.js | 0/1 | 44.59% |
+| jsx/newlines/windows.js | 0/1 | 0.00% |
+| jsx/optional-chaining/optional-chaining.jsx | 0/1 | 33.33% |
+| jsx/parentheses/argument.js | 0/1 | 36.84% |
+| jsx/significant-space/comments.js | 0/1 | 85.71% |
+| jsx/significant-space/test.js | 0/1 | 32.09% |
+| jsx/single-attribute-per-line/single-attribute-per-line.js | 0/2 | 56.60% |
+| jsx/split-attrs/test.js | 0/1 | 12.96% |
+| jsx/spread/attribute.js | 0/1 | 32.79% |
+| jsx/spread/child.js | 0/1 | 30.19% |
+| jsx/stateless-arrow-fn/test.js | 0/1 | 20.47% |
+| jsx/text-wrap/issue-16897.js | 0/1 | 48.00% |
+| jsx/text-wrap/test.js | 0/1 | 40.08% |
+
+# Refused (ok:false)
+
+The formatter's self-check rejected its own output, so it returned the input unchanged.
+
+| Fixture | Runs refused | Match ratio | First reason |
+| :------ | :----------: | :---------: | :----------- |
+| typescript/chain-expression/new-expression.ts | 1/1 | 13.24% | token-mismatch: input "new" at 281 printed as "new", which means "new@\|-1/90", not "new@\|-1/88" |
+| typescript/chain-expression/tagged-template-literals.ts | 1/1 | 9.23% | token-mismatch: input "a" at 37 printed as "a", which means "a@object\|0/12", not "a@object\|0/13" |
+| typescript/class-comment/class-implements.ts | 1/1 | 44.17% | token-mismatch: input at 18 dropped |
+| typescript/class-comment/declare.ts | 1/1 | 41.67% | token-mismatch: input at 21 dropped |
+| typescript/comments/mapped-types.ts | 1/1 | 43.21% | token-mismatch: input at 10 dropped |
+| typescript/compiler/commentInNamespaceDeclarationWithIdentifierPathName.ts | 1/1 | 28.57% | token-mismatch: input "namespace" at 1 printed as "namespace", which means "namespace@\|-1/2", not "namespace@\|-1/3" |
+| typescript/conditional-types/comments.ts | 2/2 | 50.84% | token-mismatch: input at 1353 dropped |
+| typescript/conditional-types/conditional-types.ts | 2/2 | 39.07% | token-mismatch: input "new" at 1298 printed as "new", which means "new@\|-1/175", not "new@\|-1/174" |
+| typescript/decorator-auto-accessors/decorator-auto-accessors-type-annotations.ts | 1/1 | 100.00% | token-mismatch: input "static accessor prop2: number = 1" at 52 printed as "static accessor prop2: number = 1", which me |
+| typescript/decorators/comments.ts | 1/1 | 40.00% | token-mismatch: input "static" at 55 printed as "static", which means "key:static@name\|1/4", not "static@\|-1/4" |
+| typescript/decorators/decorator-type-assertion.ts | 1/1 | 42.86% | token-mismatch: input "@(bind as ClassDecorator) class Decorated {  }  @(<ClassDecorator>bind) class Decorated {  } " at |
+| typescript/decorators/decorators-comments.ts | 1/1 | 47.89% | token-mismatch: input "readonly" at 295 printed as "readonly", which means "key:readonly@name\|1/29", not "readonly@\|-1/2 |
+| typescript/import-export/empty-import.ts | 1/1 | 23.53% | token-mismatch: input "}" at 367 printed as "}", which means "?54", not "}@\|-1/25" |
+| typescript/import-type/long-module-name/long-module-name3.ts | 1/1 | 100.00% | token-mismatch: input "declare const bit: import("../../../../scripts/babel-plugin-bit-decorator/types.d.ts").BitDecorat |
+| typescript/instantiation-expression/inferface-asi.ts | 1/1 | 20.00% | token-mismatch: input "interface Example {   (a: number): typeof a          <T>(): void }; " at 0 printed as "interface  |
+| typescript/interface/comments-generic.ts | 2/2 | 65.57% | token-mismatch: input at 256 dropped |
+| typescript/interface2/comments-declare.ts | 1/1 | 25.00% | token-mismatch: input at 36 dropped |
+| typescript/interface2/comments.ts | 1/1 | 15.15% | token-mismatch: input at 135 dropped |
+| typescript/interface2/comments-ts-and-flow/18216-mutiple-clauses.ts | 1/1 | 62.50% | token-mismatch: input at 52 dropped |
+| typescript/interface2/comments-ts-and-flow/18216-type-parameters-mutiple-clauses.ts | 1/1 | 62.50% | token-mismatch: input at 57 dropped |
+| typescript/interface2/comments-ts-and-flow/18216-type-parameters.ts | 1/1 | 62.50% | token-mismatch: input at 57 dropped |
+| typescript/interface2/comments-ts-and-flow/18216.ts | 1/1 | 62.50% | token-mismatch: input at 52 dropped |
+| typescript/interface/long-type-parameters/long-type-parameters.ts | 2/2 | 70.00% | token-mismatch: input at 325 dropped |
+| typescript/interface/no-semi/14040.ts | 1/1 | 70.11% | token-mismatch: input "X" at 719 printed as "X", which means "X@name\|0/144", not "X@\|0/143" |
+| typescript/interface/no-semi/18858.ts | 1/1 | 63.89% | token-mismatch: input "Foo" at 393 printed as "Foo", which means "Foo@name\|0/82", not "Foo@\|0/81" |
+| typescript/mapped-type/break-mode/break-mode.ts | 1/1 | 23.73% | token-mismatch: input "[" at 90 printed as "[", which means "[@\|-1/16", not "[@\|-1/15" |
+| typescript/parentheses/yield.ts | 1/1 | 50.00% | token-mismatch: input "yield" at 41 printed as "yield", which means "yield@\|-1/8", not "yield@\|-1/9" |
+| typescript/type-parameters-arguments/19505.ts | 1/1 | 37.74% | token-mismatch: input at 14 dropped |
+| typescript/union/inlining.ts | 1/1 | 50.72% | token-mismatch: input at 219 dropped |
+| typescript/union/consistent-with-flow/18647.ts | 1/1 | 16.22% | token-mismatch: input at 155 dropped |
+| typescript/union/consistent-with-flow/union-last-comment.ts | 1/1 | 58.06% | token-mismatch: input at 25 dropped |
+| jsx/jsx/conditional-expression.js | 4/4 | 79.70% | token-mismatch: input ""dunno"" at 3917 printed as ""dunno"", which means "key:dunno@alternative\|2/27", not "str:dunno@a |
 
 # Excluded
 
