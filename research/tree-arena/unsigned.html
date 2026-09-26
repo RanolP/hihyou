@@ -1,0 +1,8 @@
+<!doctype html>
+<!-- The same benchmark in a browser, where V8 runs with pointer compression (31-bit small integers):
+     chrome --headless --allow-file-access-from-files --dump-dom research/tree-arena/unsigned.html -->
+<pre id="out"></pre>
+<script>
+  globalThis.benchLog = (line) => (document.getElementById("out").textContent += line + "\n");
+</script>
+<script type="module" src="./unsigned.mjs"></script>
