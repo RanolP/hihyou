@@ -1,7 +1,7 @@
 import { attachComments } from "./comments.js";
-import { type Doc, hardline, token } from "./doc.js";
+import { type Doc, hardline, type Token, token } from "./doc.js";
 import type { EndOfLine } from "./options.js";
-import { print } from "./printer.js";
+import { type Placed, print } from "./printer.js";
 import {
   type Ctx,
   type Language,
@@ -122,17 +122,21 @@ export function format<O>(
 
     const doc: Doc = [ctx.print(root), hardline];
     const { text, placed } = print(doc, settings);
-
-    const anchors: Anchor[] = [];
-    for (const { token: t, at } of placed) {
-      const anchor: Anchor = {
-        from: [t.node.start, t.node.end],
-        to: [at, at + t.text.length],
-      };
-      if (t.synthetic) anchor.synthetic = true;
-      anchors.push(anchor);
-    }
-    return withEndOfLine(text, anchors, endOfLine(settings.endOfLine, source));
+    const eol = endOfLine(settings.endOfLine, source);
+    // The printer ends lines with `\n`, so only a `\r` inside a token can make an LF output need rewriting.
+    const rewrite = eol !== "\n" || text.includes("\r");
+    // Most callers never read the anchors, so they are built on first read rather than on every format.
+    let anchors: Anchor[] | undefined;
+    return {
+      ok: true,
+      text: rewrite ? text.replace(/\r\n?|\n/g, eol) : text,
+      get anchors() {
+        return (anchors ??= anchorsOf(
+          placed,
+          rewrite ? shiftForEndOfLine(text, eol) : undefined,
+        ));
+      },
+    };
   } catch (e) {
     return {
       ok: false,
@@ -167,33 +171,37 @@ function endOfLine(eol: EndOfLine, source: string): string {
   return { lf: "\n", crlf: "\r\n", cr: "\r" }[eol];
 }
 
+function anchorsOf(
+  { tokens, at }: Placed,
+  moved: ((at: number) => number) | undefined,
+): Anchor[] {
+  const anchors: Anchor[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i] as Token;
+    const start = at[i] as number;
+    const end = start + t.text.length;
+    const anchor: Anchor = {
+      from: [t.node.start, t.node.end],
+      to: moved ? [moved(start), moved(end)] : [start, end],
+    };
+    if (t.synthetic) anchor.synthetic = true;
+    anchors.push(anchor);
+  }
+  return anchors;
+}
+
 /**
- * Writes every line break of `text` as `eol`, those inside tokens too (a block comment's), as prettier does by
- * normalizing its input, and moves each anchor's output range with its text.
+ * Maps an offset in the printed `text` to the same place once every line break is written as `eol`, those
+ * inside tokens too (a block comment's), as prettier does by normalizing its input. Offsets must be asked in
+ * ascending order: anchors run in output order, so one pass over the breaks moves them all.
  */
-function withEndOfLine(
-  text: string,
-  anchors: Anchor[],
-  eol: string,
-): Formatted {
-  // The printer ends lines with `\n`, so only a `\r` inside a token can make an LF output need rewriting.
-  if (eol === "\n" && !text.includes("\r")) return { ok: true, text, anchors };
+function shiftForEndOfLine(text: string, eol: string) {
   const breaks = [...text.matchAll(/\r\n?|\n/g)].filter((m) => m[0] !== eol);
-  if (breaks.length === 0) return { ok: true, text, anchors };
-  // Anchors run in output order, so their offsets only grow and one pass over the breaks moves them all.
   let next = 0;
   let shift = 0;
-  const moved = (at: number) => {
+  return (at: number) => {
     for (let b = breaks[next]; b && b.index < at; b = breaks[++next])
       shift += eol.length - b[0].length;
     return at + shift;
-  };
-  return {
-    ok: true,
-    text: text.replace(/\r\n?|\n/g, eol),
-    anchors: anchors.map((a) => ({
-      ...a,
-      to: [moved(a.to[0]), moved(a.to[1])],
-    })),
   };
 }

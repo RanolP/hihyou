@@ -24,10 +24,13 @@ export interface Layout {
   ruff?: boolean;
 }
 
-/** A source token and the UTF-16 offset in the output where its text starts. */
+/**
+ * The source tokens in output order and, at the same index of `at`, the UTF-16 offset in the output where each
+ * one's text starts: parallel arrays rather than an object per token, since every pass places every token.
+ */
 export interface Placed {
-  token: Token;
-  at: number;
+  tokens: Token[];
+  at: Int32Array;
 }
 
 const hardLine: Doc = { k: "line", soft: false, hard: true };
@@ -334,7 +337,7 @@ const OVERFLOW = 2;
 export function print(
   doc: Doc,
   layout: Layout,
-): { text: string; placed: Placed[] } {
+): { text: string; placed: Placed } {
   propagateBreaks(doc);
   // Finished lines, each followed by its line break; the line being printed is `current`, so a line end trims
   // one string instead of walking back over the pieces of the line.
@@ -344,7 +347,8 @@ export function print(
   let column = 0;
   // Where the text of the current line starts, after its indentation.
   let lineStart = 0;
-  const placed: Placed[] = [];
+  const tokens: Token[] = [];
+  let at = new Int32Array(1024);
   const cmds: Cmd[] = [{ indent: ROOT, mode: BREAK, doc }];
   let remeasure = false;
   const suffixes: Cmd[] = [];
@@ -394,7 +398,13 @@ export function print(
     }
     switch (d.k) {
       case "token":
-        placed.push({ token: d, at: length });
+        if (tokens.length === at.length) {
+          const grown = new Int32Array(at.length * 2);
+          grown.set(at);
+          at = grown;
+        }
+        at[tokens.length] = length;
+        tokens.push(d);
         if (d.literal && d.text.includes("\n")) {
           writeLiteral(d.text);
           if (layout.ruff) remeasure = true;
@@ -477,7 +487,10 @@ export function print(
     }
   }
   out.push(current);
-  return { text: out.join(""), placed };
+  return {
+    text: out.join(""),
+    placed: { tokens, at: at.subarray(0, tokens.length) },
+  };
 
   function printGroup(
     g: Group | GroupIfBreak,
