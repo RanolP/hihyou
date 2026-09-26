@@ -70,24 +70,34 @@ const words = (ctx: JsCtx, n: FormatNode): Doc =>
 
 // --- where a type stands --------------------------------------------------------------------------------------
 
-/** Through a type's parentheses, to the type. */
+const UNION_LIKE = new Set(["union_type", "intersection_type"]);
+
+/**
+ * Parentheses, and a union or intersection of one type (`| A`, `& A`): prettier's AST holds neither, so the type
+ * inside stands where they stand.
+ */
+const isTransparentType = (n: FormatNode) =>
+  n.kind === "parenthesized_type" ||
+  (UNION_LIKE.has(n.kind) && items(n).length === 1);
+
+/** Through a type's parentheses and one-type unions, to the type. */
 export function unparenType(n: FormatNode | undefined): FormatNode | undefined {
-  while (n?.kind === "parenthesized_type") n = first(n);
+  while (n && isTransparentType(n)) n = items(n)[0];
   return n;
 }
 
-/** The type's real parent (past any parentheses) and the field it holds there. */
+const bare = (n: FormatNode) => unparenType(n) ?? n;
+
+/** The type's real parent (past any parentheses and one-type unions) and the field it holds there. */
 function typeRole(n: FormatNode): {
   parent: FormatNode | undefined;
   field: string | undefined;
   top: FormatNode;
 } {
   let top = n;
-  while (top.parent?.kind === "parenthesized_type") top = top.parent;
+  while (top.parent && isTransparentType(top.parent)) top = top.parent;
   return { parent: top.parent, field: top.field, top };
 }
-
-const UNION_LIKE = new Set(["union_type", "intersection_type"]);
 const TYPE_OPERATORS = new Set(["index_type_query", "readonly_type"]);
 
 /** Whether `n` is the object side of `T[K]`. */
@@ -154,11 +164,11 @@ export function typeNeedsParens(n: FormatNode): boolean {
 }
 
 /** Source parentheses around a type stay only where prettier would print them. */
-const parenthesizedType: JsRule = (n, ctx) => {
+const parenthesizedType: JsRule = (n, ctx, args) => {
   const inner = first(n);
   if (!inner) return t(ctx, n);
   if (unparenType(inner) !== inner || !typeNeedsParens(inner))
-    return p(ctx, inner);
+    return p(ctx, inner, args);
   return [
     t(ctx, anonKid(n, "(")),
     p(ctx, inner),
@@ -291,9 +301,9 @@ const isVoidType = (ctx: JsCtx, n: FormatNode) =>
 export function shouldHugUnionType(ctx: JsCtx, n: FormatNode): boolean {
   const { types } = flattenTypes(n);
   if (types.some((x) => hasComment(ctx, x))) return false;
-  const object = types.find((x) => OBJECT_LIKE.has(x.kind));
+  const object = types.find((x) => OBJECT_LIKE.has(bare(x).kind));
   if (!object) return false;
-  return types.every((x) => x === object || isVoidType(ctx, x));
+  return types.every((x) => x === object || isVoidType(ctx, bare(x)));
 }
 
 const isSimpleType = (ctx: JsCtx, n: FormatNode) =>
@@ -316,6 +326,7 @@ const opDoc = (
 ): Doc => (op ? t(ctx, op) : synthetic(anchor, kind));
 
 const unionType: JsRule = (n, ctx, args?: Args) => {
+  if (isTransparentType(n)) return p(ctx, items(n)[0], args);
   const { types, ops, lead } = flattenTypes(n);
   const bar = (x: FormatNode) => opDoc(ctx, ops.get(x), x, "|");
   if (shouldHugUnionType(ctx, n))
@@ -356,7 +367,8 @@ const unionType: JsRule = (n, ctx, args?: Args) => {
   return group(indent([softline, printed]));
 };
 
-const intersectionType: JsRule = (n, ctx) => {
+const intersectionType: JsRule = (n, ctx, args) => {
+  if (isTransparentType(n)) return p(ctx, items(n)[0], args);
   const { types, ops } = flattenTypes(n);
   let wasIndented = false;
   return group(
@@ -365,8 +377,8 @@ const intersectionType: JsRule = (n, ctx) => {
       if (i === 0) return doc;
       const previous = types[i - 1] as FormatNode;
       const amp = opDoc(ctx, ops.get(previous), previous, "&");
-      const isObject = x.kind === "object_type";
-      const previousIsObject = previous.kind === "object_type";
+      const isObject = bare(x).kind === "object_type";
+      const previousIsObject = bare(previous).kind === "object_type";
       if (previousIsObject && isObject)
         return [text(" "), amp, text(" "), wasIndented ? indent(doc) : doc];
       if (
