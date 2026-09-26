@@ -16,15 +16,16 @@ import {
   symbolFlags,
   symbolName,
 } from "./language.js";
-import { jsxText, type SyntaxNode, type SyntaxTree } from "./tree.js";
+import { LABEL_TOKEN, labelModes, labelText } from "./label.js";
+import type { SyntaxNode, SyntaxTree } from "./tree.js";
 
 /** Head flag: the node is named. Pass to `TreeBuilder.leaf` / `inner`. */
 export const NAMED = 1 << 24;
 /** Head flag: a zero-width token the parser inserted to recover from an error. */
 export const MISSING = 1 << 25;
 const INNER = 1 << 26;
-/** A token whose text is its kind's name, so `text` needs no slice of the source. */
-const FIXED = 1 << 27;
+/** Head flag: a token whose text is its kind's name, so `text` needs no slice of the source. */
+export const FIXED = 1 << 27;
 const LF_SHIFT = 28;
 const LF_MAX = 3;
 const FIELD_SHIFT = 16;
@@ -58,29 +59,6 @@ const MIN_WORDS = 256;
 /** Measured record words per node are 6.2-6.4, so ords sized at words/6 rarely doubles. */
 const WORDS_PER_NODE = 6;
 
-const LABEL_TOKEN = 0;
-const LABEL_COMMENT = 1;
-const LABEL_JSX_TEXT = 2;
-
-/** How each public kind's `label` is derived, per language; kinds past the end (ERROR) are plain tokens. */
-const labelModes = new WeakMap<Language, Uint8Array>();
-
-function labelModesOf(lang: Language): Uint8Array {
-  let modes = labelModes.get(lang);
-  if (modes) return modes;
-  modes = new Uint8Array(lang.symbolNames.length);
-  for (let kind = 0; kind < modes.length; kind++) {
-    const name = lang.symbolNames[kind] as string;
-    modes[kind] = name.includes("comment")
-      ? LABEL_COMMENT
-      : name === "jsx_text"
-        ? LABEL_JSX_TEXT
-        : LABEL_TOKEN;
-  }
-  labelModes.set(lang, modes);
-  return modes;
-}
-
 /**
  * Appends records in postorder: every child before its parent, leaves in source order. `leaf` and `inner`
  * push the new node onto a stack of finished siblings; `inner` takes the ones pushed since its `mark()` as its
@@ -98,10 +76,7 @@ export class TreeBuilder {
     private readonly lang: Language,
     private readonly source: string,
   ) {
-    const words = Math.max(
-      MIN_WORDS,
-      Math.ceil(source.length * (WORDS_PER_CHAR[lang.name] ?? 1)),
-    );
+    const words = Math.max(MIN_WORDS, Math.ceil(source.length * (WORDS_PER_CHAR[lang.name] ?? 1)));
     this.data = new Uint32Array(words);
     this.ords = new Uint32Array(Math.ceil(words / WORDS_PER_NODE));
   }
@@ -111,32 +86,17 @@ export class TreeBuilder {
     return this.kids.length;
   }
 
-  /** `kind` is a public symbol id (aliases resolved); `flags` is `NAMED | MISSING` or 0. */
-  leaf(
-    kind: number,
-    field: number,
-    flags: number,
-    start: number,
-    end: number,
-  ): void {
+  /** `kind` is a public symbol id (aliases resolved); `flags` is any of `NAMED | MISSING | FIXED`. */
+  leaf(kind: number, field: number, flags: number, start: number, end: number): void {
     const source = this.source;
     let lf = 0;
     for (let i = this.lastEnd; i < start && lf < LF_MAX; i++) {
       const c = source.charCodeAt(i);
       // A CRLF counts once; a CR whose LF opens the token still ends a line in the gap.
-      if (
-        c === 10 ||
-        (c === 13 && (i + 1 === start || source.charCodeAt(i + 1) !== 10))
-      )
-        lf++;
+      if (c === 10 || (c === 13 && (i + 1 === start || source.charCodeAt(i + 1) !== 10))) lf++;
     }
     this.lastEnd = end;
-    let head = kind | (field << FIELD_SHIFT) | flags | (lf << LF_SHIFT);
-    if ((flags & (NAMED | MISSING)) === 0) {
-      const name = symbolName(this.lang, kind);
-      if (end - start === name.length && source.startsWith(name, start))
-        head |= FIXED;
-    }
+    const head = kind | (field << FIELD_SHIFT) | flags | (lf << LF_SHIFT);
     this.grow(LEAF_WORDS);
     const h = this.top;
     const data = this.data;
@@ -173,7 +133,7 @@ export class TreeBuilder {
     data[h] =
       kind |
       (field << FIELD_SHIFT) |
-      flags |
+      (flags & ~FIXED) |
       INNER |
       ((data[first] as number) & (LF_MAX << LF_SHIFT));
     data[h + START] = start;
@@ -193,20 +153,10 @@ export class TreeBuilder {
   /** The tree, rooted at the one node left unparented; the builder must not be used afterwards. */
   finish(errorChars: number): Tree {
     if (this.kids.length !== 1)
-      throw new RangeError(
-        `a tree needs exactly one root, the builder holds ${this.kids.length}`,
-      );
+      throw new RangeError(`a tree needs exactly one root, the builder holds ${this.kids.length}`);
     const root = this.kids[0] as number;
     this.data[root + PARENT] = root;
-    return new Tree(
-      this.data,
-      this.ords,
-      this.count,
-      root,
-      errorChars,
-      this.lang,
-      this.source,
-    );
+    return new Tree(this.data, this.ords, this.count, root, errorChars, this.lang, this.source);
   }
 
   private close(h: number): void {
@@ -228,6 +178,18 @@ export class TreeBuilder {
     next.set(this.data);
     this.data = next;
   }
+}
+
+/** Whether the source span is exactly the name of public symbol `kind`, checked against the source. */
+export function isFixed(
+  lang: Language,
+  kind: number,
+  source: string,
+  start: number,
+  end: number,
+): boolean {
+  const name = symbolName(lang, kind);
+  return end - start === name.length && source.startsWith(name, start);
 }
 
 /**
@@ -284,9 +246,7 @@ export class Tree {
   /** Number of children; 0 for a leaf. */
   count(n: number): number {
     const data = this.data;
-    return ((data[n] as number) & INNER) === 0
-      ? 0
-      : (data[n + COUNT] as number);
+    return ((data[n] as number) & INNER) === 0 ? 0 : (data[n + COUNT] as number);
   }
 
   /** The `i`th child, `0 <= i < count(n)`, in source order. */
@@ -315,9 +275,7 @@ export class Tree {
   /** The node with ordinal `ord`. */
   at(ord: number): number {
     if (ord < 0 || ord >= this.nodeCount)
-      throw new RangeError(
-        `no ordinal ${ord} in a tree of ${this.nodeCount} nodes`,
-      );
+      throw new RangeError(`no ordinal ${ord} in a tree of ${this.nodeCount} nodes`);
     return this.ords[ord] as number;
   }
 
@@ -336,12 +294,8 @@ export class Tree {
     const head = this.data[n] as number;
     if ((head & INNER) !== 0) return "";
     const kind = head & 0xffff;
-    const modes = labelModesOf(this.lang);
-    const mode = kind < modes.length ? modes[kind] : LABEL_TOKEN;
-    const token = this.text(n);
-    if (mode === LABEL_COMMENT) return token.replace(/\s+/g, " ");
-    if (mode === LABEL_JSX_TEXT) return jsxText(token);
-    return token;
+    const modes = labelModes(this.lang);
+    return labelText(kind < modes.length ? (modes[kind] as number) : LABEL_TOKEN, this.text(n));
   }
 }
 
@@ -362,22 +316,19 @@ function kindIdsOf(lang: Language): Map<string, number> {
 }
 
 /** The arena form of a SyntaxTree parsed from `source`, until the parser builds one directly. */
-export function fromSyntaxTree(
-  lang: Language,
-  tree: SyntaxTree,
-  source: string,
-): Tree {
+export function fromSyntaxTree(lang: Language, tree: SyntaxTree, source: string): Tree {
   const kinds = kindIdsOf(lang);
   const fields = new Map(lang.fieldNames.map((name, id) => [name, id]));
   const b = new TreeBuilder(lang, source);
   const add = (n: SyntaxNode, mark: number) => {
     const kind = kinds.get(`${n.named ? 1 : 0}${n.kind}`);
-    if (kind === undefined)
-      throw new RangeError(`no ${lang.name} symbol for node kind ${n.kind}`);
+    if (kind === undefined) throw new RangeError(`no ${lang.name} symbol for node kind ${n.kind}`);
     const field = n.field === undefined ? 0 : (fields.get(n.field) as number);
-    const flags = (n.named ? NAMED : 0) | (n.missing ? MISSING : 0);
-    if (n.children.length === 0) b.leaf(kind, field, flags, n.start, n.end);
-    else b.inner(kind, field, flags, n.start, n.end, mark);
+    let flags = (n.named ? NAMED : 0) | (n.missing ? MISSING : 0);
+    if (n.children.length === 0) {
+      if (flags === 0 && isFixed(lang, kind, source, n.start, n.end)) flags |= FIXED;
+      b.leaf(kind, field, flags, n.start, n.end);
+    } else b.inner(kind, field, flags, n.start, n.end, mark);
   };
   const root = tree.nodes[0];
   if (!root) throw new RangeError("a SyntaxTree with no nodes");

@@ -1,8 +1,7 @@
 // The shipped arena (packages/syntechs/src/core/arena.ts) against today's SyntaxNode object tree, both built
-// from the same parser Subtree: build time, retained bytes, a preorder walk and parent chains. The arena is fed
-// by walkTree's traversal calling TreeBuilder, which is what a buildTree next to walkTree would do; every build
-// is checked word for word against fromSyntaxTree's. Also prints the record words per source char that
-// arena.ts presizes from. Needs a build (`pnpm build`), the parser-bench inputs
+// from the same parser Subtree by core/tree.ts (buildTree and walkTree + visibleTree): build time, the whole
+// parse to each tree, retained bytes, a preorder walk and parent chains. Every build is checked word for word
+// against fromSyntaxTree's. Also prints the record words per source char that arena.ts presizes from. Needs a build (`pnpm build`), the parser-bench inputs
 // (research/parser-bench/fetch-inputs.sh) and the corpus (packages/syntechs/fetch-corpus.sh).
 //
 //   node --expose-gc research/tree-arena/arena.mjs
@@ -13,14 +12,11 @@ import { fileURLToPath } from "node:url";
 
 const dist = new URL("../../packages/syntechs/dist/", import.meta.url);
 const { parseSubtree } = await import(new URL("core/parser.js", dist));
-const { walkTree, visibleTree, jsxText } = await import(
+const { parse } = await import(new URL("core/index.js", dist));
+const { buildTree, walkTree, visibleTree } = await import(
   new URL("core/tree.js", dist)
 );
-const { TreeBuilder, NAMED, MISSING, fromSyntaxTree } = await import(
-  new URL("core/arena.js", dist)
-);
-const L = await import(new URL("core/language.js", dist));
-const S = await import(new URL("core/subtree.js", dist));
+const { fromSyntaxTree } = await import(new URL("core/arena.js", dist));
 
 const RUNS = 21;
 const WARMUP = 5;
@@ -38,105 +34,6 @@ function time(fn) {
     best = Math.min(best, performance.now() - t);
   }
   return best;
-}
-
-function fieldFor(lang, productionId, structuralIndex) {
-  const start = lang.fieldSliceIndex[productionId];
-  const end = start + lang.fieldSliceLength[productionId];
-  for (let i = start; i < end; i++)
-    if (
-      lang.fieldEntryInherited[i] === 0 &&
-      lang.fieldEntryChild[i] === structuralIndex
-    )
-      return lang.fieldEntryField[i];
-  return 0;
-}
-
-/** walkTree's traversal, appending each visible node to a TreeBuilder when it closes; layout-only JSX text is skipped. */
-function buildArena(lang, root, text) {
-  const b = new TreeBuilder(lang, text);
-  const jsx = lang.symbolNames.indexOf("jsx_text");
-  const flagsOf = (tree, alias) =>
-    ((
-      alias !== 0
-        ? L.symbolFlags(lang, alias) & L.FLAG_NAMED
-        : S.flag(tree, S.NAMED)
-    )
-      ? NAMED
-      : 0) | (S.flag(tree, S.IS_MISSING) ? MISSING : 0);
-  const trees = [root];
-  const index = [0];
-  const structural = [0];
-  const position = [root.padding];
-  const openKind = [L.publicSymbol(lang, root.symbol)];
-  const openFlags = [flagsOf(root, 0)];
-  const openField = [0];
-  const openStart = [root.padding];
-  const mark = [b.mark()];
-  const hiddenField = [-1];
-  let depth = 1;
-  while (depth > 0) {
-    const d = depth - 1;
-    const tree = trees[d];
-    const children = tree.children;
-    const i = index[d];
-    if (i === children.length) {
-      depth = d;
-      if (hiddenField[d] === -1)
-        b.inner(
-          openKind[d],
-          openField[d],
-          openFlags[d],
-          openStart[d],
-          openStart[d] + tree.size,
-          mark[d],
-        );
-      continue;
-    }
-    const child = children[i];
-    const start = i === 0 ? position[d] : position[d] + child.padding;
-    position[d] = start + child.size;
-    index[d] = i + 1;
-    let alias = 0;
-    let field = 0;
-    if (!S.flag(child, S.EXTRA)) {
-      const s = structural[d];
-      alias = L.aliasAt(lang, tree.productionId, s);
-      field = fieldFor(lang, tree.productionId, s);
-      if (field === 0 && hiddenField[d] > 0) field = hiddenField[d];
-      structural[d] = s + 1;
-    }
-    const hasChildren = child.children.length > 0;
-    if (S.flag(child, S.VISIBLE) || alias !== 0) {
-      const kind = L.publicSymbol(lang, alias !== 0 ? alias : child.symbol);
-      const flags = flagsOf(child, alias);
-      if (hasChildren) {
-        trees[depth] = child;
-        index[depth] = 0;
-        structural[depth] = 0;
-        position[depth] = start;
-        openKind[depth] = kind;
-        openFlags[depth] = flags;
-        openField[depth] = field;
-        openStart[depth] = start;
-        mark[depth] = b.mark();
-        hiddenField[depth] = -1;
-        depth++;
-      } else if (
-        kind !== jsx ||
-        jsxText(text.slice(start, start + child.size)) !== ""
-      )
-        b.leaf(kind, field, flags, start, start + child.size);
-    } else if (hasChildren) {
-      trees[depth] = child;
-      index[depth] = 0;
-      structural[depth] = 0;
-      position[depth] = start;
-      hiddenField[depth] = field;
-      depth++;
-    }
-  }
-  return b.finish(0);
 }
 
 // A preorder walk reading each node's kind, start and end: the shape of the formatter's and the diff's reads.
@@ -205,6 +102,7 @@ async function measure(dir, file, grammar, variant) {
   const r = { variant };
   if (variant === "objects") {
     r.build = time(() => visibleTree(walkTree(lang, root, text)).nodes.length);
+    r.parse = time(() => parse(lang, text).nodes.length);
     // Enough copies to hold 1M nodes, so a small tree is not lost in the heap's own noise.
     const tree = visibleTree(walkTree(lang, root, text));
     r.nodes = tree.nodes.length;
@@ -218,8 +116,11 @@ async function measure(dir, file, grammar, variant) {
     r.parents = time(() => parentsObjects(tree.nodes));
     return r;
   }
-  r.build = time(() => buildArena(lang, root, text).nodeCount);
-  const t = buildArena(lang, root, text);
+  r.build = time(() => buildTree(lang, root, text).nodeCount);
+  r.parse = time(
+    () => buildTree(lang, parseSubtree(lang, text), text).nodeCount,
+  );
+  const t = buildTree(lang, root, text);
   const ref = fromSyntaxTree(
     lang,
     visibleTree(walkTree(lang, root, text)),
@@ -249,11 +150,7 @@ async function measure(dir, file, grammar, variant) {
   return r;
 }
 
-export { buildArena };
-
-if (!import.meta.main) {
-  // Imported for its builder.
-} else if (process.argv[2]) {
+if (process.argv[2]) {
   const [dir, file, grammar, variant] = process.argv.slice(2);
   console.log(JSON.stringify(await measure(new URL(dir), file, grammar, variant)));
 } else {
@@ -263,7 +160,7 @@ if (!import.meta.main) {
     `node ${process.version}; minimum of ${RUNS} runs after ${WARMUP} warm-ups, each from a collected heap; each variant in its own process, the median of 3 processes by build time\n`,
   );
   console.log(
-    "| input | nodes | words/char | objects build ms | arena build ms | objects B/node | arena B/node (allocated / used) | objects walk ms | arena walk ms | objects parents ms | arena parents ms |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    "| input | nodes | words/char | objects build ms | arena build ms | parse → SyntaxTree ms | parse → arena ms | objects B/node | arena B/node (allocated / used) | objects walk ms | arena walk ms | objects parents ms | arena parents ms |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
   );
   for (const [dir, file, grammar] of cases) {
     const [o, a] = ["objects", "arena"].map((v) => {
@@ -281,7 +178,7 @@ if (!import.meta.main) {
     if (o.nodes !== a.nodes)
       throw new Error(`${file}: arena ${a.nodes} nodes, objects ${o.nodes}`);
     console.log(
-      `| ${file} | ${a.nodes} | ${f(a.words / a.chars, 2)} | ${f(o.build)} | ${f(a.build)} | ${f(o.bytes, 0)} | ${f(a.bytes, 0)} / ${f(a.usedBytes, 0)} | ${f(o.walk, 2)} | ${f(a.walk, 2)} | ${f(o.parents, 2)} | ${f(a.parents, 2)} |`,
+      `| ${file} | ${a.nodes} | ${f(a.words / a.chars, 2)} | ${f(o.build)} | ${f(a.build)} | ${f(o.parse)} | ${f(a.parse)} | ${f(o.bytes, 0)} | ${f(a.bytes, 0)} / ${f(a.usedBytes, 0)} | ${f(o.walk, 2)} | ${f(a.walk, 2)} | ${f(o.parents, 2)} | ${f(a.parents, 2)} |`,
     );
   }
 }

@@ -7,14 +7,11 @@ import { language as python } from "../grammars/python/index.js";
 import { language as tsx } from "../grammars/tsx/index.js";
 import { language as typescript } from "../grammars/typescript/index.js";
 import { fromSyntaxTree, NO_NODE, type Tree } from "./arena.js";
-import {
-  benchFiles,
-  brokenInputs,
-  FETCHED,
-  type GrammarName,
-} from "./corpus.node.js";
+import { benchFiles, brokenInputs, FETCHED, type GrammarName } from "./corpus.node.js";
 import { parse, type SyntaxNode } from "./index.js";
 import type { Language } from "./language.js";
+import { parseSubtree } from "./parser.js";
+import { buildTree } from "./tree.js";
 
 /** Each accessor's answer for `h` against the SyntaxNode `n` it was converted from, with the lf and ordinal re-derived from the source and the object tree; one line per disagreement. */
 function divergences(lang: Language, text: string): string[] {
@@ -25,6 +22,20 @@ function divergences(lang: Language, text: string): string[] {
     out.push(`nodeCount ${t.nodeCount} vs ${tree.nodes.length}`);
   if (t.errorChars !== tree.errorChars)
     out.push(`errorChars ${t.errorChars} vs ${tree.errorChars}`);
+
+  // buildTree, straight from the parser, writes the same words as the conversion from the object tree.
+  const built = buildTree(lang, parseSubtree(lang, text), text);
+  if (built.errorChars !== t.errorChars)
+    out.push(`buildTree errorChars ${built.errorChars} vs ${t.errorChars}`);
+  if (built.root !== t.root) out.push(`buildTree root ${built.root} vs ${t.root}`);
+  const words = (x: Tree) => (x as unknown as { data: Uint32Array }).data;
+  const a = words(built);
+  const b = words(t);
+  for (let w = 0; w <= t.root + 5 + t.count(t.root); w++)
+    if (a[w] !== b[w]) {
+      out.push(`buildTree word ${w}: ${a[w]} vs ${b[w]}`);
+      break;
+    }
 
   // Newlines before each leaf back to the previous one, counted with a regex rather than the builder's loop;
   // by preorder id, where an inner node's first leaf comes after it.
@@ -43,9 +54,7 @@ function divergences(lang: Language, text: string): string[] {
 
   const check = (n: SyntaxNode, what: string, got: unknown, want: unknown) => {
     if (got !== want)
-      out.push(
-        `${n.kind}@${n.start} ${what}: ${JSON.stringify(got)} vs ${JSON.stringify(want)}`,
-      );
+      out.push(`${n.kind}@${n.start} ${what}: ${JSON.stringify(got)} vs ${JSON.stringify(want)}`);
   };
   // Postorder over both trees at once, iteratively: broken inputs nest deeper than the call stack allows.
   let ord = 0;
@@ -78,8 +87,7 @@ function divergences(lang: Language, text: string): string[] {
     check(n, "label", t.label(h), n.label);
     // An inner node's text is the same slice as its start and end, already checked; comparing two long
     // slices char by char at every level would make the check quadratic in depth.
-    if (n.children.length === 0)
-      check(n, "text", t.text(h), text.slice(n.start, n.end));
+    if (n.children.length === 0) check(n, "text", t.text(h), text.slice(n.start, n.end));
     check(n, "lf", t.lf(h), lf[n.id]);
     check(n, "ord", t.ord(h), ord);
     check(n, "at", t.at(ord), h);
@@ -93,11 +101,7 @@ function divergences(lang: Language, text: string): string[] {
 // between blank lines, CRLF and more than three newlines (lf clamps at 3), fixed and variable tokens, a
 // CSS float_value whose number no child covers, and JSX text whose label collapses.
 const CASES: [GrammarName, Language, string[]][] = [
-  [
-    "json",
-    json,
-    ['// c\r\n\r\n{"a": [1, -2.5e3,, true],\n\n\n\n\n /* b */ "b" 4}\n', ""],
-  ],
+  ["json", json, ['// c\r\n\r\n{"a": [1, -2.5e3,, true],\n\n\n\n\n /* b */ "b" 4}\n', ""]],
   [
     "css",
     css,
@@ -115,23 +119,17 @@ const CASES: [GrammarName, Language, string[]][] = [
   [
     "typescript",
     typescript,
-    [
-      "type F = ({a}: {a: number}) => number\r\n\r\ninterface I { x?: string }\nlet x: = 1\n",
-    ],
+    ["type F = ({a}: {a: number}) => number\r\n\r\ninterface I { x?: string }\nlet x: = 1\n"],
   ],
   [
     "tsx",
     tsx,
-    [
-      "const a = <A<T> b={1}>\n  text  {d}\n  <>frag</>\n</A>\nconst b = <div>unclosed {x</div>\n",
-    ],
+    ["const a = <A<T> b={1}>\n  text  {d}\n  <>frag</>\n</A>\nconst b = <div>unclosed {x</div>\n"],
   ],
   [
     "python",
     python,
-    [
-      'def f(a,\n      b):\n    # c\n\n\n\n    return f"{a!r}"\nclass C:\n\tpass\ndef g(:\n',
-    ],
+    ['def f(a,\n      b):\n    # c\n\n\n\n    return f"{a!r}"\nclass C:\n\tpass\ndef g(:\n'],
   ],
 ];
 
@@ -141,8 +139,7 @@ const CASES: [GrammarName, Language, string[]][] = [
 // different tree from the one they read through SyntaxNode, with no error.
 for (const [grammar, lang, texts] of CASES) {
   test(`the ${grammar} arena answers every accessor as its SyntaxTree does, for every node`, () => {
-    for (const text of texts)
-      expect(divergences(lang, text), JSON.stringify(text)).toEqual([]);
+    for (const text of texts) expect(divergences(lang, text), JSON.stringify(text)).toEqual([]);
   });
 
   // The corpus is gitignored, so this runs where research/parser-bench/fetch-inputs.sh and fetch-corpus.sh

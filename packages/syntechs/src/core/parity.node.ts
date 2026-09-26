@@ -13,13 +13,8 @@ import {
 } from "./corpus.node.js";
 import { parseRaw } from "./index.js";
 import type { Language } from "./language.js";
-import {
-  jsxText,
-  type RawTree,
-  type SyntaxNode,
-  type SyntaxTree,
-  visibleTree,
-} from "./tree.js";
+import { jsxText } from "./label.js";
+import { type RawTree, type SyntaxNode, type SyntaxTree, visibleTree } from "./tree.js";
 
 interface Walk {
   lines: string[];
@@ -74,8 +69,7 @@ function reference(parser: WasmParser, text: string): Walk {
     };
     raw.nodes.push(node);
     parent?.children.push(node);
-    if (node.kind === "ERROR" && errorDepth === 0)
-      raw.errorChars += node.end - node.start;
+    if (node.kind === "ERROR" && errorDepth === 0) raw.errorChars += node.end - node.start;
     if (c.gotoFirstChild()) {
       if (node.kind === "ERROR") errorDepth++;
       parent = node;
@@ -155,12 +149,7 @@ export async function checkParity(
   for (const input of inputs) {
     const expected = reference(wasm, input.text);
     nodes += expected.lines.length;
-    if (
-      expected.lines.some(
-        (l) => l.includes(" ERROR ") || l.includes("(MISSING)"),
-      )
-    )
-      withErrors++;
+    if (expected.lines.some((l) => l.includes(" ERROR ") || l.includes("(MISSING)"))) withErrors++;
     let actual: Walk;
     try {
       actual = ours(lang, input.text);
@@ -206,9 +195,7 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const showAt = args.indexOf("--show");
   const show = showAt >= 0 ? Number(args[showAt + 1]) : 3;
-  const names = args.filter(
-    (a, i) => !a.startsWith("--") && (showAt < 0 || i !== showAt + 1),
-  );
+  const names = args.filter((a, i) => !a.startsWith("--") && (showAt < 0 || i !== showAt + 1));
   const grammars = (names.length > 0 ? names : GRAMMAR_NAMES) as GrammarName[];
   for (const grammar of grammars) {
     const inputs = corpus(grammar);
@@ -223,9 +210,7 @@ async function main(): Promise<void> {
         `  ${d.input.name} (${d.input.text.length} chars): first ${d.stage} divergence at line ${d.index}`,
       );
       if (d.error) {
-        console.log(
-          `    threw: ${d.error.split("\n").slice(0, 6).join("\n    ")}`,
-        );
+        console.log(`    threw: ${d.error.split("\n").slice(0, 6).join("\n    ")}`);
         continue;
       }
       for (let k = Math.max(0, d.index - 2); k < d.index + 3; k++) {
@@ -237,8 +222,5 @@ async function main(): Promise<void> {
   }
 }
 
-if (
-  import.meta.url ===
-  `file://${process.argv[1]?.replaceAll("\\", "/").replace(/^\/?/, "/")}`
-)
+if (import.meta.url === `file://${process.argv[1]?.replaceAll("\\", "/").replace(/^\/?/, "/")}`)
   await main();
