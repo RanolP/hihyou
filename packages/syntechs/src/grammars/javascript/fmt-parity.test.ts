@@ -209,7 +209,7 @@ const corpusDir = join(import.meta.dirname, "../../../corpus");
 // a regression lowers it, and closing a gap raises it, which shows up as a test change.
 const ratchet: [Target, string, number, number][] = [
   ["js", "jquery.js", 1383, 1406],
-  ["js", "lodash.js", 2807, 2817],
+  ["js", "lodash.js", 2812, 2817],
   ["tsx", "App.tsx", 1548, 1562],
   ["tsx", "LayerUI.tsx", 130, 152],
 ];

@@ -1,4 +1,4 @@
-ts compatibility: 462/653 (70.75%), 30 refused (ok:false), 76 excluded
+ts compatibility: 466/653 (71.36%), 30 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -46,10 +46,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/comments/union.ts | 0/1 | 36.84% |
 | typescript/comments/first-argument/first-argument.ts | 0/1 | 65.45% |
 | typescript/compiler/indexSignatureWithInitializer.ts | 0/1 | 87.50% |
-| typescript/conditional-types/infer-type.ts | 1/2 | 54.76% |
-| typescript/conditional-types/nested-in-condition.ts | 0/2 | 24.89% |
-| typescript/conditional-types/new-ternary-spec.ts | 1/2 | 60.67% |
-| typescript/conditional-types/parentheses.ts | 0/2 | 50.45% |
+| typescript/conditional-types/parentheses.ts | 0/2 | 79.56% |
 | typescript/conformance/classes/classDeclarations/classAbstractKeyword/classAbstractMixedWithModifiers.ts | 0/1 | 13.33% |
 | typescript/conformance/classes/classDeclarations/classAbstractKeyword/classAbstractSingleLineDecl.ts | 0/1 | 66.67% |
 | typescript/conformance/classes/classDeclarations/classAbstractKeyword/classAbstractWithInterface.ts | 0/1 | 0.00% |
@@ -79,7 +76,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/intersection/intersection-parens.ts | 0/3 | 89.01% |
 | typescript/intersection/consistent-with-flow/intersection-parens.ts | 0/1 | 93.02% |
 | typescript/intersection/consistent-with-flow/single-member.ts | 0/1 | 46.32% |
-| typescript/keyword-types/conditional-types.ts | 0/1 | 62.50% |
 | typescript/last-argument-expansion/decorated-function.tsx | 0/1 | 75.21% |
 | typescript/mapped-type/issue-11098.ts | 0/1 | 87.13% |
 | typescript/method-chain/comment.ts | 0/1 | 0.00% |
@@ -187,8 +183,8 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | typescript/class-comment/declare.ts | 1/1 | 66.67% | check: input comment "// extends b   // 2" is missing from the output |
 | typescript/comments/mapped-types.ts | 1/1 | 80.00% | check: input comment "// commentA" is missing from the output |
 | typescript/compiler/commentInNamespaceDeclarationWithIdentifierPathName.ts | 1/1 | 57.14% | check: input "namespace" at 1 is output as "namespace" at 1, which means "namespace@\|-1/2", not "namespace@\|-1/3" |
-| typescript/conditional-types/comments.ts | 2/2 | 51.89% | check: input "any instanceof B\n  /**\n  * Comment\n  */\n    ? B \| C\n    : D" at 1337 is output as "any" at 1286, whic |
-| typescript/conditional-types/conditional-types.ts | 2/2 | 84.48% | check: input "new" at 1298 is output as "new" at 1327, which means "new@\|-1/175", not "new@\|-1/174" |
+| typescript/conditional-types/comments.ts | 2/2 | 66.60% | check: input "any instanceof B\n  /**\n  * Comment\n  */\n    ? B \| C\n    : D" at 1337 is output as "any" at 1286, whic |
+| typescript/conditional-types/conditional-types.ts | 2/2 | 100.00% | check: input "new" at 1298 is output as "new" at 1327, which means "new@\|-1/175", not "new@\|-1/174" |
 | typescript/decorator-auto-accessors/decorator-auto-accessors-type-annotations.ts | 1/1 | 75.00% | check: input "prop2" at 68 is output as "prop2" at 68, which means "key:prop2@name\|0/8", not "prop2@\|0/8" |
 | typescript/decorators/comments.ts | 1/1 | 60.00% | check: input "static" at 55 is output as "static" at 36, which means "key:static@name\|1/4", not "static@\|-1/4" |
 | typescript/decorators/decorators-comments.ts | 1/1 | 88.57% | check: input "readonly" at 295 is output as "readonly" at 251, which means "key:readonly@name\|1/29", not "readonly@\|-1/2 |
