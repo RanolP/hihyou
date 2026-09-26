@@ -1642,3 +1642,8 @@ export function outer(e: Expr): { start: number; end: number } {
 }
 
 export const isExpr = (p: Py): p is Expr => "parens" in p;
+
+/** Reads one expression on its own: an f-string interpolation's, which the module's AST keeps as a string. */
+export function exprAst(n: FormatNode, source: string): Expr {
+  return new Reader(source).expr(n);
+}

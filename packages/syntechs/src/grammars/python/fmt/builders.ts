@@ -270,7 +270,9 @@ export class Fmt {
     const last = entries.at(-1);
     if (last) {
       const magic = this.magicTrailingComma(last.end, sequenceEnd);
-      if (magic || entries.length > 1 || oneOrMore) out.push(ifBreak(comma(last.end)));
+      // Inside a single-line f-string interpolation, a trailing comma would be printed flat for nothing.
+      const inFlatFString = this.fstr.k !== "outside" && !this.fstr.multiline;
+      if ((magic || entries.length > 1 || oneOrMore) && !inFlatFString) out.push(ifBreak(comma(last.end)));
       if (magic) out.push(breakParent);
     }
     return out;

@@ -302,7 +302,7 @@ export interface Hooks {
 }
 
 /** A string spanning lines (a triple-quoted one) breaks every group around it, as ruff's multiline text does. */
-const multilineToken = (n: FormatNode, text: string): Doc =>
+export const multilineToken = (n: FormatNode, text: string): Doc =>
   text.includes("\n") ? [literalToken(n, text), breakParent] : token(n, text);
 
 /** Ruff's `InterpolatedStringLayout`: multiline when an interpolation spans lines. */
@@ -523,4 +523,11 @@ export function formatStr(f: Fmt, s: Str, hooks: Hooks, docstringIndent?: string
     return f.inParensGroup(ifBreak(exp, flatDoc));
   }
   return f.inParensGroup(expanded(f, s, parts, hooks, true));
+}
+
+/** An implicit concatenation as an operand of a binary expression, which groups it itself. */
+export function implicitConcatenated(f: Fmt, s: Str, hooks: Hooks): Doc {
+  const parts = s.parts.map((n) => partOf(f.src, n));
+  const merged = mergedFlags(f, s, parts);
+  return merged ? ifBreak(expanded(f, s, parts, hooks, false), flat(f, parts, merged, hooks)) : expanded(f, s, parts, hooks, true);
 }
