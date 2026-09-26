@@ -121,12 +121,14 @@ function read<O>(language: Language<O>, text: string): Read {
   for (let n = stack.pop(); n; n = stack.pop()) {
     if (language.comments.has(n.kind)) {
       const raw = text.slice(n.start, n.end);
-      out.comments.push(
-        (language.comment ? language.comment(raw) : raw)
-          .replace(/\r\n?/g, "\n")
-          .replace(/^[ \t]+|[ \t]+$/gm, "")
-          .trimEnd(),
-      );
+      const spelled = language.comment ? language.comment(raw) : raw;
+      for (const c of typeof spelled === "string" ? [spelled] : spelled)
+        out.comments.push(
+          c
+            .replace(/\r\n?/g, "\n")
+            .replace(/^[ \t]+|[ \t]+$/gm, "")
+            .trimEnd(),
+        );
       continue;
     }
     if (n.kind === "ERROR") out.errors.push({ start: n.start, end: n.end });

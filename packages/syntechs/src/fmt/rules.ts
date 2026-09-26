@@ -116,7 +116,7 @@ export interface Language<O = unknown> {
   readonly handleComment?: CommentHandler<O>;
   readonly printsOwnComments?: (node: FormatNode, ctx: Ctx<O>) => boolean;
   /** How `check` spells a comment before comparing; see `LanguageSpec`. */
-  readonly comment: ((text: string) => string) | undefined;
+  readonly comment: ((text: string) => string | readonly string[]) | undefined;
 }
 
 /**
@@ -149,9 +149,10 @@ export interface LanguageSpec<G extends Grammar, O> {
   readonly layoutBlind?: boolean;
   /**
    * A comment as the formatter respells it, which `check` applies to both sides before comparing (ruff writes
-   * `#x` as `# x`). The default compares comments as written.
+   * `#x` as `# x`). The default compares comments as written. Several strings compare as several comments:
+   * ruff joins trailing comments onto one line, where `# a  # b` reads back as one.
    */
-  readonly comment?: (text: string) => string;
+  readonly comment?: (text: string) => string | readonly string[];
   /**
    * The comment kinds that run to the end of the line, so code never follows one on its line. A kind maps to the
    * prefix its line comments start with, because one kind can hold both forms (tree-sitter-json's `comment` is

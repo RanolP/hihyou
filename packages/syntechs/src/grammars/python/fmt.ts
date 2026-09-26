@@ -31,7 +31,8 @@ export const python = defineLanguage(
     defaults,
     settings: ruffSettings,
     normalize,
-    comment: normalizeComment,
+    // Ruff prints a node's trailing comments on one line, where Python reads `# a  # b` back as one comment.
+    comment: (raw) => raw.split(/[ \t]+(?=#)/).map(normalizeComment),
   },
   () => ({
     module: (node, ctx) => {

@@ -227,8 +227,14 @@ function column(text: string, at: number): number {
   while (start > 0 && text[start - 1] !== "\n" && text[start - 1] !== "\r")
     start--;
   let col = 0;
+  // A form feed resets the column, as in Python's tokenizer.
   for (let i = start; i < at; i++)
-    col = text[i] === "\t" ? (Math.floor(col / 8) + 1) * 8 : col + 1;
+    col =
+      text[i] === "\t"
+        ? (Math.floor(col / 8) + 1) * 8
+        : text[i] === "\f"
+          ? 0
+          : col + 1;
   return col;
 }
 
