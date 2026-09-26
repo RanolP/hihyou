@@ -1,13 +1,12 @@
 // Formatting speed against the reference tools, on the same inputs: the large corpus files (fetch-corpus.sh,
 // research/parser-bench) and the conformance fixtures, each at its tool's defaults with an 80-column width.
 // The target: syntechs within 5x oxfmt's time and faster than prettier's; for Python, within 5x ruff's. oxfmt
-// covers every prettier-family language here (JSON and CSS natively too), so it is the reference for each; dprint
-// (wasm plugins) is timed beside it as context only.
+// covers every prettier-family language here (JSON and CSS natively too), so it is the reference for each.
 //
 //   node packages/syntechs/dist/fmt/bench.node.js [language...] [--ruff <path to ruff 0.16.8>]
 //
 // syntechs is parse + format, in process, timed after its bundles load (the load is reported apart). prettier
-// 3.9.9, oxfmt and dprint run in process through their JS APIs, one awaited call per input. ruff has no JS API: it
+// 3.9.9 and oxfmt run in process through their JS APIs, one awaited call per input. ruff has no JS API: it
 // runs as native ruff 0.16.8 (uvx, or `--ruff`), `format --check` over a directory of the inputs on one thread,
 // timed as a whole process less the same process over an empty directory.
 
@@ -20,11 +19,7 @@ import { benchFiles, type GrammarName } from "../core/corpus.node.js";
 import { parse } from "../core/index.js";
 import type { Language as Grammar } from "../core/language.js";
 import { check } from "./check.js";
-import {
-  type DprintPlugin,
-  dprint,
-  oxfmt,
-} from "./conformance/references.node.js";
+import { oxfmt } from "./conformance/references.node.js";
 import { TARGETS } from "./conformance.node.js";
 import { format } from "./format.js";
 import type { Language } from "./rules.js";
@@ -48,7 +43,6 @@ interface Group {
   /** prettier's parser and oxfmt's file extension by grammar; absent for Python, which only ruff formats. */
   prettier?: (g: GrammarName) => string;
   oxfmtExt?: (g: GrammarName) => string;
-  dprint?: DprintPlugin;
 }
 
 const GROUPS: Group[] = [
@@ -58,7 +52,6 @@ const GROUPS: Group[] = [
     corpus: ["json"],
     prettier: () => "json",
     oxfmtExt: () => "json",
-    dprint: "json",
   },
   {
     id: "css",
@@ -66,7 +59,6 @@ const GROUPS: Group[] = [
     corpus: ["css"],
     prettier: () => "css",
     oxfmtExt: () => "css",
-    dprint: "css",
   },
   {
     id: "js",
@@ -74,7 +66,6 @@ const GROUPS: Group[] = [
     corpus: ["javascript"],
     prettier: () => "babel",
     oxfmtExt: () => "jsx",
-    dprint: "typescript",
   },
   {
     id: "ts",
@@ -82,7 +73,6 @@ const GROUPS: Group[] = [
     corpus: ["typescript", "tsx"],
     prettier: () => "typescript",
     oxfmtExt: (g) => (g === "tsx" ? "tsx" : "ts"),
-    dprint: "typescript",
   },
   { id: "python", target: "python", corpus: ["python"] },
 ];
@@ -220,7 +210,6 @@ async function main() {
     const implemented = langs.size > 0;
 
     // Keep the inputs every reference accepts, so each tool formats the same bytes.
-    let dp = g.dprint ? dprint(g.dprint) : undefined;
     for (const set of sets) {
       const kept: Input[] = [];
       for (const input of set[1]) {
@@ -238,14 +227,7 @@ async function main() {
               input.text,
               { printWidth: 80 },
             );
-            await dp?.format(
-              `input.${g.oxfmtExt(input.grammar)}`,
-              input.text,
-              {},
-            );
           } catch {
-            // A rejection can leave the dprint wasm instance trapped; the next input gets a fresh one.
-            if (g.dprint) dp = dprint(g.dprint);
             continue;
           }
         }
@@ -283,7 +265,6 @@ async function main() {
         }
       let pretty: number | undefined;
       let ox: number | undefined;
-      let dpMs: number | string | undefined;
       let rf: { total: number; startup: number } | undefined;
       if (g.prettier && g.oxfmtExt) {
         const parser = g.prettier;
@@ -302,21 +283,6 @@ async function main() {
               });
           })
         ).warm;
-        if (g.dprint) {
-          // A fresh instance per set: dprint-plugin-typescript's wasm memory only grows, and a trap (out of
-          // memory on the TS corpus) leaves the instance unusable.
-          const fresh = dprint(g.dprint);
-          try {
-            dpMs = (
-              await timed(async () => {
-                for (const i of inputs)
-                  await fresh.format(`input.${ext(i.grammar)}`, i.text, {});
-              })
-            ).warm;
-          } catch (e) {
-            dpMs = `failed: ${e instanceof Error ? e.message : String(e)}`;
-          }
-        }
       } else {
         ruff ??= resolveRuff();
         rf = ruffTime(ruff, inputs);
@@ -331,7 +297,7 @@ async function main() {
       const mbs = (ms: number | undefined) =>
         ms === undefined ? undefined : bytes / 1e6 / (ms / 1e3);
       rows.push(
-        `| ${g.id} | ${label} | ${inputs.length} | ${(bytes / 1024).toFixed(0)} | ${ours ? `${cell(ours.warm)} (${cell(mbs(ours.warm), 2)} MB/s)` : "not implemented"} | ${cell(ours?.cold)} | ${pretty === undefined ? "-" : `${cell(pretty)} (${cell(mbs(pretty), 2)} MB/s)`} | ${ox === undefined ? "-" : `${cell(ox)} (${cell(mbs(ox), 2)} MB/s)`} | ${typeof dpMs !== "number" ? (dpMs ?? "-") : `${cell(dpMs)} (${cell(mbs(dpMs), 2)} MB/s)`} | ${rf ? `${cell(rf.total - rf.startup)} (+${cell(rf.startup)} startup)` : "-"} | ${ours && ref ? cell(ours.warm / ref, 2) : "-"} | ${ours && pretty ? cell(ours.warm / pretty, 2) : "-"} |`,
+        `| ${g.id} | ${label} | ${inputs.length} | ${(bytes / 1024).toFixed(0)} | ${ours ? `${cell(ours.warm)} (${cell(mbs(ours.warm), 2)} MB/s)` : "not implemented"} | ${cell(ours?.cold)} | ${pretty === undefined ? "-" : `${cell(pretty)} (${cell(mbs(pretty), 2)} MB/s)`} | ${ox === undefined ? "-" : `${cell(ox)} (${cell(mbs(ox), 2)} MB/s)`} | ${rf ? `${cell(rf.total - rf.startup)} (+${cell(rf.startup)} startup)` : "-"} | ${ours && ref ? cell(ours.warm / ref, 2) : "-"} | ${ours && pretty ? cell(ours.warm / pretty, 2) : "-"} |`,
       );
     }
     if (!implemented) {
@@ -353,14 +319,14 @@ async function main() {
     `Warm = median of ${RUNS} passes after ${WARMUP}; cold = the first pass after load. ms per pass over the set.\n`,
   );
   console.log(
-    "| Language | Inputs | Files | KB | syntechs warm ms | syntechs cold ms | prettier ms | oxfmt ms | dprint ms | ruff ms | syntechs / oxfmt (ruff) | syntechs / prettier |",
+    "| Language | Inputs | Files | KB | syntechs warm ms | syntechs cold ms | prettier ms | oxfmt ms | ruff ms | syntechs / oxfmt (ruff) | syntechs / prettier |",
   );
   console.log(
-    "| :-- | :-- | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: |",
+    "| :-- | :-- | --: | --: | --: | --: | --: | --: | --: | --: | --: |",
   );
   for (const r of rows) console.log(r);
   console.log(
-    "\nTarget: syntechs <= 5x oxfmt and < prettier (Python: <= 5x ruff), over corpus + fixtures. dprint is context only.",
+    "\nTarget: syntechs <= 5x oxfmt and < prettier (Python: <= 5x ruff), over corpus + fixtures.",
   );
   for (const v of verdicts) console.log(v);
   console.log(

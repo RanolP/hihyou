@@ -23,12 +23,7 @@ import {
   prettierSuite,
   type Suite,
 } from "./conformance/prettier.node.js";
-import {
-  type DprintPlugin,
-  dprint,
-  oxfmt,
-  type Reference,
-} from "./conformance/references.node.js";
+import { oxfmt } from "./conformance/references.node.js";
 import {
   type FixtureResult,
   fixtureOutcome,
@@ -135,8 +130,6 @@ interface Target {
   grammar: (fixture: string) => GrammarName;
   source: string;
   suite: () => Suite;
-  /** The dprint plugin scored with oxfmt beside syntechs on the same fixtures; none for Python. */
-  dprint?: DprintPlugin;
 }
 
 const prettier = (
@@ -153,7 +146,6 @@ const prettier = (
   grammar,
   source: `Fixtures: ${PRETTIER} tests/format/{${t.dirs.join(",")}} (recursive), every spec call listing parser ${t.parsers.map((p) => `\`${p}\``).join(" or ")}, expected output from its __snapshots__.`,
   suite: () => prettierSuite(prettierRoot, t),
-  dprint: fmt === "json" || fmt === "css" ? fmt : "typescript",
 });
 
 export const TARGETS: Target[] = [
@@ -279,15 +271,9 @@ function runCase(
 }
 
 /** How many fixtures each reference tool prints as the expected output in every run; the fixture name picks its parser. */
-const dprints = new Map<DprintPlugin, Reference>();
-async function scoreReferences(
-  cases: Case[],
-  plugin: DprintPlugin | undefined,
-): Promise<ReferenceScore[]> {
-  if (!plugin) return [];
-  if (!dprints.has(plugin)) dprints.set(plugin, dprint(plugin));
+async function scoreReferences(cases: Case[]): Promise<ReferenceScore[]> {
   const scores: ReferenceScore[] = [];
-  for (const ref of [oxfmt, dprints.get(plugin) as Reference]) {
+  for (const ref of [oxfmt]) {
     let passed = 0;
     for (const c of cases) {
       let all = true;
@@ -362,7 +348,8 @@ async function main() {
       source: t.source,
       results,
       excluded,
-      references: await scoreReferences(cases, t.dprint),
+      // oxfmt formats the prettier-family languages only.
+      references: t.reference === PRETTIER ? await scoreReferences(cases) : [],
     });
     writeFileSync(join(outDir, `${t.id}.snap.md`), snapshot);
     console.log(snapshot.split("\n", 1)[0]);
