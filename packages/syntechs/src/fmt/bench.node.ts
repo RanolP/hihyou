@@ -3,17 +3,19 @@
 // The target: syntechs within 5x oxfmt's time and faster than prettier's; for Python, within 5x ruff's. oxfmt
 // covers every prettier-family language here (JSON and CSS natively too), so it is the reference for each.
 //
-//   node packages/syntechs/dist/fmt/bench.node.js [language...] [--ruff <path to ruff 0.16.8>]
+//   node packages/syntechs/dist/fmt/bench.node.js [language...] [--ruff <path to ruff>]
 //
 // syntechs is parse + format, in process, timed after its bundles load (the load is reported apart). prettier
 // 3.9.9 and oxfmt run in process through their JS APIs, one awaited call per input. ruff has no JS API: it
-// runs as native ruff 0.16.8 (uvx, or `--ruff`), `format --check` over a directory of the inputs on one thread,
-// timed as a whole process less the same process over an empty directory.
+// runs as native ruff, the version mise.toml pins (0.16.9), on PATH via mise shims (or `--ruff`), `format
+// --check` over a directory of the inputs on one thread, timed as a whole process less the same process over
+// an empty directory.
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import * as prettier from "prettier";
 import { benchFiles, type GrammarName } from "../core/corpus.node.js";
 import { parseTree } from "../core/index.js";
@@ -101,20 +103,19 @@ async function load<T>(url: URL, name: string): Promise<T | undefined> {
   }
 }
 
+const REPO_ROOT = fileURLToPath(new URL("../../../..", import.meta.url));
+
 function resolveRuff(): string {
   const at = process.argv.indexOf("--ruff");
   if (at !== -1 && process.argv[at + 1]) return process.argv[at + 1] as string;
-  return execFileSync(
-    "uvx",
-    [
-      "--from",
-      "ruff@0.16.8",
-      "python",
-      "-c",
-      "import shutil; print(shutil.which('ruff'))",
-    ],
-    { encoding: "utf8" },
-  ).trim();
+  try {
+    execFileSync("ruff", ["--version"], { cwd: REPO_ROOT, stdio: "ignore" });
+  } catch {
+    throw new Error(
+      "ruff not found on PATH; run `mise install` in the repo root",
+    );
+  }
+  return "ruff";
 }
 
 /** Median whole-process time of ruff over `inputs`, less its time over an empty directory. */
@@ -135,6 +136,7 @@ function ruffTime(ruff: string, inputs: Input[]) {
           ruff,
           ["format", "--check", "--isolated", "--no-cache", d],
           {
+            cwd: REPO_ROOT,
             env: { ...process.env, RAYON_NUM_THREADS: "1" },
             encoding: "utf8",
           },
