@@ -1,4 +1,4 @@
-js compatibility: 591/804 (73.51%), 40 refused (ok:false), 304 excluded
+js compatibility: 593/804 (73.76%), 39 refused (ok:false), 304 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -48,6 +48,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/comments/jsdoc-nestled-dangling.js | 0/2 | 93.02% |
 | js/comments/jsdoc-nestled.js | 0/2 | 81.36% |
 | js/comments/jsdoc.js | 1/2 | 96.15% |
+| js/comments/return-statement.js | 0/2 | 98.34% |
 | js/comments/tagged-template-literal.js | 0/2 | 92.86% |
 | js/comments/trailing-jsdocs.js | 0/2 | 76.00% |
 | js/comments/try.js | 0/2 | 71.43% |
@@ -81,7 +82,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/comments/while-like/while.js | 0/1 | 90.24% |
 | js/comments/while-like/with.js | 0/1 | 91.84% |
 | js/conditional/comments.js | 0/2 | 65.66% |
-| js/conditional/postfix-ternary-regressions.js | 1/2 | 95.19% |
+| js/conditional/postfix-ternary-regressions.js | 1/2 | 98.10% |
 | js/decorator-auto-accessors/basic.js | 1/2 | 83.33% |
 | js/decorator-auto-accessors/comments.js | 1/2 | 90.00% |
 | js/decorator-auto-accessors/computed.js | 1/2 | 83.33% |
@@ -149,7 +150,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/import-attributes/quote-props/quoted-keys.js | 1/3 | 86.67% |
 | js/label/comment.js | 0/1 | 53.33% |
 | js/last-argument-expansion/edge_case.js | 0/1 | 74.63% |
-| js/logical-assignment/logical-assignment.js | 0/1 | 92.59% |
 | js/method-chain/break-last-member.js | 0/1 | 85.29% |
 | js/method-chain/comment.js | 0/1 | 76.27% |
 | js/method-chain/issue-11298.js | 0/1 | 20.00% |
@@ -184,7 +184,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/throw_statement/comment.js | 0/1 | 43.24% |
 | js/try/catch.js | 0/1 | 85.71% |
 | js/try/try.js | 0/1 | 50.00% |
-| jsx/ignore/jsx_ignore.js | 0/1 | 92.59% |
 | jsx/ignore/spread.js | 0/1 | 75.68% |
 
 # Refused
@@ -202,8 +201,7 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | js/comments/break-continue-statements.js | 2/2 | 72.73% | check: input comment "/* comment */" is missing from the output |
 | js/comments/dangling_for.js | 2/2 | 28.57% | check: input comment "// comment" is missing from the output |
 | js/comments/empty-statements.js | 2/2 | 17.39% | check: output comment "// second // third // first" matches no input comment |
-| js/comments/return-statement-2.js | 2/2 | 53.13% | check: input "!" at 433 is output as "!" at 404, which means "!@operator\|-1/29", not "!@operator\|-1/27" |
-| js/comments/return-statement.js | 2/2 | 69.64% | check: input "!" at 112 is output as "!" at 104, which means "!@operator\|-1/12", not "!@operator\|-1/11" |
+| js/comments/return-statement-2.js | 2/2 | 84.67% | check: input "!" at 433 is output as "!" at 438, which means "!@operator\|-1/29", not "!@operator\|-1/27" |
 | js/comments/trailing_space.js | 2/2 | 100.00% | check: input "#!/there/is-space-here->         " at 0 is output as "#!/there/is-space-here->" at 0, which means "#!/ther |
 | js/comments-closure-typecast/issue-8045.js | 1/1 | 46.15% | check: input "fooBarBaz" at 446 is output as "fooBarBaz" at 434, which means "fooBarBaz@\|0/14", not "fooBarBaz@\|0/13" |
 | js/comments/between-head-and-body/between-head-and-body.js | 1/1 | 60.15% | check: input comment "// 14" is missing from the output |
@@ -218,7 +216,7 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | js/for/continue-and-break-comment-without-blocks.js | 1/1 | 64.46% | check: input comment "// comment" is missing from the output |
 | js/for-of/comments.js | 1/1 | 88.46% | check: output comment "//2b //2c" matches no input comment |
 | js/identifier/for-of/let.js | 1/1 | 69.23% | check: input "let" at 107 is output as "let" at 104, which means "let@kind\|-1/10", not "let@object\|0/11" |
-| js/identifier/parentheses/let.js | 2/2 | 83.64% | check: the output has a syntax error at 43, which the input has not |
+| js/identifier/parentheses/let.js | 2/2 | 88.18% | check: the output has a syntax error at 43, which the input has not |
 | js/import/comments.js | 2/2 | 63.41% | check: output comment "//comment2 //comment1" matches no input comment |
 | js/import-assertions/keyword-detect.js | 1/1 | 20.00% | check: input "assert" at 32 is output as "assert" at 32, which means "assert@function\|0/4", not "assert@\|0/3" |
 | js/import/empty-import/empty-import-2.js | 1/1 | 50.00% | check: output comment "/* 😄😄😄😄 */" matches no input comment |

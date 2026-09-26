@@ -1,4 +1,4 @@
-ts compatibility: 517/653 (79.17%), 29 refused (ok:false), 76 excluded
+ts compatibility: 519/653 (79.48%), 29 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -43,7 +43,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/comments/union.ts | 0/1 | 36.84% |
 | typescript/comments/first-argument/first-argument.ts | 0/1 | 65.45% |
 | typescript/compiler/indexSignatureWithInitializer.ts | 0/1 | 87.50% |
-| typescript/conditional-types/parentheses.ts | 0/2 | 79.56% |
+| typescript/conditional-types/parentheses.ts | 0/2 | 86.00% |
 | typescript/conformance/classes/classDeclarations/classAbstractKeyword/classAbstractMixedWithModifiers.ts | 0/1 | 13.33% |
 | typescript/conformance/classes/classDeclarations/classAbstractKeyword/classAbstractSingleLineDecl.ts | 0/1 | 66.67% |
 | typescript/conformance/classes/classDeclarations/classAbstractKeyword/classAbstractWithInterface.ts | 0/1 | 0.00% |
@@ -70,9 +70,9 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/instantiation-expression/logical-expr.ts | 0/1 | 91.67% |
 | typescript/interface/ignore.ts | 0/2 | 86.79% |
 | typescript/interface2/comments-ts-only/18278.ts | 0/1 | 82.61% |
-| typescript/intersection/intersection-parens.ts | 0/3 | 89.01% |
-| typescript/intersection/consistent-with-flow/intersection-parens.ts | 0/1 | 93.02% |
-| typescript/intersection/consistent-with-flow/single-member.ts | 0/1 | 46.32% |
+| typescript/intersection/intersection-parens.ts | 1/3 | 99.29% |
+| typescript/intersection/consistent-with-flow/intersection-parens.ts | 0/1 | 97.67% |
+| typescript/intersection/consistent-with-flow/single-member.ts | 0/1 | 50.00% |
 | typescript/last-argument-expansion/decorated-function.tsx | 0/1 | 90.91% |
 | typescript/mapped-type/issue-11098.ts | 0/1 | 87.13% |
 | typescript/method-chain/comment.ts | 0/1 | 0.00% |
@@ -105,7 +105,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/union/13080.ts | 0/1 | 42.86% |
 | typescript/union/5849.ts | 0/1 | 87.88% |
 | typescript/union/7725.ts | 0/1 | 52.94% |
-| typescript/union/union-parens.ts | 0/1 | 97.20% |
+| typescript/union/union-parens.ts | 0/1 | 99.07% |
 | typescript/union/comments/18106.ts | 0/1 | 74.16% |
 | typescript/union/comments/18379.ts | 0/1 | 54.17% |
 | typescript/union/comments/18389.ts | 0/1 | 76.92% |
@@ -114,11 +114,9 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/union/consistent-with-flow/function-type-param.ts | 0/1 | 90.00% |
 | typescript/union/consistent-with-flow/leading-comments.ts | 0/1 | 78.26% |
 | typescript/union/consistent-with-flow/prettier-ignore.ts | 0/1 | 40.00% |
-| typescript/union/consistent-with-flow/single-type.ts | 0/1 | 19.64% |
-| typescript/union/single-type/single-type-2.ts | 0/1 | 61.11% |
+| typescript/union/consistent-with-flow/single-type.ts | 0/1 | 60.00% |
 | typescript/union/single-type/single-type.ts | 0/1 | 0.00% |
 | typescript/webhost/webtsc.ts | 0/1 | 99.08% |
-| jsx/ignore/jsx_ignore.js | 0/1 | 92.59% |
 | jsx/ignore/spread.js | 0/1 | 75.68% |
 
 # Refused
