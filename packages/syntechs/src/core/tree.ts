@@ -53,18 +53,6 @@ export interface RawTree {
   errorChars: number;
 }
 
-interface Frame {
-  tree: Subtree;
-  index: number;
-  structuralIndex: number;
-  /** End of the previous child; the parent's start before the first. */
-  position: number;
-  node: SyntaxNode;
-  hidden: boolean;
-  /** For a hidden frame, the field its visible descendants inherit when their own parent names none. */
-  field: number;
-}
-
 function fieldFor(
   lang: Language,
   productionId: number,
@@ -82,9 +70,45 @@ function fieldFor(
   return 0;
 }
 
+const LABEL_TOKEN = 0;
+const LABEL_COMMENT = 1;
+const LABEL_JSX_TEXT = 2;
+
+/** What the walk needs of each symbol (aliases included), looked up once per language instead of per node. */
+interface Symbols {
+  kind: string[];
+  /** For an alias: whether the alias is named; a node's own symbol reads its subtree's flag instead. */
+  named: boolean[];
+  label: Uint8Array;
+}
+
+const symbolsOf = new WeakMap<Language, Symbols>();
+
+function symbols(lang: Language): Symbols {
+  let s = symbolsOf.get(lang);
+  if (s) return s;
+  const count = lang.symbolNames.length;
+  s = { kind: [], named: [], label: new Uint8Array(count) };
+  for (let symbol = 0; symbol < count; symbol++) {
+    const kind = symbolName(lang, publicSymbol(lang, symbol));
+    s.kind.push(kind);
+    s.named.push((symbolFlags(lang, symbol) & FLAG_NAMED) !== 0);
+    s.label[symbol] = kind.includes("comment")
+      ? LABEL_COMMENT
+      : kind === "jsx_text"
+        ? LABEL_JSX_TEXT
+        : LABEL_TOKEN;
+  }
+  symbolsOf.set(lang, s);
+  return s;
+}
+
+const NO_NODES: SyntaxNode[] = [];
+
 export function walkTree(lang: Language, root: Subtree, text: string): RawTree {
   const nodes: SyntaxNode[] = [];
   const layout = new Set<SyntaxNode>();
+  const sym = symbols(lang);
   let errorChars = 0;
 
   const open = (
@@ -95,102 +119,118 @@ export function walkTree(lang: Language, root: Subtree, text: string): RawTree {
     parent: SyntaxNode | undefined,
   ): SyntaxNode => {
     const symbol = alias !== 0 ? alias : tree.symbol;
-    const kind = symbolName(lang, publicSymbol(lang, symbol));
+    const kind =
+      symbol < sym.kind.length
+        ? (sym.kind[symbol] as string)
+        : symbolName(lang, publicSymbol(lang, symbol));
+    const end = start + tree.size;
     const node: SyntaxNode = {
       id: nodes.length,
       kind,
-      named:
-        alias !== 0
-          ? (symbolFlags(lang, alias) & FLAG_NAMED) !== 0
-          : tree.named,
+      named: alias !== 0 ? (sym.named[alias] as boolean) : tree.named,
       field: field === 0 ? undefined : lang.fieldNames[field],
       missing: tree.isMissing,
       label: "",
       start,
-      end: start + tree.size,
+      end,
       parent,
-      children: [],
+      // A leaf never gains children, so leaves share one empty list.
+      children: tree.children.length === 0 ? NO_NODES : [],
       height: 1,
       size: 1,
     };
     nodes.push(node);
     parent?.children.push(node);
-    if (kind === "ERROR" && !insideError(parent))
-      errorChars += node.end - node.start;
+    if (kind === "ERROR" && !insideError(parent)) errorChars += end - start;
     return node;
   };
-  const close = (node: SyntaxNode) => {
-    if (node.children.length === 0) {
+  const close = (node: SyntaxNode, symbol: number) => {
+    const children = node.children;
+    if (children.length === 0) {
       const token = text.slice(node.start, node.end);
-      if (node.kind.includes("comment"))
-        node.label = token.replace(/\s+/g, " ");
-      else if (node.kind === "jsx_text") {
+      const mode = symbol < sym.label.length ? sym.label[symbol] : LABEL_TOKEN;
+      if (mode === LABEL_TOKEN) node.label = token;
+      else if (mode === LABEL_COMMENT) node.label = token.replace(/\s+/g, " ");
+      else {
         node.label = jsxText(token);
         if (node.label === "") layout.add(node);
-      } else node.label = token;
+      }
       return;
     }
-    for (const c of node.children) {
-      if (c.height + 1 > node.height) node.height = c.height + 1;
-      node.size += c.size;
+    let height = 1;
+    let size = 1;
+    for (let i = 0; i < children.length; i++) {
+      const c = children[i] as SyntaxNode;
+      if (c.height >= height) height = c.height + 1;
+      size += c.size;
     }
+    node.height = height;
+    node.size = size;
   };
 
-  const rootNode = open(root, 0, 0, root.padding, undefined);
-  const frames: Frame[] = [
-    {
-      tree: root,
-      index: 0,
-      structuralIndex: 0,
-      position: root.padding,
-      node: rootNode,
-      hidden: false,
-      field: 0,
-    },
-  ];
-  while (frames.length > 0) {
-    const f = frames[frames.length - 1] as Frame;
-    const children = f.tree.children;
-    if (f.index === children.length) {
-      frames.pop();
-      if (!f.hidden) close(f.node);
+  // The frames of the walk as parallel arrays, `depth` deep: an object per frame was one more allocation per
+  // node. `hiddenField` is -1 for a visible frame; a hidden one holds the field its visible descendants
+  // inherit when their own parent names none.
+  const trees: Subtree[] = [root];
+  const index: number[] = [0];
+  const structural: number[] = [0];
+  /** End of the previous child; the parent's start before the first. */
+  const position: number[] = [root.padding];
+  const owner: SyntaxNode[] = [open(root, 0, 0, root.padding, undefined)];
+  const ownerSymbol: number[] = [root.symbol];
+  const hiddenField: number[] = [-1];
+  let depth = 1;
+  while (depth > 0) {
+    const d = depth - 1;
+    const tree = trees[d] as Subtree;
+    const children = tree.children;
+    const i = index[d] as number;
+    if (i === children.length) {
+      depth = d;
+      if (hiddenField[d] === -1)
+        close(owner[d] as SyntaxNode, ownerSymbol[d] as number);
       continue;
     }
-    const child = children[f.index] as Subtree;
-    const start = f.index === 0 ? f.position : f.position + child.padding;
-    f.position = start + child.size;
-    f.index++;
+    const child = children[i] as Subtree;
+    const start =
+      i === 0
+        ? (position[d] as number)
+        : (position[d] as number) + child.padding;
+    position[d] = start + child.size;
+    index[d] = i + 1;
     let alias = 0;
     let field = 0;
     if (!child.extra) {
-      alias = aliasAt(lang, f.tree.productionId, f.structuralIndex);
-      field = fieldFor(lang, f.tree.productionId, f.structuralIndex);
-      if (field === 0 && f.hidden) field = f.field;
-      f.structuralIndex++;
+      const s = structural[d] as number;
+      alias = aliasAt(lang, tree.productionId, s);
+      field = fieldFor(lang, tree.productionId, s);
+      if (field === 0) {
+        const inherited = hiddenField[d] as number;
+        if (inherited > 0) field = inherited;
+      }
+      structural[d] = s + 1;
     }
+    const hasChildren = child.children.length > 0;
     if (child.visible || alias !== 0) {
-      const node = open(child, alias, field, start, f.node);
-      if (child.children.length > 0) {
-        frames.push({
-          tree: child,
-          index: 0,
-          structuralIndex: 0,
-          position: start,
-          node,
-          hidden: false,
-          field: 0,
-        });
-      } else close(node);
-    } else if (child.children.length > 0) {
-      frames.push({
-        tree: child,
-        index: 0,
-        structuralIndex: 0,
-        position: start,
-        node: f.node,
-        hidden: true,
-        field,
-      });
+      const node = open(child, alias, field, start, owner[d]);
+      if (hasChildren) {
+        trees[depth] = child;
+        index[depth] = 0;
+        structural[depth] = 0;
+        position[depth] = start;
+        owner[depth] = node;
+        ownerSymbol[depth] = alias !== 0 ? alias : child.symbol;
+        hiddenField[depth] = -1;
+        depth++;
+      } else close(node, alias !== 0 ? alias : child.symbol);
+    } else if (hasChildren) {
+      trees[depth] = child;
+      index[depth] = 0;
+      structural[depth] = 0;
+      position[depth] = start;
+      owner[depth] = owner[d] as SyntaxNode;
+      hiddenField[depth] = field;
+      depth++;
     }
   }
   return { nodes, layout, errorChars };
