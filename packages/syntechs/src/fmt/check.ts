@@ -98,7 +98,10 @@ export function check<O>(
 
 interface Read {
   lexemes: Lexeme[];
-  /** Each comment's text with its line breaks as `\n` and no trailing blanks, which a formatter may rewrite. */
+  /**
+   * Each comment's text with its line breaks as `\n` and no blanks at either end of a line, which a formatter
+   * may rewrite: prettier re-indents a JSDoc block's lines with the code around it.
+   */
   comments: string[];
   /** The ERROR nodes, by start; a MISSING node is no error here (see `read`). */
   errors: { start: number; end: number }[];
@@ -121,7 +124,7 @@ function read<O>(language: Language<O>, text: string): Read {
         text
           .slice(n.start, n.end)
           .replace(/\r\n?/g, "\n")
-          .replace(/[ \t]+$/gm, "")
+          .replace(/^[ \t]+|[ \t]+$/gm, "")
           .trimEnd(),
       );
       continue;

@@ -1,4 +1,4 @@
-ts compatibility: 457/653 (69.98%), 34 refused (ok:false), 76 excluded
+ts compatibility: 459/653 (70.29%), 30 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -36,10 +36,12 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/comments/11662.ts | 0/1 | 0.00% |
 | typescript/comments/16065.ts | 0/1 | 81.82% |
 | typescript/comments/16121.ts | 0/1 | 85.71% |
+| typescript/comments/16889.ts | 0/1 | 97.39% |
 | typescript/comments/after-jsx-generic.tsx | 0/1 | 85.71% |
 | typescript/comments/declare_function.ts | 0/1 | 83.33% |
 | typescript/comments/jsx.tsx | 0/1 | 20.00% |
 | typescript/comments/method_types.ts | 0/1 | 74.36% |
+| typescript/comments/methods.ts | 0/1 | 97.96% |
 | typescript/comments/type-literals.ts | 0/1 | 89.66% |
 | typescript/comments/union.ts | 0/1 | 36.84% |
 | typescript/comments/first-argument/first-argument.ts | 0/1 | 65.45% |
@@ -186,12 +188,9 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | typescript/chain-expression/tagged-template-literals.ts | 1/1 | 72.31% | check: input "a" at 37 is output as "a" at 33, which means "a@object\|0/12", not "a@object\|0/13" |
 | typescript/class-comment/class-implements.ts | 1/1 | 80.92% | check: input comment "// comment" is missing from the output |
 | typescript/class-comment/declare.ts | 1/1 | 66.67% | check: input comment "// extends b   // 2" is missing from the output |
-| typescript/comments/16889.ts | 1/1 | 97.39% | check: output comment "/**\n   * The method description\n   *\n   */" matches no input comment |
-| typescript/comments/abstract-class.ts | 1/1 | 100.00% | check: output comment "/**\n   * @deprecated\n   * Failures will be filtered based on `tslint:disable` comments by tslin |
 | typescript/comments/mapped-types.ts | 1/1 | 80.00% | check: input comment "// commentA" is missing from the output |
-| typescript/comments/methods.ts | 1/1 | 97.96% | check: output comment "/**\n   * Does something.\n   */" matches no input comment |
 | typescript/compiler/commentInNamespaceDeclarationWithIdentifierPathName.ts | 1/1 | 57.14% | check: input "namespace" at 1 is output as "namespace" at 1, which means "namespace@\|-1/2", not "namespace@\|-1/3" |
-| typescript/conditional-types/comments.ts | 2/2 | 51.89% | check: output comment "/**\n     * Comment\n     */" matches no input comment |
+| typescript/conditional-types/comments.ts | 2/2 | 51.89% | check: input "any instanceof B\n  /**\n  * Comment\n  */\n    ? B \| C\n    : D" at 1337 is output as "any" at 1286, whic |
 | typescript/conditional-types/conditional-types.ts | 2/2 | 84.48% | check: input "new" at 1298 is output as "new" at 1327, which means "new@\|-1/175", not "new@\|-1/174" |
 | typescript/decorator-auto-accessors/decorator-auto-accessors-type-annotations.ts | 1/1 | 75.00% | check: input "prop2" at 68 is output as "prop2" at 68, which means "key:prop2@name\|0/8", not "prop2@\|0/8" |
 | typescript/decorators/comments.ts | 1/1 | 60.00% | check: input "static" at 55 is output as "static" at 36, which means "key:static@name\|1/4", not "static@\|-1/4" |
@@ -212,8 +211,7 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | typescript/parentheses/yield.ts | 1/1 | 40.00% | check: input "yield" at 41 is output as "yield" at 42, which means "yield@\|-1/8", not "yield@\|-1/9" |
 | typescript/type-parameters-arguments/19505.ts | 1/1 | 98.18% | check: input comment "// dangling comment" is missing from the output |
 | typescript/union/inlining.ts | 1/1 | 64.66% | check: input comment "// articles type may be null" is missing from the output |
-| typescript/union/comments/18787.ts | 1/1 | 100.00% | check: output comment "/**\n     * 11\n     */" matches no input comment |
-| typescript/union/consistent-with-flow/18647.ts | 1/1 | 75.00% | check: output comment "/**\n     * Comment\n     */" matches no input comment |
+| typescript/union/consistent-with-flow/18647.ts | 1/1 | 75.00% | check: input "any instanceof B\n  /**\n  * Comment\n  */\n    ? B \| C\n    : D" at 139 is output as "any" at 147, which  |
 | typescript/union/consistent-with-flow/union-last-comment.ts | 1/1 | 40.00% | check: output comment "// Comment2 // Final comment1" matches no input comment |
 | jsx/jsx/conditional-expression.js | 4/4 | 88.64% | check: input "\"dunno\"" at 3917 is output as "\"dunno\"" at 3920, which means "key:dunno@alternative\|2/62", not "str:du |
 

@@ -1,4 +1,4 @@
-js compatibility: 493/804 (61.32%), 60 refused (ok:false), 304 excluded
+js compatibility: 502/804 (62.44%), 45 refused (ok:false), 304 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -18,6 +18,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/arrows/arrow-chain-with-trailing-comments.js | 0/2 | 75.00% |
 | js/arrows/arrow_function_expression.js | 0/2 | 94.29% |
 | js/arrows/call.js | 0/2 | 94.99% |
+| js/arrows/comment.js | 0/2 | 67.57% |
 | js/arrows/currying-4.js | 0/2 | 96.33% |
 | js/arrows/issue-17421.js | 0/2 | 82.51% |
 | js/arrows/comments/comment-before-arrow.js | 0/1 | 66.67% |
@@ -57,6 +58,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/classes/multiple-static.js | 0/1 | 40.00% |
 | js/comments/11273.js | 0/2 | 57.14% |
 | js/comments/array-and-object.js | 0/2 | 62.50% |
+| js/comments/binary-expressions-parens.js | 0/2 | 88.89% |
 | js/comments/blank.js | 0/2 | 92.31% |
 | js/comments/export-and-import.js | 0/2 | 78.05% |
 | js/comments/export.js | 0/2 | 86.67% |
@@ -64,13 +66,17 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/comments/if.js | 0/2 | 78.57% |
 | js/comments/issue-3532.js | 0/2 | 85.53% |
 | js/comments/issues.js | 0/2 | 72.06% |
+| js/comments/jsdoc-nestled-dangling.js | 0/2 | 93.02% |
+| js/comments/jsdoc-nestled.js | 0/2 | 81.36% |
 | js/comments/jsdoc.js | 0/2 | 45.65% |
 | js/comments/jsx.js | 0/2 | 74.56% |
 | js/comments/tagged-template-literal.js | 0/2 | 92.86% |
+| js/comments/trailing-jsdocs.js | 0/2 | 76.00% |
 | js/comments/try.js | 0/2 | 71.43% |
 | js/comments/variable-declarator.js | 0/2 | 69.63% |
 | js/comments-closure-typecast/array-and-object.js | 0/1 | 69.23% |
 | js/comments-closure-typecast/binary-expr.js | 0/1 | 0.00% |
+| js/comments-closure-typecast/closure-compiler-type-cast.js | 0/1 | 68.25% |
 | js/comments-closure-typecast/comment-placement.js | 0/1 | 61.54% |
 | js/comments-closure-typecast/extra-spaces-and-asterisks.js | 0/1 | 0.00% |
 | js/comments-closure-typecast/iife-issue-5850-isolated.js | 0/1 | 0.00% |
@@ -272,28 +278,18 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
 | js/arrays/numbers-negative-comment-after-minus.js | 1/1 | 100.00% | check: input "380014" at 104 is output as "380014" at 144, which means "key:380014@argument\|0/14", not "num:380014e0@arg |
-| js/arrows/comment.js | 2/2 | 67.57% | check: output comment "/**\n   * @param {?String} [modifier] - the BEM Modifier for the Block or Element; if undefined,  |
-| js/assignment-comments/indentable-block-comment.js | 1/1 | 100.00% | check: output comment "/**\n   * multi-line\n   */" matches no input comment |
 | js/call/no-argument/no-arguments.js | 1/1 | 64.86% | check: input comment "// 108" is missing from the output |
 | js/chain-expression/tagged-template-literals.js | 1/1 | 61.90% | check: input "a" at 23 is output as "a" at 22, which means "a@object\|0/4", not "a@object\|0/5" |
 | js/class-comment/superclass.js | 1/1 | 68.24% | check: input comment "// comment 2" is missing from the output |
-| js/comments/15661.js | 2/2 | 18.03% | check: output comment "/*\n * comment\n */" matches no input comment |
-| js/comments/binary-expressions-parens.js | 2/2 | 88.89% | check: output comment "/* $FlowFixMe(>=0.38.0 site=www) - Flow error detected during the\n   * deployment of v0.38.0. To |
+| js/comments/15661.js | 2/2 | 18.03% | check: input "!" at 0 is output as "!" at 0, which means "!@operator\|-1/4", not "!@operator\|-1/3" |
 | js/comments/break-continue-statements-2.js | 2/2 | 78.87% | check: input comment "// breaking comment" is missing from the output |
 | js/comments/break-continue-statements-3.js | 2/2 | 92.75% | check: input comment "// breaking comment" is missing from the output |
 | js/comments/break-continue-statements.js | 2/2 | 72.73% | check: input comment "/* comment */" is missing from the output |
 | js/comments/dangling_for.js | 2/2 | 28.57% | check: input comment "// comment" is missing from the output |
 | js/comments/empty-statements.js | 2/2 | 17.39% | check: output comment "// second // third // first" matches no input comment |
-| js/comments/jsdoc-nestled-dangling.js | 2/2 | 93.02% | check: output comment "/**\n                 * A\n                 */" matches no input comment |
-| js/comments/jsdoc-nestled.js | 2/2 | 81.36% | check: output comment "/**\n   * Trailing comment 2\n   */" matches no input comment |
-| js/comments/multi-comments-on-same-line.js | 2/2 | 100.00% | check: output comment "/*3\n */" matches no input comment |
 | js/comments/return-statement-2.js | 2/2 | 48.00% | check: input "!" at 433 is output as "!" at 404, which means "!@operator\|-1/29", not "!@operator\|-1/27" |
-| js/comments/return-statement.js | 2/2 | 61.82% | check: output comment "/**\n   * @type {string}\n   */" matches no input comment |
-| js/comments/single-star-jsdoc.js | 2/2 | 100.00% | check: output comment "/*\n   * Oh no\n   */" matches no input comment |
-| js/comments/trailing-jsdocs.js | 2/2 | 76.00% | check: output comment "/**\n * A type that can be written to a buffer.\n */" matches no input comment |
+| js/comments/return-statement.js | 2/2 | 61.82% | check: input "<" at 47 is output as "<" at 39, which means "<@\|-1/7", not "<@\|-1/6" |
 | js/comments/trailing_space.js | 2/2 | 100.00% | check: input "#!/there/is-space-here->         " at 0 is output as "#!/there/is-space-here->" at 0, which means "#!/ther |
-| js/comments-closure-typecast/closure-compiler-type-cast.js | 1/1 | 68.25% | check: output comment "/**\n   * @type {{\n   *   width: number,\n   * }}\n   */" matches no input comment |
-| js/comments-closure-typecast/comment-in-the-middle.js | 1/1 | 100.00% | check: output comment "/**\n   * bla bla bla\n   * @type {string \|\n   * number\n   * }\n   * bla bla bla\n   */" matche |
 | js/comments-closure-typecast/issue-8045.js | 1/1 | 46.15% | check: input "fooBarBaz" at 446 is output as "fooBarBaz" at 434, which means "fooBarBaz@\|0/14", not "fooBarBaz@\|0/13" |
 | js/comments-closure-typecast/non-casts.js | 1/1 | 100.00% | check: input "3" at 42 is output as "3" at 41, which means "num:3e0@right\|1/12", not "key:3@right\|1/12" |
 | js/comments/between-head-and-body/between-head-and-body.js | 1/1 | 60.15% | check: input comment "// 14" is missing from the output |
@@ -302,7 +298,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | js/decorators/comments.js | 1/1 | 93.94% | check: output comment "// B // C export // C" matches no input comment |
 | js/decorators-export/after_export.js | 1/1 | 76.92% | check: input "export" at 0 is output as "export" at 0, which means "export@\|0/2", not "export@\|-1/2" |
 | js/directives/issue-7346.js | 1/1 | 100.00% | check: input "'bar'" at 78 is output as "\"bar\"" at 79, which means "key:bar@\|0/7", not "key:bar@\|0/6" |
-| js/empty-paren-comment/class.js | 1/1 | 100.00% | check: output comment "/**\n   * Set of default settings to be applied to model fetch calls in DAO layer.\n   */" matche |
 | js/explicit-resource-management/valid-await-using-binding-using.js | 1/1 | 75.00% | check: input "(" at 53 is output as "await" at 53, which means "await@\|-1/7", not "(@\|-1/7" |
 | js/explicit-resource-management/valid-await-using-comments.js | 1/1 | 64.52% | check: input comment "/*8*/" is missing from the output |
 | js/explicit-resource-management/valid-for-using-binding-of-of.js | 1/1 | 50.00% | check: the output has a syntax error at 46, which the input has not |
@@ -323,10 +318,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | js/optional-chaining/comments.js | 1/1 | 71.91% | check: input comment "// Comment" is missing from the output |
 | js/quotes/strings.js | 2/2 | 100.00% | check: input "\"abc\"" at 497 is output as "\"abc\"" at 498, which means "key:abc@\|0/4", not "key:abc@\|0/3" |
 | js/return/comment.js | 1/1 | 47.19% | check: input comment "/* a */" is missing from the output |
-| js/test-declarations/angular_async.js | 2/2 | 100.00% | check: output comment "/*\n * isTestCall(parent) should only be called when parent exists\n * and parent.type is CallExp |
-| js/test-declarations/angular_fakeAsync.js | 2/2 | 100.00% | check: output comment "/*\n * isTestCall(parent) should only be called when parent exists\n * and parent.type is CallExp |
-| js/test-declarations/angular_waitForAsync.js | 2/2 | 100.00% | check: output comment "/*\n * isTestCall(parent) should only be called when parent exists\n * and parent.type is CallExp |
-| js/test-declarations/angularjs_inject.js | 2/2 | 100.00% | check: output comment "/*\n * isTestCall(parent) should only be called when parent exists\n * and parent.type is CallExp |
 | js/unary-expression/comments.js | 1/1 | 16.74% | check: input "!" at 108 is output as "!" at 82, which means "!@operator\|-1/19", not "!@operator\|-1/18" |
 | js/v8_intrinsic/intrinsic_call.js | 1/1 | 45.45% | check: input "IsAsmWasmCode" at 138 is output as ")" at 112, which means ")@\|-1/13", not "IsAsmWasmCode@function\|0/14" |
 | jsx/comments/in-end-tag.js | 1/1 | 32.08% | check: input ">" at 503 is output as ">" at 503, which means ">@\|-1/71", not ">@\|-1/62" |
