@@ -23,6 +23,18 @@ export const COST_PER_SKIPPED_CHAR = 1;
 const NO_CHILDREN: Subtree[] = [];
 export const EMPTY_STATE = new Uint8Array(0);
 
+const VISIBLE = 1;
+const NAMED = 2;
+const EXTRA = 4;
+const FRAGILE_LEFT = 8;
+const FRAGILE_RIGHT = 16;
+const IS_KEYWORD = 32;
+const IS_MISSING = 64;
+const HAS_EXTERNAL_TOKENS = 128;
+const HAS_EXTERNAL_SCANNER_STATE_CHANGE = 256;
+
+// The booleans share one small-integer field behind accessors: a parse allocates a subtree per token and per
+// reduction, and nine fields of their own made each one about half again as large.
 export class Subtree {
   symbol: number;
   parseState: number;
@@ -33,15 +45,7 @@ export class Subtree {
   /** Stored cost; read it through `errorCost()`, which prices missing leaves. */
   cost = 0;
   children: Subtree[] = NO_CHILDREN;
-  visible: boolean;
-  named: boolean;
-  extra = false;
-  fragileLeft = false;
-  fragileRight = false;
-  isKeyword = false;
-  isMissing = false;
-  hasExternalTokens = false;
-  hasExternalScannerStateChange = false;
+  flags: number;
   externalState: Uint8Array = EMPTY_STATE;
   productionId = 0;
   dynamicPrecedence = 0;
@@ -58,8 +62,66 @@ export class Subtree {
   ) {
     this.symbol = symbol;
     this.parseState = parseState;
-    this.visible = visible;
-    this.named = named;
+    this.flags = (visible ? VISIBLE : 0) | (named ? NAMED : 0);
+  }
+
+  private setFlag(bit: number, on: boolean): void {
+    this.flags = on ? this.flags | bit : this.flags & ~bit;
+  }
+
+  get visible(): boolean {
+    return (this.flags & VISIBLE) !== 0;
+  }
+  set visible(v: boolean) {
+    this.setFlag(VISIBLE, v);
+  }
+  get named(): boolean {
+    return (this.flags & NAMED) !== 0;
+  }
+  set named(v: boolean) {
+    this.setFlag(NAMED, v);
+  }
+  get extra(): boolean {
+    return (this.flags & EXTRA) !== 0;
+  }
+  set extra(v: boolean) {
+    this.setFlag(EXTRA, v);
+  }
+  get fragileLeft(): boolean {
+    return (this.flags & FRAGILE_LEFT) !== 0;
+  }
+  set fragileLeft(v: boolean) {
+    this.setFlag(FRAGILE_LEFT, v);
+  }
+  get fragileRight(): boolean {
+    return (this.flags & FRAGILE_RIGHT) !== 0;
+  }
+  set fragileRight(v: boolean) {
+    this.setFlag(FRAGILE_RIGHT, v);
+  }
+  get isKeyword(): boolean {
+    return (this.flags & IS_KEYWORD) !== 0;
+  }
+  set isKeyword(v: boolean) {
+    this.setFlag(IS_KEYWORD, v);
+  }
+  get isMissing(): boolean {
+    return (this.flags & IS_MISSING) !== 0;
+  }
+  set isMissing(v: boolean) {
+    this.setFlag(IS_MISSING, v);
+  }
+  get hasExternalTokens(): boolean {
+    return (this.flags & HAS_EXTERNAL_TOKENS) !== 0;
+  }
+  set hasExternalTokens(v: boolean) {
+    this.setFlag(HAS_EXTERNAL_TOKENS, v);
+  }
+  get hasExternalScannerStateChange(): boolean {
+    return (this.flags & HAS_EXTERNAL_SCANNER_STATE_CHANGE) !== 0;
+  }
+  set hasExternalScannerStateChange(v: boolean) {
+    this.setFlag(HAS_EXTERNAL_SCANNER_STATE_CHANGE, v);
   }
 }
 
@@ -178,13 +240,7 @@ export function cloneLeaf(t: Subtree): Subtree {
   c.sizeRows = t.sizeRows;
   c.cost = t.cost;
   c.children = t.children;
-  c.extra = t.extra;
-  c.fragileLeft = t.fragileLeft;
-  c.fragileRight = t.fragileRight;
-  c.isKeyword = t.isKeyword;
-  c.isMissing = t.isMissing;
-  c.hasExternalTokens = t.hasExternalTokens;
-  c.hasExternalScannerStateChange = t.hasExternalScannerStateChange;
+  c.flags = t.flags;
   c.externalState = t.externalState;
   c.productionId = t.productionId;
   c.dynamicPrecedence = t.dynamicPrecedence;
