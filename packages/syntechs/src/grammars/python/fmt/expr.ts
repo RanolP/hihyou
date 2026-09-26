@@ -880,7 +880,7 @@ function subscript(f: Fmt, e: Subscript, chain: Chain): Doc {
   return chain === "default" && layout === "fluent" ? group(out) : out;
 }
 
-function args(f: Fmt, a: Arguments): Doc {
+export function args(f: Fmt, a: Arguments): Doc {
   const cs = f.comments;
   const dangling = cs.dangling(a);
   const open = f.tok(a.open);
@@ -1119,13 +1119,9 @@ export function parameters(
       if (trailingComma && lastEnd !== undefined)
         out.push(f.tok(commaBefore(p, lastEnd)));
     } else {
-      out.push(
-        ifBreak(
-          lastEnd !== undefined
-            ? f.tok(commaBefore(p, lastEnd))
-            : synthetic(p.ts, ","),
-        ),
-      );
+      // A single parameter has no source comma to reuse.
+      const comma = lastEnd !== undefined ? commaBefore(p, lastEnd) : undefined;
+      out.push(ifBreak(comma ? f.tok(comma, ",") : synthetic(p.ts, ",")));
       if (!f.options["skip-magic-trailing-comma"] && trailingComma)
         out.push(hard);
     }
