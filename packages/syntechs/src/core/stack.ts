@@ -220,6 +220,7 @@ function addLink(
 export class Stack {
   heads: StackHead[] = [];
   private slices: StackSlice[] = [];
+  private readonly free: StackNode[] = [];
   private readonly baseNode = new StackNode(null, null, false, 1);
 
   constructor() {
@@ -304,7 +305,32 @@ export class Stack {
     state: number,
   ): void {
     const head = this.head(version);
-    const node = new StackNode(head.node, subtree, pending, state);
+    const reused = this.free.pop();
+    let node: StackNode;
+    if (reused === undefined)
+      node = new StackNode(head.node, subtree, pending, state);
+    else {
+      node = reused;
+      node.state = state;
+      node.more = null;
+      node.linkCount = 1;
+      node.node0 = head.node;
+      node.subtree0 = subtree;
+      node.pending0 = pending;
+      const previous = head.node;
+      node.position = previous.position;
+      node.row = previous.row;
+      node.errorCost = previous.errorCost;
+      node.dynamicPrecedence = previous.dynamicPrecedence;
+      node.nodeCount = previous.nodeCount;
+      if (subtree !== null) {
+        node.errorCost += errorCost(subtree);
+        node.position += totalSize(subtree);
+        node.row += totalRows(subtree);
+        node.nodeCount += nodeCountOf(subtree);
+        node.dynamicPrecedence += nodeDynamicPrecedence(subtree);
+      }
+    }
     if (subtree === null) head.nodeCountAtLastError = node.nodeCount;
     head.node = node;
   }
@@ -452,6 +478,7 @@ export class Stack {
         subtrees.push(subtree);
         if (!flag(subtree, EXTRA)) depth++;
       } else depth++;
+      this.free.push(node);
       node = node.node0 as StackNode;
     }
     head.node = node;
