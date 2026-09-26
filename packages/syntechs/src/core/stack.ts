@@ -17,18 +17,28 @@ const MAX_LINK_COUNT = 8;
 const MAX_ITERATOR_COUNT = 64;
 const ERROR_STATE = 0;
 
-export interface StackLink {
+interface StackLink {
   node: StackNode;
   subtree: Subtree | null;
   isPending: boolean;
 }
 
+/**
+ * A node's first link is stored in its own fields and only the rest in `more`: nearly every node has exactly
+ * one link, and a push per token and per reduction made the link object and its array most of the allocation.
+ * Links are values, as C's `StackLink` structs are, so each node owns its copies.
+ */
 export class StackNode {
   state: number;
   /** Position in UTF-16 units, and its row. */
   position = 0;
   row = 0;
-  links: StackLink[] = [];
+  linkCount = 0;
+  node0: StackNode | null = null;
+  subtree0: Subtree | null = null;
+  pending0 = false;
+  /** Links 1.. of `linkCount`. */
+  more: StackLink[] | null = null;
   errorCost = 0;
   nodeCount = 0;
   dynamicPrecedence = 0;
@@ -41,7 +51,10 @@ export class StackNode {
   ) {
     this.state = state;
     if (previous !== null) {
-      this.links.push({ node: previous, subtree, isPending });
+      this.linkCount = 1;
+      this.node0 = previous;
+      this.subtree0 = subtree;
+      this.pending0 = isPending;
       this.position = previous.position;
       this.row = previous.row;
       this.errorCost = previous.errorCost;
@@ -111,43 +124,91 @@ function subtreeIsEquivalent(
   );
 }
 
-function addLink(self: StackNode, link: StackLink): void {
-  if (link.node === self) return;
-  for (const existing of self.links) {
-    if (subtreeIsEquivalent(existing.subtree, link.subtree)) {
-      if (existing.node === link.node) {
+function linkNode(self: StackNode, i: number): StackNode {
+  return (
+    i === 0 ? self.node0 : (self.more as StackLink[])[i - 1]?.node
+  ) as StackNode;
+}
+
+function linkSubtree(self: StackNode, i: number): Subtree | null {
+  return i === 0
+    ? self.subtree0
+    : ((self.more as StackLink[])[i - 1] as StackLink).subtree;
+}
+
+function linkPending(self: StackNode, i: number): boolean {
+  return i === 0
+    ? self.pending0
+    : ((self.more as StackLink[])[i - 1] as StackLink).isPending;
+}
+
+function setLinkSubtree(
+  self: StackNode,
+  i: number,
+  subtree: Subtree | null,
+): void {
+  if (i === 0) self.subtree0 = subtree;
+  else ((self.more as StackLink[])[i - 1] as StackLink).subtree = subtree;
+}
+
+function addLink(
+  self: StackNode,
+  node: StackNode,
+  subtree: Subtree | null,
+  isPending: boolean,
+): void {
+  if (node === self) return;
+  for (let i = 0; i < self.linkCount; i++) {
+    const existingSubtree = linkSubtree(self, i);
+    if (subtreeIsEquivalent(existingSubtree, subtree)) {
+      const existingNode = linkNode(self, i);
+      if (existingNode === node) {
         if (
-          nodeDynamicPrecedence(link.subtree) >
-          nodeDynamicPrecedence(existing.subtree)
+          nodeDynamicPrecedence(subtree) >
+          nodeDynamicPrecedence(existingSubtree)
         ) {
-          existing.subtree = link.subtree;
+          setLinkSubtree(self, i, subtree);
           self.dynamicPrecedence =
-            link.node.dynamicPrecedence + nodeDynamicPrecedence(link.subtree);
+            node.dynamicPrecedence + nodeDynamicPrecedence(subtree);
         }
         return;
       }
       if (
-        existing.node.state === link.node.state &&
-        existing.node.position === link.node.position &&
-        existing.node.errorCost === link.node.errorCost
+        existingNode.state === node.state &&
+        existingNode.position === node.position &&
+        existingNode.errorCost === node.errorCost
       ) {
-        for (const l of link.node.links) addLink(existing.node, l);
-        let dynamicPrecedence = link.node.dynamicPrecedence;
-        if (link.subtree !== null)
-          dynamicPrecedence += nodeDynamicPrecedence(link.subtree);
+        for (let j = 0; j < node.linkCount; j++)
+          addLink(
+            existingNode,
+            linkNode(node, j),
+            linkSubtree(node, j),
+            linkPending(node, j),
+          );
+        let dynamicPrecedence = node.dynamicPrecedence;
+        if (subtree !== null)
+          dynamicPrecedence += nodeDynamicPrecedence(subtree);
         if (dynamicPrecedence > self.dynamicPrecedence)
           self.dynamicPrecedence = dynamicPrecedence;
         return;
       }
     }
   }
-  if (self.links.length === MAX_LINK_COUNT) return;
-  let nodeCount = link.node.nodeCount;
-  let dynamicPrecedence = link.node.dynamicPrecedence;
-  self.links.push(link);
-  if (link.subtree !== null) {
-    nodeCount += nodeCountOf(link.subtree);
-    dynamicPrecedence += nodeDynamicPrecedence(link.subtree);
+  if (self.linkCount === MAX_LINK_COUNT) return;
+  let nodeCount = node.nodeCount;
+  let dynamicPrecedence = node.dynamicPrecedence;
+  if (self.linkCount === 0) {
+    self.node0 = node;
+    self.subtree0 = subtree;
+    self.pending0 = isPending;
+  } else {
+    self.more ??= [];
+    self.more.push({ node, subtree, isPending });
+  }
+  self.linkCount++;
+  if (subtree !== null) {
+    nodeCount += nodeCountOf(subtree);
+    dynamicPrecedence += nodeDynamicPrecedence(subtree);
   }
   if (nodeCount > self.nodeCount) self.nodeCount = nodeCount;
   if (dynamicPrecedence > self.dynamicPrecedence)
@@ -221,7 +282,7 @@ export class Stack {
     if (
       head.status === PAUSED ||
       (head.node.state === ERROR_STATE &&
-        (head.node.links[0]?.subtree ?? null) === null)
+        head.node.subtree0 === null)
     ) {
       result += COST_PER_RECOVERY;
     }
@@ -297,7 +358,7 @@ export class Stack {
         const node = iterator.node;
         const action = callback(iterator);
         const shouldPop = (action & POP) !== 0;
-        const shouldStop = (action & STOP) !== 0 || node.links.length === 0;
+        const shouldStop = (action & STOP) !== 0 || node.linkCount === 0;
         if (shouldPop) {
           const subtrees = shouldStop
             ? iterator.subtrees
@@ -311,16 +372,16 @@ export class Stack {
           size--;
           continue;
         }
-        const linkCount = node.links.length;
+        const linkCount = node.linkCount;
         for (let j = 1; j <= linkCount; j++) {
           let next: StackIterator;
-          let link: StackLink;
+          let l: number;
           if (j === linkCount) {
-            link = node.links[0] as StackLink;
+            l = 0;
             next = iterator;
           } else {
             if (iterators.length >= MAX_ITERATOR_COUNT) continue;
-            link = node.links[j] as StackLink;
+            l = j;
             next = {
               node: iterator.node,
               subtrees: iterator.subtrees.slice(),
@@ -329,12 +390,13 @@ export class Stack {
             };
             iterators.push(next);
           }
-          next.node = link.node;
-          if (link.subtree !== null) {
-            if (includeSubtrees) next.subtrees.push(link.subtree);
-            if (!link.subtree.extra) {
+          next.node = linkNode(node, l);
+          const subtree = linkSubtree(node, l);
+          if (subtree !== null) {
+            if (includeSubtrees) next.subtrees.push(subtree);
+            if (!subtree.extra) {
               next.subtreeCount++;
-              if (!link.isPending) next.isPending = false;
+              if (!linkPending(node, l)) next.isPending = false;
             }
           } else {
             next.subtreeCount++;
@@ -347,6 +409,24 @@ export class Stack {
   }
 
   popCount(version: number, count: number): StackSlice[] {
+    // What `iter` does when every node above the goal has one link, without its iterators: one path, one slice.
+    const subtrees: Subtree[] = [];
+    let node = this.head(version).node;
+    let depth = 0;
+    while (depth !== count && node.linkCount === 1) {
+      const subtree = node.subtree0;
+      if (subtree !== null) {
+        subtrees.push(subtree);
+        if (!subtree.extra) depth++;
+      } else depth++;
+      node = node.node0 as StackNode;
+    }
+    if (depth === count) {
+      subtrees.reverse();
+      this.slices = [];
+      this.addSlice(version, node, subtrees);
+      return this.slices;
+    }
     return this.iter(
       version,
       (it) => (it.subtreeCount === count ? POP | STOP : NONE),
@@ -371,8 +451,9 @@ export class Stack {
 
   popError(version: number): Subtree[] {
     const node = this.head(version).node;
-    for (const link of node.links) {
-      if (link.subtree !== null && link.subtree.symbol === SYM_ERROR) {
+    for (let i = 0; i < node.linkCount; i++) {
+      const subtree = linkSubtree(node, i);
+      if (subtree !== null && subtree.symbol === SYM_ERROR) {
         let foundError = false;
         const pop = this.iter(
           version,
@@ -405,7 +486,7 @@ export class Stack {
   popAll(version: number): StackSlice[] {
     return this.iter(
       version,
-      (it) => (it.node.links.length === 0 ? POP : NONE),
+      (it) => (it.node.linkCount === 0 ? POP : NONE),
       0,
     );
   }
@@ -449,16 +530,15 @@ export class Stack {
     let node: StackNode | undefined = head.node;
     if (node.errorCost === 0) return true;
     while (node !== undefined) {
-      const link: StackLink | undefined = node.links[0];
-      if (link !== undefined) {
-        const subtree = link.subtree;
+      if (node.linkCount > 0) {
+        const subtree = node.subtree0;
         if (subtree !== null) {
           if (totalSize(subtree) > 0) return true;
           if (
             node.nodeCount > head.nodeCountAtLastError &&
             errorCost(subtree) === 0
           ) {
-            node = link.node;
+            node = node.node0 as StackNode;
             continue;
           }
         }
@@ -498,7 +578,14 @@ export class Stack {
     if (!this.canMerge(v1, v2)) return false;
     const head1 = this.head(v1);
     const head2 = this.head(v2);
-    for (const link of head2.node.links) addLink(head1.node, link);
+    const from = head2.node;
+    for (let i = 0; i < from.linkCount; i++)
+      addLink(
+        head1.node,
+        linkNode(from, i),
+        linkSubtree(from, i),
+        linkPending(from, i),
+      );
     if (head1.node.state === ERROR_STATE)
       head1.nodeCountAtLastError = head1.node.nodeCount;
     this.removeVersion(v2);

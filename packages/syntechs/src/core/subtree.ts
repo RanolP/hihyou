@@ -418,7 +418,9 @@ export function lastExternalToken(tree: Subtree): Subtree | null {
 }
 
 /** Moves the trailing extras of `self` into a new array, in their original order. */
-export function removeTrailingExtras(self: Subtree[]): Subtree[] {
+export function removeTrailingExtras(self: Subtree[]): readonly Subtree[] {
+  if (self.length === 0 || !(self[self.length - 1] as Subtree).extra)
+    return NO_CHILDREN;
   const out: Subtree[] = [];
   while (self.length > 0 && (self[self.length - 1] as Subtree).extra)
     out.push(self.pop() as Subtree);
