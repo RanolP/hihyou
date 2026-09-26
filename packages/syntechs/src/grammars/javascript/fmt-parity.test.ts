@@ -3,6 +3,7 @@ import { join } from "node:path";
 import * as prettier from "prettier";
 import { describe, expect, it } from "vitest";
 import { type Language, parse } from "../../core/index.js";
+import { check } from "../../fmt/check.js";
 import { format } from "../../fmt/format.js";
 import { language as tsxParser } from "../tsx/index.js";
 import { tsx, typescript } from "../typescript/fmt.js";
@@ -172,13 +173,19 @@ const edgeCases: [string, Target, string][] = [
   ],
 ];
 
-function ours(target: Target, text: string, options: Partial<JsOptions>) {
+function laidOut(target: Target, text: string, options: Partial<JsOptions>) {
   const t = targets[target];
   const root = parse(t.parser, text).nodes[0];
   if (!root) throw new Error("empty tree");
   const out = format(root, text, t.lang, options as Partial<AllJsOptions>);
   if (!out.ok) throw new Error(`${out.reason}: ${out.detail}`);
   return out.text;
+}
+function ours(target: Target, text: string, options: Partial<JsOptions>) {
+  const out = laidOut(target, text, options);
+  const problem = check(targets[target].lang, text, out);
+  if (problem) throw new Error(`check: ${problem}`);
+  return out;
 }
 const theirs = (target: Target, text: string, options: Partial<JsOptions>) =>
   prettier.format(text, {
@@ -216,7 +223,8 @@ describe("the fetched JS/TSX corpus keeps its count of chunks byte-identical to 
     const path = join(corpusDir, file);
     if (!existsSync(path)) return;
     const text = readFileSync(path, "utf8");
-    const a = chunks(ours(target, text, {}));
+    // Layout only: `check` compares a comment's indentation, and prettier re-indents jquery's JSDoc blocks.
+    const a = chunks(laidOut(target, text, {}));
     const b = chunks(await theirs(target, text, {}));
     const expected = new Set(b);
     expect([a.filter((c) => expected.has(c)).length, b.length]).toEqual([
