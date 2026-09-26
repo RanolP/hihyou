@@ -5,16 +5,26 @@
 //
 //   node packages/syntechs/dist/fmt/bench.node.js [language...] [--ruff <path to ruff>]
 //
-// syntechs is parse + format, in process, timed after its bundles load (the load is reported apart). prettier
-// 3.9.9 and oxfmt run in process through their JS APIs, one awaited call per input. ruff has no JS API: it
-// runs as native ruff, the version mise.toml pins (0.16.9), resolved once via `mise which ruff` (or `--ruff`),
-// `format` over a directory of the inputs on one thread, one whole-process invocation per pass, same as
-// syntechs's warm median.
+// Every tool is timed the same way, folder level: the inputs are written to a temp dir once, then per pass the
+// unformatted copies are restored and ONE whole-process CLI invocation formats the directory in place (2
+// warmups, median of 5). oxfmt and prettier run their own bin/ script under this Node (`--write`, print width
+// 80); ruff is the native binary `mise which ruff` resolves (or `--ruff`), `format --isolated --no-cache`, one
+// thread; syntechs runs through fmt/cli.node.js, a minimal directory-formatting entry built for this bench. All
+// four pay their own process/Node startup, so the comparison is apples to apples. The pre-existing in-process
+// syntechs timing (parse + format only, no process startup) is kept as a secondary "in-process" column; it is
+// not used for the ratio or the verdict.
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as prettier from "prettier";
 import { benchFiles, type GrammarName } from "../core/corpus.node.js";
@@ -104,6 +114,7 @@ async function load<T>(url: URL, name: string): Promise<T | undefined> {
 }
 
 const REPO_ROOT = fileURLToPath(new URL("../../../..", import.meta.url));
+const require = createRequire(import.meta.url);
 
 function resolveRuff(): string {
   const at = process.argv.indexOf("--ruff");
@@ -120,43 +131,75 @@ function resolveRuff(): string {
   }
 }
 
+/** The bin script a package declares, resolved from its own package.json — never a mise or pnpm shim. */
+function resolveBin(pkg: string): string {
+  const pkgJsonPath = require.resolve(`${pkg}/package.json`);
+  const { bin } = JSON.parse(readFileSync(pkgJsonPath, "utf8")) as {
+    bin: string | Record<string, string>;
+  };
+  const rel = typeof bin === "string" ? bin : (bin[pkg] as string);
+  return join(dirname(pkgJsonPath), rel);
+}
+
+const CLI_PATH = fileURLToPath(new URL("./cli.node.js", import.meta.url));
+
 /**
- * Median whole-process time of one `ruff format <dir>` invocation per pass over `inputs`,
- * restoring the unformatted copies before each pass so every pass formats the same bytes.
+ * Writes `inputs` once to a fresh temp dir (extension per `extOf`, so each CLI infers the right language), then
+ * runs `run(dir)` for `WARMUP` + `RUNS` passes, restoring the unformatted copies before each. Returns the
+ * median whole-process time of `run` alone (restore excluded) and the dir, for an error message.
  */
-function ruffTime(ruff: string, inputs: Input[]): number {
+function folderTime(
+  inputs: Input[],
+  extOf: (i: Input) => string,
+  run: (dir: string) => void,
+): { ms: number; dir: string } {
   const root = mkdtempSync(join(tmpdir(), "syntechs-bench-"));
+  const dir = join(root, "inputs");
+  mkdirSync(dir);
+  const files = inputs.map((input, i) => ({
+    path: join(dir, `${i}.${extOf(input)}`),
+    text: input.text,
+  }));
   try {
-    const dir = join(root, "inputs");
-    mkdirSync(dir);
-    const files = inputs.map((input, i) => ({
-      path: join(dir, `${i}.py`),
-      text: input.text,
-    }));
-    const restore = () => {
-      for (const f of files) writeFileSync(f.path, f.text);
-    };
     const pass = () => {
-      restore();
+      for (const f of files) writeFileSync(f.path, f.text);
       const t = performance.now();
-      const r = spawnSync(ruff, ["format", "--isolated", "--no-cache", dir], {
-        cwd: REPO_ROOT,
-        env: { ...process.env, RAYON_NUM_THREADS: "1" },
-        encoding: "utf8",
-      });
-      const elapsed = performance.now() - t;
-      if (r.status !== 0)
-        throw new Error(`ruff exited ${r.status}: ${r.stderr.slice(0, 500)}`);
-      return elapsed;
+      run(dir);
+      return performance.now() - t;
     };
     for (let i = 0; i < WARMUP; i++) pass();
     const samples: number[] = [];
     for (let i = 0; i < RUNS; i++) samples.push(pass());
-    return median(samples);
+    return { ms: median(samples), dir };
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 }
+
+const runNode =
+  (bin: string, args: string[]) =>
+  (dir: string): void => {
+    const r = spawnSync(process.execPath, [bin, ...args, dir], {
+      cwd: REPO_ROOT,
+      encoding: "utf8",
+    });
+    if (r.status !== 0)
+      throw new Error(
+        `${bin} ${args.join(" ")} ${dir} exited ${r.status}: ${r.stderr.slice(0, 500)}`,
+      );
+  };
+
+const runRuff =
+  (bin: string) =>
+  (dir: string): void => {
+    const r = spawnSync(bin, ["format", "--isolated", "--no-cache", dir], {
+      cwd: REPO_ROOT,
+      env: { ...process.env, RAYON_NUM_THREADS: "1" },
+      encoding: "utf8",
+    });
+    if (r.status !== 0)
+      throw new Error(`ruff exited ${r.status}: ${r.stderr.slice(0, 500)}`);
+  };
 
 const cell = (x: number | undefined, digits = 1) =>
   x === undefined ? "-" : x.toFixed(digits);
@@ -170,167 +213,202 @@ async function main() {
   const verdicts: string[] = [];
   const failures: string[] = [];
   let ruff: string | undefined;
+  let oxfmtBin: string | undefined;
+  let prettierBin: string | undefined;
+  console.log(`syntechs CLI: ${CLI_PATH}`);
 
-  for (const g of GROUPS) {
-    if (wanted.length > 0 && !wanted.includes(g.id)) continue;
-    const target = TARGETS.find((t) => t.id === g.target);
-    if (!target) throw new Error(`no conformance target ${g.target}`);
-    const sets: [string, Input[]][] = [
-      [
-        "corpus",
-        g.corpus.flatMap((grammar) =>
-          benchFiles(grammar).map((f) => ({ ...f, grammar })),
-        ),
-      ],
-      [
-        "fixtures",
-        target.suite().cases.map((c) => ({
-          name: c.fixture,
-          text: c.text,
-          grammar: target.grammar(c.fixture),
-        })),
-      ],
-    ];
+  // oxfmt's own printWidth default is 100; this config, outside every bench dir so it is never itself
+  // formatted, pins it to 80 to match the in-process options and prettier's --print-width.
+  const oxfmtConfigRoot = mkdtempSync(join(tmpdir(), "syntechs-bench-cfg-"));
+  const oxfmtConfig = join(oxfmtConfigRoot, ".oxfmtrc.json");
+  writeFileSync(oxfmtConfig, JSON.stringify({ printWidth: 80 }));
 
-    // syntechs: its grammars and fmt module, loaded before any timing.
-    const t0 = performance.now();
-    const grammars = new Map<GrammarName, Grammar>();
-    const langs = new Map<GrammarName, Language<unknown>>();
-    for (const grammar of new Set(
-      sets.flatMap(([, inputs]) => inputs.map((i) => i.grammar)),
-    )) {
-      const language = await load<Grammar>(
-        new URL(`../grammars/${grammar}/index.js`, import.meta.url),
-        "language",
-      );
-      const exportName =
-        target.id === "ts" && grammar === "tsx" ? "tsx" : target.export;
-      const lang = await load<Language<unknown>>(
-        new URL(`../grammars/${target.fmt}/fmt.js`, import.meta.url),
-        exportName,
-      );
-      if (language) grammars.set(grammar, language);
-      if (lang) langs.set(grammar, lang);
-    }
-    const loadMs = performance.now() - t0;
-    const implemented = langs.size > 0;
+  try {
+    for (const g of GROUPS) {
+      if (wanted.length > 0 && !wanted.includes(g.id)) continue;
+      const target = TARGETS.find((t) => t.id === g.target);
+      if (!target) throw new Error(`no conformance target ${g.target}`);
+      const sets: [string, Input[]][] = [
+        [
+          "corpus",
+          g.corpus.flatMap((grammar) =>
+            benchFiles(grammar).map((f) => ({ ...f, grammar })),
+          ),
+        ],
+        [
+          "fixtures",
+          target.suite().cases.map((c) => ({
+            name: c.fixture,
+            text: c.text,
+            grammar: target.grammar(c.fixture),
+          })),
+        ],
+      ];
 
-    // Keep the inputs every reference accepts, so each tool formats the same bytes.
-    for (const set of sets) {
-      const kept: Input[] = [];
-      for (const input of set[1]) {
-        if (g.prettier && g.oxfmtExt) {
-          try {
-            await prettier.format(input.text, {
-              parser: g.prettier(input.grammar),
-            });
-          } catch {
-            continue;
-          }
-          try {
-            await oxfmt.format(
-              `input.${g.oxfmtExt(input.grammar)}`,
-              input.text,
-              { printWidth: 80 },
-            );
-          } catch {
-            continue;
-          }
-        }
-        kept.push(input);
+      // syntechs: its grammars and fmt module, loaded before any timing.
+      const t0 = performance.now();
+      const grammars = new Map<GrammarName, Grammar>();
+      const langs = new Map<GrammarName, Language<unknown>>();
+      for (const grammar of new Set(
+        sets.flatMap(([, inputs]) => inputs.map((i) => i.grammar)),
+      )) {
+        const language = await load<Grammar>(
+          new URL(`../grammars/${grammar}/index.js`, import.meta.url),
+          "language",
+        );
+        const exportName =
+          target.id === "ts" && grammar === "tsx" ? "tsx" : target.export;
+        const lang = await load<Language<unknown>>(
+          new URL(`../grammars/${target.fmt}/fmt.js`, import.meta.url),
+          exportName,
+        );
+        if (language) grammars.set(grammar, language);
+        if (lang) langs.set(grammar, lang);
       }
-      set[1] = kept;
-    }
+      const loadMs = performance.now() - t0;
+      const implemented = langs.size > 0;
 
-    let totals = { ours: 0, prettier: 0, oxfmt: 0, ruff: 0 };
-    for (const [label, inputs] of sets) {
-      const bytes = inputs.reduce((n, i) => n + Buffer.byteLength(i.text), 0);
-      const ours = implemented
-        ? await timed(() => {
-            for (const i of inputs)
-              format(
-                parseTree(grammars.get(i.grammar) as Grammar, i.text),
-                langs.get(i.grammar) as Language<unknown>,
+      // Keep the inputs every reference accepts, so each tool formats the same bytes.
+      for (const set of sets) {
+        const kept: Input[] = [];
+        for (const input of set[1]) {
+          if (g.prettier && g.oxfmtExt) {
+            try {
+              await prettier.format(input.text, {
+                parser: g.prettier(input.grammar),
+              });
+            } catch {
+              continue;
+            }
+            try {
+              await oxfmt.format(
+                `input.${g.oxfmtExt(input.grammar)}`,
+                input.text,
+                { printWidth: 80 },
               );
-          })
-        : undefined;
-      // Correctness apart from the timing: `format` does not check its output, so the bench checks each once.
-      if (implemented)
-        for (const i of inputs) {
-          const lang = langs.get(i.grammar) as Language<unknown>;
-          const out = format(
-            parseTree(grammars.get(i.grammar) as Grammar, i.text),
-            lang,
-          );
-          const problem = out.ok
+            } catch {
+              continue;
+            }
+          }
+          kept.push(input);
+        }
+        set[1] = kept;
+      }
+
+      let totals = { ours: 0, prettier: 0, oxfmt: 0, ruff: 0 };
+      for (const [label, inputs] of sets) {
+        const bytes = inputs.reduce(
+          (n, i) => n + Buffer.byteLength(i.text),
+          0,
+        );
+        const ours = implemented
+          ? await timed(() => {
+              for (const i of inputs)
+                format(
+                  parseTree(grammars.get(i.grammar) as Grammar, i.text),
+                  langs.get(i.grammar) as Language<unknown>,
+                );
+            })
+          : undefined;
+        // Correctness apart from the timing: `format` does not check its output, so the bench checks each once.
+        if (implemented)
+          for (const i of inputs) {
+            const lang = langs.get(i.grammar) as Language<unknown>;
+            const out = format(
+              parseTree(grammars.get(i.grammar) as Grammar, i.text),
+              lang,
+            );
+            const problem = out.ok
               ? check(lang, i.text, out.text)
               : `${out.reason}: ${out.detail}`;
-          if (problem) failures.push(`${g.id} ${label} ${i.name}: ${problem}`);
+            if (problem) failures.push(`${g.id} ${label} ${i.name}: ${problem}`);
+          }
+
+        let pretty: number | undefined;
+        let ox: number | undefined;
+        let rf: number | undefined;
+        let oursFolder: number | undefined;
+        if (g.prettier && g.oxfmtExt) {
+          const extOf = (i: Input) => (g.oxfmtExt as (g: GrammarName) => string)(i.grammar);
+          if (oxfmtBin === undefined) {
+            oxfmtBin = resolveBin("oxfmt");
+            console.log(`oxfmt CLI: ${oxfmtBin}`);
+          }
+          if (prettierBin === undefined) {
+            prettierBin = resolveBin("prettier");
+            console.log(`prettier CLI: ${prettierBin}`);
+          }
+          ox = folderTime(
+            inputs,
+            extOf,
+            runNode(oxfmtBin, [
+              "--write",
+              "--disable-nested-config",
+              "-c",
+              oxfmtConfig,
+              "--threads=1",
+            ]),
+          ).ms;
+          pretty = folderTime(
+            inputs,
+            extOf,
+            runNode(prettierBin, ["--write", "--print-width=80"]),
+          ).ms;
+          if (implemented)
+            oursFolder = folderTime(inputs, extOf, runNode(CLI_PATH, [])).ms;
+        } else {
+          const extOf = () => "py";
+          if (ruff === undefined) {
+            ruff = resolveRuff();
+            console.log(`ruff: ${ruff}`);
+          }
+          rf = folderTime(inputs, extOf, runRuff(ruff)).ms;
+          if (implemented)
+            oursFolder = folderTime(inputs, extOf, runNode(CLI_PATH, [])).ms;
         }
-      let pretty: number | undefined;
-      let ox: number | undefined;
-      let rf: number | undefined;
-      if (g.prettier && g.oxfmtExt) {
-        const parser = g.prettier;
-        const ext = g.oxfmtExt;
-        pretty = (
-          await timed(async () => {
-            for (const i of inputs)
-              await prettier.format(i.text, { parser: parser(i.grammar) });
-          })
-        ).warm;
-        ox = (
-          await timed(async () => {
-            for (const i of inputs)
-              await oxfmt.format(`input.${ext(i.grammar)}`, i.text, {
-                printWidth: 80,
-              });
-          })
-        ).warm;
-      } else {
-        ruff ??= resolveRuff();
-        rf = ruffTime(ruff, inputs);
+        const ref = rf ?? ox;
+        totals = {
+          ours: totals.ours + (oursFolder ?? 0),
+          prettier: totals.prettier + (pretty ?? 0),
+          oxfmt: totals.oxfmt + (ox ?? 0),
+          ruff: totals.ruff + (rf ?? 0),
+        };
+        const mbs = (ms: number | undefined) =>
+          ms === undefined ? undefined : bytes / 1e6 / (ms / 1e3);
+        rows.push(
+          `| ${g.id} | ${label} | ${inputs.length} | ${(bytes / 1024).toFixed(0)} | ${oursFolder !== undefined ? `${cell(oursFolder)} (${cell(mbs(oursFolder), 2)} MB/s)` : implemented ? "-" : "not implemented"} | ${ours ? cell(ours.warm) : "-"} | ${pretty === undefined ? "-" : `${cell(pretty)} (${cell(mbs(pretty), 2)} MB/s)`} | ${ox === undefined ? "-" : `${cell(ox)} (${cell(mbs(ox), 2)} MB/s)`} | ${rf === undefined ? "-" : cell(rf)} | ${oursFolder && ref ? cell(oursFolder / ref, 2) : "-"} | ${oursFolder && pretty ? cell(oursFolder / pretty, 2) : "-"} |`,
+        );
       }
-      const ref = rf ?? ox;
-      totals = {
-        ours: totals.ours + (ours?.warm ?? 0),
-        prettier: totals.prettier + (pretty ?? 0),
-        oxfmt: totals.oxfmt + (ox ?? 0),
-        ruff: totals.ruff + (rf ?? 0),
-      };
-      const mbs = (ms: number | undefined) =>
-        ms === undefined ? undefined : bytes / 1e6 / (ms / 1e3);
-      rows.push(
-        `| ${g.id} | ${label} | ${inputs.length} | ${(bytes / 1024).toFixed(0)} | ${ours ? `${cell(ours.warm)} (${cell(mbs(ours.warm), 2)} MB/s)` : "not implemented"} | ${cell(ours?.cold)} | ${pretty === undefined ? "-" : `${cell(pretty)} (${cell(mbs(pretty), 2)} MB/s)`} | ${ox === undefined ? "-" : `${cell(ox)} (${cell(mbs(ox), 2)} MB/s)`} | ${rf === undefined ? "-" : cell(rf)} | ${ours && ref ? cell(ours.warm / ref, 2) : "-"} | ${ours && pretty ? cell(ours.warm / pretty, 2) : "-"} |`,
-      );
-    }
-    if (!implemented) {
+      if (!implemented) {
+        verdicts.push(
+          `${g.id}: not implemented (no fmt module export \`${target.export}\`)`,
+        );
+        continue;
+      }
+      const ref = g.prettier ? totals.oxfmt : totals.ruff;
+      const refName = g.prettier ? "oxfmt" : "ruff";
+      const vsRef = totals.ours / ref;
+      const pass = vsRef <= 5 && (!g.prettier || totals.ours < totals.prettier);
       verdicts.push(
-        `${g.id}: not implemented (no fmt module export \`${target.export}\`)`,
+        `${g.id}: ${pass ? "PASS" : "FAIL"} (syntechs ${totals.ours.toFixed(1)} ms folder = ${vsRef.toFixed(2)}x ${refName}${g.prettier ? `, ${(totals.ours / totals.prettier).toFixed(2)}x prettier` : ""}; load ${loadMs.toFixed(0)} ms not counted)`,
       );
-      continue;
     }
-    const ref = g.prettier ? totals.oxfmt : totals.ruff;
-    const refName = g.prettier ? "oxfmt" : "ruff";
-    const vsRef = totals.ours / ref;
-    const pass = vsRef <= 5 && (!g.prettier || totals.ours < totals.prettier);
-    verdicts.push(
-      `${g.id}: ${pass ? "PASS" : "FAIL"} (syntechs ${totals.ours.toFixed(1)} ms = ${vsRef.toFixed(2)}x ${refName}${g.prettier ? `, ${(totals.ours / totals.prettier).toFixed(2)}x prettier` : ""}; load ${loadMs.toFixed(0)} ms not counted)`,
-    );
+  } finally {
+    rmSync(oxfmtConfigRoot, { recursive: true, force: true });
   }
 
   console.log(
-    `Warm = median of ${RUNS} passes after ${WARMUP}; cold = the first pass after load. ms per pass over the set.\n`,
+    `\nWarm = median of ${RUNS} passes after ${WARMUP}; each pass is one whole-process CLI invocation over the input directory. ms per pass over the set.\n`,
   );
   console.log(
-    "| Language | Inputs | Files | KB | syntechs warm ms | syntechs cold ms | prettier ms | oxfmt ms | ruff ms | syntechs / oxfmt (ruff) | syntechs / prettier |",
+    "| Language | Inputs | Files | KB | syntechs folder ms | syntechs in-process ms | prettier folder ms | oxfmt folder ms | ruff folder ms | syntechs / oxfmt (ruff) | syntechs / prettier |",
   );
   console.log(
     "| :-- | :-- | --: | --: | --: | --: | --: | --: | --: | --: | --: |",
   );
   for (const r of rows) console.log(r);
   console.log(
-    "\nTarget: syntechs <= 5x oxfmt and < prettier (Python: <= 5x ruff), over corpus + fixtures.",
+    "\nTarget: syntechs <= 5x oxfmt and < prettier (Python: <= 5x ruff), over corpus + fixtures, all folder-level. The in-process column (parse + format, no process startup) is a secondary diagnostic, not the verdict.",
   );
   for (const v of verdicts) console.log(v);
   console.log(
