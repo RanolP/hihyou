@@ -20,6 +20,7 @@ import {
 import type { FormatNode } from "../../../fmt/tree.js";
 import {
   isLoneShortArgument,
+  logicalRight,
   printAssignment,
   shouldInlineLogicalExpression,
 } from "./assignment.js";
@@ -70,6 +71,56 @@ const flatten = (d: Doc): Doc[] =>
 
 // --- binaryish -------------------------------------------------------------------------------------------------
 
+/**
+ * Prettier's parser rebalances `a || (b || c)` into `(a || b) || c`, so a logical chain whose right operand
+ * repeats its operator prints as one flat chain. Undefined when `node` is no such chain, or when a comment
+ * sits on a node the rebalance would drop.
+ */
+function printRebalancedChain(ctx: JsCtx, node: FormatNode): Doc[] | undefined {
+  const op = operator(node);
+  const right = unparen(field(node, "right") as FormatNode);
+  if (!isLogical(node) || !isLogical(right) || operator(right) !== op)
+    return undefined;
+  const operands: FormatNode[] = [];
+  const ops: FormatNode[] = [];
+  let clean = true;
+  const walk = (c: FormatNode, top = false) => {
+    const inner = unparen(c);
+    if (!top && !(isLogical(inner) && operator(inner) === op)) {
+      operands.push(c);
+      return;
+    }
+    if (!top && (hasComment(ctx, c) || hasComment(ctx, inner))) clean = false;
+    walk(field(inner, "left") as FormatNode);
+    ops.push(field(inner, "operator") as FormatNode);
+    walk(field(inner, "right") as FormatNode);
+  };
+  walk(node, true);
+  if (!clean || operands.slice(1).some((o) => hasComment(ctx, o, CF.Leading)))
+    return undefined;
+  const atStart = ctx.options.experimentalOperatorPosition === "start";
+  const [head, ...rest] = operands as [FormatNode, ...FormatNode[]];
+  const parts: Doc[] = [group(p(ctx, head))];
+  rest.forEach((operand, i) => {
+    const opDoc = t(ctx, ops[i]);
+    const inner = unparen(operand);
+    const inline =
+      ((inner.kind === "object" || inner.kind === "array") &&
+        items(inner).length > 0) ||
+      inner.kind === "jsx_element" ||
+      inner.kind === "jsx_self_closing_element";
+    let rightDoc: Doc = inline
+      ? [opDoc, text(" "), p(ctx, operand)]
+      : atStart
+        ? [line, opDoc, text(" "), p(ctx, operand)]
+        : [opDoc, line, p(ctx, operand)];
+    if (i === 0 && hasComment(ctx, head, CF.Trailing | CF.Line))
+      rightDoc = group(rightDoc, true);
+    parts.push(!atStart || inline ? text(" ") : [], rightDoc);
+  });
+  return parts;
+}
+
 function printBinaryishExpressions(
   ctx: JsCtx,
   node: FormatNode,
@@ -80,6 +131,12 @@ function printBinaryishExpressions(
   const right = field(node, "right") as FormatNode;
   const leftInner = unparen(left);
   const op = operator(node);
+  const rebalanced = printRebalancedChain(ctx, node);
+  if (rebalanced) {
+    if (isNested && hasComment(ctx, node))
+      return flatten(ctx.withComments(node, rebalanced));
+    return rebalanced;
+  }
   let parts: Doc[] = [];
   if (isBinary(leftInner) && shouldFlatten(op, operator(leftInner))) {
     let nested = printBinaryishExpressions(
@@ -185,8 +242,11 @@ const binary: JsRule = (node, ctx) => {
     parent?.kind === "field_definition" ||
     parent?.kind === "pair";
   const leftInner = unparen(field(node, "left") as FormatNode);
+  const right = logicalRight(node) as FormatNode;
   const samePrecedenceSubExpression =
-    isBinary(leftInner) && shouldFlatten(operator(node), operator(leftInner));
+    (isBinary(leftInner) &&
+      shouldFlatten(operator(node), operator(leftInner))) ||
+    right !== field(node, "right");
   if (
     shouldNotIndent ||
     (shouldInlineLogicalExpression(node) && !samePrecedenceSubExpression) ||
@@ -194,7 +254,7 @@ const binary: JsRule = (node, ctx) => {
   )
     return group(parts);
   if (parts.length === 0) return [];
-  const hasJsx = isJsx(unparen(field(node, "right") as FormatNode));
+  const hasJsx = isJsx(unparen(right));
   const firstGroupIndex = parts.findIndex(
     (part) => !Array.isArray(part) && (part as { k: string }).k === "group",
   );

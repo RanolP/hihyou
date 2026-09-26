@@ -34,6 +34,7 @@ import {
   items,
   type JsCtx,
   objectOf,
+  operator,
   src,
   unparen,
 } from "./util.js";
@@ -166,9 +167,24 @@ function chooseLayout(
 }
 
 /** Prettier's shouldInlineLogicalExpression. */
+/**
+ * `n`'s right operand once prettier's parser has rebalanced `a || (b || c)` into `(a || b) || c`: the end of
+ * the right spine that repeats `n`'s logical operator.
+ */
+export function logicalRight(n: FormatNode): FormatNode | undefined {
+  let r = field(n, "right");
+  if (!isLogical(n)) return r;
+  for (;;) {
+    const inner = r && unparen(r);
+    if (!inner || !isLogical(inner) || operator(inner) !== operator(n))
+      return r;
+    r = field(inner, "right");
+  }
+}
+
 export function shouldInlineLogicalExpression(n: FormatNode): boolean {
   if (!isLogical(n)) return false;
-  const r = unparen(field(n, "right") ?? n);
+  const r = unparen(logicalRight(n) ?? n);
   if (r.kind === "object") return items(r).length > 0;
   if (r.kind === "array") return items(r).length > 0;
   return r.kind === "jsx_element" || r.kind === "jsx_self_closing_element";
