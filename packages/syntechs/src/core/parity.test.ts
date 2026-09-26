@@ -6,13 +6,13 @@ import { language as python } from "../grammars/python/index.js";
 import { language as tsx } from "../grammars/tsx/index.js";
 import { language as typescript } from "../grammars/typescript/index.js";
 import { type GrammarName, referenceMissing } from "./corpus.node.js";
-import { parse } from "./index.js";
+import { parseTree } from "./index.js";
 import type { Language } from "./language.js";
 import { checkParity } from "./parity.node.js";
 
 // Small inputs that exercise the lexer, the tables and error recovery (MISSING insertion, ERROR wrapping,
 // `recover`, `condenseStack`, stack `popError`/merging), each compared with native tree-sitter on its nodes, its
-// SyntaxTree and its errorChars. The corpus is gitignored, so these committed cases are what CI checks; the
+// labels and parents, and its errorChars. The corpus is gitignored, so these committed cases are what CI checks; the
 // fetched corpus runs through `node dist/parity.node.js`.
 // Generated modules are imported statically: vitest cannot resolve a template dynamic import to a .ts file.
 const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
@@ -89,7 +89,7 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
       "const b = <div>unclosed {x</div>\n",
       // An unclosed template inside a JSX expression, then a mismatched closing tag.
       "const c = <div>{`a${</span>\n",
-      // Multi-line JSX text becomes one collapsed label in the SyntaxTree; `in٠` stays one identifier.
+      // Multi-line JSX text becomes one collapsed label in the Tree; `in٠` stays one identifier.
       "const d = <a>\n  <b/>\n  x  y\n</a>\na\nin\u0660 b",
     ],
   ],
@@ -145,24 +145,24 @@ for (const [grammar, [lang, texts]] of Object.entries(CASES) as [
   // let a formatter drop or repeat that text unseen.
   test(`the ${grammar} tree nests every node inside its parent in order, under a root that holds every non-blank character`, () => {
     for (const text of texts) {
-      const root = parse(lang, text).nodes[0];
+      const tree = parseTree(lang, text);
       const broken: string[] = [];
-      if (root) {
-        if (/\S/.test(text.slice(0, root.start) + text.slice(root.end)))
-          broken.push(`text outside the root ${root.start}-${root.end}`);
-        const stack = [root];
-        for (let n = stack.pop(); n; n = stack.pop()) {
-          let at = n.start;
-          for (const c of n.children) {
-            if (c.start < at || c.end > n.end || c.end < c.start)
-              broken.push(
-                `${c.kind} ${c.start}-${c.end} in ${n.kind} ${n.start}-${n.end} after ${at}`,
-              );
-            at = c.end;
-            stack.push(c);
-          }
+      const root = tree.root;
+      if (/\S/.test(text.slice(0, tree.start(root)) + text.slice(tree.end(root))))
+        broken.push(`text outside the root ${tree.start(root)}-${tree.end(root)}`);
+      const stack = [root];
+      for (let n = stack.pop(); n !== undefined; n = stack.pop()) {
+        let at = tree.start(n);
+        for (let i = 0; i < tree.count(n); i++) {
+          const c = tree.child(n, i);
+          if (tree.start(c) < at || tree.end(c) > tree.end(n) || tree.end(c) < tree.start(c))
+            broken.push(
+              `${tree.kindName(c)} ${tree.start(c)}-${tree.end(c)} in ${tree.kindName(n)} ${tree.start(n)}-${tree.end(n)} after ${at}`,
+            );
+          at = tree.end(c);
+          stack.push(c);
         }
-      } else if (/\S/.test(text)) broken.push("no root");
+      }
       expect(broken, JSON.stringify(text)).toEqual([]);
     }
   });

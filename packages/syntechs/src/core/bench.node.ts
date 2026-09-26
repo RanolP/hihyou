@@ -1,4 +1,4 @@
-// This runtime (parse + the engine's SyntaxTree) against the tree-sitter 0.27 CLI's own parse time (the parity reference).
+// This runtime (parse + the arena Tree) against the tree-sitter 0.27 CLI's own parse time (the parity reference).
 // Usage: node packages/syntechs/dist/core/bench.node.js [grammar...]    (warm parse, cold start, min+gzip size)
 
 import { execFileSync } from "node:child_process";
@@ -15,7 +15,7 @@ import {
   referenceMissing,
   referenceParseMs,
 } from "./corpus.node.js";
-import { parse } from "./index.js";
+import { parseTree } from "./index.js";
 
 const RUNS = 15;
 const WARMUP = 3;
@@ -44,8 +44,8 @@ async function warm(grammar: GrammarName): Promise<void> {
   );
   console.log("input\tKB\tnodes\tours ms\tnative ms\tours/native");
   for (const input of benchFiles(grammar)) {
-    const nodes = parse(lang, input.text).nodes.length;
-    const ours = time(() => parse(lang, input.text));
+    const nodes = parseTree(lang, input.text).nodeCount;
+    const ours = time(() => parseTree(lang, input.text));
     const theirs = missing ? Number.NaN : referenceParseMs(grammar, input.text, WARMUP, RUNS);
     const name = input.name.split(/[\\/]/).at(-1);
     console.log(
@@ -66,9 +66,9 @@ const TINY: Record<GrammarName, string> = {
 /** One fresh process: import, load the grammar, parse a tiny input. Prints ms. */
 async function coldChild(grammar: GrammarName): Promise<void> {
   const t0 = performance.now();
-  const { parse } = await import("./index.js");
+  const { parseTree } = await import("./index.js");
   const lang = await loadGenerated(grammar);
-  parse(lang, TINY[grammar]);
+  parseTree(lang, TINY[grammar]);
   process.stdout.write(String(performance.now() - t0));
 }
 

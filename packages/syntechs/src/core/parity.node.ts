@@ -1,7 +1,8 @@
 // Parity with native tree-sitter (the 0.27 CLI): every visible node's type, range, field, named, isMissing and
-// isError, in preorder with depth; then, once those agree, the `SyntaxTree` hihyou consumes (labels, layout-only
-// JSX text dropped, height, size) and its errorChars. The CLI prints a field only on named nodes, so an anonymous
-// node's field goes unchecked. Usage: node packages/syntechs/dist/core/parity.node.js [grammar...] [--show N]
+// isError, in preorder with depth; then, once those agree, the arena `Tree` hihyou consumes (labels, parents)
+// and its errorChars. Layout-only JSX text, which the arena drops, is dropped from the reference too. The CLI
+// prints a field only on named nodes, so an anonymous node's field goes unchecked. Usage: node
+// packages/syntechs/dist/core/parity.node.js [grammar...] [--show N]
 
 import {
   corpus,
@@ -13,90 +14,77 @@ import {
   referenceMissing,
   referenceTrees,
 } from "./corpus.node.js";
-import { parseRaw } from "./index.js";
+import { parseTree } from "./index.js";
 import type { Language } from "./language.js";
 import { jsxText } from "./label.js";
-import { type RawTree, type SyntaxNode, type SyntaxTree, visibleTree } from "./tree.js";
 
 interface Walk {
   lines: string[];
   syntax: string[];
 }
 
-function describeSyntax(tree: SyntaxTree): string[] {
-  return [
-    ...tree.nodes.map(
-      (n, i) =>
-        `${i === n.id ? n.id : `${i}!=${n.id}`} ${n.kind}${n.named ? "" : "(anon)"} ${n.start}-${n.end} ${(n.named && n.field) || "-"}${n.missing ? " MISSING" : ""} p${n.parent?.id ?? "-"} h${n.height} s${n.size} ${JSON.stringify(n.label)}`,
-    ),
-    `errorChars ${tree.errorChars}`,
-  ];
+function nodeLine(
+  depth: number,
+  kind: string,
+  named: boolean,
+  missing: boolean,
+  start: number,
+  end: number,
+  field: string | undefined,
+): string {
+  return `${depth} ${kind}${named ? "" : "(anon)"}${missing ? "(MISSING)" : ""} ${start}-${end}${named && field ? ` ${field}:` : ""}`;
 }
 
 /**
- * The cursor walk packages/engine did over web-tree-sitter, rebuilt here over the CLI's preorder so the reference
- * SyntaxTree shares no walk, label, errorChars or height/size code with the port. Only `jsxText` and the
- * layout-leaf removal inside `visibleTree` are shared.
+ * The CLI's preorder, described with no walk, label or errorChars code shared with the port. Only `jsxText`
+ * is shared.
  */
 function reference(ref: ReferenceNode[], text: string): Walk {
   const lines: string[] = [];
-  const raw: RawTree = {
-    nodes: [],
-    layout: new Set(),
-    errorChars: 0,
-  };
-  const path: SyntaxNode[] = [];
-  for (const r of ref) {
-    lines.push(
-      `${r.depth} ${r.kind}${r.named ? "" : "(anon)"}${r.missing ? "(MISSING)" : ""} ${r.start}-${r.end}${r.field ? ` ${r.field}:` : ""}`,
-    );
+  const syntax: string[] = [];
+  let errorChars = 0;
+  /** The open ancestors by depth: kind, and preorder id among the kept nodes. */
+  const path: { kind: string; id: number }[] = [];
+  for (const [k, r] of ref.entries()) {
     path.length = r.depth;
-    const parent = path.at(-1);
-    const node: SyntaxNode = {
-      id: raw.nodes.length,
-      kind: r.kind,
-      named: r.named,
-      field: r.field,
-      missing: r.missing,
-      label: "",
-      start: r.start,
-      end: r.end,
-      parent,
-      children: [],
-      height: 1,
-      size: 1,
-    };
-    raw.nodes.push(node);
-    parent?.children.push(node);
-    if (node.kind === "ERROR" && !path.some((p) => p.kind === "ERROR")) raw.errorChars += node.end - node.start;
-    path.push(node);
-  }
-  for (const node of raw.nodes) {
-    if (node.children.length > 0) continue;
-    const token = text.slice(node.start, node.end);
-    if (node.kind.includes("comment")) node.label = token.replace(/\s+/g, " ");
-    else if (node.kind === "jsx_text") {
-      node.label = jsxText(token);
-      if (node.label === "") raw.layout.add(node);
-    } else node.label = token;
-  }
-  for (const n of raw.nodes.toReversed())
-    if (n.parent) {
-      n.parent.height = Math.max(n.parent.height, n.height + 1);
-      n.parent.size += n.size;
+    if (r.kind === "ERROR" && !path.some((p) => p.kind === "ERROR")) errorChars += r.end - r.start;
+    const leaf = (ref[k + 1]?.depth ?? -1) <= r.depth;
+    let label = "";
+    if (leaf) {
+      const token = text.slice(r.start, r.end);
+      if (r.kind.includes("comment")) label = token.replace(/\s+/g, " ");
+      else if (r.kind === "jsx_text") {
+        label = jsxText(token);
+        if (label === "") continue;
+      } else label = token;
     }
-  return { lines, syntax: describeSyntax(visibleTree(raw)) };
+    const id = lines.length;
+    lines.push(nodeLine(r.depth, r.kind, r.named, r.missing, r.start, r.end, r.field));
+    syntax.push(`${id} ${r.kind} p${path.at(-1)?.id ?? "-"} ${JSON.stringify(label)}`);
+    path.push({ kind: r.kind, id });
+  }
+  syntax.push(`errorChars ${errorChars}`);
+  return { lines, syntax };
 }
 
 function ours(lang: Language, text: string): Walk {
-  const raw = parseRaw(lang, text);
-  const depthOf = new Map<unknown, number>();
-  const lines = raw.nodes.map((n) => {
-    const depth = n.parent ? (depthOf.get(n.parent) as number) + 1 : 0;
-    depthOf.set(n, depth);
-    return `${depth} ${n.kind}${n.named ? "" : "(anon)"}${n.missing ? "(MISSING)" : ""} ${n.start}-${n.end}${n.named && n.field ? ` ${n.field}:` : ""}`;
-  });
-  return { lines, syntax: describeSyntax(visibleTree(raw)) };
+  const tree = parseTree(lang, text);
+  const lines: string[] = [];
+  const syntax: string[] = [];
+  /** Preorder without recursion: each pending node with its depth and its parent's preorder id. */
+  const stack: [number, number, number][] = [[tree.root, 0, -1]];
+  for (let top = stack.pop(); top !== undefined; top = stack.pop()) {
+    const [n, depth, parent] = top;
+    const id = lines.length;
+    const kind = tree.kindName(n);
+    lines.push(
+      nodeLine(depth, kind, tree.named(n), tree.missing(n), tree.start(n), tree.end(n), tree.fieldName(n)),
+    );
+    syntax.push(`${id} ${kind} p${parent < 0 ? "-" : parent} ${JSON.stringify(tree.label(n))}`);
+    for (let i = tree.count(n) - 1; i >= 0; i--) stack.push([tree.child(n, i), depth + 1, id]);
+  }
+  syntax.push(`errorChars ${tree.errorChars}`);
+  return { lines, syntax };
 }
 
 /** The first index where the lists differ, or -1 when they are identical. */
@@ -108,7 +96,7 @@ function firstDifference(a: string[], b: string[]): number {
 
 interface Divergence {
   input: Input;
-  /** `nodes`: the per-node lines differ. `syntaxTree`: those agree, but the SyntaxTree or errorChars do not. */
+  /** `nodes`: the per-node lines differ. `syntaxTree`: those agree, but the labels, parents or errorChars do not. */
   stage: "nodes" | "syntaxTree";
   index: number;
   expected: string[];

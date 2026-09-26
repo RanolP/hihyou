@@ -1,13 +1,7 @@
 import type { Language } from "./language.js";
 import { parseSubtree } from "./parser.js";
 import type { Tree } from "./arena.js";
-import {
-  buildTree,
-  type RawTree,
-  type SyntaxTree,
-  visibleTree,
-  walkTree,
-} from "./tree.js";
+import { buildTree } from "./tree.js";
 
 export {
   type GrammarMeta,
@@ -17,22 +11,6 @@ export {
 } from "./language.js";
 export { NO_NODE, type Tree } from "./arena.js";
 export type { ExternalScanner, Lexer } from "./lexer.js";
-export {
-  type RawTree,
-  type SyntaxNode,
-  type SyntaxTree,
-  syntaxTree,
-} from "./tree.js";
-
-/** Parses `text` into the object SyntaxTree: the visible nodes, layout-only JSX text dropped. */
-export function parse(lang: Language, text: string): SyntaxTree {
-  return visibleTree(parseRaw(lang, text));
-}
-
-/** The visible tree before layout-only JSX text is dropped, with the MISSING nodes marked. */
-export function parseRaw(lang: Language, text: string): RawTree {
-  return walkTree(lang, parseSubtree(lang, text), text);
-}
 
 /** Parses `text` into the arena tree the diff reads: the visible nodes, layout-only JSX text dropped. */
 export function parseTree(lang: Language, text: string): Tree {
