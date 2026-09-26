@@ -21,6 +21,7 @@ import { type Ctx, defineLanguage, type Rule } from "../../fmt/rules.js";
 import { isNextLineEmpty } from "../../fmt/text.js";
 import type { FormatNode } from "../../fmt/tree.js";
 import { grammar } from "./bundle.js";
+import { language } from "./index.js";
 
 /** The prettier options its postcss printer reads (3.9.9); `bracketSpacing` and `objectWrap` go unread. */
 export interface CssOptions extends PrettierOptions {
@@ -410,6 +411,9 @@ const requoted = (n: FormatNode, ctx: Ctx<CssOptions>) =>
 export const css = defineLanguage(
   grammar,
   {
+    parser: language,
+    // What `meaning` reads whole: a string's quotes and escapes, and a name's identifier, are separate leaves.
+    atoms: ["string_value", "class_name", "plain_value", "color_value"],
     lineComments: { js_comment: "//" },
     defaults,
     settings: prettierSettings,

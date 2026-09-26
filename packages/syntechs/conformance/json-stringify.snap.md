@@ -21,9 +21,9 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | json/json/propertyKey.json | 0/1 | 8.16% |
 | json/json/single-quote.json | 0/1 | 0.00% |
 
-# Refused (ok:false)
+# Refused
 
-The formatter's self-check rejected its own output, so it returned the input unchanged.
+The formatter threw (ok:false), or `check` found that its output says something the input does not.
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |

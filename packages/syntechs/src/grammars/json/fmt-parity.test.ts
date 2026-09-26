@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import * as prettier from "prettier";
 import { describe, expect, it } from "vitest";
 import { parse } from "../../core/index.js";
+import { check } from "../../fmt/check.js";
 import { format } from "../../fmt/format.js";
 import { type JsonOptions, jsonLanguageFor } from "./fmt.js";
 import { language } from "./index.js";
@@ -113,8 +114,11 @@ async function ours(
 ) {
   const root = parse(language, text).nodes[0];
   if (!root) throw new Error("empty tree");
-  const out = format(root, text, jsonLanguageFor(path), options);
+  const lang = jsonLanguageFor(path);
+  const out = format(root, text, lang, options);
   if (!out.ok) throw new Error(`${out.reason}: ${out.detail}`);
+  const problem = check(lang, text, out.text);
+  if (problem) throw new Error(`check: ${problem}`);
   return out.text;
 }
 

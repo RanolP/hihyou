@@ -1,25 +1,23 @@
-import type { Placed } from "./printer.js";
+import { parse } from "../core/index.js";
+import type { Language } from "./rules.js";
 import type { FormatNode } from "./tree.js";
 
-/** One code token as the self-check compares it: read from the input tree, or as printed. */
+/** One code token of a parsed text, as `check` compares it. */
 export interface Lexeme {
-  /** The token's source node; for a synthetic token, the node it anchors to. */
   readonly node: FormatNode;
-  /** The source slice on the input side, the printed text on the output side. */
+  /** The node's slice of the text. */
   readonly text: string;
-  /** Where `text` starts in that side's whole text (the output's line breaks are still `\n` here). */
+  /** Where `text` starts in the whole text. */
   readonly at: number;
-  /** Inserted by a rule (`synthetic()`); never on the input side. */
-  readonly synthetic: boolean;
 }
 
 /**
  * Maps one side's code tokens, in order, to what must match between input and output: a form per token, or
  * `undefined` for a token whose presence cannot change the meaning where it stands (a trailing `,`, an ASI `;`,
- * redundant parens). It runs once over the input and once over the output, so it must judge both alike: from
- * the neighbouring lexemes, or from the tree through `node`. `at` and `text` expose layout, so a language whose
- * meaning rides on it (Python's indentation) folds that into the forms, as the first token of a logical line
- * prefixed with its indent depth.
+ * redundant parens). It runs once over each parsed side, so it must judge both alike: from the neighbouring
+ * lexemes, or from the tree through `node`. `at` and `text` expose layout, so a language whose meaning rides on
+ * it (Python's indentation) folds that into the forms, as the first token of a logical line prefixed with its
+ * indent depth.
  */
 export type Normalize = (
   lexemes: readonly Lexeme[],
@@ -45,84 +43,43 @@ export function decimalValue(raw: string): string | undefined {
 }
 
 /**
- * Checks that `placed` (printed as `text`) says what `root` (of `source`) says: the normalized code tokens of
- * both sides match one for one, in order and by node, and every non-blank input character is printed exactly
- * once or belongs to a token normalized away. Returns what broke, or undefined.
+ * Checks that `formatted` says what `prev` says, as `language` judges meaning. It parses both texts, so a
+ * formatter bug that glues two tokens into one or splits one shows up as the tokens the parser reads back. The
+ * normalized code tokens of both sides match one for one in order, the comments match as a multiset (a rule may
+ * move a comment past a comma), and `formatted` has no syntax error when `prev` had none, except one holding
+ * only tokens `normalize` drops: the grammar may lack a form the formatter prints on purpose (tree-sitter-json has
+ * no trailing comma, which `jsonc` prints). Returns what broke, or undefined.
+ *
+ * `format` never runs this: a failure means a parser or formatter bug, which the tests and the conformance
+ * harness catch by checking every output they format.
  */
-export function check(
-  root: FormatNode,
-  source: string,
-  text: string,
-  placed: readonly Placed[],
-  normalize: Normalize,
-  isComment: (n: FormatNode) => boolean,
-  layoutBlind: boolean,
+export function check<O>(
+  language: Language<O>,
+  prev: string,
+  formatted: string,
 ): string | undefined {
-  // The printed source nodes by start offset: output order is source order but for the few comments a rule
-  // moves, so this is usually sorted already. A tree walk in preorder asks about nodes by growing start, so
-  // one cursor answers "was this node printed" without hashing every node of a large file.
-  const printed: FormatNode[] = [];
-  for (const { token: t } of placed) if (!t.synthetic) printed.push(t.node);
-  if (!sortedByStart(printed)) printed.sort((x, y) => x.start - y.start);
-  let cursor = 0;
-  const isPrinted = (n: FormatNode) => {
-    while (
-      cursor < printed.length &&
-      (printed[cursor] as FormatNode).start < n.start
-    )
-      cursor++;
-    for (let i = cursor; i < printed.length; i++) {
-      const p = printed[i] as FormatNode;
-      if (p.start !== n.start) break;
-      if (p === n) return true;
-    }
-    return false;
-  };
+  const before = read(language, prev);
+  const after = read(language, formatted);
+  const problem = sameComments(before.comments, after.comments);
+  if (problem) return problem;
 
+  const input = before.lexemes;
+  const output = after.lexemes;
+  const newErrors = before.errors.length === 0 ? after.errors : [];
   if (
-    layoutBlind &&
-    printsInputAsIs(root, source, placed, isPrinted, isComment)
+    newErrors.length === 0 &&
+    language.layoutBlind &&
+    sameTexts(input, output)
   )
-    return coverage(source, printed, []);
-  cursor = 0;
-
-  // The input's code tokens, in source order: each node a rule printed whole, else each leaf. Comments are
-  // left to the coverage check, because prettier moves them (a trailing comment past a comma).
-  const input: Lexeme[] = [];
-  const inputPrinted: boolean[] = [];
-  const stack = [root];
-  for (let n = stack.pop(); n; n = stack.pop()) {
-    if (isComment(n)) continue;
-    const whole = isPrinted(n);
-    if (whole || n.children.length === 0) {
-      if (n.end > n.start) {
-        input.push({
-          node: n,
-          text: source.slice(n.start, n.end),
-          at: n.start,
-          synthetic: false,
-        });
-        inputPrinted.push(whole);
-      }
-      continue;
+    return undefined;
+  const inForms = forms(input, prev, language);
+  const outForms = forms(output, formatted, language);
+  for (const e of newErrors)
+    for (let o = firstAtOrAfter(output, e.start); o < output.length; o++) {
+      if ((output[o] as Lexeme).at >= e.end) break;
+      if (outForms[o] !== undefined)
+        return `the output has a syntax error at ${e.start}, which the input has not`;
     }
-    for (let i = n.children.length - 1; i >= 0; i--) {
-      const c = n.children[i];
-      if (c) stack.push(c);
-    }
-  }
-  const output: Lexeme[] = [];
-  for (const { token: t, at } of placed)
-    if (t.text !== "" && (t.synthetic || !isComment(t.node)))
-      output.push({
-        node: t.node,
-        text: t.text,
-        at,
-        synthetic: t.synthetic === true,
-      });
-
-  const inForms = forms(input, source, normalize);
-  const outForms = forms(output, text, normalize);
   // Walks the tokens each side keeps (a defined form) in step.
   for (let i = 0, o = 0; ; i++, o++) {
     while (i < input.length && inForms[i] === undefined) i++;
@@ -131,83 +88,118 @@ export function check(
     const out = output[o];
     if (!out) {
       if (s) return `input ${describe(s)} is missing from the output`;
-      break;
+      return undefined;
     }
     if (!s) return `output ${describe(out)} matches no input token`;
-    if (out.synthetic)
-      return `inserted ${describe(out)} is not optional where it stands (normalized to ${JSON.stringify(outForms[o])})`;
-    if (out.node !== s.node)
-      return `output ${describe(out)} stands where input ${describe(s)} was`;
     if (outForms[o] !== inForms[i])
-      return `input ${describe(s)} printed as "${out.text}", which means ${JSON.stringify(outForms[o])}, not ${JSON.stringify(inForms[i])}`;
+      return `input ${describe(s)} is output as ${describe(out)}, which means ${JSON.stringify(outForms[o])}, not ${JSON.stringify(inForms[i])}`;
   }
+}
 
-  // Normalizing drops nothing from the page: an input token normalized away must still be printed or be
-  // optional, and every other input character (comments included) printed once.
-  const optional: FormatNode[] = [];
-  for (const [i, l] of input.entries())
-    if (inForms[i] === undefined && !inputPrinted[i]) optional.push(l.node);
-  return coverage(source, printed, optional);
+interface Read {
+  lexemes: Lexeme[];
+  /** Each comment's text with its line breaks as `\n` and no trailing blanks, which a formatter may rewrite. */
+  comments: string[];
+  /** The ERROR nodes, by start; a MISSING node is no error here (see `read`). */
+  errors: { start: number; end: number }[];
 }
 
 /**
- * Whether the output's code tokens are the input's, in order, by node and unrespelled, none synthetic. Then a
- * normalize that reads only nodes and texts maps both sides to the same forms, and every input token is printed,
- * so the comparison `check` would build lexemes for can only pass. Walks the input exactly as `check` does.
+ * The code tokens of `text` in order: each leaf, each node of an atom kind, and each node holding text of its
+ * own besides its children, taken whole. With the tree's nodes nested in order inside a root that spans every
+ * non-blank character (the parser test pins that), each non-blank character lands in exactly one lexeme or
+ * comment. A MISSING node is zero width, so it is no lexeme and no error: it stands for no text, and a token the
+ * recovery skipped for it is still compared (`[1,2,]` reads as a MISSING value after an optional `,`).
  */
-function printsInputAsIs(
-  root: FormatNode,
-  source: string,
-  placed: readonly Placed[],
-  isPrinted: (n: FormatNode) => boolean,
-  isComment: (n: FormatNode) => boolean,
-): boolean {
-  let o = 0;
-  const stack = [root];
+function read<O>(language: Language<O>, text: string): Read {
+  const out: Read = { lexemes: [], comments: [], errors: [] };
+  const root = parse(language.parser, text).nodes[0];
+  const stack: FormatNode[] = root ? [root] : [];
   for (let n = stack.pop(); n; n = stack.pop()) {
-    if (isComment(n)) continue;
-    const children = n.children;
-    if (isPrinted(n) || children.length === 0) {
-      if (n.end === n.start) continue;
-      let t = (placed[o] as Placed | undefined)?.token;
-      while (t && (t.text === "" || (!t.synthetic && isComment(t.node))))
-        t = (placed[++o] as Placed | undefined)?.token;
-      if (
-        !t ||
-        t.synthetic ||
-        t.node !== n ||
-        t.text.length !== n.end - n.start ||
-        !source.startsWith(t.text, n.start)
-      )
-        return false;
-      o++;
+    if (language.comments.has(n.kind)) {
+      out.comments.push(
+        text
+          .slice(n.start, n.end)
+          .replace(/\r\n?/g, "\n")
+          .replace(/[ \t]+$/gm, "")
+          .trimEnd(),
+      );
       continue;
     }
-    for (let i = children.length - 1; i >= 0; i--) {
-      const c = children[i];
-      if (c) stack.push(c);
+    if (n.kind === "ERROR") out.errors.push({ start: n.start, end: n.end });
+    const children = n.children;
+    if (
+      children.length === 0 ||
+      language.atoms.has(n.kind) ||
+      ownsText(n, text)
+    ) {
+      if (n.end > n.start)
+        out.lexemes.push({
+          node: n,
+          text: text.slice(n.start, n.end),
+          at: n.start,
+        });
+      continue;
     }
+    for (let i = children.length - 1; i >= 0; i--)
+      stack.push(children[i] as FormatNode);
   }
-  for (; o < placed.length; o++) {
-    const t = (placed[o] as Placed).token;
-    if (t.text !== "" && (t.synthetic || !isComment(t.node))) return false;
+  return out;
+}
+
+/** Whether `n` has a non-blank character outside all of its children. */
+function ownsText(n: FormatNode, text: string): boolean {
+  let at = n.start;
+  for (const c of n.children) {
+    if (hasNonBlank(text, at, c.start)) return true;
+    at = c.end;
   }
+  return hasNonBlank(text, at, n.end);
+}
+
+function sameComments(
+  before: readonly string[],
+  after: readonly string[],
+): string | undefined {
+  const count = new Map<string, number>();
+  for (const c of before) count.set(c, (count.get(c) ?? 0) + 1);
+  for (const c of after) {
+    const left = count.get(c);
+    if (!left)
+      return `output comment ${JSON.stringify(c)} matches no input comment`;
+    count.set(c, left - 1);
+  }
+  for (const [c, left] of count)
+    if (left > 0)
+      return `input comment ${JSON.stringify(c)} is missing from the output`;
+  return undefined;
+}
+
+/** The index of the first lexeme at or after `at`, or `lexemes.length`. */
+function firstAtOrAfter(lexemes: readonly Lexeme[], at: number): number {
+  let lo = 0;
+  let hi = lexemes.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if ((lexemes[mid] as Lexeme).at < at) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+function sameTexts(a: readonly Lexeme[], b: readonly Lexeme[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++)
+    if ((a[i] as Lexeme).text !== (b[i] as Lexeme).text) return false;
   return true;
 }
 
-function sortedByStart(nodes: readonly FormatNode[]): boolean {
-  for (let i = 1; i < nodes.length; i++)
-    if ((nodes[i] as FormatNode).start < (nodes[i - 1] as FormatNode).start)
-      return false;
-  return true;
-}
-
-function forms(
+function forms<O>(
   lexemes: readonly Lexeme[],
   text: string,
-  normalize: Normalize,
+  language: Language<O>,
 ): readonly (string | undefined)[] {
-  const out = normalize(lexemes, text);
+  const out = language.normalize(lexemes, text);
   if (out.length !== lexemes.length)
     throw new Error(
       `normalize returned ${out.length} forms for ${lexemes.length} tokens`,
@@ -215,48 +207,14 @@ function forms(
   return out;
 }
 
-const describe = (l: Lexeme) =>
-  `"${l.text}" at ${l.at}${l.synthetic ? " (synthetic)" : ""}`;
+const describe = (l: Lexeme) => `${JSON.stringify(l.text)} at ${l.at}`;
 
-/**
- * Checks that the ranges of `printed` and `optional` (each sorted by start) cover every non-blank character of
- * the input exactly once: a dropped token leaves a gap, a repeated one (or a node printed along with its own
- * child) overlaps. Tree-sitter puts every character outside whitespace into some leaf, so this is "each leaf
- * printed once" without walking the tree. On a tie `printed` goes first.
- */
-function coverage(
-  source: string,
-  printed: readonly FormatNode[],
-  optional: readonly FormatNode[],
-): string | undefined {
-  let covered = 0;
-  for (let p = 0, o = 0; p < printed.length || o < optional.length; ) {
-    const a = printed[p];
-    const b = optional[o];
-    let n: FormatNode;
-    if (a && (!b || a.start <= b.start)) {
-      n = a;
-      p++;
-    } else {
-      n = b as FormatNode;
-      o++;
-    }
-    if (n.start < covered) return `input at ${n.start} printed twice`;
-    if (hasNonBlank(source, covered, n.start))
-      return `input at ${covered} dropped`;
-    covered = n.end;
-  }
-  if (hasNonBlank(source, covered, source.length))
-    return `input at ${covered} dropped`;
-  return undefined;
-}
-
-/** `/\S/.test(source.slice(from, to))`, without the slice. */
-function hasNonBlank(source: string, from: number, to: number): boolean {
+/** `/\S/.test(text.slice(from, to))`, without the slice. */
+function hasNonBlank(text: string, from: number, to: number): boolean {
   for (let i = from; i < to; i++) {
-    const c = source.charCodeAt(i);
+    const c = text.charCodeAt(i);
     if (c === 32 || (c >= 9 && c <= 13)) continue;
-    if (c < 128 || !/\s/.test(source.charAt(i))) return true;
+    if (c < 128 || !/\s/.test(text.charAt(i))) return true;
   }
   return false;
 }

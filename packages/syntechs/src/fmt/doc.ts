@@ -20,8 +20,8 @@ export type Doc =
 
 /**
  * A source token, printed as `text`: usually its source slice, but a rule may respell it (a number's case, a
- * string's quotes), and the language's `normalize` decides whether the meaning held. Either way the node's
- * range is where it came from. A `synthetic` token is one a rule inserted (a trailing `,`, a `;`), which
+ * string's quotes), and the language's `normalize` decides whether `check` finds the meaning held. Either way
+ * the node's range is where it came from. A `synthetic` token is one a rule inserted (a trailing `,`, a `;`), which
  * `normalize` must declare optional; its node is the source node it sits next to.
  */
 export interface Token {

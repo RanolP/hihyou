@@ -19,6 +19,7 @@ import * as prettier from "prettier";
 import { benchFiles, type GrammarName } from "../core/corpus.node.js";
 import { parse } from "../core/index.js";
 import type { Language as Grammar } from "../core/language.js";
+import { check } from "./check.js";
 import {
   type DprintPlugin,
   dprint,
@@ -171,6 +172,7 @@ async function main() {
   );
   const rows: string[] = [];
   const verdicts: string[] = [];
+  const failures: string[] = [];
   let ruff: string | undefined;
 
   for (const g of GROUPS) {
@@ -265,6 +267,20 @@ async function main() {
             }
           })
         : undefined;
+      // Correctness apart from the timing: `format` does not check its output, so the bench checks each once.
+      if (implemented)
+        for (const i of inputs) {
+          const lang = langs.get(i.grammar) as Language<unknown>;
+          const root = parse(grammars.get(i.grammar) as Grammar, i.text)
+            .nodes[0];
+          const out = root && format(root, i.text, lang);
+          const problem = !out
+            ? undefined
+            : out.ok
+              ? check(lang, i.text, out.text)
+              : `${out.reason}: ${out.detail}`;
+          if (problem) failures.push(`${g.id} ${label} ${i.name}: ${problem}`);
+        }
       let pretty: number | undefined;
       let ox: number | undefined;
       let dpMs: number | string | undefined;
@@ -347,6 +363,11 @@ async function main() {
     "\nTarget: syntechs <= 5x oxfmt and < prettier (Python: <= 5x ruff), over corpus + fixtures. dprint is context only.",
   );
   for (const v of verdicts) console.log(v);
+  console.log(
+    failures.length === 0
+      ? "\nEvery output passed `check`."
+      : `\n${failures.length} outputs failed \`check\` (untimed):\n${failures.join("\n")}`,
+  );
 }
 
 await main();

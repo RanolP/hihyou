@@ -1,4 +1,3 @@
-import { check } from "./check.js";
 import { attachComments } from "./comments.js";
 import { type Doc, hardline, token } from "./doc.js";
 import type { EndOfLine } from "./options.js";
@@ -27,11 +26,8 @@ export type Formatted =
   | { ok: true; text: string; anchors: Anchor[] }
   | {
       ok: false;
-      /**
-       * `token-mismatch`: the rules dropped, repeated, reordered, changed the meaning of or invented a source
-       * token (as the language's `normalize` judges meaning), so the output would misstate the code.
-       */
-      reason: "token-mismatch" | "formatter-error";
+      /** `formatter-error`: a rule threw, so there is no output. */
+      reason: "formatter-error";
       /** The input, unchanged. */
       text: string;
       detail: string;
@@ -39,9 +35,10 @@ export type Formatted =
 
 /**
  * Lays out the tree of `source` by `language`'s rules, with `options` (by the names the language's own tool
- * uses) over the language's defaults. Every token of the input appears exactly once in the output, and
- * `anchors` says where; if the rules break that, the input comes back unformatted with the reason, never a
- * formatting that hides or invents code.
+ * uses) over the language's defaults, and `anchors` says where each input token landed. It does not verify that
+ * the output says what the input says: `check` does, apart, because a mismatch is a rule or parser bug for the
+ * tests to catch rather than a cost every format pays. If a rule throws, the input comes back unformatted with
+ * the reason.
  */
 export function format<O>(
   root: FormatNode,
@@ -107,22 +104,6 @@ export function format<O>(
     const doc: Doc = [ctx.print(root), hardline];
     const { text, placed } = print(doc, settings);
 
-    const problem = check(
-      root,
-      source,
-      text,
-      placed,
-      language.normalize,
-      isComment,
-      language.layoutBlind,
-    );
-    if (problem)
-      return {
-        ok: false,
-        reason: "token-mismatch",
-        text: source,
-        detail: problem,
-      };
     const anchors: Anchor[] = [];
     for (const { token: t, at } of placed) {
       const anchor: Anchor = {

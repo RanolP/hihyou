@@ -99,13 +99,13 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | css/yaml/without-newline-after.css | 0/1 | 36.36% |
 | css/yaml/yaml.css | 0/1 | 36.36% |
 
-# Refused (ok:false)
+# Refused
 
-The formatter's self-check rejected its own output, so it returned the input unchanged.
+The formatter threw (ok:false), or `check` found that its output says something the input does not.
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| css/comments/at-rules.css | 1/1 | 22.55% | token-mismatch: input at 1422 dropped |
+| css/comments/at-rules.css | 1/1 | 38.50% | check: input comment "/* comment 57 */" is missing from the output |
 
 # Excluded
 

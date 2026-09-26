@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "../core/index.js";
 import { language as jsonParser } from "../grammars/json/index.js";
-import type { Normalize } from "./check.js";
+import { check, type Normalize } from "./check.js";
 import { synthetic, text, token } from "./doc.js";
 import { format } from "./format.js";
 import {
@@ -20,6 +20,7 @@ const grammar = {
 } as const;
 
 const spec = {
+  parser: jsonParser,
   lineComments: { comment: "//" },
   defaults: prettierDefaults,
   settings: prettierSettings,
@@ -39,10 +40,13 @@ const rules = (h: Helpers<typeof grammar, PrettierOptions>) => ({
 });
 const plain = defineLanguage(grammar, spec, rules);
 
+/** `format`, and what `check` finds wrong with its output (undefined when nothing is). */
 async function run(text: string, language = plain) {
   const root = parse(jsonParser, text).nodes[0];
   if (!root) throw new Error("empty tree");
-  return format(root, text, language);
+  const out = format(root, text, language);
+  if (!out.ok) throw new Error(out.detail);
+  return { ...out, problem: check(language, text, out.text) };
 }
 
 describe("format", () => {
@@ -55,7 +59,7 @@ describe("format", () => {
   it("every anchor points from a token's input range to the same text in the output, so a reviewer's cursor maps across", async () => {
     const text = '{"a":[1,2],  "b" : "x"} // end\n';
     const out = await run(text);
-    if (!out.ok) throw new Error(out.detail);
+    expect(out.problem).toBeUndefined();
     expect(out.text).toBe('{ "a": [1, 2], "b": "x" } // end\n');
     for (const { from, to } of out.anchors)
       expect(out.text.slice(...to)).toBe(text.slice(...from).trimEnd());
@@ -79,20 +83,15 @@ describe("format", () => {
       );
   });
 
-  it("a rule that drops a token returns the input unformatted, instead of a layout that hides code", async () => {
+  it("a rule that drops a token fails the check, so a layout that hides code cannot pass the tests", async () => {
     const dropsColon = defineLanguage(grammar, spec, (h) => ({
       ...rules(h),
       pair: h.seq(h.field("key"), h.space, h.field("value")),
     }));
-    const text = '{"a":1}';
-    expect(await run(text, dropsColon)).toMatchObject({
-      ok: false,
-      reason: "token-mismatch",
-      text,
-    });
+    expect((await run('{"a":1}', dropsColon)).problem).toBeDefined();
   });
 
-  it("a rule that prints a token twice returns the input unformatted, instead of a layout that invents code", async () => {
+  it("a rule that prints a token twice fails the check, so a layout that invents code cannot pass the tests", async () => {
     const repeats = defineLanguage(grammar, spec, (h) => ({
       ...rules(h),
       number: (node, ctx) => [
@@ -100,34 +99,23 @@ describe("format", () => {
         token(node, ctx.source.slice(node.start, node.end)),
       ],
     }));
-    expect(await run("[1]", repeats)).toMatchObject({
-      ok: false,
-      reason: "token-mismatch",
-    });
+    expect((await run("[1]", repeats)).problem).toBeDefined();
   });
 
-  it("a rule that swaps two fields returns the input unformatted, instead of a layout that shows code that does not exist", async () => {
+  it("a rule that swaps two fields fails the check, so a layout that shows code that does not exist cannot pass the tests", async () => {
     const swaps = defineLanguage(grammar, spec, (h) => ({
       ...rules(h),
       pair: h.seq(h.field("value"), ":", h.space, h.field("key")),
     }));
-    const text = '{"a":1}';
-    expect(await run(text, swaps)).toMatchObject({
-      ok: false,
-      reason: "token-mismatch",
-      text,
-    });
+    expect((await run('{"a":1}', swaps)).problem).toBeDefined();
   });
 
-  it("two tokens that trade texts in place return the input unformatted, though each still covers its own range", async () => {
+  it("two tokens that trade texts in place fail the check, though each still covers its own range", async () => {
     const trades = defineLanguage(grammar, spec, (h) => ({
       ...rules(h),
       number: (node) => token(node, node.start === 1 ? "2" : "1"),
     }));
-    expect(await run("[1,2]", trades)).toMatchObject({
-      ok: false,
-      reason: "token-mismatch",
-    });
+    expect((await run("[1,2]", trades)).problem).toBeDefined();
   });
 
   // A string means its cooked value, so a respelling must keep that value.
@@ -136,22 +124,25 @@ describe("format", () => {
       l.node.kind === "string" ? `s:${JSON.parse(l.text)}` : l.text,
     );
   const respells = (to: (source: string) => string) =>
-    defineLanguage(grammar, { ...spec, normalize: cooked }, (h) => ({
-      ...rules(h),
-      string: (node, ctx) =>
-        token(node, to(ctx.source.slice(node.start, node.end))),
-    }));
+    defineLanguage(
+      grammar,
+      { ...spec, atoms: ["string"], normalize: cooked },
+      (h) => ({
+        ...rules(h),
+        string: (node, ctx) =>
+          token(node, to(ctx.source.slice(node.start, node.end))),
+      }),
+    );
 
-  it("a respelling that changes a string's cooked value returns the input unformatted, instead of a stylistic change that edits data", async () => {
+  it("a respelling that changes a string's cooked value fails the check, so a stylistic change that edits data cannot pass the tests", async () => {
     expect(
-      await run(
-        '["a"]',
-        respells(() => '"b"'),
-      ),
-    ).toMatchObject({
-      ok: false,
-      reason: "token-mismatch",
-    });
+      (
+        await run(
+          '["a"]',
+          respells(() => '"b"'),
+        )
+      ).problem,
+    ).toBeDefined();
   });
 
   it("a respelling with the same cooked value is accepted and keeps its node's anchor, so a style option like singleQuote can apply", async () => {
@@ -159,7 +150,11 @@ describe("format", () => {
       '["\\u0061"]',
       respells((s) => JSON.stringify(JSON.parse(s))),
     );
-    expect(out).toMatchObject({ ok: true, text: '["a"]\n' });
+    expect(out).toMatchObject({
+      ok: true,
+      text: '["a"]\n',
+      problem: undefined,
+    });
     expect(out.ok && out.anchors).toContainEqual({ from: [1, 9], to: [1, 4] });
   });
 
@@ -169,15 +164,21 @@ describe("format", () => {
       { ...spec, ...(normalize && { normalize }) },
       (h) => ({
         ...rules(h),
-        pair: (node, ctx) => [rules(h).pair(node, ctx), synthetic(node, ";")],
+        pair: (node, ctx) => [rules(h).pair(node, ctx), synthetic(node, ",")],
       }),
     );
 
-  it("an inserted token the language calls optional is accepted and anchored as synthetic to its node, so an added `;` maps back", async () => {
-    const dropsSemis: Normalize = (lexemes) =>
-      lexemes.map((l) => (l.text === ";" ? undefined : l.text));
-    const out = await run('{"a":1}', semis(dropsSemis));
-    expect(out).toMatchObject({ ok: true, text: '{ "a": 1; }\n' });
+  it("an inserted token the language calls optional passes the check and is anchored as synthetic to its node, so an added `,` maps back", async () => {
+    const dropsTrailing: Normalize = (lexemes) =>
+      lexemes.map((l, i) =>
+        l.text === "," && lexemes[i + 1]?.text === "}" ? undefined : l.text,
+      );
+    const out = await run('{"a":1}', semis(dropsTrailing));
+    expect(out).toMatchObject({
+      ok: true,
+      text: '{ "a": 1, }\n',
+      problem: undefined,
+    });
     expect(out.ok && out.anchors).toContainEqual({
       from: [1, 6],
       to: [8, 9],
@@ -185,26 +186,39 @@ describe("format", () => {
     });
   });
 
-  it("an inserted token the language does not call optional returns the input unformatted, instead of inventing code", async () => {
-    expect(await run('{"a":1}', semis())).toMatchObject({
-      ok: false,
-      reason: "token-mismatch",
-    });
+  it("an inserted token the language does not call optional fails the check, so invented code cannot pass the tests", async () => {
+    expect((await run('{"a":1}', semis())).problem).toBeDefined();
   });
 
   it("an unparsable region is kept verbatim rather than rejected, so the rest of the file still formats", async () => {
     const out = await run('[{"a":1,,  "b":2},   3]');
-    expect(out).toMatchObject({ ok: true, text: '[{"a":1,,  "b":2}, 3]\n' });
+    expect(out).toMatchObject({
+      ok: true,
+      text: '[{"a":1,,  "b":2}, 3]\n',
+      problem: undefined,
+    });
   });
 
   it("a value the parser invented is not printed as an item, so `[1,2,]` never shows as `[1, 2, ]`", async () => {
-    expect(await run("[1,2,]")).toMatchObject({ ok: true, text: "[1,2,]\n" });
-    expect(await run('{"a":1')).toMatchObject({ ok: true, text: '{"a":1\n' });
+    expect(await run("[1,2,]")).toMatchObject({
+      ok: true,
+      text: "[1,2,]\n",
+      problem: undefined,
+    });
+    expect(await run('{"a":1')).toMatchObject({
+      ok: true,
+      text: '{"a":1\n',
+      problem: undefined,
+    });
   });
 
   it("a comment inside an empty list survives, instead of vanishing with the list's items", async () => {
     const out = await run("[ // none\n]");
-    expect(out).toMatchObject({ ok: true, text: "[\n  // none\n]\n" });
+    expect(out).toMatchObject({
+      ok: true,
+      text: "[\n  // none\n]\n",
+      problem: undefined,
+    });
   });
 
   it("a rule table naming a kind the grammar lacks fails typecheck", () => {
@@ -236,6 +250,7 @@ describe("format", () => {
       expect(await run('{"a" :1}', language)).toMatchObject({
         ok: true,
         text: '{ "a": 1 }\n',
+        problem: undefined,
       });
   });
 

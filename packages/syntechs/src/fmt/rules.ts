@@ -1,3 +1,4 @@
+import type { Language as Parser } from "../core/language.js";
 import { identity, type Normalize } from "./check.js";
 import type { Comments } from "./comments.js";
 import {
@@ -88,6 +89,9 @@ export interface Language<O = unknown> {
   readonly lineComments: ReadonlyMap<string, string>;
   readonly defaults: O;
   settings(options: O): Settings;
+  /** The parser `check` reads both texts with; see `LanguageSpec`. */
+  readonly parser: Parser;
+  readonly atoms: ReadonlySet<string>;
   readonly normalize: Normalize;
   readonly layoutBlind: boolean;
 }
@@ -101,15 +105,23 @@ export interface LanguageSpec<G extends Grammar, O> {
   readonly defaults: O;
   /** The layout the core applies for `options`; `prettierSettings` and `ruffSettings` cover the two families. */
   readonly settings: (options: O) => Settings;
+  /** The parser of this grammar, which `check` reads the input and the output with. */
+  readonly parser: Parser;
   /**
-   * What the self-check compares instead of raw token text, so that rules may respell, insert and drop tokens
-   * without changing meaning. The default compares text as is, which rejects any respelling.
+   * Kinds `check` reads as one lexeme, whole, rather than leaf by leaf, so `normalize` sees the value a rule
+   * respells in one piece (a string, whose quotes and escapes are separate leaves). A node that holds text of its
+   * own besides its children (CSS's `1.5px`, whose only child is the unit) is read whole without being listed.
+   */
+  readonly atoms?: readonly KindOf<G>[];
+  /**
+   * What `check` compares instead of raw token text, so that rules may respell, insert and drop tokens without
+   * changing meaning. The default compares text as is, which rejects any respelling.
    */
   readonly normalize?: Normalize;
   /**
-   * `normalize` reads only each lexeme's node and text, never `at` nor the side's whole text, so an output that
-   * prints the input's tokens unchanged and in order passes the self-check without normalizing. The default
-   * `normalize` is.
+   * `normalize` reads only each lexeme's node and text, never `at` nor the side's whole text, so `check` passes
+   * an output whose code tokens have the input's texts, in order, without normalizing. The default `normalize`
+   * is.
    */
   readonly layoutBlind?: boolean;
   /**
@@ -225,6 +237,8 @@ export function defineLanguage<
     ),
     defaults: spec.defaults,
     settings: spec.settings,
+    parser: spec.parser,
+    atoms: new Set(spec.atoms),
     normalize: spec.normalize ?? identity,
     layoutBlind: spec.layoutBlind ?? spec.normalize === undefined,
   };

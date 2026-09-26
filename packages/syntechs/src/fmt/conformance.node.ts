@@ -13,6 +13,7 @@ import { createTwoFilesPatch } from "diff";
 import { type GrammarName, pkgRoot } from "../core/corpus.node.js";
 import { parse } from "../core/index.js";
 import type { Language as Grammar } from "../core/language.js";
+import { check } from "./check.js";
 import {
   type Case,
   type PrettierTarget,
@@ -244,6 +245,10 @@ function runCase(
       const res = format(root, c.text, lang, r.options);
       out = res.text;
       if (!res.ok) why = `${res.reason}: ${res.detail}`;
+      else {
+        const problem = check(lang, c.text, res.text);
+        if (problem) why = `check: ${problem}`;
+      }
     } catch (e) {
       out = c.text;
       why = `threw: ${e instanceof Error ? e.message : String(e)}`;

@@ -16,9 +16,9 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | json/jsonc/quote-props/test.jsonc | 0/3 | 50.00% |
 | json/jsonc/single-quote/test.jsonc | 0/2 | 46.15% |
 
-# Refused (ok:false)
+# Refused
 
-The formatter's self-check rejected its own output, so it returned the input unchanged.
+The formatter threw (ok:false), or `check` found that its output says something the input does not.
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |

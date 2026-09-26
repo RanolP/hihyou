@@ -7,6 +7,7 @@ import {
 } from "../../fmt/options.js";
 import { defineLanguage, type Rule } from "../../fmt/rules.js";
 import { grammar } from "./bundle.js";
+import { language } from "./index.js";
 
 /**
  * The prettier options its JSON printers read (prettier 3.9.9 ignores `singleQuote` and `quoteProps` there);
@@ -28,6 +29,7 @@ const normalize: Normalize = (lexemes) =>
   });
 
 const spec = {
+  parser: language,
   lineComments: { comment: "//" },
   defaults,
   settings: prettierSettings,
