@@ -685,6 +685,13 @@ export function leftSide(n: FormatNode): FormatNode | undefined {
   }
 }
 
+const isTernary = (n: FormatNode | undefined) =>
+  n !== undefined && unparen(n).kind === "ternary_expression";
+
+const isChainedTernary = (n: FormatNode) =>
+  n.kind === "ternary_expression" &&
+  (isTernary(field(n, "consequence")) || isTernary(field(n, "alternative")));
+
 const returnStatement: JsRule = (node, ctx) => {
   const kw = anon(node, "return") ?? anon(node, "throw");
   const arg = items(node)[0];
@@ -699,7 +706,9 @@ const returnStatement: JsRule = (node, ctx) => {
           hardline,
           synthetic(arg, ")"),
         ]
-      : isBinaryish(inner) || inner.kind === "sequence_expression"
+      : isBinaryish(inner) ||
+          inner.kind === "sequence_expression" ||
+          (ctx.options.experimentalTernaries && isChainedTernary(inner))
         ? group([
             ifBreak(synthetic(arg, "(")),
             indent([softline, printed]),
