@@ -435,6 +435,29 @@ export class Stack {
     );
   }
 
+  /**
+   * `popCount` of the only version, when every node above the goal has one link: the head drops to the goal
+   * node in place, which is where `popCount`'s new version plus the caller's `renumberVersion` back onto this
+   * one would leave it. Returns the popped subtrees in stack order, or null (stack untouched) on a fork.
+   */
+  popLinear(count: number): Subtree[] | null {
+    const head = this.heads[0] as StackHead;
+    let node = head.node;
+    let depth = 0;
+    const subtrees: Subtree[] = [];
+    while (depth !== count) {
+      if (node.linkCount !== 1) return null;
+      const subtree = node.subtree0;
+      if (subtree !== null) {
+        subtrees.push(subtree);
+        if (!flag(subtree, EXTRA)) depth++;
+      } else depth++;
+      node = node.node0 as StackNode;
+    }
+    head.node = node;
+    return subtrees.reverse();
+  }
+
   popPending(version: number): StackSlice[] {
     const pop = this.iter(
       version,

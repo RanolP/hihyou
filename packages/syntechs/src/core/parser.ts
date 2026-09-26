@@ -502,6 +502,33 @@ class Parser {
       : NO_VERSION;
   }
 
+  /**
+   * `reduce` for the only version's only action, when no stack node it pops through forks: one slice, no new
+   * version, nothing to merge, and a parent that is never fragile. False, with nothing changed, otherwise.
+   */
+  private reduceLinear(
+    symbol: number,
+    count: number,
+    dynamicPrecedence: number,
+    productionId: number,
+    endOfNonTerminalExtra: boolean,
+  ): boolean {
+    const stack = this.stack;
+    const children = stack.popLinear(count);
+    if (children === null) return false;
+    const lang = this.lang;
+    const trailingExtras = removeTrailingExtras(children);
+    const parent = newNode(lang, symbol, children, productionId);
+    const state = stack.state(0);
+    const next = nextState(lang, state, symbol);
+    if (endOfNonTerminalExtra && next === state) parent.flags |= EXTRA;
+    parent.parseState = state;
+    parent.dynamicPrecedence += dynamicPrecedence;
+    stack.push(0, parent, false, next);
+    for (const extra of trailingExtras) stack.push(0, extra, false, next);
+    return true;
+  }
+
   private accept(version: number, lookahead: Subtree): void {
     const stack = this.stack;
     stack.push(version, lookahead, false, 1);
@@ -840,7 +867,7 @@ class Parser {
       entry = cached.entry;
     }
 
-    for (;;) {
+    outer: for (;;) {
       if (needsLex) {
         needsLex = false;
         lookahead = this.lex(version, state);
@@ -868,8 +895,24 @@ class Parser {
           return;
         }
         if (type === ACTION_REDUCE) {
-          const isFragile = count > 1;
           const endOfNonTerminalExtra = lookahead === null;
+          if (
+            count === 1 &&
+            stack.versionCount() === 1 &&
+            this.reduceLinear(
+              lang.actA[a] as number,
+              lang.actB[a] as number,
+              lang.actC[a] as number,
+              lang.actD[a] as number,
+              endOfNonTerminalExtra,
+            )
+          ) {
+            state = stack.state(version);
+            if (lookahead === null) needsLex = true;
+            else entry = tableEntry(lang, state, leafSymbol(lookahead));
+            continue outer;
+          }
+          const isFragile = count > 1;
           const reductionVersion = this.reduce(
             version,
             lang.actA[a] as number,
