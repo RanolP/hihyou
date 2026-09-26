@@ -1,6 +1,6 @@
 // The <wctype.h> the grammar scanners call. web-tree-sitter links them against musl, whose alphabetic set
 // differs from JS Unicode properties (musl counts U+0660 as alphabetic and U+0363 as not), so each function
-// reproduces musl exactly; wctype.test.ts checks every code point against web-tree-sitter.wasm.
+// reproduces musl exactly; wctype.test.ts pins each function's answer on every code point.
 import { setContains } from "./language.js";
 import { MUSL_ALPHA } from "./musl-alpha.js";
 
