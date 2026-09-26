@@ -349,7 +349,11 @@ const unionType: JsRule = (n, ctx, args?: Args) => {
         i === 0
           ? ifBreak([lead ? t(ctx, lead) : synthetic(x, "|"), text(" ")])
           : [line, bar(types[i - 1] as FormatNode), text(" ")];
-      return [b, align(2, p(ctx, x))];
+      // A member aligns under its `|`, and its comments do only when one leads it.
+      const bare = ctx.printBare(x);
+      return ctx.comments(x).leading.length > 0
+        ? [b, align(2, ctx.withComments(x, bare))]
+        : [b, ctx.withComments(x, align(2, bare))];
     }),
   );
   const { parent, field: key } = typeRole(n);

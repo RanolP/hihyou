@@ -11,6 +11,7 @@ import { grammar, language as parser } from "./index.js";
 import { jsAtoms, jsNormalize } from "./normalize.js";
 import { callRules } from "./print/calls.js";
 import { classRules } from "./print/classes.js";
+import { handleComment } from "./print/comments.js";
 import { functionRules } from "./print/functions.js";
 import { isJsxSpreadArgument, jsxIgnored, jsxRules } from "./print/jsx.js";
 import { literalRules, printComment } from "./print/literals.js";
@@ -140,6 +141,7 @@ export function jsLanguage(
       normalize: jsNormalize,
       lineComments: { comment: "//" } as never,
       printComment,
+      handleComment,
       printsOwnComments: (n, ctx) =>
         (isJsx(n) && !isIgnored(ctx as JsCtx, n)) || isJsxSpreadArgument(n),
     },

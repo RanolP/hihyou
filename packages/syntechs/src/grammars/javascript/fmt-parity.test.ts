@@ -14,7 +14,7 @@ import type { JsOptions as AllJsOptions } from "./print/util.js";
 
 // Byte parity with prettier 3.9.9 for JavaScript, TypeScript and TSX, under its defaults and under a set a
 // person would write in a `.prettierrc`. Not covered, as `divergences` below pins: syntax tree-sitter-typescript
-// reads as an ERROR, and comments the core attaches to a different node than prettier does.
+// reads as an ERROR.
 
 type Target = "js" | "ts" | "tsx";
 /** The parser is the target's own, so a case sets only layout options. */
@@ -186,6 +186,11 @@ const edgeCases: [string, Target, string][] = [
     "tsx",
     `const a = <><Foo {...props} bar="it's" baz={() => 1} disabled /></>;`,
   ],
+  [
+    "comments-prettier-moves",
+    "ts",
+    "const a = 1 as const /* c */;\nfunction f() {} // after\ntype U =\n  | A // a\n  // b\n  | B;\nclass K { m /* m */ () {} }",
+  ],
 ];
 
 function ours(target: Target, text: string, options: Partial<JsOptions>) {
@@ -245,15 +250,7 @@ describe("the fetched JS/TSX corpus keeps its count of chunks byte-identical to 
 });
 
 // Target, input, then today's output, which differs from prettier's.
-const divergences: [string, Target, string, string][] = [
-  // The comment stays with `const` before the `;`, where prettier moves it after the statement.
-  [
-    "comment-after-as-const",
-    "ts",
-    "const a = 1 as const /* c */;",
-    "const a = 1 as const /* c */;\n",
-  ],
-];
+const divergences: [string, Target, string, string][] = [];
 
 describe("a known gap from prettier stays pinned, so closing one shows up as a test change", () => {
   it.each(divergences)("%s (%s)", async (_, target, text, pinned) => {
