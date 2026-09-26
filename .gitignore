@@ -4,7 +4,6 @@ dist/
 coverage/
 .claude/
 research/parser-bench/inputs/
-research/parser-bench/bulk/bulk.wasm
 packages/syntechs/corpus/
 # Language bundles are derived from the grammar packages; `pnpm install` regenerates them.
 packages/syntechs/src/grammars/*/bundle.js
