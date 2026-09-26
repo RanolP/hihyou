@@ -254,19 +254,38 @@ export function needsParens(n: FormatNode, ctx: JsCtx): boolean {
   if (!parent) return false;
 
   if (n.kind === "identifier") {
-    // `(let)[0] = 1` and `for ((async) of x)` keep theirs.
-    const text = n.end - n.start;
+    // `for ((async) of x)`, `for ((let).a of x)` and `(let)[0] = 1` keep theirs.
+    const length = n.end - n.start;
     if (
-      text === 3 &&
-      key === "object" &&
-      parent.kind === "subscript_expression"
+      key === "left" &&
+      parent.kind === "for_in_statement" &&
+      field(parent, "operator")?.kind === "of" &&
+      length === 5 &&
+      src(ctx, n) === "async"
     )
-      return (
-        src(ctx, n) === "let" &&
-        findAncestor(n, (a) => a.kind === "expression_statement") !== undefined
+      return !parent.children.some(
+        (c) => c.kind === "await" && c.field === undefined,
       );
-    if (key === "left" && parent.kind === "for_in_statement")
-      return ["async", "let"].includes(src(ctx, n));
+    if (length === 3 && src(ctx, n) === "let") {
+      const forIn = findAncestor(n, (a) => a.kind === "for_in_statement");
+      if (forIn && leftmostIs(field(forIn, "left"), n)) return true;
+      if (key === "object" && parent.kind === "subscript_expression") {
+        const statement = findAncestor(
+          n,
+          (a) =>
+            a.kind === "expression_statement" ||
+            a.kind === "for_statement" ||
+            a.kind === "for_in_statement",
+        );
+        const head =
+          statement?.kind === "expression_statement"
+            ? first(statement)
+            : statement?.kind === "for_statement"
+              ? field(statement, "initializer")
+              : statement && field(statement, "left");
+        if (leftmostIs(head, n)) return true;
+      }
+    }
     // `(type) satisfies never;`: a statement would read the name as a keyword.
     if (
       isAsLike(parent) &&
