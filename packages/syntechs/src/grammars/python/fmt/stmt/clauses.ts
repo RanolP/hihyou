@@ -1,9 +1,22 @@
-import { type Doc, indent } from "../../../../fmt/doc.js";
+import { type Doc, indent, synthetic } from "../../../../fmt/doc.js";
 import type { FormatNode } from "../../../../fmt/tree.js";
-import type { ExceptHandler, For, Py, Stmt, Try, While } from "../ast.js";
-import { type Fmt, hard, space } from "../builders.js";
+import type {
+  ExceptHandler,
+  For,
+  Py,
+  Stmt,
+  Try,
+  While,
+  With,
+  WithItem,
+} from "../ast.js";
+import { commaIn, type Fmt, hard, space } from "../builders.js";
 import type { Comment } from "../comments.js";
-import { formatExpr, maybeParenthesize } from "../expr.js";
+import {
+  canOmitOptionalParentheses,
+  formatExpr,
+  maybeParenthesize,
+} from "../expr.js";
 import type { StmtRules } from "./suite.js";
 import {
   clauseHeader,
@@ -111,7 +124,125 @@ function tryStmt(f: Fmt, s: Try): Doc {
   return out;
 }
 
+/** Ruff's `WithItemLayout`, and whether the item is the statement's only one. */
+type ItemLayout = "contextManagers" | "single" | "py38";
+
+/** Ruff's `FormatWithItem`: the context manager, then `as` and the target. */
+function withItem(
+  f: Fmt,
+  item: WithItem,
+  layout: ItemLayout,
+  single: boolean,
+): Doc {
+  const cs = f.comments;
+  const ctx = item.context;
+  const parenthesized = ctx.parens.length > 0;
+  const head =
+    layout === "single"
+      ? maybeParenthesize(f, ctx, item, "ifBreaks")
+      : layout === "py38"
+        ? maybeParenthesize(
+            f,
+            ctx,
+            item,
+            single || parenthesized ? "ifBreaks" : "ifRequired",
+          )
+        : (item.vars || !single) && parenthesized
+          ? maybeParenthesize(f, ctx, item, "ifBreaksParenthesizedNested")
+          : formatExpr(f, ctx, "never");
+  const out: Doc[] = [f.leading(cs.leading(item)), head];
+  const vars = item.vars;
+  if (vars && item.asTok) {
+    const as = cs.dangling(item);
+    out.push(
+      space,
+      f.tok(item.asTok),
+      space,
+      as.length === 0
+        ? formatExpr(f, vars)
+        : f.parenthesized(
+            synthetic(vars.ts, "("),
+            () => formatExpr(f, vars, "never"),
+            synthetic(vars.ts, ")"),
+            as,
+          ),
+    );
+  }
+  out.push(f.trailing(cs.trailing(item)));
+  return out;
+}
+
+/** The first token of `n`'s source. */
+function firstLeaf(n: FormatNode): FormatNode {
+  let x = n;
+  while (x.children[0]) x = x.children[0];
+  return x;
+}
+
+/** Ruff's `FormatStmtWith` with its `WithItemsLayout`. */
+function withStmt(f: Fmt, w: With): Doc {
+  const cs = f.comments;
+  const dangling = cs.dangling(w);
+  const first = w.items[0];
+  const split = prefix(dangling, (c) => !!first && c.start < first.start);
+  const parenComments = dangling.slice(0, split);
+  const withKw = w.kws.at(-1) ?? w.colon;
+  const clauseNode =
+    w.ts.children.find((c) => c.kind === "with_clause") ?? w.ts;
+  const single = w.items.length === 1 ? first : undefined;
+  const joined = () =>
+    f.joinCommaSeparated(
+      w.items.map((i) => ({
+        end: i.end,
+        doc: withItem(f, i, "contextManagers", !!single),
+      })),
+      w.colon.start,
+      commaIn(clauseNode, withKw),
+    );
+  const last = w.items.at(-1);
+  const tv = (f.options as { "target-version"?: string })["target-version"];
+  const canParenthesize =
+    !(tv && /^py3[0-8]$/.test(tv)) ||
+    (w.items.length > 1 && firstLeaf(clauseNode).kind === "(");
+  let items: Doc;
+  if (
+    parenComments.length > 0 ||
+    (single && (cs.hasLeading(single) || cs.hasTrailing(single)))
+  )
+    items = f.parenthesized(
+      w.open ? f.tok(w.open) : synthetic(withKw, "("),
+      joined,
+      w.close ? f.tok(w.close) : synthetic(withKw, ")"),
+      parenComments,
+    );
+  else if (last && f.magicTrailingComma(last.end, w.colon.start))
+    items = f.parenthesizeIfExpands(withKw, joined);
+  else if (single && single.context.parens.length > 0)
+    items = withItem(f, single, "single", true);
+  else if (!canParenthesize) {
+    const comma = commaIn(clauseNode, withKw);
+    items = w.items.map((i, n) => [
+      n > 0 ? [comma(w.items[n - 1]?.end ?? i.start), space] : [],
+      withItem(f, i, "py38", !!single),
+    ]);
+  } else if (single && !single.vars)
+    items = withItem(f, single, "single", true);
+  else if (single && canOmitOptionalParentheses(f, single.context))
+    items = f.optionalParentheses(single.ts, () =>
+      withItem(f, single, "contextManagers", true),
+    );
+  else items = f.parenthesizeIfExpands(withKw, joined);
+  return clause(
+    f,
+    [w.kws.map((k) => [f.tok(k), space]), items],
+    w.colon,
+    dangling.slice(split),
+    w.body,
+  );
+}
+
 export const clauseRules: StmtRules = {
+  With: withStmt,
   Try: tryStmt,
   If(f, s) {
     const cs = f.comments;
