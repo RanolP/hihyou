@@ -1,9 +1,9 @@
-ts compatibility: 519/653 (79.48%), 29 refused (ok:false), 76 excluded
+ts compatibility: 521/653 (79.79%), 29 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
 - oxfmt 0.70.0: 490/653 (75.04%)
-- dprint dprint-plugin-typescript 0.96.1: 170/653 (26.03%)
+- dprint dprint-plugin-typescript 0.96.1: 167/653 (25.57%)
 
 Fixtures: prettier 3.9.9 tests/format/{typescript,jsx} (recursive), every spec call listing parser `typescript` or `babel-ts` or `oxc-ts`, expected output from its __snapshots__.
 
@@ -31,7 +31,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/class/declare-field.ts | 0/1 | 75.00% |
 | typescript/class/empty-method-body.ts | 0/1 | 83.33% |
 | typescript/class-and-interface/heritage-break/member-expression-like.ts | 0/1 | 75.00% |
-| typescript/comments/10260.ts | 0/1 | 4.76% |
 | typescript/comments/11662.ts | 0/1 | 0.00% |
 | typescript/comments/16065.ts | 0/1 | 81.82% |
 | typescript/comments/16121.ts | 0/1 | 85.71% |
@@ -72,7 +71,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/interface2/comments-ts-only/18278.ts | 0/1 | 82.61% |
 | typescript/intersection/intersection-parens.ts | 1/3 | 99.29% |
 | typescript/intersection/consistent-with-flow/intersection-parens.ts | 0/1 | 97.67% |
-| typescript/intersection/consistent-with-flow/single-member.ts | 0/1 | 50.00% |
+| typescript/intersection/consistent-with-flow/single-member.ts | 0/1 | 80.00% |
 | typescript/last-argument-expansion/decorated-function.tsx | 0/1 | 90.91% |
 | typescript/mapped-type/issue-11098.ts | 0/1 | 87.13% |
 | typescript/method-chain/comment.ts | 0/1 | 0.00% |
@@ -115,7 +114,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/union/consistent-with-flow/leading-comments.ts | 0/1 | 78.26% |
 | typescript/union/consistent-with-flow/prettier-ignore.ts | 0/1 | 40.00% |
 | typescript/union/consistent-with-flow/single-type.ts | 0/1 | 60.00% |
-| typescript/union/single-type/single-type.ts | 0/1 | 0.00% |
 | typescript/webhost/webtsc.ts | 0/1 | 99.08% |
 | jsx/ignore/spread.js | 0/1 | 75.68% |
 
@@ -151,7 +149,7 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | typescript/mapped-type/break-mode/break-mode.ts | 1/1 | 96.30% | check: input "[" at 90 is output as "[" at 97, which means "[@\|-1/16", not "[@\|-1/15" |
 | typescript/parentheses/yield.ts | 1/1 | 40.00% | check: input "yield" at 41 is output as "yield" at 42, which means "yield@\|-1/8", not "yield@\|-1/9" |
 | typescript/type-parameters-arguments/19505.ts | 1/1 | 98.18% | check: input comment "// dangling comment" is missing from the output |
-| typescript/union/inlining.ts | 1/1 | 64.66% | check: input comment "// articles type may be null" is missing from the output |
+| typescript/union/inlining.ts | 1/1 | 70.23% | check: input comment "// articles type may be null" is missing from the output |
 | typescript/union/consistent-with-flow/18647.ts | 1/1 | 75.00% | check: input "any instanceof B\n  /**\n  * Comment\n  */\n    ? B \| C\n    : D" at 139 is output as "any" at 147, which  |
 | typescript/union/consistent-with-flow/union-last-comment.ts | 1/1 | 40.00% | check: output comment "// Comment2 // Final comment1" matches no input comment |
 

@@ -64,7 +64,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/comments-closure-typecast/issue-9358.js | 0/1 | 0.00% |
 | js/comments-closure-typecast/member.js | 0/1 | 0.00% |
 | js/comments-closure-typecast/nested.js | 0/1 | 12.50% |
-| js/comments-closure-typecast/object-with-comment.js | 0/1 | 10.00% |
+| js/comments-closure-typecast/object-with-comment.js | 0/1 | 28.57% |
 | js/comments-closure-typecast/satisfies.js | 0/1 | 33.33% |
 | js/comments-closure-typecast/superclass.js | 0/1 | 0.00% |
 | js/comments-closure-typecast/ways-to-specify-type.js | 0/1 | 15.38% |
