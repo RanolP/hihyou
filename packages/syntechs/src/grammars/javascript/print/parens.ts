@@ -540,17 +540,11 @@ export function needsParens(n: FormatNode, ctx: JsCtx): boolean {
   return false;
 }
 
+/** Prettier's isPathInForStatementInitializer: any depth, even inside a function in the initializer. */
 function inForInit(n: FormatNode): boolean {
-  for (let c: FormatNode | undefined = n; c?.parent; c = c.parent) {
+  for (let c: FormatNode | undefined = n; c?.parent; c = c.parent)
     if (c.parent.kind === "for_statement" && c.field === "initializer")
       return true;
-    if (
-      c.parent.kind === "statement_block" ||
-      c.parent.kind === "function_expression" ||
-      c.parent.kind === "arrow_function"
-    )
-      return false;
-  }
   return false;
 }
 
