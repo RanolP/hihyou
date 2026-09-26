@@ -56,6 +56,11 @@ export interface Ctx<O = unknown> {
   /** `node` as its rule prints it, with the comments attached to it; `args` reach that rule. */
   print(node: FormatNode, args?: PrintArgs): Doc;
   /**
+   * `node` as its rule prints it, without its own comments, for a rule that lays those out apart (prettier's
+   * union aligns each member but not the member's comments); pass the result through `withComments`.
+   */
+  printBare(node: FormatNode, args?: PrintArgs): Doc;
+  /**
    * `printed` with the comments attached to `node`, for a rule that prints a child itself instead of through
    * `print`: without it, those comments are lost.
    */

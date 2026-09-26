@@ -68,24 +68,24 @@ export function format<O>(
     const fallback: Rule = (node) =>
       token(node, source.slice(node.start, node.end));
 
+    // A node holding a parse error, or a node the parser invented to recover from one, has no reliable
+    // structure (which comma belongs to which item?), so it keeps its source text; the nodes around it
+    // still format.
+    const isBroken = (node: FormatNode) =>
+      node.children.some((c) => c.kind === "ERROR" || c.missing);
+
     const ctx: Ctx<O> = {
       source,
       options: resolved,
       print(node, args) {
-        // A node holding a parse error, or a node the parser invented to recover from one, has no reliable
-        // structure (which comma belongs to which item?), so it keeps its source text; the nodes around it
-        // still format.
-        let broken = false;
-        for (const c of node.children)
-          if (c.kind === "ERROR" || c.missing) {
-            broken = true;
-            break;
-          }
-        const rule = (!broken && language.rules.get(node.kind)) || fallback;
-        const printed = rule(node, ctx, args);
-        return !broken && language.printsOwnComments?.(node, ctx)
+        const printed = ctx.printBare(node, args);
+        return !isBroken(node) && language.printsOwnComments?.(node, ctx)
           ? printed
           : ctx.withComments(node, printed);
+      },
+      printBare(node, args) {
+        const rule = (!isBroken(node) && language.rules.get(node.kind)) || fallback;
+        return rule(node, ctx, args);
       },
       withComments: (node, printed) =>
         printWithComments(node, printed, comments, ctx, isLine, commentToken),
