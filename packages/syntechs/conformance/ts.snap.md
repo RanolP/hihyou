@@ -1,9 +1,9 @@
-ts compatibility: 459/653 (70.29%), 32 refused (ok:false), 76 excluded
+ts compatibility: 457/653 (69.98%), 34 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
 - oxfmt 0.70.0: 490/653 (75.04%)
-- dprint dprint-plugin-typescript 0.96.1: 167/653 (25.57%)
+- dprint dprint-plugin-typescript 0.96.1: 170/653 (26.03%)
 
 Fixtures: prettier 3.9.9 tests/format/{typescript,jsx} (recursive), every spec call listing parser `typescript` or `babel-ts` or `oxc-ts`, expected output from its __snapshots__.
 
@@ -36,12 +36,10 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/comments/11662.ts | 0/1 | 0.00% |
 | typescript/comments/16065.ts | 0/1 | 81.82% |
 | typescript/comments/16121.ts | 0/1 | 85.71% |
-| typescript/comments/16889.ts | 0/1 | 97.39% |
 | typescript/comments/after-jsx-generic.tsx | 0/1 | 85.71% |
 | typescript/comments/declare_function.ts | 0/1 | 83.33% |
 | typescript/comments/jsx.tsx | 0/1 | 20.00% |
 | typescript/comments/method_types.ts | 0/1 | 74.36% |
-| typescript/comments/methods.ts | 0/1 | 97.96% |
 | typescript/comments/type-literals.ts | 0/1 | 89.66% |
 | typescript/comments/union.ts | 0/1 | 36.84% |
 | typescript/comments/first-argument/first-argument.ts | 0/1 | 65.45% |
@@ -62,9 +60,9 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/custom/abstract/abstractProperties.ts | 0/1 | 25.00% |
 | typescript/decorator-auto-accessors/decorator-auto-accessors-new-line.ts | 0/1 | 76.92% |
 | typescript/decorator-auto-accessors/no-semi/decorator-auto-accessor-like-property-name.ts | 0/1 | 75.00% |
+| typescript/decorators/decorator-type-assertion.ts | 0/1 | 40.00% |
 | typescript/definite/definite.ts | 0/1 | 85.71% |
 | typescript/definite/without-annotation.ts | 0/1 | 91.67% |
-| typescript/end-of-line/multiline.ts | 0/3 | 71.43% |
 | typescript/explicit-resource-management/await-using-with-type-declaration.ts | 0/1 | 66.67% |
 | typescript/explicit-resource-management/using-with-type-declaration.ts | 0/1 | 66.67% |
 | typescript/export/comment.ts | 0/1 | 50.00% |
@@ -74,6 +72,8 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/import-require/type-imports.ts | 0/1 | 56.00% |
 | typescript/import-type/import-type.ts | 0/2 | 87.10% |
 | typescript/import-type/long-module-name/long-module-name.ts | 0/1 | 40.00% |
+| typescript/import-type/long-module-name/long-module-name3.ts | 0/1 | 66.67% |
+| typescript/instantiation-expression/inferface-asi.ts | 0/1 | 36.36% |
 | typescript/instantiation-expression/logical-expr.ts | 0/1 | 91.67% |
 | typescript/interface/ignore.ts | 0/2 | 86.79% |
 | typescript/interface2/comments-ts-only/18278.ts | 0/1 | 82.61% |
@@ -176,44 +176,46 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | jsx/text-wrap/issue-16897.js | 0/1 | 48.00% |
 | jsx/text-wrap/test.js | 0/1 | 40.08% |
 
-# Refused (ok:false)
+# Refused
 
-The formatter's self-check rejected its own output, so it returned the input unchanged.
+The formatter threw (ok:false), or `check` found that its output says something the input does not.
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| typescript/chain-expression/new-expression.ts | 1/1 | 13.24% | token-mismatch: input "new" at 281 printed as "new", which means "new@\|-1/90", not "new@\|-1/88" |
-| typescript/chain-expression/tagged-template-literals.ts | 1/1 | 9.23% | token-mismatch: input "a" at 37 printed as "a", which means "a@object\|0/12", not "a@object\|0/13" |
-| typescript/class-comment/class-implements.ts | 1/1 | 44.17% | token-mismatch: input at 18 dropped |
-| typescript/class-comment/declare.ts | 1/1 | 41.67% | token-mismatch: input at 21 dropped |
-| typescript/comments/mapped-types.ts | 1/1 | 43.21% | token-mismatch: input at 10 dropped |
-| typescript/compiler/commentInNamespaceDeclarationWithIdentifierPathName.ts | 1/1 | 28.57% | token-mismatch: input "namespace" at 1 printed as "namespace", which means "namespace@\|-1/2", not "namespace@\|-1/3" |
-| typescript/conditional-types/comments.ts | 2/2 | 50.84% | token-mismatch: input at 1353 dropped |
-| typescript/conditional-types/conditional-types.ts | 2/2 | 39.07% | token-mismatch: input "new" at 1298 printed as "new", which means "new@\|-1/175", not "new@\|-1/174" |
-| typescript/decorator-auto-accessors/decorator-auto-accessors-type-annotations.ts | 1/1 | 100.00% | token-mismatch: input "static accessor prop2: number = 1" at 52 printed as "static accessor prop2: number = 1", which me |
-| typescript/decorators/comments.ts | 1/1 | 40.00% | token-mismatch: input "static" at 55 printed as "static", which means "key:static@name\|1/4", not "static@\|-1/4" |
-| typescript/decorators/decorator-type-assertion.ts | 1/1 | 42.86% | token-mismatch: input "@(bind as ClassDecorator) class Decorated {  }  @(<ClassDecorator>bind) class Decorated {  } " at |
-| typescript/decorators/decorators-comments.ts | 1/1 | 47.89% | token-mismatch: input "readonly" at 295 printed as "readonly", which means "key:readonly@name\|1/29", not "readonly@\|-1/2 |
-| typescript/import-export/empty-import.ts | 1/1 | 23.53% | token-mismatch: input "}" at 367 printed as "}", which means "?54", not "}@\|-1/25" |
-| typescript/import-type/long-module-name/long-module-name3.ts | 1/1 | 100.00% | token-mismatch: input "declare const bit: import("../../../../scripts/babel-plugin-bit-decorator/types.d.ts").BitDecorat |
-| typescript/instantiation-expression/inferface-asi.ts | 1/1 | 20.00% | token-mismatch: input "interface Example {   (a: number): typeof a          <T>(): void }; " at 0 printed as "interface  |
-| typescript/interface/comments-generic.ts | 2/2 | 65.57% | token-mismatch: input at 256 dropped |
-| typescript/interface2/comments-declare.ts | 1/1 | 25.00% | token-mismatch: input at 36 dropped |
-| typescript/interface2/comments.ts | 1/1 | 15.15% | token-mismatch: input at 135 dropped |
-| typescript/interface2/comments-ts-and-flow/18216-mutiple-clauses.ts | 1/1 | 62.50% | token-mismatch: input at 52 dropped |
-| typescript/interface2/comments-ts-and-flow/18216-type-parameters-mutiple-clauses.ts | 1/1 | 62.50% | token-mismatch: input at 57 dropped |
-| typescript/interface2/comments-ts-and-flow/18216-type-parameters.ts | 1/1 | 62.50% | token-mismatch: input at 57 dropped |
-| typescript/interface2/comments-ts-and-flow/18216.ts | 1/1 | 62.50% | token-mismatch: input at 52 dropped |
-| typescript/interface/long-type-parameters/long-type-parameters.ts | 2/2 | 70.00% | token-mismatch: input at 325 dropped |
-| typescript/interface/no-semi/14040.ts | 1/1 | 70.11% | token-mismatch: input "X" at 719 printed as "X", which means "X@name\|0/144", not "X@\|0/143" |
-| typescript/interface/no-semi/18858.ts | 1/1 | 63.89% | token-mismatch: input "Foo" at 393 printed as "Foo", which means "Foo@name\|0/82", not "Foo@\|0/81" |
-| typescript/mapped-type/break-mode/break-mode.ts | 1/1 | 23.73% | token-mismatch: input "[" at 90 printed as "[", which means "[@\|-1/16", not "[@\|-1/15" |
-| typescript/parentheses/yield.ts | 1/1 | 50.00% | token-mismatch: input "yield" at 41 printed as "yield", which means "yield@\|-1/8", not "yield@\|-1/9" |
-| typescript/type-parameters-arguments/19505.ts | 1/1 | 37.74% | token-mismatch: input at 14 dropped |
-| typescript/union/inlining.ts | 1/1 | 50.72% | token-mismatch: input at 219 dropped |
-| typescript/union/consistent-with-flow/18647.ts | 1/1 | 16.22% | token-mismatch: input at 155 dropped |
-| typescript/union/consistent-with-flow/union-last-comment.ts | 1/1 | 58.06% | token-mismatch: input at 25 dropped |
-| jsx/jsx/conditional-expression.js | 4/4 | 79.70% | token-mismatch: input ""dunno"" at 3917 printed as ""dunno"", which means "key:dunno@alternative\|2/27", not "str:dunno@a |
+| typescript/chain-expression/new-expression.ts | 1/1 | 76.47% | check: input "new" at 281 is output as "new" at 227, which means "new@\|-1/82", not "new@\|-1/80" |
+| typescript/chain-expression/tagged-template-literals.ts | 1/1 | 72.31% | check: input "a" at 37 is output as "a" at 33, which means "a@object\|0/12", not "a@object\|0/13" |
+| typescript/class-comment/class-implements.ts | 1/1 | 80.92% | check: input comment "// comment" is missing from the output |
+| typescript/class-comment/declare.ts | 1/1 | 66.67% | check: input comment "// extends b   // 2" is missing from the output |
+| typescript/comments/16889.ts | 1/1 | 97.39% | check: output comment "/**\n   * The method description\n   *\n   */" matches no input comment |
+| typescript/comments/abstract-class.ts | 1/1 | 100.00% | check: output comment "/**\n   * @deprecated\n   * Failures will be filtered based on `tslint:disable` comments by tslin |
+| typescript/comments/mapped-types.ts | 1/1 | 80.00% | check: input comment "// commentA" is missing from the output |
+| typescript/comments/methods.ts | 1/1 | 97.96% | check: output comment "/**\n   * Does something.\n   */" matches no input comment |
+| typescript/compiler/commentInNamespaceDeclarationWithIdentifierPathName.ts | 1/1 | 57.14% | check: input "namespace" at 1 is output as "namespace" at 1, which means "namespace@\|-1/2", not "namespace@\|-1/3" |
+| typescript/conditional-types/comments.ts | 2/2 | 51.89% | check: output comment "/**\n     * Comment\n     */" matches no input comment |
+| typescript/conditional-types/conditional-types.ts | 2/2 | 84.48% | check: input "new" at 1298 is output as "new" at 1327, which means "new@\|-1/175", not "new@\|-1/174" |
+| typescript/decorator-auto-accessors/decorator-auto-accessors-type-annotations.ts | 1/1 | 75.00% | check: input "prop2" at 68 is output as "prop2" at 68, which means "key:prop2@name\|0/8", not "prop2@\|0/8" |
+| typescript/decorators/comments.ts | 1/1 | 60.00% | check: input "static" at 55 is output as "static" at 36, which means "key:static@name\|1/4", not "static@\|-1/4" |
+| typescript/decorators/decorators-comments.ts | 1/1 | 88.57% | check: input "readonly" at 295 is output as "readonly" at 251, which means "key:readonly@name\|1/29", not "readonly@\|-1/2 |
+| typescript/end-of-line/multiline.ts | 2/3 | 71.43% | check: input "\\\n" at 511 is output as "\\\r" at 486, which means "\\\r@\|3/35", not "\\\n@\|3/35" |
+| typescript/import-export/empty-import.ts | 1/1 | 32.43% | check: output comment "// comment // comment" matches no input comment |
+| typescript/interface/comments-generic.ts | 2/2 | 89.66% | check: input comment "// 2" is missing from the output |
+| typescript/interface2/comments-declare.ts | 1/1 | 88.89% | check: input comment "// 2" is missing from the output |
+| typescript/interface2/comments.ts | 1/1 | 73.24% | check: input comment "// comment2" is missing from the output |
+| typescript/interface2/comments-ts-and-flow/18216-mutiple-clauses.ts | 1/1 | 89.47% | check: input comment "// Comment" is missing from the output |
+| typescript/interface2/comments-ts-and-flow/18216-type-parameters-mutiple-clauses.ts | 1/1 | 89.47% | check: input comment "// Comment" is missing from the output |
+| typescript/interface2/comments-ts-and-flow/18216-type-parameters.ts | 1/1 | 42.86% | check: input comment "// Comment" is missing from the output |
+| typescript/interface2/comments-ts-and-flow/18216.ts | 1/1 | 52.94% | check: input comment "// Comment" is missing from the output |
+| typescript/interface/long-type-parameters/long-type-parameters.ts | 2/2 | 75.65% | check: input comment "// always extends RectConfig" is missing from the output |
+| typescript/interface/no-semi/14040.ts | 1/1 | 100.00% | check: the output has a syntax error at 712, which the input has not |
+| typescript/interface/no-semi/18858.ts | 1/1 | 100.00% | check: the output has a syntax error at 406, which the input has not |
+| typescript/mapped-type/break-mode/break-mode.ts | 1/1 | 96.30% | check: input "[" at 90 is output as "[" at 97, which means "[@\|-1/16", not "[@\|-1/15" |
+| typescript/parentheses/yield.ts | 1/1 | 40.00% | check: input "yield" at 41 is output as "yield" at 42, which means "yield@\|-1/8", not "yield@\|-1/9" |
+| typescript/type-parameters-arguments/19505.ts | 1/1 | 98.18% | check: input comment "// dangling comment" is missing from the output |
+| typescript/union/inlining.ts | 1/1 | 64.66% | check: input comment "// articles type may be null" is missing from the output |
+| typescript/union/comments/18787.ts | 1/1 | 100.00% | check: output comment "/**\n     * 11\n     */" matches no input comment |
+| typescript/union/consistent-with-flow/18647.ts | 1/1 | 75.00% | check: output comment "/**\n     * Comment\n     */" matches no input comment |
+| typescript/union/consistent-with-flow/union-last-comment.ts | 1/1 | 40.00% | check: output comment "// Comment2 // Final comment1" matches no input comment |
+| jsx/jsx/conditional-expression.js | 4/4 | 88.64% | check: input "\"dunno\"" at 3917 is output as "\"dunno\"" at 3920, which means "key:dunno@alternative\|2/62", not "str:du |
 
 # Excluded
 

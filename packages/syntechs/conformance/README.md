@@ -10,6 +10,6 @@ The oxfmt and dprint columns score those tools (`oxfmt 0.70.0`, `dprint dprint-p
 | [jsonc](jsonc.snap.md) | prettier 3.9.9 | 7/9 | 77.78% | 0 | 0 | 55.56% | 55.56% |
 | [json-stringify](json-stringify.snap.md) | prettier 3.9.9 | 7/14 | 50.00% | 0 | 0 | 42.86% | 42.86% |
 | [css](css.snap.md) | prettier 3.9.9 | 65/151 | 43.05% | 0 | 6 | 76.16% | 33.11% |
-| [js](js.snap.md) | prettier 3.9.9 | not implemented | | | | 70.02% | 31.47% |
-| [ts](ts.snap.md) | prettier 3.9.9 | not implemented | | | | 75.04% | 26.03% |
+| [js](js.snap.md) | prettier 3.9.9 | 493/804 | 61.32% | 60 | 304 | 70.02% | 31.47% |
+| [ts](ts.snap.md) | prettier 3.9.9 | 457/653 | 69.98% | 34 | 76 | 75.04% | 26.03% |
 | [python](python.snap.md) | ruff 0.16.8 | not implemented | | | | - | - |

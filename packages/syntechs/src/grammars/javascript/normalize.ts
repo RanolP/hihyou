@@ -51,7 +51,8 @@ function valueForm(
       node.parent &&
       (node.parent.kind === "parenthesized_expression" ||
         node.parent.kind === "parenthesized_type" ||
-        transparent(node.parent))
+        transparent(node.parent) ||
+        isEmptyNewArguments(node.parent))
     )
       return undefined;
     return t;
@@ -276,6 +277,12 @@ class Places {
     return i;
   }
 }
+
+/** The `()` prettier adds to `new A`, which calls the constructor with no arguments either way. */
+const isEmptyNewArguments = (n: FormatNode) =>
+  n.kind === "arguments" &&
+  n.parent?.kind === "new_expression" &&
+  !n.children.some((c) => c.named && c.kind !== "comment");
 
 const LOGICAL = new Set(["&&", "||", "??"]);
 

@@ -1,4 +1,4 @@
-js compatibility: 502/804 (62.44%), 60 refused (ok:false), 304 excluded
+js compatibility: 493/804 (61.32%), 60 refused (ok:false), 304 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -18,7 +18,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/arrows/arrow-chain-with-trailing-comments.js | 0/2 | 75.00% |
 | js/arrows/arrow_function_expression.js | 0/2 | 94.29% |
 | js/arrows/call.js | 0/2 | 94.99% |
-| js/arrows/comment.js | 0/2 | 67.57% |
 | js/arrows/currying-4.js | 0/2 | 96.33% |
 | js/arrows/issue-17421.js | 0/2 | 82.51% |
 | js/arrows/comments/comment-before-arrow.js | 0/1 | 66.67% |
@@ -58,26 +57,20 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/classes/multiple-static.js | 0/1 | 40.00% |
 | js/comments/11273.js | 0/2 | 57.14% |
 | js/comments/array-and-object.js | 0/2 | 62.50% |
-| js/comments/binary-expressions-parens.js | 0/2 | 88.89% |
 | js/comments/blank.js | 0/2 | 92.31% |
-| js/comments/empty-statements.js | 0/2 | 17.39% |
 | js/comments/export-and-import.js | 0/2 | 78.05% |
 | js/comments/export.js | 0/2 | 86.67% |
 | js/comments/function-declaration.js | 0/2 | 63.57% |
 | js/comments/if.js | 0/2 | 78.57% |
 | js/comments/issue-3532.js | 0/2 | 85.53% |
 | js/comments/issues.js | 0/2 | 72.06% |
-| js/comments/jsdoc-nestled-dangling.js | 0/2 | 93.02% |
-| js/comments/jsdoc-nestled.js | 0/2 | 81.36% |
 | js/comments/jsdoc.js | 0/2 | 45.65% |
 | js/comments/jsx.js | 0/2 | 74.56% |
 | js/comments/tagged-template-literal.js | 0/2 | 92.86% |
-| js/comments/trailing-jsdocs.js | 0/2 | 76.00% |
 | js/comments/try.js | 0/2 | 71.43% |
 | js/comments/variable-declarator.js | 0/2 | 69.63% |
 | js/comments-closure-typecast/array-and-object.js | 0/1 | 69.23% |
 | js/comments-closure-typecast/binary-expr.js | 0/1 | 0.00% |
-| js/comments-closure-typecast/closure-compiler-type-cast.js | 0/1 | 68.25% |
 | js/comments-closure-typecast/comment-placement.js | 0/1 | 61.54% |
 | js/comments-closure-typecast/extra-spaces-and-asterisks.js | 0/1 | 0.00% |
 | js/comments-closure-typecast/iife-issue-5850-isolated.js | 0/1 | 0.00% |
@@ -94,6 +87,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/comments-closure-typecast/no-semi/multiline.js | 0/1 | 60.00% |
 | js/comments-closure-typecast/no-semi/not-on-same-line.js | 0/1 | 81.82% |
 | js/comments-closure-typecast/no-semi/with-other-comments.js | 0/1 | 50.00% |
+| js/comments/assignment/variable-declarator.js | 0/1 | 15.38% |
 | js/comments/flow-types/inline.js | 0/1 | 62.50% |
 | js/comments/function/18146.js | 0/1 | 58.06% |
 | js/comments/function/between-parentheses-and-function-body.js | 0/1 | 52.63% |
@@ -121,8 +115,14 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/decorators/class-expression/member-expression.js | 0/2 | 0.00% |
 | js/decorators/class-expression/super-class.js | 0/2 | 14.29% |
 | js/destructuring/issue-5988.js | 0/1 | 0.00% |
+| js/discard-binding/array-pattern.js | 0/1 | 81.08% |
+| js/discard-binding/basic.js | 0/1 | 40.00% |
+| js/discard-binding/discard-binding-for-await-using-binding.js | 0/1 | 28.57% |
+| js/discard-binding/discard-binding-for-using-binding.js | 0/1 | 57.14% |
 | js/discard-binding/function-parameter.js | 0/1 | 86.36% |
+| js/discard-binding/object-pattern.js | 0/1 | 67.39% |
 | js/discard-binding/unary-expression-void.js | 0/1 | 83.33% |
+| js/discard-binding/using-variable-declarator.js | 0/1 | 73.97% |
 | js/embeded/indention/19518.js | 0/1 | 46.38% |
 | js/embeded/indention/indention-2.js | 0/1 | 23.53% |
 | js/embeded/indention/indention.js | 0/1 | 63.27% |
@@ -138,15 +138,17 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/explicit-resource-management/valid-module-block-top-level-using-binding.js | 0/1 | 28.57% |
 | js/explicit-resource-management/valid-using-as-identifier-computed-member.js | 0/1 | 0.00% |
 | js/explicit-resource-management/valid-using-as-identifier-expression-statement.js | 0/1 | 0.00% |
+| js/explicit-resource-management/valid-using-as-identifier-for-in.js | 0/1 | 88.89% |
 | js/explicit-resource-management/valid-using-as-identifier-for-init.js | 0/1 | 0.00% |
+| js/explicit-resource-management/valid-using-as-identifier-in.js | 0/1 | 66.67% |
 | js/explicit-resource-management/valid-using-binding-escaped.js | 0/1 | 66.67% |
 | js/export/blank-line-between-specifiers.js | 0/2 | 95.00% |
 | js/export-default/function_tostring.js | 0/1 | 0.00% |
 | js/export-star/export-star-as-reserved-word.js | 0/1 | 50.00% |
+| js/for/for-in-with-initializer.js | 0/1 | 38.71% |
 | js/for/in.js | 0/1 | 91.67% |
 | js/for/parentheses.js | 0/1 | 89.80% |
 | js/for-of/async-identifier.js | 0/1 | 90.00% |
-| js/for-of/comments.js | 0/1 | 88.46% |
 | js/function/iife.js | 0/1 | 22.68% |
 | js/function/issue-12967.js | 0/1 | 0.00% |
 | js/identifier/for-of/await.js | 0/1 | 50.00% |
@@ -156,12 +158,18 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/if/if_comments.js | 0/1 | 91.89% |
 | js/if/condition-break/boolean-expression.js | 0/1 | 97.01% |
 | js/if/condition-break/unary-expression.js | 0/1 | 97.06% |
-| js/import/comments.js | 0/2 | 63.41% |
+| js/import-assertions/empty.js | 0/1 | 14.29% |
+| js/import-assertions/re-export.js | 0/1 | 85.71% |
+| js/import-assertions/without-from.js | 0/1 | 0.00% |
 | js/import-assertions/bracket-spacing/empty.js | 0/1 | 0.00% |
+| js/import-assertions/bracket-spacing/re-export.js | 0/1 | 0.00% |
 | js/import-assertions/bracket-spacing/static-import.js | 0/1 | 0.00% |
 | js/import-attributes/empty.js | 0/1 | 57.14% |
+| js/import-attributes/keyword-detect.js | 0/1 | 30.77% |
 | js/import-attributes/long-sources.js | 0/1 | 86.54% |
+| js/import-attributes/re-export.js | 0/1 | 85.71% |
 | js/import-attributes/bracket-spacing/empty.js | 0/1 | 0.00% |
+| js/import-attributes/bracket-spacing/re-export.js | 0/1 | 0.00% |
 | js/import-attributes/quote-props/quoted-keys.js | 1/3 | 86.67% |
 | js/label/comment.js | 0/1 | 53.33% |
 | js/last-argument-expansion/break-parent.js | 0/1 | 70.37% |
@@ -190,6 +198,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/object-prop-break-in/test.js | 0/1 | 89.55% |
 | js/optional-chaining/chaining.js | 0/1 | 97.70% |
 | js/preserve-line/member-chain.js | 0/1 | 85.07% |
+| js/reserved-word/yield.js | 0/1 | 93.33% |
 | js/sequence-break/break.js | 0/1 | 85.29% |
 | js/sequence-expression/ignore.js | 0/1 | 72.73% |
 | js/sequence-expression/parenthesized-trailing-comment.js | 0/1 | 57.14% |
@@ -256,72 +265,72 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | jsx/spread/attribute.js | 0/1 | 32.79% |
 | jsx/spread/child.js | 0/1 | 30.19% |
 
-# Refused (ok:false)
+# Refused
 
-The formatter's self-check rejected its own output, so it returned the input unchanged.
+The formatter threw (ok:false), or `check` found that its output says something the input does not.
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| js/arrays/numbers-negative-comment-after-minus.js | 1/1 | 7.59% | token-mismatch: input "380014" at 104 printed as "380014", which means "key:380014@argument\|0/14", not "num:380014e0@arg |
-| js/call/no-argument/no-arguments.js | 1/1 | 23.16% | token-mismatch: input at 127 dropped |
-| js/chain-expression/tagged-template-literals.js | 1/1 | 23.26% | token-mismatch: input "a" at 23 printed as "a", which means "a@object\|0/4", not "a@object\|0/5" |
-| js/class-comment/superclass.js | 1/1 | 56.18% | token-mismatch: input at 20 dropped |
-| js/comments/15661.js | 2/2 | 34.72% | token-mismatch: input "!" at 0 printed as "!", which means "!@operator\|-1/4", not "!@operator\|-1/3" |
-| js/comments/break-continue-statements-2.js | 2/2 | 76.19% | token-mismatch: input at 88 dropped |
-| js/comments/break-continue-statements-3.js | 2/2 | 67.65% | token-mismatch: input at 89 dropped |
-| js/comments/break-continue-statements.js | 2/2 | 54.55% | token-mismatch: input at 18 dropped |
-| js/comments/dangling_for.js | 2/2 | 25.00% | token-mismatch: input at 3 dropped |
-| js/comments/return-statement-2.js | 2/2 | 64.39% | token-mismatch: input "!" at 433 printed as "!", which means "!@operator\|-1/29", not "!@operator\|-1/27" |
-| js/comments/return-statement.js | 2/2 | 70.79% | token-mismatch: input "<div />" at 47 printed as "<div />", which means "<div />@\|0/6", not "<div />@\|0/5" |
-| js/comments/trailing_space.js | 2/2 | 60.00% | token-mismatch: input "#!/there/is-space-here->         " at 0 printed as "#!/there/is-space-here->", which means "#!/th |
-| js/comments-closure-typecast/issue-8045.js | 1/1 | 43.14% | token-mismatch: input "fooBarBaz" at 446 printed as "fooBarBaz", which means "fooBarBaz@\|0/14", not "fooBarBaz@\|0/13" |
-| js/comments-closure-typecast/non-casts.js | 1/1 | 33.33% | token-mismatch: input "3" at 42 printed as "3", which means "num:3e0@right\|1/12", not "key:3@right\|1/12" |
-| js/comments/assignment/variable-declarator.js | 1/1 | 15.69% | token-mismatch: input "let a1 // comment  = 1; let a12 // comment  = 1; let a2 /* comment */  = 1; let a22 /* comment */ |
-| js/comments/between-head-and-body/between-head-and-body.js | 1/1 | 29.30% | token-mismatch: input at 70 dropped |
-| js/comments/between-head-and-body/empty-statement.js | 1/1 | 41.99% | token-mismatch: input at 67 dropped |
-| js/comments/between-head-and-body/non-block.js | 1/1 | 12.56% | token-mismatch: input at 82 dropped |
-| js/decorators/comments.js | 1/1 | 75.36% | token-mismatch: input "export" at 303 printed as "export", which means "?53", not "export@\|-1/21" |
-| js/decorators-export/after_export.js | 1/1 | 20.00% | token-mismatch: input "export" at 0 printed as "export", which means "export@\|0/2", not "export@\|-1/2" |
-| js/directives/issue-7346.js | 1/1 | 25.00% | token-mismatch: input "'bar'" at 78 printed as ""bar"", which means "key:bar@\|0/7", not "key:bar@\|0/6" |
-| js/discard-binding/array-pattern.js | 1/1 | 82.19% | token-mismatch: input "{   // destructuring binding   const [, void, ] = value; } {   // for-of destructuring binding    |
-| js/discard-binding/basic.js | 1/1 | 42.86% | token-mismatch: input "const [void] = [,void] = [void,] = [];  function f(void, { p: void }, [ void ]) {}  (void, { p: v |
-| js/discard-binding/discard-binding-for-await-using-binding.js | 1/1 | 33.33% | token-mismatch: input "async () => {   for(await using void of []); } " at 0 printed as "async () => {   for(await using |
-| js/discard-binding/discard-binding-for-using-binding.js | 1/1 | 66.67% | token-mismatch: input "{   for(using void of []); } " at 0 printed as "{   for(using void of []); } ", which means "?0", |
-| js/discard-binding/object-pattern.js | 1/1 | 68.13% | token-mismatch: input "{   // destructuring binding   const { void: void } = value; } {   // for-of destructuring bindin |
-| js/discard-binding/using-variable-declarator.js | 1/1 | 75.00% | token-mismatch: input "{   // using 1 declarator   using void = f(); } {   // using 2 declarators   using void = f(), vo |
-| js/explicit-resource-management/valid-await-using-binding-using.js | 1/1 | 100.00% | token-mismatch: output "await" at 53 stands where input "(" at 53 was |
-| js/explicit-resource-management/valid-await-using-comments.js | 1/1 | 12.90% | token-mismatch: output "await" at 196 stands where input "(" at 175 was |
-| js/explicit-resource-management/valid-for-using-binding-of-of.js | 1/1 | 100.00% | token-mismatch: output "await" at 27 stands where input "(" at 27 was |
-| js/explicit-resource-management/valid-using-as-identifier-for-in.js | 1/1 | 100.00% | token-mismatch: input "for (using in []); for (using.foo in []); for (using().foo in []); for (using``.foo in []); " at  |
-| js/explicit-resource-management/valid-using-as-identifier-in.js | 1/1 | 100.00% | token-mismatch: input "using in using instanceof using; " at 0 printed as "using in using instanceof using; ", which mea |
-| js/for/continue-and-break-comment-1.js | 1/1 | 56.48% | token-mismatch: input at 619 dropped |
-| js/for/continue-and-break-comment-2.js | 1/1 | 46.21% | token-mismatch: input at 22 dropped |
-| js/for/continue-and-break-comment-without-blocks.js | 1/1 | 48.19% | token-mismatch: input at 16 dropped |
-| js/for/for-in-with-initializer.js | 1/1 | 40.00% | token-mismatch: input "// https://github.com/babel/babel/blob/HEAD/packages/babel-generator/test/fixtures/parentheses/in |
-| js/identifier/for-of/let.js | 1/1 | 69.23% | token-mismatch: input "let" at 107 printed as "let", which means "let@kind\|-1/10", not "let@object\|0/11" |
-| js/identifier/parentheses/let.js | 2/2 | 61.50% | token-mismatch: input "let" at 28 printed as "let", which means "let@kind\|-1/9", not "let@object\|0/11" |
-| js/import-assertions/empty.js | 1/1 | 14.29% | token-mismatch: input "export * as foo from "foo.json" export * as bar from "bar.json" assert { } export * as baz from " |
-| js/import-assertions/keyword-detect.js | 1/1 | 33.33% | token-mismatch: input "import "./test.json" /* with */" at 0 printed as "import "./test.json" /* with */", which means " |
-| js/import-assertions/re-export.js | 1/1 | 100.00% | token-mismatch: input "export { default as foo2 } from "foo.json" assert { type: "json" }; export * from "foo.json" asse |
-| js/import-assertions/without-from.js | 1/1 | 0.00% | token-mismatch: input "import "foo" assert { type: "json" } " at 0 printed as "import "foo" assert { type: "json" } ", w |
-| js/import-assertions/bracket-spacing/re-export.js | 1/1 | 0.00% | token-mismatch: input "export { default as foo2 } from "foo.json" assert { type: "json" }; " at 0 printed as "export { d |
-| js/import-attributes/keyword-detect.js | 1/1 | 33.33% | token-mismatch: input "import "./test.json" /* assert */ with /* assert */  { type: "json" } import a from "./test.json" |
-| js/import-attributes/re-export.js | 1/1 | 100.00% | token-mismatch: input "export { default as foo2 } from "foo.json" with { type: "json" }; export * from "foo.json" with { |
-| js/import-attributes/bracket-spacing/re-export.js | 1/1 | 0.00% | token-mismatch: input "export { default as foo2 } from "foo.json" with { type: "json" }; " at 0 printed as "export { def |
-| js/import/empty-import/empty-import-2.js | 1/1 | 75.00% | token-mismatch: input at 15 printed twice |
-| js/import/empty-import/empty-import.js | 1/1 | 25.88% | token-mismatch: input "{" at 317 printed as "{", which means "{@\|-1/23", not "{@\|-1/25" |
-| js/logical-expressions/in-unary-expression.js | 1/1 | 23.17% | token-mismatch: input "!" at 107 printed as "!", which means "!@operator\|-1/5", not "!@operator\|-1/4" |
-| js/new-expression/new-expression.js | 1/1 | 55.56% | token-mismatch: input "new" at 80 printed as "new", which means "new@\|-1/16", not "new@\|-1/14" |
-| js/no-semi/debugger-statement.js | 2/2 | 71.88% | token-mismatch: input at 8 dropped |
-| js/no-semi/return-statement.js | 2/2 | 75.00% | token-mismatch: input at 23 dropped |
-| js/optional-chaining/comments.js | 1/1 | 82.98% | token-mismatch: input at 45 dropped |
-| js/quotes/strings.js | 2/2 | 45.00% | token-mismatch: input ""abc"" at 497 printed as ""abc"", which means "key:abc@\|0/4", not "key:abc@\|0/3" |
-| js/reserved-word/yield.js | 1/1 | 100.00% | token-mismatch: input "foo.yield; yield.foo; new yield(); ({ yield: "foo" }); (yield, "foo"); void yield; var yield = "f |
-| js/return/comment.js | 1/1 | 78.18% | token-mismatch: input at 23 dropped |
-| js/unary-expression/comments.js | 1/1 | 85.92% | token-mismatch: input "!" at 108 printed as "!", which means "!@operator\|-1/19", not "!@operator\|-1/18" |
-| js/v8_intrinsic/intrinsic_call.js | 1/1 | 17.65% | token-mismatch: output ")" at 112 stands where input "IsAsmWasmCode" at 138 was |
-| jsx/comments/in-end-tag.js | 1/1 | 32.08% | token-mismatch: input "/* =========== before slash =========== */ <a><// line /a>; <a></* block */ /a>;  <><// line />;  |
-| jsx/jsx/conditional-expression.js | 4/4 | 79.70% | token-mismatch: input ""dunno"" at 3917 printed as ""dunno"", which means "key:dunno@alternative\|2/27", not "str:dunno@a |
+| js/arrays/numbers-negative-comment-after-minus.js | 1/1 | 100.00% | check: input "380014" at 104 is output as "380014" at 144, which means "key:380014@argument\|0/14", not "num:380014e0@arg |
+| js/arrows/comment.js | 2/2 | 67.57% | check: output comment "/**\n   * @param {?String} [modifier] - the BEM Modifier for the Block or Element; if undefined,  |
+| js/assignment-comments/indentable-block-comment.js | 1/1 | 100.00% | check: output comment "/**\n   * multi-line\n   */" matches no input comment |
+| js/call/no-argument/no-arguments.js | 1/1 | 64.86% | check: input comment "// 108" is missing from the output |
+| js/chain-expression/tagged-template-literals.js | 1/1 | 61.90% | check: input "a" at 23 is output as "a" at 22, which means "a@object\|0/4", not "a@object\|0/5" |
+| js/class-comment/superclass.js | 1/1 | 68.24% | check: input comment "// comment 2" is missing from the output |
+| js/comments/15661.js | 2/2 | 18.03% | check: output comment "/*\n * comment\n */" matches no input comment |
+| js/comments/binary-expressions-parens.js | 2/2 | 88.89% | check: output comment "/* $FlowFixMe(>=0.38.0 site=www) - Flow error detected during the\n   * deployment of v0.38.0. To |
+| js/comments/break-continue-statements-2.js | 2/2 | 78.87% | check: input comment "// breaking comment" is missing from the output |
+| js/comments/break-continue-statements-3.js | 2/2 | 92.75% | check: input comment "// breaking comment" is missing from the output |
+| js/comments/break-continue-statements.js | 2/2 | 72.73% | check: input comment "/* comment */" is missing from the output |
+| js/comments/dangling_for.js | 2/2 | 28.57% | check: input comment "// comment" is missing from the output |
+| js/comments/empty-statements.js | 2/2 | 17.39% | check: output comment "// second // third // first" matches no input comment |
+| js/comments/jsdoc-nestled-dangling.js | 2/2 | 93.02% | check: output comment "/**\n                 * A\n                 */" matches no input comment |
+| js/comments/jsdoc-nestled.js | 2/2 | 81.36% | check: output comment "/**\n   * Trailing comment 2\n   */" matches no input comment |
+| js/comments/multi-comments-on-same-line.js | 2/2 | 100.00% | check: output comment "/*3\n */" matches no input comment |
+| js/comments/return-statement-2.js | 2/2 | 48.00% | check: input "!" at 433 is output as "!" at 404, which means "!@operator\|-1/29", not "!@operator\|-1/27" |
+| js/comments/return-statement.js | 2/2 | 61.82% | check: output comment "/**\n   * @type {string}\n   */" matches no input comment |
+| js/comments/single-star-jsdoc.js | 2/2 | 100.00% | check: output comment "/*\n   * Oh no\n   */" matches no input comment |
+| js/comments/trailing-jsdocs.js | 2/2 | 76.00% | check: output comment "/**\n * A type that can be written to a buffer.\n */" matches no input comment |
+| js/comments/trailing_space.js | 2/2 | 100.00% | check: input "#!/there/is-space-here->         " at 0 is output as "#!/there/is-space-here->" at 0, which means "#!/ther |
+| js/comments-closure-typecast/closure-compiler-type-cast.js | 1/1 | 68.25% | check: output comment "/**\n   * @type {{\n   *   width: number,\n   * }}\n   */" matches no input comment |
+| js/comments-closure-typecast/comment-in-the-middle.js | 1/1 | 100.00% | check: output comment "/**\n   * bla bla bla\n   * @type {string \|\n   * number\n   * }\n   * bla bla bla\n   */" matche |
+| js/comments-closure-typecast/issue-8045.js | 1/1 | 46.15% | check: input "fooBarBaz" at 446 is output as "fooBarBaz" at 434, which means "fooBarBaz@\|0/14", not "fooBarBaz@\|0/13" |
+| js/comments-closure-typecast/non-casts.js | 1/1 | 100.00% | check: input "3" at 42 is output as "3" at 41, which means "num:3e0@right\|1/12", not "key:3@right\|1/12" |
+| js/comments/between-head-and-body/between-head-and-body.js | 1/1 | 60.15% | check: input comment "// 14" is missing from the output |
+| js/comments/between-head-and-body/empty-statement.js | 1/1 | 51.35% | check: input comment "// 14" is missing from the output |
+| js/comments/between-head-and-body/non-block.js | 1/1 | 64.25% | check: input comment "// 14" is missing from the output |
+| js/decorators/comments.js | 1/1 | 93.94% | check: output comment "// B // C export // C" matches no input comment |
+| js/decorators-export/after_export.js | 1/1 | 76.92% | check: input "export" at 0 is output as "export" at 0, which means "export@\|0/2", not "export@\|-1/2" |
+| js/directives/issue-7346.js | 1/1 | 100.00% | check: input "'bar'" at 78 is output as "\"bar\"" at 79, which means "key:bar@\|0/7", not "key:bar@\|0/6" |
+| js/empty-paren-comment/class.js | 1/1 | 100.00% | check: output comment "/**\n   * Set of default settings to be applied to model fetch calls in DAO layer.\n   */" matche |
+| js/explicit-resource-management/valid-await-using-binding-using.js | 1/1 | 75.00% | check: input "(" at 53 is output as "await" at 53, which means "await@\|-1/7", not "(@\|-1/7" |
+| js/explicit-resource-management/valid-await-using-comments.js | 1/1 | 64.52% | check: input comment "/*8*/" is missing from the output |
+| js/explicit-resource-management/valid-for-using-binding-of-of.js | 1/1 | 50.00% | check: the output has a syntax error at 46, which the input has not |
+| js/for/continue-and-break-comment-1.js | 1/1 | 87.37% | check: input comment "/* comment */" is missing from the output |
+| js/for/continue-and-break-comment-2.js | 1/1 | 90.83% | check: input comment "// comment" is missing from the output |
+| js/for/continue-and-break-comment-without-blocks.js | 1/1 | 64.46% | check: input comment "// comment" is missing from the output |
+| js/for-of/comments.js | 1/1 | 88.46% | check: output comment "//2b //2c" matches no input comment |
+| js/identifier/for-of/let.js | 1/1 | 61.54% | check: input "let" at 107 is output as "let" at 104, which means "let@kind\|-1/10", not "let@object\|0/11" |
+| js/identifier/parentheses/let.js | 2/2 | 81.82% | check: the output has a syntax error at 43, which the input has not |
+| js/import/comments.js | 2/2 | 63.41% | check: output comment "//comment2 //comment1" matches no input comment |
+| js/import-assertions/keyword-detect.js | 1/1 | 20.00% | check: input "assert" at 32 is output as "assert" at 32, which means "assert@function\|0/4", not "assert@\|0/3" |
+| js/import/empty-import/empty-import-2.js | 1/1 | 50.00% | check: output comment "/* 😄😄😄😄 */" matches no input comment |
+| js/import/empty-import/empty-import.js | 1/1 | 32.43% | check: output comment "// comment // comment" matches no input comment |
+| js/logical-expressions/in-unary-expression.js | 1/1 | 71.62% | check: input "!" at 107 is output as "!" at 107, which means "!@operator\|-1/5", not "!@operator\|-1/4" |
+| js/new-expression/new-expression.js | 1/1 | 88.89% | check: input "new" at 80 is output as "new" at 86, which means "new@\|-1/16", not "new@\|-1/14" |
+| js/no-semi/debugger-statement.js | 2/2 | 72.41% | check: input comment "// 11" is missing from the output |
+| js/no-semi/return-statement.js | 2/2 | 75.76% | check: input comment "// 11" is missing from the output |
+| js/optional-chaining/comments.js | 1/1 | 71.91% | check: input comment "// Comment" is missing from the output |
+| js/quotes/strings.js | 2/2 | 100.00% | check: input "\"abc\"" at 497 is output as "\"abc\"" at 498, which means "key:abc@\|0/4", not "key:abc@\|0/3" |
+| js/return/comment.js | 1/1 | 47.19% | check: input comment "/* a */" is missing from the output |
+| js/test-declarations/angular_async.js | 2/2 | 100.00% | check: output comment "/*\n * isTestCall(parent) should only be called when parent exists\n * and parent.type is CallExp |
+| js/test-declarations/angular_fakeAsync.js | 2/2 | 100.00% | check: output comment "/*\n * isTestCall(parent) should only be called when parent exists\n * and parent.type is CallExp |
+| js/test-declarations/angular_waitForAsync.js | 2/2 | 100.00% | check: output comment "/*\n * isTestCall(parent) should only be called when parent exists\n * and parent.type is CallExp |
+| js/test-declarations/angularjs_inject.js | 2/2 | 100.00% | check: output comment "/*\n * isTestCall(parent) should only be called when parent exists\n * and parent.type is CallExp |
+| js/unary-expression/comments.js | 1/1 | 16.74% | check: input "!" at 108 is output as "!" at 82, which means "!@operator\|-1/19", not "!@operator\|-1/18" |
+| js/v8_intrinsic/intrinsic_call.js | 1/1 | 45.45% | check: input "IsAsmWasmCode" at 138 is output as ")" at 112, which means ")@\|-1/13", not "IsAsmWasmCode@function\|0/14" |
+| jsx/comments/in-end-tag.js | 1/1 | 32.08% | check: input ">" at 503 is output as ">" at 503, which means ">@\|-1/71", not ">@\|-1/62" |
+| jsx/jsx/conditional-expression.js | 4/4 | 88.64% | check: input "\"dunno\"" at 3917 is output as "\"dunno\"" at 3920, which means "key:dunno@alternative\|2/62", not "str:du |
 
 # Excluded
 
