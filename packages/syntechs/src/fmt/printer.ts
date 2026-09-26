@@ -42,8 +42,7 @@ function propagateBreaks(d: Doc): boolean {
       return propagateBreaks(d.contents);
     case "fill":
       return propagateBreaks(d.parts);
-    case "ifBreak":
-    {
+    case "ifBreak": {
       const broken = propagateBreaks(d.broken);
       return propagateBreaks(d.flat) || broken;
     }

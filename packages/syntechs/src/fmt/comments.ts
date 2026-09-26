@@ -40,8 +40,13 @@ export function attachComments(
 
   const stack = [root];
   for (let node = stack.pop(); node; node = stack.pop()) {
-    if (!node.children.some(isComment)) {
-      for (const c of node.children) stack.push(c);
+    const children = node.children;
+    let hasComment = false;
+    for (let i = 0; i < children.length && !hasComment; i++)
+      hasComment = isComment(children[i] as FormatNode);
+    if (!hasComment) {
+      for (let i = 0; i < children.length; i++)
+        stack.push(children[i] as FormatNode);
       continue;
     }
     const comments: {
