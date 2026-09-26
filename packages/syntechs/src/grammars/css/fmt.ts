@@ -414,6 +414,7 @@ export const css = defineLanguage(
     defaults,
     settings: prettierSettings,
     normalize,
+    layoutBlind: true,
   },
   () => ({
     stylesheet: sequence,

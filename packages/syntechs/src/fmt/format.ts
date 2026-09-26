@@ -111,6 +111,7 @@ export function format<O>(
       placed,
       language.normalize,
       isComment,
+      language.layoutBlind,
     );
     if (problem)
       return {

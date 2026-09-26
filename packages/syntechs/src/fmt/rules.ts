@@ -89,6 +89,7 @@ export interface Language<O = unknown> {
   readonly defaults: O;
   settings(options: O): Settings;
   readonly normalize: Normalize;
+  readonly layoutBlind: boolean;
 }
 
 /**
@@ -105,6 +106,12 @@ export interface LanguageSpec<G extends Grammar, O> {
    * without changing meaning. The default compares text as is, which rejects any respelling.
    */
   readonly normalize?: Normalize;
+  /**
+   * `normalize` reads only each lexeme's node and text, never `at` nor the side's whole text, so an output that
+   * prints the input's tokens unchanged and in order passes the self-check without normalizing. The default
+   * `normalize` is.
+   */
+  readonly layoutBlind?: boolean;
   /**
    * The comment kinds that run to the end of the line, so code never follows one on its line. A kind maps to the
    * prefix its line comments start with, because one kind can hold both forms (tree-sitter-json's `comment` is
@@ -219,6 +226,7 @@ export function defineLanguage<
     defaults: spec.defaults,
     settings: spec.settings,
     normalize: spec.normalize ?? identity,
+    layoutBlind: spec.layoutBlind ?? spec.normalize === undefined,
   };
 }
 

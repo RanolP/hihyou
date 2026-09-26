@@ -56,6 +56,7 @@ export function check(
   placed: readonly Placed[],
   normalize: Normalize,
   isComment: (n: FormatNode) => boolean,
+  layoutBlind: boolean,
 ): string | undefined {
   // The printed source nodes by start offset: output order is source order but for the few comments a rule
   // moves, so this is usually sorted already. A tree walk in preorder asks about nodes by growing start, so
@@ -77,6 +78,10 @@ export function check(
     }
     return false;
   };
+
+  if (layoutBlind && printsInputAsIs(root, source, placed, isPrinted, isComment))
+    return coverage(source, printed, []);
+  cursor = 0;
 
   // The input's code tokens, in source order: each node a rule printed whole, else each leaf. Comments are
   // left to the coverage check, because prettier moves them (a trailing comment past a comma).
@@ -140,6 +145,51 @@ export function check(
   for (const [i, l] of input.entries())
     if (inForms[i] === undefined && !inputPrinted[i]) optional.push(l.node);
   return coverage(source, printed, optional);
+}
+
+/**
+ * Whether the output's code tokens are the input's, in order, by node and unrespelled, none synthetic. Then a
+ * normalize that reads only nodes and texts maps both sides to the same forms, and every input token is printed,
+ * so the comparison `check` would build lexemes for can only pass. Walks the input exactly as `check` does.
+ */
+function printsInputAsIs(
+  root: FormatNode,
+  source: string,
+  placed: readonly Placed[],
+  isPrinted: (n: FormatNode) => boolean,
+  isComment: (n: FormatNode) => boolean,
+): boolean {
+  let o = 0;
+  const stack = [root];
+  for (let n = stack.pop(); n; n = stack.pop()) {
+    if (isComment(n)) continue;
+    const children = n.children;
+    if (isPrinted(n) || children.length === 0) {
+      if (n.end === n.start) continue;
+      let t = (placed[o] as Placed | undefined)?.token;
+      while (t && (t.text === "" || (!t.synthetic && isComment(t.node))))
+        t = (placed[++o] as Placed | undefined)?.token;
+      if (
+        !t ||
+        t.synthetic ||
+        t.node !== n ||
+        t.text.length !== n.end - n.start ||
+        !source.startsWith(t.text, n.start)
+      )
+        return false;
+      o++;
+      continue;
+    }
+    for (let i = children.length - 1; i >= 0; i--) {
+      const c = children[i];
+      if (c) stack.push(c);
+    }
+  }
+  for (; o < placed.length; o++) {
+    const t = (placed[o] as Placed).token;
+    if (t.text !== "" && (t.synthetic || !isComment(t.node))) return false;
+  }
+  return true;
 }
 
 function sortedByStart(nodes: readonly FormatNode[]): boolean {

@@ -32,6 +32,7 @@ const spec = {
   defaults,
   settings: prettierSettings,
   normalize,
+  layoutBlind: true,
 };
 
 // Prettier's number normalization (utilities/print-number.js): lower case, no redundant exponent sign,
