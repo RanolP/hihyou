@@ -1,11 +1,15 @@
 import { type Doc, indent } from "../../../../fmt/doc.js";
 import type { FormatNode } from "../../../../fmt/tree.js";
-import type { For, Py, Stmt, While } from "../ast.js";
+import type { ExceptHandler, For, Py, Stmt, Try, While } from "../ast.js";
 import { type Fmt, hard, space } from "../builders.js";
 import type { Comment } from "../comments.js";
 import { formatExpr, maybeParenthesize } from "../expr.js";
 import type { StmtRules } from "./suite.js";
-import { clauseHeader, formatSuite } from "./suite.js";
+import {
+  clauseHeader,
+  formatSuite,
+  leadingAlternateBranchComments,
+} from "./suite.js";
 
 /** Ruff's compound statements other than definitions (statement/stmt_{if,for,while,try,with}.rs). */
 
@@ -60,7 +64,55 @@ function splitAtBody(
   return [dangling.slice(0, split), dangling.slice(split)];
 }
 
+/** Ruff's `FormatExceptHandlerExceptHandler`; its leading comments are the `try`'s to print. */
+function exceptHandler(f: Fmt, h: ExceptHandler): Doc {
+  const [except, star] = h.kws.map((k) => f.tok(k));
+  const header: Doc[] = [except ?? [], star ?? []];
+  if (h.type) {
+    header.push(space, maybeParenthesize(f, h.type, h, "ifBreaks"));
+    if (h.asTok && h.name)
+      header.push(space, f.tok(h.asTok), space, f.tok(h.name));
+  }
+  return clause(f, header, h.colon, f.comments.dangling(h), h.body);
+}
+
+/** Ruff's `FormatStmtTry`: the `try`'s dangling comments go to the case whose body they end before. */
+function tryStmt(f: Fmt, s: Try): Doc {
+  const cs = f.comments;
+  let dangling = cs.dangling(s);
+  let previous: Stmt | undefined;
+  const out: Doc[] = [];
+  const kase = (c: { kw: FormatNode; colon: FormatNode; body: Stmt[] }) => {
+    const last = c.body.at(-1);
+    if (!last) return;
+    const n = prefix(dangling, (x) => x.end <= last.end);
+    const comments = dangling.slice(0, n);
+    dangling = dangling.slice(n);
+    const own = prefix(comments, (x) => x.line === "own");
+    out.push(
+      clause(f, f.tok(c.kw), c.colon, comments.slice(own), c.body, {
+        comments: comments.slice(0, own),
+        last: previous,
+      }),
+    );
+    previous = last;
+  };
+  kase(s);
+  for (const h of s.handlers) {
+    out.push(
+      leadingAlternateBranchComments(f, cs.leading(h), previous),
+      exceptHandler(f, h),
+    );
+    previous = h.body.at(-1);
+  }
+  if (s.orelse) kase(s.orelse);
+  if (s.finalbody) kase(s.finalbody);
+  out.push(f.dangling(dangling));
+  return out;
+}
+
 export const clauseRules: StmtRules = {
+  Try: tryStmt,
   If(f, s) {
     const cs = f.comments;
     const out: Doc[] = [
