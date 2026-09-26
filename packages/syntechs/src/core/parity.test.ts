@@ -5,7 +5,7 @@ import { language as json } from "../grammars/json/index.js";
 import { language as python } from "../grammars/python/index.js";
 import { language as tsx } from "../grammars/tsx/index.js";
 import { language as typescript } from "../grammars/typescript/index.js";
-import type { GrammarName } from "./corpus.node.js";
+import { type GrammarName, referenceMissing } from "./corpus.node.js";
 import { parse } from "./index.js";
 import type { Language } from "./language.js";
 import { checkParity } from "./parity.node.js";
@@ -112,24 +112,24 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
 };
 
 // Cases native tree-sitter cannot judge, still run by the nesting test below. The port follows web-tree-sitter
-// 0.27, whose scanners call musl's <wctype.h>; native tree-sitter calls the host libc's, so U+0363 and U+0660
-// classify per platform (wctype.test.ts pins musl's answer instead). And the native binding is the 0.25.1
-// runtime, which recovers this one broken JS input differently from the 0.27 runtime the port follows.
+// 0.27, whose scanners call musl's <wctype.h>; the CLI's grammar library calls the host libc's (the Windows CRT
+// disagrees on both), so U+0363 and U+0660 classify per platform (wctype.test.ts pins musl's answer instead).
 const NOT_NATIVE = /[ͣ٠]/;
-const NATIVE_RUNTIME_DIFFERS = new Set([
-  "function f( { return 1 }\nclass { #x = 1; static { y() } }\nconst o = { a: 1,, b }",
-]);
+
+// The reference is the tree-sitter CLI and a zig-built grammar, both pinned in mise.toml. A machine without them
+// skips the comparison, loudly, rather than passing it.
+const missing = referenceMissing();
+if (missing) console.warn(`skipping the native parity tests: ${missing}`);
 
 for (const [grammar, [lang, texts]] of Object.entries(CASES) as [
   GrammarName,
   [Language, string[]],
 ][]) {
-  test(`the ${grammar} tree matches native tree-sitter node for node, broken inputs included`, async () => {
+  test(`the ${grammar} tree matches native tree-sitter node for node, broken inputs included`, async (ctx) => {
+    if (missing) ctx.skip(missing);
     const r = await checkParity(
       grammar,
-      texts
-        .map((text, i) => ({ name: `case${i}`, text }))
-        .filter(({ text }) => !NOT_NATIVE.test(text) && !NATIVE_RUNTIME_DIFFERS.has(text)),
+      texts.map((text, i) => ({ name: `case${i}`, text })).filter(({ text }) => !NOT_NATIVE.test(text)),
       lang,
     );
     expect(

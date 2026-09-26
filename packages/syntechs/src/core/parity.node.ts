@@ -1,15 +1,17 @@
-// Parity with native tree-sitter: every visible node's type, range, field, named, isMissing and isError,
-// in preorder with depth; then, once those agree, the `SyntaxTree` hihyou consumes (labels, layout-only JSX
-// text dropped, height, size) and its errorChars. Usage: node packages/syntechs/dist/core/parity.node.js [grammar...] [--show N]
+// Parity with native tree-sitter (the 0.27 CLI): every visible node's type, range, field, named, isMissing and
+// isError, in preorder with depth; then, once those agree, the `SyntaxTree` hihyou consumes (labels, layout-only
+// JSX text dropped, height, size) and its errorChars. The CLI prints a field only on named nodes, so an anonymous
+// node's field goes unchecked. Usage: node packages/syntechs/dist/core/parity.node.js [grammar...] [--show N]
 
-import type NativeParser from "tree-sitter";
 import {
   corpus,
   GRAMMAR_NAMES,
   type GrammarName,
   type Input,
   loadGenerated,
-  loadNative,
+  type ReferenceNode,
+  referenceMissing,
+  referenceTrees,
 } from "./corpus.node.js";
 import { parseRaw } from "./index.js";
 import type { Language } from "./language.js";
@@ -25,41 +27,40 @@ function describeSyntax(tree: SyntaxTree): string[] {
   return [
     ...tree.nodes.map(
       (n, i) =>
-        `${i === n.id ? n.id : `${i}!=${n.id}`} ${n.kind}${n.named ? "" : "(anon)"} ${n.start}-${n.end} ${n.field ?? "-"}${n.missing ? " MISSING" : ""} p${n.parent?.id ?? "-"} h${n.height} s${n.size} ${JSON.stringify(n.label)}`,
+        `${i === n.id ? n.id : `${i}!=${n.id}`} ${n.kind}${n.named ? "" : "(anon)"} ${n.start}-${n.end} ${(n.named && n.field) || "-"}${n.missing ? " MISSING" : ""} p${n.parent?.id ?? "-"} h${n.height} s${n.size} ${JSON.stringify(n.label)}`,
     ),
     `errorChars ${tree.errorChars}`,
   ];
 }
 
 /**
- * The cursor walk packages/engine did over web-tree-sitter, run over native tree-sitter and rebuilt here so the
- * reference SyntaxTree shares no walk, label, errorChars or height/size code with the port. Only `jsxText` and
- * the layout-leaf removal inside `visibleTree` are shared.
+ * The cursor walk packages/engine did over web-tree-sitter, rebuilt here over the CLI's preorder so the reference
+ * SyntaxTree shares no walk, label, errorChars or height/size code with the port. Only `jsxText` and the
+ * layout-leaf removal inside `visibleTree` are shared.
  */
-function reference(parser: NativeParser, text: string): Walk {
-  const c = parser.parse(text).walk();
+function reference(ref: ReferenceNode[], text: string): Walk {
   const lines: string[] = [];
   const raw: RawTree = {
     nodes: [],
     layout: new Set(),
     errorChars: 0,
   };
-  let parent: SyntaxNode | undefined;
-  let depth = 0;
-  let errorDepth = 0;
-  for (;;) {
+  const path: SyntaxNode[] = [];
+  for (const r of ref) {
     lines.push(
-      `${depth} ${c.nodeType}${c.nodeIsNamed ? "" : "(anon)"}${c.nodeIsMissing ? "(MISSING)" : ""} ${c.startIndex}-${c.endIndex}${c.currentFieldName ? ` ${c.currentFieldName}:` : ""}`,
+      `${r.depth} ${r.kind}${r.named ? "" : "(anon)"}${r.missing ? "(MISSING)" : ""} ${r.start}-${r.end}${r.field ? ` ${r.field}:` : ""}`,
     );
+    path.length = r.depth;
+    const parent = path.at(-1);
     const node: SyntaxNode = {
       id: raw.nodes.length,
-      kind: c.nodeType,
-      named: c.nodeIsNamed,
-      field: c.currentFieldName ?? undefined,
-      missing: c.nodeIsMissing,
+      kind: r.kind,
+      named: r.named,
+      field: r.field,
+      missing: r.missing,
       label: "",
-      start: c.startIndex,
-      end: c.endIndex,
+      start: r.start,
+      end: r.end,
       parent,
       children: [],
       height: 1,
@@ -67,33 +68,24 @@ function reference(parser: NativeParser, text: string): Walk {
     };
     raw.nodes.push(node);
     parent?.children.push(node);
-    if (node.kind === "ERROR" && errorDepth === 0) raw.errorChars += node.end - node.start;
-    if (c.gotoFirstChild()) {
-      if (node.kind === "ERROR") errorDepth++;
-      parent = node;
-      depth++;
-      continue;
-    }
+    if (node.kind === "ERROR" && !path.some((p) => p.kind === "ERROR")) raw.errorChars += node.end - node.start;
+    path.push(node);
+  }
+  for (const node of raw.nodes) {
+    if (node.children.length > 0) continue;
     const token = text.slice(node.start, node.end);
     if (node.kind.includes("comment")) node.label = token.replace(/\s+/g, " ");
     else if (node.kind === "jsx_text") {
       node.label = jsxText(token);
       if (node.label === "") raw.layout.add(node);
     } else node.label = token;
-    while (!c.gotoNextSibling()) {
-      if (!c.gotoParent() || !parent) {
-        for (const n of raw.nodes.toReversed())
-          if (n.parent) {
-            n.parent.height = Math.max(n.parent.height, n.height + 1);
-            n.parent.size += n.size;
-          }
-        return { lines, syntax: describeSyntax(visibleTree(raw)) };
-      }
-      if (parent.kind === "ERROR") errorDepth--;
-      parent = parent.parent;
-      depth--;
-    }
   }
+  for (const n of raw.nodes.toReversed())
+    if (n.parent) {
+      n.parent.height = Math.max(n.parent.height, n.height + 1);
+      n.parent.size += n.size;
+    }
+  return { lines, syntax: describeSyntax(visibleTree(raw)) };
 }
 
 function ours(lang: Language, text: string): Walk {
@@ -102,7 +94,7 @@ function ours(lang: Language, text: string): Walk {
   const lines = raw.nodes.map((n) => {
     const depth = n.parent ? (depthOf.get(n.parent) as number) + 1 : 0;
     depthOf.set(n, depth);
-    return `${depth} ${n.kind}${n.named ? "" : "(anon)"}${n.missing ? "(MISSING)" : ""} ${n.start}-${n.end}${n.field ? ` ${n.field}:` : ""}`;
+    return `${depth} ${n.kind}${n.named ? "" : "(anon)"}${n.missing ? "(MISSING)" : ""} ${n.start}-${n.end}${n.named && n.field ? ` ${n.field}:` : ""}`;
   });
   return { lines, syntax: describeSyntax(visibleTree(raw)) };
 }
@@ -136,14 +128,18 @@ export async function checkParity(
   divergences: Divergence[];
 }> {
   const lang = generated ?? (await loadGenerated(grammar));
-  const native = await loadNative(grammar);
+  const refs = referenceTrees(
+    grammar,
+    inputs.map((i) => i.text),
+    lang,
+  );
   let same = 0;
   let nodes = 0;
   let nodesSame = 0;
   let withErrors = 0;
   const divergences: Divergence[] = [];
-  for (const input of inputs) {
-    const expected = reference(native, input.text);
+  for (const [k, input] of inputs.entries()) {
+    const expected = reference(refs[k] as ReferenceNode[], input.text);
     nodes += expected.lines.length;
     if (expected.lines.some((l) => l.includes(" ERROR ") || l.includes("(MISSING)"))) withErrors++;
     let actual: Walk;
@@ -192,6 +188,8 @@ async function main(): Promise<void> {
   const show = showAt >= 0 ? Number(args[showAt + 1]) : 3;
   const names = args.filter((a, i) => !a.startsWith("--") && (showAt < 0 || i !== showAt + 1));
   const grammars = (names.length > 0 ? names : GRAMMAR_NAMES) as GrammarName[];
+  const missing = referenceMissing();
+  if (missing) throw new Error(missing);
   for (const grammar of grammars) {
     const inputs = corpus(grammar);
     const r = await checkParity(grammar, inputs);

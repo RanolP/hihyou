@@ -1,13 +1,12 @@
 packages:
   - packages/*
-# tree-sitter and the grammar packages are native node bindings, the dev-only parity oracle (never shipped to the
-# browser). They ship prebuilds, so node-gyp-build only compiles on a platform without one.
 allowBuilds:
   # The platform binary arrives as an optional dependency; the postinstall only re-verifies it.
   esbuild: false
-  tree-sitter: true
-  tree-sitter-css: true
-  tree-sitter-javascript: true
-  tree-sitter-json: true
-  tree-sitter-python: true
-  tree-sitter-typescript: true
+  # Only the grammars' generated src/ is read (by the compiler, and by zig for the parity reference); their node
+  # bindings go unused, so their install scripts need not run.
+  tree-sitter-css: false
+  tree-sitter-javascript: false
+  tree-sitter-json: false
+  tree-sitter-python: false
+  tree-sitter-typescript: false

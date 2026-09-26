@@ -1,4 +1,4 @@
-// This runtime against native tree-sitter (the parity reference), both producing the engine's SyntaxTree.
+// This runtime (parse + the engine's SyntaxTree) against the tree-sitter 0.27 CLI's own parse time (the parity reference).
 // Usage: node packages/syntechs/dist/core/bench.node.js [grammar...]    (warm parse, cold start, min+gzip size)
 
 import { execFileSync } from "node:child_process";
@@ -6,14 +6,14 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 import { build } from "esbuild";
-import type NativeParser from "tree-sitter";
 import {
   benchFiles,
   GRAMMAR_NAMES,
   type GrammarName,
   loadGenerated,
-  loadNative,
   pkgRoot,
+  referenceMissing,
+  referenceParseMs,
 } from "./corpus.node.js";
 import { parse } from "./index.js";
 
@@ -34,68 +34,11 @@ function time(fn: () => unknown): number {
   return median(samples);
 }
 
-interface Node {
-  kind: string;
-  named: boolean;
-  field: string | undefined;
-  label: string;
-  start: number;
-  end: number;
-  parent: Node | undefined;
-  children: Node[];
-  height: number;
-  size: number;
-}
-
-/** What packages/engine did with web-tree-sitter before syntechs: parse, then one cursor walk into plain objects. */
-function nativeTree(parser: NativeParser, text: string): Node[] {
-  const c = parser.parse(text).walk();
-  const nodes: Node[] = [];
-  const open = (parent: Node | undefined): Node => {
-    const n: Node = {
-      kind: c.nodeType,
-      named: c.nodeIsNamed,
-      field: c.currentFieldName ?? undefined,
-      label: "",
-      start: c.startIndex,
-      end: c.endIndex,
-      parent,
-      children: [],
-      height: 1,
-      size: 1,
-    };
-    nodes.push(n);
-    parent?.children.push(n);
-    return n;
-  };
-  let node = open(undefined);
-  for (;;) {
-    if (c.gotoFirstChild()) {
-      node = open(node);
-      continue;
-    }
-    for (;;) {
-      if (node.children.length === 0)
-        node.label = text.slice(node.start, node.end);
-      for (const k of node.children) {
-        if (k.height + 1 > node.height) node.height = k.height + 1;
-        node.size += k.size;
-      }
-      if (c.gotoNextSibling()) {
-        node = open(node.parent);
-        break;
-      }
-      if (!c.gotoParent() || !node.parent) {
-        return nodes;
-      }
-      node = node.parent;
-    }
-  }
-}
-
 async function warm(grammar: GrammarName): Promise<void> {
   const lang = await loadGenerated(grammar);
-  const native = await loadNative(grammar);
+  // The CLI times its own parse alone (no spawn, no tree walk), so its column is a floor, not a like-for-like.
+  const missing = referenceMissing();
+  if (missing) console.log(`(no cli column: ${missing})`);
   console.log(
     `\n${grammar}: parse + materialise, median of ${RUNS} after ${WARMUP} warm-up runs`,
   );
@@ -103,7 +46,7 @@ async function warm(grammar: GrammarName): Promise<void> {
   for (const input of benchFiles(grammar)) {
     const nodes = parse(lang, input.text).nodes.length;
     const ours = time(() => parse(lang, input.text));
-    const theirs = time(() => nativeTree(native, input.text));
+    const theirs = missing ? Number.NaN : referenceParseMs(grammar, input.text, WARMUP, RUNS);
     const name = input.name.split(/[\\/]/).at(-1);
     console.log(
       `${name}\t${(input.text.length / 1024).toFixed(0)}\t${nodes}\t${ours.toFixed(1)}\t${theirs.toFixed(1)}\t${(ours / theirs).toFixed(2)}x`,

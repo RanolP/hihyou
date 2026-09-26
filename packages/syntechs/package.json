@@ -48,7 +48,6 @@
     "esbuild": "0.28.2",
     "oxfmt": "0.70.0",
     "prettier": "3.9.9",
-    "tree-sitter": "0.25.1",
     "tree-sitter-css": "0.25.0",
     "tree-sitter-javascript": "0.25.0",
     "tree-sitter-json": "0.24.8",

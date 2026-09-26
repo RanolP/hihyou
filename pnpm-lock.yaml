@@ -286,24 +286,21 @@ importers:
       prettier:
         specifier: 3.9.9
         version: 3.9.9
-      tree-sitter:
-        specifier: 0.25.1
-        version: 0.25.1
       tree-sitter-css:
         specifier: 0.25.0
-        version: 0.25.0(tree-sitter@0.25.1)
+        version: 0.25.0
       tree-sitter-javascript:
         specifier: 0.25.0
-        version: 0.25.0(tree-sitter@0.25.1)
+        version: 0.25.0
       tree-sitter-json:
         specifier: 0.24.8
-        version: 0.24.8(tree-sitter@0.25.1)
+        version: 0.24.8
       tree-sitter-python:
         specifier: 0.25.0
-        version: 0.25.0(tree-sitter@0.25.1)
+        version: 0.25.0
       tree-sitter-typescript:
         specifier: 0.23.2
-        version: 0.23.2(tree-sitter@0.25.1)
+        version: 0.23.2
 
   packages/ui:
     dependencies:
@@ -1412,9 +1409,6 @@ packages:
       tree-sitter:
         optional: true
 
-  tree-sitter@0.25.1:
-    resolution: {integrity: sha512-mrcEdkYtHfrK1A6fs3O6FxkBo0Qig5XUXqHhxUOQu0bmPo00QF4XaSx4edpazdHwxnSCjlGKGgIqWdaN4dvTLA==}
-
   type-fest@5.10.0:
     resolution: {integrity: sha512-NoSdpq/WEiAg5sjmBkmV/hfxv6HJH4NqPNrqjtSO5CwRmpsDfaf4begxW34KdJykH/l1yHtwBWQkCRdoXO8mPA==}
     engines: {node: '>=20'}
@@ -2246,53 +2240,36 @@ snapshots:
 
   tinypool@2.1.2: {}
 
-  tree-sitter-css@0.25.0(tree-sitter@0.25.1):
+  tree-sitter-css@0.25.0:
     dependencies:
       node-addon-api: 8.9.2
       node-gyp-build: 4.8.4
-    optionalDependencies:
-      tree-sitter: 0.25.1
 
-  tree-sitter-javascript@0.23.1(tree-sitter@0.25.1):
+  tree-sitter-javascript@0.23.1:
     dependencies:
       node-addon-api: 8.9.2
       node-gyp-build: 4.8.4
-    optionalDependencies:
-      tree-sitter: 0.25.1
 
-  tree-sitter-javascript@0.25.0(tree-sitter@0.25.1):
+  tree-sitter-javascript@0.25.0:
     dependencies:
       node-addon-api: 8.9.2
       node-gyp-build: 4.8.4
-    optionalDependencies:
-      tree-sitter: 0.25.1
 
-  tree-sitter-json@0.24.8(tree-sitter@0.25.1):
+  tree-sitter-json@0.24.8:
     dependencies:
       node-addon-api: 8.9.2
       node-gyp-build: 4.8.4
-    optionalDependencies:
-      tree-sitter: 0.25.1
 
-  tree-sitter-python@0.25.0(tree-sitter@0.25.1):
+  tree-sitter-python@0.25.0:
     dependencies:
       node-addon-api: 8.9.2
       node-gyp-build: 4.8.4
-    optionalDependencies:
-      tree-sitter: 0.25.1
 
-  tree-sitter-typescript@0.23.2(tree-sitter@0.25.1):
+  tree-sitter-typescript@0.23.2:
     dependencies:
       node-addon-api: 8.9.2
       node-gyp-build: 4.8.4
-      tree-sitter-javascript: 0.23.1(tree-sitter@0.25.1)
-    optionalDependencies:
-      tree-sitter: 0.25.1
-
-  tree-sitter@0.25.1:
-    dependencies:
-      node-addon-api: 8.9.2
-      node-gyp-build: 4.8.4
+      tree-sitter-javascript: 0.23.1
 
   type-fest@5.10.0:
     dependencies:
