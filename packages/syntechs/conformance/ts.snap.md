@@ -1,4 +1,4 @@
-ts compatibility: 521/653 (79.79%), 29 refused (ok:false), 76 excluded
+ts compatibility: 531/653 (81.32%), 28 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -14,9 +14,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
 | typescript/argument-expansion/arrow-with-return-type.ts | 0/1 | 77.78% |
-| typescript/arrow/comments.ts | 0/2 | 44.44% |
 | typescript/arrow/comments/issue-11100.ts | 0/1 | 42.86% |
-| typescript/as/as-const/as-const.ts | 0/1 | 90.91% |
 | typescript/as/comments/18160.ts | 0/1 | 81.25% |
 | typescript/assignment/lone-arg.ts | 0/1 | 41.18% |
 | typescript/binary-expressions/chain-expression.ts | 0/1 | 76.47% |
@@ -29,17 +27,12 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/chain-expression/member-expression.ts | 0/1 | 98.63% |
 | typescript/chain-expression/test2.ts | 0/1 | 80.00% |
 | typescript/class/declare-field.ts | 0/1 | 75.00% |
-| typescript/class/empty-method-body.ts | 0/1 | 83.33% |
 | typescript/class-and-interface/heritage-break/member-expression-like.ts | 0/1 | 75.00% |
 | typescript/comments/11662.ts | 0/1 | 0.00% |
 | typescript/comments/16065.ts | 0/1 | 81.82% |
-| typescript/comments/16121.ts | 0/1 | 85.71% |
 | typescript/comments/16889.ts | 0/1 | 97.39% |
-| typescript/comments/declare_function.ts | 0/1 | 83.33% |
-| typescript/comments/method_types.ts | 0/1 | 74.36% |
-| typescript/comments/methods.ts | 0/1 | 97.96% |
+| typescript/comments/method_types.ts | 0/1 | 82.05% |
 | typescript/comments/type-literals.ts | 0/1 | 89.66% |
-| typescript/comments/union.ts | 0/1 | 36.84% |
 | typescript/comments/first-argument/first-argument.ts | 0/1 | 65.45% |
 | typescript/compiler/indexSignatureWithInitializer.ts | 0/1 | 87.50% |
 | typescript/conditional-types/parentheses.ts | 0/2 | 86.00% |
@@ -71,7 +64,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/interface2/comments-ts-only/18278.ts | 0/1 | 82.61% |
 | typescript/intersection/intersection-parens.ts | 1/3 | 99.29% |
 | typescript/intersection/consistent-with-flow/intersection-parens.ts | 0/1 | 97.67% |
-| typescript/intersection/consistent-with-flow/single-member.ts | 0/1 | 80.00% |
+| typescript/intersection/consistent-with-flow/single-member.ts | 0/1 | 82.00% |
 | typescript/last-argument-expansion/decorated-function.tsx | 0/1 | 90.91% |
 | typescript/mapped-type/issue-11098.ts | 0/1 | 87.13% |
 | typescript/method-chain/comment.ts | 0/1 | 0.00% |
@@ -101,9 +94,9 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/type-parameters-arguments/consistent/typescript-only.ts | 0/1 | 70.59% |
 | typescript/type-parameters-arguments/print-width-120/issue-7542.tsx | 0/1 | 88.89% |
 | typescript/union/10599.ts | 0/1 | 87.50% |
-| typescript/union/13080.ts | 0/1 | 42.86% |
+| typescript/union/13080.ts | 0/1 | 71.43% |
 | typescript/union/5849.ts | 0/1 | 87.88% |
-| typescript/union/7725.ts | 0/1 | 52.94% |
+| typescript/union/7725.ts | 0/1 | 76.47% |
 | typescript/union/union-parens.ts | 0/1 | 99.07% |
 | typescript/union/comments/18106.ts | 0/1 | 74.16% |
 | typescript/union/comments/18379.ts | 0/1 | 54.17% |
@@ -112,9 +105,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/union/consistent-with-flow/comment.ts | 0/1 | 87.50% |
 | typescript/union/consistent-with-flow/function-type-param.ts | 0/1 | 90.00% |
 | typescript/union/consistent-with-flow/leading-comments.ts | 0/1 | 78.26% |
-| typescript/union/consistent-with-flow/prettier-ignore.ts | 0/1 | 40.00% |
-| typescript/union/consistent-with-flow/single-type.ts | 0/1 | 60.00% |
-| typescript/webhost/webtsc.ts | 0/1 | 99.08% |
+| typescript/union/consistent-with-flow/prettier-ignore.ts | 0/1 | 60.00% |
 | jsx/ignore/spread.js | 0/1 | 75.68% |
 
 # Refused
@@ -129,7 +120,7 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | typescript/class-comment/declare.ts | 1/1 | 66.67% | check: input comment "// extends b   // 2" is missing from the output |
 | typescript/comments/mapped-types.ts | 1/1 | 80.00% | check: input comment "// commentA" is missing from the output |
 | typescript/compiler/commentInNamespaceDeclarationWithIdentifierPathName.ts | 1/1 | 57.14% | check: input "namespace" at 1 is output as "namespace" at 1, which means "namespace@\|-1/2", not "namespace@\|-1/3" |
-| typescript/conditional-types/comments.ts | 2/2 | 66.60% | check: input "any instanceof B\n  /**\n  * Comment\n  */\n    ? B \| C\n    : D" at 1337 is output as "any" at 1286, whic |
+| typescript/conditional-types/comments.ts | 2/2 | 67.64% | check: input "any instanceof B\n  /**\n  * Comment\n  */\n    ? B \| C\n    : D" at 1337 is output as "any" at 1286, whic |
 | typescript/conditional-types/conditional-types.ts | 2/2 | 100.00% | check: input "new" at 1298 is output as "new" at 1327, which means "new@\|-1/175", not "new@\|-1/174" |
 | typescript/decorator-auto-accessors/decorator-auto-accessors-type-annotations.ts | 1/1 | 75.00% | check: input "prop2" at 68 is output as "prop2" at 68, which means "key:prop2@name\|0/8", not "prop2@\|0/8" |
 | typescript/decorators/comments.ts | 1/1 | 60.00% | check: input "static" at 55 is output as "static" at 36, which means "key:static@name\|1/4", not "static@\|-1/4" |
@@ -149,9 +140,8 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | typescript/mapped-type/break-mode/break-mode.ts | 1/1 | 96.30% | check: input "[" at 90 is output as "[" at 97, which means "[@\|-1/16", not "[@\|-1/15" |
 | typescript/parentheses/yield.ts | 1/1 | 40.00% | check: input "yield" at 41 is output as "yield" at 42, which means "yield@\|-1/8", not "yield@\|-1/9" |
 | typescript/type-parameters-arguments/19505.ts | 1/1 | 98.18% | check: input comment "// dangling comment" is missing from the output |
-| typescript/union/inlining.ts | 1/1 | 70.23% | check: input comment "// articles type may be null" is missing from the output |
 | typescript/union/consistent-with-flow/18647.ts | 1/1 | 75.00% | check: input "any instanceof B\n  /**\n  * Comment\n  */\n    ? B \| C\n    : D" at 139 is output as "any" at 147, which  |
-| typescript/union/consistent-with-flow/union-last-comment.ts | 1/1 | 40.00% | check: output comment "// Comment2 // Final comment1" matches no input comment |
+| typescript/union/consistent-with-flow/union-last-comment.ts | 1/1 | 64.71% | check: output comment "// Comment2 // Final comment1" matches no input comment |
 
 # Excluded
 
