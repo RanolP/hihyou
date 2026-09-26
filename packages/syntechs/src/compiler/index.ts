@@ -751,6 +751,97 @@ function charValue(lit: string): number {
   throw new Error(`unknown char literal ${t}`);
 }
 
+const ACCEPT = /^result = true; lexer\.resultSymbol = \d+; lexer\.markEnd\(\);$/;
+const IF_ADVANCE =
+  /^if \(([^]*)\) \{ (skip = true; )?state = (\d+); continue; \}$/;
+const ADVANCE_MAP =
+  /^switch \(lookahead\) \{((?: case \d+: state = \d+; continue;)*) \}$/;
+
+/**
+ * A state that advances back into itself (the body of a string, comment, identifier or whitespace run) costs one
+ * trip through the lexer loop, `advance` and the state switch per character. This rewrites its self-loop branch to
+ * scan the input with `charCodeAt` for as long as that branch would keep being the one taken, then jump there and
+ * re-enter the state once. Earlier branches win over it in the C, so the scan stops wherever any of them matches;
+ * it also stops at a surrogate, leaving the pair's decoding to the per-character path.
+ */
+function scanSelfLoops(body: string): string {
+  const lines = body.split("\n");
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const head = /^\s*case (\d+):$/.exec(lines[i] as string);
+    out.push(lines[i++] as string);
+    if (!head) continue;
+    const stmts: string[][] = [];
+    while (
+      i < lines.length &&
+      !/^\s*(case \d+|default):/.test(lines[i] as string)
+    ) {
+      const stmt = [lines[i++] as string];
+      while (
+        !/[;}]$/.test((stmt.at(-1) as string).trimEnd()) &&
+        i < lines.length
+      )
+        stmt.push(lines[i++] as string);
+      stmts.push(stmt);
+    }
+    out.push(...scanState(head[1] as string, stmts).flat());
+  }
+  return out.join("\n");
+}
+
+function scanState(self: string, stmts: string[][]): string[][] {
+  const stops: string[] = [];
+  for (const [k, stmt] of stmts.entries()) {
+    const text = stmt.map((l) => l.trim()).join("\n");
+    if (ACCEPT.test(text)) continue;
+    const map = ADVANCE_MAP.exec(text);
+    if (map) {
+      const cases = [...(map[1] as string).matchAll(/case (\d+):/g)].map(
+        (c) => `case ${c[1]}:`,
+      );
+      stops.push(`switch (lookahead) { ${cases.join(" ")} break scan; }`);
+      continue;
+    }
+    const branch = IF_ADVANCE.exec(text);
+    if (!branch) return stmts;
+    const cond = (branch[1] as string).replace(/\beof\b/g, "false");
+    if (branch[3] !== self) {
+      stops.push(`if (${cond}) break scan;`);
+      continue;
+    }
+    const indent = /^\s*/.exec(stmt[0] as string)?.[0] ?? "";
+    const skip = branch[2] ? "true" : "false";
+    const scan = [
+      `if (${branch[1]}) {`,
+      `  lexer.advance(${skip});`,
+      `  const input = lexer.input;`,
+      `  let pos = lexer.pos;`,
+      `  let rows = 0;`,
+      `  scan: for (; pos < input.length; pos++) {`,
+      `    const lookahead = input.charCodeAt(pos);`,
+      `    if (lookahead >= 55296 && lookahead <= 57343) break scan;`,
+      ...stops.map((s) => `    ${s}`),
+      `    if (!(${cond})) break scan;`,
+      `    if (lookahead === 10) rows++;`,
+      `  }`,
+      `  lexer.advanceTo(pos, rows, ${skip});`,
+      `  first = true;`,
+      `  continue;`,
+      `}`,
+    ];
+    return [
+      ...stmts.slice(0, k),
+      scan
+        .join("\n")
+        .split("\n")
+        .map((l) => indent + l),
+      ...stmts.slice(k + 1),
+    ];
+  }
+  return stmts;
+}
+
 function translateLexer(
   name: string,
   body: string,
@@ -790,7 +881,7 @@ function translateLexer(
     /.*(lexer->|[A-Z_]{4,}\(|\bgoto\b|\?|'|\(int32_t\)|\(uint).*/,
   );
   if (bad) throw new Error(`${name}: untranslated lexer construct: ${bad[0]}`);
-  out = out.trim();
+  out = scanSelfLoops(out).trim();
   return `  let result = false;
   let skip = false;
   let first = true;

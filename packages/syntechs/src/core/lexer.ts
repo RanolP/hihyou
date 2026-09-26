@@ -75,6 +75,21 @@ export class Lexer {
     this.readLookahead();
   }
 
+  /**
+   * The generated lexers' fast path for a state that loops on itself: jumps over code units the caller already
+   * scanned with `charCodeAt` (never splitting a surrogate pair), `rows` of them line feeds, as that many
+   * `advance(skip)` calls would.
+   */
+  advanceTo(pos: number, rows: number, skip: boolean): void {
+    this.pos = pos;
+    this.row += rows;
+    if (skip) {
+      this.tokenStart = pos;
+      this.tokenStartRow = this.row;
+    }
+    this.readLookahead();
+  }
+
   /** The whole input is the one included range, so its only start is offset 0. */
   isAtIncludedRangeStart(): boolean {
     return this.pos === 0;
