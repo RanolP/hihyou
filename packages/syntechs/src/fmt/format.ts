@@ -120,13 +120,15 @@ export function format<O>(
         text: source,
         detail: problem,
       };
-    const anchors = placed.map(
-      ({ token: t, at }): Anchor => ({
+    const anchors: Anchor[] = [];
+    for (const { token: t, at } of placed) {
+      const anchor: Anchor = {
         from: [t.node.start, t.node.end],
         to: [at, at + t.text.length],
-        ...(t.synthetic && { synthetic: true }),
-      }),
-    );
+      };
+      if (t.synthetic) anchor.synthetic = true;
+      anchors.push(anchor);
+    }
     return withEndOfLine(text, anchors, endOfLine(settings.endOfLine, source));
   } catch (e) {
     return {
@@ -156,6 +158,8 @@ function withEndOfLine(
   anchors: Anchor[],
   eol: string,
 ): Formatted {
+  // The printer ends lines with `\n`, so only a `\r` inside a token can make an LF output need rewriting.
+  if (eol === "\n" && !text.includes("\r")) return { ok: true, text, anchors };
   const breaks = [...text.matchAll(/\r\n?|\n/g)].filter((m) => m[0] !== eol);
   if (breaks.length === 0) return { ok: true, text, anchors };
   // Anchors run in output order, so their offsets only grow and one pass over the breaks moves them all.
