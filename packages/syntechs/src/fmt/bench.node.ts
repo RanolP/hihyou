@@ -7,9 +7,9 @@
 //
 // syntechs is parse + format, in process, timed after its bundles load (the load is reported apart). prettier
 // 3.9.9 and oxfmt run in process through their JS APIs, one awaited call per input. ruff has no JS API: it
-// runs as native ruff, the version mise.toml pins (0.16.9), on PATH via mise shims (or `--ruff`), `format
-// --check` over a directory of the inputs on one thread, timed as a whole process less the same process over
-// an empty directory.
+// runs as native ruff, the version mise.toml pins (0.16.9), resolved once via `mise which ruff` (or `--ruff`),
+// `format` over a directory of the inputs on one thread, one whole-process invocation per pass, same as
+// syntechs's warm median.
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -109,46 +109,50 @@ function resolveRuff(): string {
   const at = process.argv.indexOf("--ruff");
   if (at !== -1 && process.argv[at + 1]) return process.argv[at + 1] as string;
   try {
-    execFileSync("ruff", ["--version"], { cwd: REPO_ROOT, stdio: "ignore" });
+    return execFileSync("mise", ["which", "ruff"], {
+      cwd: REPO_ROOT,
+      encoding: "utf8",
+    }).trim();
   } catch {
     throw new Error(
-      "ruff not found on PATH; run `mise install` in the repo root",
+      "ruff not found via `mise which ruff`; run `mise install` in the repo root",
     );
   }
-  return "ruff";
 }
 
-/** Median whole-process time of ruff over `inputs`, less its time over an empty directory. */
-function ruffTime(ruff: string, inputs: Input[]) {
+/**
+ * Median whole-process time of one `ruff format <dir>` invocation per pass over `inputs`,
+ * restoring the unformatted copies before each pass so every pass formats the same bytes.
+ */
+function ruffTime(ruff: string, inputs: Input[]): number {
   const root = mkdtempSync(join(tmpdir(), "syntechs-bench-"));
   try {
     const dir = join(root, "inputs");
-    const empty = join(root, "empty");
     mkdirSync(dir);
-    mkdirSync(empty);
-    for (const [i, input] of inputs.entries())
-      writeFileSync(join(dir, `${i}.py`), input.text);
-    const run = (d: string) => {
-      const samples: number[] = [];
-      for (let i = 0; i < WARMUP + RUNS; i++) {
-        const t = performance.now();
-        const r = spawnSync(
-          ruff,
-          ["format", "--check", "--isolated", "--no-cache", d],
-          {
-            cwd: REPO_ROOT,
-            env: { ...process.env, RAYON_NUM_THREADS: "1" },
-            encoding: "utf8",
-          },
-        );
-        if (r.status !== 0 && r.status !== 1)
-          throw new Error(`ruff exited ${r.status}: ${r.stderr.slice(0, 500)}`);
-        if (i >= WARMUP) samples.push(performance.now() - t);
-      }
-      return median(samples);
+    const files = inputs.map((input, i) => ({
+      path: join(dir, `${i}.py`),
+      text: input.text,
+    }));
+    const restore = () => {
+      for (const f of files) writeFileSync(f.path, f.text);
     };
-    const startup = run(empty);
-    return { total: run(dir), startup };
+    const pass = () => {
+      restore();
+      const t = performance.now();
+      const r = spawnSync(ruff, ["format", "--isolated", "--no-cache", dir], {
+        cwd: REPO_ROOT,
+        env: { ...process.env, RAYON_NUM_THREADS: "1" },
+        encoding: "utf8",
+      });
+      const elapsed = performance.now() - t;
+      if (r.status !== 0)
+        throw new Error(`ruff exited ${r.status}: ${r.stderr.slice(0, 500)}`);
+      return elapsed;
+    };
+    for (let i = 0; i < WARMUP; i++) pass();
+    const samples: number[] = [];
+    for (let i = 0; i < RUNS; i++) samples.push(pass());
+    return median(samples);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -265,7 +269,7 @@ async function main() {
         }
       let pretty: number | undefined;
       let ox: number | undefined;
-      let rf: { total: number; startup: number } | undefined;
+      let rf: number | undefined;
       if (g.prettier && g.oxfmtExt) {
         const parser = g.prettier;
         const ext = g.oxfmtExt;
@@ -287,17 +291,17 @@ async function main() {
         ruff ??= resolveRuff();
         rf = ruffTime(ruff, inputs);
       }
-      const ref = rf ? rf.total - rf.startup : ox;
+      const ref = rf ?? ox;
       totals = {
         ours: totals.ours + (ours?.warm ?? 0),
         prettier: totals.prettier + (pretty ?? 0),
         oxfmt: totals.oxfmt + (ox ?? 0),
-        ruff: totals.ruff + (rf ? rf.total - rf.startup : 0),
+        ruff: totals.ruff + (rf ?? 0),
       };
       const mbs = (ms: number | undefined) =>
         ms === undefined ? undefined : bytes / 1e6 / (ms / 1e3);
       rows.push(
-        `| ${g.id} | ${label} | ${inputs.length} | ${(bytes / 1024).toFixed(0)} | ${ours ? `${cell(ours.warm)} (${cell(mbs(ours.warm), 2)} MB/s)` : "not implemented"} | ${cell(ours?.cold)} | ${pretty === undefined ? "-" : `${cell(pretty)} (${cell(mbs(pretty), 2)} MB/s)`} | ${ox === undefined ? "-" : `${cell(ox)} (${cell(mbs(ox), 2)} MB/s)`} | ${rf ? `${cell(rf.total - rf.startup)} (+${cell(rf.startup)} startup)` : "-"} | ${ours && ref ? cell(ours.warm / ref, 2) : "-"} | ${ours && pretty ? cell(ours.warm / pretty, 2) : "-"} |`,
+        `| ${g.id} | ${label} | ${inputs.length} | ${(bytes / 1024).toFixed(0)} | ${ours ? `${cell(ours.warm)} (${cell(mbs(ours.warm), 2)} MB/s)` : "not implemented"} | ${cell(ours?.cold)} | ${pretty === undefined ? "-" : `${cell(pretty)} (${cell(mbs(pretty), 2)} MB/s)`} | ${ox === undefined ? "-" : `${cell(ox)} (${cell(mbs(ox), 2)} MB/s)`} | ${rf === undefined ? "-" : cell(rf)} | ${ours && ref ? cell(ours.warm / ref, 2) : "-"} | ${ours && pretty ? cell(ours.warm / pretty, 2) : "-"} |`,
       );
     }
     if (!implemented) {
