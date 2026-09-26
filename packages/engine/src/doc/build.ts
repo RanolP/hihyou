@@ -56,7 +56,7 @@ export async function buildReviewDoc(
   opts: BuildOptions,
 ): Promise<ReviewDoc> {
   const changes = await source.listChanges();
-  const analyses: Analysis[] = new Array(changes.length);
+  const analyses: Analysis[] = Array.from({ length: changes.length });
   // One iterator shared by every worker hands each file to exactly one of them.
   const queue = changes.entries();
   const worker = async () => {

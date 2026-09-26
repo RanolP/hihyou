@@ -103,7 +103,9 @@ export async function presentFile(
 export function segments(
   line: ViewLine,
 ): { text: string; kind?: HighlightKind }[] {
-  const kinds: (HighlightKind | undefined)[] = new Array(line.text.length);
+  const kinds: (HighlightKind | undefined)[] = Array.from({
+    length: line.text.length,
+  });
   const ordered = line.highlights.toSorted(
     (p, q) =>
       q.to - q.from - (p.to - p.from) ||

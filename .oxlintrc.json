@@ -1,0 +1,21 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [
+    "typescript",
+    "unicorn",
+    "oxc"
+  ],
+  "categories": {
+    "correctness": "error"
+  },
+  "rules": {},
+  "env": {
+    "builtin": true
+  },
+  "ignorePatterns": [
+    "packages/engine/fixtures",
+    "research",
+    "packages/syntechs/src/grammars/*/bundle.js",
+    "packages/syntechs/src/core/musl-alpha.ts"
+  ]
+}

@@ -76,7 +76,7 @@ function valueForm(
       return `num:${decimalValue(t.replaceAll("_", "")) ?? t.toLowerCase()}`;
     case "regex": {
       const slash = t.lastIndexOf("/");
-      return `re:${t.slice(0, slash)}/${[...t.slice(slash + 1)].sort().join("")}`;
+      return `re:${t.slice(0, slash)}/${t.slice(slash + 1).split("").sort().join("")}`;
     }
     // Prettier sorts a regex's flags.
     case "regex_flags":

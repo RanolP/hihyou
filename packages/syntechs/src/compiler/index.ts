@@ -100,19 +100,19 @@ export function compile(source: GrammarSource): string {
     return v;
   };
 
-  const symbolNames: string[] = new Array(total).fill("");
+  const symbolNames: string[] = Array.from({ length: total }, () => "");
   for (const m of need(block(/ts_symbol_names\[\] = \{/)).matchAll(
     /\[(\w+)\] = ("(?:[^"\\]|\\.)*")/g,
   ))
     symbolNames[id(m[1] as string)] = cString(m[2] as string);
 
-  const publicMap: number[] = new Array(total).fill(0);
+  const publicMap: number[] = Array.from({ length: total }, () => 0);
   for (const m of need(block(/ts_symbol_map\[\] = \{/)).matchAll(
     /\[(\w+)\] = (\w+)/g,
   ))
     publicMap[id(m[1] as string)] = id(m[2] as string);
 
-  const flags: number[] = new Array(total).fill(0);
+  const flags: number[] = Array.from({ length: total }, () => 0);
   for (const m of need(block(/ts_symbol_metadata\[\] = \{/)).matchAll(
     /\[(\w+)\] = \{([^}]*)\}/g,
   )) {
@@ -123,7 +123,10 @@ export function compile(source: GrammarSource): string {
       (/\.supertype = true/.test(body) ? FLAG_SUPERTYPE : 0);
   }
 
-  const fieldNames: string[] = new Array(fieldCount + 1).fill("");
+  const fieldNames: string[] = Array.from(
+    { length: fieldCount + 1 },
+    () => "",
+  );
   for (const m of need(
     block(/ts_field_names\[\] = \{/, fieldCount === 0),
   ).matchAll(/\[(\w+)\] = ("(?:[^"\\]|\\.)*")/g))
@@ -150,7 +153,10 @@ export function compile(source: GrammarSource): string {
     const m = t.match(/^(?:ACTIONS|STATE)\((\d+)\)$/);
     small.push(m ? Number(m[1]) : id(t));
   }
-  const smallMap: number[] = new Array(stateCount - largeStateCount).fill(0);
+  const smallMap: number[] = Array.from(
+    { length: stateCount - largeStateCount },
+    () => 0,
+  );
   for (const m of need(block(/ts_small_parse_table_map\[\] = \{/)).matchAll(
     /\[SMALL_STATE\((\d+)\)\] = (\d+)/g,
   ))
@@ -198,8 +204,14 @@ export function compile(source: GrammarSource): string {
     if (!slots[i]) throw new Error(`${name}: action slot ${i} is empty`);
 
   // ---- fields, aliases ----
-  const sliceIndex: number[] = new Array(productionIdCount).fill(0);
-  const sliceLength: number[] = new Array(productionIdCount).fill(0);
+  const sliceIndex: number[] = Array.from(
+    { length: productionIdCount },
+    () => 0,
+  );
+  const sliceLength: number[] = Array.from(
+    { length: productionIdCount },
+    () => 0,
+  );
   for (const m of need(
     block(/ts_field_map_slices\[PRODUCTION_ID_COUNT\] = \{/, fieldCount === 0),
   ).matchAll(/\[(\d+)\] = \{\.index = (\d+), \.length = (\d+)\}/g)) {
@@ -221,9 +233,10 @@ export function compile(source: GrammarSource): string {
       fieldEntries[at++] = [id(e[1] as string), Number(e[2]), e[3] ? 1 : 0];
     }
   }
-  const aliases: number[] = new Array(
-    productionIdCount * maxAliasSequenceLength,
-  ).fill(0);
+  const aliases: number[] = Array.from(
+    { length: productionIdCount * maxAliasSequenceLength },
+    () => 0,
+  );
   for (const m of need(
     block(
       /ts_alias_sequences\[PRODUCTION_ID_COUNT\]\[MAX_ALIAS_SEQUENCE_LENGTH\] = \{/,
@@ -236,9 +249,12 @@ export function compile(source: GrammarSource): string {
   }
 
   // ---- lex modes, reserved words, externals ----
-  const lexState: number[] = new Array(stateCount).fill(0);
-  const externalLexState: number[] = new Array(stateCount).fill(0);
-  const reservedSet: number[] = new Array(stateCount).fill(0);
+  const lexState: number[] = Array.from({ length: stateCount }, () => 0);
+  const externalLexState: number[] = Array.from(
+    { length: stateCount },
+    () => 0,
+  );
+  const reservedSet: number[] = Array.from({ length: stateCount }, () => 0);
   for (const m of need(block(/ts_lex_modes\[STATE_COUNT\] = \{/)).matchAll(
     /\[(\d+)\] = \{([^}]*)\}/g,
   )) {
@@ -262,7 +278,9 @@ export function compile(source: GrammarSource): string {
   );
   if (rw) {
     const sets = Number(c.match(/ts_reserved_words\[(\d+)\]/)?.[1]);
-    reservedWords.push(...new Array(sets * maxReservedWordSetSize).fill(0));
+    reservedWords.push(
+      ...Array.from({ length: sets * maxReservedWordSetSize }, () => 0),
+    );
     for (const m of rw.matchAll(/\[(\d+)\] = \{([^}]*)\}/g)) {
       const words = (m[2] as string)
         .split(",")
@@ -273,7 +291,10 @@ export function compile(source: GrammarSource): string {
       });
     }
   }
-  const externalSymbolMap: number[] = new Array(externalTokenCount).fill(0);
+  const externalSymbolMap: number[] = Array.from(
+    { length: externalTokenCount },
+    () => 0,
+  );
   const externalStates: number[] = [];
   if (externalTokenCount > 0) {
     for (const m of need(
@@ -281,7 +302,9 @@ export function compile(source: GrammarSource): string {
     ).matchAll(/\[(\w+)\] = (\w+)/g))
       externalSymbolMap[id(m[1] as string)] = id(m[2] as string);
     const states = Number(c.match(/ts_external_scanner_states\[(\d+)\]/)?.[1]);
-    externalStates.push(...new Array(states * externalTokenCount).fill(0));
+    externalStates.push(
+      ...Array.from({ length: states * externalTokenCount }, () => 0),
+    );
     for (const m of need(
       block(/ts_external_scanner_states\[\d+\]\[EXTERNAL_TOKEN_COUNT\] = \{/),
     ).matchAll(/\[(\d+)\] = \{([^}]*)\}/g)) {

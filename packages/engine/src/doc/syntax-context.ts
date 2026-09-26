@@ -52,7 +52,7 @@ export function isExported(decl: SyntaxNode): boolean {
 
 /** An identifier the edit names in its own right: a variable, property or type name. */
 export function isIdentifier(n: SyntaxNode): boolean {
-  return n.named && n.children.length === 0 && /identifier$/.test(n.kind);
+  return n.named && n.children.length === 0 && n.kind.endsWith("identifier");
 }
 
 /**

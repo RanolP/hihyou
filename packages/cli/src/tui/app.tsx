@@ -178,7 +178,6 @@ export function App({ doc, load, size }: Props) {
           ) : (
             displayRows.slice(top, top + diffHeight - 3).map((row, i) => (
               <RowLine
-                // biome-ignore lint/suspicious/noArrayIndexKey: rows are positional
                 key={top + i}
                 view={view}
                 row={row}
@@ -242,12 +241,10 @@ function Line(props: {
       </Text>
       {segments(line).map((s, i) =>
         s.kind ? (
-          // biome-ignore lint/suspicious/noArrayIndexKey: segments are positional
           <Text key={i} color="black" backgroundColor={colours[s.kind]}>
             {s.text}
           </Text>
         ) : (
-          // biome-ignore lint/suspicious/noArrayIndexKey: segments are positional
           <Text key={i}>{s.text}</Text>
         ),
       )}

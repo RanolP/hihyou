@@ -218,7 +218,7 @@ function importKey(path: string): string {
 function specifier(n: SyntaxNode | undefined): boolean {
   const p = n?.parent;
   if (!p) return false;
-  if (/specifier$/.test(p.kind)) return true;
+  if (p.kind.endsWith("specifier")) return true;
   return (
     p.kind === "dotted_name" &&
     p.field !== "module_name" &&

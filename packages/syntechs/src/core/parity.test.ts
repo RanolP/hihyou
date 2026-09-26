@@ -53,7 +53,6 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
     javascript,
     [
       // Automatic semicolons, template chars, regex vs division, ternary `?` vs `?.`, JSX text, HTML comments.
-      // biome-ignore lint/suspicious/noTemplateCurlyInString: JavaScript source under test, not a template.
       "let a = b\n++c\nconst t = `x${a}y\\n`\nconst r = a / 2 / 3, s = /re[/]g/.test(t)\nx = a ? .5 : b?.c\n<!-- old\nconst j = <div>\n  hi {a} &amp; <b/>\n</div>\nif (a) b\nelse c\nfor (const k in o) {}\n",
       "function f( { return 1 }\nclass { #x = 1; static { y() } }\nconst o = { a: 1,, b }",
       "a\ninstanceof B\na\nin b\n/* c\n */ d",
@@ -78,7 +77,6 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
       // musl's iswalpha, not \p{Alphabetic}, decides whether `in`/`instanceof` end at the next character.
       "a\nin\u0363 b\na\nin\u0660 b",
       // An unclosed template literal: template chars reach end of input inside a substitution.
-      // biome-ignore lint/suspicious/noTemplateCurlyInString: TypeScript source under test, not a template.
       "let s = `x${y}` + `unterminated ${z",
       // Function-signature ASI inside a class body, and a broken generic parameter list.
       "class C { m(): void\n  n() {} }\nfunction f<T(a: T): {\n",
