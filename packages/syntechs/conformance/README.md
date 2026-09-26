@@ -11,5 +11,5 @@ The oxfmt and dprint columns score those tools (`oxfmt 0.70.0`, `dprint dprint-p
 | [json-stringify](json-stringify.snap.md) | prettier 3.9.9 | 7/14 | 50.00% | 0 | 0 | 42.86% | 42.86% |
 | [css](css.snap.md) | prettier 3.9.9 | 65/151 | 43.05% | 0 | 6 | 76.16% | 33.11% |
 | [js](js.snap.md) | prettier 3.9.9 | 502/804 | 62.44% | 45 | 304 | 70.02% | 31.47% |
-| [ts](ts.snap.md) | prettier 3.9.9 | 459/653 | 70.29% | 30 | 76 | 75.04% | 26.03% |
+| [ts](ts.snap.md) | prettier 3.9.9 | 462/653 | 70.75% | 30 | 76 | 75.04% | 26.03% |
 | [python](python.snap.md) | ruff 0.16.8 | not implemented | | | | - | - |

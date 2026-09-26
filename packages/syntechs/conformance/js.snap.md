@@ -62,7 +62,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/comments/blank.js | 0/2 | 92.31% |
 | js/comments/export-and-import.js | 0/2 | 78.05% |
 | js/comments/export.js | 0/2 | 86.67% |
-| js/comments/function-declaration.js | 0/2 | 63.57% |
+| js/comments/function-declaration.js | 0/2 | 71.54% |
 | js/comments/if.js | 0/2 | 78.57% |
 | js/comments/issue-3532.js | 0/2 | 85.53% |
 | js/comments/issues.js | 0/2 | 72.06% |
@@ -99,10 +99,10 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/comments/function/between-parentheses-and-function-body.js | 0/1 | 52.63% |
 | js/comments/in-list/dangling-comment-in-list.js | 0/1 | 95.95% |
 | js/comments/tagged-template-literal/11662.js | 0/1 | 80.00% |
-| js/comments/while-like/if.js | 0/1 | 86.00% |
+| js/comments/while-like/if.js | 0/1 | 91.84% |
 | js/comments/while-like/switch.js | 0/1 | 84.44% |
-| js/comments/while-like/while.js | 0/1 | 81.40% |
-| js/comments/while-like/with.js | 0/1 | 86.00% |
+| js/comments/while-like/while.js | 0/1 | 90.24% |
+| js/comments/while-like/with.js | 0/1 | 91.84% |
 | js/conditional/comments.js | 0/2 | 53.45% |
 | js/conditional/issue-18944.js | 1/2 | 56.67% |
 | js/conditional/new-ternary-examples.js | 0/2 | 61.30% |
@@ -221,7 +221,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/ternaries/indent-after-paren.js | 4/8 | 74.59% |
 | js/ternaries/indent.js | 4/8 | 54.94% |
 | js/ternaries/nested-in-condition.js | 1/8 | 49.56% |
-| js/ternaries/nested.js | 0/8 | 48.21% |
+| js/ternaries/nested.js | 0/8 | 51.54% |
 | js/ternaries/parenthesis.js | 4/8 | 62.50% |
 | js/ternaries/test.js | 4/8 | 72.40% |
 | js/test-declarations/jest-each-template-string.js | 0/2 | 27.78% |

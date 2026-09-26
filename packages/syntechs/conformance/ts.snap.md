@@ -1,4 +1,4 @@
-ts compatibility: 459/653 (70.29%), 30 refused (ok:false), 76 excluded
+ts compatibility: 462/653 (70.75%), 30 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -45,7 +45,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/comments/type-literals.ts | 0/1 | 89.66% |
 | typescript/comments/union.ts | 0/1 | 36.84% |
 | typescript/comments/first-argument/first-argument.ts | 0/1 | 65.45% |
-| typescript/compiler/declareDottedModuleName.ts | 0/1 | 71.43% |
 | typescript/compiler/indexSignatureWithInitializer.ts | 0/1 | 87.50% |
 | typescript/conditional-types/infer-type.ts | 1/2 | 54.76% |
 | typescript/conditional-types/nested-in-condition.ts | 0/2 | 24.89% |
@@ -54,7 +53,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/conformance/classes/classDeclarations/classAbstractKeyword/classAbstractMixedWithModifiers.ts | 0/1 | 13.33% |
 | typescript/conformance/classes/classDeclarations/classAbstractKeyword/classAbstractSingleLineDecl.ts | 0/1 | 66.67% |
 | typescript/conformance/classes/classDeclarations/classAbstractKeyword/classAbstractWithInterface.ts | 0/1 | 0.00% |
-| typescript/conformance/classes/constructorDeclarations/constructorParameters/constructorParameterProperties2.ts | 0/1 | 93.75% |
 | typescript/conformance/classes/constructorDeclarations/constructorParameters/readonlyInConstructorParameters.ts | 0/1 | 92.31% |
 | typescript/conformance/types/interfaceDeclaration/interfaceDeclaration.ts | 0/1 | 80.00% |
 | typescript/conformance/types/moduleDeclaration/kind-detection.ts | 0/1 | 0.00% |
@@ -67,7 +65,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/definite/without-annotation.ts | 0/1 | 91.67% |
 | typescript/explicit-resource-management/await-using-with-type-declaration.ts | 0/1 | 66.67% |
 | typescript/explicit-resource-management/using-with-type-declaration.ts | 0/1 | 66.67% |
-| typescript/export/comment.ts | 0/1 | 50.00% |
 | typescript/export/export-type-star-from-2.ts | 0/1 | 66.67% |
 | typescript/export/export-type-star-from.ts | 0/1 | 0.00% |
 | typescript/import-require/comments.ts | 0/1 | 70.00% |

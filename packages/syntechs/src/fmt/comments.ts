@@ -38,35 +38,56 @@ export function attachComments(
   const sameLineGap = (from: number, to: number) =>
     /^[^\S\n]*$/.test(text.slice(from, to));
 
-  const stack = [root];
-  for (let node = stack.pop(); node; node = stack.pop()) {
-    const children = node.children;
-    let hasComment = false;
-    for (let i = 0; i < children.length && !hasComment; i++)
-      hasComment = isComment(children[i] as FormatNode);
-    if (!hasComment) {
-      for (let i = 0; i < children.length; i++)
-        stack.push(children[i] as FormatNode);
-      continue;
-    }
-    const comments: {
-      comment: FormatNode;
-      preceding: FormatNode | undefined;
-      following: FormatNode | undefined;
-    }[] = [];
-    let preceding: FormatNode | undefined;
-    for (const [i, c] of node.children.entries()) {
-      if (!isComment(c)) {
-        if (c.named) preceding = c;
-        stack.push(c);
+  type Placed = {
+    comment: FormatNode;
+    preceding: FormatNode | undefined;
+    following: FormatNode | undefined;
+  };
+  // The enclosing node of each comment, with its comments in source order.
+  const enclosed = new Map<FormatNode, Placed[]>();
+  const isCode = (n: FormatNode) => !isComment(n);
+  const collect = (node: FormatNode) => {
+    for (const c of node.children) {
+      if (isCode(c)) {
+        collect(c);
         continue;
       }
-      const following = node.children.find(
-        (n, j) => j > i && n.named && !isComment(n),
-      );
-      comments.push({ comment: c, preceding, following });
+      // A tree-sitter node swallows a comment that follows its last token (`{} // x`), where prettier's node
+      // ends at that token, so a comment with no code on one side inside its node belongs to the node's parent.
+      // `at` is the child of `enclosing` holding the comment; once hoisted, prettier sees that child end before
+      // the comment (`after`) or start after it.
+      let enclosing = node;
+      let at: FormatNode = c;
+      let after = false;
+      while (enclosing.parent) {
+        const i = enclosing.children.indexOf(at);
+        const siblings = enclosing.children;
+        if (!siblings.some((n, j) => j > i && isCode(n))) after = true;
+        else if (!siblings.some((n, j) => j < i && isCode(n))) after = false;
+        else break;
+        at = enclosing;
+        enclosing = enclosing.parent;
+      }
+      const i = enclosing.children.indexOf(at);
+      const named = (n: FormatNode) => n.named && isCode(n);
+      const hoisted = at !== c && named(at);
+      const preceding =
+        hoisted && after
+          ? at
+          : enclosing.children.findLast((n, j) => j < i && named(n));
+      const following =
+        hoisted && !after
+          ? at
+          : enclosing.children.find((n, j) => j > i && named(n));
+      const list = enclosed.get(enclosing);
+      const placed = { comment: c, preceding, following };
+      if (list) list.push(placed);
+      else enclosed.set(enclosing, [placed]);
     }
+  };
+  collect(root);
 
+  for (const [node, comments] of enclosed) {
     let ties: typeof comments = [];
     const breakTies = () => {
       const first = ties[0];
