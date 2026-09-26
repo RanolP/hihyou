@@ -55,6 +55,9 @@ const isCallOrNew = (n: FormatNode | undefined) =>
 const isReturnOrThrow = (n: FormatNode | undefined) =>
   n?.kind === "return_statement" || n?.kind === "throw_statement";
 
+const flatten = (d: Doc): Doc[] =>
+  Array.isArray(d) ? d.flatMap(flatten) : [d as Doc];
+
 // --- binaryish -------------------------------------------------------------------------------------------------
 
 function printBinaryishExpressions(
@@ -68,11 +71,7 @@ function printBinaryishExpressions(
   const leftInner = unparen(left);
   const op = operator(node);
   let parts: Doc[] = [];
-  if (
-    isBinary(leftInner) &&
-    shouldFlatten(op, operator(leftInner)) &&
-    !needsParens(leftInner, ctx)
-  ) {
+  if (isBinary(leftInner) && shouldFlatten(op, operator(leftInner))) {
     let nested = printBinaryishExpressions(
       ctx,
       leftInner,
@@ -80,7 +79,7 @@ function printBinaryishExpressions(
       isInsideParenthesis,
     );
     if (left !== leftInner && hasComment(ctx, left))
-      nested = [ctx.withComments(left, nested)];
+      nested = flatten(ctx.withComments(left, nested));
     parts = nested;
   } else parts.push(group(p(ctx, left)));
 
@@ -107,7 +106,9 @@ function printBinaryishExpressions(
       estreeKind(unparen(right)) !== kind);
   if (shouldGroup) rightDoc = group(rightDoc, shouldBreak);
   parts.push(text(" "), rightDoc);
-  if (isNested && hasComment(ctx, node)) return [ctx.withComments(node, parts)];
+  // Flat, as prettier's cleanDoc leaves it, so the caller still finds the leftmost operand's group.
+  if (isNested && hasComment(ctx, node))
+    return flatten(ctx.withComments(node, parts));
   return parts;
 }
 
