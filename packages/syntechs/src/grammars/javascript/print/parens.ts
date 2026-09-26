@@ -615,7 +615,7 @@ function binaryishNeedsParens(
       if (pp > np) return true;
       if (key === "right" && pp === np) return true;
       if (pp === np && !shouldFlatten(po, op)) return true;
-      if (pp < np && op === "%") return po === "+" || po === "-";
+      if (pp < np && op === "%" && (po === "+" || po === "-")) return true;
       if (isBitwise(po)) return true;
       return false;
     }
