@@ -4,7 +4,6 @@ import {
   memorySource,
 } from "@hihyou/engine";
 import { createFormatter } from "@hihyou/present";
-import { nodeRuffWasm } from "@hihyou/present/node";
 import { render } from "ink-testing-library";
 import { expect, it } from "vitest";
 import { viewLoader } from "../review.js";
@@ -17,11 +16,7 @@ async function fixture(before: Tree, after: Tree) {
   const doc = await buildReviewDoc(source, {
     parser: createSyntaxParser(),
   });
-  const load = viewLoader(
-    doc,
-    source,
-    createFormatter({ ruffWasm: nodeRuffWasm }),
-  );
+  const load = viewLoader(doc, source, createFormatter());
   return render(
     <App doc={doc} load={load} size={{ columns: 100, rows: 16 }} />,
   );

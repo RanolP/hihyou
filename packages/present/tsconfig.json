@@ -8,6 +8,6 @@
     "lib": ["ES2023", "DOM"]
   },
   "include": ["src"],
-  "exclude": ["src/node.ts", "src/**/*.node.ts", "src/**/*.test.ts"],
-  "references": [{ "path": "../engine" }]
+  "exclude": ["src/**/*.node.ts", "src/**/*.test.ts"],
+  "references": [{ "path": "../engine" }, { "path": "../syntechs" }]
 }

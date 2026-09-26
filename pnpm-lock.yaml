@@ -233,9 +233,6 @@ importers:
 
   packages/present:
     dependencies:
-      '@astral-sh/ruff-wasm-web':
-        specifier: 0.16.8
-        version: 0.16.8
       '@hihyou/engine':
         specifier: workspace:*
         version: link:../engine
@@ -248,12 +245,12 @@ importers:
       picomatch:
         specifier: 4.0.7
         version: 4.0.7
-      prettier:
-        specifier: 3.9.9
-        version: 3.9.9
       smol-toml:
         specifier: 1.9.0
         version: 1.9.0
+      syntechs:
+        specifier: workspace:*
+        version: link:../syntechs
       yaml:
         specifier: 2.9.1
         version: 2.9.1
@@ -328,9 +325,6 @@ packages:
   '@alcalzone/ansi-tokenize@0.3.1':
     resolution: {integrity: sha512-cUD0PT0YX+rImRhfn7BfMRduP/tX/Zqt/N0dHlAyn2RlcJssCb5KsCJkhln61eh9vuJDkH8wKn3L8zJzzWXPFg==}
     engines: {node: '>=18'}
-
-  '@astral-sh/ruff-wasm-web@0.16.8':
-    resolution: {integrity: sha512-yTGMnj7pa7OwlhruYVyVaz0CmwFvKkwOnEF0NlmaATFXKSDZ3gT3/VVhHU7eNzLvZV5mthZPLDMJ5XWAYj/7xg==}
 
   '@biomejs/biome@2.5.14':
     resolution: {integrity: sha512-0FabLIjd4M/dm8VFI86RMaLLdgepzbdfiAL2R8cr7V81OYYrP1w7Z73KfAwPK5h9SrEBXTzNG2y+mBwPo9xRnw==}
@@ -1502,8 +1496,6 @@ snapshots:
     dependencies:
       ansi-styles: 6.2.3
       is-fullwidth-code-point: 5.1.0
-
-  '@astral-sh/ruff-wasm-web@0.16.8': {}
 
   '@biomejs/biome@2.5.14':
     optionalDependencies:

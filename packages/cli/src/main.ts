@@ -7,7 +7,6 @@ import {
 } from "@hihyou/engine";
 import { gitVcs } from "@hihyou/engine/node";
 import { createFormatter } from "@hihyou/present";
-import { nodeRuffWasm } from "@hihyou/present/node";
 import { exec } from "./exec.js";
 import { renderPlain } from "./plain.js";
 import { viewLoader } from "./review.js";
@@ -35,11 +34,7 @@ async function main() {
     process.stdout.write(`${JSON.stringify(doc, null, 2)}\n`);
     return;
   }
-  const load = viewLoader(
-    doc,
-    source,
-    createFormatter({ ruffWasm: nodeRuffWasm }),
-  );
+  const load = viewLoader(doc, source, createFormatter());
   if (process.stdout.isTTY && process.stdin.isTTY) {
     // Loaded only here so piped output never pays for React.
     const [{ render }, { createElement }, { App }] = await Promise.all([

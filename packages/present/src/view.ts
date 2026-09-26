@@ -57,8 +57,8 @@ export async function presentFile(
   formatter: Formatter,
 ): Promise<FileView> {
   let [oldSide, newSide] = await Promise.all([
-    side(file.oldPath ?? file.path, texts.old, formatter),
-    side(file.path, texts.new, formatter),
+    side("base", file.oldPath ?? file.path, texts.old, formatter),
+    side("head", file.path, texts.new, formatter),
   ]);
   if (oldSide.status.formatted !== newSide.status.formatted) {
     if (oldSide.status.formatted && oldSide.original !== "")
@@ -136,6 +136,7 @@ const identity: Alignment = {
 };
 
 async function side(
+  revision: "base" | "head",
   path: string,
   original: string,
   formatter: Formatter,
@@ -153,7 +154,7 @@ async function side(
     status,
   });
   if (original === "") return make("", identity, { formatted: true });
-  const result = await formatter.format(path, original);
+  const result = await formatter.format(path, original, revision);
   const unformatted = (reason: Unformatted, message?: string) =>
     make(original, identity, {
       formatted: false,

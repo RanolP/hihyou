@@ -33,23 +33,6 @@ export interface PrettierOptions {
   objectWrap: "preserve" | "collapse";
 }
 
-/** Prettier 3.9.9's defaults, as its `getSupportInfo()` reports them. */
-export const prettierDefaults: PrettierOptions = {
-  printWidth: 80,
-  tabWidth: 2,
-  useTabs: false,
-  semi: true,
-  singleQuote: false,
-  jsxSingleQuote: false,
-  quoteProps: "as-needed",
-  trailingComma: "all",
-  bracketSpacing: true,
-  bracketSameLine: false,
-  arrowParens: "always",
-  endOfLine: "lf",
-  objectWrap: "preserve",
-};
-
 /** Ruff's names, with `[format]` table keys flattened to `format.<key>`. */
 export interface RuffOptions {
   "line-length": number;
@@ -60,25 +43,17 @@ export interface RuffOptions {
   "format.line-ending": "auto" | "lf" | "cr-lf" | "native";
 }
 
-/** Ruff 0.16.8's defaults, as `ruff check --show-settings` reports them. */
-export const ruffDefaults: RuffOptions = {
-  "line-length": 88,
-  "indent-width": 4,
-  "format.quote-style": "double",
-  "format.indent-style": "space",
-  "format.skip-magic-trailing-comma": false,
-  "format.line-ending": "auto",
-};
-
-/** Per key: tool defaults, then the repo's config, then only the keys the reviewer explicitly set. */
+/**
+ * Per key: the repo's config, then only the keys the reviewer explicitly set. The formatter's own defaults
+ * (syntechs' per language) fill in whatever neither sets.
+ */
 export function mergeOptions<O extends object>(
-  defaults: O,
   repo: Partial<O>,
   reviewer: Partial<O>,
-): O {
+): Partial<O> {
   const set = (o: Partial<O>) =>
     Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
-  return { ...defaults, ...set(repo), ...set(reviewer) } as O;
+  return { ...set(repo), ...set(reviewer) } as Partial<O>;
 }
 
 export interface FormatConfigResolver {

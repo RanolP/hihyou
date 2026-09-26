@@ -12,9 +12,7 @@ export {
   type FormatConfigResolver,
   mergeOptions,
   type PrettierOptions,
-  prettierDefaults,
   type RuffOptions,
-  ruffDefaults,
 } from "./format-config.js";
 export {
   type FileView,

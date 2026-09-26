@@ -5,10 +5,11 @@
     "outDir": "dist",
     "types": ["node"]
   },
-  "include": ["src/node.ts", "src/**/*.node.ts", "src/**/*.test.ts"],
+  "include": ["src/**/*.node.ts", "src/**/*.test.ts"],
   "references": [
     { "path": "." },
     { "path": "../engine" },
-    { "path": "../engine/tsconfig.node.json" }
+    { "path": "../engine/tsconfig.node.json" },
+    { "path": "../syntechs" }
   ]
 }

@@ -1,50 +1,59 @@
-import { readFile } from "node:fs/promises";
-import { createRequire } from "node:module";
+import { memorySource } from "@hihyou/engine";
 import { describe, expect, it } from "vitest";
-// The browser entry, with the WASM bytes injected the way an extension or web page would supply them.
-import { createFormatter } from "./index.js";
+import { createFormatConfigResolver, createFormatter } from "./index.js";
 
-const wasmPath = createRequire(import.meta.url).resolve(
-  "@astral-sh/ruff-wasm-web/ruff_wasm_bg.wasm",
-);
-const formatter = createFormatter({ ruffWasm: () => readFile(wasmPath) });
+const formatter = createFormatter();
 
 describe("createFormatter", () => {
-  it("formats Python through ruff from host-supplied WASM bytes, with no Node-only loader", async () => {
-    expect(await formatter.format("a.py", "x = {  'a':1 }\n")).toEqual({
+  it("every language in the table reaches its syntechs formatter, rather than coming back unsupported", async () => {
+    expect(await formatter.format("a.json", '{"a":[1,2]}', "head")).toEqual({
       ok: true,
-      text: 'x = {"a": 1}\n',
+      text: '{ "a": [1, 2] }\n',
+    });
+    // jsonc keeps a trailing comma in a broken list; plain json never has one.
+    expect(
+      await formatter.format("a.jsonc", '{\n"a":1}', "head"),
+    ).toMatchObject({ ok: true, text: '{\n  "a": 1,\n}\n' });
+    expect(await formatter.format("a.css", "a{color:red}", "head")).toEqual({
+      ok: true,
+      text: "a {\n  color: red;\n}\n",
     });
   });
 
-  it("a failed WASM load is retried on the next Python file instead of failing every later file", async () => {
-    let calls = 0;
-    const flaky = createFormatter({
-      ruffWasm: () =>
-        ++calls === 1
-          ? Promise.reject(new Error("offline"))
-          : readFile(wasmPath),
+  it("the repo config of the file's own side applies, and a reviewer override beats it key by key", async () => {
+    const source = memorySource(
+      { ".prettierrc": "tabWidth: 4\nbracketSpacing: false\n" },
+      {},
+    );
+    const config = createFormatConfigResolver({
+      read: (revision, path) =>
+        source.read(revision === "base" ? "base" : "head", path),
     });
-    expect(await flaky.format("a.py", "x=1\n")).toMatchObject({
-      ok: false,
-      reason: "formatter-error",
-      message: "offline",
-    });
-    expect(await flaky.format("a.py", "x=1\n")).toEqual({
-      ok: true,
-      text: "x = 1\n",
-    });
+    const text = '{\n"a":{"b":1}}';
+    expect(
+      await createFormatter({ config }).format("x.json", text, "base"),
+    ).toMatchObject({ text: '{\n    "a": {"b": 1}\n}\n' });
+    expect(
+      await createFormatter({ config }).format("x.json", text, "head"),
+    ).toMatchObject({ text: '{\n  "a": { "b": 1 }\n}\n' });
+    expect(
+      await createFormatter({
+        config,
+        reviewer: { prettier: { tabWidth: 1 } },
+      }).format("x.json", text, "base"),
+    ).toMatchObject({ text: '{\n "a": {"b": 1}\n}\n' });
   });
 
-  it("broken code comes back as a formatter error instead of rejecting the whole view", async () => {
-    const result = await formatter.format("broken.ts", "const = ;\n");
+  it("broken code comes back as a formatter error instead of a half-formatted file", async () => {
+    const result = await formatter.format("broken.json", '{"a": }\n', "head");
     expect(result).toMatchObject({ ok: false, reason: "formatter-error" });
   });
 
   it("a language with no formatter is reported as unsupported rather than as a formatter error", async () => {
-    expect(await formatter.format("main.rs", "fn main(){}\n")).toEqual({
+    expect(await formatter.format("main.rs", "fn main(){}\n", "head")).toEqual({
       ok: false,
       reason: "unsupported-language",
+      message: "syntechs has no formatter for .rs yet",
     });
   });
 });

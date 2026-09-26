@@ -1,10 +1,6 @@
 import { memorySource } from "@hihyou/engine";
 import { describe, expect, it } from "vitest";
-import {
-  createFormatConfigResolver,
-  mergeOptions,
-  prettierDefaults,
-} from "./index.js";
+import { createFormatConfigResolver, mergeOptions } from "./index.js";
 
 function resolver(tree: Record<string, string>) {
   const source = memorySource({}, tree);
@@ -102,16 +98,10 @@ describe("ruff config discovery", () => {
 
 describe("mergeOptions", () => {
   it("a reviewer override beats the repo config only for the keys the reviewer set", () => {
-    const merged = mergeOptions(
-      prettierDefaults,
+    const merged = mergeOptions<{ semi: boolean; printWidth: number }>(
       { semi: false, printWidth: 100 },
       { printWidth: 60 },
     );
-    expect(merged).toMatchObject({
-      semi: false,
-      printWidth: 60,
-      singleQuote: false,
-      tabWidth: 2,
-    });
+    expect(merged).toEqual({ semi: false, printWidth: 60 });
   });
 });

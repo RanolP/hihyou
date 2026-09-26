@@ -7,11 +7,10 @@ import {
 import { describe, expect, it } from "vitest";
 import { align } from "./align.js";
 import { createFormatter } from "./format.js";
-import { nodeRuffWasm } from "./node.js";
 import { presentFile, type SideView, segments } from "./view.js";
 
 const parser = createSyntaxParser();
-const formatter = createFormatter({ ruffWasm: nodeRuffWasm });
+const formatter = createFormatter();
 
 async function present(path: string, before: string, after: string) {
   const doc = await buildReviewDoc(
@@ -39,30 +38,32 @@ function highlighted(side: SideView) {
 
 describe("presentFile", () => {
   it("an edit on a line the formatter breaks apart still highlights the edited token on its new line", async () => {
-    const before = `export const config = { name: "hihyou", retries: 3, timeoutMs: 1000, verbose: false, label: "a long label" };\n`;
-    const after = before.replace("retries: 3", "retries: 5");
-    const { view } = await present("config.ts", before, after);
+    const before = `{"name": "hihyou", "retries": 3, "timeoutMs": 1000, "verbose": false, "label": "a long label"}\n`;
+    const after = before.replace('"retries": 3', '"retries": 5');
+    const { view } = await present("config.json", before, after);
 
     expect(view.new.formatted).toBe(true);
     expect(view.new.lines.length).toBeGreaterThan(1);
     expect(highlighted(view.new)).toEqual([
-      { kind: "update", text: "5", line: "  retries: 5,", originalLine: 1 },
+      { kind: "update", text: "5", line: '  "retries": 5,', originalLine: 1 },
     ]);
     expect(highlighted(view.old)).toEqual([
-      { kind: "update", text: "3", line: "  retries: 3,", originalLine: 1 },
+      { kind: "update", text: "3", line: '  "retries": 3,', originalLine: 1 },
     ]);
   });
 
-  it("a renamed parameter the formatter wraps in added parentheses highlights only the name, not the parenthesis", async () => {
+  it("a changed value the formatter follows with an added semicolon highlights only the value, not the semicolon", async () => {
     const { view } = await present(
-      "f.ts",
-      "const f = a => a + 1\n",
-      "const f = b => b + 1\n",
+      "a.css",
+      "a{color:red}\n",
+      "a{color:blue}\n",
     );
     expect(view.new.lines.map((l) => l.text)).toEqual([
-      "const f = (b) => b + 1;",
+      "a {",
+      "  color: blue;",
+      "}",
     ]);
-    expect(highlighted(view.new).map((h) => h.text)).toEqual(["b", "b"]);
+    expect(highlighted(view.new).map((h) => h.text)).toEqual(["blue"]);
   });
 
   it("a move keeps a pointer to the other side's original line so the viewer can link it", async () => {
@@ -107,9 +108,9 @@ describe("presentFile", () => {
   });
 
   it("when only one side formats, both are shown as committed so the formatter's rewrites do not appear as changes", async () => {
-    const before = "const x = {a:1}\nconst y = 2\n";
-    const after = "const x = {a:1}\nconst y = (\n";
-    const { view } = await present("p.ts", before, after);
+    const before = '{"x": {"a":1},\n"y": 2}\n';
+    const after = '{"x": {"a":1},\n"y": }\n';
+    const { view } = await present("p.json", before, after);
     expect(view.new).toMatchObject({
       formatted: false,
       reason: "formatter-error",
