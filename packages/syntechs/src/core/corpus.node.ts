@@ -1,16 +1,11 @@
-// The inputs parity and benchmarks run on, per grammar, and the web-tree-sitter reference they compare to.
+// The inputs parity and benchmarks run on, per grammar, and the native tree-sitter reference they compare to.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
-import {
-  Language as WasmLanguage,
-  Parser as WasmParser,
-} from "web-tree-sitter";
+import NativeParser from "tree-sitter";
 import type { Language } from "./language.js";
 
-const require = createRequire(import.meta.url);
 export const pkgRoot = resolve(import.meta.dirname, "../..");
 export const repoRoot = resolve(pkgRoot, "../..");
 const benchInputs = join(repoRoot, "research/parser-bench/inputs");
@@ -26,13 +21,14 @@ export const GRAMMAR_NAMES = [
 ] as const;
 export type GrammarName = (typeof GRAMMAR_NAMES)[number];
 
-const WASM: Record<GrammarName, string> = {
-  json: "tree-sitter-json/tree-sitter-json.wasm",
-  css: "tree-sitter-css/tree-sitter-css.wasm",
-  javascript: "tree-sitter-javascript/tree-sitter-javascript.wasm",
-  typescript: "tree-sitter-typescript/tree-sitter-typescript.wasm",
-  tsx: "tree-sitter-typescript/tree-sitter-tsx.wasm",
-  python: "tree-sitter-python/tree-sitter-python.wasm",
+/** The native binding package of each grammar, and the export holding it when the package bundles several. */
+const NATIVE: Record<GrammarName, [string, string?]> = {
+  json: ["tree-sitter-json"],
+  css: ["tree-sitter-css"],
+  javascript: ["tree-sitter-javascript"],
+  typescript: ["tree-sitter-typescript", "typescript"],
+  tsx: ["tree-sitter-typescript", "tsx"],
+  python: ["tree-sitter-python"],
 };
 
 const EXTENSIONS: Record<GrammarName, string[]> = {
@@ -180,18 +176,15 @@ export async function loadGenerated(grammar: GrammarName): Promise<Language> {
   return mod.language;
 }
 
-let wasmReady: Promise<void> | undefined;
-
-export async function loadWasm(grammar: GrammarName): Promise<WasmParser> {
-  wasmReady ??= WasmParser.init();
-  await wasmReady;
-  const parser = new WasmParser();
-  parser.setLanguage(
-    await WasmLanguage.load(readFileSync(require.resolve(WASM[grammar]))),
-  );
+/**
+ * A native tree-sitter parser for the grammar: the reference, run only in Node (dev and CI), never shipped. Its
+ * indices count UTF-16 units, as ours do.
+ */
+export async function loadNative(grammar: GrammarName): Promise<NativeParser> {
+  const [pkg, key] = NATIVE[grammar];
+  const mod = (await import(pkg)) as { default?: unknown };
+  const binding = (mod.default ?? mod) as Record<string, unknown>;
+  const parser = new NativeParser();
+  parser.setLanguage((key ? binding[key] : binding) as NativeParser.Language);
   return parser;
-}
-
-export function wasmPath(grammar: GrammarName): string {
-  return require.resolve(WASM[grammar]);
 }

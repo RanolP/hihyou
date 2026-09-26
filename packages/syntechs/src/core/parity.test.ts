@@ -11,7 +11,7 @@ import type { Language } from "./language.js";
 import { checkParity } from "./parity.node.js";
 
 // Small inputs that exercise the lexer, the tables and error recovery (MISSING insertion, ERROR wrapping,
-// `recover`, `condenseStack`, stack `popError`/merging), each compared with web-tree-sitter on its nodes, its
+// `recover`, `condenseStack`, stack `popError`/merging), each compared with native tree-sitter on its nodes, its
 // SyntaxTree and its errorChars. The corpus is gitignored, so these committed cases are what CI checks; the
 // fetched corpus runs through `node dist/parity.node.js`.
 // Generated modules are imported statically: vitest cannot resolve a template dynamic import to a .ts file.
@@ -111,14 +111,25 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
   ],
 };
 
+// Cases native tree-sitter cannot judge, still run by the nesting test below. The port follows web-tree-sitter
+// 0.27, whose scanners call musl's <wctype.h>; native tree-sitter calls the host libc's, so U+0363 and U+0660
+// classify per platform (wctype.test.ts pins musl's answer instead). And the native binding is the 0.25.1
+// runtime, which recovers this one broken JS input differently from the 0.27 runtime the port follows.
+const NOT_NATIVE = /[ͣ٠]/;
+const NATIVE_RUNTIME_DIFFERS = new Set([
+  "function f( { return 1 }\nclass { #x = 1; static { y() } }\nconst o = { a: 1,, b }",
+]);
+
 for (const [grammar, [lang, texts]] of Object.entries(CASES) as [
   GrammarName,
   [Language, string[]],
 ][]) {
-  test(`the ${grammar} tree matches web-tree-sitter node for node, broken inputs included`, async () => {
+  test(`the ${grammar} tree matches native tree-sitter node for node, broken inputs included`, async () => {
     const r = await checkParity(
       grammar,
-      texts.map((text, i) => ({ name: `case${i}`, text })),
+      texts
+        .map((text, i) => ({ name: `case${i}`, text }))
+        .filter(({ text }) => !NOT_NATIVE.test(text) && !NATIVE_RUNTIME_DIFFERS.has(text)),
       lang,
     );
     expect(

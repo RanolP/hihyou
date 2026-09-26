@@ -1,26 +1,22 @@
-// This runtime against web-tree-sitter 0.27, both producing the engine's SyntaxTree.
+// This runtime against native tree-sitter (the parity reference), both producing the engine's SyntaxTree.
 // Usage: node packages/syntechs/dist/core/bench.node.js [grammar...]    (warm parse, cold start, min+gzip size)
 
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 import { build } from "esbuild";
-import type { Parser as WasmParser } from "web-tree-sitter";
+import type NativeParser from "tree-sitter";
 import {
   benchFiles,
   GRAMMAR_NAMES,
   type GrammarName,
   loadGenerated,
-  loadWasm,
+  loadNative,
   pkgRoot,
-  wasmPath,
 } from "./corpus.node.js";
 import { parse } from "./index.js";
 
-const require = createRequire(import.meta.url);
 const RUNS = 15;
 const WARMUP = 3;
 
@@ -52,10 +48,8 @@ interface Node {
 }
 
 /** What packages/engine did with web-tree-sitter before syntechs: parse, then one cursor walk into plain objects. */
-function wasmTree(parser: WasmParser, text: string): Node[] {
-  const tree = parser.parse(text);
-  if (!tree) throw new Error("no tree");
-  const c = tree.walk();
+function nativeTree(parser: NativeParser, text: string): Node[] {
+  const c = parser.parse(text).walk();
   const nodes: Node[] = [];
   const open = (parent: Node | undefined): Node => {
     const n: Node = {
@@ -92,8 +86,6 @@ function wasmTree(parser: WasmParser, text: string): Node[] {
         break;
       }
       if (!c.gotoParent() || !node.parent) {
-        c.delete();
-        tree.delete();
         return nodes;
       }
       node = node.parent;
@@ -103,21 +95,20 @@ function wasmTree(parser: WasmParser, text: string): Node[] {
 
 async function warm(grammar: GrammarName): Promise<void> {
   const lang = await loadGenerated(grammar);
-  const wasm = await loadWasm(grammar);
+  const native = await loadNative(grammar);
   console.log(
     `\n${grammar}: parse + materialise, median of ${RUNS} after ${WARMUP} warm-up runs`,
   );
-  console.log("input\tKB\tnodes\tours ms\twasm ms\tours/wasm");
+  console.log("input\tKB\tnodes\tours ms\tnative ms\tours/native");
   for (const input of benchFiles(grammar)) {
     const nodes = parse(lang, input.text).nodes.length;
     const ours = time(() => parse(lang, input.text));
-    const theirs = time(() => wasmTree(wasm, input.text));
+    const theirs = time(() => nativeTree(native, input.text));
     const name = input.name.split(/[\\/]/).at(-1);
     console.log(
       `${name}\t${(input.text.length / 1024).toFixed(0)}\t${nodes}\t${ours.toFixed(1)}\t${theirs.toFixed(1)}\t${(ours / theirs).toFixed(2)}x`,
     );
   }
-  wasm.delete();
 }
 
 const TINY: Record<GrammarName, string> = {
@@ -130,36 +121,28 @@ const TINY: Record<GrammarName, string> = {
 };
 
 /** One fresh process: import, load the grammar, parse a tiny input. Prints ms. */
-async function coldChild(grammar: GrammarName, which: string): Promise<void> {
+async function coldChild(grammar: GrammarName): Promise<void> {
   const t0 = performance.now();
-  if (which === "ours") {
-    const { parse } = await import("./index.js");
-    const lang = await loadGenerated(grammar);
-    parse(lang, TINY[grammar]);
-  } else {
-    const { Parser, Language } = await import("web-tree-sitter");
-    await Parser.init();
-    const p = new Parser();
-    p.setLanguage(await Language.load(readFileSync(wasmPath(grammar))));
-    p.parse(TINY[grammar])?.delete();
-  }
+  const { parse } = await import("./index.js");
+  const lang = await loadGenerated(grammar);
+  parse(lang, TINY[grammar]);
   process.stdout.write(String(performance.now() - t0));
 }
 
 function cold(grammar: GrammarName): void {
   const self = fileURLToPath(import.meta.url);
-  const sample = (which: string) =>
+  const sample = () =>
     median(
       Array.from({ length: 7 }, () =>
         Number(
-          execFileSync(process.execPath, [self, "--cold", grammar, which], {
+          execFileSync(process.execPath, [self, "--cold", grammar], {
             encoding: "utf8",
           }),
         ),
       ),
     );
   console.log(
-    `cold start (import + load + tiny parse, median of 7 fresh processes): ours ${sample("ours").toFixed(1)} ms, wasm ${sample("wasm").toFixed(1)} ms`,
+    `cold start (import + load + tiny parse, median of 7 fresh processes): ours ${sample().toFixed(1)} ms`,
   );
 }
 
@@ -180,28 +163,12 @@ async function size(grammar: GrammarName): Promise<void> {
   const ours = await minGzip(
     `export { parse } from "./core/index.ts"; export { language } from "./grammars/${grammar}/index.ts";`,
   );
-  const js = await minGzip(
-    `export { Parser, Language } from "web-tree-sitter";`,
-  );
-  const runtimeWasm = readFileSync(
-    join(
-      require.resolve("web-tree-sitter").replace(/web-tree-sitter\.c?js$/, ""),
-      "web-tree-sitter.wasm",
-    ),
-  );
-  const grammarWasm = readFileSync(wasmPath(grammar));
   const kb = (n: number) => `${(n / 1024).toFixed(0)} KB`;
-  const wasmGz =
-    js.gz +
-    gzipSync(runtimeWasm, { level: 9 }).length +
-    gzipSync(grammarWasm, { level: 9 }).length;
-  console.log(
-    `size: ours ${kb(ours.min)} min, ${kb(ours.gz)} gz | web-tree-sitter js ${kb(js.min)} + runtime wasm ${kb(runtimeWasm.length)} + grammar wasm ${kb(grammarWasm.length)}, ${kb(wasmGz)} gz total`,
-  );
+  console.log(`size: ours ${kb(ours.min)} min, ${kb(ours.gz)} gz`);
 }
 
 if (process.argv[2] === "--cold")
-  await coldChild(process.argv[3] as GrammarName, process.argv[4] as string);
+  await coldChild(process.argv[3] as GrammarName);
 else {
   const names = process.argv.slice(2);
   for (const grammar of (names.length > 0

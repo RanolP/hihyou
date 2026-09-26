@@ -1,15 +1,15 @@
-// Parity with web-tree-sitter 0.27: every visible node's type, range, field, named, isMissing and isError,
+// Parity with native tree-sitter: every visible node's type, range, field, named, isMissing and isError,
 // in preorder with depth; then, once those agree, the `SyntaxTree` hihyou consumes (labels, layout-only JSX
 // text dropped, height, size) and its errorChars. Usage: node packages/syntechs/dist/core/parity.node.js [grammar...] [--show N]
 
-import type { Parser as WasmParser } from "web-tree-sitter";
+import type NativeParser from "tree-sitter";
 import {
   corpus,
   GRAMMAR_NAMES,
   type GrammarName,
   type Input,
   loadGenerated,
-  loadWasm,
+  loadNative,
 } from "./corpus.node.js";
 import { parseRaw } from "./index.js";
 import type { Language } from "./language.js";
@@ -32,14 +32,12 @@ function describeSyntax(tree: SyntaxTree): string[] {
 }
 
 /**
- * The cursor walk packages/engine does over web-tree-sitter, rebuilt here so the reference SyntaxTree shares
- * no walk, label, errorChars or height/size code with the port. Only `jsxText` and the layout-leaf removal
- * inside `visibleTree` are shared.
+ * The cursor walk packages/engine did over web-tree-sitter, run over native tree-sitter and rebuilt here so the
+ * reference SyntaxTree shares no walk, label, errorChars or height/size code with the port. Only `jsxText` and
+ * the layout-leaf removal inside `visibleTree` are shared.
  */
-function reference(parser: WasmParser, text: string): Walk {
-  const tree = parser.parse(text);
-  if (!tree) throw new Error("web-tree-sitter returned no tree");
-  const c = tree.walk();
+function reference(parser: NativeParser, text: string): Walk {
+  const c = parser.parse(text).walk();
   const lines: string[] = [];
   const raw: RawTree = {
     nodes: [],
@@ -84,8 +82,6 @@ function reference(parser: WasmParser, text: string): Walk {
     } else node.label = token;
     while (!c.gotoNextSibling()) {
       if (!c.gotoParent() || !parent) {
-        c.delete();
-        tree.delete();
         for (const n of raw.nodes.toReversed())
           if (n.parent) {
             n.parent.height = Math.max(n.parent.height, n.height + 1);
@@ -140,14 +136,14 @@ export async function checkParity(
   divergences: Divergence[];
 }> {
   const lang = generated ?? (await loadGenerated(grammar));
-  const wasm = await loadWasm(grammar);
+  const native = await loadNative(grammar);
   let same = 0;
   let nodes = 0;
   let nodesSame = 0;
   let withErrors = 0;
   const divergences: Divergence[] = [];
   for (const input of inputs) {
-    const expected = reference(wasm, input.text);
+    const expected = reference(native, input.text);
     nodes += expected.lines.length;
     if (expected.lines.some((l) => l.includes(" ERROR ") || l.includes("(MISSING)"))) withErrors++;
     let actual: Walk;
@@ -187,7 +183,6 @@ export async function checkParity(
         actual: actual.syntax,
       });
   }
-  wasm.delete();
   return { same, nodes, nodesSame, withErrors, divergences };
 }
 
@@ -215,7 +210,7 @@ async function main(): Promise<void> {
       }
       for (let k = Math.max(0, d.index - 2); k < d.index + 3; k++) {
         console.log(
-          `    ${k === d.index ? ">" : " "} wasm: ${d.expected[k] ?? "(end)"}  |  ours: ${d.actual[k] ?? "(end)"}`,
+          `    ${k === d.index ? ">" : " "} native: ${d.expected[k] ?? "(end)"}  |  ours: ${d.actual[k] ?? "(end)"}`,
         );
       }
     }

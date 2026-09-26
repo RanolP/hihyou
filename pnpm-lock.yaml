@@ -277,21 +277,6 @@ importers:
         specifier: 0.0.3
         version: 0.0.3
     devDependencies:
-      '@astral-sh/ruff-wasm-web':
-        specifier: 0.16.8
-        version: 0.16.8
-      '@dprint/formatter':
-        specifier: 0.5.1
-        version: 0.5.1
-      '@dprint/json':
-        specifier: 0.24.0
-        version: 0.24.0
-      '@dprint/typescript':
-        specifier: 0.96.1
-        version: 0.96.1
-      dprint-plugin-malva:
-        specifier: 0.16.0
-        version: 0.16.0
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
@@ -301,24 +286,24 @@ importers:
       prettier:
         specifier: 3.9.9
         version: 3.9.9
+      tree-sitter:
+        specifier: 0.25.1
+        version: 0.25.1
       tree-sitter-css:
         specifier: 0.25.0
-        version: 0.25.0
+        version: 0.25.0(tree-sitter@0.25.1)
       tree-sitter-javascript:
         specifier: 0.25.0
-        version: 0.25.0
+        version: 0.25.0(tree-sitter@0.25.1)
       tree-sitter-json:
         specifier: 0.24.8
-        version: 0.24.8
+        version: 0.24.8(tree-sitter@0.25.1)
       tree-sitter-python:
         specifier: 0.25.0
-        version: 0.25.0
+        version: 0.25.0(tree-sitter@0.25.1)
       tree-sitter-typescript:
         specifier: 0.23.2
-        version: 0.23.2
-      web-tree-sitter:
-        specifier: 0.27.0
-        version: 0.27.0
+        version: 0.23.2(tree-sitter@0.25.1)
 
   packages/ui:
     dependencies:
@@ -331,15 +316,6 @@ packages:
   '@alcalzone/ansi-tokenize@0.3.1':
     resolution: {integrity: sha512-cUD0PT0YX+rImRhfn7BfMRduP/tX/Zqt/N0dHlAyn2RlcJssCb5KsCJkhln61eh9vuJDkH8wKn3L8zJzzWXPFg==}
     engines: {node: '>=18'}
-
-  '@dprint/formatter@0.5.1':
-    resolution: {integrity: sha512-cdZUrm0iv/FnnY3CKE2dEcVhNEzrC551aE2h2mTFwQCRBrqyARLDnb7D+3PlXTUVp3s34ftlnGOVCmhLT9DeKA==}
-
-  '@dprint/json@0.24.0':
-    resolution: {integrity: sha512-3d1mWWONLCwi4Q232+yVxa+ekRxqV1rrm/RPZ5K1a5YfWF6uN1zdHFYs/aNk9L7+F3mVffYgdcOOVhXsC5ZJyA==}
-
-  '@dprint/typescript@0.96.1':
-    resolution: {integrity: sha512-mz/nINSFQh1R5i2Qy90SWOCCK4SgNGRkNhCZba7LYmUkE4Zi8/45p8l8pqc9yN1fb4XY5Muhrzdh5Q3jFsYimw==}
 
   '@esbuild/aix-ppc64@0.28.2':
     resolution: {integrity: sha512-XExcO+dvLKvVtNTibSTBej1NCAbaGhWn9Ww1ZPx80qsahhPFe/8jgWP0IchNe0F3HwkU7n8ejhH8bjonqht8mQ==}
@@ -1064,9 +1040,6 @@ packages:
     resolution: {integrity: sha512-svtcdpS8CgJyqAjEQIXdb3OjhFVVYjzGAPO8WGCmRbrml64SPw/jJD4GoE98aR7r25A0XcgrK3F02yw9R/vhQw==}
     engines: {node: '>=0.3.1'}
 
-  dprint-plugin-malva@0.16.0:
-    resolution: {integrity: sha512-cHisdhrNcBHfvTG/jgHUkVyL6zeY+C5yLO+E/UyiTbp6wzauB3d25YyPZeMlsd7M/PDT8W4Yre8jKJ/xMwthiw==}
-
   emoji-regex@10.6.0:
     resolution: {integrity: sha512-toUI84YS5YmxW219erniWD0CIVOo46xGKColeNQRgOzDorgBi1v4D71/OFzgD9GO2UGKIv1C3Sp8DAn0+j5w7A==}
 
@@ -1439,6 +1412,9 @@ packages:
       tree-sitter:
         optional: true
 
+  tree-sitter@0.25.1:
+    resolution: {integrity: sha512-mrcEdkYtHfrK1A6fs3O6FxkBo0Qig5XUXqHhxUOQu0bmPo00QF4XaSx4edpazdHwxnSCjlGKGgIqWdaN4dvTLA==}
+
   type-fest@5.10.0:
     resolution: {integrity: sha512-NoSdpq/WEiAg5sjmBkmV/hfxv6HJH4NqPNrqjtSO5CwRmpsDfaf4begxW34KdJykH/l1yHtwBWQkCRdoXO8mPA==}
     engines: {node: '>=20'}
@@ -1535,9 +1511,6 @@ packages:
       jsdom:
         optional: true
 
-  web-tree-sitter@0.27.0:
-    resolution: {integrity: sha512-XK08gj6RwTMQatAG7uVRP8MunqotL/XC19vHgkSPKmELgbGPBj4ECvB8haHOUnyj6ls2B8t42UTro14zxGgAHg==}
-
   why-is-node-running@2.3.0:
     resolution: {integrity: sha512-hUrmaWBdVDcxvYqnyh09zunKzROWjbZTiNy8dBEjkS7ehEDQibXJ7XvlmtbwuTclUiIyN+CyXQD4Vmko8fNm8w==}
     engines: {node: '>=8'}
@@ -1580,12 +1553,6 @@ snapshots:
     dependencies:
       ansi-styles: 6.2.3
       is-fullwidth-code-point: 5.1.0
-
-  '@dprint/formatter@0.5.1': {}
-
-  '@dprint/json@0.24.0': {}
-
-  '@dprint/typescript@0.96.1': {}
 
   '@esbuild/aix-ppc64@0.28.2':
     optional: true
@@ -1966,8 +1933,6 @@ snapshots:
 
   diff@9.0.0: {}
 
-  dprint-plugin-malva@0.16.0: {}
-
   emoji-regex@10.6.0: {}
 
   environment@1.1.0: {}
@@ -2281,36 +2246,53 @@ snapshots:
 
   tinypool@2.1.2: {}
 
-  tree-sitter-css@0.25.0:
+  tree-sitter-css@0.25.0(tree-sitter@0.25.1):
     dependencies:
       node-addon-api: 8.9.2
       node-gyp-build: 4.8.4
+    optionalDependencies:
+      tree-sitter: 0.25.1
 
-  tree-sitter-javascript@0.23.1:
+  tree-sitter-javascript@0.23.1(tree-sitter@0.25.1):
     dependencies:
       node-addon-api: 8.9.2
       node-gyp-build: 4.8.4
+    optionalDependencies:
+      tree-sitter: 0.25.1
 
-  tree-sitter-javascript@0.25.0:
+  tree-sitter-javascript@0.25.0(tree-sitter@0.25.1):
     dependencies:
       node-addon-api: 8.9.2
       node-gyp-build: 4.8.4
+    optionalDependencies:
+      tree-sitter: 0.25.1
 
-  tree-sitter-json@0.24.8:
+  tree-sitter-json@0.24.8(tree-sitter@0.25.1):
     dependencies:
       node-addon-api: 8.9.2
       node-gyp-build: 4.8.4
+    optionalDependencies:
+      tree-sitter: 0.25.1
 
-  tree-sitter-python@0.25.0:
+  tree-sitter-python@0.25.0(tree-sitter@0.25.1):
     dependencies:
       node-addon-api: 8.9.2
       node-gyp-build: 4.8.4
+    optionalDependencies:
+      tree-sitter: 0.25.1
 
-  tree-sitter-typescript@0.23.2:
+  tree-sitter-typescript@0.23.2(tree-sitter@0.25.1):
     dependencies:
       node-addon-api: 8.9.2
       node-gyp-build: 4.8.4
-      tree-sitter-javascript: 0.23.1
+      tree-sitter-javascript: 0.23.1(tree-sitter@0.25.1)
+    optionalDependencies:
+      tree-sitter: 0.25.1
+
+  tree-sitter@0.25.1:
+    dependencies:
+      node-addon-api: 8.9.2
+      node-gyp-build: 4.8.4
 
   type-fest@5.10.0:
     dependencies:
@@ -2374,8 +2356,6 @@ snapshots:
       '@types/node': 26.6.2
     transitivePeerDependencies:
       - msw
-
-  web-tree-sitter@0.27.0: {}
 
   why-is-node-running@2.3.0:
     dependencies:
