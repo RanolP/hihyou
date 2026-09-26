@@ -464,17 +464,21 @@ const forStatement: JsRule = (node, ctx) => {
 };
 
 const forInStatement: JsRule = (node, ctx) => {
-  const kind = field(node, "kind");
+  // `await using` is a two-token kind; the `await` of `for await` stands before the `(`.
+  const kinds = fields(node, "kind");
   const left = field(node, "left");
   const value = field(node, "value");
   const op = field(node, "operator");
   const eq = anon(node, "=");
+  const forAwait = node.children.find(
+    (c) => c.kind === "await" && c.field === undefined,
+  );
   return group([
     t(ctx, anon(node, "for")),
-    anon(node, "await") ? [text(" "), t(ctx, anon(node, "await"))] : [],
+    forAwait ? [text(" "), t(ctx, forAwait)] : [],
     text(" "),
     t(ctx, anon(node, "(")),
-    kind ? [t(ctx, kind), text(" ")] : [],
+    kinds.map((k) => [t(ctx, k), text(" ")]),
     p(ctx, left),
     value ? [text(" "), t(ctx, eq), text(" "), ctx.print(value)] : [],
     text(" "),
