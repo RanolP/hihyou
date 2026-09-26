@@ -4,6 +4,7 @@ import type {
   CommentTarget,
 } from "../../../fmt/comments.js";
 import type { FormatNode } from "../../../fmt/tree.js";
+import type { JsOptions } from "./util.js";
 
 // Prettier's handleComments for estree (language-js/comments/handle-comments.js), over tree-sitter's tree: each
 // handler reads only node kinds and the tree's shape, and returns undefined when prettier's would return false.
@@ -114,9 +115,59 @@ const tryBlock = ({
   return body ? blockFirst(body) : undefined;
 };
 
-const handlers = [beforeSemicolon, unionMember, methodName, tryBlock];
+const CONDITIONALS = new Set(["ternary_expression", "conditional_type"]);
 
-export const handleComment: CommentHandler = (c) => {
+/**
+ * A comment before a conditional's branch, off the line of the code before it, leads the branch; under
+ * experimentalTernaries one before the alternate dangles on the conditional, which prints it after `:`, unless
+ * it is a one-line block comment (handleConditionalExpressionComments). Off the line: `placement` stands in for
+ * prettier's newline test between the preceding node and the comment, which it matches but for a comment that
+ * ends a line after a token such as `?` that opened it.
+ */
+const conditional = ({
+  comment,
+  text,
+  enclosing,
+  preceding,
+  following,
+  placement,
+  options,
+}: CommentContext<JsOptions>): CommentTarget | undefined => {
+  if (placement === "remaining" || !CONDITIONALS.has(enclosing.kind)) return;
+  if (!following || (preceding && placement !== "ownLine")) return;
+  const oneLineBlock = text.startsWith("/*") && !text.includes("\n");
+  return options.experimentalTernaries &&
+    following.field === "alternative" &&
+    !oneLineBlock
+    ? { node: enclosing, as: "dangling" }
+    : { node: following, as: "leading" };
+};
+
+/** Under experimentalTernaries, an own-line comment before a nested conditional dangles on its parent (handleNestedConditionalExpressionComments). */
+const nestedConditional = ({
+  enclosing,
+  following,
+  placement,
+  options,
+}: CommentContext<JsOptions>): CommentTarget | undefined => {
+  if (placement !== "ownLine" || !options.experimentalTernaries) return;
+  if (!CONDITIONALS.has(enclosing.kind) || !following) return;
+  return CONDITIONALS.has(following.kind)
+    ? { node: enclosing, as: "dangling" }
+    : undefined;
+};
+
+// In prettier's order within each placement: conditional runs early, nestedConditional last.
+const handlers = [
+  conditional,
+  beforeSemicolon,
+  unionMember,
+  methodName,
+  tryBlock,
+  nestedConditional,
+];
+
+export const handleComment: CommentHandler<JsOptions> = (c) => {
   for (const h of handlers) {
     const target = h(c);
     if (target) return target;
