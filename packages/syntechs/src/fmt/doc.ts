@@ -21,6 +21,7 @@ export type Doc =
   | BestFitting
   | BestFitParenthesize
   | FitsExpanded
+  | GroupIfBreak
   | readonly Doc[];
 
 /**
@@ -142,6 +143,16 @@ export interface FitsExpanded {
   /** Set by the printer: `contents` holds a hard break. */
   expands?: boolean;
 }
+/**
+ * Ruff's `conditional_group`: a group while `cond` is printed broken; otherwise its contents print in the mode
+ * around it, unmeasured. Unlike prettier's conditionalGroup (a `Group` with `expandedStates`) it picks no state.
+ */
+export interface GroupIfBreak {
+  readonly k: "groupIfBreak";
+  readonly contents: Doc;
+  readonly cond: GroupRef;
+  break: boolean;
+}
 /** Forces every enclosing group to break. */
 export interface BreakParent {
   readonly k: "breakParent";
@@ -243,21 +254,29 @@ export const ifBreak = (
   group: of,
 });
 
-/** `contents` indented when `of` is printed broken (or, `negate`d, when it is flat), as prettier's indentIfBreak. */
+/** `contents` indented when `of` is printed broken (or, `negate`d, when it is flat), as prettier's indentIfBreak and ruff's `indent_if_group_breaks`. */
 export const indentIfBreak = (
   contents: Doc,
-  of: Group,
+  of: GroupRef,
   negate = false,
 ): IfBreak =>
   negate
     ? ifBreak(contents, indent(contents), of)
     : ifBreak(indent(contents), contents, of);
 
+export const groupIfBreak = (contents: Doc, cond: GroupRef): GroupIfBreak => ({
+  k: "groupIfBreak",
+  contents,
+  cond,
+  break: false,
+});
+
 /** Whether `doc` holds a forced break: a hard line, a break parent, or a group already marked broken. */
 export function willBreak(doc: Doc): boolean {
   if (isDocs(doc)) return doc.some(willBreak);
   switch (doc.k) {
     case "group":
+    case "groupIfBreak":
       return doc.break || willBreak(doc.contents);
     case "line":
       return doc.hard;
@@ -266,7 +285,11 @@ export function willBreak(doc: Doc): boolean {
     case "indent":
     case "align":
     case "lineSuffix":
+    case "bestFitParenthesize":
+    case "fitsExpanded":
       return willBreak(doc.contents);
+    case "bestFitting":
+      return willBreak(doc.variants.at(-1) ?? []);
     case "fill":
       return doc.parts.some(willBreak);
     case "ifBreak":

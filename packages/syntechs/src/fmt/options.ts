@@ -68,5 +68,6 @@ export const ruffSettings = (o: RuffOptions): Settings => ({
   lineWidth: o["line-length"],
   indentWidth: o["indent-width"],
   useTabs: o["indent-style"] === "tab",
+  ruff: true,
   endOfLine: ruffEndOfLine[o["line-ending"]],
 });

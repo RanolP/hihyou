@@ -4,6 +4,7 @@ import {
   type Doc,
   type Fill,
   type Group,
+  type GroupIfBreak,
   type GroupRef,
   hardline,
   isDocs,
@@ -15,6 +16,12 @@ export interface Layout {
   lineWidth: number;
   indentWidth: number;
   useTabs: boolean;
+  /**
+   * Measure as ruff's printer does rather than prettier's: a space counts where it stands, a group measured
+   * inside another records its mode for the `ifBreak`s that follow it, and any printed line break makes the
+   * next group measure afresh.
+   */
+  ruff?: boolean;
 }
 
 /** A source token and the UTF-16 offset in the output where its text starts. */
@@ -144,6 +151,9 @@ function propagate(d: Doc, seen: Map<Doc, boolean>): boolean {
       }
       if (propagateBreaks(d.contents, seen)) d.break = true;
       return d.break;
+    case "groupIfBreak":
+      if (propagateBreaks(d.contents, seen)) d.break = true;
+      return d.break;
     case "indent":
     case "align":
     case "lineSuffix":
@@ -184,7 +194,7 @@ function fits(
   rest: readonly Cmd[],
   width: number,
   mustBeFlat: boolean,
-  groupModes: ReadonlyMap<GroupRef, Mode>,
+  groupModes: Map<GroupRef, Mode>,
   layout: Layout,
   hasLineSuffix: boolean,
   allLines = false,
@@ -226,6 +236,7 @@ function fits(
           width -= textWidth(d.text);
           break;
         }
+        if (layout.ruff && mustBeFlat) return false;
         width -= textWidth(d.text.slice(0, newline));
         if (all === FIRST_LINE) return width >= 0;
         width =
@@ -249,17 +260,28 @@ function fits(
       case "fill":
         for (const part of d.parts.slice(d.from ?? 0).reverse()) push(part);
         break;
-      case "group":
+      case "group": {
         if (mustBeFlat && d.break) return false;
+        const m = d.break ? BREAK : mode;
+        if (layout.ruff) groupModes.set(d, m);
         push(
           ((d.break || mode === BREAK) && d.expandedStates?.at(-1)) ||
             d.contents,
-          d.break ? BREAK : mode,
+          m,
         );
+        break;
+      }
+      case "groupIfBreak":
+        if ((groupModes.get(d.cond) ?? FLAT) === BREAK) {
+          if (mustBeFlat && d.break) return false;
+          push(d.contents, d.break ? BREAK : mode);
+        } else push(d.contents);
         break;
       case "line":
         if (mode === FLAT && !d.hard) {
-          if (!d.soft) pendingSpace = true;
+          if (d.soft) break;
+          if (layout.ruff) width -= 1;
+          else pendingSpace = true;
           break;
         }
         if (mode === FLAT || all === FIRST_LINE) return true;
@@ -282,10 +304,12 @@ function fits(
         else push(d.variants.at(-1) ?? []);
         break;
       case "bestFitParenthesize":
+        if (layout.ruff) groupModes.set(d, mode);
         push(d.contents);
         break;
       case "lineSuffix":
         width -= d.reserved ?? 0;
+        if (layout.ruff && d.reserved && width < 0) return false;
         hasLineSuffix = true;
         break;
       case "lineSuffixBoundary":
@@ -369,8 +393,10 @@ export function print(
     switch (d.k) {
       case "token":
         placed.push({ token: d, at: length });
-        if (d.literal && d.text.includes("\n")) writeLiteral(d.text);
-        else write(d.text);
+        if (d.literal && d.text.includes("\n")) {
+          writeLiteral(d.text);
+          if (layout.ruff) remeasure = true;
+        } else write(d.text);
         break;
       case "text":
         write(d.text);
@@ -392,6 +418,11 @@ export function print(
       case "group":
         printGroup(d, indent, mode);
         break;
+      case "groupIfBreak":
+        if ((groupModes.get(d.cond) ?? FLAT) === BREAK)
+          printGroup(d, indent, mode);
+        else cmds.push({ indent, mode, doc: d.contents });
+        break;
       case "fill":
         printFill(d, indent, mode);
         break;
@@ -401,7 +432,7 @@ export function print(
           break;
         }
         // A hard break inside a flat group: the next group must measure afresh.
-        if (mode === FLAT) remeasure = true;
+        if (mode === FLAT || layout.ruff) remeasure = true;
         if (suffixes.length > 0) {
           cmds.push(cmd, ...suffixes.reverse());
           suffixes.length = 0;
@@ -446,22 +477,32 @@ export function print(
   out.push(current);
   return { text: out.join(""), placed };
 
-  function printGroup(g: Group, indent: Indentation, mode: Mode) {
+  function printGroup(
+    g: Group | GroupIfBreak,
+    indent: Indentation,
+    mode: Mode,
+  ) {
     const cmd = chooseGroup(g, indent, mode);
-    groupModes.set(g, cmd.mode);
+    if (g.k === "group") groupModes.set(g, cmd.mode);
     cmds.push(cmd);
   }
 
-  function chooseGroup(g: Group, indent: Indentation, mode: Mode): Cmd {
+  function chooseGroup(
+    g: Group | GroupIfBreak,
+    indent: Indentation,
+    mode: Mode,
+  ): Cmd {
     if (mode === FLAT && !remeasure)
       return { indent, mode: g.break ? BREAK : FLAT, doc: g.contents };
     remeasure = false;
+    // Ruff measures a group's contents as flat, so an `ifBreak` on the group itself reads flat meanwhile.
+    if (layout.ruff && g.k === "group") groupModes.set(g, FLAT);
     const width = layout.lineWidth - column;
     const suffix = suffixes.length > 0;
     const flat: Cmd = { indent, mode: FLAT, doc: g.contents };
     if (!g.break && fits(flat, cmds, width, false, groupModes, layout, suffix))
       return flat;
-    const states = g.expandedStates;
+    const states = g.k === "group" ? g.expandedStates : undefined;
     if (!states) return { indent, mode: BREAK, doc: g.contents };
     if (!g.break)
       for (const state of states.slice(1, -1)) {
