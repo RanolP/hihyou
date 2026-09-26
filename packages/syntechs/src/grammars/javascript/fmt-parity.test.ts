@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as prettier from "prettier";
 import { describe, expect, it } from "vitest";
-import { type Language, parse } from "../../core/index.js";
+import { type Language, parseTree } from "../../core/index.js";
 import { check } from "../../fmt/check.js";
 import { format } from "../../fmt/format.js";
 import { language as tsxParser } from "../tsx/index.js";
@@ -195,9 +195,8 @@ const edgeCases: [string, Target, string][] = [
 
 function ours(target: Target, text: string, options: Partial<JsOptions>) {
   const t = targets[target];
-  const root = parse(t.parser, text).nodes[0];
-  if (!root) throw new Error("empty tree");
-  const out = format(root, text, t.lang, options as Partial<AllJsOptions>);
+  const tree = parseTree(t.parser, text);
+  const out = format(tree, t.lang, options as Partial<AllJsOptions>);
   if (!out.ok) throw new Error(`${out.reason}: ${out.detail}`);
   const problem = check(t.lang, text, out.text);
   if (problem) throw new Error(`check: ${problem}`);

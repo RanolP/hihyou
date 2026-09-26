@@ -3,22 +3,21 @@
 // Usage: node --cpu-prof --cpu-prof-dir=<dir> packages/syntechs/dist/fmt/profile.node.js <json|css> [passes]
 
 import { benchFiles } from "../core/corpus.node.js";
-import { parse } from "../core/index.js";
+import { parseTree, type Tree } from "../core/index.js";
 import { css } from "../grammars/css/fmt.js";
 import { language as cssGrammar } from "../grammars/css/index.js";
 import { jsonLanguageFor } from "../grammars/json/fmt.js";
 import { language as jsonGrammar } from "../grammars/json/index.js";
-import { type FormatNode, format } from "./index.js";
+import { format } from "./index.js";
 
 const targets = {
   json: {
     grammar: jsonGrammar,
-    run: (root: FormatNode, text: string, path: string) =>
-      format(root, text, jsonLanguageFor(path)),
+    run: (tree: Tree, path: string) => format(tree, jsonLanguageFor(path)),
   },
   css: {
     grammar: cssGrammar,
-    run: (root: FormatNode, text: string) => format(root, text, css),
+    run: (tree: Tree) => format(tree, css),
   },
 };
 
@@ -34,10 +33,9 @@ function pass(): { parse: number; format: number } {
   let formatMs = 0;
   for (const { name: path, text } of files) {
     const t0 = performance.now();
-    const root = parse(grammar, text).nodes[0];
+    const tree = parseTree(grammar, text);
     const t1 = performance.now();
-    if (!root) throw new Error(`${path}: empty tree`);
-    const out = run(root, text, path);
+    const out = run(tree, path);
     formatMs += performance.now() - t1;
     parseMs += t1 - t0;
     if (!out.ok) throw new Error(`${path}: ${out.reason}: ${out.detail}`);

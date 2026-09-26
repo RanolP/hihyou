@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parse } from "../core/index.js";
+import { parseTree } from "../core/index.js";
 import { language as jsonParser } from "../grammars/json/index.js";
 import { check, type Normalize } from "./check.js";
 import { synthetic, text, token } from "./doc.js";
@@ -42,9 +42,8 @@ const plain = defineLanguage(grammar, spec, rules);
 
 /** `format`, and what `check` finds wrong with its output (undefined when nothing is). */
 async function run(text: string, language = plain) {
-  const root = parse(jsonParser, text).nodes[0];
-  if (!root) throw new Error("empty tree");
-  const out = format(root, text, language);
+  const tree = parseTree(jsonParser, text);
+  const out = format(tree, language);
   if (!out.ok) throw new Error(out.detail);
   return { ...out, problem: check(language, text, out.text) };
 }
@@ -68,9 +67,8 @@ describe("format", () => {
 
   it("anchors still land on their tokens after line breaks are rewritten as CRLF, so the cursor mapping survives endOfLine", async () => {
     const text = '{"a":[1,2], /* x\n y */ "b":"x"}';
-    const root = parse(jsonParser, text).nodes[0];
-    if (!root) throw new Error("empty tree");
-    const out = format(root, text, plain, {
+    const tree = parseTree(jsonParser, text);
+    const out = format(tree, plain, {
       printWidth: 10,
       endOfLine: "crlf",
     });
@@ -95,8 +93,8 @@ describe("format", () => {
     const repeats = defineLanguage(grammar, spec, (h) => ({
       ...rules(h),
       number: (node, ctx) => [
-        token(node, ctx.source.slice(node.start, node.end)),
-        token(node, ctx.source.slice(node.start, node.end)),
+        token(node, ctx.tree.text(node)),
+        token(node, ctx.tree.text(node)),
       ],
     }));
     expect((await run("[1]", repeats)).problem).toBeDefined();
@@ -113,7 +111,8 @@ describe("format", () => {
   it("two tokens that trade texts in place fail the check, though each still covers its own range", async () => {
     const trades = defineLanguage(grammar, spec, (h) => ({
       ...rules(h),
-      number: (node) => token(node, node.start === 1 ? "2" : "1"),
+      number: (node, ctx) =>
+        token(node, ctx.tree.text(node) === "1" ? "2" : "1"),
     }));
     expect((await run("[1,2]", trades)).problem).toBeDefined();
   });
@@ -130,7 +129,7 @@ describe("format", () => {
       (h) => ({
         ...rules(h),
         string: (node, ctx) =>
-          token(node, to(ctx.source.slice(node.start, node.end))),
+          token(node, to(ctx.tree.text(node))),
       }),
     );
 
@@ -260,7 +259,7 @@ describe("format", () => {
       document: (node, ctx) =>
         ctx.items(node).map((n) => ctx.print(n, { mark: "!" })),
       number: (node, ctx, args) => [
-        token(node, ctx.source.slice(node.start, node.end)),
+        token(node, ctx.tree.text(node)),
         text(String(args?.["mark"] ?? "")),
       ],
     }));

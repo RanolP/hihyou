@@ -17,7 +17,7 @@ import {
   prettierDefaults,
   prettierSettings,
 } from "../../fmt/options.js";
-import { type Ctx, defineLanguage, type Rule } from "../../fmt/rules.js";
+import { type Ctx, defineLanguage, type Rule } from "../../fmt/legacy.js";
 import { isNextLineEmpty } from "../../fmt/text.js";
 import type { FormatNode } from "../../fmt/tree.js";
 import { grammar } from "./bundle.js";

@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as prettier from "prettier";
 import { benchFiles, type GrammarName } from "../core/corpus.node.js";
-import { parse } from "../core/index.js";
+import { parseTree } from "../core/index.js";
 import type { Language as Grammar } from "../core/language.js";
 import { check } from "./check.js";
 import { oxfmt } from "./conformance/references.node.js";
@@ -241,24 +241,22 @@ async function main() {
       const bytes = inputs.reduce((n, i) => n + Buffer.byteLength(i.text), 0);
       const ours = implemented
         ? await timed(() => {
-            for (const i of inputs) {
-              const root = parse(grammars.get(i.grammar) as Grammar, i.text)
-                .nodes[0];
-              if (root)
-                format(root, i.text, langs.get(i.grammar) as Language<unknown>);
-            }
+            for (const i of inputs)
+              format(
+                parseTree(grammars.get(i.grammar) as Grammar, i.text),
+                langs.get(i.grammar) as Language<unknown>,
+              );
           })
         : undefined;
       // Correctness apart from the timing: `format` does not check its output, so the bench checks each once.
       if (implemented)
         for (const i of inputs) {
           const lang = langs.get(i.grammar) as Language<unknown>;
-          const root = parse(grammars.get(i.grammar) as Grammar, i.text)
-            .nodes[0];
-          const out = root && format(root, i.text, lang);
-          const problem = !out
-            ? undefined
-            : out.ok
+          const out = format(
+            parseTree(grammars.get(i.grammar) as Grammar, i.text),
+            lang,
+          );
+          const problem = out.ok
               ? check(lang, i.text, out.text)
               : `${out.reason}: ${out.detail}`;
           if (problem) failures.push(`${g.id} ${label} ${i.name}: ${problem}`);

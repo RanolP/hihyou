@@ -2,7 +2,7 @@ import type {
   CommentContext,
   CommentHandler,
   CommentTarget,
-} from "../../../fmt/comments.js";
+} from "../../../fmt/legacy.js";
 import type { FormatNode } from "../../../fmt/tree.js";
 import type { JsOptions } from "./util.js";
 

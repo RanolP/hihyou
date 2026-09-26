@@ -3,7 +3,7 @@ import {
   ruffDefaults,
   ruffSettings,
 } from "../../fmt/options.js";
-import { defineLanguage } from "../../fmt/rules.js";
+import { defineLanguage } from "../../fmt/legacy.js";
 import { grammar } from "./bundle.js";
 import { toAst } from "./fmt/ast.js";
 import { Fmt, type PyOptions } from "./fmt/builders.js";

@@ -1,4 +1,4 @@
-import { parse } from "syntechs/core";
+import { parseTree, type Tree } from "syntechs/core";
 import { format, type Language } from "syntechs/fmt";
 import {
   type FormatConfigResolver,
@@ -79,21 +79,26 @@ const languages = new Map<string, Entry>([
   ],
 ]);
 
+function hasMissing(tree: Tree): boolean {
+  for (let o = 0; o < tree.nodeCount; o++)
+    if (tree.missing(tree.at(o))) return true;
+  return false;
+}
+
 function run<O>(
   language: Language<O>,
   text: string,
   options: Partial<O>,
 ): FormatResult {
-  const tree = parse(language.parser, text);
-  const root = tree.nodes[0];
+  const tree = parseTree(language.parser, text);
   // syntechs keeps a broken node's text as is, but a half-formatted file would show its layout as the author's.
-  if (!root || tree.errorChars > 0 || tree.nodes.some((n) => n.missing))
+  if (tree.errorChars > 0 || hasMissing(tree))
     return {
       ok: false,
       reason: "formatter-error",
       message: "the file has a syntax error",
     };
-  const out = format(root, text, language, options);
+  const out = format(tree, language, options);
   return out.ok
     ? { ok: true, text: out.text }
     : { ok: false, reason: out.reason, message: out.detail };

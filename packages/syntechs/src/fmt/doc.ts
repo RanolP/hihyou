@@ -1,6 +1,12 @@
 import type { FormatNode } from "./tree.js";
 
 /**
+ * A token's tree node: a handle into the arena tree. `FormatNode` is the legacy adapter's (legacy.ts), for the
+ * JS and Python rules that still read node objects; drop it once they move to handles.
+ */
+export type TokenNode = number | FormatNode;
+
+/**
  * Layout IR. Its semantics are prettier's document model (groups break outermost-first, `fill` packs), because
  * the output is judged byte-for-byte against prettier; what is ours is that every source token is a `Token`
  * pointing at its tree node, so the printer reports where each input token landed without re-matching text.
@@ -32,7 +38,7 @@ export type Doc =
  */
 export interface Token {
   readonly k: "token";
-  readonly node: FormatNode;
+  readonly node: TokenNode;
   readonly text: string;
   readonly synthetic?: true;
   /**
@@ -171,20 +177,20 @@ export const lineSuffixBoundary: LineSuffixBoundary = {
 };
 
 export const text = (text: string): Text => ({ k: "text", text });
-export const token = (node: FormatNode, text: string): Token => ({
+export const token = (node: TokenNode, text: string): Token => ({
   k: "token",
   node,
   text,
 });
 /** A token no source token stands for, anchored to `anchor`, the nearest source node. */
-export const synthetic = (anchor: FormatNode, text: string): Token => ({
+export const synthetic = (anchor: TokenNode, text: string): Token => ({
   k: "token",
   node: anchor,
   text,
   synthetic: true,
 });
 /** A token whose line breaks are literal (see `Token.literal`). */
-export const literalToken = (node: FormatNode, text: string): Token => ({
+export const literalToken = (node: TokenNode, text: string): Token => ({
   k: "token",
   node,
   text,

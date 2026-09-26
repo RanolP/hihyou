@@ -51,7 +51,7 @@ const printNumber = (raw: string) =>
         .replace(/\.(?=e|$)/, "");
 
 const number: Rule = (node, ctx) =>
-  token(node, printNumber(ctx.source.slice(node.start, node.end)));
+  token(node, printNumber(ctx.tree.text(node)));
 
 const fitting = (trailingSep: boolean) =>
   defineLanguage(grammar, spec, (h) => ({

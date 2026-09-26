@@ -11,7 +11,7 @@ import {
   token,
 } from "../../../fmt/doc.js";
 import type { PrettierOptions } from "../../../fmt/options.js";
-import type { Ctx, PrintArgs, Rule } from "../../../fmt/rules.js";
+import type { Ctx, PrintArgs, Rule } from "../../../fmt/legacy.js";
 import { hasNewline } from "../../../fmt/text.js";
 import type { FormatNode } from "../../../fmt/tree.js";
 

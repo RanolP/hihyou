@@ -18,13 +18,8 @@ import {
   token,
 } from "./doc.js";
 import type { Settings } from "./options.js";
-import {
-  hasNewline,
-  hasNewlineInRange,
-  isNextLineEmpty,
-  isPreviousLineEmpty,
-} from "./text.js";
-import type { FormatNode } from "./tree.js";
+import { lfAfter, newlineBetween, nextLineEmpty } from "./text.js";
+import { type FormatTree, firstLeaf } from "./tree.js";
 
 /** A grammar's vocabulary, generated from its `node-types.json` so that rules naming anything else fail to typecheck. */
 export interface Grammar {
@@ -48,45 +43,45 @@ type CommentOf<G extends Grammar> = G["comments"][number];
 /** What a rule passes down to the rule of a child it prints, as prettier's `print(path, args)` does. */
 export type PrintArgs = Readonly<Record<string, unknown>>;
 
-/** `O` is the language's options type (see `LanguageSpec`). */
+/** `O` is the language's options type (see `LanguageSpec`). A node is a handle into `tree`. */
 export interface Ctx<O = unknown> {
-  readonly source: string;
+  readonly tree: FormatTree;
   /** The options this call formats with: the language's defaults overridden by the caller's. */
   readonly options: O;
   /** `node` as its rule prints it, with the comments attached to it; `args` reach that rule. */
-  print(node: FormatNode, args?: PrintArgs): Doc;
+  print(node: number, args?: PrintArgs): Doc;
   /**
    * `node` as its rule prints it, without its own comments, for a rule that lays those out apart (prettier's
    * union aligns each member but not the member's comments); pass the result through `withComments`.
    */
-  printBare(node: FormatNode, args?: PrintArgs): Doc;
+  printBare(node: number, args?: PrintArgs): Doc;
   /**
    * `printed` with the comments attached to `node`, for a rule that prints a child itself instead of through
    * `print`: without it, those comments are lost.
    */
-  withComments(node: FormatNode, printed: Doc): Doc;
+  withComments(node: number, printed: Doc): Doc;
   /** The children that carry meaning: named, and not comments. */
-  items(node: FormatNode): FormatNode[];
+  items(node: number): number[];
   /** Comments inside `node` next to none of its items, printed one per line. */
-  dangling(node: FormatNode): Doc[];
-  hasDanglingLineComment(node: FormatNode): boolean;
+  dangling(node: number): Doc[];
+  hasDanglingLineComment(node: number): boolean;
   /**
    * Whether `node` has a leading line comment (`leadingLine`), or a trailing line comment on the line where
    * `node` starts (`trailingSameLine`).
    */
   hasComment(
-    node: FormatNode,
+    node: number,
     where: "leadingLine" | "trailingSameLine",
   ): boolean;
-  isList(node: FormatNode): boolean;
+  isList(node: number): boolean;
   /** Every comment attached to `node`: before it, after it, and inside it next to none of its items. */
-  comments(node: FormatNode): {
-    readonly leading: readonly FormatNode[];
-    readonly trailing: readonly FormatNode[];
-    readonly dangling: readonly FormatNode[];
+  comments(node: number): {
+    readonly leading: readonly number[];
+    readonly trailing: readonly number[];
+    readonly dangling: readonly number[];
   };
   /** Whether comment `c` runs to the end of its line (see `LanguageSpec.lineComments`). */
-  isLineComment(c: FormatNode): boolean;
+  isLineComment(c: number): boolean;
 }
 
 /**
@@ -94,7 +89,7 @@ export interface Ctx<O = unknown> {
  * rule reads, so that a rule table can check them against the kind the rule is for.
  */
 export interface Rule<F extends string = never, O = unknown> {
-  (node: FormatNode, ctx: Ctx<O>, args?: PrintArgs): Doc;
+  (node: number, ctx: Ctx<O>, args?: PrintArgs): Doc;
   /** Type-only, never set: carries `F`, which a function type alone would not. */
   readonly reads?: readonly F[];
 }
@@ -112,9 +107,9 @@ export interface Language<O = unknown> {
   readonly atoms: ReadonlySet<string>;
   readonly normalize: Normalize;
   readonly layoutBlind: boolean;
-  readonly printComment?: (comment: FormatNode, ctx: Ctx<O>) => Doc;
+  readonly printComment?: (comment: number, ctx: Ctx<O>) => Doc;
   readonly handleComment?: CommentHandler<O>;
-  readonly printsOwnComments?: (node: FormatNode, ctx: Ctx<O>) => boolean;
+  readonly printsOwnComments?: (node: number, ctx: Ctx<O>) => boolean;
   /** How `check` spells a comment before comparing; see `LanguageSpec`. */
   readonly comment: ((text: string) => string | readonly string[]) | undefined;
 }
@@ -163,14 +158,14 @@ export interface LanguageSpec<G extends Grammar, O> {
    * A comment as printed, when it is not its source text (prettier re-indents a block comment whose lines all
    * start with `*`).
    */
-  readonly printComment?: (comment: FormatNode, ctx: Ctx<O>) => Doc;
+  readonly printComment?: (comment: number, ctx: Ctx<O>) => Doc;
   /** Where a comment attaches when not where the core would put it (see `CommentHandler`). */
   readonly handleComment?: CommentHandler<O>;
   /**
    * Whether `node`'s rule prints the node's comments itself, through `ctx.withComments`, so they can go inside
    * something the rule wraps around them (prettier's willPrintOwnComments: a JSX element's parentheses).
    */
-  readonly printsOwnComments?: (node: FormatNode, ctx: Ctx<O>) => boolean;
+  readonly printsOwnComments?: (node: number, ctx: Ctx<O>) => boolean;
 }
 
 /** A list setting fixed by the rule, or read from the options of each call. */
@@ -291,10 +286,7 @@ export function defineLanguage<
   };
 }
 
-const slice = (node: FormatNode, ctx: Ctx) =>
-  ctx.source.slice(node.start, node.end);
-
-const verbatimRule: Rule = (node, ctx) => token(node, slice(node, ctx));
+const verbatimRule: Rule = (node, ctx) => token(node, ctx.tree.text(node));
 
 const blockRule: Rule = (node, ctx) => [
   join(
@@ -309,32 +301,35 @@ type SeqMatcher =
   | {
       readonly space: false;
       readonly literal: boolean;
-      readonly is: (c: FormatNode, items: readonly FormatNode[]) => boolean;
+      readonly is: (tree: FormatTree, c: number, items: readonly number[]) => boolean;
     };
 
-const noItems: readonly FormatNode[] = [];
+const noItems: readonly number[] = [];
 
 // Each part takes the first child no earlier part took, so a part may still match a child before an earlier part's.
 function seqRule(parts: readonly SeqPart<Grammar>[]): Rule {
   const matchers = parts.map((part): SeqMatcher => {
     const named = (
-      is: (c: FormatNode, items: readonly FormatNode[]) => boolean,
+      is: (tree: FormatTree, c: number, items: readonly number[]) => boolean,
     ) => ({ space: false, literal: false, is }) as const;
     if (typeof part === "string")
       return {
         space: false,
         literal: true,
-        is: (c) => !c.named && c.kind === part,
+        is: (tree, c) => !tree.named(c) && tree.kindName(c) === part,
       };
     if ("space" in part) return { space: true };
-    if ("field" in part) return named((c) => c.field === part.field);
-    if ("kind" in part) return named((c) => c.named && c.kind === part.kind);
-    return named((c, items) => c === items[part.nth]);
+    if ("field" in part)
+      return named((tree, c) => tree.fieldName(c) === part.field);
+    if ("kind" in part)
+      return named((tree, c) => tree.named(c) && tree.kindName(c) === part.kind);
+    return named((_, c, items) => c === items[part.nth]);
   });
   const needsItems = parts.some((p) => typeof p === "object" && "nth" in p);
   return (node, ctx) => {
+    const { tree } = ctx;
     const items = needsItems ? ctx.items(node) : noItems;
-    const children = node.children;
+    const count = tree.count(node);
     const used: number[] = [];
     const docs: Doc[] = [];
     for (const m of matchers) {
@@ -342,16 +337,19 @@ function seqRule(parts: readonly SeqPart<Grammar>[]): Rule {
         docs.push(text(" "));
         continue;
       }
-      const at = children.findIndex(
-        (c, i) => m.is(c, items) && !used.includes(i),
-      );
-      const child = children[at];
-      if (!child) {
+      let at = 0;
+      while (
+        at < count &&
+        (!m.is(tree, tree.child(node, at), items) || used.includes(at))
+      )
+        at++;
+      if (at === count) {
         docs.push([]);
         continue;
       }
       used.push(at);
-      docs.push(m.literal ? token(child, slice(child, ctx)) : ctx.print(child));
+      const child = tree.child(node, at);
+      docs.push(m.literal ? token(child, tree.text(child)) : ctx.print(child));
     }
     return group(docs);
   };
@@ -363,17 +361,22 @@ function listRule<O>(o: ListOptions<Grammar, O>): Rule<never, O> {
   const read = (v: ByOptions<O, boolean> | undefined, options: O) =>
     typeof v === "function" ? v(options) : v === true;
   return (node, ctx) => {
-    const tok = (kind: string, from: number) => {
-      const c = node.children.find(
-        (c) => !c.named && c.kind === kind && c.start >= from,
-      );
-      return c ? token(c, slice(c, ctx)) : [];
+    const { tree } = ctx;
+    const count = tree.count(node);
+    const isToken = (c: number, kind: string) =>
+      !tree.named(c) && tree.kindName(c) === kind;
+    const tok = (kind: string) => {
+      for (let i = 0; i < count; i++) {
+        const c = tree.child(node, i);
+        if (isToken(c, kind)) return token(c, tree.text(c));
+      }
+      return [];
     };
-    const open = tok(o.open, node.start);
-    const close = tok(o.close, node.start);
+    const open = tok(o.open);
+    const close = tok(o.close);
     const items = ctx.items(node);
     const first = items[0];
-    if (!first) {
+    if (first === undefined) {
       const dangling = ctx.dangling(node);
       if (dangling.length === 0) return group([open, close]);
       return group([
@@ -388,29 +391,32 @@ function listRule<O>(o: ListOptions<Grammar, O>): Rule<never, O> {
     const shouldBreak =
       always ||
       (read(o.keepExpanded, ctx.options) &&
-        hasNewlineInRange(ctx.source, node.start, first.start)) ||
+        newlineBetween(tree, firstLeaf(tree, node), firstLeaf(tree, first))) ||
       (o.breakNestedLists === true &&
         items.length > 1 &&
-        items.every(
-          (item, i) =>
+        items.every((item, i) => {
+          const next = items[i + 1];
+          return (
             ctx.isList(item) &&
-            (items[i + 1] === undefined || items[i + 1]?.kind === item.kind) &&
-            ctx.items(item).length > 1,
-        )) ||
+            (next === undefined ||
+              tree.kindName(next) === tree.kindName(item)) &&
+            ctx.items(item).length > 1
+          );
+        })) ||
       ctx.hasDanglingLineComment(node);
-    const blankAfter = (item: FormatNode) =>
-      !always && isNextLineEmpty(ctx.source, item.end);
+    const blankAfter = (item: number) => !always && nextLineEmpty(tree, item);
     // Each item's separator, found in one pass: a lookup per item would be quadratic in a lockfile's objects.
     // `items` is `children` filtered in order, so one cursor walks both; `seps[i]` follows `items[i]`.
-    const seps: (FormatNode | undefined)[] = [];
+    const seps: (number | undefined)[] = [];
     let seen = 0;
-    for (const c of node.children) {
+    for (let i = 0; i < count; i++) {
+      const c = tree.child(node, i);
       if (c === items[seen]) seen++;
-      else if (seen > 0 && !c.named && c.kind === o.sep) seps[seen - 1] ??= c;
+      else if (seen > 0 && isToken(c, o.sep)) seps[seen - 1] ??= c;
     }
     const sep = (i: number) => {
       const c = seps[i];
-      return c ? token(c, slice(c, ctx)) : [];
+      return c === undefined ? [] : token(c, tree.text(c));
     };
 
     const concise =
@@ -418,7 +424,8 @@ function listRule<O>(o: ListOptions<Grammar, O>): Rule<never, O> {
       items.length > 1 &&
       items.every(
         (item) =>
-          fillKinds.has(item.kind) && !ctx.hasComment(item, "trailingSameLine"),
+          fillKinds.has(tree.kindName(item)) &&
+          !ctx.hasComment(item, "trailingSameLine"),
       );
 
     const contents: Doc[] = [];
@@ -433,7 +440,7 @@ function listRule<O>(o: ListOptions<Grammar, O>): Rule<never, O> {
       ? fill(
           items.flatMap((item, i): Doc[] => {
             const next = items[i + 1];
-            if (!next) return [[ctx.print(item), trailing]];
+            if (next === undefined) return [[ctx.print(item), trailing]];
             const separator = blankAfter(item)
               ? [hardline, hardline]
               : ctx.hasComment(next, "leadingLine")
@@ -462,44 +469,44 @@ function listRule<O>(o: ListOptions<Grammar, O>): Rule<never, O> {
 
 /** Prints `node` with its comments, placed as prettier's printComments places them (main/comments/print.js). */
 export function printWithComments(
-  node: FormatNode,
+  node: number,
   printed: Doc,
   comments: Comments,
   ctx: Ctx,
-  isLine: (c: FormatNode) => boolean,
-  comment: (c: FormatNode) => Doc = (c) => {
-    const t = slice(c, ctx);
+  isLine: (c: number) => boolean,
+  comment: (c: number) => Doc = (c) => {
+    const t = ctx.tree.text(c);
     return token(c, isLine(c) ? t.trimEnd() : t);
   },
 ): Doc {
   const attached = comments.of(node);
   if (!attached) return printed;
-  const { source } = ctx;
+  const { tree } = ctx;
 
   const leading = attached.leading.map((c): Doc => {
+    const lf = lfAfter(tree, c);
     const after = isLine(c)
       ? hardline
-      : !hasNewline(source, c.end)
+      : lf === 0
         ? text(" ")
-        : hasNewline(source, c.start, true)
+        : tree.lf(c) > 0
           ? hardline
           : line;
-    const blank = /^[ \t]*\r?\n[ \t]*\r?\n/.test(source.slice(c.end));
-    return [comment(c), after, blank ? hardline : []];
+    return [comment(c), after, lf >= 2 ? hardline : []];
   });
 
   type Previous = { line: boolean; suffix: boolean };
   // `suffix`: printed at the end of the line, where the next trailing comment must follow it.
   const place = (
-    c: FormatNode,
+    c: number,
     lineComment: boolean,
     previous: Previous | undefined,
   ): { doc: Doc; suffix: boolean } =>
-    (previous?.suffix && !previous.line) || hasNewline(source, c.start, true)
+    (previous?.suffix && !previous.line) || tree.lf(c) > 0
       ? {
           doc: lineSuffix([
             hardline,
-            isPreviousLineEmpty(source, c.start) ? hardline : [],
+            tree.lf(c) >= 2 ? hardline : [],
             comment(c),
           ]),
           suffix: true,

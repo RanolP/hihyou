@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createTwoFilesPatch } from "diff";
 import { type GrammarName, pkgRoot } from "../core/corpus.node.js";
-import { parse } from "../core/index.js";
+import { parseTree } from "../core/index.js";
 import type { Language as Grammar } from "../core/language.js";
 import { check } from "./check.js";
 import {
@@ -236,10 +236,8 @@ function runCase(
     let out: string;
     let why: string | undefined;
     try {
-      const root = parse(grammar, c.text).nodes[0];
-      if (!root) throw new Error("no root node");
-      const res = format(root, c.text, lang, r.options);
-      out = res.text;
+      const res = format(parseTree(grammar, c.text), lang, r.options);
+      out = res.ok ? res.text : c.text;
       if (!res.ok) why = `${res.reason}: ${res.detail}`;
       else {
         const problem = check(lang, c.text, res.text);

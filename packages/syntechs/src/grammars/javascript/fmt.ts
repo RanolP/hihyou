@@ -5,7 +5,7 @@ import {
   defineLanguage,
   type Grammar,
   type Language,
-} from "../../fmt/rules.js";
+} from "../../fmt/legacy.js";
 import type { FormatNode } from "../../fmt/tree.js";
 import { grammar, language as parser } from "./index.js";
 import { jsAtoms, jsNormalize } from "./normalize.js";

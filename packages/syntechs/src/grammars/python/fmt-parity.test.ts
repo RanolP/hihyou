@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parse } from "../../core/index.js";
+import { parseTree } from "../../core/index.js";
 import { check } from "../../fmt/check.js";
 import { ruffSuite } from "../../fmt/conformance/ruff.node.js";
 import { format } from "../../fmt/format.js";
@@ -21,9 +21,8 @@ const present = existsSync(formatterRoot);
 const pinnedFile = join(import.meta.dirname, "fmt-parity.passing.json");
 
 function ours(text: string, options: Partial<PythonOptions>): string {
-  const root = parse(language, text).nodes[0];
-  if (!root) throw new Error("empty tree");
-  const out = format(root, text, python, options);
+  const tree = parseTree(language, text);
+  const out = format(tree, python, options);
   if (!out.ok) throw new Error(`${out.reason}: ${out.detail}`);
   return out.text;
 }

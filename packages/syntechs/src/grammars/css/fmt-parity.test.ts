@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as prettier from "prettier";
 import { describe, expect, it } from "vitest";
-import { parse } from "../../core/index.js";
+import { parseTree } from "../../core/index.js";
 import { check } from "../../fmt/check.js";
 import { format } from "../../fmt/format.js";
 import { type CssOptions, css } from "./fmt.js";
@@ -111,9 +111,8 @@ const corpusFiles = ["normalize.css", "animate.css", "bootstrap.css"];
 const present = corpusFiles.every((f) => existsSync(join(corpusDir, f)));
 
 function ours(text: string, options: Partial<CssOptions>) {
-  const root = parse(language, text).nodes[0];
-  if (!root) throw new Error("empty tree");
-  const out = format(root, text, css, options);
+  const tree = parseTree(language, text);
+  const out = format(tree, css, options);
   if (!out.ok) throw new Error(`${out.reason}: ${out.detail}`);
   const problem = check(css, text, out.text);
   if (problem) throw new Error(`check: ${problem}`);
