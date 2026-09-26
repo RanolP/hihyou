@@ -3,11 +3,15 @@
 
 import {
   align,
+  breakParent,
   type Doc,
+  dedent,
   group,
+  hardline,
   ifBreak,
   indent,
   indentIfBreak,
+  join,
   line,
   softline,
   synthetic,
@@ -15,18 +19,23 @@ import {
 } from "../../../fmt/doc.js";
 import type { FormatNode } from "../../../fmt/tree.js";
 import {
+  isLoneShortArgument,
   printAssignment,
   shouldInlineLogicalExpression,
 } from "./assignment.js";
 import { needsParens, role, shouldFlatten } from "./parens.js";
+import { mappedClauseOf, typeNeedsParens } from "./types.js";
 import {
   type Args,
   CF,
   callArguments,
   callee,
   field,
+  getComments,
   hasComment,
   hasLeadingOwnLineComment,
+  hasNewlineIn,
+  isBlockComment,
   isJsx,
   isLogical,
   items,
@@ -272,7 +281,8 @@ const isTestKey = (key: string) =>
   key === "test" || key === "checkType" || key === "extendsType";
 
 /** Prettier's printTernary (ternary-old.js), shared by `a ? b : c` and `A extends B ? C : D`. */
-const ternary: JsRule = (node, ctx) => {
+const ternary: JsRule = (node, ctx, args) => {
+  if (ctx.options.experimentalTernaries) return printTernary(node, ctx, args);
   const TERNARY = node.kind;
   const isType = TERNARY === "conditional_type";
   const test = field(node, "condition") as FormatNode;
@@ -376,6 +386,240 @@ const ternary: JsRule = (node, ctx) => {
     ? group([indent([softline, result]), softline])
     : result;
 };
+
+// Prettier's isSimpleExpressionByNodeCount: estree's single-node children, where a list (arguments,
+// parameters) counts none of its items and a literal or a container counts as one node with nothing inside.
+const NODE_COUNT_LISTS = new Set([
+  "arguments",
+  "formal_parameters",
+  "type_arguments",
+  "optional_chain",
+]);
+const NODE_COUNT_LEAVES = new Set([
+  "array",
+  "object",
+  "string",
+  "template_string",
+  "regex",
+  "statement_block",
+  "class_body",
+]);
+
+function innerNodeCount(n: FormatNode, max: number): number {
+  let count = 0;
+  for (const c of n.children) {
+    if (!c.named || c.kind === "comment" || NODE_COUNT_LISTS.has(c.kind))
+      continue;
+    const inner = unparen(c);
+    count++;
+    if (!NODE_COUNT_LEAVES.has(inner.kind))
+      count += innerNodeCount(inner, max - count);
+    if (count > max) return count;
+  }
+  return count;
+}
+
+const isSimpleExpressionByNodeCount = (n: FormatNode, max: number) =>
+  innerNodeCount(unparen(n), max) <= max;
+
+const SAME_LINE_ASSIGNMENT_PARENTS = new Set([
+  "assignment_expression",
+  "augmented_assignment_expression",
+  "variable_declarator",
+  "public_field_definition",
+  "field_definition",
+  "pair",
+]);
+
+const wrapInParens = (anchor: FormatNode, doc: Doc): Doc => [
+  ifBreak(synthetic(anchor, "(")),
+  indent([softline, doc]),
+  softline,
+  ifBreak(synthetic(anchor, ")")),
+];
+
+/** Prettier's printTernary (ternary.js) under experimentalTernaries, for `a ? b : c` and `A extends B ? C : D`. */
+function printTernary(node: FormatNode, ctx: JsCtx, args: Args): Doc {
+  const kind = node.kind;
+  const isConditionalExpression = kind === TERNARY;
+  const isTSConditional = !isConditionalExpression;
+  const test = field(node, "condition");
+  const testNodes = isConditionalExpression
+    ? [test]
+    : [field(node, "left"), field(node, "right")];
+  const consequentNode = field(node, "consequence") as FormatNode;
+  const alternateNode = field(node, "alternative") as FormatNode;
+  const { parent, key } = role(node);
+  const isParentTernary = parent?.kind === kind;
+  const isInTest = isParentTernary && isTestKey(key);
+  const isInAlternate = isParentTernary && key === "alternate";
+  const isConsequentTernary = unparen(consequentNode).kind === kind;
+  const isAlternateTernary = unparen(alternateNode).kind === kind;
+  const isInChain = isAlternateTernary || isInAlternate;
+  const isBigTabs = ctx.options.tabWidth > 2 || ctx.options.useTabs;
+
+  let previous = node;
+  let current = parent;
+  while (current?.kind === kind && !isTestKey(role(previous).key)) {
+    previous = current;
+    current = role(current).parent;
+  }
+  const firstNonConditionalParent = current ?? parent;
+
+  const isOnSameLineAsAssignment =
+    args?.assignmentLayout !== undefined &&
+    args.assignmentLayout !== "break-after-operator" &&
+    parent !== undefined &&
+    SAME_LINE_ASSIGNMENT_PARENTS.has(parent.kind);
+  const isOnSameLineAsReturn =
+    isReturnOrThrow(parent) && !(isConsequentTernary || isAlternateTernary);
+  const isInJsx =
+    isConditionalExpression &&
+    firstNonConditionalParent?.kind === "jsx_expression" &&
+    (parent ? role(parent).parent?.kind : undefined) !== "jsx_attribute";
+
+  const shouldExtraIndent = shouldExtraIndentForConditionalExpression(node);
+  const breakClosingParen =
+    parent?.kind === "member_expression" && key === "object";
+  const breakTSClosingParen = isTSConditional && typeNeedsParens(node);
+  const fillTab = !isBigTabs
+    ? ""
+    : ctx.options.useTabs
+      ? "\t"
+      : " ".repeat(ctx.options.tabWidth - 1);
+
+  const hasMultilineBlockComments = [
+    ...testNodes,
+    consequentNode,
+    alternateNode,
+  ].some((n) =>
+    getComments(ctx, n).some(
+      (c) => isBlockComment(ctx, c) && hasNewlineIn(ctx, c),
+    ),
+  );
+  // A chain breaks as a whole, so only its outermost ternary is grouped.
+  const shouldBreak =
+    hasMultilineBlockComments || isConsequentTernary || isAlternateTernary;
+
+  // `const result = foo != null ? foo : (\n  some + long + expression\n);` keeps a short consequent up.
+  const consequentInner = unparen(consequentNode);
+  const tryToParenthesizeAlternate =
+    !isInChain &&
+    !isParentTernary &&
+    !isTSConditional &&
+    (isInJsx
+      ? consequentInner.kind === "null"
+      : isLoneShortArgument(ctx, consequentNode) &&
+        isSimpleExpressionByNodeCount(test as FormatNode, 3));
+
+  const shouldGroupTestAndConsequent =
+    isInChain ||
+    isInAlternate ||
+    (isTSConditional && !isParentTernary) ||
+    (isParentTernary &&
+      isConditionalExpression &&
+      isSimpleExpressionByNodeCount(test as FormatNode, 1)) ||
+    tryToParenthesizeAlternate;
+
+  const alternateComments: Doc[] = [];
+  if (test && ctx.dangling(test).length > 0)
+    alternateComments.push(join(hardline, ctx.dangling(test)));
+  if (ctx.dangling(node).length > 0)
+    alternateComments.push(join(hardline, ctx.dangling(node)));
+
+  const question = t(ctx, anonKid(node, "?"));
+  const colon = t(ctx, anonKid(node, ":"));
+  let printedTest: Doc;
+  if (test) {
+    printedTest = [
+      wrapInParens(test, p(ctx, test)),
+      unparen(test).kind === TERNARY ? breakParent : [],
+    ];
+  } else {
+    const ext = field(node, "right") as FormatNode;
+    printedTest = [
+      p(ctx, field(node, "left")),
+      text(" "),
+      t(ctx, anonKid(node, "extends")),
+      text(" "),
+      ext.kind === kind || (ext.kind === "object_type" && mappedClauseOf(ext))
+        ? p(ctx, ext)
+        : group(wrapInParens(ext, p(ctx, ext))),
+    ];
+  }
+  const testGroup = group([printedTest, text(" "), question]);
+
+  const consequent = indent([
+    isConsequentTernary ||
+    (isInJsx && (isJsx(consequentInner) || isParentTernary || isInChain))
+      ? hardline
+      : line,
+    p(ctx, consequentNode),
+  ]);
+  // Unless in a chain, a broken test breaks the consequent too.
+  const testAndConsequentGroup = shouldGroupTestAndConsequent
+    ? group([
+        testGroup,
+        isInChain
+          ? consequent
+          : ifBreak(consequent, group(consequent), testGroup),
+      ])
+    : undefined;
+
+  const printedAlternate = p(ctx, alternateNode);
+  const printedAlternateWithParens =
+    tryToParenthesizeAlternate && testAndConsequentGroup
+      ? ifBreak(
+          printedAlternate,
+          dedent(wrapInParens(alternateNode, printedAlternate)),
+          testAndConsequentGroup,
+        )
+      : printedAlternate;
+
+  const parts: Doc[] = [
+    testAndConsequentGroup ?? [testGroup, consequent],
+    alternateComments.length > 0
+      ? [indent([hardline, alternateComments]), hardline]
+      : isAlternateTernary
+        ? hardline
+        : tryToParenthesizeAlternate
+          ? ifBreak(line, text(" "), testAndConsequentGroup)
+          : line,
+    colon,
+    isAlternateTernary || !isBigTabs
+      ? text(" ")
+      : shouldGroupTestAndConsequent
+        ? ifBreak(
+            text(fillTab),
+            ifBreak(
+              text(isInChain || tryToParenthesizeAlternate ? " " : fillTab),
+              text(" "),
+            ),
+            testAndConsequentGroup,
+          )
+        : ifBreak(text(fillTab), text(" ")),
+    isAlternateTernary
+      ? printedAlternateWithParens
+      : group([
+          indent(printedAlternateWithParens),
+          isInJsx && !tryToParenthesizeAlternate ? softline : [],
+        ]),
+    breakClosingParen && !shouldExtraIndent ? softline : [],
+    shouldBreak ? breakParent : [],
+  ];
+
+  // A one-line ternary bumped past `=` stays one line there.
+  if (isOnSameLineAsAssignment && !shouldBreak)
+    return group(indent([softline, group(parts)]));
+  if (isOnSameLineAsAssignment || isOnSameLineAsReturn)
+    return group(indent(parts));
+  if (shouldExtraIndent || (isTSConditional && isInTest))
+    return group([
+      indent([softline, parts]),
+      breakTSClosingParen ? softline : [],
+    ]);
+  return parent === firstNonConditionalParent ? group(parts) : parts;
+}
 
 // --- the rest --------------------------------------------------------------------------------------------------
 

@@ -151,6 +151,8 @@ export const align = (n: number | string, contents: Doc): Align => ({
   n,
   contents,
 });
+/** `contents` at the enclosing indentation minus its innermost level, as prettier's dedent. */
+export const dedent = (contents: Doc): Align => align(-1, contents);
 export const fill = (parts: readonly Doc[]): Fill => ({ k: "fill", parts });
 export const lineSuffix = (contents: Doc): LineSuffix => ({
   k: "lineSuffix",

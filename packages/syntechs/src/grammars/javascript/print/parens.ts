@@ -462,7 +462,7 @@ export function needsParens(n: FormatNode, ctx: JsCtx): boolean {
         case "call_expression":
           return key === "callee" || key === "quasi";
         case "ternary_expression":
-          return key === "test";
+          return key === "test" && !ctx.options.experimentalTernaries;
         case "member_expression":
         case "subscript_expression":
           return key === "object";

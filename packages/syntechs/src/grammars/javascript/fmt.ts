@@ -45,6 +45,7 @@ const defaults: JsOptions = {
   bracketSameLine: false,
   arrowParens: "always",
   experimentalOperatorPosition: "end",
+  experimentalTernaries: false,
   parser: "babel",
 };
 

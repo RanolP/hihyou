@@ -659,7 +659,7 @@ function memberSemicolon(ctx: JsCtx, n: FormatNode): Doc {
   return ifBreak(sep ? token(sep, "") : [], put(";"));
 }
 
-const mappedClauseOf = (n: FormatNode) => {
+export const mappedClauseOf = (n: FormatNode) => {
   const members = items(n);
   const only = members[0];
   if (members.length !== 1 || only?.kind !== "index_signature")

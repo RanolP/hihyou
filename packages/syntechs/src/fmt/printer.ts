@@ -28,12 +28,16 @@ type Cmd = { indent: Indentation; mode: Mode; doc: Doc };
 const ROOT: Indentation = { value: "", length: 0, queue: [] };
 
 // Prettier's generateIndent: alignment runs are spaces, or with tabs one tab each once an indent follows them.
+// A negative step drops the innermost level instead (prettier's dedent).
 function deeper(
   from: Indentation,
   step: number | string | "indent",
   layout: Layout,
 ): Indentation {
-  const queue = [...from.queue, step];
+  const queue =
+    typeof step === "number" && step < 0
+      ? from.queue.slice(0, -1)
+      : [...from.queue, step];
   let value = "";
   let length = 0;
   let lastTabs = 0;

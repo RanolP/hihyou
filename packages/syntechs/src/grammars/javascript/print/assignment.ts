@@ -185,12 +185,17 @@ function shouldBreakAfterOperator(
     case "sequence_expression":
       return true;
     case "conditional_type": {
+      if (ctx.options.experimentalTernaries) return true;
       const check = unparenType(field(right, "left"));
       const ext = unparenType(field(right, "right"));
       if (isGenericType(check) || isGenericType(ext)) return true;
       break;
     }
     case "ternary_expression": {
+      if (ctx.options.experimentalTernaries)
+        return [field(right, "consequence"), field(right, "alternative")].some(
+          (b) => b !== undefined && unparen(b).kind === "ternary_expression",
+        );
       const test = unparen(field(right, "condition") ?? right);
       return isBinaryish(test) && !shouldInlineLogicalExpression(test);
     }
