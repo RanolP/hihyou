@@ -110,6 +110,9 @@ export function walkTree(lang: Language, root: Subtree, text: string): RawTree {
   const layout = new Set<SyntaxNode>();
   const sym = symbols(lang);
   let errorChars = 0;
+  // The children of the open visible nodes, innermost last. A node takes its own off the end when it closes,
+  // as an array of exactly their length: pushing onto a fresh array reserved room for 17.
+  const kids: SyntaxNode[] = [];
 
   const open = (
     tree: Subtree,
@@ -134,19 +137,17 @@ export function walkTree(lang: Language, root: Subtree, text: string): RawTree {
       start,
       end,
       parent,
-      // A leaf never gains children, so leaves share one empty list.
-      children: tree.children.length === 0 ? NO_NODES : [],
+      children: NO_NODES,
       height: 1,
       size: 1,
     };
     nodes.push(node);
-    parent?.children.push(node);
+    if (parent) kids.push(node);
     if (kind === "ERROR" && !insideError(parent)) errorChars += end - start;
     return node;
   };
-  const close = (node: SyntaxNode, symbol: number) => {
-    const children = node.children;
-    if (children.length === 0) {
+  const close = (node: SyntaxNode, symbol: number, from: number) => {
+    if (kids.length === from) {
       const token = text.slice(node.start, node.end);
       const mode = symbol < sym.label.length ? sym.label[symbol] : LABEL_TOKEN;
       if (mode === LABEL_TOKEN) node.label = token;
@@ -157,6 +158,9 @@ export function walkTree(lang: Language, root: Subtree, text: string): RawTree {
       }
       return;
     }
+    const children = kids.slice(from);
+    kids.length = from;
+    node.children = children;
     let height = 1;
     let size = 1;
     for (let i = 0; i < children.length; i++) {
@@ -179,6 +183,7 @@ export function walkTree(lang: Language, root: Subtree, text: string): RawTree {
   const owner: SyntaxNode[] = [open(root, 0, 0, root.padding, undefined)];
   const ownerSymbol: number[] = [root.symbol];
   const hiddenField: number[] = [-1];
+  const kidsFrom: number[] = [0];
   let depth = 1;
   while (depth > 0) {
     const d = depth - 1;
@@ -188,7 +193,11 @@ export function walkTree(lang: Language, root: Subtree, text: string): RawTree {
     if (i === children.length) {
       depth = d;
       if (hiddenField[d] === -1)
-        close(owner[d] as SyntaxNode, ownerSymbol[d] as number);
+        close(
+          owner[d] as SyntaxNode,
+          ownerSymbol[d] as number,
+          kidsFrom[d] as number,
+        );
       continue;
     }
     const child = children[i] as Subtree;
@@ -221,8 +230,9 @@ export function walkTree(lang: Language, root: Subtree, text: string): RawTree {
         owner[depth] = node;
         ownerSymbol[depth] = alias !== 0 ? alias : child.symbol;
         hiddenField[depth] = -1;
+        kidsFrom[depth] = kids.length;
         depth++;
-      } else close(node, alias !== 0 ? alias : child.symbol);
+      } else close(node, alias !== 0 ? alias : child.symbol, kids.length);
     } else if (hasChildren) {
       trees[depth] = child;
       index[depth] = 0;
