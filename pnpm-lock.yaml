@@ -172,6 +172,9 @@ importers:
       '@types/node':
         specifier: 26.6.2
         version: 26.6.2
+      oxfmt:
+        specifier: 0.70.0
+        version: 0.70.0
       oxlint:
         specifier: 1.85.0
         version: 1.85.0
