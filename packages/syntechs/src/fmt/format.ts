@@ -72,8 +72,10 @@ export function format<O>(
     // A node holding a parse error, or a node the parser invented to recover from one, has no reliable
     // structure (which comma belongs to which item?), so it keeps its source text; the nodes around it
     // still format.
+    // Found in one walk up front: most trees have none, and then `print` asks no node's children.
+    const broken = brokenNodes(root);
     const isBroken = (node: FormatNode) =>
-      node.children.some((c) => c.kind === "ERROR" || c.missing);
+      broken !== undefined && broken.has(node);
 
     const ctx: Ctx<O> = {
       source,
@@ -107,10 +109,12 @@ export function format<O>(
       },
       comments(node) {
         const attached = comments.of(node);
+        const dangling = comments.dangling(node);
+        if (!attached && dangling.length === 0) return NO_COMMENTS;
         return {
           leading: attached?.leading ?? [],
           trailing: attached?.trailing ?? [],
-          dangling: comments.dangling(node),
+          dangling,
         };
       },
       isLineComment: isLine,
@@ -137,6 +141,21 @@ export function format<O>(
       detail: e instanceof Error ? e.message : String(e),
     };
   }
+}
+
+const NO_COMMENTS = { leading: [], trailing: [], dangling: [] } as const;
+
+/** The nodes with an `ERROR` or missing child, or undefined when the tree has none. */
+function brokenNodes(root: FormatNode): Set<FormatNode> | undefined {
+  let broken: Set<FormatNode> | undefined;
+  const stack = [root];
+  for (let node = stack.pop(); node; node = stack.pop()) {
+    for (const c of node.children) {
+      if (c.kind === "ERROR" || c.missing) (broken ??= new Set()).add(node);
+      stack.push(c);
+    }
+  }
+  return broken;
 }
 
 // Prettier's guessEndOfLine (common/end-of-line.js); ruff's `auto` also takes the first line ending.

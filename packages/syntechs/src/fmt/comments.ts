@@ -201,6 +201,8 @@ export function attachComments<O>(
 
   return {
     of: (n) => attached.get(n),
-    dangling: (n) => dangling.get(n) ?? [],
+    dangling: (n) => dangling.get(n) ?? NONE,
   };
 }
+
+const NONE: readonly FormatNode[] = [];
