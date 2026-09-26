@@ -76,16 +76,51 @@ const BODY_ENDED = new Set([
  * Prettier's locEnd for a statement: where its content ends, before a `;` and the comments ahead of it. A
  * compound statement ends where its last body does.
  */
-export function contentEnd(n: FormatNode): number {
-  let body: FormatNode | undefined;
+export function contentEnd(n: FormatNode, keepComments = false): number {
+  const body = lastBody(n);
+  if (body) return contentEnd(body, keepComments);
+  if (!SEMI_ENDED.has(n.kind)) return n.end;
+  const content = n.children.findLast(
+    (c) => c.kind !== ";" && (keepComments || !isComment(c)),
+  );
+  return content?.end ?? n.end;
+}
+
+function lastBody(n: FormatNode): FormatNode | undefined {
   if (n.kind === "if_statement") {
     const alt = field(n, "alternative");
-    body = alt ? first(alt) : field(n, "consequence");
-  } else if (BODY_ENDED.has(n.kind)) body = field(n, "body");
-  if (body) return contentEnd(body);
-  if (!SEMI_ENDED.has(n.kind)) return n.end;
-  const content = n.children.findLast((c) => c.kind !== ";" && !isComment(c));
-  return content?.end ?? n.end;
+    return alt ? first(alt) : field(n, "consequence");
+  }
+  return BODY_ENDED.has(n.kind) ? field(n, "body") : undefined;
+}
+
+const ALWAYS_SEMI_ENDED = new Set([
+  "break_statement",
+  "continue_statement",
+  "debugger_statement",
+  "variable_declaration",
+  "lexical_declaration",
+  "using_declaration",
+]);
+
+/** Prettier's statementEndsWithSemicolon: what a `// prettier-ignore`d statement gets a `;` after. */
+function endsWithSemi(n: FormatNode): boolean {
+  const body = lastBody(n);
+  if (body) return endsWithSemi(body);
+  if (ALWAYS_SEMI_ENDED.has(n.kind)) return true;
+  const own = n.children.at(-1);
+  return SEMI_ENDED.has(n.kind) && own?.kind === ";" && own.end > own.start;
+}
+
+/**
+ * Prettier's printIgnored for a statement: its source up to its content end, then the `;` the `semi` option
+ * asks for, wherever the source put it. Comments ahead of that `;` stay in the text.
+ */
+export function ignoredStatement(ctx: JsCtx, n: FormatNode): Doc {
+  let text = ctx.source.slice(n.start, contentEnd(n, true));
+  if (ctx.options.semi && endsWithSemi(n)) text += ";";
+  else if (needsAsiGuard(ctx, n)) text = `;${text}`;
+  return token(n, text);
 }
 
 /**
@@ -187,7 +222,7 @@ const hashBang: JsRule = (node, ctx) =>
 
 const statementBlock: JsRule = (node, ctx) => printBlock(ctx, node);
 
-const STATEMENT_LIST_PARENTS = new Set([
+export const STATEMENT_LIST_PARENTS = new Set([
   "program",
   "statement_block",
   "class_static_block",
@@ -202,16 +237,22 @@ const expressionStatement: JsRule = (node, ctx) => {
   // `namespace N {}` parses as an expression statement; it takes no `;`.
   if (expr?.kind === "internal_module")
     return [printed, own ? token(own, "") : []];
-  if (
-    !ctx.options.semi &&
-    expr &&
-    node.parent &&
-    STATEMENT_LIST_PARENTS.has(node.parent.kind) &&
-    expressionNeedsAsiProtection(ctx, expr)
-  )
+  if (needsAsiGuard(ctx, node))
     return [synthetic(node, ";"), printed, own ? token(own, "") : []];
   return [printed, semi(ctx, node, own)];
 };
+
+/** Prettier's shouldPrintLeadingSemicolon: with `semi: false`, a statement that would continue the line above. */
+function needsAsiGuard(ctx: JsCtx, node: FormatNode): boolean {
+  if (ctx.options.semi || node.kind !== "expression_statement") return false;
+  const expr = first(node);
+  return (
+    expr !== undefined &&
+    node.parent !== undefined &&
+    STATEMENT_LIST_PARENTS.has(node.parent.kind) &&
+    expressionNeedsAsiProtection(ctx, expr)
+  );
+}
 
 const BODY_HOLDERS = new Set([
   "do_statement",

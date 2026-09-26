@@ -17,7 +17,11 @@ import { moduleRules } from "./print/modules.js";
 import { objectRules } from "./print/objects.js";
 import { operatorRules } from "./print/operators.js";
 import { needsParens } from "./print/parens.js";
-import { statementRules } from "./print/statements.js";
+import {
+  ignoredStatement,
+  STATEMENT_LIST_PARENTS,
+  statementRules,
+} from "./print/statements.js";
 import { typeRules } from "./print/types.js";
 import {
   type Args,
@@ -88,7 +92,11 @@ function wrap(rule: JsRule): JsRule {
       const hit = cache.get(n);
       if (hit !== undefined) return hit;
     }
-    let doc = isIgnored(ctx, n) ? verbatim(ctx, n) : rule(n, ctx, args);
+    let doc = !isIgnored(ctx, n)
+      ? rule(n, ctx, args)
+      : STATEMENT_LIST_PARENTS.has(n.parent?.kind ?? "")
+        ? ignoredStatement(ctx, n)
+        : verbatim(ctx, n);
     if (n.kind !== PE && n.parent?.kind !== PE && needsParens(n, ctx))
       doc = [synthetic(n, "("), doc, synthetic(n, ")")];
     cache?.set(n, doc);
