@@ -15,6 +15,7 @@ import { textWidth } from "../../../fmt/width.js";
 import { printsAsMemberChain } from "./calls.js";
 import { printString } from "./literals.js";
 import { role } from "./parens.js";
+import { shouldHugUnionType, unparenType } from "./types.js";
 import {
   CF,
   callArguments,
@@ -124,14 +125,17 @@ function chooseLayout(
       : isArrow(right) && isArrow(unparen(field(right, "body") ?? right))
         ? "chain-tail-arrow-chain"
         : "chain-tail";
+  const rightType = unparenType(right) ?? right;
   const isHeadOfLongChain =
     !isTail && isAssignment(unparen(field(right, "right") ?? right));
   if (
     isHeadOfLongChain ||
-    (right.kind === "union_type" && !shouldHugUnion(ctx, right)) ||
-    hasLeadingOwnLineComment(ctx, rightNode) ||
-    hasComment(ctx, rightNode, CF.Leading, (c) =>
-      isIndentableBlockComment(ctx, c),
+    (rightType.kind === "union_type" && !shouldHugUnionType(ctx, rightType)) ||
+    // A one-type union's `| // c` comment leads the type inside, which is prettier's right side.
+    [rightNode, rightType].some(
+      (n) =>
+        hasLeadingOwnLineComment(ctx, n) ||
+        hasComment(ctx, n, CF.Leading, (c) => isIndentableBlockComment(ctx, c)),
     )
   )
     return "break-after-operator";
@@ -388,10 +392,6 @@ function isComplexTypeAliasParams(node: FormatNode): boolean {
   );
 }
 
-const unparenType = (n: FormatNode | undefined) => {
-  while (n?.kind === "parenthesized_type") n = first(n);
-  return n;
-};
 const isGenericType = (n: FormatNode | undefined) =>
   (n?.kind === "generic_type" && field(n, "type_arguments") !== undefined) ||
   (n?.kind === "function_type" && field(n, "type_parameters") !== undefined);
@@ -404,20 +404,4 @@ function isObjectPropertyWithShortKey(
   if (!isObjectProperty(node)) return false;
   const key = docText(keyDoc);
   return key !== undefined && textWidth(key) < ctx.options.tabWidth + 3;
-}
-
-/** Prettier's shouldHugTheOnlyFunctionParameter-style union hug (union-type-print.js shouldHugType). */
-function shouldHugUnion(ctx: JsCtx, n: FormatNode): boolean {
-  const members = items(n);
-  const objects = members.filter((m) => m.kind === "object_type");
-  const nulls = members.filter(
-    (m) =>
-      (m.kind === "predefined_type" || m.kind === "literal_type") &&
-      /^(?:void|null|undefined)$/.test(src(ctx, m)),
-  );
-  return (
-    objects.length === 1 &&
-    nulls.length + objects.length === members.length &&
-    !hasComment(ctx, n)
-  );
 }
