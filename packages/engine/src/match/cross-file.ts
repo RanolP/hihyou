@@ -1,16 +1,20 @@
-import { syntaxTree } from "syntechs/core";
 import {
   type Claimed,
   defaultMatchOptions,
+  type EditScript,
   editScript,
   isoIds,
   type Mapping,
   MatchBudgetExceeded,
   type MatchOptions,
   match,
-  type RawEdit,
 } from "syntechs/diff";
-import type { SyntaxNode, SyntaxTree } from "../parse/tree.js";
+import {
+  type NodeEdit,
+  nodeOf,
+  type SyntaxNode,
+  withNodes,
+} from "../parse/tree.js";
 
 /**
  * An edit whose `old` lies in file `from`'s base text and whose `new` in file `to`'s head text,
@@ -18,7 +22,7 @@ import type { SyntaxNode, SyntaxTree } from "../parse/tree.js";
  * `whole` marks the move of a declaration itself, as against the edits made inside it on the way.
  */
 export type CrossEdit = {
-  edit: RawEdit;
+  edit: NodeEdit;
   from: number;
   to: number;
   whole?: true;
@@ -57,28 +61,28 @@ export function crossFileMoves(
   );
   const edits: CrossEdit[] = [];
 
-  type Candidate = { file: number; n: SyntaxNode };
+  /** `i` is `n`'s index in its side, `size` its subtree's node count. */
+  type Candidate = { file: number; i: number; size: number; n: SyntaxNode };
   const candidates = (side: "a" | "b"): Candidate[] =>
     mappings
       .flatMap((m, file) => {
         if (!m) return [];
+        const s = m[side];
         const table = side === "a" ? m.src : m.dst;
-        return m[side].nodes
-          .filter(
-            (n) =>
-              n.parent &&
-              n.named &&
-              n.size >= minMoveSize &&
-              table[n.id] === -1 &&
-              !inImport(n),
-          )
-          .map((n) => ({ file, n }));
+        const out: Candidate[] = [];
+        for (let i = 1; i < s.nodes.length; i++) {
+          const size = s.size[i] as number;
+          if (size < minMoveSize || table[i] !== -1) continue;
+          const n = nodeOf(s.tree, s.node(i));
+          if (n.named && !inImport(n)) out.push({ file, i, size, n });
+        }
+        return out;
       })
-      .sort((p, q) => q.n.size - p.n.size);
+      .sort((p, q) => q.size - p.size);
   const fromA = candidates("a");
   const intoB = candidates("b");
   const isClaimed = (side: "a" | "b", c: Candidate) =>
-    claimed[c.file]?.[side][c.n.id] === 1;
+    claimed[c.file]?.[side][c.i] === 1;
 
   const claim = (x: Candidate, y: Candidate) => {
     for (const [side, c] of [
@@ -89,7 +93,7 @@ export function crossFileMoves(
       const flags = claimed[c.file]?.[side];
       if (!m || !flags) continue;
       const [own, other] = side === "a" ? [m.src, m.dst] : [m.dst, m.src];
-      for (let id = c.n.id; id < c.n.id + c.n.size; id++) {
+      for (let id = c.i; id < c.i + c.size; id++) {
         flags[id] = 1;
         const partner = own[id];
         if (partner !== undefined && partner !== -1) {
@@ -116,14 +120,14 @@ export function crossFileMoves(
   // Identical subtrees.
   const byIso = new Map<number, Candidate[]>();
   for (const y of intoB) {
-    const id = iso[y.file]?.b[y.n.id];
+    const id = iso[y.file]?.b[y.i];
     if (id === undefined) continue;
     const list = byIso.get(id);
     if (list) list.push(y);
     else byIso.set(id, [y]);
   }
   const identical = (x: Candidate) => {
-    const id = iso[x.file]?.a[x.n.id];
+    const id = iso[x.file]?.a[x.i];
     if (id === undefined) return false;
     const y = byIso
       .get(id)
@@ -157,28 +161,28 @@ export function crossFileMoves(
     const ys = namedB.get(key)?.filter((c) => !isClaimed("b", c)) ?? [];
     const [y] = ys;
     if (xs.length !== 1 || ys.length !== 1 || !y || y.file === x.file) return;
-    if (Math.min(x.n.size, y.n.size) < Math.max(x.n.size, y.n.size) / 2) return;
+    if (Math.min(x.size, y.size) < Math.max(x.size, y.size) / 2) return;
     const ma = mappings[x.file];
     const mb = mappings[y.file];
     if (!ma || !mb) return;
-    let inner: RawEdit[];
+    let inner: EditScript;
     try {
-      inner = editScript(match(subtree(ma.a, x.n), subtree(mb.b, y.n), opts));
+      // Views of the two subtrees, so the inner edits name nodes of the real trees, ancestors reachable.
+      inner = editScript(
+        match(ma.a.sub(x.n.handle), mb.b.sub(y.n.handle), opts),
+      );
     } catch (error) {
       if (error instanceof MatchBudgetExceeded) return;
       throw error;
     }
     claim(x, y);
     edits.push(move(x, y));
-    // The inner script ran on copies; point its nodes back at the real trees so their ancestors stay reachable.
-    const realA = (n: SyntaxNode) => ma.a.node(x.n.id + n.id);
-    const realB = (n: SyntaxNode) => mb.b.node(y.n.id + n.id);
-    for (const e of inner) {
-      const edit: RawEdit = { ...e };
-      if ("a" in edit && edit.a) edit.a = realA(edit.a);
-      if ("b" in edit && edit.b) edit.b = realB(edit.b);
-      edits.push({ from: x.file, to: y.file, edit });
-    }
+    for (const e of inner.edits)
+      edits.push({
+        from: x.file,
+        to: y.file,
+        edit: withNodes(e, inner.a, inner.b),
+      });
   };
 
   // Largest first, so a declaration edited on the way pairs whole before its unchanged body could pair alone.
@@ -204,19 +208,4 @@ export function nameOf(n: SyntaxNode): string | undefined {
     named.find((c) => c.field === "declaration" || c.field === "definition") ??
     (named.length === 1 ? named[0] : undefined);
   return inner ? nameOf(inner) : undefined;
-}
-
-/** A copy of `root`'s subtree as a tree of its own, ids rebased to 0 and offsets kept, so its spans still index the file's text. */
-function subtree(tree: SyntaxTree, root: SyntaxNode): SyntaxTree {
-  const nodes: SyntaxNode[] = [];
-  // Preorder: a node's parent is always copied before it.
-  for (let id = root.id; id < root.id + root.size; id++) {
-    const n = tree.node(id);
-    const parent =
-      id === root.id || !n.parent ? undefined : nodes[n.parent.id - root.id];
-    const c: SyntaxNode = { ...n, id: id - root.id, parent, children: [] };
-    nodes.push(c);
-    parent?.children.push(c);
-  }
-  return syntaxTree(nodes, 0);
 }

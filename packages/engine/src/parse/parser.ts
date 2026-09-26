@@ -1,4 +1,4 @@
-import { type Language, parse } from "syntechs/core";
+import { type Language, parseTree } from "syntechs/core";
 import type { LanguageId } from "./languages.js";
 import type { SyntaxParser } from "./tree.js";
 
@@ -15,7 +15,7 @@ const grammars: Record<LanguageId, () => Promise<{ language: Language }>> = {
 export function createSyntaxParser(): SyntaxParser {
   return {
     async parse(lang, text) {
-      return parse((await grammars[lang]()).language, text);
+      return parseTree((await grammars[lang]()).language, text);
     },
   };
 }

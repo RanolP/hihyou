@@ -1,6 +1,7 @@
-import type { SyntaxNode, SyntaxTree } from "../core/tree.js";
-import { idOf, type Mapping } from "./matcher.js";
+import type { Tree } from "../core/arena.js";
+import type { Mapping } from "./matcher.js";
 import { longestIncreasing } from "./sequence.js";
+import type { Side } from "./side.js";
 
 /** Half-open UTF-16 offset range into one side's text. */
 export interface Span {
@@ -8,20 +9,27 @@ export interface Span {
   end: number;
 }
 
-/** `a` and `b` are the old and new nodes the edit is about; absent in line mode. */
+/** `a` and `b` are handles of the old and new nodes the edit is about, in `EditScript.a` and `.b`; absent in line mode. */
 export type RawEdit =
-  | { kind: "insert"; new: Span; node?: string; b?: SyntaxNode }
-  | { kind: "delete"; old: Span; node?: string; a?: SyntaxNode }
+  | { kind: "insert"; new: Span; node?: string; b?: number }
+  | { kind: "delete"; old: Span; node?: string; a?: number }
   | {
       kind: "update" | "move";
       old: Span;
       new: Span;
       node?: string;
-      a?: SyntaxNode;
-      b?: SyntaxNode;
+      a?: number;
+      b?: number;
     };
 
-/** Per-node flags, by preorder id, for subtrees another file's diff already explains (a declaration moved across files). */
+/** Edits between two trees, whose nodes they name by handle. */
+export interface EditScript {
+  a: Tree;
+  b: Tree;
+  edits: RawEdit[];
+}
+
+/** Per-node flags, by side index, for subtrees another file's diff already explains (a declaration moved across files). */
 export interface Claimed {
   a: Uint8Array;
   b: Uint8Array;
@@ -38,77 +46,116 @@ export interface Claimed {
 export function editScript(
   { a, b, src, dst }: Mapping,
   claimed?: Claimed,
-): RawEdit[] {
+): EditScript {
+  const ta = a.tree;
+  const tb = b.tree;
   const edits: RawEdit[] = [];
-  const span = (n: SyntaxNode): Span => ({ start: n.start, end: n.end });
-  const partner = (x: SyntaxNode) => b.node(idOf(src, x));
+  const span = (t: Tree, n: number): Span => ({
+    start: t.start(n),
+    end: t.end(n),
+  });
   const holdsA = holdingClaimed(a, claimed?.a);
   const holdsB = holdingClaimed(b, claimed?.b);
   // Outermost: its parent is matched, or is itself reported piece by piece.
-  const outermost = (n: SyntaxNode, table: Int32Array, holds: Uint8Array) =>
-    !n.parent || table[n.parent.id] !== -1 || holds[n.parent.id] === 1;
+  const outermost = (
+    side: Side,
+    i: number,
+    table: Int32Array,
+    holds: Uint8Array,
+  ) => {
+    const p = side.parentOf(i);
+    return p === -1 || table[p] !== -1 || holds[p] === 1;
+  };
 
-  for (const x of a.nodes) {
-    if (claimed?.a[x.id]) continue;
-    if (src[x.id] === -1) {
-      if (!holdsA[x.id] && outermost(x, src, holdsA) && x.end > x.start)
-        edits.push({ kind: "delete", old: span(x), node: x.kind, a: x });
+  for (let x = 0; x < a.nodes.length; x++) {
+    if (claimed?.a[x]) continue;
+    const hx = a.node(x);
+    const y = src[x] as number;
+    if (y === -1) {
+      if (
+        !holdsA[x] &&
+        outermost(a, x, src, holdsA) &&
+        ta.end(hx) > ta.start(hx)
+      )
+        edits.push({
+          kind: "delete",
+          old: span(ta, hx),
+          node: ta.kindName(hx),
+          a: hx,
+        });
       continue;
     }
-    const y = partner(x);
-    const pair = { old: span(x), new: span(y), node: x.kind, a: x, b: y };
-    if (
-      x.children.length === 0 &&
-      y.children.length === 0 &&
-      x.label !== y.label
-    )
+    const hy = b.node(y);
+    const pair = {
+      old: span(ta, hx),
+      new: span(tb, hy),
+      node: ta.kindName(hx),
+      a: hx,
+      b: hy,
+    };
+    if (a.size[x] === 1 && b.size[y] === 1 && ta.label(hx) !== tb.label(hy))
       edits.push({ kind: "update", ...pair });
-    if (x.named && x.parent && (!y.parent || src[x.parent.id] !== y.parent.id))
+    const px = a.parentOf(x);
+    const py = b.parentOf(y);
+    if (ta.named(hx) && px !== -1 && (py === -1 || src[px] !== py))
       edits.push({ kind: "move", ...pair });
 
     // Reordering among children that stayed under the same parent: whatever falls outside the longest in-order run moved.
-    const stayed = x.children
-      .filter((c) => c.named && src[c.id] !== -1)
-      .map((c) => ({ c, p: partner(c) }))
-      .filter(({ p }) => p.parent === y);
+    const stayed = a
+      .childrenOf(x)
+      .filter((c) => ta.named(a.node(c)) && src[c] !== -1)
+      .map((c) => ({ c, p: src[c] as number }))
+      .filter(({ p }) => b.parentOf(p) === y);
     if (stayed.length < 2) continue;
-    const position = new Map(y.children.map((c, i) => [c, i]));
+    const position = new Map(b.childrenOf(y).map((c, i) => [c, i]));
     const kept = longestIncreasing(
       stayed.map(({ p }) => position.get(p) ?? -1),
     );
-    for (const [i, { c, p }] of stayed.entries())
-      if (!kept.has(i))
-        edits.push({
-          kind: "move",
-          old: span(c),
-          new: span(p),
-          node: c.kind,
-          a: c,
-          b: p,
-        });
+    for (const [i, { c, p }] of stayed.entries()) {
+      if (kept.has(i)) continue;
+      const hc = a.node(c);
+      const hp = b.node(p);
+      edits.push({
+        kind: "move",
+        old: span(ta, hc),
+        new: span(tb, hp),
+        node: ta.kindName(hc),
+        a: hc,
+        b: hp,
+      });
+    }
   }
-  for (const y of b.nodes) {
-    if (claimed?.b[y.id]) continue;
+  for (let y = 0; y < b.nodes.length; y++) {
+    if (claimed?.b[y]) continue;
+    const hy = b.node(y);
     if (
-      dst[y.id] === -1 &&
-      !holdsB[y.id] &&
-      outermost(y, dst, holdsB) &&
-      y.end > y.start
+      dst[y] === -1 &&
+      !holdsB[y] &&
+      outermost(b, y, dst, holdsB) &&
+      tb.end(hy) > tb.start(hy)
     )
-      edits.push({ kind: "insert", new: span(y), node: y.kind, b: y });
+      edits.push({
+        kind: "insert",
+        new: span(tb, hy),
+        node: tb.kindName(hy),
+        b: hy,
+      });
   }
-  return edits;
+  return { a: ta, b: tb, edits };
 }
 
 /** 1 for every proper ancestor of a claimed node. */
 function holdingClaimed(
-  tree: SyntaxTree,
+  side: Side,
   claimed: Uint8Array | undefined,
 ): Uint8Array {
-  const holds = new Uint8Array(tree.nodes.length);
+  const holds = new Uint8Array(side.nodes.length);
   if (!claimed) return holds;
-  for (const n of tree.nodes)
-    if (claimed[n.id] && !(n.parent && claimed[n.parent.id]))
-      for (let p = n.parent; p && !holds[p.id]; p = p.parent) holds[p.id] = 1;
+  for (let i = 0; i < holds.length; i++) {
+    if (!claimed[i]) continue;
+    const up = side.parentOf(i);
+    if (up !== -1 && claimed[up]) continue;
+    for (let p = up; p !== -1 && !holds[p]; p = side.parentOf(p)) holds[p] = 1;
+  }
   return holds;
 }

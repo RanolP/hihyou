@@ -1,5 +1,6 @@
 export {
   type Claimed,
+  type EditScript,
   editScript,
   type RawEdit,
   type Span,
@@ -13,3 +14,4 @@ export {
   type MatchOptions,
   match,
 } from "./matcher.js";
+export { Side } from "./side.js";

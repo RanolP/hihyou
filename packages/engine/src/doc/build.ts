@@ -7,11 +7,12 @@ import {
   type MatchOptions,
   match,
   type RawEdit,
+  Side,
   type Span,
 } from "syntechs/diff";
 import { type CrossEdit, crossFileMoves } from "../match/cross-file.js";
 import { type LanguageId, languageForPath } from "../parse/languages.js";
-import type { SyntaxParser } from "../parse/tree.js";
+import { type SyntaxParser, withNodes } from "../parse/tree.js";
 import {
   type ChangedFile,
   type FileSource,
@@ -84,11 +85,16 @@ export async function buildReviewDoc(
     analyses.map((a) => (a.file.language === "json" ? undefined : a.mapping)),
     opts.match ?? defaultMatchOptions,
   );
-  const located: CrossEdit[][] = analyses.map((a, i) =>
-    (a.mapping ? editScript(a.mapping, cross.claimed[i]) : (a.raw ?? [])).map(
-      (edit) => ({ edit, from: i, to: i }),
-    ),
-  );
+  const located: CrossEdit[][] = analyses.map((a, i) => {
+    if (!a.mapping)
+      return (a.raw ?? []).map((e) => ({ edit: withNodes(e), from: i, to: i }));
+    const script = editScript(a.mapping, cross.claimed[i]);
+    return script.edits.map((e) => ({
+      edit: withNodes(e, script.a, script.b),
+      from: i,
+      to: i,
+    }));
+  });
   for (const c of cross.edits) {
     if ("old" in c.edit) located[c.from]?.push(c);
     if ("new" in c.edit) located[c.to]?.push(c);
@@ -187,8 +193,7 @@ async function analyze(
     await opts.parser.parse(language, oldText),
     await opts.parser.parse(language, newText),
   ];
-  if (Math.max(a.nodes.length, b.nodes.length) > maxNodes)
-    return line("too-large");
+  if (Math.max(a.nodeCount, b.nodeCount) > maxNodes) return line("too-large");
   if (
     a.errorChars > maxErrorRatio * oldText.length ||
     b.errorChars > maxErrorRatio * newText.length
@@ -196,7 +201,7 @@ async function analyze(
     return line("parse-error");
   let mapping: Mapping;
   try {
-    mapping = match(a, b, opts.match ?? defaultMatchOptions);
+    mapping = match(Side.of(a), Side.of(b), opts.match ?? defaultMatchOptions);
   } catch (error) {
     if (error instanceof MatchBudgetExceeded) return line("too-large");
     throw error;

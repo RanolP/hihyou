@@ -1,5 +1,4 @@
-import type { RawEdit } from "syntechs/diff";
-import type { SyntaxNode } from "../parse/tree.js";
+import type { NodeEdit, SyntaxNode } from "../parse/tree.js";
 import type { Risk, RiskSignal } from "./schema.js";
 import {
   ancestry,
@@ -31,7 +30,7 @@ const errorHandling =
   /^(try_statement|catch_clause|finally_clause|throw_statement|raise_statement|except_clause|try_expression)$/;
 
 /** The signals one edit shows, from its own kind and the syntax around it. */
-export function signalsOf(edit: RawEdit): RiskSignal[] {
+export function signalsOf(edit: NodeEdit): RiskSignal[] {
   const a = "a" in edit ? edit.a : undefined;
   const b = "b" in edit ? edit.b : undefined;
   const nodes = [a, b].filter((n): n is SyntaxNode => n !== undefined);
