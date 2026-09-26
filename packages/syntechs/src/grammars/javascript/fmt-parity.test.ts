@@ -13,8 +13,8 @@ import { language as jsParser } from "./index.js";
 import type { JsOptions as AllJsOptions } from "./print/util.js";
 
 // Byte parity with prettier 3.9.9 for JavaScript, TypeScript and TSX, under its defaults and under a set a
-// person would write in a `.prettierrc`. Not covered, as `divergences` below pins: syntax tree-sitter-typescript
-// reads as an ERROR.
+// person would write in a `.prettierrc`. Not covered: syntax tree-sitter-typescript reads as
+// an ERROR.
 
 type Target = "js" | "ts" | "tsx";
 /** The parser is the target's own, so a case sets only layout options. */
@@ -246,15 +246,5 @@ describe("the fetched JS/TSX corpus keeps its count of chunks byte-identical to 
       identical,
       total,
     ]);
-  });
-});
-
-// Target, input, then today's output, which differs from prettier's.
-const divergences: [string, Target, string, string][] = [];
-
-describe("a known gap from prettier stays pinned, so closing one shows up as a test change", () => {
-  it.each(divergences)("%s (%s)", async (_, target, text, pinned) => {
-    expect(ours(target, text, {})).toBe(pinned);
-    expect(await theirs(target, text, {})).not.toBe(pinned);
   });
 });

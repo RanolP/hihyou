@@ -125,7 +125,6 @@ const CONDITIONALS = new Set(["ternary_expression", "conditional_type"]);
  * ends a line after a token such as `?` that opened it.
  */
 const conditional = ({
-  comment,
   text,
   enclosing,
   preceding,
