@@ -15,20 +15,23 @@ import {
   text,
   willBreak,
 } from "../../../fmt/doc.js";
-import { hasNewline, isNextLineEmpty } from "../../../fmt/text.js";
-import type { FormatNode } from "../../../fmt/tree.js";
+import { lfAfter, nextLineEmpty } from "../../../fmt/text.js";
 import { isTemplateOnItsOwnLine, isTestCall } from "./calls.js";
 import { role } from "./parens.js";
 import {
+  anon,
   ArgExpansionBailout,
   type Args,
   CF,
   callArguments,
   callee,
+  childWhere,
+  children,
   danglingCommentsInList,
   field,
   first,
   hasComment,
+  type HasTree,
   isBinaryish,
   isCall,
   isComment,
@@ -36,9 +39,13 @@ import {
   items,
   type JsCtx,
   type JsRule,
+  kind,
+  lastChildWhere,
+  named,
   objectOf,
   p,
   parameters,
+  parent,
   removeLines,
   semi,
   separators,
@@ -47,9 +54,6 @@ import {
   trailingCommaAllowed,
   unparen,
 } from "./util.js";
-
-const anonKid = (n: FormatNode, kind: string) =>
-  n.children.find((c) => !c.named && c.kind === kind);
 
 /** A parameter as prettier's AST would type it. */
 type ParamShape =
@@ -67,40 +71,42 @@ const PARAMETER_PROPERTY_MODIFIERS = new Set([
   "override",
 ]);
 
-function paramShape(param: FormatNode): {
+function paramShape(
+  x: HasTree,
+  param: number,
+): {
   shape: ParamShape;
-  pattern: FormatNode | undefined;
-  type: FormatNode | undefined;
-  value: FormatNode | undefined;
+  pattern: number | undefined;
+  type: number | undefined;
+  value: number | undefined;
   optional: boolean;
 } {
-  if (
-    param.kind === "required_parameter" ||
-    param.kind === "optional_parameter"
-  ) {
-    const pattern = field(param, "pattern");
-    const type = field(param, "type");
-    const value = field(param, "value");
-    const optional = param.kind === "optional_parameter";
-    const shape: ParamShape = param.children.some((c) =>
-      PARAMETER_PROPERTY_MODIFIERS.has(c.kind),
-    )
-      ? "TSParameterProperty"
-      : value
-        ? "AssignmentPattern"
-        : shapeOf(pattern);
+  const k = kind(x, param);
+  if (k === "required_parameter" || k === "optional_parameter") {
+    const pattern = field(x, param, "pattern");
+    const type = field(x, param, "type");
+    const value = field(x, param, "value");
+    const optional = k === "optional_parameter";
+    const shape: ParamShape =
+      childWhere(x, param, (c) =>
+        PARAMETER_PROPERTY_MODIFIERS.has(kind(x, c)),
+      ) !== undefined
+        ? "TSParameterProperty"
+        : value !== undefined
+          ? "AssignmentPattern"
+          : shapeOf(x, pattern);
     return { shape, pattern, type, value, optional };
   }
-  if (param.kind === "assignment_pattern")
+  if (k === "assignment_pattern")
     return {
       shape: "AssignmentPattern",
-      pattern: field(param, "left"),
+      pattern: field(x, param, "left"),
       type: undefined,
-      value: field(param, "right"),
+      value: field(x, param, "right"),
       optional: false,
     };
   return {
-    shape: shapeOf(param),
+    shape: shapeOf(x, param),
     pattern: param,
     type: undefined,
     value: undefined,
@@ -108,8 +114,8 @@ function paramShape(param: FormatNode): {
   };
 }
 
-function shapeOf(n: FormatNode | undefined): ParamShape {
-  switch (n?.kind) {
+function shapeOf(x: HasTree, n: number | undefined): ParamShape {
+  switch (kind(x, n)) {
     case "identifier":
     case "this":
       return "Identifier";
@@ -126,42 +132,49 @@ function shapeOf(n: FormatNode | undefined): ParamShape {
   }
 }
 
-const returnTypeNode = (fn: FormatNode) => {
+const returnTypeNode = (x: HasTree, fn: number) => {
+  const k = kind(x, fn);
   const r =
-    field(fn, "return_type") ??
-    (fn.kind === "construct_signature" || fn.kind === "constructor_type"
-      ? field(fn, "type")
+    field(x, fn, "return_type") ??
+    (k === "construct_signature" || k === "constructor_type"
+      ? field(x, fn, "type")
       : undefined);
-  if (!r) return undefined;
-  return r.kind === "type_annotation" ? (first(r) ?? r) : r;
+  if (r === undefined) return undefined;
+  return kind(x, r) === "type_annotation" ? (first(x, r) ?? r) : r;
 };
 
 const OBJECT_TYPES = new Set(["object_type", "mapped_type_clause"]);
-const isObjectType = (n: FormatNode | undefined) =>
-  n !== undefined && OBJECT_TYPES.has(n.kind);
+const isObjectType = (x: HasTree, n: number | undefined) =>
+  n !== undefined && OBJECT_TYPES.has(kind(x, n));
 
 /** Prettier's shouldHugTheOnlyFunctionParameter. */
 export function shouldHugTheOnlyFunctionParameter(
   ctx: JsCtx,
-  fn: FormatNode | undefined,
+  fn: number | undefined,
 ): boolean {
-  if (!fn) return false;
-  const params = parameters(fn);
+  if (fn === undefined) return false;
+  const params = parameters(ctx, fn);
   if (params.length !== 1) return false;
-  const param = params[0] as FormatNode;
+  const param = params[0] as number;
   if (hasComment(ctx, param)) return false;
-  const { shape, pattern, type, value } = paramShape(param);
+  const { shape, pattern, type, value } = paramShape(ctx, param);
   if (shape === "ObjectPattern" || shape === "ArrayPattern") return true;
-  if (shape === "Identifier" && type && isObjectType(first(type))) return true;
+  if (
+    shape === "Identifier" &&
+    type !== undefined &&
+    isObjectType(ctx, first(ctx, type))
+  )
+    return true;
   if (shape === "AssignmentPattern") {
-    const left = pattern && shapeOf(pattern);
-    const right = value && unparen(value);
+    const left = pattern !== undefined ? shapeOf(ctx, pattern) : undefined;
+    const right = value !== undefined ? unparen(ctx, value) : undefined;
+    const rightKind = kind(ctx, right);
     return (
       (left === "ObjectPattern" || left === "ArrayPattern") &&
       right !== undefined &&
-      (right.kind === "identifier" ||
-        (right.kind === "object" && items(right).length === 0) ||
-        (right.kind === "array" && items(right).length === 0))
+      (rightKind === "identifier" ||
+        (rightKind === "object" && items(ctx, right).length === 0) ||
+        (rightKind === "array" && items(ctx, right).length === 0))
     );
   }
   return false;
@@ -169,75 +182,91 @@ export function shouldHugTheOnlyFunctionParameter(
 
 /** Prettier's shouldGroupFunctionParameters. */
 export function shouldGroupFunctionParameters(
-  fn: FormatNode,
+  x: HasTree,
+  fn: number,
   returnTypeDoc: Doc,
 ): boolean {
-  const returnType = returnTypeNode(fn);
-  if (!returnType) return false;
-  const typeParameters = field(fn, "type_parameters");
-  if (typeParameters) {
-    const params = items(typeParameters);
+  const returnType = returnTypeNode(x, fn);
+  if (returnType === undefined) return false;
+  const typeParameters = field(x, fn, "type_parameters");
+  if (typeParameters !== undefined) {
+    const params = items(x, typeParameters);
     if (params.length > 1) return false;
     if (params.length === 1) {
-      const tp = params[0] as FormatNode;
-      if (field(tp, "constraint") || field(tp, "value")) return false;
+      const tp = params[0] as number;
+      if (
+        field(x, tp, "constraint") !== undefined ||
+        field(x, tp, "value") !== undefined
+      )
+        return false;
     }
   }
   return (
-    parameters(fn).length === 1 &&
-    (isObjectType(returnType) || willBreak(returnTypeDoc))
+    parameters(x, fn).length === 1 &&
+    (isObjectType(x, returnType) || willBreak(returnTypeDoc))
   );
 }
 
-function shouldBreakFunctionParameters(fn: FormatNode): boolean {
-  const params = parameters(fn);
+function shouldBreakFunctionParameters(x: HasTree, fn: number): boolean {
+  const params = parameters(x, fn);
   return (
     params.length > 1 &&
-    params.some((x) => paramShape(x).shape === "TSParameterProperty")
+    params.some((param) => paramShape(x, param).shape === "TSParameterProperty")
   );
 }
 
-const isSimpleName = (n: FormatNode | undefined) => n?.kind === "identifier";
+const isSimpleName = (x: HasTree, n: number | undefined) =>
+  kind(x, n) === "identifier";
 
 /** Prettier's isDecoratedFunction: `const x = decorator(options)(() => {...})`. */
-function isDecoratedFunction(ctx: JsCtx, fn: FormatNode): boolean {
+function isDecoratedFunction(ctx: JsCtx, fn: number): boolean {
   if (
-    fn.kind !== "arrow_function" ||
-    field(fn, "body")?.kind !== "statement_block"
+    kind(ctx, fn) !== "arrow_function" ||
+    kind(ctx, field(ctx, fn, "body")) !== "statement_block"
   )
     return false;
-  const { parent: c, key } = role(fn);
-  if (!c || key !== "arguments" || !isCall(c) || callArguments(c).length !== 1)
+  const { parent: c, key } = role(ctx, fn);
+  if (
+    c === undefined ||
+    key !== "arguments" ||
+    !isCall(ctx, c) ||
+    callArguments(ctx, c).length !== 1
+  )
     return false;
-  const inner = callee(c) && unparen(callee(c) as FormatNode);
-  if (!inner || !isCall(inner)) return false;
-  const decorator = callee(inner);
+  const calleeNode = callee(ctx, c);
+  const inner = calleeNode !== undefined ? unparen(ctx, calleeNode) : undefined;
+  if (inner === undefined || !isCall(ctx, inner)) return false;
+  const decorator = callee(ctx, inner);
   if (
     !(
-      isSimpleName(decorator) ||
-      (decorator?.kind === "member_expression" &&
-        isSimpleName(objectOf(decorator)) &&
-        field(decorator, "property")?.kind === "property_identifier")
+      isSimpleName(ctx, decorator) ||
+      (decorator !== undefined &&
+        kind(ctx, decorator) === "member_expression" &&
+        isSimpleName(ctx, objectOf(ctx, decorator)) &&
+        kind(ctx, field(ctx, decorator, "property")) === "property_identifier")
     )
   )
     return false;
-  const up = role(c);
+  const up = role(ctx, c);
   const holder = up.parent;
-  if (!holder) return false;
-  if (holder.kind === "variable_declarator" && up.key === "init") {
-    const declaration = holder.parent;
+  if (holder === undefined) return false;
+  const holderKind = kind(ctx, holder);
+  if (holderKind === "variable_declarator" && up.key === "init") {
+    const declaration = parent(ctx, holder);
+    const declarationKind = kind(ctx, declaration);
     return (
-      declaration?.kind !== "variable_declaration" &&
-      (declaration?.kind !== "lexical_declaration" ||
-        (src(ctx, declaration).startsWith("const") &&
-          items(declaration).filter((d) => d.kind === "variable_declarator")
-            .length === 1))
+      declarationKind !== "variable_declaration" &&
+      (declarationKind !== "lexical_declaration" ||
+        (src(ctx, declaration as number).startsWith("const") &&
+          items(ctx, declaration as number).filter(
+            (d) => kind(ctx, d) === "variable_declarator",
+          ).length === 1))
     );
   }
-  if (holder.kind === "export_statement" && up.key === "declaration")
+  if (holderKind === "export_statement" && up.key === "declaration")
     return true;
-  if (holder.kind === "assignment_expression" && up.key === "right") {
-    const left = field(holder, "left");
+  if (holderKind === "assignment_expression" && up.key === "right") {
+    const left = field(ctx, holder, "left");
     return (
       left !== undefined &&
       src(ctx, left).replaceAll(/\s/g, "") === "module.exports"
@@ -249,18 +278,18 @@ function isDecoratedFunction(ctx: JsCtx, fn: FormatNode): boolean {
 /** Prettier's printFunctionParameters for function `fn`, whose `formal_parameters` holds the list. */
 export function printFunctionParameters(
   ctx: JsCtx,
-  fn: FormatNode,
+  fn: number,
   expand = false,
   withTypeParameters = false,
 ): Doc {
   const typeParametersNode = withTypeParameters
-    ? field(fn, "type_parameters")
+    ? field(ctx, fn, "type_parameters")
     : undefined;
   const typeParametersDoc = p(ctx, typeParametersNode);
-  const list = field(fn, "parameters");
-  if (!list) {
+  const list = field(ctx, fn, "parameters");
+  if (list === undefined) {
     // A lone parameter without parentheses, printed with them.
-    const single = field(fn, "parameter");
+    const single = field(ctx, fn, "parameter");
     return [
       typeParametersDoc,
       synthetic(fn, "("),
@@ -277,23 +306,24 @@ export function printFunctionParameters(
   ];
 }
 
+/** The last anonymous `text` token among `n`'s children. */
+const lastAnon = (ctx: JsCtx, n: number, text: string) =>
+  lastChildWhere(ctx, n, (c) => !named(ctx, c) && kind(ctx, c) === text);
+
 function parametersDoc(
   ctx: JsCtx,
-  fn: FormatNode,
-  list: FormatNode,
+  fn: number,
+  list: number,
   expand: boolean,
   typeParametersDoc: Doc,
 ): Doc {
-  const open = t(ctx, anonKid(list, "("));
-  const close = t(
-    ctx,
-    list.children.findLast((c) => !c.named && c.kind === ")"),
-  );
-  const params = items(list);
+  const open = t(ctx, anon(ctx, list, "("));
+  const close = t(ctx, lastAnon(ctx, list, ")"));
+  const params = items(ctx, list);
   if (params.length === 0)
     return [open, danglingCommentsInList(ctx, list), close];
-  const commas = separators(list, params);
-  const inTestCall = isTestCall(ctx, role(fn).parent);
+  const commas = separators(ctx, list, params);
+  const inTestCall = isTestCall(ctx, role(ctx, fn).parent);
   const hug = shouldHugTheOnlyFunctionParameter(ctx, fn);
   const printed: Doc[] = [];
   params.forEach((param, index) => {
@@ -301,8 +331,7 @@ function parametersDoc(
     if (index === params.length - 1) return;
     printed.push(t(ctx, commas.get(param)));
     if (inTestCall || hug) printed.push(text(" "));
-    else if (isNextLineEmpty(ctx.source, param.end))
-      printed.push(hardline, hardline);
+    else if (nextLineEmpty(ctx.tree, param)) printed.push(hardline, hardline);
     else printed.push(line);
   });
   if (expand && !isDecoratedFunction(ctx, fn)) {
@@ -310,14 +339,16 @@ function parametersDoc(
       throw new ArgExpansionBailout();
     return group([open, removeLines(printed), close]);
   }
-  const decorated = params.some((param) =>
-    param.children.some((c) => c.kind === "decorator"),
+  const decorated = params.some(
+    (param) =>
+      childWhere(ctx, param, (c) => kind(ctx, c) === "decorator") !==
+      undefined,
   );
   if ((hug && !decorated) || inTestCall) return [open, ...printed, close];
-  const last = params.at(-1) as FormatNode;
+  const last = params.at(-1) as number;
   const hasRest =
-    paramShape(last).shape === "RestElement" ||
-    paramShape(last).pattern?.kind === "rest_pattern";
+    paramShape(ctx, last).shape === "RestElement" ||
+    kind(ctx, paramShape(ctx, last).pattern) === "rest_pattern";
   return [
     open,
     indent([softline, ...printed]),
@@ -330,127 +361,128 @@ function parametersDoc(
 }
 
 /** Prettier's printReturnType. */
-const printReturnType = (ctx: JsCtx, fn: FormatNode): Doc =>
-  p(ctx, field(fn, "return_type"));
+const printReturnType = (ctx: JsCtx, fn: number): Doc =>
+  p(ctx, field(ctx, fn, "return_type"));
 
 /** Prettier's canPrintParamsWithoutParens. */
-export function canPrintParamsWithoutParens(
-  ctx: JsCtx,
-  fn: FormatNode,
-): boolean {
-  const params = parameters(fn);
+export function canPrintParamsWithoutParens(ctx: JsCtx, fn: number): boolean {
+  const params = parameters(ctx, fn);
   if (params.length !== 1) return false;
-  const param = params[0] as FormatNode;
-  const { shape, type, optional } = paramShape(param);
-  const list = field(fn, "parameters");
+  const param = params[0] as number;
+  const { shape, type, optional } = paramShape(ctx, param);
+  const list = field(ctx, fn, "parameters");
   return (
-    !field(fn, "type_parameters") &&
-    !(list && ctx.dangling(list).length > 0) &&
+    field(ctx, fn, "type_parameters") === undefined &&
+    !(list !== undefined && ctx.dangling(list).length > 0) &&
     shape === "Identifier" &&
-    param.kind !== "this" &&
-    !type &&
+    kind(ctx, param) !== "this" &&
+    type === undefined &&
     !hasComment(ctx, param) &&
     !optional &&
-    !field(fn, "return_type")
+    field(ctx, fn, "return_type") === undefined
   );
 }
 
 /** The keyword tokens before a function's name or parameters: `async`, `function`, `*`. */
-const keyword = (ctx: JsCtx, n: FormatNode, kind: string): Doc =>
-  t(ctx, anonKid(n, kind));
+const keyword = (ctx: JsCtx, n: number, kind: string): Doc =>
+  t(ctx, anon(ctx, n, kind));
 
 const functionRule: JsRule = (n, ctx, args?: Args) => {
   let shouldExpandParameters = false;
+  const k = kind(ctx, n);
   if (
-    (n.kind === "function_expression" || n.kind === "generator_function") &&
+    (k === "function_expression" || k === "generator_function") &&
     args?.expandLastArg
   ) {
-    const parent = role(n).parent;
+    const parent = role(ctx, n).parent;
     if (
       parent !== undefined &&
-      isCall(parent) &&
-      (callArguments(parent).length > 1 ||
-        parameters(n).every((x) => {
-          const s = paramShape(x);
-          return s.shape === "Identifier" && !s.type;
+      isCall(ctx, parent) &&
+      (callArguments(ctx, parent).length > 1 ||
+        parameters(ctx, n).every((x) => {
+          const s = paramShape(ctx, x);
+          return s.shape === "Identifier" && s.type === undefined;
         }))
     )
       shouldExpandParameters = true;
   }
   const parametersDoc = printFunctionParameters(ctx, n, shouldExpandParameters);
   const returnTypeDoc = printReturnType(ctx, n);
-  const shouldGroup = shouldGroupFunctionParameters(n, returnTypeDoc);
-  const declare = anonKid(n, "declare");
-  const async = anonKid(n, "async");
-  const star = anonKid(n, "*");
-  const name = field(n, "name");
-  const body = field(n, "body");
+  const shouldGroup = shouldGroupFunctionParameters(ctx, n, returnTypeDoc);
+  const declare = anon(ctx, n, "declare");
+  const async = anon(ctx, n, "async");
+  const star = anon(ctx, n, "*");
+  const name = field(ctx, n, "name");
+  const body = field(ctx, n, "body");
   return [
-    declare ? [t(ctx, declare), text(" ")] : [],
-    async ? [t(ctx, async), text(" ")] : [],
+    declare !== undefined ? [t(ctx, declare), text(" ")] : [],
+    async !== undefined ? [t(ctx, async), text(" ")] : [],
     keyword(ctx, n, "function"),
-    star ? t(ctx, star) : [],
+    star !== undefined ? t(ctx, star) : [],
     text(" "),
     p(ctx, name),
-    p(ctx, field(n, "type_parameters")),
+    p(ctx, field(ctx, n, "type_parameters")),
     group([shouldGroup ? group(parametersDoc) : parametersDoc, returnTypeDoc]),
-    body ? [text(" "), p(ctx, body)] : semi(ctx, n),
+    body !== undefined ? [text(" "), p(ctx, body)] : semi(ctx, n),
   ];
 };
 
 /** Prettier's printMethodValue: the parameters, return type and body of a method. */
-export function printMethodValue(ctx: JsCtx, n: FormatNode): Doc {
+export function printMethodValue(ctx: JsCtx, n: number): Doc {
   const parametersDoc = printFunctionParameters(ctx, n);
   const returnTypeDoc = printReturnType(ctx, n);
-  const shouldGroup = shouldGroupFunctionParameters(n, returnTypeDoc);
-  const body = field(n, "body");
+  const shouldGroup = shouldGroupFunctionParameters(ctx, n, returnTypeDoc);
+  const body = field(ctx, n, "body");
   return [
-    p(ctx, field(n, "type_parameters")),
+    p(ctx, field(ctx, n, "type_parameters")),
     group([
-      shouldBreakFunctionParameters(n)
+      shouldBreakFunctionParameters(ctx, n)
         ? group(parametersDoc, true)
         : shouldGroup
           ? group(parametersDoc)
           : parametersDoc,
       returnTypeDoc,
     ]),
-    body ? [text(" "), p(ctx, body)] : semi(ctx, n),
+    body !== undefined ? [text(" "), p(ctx, body)] : semi(ctx, n),
   ];
 }
 
 // --- arrow functions ----------------------------------------------------------------------------------------
 
 /** Whether `n`'s leftmost token belongs to an object literal (prettier's startsWithNoLookaheadToken). */
-function startsWithObject(n: FormatNode): boolean {
-  for (let x: FormatNode | undefined = n; x; ) {
-    if (x.kind === "object") return true;
-    switch (x.kind) {
+function startsWithObject(h: HasTree, n: number): boolean {
+  for (let x: number | undefined = n; x !== undefined; ) {
+    const k = kind(h, x);
+    if (k === "object") return true;
+    switch (k) {
       case "parenthesized_expression":
         return false;
       case "ternary_expression":
-        x = field(x, "condition");
+        x = field(h, x, "condition");
         break;
       case "binary_expression":
       case "assignment_expression":
       case "augmented_assignment_expression":
-        x = field(x, "left");
+        x = field(h, x, "left");
         break;
       case "call_expression":
-        x = callee(x);
+        x = callee(h, x);
         break;
       case "member_expression":
       case "subscript_expression":
-        x = objectOf(x);
+        x = objectOf(h, x);
         break;
       case "sequence_expression":
       case "non_null_expression":
       case "as_expression":
       case "satisfies_expression":
-        x = first(x);
+        x = first(h, x);
         break;
-      case "update_expression":
-        x = x.children[0]?.named ? x.children[0] : undefined;
+      case "update_expression": {
+        const head: number | undefined = children(h, x)[0];
+        x = head !== undefined && named(h, head) ? head : undefined;
         break;
+      }
       default:
         return false;
     }
@@ -458,53 +490,47 @@ function startsWithObject(n: FormatNode): boolean {
   return false;
 }
 
-const shouldAddParensIfNotBreak = (n: FormatNode) =>
-  n.kind === "ternary_expression" && !startsWithObject(n);
+const shouldAddParensIfNotBreak = (x: HasTree, n: number) =>
+  kind(x, n) === "ternary_expression" && !startsWithObject(x, n);
 
-function mayBreakAfterShortPrefix(ctx: JsCtx, body: FormatNode): boolean {
+function mayBreakAfterShortPrefix(ctx: JsCtx, body: number): boolean {
+  const k = kind(ctx, body);
   return (
-    body.kind === "array" ||
-    body.kind === "object" ||
-    body.kind === "arrow_function" ||
-    body.kind === "statement_block" ||
-    isJsx(body) ||
+    k === "array" ||
+    k === "object" ||
+    k === "arrow_function" ||
+    k === "statement_block" ||
+    isJsx(ctx, body) ||
     isTemplateOnItsOwnLine(ctx, body)
   );
 }
 
-const isCallLike = (n: FormatNode | undefined) =>
-  n !== undefined &&
-  (n.kind === "call_expression" || n.kind === "new_expression");
+const isCallLike = (x: HasTree, n: number | undefined) => {
+  const k = kind(x, n);
+  return k === "call_expression" || k === "new_expression";
+};
 
-function printArrowSignature(ctx: JsCtx, n: FormatNode, args: Args): Doc {
+function printArrowSignature(ctx: JsCtx, n: number, args: Args): Doc {
   const parts: Doc[] = [];
-  const async = anonKid(n, "async");
-  if (async) parts.push(t(ctx, async), text(" "));
+  const async = anon(ctx, n, "async");
+  if (async !== undefined) parts.push(t(ctx, async), text(" "));
   if (
     ctx.options.arrowParens === "avoid" &&
     canPrintParamsWithoutParens(ctx, n)
   ) {
-    const list = field(n, "parameters");
-    if (list) {
+    const list = field(ctx, n, "parameters");
+    if (list !== undefined) {
       // `(a) => a` loses its parentheses.
-      const param = parameters(n)[0] as FormatNode;
+      const param = parameters(ctx, n)[0] as number;
       parts.push(
         ctx.withComments(list, [
-          t(ctx, anonKid(list, "("), ""),
+          t(ctx, anon(ctx, list, "("), ""),
           p(ctx, param),
-          t(
-            ctx,
-            list.children.findLast((c) => !c.named && c.kind === ","),
-            "",
-          ),
-          t(
-            ctx,
-            list.children.findLast((c) => !c.named && c.kind === ")"),
-            "",
-          ),
+          t(ctx, lastAnon(ctx, list, ","), ""),
+          t(ctx, lastAnon(ctx, list, ")"), ""),
         ]),
       );
-    } else parts.push(p(ctx, field(n, "parameter")));
+    } else parts.push(p(ctx, field(ctx, n, "parameter")));
   } else {
     const expand = Boolean(args?.expandLastArg || args?.expandFirstArg);
     let returnTypeDoc = printReturnType(ctx, n);
@@ -521,19 +547,20 @@ function printArrowSignature(ctx: JsCtx, n: FormatNode, args: Args): Doc {
   return parts;
 }
 
-const arrowToken = (ctx: JsCtx, n: FormatNode): Doc => [
+const arrowToken = (ctx: JsCtx, n: number): Doc => [
   text(" "),
-  t(ctx, anonKid(n, "=>")),
+  t(ctx, anon(ctx, n, "=>")),
 ];
 
 const arrow: JsRule = (node, ctx, args?: Args) => {
   const signatureDocs: Doc[] = [];
-  const arrows: FormatNode[] = [];
+  const arrows: number[] = [];
   let bodyDoc: Doc = [];
   let shouldBreakChain = false;
-  const bodyOf = (x: FormatNode) => field(x, "body") as FormatNode;
+  const bodyOf = (x: number) => field(ctx, x, "body") as number;
+  const isArrow = (x: number) => kind(ctx, x) === "arrow_function";
   const shouldPrintAsChain =
-    !args?.expandLastArg && unparen(bodyOf(node)).kind === "arrow_function";
+    !args?.expandLastArg && isArrow(unparen(ctx, bodyOf(node)));
   let functionBody = bodyOf(node);
   let bodyNode = functionBody;
 
@@ -544,60 +571,66 @@ const arrow: JsRule = (node, ctx, args?: Args) => {
     );
     arrows.push(x);
     if (shouldPrintAsChain) {
-      const params = parameters(x);
+      const params = parameters(ctx, x);
       shouldBreakChain ||=
-        (field(x, "return_type") !== undefined && params.length > 0) ||
-        field(x, "type_parameters") !== undefined ||
-        params.some((param) => paramShape(param).shape !== "Identifier");
+        (field(ctx, x, "return_type") !== undefined && params.length > 0) ||
+        field(ctx, x, "type_parameters") !== undefined ||
+        params.some((param) => paramShape(ctx, param).shape !== "Identifier");
     }
     const body = bodyOf(x);
-    if (!shouldPrintAsChain || unparen(body).kind !== "arrow_function") {
+    if (!shouldPrintAsChain || !isArrow(unparen(ctx, body))) {
       bodyNode = body;
       bodyDoc = p(ctx, body, args);
-      functionBody = unparen(body);
+      functionBody = unparen(ctx, body);
       break;
     }
-    x = unparen(body);
+    x = unparen(ctx, body);
   }
 
   const hasLeadingOwnLine = [bodyNode, functionBody].some((b) =>
-    hasComment(ctx, b, CF.Leading, (c) => hasNewline(ctx.source, c.end)),
+    hasComment(ctx, b, CF.Leading, (c) => lfAfter(ctx.tree, c) > 0),
   );
   const shouldPutBodyOnSameLine =
     !hasLeadingOwnLine &&
-    (functionBody.kind === "sequence_expression" ||
+    (kind(ctx, functionBody) === "sequence_expression" ||
       mayBreakAfterShortPrefix(ctx, functionBody) ||
-      (!shouldBreakChain && shouldAddParensIfNotBreak(functionBody)));
+      (!shouldBreakChain && shouldAddParensIfNotBreak(ctx, functionBody)));
 
-  const { parent, key } = role(node);
-  const isCallee = key === "callee" && isCallLike(parent);
+  const { parent, key } = role(ctx, node);
+  const isCallee = key === "callee" && isCallLike(ctx, parent);
 
   // Prettier's printArrowFunctionSignatures.
   const joinSignatures = () => {
     const out: Doc[] = [];
     signatureDocs.forEach((s, i) => {
-      if (i > 0) out.push(arrowToken(ctx, arrows[i - 1] as FormatNode), line);
+      if (i > 0) out.push(arrowToken(ctx, arrows[i - 1] as number), line);
       out.push(s);
     });
     return out;
   };
   let signaturesDoc: Doc;
   if (signatureDocs.length === 1) signaturesDoc = signatureDocs[0] as Doc;
-  else if ((key !== "callee" && isCallLike(parent)) || isBinaryish(parent)) {
+  else if (
+    (key !== "callee" && isCallLike(ctx, parent)) ||
+    isBinaryish(ctx, parent)
+  ) {
     const rest: Doc[] = [];
     signatureDocs.slice(1).forEach((s, i) => {
-      if (i > 0) rest.push(arrowToken(ctx, arrows[i] as FormatNode), line);
+      if (i > 0) rest.push(arrowToken(ctx, arrows[i] as number), line);
       rest.push(s);
     });
     signaturesDoc = group(
       [
         signatureDocs[0] as Doc,
-        arrowToken(ctx, arrows[0] as FormatNode),
+        arrowToken(ctx, arrows[0] as number),
         indent([line, rest]),
       ],
       shouldBreakChain,
     );
-  } else if ((key === "callee" && isCallLike(parent)) || args?.assignmentLayout)
+  } else if (
+    (key === "callee" && isCallLike(ctx, parent)) ||
+    args?.assignmentLayout
+  )
     signaturesDoc = group(joinSignatures(), shouldBreakChain);
   else signaturesDoc = group(indent(joinSignatures()), shouldBreakChain);
 
@@ -619,12 +652,12 @@ const arrow: JsRule = (node, ctx, args?: Args) => {
       ? ifBreak(synthetic(node, ","))
       : [];
   const trailingSpace =
-    (args?.expandLastArg || parent?.kind === "jsx_expression") &&
+    (args?.expandLastArg || kind(ctx, parent) === "jsx_expression") &&
     !hasComment(ctx, node)
       ? softline
       : [];
   let body: Doc;
-  if (shouldPutBodyOnSameLine && shouldAddParensIfNotBreak(functionBody))
+  if (shouldPutBodyOnSameLine && shouldAddParensIfNotBreak(ctx, functionBody))
     body = [
       text(" "),
       group([
@@ -648,7 +681,7 @@ const arrow: JsRule = (node, ctx, args?: Args) => {
   );
   return group([
     chainGroup,
-    arrowToken(ctx, arrows.at(-1) as FormatNode),
+    arrowToken(ctx, arrows.at(-1) as number),
     shouldPrintAsChain ? indentIfBreak(body, chainGroup) : group(body),
     shouldPrintAsChain && isCallee ? ifBreak(softline, [], chainGroup) : [],
   ]);
@@ -659,25 +692,25 @@ const arrow: JsRule = (node, ctx, args?: Args) => {
 /** A TS parameter: modifiers, pattern, `?`, type, default. */
 const parameter: JsRule = (n, ctx) => {
   const parts: Doc[] = [];
-  const decorators: FormatNode[] = [];
-  const pattern = field(n, "pattern") ?? field(n, "name");
-  const value = field(n, "value");
-  for (const c of n.children) {
+  const decorators: number[] = [];
+  const pattern = field(ctx, n, "pattern") ?? field(ctx, n, "name");
+  const value = field(ctx, n, "value");
+  for (const c of children(ctx, n)) {
     if (c === pattern) break;
-    if (isComment(c)) continue;
-    if (c.kind === "decorator") decorators.push(c);
+    if (isComment(ctx, c)) continue;
+    if (kind(ctx, c) === "decorator") decorators.push(c);
     else parts.push(p(ctx, c), text(" "));
   }
   parts.push(
     p(ctx, pattern),
-    t(ctx, anonKid(n, "?")),
-    p(ctx, field(n, "type")),
+    t(ctx, anon(ctx, n, "?")),
+    p(ctx, field(ctx, n, "type")),
   );
-  if (value)
-    parts.push(text(" "), t(ctx, anonKid(n, "=")), text(" "), p(ctx, value));
+  if (value !== undefined)
+    parts.push(text(" "), t(ctx, anon(ctx, n, "=")), text(" "), p(ctx, value));
   if (decorators.length === 0) return parts;
   // Prettier's print() wraps a decorated node as group([printDecorators, doc]).
-  const broken = decorators.some((d) => hasNewline(ctx.source, d.end));
+  const broken = decorators.some((d) => lfAfter(ctx.tree, d) > 0);
   return group([
     broken ? breakParent : [],
     join(
@@ -690,11 +723,11 @@ const parameter: JsRule = (n, ctx) => {
 };
 
 const assignmentPattern: JsRule = (n, ctx) => [
-  p(ctx, field(n, "left")),
+  p(ctx, field(ctx, n, "left")),
   text(" "),
-  t(ctx, anonKid(n, "=")),
+  t(ctx, anon(ctx, n, "=")),
   text(" "),
-  p(ctx, field(n, "right")),
+  p(ctx, field(ctx, n, "right")),
 ];
 
 export const functionRules: Record<string, JsRule> = {

@@ -2,95 +2,119 @@ import type {
   CommentContext,
   CommentHandler,
   CommentTarget,
-} from "../../../fmt/legacy.js";
-import type { FormatNode } from "../../../fmt/tree.js";
-import type { JsOptions } from "./util.js";
+} from "../../../fmt/comments.js";
+import {
+  children,
+  fieldName,
+  type HasTree,
+  type JsOptions,
+  kind,
+  lastChildWhere,
+  named,
+  parent,
+} from "./util.js";
 
 // Prettier's handleComments for estree (language-js/comments/handle-comments.js), over tree-sitter's tree: each
 // handler reads only node kinds and the tree's shape, and returns undefined when prettier's would return false.
 
-const isCode = (n: FormatNode) => n.kind !== "comment";
+const isCode = (x: HasTree, n: number) => kind(x, n) !== "comment";
 
 /** The code children of `n` after `child`. */
-const codeAfter = (n: FormatNode, child: FormatNode) =>
-  n.children.slice(n.children.indexOf(child) + 1).filter(isCode);
+const codeAfter = (x: HasTree, n: number, child: number) => {
+  const all = children(x, n);
+  return all.slice(all.indexOf(child) + 1).filter((c) => isCode(x, c));
+};
 
-const lastCode = (n: FormatNode) => n.children.findLast(isCode);
+const lastCode = (x: HasTree, n: number) =>
+  lastChildWhere(x, n, (c) => isCode(x, c));
 
 /**
  * A comment before a statement's closing `;` sits between that statement and the next: prettier's statement ends
  * before the comment. On a line of its own it leads the next statement (`a\n// c\n;[]`), else it trails the
  * statement (`const a = 1 /* c *\/;` prints `const a = 1; /* c *\/`).
  */
-const beforeSemicolon = ({
-  comment,
-  enclosing,
-  following,
-  placement,
-}: CommentContext): CommentTarget | undefined => {
+const beforeSemicolon = (c: CommentContext): CommentTarget | undefined => {
+  const { comment, enclosing, following, placement } = c;
   // A `for` head's initializer is a statement, `;` and all.
   if (
-    following ||
-    (enclosing.parent?.kind.startsWith("for") && enclosing.field !== "body")
+    following !== undefined ||
+    (kind(c, parent(c, enclosing))?.startsWith("for") &&
+      fieldName(c, enclosing) !== "body")
   )
     return;
-  const rest = codeAfter(enclosing, comment);
-  if (rest.length !== 1 || rest[0]?.kind !== ";") return;
+  const rest = codeAfter(c, enclosing, comment);
+  if (rest.length !== 1 || kind(c, rest[0]) !== ";") return;
   let node = enclosing;
-  while (node.parent?.parent && lastCode(node.parent) === node)
-    node = node.parent;
+  for (
+    let up = parent(c, node);
+    up !== undefined &&
+    parent(c, up) !== undefined &&
+    lastCode(c, up) === node;
+    up = parent(c, node)
+  )
+    node = up;
+  const holder = parent(c, node);
   const next =
-    placement === "ownLine" && node.parent
-      ? codeAfter(node.parent, node).find((n) => n.named)
+    placement === "ownLine" && holder !== undefined
+      ? codeAfter(c, holder, node).find((n) => named(c, n))
       : undefined;
-  return next ? { node: next, as: "leading" } : { node, as: "trailing" };
+  return next !== undefined
+    ? { node: next, as: "leading" }
+    : { node, as: "trailing" };
 };
 
 /** tree-sitter nests `A | B | C` as `(A | B) | C`; prettier's union is flat. */
-const lastMember = (n: FormatNode): FormatNode => {
+const lastMember = (x: HasTree, n: number): number => {
   let member = n;
-  while (member.kind === "union_type") {
-    const last = member.children.findLast((c) => c.named && isCode(c));
-    if (!last) break;
+  while (kind(x, member) === "union_type") {
+    const last = lastChildWhere(
+      x,
+      member,
+      (c) => named(x, c) && isCode(x, c),
+    );
+    if (last === undefined) break;
     member = last;
   }
   return member;
 };
 
 /** A comment between union members trails the member before it (handleUnionTypeComments). */
-const unionMember = ({
-  enclosing,
-  preceding,
-  placement,
-}: CommentContext): CommentTarget | undefined => {
+const unionMember = (c: CommentContext): CommentTarget | undefined => {
+  const { enclosing, preceding, placement } = c;
   if (
-    enclosing.kind !== "union_type" ||
-    !preceding ||
+    kind(c, enclosing) !== "union_type" ||
+    preceding === undefined ||
     placement === "remaining"
   )
     return;
-  return { node: lastMember(preceding), as: "trailing" };
+  return { node: lastMember(c, preceding), as: "trailing" };
 };
 
 const METHODS = new Set(["method_definition", "method_signature"]);
 
 /** `m /* c *\/ () {}`: the comment trails the method's name (handleMethodNameComments). */
-const methodName = ({
-  enclosing,
-  preceding,
-  following,
-}: CommentContext): CommentTarget | undefined => {
-  if (!METHODS.has(enclosing.kind) || !preceding || !following) return;
-  if (preceding.field !== "name" || following.field !== "parameters") return;
+const methodName = (c: CommentContext): CommentTarget | undefined => {
+  const { enclosing, preceding, following } = c;
+  if (
+    !METHODS.has(kind(c, enclosing)) ||
+    preceding === undefined ||
+    following === undefined
+  )
+    return;
+  if (
+    fieldName(c, preceding) !== "name" ||
+    fieldName(c, following) !== "parameters"
+  )
+    return;
   return { node: preceding, as: "trailing" };
 };
 
 /** A block's first statement leads with the comment, or an empty block holds it (addBlockStatementFirstComment). */
-const blockFirst = (block: FormatNode): CommentTarget => {
-  const first = block.children.find(
-    (n) => n.named && isCode(n) && n.kind !== "empty_statement",
+const blockFirst = (x: HasTree, block: number): CommentTarget => {
+  const first = children(x, block).find(
+    (n) => named(x, n) && isCode(x, n) && kind(x, n) !== "empty_statement",
   );
-  return first
+  return first !== undefined
     ? { node: first, as: "leading" }
     : { node: block, as: "dangling" };
 };
@@ -98,21 +122,21 @@ const blockFirst = (block: FormatNode): CommentTarget => {
 const TRY_PARTS = new Set(["try_statement", "catch_clause", "finally_clause"]);
 
 /** `try /* c *\/ {}`: a comment before a try, catch or finally block moves into it (handleTryStatementComments). */
-const tryBlock = ({
-  enclosing,
-  preceding,
-  following,
-  placement,
-}: CommentContext): CommentTarget | undefined => {
-  if (!TRY_PARTS.has(enclosing.kind) || !following || placement === "remaining")
+const tryBlock = (c: CommentContext): CommentTarget | undefined => {
+  const { enclosing, preceding, following, placement } = c;
+  if (
+    !TRY_PARTS.has(kind(c, enclosing)) ||
+    following === undefined ||
+    placement === "remaining"
+  )
     return;
-  if (enclosing.kind === "catch_clause" && preceding)
+  if (kind(c, enclosing) === "catch_clause" && preceding !== undefined)
     return { node: preceding, as: "trailing" };
-  if (following.kind === "statement_block") return blockFirst(following);
-  const body = following.kind.endsWith("_clause")
-    ? following.children.findLast((n) => n.kind === "statement_block")
+  if (kind(c, following) === "statement_block") return blockFirst(c, following);
+  const body = kind(c, following).endsWith("_clause")
+    ? lastChildWhere(c, following, (n) => kind(c, n) === "statement_block")
     : undefined;
-  return body ? blockFirst(body) : undefined;
+  return body !== undefined ? blockFirst(c, body) : undefined;
 };
 
 const CONDITIONALS = new Set(["ternary_expression", "conditional_type"]);
@@ -124,34 +148,33 @@ const CONDITIONALS = new Set(["ternary_expression", "conditional_type"]);
  * prettier's newline test between the preceding node and the comment, which it matches but for a comment that
  * ends a line after a token such as `?` that opened it.
  */
-const conditional = ({
-  text,
-  enclosing,
-  preceding,
-  following,
-  placement,
-  options,
-}: CommentContext<JsOptions>): CommentTarget | undefined => {
-  if (placement === "remaining" || !CONDITIONALS.has(enclosing.kind)) return;
-  if (!following || (preceding && placement !== "ownLine")) return;
+const conditional = (
+  c: CommentContext<JsOptions>,
+): CommentTarget | undefined => {
+  const { text, enclosing, preceding, following, placement, options } = c;
+  if (placement === "remaining" || !CONDITIONALS.has(kind(c, enclosing)))
+    return;
+  if (
+    following === undefined ||
+    (preceding !== undefined && placement !== "ownLine")
+  )
+    return;
   const oneLineBlock = text.startsWith("/*") && !text.includes("\n");
   return options.experimentalTernaries &&
-    following.field === "alternative" &&
+    fieldName(c, following) === "alternative" &&
     !oneLineBlock
     ? { node: enclosing, as: "dangling" }
     : { node: following, as: "leading" };
 };
 
 /** Under experimentalTernaries, an own-line comment before a nested conditional dangles on its parent (handleNestedConditionalExpressionComments). */
-const nestedConditional = ({
-  enclosing,
-  following,
-  placement,
-  options,
-}: CommentContext<JsOptions>): CommentTarget | undefined => {
+const nestedConditional = (
+  c: CommentContext<JsOptions>,
+): CommentTarget | undefined => {
+  const { enclosing, following, placement, options } = c;
   if (placement !== "ownLine" || !options.experimentalTernaries) return;
-  if (!CONDITIONALS.has(enclosing.kind) || !following) return;
-  return CONDITIONALS.has(following.kind)
+  if (!CONDITIONALS.has(kind(c, enclosing)) || following === undefined) return;
+  return CONDITIONALS.has(kind(c, following))
     ? { node: enclosing, as: "dangling" }
     : undefined;
 };

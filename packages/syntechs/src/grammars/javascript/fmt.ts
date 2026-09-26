@@ -5,8 +5,7 @@ import {
   defineLanguage,
   type Grammar,
   type Language,
-} from "../../fmt/legacy.js";
-import type { FormatNode } from "../../fmt/tree.js";
+} from "../../fmt/rules.js";
 import { grammar, language as parser } from "./index.js";
 import { jsAtoms, jsNormalize } from "./normalize.js";
 import { callRules } from "./print/calls.js";
@@ -26,10 +25,15 @@ import {
 } from "./print/statements.js";
 import { typeRules } from "./print/types.js";
 import {
+  anon,
   type Args,
   isIgnoreComment,
   isJsx,
   items,
+  kind,
+  lastChildWhere,
+  named,
+  parent,
   type JsCtx,
   type JsOptions,
   type JsRule,
@@ -60,26 +64,26 @@ const PE = "parenthesized_expression";
  * into the outer one. The syntactic parentheses of `if (...)` and its kin are the statement's to print.
  */
 const parenthesized: JsRule = (n, ctx, args?: Args) => {
-  const inner = items(n)[0];
-  if (!inner) return t(ctx, n);
-  if (n.parent?.kind === PE) return p(ctx, inner, args);
-  if (!needsParens(unparen(n), ctx)) return p(ctx, inner, args);
-  const open = n.children.find((c) => !c.named && c.kind === "(");
-  const close = n.children.findLast((c) => !c.named && c.kind === ")");
+  const inner = items(ctx, n)[0];
+  if (inner === undefined) return t(ctx, n);
+  if (kind(ctx, parent(ctx, n)) === PE) return p(ctx, inner, args);
+  if (!needsParens(unparen(ctx, n), ctx)) return p(ctx, inner, args);
+  const open = anon(ctx, n, "(");
+  const close = lastChildWhere(ctx, n, (c) => !named(ctx, c) && kind(ctx, c) === ")");
   return [t(ctx, open), p(ctx, inner, args), t(ctx, close)];
 };
 
 /** A node under a `// prettier-ignore` comment keeps its source text. */
-const isIgnored = (ctx: JsCtx, n: FormatNode) => {
+const isIgnored = (ctx: JsCtx, n: number) => {
   for (const c of ctx.comments(n).leading)
     if (isIgnoreComment(ctx, c)) return true;
-  return isJsx(n) && jsxIgnored(ctx, n, (c) => isIgnoreComment(ctx, c));
+  return isJsx(ctx, n) && jsxIgnored(ctx, n, (c) => isIgnoreComment(ctx, c));
 };
 
 // Kept on the ctx itself, which lives as long as one format: a lookup per node through a WeakMap keyed by ctx
 // cost more than the rules it saved.
 const CACHE = Symbol("printed");
-type Cached = JsCtx & { [CACHE]?: Map<FormatNode, Doc> };
+type Cached = JsCtx & { [CACHE]?: Map<number, Doc> };
 
 /**
  * Every rule runs through here: a node printed twice (a call's arguments tried hugged and then expanded) is
@@ -87,7 +91,7 @@ type Cached = JsCtx & { [CACHE]?: Map<FormatNode, Doc> };
  */
 function wrap(rule: JsRule): JsRule {
   return (n, ctx, args?: Args) => {
-    let cache: Map<FormatNode, Doc> | undefined;
+    let cache: Map<number, Doc> | undefined;
     if (args === undefined) {
       cache = (ctx as Cached)[CACHE] ??= new Map();
       const hit = cache.get(n);
@@ -95,10 +99,11 @@ function wrap(rule: JsRule): JsRule {
     }
     let doc = !isIgnored(ctx, n)
       ? rule(n, ctx, args)
-      : STATEMENT_LIST_PARENTS.has(n.parent?.kind ?? "")
+      : STATEMENT_LIST_PARENTS.has(kind(ctx, parent(ctx, n)) ?? "")
         ? ignoredStatement(ctx, n)
         : verbatim(ctx, n);
-    if (n.kind !== PE && n.parent?.kind !== PE && needsParens(n, ctx))
+    const k = kind(ctx, n);
+    if (k !== PE && kind(ctx, parent(ctx, n)) !== PE && needsParens(n, ctx))
       doc = [synthetic(n, "("), doc, synthetic(n, ")")];
     cache?.set(n, doc);
     return doc;
@@ -120,7 +125,7 @@ export function jsRules(): Record<string, JsRule> {
     ...jsxRules,
     parenthesized_expression: parenthesized,
   };
-  for (const [kind, rule] of Object.entries(table)) table[kind] = wrap(rule);
+  for (const [name, rule] of Object.entries(table)) table[name] = wrap(rule);
   return table;
 }
 
@@ -142,7 +147,8 @@ export function jsLanguage(
       printComment,
       handleComment,
       printsOwnComments: (n, ctx) =>
-        (isJsx(n) && !isIgnored(ctx as JsCtx, n)) || isJsxSpreadArgument(n),
+        (isJsx(ctx, n) && !isIgnored(ctx as JsCtx, n)) ||
+        isJsxSpreadArgument(ctx, n),
     },
     () => jsRules() as never,
   );

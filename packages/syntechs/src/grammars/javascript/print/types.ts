@@ -21,11 +21,11 @@ import {
   token,
 } from "../../../fmt/doc.js";
 import {
-  hasNewline,
-  hasNewlineInRange,
-  isNextLineEmpty,
+  lfAfter,
+  newlineBetween,
+  nextLineEmpty,
 } from "../../../fmt/text.js";
-import type { FormatNode } from "../../../fmt/tree.js";
+import { firstLeaf } from "../../../fmt/tree.js";
 import { printAssignment } from "./assignment.js";
 import {
   printFunctionParameters,
@@ -36,17 +36,26 @@ import { array, objectRules, printKey } from "./objects.js";
 import { role } from "./parens.js";
 import {
   type Args,
+  anon,
   CF,
+  children,
+  childWhere,
   field,
+  fieldName,
   first,
   getComments,
+  type HasTree,
   hasComment,
   isComment,
   isMember,
   items,
   type JsCtx,
   type JsRule,
+  kind,
+  lastChildWhere,
+  named,
   p,
+  parent,
   semi,
   separators,
   src,
@@ -55,17 +64,20 @@ import {
   unparen,
 } from "./util.js";
 
-const anonKid = (n: FormatNode, kind: string) =>
-  n.children.find((c) => !c.named && c.kind === kind);
-const anonKids = (n: FormatNode) => n.children.filter((c) => !c.named);
+const anonKid = (x: HasTree, n: number, text: string) => anon(x, n, text);
+const anonKids = (x: HasTree, n: number) =>
+  children(x, n).filter((c) => !named(x, c));
+/** The last anonymous token `text` among `n`'s children: a closing bracket. */
+const lastAnonKid = (x: HasTree, n: number, text: string) =>
+  lastChildWhere(x, n, (c) => !named(x, c) && kind(x, c) === text);
 
 /** `n`'s children printed one after another, each separated by a space: the shape of every keyword-led type. */
-const words = (ctx: JsCtx, n: FormatNode): Doc =>
+const words = (ctx: JsCtx, n: number): Doc =>
   join(
     text(" "),
-    n.children
-      .filter((c) => !isComment(c))
-      .map((c) => (c.named ? p(ctx, c) : t(ctx, c))),
+    children(ctx, n)
+      .filter((c) => !isComment(ctx, c))
+      .map((c) => (named(ctx, c) ? p(ctx, c) : t(ctx, c))),
   );
 
 // --- where a type stands --------------------------------------------------------------------------------------
@@ -76,93 +88,110 @@ const UNION_LIKE = new Set(["union_type", "intersection_type"]);
  * Parentheses, and a union or intersection of one type (`| A`, `& A`): prettier's AST holds neither, so the type
  * inside stands where they stand.
  */
-const isTransparentType = (n: FormatNode) =>
-  n.kind === "parenthesized_type" ||
-  (UNION_LIKE.has(n.kind) && items(n).length === 1);
+const isTransparentType = (x: HasTree, n: number) =>
+  kind(x, n) === "parenthesized_type" ||
+  (UNION_LIKE.has(kind(x, n)) && items(x, n).length === 1);
 
 /** Through a type's parentheses and one-type unions, to the type. */
-export function unparenType(n: FormatNode | undefined): FormatNode | undefined {
-  while (n && isTransparentType(n)) n = items(n)[0];
+export function unparenType(
+  x: HasTree,
+  n: number | undefined,
+): number | undefined {
+  while (n !== undefined && isTransparentType(x, n)) n = items(x, n)[0];
   return n;
 }
 
-const bare = (n: FormatNode) => unparenType(n) ?? n;
+const bare = (x: HasTree, n: number) => unparenType(x, n) ?? n;
 
 /** The type's real parent (past any parentheses and one-type unions) and the field it holds there. */
-function typeRole(n: FormatNode): {
-  parent: FormatNode | undefined;
+function typeRole(
+  x: HasTree,
+  n: number,
+): {
+  parent: number | undefined;
   field: string | undefined;
-  top: FormatNode;
+  top: number;
 } {
   let top = n;
-  while (top.parent && isTransparentType(top.parent)) top = top.parent;
-  return { parent: top.parent, field: top.field, top };
+  for (
+    let up = parent(x, top);
+    up !== undefined && isTransparentType(x, up);
+    up = parent(x, top)
+  )
+    top = up;
+  return { parent: parent(x, top), field: fieldName(x, top), top };
 }
 const TYPE_OPERATORS = new Set(["index_type_query", "readonly_type"]);
 
 /** Whether `n` is the object side of `T[K]`. */
-const isLookupObject = (n: FormatNode, parent: FormatNode | undefined) =>
-  parent?.kind === "lookup_type" && items(parent)[0] === n;
+const isLookupObject = (x: HasTree, n: number, up: number | undefined) =>
+  up !== undefined &&
+  kind(x, up) === "lookup_type" &&
+  items(x, up)[0] === n;
 
 /** The type an infer, function or constructor type ends in, for the constrained-infer rule. */
-function returnType(n: FormatNode): FormatNode | undefined {
-  const r = field(n, "return_type") ?? field(n, "type");
-  return r?.kind === "type_annotation" ? first(r) : r;
+function returnType(x: HasTree, n: number): number | undefined {
+  const r = field(x, n, "return_type") ?? field(x, n, "type");
+  return r !== undefined && kind(x, r) === "type_annotation" ? first(x, r) : r;
 }
 
 /** Prettier's needsParens for a type (needs-parentheses.js), asked of a type the source wrapped in parentheses. */
-export function typeNeedsParens(n: FormatNode): boolean {
-  const { parent, field: key, top } = typeRole(n);
-  if (!parent) return false;
-  const kind = n.kind;
+export function typeNeedsParens(x: HasTree, n: number): boolean {
+  const { parent: up, field: key, top } = typeRole(x, n);
+  if (up === undefined) return false;
+  const k = kind(x, n);
+  const upKind = kind(x, up);
   const operatorParent = () =>
-    parent.kind === "array_type" ||
-    parent.kind === "optional_type" ||
-    parent.kind === "rest_type" ||
-    isLookupObject(top, parent) ||
-    TYPE_OPERATORS.has(parent.kind);
-  switch (kind) {
+    upKind === "array_type" ||
+    upKind === "optional_type" ||
+    upKind === "rest_type" ||
+    isLookupObject(x, top, up) ||
+    TYPE_OPERATORS.has(upKind);
+  switch (k) {
     case "function_type":
     case "conditional_type":
     case "constructor_type": {
       if (
-        kind === "function_type" &&
-        parent.kind === "type_annotation" &&
-        parent.parent?.kind === "arrow_function"
+        k === "function_type" &&
+        upKind === "type_annotation" &&
+        kind(x, parent(x, up)) === "arrow_function"
       )
         return true;
-      if (parent.kind === "conditional_type") {
-        if (key === "right" && kind === "conditional_type") return true;
+      if (upKind === "conditional_type") {
+        if (key === "right" && k === "conditional_type") return true;
         if (key === "left") return true;
         if (key === "right") {
-          const r = returnType(n);
+          const r = returnType(x, n);
           // `asserts x is T` wraps the predicate prettier reads as TSTypePredicate.
-          const predicate = r?.kind === "asserts" ? first(r) : r;
+          const predicate = kind(x, r) === "asserts" ? first(x, r as number) : r;
           const inner =
-            predicate?.kind === "type_predicate"
-              ? field(predicate, "type")
+            kind(x, predicate) === "type_predicate"
+              ? field(x, predicate as number, "type")
               : predicate;
-          if (inner?.kind === "infer_type" && anonKid(inner, "extends"))
+          if (
+            kind(x, inner) === "infer_type" &&
+            anonKid(x, inner as number, "extends") !== undefined
+          )
             return true;
         }
       }
-      if (kind === "conditional_type" && parent.kind === "constraint")
-        return true;
-      if (UNION_LIKE.has(parent.kind)) return true;
+      if (k === "conditional_type" && upKind === "constraint") return true;
+      if (UNION_LIKE.has(upKind)) return true;
       return operatorParent();
     }
     case "union_type":
     case "intersection_type":
-      return UNION_LIKE.has(parent.kind) || operatorParent();
+      return UNION_LIKE.has(upKind) || operatorParent();
     case "infer_type":
-      if (parent.kind === "rest_type") return false;
-      if (UNION_LIKE.has(parent.kind) && anonKid(n, "extends")) return true;
+      if (upKind === "rest_type") return false;
+      if (UNION_LIKE.has(upKind) && anonKid(x, n, "extends") !== undefined)
+        return true;
       return operatorParent();
     case "index_type_query":
     case "readonly_type":
       return operatorParent();
     case "type_query":
-      return isLookupObject(top, parent) || parent.kind === "array_type";
+      return isLookupObject(x, top, up) || upKind === "array_type";
     default:
       return false;
   }
@@ -170,17 +199,14 @@ export function typeNeedsParens(n: FormatNode): boolean {
 
 /** Source parentheses around a type stay only where prettier would print them. */
 const parenthesizedType: JsRule = (n, ctx, args) => {
-  const inner = first(n);
-  if (!inner) return t(ctx, n);
-  if (unparenType(inner) !== inner || !typeNeedsParens(inner))
+  const inner = first(ctx, n);
+  if (inner === undefined) return t(ctx, n);
+  if (unparenType(ctx, inner) !== inner || !typeNeedsParens(ctx, inner))
     return p(ctx, inner, args);
   return [
-    t(ctx, anonKid(n, "(")),
+    t(ctx, anonKid(ctx, n, "(")),
     p(ctx, inner),
-    t(
-      ctx,
-      n.children.findLast((c) => !c.named && c.kind === ")"),
-    ),
+    t(ctx, lastAnonKid(ctx, n, ")")),
   ];
 };
 
@@ -188,53 +214,55 @@ const parenthesizedType: JsRule = (n, ctx, args) => {
 
 /** `: T`, `?: T`, `-?: T`: the annotation's own token, then the type. */
 const annotation: JsRule = (n, ctx) => {
-  const [tok] = anonKids(n);
-  return [t(ctx, tok), text(" "), p(ctx, items(n)[0])];
+  const [tok] = anonKids(ctx, n);
+  return [t(ctx, tok), text(" "), p(ctx, items(ctx, n)[0])];
 };
 
 const typePredicate: JsRule = (n, ctx) => {
-  const type = field(n, "type");
+  const type = field(ctx, n, "type");
   return [
-    p(ctx, field(n, "name")),
-    type ? [text(" "), t(ctx, anonKid(n, "is")), text(" "), p(ctx, type)] : [],
+    p(ctx, field(ctx, n, "name")),
+    type !== undefined
+      ? [text(" "), t(ctx, anonKid(ctx, n, "is")), text(" "), p(ctx, type)]
+      : [],
   ];
 };
 
 // --- simple compound types ------------------------------------------------------------------------------------
 
 const arrayType: JsRule = (n, ctx) => [
-  p(ctx, items(n)[0]),
-  t(ctx, anonKid(n, "[")),
-  t(ctx, anonKid(n, "]")),
+  p(ctx, items(ctx, n)[0]),
+  t(ctx, anonKid(ctx, n, "[")),
+  t(ctx, anonKid(ctx, n, "]")),
 ];
 
 const lookupType: JsRule = (n, ctx) => {
-  const [object, index] = items(n);
+  const [object, index] = items(ctx, n);
   return [
     p(ctx, object),
-    t(ctx, anonKid(n, "[")),
+    t(ctx, anonKid(ctx, n, "[")),
     p(ctx, index),
-    t(ctx, anonKid(n, "]")),
+    t(ctx, anonKid(ctx, n, "]")),
   ];
 };
 
 const optionalType: JsRule = (n, ctx) => [
-  p(ctx, items(n)[0]),
-  t(ctx, anonKid(n, "?")),
+  p(ctx, items(ctx, n)[0]),
+  t(ctx, anonKid(ctx, n, "?")),
 ];
 const restType: JsRule = (n, ctx) => [
-  t(ctx, anonKid(n, "...")),
-  p(ctx, items(n)[0]),
+  t(ctx, anonKid(ctx, n, "...")),
+  p(ctx, items(ctx, n)[0]),
 ];
 const genericType: JsRule = (n, ctx) => [
-  p(ctx, field(n, "name")),
-  p(ctx, field(n, "type_arguments")),
+  p(ctx, field(ctx, n, "name")),
+  p(ctx, field(ctx, n, "type_arguments")),
 ];
 
 const typeQuery: JsRule = (n, ctx) => {
-  const [expr, ...rest] = items(n);
+  const [expr, ...rest] = items(ctx, n);
   return [
-    t(ctx, anonKid(n, "typeof")),
+    t(ctx, anonKid(ctx, n, "typeof")),
     text(" "),
     p(ctx, expr),
     rest.map((r) => p(ctx, r)),
@@ -242,48 +270,54 @@ const typeQuery: JsRule = (n, ctx) => {
 };
 
 const templateLiteralType: JsRule = (n, ctx) =>
-  n.children.map((c) =>
-    c.named && c.kind === "template_type" ? p(ctx, c) : t(ctx, c),
+  children(ctx, n).map((c) =>
+    named(ctx, c) && kind(ctx, c) === "template_type" ? p(ctx, c) : t(ctx, c),
   );
 
 const templateType: JsRule = (n, ctx) => [
-  t(ctx, anonKid(n, "${")),
-  p(ctx, items(n)[0]),
-  t(ctx, anonKid(n, "}")),
+  t(ctx, anonKid(ctx, n, "${")),
+  p(ctx, items(ctx, n)[0]),
+  t(ctx, anonKid(ctx, n, "}")),
 ];
 
 /** `infer U` and `infer U extends C`, the constraint laid out as a type parameter's. */
 const inferType: JsRule = (n, ctx) => {
-  const [name, constraint] = items(n);
-  const parts: Doc[] = [t(ctx, anonKid(n, "infer")), text(" "), p(ctx, name)];
-  if (constraint)
-    parts.push(printConstraint(ctx, anonKid(n, "extends"), constraint));
+  const [name, constraint] = items(ctx, n);
+  const parts: Doc[] = [
+    t(ctx, anonKid(ctx, n, "infer")),
+    text(" "),
+    p(ctx, name),
+  ];
+  if (constraint !== undefined)
+    parts.push(printConstraint(ctx, anonKid(ctx, n, "extends"), constraint));
   return group(parts);
 };
 
 // --- unions and intersections ---------------------------------------------------------------------------------
 
 interface Flat {
-  types: FormatNode[];
+  types: number[];
   /** The operator after each type but the last. */
-  ops: Map<FormatNode, FormatNode>;
+  ops: Map<number, number>;
   /** A leading `|` (`type A = | a | b`), which prettier drops. */
-  lead: FormatNode | undefined;
+  lead: number | undefined;
 }
 
 /** tree-sitter nests `a | b | c` to the left; prettier's AST holds the flat list. */
-export function flattenTypes(n: FormatNode): Flat {
+export function flattenTypes(x: HasTree, n: number): Flat {
   const out: Flat = { types: [], ops: new Map(), lead: undefined };
-  const walk = (x: FormatNode) => {
-    for (const c of x.children) {
-      if (isComment(c)) continue;
-      if (c.named) {
-        if (c.kind === n.kind) walk(c);
+  const nKind = kind(x, n);
+  const walk = (w: number) => {
+    for (const c of children(x, w)) {
+      if (isComment(x, c)) continue;
+      const k = kind(x, c);
+      if (named(x, c)) {
+        if (k === nKind) walk(c);
         else out.types.push(c);
-      } else if (c.kind === "|" || c.kind === "&") {
+      } else if (k === "|" || k === "&") {
         const last = out.types.at(-1);
-        if (last && !out.ops.has(last)) out.ops.set(last, c);
-        else if (!last) out.lead ??= c;
+        if (last !== undefined && !out.ops.has(last)) out.ops.set(last, c);
+        else if (last === undefined) out.lead ??= c;
       }
     }
   };
@@ -298,57 +332,64 @@ const OBJECT_LIKE = new Set([
   "nested_type_identifier",
 ]);
 
-const isVoidType = (ctx: JsCtx, n: FormatNode) =>
-  (n.kind === "predefined_type" || n.kind === "literal_type") &&
+const isVoidType = (ctx: JsCtx, n: number) =>
+  (kind(ctx, n) === "predefined_type" || kind(ctx, n) === "literal_type") &&
   /^(?:void|null)$/.test(src(ctx, n));
 
 /** Prettier's shouldHugUnionType: one object-like type among nothing but `void` and `null`. */
-export function shouldHugUnionType(ctx: JsCtx, n: FormatNode): boolean {
-  const { types } = flattenTypes(n);
+export function shouldHugUnionType(ctx: JsCtx, n: number): boolean {
+  const { types } = flattenTypes(ctx, n);
   if (types.some((x) => hasComment(ctx, x))) return false;
-  const object = types.find((x) => OBJECT_LIKE.has(bare(x).kind));
-  if (!object) return false;
-  return types.every((x) => x === object || isVoidType(ctx, bare(x)));
+  const object = types.find((x) => OBJECT_LIKE.has(kind(ctx, bare(ctx, x))));
+  if (object === undefined) return false;
+  return types.every((x) => x === object || isVoidType(ctx, bare(ctx, x)));
 }
 
-const isSimpleType = (ctx: JsCtx, n: FormatNode) =>
-  (n.kind === "predefined_type" && !src(ctx, n).startsWith("unique")) ||
-  n.kind === "type_identifier" ||
-  n.kind === "nested_type_identifier" ||
-  n.kind === "this_type";
+const isSimpleType = (ctx: JsCtx, n: number) => {
+  const k = kind(ctx, n);
+  return (
+    (k === "predefined_type" && !src(ctx, n).startsWith("unique")) ||
+    k === "type_identifier" ||
+    k === "nested_type_identifier" ||
+    k === "this_type"
+  );
+};
 
 /** Prettier's shouldHugType. */
-function shouldHugType(ctx: JsCtx, n: FormatNode): boolean {
-  if (isSimpleType(ctx, n) || n.kind === "object_type") return true;
-  return n.kind === "union_type" && shouldHugUnionType(ctx, n);
+function shouldHugType(ctx: JsCtx, n: number): boolean {
+  if (isSimpleType(ctx, n) || kind(ctx, n) === "object_type") return true;
+  return kind(ctx, n) === "union_type" && shouldHugUnionType(ctx, n);
 }
 
 const opDoc = (
   ctx: JsCtx,
-  op: FormatNode | undefined,
-  anchor: FormatNode,
+  op: number | undefined,
+  anchor: number,
   kind: string,
-): Doc => (op ? t(ctx, op) : synthetic(anchor, kind));
+): Doc => (op !== undefined ? t(ctx, op) : synthetic(anchor, kind));
 
 const unionType: JsRule = (n, ctx, args?: Args) => {
-  if (isTransparentType(n)) return p(ctx, items(n)[0], args);
-  const { types, ops, lead } = flattenTypes(n);
-  const bar = (x: FormatNode) => opDoc(ctx, ops.get(x), x, "|");
+  if (isTransparentType(ctx, n)) return p(ctx, items(ctx, n)[0], args);
+  const { types, ops, lead } = flattenTypes(ctx, n);
+  const bar = (x: number) => opDoc(ctx, ops.get(x), x, "|");
   if (shouldHugUnionType(ctx, n))
     return join(
       [],
       types.map((x, i) =>
         i === 0
           ? p(ctx, x)
-          : [text(" "), bar(types[i - 1] as FormatNode), text(" "), p(ctx, x)],
+          : [text(" "), bar(types[i - 1] as number), text(" "), p(ctx, x)],
       ),
     );
   const printed = group(
     types.map((x, i) => {
       const b: Doc =
         i === 0
-          ? ifBreak([lead ? t(ctx, lead) : synthetic(x, "|"), text(" ")])
-          : [line, bar(types[i - 1] as FormatNode), text(" ")];
+          ? ifBreak([
+              lead !== undefined ? t(ctx, lead) : synthetic(x, "|"),
+              text(" "),
+            ])
+          : [line, bar(types[i - 1] as number), text(" ")];
       // A member aligns under its `|`, and its comments do only when one leads it.
       const bare = ctx.printBare(x);
       return ctx.comments(x).leading.length > 0
@@ -356,43 +397,47 @@ const unionType: JsRule = (n, ctx, args?: Args) => {
         : [b, ctx.withComments(x, align(2, bare))];
     }),
   );
-  const { parent, field: key } = typeRole(n);
-  if (n.parent?.kind === "parenthesized_type" && typeNeedsParens(n))
+  const { parent: up, field: key } = typeRole(ctx, n);
+  const upKind = kind(ctx, up);
+  if (
+    kind(ctx, parent(ctx, n)) === "parenthesized_type" &&
+    typeNeedsParens(ctx, n)
+  )
     return group([indent([softline, printed]), softline]);
-  if (parent?.kind === "tuple_type" && items(parent).length > 1)
+  if (upKind === "tuple_type" && items(ctx, up as number).length > 1)
     return group([
       indent([ifBreak([synthetic(n, "("), softline]), printed]),
       softline,
       ifBreak(synthetic(n, ")")),
     ]);
   const noIndent =
-    parent?.kind === "type_assertion" ||
-    parent?.kind === "tuple_type" ||
-    (parent?.kind === "conditional_type" &&
+    upKind === "type_assertion" ||
+    upKind === "tuple_type" ||
+    (upKind === "conditional_type" &&
       (key === "consequence" || key === "alternative")) ||
-    parent?.kind === "type_arguments";
+    upKind === "type_arguments";
   if (args?.assignmentLayout === "break-after-operator" || noIndent)
     return printed;
   return group(indent([softline, printed]));
 };
 
 const intersectionType: JsRule = (n, ctx, args) => {
-  if (isTransparentType(n)) return p(ctx, items(n)[0], args);
-  const { types, ops } = flattenTypes(n);
+  if (isTransparentType(ctx, n)) return p(ctx, items(ctx, n)[0], args);
+  const { types, ops } = flattenTypes(ctx, n);
   let wasIndented = false;
   return group(
     types.map((x, i) => {
       const doc = p(ctx, x);
       if (i === 0) return doc;
-      const previous = types[i - 1] as FormatNode;
+      const previous = types[i - 1] as number;
       const amp = opDoc(ctx, ops.get(previous), previous, "&");
-      const isObject = bare(x).kind === "object_type";
-      const previousIsObject = bare(previous).kind === "object_type";
+      const isObject = kind(ctx, bare(ctx, x)) === "object_type";
+      const previousIsObject = kind(ctx, bare(ctx, previous)) === "object_type";
       if (previousIsObject && isObject)
         return [text(" "), amp, text(" "), wasIndented ? indent(doc) : doc];
       if (
         (!previousIsObject && !isObject) ||
-        hasComment(ctx, x, CF.Leading, (c) => hasNewline(ctx.source, c.end))
+        hasComment(ctx, x, CF.Leading, (c) => lfAfter(ctx.tree, c) > 0)
       )
         return ctx.options.experimentalOperatorPosition === "start"
           ? indent([line, amp, text(" "), doc])
@@ -407,33 +452,32 @@ const intersectionType: JsRule = (n, ctx, args) => {
 
 /** Prettier's printTypeParameters, for `<...>` lists of parameters and of arguments alike. */
 const typeParameters: JsRule = (n, ctx) => {
-  const params = items(n);
-  const open = t(ctx, anonKid(n, "<"));
-  const close = t(
-    ctx,
-    n.children.findLast((c) => !c.named && c.kind === ">"),
-  );
-  const commas = separators(n, params);
+  const params = items(ctx, n);
+  const open = t(ctx, anonKid(ctx, n, "<"));
+  const close = t(ctx, lastAnonKid(ctx, n, ">"));
+  const commas = separators(ctx, n, params);
   const lastComma =
-    params.length > 0 ? commas.get(params.at(-1) as FormatNode) : undefined;
+    params.length > 0 ? commas.get(params.at(-1) as number) : undefined;
   if (params.length === 0) return [open, ctx.dangling(n), close];
-  const annotated = n.parent?.parent;
+  const up = parent(ctx, n);
+  const annotated = parent(ctx, up);
+  const declarator = parent(ctx, annotated);
   const isArrowFunctionVariable =
-    !(params.length === 1 && params[0]?.kind === "object_type") &&
-    n.parent?.kind === "generic_type" &&
-    annotated?.kind === "type_annotation" &&
-    annotated.parent?.kind === "variable_declarator" &&
-    field(annotated.parent, "value")?.kind === "arrow_function";
+    !(params.length === 1 && kind(ctx, params[0]) === "object_type") &&
+    kind(ctx, up) === "generic_type" &&
+    kind(ctx, annotated) === "type_annotation" &&
+    kind(ctx, declarator) === "variable_declarator" &&
+    kind(ctx, field(ctx, declarator as number, "value")) === "arrow_function";
   const shouldInline =
     !isArrowFunctionVariable &&
     params.length === 1 &&
-    shouldHugType(ctx, params[0] as FormatNode) &&
+    shouldHugType(ctx, params[0] as number) &&
     !params.some((x) => {
       const comments = getComments(ctx, x, CF.Leading | CF.Trailing);
       return (
         comments.length > 0 &&
         (comments.some((c) => ctx.isLineComment(c)) ||
-          hasNewline(ctx.source, (comments.at(-1) as FormatNode).end))
+          lfAfter(ctx.tree, comments.at(-1) as number) > 0)
       );
     });
   const printed = params.map((x, i) =>
@@ -443,20 +487,20 @@ const typeParameters: JsRule = (n, ctx) => {
     return [open, join(text(" "), printed), t(ctx, lastComma, ""), close];
   // `<T,>` in a TSX arrow keeps its comma: without it the list would read as a JSX tag.
   const forced =
-    n.kind === "type_parameters" &&
+    kind(ctx, n) === "type_parameters" &&
     params.length === 1 &&
-    !field(params[0] as FormatNode, "constraint") &&
-    n.parent?.kind === "arrow_function" &&
+    field(ctx, params[0] as number, "constraint") === undefined &&
+    kind(ctx, up) === "arrow_function" &&
     lastComma !== undefined;
   const trailing: Doc =
-    n.kind === "type_arguments"
+    kind(ctx, n) === "type_arguments"
       ? t(ctx, lastComma, "")
       : forced
         ? t(ctx, lastComma)
         : trailingCommaAllowed(ctx, "all")
-          ? lastComma
+          ? lastComma !== undefined
             ? ifBreak(t(ctx, lastComma), t(ctx, lastComma, ""))
-            : ifBreak(synthetic(params.at(-1) as FormatNode, ","))
+            : ifBreak(synthetic(params.at(-1) as number, ","))
           : t(ctx, lastComma, "");
   return group([
     open,
@@ -470,8 +514,8 @@ const typeParameters: JsRule = (n, ctx) => {
 /** ` extends C` with the constraint moved to the next line, indented, when it does not fit. */
 function printConstraint(
   ctx: JsCtx,
-  keyword: FormatNode | undefined,
-  type: FormatNode | undefined,
+  keyword: number | undefined,
+  type: number | undefined,
 ): Doc {
   const g = group(indent(line));
   return [
@@ -485,24 +529,26 @@ function printConstraint(
 
 const typeParameter: JsRule = (n, ctx) => {
   const parts: Doc[] = [];
-  const name = field(n, "name");
-  for (const c of n.children) {
+  const name = field(ctx, n, "name");
+  for (const c of children(ctx, n)) {
     if (c === name) break;
-    if (!isComment(c)) parts.push(t(ctx, c), text(" "));
+    if (!isComment(ctx, c)) parts.push(t(ctx, c), text(" "));
   }
   parts.push(p(ctx, name));
-  const constraint = field(n, "constraint");
-  if (constraint)
+  const constraint = field(ctx, n, "constraint");
+  if (constraint !== undefined)
     parts.push(
       printConstraint(
         ctx,
-        anonKid(constraint, "extends"),
-        items(constraint)[0],
+        anonKid(ctx, constraint, "extends"),
+        items(ctx, constraint)[0],
       ),
     );
-  const value = field(n, "value");
-  if (value)
-    parts.push(printConstraint(ctx, anonKid(value, "="), items(value)[0]));
+  const value = field(ctx, n, "value");
+  if (value !== undefined)
+    parts.push(
+      printConstraint(ctx, anonKid(ctx, value, "="), items(ctx, value)[0]),
+    );
   return group(parts);
 };
 
@@ -510,18 +556,18 @@ const typeParameter: JsRule = (n, ctx) => {
 
 const typeAlias: JsRule = (n, ctx) => {
   const left: Doc = [
-    t(ctx, anonKid(n, "type")),
+    t(ctx, anonKid(ctx, n, "type")),
     text(" "),
-    p(ctx, field(n, "name")),
-    p(ctx, field(n, "type_parameters")),
+    p(ctx, field(ctx, n, "name")),
+    p(ctx, field(ctx, n, "type_parameters")),
   ];
   return [
     printAssignment(
       ctx,
       n,
       left,
-      [text(" "), t(ctx, anonKid(n, "="))],
-      field(n, "value"),
+      [text(" "), t(ctx, anonKid(ctx, n, "="))],
+      field(ctx, n, "value"),
     ),
     semi(ctx, n),
   ];
@@ -532,31 +578,40 @@ const enumDeclaration: JsRule = (n, ctx) => words(ctx, n);
 const enumAssignment: JsRule = (n, ctx) => [
   printKey(ctx, n),
   text(" "),
-  t(ctx, anonKid(n, "=")),
+  t(ctx, anonKid(ctx, n, "=")),
   text(" "),
-  p(ctx, field(n, "value")),
+  p(ctx, field(ctx, n, "value")),
 ];
 
 /** `module "m" { ... }`, `namespace N.M { ... }`. */
 const moduleDeclaration: JsRule = (n, ctx) => {
-  const body = field(n, "body");
+  const body = field(ctx, n, "body");
   const parts: Doc[] = [];
-  for (const c of n.children) {
-    if (c === body || isComment(c)) continue;
+  for (const c of children(ctx, n)) {
+    if (c === body || isComment(ctx, c)) continue;
     if (parts.length > 0) parts.push(text(" "));
-    parts.push(c.named ? p(ctx, c) : t(ctx, c));
+    parts.push(named(ctx, c) ? p(ctx, c) : t(ctx, c));
   }
-  return [parts, body ? [text(" "), group(p(ctx, body))] : semi(ctx, n)];
+  return [
+    parts,
+    body !== undefined ? [text(" "), group(p(ctx, body))] : semi(ctx, n),
+  ];
 };
 
 const ambientDeclaration: JsRule = (n, ctx) => {
-  const block = n.children.find((c) => c.kind === "statement_block");
-  if (block) {
-    const rest = n.children.filter((c) => c !== block && !isComment(c));
+  const block = childWhere(
+    ctx,
+    n,
+    (c) => kind(ctx, c) === "statement_block",
+  );
+  if (block !== undefined) {
+    const rest = children(ctx, n).filter(
+      (c) => c !== block && !isComment(ctx, c),
+    );
     return [
       join(
         text(" "),
-        rest.map((c) => (c.named ? p(ctx, c) : t(ctx, c))),
+        rest.map((c) => (named(ctx, c) ? p(ctx, c) : t(ctx, c))),
       ),
       text(" "),
       group(p(ctx, block)),
@@ -569,46 +624,45 @@ const ambientDeclaration: JsRule = (n, ctx) => {
 
 /** Prettier's printBinaryCastExpression: `x as T`, `x satisfies T`. */
 const castExpression: JsRule = (n, ctx) => {
-  const [expression, type] = items(n);
-  const keyword = anonKids(n).find(
-    (c) => c.kind === "as" || c.kind === "satisfies",
+  const [expression, type] = items(ctx, n);
+  const keyword = anonKids(ctx, n).find(
+    (c) => kind(ctx, c) === "as" || kind(ctx, c) === "satisfies",
   );
-  const constKw = type ? undefined : anonKid(n, "const");
+  const constKw = type !== undefined ? undefined : anonKid(ctx, n, "const");
   const parts: Doc[] = [
     p(ctx, expression),
     text(" "),
     t(ctx, keyword),
     text(" "),
-    type ? p(ctx, type) : t(ctx, constKw),
+    type !== undefined ? p(ctx, type) : t(ctx, constKw),
   ];
-  const { parent, key } = role(n);
+  const { parent: up, key } = role(ctx, n);
   if (
     (key === "callee" &&
-      (parent?.kind === "call_expression" ||
-        parent?.kind === "new_expression")) ||
-    (key === "object" && isMember(parent))
+      (kind(ctx, up) === "call_expression" ||
+        kind(ctx, up) === "new_expression")) ||
+    (key === "object" && isMember(ctx, up))
   )
     return group([indent([softline, ...parts]), softline]);
   return parts;
 };
 
 const typeAssertion: JsRule = (n, ctx) => {
-  const args = n.children.find((c) => c.kind === "type_arguments");
-  const expression = items(n).find((c) => c !== args);
-  const inner = args ? items(args)[0] : undefined;
-  const cast = args
-    ? group([
-        t(ctx, anonKid(args, "<")),
-        indent([softline, p(ctx, inner)]),
-        softline,
-        t(
-          ctx,
-          args.children.findLast((c) => !c.named && c.kind === ">"),
-        ),
-      ])
-    : [];
+  const args = childWhere(ctx, n, (c) => kind(ctx, c) === "type_arguments");
+  const expression = items(ctx, n).find((c) => c !== args);
+  const inner = args !== undefined ? items(ctx, args)[0] : undefined;
+  const cast =
+    args !== undefined
+      ? group([
+          t(ctx, anonKid(ctx, args, "<")),
+          indent([softline, p(ctx, inner)]),
+          softline,
+          t(ctx, lastAnonKid(ctx, args, ">")),
+        ])
+      : [];
   const printed = p(ctx, expression);
-  const bare = expression && unparen(expression).kind;
+  const bare =
+    expression !== undefined ? kind(ctx, unparen(ctx, expression)) : undefined;
   if (bare === "array" || bare === "object") return group([cast, printed]);
   const broken = group(
     [
@@ -629,92 +683,103 @@ const typeAssertion: JsRule = (n, ctx) => {
 // --- object types and interfaces ------------------------------------------------------------------------------
 
 /** The `;` or `,` after a member in its body, which prettier reprints as `;` or drops. */
-function memberSeparator(n: FormatNode): FormatNode | undefined {
-  const siblings = n.parent?.children ?? [];
+function memberSeparator(x: HasTree, n: number): number | undefined {
+  const up = parent(x, n);
+  const siblings = up !== undefined ? children(x, up) : [];
   for (let i = siblings.indexOf(n) + 1; i < siblings.length; i++) {
-    const c = siblings[i] as FormatNode;
-    if (!c.named && (c.kind === ";" || c.kind === ",")) return c;
-    if (!isComment(c)) return undefined;
+    const c = siblings[i] as number;
+    const k = kind(x, c);
+    if (!named(x, c) && (k === ";" || k === ",")) return c;
+    if (!isComment(x, c)) return undefined;
   }
   return undefined;
 }
 
-const isKeywordProperty = (ctx: JsCtx, n: FormatNode) => {
-  if (n.kind !== "property_signature" || field(n, "type")) return false;
-  const key = field(n, "name");
+const isKeywordProperty = (ctx: JsCtx, n: number) => {
+  if (
+    kind(ctx, n) !== "property_signature" ||
+    field(ctx, n, "type") !== undefined
+  )
+    return false;
+  const key = field(ctx, n, "name");
   return (
-    key?.kind === "property_identifier" &&
-    /^(?:static|get|set)$/.test(src(ctx, key))
+    kind(ctx, key) === "property_identifier" &&
+    /^(?:static|get|set)$/.test(src(ctx, key as number))
   );
 };
 
 /** Prettier's shouldPrintSemicolonAfterInterfaceProperty. */
 function needsInterfaceSemicolon(
   ctx: JsCtx,
-  n: FormatNode,
-  next: FormatNode | undefined,
+  n: number,
+  next: number | undefined,
 ): boolean {
-  if (ctx.options.semi || n.kind !== "property_signature") return false;
+  if (ctx.options.semi || kind(ctx, n) !== "property_signature") return false;
   if (isKeywordProperty(ctx, n)) return true;
-  if (!next) return false;
-  return next.kind === "call_signature" && !field(n, "type");
+  if (next === undefined) return false;
+  return (
+    kind(ctx, next) === "call_signature" && field(ctx, n, "type") === undefined
+  );
 }
 
 /** Prettier's printClassMemberSemicolon, from the member's own separator when the source has one. */
-function memberSemicolon(ctx: JsCtx, n: FormatNode): Doc {
-  const parent = n.parent;
-  const sep = memberSeparator(n);
+function memberSemicolon(ctx: JsCtx, n: number): Doc {
+  const up = parent(ctx, n);
+  const sep = memberSeparator(ctx, n);
   const put = (text: string): Doc =>
-    sep ? token(sep, text) : text ? synthetic(n, text) : [];
-  if (!parent) return [];
-  if (parent.kind === "interface_body" || parent.kind === "class_body")
+    sep !== undefined ? token(sep, text) : text ? synthetic(n, text) : [];
+  if (up === undefined) return [];
+  const upKind = kind(ctx, up);
+  if (upKind === "interface_body" || upKind === "class_body")
     return put(ctx.options.semi ? ";" : "");
-  if (parent.kind !== "object_type") return sep ? token(sep, "") : [];
-  const members = items(parent);
+  if (upKind !== "object_type") return sep !== undefined ? token(sep, "") : [];
+  const members = items(ctx, up);
   const i = members.indexOf(n);
   const next = members[i + 1];
-  if (!next)
+  if (next === undefined)
     return ctx.options.semi
-      ? ifBreak(put(";"), sep ? token(sep, "") : [])
+      ? ifBreak(put(";"), sep !== undefined ? token(sep, "") : [])
       : put("");
   if (ctx.options.semi || needsInterfaceSemicolon(ctx, n, next))
     return put(";");
-  return ifBreak(sep ? token(sep, "") : [], put(";"));
+  return ifBreak(sep !== undefined ? token(sep, "") : [], put(";"));
 }
 
-export const mappedClauseOf = (n: FormatNode) => {
-  const members = items(n);
+export const mappedClauseOf = (x: HasTree, n: number) => {
+  const members = items(x, n);
   const only = members[0];
-  if (members.length !== 1 || only?.kind !== "index_signature")
+  if (members.length !== 1 || kind(x, only) !== "index_signature")
     return undefined;
-  const clause = only.children.find((c) => c.kind === "mapped_type_clause");
-  return clause ? { signature: only, clause } : undefined;
+  const signature = only as number;
+  const clause = childWhere(
+    x,
+    signature,
+    (c) => kind(x, c) === "mapped_type_clause",
+  );
+  return clause !== undefined ? { signature, clause } : undefined;
 };
 
 /** Prettier's printTypeScriptMappedType, over tree-sitter's `{ [K in T]: V }` object type. */
 function mappedType(
   ctx: JsCtx,
-  n: FormatNode,
-  signature: FormatNode,
-  clause: FormatNode,
+  n: number,
+  signature: number,
+  clause: number,
 ): Doc {
-  const open = anonKid(n, "{");
-  const close = n.children.findLast((c) => !c.named && c.kind === "}");
+  const open = anonKid(ctx, n, "{");
+  const close = lastAnonKid(ctx, n, "}");
   let shouldBreak = false;
-  if (ctx.options.objectWrap === "preserve" && open) {
-    const start = open.end;
-    const after = ctx.source.slice(start).search(/\S/);
-    shouldBreak =
-      after >= 0 && hasNewlineInRange(ctx.source, start, start + after);
-  }
+  // A line break between `{` and the first thing after it, a comment included.
+  if (ctx.options.objectWrap === "preserve" && open !== undefined)
+    shouldBreak = lfAfter(ctx.tree, open) > 0;
   const spacing = ctx.options.bracketSpacing ? line : softline;
-  const readonlyKw = anonKid(signature, "readonly");
-  const sign = field(signature, "sign");
-  const name = field(clause, "name");
-  const type = field(clause, "type");
-  const alias = field(clause, "alias");
-  const valueAnnotation = field(signature, "type");
-  const sep = memberSeparator(signature);
+  const readonlyKw = anonKid(ctx, signature, "readonly");
+  const sign = field(ctx, signature, "sign");
+  const name = field(ctx, clause, "name");
+  const type = field(ctx, clause, "type");
+  const alias = field(ctx, clause, "alias");
+  const valueAnnotation = field(ctx, signature, "type");
+  const sep = memberSeparator(ctx, signature);
   const dangling = ctx.dangling(n);
   return group(
     [
@@ -722,35 +787,37 @@ function mappedType(
       indent([
         spacing,
         dangling.length > 0 ? [join(hardline, dangling), hardline] : [],
-        readonlyKw ? [t(ctx, sign), t(ctx, readonlyKw), text(" ")] : [],
+        readonlyKw !== undefined
+          ? [t(ctx, sign), t(ctx, readonlyKw), text(" ")]
+          : [],
         group([
-          t(ctx, anonKid(signature, "[")),
+          t(ctx, anonKid(ctx, signature, "[")),
           indent([
             softline,
             p(ctx, name),
             text(" "),
-            t(ctx, anonKid(clause, "in")),
+            t(ctx, anonKid(ctx, clause, "in")),
             text(" "),
             p(ctx, type),
-            alias
+            alias !== undefined
               ? [
                   text(" "),
-                  t(ctx, anonKid(clause, "as")),
+                  t(ctx, anonKid(ctx, clause, "as")),
                   text(" "),
                   p(ctx, alias),
                 ]
               : [],
           ]),
           softline,
-          t(ctx, anonKid(signature, "]")),
+          t(ctx, anonKid(ctx, signature, "]")),
         ]),
         p(ctx, valueAnnotation),
         ctx.options.semi
           ? ifBreak(
-              sep ? token(sep, ";") : synthetic(signature, ";"),
-              sep ? token(sep, "") : [],
+              sep !== undefined ? token(sep, ";") : synthetic(signature, ";"),
+              sep !== undefined ? token(sep, "") : [],
             )
-          : sep
+          : sep !== undefined
             ? token(sep, "")
             : [],
       ]),
@@ -762,46 +829,45 @@ function mappedType(
 }
 
 /** Whether an object type is the annotation of a function's hugged only parameter. */
-function isHuggedParameterType(ctx: JsCtx, n: FormatNode): boolean {
-  const annotation = n.parent;
-  if (annotation?.kind !== "type_annotation") return false;
-  const param = annotation.parent;
+function isHuggedParameterType(ctx: JsCtx, n: number): boolean {
+  const annotation = parent(ctx, n);
+  if (kind(ctx, annotation) !== "type_annotation") return false;
+  const param = parent(ctx, annotation);
+  const paramKind = kind(ctx, param);
   if (
-    param?.kind !== "required_parameter" &&
-    param?.kind !== "optional_parameter"
+    paramKind !== "required_parameter" &&
+    paramKind !== "optional_parameter"
   )
     return false;
-  const list = param.parent;
+  const list = parent(ctx, param);
   return (
-    list?.kind === "formal_parameters" &&
-    shouldHugTheOnlyFunctionParameter(ctx, list.parent)
+    kind(ctx, list) === "formal_parameters" &&
+    shouldHugTheOnlyFunctionParameter(ctx, parent(ctx, list))
   );
 }
 
 /** Prettier's printClassBody for `TSTypeLiteral` and `TSInterfaceBody`. */
 const typeBody: JsRule = (n, ctx) => {
-  const isObjectType = n.kind === "object_type";
-  const mapped = isObjectType ? mappedClauseOf(n) : undefined;
-  if (mapped) return mappedType(ctx, n, mapped.signature, mapped.clause);
-  const members = items(n);
+  const isObjectType = kind(ctx, n) === "object_type";
+  const mapped = isObjectType ? mappedClauseOf(ctx, n) : undefined;
+  if (mapped !== undefined)
+    return mappedType(ctx, n, mapped.signature, mapped.clause);
+  const members = items(ctx, n);
   const parts: Doc[] = [];
   members.forEach((m, i) => {
     parts.push(p(ctx, m));
     const next = members[i + 1];
     if (!isObjectType && needsInterfaceSemicolon(ctx, m, next))
       parts.push(synthetic(m, ";"));
-    if (next) {
+    if (next !== undefined) {
       parts.push(isObjectType ? line : hardline);
-      if (isNextLineEmpty(ctx.source, m.end)) parts.push(hardline);
+      if (nextLineEmpty(ctx.tree, m)) parts.push(hardline);
     }
   });
   const dangling = ctx.dangling(n);
   if (dangling.length > 0) parts.push(join(hardline, dangling));
-  const open = t(ctx, anonKid(n, "{"));
-  const close = t(
-    ctx,
-    n.children.findLast((c) => !c.named && c.kind === "}"),
-  );
+  const open = t(ctx, anonKid(ctx, n, "{"));
+  const close = t(ctx, lastAnonKid(ctx, n, "}"));
   if (!isObjectType)
     return [
       open,
@@ -812,7 +878,11 @@ const typeBody: JsRule = (n, ctx) => {
     hasComment(ctx, n, CF.Dangling | CF.Line) ||
     (ctx.options.objectWrap === "preserve" &&
       members[0] !== undefined &&
-      hasNewlineInRange(ctx.source, n.start, members[0].start));
+      newlineBetween(
+        ctx.tree,
+        firstLeaf(ctx.tree, n),
+        firstLeaf(ctx.tree, members[0]),
+      ));
   if (parts.length === 0) return group([open, close]);
   const spacing =
     !ctx.options.bracketSpacing || (members.length === 0 && !shouldBreak)
@@ -823,71 +893,82 @@ const typeBody: JsRule = (n, ctx) => {
   return group(content, shouldBreak);
 };
 
+/** The children of `n` after its key, where a `?` stands. */
+const afterKey = (ctx: JsCtx, n: number, key: number | undefined) => {
+  if (key === undefined) return [];
+  const kids = children(ctx, n);
+  return kids.slice(kids.indexOf(key) + 1);
+};
+
 const propertySignature: JsRule = (n, ctx) => {
-  const key = field(n, "name");
+  const key = field(ctx, n, "name");
   const parts: Doc[] = [];
-  for (const c of n.children) {
+  for (const c of children(ctx, n)) {
     if (c === key) break;
-    if (!isComment(c)) parts.push(c.named ? p(ctx, c) : t(ctx, c), text(" "));
+    if (!isComment(ctx, c))
+      parts.push(named(ctx, c) ? p(ctx, c) : t(ctx, c), text(" "));
   }
-  const after = key ? n.children.slice(n.children.indexOf(key) + 1) : [];
+  const after = afterKey(ctx, n, key);
   return [
     parts,
     printKey(ctx, n),
     t(
       ctx,
-      after.find((c) => !c.named && c.kind === "?"),
+      after.find((c) => !named(ctx, c) && kind(ctx, c) === "?"),
     ),
-    p(ctx, field(n, "type")),
+    p(ctx, field(ctx, n, "type")),
     memberSemicolon(ctx, n),
   ];
 };
 
 const methodSignature: JsRule = (n, ctx) => {
-  const key = field(n, "name");
+  const key = field(ctx, n, "name");
   const parts: Doc[] = [];
-  for (const c of n.children) {
+  for (const c of children(ctx, n)) {
     if (c === key) break;
-    if (!isComment(c)) parts.push(c.named ? p(ctx, c) : t(ctx, c), text(" "));
+    if (!isComment(ctx, c))
+      parts.push(named(ctx, c) ? p(ctx, c) : t(ctx, c), text(" "));
   }
-  const after = key ? n.children.slice(n.children.indexOf(key) + 1) : [];
+  const after = afterKey(ctx, n, key);
   parts.push(
     printKey(ctx, n),
     t(
       ctx,
-      after.find((c) => !c.named && c.kind === "?"),
+      after.find((c) => !named(ctx, c) && kind(ctx, c) === "?"),
     ),
   );
   const parametersDoc = printFunctionParameters(ctx, n, false, true);
-  const returnNode = field(n, "return_type");
-  const returnTypeDoc = returnNode ? p(ctx, returnNode) : [];
+  const returnNode = field(ctx, n, "return_type");
+  const returnTypeDoc = returnNode !== undefined ? p(ctx, returnNode) : [];
   parts.push(
-    shouldGroupFunctionParameters(n, returnTypeDoc)
+    shouldGroupFunctionParameters(ctx, n, returnTypeDoc)
       ? group(parametersDoc)
       : parametersDoc,
   );
-  if (returnNode) parts.push(group(returnTypeDoc));
+  if (returnNode !== undefined) parts.push(group(returnTypeDoc));
   return [group(parts), memberSemicolon(ctx, n)];
 };
 
 const indexSignature: JsRule = (n, ctx) => {
-  const name = field(n, "name");
-  const indexType = field(n, "index_type");
-  const colon = anonKid(n, ":");
+  const name = field(ctx, n, "name");
+  const indexType = field(ctx, n, "index_type");
+  const colon = anonKid(ctx, n, ":");
   const parts: Doc[] = [];
-  for (const c of n.children) {
-    if (!c.named && c.kind === "[") break;
-    if (!isComment(c)) parts.push(c.named ? p(ctx, c) : t(ctx, c), text(" "));
+  for (const c of children(ctx, n)) {
+    if (!named(ctx, c) && kind(ctx, c) === "[") break;
+    if (!isComment(ctx, c))
+      parts.push(named(ctx, c) ? p(ctx, c) : t(ctx, c), text(" "));
   }
-  const parameter: Doc = name
-    ? [p(ctx, name), t(ctx, colon), text(" "), p(ctx, indexType)]
-    : [];
+  const parameter: Doc =
+    name !== undefined
+      ? [p(ctx, name), t(ctx, colon), text(" "), p(ctx, indexType)]
+      : [];
   return [
     parts,
-    t(ctx, anonKid(n, "[")),
-    name ? group([indent([softline, parameter]), softline]) : [],
-    t(ctx, anonKid(n, "]")),
-    p(ctx, field(n, "type")),
+    t(ctx, anonKid(ctx, n, "[")),
+    name !== undefined ? group([indent([softline, parameter]), softline]) : [],
+    t(ctx, anonKid(ctx, n, "]")),
+    p(ctx, field(ctx, n, "type")),
     memberSemicolon(ctx, n),
   ];
 };
@@ -895,27 +976,33 @@ const indexSignature: JsRule = (n, ctx) => {
 /** Prettier's printFunctionType, for function and constructor types and call and construct signatures. */
 const functionType: JsRule = (n, ctx) => {
   const parts: Doc[] = [];
-  const abstractKw = anonKid(n, "abstract");
-  if (abstractKw) parts.push(t(ctx, abstractKw), text(" "));
-  const newKw = anonKid(n, "new");
-  if (newKw) parts.push(t(ctx, newKw), text(" "));
+  const abstractKw = anonKid(ctx, n, "abstract");
+  if (abstractKw !== undefined) parts.push(t(ctx, abstractKw), text(" "));
+  const newKw = anonKid(ctx, n, "new");
+  if (newKw !== undefined) parts.push(t(ctx, newKw), text(" "));
   let parametersDoc = printFunctionParameters(ctx, n, false, true);
   const isSignature =
-    n.kind === "call_signature" || n.kind === "construct_signature";
-  const returnNode = field(n, "return_type") ?? field(n, "type");
-  const returnTypeDoc: Doc = !returnNode
-    ? []
-    : isSignature
-      ? p(ctx, returnNode)
-      : [text(" "), t(ctx, anonKid(n, "=>")), text(" "), p(ctx, returnNode)];
-  if (shouldGroupFunctionParameters(n, returnTypeDoc))
+    kind(ctx, n) === "call_signature" || kind(ctx, n) === "construct_signature";
+  const returnNode = field(ctx, n, "return_type") ?? field(ctx, n, "type");
+  const returnTypeDoc: Doc =
+    returnNode === undefined
+      ? []
+      : isSignature
+        ? p(ctx, returnNode)
+        : [
+            text(" "),
+            t(ctx, anonKid(ctx, n, "=>")),
+            text(" "),
+            p(ctx, returnNode),
+          ];
+  if (shouldGroupFunctionParameters(ctx, n, returnTypeDoc))
     parametersDoc = group(parametersDoc);
   parts.push(parametersDoc, returnTypeDoc);
   // `(): (r: U) => S => x` parses without parentheses around the arrow's return type; prettier adds them.
   if (
-    n.kind === "function_type" &&
-    n.parent?.kind !== "parenthesized_type" &&
-    typeNeedsParens(n)
+    kind(ctx, n) === "function_type" &&
+    kind(ctx, parent(ctx, n)) !== "parenthesized_type" &&
+    typeNeedsParens(ctx, n)
   )
     return [synthetic(n, "("), group(parts), synthetic(n, ")")];
   return [group(parts), isSignature ? memberSemicolon(ctx, n) : []];
@@ -923,7 +1010,7 @@ const functionType: JsRule = (n, ctx) => {
 
 export const typeRules: Record<string, JsRule> = {
   parenthesized_type: parenthesizedType,
-  literal_type: (n, ctx) => p(ctx, first(n)),
+  literal_type: (n, ctx) => p(ctx, first(ctx, n)),
   type_annotation: annotation,
   opting_type_annotation: annotation,
   omitting_type_annotation: annotation,

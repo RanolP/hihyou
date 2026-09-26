@@ -15,12 +15,8 @@ import {
   text,
   token,
 } from "../../../fmt/doc.js";
-import {
-  hasNewline,
-  hasNewlineInRange,
-  isNextLineEmpty,
-} from "../../../fmt/text.js";
-import type { FormatNode } from "../../../fmt/tree.js";
+import { lfAfter, newlineBetween, nextLineEmpty } from "../../../fmt/text.js";
+import { type FormatTree, firstLeaf } from "../../../fmt/tree.js";
 import { printAssignment } from "./assignment.js";
 import {
   printMethodValue,
@@ -30,23 +26,30 @@ import { printNumber, printString } from "./literals.js";
 import { role } from "./parens.js";
 import {
   CF,
+  childWhere,
+  children as childrenOf,
   danglingComments,
   danglingCommentsInList,
   field,
+  type HasTree,
   hasComment,
   isComment,
   isConciselyPrintedArray,
   items,
   type JsCtx,
   type JsRule,
+  kind,
+  lastChildWhere,
+  named,
   p,
+  parent as parentOf,
   src,
   t,
   trailingCommaAllowed,
 } from "./util.js";
 
-const anonKid = (n: FormatNode, kind: string) =>
-  n.children.find((c) => !c.named && c.kind === kind);
+const anonKid = (x: HasTree, n: number, k: string) =>
+  childWhere(x, n, (c) => !named(x, c) && kind(x, c) === k);
 
 // --- keys -------------------------------------------------------------------------------------------------------
 
@@ -60,69 +63,72 @@ const isEs5IdentifierName = (s: string) =>
 const isTypeScript = (ctx: JsCtx) => ctx.options.parser === "typescript";
 
 /** The key child of a property-like node. */
-export const keyOf = (n: FormatNode) =>
-  field(n, "key") ?? field(n, "name") ?? field(n, "property");
+export const keyOf = (x: HasTree, n: number) =>
+  field(x, n, "key") ?? field(x, n, "name") ?? field(x, n, "property");
 
 /** A string key's value when it is plain text (no escapes), which is all prettier ever unquotes. */
-function stringValue(ctx: JsCtx, key: FormatNode): string | undefined {
-  if (key.kind !== "string") return undefined;
+function stringValue(ctx: JsCtx, key: number): string | undefined {
+  if (kind(ctx, key) !== "string") return undefined;
   const raw = src(ctx, key);
   const content = raw.slice(1, -1);
   return content.includes("\\") ? undefined : content;
 }
 
-function isKeySafeToUnquote(ctx: JsCtx, n: FormatNode): boolean {
-  const key = keyOf(n);
-  if (!key) return false;
+function isKeySafeToUnquote(ctx: JsCtx, n: number): boolean {
+  const key = keyOf(ctx, n);
+  if (key === undefined) return false;
   const value = stringValue(ctx, key);
   if (value === undefined) return false;
   if (
     printString(src(ctx, key), ctx.options.singleQuote).slice(1, -1) !== value
   )
     return false;
-  if (n.kind === "method_signature" && value === "new") return false;
+  const k = kind(ctx, n);
+  if (k === "method_signature" && value === "new") return false;
   const isClassProperty =
-    n.kind === "public_field_definition" || n.kind === "field_definition";
+    k === "public_field_definition" || k === "field_definition";
   if (!(isTypeScript(ctx) && isClassProperty) && isEs5IdentifierName(value))
     return true;
   return (
     !isTypeScript(ctx) &&
-    n.kind !== "import_attribute" &&
+    k !== "import_attribute" &&
     isSimpleNumber(value) &&
     String(Number(value)) === value
   );
 }
 
-function isKeySafeToQuote(ctx: JsCtx, n: FormatNode): boolean {
-  const key = keyOf(n);
-  if (!key) return false;
-  if (key.kind === "property_identifier" || key.kind === "identifier")
-    return true;
-  if (key.kind !== "number" || isTypeScript(ctx)) return false;
+function isKeySafeToQuote(ctx: JsCtx, n: number): boolean {
+  const key = keyOf(ctx, n);
+  if (key === undefined) return false;
+  const k = kind(ctx, key);
+  if (k === "property_identifier" || k === "identifier") return true;
+  if (k !== "number" || isTypeScript(ctx)) return false;
   const printed = printNumber(src(ctx, key));
   return String(Number(src(ctx, key))) === printed && isSimpleNumber(printed);
 }
 
-const quoteCache = new WeakMap<FormatNode, boolean>();
-function hasSiblingsRequireQuoted(ctx: JsCtx, n: FormatNode): boolean {
-  const parent = n.parent;
-  if (!parent) return false;
-  let cached = quoteCache.get(parent);
+const quoteCache = new WeakMap<FormatTree, Map<number, boolean>>();
+function hasSiblingsRequireQuoted(ctx: JsCtx, n: number): boolean {
+  const parent = parentOf(ctx, n);
+  if (parent === undefined) return false;
+  let byParent = quoteCache.get(ctx.tree);
+  if (byParent === undefined) quoteCache.set(ctx.tree, (byParent = new Map()));
+  let cached = byParent.get(parent);
   if (cached === undefined) {
-    cached = items(parent).some((sibling) => {
-      const key = keyOf(sibling);
-      return key?.kind === "string" && !isKeySafeToUnquote(ctx, sibling);
+    cached = items(ctx, parent).some((sibling) => {
+      const key = keyOf(ctx, sibling);
+      return kind(ctx, key) === "string" && !isKeySafeToUnquote(ctx, sibling);
     });
-    quoteCache.set(parent, cached);
+    byParent.set(parent, cached);
   }
   return cached;
 }
 
 /** Prettier's printKey: a property's key, quoted or unquoted as `quoteProps` asks. */
-export function printKey(ctx: JsCtx, n: FormatNode): Doc {
-  const key = keyOf(n);
-  if (!key) return [];
-  if (key.kind === "computed_property_name") return p(ctx, key);
+export function printKey(ctx: JsCtx, n: number): Doc {
+  const key = keyOf(ctx, n);
+  if (key === undefined) return [];
+  if (kind(ctx, key) === "computed_property_name") return p(ctx, key);
   const { quoteProps } = ctx.options;
   if (
     quoteProps === "consistent" &&
@@ -130,7 +136,9 @@ export function printKey(ctx: JsCtx, n: FormatNode): Doc {
     isKeySafeToQuote(ctx, n)
   ) {
     const name =
-      key.kind === "number" ? String(Number(src(ctx, key))) : src(ctx, key);
+      kind(ctx, key) === "number"
+        ? String(Number(src(ctx, key)))
+        : src(ctx, key);
     return ctx.withComments(
       key,
       token(key, printString(JSON.stringify(name), ctx.options.singleQuote)),
@@ -170,65 +178,67 @@ const PARAMETER_WRAPPERS = new Set([
 ]);
 
 /** The node prettier's AST would give as a pattern's parent: a parameter's function, not its list. */
-function patternParent(n: FormatNode): FormatNode | undefined {
-  let x = role(n).parent;
-  while (x && PARAMETER_WRAPPERS.has(x.kind)) x = x.parent;
-  return x;
+function patternParent(x: HasTree, n: number): number | undefined {
+  let up = role(x, n).parent;
+  while (up !== undefined && PARAMETER_WRAPPERS.has(kind(x, up)))
+    up = parentOf(x, up);
+  return up;
 }
 
 /** Whether `n` is the one parameter of a function whose parameter prettier hugs. */
-function isHuggedParameter(ctx: JsCtx, n: FormatNode): boolean {
-  let x = n.parent;
+function isHuggedParameter(ctx: JsCtx, n: number): boolean {
+  let x = parentOf(ctx, n);
+  const k = kind(ctx, x);
   if (
-    x &&
-    (x.kind === "required_parameter" || x.kind === "optional_parameter")
+    x !== undefined &&
+    (k === "required_parameter" || k === "optional_parameter")
   ) {
     // A decorated parameter is an ObjectPattern with decorators to prettier, which it never hugs.
     if (
-      field(x, "pattern") !== n ||
-      x.children.some((c) => c.kind === "decorator")
+      field(ctx, x, "pattern") !== n ||
+      childWhere(ctx, x, (c) => kind(ctx, c) === "decorator") !== undefined
     )
       return false;
-    x = x.parent;
+    x = parentOf(ctx, x);
   }
   return (
-    x?.kind === "formal_parameters" &&
-    shouldHugTheOnlyFunctionParameter(ctx, x.parent)
+    kind(ctx, x) === "formal_parameters" &&
+    shouldHugTheOnlyFunctionParameter(ctx, parentOf(ctx, x))
   );
 }
 
 /** The children between `{` and `}` with the source `,` after each. */
-function members(n: FormatNode): FormatNode[] {
-  return n.children.filter((c) => c.named && !isComment(c));
+function members(x: HasTree, n: number): number[] {
+  return items(x, n);
 }
 
 const object: JsRule = (n, ctx) => {
-  const children = members(n);
-  const parent = patternParent(n);
-  const isPattern = n.kind === "object_pattern";
+  const children = members(ctx, n);
+  const parent = patternParent(ctx, n);
+  const isPattern = kind(ctx, n) === "object_pattern";
   const shouldBreak =
-    n.kind === "enum_body" ||
+    kind(ctx, n) === "enum_body" ||
     (isPattern &&
-      !FUNCTION_PARENTS.has(parent?.kind ?? "") &&
+      !FUNCTION_PARENTS.has(kind(ctx, parent) ?? "") &&
       children.some((c) => {
-        const value = c.kind === "pair_pattern" ? field(c, "value") : undefined;
-        return (
-          value?.kind === "object_pattern" || value?.kind === "array_pattern"
-        );
+        const value =
+          kind(ctx, c) === "pair_pattern" ? field(ctx, c, "value") : undefined;
+        const k = kind(ctx, value);
+        return k === "object_pattern" || k === "array_pattern";
       })) ||
     (!isPattern &&
       ctx.options.objectWrap === "preserve" &&
       children.length > 0 &&
-      hasNewlineInRange(
-        ctx.source,
-        n.start,
-        (children[0] as FormatNode).start,
+      newlineBetween(
+        ctx.tree,
+        firstLeaf(ctx.tree, n),
+        firstLeaf(ctx.tree, children[0] as number),
       ));
 
-  const open = t(ctx, anonKid(n, "{"));
+  const open = t(ctx, anonKid(ctx, n, "{"));
   const close = t(
     ctx,
-    n.children.findLast((c) => !c.named && c.kind === "}"),
+    lastChildWhere(ctx, n, (c) => !named(ctx, c) && kind(ctx, c) === "}"),
   );
   let content: Doc;
   if (children.length === 0)
@@ -237,18 +247,18 @@ const object: JsRule = (n, ctx) => {
     const parts: Doc[] = [];
     children.forEach((c, i) => {
       if (i > 0) {
-        const previous = children[i - 1] as FormatNode;
-        parts.push(t(ctx, commaAfter(n, previous)), line);
-        if (isNextLineEmpty(ctx.source, previous.end)) parts.push(hardline);
+        const previous = children[i - 1] as number;
+        parts.push(t(ctx, commaAfter(ctx, n, previous)), line);
+        if (nextLineEmpty(ctx.tree, previous)) parts.push(hardline);
       }
       parts.push(p(ctx, c));
     });
-    const last = children.at(-1) as FormatNode;
+    const last = children.at(-1) as number;
     const spacing = ctx.options.bracketSpacing ? line : softline;
     content = [
       open,
       indent([spacing, ...parts]),
-      last.kind === "rest_pattern" || !trailingCommaAllowed(ctx)
+      kind(ctx, last) === "rest_pattern" || !trailingCommaAllowed(ctx)
         ? []
         : ifBreak(synthetic(last, ",")),
       danglingCommentsAfter(ctx, n),
@@ -257,99 +267,103 @@ const object: JsRule = (n, ctx) => {
     ];
   }
   if (isPattern && isHuggedParameter(ctx, n)) return content;
-  const { key, parent: realParent } = role(n);
+  const { key, parent: realParent } = role(ctx, n);
   if (
     !shouldBreak &&
     isPattern &&
-    ((realParent?.kind === "assignment_expression" && key === "left") ||
-      (realParent?.kind === "variable_declarator" && key === "name"))
+    ((kind(ctx, realParent) === "assignment_expression" && key === "left") ||
+      (kind(ctx, realParent) === "variable_declarator" && key === "name"))
   )
     return content;
   return group(content, shouldBreak);
 };
 
 /** Dangling comments of a non-empty object sit after its last member (prettier attaches them there). */
-const danglingCommentsAfter = (ctx: JsCtx, n: FormatNode): Doc => {
+const danglingCommentsAfter = (ctx: JsCtx, n: number): Doc => {
   const docs = danglingComments(ctx, n);
   return Array.isArray(docs) && docs.length === 0 ? [] : [line, docs];
 };
 
 function commaAfter(
-  list: FormatNode,
-  item: FormatNode,
-): FormatNode | undefined {
-  const i = list.children.indexOf(item);
-  for (let j = i + 1; j < list.children.length; j++) {
-    const c = list.children[j] as FormatNode;
-    if (!c.named && c.kind === ",") return c;
-    if (!isComment(c)) return undefined;
+  x: HasTree,
+  list: number,
+  item: number,
+): number | undefined {
+  const siblings = childrenOf(x, list);
+  const i = siblings.indexOf(item);
+  for (let j = i + 1; j < siblings.length; j++) {
+    const c = siblings[j] as number;
+    if (!named(x, c) && kind(x, c) === ",") return c;
+    if (!isComment(x, c)) return undefined;
   }
   return undefined;
 }
 
 const pair: JsRule = (n, ctx) => {
-  const colon = anonKid(n, ":");
+  const colon = anonKid(ctx, n, ":");
   return printAssignment(
     ctx,
     n,
     printKey(ctx, n),
     t(ctx, colon),
-    field(n, "value"),
+    field(ctx, n, "value"),
   );
 };
 
 const assignmentPattern: JsRule = (n, ctx) => [
-  p(ctx, field(n, "left")),
+  p(ctx, field(ctx, n, "left")),
   text(" "),
-  t(ctx, anonKid(n, "=")),
+  t(ctx, anonKid(ctx, n, "=")),
   text(" "),
-  p(ctx, field(n, "right")),
+  p(ctx, field(ctx, n, "right")),
 ];
 
 const computedPropertyName: JsRule = (n, ctx) => [
-  t(ctx, anonKid(n, "[")),
-  p(ctx, items(n)[0]),
-  t(ctx, anonKid(n, "]")),
+  t(ctx, anonKid(ctx, n, "[")),
+  p(ctx, items(ctx, n)[0]),
+  t(ctx, anonKid(ctx, n, "]")),
 ];
 
 /** Prettier's printMethod, for object and class methods alike: modifiers, key, `?`, then the method value. */
 export const method: JsRule = (n, ctx) => {
   const parts: Doc[] = [];
-  const name = field(n, "name");
-  for (const c of n.children) {
+  const name = field(ctx, n, "name");
+  const kids = childrenOf(ctx, n);
+  for (const c of kids) {
     if (c === name) break;
-    if (isComment(c)) continue;
-    if (c.kind === "decorator") continue;
+    if (isComment(ctx, c)) continue;
+    if (kind(ctx, c) === "decorator") continue;
     parts.push(p(ctx, c));
-    if (c.kind !== "*") parts.push(text(" "));
+    if (kind(ctx, c) !== "*") parts.push(text(" "));
   }
-  const decorators = n.children.filter((c) => c.kind === "decorator");
+  const decorators = kids.filter((c) => kind(ctx, c) === "decorator");
   return [
     printDecorators(ctx, decorators),
     parts,
     printKey(ctx, n),
-    t(ctx, name && nextAnon(n, name, "?")),
+    t(ctx, name === undefined ? undefined : nextAnon(ctx, n, name, "?")),
     printMethodValue(ctx, n),
   ];
 };
 
 function nextAnon(
-  n: FormatNode,
-  after: FormatNode,
-  kind: string,
-): FormatNode | undefined {
-  const i = n.children.indexOf(after);
-  const c = n.children[i + 1];
-  return c && !c.named && c.kind === kind ? c : undefined;
+  x: HasTree,
+  n: number,
+  after: number,
+  k: string,
+): number | undefined {
+  const siblings = childrenOf(x, n);
+  const c = siblings[siblings.indexOf(after) + 1];
+  return c !== undefined && !named(x, c) && kind(x, c) === k ? c : undefined;
 }
 
 /** Prettier's printClassMemberDecorators. */
 export function printDecorators(
   ctx: JsCtx,
-  decorators: readonly FormatNode[],
+  decorators: readonly number[],
 ): Doc {
   if (decorators.length === 0) return [];
-  const broken = decorators.some((d) => hasNewline(ctx.source, d.end));
+  const broken = decorators.some((d) => lfAfter(ctx.tree, d) > 0);
   return group([
     join(
       line,
@@ -363,19 +377,20 @@ export function printDecorators(
 
 /** The elements of an array, `undefined` for each hole, with the `,` after each. */
 function arrayElements(
-  n: FormatNode,
-): { element: FormatNode | undefined; comma: FormatNode | undefined }[] {
+  x: HasTree,
+  n: number,
+): { element: number | undefined; comma: number | undefined }[] {
   const out: {
-    element: FormatNode | undefined;
-    comma: FormatNode | undefined;
+    element: number | undefined;
+    comma: number | undefined;
   }[] = [];
   let expecting = true;
-  for (const c of n.children) {
-    if (isComment(c)) continue;
-    if (c.named) {
+  for (const c of childrenOf(x, n)) {
+    if (isComment(x, c)) continue;
+    if (named(x, c)) {
       out.push({ element: c, comma: undefined });
       expecting = false;
-    } else if (c.kind === ",") {
+    } else if (kind(x, c) === ",") {
       if (expecting) out.push({ element: undefined, comma: c });
       else {
         const last = out.at(-1);
@@ -387,28 +402,29 @@ function arrayElements(
   return out;
 }
 
-const isArrayOrObject = (n: FormatNode | undefined) =>
-  n !== undefined && (n.kind === "array" || n.kind === "object");
+const isArrayOrObject = (x: HasTree, n: number | undefined) =>
+  kind(x, n) === "array" || kind(x, n) === "object";
 
 export const array: JsRule = (n, ctx) => {
-  const open = t(ctx, anonKid(n, "["));
+  const open = t(ctx, anonKid(ctx, n, "["));
   const close = t(
     ctx,
-    n.children.findLast((c) => !c.named && c.kind === "]"),
+    lastChildWhere(ctx, n, (c) => !named(ctx, c) && kind(ctx, c) === "]"),
   );
-  const elements = arrayElements(n);
+  const elements = arrayElements(ctx, n);
   if (elements.length === 0)
     return group([open, danglingCommentsInList(ctx, n), close]);
   const lastElem = elements.at(-1) as (typeof elements)[number];
-  const canHaveTrailingComma = lastElem.element?.kind !== "rest_pattern";
+  const canHaveTrailingComma = kind(ctx, lastElem.element) !== "rest_pattern";
   const needsForcedTrailingComma = lastElem.element === undefined;
   const shouldBreak =
     (elements.length > 1 &&
       elements.every(({ element }, i) => {
-        if (!isArrayOrObject(element)) return false;
+        if (!isArrayOrObject(ctx, element)) return false;
         const next = elements[i + 1]?.element;
-        if (next && next.kind !== element?.kind) return false;
-        return items(element as FormatNode).length > 1;
+        if (next !== undefined && kind(ctx, next) !== kind(ctx, element))
+          return false;
+        return items(ctx, element as number).length > 1;
       })) ||
     hasComment(ctx, n, CF.Dangling | CF.Line);
   const concise = isConciselyPrintedArray(ctx, n);
@@ -433,9 +449,9 @@ export const array: JsRule = (n, ctx) => {
       if (!isLast) {
         const next = elements[i + 1]?.element;
         parts.push(
-          element && isNextLineEmpty(ctx.source, element.end)
+          element !== undefined && nextLineEmpty(ctx.tree, element)
             ? [hardline, hardline]
-            : next && hasComment(ctx, next, CF.Leading | CF.Line)
+            : next !== undefined && hasComment(ctx, next, CF.Leading | CF.Line)
               ? hardline
               : line,
         );
@@ -445,12 +461,14 @@ export const array: JsRule = (n, ctx) => {
   } else {
     elements.forEach(({ element, comma }, i) => {
       const isLast = i === elements.length - 1;
-      body.push(element ? group(p(ctx, element)) : []);
+      body.push(element !== undefined ? group(p(ctx, element)) : []);
       if (!isLast)
         body.push([
           t(ctx, comma),
           line,
-          element && isNextLineEmpty(ctx.source, element.end) ? softline : [],
+          element !== undefined && nextLineEmpty(ctx.tree, element)
+            ? softline
+            : [],
         ]);
     });
     body.push(
@@ -467,8 +485,8 @@ export const array: JsRule = (n, ctx) => {
 };
 
 const spread: JsRule = (n, ctx) => [
-  t(ctx, anonKid(n, "...")),
-  p(ctx, items(n)[0]),
+  t(ctx, anonKid(ctx, n, "...")),
+  p(ctx, items(ctx, n)[0]),
 ];
 
 export const objectRules: Record<string, JsRule> = {

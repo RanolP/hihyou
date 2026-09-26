@@ -10,7 +10,6 @@ import {
   lineSuffixBoundary,
   text,
 } from "../../../fmt/doc.js";
-import type { FormatNode } from "../../../fmt/tree.js";
 import { textWidth } from "../../../fmt/width.js";
 import { printsAsMemberChain } from "./calls.js";
 import { printString } from "./literals.js";
@@ -21,9 +20,11 @@ import {
   callArguments,
   callee,
   canBreak,
+  childWhere,
   docText,
   field,
   first,
+  type HasTree,
   hasComment,
   hasLeadingOwnLineComment,
   isAssignment,
@@ -34,6 +35,7 @@ import {
   isMember,
   items,
   type JsCtx,
+  kind,
   objectOf,
   operator,
   src,
@@ -56,15 +58,14 @@ export type AssignmentLayout =
  */
 export function printAssignment(
   ctx: JsCtx,
-  node: FormatNode,
+  node: number,
   left: Doc,
   operator: Doc,
-  right: FormatNode | undefined,
+  right: number | undefined,
 ): Doc {
   const layout = chooseLayout(ctx, node, left, right);
-  const rightDoc: Doc = right
-    ? ctx.print(right, { assignmentLayout: layout })
-    : [];
+  const rightDoc: Doc =
+    right !== undefined ? ctx.print(right, { assignmentLayout: layout }) : [];
   switch (layout) {
     case "break-after-operator":
       return group([group(left), operator, group(indent([line, rightDoc]))]);
@@ -93,44 +94,49 @@ export function printAssignment(
   }
 }
 
-const isDeclarator = (n: FormatNode | undefined) =>
-  n?.kind === "variable_declarator";
-const isAssignmentOrDeclarator = (n: FormatNode | undefined) =>
-  isAssignment(n) || isDeclarator(n);
-const isArrow = (n: FormatNode | undefined) => n?.kind === "arrow_function";
-const isObjectProperty = (n: FormatNode) => n.kind === "pair";
+const isDeclarator = (x: HasTree, n: number | undefined) =>
+  kind(x, n) === "variable_declarator";
+const isAssignmentOrDeclarator = (x: HasTree, n: number | undefined) =>
+  isAssignment(x, n) || isDeclarator(x, n);
+const isArrow = (x: HasTree, n: number | undefined) =>
+  kind(x, n) === "arrow_function";
+const isObjectProperty = (x: HasTree, n: number) => kind(x, n) === "pair";
 
 function chooseLayout(
   ctx: JsCtx,
-  node: FormatNode,
+  node: number,
   left: Doc,
-  rightNode: FormatNode | undefined,
+  rightNode: number | undefined,
 ): AssignmentLayout {
-  if (!rightNode) return "only-left";
-  const right = unparen(rightNode);
-  const isTail = !isAssignment(right);
-  const parent = role(node).parent;
-  const grandparent = parent && role(parent).parent;
+  if (rightNode === undefined) return "only-left";
+  const right = unparen(ctx, rightNode);
+  const isTail = !isAssignment(ctx, right);
+  const parent = role(ctx, node).parent;
+  const grandparent =
+    parent !== undefined ? role(ctx, parent).parent : undefined;
   // `a = b = c`: prettier's path.match(isAssignment, isAssignmentOrVariableDeclarator, ...).
   if (
-    isAssignment(node) &&
-    isAssignmentOrDeclarator(parent) &&
-    grandparent &&
+    isAssignment(ctx, node) &&
+    isAssignmentOrDeclarator(ctx, parent) &&
+    grandparent !== undefined &&
     (!isTail ||
-      (grandparent.kind !== "expression_statement" &&
-        !grandparent.kind.endsWith("declaration")))
+      (kind(ctx, grandparent) !== "expression_statement" &&
+        !kind(ctx, grandparent).endsWith("declaration")))
   )
     return !isTail
       ? "chain"
-      : isArrow(right) && isArrow(unparen(field(right, "body") ?? right))
+      : isArrow(ctx, right) &&
+          isArrow(ctx, unparen(ctx, field(ctx, right, "body") ?? right))
         ? "chain-tail-arrow-chain"
         : "chain-tail";
-  const rightType = unparenType(right) ?? right;
+  const rightType = unparenType(ctx, right) ?? right;
   const isHeadOfLongChain =
-    !isTail && isAssignment(unparen(field(right, "right") ?? right));
+    !isTail &&
+    isAssignment(ctx, unparen(ctx, field(ctx, right, "right") ?? right));
   if (
     isHeadOfLongChain ||
-    (rightType.kind === "union_type" && !shouldHugUnionType(ctx, rightType)) ||
+    (kind(ctx, rightType) === "union_type" &&
+      !shouldHugUnionType(ctx, rightType)) ||
     // A one-type union's `| // c` comment leads the type inside, which is prettier's right side.
     [rightNode, rightType].some(
       (n) =>
@@ -140,31 +146,32 @@ function chooseLayout(
   )
     return "break-after-operator";
   if (
-    node.kind === "import_attribute" ||
-    (right.kind === "call_expression" &&
-      src(ctx, callee(right) ?? right) === "require")
+    kind(ctx, node) === "import_attribute" ||
+    (kind(ctx, right) === "call_expression" &&
+      src(ctx, callee(ctx, right) ?? right) === "require")
   )
     return "never-break-after-operator";
   const canBreakLeft = canBreak(left);
   if (
-    isComplexDestructuring(node) ||
-    hasComplexTypeAnnotation(node) ||
-    (isDeclarator(node) && isArrow(right) && canBreakLeft)
+    isComplexDestructuring(ctx, node) ||
+    hasComplexTypeAnnotation(ctx, node) ||
+    (isDeclarator(ctx, node) && isArrow(ctx, right) && canBreakLeft)
   )
     return "break-lhs";
   const hasShortKey = isObjectPropertyWithShortKey(ctx, node, left);
   if (shouldBreakAfterOperator(ctx, rightNode, hasShortKey))
     return "break-after-operator";
-  if (isComplexTypeAliasParams(node)) return "break-lhs";
+  if (isComplexTypeAliasParams(ctx, node)) return "break-lhs";
+  const rightKind = kind(ctx, right);
   if (
     !canBreakLeft &&
     (hasShortKey ||
-      right.kind === "template_string" ||
-      (right.kind === "call_expression" &&
-        field(right, "arguments")?.kind === "template_string") ||
-      isBoolean(right) ||
-      right.kind === "number" ||
-      right.kind === "class")
+      rightKind === "template_string" ||
+      (rightKind === "call_expression" &&
+        kind(ctx, field(ctx, right, "arguments")) === "template_string") ||
+      isBoolean(ctx, right) ||
+      rightKind === "number" ||
+      rightKind === "class")
   )
     return "never-break-after-operator";
   return "fluid";
@@ -175,115 +182,135 @@ function chooseLayout(
  * `n`'s right operand once prettier's parser has rebalanced `a || (b || c)` into `(a || b) || c`: the end of
  * the right spine that repeats `n`'s logical operator.
  */
-export function logicalRight(n: FormatNode): FormatNode | undefined {
-  let r = field(n, "right");
-  if (!isLogical(n)) return r;
+export function logicalRight(x: HasTree, n: number): number | undefined {
+  let r = field(x, n, "right");
+  if (!isLogical(x, n)) return r;
   for (;;) {
-    const inner = r && unparen(r);
-    if (!inner || !isLogical(inner) || operator(inner) !== operator(n))
+    const inner = r !== undefined ? unparen(x, r) : undefined;
+    if (
+      inner === undefined ||
+      !isLogical(x, inner) ||
+      operator(x, inner) !== operator(x, n)
+    )
       return r;
-    r = field(inner, "right");
+    r = field(x, inner, "right");
   }
 }
 
-export function shouldInlineLogicalExpression(n: FormatNode): boolean {
-  if (!isLogical(n)) return false;
-  const r = unparen(logicalRight(n) ?? n);
-  if (r.kind === "object") return items(r).length > 0;
-  if (r.kind === "array") return items(r).length > 0;
-  return r.kind === "jsx_element" || r.kind === "jsx_self_closing_element";
+export function shouldInlineLogicalExpression(x: HasTree, n: number): boolean {
+  if (!isLogical(x, n)) return false;
+  const r = unparen(x, logicalRight(x, n) ?? n);
+  const k = kind(x, r);
+  if (k === "object") return items(x, r).length > 0;
+  if (k === "array") return items(x, r).length > 0;
+  return k === "jsx_element" || k === "jsx_self_closing_element";
 }
 
 function shouldBreakAfterOperator(
   ctx: JsCtx,
-  rightNode: FormatNode,
+  rightNode: number,
   hasShortKey: boolean,
 ): boolean {
-  const right = unparen(rightNode);
-  if (isBinaryish(right) && !shouldInlineLogicalExpression(right)) return true;
-  switch (right.kind) {
+  const right = unparen(ctx, rightNode);
+  if (isBinaryish(ctx, right) && !shouldInlineLogicalExpression(ctx, right))
+    return true;
+  switch (kind(ctx, right)) {
     case "sequence_expression":
       return true;
     case "conditional_type": {
       if (ctx.options.experimentalTernaries) return true;
-      const check = unparenType(field(right, "left"));
-      const ext = unparenType(field(right, "right"));
-      if (isGenericType(check) || isGenericType(ext)) return true;
+      const check = unparenType(ctx, field(ctx, right, "left"));
+      const ext = unparenType(ctx, field(ctx, right, "right"));
+      if (isGenericType(ctx, check) || isGenericType(ctx, ext)) return true;
       break;
     }
     case "ternary_expression": {
       if (ctx.options.experimentalTernaries)
-        return [field(right, "consequence"), field(right, "alternative")].some(
-          (b) => b !== undefined && unparen(b).kind === "ternary_expression",
+        return [
+          field(ctx, right, "consequence"),
+          field(ctx, right, "alternative"),
+        ].some(
+          (b) =>
+            b !== undefined &&
+            kind(ctx, unparen(ctx, b)) === "ternary_expression",
         );
-      const test = unparen(field(right, "condition") ?? right);
-      return isBinaryish(test) && !shouldInlineLogicalExpression(test);
+      const test = unparen(ctx, field(ctx, right, "condition") ?? right);
+      return (
+        isBinaryish(ctx, test) && !shouldInlineLogicalExpression(ctx, test)
+      );
     }
     case "class":
-      return right.children.some((c) => c.kind === "decorator");
+      return (
+        childWhere(ctx, right, (c) => kind(ctx, c) === "decorator") !==
+        undefined
+      );
   }
   if (hasShortKey) return false;
   let n = right;
   for (;;) {
+    const k = kind(ctx, n);
     if (
-      n.kind === "unary_expression" ||
-      n.kind === "await_expression" ||
-      (n.kind === "yield_expression" && first(n))
+      k === "unary_expression" ||
+      k === "await_expression" ||
+      (k === "yield_expression" && first(ctx, n) !== undefined)
     ) {
-      const a = field(n, "argument") ?? first(n);
-      if (!a) break;
-      n = unparen(a);
-    } else if (n.kind === "non_null_expression") {
-      const a = first(n);
-      if (!a) break;
-      n = unparen(a);
+      const a = field(ctx, n, "argument") ?? first(ctx, n);
+      if (a === undefined) break;
+      n = unparen(ctx, a);
+    } else if (k === "non_null_expression") {
+      const a = first(ctx, n);
+      if (a === undefined) break;
+      n = unparen(ctx, a);
     } else break;
   }
-  return n.kind === "string" || isPoorlyBreakableMemberOrCallChain(ctx, n);
+  return (
+    kind(ctx, n) === "string" || isPoorlyBreakableMemberOrCallChain(ctx, n)
+  );
 }
 
 function isPoorlyBreakableMemberOrCallChain(
   ctx: JsCtx,
-  n: FormatNode,
+  n: number,
   deep = false,
 ): boolean {
-  n = unparen(n);
-  if (n.kind === "call_expression" || n.kind === "new_expression") {
-    if (field(n, "arguments")?.kind === "template_string") return false;
+  n = unparen(ctx, n);
+  const k = kind(ctx, n);
+  if (k === "call_expression" || k === "new_expression") {
+    if (kind(ctx, field(ctx, n, "arguments")) === "template_string")
+      return false;
     if (printsAsMemberChain(ctx, n)) return false;
-    const args = callArguments(n);
+    const args = callArguments(ctx, n);
     const poor =
       args.length === 0 ||
       (args.length === 1 &&
         args[0] !== undefined &&
         isLoneShortArgument(ctx, args[0]));
     if (!poor) return false;
-    if (isCallWithComplexTypeArguments(n)) return false;
-    const c = callee(n);
+    if (isCallWithComplexTypeArguments(ctx, n)) return false;
+    const c = callee(ctx, n);
     return c !== undefined && isPoorlyBreakableMemberOrCallChain(ctx, c, true);
   }
-  if (isMember(n)) {
-    const o = objectOf(n);
+  if (isMember(ctx, n)) {
+    const o = objectOf(ctx, n);
     return o !== undefined && isPoorlyBreakableMemberOrCallChain(ctx, o, true);
   }
-  if (n.kind === "non_null_expression") {
-    const o = first(n);
+  if (k === "non_null_expression") {
+    const o = first(ctx, n);
     return o !== undefined && isPoorlyBreakableMemberOrCallChain(ctx, o, deep);
   }
-  return deep && (n.kind === "identifier" || n.kind === "this");
+  return deep && (k === "identifier" || k === "this");
 }
 
-function isCallWithComplexTypeArguments(n: FormatNode): boolean {
-  const args = field(n, "type_arguments");
-  if (!args) return false;
-  const params = items(args);
+function isCallWithComplexTypeArguments(x: HasTree, n: number): boolean {
+  const args = field(x, n, "type_arguments");
+  if (args === undefined) return false;
+  const params = items(x, args);
   if (params.length > 1) return true;
-  const only = params[0];
+  const only = kind(x, params[0]);
   if (
-    only &&
-    (only.kind === "union_type" ||
-      only.kind === "intersection_type" ||
-      only.kind === "object_type")
+    only === "union_type" ||
+    only === "intersection_type" ||
+    only === "object_type"
   )
     return true;
   return false;
@@ -292,116 +319,124 @@ function isCallWithComplexTypeArguments(n: FormatNode): boolean {
 /** Prettier's isLoneShortArgument (utilities/is-lone-short-argument.js). */
 export function isLoneShortArgument(
   ctx: JsCtx,
-  n: FormatNode,
+  n: number,
   printWidth = ctx.options.printWidth,
 ): boolean {
   if (hasComment(ctx, n)) return false;
   const threshold = printWidth * 0.25;
-  n = unparen(n);
-  if (n.kind === "this") return true;
-  if (n.kind === "identifier" || n.kind === "undefined")
+  n = unparen(ctx, n);
+  const k = kind(ctx, n);
+  if (k === "this") return true;
+  if (k === "identifier" || k === "undefined")
     return textWidth(src(ctx, n)) <= threshold;
-  if (n.kind === "unary_expression") {
-    const op = field(n, "operator")?.kind;
-    const arg = field(n, "argument");
+  if (k === "unary_expression") {
+    const op = kind(ctx, field(ctx, n, "operator"));
+    const arg = field(ctx, n, "argument");
     if (
       (op === "+" || op === "-") &&
-      arg &&
-      unparen(arg).kind === "number" &&
+      arg !== undefined &&
+      kind(ctx, unparen(ctx, arg)) === "number" &&
       !hasComment(ctx, arg)
     )
       return true;
     return arg !== undefined && isLoneShortArgument(ctx, arg, printWidth);
   }
-  if (n.kind === "regex")
-    return src(ctx, field(n, "pattern") ?? n).length <= threshold;
-  if (n.kind === "string")
+  if (k === "regex")
+    return src(ctx, field(ctx, n, "pattern") ?? n).length <= threshold;
+  if (k === "string")
     return (
       printString(src(ctx, n), ctx.options.singleQuote).length <= threshold
     );
-  if (n.kind === "template_string") {
+  if (k === "template_string") {
     const raw = src(ctx, n).slice(1, -1);
     return (
-      !n.children.some((c) => c.kind === "template_substitution") &&
+      childWhere(ctx, n, (c) => kind(ctx, c) === "template_substitution") ===
+        undefined &&
       raw.length <= threshold &&
       !raw.includes("\n")
     );
   }
   if (
-    n.kind === "call_expression" &&
-    field(n, "arguments")?.kind === "arguments"
+    k === "call_expression" &&
+    kind(ctx, field(ctx, n, "arguments")) === "arguments"
   ) {
-    const c = callee(n);
+    const c = callee(ctx, n);
     return (
-      callArguments(n).length === 0 &&
-      c?.kind === "identifier" &&
+      callArguments(ctx, n).length === 0 &&
+      c !== undefined &&
+      kind(ctx, c) === "identifier" &&
       src(ctx, c).length <= threshold - 2
     );
   }
-  return ["number", "true", "false", "null"].includes(n.kind);
+  return ["number", "true", "false", "null"].includes(k);
 }
 
-function isComplexDestructuring(node: FormatNode): boolean {
-  if (!isAssignmentOrDeclarator(node)) return false;
-  const left = field(node, "left") ?? field(node, "name");
-  if (!left || unparen(left).kind !== "object_pattern") return false;
-  const props = items(unparen(left));
+function isComplexDestructuring(x: HasTree, node: number): boolean {
+  if (!isAssignmentOrDeclarator(x, node)) return false;
+  const left = field(x, node, "left") ?? field(x, node, "name");
+  if (left === undefined || kind(x, unparen(x, left)) !== "object_pattern")
+    return false;
+  const props = items(x, unparen(x, left));
   return (
     props.length > 2 &&
     props.some(
       (p) =>
-        p.kind === "pair_pattern" ||
+        kind(x, p) === "pair_pattern" ||
         // `{ a = 1 }`: a shorthand property whose value is an assignment pattern.
-        p.kind === "object_assignment_pattern",
+        kind(x, p) === "object_assignment_pattern",
     )
   );
 }
 
-function hasComplexTypeAnnotation(node: FormatNode): boolean {
-  if (!isDeclarator(node)) return false;
-  const annotation = field(node, "type");
-  const type = annotation && first(annotation);
-  const params = type && typeArgumentsOf(type);
+function hasComplexTypeAnnotation(x: HasTree, node: number): boolean {
+  if (!isDeclarator(x, node)) return false;
+  const annotation = field(x, node, "type");
+  const type = annotation !== undefined ? first(x, annotation) : undefined;
+  const params = type !== undefined ? typeArgumentsOf(x, type) : undefined;
   return (
     params !== undefined &&
     params.length > 1 &&
     params.some(
       (p) =>
-        (typeArgumentsOf(p)?.length ?? 0) > 0 || p.kind === "conditional_type",
+        (typeArgumentsOf(x, p)?.length ?? 0) > 0 ||
+        kind(x, p) === "conditional_type",
     )
   );
 }
 
-function typeArgumentsOf(type: FormatNode): FormatNode[] | undefined {
-  if (type.kind !== "generic_type") return undefined;
-  const args = field(type, "type_arguments");
-  return args ? items(args) : undefined;
+function typeArgumentsOf(x: HasTree, type: number): number[] | undefined {
+  if (kind(x, type) !== "generic_type") return undefined;
+  const args = field(x, type, "type_arguments");
+  return args !== undefined ? items(x, args) : undefined;
 }
 
-function isComplexTypeAliasParams(node: FormatNode): boolean {
-  if (node.kind !== "type_alias_declaration") return false;
-  const params = field(node, "type_parameters");
-  if (!params) return false;
-  const list = items(params);
+function isComplexTypeAliasParams(x: HasTree, node: number): boolean {
+  if (kind(x, node) !== "type_alias_declaration") return false;
+  const params = field(x, node, "type_parameters");
+  if (params === undefined) return false;
+  const list = items(x, params);
   return (
     list.length > 1 &&
     list.some(
       (p) =>
-        field(p, "constraint") !== undefined || field(p, "value") !== undefined,
+        field(x, p, "constraint") !== undefined ||
+        field(x, p, "value") !== undefined,
     )
   );
 }
 
-const isGenericType = (n: FormatNode | undefined) =>
-  (n?.kind === "generic_type" && field(n, "type_arguments") !== undefined) ||
-  (n?.kind === "function_type" && field(n, "type_parameters") !== undefined);
+const isGenericType = (x: HasTree, n: number | undefined) =>
+  (kind(x, n) === "generic_type" &&
+    field(x, n as number, "type_arguments") !== undefined) ||
+  (kind(x, n) === "function_type" &&
+    field(x, n as number, "type_parameters") !== undefined);
 
 function isObjectPropertyWithShortKey(
   ctx: JsCtx,
-  node: FormatNode,
+  node: number,
   keyDoc: Doc,
 ): boolean {
-  if (!isObjectProperty(node)) return false;
+  if (!isObjectProperty(ctx, node)) return false;
   const key = docText(keyDoc);
   return key !== undefined && textWidth(key) < ctx.options.tabWidth + 3;
 }

@@ -23,15 +23,17 @@ import {
   token,
   withContents,
 } from "../../../fmt/doc.js";
-import type { FormatNode } from "../../../fmt/tree.js";
 import { isDirective } from "./parens.js";
 import {
   anon,
+  children,
   field,
   first,
   hasComment,
   type JsCtx,
   type JsRule,
+  kind,
+  parent,
   src,
   unparen,
 } from "./util.js";
@@ -100,8 +102,12 @@ function printDirective(raw: string, singleQuote: boolean): string {
 
 const string: JsRule = (node, ctx) => {
   const raw = src(ctx, node);
-  const statement = node.parent;
-  if (statement?.kind === "expression_statement" && isDirective(statement))
+  const statement = parent(ctx, node);
+  if (
+    statement !== undefined &&
+    kind(ctx, statement) === "expression_statement" &&
+    isDirective(ctx, statement)
+  )
     return token(node, printDirective(raw, ctx.options.singleQuote));
   // A line continuation keeps its break, which the printer must not indent.
   const printed = printString(raw, ctx.options.singleQuote);
@@ -113,8 +119,8 @@ const string: JsRule = (node, ctx) => {
 const number: JsRule = (node, ctx) => token(node, printNumber(src(ctx, node)));
 
 const regex: JsRule = (node, ctx) => {
-  const flags = field(node, "flags");
-  const parts: Doc[] = node.children.map((c) =>
+  const flags = field(ctx, node, "flags");
+  const parts: Doc[] = children(ctx, node).map((c) =>
     c === flags
       ? token(c, [...src(ctx, c)].sort().join(""))
       : token(c, src(ctx, c)),
@@ -206,50 +212,58 @@ const INDENTED_WHEN_BROKEN = new Set([
   "satisfies_expression",
 ]);
 
-/** The raw text of each quasi of a template string, between its backticks and substitutions. */
-function quasis(ctx: JsCtx, node: FormatNode): string[] {
+/**
+ * The raw text of each quasi of a template string, between its backticks and substitutions. The children
+ * (backticks, string_fragment, escape_sequence, template_substitution) tile the template's span with no gap,
+ * so a child's offset in the template's text is the length of the children before it.
+ */
+function quasis(ctx: JsCtx, node: number): string[] {
+  const whole = src(ctx, node);
   const out: string[] = [];
-  let from = node.start + 1;
-  for (const c of node.children)
-    if (c.kind === "template_substitution") {
-      out.push(ctx.source.slice(from, c.start));
-      from = c.end;
+  let from = 1;
+  let at = 0;
+  for (const c of children(ctx, node)) {
+    const length = src(ctx, c).length;
+    if (kind(ctx, c) === "template_substitution") {
+      out.push(whole.slice(from, at));
+      from = at + length;
     }
-  out.push(ctx.source.slice(from, node.end - 1));
+    at += length;
+  }
+  out.push(whole.slice(from, whole.length - 1));
   return out;
 }
 
 function printSubstitution(
   ctx: JsCtx,
-  sub: FormatNode,
+  sub: number,
   indentSizeOf: number,
   previousQuasi: string,
   preserveIndentation = true,
 ): Doc {
-  const open = anon(sub, "${");
-  const close = anon(sub, "}");
-  const expr = first(sub);
-  let doc: Doc = expr ? ctx.print(expr) : [];
+  const open = anon(ctx, sub, "${");
+  const close = anon(ctx, sub, "}");
+  const expr = first(ctx, sub);
+  let doc: Doc = expr !== undefined ? ctx.print(expr) : [];
   let hasNewline = src(ctx, sub).includes("\n");
   if (!hasNewline) {
     const flat = flatten(doc);
     if (flat === undefined) hasNewline = true;
     else doc = flat;
   }
-  const e = expr && unparen(expr);
   if (
     hasNewline &&
-    expr &&
-    e &&
-    (hasComment(ctx, expr) || INDENTED_WHEN_BROKEN.has(e.kind))
+    expr !== undefined &&
+    (hasComment(ctx, expr) ||
+      INDENTED_WHEN_BROKEN.has(kind(ctx, unparen(ctx, expr))))
   )
     doc = [indent([softline, doc]), softline];
   const wrap = (d: Doc) =>
     group([
-      open ? token(open, "${") : [],
+      open !== undefined ? token(open, "${") : [],
       d,
       lineSuffixBoundary,
-      close ? token(close, "}") : [],
+      close !== undefined ? token(close, "}") : [],
     ]);
   if (!preserveIndentation) return wrap(doc);
   doc =
@@ -260,7 +274,7 @@ function printSubstitution(
 }
 
 /** The quasi leaves of a template printed as their source, a line break in them kept where it is. */
-const quasiLeaf = (ctx: JsCtx, c: FormatNode): Doc => {
+const quasiLeaf = (ctx: JsCtx, c: number): Doc => {
   const t = src(ctx, c);
   return t.includes("\n") ? literalToken(c, t) : token(c, t);
 };
@@ -276,20 +290,20 @@ const templateString: JsRule = (node, ctx) => {
     return size;
   });
   let i = 0;
-  const parts = node.children.map((c): Doc => {
-    if (c.kind === "template_substitution") {
+  const parts = children(ctx, node).map((c): Doc => {
+    if (kind(ctx, c) === "template_substitution") {
       const doc = printSubstitution(ctx, c, sizes[i] ?? 0, raws[i] ?? "");
       i++;
       return doc;
     }
-    if (c.kind === "comment") return [];
+    if (kind(ctx, c) === "comment") return [];
     return quasiLeaf(ctx, c);
   });
   return [lineSuffixBoundary, parts];
 };
 
 /** Prettier's printComment: a block comment whose lines all start with `*` is re-indented. */
-export function printComment(c: FormatNode, ctx: JsCtx): Doc {
+export function printComment(c: number, ctx: JsCtx): Doc {
   const raw = src(ctx, c);
   if (ctx.isLineComment(c)) return token(c, raw.trimEnd());
   if (raw.startsWith("/*") && raw.includes("\n")) {

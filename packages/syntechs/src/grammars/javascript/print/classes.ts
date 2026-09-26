@@ -13,8 +13,7 @@ import {
   synthetic,
   text,
 } from "../../../fmt/doc.js";
-import { isNextLineEmpty } from "../../../fmt/text.js";
-import type { FormatNode } from "../../../fmt/tree.js";
+import { nextLineEmpty } from "../../../fmt/text.js";
 import { printAssignment } from "./assignment.js";
 import {
   method,
@@ -22,17 +21,26 @@ import {
   printDecorators as printMemberDecorators,
 } from "./objects.js";
 import {
+  anon,
   CF,
+  childWhere,
+  children,
   field,
+  type HasTree,
   hasComment,
   isComment,
   isMember,
   items,
   type JsCtx,
   type JsRule,
+  kind,
+  lastChildWhere,
+  named,
   p,
+  parent,
   semi,
   separators,
+  src,
   t,
 } from "./util.js";
 
@@ -43,78 +51,88 @@ const METHOD_KINDS = new Set([
   "method_signature",
 ]);
 
-const decoratorsOf = (n: FormatNode) =>
-  n.children.filter((c) => c.kind === "decorator");
-const kw = (n: FormatNode | undefined, kind: string) =>
-  n?.children.some((c) => !c.named && c.kind === kind) ?? false;
-const heritageOf = (n: FormatNode) =>
-  n.children.find((c) => c.kind === "class_heritage");
+const decoratorsOf = (x: HasTree, n: number) =>
+  children(x, n).filter((c) => kind(x, c) === "decorator");
+const kw = (x: HasTree, n: number | undefined, k: string) =>
+  n !== undefined && anon(x, n, k) !== undefined;
+const heritageOf = (x: HasTree, n: number) =>
+  childWhere(x, n, (c) => kind(x, c) === "class_heritage");
 
 /** The superclass expression and the `implements` list of a class, with the nodes that own their keywords. */
-function heritage(n: FormatNode) {
+function heritage(x: HasTree, n: number) {
   // An interface's `extends A, B` is a list, like a class's `implements`.
-  const list = n.children.find((c) => c.kind === "extends_type_clause");
-  if (list)
+  const list = childWhere(x, n, (c) => kind(x, c) === "extends_type_clause");
+  if (list !== undefined)
     return {
       h: list,
       ext: undefined,
       imp: list,
       superClass: undefined,
-      implementsList: items(list),
+      implementsList: items(x, list),
     };
-  const h = heritageOf(n);
-  if (!h) return { superClass: undefined, implementsList: [] as FormatNode[] };
-  const ext = h.children.find((c) => c.kind === "extends_clause");
-  const imp = h.children.find((c) => c.kind === "implements_clause");
-  const bare = items(h)[0];
-  const superClass = ext
-    ? field(ext, "value")
-    : bare === imp
-      ? undefined
-      : bare;
-  return { h, ext, imp, superClass, implementsList: imp ? items(imp) : [] };
+  const h = heritageOf(x, n);
+  if (h === undefined)
+    return { superClass: undefined, implementsList: [] as number[] };
+  const ext = childWhere(x, h, (c) => kind(x, c) === "extends_clause");
+  const imp = childWhere(x, h, (c) => kind(x, c) === "implements_clause");
+  const bare = items(x, h)[0];
+  const superClass =
+    ext !== undefined
+      ? field(x, ext, "value")
+      : bare === imp
+        ? undefined
+        : bare;
+  return {
+    h,
+    ext,
+    imp,
+    superClass,
+    implementsList: imp !== undefined ? items(x, imp) : [],
+  };
 }
 
-const hasMultipleHeritage = (n: FormatNode) => {
-  const { superClass, implementsList } = heritage(n);
-  return (superClass ? 1 : 0) + implementsList.length > 1;
+const hasMultipleHeritage = (x: HasTree, n: number) => {
+  const { superClass, implementsList } = heritage(x, n);
+  return (superClass !== undefined ? 1 : 0) + implementsList.length > 1;
 };
 
 /** Prettier's shouldPrintClassInGroupMode. */
-function groupMode(ctx: JsCtx, n: FormatNode): boolean {
-  const name = field(n, "name");
-  const typeParameters = field(n, "type_parameters");
-  const { ext, superClass, implementsList } = heritage(n);
+function groupMode(ctx: JsCtx, n: number): boolean {
+  const name = field(ctx, n, "name");
+  const typeParameters = field(ctx, n, "type_parameters");
+  const { ext, superClass, implementsList } = heritage(ctx, n);
   if (
     hasComment(ctx, name, CF.Trailing) ||
     hasComment(ctx, typeParameters, CF.Trailing) ||
     hasComment(ctx, superClass) ||
-    hasMultipleHeritage(n)
+    hasMultipleHeritage(ctx, n)
   )
     return true;
-  if (superClass) {
-    if (n.parent?.kind === "assignment_expression") return false;
-    return !field(ext ?? n, "type_arguments") && isMember(superClass);
+  if (superClass !== undefined) {
+    if (kind(ctx, parent(ctx, n)) === "assignment_expression") return false;
+    return (
+      field(ctx, ext ?? n, "type_arguments") === undefined &&
+      isMember(ctx, superClass)
+    );
   }
-  const first = implementsList[0];
-  return first?.kind === "nested_type_identifier";
+  return kind(ctx, implementsList[0]) === "nested_type_identifier";
 }
 
 /** The `extends` and `implements` clauses, the part of the class header that indents when it breaks. */
-function printHeritage(ctx: JsCtx, n: FormatNode, grouped: boolean): Doc {
-  const { h, ext, imp, superClass, implementsList } = heritage(n);
-  if (!h) return [];
+function printHeritage(ctx: JsCtx, n: number, grouped: boolean): Doc {
+  const { h, ext, imp, superClass, implementsList } = heritage(ctx, n);
+  if (h === undefined) return [];
   const parts: Doc[] = [];
-  if (superClass) {
-    const keyword = t(
-      ctx,
-      (ext ?? h).children.find((c) => !c.named && c.kind === "extends"),
-    );
+  if (superClass !== undefined) {
+    const keyword = t(ctx, anon(ctx, ext ?? h, "extends"));
     let printed: Doc = [
       p(ctx, superClass),
-      p(ctx, ext && field(ext, "type_arguments")),
+      p(
+        ctx,
+        ext !== undefined ? field(ctx, ext, "type_arguments") : undefined,
+      ),
     ];
-    if (n.parent?.kind === "assignment_expression")
+    if (kind(ctx, parent(ctx, n)) === "assignment_expression")
       printed = group(
         ifBreak(
           [
@@ -129,14 +147,18 @@ function printHeritage(ctx: JsCtx, n: FormatNode, grouped: boolean): Doc {
     const doc: Doc = [keyword, text(" "), printed];
     parts.push(grouped ? [line, group(doc)] : [text(" "), doc]);
   }
-  if (imp && implementsList.length > 0) {
+  if (imp !== undefined && implementsList.length > 0) {
     const keyword = t(
       ctx,
-      imp.children.find(
-        (c) => !c.named && (c.kind === "implements" || c.kind === "extends"),
+      childWhere(
+        ctx,
+        imp,
+        (c) =>
+          !named(ctx, c) &&
+          (kind(ctx, c) === "implements" || kind(ctx, c) === "extends"),
       ),
     );
-    const commas = separators(imp, implementsList);
+    const commas = separators(ctx, imp, implementsList);
     const list = join(
       line,
       implementsList.map((c, i) =>
@@ -145,7 +167,7 @@ function printHeritage(ctx: JsCtx, n: FormatNode, grouped: boolean): Doc {
           : p(ctx, c),
       ),
     );
-    if (!hasMultipleHeritage(n)) {
+    if (!hasMultipleHeritage(ctx, n)) {
       const doc: Doc = [keyword, text(" "), list];
       parts.push(grouped ? [line, group(doc)] : [text(" "), doc]);
     } else parts.push([line, keyword, group(indent([line, list]))]);
@@ -156,13 +178,15 @@ function printHeritage(ctx: JsCtx, n: FormatNode, grouped: boolean): Doc {
 /** Prettier's printDecorators for a declaration: each on its own line above the class. */
 function printDeclarationDecorators(
   ctx: JsCtx,
-  n: FormatNode,
-  decorators: readonly FormatNode[],
+  n: number,
+  decorators: readonly number[],
 ): Doc {
   if (decorators.length === 0) return [];
-  const parent = n.parent;
+  const up = parent(ctx, n);
   const exported =
-    parent?.kind === "export_statement" && field(parent, "declaration") === n;
+    up !== undefined &&
+    kind(ctx, up) === "export_statement" &&
+    field(ctx, up, "declaration") === n;
   return [
     exported ? hardline : breakParent,
     join(
@@ -176,95 +200,93 @@ function printDeclarationDecorators(
 const printClass: JsRule = (n, ctx) => {
   const grouped = groupMode(ctx, n);
   const parts: Doc[] = [];
-  const name = field(n, "name");
-  for (const c of n.children) {
-    if (c.named) break;
-    if (c.kind === "abstract" || c.kind === "declare")
-      parts.push(t(ctx, c), text(" "));
+  const name = field(ctx, n, "name");
+  for (const c of children(ctx, n)) {
+    if (named(ctx, c)) break;
+    const k = kind(ctx, c);
+    if (k === "abstract" || k === "declare") parts.push(t(ctx, c), text(" "));
   }
-  const isInterface = n.kind === "interface_declaration";
-  parts.push(
-    t(
-      ctx,
-      n.children.find(
-        (c) => !c.named && c.kind === (isInterface ? "interface" : "class"),
-      ),
-    ),
-  );
+  const isInterface = kind(ctx, n) === "interface_declaration";
+  parts.push(t(ctx, anon(ctx, n, isInterface ? "interface" : "class")));
   const head: Doc[] = [];
-  if (name) head.push(text(" "), p(ctx, name));
-  head.push(p(ctx, field(n, "type_parameters")));
+  if (name !== undefined) head.push(text(" "), p(ctx, name));
+  head.push(p(ctx, field(ctx, n, "type_parameters")));
   const heritageDoc = printHeritage(ctx, n, grouped);
-  const body = field(n, "body");
+  const body = field(ctx, n, "body");
   if (grouped) {
     const contents: Doc[] = [...head, indent(heritageDoc)];
     const g = group(contents);
     parts.push(
       g,
-      !isInterface && body && items(body).length > 0
+      !isInterface && body !== undefined && items(ctx, body).length > 0
         ? ifBreak(hardline, text(" "), g)
         : text(" "),
     );
   } else parts.push(...head, heritageDoc, text(" "));
   parts.push(p(ctx, body));
-  return [printDeclarationDecorators(ctx, n, decoratorsOf(n)), parts];
+  return [printDeclarationDecorators(ctx, n, decoratorsOf(ctx, n)), parts];
 };
 
-const nameText = (ctx: JsCtx, n: FormatNode) => {
-  const key = field(n, "name") ?? field(n, "property");
-  return key ? ctx.source.slice(key.start, key.end) : "";
+const nameText = (ctx: JsCtx, n: number) => {
+  const key = field(ctx, n, "name") ?? field(ctx, n, "property");
+  return key !== undefined ? src(ctx, key) : "";
 };
 
 /** Prettier's shouldPrintSemicolonAfterClassProperty: the `;` a no-semi class still needs against ASI. */
 function needsSemicolonAfter(
   ctx: JsCtx,
-  n: FormatNode,
-  next: FormatNode | undefined,
+  n: number,
+  next: number | undefined,
 ): boolean {
-  if (ctx.options.semi || !FIELD_KINDS.has(n.kind)) return false;
-  const key = field(n, "name") ?? field(n, "property");
+  if (ctx.options.semi || !FIELD_KINDS.has(kind(ctx, n))) return false;
+  const key = field(ctx, n, "name") ?? field(ctx, n, "property");
   if (
-    !field(n, "value") &&
-    key?.kind === "property_identifier" &&
-    !field(n, "type")
+    field(ctx, n, "value") === undefined &&
+    kind(ctx, key) === "property_identifier" &&
+    field(ctx, n, "type") === undefined
   ) {
     const name = nameText(ctx, n);
     if (name === "static" || name === "get" || name === "set") return true;
   }
-  if (!next) return false;
+  if (next === undefined) return false;
   if (
-    kw(next, "static") ||
-    kw(next, "readonly") ||
-    next.children.some((c) => c.kind === "accessibility_modifier")
+    kw(ctx, next, "static") ||
+    kw(ctx, next, "readonly") ||
+    childWhere(ctx, next, (c) => kind(ctx, c) === "accessibility_modifier") !==
+      undefined
   )
     return false;
-  const nextKey = field(next, "name") ?? field(next, "property");
-  const computed = nextKey?.kind === "computed_property_name";
+  const nextKey = field(ctx, next, "name") ?? field(ctx, next, "property");
+  const computed = kind(ctx, nextKey) === "computed_property_name";
   if (!computed) {
-    const name = nextKey ? ctx.source.slice(nextKey.start, nextKey.end) : "";
+    const name = nextKey !== undefined ? src(ctx, nextKey) : "";
     if (name === "in" || name === "instanceof") return true;
   }
-  if (FIELD_KINDS.has(next.kind)) return computed;
-  if (METHOD_KINDS.has(next.kind)) {
-    if (kw(next, "async") || kw(next, "get") || kw(next, "set")) return false;
-    return computed || kw(next, "*");
+  if (FIELD_KINDS.has(kind(ctx, next))) return computed;
+  if (METHOD_KINDS.has(kind(ctx, next))) {
+    if (kw(ctx, next, "async") || kw(ctx, next, "get") || kw(ctx, next, "set"))
+      return false;
+    return computed || kw(ctx, next, "*");
   }
-  return next.kind === "index_signature";
+  return kind(ctx, next) === "index_signature";
 }
 
-const ownSemicolon = (n: FormatNode) => {
-  const siblings = n.parent?.children ?? [];
+const ownSemicolon = (x: HasTree, n: number) => {
+  const up = parent(x, n);
+  const siblings = up !== undefined ? children(x, up) : [];
   const next = siblings[siblings.indexOf(n) + 1];
-  return next && !next.named && next.kind === ";" ? next : undefined;
+  return next !== undefined && !named(x, next) && kind(x, next) === ";"
+    ? next
+    : undefined;
 };
 
 const classBody: JsRule = (n, ctx) => {
   // A method's decorators parse as its siblings in the class body; they print with the member they precede.
-  const members: FormatNode[] = [];
-  const decoratorsBefore = new Map<FormatNode, FormatNode[]>();
-  let pending: FormatNode[] = [];
-  for (const c of items(n)) {
-    if (c.kind === "decorator") pending.push(c);
+  const members: number[] = [];
+  const decoratorsBefore = new Map<number, number[]>();
+  let pending: number[] = [];
+  for (const c of items(ctx, n)) {
+    if (kind(ctx, c) === "decorator") pending.push(c);
     else {
       if (pending.length > 0) decoratorsBefore.set(c, pending);
       pending = [];
@@ -275,26 +297,23 @@ const classBody: JsRule = (n, ctx) => {
   members.forEach((m, i) => {
     const decorators = decoratorsBefore.get(m);
     parts.push(
-      decorators
+      decorators !== undefined
         ? [printMemberDecorators(ctx, decorators), p(ctx, m)]
         : p(ctx, m),
     );
     const next = members[i + 1];
     if (needsSemicolonAfter(ctx, m, next)) parts.push(synthetic(m, ";"));
-    if (next) {
+    if (next !== undefined) {
       parts.push(hardline);
-      if (isNextLineEmpty(ctx.source, m.end)) parts.push(hardline);
+      if (nextLineEmpty(ctx.tree, m)) parts.push(hardline);
     }
   });
   const dangling = ctx.dangling(n);
   if (dangling.length > 0) parts.push(join(hardline, dangling));
-  const open = t(
-    ctx,
-    n.children.find((c) => !c.named && c.kind === "{"),
-  );
+  const open = t(ctx, anon(ctx, n, "{"));
   const close = t(
     ctx,
-    n.children.findLast((c) => !c.named && c.kind === "}"),
+    lastChildWhere(ctx, n, (c) => !named(ctx, c) && kind(ctx, c) === "}"),
   );
   return [
     open,
@@ -305,42 +324,40 @@ const classBody: JsRule = (n, ctx) => {
 
 /** Prettier's printClassProperty. */
 const classProperty: JsRule = (n, ctx) => {
-  const key = field(n, "name") ?? field(n, "property");
-  const parts: Doc[] = [printMemberDecorators(ctx, decoratorsOf(n))];
-  for (const c of n.children) {
+  const key = field(ctx, n, "name") ?? field(ctx, n, "property");
+  const parts: Doc[] = [printMemberDecorators(ctx, decoratorsOf(ctx, n))];
+  const all = children(ctx, n);
+  for (const c of all) {
     if (c === key) break;
-    if (isComment(c) || c.kind === "decorator") continue;
+    if (isComment(ctx, c) || kind(ctx, c) === "decorator") continue;
     parts.push(p(ctx, c), text(" "));
   }
   parts.push(printKey(ctx, n));
-  const after = key ? n.children.slice(n.children.indexOf(key) + 1) : [];
+  const after = key !== undefined ? all.slice(all.indexOf(key) + 1) : [];
   const mark = after.find(
-    (c) => !c.named && (c.kind === "?" || c.kind === "!"),
+    (c) => !named(ctx, c) && (kind(ctx, c) === "?" || kind(ctx, c) === "!"),
   );
-  parts.push(t(ctx, mark), p(ctx, field(n, "type")));
-  const value = field(n, "value");
-  const eq = after.find((c) => !c.named && c.kind === "=");
+  parts.push(t(ctx, mark), p(ctx, field(ctx, n, "type")));
+  const value = field(ctx, n, "value");
+  const eq = after.find((c) => !named(ctx, c) && kind(ctx, c) === "=");
   return [
     printAssignment(ctx, n, parts, [text(" "), t(ctx, eq)], value),
-    semi(ctx, n, ownSemicolon(n)),
+    semi(ctx, n, ownSemicolon(ctx, n)),
   ];
 };
 
 const staticBlock: JsRule = (n, ctx) => [
-  t(
-    ctx,
-    n.children.find((c) => !c.named && c.kind === "static"),
-  ),
+  t(ctx, anon(ctx, n, "static")),
   text(" "),
-  p(ctx, field(n, "body")),
+  p(ctx, field(ctx, n, "body")),
 ];
 
 const decorator: JsRule = (n, ctx) => [
   t(
     ctx,
-    n.children.find((c) => c.kind === "@"),
+    childWhere(ctx, n, (c) => kind(ctx, c) === "@"),
   ),
-  p(ctx, items(n)[0]),
+  p(ctx, items(ctx, n)[0]),
 ];
 
 export const classRules: Record<string, JsRule> = {

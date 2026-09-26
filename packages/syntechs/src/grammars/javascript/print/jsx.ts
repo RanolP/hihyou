@@ -21,17 +21,19 @@ import {
   token,
   willBreak,
 } from "../../../fmt/doc.js";
-import { hasNewlineInRange, isNextLineEmpty } from "../../../fmt/text.js";
-import type { FormatNode } from "../../../fmt/tree.js";
+import { nextLineEmpty } from "../../../fmt/text.js";
 import { preferredQuote } from "./literals.js";
 import { needsParens, role } from "./parens.js";
 import {
   anon,
   CF,
+  children as childrenOf,
+  childWhere,
   danglingComments,
   field,
   fields,
   first,
+  type HasTree,
   hasComment,
   hasNewlineIn,
   isComment,
@@ -40,7 +42,11 @@ import {
   type JsCtx,
   type JsOptions,
   type JsRule,
+  kind,
+  lastChildWhere,
+  named,
   p,
+  parent as parentOf,
   src,
   t,
   unparen,
@@ -58,29 +64,36 @@ const EMPTY: Doc = [];
 /** One of Babel's JSX children: a JSXText (its raw text and the tree nodes it came from) or any other node. */
 type Child =
   | { text: string; pieces: readonly Piece[]; node?: undefined }
-  | { node: FormatNode; text?: undefined };
+  | { node: number; text?: undefined };
 /** A source node inside a JSXText, at `at` in its text. */
 interface Piece {
   at: number;
-  node: FormatNode;
+  node: number;
 }
 
-const isTextPiece = (n: FormatNode) =>
-  n.kind === "jsx_text" || n.kind === "html_character_reference";
+const isTextPiece = (ctx: JsCtx, n: number) => {
+  const k = kind(ctx, n);
+  return k === "jsx_text" || k === "html_character_reference";
+};
 
-/** The source between `from` and `to`, which tree-sitter keeps no node for: blank, reduced to what JSX reads. */
+/**
+ * The source between sibling `from` and the next sibling `to`, which tree-sitter keeps no node for: blank,
+ * reduced to what JSX reads. No leaf lies between the two, so its line breaks are `to`'s `lf`.
+ */
 function gap(ctx: JsCtx, from: number, to: number): string {
-  if (from >= to) return "";
-  if (!hasNewlineInRange(ctx.source, from, to)) return " ";
-  return isNextLineEmpty(ctx.source, from) ? "\n\n" : "\n";
+  if (ctx.tree.adjoins(from, to)) return "";
+  const lf = ctx.tree.lf(to);
+  if (lf === 0) return " ";
+  return lf >= 2 ? "\n\n" : "\n";
 }
 
 /** The children of a jsx_element as Babel lists them. */
-function jsxChildren(ctx: JsCtx, n: FormatNode): Child[] {
-  const open = field(n, "open_tag");
-  const close = field(n, "close_tag");
+function jsxChildren(ctx: JsCtx, n: number): Child[] {
+  const open = field(ctx, n, "open_tag");
+  const close = field(ctx, n, "close_tag");
   const out: Child[] = [];
-  let at = open ? open.end : n.start;
+  // The sibling the next gap starts after: without an opening tag the first child starts the element.
+  let at = open;
   let raw = "";
   let pieces: Piece[] = [];
   const flush = () => {
@@ -88,11 +101,11 @@ function jsxChildren(ctx: JsCtx, n: FormatNode): Child[] {
     raw = "";
     pieces = [];
   };
-  for (const c of n.children) {
+  for (const c of childrenOf(ctx, n)) {
     if (c === open || c === close) continue;
-    raw += gap(ctx, at, c.start);
-    at = c.end;
-    if (isTextPiece(c)) {
+    if (at !== undefined) raw += gap(ctx, at, c);
+    at = c;
+    if (isTextPiece(ctx, c)) {
       pieces.push({ at: raw.length, node: c });
       raw += src(ctx, c);
     } else {
@@ -100,7 +113,8 @@ function jsxChildren(ctx: JsCtx, n: FormatNode): Child[] {
       out.push({ node: c });
     }
   }
-  raw += gap(ctx, at, close ? close.start : n.end);
+  // Without a closing tag the element ends at its last child, as a tree-sitter node ends at its last token.
+  if (at !== undefined && close !== undefined) raw += gap(ctx, at, close);
   flush();
   return out;
 }
@@ -115,18 +129,19 @@ const isMeaningfulText = (c: Child | undefined) =>
   (NON_WHITESPACE.test(c.text) || !c.text.includes("\n"));
 
 /** Prettier's isJsxWhitespaceExpression: `{" "}`. */
-function isWhitespaceExpression(ctx: JsCtx, n: FormatNode): boolean {
-  if (n.kind !== "jsx_expression") return false;
-  const e = first(n);
+function isWhitespaceExpression(ctx: JsCtx, n: number): boolean {
+  if (kind(ctx, n) !== "jsx_expression") return false;
+  const e = first(ctx, n);
   return (
-    e?.kind === "string" &&
+    e !== undefined &&
+    kind(ctx, e) === "string" &&
     src(ctx, e).slice(1, -1) === " " &&
     !hasComment(ctx, e)
   );
 }
 
-const isSelfClosing = (n: FormatNode | undefined) =>
-  n?.kind === "jsx_self_closing_element";
+const isSelfClosing = (x: HasTree, n: number | undefined) =>
+  kind(x, n) === "jsx_self_closing_element";
 
 const isEmptyish = (doc: Doc) =>
   doc === EMPTY || (isDocs(doc) && doc.length === 0);
@@ -135,18 +150,20 @@ const isEmptyOrAnyLine = (doc: Doc) =>
   doc === EMPTY || doc === line || doc === hardline || doc === softline;
 
 function separatorNoWhitespace(
+  x: HasTree,
   fbt: boolean,
   word: string,
   child: Child,
   next: Child | undefined,
 ): Doc {
   if (fbt) return EMPTY;
-  if (isSelfClosing(child.node) || isSelfClosing(next?.node))
+  if (isSelfClosing(x, child.node) || isSelfClosing(x, next?.node))
     return word.length === 1 ? softline : hardline;
   return softline;
 }
 
 function separatorWithWhitespace(
+  x: HasTree,
   fbt: boolean,
   word: string,
   child: Child,
@@ -154,15 +171,18 @@ function separatorWithWhitespace(
 ): Doc {
   if (fbt) return hardline;
   if (word.length === 1)
-    return isSelfClosing(child.node) || isSelfClosing(next?.node)
+    return isSelfClosing(x, child.node) || isSelfClosing(x, next?.node)
       ? hardline
       : softline;
   return hardline;
 }
 
-/** The node a word of a JSXText starts in, for its token to point at. */
-function pieceAt(child: Child & { text: string }, at: number): FormatNode {
-  let node = child.pieces[0]?.node as FormatNode;
+/** The node a word of a JSXText starts in, for its token to point at; none for a text of gaps only. */
+function pieceAt(
+  child: Child & { text: string },
+  at: number,
+): number | undefined {
+  let node = child.pieces[0]?.node;
   for (const piece of child.pieces) {
     if (piece.at > at) break;
     node = piece.node;
@@ -199,7 +219,7 @@ function printChildren(
           offset += space.length;
           pushLine(
             space.includes("\n")
-              ? separatorWithWhitespace(fbt, words[0] ?? "", child, next)
+              ? separatorWithWhitespace(ctx, fbt, words[0] ?? "", child, next)
               : whitespace,
           );
         }
@@ -213,7 +233,7 @@ function printChildren(
           if (j % 2 === 1) pushLine(line);
           else {
             const anchor = pieceAt(child, offset);
-            push(anchor ? token(anchor, word) : text(word));
+            push(anchor !== undefined ? token(anchor, word) : text(word));
             lastWord = word;
           }
           offset += word.length;
@@ -221,10 +241,10 @@ function printChildren(
         if (endWhitespace !== undefined)
           pushLine(
             endWhitespace.includes("\n")
-              ? separatorWithWhitespace(fbt, lastWord, child, next)
+              ? separatorWithWhitespace(ctx, fbt, lastWord, child, next)
               : whitespace,
           );
-        else pushLine(separatorNoWhitespace(fbt, lastWord, child, next));
+        else pushLine(separatorNoWhitespace(ctx, fbt, lastWord, child, next));
       } else if (raw.includes("\n")) {
         if ((raw.match(/\n/g) as RegExpMatchArray).length > 1)
           pushLine(hardline);
@@ -236,7 +256,7 @@ function printChildren(
           (next.text as string)
             .replace(JSX_TRIM, "")
             .split(JSX_WHITESPACE)[0] ?? "";
-        pushLine(separatorNoWhitespace(fbt, firstWord, child, next));
+        pushLine(separatorNoWhitespace(ctx, fbt, firstWord, child, next));
       } else pushLine(hardline);
     }
   }
@@ -244,10 +264,10 @@ function printChildren(
 }
 
 /** Prettier's printJsxElementInternal. */
-function printElementInternal(n: FormatNode, ctx: JsCtx): Doc {
-  if (isSelfClosing(n)) return printOpening(n, ctx, true);
-  const open = field(n, "open_tag") as FormatNode;
-  const close = field(n, "close_tag") as FormatNode;
+function printElementInternal(n: number, ctx: JsCtx): Doc {
+  if (isSelfClosing(ctx, n)) return printOpening(n, ctx, true);
+  const open = field(ctx, n, "open_tag") as number;
+  const close = field(ctx, n, "close_tag") as number;
   let children = jsxChildren(ctx, n);
   const only = children[0];
   if (
@@ -261,26 +281,31 @@ function printElementInternal(n: FormatNode, ctx: JsCtx): Doc {
   const openingLines = p(ctx, open);
   const closingLines = p(ctx, close);
 
-  if (only?.node?.kind === "jsx_expression" && children.length === 1) {
-    const e = unparen(first(only.node) ?? only.node);
-    if (e.kind === "template_string" || isTaggedTemplate(e))
+  if (
+    only?.node !== undefined &&
+    kind(ctx, only.node) === "jsx_expression" &&
+    children.length === 1
+  ) {
+    const e = unparen(ctx, first(ctx, only.node) ?? only.node);
+    if (kind(ctx, e) === "template_string" || isTaggedTemplate(ctx, e))
       return [openingLines, p(ctx, only.node), closingLines];
   }
 
   children = children.map((c) =>
-    c.node && isWhitespaceExpression(ctx, c.node)
+    c.node !== undefined && isWhitespaceExpression(ctx, c.node)
       ? { text: " ", pieces: [{ at: 0, node: c.node }] }
       : c,
   );
 
-  const containsTag = children.some((c) => isJsx(c.node));
+  const containsTag = children.some((c) => isJsx(ctx, c.node));
   const containsMultipleExpressions =
     children.filter(
       (c) =>
-        c.node?.kind === "jsx_expression" &&
-        first(c.node)?.kind !== "spread_element",
+        c.node !== undefined &&
+        kind(ctx, c.node) === "jsx_expression" &&
+        kind(ctx, first(ctx, c.node)) !== "spread_element",
     ).length > 1;
-  const containsMultipleAttributes = fields(open, "attribute").length > 1;
+  const containsMultipleAttributes = fields(ctx, open, "attribute").length > 1;
 
   let forcedBreak =
     willBreak(openingLines) ||
@@ -293,8 +318,11 @@ function printElementInternal(n: FormatNode, ctx: JsCtx): Doc {
     ctx.options.singleQuote ? "{' '}" : '{" "}',
   );
   const whitespace = ifBreak([rawWhitespace, softline], text(" "));
-  const name = field(open, "name");
-  const fbt = name?.kind === "identifier" && src(ctx, name) === "fbt";
+  const name = field(ctx, open, "name");
+  const fbt =
+    name !== undefined &&
+    kind(ctx, name) === "identifier" &&
+    src(ctx, name) === "fbt";
 
   const parts = printChildren(ctx, children, whitespace, fbt);
   const containsText = children.some(isMeaningfulText);
@@ -391,22 +419,23 @@ const NO_WRAP_PARENTS = new Set([
 ]);
 
 /** Prettier's shouldBreakJsxElement: the element an arrow returns inside a call inside a JSX container. */
-function shouldBreakElement(n: FormatNode): boolean {
-  const body = role(n);
-  if (body.key !== "body" || body.parent?.kind !== "arrow_function")
+function shouldBreakElement(ctx: JsCtx, n: number): boolean {
+  const body = role(ctx, n);
+  if (body.key !== "body" || kind(ctx, body.parent) !== "arrow_function")
     return false;
-  const arg = role(body.parent);
-  if (arg.key !== "arguments" || arg.parent?.kind !== "call_expression")
+  const arg = role(ctx, body.parent as number);
+  if (arg.key !== "arguments" || kind(ctx, arg.parent) !== "call_expression")
     return false;
-  return role(arg.parent).parent?.kind === "jsx_expression";
+  return kind(ctx, role(ctx, arg.parent as number).parent) === "jsx_expression";
 }
 
 /** Prettier's printJsxElement with maybeWrapJsxElementInParens. */
 /** Prints its own comments (see `printsOwnComments` in fmt.ts), so they sit inside the parentheses. */
 const element: JsRule = (n, ctx) => {
   const elem = ctx.withComments(n, printElementInternal(n, ctx));
-  const parent = role(n).parent;
-  if (!parent || NO_WRAP_PARENTS.has(parent.kind)) return elem;
+  const parent = role(ctx, n).parent;
+  if (parent === undefined || NO_WRAP_PARENTS.has(kind(ctx, parent)))
+    return elem;
   const parens = needsParens(n, ctx);
   return group(
     [
@@ -415,26 +444,29 @@ const element: JsRule = (n, ctx) => {
       softline,
       parens ? [] : ifBreak(synthetic(n, ")")),
     ],
-    shouldBreakElement(n),
+    shouldBreakElement(ctx, n),
   );
 };
 
 /** A tag's name as prettier's JSXIdentifier, JSXMemberExpression or JSXNamespacedName: never broken. */
-const printName = (ctx: JsCtx, name: FormatNode | undefined): Doc =>
-  name ? ctx.withComments(name, token(name, src(ctx, name))) : [];
+const printName = (ctx: JsCtx, name: number | undefined): Doc =>
+  name !== undefined
+    ? ctx.withComments(name, token(name, src(ctx, name)))
+    : [];
 
 /** Prettier's printJsxOpeningElement; a self-closing element is its own opening element. */
-function printOpening(n: FormatNode, ctx: JsCtx, selfClosing: boolean): Doc {
-  const name = field(n, "name");
-  if (!name) return printFragmentTag(n, ctx, true);
-  const typeArgs = field(n, "type_arguments");
-  const attributes = fields(n, "attribute");
+function printOpening(n: number, ctx: JsCtx, selfClosing: boolean): Doc {
+  const name = field(ctx, n, "name");
+  if (name === undefined) return printFragmentTag(n, ctx, true);
+  const typeArgs = field(ctx, n, "type_arguments");
+  const attributes = fields(ctx, n, "attribute");
   const nameHasComments = hasComment(ctx, name) || hasComment(ctx, typeArgs);
-  const lt = t(ctx, anon(n, "<"));
+  const lt = t(ctx, anon(ctx, n, "<"));
   const head: Doc = [lt, printName(ctx, name), p(ctx, typeArgs)];
-  const end = n.children.findLast(
-    (c) => !c.named && (c.kind === ">" || c.kind === "/>"),
-  );
+  const end = lastChildWhere(ctx, n, (c) => {
+    const k = kind(ctx, c);
+    return !named(ctx, c) && (k === ">" || k === "/>");
+  });
   const closeTag: Doc = t(ctx, end);
 
   if (selfClosing && attributes.length === 0 && !nameHasComments)
@@ -442,12 +474,14 @@ function printOpening(n: FormatNode, ctx: JsCtx, selfClosing: boolean): Doc {
 
   const only = attributes[0];
   const onlyValue =
-    only?.kind === "jsx_attribute" ? attrValue(only) : undefined;
+    only !== undefined && kind(ctx, only) === "jsx_attribute"
+      ? attrValue(ctx, only)
+      : undefined;
   if (
     attributes.length === 1 &&
-    only?.kind === "jsx_attribute" &&
-    isAttrString(onlyValue) &&
-    !hasNewlineIn(ctx, onlyValue as FormatNode) &&
+    kind(ctx, only) === "jsx_attribute" &&
+    isAttrString(ctx, onlyValue) &&
+    !hasNewlineIn(ctx, onlyValue as number) &&
     !nameHasComments &&
     !hasComment(ctx, only)
   )
@@ -459,8 +493,8 @@ function printOpening(n: FormatNode, ctx: JsCtx, selfClosing: boolean): Doc {
     ]);
 
   const shouldBreak = attributes.some((a) => {
-    const v = a.kind === "jsx_attribute" ? attrValue(a) : undefined;
-    return isAttrString(v) && hasNewlineIn(ctx, v as FormatNode);
+    const v = kind(ctx, a) === "jsx_attribute" ? attrValue(ctx, a) : undefined;
+    return isAttrString(ctx, v) && hasNewlineIn(ctx, v as number);
   });
   const options = ctx.options as JsxOptions;
   const attributeLine =
@@ -478,7 +512,7 @@ function printOpening(n: FormatNode, ctx: JsCtx, selfClosing: boolean): Doc {
         attributes.map((a, i) => {
           const previous = attributes[i - 1];
           const sep =
-            previous && isNextLineEmpty(ctx.source, previous.end)
+            previous !== undefined && nextLineEmpty(ctx.tree, previous)
               ? [hardline, hardline]
               : attributeLine;
           return [sep, p(ctx, a)];
@@ -492,7 +526,7 @@ function printOpening(n: FormatNode, ctx: JsCtx, selfClosing: boolean): Doc {
 
 function bracketSameLine(
   ctx: JsCtx,
-  attributes: readonly FormatNode[],
+  attributes: readonly number[],
   nameHasComments: boolean,
 ): boolean {
   if (attributes.length === 0 && !nameHasComments) return true;
@@ -505,24 +539,37 @@ function bracketSameLine(
   );
 }
 
-const attrValue = (a: FormatNode) =>
-  a.children.find(
-    (c) => c.named && !isComment(c) && c.start > (anon(a, "=")?.start ?? a.end),
+/** An attribute's value: its named child after the `=`; none without one. */
+function attrValue(ctx: JsCtx, a: number): number | undefined {
+  const eq = anon(ctx, a, "=");
+  if (eq === undefined) return undefined;
+  const after = ctx.tree.ord(eq);
+  return childWhere(
+    ctx,
+    a,
+    (c) => named(ctx, c) && !isComment(ctx, c) && ctx.tree.ord(c) > after,
   );
+}
 
-const isAttrString = (v: FormatNode | undefined) => v?.kind === "string";
+const isAttrString = (x: HasTree, v: number | undefined) =>
+  kind(x, v) === "string";
 
 /** Prettier's printJsxAttribute: a string value requoted by `jsxSingleQuote`, its quotes as entities. */
 const attribute: JsRule = (n, ctx) => {
-  const eq = anon(n, "=");
-  const name = n.children.find(
-    (c) => c.named && !isComment(c) && (!eq || c.end <= eq.start),
+  const eq = anon(ctx, n, "=");
+  const name = childWhere(
+    ctx,
+    n,
+    (c) =>
+      named(ctx, c) &&
+      !isComment(ctx, c) &&
+      (eq === undefined || ctx.tree.ord(c) < ctx.tree.ord(eq)),
   );
-  const value = eq ? attrValue(n) : undefined;
+  const value = eq !== undefined ? attrValue(ctx, n) : undefined;
   const parts: Doc[] = [p(ctx, name)];
-  if (eq && value) {
+  if (eq !== undefined && value !== undefined) {
     let res: Doc;
-    if (isAttrString(value)) {
+    if (isAttrString(ctx, value)) {
       const raw = src(ctx, value)
         .slice(1, -1)
         .replaceAll("&apos;", "'")
@@ -544,19 +591,19 @@ const attribute: JsRule = (n, ctx) => {
 
 /** Prettier's printJsxClosingElement. */
 const closing: JsRule = (n, ctx) => {
-  const name = field(n, "name");
-  if (!name) return printFragmentTag(n, ctx, false);
+  const name = field(ctx, n, "name");
+  if (name === undefined) return printFragmentTag(n, ctx, false);
   const printed = printName(ctx, name);
   let middle: Doc = printed;
   if (hasComment(ctx, name, CF.Leading | CF.Line))
     middle = [indent([hardline, printed]), hardline];
   else if (hasComment(ctx, name, CF.Leading | CF.Block))
     middle = [text(" "), printed];
-  return [t(ctx, anon(n, "</")), middle, t(ctx, anon(n, ">"))];
+  return [t(ctx, anon(ctx, n, "</")), middle, t(ctx, anon(ctx, n, ">"))];
 };
 
 /** Prettier's printJsxOpeningClosingFragment: `<>` or `</>` with the comments inside it. */
-function printFragmentTag(n: FormatNode, ctx: JsCtx, opening: boolean): Doc {
+function printFragmentTag(n: number, ctx: JsCtx, opening: boolean): Doc {
   const dangling = ctx.comments(n).dangling;
   const hasOwnLine = dangling.some((c) => ctx.isLineComment(c));
   const lead = hasOwnLine
@@ -565,25 +612,25 @@ function printFragmentTag(n: FormatNode, ctx: JsCtx, opening: boolean): Doc {
       ? text(" ")
       : [];
   return [
-    t(ctx, anon(n, opening ? "<" : "</")),
+    t(ctx, anon(ctx, n, opening ? "<" : "</")),
     indent([lead, join(hardline, ctx.dangling(n))]),
     hasOwnLine ? hardline : [],
     t(
       ctx,
-      n.children.findLast((c) => !c.named && c.kind === ">"),
+      lastChildWhere(ctx, n, (c) => !named(ctx, c) && kind(ctx, c) === ">"),
     ),
   ];
 }
 
 /** Prettier's printJsxExpressionContainer, printJsxEmptyExpression and printJsxSpreadAttributeOrChild. */
 const expression: JsRule = (n, ctx) => {
-  const open = t(ctx, anon(n, "{"));
+  const open = t(ctx, anon(ctx, n, "{"));
   const close = t(
     ctx,
-    n.children.findLast((c) => !c.named && c.kind === "}"),
+    lastChildWhere(ctx, n, (c) => !named(ctx, c) && kind(ctx, c) === "}"),
   );
-  const e = first(n);
-  if (!e) {
+  const e = first(ctx, n);
+  if (e === undefined) {
     const lineComment = ctx
       .comments(n)
       .dangling.some((c) => ctx.isLineComment(c));
@@ -595,21 +642,22 @@ const expression: JsRule = (n, ctx) => {
       close,
     ]);
   }
-  if (e.kind === "spread_element") {
+  if (kind(ctx, e) === "spread_element") {
     // Prettier's printJsxSpreadAttributeOrChild: the argument's comments go around `...`, and a commented
     // spread goes on its own lines inside the braces once anything breaks.
-    const arg = first(e);
-    const spread = arg
-      ? ctx.withComments(
-          e,
-          ctx.withComments(arg, [t(ctx, anon(e, "...")), p(ctx, arg)]),
-        )
-      : p(ctx, e);
+    const arg = first(ctx, e);
+    const spread =
+      arg !== undefined
+        ? ctx.withComments(
+            e,
+            ctx.withComments(arg, [t(ctx, anon(ctx, e, "...")), p(ctx, arg)]),
+          )
+        : p(ctx, e);
     if (!hasComment(ctx, e) && !hasComment(ctx, arg))
       return [open, spread, close];
     return [open, indent([softline, spread]), softline, close];
   }
-  if (shouldInline(ctx, unparen(e), n.parent))
+  if (shouldInline(ctx, unparen(ctx, e), parentOf(ctx, n)))
     return group([open, p(ctx, e), lineSuffixBoundary, close]);
   return group([
     open,
@@ -622,11 +670,11 @@ const expression: JsRule = (n, ctx) => {
 
 function shouldInline(
   ctx: JsCtx,
-  e: FormatNode,
-  parent: FormatNode | undefined,
+  e: number,
+  parent: number | undefined,
 ): boolean {
   if (hasComment(ctx, e)) return false;
-  switch (e.kind) {
+  switch (kind(ctx, e)) {
     case "array":
     case "object":
     case "arrow_function":
@@ -637,46 +685,62 @@ function shouldInline(
     case "call_expression":
       return true;
     case "await_expression": {
-      const arg = first(e);
+      const arg = first(ctx, e);
       return (
         arg !== undefined &&
-        (isJsx(unparen(arg)) || shouldInline(ctx, unparen(arg), e))
+        (isJsx(ctx, unparen(ctx, arg)) ||
+          shouldInline(ctx, unparen(ctx, arg), e))
       );
     }
     case "ternary_expression":
     case "binary_expression":
-      return parent?.kind === "jsx_element";
+      return kind(ctx, parent) === "jsx_element";
     default:
       return false;
   }
 }
 
 /** A JSX spread's argument, whose comments `expression` prints around the `...` (even when ignored). */
-export const isJsxSpreadArgument = (n: FormatNode) =>
-  n.parent?.kind === "spread_element" &&
-  n.parent.parent?.kind === "jsx_expression" &&
-  first(n.parent) === n;
+export function isJsxSpreadArgument(x: HasTree, n: number): boolean {
+  const spread = parentOf(x, n);
+  return (
+    spread !== undefined &&
+    kind(x, spread) === "spread_element" &&
+    kind(x, parentOf(x, spread)) === "jsx_expression" &&
+    first(x, spread) === n
+  );
+}
 
 /** Prettier's hasJsxIgnoreComment: a child element right after `{/* prettier-ignore *\/}` keeps its source text. */
 export function jsxIgnored(
   ctx: JsCtx,
-  n: FormatNode,
-  isIgnore: (c: FormatNode) => boolean,
+  n: number,
+  isIgnore: (c: number) => boolean,
 ): boolean {
-  if (!isJsx(n) || n.parent?.kind !== "jsx_element") return false;
-  const siblings = n.parent.children;
-  let previous: FormatNode | undefined;
+  const element = parentOf(ctx, n);
+  if (
+    !isJsx(ctx, n) ||
+    element === undefined ||
+    kind(ctx, element) !== "jsx_element"
+  )
+    return false;
+  const siblings = childrenOf(ctx, element);
+  let previous: number | undefined;
   for (let i = siblings.indexOf(n) - 1; i >= 0; i--) {
-    const c = siblings[i] as FormatNode;
-    if (!c.named) continue;
-    if (c.kind === "jsx_text" && /^[ \n\r\t]*\n[ \n\r\t]*$/.test(src(ctx, c)))
+    const c = siblings[i] as number;
+    if (!named(ctx, c)) continue;
+    if (
+      kind(ctx, c) === "jsx_text" &&
+      /^[ \n\r\t]*\n[ \n\r\t]*$/.test(src(ctx, c))
+    )
       continue;
     previous = c;
     break;
   }
   return (
-    previous?.kind === "jsx_expression" &&
-    !first(previous) &&
+    previous !== undefined &&
+    kind(ctx, previous) === "jsx_expression" &&
+    first(ctx, previous) === undefined &&
     ctx.comments(previous).dangling.some(isIgnore)
   );
 }

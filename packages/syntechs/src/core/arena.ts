@@ -219,6 +219,11 @@ export class Tree {
     private readonly source: string,
   ) {}
 
+  /** The source starts with a byte order mark, which the lexer skips as padding before the root. */
+  get bom(): boolean {
+    return this.source.charCodeAt(0) === 0xfeff;
+  }
+
   /** Public symbol id, aliases resolved. */
   kind(n: number): number {
     return (this.data[n] as number) & 0xffff;
