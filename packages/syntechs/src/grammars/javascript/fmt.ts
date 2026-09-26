@@ -12,6 +12,7 @@ import { jsAtoms, jsNormalize } from "./normalize.js";
 import { callRules } from "./print/calls.js";
 import { classRules } from "./print/classes.js";
 import { functionRules } from "./print/functions.js";
+import { jsxRules } from "./print/jsx.js";
 import { literalRules, printComment } from "./print/literals.js";
 import { moduleRules } from "./print/modules.js";
 import { objectRules } from "./print/objects.js";
@@ -118,6 +119,7 @@ export function jsRules(): Record<string, JsRule> {
     ...classRules,
     ...moduleRules,
     ...typeRules,
+    ...jsxRules,
     parenthesized_expression: parenthesized,
   };
   for (const [kind, rule] of Object.entries(table)) table[kind] = wrap(rule);

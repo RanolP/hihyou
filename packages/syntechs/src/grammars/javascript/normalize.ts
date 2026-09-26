@@ -8,9 +8,16 @@ import type { FormatNode } from "../../fmt/tree.js";
  * joins two lines into a call) changes some token's place and fails; tokens whose presence means nothing where
  * they stand (a `;`, a trailing `,`, a paren) normalize away.
  */
-export const jsNormalize: Normalize = (lexemes) => {
-  const places = new Places();
+export const jsNormalize: Normalize = (lexemes, text) => {
+  const jsx = new JsxTexts(text);
+  const places = new Places((n) => jsx.isText(n));
   return lexemes.map((l, i) => {
+    const run = jsx.runOf(l.node);
+    // Prettier merges adjacent JSX spaces into one, which HTML renders alike.
+    if (run)
+      return jsx.first(run)
+        ? `jsx:${run.value.replace(/ {2,}/g, " ")}@${places.at(run.element)}`
+        : undefined;
     const value = valueForm(l, l.node, lexemes, i);
     return value === undefined ? undefined : `${value}@${places.of(l.node)}`;
   });
@@ -101,7 +108,8 @@ function isKey(n: FormatNode): boolean {
   if (!p) return false;
   if (p.kind === "enum_body" || p.kind === "enum_assignment")
     return n.field === "name" || p.kind === "enum_body";
-  return KEY_PARENTS[p.kind] === n.field;
+  const key = KEY_PARENTS[p.kind];
+  return key !== undefined && key === n.field;
 }
 
 function keyName(n: FormatNode, t: string): string {
@@ -173,6 +181,9 @@ export function cook(raw: string): string {
  * without changing what it means, so each operand and operator stands at its index in the whole chain.
  */
 class Places {
+  /** A JSX child that is text stands nowhere of its own: its run of text (`JsxTexts`) carries the meaning. */
+  constructor(private readonly isJsxText: (n: FormatNode) => boolean) {}
+
   private readonly ids = new Map<string, number>();
   private readonly memo = new Map<FormatNode, number>();
   private readonly index = new Map<FormatNode, number>();
@@ -181,6 +192,11 @@ class Places {
     FormatNode,
     { root: FormatNode; at: number }
   >();
+
+  /** The place of `n` itself, as a number. */
+  at(n: FormatNode): number {
+    return this.chain(n);
+  }
 
   of(n: FormatNode): string {
     const p = this.parentOf(n);
@@ -268,7 +284,12 @@ class Places {
     if (i === undefined) {
       let count = 0;
       for (const c of p.children) {
-        if (c.named && c.kind !== "comment" && c.kind !== "empty_statement")
+        if (
+          c.named &&
+          c.kind !== "comment" &&
+          c.kind !== "empty_statement" &&
+          !this.isJsxText(c)
+        )
           this.index.set(c, count++);
         else this.index.set(c, -1);
       }
@@ -378,4 +399,104 @@ export function hasOptionalChain(n: FormatNode | undefined): boolean {
     n = n.children.find((c) => c.field === "object" || c.field === "function");
   }
   return false;
+}
+
+/**
+ * The text of a JSX element's children as React reads it: each run of text between two other children, with
+ * `{" "}` counted as text, is one value, the lines of each JSXText trimmed and joined as Babel's
+ * cleanJSXElementLiteralChild does. Prettier moves the line breaks of a run and trades a space for `{" "}`,
+ * which changes the run's tokens but not that value, so a run is compared whole, at its element.
+ */
+class JsxTexts {
+  private readonly runs = new Map<FormatNode, JsxRun>();
+  private readonly scanned = new Set<FormatNode>();
+  private readonly emitted = new Set<JsxRun>();
+
+  constructor(private readonly text: string) {}
+
+  /** A child of a JSX element that belongs to a run of text. */
+  isText(n: FormatNode): boolean {
+    if (n.parent?.kind !== "jsx_element") return false;
+    return (
+      n.kind === "jsx_text" ||
+      n.kind === "html_character_reference" ||
+      this.isSpace(n)
+    );
+  }
+
+  /** The run the token `n` is part of: a text node, or a token of a `{" "}`. */
+  runOf(n: FormatNode): JsxRun | undefined {
+    const child = this.isText(n)
+      ? n
+      : n.parent && this.isText(n.parent)
+        ? n.parent
+        : undefined;
+    if (!child) return undefined;
+    const element = child.parent as FormatNode;
+    if (!this.scanned.has(element)) this.scan(element);
+    return this.runs.get(child);
+  }
+
+  /** Whether this is the first token of `run` asked about: the one that carries its value. */
+  first(run: JsxRun): boolean {
+    if (this.emitted.has(run)) return false;
+    this.emitted.add(run);
+    return true;
+  }
+
+  private isSpace(n: FormatNode): boolean {
+    if (n.kind !== "jsx_expression") return false;
+    const inner = n.children.filter((c) => c.named);
+    const s = inner[0];
+    return (
+      inner.length === 1 &&
+      s?.kind === "string" &&
+      this.text.slice(s.start + 1, s.end - 1) === " "
+    );
+  }
+
+  private scan(element: FormatNode) {
+    this.scanned.add(element);
+    const open = element.children.find((c) => c.field === "open_tag");
+    const close = element.children.find((c) => c.field === "close_tag");
+    let run: JsxRun = { element, value: "" };
+    let from = open ? open.end : element.start;
+    const text = (to: number) => {
+      run.value += cleanJsxText(this.text.slice(from, to));
+    };
+    for (const c of element.children) {
+      if (c === open || c === close) continue;
+      if (c.kind === "jsx_text" || c.kind === "html_character_reference") {
+        this.runs.set(c, run);
+        continue;
+      }
+      text(c.start);
+      from = c.end;
+      if (this.isSpace(c)) {
+        run.value += " ";
+        this.runs.set(c, run);
+      } else if (c.kind !== "comment") run = { element, value: "" };
+    }
+    text(close ? close.start : element.end);
+  }
+}
+
+interface JsxRun {
+  readonly element: FormatNode;
+  value: string;
+}
+
+/** Babel's cleanJSXElementLiteralChild: each line trimmed where it meets a line break, blank lines dropped. */
+function cleanJsxText(raw: string): string {
+  const lines = raw.split(/\r\n|\n|\r/);
+  let last = -1;
+  for (const [i, l] of lines.entries()) if (/[^ \t]/.test(l)) last = i;
+  let out = "";
+  for (const [i, l] of lines.entries()) {
+    let line = l.replaceAll("\t", " ");
+    if (i > 0) line = line.replace(/^ +/, "");
+    if (i < lines.length - 1) line = line.replace(/ +$/, "");
+    if (line) out += i === last ? line : `${line} `;
+  }
+  return out;
 }

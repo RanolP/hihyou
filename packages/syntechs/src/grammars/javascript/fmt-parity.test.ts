@@ -13,9 +13,8 @@ import { language as jsParser } from "./index.js";
 import type { JsOptions as AllJsOptions } from "./print/util.js";
 
 // Byte parity with prettier 3.9.9 for JavaScript, TypeScript and TSX, under its defaults and under a set a
-// person would write in a `.prettierrc`. Not covered, as `divergences` below pins: JSX (not printed yet, so
-// an element keeps its source text), syntax tree-sitter-typescript reads as an ERROR, and comments the core
-// attaches to a different node than prettier does.
+// person would write in a `.prettierrc`. Not covered, as `divergences` below pins: syntax tree-sitter-typescript
+// reads as an ERROR, and comments the core attaches to a different node than prettier does.
 
 type Target = "js" | "ts" | "tsx";
 /** The parser is the target's own, so a case sets only layout options. */
@@ -171,6 +170,22 @@ const edgeCases: [string, Target, string][] = [
     "tsx",
     "const f = <T,>(x: T) => x;\nexport default function g(): number { return 1 }",
   ],
+  ["jsx-element", "tsx", 'const a = <div   className="x">{ y }</div>;'],
+  [
+    "jsx-multiline-parens",
+    "tsx",
+    `const a = <div className="${long("c")}" id="${long("i")}"><span>{b}</span> text</div>;`,
+  ],
+  [
+    "jsx-text-fill",
+    "js",
+    `const a = <p>${"lorem ipsum dolor ".repeat(8)}<b>sit</b> amet {x} consectetur.</p>;`,
+  ],
+  [
+    "jsx-fragment-attrs",
+    "tsx",
+    `const a = <><Foo {...props} bar="it's" baz={() => 1} disabled /></>;`,
+  ],
 ];
 
 function ours(target: Target, text: string, options: Partial<JsOptions>) {
@@ -210,8 +225,8 @@ const corpusDir = join(import.meta.dirname, "../../../corpus");
 const ratchet: [Target, string, number, number][] = [
   ["js", "jquery.js", 1383, 1406],
   ["js", "lodash.js", 2812, 2817],
-  ["tsx", "App.tsx", 1548, 1562],
-  ["tsx", "LayerUI.tsx", 130, 152],
+  ["tsx", "App.tsx", 1551, 1562],
+  ["tsx", "LayerUI.tsx", 152, 152],
 ];
 
 describe("the fetched JS/TSX corpus keeps its count of chunks byte-identical to prettier, so a layout regression cannot hide in a large file", () => {
@@ -231,13 +246,6 @@ describe("the fetched JS/TSX corpus keeps its count of chunks byte-identical to 
 
 // Target, input, then today's output, which differs from prettier's.
 const divergences: [string, Target, string, string][] = [
-  // JSX is not printed yet: an element keeps its source text.
-  [
-    "jsx-element",
-    "tsx",
-    'const a = <div   className="x">{ y }</div>;',
-    'const a = <div   className="x">{ y }</div>;\n',
-  ],
   // The comment stays with `const` before the `;`, where prettier moves it after the statement.
   [
     "comment-after-as-const",
