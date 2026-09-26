@@ -149,6 +149,13 @@ class Parser {
             (version > 0 && position === lastPosition)
           ) {
             lastPosition = position;
+            // Condensing a lone active version, with no finished tree to weigh it against, changes nothing.
+            if (
+              this.finishedTree === null &&
+              stack.versionCount() === 1 &&
+              stack.isActive(0)
+            )
+              continue;
             break;
           }
         }
