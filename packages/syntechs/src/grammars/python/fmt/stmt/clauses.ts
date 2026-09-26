@@ -1,4 +1,4 @@
-import { type Doc, indent, synthetic } from "../../../../fmt/doc.js";
+import { type Doc, synthetic } from "../../../../fmt/doc.js";
 import type { FormatNode } from "../../../../fmt/tree.js";
 import type {
   ExceptHandler,
@@ -10,7 +10,7 @@ import type {
   With,
   WithItem,
 } from "../ast.js";
-import { commaIn, type Fmt, hard, space } from "../builders.js";
+import { commaIn, type Fmt, space } from "../builders.js";
 import type { Comment } from "../comments.js";
 import {
   canOmitOptionalParentheses,
@@ -19,18 +19,14 @@ import {
 } from "../expr.js";
 import type { StmtRules } from "./suite.js";
 import {
+  clauseBody,
   clauseHeader,
-  formatSuite,
   leadingAlternateBranchComments,
 } from "./suite.js";
 
 /** Ruff's compound statements other than definitions (statement/stmt_{if,for,while,try,with}.rs). */
 
-/**
- * Ruff's `clause`: a header, its colon and the comments after it, then the indented body. The body is
- * `clauseBody`'s for an `other` suite without its closing line break: whatever follows a clause starts with
- * its own line, and at the end of the file that break would stack on the one `format` ends the file with.
- */
+/** Ruff's `clause`: a header, its colon and the comments after it, then the indented body. */
 function clause(
   f: Fmt,
   header: Doc,
@@ -41,7 +37,7 @@ function clause(
 ): Doc {
   return [
     clauseHeader(f, header, f.tok(colon), colonComments, alternate),
-    indent([hard, formatSuite(f, body, "other")]),
+    clauseBody(f, body, "other", colonComments),
   ];
 }
 

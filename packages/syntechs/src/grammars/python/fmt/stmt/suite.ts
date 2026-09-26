@@ -1,8 +1,7 @@
-import type { Doc } from "../../../../fmt/doc.js";
+import { type Doc, indent } from "../../../../fmt/doc.js";
 import type { ExprStmt, Module, Py, Stmt, Str } from "../ast.js";
 import { Unformattable } from "../ast.js";
 import {
-  blockIndent,
   COMPOUND,
   emptyLine,
   type Fmt,
@@ -307,7 +306,8 @@ export function clauseHeader(
 /**
  * Ruff's `FormatClauseBody`: a function or class body of only `...` stays on the header's line; any other body
  * goes indented on the lines below. `colonComments` are the header's trailing comments, printed here too
- * (they are marked printed, so the header printing them first wins).
+ * (they are marked printed, so the header printing them first wins). It ends without a line break: whatever
+ * follows starts its own line, and at the end of the file one would stack on the break `format` ends it with.
  */
 export function clauseBody(
   f: Fmt,
@@ -318,9 +318,12 @@ export function clauseBody(
   if (kind === "function" || kind === "class") {
     const ellipsis = onlyEllipsis(f, body);
     if (ellipsis && colonComments.length === 0)
-      return [space, formatStmt(f, ellipsis), hard];
+      return [space, formatStmt(f, ellipsis)];
   }
-  return [f.trailing(colonComments), blockIndent(formatSuite(f, body, kind))];
+  return [
+    f.trailing(colonComments),
+    indent([hard, formatSuite(f, body, kind)]),
+  ];
 }
 
 /** Ruff's `leading_alternate_branch_comments`: the lines before `else`/`elif`/`except`/`finally` and its comments. */

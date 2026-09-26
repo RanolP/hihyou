@@ -1,4 +1,4 @@
-import { type Doc, group, synthetic } from "../../../../fmt/doc.js";
+import { type Doc, group, indent, synthetic } from "../../../../fmt/doc.js";
 import type { FormatNode } from "../../../../fmt/tree.js";
 import type {
   ClassDef,
@@ -10,7 +10,6 @@ import type {
 } from "../ast.js";
 import { exprAst, Unformattable } from "../ast.js";
 import {
-  blockIndent,
   COMPOUND,
   commaIn,
   emptyLine,
@@ -196,11 +195,7 @@ const unsupported = (n: FormatNode): never => {
 
 // ---- definitions ----
 
-/**
- * A clause body without the line break `blockIndent` ends it with. That break collapses into whatever follows
- * inside a file, but the last statement of a file meets the non-collapsing line break `format` ends every file
- * with, and the two would print a blank line.
- */
+/** `clauseBody`, refusing a backslash continuation after the colon. */
 function body(
   f: Fmt,
   header: { readonly ts: FormatNode; readonly colon: FormatNode },
@@ -217,14 +212,7 @@ function body(
     throw new Unformattable(
       `backslash continuation before a body at ${header.colon.end}`,
     );
-  return withoutTrailingHard(clauseBody(f, stmts, kind, colonComments));
-}
-
-function withoutTrailingHard(d: Doc): Doc {
-  if (!Array.isArray(d) || d.length === 0) return d;
-  const last = d.at(-1) as Doc;
-  if (last === hard) return d.slice(0, -1);
-  return [...d.slice(0, -1), withoutTrailingHard(last)];
+  return clauseBody(f, stmts, kind, colonComments);
 }
 
 /** Ruff's `format_function_header`, less its colon. */
@@ -819,7 +807,8 @@ export const defRules: StmtRules = {
             )
           : [];
         out.push(
-          blockIndent([
+          indent([
+            hard,
             alternate,
             f.leading(cs.leading(c)),
             matchCase(f, c),
@@ -832,7 +821,7 @@ export const defRules: StmtRules = {
     });
     return [
       clauseHeader(f, header, f.tok(s.colon), cs.dangling(s)),
-      withoutTrailingHard(cases),
+      cases,
     ];
   },
   FunctionDef(f, s) {
