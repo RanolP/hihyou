@@ -1,4 +1,4 @@
-js compatibility: not implemented
+js compatibility: 502/804 (62.44%), 60 refused (ok:false), 304 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -6,6 +6,322 @@ Other formatters on the same fixtures, fixtures passed:
 - dprint dprint-plugin-typescript 0.96.1: 253/804 (31.47%)
 
 Fixtures: prettier 3.9.9 tests/format/{js,jsx} (recursive), every spec call listing parser `babel` or `acorn` or `espree` or `meriyah` or `oxc`, expected output from its __snapshots__.
+
+# Failed
+
+Printed, but not as the reference prints it. A run is one option set of the fixture's spec.
+
+| Fixture | Runs passed | Match ratio |
+| :------ | :---------: | :---------: |
+| js/arrays/numbers-with-holes.js | 0/1 | 57.78% |
+| js/arrays/preserve_empty_lines.js | 0/1 | 88.41% |
+| js/arrows/arrow-chain-with-trailing-comments.js | 0/2 | 75.00% |
+| js/arrows/arrow_function_expression.js | 0/2 | 94.29% |
+| js/arrows/call.js | 0/2 | 94.99% |
+| js/arrows/comment.js | 0/2 | 67.57% |
+| js/arrows/currying-4.js | 0/2 | 96.33% |
+| js/arrows/issue-17421.js | 0/2 | 82.51% |
+| js/arrows/comments/comment-before-arrow.js | 0/1 | 66.67% |
+| js/arrows/parenthesized-body/issue-18776.js | 0/1 | 71.43% |
+| js/arrows/parenthesized-body/issue-19261.js | 0/1 | 77.78% |
+| js/assignment/destructuring-heuristic.js | 0/1 | 84.00% |
+| js/assignment-comments/function.js | 0/1 | 84.91% |
+| js/assignment-comments/number.js | 0/1 | 87.50% |
+| js/async/nested.js | 0/1 | 14.29% |
+| js/async/simple-nested-await.js | 0/1 | 50.00% |
+| js/await/await-with-parens.js | 0/1 | 76.19% |
+| js/binary-expressions/arrow.js | 1/2 | 83.33% |
+| js/binary-expressions/bitwise-flags.js | 0/2 | 80.00% |
+| js/binary-expressions/call.js | 1/2 | 66.98% |
+| js/binary-expressions/chain-expression.js | 1/2 | 87.50% |
+| js/binary-expressions/comment.js | 0/2 | 55.88% |
+| js/binary-expressions/if.js | 1/2 | 89.47% |
+| js/binary-expressions/inline-jsx.js | 0/2 | 36.67% |
+| js/binary-expressions/inline-object-array.js | 1/2 | 93.55% |
+| js/binary-expressions/jsx_parent.js | 0/2 | 66.67% |
+| js/binary-expressions/math.js | 0/2 | 86.36% |
+| js/binary-expressions/return.js | 1/2 | 85.00% |
+| js/binary-expressions/short-right.js | 1/2 | 79.03% |
+| js/binary-expressions/test.js | 1/2 | 75.00% |
+| js/binary-expressions/unary.js | 1/2 | 75.00% |
+| js/binary-expressions/mutiple-comments/17192.js | 1/2 | 83.33% |
+| js/binary-expressions/parentheses/bitwise.js | 0/1 | 61.54% |
+| js/binary_math/parens.js | 0/1 | 95.24% |
+| js/call/boolean/boolean.js | 0/2 | 73.81% |
+| js/call/first-argument-expansion/jsx.js | 0/1 | 0.00% |
+| js/chain-expression/call-expression.js | 0/1 | 96.00% |
+| js/chain-expression/member-chain.js | 0/1 | 57.14% |
+| js/chain-expression/member-expression.js | 0/1 | 96.43% |
+| js/chain-expression/new-expression.js | 0/1 | 95.83% |
+| js/class-comment/misc.js | 0/1 | 72.73% |
+| js/classes/method.js | 0/1 | 71.43% |
+| js/classes/multiple-static.js | 0/1 | 40.00% |
+| js/comments/11273.js | 0/2 | 57.14% |
+| js/comments/array-and-object.js | 0/2 | 62.50% |
+| js/comments/binary-expressions-parens.js | 0/2 | 88.89% |
+| js/comments/blank.js | 0/2 | 92.31% |
+| js/comments/empty-statements.js | 0/2 | 17.39% |
+| js/comments/export-and-import.js | 0/2 | 78.05% |
+| js/comments/export.js | 0/2 | 86.67% |
+| js/comments/function-declaration.js | 0/2 | 63.57% |
+| js/comments/if.js | 0/2 | 78.57% |
+| js/comments/issue-3532.js | 0/2 | 85.53% |
+| js/comments/issues.js | 0/2 | 72.06% |
+| js/comments/jsdoc-nestled-dangling.js | 0/2 | 93.02% |
+| js/comments/jsdoc-nestled.js | 0/2 | 81.36% |
+| js/comments/jsdoc.js | 0/2 | 45.65% |
+| js/comments/jsx.js | 0/2 | 74.56% |
+| js/comments/tagged-template-literal.js | 0/2 | 92.86% |
+| js/comments/trailing-jsdocs.js | 0/2 | 76.00% |
+| js/comments/try.js | 0/2 | 71.43% |
+| js/comments/variable-declarator.js | 0/2 | 69.63% |
+| js/comments-closure-typecast/array-and-object.js | 0/1 | 69.23% |
+| js/comments-closure-typecast/binary-expr.js | 0/1 | 0.00% |
+| js/comments-closure-typecast/closure-compiler-type-cast.js | 0/1 | 68.25% |
+| js/comments-closure-typecast/comment-placement.js | 0/1 | 61.54% |
+| js/comments-closure-typecast/extra-spaces-and-asterisks.js | 0/1 | 0.00% |
+| js/comments-closure-typecast/iife-issue-5850-isolated.js | 0/1 | 0.00% |
+| js/comments-closure-typecast/iife.js | 0/1 | 18.18% |
+| js/comments-closure-typecast/issue-4124.js | 0/1 | 35.00% |
+| js/comments-closure-typecast/issue-9358.js | 0/1 | 0.00% |
+| js/comments-closure-typecast/member.js | 0/1 | 0.00% |
+| js/comments-closure-typecast/nested.js | 0/1 | 12.50% |
+| js/comments-closure-typecast/object-with-comment.js | 0/1 | 10.00% |
+| js/comments-closure-typecast/satisfies.js | 0/1 | 33.33% |
+| js/comments-closure-typecast/superclass.js | 0/1 | 0.00% |
+| js/comments-closure-typecast/ways-to-specify-type.js | 0/1 | 15.38% |
+| js/comments-closure-typecast/no-semi/comments.js | 0/1 | 70.59% |
+| js/comments-closure-typecast/no-semi/multiline.js | 0/1 | 60.00% |
+| js/comments-closure-typecast/no-semi/not-on-same-line.js | 0/1 | 81.82% |
+| js/comments-closure-typecast/no-semi/with-other-comments.js | 0/1 | 50.00% |
+| js/comments/flow-types/inline.js | 0/1 | 62.50% |
+| js/comments/function/18146.js | 0/1 | 58.06% |
+| js/comments/function/between-parentheses-and-function-body.js | 0/1 | 52.63% |
+| js/comments/in-list/dangling-comment-in-list.js | 0/1 | 95.95% |
+| js/comments/tagged-template-literal/11662.js | 0/1 | 80.00% |
+| js/comments/while-like/if.js | 0/1 | 86.00% |
+| js/comments/while-like/switch.js | 0/1 | 84.44% |
+| js/comments/while-like/while.js | 0/1 | 81.40% |
+| js/comments/while-like/with.js | 0/1 | 86.00% |
+| js/conditional/comments.js | 0/2 | 53.45% |
+| js/conditional/issue-18944.js | 1/2 | 56.67% |
+| js/conditional/new-ternary-examples.js | 0/2 | 61.30% |
+| js/conditional/new-ternary-spec.js | 0/2 | 70.47% |
+| js/conditional/postfix-ternary-regressions.js | 1/2 | 70.77% |
+| js/decorator-auto-accessors/basic.js | 1/2 | 83.33% |
+| js/decorator-auto-accessors/comments.js | 1/2 | 90.00% |
+| js/decorator-auto-accessors/computed.js | 1/2 | 83.33% |
+| js/decorator-auto-accessors/private.js | 1/2 | 83.33% |
+| js/decorator-auto-accessors/static-computed.js | 1/2 | 83.33% |
+| js/decorator-auto-accessors/static-private.js | 1/2 | 83.33% |
+| js/decorator-auto-accessors/static.js | 1/2 | 83.33% |
+| js/decorators/member-expression.js | 0/1 | 90.91% |
+| js/decorators/parens.js | 0/1 | 75.00% |
+| js/decorators/class-expression/class-expression.js | 0/2 | 55.56% |
+| js/decorators/class-expression/member-expression.js | 0/2 | 0.00% |
+| js/decorators/class-expression/super-class.js | 0/2 | 14.29% |
+| js/destructuring/issue-5988.js | 0/1 | 0.00% |
+| js/discard-binding/function-parameter.js | 0/1 | 86.36% |
+| js/discard-binding/unary-expression-void.js | 0/1 | 83.33% |
+| js/embeded/indention/19518.js | 0/1 | 46.38% |
+| js/embeded/indention/indention-2.js | 0/1 | 23.53% |
+| js/embeded/indention/indention.js | 0/1 | 63.27% |
+| js/empty-paren-comment/empty_paren_comment.js | 0/1 | 91.43% |
+| js/explicit-resource-management/for-await-using-of-comments.js | 0/1 | 0.00% |
+| js/explicit-resource-management/using-declarations.js | 0/1 | 87.50% |
+| js/explicit-resource-management/valid-await-expr-using-in.js | 0/1 | 66.67% |
+| js/explicit-resource-management/valid-await-expr-using-instanceof.js | 0/1 | 66.67% |
+| js/explicit-resource-management/valid-await-expr-using.js | 0/1 | 50.00% |
+| js/explicit-resource-management/valid-await-using-asi-assignment.js | 0/1 | 57.14% |
+| js/explicit-resource-management/valid-await-using-binding-escaped.js | 0/1 | 66.67% |
+| js/explicit-resource-management/valid-module-block-top-level-await-using-binding.js | 0/1 | 28.57% |
+| js/explicit-resource-management/valid-module-block-top-level-using-binding.js | 0/1 | 28.57% |
+| js/explicit-resource-management/valid-using-as-identifier-computed-member.js | 0/1 | 0.00% |
+| js/explicit-resource-management/valid-using-as-identifier-expression-statement.js | 0/1 | 0.00% |
+| js/explicit-resource-management/valid-using-as-identifier-for-init.js | 0/1 | 0.00% |
+| js/explicit-resource-management/valid-using-binding-escaped.js | 0/1 | 66.67% |
+| js/export/blank-line-between-specifiers.js | 0/2 | 95.00% |
+| js/export-default/function_tostring.js | 0/1 | 0.00% |
+| js/export-star/export-star-as-reserved-word.js | 0/1 | 50.00% |
+| js/for/in.js | 0/1 | 91.67% |
+| js/for/parentheses.js | 0/1 | 89.80% |
+| js/for-of/async-identifier.js | 0/1 | 90.00% |
+| js/for-of/comments.js | 0/1 | 88.46% |
+| js/function/iife.js | 0/1 | 22.68% |
+| js/function/issue-12967.js | 0/1 | 0.00% |
+| js/identifier/for-of/await.js | 0/1 | 50.00% |
+| js/if/blank-lines.js | 0/1 | 72.55% |
+| js/if/comment-between-condition-and-body.js | 0/1 | 96.10% |
+| js/if/comment_before_else.js | 0/1 | 88.00% |
+| js/if/if_comments.js | 0/1 | 91.89% |
+| js/if/condition-break/boolean-expression.js | 0/1 | 97.01% |
+| js/if/condition-break/unary-expression.js | 0/1 | 97.06% |
+| js/import/comments.js | 0/2 | 63.41% |
+| js/import-assertions/bracket-spacing/empty.js | 0/1 | 0.00% |
+| js/import-assertions/bracket-spacing/static-import.js | 0/1 | 0.00% |
+| js/import-attributes/empty.js | 0/1 | 57.14% |
+| js/import-attributes/long-sources.js | 0/1 | 86.54% |
+| js/import-attributes/bracket-spacing/empty.js | 0/1 | 0.00% |
+| js/import-attributes/quote-props/quoted-keys.js | 1/3 | 86.67% |
+| js/label/comment.js | 0/1 | 53.33% |
+| js/last-argument-expansion/break-parent.js | 0/1 | 70.37% |
+| js/last-argument-expansion/edge_case.js | 0/1 | 62.99% |
+| js/last-argument-expansion/issue-7518.js | 0/1 | 85.71% |
+| js/last-argument-expansion/jsx.js | 0/1 | 20.00% |
+| js/line-suffix-boundary/boundary.js | 0/1 | 91.23% |
+| js/logical-assignment/logical-assignment.js | 0/1 | 92.59% |
+| js/logical-expressions/issue-7024.js | 0/1 | 66.67% |
+| js/method-chain/break-last-member.js | 0/1 | 85.29% |
+| js/method-chain/comment.js | 0/1 | 76.27% |
+| js/method-chain/issue-11298.js | 0/1 | 20.00% |
+| js/method-chain/pr-7889.js | 0/1 | 27.27% |
+| js/newline/backslash_2028.js | 0/1 | 40.00% |
+| js/newline/backslash_2029.js | 0/1 | 40.00% |
+| js/no-semi/comments.js | 0/2 | 92.00% |
+| js/no-semi/do-while-statement.js | 0/2 | 92.31% |
+| js/no-semi/for-in-statement.js | 0/2 | 62.86% |
+| js/no-semi/for-of-statement.js | 0/2 | 67.39% |
+| js/no-semi/for-statement.js | 0/2 | 62.86% |
+| js/no-semi/if-statement.js | 0/2 | 66.67% |
+| js/no-semi/imports.js | 0/2 | 90.91% |
+| js/no-semi/labeled-statement.js | 0/2 | 62.86% |
+| js/no-semi/while-statement.js | 0/2 | 62.86% |
+| js/no-semi/with-statement.js | 0/2 | 62.86% |
+| js/object-prop-break-in/test.js | 0/1 | 89.55% |
+| js/optional-chaining/chaining.js | 0/1 | 97.70% |
+| js/preserve-line/member-chain.js | 0/1 | 85.07% |
+| js/sequence-break/break.js | 0/1 | 85.29% |
+| js/sequence-expression/ignore.js | 0/1 | 72.73% |
+| js/sequence-expression/parenthesized-trailing-comment.js | 0/1 | 57.14% |
+| js/sequence-expression/parenthesized.js | 0/1 | 85.71% |
+| js/strings/multiline-literal.js | 0/2 | 70.00% |
+| js/switch/comments.js | 0/1 | 90.37% |
+| js/switch/comments2.js | 0/1 | 84.21% |
+| js/template/graphql.js | 0/1 | 82.76% |
+| js/template/inline.js | 0/1 | 94.34% |
+| js/template-literals/expression-break.js | 0/1 | 80.00% |
+| js/template-literals/indention.js | 0/1 | 29.75% |
+| js/ternaries/binary.js | 4/8 | 68.42% |
+| js/ternaries/func-call.js | 4/8 | 75.00% |
+| js/ternaries/indent-after-paren.js | 4/8 | 74.59% |
+| js/ternaries/indent.js | 4/8 | 54.94% |
+| js/ternaries/nested-in-condition.js | 1/8 | 49.56% |
+| js/ternaries/nested.js | 0/8 | 48.21% |
+| js/ternaries/parenthesis.js | 4/8 | 62.50% |
+| js/ternaries/test.js | 4/8 | 72.40% |
+| js/test-declarations/jest-each-template-string.js | 0/2 | 27.78% |
+| js/test-declarations/jest-each.js | 0/2 | 63.24% |
+| js/throw_statement/comment.js | 0/1 | 43.24% |
+| js/trailing-comma/jsx.js | 1/3 | 90.48% |
+| js/try/catch.js | 0/1 | 85.71% |
+| js/try/try.js | 0/1 | 50.00% |
+| js/unicode/nbsp-jsx.js | 0/1 | 22.22% |
+| js/yield/jsx-without-parenthesis.js | 0/1 | 50.00% |
+| js/yield/jsx.js | 0/1 | 50.00% |
+| jsx/attr-element/attr-element.js | 0/1 | 0.00% |
+| jsx/attribute-blank-lines/attribute-blank-lines.js | 0/2 | 57.29% |
+| jsx/comments/eslint-disable.js | 0/1 | 0.00% |
+| jsx/comments/in-attributes.js | 0/1 | 23.26% |
+| jsx/comments/in-tags.js | 0/1 | 90.91% |
+| jsx/comments/jsx-tag-comment-after-prop.js | 0/1 | 36.36% |
+| jsx/comments/like-a-comment-in-jsx-text.js | 0/1 | 0.00% |
+| jsx/deprecated-jsx-bracket-same-line-option/jsx.js | 1/4 | 88.16% |
+| jsx/escape/nbsp.js | 0/1 | 70.00% |
+| jsx/fragment/fragment.js | 0/1 | 88.73% |
+| jsx/ignore/jsx_ignore.js | 0/1 | 68.52% |
+| jsx/ignore/spread.js | 0/1 | 42.11% |
+| jsx/jsx/array-iter.js | 0/4 | 26.56% |
+| jsx/jsx/arrow.js | 0/4 | 29.63% |
+| jsx/jsx/attr-comments.js | 0/4 | 87.10% |
+| jsx/jsx/await.js | 0/4 | 20.69% |
+| jsx/jsx/expression.js | 0/4 | 60.43% |
+| jsx/jsx/flow_fix_me.js | 0/4 | 0.00% |
+| jsx/jsx/html_escape.js | 2/4 | 66.67% |
+| jsx/jsx/hug.js | 0/4 | 47.06% |
+| jsx/jsx/logical-expression.js | 0/4 | 37.50% |
+| jsx/jsx/object-property.js | 0/4 | 52.00% |
+| jsx/jsx/open-break.js | 0/4 | 33.33% |
+| jsx/jsx/parens.js | 0/4 | 57.89% |
+| jsx/jsx/quotes.js | 0/4 | 64.29% |
+| jsx/jsx/regex.js | 0/4 | 50.00% |
+| jsx/jsx/return-statement.js | 0/4 | 74.47% |
+| jsx/jsx/spacing.js | 0/4 | 40.00% |
+| jsx/jsx/template-literal-in-attr.js | 0/4 | 33.33% |
+| jsx/newlines/test.js | 0/1 | 44.59% |
+| jsx/newlines/windows.js | 0/1 | 0.00% |
+| jsx/optional-chaining/optional-chaining.jsx | 0/1 | 33.33% |
+| jsx/parentheses/argument.js | 0/1 | 36.84% |
+| jsx/single-attribute-per-line/single-attribute-per-line.js | 0/2 | 56.60% |
+| jsx/split-attrs/test.js | 0/1 | 12.96% |
+| jsx/spread/attribute.js | 0/1 | 32.79% |
+| jsx/spread/child.js | 0/1 | 30.19% |
+
+# Refused (ok:false)
+
+The formatter's self-check rejected its own output, so it returned the input unchanged.
+
+| Fixture | Runs refused | Match ratio | First reason |
+| :------ | :----------: | :---------: | :----------- |
+| js/arrays/numbers-negative-comment-after-minus.js | 1/1 | 7.59% | token-mismatch: input "380014" at 104 printed as "380014", which means "key:380014@argument\|0/14", not "num:380014e0@arg |
+| js/call/no-argument/no-arguments.js | 1/1 | 23.16% | token-mismatch: input at 127 dropped |
+| js/chain-expression/tagged-template-literals.js | 1/1 | 23.26% | token-mismatch: input "a" at 23 printed as "a", which means "a@object\|0/4", not "a@object\|0/5" |
+| js/class-comment/superclass.js | 1/1 | 56.18% | token-mismatch: input at 20 dropped |
+| js/comments/15661.js | 2/2 | 34.72% | token-mismatch: input "!" at 0 printed as "!", which means "!@operator\|-1/4", not "!@operator\|-1/3" |
+| js/comments/break-continue-statements-2.js | 2/2 | 76.19% | token-mismatch: input at 88 dropped |
+| js/comments/break-continue-statements-3.js | 2/2 | 67.65% | token-mismatch: input at 89 dropped |
+| js/comments/break-continue-statements.js | 2/2 | 54.55% | token-mismatch: input at 18 dropped |
+| js/comments/dangling_for.js | 2/2 | 25.00% | token-mismatch: input at 3 dropped |
+| js/comments/return-statement-2.js | 2/2 | 64.39% | token-mismatch: input "!" at 433 printed as "!", which means "!@operator\|-1/29", not "!@operator\|-1/27" |
+| js/comments/return-statement.js | 2/2 | 70.79% | token-mismatch: input "<div />" at 47 printed as "<div />", which means "<div />@\|0/6", not "<div />@\|0/5" |
+| js/comments/trailing_space.js | 2/2 | 60.00% | token-mismatch: input "#!/there/is-space-here->         " at 0 printed as "#!/there/is-space-here->", which means "#!/th |
+| js/comments-closure-typecast/issue-8045.js | 1/1 | 43.14% | token-mismatch: input "fooBarBaz" at 446 printed as "fooBarBaz", which means "fooBarBaz@\|0/14", not "fooBarBaz@\|0/13" |
+| js/comments-closure-typecast/non-casts.js | 1/1 | 33.33% | token-mismatch: input "3" at 42 printed as "3", which means "num:3e0@right\|1/12", not "key:3@right\|1/12" |
+| js/comments/assignment/variable-declarator.js | 1/1 | 15.69% | token-mismatch: input "let a1 // comment  = 1; let a12 // comment  = 1; let a2 /* comment */  = 1; let a22 /* comment */ |
+| js/comments/between-head-and-body/between-head-and-body.js | 1/1 | 29.30% | token-mismatch: input at 70 dropped |
+| js/comments/between-head-and-body/empty-statement.js | 1/1 | 41.99% | token-mismatch: input at 67 dropped |
+| js/comments/between-head-and-body/non-block.js | 1/1 | 12.56% | token-mismatch: input at 82 dropped |
+| js/decorators/comments.js | 1/1 | 75.36% | token-mismatch: input "export" at 303 printed as "export", which means "?53", not "export@\|-1/21" |
+| js/decorators-export/after_export.js | 1/1 | 20.00% | token-mismatch: input "export" at 0 printed as "export", which means "export@\|0/2", not "export@\|-1/2" |
+| js/directives/issue-7346.js | 1/1 | 25.00% | token-mismatch: input "'bar'" at 78 printed as ""bar"", which means "key:bar@\|0/7", not "key:bar@\|0/6" |
+| js/discard-binding/array-pattern.js | 1/1 | 82.19% | token-mismatch: input "{   // destructuring binding   const [, void, ] = value; } {   // for-of destructuring binding    |
+| js/discard-binding/basic.js | 1/1 | 42.86% | token-mismatch: input "const [void] = [,void] = [void,] = [];  function f(void, { p: void }, [ void ]) {}  (void, { p: v |
+| js/discard-binding/discard-binding-for-await-using-binding.js | 1/1 | 33.33% | token-mismatch: input "async () => {   for(await using void of []); } " at 0 printed as "async () => {   for(await using |
+| js/discard-binding/discard-binding-for-using-binding.js | 1/1 | 66.67% | token-mismatch: input "{   for(using void of []); } " at 0 printed as "{   for(using void of []); } ", which means "?0", |
+| js/discard-binding/object-pattern.js | 1/1 | 68.13% | token-mismatch: input "{   // destructuring binding   const { void: void } = value; } {   // for-of destructuring bindin |
+| js/discard-binding/using-variable-declarator.js | 1/1 | 75.00% | token-mismatch: input "{   // using 1 declarator   using void = f(); } {   // using 2 declarators   using void = f(), vo |
+| js/explicit-resource-management/valid-await-using-binding-using.js | 1/1 | 100.00% | token-mismatch: output "await" at 53 stands where input "(" at 53 was |
+| js/explicit-resource-management/valid-await-using-comments.js | 1/1 | 12.90% | token-mismatch: output "await" at 196 stands where input "(" at 175 was |
+| js/explicit-resource-management/valid-for-using-binding-of-of.js | 1/1 | 100.00% | token-mismatch: output "await" at 27 stands where input "(" at 27 was |
+| js/explicit-resource-management/valid-using-as-identifier-for-in.js | 1/1 | 100.00% | token-mismatch: input "for (using in []); for (using.foo in []); for (using().foo in []); for (using``.foo in []); " at  |
+| js/explicit-resource-management/valid-using-as-identifier-in.js | 1/1 | 100.00% | token-mismatch: input "using in using instanceof using; " at 0 printed as "using in using instanceof using; ", which mea |
+| js/for/continue-and-break-comment-1.js | 1/1 | 56.48% | token-mismatch: input at 619 dropped |
+| js/for/continue-and-break-comment-2.js | 1/1 | 46.21% | token-mismatch: input at 22 dropped |
+| js/for/continue-and-break-comment-without-blocks.js | 1/1 | 48.19% | token-mismatch: input at 16 dropped |
+| js/for/for-in-with-initializer.js | 1/1 | 40.00% | token-mismatch: input "// https://github.com/babel/babel/blob/HEAD/packages/babel-generator/test/fixtures/parentheses/in |
+| js/identifier/for-of/let.js | 1/1 | 69.23% | token-mismatch: input "let" at 107 printed as "let", which means "let@kind\|-1/10", not "let@object\|0/11" |
+| js/identifier/parentheses/let.js | 2/2 | 61.50% | token-mismatch: input "let" at 28 printed as "let", which means "let@kind\|-1/9", not "let@object\|0/11" |
+| js/import-assertions/empty.js | 1/1 | 14.29% | token-mismatch: input "export * as foo from "foo.json" export * as bar from "bar.json" assert { } export * as baz from " |
+| js/import-assertions/keyword-detect.js | 1/1 | 33.33% | token-mismatch: input "import "./test.json" /* with */" at 0 printed as "import "./test.json" /* with */", which means " |
+| js/import-assertions/re-export.js | 1/1 | 100.00% | token-mismatch: input "export { default as foo2 } from "foo.json" assert { type: "json" }; export * from "foo.json" asse |
+| js/import-assertions/without-from.js | 1/1 | 0.00% | token-mismatch: input "import "foo" assert { type: "json" } " at 0 printed as "import "foo" assert { type: "json" } ", w |
+| js/import-assertions/bracket-spacing/re-export.js | 1/1 | 0.00% | token-mismatch: input "export { default as foo2 } from "foo.json" assert { type: "json" }; " at 0 printed as "export { d |
+| js/import-attributes/keyword-detect.js | 1/1 | 33.33% | token-mismatch: input "import "./test.json" /* assert */ with /* assert */  { type: "json" } import a from "./test.json" |
+| js/import-attributes/re-export.js | 1/1 | 100.00% | token-mismatch: input "export { default as foo2 } from "foo.json" with { type: "json" }; export * from "foo.json" with { |
+| js/import-attributes/bracket-spacing/re-export.js | 1/1 | 0.00% | token-mismatch: input "export { default as foo2 } from "foo.json" with { type: "json" }; " at 0 printed as "export { def |
+| js/import/empty-import/empty-import-2.js | 1/1 | 75.00% | token-mismatch: input at 15 printed twice |
+| js/import/empty-import/empty-import.js | 1/1 | 25.88% | token-mismatch: input "{" at 317 printed as "{", which means "{@\|-1/23", not "{@\|-1/25" |
+| js/logical-expressions/in-unary-expression.js | 1/1 | 23.17% | token-mismatch: input "!" at 107 printed as "!", which means "!@operator\|-1/5", not "!@operator\|-1/4" |
+| js/new-expression/new-expression.js | 1/1 | 55.56% | token-mismatch: input "new" at 80 printed as "new", which means "new@\|-1/16", not "new@\|-1/14" |
+| js/no-semi/debugger-statement.js | 2/2 | 71.88% | token-mismatch: input at 8 dropped |
+| js/no-semi/return-statement.js | 2/2 | 75.00% | token-mismatch: input at 23 dropped |
+| js/optional-chaining/comments.js | 1/1 | 82.98% | token-mismatch: input at 45 dropped |
+| js/quotes/strings.js | 2/2 | 45.00% | token-mismatch: input ""abc"" at 497 printed as ""abc"", which means "key:abc@\|0/4", not "key:abc@\|0/3" |
+| js/reserved-word/yield.js | 1/1 | 100.00% | token-mismatch: input "foo.yield; yield.foo; new yield(); ({ yield: "foo" }); (yield, "foo"); void yield; var yield = "f |
+| js/return/comment.js | 1/1 | 78.18% | token-mismatch: input at 23 dropped |
+| js/unary-expression/comments.js | 1/1 | 85.92% | token-mismatch: input "!" at 108 printed as "!", which means "!@operator\|-1/19", not "!@operator\|-1/18" |
+| js/v8_intrinsic/intrinsic_call.js | 1/1 | 17.65% | token-mismatch: output ")" at 112 stands where input "IsAsmWasmCode" at 138 was |
+| jsx/comments/in-end-tag.js | 1/1 | 32.08% | token-mismatch: input "/* =========== before slash =========== */ <a><// line /a>; <a></* block */ /a>;  <><// line />;  |
+| jsx/jsx/conditional-expression.js | 4/4 | 79.70% | token-mismatch: input ""dunno"" at 3917 printed as ""dunno"", which means "key:dunno@alternative\|2/27", not "str:dunno@a |
 
 # Excluded
 
