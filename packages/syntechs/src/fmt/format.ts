@@ -82,7 +82,10 @@ export function format<O>(
             break;
           }
         const rule = (!broken && language.rules.get(node.kind)) || fallback;
-        return ctx.withComments(node, rule(node, ctx, args));
+        const printed = rule(node, ctx, args);
+        return !broken && language.printsOwnComments?.(node, ctx)
+          ? printed
+          : ctx.withComments(node, printed);
       },
       withComments: (node, printed) =>
         printWithComments(node, printed, comments, ctx, isLine, commentToken),

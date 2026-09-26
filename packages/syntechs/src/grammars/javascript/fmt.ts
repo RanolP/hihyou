@@ -26,6 +26,7 @@ import {
 import { typeRules } from "./print/types.js";
 import {
   type Args,
+  isJsx,
   items,
   type JsCtx,
   type JsOptions,
@@ -141,6 +142,7 @@ export function jsLanguage(
       normalize: jsNormalize,
       lineComments: { comment: "//" } as never,
       printComment,
+      printsOwnComments: (n, ctx) => isJsx(n) && !isIgnored(ctx as JsCtx, n),
     },
     () => jsRules() as never,
   );

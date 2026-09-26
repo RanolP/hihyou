@@ -109,6 +109,7 @@ export interface Language<O = unknown> {
   readonly layoutBlind: boolean;
   readonly printComment?: (comment: FormatNode, ctx: Ctx<O>) => Doc;
   readonly handleComment?: CommentHandler;
+  readonly printsOwnComments?: (node: FormatNode, ctx: Ctx<O>) => boolean;
 }
 
 /**
@@ -152,6 +153,11 @@ export interface LanguageSpec<G extends Grammar, O> {
   readonly printComment?: (comment: FormatNode, ctx: Ctx<O>) => Doc;
   /** Where a comment attaches when not where the core would put it (see `CommentHandler`). */
   readonly handleComment?: CommentHandler;
+  /**
+   * Whether `node`'s rule prints the node's comments itself, through `ctx.withComments`, so they can go inside
+   * something the rule wraps around them (prettier's willPrintOwnComments: a JSX element's parentheses).
+   */
+  readonly printsOwnComments?: (node: FormatNode, ctx: Ctx<O>) => boolean;
 }
 
 /** A list setting fixed by the rule, or read from the options of each call. */
@@ -265,6 +271,9 @@ export function defineLanguage<
     layoutBlind: spec.layoutBlind ?? spec.normalize === undefined,
     ...(spec.printComment && { printComment: spec.printComment }),
     ...(spec.handleComment && { handleComment: spec.handleComment }),
+    ...(spec.printsOwnComments && {
+      printsOwnComments: spec.printsOwnComments,
+    }),
   };
 }
 

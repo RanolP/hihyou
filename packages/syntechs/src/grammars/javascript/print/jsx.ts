@@ -401,8 +401,9 @@ function shouldBreakElement(n: FormatNode): boolean {
 }
 
 /** Prettier's printJsxElement with maybeWrapJsxElementInParens. */
+/** Prints its own comments (see `printsOwnComments` in fmt.ts), so they sit inside the parentheses. */
 const element: JsRule = (n, ctx) => {
-  const elem = printElementInternal(n, ctx);
+  const elem = ctx.withComments(n, printElementInternal(n, ctx));
   const parent = role(n).parent;
   if (!parent || NO_WRAP_PARENTS.has(parent.kind)) return elem;
   const parens = needsParens(n, ctx);
