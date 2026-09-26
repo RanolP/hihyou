@@ -183,6 +183,16 @@ function optional(l: Lexeme, next: Lexeme | undefined): boolean {
         );
       return false;
     case ",": {
+      // A bare tuple's trailing comma (`for x in 1, 2,:`), which ruff drops or keeps inside added parentheses.
+      if (
+        (parent?.kind === "expression_list" ||
+          parent?.kind === "pattern_list") &&
+        parent.children.at(-1) === n
+      )
+        return (
+          parent.children.filter((c) => c.named && c.kind !== "comment")
+            .length > 1
+        );
       if (!next || !closers.has(next.text)) return false;
       // A one-element tuple's comma is what makes it a tuple, in a subscript's brackets too.
       if (
