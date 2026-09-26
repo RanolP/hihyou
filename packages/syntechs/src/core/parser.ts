@@ -510,14 +510,15 @@ class Parser {
   }
 
   /**
-   * `reduce` for the only version's only action, when no stack node it pops through forks: one slice, no new
-   * version, nothing to merge, and a parent that is never fragile. False, with nothing changed, otherwise.
+   * `reduce` for the only version's only effective action, when no stack node it pops through forks: one
+   * slice, no new version, nothing to merge. False, with nothing changed, otherwise.
    */
   private reduceLinear(
     symbol: number,
     count: number,
     dynamicPrecedence: number,
     productionId: number,
+    isFragile: boolean,
     endOfNonTerminalExtra: boolean,
   ): boolean {
     const stack = this.stack;
@@ -529,7 +530,12 @@ class Parser {
     const state = stack.state(0);
     const next = nextState(lang, state, symbol);
     if (endOfNonTerminalExtra && next === state) parent.flags |= EXTRA;
-    parent.parseState = state;
+    if (isFragile) {
+      parent.flags |= FRAGILE_LEFT | FRAGILE_RIGHT;
+      parent.parseState = STATE_NONE;
+    } else {
+      parent.parseState = state;
+    }
     parent.dynamicPrecedence += dynamicPrecedence;
     stack.push(0, parent, false, next);
     for (const extra of trailingExtras) stack.push(0, extra, false, next);
@@ -904,13 +910,14 @@ class Parser {
         if (type === ACTION_REDUCE) {
           const endOfNonTerminalExtra = lookahead === null;
           if (
-            count === 1 &&
             stack.versionCount() === 1 &&
+            (count === 1 || isSoleReduce(lang, entry, count)) &&
             this.reduceLinear(
               lang.actA[a] as number,
               lang.actB[a] as number,
               lang.actC[a] as number,
               lang.actD[a] as number,
+              count > 1,
               endOfNonTerminalExtra,
             )
           ) {
@@ -1077,6 +1084,18 @@ class Parser {
     }
     return minErrorCost;
   }
+}
+
+/** Whether `advance` runs exactly one action of this entry: one reduce, every other action a repetition shift. */
+function isSoleReduce(lang: Language, entry: number, count: number): boolean {
+  let reduces = 0;
+  for (let a = entry + 1; a <= entry + count; a++) {
+    const type = lang.actType[a];
+    if (type === ACTION_REDUCE) reduces++;
+    else if (type !== ACTION_SHIFT || ((lang.actB[a] as number) & 2) === 0)
+      return false;
+  }
+  return reduces === 1;
 }
 
 function rowsBetween(end: number, start: number): number {
