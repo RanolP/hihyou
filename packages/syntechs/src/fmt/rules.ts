@@ -304,28 +304,55 @@ const blockRule: Rule = (node, ctx) => [
   ctx.dangling(node),
 ];
 
+type SeqMatcher =
+  | { readonly space: true }
+  | {
+      readonly space: false;
+      readonly literal: boolean;
+      readonly is: (c: FormatNode, items: readonly FormatNode[]) => boolean;
+    };
+
+const noItems: readonly FormatNode[] = [];
+
+// Each part takes the first child no earlier part took, so a part may still match a child before an earlier part's.
 function seqRule(parts: readonly SeqPart<Grammar>[]): Rule {
+  const matchers = parts.map((part): SeqMatcher => {
+    const named = (
+      is: (c: FormatNode, items: readonly FormatNode[]) => boolean,
+    ) => ({ space: false, literal: false, is }) as const;
+    if (typeof part === "string")
+      return {
+        space: false,
+        literal: true,
+        is: (c) => !c.named && c.kind === part,
+      };
+    if ("space" in part) return { space: true };
+    if ("field" in part) return named((c) => c.field === part.field);
+    if ("kind" in part) return named((c) => c.named && c.kind === part.kind);
+    return named((c, items) => c === items[part.nth]);
+  });
+  const needsItems = parts.some((p) => typeof p === "object" && "nth" in p);
   return (node, ctx) => {
-    const used = new Set<FormatNode>();
-    const items = ctx.items(node);
-    const matches = (part: Exclude<SeqPart<Grammar>, { space: true }>) =>
-      typeof part === "string"
-        ? (c: FormatNode) => !c.named && c.kind === part
-        : "field" in part
-          ? (c: FormatNode) => c.field === part.field
-          : "kind" in part
-            ? (c: FormatNode) => c.named && c.kind === part.kind
-            : (c: FormatNode) => c === items[part.nth];
-    const docs = parts.map((part): Doc => {
-      if (typeof part === "object" && "space" in part) return text(" ");
-      const isPart = matches(part);
-      const child = node.children.find((c) => !used.has(c) && isPart(c));
-      if (!child) return [];
-      used.add(child);
-      return typeof part === "string"
-        ? token(child, slice(child, ctx))
-        : ctx.print(child);
-    });
+    const items = needsItems ? ctx.items(node) : noItems;
+    const children = node.children;
+    const used: number[] = [];
+    const docs: Doc[] = [];
+    for (const m of matchers) {
+      if (m.space) {
+        docs.push(text(" "));
+        continue;
+      }
+      const at = children.findIndex(
+        (c, i) => m.is(c, items) && !used.includes(i),
+      );
+      const child = children[at];
+      if (!child) {
+        docs.push([]);
+        continue;
+      }
+      used.push(at);
+      docs.push(m.literal ? token(child, slice(child, ctx)) : ctx.print(child));
+    }
     return group(docs);
   };
 }
