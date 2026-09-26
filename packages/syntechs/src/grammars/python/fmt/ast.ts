@@ -986,8 +986,18 @@ class Reader {
     const clause =
       this.named(n).find((c) => c.kind === "with_clause") ??
       fail(n, "no with clause");
+    // `with (a as b):` parses as one item whose value is a parenthesized `as`; the parentheses are the statement's.
+    let parens: FormatNode | undefined;
     const items = this.named(clause).map((item): WithItem => {
-      const value = this.needField(item, "value");
+      let value = this.needField(item, "value");
+      const inner = this.named(value)[0];
+      if (
+        value.kind === "parenthesized_expression" &&
+        inner?.kind === "as_pattern"
+      ) {
+        parens = value;
+        value = inner;
+      }
       let context: Expr;
       let asTok: FormatNode | undefined;
       let vars: Expr | undefined;
@@ -1001,8 +1011,8 @@ class Reader {
       return this.link({
         kind: "WithItem",
         ts: item,
-        start: item.start,
-        end: item.end,
+        start: value.start,
+        end: value.end,
         kids: [context, ...(vars ? [vars] : [])],
         parent: undefined,
         context,
@@ -1021,9 +1031,9 @@ class Reader {
       kws: [this.tok(n, "async"), this.need(n, "with")].filter(
         (k) => k !== undefined,
       ),
-      open: this.tok(clause, "("),
+      open: parens ? this.need(parens, "(") : this.tok(clause, "("),
       items,
-      close: this.tok(clause, ")"),
+      close: parens ? this.need(parens, ")") : this.tok(clause, ")"),
       colon: this.need(n, ":"),
       body,
     });
