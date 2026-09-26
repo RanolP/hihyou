@@ -45,7 +45,7 @@ const EXTENSIONS: Record<GrammarName, string[]> = {
 };
 
 /** Large real-world files: the parser-bench inputs, then what fetch-corpus.sh downloads. */
-const FETCHED: Record<GrammarName, string[]> = {
+export const FETCHED: Record<GrammarName, string[]> = {
   json: [
     join(benchInputs, "big.json"),
     join(benchInputs, "package-lock.json"),

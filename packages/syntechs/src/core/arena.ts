@@ -8,8 +8,15 @@
 // Bits 30 and 31 stay clear in every word, so a value read out is a small integer in V8 with or without
 // pointer compression and never boxes when it lands in a Map key or an object field.
 
-import { type Language, symbolName } from "./language.js";
-import { jsxText } from "./tree.js";
+import {
+  FLAG_NAMED,
+  type Language,
+  publicSymbol,
+  SYM_ERROR,
+  symbolFlags,
+  symbolName,
+} from "./language.js";
+import { jsxText, type SyntaxNode, type SyntaxTree } from "./tree.js";
 
 /** Head flag: the node is named. Pass to `TreeBuilder.leaf` / `inner`. */
 export const NAMED = 1 << 24;
@@ -336,4 +343,66 @@ export class Tree {
     if (mode === LABEL_JSX_TEXT) return jsxText(token);
     return token;
   }
+}
+
+/** Public symbol id by `named` flag and kind name, per language: a SyntaxNode carries only the name. */
+const kindIds = new WeakMap<Language, Map<string, number>>();
+
+function kindIdsOf(lang: Language): Map<string, number> {
+  let ids = kindIds.get(lang);
+  if (ids) return ids;
+  ids = new Map([["1ERROR", SYM_ERROR]]);
+  for (let s = 0; s < lang.symbolNames.length; s++) {
+    const kind = publicSymbol(lang, s);
+    const key = `${symbolFlags(lang, s) & FLAG_NAMED ? 1 : 0}${symbolName(lang, kind)}`;
+    if (!ids.has(key)) ids.set(key, kind);
+  }
+  kindIds.set(lang, ids);
+  return ids;
+}
+
+/** The arena form of a SyntaxTree parsed from `source`, until the parser builds one directly. */
+export function fromSyntaxTree(
+  lang: Language,
+  tree: SyntaxTree,
+  source: string,
+): Tree {
+  const kinds = kindIdsOf(lang);
+  const fields = new Map(lang.fieldNames.map((name, id) => [name, id]));
+  const b = new TreeBuilder(lang, source);
+  const add = (n: SyntaxNode, mark: number) => {
+    const kind = kinds.get(`${n.named ? 1 : 0}${n.kind}`);
+    if (kind === undefined)
+      throw new RangeError(`no ${lang.name} symbol for node kind ${n.kind}`);
+    const field = n.field === undefined ? 0 : (fields.get(n.field) as number);
+    const flags = (n.named ? NAMED : 0) | (n.missing ? MISSING : 0);
+    if (n.children.length === 0) b.leaf(kind, field, flags, n.start, n.end);
+    else b.inner(kind, field, flags, n.start, n.end, mark);
+  };
+  const root = tree.nodes[0];
+  if (!root) throw new RangeError("a SyntaxTree with no nodes");
+  // Postorder without recursion: the open nodes, the next child of each, and the sibling mark it started at.
+  const open: SyntaxNode[] = [root];
+  const next: number[] = [0];
+  const marks: number[] = [b.mark()];
+  while (open.length > 0) {
+    const d = open.length - 1;
+    const n = open[d] as SyntaxNode;
+    const i = next[d] as number;
+    if (i < n.children.length) {
+      next[d] = i + 1;
+      const c = n.children[i] as SyntaxNode;
+      if (c.children.length === 0) add(c, 0);
+      else {
+        open.push(c);
+        next.push(0);
+        marks.push(b.mark());
+      }
+      continue;
+    }
+    open.pop();
+    next.pop();
+    add(n, marks.pop() as number);
+  }
+  return b.finish(tree.errorChars);
 }
