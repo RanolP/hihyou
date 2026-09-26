@@ -31,6 +31,7 @@ import {
   callArguments,
   callee,
   field,
+  first,
   getComments,
   hasComment,
   hasLeadingOwnLineComment,
@@ -277,6 +278,33 @@ const isNil = (ctx: JsCtx, n: FormatNode) =>
   n.kind === "undefined" ||
   (n.kind === "identifier" && src(ctx, n) === "undefined");
 
+// A conditional type's parent and key look through the source's parentheses, as role does for expressions.
+const TYPE_KEYS: Readonly<Record<string, string>> = {
+  left: "checkType",
+  right: "extendsType",
+  consequence: "consequent",
+  alternative: "alternate",
+};
+function ternaryRole(n: FormatNode): {
+  parent: FormatNode | undefined;
+  key: string;
+} {
+  if (n.kind !== "conditional_type") return role(n);
+  let top = n;
+  while (top.parent?.kind === "parenthesized_type") top = top.parent;
+  const parent = top.parent;
+  const key = top.field ?? "";
+  return {
+    parent,
+    key: parent?.kind === "conditional_type" ? (TYPE_KEYS[key] ?? key) : key,
+  };
+}
+const bare = (n: FormatNode): FormatNode => {
+  let x = unparen(n);
+  while (x.kind === "parenthesized_type") x = first(x) ?? x;
+  return x;
+};
+
 const isTestKey = (key: string) =>
   key === "test" || key === "checkType" || key === "extendsType";
 
@@ -290,21 +318,21 @@ const ternary: JsRule = (node, ctx, args) => {
   const alternate = field(node, "alternative") as FormatNode;
   const question = t(ctx, anonKid(node, "?"));
   const colon = t(ctx, anonKid(node, ":"));
-  const { parent, key } = role(node);
+  const { parent, key } = ternaryRole(node);
   const isParentTest = parent?.kind === TERNARY && isTestKey(key);
   let forceNoIndent = parent?.kind === TERNARY && !isParentTest;
 
   let previous = node;
   let current = parent;
-  while (current?.kind === TERNARY && !isTestKey(role(previous).key)) {
+  while (current?.kind === TERNARY && !isTestKey(ternaryRole(previous).key)) {
     previous = current;
-    current = role(current).parent;
+    current = ternaryRole(current).parent;
   }
   const firstNonConditionalParent = current ?? parent;
   const lastConditionalParent = previous;
 
-  const consequentInner = unparen(consequent);
-  const alternateInner = unparen(alternate);
+  const consequentInner = bare(consequent);
+  const alternateInner = bare(alternate);
   const parts: Doc[] = [];
   let jsxMode = false;
   if (
@@ -449,20 +477,20 @@ function printTernary(node: FormatNode, ctx: JsCtx, args: Args): Doc {
     : [field(node, "left"), field(node, "right")];
   const consequentNode = field(node, "consequence") as FormatNode;
   const alternateNode = field(node, "alternative") as FormatNode;
-  const { parent, key } = role(node);
+  const { parent, key } = ternaryRole(node);
   const isParentTernary = parent?.kind === kind;
   const isInTest = isParentTernary && isTestKey(key);
   const isInAlternate = isParentTernary && key === "alternate";
-  const isConsequentTernary = unparen(consequentNode).kind === kind;
-  const isAlternateTernary = unparen(alternateNode).kind === kind;
+  const isConsequentTernary = bare(consequentNode).kind === kind;
+  const isAlternateTernary = bare(alternateNode).kind === kind;
   const isInChain = isAlternateTernary || isInAlternate;
   const isBigTabs = ctx.options.tabWidth > 2 || ctx.options.useTabs;
 
   let previous = node;
   let current = parent;
-  while (current?.kind === kind && !isTestKey(role(previous).key)) {
+  while (current?.kind === kind && !isTestKey(ternaryRole(previous).key)) {
     previous = current;
-    current = role(current).parent;
+    current = ternaryRole(current).parent;
   }
   const firstNonConditionalParent = current ?? parent;
 
@@ -542,7 +570,8 @@ function printTernary(node: FormatNode, ctx: JsCtx, args: Args): Doc {
       text(" "),
       t(ctx, anonKid(node, "extends")),
       text(" "),
-      ext.kind === kind || (ext.kind === "object_type" && mappedClauseOf(ext))
+      bare(ext).kind === kind ||
+      (bare(ext).kind === "object_type" && mappedClauseOf(bare(ext)))
         ? p(ctx, ext)
         : group(wrapInParens(ext, p(ctx, ext))),
     ];
