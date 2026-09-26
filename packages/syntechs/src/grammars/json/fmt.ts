@@ -21,11 +21,11 @@ const defaults: JsonOptions = { ...prettierDefaults, trailingComma: "all" };
 
 // A number means its value, whatever its spelling, and a comma before a closing bracket (jsonc's trailing
 // comma) means nothing.
-const normalize: Normalize = (lexemes) =>
+const normalize: Normalize = (lexemes, _text, tree) =>
   lexemes.map((l, i) => {
     const next = lexemes[i + 1]?.text;
     if (l.text === "," && (next === "]" || next === "}")) return undefined;
-    return l.node.kind === "number" ? (decimalValue(l.text) ?? l.text) : l.text;
+    return tree.kindName(l.node) === "number" ? (decimalValue(l.text) ?? l.text) : l.text;
   });
 
 const spec = {

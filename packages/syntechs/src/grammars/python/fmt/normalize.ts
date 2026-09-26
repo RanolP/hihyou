@@ -1,9 +1,9 @@
+import { NO_NODE, type Tree } from "../../../core/arena.js";
 import {
   decimalValue,
   type Lexeme,
   type Normalize,
 } from "../../../fmt/check.js";
-import type { FormatNode } from "../../../fmt/tree.js";
 
 /**
  * What `check` compares for Python: ruff respells strings (quotes, prefixes, escapes, joined implicit
@@ -46,21 +46,44 @@ const headers = new Set([
 const docstringOwners = new Set(["function_definition", "class_definition"]);
 
 /** Whether a string lexeme is a docstring, which ruff re-indents: the first statement of a module, def or class. */
-function isDocstring(n: FormatNode): boolean {
+function isDocstring(tree: Tree, n: number): boolean {
   let s = n;
-  while (s.parent?.kind === "parenthesized_expression") s = s.parent;
-  const stmt = s.parent;
-  if (stmt?.kind !== "expression_statement") return false;
-  const container = stmt.parent;
-  if (!container) return false;
-  const first = container.children.find((c) => c.named && c.kind !== "comment");
+  while (
+    tree.parent(s) !== NO_NODE &&
+    tree.kindName(tree.parent(s)) === "parenthesized_expression"
+  )
+    s = tree.parent(s);
+  const stmt = tree.parent(s);
+  if (stmt === NO_NODE || tree.kindName(stmt) !== "expression_statement")
+    return false;
+  const container = tree.parent(stmt);
+  if (container === NO_NODE) return false;
+  let first = NO_NODE;
+  for (let i = 0, count = tree.count(container); i < count; i++) {
+    const c = tree.child(container, i);
+    if (tree.named(c) && tree.kindName(c) !== "comment") {
+      first = c;
+      break;
+    }
+  }
   if (first !== stmt) return false;
-  if (container.kind === "module") return true;
+  if (tree.kindName(container) === "module") return true;
+  const owner = tree.parent(container);
   return (
-    container.kind === "block" &&
-    container.parent !== undefined &&
-    docstringOwners.has(container.parent.kind)
+    tree.kindName(container) === "block" &&
+    owner !== NO_NODE &&
+    docstringOwners.has(tree.kindName(owner))
   );
+}
+
+/** How many of `n`'s children are named and no comment. */
+function namedCount(tree: Tree, n: number): number {
+  let named = 0;
+  for (let i = 0, count = tree.count(n); i < count; i++) {
+    const c = tree.child(n, i);
+    if (tree.named(c) && tree.kindName(c) !== "comment") named++;
+  }
+  return named;
 }
 
 const simpleEscapes: Record<string, string> = {
@@ -96,46 +119,53 @@ function decode(text: string, bytes: boolean): string {
 
 /** One string part's form: `b` for bytes, then the value, with each interpolation as its text without blanks. */
 function stringValue(
-  part: FormatNode,
+  tree: Tree,
+  part: number,
   text: string,
   at: number,
 ): { bytes: boolean; value: string } {
-  const startNode = part.children[0];
-  const prefix = startNode
-    ? text
-        .slice(startNode.start - at, startNode.end - at)
-        .replace(/['"]/g, "")
-        .toLowerCase()
-    : "";
+  const startNode = tree.count(part) > 0 ? tree.child(part, 0) : NO_NODE;
+  const prefix =
+    startNode !== NO_NODE
+      ? text
+          .slice(tree.start(startNode) - at, tree.end(startNode) - at)
+          .replace(/['"]/g, "")
+          .toLowerCase()
+      : "";
   const raw = prefix.includes("r");
   const bytes = prefix.includes("b");
   const interpolated = prefix.includes("f") || prefix.includes("t");
   let value = "";
-  for (const c of part.children) {
-    const t = text.slice(c.start - at, c.end - at);
-    if (c.kind === "string_content" || c.kind === "escape_sequence") {
+  for (let i = 0, count = tree.count(part); i < count; i++) {
+    const c = tree.child(part, i);
+    const k = tree.kindName(c);
+    const t = text.slice(tree.start(c) - at, tree.end(c) - at);
+    if (k === "string_content" || k === "escape_sequence") {
       let v = raw ? t : decode(t, bytes);
       if (interpolated) v = v.replace(/\{\{/g, "{").replace(/\}\}/g, "}");
       value += v;
-    } else if (c.kind === "interpolation")
+    } else if (k === "interpolation")
       value += `\0${t.replace(/\s+/g, "").replace(/'/g, '"')}\0`;
   }
   return { bytes, value };
 }
 
-function stringForm(l: Lexeme): string {
-  const parts =
-    l.node.kind === "concatenated_string"
-      ? l.node.children.filter((c) => c.kind === "string")
-      : [l.node];
+function stringForm(tree: Tree, l: Lexeme): string {
+  const parts: number[] = [];
+  if (tree.kindName(l.node) === "concatenated_string") {
+    for (let i = 0, count = tree.count(l.node); i < count; i++) {
+      const c = tree.child(l.node, i);
+      if (tree.kindName(c) === "string") parts.push(c);
+    }
+  } else parts.push(l.node);
   let bytes = false;
   let value = "";
   for (const p of parts) {
-    const v = stringValue(p, l.text, l.at);
+    const v = stringValue(tree, p, l.text, l.at);
     bytes ||= v.bytes;
     value += v.value;
   }
-  if (isDocstring(l.node))
+  if (isDocstring(tree, l.node))
     value = value
       .split("\n")
       .map((s) => s.trim())
@@ -155,56 +185,61 @@ function numberForm(text: string): string {
 const closers = new Set([")", "]", "}"]);
 
 /** Whether `l`, a punctuation leaf, is one ruff may add or drop without changing meaning. */
-function optional(l: Lexeme, next: Lexeme | undefined): boolean {
+function optional(
+  tree: Tree,
+  l: Lexeme,
+  next: Lexeme | undefined,
+): boolean {
   const n = l.node;
-  const parent = n.parent;
+  const parent = tree.parent(n);
+  const parentKind = parent === NO_NODE ? undefined : tree.kindName(parent);
   switch (l.text) {
     case ";":
       return true;
     case "(":
     case ")":
-      if (!parent) return false;
-      if (parent.kind === "parenthesized_expression") return true;
-      if (parent.kind === "tuple" || parent.kind === "tuple_pattern") {
+      if (parent === NO_NODE) return false;
+      if (parentKind === "parenthesized_expression") return true;
+      if (parentKind === "tuple" || parentKind === "tuple_pattern") {
         // Around a tuple already in parentheses, the tuple's own are the ones ruff may keep or drop.
-        let outer = parent.parent;
-        while (outer?.kind === "parenthesized_expression") outer = outer.parent;
-        return outer !== undefined && bareTupleParents.has(outer.kind);
+        let outer = tree.parent(parent);
+        while (
+          outer !== NO_NODE &&
+          tree.kindName(outer) === "parenthesized_expression"
+        )
+          outer = tree.parent(outer);
+        return outer !== NO_NODE && bareTupleParents.has(tree.kindName(outer));
       }
       if (
-        parent.kind === "with_clause" ||
-        parent.kind === "import_from_statement"
+        parentKind === "with_clause" ||
+        parentKind === "import_from_statement"
       )
         return true;
-      if (parent.kind === "argument_list")
+      if (parentKind === "argument_list") {
+        const grand = tree.parent(parent);
         return (
-          parent.parent?.kind === "class_definition" &&
-          !parent.children.some((c) => c.named && c.kind !== "comment")
+          grand !== NO_NODE &&
+          tree.kindName(grand) === "class_definition" &&
+          namedCount(tree, parent) === 0
         );
+      }
       return false;
     case ",": {
       // A bare tuple's trailing comma (`for x in 1, 2,:`), which ruff drops or keeps inside added parentheses.
       if (
-        (parent?.kind === "expression_list" ||
-          parent?.kind === "pattern_list") &&
-        parent.children.at(-1) === n
+        (parentKind === "expression_list" || parentKind === "pattern_list") &&
+        tree.child(parent, tree.count(parent) - 1) === n
       )
-        return (
-          parent.children.filter((c) => c.named && c.kind !== "comment")
-            .length > 1
-        );
+        return namedCount(tree, parent) > 1;
       if (!next || !closers.has(next.text)) return false;
       // A one-element tuple's comma is what makes it a tuple, in a subscript's brackets too.
       if (
-        parent?.kind === "tuple" ||
-        parent?.kind === "tuple_pattern" ||
-        parent?.kind === "subscript" ||
-        parent?.kind === "type_parameter"
+        parentKind === "tuple" ||
+        parentKind === "tuple_pattern" ||
+        parentKind === "subscript" ||
+        parentKind === "type_parameter"
       )
-        return (
-          parent.children.filter((c) => c.named && c.kind !== "comment")
-            .length > 1
-        );
+        return namedCount(tree, parent) > 1;
       return true;
     }
     default:
@@ -212,12 +247,17 @@ function optional(l: Lexeme, next: Lexeme | undefined): boolean {
   }
 }
 
-function form(l: Lexeme, next: Lexeme | undefined): string | undefined {
-  const k = l.node.kind;
+function form(
+  tree: Tree,
+  l: Lexeme,
+  next: Lexeme | undefined,
+): string | undefined {
+  const k = tree.kindName(l.node);
   if (k === "line_continuation" || l.text.trim() === "") return undefined;
-  if (k === "string" || k === "concatenated_string") return stringForm(l);
+  if (k === "string" || k === "concatenated_string")
+    return stringForm(tree, l);
   if (k === "integer" || k === "float") return numberForm(l.text);
-  if (!l.node.named && optional(l, next)) return undefined;
+  if (!tree.named(l.node) && optional(tree, l, next)) return undefined;
   return l.text;
 }
 
@@ -249,7 +289,7 @@ function hasNewline(text: string, from: number, to: number): boolean {
   return false;
 }
 
-export const normalize: Normalize = (lexemes, text) => {
+export const normalize: Normalize = (lexemes, text, tree) => {
   const out: (string | undefined)[] = [];
   const indents = [0];
   let brackets = 0;
@@ -258,8 +298,9 @@ export const normalize: Normalize = (lexemes, text) => {
   let prev: Lexeme | undefined;
   let prevEnd = 0;
   for (const [i, l] of lexemes.entries()) {
-    const f = form(l, lexemes[i + 1]);
-    const continued = prev?.node.kind === "line_continuation";
+    const f = form(tree, l, lexemes[i + 1]);
+    const continued =
+      prev !== undefined && tree.kindName(prev.node) === "line_continuation";
     if (
       brackets === 0 &&
       !continued &&
@@ -270,20 +311,25 @@ export const normalize: Normalize = (lexemes, text) => {
       if (col > (indents.at(-1) ?? 0)) indents.push(col);
       lineDepth = indents.length - 1;
       pending = lineDepth;
-    } else if (brackets === 0 && prev && !prev.node.named && prev.text === ";")
+    } else if (
+      brackets === 0 &&
+      prev &&
+      !tree.named(prev.node) &&
+      prev.text === ";"
+    )
       pending = lineDepth;
     else if (
       brackets === 0 &&
       prev &&
       prev.text === ":" &&
-      prev.node.parent &&
-      headers.has(prev.node.parent.kind)
+      tree.parent(prev.node) !== NO_NODE &&
+      headers.has(tree.kindName(tree.parent(prev.node)))
     ) {
       // A body on its header's line, which ruff moves to its own indented line.
       lineDepth += 1;
       pending = lineDepth;
     }
-    if (!l.node.named || l.node.children.length === 0) {
+    if (!tree.named(l.node) || tree.count(l.node) === 0) {
       if (l.text === "(" || l.text === "[" || l.text === "{") brackets++;
       else if (closers.has(l.text)) brackets = Math.max(0, brackets - 1);
     }

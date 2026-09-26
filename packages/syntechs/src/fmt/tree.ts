@@ -51,24 +51,3 @@ export function prevLeaf(tree: FormatTree, n: number): number {
   }
   return NO_NODE;
 }
-
-/**
- * The tree the formatter used to read, which `check` still reads, and the JS and Python formatters until they
- * move onto `FormatTree` (see `legacy.ts`). Offsets are UTF-16 code units into the source text.
- */
-export interface FormatNode {
-  readonly kind: string;
-  /** False for anonymous tokens the grammar spells literally (punctuation, keywords). */
-  readonly named: boolean;
-  readonly field: string | undefined;
-  /**
-   * Inserted by the parser to recover from a syntax error, so it stands for no source text. Zero width alone
-   * does not tell: a TypeScript statement's semicolon can be zero width and still real.
-   */
-  readonly missing: boolean;
-  /** The enclosing node; undefined at the root. */
-  readonly parent: FormatNode | undefined;
-  readonly start: number;
-  readonly end: number;
-  readonly children: readonly FormatNode[];
-}

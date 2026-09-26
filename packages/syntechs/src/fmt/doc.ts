@@ -1,10 +1,5 @@
-import type { FormatNode } from "./tree.js";
-
-/**
- * A token's tree node: a handle into the arena tree. `FormatNode` is the legacy adapter's (legacy.ts), for the
- * JS and Python rules that still read node objects; drop it once they move to handles.
- */
-export type TokenNode = number | FormatNode;
+/** A token's tree node: a handle into the arena tree. */
+export type TokenNode = number;
 
 /**
  * Layout IR. Its semantics are prettier's document model (groups break outermost-first, `fill` packs), because

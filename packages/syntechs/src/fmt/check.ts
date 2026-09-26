@@ -1,10 +1,10 @@
-import { parse } from "../core/index.js";
+import { parseTree, type Tree } from "../core/index.js";
 import type { Language } from "./rules.js";
-import type { FormatNode } from "./tree.js";
 
 /** One code token of a parsed text, as `check` compares it. */
 export interface Lexeme {
-  readonly node: FormatNode;
+  /** The token's node: a handle into the side's `Tree`, which `Normalize` receives. */
+  readonly node: number;
   /** The node's slice of the text. */
   readonly text: string;
   /** Where `text` starts in the whole text. */
@@ -15,13 +15,14 @@ export interface Lexeme {
  * Maps one side's code tokens, in order, to what must match between input and output: a form per token, or
  * `undefined` for a token whose presence cannot change the meaning where it stands (a trailing `,`, an ASI `;`,
  * redundant parens). It runs once over each parsed side, so it must judge both alike: from the neighbouring
- * lexemes, or from the tree through `node`. `at` and `text` expose layout, so a language whose meaning rides on
+ * lexemes, or from `tree` through `node`. `at` and `text` expose layout, so a language whose meaning rides on
  * it (Python's indentation) folds that into the forms, as the first token of a logical line prefixed with its
  * indent depth.
  */
 export type Normalize = (
   lexemes: readonly Lexeme[],
   text: string,
+  tree: Tree,
 ) => readonly (string | undefined)[];
 
 export const identity: Normalize = (lexemes) => lexemes.map((l) => l.text);
@@ -72,8 +73,8 @@ export function check<O>(
     sameTexts(input, output)
   )
     return undefined;
-  const inForms = forms(input, prev, language);
-  const outForms = forms(output, formatted, language);
+  const inForms = forms(input, prev, before.tree, language);
+  const outForms = forms(output, formatted, after.tree, language);
   for (const e of newErrors)
     for (let o = firstAtOrAfter(output, e.start); o < output.length; o++) {
       if ((output[o] as Lexeme).at >= e.end) break;
@@ -97,6 +98,7 @@ export function check<O>(
 }
 
 interface Read {
+  tree: Tree;
   lexemes: Lexeme[];
   /**
    * Each comment's text with its line breaks as `\n` and no blanks at either end of a line, which a formatter
@@ -115,12 +117,15 @@ interface Read {
  * recovery skipped for it is still compared (`[1,2,]` reads as a MISSING value after an optional `,`).
  */
 function read<O>(language: Language<O>, text: string): Read {
-  const out: Read = { lexemes: [], comments: [], errors: [] };
-  const root = parse(language.parser, text).nodes[0];
-  const stack: FormatNode[] = root ? [root] : [];
-  for (let n = stack.pop(); n; n = stack.pop()) {
-    if (language.comments.has(n.kind)) {
-      const raw = text.slice(n.start, n.end);
+  const tree = parseTree(language.parser, text);
+  const out: Read = { tree, lexemes: [], comments: [], errors: [] };
+  const stack: number[] = [tree.root];
+  for (let n = stack.pop(); n !== undefined; n = stack.pop()) {
+    const kind = tree.kindName(n);
+    const start = tree.start(n);
+    const end = tree.end(n);
+    if (language.comments.has(kind)) {
+      const raw = text.slice(start, end);
       const spelled = language.comment ? language.comment(raw) : raw;
       for (const c of typeof spelled === "string" ? [spelled] : spelled)
         out.comments.push(
@@ -131,35 +136,27 @@ function read<O>(language: Language<O>, text: string): Read {
         );
       continue;
     }
-    if (n.kind === "ERROR") out.errors.push({ start: n.start, end: n.end });
-    const children = n.children;
-    if (
-      children.length === 0 ||
-      language.atoms.has(n.kind) ||
-      ownsText(n, text)
-    ) {
-      if (n.end > n.start)
-        out.lexemes.push({
-          node: n,
-          text: text.slice(n.start, n.end),
-          at: n.start,
-        });
+    if (kind === "ERROR") out.errors.push({ start, end });
+    const count = tree.count(n);
+    if (count === 0 || language.atoms.has(kind) || ownsText(tree, n, text)) {
+      if (end > start)
+        out.lexemes.push({ node: n, text: text.slice(start, end), at: start });
       continue;
     }
-    for (let i = children.length - 1; i >= 0; i--)
-      stack.push(children[i] as FormatNode);
+    for (let i = count - 1; i >= 0; i--) stack.push(tree.child(n, i));
   }
   return out;
 }
 
 /** Whether `n` has a non-blank character outside all of its children. */
-function ownsText(n: FormatNode, text: string): boolean {
-  let at = n.start;
-  for (const c of n.children) {
-    if (hasNonBlank(text, at, c.start)) return true;
-    at = c.end;
+function ownsText(tree: Tree, n: number, text: string): boolean {
+  let at = tree.start(n);
+  for (let i = 0, count = tree.count(n); i < count; i++) {
+    const c = tree.child(n, i);
+    if (hasNonBlank(text, at, tree.start(c))) return true;
+    at = tree.end(c);
   }
-  return hasNonBlank(text, at, n.end);
+  return hasNonBlank(text, at, tree.end(n));
 }
 
 function sameComments(
@@ -202,9 +199,10 @@ function sameTexts(a: readonly Lexeme[], b: readonly Lexeme[]): boolean {
 function forms<O>(
   lexemes: readonly Lexeme[],
   text: string,
+  tree: Tree,
   language: Language<O>,
 ): readonly (string | undefined)[] {
-  const out = language.normalize(lexemes, text);
+  const out = language.normalize(lexemes, text, tree);
   if (out.length !== lexemes.length)
     throw new Error(
       `normalize returned ${out.length} forms for ${lexemes.length} tokens`,

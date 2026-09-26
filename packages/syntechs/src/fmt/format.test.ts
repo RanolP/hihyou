@@ -118,9 +118,9 @@ describe("format", () => {
   });
 
   // A string means its cooked value, so a respelling must keep that value.
-  const cooked: Normalize = (lexemes) =>
+  const cooked: Normalize = (lexemes, _text, tree) =>
     lexemes.map((l) =>
-      l.node.kind === "string" ? `s:${JSON.parse(l.text)}` : l.text,
+      tree.kindName(l.node) === "string" ? `s:${JSON.parse(l.text)}` : l.text,
     );
   const respells = (to: (source: string) => string) =>
     defineLanguage(

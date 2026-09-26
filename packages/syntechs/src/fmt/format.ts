@@ -200,8 +200,7 @@ function anchorsOf(
     const start = at[i] as number;
     const end = start + t.text.length;
     const anchor: Anchor = {
-      from:
-        typeof n === "number" ? [tree.start(n), tree.end(n)] : [n.start, n.end],
+      from: [tree.start(n), tree.end(n)],
       to: moved ? [moved(start), moved(end)] : [start, end],
     };
     if (t.synthetic) anchor.synthetic = true;

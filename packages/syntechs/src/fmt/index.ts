@@ -30,5 +30,4 @@ export {
   type Rule,
   type SeqPart,
 } from "./rules.js";
-export type { FormatNode } from "./tree.js";
 export { textWidth } from "./width.js";

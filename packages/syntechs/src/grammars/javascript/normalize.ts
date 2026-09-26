@@ -1,5 +1,5 @@
+import { NO_NODE, type Tree } from "../../core/arena.js";
 import { decimalValue, type Lexeme, type Normalize } from "../../fmt/check.js";
-import type { FormatNode } from "../../fmt/tree.js";
 
 /**
  * What a JS/TS token means: its value (a string's cooked text, a number's value, a key's name) and where it
@@ -8,9 +8,9 @@ import type { FormatNode } from "../../fmt/tree.js";
  * joins two lines into a call) changes some token's place and fails; tokens whose presence means nothing where
  * they stand (a `;`, a trailing `,`, a paren) normalize away.
  */
-export const jsNormalize: Normalize = (lexemes, text) => {
-  const jsx = new JsxTexts(text);
-  const places = new Places((n) => jsx.isText(n));
+export const jsNormalize: Normalize = (lexemes, text, tree) => {
+  const jsx = new JsxTexts(text, tree);
+  const places = new Places(tree, (n) => jsx.isText(n));
   return lexemes.map((l, i) => {
     const run = jsx.runOf(l.node);
     // Prettier merges adjacent JSX spaces into one, which HTML renders alike.
@@ -18,7 +18,7 @@ export const jsNormalize: Normalize = (lexemes, text) => {
       return jsx.first(run)
         ? `jsx:${run.value.replace(/ {2,}/g, " ")}@${places.at(run.element)}`
         : undefined;
-    const value = valueForm(l, l.node, lexemes, i);
+    const value = valueForm(tree, l, l.node, lexemes, i);
     return value === undefined ? undefined : `${value}@${places.of(l.node)}`;
   });
 };
@@ -30,18 +30,25 @@ const CLOSERS = new Set([")", "]", "}", ">"]);
 const TYPE_BODIES = new Set(["object_type", "interface_body"]);
 
 function valueForm(
+  tree: Tree,
   l: Lexeme,
-  node: FormatNode,
+  node: number,
   lexemes: readonly Lexeme[],
   i: number,
 ): string | undefined {
   const t = l.text;
-  if (!node.named) {
+  const parent = tree.parent(node);
+  if (!tree.named(node)) {
     if (t === ";") return undefined;
     // A type member's separator: `,` and `;` mean the same there.
-    if (t === "," && node.parent && TYPE_BODIES.has(node.parent.kind))
+    if (
+      t === "," &&
+      parent !== NO_NODE &&
+      TYPE_BODIES.has(tree.kindName(parent))
+    )
       return undefined;
-    if ((t === "|" || t === "&") && isLeadingOperator(node)) return undefined;
+    if ((t === "|" || t === "&") && isLeadingOperator(tree, node))
+      return undefined;
     if (t === ",") {
       const next = lexemes[i + 1]?.text;
       const previous = lexemes[i - 1]?.text;
@@ -55,21 +62,22 @@ function valueForm(
     }
     if (
       (t === "(" || t === ")") &&
-      node.parent &&
-      (node.parent.kind === "parenthesized_expression" ||
-        node.parent.kind === "parenthesized_type" ||
-        transparent(node.parent) ||
-        isEmptyNewArguments(node.parent))
+      parent !== NO_NODE &&
+      (tree.kindName(parent) === "parenthesized_expression" ||
+        tree.kindName(parent) === "parenthesized_type" ||
+        transparent(tree, parent) ||
+        isEmptyNewArguments(tree, parent))
     )
       return undefined;
     return t;
   }
-  if (node.kind === "jsx_text")
+  const kind = tree.kindName(node);
+  if (kind === "jsx_text")
     return `jsx:${t.split(/\s+/).filter(Boolean).join(" ")}`;
-  if (isKey(node)) return `key:${keyName(node, t)}`;
-  switch (node.kind) {
+  if (isKey(tree, node)) return `key:${keyName(kind, t)}`;
+  switch (kind) {
     case "string":
-      if (node.parent?.kind === "jsx_attribute")
+      if (parentKind(tree, node) === "jsx_attribute")
         return `attr:${decodeQuotes(t.slice(1, -1))}`;
       return `str:${cook(t.slice(1, -1))}`;
     case "number":
@@ -97,25 +105,52 @@ const KEY_PARENTS: Readonly<Record<string, string>> = {
   field_definition: "property",
 };
 
-function isKey(n: FormatNode): boolean {
-  if (
-    n.kind !== "string" &&
-    n.kind !== "number" &&
-    n.kind !== "property_identifier"
-  )
+function isKey(tree: Tree, n: number): boolean {
+  const kind = tree.kindName(n);
+  if (kind !== "string" && kind !== "number" && kind !== "property_identifier")
     return false;
-  const p = n.parent;
-  if (!p) return false;
-  if (p.kind === "enum_body" || p.kind === "enum_assignment")
-    return n.field === "name" || p.kind === "enum_body";
-  const key = KEY_PARENTS[p.kind];
-  return key !== undefined && key === n.field;
+  const p = tree.parent(n);
+  if (p === NO_NODE) return false;
+  const pk = tree.kindName(p);
+  if (pk === "enum_body" || pk === "enum_assignment")
+    return tree.fieldName(n) === "name" || pk === "enum_body";
+  const key = KEY_PARENTS[pk];
+  return key !== undefined && key === tree.fieldName(n);
 }
 
-function keyName(n: FormatNode, t: string): string {
-  if (n.kind === "string") return cook(t.slice(1, -1));
-  if (n.kind === "number") return String(Number(t.replaceAll("_", "")));
+function keyName(kind: string, t: string): string {
+  if (kind === "string") return cook(t.slice(1, -1));
+  if (kind === "number") return String(Number(t.replaceAll("_", "")));
   return t;
+}
+
+/** The kind of `n`'s parent; undefined at the root. */
+function parentKind(tree: Tree, n: number): string | undefined {
+  const p = tree.parent(n);
+  return p === NO_NODE ? undefined : tree.kindName(p);
+}
+
+/** The first child of `n` that passes `test`, or `NO_NODE`. */
+function findChild(
+  tree: Tree,
+  n: number,
+  test: (c: number) => boolean,
+): number {
+  for (let i = 0, count = tree.count(n); i < count; i++) {
+    const c = tree.child(n, i);
+    if (test(c)) return c;
+  }
+  return NO_NODE;
+}
+
+/** The named children of `n` that are not comments, counted. */
+function codeChildren(tree: Tree, n: number): number {
+  let k = 0;
+  for (let i = 0, count = tree.count(n); i < count; i++) {
+    const c = tree.child(n, i);
+    if (tree.named(c) && tree.kindName(c) !== "comment") k++;
+  }
+  return k;
 }
 
 const decodeQuotes = (s: string) =>
@@ -182,32 +217,32 @@ export function cook(raw: string): string {
  */
 class Places {
   /** A JSX child that is text stands nowhere of its own: its run of text (`JsxTexts`) carries the meaning. */
-  constructor(private readonly isJsxText: (n: FormatNode) => boolean) {}
+  constructor(
+    private readonly tree: Tree,
+    private readonly isJsxText: (n: number) => boolean,
+  ) {}
 
   private readonly ids = new Map<string, number>();
-  private readonly memo = new Map<FormatNode, number>();
-  private readonly index = new Map<FormatNode, number>();
+  private readonly memo = new Map<number, number>();
+  private readonly index = new Map<number, number>();
   /** An operand or operator of a flat logical chain: the chain's root and its index there. */
-  private readonly flat = new Map<
-    FormatNode,
-    { root: FormatNode; at: number }
-  >();
+  private readonly flat = new Map<number, { root: number; at: number }>();
 
   /** The place of `n` itself, as a number. */
-  at(n: FormatNode): number {
+  at(n: number): number {
     return this.chain(n);
   }
 
-  of(n: FormatNode): string {
+  of(n: number): string {
     const p = this.parentOf(n);
-    return `${this.label(n)}/${p ? this.chain(p) : 0}`;
+    return `${this.label(n)}/${p !== NO_NODE ? this.chain(p) : 0}`;
   }
 
-  private chain(n: FormatNode): number {
+  private chain(n: number): number {
     const hit = this.memo.get(n);
     if (hit !== undefined) return hit;
     const p = this.parentOf(n);
-    const key = `${n.kind}:${this.label(n)}/${p ? this.chain(p) : 0}`;
+    const key = `${this.tree.kindName(n)}:${this.label(n)}/${p !== NO_NODE ? this.chain(p) : 0}`;
     let id = this.ids.get(key);
     if (id === undefined) {
       id = this.ids.size + 1;
@@ -217,48 +252,59 @@ class Places {
     return id;
   }
 
-  private top(n: FormatNode): FormatNode {
-    while (n.parent && transparent(n.parent)) n = n.parent;
+  private top(n: number): number {
+    const tree = this.tree;
+    for (
+      let p = tree.parent(n);
+      p !== NO_NODE && transparent(tree, p);
+      p = tree.parent(n)
+    )
+      n = p;
     return n;
   }
 
-  private parentOf(n: FormatNode): FormatNode | undefined {
+  private parentOf(n: number): number {
     const t = this.top(n);
-    return this.flatPlace(t)?.root ?? t.parent;
+    return this.flatPlace(t)?.root ?? this.tree.parent(t);
   }
 
-  private label(n: FormatNode): string {
+  private label(n: number): string {
+    const tree = this.tree;
     const t = this.top(n);
     const flat = this.flatPlace(t);
-    if (flat) return `${t.named ? "" : t.kind}~${flat.at}`;
+    if (flat) return `${tree.named(t) ? "" : tree.kindName(t)}~${flat.at}`;
     const field =
-      t.field === "parameter" && t.parent?.kind === "arrow_function"
+      tree.fieldName(t) === "parameter" &&
+      parentKind(tree, t) === "arrow_function"
         ? "parameters"
-        : t.field;
+        : tree.fieldName(t);
     return `${field ?? ""}|${this.position(t)}`;
   }
 
-  private flatPlace(t: FormatNode) {
-    const p = t.parent;
-    const op = p && logicalOperator(p);
+  private flatPlace(t: number) {
+    const tree = this.tree;
+    const p = tree.parent(t);
+    const op = p !== NO_NODE ? logicalOperator(tree, p) : undefined;
     if (!op) return undefined;
     let root = p;
     for (;;) {
-      const up = this.top(root).parent;
-      if (!up || logicalOperator(up) !== op) break;
+      const up = tree.parent(this.top(root));
+      if (up === NO_NODE || logicalOperator(tree, up) !== op) break;
       root = up;
     }
     if (!this.flat.has(t)) {
       let at = 0;
-      const walk = (n: FormatNode) => {
-        for (const c of n.children) {
-          if (!c.named) {
-            if (c.field === "operator") this.flat.set(c, { root, at: at - 1 });
+      const walk = (n: number) => {
+        for (let i = 0, count = tree.count(n); i < count; i++) {
+          const c = tree.child(n, i);
+          if (!tree.named(c)) {
+            if (tree.fieldName(c) === "operator")
+              this.flat.set(c, { root, at: at - 1 });
             continue;
           }
-          if (c.kind === "comment") continue;
+          if (tree.kindName(c) === "comment") continue;
           const inner = this.bottom(c);
-          if (logicalOperator(inner) === op) walk(inner);
+          if (logicalOperator(tree, inner) === op) walk(inner);
           else this.flat.set(c, { root, at: at++ });
         }
       };
@@ -268,26 +314,33 @@ class Places {
   }
 
   /** The node under `n`'s see-through parens: the inverse of `top`. */
-  private bottom(n: FormatNode): FormatNode {
-    while (transparent(n)) {
-      const inner = n.children.find((c) => c.named && c.kind !== "comment");
-      if (!inner) break;
+  private bottom(n: number): number {
+    const tree = this.tree;
+    while (transparent(tree, n)) {
+      const inner = findChild(
+        tree,
+        n,
+        (c) => tree.named(c) && tree.kindName(c) !== "comment",
+      );
+      if (inner === NO_NODE) break;
       n = inner;
     }
     return n;
   }
 
-  private position(n: FormatNode): number {
-    const p = n.parent;
-    if (!p) return 0;
+  private position(n: number): number {
+    const tree = this.tree;
+    const p = tree.parent(n);
+    if (p === NO_NODE) return 0;
     let i = this.index.get(n);
     if (i === undefined) {
       let count = 0;
-      for (const c of p.children) {
+      for (let k = 0, all = tree.count(p); k < all; k++) {
+        const c = tree.child(p, k);
         if (
-          c.named &&
-          c.kind !== "comment" &&
-          c.kind !== "empty_statement" &&
+          tree.named(c) &&
+          tree.kindName(c) !== "comment" &&
+          tree.kindName(c) !== "empty_statement" &&
           !this.isJsxText(c)
         )
           this.index.set(c, count++);
@@ -300,103 +353,143 @@ class Places {
 }
 
 /** The `()` prettier adds to `new A`, which calls the constructor with no arguments either way. */
-const isEmptyNewArguments = (n: FormatNode) =>
-  n.kind === "arguments" &&
-  n.parent?.kind === "new_expression" &&
-  !n.children.some((c) => c.named && c.kind !== "comment");
+const isEmptyNewArguments = (tree: Tree, n: number) =>
+  tree.kindName(n) === "arguments" &&
+  parentKind(tree, n) === "new_expression" &&
+  codeChildren(tree, n) === 0;
 
 const LOGICAL = new Set(["&&", "||", "??"]);
 
-function logicalOperator(n: FormatNode): string | undefined {
-  if (n.kind !== "binary_expression") return undefined;
-  const op = n.children.find((c) => c.field === "operator")?.kind;
+function logicalOperator(tree: Tree, n: number): string | undefined {
+  if (tree.kindName(n) !== "binary_expression") return undefined;
+  const operator = findChild(
+    tree,
+    n,
+    (c) => tree.fieldName(c) === "operator",
+  );
+  const op = operator === NO_NODE ? undefined : tree.kindName(operator);
   return op !== undefined && LOGICAL.has(op) ? op : undefined;
 }
 
 /** The `|` of `type A = | a | b`, which prettier drops. */
-const isLeadingOperator = (n: FormatNode) =>
-  (n.parent?.kind === "union_type" || n.parent?.kind === "intersection_type") &&
-  n.parent.children[0] === n;
+const isLeadingOperator = (tree: Tree, n: number) => {
+  const p = tree.parent(n);
+  if (p === NO_NODE) return false;
+  const pk = tree.kindName(p);
+  return (
+    (pk === "union_type" || pk === "intersection_type") &&
+    tree.count(p) > 0 &&
+    tree.child(p, 0) === n
+  );
+};
 
-function transparent(n: FormatNode): boolean {
-  switch (n.kind) {
+function transparent(tree: Tree, n: number): boolean {
+  switch (tree.kindName(n)) {
     case "parenthesized_expression":
-      return !parensMatter(n);
+      return !parensMatter(tree, n);
     case "parenthesized_type":
       return true;
     case "union_type":
     case "intersection_type": {
-      const lead = n.children[0];
       return (
-        lead !== undefined &&
-        isLeadingOperator(lead) &&
-        n.children.filter((c) => c.named && c.kind !== "comment").length === 1
+        tree.count(n) > 0 &&
+        isLeadingOperator(tree, tree.child(n, 0)) &&
+        codeChildren(tree, n) === 1
       );
     }
     case "formal_parameters":
       return (
-        n.parent?.kind === "arrow_function" && soleParameter(n) !== undefined
+        parentKind(tree, n) === "arrow_function" &&
+        soleParameter(tree, n) !== NO_NODE
       );
-    case "required_parameter":
-      return n.parent?.kind === "formal_parameters" && transparent(n.parent);
+    case "required_parameter": {
+      const p = tree.parent(n);
+      return (
+        p !== NO_NODE &&
+        tree.kindName(p) === "formal_parameters" &&
+        transparent(tree, p)
+      );
+    }
     default:
       return false;
   }
 }
 
-/** The single parameter of a list that holds one plain identifier (in TS, a `required_parameter` holding only it). */
-export function soleParameter(params: FormatNode): FormatNode | undefined {
-  let only: FormatNode | undefined;
-  for (const c of params.children) {
-    if (!c.named || c.kind === "comment") {
-      if (c.kind === "comment") return undefined;
+/**
+ * The single parameter of a list that holds one plain identifier (in TS, a `required_parameter` holding only
+ * it), or `NO_NODE`.
+ */
+export function soleParameter(tree: Tree, params: number): number {
+  let only = NO_NODE;
+  for (let i = 0, count = tree.count(params); i < count; i++) {
+    const c = tree.child(params, i);
+    if (!tree.named(c) || tree.kindName(c) === "comment") {
+      if (tree.kindName(c) === "comment") return NO_NODE;
       continue;
     }
-    if (only) return undefined;
+    if (only !== NO_NODE) return NO_NODE;
     only = c;
   }
-  if (!only) return undefined;
-  if (only.kind === "identifier") return only;
+  if (only === NO_NODE) return NO_NODE;
+  if (tree.kindName(only) === "identifier") return only;
   if (
-    only.kind === "required_parameter" &&
-    only.children.length === 1 &&
-    only.children[0]?.kind === "identifier"
+    tree.kindName(only) === "required_parameter" &&
+    tree.count(only) === 1 &&
+    tree.kindName(tree.child(only, 0)) === "identifier"
   )
-    return only.children[0];
-  return undefined;
+    return tree.child(only, 0);
+  return NO_NODE;
 }
 
-function parensMatter(pe: FormatNode): boolean {
-  let inner = pe.children.find((c) => c.named && c.kind !== "comment");
-  while (inner?.kind === "parenthesized_expression")
-    inner = inner.children.find((c) => c.named && c.kind !== "comment");
-  if (!inner) return true;
-  const p = pe.parent;
-  if (inner.kind === "string" && p?.kind === "expression_statement")
+function parensMatter(tree: Tree, pe: number): boolean {
+  const code = (c: number) => tree.named(c) && tree.kindName(c) !== "comment";
+  let inner = findChild(tree, pe, code);
+  while (
+    inner !== NO_NODE &&
+    tree.kindName(inner) === "parenthesized_expression"
+  )
+    inner = findChild(tree, inner, code);
+  if (inner === NO_NODE) return true;
+  const pk = parentKind(tree, pe);
+  if (tree.kindName(inner) === "string" && pk === "expression_statement")
     return true;
+  const field = tree.fieldName(pe);
   const reads =
-    (p?.kind === "member_expression" || p?.kind === "subscript_expression") &&
-    pe.field === "object";
-  const calls = p?.kind === "call_expression" && pe.field === "function";
+    (pk === "member_expression" || pk === "subscript_expression") &&
+    field === "object";
+  const calls = pk === "call_expression" && field === "function";
   return (
-    (reads || calls || p?.kind === "non_null_expression") &&
-    hasOptionalChain(inner)
+    (reads || calls || pk === "non_null_expression") &&
+    hasOptionalChain(tree, inner)
   );
 }
 
-export function hasOptionalChain(n: FormatNode | undefined): boolean {
-  while (n) {
+/** Whether the chain `n` heads (`NO_NODE` for none) holds a `?.`. */
+export function hasOptionalChain(tree: Tree, n: number): boolean {
+  while (n !== NO_NODE) {
+    const kind = tree.kindName(n);
     if (
-      n.kind !== "member_expression" &&
-      n.kind !== "subscript_expression" &&
-      n.kind !== "call_expression"
+      kind !== "member_expression" &&
+      kind !== "subscript_expression" &&
+      kind !== "call_expression"
     )
-      return n.kind === "non_null_expression"
-        ? hasOptionalChain(n.children[0])
+      return kind === "non_null_expression"
+        ? hasOptionalChain(
+            tree,
+            tree.count(n) > 0 ? tree.child(n, 0) : NO_NODE,
+          )
         : false;
-    if (n.children.some((c) => c.kind === "optional_chain" || c.kind === "?."))
+    if (
+      findChild(tree, n, (c) => {
+        const k = tree.kindName(c);
+        return k === "optional_chain" || k === "?.";
+      }) !== NO_NODE
+    )
       return true;
-    n = n.children.find((c) => c.field === "object" || c.field === "function");
+    n = findChild(tree, n, (c) => {
+      const f = tree.fieldName(c);
+      return f === "object" || f === "function";
+    });
   }
   return false;
 }
@@ -408,31 +501,36 @@ export function hasOptionalChain(n: FormatNode | undefined): boolean {
  * which changes the run's tokens but not that value, so a run is compared whole, at its element.
  */
 class JsxTexts {
-  private readonly runs = new Map<FormatNode, JsxRun>();
-  private readonly scanned = new Set<FormatNode>();
+  private readonly runs = new Map<number, JsxRun>();
+  private readonly scanned = new Set<number>();
   private readonly emitted = new Set<JsxRun>();
 
-  constructor(private readonly text: string) {}
+  constructor(
+    private readonly text: string,
+    private readonly tree: Tree,
+  ) {}
 
   /** A child of a JSX element that belongs to a run of text. */
-  isText(n: FormatNode): boolean {
-    if (n.parent?.kind !== "jsx_element") return false;
+  isText(n: number): boolean {
+    if (parentKind(this.tree, n) !== "jsx_element") return false;
+    const kind = this.tree.kindName(n);
     return (
-      n.kind === "jsx_text" ||
-      n.kind === "html_character_reference" ||
+      kind === "jsx_text" ||
+      kind === "html_character_reference" ||
       this.isSpace(n)
     );
   }
 
   /** The run the token `n` is part of: a text node, or a token of a `{" "}`. */
-  runOf(n: FormatNode): JsxRun | undefined {
+  runOf(n: number): JsxRun | undefined {
+    const p = this.tree.parent(n);
     const child = this.isText(n)
       ? n
-      : n.parent && this.isText(n.parent)
-        ? n.parent
-        : undefined;
-    if (!child) return undefined;
-    const element = child.parent as FormatNode;
+      : p !== NO_NODE && this.isText(p)
+        ? p
+        : NO_NODE;
+    if (child === NO_NODE) return undefined;
+    const element = this.tree.parent(child);
     if (!this.scanned.has(element)) this.scan(element);
     return this.runs.get(child);
   }
@@ -444,45 +542,62 @@ class JsxTexts {
     return true;
   }
 
-  private isSpace(n: FormatNode): boolean {
-    if (n.kind !== "jsx_expression") return false;
-    const inner = n.children.filter((c) => c.named);
-    const s = inner[0];
+  private isSpace(n: number): boolean {
+    const tree = this.tree;
+    if (tree.kindName(n) !== "jsx_expression") return false;
+    let named = 0;
+    let s = NO_NODE;
+    for (let i = 0, count = tree.count(n); i < count; i++) {
+      const c = tree.child(n, i);
+      if (!tree.named(c)) continue;
+      if (named++ === 0) s = c;
+    }
     return (
-      inner.length === 1 &&
-      s?.kind === "string" &&
-      this.text.slice(s.start + 1, s.end - 1) === " "
+      named === 1 &&
+      tree.kindName(s) === "string" &&
+      this.text.slice(tree.start(s) + 1, tree.end(s) - 1) === " "
     );
   }
 
-  private scan(element: FormatNode) {
+  private scan(element: number) {
+    const tree = this.tree;
     this.scanned.add(element);
-    const open = element.children.find((c) => c.field === "open_tag");
-    const close = element.children.find((c) => c.field === "close_tag");
+    const open = findChild(
+      tree,
+      element,
+      (c) => tree.fieldName(c) === "open_tag",
+    );
+    const close = findChild(
+      tree,
+      element,
+      (c) => tree.fieldName(c) === "close_tag",
+    );
     let run: JsxRun = { element, value: "" };
-    let from = open ? open.end : element.start;
+    let from = open !== NO_NODE ? tree.end(open) : tree.start(element);
     const text = (to: number) => {
       run.value += cleanJsxText(this.text.slice(from, to));
     };
-    for (const c of element.children) {
+    for (let i = 0, count = tree.count(element); i < count; i++) {
+      const c = tree.child(element, i);
       if (c === open || c === close) continue;
-      if (c.kind === "jsx_text" || c.kind === "html_character_reference") {
+      const kind = tree.kindName(c);
+      if (kind === "jsx_text" || kind === "html_character_reference") {
         this.runs.set(c, run);
         continue;
       }
-      text(c.start);
-      from = c.end;
+      text(tree.start(c));
+      from = tree.end(c);
       if (this.isSpace(c)) {
         run.value += " ";
         this.runs.set(c, run);
-      } else if (c.kind !== "comment") run = { element, value: "" };
+      } else if (kind !== "comment") run = { element, value: "" };
     }
-    text(close ? close.start : element.end);
+    text(close !== NO_NODE ? tree.start(close) : tree.end(element));
   }
 }
 
 interface JsxRun {
-  readonly element: FormatNode;
+  readonly element: number;
   value: string;
 }
 

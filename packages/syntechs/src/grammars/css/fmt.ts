@@ -1,4 +1,4 @@
-import { NO_NODE } from "../../core/arena.js";
+import { NO_NODE, type Tree } from "../../core/arena.js";
 import { decimalValue, type Normalize } from "../../fmt/check.js";
 import {
   type Doc,
@@ -21,7 +21,6 @@ import {
 import { type Ctx, defineLanguage, type Rule } from "../../fmt/rules.js";
 import { newlineBetween, nextLineEmpty } from "../../fmt/text.js";
 import {
-  type FormatNode,
   type FormatTree,
   firstLeaf,
   nextLeaf,
@@ -176,8 +175,10 @@ function enclosingFunction(n: number, ctx: Ctx): string | undefined {
 
 // What a token means, whatever prettier's spelling of it: a string by its cooked value, a number by its exact
 // value and its unit, and hex colors, keywords and names by their case-folded form where CSS ignores case.
-function meaning(node: FormatNode, t: string): string {
-  switch (node.kind) {
+function meaning(tree: Tree, node: number, t: string): string {
+  const parent = tree.parent(node);
+  const parentKind = parent === NO_NODE ? undefined : tree.kindName(parent);
+  switch (tree.kindName(node)) {
     case "string_value":
       return cook(t);
     case "integer_value":
@@ -196,31 +197,31 @@ function meaning(node: FormatNode, t: string): string {
     case "property_name":
       return maybeLower(t);
     case "class_name":
-      return node.parent?.kind === "pseudo_class_selector"
+      return parentKind === "pseudo_class_selector"
         ? t.toLowerCase()
         : t;
     case "tag_name":
-      return node.parent?.kind === "pseudo_element_selector"
+      return parentKind === "pseudo_element_selector"
         ? t.toLowerCase()
         : t;
     case "plain_value":
-      if (node.parent?.kind === "attribute_selector")
+      if (parentKind === "attribute_selector")
         return /^["']/.test(t) ? cook(t) : t;
       return cssWideKeywords.has(t.toLowerCase())
         ? t.toLowerCase()
         : t.replace(/\s+/g, "");
     default:
-      return !node.named && t.startsWith("@") ? t.toLowerCase() : t;
+      return !tree.named(node) && t.startsWith("@") ? t.toLowerCase() : t;
   }
 }
 
 // A `;` that ends the last statement of a block or of the file means nothing, so prettier may add one there.
-const normalize: Normalize = (lexemes) =>
+const normalize: Normalize = (lexemes, _text, tree) =>
   lexemes.map((l, i) => {
     const next = lexemes[i + 1]?.text;
     if (l.text === ";" && (next === undefined || next === "}"))
       return undefined;
-    return meaning(l.node, l.text);
+    return meaning(tree, l.node, l.text);
   });
 
 /** Statements one per line, keeping one blank line where the source had any (prettier's `genericPrint` of nodes). */
