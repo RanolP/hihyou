@@ -1,6 +1,6 @@
 import type { Language as Parser } from "../core/language.js";
 import { identity, type Normalize } from "./check.js";
-import type { Comments } from "./comments.js";
+import type { CommentHandler, Comments } from "./comments.js";
 import {
   breakParent,
   type Doc,
@@ -108,6 +108,7 @@ export interface Language<O = unknown> {
   readonly normalize: Normalize;
   readonly layoutBlind: boolean;
   readonly printComment?: (comment: FormatNode, ctx: Ctx<O>) => Doc;
+  readonly handleComment?: CommentHandler;
 }
 
 /**
@@ -149,6 +150,8 @@ export interface LanguageSpec<G extends Grammar, O> {
    * start with `*`).
    */
   readonly printComment?: (comment: FormatNode, ctx: Ctx<O>) => Doc;
+  /** Where a comment attaches when not where the core would put it (see `CommentHandler`). */
+  readonly handleComment?: CommentHandler;
 }
 
 /** A list setting fixed by the rule, or read from the options of each call. */
@@ -261,6 +264,7 @@ export function defineLanguage<
     normalize: spec.normalize ?? identity,
     layoutBlind: spec.layoutBlind ?? spec.normalize === undefined,
     ...(spec.printComment && { printComment: spec.printComment }),
+    ...(spec.handleComment && { handleComment: spec.handleComment }),
   };
 }
 

@@ -13,15 +13,41 @@ export interface Comments {
   dangling(node: FormatNode): readonly FormatNode[];
 }
 
+/** Where prettier's attach classifies a comment: alone on its line, ending one, or between code on one line. */
+export type Placement = "ownLine" | "endOfLine" | "remaining";
+
+/** A comment with the neighbours the core found for it, as prettier's handleComments hooks receive it. */
+export interface CommentContext {
+  readonly comment: FormatNode;
+  readonly placement: Placement;
+  readonly enclosing: FormatNode;
+  readonly preceding: FormatNode | undefined;
+  readonly following: FormatNode | undefined;
+}
+
+/** A node to attach a comment to, and how it prints there. */
+export interface CommentTarget {
+  readonly node: FormatNode;
+  readonly as: "leading" | "trailing" | "dangling";
+}
+
+/**
+ * A language's own placement for a comment, where its syntax tree differs from prettier's AST or prettier's
+ * handlers move a comment (a union member's comment trails the member before it); `undefined` keeps the
+ * core's.
+ */
+export type CommentHandler = (c: CommentContext) => CommentTarget | undefined;
+
 /**
  * Attaches every comment to a neighbouring node the way prettier's `attach` does (main/comments/attach.js),
- * minus its language-specific handlers. The parser already put each comment among the children of the
+ * with `handle` standing for its language-specific handlers. The parser already put each comment among the children of the
  * smallest node enclosing it, so the neighbours are that node's items on either side.
  */
 export function attachComments(
   root: FormatNode,
   text: string,
   isComment: (n: FormatNode) => boolean,
+  handle?: CommentHandler,
 ): Comments {
   const attached = new Map<FormatNode, Attached>();
   const dangling = new Map<FormatNode, FormatNode[]>();
@@ -131,11 +157,26 @@ export function attachComments(
         end = next.comment.end;
       }
 
-      if (hasNewline(text, start, true)) {
+      const placement: Placement = hasNewline(text, start, true)
+        ? "ownLine"
+        : hasNewline(text, end)
+          ? "endOfLine"
+          : "remaining";
+      const target = handle?.({
+        comment,
+        placement,
+        enclosing: node,
+        preceding,
+        following,
+      });
+      if (target) {
+        if (target.as === "dangling") addDangling(target.node, comment);
+        else at(target.node)[target.as].push(comment);
+      } else if (placement === "ownLine") {
         if (following) at(following).leading.push(comment);
         else if (preceding) at(preceding).trailing.push(comment);
         else addDangling(node, comment);
-      } else if (hasNewline(text, end)) {
+      } else if (placement === "endOfLine") {
         if (preceding) at(preceding).trailing.push(comment);
         else if (following) at(following).leading.push(comment);
         else addDangling(node, comment);

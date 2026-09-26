@@ -54,7 +54,12 @@ export function format<O>(
       const prefix = language.lineComments.get(n.kind);
       return prefix !== undefined && source.startsWith(prefix, n.start);
     };
-    const comments = attachComments(root, source, isComment);
+    const comments = attachComments(
+      root,
+      source,
+      isComment,
+      language.handleComment,
+    );
     const commentToken = (c: FormatNode): Doc => {
       if (language.printComment) return language.printComment(c, ctx);
       const t = source.slice(c.start, c.end);
