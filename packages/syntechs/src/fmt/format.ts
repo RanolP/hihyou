@@ -76,14 +76,10 @@ export function format<O>(
             break;
           }
         const rule = (!broken && language.rules.get(node.kind)) || fallback;
-        return printWithComments(
-          node,
-          rule(node, ctx, args),
-          comments,
-          ctx,
-          isLine,
-        );
+        return ctx.withComments(node, rule(node, ctx, args));
       },
+      withComments: (node, printed) =>
+        printWithComments(node, printed, comments, ctx, isLine),
       items: (node) => node.children.filter((c) => c.named && !isComment(c)),
       dangling: (node) => comments.dangling(node).map(commentToken),
       hasDanglingLineComment: (node) => comments.dangling(node).some(isLine),

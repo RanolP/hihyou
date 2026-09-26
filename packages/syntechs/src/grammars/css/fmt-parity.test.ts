@@ -97,6 +97,8 @@ const edgeCases: [string, string][] = [
     '@font-face{font-family:x;src:url(a.woff2) format("woff2"),url(a.woff) format("woff")}',
   ],
   ["other-at-rules", "@layer a,b;@container (min-width:400px){a{b:c}}"],
+  // An at-rule's params print as raw text, which once dropped the comments attached to them.
+  ["at-rule-param-comment", "@counter-style /* c */ thumbs {}"],
   [
     "progid",
     "a{filter:progid:DXImageTransform.Microsoft.gradient(startColorstr='#80000000')}",

@@ -394,13 +394,16 @@ const semicolon = (node: FormatNode, ctx: Ctx) => {
   const semi = anon(node, ";");
   return semi ? verbatim(semi, ctx) : synthetic(node, ";");
 };
-/** Parameters kept as written, each separated by one space where the source had any gap (prettier's raw params). */
+/**
+ * Parameters kept as written, each separated by one space where the source had any gap (prettier's raw params).
+ * A comment among them is attached to a parameter, so it prints with that parameter rather than in a gap.
+ */
 const raw = (nodes: readonly FormatNode[], ctx: Ctx): Doc =>
   nodes.map((n, i) => {
     const prev = nodes[i - 1];
     return [
-      prev && gap(ctx, prev, n) !== "" ? text(gap(ctx, prev, n)) : [],
-      verbatim(n, ctx),
+      prev && prev.end !== n.start ? text(" ") : [],
+      ctx.withComments(n, verbatim(n, ctx)),
     ];
   });
 

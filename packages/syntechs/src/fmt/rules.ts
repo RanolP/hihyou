@@ -55,6 +55,11 @@ export interface Ctx<O = unknown> {
   readonly options: O;
   /** `node` as its rule prints it, with the comments attached to it; `args` reach that rule. */
   print(node: FormatNode, args?: PrintArgs): Doc;
+  /**
+   * `printed` with the comments attached to `node`, for a rule that prints a child itself instead of through
+   * `print`: without it, those comments are lost.
+   */
+  withComments(node: FormatNode, printed: Doc): Doc;
   /** The children that carry meaning: named, and not comments. */
   items(node: FormatNode): FormatNode[];
   /** Comments inside `node` next to none of its items, printed one per line. */

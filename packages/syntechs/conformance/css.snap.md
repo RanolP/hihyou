@@ -1,4 +1,4 @@
-css compatibility: 65/151 (43.05%), 1 refused (ok:false), 6 excluded
+css compatibility: 65/151 (43.05%), 0 refused (ok:false), 6 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -42,6 +42,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | css/color/color-adjuster.css | 0/1 | 96.77% |
 | css/comments/15948.css | 0/1 | 16.67% |
 | css/comments/17479.css | 0/1 | 46.51% |
+| css/comments/at-rules.css | 0/1 | 39.44% |
 | css/comments/custom-properties.css | 0/1 | 53.85% |
 | css/comments/declaration.css | 0/1 | 60.12% |
 | css/comments/prettier-ignore.css | 0/1 | 80.00% |
@@ -105,7 +106,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| css/comments/at-rules.css | 1/1 | 38.50% | check: input comment "/* comment 57 */" is missing from the output |
 
 # Excluded
 
