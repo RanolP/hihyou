@@ -136,11 +136,12 @@ function propagateBreaks(d: Doc, seen = new Map<Doc, boolean>()): boolean {
 
 function propagate(d: Doc, seen: Map<Doc, boolean>): boolean {
   // Every part is visited, not only up to the first break: each nested group needs its own mark.
-  if (isDocs(d))
-    return d.reduce(
-      (broken, part) => propagateBreaks(part, seen) || broken,
-      false,
-    );
+  if (isDocs(d)) {
+    let broken = false;
+    for (let i = 0; i < d.length; i++)
+      if (propagateBreaks(d[i] as Doc, seen)) broken = true;
+    return broken;
+  }
   switch (d.k) {
     case "breakParent":
       return true;
@@ -219,7 +220,7 @@ function fits(
     const push = (doc: Doc, m = mode, i = indent, a: Measure = all) =>
       cmds.push({ indent: i, mode: m, doc, all: a });
     if (isDocs(d)) {
-      for (const part of d.toReversed()) push(part);
+      for (let i = d.length - 1; i >= 0; i--) push(d[i] as Doc);
       continue;
     }
     switch (d.k) {
@@ -258,7 +259,8 @@ function fits(
         push(d.contents, mode, aligned(indent, d.n, layout));
         break;
       case "fill":
-        for (const part of d.parts.slice(d.from ?? 0).reverse()) push(part);
+        for (let i = d.parts.length - 1; i >= (d.from ?? 0); i--)
+          push(d.parts[i] as Doc);
         break;
       case "group": {
         if (mustBeFlat && d.break) return false;
