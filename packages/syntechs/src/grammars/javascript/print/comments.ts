@@ -17,21 +17,32 @@ const codeAfter = (n: FormatNode, child: FormatNode) =>
 const lastCode = (n: FormatNode) => n.children.findLast(isCode);
 
 /**
- * A comment before a statement's closing `;` trails the whole statement: prettier's statement ends before the
- * comment (`const a = 1 /* c *\/;` prints `const a = 1; /* c *\/`).
+ * A comment before a statement's closing `;` sits between that statement and the next: prettier's statement ends
+ * before the comment. On a line of its own it leads the next statement (`a\n// c\n;[]`), else it trails the
+ * statement (`const a = 1 /* c *\/;` prints `const a = 1; /* c *\/`).
  */
 const beforeSemicolon = ({
   comment,
   enclosing,
   following,
+  placement,
 }: CommentContext): CommentTarget | undefined => {
-  if (following || enclosing.parent?.kind.startsWith("for")) return;
+  // A `for` head's initializer is a statement, `;` and all.
+  if (
+    following ||
+    (enclosing.parent?.kind.startsWith("for") && enclosing.field !== "body")
+  )
+    return;
   const rest = codeAfter(enclosing, comment);
   if (rest.length !== 1 || rest[0]?.kind !== ";") return;
   let node = enclosing;
   while (node.parent?.parent && lastCode(node.parent) === node)
     node = node.parent;
-  return { node, as: "trailing" };
+  const next =
+    placement === "ownLine" && node.parent
+      ? codeAfter(node.parent, node).find((n) => n.named)
+      : undefined;
+  return next ? { node: next, as: "leading" } : { node, as: "trailing" };
 };
 
 /** tree-sitter nests `A | B | C` as `(A | B) | C`; prettier's union is flat. */
