@@ -3,16 +3,25 @@
 
 import {
   align,
+  contentsOf,
   type Doc,
+  flatOf,
   group,
   hardline,
   indent,
+  isBroken,
   isDocs,
+  isHardLine,
+  isSoftLine,
+  kindOf,
   lineSuffixBoundary,
   literalToken,
+  partsOf,
   softline,
   text,
+  textOf,
   token,
+  withContents,
 } from "../../../fmt/doc.js";
 import type { FormatNode } from "../../../fmt/tree.js";
 import { isDirective } from "./parens.js";
@@ -152,31 +161,31 @@ export function flatten(doc: Doc): Doc | undefined {
   const walk = (d: Doc): Doc => {
     if (broken) return [];
     if (isDocs(d)) return d.map(walk);
-    switch (d.k) {
+    switch (kindOf(d)) {
       case "token":
-        if (d.text.includes("\n")) broken = true;
+        if (textOf(d).includes("\n")) broken = true;
         return d;
       case "text":
-        if (d.text.includes("\n")) broken = true;
+        if (textOf(d).includes("\n")) broken = true;
         return d;
       case "line":
-        if (d.hard) broken = true;
-        return d.soft ? [] : text(" ");
+        if (isHardLine(d)) broken = true;
+        return isSoftLine(d) ? [] : text(" ");
       case "breakParent":
         broken = true;
         return [];
       case "group":
-        if (d.break) broken = true;
-        return walk(d.contents);
+        if (isBroken(d)) broken = true;
+        return walk(contentsOf(d));
       case "indent":
       case "align":
-        return walk(d.contents);
+        return walk(contentsOf(d));
       case "fill":
-        return d.parts.slice(d.from ?? 0).map(walk);
+        return partsOf(d).map(walk);
       case "ifBreak":
-        return walk(d.flat);
+        return walk(flatOf(d));
       case "lineSuffix":
-        return { ...d, contents: walk(d.contents) };
+        return withContents(d, walk(contentsOf(d)));
       // Ruff's layouts, which a JavaScript doc never holds.
       default:
         return d;

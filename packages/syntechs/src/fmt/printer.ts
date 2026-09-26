@@ -1,14 +1,41 @@
 import {
-  type BestFitParenthesize,
-  type BestFitting,
+  ALIGN,
+  ALL_LINES,
+  alignOf,
+  BEST_FIT_PARENTHESIZE,
+  BEST_FITTING,
+  BREAK_PARENT,
+  BROKEN,
+  buf,
+  COLLAPSE,
   type Doc,
-  type Fill,
-  type Group,
-  type GroupIfBreak,
-  type GroupRef,
+  type DocHandle,
+  docCount,
+  deref,
+  EXPANDS,
+  FILL,
+  FITS_EXPANDED,
+  GROUP,
+  GROUP_IF_BREAK,
+  HARD,
   hardline,
-  isDocs,
-  type Token,
+  IF_BREAK,
+  INDENT,
+  LINE,
+  LINE_SUFFIX,
+  LINE_SUFFIX_BOUNDARY,
+  LITERAL,
+  lineOf,
+  NONE,
+  nodes,
+  SOFT,
+  STATES,
+  strs,
+  SYNTHETIC,
+  BLANK,
+  TEXT,
+  TOKEN,
+  type TokenNode,
 } from "./doc.js";
 import { textWidth } from "./width.js";
 
@@ -24,41 +51,49 @@ export interface Layout {
   ruff?: boolean;
 }
 
+/** A source token as printed: its node, its text, and whether a rule inserted it (see `synthetic`). */
+export interface PlacedToken {
+  readonly node: TokenNode;
+  readonly text: string;
+  readonly synthetic: boolean;
+}
 /**
  * The source tokens in output order and, at the same index of `at`, the UTF-16 offset in the output where each
  * one's text starts: parallel arrays rather than an object per token, since every pass places every token.
  */
 export interface Placed {
-  tokens: Token[];
+  tokens: PlacedToken[];
   at: Int32Array;
 }
 
-const hardLine: Doc = { k: "line", soft: false, hard: true };
+const hardLine = lineOf(HARD);
 const BREAK = 0;
 const FLAT = 1;
 type Mode = typeof BREAK | typeof FLAT;
+// How many lines a width check counts: the first, all, or all with any width (inside `fitsExpanded`, only the
+// text around it).
+const FIRST_LINE = 0;
+const ALL = 1;
+const OVERFLOW = 2;
+
 /** Prettier's indentation: each level an indent or an alignment, rendered to `value` spanning `length` columns. */
 interface Indentation {
   readonly value: string;
   readonly length: number;
   readonly queue: readonly (number | string | "indent")[];
-  /** This indentation one indent deeper under `indentedIn`, built once: the printer and every width check step into it. */
-  indented?: Indentation;
-  indentedIn?: Layout;
+  /** The indentation one indent deeper, by id, built once: the printer and every width check step into it. */
+  indented: number;
+  /** The alignments already built from this one, by step. */
+  aligned: Map<number | string, number> | undefined;
 }
-type Cmd = { indent: Indentation; mode: Mode; doc: Doc };
-
-const ROOT: Indentation = { value: "", length: 0, queue: [] };
 
 // Prettier's generateIndent: alignment runs are spaces, or with tabs one tab each once an indent follows them.
 // A negative step drops the innermost level instead (prettier's dedent).
-function deeper(
+function render(
   from: Indentation,
   step: number | string | "indent",
   layout: Layout,
 ): Indentation {
-  if (step === "indent" && from.indentedIn === layout && from.indented)
-    return from.indented;
   const queue =
     typeof step === "number" && step < 0
       ? from.queue.slice(0, -1)
@@ -100,245 +135,322 @@ function deeper(
     }
   }
   flushSpaces();
-  const next: Indentation = { value, length, queue };
-  if (step === "indent") {
-    from.indented = next;
-    from.indentedIn = layout;
-  }
-  return next;
+  return { value, length, queue, indented: -1, aligned: undefined };
 }
 
-/** Prettier's align: `-Infinity` back to the root, nothing for `0` or `""`, else one alignment step deeper. */
-const aligned = (
-  from: Indentation,
-  n: number | string,
-  layout: Layout,
-): Indentation =>
-  n === Number.NEGATIVE_INFINITY
-    ? ROOT
-    : n === 0 || n === ""
-      ? from
-      : deeper(from, n, layout);
-
-function unknownDoc(d: never): never {
-  throw new Error(`unknown doc ${JSON.stringify(d)}`);
+function unknownDoc(kind: number): never {
+  throw new Error(`unknown doc kind ${kind}`);
 }
 
-/**
- * Marks every group that holds a hard break, directly or through a nested broken group, as broken. A conditional
- * group is only walked, never marked: which of its states breaks is the printer's choice. A doc may share a part
- * between both branches of an `ifBreak` or between states, so each part is visited once, not once per path to it.
- */
-function propagateBreaks(d: Doc, seen = new Map<Doc, boolean>()): boolean {
-  const known = seen.get(d);
-  if (known !== undefined) return known;
-  const result = propagate(d, seen);
-  seen.set(d, result);
-  return result;
-}
-
-function propagate(d: Doc, seen: Map<Doc, boolean>): boolean {
-  // Every part is visited, not only up to the first break: each nested group needs its own mark.
-  if (isDocs(d)) {
-    let broken = false;
-    for (let i = 0; i < d.length; i++)
-      if (propagateBreaks(d[i] as Doc, seen)) broken = true;
-    return broken;
-  }
-  switch (d.k) {
-    case "breakParent":
-      return true;
-    case "group":
-      if (d.expandedStates) {
-        for (const state of d.expandedStates) propagateBreaks(state, seen);
-        return d.break;
-      }
-      if (propagateBreaks(d.contents, seen)) d.break = true;
-      return d.break;
-    case "groupIfBreak":
-      if (propagateBreaks(d.contents, seen)) d.break = true;
-      return d.break;
-    case "indent":
-    case "align":
-    case "lineSuffix":
-      return propagateBreaks(d.contents, seen);
-    case "fill":
-      return propagateBreaks(d.parts, seen);
-    case "ifBreak":
-      return propagateBreaks([d.broken, d.flat], seen);
-    // A variant's breaks are its own: the choice among variants is what decides whether the line breaks.
-    case "bestFitting":
-      propagateBreaks(d.variants, seen);
-      return false;
-    case "bestFitParenthesize":
-      propagateBreaks(d.contents, seen);
-      return false;
-    case "fitsExpanded":
-      d.expands = propagateBreaks(d.contents, seen);
-      return false;
-    case "token":
-    case "text":
-    case "lineSuffixBoundary":
-      return false;
-    case "line":
-      return d.hard && d.collapse === true;
-    default:
-      return unknownDoc(d);
-  }
-}
-
-/**
- * Whether `next` fits in `width` columns up to its first line break; when `next` runs out, the enclosing
- * `rest` commands are measured too, in their own modes. `mustBeFlat` rejects any already-broken group.
- * A space from a line counts only once text follows it, as it would be trimmed at a line end.
- * With `allLines`, every line `next` breaks into is measured, not only the first.
- */
-function fits(
-  next: Cmd,
-  rest: readonly Cmd[],
-  width: number,
-  mustBeFlat: boolean,
-  groupModes: Map<GroupRef, Mode>,
-  layout: Layout,
-  hasLineSuffix: boolean,
-  allLines = false,
-): boolean {
-  let restIdx = rest.length;
-  let pendingSpace = false;
-  // How many lines count: the first, all, or all with any width (inside `fitsExpanded`, only the text around it).
-  type Measure = typeof FIRST_LINE | typeof ALL_LINES | typeof OVERFLOW;
-  type Measured = Cmd & { all: Measure };
-  const cmds: Measured[] = [
-    { ...next, all: allLines ? ALL_LINES : FIRST_LINE },
-  ];
-  if (width < 0) return false;
-  for (;;) {
-    const cmd =
-      cmds.pop() ??
-      (restIdx > 0
-        ? { ...(rest[--restIdx] as Cmd), all: FIRST_LINE }
-        : undefined);
-    if (!cmd) return true;
-    const { indent, mode, doc: d, all } = cmd;
-    const push = (doc: Doc, m = mode, i = indent, a: Measure = all) =>
-      cmds.push({ indent: i, mode: m, doc, all: a });
-    if (isDocs(d)) {
-      for (let i = d.length - 1; i >= 0; i--) push(d[i] as Doc);
-      continue;
-    }
-    switch (d.k) {
-      case "token":
-      case "text": {
-        if (d.text === "") break;
-        if (pendingSpace) {
-          width -= 1;
-          pendingSpace = false;
-        }
-        const newline =
-          d.k === "token" && d.literal ? d.text.indexOf("\n") : -1;
-        if (newline < 0) {
-          width -= textWidth(d.text);
-          break;
-        }
-        if (layout.ruff && mustBeFlat) return false;
-        width -= textWidth(d.text.slice(0, newline));
-        if (all === FIRST_LINE) return width >= 0;
-        width =
-          layout.lineWidth -
-          textWidth(d.text.slice(d.text.lastIndexOf("\n") + 1));
-        break;
-      }
-      case "fitsExpanded":
-        if (mode === BREAK) push(d.contents);
-        else if (!d.whenFlat || (groupModes.get(d.whenFlat) ?? FLAT) === FLAT)
-          push(d.contents, BREAK, indent, OVERFLOW);
-        else if (d.expands) return false;
-        else push(d.contents);
-        break;
-      case "indent":
-        push(d.contents, mode, deeper(indent, "indent", layout));
-        break;
-      case "align":
-        push(d.contents, mode, aligned(indent, d.n, layout));
-        break;
-      case "fill":
-        for (let i = d.parts.length - 1; i >= (d.from ?? 0); i--)
-          push(d.parts[i] as Doc);
-        break;
-      case "group": {
-        if (mustBeFlat && d.break) return false;
-        const m = d.break ? BREAK : mode;
-        if (layout.ruff) groupModes.set(d, m);
-        push(
-          ((d.break || mode === BREAK) && d.expandedStates?.at(-1)) ||
-            d.contents,
-          m,
-        );
-        break;
-      }
-      case "groupIfBreak":
-        if ((groupModes.get(d.cond) ?? FLAT) === BREAK) {
-          if (mustBeFlat && d.break) return false;
-          push(d.contents, d.break ? BREAK : mode);
-        } else push(d.contents);
-        break;
-      case "line":
-        if (mode === FLAT && !d.hard) {
-          if (d.soft) break;
-          if (layout.ruff) width -= 1;
-          else pendingSpace = true;
-          break;
-        }
-        if (mode === FLAT || all === FIRST_LINE) return true;
-        width = layout.lineWidth - indent.length;
-        pendingSpace = false;
-        break;
-      case "ifBreak": {
-        const m = d.group ? (groupModes.get(d.group) ?? FLAT) : mode;
-        push(m === BREAK ? d.broken : d.flat);
-        break;
-      }
-      case "bestFitting":
-        if (mode === FLAT)
-          push(
-            d.variants[0] ?? [],
-            mode,
-            indent,
-            d.allLines ? ALL_LINES : FIRST_LINE,
-          );
-        else push(d.variants.at(-1) ?? []);
-        break;
-      case "bestFitParenthesize":
-        if (layout.ruff) groupModes.set(d, mode);
-        push(d.contents);
-        break;
-      case "lineSuffix":
-        width -= d.reserved ?? 0;
-        if (layout.ruff && d.reserved && width < 0) return false;
-        hasLineSuffix = true;
-        break;
-      case "lineSuffixBoundary":
-        if (hasLineSuffix) return false;
-        break;
-      case "breakParent":
-        break;
-      default:
-        unknownDoc(d);
-    }
-    if (width < 0 && all !== OVERFLOW) return false;
-  }
-}
-
-const FIRST_LINE = 0;
-const ALL_LINES = 1;
-const OVERFLOW = 2;
+const grow32 = (a: Int32Array) => {
+  const g = new Int32Array(a.length * 2);
+  g.set(a);
+  return g;
+};
+const grow8 = (a: Uint8Array) => {
+  const g = new Uint8Array(a.length * 2);
+  g.set(a);
+  return g;
+};
 
 /** Prints `doc` as prettier's printer would, returning the text and where each source token was placed. */
 export function print(
   doc: Doc,
   layout: Layout,
 ): { text: string; placed: Placed } {
-  propagateBreaks(doc);
+  // Nothing is built while printing, so the buffer is fixed from here on.
+  const b = buf;
+  const count = docCount();
+  const ruff = layout.ruff === true;
+  // A group's printed mode, by handle: 0 unset (read as flat), else mode + 1.
+  const groupModes = new Uint8Array(count);
+  const modeOf = (g: number): Mode =>
+    groupModes[g] === BREAK + 1 ? BREAK : FLAT;
+
+  const indents: Indentation[] = [
+    { value: "", length: 0, queue: [], indented: -1, aligned: undefined },
+  ];
+  const deeper = (from: number): number => {
+    const f = indents[from] as Indentation;
+    if (f.indented < 0) {
+      indents.push(render(f, "indent", layout));
+      f.indented = indents.length - 1;
+    }
+    return f.indented;
+  };
+  // Prettier's align: `-Infinity` back to the root, nothing for `0` or `""`, else one alignment step deeper.
+  const aligned = (from: number, n: number | string): number => {
+    if (n === Number.NEGATIVE_INFINITY) return 0;
+    if (n === 0 || n === "") return from;
+    const f = indents[from] as Indentation;
+    f.aligned ??= new Map();
+    let id = f.aligned.get(n);
+    if (id === undefined) {
+      indents.push(render(f, n, layout));
+      id = indents.length - 1;
+      f.aligned.set(n, id);
+    }
+    return id;
+  };
+
+  // A token's or a text's width, measured once and kept in its third slot.
+  const widthOf = (h: number, s: string): number => {
+    let w = b[h * 4 + 3] as number;
+    if (w < 0) {
+      w = textWidth(s);
+      b[h * 4 + 3] = w;
+    }
+    return w;
+  };
+
+  propagateBreaks(b, count);
+
+  // The print stack: a doc and its indentation, mode, and (for a fill) the index of its first unprinted part.
+  const pDoc: Doc[] = [];
+  let pInd = new Int32Array(256);
+  let pMode = new Uint8Array(256);
+  let pAux = new Int32Array(256);
+  let pp = 0;
+  const push = (d: Doc, ind: number, mode: Mode, aux = 0) => {
+    if (pp === pInd.length) {
+      pInd = grow32(pInd);
+      pMode = grow8(pMode);
+      pAux = grow32(pAux);
+    }
+    pDoc[pp] = d;
+    pInd[pp] = ind;
+    pMode[pp] = mode;
+    pAux[pp] = aux;
+    pp++;
+  };
+  // Line suffixes waiting for the next line break.
+  const sDoc: Doc[] = [];
+  const sInd: number[] = [];
+  const sMode: Mode[] = [];
+  const flushSuffixes = () => {
+    for (let i = sDoc.length - 1; i >= 0; i--)
+      push(sDoc[i] as Doc, sInd[i] as number, sMode[i] as Mode);
+    sDoc.length = 0;
+    sInd.length = 0;
+    sMode.length = 0;
+  };
+
+  // The width-check stack: as the print stack, plus how many lines each entry measures.
+  const fDoc: Doc[] = [];
+  let fInd = new Int32Array(256);
+  let fMode = new Uint8Array(256);
+  let fAll = new Uint8Array(256);
+  let fAux = new Int32Array(256);
+  let fp = 0;
+  const fpush = (d: Doc, ind: number, mode: number, all: number, aux = 0) => {
+    if (fp === fInd.length) {
+      fInd = grow32(fInd);
+      fMode = grow8(fMode);
+      fAll = grow8(fAll);
+      fAux = grow32(fAux);
+    }
+    fDoc[fp] = d;
+    fInd[fp] = ind;
+    fMode[fp] = mode;
+    fAll[fp] = all;
+    fAux[fp] = aux;
+    fp++;
+  };
+
+  /**
+   * Whether what `fpush` put on the width-check stack fits in `width` columns up to its first line break; when
+   * it runs out, the print stack's entries below `restTop` are measured too, in their own modes. `mustBeFlat`
+   * rejects any already-broken group. A space from a line counts only once text follows it, as it would be
+   * trimmed at a line end. An entry pushed as `ALL` measures every line it breaks into, not only the first.
+   */
+  function fits(
+    restTop: number,
+    width: number,
+    mustBeFlat: boolean,
+    hasLineSuffix: boolean,
+  ): boolean {
+    if (width < 0) {
+      fp = 0;
+      return false;
+    }
+    let restIdx = restTop;
+    let pendingSpace = false;
+    for (;;) {
+      let d: Doc;
+      let ind: number;
+      let mode: number;
+      let all: number;
+      let aux: number;
+      if (fp > 0) {
+        fp--;
+        d = fDoc[fp] as Doc;
+        ind = fInd[fp] as number;
+        mode = fMode[fp] as number;
+        all = fAll[fp] as number;
+        aux = fAux[fp] as number;
+      } else if (restIdx > 0) {
+        restIdx--;
+        d = pDoc[restIdx] as Doc;
+        ind = pInd[restIdx] as number;
+        mode = pMode[restIdx] as number;
+        all = FIRST_LINE;
+        aux = pAux[restIdx] as number;
+      } else return true;
+      if (typeof d !== "number") {
+        const ds = d as readonly Doc[];
+        for (let i = ds.length - 1; i >= 0; i--)
+          fpush(ds[i] as Doc, ind, mode, all);
+        continue;
+      }
+      const at = d * 4;
+      const head = b[at] as number;
+      const kind = head & 0xff;
+      const flags = head >>> 8;
+      switch (kind) {
+        case TOKEN:
+        case TEXT: {
+          const s = strs[b[at + 2] as number] as string;
+          if (s === "") break;
+          if (pendingSpace) {
+            width -= 1;
+            pendingSpace = false;
+          }
+          const newline = flags & LITERAL ? s.indexOf("\n") : -1;
+          if (newline < 0) {
+            width -= widthOf(d, s);
+            break;
+          }
+          if (ruff && mustBeFlat) {
+            fp = 0;
+            return false;
+          }
+          width -= textWidth(s.slice(0, newline));
+          if (all === FIRST_LINE) {
+            fp = 0;
+            return width >= 0;
+          }
+          width =
+            layout.lineWidth - textWidth(s.slice(s.lastIndexOf("\n") + 1));
+          break;
+        }
+        case FITS_EXPANDED: {
+          const contents = deref(b[at + 1] as number);
+          const whenFlat = b[at + 2] as number;
+          if (mode === BREAK) fpush(contents, ind, mode, all);
+          else if (whenFlat === NONE || modeOf(whenFlat) === FLAT)
+            fpush(contents, ind, BREAK, OVERFLOW);
+          else if (flags & EXPANDS) {
+            fp = 0;
+            return false;
+          } else fpush(contents, ind, mode, all);
+          break;
+        }
+        case INDENT:
+          fpush(deref(b[at + 1] as number), deeper(ind), mode, all);
+          break;
+        case ALIGN:
+          fpush(
+            deref(b[at + 1] as number),
+            aligned(ind, alignOf(d)),
+            mode,
+            all,
+          );
+          break;
+        case FILL: {
+          const parts = deref(b[at + 1] as number) as readonly Doc[];
+          for (let i = parts.length - 1; i >= aux; i--)
+            fpush(parts[i] as Doc, ind, mode, all);
+          break;
+        }
+        case GROUP: {
+          const broken = (flags & BROKEN) !== 0;
+          if (mustBeFlat && broken) {
+            fp = 0;
+            return false;
+          }
+          const m = broken ? BREAK : mode;
+          if (ruff) groupModes[d] = m + 1;
+          const last =
+            (broken || mode === BREAK) && flags & STATES
+              ? (deref(b[at + 2] as number) as readonly Doc[]).at(-1)
+              : undefined;
+          fpush(last ?? deref(b[at + 1] as number), ind, m, all);
+          break;
+        }
+        case GROUP_IF_BREAK:
+          if (modeOf(b[at + 2] as number) === BREAK) {
+            const broken = (flags & BROKEN) !== 0;
+            if (mustBeFlat && broken) {
+              fp = 0;
+              return false;
+            }
+            fpush(deref(b[at + 1] as number), ind, broken ? BREAK : mode, all);
+          } else fpush(deref(b[at + 1] as number), ind, mode, all);
+          break;
+        case LINE:
+          if (mode === FLAT && !(flags & HARD)) {
+            if (flags & SOFT) break;
+            if (ruff) width -= 1;
+            else pendingSpace = true;
+            break;
+          }
+          if (mode === FLAT || all === FIRST_LINE) {
+            fp = 0;
+            return true;
+          }
+          width = layout.lineWidth - (indents[ind] as Indentation).length;
+          pendingSpace = false;
+          break;
+        case IF_BREAK: {
+          const g = b[at + 3] as number;
+          const m = g !== NONE ? modeOf(g) : mode;
+          fpush(deref(b[at + (m === BREAK ? 1 : 2)] as number), ind, mode, all);
+          break;
+        }
+        case BEST_FITTING: {
+          const variants = deref(b[at + 1] as number) as readonly Doc[];
+          if (mode === FLAT)
+            fpush(
+              variants[0] ?? [],
+              ind,
+              mode,
+              flags & ALL_LINES ? ALL : FIRST_LINE,
+            );
+          else fpush(variants.at(-1) ?? [], ind, mode, all);
+          break;
+        }
+        case BEST_FIT_PARENTHESIZE:
+          if (ruff) groupModes[d] = mode + 1;
+          fpush(deref(b[at + 2] as number), ind, mode, all);
+          break;
+        case LINE_SUFFIX: {
+          const reserved = b[at + 2] as number;
+          width -= reserved;
+          if (ruff && reserved && width < 0) {
+            fp = 0;
+            return false;
+          }
+          hasLineSuffix = true;
+          break;
+        }
+        case LINE_SUFFIX_BOUNDARY:
+          if (hasLineSuffix) {
+            fp = 0;
+            return false;
+          }
+          break;
+        case BREAK_PARENT:
+          break;
+        default:
+          unknownDoc(kind);
+      }
+      if (width < 0 && all !== OVERFLOW) {
+        fp = 0;
+        return false;
+      }
+    }
+  }
+
   // Finished lines, each followed by its line break; the line being printed is `current`, so a line end trims
   // one string instead of walking back over the pieces of the line.
   const out: string[] = [];
@@ -347,21 +459,13 @@ export function print(
   let column = 0;
   // Where the text of the current line starts, after its indentation.
   let lineStart = 0;
-  const tokens: Token[] = [];
-  let at = new Int32Array(1024);
-  const cmds: Cmd[] = [{ indent: ROOT, mode: BREAK, doc }];
+  const tokens: PlacedToken[] = [];
+  let placedAt = new Int32Array(1024);
   let remeasure = false;
-  const suffixes: Cmd[] = [];
-  const groupModes = new Map<GroupRef, Mode>();
   const endLine = () => {
     out.push(current, "\n");
     current = "";
     length += 1;
-  };
-  const write = (s: string) => {
-    current += s;
-    length += s.length;
-    column += textWidth(s);
   };
   // A literal token's breaks restart the column, at the root indentation as prettier's literalline does. Its
   // lines are finished as they are: a line end trims only the line being printed.
@@ -375,284 +479,357 @@ export function print(
   // Trailing spaces and tabs go when a line ends; tokens never end in either, so no placement moves.
   const trimLineEnd = () => {
     let end = current.length;
-    for (let c = current.charCodeAt(end - 1); c === 32 || c === 9; )
+    for (let c = current.charCodeAt(end - 1); c === 32 || c === 9;)
       c = current.charCodeAt(--end - 1);
     if (end === current.length) return;
     length -= current.length - end;
     current = current.slice(0, end);
   };
 
+  push(doc, 0, BREAK);
   for (;;) {
-    let cmd = cmds.pop();
-    if (!cmd && suffixes.length > 0) {
-      cmds.push(...suffixes.reverse());
-      suffixes.length = 0;
-      cmd = cmds.pop();
+    if (pp === 0) {
+      if (sDoc.length === 0) break;
+      flushSuffixes();
     }
-    if (!cmd) break;
-    const { indent, mode, doc: d } = cmd;
-    if (isDocs(d)) {
-      for (let i = d.length - 1; i >= 0; i--)
-        cmds.push({ indent, mode, doc: d[i] as Doc });
+    pp--;
+    const d = pDoc[pp] as Doc;
+    const ind = pInd[pp] as number;
+    const mode = pMode[pp] as Mode;
+    const aux = pAux[pp] as number;
+    if (typeof d !== "number") {
+      const ds = d as readonly Doc[];
+      for (let i = ds.length - 1; i >= 0; i--) push(ds[i] as Doc, ind, mode);
       continue;
     }
-    switch (d.k) {
-      case "token":
-        if (tokens.length === at.length) {
-          const grown = new Int32Array(at.length * 2);
-          grown.set(at);
-          at = grown;
+    const at = d * 4;
+    const head = b[at] as number;
+    const kind = head & 0xff;
+    const flags = head >>> 8;
+    switch (kind) {
+      case TOKEN: {
+        const s = strs[b[at + 2] as number] as string;
+        if (tokens.length === placedAt.length) {
+          const grown = new Int32Array(placedAt.length * 2);
+          grown.set(placedAt);
+          placedAt = grown;
         }
-        at[tokens.length] = length;
-        tokens.push(d);
-        if (d.literal && d.text.includes("\n")) {
-          writeLiteral(d.text);
-          if (layout.ruff) remeasure = true;
-        } else write(d.text);
-        break;
-      case "text":
-        write(d.text);
-        break;
-      case "indent":
-        cmds.push({
-          indent: deeper(indent, "indent", layout),
-          mode,
-          doc: d.contents,
+        placedAt[tokens.length] = length;
+        tokens.push({
+          node: nodes[b[at + 1] as number] as TokenNode,
+          text: s,
+          synthetic: (flags & SYNTHETIC) !== 0,
         });
+        if (flags & LITERAL && s.includes("\n")) {
+          writeLiteral(s);
+          if (ruff) remeasure = true;
+        } else {
+          current += s;
+          length += s.length;
+          column += widthOf(d, s);
+        }
         break;
-      case "align":
-        cmds.push({
-          indent: aligned(indent, d.n, layout),
-          mode,
-          doc: d.contents,
-        });
+      }
+      case TEXT: {
+        const s = strs[b[at + 2] as number] as string;
+        current += s;
+        length += s.length;
+        column += widthOf(d, s);
         break;
-      case "group":
-        printGroup(d, indent, mode);
+      }
+      case INDENT:
+        push(deref(b[at + 1] as number), deeper(ind), mode);
         break;
-      case "groupIfBreak":
-        if ((groupModes.get(d.cond) ?? FLAT) === BREAK)
-          printGroup(d, indent, mode);
-        else cmds.push({ indent, mode, doc: d.contents });
+      case ALIGN:
+        push(deref(b[at + 1] as number), aligned(ind, alignOf(d)), mode);
         break;
-      case "fill":
-        printFill(d, indent, mode);
+      case GROUP:
+        printGroup(d, kind, flags, ind, mode);
         break;
-      case "line":
-        if (mode === FLAT && !d.hard) {
-          if (!d.soft) write(" ");
+      case GROUP_IF_BREAK:
+        if (modeOf(b[at + 2] as number) === BREAK)
+          printGroup(d, kind, flags, ind, mode);
+        else push(deref(b[at + 1] as number), ind, mode);
+        break;
+      case FILL:
+        printFill(d, ind, mode, aux);
+        break;
+      case LINE: {
+        if (mode === FLAT && !(flags & HARD)) {
+          if (!(flags & SOFT)) {
+            current += " ";
+            length += 1;
+            column += 1;
+          }
           break;
         }
         // A hard break inside a flat group: the next group must measure afresh.
-        if (mode === FLAT || layout.ruff) remeasure = true;
-        if (suffixes.length > 0) {
-          cmds.push(cmd, ...suffixes.reverse());
-          suffixes.length = 0;
+        if (mode === FLAT || ruff) remeasure = true;
+        if (sDoc.length > 0) {
+          push(d, ind, mode, aux);
+          flushSuffixes();
           break;
         }
         trimLineEnd();
-        if (!d.collapse || length > lineStart) endLine();
-        if (d.blank) endLine();
-        write(indent.value);
-        column = indent.length;
+        if (!(flags & COLLAPSE) || length > lineStart) endLine();
+        if (flags & BLANK) endLine();
+        const indentation = indents[ind] as Indentation;
+        current += indentation.value;
+        length += indentation.value.length;
+        column = indentation.length;
         lineStart = length;
         break;
-      case "fitsExpanded":
-        if (!d.whenFlat || (groupModes.get(d.whenFlat) ?? FLAT) === FLAT)
-          remeasure = true;
-        cmds.push({ indent, mode, doc: d.contents });
-        break;
-      case "ifBreak": {
-        const m = d.group ? (groupModes.get(d.group) ?? FLAT) : mode;
-        cmds.push({ indent, mode, doc: m === BREAK ? d.broken : d.flat });
+      }
+      case FITS_EXPANDED: {
+        const whenFlat = b[at + 2] as number;
+        if (whenFlat === NONE || modeOf(whenFlat) === FLAT) remeasure = true;
+        push(deref(b[at + 1] as number), ind, mode);
         break;
       }
-      case "lineSuffix":
-        suffixes.push({ indent, mode, doc: d.contents });
-        column += d.reserved ?? 0;
+      case IF_BREAK: {
+        const g = b[at + 3] as number;
+        const m = g !== NONE ? modeOf(g) : mode;
+        push(deref(b[at + (m === BREAK ? 1 : 2)] as number), ind, mode);
         break;
-      case "bestFitting":
-        printBestFitting(d, indent, mode);
+      }
+      case LINE_SUFFIX:
+        sDoc.push(deref(b[at + 1] as number));
+        sInd.push(ind);
+        sMode.push(mode);
+        column += b[at + 2] as number;
         break;
-      case "bestFitParenthesize":
-        printBestFitParenthesize(d, indent, mode);
+      case BEST_FITTING:
+        printBestFitting(d, flags, ind, mode);
         break;
-      case "lineSuffixBoundary":
-        if (suffixes.length > 0) cmds.push({ indent, mode, doc: hardLine });
+      case BEST_FIT_PARENTHESIZE:
+        printBestFitParenthesize(d, ind, mode);
         break;
-      case "breakParent":
+      case LINE_SUFFIX_BOUNDARY:
+        if (sDoc.length > 0) push(hardLine, ind, mode);
+        break;
+      case BREAK_PARENT:
         break;
       default:
-        unknownDoc(d);
+        unknownDoc(kind);
     }
   }
   out.push(current);
   return {
     text: out.join(""),
-    placed: { tokens, at: at.subarray(0, tokens.length) },
+    placed: { tokens, at: placedAt.subarray(0, tokens.length) },
   };
 
   function printGroup(
-    g: Group | GroupIfBreak,
-    indent: Indentation,
+    g: number,
+    kind: number,
+    flags: number,
+    ind: number,
     mode: Mode,
   ) {
-    const cmd = chooseGroup(g, indent, mode);
-    if (g.k === "group") groupModes.set(g, cmd.mode);
-    cmds.push(cmd);
-  }
-
-  function chooseGroup(
-    g: Group | GroupIfBreak,
-    indent: Indentation,
-    mode: Mode,
-  ): Cmd {
-    if (mode === FLAT && !remeasure)
-      return { indent, mode: g.break ? BREAK : FLAT, doc: g.contents };
-    remeasure = false;
-    // Ruff measures a group's contents as flat, so an `ifBreak` on the group itself reads flat meanwhile.
-    if (layout.ruff && g.k === "group") groupModes.set(g, FLAT);
-    const width = layout.lineWidth - column;
-    const suffix = suffixes.length > 0;
-    const flat: Cmd = { indent, mode: FLAT, doc: g.contents };
-    if (!g.break && fits(flat, cmds, width, false, groupModes, layout, suffix))
-      return flat;
-    const states = g.k === "group" ? g.expandedStates : undefined;
-    if (!states) return { indent, mode: BREAK, doc: g.contents };
-    if (!g.break)
-      for (const state of states.slice(1, -1)) {
-        const candidate: Cmd = { indent, mode: FLAT, doc: state };
-        if (fits(candidate, cmds, width, false, groupModes, layout, suffix))
-          return candidate;
+    const at = g * 4;
+    const contents = deref(b[at + 1] as number);
+    const broken = (flags & BROKEN) !== 0;
+    let chosen = contents;
+    let m: Mode;
+    if (mode === FLAT && !remeasure) m = broken ? BREAK : FLAT;
+    else {
+      remeasure = false;
+      // Ruff measures a group's contents as flat, so an `ifBreak` on the group itself reads flat meanwhile.
+      if (ruff && kind === GROUP) groupModes[g] = FLAT + 1;
+      const width = layout.lineWidth - column;
+      const suffix = sDoc.length > 0;
+      m = BREAK;
+      if (!broken) {
+        fpush(contents, ind, FLAT, FIRST_LINE);
+        if (fits(pp, width, false, suffix)) m = FLAT;
       }
-    return { indent, mode: BREAK, doc: states.at(-1) ?? g.contents };
+      if (m === BREAK && kind === GROUP && flags & STATES) {
+        const states = deref(b[at + 2] as number) as readonly Doc[];
+        if (!broken)
+          for (let i = 1; i < states.length - 1; i++) {
+            fpush(states[i] as Doc, ind, FLAT, FIRST_LINE);
+            if (fits(pp, width, false, suffix)) {
+              chosen = states[i] as Doc;
+              m = FLAT;
+              break;
+            }
+          }
+        if (m === BREAK) chosen = states.at(-1) ?? contents;
+      }
+    }
+    if (kind === GROUP) groupModes[g] = m + 1;
+    push(chosen, ind, m);
   }
 
-  function printBestFitting(b: BestFitting, indent: Indentation, mode: Mode) {
-    const last = b.variants.length - 1;
+  function printBestFitting(h: number, flags: number, ind: number, mode: Mode) {
+    const variants = deref(b[h * 4 + 1] as number) as readonly Doc[];
+    const last = variants.length - 1;
     if (mode === FLAT && !remeasure) {
-      cmds.push({ indent, mode: FLAT, doc: b.variants[0] ?? [] });
+      push(variants[0] ?? [], ind, FLAT);
       return;
     }
     remeasure = false;
     const width = layout.lineWidth - column;
-    for (const variant of b.variants.slice(0, last)) {
-      const flat: Cmd = { indent, mode: FLAT, doc: variant };
-      if (
-        fits(
-          flat,
-          cmds,
-          width,
-          false,
-          groupModes,
-          layout,
-          suffixes.length > 0,
-          b.allLines,
-        )
-      ) {
-        cmds.push(flat);
+    const all = flags & ALL_LINES ? ALL : FIRST_LINE;
+    for (let i = 0; i < last; i++) {
+      fpush(variants[i] as Doc, ind, FLAT, all);
+      if (fits(pp, width, false, sDoc.length > 0)) {
+        push(variants[i] as Doc, ind, FLAT);
         return;
       }
     }
-    cmds.push({ indent, mode: BREAK, doc: b.variants[last] ?? [] });
+    push(variants[last] ?? [], ind, BREAK);
   }
 
-  function printBestFitParenthesize(
-    b: BestFitParenthesize,
-    indent: Indentation,
-    mode: Mode,
-  ) {
-    const flat: Cmd = { indent, mode: FLAT, doc: b.contents };
-    groupModes.set(b, FLAT);
+  function printBestFitParenthesize(h: number, ind: number, mode: Mode) {
+    const at = h * 4;
+    const contents = deref(b[at + 2] as number);
+    groupModes[h] = FLAT + 1;
     if (mode === FLAT && !remeasure) {
-      cmds.push(flat);
+      push(contents, ind, FLAT);
       return;
     }
     remeasure = false;
     const width = layout.lineWidth - column;
-    if (
-      fits(flat, cmds, width, false, groupModes, layout, suffixes.length > 0)
-    ) {
-      cmds.push(flat);
+    fpush(contents, ind, FLAT, FIRST_LINE);
+    if (fits(pp, width, false, sDoc.length > 0)) {
+      push(contents, ind, FLAT);
       return;
     }
-    groupModes.set(b, BREAK);
-    const wrapped: Cmd = {
-      indent,
-      mode: BREAK,
-      doc: [
-        b.open,
-        { k: "indent", contents: [hardline, b.contents] },
-        hardline,
-        b.close,
-      ],
-    };
-    if (
-      fits(
-        wrapped,
-        cmds,
-        width,
-        false,
-        groupModes,
-        layout,
-        suffixes.length > 0,
-        true,
-      )
-    ) {
-      cmds.push(wrapped);
+    groupModes[h] = BREAK + 1;
+    // `open`, the contents indented on lines of their own (the node after this one), `close`.
+    const open = b[at + 1] as DocHandle;
+    const close = b[at + 3] as DocHandle;
+    const wrapped = (h + 1) as DocHandle;
+    fpush(close, ind, BREAK, ALL);
+    fpush(hardline, ind, BREAK, ALL);
+    fpush(wrapped, ind, BREAK, ALL);
+    fpush(open, ind, BREAK, ALL);
+    if (fits(pp, width, false, sDoc.length > 0)) {
+      push(close, ind, BREAK);
+      push(hardline, ind, BREAK);
+      push(wrapped, ind, BREAK);
+      push(open, ind, BREAK);
       return;
     }
-    groupModes.set(b, FLAT);
+    groupModes[h] = FLAT + 1;
     // Bare after all, but each group inside measures itself rather than printing flat on trust.
     remeasure = true;
-    cmds.push(flat);
+    push(contents, ind, FLAT);
   }
 
   // Prettier's fill: a separator breaks unless the content before and after it fit on the line together.
-  function printFill(f: Fill, indent: Indentation, mode: Mode) {
+  function printFill(h: number, ind: number, mode: Mode, from: number) {
     const width = layout.lineWidth - column;
-    const from = f.from ?? 0;
-    const content = f.parts[from];
-    const separator = f.parts[from + 1];
-    const second = f.parts[from + 2];
+    const parts = deref(b[h * 4 + 1] as number) as readonly Doc[];
+    const content = parts[from];
+    const separator = parts[from + 1];
+    const second = parts[from + 2];
     if (content === undefined) return;
-    const flat = (doc: Doc): Cmd => ({ indent, mode: FLAT, doc });
-    const broken = (doc: Doc): Cmd => ({ indent, mode: BREAK, doc });
-    const suffix = suffixes.length > 0;
-    const contentFits = fits(
-      flat(content),
-      [],
-      width,
-      true,
-      groupModes,
-      layout,
-      suffix,
-    );
+    const suffix = sDoc.length > 0;
+    fpush(content, ind, FLAT, FIRST_LINE);
+    const contentFits = fits(0, width, true, suffix);
+    const cm = contentFits ? FLAT : BREAK;
     if (separator === undefined) {
-      cmds.push(contentFits ? flat(content) : broken(content));
+      push(content, ind, cm);
       return;
     }
     if (second === undefined) {
-      cmds.push(
-        contentFits ? flat(separator) : broken(separator),
-        contentFits ? flat(content) : broken(content),
-      );
+      push(separator, ind, cm);
+      push(content, ind, cm);
       return;
     }
-    cmds.push({ indent, mode, doc: { ...f, from: from + 2 } });
-    if (
-      fits(
-        flat([content, separator, second]),
-        [],
-        width,
-        true,
-        groupModes,
-        layout,
-        suffix,
-      )
-    )
-      cmds.push(flat(separator), flat(content));
-    else if (contentFits) cmds.push(broken(separator), flat(content));
-    else cmds.push(broken(separator), broken(content));
+    push(h as DocHandle, ind, mode, from + 2);
+    fpush(second, ind, FLAT, FIRST_LINE);
+    fpush(separator, ind, FLAT, FIRST_LINE);
+    fpush(content, ind, FLAT, FIRST_LINE);
+    if (fits(0, width, true, suffix)) {
+      push(separator, ind, FLAT);
+      push(content, ind, FLAT);
+    } else {
+      push(separator, ind, BREAK);
+      push(content, ind, cm);
+    }
   }
+}
+
+/**
+ * Marks every group that holds a hard break, directly or through a nested broken group, as broken, in one pass
+ * over the buffer. A conditional group is only walked, never marked: which of its states breaks is the printer's
+ * choice. A doc may share a part between both branches of an `ifBreak` or between states, so each node is
+ * visited once, whatever the paths to it; children are mostly built before their parents, so walking handles in
+ * order keeps the recursion shallow.
+ */
+function propagateBreaks(b: Int32Array, count: number): void {
+  // 0 unvisited, 1 holds no break, 2 holds one.
+  const memo = new Uint8Array(count);
+  const breaks = (d: Doc): boolean => {
+    if (typeof d !== "number") {
+      // Every part is visited, not only up to the first break: each nested group needs its own mark.
+      const ds = d as readonly Doc[];
+      let broken = false;
+      for (let i = 0; i < ds.length; i++)
+        if (breaks(ds[i] as Doc)) broken = true;
+      return broken;
+    }
+    const known = memo[d] as number;
+    if (known !== 0) return known === 2;
+    const result = visit(d);
+    memo[d] = result ? 2 : 1;
+    return result;
+  };
+  const visit = (h: number): boolean => {
+    const at = h * 4;
+    const head = b[at] as number;
+    const flags = head >>> 8;
+    switch (head & 0xff) {
+      case BREAK_PARENT:
+        return true;
+      case GROUP:
+        if (flags & STATES) {
+          for (const state of deref(b[at + 2] as number) as readonly Doc[])
+            breaks(state);
+          return (flags & BROKEN) !== 0;
+        }
+        if (breaks(deref(b[at + 1] as number))) {
+          b[at] = head | (BROKEN << 8);
+          return true;
+        }
+        return (flags & BROKEN) !== 0;
+      case GROUP_IF_BREAK:
+        if (breaks(deref(b[at + 1] as number))) {
+          b[at] = head | (BROKEN << 8);
+          return true;
+        }
+        return (flags & BROKEN) !== 0;
+      case INDENT:
+      case ALIGN:
+      case LINE_SUFFIX:
+      case FILL:
+        return breaks(deref(b[at + 1] as number));
+      case IF_BREAK: {
+        const broken = breaks(deref(b[at + 1] as number));
+        return breaks(deref(b[at + 2] as number)) || broken;
+      }
+      // A variant's breaks are its own: the choice among variants is what decides whether the line breaks.
+      case BEST_FITTING:
+        breaks(deref(b[at + 1] as number));
+        return false;
+      case BEST_FIT_PARENTHESIZE:
+        breaks(deref(b[at + 2] as number));
+        return false;
+      case FITS_EXPANDED:
+        if (breaks(deref(b[at + 1] as number))) b[at] = head | (EXPANDS << 8);
+        return false;
+      case TOKEN:
+      case TEXT:
+      case LINE_SUFFIX_BOUNDARY:
+        return false;
+      case LINE:
+        return (flags & HARD) !== 0 && (flags & COLLAPSE) !== 0;
+      default:
+        return unknownDoc(head & 0xff);
+    }
+  };
+  for (let h = 1; h < count; h++) breaks(h as DocHandle);
 }

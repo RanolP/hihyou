@@ -11,7 +11,9 @@ import {
   ifBreak,
   indent,
   indentIfBreak,
+  isDocs,
   join,
+  kindOf,
   line,
   softline,
   synthetic,
@@ -256,7 +258,7 @@ const binary: JsRule = (node, ctx) => {
   if (parts.length === 0) return [];
   const hasJsx = isJsx(unparen(right));
   const firstGroupIndex = parts.findIndex(
-    (part) => !Array.isArray(part) && (part as { k: string }).k === "group",
+    (part) => !isDocs(part) && kindOf(part) === "group",
   );
   const headParts = parts.slice(
     0,
@@ -765,7 +767,7 @@ const awaitExpression: JsRule = (node, ctx) => {
 
 /** Whether `target` is the leftmost node of expression `n` (prettier's startsWithNoLookaheadToken). */
 function startsWith(n: FormatNode | undefined, target: FormatNode): boolean {
-  for (let x = n; x; ) {
+  for (let x = n; x;) {
     if (x === target) return true;
     switch (x.kind) {
       case "call_expression":

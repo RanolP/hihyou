@@ -1,14 +1,27 @@
 import {
+  brokenOf,
+  contentsOf,
   type Doc,
+  fill,
+  flatOf,
+  group,
   hardline,
   ifBreak,
   indent,
+  isBroken,
   isDocs,
+  isHardLine,
+  isSoftLine,
   join,
+  kindOf,
+  partsOf,
   softline,
+  statesOf,
   synthetic,
   text,
+  textOf,
   token,
+  withContents,
 } from "../../../fmt/doc.js";
 import type { PrettierOptions } from "../../../fmt/options.js";
 import type { Ctx, PrintArgs, Rule } from "../../../fmt/legacy.js";
@@ -271,21 +284,21 @@ export const isBlockComment = (ctx: JsCtx, c: FormatNode) =>
 /** Prettier's canBreak: whether `doc` holds any line. */
 export function canBreak(doc: Doc): boolean {
   if (isDocs(doc)) return doc.some(canBreak);
-  switch (doc.k) {
+  switch (kindOf(doc)) {
     case "line":
       return true;
     case "group":
       return (
-        canBreak(doc.contents) || (doc.expandedStates?.some(canBreak) ?? false)
+        canBreak(contentsOf(doc)) || (statesOf(doc)?.some(canBreak) ?? false)
       );
     case "indent":
     case "align":
     case "lineSuffix":
-      return canBreak(doc.contents);
+      return canBreak(contentsOf(doc));
     case "fill":
-      return doc.parts.some(canBreak);
+      return partsOf(doc).some(canBreak);
     case "ifBreak":
-      return canBreak(doc.broken) || canBreak(doc.flat);
+      return canBreak(brokenOf(doc)) || canBreak(flatOf(doc));
     default:
       return false;
   }
@@ -302,9 +315,10 @@ export function docText(doc: Doc): string | undefined {
     }
     return out;
   }
-  if (doc.k === "token" || doc.k === "text") return doc.text;
-  if (doc.k === "group" && !doc.expandedStates && !doc.break)
-    return docText(doc.contents);
+  const kind = kindOf(doc);
+  if (kind === "token" || kind === "text") return textOf(doc);
+  if (kind === "group" && !statesOf(doc) && !isBroken(doc))
+    return docText(contentsOf(doc));
   return undefined;
 }
 
@@ -452,7 +466,7 @@ export function danglingCommentsInList(ctx: JsCtx, n: FormatNode): Doc {
 
 /** Prettier's getNextNonSpaceNonCommentCharacterIndex. */
 export function nextCodeIndex(text: string, i: number): number {
-  for (let old = -1; i !== old; ) {
+  for (let old = -1; i !== old;) {
     old = i;
     while (i < text.length && /\s/.test(text.charAt(i))) i++;
     if (text.startsWith("/*", i)) {
@@ -490,21 +504,23 @@ export const trailingComma = (
 /** Prettier's removeLines: every soft or plain line printed flat, every group unbroken. Hard lines stay. */
 export function removeLines(doc: Doc): Doc {
   if (isDocs(doc)) return doc.map(removeLines);
-  switch (doc.k) {
+  switch (kindOf(doc)) {
     case "line":
-      return doc.hard ? doc : doc.soft ? [] : text(" ");
-    case "group":
-      return doc.expandedStates
-        ? removeLines(doc.expandedStates.at(-1) as Doc)
-        : { ...doc, contents: removeLines(doc.contents), break: false };
+      return isHardLine(doc) ? doc : isSoftLine(doc) ? [] : text(" ");
+    case "group": {
+      const states = statesOf(doc);
+      return states
+        ? removeLines(states.at(-1) as Doc)
+        : group(removeLines(contentsOf(doc)));
+    }
     case "indent":
     case "align":
     case "lineSuffix":
-      return { ...doc, contents: removeLines(doc.contents) };
+      return withContents(doc, removeLines(contentsOf(doc)));
     case "fill":
-      return { ...doc, parts: doc.parts.map(removeLines) };
+      return fill(partsOf(doc).map(removeLines));
     case "ifBreak":
-      return removeLines(doc.flat);
+      return removeLines(flatOf(doc));
     default:
       return doc;
   }

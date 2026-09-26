@@ -1,9 +1,9 @@
 import { NO_NODE, type Tree } from "../core/arena.js";
 import { SYM_ERROR } from "../core/language.js";
 import { attachComments } from "./comments.js";
-import { type Doc, hardline, type Token, token } from "./doc.js";
+import { type Doc, docMark, hardline, releaseDocs, token } from "./doc.js";
 import type { EndOfLine } from "./options.js";
-import { type Placed, print } from "./printer.js";
+import { type Placed, type PlacedToken, print } from "./printer.js";
 import {
   type Ctx,
   type Language,
@@ -44,6 +44,7 @@ export function format<O>(
   language: Language<O>,
   options: Partial<O> = {},
 ): Formatted {
+  const mark = docMark();
   try {
     const resolved: O = { ...language.defaults, ...options };
     const settings = language.settings(resolved);
@@ -161,6 +162,8 @@ export function format<O>(
       reason: "formatter-error",
       detail: e instanceof Error ? e.message : String(e),
     };
+  } finally {
+    releaseDocs(mark);
   }
 }
 
@@ -192,7 +195,7 @@ function anchorsOf(
 ): Anchor[] {
   const anchors: Anchor[] = [];
   for (let i = 0; i < tokens.length; i++) {
-    const t = tokens[i] as Token;
+    const t = tokens[i] as PlacedToken;
     const n = t.node;
     const start = at[i] as number;
     const end = start + t.text.length;

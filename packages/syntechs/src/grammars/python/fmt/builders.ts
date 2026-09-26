@@ -8,11 +8,16 @@ import {
   ifBreak,
   indent,
   indentIfBreak,
-  type Line,
-  type LineSuffix,
+  COLLAPSE,
+  HARD,
+  lineOf,
+  lineSuffix,
+  BLANK,
+  SOFT,
   synthetic,
   type Token,
   text,
+  textOf,
   token,
 } from "../../../fmt/doc.js";
 import type { FormatNode } from "../../../fmt/tree.js";
@@ -48,31 +53,10 @@ export const PAREN: Level = { k: "paren" };
 export const EXPR: Level = { k: "expr", g: undefined };
 
 // Ruff's lines: breaking on a line that is still empty prints nothing, so they never stack into blank lines.
-export const hard: Line = {
-  k: "line",
-  soft: false,
-  hard: true,
-  collapse: true,
-};
-export const soft: Line = {
-  k: "line",
-  soft: true,
-  hard: false,
-  collapse: true,
-};
-export const softOrSpace: Line = {
-  k: "line",
-  soft: false,
-  hard: false,
-  collapse: true,
-};
-export const emptyLine: Line = {
-  k: "line",
-  soft: false,
-  hard: true,
-  collapse: true,
-  blank: true,
-};
+export const hard = lineOf(HARD | COLLAPSE);
+export const soft = lineOf(SOFT | COLLAPSE);
+export const softOrSpace = lineOf(COLLAPSE);
+export const emptyLine = lineOf(HARD | COLLAPSE | BLANK);
 export const space = text(" ");
 
 export const blockIndent = (d: Doc): Doc => [indent([hard, d]), hard];
@@ -152,7 +136,7 @@ export class Fmt {
 
   eolComment(c: Comment): Doc {
     const t = this.comment(c);
-    const reserved = isPragma(t.text) ? 0 : 2 + textWidth(t.text);
+    const reserved = isPragma(textOf(t)) ? 0 : 2 + textWidth(textOf(t));
     return [suffix([text("  "), t], reserved), breakParent];
   }
 
@@ -326,11 +310,8 @@ export class Fmt {
 
 type Group2 = ReturnType<typeof group>;
 
-export const suffix = (contents: Doc, reserved: number): LineSuffix => ({
-  k: "lineSuffix",
-  contents,
-  reserved,
-});
+export const suffix = (contents: Doc, reserved: number): Doc =>
+  lineSuffix(contents, reserved);
 
 /** The comma token in `parent` (a tree-sitter node) at or after `from`, or a synthetic one after `anchor`. */
 export function commaIn(

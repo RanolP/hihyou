@@ -1,16 +1,23 @@
 import {
   bestFitParenthesize,
   bestFitting,
+  breakParent,
+  contentsOf,
   type Doc,
   fitsExpanded,
+  flatOf,
   group,
   ifBreak,
   indent,
   isDocs,
+  isHardLine,
+  isSoftLine,
+  kindOf,
   synthetic,
   type Token,
   text,
   token,
+  variantsOf,
   willBreak,
 } from "../../../fmt/doc.js";
 import type { FormatNode } from "../../../fmt/tree.js";
@@ -84,11 +91,7 @@ export type Parenthesize =
 type Needs = "always" | "never" | "multiline" | "bestFit";
 type Chain = "default" | "nonFluent" | "fluent";
 export type TupleMode =
-  | "default"
-  | "preserve"
-  | "optionalParentheses"
-  | "never"
-  | "neverPreserve";
+  "default" | "preserve" | "optionalParentheses" | "never" | "neverPreserve";
 
 export interface Opts {
   chain?: Chain;
@@ -1060,7 +1063,7 @@ function lambdaBody(f: Fmt, e: Lambda, header: readonly Comment[]): Doc {
   if (body.kind === "Call" || body.kind === "Subscript") {
     const unparenthesized = formatExpr(f, body, "never");
     return [
-      willBreak(unparenthesized) ? { k: "breakParent" } : [],
+      willBreak(unparenthesized) ? breakParent : [],
       bestFitting([
         unparenthesized,
         group(unparenthesized, true),
@@ -1847,21 +1850,21 @@ function needsBracketSpacing(e: Expr): boolean {
 /** Ruff's `RemoveSoftLinesBuffer`: the doc as it prints when nothing in it may break. */
 export function removeSoftLines(d: Doc): Doc {
   if (isDocs(d)) return d.map(removeSoftLines);
-  switch (d.k) {
+  switch (kindOf(d)) {
     case "line":
-      if (d.hard) return d;
-      return d.soft ? [] : space;
+      if (isHardLine(d)) return d;
+      return isSoftLine(d) ? [] : space;
     case "ifBreak":
-      return removeSoftLines(d.flat);
+      return removeSoftLines(flatOf(d));
     case "group":
     case "groupIfBreak":
     case "fitsExpanded":
     case "bestFitParenthesize":
-      return removeSoftLines(d.contents);
+      return removeSoftLines(contentsOf(d));
     case "indent":
-      return removeSoftLines(d.contents);
+      return removeSoftLines(contentsOf(d));
     case "bestFitting":
-      return removeSoftLines(d.variants[0] ?? []);
+      return removeSoftLines(variantsOf(d)[0] ?? []);
     default:
       return d;
   }

@@ -672,7 +672,7 @@ function expanded(
         hasLineBreak(f.src, (parts[i - 1] as Part).node.end, p.node.start),
     )
   )
-    out.push({ k: "breakParent" });
+    out.push(breakParent);
   // Comments between parts attach to the string; each goes to the part it follows on its line, else the next.
   const between = f.comments.dangling(s);
   for (const [i, p] of parts.entries()) {
