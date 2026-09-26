@@ -12,7 +12,7 @@ import { jsAtoms, jsNormalize } from "./normalize.js";
 import { callRules } from "./print/calls.js";
 import { classRules } from "./print/classes.js";
 import { functionRules } from "./print/functions.js";
-import { jsxRules } from "./print/jsx.js";
+import { jsxIgnored, jsxRules } from "./print/jsx.js";
 import { literalRules, printComment } from "./print/literals.js";
 import { moduleRules } from "./print/modules.js";
 import { objectRules } from "./print/objects.js";
@@ -69,12 +69,11 @@ const parenthesized: JsRule = (n, ctx, args?: Args) => {
 const IGNORE = /^(?:\/\/|\/\*)\s*prettier-ignore\s*(?:\*\/)?$/;
 
 /** A node under a `// prettier-ignore` comment keeps its source text. */
-const isIgnored = (ctx: JsCtx, n: FormatNode) =>
-  ctx
-    .comments(n)
-    .leading.some((c) =>
-      IGNORE.test(ctx.source.slice(c.start, c.end).trimEnd()),
-    );
+const isIgnored = (ctx: JsCtx, n: FormatNode) => {
+  const isIgnore = (c: FormatNode) =>
+    IGNORE.test(ctx.source.slice(c.start, c.end).trimEnd());
+  return ctx.comments(n).leading.some(isIgnore) || jsxIgnored(ctx, n, isIgnore);
+};
 
 type Cache = WeakMap<FormatNode, Doc>;
 const caches = new WeakMap<JsCtx, Cache>();

@@ -439,7 +439,8 @@ function printOpening(n: FormatNode, ctx: JsCtx, selfClosing: boolean): Doc {
     return [head, text(" "), closeTag];
 
   const only = attributes[0];
-  const onlyValue = only && field(only, "value");
+  const onlyValue =
+    only?.kind === "jsx_attribute" ? attrValue(only) : undefined;
   if (
     attributes.length === 1 &&
     only?.kind === "jsx_attribute" &&
@@ -588,7 +589,12 @@ const expression: JsRule = (n, ctx) => {
       close,
     ]);
   }
-  if (e.kind === "spread_element") return [open, p(ctx, e), close];
+  if (e.kind === "spread_element") {
+    // Prettier's printJsxSpreadAttributeOrChild: a commented spread goes on its own lines inside the braces.
+    if (!hasComment(ctx, e) && !hasComment(ctx, first(e)))
+      return [open, p(ctx, e), close];
+    return [open, indent([softline, p(ctx, e)]), softline, close];
+  }
   if (shouldInline(ctx, unparen(e), n.parent))
     return group([open, p(ctx, e), lineSuffixBoundary, close]);
   return group([
@@ -629,6 +635,30 @@ function shouldInline(
     default:
       return false;
   }
+}
+
+/** Prettier's hasJsxIgnoreComment: a child element right after `{/* prettier-ignore *\/}` keeps its source text. */
+export function jsxIgnored(
+  ctx: JsCtx,
+  n: FormatNode,
+  isIgnore: (c: FormatNode) => boolean,
+): boolean {
+  if (!isJsx(n) || n.parent?.kind !== "jsx_element") return false;
+  const siblings = n.parent.children;
+  let previous: FormatNode | undefined;
+  for (let i = siblings.indexOf(n) - 1; i >= 0; i--) {
+    const c = siblings[i] as FormatNode;
+    if (!c.named) continue;
+    if (c.kind === "jsx_text" && /^[ \n\r\t]*\n[ \n\r\t]*$/.test(src(ctx, c)))
+      continue;
+    previous = c;
+    break;
+  }
+  return (
+    previous?.kind === "jsx_expression" &&
+    !first(previous) &&
+    ctx.comments(previous).dangling.some(isIgnore)
+  );
 }
 
 export const jsxRules: Record<string, JsRule> = {
