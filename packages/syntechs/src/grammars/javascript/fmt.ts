@@ -71,12 +71,15 @@ const parenthesized: JsRule = (n, ctx, args?: Args) => {
 
 /** A node under a `// prettier-ignore` comment keeps its source text. */
 const isIgnored = (ctx: JsCtx, n: FormatNode) => {
-  const isIgnore = (c: FormatNode) => isIgnoreComment(ctx, c);
-  return ctx.comments(n).leading.some(isIgnore) || jsxIgnored(ctx, n, isIgnore);
+  for (const c of ctx.comments(n).leading)
+    if (isIgnoreComment(ctx, c)) return true;
+  return isJsx(n) && jsxIgnored(ctx, n, (c) => isIgnoreComment(ctx, c));
 };
 
-type Cache = WeakMap<FormatNode, Doc>;
-const caches = new WeakMap<JsCtx, Cache>();
+// Kept on the ctx itself, which lives as long as one format: a lookup per node through a WeakMap keyed by ctx
+// cost more than the rules it saved.
+const CACHE = Symbol("printed");
+type Cached = JsCtx & { [CACHE]?: Map<FormatNode, Doc> };
 
 /**
  * Every rule runs through here: a node printed twice (a call's arguments tried hugged and then expanded) is
@@ -84,13 +87,9 @@ const caches = new WeakMap<JsCtx, Cache>();
  */
 function wrap(rule: JsRule): JsRule {
   return (n, ctx, args?: Args) => {
-    let cache: Cache | undefined;
+    let cache: Map<FormatNode, Doc> | undefined;
     if (args === undefined) {
-      cache = caches.get(ctx);
-      if (!cache) {
-        cache = new WeakMap();
-        caches.set(ctx, cache);
-      }
+      cache = (ctx as Cached)[CACHE] ??= new Map();
       const hit = cache.get(n);
       if (hit !== undefined) return hit;
     }
