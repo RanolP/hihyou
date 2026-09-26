@@ -68,10 +68,19 @@ const FIRST_LEAF_PARSE_STATE = 14;
 export const CHILDREN = 15;
 
 /**
- * Words reserved per UTF-16 unit of source before the first doubling.
- * TODO(parser-arena): set from the measured words per char once the parse runs on the arena.
+ * Words reserved per UTF-16 unit of source before the first doubling, just above the largest ratio among the
+ * bench and corpus inputs, dead GLR branches included: json 2.92, css 2.24-6.32, javascript 2.81-5.82,
+ * typescript 4.19-5.75, tsx 4.58-5.48, python 3.61-4.63. Overshooting costs untouched zeroed memory,
+ * undershooting a copy of everything allocated so far.
  */
-const WORDS_PER_CHAR = 4;
+const WORDS_PER_CHAR: Record<string, number> = {
+  json: 3.0,
+  css: 6.5,
+  javascript: 6.0,
+  typescript: 6.0,
+  tsx: 5.6,
+  python: 4.8,
+};
 const MIN_WORDS = 1024;
 
 /** VISIBLE and NAMED as a symbol's metadata gives them. */
@@ -109,7 +118,10 @@ export class Subtrees {
     sourceLength: number,
   ) {
     this.words = new Int32Array(
-      Math.max(MIN_WORDS, Math.ceil(sourceLength * WORDS_PER_CHAR)),
+      Math.max(
+        MIN_WORDS,
+        Math.ceil(sourceLength * (WORDS_PER_CHAR[lang.name] ?? 4)),
+      ),
     );
   }
 
