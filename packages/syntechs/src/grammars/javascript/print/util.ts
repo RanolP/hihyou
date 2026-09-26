@@ -308,9 +308,17 @@ export function docText(doc: Doc): string | undefined {
   return undefined;
 }
 
-/** Prettier's hasLeadingOwnLineComment (a JSX element's ignore comment aside). */
+const IGNORE = /^(?:\/\/|\/\*)\s*prettier-ignore\s*(?:\*\/)?$/;
+
+/** Whether comment `c` is a `// prettier-ignore` or `/* prettier-ignore *\/`. */
+export const isIgnoreComment = (ctx: JsCtx, c: FormatNode) =>
+  IGNORE.test(src(ctx, c).trimEnd());
+
+/** Prettier's hasLeadingOwnLineComment: a JSX element counts only an ignore comment, which it prints above itself. */
 export const hasLeadingOwnLineComment = (ctx: JsCtx, n: FormatNode) =>
-  hasComment(ctx, n, CF.Leading, (c) => hasNewline(ctx.source, c.end));
+  isJsx(n)
+    ? hasComment(ctx, n, 0, (c) => isIgnoreComment(ctx, c))
+    : hasComment(ctx, n, CF.Leading, (c) => hasNewline(ctx.source, c.end));
 
 /** Prettier's isIndentableBlockComment: a multi-line block comment whose lines all start with `*`. */
 export function isIndentableBlockComment(ctx: JsCtx, c: FormatNode): boolean {

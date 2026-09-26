@@ -641,18 +641,22 @@ const switchCase: JsRule = (node, ctx) => {
   return parts;
 };
 
-// Prettier's returnArgumentHasLeadingComment (utilities/return-statement-has-leading-comment.js).
-function returnArgumentHasLeadingComment(ctx: JsCtx, n: FormatNode): boolean {
-  if (
-    hasLeadingOwnLineComment(ctx, n) ||
-    (hasComment(ctx, n, CF.Leading, (c) =>
+// Prettier's returnArgumentHasLeadingComment (utilities/return-statement-has-leading-comment.js). Its argument
+// has no parentheses, so a comment inside `return (` counts for the expression they wrap.
+export function returnArgumentHasLeadingComment(
+  ctx: JsCtx,
+  arg: FormatNode,
+): boolean {
+  const n = unparen(arg);
+  const leads = (x: FormatNode) =>
+    hasLeadingOwnLineComment(ctx, x) ||
+    (hasComment(ctx, x, CF.Leading, (c) =>
       hasNewlineInRange(ctx.source, c.start, c.end),
     ) &&
-      !isJsx(unparen(n)))
-  )
-    return true;
-  for (let left = leftSide(n); left; left = leftSide(left))
-    if (hasLeadingOwnLineComment(ctx, left)) return true;
+      !isJsx(n));
+  if (leads(arg) || (n !== arg && leads(n))) return true;
+  for (let left = leftSide(n); left; left = leftSide(unparen(left)))
+    if (hasLeadingOwnLineComment(ctx, unparen(left))) return true;
   return false;
 }
 

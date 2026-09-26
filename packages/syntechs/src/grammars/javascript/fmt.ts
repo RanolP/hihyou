@@ -26,6 +26,7 @@ import {
 import { typeRules } from "./print/types.js";
 import {
   type Args,
+  isIgnoreComment,
   isJsx,
   items,
   type JsCtx,
@@ -67,12 +68,9 @@ const parenthesized: JsRule = (n, ctx, args?: Args) => {
   return [t(ctx, open), p(ctx, inner, args), t(ctx, close)];
 };
 
-const IGNORE = /^(?:\/\/|\/\*)\s*prettier-ignore\s*(?:\*\/)?$/;
-
 /** A node under a `// prettier-ignore` comment keeps its source text. */
 const isIgnored = (ctx: JsCtx, n: FormatNode) => {
-  const isIgnore = (c: FormatNode) =>
-    IGNORE.test(ctx.source.slice(c.start, c.end).trimEnd());
+  const isIgnore = (c: FormatNode) => isIgnoreComment(ctx, c);
   return ctx.comments(n).leading.some(isIgnore) || jsxIgnored(ctx, n, isIgnore);
 };
 

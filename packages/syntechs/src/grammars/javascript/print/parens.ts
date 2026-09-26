@@ -3,6 +3,7 @@
 // does not have, so every question here looks through them to the node's real parent and role.
 
 import type { FormatNode } from "../../../fmt/tree.js";
+import { returnArgumentHasLeadingComment } from "./statements.js";
 import {
   argument,
   callee,
@@ -252,6 +253,12 @@ const STATEMENT_EXPRESSION_KINDS = new Set([
 export function needsParens(n: FormatNode, ctx: JsCtx): boolean {
   const { parent, key, top } = role(n);
   if (!parent) return false;
+  // `return (\n// comment\na, b\n)`: the statement's own parentheses already hold the argument.
+  if (
+    (parent.kind === "return_statement" || parent.kind === "throw_statement") &&
+    returnArgumentHasLeadingComment(ctx, top)
+  )
+    return false;
 
   if (n.kind === "identifier") {
     // `for ((async) of x)`, `for ((let).a of x)` and `(let)[0] = 1` keep theirs.
