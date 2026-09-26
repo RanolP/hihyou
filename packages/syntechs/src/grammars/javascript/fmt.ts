@@ -44,6 +44,7 @@ const defaults: JsOptions = {
   trailingComma: "all",
   bracketSameLine: false,
   arrowParens: "always",
+  experimentalOperatorPosition: "end",
   parser: "babel",
 };
 

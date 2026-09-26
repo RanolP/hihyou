@@ -24,6 +24,8 @@ export interface JsOptions extends PrettierOptions {
   trailingComma: "all" | "es5" | "none";
   bracketSameLine: boolean;
   arrowParens: "always" | "avoid";
+  /** Where a broken binary expression puts its operator: ending the line, or starting the next. */
+  experimentalOperatorPosition: "end" | "start";
   /** Which of prettier's parsers this formatter stands in for: a few decisions differ for TypeScript. */
   parser: "babel" | "typescript";
 }

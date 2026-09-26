@@ -85,15 +85,27 @@ function printBinaryishExpressions(
 
   const shouldInline = shouldInlineLogicalExpression(node);
   const opDoc = t(ctx, field(node, "operator"));
+  const atStart = ctx.options.experimentalOperatorPosition === "start";
+  const commentBeforeOperator = hasLeadingOwnLineComment(ctx, right);
   let rightDoc: Doc;
   if (shouldInline)
     rightDoc = [
       opDoc,
-      hasLeadingOwnLineComment(ctx, right)
+      commentBeforeOperator
         ? indent([line, p(ctx, right)])
         : [text(" "), p(ctx, right)],
     ];
-  else rightDoc = [opDoc, line, p(ctx, right)];
+  else if (atStart) {
+    let rightContent = p(ctx, right);
+    let comment: Doc = [];
+    // The right operand's own-line leading comments go above the operator, as prettier shifts them off.
+    if (commentBeforeOperator && Array.isArray(rightContent)) {
+      const [first = [], ...rest] = rightContent as Doc[];
+      comment = first;
+      rightContent = rest;
+    }
+    rightDoc = [line, comment, opDoc, text(" "), rightContent];
+  } else rightDoc = [opDoc, line, p(ctx, right)];
 
   const { parent } = role(node);
   const shouldBreak = hasComment(ctx, left, CF.Trailing | CF.Line);
@@ -105,7 +117,10 @@ function printBinaryishExpressions(
       estreeKind(leftInner) !== kind &&
       estreeKind(unparen(right)) !== kind);
   if (shouldGroup) rightDoc = group(rightDoc, shouldBreak);
-  parts.push(text(" "), rightDoc);
+  parts.push(
+    !atStart || shouldInline || commentBeforeOperator ? text(" ") : [],
+    rightDoc,
+  );
   // Flat, as prettier's cleanDoc leaves it, so the caller still finds the leftmost operand's group.
   if (isNested && hasComment(ctx, node))
     return flatten(ctx.withComments(node, parts));
