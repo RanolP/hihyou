@@ -2,9 +2,12 @@
 // (prettier 3.9.9's tests/format, ruff 0.16.8's formatter fixtures), fetched by fetch-corpus.sh. Writes
 // conformance/<target>.snap.md per target and conformance/README.md, the matrix, and commits both.
 //
-//   node packages/syntechs/dist/fmt/conformance.node.js [target...] [--diff <fixture substring>]
+//   node packages/syntechs/dist/fmt/conformance.node.js [target...] [--diff <fixture substring>] [--only <substring>]...
 //
 // A language joins the matrix with one entry in TARGETS: its fmt module export and its fixture directories.
+// `--only` (repeatable) runs just the fixtures whose path matches one of the given substrings, prints
+// passed/total and the failing fixture names, and writes no snapshot or README — for a worker checking a slice
+// of the matrix without producing a diff the others would have to reconcile.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -28,6 +31,7 @@ import {
 } from "./conformance/references.node.js";
 import {
   type FixtureResult,
+  fixtureOutcome,
   lineRatio,
   type MatrixRow,
   type ReferenceScore,
@@ -307,9 +311,12 @@ async function main() {
   const args = process.argv.slice(2);
   const diffAt = args.indexOf("--diff");
   const diff = diffAt === -1 ? undefined : args[diffAt + 1];
-  const wanted = args.filter(
-    (_, i) => diffAt === -1 || (i !== diffAt && i !== diffAt + 1),
-  );
+  const only = args.filter((_a, i) => args[i - 1] === "--only");
+  const wanted = args.filter((a, i) => {
+    if (diffAt !== -1 && (i === diffAt || i === diffAt + 1)) return false;
+    if (a === "--only" || args[i - 1] === "--only") return false;
+    return true;
+  });
   const unknown = wanted.filter((w) => !TARGETS.some((t) => t.id === w));
   if (unknown.length > 0)
     throw new Error(
@@ -322,7 +329,11 @@ async function main() {
   mkdirSync(outDir, { recursive: true });
   for (const t of TARGETS) {
     if (wanted.length > 0 && !wanted.includes(t.id)) continue;
-    const { cases, excluded } = t.suite();
+    const { cases: allCases, excluded } = t.suite();
+    const cases =
+      only.length === 0
+        ? allCases
+        : allCases.filter((c) => only.some((p) => c.fixture.includes(p)));
     let results: FixtureResult[] | "not implemented" = [];
     for (const c of cases) {
       const g = t.grammar(c.fixture);
@@ -332,6 +343,19 @@ async function main() {
         break;
       }
       results.push(runCase(c, await loadGrammar(g), lang, diff));
+    }
+    if (only.length > 0) {
+      const failing =
+        results === "not implemented"
+          ? []
+          : results
+              .filter((r) => fixtureOutcome(r) !== "pass")
+              .map((r) => r.fixture);
+      console.log(
+        `${t.id}: ${cases.length - failing.length}/${cases.length} passed` +
+          (failing.length > 0 ? `\nfailing: ${failing.join(", ")}` : ""),
+      );
+      continue;
     }
     const snapshot = renderSnapshot({
       id: t.id,
@@ -343,6 +367,7 @@ async function main() {
     writeFileSync(join(outDir, `${t.id}.snap.md`), snapshot);
     console.log(snapshot.split("\n", 1)[0]);
   }
+  if (only.length > 0) return;
 
   const rows: MatrixRow[] = [];
   for (const t of TARGETS) {
