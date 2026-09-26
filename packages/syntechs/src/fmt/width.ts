@@ -2,14 +2,20 @@ import emojiRegex from "emoji-regex";
 import { eastAsianWidth } from "get-east-asian-width";
 import { isNarrowEmojiCharacter } from "narrow-emojis";
 
-const nonAscii = /[^\x20-\x7F]/;
-
 /**
  * Terminal columns `text` occupies, measured as prettier 3.9.9's getStringWidth measures them, with the
  * versions of its width tables it bundles: wide and fullwidth characters and most emoji take 2.
  */
 export function textWidth(text: string): number {
-  if (!nonAscii.test(text)) return text.length;
+  // Printable ASCII, nearly every token, is one column a character; a loop answers that before a regex would.
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (c < 0x20 || c > 0x7f) return nonAsciiWidth(text);
+  }
+  return text.length;
+}
+
+function nonAsciiWidth(text: string): number {
   let width = 0;
   const rest = text.replace(emojiRegex(), (emoji) => {
     width += isNarrowEmojiCharacter(emoji) ? 1 : 2;

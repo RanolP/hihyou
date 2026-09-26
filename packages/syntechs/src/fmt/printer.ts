@@ -25,8 +25,12 @@ function unknownDoc(d: never): never {
 /** Marks every group that holds a hard break, directly or through a nested broken group, as broken. */
 function propagateBreaks(d: Doc): boolean {
   // Every part is visited, not only up to the first break: each nested group needs its own mark.
-  if (isDocs(d))
-    return d.reduce((broken, part) => propagateBreaks(part) || broken, false);
+  if (isDocs(d)) {
+    let broken = false;
+    for (let i = 0; i < d.length; i++)
+      if (propagateBreaks(d[i] as Doc)) broken = true;
+    return broken;
+  }
   switch (d.k) {
     case "breakParent":
       return true;
@@ -39,7 +43,10 @@ function propagateBreaks(d: Doc): boolean {
     case "fill":
       return propagateBreaks(d.parts);
     case "ifBreak":
-      return propagateBreaks([d.broken, d.flat]);
+    {
+      const broken = propagateBreaks(d.broken);
+      return propagateBreaks(d.flat) || broken;
+    }
     case "token":
     case "text":
     case "line":
@@ -130,6 +137,17 @@ export function print(
   let remeasure = false;
   const suffixes: Cmd[] = [];
   const groupModes = new Map<Group, Mode>();
+  const indents: string[] = [];
+  const indentation = (level: number) => {
+    let s = indents[level];
+    if (s === undefined) {
+      s = layout.useTabs
+        ? "\t".repeat(level)
+        : " ".repeat(level * layout.indentWidth);
+      indents[level] = s;
+    }
+    return s;
+  };
   const write = (s: string) => {
     current += s;
     length += s.length;
@@ -140,6 +158,7 @@ export function print(
     let end = current.length;
     for (let c = current.charCodeAt(end - 1); c === 32 || c === 9; )
       c = current.charCodeAt(--end - 1);
+    if (end === current.length) return;
     length -= current.length - end;
     current = current.slice(0, end);
   };
@@ -191,11 +210,7 @@ export function print(
         out.push(current, "\n");
         current = "";
         length += 1;
-        write(
-          layout.useTabs
-            ? "\t".repeat(indent)
-            : " ".repeat(indent * layout.indentWidth),
-        );
+        write(indentation(indent));
         column = indent * layout.indentWidth;
         break;
       case "ifBreak": {
