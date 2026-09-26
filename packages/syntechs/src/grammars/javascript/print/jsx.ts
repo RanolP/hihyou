@@ -34,6 +34,7 @@ import {
   first,
   hasComment,
   hasNewlineIn,
+  isComment,
   isJsx,
   isTaggedTemplate,
   type JsCtx,
@@ -505,14 +506,18 @@ function bracketSameLine(
 }
 
 const attrValue = (a: FormatNode) =>
-  a.children.find((c) => c.named && c.start > (anon(a, "=")?.start ?? a.end));
+  a.children.find(
+    (c) => c.named && !isComment(c) && c.start > (anon(a, "=")?.start ?? a.end),
+  );
 
 const isAttrString = (v: FormatNode | undefined) => v?.kind === "string";
 
 /** Prettier's printJsxAttribute: a string value requoted by `jsxSingleQuote`, its quotes as entities. */
 const attribute: JsRule = (n, ctx) => {
   const eq = anon(n, "=");
-  const name = n.children.find((c) => c.named && (!eq || c.end <= eq.start));
+  const name = n.children.find(
+    (c) => c.named && !isComment(c) && (!eq || c.end <= eq.start),
+  );
   const value = eq ? attrValue(n) : undefined;
   const parts: Doc[] = [p(ctx, name)];
   if (eq && value) {
@@ -591,10 +596,18 @@ const expression: JsRule = (n, ctx) => {
     ]);
   }
   if (e.kind === "spread_element") {
-    // Prettier's printJsxSpreadAttributeOrChild: a commented spread goes on its own lines inside the braces.
-    if (!hasComment(ctx, e) && !hasComment(ctx, first(e)))
-      return [open, p(ctx, e), close];
-    return [open, indent([softline, p(ctx, e)]), softline, close];
+    // Prettier's printJsxSpreadAttributeOrChild: the argument's comments go around `...`, and a commented
+    // spread goes on its own lines inside the braces once anything breaks.
+    const arg = first(e);
+    const spread = arg
+      ? ctx.withComments(
+          e,
+          ctx.withComments(arg, [t(ctx, anon(e, "...")), p(ctx, arg)]),
+        )
+      : p(ctx, e);
+    if (!hasComment(ctx, e) && !hasComment(ctx, arg))
+      return [open, spread, close];
+    return [open, indent([softline, spread]), softline, close];
   }
   if (shouldInline(ctx, unparen(e), n.parent))
     return group([open, p(ctx, e), lineSuffixBoundary, close]);
@@ -637,6 +650,12 @@ function shouldInline(
       return false;
   }
 }
+
+/** A JSX spread's argument, whose comments `expression` prints around the `...` (even when ignored). */
+export const isJsxSpreadArgument = (n: FormatNode) =>
+  n.parent?.kind === "spread_element" &&
+  n.parent.parent?.kind === "jsx_expression" &&
+  first(n.parent) === n;
 
 /** Prettier's hasJsxIgnoreComment: a child element right after `{/* prettier-ignore *\/}` keeps its source text. */
 export function jsxIgnored(

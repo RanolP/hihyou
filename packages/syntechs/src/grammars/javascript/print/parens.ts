@@ -538,6 +538,9 @@ export function needsParens(n: FormatNode, ctx: JsCtx): boolean {
             "assignment_expression",
             "augmented_assignment_expression",
             "assignment_pattern",
+            // TypeScript's parameter with a default value, babel-ts's AssignmentPattern.
+            "required_parameter",
+            "optional_parameter",
             "binary_expression",
             "ternary_expression",
             "expression_statement",
