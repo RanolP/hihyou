@@ -1,5 +1,5 @@
 import { type Doc, synthetic } from "../../../../fmt/doc.js";
-import type { FormatNode } from "../../../../fmt/tree.js";
+import { firstLeaf } from "../../../../fmt/tree.js";
 import type {
   ExceptHandler,
   For,
@@ -17,6 +17,7 @@ import {
   formatExpr,
   maybeParenthesize,
 } from "../expr.js";
+import { startOf } from "../trivia.js";
 import type { StmtRules } from "./suite.js";
 import {
   clauseBody,
@@ -30,7 +31,7 @@ import {
 function clause(
   f: Fmt,
   header: Doc,
-  colon: FormatNode,
+  colon: number,
   colonComments: readonly Comment[],
   body: readonly Stmt[],
   alternate?: { comments: readonly Comment[]; last: Py | undefined },
@@ -79,7 +80,7 @@ function exceptHandler(f: Fmt, h: ExceptHandler): Doc {
   const header: Doc[] = [except ?? [], star ?? []];
   if (h.type) {
     header.push(space, maybeParenthesize(f, h.type, h, "ifBreaks"));
-    if (h.asTok && h.name)
+    if (h.asTok !== undefined && h.name !== undefined)
       header.push(space, f.tok(h.asTok), space, f.tok(h.name));
   }
   return clause(f, header, h.colon, f.comments.dangling(h), h.body);
@@ -91,7 +92,7 @@ function tryStmt(f: Fmt, s: Try): Doc {
   let dangling = cs.dangling(s);
   let previous: Stmt | undefined;
   const out: Doc[] = [];
-  const kase = (c: { kw: FormatNode; colon: FormatNode; body: Stmt[] }) => {
+  const kase = (c: { kw: number; colon: number; body: Stmt[] }) => {
     const last = c.body.at(-1);
     if (!last) return;
     const n = prefix(dangling, (x) => x.end <= last.end);
@@ -148,7 +149,7 @@ function withItem(
           : formatExpr(f, ctx, "never");
   const out: Doc[] = [f.leading(cs.leading(item)), head];
   const vars = item.vars;
-  if (vars && item.asTok) {
+  if (vars && item.asTok !== undefined) {
     const as = cs.dangling(item);
     out.push(
       space,
@@ -168,11 +169,13 @@ function withItem(
   return out;
 }
 
-/** The first token of `n`'s source. */
-function firstLeaf(n: FormatNode): FormatNode {
-  let x = n;
-  while (x.children[0]) x = x.children[0];
-  return x;
+/** The `with_clause` child of a `with` statement, or the statement itself. */
+function withClause(f: Fmt, w: With): number {
+  for (let i = 0, n = f.tree.count(w.ts); i < n; i++) {
+    const c = f.tree.child(w.ts, i);
+    if (f.tree.kindName(c) === "with_clause") return c;
+  }
+  return w.ts;
 }
 
 /** Ruff's `FormatStmtWith` with its `WithItemsLayout`. */
@@ -182,9 +185,10 @@ function withStmt(f: Fmt, w: With): Doc {
   const first = w.items[0];
   const split = prefix(dangling, (c) => !!first && c.start < first.start);
   const parenComments = dangling.slice(0, split);
-  const withKw = w.kws.at(-1) ?? w.colon;
-  const clauseNode =
-    w.ts.children.find((c) => c.kind === "with_clause") ?? w.ts;
+  const lastKw = w.kws.at(-1);
+  const withKw = lastKw !== undefined ? lastKw : w.colon;
+  const colonStart = startOf(f.tree, w.colon);
+  const clauseNode = withClause(f, w);
   const single = w.items.length === 1 ? first : undefined;
   const joined = () =>
     f.joinCommaSeparated(
@@ -192,31 +196,32 @@ function withStmt(f: Fmt, w: With): Doc {
         end: i.end,
         doc: withItem(f, i, "contextManagers", !!single),
       })),
-      w.colon.start,
-      commaIn(clauseNode, withKw),
+      colonStart,
+      commaIn(f.tree, clauseNode, withKw),
     );
   const last = w.items.at(-1);
   const tv = (f.options as { "target-version"?: string })["target-version"];
   const canParenthesize =
     !(tv && /^py3[0-8]$/.test(tv)) ||
-    (w.items.length > 1 && firstLeaf(clauseNode).kind === "(");
+    (w.items.length > 1 &&
+      f.tree.kindName(firstLeaf(f.tree, clauseNode)) === "(");
   let items: Doc;
   if (
     parenComments.length > 0 ||
     (single && (cs.hasLeading(single) || cs.hasTrailing(single)))
   )
     items = f.parenthesized(
-      w.open ? f.tok(w.open) : synthetic(withKw, "("),
+      w.open !== undefined ? f.tok(w.open) : synthetic(withKw, "("),
       joined,
-      w.close ? f.tok(w.close) : synthetic(withKw, ")"),
+      w.close !== undefined ? f.tok(w.close) : synthetic(withKw, ")"),
       parenComments,
     );
-  else if (last && f.magicTrailingComma(last.end, w.colon.start))
+  else if (last && f.magicTrailingComma(last.end, colonStart))
     items = f.parenthesizeIfExpands(withKw, joined);
   else if (single && single.context.parens.length > 0)
     items = withItem(f, single, "single", true);
   else if (!canParenthesize) {
-    const comma = commaIn(clauseNode, withKw);
+    const comma = commaIn(f.tree, clauseNode, withKw);
     items = w.items.map((i, n) => [
       n > 0 ? [comma(w.items[n - 1]?.end ?? i.start), space] : [],
       withItem(f, i, "py38", !!single),

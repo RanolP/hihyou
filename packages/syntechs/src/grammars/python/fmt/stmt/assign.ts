@@ -34,6 +34,7 @@ import {
   implicitFlat,
   interpolatedAssignment,
 } from "../strings.js";
+import { startOf } from "../trivia.js";
 import type { StmtRules } from "./suite.js";
 
 /**
@@ -424,8 +425,11 @@ export function rightToLeft(
 
 /** Ruff's `FormatTypeVar` / `FormatTypeVarTuple` / `FormatParamSpec`. */
 function typeParam(f: Fmt, p: TypeParam): Doc {
-  const out: Doc[] = [p.star ? f.tok(p.star) : [], f.tok(p.name)];
-  if (p.colon && p.bound)
+  const out: Doc[] = [
+    p.star !== undefined ? f.tok(p.star) : [],
+    f.tok(p.name),
+  ];
+  if (p.colon !== undefined && p.bound)
     out.push(f.tok(p.colon), space, formatExpr(f, p.bound));
   return out;
 }
@@ -434,11 +438,12 @@ function typeParam(f: Fmt, p: TypeParam): Doc {
 export function typeParams(f: Fmt, tp: TypeParams): Doc {
   if (f.comments.hasAnyIn(tp.start, tp.end))
     throw new Unformattable(`comment in type parameters at ${tp.start}`);
-  const comma = commaIn(tp.ts, tp.open);
+  const comma = commaIn(f.tree, tp.ts, tp.open);
   const entries = tp.params.map((p) => ({ end: p.end, doc: typeParam(f, p) }));
   return f.parenthesized(
     f.tok(tp.open),
-    () => f.joinCommaSeparated(entries, tp.close.start, comma),
+    () =>
+      f.joinCommaSeparated(entries, startOf(f.tree, tp.close), comma),
     f.tok(tp.close),
   );
 }
@@ -454,7 +459,7 @@ export const assignRules: StmtRules = {
       throw new Unformattable(`assignment without target at ${s.start}`);
     const eq = (i: number) => {
       const t = s.ops[i];
-      if (!t) throw new Unformattable(`missing = at ${s.start}`);
+      if (t === undefined) throw new Unformattable(`missing = at ${s.start}`);
       return f.tok(t);
     };
     const last = rest.at(-1);
@@ -482,7 +487,7 @@ export const assignRules: StmtRules = {
     const annotation = s.annotation;
     const needs = needsParentheses(f, annotation, s);
     const head: Doc = [formatExpr(f, s.target), f.tok(s.colon), space];
-    if (s.value && s.eq) {
+    if (s.value && s.eq !== undefined) {
       if (needs !== "always" && isSplittable(annotation))
         return [
           head,

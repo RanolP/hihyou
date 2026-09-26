@@ -3,7 +3,7 @@ import {
   ruffDefaults,
   ruffSettings,
 } from "../../fmt/options.js";
-import { defineLanguage } from "../../fmt/legacy.js";
+import { defineLanguage } from "../../fmt/rules.js";
 import { grammar } from "./bundle.js";
 import { toAst } from "./fmt/ast.js";
 import { Fmt, type PyOptions } from "./fmt/builders.js";
@@ -35,10 +35,10 @@ export const python = defineLanguage(
     comment: (raw) => raw.split(/[ \t]+(?=#)/).map(normalizeComment),
   },
   () => ({
-    module: (node, ctx) => {
-      const m = toAst(node, ctx.source);
+    module: (_, ctx) => {
+      const m = toAst(ctx.tree);
       return formatModule(
-        new Fmt(ctx.source, ctx.options, attach(m, ctx.source)),
+        new Fmt(ctx.tree, ctx.options, attach(m, ctx.tree)),
         m,
       );
     },

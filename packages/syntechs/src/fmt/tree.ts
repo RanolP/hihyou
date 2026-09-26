@@ -2,7 +2,7 @@ import { NO_NODE, type Tree } from "../core/arena.js";
 
 /**
  * The tree the formatter reads: the arena `Tree` without offsets, so a rule learns about layout only through
- * `lf`, `adjoins` and token text, never by probing the source around a position.
+ * `lf`, `adjoins`, `col` and token text, never by probing the source around a position.
  */
 export type FormatTree = Pick<
   Tree,
@@ -23,6 +23,7 @@ export type FormatTree = Pick<
   | "ord"
   | "at"
   | "adjoins"
+  | "col"
 >;
 
 /** The first leaf of `n`: `n` itself when it is one. */

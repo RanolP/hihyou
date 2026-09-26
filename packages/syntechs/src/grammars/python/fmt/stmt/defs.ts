@@ -1,5 +1,5 @@
 import { type Doc, group, indent, synthetic } from "../../../../fmt/doc.js";
-import type { FormatNode } from "../../../../fmt/tree.js";
+import type { FormatTree } from "../../../../fmt/tree.js";
 import type {
   ClassDef,
   Decorator,
@@ -20,10 +20,11 @@ import {
 import type { Comment } from "../comments.js";
 import { args, formatExpr, maybeParenthesize, parameters } from "../expr.js";
 import {
-  lineStart,
+  endOf,
   linesAfter,
   linesAfterIgnoringEndOfLineTrivia,
   linesBefore,
+  startOf,
 } from "../trivia.js";
 import {
   clauseBody,
@@ -33,6 +34,9 @@ import {
 } from "./suite.js";
 
 /** Ruff's definitions and `match` (statement/stmt_{function_def,class_def,match}.rs, other/decorator.rs). */
+
+const kids = (tree: FormatTree, n: number): number[] =>
+  Array.from({ length: tree.count(n) }, (_, i) => tree.child(n, i));
 
 /** The blank lines a definition needs between itself and its leading comments: two at the top, else one. */
 const definitionGap = (f: Fmt) => (f.level.k === "top" ? 2 : 1);
@@ -44,7 +48,7 @@ function emptyLinesAfterLeadingComments(
 ): Doc {
   const last = comments.findLast((c) => c.line === "own");
   if (!last) return [];
-  const actual = Math.max(0, linesAfter(last.end, f.src) - 1);
+  const actual = Math.max(0, linesAfter(f.tree, last.end) - 1);
   const want = definitionGap(f);
   if (actual === 0 || actual >= want) return [];
   return Array.from({ length: want - actual }, () => emptyLine);
@@ -57,7 +61,7 @@ function emptyLinesBeforeTrailingComments(
 ): Doc {
   const first = comments.find((c) => c.line === "own");
   if (!first) return [];
-  const actual = Math.max(0, linesBefore(first.start, f.src) - 1);
+  const actual = Math.max(0, linesBefore(f.tree, first.start) - 1);
   const want = definitionGap(f);
   return Array.from({ length: Math.max(0, want - actual) }, () => emptyLine);
 }
@@ -87,7 +91,7 @@ function decorators(
   if (leadingDefinitionComments.length === 0) out.push(hard);
   else
     out.push(
-      linesAfterIgnoringEndOfLineTrivia(last.end, f.src) <= 1
+      linesAfterIgnoringEndOfLineTrivia(f.tree, last.end) <= 1
         ? hard
         : emptyLine,
       f.leading(leadingDefinitionComments),
@@ -118,13 +122,18 @@ function splitDangling(
 function typeParams(f: Fmt, tp: TypeParams): Doc {
   if (f.comments.has(tp) || f.comments.hasAnyIn(tp.start, tp.end))
     throw new Unformattable(`comment in type parameters at ${tp.start}`);
-  const open = tp.ts.children.find((c) => c.kind === "[");
-  const close = tp.ts.children.findLast((c) => c.kind === "]");
-  if (!open || !close)
+  const t = f.tree;
+  const children = kids(t, tp.ts);
+  const open = children.find((c) => t.kindName(c) === "[");
+  const close = children.findLast((c) => t.kindName(c) === "]");
+  if (open === undefined || close === undefined)
     throw new Unformattable(`type parameters without brackets at ${tp.start}`);
-  const items = tp.ts.children.filter((c) => c.named);
-  const entries = items.map((n) => ({ end: n.end, doc: typeParam(f, n) }));
-  const comma = commaIn(tp.ts, open);
+  const items = children.filter((c) => t.named(c));
+  const entries = items.map((n) => ({
+    end: endOf(t, n),
+    doc: typeParam(f, n),
+  }));
+  const comma = commaIn(t, tp.ts, open);
   return f.parenthesized(
     f.tok(open),
     () => f.joinCommaSeparated(entries, tp.end, comma),
@@ -132,65 +141,82 @@ function typeParams(f: Fmt, tp: TypeParams): Doc {
   );
 }
 
-function typeParam(f: Fmt, n: FormatNode): Doc {
-  const inner = unwrapType(n);
-  switch (inner.kind) {
+function typeParam(f: Fmt, n: number): Doc {
+  const t = f.tree;
+  const inner = unwrapType(t, n);
+  switch (t.kindName(inner)) {
     case "identifier":
       return f.tok(inner);
     case "splat_type": {
-      const [star, name] = inner.children;
-      if (!star || !name || name.kind !== "identifier")
-        return unsupported(inner);
+      const [star, name] = kids(t, inner);
+      if (
+        star === undefined ||
+        name === undefined ||
+        t.kindName(name) !== "identifier"
+      )
+        return unsupported(t, inner);
       return [f.tok(star), f.tok(name)];
     }
     case "constrained_type": {
-      const [name, colon, bound] = inner.children;
-      if (!name || !colon || !bound || colon.kind !== ":")
-        return unsupported(inner);
-      const nameTok = unwrapType(name);
-      if (nameTok.kind !== "identifier") return unsupported(inner);
+      const [name, colon, bound] = kids(t, inner);
+      if (
+        name === undefined ||
+        colon === undefined ||
+        bound === undefined ||
+        t.kindName(colon) !== ":"
+      )
+        return unsupported(t, inner);
+      const nameTok = unwrapType(t, name);
+      if (t.kindName(nameTok) !== "identifier") return unsupported(t, inner);
       return [f.tok(nameTok), f.tok(colon), space, simpleType(f, bound)];
     }
     default:
-      return unsupported(inner);
+      return unsupported(t, inner);
   }
 }
 
-const unwrapType = (n: FormatNode): FormatNode => {
+const unwrapType = (tree: FormatTree, n: number): number => {
   let x = n;
-  while (x.kind === "type" && x.children.length === 1 && x.children[0])
-    x = x.children[0];
+  while (tree.kindName(x) === "type" && tree.count(x) === 1)
+    x = tree.child(x, 0);
   return x;
 };
 
-function simpleType(f: Fmt, n: FormatNode): Doc {
-  const x = unwrapType(n);
-  switch (x.kind) {
+function simpleType(f: Fmt, n: number): Doc {
+  const t = f.tree;
+  const x = unwrapType(t, n);
+  switch (t.kindName(x)) {
     case "identifier":
       return f.tok(x);
     case "attribute":
-      return x.children.map((c) =>
-        c.kind === "." || c.kind === "identifier"
+      return kids(t, x).map((c) => {
+        const k = t.kindName(c);
+        return k === "." || k === "identifier"
           ? f.tok(c)
-          : c.kind === "attribute"
+          : k === "attribute"
             ? simpleType(f, c)
-            : unsupported(c),
-      );
-    case "tuple":
-      return x.children.map((c) =>
-        c.kind === "(" || c.kind === ")"
+            : unsupported(t, c);
+      });
+    case "tuple": {
+      const cs = kids(t, x);
+      return cs.map((c) => {
+        const k = t.kindName(c);
+        return k === "(" || k === ")"
           ? f.tok(c)
-          : c.kind === ","
-            ? [f.tok(c), c === x.children.at(-2) ? [] : space]
-            : simpleType(f, c),
-      );
+          : k === ","
+            ? [f.tok(c), c === cs.at(-2) ? [] : space]
+            : simpleType(f, c);
+      });
+    }
     default:
-      return unsupported(x);
+      return unsupported(t, x);
   }
 }
 
-const unsupported = (n: FormatNode): never => {
-  throw new Unformattable(`unsupported type parameter ${n.kind} at ${n.start}`);
+const unsupported = (tree: FormatTree, n: number): never => {
+  throw new Unformattable(
+    `unsupported type parameter ${tree.kindName(n)} at ${startOf(tree, n)}`,
+  );
 };
 
 // ---- definitions ----
@@ -198,19 +224,22 @@ const unsupported = (n: FormatNode): never => {
 /** `clauseBody`, refusing a backslash continuation after the colon. */
 function body(
   f: Fmt,
-  header: { readonly ts: FormatNode; readonly colon: FormatNode },
+  header: { readonly ts: number; readonly colon: number },
   stmts: Parameters<typeof clauseBody>[1],
   kind: "function" | "class" | "other",
   colonComments: readonly Comment[],
 ): Doc {
+  const t = f.tree;
+  const colonEnd = endOf(t, header.colon);
   // `check` reads a backslash alone on the line after a colon as a dedent, so it would flag the correct output.
   if (
-    header.ts.children.some(
-      (c) => c.kind === "line_continuation" && c.start >= header.colon.end,
+    kids(t, header.ts).some(
+      (c) =>
+        t.kindName(c) === "line_continuation" && startOf(t, c) >= colonEnd,
     )
   )
     throw new Unformattable(
-      `backslash continuation before a body at ${header.colon.end}`,
+      `backslash continuation before a body at ${colonEnd}`,
     );
   return clauseBody(f, stmts, kind, colonComments);
 }
@@ -225,12 +254,12 @@ function functionHeader(f: Fmt, s: FunctionDef): Doc {
   const emptyParams = p.items.length === 0 && !cs.has(p);
   // Ruff's empty `soft_block_indent` prints nothing, where the shared `emptyParenthesized` still breaks.
   const inner: Doc[] = [
-    emptyParams && p.open && p.close
+    emptyParams && p.open !== undefined && p.close !== undefined
       ? [f.tok(p.open), f.tok(p.close)]
       : parameters(f, p, "preserve"),
   ];
   const ret = s.returns;
-  if (ret && s.arrow) {
+  if (ret && s.arrow !== undefined) {
     inner.push(space, f.tok(s.arrow), space);
     if (ret.kind === "Tuple")
       inner.push(formatExpr(f, ret, cs.hasLeading(ret) ? "always" : "never"));
@@ -272,65 +301,69 @@ function classHeader(f: Fmt, s: ClassDef): Doc {
  * tokens), so this model folds both in: `paren` holds a pattern's outermost redundant parentheses.
  */
 type Pat = {
-  readonly node: FormatNode;
+  readonly node: number;
   readonly start: number;
   readonly end: number;
-  paren?: { open: FormatNode; close: FormatNode };
+  paren?: { open: number; close: number };
 } & (
   | { k: "expr"; e: Expr; capture: boolean }
-  | { k: "neg"; minus: FormatNode; e: Expr }
-  | { k: "complex"; left: Pat; op: FormatNode; right: Pat }
-  | { k: "attr"; parts: readonly FormatNode[] }
+  | { k: "neg"; minus: number; e: Expr }
+  | { k: "complex"; left: Pat; op: number; right: Pat }
+  | { k: "attr"; parts: readonly number[] }
   | { k: "wild" }
-  | { k: "star"; star: FormatNode; name: FormatNode }
+  | { k: "star"; star: number; name: number }
   | {
       k: "seq";
       type: "list" | "tuple" | "bare";
-      open?: FormatNode;
-      close?: FormatNode;
+      open?: number;
+      close?: number;
       items: Pat[];
-      commas: FormatNode;
+      commas: number;
       end_: number;
     }
   | {
       k: "map";
-      open: FormatNode;
-      close: FormatNode;
-      pairs: { key: Pat; colon: FormatNode; value: Pat }[];
-      rest: { star: FormatNode; name: FormatNode } | undefined;
+      open: number;
+      close: number;
+      pairs: { key: Pat; colon: number; value: Pat }[];
+      rest: { star: number; name: number } | undefined;
     }
   | {
       k: "class";
-      cls: readonly FormatNode[];
-      open: FormatNode;
-      close: FormatNode;
+      cls: readonly number[];
+      open: number;
+      close: number;
       items: Pat[];
-      keywords: { name: FormatNode; eq: FormatNode; value: Pat; end: number }[];
+      keywords: { name: number; eq: number; value: Pat; end: number }[];
     }
-  | { k: "as"; pattern: Pat; as: FormatNode; name: FormatNode }
-  | { k: "or"; items: Pat[]; bars: FormatNode[] }
+  | { k: "as"; pattern: Pat; as: number; name: number }
+  | { k: "or"; items: Pat[]; bars: number[] }
 );
 
-const outerEnd = (p: Pat) => p.paren?.close.end ?? p.end;
+const outerEnd = (f: Fmt, p: Pat) =>
+  p.paren !== undefined ? endOf(f.tree, p.paren.close) : p.end;
 
-const unsupportedPattern = (n: FormatNode): never => {
-  throw new Unformattable(`unsupported pattern ${n.kind} at ${n.start}`);
+const unsupportedPattern = (f: Fmt, n: number): never => {
+  throw new Unformattable(
+    `unsupported pattern ${f.tree.kindName(n)} at ${startOf(f.tree, n)}`,
+  );
 };
 
 /** The pattern after `case`: several top-level patterns (or one and a comma) are a tuple without parentheses. */
 function readCasePattern(f: Fmt, c: MatchCase): Pat {
+  const t = f.tree;
   const clause = c.pattern.ts;
-  const stop = c.guardKw?.start ?? c.colon.start;
-  const kids = clause.children.filter(
+  const stop = startOf(t, c.guardKw !== undefined ? c.guardKw : c.colon);
+  const parts = kids(t, clause).filter(
     (x) =>
-      x.start >= c.pattern.start &&
-      x.end <= stop &&
-      (x.kind === "case_pattern" || x.kind === ","),
+      startOf(t, x) >= c.pattern.start &&
+      endOf(t, x) <= stop &&
+      (t.kindName(x) === "case_pattern" || t.kindName(x) === ","),
   );
-  const items = kids.filter((x) => x.kind === "case_pattern");
+  const items = parts.filter((x) => t.kindName(x) === "case_pattern");
   const first = items[0];
-  if (!first) return unsupportedPattern(clause);
-  if (items.length === 1 && kids.length === 1) return readPattern(f, first);
+  if (first === undefined) return unsupportedPattern(f, clause);
+  if (items.length === 1 && parts.length === 1) return readPattern(f, first);
   const pats = items.map((x) => readPattern(f, x));
   return {
     k: "seq",
@@ -344,20 +377,22 @@ function readCasePattern(f: Fmt, c: MatchCase): Pat {
   };
 }
 
-function readPattern(f: Fmt, n: FormatNode): Pat {
-  const base = { node: n, start: n.start, end: n.end };
-  const kids = n.children.filter((x) => x.kind !== "line_continuation");
-  for (const x of kids)
-    if (x.kind === "ERROR" || x.missing) unsupportedPattern(x);
-  switch (n.kind) {
+function readPattern(f: Fmt, n: number): Pat {
+  const t = f.tree;
+  const kind = (x: number) => t.kindName(x);
+  const base = { node: n, start: startOf(t, n), end: endOf(t, n) };
+  const cs = kids(t, n).filter((x) => kind(x) !== "line_continuation");
+  for (const x of cs)
+    if (kind(x) === "ERROR" || t.missing(x)) unsupportedPattern(f, x);
+  switch (kind(n)) {
     case "case_pattern":
-      return readGroup(f, n, kids);
+      return readGroup(f, n, cs);
     case "union_pattern": {
-      const bars = kids.filter((x) => x.kind === "|");
+      const bars = cs.filter((x) => kind(x) === "|");
       const items: Pat[] = [];
-      let run: FormatNode[] = [];
-      for (const x of [...kids, undefined]) {
-        if (x === undefined || x.kind === "|") {
+      let run: number[] = [];
+      for (const x of [...cs, undefined]) {
+        if (x === undefined || kind(x) === "|") {
           items.push(readGroup(f, n, run));
           run = [];
         } else run.push(x);
@@ -365,13 +400,13 @@ function readPattern(f: Fmt, n: FormatNode): Pat {
       return { ...base, k: "or", items, bars };
     }
     case "dotted_name": {
-      const [only] = kids;
-      if (kids.length === 1 && only?.kind === "identifier")
-        return { ...base, k: "expr", e: exprAst(only, f.src), capture: true };
-      return { ...base, k: "attr", parts: kids };
+      const [only] = cs;
+      if (cs.length === 1 && only !== undefined && kind(only) === "identifier")
+        return { ...base, k: "expr", e: exprAst(t, only), capture: true };
+      return { ...base, k: "attr", parts: cs };
     }
     case "identifier":
-      return { ...base, k: "expr", e: exprAst(n, f.src), capture: true };
+      return { ...base, k: "expr", e: exprAst(t, n), capture: true };
     case "string":
     case "concatenated_string":
     case "integer":
@@ -379,42 +414,59 @@ function readPattern(f: Fmt, n: FormatNode): Pat {
     case "none":
     case "true":
     case "false":
-      return { ...base, k: "expr", e: exprAst(n, f.src), capture: false };
+      return { ...base, k: "expr", e: exprAst(t, n), capture: false };
     case "_":
       return { ...base, k: "wild" };
     case "complex_pattern": {
-      const op = kids.findLast((x) => x.kind === "+" || x.kind === "-");
-      if (!op) return unsupportedPattern(n);
-      const at = kids.indexOf(op);
+      const op = cs.findLast((x) => kind(x) === "+" || kind(x) === "-");
+      if (op === undefined) return unsupportedPattern(f, n);
+      const at = cs.indexOf(op);
       return {
         ...base,
         k: "complex",
-        left: readGroup(f, n, kids.slice(0, at)),
+        left: readGroup(f, n, cs.slice(0, at)),
         op,
-        right: readGroup(f, n, kids.slice(at + 1)),
+        right: readGroup(f, n, cs.slice(at + 1)),
       };
     }
     case "splat_pattern": {
-      const [star, name] = kids;
-      if (!star || !name || star.kind !== "*" || kids.length !== 2)
-        return unsupportedPattern(n);
+      const [star, name] = cs;
+      if (
+        star === undefined ||
+        name === undefined ||
+        kind(star) !== "*" ||
+        cs.length !== 2
+      )
+        return unsupportedPattern(f, n);
       return { ...base, k: "star", star, name };
     }
     case "as_pattern": {
-      const [inner, as, name] = kids;
-      if (!inner || !as || !name || as.kind !== "as" || kids.length !== 3)
-        return unsupportedPattern(n);
+      const [inner, as, name] = cs;
+      if (
+        inner === undefined ||
+        as === undefined ||
+        name === undefined ||
+        kind(as) !== "as" ||
+        cs.length !== 3
+      )
+        return unsupportedPattern(f, n);
       return { ...base, k: "as", pattern: readPattern(f, inner), as, name };
     }
     case "list_pattern":
     case "tuple_pattern": {
-      const open = kids[0];
-      const close = kids.at(-1);
-      if (!open || !close || kids.length < 2) return unsupportedPattern(n);
-      const items = kids.filter((x) => x.kind === "case_pattern");
-      const commas = kids.filter((x) => x.kind === ",").length;
+      const open = cs[0];
+      const close = cs.at(-1);
+      if (open === undefined || close === undefined || cs.length < 2)
+        return unsupportedPattern(f, n);
+      const items = cs.filter((x) => kind(x) === "case_pattern");
+      const commas = cs.filter((x) => kind(x) === ",").length;
       const [only] = items;
-      if (n.kind === "tuple_pattern" && only && items.length === 1 && !commas) {
+      if (
+        kind(n) === "tuple_pattern" &&
+        only !== undefined &&
+        items.length === 1 &&
+        !commas
+      ) {
         // `(p)`: the parentheses are the pattern's own, the outermost pair kept.
         const inner = readPattern(f, only);
         inner.paren = { open, close };
@@ -423,32 +475,42 @@ function readPattern(f: Fmt, n: FormatNode): Pat {
       return {
         ...base,
         k: "seq",
-        type: n.kind === "list_pattern" ? "list" : "tuple",
+        type: kind(n) === "list_pattern" ? "list" : "tuple",
         open,
         close,
         items: items.map((x) => readPattern(f, x)),
         commas: n,
-        end_: n.end,
+        end_: base.end,
       };
     }
     case "dict_pattern": {
-      const open = kids[0];
-      const close = kids.at(-1);
-      if (!open || !close || open.kind !== "{" || close.kind !== "}")
-        return unsupportedPattern(n);
-      const pairs: { key: Pat; colon: FormatNode; value: Pat }[] = [];
-      let rest: { star: FormatNode; name: FormatNode } | undefined;
-      let run: FormatNode[] = [];
-      let colon: FormatNode | undefined;
-      for (const x of kids.slice(1, -1)) {
-        if (x.kind === ",") continue;
-        if (x.kind === "splat_pattern") {
-          const [star, name] = x.children;
-          if (!star || !name || star.kind !== "**" || x.children.length !== 2)
-            return unsupportedPattern(x);
+      const open = cs[0];
+      const close = cs.at(-1);
+      if (
+        open === undefined ||
+        close === undefined ||
+        kind(open) !== "{" ||
+        kind(close) !== "}"
+      )
+        return unsupportedPattern(f, n);
+      const pairs: { key: Pat; colon: number; value: Pat }[] = [];
+      let rest: { star: number; name: number } | undefined;
+      let run: number[] = [];
+      let colon: number | undefined;
+      for (const x of cs.slice(1, -1)) {
+        if (kind(x) === ",") continue;
+        if (kind(x) === "splat_pattern") {
+          const [star, name] = kids(t, x);
+          if (
+            star === undefined ||
+            name === undefined ||
+            kind(star) !== "**" ||
+            t.count(x) !== 2
+          )
+            return unsupportedPattern(f, x);
           rest = { star, name };
-        } else if (x.kind === ":" && !colon) colon = x;
-        else if (colon && x.kind === "case_pattern") {
+        } else if (kind(x) === ":" && colon === undefined) colon = x;
+        else if (colon !== undefined && kind(x) === "case_pattern") {
           pairs.push({
             key: readGroup(f, n, run),
             colon,
@@ -456,46 +518,54 @@ function readPattern(f: Fmt, n: FormatNode): Pat {
           });
           run = [];
           colon = undefined;
-        } else if (!colon) run.push(x);
-        else return unsupportedPattern(x);
+        } else if (colon === undefined) run.push(x);
+        else return unsupportedPattern(f, x);
       }
-      if (run.length > 0 || colon) return unsupportedPattern(n);
+      if (run.length > 0 || colon !== undefined)
+        return unsupportedPattern(f, n);
       return { ...base, k: "map", open, close, pairs, rest };
     }
     case "class_pattern": {
-      const at = kids.findIndex((x) => x.kind === "(");
-      const open = kids[at];
-      const close = kids.at(-1);
-      const cls = kids[0];
-      if (!open || !close || close.kind !== ")" || at !== 1 || !cls)
-        return unsupportedPattern(n);
-      if (cls.kind !== "dotted_name") return unsupportedPattern(cls);
+      const at = cs.findIndex((x) => kind(x) === "(");
+      const open = cs[at];
+      const close = cs.at(-1);
+      const cls = cs[0];
+      if (
+        open === undefined ||
+        close === undefined ||
+        kind(close) !== ")" ||
+        at !== 1 ||
+        cls === undefined
+      )
+        return unsupportedPattern(f, n);
+      if (kind(cls) !== "dotted_name") return unsupportedPattern(f, cls);
       const items: Pat[] = [];
       const keywords: {
-        name: FormatNode;
-        eq: FormatNode;
+        name: number;
+        eq: number;
         value: Pat;
         end: number;
       }[] = [];
-      for (const x of kids.slice(at + 1, -1)) {
-        if (x.kind === ",") continue;
-        const kw = x.children.length === 1 ? x.children[0] : undefined;
-        if (kw?.kind === "keyword_pattern") {
-          const [name, eq, ...value] = kw.children;
-          if (!name || !eq || eq.kind !== "=") return unsupportedPattern(kw);
+      for (const x of cs.slice(at + 1, -1)) {
+        if (kind(x) === ",") continue;
+        const kw = t.count(x) === 1 ? t.child(x, 0) : undefined;
+        if (kw !== undefined && kind(kw) === "keyword_pattern") {
+          const [name, eq, ...value] = kids(t, kw);
+          if (name === undefined || eq === undefined || kind(eq) !== "=")
+            return unsupportedPattern(f, kw);
           keywords.push({
             name,
             eq,
             value: readGroup(f, kw, value),
-            end: kw.end,
+            end: endOf(t, kw),
           });
-        } else if (keywords.length > 0) return unsupportedPattern(x);
+        } else if (keywords.length > 0) return unsupportedPattern(f, x);
         else items.push(readPattern(f, x));
       }
       return {
         ...base,
         k: "class",
-        cls: cls.children,
+        cls: kids(t, cls),
         open,
         close,
         items,
@@ -503,30 +573,31 @@ function readPattern(f: Fmt, n: FormatNode): Pat {
       };
     }
     default:
-      return unsupportedPattern(n);
+      return unsupportedPattern(f, n);
   }
 }
 
 /** One pattern from sibling nodes: a lone node, or `-` and a number, which tree-sitter leaves unwrapped. */
-function readGroup(f: Fmt, parent: FormatNode, nodes: FormatNode[]): Pat {
+function readGroup(f: Fmt, parent: number, nodes: number[]): Pat {
+  const t = f.tree;
   const [a, b] = nodes;
-  if (a && nodes.length === 1) return readPattern(f, a);
+  if (a !== undefined && nodes.length === 1) return readPattern(f, a);
   if (
-    a &&
-    b &&
+    a !== undefined &&
+    b !== undefined &&
     nodes.length === 2 &&
-    a.kind === "-" &&
-    (b.kind === "integer" || b.kind === "float")
+    t.kindName(a) === "-" &&
+    (t.kindName(b) === "integer" || t.kindName(b) === "float")
   )
     return {
       node: a,
-      start: a.start,
-      end: b.end,
+      start: startOf(t, a),
+      end: endOf(t, b),
       k: "neg",
       minus: a,
-      e: exprAst(b, f.src),
+      e: exprAst(t, b),
     };
-  return unsupportedPattern(a ?? parent);
+  return unsupportedPattern(f, a !== undefined ? a : parent);
 }
 
 /** Ruff's `FormatPattern` with its `Parentheses` option. */
@@ -569,7 +640,7 @@ function patternFields(f: Fmt, p: Pat): Doc {
       return f.inParensGroup(
         p.items.map((item, i) => {
           const bar = p.bars[i - 1];
-          return bar
+          return bar !== undefined
             ? [f.softLineOrSpace(), f.tok(bar), space, pattern(f, item)]
             : pattern(f, item);
         }),
@@ -585,10 +656,15 @@ function patternFields(f: Fmt, p: Pat): Doc {
 
 /** Ruff's `FormatPatternMatchSequence`. */
 function sequence(f: Fmt, p: Pat & { k: "seq" }): Doc {
-  const open = p.open ? f.tok(p.open) : synthetic(p.node, "(");
-  const close = p.close ? f.tok(p.close) : synthetic(p.node, ")");
+  const open = p.open !== undefined ? f.tok(p.open) : synthetic(p.node, "(");
+  const close =
+    p.close !== undefined ? f.tok(p.close) : synthetic(p.node, ")");
   const [only] = p.items;
-  const comma = commaIn(p.commas, p.open ?? p.node);
+  const comma = commaIn(
+    f.tree,
+    p.commas,
+    p.open !== undefined ? p.open : p.node,
+  );
   if (!only) return f.emptyParenthesized(open, [], close);
   if (p.items.length === 1 && p.type !== "list") {
     // A one-element tuple keeps its parentheses, and its comma never makes it expand.
@@ -596,13 +672,13 @@ function sequence(f: Fmt, p: Pat & { k: "seq" }): Doc {
     const close1 = p.type === "tuple" ? close : synthetic(p.node, ")");
     return f.parenthesized(
       open1,
-      () => [pattern(f, only), comma(outerEnd(only))],
+      () => [pattern(f, only), comma(outerEnd(f, only))],
       close1,
     );
   }
   const items = () =>
     f.joinCommaSeparated(
-      p.items.map((x) => ({ end: outerEnd(x), doc: pattern(f, x) })),
+      p.items.map((x) => ({ end: outerEnd(f, x), doc: pattern(f, x) })),
       p.end_,
       comma,
     );
@@ -618,18 +694,19 @@ function mapping(f: Fmt, p: Pat & { k: "map" }): Doc {
     return f.emptyParenthesized(open, [], close);
   const entries: { end: number; doc: Doc }[] = p.pairs.map(
     ({ key, colon, value }) => ({
-      end: outerEnd(value),
+      end: outerEnd(f, value),
       doc: group([pattern(f, key), f.tok(colon), space, pattern(f, value)]),
     }),
   );
   if (p.rest)
     entries.push({
-      end: p.rest.name.end,
+      end: endOf(f.tree, p.rest.name),
       doc: [f.tok(p.rest.star), f.tok(p.rest.name)],
     });
   return f.parenthesized(
     open,
-    () => f.joinCommaSeparated(entries, p.end, commaIn(p.node, p.open)),
+    () =>
+      f.joinCommaSeparated(entries, p.end, commaIn(f.tree, p.node, p.open)),
     close,
   );
 }
@@ -642,18 +719,21 @@ function classPattern(f: Fmt, p: Pat & { k: "class" }): Doc {
   const [only] = p.items;
   if (!only && p.keywords.length === 0)
     return [cls, f.emptyParenthesized(open, [], close)];
-  const comma = commaIn(p.node, p.open);
+  const comma = commaIn(f.tree, p.node, p.open);
   const entries = () =>
     only && p.items.length === 1 && p.keywords.length === 0
       ? [
           {
-            end: outerEnd(only),
+            end: outerEnd(f, only),
             // A lone argument keeps its parentheses only when it has its own.
             doc: pattern(f, only, only.paren ? "always" : "never"),
           },
         ]
       : [
-          ...p.items.map((x) => ({ end: outerEnd(x), doc: pattern(f, x) })),
+          ...p.items.map((x) => ({
+            end: outerEnd(f, x),
+            doc: pattern(f, x),
+          })),
           ...p.keywords.map((k) => ({
             end: k.end,
             doc: [f.tok(k.name), f.tok(k.eq), pattern(f, k.value)],
@@ -765,13 +845,11 @@ function matchCase(f: Fmt, c: MatchCase): Doc {
     p.k === "map" ||
     p.k === "class" ||
     (p.k === "seq" && p.type !== "bare");
-  if (
-    !bracketed &&
-    c.colon.end - lineStart(f.src, c.start) > f.options["line-length"]
-  )
+  // The colon's end column; a header spanning lines is measured on the colon's own line only.
+  if (!bracketed && f.tree.col(c.colon) + 1 > f.options["line-length"])
     throw new Unformattable(`long unparenthesized case pattern at ${c.start}`);
   const header: Doc[] = [f.tok(c.kw), space, maybeParenthesizePattern(f, p, c)];
-  if (c.guardKw && c.guard)
+  if (c.guardKw !== undefined && c.guard)
     header.push(
       space,
       f.tok(c.guardKw),
@@ -788,7 +866,10 @@ export const defRules: StmtRules = {
   Match(f, s) {
     const cs = f.comments;
     // The AST reads one subject, so `match a, b:` would lose the rest.
-    if (s.ts.children.filter((c) => c.field === "subject").length > 1)
+    if (
+      kids(f.tree, s.ts).filter((c) => f.tree.fieldName(c) === "subject")
+        .length > 1
+    )
       throw new Unformattable(`tuple subject in a match at ${s.start}`);
     const header = [
       f.tok(s.kw),

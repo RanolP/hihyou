@@ -20,12 +20,12 @@ import {
   textOf,
   token,
 } from "../../../fmt/doc.js";
-import type { FormatNode } from "../../../fmt/tree.js";
+import type { FormatTree } from "../../../fmt/tree.js";
 import { textWidth } from "../../../fmt/width.js";
 import type { Comment, Comments } from "./comments.js";
 import { isPragma, normalizeComment } from "./comments.js";
 import type { FState } from "./strings.js";
-import { linesAfter, linesBefore, tokens } from "./trivia.js";
+import { linesAfter, linesBefore, startOf, tokens } from "./trivia.js";
 
 /** Ruff's `format.*` options the Python rules read, by ruff's names. */
 export interface PyOptions {
@@ -71,7 +71,7 @@ export class Fmt {
   fstr: FState = { k: "outside" };
 
   constructor(
-    readonly src: string,
+    readonly tree: FormatTree,
     readonly options: PyOptions,
     readonly comments: Comments,
   ) {}
@@ -86,18 +86,18 @@ export class Fmt {
     }
   }
 
-  text(n: { start: number; end: number }): string {
-    return this.src.slice(n.start, n.end);
+  text(n: number): string {
+    return this.tree.text(n);
   }
 
-  tok(n: FormatNode, as?: string): Token {
-    return token(n, as ?? this.src.slice(n.start, n.end));
+  tok(n: number, as?: string): Token {
+    return token(n, as ?? this.tree.text(n));
   }
 
   /** A comment as printed; marks it printed. */
   comment(c: Comment): Token {
     c.formatted = true;
-    return token(c.ts, normalizeComment(this.src.slice(c.start, c.end)));
+    return token(c.ts, normalizeComment(this.tree.text(c.ts)));
   }
 
   emptyLines(n: number): Doc {
@@ -115,7 +115,7 @@ export class Fmt {
     const out: Doc[] = [];
     for (const c of cs) {
       if (c.formatted) continue;
-      out.push(this.comment(c), this.emptyLines(linesAfter(c.end, this.src)));
+      out.push(this.comment(c), this.emptyLines(linesAfter(this.tree, c.end)));
     }
     return out;
   }
@@ -127,7 +127,7 @@ export class Fmt {
       if (c.formatted) continue;
       ownLine ||= c.line === "own";
       if (ownLine) {
-        const lines = this.emptyLines(linesBefore(c.start, this.src));
+        const lines = this.emptyLines(linesBefore(this.tree, c.start));
         out.push(suffix([lines, this.comment(c)], 0), breakParent);
       } else out.push(this.eolComment(c));
     }
@@ -146,7 +146,7 @@ export class Fmt {
     for (const c of cs) {
       if (c.formatted) continue;
       if (first) out.push(c.line === "own" ? hard : text("  "));
-      out.push(this.comment(c), this.emptyLines(linesAfter(c.end, this.src)));
+      out.push(this.comment(c), this.emptyLines(linesAfter(this.tree, c.end)));
       first = false;
     }
     return out;
@@ -182,7 +182,7 @@ export class Fmt {
   }
 
   /** Ruff's `optional_parentheses`: parentheses only when `content` must break, whose groups see them. */
-  optionalParentheses(anchor: FormatNode, content: () => Doc): Doc {
+  optionalParentheses(anchor: number, content: () => Doc): Doc {
     const contents: Doc[] = [];
     const g = group(contents);
     const c = this.at({ k: "expr", g }, content);
@@ -197,7 +197,7 @@ export class Fmt {
 
   /** Ruff's `parenthesize_if_expands`. */
   parenthesizeIfExpands(
-    anchor: FormatNode,
+    anchor: number,
     content: () => Doc,
     indented = true,
   ): Group2 {
@@ -270,7 +270,7 @@ export class Fmt {
   /** Whether the source has a comma (ruff's magic trailing comma) after `end`, before `sequenceEnd`. */
   magicTrailingComma(end: number, sequenceEnd: number): boolean {
     if (this.options["skip-magic-trailing-comma"]) return false;
-    for (const t of tokens(this.src, end, sequenceEnd)) {
+    for (const t of tokens(this.tree, end, sequenceEnd)) {
       if (t.kind === ")") continue;
       return t.kind === ",";
     }
@@ -313,14 +313,18 @@ type Group2 = ReturnType<typeof group>;
 export const suffix = (contents: Doc, reserved: number): Doc =>
   lineSuffix(contents, reserved);
 
-/** The comma token in `parent` (a tree-sitter node) at or after `from`, or a synthetic one after `anchor`. */
+/** The comma token among `parent`'s children at or after position `from`, or a synthetic one after `anchor`. */
 export function commaIn(
-  parent: FormatNode,
-  anchor: FormatNode,
+  tree: FormatTree,
+  parent: number,
+  anchor: number,
 ): (from: number) => Token {
   return (from) => {
-    for (const c of parent.children)
-      if (!c.named && c.kind === "," && c.start >= from) return token(c, ",");
+    for (let i = 0, n = tree.count(parent); i < n; i++) {
+      const c = tree.child(parent, i);
+      if (!tree.named(c) && tree.kindName(c) === "," && startOf(tree, c) >= from)
+        return token(c, ",");
+    }
     return synthetic(anchor, ",");
   };
 }

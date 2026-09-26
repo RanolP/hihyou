@@ -1,14 +1,29 @@
+import { NO_NODE } from "../../../core/arena.js";
+import { type FormatTree, firstLeaf } from "../../../fmt/tree.js";
+
 /**
- * Ruff's `SimpleTokenizer` and line counting (ruff_python_trivia): the formatter asks what lies between two
- * nodes (a paren, a comma, how many blank lines) by lexing only that gap, never the whole file.
+ * Ruff's `SimpleTokenizer` and line counting (ruff_python_trivia), read off the tree: the formatter asks what
+ * lies between two nodes (a paren, a comma, how many blank lines) by walking only the leaves of that gap.
+ *
+ * A position stands where a source offset stood in ruff: leaf `l` starts at `2 * ord(l)` and ends at
+ * `2 * ord(l) + 1`, and a node spans its first leaf's start to its last leaf's end. Leaves keep source order in
+ * postorder, so positions order as offsets do; two positions are never equal across a gap, so adjacency is
+ * `tree.adjoins`, never `a.end === b.start`. The gap before leaf `l` lies inside `[from, to)` when
+ * `from < start(l) <= to`.
  */
 
 export interface Tok {
-  /** The token's text for punctuation and keywords; `name`, `ws`, `nl`, `comment`, `cont` or `other` else. */
+  /** The token's text for punctuation and keywords; `name` for other words, numbers included. */
   readonly kind: string;
   readonly start: number;
   readonly end: number;
+  readonly node: number;
 }
+
+/** The start of the whole file, before its first leaf. */
+export const FILE_START = -1;
+/** The end of the whole file, after its last leaf. */
+export const FILE_END = Number.MAX_SAFE_INTEGER;
 
 const KEYWORDS = new Set([
   "and",
@@ -48,111 +63,98 @@ const KEYWORDS = new Set([
   "type",
 ]);
 
-const PUNCT3 = ["**=", "//=", ">>=", "<<=", "..."];
-const PUNCT2 = [
-  ":=",
-  "->",
-  "**",
-  "//",
-  "<<",
-  ">>",
-  "<=",
-  ">=",
-  "==",
-  "!=",
-  "+=",
-  "-=",
-  "*=",
-  "/=",
-  "%=",
-  "&=",
-  "|=",
-  "^=",
-  "@=",
-];
-
-const isWs = (c: string) => c === " " || c === "\t" || c === "\f";
 const isIdent = (c: string) => /[\p{L}\p{N}_]/u.test(c);
 
-/** The token of `src` at `pos` (not past `end`). */
-export function lexAt(src: string, pos: number, end = src.length): Tok {
-  const c = src[pos] as string;
-  if (isWs(c)) {
-    let e = pos + 1;
-    while (e < end && isWs(src[e] as string)) e++;
-    return { kind: "ws", start: pos, end: e };
-  }
-  if (c === "\n") return { kind: "nl", start: pos, end: pos + 1 };
-  if (c === "\r")
-    return {
-      kind: "nl",
-      start: pos,
-      end: src[pos + 1] === "\n" && pos + 1 < end ? pos + 2 : pos + 1,
-    };
-  if (c === "#") {
-    let e = pos + 1;
-    while (e < end && src[e] !== "\n" && src[e] !== "\r") e++;
-    return { kind: "comment", start: pos, end: e };
-  }
-  if (c === "\\") {
-    let e = pos + 1;
-    if (src[e] === "\r") e++;
-    if (src[e] === "\n") e++;
-    return { kind: "cont", start: pos, end: Math.min(e, end) };
-  }
-  if (isIdent(c)) {
-    let e = pos + 1;
-    while (e < end && isIdent(src[e] as string)) e++;
-    const word = src.slice(pos, e);
-    return { kind: KEYWORDS.has(word) ? word : "name", start: pos, end: e };
-  }
-  for (const p of PUNCT3)
-    if (src.startsWith(p, pos) && pos + 3 <= end)
-      return { kind: p, start: pos, end: pos + 3 };
-  for (const p of PUNCT2)
-    if (src.startsWith(p, pos) && pos + 2 <= end)
-      return { kind: p, start: pos, end: pos + 2 };
-  return { kind: c, start: pos, end: pos + 1 };
+/** The last leaf of `n`: `n` itself when it is one. */
+export function lastLeaf(tree: FormatTree, n: number): number {
+  for (let c = tree.count(n); c > 0; c = tree.count(n)) n = tree.child(n, c - 1);
+  return n;
 }
 
-export const isTrivia = (t: Tok) =>
-  t.kind === "ws" ||
-  t.kind === "nl" ||
-  t.kind === "comment" ||
-  t.kind === "cont";
+export const startOf = (tree: FormatTree, n: number): number =>
+  2 * tree.ord(firstLeaf(tree, n));
+export const endOf = (tree: FormatTree, n: number): number =>
+  2 * tree.ord(lastLeaf(tree, n)) + 1;
 
-/** The tokens of `src[start, end)`, trivia skipped, lazily. */
+/** The leaf a position belongs to: the one it starts or ends. */
+export const leafAt = (tree: FormatTree, pos: number): number =>
+  tree.at(pos >> 1);
+
+const isLeaf = (tree: FormatTree, n: number) => tree.count(n) === 0;
+
+/** The first leaf starting at or after `pos`, or `NO_NODE`. */
+export function leafFrom(tree: FormatTree, pos: number): number {
+  for (let o = Math.max(0, Math.ceil(pos / 2)); o < tree.nodeCount; o++) {
+    const l = tree.at(o);
+    if (isLeaf(tree, l)) return l;
+  }
+  return NO_NODE;
+}
+
+/** The last leaf ending at or before `pos`, or `NO_NODE`. */
+export function leafBefore(tree: FormatTree, pos: number): number {
+  for (let o = Math.min(tree.nodeCount - 1, (pos - 1) >> 1); o >= 0; o--) {
+    const l = tree.at(o);
+    if (isLeaf(tree, l)) return l;
+  }
+  return NO_NODE;
+}
+
+export const nextLeafOf = (tree: FormatTree, l: number): number =>
+  leafFrom(tree, 2 * tree.ord(l) + 1);
+export const prevLeafOf = (tree: FormatTree, l: number): number =>
+  leafBefore(tree, 2 * tree.ord(l));
+
+/** A comment or a line continuation: what ruff's tokenizer skips as trivia. */
+export function isTrivia(tree: FormatTree, l: number): boolean {
+  const k = tree.kindName(l);
+  return k === "comment" || k === "line_continuation";
+}
+
+const isComment = (tree: FormatTree, l: number) =>
+  tree.kindName(l) === "comment";
+
+/** Line breaks before leaf `l`, back to the previous leaf; at the end of the file, the trailing ones. */
+const lfOf = (tree: FormatTree, l: number) =>
+  l === NO_NODE ? tree.trailingLf : tree.lf(l);
+
+function kindOf(text: string): string {
+  if (KEYWORDS.has(text)) return text;
+  return isIdent(text.charAt(0)) ? "name" : text;
+}
+
+/** The tokens in `[start, end)`, trivia skipped, lazily. */
 export function* tokens(
-  src: string,
+  tree: FormatTree,
   start: number,
-  end = src.length,
+  end = FILE_END,
 ): Generator<Tok> {
-  let pos = start;
-  while (pos < end) {
-    const t = lexAt(src, pos, end);
-    pos = t.end;
-    if (!isTrivia(t)) yield t;
+  for (let o = Math.max(0, Math.ceil(start / 2)); o < tree.nodeCount; o++) {
+    if (2 * o + 1 > end) return;
+    const l = tree.at(o);
+    if (!isLeaf(tree, l) || isTrivia(tree, l)) continue;
+    yield { kind: kindOf(tree.text(l)), start: 2 * o, end: 2 * o + 1, node: l };
   }
 }
 
 /** The first non-trivia token at or after `start` and before `end`. */
 export function firstToken(
-  src: string,
+  tree: FormatTree,
   start: number,
-  end = src.length,
+  end = FILE_END,
 ): Tok | undefined {
-  for (const t of tokens(src, start, end)) return t;
+  for (const t of tokens(tree, start, end)) return t;
   return undefined;
 }
 
 /** Ruff's `find_only_token_in_range`: the one token between two nodes, after the closing parens of the left one. */
 export function onlyToken(
-  src: string,
+  tree: FormatTree,
   start: number,
   end: number,
   kind: string,
 ): Tok {
-  for (const t of tokens(src, start, end)) {
+  for (const t of tokens(tree, start, end)) {
     if (t.kind === ")") continue;
     if (t.kind !== kind)
       throw new Error(`expected ${kind} at ${t.start}, found ${t.kind}`);
@@ -161,135 +163,110 @@ export function onlyToken(
   throw new Error(`no ${kind} in ${start}..${end}`);
 }
 
-/** Whether any token in `src[start, end)` is `kind`. */
+/** Whether any token in `[start, end)` is `kind`. */
 export function hasToken(
-  src: string,
+  tree: FormatTree,
   start: number,
   end: number,
   kind: string,
 ): boolean {
-  for (const t of tokens(src, start, end)) if (t.kind === kind) return true;
+  for (const t of tokens(tree, start, end)) if (t.kind === kind) return true;
   return false;
 }
 
-const isPyWs = (c: string | undefined) => c === " " || c === "\t" || c === "\f";
+const endsLine = (text: string) => /[\r\n]$/.test(text);
 
-/** Line breaks between `offset` and the previous non-whitespace character. */
-export function linesBefore(offset: number, src: string): number {
-  let n = 0;
-  let i = offset - 1;
-  while (i >= 0) {
-    const c = src[i];
-    if (c === "\n") {
-      n++;
-      if (src[i - 1] === "\r") i--;
-    } else if (c === "\r") n++;
-    else if (!isPyWs(c)) break;
-    i--;
-  }
-  return n;
+/** Line breaks between `pos` (a leaf's start) and the previous non-whitespace character. */
+export function linesBefore(tree: FormatTree, pos: number): number {
+  const l = leafFrom(tree, pos);
+  const prev = leafBefore(tree, pos);
+  // A line continuation's own line break is the last character before the next line.
+  const cont = prev !== NO_NODE && endsLine(tree.text(prev)) ? 1 : 0;
+  return lfOf(tree, l) + cont;
 }
 
-/** Line breaks between `offset` and the next non-whitespace character. */
-export function linesAfter(offset: number, src: string): number {
-  let n = 0;
-  let i = offset;
-  while (i < src.length) {
-    const c = src[i];
-    if (c === "\n") n++;
-    else if (c === "\r") {
-      n++;
-      if (src[i + 1] === "\n") i++;
-    } else if (!isPyWs(c)) break;
-    i++;
-  }
-  return n;
+/** Line breaks between `pos` (a leaf's end) and the next non-whitespace character. */
+export function linesAfter(tree: FormatTree, pos: number): number {
+  return lfOf(tree, leafFrom(tree, pos));
 }
 
-/** Line breaks after `offset` up to the next code token, counting only those after the last comment. */
-export function linesAfterIgnoringTrivia(offset: number, src: string): number {
-  let n = 0;
-  let pos = offset;
-  while (pos < src.length) {
-    const t = lexAt(src, pos);
-    pos = t.end;
-    if (t.kind === "nl") n++;
-    else if (t.kind === "ws") continue;
-    else if (t.kind === "comment") n = 0;
-    else break;
-  }
-  return n;
-}
-
-/** Line breaks after `offset`, past the end-of-line trivia, up to the next non-blank line. */
-export function linesAfterIgnoringEndOfLineTrivia(
-  offset: number,
-  src: string,
+/** Line breaks after `pos` up to the next code token, counting only those after the last comment. */
+export function linesAfterIgnoringTrivia(
+  tree: FormatTree,
+  pos: number,
 ): number {
-  let pos = offset;
   let n = 0;
-  let started = false;
-  while (pos < src.length) {
-    const t = lexAt(src, pos);
-    pos = t.end;
-    if (!started) {
-      if (t.kind !== "nl" && isTrivia(t)) continue;
-      started = true;
-    }
-    if (t.kind === "nl") n++;
-    else if (t.kind !== "ws") break;
+  for (let l = leafFrom(tree, pos); ; l = nextLeafOf(tree, l)) {
+    n += lfOf(tree, l);
+    if (l === NO_NODE || !isComment(tree, l)) return n;
+    n = 0;
   }
-  return n;
 }
 
-/** The empty lines in `src[start, end)` (from ruff's placement): the most between two comments. */
-export function maxEmptyLines(src: string, start: number, end: number): number {
-  let newlines = 0;
+/** Line breaks after `pos`, past the end-of-line trivia, up to the next non-blank line. */
+export function linesAfterIgnoringEndOfLineTrivia(
+  tree: FormatTree,
+  pos: number,
+): number {
+  let l = leafFrom(tree, pos);
+  while (l !== NO_NODE && tree.lf(l) === 0 && isTrivia(tree, l))
+    l = nextLeafOf(tree, l);
+  return lfOf(tree, l);
+}
+
+/** The empty lines in `[start, end)` (from ruff's placement): the most between two comments. */
+export function maxEmptyLines(
+  tree: FormatTree,
+  start: number,
+  end: number,
+): number {
   let max = 0;
-  let pos = start;
-  while (pos < end) {
-    const t = lexAt(src, pos, end);
-    pos = t.end;
-    if (t.kind === "nl") newlines++;
-    else if (t.kind === "ws") continue;
-    else if (t.kind === "comment") {
-      max = Math.max(max, newlines);
-      newlines = 0;
-    } else {
-      max = Math.max(max, newlines);
-      newlines = 0;
-      break;
-    }
+  for (let l = leafFrom(tree, start); ; l = nextLeafOf(tree, l)) {
+    max = Math.max(max, lfOf(tree, l));
+    if (l === NO_NODE || 2 * tree.ord(l) >= end || !isComment(tree, l)) break;
   }
-  return Math.max(0, Math.max(max, newlines) - 1);
+  return Math.max(0, max - 1);
 }
 
-/** The start of the line holding `offset`. */
-export function lineStart(src: string, offset: number): number {
-  let i = offset;
-  while (i > 0 && src[i - 1] !== "\n" && src[i - 1] !== "\r") i--;
-  return i;
+/** Whether `[start, end)` holds a line break, in a gap or inside a token. */
+export function hasLineBreak(
+  tree: FormatTree,
+  start: number,
+  end: number,
+): boolean {
+  let o = Math.max(0, start >> 1);
+  for (; o < tree.nodeCount && 2 * o <= end; o++) {
+    const l = tree.at(o);
+    if (!isLeaf(tree, l)) continue;
+    if (start < 2 * o && tree.lf(l) > 0) return true;
+    if (start <= 2 * o && 2 * o + 1 <= end && /[\r\n]/.test(tree.text(l)))
+      return true;
+  }
+  return o >= tree.nodeCount && end === FILE_END && tree.trailingLf > 0;
 }
 
-/** The end of the line holding `offset`, after its line break. */
-export function fullLineEnd(src: string, offset: number): number {
-  let i = offset;
-  while (i < src.length && src[i] !== "\n" && src[i] !== "\r") i++;
-  if (src[i] === "\r") i++;
-  if (src[i] === "\n" && src[i - 1] !== "\n") i++;
-  return i;
+/** Whether leaf `l` is the first thing on its line. */
+export function startsLine(tree: FormatTree, l: number): boolean {
+  if (tree.lf(l) > 0) return true;
+  const prev = prevLeafOf(tree, l);
+  return prev === NO_NODE || endsLine(tree.text(prev));
 }
 
-/** The whitespace before `offset` on its line, or undefined if code precedes it there. */
-export function indentationAt(src: string, offset: number): string | undefined {
-  const s = lineStart(src, offset);
-  for (let i = s; i < offset; i++) if (!isPyWs(src[i])) return undefined;
-  return src.slice(s, offset);
+/** The indentation of the line `pos` (a leaf's start) begins, or undefined if code precedes it there. */
+export function indentationAt(
+  tree: FormatTree,
+  pos: number,
+): number | undefined {
+  const l = leafFrom(tree, pos);
+  return startsLine(tree, l) ? tree.col(l) : undefined;
 }
 
-/** Whether `src[start, end)` holds a line break. */
-export function hasLineBreak(src: string, start: number, end: number): boolean {
-  for (let i = start; i < end; i++)
-    if (src[i] === "\n" || src[i] === "\r") return true;
-  return false;
+/** The last code token's last character before `pos`, comments and line continuations skipped. */
+export function previousChar(
+  tree: FormatTree,
+  pos: number,
+): string | undefined {
+  for (let l = leafBefore(tree, pos); l !== NO_NODE; l = prevLeafOf(tree, l))
+    if (!isTrivia(tree, l)) return tree.text(l).at(-1);
+  return undefined;
 }

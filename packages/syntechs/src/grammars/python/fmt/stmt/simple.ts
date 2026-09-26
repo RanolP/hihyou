@@ -21,7 +21,9 @@ const keywordOnly = (f: Fmt, s: Simple) => f.tok(s.kw);
 function names(f: Fmt, s: Simple, sep: Doc): Doc {
   return s.names.map((n, i) => {
     const comma = s.commas[i - 1];
-    return i === 0 || !comma ? f.tok(n) : [f.tok(comma), sep, f.tok(n)];
+    return i === 0 || comma === undefined
+      ? f.tok(n)
+      : [f.tok(comma), sep, f.tok(n)];
   });
 }
 
@@ -44,7 +46,7 @@ function global(f: Fmt, s: Simple): Doc {
 function alias(f: Fmt, a: Alias): Doc {
   const cs = f.comments;
   const out: Doc[] = [f.leading(cs.leading(a)), a.name.map((t) => f.tok(t))];
-  if (a.asTok && a.asname)
+  if (a.asTok !== undefined && a.asname !== undefined)
     out.push(space, f.tok(a.asTok), space, f.tok(a.asname));
   out.push(f.trailing(cs.dangling(a)), f.trailing(cs.trailing(a)));
   return out;
@@ -53,7 +55,7 @@ function alias(f: Fmt, a: Alias): Doc {
 export const simpleRules: StmtRules = {
   Expr(f, s) {
     const v = s.value;
-    if (v.kind === "BinOp" && arithmeticOps.has(v.op.kind))
+    if (v.kind === "BinOp" && arithmeticOps.has(f.tree.kindName(v.op)))
       return maybeParenthesize(f, v, s, "optional");
     return formatExpr(f, v);
   },
@@ -71,7 +73,7 @@ export const simpleRules: StmtRules = {
     const [exc, cause] = s.values;
     const out: Doc[] = [f.tok(s.kw)];
     if (exc) out.push(space, maybeParenthesize(f, exc, s, "optional"));
-    if (cause && s.sep)
+    if (cause && s.sep !== undefined)
       out.push(
         space,
         f.tok(s.sep),
@@ -84,7 +86,7 @@ export const simpleRules: StmtRules = {
     const [test, msg] = s.values;
     const out: Doc[] = [f.tok(s.kw)];
     if (test) out.push(space, maybeParenthesize(f, test, s, "ifBreaks"));
-    if (msg && s.sep)
+    if (msg && s.sep !== undefined)
       out.push(
         f.tok(s.sep),
         space,
@@ -96,11 +98,12 @@ export const simpleRules: StmtRules = {
     const v = s.values[0];
     if (!v) return f.tok(s.kw);
     // `del a, b` has several targets; `del (a, b)` has one, a tuple.
-    const targets: Expr[] = v.kind === "Tuple" && !v.open ? v.elts : [v];
+    const targets: Expr[] =
+      v.kind === "Tuple" && v.open === undefined ? v.elts : [v];
     const [single] = targets;
     if (targets.length === 1 && single)
       return [f.tok(s.kw), space, maybeParenthesize(f, single, s, "ifBreaks")];
-    const comma = commaIn(v.ts, v.ts);
+    const comma = commaIn(f.tree, v.ts, v.ts);
     const entries = targets.map((t) => ({ end: t.end, doc: formatExpr(f, t) }));
     return [
       f.tok(s.kw),
@@ -113,7 +116,7 @@ export const simpleRules: StmtRules = {
   Global: global,
   Nonlocal: global,
   Import(f, s) {
-    const comma = commaIn(s.ts, s.kw);
+    const comma = commaIn(f.tree, s.ts, s.kw);
     return [
       f.tok(s.kw),
       space,
@@ -133,15 +136,17 @@ export const simpleRules: StmtRules = {
       f.tok(s.importKw),
       space,
     ];
-    if (s.star) return [head, f.tok(s.star)];
-    const comma = commaIn(s.ts, s.importKw);
+    if (s.star !== undefined) return [head, f.tok(s.star)];
+    const comma = commaIn(f.tree, s.ts, s.importKw);
     const entries = s.names.map((a) => ({ end: a.end, doc: alias(f, a) }));
     const list = () => f.joinCommaSeparated(entries, s.end, comma, true);
     const dangling = f.comments.dangling(s);
     if (dangling.length === 0)
       return [head, f.parenthesizeIfExpands(s.importKw, list)];
-    const open = s.open ? f.tok(s.open) : synthetic(s.importKw, "(");
-    const close = s.close ? f.tok(s.close) : synthetic(s.importKw, ")");
+    const open =
+      s.open !== undefined ? f.tok(s.open) : synthetic(s.importKw, "(");
+    const close =
+      s.close !== undefined ? f.tok(s.close) : synthetic(s.importKw, ")");
     return [head, f.parenthesized(open, list, close, dangling)];
   },
 };

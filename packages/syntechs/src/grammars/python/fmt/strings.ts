@@ -1,15 +1,9 @@
-import {
-  breakParent,
-  type Doc,
-  ifBreak,
-  literalToken,
-  token,
-} from "../../../fmt/doc.js";
-import type { FormatNode } from "../../../fmt/tree.js";
+import { breakParent, type Doc, ifBreak, literalToken, token } from "../../../fmt/doc.js";
+import type { FormatTree } from "../../../fmt/tree.js";
 import type { Str } from "./ast.js";
 import type { Fmt } from "./builders.js";
 import type { Comment } from "./comments.js";
-import { hasLineBreak } from "./trivia.js";
+import { endOf, FILE_END, FILE_START, hasLineBreak, startOf } from "./trivia.js";
 
 /**
  * Ruff's string formatting (string/{mod,normalize,implicit,docstring}.rs): the prefix and quotes each part
@@ -30,12 +24,13 @@ export interface Flags {
 
 /** One tree-sitter `string` node. */
 export interface Part {
-  readonly node: FormatNode;
-  readonly start: FormatNode;
-  readonly end: FormatNode;
+  readonly node: number;
+  readonly start: number;
+  readonly end: number;
   readonly flags: Flags;
   /** `string_content` and `interpolation` children, in order. */
-  readonly elements: readonly FormatNode[];
+  readonly elements: readonly number[];
+  /** The contents' bounds within the text of `node` (not source offsets). */
   readonly contentStart: number;
   readonly contentEnd: number;
 }
@@ -49,11 +44,9 @@ export type FState =
       readonly multiline: boolean;
     };
 
-export const isRaw = (fl: Flags) =>
-  fl.prefix.startsWith("r") || fl.prefix.startsWith("R");
+export const isRaw = (fl: Flags) => fl.prefix.startsWith("r") || fl.prefix.startsWith("R");
 export const isBytes = (fl: Flags) => fl.prefix.includes("b");
-export const isInterpolated = (fl: Flags) =>
-  fl.prefix.includes("f") || fl.prefix.includes("t");
+export const isInterpolated = (fl: Flags) => fl.prefix.includes("f") || fl.prefix.includes("t");
 const opposite = (q: Quote): Quote => (q === '"' ? "'" : '"');
 const quotesOf = (fl: Flags) => fl.quote.repeat(fl.triple ? 3 : 1);
 
@@ -62,21 +55,23 @@ export function normalizePrefix(letters: string): string {
   return r + letters.replace(/[rRuU]/g, "").toLowerCase();
 }
 
-export function partOf(src: string, node: FormatNode): Part {
-  const start = node.children[0];
-  const end = node.children.at(-1);
-  if (
-    !start ||
-    !end ||
-    start.kind !== "string_start" ||
-    end.kind !== "string_end"
-  )
-    throw new Error(`malformed string at ${node.start}`);
-  const m = /^([a-zA-Z]*)("""|'''|"|')$/.exec(
-    src.slice(start.start, start.end),
-  );
-  if (!m) throw new Error(`malformed string start at ${start.start}`);
+export function partOf(tree: FormatTree, node: number): Part {
+  const count = tree.count(node);
+  if (count < 2) throw new Error(`malformed string at node ${node}`);
+  const start = tree.child(node, 0);
+  const end = tree.child(node, count - 1);
+  if (tree.kindName(start) !== "string_start" || tree.kindName(end) !== "string_end")
+    throw new Error(`malformed string at node ${node}`);
+  const startText = tree.text(start);
+  const m = /^([a-zA-Z]*)("""|'''|"|')$/.exec(startText);
+  if (!m) throw new Error(`malformed string start at node ${start}`);
   const quotes = m[2] as string;
+  const elements: number[] = [];
+  for (let i = 0; i < count; i++) {
+    const c = tree.child(node, i);
+    const k = tree.kindName(c);
+    if (k === "string_content" || k === "interpolation") elements.push(c);
+  }
   return {
     node,
     start,
@@ -86,18 +81,31 @@ export function partOf(src: string, node: FormatNode): Part {
       quote: quotes[0] as Quote,
       triple: quotes.length === 3,
     },
-    elements: node.children.filter(
-      (c) => c.kind === "string_content" || c.kind === "interpolation",
-    ),
-    contentStart: start.end,
-    contentEnd: end.start,
+    elements,
+    contentStart: startText.length,
+    contentEnd: tree.text(node).length - tree.text(end).length,
   };
 }
 
-const isDebug = (interp: FormatNode) =>
-  interp.children.some((c) => !c.named && c.kind === "=");
-const formatSpec = (interp: FormatNode) =>
-  interp.children.find((c) => c.kind === "format_specifier");
+/** The source between a part's quotes. */
+const contentOf = (tree: FormatTree, part: Part): string =>
+  tree.text(part.node).slice(part.contentStart, part.contentEnd);
+
+function isDebug(tree: FormatTree, interp: number): boolean {
+  for (let i = 0; i < tree.count(interp); i++) {
+    const c = tree.child(interp, i);
+    if (!tree.named(c) && tree.kindName(c) === "=") return true;
+  }
+  return false;
+}
+
+function formatSpec(tree: FormatTree, interp: number): number | undefined {
+  for (let i = 0; i < tree.count(interp); i++) {
+    const c = tree.child(interp, i);
+    if (tree.kindName(c) === "format_specifier") return c;
+  }
+  return undefined;
+}
 
 /** Ruff's `contains_opposite_quote`. */
 function containsOppositeQuote(content: string, fl: Flags): boolean {
@@ -112,48 +120,44 @@ function containsOppositeQuote(content: string, fl: Flags): boolean {
   return false;
 }
 
-function descendants(
-  n: FormatNode,
-  kind: string,
-  out: FormatNode[] = [],
-): FormatNode[] {
-  for (const c of n.children) {
-    if (c.kind === kind) out.push(c);
-    descendants(c, kind, out);
+function descendants(tree: FormatTree, n: number, kind: string, out: number[] = []): number[] {
+  for (let i = 0; i < tree.count(n); i++) {
+    const c = tree.child(n, i);
+    if (tree.kindName(c) === kind) out.push(c);
+    descendants(tree, c, kind, out);
   }
   return out;
 }
 
 /** Ruff's `preferred_quote_style`, for a target before Python 3.12 (no PEP 701). */
-export function preferredQuoteStyle(
-  f: Fmt,
-  part: Part,
-  preferred: QuoteStyle,
-): QuoteStyle {
+export function preferredQuoteStyle(f: Fmt, part: Part, preferred: QuoteStyle): QuoteStyle {
   const state = f.fstr;
   if (state.k === "nested") return "preserve";
   if (state.k === "inside" && (!state.flags.triple || part.flags.triple))
     return opposite(state.flags.quote) === '"' ? "double" : "single";
   if (preferred === "preserve") return "preserve";
   if (isInterpolated(part.flags)) {
-    const interps = part.elements.filter((e) => e.kind === "interpolation");
+    const interps = part.elements.filter((e) => f.tree.kindName(e) === "interpolation");
     for (const i of interps) {
-      if (isDebug(i) && containsOppositeQuote(f.text(i), part.flags))
-        return "preserve";
-      const spec = formatSpec(i);
-      if (spec && isDebug(i) && containsOppositeQuote(f.text(spec), part.flags))
+      if (isDebug(f.tree, i) && containsOppositeQuote(f.text(i), part.flags)) return "preserve";
+      const spec = formatSpec(f.tree, i);
+      if (
+        spec !== undefined &&
+        isDebug(f.tree, i) &&
+        containsOppositeQuote(f.text(spec), part.flags)
+      )
         return "preserve";
     }
     for (const i of interps)
-      for (const s of descendants(i, "string")) {
-        const p = partOf(f.src, s);
+      for (const s of descendants(f.tree, i, "string")) {
+        const p = partOf(f.tree, s);
         if (!p.flags.triple) continue;
         const literal = isInterpolated(p.flags)
           ? p.elements
-              .filter((e) => e.kind === "string_content")
+              .filter((e) => f.tree.kindName(e) === "string_content")
               .map((e) => f.text(e))
               .join("")
-          : f.src.slice(p.contentStart, p.contentEnd);
+          : contentOf(f.tree, p);
         if (literal.includes(p.flags.quote)) return "preserve";
       }
   }
@@ -212,11 +216,7 @@ function tripleContainsPreferred(text: string, q: Quote): boolean {
   return false;
 }
 
-function rawContainsPreferred(
-  text: string,
-  q: Quote,
-  triple: boolean,
-): boolean {
+function rawContainsPreferred(text: string, q: Quote, triple: boolean): boolean {
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
     if (c === "\\") i++;
@@ -257,14 +257,10 @@ function choose(m: Metadata, preferred: Quote): Quote {
 /** Ruff's `QuoteMetadata::from_part`: an f-string counts its literal elements only. */
 function partMetadata(f: Fmt, part: Part, preferred: Quote): Metadata {
   if (!isInterpolated(part.flags))
-    return metadataOf(
-      f.src.slice(part.contentStart, part.contentEnd),
-      part.flags,
-      preferred,
-    );
+    return metadataOf(contentOf(f.tree, part), part.flags, preferred);
   let m = metadataOf("", part.flags, preferred);
   for (const e of part.elements)
-    if (e.kind === "string_content")
+    if (f.tree.kindName(e) === "string_content")
       m = mergeMetadata(m, metadataOf(f.text(e), part.flags, preferred)) ?? m;
   return m;
 }
@@ -278,7 +274,7 @@ export function chooseQuotes(
   const style = preferredQuoteStyle(f, part, preferred);
   if (style === "preserve") return part.flags;
   const q: Quote = style === "double" ? '"' : "'";
-  const raw = f.src.slice(part.contentStart, part.contentEnd);
+  const raw = contentOf(f.tree, part);
   const first = raw.search(/[\\"'\r]/);
   if (first < 0) return { ...part.flags, quote: q };
   const m = isInterpolated(part.flags)
@@ -288,11 +284,7 @@ export function chooseQuotes(
 }
 
 /** Ruff's `UnicodeEscape::normalize`: the escape's body with its hex digits lowercased or its name uppercased. */
-function normalizeEscape(
-  kind: string,
-  input: string,
-  allowUnicode: boolean,
-): string | undefined {
+function normalizeEscape(kind: string, input: string, allowUnicode: boolean): string | undefined {
   const len =
     kind === "x"
       ? 2
@@ -313,8 +305,7 @@ function normalizeEscape(
   if (input[0] !== "{") return undefined;
   for (let i = 1; i < input.length; i++) {
     const c = input[i] as string;
-    if (c === "}")
-      return i < 3 ? undefined : input.slice(0, i + 1).toUpperCase();
+    if (c === "}") return i < 3 ? undefined : input.slice(0, i + 1).toUpperCase();
     if (!/[0-9A-Za-z -]/.test(c)) return undefined;
   }
   return undefined;
@@ -392,41 +383,29 @@ export function normalizeString(
 function needsChaperone(fl: Flags, trimEnd: string): boolean {
   const slashes = (s: string) => s.length - s.replace(/\\+$/, "").length;
   if (slashes(trimEnd) % 2 === 1) return true;
-  return (
-    fl.triple &&
-    trimEnd.endsWith(fl.quote) &&
-    slashes(trimEnd.slice(0, -1)) % 2 === 0
-  );
+  return fl.triple && trimEnd.endsWith(fl.quote) && slashes(trimEnd.slice(0, -1)) % 2 === 0;
 }
 
 export interface Hooks {
   /** Prints an f-string interpolation, with the enclosing string's flags and layout in `f.fstr`. */
-  interpolation(
-    f: Fmt,
-    interp: FormatNode,
-    flags: Flags,
-    multiline: boolean,
-  ): Doc;
+  interpolation(f: Fmt, interp: number, flags: Flags, multiline: boolean): Doc;
 }
 
 /** A string spanning lines (a triple-quoted one) breaks every group around it, as ruff's multiline text does. */
-export const multilineToken = (n: FormatNode, text: string): Doc =>
+export const multilineToken = (n: number, text: string): Doc =>
   text.includes("\n") ? [literalToken(n, text), breakParent] : token(n, text);
 
 /** Ruff's `InterpolatedStringLayout`: multiline when an interpolation spans lines. */
 function layoutMultiline(f: Fmt, part: Part): boolean {
   return part.elements.some(
-    (e) => e.kind === "interpolation" && hasLineBreak(f.src, e.start, e.end),
+    (e) =>
+      f.tree.kindName(e) === "interpolation" &&
+      hasLineBreak(f.tree, startOf(f.tree, e), endOf(f.tree, e)),
   );
 }
 
 /** Prints an f-string's elements with `fl`, as ruff's `FormatFString`; literals escape braces when `escape`. */
-function interpolatedElements(
-  f: Fmt,
-  part: Part,
-  fl: Flags,
-  hooks: Hooks,
-): Doc[] {
+function interpolatedElements(f: Fmt, part: Part, fl: Flags, hooks: Hooks): Doc[] {
   const multiline = layoutMultiline(f, part);
   const saved = f.fstr;
   f.fstr = {
@@ -436,7 +415,7 @@ function interpolatedElements(
   };
   try {
     return part.elements.map((e) =>
-      e.kind === "string_content"
+      f.tree.kindName(e) === "string_content"
         ? multilineToken(e, normalizeString(f.text(e), 0, fl, false))
         : hooks.interpolation(f, e, fl, multiline),
     );
@@ -446,12 +425,7 @@ function interpolatedElements(
 }
 
 /** One part, with its own quotes: ruff's `FormatStringLiteral` / `FormatBytesLiteral` / `FormatFString`. */
-export function formatPart(
-  f: Fmt,
-  part: Part,
-  hooks: Hooks,
-  docstringIndent?: string,
-): Doc {
+export function formatPart(f: Fmt, part: Part, hooks: Hooks, docstringIndent?: string): Doc {
   if (isInterpolated(part.flags)) {
     const fl = chooseQuotes(f, part);
     const q = quotesOf(fl);
@@ -467,16 +441,11 @@ export function formatPart(
     part,
     docstringIndent !== undefined && style !== "preserve" ? "double" : style,
   );
-  const raw = f.src.slice(part.contentStart, part.contentEnd);
+  const raw = contentOf(f.tree, part);
   const first = raw.search(/[\\"'\r]/);
   const content = first < 0 ? raw : normalizeString(raw, first, fl, false);
   if (docstringIndent !== undefined) {
-    const doc = docstring(
-      content,
-      fl,
-      docstringIndent,
-      f.options["indent-width"],
-    );
+    const doc = docstring(content, fl, docstringIndent, f.options["indent-width"]);
     if (doc !== undefined) return multilineToken(part.node, doc);
   }
   const q = quotesOf(fl);
@@ -523,8 +492,7 @@ function docstring(
   if (trimBoth.startsWith(fl.quote)) out += " ";
   if (trimEnd !== "") out += trimBoth;
   if (content.slice(first.length).trim() === "") {
-    if (needsChaperone(fl, trimEnd) || (trimEnd === "" && content !== ""))
-      out += " ";
+    if (needsChaperone(fl, trimEnd) || (trimEnd === "" && content !== "")) out += " ";
     return out + q;
   }
   hardBreak();
@@ -549,10 +517,7 @@ function docstring(
     }
     const lead = /^\s*/.exec(te)?.[0] ?? "";
     if (/[^ ]/.test(lead))
-      write(
-        " ".repeat(Math.max(0, indentation(te).columns - strip.columns)) +
-          te.trimStart(),
-      );
+      write(" ".repeat(Math.max(0, indentation(te).columns - strip.columns)) + te.trimStart());
     else write(te.slice(strip.length));
     if (!last) hardBreak();
   }
@@ -565,23 +530,19 @@ function docstring(
 /** Ruff's `StringLike::is_multiline`. */
 export function isMultilineStr(f: Fmt, s: Str): boolean {
   return s.parts.some((n) => {
-    const p = partOf(f.src, n);
+    const p = partOf(f.tree, n);
     if (!isInterpolated(p.flags))
-      return p.flags.triple && hasLineBreak(f.src, n.start, n.end);
+      return p.flags.triple && hasLineBreak(f.tree, startOf(f.tree, n), endOf(f.tree, n));
     return p.elements.some((e) =>
-      e.kind === "string_content"
-        ? p.flags.triple && hasLineBreak(f.src, e.start, e.end)
-        : isDebug(e) && /[\r\n]/.test(f.text(e)),
+      f.tree.kindName(e) === "string_content"
+        ? p.flags.triple && hasLineBreak(f.tree, startOf(f.tree, e), endOf(f.tree, e))
+        : isDebug(f.tree, e) && /[\r\n]/.test(f.text(e)),
     );
   });
 }
 
 /** The flags an implicit concatenation merges into, or undefined when it must keep its parts (ruff's `merge_flags`). */
-function mergedFlags(
-  f: Fmt,
-  s: Str,
-  parts: readonly Part[],
-): Flags | undefined {
+function mergedFlags(f: Fmt, s: Str, parts: readonly Part[]): Flags | undefined {
   if (isMultilineStr(f, s)) return undefined;
   if (f.comments.hasDangling(s)) return undefined;
   let preserve: Quote | undefined;
@@ -600,20 +561,12 @@ function mergedFlags(
         f.fstr.k === "outside" &&
         f.options["quote-style"] !== "preserve"
       ) {
-        if (preserve !== undefined && preserve !== p.flags.quote)
-          return undefined;
+        if (preserve !== undefined && preserve !== p.flags.quote) return undefined;
         preserve = p.flags.quote;
       }
     }
   }
-  const prefix =
-    s.flavor === "bytes"
-      ? "b"
-      : s.flavor === "f"
-        ? "f"
-        : s.flavor === "t"
-          ? "t"
-          : "";
+  const prefix = s.flavor === "bytes" ? "b" : s.flavor === "f" ? "f" : s.flavor === "t" ? "t" : "";
   const first = parts[0] as Part;
   let quote: Quote;
   if (preserve !== undefined) quote = preserve;
@@ -643,48 +596,40 @@ function flat(f: Fmt, parts: readonly Part[], fl: Flags, hooks: Hooks): Doc {
   const q = quotesOf(fl);
   for (const [i, p] of parts.entries()) {
     out.push(token(p.start, i === 0 ? fl.prefix + q : ""));
-    if (isInterpolated(p.flags))
-      out.push(interpolatedElements(f, p, fl, hooks));
+    if (isInterpolated(p.flags)) out.push(interpolatedElements(f, p, fl, hooks));
     else
       for (const e of p.elements)
-        out.push(
-          token(e, normalizeString(f.text(e), 0, fl, isInterpolated(fl))),
-        );
+        out.push(token(e, normalizeString(f.text(e), 0, fl, isInterpolated(fl))));
     out.push(token(p.end, i === parts.length - 1 ? q : ""));
   }
   return out;
 }
 
 /** Ruff's `FormatImplicitConcatenatedStringExpanded`: each part on its own, joined by in-parentheses-only lines. */
-function expanded(
-  f: Fmt,
-  s: Str,
-  parts: readonly Part[],
-  hooks: Hooks,
-  multipart: boolean,
-): Doc {
+function expanded(f: Fmt, s: Str, parts: readonly Part[], hooks: Hooks, multipart: boolean): Doc {
   const out: Doc[] = [];
   if (
     multipart &&
     parts.some(
       (p, i) =>
         i > 0 &&
-        hasLineBreak(f.src, (parts[i - 1] as Part).node.end, p.node.start),
+        hasLineBreak(f.tree, endOf(f.tree, (parts[i - 1] as Part).node), startOf(f.tree, p.node)),
     )
   )
     out.push(breakParent);
   // Comments between parts attach to the string; each goes to the part it follows on its line, else the next.
   const between = f.comments.dangling(s);
   for (const [i, p] of parts.entries()) {
-    const prevEnd = i === 0 ? -1 : (parts[i - 1] as Part).node.end;
-    const nextStart = parts[i + 1]?.node.start ?? Number.POSITIVE_INFINITY;
+    const prevEnd = i === 0 ? FILE_START : endOf(f.tree, (parts[i - 1] as Part).node);
+    const next = parts[i + 1];
+    const nextStart = next === undefined ? FILE_END : startOf(f.tree, next.node);
+    const pStart = startOf(f.tree, p.node);
+    const pEnd = endOf(f.tree, p.node);
     const leading = between.filter(
-      (c: Comment) =>
-        c.line === "own" && c.start > prevEnd && c.end < p.node.start,
+      (c: Comment) => c.line === "own" && c.start > prevEnd && c.end < pStart,
     );
     const trailing = between.filter(
-      (c: Comment) =>
-        c.line === "eol" && c.start > p.node.end && c.end < nextStart,
+      (c: Comment) => c.line === "eol" && c.start > pEnd && c.end < nextStart,
     );
     if (i > 0) out.push(f.softLineOrSpace());
     out.push(
@@ -697,24 +642,15 @@ function expanded(
 }
 
 /** Ruff's `FormatExprStringLiteral` / `FormatExprFString` / bytes, for the whole expression `s`. */
-export function formatStr(
-  f: Fmt,
-  s: Str,
-  hooks: Hooks,
-  docstringIndent?: string,
-): Doc {
-  const parts = s.parts.map((n) => partOf(f.src, n));
-  if (parts.length === 1)
-    return formatPart(f, parts[0] as Part, hooks, docstringIndent);
-  const parenthesized =
-    f.level.k === "paren" || (f.level.k === "expr" && f.level.g !== undefined);
+export function formatStr(f: Fmt, s: Str, hooks: Hooks, docstringIndent?: string): Doc {
+  const parts = s.parts.map((n) => partOf(f.tree, n));
+  if (parts.length === 1) return formatPart(f, parts[0] as Part, hooks, docstringIndent);
+  const parenthesized = f.level.k === "paren" || (f.level.k === "expr" && f.level.g !== undefined);
   const merged = mergedFlags(f, s, parts);
   if (!parenthesized) {
     if (merged) return flat(f, parts, merged, hooks);
     if (docstringIndent !== undefined)
-      return f.parenthesizeIfExpands(s.ts, () =>
-        expanded(f, s, parts, hooks, true),
-      );
+      return f.parenthesizeIfExpands(s.ts, () => expanded(f, s, parts, hooks, true));
   }
   if (merged) {
     const flatDoc = flat(f, parts, merged, hooks);
@@ -726,13 +662,10 @@ export function formatStr(
 
 /** An implicit concatenation as an operand of a binary expression, which groups it itself. */
 export function implicitConcatenated(f: Fmt, s: Str, hooks: Hooks): Doc {
-  const parts = s.parts.map((n) => partOf(f.src, n));
+  const parts = s.parts.map((n) => partOf(f.tree, n));
   const merged = mergedFlags(f, s, parts);
   return merged
-    ? ifBreak(
-        expanded(f, s, parts, hooks, false),
-        flat(f, parts, merged, hooks),
-      )
+    ? ifBreak(expanded(f, s, parts, hooks, false), flat(f, parts, merged, hooks))
     : expanded(f, s, parts, hooks, true);
 }
 
@@ -740,20 +673,16 @@ export function implicitConcatenated(f: Fmt, s: Str, hooks: Hooks): Doc {
  * Ruff's `FormatImplicitConcatenatedStringFlat::new`: when `s`'s parts merge, what prints them as one string.
  * Printing is deferred so a caller can mark the comments it moves before the parts are printed.
  */
-export function implicitFlat(
-  f: Fmt,
-  s: Str,
-  hooks: Hooks,
-): (() => Doc) | undefined {
+export function implicitFlat(f: Fmt, s: Str, hooks: Hooks): (() => Doc) | undefined {
   if (s.parts.length < 2) return undefined;
-  const parts = s.parts.map((n) => partOf(f.src, n));
+  const parts = s.parts.map((n) => partOf(f.tree, n));
   const merged = mergedFlags(f, s, parts);
   return merged && (() => flat(f, parts, merged, hooks));
 }
 
 /** Ruff's `FormatImplicitConcatenatedStringExpanded` with `ImplicitConcatenatedLayout::MaybeFlat`. */
 export function implicitExpanded(f: Fmt, s: Str, hooks: Hooks): Doc {
-  const parts = s.parts.map((n) => partOf(f.src, n));
+  const parts = s.parts.map((n) => partOf(f.tree, n));
   return expanded(f, s, parts, hooks, false);
 }
 
@@ -761,16 +690,11 @@ export function implicitExpanded(f: Fmt, s: Str, hooks: Hooks): Doc {
  * Ruff's `format_interpolated_string_assignment`: a lone f- or t-string whose interpolations span lines, and
  * which is not otherwise multiline, printed on its own (deferred, as `implicitFlat`); undefined for any other string.
  */
-export function interpolatedAssignment(
-  f: Fmt,
-  s: Str,
-  hooks: Hooks,
-): (() => Doc) | undefined {
+export function interpolatedAssignment(f: Fmt, s: Str, hooks: Hooks): (() => Doc) | undefined {
   const [node] = s.parts;
-  if (s.parts.length !== 1 || !node) return undefined;
-  const part = partOf(f.src, node);
-  if (!isInterpolated(part.flags) || !layoutMultiline(f, part))
-    return undefined;
+  if (s.parts.length !== 1 || node === undefined) return undefined;
+  const part = partOf(f.tree, node);
+  if (!isInterpolated(part.flags) || !layoutMultiline(f, part)) return undefined;
   if (isMultilineStr(f, s)) return undefined;
   return () => formatPart(f, part, hooks);
 }

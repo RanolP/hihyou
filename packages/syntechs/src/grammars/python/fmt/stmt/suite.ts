@@ -82,7 +82,7 @@ export function formatModule(f: Fmt, m: Module): Doc {
 /** `fmt: off`, `fmt: skip` and `yapf: disable` ask for source text kept as written, which this port does not do. */
 function rejectSuppressions(f: Fmt): void {
   for (const c of f.comments.all)
-    if (/\bfmt:\s*(?:off|skip)\b|\byapf:\s*disable\b/.test(f.text(c)))
+    if (/\bfmt:\s*(?:off|skip)\b|\byapf:\s*disable\b/.test(f.tree.text(c.ts)))
       throw new Unformattable(`suppression comment at ${c.start}`);
 }
 
@@ -148,7 +148,7 @@ function docstring(f: Fmt, s: ExprStmt & { value: Str }, kind: SuiteKind): Doc {
   const trailing = cs.trailing(s);
   if (kind === "class") {
     const own = trailing.find((c) => c.line === "own");
-    if (own && linesBefore(own.start, f.src) < 2) out.push(emptyLine);
+    if (own && linesBefore(f.tree, own.start) < 2) out.push(emptyLine);
   }
   out.push(f.trailing(trailing));
   return out;
@@ -206,7 +206,7 @@ export function formatSuite(
         out.push(emptyLine);
       if (kind === "function" && !firstDoc) {
         const start = cs.leading(first)[0]?.start ?? first.start;
-        if (linesBefore(start, f.src) > 1) out.push(emptyLine);
+        if (linesBefore(f.tree, start) > 1) out.push(emptyLine);
       }
       out.push(firstDoc ? docstring(f, firstDoc, kind) : formatStmt(f, first));
       let emptyLineAfterDocstring =
@@ -244,7 +244,7 @@ function between(
       following.kind === "FunctionDef" &&
       preceding.kind === "FunctionDef" &&
       onlyEllipsis(f, preceding.body) !== undefined &&
-      linesAfterIgnoringEndOfLineTrivia(preceding.end, f.src) < 2 &&
+      linesAfterIgnoringEndOfLineTrivia(f.tree, preceding.end) < 2 &&
       !cs.hasTrailingOwnLine(preceding);
     if (stubBefore) return hard;
     return top ? [emptyLine, emptyLine] : emptyLine;
@@ -255,16 +255,16 @@ function between(
   ) {
     if (!top) return emptyLine;
     return linesAfter(
+      f.tree,
       lastTrailingEnd(cs.trailing(preceding), preceding.end),
-      f.src,
     ) <= 2
       ? emptyLine
       : [emptyLine, emptyLine];
   }
   if (isCompound(preceding)) {
     const n = linesBefore(
+      f.tree,
       cs.leading(following)[0]?.start ?? following.start,
-      f.src,
     );
     if (n <= 1) return hard;
     if (n === 2) return emptyLine;
@@ -272,8 +272,8 @@ function between(
   }
   if (afterDocstring) return emptyLine;
   const n = linesAfter(
+    f.tree,
     lastTrailingEnd(cs.trailing(preceding), preceding.end),
-    f.src,
   );
   if (n <= 1) return hard;
   if (!top || n === 2) return emptyLine;
@@ -334,7 +334,10 @@ export function leadingAlternateBranchComments(
 ): Doc {
   const first = comments[0];
   if (first)
-    return [f.emptyLines(linesBefore(first.start, f.src)), f.leading(comments)];
-  if (last) return f.emptyLines(linesAfterIgnoringTrivia(last.end, f.src));
+    return [
+      f.emptyLines(linesBefore(f.tree, first.start)),
+      f.leading(comments),
+    ];
+  if (last) return f.emptyLines(linesAfterIgnoringTrivia(f.tree, last.end));
   return [];
 }

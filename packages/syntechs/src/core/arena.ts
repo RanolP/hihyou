@@ -298,6 +298,22 @@ export class Tree {
     return this.source.slice(this.start(n), this.end(n));
   }
 
+  /**
+   * UTF-16 units from the start of `n`'s line to `n`'s start. Ruff compares a comment's indentation with the
+   * statements around it to pick the block the comment closes, which no line-break count can tell.
+   */
+  col(n: number): number {
+    const source = this.source;
+    const start = this.start(n);
+    let i = start;
+    while (i > 0) {
+      const c = source.charCodeAt(i - 1);
+      if (c === 10 || c === 13) break;
+      i--;
+    }
+    return start - i;
+  }
+
   /** Whether `b` starts exactly where `a` ends: no whitespace, comment or other text between them. */
   adjoins(a: number, b: number): boolean {
     return this.end(a) === this.start(b);
