@@ -1,4 +1,4 @@
-ts compatibility: 466/653 (71.36%), 30 refused (ok:false), 76 excluded
+ts compatibility: 517/653 (79.17%), 29 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -18,7 +18,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/arrow/comments/issue-11100.ts | 0/1 | 42.86% |
 | typescript/as/as-const/as-const.ts | 0/1 | 90.91% |
 | typescript/as/comments/18160.ts | 0/1 | 81.25% |
-| typescript/assignment/issue-10848.tsx | 0/1 | 79.73% |
 | typescript/assignment/lone-arg.ts | 0/1 | 41.18% |
 | typescript/binary-expressions/chain-expression.ts | 0/1 | 76.47% |
 | typescript/call/callee-comments.ts | 0/1 | 69.44% |
@@ -37,9 +36,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/comments/16065.ts | 0/1 | 81.82% |
 | typescript/comments/16121.ts | 0/1 | 85.71% |
 | typescript/comments/16889.ts | 0/1 | 97.39% |
-| typescript/comments/after-jsx-generic.tsx | 0/1 | 85.71% |
 | typescript/comments/declare_function.ts | 0/1 | 83.33% |
-| typescript/comments/jsx.tsx | 0/1 | 20.00% |
 | typescript/comments/method_types.ts | 0/1 | 74.36% |
 | typescript/comments/methods.ts | 0/1 | 97.96% |
 | typescript/comments/type-literals.ts | 0/1 | 89.66% |
@@ -76,7 +73,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/intersection/intersection-parens.ts | 0/3 | 89.01% |
 | typescript/intersection/consistent-with-flow/intersection-parens.ts | 0/1 | 93.02% |
 | typescript/intersection/consistent-with-flow/single-member.ts | 0/1 | 46.32% |
-| typescript/last-argument-expansion/decorated-function.tsx | 0/1 | 75.21% |
+| typescript/last-argument-expansion/decorated-function.tsx | 0/1 | 90.91% |
 | typescript/mapped-type/issue-11098.ts | 0/1 | 87.13% |
 | typescript/method-chain/comment.ts | 0/1 | 0.00% |
 | typescript/module/global.ts | 0/1 | 38.10% |
@@ -93,11 +90,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/ternaries/indent.ts | 0/1 | 95.80% |
 | typescript/test-declarations/test_declarations.ts | 0/2 | 50.00% |
 | typescript/trailing-comma/trailing.ts | 2/3 | 97.78% |
-| typescript/tsx/attribute-blank-lines.tsx | 0/1 | 50.00% |
-| typescript/tsx/member-expression.tsx | 0/1 | 40.00% |
-| typescript/tsx/optional-chaining.tsx | 0/1 | 15.38% |
-| typescript/tsx/react.tsx | 0/1 | 40.00% |
-| typescript/tsx/url.tsx | 0/1 | 58.06% |
+| typescript/tsx/optional-chaining.tsx | 0/1 | 73.33% |
 | typescript/type-arguments-bit-shift-left-like/4.ts | 0/1 | 0.00% |
 | typescript/type-parameters-arguments/18041.ts | 0/1 | 45.71% |
 | typescript/type-parameters-arguments/const.ts | 0/1 | 90.63% |
@@ -125,51 +118,8 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/union/single-type/single-type-2.ts | 0/1 | 61.11% |
 | typescript/union/single-type/single-type.ts | 0/1 | 0.00% |
 | typescript/webhost/webtsc.ts | 0/1 | 99.08% |
-| jsx/attribute-blank-lines/attribute-blank-lines.js | 0/2 | 57.29% |
-| jsx/comments/eslint-disable.js | 0/1 | 0.00% |
-| jsx/comments/in-attributes.js | 0/1 | 23.26% |
-| jsx/comments/in-tags.js | 0/1 | 90.91% |
-| jsx/comments/jsx-tag-comment-after-prop.js | 0/1 | 36.36% |
-| jsx/comments/like-a-comment-in-jsx-text.js | 0/1 | 0.00% |
-| jsx/deprecated-jsx-bracket-same-line-option/jsx.js | 1/4 | 88.16% |
-| jsx/escape/nbsp.js | 0/1 | 70.00% |
-| jsx/expression-with-types/expression.js | 0/4 | 85.71% |
-| jsx/fragment/fragment.js | 0/1 | 88.73% |
-| jsx/ignore/jsx_ignore.js | 0/1 | 68.52% |
-| jsx/ignore/spread.js | 0/1 | 42.11% |
-| jsx/jsx/array-iter.js | 0/4 | 26.56% |
-| jsx/jsx/arrow.js | 0/4 | 29.63% |
-| jsx/jsx/attr-comments.js | 0/4 | 87.10% |
-| jsx/jsx/await.js | 0/4 | 20.69% |
-| jsx/jsx/expression.js | 0/4 | 60.43% |
-| jsx/jsx/flow_fix_me.js | 0/4 | 0.00% |
-| jsx/jsx/html_escape.js | 2/4 | 66.67% |
-| jsx/jsx/hug.js | 0/4 | 47.06% |
-| jsx/jsx/logical-expression.js | 0/4 | 37.50% |
-| jsx/jsx/object-property.js | 0/4 | 52.00% |
-| jsx/jsx/open-break.js | 0/4 | 33.33% |
-| jsx/jsx/parens.js | 0/4 | 57.89% |
-| jsx/jsx/quotes.js | 0/4 | 64.29% |
-| jsx/jsx/regex.js | 0/4 | 50.00% |
-| jsx/jsx/return-statement.js | 0/4 | 74.47% |
-| jsx/jsx/spacing.js | 0/4 | 40.00% |
-| jsx/jsx/template-literal-in-attr.js | 0/4 | 33.33% |
-| jsx/last-line/last_line.js | 1/2 | 92.11% |
-| jsx/last-line/single_prop_multiline_string.js | 0/2 | 22.88% |
-| jsx/multiline-assign/test.js | 0/1 | 34.62% |
-| jsx/newlines/test.js | 0/1 | 44.59% |
-| jsx/newlines/windows.js | 0/1 | 0.00% |
-| jsx/optional-chaining/optional-chaining.jsx | 0/1 | 33.33% |
-| jsx/parentheses/argument.js | 0/1 | 36.84% |
-| jsx/significant-space/comments.js | 0/1 | 85.71% |
-| jsx/significant-space/test.js | 0/1 | 32.09% |
-| jsx/single-attribute-per-line/single-attribute-per-line.js | 0/2 | 56.60% |
-| jsx/split-attrs/test.js | 0/1 | 12.96% |
-| jsx/spread/attribute.js | 0/1 | 32.79% |
-| jsx/spread/child.js | 0/1 | 30.19% |
-| jsx/stateless-arrow-fn/test.js | 0/1 | 20.47% |
-| jsx/text-wrap/issue-16897.js | 0/1 | 48.00% |
-| jsx/text-wrap/test.js | 0/1 | 40.08% |
+| jsx/ignore/jsx_ignore.js | 0/1 | 92.59% |
+| jsx/ignore/spread.js | 0/1 | 75.68% |
 
 # Refused
 
@@ -206,7 +156,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | typescript/union/inlining.ts | 1/1 | 64.66% | check: input comment "// articles type may be null" is missing from the output |
 | typescript/union/consistent-with-flow/18647.ts | 1/1 | 75.00% | check: input "any instanceof B\n  /**\n  * Comment\n  */\n    ? B \| C\n    : D" at 139 is output as "any" at 147, which  |
 | typescript/union/consistent-with-flow/union-last-comment.ts | 1/1 | 40.00% | check: output comment "// Comment2 // Final comment1" matches no input comment |
-| jsx/jsx/conditional-expression.js | 4/4 | 88.64% | check: input "\"dunno\"" at 3917 is output as "\"dunno\"" at 3920, which means "key:dunno@alternative\|2/62", not "str:du |
 
 # Excluded
 

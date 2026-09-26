@@ -1,4 +1,4 @@
-js compatibility: 534/804 (66.42%), 43 refused (ok:false), 304 excluded
+js compatibility: 591/804 (73.51%), 40 refused (ok:false), 304 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -17,7 +17,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/arrays/preserve_empty_lines.js | 0/1 | 88.41% |
 | js/arrows/arrow-chain-with-trailing-comments.js | 0/2 | 75.00% |
 | js/arrows/arrow_function_expression.js | 0/2 | 94.29% |
-| js/arrows/call.js | 0/2 | 94.99% |
 | js/arrows/comment.js | 0/2 | 67.57% |
 | js/arrows/currying-4.js | 0/2 | 96.33% |
 | js/arrows/issue-17421.js | 0/2 | 82.51% |
@@ -30,9 +29,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/async/nested.js | 0/1 | 14.29% |
 | js/async/simple-nested-await.js | 0/1 | 50.00% |
 | js/await/await-with-parens.js | 0/1 | 76.19% |
-| js/binary-expressions/inline-jsx.js | 0/2 | 40.00% |
-| js/binary-expressions/jsx_parent.js | 0/2 | 66.67% |
-| js/call/first-argument-expansion/jsx.js | 0/1 | 0.00% |
 | js/chain-expression/call-expression.js | 0/1 | 96.00% |
 | js/chain-expression/member-chain.js | 0/1 | 57.14% |
 | js/chain-expression/member-expression.js | 0/1 | 96.43% |
@@ -45,14 +41,13 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/comments/blank.js | 0/2 | 92.31% |
 | js/comments/export-and-import.js | 0/2 | 78.05% |
 | js/comments/export.js | 0/2 | 86.67% |
-| js/comments/function-declaration.js | 0/2 | 71.54% |
+| js/comments/function-declaration.js | 0/2 | 68.80% |
 | js/comments/if.js | 0/2 | 78.57% |
-| js/comments/issue-3532.js | 0/2 | 85.53% |
-| js/comments/issues.js | 0/2 | 79.41% |
+| js/comments/issue-3532.js | 0/2 | 91.67% |
+| js/comments/issues.js | 0/2 | 83.58% |
 | js/comments/jsdoc-nestled-dangling.js | 0/2 | 93.02% |
 | js/comments/jsdoc-nestled.js | 0/2 | 81.36% |
-| js/comments/jsdoc.js | 0/2 | 45.65% |
-| js/comments/jsx.js | 0/2 | 74.56% |
+| js/comments/jsdoc.js | 1/2 | 96.15% |
 | js/comments/tagged-template-literal.js | 0/2 | 92.86% |
 | js/comments/trailing-jsdocs.js | 0/2 | 76.00% |
 | js/comments/try.js | 0/2 | 71.43% |
@@ -77,7 +72,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/comments-closure-typecast/no-semi/not-on-same-line.js | 0/1 | 81.82% |
 | js/comments-closure-typecast/no-semi/with-other-comments.js | 0/1 | 50.00% |
 | js/comments/assignment/variable-declarator.js | 0/1 | 15.38% |
-| js/comments/flow-types/inline.js | 0/1 | 62.50% |
 | js/comments/function/18146.js | 0/1 | 58.06% |
 | js/comments/function/between-parentheses-and-function-body.js | 0/1 | 52.63% |
 | js/comments/in-list/dangling-comment-in-list.js | 0/1 | 95.95% |
@@ -87,8 +81,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/comments/while-like/while.js | 0/1 | 90.24% |
 | js/comments/while-like/with.js | 0/1 | 91.84% |
 | js/conditional/comments.js | 0/2 | 65.66% |
-| js/conditional/new-ternary-examples.js | 0/2 | 79.34% |
-| js/conditional/new-ternary-spec.js | 0/2 | 92.54% |
 | js/conditional/postfix-ternary-regressions.js | 1/2 | 95.19% |
 | js/decorator-auto-accessors/basic.js | 1/2 | 83.33% |
 | js/decorator-auto-accessors/comments.js | 1/2 | 90.00% |
@@ -156,16 +148,11 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/import-attributes/bracket-spacing/re-export.js | 0/1 | 0.00% |
 | js/import-attributes/quote-props/quoted-keys.js | 1/3 | 86.67% |
 | js/label/comment.js | 0/1 | 53.33% |
-| js/last-argument-expansion/break-parent.js | 0/1 | 70.37% |
-| js/last-argument-expansion/edge_case.js | 0/1 | 62.99% |
-| js/last-argument-expansion/issue-7518.js | 0/1 | 85.71% |
-| js/last-argument-expansion/jsx.js | 0/1 | 20.00% |
-| js/line-suffix-boundary/boundary.js | 0/1 | 91.23% |
+| js/last-argument-expansion/edge_case.js | 0/1 | 74.63% |
 | js/logical-assignment/logical-assignment.js | 0/1 | 92.59% |
 | js/method-chain/break-last-member.js | 0/1 | 85.29% |
 | js/method-chain/comment.js | 0/1 | 76.27% |
 | js/method-chain/issue-11298.js | 0/1 | 20.00% |
-| js/method-chain/pr-7889.js | 0/1 | 27.27% |
 | js/newline/backslash_2028.js | 0/1 | 40.00% |
 | js/newline/backslash_2029.js | 0/1 | 40.00% |
 | js/no-semi/comments.js | 0/2 | 88.46% |
@@ -192,54 +179,13 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/template/inline.js | 0/1 | 94.34% |
 | js/template-literals/expression-break.js | 0/1 | 80.00% |
 | js/template-literals/indention.js | 0/1 | 29.75% |
-| js/ternaries/nested-in-condition.js | 2/8 | 78.23% |
-| js/ternaries/nested.js | 0/8 | 80.40% |
 | js/test-declarations/jest-each-template-string.js | 0/2 | 27.78% |
 | js/test-declarations/jest-each.js | 0/2 | 63.24% |
 | js/throw_statement/comment.js | 0/1 | 43.24% |
-| js/trailing-comma/jsx.js | 1/3 | 90.48% |
 | js/try/catch.js | 0/1 | 85.71% |
 | js/try/try.js | 0/1 | 50.00% |
-| js/unicode/nbsp-jsx.js | 0/1 | 22.22% |
-| js/yield/jsx-without-parenthesis.js | 0/1 | 50.00% |
-| js/yield/jsx.js | 0/1 | 50.00% |
-| jsx/attr-element/attr-element.js | 0/1 | 0.00% |
-| jsx/attribute-blank-lines/attribute-blank-lines.js | 0/2 | 57.29% |
-| jsx/comments/eslint-disable.js | 0/1 | 0.00% |
-| jsx/comments/in-attributes.js | 0/1 | 23.26% |
-| jsx/comments/in-tags.js | 0/1 | 90.91% |
-| jsx/comments/jsx-tag-comment-after-prop.js | 0/1 | 36.36% |
-| jsx/comments/like-a-comment-in-jsx-text.js | 0/1 | 0.00% |
-| jsx/deprecated-jsx-bracket-same-line-option/jsx.js | 1/4 | 88.16% |
-| jsx/escape/nbsp.js | 0/1 | 70.00% |
-| jsx/fragment/fragment.js | 0/1 | 88.73% |
-| jsx/ignore/jsx_ignore.js | 0/1 | 68.52% |
-| jsx/ignore/spread.js | 0/1 | 42.11% |
-| jsx/jsx/array-iter.js | 0/4 | 26.56% |
-| jsx/jsx/arrow.js | 0/4 | 29.63% |
-| jsx/jsx/attr-comments.js | 0/4 | 87.10% |
-| jsx/jsx/await.js | 0/4 | 20.69% |
-| jsx/jsx/expression.js | 0/4 | 60.43% |
-| jsx/jsx/flow_fix_me.js | 0/4 | 0.00% |
-| jsx/jsx/html_escape.js | 2/4 | 66.67% |
-| jsx/jsx/hug.js | 0/4 | 47.06% |
-| jsx/jsx/logical-expression.js | 0/4 | 37.50% |
-| jsx/jsx/object-property.js | 0/4 | 52.00% |
-| jsx/jsx/open-break.js | 0/4 | 33.33% |
-| jsx/jsx/parens.js | 0/4 | 57.89% |
-| jsx/jsx/quotes.js | 0/4 | 64.29% |
-| jsx/jsx/regex.js | 0/4 | 50.00% |
-| jsx/jsx/return-statement.js | 0/4 | 74.47% |
-| jsx/jsx/spacing.js | 0/4 | 40.00% |
-| jsx/jsx/template-literal-in-attr.js | 0/4 | 33.33% |
-| jsx/newlines/test.js | 0/1 | 44.59% |
-| jsx/newlines/windows.js | 0/1 | 0.00% |
-| jsx/optional-chaining/optional-chaining.jsx | 0/1 | 33.33% |
-| jsx/parentheses/argument.js | 0/1 | 36.84% |
-| jsx/single-attribute-per-line/single-attribute-per-line.js | 0/2 | 56.60% |
-| jsx/split-attrs/test.js | 0/1 | 12.96% |
-| jsx/spread/attribute.js | 0/1 | 32.79% |
-| jsx/spread/child.js | 0/1 | 30.19% |
+| jsx/ignore/jsx_ignore.js | 0/1 | 92.59% |
+| jsx/ignore/spread.js | 0/1 | 75.68% |
 
 # Refused
 
@@ -247,7 +193,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| js/arrays/numbers-negative-comment-after-minus.js | 1/1 | 100.00% | check: input "380014" at 104 is output as "380014" at 144, which means "key:380014@argument\|0/14", not "num:380014e0@arg |
 | js/call/no-argument/no-arguments.js | 1/1 | 64.86% | check: input comment "// 108" is missing from the output |
 | js/chain-expression/tagged-template-literals.js | 1/1 | 61.90% | check: input "a" at 23 is output as "a" at 22, which means "a@object\|0/4", not "a@object\|0/5" |
 | js/class-comment/superclass.js | 1/1 | 68.24% | check: input comment "// comment 2" is missing from the output |
@@ -258,16 +203,15 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | js/comments/dangling_for.js | 2/2 | 28.57% | check: input comment "// comment" is missing from the output |
 | js/comments/empty-statements.js | 2/2 | 17.39% | check: output comment "// second // third // first" matches no input comment |
 | js/comments/return-statement-2.js | 2/2 | 53.13% | check: input "!" at 433 is output as "!" at 404, which means "!@operator\|-1/29", not "!@operator\|-1/27" |
-| js/comments/return-statement.js | 2/2 | 61.82% | check: input "<" at 47 is output as "<" at 39, which means "<@\|-1/7", not "<@\|-1/6" |
+| js/comments/return-statement.js | 2/2 | 69.64% | check: input "!" at 112 is output as "!" at 104, which means "!@operator\|-1/12", not "!@operator\|-1/11" |
 | js/comments/trailing_space.js | 2/2 | 100.00% | check: input "#!/there/is-space-here->         " at 0 is output as "#!/there/is-space-here->" at 0, which means "#!/ther |
 | js/comments-closure-typecast/issue-8045.js | 1/1 | 46.15% | check: input "fooBarBaz" at 446 is output as "fooBarBaz" at 434, which means "fooBarBaz@\|0/14", not "fooBarBaz@\|0/13" |
-| js/comments-closure-typecast/non-casts.js | 1/1 | 100.00% | check: input "3" at 42 is output as "3" at 41, which means "num:3e0@right\|1/12", not "key:3@right\|1/12" |
 | js/comments/between-head-and-body/between-head-and-body.js | 1/1 | 60.15% | check: input comment "// 14" is missing from the output |
 | js/comments/between-head-and-body/empty-statement.js | 1/1 | 51.35% | check: input comment "// 14" is missing from the output |
 | js/comments/between-head-and-body/non-block.js | 1/1 | 64.25% | check: input comment "// 14" is missing from the output |
 | js/decorators/comments.js | 1/1 | 93.94% | check: output comment "// B // C export // C" matches no input comment |
 | js/decorators-export/after_export.js | 1/1 | 76.92% | check: input "export" at 0 is output as "export" at 0, which means "export@\|0/2", not "export@\|-1/2" |
-| js/directives/issue-7346.js | 1/1 | 100.00% | check: input "'bar'" at 78 is output as "\"bar\"" at 79, which means "key:bar@\|0/7", not "key:bar@\|0/6" |
+| js/directives/issue-7346.js | 1/1 | 100.00% | check: input "'bar'" at 78 is output as "\"bar\"" at 79, which means "str:bar@\|0/7", not "str:bar@\|0/6" |
 | js/explicit-resource-management/valid-await-using-comments.js | 1/1 | 64.52% | check: input comment "/*8*/" is missing from the output |
 | js/for/continue-and-break-comment-1.js | 1/1 | 87.37% | check: input comment "/* comment */" is missing from the output |
 | js/for/continue-and-break-comment-2.js | 1/1 | 90.83% | check: input comment "// comment" is missing from the output |
@@ -284,12 +228,11 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | js/no-semi/debugger-statement.js | 2/2 | 86.67% | check: input comment "// 11" is missing from the output |
 | js/no-semi/return-statement.js | 2/2 | 88.24% | check: input comment "// 11" is missing from the output |
 | js/optional-chaining/comments.js | 1/1 | 71.91% | check: input comment "// Comment" is missing from the output |
-| js/quotes/strings.js | 2/2 | 100.00% | check: input "\"abc\"" at 497 is output as "\"abc\"" at 498, which means "key:abc@\|0/4", not "key:abc@\|0/3" |
+| js/quotes/strings.js | 2/2 | 100.00% | check: input "\"abc\"" at 497 is output as "\"abc\"" at 498, which means "str:abc@\|0/4", not "str:abc@\|0/3" |
 | js/return/comment.js | 1/1 | 47.19% | check: input comment "/* a */" is missing from the output |
 | js/unary-expression/comments.js | 1/1 | 16.74% | check: input "!" at 108 is output as "!" at 82, which means "!@operator\|-1/19", not "!@operator\|-1/18" |
 | js/v8_intrinsic/intrinsic_call.js | 1/1 | 45.45% | check: input "IsAsmWasmCode" at 138 is output as ")" at 112, which means ")@\|-1/13", not "IsAsmWasmCode@function\|0/14" |
 | jsx/comments/in-end-tag.js | 1/1 | 32.08% | check: input ">" at 503 is output as ">" at 503, which means ">@\|-1/71", not ">@\|-1/62" |
-| jsx/jsx/conditional-expression.js | 4/4 | 88.64% | check: input "\"dunno\"" at 3917 is output as "\"dunno\"" at 3920, which means "key:dunno@alternative\|2/62", not "str:du |
 
 # Excluded
 
