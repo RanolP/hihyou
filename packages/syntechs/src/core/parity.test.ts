@@ -6,6 +6,7 @@ import { language as python } from "../grammars/python/index.js";
 import { language as tsx } from "../grammars/tsx/index.js";
 import { language as typescript } from "../grammars/typescript/index.js";
 import type { GrammarName } from "./corpus.node.js";
+import { parse } from "./index.js";
 import type { Language } from "./language.js";
 import { checkParity } from "./parity.node.js";
 
@@ -128,5 +129,32 @@ for (const [grammar, [lang, texts]] of Object.entries(CASES) as [
           `${d.input.name} ${d.stage} at ${d.index}: ${d.expected[d.index]} vs ${d.actual[d.index]}${d.error ? ` threw ${d.error}` : ""}`,
       ),
     ).toEqual([]);
+  });
+
+  // fmt's `check` reads each non-blank character as part of exactly one token (a leaf, or a node holding text of
+  // its own); a node outside its parent, children out of order or overlapping, or text outside the root would
+  // let a formatter drop or repeat that text unseen.
+  test(`the ${grammar} tree nests every node inside its parent in order, under a root that holds every non-blank character`, () => {
+    for (const text of texts) {
+      const root = parse(lang, text).nodes[0];
+      const broken: string[] = [];
+      if (root) {
+        if (/\S/.test(text.slice(0, root.start) + text.slice(root.end)))
+          broken.push(`text outside the root ${root.start}-${root.end}`);
+        const stack = [root];
+        for (let n = stack.pop(); n; n = stack.pop()) {
+          let at = n.start;
+          for (const c of n.children) {
+            if (c.start < at || c.end > n.end || c.end < c.start)
+              broken.push(
+                `${c.kind} ${c.start}-${c.end} in ${n.kind} ${n.start}-${n.end} after ${at}`,
+              );
+            at = c.end;
+            stack.push(c);
+          }
+        }
+      } else if (/\S/.test(text)) broken.push("no root");
+      expect(broken, JSON.stringify(text)).toEqual([]);
+    }
   });
 }
