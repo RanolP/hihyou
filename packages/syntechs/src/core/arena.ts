@@ -88,13 +88,7 @@ export class TreeBuilder {
 
   /** `kind` is a public symbol id (aliases resolved); `flags` is any of `NAMED | MISSING | FIXED`. */
   leaf(kind: number, field: number, flags: number, start: number, end: number): void {
-    const source = this.source;
-    let lf = 0;
-    for (let i = this.lastEnd; i < start && lf < LF_MAX; i++) {
-      const c = source.charCodeAt(i);
-      // A CRLF counts once; a CR whose LF opens the token still ends a line in the gap.
-      if (c === 10 || (c === 13 && (i + 1 === start || source.charCodeAt(i + 1) !== 10))) lf++;
-    }
+    const lf = lineBreaks(this.source, this.lastEnd, start);
     this.lastEnd = end;
     const head = kind | (field << FIELD_SHIFT) | flags | (lf << LF_SHIFT);
     this.grow(LEAF_WORDS);
@@ -156,7 +150,9 @@ export class TreeBuilder {
       throw new RangeError(`a tree needs exactly one root, the builder holds ${this.kids.length}`);
     const root = this.kids[0] as number;
     this.data[root + PARENT] = root;
-    return new Tree(this.data, this.ords, this.count, root, errorChars, this.lang, this.source);
+    const source = this.source;
+    const trailingLf = lineBreaks(source, this.lastEnd, source.length);
+    return new Tree(this.data, this.ords, this.count, root, errorChars, trailingLf, this.lang, source);
   }
 
   private close(h: number): void {
@@ -178,6 +174,17 @@ export class TreeBuilder {
     next.set(this.data);
     this.data = next;
   }
+}
+
+/** Line breaks in `source` from `from` up to `to`, clamped to `LF_MAX`. */
+function lineBreaks(source: string, from: number, to: number): number {
+  let lf = 0;
+  for (let i = from; i < to && lf < LF_MAX; i++) {
+    const c = source.charCodeAt(i);
+    // A CRLF counts once; a CR whose LF opens the token still ends a line in the gap.
+    if (c === 10 || (c === 13 && (i + 1 === to || source.charCodeAt(i + 1) !== 10))) lf++;
+  }
+  return lf;
 }
 
 /** Whether the source span is exactly the name of public symbol `kind`, checked against the source. */
@@ -206,6 +213,8 @@ export class Tree {
     readonly root: number,
     /** Characters covered by ERROR nodes, for the caller's parse-error threshold. */
     readonly errorChars: number,
+    /** Newlines after the last leaf to the end of the source, clamped to 3: `lf` of the end of file. */
+    readonly trailingLf: number,
     private readonly lang: Language,
     private readonly source: string,
   ) {}
@@ -287,6 +296,17 @@ export class Tree {
     const head = this.data[n] as number;
     if ((head & FIXED) !== 0) return symbolName(this.lang, head & 0xffff);
     return this.source.slice(this.start(n), this.end(n));
+  }
+
+  /** Whether `b` starts exactly where `a` ends: no whitespace, comment or other text between them. */
+  adjoins(a: number, b: number): boolean {
+    return this.end(a) === this.start(b);
+  }
+
+  /** The source's line ending as prettier's guessEndOfLine reads it: after the first `\r`, else `\n`. */
+  lineEnding(): "\n" | "\r\n" | "\r" {
+    const cr = this.source.indexOf("\r");
+    return cr === -1 ? "\n" : this.source.charAt(cr + 1) === "\n" ? "\r\n" : "\r";
   }
 
   /** A leaf's text with comment and JSX-text whitespace runs collapsed to one space; "" for an inner node. */
