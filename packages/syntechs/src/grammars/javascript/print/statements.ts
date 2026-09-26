@@ -24,6 +24,7 @@ import {
 import type { FormatNode } from "../../../fmt/tree.js";
 import { expressionNeedsAsiProtection } from "./asi.js";
 import { printAssignment } from "./assignment.js";
+import { needsParens } from "./parens.js";
 import {
   anon,
   CF,
@@ -323,8 +324,16 @@ function parenthesized(
     ctx,
     pe.children.findLast((c) => !c.named && c.kind === ")"),
   );
-  const doc = inner ? layout(ctx.print(inner), inner) : [];
+  const doc = inner ? layout(withParens(ctx, inner), inner) : [];
   return ctx.withComments(pe, [open, doc, close]);
+}
+
+/** Prettier prints the condition through needsParens: `if ((a = b))` keeps a pair inside the statement's own. */
+function withParens(ctx: JsCtx, inner: FormatNode): Doc {
+  const printed = ctx.print(inner);
+  const expr = unparen(inner);
+  if (!needsParens(expr, ctx)) return printed;
+  return [synthetic(expr, "("), printed, synthetic(expr, ")")];
 }
 
 const conditionLayout =
