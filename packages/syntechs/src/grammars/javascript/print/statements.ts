@@ -48,6 +48,46 @@ import {
 
 const isEmpty = (n: FormatNode) => n.kind === "empty_statement";
 
+/** The statements whose `;` prettier's locEnd leaves out (loc.js): `foo\n\n;[]` ends at `foo`. */
+const SEMI_ENDED = new Set([
+  "expression_statement",
+  "import_statement",
+  "export_statement",
+  "return_statement",
+  "throw_statement",
+  "do_statement",
+  "break_statement",
+  "continue_statement",
+  "debugger_statement",
+  "variable_declaration",
+  "lexical_declaration",
+  "using_declaration",
+]);
+
+const BODY_ENDED = new Set([
+  "for_statement",
+  "for_in_statement",
+  "labeled_statement",
+  "with_statement",
+  "while_statement",
+]);
+
+/**
+ * Prettier's locEnd for a statement: where its content ends, before a `;` and the comments ahead of it. A
+ * compound statement ends where its last body does.
+ */
+export function contentEnd(n: FormatNode): number {
+  let body: FormatNode | undefined;
+  if (n.kind === "if_statement") {
+    const alt = field(n, "alternative");
+    body = alt ? first(alt) : field(n, "consequence");
+  } else if (BODY_ENDED.has(n.kind)) body = field(n, "body");
+  if (body) return contentEnd(body);
+  if (!SEMI_ENDED.has(n.kind)) return n.end;
+  const content = n.children.findLast((c) => c.kind !== ";" && !isComment(c));
+  return content?.end ?? n.end;
+}
+
 /**
  * Prettier's printStatementSequence: each statement on its own line, a blank line kept after one. An empty
  * statement prints nothing, yet is still printed so that its `;` is accounted for.
@@ -62,9 +102,18 @@ export function statementSequence(
     parts.push(ctx.print(s));
     if (isEmpty(s) || s === last) continue;
     parts.push(hardline);
-    if (isNextLineEmpty(ctx.source, s.end)) parts.push(hardline);
+    if (isNextLineEmptyAfter(ctx, s)) parts.push(hardline);
   }
   return parts;
+}
+
+/** Prettier's isNextLineEmpty for a node: a blank line after its content, or after its `;`. */
+function isNextLineEmptyAfter(ctx: JsCtx, n: FormatNode): boolean {
+  const end = contentEnd(n);
+  return (
+    isNextLineEmpty(ctx.source, end) ||
+    (end !== n.end && isNextLineEmpty(ctx.source, n.end))
+  );
 }
 
 /** Prettier's printBlockBody: `undefined` when the block holds no statement and no comment. */
