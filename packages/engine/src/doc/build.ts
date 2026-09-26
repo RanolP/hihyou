@@ -12,13 +12,8 @@ import {
 } from "syntechs/diff";
 import { type CrossEdit, crossFileMoves } from "../match/cross-file.js";
 import { type LanguageId, languageForPath } from "../parse/languages.js";
-import { type SyntaxParser, withNodes } from "../parse/tree.js";
-import {
-  type ChangedFile,
-  type FileSource,
-  isBinary,
-  sameBytes,
-} from "../source/file-source.js";
+import type { SyntaxParser } from "../parse/tree.js";
+import { type ChangedFile, type FileSource, isBinary, sameBytes } from "../source/file-source.js";
 import { foldReason, producedBy } from "./fold.js";
 import { groupEdits } from "./groups.js";
 import { riskOf, signalsOf } from "./risk.js";
@@ -52,10 +47,7 @@ const concurrency = 8;
  * A file that cannot be read or diffed becomes an `error` entry naming the cause, and the rest still build.
  * Rejects only when the list of changes itself cannot be read.
  */
-export async function buildReviewDoc(
-  source: FileSource,
-  opts: BuildOptions,
-): Promise<ReviewDoc> {
+export async function buildReviewDoc(source: FileSource, opts: BuildOptions): Promise<ReviewDoc> {
   const changes = await source.listChanges();
   const analyses: Analysis[] = Array.from({ length: changes.length });
   // One iterator shared by every worker hands each file to exactly one of them.
@@ -86,11 +78,12 @@ export async function buildReviewDoc(
     opts.match ?? defaultMatchOptions,
   );
   const located: CrossEdit[][] = analyses.map((a, i) => {
-    if (!a.mapping)
-      return (a.raw ?? []).map((e) => ({ edit: withNodes(e), from: i, to: i }));
+    if (!a.mapping) return (a.raw ?? []).map((e) => ({ edit: e, from: i, to: i }));
     const script = editScript(a.mapping, cross.claimed[i]);
     return script.edits.map((e) => ({
-      edit: withNodes(e, script.a, script.b),
+      edit: e,
+      ta: script.a,
+      tb: script.b,
       from: i,
       to: i,
     }));
@@ -106,7 +99,7 @@ export async function buildReviewDoc(
     const risk = riskOf(
       file.diffMode === "error"
         ? [["error"]]
-        : (located[i] ?? []).map((l) => signalsOf(l.edit)),
+        : (located[i] ?? []).map((l) => signalsOf(l.edit, l.ta, l.tb)),
     );
     return { ...file, ...(fold && { fold }), edits, risk };
   });
@@ -154,14 +147,11 @@ async function analyze(
     ...(change.oldPath !== undefined && { oldPath: change.oldPath }),
     status: change.status,
   };
-  if (change.submodule)
-    return { file: { ...file, language: null, diffMode: "submodule" } };
+  if (change.submodule) return { file: { ...file, language: null, diffMode: "submodule" } };
   const language: LanguageId | null = languageForPath(change.path) ?? null;
   const empty = new Uint8Array();
   const [oldBytes, newBytes] = await Promise.all([
-    change.status === "added"
-      ? empty
-      : source.read("base", change.oldPath ?? change.path),
+    change.status === "added" ? empty : source.read("base", change.oldPath ?? change.path),
     change.status === "deleted" ? empty : source.read("head", change.path),
   ]);
   if (isBinary(oldBytes) || isBinary(newBytes))
@@ -187,8 +177,7 @@ async function analyze(
   });
 
   if (!language) return line("unsupported-language");
-  if (Math.max(oldText.length, newText.length) > maxChars)
-    return line("too-large");
+  if (Math.max(oldText.length, newText.length) > maxChars) return line("too-large");
   const [a, b] = [
     await opts.parser.parse(language, oldText),
     await opts.parser.parse(language, newText),
@@ -210,10 +199,7 @@ async function analyze(
 }
 
 /** Both sides as UTF-8 text, or undefined when they differ and either is not valid UTF-8. */
-function decode(
-  oldBytes: Uint8Array,
-  newBytes: Uint8Array,
-): [string, string] | undefined {
+function decode(oldBytes: Uint8Array, newBytes: Uint8Array): [string, string] | undefined {
   try {
     const strict = new TextDecoder("utf-8", { fatal: true });
     return [strict.decode(oldBytes), strict.decode(newBytes)];
@@ -247,11 +233,7 @@ function toDocEdits(
   const ids = new Map<CrossEdit, number>();
   const edits = located.map((list, i) => {
     const here = ({ edit, to }: CrossEdit) =>
-      "new" in edit && to === i
-        ? edit.new.start
-        : "old" in edit
-          ? edit.old.start
-          : 0;
+      "new" in edit && to === i ? edit.new.start : "old" in edit ? edit.old.start : 0;
     return list
       .toSorted((p, q) => here(p) - here(q))
       .map((l): Edit => {
@@ -275,8 +257,7 @@ function toDocEdits(
               old: range(from, 0, e.old),
               new: range(to, 1, e.new),
               ...common,
-              ...(from !== i &&
-                fromFile && { from: fromFile.oldPath ?? fromFile.path }),
+              ...(from !== i && fromFile && { from: fromFile.oldPath ?? fromFile.path }),
               ...(to !== i && toFile && { to: toFile.path }),
             };
           }
@@ -288,8 +269,7 @@ function toDocEdits(
 
 function positions(text: string): (offset: number) => Position {
   const starts = [0];
-  for (let i = text.indexOf("\n"); i !== -1; i = text.indexOf("\n", i + 1))
-    starts.push(i + 1);
+  for (let i = text.indexOf("\n"); i !== -1; i = text.indexOf("\n", i + 1)) starts.push(i + 1);
   return (offset) => {
     // The last line start at or before `offset`.
     let lo = 0;

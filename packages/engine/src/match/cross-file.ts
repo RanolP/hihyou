@@ -9,20 +9,20 @@ import {
   type MatchOptions,
   match,
 } from "syntechs/diff";
-import {
-  type NodeEdit,
-  nodeOf,
-  type SyntaxNode,
-  withNodes,
-} from "../parse/tree.js";
+import { NO_NODE } from "syntechs/core";
+import type { RawEdit } from "syntechs/diff";
+import type { Tree } from "../parse/tree.js";
 
 /**
  * An edit whose `old` lies in file `from`'s base text and whose `new` in file `to`'s head text,
  * by index into the list given to `crossFileMoves`. An insert has only `to`, a delete only `from`.
  * `whole` marks the move of a declaration itself, as against the edits made inside it on the way.
+ * The edit's `a` is a node of `ta`, its `b` of `tb`; a line-mode edit has neither.
  */
 export type CrossEdit = {
-  edit: NodeEdit;
+  edit: RawEdit;
+  ta?: Tree;
+  tb?: Tree;
   from: number;
   to: number;
   whole?: true;
@@ -49,9 +49,7 @@ export function crossFileMoves(
   opts: MatchOptions = defaultMatchOptions,
 ): { claimed: (Claimed | undefined)[]; edits: CrossEdit[] } {
   const intern = new Map<string, number>();
-  const iso = mappings.map(
-    (m) => m && { a: isoIds(m.a, intern), b: isoIds(m.b, intern) },
-  );
+  const iso = mappings.map((m) => m && { a: isoIds(m.a, intern), b: isoIds(m.b, intern) });
   const claimed = mappings.map(
     (m) =>
       m && {
@@ -61,8 +59,14 @@ export function crossFileMoves(
   );
   const edits: CrossEdit[] = [];
 
-  /** `i` is `n`'s index in its side, `size` its subtree's node count. */
-  type Candidate = { file: number; i: number; size: number; n: SyntaxNode };
+  /** `i` is `n`'s index in its side, `size` its subtree's node count, `tree` the tree `n` is a node of. */
+  type Candidate = {
+    file: number;
+    i: number;
+    size: number;
+    n: number;
+    tree: Tree;
+  };
   const candidates = (side: "a" | "b"): Candidate[] =>
     mappings
       .flatMap((m, file) => {
@@ -73,16 +77,15 @@ export function crossFileMoves(
         for (let i = 1; i < s.nodes.length; i++) {
           const size = s.size[i] as number;
           if (size < minMoveSize || table[i] !== -1) continue;
-          const n = nodeOf(s.tree, s.node(i));
-          if (n.named && !inImport(n)) out.push({ file, i, size, n });
+          const n = s.node(i);
+          if (s.tree.named(n) && !inImport(s.tree, n)) out.push({ file, i, size, n, tree: s.tree });
         }
         return out;
       })
       .sort((p, q) => q.size - p.size);
   const fromA = candidates("a");
   const intoB = candidates("b");
-  const isClaimed = (side: "a" | "b", c: Candidate) =>
-    claimed[c.file]?.[side][c.i] === 1;
+  const isClaimed = (side: "a" | "b", c: Candidate) => claimed[c.file]?.[side][c.i] === 1;
 
   const claim = (x: Candidate, y: Candidate) => {
     for (const [side, c] of [
@@ -109,12 +112,14 @@ export function crossFileMoves(
     whole: true,
     edit: {
       kind: "move",
-      old: { start: x.n.start, end: x.n.end },
-      new: { start: y.n.start, end: y.n.end },
-      node: x.n.kind,
+      old: { start: x.tree.start(x.n), end: x.tree.end(x.n) },
+      new: { start: y.tree.start(y.n), end: y.tree.end(y.n) },
+      node: x.tree.kindName(x.n),
       a: x.n,
       b: y.n,
     },
+    ta: x.tree,
+    tb: y.tree,
   });
 
   // Identical subtrees.
@@ -129,9 +134,7 @@ export function crossFileMoves(
   const identical = (x: Candidate) => {
     const id = iso[x.file]?.a[x.i];
     if (id === undefined) return false;
-    const y = byIso
-      .get(id)
-      ?.find((y) => y.file !== x.file && !isClaimed("b", y));
+    const y = byIso.get(id)?.find((y) => y.file !== x.file && !isClaimed("b", y));
     if (!y) return false;
     claim(x, y);
     edits.push(move(x, y));
@@ -142,9 +145,9 @@ export function crossFileMoves(
   const byName = (cs: Candidate[]) => {
     const groups = new Map<string, Candidate[]>();
     for (const c of cs) {
-      const name = nameOf(c.n);
+      const name = nameOf(c.tree, c.n);
       if (name === undefined) continue;
-      const key = `${c.n.kind}\0${name}`;
+      const key = `${c.tree.kindName(c.n)}\0${name}`;
       const list = groups.get(key);
       if (list) list.push(c);
       else groups.set(key, [c]);
@@ -154,9 +157,9 @@ export function crossFileMoves(
   const namedA = byName(fromA);
   const namedB = byName(intoB);
   const sameName = (x: Candidate) => {
-    const name = nameOf(x.n);
+    const name = nameOf(x.tree, x.n);
     if (name === undefined) return;
-    const key = `${x.n.kind}\0${name}`;
+    const key = `${x.tree.kindName(x.n)}\0${name}`;
     const xs = namedA.get(key)?.filter((c) => !isClaimed("a", c)) ?? [];
     const ys = namedB.get(key)?.filter((c) => !isClaimed("b", c)) ?? [];
     const [y] = ys;
@@ -168,9 +171,7 @@ export function crossFileMoves(
     let inner: EditScript;
     try {
       // Views of the two subtrees, so the inner edits name nodes of the real trees, ancestors reachable.
-      inner = editScript(
-        match(ma.a.sub(x.n.handle), mb.b.sub(y.n.handle), opts),
-      );
+      inner = editScript(match(ma.a.sub(x.n), mb.b.sub(y.n), opts));
     } catch (error) {
       if (error instanceof MatchBudgetExceeded) return;
       throw error;
@@ -181,7 +182,9 @@ export function crossFileMoves(
       edits.push({
         from: x.file,
         to: y.file,
-        edit: withNodes(e, inner.a, inner.b),
+        edit: e,
+        ta: inner.a,
+        tb: inner.b,
       });
   };
 
@@ -190,9 +193,9 @@ export function crossFileMoves(
   return { claimed, edits };
 }
 
-function inImport(n: SyntaxNode): boolean {
-  for (let p: SyntaxNode | undefined = n; p; p = p.parent)
-    if (importKinds.test(p.kind)) return true;
+function inImport(tree: Tree, n: number): boolean {
+  for (let p = n; p !== NO_NODE; p = tree.parent(p))
+    if (importKinds.test(tree.kindName(p))) return true;
   return false;
 }
 
@@ -200,12 +203,18 @@ function inImport(n: SyntaxNode): boolean {
  * The name a declaration introduces: its `name` field, through an `export` (default or not), a Python
  * decorator, or a single `const x = ...`.
  */
-export function nameOf(n: SyntaxNode): string | undefined {
-  const named = n.children.filter((c) => c.named);
-  const name = named.find((c) => c.field === "name");
-  if (name) return name.children.length === 0 ? name.label : undefined;
+export function nameOf(tree: Tree, n: number): string | undefined {
+  const named: number[] = [];
+  for (let i = 0, count = tree.count(n); i < count; i++) {
+    const c = tree.child(n, i);
+    if (tree.named(c)) named.push(c);
+  }
+  const name = named.find((c) => tree.fieldName(c) === "name");
+  if (name !== undefined) return tree.count(name) === 0 ? tree.label(name) : undefined;
   const inner =
-    named.find((c) => c.field === "declaration" || c.field === "definition") ??
-    (named.length === 1 ? named[0] : undefined);
-  return inner ? nameOf(inner) : undefined;
+    named.find((c) => {
+      const field = tree.fieldName(c);
+      return field === "declaration" || field === "definition";
+    }) ?? (named.length === 1 ? named[0] : undefined);
+  return inner !== undefined ? nameOf(tree, inner) : undefined;
 }
