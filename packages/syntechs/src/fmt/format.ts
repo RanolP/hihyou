@@ -59,6 +59,7 @@ export function format<O>(
       source,
       isComment,
       language.handleComment,
+      resolved,
     );
     const commentToken = (c: FormatNode): Doc => {
       if (language.printComment) return language.printComment(c, ctx);

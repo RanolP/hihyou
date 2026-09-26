@@ -17,12 +17,15 @@ export interface Comments {
 export type Placement = "ownLine" | "endOfLine" | "remaining";
 
 /** A comment with the neighbours the core found for it, as prettier's handleComments hooks receive it. */
-export interface CommentContext {
+export interface CommentContext<O = unknown> {
   readonly comment: FormatNode;
+  /** The comment's own text. */
+  readonly text: string;
   readonly placement: Placement;
   readonly enclosing: FormatNode;
   readonly preceding: FormatNode | undefined;
   readonly following: FormatNode | undefined;
+  readonly options: O;
 }
 
 /** A node to attach a comment to, and how it prints there. */
@@ -36,18 +39,21 @@ export interface CommentTarget {
  * handlers move a comment (a union member's comment trails the member before it); `undefined` keeps the
  * core's.
  */
-export type CommentHandler = (c: CommentContext) => CommentTarget | undefined;
+export type CommentHandler<O = unknown> = (
+  c: CommentContext<O>,
+) => CommentTarget | undefined;
 
 /**
  * Attaches every comment to a neighbouring node the way prettier's `attach` does (main/comments/attach.js),
  * with `handle` standing for its language-specific handlers. The parser already put each comment among the children of the
  * smallest node enclosing it, so the neighbours are that node's items on either side.
  */
-export function attachComments(
+export function attachComments<O>(
   root: FormatNode,
   text: string,
   isComment: (n: FormatNode) => boolean,
-  handle?: CommentHandler,
+  handle?: CommentHandler<O>,
+  options?: O,
 ): Comments {
   const attached = new Map<FormatNode, Attached>();
   const dangling = new Map<FormatNode, FormatNode[]>();
@@ -164,6 +170,8 @@ export function attachComments(
           : "remaining";
       const target = handle?.({
         comment,
+        text: text.slice(comment.start, comment.end),
+        options: options as O,
         placement,
         enclosing: node,
         preceding,

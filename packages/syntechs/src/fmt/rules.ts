@@ -113,7 +113,7 @@ export interface Language<O = unknown> {
   readonly normalize: Normalize;
   readonly layoutBlind: boolean;
   readonly printComment?: (comment: FormatNode, ctx: Ctx<O>) => Doc;
-  readonly handleComment?: CommentHandler;
+  readonly handleComment?: CommentHandler<O>;
   readonly printsOwnComments?: (node: FormatNode, ctx: Ctx<O>) => boolean;
 }
 
@@ -157,7 +157,7 @@ export interface LanguageSpec<G extends Grammar, O> {
    */
   readonly printComment?: (comment: FormatNode, ctx: Ctx<O>) => Doc;
   /** Where a comment attaches when not where the core would put it (see `CommentHandler`). */
-  readonly handleComment?: CommentHandler;
+  readonly handleComment?: CommentHandler<O>;
   /**
    * Whether `node`'s rule prints the node's comments itself, through `ctx.withComments`, so they can go inside
    * something the rule wraps around them (prettier's willPrintOwnComments: a JSX element's parentheses).
