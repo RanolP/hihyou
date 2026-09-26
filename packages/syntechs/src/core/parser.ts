@@ -30,9 +30,16 @@ import {
   cloneLeaf,
   compareSubtrees,
   EMPTY_STATE,
+  EXTRA,
   errorCost,
   externalScannerState,
   externalStateEq,
+  FRAGILE_LEFT,
+  FRAGILE_RIGHT,
+  flag,
+  HAS_EXTERNAL_SCANNER_STATE_CHANGE,
+  HAS_EXTERNAL_TOKENS,
+  IS_KEYWORD,
   lastExternalToken,
   leafParseState,
   leafSymbol,
@@ -44,6 +51,7 @@ import {
   nodeDynamicPrecedence,
   removeTrailingExtras,
   type Subtree,
+  setFlag,
   setSymbol,
   totalRows,
   totalSize,
@@ -222,7 +230,7 @@ class Parser {
       lang.lexState[leafState] === currentLexState &&
       lang.externalLexState[leafState] === currentExternal &&
       (leafSym !== lang.keywordCaptureToken ||
-        (!tree.isKeyword && tree.parseState === state))
+        (!flag(tree, IS_KEYWORD) && tree.parseState === state))
     ) {
       return true;
     }
@@ -366,7 +374,7 @@ class Parser {
     );
     if (foundExternalToken) {
       result.externalState = externalState;
-      result.hasExternalScannerStateChange = externalStateChanged;
+      setFlag(result, HAS_EXTERNAL_SCANNER_STATE_CHANGE, externalStateChanged);
     }
     return result;
   }
@@ -415,12 +423,12 @@ class Parser {
   ): void {
     const isLeaf = lookahead.children.length === 0;
     let subtree = lookahead;
-    if (extra !== lookahead.extra && isLeaf) {
+    if (extra !== flag(lookahead, EXTRA) && isLeaf) {
       subtree = cloneLeaf(lookahead);
-      subtree.extra = extra;
+      setFlag(subtree, EXTRA, extra);
     }
     this.stack.push(version, subtree, !isLeaf, state);
-    if (subtree.hasExternalTokens)
+    if (flag(subtree, HAS_EXTERNAL_TOKENS))
       this.stack.setLastExternalToken(version, lastExternalToken(subtree));
   }
 
@@ -470,10 +478,9 @@ class Parser {
       }
       const state = stack.state(sliceVersion);
       const next = nextState(lang, state, symbol);
-      if (endOfNonTerminalExtra && next === state) parent.extra = true;
+      if (endOfNonTerminalExtra && next === state) parent.flags |= EXTRA;
       if (isFragile || pop.length > 1 || initialVersionCount > 1) {
-        parent.fragileLeft = true;
-        parent.fragileRight = true;
+        parent.flags |= FRAGILE_LEFT | FRAGILE_RIGHT;
         parent.parseState = STATE_NONE;
       } else {
         parent.parseState = state;
@@ -504,7 +511,7 @@ class Parser {
       let root: Subtree | null = null;
       for (let j = trees.length - 1; j >= 0; j--) {
         const tree = trees[j] as Subtree;
-        if (!tree.extra) {
+        if (!flag(tree, EXTRA)) {
           trees.splice(j, 1, ...tree.children);
           root = newNode(this.lang, tree.symbol, trees, tree.productionId);
           break;
@@ -725,7 +732,7 @@ class Parser {
       stack.halt(version);
       return;
     }
-    if (didRecover && lookahead.hasExternalScannerStateChange) {
+    if (didRecover && flag(lookahead, HAS_EXTERNAL_SCANNER_STATE_CHANGE)) {
       stack.halt(version);
       return;
     }
@@ -749,7 +756,7 @@ class Parser {
       ((lang.actB[entry + n] as number) & 1) !== 0
     ) {
       la = cloneLeaf(la);
-      la.extra = true;
+      la.flags |= EXTRA;
     }
 
     let errorRepeat = newNode(lang, SYM_ERROR_REPEAT, [la], 0);
@@ -766,7 +773,7 @@ class Parser {
     }
 
     stack.push(version, errorRepeat, false, ERROR_STATE);
-    if (la.hasExternalTokens)
+    if (flag(la, HAS_EXTERNAL_TOKENS))
       stack.setLastExternalToken(version, lastExternalToken(la));
   }
 
@@ -898,7 +905,8 @@ class Parser {
       }
 
       if (
-        lookahead?.isKeyword &&
+        lookahead !== null &&
+        flag(lookahead, IS_KEYWORD) &&
         lookahead.symbol !== lang.keywordCaptureToken &&
         !isReservedWord(lang, state, lookahead.symbol)
       ) {
@@ -942,7 +950,8 @@ class Parser {
         for (const child of parent.children) {
           pending = child.children.length > 0;
           if (child.symbol === SYM_ERROR) state = ERROR_STATE;
-          else if (!child.extra) state = nextState(lang, state, child.symbol);
+          else if (!flag(child, EXTRA))
+            state = nextState(lang, state, child.symbol);
           stack.push(slice.version, child, pending, state);
         }
         for (let j = 1; j < slice.subtrees.length; j++)

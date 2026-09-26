@@ -79,7 +79,10 @@ export function check(
     return false;
   };
 
-  if (layoutBlind && printsInputAsIs(root, source, placed, isPrinted, isComment))
+  if (
+    layoutBlind &&
+    printsInputAsIs(root, source, placed, isPrinted, isComment)
+  )
     return coverage(source, printed, []);
   cursor = 0;
 

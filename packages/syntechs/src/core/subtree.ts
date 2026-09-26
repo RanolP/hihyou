@@ -23,110 +23,83 @@ export const COST_PER_SKIPPED_CHAR = 1;
 const NO_CHILDREN: Subtree[] = [];
 export const EMPTY_STATE = new Uint8Array(0);
 
-const VISIBLE = 1;
-const NAMED = 2;
-const EXTRA = 4;
-const FRAGILE_LEFT = 8;
-const FRAGILE_RIGHT = 16;
-const IS_KEYWORD = 32;
-const IS_MISSING = 64;
-const HAS_EXTERNAL_TOKENS = 128;
-const HAS_EXTERNAL_SCANNER_STATE_CHANGE = 256;
+export const VISIBLE = 1;
+export const NAMED = 2;
+export const EXTRA = 4;
+export const FRAGILE_LEFT = 8;
+export const FRAGILE_RIGHT = 16;
+export const IS_KEYWORD = 32;
+export const IS_MISSING = 64;
+export const HAS_EXTERNAL_TOKENS = 128;
+export const HAS_EXTERNAL_SCANNER_STATE_CHANGE = 256;
 
-// The booleans share one small-integer field behind accessors: a parse allocates a subtree per token and per
+// The booleans share one small-integer field, read with `flag`: a parse allocates a subtree per token and per
 // reduction, and nine fields of their own made each one about half again as large.
-export class Subtree {
+export interface Subtree {
   symbol: number;
   parseState: number;
-  padding = 0;
-  paddingRows = 0;
-  size = 0;
-  sizeRows = 0;
+  padding: number;
+  paddingRows: number;
+  size: number;
+  sizeRows: number;
   /** Stored cost; read it through `errorCost()`, which prices missing leaves. */
-  cost = 0;
-  children: Subtree[] = NO_CHILDREN;
+  cost: number;
+  children: Subtree[];
   flags: number;
-  externalState: Uint8Array = EMPTY_STATE;
-  productionId = 0;
-  dynamicPrecedence = 0;
-  visibleDescendantCount = 0;
-  visibleChildCount = 0;
-  firstLeafSymbol = 0;
-  firstLeafParseState = 0;
+  externalState: Uint8Array;
+  productionId: number;
+  dynamicPrecedence: number;
+  visibleDescendantCount: number;
+  visibleChildCount: number;
+  firstLeafSymbol: number;
+  firstLeafParseState: number;
+}
 
-  constructor(
-    symbol: number,
-    parseState: number,
-    visible: boolean,
-    named: boolean,
-  ) {
-    this.symbol = symbol;
-    this.parseState = parseState;
-    this.flags = (visible ? VISIBLE : 0) | (named ? NAMED : 0);
-  }
+// Every subtree comes from this one object literal rather than a class: V8 learns that the objects of a
+// literal's allocation site outlive the young generation and then allocates them old, which it does not do
+// for `new`, and a tree is long-lived. Copying survivors out of the young generation was most of the GC time.
+function subtree(symbol: number, parseState: number, flags: number): Subtree {
+  return {
+    symbol,
+    parseState,
+    padding: 0,
+    paddingRows: 0,
+    size: 0,
+    sizeRows: 0,
+    cost: 0,
+    children: NO_CHILDREN,
+    flags,
+    externalState: EMPTY_STATE,
+    productionId: 0,
+    dynamicPrecedence: 0,
+    visibleDescendantCount: 0,
+    visibleChildCount: 0,
+    firstLeafSymbol: 0,
+    firstLeafParseState: 0,
+  };
+}
 
-  private setFlag(bit: number, on: boolean): void {
-    this.flags = on ? this.flags | bit : this.flags & ~bit;
-  }
+export function flag(t: Subtree, bit: number): boolean {
+  return (t.flags & bit) !== 0;
+}
 
-  get visible(): boolean {
-    return (this.flags & VISIBLE) !== 0;
-  }
-  set visible(v: boolean) {
-    this.setFlag(VISIBLE, v);
-  }
-  get named(): boolean {
-    return (this.flags & NAMED) !== 0;
-  }
-  set named(v: boolean) {
-    this.setFlag(NAMED, v);
-  }
-  get extra(): boolean {
-    return (this.flags & EXTRA) !== 0;
-  }
-  set extra(v: boolean) {
-    this.setFlag(EXTRA, v);
-  }
-  get fragileLeft(): boolean {
-    return (this.flags & FRAGILE_LEFT) !== 0;
-  }
-  set fragileLeft(v: boolean) {
-    this.setFlag(FRAGILE_LEFT, v);
-  }
-  get fragileRight(): boolean {
-    return (this.flags & FRAGILE_RIGHT) !== 0;
-  }
-  set fragileRight(v: boolean) {
-    this.setFlag(FRAGILE_RIGHT, v);
-  }
-  get isKeyword(): boolean {
-    return (this.flags & IS_KEYWORD) !== 0;
-  }
-  set isKeyword(v: boolean) {
-    this.setFlag(IS_KEYWORD, v);
-  }
-  get isMissing(): boolean {
-    return (this.flags & IS_MISSING) !== 0;
-  }
-  set isMissing(v: boolean) {
-    this.setFlag(IS_MISSING, v);
-  }
-  get hasExternalTokens(): boolean {
-    return (this.flags & HAS_EXTERNAL_TOKENS) !== 0;
-  }
-  set hasExternalTokens(v: boolean) {
-    this.setFlag(HAS_EXTERNAL_TOKENS, v);
-  }
-  get hasExternalScannerStateChange(): boolean {
-    return (this.flags & HAS_EXTERNAL_SCANNER_STATE_CHANGE) !== 0;
-  }
-  set hasExternalScannerStateChange(v: boolean) {
-    this.setFlag(HAS_EXTERNAL_SCANNER_STATE_CHANGE, v);
-  }
+export function setFlag(t: Subtree, bit: number, on: boolean): void {
+  t.flags = on ? t.flags | bit : t.flags & ~bit;
+}
+
+/** VISIBLE and NAMED as a symbol's metadata gives them. */
+function symbolBits(lang: Language, symbol: number): number {
+  const flags = symbolFlags(lang, symbol);
+  return (
+    ((flags & FLAG_VISIBLE) !== 0 ? VISIBLE : 0) |
+    ((flags & FLAG_NAMED) !== 0 ? NAMED : 0)
+  );
 }
 
 export function errorCost(t: Subtree): number {
-  return t.isMissing ? COST_PER_MISSING_TREE + COST_PER_RECOVERY : t.cost;
+  return flag(t, IS_MISSING)
+    ? COST_PER_MISSING_TREE + COST_PER_RECOVERY
+    : t.cost;
 }
 
 export function leafSymbol(t: Subtree): number {
@@ -168,20 +141,18 @@ export function newLeaf(
   hasExternalTokens: boolean,
   isKeyword: boolean,
 ): Subtree {
-  const flags = symbolFlags(lang, symbol);
-  const t = new Subtree(
+  const t = subtree(
     symbol,
     parseState,
-    (flags & FLAG_VISIBLE) !== 0,
-    (flags & FLAG_NAMED) !== 0,
+    symbolBits(lang, symbol) |
+      (symbol === 0 ? EXTRA : 0) |
+      (hasExternalTokens ? HAS_EXTERNAL_TOKENS : 0) |
+      (isKeyword ? IS_KEYWORD : 0),
   );
   t.padding = padding;
   t.paddingRows = paddingRows;
   t.size = size;
   t.sizeRows = sizeRows;
-  t.extra = symbol === 0;
-  t.hasExternalTokens = hasExternalTokens;
-  t.isKeyword = isKeyword;
   return t;
 }
 
@@ -204,8 +175,7 @@ export function newError(
     false,
     false,
   );
-  t.fragileLeft = true;
-  t.fragileRight = true;
+  t.flags |= FRAGILE_LEFT | FRAGILE_RIGHT;
   return t;
 }
 
@@ -227,20 +197,19 @@ export function newMissingLeaf(
     false,
     false,
   );
-  t.isMissing = true;
+  t.flags |= IS_MISSING;
   return t;
 }
 
 /** `ts_subtree_make_mut` for a leaf: a fresh copy the caller may change. */
 export function cloneLeaf(t: Subtree): Subtree {
-  const c = new Subtree(t.symbol, t.parseState, t.visible, t.named);
+  const c = subtree(t.symbol, t.parseState, t.flags);
   c.padding = t.padding;
   c.paddingRows = t.paddingRows;
   c.size = t.size;
   c.sizeRows = t.sizeRows;
   c.cost = t.cost;
   c.children = t.children;
-  c.flags = t.flags;
   c.externalState = t.externalState;
   c.productionId = t.productionId;
   c.dynamicPrecedence = t.dynamicPrecedence;
@@ -252,18 +221,15 @@ export function cloneLeaf(t: Subtree): Subtree {
 }
 
 export function setSymbol(lang: Language, t: Subtree, symbol: number): void {
-  const flags = symbolFlags(lang, symbol);
   t.symbol = symbol;
-  t.named = (flags & FLAG_NAMED) !== 0;
-  t.visible = (flags & FLAG_VISIBLE) !== 0;
+  t.flags = (t.flags & ~(VISIBLE | NAMED)) | symbolBits(lang, symbol);
 }
 
 export function summarizeChildren(lang: Language, self: Subtree): void {
   self.visibleChildCount = 0;
   self.cost = 0;
   self.visibleDescendantCount = 0;
-  self.hasExternalTokens = false;
-  self.hasExternalScannerStateChange = false;
+  self.flags &= ~(HAS_EXTERNAL_TOKENS | HAS_EXTERNAL_SCANNER_STATE_CHANGE);
   self.dynamicPrecedence = 0;
   let structuralIndex = 0;
   const productionId = self.productionId;
@@ -273,8 +239,9 @@ export function summarizeChildren(lang: Language, self: Subtree): void {
   const n = children.length;
   for (let i = 0; i < n; i++) {
     const child = children[i] as Subtree;
-    if (child.hasExternalScannerStateChange)
-      self.hasExternalScannerStateChange = true;
+    const childFlags = child.flags;
+    if ((childFlags & HAS_EXTERNAL_SCANNER_STATE_CHANGE) !== 0)
+      self.flags |= HAS_EXTERNAL_SCANNER_STATE_CHANGE;
     if (i === 0) {
       self.padding = child.padding;
       self.paddingRows = child.paddingRows;
@@ -293,10 +260,10 @@ export function summarizeChildren(lang: Language, self: Subtree): void {
       self.cost += errorCost(child);
       if (
         isErrorParent &&
-        !child.extra &&
+        (childFlags & EXTRA) === 0 &&
         !(child.symbol === SYM_ERROR && grandchildCount === 0)
       ) {
-        if (child.visible) self.cost += COST_PER_SKIPPED_TREE;
+        if ((childFlags & VISIBLE) !== 0) self.cost += COST_PER_SKIPPED_TREE;
         else if (grandchildCount > 0)
           self.cost += COST_PER_SKIPPED_TREE * child.visibleChildCount;
       }
@@ -306,25 +273,25 @@ export function summarizeChildren(lang: Language, self: Subtree): void {
       self.visibleDescendantCount += child.visibleDescendantCount;
     }
     if (
-      !child.extra &&
+      (childFlags & EXTRA) === 0 &&
       child.symbol !== 0 &&
       aliasAt(lang, productionId, structuralIndex) !== 0
     ) {
       self.visibleDescendantCount++;
       self.visibleChildCount++;
-    } else if (child.visible) {
+    } else if ((childFlags & VISIBLE) !== 0) {
       self.visibleDescendantCount++;
       self.visibleChildCount++;
     } else if (grandchildCount > 0) {
       self.visibleChildCount += child.visibleChildCount;
     }
-    if (child.hasExternalTokens) self.hasExternalTokens = true;
+    if ((childFlags & HAS_EXTERNAL_TOKENS) !== 0)
+      self.flags |= HAS_EXTERNAL_TOKENS;
     if (child.symbol === SYM_ERROR) {
-      self.fragileLeft = true;
-      self.fragileRight = true;
+      self.flags |= FRAGILE_LEFT | FRAGILE_RIGHT;
       self.parseState = STATE_NONE;
     }
-    if (!child.extra) structuralIndex++;
+    if ((childFlags & EXTRA) === 0) structuralIndex++;
   }
   if (isErrorParent) self.cost += errorExtentCost(self.size, self.sizeRows);
   if (n > 0) {
@@ -332,8 +299,7 @@ export function summarizeChildren(lang: Language, self: Subtree): void {
     const last = children[n - 1] as Subtree;
     self.firstLeafSymbol = leafSymbol(first);
     self.firstLeafParseState = leafParseState(first);
-    if (first.fragileLeft) self.fragileLeft = true;
-    if (last.fragileRight) self.fragileRight = true;
+    self.flags |= (first.flags & FRAGILE_LEFT) | (last.flags & FRAGILE_RIGHT);
   }
 }
 
@@ -343,16 +309,12 @@ export function newNode(
   children: Subtree[],
   productionId: number,
 ): Subtree {
-  const flags = symbolFlags(lang, symbol);
-  const t = new Subtree(
+  const fragile = symbol === SYM_ERROR || symbol === SYM_ERROR_REPEAT;
+  const t = subtree(
     symbol,
     0,
-    (flags & FLAG_VISIBLE) !== 0,
-    (flags & FLAG_NAMED) !== 0,
+    symbolBits(lang, symbol) | (fragile ? FRAGILE_LEFT | FRAGILE_RIGHT : 0),
   );
-  const fragile = symbol === SYM_ERROR || symbol === SYM_ERROR_REPEAT;
-  t.fragileLeft = fragile;
-  t.fragileRight = fragile;
   t.children = children;
   t.productionId = productionId;
   summarizeChildren(lang, t);
@@ -365,7 +327,7 @@ export function newErrorNode(
   extra: boolean,
 ): Subtree {
   const t = newNode(lang, SYM_ERROR, children, 0);
-  t.extra = extra;
+  setFlag(t, EXTRA, extra);
   return t;
 }
 
@@ -386,7 +348,7 @@ export function compareSubtrees(left: Subtree, right: Subtree): number {
 }
 
 export function externalScannerState(t: Subtree | null): Uint8Array {
-  return t?.hasExternalTokens && t.children.length === 0
+  return t !== null && flag(t, HAS_EXTERNAL_TOKENS) && t.children.length === 0
     ? t.externalState
     : EMPTY_STATE;
 }
@@ -403,12 +365,12 @@ export function externalStateEq(a: Subtree | null, b: Subtree | null): boolean {
 }
 
 export function lastExternalToken(tree: Subtree): Subtree | null {
-  if (!tree.hasExternalTokens) return null;
+  if (!flag(tree, HAS_EXTERNAL_TOKENS)) return null;
   let t = tree;
   while (t.children.length > 0) {
     for (let i = t.children.length - 1; i >= 0; i--) {
       const child = t.children[i] as Subtree;
-      if (child.hasExternalTokens) {
+      if (flag(child, HAS_EXTERNAL_TOKENS)) {
         t = child;
         break;
       }
@@ -419,10 +381,10 @@ export function lastExternalToken(tree: Subtree): Subtree | null {
 
 /** Moves the trailing extras of `self` into a new array, in their original order. */
 export function removeTrailingExtras(self: Subtree[]): readonly Subtree[] {
-  if (self.length === 0 || !(self[self.length - 1] as Subtree).extra)
+  if (self.length === 0 || !flag(self[self.length - 1] as Subtree, EXTRA))
     return NO_CHILDREN;
   const out: Subtree[] = [];
-  while (self.length > 0 && (self[self.length - 1] as Subtree).extra)
+  while (self.length > 0 && flag(self[self.length - 1] as Subtree, EXTRA))
     out.push(self.pop() as Subtree);
   out.reverse();
   return out;
@@ -430,7 +392,7 @@ export function removeTrailingExtras(self: Subtree[]): readonly Subtree[] {
 
 export function nodeCountOf(t: Subtree): number {
   let count = t.children.length === 0 ? 0 : t.visibleDescendantCount;
-  if (t.visible) count++;
+  if (flag(t, VISIBLE)) count++;
   if (t.symbol === SYM_ERROR_REPEAT) count++;
   return count;
 }

@@ -10,7 +10,14 @@ import {
   symbolFlags,
   symbolName,
 } from "./language.js";
-import type { Subtree } from "./subtree.js";
+import {
+  EXTRA,
+  flag,
+  IS_MISSING,
+  NAMED,
+  type Subtree,
+  VISIBLE,
+} from "./subtree.js";
 
 /** Plain-object syntax tree, materialized once so its readers never cross into the parser. Offsets are UTF-16 code units into the source text. */
 export interface SyntaxNode {
@@ -130,9 +137,9 @@ export function walkTree(lang: Language, root: Subtree, text: string): RawTree {
     const node: SyntaxNode = {
       id: nodes.length,
       kind,
-      named: alias !== 0 ? (sym.named[alias] as boolean) : tree.named,
+      named: alias !== 0 ? (sym.named[alias] as boolean) : flag(tree, NAMED),
       field: field === 0 ? undefined : lang.fieldNames[field],
-      missing: tree.isMissing,
+      missing: flag(tree, IS_MISSING),
       label: "",
       start,
       end,
@@ -209,7 +216,7 @@ export function walkTree(lang: Language, root: Subtree, text: string): RawTree {
     index[d] = i + 1;
     let alias = 0;
     let field = 0;
-    if (!child.extra) {
+    if (!flag(child, EXTRA)) {
       const s = structural[d] as number;
       alias = aliasAt(lang, tree.productionId, s);
       field = fieldFor(lang, tree.productionId, s);
@@ -220,7 +227,7 @@ export function walkTree(lang: Language, root: Subtree, text: string): RawTree {
       structural[d] = s + 1;
     }
     const hasChildren = child.children.length > 0;
-    if (child.visible || alias !== 0) {
+    if (flag(child, VISIBLE) || alias !== 0) {
       const node = open(child, alias, field, start, owner[d]);
       if (hasChildren) {
         trees[depth] = child;

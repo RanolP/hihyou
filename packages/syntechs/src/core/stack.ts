@@ -4,8 +4,10 @@
 import { SYM_ERROR } from "./language.js";
 import {
   COST_PER_RECOVERY,
+  EXTRA,
   errorCost,
   externalStateEq,
+  flag,
   nodeCountOf,
   nodeDynamicPrecedence,
   type Subtree,
@@ -119,7 +121,7 @@ function subtreeIsEquivalent(
     left.padding === right.padding &&
     left.size === right.size &&
     left.children.length === right.children.length &&
-    left.extra === right.extra &&
+    flag(left, EXTRA) === flag(right, EXTRA) &&
     externalStateEq(left, right)
   );
 }
@@ -281,8 +283,7 @@ export class Stack {
     let result = head.node.errorCost;
     if (
       head.status === PAUSED ||
-      (head.node.state === ERROR_STATE &&
-        head.node.subtree0 === null)
+      (head.node.state === ERROR_STATE && head.node.subtree0 === null)
     ) {
       result += COST_PER_RECOVERY;
     }
@@ -394,7 +395,7 @@ export class Stack {
           const subtree = linkSubtree(node, l);
           if (subtree !== null) {
             if (includeSubtrees) next.subtrees.push(subtree);
-            if (!subtree.extra) {
+            if (!flag(subtree, EXTRA)) {
               next.subtreeCount++;
               if (!linkPending(node, l)) next.isPending = false;
             }
@@ -417,7 +418,7 @@ export class Stack {
       const subtree = node.subtree0;
       if (subtree !== null) {
         subtrees.push(subtree);
-        if (!subtree.extra) depth++;
+        if (!flag(subtree, EXTRA)) depth++;
       } else depth++;
       node = node.node0 as StackNode;
     }
