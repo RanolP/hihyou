@@ -23,6 +23,7 @@
   "black/cases/pep_572_slices.py#{}",
   "black/cases/percent_precedence.py#{}",
   "black/cases/power_op_spacing_long.py#{}",
+  "black/cases/prefer_rhs_split.py#{}",
   "black/cases/prefer_rhs_split_reformatted.py#{}",
   "black/cases/preview_cantfit_string.py#{\"preview\":\"enabled\"}",
   "black/cases/preview_format_unicode_escape_seq.py#{\"preview\":\"enabled\"}",

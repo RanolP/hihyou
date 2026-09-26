@@ -1275,11 +1275,21 @@ class Reader {
     });
   }
 
+  /** Whether `n` is parentheses around one expression; a target `(x)` reads as a one-element `tuple_pattern`. */
+  isParens(n: FormatNode): boolean {
+    return (
+      n.kind === "parenthesized_expression" ||
+      (n.kind === "tuple_pattern" &&
+        this.named(n).length === 1 &&
+        !this.tok(n, ","))
+    );
+  }
+
   /** The node inside any parentheses around `n`. */
   unparen(n: FormatNode): FormatNode {
     let x = n;
     for (;;) {
-      if (x.kind !== "parenthesized_expression") return x;
+      if (!this.isParens(x)) return x;
       const inner = this.named(x);
       if (inner.length !== 1) return x;
       x = inner[0] as FormatNode;
@@ -1289,7 +1299,7 @@ class Reader {
   expr(n: FormatNode): Expr {
     const parens: Paren[] = [];
     let x = n;
-    while (x.kind === "parenthesized_expression") {
+    while (this.isParens(x)) {
       const inner = this.named(x);
       const only = inner[0];
       // `(yield)` and `(*a)` stay as tree-sitter wraps them; any other shape is a parse oddity.
@@ -1675,9 +1685,13 @@ class Reader {
   }
 
   str(n: FormatNode, parts: FormatNode[], parens: Paren[]): Str {
-    const first = parts[0] ?? fail(n, "empty string");
-    const start = first.children[0] ?? fail(first, "no string start");
-    const prefix = this.text(start).toLowerCase();
+    // One f- or t-string part makes the whole concatenation one, as in Python's AST.
+    if (parts.length === 0) fail(n, "empty string");
+    let prefix = "";
+    for (const p of parts) {
+      const start = p.children[0] ?? fail(p, "no string start");
+      prefix += this.text(start).toLowerCase();
+    }
     if (prefix.includes("`")) fail(n, "Python 2 backticks");
     const flavor = prefix.includes("b")
       ? "bytes"
@@ -1686,6 +1700,7 @@ class Reader {
         : prefix.includes("t")
           ? "t"
           : "str";
+    if (flavor === "f" && prefix.includes("t")) fail(n, "f and t parts mixed");
     for (const p of parts) this.dotted(p);
     return {
       kind: "Str",
