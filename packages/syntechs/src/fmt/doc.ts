@@ -16,6 +16,8 @@ export type Doc =
   | LineSuffix
   | BreakParent
   | IfBreak
+  | Align
+  | LineSuffixBoundary
   | readonly Doc[];
 
 /**
@@ -29,6 +31,12 @@ export interface Token {
   readonly node: FormatNode;
   readonly text: string;
   readonly synthetic?: true;
+  /**
+   * Its line breaks are prettier's literal lines (a template literal's text): the column restarts at 0 after each
+   * one, and a width check ends at the first. Otherwise the whole text counts toward one line, as prettier counts a
+   * multi-line comment.
+   */
+  readonly literal?: boolean;
 }
 /** Text the formatter synthesizes, such as a space; it maps to no input range. */
 export interface Text {
@@ -46,6 +54,11 @@ export interface Group {
   readonly k: "group";
   readonly contents: Doc;
   break: boolean;
+  /**
+   * Prettier's conditionalGroup: when `contents` (the first state) does not fit flat, the first later state that
+   * fits flat, else the last one broken. A break inside a state does not break this group.
+   */
+  readonly expandedStates?: readonly Doc[];
 }
 export interface Indent {
   readonly k: "indent";
@@ -70,6 +83,16 @@ export interface IfBreak {
   readonly flat: Doc;
   readonly group: Group | undefined;
 }
+/** Indents `contents` by `n` spaces (or by the string `n`) past the enclosing indentation, as prettier's align; `-Infinity` returns to the root indentation (prettier's dedentToRoot). */
+export interface Align {
+  readonly k: "align";
+  readonly n: number | string;
+  readonly contents: Doc;
+}
+/** Flushes pending line suffixes with a line break here, so a trailing comment never swallows what follows. */
+export interface LineSuffixBoundary {
+  readonly k: "lineSuffixBoundary";
+}
 /** Forces every enclosing group to break. */
 export interface BreakParent {
   readonly k: "breakParent";
@@ -82,6 +105,10 @@ export const hardline: Doc = [
   { k: "line", soft: false, hard: true },
   breakParent,
 ];
+
+export const lineSuffixBoundary: LineSuffixBoundary = {
+  k: "lineSuffixBoundary",
+};
 
 export const text = (text: string): Text => ({ k: "text", text });
 export const token = (node: FormatNode, text: string): Token => ({
@@ -96,12 +123,34 @@ export const synthetic = (anchor: FormatNode, text: string): Token => ({
   text,
   synthetic: true,
 });
+/** A token whose line breaks are literal (see `Token.literal`). */
+export const literalToken = (node: FormatNode, text: string): Token => ({
+  k: "token",
+  node,
+  text,
+  literal: true,
+});
 export const group = (contents: Doc, shouldBreak = false): Group => ({
   k: "group",
   contents,
   break: shouldBreak,
 });
+/** Prettier's conditionalGroup: `states` from most to least compact (see `Group.expandedStates`). */
+export const conditionalGroup = (
+  states: readonly Doc[],
+  shouldBreak = false,
+): Group => ({
+  k: "group",
+  contents: states[0] ?? [],
+  break: shouldBreak,
+  expandedStates: states,
+});
 export const indent = (contents: Doc): Indent => ({ k: "indent", contents });
+export const align = (n: number | string, contents: Doc): Align => ({
+  k: "align",
+  n,
+  contents,
+});
 export const fill = (parts: readonly Doc[]): Fill => ({ k: "fill", parts });
 export const lineSuffix = (contents: Doc): LineSuffix => ({
   k: "lineSuffix",
@@ -114,6 +163,39 @@ export const ifBreak = (broken: Doc, flat: Doc = [], of?: Group): IfBreak => ({
   flat,
   group: of,
 });
+
+/** `contents` indented when `of` is printed broken (or, `negate`d, when it is flat), as prettier's indentIfBreak. */
+export const indentIfBreak = (
+  contents: Doc,
+  of: Group,
+  negate = false,
+): IfBreak =>
+  negate
+    ? ifBreak(contents, indent(contents), of)
+    : ifBreak(indent(contents), contents, of);
+
+/** Whether `doc` holds a forced break: a hard line, a break parent, or a group already marked broken. */
+export function willBreak(doc: Doc): boolean {
+  if (isDocs(doc)) return doc.some(willBreak);
+  switch (doc.k) {
+    case "group":
+      return doc.break || willBreak(doc.contents);
+    case "line":
+      return doc.hard;
+    case "breakParent":
+      return true;
+    case "indent":
+    case "align":
+    case "lineSuffix":
+      return willBreak(doc.contents);
+    case "fill":
+      return doc.parts.some(willBreak);
+    case "ifBreak":
+      return willBreak(doc.broken) || willBreak(doc.flat);
+    default:
+      return false;
+  }
+}
 
 /** `Array.isArray` narrows to `any[]`, which leaves a `readonly Doc[]` inside the union; this narrows both ways. */
 export const isDocs = (d: Doc): d is readonly Doc[] => Array.isArray(d);

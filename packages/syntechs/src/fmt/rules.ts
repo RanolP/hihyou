@@ -74,6 +74,14 @@ export interface Ctx<O = unknown> {
     where: "leadingLine" | "trailingSameLine",
   ): boolean;
   isList(node: FormatNode): boolean;
+  /** Every comment attached to `node`: before it, after it, and inside it next to none of its items. */
+  comments(node: FormatNode): {
+    readonly leading: readonly FormatNode[];
+    readonly trailing: readonly FormatNode[];
+    readonly dangling: readonly FormatNode[];
+  };
+  /** Whether comment `c` runs to the end of its line (see `LanguageSpec.lineComments`). */
+  isLineComment(c: FormatNode): boolean;
 }
 
 /**
@@ -99,6 +107,7 @@ export interface Language<O = unknown> {
   readonly atoms: ReadonlySet<string>;
   readonly normalize: Normalize;
   readonly layoutBlind: boolean;
+  readonly printComment?: (comment: FormatNode, ctx: Ctx<O>) => Doc;
 }
 
 /**
@@ -135,6 +144,11 @@ export interface LanguageSpec<G extends Grammar, O> {
    * `// ...` and `/* ... *\/`); `""` makes every comment of the kind a line comment (Python's `#`).
    */
   readonly lineComments: { readonly [K in CommentOf<G>]?: string };
+  /**
+   * A comment as printed, when it is not its source text (prettier re-indents a block comment whose lines all
+   * start with `*`).
+   */
+  readonly printComment?: (comment: FormatNode, ctx: Ctx<O>) => Doc;
 }
 
 /** A list setting fixed by the rule, or read from the options of each call. */
@@ -246,6 +260,7 @@ export function defineLanguage<
     atoms: new Set(spec.atoms),
     normalize: spec.normalize ?? identity,
     layoutBlind: spec.layoutBlind ?? spec.normalize === undefined,
+    ...(spec.printComment && { printComment: spec.printComment }),
   };
 }
 
@@ -399,14 +414,14 @@ export function printWithComments(
   comments: Comments,
   ctx: Ctx,
   isLine: (c: FormatNode) => boolean,
+  comment: (c: FormatNode) => Doc = (c) => {
+    const t = slice(c, ctx);
+    return token(c, isLine(c) ? t.trimEnd() : t);
+  },
 ): Doc {
   const attached = comments.of(node);
   if (!attached) return printed;
   const { source } = ctx;
-  const comment = (c: FormatNode) => {
-    const t = slice(c, ctx);
-    return token(c, isLine(c) ? t.trimEnd() : t);
-  };
 
   const leading = attached.leading.map((c): Doc => {
     const after = isLine(c)

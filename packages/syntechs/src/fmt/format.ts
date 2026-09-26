@@ -55,7 +55,8 @@ export function format<O>(
       return prefix !== undefined && source.startsWith(prefix, n.start);
     };
     const comments = attachComments(root, source, isComment);
-    const commentToken = (c: FormatNode) => {
+    const commentToken = (c: FormatNode): Doc => {
+      if (language.printComment) return language.printComment(c, ctx);
       const t = source.slice(c.start, c.end);
       return token(c, isLine(c) ? t.trimEnd() : t);
     };
@@ -79,7 +80,7 @@ export function format<O>(
         return ctx.withComments(node, rule(node, ctx, args));
       },
       withComments: (node, printed) =>
-        printWithComments(node, printed, comments, ctx, isLine),
+        printWithComments(node, printed, comments, ctx, isLine, commentToken),
       items: (node) => node.children.filter((c) => c.named && !isComment(c)),
       dangling: (node) => comments.dangling(node).map(commentToken),
       hasDanglingLineComment: (node) => comments.dangling(node).some(isLine),
@@ -95,6 +96,15 @@ export function format<O>(
         const rule = language.rules.get(node.kind);
         return rule !== undefined && language.lists.has(rule);
       },
+      comments(node) {
+        const attached = comments.of(node);
+        return {
+          leading: attached?.leading ?? [],
+          trailing: attached?.trailing ?? [],
+          dangling: comments.dangling(node),
+        };
+      },
+      isLineComment: isLine,
     };
 
     const doc: Doc = [ctx.print(root), hardline];
