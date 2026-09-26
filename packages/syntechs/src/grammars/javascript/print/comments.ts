@@ -84,7 +84,37 @@ const methodName = ({
   return { node: preceding, as: "trailing" };
 };
 
-const handlers = [beforeSemicolon, unionMember, methodName];
+/** A block's first statement leads with the comment, or an empty block holds it (addBlockStatementFirstComment). */
+const blockFirst = (block: FormatNode): CommentTarget => {
+  const first = block.children.find(
+    (n) => n.named && isCode(n) && n.kind !== "empty_statement",
+  );
+  return first
+    ? { node: first, as: "leading" }
+    : { node: block, as: "dangling" };
+};
+
+const TRY_PARTS = new Set(["try_statement", "catch_clause", "finally_clause"]);
+
+/** `try /* c *\/ {}`: a comment before a try, catch or finally block moves into it (handleTryStatementComments). */
+const tryBlock = ({
+  enclosing,
+  preceding,
+  following,
+  placement,
+}: CommentContext): CommentTarget | undefined => {
+  if (!TRY_PARTS.has(enclosing.kind) || !following || placement === "remaining")
+    return;
+  if (enclosing.kind === "catch_clause" && preceding)
+    return { node: preceding, as: "trailing" };
+  if (following.kind === "statement_block") return blockFirst(following);
+  const body = following.kind.endsWith("_clause")
+    ? following.children.findLast((n) => n.kind === "statement_block")
+    : undefined;
+  return body ? blockFirst(body) : undefined;
+};
+
+const handlers = [beforeSemicolon, unionMember, methodName, tryBlock];
 
 export const handleComment: CommentHandler = (c) => {
   for (const h of handlers) {
