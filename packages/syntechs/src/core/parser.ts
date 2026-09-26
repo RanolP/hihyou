@@ -27,34 +27,16 @@ import {
   COST_PER_SKIPPED_CHAR,
   COST_PER_SKIPPED_LINE,
   COST_PER_SKIPPED_TREE,
-  cloneLeaf,
-  compareSubtrees,
   EMPTY_STATE,
   EXTRA,
-  errorCost,
-  externalScannerState,
-  externalStateEq,
   FRAGILE_LEFT,
   FRAGILE_RIGHT,
-  flag,
   HAS_EXTERNAL_SCANNER_STATE_CHANGE,
   HAS_EXTERNAL_TOKENS,
   IS_KEYWORD,
-  lastExternalToken,
-  leafParseState,
-  leafSymbol,
-  newError,
-  newErrorNode,
-  newLeaf,
-  newMissingLeaf,
-  newNode,
-  nodeDynamicPrecedence,
-  removeTrailingExtras,
+  NONE,
   type Subtree,
-  setFlag,
-  setSymbol,
-  totalRows,
-  totalSize,
+  Subtrees,
 } from "./subtree.js";
 
 const MAX_VERSION_COUNT = 6;
@@ -103,27 +85,35 @@ function compareVersions(a: ErrorStatus, b: ErrorStatus): number {
 }
 
 /** Parses `text` from scratch and returns the root subtree, as `ts_parser_parse` would before balancing. */
-export function parseSubtree(lang: Language, text: string): Subtree {
-  return new Parser(lang, text).parse();
+export function parseSubtree(
+  lang: Language,
+  text: string,
+): { subtrees: Subtrees; root: Subtree } {
+  const parser = new Parser(lang, text);
+  const root = parser.parse();
+  return { subtrees: parser.subtrees, root };
 }
 
 class Parser {
   private readonly lexer = new Lexer();
-  private readonly stack = new Stack();
+  readonly subtrees: Subtrees;
+  private readonly stack: Stack;
   private readonly scanner: ExternalScanner | undefined;
   private readonly scanBuffer = new Uint8Array(1024);
   private readonly validTokens: Uint8Array[] = [];
-  private finishedTree: Subtree | null = null;
+  private finishedTree: Subtree = NONE;
   private acceptCount = 0;
-  private cacheToken: Subtree | null = null;
+  private cacheToken: Subtree = NONE;
   private cachePosition = 0;
-  private cacheLastExternal: Subtree | null = null;
+  private cacheLastExternal: Subtree = NONE;
   private reduceActions: ReduceAction[] = [];
 
   constructor(
     private readonly lang: Language,
     text: string,
   ) {
+    this.subtrees = new Subtrees(lang, text.length);
+    this.stack = new Stack(this.subtrees);
     this.lexer.setInput(text);
     this.scanner = lang.createScanner?.();
     const n = lang.externalTokenCount;
@@ -151,7 +141,7 @@ class Parser {
             lastPosition = position;
             // Condensing a lone active version, with no finished tree to weigh it against, changes nothing.
             if (
-              this.finishedTree === null &&
+              this.finishedTree === NONE &&
               stack.versionCount() === 1 &&
               stack.isActive(0)
             )
@@ -162,14 +152,14 @@ class Parser {
       }
       const minErrorCost = this.condenseStack();
       if (
-        this.finishedTree !== null &&
-        errorCost(this.finishedTree) < minErrorCost
+        this.finishedTree !== NONE &&
+        this.subtrees.errorCost(this.finishedTree) < minErrorCost
       ) {
         stack.clear();
         break;
       }
     } while (versionCount !== 0);
-    if (this.finishedTree === null)
+    if (this.finishedTree === NONE)
       throw new Error("tree-sitter port finished without a tree");
     return this.finishedTree;
   }
@@ -194,7 +184,7 @@ class Parser {
     isInError: boolean,
     cost: number,
   ): boolean {
-    if (this.finishedTree !== null && errorCost(this.finishedTree) <= cost)
+    if (this.finishedTree !== NONE && this.subtrees.errorCost(this.finishedTree) <= cost)
       return true;
     const stack = this.stack;
     const position = stack.position(version);
@@ -227,8 +217,9 @@ class Parser {
     entry: number,
   ): boolean {
     const lang = this.lang;
-    const leafSym = leafSymbol(tree);
-    const leafState = leafParseState(tree);
+    const subtrees = this.subtrees;
+    const leafSym = subtrees.leafSymbol(tree);
+    const leafState = subtrees.leafParseState(tree);
     const currentLexState = lang.lexState[state] as number;
     const currentExternal = lang.externalLexState[state] as number;
     if (currentLexState === STATE_NONE) return false;
@@ -237,21 +228,23 @@ class Parser {
       lang.lexState[leafState] === currentLexState &&
       lang.externalLexState[leafState] === currentExternal &&
       (leafSym !== lang.keywordCaptureToken ||
-        (!flag(tree, IS_KEYWORD) && tree.parseState === state))
+        (!subtrees.flag(tree, IS_KEYWORD) &&
+          subtrees.parseState(tree) === state))
     ) {
       return true;
     }
-    if (tree.size === 0 && leafSym !== SYM_END) return false;
+    if (subtrees.size(tree) === 0 && leafSym !== SYM_END) return false;
     return currentExternal === 0 && isReusable(lang, entry);
   }
 
-  private lex(version: number, parseState: number): Subtree | null {
+  private lex(version: number, parseState: number): Subtree {
     const lang = this.lang;
+    const subtrees = this.subtrees;
     const lexer = this.lexer;
     const stack = this.stack;
     let lexState = lang.lexState[parseState] as number;
     let externalLexState = lang.externalLexState[parseState] as number;
-    if (lexState === STATE_NONE) return null;
+    if (lexState === STATE_NONE) return NONE;
     const startPosition = stack.position(version);
     const startRow = stack.row(version);
     const externalToken = stack.lastExternalToken(version);
@@ -272,7 +265,7 @@ class Parser {
       if (externalLexState !== 0 && this.scanner !== undefined) {
         const scanner = this.scanner;
         lexer.start();
-        const previous = externalToken?.externalState ?? EMPTY_STATE;
+        const previous = subtrees.externalStateOf(externalToken);
         scanner.deserialize(previous, previous.length);
         foundToken = scanner.scan(
           lexer,
@@ -283,7 +276,7 @@ class Parser {
           const length = scanner.serialize(this.scanBuffer);
           externalState = this.scanBuffer.slice(0, length);
           externalStateChanged = !bytesEqual(
-            externalScannerState(externalToken),
+            subtrees.externalScannerState(externalToken),
             externalState,
           );
           if (lexer.tokenEnd <= currentPosition && !externalStateChanged) {
@@ -334,8 +327,7 @@ class Parser {
     }
 
     if (skippedError) {
-      return newError(
-        lang,
+      return subtrees.newError(
         errorStart - startPosition,
         rowsBetween(errorStartRow, startRow),
         errorEnd - errorStart,
@@ -368,8 +360,7 @@ class Parser {
         symbol = lexer.resultSymbol;
       }
     }
-    const result = newLeaf(
-      lang,
+    const result = subtrees.newLeaf(
       symbol,
       tokenStart - startPosition,
       rowsBetween(tokenStartRow, startRow),
@@ -380,8 +371,12 @@ class Parser {
       isKeyword,
     );
     if (foundExternalToken) {
-      result.externalState = externalState;
-      setFlag(result, HAS_EXTERNAL_SCANNER_STATE_CHANGE, externalStateChanged);
+      subtrees.setExternalState(result, externalState);
+      subtrees.setFlag(
+        result,
+        HAS_EXTERNAL_SCANNER_STATE_CHANGE,
+        externalStateChanged,
+      );
     }
     return result;
   }
@@ -389,15 +384,15 @@ class Parser {
   private getCachedToken(
     state: number,
     position: number,
-    lastExternal: Subtree | null,
+    lastExternal: Subtree,
   ): { token: Subtree; entry: number } | null {
     const token = this.cacheToken;
     if (
-      token !== null &&
+      token !== NONE &&
       this.cachePosition === position &&
-      externalStateEq(this.cacheLastExternal, lastExternal)
+      this.subtrees.externalStateEq(this.cacheLastExternal, lastExternal)
     ) {
-      const entry = tableEntry(this.lang, state, token.symbol);
+      const entry = tableEntry(this.lang, state, this.subtrees.symbol(token));
       if (this.canReuseFirstLeaf(state, token, entry)) return { token, entry };
     }
     return null;
@@ -405,21 +400,32 @@ class Parser {
 
   // ---- actions ---------------------------------------------------------------------------------------------
 
-  private selectTree(left: Subtree | null, right: Subtree | null): boolean {
-    if (left === null) return true;
-    if (right === null) return false;
-    if (errorCost(right) < errorCost(left)) return true;
-    if (errorCost(left) < errorCost(right)) return false;
-    if (nodeDynamicPrecedence(right) > nodeDynamicPrecedence(left)) return true;
-    if (nodeDynamicPrecedence(left) > nodeDynamicPrecedence(right))
+  private selectTree(left: Subtree, right: Subtree): boolean {
+    const subtrees = this.subtrees;
+    if (left === NONE) return true;
+    if (right === NONE) return false;
+    if (subtrees.errorCost(right) < subtrees.errorCost(left)) return true;
+    if (subtrees.errorCost(left) < subtrees.errorCost(right)) return false;
+    if (
+      subtrees.nodeDynamicPrecedence(right) >
+      subtrees.nodeDynamicPrecedence(left)
+    )
+      return true;
+    if (
+      subtrees.nodeDynamicPrecedence(left) >
+      subtrees.nodeDynamicPrecedence(right)
+    )
       return false;
-    if (errorCost(left) > 0) return true;
-    return compareSubtrees(left, right) === 1;
+    if (subtrees.errorCost(left) > 0) return true;
+    return subtrees.compare(left, right) === 1;
   }
 
   private selectChildren(left: Subtree, children: Subtree[]): boolean {
-    const scratch = newNode(this.lang, left.symbol, children.slice(), 0);
-    return this.selectTree(left, scratch);
+    const subtrees = this.subtrees;
+    const scratch = subtrees.newNode(subtrees.symbol(left), children, 0);
+    const selected = this.selectTree(left, scratch);
+    subtrees.release(scratch);
+    return selected;
   }
 
   private shift(
@@ -428,15 +434,19 @@ class Parser {
     lookahead: Subtree,
     extra: boolean,
   ): void {
-    const isLeaf = lookahead.children.length === 0;
+    const subtrees = this.subtrees;
+    const isLeaf = subtrees.childCount(lookahead) === 0;
     let subtree = lookahead;
-    if (extra !== flag(lookahead, EXTRA) && isLeaf) {
-      subtree = cloneLeaf(lookahead);
-      setFlag(subtree, EXTRA, extra);
+    if (extra !== subtrees.flag(lookahead, EXTRA) && isLeaf) {
+      subtree = subtrees.cloneLeaf(lookahead);
+      subtrees.setFlag(subtree, EXTRA, extra);
     }
     this.stack.push(version, subtree, !isLeaf, state);
-    if (flag(subtree, HAS_EXTERNAL_TOKENS))
-      this.stack.setLastExternalToken(version, lastExternalToken(subtree));
+    if (subtrees.flag(subtree, HAS_EXTERNAL_TOKENS))
+      this.stack.setLastExternalToken(
+        version,
+        subtrees.lastExternalToken(subtree),
+      );
   }
 
   private reduce(
@@ -449,6 +459,7 @@ class Parser {
     endOfNonTerminalExtra: boolean,
   ): number {
     const lang = this.lang;
+    const subtrees = this.subtrees;
     const stack = this.stack;
     const initialVersionCount = stack.versionCount();
     const pop = stack.popCount(version, count);
@@ -470,29 +481,30 @@ class Parser {
         continue;
       }
       const children = slice.subtrees;
-      let trailingExtras = removeTrailingExtras(children);
-      let parent = newNode(lang, symbol, children, productionId);
+      let trailingExtras = subtrees.removeTrailingExtras(children);
+      let parent = subtrees.newNode(symbol, children, productionId);
       while (i + 1 < pop.length) {
         const next = pop[i + 1] as StackSlice;
         if (next.version !== slice.version) break;
         i++;
         const nextChildren = next.subtrees;
-        const nextTrailingExtras = removeTrailingExtras(nextChildren);
+        const nextTrailingExtras = subtrees.removeTrailingExtras(nextChildren);
         if (this.selectChildren(parent, nextChildren)) {
           trailingExtras = nextTrailingExtras;
-          parent = newNode(lang, symbol, nextChildren, productionId);
+          parent = subtrees.newNode(symbol, nextChildren, productionId);
         }
       }
       const state = stack.state(sliceVersion);
       const next = nextState(lang, state, symbol);
-      if (endOfNonTerminalExtra && next === state) parent.flags |= EXTRA;
+      if (endOfNonTerminalExtra && next === state)
+        subtrees.setFlag(parent, EXTRA, true);
       if (isFragile || pop.length > 1 || initialVersionCount > 1) {
-        parent.flags |= FRAGILE_LEFT | FRAGILE_RIGHT;
-        parent.parseState = STATE_NONE;
+        subtrees.setFlag(parent, FRAGILE_LEFT | FRAGILE_RIGHT, true);
+        subtrees.setParseState(parent, STATE_NONE);
       } else {
-        parent.parseState = state;
+        subtrees.setParseState(parent, state);
       }
-      parent.dynamicPrecedence += dynamicPrecedence;
+      subtrees.addDynamicPrecedence(parent, dynamicPrecedence);
       stack.push(sliceVersion, parent, false, next);
       for (const extra of trailingExtras)
         stack.push(sliceVersion, extra, false, next);
@@ -525,41 +537,48 @@ class Parser {
     const children = stack.popLinear(count);
     if (children === null) return false;
     const lang = this.lang;
-    const trailingExtras = removeTrailingExtras(children);
-    const parent = newNode(lang, symbol, children, productionId);
+    const subtrees = this.subtrees;
+    const trailingExtras = subtrees.removeTrailingExtras(children);
+    const parent = subtrees.newNode(symbol, children, productionId);
     const state = stack.state(0);
     const next = nextState(lang, state, symbol);
-    if (endOfNonTerminalExtra && next === state) parent.flags |= EXTRA;
+    if (endOfNonTerminalExtra && next === state)
+      subtrees.setFlag(parent, EXTRA, true);
     if (isFragile) {
-      parent.flags |= FRAGILE_LEFT | FRAGILE_RIGHT;
-      parent.parseState = STATE_NONE;
+      subtrees.setFlag(parent, FRAGILE_LEFT | FRAGILE_RIGHT, true);
+      subtrees.setParseState(parent, STATE_NONE);
     } else {
-      parent.parseState = state;
+      subtrees.setParseState(parent, state);
     }
-    parent.dynamicPrecedence += dynamicPrecedence;
+    subtrees.addDynamicPrecedence(parent, dynamicPrecedence);
     stack.push(0, parent, false, next);
     for (const extra of trailingExtras) stack.push(0, extra, false, next);
     return true;
   }
 
   private accept(version: number, lookahead: Subtree): void {
+    const subtrees = this.subtrees;
     const stack = this.stack;
     stack.push(version, lookahead, false, 1);
     const pop = stack.popAll(version);
     for (const slice of pop) {
       const trees = slice.subtrees;
-      let root: Subtree | null = null;
+      let root = NONE;
       for (let j = trees.length - 1; j >= 0; j--) {
         const tree = trees[j] as Subtree;
-        if (!flag(tree, EXTRA)) {
-          trees.splice(j, 1, ...tree.children);
-          root = newNode(this.lang, tree.symbol, trees, tree.productionId);
+        if (!subtrees.flag(tree, EXTRA)) {
+          trees.splice(j, 1, ...subtrees.children(tree));
+          root = subtrees.newNode(
+            subtrees.symbol(tree),
+            trees,
+            subtrees.productionId(tree),
+          );
           break;
         }
       }
-      if (root === null) throw new Error("accepted a stack slice with no root");
+      if (root === NONE) throw new Error("accepted a stack slice with no root");
       this.acceptCount++;
-      if (this.finishedTree !== null) {
+      if (this.finishedTree !== NONE) {
         if (this.selectTree(this.finishedTree, root)) this.finishedTree = root;
       } else {
         this.finishedTree = root;
@@ -675,7 +694,7 @@ class Parser {
     depth: number,
     goalState: number,
   ): boolean {
-    const lang = this.lang;
+    const subtrees = this.subtrees;
     const stack = this.stack;
     const pop = stack.popCount(version, depth);
     let previousVersion = NO_VERSION;
@@ -693,17 +712,21 @@ class Parser {
       const errorTrees = stack.popError(slice.version);
       if (errorTrees.length > 0) {
         const errorTree = errorTrees[0] as Subtree;
-        if (errorTree.children.length > 0) {
+        if (subtrees.childCount(errorTree) > 0) {
           slice.subtrees.unshift(
-            newNode(lang, SYM_ERROR_REPEAT, errorTree.children.slice(), 0),
+            subtrees.newNode(
+              SYM_ERROR_REPEAT,
+              subtrees.children(errorTree),
+              0,
+            ),
           );
         }
       }
-      const trailingExtras = removeTrailingExtras(slice.subtrees);
+      const trailingExtras = subtrees.removeTrailingExtras(slice.subtrees);
       if (slice.subtrees.length > 0) {
         stack.push(
           slice.version,
-          newErrorNode(lang, slice.subtrees, true),
+          subtrees.newErrorNode(slice.subtrees, true),
           false,
           goalState,
         );
@@ -717,6 +740,7 @@ class Parser {
 
   private recover(version: number, lookahead: Subtree): void {
     const lang = this.lang;
+    const subtrees = this.subtrees;
     const stack = this.stack;
     let didRecover = false;
     const previousVersionCount = stack.versionCount();
@@ -726,7 +750,7 @@ class Parser {
     const nodeCountSinceError = stack.nodeCountSinceError(version);
     const currentErrorCost = stack.errorCost(version);
 
-    if (summary !== null && lookahead.symbol !== SYM_ERROR) {
+    if (summary !== null && subtrees.symbol(lookahead) !== SYM_ERROR) {
       for (const entry of summary) {
         if (entry.state === ERROR_STATE) continue;
         if (entry.position === position) continue;
@@ -749,7 +773,7 @@ class Parser {
           (position - entry.position) * 2 * COST_PER_SKIPPED_CHAR +
           (row - entry.row) * COST_PER_SKIPPED_LINE;
         if (this.betterVersionExists(version, false, newCost)) break;
-        if (hasActions(lang, entry.state, lookahead.symbol)) {
+        if (hasActions(lang, entry.state, subtrees.symbol(lookahead))) {
           if (this.recoverToState(version, depth, entry.state)) {
             didRecover = true;
             break;
@@ -762,8 +786,8 @@ class Parser {
       if (!stack.isActive(i)) stack.removeVersion(i--);
     }
 
-    if (lookahead.symbol === SYM_END) {
-      stack.push(version, newErrorNode(lang, [], false), false, 1);
+    if (subtrees.symbol(lookahead) === SYM_END) {
+      stack.push(version, subtrees.newErrorNode([], false), false, 1);
       this.accept(version, lookahead);
       return;
     }
@@ -772,7 +796,10 @@ class Parser {
       stack.halt(version);
       return;
     }
-    if (didRecover && flag(lookahead, HAS_EXTERNAL_SCANNER_STATE_CHANGE)) {
+    if (
+      didRecover &&
+      subtrees.flag(lookahead, HAS_EXTERNAL_SCANNER_STATE_CHANGE)
+    ) {
       stack.halt(version);
       return;
     }
@@ -780,26 +807,26 @@ class Parser {
     const newCost =
       currentErrorCost +
       COST_PER_SKIPPED_TREE +
-      totalSize(lookahead) * 2 * COST_PER_SKIPPED_CHAR +
-      totalRows(lookahead) * COST_PER_SKIPPED_LINE;
+      subtrees.totalSize(lookahead) * 2 * COST_PER_SKIPPED_CHAR +
+      subtrees.totalRows(lookahead) * COST_PER_SKIPPED_LINE;
     if (this.betterVersionExists(version, false, newCost)) {
       stack.halt(version);
       return;
     }
 
     let la = lookahead;
-    const entry = tableEntry(lang, 1, la.symbol);
+    const entry = tableEntry(lang, 1, subtrees.symbol(la));
     const n = actionCount(lang, entry);
     if (
       n > 0 &&
       lang.actType[entry + n] === ACTION_SHIFT &&
       ((lang.actB[entry + n] as number) & 1) !== 0
     ) {
-      la = cloneLeaf(la);
-      la.flags |= EXTRA;
+      la = subtrees.cloneLeaf(la);
+      subtrees.setFlag(la, EXTRA, true);
     }
 
-    let errorRepeat = newNode(lang, SYM_ERROR_REPEAT, [la], 0);
+    let errorRepeat = subtrees.newNode(SYM_ERROR_REPEAT, [la], 0);
     if (nodeCountSinceError > 0) {
       const pop = stack.popCount(version, 1);
       const first = pop[0] as StackSlice;
@@ -809,16 +836,17 @@ class Parser {
       }
       stack.renumberVersion(first.version, version);
       first.subtrees.push(errorRepeat);
-      errorRepeat = newNode(lang, SYM_ERROR_REPEAT, first.subtrees, 0);
+      errorRepeat = subtrees.newNode(SYM_ERROR_REPEAT, first.subtrees, 0);
     }
 
     stack.push(version, errorRepeat, false, ERROR_STATE);
-    if (flag(la, HAS_EXTERNAL_TOKENS))
-      stack.setLastExternalToken(version, lastExternalToken(la));
+    if (subtrees.flag(la, HAS_EXTERNAL_TOKENS))
+      stack.setLastExternalToken(version, subtrees.lastExternalToken(la));
   }
 
-  private handleError(version: number, lookahead: Subtree | null): void {
+  private handleError(version: number, lookahead: Subtree): void {
     const lang = this.lang;
+    const subtrees = this.subtrees;
     const stack = this.stack;
     const previousVersionCount = stack.versionCount();
     this.doAllPotentialReductions(version, 0);
@@ -826,7 +854,7 @@ class Parser {
     const position = stack.position(version);
     const row = stack.row(version);
     // A paused version always holds a lookahead: only `advance` pauses, and only after lexing.
-    const la = lookahead as Subtree;
+    const la = lookahead;
 
     let didInsertMissingToken = false;
     for (let v = version; v < versionCount; ) {
@@ -839,20 +867,24 @@ class Parser {
         ) {
           const stateAfterMissing = nextState(lang, state, missingSymbol);
           if (stateAfterMissing === 0 || stateAfterMissing === state) continue;
-          if (hasReduceAction(lang, stateAfterMissing, leafSymbol(la))) {
+          if (
+            hasReduceAction(lang, stateAfterMissing, subtrees.leafSymbol(la))
+          ) {
             this.lexer.reset(position, row);
             this.lexer.markEnd();
             const withMissing = stack.copyVersion(v);
-            const missing = newMissingLeaf(lang, missingSymbol, state, 0, 0);
+            const missing = subtrees.newMissingLeaf(missingSymbol, state, 0, 0);
             stack.push(withMissing, missing, false, stateAfterMissing);
-            if (this.doAllPotentialReductions(withMissing, leafSymbol(la))) {
+            if (
+              this.doAllPotentialReductions(withMissing, subtrees.leafSymbol(la))
+            ) {
               didInsertMissingToken = true;
               break;
             }
           }
         }
       }
-      stack.push(v, null, false, ERROR_STATE);
+      stack.push(v, NONE, false, ERROR_STATE);
       v = v === version ? previousVersionCount : v + 1;
     }
 
@@ -867,11 +899,12 @@ class Parser {
 
   private advance(version: number): void {
     const lang = this.lang;
+    const subtrees = this.subtrees;
     const stack = this.stack;
     let state = stack.state(version);
     const position = stack.position(version);
     const lastExternal = stack.lastExternalToken(version);
-    let lookahead: Subtree | null = null;
+    let lookahead = NONE;
     let entry = 0;
     const cached = this.getCachedToken(state, position, lastExternal);
     let needsLex = cached === null;
@@ -884,11 +917,11 @@ class Parser {
       if (needsLex) {
         needsLex = false;
         lookahead = this.lex(version, state);
-        if (lookahead !== null) {
+        if (lookahead !== NONE) {
           this.cacheToken = lookahead;
           this.cachePosition = position;
           this.cacheLastExternal = lastExternal;
-          entry = tableEntry(lang, state, lookahead.symbol);
+          entry = tableEntry(lang, state, subtrees.symbol(lookahead));
         } else {
           entry = tableEntry(lang, state, SYM_END);
         }
@@ -904,11 +937,11 @@ class Parser {
           if ((flags & 2) !== 0) continue;
           const extra = (flags & 1) !== 0;
           const next = extra ? state : (lang.actA[a] as number);
-          this.shift(version, next, lookahead as Subtree, extra);
+          this.shift(version, next, lookahead, extra);
           return;
         }
         if (type === ACTION_REDUCE) {
-          const endOfNonTerminalExtra = lookahead === null;
+          const endOfNonTerminalExtra = lookahead === NONE;
           if (
             stack.versionCount() === 1 &&
             (count === 1 || isSoleReduce(lang, entry, count)) &&
@@ -922,8 +955,9 @@ class Parser {
             )
           ) {
             state = stack.state(version);
-            if (lookahead === null) needsLex = true;
-            else entry = tableEntry(lang, state, leafSymbol(lookahead));
+            if (lookahead === NONE) needsLex = true;
+            else
+              entry = tableEntry(lang, state, subtrees.leafSymbol(lookahead));
             continue outer;
           }
           const isFragile = count > 1;
@@ -940,10 +974,10 @@ class Parser {
           if (reductionVersion !== NO_VERSION)
             lastReductionVersion = reductionVersion;
         } else if (type === ACTION_ACCEPT) {
-          this.accept(version, lookahead as Subtree);
+          this.accept(version, lookahead);
           return;
         } else if (type === ACTION_RECOVER) {
-          this.recover(version, lookahead as Subtree);
+          this.recover(version, lookahead);
           return;
         }
       }
@@ -951,8 +985,8 @@ class Parser {
       if (lastReductionVersion !== NO_VERSION) {
         stack.renumberVersion(lastReductionVersion, version);
         state = stack.state(version);
-        if (lookahead === null) needsLex = true;
-        else entry = tableEntry(lang, state, leafSymbol(lookahead));
+        if (lookahead === NONE) needsLex = true;
+        else entry = tableEntry(lang, state, subtrees.leafSymbol(lookahead));
         continue;
       }
 
@@ -962,21 +996,21 @@ class Parser {
       }
 
       if (
-        lookahead !== null &&
-        flag(lookahead, IS_KEYWORD) &&
-        lookahead.symbol !== lang.keywordCaptureToken &&
-        !isReservedWord(lang, state, lookahead.symbol)
+        lookahead !== NONE &&
+        subtrees.flag(lookahead, IS_KEYWORD) &&
+        subtrees.symbol(lookahead) !== lang.keywordCaptureToken &&
+        !isReservedWord(lang, state, subtrees.symbol(lookahead))
       ) {
         entry = tableEntry(lang, state, lang.keywordCaptureToken);
         if (actionCount(lang, entry) > 0) {
-          lookahead = cloneLeaf(lookahead);
-          setSymbol(lang, lookahead, lang.keywordCaptureToken);
+          lookahead = subtrees.cloneLeaf(lookahead);
+          subtrees.setSymbol(lookahead, lang.keywordCaptureToken);
           continue;
         }
       }
 
       if (state === ERROR_STATE) {
-        this.recover(version, lookahead as Subtree);
+        this.recover(version, lookahead);
         return;
       }
 
@@ -993,6 +1027,7 @@ class Parser {
 
   private breakdownTopOfStack(version: number): boolean {
     const lang = this.lang;
+    const subtrees = this.subtrees;
     const stack = this.stack;
     let didBreakDown = false;
     let pending = false;
@@ -1004,11 +1039,13 @@ class Parser {
       for (const slice of pop) {
         let state = stack.state(slice.version);
         const parent = slice.subtrees[0] as Subtree;
-        for (const child of parent.children) {
-          pending = child.children.length > 0;
-          if (child.symbol === SYM_ERROR) state = ERROR_STATE;
-          else if (!flag(child, EXTRA))
-            state = nextState(lang, state, child.symbol);
+        for (let c = 0, n = subtrees.childCount(parent); c < n; c++) {
+          const child = subtrees.child(parent, c);
+          pending = subtrees.childCount(child) > 0;
+          const childSymbol = subtrees.symbol(child);
+          if (childSymbol === SYM_ERROR) state = ERROR_STATE;
+          else if (!subtrees.flag(child, EXTRA))
+            state = nextState(lang, state, childSymbol);
           stack.push(slice.version, child, pending, state);
         }
         for (let j = 1; j < slice.subtrees.length; j++)

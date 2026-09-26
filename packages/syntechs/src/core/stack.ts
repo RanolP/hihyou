@@ -1,18 +1,14 @@
 // Port of tree-sitter v0.27.0 lib/src/stack.c: the graph-structured stack of the GLR parser.
-// Nodes are shared between versions exactly as in C; the garbage collector replaces ref-counting.
+// Nodes are shared between versions exactly as in C; the garbage collector replaces ref-counting for nodes, and
+// the subtrees they link are handles into the parse's `Subtrees`, which frees them all when the parse ends.
 
 import { SYM_ERROR } from "./language.js";
 import {
   COST_PER_RECOVERY,
   EXTRA,
-  errorCost,
-  externalStateEq,
-  flag,
-  nodeCountOf,
-  nodeDynamicPrecedence,
+  NONE,
   type Subtree,
-  totalRows,
-  totalSize,
+  type Subtrees,
 } from "./subtree.js";
 
 const MAX_LINK_COUNT = 8;
@@ -21,7 +17,7 @@ const ERROR_STATE = 0;
 
 interface StackLink {
   node: StackNode;
-  subtree: Subtree | null;
+  subtree: Subtree;
   isPending: boolean;
 }
 
@@ -37,7 +33,7 @@ export class StackNode {
   row = 0;
   linkCount = 0;
   node0: StackNode | null = null;
-  subtree0: Subtree | null = null;
+  subtree0: Subtree = NONE;
   pending0 = false;
   /** Links 1.. of `linkCount`. */
   more: StackLink[] | null = null;
@@ -45,30 +41,35 @@ export class StackNode {
   nodeCount = 0;
   dynamicPrecedence = 0;
 
-  constructor(
-    previous: StackNode | null,
-    subtree: Subtree | null,
+  constructor(state: number) {
+    this.state = state;
+  }
+
+  /** Makes this node, fresh or reused, the one-link successor of `previous` through `subtree`. */
+  linkTo(
+    subtrees: Subtrees,
+    previous: StackNode,
+    subtree: Subtree,
     isPending: boolean,
     state: number,
-  ) {
+  ): void {
     this.state = state;
-    if (previous !== null) {
-      this.linkCount = 1;
-      this.node0 = previous;
-      this.subtree0 = subtree;
-      this.pending0 = isPending;
-      this.position = previous.position;
-      this.row = previous.row;
-      this.errorCost = previous.errorCost;
-      this.dynamicPrecedence = previous.dynamicPrecedence;
-      this.nodeCount = previous.nodeCount;
-      if (subtree !== null) {
-        this.errorCost += errorCost(subtree);
-        this.position += totalSize(subtree);
-        this.row += totalRows(subtree);
-        this.nodeCount += nodeCountOf(subtree);
-        this.dynamicPrecedence += nodeDynamicPrecedence(subtree);
-      }
+    this.more = null;
+    this.linkCount = 1;
+    this.node0 = previous;
+    this.subtree0 = subtree;
+    this.pending0 = isPending;
+    this.position = previous.position;
+    this.row = previous.row;
+    this.errorCost = previous.errorCost;
+    this.dynamicPrecedence = previous.dynamicPrecedence;
+    this.nodeCount = previous.nodeCount;
+    if (subtree !== NONE) {
+      this.errorCost += subtrees.errorCost(subtree);
+      this.position += subtrees.totalSize(subtree);
+      this.row += subtrees.totalRows(subtree);
+      this.nodeCount += subtrees.nodeCountOf(subtree);
+      this.dynamicPrecedence += subtrees.nodeDynamicPrecedence(subtree);
     }
   }
 }
@@ -88,8 +89,8 @@ interface StackHead {
   node: StackNode;
   summary: SummaryEntry[] | null;
   nodeCountAtLastError: number;
-  lastExternalToken: Subtree | null;
-  lookaheadWhenPaused: Subtree | null;
+  lastExternalToken: Subtree;
+  lookaheadWhenPaused: Subtree;
   status: number;
 }
 
@@ -105,24 +106,25 @@ interface StackIterator {
   isPending: boolean;
 }
 
-const NONE = 0;
+const CONTINUE = 0;
 const STOP = 1;
 const POP = 2;
 
 function subtreeIsEquivalent(
-  left: Subtree | null,
-  right: Subtree | null,
+  s: Subtrees,
+  left: Subtree,
+  right: Subtree,
 ): boolean {
   if (left === right) return true;
-  if (left === null || right === null) return false;
-  if (left.symbol !== right.symbol) return false;
-  if (errorCost(left) > 0 && errorCost(right) > 0) return true;
+  if (left === NONE || right === NONE) return false;
+  if (s.symbol(left) !== s.symbol(right)) return false;
+  if (s.errorCost(left) > 0 && s.errorCost(right) > 0) return true;
   return (
-    left.padding === right.padding &&
-    left.size === right.size &&
-    left.children.length === right.children.length &&
-    flag(left, EXTRA) === flag(right, EXTRA) &&
-    externalStateEq(left, right)
+    s.padding(left) === s.padding(right) &&
+    s.size(left) === s.size(right) &&
+    s.childCount(left) === s.childCount(right) &&
+    s.flag(left, EXTRA) === s.flag(right, EXTRA) &&
+    s.externalStateEq(left, right)
   );
 }
 
@@ -132,7 +134,7 @@ function linkNode(self: StackNode, i: number): StackNode {
   ) as StackNode;
 }
 
-function linkSubtree(self: StackNode, i: number): Subtree | null {
+function linkSubtree(self: StackNode, i: number): Subtree {
   return i === 0
     ? self.subtree0
     : ((self.more as StackLink[])[i - 1] as StackLink).subtree;
@@ -147,31 +149,32 @@ function linkPending(self: StackNode, i: number): boolean {
 function setLinkSubtree(
   self: StackNode,
   i: number,
-  subtree: Subtree | null,
+  subtree: Subtree,
 ): void {
   if (i === 0) self.subtree0 = subtree;
   else ((self.more as StackLink[])[i - 1] as StackLink).subtree = subtree;
 }
 
 function addLink(
+  s: Subtrees,
   self: StackNode,
   node: StackNode,
-  subtree: Subtree | null,
+  subtree: Subtree,
   isPending: boolean,
 ): void {
   if (node === self) return;
   for (let i = 0; i < self.linkCount; i++) {
     const existingSubtree = linkSubtree(self, i);
-    if (subtreeIsEquivalent(existingSubtree, subtree)) {
+    if (subtreeIsEquivalent(s, existingSubtree, subtree)) {
       const existingNode = linkNode(self, i);
       if (existingNode === node) {
         if (
-          nodeDynamicPrecedence(subtree) >
-          nodeDynamicPrecedence(existingSubtree)
+          s.nodeDynamicPrecedence(subtree) >
+          s.nodeDynamicPrecedence(existingSubtree)
         ) {
           setLinkSubtree(self, i, subtree);
           self.dynamicPrecedence =
-            node.dynamicPrecedence + nodeDynamicPrecedence(subtree);
+            node.dynamicPrecedence + s.nodeDynamicPrecedence(subtree);
         }
         return;
       }
@@ -182,14 +185,15 @@ function addLink(
       ) {
         for (let j = 0; j < node.linkCount; j++)
           addLink(
+            s,
             existingNode,
             linkNode(node, j),
             linkSubtree(node, j),
             linkPending(node, j),
           );
         let dynamicPrecedence = node.dynamicPrecedence;
-        if (subtree !== null)
-          dynamicPrecedence += nodeDynamicPrecedence(subtree);
+        if (subtree !== NONE)
+          dynamicPrecedence += s.nodeDynamicPrecedence(subtree);
         if (dynamicPrecedence > self.dynamicPrecedence)
           self.dynamicPrecedence = dynamicPrecedence;
         return;
@@ -208,9 +212,9 @@ function addLink(
     self.more.push({ node, subtree, isPending });
   }
   self.linkCount++;
-  if (subtree !== null) {
-    nodeCount += nodeCountOf(subtree);
-    dynamicPrecedence += nodeDynamicPrecedence(subtree);
+  if (subtree !== NONE) {
+    nodeCount += s.nodeCountOf(subtree);
+    dynamicPrecedence += s.nodeDynamicPrecedence(subtree);
   }
   if (nodeCount > self.nodeCount) self.nodeCount = nodeCount;
   if (dynamicPrecedence > self.dynamicPrecedence)
@@ -221,9 +225,9 @@ export class Stack {
   heads: StackHead[] = [];
   private slices: StackSlice[] = [];
   private readonly free: StackNode[] = [];
-  private readonly baseNode = new StackNode(null, null, false, 1);
+  private readonly baseNode = new StackNode(1);
 
-  constructor() {
+  constructor(readonly subtrees: Subtrees) {
     this.clear();
   }
 
@@ -233,8 +237,8 @@ export class Stack {
         node: this.baseNode,
         summary: null,
         nodeCountAtLastError: 0,
-        lastExternalToken: null,
-        lookaheadWhenPaused: null,
+        lastExternalToken: NONE,
+        lookaheadWhenPaused: NONE,
         status: ACTIVE,
       },
     ];
@@ -271,11 +275,11 @@ export class Stack {
     return this.head(version).node.row;
   }
 
-  lastExternalToken(version: number): Subtree | null {
+  lastExternalToken(version: number): Subtree {
     return this.head(version).lastExternalToken;
   }
 
-  setLastExternalToken(version: number, token: Subtree | null): void {
+  setLastExternalToken(version: number, token: Subtree): void {
     this.head(version).lastExternalToken = token;
   }
 
@@ -284,7 +288,7 @@ export class Stack {
     let result = head.node.errorCost;
     if (
       head.status === PAUSED ||
-      (head.node.state === ERROR_STATE && head.node.subtree0 === null)
+      (head.node.state === ERROR_STATE && head.node.subtree0 === NONE)
     ) {
       result += COST_PER_RECOVERY;
     }
@@ -300,38 +304,14 @@ export class Stack {
 
   push(
     version: number,
-    subtree: Subtree | null,
+    subtree: Subtree,
     pending: boolean,
     state: number,
   ): void {
     const head = this.head(version);
-    const reused = this.free.pop();
-    let node: StackNode;
-    if (reused === undefined)
-      node = new StackNode(head.node, subtree, pending, state);
-    else {
-      node = reused;
-      node.state = state;
-      node.more = null;
-      node.linkCount = 1;
-      node.node0 = head.node;
-      node.subtree0 = subtree;
-      node.pending0 = pending;
-      const previous = head.node;
-      node.position = previous.position;
-      node.row = previous.row;
-      node.errorCost = previous.errorCost;
-      node.dynamicPrecedence = previous.dynamicPrecedence;
-      node.nodeCount = previous.nodeCount;
-      if (subtree !== null) {
-        node.errorCost += errorCost(subtree);
-        node.position += totalSize(subtree);
-        node.row += totalRows(subtree);
-        node.nodeCount += nodeCountOf(subtree);
-        node.dynamicPrecedence += nodeDynamicPrecedence(subtree);
-      }
-    }
-    if (subtree === null) head.nodeCountAtLastError = node.nodeCount;
+    const node = this.free.pop() ?? new StackNode(state);
+    node.linkTo(this.subtrees, head.node, subtree, pending, state);
+    if (subtree === NONE) head.nodeCountAtLastError = node.nodeCount;
     head.node = node;
   }
 
@@ -342,7 +322,7 @@ export class Stack {
       summary: null,
       nodeCountAtLastError: o.nodeCountAtLastError,
       lastExternalToken: o.lastExternalToken,
-      lookaheadWhenPaused: null,
+      lookaheadWhenPaused: NONE,
       status: ACTIVE,
     });
     return this.heads.length - 1;
@@ -419,9 +399,9 @@ export class Stack {
           }
           next.node = linkNode(node, l);
           const subtree = linkSubtree(node, l);
-          if (subtree !== null) {
+          if (subtree !== NONE) {
             if (includeSubtrees) next.subtrees.push(subtree);
-            if (!flag(subtree, EXTRA)) {
+            if (!this.subtrees.flag(subtree, EXTRA)) {
               next.subtreeCount++;
               if (!linkPending(node, l)) next.isPending = false;
             }
@@ -442,9 +422,9 @@ export class Stack {
     let depth = 0;
     while (depth !== count && node.linkCount === 1) {
       const subtree = node.subtree0;
-      if (subtree !== null) {
+      if (subtree !== NONE) {
         subtrees.push(subtree);
-        if (!flag(subtree, EXTRA)) depth++;
+        if (!this.subtrees.flag(subtree, EXTRA)) depth++;
       } else depth++;
       node = node.node0 as StackNode;
     }
@@ -456,7 +436,7 @@ export class Stack {
     }
     return this.iter(
       version,
-      (it) => (it.subtreeCount === count ? POP | STOP : NONE),
+      (it) => (it.subtreeCount === count ? POP | STOP : CONTINUE),
       count,
     );
   }
@@ -474,9 +454,9 @@ export class Stack {
     while (depth !== count) {
       if (node.linkCount !== 1) return null;
       const subtree = node.subtree0;
-      if (subtree !== null) {
+      if (subtree !== NONE) {
         subtrees.push(subtree);
-        if (!flag(subtree, EXTRA)) depth++;
+        if (!this.subtrees.flag(subtree, EXTRA)) depth++;
       } else depth++;
       this.free.push(node);
       node = node.node0 as StackNode;
@@ -489,7 +469,7 @@ export class Stack {
     const pop = this.iter(
       version,
       (it) =>
-        it.subtreeCount >= 1 ? (it.isPending ? POP | STOP : STOP) : NONE,
+        it.subtreeCount >= 1 ? (it.isPending ? POP | STOP : STOP) : CONTINUE,
       0,
     );
     if (pop.length > 0) {
@@ -504,7 +484,7 @@ export class Stack {
     const node = this.head(version).node;
     for (let i = 0; i < node.linkCount; i++) {
       const subtree = linkSubtree(node, i);
-      if (subtree !== null && subtree.symbol === SYM_ERROR) {
+      if (subtree !== NONE && this.subtrees.symbol(subtree) === SYM_ERROR) {
         let foundError = false;
         const pop = this.iter(
           version,
@@ -512,14 +492,14 @@ export class Stack {
             if (it.subtrees.length > 0) {
               if (
                 !foundError &&
-                (it.subtrees[0] as Subtree).symbol === SYM_ERROR
+                this.subtrees.symbol(it.subtrees[0] as Subtree) === SYM_ERROR
               ) {
                 foundError = true;
                 return POP | STOP;
               }
               return STOP;
             }
-            return NONE;
+            return CONTINUE;
           },
           1,
         );
@@ -537,7 +517,7 @@ export class Stack {
   popAll(version: number): StackSlice[] {
     return this.iter(
       version,
-      (it) => (it.node.linkCount === 0 ? POP : NONE),
+      (it) => (it.node.linkCount === 0 ? POP : CONTINUE),
       0,
     );
   }
@@ -553,7 +533,7 @@ export class Stack {
         for (let i = summary.length - 1; i >= 0; i--) {
           const entry = summary[i] as SummaryEntry;
           if (entry.depth < depth) break;
-          if (entry.depth === depth && entry.state === state) return NONE;
+          if (entry.depth === depth && entry.state === state) return CONTINUE;
         }
         summary.push({
           position: it.node.position,
@@ -561,7 +541,7 @@ export class Stack {
           depth,
           state,
         });
-        return NONE;
+        return CONTINUE;
       },
       -1,
     );
@@ -583,11 +563,11 @@ export class Stack {
     while (node !== undefined) {
       if (node.linkCount > 0) {
         const subtree = node.subtree0;
-        if (subtree !== null) {
-          if (totalSize(subtree) > 0) return true;
+        if (subtree !== NONE) {
+          if (this.subtrees.totalSize(subtree) > 0) return true;
           if (
             node.nodeCount > head.nodeCountAtLastError &&
-            errorCost(subtree) === 0
+            this.subtrees.errorCost(subtree) === 0
           ) {
             node = node.node0 as StackNode;
             continue;
@@ -632,6 +612,7 @@ export class Stack {
     const from = head2.node;
     for (let i = 0; i < from.linkCount; i++)
       addLink(
+        this.subtrees,
         head1.node,
         linkNode(from, i),
         linkSubtree(from, i),
@@ -652,7 +633,10 @@ export class Stack {
       head1.node.state === head2.node.state &&
       head1.node.position === head2.node.position &&
       head1.node.errorCost === head2.node.errorCost &&
-      externalStateEq(head1.lastExternalToken, head2.lastExternalToken)
+      this.subtrees.externalStateEq(
+        head1.lastExternalToken,
+        head2.lastExternalToken,
+      )
     );
   }
 
@@ -660,7 +644,7 @@ export class Stack {
     this.head(version).status = HALTED;
   }
 
-  pause(version: number, lookahead: Subtree | null): void {
+  pause(version: number, lookahead: Subtree): void {
     const head = this.head(version);
     head.status = PAUSED;
     head.lookaheadWhenPaused = lookahead;
@@ -679,11 +663,11 @@ export class Stack {
     return this.head(version).status === PAUSED;
   }
 
-  resume(version: number): Subtree | null {
+  resume(version: number): Subtree {
     const head = this.head(version);
     const result = head.lookaheadWhenPaused;
     head.status = ACTIVE;
-    head.lookaheadWhenPaused = null;
+    head.lookaheadWhenPaused = NONE;
     return result;
   }
 }

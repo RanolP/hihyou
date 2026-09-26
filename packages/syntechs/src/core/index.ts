@@ -14,5 +14,6 @@ export type { ExternalScanner, Lexer } from "./lexer.js";
 
 /** Parses `text` into the arena tree the diff reads: the visible nodes, layout-only JSX text dropped. */
 export function parseTree(lang: Language, text: string): Tree {
-  return buildTree(lang, parseSubtree(lang, text), text);
+  const { subtrees, root } = parseSubtree(lang, text);
+  return buildTree(subtrees, root, text);
 }

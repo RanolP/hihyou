@@ -1,6 +1,9 @@
 // Port of tree-sitter v0.27.0 lib/src/subtree.c: the parts the parser uses when parsing from scratch.
-// Subtrees are plain objects owned by the garbage collector, so there is no ref-counting; `make_mut` always
-// clones, which C also does whenever a subtree is shared (the token cache always shares the lookahead).
+// Subtrees are records in one growable Int32Array per parse, bump-allocated and freed together with the parse;
+// a subtree is its record's word offset. There is no ref-counting, so `make_mut` always copies, which C also
+// does whenever a subtree is shared (the token cache always shares the lookahead): a record is written only by
+// the call that allocated it, before any other version can reach it. Versions that lose leave their records
+// behind as garbage until the parse ends.
 // Sizes are UTF-16 units; costs double them because tree-sitter measures UTF-16 input in bytes.
 
 import {
@@ -20,7 +23,6 @@ export const COST_PER_SKIPPED_TREE = 100;
 export const COST_PER_SKIPPED_LINE = 30;
 export const COST_PER_SKIPPED_CHAR = 1;
 
-const NO_CHILDREN: Subtree[] = [];
 export const EMPTY_STATE = new Uint8Array(0);
 
 export const VISIBLE = 1;
@@ -32,60 +34,45 @@ export const IS_KEYWORD = 32;
 export const IS_MISSING = 64;
 export const HAS_EXTERNAL_TOKENS = 128;
 export const HAS_EXTERNAL_SCANNER_STATE_CHANGE = 256;
+/** The record is a token's short one, with `EXTERNAL` where a node's record keeps its production id. */
+const LEAF_RECORD = 512;
 
-// The booleans share one small-integer field, read with `flag`: a parse allocates a subtree per token and per
-// reduction, and nine fields of their own made each one about half again as large.
-export interface Subtree {
-  symbol: number;
-  parseState: number;
-  padding: number;
-  paddingRows: number;
-  size: number;
-  sizeRows: number;
-  /** Stored cost; read it through `errorCost()`, which prices missing leaves. */
-  cost: number;
-  children: Subtree[];
-  flags: number;
-  externalState: Uint8Array;
-  productionId: number;
-  dynamicPrecedence: number;
-  visibleDescendantCount: number;
-  visibleChildCount: number;
-  firstLeafSymbol: number;
-  firstLeafParseState: number;
-}
+declare const subtreeBrand: unique symbol;
+/** A record's word offset in its parse's `Subtrees`. */
+export type Subtree = number & { readonly [subtreeBrand]: true };
+/** No subtree: C's NULL_SUBTREE, which the stack links for an error and the parser passes for no lookahead. */
+export const NONE = -1 as Subtree;
 
-// Every subtree comes from this one object literal rather than a class: V8 learns that the objects of a
-// literal's allocation site outlive the young generation and then allocates them old, which it does not do
-// for `new`, and a tree is long-lived. Copying survivors out of the young generation was most of the GC time.
-function subtree(symbol: number, parseState: number, flags: number): Subtree {
-  return {
-    symbol,
-    parseState,
-    padding: 0,
-    paddingRows: 0,
-    size: 0,
-    sizeRows: 0,
-    cost: 0,
-    children: NO_CHILDREN,
-    flags,
-    externalState: EMPTY_STATE,
-    productionId: 0,
-    dynamicPrecedence: 0,
-    visibleDescendantCount: 0,
-    visibleChildCount: 0,
-    firstLeafSymbol: 0,
-    firstLeafParseState: 0,
-  };
-}
+// Every record starts with these words.
+export const SYMBOL = 0;
+export const FLAGS = 1;
+const PARSE_STATE = 2;
+export const PADDING = 3;
+const PADDING_ROWS = 4;
+export const SIZE = 5;
+const SIZE_ROWS = 6;
+/** Stored cost; read it through `errorCost()`, which prices missing leaves. */
+const COST = 7;
+export const CHILD_COUNT = 8;
+// A token's record ends with the index of its external scanner state.
+const EXTERNAL = 9;
+const LEAF_WORDS = 10;
+// A node's record goes on with these, then its children's handles. A node may have no children (an ERROR
+// node recovery pushes at the end of input); only `LEAF_RECORD` tells the two layouts apart.
+export const PRODUCTION_ID = 9;
+const DYNAMIC_PRECEDENCE = 10;
+const VISIBLE_DESCENDANT_COUNT = 11;
+const VISIBLE_CHILD_COUNT = 12;
+const FIRST_LEAF_SYMBOL = 13;
+const FIRST_LEAF_PARSE_STATE = 14;
+export const CHILDREN = 15;
 
-export function flag(t: Subtree, bit: number): boolean {
-  return (t.flags & bit) !== 0;
-}
-
-export function setFlag(t: Subtree, bit: number, on: boolean): void {
-  t.flags = on ? t.flags | bit : t.flags & ~bit;
-}
+/**
+ * Words reserved per UTF-16 unit of source before the first doubling.
+ * TODO(parser-arena): set from the measured words per char once the parse runs on the arena.
+ */
+const WORDS_PER_CHAR = 4;
+const MIN_WORDS = 1024;
 
 /** VISIBLE and NAMED as a symbol's metadata gives them. */
 function symbolBits(lang: Language, symbol: number): number {
@@ -96,32 +83,6 @@ function symbolBits(lang: Language, symbol: number): number {
   );
 }
 
-export function errorCost(t: Subtree): number {
-  return flag(t, IS_MISSING)
-    ? COST_PER_MISSING_TREE + COST_PER_RECOVERY
-    : t.cost;
-}
-
-export function leafSymbol(t: Subtree): number {
-  return t.children.length === 0 ? t.symbol : t.firstLeafSymbol;
-}
-
-export function leafParseState(t: Subtree): number {
-  return t.children.length === 0 ? t.parseState : t.firstLeafParseState;
-}
-
-export function totalSize(t: Subtree): number {
-  return t.padding + t.size;
-}
-
-export function totalRows(t: Subtree): number {
-  return t.paddingRows + t.sizeRows;
-}
-
-export function nodeDynamicPrecedence(t: Subtree | null): number {
-  return t === null || t.children.length === 0 ? 0 : t.dynamicPrecedence;
-}
-
 function errorExtentCost(size: number, rows: number): number {
   return (
     COST_PER_RECOVERY +
@@ -130,269 +91,457 @@ function errorExtentCost(size: number, rows: number): number {
   );
 }
 
-export function newLeaf(
-  lang: Language,
-  symbol: number,
-  padding: number,
-  paddingRows: number,
-  size: number,
-  sizeRows: number,
-  parseState: number,
-  hasExternalTokens: boolean,
-  isKeyword: boolean,
-): Subtree {
-  const t = subtree(
-    symbol,
-    parseState,
-    symbolBits(lang, symbol) |
-      (symbol === 0 ? EXTRA : 0) |
-      (hasExternalTokens ? HAS_EXTERNAL_TOKENS : 0) |
-      (isKeyword ? IS_KEYWORD : 0),
-  );
-  t.padding = padding;
-  t.paddingRows = paddingRows;
-  t.size = size;
-  t.sizeRows = sizeRows;
-  return t;
-}
+/**
+ * One parse's subtrees. Every method that allocates may replace `words`, so a caller holding the array across
+ * an allocation must read it again.
+ */
+export class Subtrees {
+  words: Int32Array;
+  /** Words in use; the next record starts here. */
+  top = 0;
+  /** Records allocated and not released, garbage included. */
+  records = 0;
+  /** External scanner states by `EXTERNAL` index; 0 is the empty state. */
+  private readonly external: Uint8Array[] = [EMPTY_STATE];
 
-export function newError(
-  lang: Language,
-  padding: number,
-  paddingRows: number,
-  size: number,
-  sizeRows: number,
-  parseState: number,
-): Subtree {
-  const t = newLeaf(
-    lang,
-    SYM_ERROR,
-    padding,
-    paddingRows,
-    size,
-    sizeRows,
-    parseState,
-    false,
-    false,
-  );
-  t.flags |= FRAGILE_LEFT | FRAGILE_RIGHT;
-  return t;
-}
+  constructor(
+    readonly lang: Language,
+    sourceLength: number,
+  ) {
+    this.words = new Int32Array(
+      Math.max(MIN_WORDS, Math.ceil(sourceLength * WORDS_PER_CHAR)),
+    );
+  }
 
-export function newMissingLeaf(
-  lang: Language,
-  symbol: number,
-  state: number,
-  padding: number,
-  paddingRows: number,
-): Subtree {
-  const t = newLeaf(
-    lang,
-    symbol,
-    padding,
-    paddingRows,
-    0,
-    0,
-    state,
-    false,
-    false,
-  );
-  t.flags |= IS_MISSING;
-  return t;
-}
-
-/** `ts_subtree_make_mut` for a leaf: a fresh copy the caller may change. */
-export function cloneLeaf(t: Subtree): Subtree {
-  const c = subtree(t.symbol, t.parseState, t.flags);
-  c.padding = t.padding;
-  c.paddingRows = t.paddingRows;
-  c.size = t.size;
-  c.sizeRows = t.sizeRows;
-  c.cost = t.cost;
-  c.children = t.children;
-  c.externalState = t.externalState;
-  c.productionId = t.productionId;
-  c.dynamicPrecedence = t.dynamicPrecedence;
-  c.visibleDescendantCount = t.visibleDescendantCount;
-  c.visibleChildCount = t.visibleChildCount;
-  c.firstLeafSymbol = t.firstLeafSymbol;
-  c.firstLeafParseState = t.firstLeafParseState;
-  return c;
-}
-
-export function setSymbol(lang: Language, t: Subtree, symbol: number): void {
-  t.symbol = symbol;
-  t.flags = (t.flags & ~(VISIBLE | NAMED)) | symbolBits(lang, symbol);
-}
-
-export function summarizeChildren(lang: Language, self: Subtree): void {
-  self.visibleChildCount = 0;
-  self.cost = 0;
-  self.visibleDescendantCount = 0;
-  self.flags &= ~(HAS_EXTERNAL_TOKENS | HAS_EXTERNAL_SCANNER_STATE_CHANGE);
-  self.dynamicPrecedence = 0;
-  let structuralIndex = 0;
-  const productionId = self.productionId;
-  const isErrorParent =
-    self.symbol === SYM_ERROR || self.symbol === SYM_ERROR_REPEAT;
-  const children = self.children;
-  const n = children.length;
-  for (let i = 0; i < n; i++) {
-    const child = children[i] as Subtree;
-    const childFlags = child.flags;
-    if ((childFlags & HAS_EXTERNAL_SCANNER_STATE_CHANGE) !== 0)
-      self.flags |= HAS_EXTERNAL_SCANNER_STATE_CHANGE;
-    if (i === 0) {
-      self.padding = child.padding;
-      self.paddingRows = child.paddingRows;
-      self.size = child.size;
-      self.sizeRows = child.sizeRows;
-    } else {
-      // length_add: rows accumulate, bytes accumulate.
-      self.size += child.padding + child.size;
-      self.sizeRows += child.paddingRows + child.sizeRows;
+  private alloc(words: number): Subtree {
+    const t = this.top;
+    const need = t + words;
+    if (need > this.words.length) {
+      let size = this.words.length * 2;
+      while (size < need) size *= 2;
+      const next = new Int32Array(size);
+      next.set(this.words.subarray(0, t));
+      this.words = next;
     }
-    const grandchildCount = child.children.length;
-    if (child.symbol === SYM_ERROR_REPEAT) {
-      self.cost +=
-        errorCost(child) - errorExtentCost(child.size, child.sizeRows);
-    } else {
-      self.cost += errorCost(child);
-      if (
-        isErrorParent &&
-        (childFlags & EXTRA) === 0 &&
-        !(child.symbol === SYM_ERROR && grandchildCount === 0)
-      ) {
-        if ((childFlags & VISIBLE) !== 0) self.cost += COST_PER_SKIPPED_TREE;
-        else if (grandchildCount > 0)
-          self.cost += COST_PER_SKIPPED_TREE * child.visibleChildCount;
+    this.top = need;
+    this.records++;
+    return t as Subtree;
+  }
+
+  /** Frees `t`, the last record allocated, which nothing may reference any more. */
+  release(t: Subtree): void {
+    this.top = t;
+    this.records--;
+  }
+
+  // ---- reads ---------------------------------------------------------------------------------------------
+
+  symbol(t: Subtree): number {
+    return this.words[t + SYMBOL] as number;
+  }
+
+  flag(t: Subtree, bit: number): boolean {
+    return ((this.words[t + FLAGS] as number) & bit) !== 0;
+  }
+
+  parseState(t: Subtree): number {
+    return this.words[t + PARSE_STATE] as number;
+  }
+
+  padding(t: Subtree): number {
+    return this.words[t + PADDING] as number;
+  }
+
+  size(t: Subtree): number {
+    return this.words[t + SIZE] as number;
+  }
+
+  childCount(t: Subtree): number {
+    return this.words[t + CHILD_COUNT] as number;
+  }
+
+  child(t: Subtree, i: number): Subtree {
+    return this.words[t + CHILDREN + i] as Subtree;
+  }
+
+  /** A copy of the children's handles, which the caller owns. */
+  children(t: Subtree): Subtree[] {
+    const n = this.childCount(t);
+    const out: Subtree[] = [];
+    for (let i = 0; i < n; i++) out.push(this.child(t, i));
+    return out;
+  }
+
+  productionId(t: Subtree): number {
+    return this.flag(t, LEAF_RECORD)
+      ? 0
+      : (this.words[t + PRODUCTION_ID] as number);
+  }
+
+  errorCost(t: Subtree): number {
+    return this.flag(t, IS_MISSING)
+      ? COST_PER_MISSING_TREE + COST_PER_RECOVERY
+      : (this.words[t + COST] as number);
+  }
+
+  leafSymbol(t: Subtree): number {
+    const w = this.words;
+    return w[t + CHILD_COUNT] === 0
+      ? (w[t + SYMBOL] as number)
+      : (w[t + FIRST_LEAF_SYMBOL] as number);
+  }
+
+  leafParseState(t: Subtree): number {
+    const w = this.words;
+    return w[t + CHILD_COUNT] === 0
+      ? (w[t + PARSE_STATE] as number)
+      : (w[t + FIRST_LEAF_PARSE_STATE] as number);
+  }
+
+  totalSize(t: Subtree): number {
+    const w = this.words;
+    return (w[t + PADDING] as number) + (w[t + SIZE] as number);
+  }
+
+  totalRows(t: Subtree): number {
+    const w = this.words;
+    return (w[t + PADDING_ROWS] as number) + (w[t + SIZE_ROWS] as number);
+  }
+
+  /** 0 for `NONE` and for a subtree with no children. */
+  nodeDynamicPrecedence(t: Subtree): number {
+    return t === NONE || this.words[t + CHILD_COUNT] === 0
+      ? 0
+      : (this.words[t + DYNAMIC_PRECEDENCE] as number);
+  }
+
+  nodeCountOf(t: Subtree): number {
+    const w = this.words;
+    let count =
+      w[t + CHILD_COUNT] === 0 ? 0 : (w[t + VISIBLE_DESCENDANT_COUNT] as number);
+    if (((w[t + FLAGS] as number) & VISIBLE) !== 0) count++;
+    if (w[t + SYMBOL] === SYM_ERROR_REPEAT) count++;
+    return count;
+  }
+
+  /** A token's scanner state as the lexer serialized it, whether or not the token has external tokens; empty for `NONE`. */
+  externalStateOf(t: Subtree): Uint8Array {
+    return t === NONE || !this.flag(t, LEAF_RECORD)
+      ? EMPTY_STATE
+      : (this.external[this.words[t + EXTERNAL] as number] as Uint8Array);
+  }
+
+  /** `ts_subtree_external_scanner_state`: empty unless `t` is a token with external tokens. */
+  externalScannerState(t: Subtree): Uint8Array {
+    return t !== NONE &&
+      this.flag(t, HAS_EXTERNAL_TOKENS) &&
+      this.childCount(t) === 0
+      ? this.externalStateOf(t)
+      : EMPTY_STATE;
+  }
+
+  externalStateEq(a: Subtree, b: Subtree): boolean {
+    return bytesEqual(this.externalScannerState(a), this.externalScannerState(b));
+  }
+
+  lastExternalToken(tree: Subtree): Subtree {
+    if (!this.flag(tree, HAS_EXTERNAL_TOKENS)) return NONE;
+    let t = tree;
+    while (this.childCount(t) > 0) {
+      for (let i = this.childCount(t) - 1; i >= 0; i--) {
+        const child = this.child(t, i);
+        if (this.flag(child, HAS_EXTERNAL_TOKENS)) {
+          t = child;
+          break;
+        }
       }
     }
-    if (grandchildCount > 0) {
-      self.dynamicPrecedence += child.dynamicPrecedence;
-      self.visibleDescendantCount += child.visibleDescendantCount;
+    return t;
+  }
+
+  /** -1, 0 or 1: symbol, then child count, then children, in preorder. */
+  compare(left: Subtree, right: Subtree): number {
+    const stack: Subtree[] = [left, right];
+    while (stack.length > 0) {
+      const r = stack.pop() as Subtree;
+      const l = stack.pop() as Subtree;
+      const ls = this.symbol(l);
+      const rs = this.symbol(r);
+      if (ls < rs) return -1;
+      if (rs < ls) return 1;
+      const ln = this.childCount(l);
+      const rn = this.childCount(r);
+      if (ln < rn) return -1;
+      if (rn < ln) return 1;
+      for (let i = ln; i > 0; i--)
+        stack.push(this.child(l, i - 1), this.child(r, i - 1));
     }
+    return 0;
+  }
+
+  /** Moves the trailing extras of `self` into a new array, in their original order. */
+  removeTrailingExtras(self: Subtree[]): readonly Subtree[] {
     if (
-      (childFlags & EXTRA) === 0 &&
-      child.symbol !== 0 &&
-      aliasAt(lang, productionId, structuralIndex) !== 0
-    ) {
-      self.visibleDescendantCount++;
-      self.visibleChildCount++;
-    } else if ((childFlags & VISIBLE) !== 0) {
-      self.visibleDescendantCount++;
-      self.visibleChildCount++;
-    } else if (grandchildCount > 0) {
-      self.visibleChildCount += child.visibleChildCount;
+      self.length === 0 ||
+      !this.flag(self[self.length - 1] as Subtree, EXTRA)
+    )
+      return NO_SUBTREES;
+    const out: Subtree[] = [];
+    while (self.length > 0 && this.flag(self[self.length - 1] as Subtree, EXTRA))
+      out.push(self.pop() as Subtree);
+    out.reverse();
+    return out;
+  }
+
+  // ---- writes, only to a record the caller has just allocated ---------------------------------------------
+
+  setFlag(t: Subtree, bit: number, on: boolean): void {
+    const w = this.words;
+    const flags = w[t + FLAGS] as number;
+    w[t + FLAGS] = on ? flags | bit : flags & ~bit;
+  }
+
+  setSymbol(t: Subtree, symbol: number): void {
+    const w = this.words;
+    w[t + SYMBOL] = symbol;
+    w[t + FLAGS] =
+      ((w[t + FLAGS] as number) & ~(VISIBLE | NAMED)) |
+      symbolBits(this.lang, symbol);
+  }
+
+  setParseState(t: Subtree, state: number): void {
+    this.words[t + PARSE_STATE] = state;
+  }
+
+  /** On a node's record; a token has no dynamic precedence. */
+  addDynamicPrecedence(t: Subtree, amount: number): void {
+    const w = this.words;
+    w[t + DYNAMIC_PRECEDENCE] = (w[t + DYNAMIC_PRECEDENCE] as number) + amount;
+  }
+
+  /** On a token's record. */
+  setExternalState(t: Subtree, state: Uint8Array): void {
+    this.words[t + EXTERNAL] = this.external.length;
+    this.external.push(state);
+  }
+
+  // ---- constructors --------------------------------------------------------------------------------------
+
+  newLeaf(
+    symbol: number,
+    padding: number,
+    paddingRows: number,
+    size: number,
+    sizeRows: number,
+    parseState: number,
+    hasExternalTokens: boolean,
+    isKeyword: boolean,
+  ): Subtree {
+    const t = this.alloc(LEAF_WORDS);
+    const w = this.words;
+    w[t + SYMBOL] = symbol;
+    w[t + FLAGS] =
+      LEAF_RECORD |
+      symbolBits(this.lang, symbol) |
+      (symbol === 0 ? EXTRA : 0) |
+      (hasExternalTokens ? HAS_EXTERNAL_TOKENS : 0) |
+      (isKeyword ? IS_KEYWORD : 0);
+    w[t + PARSE_STATE] = parseState;
+    w[t + PADDING] = padding;
+    w[t + PADDING_ROWS] = paddingRows;
+    w[t + SIZE] = size;
+    w[t + SIZE_ROWS] = sizeRows;
+    w[t + COST] = 0;
+    w[t + CHILD_COUNT] = 0;
+    w[t + EXTERNAL] = 0;
+    return t;
+  }
+
+  newError(
+    padding: number,
+    paddingRows: number,
+    size: number,
+    sizeRows: number,
+    parseState: number,
+  ): Subtree {
+    const t = this.newLeaf(
+      SYM_ERROR,
+      padding,
+      paddingRows,
+      size,
+      sizeRows,
+      parseState,
+      false,
+      false,
+    );
+    this.setFlag(t, FRAGILE_LEFT | FRAGILE_RIGHT, true);
+    return t;
+  }
+
+  newMissingLeaf(
+    symbol: number,
+    state: number,
+    padding: number,
+    paddingRows: number,
+  ): Subtree {
+    const t = this.newLeaf(symbol, padding, paddingRows, 0, 0, state, false, false);
+    this.setFlag(t, IS_MISSING, true);
+    return t;
+  }
+
+  /** `ts_subtree_make_mut`: a fresh copy of `t`'s record the caller may change. */
+  cloneLeaf(t: Subtree): Subtree {
+    const words = this.flag(t, LEAF_RECORD)
+      ? LEAF_WORDS
+      : CHILDREN + this.childCount(t);
+    const c = this.alloc(words);
+    this.words.copyWithin(c, t, t + words);
+    return c;
+  }
+
+  newNode(
+    symbol: number,
+    children: readonly Subtree[],
+    productionId: number,
+  ): Subtree {
+    const n = children.length;
+    const t = this.alloc(CHILDREN + n);
+    const w = this.words;
+    const fragile = symbol === SYM_ERROR || symbol === SYM_ERROR_REPEAT;
+    w[t + SYMBOL] = symbol;
+    w[t + FLAGS] =
+      symbolBits(this.lang, symbol) |
+      (fragile ? FRAGILE_LEFT | FRAGILE_RIGHT : 0);
+    w[t + PARSE_STATE] = 0;
+    w[t + CHILD_COUNT] = n;
+    w[t + PRODUCTION_ID] = productionId;
+    for (let i = 0; i < n; i++) w[t + CHILDREN + i] = children[i] as Subtree;
+    this.summarizeChildren(t);
+    return t;
+  }
+
+  newErrorNode(children: readonly Subtree[], extra: boolean): Subtree {
+    const t = this.newNode(SYM_ERROR, children, 0);
+    this.setFlag(t, EXTRA, extra);
+    return t;
+  }
+
+  private summarizeChildren(self: Subtree): void {
+    const lang = this.lang;
+    const w = this.words;
+    let flags =
+      (w[self + FLAGS] as number) &
+      ~(HAS_EXTERNAL_TOKENS | HAS_EXTERNAL_SCANNER_STATE_CHANGE);
+    let parseState = w[self + PARSE_STATE] as number;
+    let padding = 0;
+    let paddingRows = 0;
+    let size = 0;
+    let sizeRows = 0;
+    let cost = 0;
+    let dynamicPrecedence = 0;
+    let visibleDescendantCount = 0;
+    let visibleChildCount = 0;
+    let structuralIndex = 0;
+    const productionId = w[self + PRODUCTION_ID] as number;
+    const selfSymbol = w[self + SYMBOL] as number;
+    const isErrorParent =
+      selfSymbol === SYM_ERROR || selfSymbol === SYM_ERROR_REPEAT;
+    const n = w[self + CHILD_COUNT] as number;
+    for (let i = 0; i < n; i++) {
+      const child = w[self + CHILDREN + i] as number;
+      const childFlags = w[child + FLAGS] as number;
+      const childSymbol = w[child + SYMBOL] as number;
+      const childSize = w[child + SIZE] as number;
+      const childSizeRows = w[child + SIZE_ROWS] as number;
+      if ((childFlags & HAS_EXTERNAL_SCANNER_STATE_CHANGE) !== 0)
+        flags |= HAS_EXTERNAL_SCANNER_STATE_CHANGE;
+      if (i === 0) {
+        padding = w[child + PADDING] as number;
+        paddingRows = w[child + PADDING_ROWS] as number;
+        size = childSize;
+        sizeRows = childSizeRows;
+      } else {
+        // length_add: rows accumulate, bytes accumulate.
+        size += (w[child + PADDING] as number) + childSize;
+        sizeRows += (w[child + PADDING_ROWS] as number) + childSizeRows;
+      }
+      const grandchildCount = w[child + CHILD_COUNT] as number;
+      const childCost =
+        (childFlags & IS_MISSING) !== 0
+          ? COST_PER_MISSING_TREE + COST_PER_RECOVERY
+          : (w[child + COST] as number);
+      if (childSymbol === SYM_ERROR_REPEAT) {
+        cost += childCost - errorExtentCost(childSize, childSizeRows);
+      } else {
+        cost += childCost;
+        if (
+          isErrorParent &&
+          (childFlags & EXTRA) === 0 &&
+          !(childSymbol === SYM_ERROR && grandchildCount === 0)
+        ) {
+          if ((childFlags & VISIBLE) !== 0) cost += COST_PER_SKIPPED_TREE;
+          else if (grandchildCount > 0)
+            cost +=
+              COST_PER_SKIPPED_TREE *
+              (w[child + VISIBLE_CHILD_COUNT] as number);
+        }
+      }
+      if (grandchildCount > 0) {
+        dynamicPrecedence += w[child + DYNAMIC_PRECEDENCE] as number;
+        visibleDescendantCount += w[child + VISIBLE_DESCENDANT_COUNT] as number;
+      }
+      if (
+        (childFlags & EXTRA) === 0 &&
+        childSymbol !== 0 &&
+        aliasAt(lang, productionId, structuralIndex) !== 0
+      ) {
+        visibleDescendantCount++;
+        visibleChildCount++;
+      } else if ((childFlags & VISIBLE) !== 0) {
+        visibleDescendantCount++;
+        visibleChildCount++;
+      } else if (grandchildCount > 0) {
+        visibleChildCount += w[child + VISIBLE_CHILD_COUNT] as number;
+      }
+      if ((childFlags & HAS_EXTERNAL_TOKENS) !== 0) flags |= HAS_EXTERNAL_TOKENS;
+      if (childSymbol === SYM_ERROR) {
+        flags |= FRAGILE_LEFT | FRAGILE_RIGHT;
+        parseState = STATE_NONE;
+      }
+      if ((childFlags & EXTRA) === 0) structuralIndex++;
     }
-    if ((childFlags & HAS_EXTERNAL_TOKENS) !== 0)
-      self.flags |= HAS_EXTERNAL_TOKENS;
-    if (child.symbol === SYM_ERROR) {
-      self.flags |= FRAGILE_LEFT | FRAGILE_RIGHT;
-      self.parseState = STATE_NONE;
+    if (isErrorParent) cost += errorExtentCost(size, sizeRows);
+    let firstLeafSymbol = 0;
+    let firstLeafParseState = 0;
+    if (n > 0) {
+      const first = w[self + CHILDREN] as Subtree;
+      const last = w[self + CHILDREN + n - 1] as number;
+      firstLeafSymbol = this.leafSymbol(first);
+      firstLeafParseState = this.leafParseState(first);
+      flags |=
+        ((w[first + FLAGS] as number) & FRAGILE_LEFT) |
+        ((w[last + FLAGS] as number) & FRAGILE_RIGHT);
     }
-    if ((childFlags & EXTRA) === 0) structuralIndex++;
+    w[self + FLAGS] = flags;
+    w[self + PARSE_STATE] = parseState;
+    w[self + PADDING] = padding;
+    w[self + PADDING_ROWS] = paddingRows;
+    w[self + SIZE] = size;
+    w[self + SIZE_ROWS] = sizeRows;
+    w[self + COST] = cost;
+    w[self + DYNAMIC_PRECEDENCE] = dynamicPrecedence;
+    w[self + VISIBLE_DESCENDANT_COUNT] = visibleDescendantCount;
+    w[self + VISIBLE_CHILD_COUNT] = visibleChildCount;
+    w[self + FIRST_LEAF_SYMBOL] = firstLeafSymbol;
+    w[self + FIRST_LEAF_PARSE_STATE] = firstLeafParseState;
   }
-  if (isErrorParent) self.cost += errorExtentCost(self.size, self.sizeRows);
-  if (n > 0) {
-    const first = children[0] as Subtree;
-    const last = children[n - 1] as Subtree;
-    self.firstLeafSymbol = leafSymbol(first);
-    self.firstLeafParseState = leafParseState(first);
-    self.flags |= (first.flags & FRAGILE_LEFT) | (last.flags & FRAGILE_RIGHT);
-  }
 }
 
-export function newNode(
-  lang: Language,
-  symbol: number,
-  children: Subtree[],
-  productionId: number,
-): Subtree {
-  const fragile = symbol === SYM_ERROR || symbol === SYM_ERROR_REPEAT;
-  const t = subtree(
-    symbol,
-    0,
-    symbolBits(lang, symbol) | (fragile ? FRAGILE_LEFT | FRAGILE_RIGHT : 0),
-  );
-  t.children = children;
-  t.productionId = productionId;
-  summarizeChildren(lang, t);
-  return t;
-}
-
-export function newErrorNode(
-  lang: Language,
-  children: Subtree[],
-  extra: boolean,
-): Subtree {
-  const t = newNode(lang, SYM_ERROR, children, 0);
-  setFlag(t, EXTRA, extra);
-  return t;
-}
-
-/** -1, 0 or 1: symbol, then child count, then children, in preorder. */
-export function compareSubtrees(left: Subtree, right: Subtree): number {
-  const stack: Subtree[] = [left, right];
-  while (stack.length > 0) {
-    const r = stack.pop() as Subtree;
-    const l = stack.pop() as Subtree;
-    if (l.symbol < r.symbol) return -1;
-    if (r.symbol < l.symbol) return 1;
-    if (l.children.length < r.children.length) return -1;
-    if (r.children.length < l.children.length) return 1;
-    for (let i = l.children.length; i > 0; i--)
-      stack.push(l.children[i - 1] as Subtree, r.children[i - 1] as Subtree);
-  }
-  return 0;
-}
-
-export function externalScannerState(t: Subtree | null): Uint8Array {
-  return t !== null && flag(t, HAS_EXTERNAL_TOKENS) && t.children.length === 0
-    ? t.externalState
-    : EMPTY_STATE;
-}
+const NO_SUBTREES: readonly Subtree[] = [];
 
 export function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (a === b) return true;
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
   return true;
-}
-
-export function externalStateEq(a: Subtree | null, b: Subtree | null): boolean {
-  return bytesEqual(externalScannerState(a), externalScannerState(b));
-}
-
-export function lastExternalToken(tree: Subtree): Subtree | null {
-  if (!flag(tree, HAS_EXTERNAL_TOKENS)) return null;
-  let t = tree;
-  while (t.children.length > 0) {
-    for (let i = t.children.length - 1; i >= 0; i--) {
-      const child = t.children[i] as Subtree;
-      if (flag(child, HAS_EXTERNAL_TOKENS)) {
-        t = child;
-        break;
-      }
-    }
-  }
-  return t;
-}
-
-/** Moves the trailing extras of `self` into a new array, in their original order. */
-export function removeTrailingExtras(self: Subtree[]): readonly Subtree[] {
-  if (self.length === 0 || !flag(self[self.length - 1] as Subtree, EXTRA))
-    return NO_CHILDREN;
-  const out: Subtree[] = [];
-  while (self.length > 0 && flag(self[self.length - 1] as Subtree, EXTRA))
-    out.push(self.pop() as Subtree);
-  out.reverse();
-  return out;
-}
-
-export function nodeCountOf(t: Subtree): number {
-  let count = t.children.length === 0 ? 0 : t.visibleDescendantCount;
-  if (flag(t, VISIBLE)) count++;
-  if (t.symbol === SYM_ERROR_REPEAT) count++;
-  return count;
 }
