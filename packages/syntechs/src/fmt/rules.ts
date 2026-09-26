@@ -401,16 +401,15 @@ function listRule<O>(o: ListOptions<Grammar, O>): Rule<never, O> {
     const blankAfter = (item: FormatNode) =>
       !always && isNextLineEmpty(ctx.source, item.end);
     // Each item's separator, found in one pass: a lookup per item would be quadratic in a lockfile's objects.
-    const seps = new Map<FormatNode, FormatNode>();
-    const isItem = new Set(items);
-    let previous: FormatNode | undefined;
+    // `items` is `children` filtered in order, so one cursor walks both; `seps[i]` follows `items[i]`.
+    const seps: (FormatNode | undefined)[] = [];
+    let seen = 0;
     for (const c of node.children) {
-      if (isItem.has(c)) previous = c;
-      else if (previous && !c.named && c.kind === o.sep && !seps.has(previous))
-        seps.set(previous, c);
+      if (c === items[seen]) seen++;
+      else if (seen > 0 && !c.named && c.kind === o.sep) seps[seen - 1] ??= c;
     }
-    const sep = (item: FormatNode) => {
-      const c = seps.get(item);
+    const sep = (i: number) => {
+      const c = seps[i];
       return c ? token(c, slice(c, ctx)) : [];
     };
 
@@ -440,7 +439,7 @@ function listRule<O>(o: ListOptions<Grammar, O>): Rule<never, O> {
               : ctx.hasComment(next, "leadingLine")
                 ? hardline
                 : line;
-            return [[ctx.print(item), sep(item)], separator];
+            return [[ctx.print(item), sep(i)], separator];
           }),
         )
       : items.map((item, i) => {
@@ -453,7 +452,7 @@ function listRule<O>(o: ListOptions<Grammar, O>): Rule<never, O> {
               ? hardline
               : softline
             : [];
-          return [printed, sep(item), line, blank];
+          return [printed, sep(i), line, blank];
         });
     const pad = read(o.pad, ctx.options) ? line : softline;
     contents.push(open, indent([pad, body]), pad, close);
