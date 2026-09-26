@@ -8,6 +8,7 @@ import {
   space,
 } from "../builders.js";
 import { formatExpr, maybeParenthesize, node } from "../expr.js";
+import { leftToRight } from "./assign.js";
 import type { StmtRules } from "./suite.js";
 
 /** Ruff's one-line statements (statement/stmt_{expr,pass,return,raise,assert,delete,global,import,...}.rs). */
@@ -64,8 +65,7 @@ export const simpleRules: StmtRules = {
     if (!v) return f.tok(s.kw);
     if (v.kind === "Tuple" && !f.comments.hasLeading(v))
       return [f.tok(s.kw), space, node(f, v, { tuple: "optionalParentheses" })];
-    // TODO(C2): ruff's `FormatStatementsLastExpression::left_to_right`.
-    return [f.tok(s.kw), space, maybeParenthesize(f, v, s, "ifBreaks")];
+    return [f.tok(s.kw), space, leftToRight(f, v, s)];
   },
   Raise(f, s) {
     const [exc, cause] = s.values;

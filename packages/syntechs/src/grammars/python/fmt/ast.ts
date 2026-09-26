@@ -201,7 +201,8 @@ export type Other =
   | ExceptHandler
   | MatchCase
   | Pattern
-  | TypeParams;
+  | TypeParams
+  | TypeParam;
 
 export interface Arguments extends Base {
   readonly kind: "Arguments";
@@ -299,6 +300,18 @@ export interface Pattern extends Base {
 }
 export interface TypeParams extends Base {
   readonly kind: "TypeParams";
+  readonly open: FormatNode;
+  readonly params: TypeParam[];
+  readonly close: FormatNode;
+}
+/** `T`, `T: bound`, `*Ts` or `**P`. */
+export interface TypeParam extends Base {
+  readonly kind: "TypeParam";
+  /** `*` or `**`. */
+  readonly star: FormatNode | undefined;
+  readonly name: FormatNode;
+  readonly colon: FormatNode | undefined;
+  readonly bound: Expr | undefined;
 }
 
 export type Stmt =
@@ -693,10 +706,17 @@ class Reader {
           this.needField(n, "left"),
           this.needField(n, "right"),
         ];
-        const name = this.expr(this.typeExpr(left));
-        const value = this.expr(this.typeExpr(right));
-        const tp = this.named(n).find((c) => c.kind === "type_parameter");
+        // `type X[T] = ...` reads its left side as a generic type: the name, then the parameters.
+        const head = this.typeExpr(left);
+        const generic = head.kind === "generic_type";
+        const name = this.expr(
+          generic ? (this.named(head)[0] as FormatNode) : head,
+        );
+        const tp = generic
+          ? this.named(head).find((c) => c.kind === "type_parameter")
+          : undefined;
         const typeParams = tp && this.typeParams(tp);
+        const value = this.expr(this.typeExpr(right));
         return this.link({
           kind: "TypeAlias",
           ts: n,
@@ -1142,15 +1162,63 @@ class Reader {
   }
 
   typeParams(n: FormatNode): TypeParams {
-    this.dotted(n);
-    return {
+    const params = this.named(n).map((t) => this.typeParam(t));
+    return this.link({
       kind: "TypeParams",
       ts: n,
       start: n.start,
       end: n.end,
-      kids: [],
+      kids: params,
       parent: undefined,
-    };
+      open: this.need(n, "["),
+      params,
+      close: this.need(n, "]"),
+    });
+  }
+
+  typeParam(t: FormatNode): TypeParam {
+    const p = this.typeExpr(t);
+    const base = { ts: p, start: p.start, end: p.end, parent: undefined };
+    switch (p.kind) {
+      case "identifier":
+        return {
+          ...base,
+          kind: "TypeParam",
+          kids: [],
+          star: undefined,
+          name: p,
+          colon: undefined,
+          bound: undefined,
+        };
+      case "splat_type":
+        return {
+          ...base,
+          kind: "TypeParam",
+          kids: [],
+          star: p.children[0] ?? fail(p, "no star"),
+          name: this.named(p)[0] ?? fail(p, "no name"),
+          colon: undefined,
+          bound: undefined,
+        };
+      case "constrained_type": {
+        const [nameType, boundType] = this.named(p);
+        const name = nameType && this.typeExpr(nameType);
+        if (!name || name.kind !== "identifier" || !boundType)
+          return fail(p, "unsupported type parameter");
+        const bound = this.expr(boundType);
+        return this.link({
+          ...base,
+          kind: "TypeParam",
+          kids: [bound],
+          star: undefined,
+          name,
+          colon: this.need(p, ":"),
+          bound,
+        });
+      }
+      default:
+        return fail(p, "unsupported type parameter");
+    }
   }
 
   matchStmt(n: FormatNode): Match {
@@ -1315,6 +1383,49 @@ class Reader {
       }
       case "list_splat":
       case "dictionary_splat": {
+        const value = this.expr(this.named(n)[0] ?? fail(n, "empty splat"));
+        return {
+          ...base,
+          kind: "Starred",
+          kids: [value],
+          op: n.children[0] ?? fail(n, "no star"),
+          value,
+        };
+      }
+      case "generic_type": {
+        // tree-sitter reads `list[int]` in an annotation as a generic type, ruff as a subscript.
+        const [id, tp] = this.named(n);
+        if (!id || tp?.kind !== "type_parameter")
+          return fail(n, "unsupported generic type");
+        const value = this.expr(id);
+        const subs = this.named(tp);
+        const open = this.need(tp, "[");
+        const close = this.need(tp, "]");
+        const commas = tp.children.filter((c) => !c.named && c.kind === ",");
+        const slice =
+          subs.length === 1 && commas.length === 0
+            ? this.expr(subs[0] as FormatNode)
+            : this.link(
+                this.tupleOf(
+                  tp,
+                  subs,
+                  undefined,
+                  undefined,
+                  open.end,
+                  close.start,
+                ),
+              );
+        return {
+          ...base,
+          kind: "Subscript",
+          kids: [value, slice],
+          value,
+          open,
+          slice,
+          close,
+        };
+      }
+      case "splat_type": {
         const value = this.expr(this.named(n)[0] ?? fail(n, "empty splat"));
         return {
           ...base,

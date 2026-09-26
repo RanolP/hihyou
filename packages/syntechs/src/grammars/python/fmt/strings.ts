@@ -735,3 +735,42 @@ export function implicitConcatenated(f: Fmt, s: Str, hooks: Hooks): Doc {
       )
     : expanded(f, s, parts, hooks, true);
 }
+
+/**
+ * Ruff's `FormatImplicitConcatenatedStringFlat::new`: when `s`'s parts merge, what prints them as one string.
+ * Printing is deferred so a caller can mark the comments it moves before the parts are printed.
+ */
+export function implicitFlat(
+  f: Fmt,
+  s: Str,
+  hooks: Hooks,
+): (() => Doc) | undefined {
+  if (s.parts.length < 2) return undefined;
+  const parts = s.parts.map((n) => partOf(f.src, n));
+  const merged = mergedFlags(f, s, parts);
+  return merged && (() => flat(f, parts, merged, hooks));
+}
+
+/** Ruff's `FormatImplicitConcatenatedStringExpanded` with `ImplicitConcatenatedLayout::MaybeFlat`. */
+export function implicitExpanded(f: Fmt, s: Str, hooks: Hooks): Doc {
+  const parts = s.parts.map((n) => partOf(f.src, n));
+  return expanded(f, s, parts, hooks, false);
+}
+
+/**
+ * Ruff's `format_interpolated_string_assignment`: a lone f- or t-string whose interpolations span lines, and
+ * which is not otherwise multiline, printed on its own (deferred, as `implicitFlat`); undefined for any other string.
+ */
+export function interpolatedAssignment(
+  f: Fmt,
+  s: Str,
+  hooks: Hooks,
+): (() => Doc) | undefined {
+  const [node] = s.parts;
+  if (s.parts.length !== 1 || !node) return undefined;
+  const part = partOf(f.src, node);
+  if (!isInterpolated(part.flags) || !layoutMultiline(f, part))
+    return undefined;
+  if (isMultilineStr(f, s)) return undefined;
+  return () => formatPart(f, part, hooks);
+}

@@ -145,7 +145,7 @@ function stringForm(l: Lexeme): string {
 }
 
 function numberForm(text: string): string {
-  const t = text.toLowerCase();
+  const t = text.toLowerCase().replace(/_/g, "");
   if (/^0[xob]/.test(t)) return `N${t}`;
   if (t.endsWith("j"))
     return `N${decimalValue(t.slice(0, -1)) ?? t.slice(0, -1)}j`;
@@ -165,11 +165,12 @@ function optional(l: Lexeme, next: Lexeme | undefined): boolean {
     case ")":
       if (!parent) return false;
       if (parent.kind === "parenthesized_expression") return true;
-      if (
-        (parent.kind === "tuple" || parent.kind === "tuple_pattern") &&
-        parent.parent
-      )
-        return bareTupleParents.has(parent.parent.kind);
+      if (parent.kind === "tuple" || parent.kind === "tuple_pattern") {
+        // Around a tuple already in parentheses, the tuple's own are the ones ruff may keep or drop.
+        let outer = parent.parent;
+        while (outer?.kind === "parenthesized_expression") outer = outer.parent;
+        return outer !== undefined && bareTupleParents.has(outer.kind);
+      }
       if (
         parent.kind === "with_clause" ||
         parent.kind === "import_from_statement"
@@ -183,9 +184,13 @@ function optional(l: Lexeme, next: Lexeme | undefined): boolean {
       return false;
     case ",": {
       if (!next || !closers.has(next.text)) return false;
-      if (parent?.kind === "subscript") return false;
-      // A one-element tuple's comma is what makes it a tuple.
-      if (parent?.kind === "tuple" || parent?.kind === "tuple_pattern")
+      // A one-element tuple's comma is what makes it a tuple, in a subscript's brackets too.
+      if (
+        parent?.kind === "tuple" ||
+        parent?.kind === "tuple_pattern" ||
+        parent?.kind === "subscript" ||
+        parent?.kind === "type_parameter"
+      )
         return (
           parent.children.filter((c) => c.named && c.kind !== "comment")
             .length > 1
@@ -217,9 +222,14 @@ function column(text: string, at: number): number {
   return col;
 }
 
+/** Whether a logical line ends between `from` and `to`: a line break no backslash escapes. */
 function hasNewline(text: string, from: number, to: number): boolean {
-  for (let i = from; i < to; i++)
-    if (text[i] === "\n" || text[i] === "\r") return true;
+  for (let i = from; i < to; i++) {
+    const c = text[i];
+    if (c !== "\n" && c !== "\r") continue;
+    const before = c === "\n" && text[i - 1] === "\r" ? i - 2 : i - 1;
+    if (text[before] !== "\\") return true;
+  }
   return false;
 }
 

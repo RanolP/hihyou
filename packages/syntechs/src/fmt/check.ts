@@ -217,6 +217,9 @@ function hasNonBlank(text: string, from: number, to: number): boolean {
   for (let i = from; i < to; i++) {
     const c = text.charCodeAt(i);
     if (c === 32 || (c >= 9 && c <= 13)) continue;
+    // A backslash line continuation some parsers (Python's) skip as blank rather than keep as a node.
+    const next = text.charCodeAt(i + 1);
+    if (c === 92 && (next === 10 || next === 13)) continue;
     if (c < 128 || !/\s/.test(text.charAt(i))) return true;
   }
   return false;
