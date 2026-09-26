@@ -385,7 +385,9 @@ const intersectionType: JsRule = (n, ctx, args) => {
         (!previousIsObject && !isObject) ||
         hasComment(ctx, x, CF.Leading, (c) => hasNewline(ctx.source, c.end))
       )
-        return indent([text(" "), amp, line, doc]);
+        return ctx.options.experimentalOperatorPosition === "start"
+          ? indent([line, amp, text(" "), doc])
+          : indent([text(" "), amp, line, doc]);
       if (i > 1) wasIndented = true;
       return [text(" "), amp, text(" "), i > 1 ? indent(doc) : doc];
     }),
