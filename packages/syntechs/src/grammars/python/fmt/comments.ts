@@ -171,7 +171,11 @@ export function isFirstStatementInBody(s: Py, body: Py): boolean {
     case "While":
       return s === body.body[0] || s === body.orelse?.body[0];
     case "Try":
-      return s === body.body[0] || s === body.orelse?.body[0] || s === body.finalbody?.body[0];
+      return (
+        s === body.body[0] ||
+        s === body.orelse?.body[0] ||
+        s === body.finalbody?.body[0]
+      );
     case "If":
     case "ElifElse":
     case "With":
@@ -193,7 +197,11 @@ export function isFirstStatementInAlternateBody(s: Py, body: Py): boolean {
     case "While":
       return s === body.orelse?.body[0];
     case "Try":
-      return s === body.handlers[0] || s === body.orelse?.body[0] || s === body.finalbody?.body[0];
+      return (
+        s === body.handlers[0] ||
+        s === body.orelse?.body[0] ||
+        s === body.finalbody?.body[0]
+      );
     case "If":
       return s === body.clauses[0];
     default:
@@ -201,7 +209,8 @@ export function isFirstStatementInAlternateBody(s: Py, body: Py): boolean {
   }
 }
 
-const isAlternativeBranchWithNode = (p: Py) => p.kind === "ExceptHandler" || p.kind === "ElifElse";
+const isAlternativeBranchWithNode = (p: Py) =>
+  p.kind === "ExceptHandler" || p.kind === "ElifElse";
 
 interface Decorated {
   readonly c: Comment;
@@ -211,7 +220,9 @@ interface Decorated {
   readonly parent: Py | undefined;
 }
 
-type Placement = { to: "leading" | "trailing" | "dangling"; node: Key } | undefined;
+type Placement =
+  | { to: "leading" | "trailing" | "dangling"; node: Key }
+  | undefined;
 
 const leading = (node: Key): Placement => ({ to: "leading", node });
 const trailing = (node: Key): Placement => ({ to: "trailing", node });
@@ -262,18 +273,36 @@ export function attach(module: Module, source: string): Comments {
   };
 
   const visit = (node: Py) => {
-    const range = node.kind === "Module" ? { start: 0, end: source.length } : node;
+    const range =
+      node.kind === "Module" ? { start: 0, end: source.length } : node;
     const enclosing = parents.at(-1) ?? node;
     for (let c = pending[next]; c && c.end <= range.start; c = pending[++next])
-      push({ c, enclosing, preceding, following: node, parent: parents.at(-2) });
+      push({
+        c,
+        enclosing,
+        preceding,
+        following: node,
+        parent: parents.at(-2),
+      });
     preceding = undefined;
     parents.push(node);
-    const skip = (pending[next]?.start ?? Number.POSITIVE_INFINITY) >= range.end;
+    const skip =
+      (pending[next]?.start ?? Number.POSITIVE_INFINITY) >= range.end;
     if (!skip) for (const k of node.kids) visit(k);
     parents.pop();
     const root = parents.length === 0;
-    for (let c = pending[next]; c && (root || c.start < range.end); c = pending[++next])
-      push({ c, enclosing: node, parent: parents.at(-1), preceding, following: undefined });
+    for (
+      let c = pending[next];
+      c && (root || c.start < range.end);
+      c = pending[++next]
+    )
+      push({
+        c,
+        enclosing: node,
+        parent: parents.at(-1),
+        preceding,
+        following: undefined,
+      });
     preceding = node;
   };
   visit(module);
@@ -298,7 +327,8 @@ class Placer {
   /** Whether any token in [start, end), up to an `as`, `def` or `class`, is `kind`. */
   private anyBefore(start: number, end: number, kind: string): boolean {
     for (const t of tokens(this.src, start, end)) {
-      if (t.kind === "as" || t.kind === "def" || t.kind === "class") return false;
+      if (t.kind === "as" || t.kind === "def" || t.kind === "class")
+        return false;
       if (t.kind === kind) return true;
     }
     return false;
@@ -346,9 +376,12 @@ class Placer {
 
   private betweenStatements(d: Decorated): Placement {
     const { preceding, following } = d;
-    if (!preceding || !following || !isStmt(preceding) || !isStmt(following)) return undefined;
+    if (!preceding || !following || !isStmt(preceding) || !isStmt(following))
+      return undefined;
     if (d.c.line === "eol") return undefined;
-    return maxEmptyLines(this.src, d.c.end, following.start) === 0 ? leading(following) : trailing(preceding);
+    return maxEmptyLines(this.src, d.c.end, following.start) === 0
+      ? leading(following)
+      : trailing(preceding);
   }
 
   /** Ruff's `comment_indentation_after`: the least indentation of the comments from the line after `preceding` to `c`. */
@@ -358,36 +391,49 @@ class Placer {
     for (const x of this.comments) {
       if (x.start < from || x.end > c.end) continue;
       const indent = indentationAt(this.src, x.start);
-      if (indent !== undefined) min = Math.min(min ?? indent.length, indent.length);
+      if (indent !== undefined)
+        min = Math.min(min ?? indent.length, indent.length);
     }
     return min ?? 0;
   }
 
   private betweenBranches(d: Decorated, preceding: Py): Placement {
     const { following, enclosing } = d;
-    if (!following || !isFirstStatementInAlternateBody(following, enclosing)) return undefined;
+    if (!following || !isFirstStatementInAlternateBody(following, enclosing))
+      return undefined;
     const commentIndent = this.commentIndentationAfter(preceding, d.c);
-    const precedingIndent = indentationAt(this.src, preceding.start)?.length ?? commentIndent + 1;
+    const precedingIndent =
+      indentationAt(this.src, preceding.start)?.length ?? commentIndent + 1;
     if (commentIndent > precedingIndent) return undefined;
     if (commentIndent === precedingIndent)
-      return isAlternativeBranchWithNode(preceding) ? dangling(enclosing) : trailing(preceding);
-    return isAlternativeBranchWithNode(following) ? leading(following) : dangling(enclosing);
+      return isAlternativeBranchWithNode(preceding)
+        ? dangling(enclosing)
+        : trailing(preceding);
+    return isAlternativeBranchWithNode(following)
+      ? leading(following)
+      : dangling(enclosing);
   }
 
   private afterBranch(d: Decorated, preceding: Py): Placement {
     let last = lastChildInBody(preceding);
     if (!last) {
-      if (d.following && isFirstStatementInAlternateBody(d.following, d.enclosing)) last = preceding;
+      if (
+        d.following &&
+        isFirstStatementInAlternateBody(d.following, d.enclosing)
+      )
+        last = preceding;
       else return undefined;
     }
     const commentIndent = this.commentIndentationAfter(preceding, d.c);
-    const precedingIndent = indentationAt(this.src, preceding.start)?.length ?? 0;
+    const precedingIndent =
+      indentationAt(this.src, preceding.start)?.length ?? 0;
     if (commentIndent === precedingIndent) return undefined;
     let parent: Py | undefined;
     let child: Py = last;
     for (;;) {
       const childIndent = indentationAt(this.src, child.start)?.length ?? 0;
-      if (commentIndent < childIndent) return parent ? trailing(parent) : undefined;
+      if (commentIndent < childIndent)
+        return parent ? trailing(parent) : undefined;
       if (commentIndent === childIndent) return trailing(child);
       const nested = lastChildInBody(child);
       if (!nested) return trailing(child);
@@ -400,7 +446,10 @@ class Placer {
     const e = d.enclosing;
     switch (e.kind) {
       case "Parameters":
-        return this.parametersSeparator(d, e) ?? (e.open ? this.bracketedEndOfLine(d) : undefined);
+        return (
+          this.parametersSeparator(d, e) ??
+          (e.open ? this.bracketedEndOfLine(d) : undefined)
+        );
       case "Parameter":
         return this.parameter(d, e);
       case "Arguments":
@@ -424,15 +473,24 @@ class Placer {
       case "Lambda":
         return this.lambda(d, e);
       case "Dict":
-        return this.dictUnpacking(d) ?? this.bracketedEndOfLine(d) ?? this.keyValue(d);
+        return (
+          this.dictUnpacking(d) ??
+          this.bracketedEndOfLine(d) ??
+          this.keyValue(d)
+        );
       case "DictComp":
-        return this.dictUnpacking(d) ?? this.keyValue(d) ?? this.bracketedEndOfLine(d);
+        return (
+          this.dictUnpacking(d) ??
+          this.keyValue(d) ??
+          this.bracketedEndOfLine(d)
+        );
       case "IfExp":
         return this.ifExp(d, e);
       case "Slice":
         return this.slice(d, e);
       case "Starred":
-        if (d.following && !hasToken(this.src, e.start, d.c.start, "(")) return leading(e);
+        if (d.following && !hasToken(this.src, e.start, d.c.start, "("))
+          return leading(e);
         return undefined;
       case "Subscript":
         return this.subscript(d, e);
@@ -444,7 +502,8 @@ class Placer {
         if (
           d.c.line === "own" &&
           d.preceding?.kind === "Decorator" &&
-          (d.following?.kind === "Parameters" || d.following?.kind === "TypeParams")
+          (d.following?.kind === "Parameters" ||
+            d.following?.kind === "TypeParams")
         )
           return dangling(e);
         return undefined;
@@ -480,9 +539,13 @@ class Placer {
       case "Assign":
       case "AugAssign":
       case "TypeAlias":
-        return d.preceding === e.value ? this.implicitConcatenated(d) : undefined;
+        return d.preceding === e.value
+          ? this.implicitConcatenated(d)
+          : undefined;
       case "AnnAssign":
-        return e.value && d.preceding === e.value ? this.implicitConcatenated(d) : undefined;
+        return e.value && d.preceding === e.value
+          ? this.implicitConcatenated(d)
+          : undefined;
       case "Alias":
       case "Pattern":
         return dangling(e);
@@ -507,8 +570,18 @@ class Placer {
       const next = p.items[i + 1];
       const precedingEnd = prev ? prev.end : (p.open?.end ?? p.start);
       const followingStart = next ? next.start : (p.close?.start ?? p.end);
-      if (d.c.start > precedingEnd && d.c.start < item.start && d.c.line === "own") return dangling(p);
-      if (d.c.start > item.end && d.c.start < followingStart && d.c.line === "eol") return dangling(p);
+      if (
+        d.c.start > precedingEnd &&
+        d.c.start < item.start &&
+        d.c.line === "own"
+      )
+        return dangling(p);
+      if (
+        d.c.start > item.end &&
+        d.c.start < followingStart &&
+        d.c.line === "eol"
+      )
+        return dangling(p);
     }
     return undefined;
   }
@@ -523,7 +596,8 @@ class Placer {
     }
     if (d.c.start < p.name.start) {
       const params = d.parent;
-      if (params?.kind === "Parameters" && params.start === p.start) return leading(params);
+      if (params?.kind === "Parameters" && params.start === p.start)
+        return leading(params);
       return leading(p);
     }
     return undefined;
@@ -531,7 +605,8 @@ class Placer {
 
   /** The first token after `from`, past closing parentheses: the operator between two operands. */
   private operatorAfter(from: number, to: number): number {
-    for (const t of tokens(this.src, from, to)) if (t.kind !== ")") return t.start;
+    for (const t of tokens(this.src, from, to))
+      if (t.kind !== ")") return t.start;
     return to;
   }
 
@@ -563,8 +638,11 @@ class Placer {
     if (d.c.line === "eol") return undefined;
     const { preceding, following } = d;
     if (!preceding || !following) return undefined;
-    if (following.kind !== "FunctionDef" && following.kind !== "ClassDef") return undefined;
-    return maxEmptyLines(this.src, d.c.end, following.start) === 0 ? leading(following) : trailing(preceding);
+    if (following.kind !== "FunctionDef" && following.kind !== "ClassDef")
+      return undefined;
+    return maxEmptyLines(this.src, d.c.end, following.start) === 0
+      ? leading(following)
+      : trailing(preceding);
   }
 
   private slice(d: Decorated, s: Slice): Placement {
@@ -572,7 +650,11 @@ class Placer {
     if (d.c.line === "eol" && before === "[") return dangling(d.parent ?? s);
     const [first, second] = s.colons;
     const node =
-      !first || d.c.start < first.start ? s.lower : !second || d.c.start < second.start ? s.upper : s.step;
+      !first || d.c.start < first.start
+        ? s.lower
+        : !second || d.c.start < second.start
+          ? s.upper
+          : s.step;
     if (!node) return dangling(s);
     return d.c.start < node.start ? leading(node) : trailing(node);
   }
@@ -593,7 +675,8 @@ class Placer {
   }
 
   private subscript(d: Decorated, s: Subscript): Placement {
-    if (s.slice.kind === "Slice") return this.slice({ ...d, parent: s }, s.slice);
+    if (s.slice.kind === "Slice")
+      return this.slice({ ...d, parent: s }, s.slice);
     if (d.c.line === "eol" && s.value.end < d.c.start) {
       const it = tokens(this.src, s.value.end, d.c.start);
       let found = false;
@@ -616,7 +699,10 @@ class Placer {
     return undefined;
   }
 
-  private keyword(d: Decorated, k: { start: number; name: FormatNode | undefined; kind: "Keyword" }): Placement {
+  private keyword(
+    d: Decorated,
+    k: { start: number; name: FormatNode | undefined; kind: "Keyword" },
+  ): Placement {
     const start = k.name ? k.name.end : k.start;
     if (hasToken(this.src, start, d.c.start, "(")) return undefined;
     return leading(d.enclosing);
@@ -625,14 +711,17 @@ class Placer {
   private dictUnpacking(d: Decorated): Placement {
     if (!d.following) return undefined;
     const from = d.preceding ? d.preceding.end : d.enclosing.start;
-    for (const t of tokens(this.src, from, d.c.start)) if (t.kind === "**") return leading(d.following);
+    for (const t of tokens(this.src, from, d.c.start))
+      if (t.kind === "**") return leading(d.following);
     return undefined;
   }
 
   private keyValue(d: Decorated): Placement {
     const { preceding, following } = d;
     if (!preceding || !following) return undefined;
-    return hasToken(this.src, preceding.end, following.start, ":") ? dangling(d.enclosing) : undefined;
+    return hasToken(this.src, preceding.end, following.start, ":")
+      ? dangling(d.enclosing)
+      : undefined;
   }
 
   private attribute(d: Decorated, a: Attribute): Placement {
@@ -649,8 +738,14 @@ class Placer {
 
   private ifExp(d: Decorated, e: Expr & { kind: "IfExp" }): Placement {
     if (d.c.line === "own") return undefined;
-    if (e.ifTok.start < d.c.start && d.c.start < outer(e.test).start && d.c.start < e.test.start) return leading(e.test);
-    if (e.elseTok.start < d.c.start && d.c.start < e.orelse.start) return leading(e.orelse);
+    if (
+      e.ifTok.start < d.c.start &&
+      d.c.start < outer(e.test).start &&
+      d.c.start < e.test.start
+    )
+      return leading(e.test);
+    if (e.elseTok.start < d.c.start && d.c.start < e.orelse.start)
+      return leading(e.orelse);
     return undefined;
   }
 
@@ -668,13 +763,15 @@ class Placer {
     const { preceding, following } = d;
     if (!preceding || !following) return undefined;
     for (const t of tokens(this.src, preceding.end, following.start))
-      if (t.kind === ":=") return d.c.end < t.start ? trailing(preceding) : dangling(d.enclosing);
+      if (t.kind === ":=")
+        return d.c.end < t.start ? trailing(preceding) : dangling(d.enclosing);
     return undefined;
   }
 
   private lambda(d: Decorated, l: Lambda): Placement {
     if (l.params) {
-      if (d.c.start < l.params.start) return d.c.line === "own" ? leading(l.params) : dangling(l);
+      if (d.c.start < l.params.start)
+        return d.c.line === "own" ? leading(l.params) : dangling(l);
       if (l.params.end < d.c.start && d.c.start < l.body.start) {
         if (hasToken(this.src, l.params.end, d.c.start, "(")) return undefined;
         return dangling(l);
@@ -702,7 +799,13 @@ class Placer {
 
   private importFrom(d: Decorated, i: ImportFrom): Placement {
     const first = i.names[0];
-    if (d.c.line === "eol" && first && i.start < d.c.start && d.c.start < first.start) return dangling(i);
+    if (
+      d.c.line === "eol" &&
+      first &&
+      i.start < d.c.start &&
+      d.c.start < first.start
+    )
+      return dangling(i);
     const next = firstToken(this.src, d.c.start);
     if (next?.kind === ",") {
       if (d.preceding?.kind === "Alias") return dangling(d.preceding);
@@ -712,7 +815,13 @@ class Placer {
 
   private withStmt(d: Decorated, w: With): Placement {
     const first = w.items[0];
-    if (d.c.line === "eol" && first && w.start < d.c.start && d.c.start < first.start) return dangling(w);
+    if (
+      d.c.line === "eol" &&
+      first &&
+      w.start < d.c.start &&
+      d.c.start < first.start
+    )
+      return dangling(w);
     return undefined;
   }
 
@@ -726,7 +835,8 @@ class Placer {
     for (const { kw, test } of c.ifs) {
       if (own) {
         if (lastEnd < d.c.start && d.c.start < kw.start) return dangling(c);
-      } else if (kw.start < d.c.start && d.c.start < test.start) return dangling(c);
+      } else if (kw.start < d.c.start && d.c.start < test.start)
+        return dangling(c);
       lastEnd = outer(test).end;
     }
     return undefined;
@@ -735,11 +845,14 @@ class Placer {
   private implicitConcatenated(d: Decorated): Placement {
     if (d.c.line !== "eol") return undefined;
     const s = d.preceding;
-    if (!s || s.kind !== "Str" || (s as Str).parts.length < 2) return undefined;
+    if (s?.kind !== "Str" || (s as Str).parts.length < 2) return undefined;
     const str = s as Str;
     const last = str.parts.at(-1) as FormatNode;
     const secondLast = str.parts.at(-2) as FormatNode;
-    if (hasLineBreak(this.src, secondLast.end, last.start) && str.parens.length > 0) {
+    if (
+      hasLineBreak(this.src, secondLast.end, last.start) &&
+      str.parens.length > 0
+    ) {
       if (!hasToken(this.src, last.end, d.c.start, ")")) return trailing(last);
     }
     return undefined;
@@ -749,7 +862,10 @@ class Placer {
 /** Ruff's `is_pragma_comment`: a comment tools read, which never counts against the line width. */
 export function isPragma(text: string): boolean {
   const t = text.replace(/^#\s*/, "");
-  return /^(noqa|nosec)\b/i.test(t) || /^(isort|type|pyright|pyrefly|pylint|flake8|ruff|ty):/.test(t);
+  return (
+    /^(noqa|nosec)\b/i.test(t) ||
+    /^(isort|type|pyright|pyrefly|pylint|flake8|ruff|ty):/.test(t)
+  );
 }
 
 /** Ruff's `normalize_comment`: `#` then one space, unless a shebang-like or type comment. */

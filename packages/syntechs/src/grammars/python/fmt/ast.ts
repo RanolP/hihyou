@@ -564,10 +564,18 @@ class Reader {
         return this.exprStmt(n);
       case "return_statement":
       case "delete_statement": {
-        const kw = this.need(n, n.kind === "return_statement" ? "return" : "del");
+        const kw = this.need(
+          n,
+          n.kind === "return_statement" ? "return" : "del",
+        );
         const value = this.named(n)[0];
         const values = [value && this.expr(value)];
-        return this.simple(n, n.kind === "return_statement" ? "Return" : "Delete", kw, values);
+        return this.simple(
+          n,
+          n.kind === "return_statement" ? "Return" : "Delete",
+          kw,
+          values,
+        );
       }
       case "pass_statement":
         return this.simple(n, "Pass", this.need(n, "pass"), []);
@@ -659,7 +667,9 @@ class Reader {
         const decorators = this.named(n)
           .filter((c) => c.kind === "decorator")
           .map((d): Decorator => {
-            const expr = this.expr(this.named(d)[0] ?? fail(d, "empty decorator"));
+            const expr = this.expr(
+              this.named(d)[0] ?? fail(d, "empty decorator"),
+            );
             return this.link({
               kind: "Decorator",
               ts: d,
@@ -679,7 +689,10 @@ class Reader {
       case "match_statement":
         return this.matchStmt(n);
       case "type_alias_statement": {
-        const [left, right] = [this.needField(n, "left"), this.needField(n, "right")];
+        const [left, right] = [
+          this.needField(n, "left"),
+          this.needField(n, "right"),
+        ];
         const name = this.expr(this.typeExpr(left));
         const value = this.expr(this.typeExpr(right));
         const tp = this.named(n).find((c) => c.kind === "type_parameter");
@@ -817,9 +830,11 @@ class Reader {
   }
 
   alias(a: FormatNode): Alias {
-    const nameNode = a.kind === "aliased_import" ? this.needField(a, "name") : a;
+    const nameNode =
+      a.kind === "aliased_import" ? this.needField(a, "name") : a;
     const name = this.dotted(nameNode);
-    const asname = a.kind === "aliased_import" ? this.needField(a, "alias") : undefined;
+    const asname =
+      a.kind === "aliased_import" ? this.needField(a, "alias") : undefined;
     return {
       kind: "Alias",
       ts: a,
@@ -875,8 +890,13 @@ class Reader {
     const test = this.expr(this.needField(n, "condition"));
     const body = this.body(this.needField(n, "consequence"));
     const clauses = this.fields(n, "alternative").map((c): Clause => {
-      const cbody = this.body(this.needField(c, c.kind === "elif_clause" ? "consequence" : "body"));
-      const ctest = c.kind === "elif_clause" ? this.expr(this.needField(c, "condition")) : undefined;
+      const cbody = this.body(
+        this.needField(c, c.kind === "elif_clause" ? "consequence" : "body"),
+      );
+      const ctest =
+        c.kind === "elif_clause"
+          ? this.expr(this.needField(c, "condition"))
+          : undefined;
       return this.link({
         kind: "ElifElse",
         ts: c,
@@ -907,7 +927,8 @@ class Reader {
 
   orelse(c: FormatNode | undefined): OrElse | undefined {
     if (!c) return undefined;
-    const block = this.field(c, "body") ?? this.named(c).find((x) => x.kind === "block");
+    const block =
+      this.field(c, "body") ?? this.named(c).find((x) => x.kind === "block");
     return {
       kw: this.need(c, c.kind === "finally_clause" ? "finally" : "else"),
       colon: this.need(c, ":"),
@@ -920,9 +941,11 @@ class Reader {
     const iter = this.expr(this.needField(n, "right"));
     const body = this.body(this.needField(n, "body"));
     const orelse = this.orelse(this.field(n, "alternative"));
-    const kws = [this.tok(n, "async"), this.need(n, "for"), this.need(n, "in")].filter(
-      (k) => k !== undefined,
-    );
+    const kws = [
+      this.tok(n, "async"),
+      this.need(n, "for"),
+      this.need(n, "in"),
+    ].filter((k) => k !== undefined);
     return this.link({
       kind: "For",
       ts: n,
@@ -940,7 +963,9 @@ class Reader {
   }
 
   withStmt(n: FormatNode): With {
-    const clause = this.named(n).find((c) => c.kind === "with_clause") ?? fail(n, "no with clause");
+    const clause =
+      this.named(n).find((c) => c.kind === "with_clause") ??
+      fail(n, "no with clause");
     const items = this.named(clause).map((item): WithItem => {
       const value = this.needField(item, "value");
       let context: Expr;
@@ -973,7 +998,9 @@ class Reader {
       end: this.stmtEnd(body, n.end),
       kids: [...items, ...body],
       parent: undefined,
-      kws: [this.tok(n, "async"), this.need(n, "with")].filter((k) => k !== undefined),
+      kws: [this.tok(n, "async"), this.need(n, "with")].filter(
+        (k) => k !== undefined,
+      ),
       open: this.tok(clause, "("),
       items,
       close: this.tok(clause, ")"),
@@ -1012,7 +1039,9 @@ class Reader {
             end: this.stmtEnd(hbody, c.end),
             kids: [...(type ? [type] : []), ...hbody],
             parent: undefined,
-            kws: [this.need(c, "except"), this.tok(c, "*")].filter((k) => k !== undefined),
+            kws: [this.need(c, "except"), this.tok(c, "*")].filter(
+              (k) => k !== undefined,
+            ),
             type,
             asTok,
             name,
@@ -1023,13 +1052,19 @@ class Reader {
       } else if (c.kind === "else_clause") orelse = this.orelse(c);
       else if (c.kind === "finally_clause") finalbody = this.orelse(c);
     }
-    const last = finalbody?.body ?? orelse?.body ?? handlers.at(-1)?.body ?? body;
+    const last =
+      finalbody?.body ?? orelse?.body ?? handlers.at(-1)?.body ?? body;
     return this.link({
       kind: "Try",
       ts: n,
       start: n.start,
       end: this.stmtEnd(last, n.end),
-      kids: [...body, ...handlers, ...(orelse?.body ?? []), ...(finalbody?.body ?? [])],
+      kids: [
+        ...body,
+        ...handlers,
+        ...(orelse?.body ?? []),
+        ...(finalbody?.body ?? []),
+      ],
       parent: undefined,
       kw: this.need(n, "try"),
       colon: this.need(n, ":"),
@@ -1040,7 +1075,11 @@ class Reader {
     });
   }
 
-  functionDef(n: FormatNode, decorators: Decorator[], start: number): FunctionDef {
+  functionDef(
+    n: FormatNode,
+    decorators: Decorator[],
+    start: number,
+  ): FunctionDef {
     const tp = this.field(n, "type_parameters");
     const typeParams = tp && this.typeParams(tp);
     const params = this.parameters(this.needField(n, "parameters"));
@@ -1061,7 +1100,9 @@ class Reader {
       ],
       parent: undefined,
       decorators,
-      kws: [this.tok(n, "async"), this.need(n, "def")].filter((k) => k !== undefined),
+      kws: [this.tok(n, "async"), this.need(n, "def")].filter(
+        (k) => k !== undefined,
+      ),
       name: this.needField(n, "name"),
       typeParams,
       params,
@@ -1083,7 +1124,12 @@ class Reader {
       ts: n,
       start,
       end: this.stmtEnd(body, n.end),
-      kids: [...decorators, ...(typeParams ? [typeParams] : []), ...(args ? [args] : []), ...body],
+      kids: [
+        ...decorators,
+        ...(typeParams ? [typeParams] : []),
+        ...(args ? [args] : []),
+        ...body,
+      ],
       parent: undefined,
       decorators,
       kw: this.need(n, "class"),
@@ -1097,21 +1143,33 @@ class Reader {
 
   typeParams(n: FormatNode): TypeParams {
     this.dotted(n);
-    return { kind: "TypeParams", ts: n, start: n.start, end: n.end, kids: [], parent: undefined };
+    return {
+      kind: "TypeParams",
+      ts: n,
+      start: n.start,
+      end: n.end,
+      kids: [],
+      parent: undefined,
+    };
   }
 
   matchStmt(n: FormatNode): Match {
     const subject = this.expr(this.needField(n, "subject"));
     const block = this.needField(n, "body");
     const cases = this.named(block).map((c): MatchCase => {
-      const patternNode = this.named(c).find((x) => x.kind === "case_pattern") ?? fail(c, "no pattern");
+      const patternNode =
+        this.named(c).find((x) => x.kind === "case_pattern") ??
+        fail(c, "no pattern");
       this.dotted(patternNode);
       const guardClause = this.field(c, "guard");
       const guardExpr = guardClause && this.named(guardClause)[0];
       const guard = guardExpr && this.expr(guardExpr);
       const body = this.body(this.needField(c, "consequence"));
       // Every pattern after `case`, up to the guard or the colon, as one node.
-      const last = this.named(c).filter((x) => x.kind === "case_pattern").at(-1) ?? patternNode;
+      const last =
+        this.named(c)
+          .filter((x) => x.kind === "case_pattern")
+          .at(-1) ?? patternNode;
       const pattern: Pattern = {
         kind: "Pattern",
         ts: c,
@@ -1167,8 +1225,13 @@ class Reader {
       const inner = this.named(x);
       const only = inner[0];
       // `(yield)` and `(*a)` stay as tree-sitter wraps them; any other shape is a parse oddity.
-      if (inner.length !== 1 || !only) return fail(x, "unsupported parentheses");
-      parens.push({ open: this.need(x, "("), close: this.need(x, ")"), wrapper: x });
+      if (inner.length !== 1 || !only)
+        return fail(x, "unsupported parentheses");
+      parens.push({
+        open: this.need(x, "("),
+        close: this.need(x, ")"),
+        wrapper: x,
+      });
       x = only;
     }
     const e = this.bare(x, parens);
@@ -1176,7 +1239,13 @@ class Reader {
   }
 
   bare(n: FormatNode, parens: Paren[]): Expr {
-    const base = { ts: n, start: n.start, end: n.end, parent: undefined, parens };
+    const base = {
+      ts: n,
+      start: n.start,
+      end: n.end,
+      parent: undefined,
+      parens,
+    };
     const leaf = (kind: Leaf["kind"]): Leaf => ({ ...base, kind, kids: [] });
     switch (n.kind) {
       case "identifier":
@@ -1197,13 +1266,22 @@ class Reader {
         return this.str(n, this.named(n), parens);
       case "attribute": {
         const value = this.expr(this.needField(n, "object"));
-        return { ...base, kind: "Attribute", kids: [value], value, dot: this.need(n, "."), attr: this.needField(n, "attribute") };
+        return {
+          ...base,
+          kind: "Attribute",
+          kids: [value],
+          value,
+          dot: this.need(n, "."),
+          attr: this.needField(n, "attribute"),
+        };
       }
       case "call": {
         const func = this.expr(this.needField(n, "function"));
         const argNode = this.needField(n, "arguments");
         const args =
-          argNode.kind === "generator_expression" ? this.soleGenerator(argNode) : this.arguments(argNode);
+          argNode.kind === "generator_expression"
+            ? this.soleGenerator(argNode)
+            : this.arguments(argNode);
         return { ...base, kind: "Call", kids: [func, args], func, args };
       }
       case "subscript": {
@@ -1215,13 +1293,36 @@ class Reader {
         const slice =
           subs.length === 1 && commas.length === 0
             ? this.expr(subs[0] as FormatNode)
-            : this.link(this.tupleOf(n, subs, undefined, undefined, open.end, close.start));
-        return { ...base, kind: "Subscript", kids: [value, slice], value, open, slice, close };
+            : this.link(
+                this.tupleOf(
+                  n,
+                  subs,
+                  undefined,
+                  undefined,
+                  open.end,
+                  close.start,
+                ),
+              );
+        return {
+          ...base,
+          kind: "Subscript",
+          kids: [value, slice],
+          value,
+          open,
+          slice,
+          close,
+        };
       }
       case "list_splat":
       case "dictionary_splat": {
         const value = this.expr(this.named(n)[0] ?? fail(n, "empty splat"));
-        return { ...base, kind: "Starred", kids: [value], op: n.children[0] ?? fail(n, "no star"), value };
+        return {
+          ...base,
+          kind: "Starred",
+          kids: [value],
+          op: n.children[0] ?? fail(n, "no star"),
+          value,
+        };
       }
       case "parenthesized_list_splat": {
         // `(*a)` inside a call's arguments: a starred expression in parentheses.
@@ -1230,13 +1331,23 @@ class Reader {
       case "unary_operator":
       case "not_operator": {
         const operand = this.expr(this.needField(n, "argument"));
-        const op = n.kind === "not_operator" ? this.need(n, "not") : this.needField(n, "operator");
+        const op =
+          n.kind === "not_operator"
+            ? this.need(n, "not")
+            : this.needField(n, "operator");
         return { ...base, kind: "UnaryOp", kids: [operand], op, operand };
       }
       case "binary_operator": {
         const left = this.expr(this.needField(n, "left"));
         const right = this.expr(this.needField(n, "right"));
-        return { ...base, kind: "BinOp", kids: [left, right], left, op: this.needField(n, "operator"), right };
+        return {
+          ...base,
+          kind: "BinOp",
+          kids: [left, right],
+          left,
+          op: this.needField(n, "operator"),
+          right,
+        };
       }
       case "boolean_operator": {
         // Ruff lists `a and b and c` as one node; tree-sitter nests it to the left.
@@ -1245,7 +1356,11 @@ class Reader {
         const ops: FormatNode[] = [];
         const walk = (x: FormatNode) => {
           const left = this.needField(x, "left");
-          if (left.kind === "boolean_operator" && this.needField(left, "operator").kind === op.kind) walk(left);
+          if (
+            left.kind === "boolean_operator" &&
+            this.needField(left, "operator").kind === op.kind
+          )
+            walk(left);
           else values.push(this.expr(left));
           ops.push(this.needField(x, "operator"));
           values.push(this.expr(this.needField(x, "right")));
@@ -1296,11 +1411,24 @@ class Reader {
       case "named_expression": {
         const target = this.expr(this.needField(n, "name"));
         const value = this.expr(this.needField(n, "value"));
-        return { ...base, kind: "Named", kids: [target, value], target, op: this.need(n, ":="), value };
+        return {
+          ...base,
+          kind: "Named",
+          kids: [target, value],
+          target,
+          op: this.need(n, ":="),
+          value,
+        };
       }
       case "await": {
         const value = this.expr(this.named(n)[0] ?? fail(n, "empty await"));
-        return { ...base, kind: "Await", kids: [value], kw: this.need(n, "await"), value };
+        return {
+          ...base,
+          kind: "Await",
+          kids: [value],
+          kw: this.need(n, "await"),
+          value,
+        };
       }
       case "yield": {
         const v = this.named(n);
@@ -1349,7 +1477,8 @@ class Reader {
               colon: this.need(c, ":"),
               value: this.expr(this.needField(c, "value")),
             };
-          if (c.kind === "dictionary_splat") return { key: undefined, colon: undefined, value: this.expr(c) };
+          if (c.kind === "dictionary_splat")
+            return { key: undefined, colon: undefined, value: this.expr(c) };
           return fail(c, "bad dict item");
         });
         return {
@@ -1368,7 +1497,12 @@ class Reader {
         const generators = this.comprehensions(n);
         return {
           ...base,
-          kind: n.kind === "list_comprehension" ? "ListComp" : n.kind === "set_comprehension" ? "SetComp" : "Generator",
+          kind:
+            n.kind === "list_comprehension"
+              ? "ListComp"
+              : n.kind === "set_comprehension"
+                ? "SetComp"
+                : "Generator",
           kids: [elt, ...generators],
           open: n.children[0],
           elt,
@@ -1434,9 +1568,25 @@ class Reader {
     const start = first.children[0] ?? fail(first, "no string start");
     const prefix = this.text(start).toLowerCase();
     if (prefix.includes("`")) fail(n, "Python 2 backticks");
-    const flavor = prefix.includes("b") ? "bytes" : prefix.includes("f") ? "f" : prefix.includes("t") ? "t" : "str";
+    const flavor = prefix.includes("b")
+      ? "bytes"
+      : prefix.includes("f")
+        ? "f"
+        : prefix.includes("t")
+          ? "t"
+          : "str";
     for (const p of parts) this.dotted(p);
-    return { kind: "Str", ts: n, start: n.start, end: n.end, kids: [], parent: undefined, parens, parts, flavor };
+    return {
+      kind: "Str",
+      ts: n,
+      start: n.start,
+      end: n.end,
+      kids: [],
+      parent: undefined,
+      parens,
+      parts,
+      flavor,
+    };
   }
 
   tupleOf(
@@ -1450,10 +1600,24 @@ class Reader {
     const elts = items.map((c) => this.expr(c));
     const commas = n.children.filter((c) => !c.named && c.kind === ",");
     // Without parentheses, ruff's tuple runs from its first item to its last comma or item.
-    const start = open ? n.start : Math.max(from, Math.min(elts[0]?.start ?? from, commas[0]?.start ?? to));
-    const end = close ? n.end : Math.min(to, Math.max(elts.at(-1)?.end ?? start, commas.at(-1)?.end ?? start));
-    const outerStart = open ? start : Math.min(start, ...elts.map((e) => outer(e).start));
-    const outerEnd = close ? end : Math.max(end, ...elts.map((e) => outer(e).end));
+    const start = open
+      ? n.start
+      : Math.max(
+          from,
+          Math.min(elts[0]?.start ?? from, commas[0]?.start ?? to),
+        );
+    const end = close
+      ? n.end
+      : Math.min(
+          to,
+          Math.max(elts.at(-1)?.end ?? start, commas.at(-1)?.end ?? start),
+        );
+    const outerStart = open
+      ? start
+      : Math.min(start, ...elts.map((e) => outer(e).start));
+    const outerEnd = close
+      ? end
+      : Math.max(end, ...elts.map((e) => outer(e).end));
     return {
       kind: "Tuple",
       ts: n,
@@ -1476,8 +1640,17 @@ class Reader {
         const target = this.expr(this.needField(c, "left"));
         const rights = this.fields(c, "right");
         const iter =
-          rights.length > 1 || c.children.some((x) => x.kind === "," && !x.named)
-            ? this.link(this.tupleOf(c, rights, undefined, undefined, this.need(c, "in").end))
+          rights.length > 1 ||
+          c.children.some((x) => x.kind === "," && !x.named)
+            ? this.link(
+                this.tupleOf(
+                  c,
+                  rights,
+                  undefined,
+                  undefined,
+                  this.need(c, "in").end,
+                ),
+              )
             : this.expr(rights[0] ?? fail(c, "no iter"));
         out.push({
           kind: "Comprehension",
@@ -1486,7 +1659,11 @@ class Reader {
           end: iter.end,
           kids: [target, iter],
           parent: undefined,
-          kws: [this.tok(c, "async"), this.need(c, "for"), this.need(c, "in")].filter((k) => k !== undefined),
+          kws: [
+            this.tok(c, "async"),
+            this.need(c, "for"),
+            this.need(c, "in"),
+          ].filter((k) => k !== undefined),
           target,
           iter,
           ifs: [],
@@ -1522,7 +1699,17 @@ class Reader {
       generators,
       close: undefined,
     });
-    return this.link({ kind: "Arguments", ts: g, start: g.start, end: g.end, kids: [gen], parent: undefined, open, items: [gen], close });
+    return this.link({
+      kind: "Arguments",
+      ts: g,
+      start: g.start,
+      end: g.end,
+      kids: [gen],
+      parent: undefined,
+      open,
+      items: [gen],
+      close,
+    });
   }
 
   arguments(n: FormatNode): Arguments {
@@ -1573,7 +1760,12 @@ class Reader {
   parameters(n: FormatNode): Parameters {
     const items = this.named(n).map((c): Parameter | Separator => {
       if (c.kind === "positional_separator" || c.kind === "keyword_separator")
-        return { kind: "Separator", tok: c.children[0] ?? c, start: c.start, end: c.end };
+        return {
+          kind: "Separator",
+          tok: c.children[0] ?? c,
+          start: c.start,
+          end: c.end,
+        };
       return this.parameter(c);
     });
     return this.link({
@@ -1590,7 +1782,13 @@ class Reader {
   }
 
   parameter(c: FormatNode): Parameter {
-    const base = { kind: "Parameter" as const, ts: c, start: c.start, end: c.end, parent: undefined };
+    const base = {
+      kind: "Parameter" as const,
+      ts: c,
+      start: c.start,
+      end: c.end,
+      parent: undefined,
+    };
     const plain = (name: FormatNode, star?: FormatNode): Parameter => ({
       ...base,
       kids: [],
@@ -1609,9 +1807,20 @@ class Reader {
         return plain(this.named(c)[0] ?? fail(c, "no name"), c.children[0]);
       case "typed_parameter": {
         const inner = this.named(c)[0] ?? fail(c, "no name");
-        const p = inner.kind === "identifier" ? plain(inner) : plain(this.named(inner)[0] ?? fail(inner, "no name"), inner.children[0]);
+        const p =
+          inner.kind === "identifier"
+            ? plain(inner)
+            : plain(
+                this.named(inner)[0] ?? fail(inner, "no name"),
+                inner.children[0],
+              );
         const annotation = this.expr(this.typeExpr(this.needField(c, "type")));
-        return this.link({ ...p, kids: [annotation], colon: this.need(c, ":"), annotation });
+        return this.link({
+          ...p,
+          kids: [annotation],
+          colon: this.need(c, ":"),
+          annotation,
+        });
       }
       case "default_parameter":
       case "typed_default_parameter": {

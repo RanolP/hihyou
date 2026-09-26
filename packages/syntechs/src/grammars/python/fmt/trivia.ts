@@ -116,10 +116,17 @@ export function lexAt(src: string, pos: number, end = src.length): Tok {
 }
 
 export const isTrivia = (t: Tok) =>
-  t.kind === "ws" || t.kind === "nl" || t.kind === "comment" || t.kind === "cont";
+  t.kind === "ws" ||
+  t.kind === "nl" ||
+  t.kind === "comment" ||
+  t.kind === "cont";
 
 /** The tokens of `src[start, end)`, trivia skipped, lazily. */
-export function* tokens(src: string, start: number, end = src.length): Generator<Tok> {
+export function* tokens(
+  src: string,
+  start: number,
+  end = src.length,
+): Generator<Tok> {
   let pos = start;
   while (pos < end) {
     const t = lexAt(src, pos, end);
@@ -129,23 +136,38 @@ export function* tokens(src: string, start: number, end = src.length): Generator
 }
 
 /** The first non-trivia token at or after `start` and before `end`. */
-export function firstToken(src: string, start: number, end = src.length): Tok | undefined {
+export function firstToken(
+  src: string,
+  start: number,
+  end = src.length,
+): Tok | undefined {
   for (const t of tokens(src, start, end)) return t;
   return undefined;
 }
 
 /** Ruff's `find_only_token_in_range`: the one token between two nodes, after the closing parens of the left one. */
-export function onlyToken(src: string, start: number, end: number, kind: string): Tok {
+export function onlyToken(
+  src: string,
+  start: number,
+  end: number,
+  kind: string,
+): Tok {
   for (const t of tokens(src, start, end)) {
     if (t.kind === ")") continue;
-    if (t.kind !== kind) throw new Error(`expected ${kind} at ${t.start}, found ${t.kind}`);
+    if (t.kind !== kind)
+      throw new Error(`expected ${kind} at ${t.start}, found ${t.kind}`);
     return t;
   }
   throw new Error(`no ${kind} in ${start}..${end}`);
 }
 
 /** Whether any token in `src[start, end)` is `kind`. */
-export function hasToken(src: string, start: number, end: number, kind: string): boolean {
+export function hasToken(
+  src: string,
+  start: number,
+  end: number,
+  kind: string,
+): boolean {
   for (const t of tokens(src, start, end)) if (t.kind === kind) return true;
   return false;
 }
@@ -200,7 +222,10 @@ export function linesAfterIgnoringTrivia(offset: number, src: string): number {
 }
 
 /** Line breaks after `offset`, past the end-of-line trivia, up to the next non-blank line. */
-export function linesAfterIgnoringEndOfLineTrivia(offset: number, src: string): number {
+export function linesAfterIgnoringEndOfLineTrivia(
+  offset: number,
+  src: string,
+): number {
   let pos = offset;
   let n = 0;
   let started = false;
@@ -264,6 +289,7 @@ export function indentationAt(src: string, offset: number): string | undefined {
 
 /** Whether `src[start, end)` holds a line break. */
 export function hasLineBreak(src: string, start: number, end: number): boolean {
-  for (let i = start; i < end; i++) if (src[i] === "\n" || src[i] === "\r") return true;
+  for (let i = start; i < end; i++)
+    if (src[i] === "\n" || src[i] === "\r") return true;
   return false;
 }

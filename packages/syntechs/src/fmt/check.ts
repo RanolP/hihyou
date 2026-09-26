@@ -120,9 +120,9 @@ function read<O>(language: Language<O>, text: string): Read {
   const stack: FormatNode[] = root ? [root] : [];
   for (let n = stack.pop(); n; n = stack.pop()) {
     if (language.comments.has(n.kind)) {
+      const raw = text.slice(n.start, n.end);
       out.comments.push(
-        text
-          .slice(n.start, n.end)
+        (language.comment ? language.comment(raw) : raw)
           .replace(/\r\n?/g, "\n")
           .replace(/^[ \t]+|[ \t]+$/gm, "")
           .trimEnd(),

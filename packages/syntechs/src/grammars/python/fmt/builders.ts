@@ -2,17 +2,17 @@ import {
   breakParent,
   type Doc,
   fitsExpanded,
+  type GroupRef,
   group,
   groupIfBreak,
-  type GroupRef,
   ifBreak,
   indent,
   indentIfBreak,
   type Line,
   type LineSuffix,
   synthetic,
-  text,
   type Token,
+  text,
   token,
 } from "../../../fmt/doc.js";
 import type { FormatNode } from "../../../fmt/tree.js";
@@ -48,10 +48,31 @@ export const PAREN: Level = { k: "paren" };
 export const EXPR: Level = { k: "expr", g: undefined };
 
 // Ruff's lines: breaking on a line that is still empty prints nothing, so they never stack into blank lines.
-export const hard: Line = { k: "line", soft: false, hard: true, collapse: true };
-export const soft: Line = { k: "line", soft: true, hard: false, collapse: true };
-export const softOrSpace: Line = { k: "line", soft: false, hard: false, collapse: true };
-export const emptyLine: Line = { k: "line", soft: false, hard: true, collapse: true, blank: true };
+export const hard: Line = {
+  k: "line",
+  soft: false,
+  hard: true,
+  collapse: true,
+};
+export const soft: Line = {
+  k: "line",
+  soft: true,
+  hard: false,
+  collapse: true,
+};
+export const softOrSpace: Line = {
+  k: "line",
+  soft: false,
+  hard: false,
+  collapse: true,
+};
+export const emptyLine: Line = {
+  k: "line",
+  soft: false,
+  hard: true,
+  collapse: true,
+  blank: true,
+};
 export const space = text(" ");
 
 export const blockIndent = (d: Doc): Doc => [indent([hard, d]), hard];
@@ -152,7 +173,13 @@ export class Fmt {
   }
 
   /** Ruff's `parenthesized`: `left`, `content` indented on its own lines if it breaks, `right`. */
-  parenthesized(left: Token, content: () => Doc, right: Token, dangling: readonly Comment[] = [], hug = false): Doc {
+  parenthesized(
+    left: Token,
+    content: () => Doc,
+    right: Token,
+    dangling: readonly Comment[] = [],
+    hug = false,
+  ): Doc {
     const level = this.level;
     return this.at(PAREN, () => {
       const c = content();
@@ -162,7 +189,10 @@ export class Fmt {
             ? c
             : group(softBlockIndent(c))
           : group([this.danglingOpenParen(dangling), softBlockIndent(c)]);
-      const inner = level.k === "expr" && level.g ? fitsExpanded(indented, level.g) : indented;
+      const inner =
+        level.k === "expr" && level.g
+          ? fitsExpanded(indented, level.g)
+          : indented;
       return [left, inner, right];
     });
   }
@@ -182,7 +212,11 @@ export class Fmt {
   }
 
   /** Ruff's `parenthesize_if_expands`. */
-  parenthesizeIfExpands(anchor: FormatNode, content: () => Doc, indented = true): Group2 {
+  parenthesizeIfExpands(
+    anchor: FormatNode,
+    content: () => Doc,
+    indented = true,
+  ): Group2 {
     const c = this.at(PAREN, content);
     const contents: Doc[] = [];
     const g = group(contents);
@@ -193,12 +227,21 @@ export class Fmt {
         soft,
         ifBreak(synthetic(anchor, ")"), [], g),
       );
-    else contents.push(ifBreak(synthetic(anchor, "("), [], g), c, ifBreak(synthetic(anchor, ")"), [], g));
+    else
+      contents.push(
+        ifBreak(synthetic(anchor, "("), [], g),
+        c,
+        ifBreak(synthetic(anchor, ")"), [], g),
+      );
     return g;
   }
 
   /** Ruff's `empty_parenthesized`. */
-  emptyParenthesized(left: Token, dangling: readonly Comment[], right: Token): Doc {
+  emptyParenthesized(
+    left: Token,
+    dangling: readonly Comment[],
+    right: Token,
+  ): Doc {
     const split = dangling.findIndex((c) => c.line === "own");
     const eol = split < 0 ? dangling : dangling.slice(0, split);
     const own = split < 0 ? [] : dangling.slice(split);
@@ -221,7 +264,8 @@ export class Fmt {
   softLineOrSpace(): Doc {
     const l = this.level;
     if (l.k === "paren") return softOrSpace;
-    if (l.k === "expr" && l.g) return [ifBreak(softOrSpace, [], l.g), ifBreak([], space, l.g)];
+    if (l.k === "expr" && l.g)
+      return [ifBreak(softOrSpace, [], l.g), ifBreak([], space, l.g)];
     return space;
   }
 
@@ -272,7 +316,8 @@ export class Fmt {
       const magic = this.magicTrailingComma(last.end, sequenceEnd);
       // Inside a single-line f-string interpolation, a trailing comma would be printed flat for nothing.
       const inFlatFString = this.fstr.k !== "outside" && !this.fstr.multiline;
-      if ((magic || entries.length > 1 || oneOrMore) && !inFlatFString) out.push(ifBreak(comma(last.end)));
+      if ((magic || entries.length > 1 || oneOrMore) && !inFlatFString)
+        out.push(ifBreak(comma(last.end)));
       if (magic) out.push(breakParent);
     }
     return out;
@@ -288,10 +333,13 @@ export const suffix = (contents: Doc, reserved: number): LineSuffix => ({
 });
 
 /** The comma token in `parent` (a tree-sitter node) at or after `from`, or a synthetic one after `anchor`. */
-export function commaIn(parent: FormatNode, anchor: FormatNode): (from: number) => Token {
+export function commaIn(
+  parent: FormatNode,
+  anchor: FormatNode,
+): (from: number) => Token {
   return (from) => {
-    for (const c of parent.children) if (!c.named && c.kind === "," && c.start >= from) return token(c, ",");
+    for (const c of parent.children)
+      if (!c.named && c.kind === "," && c.start >= from) return token(c, ",");
     return synthetic(anchor, ",");
   };
 }
-

@@ -1,0 +1,272 @@
+import {
+  decimalValue,
+  type Lexeme,
+  type Normalize,
+} from "../../../fmt/check.js";
+import type { FormatNode } from "../../../fmt/tree.js";
+
+/**
+ * What `check` compares for Python: ruff respells strings (quotes, prefixes, escapes, joined implicit
+ * concatenations, re-indented docstrings) and numbers, adds and drops optional parentheses, trailing commas,
+ * `;` and backslash continuations, and moves a body after `:` onto its own lines. Those map to one form or to
+ * none. Indentation carries meaning, so the first kept token of each logical line is prefixed with its block
+ * depth, as Python's tokenizer counts INDENT and DEDENT.
+ */
+
+/** Parents under which a tuple's parentheses are optional: a statement's value or target, a subscript, `yield`. */
+const bareTupleParents = new Set([
+  "expression_statement",
+  "for_statement",
+  "return_statement",
+  "assignment",
+  "augmented_assignment",
+  "subscript",
+  "delete_statement",
+  "yield",
+]);
+
+/** Parents whose `:` ends a compound statement's header. */
+const headers = new Set([
+  "if_statement",
+  "elif_clause",
+  "else_clause",
+  "for_statement",
+  "while_statement",
+  "try_statement",
+  "except_clause",
+  "except_group_clause",
+  "finally_clause",
+  "with_statement",
+  "function_definition",
+  "class_definition",
+  "match_statement",
+  "case_clause",
+]);
+
+const docstringOwners = new Set(["function_definition", "class_definition"]);
+
+/** Whether a string lexeme is a docstring, which ruff re-indents: the first statement of a module, def or class. */
+function isDocstring(n: FormatNode): boolean {
+  let s = n;
+  while (s.parent?.kind === "parenthesized_expression") s = s.parent;
+  const stmt = s.parent;
+  if (stmt?.kind !== "expression_statement") return false;
+  const container = stmt.parent;
+  if (!container) return false;
+  const first = container.children.find((c) => c.named && c.kind !== "comment");
+  if (first !== stmt) return false;
+  if (container.kind === "module") return true;
+  return (
+    container.kind === "block" &&
+    container.parent !== undefined &&
+    docstringOwners.has(container.parent.kind)
+  );
+}
+
+const simpleEscapes: Record<string, string> = {
+  "\n": "",
+  "\\": "\\",
+  "'": "'",
+  '"': '"',
+  a: "\x07",
+  b: "\b",
+  f: "\f",
+  n: "\n",
+  r: "\r",
+  t: "\t",
+  v: "\v",
+};
+
+/** The value of a non-raw string's literal text: escapes decoded, `\N{...}` kept with its name upper-cased. */
+function decode(text: string, bytes: boolean): string {
+  return text.replace(
+    /\\(\r\n|[\n\\'"abfnrtv]|[0-7]{1,3}|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|N\{[^}]*\})/g,
+    (all, e: string) => {
+      if (e === "\r\n") return "";
+      const simple = simpleEscapes[e];
+      if (simple !== undefined) return simple;
+      if (/^[0-7]/.test(e)) return String.fromCodePoint(Number.parseInt(e, 8));
+      if (e[0] === "N")
+        return bytes ? all : `\\N{${e.slice(2, -1).toUpperCase()}}`;
+      if (bytes && e[0] !== "x") return all;
+      return String.fromCodePoint(Number.parseInt(e.slice(1), 16));
+    },
+  );
+}
+
+/** One string part's form: `b` for bytes, then the value, with each interpolation as its text without blanks. */
+function stringValue(
+  part: FormatNode,
+  text: string,
+  at: number,
+): { bytes: boolean; value: string } {
+  const startNode = part.children[0];
+  const prefix = startNode
+    ? text
+        .slice(startNode.start - at, startNode.end - at)
+        .replace(/['"]/g, "")
+        .toLowerCase()
+    : "";
+  const raw = prefix.includes("r");
+  const bytes = prefix.includes("b");
+  const interpolated = prefix.includes("f") || prefix.includes("t");
+  let value = "";
+  for (const c of part.children) {
+    const t = text.slice(c.start - at, c.end - at);
+    if (c.kind === "string_content" || c.kind === "escape_sequence") {
+      let v = raw ? t : decode(t, bytes);
+      if (interpolated) v = v.replace(/\{\{/g, "{").replace(/\}\}/g, "}");
+      value += v;
+    } else if (c.kind === "interpolation")
+      value += `\0${t.replace(/\s+/g, "").replace(/'/g, '"')}\0`;
+  }
+  return { bytes, value };
+}
+
+function stringForm(l: Lexeme): string {
+  const parts =
+    l.node.kind === "concatenated_string"
+      ? l.node.children.filter((c) => c.kind === "string")
+      : [l.node];
+  let bytes = false;
+  let value = "";
+  for (const p of parts) {
+    const v = stringValue(p, l.text, l.at);
+    bytes ||= v.bytes;
+    value += v.value;
+  }
+  if (isDocstring(l.node))
+    value = value
+      .split("\n")
+      .map((s) => s.trim())
+      .filter((s) => s !== "")
+      .join("\n");
+  return `S${bytes ? "b" : ""}${value}`;
+}
+
+function numberForm(text: string): string {
+  const t = text.toLowerCase();
+  if (/^0[xob]/.test(t)) return `N${t}`;
+  if (t.endsWith("j"))
+    return `N${decimalValue(t.slice(0, -1)) ?? t.slice(0, -1)}j`;
+  return `N${decimalValue(t) ?? t}`;
+}
+
+const closers = new Set([")", "]", "}"]);
+
+/** Whether `l`, a punctuation leaf, is one ruff may add or drop without changing meaning. */
+function optional(l: Lexeme, next: Lexeme | undefined): boolean {
+  const n = l.node;
+  const parent = n.parent;
+  switch (l.text) {
+    case ";":
+      return true;
+    case "(":
+    case ")":
+      if (!parent) return false;
+      if (parent.kind === "parenthesized_expression") return true;
+      if (
+        (parent.kind === "tuple" || parent.kind === "tuple_pattern") &&
+        parent.parent
+      )
+        return bareTupleParents.has(parent.parent.kind);
+      if (
+        parent.kind === "with_clause" ||
+        parent.kind === "import_from_statement"
+      )
+        return true;
+      if (parent.kind === "argument_list")
+        return (
+          parent.parent?.kind === "class_definition" &&
+          !parent.children.some((c) => c.named && c.kind !== "comment")
+        );
+      return false;
+    case ",": {
+      if (!next || !closers.has(next.text)) return false;
+      if (parent?.kind === "subscript") return false;
+      // A one-element tuple's comma is what makes it a tuple.
+      if (parent?.kind === "tuple" || parent?.kind === "tuple_pattern")
+        return (
+          parent.children.filter((c) => c.named && c.kind !== "comment")
+            .length > 1
+        );
+      return true;
+    }
+    default:
+      return false;
+  }
+}
+
+function form(l: Lexeme, next: Lexeme | undefined): string | undefined {
+  const k = l.node.kind;
+  if (k === "line_continuation" || l.text.trim() === "") return undefined;
+  if (k === "string" || k === "concatenated_string") return stringForm(l);
+  if (k === "integer" || k === "float") return numberForm(l.text);
+  if (!l.node.named && optional(l, next)) return undefined;
+  return l.text;
+}
+
+/** The column of `at` in `text`, with tabs to the next multiple of 8, as Python's tokenizer counts it. */
+function column(text: string, at: number): number {
+  let start = at;
+  while (start > 0 && text[start - 1] !== "\n" && text[start - 1] !== "\r")
+    start--;
+  let col = 0;
+  for (let i = start; i < at; i++)
+    col = text[i] === "\t" ? (Math.floor(col / 8) + 1) * 8 : col + 1;
+  return col;
+}
+
+function hasNewline(text: string, from: number, to: number): boolean {
+  for (let i = from; i < to; i++)
+    if (text[i] === "\n" || text[i] === "\r") return true;
+  return false;
+}
+
+export const normalize: Normalize = (lexemes, text) => {
+  const out: (string | undefined)[] = [];
+  const indents = [0];
+  let brackets = 0;
+  let lineDepth = 0;
+  let pending: number | undefined;
+  let prev: Lexeme | undefined;
+  let prevEnd = 0;
+  for (const [i, l] of lexemes.entries()) {
+    const f = form(l, lexemes[i + 1]);
+    const continued = prev?.node.kind === "line_continuation";
+    if (
+      brackets === 0 &&
+      !continued &&
+      (prev === undefined || hasNewline(text, prevEnd, l.at))
+    ) {
+      const col = column(text, l.at);
+      while (col < (indents.at(-1) ?? 0)) indents.pop();
+      if (col > (indents.at(-1) ?? 0)) indents.push(col);
+      lineDepth = indents.length - 1;
+      pending = lineDepth;
+    } else if (brackets === 0 && prev && !prev.node.named && prev.text === ";")
+      pending = lineDepth;
+    else if (
+      brackets === 0 &&
+      prev &&
+      prev.text === ":" &&
+      prev.node.parent &&
+      headers.has(prev.node.parent.kind)
+    ) {
+      // A body on its header's line, which ruff moves to its own indented line.
+      lineDepth += 1;
+      pending = lineDepth;
+    }
+    if (!l.node.named || l.node.children.length === 0) {
+      if (l.text === "(" || l.text === "[" || l.text === "{") brackets++;
+      else if (closers.has(l.text)) brackets = Math.max(0, brackets - 1);
+    }
+    if (f !== undefined && pending !== undefined) {
+      out.push(`${pending}:${f}`);
+      pending = undefined;
+    } else out.push(f);
+    prev = l;
+    prevEnd = l.at + l.text.length;
+  }
+  return out;
+};
