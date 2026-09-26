@@ -136,7 +136,12 @@ export function typeNeedsParens(n: FormatNode): boolean {
         if (key === "left") return true;
         if (key === "right") {
           const r = returnType(n);
-          const inner = r?.kind === "type_predicate" ? field(r, "type") : r;
+          // `asserts x is T` wraps the predicate prettier reads as TSTypePredicate.
+          const predicate = r?.kind === "asserts" ? first(r) : r;
+          const inner =
+            predicate?.kind === "type_predicate"
+              ? field(predicate, "type")
+              : predicate;
           if (inner?.kind === "infer_type" && anonKid(inner, "extends"))
             return true;
         }
