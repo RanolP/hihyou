@@ -242,6 +242,31 @@ Today the parser builds `Subtree` objects, and `walkTree` reads them into the vi
 
 Nothing in the first step depends on this. The record format of the visible tree is chosen so that a postorder producer, which is what a reduce is, can write it directly.
 
+## The shipped arena, measured
+
+`packages/syntechs/src/core/arena.ts` implements the wide layout. `research/tree-arena/arena.mjs` builds it from the parser's `Subtree` through `walkTree`'s traversal, which is what `buildTree` will do, and checks every build word for word against `fromSyntaxTree`. It needs a `pnpm run typecheck` and runs as `node --expose-gc research/tree-arena/arena.mjs`. The table below is from Node v24.18.0. Each figure is the minimum of 21 runs, each variant ran in its own process, and the median of 3 processes is kept. On this shared machine, medians moved 2–4x between identical processes, while the minimum held.
+
+| input | nodes | words/char | objects build ms | arena build ms | objects B/node | arena B/node (allocated / used) | objects walk ms | arena walk ms | objects parents ms | arena parents ms |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| big.json | 579360 | 1.14 | 134.8 | 103.3 | 154 | 31 / 29 | 33.66 | 18.63 | 25.43 | 12.73 |
+| package-lock.json | 64373 | 1.14 | 10.3 | 8.6 | 156 | 31 / 29 | 0.87 | 0.26 | 0.79 | 0.18 |
+| bootstrap.css | 76837 | 1.74 | 18.8 | 24.2 | 165 | 34 / 29 | 1.58 | 0.42 | 2.71 | 0.42 |
+| normalize.css | 795 | 0.81 | 0.1 | 0.1 | 210 | 72 / 29 | 0.02 | 0.01 | 0.01 | 0.00 |
+| jquery.js | 70216 | 1.55 | 27.3 | 25.3 | 172 | 30 / 29 | 1.81 | 0.51 | 1.97 | 0.61 |
+| lodash.js | 62981 | 0.73 | 22.7 | 21.9 | 221 | 65 / 29 | 1.64 | 0.40 | 1.97 | 0.43 |
+| checker.ts | 512331 | 1.05 | 226.2 | 178.6 | 172 | 36 / 29 | 34.15 | 14.45 | 19.73 | 4.71 |
+| scanner.ts | 43169 | 1.23 | 20.3 | 9.4 | 164 | 31 / 29 | 0.70 | 0.25 | 0.34 | 0.20 |
+| App.tsx | 60791 | 1.42 | 25.5 | 16.3 | 165 | 31 / 29 | 1.64 | 0.48 | 1.62 | 0.38 |
+| LayerUI.tsx | 4174 | 1.38 | 0.7 | 0.5 | 162 | 32 / 29 | 0.10 | 0.03 | 0.07 | 0.02 |
+| argparse.py | 18660 | 1.16 | 3.0 | 2.2 | 171 | 31 / 29 | 0.52 | 0.12 | 0.36 | 0.08 |
+| dataclasses.py | 9156 | 0.89 | 1.1 | 1.2 | 189 | 39 / 29 | 0.29 | 0.06 | 0.10 | 0.03 |
+
+The bootstrap.css build flipped between runs (38.2 vs 29.6 ms in an earlier one), so its row is noise. On the small inputs, alternating the two builds within one process puts the arena at or below the objects: argparse.py 2.87 vs 3.33 ms, dataclasses.py 1.55 vs 1.72, LayerUI.tsx 0.57 vs 0.59, normalize.css 0.157 vs 0.148, scanner.ts 10.7 vs 10.9.
+
+Words per node is 6.23–6.37 in every language, so `ords` is presized to words / 6. The words-per-char ratios `arena.ts` presizes from (json 1.2, css 2.0, javascript 1.6, typescript 1.3, tsx 1.5, python 1.2) sit just above the high end of what each language measured: json 1.14 (edge.json, a tiny file, 3.97), css 0.81–1.94, javascript 0.73–1.55, typescript 1.05–1.23, tsx 1.38–1.42, python 0.89–1.17. Files full of comments sit at the low end, and the buffer is not trimmed after the build, so their allocation reaches about 2x the used words (lodash.js, 65 vs 29 B/node).
+
+**Text no leaf covers.** An inner node's `text` is its source span, because some inner nodes hold text outside every child leaf. CSS `color_value` (the digits after `#`), `integer_value` and `float_value` hold the number, with only the unit as a child. Python `string_content` holds the text between its `escape_sequence` children, and `format_specifier` and an `assignment` spanning a `\` continuation do the same. JSON, JavaScript, TypeScript and TSX have none. A formatter that never reads the source needs these as synthetic leaves, or needs `text` of an inner node to stay.
+
 ## Migration order
 
 Twelve files import `SyntaxNode` today. Every one of them changes, except `core/index.ts`, which only swaps its exports.
