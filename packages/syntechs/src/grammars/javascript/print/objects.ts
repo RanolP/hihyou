@@ -22,6 +22,7 @@ import {
   GROUP,
   IF_BROKEN,
   INDENT,
+  type JsStreamCtx,
   jsCtx,
   onDoc,
   open,
@@ -30,6 +31,7 @@ import {
   sHardline,
   sLine,
   sToken,
+  withComments,
 } from "../sink.js";
 import { printAssignment } from "./assignment.js";
 import {
@@ -138,38 +140,39 @@ function hasSiblingsRequireQuoted(ctx: JsCtx, n: number): boolean {
 }
 
 /** Prettier's printKey: a property's key, quoted or unquoted as `quoteProps` asks. */
-export function printKey(ctx: JsCtx, n: number): Doc {
-  const key = keyOf(ctx, n);
-  if (key === undefined) return [];
-  if (kind(ctx, key) === "computed_property_name") return p(ctx, key);
-  const { quoteProps } = ctx.options;
+export function sPrintKey(ctx: JsStreamCtx, n: number): void {
+  const js = ctx.js;
+  const key = keyOf(js, n);
+  if (key === undefined) return;
+  if (kind(js, key) === "computed_property_name") return ctx.print(key);
+  const { quoteProps } = js.options;
   if (
     quoteProps === "consistent" &&
-    hasSiblingsRequireQuoted(ctx, n) &&
-    isKeySafeToQuote(ctx, n)
+    hasSiblingsRequireQuoted(js, n) &&
+    isKeySafeToQuote(js, n)
   ) {
     const name =
-      kind(ctx, key) === "number"
-        ? String(Number(src(ctx, key)))
-        : src(ctx, key);
-    return ctx.withComments(
-      key,
-      token(key, printString(JSON.stringify(name), ctx.options.singleQuote)),
+      kind(js, key) === "number" ? String(Number(src(js, key))) : src(js, key);
+    return withComments(ctx, key, () =>
+      sToken(key, printString(JSON.stringify(name), js.options.singleQuote)),
     );
   }
   if (
     (quoteProps === "as-needed" ||
-      (quoteProps === "consistent" && !hasSiblingsRequireQuoted(ctx, n))) &&
-    isKeySafeToUnquote(ctx, n)
+      (quoteProps === "consistent" && !hasSiblingsRequireQuoted(js, n))) &&
+    isKeySafeToUnquote(js, n)
   ) {
-    const value = stringValue(ctx, key) ?? "";
-    return ctx.withComments(
-      key,
-      token(key, /^\d/.test(value) ? printNumber(value) : value),
+    const value = stringValue(js, key) ?? "";
+    return withComments(ctx, key, () =>
+      sToken(key, /^\d/.test(value) ? printNumber(value) : value),
     );
   }
-  return p(ctx, key);
+  ctx.print(key);
 }
+
+const printKeyDoc = onDoc((n, ctx) => sPrintKey(jsCtx(ctx), n));
+/** `sPrintKey` for a rule still on the Doc. */
+export const printKey = (ctx: JsCtx, n: number): Doc => printKeyDoc(n, ctx);
 
 // --- objects ----------------------------------------------------------------------------------------------------
 
