@@ -1,5 +1,5 @@
 // Definitions: functions, classes, decorators, parameters, and type parameters.
-import { space, tok } from "../../../fmt/dsl/dsl.js";
+import { custom, grpParen, sepBy, space, tok } from "../../../fmt/dsl/dsl.js";
 import type { Structure } from "../format.js";
 
 export const stmtDef = {
@@ -24,6 +24,9 @@ export const stmtDef = {
     ":",
     $.body.via("def.body"),
   ],
+  // Ruff lays out the list (`def.parameters`), with the comments it splits by position and its magic comma.
+  parameters: ($) => grpParen(sepBy(",", $.children)).via("def.parameters"),
+  lambda_parameters: () => custom("def.lambdaParameters"),
   typed_parameter: ($) => [$.children, ":", $.type.via("def.annotation")],
   default_parameter: ($) => [$.name, "=", $.value.via("def.default")],
   typed_default_parameter: ($) => [

@@ -1,10 +1,11 @@
 // The customs stmt-def.ts's `.via`s name: a definition's part as ruff lays it out, looked up by the definition.
 import type { StreamCtx } from "../../../fmt/stream-format.js";
-import type { ClassDef, Decorator, FunctionDef, Parameter } from "../fmt/ast.js";
+import type { Frame } from "../../../fmt/dsl/runtime.js";
+import type { ClassDef, Decorator, FunctionDef, Lambda, Parameter } from "../fmt/ast.js";
 import { type Format, group } from "../fmt/elements.js";
 import { hard, space } from "../fmt/builders.js";
 import { args, formatExpr, maybeParenthesize, parameters } from "../fmt/expr.js";
-import { part, ruffOf, ruffStmtOf } from "../fmt/sink.js";
+import { dslPart, frameParts, part, ruffOf, ruffStmtOf } from "../fmt/sink.js";
 import { body, decorators, simpleType, splitDangling, typeParams } from "../fmt/stmt/defs.js";
 import { endOf, tokens } from "../fmt/trivia.js";
 
@@ -42,12 +43,7 @@ export const stmtDefVia = {
     const cs = f.comments;
     const p = s.params;
     const emptyParams = p.items.length === 0 && !cs.has(p);
-    // Ruff's empty `soft_block_indent` prints nothing, where the shared `emptyParenthesized` still breaks.
-    const inner: Format[] = [
-      emptyParams && p.open !== undefined && p.close !== undefined
-        ? [f.tok(p.open), f.tok(p.close)]
-        : parameters(f, p, "preserve"),
-    ];
+    const inner: Format[] = [dslPart(p.ts)];
     const ret = s.returns;
     if (ret && s.arrow !== undefined) {
       inner.push(space, f.tok(s.arrow), space);
@@ -66,6 +62,21 @@ export const stmtDefVia = {
         );
     }
     part(group(inner));
+  },
+  // A `def`'s parameters in their parentheses: ruff lays out the list, splitting its comments by position.
+  "def.parameters": (node: number, _: StreamCtx<unknown>, frame: Frame) => {
+    const { f, s } = ruffStmtOf(node);
+    const p = (s as FunctionDef).params;
+    const { open, close } = frameParts(frame);
+    // Ruff's empty `soft_block_indent` prints nothing, where the shared `emptyParenthesized` still breaks.
+    const empty =
+      p.items.length === 0 && !f.comments.has(p) && p.open !== undefined && p.close !== undefined;
+    part(empty ? [open, close] : parameters(f, p, { open, close }));
+  },
+  "def.lambdaParameters": (node: number, ctx: StreamCtx<unknown>) => {
+    const { f, e } = ruffOf(ctx.tree.parent(node));
+    const p = (e as Lambda).params;
+    if (p) part(parameters(f, p, "never"));
   },
   // Ruff's `class` arguments: an empty list is dropped, keeping its end-of-line comments.
   "def.classArgs": (c: number) => {

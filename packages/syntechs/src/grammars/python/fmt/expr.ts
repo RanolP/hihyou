@@ -994,7 +994,7 @@ export function lambdaHeader(f: Fmt, e: Lambda): readonly Comment[] {
 export function lambdaParams(f: Fmt, e: Lambda, p: Parameters): Format {
   const cs = f.comments;
   const before = cs.dangling(e).filter((c) => c.end < p.start);
-  const params = parameters(f, p, "never");
+  const params = dslPart(p.ts);
   return [
     before.length === 0 ? (cs.hasLeading(p) ? hard : space) : f.dangling(before),
     cs.hasAnyIn(p.start, p.end) || cs.has(p) ? params : removeSoftLines(params),
@@ -1047,11 +1047,14 @@ export function lambdaBody(f: Fmt, e: Lambda, header: readonly Comment[]): Forma
   return f.parenthesizeIfExpands(body.ts, () => formatExpr(f, body, "never"));
 }
 
-/** Ruff's `FormatParameters`, `Preserve` (a `def`'s parentheses) or `Never` (a lambda's). */
+/**
+ * Ruff's `FormatParameters`, `Preserve` (a `def`'s parentheses, given as the tokens of its spec's frame) or `Never`
+ * (a lambda's).
+ */
 export function parameters(
   f: Fmt,
   p: Parameters,
-  mode: "preserve" | "never",
+  mode: { readonly open: Token; readonly close: Token } | "never",
 ): Format {
   const cs = f.comments;
   const dangling = cs.dangling(p);
@@ -1103,8 +1106,7 @@ export function parameters(
   };
   if (mode === "never")
     return [group(inner()), f.dangling(rest.filter((c) => !c.formatted))];
-  const open = p.open !== undefined ? f.tok(p.open) : synthetic(p.ts, "(");
-  const close = p.close !== undefined ? f.tok(p.close) : synthetic(p.ts, ")");
+  const { open, close } = mode;
   return f.at(PAREN, () => {
     if (p.items.length === 0)
       return f.emptyParenthesized(open, dangling, close);
