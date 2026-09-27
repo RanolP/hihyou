@@ -9,29 +9,17 @@ import {
   outer,
   type Sequence,
 } from "../fmt/ast.js";
-import { commaIn, type Fmt, PAREN } from "../fmt/builders.js";
+import { type Fmt, PAREN, writeCommaIn } from "../fmt/builders.js";
 import {
   type ComprehensionComments,
   comprehensionComments,
-  formatExpr,
   itemStart,
   writeComprehensionBody,
   writeComprehensionSpacer,
+  writeExpr,
   writeSequenceContent,
 } from "../fmt/expr.js";
-import {
-  COLLAPSE,
-  close as sClose,
-  dslPart,
-  frameParts,
-  GROUP,
-  open as sOpen,
-  part,
-  record,
-  ruffOf,
-  sLine,
-  sText,
-} from "../fmt/sink.js";
+import { COLLAPSE, close as sClose, GROUP, open as sOpen, ruffOf, sDsl, sLine, sText } from "../fmt/sink.js";
 
 /** The expression a dict's item `c` starts with: a pair's key, else the `**` splat. */
 const itemExpr = (c: number, ctx: StreamCtx<unknown>) =>
@@ -41,20 +29,20 @@ const itemExpr = (c: number, ctx: StreamCtx<unknown>) =>
 function writeDictItem(f: Fmt, item: Dict["items"][number]): void {
   if (item.key && item.colon !== undefined) {
     sOpen(GROUP);
-    part(dslPart(f.tree.parent(item.colon)));
+    sDsl(f.tree.parent(item.colon));
     sClose();
   } else if (item.value.kind === "Starred") {
     const s = item.value;
     const cs = f.comments;
-    part(f.leading(cs.leading(s)));
-    part(f.leading(cs.leading(s.value)));
+    f.writeLeading(cs.leading(s));
+    f.writeLeading(cs.leading(s.value));
     sOpen(GROUP);
-    part(f.tok(s.op));
-    part(f.dangling(cs.dangling(s)));
-    part(formatExpr(f, s.value));
+    f.writeTok(s.op);
+    f.writeDangling(cs.dangling(s));
+    writeExpr(f, s.value);
     sClose();
-    part(f.trailing(cs.trailing(s)));
-  } else part(formatExpr(f, item.value));
+    f.writeTrailing(cs.trailing(s));
+  } else writeExpr(f, item.value);
 }
 
 export const collectionVia = {
@@ -62,18 +50,18 @@ export const collectionVia = {
   // dict comprehension's only those before the first item), or all of them between the brackets of an empty one.
   "collection.brackets": (node: number, _: StreamCtx<unknown>, frame: Frame) => {
     const { f, e } = ruffOf(node);
-    const { open, body, close } = frameParts(frame);
+    const { open, body, close } = frame;
     const dangling = f.comments.dangling(e);
     if (e.kind === "Dict" || e.kind === "DictComp") {
       const first = e.kind === "Dict" ? e.items[0] : e;
       if (first === undefined)
-        return part(f.at(PAREN, () => f.emptyParenthesized(open, dangling, close)));
+        return f.at(PAREN, () => f.writeEmptyParenthesized(open, dangling, close));
       const firstStart = e.kind === "Dict" ? itemStart(first as Dict["items"][number]) : outer(e.key).start;
-      return part(f.parenthesized(open, body, close, dangling.filter((c) => c.end < firstStart)));
+      return f.writeParenthesized(open, body, close, dangling.filter((c) => c.end < firstStart));
     }
     if (e.kind !== "ListComp" && e.kind !== "SetComp" && e.kind !== "Generator" && (e as Sequence).elts.length === 0)
-      return part(f.at(PAREN, () => f.emptyParenthesized(open, dangling, close)));
-    part(f.parenthesized(open, body, close, dangling));
+      return f.at(PAREN, () => f.writeEmptyParenthesized(open, dangling, close));
+    f.writeParenthesized(open, body, close, dangling);
   },
   // Given the first item, prints them all: the layout is the list's or set's.
   "collection.sequence": (c: number) => {
@@ -85,26 +73,24 @@ export const collectionVia = {
     const e = first.parent as Sequence;
     const [single] = e.elts;
     if (e.elts.length === 1 && single) {
-      part(formatExpr(f, single));
-      part(commaIn(f.tree, e.ts, e.ts)(single.end));
+      writeExpr(f, single);
+      writeCommaIn(f.tree, e.ts, e.ts)(single.end);
     } else writeSequenceContent(f, e);
   },
   "collection.dict": (c: number, ctx: StreamCtx<unknown>) => {
     const { f, e: first } = itemExpr(c, ctx);
     const e = first.parent as Dict;
-    part(
-      f.joinCommaSeparated(
-        e.items.map((item) => ({ end: item.value.end, doc: record(() => writeDictItem(f, item)) })),
-        e.end,
-        commaIn(f.tree, e.ts, e.ts),
-      ),
+    f.writeJoinCommaSeparated(
+      e.items.map((item) => ({ end: item.value.end, write: () => writeDictItem(f, item) })),
+      e.end,
+      writeCommaIn(f.tree, e.ts, e.ts),
     );
   },
   "collection.pairKey": (c: number) => {
     const { f, e } = ruffOf(c);
-    if (e.parent?.kind !== "DictComp") return part(formatExpr(f, e));
+    if (e.parent?.kind !== "DictComp") return writeExpr(f, e);
     sOpen(GROUP);
-    part(formatExpr(f, e));
+    writeExpr(f, e);
     sClose();
   },
   // The comments between the colon and the value, which ruff keeps there, else a space.
@@ -124,15 +110,15 @@ export const collectionVia = {
       mine = dangling.filter((c) => c.end >= firstStart && c.start >= prevEnd && c.start < e.end);
     }
     if (mine.length === 0) sText(" ");
-    else part(f.dangling(mine));
-    part(formatExpr(f, e));
+    else f.writeDangling(mine);
+    writeExpr(f, e);
   },
   // Given the key and value's pair, prints the comprehension's body: the pair and its clauses in one group.
   "collection.dictComp": (c: number, ctx: StreamCtx<unknown>) => {
     const { f, e: key } = ruffOf(fieldChild(ctx.tree, c, "key"));
     const e = key.parent as DictComp;
     sOpen(GROUP);
-    writeComprehensionBody(f, e, () => part(dslPart(c)));
+    writeComprehensionBody(f, e, () => sDsl(c));
     sClose();
   },
   // Given the element, prints a list, set or generator comprehension's body: the element and its clauses in one group.
@@ -142,7 +128,7 @@ export const collectionVia = {
     sOpen(GROUP);
     writeComprehensionBody(f, e, () => {
       sOpen(GROUP);
-      part(formatExpr(f, e.elt));
+      writeExpr(f, e.elt);
       sClose();
     });
     sClose();
@@ -150,23 +136,20 @@ export const collectionVia = {
   "collection.async": (t: number | undefined, node: number, ctx: StreamCtx<unknown>) => {
     if (t === undefined) return;
     const { f } = ruffOf(fieldChild(ctx.tree, node, "left"));
-    part(f.tok(t));
+    f.writeTok(t);
     sText(" ");
   },
   // The for clause's target between the comments ruff keeps before and after it.
   "collection.forTarget": (c: number) => {
     const { f, e: target } = ruffOf(c);
     const { beforeTarget, beforeIn } = comprehensionComments(f, target.parent as Comprehension);
-    part(f.trailing(beforeTarget));
+    f.writeTrailing(beforeTarget);
     writeComprehensionSpacer(f, target, target.kind !== "Tuple");
-    part(
-      target.kind === "Tuple"
-        ? formatExpr(f, target, "preserve", { tuple: "never" })
-        : formatExpr(f, target),
-    );
+    if (target.kind === "Tuple") writeExpr(f, target, "preserve", { tuple: "never" });
+    else writeExpr(f, target);
     if (beforeIn.length === 0) sText(" ");
     else sLine(COLLAPSE);
-    part(f.leading(beforeIn));
+    f.writeLeading(beforeIn);
   },
   // Given the iterable's first expression, prints the whole iterable, an unparenthesized tuple included.
   "collection.forIter": (c: number, ctx: StreamCtx<unknown>) => {
@@ -174,17 +157,17 @@ export const collectionVia = {
     const { f, e: target } = ruffOf(fieldChild(ctx.tree, clause, "left"));
     const comp = target.parent as Comprehension;
     const { trailingIn } = comprehensionComments(f, comp);
-    part(f.trailing(trailingIn));
+    f.writeTrailing(trailingIn);
     writeComprehensionSpacer(f, comp.iter, true);
-    part(formatExpr(f, comp.iter));
+    writeExpr(f, comp.iter);
   },
   "collection.ifTest": (c: number) => {
     const { f, e: test } = ruffOf(c);
     const comp = test.parent as Comprehension;
     const i = comp.ifs.findIndex((x) => x.test === test);
     const { eol } = comprehensionComments(f, comp).ifs[i] as ComprehensionComments["ifs"][number];
-    part(f.trailing(eol));
+    f.writeTrailing(eol);
     writeComprehensionSpacer(f, test, true);
-    part(formatExpr(f, test));
+    writeExpr(f, test);
   },
 };

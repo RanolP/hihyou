@@ -488,15 +488,28 @@ export function commaIn(
   anchor: number,
 ): (from: number) => Token {
   return (from) => {
-    for (let i = 0, n = tree.count(parent); i < n; i++) {
-      const c = tree.child(parent, i);
-      if (
-        !tree.named(c) &&
-        tree.kindName(c) === "," &&
-        startOf(tree, c) >= from
-      )
-        return token(c, ",");
-    }
-    return synthetic(anchor, ",");
+    const c = commaAfter(tree, parent, from);
+    return c === undefined ? synthetic(anchor, ",") : token(c, ",");
   };
+}
+
+/** `commaIn`, written. */
+export function writeCommaIn(
+  tree: FormatTree,
+  parent: number,
+  anchor: number,
+): (from: number) => void {
+  return (from) => {
+    const c = commaAfter(tree, parent, from);
+    if (c === undefined) sink.sToken(anchor, ",", true);
+    else sink.sToken(c, ",");
+  };
+}
+
+function commaAfter(tree: FormatTree, parent: number, from: number): number | undefined {
+  for (let i = 0, n = tree.count(parent); i < n; i++) {
+    const c = tree.child(parent, i);
+    if (!tree.named(c) && tree.kindName(c) === "," && startOf(tree, c) >= from) return c;
+  }
+  return undefined;
 }

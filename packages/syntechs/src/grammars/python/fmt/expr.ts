@@ -52,6 +52,7 @@ import {
   softBlockIndent,
   softOrSpace,
   space,
+  writeCommaIn,
 } from "./builders.js";
 import type { Comment } from "./comments.js";
 import * as sink from "./sink.js";
@@ -809,11 +810,11 @@ function writeFields(f: Fmt, e: Expr, o: Opts): void {
       sink.part(subscript(f, e, o.chain ?? "default"));
       return;
     case "Tuple":
-      sink.part(tuple(f, e, o.tuple ?? "default"));
+      writeTuple(f, e, o.tuple ?? "default");
       return;
     case "List":
     case "Set":
-      sink.part(list(f, e));
+      writeList(f, e);
       return;
     case "Dict":
       sink.sDsl(e.ts);
@@ -821,7 +822,7 @@ function writeFields(f: Fmt, e: Expr, o: Opts): void {
     case "ListComp":
     case "SetComp":
     case "Generator":
-      sink.part(comp(f, e, o.genPreserve === true));
+      writeComp(f, e, o.genPreserve === true);
       return;
   }
 }
@@ -1188,87 +1189,86 @@ function writeParameter(f: Fmt, p: Parameter): void {
   f.writeTrailing(cs.trailing(p));
 }
 
-function sequenceEntries(f: Fmt, e: Sequence, o: Opts = {}) {
-  return e.elts.map((x) => ({
-    end: x.end,
-    doc: formatExpr(f, x, "preserve", o),
-  }));
+function writeSequence(f: Fmt, e: Sequence, comma: (after: number) => void): void {
+  f.writeJoinCommaSeparated(
+    e.elts.map((x) => ({ end: x.end, write: () => writeExpr(f, x) })),
+    e.end,
+    comma,
+  );
 }
 
-function tuple(f: Fmt, e: Sequence, mode: TupleMode): Format {
+function writeTuple(f: Fmt, e: Sequence, mode: TupleMode): void {
   const cs = f.comments;
   const dangling = cs.dangling(e);
-  const parenthesized = e.open !== undefined;
-  const open = e.open !== undefined ? f.tok(e.open) : synthetic(e.ts, "(");
-  const close = e.close !== undefined ? f.tok(e.close) : synthetic(e.ts, ")");
-  const comma = commaIn(f.tree, e.ts, e.ts);
+  const { open: lp, close: rp } = e;
+  const parenthesized = lp !== undefined;
+  const open = lp !== undefined ? () => f.writeTok(lp) : () => sink.sToken(e.ts, "(", true);
+  const close = rp !== undefined ? () => f.writeTok(rp) : () => sink.sToken(e.ts, ")", true);
+  const comma = writeCommaIn(f.tree, e.ts, e.ts);
   const spec =
     parenthesized &&
     f.tree.kindName(e.ts) === "tuple" &&
     (e.elts.length <= 1 || !(mode === "neverPreserve" && dangling.length === 0));
-  if (spec) return dslPart(e.ts);
+  if (spec) return sink.sDsl(e.ts);
   if (e.elts.length === 0)
-    return f.at(PAREN, () => f.emptyParenthesized(open, dangling, close));
-  const sequence = () =>
-    f.joinCommaSeparated(sequenceEntries(f, e), e.end, comma);
+    return f.at(PAREN, () => f.writeEmptyParenthesized(open, dangling, close));
+  const sequence = () => writeSequence(f, e, comma);
   if (e.elts.length === 1) {
     const single = e.elts[0] as Expr;
     if (mode === "preserve" && !parenthesized) {
       const c = e.commas[0];
-      return [
-        formatExpr(f, single),
-        c !== undefined && startOf(f.tree, c) >= single.end ? f.tok(c) : [],
-      ];
+      writeExpr(f, single);
+      if (c !== undefined && startOf(f.tree, c) >= single.end) f.writeTok(c);
+      return;
     }
-    return f.parenthesized(
-      open,
-      () => [formatExpr(f, single), comma(single.end)],
-      close,
-      dangling,
-    );
+    const content = () => {
+      writeExpr(f, single);
+      comma(single.end);
+    };
+    return f.writeParenthesized(open, content, close, dangling);
   }
   if (parenthesized && !(mode === "neverPreserve" && dangling.length === 0))
-    return f.parenthesized(open, sequence, close, dangling);
+    return f.writeParenthesized(open, sequence, close, dangling);
   switch (mode) {
     case "never":
-      return e.elts.map((x, i) =>
-        i > 0
-          ? [
-              group([comma((e.elts[i - 1] as Expr).end), space]),
-              formatExpr(f, x),
-            ]
-          : formatExpr(f, x),
-      );
+      for (const [i, x] of e.elts.entries()) {
+        if (i > 0) {
+          sOpen(GROUP);
+          comma((e.elts[i - 1] as Expr).end);
+          sText(" ");
+          sClose();
+        }
+        writeExpr(f, x);
+      }
+      return;
     case "preserve":
-      return group(sequence());
+      sOpen(GROUP);
+      sequence();
+      sClose();
+      return;
     case "neverPreserve":
-      return f.optionalParentheses(e.ts, sequence);
+      return f.writeOptionalParentheses(e.ts, sequence);
     case "optionalParentheses":
-      if (e.elts.length === 2) return f.optionalParentheses(e.ts, sequence);
-      return f.parenthesizeIfExpands(e.ts, sequence);
+      if (e.elts.length === 2) return f.writeOptionalParentheses(e.ts, sequence);
+      return f.writeParenthesizeIfExpands(e.ts, sequence);
     default:
-      return f.parenthesizeIfExpands(e.ts, sequence);
+      return f.writeParenthesizeIfExpands(e.ts, sequence);
   }
 }
 
-function list(f: Fmt, e: Sequence): Format {
-  if (f.tree.kindName(e.ts) !== "list_pattern") return dslPart(e.ts);
+function writeList(f: Fmt, e: Sequence): void {
+  if (f.tree.kindName(e.ts) !== "list_pattern") return sink.sDsl(e.ts);
   const dangling = f.comments.dangling(e);
-  const open = f.tok(e.open as number);
-  const close = f.tok(e.close as number);
+  const open = () => f.writeTok(e.open as number);
+  const close = () => f.writeTok(e.close as number);
   if (e.elts.length === 0)
-    return f.at(PAREN, () => f.emptyParenthesized(open, dangling, close));
-  return f.parenthesized(
-    open,
-    () => record(() => writeSequenceContent(f, e)),
-    close,
-    dangling,
-  );
+    return f.at(PAREN, () => f.writeEmptyParenthesized(open, dangling, close));
+  f.writeParenthesized(open, () => writeSequenceContent(f, e), close, dangling);
 }
 
 /** A list's or set's items between its brackets. */
 export function writeSequenceContent(f: Fmt, e: Sequence): void {
-  part(f.joinCommaSeparated(sequenceEntries(f, e), e.end, commaIn(f.tree, e.ts, e.ts)));
+  writeSequence(f, e, writeCommaIn(f.tree, e.ts, e.ts));
 }
 
 export function itemStart(i: Dict["items"][number]): number {
@@ -1276,11 +1276,11 @@ export function itemStart(i: Dict["items"][number]): number {
   return outer(k).start;
 }
 
-function comp(f: Fmt, e: Comp, preserve: boolean): Format {
+function writeComp(f: Fmt, e: Comp, preserve: boolean): void {
   const dangling = f.comments.dangling(e);
   const elt = () => {
     sOpen(GROUP);
-    part(formatExpr(f, e.elt));
+    writeExpr(f, e.elt);
     sClose();
   };
   if (
@@ -1289,17 +1289,19 @@ function comp(f: Fmt, e: Comp, preserve: boolean): Format {
     dangling.length === 0 &&
     e.open === undefined
   )
-    return record(() => writeComprehensionBody(f, e, elt));
-  if (e.open !== undefined) return dslPart(e.ts);
-  const open = e.open !== undefined ? f.tok(e.open) : synthetic(e.ts, "(");
-  const close = e.close !== undefined ? f.tok(e.close) : synthetic(e.ts, ")");
-  const body = () =>
-    record(() => {
-      sOpen(GROUP);
-      writeComprehensionBody(f, e, elt);
-      sClose();
-    });
-  return f.parenthesized(open, body, close, dangling);
+    return writeComprehensionBody(f, e, elt);
+  if (e.open !== undefined) return sink.sDsl(e.ts);
+  const body = () => {
+    sOpen(GROUP);
+    writeComprehensionBody(f, e, elt);
+    sClose();
+  };
+  f.writeParenthesized(
+    () => sink.sToken(e.ts, "(", true),
+    body,
+    () => sink.sToken(e.ts, ")", true),
+    dangling,
+  );
 }
 
 /** A comprehension's body as ruff prints it: `head` (its element, or its key and value), then each clause. */
@@ -1314,17 +1316,17 @@ export function writeComprehensionBody(f: Fmt, e: Comp | DictComp, head: () => v
 /** Ruff's `FormatComprehension`: the `for` clause and each `if` clause from their DSL spec, between their comments. */
 function writeComprehension(f: Fmt, c: Comprehension): void {
   const cs = f.comments;
-  part(f.leading(cs.leading(c)));
-  part(dslPart(c.ts));
+  f.writeLeading(cs.leading(c));
+  sink.sDsl(c.ts);
   if (c.ifs.length > 0) {
     const { ifs } = comprehensionComments(f, c);
     for (const [i, cond] of c.ifs.entries()) {
       sLine(COLLAPSE);
-      part(f.leading((ifs[i] as ComprehensionComments["ifs"][number]).own));
-      part(dslPart(f.tree.parent(cond.kw)));
+      f.writeLeading((ifs[i] as ComprehensionComments["ifs"][number]).own);
+      sink.sDsl(f.tree.parent(cond.kw));
     }
   }
-  part(f.trailing(cs.trailing(c)));
+  f.writeTrailing(cs.trailing(c));
 }
 
 export interface ComprehensionComments {
