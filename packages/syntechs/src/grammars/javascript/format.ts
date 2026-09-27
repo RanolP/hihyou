@@ -12,6 +12,23 @@ const format = defineFormat<typeof grammar, JsOptions>();
 /** JS, TS and TSX as prettier 3.9.9 lays them out. */
 export const javascript = format({
   structure: {
+    // Statements (print/statements.ts): a blank line kept after a statement's content, and a clause's body beside
+    // or below its head are customs.
+    program: () => custom("stmt.program"),
+    hash_bang_line: () => custom("stmt.hashBang"),
+    statement_block: () => custom("stmt.block"),
+    empty_statement: () => custom("stmt.empty"),
+    else_clause: () => custom("stmt.else"),
+    for_statement: () => custom("stmt.for"),
+    for_in_statement: () => custom("stmt.forIn"),
+    try_statement: ($) => [
+      "try",
+      space,
+      $.body,
+      $.handler.andThen((h) => [space, h]),
+      $.finalizer.andThen((f) => [space, f]),
+    ],
+    catch_clause: () => custom("stmt.catch"),
     finally_clause: ($) => ["finally", space, $.body],
 
     update_expression: () => inOrder(),
@@ -67,5 +84,27 @@ export const javascript = format({
     interface_declaration: () => custom("class"),
     class_static_block: ($) => ["static", space, $.body],
     decorator: ($) => ["@", $.children],
+
+    switch_case: () => custom("stmt.case"),
+    switch_default: () => custom("stmt.case"),
+    labeled_statement: () => custom("stmt.labeled"),
+
+    // Imports and exports (print/modules.ts).
+    import_clause: () => custom("module.clause"),
+    import_specifier: () => inOrder(space),
+    export_specifier: () => inOrder(space),
+    namespace_import: () => inOrder(space),
+    namespace_export: () => inOrder(space),
+    import_attribute: () => custom("module.attribute"),
+    import_require_clause: ($) => [
+      $.children,
+      space,
+      "=",
+      space,
+      "require",
+      "(",
+      $.source,
+      ")",
+    ],
   },
 });

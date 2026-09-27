@@ -1,6 +1,7 @@
 // Prettier's statement printers: block.js, statement-sequence.js, expression-statement.js, if-statement.js,
 // clause.js, for-statement.js, for-x-statement.js, while-statement.js, do-while-statement.js, try-statement.js,
 // switch-statement.js, return-statement.js, variable-declaration.js, and estree.js's small statements.
+// Their layouts are format.ts's; what it names `custom` is `statementCustoms`, written against sink.ts.
 
 import {
   type Doc,
@@ -16,8 +17,22 @@ import {
   token,
 } from "../../../fmt/doc.js";
 import { NO_NODE } from "../../../core/arena.js";
+import type { CustomRule } from "../../../fmt/dsl/runtime.js";
 import { lfAfter, nextLineEmpty } from "../../../fmt/text.js";
 import { firstLeaf, type FormatTree, prevLeaf } from "../../../fmt/tree.js";
+import {
+  close,
+  GROUP,
+  INDENT,
+  type JsStreamCtx,
+  jsCtx,
+  open,
+  SOFT,
+  sHardline,
+  sLine,
+  sText,
+  sToken,
+} from "../sink.js";
 import { expressionNeedsAsiProtection } from "./asi.js";
 import { printAssignment } from "./assignment.js";
 import { needsParens } from "./parens.js";
@@ -38,6 +53,7 @@ import {
   isJsx,
   items,
   type JsCtx,
+  type JsOptions,
   type JsRule,
   kind,
   lastChildWhere,
@@ -165,23 +181,45 @@ export function ignoredStatement(ctx: JsCtx, n: number): Doc {
   return token(n, text);
 }
 
+// ---- sink helpers ----
+
+/** Token `c` as written, or as `as`; nothing when there is none. */
+export function sTok(x: HasTree, c: number | undefined, as?: string): void {
+  if (c !== undefined) sToken(c, as ?? src(x, c));
+}
+
+/** `node` as its rule prints it, with its comments; nothing when there is none. */
+const pr = (s: JsStreamCtx, node: number | undefined, args?: Record<string, unknown>) => {
+  if (node !== undefined) s.print(node, args);
+};
+
+/** `node`'s dangling comments, one per line. */
+function danglingLines(s: JsStreamCtx, node: number): void {
+  s.danglingComments(node).forEach((c, i) => {
+    if (i > 0) sHardline();
+    s.comment(c);
+  });
+}
+
 /**
  * Prettier's printStatementSequence: each statement on its own line, a blank line kept after one. An empty
  * statement prints nothing, yet is still printed so that its `;` is accounted for.
  */
-export function statementSequence(
-  ctx: JsCtx,
-  statements: readonly number[],
-): Doc {
-  const parts: Doc[] = [];
-  const last = statements.findLast((s) => !isEmpty(ctx, s));
-  for (const s of statements) {
-    parts.push(ctx.print(s));
-    if (isEmpty(ctx, s) || s === last) continue;
-    parts.push(hardline);
-    if (isNextLineEmptyAfter(ctx, s)) parts.push(hardline);
+function statementSequence(s: JsStreamCtx, statements: readonly number[]): void {
+  const js = s.js;
+  const last = statements.findLast((x) => !isEmpty(js, x));
+  for (const x of statements) {
+    s.print(x);
+    if (isEmpty(js, x) || x === last) continue;
+    sHardline();
+    if (isNextLineEmptyAfter(js, x)) sHardline();
   }
-  return parts;
+}
+
+/** The statements of a list, as a sequence when one is no empty statement, else each printed for its `;`. */
+function statementsOrEmpties(s: JsStreamCtx, body: readonly number[]): void {
+  if (body.some((x) => !isEmpty(s.js, x))) statementSequence(s, body);
+  else for (const x of body) s.print(x);
 }
 
 /** Prettier's isNextLineEmpty for a node: a blank line after its content, or after its `;`. */
@@ -190,23 +228,6 @@ function isNextLineEmptyAfter(ctx: JsCtx, n: number): boolean {
   return (
     nextLineEmpty(ctx.tree, end) || (end !== n && nextLineEmpty(ctx.tree, n))
   );
-}
-
-/** Prettier's printBlockBody: `undefined` when the block holds no statement and no comment. */
-function blockBody(
-  ctx: JsCtx,
-  node: number,
-  body = items(ctx, node),
-): Doc | undefined {
-  const hasBody = body.some((s) => !isEmpty(ctx, s));
-  const dangling = ctx.comments(node).dangling;
-  if (!hasBody && dangling.length === 0) {
-    return undefined;
-  }
-  return [
-    hasBody ? statementSequence(ctx, body) : body.map((s) => ctx.print(s)),
-    join(hardline, ctx.dangling(node)),
-  ];
 }
 
 const NO_HARDLINE_IN_EMPTY_BLOCK = new Set([
@@ -224,44 +245,30 @@ const NO_HARDLINE_IN_EMPTY_BLOCK = new Set([
   "module",
 ]);
 
-/** A statement block: `{`, the statements indented, `}`. */
-export function printBlock(
-  ctx: JsCtx,
-  node: number,
-  body = items(ctx, node),
-): Doc {
-  const open = t(ctx, anon(ctx, node, "{"));
-  const close = t(
-    ctx,
-    lastChildWhere(ctx, node, (c) => !named(ctx, c) && kind(ctx, c) === "}"),
-  );
-  const printed = blockBody(ctx, node, body);
-  if (printed !== undefined)
-    return [open, indent([hardline, printed]), hardline, close];
-  const empties = body.map((s) => ctx.print(s));
-  const up = parent(ctx, node);
-  const bare =
-    up !== undefined &&
-    (NO_HARDLINE_IN_EMPTY_BLOCK.has(kind(ctx, up)) ||
-      (kind(ctx, up) === "catch_clause" &&
-        field(ctx, parent(ctx, up) ?? up, "finalizer") === undefined));
-  return [open, empties, bare ? [] : hardline, close];
+/** A statement block: `{`, the statements indented, `}` (prettier's printBlock and printBlockBody). */
+function printBlock(s: JsStreamCtx, node: number): void {
+  const js = s.js;
+  const body = items(js, node);
+  sTok(js, anon(js, node, "{"));
+  if (body.some((x) => !isEmpty(js, x)) || s.danglingComments(node).length > 0) {
+    open(INDENT);
+    sHardline();
+    statementsOrEmpties(s, body);
+    danglingLines(s, node);
+    close();
+    sHardline();
+  } else {
+    for (const x of body) s.print(x);
+    const up = parent(js, node);
+    const bare =
+      up !== undefined &&
+      (NO_HARDLINE_IN_EMPTY_BLOCK.has(kind(js, up)) ||
+        (kind(js, up) === "catch_clause" &&
+          field(js, parent(js, up) ?? up, "finalizer") === undefined));
+    if (!bare) sHardline();
+  }
+  sTok(js, lastChildWhere(js, node, (c) => !named(js, c) && kind(js, c) === "}"));
 }
-
-const program: JsRule = (node, ctx) => {
-  const body = items(ctx, node);
-  const hasBody = body.some((s) => !isEmpty(ctx, s));
-  return [
-    // Prettier keeps a byte order mark.
-    ctx.tree.bom ? text("﻿") : [],
-    hasBody ? statementSequence(ctx, body) : body.map((s) => ctx.print(s)),
-    join(hardline, ctx.dangling(node)),
-  ];
-};
-
-const hashBang: JsRule = (node, ctx) => t(ctx, node, src(ctx, node).trimEnd());
-
-const statementBlock: JsRule = (node, ctx) => printBlock(ctx, node);
 
 export const STATEMENT_LIST_PARENTS = new Set([
   "program",
@@ -270,26 +277,6 @@ export const STATEMENT_LIST_PARENTS = new Set([
   "switch_case",
   "switch_default",
 ]);
-
-const expressionStatement: JsRule = (node, ctx) => {
-  const expr = first(ctx, node);
-  const own = lastChildWhere(
-    ctx,
-    node,
-    (c) => !named(ctx, c) && kind(ctx, c) === ";",
-  );
-  const printed = p(ctx, expr);
-  // `namespace N {}` parses as an expression statement; it takes no `;`.
-  if (kind(ctx, expr) === "internal_module")
-    return [printed, own !== undefined ? token(own, "") : []];
-  if (needsAsiGuard(ctx, node))
-    return [
-      synthetic(node, ";"),
-      printed,
-      own !== undefined ? token(own, "") : [],
-    ];
-  return [printed, semi(ctx, node, own)];
-};
 
 /** Prettier's shouldPrintLeadingSemicolon: with `semi: false`, a statement that would continue the line above. */
 function needsAsiGuard(ctx: JsCtx, node: number): boolean {
@@ -314,33 +301,41 @@ const BODY_HOLDERS = new Set([
   "while_statement",
 ]);
 
-/** Prettier's isMeaningfulEmptyStatement: an empty body keeps its `;`, any other empty statement vanishes. */
-const emptyStatement: JsRule = (node, ctx) => {
-  const up = parent(ctx, node);
-  const role = fieldName(ctx, node);
-  const meaningful =
-    up !== undefined &&
-    ((kind(ctx, up) === "if_statement" && role === "consequence") ||
-      kind(ctx, up) === "else_clause" ||
-      (BODY_HOLDERS.has(kind(ctx, up)) && role === "body"));
-  return token(node, meaningful ? ";" : "");
-};
-
 // Prettier's printClause (clause.js).
-function clause(ctx: JsCtx, body: number | undefined, elseIf = false): Doc {
-  if (body === undefined) return [];
-  const doc = ctx.print(body);
-  if (isEmpty(ctx, body))
-    return hasComment(ctx, body, CF.Leading) ? [text(" "), doc] : doc;
-  const isBlock = kind(ctx, body) === "statement_block";
-  const leading = getComments(ctx, body, CF.Leading)[0];
+function clause(s: JsStreamCtx, body: number | undefined, elseIf = false): void {
+  if (body === undefined) return;
+  const js = s.js;
+  if (isEmpty(js, body)) {
+    if (hasComment(js, body, CF.Leading)) sText(" ");
+    s.print(body);
+    return;
+  }
+  const isBlock = kind(js, body) === "statement_block";
+  const leading = getComments(js, body, CF.Leading)[0];
   if (
     leading !== undefined &&
-    (src(ctx, leading).includes("\n") || ctx.tree.lf(leading) > 0)
-  )
-    return isBlock ? [hardline, doc] : indent([hardline, doc]);
-  if (isBlock || elseIf) return [text(" "), doc];
-  return indent([line, doc]);
+    (src(js, leading).includes("\n") || js.tree.lf(leading) > 0)
+  ) {
+    if (isBlock) {
+      sHardline();
+      s.print(body);
+    } else {
+      open(INDENT);
+      sHardline();
+      s.print(body);
+      close();
+    }
+    return;
+  }
+  if (isBlock || elseIf) {
+    sText(" ");
+    s.print(body);
+    return;
+  }
+  open(INDENT);
+  sLine(0);
+  s.print(body);
+  close();
 }
 
 const isLogicalNot = (x: HasTree, n: number | undefined) =>
@@ -357,357 +352,6 @@ function shouldInlineCondition(ctx: JsCtx, n: number): boolean {
     ["&&", "||", "??"].includes(kind(ctx, field(ctx, a, "operator")) ?? "")
   );
 }
-
-/**
- * The `(condition)` of an if, while, do-while or with statement, or a switch's discriminant: tree-sitter's
- * parenthesized_expression, whose parentheses are the statement's own.
- */
-function parenthesized(
-  ctx: JsCtx,
-  pe: number | undefined,
-  layout: (inner: Doc, node: number) => Doc,
-): Doc {
-  if (pe === undefined) return [];
-  if (kind(ctx, pe) !== "parenthesized_expression")
-    return layout(ctx.print(pe), pe);
-  const inner = first(ctx, pe);
-  const open = t(ctx, anon(ctx, pe, "("));
-  const close = t(
-    ctx,
-    lastChildWhere(ctx, pe, (c) => !named(ctx, c) && kind(ctx, c) === ")"),
-  );
-  const doc = inner !== undefined ? layout(withParens(ctx, inner), inner) : [];
-  return ctx.withComments(pe, [open, doc, close]);
-}
-
-/** Prettier prints the condition through needsParens: `if ((a = b))` keeps a pair inside the statement's own. */
-function withParens(ctx: JsCtx, inner: number): Doc {
-  const printed = ctx.print(inner);
-  const expr = unparen(ctx, inner);
-  if (!needsParens(expr, ctx)) return printed;
-  return [synthetic(expr, "("), printed, synthetic(expr, ")")];
-}
-
-const conditionLayout =
-  (ctx: JsCtx) =>
-  (doc: Doc, node: number): Doc =>
-    shouldInlineCondition(ctx, unparen(ctx, node))
-      ? doc
-      : group([indent([softline, doc]), softline]);
-
-const ifStatement: JsRule = (node, ctx) => {
-  const consequent = field(ctx, node, "consequence");
-  const alternative = field(ctx, node, "alternative");
-  const opening = group([
-    t(ctx, anon(ctx, node, "if")),
-    text(" "),
-    parenthesized(ctx, field(ctx, node, "condition"), conditionLayout(ctx)),
-    clause(ctx, consequent),
-  ]);
-  if (alternative === undefined) return opening;
-  const isBlock = kind(ctx, consequent) === "statement_block";
-  const parts: Doc[] = [opening];
-  let needSpace = isBlock;
-  if (!isBlock) {
-    parts.push(hardline);
-    needSpace = false;
-  }
-  const dangling = getComments(ctx, node, CF.Dangling);
-  const firstComment = dangling[0];
-  const lastComment = dangling.at(-1);
-  if (firstComment !== undefined && lastComment !== undefined) {
-    if (ctx.tree.lf(firstComment) >= 2)
-      parts.push(isBlock ? [hardline, hardline] : hardline);
-    else if (ctx.tree.lf(firstComment) > 0) parts.push(isBlock ? hardline : []);
-    else parts.push(text(" "));
-    parts.push(
-      join(hardline, ctx.dangling(node)),
-      ctx.isLineComment(lastComment) || lfAfter(ctx.tree, lastComment) > 0
-        ? hardline
-        : text(" "),
-    );
-    needSpace = false;
-  }
-  // tree-sitter's else_clause holds `else` and the alternate statement.
-  const elseKw = anon(ctx, alternative, "else");
-  const body = first(ctx, alternative);
-  parts.push(
-    needSpace ? text(" ") : [],
-    ctx.withComments(alternative, [
-      t(ctx, elseKw),
-      group(clause(ctx, body, kind(ctx, body) === "if_statement")),
-    ]),
-  );
-  return parts;
-};
-
-const elseClause: JsRule = (node, ctx) => {
-  const body = first(ctx, node);
-  return [
-    t(ctx, anon(ctx, node, "else")),
-    group(clause(ctx, body, kind(ctx, body) === "if_statement")),
-  ];
-};
-
-const forStatement: JsRule = (node, ctx) => {
-  const body = clause(ctx, field(ctx, node, "body"));
-  const dangling = ctx.dangling(node);
-  const comments: Doc =
-    dangling.length > 0 ? [join(hardline, dangling), softline] : [];
-  const open = t(ctx, anon(ctx, node, "("));
-  const close = t(
-    ctx,
-    lastChildWhere(ctx, node, (c) => !named(ctx, c) && kind(ctx, c) === ")"),
-  );
-  const init = field(ctx, node, "initializer");
-  const conditions = fields(ctx, node, "condition");
-  const update = field(ctx, node, "increment");
-  // The first `;` belongs to the initializer (inside a declaration, or after an expression), the second to the
-  // condition; an empty part is an empty_statement that is its `;`.
-  const semis = children(ctx, node).filter(
-    (c) => !named(ctx, c) && kind(ctx, c) === ";",
-  );
-  const initKind = kind(ctx, init);
-  const initIsDeclaration = initKind?.endsWith("declaration") === true;
-  const initDoc: Doc =
-    init === undefined
-      ? []
-      : initKind === "empty_statement"
-        ? []
-        : ctx.print(init, { forInit: true });
-  const initSemi =
-    initKind === "empty_statement"
-      ? init
-      : initIsDeclaration
-        ? undefined
-        : semis[0];
-  const test = conditions.find(
-    (c) => named(ctx, c) && kind(ctx, c) !== "empty_statement",
-  );
-  const testSemiNode =
-    conditions.find((c) => kind(ctx, c) === "empty_statement") ??
-    semis.find(
-      (s) =>
-        s !== initSemi &&
-        (test === undefined || ctx.tree.ord(s) > ctx.tree.ord(test)),
-    );
-  const forKw = t(ctx, anon(ctx, node, "for"));
-  const semiDoc = (c: number | undefined): Doc =>
-    c !== undefined ? token(c, ";") : synthetic(node, ";");
-  const initSemiDoc: Doc = initIsDeclaration ? [] : semiDoc(initSemi);
-  if (
-    !(init !== undefined && initKind !== "empty_statement") &&
-    test === undefined &&
-    update === undefined
-  )
-    return [
-      comments,
-      group([
-        forKw,
-        text(" "),
-        open,
-        initSemiDoc,
-        semiDoc(testSemiNode),
-        close,
-        body,
-      ]),
-    ];
-  return [
-    comments,
-    group([
-      forKw,
-      text(" "),
-      open,
-      group([
-        indent([
-          softline,
-          initDoc,
-          initSemiDoc,
-          line,
-          p(ctx, test),
-          semiDoc(testSemiNode),
-          update !== undefined ? [line, ctx.print(update)] : [],
-        ]),
-        softline,
-      ]),
-      close,
-      body,
-    ]),
-  ];
-};
-
-const forInStatement: JsRule = (node, ctx) => {
-  // `await using` is a two-token kind; the `await` of `for await` stands before the `(`.
-  const kinds = fields(ctx, node, "kind");
-  const left = field(ctx, node, "left");
-  const value = field(ctx, node, "value");
-  const op = field(ctx, node, "operator");
-  const eq = anon(ctx, node, "=");
-  const forAwait = children(ctx, node).find(
-    (c) => kind(ctx, c) === "await" && fieldName(ctx, c) === undefined,
-  );
-  return group([
-    t(ctx, anon(ctx, node, "for")),
-    forAwait !== undefined ? [text(" "), t(ctx, forAwait)] : [],
-    text(" "),
-    t(ctx, anon(ctx, node, "(")),
-    kinds.map((k) => [t(ctx, k), text(" ")]),
-    p(ctx, left),
-    value !== undefined
-      ? [text(" "), t(ctx, eq), text(" "), ctx.print(value)]
-      : [],
-    text(" "),
-    t(ctx, op),
-    text(" "),
-    p(ctx, field(ctx, node, "right")),
-    t(
-      ctx,
-      lastChildWhere(ctx, node, (c) => !named(ctx, c) && kind(ctx, c) === ")"),
-    ),
-    clause(ctx, field(ctx, node, "body")),
-  ]);
-};
-
-const whileStatement: JsRule = (node, ctx) => {
-  const kw = anon(ctx, node, "while") ?? anon(ctx, node, "with");
-  const cond = field(ctx, node, "condition") ?? field(ctx, node, "object");
-  return group([
-    t(ctx, kw),
-    text(" "),
-    parenthesized(ctx, cond, conditionLayout(ctx)),
-    clause(ctx, field(ctx, node, "body")),
-  ]);
-};
-
-const doStatement: JsRule = (node, ctx) => {
-  const body = field(ctx, node, "body");
-  return [
-    group([t(ctx, anon(ctx, node, "do")), clause(ctx, body)]),
-    kind(ctx, body) === "statement_block" ? text(" ") : hardline,
-    t(ctx, anon(ctx, node, "while")),
-    text(" "),
-    parenthesized(ctx, field(ctx, node, "condition"), conditionLayout(ctx)),
-    semi(ctx, node),
-  ];
-};
-
-const tryStatement: JsRule = (node, ctx) => {
-  const handler = field(ctx, node, "handler");
-  const finalizer = field(ctx, node, "finalizer");
-  return [
-    t(ctx, anon(ctx, node, "try")),
-    text(" "),
-    p(ctx, field(ctx, node, "body")),
-    handler !== undefined ? [text(" "), ctx.print(handler)] : [],
-    finalizer !== undefined ? [text(" "), ctx.print(finalizer)] : [],
-  ];
-};
-
-const catchClause: JsRule = (node, ctx) => {
-  const param = field(ctx, node, "parameter");
-  const body = field(ctx, node, "body");
-  const catchKw = t(ctx, anon(ctx, node, "catch"));
-  if (param === undefined) return [catchKw, text(" "), p(ctx, body)];
-  // A comment before the parameter ends ahead of its first leaf; one after it follows its whole subtree.
-  const before = ctx.tree.ord(firstLeaf(ctx.tree, param));
-  const after = ctx.tree.ord(param);
-  const hasComments = hasComment(
-    ctx,
-    param,
-    0,
-    (c) =>
-      ctx.isLineComment(c) ||
-      (ctx.tree.ord(c) < before && lfAfter(ctx.tree, c) > 0) ||
-      (ctx.tree.ord(c) > after && ctx.tree.lf(c) > 0),
-  );
-  const open = t(ctx, anon(ctx, node, "("));
-  const close = t(ctx, anon(ctx, node, ")"));
-  // A TypeScript catch parameter's annotation (`catch (e: unknown)`).
-  const type = field(ctx, node, "type");
-  const printed: Doc = [
-    ctx.print(param),
-    type !== undefined ? ctx.print(type) : [],
-  ];
-  return [
-    catchKw,
-    text(" "),
-    hasComments
-      ? [open, indent([softline, printed]), softline, close]
-      : [open, printed, close],
-    text(" "),
-    p(ctx, body),
-  ];
-};
-
-
-const switchStatement: JsRule = (node, ctx) => {
-  const body = field(ctx, node, "body");
-  const cases = body !== undefined ? items(ctx, body) : [];
-  const disc = field(ctx, node, "value");
-  const header = group([
-    t(ctx, anon(ctx, node, "switch")),
-    text(" "),
-    parenthesized(ctx, disc, (doc) => [indent([softline, doc]), softline]),
-  ]);
-  if (body === undefined) return header;
-  const open = t(ctx, anon(ctx, body, "{"));
-  const close = t(
-    ctx,
-    lastChildWhere(ctx, body, (c) => !named(ctx, c) && kind(ctx, c) === "}"),
-  );
-  const dangling = ctx.dangling(body);
-  return [
-    header,
-    text(" "),
-    ctx.withComments(body, [
-      open,
-      cases.length > 0
-        ? indent([
-            hardline,
-            join(
-              hardline,
-              cases.map((c, i) => [
-                ctx.print(c),
-                i < cases.length - 1 && nextLineEmpty(ctx.tree, c)
-                  ? hardline
-                  : [],
-              ]),
-            ),
-          ])
-        : dangling.length > 0
-          ? indent([hardline, join(hardline, dangling)])
-          : [],
-      hardline,
-      close,
-    ]),
-  ];
-};
-
-const switchCase: JsRule = (node, ctx) => {
-  const value = field(ctx, node, "value");
-  const parts: Doc[] =
-    value !== undefined
-      ? [
-          t(ctx, anon(ctx, node, "case")),
-          text(" "),
-          ctx.print(value),
-          t(ctx, anon(ctx, node, ":")),
-        ]
-      : [t(ctx, anon(ctx, node, "default")), t(ctx, anon(ctx, node, ":"))];
-  const dangling = ctx.dangling(node);
-  if (dangling.length > 0) parts.push(text(" "), join(hardline, dangling));
-  const body = items(ctx, node).filter((c) => c !== value);
-  const consequent = body.filter((s) => !isEmpty(ctx, s));
-  if (consequent.length > 0) {
-    const cons = statementSequence(ctx, body);
-    parts.push(
-      consequent.length === 1 && kind(ctx, consequent[0]) === "statement_block"
-        ? [text(" "), cons]
-        : indent([hardline, cons]),
-    );
-  } else parts.push(body.map((s) => ctx.print(s)));
-  return parts;
-};
 
 // Prettier's returnArgumentHasLeadingComment (utilities/return-statement-has-leading-comment.js). Its argument
 // has no parentheses, so a comment inside `return (` counts for the expression they wrap.
@@ -769,6 +413,263 @@ const isChainedTernary = (x: HasTree, n: number) =>
   (isTernary(x, field(x, n, "consequence")) ||
     isTernary(x, field(x, n, "alternative")));
 
+/** A switch's case or default: its label, then its statements indented below it. */
+const switchCase: CustomRule<JsOptions> = (node, ctx) => {
+  const s = jsCtx(ctx);
+  const js = s.js;
+  const value = field(js, node, "value");
+  if (value !== undefined) {
+    sTok(js, anon(js, node, "case"));
+    sText(" ");
+    s.print(value);
+  } else sTok(js, anon(js, node, "default"));
+  sTok(js, anon(js, node, ":"));
+  if (s.danglingComments(node).length > 0) {
+    sText(" ");
+    danglingLines(s, node);
+  }
+  const body = items(js, node).filter((c) => c !== value);
+  const consequent = body.filter((x) => !isEmpty(js, x));
+  if (consequent.length === 0) {
+    for (const x of body) s.print(x);
+  } else if (
+    consequent.length === 1 &&
+    kind(js, consequent[0]) === "statement_block"
+  ) {
+    sText(" ");
+    statementSequence(s, body);
+  } else {
+    open(INDENT);
+    sHardline();
+    statementSequence(s, body);
+    close();
+  }
+};
+
+/** The rules format.ts names `custom` for the statements. */
+export const statementCustoms = {
+  "stmt.program": (node, ctx) => {
+    const s = jsCtx(ctx);
+    // Prettier keeps a byte order mark.
+    if (ctx.tree.bom) sText("﻿");
+    statementsOrEmpties(s, items(s.js, node));
+    danglingLines(s, node);
+  },
+
+  "stmt.hashBang": (node, ctx) => sToken(node, src(ctx, node).trimEnd()),
+
+  "stmt.block": (node, ctx) => printBlock(jsCtx(ctx), node),
+
+  /** Prettier's isMeaningfulEmptyStatement: an empty body keeps its `;`, any other empty statement vanishes. */
+  "stmt.empty": (node, ctx) => {
+    const up = parent(ctx, node);
+    const role = fieldName(ctx, node);
+    const meaningful =
+      up !== undefined &&
+      ((kind(ctx, up) === "if_statement" && role === "consequence") ||
+        kind(ctx, up) === "else_clause" ||
+        (BODY_HOLDERS.has(kind(ctx, up)) && role === "body"));
+    sToken(node, meaningful ? ";" : "");
+  },
+
+  "stmt.else": (node, ctx) => {
+    const s = jsCtx(ctx);
+    const body = first(s.js, node);
+    sTok(s.js, anon(s.js, node, "else"));
+    open(GROUP);
+    clause(s, body, kind(s.js, body) === "if_statement");
+    close();
+  },
+
+  "stmt.for": (node, ctx) => {
+    const s = jsCtx(ctx);
+    const js = s.js;
+    const init = field(js, node, "initializer");
+    const conditions = fields(js, node, "condition");
+    const update = field(js, node, "increment");
+    // The first `;` belongs to the initializer (inside a declaration, or after an expression), the second to the
+    // condition; an empty part is an empty_statement that is its `;`.
+    const semis = children(js, node).filter(
+      (c) => !named(js, c) && kind(js, c) === ";",
+    );
+    const initKind = kind(js, init);
+    const initIsDeclaration = initKind?.endsWith("declaration") === true;
+    const initSemi =
+      initKind === "empty_statement"
+        ? init
+        : initIsDeclaration
+          ? undefined
+          : semis[0];
+    const test = conditions.find(
+      (c) => named(js, c) && kind(js, c) !== "empty_statement",
+    );
+    const testSemiNode =
+      conditions.find((c) => kind(js, c) === "empty_statement") ??
+      semis.find(
+        (x) =>
+          x !== initSemi &&
+          (test === undefined || js.tree.ord(x) > js.tree.ord(test)),
+      );
+    const semiTok = (c: number | undefined) => {
+      if (c !== undefined) sToken(c, ";");
+      else sToken(node, ";", true);
+    };
+    const initSemiTok = () => {
+      if (!initIsDeclaration) semiTok(initSemi);
+    };
+    if (s.danglingComments(node).length > 0) {
+      danglingLines(s, node);
+      sLine(SOFT);
+    }
+    open(GROUP);
+    sTok(js, anon(js, node, "for"));
+    sText(" ");
+    sTok(js, anon(js, node, "("));
+    if (
+      !(init !== undefined && initKind !== "empty_statement") &&
+      test === undefined &&
+      update === undefined
+    ) {
+      initSemiTok();
+      semiTok(testSemiNode);
+    } else {
+      open(GROUP);
+      open(INDENT);
+      sLine(SOFT);
+      if (init !== undefined && initKind !== "empty_statement")
+        s.print(init, { forInit: true });
+      initSemiTok();
+      sLine(0);
+      pr(s, test);
+      semiTok(testSemiNode);
+      if (update !== undefined) {
+        sLine(0);
+        s.print(update);
+      }
+      close();
+      sLine(SOFT);
+      close();
+    }
+    sTok(js, lastChildWhere(js, node, (c) => !named(js, c) && kind(js, c) === ")"));
+    clause(s, field(js, node, "body"));
+    close();
+  },
+
+  "stmt.forIn": (node, ctx) => {
+    const s = jsCtx(ctx);
+    const js = s.js;
+    const value = field(js, node, "value");
+    // `await using` is a two-token kind; the `await` of `for await` stands before the `(`.
+    const forAwait = children(js, node).find(
+      (c) => kind(js, c) === "await" && fieldName(js, c) === undefined,
+    );
+    open(GROUP);
+    sTok(js, anon(js, node, "for"));
+    if (forAwait !== undefined) {
+      sText(" ");
+      sTok(js, forAwait);
+    }
+    sText(" ");
+    sTok(js, anon(js, node, "("));
+    for (const k of fields(js, node, "kind")) {
+      sTok(js, k);
+      sText(" ");
+    }
+    pr(s, field(js, node, "left"));
+    if (value !== undefined) {
+      sText(" ");
+      sTok(js, anon(js, node, "="));
+      sText(" ");
+      s.print(value);
+    }
+    sText(" ");
+    sTok(js, field(js, node, "operator"));
+    sText(" ");
+    pr(s, field(js, node, "right"));
+    sTok(js, lastChildWhere(js, node, (c) => !named(js, c) && kind(js, c) === ")"));
+    clause(s, field(js, node, "body"));
+    close();
+  },
+
+  /** `while` and `with`. */
+  "stmt.catch": (node, ctx) => {
+    const s = jsCtx(ctx);
+    const js = s.js;
+    const param = field(js, node, "parameter");
+    const body = field(js, node, "body");
+    sTok(js, anon(js, node, "catch"));
+    sText(" ");
+    if (param !== undefined) {
+      // A comment before the parameter ends ahead of its first leaf; one after it follows its whole subtree.
+      const before = js.tree.ord(firstLeaf(js.tree, param));
+      const after = js.tree.ord(param);
+      const hasComments = hasComment(
+        js,
+        param,
+        0,
+        (c) =>
+          js.isLineComment(c) ||
+          (js.tree.ord(c) < before && lfAfter(js.tree, c) > 0) ||
+          (js.tree.ord(c) > after && js.tree.lf(c) > 0),
+      );
+      // A TypeScript catch parameter's annotation (`catch (e: unknown)`).
+      const type = field(js, node, "type");
+      sTok(js, anon(js, node, "("));
+      if (hasComments) {
+        open(INDENT);
+        sLine(SOFT);
+      }
+      s.print(param);
+      pr(s, type);
+      if (hasComments) {
+        close();
+        sLine(SOFT);
+      }
+      sTok(js, anon(js, node, ")"));
+      sText(" ");
+    }
+    pr(s, body);
+  },
+
+  "stmt.case": switchCase,
+  "stmt.labeled": (node, ctx) => {
+    const s = jsCtx(ctx);
+    const js = s.js;
+    const body = field(js, node, "body");
+    pr(s, field(js, node, "label"));
+    sTok(js, anon(js, node, ":"));
+    if (
+      !(
+        body !== undefined &&
+        isEmpty(js, body) &&
+        !hasComment(js, body, CF.Leading)
+      )
+    )
+      sText(" ");
+    pr(s, body);
+  },
+} satisfies Record<string, CustomRule<JsOptions>>;
+
+const expressionStatement: JsRule = (node, ctx) => {
+  const expr = first(ctx, node);
+  const own = lastChildWhere(
+    ctx,
+    node,
+    (c) => !named(ctx, c) && kind(ctx, c) === ";",
+  );
+  const printed = p(ctx, expr);
+  // `namespace N {}` parses as an expression statement; it takes no `;`.
+  if (kind(ctx, expr) === "internal_module")
+    return [printed, own !== undefined ? token(own, "") : []];
+  if (needsAsiGuard(ctx, node))
+    return [
+      synthetic(node, ";"),
+      printed,
+      own !== undefined ? token(own, "") : [],
+    ];
+  return [printed, semi(ctx, node, own)];
+};
+
 const returnStatement: JsRule = (node, ctx) => {
   const kw = anon(ctx, node, "return") ?? anon(ctx, node, "throw");
   const arg = items(ctx, node)[0];
@@ -816,20 +717,6 @@ const debuggerStatement: JsRule = (node, ctx) => [
   semi(ctx, node),
 ];
 
-const labeledStatement: JsRule = (node, ctx) => {
-  const body = field(ctx, node, "body");
-  const colon = t(ctx, anon(ctx, node, ":"));
-  const label = p(ctx, field(ctx, node, "label"));
-  if (
-    body !== undefined &&
-    isEmpty(ctx, body) &&
-    !hasComment(ctx, body, CF.Leading)
-  )
-    return [label, colon, ctx.print(body)];
-  return [label, colon, text(" "), p(ctx, body)];
-};
-
-/** The variable declarations: `var`, `let`/`const` (lexical), `using`; each declarator an assignment. */
 const declaration: JsRule = (node, ctx, args) => {
   const declarators = items(ctx, node).filter(
     (c) => kind(ctx, c) === "variable_declarator",
@@ -888,6 +775,172 @@ const declaration: JsRule = (node, ctx, args) => {
   ]);
 };
 
+// Prettier's printClause (clause.js).
+function clauseDoc(ctx: JsCtx, body: number | undefined, elseIf = false): Doc {
+  if (body === undefined) return [];
+  const doc = ctx.print(body);
+  if (isEmpty(ctx, body))
+    return hasComment(ctx, body, CF.Leading) ? [text(" "), doc] : doc;
+  const isBlock = kind(ctx, body) === "statement_block";
+  const leading = getComments(ctx, body, CF.Leading)[0];
+  if (
+    leading !== undefined &&
+    (src(ctx, leading).includes("\n") || ctx.tree.lf(leading) > 0)
+  )
+    return isBlock ? [hardline, doc] : indent([hardline, doc]);
+  if (isBlock || elseIf) return [text(" "), doc];
+  return indent([line, doc]);
+}
+
+/**
+ * The `(condition)` of an if, while, do-while or with statement, or a switch's discriminant: tree-sitter's
+ * parenthesized_expression, whose parentheses are the statement's own.
+ */
+function parenthesized(
+  ctx: JsCtx,
+  pe: number | undefined,
+  layout: (inner: Doc, node: number) => Doc,
+): Doc {
+  if (pe === undefined) return [];
+  if (kind(ctx, pe) !== "parenthesized_expression")
+    return layout(ctx.print(pe), pe);
+  const inner = first(ctx, pe);
+  const open = t(ctx, anon(ctx, pe, "("));
+  const close = t(
+    ctx,
+    lastChildWhere(ctx, pe, (c) => !named(ctx, c) && kind(ctx, c) === ")"),
+  );
+  const doc = inner !== undefined ? layout(withParens(ctx, inner), inner) : [];
+  return ctx.withComments(pe, [open, doc, close]);
+}
+
+/** Prettier prints the condition through needsParens: `if ((a = b))` keeps a pair inside the statement's own. */
+function withParens(ctx: JsCtx, inner: number): Doc {
+  const printed = ctx.print(inner);
+  const expr = unparen(ctx, inner);
+  if (!needsParens(expr, ctx)) return printed;
+  return [synthetic(expr, "("), printed, synthetic(expr, ")")];
+}
+
+const conditionLayout =
+  (ctx: JsCtx) =>
+  (doc: Doc, node: number): Doc =>
+    shouldInlineCondition(ctx, unparen(ctx, node))
+      ? doc
+      : group([indent([softline, doc]), softline]);
+
+const ifStatement: JsRule = (node, ctx) => {
+  const consequent = field(ctx, node, "consequence");
+  const alternative = field(ctx, node, "alternative");
+  const opening = group([
+    t(ctx, anon(ctx, node, "if")),
+    text(" "),
+    parenthesized(ctx, field(ctx, node, "condition"), conditionLayout(ctx)),
+    clauseDoc(ctx, consequent),
+  ]);
+  if (alternative === undefined) return opening;
+  const isBlock = kind(ctx, consequent) === "statement_block";
+  const parts: Doc[] = [opening];
+  let needSpace = isBlock;
+  if (!isBlock) {
+    parts.push(hardline);
+    needSpace = false;
+  }
+  const dangling = getComments(ctx, node, CF.Dangling);
+  const firstComment = dangling[0];
+  const lastComment = dangling.at(-1);
+  if (firstComment !== undefined && lastComment !== undefined) {
+    if (ctx.tree.lf(firstComment) >= 2)
+      parts.push(isBlock ? [hardline, hardline] : hardline);
+    else if (ctx.tree.lf(firstComment) > 0) parts.push(isBlock ? hardline : []);
+    else parts.push(text(" "));
+    parts.push(
+      join(hardline, ctx.dangling(node)),
+      ctx.isLineComment(lastComment) || lfAfter(ctx.tree, lastComment) > 0
+        ? hardline
+        : text(" "),
+    );
+    needSpace = false;
+  }
+  // tree-sitter's else_clause holds `else` and the alternate statement.
+  const elseKw = anon(ctx, alternative, "else");
+  const body = first(ctx, alternative);
+  parts.push(
+    needSpace ? text(" ") : [],
+    ctx.withComments(alternative, [
+      t(ctx, elseKw),
+      group(clauseDoc(ctx, body, kind(ctx, body) === "if_statement")),
+    ]),
+  );
+  return parts;
+};
+
+const whileStatement: JsRule = (node, ctx) => {
+  const kw = anon(ctx, node, "while") ?? anon(ctx, node, "with");
+  const cond = field(ctx, node, "condition") ?? field(ctx, node, "object");
+  return group([
+    t(ctx, kw),
+    text(" "),
+    parenthesized(ctx, cond, conditionLayout(ctx)),
+    clauseDoc(ctx, field(ctx, node, "body")),
+  ]);
+};
+
+const doStatement: JsRule = (node, ctx) => {
+  const body = field(ctx, node, "body");
+  return [
+    group([t(ctx, anon(ctx, node, "do")), clauseDoc(ctx, body)]),
+    kind(ctx, body) === "statement_block" ? text(" ") : hardline,
+    t(ctx, anon(ctx, node, "while")),
+    text(" "),
+    parenthesized(ctx, field(ctx, node, "condition"), conditionLayout(ctx)),
+    semi(ctx, node),
+  ];
+};
+
+const switchStatement: JsRule = (node, ctx) => {
+  const body = field(ctx, node, "body");
+  const cases = body !== undefined ? items(ctx, body) : [];
+  const disc = field(ctx, node, "value");
+  const header = group([
+    t(ctx, anon(ctx, node, "switch")),
+    text(" "),
+    parenthesized(ctx, disc, (doc) => [indent([softline, doc]), softline]),
+  ]);
+  if (body === undefined) return header;
+  const open = t(ctx, anon(ctx, body, "{"));
+  const close = t(
+    ctx,
+    lastChildWhere(ctx, body, (c) => !named(ctx, c) && kind(ctx, c) === "}"),
+  );
+  const dangling = ctx.dangling(body);
+  return [
+    header,
+    text(" "),
+    ctx.withComments(body, [
+      open,
+      cases.length > 0
+        ? indent([
+            hardline,
+            join(
+              hardline,
+              cases.map((c, i) => [
+                ctx.print(c),
+                i < cases.length - 1 && nextLineEmpty(ctx.tree, c)
+                  ? hardline
+                  : [],
+              ]),
+            ),
+          ])
+        : dangling.length > 0
+          ? indent([hardline, join(hardline, dangling)])
+          : [],
+      hardline,
+      close,
+    ]),
+  ];
+};
+
 const variableDeclarator: JsRule = (node, ctx) => {
   const name = field(ctx, node, "name");
   const value = field(ctx, node, "value");
@@ -905,30 +958,22 @@ const variableDeclarator: JsRule = (node, ctx) => {
   );
 };
 
+/**
+ * The statement kinds still printed by the Doc: those ending in a `;`; those whose `(condition)` carries comments a
+ * custom would drop; and a declarator, an assignment (assignment.ts).
+ */
 export const statementRules: Record<string, JsRule> = {
-  program,
-  hash_bang_line: hashBang,
-  statement_block: statementBlock,
   expression_statement: expressionStatement,
-  empty_statement: emptyStatement,
   if_statement: ifStatement,
-  else_clause: elseClause,
-  for_statement: forStatement,
-  for_in_statement: forInStatement,
   while_statement: whileStatement,
   with_statement: whileStatement,
-  do_statement: doStatement,
-  try_statement: tryStatement,
-  catch_clause: catchClause,
   switch_statement: switchStatement,
-  switch_case: switchCase,
-  switch_default: switchCase,
+  do_statement: doStatement,
   return_statement: returnStatement,
   throw_statement: returnStatement,
   break_statement: breakStatement,
   continue_statement: breakStatement,
   debugger_statement: debuggerStatement,
-  labeled_statement: labeledStatement,
   variable_declaration: declaration,
   lexical_declaration: declaration,
   using_declaration: declaration,

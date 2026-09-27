@@ -1,37 +1,45 @@
-// Prettier's import and export printers (print/module.js).
+// Prettier's import and export printers (print/module.js). Their layouts are format.ts's; what it names `custom`
+// is `moduleCustoms`, written against sink.ts.
 
+import { type Doc, hardline, join, text } from "../../../fmt/doc.js";
+import type { CustomRule } from "../../../fmt/dsl/runtime.js";
 import {
-  type Doc,
-  group,
-  hardline,
-  indent,
-  join,
-  line,
-  softline,
-  synthetic,
-  text,
-} from "../../../fmt/doc.js";
+  capture,
+  close,
+  GROUP,
+  IF_BROKEN,
+  INDENT,
+  type JsStreamCtx,
+  jsCtx,
+  onDoc,
+  open,
+  place,
+  removeLines,
+  SOFT,
+  sLine,
+  sText,
+  sToken,
+} from "../sink.js";
+import { sTok } from "./statements.js";
 import {
   childWhere,
   children as childrenOf,
   field,
   getComments,
   hasComment,
-  isComment,
   items,
-  type JsCtx,
+  type JsOptions,
   type JsRule,
   kind,
   lastChildWhere,
   named as isNamed,
   p,
   parent,
-  removeLines,
   semi,
   separators,
   src,
   t,
-  trailingComma,
+  trailingCommaAllowed,
 } from "./util.js";
 
 const NAMED = new Set(["named_imports", "export_clause"]);
@@ -46,177 +54,149 @@ const DECLARATION_VALUES = new Set([
   "class",
 ]);
 
-/** `n`'s children as words: each printed and separated by one space, the way every module clause reads. */
-const words = (ctx: JsCtx, n: number, children = childrenOf(ctx, n)): Doc =>
-  join(
-    text(" "),
-    children
-      .filter((c) => !isComment(ctx, c))
-      .map((c) => (isNamed(ctx, c) ? p(ctx, c) : t(ctx, c))),
-  );
-
 /** Prettier's printModuleSpecifiers over an import clause, or over an export statement's specifier nodes. */
-function printSpecifiers(ctx: JsCtx, clauses: readonly number[]): Doc {
-  const standaloneNodes = clauses.filter((c) => STANDALONE.has(kind(ctx, c)));
-  const named = clauses.find((c) => NAMED.has(kind(ctx, c)));
-  const owner = parent(ctx, clauses[0]);
+function printSpecifiers(s: JsStreamCtx, clauses: readonly number[]): void {
+  const js = s.js;
+  const standaloneNodes = clauses.filter((c) => STANDALONE.has(kind(js, c)));
+  const named = clauses.find((c) => NAMED.has(kind(js, c)));
+  const owner = parent(js, clauses[0]);
   const commas =
     owner !== undefined
-      ? separators(ctx, owner, clauses)
+      ? separators(js, owner, clauses)
       : new Map<number, number>();
-  const comma = (c: number): Doc => [
-    t(ctx, commas.get(c)),
-    commas.has(c) ? [] : synthetic(c, ","),
-    text(" "),
-  ];
-  const grouped = named !== undefined ? items(ctx, named) : [];
-  const parts: Doc[] = standaloneNodes.map((c, i) => [
-    i > 0 ? comma(standaloneNodes[i - 1] as number) : [],
-    p(ctx, c),
-  ]);
-  if (named === undefined) return parts;
-  const open = t(
-    ctx,
-    childWhere(ctx, named, (c) => !isNamed(ctx, c) && kind(ctx, c) === "{"),
-  );
-  const close = t(
-    ctx,
-    lastChildWhere(ctx, named, (c) => !isNamed(ctx, c) && kind(ctx, c) === "}"),
+  const comma = (c: number) => {
+    const own = commas.get(c);
+    if (own !== undefined) sTok(js, own);
+    else sToken(c, ",", true);
+    sText(" ");
+  };
+  standaloneNodes.forEach((c, i) => {
+    if (i > 0) comma(standaloneNodes[i - 1] as number);
+    s.print(c);
+  });
+  if (named === undefined) return;
+  const grouped = items(js, named);
+  const open_ = childWhere(js, named, (c) => !isNamed(js, c) && kind(js, c) === "{");
+  const close_ = lastChildWhere(
+    js,
+    named,
+    (c) => !isNamed(js, c) && kind(js, c) === "}",
   );
   if (grouped.length === 0) {
-    if (standaloneNodes.length > 0) return parts;
-    const dangling = ctx.dangling(named);
-    return dangling.length > 0
-      ? [open, text(" "), join(line, dangling), text(" "), close]
-      : [open, close];
+    if (standaloneNodes.length > 0) return;
+    const dangling = s.danglingComments(named);
+    sTok(js, open_);
+    if (dangling.length > 0) {
+      sText(" ");
+      dangling.forEach((c, i) => {
+        if (i > 0) sLine(0);
+        s.comment(c);
+      });
+      sText(" ");
+    }
+    sTok(js, close_);
+    return;
   }
   const lastStandalone = standaloneNodes.at(-1);
-  if (lastStandalone !== undefined) parts.push(comma(lastStandalone));
-  const itemCommas = separators(ctx, named, grouped);
-  const printed = grouped.map((s, i) => {
-    const sep = itemCommas.get(s);
-    return i === grouped.length - 1
-      ? p(ctx, s)
-      : [p(ctx, s), sep !== undefined ? t(ctx, sep) : synthetic(s, ",")];
-  });
+  if (lastStandalone !== undefined) comma(lastStandalone);
+  const itemCommas = separators(js, named, grouped);
+  const printed = (between: () => void) =>
+    grouped.forEach((x, i) => {
+      if (i > 0) between();
+      s.print(x);
+      if (i === grouped.length - 1) return;
+      const sep = itemCommas.get(x);
+      if (sep !== undefined) sTok(js, sep);
+      else sToken(x, ",", true);
+    });
   const canBreak =
     grouped.length > 1 ||
     standaloneNodes.length > 0 ||
-    grouped.some((s) => hasComment(ctx, s));
-  const spacing = ctx.options.bracketSpacing ? line : softline;
-  if (canBreak)
-    parts.push(
-      group([
-        open,
-        indent([spacing, join(line, printed)]),
-        trailingComma(ctx, grouped.at(-1) as number),
-        spacing,
-        close,
-      ]),
-    );
-  else
-    parts.push([
-      open,
-      ctx.options.bracketSpacing ? text(" ") : [],
-      printed,
-      ctx.options.bracketSpacing ? text(" ") : [],
-      close,
-    ]);
-  return parts;
+    grouped.some((x) => hasComment(js, x));
+  const spacing = js.options.bracketSpacing ? 0 : SOFT;
+  if (canBreak) {
+    open(GROUP);
+    sTok(js, open_);
+    open(INDENT);
+    sLine(spacing);
+    printed(() => sLine(0));
+    close();
+    if (trailingCommaAllowed(js)) {
+      open(IF_BROKEN);
+      sToken(grouped.at(-1) as number, ",", true);
+      close();
+    }
+    sLine(spacing);
+    sTok(js, close_);
+    close();
+  } else {
+    sTok(js, open_);
+    if (js.options.bracketSpacing) sText(" ");
+    printed(() => {});
+    if (js.options.bracketSpacing) sText(" ");
+    sTok(js, close_);
+  }
 }
 
-const importClause: JsRule = (n, ctx) => printSpecifiers(ctx, items(ctx, n));
-
-/** Prettier's printImportDeclaration and printExportDeclaration. */
+/** Prettier's printImportDeclaration and printExportDeclaration; its `;` keeps it on the Doc until `tok(";").via("semi")` lands. */
 const moduleStatement: JsRule = (n, ctx) => {
   const all = childrenOf(ctx, n);
   const decorators = all.filter((c) => kind(ctx, c) === "decorator");
   const children = all.filter(
-    (c) =>
-      kind(ctx, c) !== "decorator" &&
-      !(kind(ctx, c) === ";" && !isNamed(ctx, c)),
+    (c) => kind(ctx, c) !== "decorator" && !(kind(ctx, c) === ";" && !isNamed(ctx, c)),
   );
-  const specifiers = children.filter(
-    (c) => NAMED.has(kind(ctx, c)) || kind(ctx, c) === "namespace_export",
-  );
+  const specifiers = children.filter((c) => NAMED.has(kind(ctx, c)) || kind(ctx, c) === "namespace_export");
   const pieces: Doc[] = [];
   for (const c of children) {
     if (specifiers.includes(c)) {
-      if (c === specifiers[0]) pieces.push(printSpecifiers(ctx, specifiers));
+      if (c === specifiers[0]) pieces.push(onDoc((_, sctx) => printSpecifiers(jsCtx(sctx), specifiers))(n, ctx));
     } else pieces.push(isNamed(ctx, c) ? p(ctx, c) : t(ctx, c));
   }
   const parts = join(text(" "), pieces);
   const declaration = field(ctx, n, "declaration");
   const value = field(ctx, n, "value");
-  const needsSemi =
-    declaration === undefined &&
-    !(value !== undefined && DECLARATION_VALUES.has(kind(ctx, value)));
+  const needsSemi = declaration === undefined && !(value !== undefined && DECLARATION_VALUES.has(kind(ctx, value)));
   return [
-    decorators.length > 0
-      ? [
-          join(
-            hardline,
-            decorators.map((d) => p(ctx, d)),
-          ),
-          hardline,
-        ]
-      : [],
+    decorators.length > 0 ? [join(hardline, decorators.map((d) => p(ctx, d))), hardline] : [],
     parts,
     needsSemi ? semi(ctx, n) : [],
-  ];
-};
-
-/** `with { type: "json" }`: a lone `type` attribute never breaks. */
-const importAttribute: JsRule = (n, ctx) => {
-  const object = items(ctx, n)[0];
-  const [keyword] = childrenOf(ctx, n).filter((c) => !isNamed(ctx, c));
-  let doc = p(ctx, object);
-  const props = object !== undefined ? items(ctx, object) : [];
-  const only = props[0];
-  const key = only !== undefined ? field(ctx, only, "key") : undefined;
-  if (
-    props.length === 1 &&
-    only !== undefined &&
-    kind(ctx, only) === "pair" &&
-    key !== undefined &&
-    /^(type|"type"|'type')$/.test(src(ctx, key)) &&
-    kind(ctx, field(ctx, only, "value")) === "string" &&
-    getComments(ctx, only).length === 0
-  )
-    doc = removeLines(doc);
-  return [t(ctx, keyword), text(" "), doc];
-};
-
-const specifier: JsRule = (n, ctx) => words(ctx, n);
-
-const requireClause: JsRule = (n, ctx) => {
-  const [name] = items(ctx, n);
-  const kids = childrenOf(ctx, n).filter((c) => !isNamed(ctx, c));
-  const tok = (k: string) =>
-    t(
-      ctx,
-      kids.find((c) => kind(ctx, c) === k),
-    );
-  return [
-    p(ctx, name),
-    text(" "),
-    tok("="),
-    text(" "),
-    tok("require"),
-    tok("("),
-    p(ctx, field(ctx, n, "source")),
-    tok(")"),
   ];
 };
 
 export const moduleRules: Record<string, JsRule> = {
   import_statement: moduleStatement,
   export_statement: moduleStatement,
-  import_clause: importClause,
-  import_specifier: specifier,
-  export_specifier: specifier,
-  namespace_import: specifier,
-  namespace_export: specifier,
-  import_attribute: importAttribute,
-  import_require_clause: requireClause,
 };
+
+/** The rules format.ts names `custom` for imports and exports. */
+export const moduleCustoms = {
+  "module.clause": (n, ctx) => {
+    const s = jsCtx(ctx);
+    printSpecifiers(s, items(s.js, n));
+  },
+
+  /** `with { type: "json" }`: a lone `type` attribute never breaks. */
+  "module.attribute": (n, ctx) => {
+    const s = jsCtx(ctx);
+    const js = s.js;
+    const object = items(js, n)[0];
+    const [keyword] = childrenOf(js, n).filter((c) => !isNamed(js, c));
+    sTok(js, keyword);
+    sText(" ");
+    if (object === undefined) return;
+    const props = items(js, object);
+    const only = props[0];
+    const key = only !== undefined ? field(js, only, "key") : undefined;
+    if (
+      props.length === 1 &&
+      only !== undefined &&
+      kind(js, only) === "pair" &&
+      key !== undefined &&
+      /^(type|"type"|'type')$/.test(src(js, key)) &&
+      kind(js, field(js, only, "value")) === "string" &&
+      getComments(js, only).length === 0
+    )
+      place(removeLines(capture(() => s.print(object))));
+    else s.print(object);
+  },
+} satisfies Record<string, CustomRule<JsOptions>>;
