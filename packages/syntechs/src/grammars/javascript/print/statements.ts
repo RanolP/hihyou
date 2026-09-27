@@ -21,13 +21,16 @@ import type { CustomRule } from "../../../fmt/dsl/runtime.js";
 import { lfAfter, nextLineEmpty } from "../../../fmt/text.js";
 import { firstLeaf, type FormatTree, prevLeaf } from "../../../fmt/tree.js";
 import {
+  capture,
   close,
   GROUP,
   IF_BROKEN,
   INDENT,
   type JsStreamCtx,
   jsCtx,
+  onDoc,
   open,
+  place,
   SOFT,
   sHardline,
   sLine,
@@ -832,6 +835,91 @@ export const statementCustoms = {
     });
   },
 
+  /**
+   * Prettier's variable-declaration.js: the keywords, then the declarators, one per line once one has a value
+   * (outside a for-head), the first indented with them when there are several or it has comments.
+   */
+  "stmt.declaration": (node, ctx) => {
+    const s = jsCtx(ctx);
+    const js = s.js;
+    const declarators = items(js, node).filter(
+      (c) => kind(js, c) === "variable_declarator",
+    );
+    const seps = separators(js, node, declarators);
+    // The keywords stand before the first declarator (all of them, when there is none).
+    const firstDeclarator = declarators[0];
+    const kinds = children(js, node).filter(
+      (c) =>
+        !named(js, c) &&
+        !isComment(js, c) &&
+        (firstDeclarator === undefined ||
+          js.tree.ord(c) < js.tree.ord(firstDeclarator)) &&
+        kind(js, c) !== ";",
+    );
+    const forInit =
+      s.args?.forInit === true ||
+      (kind(js, parent(js, node)) === "for_statement" &&
+        fieldName(js, node) === "initializer");
+    const hasValue = declarators.some(
+      (d) => field(js, d, "value") !== undefined,
+    );
+    const own = lastChildWhere(
+      js,
+      node,
+      (c) => !named(js, c) && kind(js, c) === ";",
+    );
+    open(GROUP);
+    kinds.forEach((k, i) => {
+      if (i > 0) sText(" ");
+      sTok(js, k);
+    });
+    if (firstDeclarator !== undefined) {
+      sText(" ");
+      const indented =
+        declarators.length > 1 || hasComment(js, firstDeclarator);
+      if (indented) open(INDENT);
+      s.print(firstDeclarator);
+      if (indented) close();
+    }
+    open(INDENT);
+    declarators.slice(1).forEach((d, i) => {
+      sTok(js, seps.get(declarators[i] as number));
+      if (hasValue && !forInit) sHardline();
+      else sLine(0);
+      s.print(d);
+    });
+    close();
+    // The last declarator's `,` in a recovered tree is not expected; a for-head's `;` is the for's own.
+    if (!forInit) semiCustoms.semi(own, node, ctx);
+    else if (own !== undefined) sToken(own, ";");
+    close();
+  },
+
+  /** A declarator is an assignment (assignment.ts): its name and type, `=`, its value. */
+  "stmt.declarator": (node, ctx) => {
+    const s = jsCtx(ctx);
+    const js = s.js;
+    const value = field(js, node, "value");
+    const eq = anon(js, node, "=");
+    const left = () => {
+      for (const c of children(js, node))
+        if (c === value || c === eq || isComment(js, c)) continue;
+        else if (named(js, c)) s.print(c);
+        else sTok(js, c);
+    };
+    if (field(js, node, "name") === undefined) {
+      left();
+      return;
+    }
+    const leftPart = capture(left);
+    const operator = capture(() => {
+      if (eq === undefined) return;
+      sText(" ");
+      sTok(js, eq);
+    });
+    place({ doc: printAssignment(js, node, leftPart.doc, operator.doc, value) });
+  },
+
   "stmt.case": switchCase,
   "stmt.labeled": (node, ctx) => {
     const s = jsCtx(ctx);
@@ -871,89 +959,9 @@ const expressionStatement: JsRule = (node, ctx) => {
   return [printed, semi(ctx, node, own)];
 };
 
-const declaration: JsRule = (node, ctx, args) => {
-  const declarators = items(ctx, node).filter(
-    (c) => kind(ctx, c) === "variable_declarator",
-  );
-  const seps = separators(ctx, node, declarators);
-  // The keywords stand before the first declarator (all of them, when there is none).
-  const firstDeclarator = declarators[0];
-  const kinds = children(ctx, node).filter(
-    (c) =>
-      !named(ctx, c) &&
-      !isComment(ctx, c) &&
-      (firstDeclarator === undefined ||
-        ctx.tree.ord(c) < ctx.tree.ord(firstDeclarator)) &&
-      kind(ctx, c) !== ";",
-  );
-  const forInit =
-    args?.forInit === true ||
-    (kind(ctx, parent(ctx, node)) === "for_statement" &&
-      fieldName(ctx, node) === "initializer");
-  const printed = declarators.map((d) => ctx.print(d));
-  const hasValue = declarators.some(
-    (d) => field(ctx, d, "value") !== undefined,
-  );
-  const firstDoc =
-    printed.length === 1 &&
-    firstDeclarator !== undefined &&
-    !hasComment(ctx, firstDeclarator)
-      ? printed[0]
-      : printed[0] !== undefined
-        ? indent(printed[0])
-        : undefined;
-  const own = lastChildWhere(
-    ctx,
-    node,
-    (c) => !named(ctx, c) && kind(ctx, c) === ";",
-  );
-  return group([
-    join(
-      text(" "),
-      kinds.map((k) => t(ctx, k)),
-    ),
-    firstDoc !== undefined ? [text(" "), firstDoc] : [],
-    indent(
-      printed.slice(1).map((doc, i) => {
-        const previous = declarators[i];
-        const sep = previous !== undefined ? seps.get(previous) : undefined;
-        return [
-          sep !== undefined ? t(ctx, sep) : [],
-          hasValue && !forInit ? hardline : line,
-          doc,
-        ];
-      }),
-    ),
-    // The last declarator's `,` in a recovered tree is not expected; a for-head's `;` is the for's own.
-    forInit ? (own !== undefined ? token(own, ";") : []) : semi(ctx, node, own),
-  ]);
-};
-
-const variableDeclarator: JsRule = (node, ctx) => {
-  const name = field(ctx, node, "name");
-  const value = field(ctx, node, "value");
-  const eq = anon(ctx, node, "=");
-  const left: Doc = children(ctx, node)
-    .filter((c) => c !== value && c !== eq && !isComment(ctx, c))
-    .map((c) => (named(ctx, c) ? ctx.print(c) : t(ctx, c)));
-  if (name === undefined) return left;
-  return printAssignment(
-    ctx,
-    node,
-    left,
-    eq !== undefined ? [text(" "), t(ctx, eq)] : [],
-    value,
-  );
-};
-
-/**
- * The statement kinds still printed by the Doc: those ending in a `;`; those whose `(condition)` carries comments a
- * custom would drop; and a declarator, an assignment (assignment.ts).
- */
+/** The statement kinds still printed by the Doc. */
 export const statementRules: Record<string, JsRule> = {
   expression_statement: expressionStatement,
-  variable_declaration: declaration,
-  lexical_declaration: declaration,
-  using_declaration: declaration,
-  variable_declarator: variableDeclarator,
+  // JavaScript's `using`, a kind the tsx grammar the spec is typed against lacks.
+  using_declaration: onDoc(statementCustoms["stmt.declaration"]),
 };
