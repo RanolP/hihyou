@@ -220,4 +220,7 @@ export const stmtSimpleVia = {
     const entries = targets.map((t) => ({ end: t.end, doc: formatExpr(f, t) }));
     part(f.parenthesizeIfExpands(s.kw, () => f.joinCommaSeparated(entries, s.end, comma)));
   },
+  "simple.python2": (n: number, ctx: StreamCtx<unknown>) => {
+    throw new Unformattable(`Python 2: ${ctx.tree.kindName(n)} at ${byteOffsetOf(ctx.tree, n)}`);
+  },
 };

@@ -52,4 +52,8 @@ export const stmtSimple = {
   assignment: () => custom("simple.assignment"),
   augmented_assignment: () => custom("simple.assignment"),
   type_alias_statement: ($) => ["type", space, $.left.via("simple.typeAlias")],
+  // Python 2, which ruff does not parse: the file is left as written.
+  print_statement: () => custom("simple.python2"),
+  exec_statement: () => custom("simple.python2"),
+  chevron: () => custom("simple.python2"),
 } satisfies Structure;
