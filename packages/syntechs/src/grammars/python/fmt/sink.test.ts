@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { printStream, resetStream } from "../../../fmt/stream.js";
-import { emit, willBreak as formatWillBreak } from "./elements.js";
+import {
+  emit,
+  group as elGroup,
+  lineOf,
+  text as elText,
+  willBreak as formatWillBreak,
+} from "./elements.js";
 import {
   BLANK,
   BROKEN,
@@ -14,6 +20,7 @@ import {
   HARD,
   IF_BROKEN,
   IF_FLAT,
+  idOf,
   INDENT,
   LINE_SUFFIX,
   open,
@@ -179,6 +186,17 @@ const scripts: Record<string, () => void> = {
         close();
       }),
     );
+  },
+  "an interval asking a group ruff's elements built": () => {
+    const g = elGroup([elText("w0"), lineOf(0), elText("w1"), lineOf(0), elText("w2")]);
+    part(g);
+    const k = idOf(g);
+    open(IF_BROKEN, k);
+    sText(" #broken");
+    close();
+    open(GROUP_IF_BROKEN, k);
+    words(3, 3);
+    close();
   },
   "a part placed by what willBreak reads of it": () => {
     for (const hard of [false, true]) {

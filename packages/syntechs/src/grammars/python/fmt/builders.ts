@@ -1,10 +1,7 @@
 import {
-  breakParent,
   type Format,
-  fitsExpanded,
   type GroupRef,
   group,
-  groupIfBreak,
   ifBreak,
   indent,
   indentIfBreak,
@@ -91,6 +88,11 @@ export class Fmt {
 
   tok(n: number, as?: string): Token {
     return token(n, as ?? this.tree.text(n));
+  }
+
+  /** `tok`, written. */
+  writeTok(n: number, as?: string): void {
+    sink.sToken(n, as ?? this.tree.text(n));
   }
 
   /** A comment as printed; marks it printed. */
@@ -209,6 +211,43 @@ export class Fmt {
   }
 
   /** Ruff's `parenthesized`: `left`, `content` indented on its own lines if it breaks, `right`. */
+  writeParenthesized(
+    left: () => void,
+    content: () => void,
+    right: () => void,
+    dangling: readonly Comment[] = [],
+    hug = false,
+  ): void {
+    left();
+    this.writeParenthesizedContent(content, dangling, hug);
+    right();
+  }
+
+  /** What `parenthesized` puts between its brackets, for a DSL rule that prints the brackets itself. */
+  writeParenthesizedContent(
+    content: () => void,
+    dangling: readonly Comment[] = [],
+    hug = false,
+  ): void {
+    const level = this.level;
+    this.at(PAREN, () => {
+      const g = level.k === "expr" ? level.g : undefined;
+      if (g) sink.openFitsExpanded(sink.idOf(g));
+      if (dangling.length === 0 && hug) content();
+      else {
+        sink.open(sink.GROUP);
+        this.writeDanglingOpenParen(dangling);
+        sink.open(sink.INDENT);
+        sink.sLine(sink.SOFT | sink.COLLAPSE);
+        content();
+        sink.close();
+        sink.sLine(sink.SOFT | sink.COLLAPSE);
+        sink.close();
+      }
+      if (g) sink.close();
+    });
+  }
+
   parenthesized(
     left: Token,
     content: () => Format,
@@ -216,28 +255,25 @@ export class Fmt {
     dangling: readonly Comment[] = [],
     hug = false,
   ): Format {
-    return [left, this.parenthesizedContent(content, dangling, hug), right];
+    return sink.record(() =>
+      this.writeParenthesized(
+        () => sink.part(left),
+        () => sink.part(content()),
+        () => sink.part(right),
+        dangling,
+        hug,
+      ),
+    );
   }
 
-  /** What `parenthesized` puts between its brackets, for a DSL rule that prints the brackets itself. */
   parenthesizedContent(
     content: () => Format,
     dangling: readonly Comment[] = [],
     hug = false,
   ): Format {
-    const level = this.level;
-    return this.at(PAREN, () => {
-      const c = content();
-      const indented =
-        dangling.length === 0
-          ? hug
-            ? c
-            : group(softBlockIndent(c))
-          : group([this.danglingOpenParen(dangling), softBlockIndent(c)]);
-      return level.k === "expr" && level.g
-        ? fitsExpanded(indented, level.g)
-        : indented;
-    });
+    return sink.record(() =>
+      this.writeParenthesizedContent(() => sink.part(content()), dangling, hug),
+    );
   }
 
   /** Ruff's `optional_parentheses`: parentheses only when `content` must break, whose groups see them. */
@@ -280,21 +316,39 @@ export class Fmt {
   }
 
   /** Ruff's `empty_parenthesized`. */
+  writeEmptyParenthesized(
+    left: () => void,
+    dangling: readonly Comment[],
+    right: () => void,
+  ): void {
+    const split = dangling.findIndex((c) => c.line === "own");
+    const eol = split < 0 ? dangling : dangling.slice(0, split);
+    const own = split < 0 ? [] : dangling.slice(split);
+    sink.open(sink.GROUP);
+    left();
+    this.writeTrailing(eol);
+    if (eol.length > 0 && own.length > 0) sink.sLine(sink.HARD | sink.COLLAPSE);
+    sink.open(sink.INDENT);
+    sink.sLine(sink.SOFT | sink.COLLAPSE);
+    this.writeDangling(own);
+    sink.close();
+    sink.sLine(sink.SOFT | sink.COLLAPSE);
+    right();
+    sink.close();
+  }
+
   emptyParenthesized(
     left: Token,
     dangling: readonly Comment[],
     right: Token,
   ): Format {
-    const split = dangling.findIndex((c) => c.line === "own");
-    const eol = split < 0 ? dangling : dangling.slice(0, split);
-    const own = split < 0 ? [] : dangling.slice(split);
-    return group([
-      left,
-      this.trailing(eol),
-      eol.length > 0 && own.length > 0 ? hard : [],
-      softBlockIndent(this.dangling(own)),
-      right,
-    ]);
+    return sink.record(() =>
+      this.writeEmptyParenthesized(
+        () => sink.part(left),
+        dangling,
+        () => sink.part(right),
+      ),
+    );
   }
 
   softLine(): Format {
@@ -304,19 +358,39 @@ export class Fmt {
     return [];
   }
 
-  softLineOrSpace(): Format {
+  writeSoftLineOrSpace(): void {
     const l = this.level;
-    if (l.k === "paren") return softOrSpace;
-    if (l.k === "expr" && l.g)
-      return [ifBreak(softOrSpace, [], l.g), ifBreak([], space, l.g)];
-    return space;
+    if (l.k === "paren") sink.sLine(sink.COLLAPSE);
+    else if (l.k === "expr" && l.g) {
+      const g = sink.idOf(l.g);
+      sink.open(sink.IF_BROKEN, g);
+      sink.sLine(sink.COLLAPSE);
+      sink.close();
+      sink.open(sink.IF_FLAT, g);
+      sink.sText(" ");
+      sink.close();
+    } else sink.sText(" ");
+  }
+
+  softLineOrSpace(): Format {
+    return sink.record(() => this.writeSoftLineOrSpace());
+  }
+
+  writeInParensGroup(content: () => void): void {
+    const l = this.level;
+    if (l.k === "paren") {
+      sink.open(sink.GROUP);
+      content();
+      sink.close();
+    } else if (l.k === "expr" && l.g) {
+      sink.open(sink.GROUP_IF_BROKEN, sink.idOf(l.g));
+      content();
+      sink.close();
+    } else content();
   }
 
   inParensGroup(d: Format): Format {
-    const l = this.level;
-    if (l.k === "paren") return group(d);
-    if (l.k === "expr" && l.g) return groupIfBreak(d, l.g);
-    return d;
+    return sink.record(() => this.writeInParensGroup(() => sink.part(d)));
   }
 
   inParensIfBreaks(d: Format): Format {
@@ -340,30 +414,53 @@ export class Fmt {
    * Ruff's `join_comma_separated`: entries separated by a comma and a line, and a trailing comma when broken.
    * `commas` finds the source comma after an entry, so the self-check sees the input's own commas.
    */
-  joinCommaSeparated(
-    entries: readonly { end: number; doc: Format; sep?: Format }[],
+  writeJoinCommaSeparated(
+    entries: readonly { end: number; write: () => void; sep?: () => void }[],
     sequenceEnd: number,
-    comma: (after: number) => Token,
+    comma: (after: number) => void,
     oneOrMore = false,
-  ): Format {
-    const out: Format[] = [];
+  ): void {
     for (const [i, e] of entries.entries()) {
       if (i > 0) {
         const prev = entries[i - 1] as { end: number };
-        out.push(comma(prev.end), e.sep ?? softOrSpace);
+        comma(prev.end);
+        if (e.sep) e.sep();
+        else sink.sLine(sink.COLLAPSE);
       }
-      out.push(e.doc);
+      e.write();
     }
     const last = entries.at(-1);
     if (last) {
       const magic = this.magicTrailingComma(last.end, sequenceEnd);
       // Inside a single-line f-string interpolation, a trailing comma would be printed flat for nothing.
       const inFlatFString = this.fstr.k !== "outside" && !this.fstr.multiline;
-      if ((magic || entries.length > 1 || oneOrMore) && !inFlatFString)
-        out.push(ifBreak(comma(last.end)));
-      if (magic) out.push(breakParent);
+      if ((magic || entries.length > 1 || oneOrMore) && !inFlatFString) {
+        sink.open(sink.IF_BROKEN);
+        comma(last.end);
+        sink.close();
+      }
+      if (magic) sink.sBreakParent();
     }
-    return out;
+  }
+
+  joinCommaSeparated(
+    entries: readonly { end: number; doc: Format; sep?: Format }[],
+    sequenceEnd: number,
+    comma: (after: number) => Token,
+    oneOrMore = false,
+  ): Format {
+    return sink.record(() =>
+      this.writeJoinCommaSeparated(
+        entries.map(({ end, doc, sep }) => ({
+          end,
+          write: () => sink.part(doc),
+          ...(sep === undefined ? {} : { sep: () => sink.part(sep) }),
+        })),
+        sequenceEnd,
+        (after) => sink.part(comma(after)),
+        oneOrMore,
+      ),
+    );
   }
 }
 

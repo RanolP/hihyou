@@ -54,15 +54,16 @@ const frames: Frame[] = [];
 /**
  * The id `open` returns in a recording is `RECORDED` plus an index here, apart from the stream's interval ids, so
  * a recorded interval may ask a group already written to the stream and a stream write one already recorded. The
- * index holds the group (or best-fit-parenthesize) it opened, which exists from its open.
+ * index holds the group (or best-fit-parenthesize) it opened, which exists from its open, or a group ruff's rules
+ * built (`idOf`).
  */
 const RECORDED = 1 << 30;
-let handles: (Group | undefined)[] = [];
+let handles: (GroupRef | undefined)[] = [];
 
 const top = () => frames[frames.length - 1] as Frame;
 const put = (f: Format) => void top().parts.push(f);
 
-function handleOf(ref: number): Group {
+function handleOf(ref: number): GroupRef {
   const g = handles[ref - RECORDED];
   if (g === undefined) throw new Error(`python sink: interval refers to ${ref}, which is no recorded group`);
   return g;
@@ -108,6 +109,14 @@ const needRef = (f: Frame): GroupRef => {
   if (!f.ref) throw new Error(`python sink: interval kind ${f.kind} asks no group`);
   return f.ref;
 };
+
+/** The id an interval asks `g` by, a group (or best-fit-parenthesize) ruff's rules built. */
+export function idOf(g: GroupRef): number {
+  // On the stream a group written has its interval; one still to be written is asked once it is.
+  if (frames.length === 0 && g.k >= 0) return g.k;
+  handles.push(g);
+  return RECORDED + handles.length - 1;
+}
 
 export function sToken(node: number, s: string, synthetic = false): void {
   if (frames.length > 0) put(synthetic ? el.synthetic(node, s) : el.token(node, s));
@@ -212,7 +221,7 @@ export function closeBestFitParenthesize(k: number, close0: () => void): void {
   const f = closeFrame(BEST_FIT_PARENTHESIZE);
   if (f.id !== k) throw new Error("python sink: closing another best-fit-parenthesize");
   f.list.push(closing);
-  put(handleOf(f.id));
+  put(handleOf(f.id) as Group);
 }
 export function close(): void {
   if (frames.length === 0) {
@@ -222,7 +231,7 @@ export function close(): void {
   const f = closeFrame();
   switch (f.kind) {
     case stream.GROUP:
-      put(handleOf(f.id));
+      put(handleOf(f.id) as Group);
       return;
     case stream.INDENT:
       put(el.indent(f.parts));
