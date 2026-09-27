@@ -314,17 +314,19 @@ export const clauseBody = (...args: Parameters<typeof writeClauseBody>): Format 
   record(() => writeClauseBody(...args));
 
 /** Ruff's `leading_alternate_branch_comments`: the lines before `else`/`elif`/`except`/`finally` and its comments. */
-export function leadingAlternateBranchComments(
+export function writeLeadingAlternateBranchComments(
   f: Fmt,
   comments: readonly Comment[],
   last: Py | undefined,
-): Format {
+): void {
   const first = comments[0];
-  if (first)
-    return [
-      f.emptyLines(linesBefore(f.tree, first.start)),
-      f.leading(comments),
-    ];
-  if (last) return f.emptyLines(linesAfterIgnoringTrivia(f.tree, last.end));
-  return [];
+  if (first) {
+    part(f.emptyLines(linesBefore(f.tree, first.start)));
+    part(f.leading(comments));
+  } else if (last) part(f.emptyLines(linesAfterIgnoringTrivia(f.tree, last.end)));
 }
+
+/** `writeLeadingAlternateBranchComments`, as a `Format` for stmt-match.via.ts. */
+export const leadingAlternateBranchComments = (
+  ...args: Parameters<typeof writeLeadingAlternateBranchComments>
+): Format => record(() => writeLeadingAlternateBranchComments(...args));

@@ -1,10 +1,10 @@
 // The customs stmt-compound.ts's `.via`s name: ruff's clause headers and bodies (statement/clause.rs).
 import type { StreamCtx } from "../../../fmt/stream-format.js";
 import type { Py, Stmt } from "../fmt/ast.js";
-import { type Fmt, space } from "../fmt/builders.js";
+import type { Fmt } from "../fmt/builders.js";
 import type { Comment } from "../fmt/comments.js";
 import { formatExpr, maybeParenthesize } from "../fmt/expr.js";
-import { part, ruffOf, ruffStmtOf } from "../fmt/sink.js";
+import { part, ruffOf, ruffStmtOf, sText, sToken } from "../fmt/sink.js";
 import {
   exceptType,
   type ItemLayout,
@@ -15,9 +15,9 @@ import {
   withItems,
 } from "../fmt/stmt/clauses.js";
 import {
-  leadingAlternateBranchComments,
   type SuiteKind,
   writeClauseBody,
+  writeLeadingAlternateBranchComments,
   writeSuite,
 } from "../fmt/stmt/suite.js";
 
@@ -98,12 +98,12 @@ export const stmtCompoundVia = {
     const { f, s } = ruffStmtOf(n);
     const h = s.kind === "Try" ? s.handlers.find((x) => x.ts === n) : undefined;
     if (!h) throw new Error("python: an except type outside a try's handler");
-    part(exceptType(f, h));
+    exceptType(f, h);
   },
   "compound.withItems": (c: number, ctx: StreamCtx<unknown>) => {
     const { f, s } = ruffStmtOf(ctx.tree.parent(c));
     if (s.kind !== "With") throw new Error("python: a with clause outside a with");
-    part(withItems(f, s));
+    withItems(f, s);
   },
   // Given the item's value, prints the item in the layout its caller passes (`ctx.args`).
   "compound.withItem": (c: number, ctx: StreamCtx<unknown>) => {
@@ -112,18 +112,19 @@ export const stmtCompoundVia = {
     const item = s.kind === "With" ? s.items.find((i) => i.ts === n) : undefined;
     const args = ctx.args as { layout: ItemLayout; single: boolean } | undefined;
     if (!item || !args) throw new Error("python: a with item outside a with's items");
-    part(withItem(f, item, args.layout, args.single));
+    withItem(f, item, args.layout, args.single);
   },
   // `async` and the space after it, where the statement has one.
-  "compound.async": (token: number | undefined) => {
+  "compound.async": (token: number | undefined, _: number, ctx: StreamCtx<unknown>) => {
     if (token === undefined) return;
-    const { f } = ruffStmtOf(token);
-    part([f.tok(token), space]);
+    sToken(token, ctx.tree.text(token));
+    sText(" ");
   },
   // A clause's keyword, after the comments and blank lines that separate it from the clause before.
   "compound.alternate": (token: number | undefined, n: number, ctx: StreamCtx<unknown>) => {
     const { f, alternate } = clauseOf(n, ctx);
-    part([leadingAlternateBranchComments(f, alternate.comments, alternate.last), token === undefined ? [] : f.tok(token)]);
+    writeLeadingAlternateBranchComments(f, alternate.comments, alternate.last);
+    if (token !== undefined) sToken(token, ctx.tree.text(token));
   },
   // The block's statements as ruff's suite of the kind its clause passes (`ctx.args`).
   "compound.suite": (n: number, ctx: StreamCtx<unknown>) => {
