@@ -10,6 +10,7 @@ import {
   synthetic,
   text,
   token,
+  type Token,
   removeSoftLines,
   willBreak,
 } from "./elements.js";
@@ -851,43 +852,50 @@ export function number(raw: string): string {
   return complex ? `${out}j` : out;
 }
 
+/** A call's or class's arguments: an argument list prints by its rule; a sole generator's parentheses are ruff's. */
 export function args(f: Fmt, a: Arguments): Format {
-  const cs = f.comments;
-  const dangling = cs.dangling(a);
-  const open = f.tok(a.open);
-  const close = f.tok(a.close);
+  return f.tree.kindName(a.ts) === "argument_list"
+    ? dslPart(a.ts)
+    : argumentsFrame(f, a, f.tok(a.open), () => argumentItems(f, a), f.tok(a.close));
+}
+
+/** Ruff's frame of arguments: `items` between the brackets, or the dangling comments of an empty list. */
+export function argumentsFrame(f: Fmt, a: Arguments, open: Token, items: () => Format, close: Token): Format {
+  const dangling = f.comments.dangling(a);
   if (a.items.length === 0)
     return f.at(PAREN, () => f.emptyParenthesized(open, dangling, close));
+  return f.parenthesized(open, items, close, dangling, argumentsHuggable(f, a));
+}
+
+/** Ruff's arguments between their brackets, comma-separated in one group. */
+export function argumentItems(f: Fmt, a: Arguments): Format {
   const comma = commaIn(f.tree, a.ts, a.ts);
-  const all = () => {
-    const [single] = a.items;
-    if (a.items.length === 1 && single && isExpr(single)) {
-      const doc =
-        single.kind === "Generator"
-          ? formatExpr(f, single, "preserve", { genPreserve: true })
-          : formatExpr(
-              f,
-              single,
-              singleArgumentParenthesized(f, single, a.end)
-                ? "always"
-                : "never",
-            );
-      return group(
-        f.joinCommaSeparated([{ end: single.end, doc }], a.end, comma),
-      );
-    }
+  const [single] = a.items;
+  if (a.items.length === 1 && single && isExpr(single)) {
+    const doc =
+      single.kind === "Generator"
+        ? formatExpr(f, single, "preserve", { genPreserve: true })
+        : formatExpr(
+            f,
+            single,
+            singleArgumentParenthesized(f, single, a.end)
+              ? "always"
+              : "never",
+          );
     return group(
-      f.joinCommaSeparated(
-        a.items.map((i) => ({
-          end: i.end,
-          doc: isExpr(i) ? formatExpr(f, i) : keyword(f, i),
-        })),
-        a.end,
-        comma,
-      ),
+      f.joinCommaSeparated([{ end: single.end, doc }], a.end, comma),
     );
-  };
-  return f.parenthesized(open, all, close, dangling, argumentsHuggable(f, a));
+  }
+  return group(
+    f.joinCommaSeparated(
+      a.items.map((i) => ({
+        end: i.end,
+        doc: isExpr(i) ? formatExpr(f, i) : keyword(f, i),
+      })),
+      a.end,
+      comma,
+    ),
+  );
 }
 
 function singleArgumentParenthesized(f: Fmt, arg: Expr, end: number): boolean {

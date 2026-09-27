@@ -1,5 +1,5 @@
 // Calls, attributes, subscripts, slices, parenthesized expressions, expression lists, splats, and types.
-import { custom, tok } from "../../../fmt/dsl/dsl.js";
+import { custom, grpParen, tok } from "../../../fmt/dsl/dsl.js";
 import type { Structure } from "../format.js";
 
 // An attribute, call or subscript continues its caller's call chain layout (`ctx.args.chain`, ruff's
@@ -32,6 +32,10 @@ export const exprAccess = {
     $.children.at(0).andThen((v) => v.via("access.chainValue")),
     $.children.at(1).andThen((s) => s.via("access.typeSubscript")),
   ],
+  // Ruff's frame (`parenthesized`, or `empty_parenthesized` with the dangling comments) around its arguments, which
+  // the custom given the first prints comma-separated.
+  argument_list: ($) =>
+    grpParen($.children.at(0).andThen((c) => c.via("access.argumentItems"))).via("access.argumentsFrame"),
   // Ruff's tuple layout for the mode its caller passes (`ctx.args.tuple`): every token of it sits in a group or
   // parentheses ruff decides on.
   expression_list: () => custom("access.tuple"),

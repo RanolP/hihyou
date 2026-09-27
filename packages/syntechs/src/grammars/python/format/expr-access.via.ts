@@ -1,11 +1,14 @@
 // The customs expr-access.ts's `.via`s name.
+import type { Frame } from "../../../fmt/dsl/runtime.js";
 import type { StreamCtx } from "../../../fmt/stream-format.js";
-import type { Attribute, Call, Expr, Py, Sequence, Slice, Subscript } from "../fmt/ast.js";
+import type { Arguments, Attribute, Call, ClassDef, Expr, Py, Sequence, Slice, Subscript } from "../fmt/ast.js";
 import { type Fmt, hard, soft } from "../fmt/builders.js";
 import type { Comment } from "../fmt/comments.js";
 import type { Format } from "../fmt/elements.js";
 import {
   args,
+  argumentItems,
+  argumentsFrame,
   type Chain,
   chainValue,
   formatExpr,
@@ -15,7 +18,7 @@ import {
   writeExpr,
   writeTuple,
 } from "../fmt/expr.js";
-import { COLLAPSE, HARD, part, ruffOf, sLine, sText } from "../fmt/sink.js";
+import { COLLAPSE, frameParts, HARD, part, ruffOf, ruffStmtOf, sLine, sText } from "../fmt/sink.js";
 import { startOf, tokens } from "../fmt/trivia.js";
 
 /**
@@ -54,6 +57,16 @@ function writeSliceBound(f: Fmt, x: Expr, spaced: boolean): void {
     else sText("  ");
   } else if (spaced) sText(" ");
   writeExpr(f, x);
+}
+
+/** Argument list `n`'s arguments, a call's or a class's. */
+function argumentsOf(n: number, ctx: StreamCtx<unknown>): { f: Fmt; a: Arguments } {
+  if (ctx.tree.kindName(ctx.tree.parent(n)) === "class_definition") {
+    const { f, s } = ruffStmtOf(n);
+    return { f, a: (s as ClassDef).args as Arguments };
+  }
+  const { f, e } = ruffOf(ctx.tree.parent(n));
+  return { f, a: (e as Call).args };
 }
 
 const sliceOf = (n: number) => ruffOf(n) as { f: Fmt; e: Slice };
@@ -175,6 +188,15 @@ export const exprAccessVia = {
     const { f, e } = ruffOf(ctx.tree.parent(c));
     const s = e as Subscript;
     part([f.tok(s.open), subscriptContent(f, s), f.tok(s.close)]);
+  },
+  "access.argumentsFrame": (n: number, ctx: StreamCtx<unknown>, frame: Frame) => {
+    const { f, a } = argumentsOf(n, ctx);
+    const { open, body, close } = frameParts(frame);
+    part(argumentsFrame(f, a, open, body, close));
+  },
+  "access.argumentItems": (c: number, ctx: StreamCtx<unknown>) => {
+    const { f, a } = argumentsOf(ctx.tree.parent(c), ctx);
+    part(argumentItems(f, a));
   },
   "access.tuple": (n: number, ctx: StreamCtx<unknown>) => {
     const { f, e } = ruffOf(n);
