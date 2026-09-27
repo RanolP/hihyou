@@ -3,21 +3,9 @@
 // switch-statement.js, return-statement.js, variable-declaration.js, and estree.js's small statements.
 // Their layouts are format.ts's; what it names `custom` is `statementCustoms`, written against sink.ts.
 
-import {
-  type Doc,
-  group,
-  hardline,
-  ifBreak,
-  indent,
-  join,
-  line,
-  softline,
-  synthetic,
-  text,
-  token,
-} from "../../../fmt/doc.js";
+import { type Doc, token } from "../../../fmt/doc.js";
 import { NO_NODE } from "../../../core/arena.js";
-import type { CustomRule } from "../../../fmt/dsl/runtime.js";
+import type { CustomRule, TokenRule } from "../../../fmt/dsl/runtime.js";
 import { lfAfter, nextLineEmpty } from "../../../fmt/text.js";
 import { firstLeaf, type FormatTree, prevLeaf } from "../../../fmt/tree.js";
 import {
@@ -64,12 +52,9 @@ import {
   kind,
   lastChildWhere,
   named,
-  p,
   parent,
-  semi,
   separators,
   src,
-  t,
   unparen,
 } from "./util.js";
 
@@ -502,8 +487,7 @@ const switchCase: CustomRule<JsOptions> = (node, ctx) => {
   }
 };
 
-/** The rules format.ts names `custom` for the statements. */
-export const statementCustoms = {
+const customs = {
   "stmt.program": (node, ctx) => {
     const s = jsCtx(ctx);
     // Prettier keeps a byte order mark.
@@ -937,31 +921,35 @@ export const statementCustoms = {
       sText(" ");
     pr(s, body);
   },
+
+  /** An expression statement's expression, after the `;` needsAsiGuard asks for. */
+  "stmt.asiGuard": (expr, ctx) => {
+    const js = jsCtx(ctx).js;
+    const statement = parent(js, expr);
+    if (statement !== undefined && asiGuarded(js, statement))
+      sToken(statement, ";", true);
+    jsCtx(ctx).printNode(expr);
+  },
 } satisfies Record<string, CustomRule<JsOptions>>;
 
-const expressionStatement: JsRule = (node, ctx) => {
-  const expr = first(ctx, node);
-  const own = lastChildWhere(
-    ctx,
-    node,
-    (c) => !named(ctx, c) && kind(ctx, c) === ";",
-  );
-  const printed = p(ctx, expr);
-  // `namespace N {}` parses as an expression statement; it takes no `;`.
-  if (kind(ctx, expr) === "internal_module")
-    return [printed, own !== undefined ? token(own, "") : []];
-  if (needsAsiGuard(ctx, node))
-    return [
-      synthetic(node, ";"),
-      printed,
-      own !== undefined ? token(own, "") : [],
-    ];
-  return [printed, semi(ctx, node, own)];
+/** needsAsiGuard for an expression statement, but for `namespace N {}`, which parses as one. */
+const asiGuarded = (ctx: JsCtx, statement: number) =>
+  kind(ctx, first(ctx, statement)) !== "internal_module" &&
+  needsAsiGuard(ctx, statement);
+
+/** An expression statement's `;`: none after a guarded one or a namespace, else the `semi` option's. */
+const exprSemi: TokenRule<JsOptions> = (token, node, ctx) => {
+  const js = jsCtx(ctx).js;
+  if (asiGuarded(js, node) || kind(js, first(js, node)) === "internal_module") {
+    if (token !== undefined) sToken(token, "");
+  } else semiCustoms.semi(token, node, ctx);
 };
+
+/** The rules format.ts names `custom` for the statements. */
+export const statementCustoms = { ...customs, "stmt.exprSemi": exprSemi };
 
 /** The statement kinds still printed by the Doc. */
 export const statementRules: Record<string, JsRule> = {
-  expression_statement: expressionStatement,
   // JavaScript's `using`, a kind the tsx grammar the spec is typed against lacks.
   using_declaration: onDoc(statementCustoms["stmt.declaration"]),
 };

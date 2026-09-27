@@ -40,4 +40,5 @@ export const statements = {
   variable_declaration: () => custom("stmt.declaration"),
   lexical_declaration: () => custom("stmt.declaration"),
   variable_declarator: () => custom("stmt.declarator"),
+  expression_statement: ($) => [$.children.via("stmt.asiGuard"), tok(";").via("stmt.exprSemi")],
 } satisfies JsStructure;
