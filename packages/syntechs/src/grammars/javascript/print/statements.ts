@@ -9,7 +9,6 @@ import type { CustomRule, TokenRule } from "../../../fmt/dsl/runtime.js";
 import { lfAfter, nextLineEmpty } from "../../../fmt/text.js";
 import { firstLeaf, type FormatTree, prevLeaf } from "../../../fmt/tree.js";
 import {
-  capture,
   close,
   GROUP,
   IF_BROKEN,
@@ -18,7 +17,6 @@ import {
   jsCtx,
   onDoc,
   open,
-  place,
   SOFT,
   sHardline,
   sLine,
@@ -27,7 +25,7 @@ import {
   withComments,
 } from "../sink.js";
 import { expressionNeedsAsiProtection } from "./asi.js";
-import { printAssignment } from "./assignment.js";
+import { sPrintAssignment } from "./assignment.js";
 import { needsParens } from "./parens.js";
 import { semiCustoms } from "./semi.js";
 import {
@@ -895,13 +893,17 @@ const customs = {
       left();
       return;
     }
-    const leftPart = capture(left);
-    const operator = capture(() => {
-      if (eq === undefined) return;
-      sText(" ");
-      sTok(js, eq);
-    });
-    place({ doc: printAssignment(js, node, leftPart.doc, operator.doc, value) });
+    sPrintAssignment(
+      s,
+      node,
+      left,
+      () => {
+        if (eq === undefined) return;
+        sText(" ");
+        sTok(js, eq);
+      },
+      value,
+    );
   },
 
   "stmt.case": switchCase,
