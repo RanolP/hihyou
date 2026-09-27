@@ -753,18 +753,11 @@ function fields(f: Fmt, e: Expr, o: Opts): Format {
     case "BoolOp":
       return dslPart(e.ts);
     case "IfExp":
-      return ifExp(f, e, o.ifNested === true);
+      // An `else` branch's conditional continues the group of the one it is in.
+      return o.ifNested === true ? dslPart(e.ts) : f.inParensGroup(dslPart(e.ts));
     case "Lambda":
       return lambda(f, e, o.lambdaAssign === true);
-    case "Named": {
-      const dangling = f.comments.dangling(e);
-      return [
-        group([formatExpr(f, e.target), f.softLineOrSpace()]),
-        f.tok(e.op),
-        dangling.length === 0 ? space : [f.dangling(dangling), hard],
-        formatExpr(f, e.value),
-      ];
-    }
+    case "Named":
     case "Await":
     case "Yield":
       return dslPart(e.ts);
@@ -956,27 +949,6 @@ export function unaryNeedsLineBreak(f: Fmt, e: UnaryOp): boolean {
   if (e.operand.parens.length === 0) return true;
   const p = e.operand.parens[0];
   return p !== undefined && leading.some((c) => c.start < p.start);
-}
-
-function ifExp(f: Fmt, e: IfExp, nested: boolean): Format {
-  const cs = f.comments;
-  const orelse = e.orelse;
-  const inner = [
-    formatExpr(f, e.body),
-    f.softLineOrSpace(),
-    f.leading(cs.leading(e.test)),
-    f.tok(e.ifTok),
-    space,
-    formatExpr(f, e.test),
-    f.softLineOrSpace(),
-    f.leading(cs.leading(orelse)),
-    f.tok(e.elseTok),
-    space,
-    orelse.kind === "IfExp" && orelse.parens.length === 0
-      ? node(f, orelse, { ifNested: true })
-      : f.inParensGroup(formatExpr(f, orelse)),
-  ];
-  return nested ? inner : f.inParensGroup(inner);
 }
 
 function lambda(f: Fmt, e: Lambda, assignment: boolean): Format {

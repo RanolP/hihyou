@@ -24,4 +24,16 @@ export const expr = {
   binary_operator: () => custom("expr.binaryLike"),
   boolean_operator: () => custom("expr.binaryLike"),
   comparison_operator: () => custom("expr.binaryLike"),
+
+  // Each branch's custom prints the line break after it, and the next branch's leading comments before its keyword.
+  conditional_expression: ($) => [
+    $.children.at(0).andThen((b) => b.via("expr.ifBody")),
+    "if",
+    space,
+    $.children.at(1).andThen((t) => t.via("expr.ifTest")),
+    "else",
+    space,
+    $.children.at(2).andThen((o) => o.via("expr.ifOrelse")),
+  ],
+  named_expression: ($) => [$.name.via("expr.namedTarget"), ":=", $.value.via("expr.namedValue")],
 } satisfies Structure;
