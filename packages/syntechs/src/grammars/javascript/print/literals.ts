@@ -1,7 +1,6 @@
 // Prettier's literal printers (print/literal.js, utilities/print-string.js, print-number.js), its template
 // literal printer (print/template-literal.js) and its comment printer (print/comment.js).
 
-import { type Doc, hardline, literalToken, text, token } from "../../../fmt/doc.js";
 import { isDirective } from "./parens.js";
 import {
   anon,
@@ -9,6 +8,7 @@ import {
   field,
   first,
   hasComment,
+  type HasTree,
   type JsCtx,
   kind,
   parent,
@@ -31,7 +31,9 @@ import {
   SOFT,
   sLine,
   sLineSuffixBoundary,
+  sHardline,
   sLiteral,
+  sText,
   sToken,
 } from "../sink.js";
 import type { JsOptions } from "./util.js";
@@ -265,27 +267,34 @@ const templateString: CustomRule<JsOptions> = (node, sctx) => {
 };
 
 /** Prettier's printComment: a block comment whose lines all start with `*` is re-indented. */
-export function printComment(c: number, ctx: JsCtx): Doc {
+export function printComment(
+  c: number,
+  ctx: HasTree & { isLineComment(c: number): boolean },
+): void {
   const raw = src(ctx, c);
-  if (ctx.isLineComment(c)) return token(c, raw.trimEnd());
+  if (ctx.isLineComment(c)) {
+    sToken(c, raw.trimEnd());
+    return;
+  }
   if (raw.startsWith("/*") && raw.includes("\n")) {
     const value = raw.slice(2, -2);
     const lines = `*${value}*`.split("\n").map((l) => l.trimStart());
     if (lines.every((l) => l.startsWith("*"))) {
-      const out: Doc[] = [];
       lines.forEach((l, index) => {
-        if (index === 0) out.push(token(c, `/${l.trimEnd()}`), hardline);
-        else if (index === lines.length - 1) out.push(text(` ${l}/`));
+        if (index === 0) {
+          sToken(c, `/${l.trimEnd()}`);
+          sHardline();
+        } else if (index === lines.length - 1) sText(` ${l}/`);
         else {
-          const trimmed = l.trimEnd();
-          out.push(text(` ${trimmed}`));
-          out.push(hardline);
+          sText(` ${l.trimEnd()}`);
+          sHardline();
         }
       });
-      return out;
+      return;
     }
   }
-  return raw.includes("\n") ? literalToken(c, raw) : token(c, raw);
+  if (raw.includes("\n")) sLiteral(c, raw);
+  else sToken(c, raw);
 }
 
 /** The customs format/literals.ts names, by the names its spec gives them. */

@@ -28,7 +28,7 @@ import {
   statementRules,
 } from "./print/statements.js";
 import { typeCustoms, typeRules } from "./print/types.js";
-import { onDoc } from "./sink.js";
+import { onDoc, record } from "./sink.js";
 import {
   anon,
   type Args,
@@ -162,7 +162,7 @@ export function jsLanguage(
       atoms: jsAtoms,
       normalize: jsNormalize,
       lineComments: { comment: "//" } as never,
-      printComment,
+      printComment: (c, ctx) => record(() => printComment(c, ctx)),
       handleComment,
       printsOwnComments: (n, ctx) =>
         (isJsx(ctx, n) && !isIgnored(ctx as JsCtx, n)) ||

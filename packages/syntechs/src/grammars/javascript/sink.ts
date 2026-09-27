@@ -470,7 +470,7 @@ export function onDoc(rule: StreamRule<JsOptions>): JsRule {
       danglingComments: (node) => js.comments(node).dangling,
       isComment: (node) => js.tree.kindName(node) === "comment",
       isLineComment: (c) => js.isLineComment(c),
-      comment: (c) => writeDoc(printComment(c, js)),
+      comment: (c) => printComment(c, js),
       isList: (node) => js.isList(node),
       isBroken: () => false,
       // The Doc ctx prints every comment, a node's own included, so none is left to the rule.
