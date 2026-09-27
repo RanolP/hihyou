@@ -13,7 +13,7 @@ import {
 } from "../fmt/ast.js";
 import { commaIn, type Fmt } from "../fmt/builders.js";
 import { formatExpr, isSplittable, maybeParenthesize, needsParentheses, node } from "../fmt/expr.js";
-import { part, record, ruffOf, ruffStmtOf, sText, sToken } from "../fmt/sink.js";
+import { part, ruffOf, ruffStmtOf, sText, sToken } from "../fmt/sink.js";
 import {
   beforeOperator,
   hasTargetOwnParentheses,
@@ -195,19 +195,16 @@ export const stmtSimpleVia = {
     const { f, s: st } = ruffStmtOf(c);
     const s = st as ImportFrom;
     const comma = commaIn(f.tree, s.ts, s.importKw);
-    const entries = s.names.map((a) => ({ end: a.end, doc: record(() => alias(f, a)) }));
-    const list = () => f.joinCommaSeparated(entries, s.end, comma, true);
+    const entries = s.names.map((a) => ({ end: a.end, write: () => alias(f, a) }));
+    const list = () => f.writeJoinCommaSeparated(entries, s.end, (after) => part(comma(after)), true);
     const dangling = f.comments.dangling(s);
     if (dangling.length === 0) {
-      part(f.parenthesizeIfExpands(s.importKw, list));
+      f.writeParenthesizeIfExpands(s.importKw, list);
       return;
     }
     // A parenthesis as written, or one added at `import`.
-    const paren = (t: number | undefined, p: string) =>
-      t !== undefined ? sToken(t, f.text(t)) : sToken(s.importKw, p, true);
-    paren(s.open, "(");
-    part(f.parenthesizedContent(list, dangling));
-    paren(s.close, ")");
+    const paren = (t: number | undefined, p: string) => (t !== undefined ? f.writeTok(t) : sToken(s.importKw, p, true));
+    f.writeParenthesized(() => paren(s.open, "("), list, () => paren(s.close, ")"), dangling);
   },
   "simple.deleteTargets":(c: number) => {
     const { f, e } = ruffOf(c);

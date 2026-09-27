@@ -1,6 +1,6 @@
 import type { Alias, Simple } from "../ast.js";
 import type { Fmt } from "../builders.js";
-import { close, COLLAPSE, GROUP, IF_BROKEN, INDENT, open, part, SOFT, sDsl, sLine, sText, sToken } from "../sink.js";
+import { close, COLLAPSE, GROUP, IF_BROKEN, INDENT, open, SOFT, sDsl, sLine, sText, sToken } from "../sink.js";
 
 /** Ruff's one-line statements (statement/stmt_{expr,pass,return,raise,assert,delete,global,import,...}.rs). */
 
@@ -47,8 +47,8 @@ export function globalNames(f: Fmt, s: Simple): void {
 /** An import's alias with its comments. */
 export function alias(f: Fmt, a: Alias): void {
   const cs = f.comments;
-  part(f.leading(cs.leading(a)));
+  f.writeLeading(cs.leading(a));
   sDsl(a.ts);
-  part(f.trailing(cs.dangling(a)));
-  part(f.trailing(cs.trailing(a)));
+  f.writeTrailing(cs.dangling(a));
+  f.writeTrailing(cs.trailing(a));
 }
