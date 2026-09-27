@@ -16,7 +16,7 @@ import {
   hasLineBreak,
   startOf,
 } from "./trivia.js";
-import { dslPart } from "./sink.js";
+import { dslPart, sBreakParent, sLiteral, sToken } from "./sink.js";
 
 /**
  * Ruff's string formatting (string/{mod,normalize,implicit,docstring}.rs): the prefix and quotes each part
@@ -432,6 +432,13 @@ function needsChaperone(fl: Flags, trimEnd: string): boolean {
 /** A string spanning lines (a triple-quoted one) breaks every group around it, as ruff's multiline text does. */
 export const multilineToken = (n: number, text: string): Format =>
   text.includes("\n") ? [literalToken(n, text), breakParent] : token(n, text);
+
+/** `multilineToken`, written where the rule printing prints. */
+export function sMultiline(n: number, text: string): void {
+  if (!text.includes("\n")) return sToken(n, text);
+  sLiteral(n, text);
+  sBreakParent();
+}
 
 /** Ruff's `InterpolatedStringLayout`: multiline when an interpolation spans lines. */
 function layoutMultiline(f: Fmt, part: Part): boolean {

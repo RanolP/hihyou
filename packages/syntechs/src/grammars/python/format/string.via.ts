@@ -2,19 +2,34 @@
 import { NO_NODE } from "../../../core/arena.js";
 import type { StreamCtx } from "../../../fmt/stream-format.js";
 import { exprAst, type Expr, type Str } from "../fmt/ast.js";
-import { PAREN, soft, softBlockIndent, softOrSpace, space } from "../fmt/builders.js";
-import { type Format, group, indent, removeSoftLines } from "../fmt/elements.js";
+import { PAREN } from "../fmt/builders.js";
 import { formatExpr, leftMost } from "../fmt/expr.js";
-import { dslPart, part, ruffFmt, ruffOf, sToken } from "../fmt/sink.js";
+import {
+  capture,
+  close,
+  COLLAPSE,
+  GROUP,
+  INDENT,
+  open,
+  part,
+  place,
+  removeSoftLines,
+  ruffFmt,
+  ruffOf,
+  SOFT,
+  sLine,
+  sText,
+  sToken,
+} from "../fmt/sink.js";
 import {
   formatStr,
   isInterpolated,
-  multilineToken,
   normalizeString,
   partArgs,
   type PartArgs,
   partOf,
   quotesOf,
+  sMultiline,
 } from "../fmt/strings.js";
 import { endOf, hasLineBreak, startOf } from "../fmt/trivia.js";
 
@@ -59,7 +74,7 @@ export const stringVia = {
     const { flags, joined } = argsOf(ctx);
     const text = ctx.tree.text(c);
     if (joined) sToken(c, normalizeString(text, 0, flags, isInterpolated(flags)));
-    else part(multilineToken(c, normalizeString(text, 0, flags, false)));
+    else sMultiline(c, normalizeString(text, 0, flags, false));
   },
   // Ruff's `FormatInterpolatedElement`. Its expression reads the enclosing string's quotes and layout from
   // `f.fstr`, dynamic context rather than args, since they reach any string or collection nested at any depth.
@@ -79,7 +94,7 @@ export const stringVia = {
     const inside = cs.all.filter((c) => c.start > interpStart && c.end < interpEnd);
     if (debug || inside.length > 0) {
       for (const c of inside) c.formatted = true;
-      part(multilineToken(interp, f.text(interp)));
+      sMultiline(interp, f.text(interp));
       return;
     }
     const byField = (name: string): number => {
@@ -91,33 +106,46 @@ export const stringVia = {
     };
     const exprNode = byField("expression");
     if (exprNode === NO_NODE) {
-      part(f.tok(interp));
+      sToken(interp, f.text(interp));
       return;
     }
-    const open = tree.child(interp, 0);
-    const close = tree.child(interp, n - 1);
+    const lbrace = tree.child(interp, 0);
+    const rbrace = tree.child(interp, n - 1);
     const conversion = byField("type_conversion");
     const spec = byField("format_specifier");
     const e = exprAst(tree, exprNode);
     const multiline2 =
       multiline &&
       (flags.triple || hasLineBreak(tree, interpStart, spec !== NO_NODE ? startOf(tree, spec) : interpEnd));
-    const bracket = needsBracketSpacing(e) ? (multiline2 ? softOrSpace : space) : [];
+    const spaced = needsBracketSpacing(e);
+    const bracket = () => {
+      if (!spaced) return;
+      if (multiline2) sLine(COLLAPSE);
+      else sText(" ");
+    };
+    const item = () => {
+      bracket();
+      part(formatExpr(f, e));
+      if (conversion !== NO_NODE) ctx.printNode(conversion);
+      if (spec !== NO_NODE) ctx.printNode(spec);
+      if (conversion === NO_NODE && spec === NO_NODE) bracket();
+    };
     const saved = f.fstr;
     f.fstr = { k: saved.k === "outside" ? "inside" : "nested", flags, multiline: multiline2 };
     try {
-      part([
-        f.tok(open),
-        f.at(PAREN, () => {
-          const item: Format[] = [bracket, formatExpr(f, e)];
-          if (conversion !== NO_NODE) item.push(dslPart(conversion));
-          if (spec !== NO_NODE) item.push(dslPart(spec));
-          if (conversion === NO_NODE && spec === NO_NODE) item.push(bracket);
-          if (multiline) return spec !== NO_NODE ? group(indent([soft, item])) : group(softBlockIndent(item));
-          return removeSoftLines(item);
-        }),
-        f.tok(close),
-      ]);
+      sToken(lbrace, f.text(lbrace));
+      f.at(PAREN, () => {
+        if (!multiline) return place(removeSoftLines(capture(item)));
+        // Ruff's `group(indent([soft, item]))` with a spec, else `group(soft_block_indent(item))`.
+        open(GROUP);
+        open(INDENT);
+        sLine(SOFT | COLLAPSE);
+        item();
+        close();
+        if (spec === NO_NODE) sLine(SOFT | COLLAPSE);
+        close();
+      });
+      sToken(rbrace, f.text(rbrace));
     } finally {
       f.fstr = saved;
     }
