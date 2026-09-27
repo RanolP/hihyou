@@ -1145,14 +1145,6 @@ const call: JsRule = (n, ctx) => {
   return contents;
 };
 
-const nonNull: JsRule = (n, ctx) => [
-  p(ctx, first(ctx, n)),
-  t(
-    ctx,
-    childWhere(ctx, n, (c) => kind(ctx, c) === "!"),
-  ),
-];
-
 /** The customs format/calls.ts names, by the names its spec gives them. */
 export const callCustoms = {} satisfies Record<string, CustomRule<JsOptions>>;
 
@@ -1161,5 +1153,4 @@ export const callRules: Record<string, JsRule> = {
   new_expression: call,
   member_expression: member,
   subscript_expression: member,
-  non_null_expression: nonNull,
 };
