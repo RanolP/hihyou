@@ -43,6 +43,16 @@ export const types = {
     $.name.via("methodSignature"),
     tok(";").via("memberSemi"),
   ],
+  call_signature: ($) => [
+    $.parameters.via("signature"),
+    tok(";").via("memberSemi"),
+  ],
+  construct_signature: ($) => [
+    $.parameters.via("signature"),
+    tok(";").via("memberSemi"),
+  ],
+  function_type: () => custom("functionType"),
+  constructor_type: () => custom("functionType"),
   index_signature: ($) => [
     $.type.via("indexSignature"),
     tok(";").via("memberSemi"),

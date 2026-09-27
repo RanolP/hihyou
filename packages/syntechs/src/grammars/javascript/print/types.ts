@@ -720,29 +720,6 @@ function needsInterfaceSemicolon(
   );
 }
 
-/** Prettier's printClassMemberSemicolon, from the member's own separator when the source has one. */
-function memberSemicolon(ctx: JsCtx, n: number): Doc {
-  const up = parent(ctx, n);
-  const sep = memberSeparator(ctx, n);
-  const put = (text: string): Doc =>
-    sep !== undefined ? token(sep, text) : text ? synthetic(n, text) : [];
-  if (up === undefined) return [];
-  const upKind = kind(ctx, up);
-  if (upKind === "interface_body" || upKind === "class_body")
-    return put(ctx.options.semi ? ";" : "");
-  if (upKind !== "object_type") return sep !== undefined ? token(sep, "") : [];
-  const members = items(ctx, up);
-  const i = members.indexOf(n);
-  const next = members[i + 1];
-  if (next === undefined)
-    return ctx.options.semi
-      ? ifBreak(put(";"), sep !== undefined ? token(sep, "") : [])
-      : put("");
-  if (ctx.options.semi || needsInterfaceSemicolon(ctx, n, next))
-    return put(";");
-  return ifBreak(sep !== undefined ? token(sep, "") : [], put(";"));
-}
-
 /**
  * A type member's separator, which a spec writes as `tok(";").via("memberSemi")`: prettier's
  * printClassMemberSemicolon. The separator is the body's child after the member, never the member's own, so the
@@ -1039,39 +1016,53 @@ const indexSignature: CustomRule<JsOptions> = (type, sctx) => {
   ctx.printNode(type);
 };
 
-/** Prettier's printFunctionType, for function and constructor types and call and construct signatures. */
-const functionType: JsRule = (n, ctx) => {
-  const parts: Doc[] = [];
-  const abstractKw = anonKid(ctx, n, "abstract");
-  if (abstractKw !== undefined) parts.push(t(ctx, abstractKw), text(" "));
-  const newKw = anonKid(ctx, n, "new");
-  if (newKw !== undefined) parts.push(t(ctx, newKw), text(" "));
-  let parametersDoc = printFunctionParameters(ctx, n, false, true);
+/**
+ * Prettier's printFunctionType, for function and constructor types and, up to their separator, call and
+ * construct signatures.
+ */
+const functionType: CustomRule<JsOptions> = (n, sctx) => {
+  const ctx = jsCtx(sctx);
+  const js = ctx.js;
+  const parametersDoc = printFunctionParameters(js, n, false, true);
   const isSignature =
-    kind(ctx, n) === "call_signature" || kind(ctx, n) === "construct_signature";
-  const returnNode = field(ctx, n, "return_type") ?? field(ctx, n, "type");
-  const returnTypeDoc: Doc =
-    returnNode === undefined
-      ? []
-      : isSignature
-        ? p(ctx, returnNode)
-        : [
-            text(" "),
-            t(ctx, anonKid(ctx, n, "=>")),
-            text(" "),
-            p(ctx, returnNode),
-          ];
-  if (shouldGroupFunctionParameters(ctx, n, returnTypeDoc))
-    parametersDoc = group(parametersDoc);
-  parts.push(parametersDoc, returnTypeDoc);
+    kind(js, n) === "call_signature" || kind(js, n) === "construct_signature";
+  const returnNode = field(js, n, "return_type") ?? field(js, n, "type");
+  const returnType = capture(() => {
+    if (returnNode === undefined) return;
+    if (!isSignature) {
+      sText(" ");
+      tok(js, anonKid(js, n, "=>"));
+      sText(" ");
+    }
+    ctx.print(returnNode);
+  });
   // `(): (r: U) => S => x` parses without parentheses around the arrow's return type; prettier adds them.
-  if (
-    kind(ctx, n) === "function_type" &&
-    kind(ctx, parent(ctx, n)) !== "parenthesized_type" &&
-    typeNeedsParens(ctx, n)
-  )
-    return [synthetic(n, "("), group(parts), synthetic(n, ")")];
-  return [group(parts), isSignature ? memberSemicolon(ctx, n) : []];
+  const parenthesized =
+    kind(js, n) === "function_type" &&
+    kind(js, parent(js, n)) !== "parenthesized_type" &&
+    typeNeedsParens(js, n);
+  if (parenthesized) sToken(n, "(", true);
+  open(GROUP);
+  for (const keyword of ["abstract", "new"]) {
+    const c = anonKid(js, n, keyword);
+    if (c === undefined) continue;
+    tok(js, c);
+    sText(" ");
+  }
+  place({
+    doc: shouldGroupFunctionParameters(js, n, returnType.doc)
+      ? group(parametersDoc)
+      : parametersDoc,
+  });
+  place(returnType);
+  close();
+  if (parenthesized) sToken(n, ")", true);
+};
+
+/** A call or construct signature up to its separator, reached through its parameters (`.via("signature")`). */
+const signature: CustomRule<JsOptions> = (parameters, sctx, seq) => {
+  const n = parent(jsCtx(sctx).js, parameters);
+  if (n !== undefined) functionType(n, sctx, seq);
 };
 
 /** The TypeScript kinds format.ts lays out by hand, by the names its spec gives them. */
@@ -1087,6 +1078,8 @@ const nodeCustoms = {
   memberKey,
   methodSignature,
   indexSignature,
+  functionType,
+  signature,
 } satisfies Record<string, CustomRule<JsOptions>>;
 
 export const typeCustoms = {
@@ -1101,9 +1094,5 @@ export const typeRules: Record<string, JsRule> = {
   module: moduleDeclaration,
   internal_module: moduleDeclaration,
   type_assertion: typeAssertion,
-  call_signature: functionType,
-  construct_signature: functionType,
-  function_type: functionType,
-  constructor_type: functionType,
   tuple_type: array,
 };
