@@ -756,7 +756,7 @@ function fields(f: Fmt, e: Expr, o: Opts): Format {
       // An `else` branch's conditional continues the group of the one it is in.
       return o.ifNested === true ? dslPart(e.ts) : f.inParensGroup(dslPart(e.ts));
     case "Lambda":
-      return lambda(f, e, o.lambdaAssign === true);
+      return dslPart(e.ts, { lambdaAssign: o.lambdaAssign === true });
     case "Named":
     case "Await":
     case "Yield":
@@ -951,32 +951,25 @@ export function unaryNeedsLineBreak(f: Fmt, e: UnaryOp): boolean {
   return p !== undefined && leading.some((c) => c.start < p.start);
 }
 
-function lambda(f: Fmt, e: Lambda, assignment: boolean): Format {
-  const cs = f.comments;
-  const dangling = cs.dangling(e);
-  const out: Format[] = [f.tok(e.lambdaTok)];
-  let header: readonly Comment[] = dangling;
+/** The lambda's dangling comments after its parameters start: they print between `:` and its body. */
+export function lambdaHeader(f: Fmt, e: Lambda): readonly Comment[] {
+  const dangling = f.comments.dangling(e);
   const p = e.params;
-  if (p) {
-    const before = dangling.filter((c) => c.end < p.start);
-    header = dangling.filter((c) => c.end >= p.start);
-    if (before.length === 0) out.push(cs.hasLeading(p) ? hard : space);
-    else out.push(f.dangling(before));
-    const params = parameters(f, p, "never");
-    out.push(
-      cs.hasAnyIn(p.start, p.end) || cs.has(p)
-        ? params
-        : removeSoftLines(params),
-    );
-  }
-  out.push(f.tok(e.colon));
-  if (header.length === 0) out.push(space);
-  const bodyDoc = lambdaBody(f, e, header);
-  out.push(assignment ? fitsExpanded(bodyDoc) : bodyDoc);
-  return out;
+  return p ? dangling.filter((c) => c.end >= p.start) : dangling;
 }
 
-function lambdaBody(f: Fmt, e: Lambda, header: readonly Comment[]): Format {
+/** What follows `lambda`: its dangling comments before the parameters, or a space or break, and the parameters. */
+export function lambdaParams(f: Fmt, e: Lambda, p: Parameters): Format {
+  const cs = f.comments;
+  const before = cs.dangling(e).filter((c) => c.end < p.start);
+  const params = parameters(f, p, "never");
+  return [
+    before.length === 0 ? (cs.hasLeading(p) ? hard : space) : f.dangling(before),
+    cs.hasAnyIn(p.start, p.end) || cs.has(p) ? params : removeSoftLines(params),
+  ];
+}
+
+export function lambdaBody(f: Fmt, e: Lambda, header: readonly Comment[]): Format {
   const cs = f.comments;
   const body = e.body;
   if (header.length > 0) {

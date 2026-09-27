@@ -1,6 +1,7 @@
 import * as stream from "../../../fmt/stream.js";
 import type { Expr, Stmt } from "./ast.js";
 import type { Fmt } from "./builders.js";
+import type { PrintArgs } from "../../../fmt/rules.js";
 import type { StreamCtx } from "../../../fmt/stream-format.js";
 import {
   breakParent,
@@ -166,8 +167,12 @@ export function part(f: Format): void {
   ops.push({ t: "part", f });
 }
 
-/** Tree-sitter node `node` as its rule of Python's DSL spec prints it, without its comments (ruff prints those). */
-export function dslPart(node: number): Format {
+/**
+ * Tree-sitter node `node` as its rule of Python's DSL spec prints it, without its comments (ruff prints those).
+ * `args` carry what ruff's caller chose for the node (its `Opts`); the rule and its `.via` customs read them as
+ * `ctx.args`.
+ */
+export function dslPart(node: number, args?: PrintArgs): Format {
   if (!current) throw new Error("python sink: dslPart outside the module rule");
   // A broken node prints as its text straight into the stream, past this recording.
   if (current.isBroken(node)) throw new Error("python sink: dslPart of a broken node");
@@ -177,7 +182,7 @@ export function dslPart(node: number): Format {
   ops = rec;
   opens = 0;
   try {
-    current.printNode(node);
+    current.printNode(node, args);
   } finally {
     ops = outer;
     opens = outerOpens;

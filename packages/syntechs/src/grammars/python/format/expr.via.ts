@@ -1,12 +1,35 @@
 // The customs expr.ts's `.via`s name.
 import type { StreamCtx } from "../../../fmt/stream-format.js";
-import type { BinOp, BoolOp, Compare, IfExp, Named, Py, UnaryOp } from "../fmt/ast.js";
+import type { BinOp, BoolOp, Compare, IfExp, Lambda, Named, Py, UnaryOp } from "../fmt/ast.js";
 import { hard, space } from "../fmt/builders.js";
-import { group } from "../fmt/elements.js";
-import { binaryLike, formatExpr, maybeParenthesize, node, number, unaryNeedsLineBreak } from "../fmt/expr.js";
+import { fitsExpanded, group } from "../fmt/elements.js";
+import {
+  binaryLike,
+  formatExpr,
+  lambdaBody,
+  lambdaHeader,
+  lambdaParams,
+  maybeParenthesize,
+  node,
+  number,
+  unaryNeedsLineBreak,
+} from "../fmt/expr.js";
 import { part, ruffOf, sText, sToken } from "../fmt/sink.js";
 
 export const exprVia = {
+  "expr.lambdaParams": (c: number, ctx: StreamCtx<unknown>) => {
+    const { f, e } = ruffOf(ctx.tree.parent(c));
+    const l = e as Lambda;
+    if (l.params) part(lambdaParams(f, l, l.params));
+  },
+  // An assignment's lambda (`ctx.args.lambdaAssign`, from ruff's caller) fits its body expanded.
+  "expr.lambdaBody": (c: number, ctx: StreamCtx<unknown>) => {
+    const { f, e } = ruffOf(ctx.tree.parent(c));
+    const l = e as Lambda;
+    const header = lambdaHeader(f, l);
+    const body = lambdaBody(f, l, header);
+    part([header.length === 0 ? space : [], ctx.args?.lambdaAssign === true ? fitsExpanded(body) : body]);
+  },
   // A number read as ruff normalizes it; a pattern's number has no expression in the module's AST to look up.
   "expr.number": (c: number, ctx: StreamCtx<unknown>) => {
     sToken(c, number(ctx.tree.text(c)));

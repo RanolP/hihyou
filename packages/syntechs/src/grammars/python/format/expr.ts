@@ -35,5 +35,12 @@ export const expr = {
     space,
     $.children.at(2).andThen((o) => o.via("expr.ifOrelse")),
   ],
+  // The header's dangling comments print around the parameters and the body, where ruff splits them at `:`.
+  lambda: ($) => [
+    "lambda",
+    $.parameters.andThen((p) => p.via("expr.lambdaParams")),
+    ":",
+    $.body.via("expr.lambdaBody"),
+  ],
   named_expression: ($) => [$.name.via("expr.namedTarget"), ":=", $.value.via("expr.namedValue")],
 } satisfies Structure;
