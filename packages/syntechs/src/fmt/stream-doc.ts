@@ -52,6 +52,7 @@ import {
   LINE_SUFFIX,
   open,
   openAlign,
+  openFitsExpanded,
   openIndentIfBreak,
   openReservedSuffix,
   SOFT,
@@ -110,6 +111,11 @@ export function sDoc(doc: Doc): void {
           groups.get(slotB(h)) as number,
           isBroken(h) ? BROKEN : 0,
         );
+        emit(contentsOf(h));
+        close();
+        return;
+      case D_FITS_EXPANDED:
+        openFitsExpanded(slotB(h) === NONE ? -1 : (groups.get(slotB(h)) as number));
         emit(contentsOf(h));
         close();
         return;
@@ -229,9 +235,14 @@ function check(doc: Doc, seen: Set<Doc>): void {
         seen.add(d);
         walk(contentsOf(h));
         return true;
+      case D_FITS_EXPANDED:
+        if (slotB(h) !== NONE && !groups.has(slotB(h)))
+          throw new Unsupported("fitsExpanded on a group built after it");
+        seen.add(d);
+        walk(contentsOf(h));
+        return true;
       case D_BEST_FITTING:
       case D_BEST_FIT_PARENTHESIZE:
-      case D_FITS_EXPANDED:
         throw new Unsupported(kindOf(h));
       default:
         throw new Unsupported(`doc kind ${kind}`);

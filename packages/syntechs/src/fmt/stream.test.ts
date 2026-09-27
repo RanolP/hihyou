@@ -4,6 +4,7 @@ import {
   align,
   dedent,
   fill,
+  fitsExpanded,
   group,
   groupIfBreak,
   hardline,
@@ -14,6 +15,7 @@ import {
   lineSuffix,
   lineSuffixBoundary,
   literalToken,
+  softline,
   text,
 } from "./doc.js";
 import { print } from "./printer.js";
@@ -30,6 +32,7 @@ import {
   LINE_SUFFIX,
   open,
   openAlign,
+  openFitsExpanded,
   openIndentIfBreak,
   openReservedSuffix,
   printStream,
@@ -39,6 +42,7 @@ import {
   sLineSuffixBoundary,
   sLiteral,
   sRuffLine,
+  SOFT,
   sText,
 } from "./stream.js";
 
@@ -416,5 +420,41 @@ describe("printStream matches printer.ts under ruff's measure", () => {
       close();
     });
     expect(out).toBe("aaaa\nbcc\ndd\nxy\nz");
+  });
+
+  it("measures a fitsExpanded broken over lines of any width, counting only the text around it", () => {
+    const list = group([
+      text("["),
+      indent([softline, text("aaaaaaaaaaaa")]),
+      softline,
+      text("]"),
+    ]);
+    const doc = indent([
+      hardline,
+      group([text("f("), fitsExpanded(list), text(")"), line, text("x")]),
+    ]);
+    const out = ruffBoth(10, doc, () => {
+      open(INDENT);
+      sHardline();
+      open(GROUP);
+      sText("f(");
+      openFitsExpanded(-1);
+      open(GROUP);
+      sText("[");
+      open(INDENT);
+      sLine(SOFT);
+      sText("aaaaaaaaaaaa");
+      close();
+      sLine(SOFT);
+      sText("]");
+      close();
+      close();
+      sText(")");
+      sLine(0);
+      sText("x");
+      close();
+      close();
+    });
+    expect(out).toBe("\n  f([\n    aaaaaaaaaaaa\n  ]) x");
   });
 });

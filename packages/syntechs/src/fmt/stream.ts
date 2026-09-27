@@ -108,6 +108,23 @@ export function openIndentIfBreak(ref: number, negate = false): number {
 }
 /** Ruff's `conditional_group`: a group while the group `iRef` prints broken, else its contents in the mode around. */
 export const GROUP_IF_BROKEN = 43;
+/** Ruff's `fits_expanded`; see `openFitsExpanded`. `close` turns it `FITS_EXPANDED_BREAKS` when its contents break. */
+const FITS_EXPANDED = 44;
+const FITS_EXPANDED_BREAKS = 45;
+/** Whether the stream holds a `fitsExpanded`, so a measure tracks the indentation it enters. */
+let expandsSeen = false;
+
+/**
+ * Opens ruff's `fits_expanded`: while the group interval `whenFlat` (-1: always) prints flat, a group measuring
+ * it counts only the text around it, as if its contents were broken over lines of any width. Its breaks do not
+ * break the groups around; they fail the measure when the condition does not hold. Close it with `close`.
+ */
+export function openFitsExpanded(whenFlat: number): number {
+  expandsSeen = true;
+  // A group around it cannot be measured flat as one width.
+  hard++;
+  return open(FITS_EXPANDED, whenFlat);
+}
 // --- end ruff ---
 
 // The stream.
@@ -158,6 +175,7 @@ let ruffSpaces = false;
 
 export function resetStream(ruff = false): void {
   ruffSpaces = ruff;
+  expandsSeen = false;
   n = 0;
   strs.length = 0;
   mergeable = false;
@@ -356,6 +374,10 @@ export function close(): void {
   if (lastLine >= (iStart[k] as number)) flags |= TRAIL;
   const hasBp = bp > (oBp[op] as number);
   const hasHard = hard > (oHard[op] as number);
+  if (kind === FITS_EXPANDED) {
+    if (hasBp) iKind[k] = FITS_EXPANDED_BREAKS;
+    bp = oBp[op] as number;
+  }
   if (kind === GROUP || kind === GROUP_IF_BROKEN) {
     if (flags & BROKEN && !hasBp) bp++;
     if (hasBp) flags |= BROKEN;
@@ -461,6 +483,12 @@ export function printStream(layout: Layout): StreamPrinted {
   // Frames a measure enters past where printing stands.
   let lEnd = new Int32Array(64);
   let lMode = new Uint8Array(64);
+  // --- ruff ---
+  const overflows = expandsSeen;
+  // The indentation intervals a measure enters, innermost last: read only by the lines inside a fitsExpanded.
+  let xEnd = new Int32Array(16);
+  let xInd = new Int32Array(16);
+  // --- end ruff ---
 
   let remeasure = false;
   // While flushed line-suffix content prints: its base frame, below which a measure does not go, and the
@@ -492,6 +520,9 @@ export function printStream(layout: Layout): StreamPrinted {
     // Prettier's hasLineSuffix: a boundary fails the measure once a suffix is pending or was measured.
     let seenSuffix = suffixIn || sK.length > 0;
     suffixIn = false;
+    // Where the last fitsExpanded measured broken ends: before it, lines restart the width and none is checked.
+    let ovEnd = -1;
+    let xs = 0;
     for (;;) {
       while (ls > 0 && (lEnd[ls - 1] as number) <= i) ls--;
       let mode: number;
@@ -522,6 +553,8 @@ export function printStream(layout: Layout): StreamPrinted {
       if (i >= n) return true;
       let jumped = false;
       while (cur < m && iStart[cur] === i) {
+        // Past a fitsExpanded whose last line overflowed, anything but a breaking line fails.
+        if (width < 0 && i >= ovEnd) return false;
         const k = cur;
         const e = iEnd[k] as number;
         const kind = iKind[k] as number;
@@ -563,6 +596,13 @@ export function printStream(layout: Layout): StreamPrinted {
         } else if (kind === LITERAL_TOKEN) {
           if (ruff && mustBeFlat) return false;
           const s = strs[eStr[i] as number] as string;
+          if (i < ovEnd) {
+            width = lineWidth - textWidth(s.slice(s.lastIndexOf("\n") + 1));
+            i = e;
+            cur = iNext[k] as number;
+            jumped = true;
+            break;
+          }
           if (pending) width -= 1;
           return width - textWidth(s.slice(0, s.indexOf("\n"))) >= 0;
         } else if (kind === GROUP_IF_BROKEN) {
@@ -578,7 +618,55 @@ export function printStream(layout: Layout): StreamPrinted {
               lEnd[ls] = e;
               lMode[ls] = BREAK;
               ls++;
+              mode = BREAK;
             }
+          }
+        } else if (kind === FITS_EXPANDED || kind === FITS_EXPANDED_BREAKS) {
+          cur++;
+          const r = iRef[k] as number;
+          if (mode === FLAT && (r < 0 || modeOf(r) === FLAT)) {
+            if (e > i) {
+              if (ls === lEnd.length) {
+                lEnd = grow32(lEnd);
+                lMode = grow8(lMode);
+              }
+              lEnd[ls] = e;
+              lMode[ls] = BREAK;
+              ls++;
+              mode = BREAK;
+              if (e > ovEnd) ovEnd = e;
+            }
+          } else if (mode === FLAT && kind === FITS_EXPANDED_BREAKS) return false;
+        } else if (
+          overflows &&
+          (kind === INDENT ||
+            kind === ALIGN ||
+            kind === INDENT_IF_BROKEN ||
+            kind === INDENT_IF_FLAT)
+        ) {
+          cur++;
+          if (e > i) {
+            while (xs > 0 && (xEnd[xs - 1] as number) <= i) xs--;
+            const base =
+              xs > 0
+                ? (xInd[xs - 1] as number)
+                : (fInd[lp >= floor ? lp : fp - 1] as number);
+            let ind = base;
+            if (kind === INDENT) ind = deeper(base);
+            else if (kind === ALIGN)
+              ind = alignedFrom(base, alignSteps[iRef[k] as number] as number | string);
+            else {
+              const r = iRef[k] as number;
+              const c = r >= 0 ? modeOf(r) : mode;
+              if ((kind === INDENT_IF_BROKEN) === (c === BREAK)) ind = deeper(base);
+            }
+            if (xs === xEnd.length) {
+              xEnd = grow32(xEnd);
+              xInd = grow32(xInd);
+            }
+            xEnd[xs] = e;
+            xInd[xs] = ind;
+            xs++;
           }
         } else cur++;
       }
@@ -595,6 +683,11 @@ export function printStream(layout: Layout): StreamPrinted {
             if (ruff) width -= 1;
             else pending = true;
           }
+        } else if (i < ovEnd) {
+          while (xs > 0 && (xEnd[xs - 1] as number) <= i) xs--;
+          const ind =
+            xs > 0 ? (xInd[xs - 1] as number) : (fInd[lp >= floor ? lp : fp - 1] as number);
+          width = lineWidth - (indents[ind] as Indentation).length;
         } else return true;
       } else if ((strs[eStr[i] as number] as string).length > 0) {
         if (pending) {
@@ -603,7 +696,7 @@ export function printStream(layout: Layout): StreamPrinted {
         }
         width -= eW[i] as number;
       }
-      if (width < 0) return false;
+      if (width < 0 && i >= ovEnd) return false;
       i++;
     }
   }
@@ -872,6 +965,13 @@ export function printStream(layout: Layout): StreamPrinted {
               modeOf(iRef[k] as number) === BREAK ? decideGroup(k, tm) : tm;
             cur++;
             if (e > i) fpush(e, ti, g);
+            break;
+          }
+          case FITS_EXPANDED:
+          case FITS_EXPANDED_BREAKS: {
+            const r = iRef[k] as number;
+            if (r < 0 || modeOf(r) === FLAT) remeasure = true;
+            cur++;
             break;
           }
           default:
