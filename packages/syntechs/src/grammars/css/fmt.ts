@@ -629,19 +629,15 @@ export const customs = {
 
 /** CSS as prettier 3.9.9's postcss printer lays it out; the layouts are format.ts, generated into fmt.gen.ts. */
 export const css: Language<CssOptions> = {
-  ...defineLanguage(
-    grammar,
-    {
-      parser: language,
-      // What `meaning` reads whole: a string's quotes and escapes, and a name's identifier, are separate leaves.
-      atoms: ["string_value", "class_name", "plain_value", "color_value"],
-      lineComments: { js_comment: "//" },
-      defaults,
-      settings: prettierSettings,
-      normalize,
-      layoutBlind: true,
-    },
-    () => ({}),
-  ),
+  ...defineLanguage(grammar, {
+    parser: language,
+    // What `meaning` reads whole: a string's quotes and escapes, and a name's identifier, are separate leaves.
+    atoms: ["string_value", "class_name", "plain_value", "color_value"],
+    lineComments: { js_comment: "//" },
+    defaults,
+    settings: prettierSettings,
+    normalize,
+    layoutBlind: true,
+  }),
   stream: gen.css(customs),
 };

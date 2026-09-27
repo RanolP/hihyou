@@ -147,19 +147,15 @@ export function jsLanguage(
 ): Language<JsOptions> {
   const rules = jsRules();
   return {
-    ...defineLanguage(
-      g,
-      {
-        defaults: { ...defaults, ...overrides },
-        settings: prettierSettings,
-        parser: language,
-        atoms: jsAtoms,
-        normalize: jsNormalize,
-        lineComments: { comment: "//" } as never,
-        handleComment,
-      },
-      () => ({}),
-    ),
+    ...defineLanguage(g, {
+      defaults: { ...defaults, ...overrides },
+      settings: prettierSettings,
+      parser: language,
+      atoms: jsAtoms,
+      normalize: jsNormalize,
+      lineComments: { comment: "//" } as never,
+      handleComment,
+    }),
     stream: {
       rules,
       lists: new Set(),

@@ -24,8 +24,8 @@ import { lfAfter, newlineBetween } from "./text.js";
 import { type FormatTree, firstLeaf } from "./tree.js";
 
 /**
- * The stream path (see `stream.ts`) for the rules a formatter spec generates (`dsl/`): a rule appends to the stream instead of
- * returning a Doc, and `format` hands a language with `stream` rules to `formatStream`.
+ * What a rule reads as it prints: the rules a formatter spec generates (`dsl/`) append to the stream (see
+ * `stream.ts`), which `formatStream` prints.
  */
 export interface StreamCtx<O = unknown> {
   readonly tree: FormatTree;
@@ -143,11 +143,15 @@ export type StreamRule<O = unknown> = (node: number, ctx: StreamCtx<O>) => void;
 export interface StreamRules<O = unknown> {
   readonly rules: ReadonlyMap<string, StreamRule<O>>;
   readonly lists: ReadonlySet<StreamRule<O>>;
-  /** Appends comment `c` as printed, when it is not its source text (`LanguageSpec.printComment`). */
+  /**
+   * Appends comment `c` as printed, when it is not its source text (prettier re-indents a block comment whose
+   * lines all start with `*`).
+   */
   readonly printComment?: (c: number, ctx: StreamCtx<O>) => void;
   /**
-   * Whether `node`'s rule prints the node's comments itself (`LanguageSpec.printsOwnComments`), with
-   * `printLeadingComments` and `printTrailingComments`, so they can go inside what the rule wraps around them.
+   * Whether `node`'s rule prints the node's comments itself, with `printLeadingComments` and
+   * `printTrailingComments`, so they can go inside what the rule wraps around them (prettier's
+   * willPrintOwnComments: a JSX element's parentheses).
    */
   readonly printsOwnComments?: (node: number, ctx: StreamCtx<O>) => boolean;
   /**
@@ -159,7 +163,7 @@ export interface StreamRules<O = unknown> {
   readonly wrap?: (node: number, ctx: StreamCtx<O>, print: () => void, args: PrintArgs | undefined) => void;
 }
 
-/** `format`, over the stream rules of `base` (a language with `stream` rules). */
+/** `format`: lays `tree` out on the stream by the `stream` rules of `base`, and prints it. */
 export function formatStream<O>(
   tree: Tree,
   base: Language<O>,
@@ -167,12 +171,6 @@ export function formatStream<O>(
 ): Formatted {
   try {
     const language = base.stream;
-    if (!language) throw new Error("formatStream: a language without stream rules");
-    if (
-      (base.printComment && !language.printComment) ||
-      (base.printsOwnComments && !language.printsOwnComments)
-    )
-      throw new Error("formatStream: a language whose comment hooks have no stream form");
     const resolved: O = { ...base.defaults, ...options };
     const settings = base.settings(resolved);
     resetStream(settings.ruff === true);
@@ -227,7 +225,7 @@ export function formatStream<O>(
       tree,
       options: resolved,
       placement: comments,
-      // `printWithComments` of rules.ts.
+      // Prettier's printComments (main/comments/print.js).
       print(node, args) {
         if (ctx.ownsComments(node)) {
           printNode(node, args);

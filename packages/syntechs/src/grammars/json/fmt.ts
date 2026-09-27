@@ -59,7 +59,7 @@ export const number: StreamRule = (node, ctx) =>
 
 // The layouts are src/grammars/json/format.ts, generated into fmt.gen.ts.
 const define = (stream: StreamRules<JsonOptions>): Language<JsonOptions> => ({
-  ...defineLanguage(grammar, spec, () => ({})),
+  ...defineLanguage(grammar, spec),
   stream,
 });
 

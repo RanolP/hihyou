@@ -1,47 +1,31 @@
 import { describe, expect, it } from "vitest";
 import { parseTree } from "../core/index.js";
+import { json } from "../grammars/json/fmt.js";
 import { language as jsonParser } from "../grammars/json/index.js";
-import { check, type Normalize } from "./check.js";
-import { synthetic, text, token } from "./doc.js";
+import { check, identity, type Normalize } from "./check.js";
 import { format } from "./format.js";
-import {
-  type PrettierOptions,
-  prettierDefaults,
-  prettierSettings,
-} from "./options.js";
-import { defineLanguage, type Helpers } from "./rules.js";
+import type { Language } from "./rules.js";
+import { sText, sToken } from "./stream.js";
+import type { StreamRule } from "./stream-format.js";
 
-const grammar = {
-  kinds: ["document", "object", "pair", "array", "string", "number", "comment"],
-  tokens: ["{", "}", "[", "]", ",", ":"],
-  // `body` is not tree-sitter-json's: it gives the typecheck test a field that exists on a kind other than `pair`.
-  fields: { pair: ["key", "value"], document: ["body"] },
-  comments: ["comment"],
-} as const;
+type Json = Language<typeof json.defaults>;
 
-const spec = {
-  parser: jsonParser,
-  lineComments: { comment: "//" },
-  defaults: prettierDefaults,
-  settings: prettierSettings,
+/** JSON with `rules` over its own, and `spec` over its language fields. */
+const withRules = (
+  rules: Record<string, StreamRule>,
+  spec: Partial<Omit<Json, "stream">> = {},
+): Json => {
+  const merged = new Map(json.stream.rules);
+  for (const [k, r] of Object.entries(rules)) merged.set(k, r);
+  return { ...json, ...spec, stream: { ...json.stream, rules: merged } };
 };
 
-const rules = (h: Helpers<typeof grammar, PrettierOptions>) => ({
-  document: h.block(),
-  object: h.list({
-    open: "{",
-    close: "}",
-    sep: ",",
-    pad: true,
-    blankLines: "force",
-  }),
-  array: h.list({ open: "[", close: "]", sep: ",", blankLines: "ifBroken" }),
-  pair: h.seq(h.field("key"), ":", h.space, h.field("value")),
-});
-const plain = defineLanguage(grammar, spec, rules);
+const pairRule = json.stream.rules.get("pair") as StreamRule;
+const pairOf = (node: number, ctx: Parameters<StreamRule>[1]) =>
+  ctx.items(node) as [number, number];
 
 /** `format`, and what `check` finds wrong with its output (undefined when nothing is). */
-async function run(text: string, language = plain) {
+async function run(text: string, language: Json = json) {
   const tree = parseTree(jsonParser, text);
   const out = format(tree, language);
   if (!out.ok) throw new Error(out.detail);
@@ -68,7 +52,7 @@ describe("format", () => {
   it("anchors still land on their tokens after line breaks are rewritten as CRLF, so the cursor mapping survives endOfLine", async () => {
     const text = '{"a":[1,2], /* x\n y */ "b":"x"}';
     const tree = parseTree(jsonParser, text);
-    const out = format(tree, plain, {
+    const out = format(tree, json, {
       printWidth: 10,
       endOfLine: "crlf",
     });
@@ -82,38 +66,44 @@ describe("format", () => {
   });
 
   it("a rule that drops a token fails the check, so a layout that hides code cannot pass the tests", async () => {
-    const dropsColon = defineLanguage(grammar, spec, (h) => ({
-      ...rules(h),
-      pair: h.seq(h.field("key"), h.space, h.field("value")),
-    }));
+    const dropsColon = withRules({
+      pair: (node, ctx) => {
+        const [key, value] = pairOf(node, ctx);
+        ctx.print(key);
+        sText(" ");
+        ctx.print(value);
+      },
+    });
     expect((await run('{"a":1}', dropsColon)).problem).toBeDefined();
   });
 
   it("a rule that prints a token twice fails the check, so a layout that invents code cannot pass the tests", async () => {
-    const repeats = defineLanguage(grammar, spec, (h) => ({
-      ...rules(h),
-      number: (node, ctx) => [
-        token(node, ctx.tree.text(node)),
-        token(node, ctx.tree.text(node)),
-      ],
-    }));
+    const repeats = withRules({
+      number: (node, ctx) => {
+        sToken(node, ctx.tree.text(node));
+        sToken(node, ctx.tree.text(node));
+      },
+    });
     expect((await run("[1]", repeats)).problem).toBeDefined();
   });
 
   it("a rule that swaps two fields fails the check, so a layout that shows code that does not exist cannot pass the tests", async () => {
-    const swaps = defineLanguage(grammar, spec, (h) => ({
-      ...rules(h),
-      pair: h.seq(h.field("value"), ":", h.space, h.field("key")),
-    }));
+    const swaps = withRules({
+      pair: (node, ctx) => {
+        const [key, value] = pairOf(node, ctx);
+        ctx.print(value);
+        sText(": ");
+        ctx.print(key);
+      },
+    });
     expect((await run('{"a":1}', swaps)).problem).toBeDefined();
   });
 
   it("two tokens that trade texts in place fail the check, though each still covers its own range", async () => {
-    const trades = defineLanguage(grammar, spec, (h) => ({
-      ...rules(h),
+    const trades = withRules({
       number: (node, ctx) =>
-        token(node, ctx.tree.text(node) === "1" ? "2" : "1"),
-    }));
+        sToken(node, ctx.tree.text(node) === "1" ? "2" : "1"),
+    });
     expect((await run("[1,2]", trades)).problem).toBeDefined();
   });
 
@@ -123,24 +113,13 @@ describe("format", () => {
       tree.kindName(l.node) === "string" ? `s:${JSON.parse(l.text)}` : l.text,
     );
   const respells = (to: (source: string) => string) =>
-    defineLanguage(
-      grammar,
-      { ...spec, atoms: ["string"], normalize: cooked },
-      (h) => ({
-        ...rules(h),
-        string: (node, ctx) => token(node, to(ctx.tree.text(node))),
-      }),
+    withRules(
+      { string: (node, ctx) => sToken(node, to(ctx.tree.text(node))) },
+      { atoms: new Set(["string"]), normalize: cooked, layoutBlind: false },
     );
 
   it("a respelling that changes a string's cooked value fails the check, so a stylistic change that edits data cannot pass the tests", async () => {
-    expect(
-      (
-        await run(
-          '["a"]',
-          respells(() => '"b"'),
-        )
-      ).problem,
-    ).toBeDefined();
+    expect((await run('["a"]', respells(() => '"b"'))).problem).toBeDefined();
   });
 
   it("a respelling with the same cooked value is accepted and keeps its node's anchor, so a style option like singleQuote can apply", async () => {
@@ -156,14 +135,15 @@ describe("format", () => {
     expect(out.ok && out.anchors).toContainEqual({ from: [1, 9], to: [1, 4] });
   });
 
-  const semis = (normalize?: Normalize) =>
-    defineLanguage(
-      grammar,
-      { ...spec, ...(normalize && { normalize }) },
-      (h) => ({
-        ...rules(h),
-        pair: (node, ctx) => [rules(h).pair(node, ctx), synthetic(node, ",")],
-      }),
+  const semis = (normalize: Normalize) =>
+    withRules(
+      {
+        pair: (node, ctx) => {
+          pairRule(node, ctx);
+          sToken(node, ",", true);
+        },
+      },
+      { normalize, layoutBlind: false },
     );
 
   it("an inserted token the language calls optional passes the check and is anchored as synthetic to its node, so an added `,` maps back", async () => {
@@ -185,7 +165,7 @@ describe("format", () => {
   });
 
   it("an inserted token the language does not call optional fails the check, so invented code cannot pass the tests", async () => {
-    expect((await run('{"a":1}', semis())).problem).toBeDefined();
+    expect((await run('{"a":1}', semis(identity))).problem).toBeDefined();
   });
 
   it("an unparsable region is kept verbatim rather than rejected, so the rest of the file still formats", async () => {
@@ -217,51 +197,5 @@ describe("format", () => {
       text: "[\n  // none\n]\n",
       problem: undefined,
     });
-  });
-
-  it("a rule table naming a kind the grammar lacks fails typecheck", () => {
-    defineLanguage(grammar, spec, (h) => ({
-      ...rules(h),
-      // @ts-expect-error: `objekt` is not a kind of this grammar
-      objekt: h.verbatim(),
-    }));
-  });
-
-  it("a seq reading a field its kind lacks fails typecheck, instead of printing nothing for it at run time", () => {
-    defineLanguage(grammar, spec, (h) => ({
-      ...rules(h),
-      // @ts-expect-error: `body` is a field of `document`, not of `pair`
-      pair: h.seq(h.field("body")),
-    }));
-  });
-
-  it("a seq reaches children in no field by kind or by position, so such a child is printed rather than dropped", async () => {
-    const byKind = defineLanguage(grammar, spec, (h) => ({
-      ...rules(h),
-      document: h.seq({ kind: "object" }),
-    }));
-    const byPosition = defineLanguage(grammar, spec, (h) => ({
-      ...rules(h),
-      document: h.seq({ nth: 0 }),
-    }));
-    for (const language of [byKind, byPosition])
-      expect(await run('{"a" :1}', language)).toMatchObject({
-        ok: true,
-        text: '{ "a": 1 }\n',
-        problem: undefined,
-      });
-  });
-
-  it("args a rule passes to `print` reach the child's rule, so a parent can steer how a child prints", async () => {
-    const marks = defineLanguage(grammar, spec, (h) => ({
-      ...rules(h),
-      document: (node, ctx) =>
-        ctx.items(node).map((n) => ctx.print(n, { mark: "!" })),
-      number: (node, ctx, args) => [
-        token(node, ctx.tree.text(node)),
-        text(String(args?.["mark"] ?? "")),
-      ],
-    }));
-    expect(await run("1", marks)).toMatchObject({ ok: true, text: "1!\n" });
   });
 });
