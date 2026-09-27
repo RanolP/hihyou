@@ -3,14 +3,13 @@ import type { StreamCtx } from "../../../fmt/stream-format.js";
 import type { Frame } from "../../../fmt/dsl/runtime.js";
 import type { ClassDef, Decorator, FunctionDef, Lambda, Parameter, TypeAlias } from "../fmt/ast.js";
 import { writeAliasTypeParams } from "../fmt/stmt/assign.js";
-import { args, writeExpr, writeMaybeParenthesize, writeParameters } from "../fmt/expr.js";
+import { writeArgs, writeExpr, writeMaybeParenthesize, writeParameters } from "../fmt/expr.js";
 import {
   close,
   COLLAPSE,
   GROUP,
   HARD,
   open,
-  part,
   ruffOf,
   ruffStmtOf,
   sDsl,
@@ -116,7 +115,7 @@ export const stmtDefVia = {
       const dangling = f.comments.dangling(a);
       if (a.items.length === 0 && dangling.every((c) => c.line === "eol"))
         f.writeTrailing(dangling);
-      else part(args(f, a));
+      else writeArgs(f, a);
     }
   },
   // The comments after the colon, then the body.

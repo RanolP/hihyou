@@ -42,13 +42,11 @@ import {
 } from "./ast.js";
 import {
   blockIndent,
-  commaIn,
   EXPR,
   type Fmt,
   hard,
   type Level,
   PAREN,
-  soft,
   softBlockIndent,
   softOrSpace,
   space,
@@ -60,7 +58,6 @@ import type { Frame } from "../../../fmt/dsl/runtime.js";
 import {
   COLLAPSE,
   close as sClose,
-  dslPart,
   GROUP,
   open as sOpen,
   part,
@@ -862,11 +859,6 @@ export function writeArgs(f: Fmt, a: Arguments): void {
       () => writeArgumentItems(f, a),
       () => f.writeTok(a.close),
     );
-}
-
-/** `writeArgs` as a `Format`, for a caller still building one. */
-export function args(f: Fmt, a: Arguments): Format {
-  return record(() => writeArgs(f, a));
 }
 
 /** Ruff's frame of arguments: `items` between the brackets, or the dangling comments of an empty list. */
