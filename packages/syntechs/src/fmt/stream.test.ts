@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   type Doc,
+  align,
+  dedent,
   fill,
   group,
   hardline,
+  indent,
   line,
   lineSuffix,
   lineSuffixBoundary,
@@ -15,8 +18,10 @@ import {
   FILL,
   FILL_ITEM,
   GROUP,
+  INDENT,
   LINE_SUFFIX,
   open,
+  openAlign,
   printStream,
   resetStream,
   sHardline,
@@ -222,6 +227,32 @@ describe("printStream matches printer.ts", () => {
       },
     );
     expect(out).toBe("xa //\nb");
+  });
+
+  it("aligns past the enclosing indent and dedents back out of it, as prettier's align and dedent", () => {
+    const out = both(
+      80,
+      indent([
+        hardline,
+        align(3, [text("a"), hardline, text("b")]),
+        dedent([hardline, text("c")]),
+      ]),
+      () => {
+        open(INDENT);
+        sHardline();
+        openAlign(3);
+        sText("a");
+        sHardline();
+        sText("b");
+        close();
+        openAlign(-1);
+        sHardline();
+        sText("c");
+        close();
+        close();
+      },
+    );
+    expect(out).toBe("\n  a\n     b\nc");
   });
 });
 

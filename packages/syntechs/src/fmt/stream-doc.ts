@@ -1,5 +1,6 @@
 import {
   ALIGN as D_ALIGN,
+  alignOf,
   BEST_FIT_PARENTHESIZE as D_BEST_FIT_PARENTHESIZE,
   BEST_FITTING as D_BEST_FITTING,
   BREAK_PARENT as D_BREAK_PARENT,
@@ -46,6 +47,7 @@ import {
   INDENT,
   LINE_SUFFIX,
   open,
+  openAlign,
   SOFT,
   sBreakParent,
   sLine,
@@ -99,6 +101,11 @@ export function sDoc(doc: Doc): void {
         return;
       case D_LINE_SUFFIX:
         open(LINE_SUFFIX);
+        emit(contentsOf(h));
+        close();
+        return;
+      case D_ALIGN:
+        openAlign(alignOf(h));
         emit(contentsOf(h));
         close();
         return;
@@ -173,6 +180,7 @@ function check(doc: Doc, seen: Set<Doc>): void {
           throw new Unsupported("lineSuffix with reserved width");
       // falls through
       case D_INDENT:
+      case D_ALIGN:
         seen.add(d);
         walk(contentsOf(h));
         return true;
@@ -189,7 +197,6 @@ function check(doc: Doc, seen: Set<Doc>): void {
         walk(flatOf(h));
         return true;
       }
-      case D_ALIGN:
       case D_BEST_FITTING:
       case D_BEST_FIT_PARENTHESIZE:
       case D_FITS_EXPANDED:

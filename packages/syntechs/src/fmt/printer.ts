@@ -77,7 +77,7 @@ const ALL = 1;
 const OVERFLOW = 2;
 
 /** Prettier's indentation: each level an indent or an alignment, rendered to `value` spanning `length` columns. */
-interface Indentation {
+export interface Indentation {
   readonly value: string;
   readonly length: number;
   readonly queue: readonly (number | string | "indent")[];
@@ -89,7 +89,7 @@ interface Indentation {
 
 // Prettier's generateIndent: alignment runs are spaces, or with tabs one tab each once an indent follows them.
 // A negative step drops the innermost level instead (prettier's dedent).
-function render(
+export function render(
   from: Indentation,
   step: number | string | "indent",
   layout: Layout,

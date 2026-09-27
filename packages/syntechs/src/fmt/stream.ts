@@ -1,4 +1,8 @@
-import type { Layout } from "./printer.js";
+import {
+  type Indentation,
+  type Layout,
+  render as renderIndentation,
+} from "./printer.js";
 import { textWidth } from "./width.js";
 
 /**
@@ -9,7 +13,7 @@ import { textWidth } from "./width.js";
  * and whether it holds a forced break is known when it closes: measuring a group reads its own contents in O(1)
  * and scans only what follows it, up to the next line break.
  *
- * The semantics are `printer.ts`'s for the subset JSON builds (no align, best-fitting, literal lines or ruff
+ * The semantics are `printer.ts`'s for the subset JSON builds (no best-fitting, literal lines or ruff
  * measuring); `stream-format.ts` compares the two on the same input.
  */
 
@@ -59,6 +63,13 @@ let bndSfx = -1;
 /** The last line suffix opened where a flat measure reads it. */
 let lastSfx = -1;
 // --- end lineSuffixBoundary ---
+
+// --- align ---
+/** An interval kind: its contents at an alignment past the enclosing indentation (see `openAlign`). */
+export const ALIGN = 16;
+/** Each align interval's step, by the index its `iRef` holds. */
+const alignSteps: (number | string)[] = [];
+// --- end align ---
 
 const BREAK = 0;
 const FLAT = 1;
@@ -137,6 +148,7 @@ export function resetStream(ruff = false): void {
   bndM = -1;
   bndSfx = -1;
   lastSfx = -1;
+  alignSteps.length = 0;
 }
 
 function entry(kind: number, flag: number, str: number, node: number, w: number) {
@@ -264,6 +276,15 @@ export function open(kind: number, ref = -1, flags = 0): number {
   return m++;
 }
 
+/**
+ * Opens prettier's align: `n` spaces (or the string `n`) past the enclosing indentation, `-1` its innermost level
+ * dropped (dedent), `-Infinity` the root (dedentToRoot). Close it with `close`.
+ */
+export function openAlign(n: number | string): number {
+  alignSteps.push(n);
+  return open(ALIGN, alignSteps.length - 1);
+}
+
 /** Closes the innermost open interval. */
 export function close(): void {
   op--;
@@ -323,17 +344,31 @@ export function printStream(layout: Layout): StreamPrinted {
     throw new Error("printStream: reset the stream with the layout's ruff");
   if (op !== 0) throw new Error(`printStream: ${op} intervals left open`);
   const lineWidth = layout.lineWidth;
-  // Indentation by level: the stream has indents only, no alignment.
-  const indents: string[] = [""];
-  const indentOf = (level: number) => {
-    let s = indents[level];
-    if (s === undefined) {
-      s = layout.useTabs
-        ? "\t".repeat(level)
-        : " ".repeat(level * layout.indentWidth);
-      indents[level] = s;
+  // Indentations by id, as `printer.ts` builds them: each one step (an indent or an alignment) deeper than
+  // another, built once.
+  const indents: Indentation[] = [
+    { value: "", length: 0, queue: [], indented: -1, aligned: undefined },
+  ];
+  const deeper = (from: number): number => {
+    const f = indents[from] as Indentation;
+    if (f.indented < 0) {
+      indents.push(renderIndentation(f, "indent", layout));
+      f.indented = indents.length - 1;
     }
-    return s;
+    return f.indented;
+  };
+  const alignedFrom = (from: number, n: number | string): number => {
+    if (n === Number.NEGATIVE_INFINITY) return 0;
+    if (n === 0 || n === "") return from;
+    const f = indents[from] as Indentation;
+    f.aligned ??= new Map();
+    let id = f.aligned.get(n);
+    if (id === undefined) {
+      indents.push(renderIndentation(f, n, layout));
+      id = indents.length - 1;
+      f.aligned.set(n, id);
+    }
+    return id;
   };
 
   // A group's printed mode, by interval: 0 unset (read as flat), else mode + 1.
@@ -671,7 +706,7 @@ export function printStream(layout: Layout): StreamPrinted {
           }
           case INDENT:
             cur++;
-            if (e > i) fpush(e, ti + 1, tm);
+            if (e > i) fpush(e, deeper(ti), tm);
             break;
           case IF_BROKEN:
           case IF_FLAT: {
@@ -705,6 +740,15 @@ export function printStream(layout: Layout): StreamPrinted {
             if (e > i) fpush(e, ti, cm);
             break;
           }
+          case ALIGN:
+            cur++;
+            if (e > i)
+              fpush(
+                e,
+                alignedFrom(ti, alignSteps[iRef[k] as number] as number | string),
+                tm,
+              );
+            break;
           default:
             throw new Error(`printStream: unknown interval kind ${iKind[k]}`);
         }
@@ -731,10 +775,10 @@ export function printStream(layout: Layout): StreamPrinted {
           while (sK.length > 0) flushSuffixes();
           trimLineEnd();
           endLine();
-          const indentation = indentOf(fInd[fp - 1] as number);
-          current += indentation;
-          length += indentation.length;
-          column = (fInd[fp - 1] as number) * layout.indentWidth;
+          const indentation = indents[fInd[fp - 1] as number] as Indentation;
+          current += indentation.value;
+          length += indentation.value.length;
+          column = indentation.length;
         }
       } else {
         const s = strs[eStr[i] as number] as string;
