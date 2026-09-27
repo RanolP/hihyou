@@ -106,6 +106,20 @@ it("a typo'd kind, field, token, separator or option fails to typecheck, so a sp
   expect(specs).toBeTypeOf("function");
 });
 
+// An `.at` the IR loses prints the first child wherever the spec names a later one.
+it("`.at` reaches the IR, with a `.via` after it", () => {
+  const ir = format({
+    structure: {
+      object: ($) => $.children.at(1).andThen((c) => [space, c.via("second")]),
+    },
+  });
+  expect(ir.structure["object"]).toEqual({
+    t: "opt",
+    ref: { t: "ref", name: "children", at: 1 },
+    then: { t: "seq", parts: [expect.anything(), { t: "ref", name: "children", at: 1, via: "second" }] },
+  });
+});
+
 // A `.via` the IR loses prints the child by its own rule, silently skipping the custom its parent named.
 it("`.via` reaches the IR on a required field and inside `andThen`", () => {
   const ir = format({

@@ -33,12 +33,13 @@ type TokenOf<G extends Grammar> = G["tokens"][number];
 // ---- IR: what a spec is once called, plain data ----
 
 /**
- * A field of the node, or (`name` "children") its children in no field; `via`: printed by that custom rule in
- * place of its own.
+ * A field of the node, or (`name` "children") its children in no field; `at`: the one at that index among them;
+ * `via`: printed by that custom rule in place of its own.
  */
 export interface Ref {
   readonly t: "ref";
   readonly name: string;
+  readonly at?: number;
   readonly via?: string;
 }
 
@@ -139,8 +140,11 @@ export interface Node extends Piece<"node"> {
    */
   via(name: string): Node;
 }
-/** Several children, which only a list idiom (`sepBy`, `lines`) lays out. */
-export type List = Piece<"list">;
+/** Several children, which only a list idiom (`sepBy`, `lines`) lays out, or one of them by index. */
+export interface List extends Piece<"list"> {
+  /** The `i`th of the children, absent when there are fewer. */
+  at(i: number): Option<Node>;
+}
 /** A child that may be absent: `andThen` prints what `f` makes of it when present, and nothing otherwise. */
 export interface Option<A> {
   andThen<T>(f: (a: A) => T): Piece<{ opt: T }>;
@@ -313,21 +317,32 @@ function plain(c: unknown): Cond {
 }
 
 const refOf = (x: unknown): Ref => {
-  const { name, via, viaName } = x as { name: string; via?: unknown; viaName?: string };
-  const v = viaName ?? (typeof via === "string" ? via : undefined);
-  return v === undefined ? { t: "ref", name } : { t: "ref", name, via: v };
+  const r = x as { name: string; at?: unknown; atIndex?: number; via?: unknown; viaName?: string };
+  const at = r.atIndex ?? (typeof r.at === "number" ? r.at : undefined);
+  const via = r.viaName ?? (typeof r.via === "string" ? r.via : undefined);
+  return {
+    t: "ref",
+    name: r.name,
+    ...(at === undefined ? {} : { at }),
+    ...(via === undefined ? {} : { via }),
+  };
 };
 
-/** `$.<name>`, a `Node` and an `Option` at once; `viaName` holds its `.via`, since `via` is the method. */
-const nodeRef = (name: string, viaName?: string): unknown => ({
+/**
+ * `$.<name>` (or `.at(i)` of it), a `Node`, a `List` and an `Option` at once; `atIndex` and `viaName` hold its
+ * `.at` and `.via`, since those names are the methods.
+ */
+const nodeRef = (name: string, atIndex?: number, viaName?: string): unknown => ({
   t: "ref",
   name,
+  atIndex,
   viaName,
-  via: (v: string) => nodeRef(name, v),
+  at: (i: number) => nodeRef(name, i),
+  via: (v: string) => nodeRef(name, atIndex, v),
   andThen: (f: (a: unknown) => unknown): Tree => ({
     t: "opt",
-    ref: { t: "ref", name },
-    then: toTree(f(nodeRef(name, viaName))),
+    ref: refOf(nodeRef(name, atIndex)),
+    then: toTree(f(nodeRef(name, atIndex, viaName))),
   }),
 });
 

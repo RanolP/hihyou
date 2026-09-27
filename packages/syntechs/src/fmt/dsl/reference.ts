@@ -40,6 +40,7 @@ import {
   type FormatIR,
   type FrameWrap,
   frameWrap,
+  type Ref,
   type Tree,
   type Wrap,
 } from "./dsl.js";
@@ -146,8 +147,10 @@ export function flatten<O>(
       return tokenChild(t, n, text, nth);
     };
     const owner = danglingOwner(tree);
-    const refChild = (name: string) =>
-      name === "children" ? (listItems(ctx, n, name, kindHasFields)[0] ?? -1) : fieldChild(t, n, name);
+    const refChild = ({ name, at }: Ref) =>
+      at !== undefined || name === "children"
+        ? (listItems(ctx, n, name, kindHasFields)[at ?? 0] ?? -1)
+        : fieldChild(t, n, name);
     const dangling = () => {
       const cs = ctx.danglingComments(n);
       return cs;
@@ -165,12 +168,12 @@ export function flatten<O>(
           return;
         }
         case "ref": {
-          const c = refChild(x.name);
+          const c = refChild(x);
           if (c !== -1) child(c, x.via);
           return;
         }
         case "opt":
-          if (refChild(x.ref.name) !== -1) walk(x.then);
+          if (refChild(x.ref) !== -1) walk(x.then);
           return;
         case "space":
           out.push({ e: "space" });
