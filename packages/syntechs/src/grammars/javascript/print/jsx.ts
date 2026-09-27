@@ -2,26 +2,37 @@
 // character references included; tree-sitter splits it into `jsx_text` and `html_character_reference` nodes and
 // drops a blank run that holds a line break, so `jsxChildren` rebuilds it from those nodes and the gaps between.
 
-import {
-  conditionalGroup,
-  type Doc,
-  fill,
-  group,
-  hardline,
-  ifBreak,
-  indent,
-  isDocs,
-  join,
-  line,
-  lineSuffixBoundary,
-  literalToken,
-  softline,
-  synthetic,
-  text,
-  token,
-  willBreak,
-} from "../../../fmt/doc.js";
+import type { CustomRule } from "../../../fmt/dsl/runtime.js";
 import { nextLineEmpty } from "../../../fmt/text.js";
+import {
+  BROKEN,
+  capture,
+  close,
+  closeChoice,
+  closeState,
+  FILL,
+  FILL_ITEM,
+  GROUP,
+  IF_BROKEN,
+  IF_FLAT,
+  INDENT,
+  type JsStreamCtx,
+  jsCtx,
+  open,
+  openChoice,
+  openState,
+  type Part,
+  place,
+  SOFT,
+  sHardline,
+  sLine,
+  sLineSuffixBoundary,
+  sLiteral,
+  sText,
+  sToken,
+  willBreak,
+  withComments,
+} from "../sink.js";
 import { preferredQuote } from "./literals.js";
 import { needsParens, role } from "./parens.js";
 import {
@@ -29,7 +40,6 @@ import {
   CF,
   children as childrenOf,
   childWhere,
-  danglingComments,
   field,
   fields,
   first,
@@ -45,40 +55,16 @@ import {
   kind,
   lastChildWhere,
   named,
-  p,
   parent as parentOf,
   src,
-  t,
   unparen,
 } from "./util.js";
-import type { CustomRule } from "../../../fmt/dsl/runtime.js";
-import {
-  BROKEN,
-  close,
-  GROUP,
-  IF_BROKEN,
-  INDENT,
-  type JsStreamCtx,
-  jsCtx,
-  open,
-  SOFT,
-  sHardline,
-  sLine,
-  sLineSuffixBoundary,
-  sLiteral,
-  sText,
-  sToken,
-  withComments,
-} from "../sink.js";
 
 /** Options prettier's JSX printer reads that the rest of the JS printer does not. */
 type JsxOptions = JsOptions & {
   singleAttributePerLine?: boolean;
   jsxBracketSameLine?: boolean;
 };
-
-/** Prettier's `""` in a list of fill parts: the identity the separator clean-up compares against. */
-const EMPTY: Doc = [];
 
 /** One of Babel's JSX children: a JSXText (its raw text and the tree nodes it came from) or any other node. */
 type Child =
@@ -162,11 +148,27 @@ function isWhitespaceExpression(ctx: JsCtx, n: number): boolean {
 const isSelfClosing = (x: HasTree, n: number | undefined) =>
   kind(x, n) === "jsx_self_closing_element";
 
-const isEmptyish = (doc: Doc) =>
-  doc === EMPTY || (isDocs(doc) && doc.length === 0);
+/**
+ * A separator of prettier's JSX fill: `line`, `softline`, `hardline`, `ws` its jsxWhitespace
+ * (`ifBreak([rawJsxWhitespace, softline], " ")`), `wsHard` `[rawJsxWhitespace, hardline]`.
+ */
+type Sep = "line" | "softline" | "hardline" | "ws" | "wsHard";
+/** What a fill content writes: a token, or a printed child read by willBreak before it is placed. */
+type Atom = (() => void) | Part;
+/** A fill content, its atoms in order; `[]` is prettier's `""`, which the separator clean-up looks for. */
+type Content = readonly Atom[];
+type FillPart = Content | Sep;
 
-const isEmptyOrAnyLine = (doc: Doc) =>
-  doc === EMPTY || doc === line || doc === hardline || doc === softline;
+const isEmptyContent = (x: FillPart | undefined) =>
+  Array.isArray(x) && x.length === 0;
+
+const isEmptyOrAnyLine = (x: FillPart) =>
+  isEmptyContent(x) || x === "line" || x === "softline" || x === "hardline";
+
+const breaks = (x: FillPart) =>
+  typeof x === "string"
+    ? x === "hardline" || x === "wsHard"
+    : x.some((a) => typeof a !== "function" && willBreak(a));
 
 function separatorNoWhitespace(
   x: HasTree,
@@ -174,11 +176,11 @@ function separatorNoWhitespace(
   word: string,
   child: Child,
   next: Child | undefined,
-): Doc {
-  if (fbt) return EMPTY;
+): Sep | undefined {
+  if (fbt) return undefined;
   if (isSelfClosing(x, child.node) || isSelfClosing(x, next?.node))
-    return word.length === 1 ? softline : hardline;
-  return softline;
+    return word.length === 1 ? "softline" : "hardline";
+  return "softline";
 }
 
 function separatorWithWhitespace(
@@ -187,13 +189,13 @@ function separatorWithWhitespace(
   word: string,
   child: Child,
   next: Child | undefined,
-): Doc {
-  if (fbt) return hardline;
+): Sep {
+  if (fbt) return "hardline";
   if (word.length === 1)
     return isSelfClosing(x, child.node) || isSelfClosing(x, next?.node)
-      ? hardline
-      : softline;
-  return hardline;
+      ? "hardline"
+      : "softline";
+  return "hardline";
 }
 
 /** The node a word of a JSXText starts in, for its token to point at; none for a text of gaps only. */
@@ -211,18 +213,18 @@ function pieceAt(
 
 /** Prettier's printJsxChildren: fill parts, content at even indexes and separators at odd ones. */
 function printChildren(
-  ctx: JsCtx,
+  s: JsStreamCtx,
   children: readonly Child[],
-  whitespace: Doc,
   fbt: boolean,
-): Doc[] {
-  const parts: Doc[] = [EMPTY];
-  const push = (doc: Doc) => {
-    parts.push([parts.pop() as Doc, doc]);
+): FillPart[] {
+  const ctx = s.js;
+  const parts: FillPart[] = [[]];
+  const push = (atom: Atom) => {
+    parts.push([...(parts.pop() as Content), atom]);
   };
-  const pushLine = (doc: Doc) => {
-    if (doc === EMPTY) return;
-    parts.push(doc, EMPTY);
+  const pushLine = (sep: Sep | undefined) => {
+    if (sep === undefined) return;
+    parts.push(sep, []);
   };
   for (const [i, child] of children.entries()) {
     const next = children[i + 1];
@@ -239,7 +241,7 @@ function printChildren(
           pushLine(
             space.includes("\n")
               ? separatorWithWhitespace(ctx, fbt, words[0] ?? "", child, next)
-              : whitespace,
+              : "ws",
           );
         }
         let endWhitespace: string | undefined;
@@ -249,10 +251,14 @@ function printChildren(
         }
         if (words.length === 0) continue;
         for (const [j, word] of words.entries()) {
-          if (j % 2 === 1) pushLine(line);
+          if (j % 2 === 1) pushLine("line");
           else {
             const anchor = pieceAt(child, offset);
-            push(anchor !== undefined ? token(anchor, word) : text(word));
+            push(
+              anchor !== undefined
+                ? () => sToken(anchor, word)
+                : () => sText(word),
+            );
             lastWord = word;
           }
           offset += word.length;
@@ -261,31 +267,64 @@ function printChildren(
           pushLine(
             endWhitespace.includes("\n")
               ? separatorWithWhitespace(ctx, fbt, lastWord, child, next)
-              : whitespace,
+              : "ws",
           );
         else pushLine(separatorNoWhitespace(ctx, fbt, lastWord, child, next));
       } else if (raw.includes("\n")) {
         if ((raw.match(/\n/g) as RegExpMatchArray).length > 1)
-          pushLine(hardline);
-      } else pushLine(whitespace);
+          pushLine("hardline");
+      } else pushLine("ws");
     } else {
-      push(p(ctx, child.node));
+      const node = child.node;
+      push(capture(() => s.print(node)));
       if (next !== undefined && isMeaningfulText(next)) {
         const firstWord =
           (next.text as string)
             .replace(JSX_TRIM, "")
             .split(JSX_WHITESPACE)[0] ?? "";
         pushLine(separatorNoWhitespace(ctx, fbt, firstWord, child, next));
-      } else pushLine(hardline);
+      } else pushLine("hardline");
     }
   }
   return parts;
 }
 
+/** Writes fill part `x`; `raw` writes the element's rawJsxWhitespace, `{" "}`. */
+function writePart(x: FillPart, raw: () => void): void {
+  switch (x) {
+    case "line":
+      sLine(0);
+      return;
+    case "softline":
+      sLine(SOFT);
+      return;
+    case "hardline":
+      sHardline();
+      return;
+    case "ws":
+      within(IF_BROKEN, () => {
+        raw();
+        sLine(SOFT);
+      });
+      within(IF_FLAT, () => sText(" "));
+      return;
+    case "wsHard":
+      raw();
+      sHardline();
+      return;
+    default:
+      for (const a of x) {
+        if (typeof a === "function") a();
+        else place(a);
+      }
+  }
+}
+
 /** Prettier's printJsxElementInternal. */
-function printElementInternal(n: number, ctx: JsCtx): Doc {
-  const open = field(ctx, n, "open_tag") as number;
-  const close = field(ctx, n, "close_tag") as number;
+function sElementInternal(s: JsStreamCtx, n: number): void {
+  const ctx = s.js;
+  const open0 = field(ctx, n, "open_tag") as number;
+  const close0 = field(ctx, n, "close_tag") as number;
   let children = jsxChildren(ctx, n);
   const only = children[0];
   if (
@@ -293,11 +332,14 @@ function printElementInternal(n: number, ctx: JsCtx): Doc {
     (children.length === 1 &&
       only?.text !== undefined &&
       !isMeaningfulText(only))
-  )
-    return [p(ctx, open), p(ctx, close)];
+  ) {
+    s.print(open0);
+    s.print(close0);
+    return;
+  }
 
-  const openingLines = p(ctx, open);
-  const closingLines = p(ctx, close);
+  const openingLines = capture(() => s.print(open0));
+  const closingLines = capture(() => s.print(close0));
 
   if (
     only?.node !== undefined &&
@@ -305,8 +347,12 @@ function printElementInternal(n: number, ctx: JsCtx): Doc {
     children.length === 1
   ) {
     const e = unparen(ctx, first(ctx, only.node) ?? only.node);
-    if (kind(ctx, e) === "template_string" || isTaggedTemplate(ctx, e))
-      return [openingLines, p(ctx, only.node), closingLines];
+    if (kind(ctx, e) === "template_string" || isTaggedTemplate(ctx, e)) {
+      place(openingLines);
+      s.print(only.node);
+      place(closingLines);
+      return;
+    }
   }
 
   children = children.map((c) =>
@@ -323,7 +369,8 @@ function printElementInternal(n: number, ctx: JsCtx): Doc {
         kind(ctx, c.node) === "jsx_expression" &&
         kind(ctx, first(ctx, c.node)) !== "spread_element",
     ).length > 1;
-  const containsMultipleAttributes = fields(ctx, open, "attribute").length > 1;
+  const containsMultipleAttributes =
+    fields(ctx, open0, "attribute").length > 1;
 
   let forcedBreak =
     willBreak(openingLines) ||
@@ -331,18 +378,15 @@ function printElementInternal(n: number, ctx: JsCtx): Doc {
     containsMultipleAttributes ||
     containsMultipleExpressions;
 
-  const rawWhitespace = synthetic(
-    n,
-    ctx.options.singleQuote ? "{' '}" : '{" "}',
-  );
-  const whitespace = ifBreak([rawWhitespace, softline], text(" "));
-  const name = field(ctx, open, "name");
+  const rawText = ctx.options.singleQuote ? "{' '}" : '{" "}';
+  const raw = () => sToken(n, rawText, true);
+  const name = field(ctx, open0, "name");
   const fbt =
     name !== undefined &&
     kind(ctx, name) === "identifier" &&
     src(ctx, name) === "fbt";
 
-  const parts = printChildren(ctx, children, whitespace, fbt);
+  const parts = printChildren(s, children, fbt);
   const containsText = children.some(isMeaningfulText);
 
   // Multiple whitespace elements can end up with empty content between them: drop the empty ones and the soft
@@ -351,17 +395,17 @@ function printElementInternal(n: number, ctx: JsCtx): Doc {
     const a = parts[i];
     const b = parts[i + 1];
     const c = parts[i + 2];
-    const pairOfEmpty = a === EMPTY && b === EMPTY;
-    const pairOfHardlines = a === hardline && b === EMPTY && c === hardline;
+    const pairOfEmpty = isEmptyContent(a) && isEmptyContent(b);
+    const pairOfHardlines =
+      a === "hardline" && isEmptyContent(b) && c === "hardline";
     const lineThenWhitespace =
-      (a === softline || a === hardline) && b === EMPTY && c === whitespace;
+      (a === "softline" || a === "hardline") && isEmptyContent(b) && c === "ws";
     const whitespaceThenLine =
-      a === whitespace && b === EMPTY && (c === softline || c === hardline);
-    const doubleWhitespace =
-      a === whitespace && b === EMPTY && c === whitespace;
+      a === "ws" && isEmptyContent(b) && (c === "softline" || c === "hardline");
+    const doubleWhitespace = a === "ws" && isEmptyContent(b) && c === "ws";
     const hardAndSoft =
-      (a === softline && b === EMPTY && c === hardline) ||
-      (a === hardline && b === EMPTY && c === softline);
+      (a === "softline" && isEmptyContent(b) && c === "hardline") ||
+      (a === "hardline" && isEmptyContent(b) && c === "softline");
     if (
       (pairOfHardlines && containsText) ||
       pairOfEmpty ||
@@ -373,11 +417,12 @@ function printElementInternal(n: number, ctx: JsCtx): Doc {
     else if (whitespaceThenLine) parts.splice(i + 1, 2);
   }
 
-  while (parts.length > 0 && isEmptyOrAnyLine(parts.at(-1) as Doc)) parts.pop();
+  while (parts.length > 0 && isEmptyOrAnyLine(parts.at(-1) as FillPart))
+    parts.pop();
   while (
     parts.length > 1 &&
-    isEmptyOrAnyLine(parts[0] as Doc) &&
-    isEmptyOrAnyLine(parts[1] as Doc)
+    isEmptyOrAnyLine(parts[0] as FillPart) &&
+    isEmptyOrAnyLine(parts[1] as FillPart)
   ) {
     parts.shift();
     parts.shift();
@@ -385,44 +430,74 @@ function printElementInternal(n: number, ctx: JsCtx): Doc {
 
   // The children as printed when the element breaks: JSX whitespace that would land at a line's edge prints
   // as `{" "}`, keeping every separator at an odd index as fill needs.
-  const multiline: Doc[] = [EMPTY];
-  const append = (doc: Doc) => multiline.push([multiline.pop() as Doc, doc]);
+  const multiline: FillPart[] = [[]];
+  const append = (x: Content) =>
+    multiline.push([...(multiline.pop() as Content), ...x]);
   for (const [i, child] of parts.entries()) {
-    if (child === whitespace) {
-      if (i === 1 && isEmptyish(parts[0] as Doc)) {
+    if (child === "ws") {
+      if (i === 1 && isEmptyContent(parts[0])) {
         if (parts.length === 2) {
-          append(rawWhitespace);
+          append([raw]);
           continue;
         }
-        multiline.push([rawWhitespace, hardline], EMPTY);
+        multiline.push("wsHard", []);
         continue;
       }
       if (i === parts.length - 1) {
-        append(rawWhitespace);
+        append([raw]);
         continue;
       }
-      if (parts[i - 1] === EMPTY && parts[i - 2] === hardline) {
-        append(rawWhitespace);
+      if (isEmptyContent(parts[i - 1]) && parts[i - 2] === "hardline") {
+        append([raw]);
         continue;
       }
     }
-    if (i % 2 === 0) append(child);
-    else multiline.push(child, EMPTY);
-    if (willBreak(child)) forcedBreak = true;
+    if (i % 2 === 0) append(child as Content);
+    else multiline.push(child, []);
+    if (breaks(child)) forcedBreak = true;
   }
 
-  const content = containsText ? fill(multiline) : group(multiline, true);
-  const multiLineElem = group([
-    openingLines,
-    indent([hardline, content]),
-    hardline,
-    closingLines,
-  ]);
-  if (forcedBreak) return multiLineElem;
-  return conditionalGroup([
-    group([openingLines, ...parts, closingLines]),
-    multiLineElem,
-  ]);
+  const multiLineElem = () =>
+    within(GROUP, () => {
+      place(openingLines);
+      within(INDENT, () => {
+        sHardline();
+        if (containsText) {
+          open(FILL);
+          for (const [i, x] of multiline.entries()) {
+            if (i % 2 === 0) within(FILL_ITEM, () => writePart(x, raw));
+            else writePart(x, raw);
+          }
+          close();
+        } else
+          within(
+            GROUP,
+            () => {
+              for (const x of multiline) writePart(x, raw);
+            },
+            -1,
+            BROKEN,
+          );
+      });
+      sHardline();
+      place(closingLines);
+    });
+  if (forcedBreak) {
+    multiLineElem();
+    return;
+  }
+  openChoice(false);
+  openState();
+  within(GROUP, () => {
+    place(openingLines);
+    for (const x of parts) writePart(x, raw);
+    place(closingLines);
+  });
+  closeState();
+  openState();
+  multiLineElem();
+  closeState();
+  closeChoice();
 }
 
 const NO_WRAP_PARENTS = new Set([
@@ -446,25 +521,6 @@ function shouldBreakElement(ctx: JsCtx, n: number): boolean {
     return false;
   return kind(ctx, role(ctx, arg.parent as number).parent) === "jsx_expression";
 }
-
-/** Prettier's printJsxElement with maybeWrapJsxElementInParens. */
-/** Prints its own comments (see `printsOwnComments` in fmt.ts), so they sit inside the parentheses. */
-const element: JsRule = (n, ctx) => {
-  const elem = ctx.withComments(n, printElementInternal(n, ctx));
-  const parent = role(ctx, n).parent;
-  if (parent === undefined || NO_WRAP_PARENTS.has(kind(ctx, parent)))
-    return elem;
-  const parens = needsParens(n, ctx);
-  return group(
-    [
-      parens ? [] : ifBreak(synthetic(n, "(")),
-      indent([softline, elem]),
-      softline,
-      parens ? [] : ifBreak(synthetic(n, ")")),
-    ],
-    shouldBreakElement(ctx, n),
-  );
-};
 
 /** Prettier's printJsxOpeningElement; a self-closing element is its own opening element. */
 function sOpening(s: JsStreamCtx, n: number, selfClosing: boolean): void {
@@ -639,8 +695,8 @@ const tokOf = (ctx: JsCtx, c: number | undefined) => {
 };
 
 /** What `fn` writes inside an interval of `kind`. */
-function within(kind: number, fn: () => void, ref = -1): void {
-  open(kind, ref);
+function within(kind: number, fn: () => void, ref = -1, flags = 0): void {
+  open(kind, ref, flags);
   fn();
   close();
 }
@@ -850,6 +906,10 @@ export const jsxCustoms = {
   jsxClosing: closing,
   jsxAttribute: attribute,
   jsxExpression: expression,
+  jsxElement: (n, sctx) => {
+    const s = jsCtx(sctx);
+    sElement(s, n, () => sElementInternal(s, n));
+  },
   jsxOpening: (n, sctx) => sOpening(jsCtx(sctx), n, false),
   jsxSelfClosing: (n, sctx) => {
     const s = jsCtx(sctx);
@@ -857,6 +917,4 @@ export const jsxCustoms = {
   },
 } satisfies Record<string, CustomRule<JsOptions>>;
 
-export const jsxRules: Record<string, JsRule> = {
-  jsx_element: element,
-};
+export const jsxRules: Record<string, JsRule> = {};

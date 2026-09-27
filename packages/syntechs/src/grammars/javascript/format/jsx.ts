@@ -8,4 +8,5 @@ export const jsx = {
   jsx_expression: () => custom("jsxExpression"),
   jsx_opening_element: () => custom("jsxOpening"),
   jsx_self_closing_element: () => custom("jsxSelfClosing"),
+  jsx_element: () => custom("jsxElement"),
 } satisfies JsStructure;
