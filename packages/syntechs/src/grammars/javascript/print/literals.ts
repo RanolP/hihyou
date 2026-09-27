@@ -38,6 +38,7 @@ import {
   unparen,
 } from "./util.js";
 import type { CustomRule } from "../../../fmt/dsl/runtime.js";
+import { jsCtx, sToken } from "../sink.js";
 import type { JsOptions } from "./util.js";
 
 const DOUBLE = '"';
@@ -118,16 +119,14 @@ const string: JsRule = (node, ctx) => {
     : token(node, printed);
 };
 
-const number: JsRule = (node, ctx) => token(node, printNumber(src(ctx, node)));
+const number: CustomRule<JsOptions> = (node, ctx) =>
+  sToken(node, printNumber(src(jsCtx(ctx).js, node)));
 
-const regex: JsRule = (node, ctx) => {
-  const flags = field(ctx, node, "flags");
-  const parts: Doc[] = children(ctx, node).map((c) =>
-    c === flags
-      ? token(c, [...src(ctx, c)].sort().join(""))
-      : token(c, src(ctx, c)),
-  );
-  return parts;
+const regex: CustomRule<JsOptions> = (node, ctx) => {
+  const js = jsCtx(ctx).js;
+  const flags = field(js, node, "flags");
+  for (const c of children(js, node))
+    sToken(c, c === flags ? [...src(js, c)].sort().join("") : src(js, c));
 };
 
 // Prettier's getAlignmentSize and getIndentSize (utilities/get-alignment-size.js, get-indent-size.js).
@@ -329,11 +328,12 @@ export function printComment(c: number, ctx: JsCtx): Doc {
 }
 
 /** The customs format/literals.ts names, by the names its spec gives them. */
-export const literalCustoms = {} satisfies Record<string, CustomRule<JsOptions>>;
+export const literalCustoms = {
+  number,
+  regex,
+} satisfies Record<string, CustomRule<JsOptions>>;
 
 export const literalRules: Record<string, JsRule> = {
   string,
-  number,
-  regex,
   template_string: templateString,
 };
