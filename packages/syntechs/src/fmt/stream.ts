@@ -1692,8 +1692,15 @@ export function printStream(layout: Layout): StreamPrinted {
             jumped = true;
             break;
           case FILL:
-            cur++;
-            if (e > i) fpush(e, ti, tm);
+            if (e > i) {
+              cur++;
+              fpush(e, ti, tm);
+            } else {
+              // Empty, it has no frame of its own, and its items would decide the separator mode of the frame
+              // around; it prints nothing.
+              cur = iNext[k] as number;
+              jumped = true;
+            }
             break;
           case FILL_ITEM: {
             if (tm >= FORCED_BREAK) {

@@ -203,6 +203,21 @@ describe("printStream matches printer.ts", () => {
     expect(out).toBe("aaaa\nb ");
   });
 
+  it("leaves the group around an empty fill in the mode it decided, not the empty item's separator mode", () => {
+    const out = both(4, group([fill([[]]), text("t0"), line, text("t1")]), () => {
+      open(GROUP);
+      open(FILL);
+      open(FILL_ITEM);
+      close();
+      close();
+      sText("t0");
+      sLine(0);
+      sText("t1");
+      close();
+    });
+    expect(out).toBe("t0\nt1");
+  });
+
   it("prints a line suffix queued inside a line suffix before the line break", () => {
     const out = both(
       80,
