@@ -1,10 +1,20 @@
 // The customs expr-access.ts's `.via`s name.
 import type { StreamCtx } from "../../../fmt/stream-format.js";
-import type { Attribute, Call, Expr, Py, Slice, Subscript } from "../fmt/ast.js";
+import type { Attribute, Call, Expr, Py, Sequence, Slice, Subscript } from "../fmt/ast.js";
 import { type Fmt, hard, soft } from "../fmt/builders.js";
 import type { Comment } from "../fmt/comments.js";
 import type { Format } from "../fmt/elements.js";
-import { args, type Chain, chainValue, formatExpr, isCallLike, node, writeExpr } from "../fmt/expr.js";
+import {
+  args,
+  type Chain,
+  chainValue,
+  formatExpr,
+  isCallLike,
+  node,
+  type TupleMode,
+  writeExpr,
+  writeTuple,
+} from "../fmt/expr.js";
 import { COLLAPSE, HARD, part, ruffOf, sLine, sText } from "../fmt/sink.js";
 import { startOf, tokens } from "../fmt/trivia.js";
 
@@ -165,6 +175,10 @@ export const exprAccessVia = {
     const { f, e } = ruffOf(ctx.tree.parent(c));
     const s = e as Subscript;
     part([f.tok(s.open), subscriptContent(f, s), f.tok(s.close)]);
+  },
+  "access.tuple": (n: number, ctx: StreamCtx<unknown>) => {
+    const { f, e } = ruffOf(n);
+    writeTuple(f, e as Sequence, (ctx.args?.tuple as TupleMode | undefined) ?? "default");
   },
   "access.keywordValue": (c: number) => {
     const { f, e } = ruffOf(c);

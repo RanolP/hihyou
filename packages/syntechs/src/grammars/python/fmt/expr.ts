@@ -813,7 +813,10 @@ function writeFields(f: Fmt, e: Expr, o: Opts): void {
       return;
     }
     case "Tuple":
-      writeTuple(f, e, o.tuple ?? "default");
+      // A bare `a, b` of its own node prints by its rule, given the mode.
+      if (["expression_list", "pattern_list"].includes(f.tree.kindName(e.ts)))
+        sink.sDsl(e.ts, { tuple: o.tuple ?? "default" });
+      else writeTuple(f, e, o.tuple ?? "default");
       return;
     case "List":
     case "Set":
@@ -1127,7 +1130,8 @@ function writeSequence(f: Fmt, e: Sequence, comma: (after: number) => void): voi
   );
 }
 
-function writeTuple(f: Fmt, e: Sequence, mode: TupleMode): void {
+/** Ruff's tuple layout; `expression_list` and `pattern_list` reach it through their rule's custom. */
+export function writeTuple(f: Fmt, e: Sequence, mode: TupleMode): void {
   const cs = f.comments;
   const dangling = cs.dangling(e);
   const { open: lp, close: rp } = e;
