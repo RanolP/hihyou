@@ -267,6 +267,8 @@ type Pat = {
   readonly start: number;
   readonly end: number;
   paren?: { open: number; close: number };
+  /** The `case_pattern` holding the pattern, whose rule prints it; none past the parentheses of `(p)`. */
+  cp?: number;
 } & (
   | { k: "expr"; e: Expr; capture: boolean }
   | { k: "neg"; minus: number; e: Expr }
@@ -347,8 +349,11 @@ export function readPattern(f: Fmt, n: number): Pat {
   for (const x of cs)
     if (kind(x) === "ERROR" || t.missing(x)) unsupportedPattern(f, x);
   switch (kind(n)) {
-    case "case_pattern":
-      return readGroup(f, n, cs);
+    case "case_pattern": {
+      const p = readGroup(f, n, cs);
+      if (p.paren === undefined) p.cp = n;
+      return p;
+    }
     case "union_pattern": {
       const bars = cs.filter((x) => kind(x) === "|");
       const items: Pat[] = [];
@@ -570,10 +575,12 @@ export function pattern(
 ): Format {
   const parenthesize =
     parens === "preserve" ? p.paren !== undefined : parens === "always";
-  if (!parenthesize) return patternFields(f, p);
+  const fields = () =>
+    p.cp !== undefined ? dslPart(p.cp) : patternFields(f, p);
+  if (!parenthesize) return fields();
   const open = p.paren ? f.tok(p.paren.open) : synthetic(p.node, "(");
   const close = p.paren ? f.tok(p.paren.close) : synthetic(p.node, ")");
-  return f.parenthesized(open, () => patternFields(f, p), close);
+  return f.parenthesized(open, fields, close);
 }
 
 function patternFields(f: Fmt, p: Pat): Format {

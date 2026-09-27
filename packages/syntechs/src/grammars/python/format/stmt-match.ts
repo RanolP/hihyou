@@ -18,6 +18,8 @@ export const stmtMatch = {
     ":",
     $.consequence.via("match.caseBody"),
   ],
+  // A wildcard, a negative number (`-` and the number), or one pattern; a `(p)` tuple's parentheses are p's own.
+  case_pattern: ($) => ["_", "-", $.children.andThen((p) => p.via("match.pattern"))],
   as_pattern: ($) => [
     $.children.at(0).andThen((p) => p.via("match.pattern")),
     space,
