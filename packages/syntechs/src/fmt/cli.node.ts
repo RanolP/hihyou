@@ -13,24 +13,48 @@ import { extname, join } from "node:path";
 import type { Language as Grammar } from "../core/language.js";
 import type { Language } from "./rules.js";
 
+// Each import is a literal specifier, so a bundler can follow it (the bench runs this entry bundled).
+type Load<T> = () => Promise<T>;
 interface Spec {
-  grammar: string;
-  fmtDir: string;
+  grammar: Load<{ language: Grammar }>;
+  fmt: Load<Record<string, unknown>>;
   export: string;
 }
 
+const javascript: Spec = {
+  grammar: () => import("../grammars/javascript/index.js"),
+  fmt: () => import("../grammars/javascript/fmt.js"),
+  export: "javascript",
+};
+const typescript = () => import("../grammars/typescript/fmt.js");
 const EXT: Record<string, Spec> = {
-  ".json": { grammar: "json", fmtDir: "json", export: "json" },
-  ".css": { grammar: "css", fmtDir: "css", export: "css" },
-  ".js": { grammar: "javascript", fmtDir: "javascript", export: "javascript" },
-  ".jsx": {
-    grammar: "javascript",
-    fmtDir: "javascript",
-    export: "javascript",
+  ".json": {
+    grammar: () => import("../grammars/json/index.js"),
+    fmt: () => import("../grammars/json/fmt.js"),
+    export: "json",
   },
-  ".ts": { grammar: "typescript", fmtDir: "typescript", export: "typescript" },
-  ".tsx": { grammar: "tsx", fmtDir: "typescript", export: "tsx" },
-  ".py": { grammar: "python", fmtDir: "python", export: "python" },
+  ".css": {
+    grammar: () => import("../grammars/css/index.js"),
+    fmt: () => import("../grammars/css/fmt.js"),
+    export: "css",
+  },
+  ".js": javascript,
+  ".jsx": javascript,
+  ".ts": {
+    grammar: () => import("../grammars/typescript/index.js"),
+    fmt: typescript,
+    export: "typescript",
+  },
+  ".tsx": {
+    grammar: () => import("../grammars/tsx/index.js"),
+    fmt: typescript,
+    export: "tsx",
+  },
+  ".py": {
+    grammar: () => import("../grammars/python/index.js"),
+    fmt: () => import("../grammars/python/fmt.js"),
+    export: "python",
+  },
 };
 
 const dir = process.argv[2];
@@ -51,29 +75,21 @@ enableCompileCache();
 const { parseTree } = await import("../core/index.js");
 const { format } = await import("./format.js");
 
-const grammars = new Map<string, Grammar>();
-const langs = new Map<string, Language<unknown> | undefined>();
+const loaded = new Map<
+  Spec,
+  { grammar: Grammar; lang: Language<unknown> | undefined }
+>();
 const writes: Promise<void>[] = [];
 for (const { spec, path, text: pending } of files) {
-  let grammar = grammars.get(spec.grammar);
-  if (!grammar) {
-    grammar = (
-      (await import(
-        new URL(`../grammars/${spec.grammar}/index.js`, import.meta.url).href
-      )) as { language: Grammar }
-    ).language;
-    grammars.set(spec.grammar, grammar);
+  let entry = loaded.get(spec);
+  if (!entry) {
+    entry = {
+      grammar: (await spec.grammar()).language,
+      lang: (await spec.fmt())[spec.export] as Language<unknown> | undefined,
+    };
+    loaded.set(spec, entry);
   }
-  const langKey = `${spec.fmtDir}#${spec.export}`;
-  let lang = langs.get(langKey);
-  if (!lang) {
-    lang = (
-      (await import(
-        new URL(`../grammars/${spec.fmtDir}/fmt.js`, import.meta.url).href
-      )) as Record<string, Language<unknown>>
-    )[spec.export];
-    langs.set(langKey, lang);
-  }
+  const { grammar, lang } = entry;
   if (!lang) continue;
   const text = await pending;
   const out = format(parseTree(grammar, text), lang);

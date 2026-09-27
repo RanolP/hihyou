@@ -9,8 +9,9 @@
 // unformatted copies are restored and ONE whole-process CLI invocation formats the directory in place (2
 // warmups, median of 5). oxfmt and prettier run their own bin/ script under this Node (`--write`, print width
 // 80); ruff is the native binary `mise which ruff` resolves (or `--ruff`), `format --isolated --no-cache`, one
-// thread; syntechs runs through fmt/cli.node.js, a minimal directory-formatting entry built for this bench. All
-// four pay their own process/Node startup, so the comparison is apples to apples. The pre-existing in-process
+// thread; syntechs runs through fmt/cli.node.js, a minimal directory-formatting entry built for this bench, bundled by
+// tsdown as a Node CLI ships (prettier and oxfmt ship theirs bundled too), so startup loads a few files rather
+// than resolving, stat-ing and compiling ~60 modules one by one. All four pay their own process/Node startup, so the comparison is apples to apples. The pre-existing in-process
 // syntechs timing (parse + format only, no process startup) is kept as a secondary "in-process" column; it is
 // not used for the ratio or the verdict.
 
@@ -26,6 +27,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { build } from "tsdown";
 import * as prettier from "prettier";
 import { benchFiles, type GrammarName } from "../core/corpus.node.js";
 import { parseTree } from "../core/index.js";
@@ -141,7 +143,25 @@ function resolveBin(pkg: string): string {
   return join(dirname(pkgJsonPath), rel);
 }
 
-const CLI_PATH = fileURLToPath(new URL("./cli.node.js", import.meta.url));
+/** Bundles fmt/cli.node.js into `outdir`, split per language like its dynamic imports; returns the entry. */
+async function bundleCli(outdir: string): Promise<string> {
+  await build({
+    entry: {
+      "cli.node": fileURLToPath(new URL("./cli.node.js", import.meta.url)),
+    },
+    format: "esm",
+    platform: "node",
+    outDir: outdir,
+    dts: false,
+    clean: false,
+    config: false,
+    // Bundle every dependency, matching esbuild's `bundle: true` -- otherwise tsdown externalizes
+    // node_modules imports (e.g. emoji-regex), and the bundle can't run standalone.
+    deps: { alwaysBundle: /.*/ },
+    logLevel: "warn",
+  });
+  return join(outdir, "cli.node.mjs");
+}
 
 /**
  * Writes `inputs` once to a fresh temp dir (extension per `extOf`, so each CLI infers the right language), then
@@ -215,6 +235,8 @@ async function main() {
   let ruff: string | undefined;
   let oxfmtBin: string | undefined;
   let prettierBin: string | undefined;
+  const cliRoot = mkdtempSync(join(tmpdir(), "syntechs-bench-cli-"));
+  const CLI_PATH = await bundleCli(cliRoot);
   console.log(`syntechs CLI: ${CLI_PATH}`);
 
   // oxfmt's own printWidth default is 100; this config, outside every bench dir so it is never itself
@@ -394,6 +416,7 @@ async function main() {
     }
   } finally {
     rmSync(oxfmtConfigRoot, { recursive: true, force: true });
+    rmSync(cliRoot, { recursive: true, force: true });
   }
 
   console.log(
