@@ -7,12 +7,8 @@ import {
   space,
 } from "../builders.js";
 import { dslPart } from "../sink.js";
-import type { StmtRules } from "./suite.js";
 
 /** Ruff's one-line statements (statement/stmt_{expr,pass,return,raise,assert,delete,global,import,...}.rs). */
-
-// A statement its rule in format.ts prints.
-const fromSpec = (_: Fmt, s: { readonly ts: number }) => dslPart(s.ts);
 
 function names(f: Fmt, s: Simple, sep: Format): Format {
   return s.names.map((n, i) => {
@@ -34,18 +30,3 @@ export function alias(f: Fmt, a: Alias): Format {
   const cs = f.comments;
   return [f.leading(cs.leading(a)), dslPart(a.ts), f.trailing(cs.dangling(a)), f.trailing(cs.trailing(a))];
 }
-
-export const simpleRules: StmtRules = {
-  Expr: fromSpec,
-  Pass: fromSpec,
-  Break: fromSpec,
-  Continue: fromSpec,
-  Return: fromSpec,
-  Raise: fromSpec,
-  Assert: fromSpec,
-  Delete: fromSpec,
-  Global: fromSpec,
-  Nonlocal: fromSpec,
-  Import: fromSpec,
-  ImportFrom: fromSpec,
-};

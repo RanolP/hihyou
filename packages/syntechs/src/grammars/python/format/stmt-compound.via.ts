@@ -15,10 +15,10 @@ import {
   withItems,
 } from "../fmt/stmt/clauses.js";
 import {
-  clauseBody,
-  formatSuite,
   leadingAlternateBranchComments,
   type SuiteKind,
+  writeClauseBody,
+  writeSuite,
 } from "../fmt/stmt/suite.js";
 
 /** A clause as ruff's `clause` prints it: the comments around its header, and its body. */
@@ -133,11 +133,12 @@ export const stmtCompoundVia = {
     if (first === undefined || !kind) throw new Error("python: a block outside a clause's body");
     // A statement's keyword or first child looks up the statement.
     const { f } = ruffStmtOf(ctx.tree.child(first, 0));
-    part(formatSuite(f, items.map((c) => ruffStmtOf(ctx.tree.child(c, 0)).s), kind));
+    writeSuite(f, items.map((c) => ruffStmtOf(ctx.tree.child(c, 0)).s), kind);
   },
   // A block: the comments after its clause's colon, then ruff's suite.
   "compound.body": (c: number, ctx: StreamCtx<unknown>) => {
     const { f, colon, body, after = [] } = clauseOf(ctx.tree.parent(c), ctx);
-    part([clauseBody(f, body, "other", colon), f.dangling(after)]);
+    writeClauseBody(f, body, "other", colon);
+    part(f.dangling(after));
   },
 };

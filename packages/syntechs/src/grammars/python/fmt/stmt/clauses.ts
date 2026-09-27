@@ -19,12 +19,9 @@ import {
 } from "../expr.js";
 import { dslPart } from "../sink.js";
 import { startOf } from "../trivia.js";
-import type { StmtRules } from "./suite.js";
 
 /** Ruff's compound statements other than definitions (statement/stmt_{if,for,while,try,with}.rs). */
 
-// A statement its rule in format/stmt-compound.ts prints.
-const fromSpec = (_: Fmt, s: Stmt) => dslPart(s.ts);
 
 /** The length of the prefix of `cs` that `p` holds for (Rust's `partition_point`). */
 function prefix(cs: readonly Comment[], p: (c: Comment) => boolean): number {
@@ -234,11 +231,3 @@ export function withComments(f: Fmt, w: With): [readonly Comment[], readonly Com
   const split = prefix(dangling, (c) => !!first && c.start < first.start);
   return [dangling.slice(0, split), dangling.slice(split)];
 }
-
-export const clauseRules: StmtRules = {
-  With: fromSpec,
-  Try: fromSpec,
-  If: fromSpec,
-  While: fromSpec,
-  For: fromSpec,
-};

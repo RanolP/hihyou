@@ -36,7 +36,6 @@ import { dslPart } from "../sink.js";
 import * as sink from "../sink.js";
 import type { Frame } from "../../../../fmt/dsl/runtime.js";
 import { byteOffsetOf, startOf } from "../trivia.js";
-import type { StmtRules } from "./suite.js";
 
 /**
  * Ruff's assignments (statement/stmt_{assign,ann_assign,aug_assign,type_alias}.rs) and the layout of a
@@ -455,13 +454,3 @@ export function writeAliasTypeParams(f: Fmt, tp: TypeParams, frame: Frame): void
 /** Ruff's `is_invalid_type_expression`: a type alias value only kept as written. */
 export const isInvalidTypeExpression = (e: Expr) =>
   e.kind === "Named" || e.kind === "Await" || e.kind === "Yield";
-
-// Statements their rules in format/stmt-simple.ts print.
-const fromSpec = (_: Fmt, s: { readonly ts: number }) => dslPart(s.ts);
-
-export const assignRules: StmtRules = {
-  Assign: fromSpec,
-  AnnAssign: fromSpec,
-  AugAssign: fromSpec,
-  TypeAlias: fromSpec,
-};

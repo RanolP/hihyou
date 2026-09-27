@@ -1,17 +1,10 @@
-import { type Format, indent } from "../elements.js";
+import type { Format } from "../elements.js";
 import type { ExprStmt, Module, Py, Stmt, Str } from "../ast.js";
 import { Unformattable } from "../ast.js";
-import {
-  COMPOUND,
-  emptyLine,
-  type Fmt,
-  hard,
-  space,
-  TOP,
-} from "../builders.js";
+import { COMPOUND, type Fmt, TOP } from "../builders.js";
 import type { Comment } from "../comments.js";
 import { lastChildInBody } from "../comments.js";
-import { dslPart } from "../sink.js";
+import { BLANK, COLLAPSE, close, HARD, INDENT, open, part, record, sDsl, sLine, sText } from "../sink.js";
 import { formatStr } from "../strings.js";
 import {
   byteOffsetOf,
@@ -20,15 +13,12 @@ import {
   linesAfterIgnoringTrivia,
   linesBefore,
 } from "../trivia.js";
-import { assignRules } from "./assign.js";
-import { clauseRules } from "./clauses.js";
 import { defRules } from "./defs.js";
-import { simpleRules } from "./simple.js";
 
 /**
  * Ruff's module and suite formatting (module/mod_module.rs, statement/suite.rs, statement/clause.rs): the blank
- * lines between statements, docstrings, and the clause header and body every compound statement prints with.
- * Each statement kind's own layout lives in one of the rule tables below, so they can grow apart.
+ * lines between statements, docstrings, and the body every compound statement prints with. Each statement prints
+ * by its rule in format/*.ts; a definition by defs.ts's, which lays out the blank lines around its comments.
  */
 
 // Distributes over `Stmt`: `Simple` spans several kinds, which `Extract<Stmt, { kind: K }>` would miss.
@@ -50,15 +40,12 @@ export type StmtRules = { readonly [K in Stmt["kind"]]?: StmtRule<K> };
  */
 export type SuiteKind = "top" | "function" | "class" | "other";
 
-let table: StmtRules | undefined;
-// Built on first use: the rule files import this one, so their tables are not initialized when it loads.
-const rules = (): StmtRules => {
-  table ??= { ...simpleRules, ...assignRules, ...clauseRules, ...defRules };
-  return table;
-};
+// Ruff's lines: breaking on a line that is still empty prints nothing, so they never stack into blank lines.
+const hard = () => sLine(HARD | COLLAPSE);
+const emptyLine = () => sLine(HARD | COLLAPSE | BLANK);
 
 /** Ruff's `FormatModModule`. */
-export function formatModule(f: Fmt, m: Module): Format {
+export function writeModule(f: Fmt, m: Module): void {
   rejectSuppressions(f);
   const cs = f.comments;
   if (m.body.length === 0) {
@@ -71,13 +58,13 @@ export function formatModule(f: Fmt, m: Module): Format {
     // The last one's line break is the one `format` ends every file with.
     const last = dangling.at(-1);
     if (last)
-      return f.at(TOP, () => [
-        f.leading(dangling.slice(0, -1)),
-        f.comment(last),
-      ]);
-    return [];
+      f.at(TOP, () => {
+        part(f.leading(dangling.slice(0, -1)));
+        part(f.comment(last));
+      });
+    return;
   }
-  return formatSuite(f, m.body, "top");
+  writeSuite(f, m.body, "top");
 }
 
 /** `fmt: off`, `fmt: skip` and `yapf: disable` ask for source text kept as written, which this port does not do. */
@@ -90,16 +77,13 @@ function rejectSuppressions(f: Fmt): void {
 }
 
 /** A statement with its leading and trailing comments (ruff's `FormatNodeRule::fmt`). */
-export function formatStmt(f: Fmt, s: Stmt): Format {
-  const rule = rules()[s.kind] as StmtRule<typeof s.kind> | undefined;
-  if (!rule)
-    throw new Unformattable(
-      `no rule for ${s.kind} at ${byteOffsetOf(f.tree, s.ts)}`,
-    );
+function writeStmt(f: Fmt, s: Stmt): void {
   const cs = f.comments;
-  const leading = f.leading(cs.leading(s));
-  const body = rule(f, s as never);
-  return [leading, body, f.trailing(cs.trailing(s))];
+  part(f.leading(cs.leading(s)));
+  const def = defRules[s.kind] as StmtRule<typeof s.kind> | undefined;
+  if (def) part(def(f, s as never));
+  else sDsl(s.ts);
+  part(f.trailing(cs.trailing(s)));
 }
 
 const isDefinition = (s: Stmt) =>
@@ -142,22 +126,19 @@ function indentOf(f: Fmt): string {
 }
 
 /** Ruff's `FormatDocstringStmt`. */
-function docstring(f: Fmt, s: ExprStmt & { value: Str }, kind: SuiteKind): Format {
+function docstring(f: Fmt, s: ExprStmt & { value: Str }, kind: SuiteKind): void {
   const cs = f.comments;
   const v = s.value;
-  const out: Format[] = [
-    f.leading(cs.leading(s)),
-    f.leading(cs.leading(v)),
-    formatStr(f, v, indentOf(f)),
-    f.trailing(cs.trailing(v)),
-  ];
+  part(f.leading(cs.leading(s)));
+  part(f.leading(cs.leading(v)));
+  part(formatStr(f, v, indentOf(f)));
+  part(f.trailing(cs.trailing(v)));
   const trailing = cs.trailing(s);
   if (kind === "class") {
     const own = trailing.find((c) => c.line === "own");
-    if (own && linesBefore(f.tree, own.start) < 2) out.push(emptyLine);
+    if (own && linesBefore(f.tree, own.start) < 2) emptyLine();
   }
-  out.push(f.trailing(trailing));
-  return out;
+  part(f.trailing(trailing));
 }
 
 /** Ruff's `trailing_function_or_class_def`: the def or class that `s` ends with, through nested last bodies. */
@@ -193,42 +174,39 @@ const lastTrailingEnd = (cs: readonly Comment[], fallback: number) =>
   cs.at(-1)?.end ?? fallback;
 
 /** Ruff's `FormatSuite`. */
-export function formatSuite(
+export function writeSuite(
   f: Fmt,
   body: readonly Stmt[],
   kind: SuiteKind,
-): Format {
+): void {
   const first = body[0];
-  if (!first) return [];
+  if (!first) return;
   const cs = f.comments;
   const top = kind === "top";
   const savedDepth = f.depth;
   f.depth = top ? 0 : f.depth + 1;
   try {
-    return f.at(top ? TOP : COMPOUND, () => {
-      const out: Format[] = [];
+    f.at(top ? TOP : COMPOUND, () => {
       const firstDoc = asDocstring(f, first, kind);
       if (kind === "other" && isDefinition(first) && !cs.hasLeading(first))
-        out.push(emptyLine);
+        emptyLine();
       if (kind === "function" && !firstDoc) {
         const start = cs.leading(first)[0]?.start ?? first.start;
-        if (linesBefore(f.tree, start) > 1) out.push(emptyLine);
+        if (linesBefore(f.tree, start) > 1) emptyLine();
       }
-      out.push(firstDoc ? docstring(f, firstDoc, kind) : formatStmt(f, first));
+      if (firstDoc) docstring(f, firstDoc, kind);
+      else writeStmt(f, first);
       let emptyLineAfterDocstring =
         (firstDoc !== undefined && kind === "class") ||
         (top && firstDoc !== undefined);
 
       let preceding = first;
       for (const following of body.slice(1)) {
-        out.push(
-          between(f, preceding, following, kind, emptyLineAfterDocstring),
-        );
-        out.push(formatStmt(f, following));
+        between(f, preceding, following, kind, emptyLineAfterDocstring);
+        writeStmt(f, following);
         preceding = following;
         emptyLineAfterDocstring = false;
       }
-      return out;
     });
   } finally {
     f.depth = savedDepth;
@@ -242,9 +220,14 @@ function between(
   following: Stmt,
   kind: SuiteKind,
   afterDocstring: boolean,
-): Format {
+): void {
   const cs = f.comments;
   const top = kind === "top";
+  // One blank line, or two at the top level.
+  const blank = (two: boolean) => {
+    emptyLine();
+    if (two) emptyLine();
+  };
   if (isDefinition(following) || trailingDefinition(f, preceding)) {
     const stubBefore =
       following.kind === "FunctionDef" &&
@@ -252,62 +235,45 @@ function between(
       onlyEllipsis(f, preceding.body) !== undefined &&
       linesAfterIgnoringEndOfLineTrivia(f.tree, preceding.end) < 2 &&
       !cs.hasTrailingOwnLine(preceding);
-    if (stubBefore) return hard;
-    return top ? [emptyLine, emptyLine] : emptyLine;
+    if (stubBefore) hard();
+    else blank(top);
+    return;
   }
   if (
     isImport(preceding) &&
     (!isImport(following) || cs.hasLeading(following))
   ) {
-    if (!top) return emptyLine;
-    return linesAfter(
-      f.tree,
-      lastTrailingEnd(cs.trailing(preceding), preceding.end),
-    ) <= 2
-      ? emptyLine
-      : [emptyLine, emptyLine];
+    blank(
+      top &&
+        linesAfter(
+          f.tree,
+          lastTrailingEnd(cs.trailing(preceding), preceding.end),
+        ) > 2,
+    );
+    return;
   }
   if (isCompound(preceding)) {
     const n = linesBefore(
       f.tree,
       cs.leading(following)[0]?.start ?? following.start,
     );
-    if (n <= 1) return hard;
-    if (n === 2) return emptyLine;
-    return top ? [emptyLine, emptyLine] : emptyLine;
+    if (n <= 1) hard();
+    else blank(n > 2 && top);
+    return;
   }
-  if (afterDocstring) return emptyLine;
+  if (afterDocstring) {
+    emptyLine();
+    return;
+  }
   const n = linesAfter(
     f.tree,
     lastTrailingEnd(cs.trailing(preceding), preceding.end),
   );
-  if (n <= 1) return hard;
-  if (!top || n === 2) return emptyLine;
-  return [emptyLine, emptyLine];
+  if (n <= 1) hard();
+  else blank(top && n > 2);
 }
 
 // ---- clauses (statement/clause.rs), shared by every compound statement ----
-
-/**
- * Ruff's `FormatClauseHeader`: `header` then its colon, then the comments after the colon. `alternate` gives
- * the leading comments of an alternative branch (`else`, `except`, ...) and the node before it.
- */
-export function clauseHeader(
-  f: Fmt,
-  header: Format,
-  colon: Format,
-  colonComments: readonly Comment[],
-  alternate?: { comments: readonly Comment[]; last: Py | undefined },
-): Format {
-  return [
-    alternate
-      ? leadingAlternateBranchComments(f, alternate.comments, alternate.last)
-      : [],
-    header,
-    colon,
-    f.trailing(colonComments),
-  ];
-}
 
 /** The block `s` stands in: a decorated definition's statement node is the definition, inside its decorators'. */
 function blockOf(f: Fmt, s: Stmt): number {
@@ -321,23 +287,31 @@ function blockOf(f: Fmt, s: Stmt): number {
  * (they are marked printed, so the header printing them first wins). It ends without a line break: whatever
  * follows starts its own line, and at the end of the file one would stack on the break `format` ends it with.
  */
-export function clauseBody(
+export function writeClauseBody(
   f: Fmt,
   body: readonly Stmt[],
   kind: SuiteKind,
   colonComments: readonly Comment[],
-): Format {
+): void {
   if (kind === "function" || kind === "class") {
     const ellipsis = onlyEllipsis(f, body);
-    if (ellipsis && colonComments.length === 0)
-      return [space, formatStmt(f, ellipsis)];
+    if (ellipsis && colonComments.length === 0) {
+      sText(" ");
+      writeStmt(f, ellipsis);
+      return;
+    }
   }
-  return [
-    f.trailing(colonComments),
-    // The block, as its rule in format/stmt-compound.ts prints it: ruff's suite of this kind.
-    indent([hard, body[0] ? dslPart(blockOf(f, body[0]), { suite: kind }) : []]),
-  ];
+  part(f.trailing(colonComments));
+  open(INDENT);
+  hard();
+  // The block, as its rule in format/stmt-compound.ts prints it: ruff's suite of this kind.
+  if (body[0]) sDsl(blockOf(f, body[0]), { suite: kind });
+  close();
 }
+
+/** `writeClauseBody`, as a `Format` for defs.ts's rules. */
+export const clauseBody = (...args: Parameters<typeof writeClauseBody>): Format =>
+  record(() => writeClauseBody(...args));
 
 /** Ruff's `leading_alternate_branch_comments`: the lines before `else`/`elif`/`except`/`finally` and its comments. */
 export function leadingAlternateBranchComments(

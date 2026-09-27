@@ -15,10 +15,9 @@ import {
   normalizeComment,
   type Comments as RuffComments,
 } from "./fmt/comments.js";
-import { emit } from "./fmt/elements.js";
 import { printing, sToken, within } from "./fmt/sink.js";
 import { normalize } from "./fmt/normalize.js";
-import { formatModule } from "./fmt/stmt/suite.js";
+import { writeModule } from "./fmt/stmt/suite.js";
 import * as gen from "./fmt.gen.js";
 import { collectionVia } from "./format/collection.via.js";
 import { exprVia } from "./format/expr.via.js";
@@ -53,7 +52,7 @@ const module: CustomRule<PythonOptions> = (_, ctx) => {
   if (!ruff) throw new Error("python: the module printed without its placement pass");
   if ("error" in ruff) throw ruff.error;
   const f = new Fmt(ctx.tree, ctx.options, ruff.comments);
-  within(ctx, { f, byTs: ruff.byTs, stmts: ruff.stmts }, () => emit(formatModule(f, ruff.module)));
+  within(ctx, { f, byTs: ruff.byTs, stmts: ruff.stmts }, () => writeModule(f, ruff.module));
 };
 
 const rules = gen.python({
