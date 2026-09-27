@@ -10,6 +10,7 @@ import {
   printWithComments,
   type Rule,
 } from "./rules.js";
+import { formatStream } from "./stream-format.js";
 import { newlineBetween } from "./text.js";
 import { firstLeaf } from "./tree.js";
 
@@ -44,6 +45,7 @@ export function format<O>(
   language: Language<O>,
   options: Partial<O> = {},
 ): Formatted {
+  if (language.stream) return formatStream(tree, language, options);
   const mark = docMark();
   try {
     const resolved: O = { ...language.defaults, ...options };

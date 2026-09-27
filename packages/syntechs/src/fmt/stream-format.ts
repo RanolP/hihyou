@@ -7,12 +7,14 @@ import {
   type Formatted,
   shiftForEndOfLine,
 } from "./format.js";
-import type {
-  ByOptions,
-  Grammar,
-  Language,
-  ListOptions,
-  SeqPart,
+import {
+  type ByOptions,
+  defineLanguage,
+  type Grammar,
+  type Language,
+  type LanguageSpec,
+  type ListOptions,
+  type SeqPart,
 } from "./rules.js";
 import {
   BROKEN,
@@ -37,8 +39,8 @@ import { lfAfter, newlineBetween, nextLineEmpty } from "./text.js";
 import { type FormatTree, firstLeaf } from "./tree.js";
 
 /**
- * The prototype stream path (see `stream.ts`) for the rule helpers JSON uses: a rule appends to the stream
- * instead of returning a Doc. `formatStream` must print what `format` prints, anchors included.
+ * The stream path (see `stream.ts`) for the rule helpers JSON uses: a rule appends to the stream instead of
+ * returning a Doc, and `format` hands a language defined by `defineStream` to `formatStream`.
  */
 export interface StreamCtx<O = unknown> {
   readonly tree: FormatTree;
@@ -56,9 +58,7 @@ export interface StreamCtx<O = unknown> {
 
 export type StreamRule<O = unknown> = (node: number, ctx: StreamCtx<O>) => void;
 
-export interface StreamLanguage<O = unknown> {
-  /** The Doc-path language whose comments, options and settings this one shares. */
-  readonly base: Language<O>;
+export interface StreamRules<O = unknown> {
   readonly rules: ReadonlyMap<string, StreamRule<O>>;
   readonly lists: ReadonlySet<StreamRule<O>>;
 }
@@ -75,13 +75,14 @@ export interface StreamHelpers<G extends Grammar, O> {
   readonly space: { readonly space: true };
 }
 
+/** `defineLanguage`, with rules that append to the stream: `format` prints the language through `formatStream`. */
 export function defineStream<const G extends Grammar, O>(
-  _grammar: G,
-  base: Language<O>,
+  grammar: G,
+  spec: LanguageSpec<G, O>,
   define: (
     h: StreamHelpers<G, O>,
   ) => { [K in KindOf<G>]?: StreamRule<O> },
-): StreamLanguage<O> {
+): Language<O> {
   const lists = new Set<StreamRule<O>>();
   const h: StreamHelpers<G, O> = {
     list(o) {
@@ -98,7 +99,7 @@ export function defineStream<const G extends Grammar, O>(
   const rules = new Map<string, StreamRule<O>>();
   for (const [kind, rule] of Object.entries(define(h)))
     if (rule) rules.set(kind, rule as StreamRule<O>);
-  return { base, rules, lists };
+  return { ...defineLanguage(grammar, spec, () => ({})), stream: { rules, lists } };
 }
 
 const verbatimRule: StreamRule = (node, ctx) =>
@@ -303,14 +304,15 @@ function listRule<O>(o: ListOptions<Grammar, O>): StreamRule<O> {
   };
 }
 
-/** `format`, over the stream path of `language`. */
+/** `format`, over the stream rules of `base` (a `defineStream` language). */
 export function formatStream<O>(
   tree: Tree,
-  language: StreamLanguage<O>,
+  base: Language<O>,
   options: Partial<O> = {},
 ): Formatted {
-  const base = language.base;
   try {
+    const language = base.stream;
+    if (!language) throw new Error("formatStream: a language without stream rules");
     if (base.printComment || base.printsOwnComments)
       throw new Error("formatStream: a language that prints its own comments");
     resetStream();

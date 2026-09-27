@@ -1,12 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import * as prettier from "prettier";
 import { describe, expect, it } from "vitest";
 import { parseTree } from "../../core/index.js";
 import { check } from "../../fmt/check.js";
 import { format } from "../../fmt/format.js";
-import { formatStream } from "../../fmt/stream-format.js";
-import { type JsonOptions, jsonLanguageFor, streamFor } from "./fmt.js";
+import { type JsonOptions, jsonLanguageFor } from "./fmt.js";
 import { language } from "./index.js";
 
 // Byte parity with prettier 3.9.9 at its defaults. Not covered, because prettier's comment handlers move
@@ -183,30 +182,3 @@ describe("a known gap from prettier stays pinned, so closing one shows up as a t
   });
 });
 
-// Without this, the stream prototype (fmt/stream.ts) could lay out or anchor differently and its benchmark would
-// time a different layout; the parser-bench inputs (big.json) join when fetched.
-describe("the stream prototype prints each JSON input as the Doc path does, text and anchors", () => {
-  const root = execFileSync("git", ["rev-parse", "--show-toplevel"], {
-    encoding: "utf8",
-  }).trim();
-  const bench = ["big.json", "package-lock.json", "edge.json"]
-    .map((f) => `${root}/research/parser-bench/inputs/${f}`)
-    .filter((f) => existsSync(f))
-    .map((f): [string, string] => [f, readFileSync(f, "utf8")]);
-  const inputs: [string, string, Partial<JsonOptions>][] = [
-    ...[...corpus(), ...divergences, ...bench].map(
-      ([p, t]): [string, string, Partial<JsonOptions>] => [p, t, {}],
-    ),
-    ...withOptions,
-  ];
-  it(`${inputs.length} inputs`, () => {
-    for (const [path, text, options] of inputs) {
-      const tree = parseTree(language, text);
-      const lang = jsonLanguageFor(path);
-      const doc = format(tree, lang, options);
-      const stream = formatStream(tree, streamFor(lang), options);
-      expect(stream.ok && stream.text, path).toBe(doc.ok && doc.text);
-      expect(stream.ok && stream.anchors, path).toEqual(doc.ok && doc.anchors);
-    }
-  });
-});

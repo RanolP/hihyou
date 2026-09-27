@@ -18,6 +18,7 @@ import {
   token,
 } from "./doc.js";
 import type { Settings } from "./options.js";
+import type { StreamRules } from "./stream-format.js";
 import { lfAfter, newlineBetween, nextLineEmpty } from "./text.js";
 import { type FormatTree, firstLeaf } from "./tree.js";
 
@@ -109,6 +110,8 @@ export interface Language<O = unknown> {
   readonly printsOwnComments?: (node: number, ctx: Ctx<O>) => boolean;
   /** How `check` spells a comment before comparing; see `LanguageSpec`. */
   readonly comment: ((text: string) => string | readonly string[]) | undefined;
+  /** Rules that append to the linear stream (`stream.ts`) instead of building a Doc; `format` then prints by them. */
+  readonly stream?: StreamRules<O>;
 }
 
 /**

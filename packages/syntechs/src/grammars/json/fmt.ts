@@ -1,17 +1,11 @@
 import { decimalValue, type Normalize } from "../../fmt/check.js";
-import { token } from "../../fmt/doc.js";
 import {
   type PrettierOptions,
   prettierDefaults,
   prettierSettings,
 } from "../../fmt/options.js";
-import { defineLanguage, type Language, type Rule } from "../../fmt/rules.js";
 import { sToken } from "../../fmt/stream.js";
-import {
-  defineStream,
-  type StreamLanguage,
-  type StreamRule,
-} from "../../fmt/stream-format.js";
+import { defineStream, type StreamRule } from "../../fmt/stream-format.js";
 import { grammar } from "./bundle.js";
 import { language } from "./index.js";
 
@@ -58,10 +52,9 @@ const printNumber = (raw: string) =>
         .replace(/(\.\d+?)0+(?=e|$)/, "$1")
         .replace(/\.(?=e|$)/, "");
 
-const number: Rule = (node, ctx) =>
-  token(node, printNumber(ctx.tree.text(node)));
+const number: StreamRule = (node, ctx) =>
+  sToken(node, printNumber(ctx.tree.text(node)));
 
-// Shared by the Doc rules and the stream prototype's (`streamFor`), so both lay out one set of options.
 const fittingObject = (trailingSep: boolean) =>
   ({
     open: "{",
@@ -99,7 +92,7 @@ const stringifyArray = {
 } as const;
 
 const fitting = (trailingSep: boolean) =>
-  defineLanguage(grammar, spec, (h) => ({
+  defineStream(grammar, spec, (h) => ({
     document: h.block(),
     object: h.list(fittingObject(trailingSep)),
     array: h.list(fittingArray(trailingSep)),
@@ -115,45 +108,13 @@ export const json = fitting(false);
 export const jsonc = fitting(true);
 
 /** JSON as prettier's `json-stringify` parser prints it, like `JSON.stringify(value, null, 2)`: every list broken. */
-export const jsonStringify = defineLanguage(grammar, spec, (h) => ({
+export const jsonStringify = defineStream(grammar, spec, (h) => ({
   document: h.block(),
   object: h.list(stringifyObject),
   array: h.list(stringifyArray),
   pair: h.seq(h.field("key"), ":", h.space, h.field("value")),
   string: h.verbatim(),
 }));
-
-const streamNumber: StreamRule = (node, ctx) =>
-  sToken(node, printNumber(ctx.tree.text(node)));
-const streamFitting = (base: Language<JsonOptions>, trailingSep: boolean) =>
-  defineStream(grammar, base, (h) => ({
-    document: h.block(),
-    object: h.list(fittingObject(trailingSep)),
-    array: h.list(fittingArray(trailingSep)),
-    pair: h.seq(h.field("key"), ":", h.space, h.field("value")),
-    string: h.verbatim(),
-    number: streamNumber,
-  }));
-const streams = new Map<Language<JsonOptions>, StreamLanguage<JsonOptions>>([
-  [json, streamFitting(json, false)],
-  [jsonc, streamFitting(jsonc, true)],
-  [
-    jsonStringify,
-    defineStream(grammar, jsonStringify, (h) => ({
-      document: h.block(),
-      object: h.list(stringifyObject),
-      array: h.list(stringifyArray),
-      pair: h.seq(h.field("key"), ":", h.space, h.field("value")),
-      string: h.verbatim(),
-    })),
-  ],
-]);
-/** The stream-prototype twin of `json`, `jsonc` or `jsonStringify` (see fmt/stream.ts), for `formatStream`. */
-export function streamFor(language: Language<JsonOptions>) {
-  const s = streams.get(language);
-  if (!s) throw new Error("streamFor: not a JSON language");
-  return s;
-}
 
 /**
  * The language prettier 3.9.9 picks for a file name: `json-stringify` for the files npm and composer rewrite,

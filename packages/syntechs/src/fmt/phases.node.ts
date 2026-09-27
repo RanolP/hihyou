@@ -319,18 +319,6 @@ async function warm(lang: string, passes: number) {
   const fmt = (
     (await import(here(`../grammars/${spec.fmtDir}/fmt.js`))) as Record<string, unknown>
   )[spec.export];
-  // SYNTECHS_STREAM=1 times the JSON stream prototype (fmt/stream.ts) in place of the Doc path.
-  let run: (tree: unknown) => { ok: boolean } = (tree) => format(tree, fmt);
-  if (process.env.SYNTECHS_STREAM === "1") {
-    const { formatStream } = (await import(here("./stream-format.js"))) as {
-      formatStream: (tree: unknown, language: unknown) => { ok: boolean };
-    };
-    const { streamFor } = (await import(here("../grammars/json/fmt.js"))) as {
-      streamFor: (language: unknown) => unknown;
-    };
-    const stream = streamFor(fmt);
-    run = (tree) => formatStream(tree, stream);
-  }
 
   const gcs: { start: number; duration: number }[] = [];
   const obs = new PerformanceObserver((list) => {
@@ -342,7 +330,7 @@ async function warm(lang: string, passes: number) {
     const t0 = performance.now();
     const tree = parseTree(grammar, input.text);
     const t1 = performance.now();
-    const out = run(tree);
+    const out = format(tree, fmt);
     const t2 = performance.now();
     if (!out.ok) throw new Error(`${input.name}: format failed`);
     windows.push({ phase: "parse", from: t0, to: t1 }, { phase: "format", from: t1, to: t2 });
