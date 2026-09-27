@@ -1225,19 +1225,15 @@ function list(f: Fmt, e: Sequence): Format {
     return f.at(PAREN, () => f.emptyParenthesized(open, dangling, close));
   return f.parenthesized(
     open,
-    () => sequenceContent(f, e),
+    () => record(() => writeSequenceContent(f, e)),
     close,
     dangling,
   );
 }
 
 /** A list's or set's items between its brackets. */
-export function sequenceContent(f: Fmt, e: Sequence): Format {
-  return f.joinCommaSeparated(
-    sequenceEntries(f, e),
-    e.end,
-    commaIn(f.tree, e.ts, e.ts),
-  );
+export function writeSequenceContent(f: Fmt, e: Sequence): void {
+  part(f.joinCommaSeparated(sequenceEntries(f, e), e.end, commaIn(f.tree, e.ts, e.ts)));
 }
 
 export function itemStart(i: Dict["items"][number]): number {
