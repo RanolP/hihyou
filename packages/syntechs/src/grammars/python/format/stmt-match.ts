@@ -18,4 +18,18 @@ export const stmtMatch = {
     ":",
     $.consequence.via("match.caseBody"),
   ],
+  as_pattern: ($) => [
+    $.children.at(0).andThen((p) => p.via("match.pattern")),
+    space,
+    "as",
+    space,
+    // A case's `as` names an identifier in no field; `alias` is a with-item's `as` target.
+    $.children.at(1).andThen((n) => n),
+  ],
+  splat_pattern: ($) => ["*", "**", "_", $.children.andThen((n) => n)],
+  keyword_pattern: ($) => [
+    $.children.at(0).andThen((n) => n),
+    "=",
+    $.children.at(1).andThen((v) => v.via("match.keywordValue")),
+  ],
 } satisfies Structure;

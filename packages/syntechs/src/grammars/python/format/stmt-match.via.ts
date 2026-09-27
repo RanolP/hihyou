@@ -6,7 +6,15 @@ import { COMPOUND, type Fmt, hard, space } from "../fmt/builders.js";
 import { type Format, indent } from "../fmt/elements.js";
 import { maybeParenthesize } from "../fmt/expr.js";
 import { dslPart, part, ruffStmtOf } from "../fmt/sink.js";
-import { body, kids, maybeParenthesizePattern, readCasePattern } from "../fmt/stmt/defs.js";
+import {
+  body,
+  kids,
+  maybeParenthesizePattern,
+  pattern,
+  readCasePattern,
+  readGroup,
+  readPattern,
+} from "../fmt/stmt/defs.js";
 import { leadingAlternateBranchComments } from "../fmt/stmt/suite.js";
 import { byteOffsetOf } from "../fmt/trivia.js";
 
@@ -19,7 +27,26 @@ function caseOf(child: number, ctx: StreamCtx<unknown>): { f: Fmt; c: MatchCase 
   return { f, c };
 }
 
+/** The `Fmt` printing `n`, a node inside a case's pattern. */
+function fmtOf(n: number, ctx: StreamCtx<unknown>): Fmt {
+  let child = n;
+  while (ctx.tree.kindName(ctx.tree.parent(child)) !== "case_clause") child = ctx.tree.parent(child);
+  return caseOf(child, ctx).f;
+}
+
 export const stmtMatchVia = {
+  // A sub-pattern whose parentheses are its own.
+  "match.pattern": (n: number, ctx: StreamCtx<unknown>) => {
+    const f = fmtOf(n, ctx);
+    part(pattern(f, readPattern(f, n)));
+  },
+  // Given the first node of a keyword's value, prints it: `-` and a number are two nodes.
+  "match.keywordValue": (n: number, ctx: StreamCtx<unknown>) => {
+    const f = fmtOf(n, ctx);
+    const kw = ctx.tree.parent(n);
+    const [, , ...value] = kids(f.tree, kw);
+    part(pattern(f, readGroup(f, kw, value)));
+  },
   "match.subject": (n: number) => {
     const { f, s: m } = ruffStmtOf(n);
     const s = m as Match;

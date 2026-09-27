@@ -339,7 +339,7 @@ export function readCasePattern(f: Fmt, c: MatchCase): Pat {
   };
 }
 
-function readPattern(f: Fmt, n: number): Pat {
+export function readPattern(f: Fmt, n: number): Pat {
   const t = f.tree;
   const kind = (x: number) => t.kindName(x);
   const base = { node: n, start: startOf(t, n), end: endOf(t, n) };
@@ -540,7 +540,7 @@ function readPattern(f: Fmt, n: number): Pat {
 }
 
 /** One pattern from sibling nodes: a lone node, or `-` and a number, which tree-sitter leaves unwrapped. */
-function readGroup(f: Fmt, parent: number, nodes: number[]): Pat {
+export function readGroup(f: Fmt, parent: number, nodes: number[]): Pat {
   const t = f.tree;
   const [a, b] = nodes;
   if (a !== undefined && nodes.length === 1) return readPattern(f, a);
@@ -563,7 +563,7 @@ function readGroup(f: Fmt, parent: number, nodes: number[]): Pat {
 }
 
 /** Ruff's `FormatPattern` with its `Parentheses` option. */
-function pattern(
+export function pattern(
   f: Fmt,
   p: Pat,
   parens: "preserve" | "always" | "never" = "preserve",
@@ -595,9 +595,9 @@ function patternFields(f: Fmt, p: Pat): Format {
     case "wild":
       return f.tok(p.node);
     case "star":
-      return [f.tok(p.star), f.tok(p.name)];
+      return dslPart(p.node);
     case "as":
-      return [pattern(f, p.pattern), space, f.tok(p.as), space, f.tok(p.name)];
+      return dslPart(p.node);
     case "or":
       return f.inParensGroup(
         p.items.map((item, i) => {
@@ -662,7 +662,7 @@ function mapping(f: Fmt, p: Pat & { k: "map" }): Format {
   if (p.rest)
     entries.push({
       end: endOf(f.tree, p.rest.name),
-      doc: [f.tok(p.rest.star), f.tok(p.rest.name)],
+      doc: dslPart(f.tree.parent(p.rest.star)),
     });
   return f.parenthesized(
     open,
@@ -696,7 +696,7 @@ function classPattern(f: Fmt, p: Pat & { k: "class" }): Format {
           })),
           ...p.keywords.map((k) => ({
             end: k.end,
-            doc: [f.tok(k.name), f.tok(k.eq), pattern(f, k.value)],
+            doc: dslPart(f.tree.parent(k.name)),
           })),
         ];
   return [
