@@ -56,8 +56,8 @@ import {
   space,
 } from "./builders.js";
 import type { Comment } from "./comments.js";
+import { dslPart } from "./sink.js";
 import {
-  formatStr,
   type Hooks,
   implicitConcatenated,
   isInterpolated,
@@ -738,7 +738,7 @@ function fields(f: Fmt, e: Expr, o: Opts): Format {
     case "Number":
       return f.tok(e.ts, number(f.text(e.ts)));
     case "Str":
-      return formatStr(f, e, hooks);
+      return dslPart(e.ts);
     case "Attribute":
       return attribute(f, e, o.chain ?? "default");
     case "Call":

@@ -514,8 +514,12 @@ export function toAst(
   byTs = new Map<number, Expr>(),
   stmts = new Map<number, Stmt>(),
 ): Module {
+  readBy.set(tree, byTs);
   return new Reader(tree, byTs, stmts).module(tree.root);
 }
+
+// Each tree's `byTs`, which `exprAst` adds its expressions to, so a `.via` custom finds them too.
+const readBy = new WeakMap<FormatTree, Map<number, Expr>>();
 
 class Reader {
   constructor(
@@ -1418,6 +1422,8 @@ class Reader {
     }
     const e = this.link(this.bare(x, parens));
     this.byTs.set(n, e);
+    // Also under the node inside the parentheses, which the rule of its kind (`dslPart(e.ts)`) prints.
+    this.byTs.set(x, e);
     return e;
   }
 
@@ -2131,5 +2137,5 @@ export const isExpr = (p: Py): p is Expr => "parens" in p;
 
 /** Reads one expression on its own: an f-string interpolation's, which the module's AST keeps as a string. */
 export function exprAst(tree: FormatTree, n: number): Expr {
-  return new Reader(tree, new Map(), new Map()).expr(n);
+  return new Reader(tree, readBy.get(tree) ?? new Map(), new Map()).expr(n);
 }
