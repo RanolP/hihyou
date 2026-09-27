@@ -6,11 +6,16 @@
 //   node packages/syntechs/dist/fmt/cli.node.js <dir>
 
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { enableCompileCache } from "node:module";
 import { extname, join } from "node:path";
-import { parseTree } from "../core/index.js";
 import type { Language as Grammar } from "../core/language.js";
-import { format } from "./format.js";
 import type { Language } from "./rules.js";
+
+// V8's code cache for every module this process loads, kept in the OS temp dir across runs, so a repeat run
+// skips parsing and compiling them. It covers only modules loaded after this call, hence the dynamic imports.
+enableCompileCache();
+const { parseTree } = await import("../core/index.js");
+const { format } = await import("./format.js");
 
 interface Spec {
   grammar: string;
