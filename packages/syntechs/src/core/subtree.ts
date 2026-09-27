@@ -54,32 +54,36 @@ const SIZE_ROWS = 6;
 /** Stored cost; read it through `errorCost()`, which prices missing leaves. */
 const COST = 7;
 export const CHILD_COUNT = 8;
-// A token's record ends with the index of its external scanner state.
+// A token's record holds the index of its external scanner state here; a node's, its production id.
 const EXTERNAL = 9;
-const LEAF_WORDS = 10;
+export const PRODUCTION_ID = 9;
+// Where the direct tree build (`DirectTree` in tree.ts) put the subtree: its first entry on the builder's
+// stack of unparented nodes, and how many entries it has there; `KIDS` is -1 until it is emitted.
+export const MARK = 10;
+export const KIDS = 11;
+const LEAF_WORDS = 12;
 // A node's record goes on with these, then its children's handles. A node may have no children (an ERROR
 // node recovery pushes at the end of input); only `LEAF_RECORD` tells the two layouts apart.
-export const PRODUCTION_ID = 9;
-const DYNAMIC_PRECEDENCE = 10;
-const VISIBLE_DESCENDANT_COUNT = 11;
-const VISIBLE_CHILD_COUNT = 12;
-const FIRST_LEAF_SYMBOL = 13;
-const FIRST_LEAF_PARSE_STATE = 14;
-export const CHILDREN = 15;
+const DYNAMIC_PRECEDENCE = 12;
+const VISIBLE_DESCENDANT_COUNT = 13;
+const VISIBLE_CHILD_COUNT = 14;
+const FIRST_LEAF_SYMBOL = 15;
+const FIRST_LEAF_PARSE_STATE = 16;
+export const CHILDREN = 17;
 
 /**
  * Words reserved per UTF-16 unit of source before the first doubling, just above the largest ratio among the
- * bench and corpus inputs, dead GLR branches included: json 2.92, css 2.24-6.32, javascript 2.81-5.82,
- * typescript 4.19-5.75, tsx 4.58-5.48, python 3.61-4.63. Overshooting costs untouched zeroed memory,
+ * bench inputs, dead GLR branches included: json 3.36, css 2.58-7.26, javascript 3.21-6.66, typescript
+ * 4.79-6.56, tsx 5.25-6.27, python 4.14-5.30. Overshooting costs untouched zeroed memory,
  * undershooting a copy of everything allocated so far.
  */
 const WORDS_PER_CHAR: Record<string, number> = {
-  json: 3.0,
-  css: 6.5,
-  javascript: 6.0,
-  typescript: 6.0,
-  tsx: 5.6,
-  python: 4.8,
+  json: 3.6,
+  css: 7.8,
+  javascript: 7.2,
+  typescript: 7.2,
+  tsx: 6.8,
+  python: 5.8,
 };
 const MIN_WORDS = 1024;
 
@@ -374,6 +378,7 @@ export class Subtrees {
     w[t + COST] = 0;
     w[t + CHILD_COUNT] = 0;
     w[t + EXTERNAL] = 0;
+    w[t + KIDS] = -1;
     return t;
   }
 
@@ -425,6 +430,7 @@ export class Subtrees {
       : CHILDREN + this.childCount(t);
     const c = this.alloc(words);
     this.words.copyWithin(c, t, t + words);
+    this.words[c + KIDS] = -1;
     return c;
   }
 
@@ -444,6 +450,7 @@ export class Subtrees {
     w[t + PARSE_STATE] = 0;
     w[t + CHILD_COUNT] = n;
     w[t + PRODUCTION_ID] = productionId;
+    w[t + KIDS] = -1;
     for (let i = 0; i < n; i++) w[t + CHILDREN + i] = children[i] as Subtree;
     this.summarizeChildren(t);
     return t;

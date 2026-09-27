@@ -145,6 +145,83 @@ export class TreeBuilder {
     this.close(h);
   }
 
+  // ---- for DirectTree (tree.ts), which appends nodes before it knows their parent's alias and field -------
+
+  /** @internal The `i`th unparented node, `0 <= i < mark()`. */
+  kid(i: number): number {
+    return this.kids[i] as number;
+  }
+
+  /** @internal Whether finished node `h` has children. */
+  isInner(h: number): boolean {
+    return ((this.data[h] as number) & INNER) !== 0;
+  }
+
+  /** @internal */
+  fieldOf(h: number): number {
+    return ((this.data[h] as number) >>> FIELD_SHIFT) & 0xff;
+  }
+
+  /** @internal */
+  setField(h: number, field: number): void {
+    const data = this.data;
+    data[h] =
+      ((data[h] as number) & ~(0xff << FIELD_SHIFT)) | (field << FIELD_SHIFT);
+  }
+
+  /** @internal Gives finished node `h` a new kind, field and `NAMED | FIXED` flags; `lf` and the rest stay. */
+  retag(h: number, kind: number, field: number, flags: number): void {
+    const data = this.data;
+    data[h] =
+      ((data[h] as number) & (INNER | MISSING | (LF_MAX << LF_SHIFT))) |
+      kind |
+      (field << FIELD_SHIFT) |
+      flags;
+  }
+
+  /** @internal */
+  startOf(h: number): number {
+    return this.data[h + START] as number;
+  }
+
+  /** @internal */
+  endOf(h: number): number {
+    return this.data[h + END] as number;
+  }
+
+  /** @internal Takes the unparented nodes from `from` on off the stack, to `attach` back later in order. */
+  detach(from: number): number[] {
+    return this.kids.splice(from);
+  }
+
+  /** @internal */
+  attach(h: number): void {
+    this.kids.push(h);
+  }
+
+  /**
+   * @internal Undoes the last `inner`, putting its children back on the stack. False, with nothing changed,
+   * when the last node appended is not an unparented inner node.
+   */
+  unwrapLast(): boolean {
+    const kids = this.kids;
+    const h = kids[kids.length - 1];
+    if (
+      h === undefined ||
+      this.count === 0 ||
+      this.ords[this.count - 1] !== h ||
+      ((this.data[h] as number) & INNER) === 0
+    )
+      return false;
+    const data = this.data;
+    kids.pop();
+    const n = data[h + COUNT] as number;
+    for (let i = 0; i < n; i++) kids.push(data[h + CHILDREN + i] as number);
+    this.count--;
+    this.top = h;
+    return true;
+  }
+
   /** The tree, rooted at the one node left unparented; the builder must not be used afterwards. */
   finish(errorChars: number): Tree {
     if (this.kids.length !== 1)

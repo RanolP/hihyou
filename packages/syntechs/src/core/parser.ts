@@ -21,7 +21,9 @@ import {
   tableEntry,
 } from "./language.js";
 import { type ExternalScanner, Lexer } from "./lexer.js";
+import type { Tree } from "./arena.js";
 import { Stack, type StackSlice } from "./stack.js";
+import { DirectTree } from "./tree.js";
 import {
   bytesEqual,
   COST_PER_SKIPPED_CHAR,
@@ -84,14 +86,21 @@ function compareVersions(a: ErrorStatus, b: ErrorStatus): number {
   return COMPARISON_NONE;
 }
 
-/** Parses `text` from scratch and returns the root subtree, as `ts_parser_parse` would before balancing. */
+/**
+ * Parses `text` from scratch and returns the root subtree, as `ts_parser_parse` would before balancing, and
+ * `buildTree`'s tree of it where the parse could build that as it went (see `DirectTree`), else null.
+ */
 export function parseSubtree(
   lang: Language,
   text: string,
-): { subtrees: Subtrees; root: Subtree } {
+): { subtrees: Subtrees; root: Subtree; tree: Tree | null } {
   const parser = new Parser(lang, text);
   const root = parser.parse();
-  return { subtrees: parser.subtrees, root };
+  return {
+    subtrees: parser.subtrees,
+    root,
+    tree: parser.direct.finish(root),
+  };
 }
 
 class Parser {
@@ -107,6 +116,7 @@ class Parser {
   private cachePosition = 0;
   private cacheLastExternal: Subtree = NONE;
   private reduceActions: ReduceAction[] = [];
+  readonly direct: DirectTree;
 
   constructor(
     private readonly lang: Language,
@@ -114,6 +124,7 @@ class Parser {
   ) {
     this.subtrees = new Subtrees(lang, text.length);
     this.stack = new Stack(this.subtrees);
+    this.direct = new DirectTree(this.subtrees, text);
     this.lexer.setInput(text);
     this.scanner = lang.createScanner?.();
     const n = lang.externalTokenCount;
@@ -330,6 +341,7 @@ class Parser {
     }
 
     if (skippedError) {
+      this.direct.fail();
       return subtrees.newError(
         errorStart - startPosition,
         rowsBetween(errorStartRow, startRow),
@@ -444,6 +456,11 @@ class Parser {
       subtree = subtrees.cloneLeaf(lookahead);
       subtrees.setFlag(subtree, EXTRA, extra);
     }
+    this.direct.shift(
+      subtree,
+      this.stack.position(version),
+      this.stack.versionCount(),
+    );
     this.stack.push(version, subtree, !isLeaf, state);
     if (subtrees.flag(subtree, HAS_EXTERNAL_TOKENS))
       this.stack.setLastExternalToken(
@@ -464,6 +481,7 @@ class Parser {
     const lang = this.lang;
     const subtrees = this.subtrees;
     const stack = this.stack;
+    this.direct.defer();
     const initialVersionCount = stack.versionCount();
     const pop = stack.popCount(version, count);
     let removedVersionCount = 0;
@@ -554,6 +572,7 @@ class Parser {
       subtrees.setParseState(parent, state);
     }
     subtrees.addDynamicPrecedence(parent, dynamicPrecedence);
+    this.direct.reduce(parent, children, stack.position(0));
     stack.push(0, parent, false, next);
     for (const extra of trailingExtras) stack.push(0, extra, false, next);
     return true;
@@ -576,6 +595,8 @@ class Parser {
             trees,
             subtrees.productionId(tree),
           );
+          if (pop.length === 1) this.direct.accept(tree, root);
+          else this.direct.defer();
           break;
         }
       }
@@ -741,6 +762,7 @@ class Parser {
     const lang = this.lang;
     const subtrees = this.subtrees;
     const stack = this.stack;
+    this.direct.fail();
     let didRecover = false;
     const previousVersionCount = stack.versionCount();
     const position = stack.position(version);
@@ -848,6 +870,7 @@ class Parser {
     const subtrees = this.subtrees;
     const stack = this.stack;
     const previousVersionCount = stack.versionCount();
+    this.direct.fail();
     this.doAllPotentialReductions(version, 0);
     const versionCount = stack.versionCount();
     const position = stack.position(version);
@@ -903,6 +926,9 @@ class Parser {
     const lang = this.lang;
     const subtrees = this.subtrees;
     const stack = this.stack;
+    const direct = this.direct;
+    const onlyHead = stack.versionCount() === 1 ? stack.heads[0] : undefined;
+    if (direct.deferred && onlyHead !== undefined) direct.sync(onlyHead.node);
     let state = stack.state(version);
     const position = stack.position(version);
     const lastExternal = stack.lastExternalToken(version);
@@ -1017,6 +1043,7 @@ class Parser {
       }
 
       if (this.breakdownTopOfStack(version)) {
+        this.direct.fail();
         state = stack.state(version);
         needsLex = true;
         continue;
