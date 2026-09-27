@@ -25,7 +25,6 @@ import type { Tree } from "./arena.js";
 import { Stack, type StackSlice } from "./stack.js";
 import { DirectTree } from "./tree.js";
 import {
-  bytesEqual,
   COST_PER_SKIPPED_CHAR,
   COST_PER_SKIPPED_LINE,
   COST_PER_SKIPPED_TREE,
@@ -103,13 +102,29 @@ export function parseSubtree(
   };
 }
 
+const VALID_TOKENS = new WeakMap<Language, readonly Uint8Array[]>();
+
+/** The external scanner's valid-token row per external lex state, built once per language: read-only views. */
+function validTokensOf(lang: Language): readonly Uint8Array[] {
+  let rows = VALID_TOKENS.get(lang);
+  if (rows === undefined) {
+    const n = lang.externalTokenCount;
+    const built: Uint8Array[] = [];
+    for (let s = 0; s * n < lang.externalStates.length; s++)
+      built.push(lang.externalStates.subarray(s * n, s * n + n));
+    VALID_TOKENS.set(lang, built);
+    rows = built;
+  }
+  return rows;
+}
+
 class Parser {
   private readonly lexer = new Lexer();
   readonly subtrees: Subtrees;
   private readonly stack: Stack;
   private readonly scanner: ExternalScanner | undefined;
   private readonly scanBuffer = new Uint8Array(1024);
-  private readonly validTokens: Uint8Array[] = [];
+  private readonly validTokens: readonly Uint8Array[];
   private finishedTree: Subtree = NONE;
   private acceptCount = 0;
   private cacheToken: Subtree = NONE;
@@ -127,9 +142,7 @@ class Parser {
     this.direct = new DirectTree(this.subtrees, text);
     this.lexer.setInput(text);
     this.scanner = lang.createScanner?.();
-    const n = lang.externalTokenCount;
-    for (let s = 0; s * n < lang.externalStates.length; s++)
-      this.validTokens.push(lang.externalStates.subarray(s * n, s * n + n));
+    this.validTokens = validTokensOf(lang);
   }
 
   parse(): Subtree {
@@ -288,11 +301,14 @@ class Parser {
         lexer.finish();
         if (foundToken) {
           const length = scanner.serialize(this.scanBuffer);
-          externalState = this.scanBuffer.slice(0, length);
-          externalStateChanged = !bytesEqual(
-            subtrees.externalScannerState(externalToken),
-            externalState,
-          );
+          const before = subtrees.externalScannerState(externalToken);
+          externalStateChanged = before.length !== length;
+          for (let i = 0; !externalStateChanged && i < length; i++)
+            externalStateChanged = before[i] !== this.scanBuffer[i];
+          // States are never mutated once stored, so an unchanged one is shared rather than copied.
+          externalState = externalStateChanged
+            ? this.scanBuffer.slice(0, length)
+            : before;
           if (lexer.tokenEnd <= currentPosition && !externalStateChanged) {
             const symbol = lang.externalSymbolMap[lexer.resultSymbol] as number;
             const nextParseState = nextState(lang, parseState, symbol);
