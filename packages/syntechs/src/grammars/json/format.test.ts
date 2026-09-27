@@ -7,10 +7,8 @@ import type { DslGrammar, FormatIR } from "../../fmt/dsl/dsl.js";
 import { referenceRules } from "../../fmt/dsl/reference.js";
 import { format } from "../../fmt/format.js";
 import type { Language } from "../../fmt/rules.js";
-import type { StreamRules } from "../../fmt/stream-format.js";
 import { grammar, language } from "./index.js";
 import { type JsonOptions, json, jsonc, jsonStringify, number } from "./fmt.js";
-import * as gen from "./fmt.gen.js";
 import * as spec from "./format.js";
 
 const root = execFileSync("git", ["rev-parse", "--show-toplevel"], {
@@ -65,10 +63,10 @@ const options: Partial<JsonOptions>[] = [
   { bracketSpacing: false, objectWrap: "collapse", trailingComma: "none", printWidth: 40 },
 ];
 
-const languages: [string, Language<JsonOptions>, FormatIR, StreamRules<JsonOptions>][] = [
-  ["json", json, spec.json, gen.json({ number })],
-  ["jsonc", jsonc, spec.jsonc, gen.jsonc({ number })],
-  ["jsonStringify", jsonStringify, spec.jsonStringify, gen.jsonStringify()],
+const languages: [string, Language<JsonOptions>, FormatIR][] = [
+  ["json", json, spec.json],
+  ["jsonc", jsonc, spec.jsonc],
+  ["jsonStringify", jsonStringify, spec.jsonStringify],
 ];
 
 const run = (text: string, lang: Language<JsonOptions>, o: Partial<JsonOptions>) =>
@@ -77,24 +75,14 @@ const run = (text: string, lang: Language<JsonOptions>, o: Partial<JsonOptions>)
 // The generated rules fuse the two passes; a divergence from the reference would change a layout the spec
 // says nothing about, in a way no reader of the spec could predict.
 describe("the generated formatter prints what the two-pass reference prints, output and anchors, so fusing the passes never changes a layout", () => {
-  it.each(languages)("%s", (_, base, ir, fused) => {
+  it.each(languages)("%s", (_, generated, ir) => {
     const reference = {
-      ...base,
+      ...generated,
       stream: referenceRules<JsonOptions>(ir, grammar as DslGrammar, { number }),
     };
-    const generated = { ...base, stream: fused };
     for (const text of corpus)
       for (const o of options)
         expect(run(text, generated, o), text).toEqual(run(text, reference, o));
   });
 });
 
-// Transitional: the hand-written rules go once the languages switch to the generated ones.
-describe("the generated JSON formatter prints what the hand-written rules print, so switching to it changes no layout", () => {
-  it.each(languages)("%s", (_, base, _ir, fused) => {
-    const generated = { ...base, stream: fused };
-    for (const text of corpus)
-      for (const o of options)
-        expect(run(text, generated, o), text).toEqual(run(text, base, o));
-  });
-});

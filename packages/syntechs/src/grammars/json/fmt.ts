@@ -5,8 +5,10 @@ import {
   prettierSettings,
 } from "../../fmt/options.js";
 import { sToken } from "../../fmt/stream.js";
-import { defineStream, type StreamRule } from "../../fmt/stream-format.js";
+import { defineLanguage, type Language } from "../../fmt/rules.js";
+import type { StreamRules, StreamRule } from "../../fmt/stream-format.js";
 import { grammar } from "./bundle.js";
+import * as gen from "./fmt.gen.js";
 import { language } from "./index.js";
 
 /**
@@ -55,66 +57,20 @@ const printNumber = (raw: string) =>
 export const number: StreamRule = (node, ctx) =>
   sToken(node, printNumber(ctx.tree.text(node)));
 
-const fittingObject = (trailingSep: boolean) =>
-  ({
-    open: "{",
-    close: "}",
-    sep: ",",
-    pad: (o: JsonOptions) => o.bracketSpacing,
-    keepExpanded: (o: JsonOptions) => o.objectWrap === "preserve",
-    blankLines: "force",
-    trailingSep: (o: JsonOptions) => trailingSep && o.trailingComma !== "none",
-  }) as const;
-const fittingArray = (trailingSep: boolean) =>
-  ({
-    open: "[",
-    close: "]",
-    sep: ",",
-    fillIfAll: ["number"],
-    breakNestedLists: true,
-    groupItems: true,
-    blankLines: "ifBroken",
-    trailingSep: (o: JsonOptions) => trailingSep && o.trailingComma !== "none",
-  }) as const;
-const stringifyObject = {
-  open: "{",
-  close: "}",
-  sep: ",",
-  blankLines: "force",
-  expand: "always",
-} as const;
-const stringifyArray = {
-  open: "[",
-  close: "]",
-  sep: ",",
-  blankLines: "ifBroken",
-  expand: "always",
-} as const;
-
-const fitting = (trailingSep: boolean) =>
-  defineStream(grammar, spec, (h) => ({
-    document: h.block(),
-    object: h.list(fittingObject(trailingSep)),
-    array: h.list(fittingArray(trailingSep)),
-    pair: h.seq(h.field("key"), ":", h.space, h.field("value")),
-    string: h.verbatim(),
-    number,
-  }));
+// The layouts are src/grammars/json/format.ts, generated into fmt.gen.ts.
+const define = (stream: StreamRules<JsonOptions>): Language<JsonOptions> => ({
+  ...defineLanguage(grammar, spec, () => ({})),
+  stream,
+});
 
 /** JSON as prettier's `json` parser prints it: lists fit on a line when they can, comments allowed. */
-export const json = fitting(false);
+export const json = define(gen.json({ number }));
 /** JSON with Comments (`.jsonc`, VS Code and Sublime settings) as prettier's `jsonc` parser prints it: like
  * `json`, plus a trailing comma in every broken list unless `trailingComma` is `none`. */
-export const jsonc = fitting(true);
+export const jsonc = define(gen.jsonc({ number }));
 
 /** JSON as prettier's `json-stringify` parser prints it, like `JSON.stringify(value, null, 2)`: every list broken. */
-export const jsonStringify = defineStream(grammar, spec, (h) => ({
-  document: h.block(),
-  object: h.list(stringifyObject),
-  array: h.list(stringifyArray),
-  pair: h.seq(h.field("key"), ":", h.space, h.field("value")),
-  string: h.verbatim(),
-}));
+export const jsonStringify = define(gen.jsonStringify());
 
 /**
  * The language prettier 3.9.9 picks for a file name: `json-stringify` for the files npm and composer rewrite,
