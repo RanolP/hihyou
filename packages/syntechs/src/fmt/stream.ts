@@ -13,7 +13,7 @@ import { textWidth } from "./width.js";
  * and whether it holds a forced break is known when it closes: measuring a group reads its own contents in O(1)
  * and scans only what follows it, up to the next line break.
  *
- * The semantics are `printer.ts`'s, ruff's measure and layout kinds included, but for conditional groups;
+ * The semantics are `printer.ts`'s, ruff's measure and layout kinds included;
  * `stream-format.ts` compares the two on the same input, and `stream-doc.ts` lowers a formatter's Doc onto it.
  */
 
@@ -21,6 +21,8 @@ import { textWidth } from "./width.js";
 const TEXT = 0;
 const TOKEN = 1;
 const LINE = 2;
+/** Prints the span interval its `eStr` holds, there, in the mode and indentation around (see `sJump`). */
+const JUMP = 3;
 // Line flags.
 export const SOFT = 1;
 export const HARD = 2;
@@ -293,6 +295,9 @@ export function resetStream(ruff = false): void {
   lastSfx = -1;
   alignSteps.length = 0;
   choiceSaves.length = 0;
+  spanSaves.length = 0;
+  spanBits.clear();
+  leadAt = -1;
 }
 
 function entry(kind: number, flag: number, str: number, node: number, w: number) {
@@ -372,6 +377,10 @@ export function sLine(flags: number): void {
     else if (lastLine === -1) {
       pos += 1;
       runStart = n;
+    } else if (lastLine === FRESH) {
+      pos += 1;
+      runStart = n;
+      leadAt = n;
     } else
       for (let o = op - 1; o >= 0; o--) {
         const k = oIdx[o] as number;
@@ -579,6 +588,169 @@ export function close(): void {
   mergeable = false;
 }
 
+// --- span ---
+/**
+ * An interval kind: a part a Doc shares, built once (`openSpan`) and printed again wherever a `JUMP` entry names
+ * it (`sJump`). It is built as if nothing were measured before it, so what it holds measures the same wherever
+ * it prints, and closes with the effect a jump to it has on the counters around, which `transfer` applies.
+ */
+const SPAN = 19;
+/** `lastLine` at a span's start: nothing measured in it yet, so a line there is its lead. */
+const FRESH = -2;
+/** The entry of the first line of the span being built, when it is the first thing measured in it, else -1. */
+let leadAt = -1;
+/** Per span still open: the builder state it was opened in (`SPAN_SAVE` numbers). */
+const spanSaves: number[] = [];
+const SPAN_SAVE = 9;
+/** Per closed span: what its contents do to the counters around (the `S_` bits). Its `iRef` holds `S_REFS`'s group. */
+const spanBits = new Map<number, number>();
+const S_HARD = 1;
+const S_BP = 2;
+/** Its first measured entry is a line: in a run of lines around, that line's space was already counted. */
+const S_LEAD = 4;
+/** It measured text or a line: `lastLine` after it is its own. */
+const S_TOUCH = 8;
+/** It ends in a run of lines. */
+const S_RUN = 16;
+/** It ends in the run its lead started, with no text: a run around goes on through it. */
+const S_LINES_ONLY = 32;
+const S_SFX = 64;
+const S_BND = 128;
+/** A measured line suffix before its measured boundary. */
+const S_BND_SFX = 256;
+/** It holds an `ifBreak` on a group; `iRef` holds the first such group. */
+const S_REFS = 512;
+
+/** Opens the span a shared part is built in; close it with `closeSpan`, then print it again with `sJump`. */
+export function openSpan(): number {
+  spanSaves.push(pos, lastLine, runStart, lastSfx, bndM, bndSfx, noMeasure, refCount, leadAt);
+  lastLine = FRESH;
+  runStart = -1;
+  lastSfx = -1;
+  bndM = -1;
+  bndSfx = -1;
+  noMeasure = 0;
+  leadAt = -1;
+  return open(SPAN);
+}
+
+export function closeSpan(): void {
+  const o = op - 1;
+  const t = oIdx[o] as number;
+  let bits =
+    (hard > (oHard[o] as number) ? S_HARD : 0) | (bp > (oBp[o] as number) ? S_BP : 0);
+  close();
+  const b = spanSaves.length - SPAN_SAVE;
+  const refs0 = spanSaves[b + 7] as number;
+  let first = -1;
+  let inner = false;
+  for (let r = refs0; r < refCount; r++) {
+    const g = refs[r] as number;
+    if (first < 0 || g < first) first = g;
+    if (g > t) inner = true;
+  }
+  if (first >= 0) {
+    bits |= S_REFS;
+    iRef[t] = first;
+  }
+  if (inner) scanInnerRefs(t);
+  const endLine = lastLine;
+  const endRun = runStart;
+  const lead = leadAt;
+  if (lead >= 0) bits |= S_LEAD;
+  if (endLine !== FRESH) bits |= S_TOUCH;
+  if (endLine >= 0) {
+    bits |= S_RUN;
+    if (lead >= 0 && endRun === lead) bits |= S_LINES_ONLY;
+  }
+  const flags = iFlag[t] as number;
+  if (flags & SFX) bits |= S_SFX;
+  if (flags & BND) bits |= S_BND;
+  if (flags & SPECIAL) bits |= S_BND_SFX;
+  spanBits.set(t, bits);
+  pos = spanSaves[b] as number;
+  lastLine = spanSaves[b + 1] as number;
+  runStart = spanSaves[b + 2] as number;
+  lastSfx = spanSaves[b + 3] as number;
+  bndM = spanSaves[b + 4] as number;
+  bndSfx = spanSaves[b + 5] as number;
+  noMeasure = spanSaves[b + 6] as number;
+  leadAt = spanSaves[b + 8] as number;
+  spanSaves.length = b;
+  // Its own groups and refs are counted where it was built; the rest is the effect around.
+  transfer(bits & ~(S_HARD | S_BP | S_REFS), t, endLine, endRun, lead);
+}
+
+/** Prints the closed span `t` here again: a `JUMP` entry, measured as the span's contents would be here. */
+export function sJump(t: number): void {
+  const j = n;
+  entry(JUMP, 0, t, 0, 0);
+  mergeable = false;
+  transfer(spanBits.get(t) as number, t, j, j, j);
+}
+
+/** Applies span `t`'s effect on the counters around, its last line at `endLine`, its run from `endRun`. */
+function transfer(bits: number, t: number, endLine: number, endRun: number, lead: number) {
+  if (bits & S_HARD) hard++;
+  if (bits & S_BP) bp++;
+  if (bits & S_REFS) {
+    if (refCount === refs.length) refs = grow32(refs);
+    refs[refCount++] = iRef[t] as number;
+  }
+  if (noMeasure > 0) return;
+  // Intervals from `m` on open after it: any index at or past it reads as inside it for those around.
+  if (bits & S_BND) {
+    bndM = m;
+    bndSfx = bits & S_BND_SFX ? m : lastSfx;
+  }
+  if (bits & S_SFX) lastSfx = m;
+  const w = (iP1[t] as number) - (iP0[t] as number);
+  if (!ruffSpaces && bits & S_LEAD && lastLine >= 0) {
+    // Its lead line joins the run around, whose first line counted the space.
+    pos += w - 1;
+    for (let o = op - 1; o >= 0; o--) {
+      const k = oIdx[o] as number;
+      if ((iStart[k] as number) <= runStart || (iFlag[k] as number) & LEAD) break;
+      iFlag[k] = (iFlag[k] as number) | LEAD;
+    }
+    if (bits & S_LINES_ONLY) lastLine = endLine;
+    else if (bits & S_RUN) {
+      lastLine = endLine;
+      runStart = endRun;
+    } else lastLine = -1;
+    return;
+  }
+  pos += w;
+  if (bits & S_LEAD && lastLine === FRESH) leadAt = lead;
+  if (bits & S_RUN) {
+    lastLine = endLine;
+    runStart = endRun;
+  } else if (bits & S_TOUCH) lastLine = -1;
+}
+
+/**
+ * Printed again through a jump, an `ifBreak` on a group inside span `t` reads that group's mode from the print
+ * before, as `printer.ts` reads a shared group's: the groups holding it measure by a scan, which reads it.
+ */
+function scanInnerRefs(t: number) {
+  const held = new Int32Array(m - t + 1);
+  for (let x = t; x < m; x++) {
+    const kind = iKind[x] as number;
+    held[x - t + 1] =
+      (held[x - t] as number) +
+      ((kind === IF_BROKEN || kind === IF_FLAT) && (iRef[x] as number) > t ? 1 : 0);
+  }
+  for (let x = t + 1; x < m; x++) {
+    const kind = iKind[x] as number;
+    if (
+      (kind === GROUP || kind === GROUP_IF_BROKEN || kind === FILL_ITEM || kind === STATE) &&
+      (held[(iNext[x] as number) - t] as number) > (held[x + 1 - t] as number)
+    )
+      iFlag[x] = (iFlag[x] as number) | SPECIAL;
+  }
+}
+// --- end span ---
+
 /** What `printStream` returns: the text, and each printed token's stream entry and output offset. */
 export interface StreamPrinted {
   text: string;
@@ -672,6 +844,18 @@ export function printStream(layout: Layout): StreamPrinted {
   const pick = new Int32Array(fittingSeen ? m : 0);
   // --- end ruff ---
 
+  // --- span ---
+  // The jumps printing stands in, innermost last: each one's base print frame, and the entry and interval after it.
+  let jFp = new Int32Array(16);
+  let jRet = new Int32Array(16);
+  let jCur = new Int32Array(16);
+  let jp = 0;
+  // A measure's own: the jumps it entered, by the depth of their frame, and the entry and interval after each.
+  let mjLs = new Int32Array(16);
+  let mjRet = new Int32Array(16);
+  let mjCur = new Int32Array(16);
+  // --- end span ---
+
   let remeasure = false;
   // While flushed line-suffix content prints: its base frame, below which a measure does not go, and the
   // suffixes of the same flush still to print (`qK`/`qM` from `qAt`), which a measure reads instead.
@@ -708,14 +892,35 @@ export function printStream(layout: Layout): StreamPrinted {
     // Where the lines measured each (`all`, and a fitsExpanded's) end: before it, a line restarts the width.
     let allEnd = all ? to : -1;
     let xs = 0;
+    // The jumps this measure entered, and the print frames of the jumps printing stands in, innermost last.
+    let mj = 0;
+    let pj = jp - 1;
     for (;;) {
-      while (ls > 0 && (lEnd[ls - 1] as number) <= i) ls--;
+      while (ls > 0 && (lEnd[ls - 1] as number) <= i) {
+        ls--;
+        if (mj > 0 && mjLs[mj - 1] === ls) {
+          mj--;
+          i = mjRet[mj] as number;
+          cur = mjCur[mj] as number;
+        }
+      }
       let mode: number;
       if (ls > 0) mode = lMode[ls - 1] as number;
       else if (i < to) mode = mode0;
       else {
         if (!rest) return true;
-        while (lp >= floor && (fEnd[lp] as number) <= i) lp--;
+        while (lp >= floor && (fEnd[lp] as number) <= i) {
+          if (pj >= 0 && jFp[pj] === lp) {
+            // Past the span printing jumped into: on after the jump, where nothing measured before reaches.
+            i = jRet[pj] as number;
+            cur = jCur[pj] as number;
+            pj--;
+            to = -1;
+            allEnd = -1;
+            ovEnd = -1;
+          }
+          lp--;
+        }
         if (lp < floor) {
           // Inside flushed line-suffix content, prettier's rest is the suffixes queued after it, then the line
           // that flushed them, which breaks: the frames below were printed already.
@@ -920,6 +1125,34 @@ export function printStream(layout: Layout): StreamPrinted {
         } else cur++;
       }
       if (jumped) continue;
+      if (eKind[i] === JUMP) {
+        const t = eStr[i] as number;
+        if ((iEnd[t] as number) > (iStart[t] as number)) {
+          // The span's entries come before the jump: bounds past the jump are past them, others end before it.
+          if (allEnd <= i) allEnd = -1;
+          if (ovEnd <= i) ovEnd = -1;
+          while (xs > 0 && (xEnd[xs - 1] as number) <= i) xs--;
+          if (ls === lEnd.length) {
+            lEnd = grow32(lEnd);
+            lMode = grow8(lMode);
+          }
+          if (mj === mjLs.length) {
+            mjLs = grow32(mjLs);
+            mjRet = grow32(mjRet);
+            mjCur = grow32(mjCur);
+          }
+          mjLs[mj] = ls;
+          mjRet[mj] = i + 1;
+          mjCur[mj] = cur;
+          mj++;
+          lEnd[ls] = iEnd[t] as number;
+          lMode[ls] = mode;
+          ls++;
+          i = iStart[t] as number;
+          cur = t + 1;
+        } else i++;
+        continue;
+      }
       if (eKind[i] === LINE) {
         const f = eFlag[i] as number;
         if (f & BOUNDARY) {
@@ -1040,7 +1273,11 @@ export function printStream(layout: Layout): StreamPrinted {
       if (separatorIntervals) special = true;
       if ((flags | (iFlag[next] as number)) & BND) special = true;
       for (let s = iEnd[k] as number; s < (iStart[next] as number); s++)
-        if (eKind[s] === LINE && (eFlag[s] as number) & HARD) special = true;
+        if (
+          (eKind[s] === LINE && (eFlag[s] as number) & HARD) ||
+          eKind[s] === JUMP
+        )
+          special = true;
       const pairFits =
         width >= 0 &&
         (special
@@ -1401,6 +1638,9 @@ export function printStream(layout: Layout): StreamPrinted {
             cur = iNext[k] as number;
             jumped = true;
             break;
+          case SPAN:
+            cur++;
+            break;
           default:
             throw new Error(`printStream: unknown interval kind ${iKind[k]}`);
         }
@@ -1408,6 +1648,22 @@ export function printStream(layout: Layout): StreamPrinted {
       }
       if (jumped) continue;
       const md = fMode[fp - 1] as number;
+      if (eKind[i] === JUMP) {
+        const t = eStr[i] as number;
+        if (jp === jFp.length) {
+          jFp = grow32(jFp);
+          jRet = grow32(jRet);
+          jCur = grow32(jCur);
+        }
+        jFp[jp] = fp;
+        jRet[jp] = i + 1;
+        jCur[jp] = cur;
+        jp++;
+        run(iStart[t] as number, iEnd[t] as number, t + 1, fInd[fp - 1] as number, md);
+        jp--;
+        i++;
+        continue;
+      }
       if (eKind[i] === LINE) {
         const f = eFlag[i] as number;
         if (f & BOUNDARY && sK.length === 0) {

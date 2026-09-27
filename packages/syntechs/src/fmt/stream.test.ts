@@ -47,6 +47,9 @@ import {
   openBestFitParenthesize,
   openBestFitting,
   openChoice,
+  openSpan,
+  closeSpan,
+  sJump,
   openFitsExpanded,
   openState,
   openIndentIfBreak,
@@ -378,6 +381,89 @@ describe("printStream matches printer.ts for conditional groups", () => {
       },
     );
     expect(out).toBe("aaaa-bbbb");
+  });
+});
+
+describe("printStream matches printer.ts for a shared part printed through a jump", () => {
+  // A part built once as a span; `jump` prints it again.
+  const span = (build: () => void): number => {
+    const t = openSpan();
+    build();
+    closeSpan();
+    return t;
+  };
+
+  it("decides a jumped group by what follows the jump, not what follows the span", () => {
+    const s = group([text("aa"), line, text("bb")]);
+    const out = both(6, [s, hardline, s, text("zzz")], () => {
+      const t = span(() => {
+        open(GROUP);
+        sText("aa");
+        sLine(0);
+        sText("bb");
+        close();
+      });
+      sHardline();
+      sJump(t);
+      sText("zzz");
+    });
+    expect(out).toBe("aa bb\naa\nbbzzz");
+  });
+
+  it("counts a jump's width in the group around it", () => {
+    const s = group(text("dddd"));
+    const out = both(6, [s, hardline, group([text("cc"), line, s])], () => {
+      const t = span(() => {
+        open(GROUP);
+        sText("dddd");
+        close();
+      });
+      sHardline();
+      open(GROUP);
+      sText("cc");
+      sLine(0);
+      sJump(t);
+      close();
+    });
+    expect(out).toBe("dddd\ncc\ndddd");
+  });
+
+  it("counts a jumped part's leading line as one space with the run of lines before it", () => {
+    const s = group([line, text("b")]);
+    const out = both(3, [s, hardline, group([text("a"), line, s])], () => {
+      const t = span(() => {
+        open(GROUP);
+        sLine(0);
+        sText("b");
+        close();
+      });
+      sHardline();
+      open(GROUP);
+      sText("a");
+      sLine(0);
+      sJump(t);
+      close();
+    });
+    expect(out).toBe(" b\na  b");
+  });
+
+  it("measures through a jump and on past it", () => {
+    const s = group(text("dd"));
+    const out = both(5, [s, hardline, group([text("cc"), line]), s, text("e")], () => {
+      const t = span(() => {
+        open(GROUP);
+        sText("dd");
+        close();
+      });
+      sHardline();
+      open(GROUP);
+      sText("cc");
+      sLine(0);
+      close();
+      sJump(t);
+      sText("e");
+    });
+    expect(out).toBe("dd\ncc\ndde");
   });
 });
 

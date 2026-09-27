@@ -63,6 +63,9 @@ import {
   openState,
   closeState,
   closeChoice,
+  openSpan,
+  closeSpan,
+  sJump,
   openIndentIfBreak,
   openReservedSuffix,
   openVariant,
@@ -85,9 +88,25 @@ export class Unsupported extends Error {}
  * the stream one construct at a time, and how the equivalence harness checks the stream against the printer.
  */
 export function sDoc(doc: Doc): void {
-  check(doc, new Set());
+  const shared = check(doc, new Set());
   const groups = new Map<number, number>();
+  // A shared part holding intervals is built once, as a span, and jumped to wherever else it appears.
+  const spans = new Map<Doc, number>();
   const emit = (d: Doc): void => {
+    if (shared.has(d)) {
+      const t = spans.get(d);
+      if (t !== undefined) {
+        sJump(t);
+        return;
+      }
+      spans.set(d, openSpan());
+      emitPart(d);
+      closeSpan();
+      return;
+    }
+    emitPart(d);
+  };
+  const emitPart = (d: Doc): void => {
     if (isDocs(d)) {
       for (const x of d) emit(x);
       return;
@@ -210,10 +229,10 @@ export function sDoc(doc: Doc): void {
 }
 
 /**
- * Throws `Unsupported` for anything in `doc` the stream cannot print yet: a kind it lacks, a group an `ifBreak`
- * names before the group itself is built, or a shared part holding a group (the stream would build it twice).
+ * Throws `Unsupported` for anything in `doc` the stream cannot print yet: a kind it lacks, or a group an
+ * `ifBreak` names before the group itself is built. Returns the parts `doc` shares that hold intervals.
  */
-function check(doc: Doc, seen: Set<Doc>): void {
+function check(doc: Doc, seen: Set<Doc>): Set<Doc> {
   const groups = new Set<number>();
   const shared = new Set<Doc>();
   // --- ruff ---
@@ -322,8 +341,8 @@ function check(doc: Doc, seen: Set<Doc>): void {
     }
   };
   walk(doc);
-  for (const d of shared)
-    if (holdsInterval(d)) throw new Unsupported("a shared part holding intervals");
+  for (const d of shared) if (!holdsInterval(d)) shared.delete(d);
+  return shared;
 }
 
 // --- ruff ---
