@@ -4,12 +4,12 @@ import { type Fmt, writeCommaIn } from "../builders.js";
 import type { Comment } from "../comments.js";
 import {
   canOmitOptionalParentheses,
-  formatExpr,
   hasOwnParentheses,
   hasParentheses,
-  maybeParenthesize,
   needsParentheses,
-  node,
+  writeExpr,
+  writeMaybeParenthesize,
+  writeNode,
 } from "../expr.js";
 import {
   BROKEN,
@@ -123,12 +123,12 @@ export function targetWithEqual(
 ): void {
   const cs = f.comments;
   if (preserveParentheses || cs.hasLeading(target) || cs.hasTrailing(target))
-    part(formatExpr(f, target));
+    writeExpr(f, target);
   else if (shouldParenthesizeTarget(f, target))
     f.writeParenthesizeIfExpands(target.ts, () =>
-      part(formatExpr(f, target, "never")),
+      writeExpr(f, target, "never"),
     );
-  else part(formatExpr(f, target, "never"));
+  else writeExpr(f, target, "never");
   space();
   eq();
   space();
@@ -137,9 +137,9 @@ export function targetWithEqual(
 /** Ruff's `AnyBeforeOperator::Expression`. */
 export function beforeOperator(f: Fmt, e: Expr): void {
   const cs = f.comments;
-  if (cs.hasLeading(e) || cs.hasTrailing(e)) return part(formatExpr(f, e));
-  if (!shouldParenthesizeTarget(f, e)) return part(formatExpr(f, e, "never"));
-  const content = () => part(formatExpr(f, e, "never"));
+  if (cs.hasLeading(e) || cs.hasTrailing(e)) return writeExpr(f, e);
+  if (!shouldParenthesizeTarget(f, e)) return writeExpr(f, e, "never");
+  const content = () => writeExpr(f, e, "never");
   if (canOmitOptionalParentheses(f, e)) f.writeOptionalParentheses(e.ts, content);
   else f.writeParenthesizeIfExpands(e.ts, content);
 }
@@ -173,9 +173,9 @@ function nonInlineableUsesBestFit(f: Fmt, value: Expr, stmt: Stmt): boolean {
 function maybeParenthesizeValue(f: Fmt, value: Expr, stmt: Stmt): void {
   if (value.kind === "Lambda" && !f.comments.hasLeading(value))
     f.writeParenthesizeIfExpands(value.ts, () =>
-      part(node(f, value, { lambdaAssign: true })),
+      writeNode(f, value, { lambdaAssign: true }),
     );
-  else part(maybeParenthesize(f, value, stmt, "ifBreaks"));
+  else writeMaybeParenthesize(f, value, stmt, "ifBreaks");
 }
 
 /**
@@ -221,11 +221,11 @@ export function leftToRight(f: Fmt, value: Expr, stmt: Stmt): void {
     return maybeParenthesizeValue(f, value, stmt);
 
   const comments = inlinedComments(f, value, stmt);
-  if (!comments) return part(formatExpr(f, value, "always"));
+  if (!comments) return writeExpr(f, value, "always");
   const inline = inlinePart(f, comments);
   const fallback = () => {
     unmark(comments);
-    part(maybeParenthesize(f, value, stmt, "ifBreaks"));
+    writeMaybeParenthesize(f, value, stmt, "ifBreaks");
   };
   const flatThenInline = (flat: Part) => () => {
     place(flat);
@@ -277,7 +277,7 @@ export function leftToRight(f: Fmt, value: Expr, stmt: Stmt): void {
   }
 
   const b = openBestFitParenthesize(() => lparen(value));
-  f.at({ k: "expr", g: refTo(b) }, () => part(formatExpr(f, value, "never")));
+  f.at({ k: "expr", g: refTo(b) }, () => writeExpr(f, value, "never"));
   if (comments.length === 0) return closeBestFitParenthesize(b, () => rparen(value));
   open(IF_BROKEN, b);
   place(inline);
@@ -328,7 +328,7 @@ export function rightToLeft(
   if (!comments) {
     before();
     withOp();
-    return part(formatExpr(f, value, "always"));
+    return writeExpr(f, value, "always");
   }
   const inline = inlinePart(f, comments);
   const last = capture(before);
@@ -337,13 +337,13 @@ export function rightToLeft(
     unmark(marked);
     place(last);
     withOp();
-    part(maybeParenthesize(f, value, stmt, "ifBreaks"));
+    writeMaybeParenthesize(f, value, stmt, "ifBreaks");
   };
 
   if (!implicit && !interpolated && lastBreaks) {
     place(last);
     withOp();
-    part(formatExpr(f, value, "never"));
+    writeExpr(f, value, "never");
     return place(inline);
   }
 
@@ -355,7 +355,7 @@ export function rightToLeft(
     formatValue = isInterpolatedStr(str) ? removeSoftLines(raw) : raw;
   } else if (interpolatedRaw !== undefined)
     formatValue = removeSoftLines(interpolatedRaw);
-  else formatValue = capture(() => part(formatExpr(f, value, "never")));
+  else formatValue = capture(() => writeExpr(f, value, "never"));
 
   const splitLast = () => brokenGroup(() => place(last));
   const valueParenthesizedFlat = () => {

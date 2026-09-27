@@ -13,7 +13,6 @@ import { type Fmt, writeCommaIn } from "../builders.js";
 import type { Comment } from "../comments.js";
 import {
   canOmitOptionalParentheses,
-  maybeParenthesize,
   writeExpr,
   writeMaybeParenthesize,
 } from "../expr.js";
@@ -58,7 +57,7 @@ function splitAtBody(
 /** Ruff's `FormatExceptHandlerExceptHandler` after `except` and `*`: the type, then `as` and the name. */
 export function exceptType(f: Fmt, h: ExceptHandler): void {
   if (!h.type) return;
-  part(maybeParenthesize(f, h.type, h, "ifBreaks"));
+  writeMaybeParenthesize(f, h.type, h, "ifBreaks");
   if (h.asTok !== undefined && h.name !== undefined) {
     sText(" ");
     tok(f, h.asTok);
