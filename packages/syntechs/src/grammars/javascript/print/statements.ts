@@ -492,8 +492,6 @@ const customs = {
     danglingLines(s, node);
   },
 
-  "stmt.hashBang": (node, ctx) => sToken(node, src(ctx, node).trimEnd()),
-
   "stmt.block": (node, ctx) => printBlock(jsCtx(ctx), node),
 
   /** Prettier's isMeaningfulEmptyStatement: an empty body keeps its `;`, any other empty statement vanishes. */

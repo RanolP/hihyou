@@ -5,7 +5,6 @@ import { isDirective } from "./parens.js";
 import {
   anon,
   children,
-  field,
   first,
   hasComment,
   type HasTree,
@@ -15,6 +14,7 @@ import {
   src,
   unparen,
 } from "./util.js";
+import { printString } from "../../../fmt/dsl/normalizers.js";
 import type { CustomRule } from "../../../fmt/dsl/runtime.js";
 import {
   capture,
@@ -40,53 +40,6 @@ import type { JsOptions } from "./util.js";
 
 const DOUBLE = '"';
 const SINGLE = "'";
-
-/** Prettier's getPreferredQuote: the preferred quote unless the text holds more of it than of the other. */
-export function preferredQuote(content: string, preferSingle: boolean): string {
-  const [preferred, alternate] = preferSingle
-    ? [SINGLE, DOUBLE]
-    : [DOUBLE, SINGLE];
-  let p = 0;
-  let a = 0;
-  for (const ch of content) {
-    if (ch === preferred) p++;
-    else if (ch === alternate) a++;
-  }
-  return p > a ? alternate : preferred;
-}
-
-/** Prettier's makeString: `content` between `quote`, unescaping the other quote and escaping this one. */
-export function makeString(content: string, quote: string): string {
-  const other = quote === DOUBLE ? SINGLE : DOUBLE;
-  const body = content.replaceAll(
-    /\\(["'\\])|(["'])/g,
-    (match, escaped: string | undefined, unescaped: string | undefined) => {
-      if (escaped) return escaped === other ? other : match;
-      return unescaped === quote ? `\\${unescaped}` : (unescaped ?? "");
-    },
-  );
-  return quote + body + quote;
-}
-
-/** Prettier's printString over a string literal's raw text, quotes included. */
-export function printString(raw: string, singleQuote: boolean): string {
-  const content = raw.slice(1, -1);
-  const quote = preferredQuote(content, singleQuote);
-  return raw.charAt(0) === quote ? raw : makeString(content, quote);
-}
-
-/** Prettier's printNumber, and printBigInt for a literal ending in `n`. */
-export function printNumber(raw: string): string {
-  if (/n$/i.test(raw)) return raw.toLowerCase();
-  if (raw.length === 1) return raw;
-  return raw
-    .toLowerCase()
-    .replace(/^([+-]?[\d.]+e)(?:\+|(-))?0*(?=\d)/, "$1$2")
-    .replace(/^([+-]?[\d.]+)e[+-]?0+$/, "$1")
-    .replace(/^([+-])?\./, "$10.")
-    .replace(/(\.\d+?)0+(?=e|$)/, "$1")
-    .replace(/\.(?=e|$)/, "");
-}
 
 function printDirective(raw: string, singleQuote: boolean): string {
   const content = raw.slice(1, -1);
@@ -116,16 +69,6 @@ const string: CustomRule<JsOptions> = (node, ctx) => {
   const printed = printString(raw, js.options.singleQuote);
   if (printed.includes("\n")) sLiteral(node, printed);
   else sToken(node, printed);
-};
-
-const number: CustomRule<JsOptions> = (node, ctx) =>
-  sToken(node, printNumber(src(jsCtx(ctx).js, node)));
-
-const regex: CustomRule<JsOptions> = (node, ctx) => {
-  const js = jsCtx(ctx).js;
-  const flags = field(js, node, "flags");
-  for (const c of children(js, node))
-    sToken(c, c === flags ? [...src(js, c)].sort().join("") : src(js, c));
 };
 
 // Prettier's getAlignmentSize and getIndentSize (utilities/get-alignment-size.js, get-indent-size.js).
@@ -299,8 +242,6 @@ export function printComment(
 
 /** The customs format/literals.ts names, by the names its spec gives them. */
 export const literalCustoms = {
-  number,
-  regex,
   string,
   templateString,
 } satisfies Record<string, CustomRule<JsOptions>>;

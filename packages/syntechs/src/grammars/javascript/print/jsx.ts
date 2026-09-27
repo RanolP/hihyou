@@ -33,7 +33,7 @@ import {
   willBreak,
   withComments,
 } from "../sink.js";
-import { preferredQuote } from "./literals.js";
+import { preferredQuote } from "../../../fmt/dsl/normalizers.js";
 import { needsParens, role } from "./parens.js";
 import {
   anon,

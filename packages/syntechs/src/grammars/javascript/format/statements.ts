@@ -1,11 +1,11 @@
 // Statements (customs: print/statements.ts). A blank line kept after a statement's content, and a clause's body
 // beside or below its head, are customs.
-import { custom, space, tok } from "../../../fmt/dsl/dsl.js";
+import { custom, space, text, tok } from "../../../fmt/dsl/dsl.js";
 import type { JsStructure } from "../format.js";
 
 export const statements = {
   program: () => custom("stmt.program"),
-  hash_bang_line: () => custom("stmt.hashBang"),
+  hash_bang_line: () => text("trimEnd"),
   statement_block: () => custom("stmt.block"),
   empty_statement: () => custom("stmt.empty"),
   else_clause: () => custom("stmt.else"),

@@ -19,7 +19,7 @@ import {
   sText,
 } from "../sink.js";
 import { printsAsMemberChain } from "./calls.js";
-import { printString } from "./literals.js";
+import { printString } from "../../../fmt/dsl/normalizers.js";
 import { role } from "./parens.js";
 import { shouldHugUnionType, unparenType } from "./types.js";
 import {

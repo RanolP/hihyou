@@ -28,7 +28,7 @@ import {
   sPrintMethodValue,
   shouldHugTheOnlyFunctionParameter,
 } from "./functions.js";
-import { printNumber, printString } from "./literals.js";
+import { printNumber, printString } from "../../../fmt/dsl/normalizers.js";
 import { role } from "./parens.js";
 import {
   CF,
