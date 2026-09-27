@@ -1,5 +1,5 @@
 // Definitions: functions, classes, decorators, parameters, and type parameters.
-import { custom, grpParen, sepBy, space, tok } from "../../../fmt/dsl/dsl.js";
+import { custom, grpBracket, grpParen, sepBy, space, tok } from "../../../fmt/dsl/dsl.js";
 import type { Structure } from "../format.js";
 
 export const stmtDef = {
@@ -10,7 +10,7 @@ export const stmtDef = {
     "def",
     space,
     $.name,
-    $.type_parameters.andThen((tp) => tp.via("def.typeParams")),
+    $.type_parameters.andThen((tp) => tp),
     $.parameters.via("def.signature"),
     ":",
     $.body.via("def.body"),
@@ -19,7 +19,7 @@ export const stmtDef = {
     "class",
     space,
     $.name,
-    $.type_parameters.andThen((tp) => tp.via("def.typeParams")),
+    $.type_parameters.andThen((tp) => tp),
     $.superclasses.andThen((a) => a.via("def.classArgs")),
     ":",
     $.body.via("def.body"),
@@ -37,6 +37,8 @@ export const stmtDef = {
     "=",
     $.value.via("def.default"),
   ],
+  // Ruff lays out the list (`def.typeParams`): a definition's and a type alias's differ in what they accept.
+  type_parameter: ($) => grpBracket(sepBy(",", $.children)).via("def.typeParams"),
   // A type parameter's `T: bound`.
   constrained_type: ($) => [
     $.children.at(0).andThen((name) => name),

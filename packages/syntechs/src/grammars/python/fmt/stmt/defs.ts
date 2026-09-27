@@ -1,4 +1,4 @@
-import type { Format } from "../elements.js";
+import type { Format, Token } from "../elements.js";
 import type { FormatTree } from "../../../../fmt/tree.js";
 import type {
   ClassDef,
@@ -122,9 +122,9 @@ export function splitDangling(
 /**
  * Ruff's `FormatTypeParams`. Tree-sitter reads a bound as a type expression the AST does not convert, so a
  * bound is printed from its tokens and only in the shapes whose spacing is fixed: a name, a dotted name, or a
- * parenthesized tuple of those.
+ * parenthesized tuple of those. `openTok` and `closeTok` print the brackets (the frame of the kind's rule).
  */
-export function typeParams(f: Fmt, tp: TypeParams): Format {
+export function typeParams(f: Fmt, tp: TypeParams, openTok: Token, closeTok: Token): Format {
   if (f.comments.has(tp) || f.comments.hasAnyIn(tp.start, tp.end))
     throw new Unformattable(
       `comment in type parameters at ${byteOffsetOf(f.tree, tp.ts)}`,
@@ -144,9 +144,9 @@ export function typeParams(f: Fmt, tp: TypeParams): Format {
   }));
   const comma = commaIn(t, tp.ts, open);
   return f.parenthesized(
-    f.tok(open),
+    openTok,
     () => f.joinCommaSeparated(entries, tp.end, comma),
-    f.tok(close),
+    closeTok,
   );
 }
 

@@ -1,7 +1,8 @@
 // The customs stmt-def.ts's `.via`s name: a definition's part as ruff lays it out, looked up by the definition.
 import type { StreamCtx } from "../../../fmt/stream-format.js";
 import type { Frame } from "../../../fmt/dsl/runtime.js";
-import type { ClassDef, Decorator, FunctionDef, Lambda, Parameter } from "../fmt/ast.js";
+import type { ClassDef, Decorator, FunctionDef, Lambda, Parameter, TypeAlias } from "../fmt/ast.js";
+import { aliasTypeParams } from "../fmt/stmt/assign.js";
 import { type Format, group } from "../fmt/elements.js";
 import { hard, space } from "../fmt/builders.js";
 import { args, formatExpr, maybeParenthesize, parameters } from "../fmt/expr.js";
@@ -26,10 +27,25 @@ export const stmtDefVia = {
     const { f } = ruffStmtOf(token);
     part([f.tok(token), space]);
   },
-  "def.typeParams": (c: number) => {
-    const { f, s } = ruffStmtOf(c);
-    const tp = (s as FunctionDef | ClassDef).typeParams;
-    if (tp) part(typeParams(f, tp));
+  // A definition's or a type alias's (under its `generic_type`) type parameters in their brackets.
+  "def.typeParams": (node: number, ctx: StreamCtx<unknown>, frame: Frame) => {
+    const { open, close } = frameParts(frame);
+    const t = ctx.tree;
+    const parent = t.parent(node);
+    if (t.kindName(parent) === "generic_type") {
+      // The alias's left side, which tree-sitter may wrap in a `type`.
+      const left = t.kindName(t.parent(parent)) === "type" ? t.parent(parent) : parent;
+      const { f, s } = ruffStmtOf(left);
+      const tp = (s as TypeAlias).typeParams;
+      // A subscript's `list[int]` is a `generic_type` too, whose brackets ruff prints as a subscript's.
+      if (s.kind !== "TypeAlias" || tp?.ts !== node)
+        throw new Error("python: def.typeParams on a generic_type's brackets other than a type alias's");
+      part(aliasTypeParams(f, tp, open, close));
+    } else {
+      const { f, s } = ruffStmtOf(node);
+      const tp = (s as FunctionDef | ClassDef).typeParams;
+      if (tp) part(typeParams(f, tp, open, close));
+    }
   },
   // A definition's bound prints from its tokens (`ctx.args.boundTokens`), a type alias's as an expression.
   "def.bound": (c: number, ctx: StreamCtx<unknown>) => {

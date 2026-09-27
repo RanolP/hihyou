@@ -6,6 +6,7 @@ import {
   ifBreak,
   removeSoftLines,
   synthetic,
+  type Token,
   willBreak,
 } from "../elements.js";
 import type { Expr, Stmt, TypeParam, TypeParams } from "../ast.js";
@@ -428,8 +429,11 @@ function typeParam(f: Fmt, p: TypeParam): Format {
   return [p.star !== undefined ? f.tok(p.star) : [], f.tok(p.name)];
 }
 
-/** Ruff's `FormatTypeParams`: `[T, *Ts, **P]`, split one per line when it does not fit. */
-export function typeParams(f: Fmt, tp: TypeParams): Format {
+/** A type alias's type parameters, as their rule prints them. */
+export const typeParams = (_: Fmt, tp: TypeParams): Format => dslPart(tp.ts);
+
+/** Ruff's `FormatTypeParams`: `[T, *Ts, **P]`, split one per line when it does not fit, between `open` and `close`. */
+export function aliasTypeParams(f: Fmt, tp: TypeParams, open: Token, close: Token): Format {
   if (f.comments.hasAnyIn(tp.start, tp.end))
     throw new Unformattable(
       `comment in type parameters at ${byteOffsetOf(f.tree, tp.ts)}`,
@@ -437,9 +441,9 @@ export function typeParams(f: Fmt, tp: TypeParams): Format {
   const comma = commaIn(f.tree, tp.ts, tp.open);
   const entries = tp.params.map((p) => ({ end: p.end, doc: typeParam(f, p) }));
   return f.parenthesized(
-    f.tok(tp.open),
+    open,
     () => f.joinCommaSeparated(entries, startOf(f.tree, tp.close), comma),
-    f.tok(tp.close),
+    close,
   );
 }
 
