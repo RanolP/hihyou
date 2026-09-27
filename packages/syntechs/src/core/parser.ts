@@ -574,7 +574,8 @@ class Parser {
     subtrees.addDynamicPrecedence(parent, dynamicPrecedence);
     this.direct.reduce(parent, children, stack.position(0));
     stack.push(0, parent, false, next);
-    for (const extra of trailingExtras) stack.push(0, extra, false, next);
+    for (let i = 0; i < trailingExtras.length; i++)
+      stack.push(0, trailingExtras[i] as Subtree, false, next);
     return true;
   }
 

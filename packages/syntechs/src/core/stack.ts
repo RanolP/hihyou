@@ -221,6 +221,7 @@ export class Stack {
   heads: StackHead[] = [];
   private slices: StackSlice[] = [];
   private readonly free: StackNode[] = [];
+  private readonly popped: Subtree[] = [];
   private readonly baseNode = new StackNode(1);
 
   constructor(readonly subtrees: Subtrees) {
@@ -440,25 +441,41 @@ export class Stack {
   /**
    * `popCount` of the only version, when every node above the goal has one link: the head drops to the goal
    * node in place, which is where `popCount`'s new version plus the caller's `renumberVersion` back onto this
-   * one would leave it. Returns the popped subtrees in stack order, or null (stack untouched) on a fork.
+   * one would leave it. Returns the popped subtrees in stack order, or null (stack untouched) on a fork. The
+   * array is reused by the next call, so the caller must be done with it by then.
    */
   popLinear(count: number): Subtree[] | null {
     const head = this.heads[0] as StackHead;
+    // A first walk counts the subtrees and checks for a fork, so the second can fill the array back to front
+    // and never grow or shrink it past its length (either would reallocate its store on every call).
     let node = head.node;
     let depth = 0;
-    const subtrees: Subtree[] = [];
+    let k = 0;
     while (depth !== count) {
       if (node.linkCount !== 1) return null;
       const subtree = node.subtree0;
       if (subtree !== NONE) {
-        subtrees.push(subtree);
+        k++;
+        if (!this.subtrees.flag(subtree, EXTRA)) depth++;
+      } else depth++;
+      node = node.node0 as StackNode;
+    }
+    const subtrees = this.popped;
+    while (subtrees.length < k) subtrees.push(NONE);
+    if (subtrees.length > k) subtrees.length = k;
+    node = head.node;
+    depth = 0;
+    while (depth !== count) {
+      const subtree = node.subtree0;
+      if (subtree !== NONE) {
+        subtrees[--k] = subtree;
         if (!this.subtrees.flag(subtree, EXTRA)) depth++;
       } else depth++;
       this.free.push(node);
       node = node.node0 as StackNode;
     }
     head.node = node;
-    return subtrees.reverse();
+    return subtrees;
   }
 
   popPending(version: number): StackSlice[] {
