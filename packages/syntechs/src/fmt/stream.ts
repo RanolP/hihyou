@@ -218,6 +218,15 @@ export function sLiteral(node: number, s: string): void {
   close();
 }
 
+/**
+ * Opens a line suffix whose `reserved` columns count against the line now, although its contents print at the
+ * next line break: ruff's way to keep a trailing comment within the width. Close it with `close`.
+ */
+export function openReservedSuffix(reserved: number): number {
+  if (noMeasure === 0) pos += reserved;
+  return open(LINE_SUFFIX, reserved);
+}
+
 /** A line: 0 (a space when flat), `SOFT` (nothing when flat) or `HARD` (always breaks; pair it with `sBreakParent`). */
 export function sLine(flags: number): void {
   if (noMeasure === 0 && flags === 0) {
@@ -516,6 +525,9 @@ export function printStream(layout: Layout): StreamPrinted {
           }
         } else if (kind === LINE_SUFFIX) {
           seenSuffix = true;
+          // A reserved suffix's `iRef` holds its reserved columns.
+          const reserved = iRef[k] as number;
+          if (reserved > 0 && (width -= reserved) < 0) return false;
           i = e;
           cur = iNext[k] as number;
           jumped = true;
@@ -747,6 +759,7 @@ export function printStream(layout: Layout): StreamPrinted {
             break;
           }
           case LINE_SUFFIX:
+            if ((iRef[k] as number) > 0) column += iRef[k] as number;
             sK.push(k);
             sI.push(ti);
             sM.push(tm);

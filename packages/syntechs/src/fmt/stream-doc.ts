@@ -48,6 +48,7 @@ import {
   LINE_SUFFIX,
   open,
   openAlign,
+  openReservedSuffix,
   SOFT,
   sBreakParent,
   sLine,
@@ -102,7 +103,8 @@ export function sDoc(doc: Doc): void {
         close();
         return;
       case D_LINE_SUFFIX:
-        open(LINE_SUFFIX);
+        if (reservedOf(h) > 0) openReservedSuffix(reservedOf(h));
+        else open(LINE_SUFFIX);
         emit(contentsOf(h));
         close();
         return;
@@ -175,9 +177,6 @@ function check(doc: Doc, seen: Set<Doc>): void {
         walk(contentsOf(h));
         return true;
       case D_LINE_SUFFIX:
-        if (reservedOf(h) > 0)
-          throw new Unsupported("lineSuffix with reserved width");
-      // falls through
       case D_INDENT:
       case D_ALIGN:
         seen.add(d);

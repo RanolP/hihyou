@@ -23,6 +23,7 @@ import {
   LINE_SUFFIX,
   open,
   openAlign,
+  openReservedSuffix,
   printStream,
   resetStream,
   sHardline,
@@ -300,5 +301,30 @@ describe("printStream matches printer.ts under ruff's measure", () => {
       close();
     });
     expect(out).toBe("a bb\n  cccc d\nee");
+  });
+
+  it("counts a line suffix's reserved columns against the line it is queued on", () => {
+    const doc = [
+      group([text("a"), line, text("b")]),
+      lineSuffix(text(" # c"), 4),
+      group([line, text("d")]),
+      hardline,
+    ];
+    const out = ruffBoth(6, doc, () => {
+      open(GROUP);
+      sText("a");
+      sLine(0);
+      sText("b");
+      close();
+      openReservedSuffix(4);
+      sText(" # c");
+      close();
+      open(GROUP);
+      sLine(0);
+      sText("d");
+      close();
+      sHardline();
+    });
+    expect(out).toBe("a\nb # c\nd\n");
   });
 });
