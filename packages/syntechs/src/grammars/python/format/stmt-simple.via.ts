@@ -11,7 +11,7 @@ import {
   type TypeAlias,
   Unformattable,
 } from "../fmt/ast.js";
-import { commaIn, type Fmt } from "../fmt/builders.js";
+import { type Fmt, writeCommaIn } from "../fmt/builders.js";
 import { formatExpr, isSplittable, maybeParenthesize, needsParentheses, node } from "../fmt/expr.js";
 import { part, ruffOf, ruffStmtOf, sText, sToken } from "../fmt/sink.js";
 import {
@@ -182,10 +182,10 @@ export const stmtSimpleVia = {
   "simple.importNames": (c: number) => {
     const { f, s } = ruffStmtOf(c);
     const { names, kw, ts } = s as Import;
-    const comma = commaIn(f.tree, ts, kw);
+    const comma = writeCommaIn(f.tree, ts, kw);
     names.forEach((a, i) => {
       if (i > 0) {
-        part(comma(names[i - 1]?.end ?? a.start));
+        comma(names[i - 1]?.end ?? a.start);
         sText(" ");
       }
       alias(f, a);
@@ -194,9 +194,9 @@ export const stmtSimpleVia = {
   "simple.importFromNames": (c: number) => {
     const { f, s: st } = ruffStmtOf(c);
     const s = st as ImportFrom;
-    const comma = commaIn(f.tree, s.ts, s.importKw);
+    const comma = writeCommaIn(f.tree, s.ts, s.importKw);
     const entries = s.names.map((a) => ({ end: a.end, write: () => alias(f, a) }));
-    const list = () => f.writeJoinCommaSeparated(entries, s.end, (after) => part(comma(after)), true);
+    const list = () => f.writeJoinCommaSeparated(entries, s.end, comma, true);
     const dangling = f.comments.dangling(s);
     if (dangling.length === 0) {
       f.writeParenthesizeIfExpands(s.importKw, list);
@@ -216,9 +216,12 @@ export const stmtSimpleVia = {
       part(maybeParenthesize(f, single, s, "ifBreaks"));
       return;
     }
-    const comma = commaIn(f.tree, e.ts, e.ts);
-    const entries = targets.map((t) => ({ end: t.end, doc: formatExpr(f, t) }));
-    part(f.parenthesizeIfExpands(s.kw, () => f.joinCommaSeparated(entries, s.end, comma)));
+    const comma = writeCommaIn(f.tree, e.ts, e.ts);
+    const entries = targets.map((t) => {
+      const doc = formatExpr(f, t);
+      return { end: t.end, write: () => part(doc) };
+    });
+    f.writeParenthesizeIfExpands(s.kw, () => f.writeJoinCommaSeparated(entries, s.end, comma));
   },
   "simple.python2": (n: number, ctx: StreamCtx<unknown>) => {
     throw new Unformattable(`Python 2: ${ctx.tree.kindName(n)} at ${byteOffsetOf(ctx.tree, n)}`);

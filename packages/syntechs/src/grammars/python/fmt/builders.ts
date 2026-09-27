@@ -8,7 +8,6 @@ import {
   lineOf,
   BLANK,
   SOFT,
-  synthetic,
   type Token,
   text,
   token,
@@ -453,26 +452,6 @@ export class Fmt {
       if (magic) sink.sBreakParent();
     }
   }
-
-  joinCommaSeparated(
-    entries: readonly { end: number; doc: Format; sep?: Format }[],
-    sequenceEnd: number,
-    comma: (after: number) => Token,
-    oneOrMore = false,
-  ): Format {
-    return sink.record(() =>
-      this.writeJoinCommaSeparated(
-        entries.map(({ end, doc, sep }) => ({
-          end,
-          write: () => sink.part(doc),
-          ...(sep === undefined ? {} : { sep: () => sink.part(sep) }),
-        })),
-        sequenceEnd,
-        (after) => sink.part(comma(after)),
-        oneOrMore,
-      ),
-    );
-  }
 }
 
 function writeIfBroken(g: number, content: () => void): void {
@@ -481,19 +460,7 @@ function writeIfBroken(g: number, content: () => void): void {
   sink.close();
 }
 
-/** The comma token among `parent`'s children at or after position `from`, or a synthetic one after `anchor`. */
-export function commaIn(
-  tree: FormatTree,
-  parent: number,
-  anchor: number,
-): (from: number) => Token {
-  return (from) => {
-    const c = commaAfter(tree, parent, from);
-    return c === undefined ? synthetic(anchor, ",") : token(c, ",");
-  };
-}
-
-/** `commaIn`, written. */
+/** Writes the comma among `parent`'s children at or after position `from`, or a synthetic one after `anchor`. */
 export function writeCommaIn(
   tree: FormatTree,
   parent: number,

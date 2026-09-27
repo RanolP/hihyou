@@ -9,7 +9,7 @@ import type {
   With,
   WithItem,
 } from "../ast.js";
-import { commaIn, type Fmt } from "../builders.js";
+import { type Fmt, writeCommaIn } from "../builders.js";
 import type { Comment } from "../comments.js";
 import {
   canOmitOptionalParentheses,
@@ -167,7 +167,7 @@ export function withItems(f: Fmt, w: With): void {
   const clauseNode = withClause(f, w);
   const single = w.items.length === 1 ? first : undefined;
   // Each item prints by its rule in format/stmt-compound.ts, in the layout ruff chose for the statement.
-  const comma = commaIn(f.tree, clauseNode, withKw);
+  const comma = writeCommaIn(f.tree, clauseNode, withKw);
   const joined = () =>
     f.writeJoinCommaSeparated(
       w.items.map((i) => ({
@@ -175,7 +175,7 @@ export function withItems(f: Fmt, w: With): void {
         write: () => sDsl(i.ts, { layout: "contextManagers", single: !!single }),
       })),
       colonStart,
-      (after) => part(comma(after)),
+      comma,
     );
   const last = w.items.at(-1);
   const tv = (f.options as { "target-version"?: string })["target-version"];
@@ -200,7 +200,7 @@ export function withItems(f: Fmt, w: With): void {
   else if (!canParenthesize) {
     w.items.forEach((i, n) => {
       if (n > 0) {
-        part(comma(w.items[n - 1]?.end ?? i.start));
+        comma(w.items[n - 1]?.end ?? i.start);
         sText(" ");
       }
       sDsl(i.ts, { layout: "py38", single: !!single });

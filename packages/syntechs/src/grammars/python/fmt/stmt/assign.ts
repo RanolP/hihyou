@@ -1,6 +1,6 @@
 import type { Expr, Stmt, TypeParam, TypeParams } from "../ast.js";
 import { Unformattable } from "../ast.js";
-import type { Fmt } from "../builders.js";
+import { type Fmt, writeCommaIn } from "../builders.js";
 import type { Comment } from "../comments.js";
 import {
   canOmitOptionalParentheses,
@@ -47,7 +47,6 @@ import { dslPart } from "../sink.js";
 import * as sink from "../sink.js";
 import type { Frame } from "../../../../fmt/dsl/runtime.js";
 import { byteOffsetOf, startOf } from "../trivia.js";
-import { writeCommaIn } from "./defs.js";
 
 /**
  * Ruff's assignments (statement/stmt_{assign,ann_assign,aug_assign,type_alias}.rs) and the layout of a

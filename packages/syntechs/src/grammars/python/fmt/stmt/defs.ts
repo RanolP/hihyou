@@ -7,7 +7,7 @@ import type {
   TypeParams,
 } from "../ast.js";
 import { Unformattable } from "../ast.js";
-import type { Fmt } from "../builders.js";
+import { type Fmt, writeCommaIn } from "../builders.js";
 import type { Comment } from "../comments.js";
 import * as sink from "../sink.js";
 import type { Frame } from "../../../../fmt/dsl/runtime.js";
@@ -135,20 +135,6 @@ export function writeTypeParams(f: Fmt, tp: TypeParams, frame: Frame): void {
     () => f.writeJoinCommaSeparated(entries, tp.end, writeCommaIn(t, tp.ts, open)),
     frame.close,
   );
-}
-
-/** Builders' `commaIn`, written: the comma among `parent`'s children at or after `from`, or one synthetic after `anchor`. */
-export function writeCommaIn(tree: FormatTree, parent: number, anchor: number): (from: number) => void {
-  return (from) => {
-    for (let i = 0, n = tree.count(parent); i < n; i++) {
-      const c = tree.child(parent, i);
-      if (!tree.named(c) && tree.kindName(c) === "," && startOf(tree, c) >= from) {
-        sink.sToken(c, ",");
-        return;
-      }
-    }
-    sink.sToken(anchor, ",", true);
-  };
 }
 
 const writeTok = (f: Fmt, n: number) => sink.sToken(n, f.text(n));
