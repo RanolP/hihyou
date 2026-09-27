@@ -3,22 +3,6 @@
 // is-function-composition-arguments.js, is-template-on-its-own-line.js).
 
 import { NO_NODE } from "../../../core/arena.js";
-import {
-  breakParent,
-  conditionalGroup,
-  type Doc,
-  group,
-  hardline,
-  ifBreak,
-  indent,
-  join,
-  line,
-  lineSuffixBoundary,
-  softline,
-  synthetic,
-  text,
-  willBreak,
-} from "../../../fmt/doc.js";
 import { nextLineEmpty } from "../../../fmt/text.js";
 import { nextLeaf } from "../../../fmt/tree.js";
 import { needsParens, role } from "./parens.js";
@@ -50,26 +34,37 @@ import {
   lastChildWhere,
   objectOf,
   operator,
-  p,
   parameters,
   separators,
   src,
-  t,
   trailingCommaAllowed,
   unparen,
 } from "./util.js";
 import type { CustomRule } from "../../../fmt/dsl/runtime.js";
 import {
+  BROKEN,
+  capture,
   close,
+  closeChoice,
+  closeState,
   GROUP,
+  IF_BROKEN,
   INDENT,
   type JsStreamCtx,
   jsCtx,
   open,
+  openChoice,
+  openState,
+  type Part,
+  place,
   SOFT,
+  sBreakParent,
+  sHardline,
   sLine,
   sLineSuffixBoundary,
+  sText,
   sToken,
+  willBreak,
 } from "../sink.js";
 import type { JsOptions } from "./util.js";
 
@@ -101,17 +96,6 @@ const isDynamicImport = (x: HasTree, n: number) =>
 
 const isCallLike = (x: HasTree, n: number) =>
   isCall(x, n) || kind(x, n) === "new_expression";
-
-const optionalToken = (ctx: JsCtx, n: number): Doc =>
-  t(
-    ctx,
-    childWhere(ctx, n, (c) => isOptionalChainToken(ctx, c)),
-  );
-
-const typeArguments = (ctx: JsCtx, n: number): Doc => {
-  const ta = field(ctx, n, "type_arguments");
-  return ta !== undefined ? [p(ctx, ta), lineSuffixBoundary] : [];
-};
 
 /** The arguments list node of a call (its comments are printed with the arguments). */
 const argumentsNode = (x: HasTree, n: number) => {
@@ -539,66 +523,124 @@ function isReactHookCallWithDepsArray(
 
 // --- call arguments -----------------------------------------------------------------------------------------
 
+/** `n`'s `?.`, into the sink. */
+const sOptional = (ctx: JsCtx, n: number) =>
+  sTok(
+    ctx,
+    childWhere(ctx, n, (c) => isOptionalChainToken(ctx, c)),
+  );
+
+/** `n`'s type arguments, into the sink. */
+const sTypeArguments = (sctx: JsStreamCtx, n: number) => {
+  const ta = field(sctx.js, n, "type_arguments");
+  if (ta === undefined) return;
+  sctx.print(ta);
+  sLineSuffixBoundary();
+};
+
+/**
+ * What `fn` writes, with `node`'s comments around it: the Doc ctx prints them, since under `onDoc` the stream
+ * ctx's comment lists are empty.
+ */
+const commented = (ctx: JsCtx, node: number, fn: () => void): Part => ({
+  doc: ctx.withComments(node, capture(fn).doc),
+});
+
 /** Prettier's printCallArguments over the call (or new expression) `n`. */
-export function printCallArguments(ctx: JsCtx, n: number): Doc {
+function sCallArguments(sctx: JsStreamCtx, n: number): void {
+  const ctx = sctx.js;
   const list = argumentsNode(ctx, n);
   if (list === undefined) {
     // `new A` prints as `new A()`.
-    return kind(ctx, n) === "new_expression"
-      ? [synthetic(n, "("), synthetic(n, ")")]
-      : [];
+    if (kind(ctx, n) === "new_expression") {
+      sToken(n, "(", true);
+      sToken(n, ")", true);
+    }
+    return;
   }
-  return ctx.withComments(list, argumentsDoc(ctx, n, list));
+  place(commented(ctx, list, () => sArguments(sctx, n, list)));
 }
 
-function argumentsDoc(ctx: JsCtx, n: number, list: number): Doc {
-  const open = t(
-    ctx,
-    childWhere(ctx, list, (c) => kind(ctx, c) === "("),
-  );
-  const close = t(
-    ctx,
-    lastChildWhere(ctx, list, (c) => kind(ctx, c) === ")"),
-  );
+/** Writes each of `states` as one state of a conditional group. */
+function sConditionalGroup(states: readonly (() => void)[]): void {
+  openChoice(false);
+  for (const state of states) {
+    openState();
+    state();
+    closeState();
+  }
+  closeChoice();
+}
+
+function sArguments(sctx: JsStreamCtx, n: number, list: number): void {
+  const ctx = sctx.js;
+  const openParen = childWhere(ctx, list, (c) => kind(ctx, c) === "(");
+  const closeParen = lastChildWhere(ctx, list, (c) => kind(ctx, c) === ")");
   const args = items(ctx, list);
-  if (args.length === 0)
-    return group([open, danglingCommentsInList(ctx, list), close]);
+  if (args.length === 0) {
+    open(GROUP);
+    sTok(ctx, openParen);
+    place({ doc: danglingCommentsInList(ctx, list) });
+    sTok(ctx, closeParen);
+    close();
+    return;
+  }
   const commas = separators(ctx, list, args);
-  const comma = (a: number) => t(ctx, commas.get(a));
+  const comma = (a: number) => sTok(ctx, commas.get(a));
   const lastIndex = args.length - 1;
 
   if (isReactHookCallWithDepsArray(ctx, args)) {
-    return [
-      open,
-      args.map((a, i) => [
-        p(ctx, a),
-        i === lastIndex ? [] : [comma(a), text(" ")],
-      ]),
-      close,
-    ];
+    sTok(ctx, openParen);
+    args.forEach((a, i) => {
+      sctx.print(a);
+      if (i === lastIndex) return;
+      comma(a);
+      sText(" ");
+    });
+    sTok(ctx, closeParen);
+    return;
   }
 
   let anyArgEmptyLine = false;
-  const printedArguments = args.map((a, i): Doc => {
-    const doc = p(ctx, a);
-    if (i === lastIndex) return doc;
-    if (nextLineEmpty(ctx.tree, a)) {
-      anyArgEmptyLine = true;
-      return [doc, comma(a), hardline, hardline];
-    }
-    return [doc, comma(a), line];
-  });
+  const printedArguments = args.map((a, i) =>
+    capture(() => {
+      sctx.print(a);
+      if (i === lastIndex) return;
+      comma(a);
+      if (nextLineEmpty(ctx.tree, a)) {
+        anyArgEmptyLine = true;
+        sHardline();
+        sHardline();
+      } else sLine(0);
+    }),
+  );
   const last = args[lastIndex] as number;
   const trailing =
-    !isDynamicImport(ctx, n) && trailingCommaAllowed(ctx, "all")
-      ? ifBreakComma(last)
-      : [];
+    !isDynamicImport(ctx, n) && trailingCommaAllowed(ctx, "all");
+  const sTrailing = () => {
+    if (!trailing) return;
+    open(IF_BROKEN);
+    sToken(last, ",", true);
+    close();
+  };
 
-  const allArgsBrokenOut = () =>
-    group(
-      [open, indent([line, ...printedArguments]), trailing, line, close],
-      true,
-    );
+  const allArgsBrokenOut = () => {
+    open(GROUP, -1, BROKEN);
+    sTok(ctx, openParen);
+    open(INDENT);
+    sLine(0);
+    printedArguments.forEach(place);
+    close();
+    sTrailing();
+    sLine(0);
+    sTok(ctx, closeParen);
+    close();
+  };
+  const brokenGroup = (part: Part) => {
+    open(GROUP, -1, BROKEN);
+    place(part);
+    close();
+  };
 
   if (
     anyArgEmptyLine ||
@@ -611,102 +653,74 @@ function argumentsDoc(ctx: JsCtx, n: number, list: number): Doc {
     const tail = printedArguments.slice(1);
     if (tail.some(willBreak)) return allArgsBrokenOut();
     const firstArg = args[0] as number;
-    let firstDoc: Doc;
+    let firstDoc: Part;
     try {
-      firstDoc = p(ctx, firstArg, { expandFirstArg: true });
+      firstDoc = capture(() => sctx.print(firstArg, { expandFirstArg: true }));
     } catch (caught) {
       if (caught instanceof ArgExpansionBailout) return allArgsBrokenOut();
       throw caught;
     }
-    const sep = [comma(firstArg), text(" ")];
-    if (willBreak(firstDoc))
-      return [
-        breakParent,
-        conditionalGroup([
-          [open, group(firstDoc, true), sep, ...tail, close],
-          allArgsBrokenOut(),
-        ]),
-      ];
-    return conditionalGroup([
-      [open, firstDoc, sep, ...tail, close],
-      [open, group(firstDoc, true), sep, ...tail, close],
-      allArgsBrokenOut(),
+    const hugged = (hug: (part: Part) => void) => () => {
+      sTok(ctx, openParen);
+      hug(firstDoc);
+      comma(firstArg);
+      sText(" ");
+      tail.forEach(place);
+      sTok(ctx, closeParen);
+    };
+    if (willBreak(firstDoc)) {
+      sBreakParent();
+      return sConditionalGroup([hugged(brokenGroup), allArgsBrokenOut]);
+    }
+    return sConditionalGroup([
+      hugged(place),
+      hugged(brokenGroup),
+      allArgsBrokenOut,
     ]);
   }
 
   if (shouldExpandLastArg(ctx, args)) {
     const head = printedArguments.slice(0, -1);
     if (head.some(willBreak)) return allArgsBrokenOut();
-    let lastDoc: Doc;
+    let lastDoc: Part;
     try {
-      lastDoc = p(ctx, last, { expandLastArg: true });
+      lastDoc = capture(() => sctx.print(last, { expandLastArg: true }));
     } catch (caught) {
       if (caught instanceof ArgExpansionBailout) return allArgsBrokenOut();
       throw caught;
     }
-    if (willBreak(lastDoc))
-      return [
-        breakParent,
-        conditionalGroup([
-          [open, ...head, group(lastDoc, true), close],
-          allArgsBrokenOut(),
-        ]),
-      ];
-    return conditionalGroup([
-      [open, ...head, lastDoc, close],
-      [open, ...head, group(lastDoc, true), close],
-      allArgsBrokenOut(),
+    const hugged = (hug: (part: Part) => void) => () => {
+      sTok(ctx, openParen);
+      head.forEach(place);
+      hug(lastDoc);
+      sTok(ctx, closeParen);
+    };
+    if (willBreak(lastDoc)) {
+      sBreakParent();
+      return sConditionalGroup([hugged(brokenGroup), allArgsBrokenOut]);
+    }
+    return sConditionalGroup([
+      hugged(place),
+      hugged(brokenGroup),
+      allArgsBrokenOut,
     ]);
   }
 
-  const contents = [
-    open,
-    indent([softline, ...printedArguments]),
-    trailing,
-    softline,
-    close,
-  ];
-  if (isLongCurriedCall(ctx, n)) return contents;
-  return group(contents, printedArguments.some(willBreak) || anyArgEmptyLine);
+  const grouped = !isLongCurriedCall(ctx, n);
+  if (grouped)
+    open(GROUP, -1, printedArguments.some(willBreak) ? BROKEN : 0);
+  sTok(ctx, openParen);
+  open(INDENT);
+  sLine(SOFT);
+  printedArguments.forEach(place);
+  close();
+  sTrailing();
+  sLine(SOFT);
+  sTok(ctx, closeParen);
+  if (grouped) close();
 }
-
-const ifBreakComma = (anchor: number): Doc => ifBreak(synthetic(anchor, ","));
 
 // --- member expressions -------------------------------------------------------------------------------------
-
-/** Prettier's printMemberLookup: `.b`, `?.b`, `[0]`, `[key]`. */
-function printMemberLookup(ctx: JsCtx, n: number): Doc {
-  const optional = optionalToken(ctx, n);
-  if (kind(ctx, n) === "member_expression") {
-    const property = field(ctx, n, "property");
-    return [
-      optional,
-      t(
-        ctx,
-        childWhere(ctx, n, (c) => kind(ctx, c) === "."),
-      ),
-      p(ctx, property),
-    ];
-  }
-  const index = field(ctx, n, "index");
-  const open = t(
-    ctx,
-    childWhere(ctx, n, (c) => kind(ctx, c) === "["),
-  );
-  const close = t(
-    ctx,
-    lastChildWhere(ctx, n, (c) => kind(ctx, c) === "]"),
-  );
-  if (index === undefined || kind(ctx, unparen(ctx, index)) === "number")
-    return [optional, open, p(ctx, index), close];
-  return group([
-    optional,
-    open,
-    indent([softline, p(ctx, index)]),
-    softline,
-    close,
-  ]);
-}
 
 /** Up through members (as their object) and non-null assertions, whether `n` is the callee of a `new`. */
 function isNewCallee(x: HasTree, n: number): boolean {
@@ -816,14 +830,15 @@ const memberCustom: CustomRule<JsOptions> = (n, s) => {
 
 interface Printed {
   node: number;
-  printed: Doc;
+  printed: Part;
   hasTrailingEmptyLine?: boolean;
 }
 
 const isFactory = (name: string) => /^[A-Z]|^[$_]+$/.test(name);
 
 /** Prettier's printMemberChain for call `n` whose callee is a member. */
-function printMemberChain(ctx: JsCtx, n: number): Doc {
+function sMemberChain(sctx: JsStreamCtx, n: number): void {
+  const ctx = sctx.js;
   const top = role(ctx, n);
   const isExpressionStatement =
     kind(ctx, top.parent) === "expression_statement";
@@ -851,7 +866,7 @@ function printMemberChain(ctx: JsCtx, n: number): Doc {
           undefined ||
         needsParens(inner, ctx);
       if (!kept) return rec(inner);
-      printedNodes.unshift({ node, printed: ctx.print(node) });
+      printedNodes.unshift({ node, printed: capture(() => sctx.print(node)) });
       return;
     }
     if (
@@ -864,20 +879,22 @@ function printMemberChain(ctx: JsCtx, n: number): Doc {
       printedNodes.unshift({
         node,
         hasTrailingEmptyLine,
-        printed: [
-          ctx.withComments(node, [
-            optionalToken(ctx, node),
-            typeArguments(ctx, node),
-            printCallArguments(ctx, node),
-          ]),
-          hasTrailingEmptyLine ? hardline : [],
-        ],
+        printed: capture(() => {
+          place(
+            commented(ctx, node, () => {
+              sOptional(ctx, node);
+              sTypeArguments(sctx, node);
+              sCallArguments(sctx, node);
+            }),
+          );
+          if (hasTrailingEmptyLine) sHardline();
+        }),
       });
       rec(callee(ctx, node) as number);
     } else if (isMember(ctx, node) && !needsParens(node, ctx)) {
       printedNodes.unshift({
         node,
-        printed: ctx.withComments(node, printMemberLookup(ctx, node)),
+        printed: commented(ctx, node, () => sMemberLookup(sctx, node)),
       });
       rec(objectOf(ctx, node) as number);
     } else if (
@@ -886,9 +903,8 @@ function printMemberChain(ctx: JsCtx, n: number): Doc {
     ) {
       printedNodes.unshift({
         node,
-        printed: ctx.withComments(
-          node,
-          t(
+        printed: commented(ctx, node, () =>
+          sTok(
             ctx,
             childWhere(ctx, node, (c) => kind(ctx, c) === "!"),
           ),
@@ -896,17 +912,17 @@ function printMemberChain(ctx: JsCtx, n: number): Doc {
       });
       rec(first(ctx, node) as number);
     } else {
-      printedNodes.unshift({ node, printed: ctx.print(node) });
+      printedNodes.unshift({ node, printed: capture(() => sctx.print(node)) });
     }
   };
 
   printedNodes.unshift({
     node: n,
-    printed: [
-      optionalToken(ctx, n),
-      typeArguments(ctx, n),
-      printCallArguments(ctx, n),
-    ],
+    printed: capture(() => {
+      sOptional(ctx, n);
+      sTypeArguments(sctx, n);
+      sCallArguments(sctx, n);
+    }),
   });
   const c = callee(ctx, n);
   if (c !== undefined) rec(c);
@@ -994,14 +1010,12 @@ function printMemberChain(ctx: JsCtx, n: number): Doc {
     !hasComment(ctx, (groups[1] as Printed[])[0]?.node) &&
     shouldNotWrap(groups);
 
-  const printGroup = (g: Printed[]): Doc => g.map((x) => x.printed);
-  const printIndentedGroup = (gs: Printed[][]): Doc =>
-    gs.length === 0
-      ? []
-      : indent([hardline, join(hardline, gs.map(printGroup))]);
+  const printGroup = (g: Printed[]) => {
+    for (const x of g) place(x.printed);
+  };
+  const groupWillBreak = (g: Printed[]) => g.some((x) => willBreak(x.printed));
+  const oneLine = () => groups.forEach(printGroup);
 
-  const printedGroups = groups.map(printGroup);
-  const oneLine: Doc = printedGroups;
   const cutoff = shouldMerge ? 3 : 2;
   const flat = groups.flat();
   const nodeHasComment =
@@ -1015,7 +1029,11 @@ function printMemberChain(ctx: JsCtx, n: number): Doc {
     !nodeHasComment &&
     groups.every((g) => !g.at(-1)?.hasTrailingEmptyLine)
   ) {
-    return isLongCurriedCall(ctx, n) ? oneLine : group(oneLine);
+    const grouped = !isLongCurriedCall(ctx, n);
+    if (grouped) open(GROUP);
+    oneLine();
+    if (grouped) close();
+    return;
   }
 
   const lastNodeBeforeIndent = (groups[shouldMerge ? 1 : 0] as Printed[]).at(-1)
@@ -1024,21 +1042,29 @@ function printMemberChain(ctx: JsCtx, n: number): Doc {
     !isCallNode(lastNodeBeforeIndent) &&
     shouldInsertEmptyLineAfter(lastNodeBeforeIndent);
 
-  const expanded: Doc = [
-    printGroup(groups[0] as Printed[]),
-    shouldMerge ? groups.slice(1, 2).map(printGroup) : [],
-    shouldHaveEmptyLineBeforeIndent ? hardline : [],
-    printIndentedGroup(groups.slice(shouldMerge ? 2 : 1)),
-  ];
+  const expanded = () => {
+    printGroup(groups[0] as Printed[]);
+    if (shouldMerge) groups.slice(1, 2).forEach(printGroup);
+    if (shouldHaveEmptyLineBeforeIndent) sHardline();
+    const indented = groups.slice(shouldMerge ? 2 : 1);
+    if (indented.length === 0) return;
+    open(INDENT);
+    sHardline();
+    indented.forEach((g, j) => {
+      if (j > 0) sHardline();
+      printGroup(g);
+    });
+    close();
+  };
 
   const callExpressions = printedNodes.map((x) => x.node).filter(isCallNode);
   const lastGroupWillBreakAndOtherCallsHaveFunctionArguments = () => {
-    const lastGroupNode = (groups.at(-1) as Printed[]).at(-1)?.node;
-    const lastGroupDoc = printedGroups.at(-1) as Doc;
+    const lastGroup = groups.at(-1) as Printed[];
+    const lastGroupNode = lastGroup.at(-1)?.node;
     return (
       lastGroupNode !== undefined &&
       isCallNode(lastGroupNode) &&
-      willBreak(lastGroupDoc) &&
+      groupWillBreak(lastGroup) &&
       callExpressions
         .slice(0, -1)
         .some((x) =>
@@ -1049,25 +1075,24 @@ function printMemberChain(ctx: JsCtx, n: number): Doc {
     );
   };
 
-  let result: Doc;
   if (
     nodeHasComment ||
     (callExpressions.length > 2 &&
       callExpressions.some((x) =>
         callArguments(ctx, x).some((a) => !isSimpleCallArgument(ctx, a)),
       )) ||
-    printedGroups.slice(0, -1).some(willBreak) ||
+    groups.slice(0, -1).some(groupWillBreak) ||
     lastGroupWillBreakAndOtherCallsHaveFunctionArguments()
   ) {
-    result = group(expanded);
+    open(GROUP);
+    expanded();
+    close();
   } else {
-    result = [
-      willBreak(oneLine) || shouldHaveEmptyLineBeforeIndent ? breakParent : [],
-      conditionalGroup([oneLine, expanded]),
-    ];
+    if (groups.some(groupWillBreak) || shouldHaveEmptyLineBeforeIndent)
+      sBreakParent();
+    sConditionalGroup([oneLine, expanded]);
   }
   markMemberChain(ctx, n);
-  return result;
 }
 
 // --- calls --------------------------------------------------------------------------------------------------
@@ -1124,31 +1149,36 @@ function isCommonJsOrAmdModuleDefinition(ctx: JsCtx, n: number): boolean {
   return false;
 }
 
-const printCallee = (ctx: JsCtx, n: number): Doc => {
-  const newKeyword =
-    kind(ctx, n) === "new_expression"
-      ? [
-          t(
-            ctx,
-            childWhere(ctx, n, (c) => kind(ctx, c) === "new"),
-          ),
-          text(" "),
-        ]
-      : [];
-  return [newKeyword, p(ctx, callee(ctx, n)), lineSuffixBoundary];
+/** The callee, after `new ` for a new expression. */
+const sCallee = (sctx: JsStreamCtx, n: number) => {
+  const ctx = sctx.js;
+  if (kind(ctx, n) === "new_expression") {
+    sTok(
+      ctx,
+      childWhere(ctx, n, (c) => kind(ctx, c) === "new"),
+    );
+    sText(" ");
+  }
+  const c = callee(ctx, n);
+  if (c !== undefined) sctx.print(c);
+  sLineSuffixBoundary();
 };
 
-const call: JsRule = (n, ctx) => {
-  if (isTaggedTemplate(ctx, n))
-    return [
-      p(ctx, callee(ctx, n)),
-      typeArguments(ctx, n),
-      lineSuffixBoundary,
-      p(ctx, field(ctx, n, "arguments")),
-    ];
-  const optional = optionalToken(ctx, n);
+/** Prettier's printCallExpression, for calls and `new`. */
+const callCustom: CustomRule<JsOptions> = (n, s) => {
+  const sctx = jsCtx(s);
+  const ctx = sctx.js;
+  if (isTaggedTemplate(ctx, n)) {
+    const c = callee(ctx, n);
+    if (c !== undefined) sctx.print(c);
+    sTypeArguments(sctx, n);
+    sLineSuffixBoundary();
+    const template = field(ctx, n, "arguments");
+    if (template !== undefined) sctx.print(template);
+    return;
+  }
   const args = callArguments(ctx, n);
-  const typeArgs = typeArguments(ctx, n);
+  const typeArgs = capture(() => sTypeArguments(sctx, n));
   const list = argumentsNode(ctx, n);
   if (
     list !== undefined &&
@@ -1159,27 +1189,28 @@ const call: JsRule = (n, ctx) => {
       isTestCall(ctx, n, role(ctx, n).parent))
   ) {
     const commas = separators(ctx, list, args);
-    const open = t(
-      ctx,
-      childWhere(ctx, list, (c) => kind(ctx, c) === "("),
+    sCallee(sctx, n);
+    sOptional(ctx, n);
+    place(typeArgs);
+    place(
+      commented(ctx, list, () => {
+        sTok(
+          ctx,
+          childWhere(ctx, list, (c) => kind(ctx, c) === "("),
+        );
+        args.forEach((a, i) => {
+          sctx.print(a);
+          if (i === args.length - 1) return;
+          sTok(ctx, commas.get(a));
+          sText(" ");
+        });
+        sTok(
+          ctx,
+          lastChildWhere(ctx, list, (c) => kind(ctx, c) === ")"),
+        );
+      }),
     );
-    const close = t(
-      ctx,
-      lastChildWhere(ctx, list, (c) => kind(ctx, c) === ")"),
-    );
-    return [
-      printCallee(ctx, n),
-      optional,
-      typeArgs,
-      ctx.withComments(list, [
-        open,
-        args.map((a, i) => [
-          p(ctx, a),
-          i === args.length - 1 ? [] : [t(ctx, commas.get(a)), text(" ")],
-        ]),
-        close,
-      ]),
-    ];
+    return;
   }
   const c = callee(ctx, n);
   if (
@@ -1189,27 +1220,22 @@ const call: JsRule = (n, ctx) => {
     isMember(ctx, unparen(ctx, c)) &&
     !needsParens(unparen(ctx, c), ctx)
   )
-    return printMemberChain(ctx, n);
-  const contents = [
-    printCallee(ctx, n),
-    optional,
-    typeArgs,
-    printCallArguments(ctx, n),
-  ];
-  if (
+    return sMemberChain(sctx, n);
+  const grouped =
     isDynamicImport(ctx, n) ||
-    (c !== undefined && isCallExpression(ctx, unparen(ctx, c)))
-  )
-    return group(contents);
-  return contents;
+    (c !== undefined && isCallExpression(ctx, unparen(ctx, c)));
+  if (grouped) open(GROUP);
+  sCallee(sctx, n);
+  sOptional(ctx, n);
+  place(typeArgs);
+  sCallArguments(sctx, n);
+  if (grouped) close();
 };
 
 /** The customs format/calls.ts names, by the names its spec gives them. */
 export const callCustoms = {
+  call: callCustom,
   member: memberCustom,
 } satisfies Record<string, CustomRule<JsOptions>>;
 
-export const callRules: Record<string, JsRule> = {
-  call_expression: call,
-  new_expression: call,
-};
+export const callRules: Record<string, JsRule> = {};
