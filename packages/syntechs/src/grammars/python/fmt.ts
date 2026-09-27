@@ -22,7 +22,10 @@ import { formatModule } from "./fmt/stmt/suite.js";
 import * as gen from "./fmt.gen.js";
 import { collectionVia } from "./format/collection.via.js";
 import { exprVia } from "./format/expr.via.js";
+import { exprAccessVia } from "./format/expr-access.via.js";
 import { stmtCompoundVia } from "./format/stmt-compound.via.js";
+import { stmtDefVia } from "./format/stmt-def.via.js";
+import { stmtMatchVia } from "./format/stmt-match.via.js";
 import { stmtSimpleVia } from "./format/stmt-simple.via.js";
 import { stringVia } from "./format/string.via.js";
 import { language } from "./index.js";
@@ -98,7 +101,10 @@ export const python: Language<PythonOptions> = {
     module,
     ...stmtSimpleVia,
     ...stmtCompoundVia,
+    ...stmtDefVia,
+    ...stmtMatchVia,
     ...exprVia,
+    ...exprAccessVia,
     ...collectionVia,
     ...stringVia,
   }),

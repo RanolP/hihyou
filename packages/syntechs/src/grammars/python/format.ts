@@ -7,7 +7,10 @@ import type { grammar } from "./bundle.js";
 import type { PythonOptions } from "./fmt.js";
 import { collection } from "./format/collection.js";
 import { expr } from "./format/expr.js";
+import { exprAccess } from "./format/expr-access.js";
 import { stmtCompound } from "./format/stmt-compound.js";
+import { stmtDef } from "./format/stmt-def.js";
+import { stmtMatch } from "./format/stmt-match.js";
 import { stmtSimple } from "./format/stmt-simple.js";
 import { string } from "./format/string.js";
 
@@ -21,7 +24,10 @@ export const python = format({
     module: () => custom("module"),
     ...stmtSimple,
     ...stmtCompound,
+    ...stmtDef,
+    ...stmtMatch,
     ...expr,
+    ...exprAccess,
     ...collection,
     ...string,
   },
