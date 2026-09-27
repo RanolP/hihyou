@@ -13,10 +13,11 @@ import { commaIn, type Fmt } from "../builders.js";
 import type { Comment } from "../comments.js";
 import {
   canOmitOptionalParentheses,
-  formatExpr,
   maybeParenthesize,
+  writeExpr,
+  writeMaybeParenthesize,
 } from "../expr.js";
-import { dslPart, part, sDsl, sText, sToken } from "../sink.js";
+import { part, sDsl, sText, sToken } from "../sink.js";
 import { startOf } from "../trivia.js";
 
 /** Ruff's compound statements other than definitions (statement/stmt_{if,for,while,try,with}.rs). */
@@ -123,36 +124,27 @@ export function withItem(
   const cs = f.comments;
   const ctx = item.context;
   const parenthesized = ctx.parens.length > 0;
-  // Built before the item's leading comments, which it prints ahead of.
-  const head =
-    layout === "single"
-      ? maybeParenthesize(f, ctx, item, "ifBreaks")
-      : layout === "py38"
-        ? maybeParenthesize(
-            f,
-            ctx,
-            item,
-            single || parenthesized ? "ifBreaks" : "ifRequired",
-          )
-        : (item.vars || !single) && parenthesized
-          ? maybeParenthesize(f, ctx, item, "ifBreaksParenthesizedNested")
-          : formatExpr(f, ctx, "never");
-  part(f.leading(cs.leading(item)));
-  part(head);
+  f.writeLeading(cs.leading(item));
+  if (layout === "single") writeMaybeParenthesize(f, ctx, item, "ifBreaks");
+  else if (layout === "py38")
+    writeMaybeParenthesize(f, ctx, item, single || parenthesized ? "ifBreaks" : "ifRequired");
+  else if ((item.vars || !single) && parenthesized)
+    writeMaybeParenthesize(f, ctx, item, "ifBreaksParenthesizedNested");
+  else writeExpr(f, ctx, "never");
   const vars = item.vars;
   if (vars && item.asTok !== undefined) {
     const as = cs.dangling(item);
     sText(" ");
     tok(f, item.asTok);
     sText(" ");
-    if (as.length === 0) part(formatExpr(f, vars));
+    if (as.length === 0) writeExpr(f, vars);
     else {
       sToken(vars.ts, "(", true);
-      part(f.parenthesizedContent(() => formatExpr(f, vars, "never"), as));
+      f.writeParenthesizedContent(() => writeExpr(f, vars, "never"), as);
       sToken(vars.ts, ")", true);
     }
   }
-  part(f.trailing(cs.trailing(item)));
+  f.writeTrailing(cs.trailing(item));
 }
 
 /** The `with_clause` child of a `with` statement, or the statement itself. */
@@ -174,17 +166,16 @@ export function withItems(f: Fmt, w: With): void {
   const colonStart = startOf(f.tree, w.colon);
   const clauseNode = withClause(f, w);
   const single = w.items.length === 1 ? first : undefined;
-  // An item as its rule in format/stmt-compound.ts prints it, in the layout ruff chose for the statement: as a
-  // `Format` for the builders that lay it out, written where it prints as is.
-  const item = (i: WithItem, layout: ItemLayout, only: boolean) => dslPart(i.ts, { layout, single: only });
+  // Each item prints by its rule in format/stmt-compound.ts, in the layout ruff chose for the statement.
+  const comma = commaIn(f.tree, clauseNode, withKw);
   const joined = () =>
-    f.joinCommaSeparated(
+    f.writeJoinCommaSeparated(
       w.items.map((i) => ({
         end: i.end,
-        doc: item(i, "contextManagers", !!single),
+        write: () => sDsl(i.ts, { layout: "contextManagers", single: !!single }),
       })),
       colonStart,
-      commaIn(f.tree, clauseNode, withKw),
+      (after) => part(comma(after)),
     );
   const last = w.items.at(-1);
   const tv = (f.options as { "target-version"?: string })["target-version"];
@@ -200,14 +191,13 @@ export function withItems(f: Fmt, w: With): void {
     (single && (cs.hasLeading(single) || cs.hasTrailing(single)))
   ) {
     paren(w.open, "(");
-    part(f.parenthesizedContent(joined, parenComments));
+    f.writeParenthesizedContent(joined, parenComments);
     paren(w.close, ")");
   } else if (last && f.magicTrailingComma(last.end, colonStart))
-    part(f.parenthesizeIfExpands(withKw, joined));
+    f.writeParenthesizeIfExpands(withKw, joined);
   else if (single && single.context.parens.length > 0)
     sDsl(single.ts, { layout: "single", single: true });
   else if (!canParenthesize) {
-    const comma = commaIn(f.tree, clauseNode, withKw);
     w.items.forEach((i, n) => {
       if (n > 0) {
         part(comma(w.items[n - 1]?.end ?? i.start));
@@ -218,8 +208,8 @@ export function withItems(f: Fmt, w: With): void {
   } else if (single && !single.vars)
     sDsl(single.ts, { layout: "single", single: true });
   else if (single && canOmitOptionalParentheses(f, single.context))
-    part(f.optionalParentheses(single.ts, () => item(single, "contextManagers", true)));
-  else part(f.parenthesizeIfExpands(withKw, joined));
+    f.writeOptionalParentheses(single.ts, () => sDsl(single.ts, { layout: "contextManagers", single: true }));
+  else f.writeParenthesizeIfExpands(withKw, joined);
 }
 
 /** A `with`'s dangling comments: those inside its parentheses, before the first item, and those on its colon. */
