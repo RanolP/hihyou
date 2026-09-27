@@ -93,6 +93,19 @@ const LITERAL_TOKEN = 40;
 /** Line flags (`doc.ts`'s): a broken line on a line still empty prints nothing, and one adds an empty line. */
 export const COLLAPSE = 4;
 export const BLANK = 8;
+/** Its contents indented when the group `iRef` (-1: the enclosing mode) prints broken; see `openIndentIfBreak`. */
+const INDENT_IF_BROKEN = 41;
+/** As `INDENT_IF_BROKEN`, indented when the group prints flat. */
+const INDENT_IF_FLAT = 42;
+
+/**
+ * Opens ruff's `indent_if_group_breaks` (prettier's indentIfBreak): its contents, built once, indented when the
+ * group interval `ref` (-1: the enclosing mode) prints broken, or with `negate` when it prints flat. Close it
+ * with `close`. The indentation reaches only line breaks, so a measure reads the contents as they are.
+ */
+export function openIndentIfBreak(ref: number, negate = false): number {
+  return open(negate ? INDENT_IF_FLAT : INDENT_IF_BROKEN, ref);
+}
 // --- end ruff ---
 
 // The stream.
@@ -822,6 +835,19 @@ export function printStream(layout: Layout): StreamPrinted {
             i = e;
             cur = iNext[k] as number;
             jumped = true;
+            break;
+          }
+          case INDENT_IF_BROKEN:
+          case INDENT_IF_FLAT: {
+            const r = iRef[k] as number;
+            const c = r >= 0 ? modeOf(r) : tm;
+            cur++;
+            if (e > i)
+              fpush(
+                e,
+                (iKind[k] === INDENT_IF_BROKEN) === (c === BREAK) ? deeper(ti) : ti,
+                tm,
+              );
             break;
           }
           default:

@@ -7,6 +7,7 @@ import {
   group,
   hardline,
   indent,
+  indentIfBreak,
   line,
   lineOf,
   lineSuffix,
@@ -27,6 +28,7 @@ import {
   LINE_SUFFIX,
   open,
   openAlign,
+  openIndentIfBreak,
   openReservedSuffix,
   printStream,
   resetStream,
@@ -355,5 +357,28 @@ describe("printStream matches printer.ts under ruff's measure", () => {
       close();
     });
     expect(out).toBe("a\n\nb\nc");
+  });
+
+  it("indents an indentIfBreak's contents, built once, by its group's printed mode", () => {
+    const g = group([text("aaaa"), line, text("b")]);
+    const contents = group([text("c"), hardline, text("d")]);
+    const doc = [g, indentIfBreak(contents, g), indentIfBreak(contents, g, true)];
+    const out = ruffBoth(4, doc, () => {
+      const k = open(GROUP);
+      sText("aaaa");
+      sLine(0);
+      sText("b");
+      close();
+      for (const negate of [false, true]) {
+        openIndentIfBreak(k, negate);
+        open(GROUP);
+        sText("c");
+        sHardline();
+        sText("d");
+        close();
+        close();
+      }
+    });
+    expect(out).toBe("aaaa\nbc\n  dc\nd");
   });
 });

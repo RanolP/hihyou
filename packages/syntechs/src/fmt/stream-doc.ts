@@ -50,6 +50,7 @@ import {
   LINE_SUFFIX,
   open,
   openAlign,
+  openIndentIfBreak,
   openReservedSuffix,
   SOFT,
   sBreakParent,
@@ -131,6 +132,13 @@ export function sDoc(doc: Doc): void {
       case D_IF_BREAK: {
         const of = slotC(h);
         const ref = of === NONE ? -1 : (groups.get(of) as number);
+        const indents = indentIfBreakOf(h);
+        if (indents !== 0) {
+          openIndentIfBreak(ref, indents === NEGATED);
+          emit(indents === NEGATED ? brokenOf(h) : flatOf(h));
+          close();
+          return;
+        }
         open(IF_BROKEN, ref);
         emit(brokenOf(h));
         close();
@@ -195,6 +203,11 @@ function check(doc: Doc, seen: Set<Doc>): void {
         const of = slotC(h);
         if (of !== NONE && !groups.has(of))
           throw new Unsupported("ifBreak on a group built after it");
+        const indents = indentIfBreakOf(h);
+        if (indents !== 0) {
+          walk(indents === NEGATED ? brokenOf(h) : flatOf(h));
+          return true;
+        }
         walk(brokenOf(h));
         walk(flatOf(h));
         return true;
@@ -212,6 +225,23 @@ function check(doc: Doc, seen: Set<Doc>): void {
   for (const d of shared)
     if (holdsInterval(d)) throw new Unsupported("a shared part holding intervals");
 }
+
+// --- ruff ---
+const NEGATED = 2;
+/**
+ * Whether the ifBreak `h` is an `indentIfBreak`: 1 for `ifBreak(indent(x), x)`, `NEGATED` for
+ * `ifBreak(x, indent(x))`, else 0. Its `x` is then built once, as one interval indenting by the mode.
+ */
+function indentIfBreakOf(h: DocHandle): number {
+  const broken = brokenOf(h);
+  const flat = flatOf(h);
+  if (!isDocs(broken) && kindCode(broken) === D_INDENT && contentsOf(broken) === flat)
+    return 1;
+  if (!isDocs(flat) && kindCode(flat) === D_INDENT && contentsOf(flat) === broken)
+    return NEGATED;
+  return 0;
+}
+// --- end ruff ---
 
 function holdsInterval(d: Doc): boolean {
   if (isDocs(d)) return d.some(holdsInterval);
