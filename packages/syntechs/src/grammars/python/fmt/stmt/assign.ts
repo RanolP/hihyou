@@ -1,22 +1,6 @@
-import {
-  bestFitParenthesize,
-  bestFitting,
-  type Format,
-  group,
-  ifBreak,
-  removeSoftLines,
-  synthetic,
-  willBreak,
-} from "../elements.js";
 import type { Expr, Stmt, TypeParam, TypeParams } from "../ast.js";
 import { Unformattable } from "../ast.js";
-import {
-  blockIndent,
-  commaIn,
-  type Fmt,
-  softBlockIndent,
-  space,
-} from "../builders.js";
+import { commaIn, type Fmt } from "../builders.js";
 import type { Comment } from "../comments.js";
 import {
   canOmitOptionalParentheses,
@@ -27,6 +11,33 @@ import {
   needsParentheses,
   node,
 } from "../expr.js";
+import {
+  BROKEN,
+  capture,
+  close,
+  closeBestFitParenthesize,
+  closeVariant,
+  COLLAPSE,
+  GROUP,
+  HARD,
+  IF_BROKEN,
+  IF_FLAT,
+  INDENT,
+  open,
+  openBestFitParenthesize,
+  openBestFitting,
+  openVariant,
+  type Part,
+  part,
+  place,
+  refTo,
+  removeSoftLines,
+  SOFT,
+  sLine,
+  sText,
+  sToken,
+  willBreak,
+} from "../sink.js";
 import {
   implicitExpanded,
   implicitFlat,
@@ -43,6 +54,36 @@ import { byteOffsetOf, startOf } from "../trivia.js";
  * optional parentheses, with the end-of-line comments after it kept on its line, or, when the part before the
  * operator can split too, the first of several layouts that fits.
  */
+
+const space = () => sText(" ");
+
+/** A group built broken around what `content` writes. */
+function brokenGroup(content: () => void): void {
+  open(GROUP, -1, BROKEN);
+  content();
+  close();
+}
+
+/** Ruff's `soft_block_indent` (`hard`: `block_indent`). */
+function blockIndent(content: () => void, hard = false): void {
+  const line = () => sLine((hard ? HARD : SOFT) | COLLAPSE);
+  open(INDENT);
+  line();
+  content();
+  close();
+  line();
+}
+
+/** Ruff's `best_fitting`: each variant as its writer writes it. */
+function bestFitting(variants: readonly (() => void)[], allLines = false): void {
+  const k = openBestFitting(allLines);
+  for (const write of variants) {
+    const v = openVariant(k);
+    write();
+    closeVariant(v);
+  }
+  close();
+}
 
 /** Ruff's `has_target_own_parentheses`. */
 export function hasTargetOwnParentheses(f: Fmt, e: Expr): boolean {
@@ -77,30 +118,30 @@ function shouldParenthesizeTarget(f: Fmt, e: Expr): boolean {
 export function targetWithEqual(
   f: Fmt,
   target: Expr,
-  eq: Format,
+  eq: () => void,
   preserveParentheses: boolean,
-): Format {
+): void {
   const cs = f.comments;
-  let doc: Format;
   if (preserveParentheses || cs.hasLeading(target) || cs.hasTrailing(target))
-    doc = formatExpr(f, target);
+    part(formatExpr(f, target));
   else if (shouldParenthesizeTarget(f, target))
-    doc = f.parenthesizeIfExpands(target.ts, () =>
-      formatExpr(f, target, "never"),
+    f.writeParenthesizeIfExpands(target.ts, () =>
+      part(formatExpr(f, target, "never")),
     );
-  else doc = formatExpr(f, target, "never");
-  return [doc, space, eq, space];
+  else part(formatExpr(f, target, "never"));
+  space();
+  eq();
+  space();
 }
 
 /** Ruff's `AnyBeforeOperator::Expression`. */
-export function beforeOperator(f: Fmt, e: Expr): Format {
+export function beforeOperator(f: Fmt, e: Expr): void {
   const cs = f.comments;
-  if (cs.hasLeading(e) || cs.hasTrailing(e)) return formatExpr(f, e);
-  if (!shouldParenthesizeTarget(f, e)) return formatExpr(f, e, "never");
-  const content = () => formatExpr(f, e, "never");
-  return canOmitOptionalParentheses(f, e)
-    ? f.optionalParentheses(e.ts, content)
-    : f.parenthesizeIfExpands(e.ts, content);
+  if (cs.hasLeading(e) || cs.hasTrailing(e)) return part(formatExpr(f, e));
+  if (!shouldParenthesizeTarget(f, e)) return part(formatExpr(f, e, "never"));
+  const content = () => part(formatExpr(f, e, "never"));
+  if (canOmitOptionalParentheses(f, e)) f.writeOptionalParentheses(e.ts, content);
+  else f.writeParenthesizeIfExpands(e.ts, content);
 }
 
 /** Ruff's `should_inline_comments`: a value whose end-of-line comments stay after it when it is parenthesized. */
@@ -129,12 +170,12 @@ function nonInlineableUsesBestFit(f: Fmt, value: Expr, stmt: Stmt): boolean {
 }
 
 /** Ruff's `MaybeParenthesizeValue`. */
-function maybeParenthesizeValue(f: Fmt, value: Expr, stmt: Stmt): Format {
+function maybeParenthesizeValue(f: Fmt, value: Expr, stmt: Stmt): void {
   if (value.kind === "Lambda" && !f.comments.hasLeading(value))
-    return f.parenthesizeIfExpands(value.ts, () =>
-      node(f, value, { lambdaAssign: true }),
+    f.writeParenthesizeIfExpands(value.ts, () =>
+      part(node(f, value, { lambdaAssign: true })),
     );
-  return maybeParenthesize(f, value, stmt, "ifBreaks");
+  else part(maybeParenthesize(f, value, stmt, "ifBreaks"));
 }
 
 /**
@@ -157,21 +198,21 @@ function inlinedComments(
 }
 
 /** Prints `comments` once, marking them printed so the value and the statement leave them out. */
-function inlineDoc(f: Fmt, comments: readonly Comment[]): Format {
-  return f.trailing(comments);
+function inlinePart(f: Fmt, comments: readonly Comment[]): Part {
+  return capture(() => f.writeTrailing(comments));
 }
 
 const unmark = (comments: readonly Comment[]) => {
   for (const c of comments) c.formatted = false;
 };
 
-const lparen = (e: Expr) => synthetic(e.ts, "(");
-const rparen = (e: Expr) => synthetic(e.ts, ")");
+const lparen = (e: Expr) => sToken(e.ts, "(", true);
+const rparen = (e: Expr) => sToken(e.ts, ")", true);
 const isInterpolatedStr = (e: Expr) =>
   e.kind === "Str" && (e.flavor === "f" || e.flavor === "t");
 
 /** Ruff's `FormatStatementsLastExpression::LeftToRight`: `value` after its statement's operator. */
-export function leftToRight(f: Fmt, value: Expr, stmt: Stmt): Format {
+export function leftToRight(f: Fmt, value: Expr, stmt: Stmt): void {
   const str = value.kind === "Str" ? value : undefined;
   const canInline = shouldInlineComments(f, value, stmt);
   const interpolated = str && interpolatedAssignment(f, str);
@@ -180,58 +221,71 @@ export function leftToRight(f: Fmt, value: Expr, stmt: Stmt): Format {
     return maybeParenthesizeValue(f, value, stmt);
 
   const comments = inlinedComments(f, value, stmt);
-  if (!comments) return formatExpr(f, value, "always");
-  const inline = inlineDoc(f, comments);
+  if (!comments) return part(formatExpr(f, value, "always"));
+  const inline = inlinePart(f, comments);
   const fallback = () => {
     unmark(comments);
-    return maybeParenthesize(f, value, stmt, "ifBreaks");
+    part(maybeParenthesize(f, value, stmt, "ifBreaks"));
   };
+  const flatThenInline = (flat: Part) => () => {
+    place(flat);
+    place(inline);
+  };
+  const parenthesizedFlat = (flat: Part) => () =>
+    brokenGroup(() => {
+      lparen(value);
+      blockIndent(flatThenInline(flat));
+      rparen(value);
+    });
 
   if (str && implicit) {
-    const raw = implicit();
+    const raw = capture(() => part(implicit()));
     const isInterpolated = isInterpolatedStr(str);
     const flat = isInterpolated ? removeSoftLines(raw) : raw;
     if (isInterpolated && willBreak(flat)) return fallback();
-    const joined = group(
-      [lparen(value), softBlockIndent([flat, inline]), rparen(value)],
-      true,
-    );
-    const expandedContents: Format[] = [];
-    const expanded = group(expandedContents, true);
-    expandedContents.push(
-      lparen(value),
-      blockIndent(
-        f.at({ k: "expr", g: expanded }, () => implicitExpanded(f, str)),
-      ),
-      rparen(value),
-      inline,
-    );
-    return bestFitting([[flat, inline], joined, expanded], true);
-  }
-
-  if (interpolated) {
-    const raw = interpolated();
-    const flat = removeSoftLines(raw);
-    if (willBreak(flat)) return fallback();
     return bestFitting(
       [
-        [flat, inline],
-        group(
-          [lparen(value), softBlockIndent([flat, inline]), rparen(value)],
-          true,
-        ),
-        [raw, inline],
+        flatThenInline(flat),
+        parenthesizedFlat(flat),
+        () => {
+          const g = open(GROUP, -1, BROKEN);
+          lparen(value);
+          blockIndent(
+            () =>
+              f.at({ k: "expr", g: refTo(g) }, () =>
+                part(implicitExpanded(f, str)),
+              ),
+            true,
+          );
+          rparen(value);
+          place(inline);
+          close();
+        },
       ],
       true,
     );
   }
 
-  const contents: Format[] = [];
-  const b = bestFitParenthesize(lparen(value), contents, rparen(value));
-  contents.push(f.at({ k: "expr", g: b }, () => formatExpr(f, value, "never")));
-  if (comments.length === 0) return b;
-  contents.push(ifBreak(inline, [], b));
-  return [b, ifBreak([], inline, b)];
+  if (interpolated) {
+    const raw = capture(() => part(interpolated()));
+    const flat = removeSoftLines(raw);
+    if (willBreak(flat)) return fallback();
+    return bestFitting(
+      [flatThenInline(flat), parenthesizedFlat(flat), flatThenInline(raw)],
+      true,
+    );
+  }
+
+  const b = openBestFitParenthesize(() => lparen(value));
+  f.at({ k: "expr", g: refTo(b) }, () => part(formatExpr(f, value, "never")));
+  if (comments.length === 0) return closeBestFitParenthesize(b, () => rparen(value));
+  open(IF_BROKEN, b);
+  place(inline);
+  close();
+  closeBestFitParenthesize(b, () => rparen(value));
+  open(IF_FLAT, b);
+  place(inline);
+  close();
 }
 
 /**
@@ -240,22 +294,30 @@ export function leftToRight(f: Fmt, value: Expr, stmt: Stmt): Format {
  */
 export function rightToLeft(
   f: Fmt,
-  before: () => Format,
-  op: Format,
+  before: () => void,
+  op: () => void,
   value: Expr,
   stmt: Stmt,
-): Format {
+): void {
   const str = value.kind === "Str" ? value : undefined;
   const canInline = shouldInlineComments(f, value, stmt);
   const interpolated = str && interpolatedAssignment(f, str);
   const implicit = str && implicitFlat(f, str);
+  const withOp = () => {
+    space();
+    op();
+    space();
+  };
   if (
     !canInline &&
     !nonInlineableUsesBestFit(f, value, stmt) &&
     !implicit &&
     !interpolated
-  )
-    return [before(), space, op, space, maybeParenthesizeValue(f, value, stmt)];
+  ) {
+    before();
+    withOp();
+    return maybeParenthesizeValue(f, value, stmt);
+  }
 
   const cs = f.comments;
   let comments: Comment[] | undefined;
@@ -263,53 +325,66 @@ export function rightToLeft(
     comments = inlinedComments(f, value, stmt);
   else if (!cs.hasLeading(value) && !cs.hasTrailingOwnLine(value))
     comments = [];
-  if (!comments)
-    return [before(), space, op, space, formatExpr(f, value, "always")];
-  const inline = inlineDoc(f, comments);
-  const last = before();
+  if (!comments) {
+    before();
+    withOp();
+    return part(formatExpr(f, value, "always"));
+  }
+  const inline = inlinePart(f, comments);
+  const last = capture(before);
   const lastBreaks = willBreak(last);
   const fallback = (marked: readonly Comment[]) => {
     unmark(marked);
-    return [
-      last,
-      space,
-      op,
-      space,
-      maybeParenthesize(f, value, stmt, "ifBreaks"),
-    ];
+    place(last);
+    withOp();
+    part(maybeParenthesize(f, value, stmt, "ifBreaks"));
   };
 
-  if (!implicit && !interpolated && lastBreaks)
-    return [last, space, op, space, formatExpr(f, value, "never"), inline];
+  if (!implicit && !interpolated && lastBreaks) {
+    place(last);
+    withOp();
+    part(formatExpr(f, value, "never"));
+    return place(inline);
+  }
 
   // The interpolated string as it prints with its line breaks, which the flat layouts leave out.
-  const interpolatedRaw = interpolated?.();
-  let formatValue: Format;
+  const interpolatedRaw = interpolated ? capture(() => part(interpolated())) : undefined;
+  let formatValue: Part;
   if (str && implicit) {
-    const raw = implicit();
+    const raw = capture(() => part(implicit()));
     formatValue = isInterpolatedStr(str) ? removeSoftLines(raw) : raw;
   } else if (interpolatedRaw !== undefined)
     formatValue = removeSoftLines(interpolatedRaw);
-  else formatValue = formatExpr(f, value, "never");
+  else formatValue = capture(() => part(formatExpr(f, value, "never")));
 
-  const singleLine: Format = [last, space, op, space, formatValue, inline];
-  const flatTargetParenthesizeValue: Format = [
-    last,
-    space,
-    op,
-    space,
-    lparen(value),
-    group(softBlockIndent([formatValue, inline]), true),
-    rparen(value),
-  ];
-  const splitTargetFlatValue: Format = [
-    group(last, true),
-    space,
-    op,
-    space,
-    formatValue,
-    inline,
-  ];
+  const splitLast = () => brokenGroup(() => place(last));
+  const valueParenthesizedFlat = () => {
+    lparen(value);
+    brokenGroup(() =>
+      blockIndent(() => {
+        place(formatValue);
+        place(inline);
+      }),
+    );
+    rparen(value);
+  };
+  const singleLine = () => {
+    place(last);
+    withOp();
+    place(formatValue);
+    place(inline);
+  };
+  const flatTargetParenthesizeValue = () => {
+    place(last);
+    withOp();
+    valueParenthesizedFlat();
+  };
+  const splitTargetFlatValue = () => {
+    splitLast();
+    withOp();
+    place(formatValue);
+    place(inline);
+  };
 
   if (
     value.kind === "Call" ||
@@ -318,41 +393,44 @@ export function rightToLeft(
   )
     return bestFitting([
       singleLine,
-      [last, space, op, space, group(formatValue, true)],
+      () => {
+        place(last);
+        withOp();
+        brokenGroup(() => place(formatValue));
+      },
       flatTargetParenthesizeValue,
       splitTargetFlatValue,
     ]);
 
-  const splitTargetValueParenthesizedFlat: Format = [
-    group(last, true),
-    space,
-    op,
-    space,
-    lparen(value),
-    group(softBlockIndent([formatValue, inline]), true),
-    rparen(value),
-  ];
+  const splitTargetValueParenthesizedFlat = () => {
+    splitLast();
+    withOp();
+    valueParenthesizedFlat();
+  };
 
   if (str && implicit) {
     if (isInterpolatedStr(str) && willBreak(formatValue))
       return fallback(comments);
-    const expandedContents: Format[] = [];
-    const expanded = group(expandedContents, true);
-    expandedContents.push(
-      softBlockIndent(
-        f.at({ k: "expr", g: expanded }, () => implicitExpanded(f, str)),
-      ),
-    );
-    const splitTargetValueParenthesizedMultiline: Format = [
-      group(last, true),
-      space,
-      op,
-      space,
-      lparen(value),
-      expanded,
-      rparen(value),
-      inline,
-    ];
+    const expanded = capture(() => {
+      const g = open(GROUP, -1, BROKEN);
+      blockIndent(() =>
+        f.at({ k: "expr", g: refTo(g) }, () =>
+          part(implicitExpanded(f, str)),
+        ),
+      );
+      close();
+    });
+    const valueExpanded = () => {
+      withOp();
+      lparen(value);
+      place(expanded);
+      rparen(value);
+      place(inline);
+    };
+    const splitTargetValueParenthesizedMultiline = () => {
+      splitLast();
+      valueExpanded();
+    };
     if (lastBreaks)
       return bestFitting(
         [
@@ -366,16 +444,10 @@ export function rightToLeft(
       [
         singleLine,
         flatTargetParenthesizeValue,
-        [
-          last,
-          space,
-          op,
-          space,
-          lparen(value),
-          expanded,
-          rparen(value),
-          inline,
-        ],
+        () => {
+          place(last);
+          valueExpanded();
+        },
         splitTargetFlatValue,
         splitTargetValueParenthesizedFlat,
         splitTargetValueParenthesizedMultiline,
@@ -386,14 +458,15 @@ export function rightToLeft(
 
   if (interpolatedRaw !== undefined) {
     if (willBreak(formatValue)) return fallback(comments);
-    const regular: Format = [interpolatedRaw, inline];
-    const splitTargetRegular: Format = [
-      group(last, true),
-      space,
-      op,
-      space,
-      regular,
-    ];
+    const regular = () => {
+      withOp();
+      place(interpolatedRaw);
+      place(inline);
+    };
+    const splitTargetRegular = () => {
+      splitLast();
+      regular();
+    };
     if (lastBreaks)
       return bestFitting(
         [
@@ -407,7 +480,10 @@ export function rightToLeft(
       [
         singleLine,
         flatTargetParenthesizeValue,
-        [last, space, op, space, regular],
+        () => {
+          place(last);
+          regular();
+        },
         splitTargetFlatValue,
         splitTargetValueParenthesizedFlat,
         splitTargetRegular,
@@ -416,11 +492,7 @@ export function rightToLeft(
     );
   }
 
-  return bestFitting([
-    singleLine,
-    flatTargetParenthesizeValue,
-    splitTargetFlatValue,
-  ]);
+  bestFitting([singleLine, flatTargetParenthesizeValue, splitTargetFlatValue]);
 }
 
 /** Ruff's `FormatTypeVar` / `FormatTypeVarTuple` / `FormatParamSpec`. */
@@ -433,7 +505,7 @@ function writeTypeParam(f: Fmt, p: TypeParam): void {
 }
 
 /** A type alias's type parameters, as their rule prints them. */
-export const typeParams = (_: Fmt, tp: TypeParams): Format => dslPart(tp.ts);
+export const typeParams = (_: Fmt, tp: TypeParams): void => sink.sDsl(tp.ts);
 
 /** Ruff's `FormatTypeParams`: `[T, *Ts, **P]`, split one per line when it does not fit, in `frame`'s brackets. */
 export function writeAliasTypeParams(f: Fmt, tp: TypeParams, frame: Frame): void {
