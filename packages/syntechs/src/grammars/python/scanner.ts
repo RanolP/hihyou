@@ -288,8 +288,10 @@ class PythonScanner implements ExternalScanner {
   }
 
   deserialize(buffer: Uint8Array, length: number): void {
-    this.delimiters = [];
-    this.indents = [0];
+    // Emptied in place: this runs before every scan, and nothing else holds these arrays.
+    this.delimiters.length = 0;
+    this.indents.length = 1;
+    this.indents[0] = 0;
     // An empty state keeps insideInterpolatedString as it was, as the C scanner does.
     if (length === 0) return;
     let size = 0;
