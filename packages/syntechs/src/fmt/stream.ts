@@ -1,15 +1,15 @@
 import { textWidth } from "./width.js";
 
 /**
- * A prototype layout IR beside `doc.ts`: the document is one linear stream of entries (text runs, source
+ * The layout IR every formatter builds: the document is one linear stream of entries (text runs, source
  * tokens, line breaks), and every group, indent, `ifBreak` branch, line suffix and fill is a `[start, end)`
  * interval over it in a side table, in the order it was opened, so nesting is preorder. The builder keeps a
  * running flat width, so a group's flat width is the difference of two numbers taken when it opens and closes,
  * and whether it holds a forced break is known when it closes: measuring a group reads its own contents in O(1)
  * and scans only what follows it, up to the next line break.
  *
- * The semantics are `printer.ts`'s, ruff's measure and layout kinds included;
- * `stream-format.ts` compares the two on the same input, and `stream-doc.ts` lowers a formatter's Doc onto it.
+ * The semantics are those of `printer.ts`, the Doc printer it replaces, ruff's measure and layout kinds
+ * included; `stream.test.ts` compares the two on the same input.
  */
 
 // Entry kinds.
