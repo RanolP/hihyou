@@ -55,6 +55,7 @@ import {
 } from "./builders.js";
 import type { Comment } from "./comments.js";
 import * as sink from "./sink.js";
+import type { Frame } from "../../../fmt/dsl/runtime.js";
 import {
   COLLAPSE,
   close as sClose,
@@ -991,15 +992,17 @@ export function lambdaHeader(f: Fmt, e: Lambda): readonly Comment[] {
 }
 
 /** What follows `lambda`: its dangling comments before the parameters, or a space or break, and the parameters. */
-export function lambdaParams(f: Fmt, e: Lambda, p: Parameters): Format {
+export function writeLambdaParams(f: Fmt, e: Lambda, p: Parameters): void {
   const cs = f.comments;
   const before = cs.dangling(e).filter((c) => c.end < p.start);
-  const params = dslPart(p.ts);
-  return [
-    before.length === 0 ? (cs.hasLeading(p) ? hard : space) : f.dangling(before),
-    cs.hasAnyIn(p.start, p.end) || cs.has(p) ? params : removeSoftLines(params),
-  ];
+  const params = sink.capture(() => sink.part(dslPart(p.ts)));
+  if (before.length > 0) f.writeDangling(before);
+  else if (cs.hasLeading(p)) sink.sLine(sink.HARD | sink.COLLAPSE);
+  else sink.sText(" ");
+  sink.place(cs.hasAnyIn(p.start, p.end) || cs.has(p) ? params : sink.removeSoftLines(params));
 }
+export const lambdaParams = (f: Fmt, e: Lambda, p: Parameters): Format =>
+  sink.record(() => writeLambdaParams(f, e, p));
 
 export function lambdaBody(f: Fmt, e: Lambda, header: readonly Comment[]): Format {
   const cs = f.comments;
@@ -1048,14 +1051,14 @@ export function lambdaBody(f: Fmt, e: Lambda, header: readonly Comment[]): Forma
 }
 
 /**
- * Ruff's `FormatParameters`, `Preserve` (a `def`'s parentheses, given as the tokens of its spec's frame) or `Never`
- * (a lambda's).
+ * Ruff's `FormatParameters`, `Preserve` (a `def`'s parentheses, written by its spec's frame) or `Never` (a
+ * lambda's).
  */
-export function parameters(
+export function writeParameters(
   f: Fmt,
   p: Parameters,
-  mode: { readonly open: Token; readonly close: Token } | "never",
-): Format {
+  mode: Frame | "never",
+): void {
   const cs = f.comments;
   const dangling = cs.dangling(p);
   let parenComments: Comment[] = [];
@@ -1073,50 +1076,68 @@ export function parameters(
       rest = dangling.slice(1);
     }
   }
+  const writeTok = (n: number) => sink.sToken(n, f.text(n));
   const inner = () => {
-    const out: Format[] = [];
-    const sep = isParenthesizedLevel(f.level) ? softOrSpace : space;
+    const parenthesizedLevel = isParenthesizedLevel(f.level);
     let lastEnd: number | undefined;
     for (const [i, item] of p.items.entries()) {
-      if (i > 0) out.push(f.tok(commaBefore(f, p, item.start)), sep);
+      if (i > 0) {
+        writeTok(commaBefore(f, p, item.start));
+        if (parenthesizedLevel) sink.sLine(sink.COLLAPSE);
+        else sink.sText(" ");
+      }
       if (item.kind === "Separator") {
         const mine = rest.filter((c) => separatorOwns(p, i, c));
-        const own = mine.filter((c) => c.line === "own");
-        const eol = mine.filter((c) => c.line !== "own");
-        out.push(f.leading(own), dslPart(item.ts), f.trailing(eol));
-      } else out.push(parameter(f, item));
+        f.writeLeading(mine.filter((c) => c.line === "own"));
+        sink.part(dslPart(item.ts));
+        f.writeTrailing(mine.filter((c) => c.line !== "own"));
+      } else writeParameter(f, item);
       lastEnd = item.end;
     }
     const trailingComma =
       lastEnd !== undefined && firstTokenAfter(f, lastEnd) === ",";
     if (mode === "never") {
       if (trailingComma && lastEnd !== undefined)
-        out.push(f.tok(commaBefore(f, p, lastEnd)));
+        writeTok(commaBefore(f, p, lastEnd));
     } else {
       // A single parameter has no source comma to reuse.
       const comma =
         lastEnd !== undefined ? commaBefore(f, p, lastEnd) : undefined;
-      out.push(
-        ifBreak(comma !== undefined ? f.tok(comma, ",") : synthetic(p.ts, ",")),
-      );
+      sink.open(sink.IF_BROKEN);
+      if (comma !== undefined) sink.sToken(comma, ",");
+      else sink.sToken(p.ts, ",", true);
+      sink.close();
       if (!f.options["skip-magic-trailing-comma"] && trailingComma)
-        out.push(hard);
+        sink.sLine(sink.HARD | sink.COLLAPSE);
     }
-    return out;
   };
-  if (mode === "never")
-    return [group(inner()), f.dangling(rest.filter((c) => !c.formatted))];
-  const { open, close } = mode;
-  return f.at(PAREN, () => {
-    if (p.items.length === 0)
-      return f.emptyParenthesized(open, dangling, close);
-    const body = p.items.length === 1 ? inner() : group(inner());
-    return [
-      open,
-      f.danglingOpenParen(parenComments),
-      softBlockIndent(body),
-      close,
-    ];
+  if (mode === "never") {
+    sink.open(sink.GROUP);
+    inner();
+    sink.close();
+    f.writeDangling(rest.filter((c) => !c.formatted));
+    return;
+  }
+  f.at(PAREN, () => {
+    if (p.items.length === 0) {
+      const { open, close } = sink.frameParts(mode);
+      sink.part(f.emptyParenthesized(open, dangling, close));
+      return;
+    }
+    // Ruff builds the parameters before the comments after the `(`; the two share no comment.
+    mode.open();
+    f.writeDanglingOpenParen(parenComments);
+    sink.open(sink.INDENT);
+    sink.sLine(sink.SOFT | sink.COLLAPSE);
+    if (p.items.length === 1) inner();
+    else {
+      sink.open(sink.GROUP);
+      inner();
+      sink.close();
+    }
+    sink.close();
+    sink.sLine(sink.SOFT | sink.COLLAPSE);
+    mode.close();
   });
 }
 
@@ -1149,9 +1170,11 @@ function firstTokenAfter(f: Fmt, at: number): string | undefined {
 }
 
 /** Ruff's `FormatParameter`: its comments, then the parameter as its rule in format.ts prints it. */
-function parameter(f: Fmt, p: Parameter): Format {
+function writeParameter(f: Fmt, p: Parameter): void {
   const cs = f.comments;
-  return [f.leading(cs.leading(p)), dslPart(p.ts), f.trailing(cs.trailing(p))];
+  f.writeLeading(cs.leading(p));
+  sink.part(dslPart(p.ts));
+  f.writeTrailing(cs.trailing(p));
 }
 
 function sequenceEntries(f: Fmt, e: Sequence, o: Opts = {}) {

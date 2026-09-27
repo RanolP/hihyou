@@ -5,7 +5,7 @@ import type { ClassDef, Decorator, FunctionDef, Lambda, Parameter, TypeAlias } f
 import { aliasTypeParams } from "../fmt/stmt/assign.js";
 import { type Format, group } from "../fmt/elements.js";
 import { hard, space } from "../fmt/builders.js";
-import { args, formatExpr, maybeParenthesize, parameters } from "../fmt/expr.js";
+import { args, formatExpr, maybeParenthesize, writeParameters } from "../fmt/expr.js";
 import { dslPart, frameParts, part, ruffOf, ruffStmtOf } from "../fmt/sink.js";
 import { body, decorators, simpleType, splitDangling, typeParams } from "../fmt/stmt/defs.js";
 import { endOf, tokens } from "../fmt/trivia.js";
@@ -83,16 +83,18 @@ export const stmtDefVia = {
   "def.parameters": (node: number, _: StreamCtx<unknown>, frame: Frame) => {
     const { f, s } = ruffStmtOf(node);
     const p = (s as FunctionDef).params;
-    const { open, close } = frameParts(frame);
     // Ruff's empty `soft_block_indent` prints nothing, where the shared `emptyParenthesized` still breaks.
     const empty =
       p.items.length === 0 && !f.comments.has(p) && p.open !== undefined && p.close !== undefined;
-    part(empty ? [open, close] : parameters(f, p, { open, close }));
+    if (empty) {
+      frame.open();
+      frame.close();
+    } else writeParameters(f, p, frame);
   },
   "def.lambdaParameters": (node: number, ctx: StreamCtx<unknown>) => {
     const { f, e } = ruffOf(ctx.tree.parent(node));
     const p = (e as Lambda).params;
-    if (p) part(parameters(f, p, "never"));
+    if (p) writeParameters(f, p, "never");
   },
   // Ruff's `class` arguments: an empty list is dropped, keeping its end-of-line comments.
   "def.classArgs": (c: number) => {
