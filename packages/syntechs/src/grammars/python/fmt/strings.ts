@@ -352,6 +352,27 @@ function normalizeEscape(
   return undefined;
 }
 
+/**
+ * Whether `input` from `from` holds a character `normalizeString`'s loop changes anything at: most strings hold
+ * none, and one char-code scan is cheaper than that loop's one-character strings.
+ */
+function actsOn(
+  input: string,
+  from: number,
+  raw: boolean,
+  fl: Flags,
+  escapeBraces: boolean,
+): boolean {
+  const quote = fl.triple ? -1 : fl.quote.charCodeAt(0);
+  for (let i = from; i < input.length; i++) {
+    const c = input.charCodeAt(i);
+    if (c === 13 /* \r */) return true;
+    if (escapeBraces && (c === 123 || c === 125) /* { } */) return true;
+    if (!raw && (c === 92 /* \ */ || c === quote)) return true;
+  }
+  return false;
+}
+
 /** Ruff's `normalize_string`: line endings to `\n`, escapes' case, and quotes escaped for `fl.quote`. */
 export function normalizeString(
   input: string,
@@ -359,11 +380,12 @@ export function normalizeString(
   fl: Flags,
   escapeBraces: boolean,
 ): string {
+  const raw = isRaw(fl);
+  if (!actsOn(input, from, raw, fl, escapeBraces)) return input;
   let out = "";
   let last = 0;
   const preferred = fl.quote;
   const opp = opposite(preferred);
-  const raw = isRaw(fl);
   let i = from;
   while (i < input.length) {
     const c = input[i];
