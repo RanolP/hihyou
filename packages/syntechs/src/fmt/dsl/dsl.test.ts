@@ -17,8 +17,10 @@ import {
   grpParen,
   lines,
   option,
+  parentIs,
   sepBy,
   space,
+  text,
   tok,
   verbatim,
 } from "./dsl.js";
@@ -115,6 +117,32 @@ it("a typo'd kind, field, token, separator or option fails to typecheck, so a sp
       wrapping: { object: { keepExpanded: option("objectWrap").is("preserve") } },
     }),
     format({
+      // A `text` whose `when` names a kind or option the grammar lacks never holds, so it silently never respells.
+      structure: {
+        // @ts-expect-error: `objects` is not a kind
+        pair: () => text("lower", parentIs("objects")),
+      },
+    }),
+    format({
+      structure: {
+        // @ts-expect-error: `bracketSpaceing` is not an option
+        pair: () => text("lower", option("bracketSpaceing")),
+      },
+    }),
+    format({
+      structure: {
+        // @ts-expect-error: `lowercase` is not a normalizer
+        pair: () => text("lowercase"),
+      },
+    }),
+    format({
+      structure: {
+        document: () => text("lower", parentIs("object")),
+        pair: () => text("printNumber", option("bracketSpacing")),
+        object: () => text("trimEnd"),
+      },
+    }),
+    format({
       structure: {
         // @ts-expect-error: an Option is not a node
         if_statement: ($) => ["if", $.condition, $.alternative],
@@ -188,6 +216,18 @@ it("`.via` reaches the IR on a required field and inside `andThen`", () => {
       },
     ],
   });
+});
+
+// A `when` the IR loses respells the text everywhere: CSS would lowercase every class name, not only a pseudo-class's.
+it("`text(fn, when)` reaches the IR with its condition, and without one holds everywhere", () => {
+  const ir = format({
+    structure: {
+      pair: () => text("lower", parentIs("object")),
+      object: () => text("printNumber"),
+    },
+  });
+  expect(ir.structure["pair"]).toEqual({ t: "text", fn: "lower", when: { t: "parent", kind: "object" } });
+  expect(ir.structure["object"]).toEqual({ t: "text", fn: "printNumber", when: true });
 });
 
 // A `tok(...).via` the IR loses prints the source token as written, silently skipping the rule that inserts or drops it.

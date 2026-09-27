@@ -11,6 +11,7 @@
 // into straight-line stream calls (`emit.ts`), fusing the two passes into one per node; a test holds the fused
 // code to the two-pass reference, output and anchors.
 import type { Grammar } from "../rules.js";
+import type { NormalizerName } from "./normalizers.js";
 
 /** What node-types.json says fills a field or the children in no field (see the bundle's `fieldTypes`). */
 export interface Slot {
@@ -52,7 +53,9 @@ export type Cond =
       readonly key: string;
       readonly op: "truthy" | "is" | "isNot";
       readonly value?: unknown;
-    };
+    }
+  /** The node's parent is of kind `kind`. */
+  | { readonly t: "parent"; readonly kind: string };
 
 export type Tree =
   /** A source token; `via`: printed by that token rule (`tok(text).via(name)`), present or not. */
@@ -81,6 +84,8 @@ export type Tree =
   | { readonly t: "lines"; readonly list: Ref }
   | { readonly t: "inOrder"; readonly space: boolean }
   | { readonly t: "verbatim" }
+  /** The node's source text through normalizer `fn` (`normalizers.ts`) where `when` holds, else as written. */
+  | { readonly t: "text"; readonly fn: NormalizerName; readonly when: Cond }
   | { readonly t: "custom"; readonly name: string };
 
 /** How one bracket or list frame of a node breaks. */
@@ -200,6 +205,14 @@ export type TokenTree<G extends Grammar, O> =
 /** A rule that prints the whole node: `verbatim` or `custom`. */
 type Whole = Piece<"whole">;
 
+/** A `text` rule's `when` on where its node sits (`parentIs`). */
+export interface ParentCond<K> {
+  readonly t: "parent";
+  readonly kind: K;
+}
+/** `text`'s output, its `when` checked against the grammar's kinds and the options. */
+type Text<G extends Grammar, O> = Piece<{ text: CondOf<O> | ParentCond<KindOf<G>> }>;
+
 type FrameWrapOf<G extends Grammar, O> = Omit<
   FrameWrap,
   "packWhenAllOf" | "keepExpanded"
@@ -221,7 +234,7 @@ type WrapOf<G extends DslGrammar, O, K> = FrameWrapOf<G, O> & {
 
 export interface FormatSpec<G extends DslGrammar, O> {
   readonly structure: {
-    readonly [K in KindOf<G>]?: ($: Fields<G, K>) => TokenTree<G, O> | Whole;
+    readonly [K in KindOf<G>]?: ($: Fields<G, K>) => TokenTree<G, O> | Whole | Text<G, O>;
   };
   readonly wrapping?: { readonly [K in KindOf<G>]?: WrapOf<G, O, K> };
 }
@@ -235,6 +248,17 @@ export const space: Piece<"space"> = piece({ t: "space" });
 
 /** The node's source text as one token. */
 export const verbatim: Whole = piece({ t: "verbatim" });
+
+/**
+ * The node's source text as one token, respelled by the normalizer `fn` (`normalizers.ts`, which says what options
+ * each reads); with `when`, only where it holds, and as written elsewhere. For a spelling the layout canonicalizes:
+ * a number, a keyword's case, a string's quotes.
+ */
+export const text = <const W = never>(fn: NormalizerName, when?: W): Piece<{ text: W }> =>
+  piece({ t: "text", fn, when: when === undefined ? true : plain(when) });
+
+/** The node's parent is of kind `kind`: a `text` rule's `when`, for a spelling only some parents canonicalize. */
+export const parentIs = <const K extends string>(kind: K): ParentCond<K> => ({ t: "parent", kind });
 
 /**
  * The hand-written rule `name` (a `CustomRule`, see `runtime.ts`) prints the node; the generated module takes it
@@ -346,7 +370,9 @@ export const option = <const K extends string>(key: K) => ({
 
 function plain(c: unknown): Cond {
   if (c === undefined || typeof c === "boolean") return c === true;
-  const { key, op, value } = c as Exclude<Cond, boolean>;
+  const x = c as Exclude<Cond, boolean>;
+  if (x.t === "parent") return { t: "parent", kind: x.kind };
+  const { key, op, value } = x;
   return op === "truthy"
     ? { t: "option", key, op }
     : { t: "option", key, op, value };

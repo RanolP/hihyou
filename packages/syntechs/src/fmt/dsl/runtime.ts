@@ -339,3 +339,9 @@ export function separators(
   }
   return seps;
 }
+
+/** Whether `node`'s parent is of kind `kind` (a `parentIs` condition). */
+export function parentIs(tree: FormatTree, node: number, kind: string): boolean {
+  const p = tree.parent(node);
+  return p !== -1 && tree.kindName(p) === kind;
+}

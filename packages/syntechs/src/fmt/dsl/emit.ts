@@ -1,6 +1,7 @@
 // A spec's IR as TypeScript: per kind, one stream rule making the calls the two passes of `reference.ts` make,
 // with the flattened sequence never built and each wrapping rule's choices decided while generating.
 import { type Cond, type DslGrammar, type FormatIR, frameWrap, type Ref, type Tree, type Wrap } from "./dsl.js";
+import { type NormalizerName, normalizerOptions } from "./normalizers.js";
 import { danglingOwner, holdsList } from "./reference.js";
 
 const str = (s: string) => JSON.stringify(s);
@@ -15,10 +16,13 @@ const ident = (kind: string) => `$${kind.replace(/\W/g, "_")}`;
 function optionKeys(ir: FormatIR): string[] {
   const keys = new Set<string>();
   const cond = (c: Cond | undefined) => {
-    if (c !== undefined && typeof c !== "boolean") keys.add(c.key);
+    if (c !== undefined && typeof c !== "boolean" && c.t === "option") keys.add(c.key);
   };
   const walk = (x: Tree): void => {
-    if (x.t === "seq") x.parts.forEach(walk);
+    if (x.t === "text") {
+      cond(x.when);
+      for (const k of normalizerOptions[x.fn] ?? []) keys.add(k);
+    } else if (x.t === "seq") x.parts.forEach(walk);
     else if (x.t === "opt") walk(x.then);
     else if (x.t === "brackets") {
       cond(x.pad);
@@ -75,6 +79,7 @@ const hasOpt = (x: Tree): boolean =>
 
 const cond = (c: Cond): string => {
   if (typeof c === "boolean") return String(c);
+  if (c.t === "parent") return `parentIs(t, node, ${str(c.kind)})`;
   const v = `ctx.options.${c.key}`;
   if (c.op === "truthy") return `Boolean(${v})`;
   return `${v} ${c.op === "is" ? "===" : "!=="} ${JSON.stringify(c.value)}`;
@@ -173,6 +178,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
       case "space":
       case "brackets":
       case "verbatim":
+      case "text":
       case "custom":
         return "false";
       case "inOrder":
@@ -413,6 +419,17 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
       case "verbatim":
         line("sToken(node, t.text(node));");
         return;
+      case "text": {
+        const call = (s: string) => `${x.fn}(${s}${normalizerOptions[x.fn] ? ", ctx.options" : ""})`;
+        if (x.when === true) {
+          line(`sToken(node, ${call("t.text(node)")});`);
+          return;
+        }
+        const raw = name("raw");
+        line(`const ${raw} = t.text(node);`);
+        line(`sToken(node, ${cond(x.when)} ? ${call(raw)} : ${raw});`);
+        return;
+      }
       case "custom":
         line(`custom[${str(x.name)}](node, ctx, customSeq(ctx, node));`);
         return;
@@ -493,6 +510,22 @@ export function emit(
       parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
       0,
       'import { splitChild } from "../../fmt/dsl/runtime.js";',
+    );
+  if (parts.some((p) => p.includes("parentIs(")))
+    parts.splice(
+      parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
+      0,
+      'import { parentIs } from "../../fmt/dsl/runtime.js";',
+    );
+  // The normalizers the `text` rules name, each called directly (a `text` is only ever a whole rule).
+  const fns = new Set<NormalizerName>();
+  for (const ir of Object.values(specs))
+    for (const x of Object.values(ir.structure)) if (x.t === "text") fns.add(x.fn);
+  if (fns.size > 0)
+    parts.splice(
+      parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
+      0,
+      `import { ${[...fns].sort().join(", ")} } from "../../fmt/dsl/normalizers.js";`,
     );
   const extra = [...(tokenRules ? ["TokenRule"] : []), ...(frameRules ? ["FrameRule"] : [])];
   if (extra.length > 0)

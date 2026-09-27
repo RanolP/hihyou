@@ -9,7 +9,7 @@
 //   wrap     sequence -> stream calls, node range by node range, each under its kind's wrapping rule: groups,
 //            indents, lines and fills. A `custom` kind's rule lays out its range itself.
 import { newlineBetween, nextLineEmpty } from "../text.js";
-import { firstLeaf } from "../tree.js";
+import { type FormatTree, firstLeaf } from "../tree.js";
 import {
   BROKEN,
   close,
@@ -53,16 +53,27 @@ import {
   type Entry,
   fieldChild,
   listItems,
+  parentIs,
   separators,
   splitChild,
   tokenChild,
   type TokenRule,
 } from "./runtime.js";
+import { normalizers } from "./normalizers.js";
 
 export type { Entry } from "./runtime.js";
 
-export const evalCond = (c: Cond, options: unknown): boolean => {
+/** Whether `c` holds under `options`; a `parent` condition asks `at`, the tree and node it is about. */
+export const evalCond = (
+  c: Cond,
+  options: unknown,
+  at?: { readonly tree: FormatTree; readonly node: number },
+): boolean => {
   if (typeof c === "boolean") return c;
+  if (c.t === "parent") {
+    if (!at) throw new Error("evalCond: a `parent` condition outside a `text` rule");
+    return parentIs(at.tree, at.node, c.kind);
+  }
   const v = (options as Record<string, unknown>)[c.key];
   return c.op === "truthy" ? Boolean(v) : c.op === "is" ? v === c.value : v !== c.value;
 };
@@ -264,6 +275,14 @@ export function flatten<O>(
         case "verbatim":
           out.push({ e: "tok", node: n, text: t.text(n), synthetic: false });
           return;
+        case "text": {
+          const raw = t.text(n);
+          const text = evalCond(x.when, ctx.options, { tree: t, node: n })
+            ? (normalizers[x.fn] as (s: string, o: unknown) => string)(raw, ctx.options)
+            : raw;
+          out.push({ e: "tok", node: n, text, synthetic: false });
+          return;
+        }
         case "custom":
           throw new Error("flatten: `custom` is a whole rule, never part of one");
       }
