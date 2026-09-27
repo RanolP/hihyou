@@ -5,7 +5,8 @@ import {
   type Grammar,
   type Language,
 } from "../../fmt/rules.js";
-import type { StreamRule } from "../../fmt/stream-format.js";
+import type { StreamCtx, StreamRule } from "../../fmt/stream-format.js";
+import { closeSpan, openSpan, sJump } from "../../fmt/stream.js";
 import * as gen from "./fmt.gen.js";
 import { grammar, language as parser } from "./index.js";
 import { jsAtoms, jsNormalize } from "./normalize.js";
@@ -168,19 +169,35 @@ export function jsLanguage(
       },
       // A node with no rule prints as its token. A node with one prints as its source text under a
       // prettier-ignore, and inside the parentheses the layout needs where it moved a node the source gave none.
-      wrap: (n, s, print) => {
+      wrap: (n, s, print, args) => {
         if (!rules.has(s.tree.kindName(n))) return print();
-        const ctx = jsCtx(s).js;
-        const parens =
-          kind(ctx, n) !== PE && kind(ctx, parent(ctx, n)) !== PE && needsParens(n, ctx);
-        if (parens) sToken(n, "(", true);
-        if (!isIgnored(ctx, n)) print();
-        else if (STATEMENT_LIST_PARENTS.has(kind(ctx, parent(ctx, n)) ?? "")) ignoredStatement(ctx, n);
-        else sToken(n, ctx.tree.text(n));
-        if (parens) sToken(n, ")", true);
+        if (args !== undefined) return wrapped(n, s, print);
+        const cache = ((s as Cached)[CACHE] ??= new Map());
+        const hit = cache.get(n);
+        if (hit !== undefined) return sJump(hit);
+        const t = openSpan();
+        wrapped(n, s, print);
+        closeSpan();
+        cache.set(n, t);
       },
     },
   };
+}
+
+// Prettier's print cache (main/ast-to-doc.js): a node printed with no args prints the same wherever it is
+// printed again (an argument printed plain, then hugged), so its second print jumps to the span its first built
+// rather than running its rules again, which nested hugs would repeat at every level.
+const CACHE = Symbol("printed");
+type Cached = { [CACHE]?: Map<number, number> };
+
+function wrapped(n: number, s: StreamCtx<JsOptions>, print: () => void): void {
+  const ctx = jsCtx(s).js;
+  const parens = kind(ctx, n) !== PE && kind(ctx, parent(ctx, n)) !== PE && needsParens(n, ctx);
+  if (parens) sToken(n, "(", true);
+  if (!isIgnored(ctx, n)) print();
+  else if (STATEMENT_LIST_PARENTS.has(kind(ctx, parent(ctx, n)) ?? "")) ignoredStatement(ctx, n);
+  else sToken(n, ctx.tree.text(n));
+  if (parens) sToken(n, ")", true);
 }
 
 /** JavaScript (and JSX) as prettier's `babel` parser prints it. */
