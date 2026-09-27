@@ -17,7 +17,6 @@ import {
   partsOf,
   softline,
   statesOf,
-  synthetic,
   text,
   textOf,
   token,
@@ -127,20 +126,6 @@ export const fields = (x: HasTree, n: number, name: string) =>
 /** The anonymous token `text` among `n`'s children. */
 export const anon = (x: HasTree, n: number, text: string) =>
   childWhere(x, n, (c) => !x.tree.named(c) && x.tree.kindName(c) === text);
-
-/** The `;` ending statement `n`: its own when the source has one, else inserted, or dropped when `semi` is off. */
-export function semi(ctx: JsCtx, n: number, own?: number): Doc {
-  const c =
-    own ??
-    lastChildWhere(
-      ctx,
-      n,
-      (c) => !ctx.tree.named(c) && ctx.tree.kindName(c) === ";",
-    );
-  const present = c !== undefined && src(ctx, c) !== "";
-  if (!ctx.options.semi) return present ? token(c, "") : [];
-  return present ? token(c, ";") : synthetic(n, ";");
-}
 
 export const isComment = (x: HasTree, n: number) => {
   const k = x.tree.kindName(n);

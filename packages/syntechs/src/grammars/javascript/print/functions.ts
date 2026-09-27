@@ -1,6 +1,5 @@
 // Prettier's function printers: function.js, function-parameters.js, arrow-function.js.
 
-import type { Doc } from "../../../fmt/doc.js";
 import { lfAfter, nextLineEmpty } from "../../../fmt/text.js";
 import {
   BROKEN,
@@ -12,7 +11,6 @@ import {
   INDENT,
   type JsStreamCtx,
   jsCtx,
-  onDoc,
   open,
   openIndentIfBreak,
   type Part,
@@ -54,7 +52,6 @@ import {
   objectOf,
   parameters,
   parent,
-  semi,
   separators,
   src,
   trailingCommaAllowed,
@@ -217,13 +214,6 @@ export function sShouldGroupFunctionParameters(
   );
 }
 
-/** `sShouldGroupFunctionParameters` for a rule still on the Doc (types.ts's methodSignature and functionType). */
-export const shouldGroupFunctionParameters = (
-  x: HasTree,
-  fn: number,
-  returnTypeDoc: Doc,
-): boolean => sShouldGroupFunctionParameters(x, fn, { doc: returnTypeDoc });
-
 function shouldBreakFunctionParameters(x: HasTree, fn: number): boolean {
   const params = parameters(x, fn);
   return (
@@ -291,17 +281,6 @@ function isDecoratedFunction(ctx: JsCtx, fn: number): boolean {
   }
   return false;
 }
-
-/** `sPrintFunctionParameters` as a Doc, for the rules still on it (types.ts's methodSignature and functionType). */
-export const printFunctionParameters = (
-  ctx: JsCtx,
-  fn: number,
-  expand = false,
-  withTypeParameters = false,
-): Doc =>
-  onDoc((n, s) =>
-    sPrintFunctionParameters(s, n, expand, withTypeParameters),
-  )(fn, ctx);
 
 /** Prettier's printFunctionParameters for function `fn`, whose `formal_parameters` holds the list. */
 export function sPrintFunctionParameters(
@@ -510,11 +489,6 @@ export function sPrintMethodValue(ctx: JsStreamCtx, n: number): void {
   } else if (present) sToken(c, ";");
   else sToken(n, ";", true);
 }
-
-const printMethodValueDoc = onDoc((n, ctx) => sPrintMethodValue(jsCtx(ctx), n));
-/** `sPrintMethodValue` for a rule still on the Doc (classes.ts's and objects.ts's methods). */
-export const printMethodValue = (ctx: JsCtx, n: number): Doc =>
-  printMethodValueDoc(n, ctx);
 
 // --- arrow functions ----------------------------------------------------------------------------------------
 

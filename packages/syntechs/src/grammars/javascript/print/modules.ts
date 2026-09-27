@@ -136,7 +136,7 @@ function printSpecifiers(s: JsStreamCtx, clauses: readonly number[]): void {
 }
 
 /**
- * Prettier's printImportDeclaration and printExportDeclaration. Its `;` is util.ts's semi() (the last one) rather
+ * Prettier's printImportDeclaration and printExportDeclaration. Its `;` is the `semi` rule on the last `;` rather
  * than `tok(";")`'s first, and an export of a declaration, or of a default function or class, has none.
  */
 function printModuleStatement(s: JsStreamCtx, n: number, ctx: StreamCtx<JsOptions>): void {

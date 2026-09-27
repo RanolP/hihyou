@@ -1,7 +1,6 @@
 // Prettier's object, array, property and key printers (print/object.js, array.js, property.js, key.js) and
 // printMethod (print/function.js).
 
-import type { Doc } from "../../../fmt/doc.js";
 import type { CustomRule } from "../../../fmt/dsl/runtime.js";
 import type { StreamCtx, StreamRule } from "../../../fmt/stream-format.js";
 import { lfAfter, newlineBetween, nextLineEmpty } from "../../../fmt/text.js";
@@ -16,7 +15,6 @@ import {
   INDENT,
   type JsStreamCtx,
   jsCtx,
-  onDoc,
   open,
   SOFT,
   sHardline,
@@ -158,10 +156,6 @@ export function sPrintKey(ctx: JsStreamCtx, n: number): void {
   }
   ctx.print(key);
 }
-
-const printKeyDoc = onDoc((n, ctx) => sPrintKey(jsCtx(ctx), n));
-/** `sPrintKey` for a rule still on the Doc. */
-export const printKey = (ctx: JsCtx, n: number): Doc => printKeyDoc(n, ctx);
 
 // --- objects ----------------------------------------------------------------------------------------------------
 

@@ -1,7 +1,6 @@
 // Prettier's assignment layouts (print/assignment.js): how `left = right`, a declarator, an object property
 // and a class property break.
 
-import type { Doc } from "../../../fmt/doc.js";
 import { textWidth } from "../../../fmt/width.js";
 import {
   capture,
@@ -11,8 +10,6 @@ import {
   GROUP,
   INDENT,
   type JsStreamCtx,
-  jsCtx,
-  onDoc,
   open,
   openIndentIfBreak,
   type Part,
@@ -145,25 +142,6 @@ export function sPrintAssignment(
     case "only-left":
       return place(leftPart);
   }
-}
-
-/** `sPrintAssignment` for a rule still on the Doc. */
-export function printAssignment(
-  ctx: JsCtx,
-  node: number,
-  left: Doc,
-  operator: Doc,
-  right: number | undefined,
-): Doc {
-  return onDoc((n, s) =>
-    sPrintAssignment(
-      jsCtx(s),
-      n,
-      () => place({ doc: left }),
-      () => place({ doc: operator }),
-      right,
-    ),
-  )(node, ctx);
 }
 
 const isDeclarator = (x: HasTree, n: number | undefined) =>

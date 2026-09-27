@@ -4,7 +4,7 @@ import type { JsOptions } from "./util.js";
 
 /**
  * A statement's trailing `;`, which a spec writes as `tok(";").via("semi")`: the source's own `;` when it has one,
- * one added when it has none, and neither under `semi: false`. util.ts's semi() is the same rule on the Doc.
+ * one added when it has none, and neither under `semi: false`.
  */
 const semi: TokenRule<JsOptions> = (token, node, ctx) => {
   const present = token !== undefined && ctx.tree.text(token) !== "";
