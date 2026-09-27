@@ -3,11 +3,28 @@ import type { StreamCtx } from "../../../fmt/stream-format.js";
 import type { Frame } from "../../../fmt/dsl/runtime.js";
 import type { ClassDef, Decorator, FunctionDef, Lambda, Parameter, TypeAlias } from "../fmt/ast.js";
 import { writeAliasTypeParams } from "../fmt/stmt/assign.js";
-import { type Format, group } from "../fmt/elements.js";
-import { hard, space } from "../fmt/builders.js";
 import { args, formatExpr, maybeParenthesize, writeParameters } from "../fmt/expr.js";
-import { dslPart, part, ruffOf, ruffStmtOf } from "../fmt/sink.js";
-import { body, decorators, splitDangling, writeSimpleType, writeTypeParams } from "../fmt/stmt/defs.js";
+import {
+  close,
+  COLLAPSE,
+  dslPart,
+  GROUP,
+  HARD,
+  open,
+  part,
+  ruffOf,
+  ruffStmtOf,
+  sLine,
+  sText,
+  sToken,
+} from "../fmt/sink.js";
+import {
+  splitDangling,
+  writeBody,
+  writeDecorators,
+  writeSimpleType,
+  writeTypeParams,
+} from "../fmt/stmt/defs.js";
 import { endOf, tokens } from "../fmt/trivia.js";
 
 export const stmtDefVia = {
@@ -16,7 +33,7 @@ export const stmtDefVia = {
     const { f, s } = ruffStmtOf(c);
     const def = s as FunctionDef | ClassDef;
     const [leadingDef] = splitDangling(f, def);
-    part(decorators(f, def.decorators, leadingDef));
+    writeDecorators(f, def.decorators, leadingDef);
   },
   "def.decorator": (c: number) => {
     const { f, e } = ruffOf(c);
@@ -25,7 +42,8 @@ export const stmtDefVia = {
   "def.async": (token: number | undefined) => {
     if (token === undefined) return;
     const { f } = ruffStmtOf(token);
-    part([f.tok(token), space]);
+    sToken(token, f.text(token));
+    sText(" ");
   },
   // A definition's or a type alias's (under its `generic_type`) type parameters in their brackets.
   "def.typeParams": (node: number, ctx: StreamCtx<unknown>, frame: Frame) => {
@@ -59,16 +77,19 @@ export const stmtDefVia = {
     const cs = f.comments;
     const p = s.params;
     const emptyParams = p.items.length === 0 && !cs.has(p);
-    const inner: Format[] = [dslPart(p.ts)];
+    open(GROUP);
+    part(dslPart(p.ts));
     const ret = s.returns;
     if (ret && s.arrow !== undefined) {
-      inner.push(space, f.tok(s.arrow), space);
+      sText(" ");
+      sToken(s.arrow, f.text(s.arrow));
+      sText(" ");
       if (ret.kind === "Tuple")
-        inner.push(formatExpr(f, ret, cs.hasLeading(ret) ? "always" : "never"));
+        part(formatExpr(f, ret, cs.hasLeading(ret) ? "always" : "never"));
       // Parenthesized so the comment cannot become the header's own on the next run.
-      else if (cs.hasTrailing(ret)) inner.push(formatExpr(f, ret, "always"));
+      else if (cs.hasTrailing(ret)) part(formatExpr(f, ret, "always"));
       else
-        inner.push(
+        part(
           maybeParenthesize(
             f,
             ret,
@@ -77,7 +98,7 @@ export const stmtDefVia = {
           ),
         );
     }
-    part(group(inner));
+    close();
   },
   // A `def`'s parameters in their parentheses: ruff lays out the list, splitting its comments by position.
   "def.parameters": (node: number, _: StreamCtx<unknown>, frame: Frame) => {
@@ -103,7 +124,7 @@ export const stmtDefVia = {
     if (a) {
       const dangling = f.comments.dangling(a);
       if (a.items.length === 0 && dangling.every((c) => c.line === "eol"))
-        part(f.trailing(dangling));
+        f.writeTrailing(dangling);
       else part(args(f, a));
     }
   },
@@ -112,15 +133,15 @@ export const stmtDefVia = {
     const { f, s } = ruffStmtOf(c);
     const def = s as FunctionDef | ClassDef;
     const [, trailingDef] = splitDangling(f, def);
-    part([
-      f.trailing(trailingDef),
-      body(f, def, def.body, def.kind === "FunctionDef" ? "function" : "class", trailingDef),
-    ]);
+    f.writeTrailing(trailingDef);
+    writeBody(f, def, def.body, def.kind === "FunctionDef" ? "function" : "class", trailingDef);
   },
   // An annotation with a leading comment of its own starts on the next line, unless parenthesized.
   "def.annotation": (c: number) => {
     const { f, e } = ruffOf(c);
-    part([f.comments.hasLeading(e) && e.parens.length === 0 ? hard : space, formatExpr(f, e)]);
+    if (f.comments.hasLeading(e) && e.parens.length === 0) sLine(HARD | COLLAPSE);
+    else sText(" ");
+    part(formatExpr(f, e));
   },
   // A default whose leading comment follows the `=` starts on the next line.
   "def.default": (c: number) => {
@@ -143,8 +164,8 @@ export const stmtDefVia = {
         break;
       }
     }
-    const lineBreak = breakLeading;
-    const sp = p.annotation ? space : [];
-    part([lineBreak ? hard : sp, formatExpr(f, e)]);
+    if (breakLeading) sLine(HARD | COLLAPSE);
+    else if (p.annotation) sText(" ");
+    part(formatExpr(f, e));
   },
 };

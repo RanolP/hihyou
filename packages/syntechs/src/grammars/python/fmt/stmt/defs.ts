@@ -10,9 +10,7 @@ import type {
 import { Unformattable } from "../ast.js";
 import {
   commaIn,
-  emptyLine,
   type Fmt,
-  hard,
   space,
 } from "../builders.js";
 import type { Comment } from "../comments.js";
@@ -41,69 +39,67 @@ export const kids = (tree: FormatTree, n: number): number[] =>
 /** The blank lines a definition needs between itself and its leading comments: two at the top, else one. */
 const definitionGap = (f: Fmt) => (f.level.k === "top" ? 2 : 1);
 
-/** Ruff's `empty_lines_after_leading_comments`, printed after the leading comments already were. */
-function emptyLinesAfterLeadingComments(
-  f: Fmt,
-  comments: readonly Comment[],
-): Format {
+const writeHard = () => sink.sLine(sink.HARD | sink.COLLAPSE);
+const writeEmptyLines = (n: number) => {
+  for (let i = 0; i < n; i++) sink.sLine(sink.HARD | sink.COLLAPSE | sink.BLANK);
+};
+
+/** Ruff's `empty_lines_after_leading_comments`, written after the leading comments already were. */
+function writeEmptyLinesAfterLeadingComments(f: Fmt, comments: readonly Comment[]): void {
   const last = comments.findLast((c) => c.line === "own");
-  if (!last) return [];
+  if (!last) return;
   const actual = Math.max(0, linesAfter(f.tree, last.end) - 1);
   const want = definitionGap(f);
-  if (actual === 0 || actual >= want) return [];
-  return Array.from({ length: want - actual }, () => emptyLine);
+  if (actual === 0 || actual >= want) return;
+  writeEmptyLines(want - actual);
 }
 
-/** Ruff's `empty_lines_before_trailing_comments`, printed before the trailing comments are. */
-function emptyLinesBeforeTrailingComments(
-  f: Fmt,
-  comments: readonly Comment[],
-): Format {
+/** Ruff's `empty_lines_before_trailing_comments`, written before the trailing comments are. */
+function writeEmptyLinesBeforeTrailingComments(f: Fmt, comments: readonly Comment[]): void {
   const first = comments.find((c) => c.line === "own");
-  if (!first) return [];
+  if (!first) return;
   const actual = Math.max(0, linesBefore(f.tree, first.start) - 1);
-  const want = definitionGap(f);
-  return Array.from({ length: Math.max(0, want - actual) }, () => emptyLine);
+  writeEmptyLines(Math.max(0, definitionGap(f) - actual));
 }
 
 /**
  * A definition as its rule in format.ts prints it, from its decorators when it has any; the blank lines that
- * separate it from its own leading and trailing comments, which ruff prints around it, stay here.
+ * separate it from its own leading and trailing comments, which ruff prints around it, stay here. Recorded, as
+ * the statement rules lay out `Format`s.
  */
-function defFromSpec(f: Fmt, s: FunctionDef | ClassDef): Format {
-  return [
-    emptyLinesAfterLeadingComments(f, f.comments.leading(s)),
-    dslPart(s.decorators.length > 0 ? f.tree.parent(s.ts) : s.ts),
-    emptyLinesBeforeTrailingComments(f, f.comments.trailing(s)),
-  ];
-}
+const defFromSpec = (f: Fmt, s: FunctionDef | ClassDef): Format =>
+  sink.record(() => {
+    writeEmptyLinesAfterLeadingComments(f, f.comments.leading(s));
+    sink.part(dslPart(s.decorators.length > 0 ? f.tree.parent(s.ts) : s.ts));
+    writeEmptyLinesBeforeTrailingComments(f, f.comments.trailing(s));
+  });
 
 /** Ruff's `FormatDecorator`, with the decorator's own comments. */
-function decorator(f: Fmt, d: Decorator): Format {
+function writeDecorator(f: Fmt, d: Decorator): void {
   const cs = f.comments;
-  return [f.leading(cs.leading(d)), dslPart(d.ts), f.trailing(cs.trailing(d))];
+  f.writeLeading(cs.leading(d));
+  sink.part(dslPart(d.ts));
+  f.writeTrailing(cs.trailing(d));
 }
 
 /** Ruff's `FormatDecorators`: one per line, then the own-line comments between the last and the header. */
-export function decorators(
+export function writeDecorators(
   f: Fmt,
   list: readonly Decorator[],
   leadingDefinitionComments: readonly Comment[],
-): Format {
+): void {
   const last = list.at(-1);
-  if (!last) return [];
-  const out: Format[] = list.map((d, i) =>
-    i === 0 ? decorator(f, d) : [hard, decorator(f, d)],
-  );
-  if (leadingDefinitionComments.length === 0) out.push(hard);
-  else
-    out.push(
-      linesAfterIgnoringEndOfLineTrivia(f.tree, last.end) <= 1
-        ? hard
-        : emptyLine,
-      f.leading(leadingDefinitionComments),
-    );
-  return out;
+  if (!last) return;
+  for (const [i, d] of list.entries()) {
+    if (i > 0) writeHard();
+    writeDecorator(f, d);
+  }
+  if (leadingDefinitionComments.length === 0) writeHard();
+  else {
+    if (linesAfterIgnoringEndOfLineTrivia(f.tree, last.end) <= 1) writeHard();
+    else writeEmptyLines(1);
+    f.writeLeading(leadingDefinitionComments);
+  }
 }
 
 /**
@@ -239,13 +235,13 @@ const unsupported = (tree: FormatTree, n: number): never => {
 // ---- definitions ----
 
 /** `clauseBody`, refusing a backslash continuation after the colon. */
-export function body(
+export function writeBody(
   f: Fmt,
   header: { readonly ts: number; readonly colon: number },
   stmts: Parameters<typeof clauseBody>[1],
   kind: "function" | "class" | "other",
   colonComments: readonly Comment[],
-): Format {
+): void {
   const t = f.tree;
   const colonEnd = endOf(t, header.colon);
   // `check` reads a backslash alone on the line after a colon as a dedent, so it would flag the correct output.
@@ -257,8 +253,10 @@ export function body(
     throw new Unformattable(
       `backslash continuation before a body at ${byteEndOf(t, header.colon)}`,
     );
-  return clauseBody(f, stmts, kind, colonComments);
+  sink.part(clauseBody(f, stmts, kind, colonComments));
 }
+/** `writeBody`, recorded for a caller still laying out `Format`s. */
+export const body = (...a: Parameters<typeof writeBody>): Format => sink.record(() => writeBody(...a));
 
 // A statement its rule in format.ts prints.
 const fromSpec = (_: Fmt, s: Match) => dslPart(s.ts);
