@@ -4,6 +4,7 @@ import {
   align,
   bestFitParenthesize,
   bestFitting,
+  breakParent,
   conditionalGroup,
   dedent,
   fill,
@@ -22,13 +23,20 @@ import {
   softline,
   text,
   token,
+  willBreak as docWillBreak,
 } from "./doc.js";
 import { print } from "./printer.js";
 import {
   BLANK,
   BROKEN,
+  CHOICE,
   COLLAPSE,
+  canBreak,
   close,
+  flatText,
+  sBreakParent,
+  shape,
+  willBreak,
   closeBestFitParenthesize,
   closeChoice,
   closeState,
@@ -359,6 +367,28 @@ describe("printStream matches printer.ts for conditional groups", () => {
     expect(out).toBe("a\nb c");
   });
 
+  // Propagated past the choice, a later state's break would break every call holding an expandable argument.
+  it("leaves the groups around flat for a break parent in a later state", () => {
+    const out = both(
+      80,
+      group([text("x"), line, conditionalGroup([text("a"), [text("b"), breakParent]])]),
+      () => {
+        open(GROUP);
+        sText("x");
+        sLine(0);
+        choice([
+          () => sText("a"),
+          () => {
+            sText("b");
+            sBreakParent();
+          },
+        ]);
+        close();
+      },
+    );
+    expect(out).toBe("x a");
+  });
+
   it("finds a fill's next item past a separator holding an ifBreak", () => {
     const out = both(
       8,
@@ -464,6 +494,116 @@ describe("printStream matches printer.ts for a shared part printed through a jum
       sText("e");
     });
     expect(out).toBe("dd\ncc\ndde");
+  });
+});
+
+describe("the range queries answer what doc.ts's and the JS printer's Doc queries answer", () => {
+  const choice = (states: (() => void)[]) => {
+    const k = openChoice(false);
+    for (const s of states) {
+      openState();
+      s();
+      closeState();
+    }
+    closeChoice();
+    return k;
+  };
+  const span = (build: () => void): number => {
+    const t = openSpan();
+    build();
+    closeSpan();
+    return t;
+  };
+  const wrapped = (kind: number, build: () => void) => {
+    const k = open(kind);
+    build();
+    close();
+    return k;
+  };
+
+  // A choice's state breaks reach no flag around it, so a willBreak reading only flags would call a hugged
+  // argument holding a call's expanded arguments unbreaking.
+  it("willBreak sees a break in a choice's first state, through a jump too, and none in a later state", () => {
+    const firstBreaks = [[text("a"), hardline], text("b")];
+    const laterBreaks = [text("a"), [text("b"), hardline]];
+    expect(docWillBreak(conditionalGroup(firstBreaks))).toBe(true);
+    expect(docWillBreak(conditionalGroup(laterBreaks))).toBe(false);
+    resetStream();
+    const t = span(() =>
+      choice([
+        () => {
+          sText("a");
+          sHardline();
+        },
+        () => sText("b"),
+      ]),
+    );
+    const u = span(() =>
+      choice([
+        () => sText("a"),
+        () => {
+          sText("b");
+          sHardline();
+        },
+      ]),
+    );
+    const g = wrapped(INDENT, () => sJump(t));
+    const h = wrapped(INDENT, () => sJump(u));
+    expect([willBreak(t), willBreak(u), willBreak(g), willBreak(h)]).toEqual([
+      true,
+      false,
+      true,
+      false,
+    ]);
+  });
+
+  it("canBreak sees a line in any state and through a jump, and no line in a boundary", () => {
+    resetStream();
+    const later = choice([() => sText("a"), () => sLine(SOFT)]);
+    const t = span(() => sLine(0));
+    const viaJump = wrapped(INDENT, () => sJump(t));
+    const boundary = wrapped(INDENT, () => sLineSuffixBoundary());
+    const textOnly = wrapped(GROUP, () => sText("a"));
+    expect([canBreak(later), canBreak(viaJump), canBreak(boundary), canBreak(textOnly)]).toEqual(
+      [true, true, false, false],
+    );
+  });
+
+  it("flatText reads text through unbroken groups and jumps, and gives up at a line or a break parent", () => {
+    resetStream();
+    const t = span(() => sText("c"));
+    const textual = wrapped(GROUP, () => {
+      sText("a");
+      wrapped(GROUP, () => sToken(0, "b"));
+      sJump(t);
+    });
+    const lined = wrapped(GROUP, () => {
+      sText("a");
+      sLine(SOFT);
+    });
+    const breaking = span(() => {
+      sText("a");
+      sBreakParent();
+    });
+    const indented = wrapped(INDENT, () => sText("a"));
+    expect([flatText(textual), flatText(lined), flatText(breaking), flatText(indented)]).toEqual([
+      "abc",
+      undefined,
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it("shape lists a choice's states and a fill's items, not its separators", () => {
+    resetStream();
+    const k = choice([() => sText("a"), () => sText("b")]);
+    const f = open(FILL);
+    const a = wrapped(FILL_ITEM, () => sText("a"));
+    wrapped(IF_BROKEN, () => sText("-"));
+    const b = wrapped(FILL_ITEM, () => sText("b"));
+    close();
+    expect(shape(k)).toEqual({ kind: CHOICE, parts: [k + 1, k + 2] });
+    expect(shape(f)).toEqual({ kind: FILL, parts: [a, b] });
   });
 });
 

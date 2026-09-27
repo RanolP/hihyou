@@ -48,6 +48,8 @@ const SPECIAL = 4;
  * entry: prettier's fits, measuring it from its start, counts that space, which the running width counted before it.
  */
 const LEAD = 8;
+/** It holds a break parent (a hard line's included) or a broken group, which breaks the groups around it. */
+const BREAKS = 32;
 
 // --- lineSuffixBoundary ---
 /**
@@ -88,6 +90,8 @@ const STATE = 18;
  */
 const choiceSaves: number[] = [];
 const CHOICE_SAVE = 13;
+/** Whether the stream holds a choice, whose state breaks reach no `BREAKS` flag around it (see `willBreak`). */
+let choiceSeen = false;
 // --- end choice ---
 
 const BREAK = 0;
@@ -279,6 +283,7 @@ export function resetStream(ruff = false): void {
   ruffSpaces = ruff;
   expandsSeen = false;
   fittingSeen = false;
+  choiceSeen = false;
   n = 0;
   strs.length = 0;
   mergeable = false;
@@ -478,6 +483,7 @@ export function openAlign(n: number | string): number {
  * groups; `broken` does.
  */
 export function openChoice(broken: boolean): number {
+  choiceSeen = true;
   choiceSaves.push(pos, lastLine, runStart, lastSfx, bndM, bndSfx);
   choiceSaves.push(0, 0, 0, 0, 0, 0, 0);
   return open(CHOICE, -1, broken ? BROKEN : 0);
@@ -550,6 +556,7 @@ export function close(): void {
   if (lastLine >= (iStart[k] as number)) flags |= TRAIL;
   const hasBp = bp > (oBp[op] as number);
   const hasHard = hard > (oHard[op] as number);
+  if (hasBp) flags |= BREAKS;
   if (kind === FITS_EXPANDED) {
     if (hasBp) iKind[k] = FITS_EXPANDED_BREAKS;
     bp = oBp[op] as number;
@@ -594,7 +601,7 @@ export function close(): void {
  * it (`sJump`). It is built as if nothing were measured before it, so what it holds measures the same wherever
  * it prints, and closes with the effect a jump to it has on the counters around, which `transfer` applies.
  */
-const SPAN = 19;
+export const SPAN = 19;
 /** `lastLine` at a span's start: nothing measured in it yet, so a line there is its lead. */
 const FRESH = -2;
 /** The entry of the first line of the span being built, when it is the first thing measured in it, else -1. */
@@ -750,6 +757,126 @@ function scanInnerRefs(t: number) {
   }
 }
 // --- end span ---
+
+// --- queries ---
+// What a rule asks of a part it built, as `doc.ts`'s and the JS printer's Doc queries ask of a Doc: the part is a
+// closed interval, a span when it is only a sequence. Each reads the interval's own entries and intervals, and the
+// span of each jump among them.
+
+/**
+ * Walks closed interval `k`'s contents as a Doc query reads them: `enter(x)` is asked of each interval inside
+ * (false skips it), `entry(i)` of each entry outside a skipped one; either returning true stops the walk.
+ */
+function walkIn(
+  k: number,
+  enter: (x: number) => boolean | "stop",
+  entryAt: (i: number) => boolean,
+): boolean {
+  const to = iEnd[k] as number;
+  const stop = iNext[k] as number;
+  let cur = k + 1;
+  let i = iStart[k] as number;
+  for (;;) {
+    let skipped = false;
+    while (cur < stop && iStart[cur] === i) {
+      const go = enter(cur);
+      if (go === "stop") return true;
+      if (go) cur++;
+      else {
+        i = iEnd[cur] as number;
+        cur = iNext[cur] as number;
+        skipped = true;
+        break;
+      }
+    }
+    if (skipped) continue;
+    if (i >= to) return false;
+    if (entryAt(i)) return true;
+    i++;
+  }
+}
+
+/**
+ * `doc.ts`'s willBreak: whether closed interval `k` holds a break parent (a hard line's included) or a broken
+ * group. A choice reads its first state only, as the Doc's contents are that state.
+ */
+export function willBreak(k: number): boolean {
+  const flags = iFlag[k] as number;
+  if (flags & (BROKEN | BREAKS)) return true;
+  if (iKind[k] === CHOICE) return (iRef[k] as number) >= 0 && willBreak(k + 1);
+  // Only a choice's first state breaks nothing around it, so only a stream with a choice needs the walk.
+  if (!choiceSeen) return false;
+  return walkIn(
+    k,
+    (x) => (iKind[x] === CHOICE ? (willBreak(x) ? "stop" : false) : true),
+    (i) => eKind[i] === JUMP && willBreak(eStr[i] as number),
+  );
+}
+
+/** The JS printer's canBreak: whether closed interval `k` holds a line, in any state of a choice or branch. */
+export function canBreak(k: number): boolean {
+  return walkIn(
+    k,
+    () => true,
+    (i) =>
+      (eKind[i] === LINE && !((eFlag[i] as number) & BOUNDARY)) ||
+      (eKind[i] === JUMP && canBreak(eStr[i] as number)),
+  );
+}
+
+/**
+ * The JS printer's docText: the text closed interval `k` prints when it holds only text in unbroken groups (no
+ * line, choice, break parent or other interval), else undefined.
+ */
+export function flatText(k: number): string | undefined {
+  const textual = (x: number) => {
+    const kind = iKind[x] as number;
+    return (
+      ((kind === GROUP && !((iFlag[x] as number) & BROKEN)) ||
+        kind === SPAN ||
+        kind === LITERAL_TOKEN) &&
+      !((iFlag[x] as number) & BREAKS)
+    );
+  };
+  if (!textual(k)) return undefined;
+  let out = "";
+  const failed = walkIn(
+    k,
+    (x) => (textual(x) ? true : "stop"),
+    (i) => {
+      const kind = eKind[i] as number;
+      if (kind === TEXT || kind === TOKEN) {
+        out += strs[eStr[i] as number] as string;
+        return false;
+      }
+      if (kind === JUMP) {
+        const s = flatText(eStr[i] as number);
+        if (s === undefined) return true;
+        out += s;
+        return false;
+      }
+      return true;
+    },
+  );
+  return failed ? undefined : out;
+}
+
+/** What closed interval `k` is: its kind (`GROUP`, `CHOICE`, `FILL`, `SPAN`, ...) and its parts in order. */
+export interface Shape {
+  readonly kind: number;
+  /** A choice's states, a fill's items; else none. */
+  readonly parts: readonly number[];
+}
+
+export function shape(k: number): Shape {
+  const kind = iKind[k] as number;
+  const parts: number[] = [];
+  if (kind === CHOICE || kind === FILL)
+    for (let x = k + 1; x < (iNext[k] as number); x = iNext[x] as number)
+      if (iKind[x] === (kind === CHOICE ? STATE : FILL_ITEM)) parts.push(x);
+  return { kind, parts };
+}
+// --- end queries ---
 
 /** What `printStream` returns: the text, and each printed token's stream entry and output offset. */
 export interface StreamPrinted {
