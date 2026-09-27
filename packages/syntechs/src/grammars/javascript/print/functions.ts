@@ -25,6 +25,7 @@ import {
   sText,
   sToken,
   willBreak as partWillBreak,
+  withComments,
 } from "../sink.js";
 import { isTemplateOnItsOwnLine, isTestCall } from "./calls.js";
 import { role } from "./parens.js";
@@ -298,17 +299,6 @@ export const printFunctionParameters = (
 ): Doc =>
   onDoc((n, s) => printParameters(s, n, expand, withTypeParameters))(fn, ctx);
 
-/**
- * What `fn` writes, with `node`'s own comments around it. The Doc ctx's withComments: under `onDoc` the stream ctx
- * prints a node's comments only around the node's own rule, and `formal_parameters` has none.
- */
-function withComments(s: StreamCtx<JsOptions>, node: number, fn: () => void): void {
-  place(commented(s, node, capture(fn)));
-}
-const commented = (s: StreamCtx<JsOptions>, node: number, part: Part): Part => ({
-  doc: jsCtx(s).js.withComments(node, part.doc),
-});
-
 /** Prettier's printFunctionParameters for function `fn`, whose `formal_parameters` holds the list. */
 function printParameters(
   s: StreamCtx<JsOptions>,
@@ -329,7 +319,8 @@ function printParameters(
     sToken(fn, ")", true);
     return;
   }
-  withComments(s, list, () =>
+  // `formal_parameters` has no rule of its own to print its comments around it.
+  withComments(jsCtx(s), list, () =>
     printParameterList(s, fn, list, expand, typeParameters),
   );
 }
@@ -609,7 +600,7 @@ function printArrowSignature(s: StreamCtx<JsOptions>, n: number, args: Args): vo
     if (list !== undefined) {
       // `(a) => a` loses its parentheses.
       const param = parameters(ctx, n)[0] as number;
-      withComments(s, list, () => {
+      withComments(jsCtx(s), list, () => {
         drop(anon(ctx, list, "("));
         s.print(param);
         drop(lastAnon(ctx, list, ","));
@@ -660,9 +651,13 @@ const arrow: CustomRule<JsOptions> = (node, s) => {
   let bodyNode = functionBody;
 
   for (let x = node; ;) {
-    const signature = capture(() => printArrowSignature(s, x, args));
+    // A chained arrow is printed through its head, so its own comments go around its signature.
+    const head = signatures.length === 0;
     signatures.push(
-      signatures.length === 0 ? signature : commented(s, x, signature),
+      capture(() => {
+        if (head) printArrowSignature(s, x, args);
+        else withComments(js, x, () => printArrowSignature(s, x, args));
+      }),
     );
     arrows.push(x);
     if (shouldPrintAsChain) {
