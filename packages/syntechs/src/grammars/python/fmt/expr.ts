@@ -787,24 +787,6 @@ function writeFields(f: Fmt, e: Expr, o: Opts): void {
   }
 }
 
-/** Ruff's number normalization: lower-case prefixes and exponents, upper-case hex digits, no bare dots. */
-export function number(raw: string): string {
-  const complex = /[jJ]$/.test(raw);
-  const body = complex ? raw.slice(0, -1) : raw;
-  if (/^0[bBoOxX]/.test(body)) {
-    const hex = /^0[xX]/.test(body);
-    const digits = body.slice(2);
-    return `0${(body[1] as string).toLowerCase()}${hex ? digits.replace(/[a-f]/g, (c) => c.toUpperCase()) : digits}${complex ? "j" : ""}`;
-  }
-  if (!complex && !/[.eE]/.test(body)) return body;
-  let out = body.startsWith(".") ? `0${body}` : body;
-  out = out
-    .replace(/\.(?=[eE]|$)/, ".0")
-    .replace(/E/, "e")
-    .replace(/e\+/, "e");
-  return complex ? `${out}j` : out;
-}
-
 /** A call's or class's arguments: an argument list prints by its rule; a sole generator's parentheses are ruff's. */
 export function writeArgs(f: Fmt, a: Arguments): void {
   if (f.tree.kindName(a.ts) === "argument_list") sink.sDsl(a.ts);

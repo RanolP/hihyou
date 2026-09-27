@@ -3,7 +3,6 @@ import type { StreamCtx } from "../../../fmt/stream-format.js";
 import type { BinOp, BoolOp, Compare, IfExp, Lambda, Named, Py, UnaryOp } from "../fmt/ast.js";
 import {
   lambdaHeader,
-  number,
   unaryNeedsLineBreak,
   writeBinaryLike,
   writeExpr,
@@ -33,10 +32,6 @@ export const exprVia = {
     openFitsExpanded(-1);
     writeLambdaBody(f, l, header);
     close();
-  },
-  // A number read as ruff normalizes it; a pattern's number has no expression in the module's AST to look up.
-  "expr.number": (c: number, ctx: StreamCtx<unknown>) => {
-    sToken(c, number(ctx.tree.text(c)));
   },
   // The operand with what goes between it and the operator: the operator's dangling comments and a space or break.
   "expr.unaryOperand": (c: number) => {
