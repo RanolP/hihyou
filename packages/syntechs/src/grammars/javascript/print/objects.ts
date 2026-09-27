@@ -15,8 +15,23 @@ import {
   text,
   token,
 } from "../../../fmt/doc.js";
+import type { CustomRule } from "../../../fmt/dsl/runtime.js";
+import type { StreamCtx } from "../../../fmt/stream-format.js";
 import { lfAfter, newlineBetween, nextLineEmpty } from "../../../fmt/text.js";
 import { type FormatTree, firstLeaf } from "../../../fmt/tree.js";
+import {
+  BROKEN,
+  close,
+  GROUP,
+  IF_BROKEN,
+  INDENT,
+  jsCtx,
+  open,
+  SOFT,
+  sHardline,
+  sLine,
+  sToken,
+} from "../sink.js";
 import { printAssignment } from "./assignment.js";
 import {
   printMethodValue,
@@ -37,6 +52,7 @@ import {
   isConciselyPrintedArray,
   items,
   type JsCtx,
+  type JsOptions,
   type JsRule,
   kind,
   lastChildWhere,
@@ -212,7 +228,34 @@ function members(x: HasTree, n: number): number[] {
   return items(x, n);
 }
 
-const object: JsRule = (n, ctx) => {
+/** `c` as the source token it is; nothing when absent. */
+const tok = (ctx: JsCtx, c: number | undefined) => {
+  if (c !== undefined) sToken(c, src(ctx, c));
+};
+
+/** Prettier's printDanglingComments over the sink: `n`'s dangling comments one per line. */
+function sDanglingComments(sctx: StreamCtx<JsOptions>, n: number): void {
+  sctx.danglingComments(n).forEach((c, i) => {
+    if (i > 0) sHardline();
+    sctx.comment(c);
+  });
+}
+
+/** Prettier's printDanglingCommentsInList over the sink. */
+function sDanglingCommentsInList(sctx: StreamCtx<JsOptions>, n: number): void {
+  const dangling = sctx.danglingComments(n);
+  if (dangling.length === 0) return;
+  open(INDENT);
+  sLine(SOFT);
+  sDanglingComments(sctx, n);
+  close();
+  if (dangling.some((c) => sctx.isLineComment(c))) sHardline();
+  else sLine(SOFT);
+}
+
+/** Prettier's printObject, for object literals and patterns. */
+const objectCustom: CustomRule<JsOptions> = (n, sctx) => {
+  const { js: ctx } = jsCtx(sctx);
   const children = members(ctx, n);
   const parent = patternParent(ctx, n);
   const isPattern = kind(ctx, n) === "object_pattern";
@@ -234,55 +277,64 @@ const object: JsRule = (n, ctx) => {
         firstLeaf(ctx.tree, n),
         firstLeaf(ctx.tree, children[0] as number),
       ));
-
-  const open = t(ctx, anonKid(ctx, n, "{"));
-  const close = t(
+  const { key, parent: realParent } = role(ctx, n);
+  // A hugged parameter, and a pattern being destructured into, print their braces bare in the enclosing group.
+  const grouped =
+    !(isPattern && isHuggedParameter(ctx, n)) &&
+    !(
+      !shouldBreak &&
+      isPattern &&
+      ((kind(ctx, realParent) === "assignment_expression" && key === "left") ||
+        (kind(ctx, realParent) === "variable_declarator" && key === "name"))
+    );
+  const openBrace = anonKid(ctx, n, "{");
+  const closeBrace = lastChildWhere(
     ctx,
-    lastChildWhere(ctx, n, (c) => !named(ctx, c) && kind(ctx, c) === "}"),
+    n,
+    (c) => !named(ctx, c) && kind(ctx, c) === "}",
   );
-  let content: Doc;
-  if (children.length === 0)
-    content = group([open, danglingCommentsInList(ctx, n), close]);
-  else {
-    const parts: Doc[] = [];
+  if (grouped) open(GROUP, -1, shouldBreak ? BROKEN : 0);
+  if (children.length === 0) {
+    open(GROUP);
+    tok(ctx, openBrace);
+    sDanglingCommentsInList(sctx, n);
+    tok(ctx, closeBrace);
+    close();
+  } else {
+    const spacing = ctx.options.bracketSpacing ? 0 : SOFT;
+    tok(ctx, openBrace);
+    open(INDENT);
+    sLine(spacing);
     children.forEach((c, i) => {
       if (i > 0) {
         const previous = children[i - 1] as number;
-        parts.push(t(ctx, commaAfter(ctx, n, previous)), line);
-        if (nextLineEmpty(ctx.tree, previous)) parts.push(hardline);
+        tok(ctx, commaAfter(ctx, n, previous));
+        sLine(0);
+        if (nextLineEmpty(ctx.tree, previous)) sHardline();
       }
-      parts.push(p(ctx, c));
+      sctx.print(c);
     });
+    close();
     const last = children.at(-1) as number;
-    const spacing = ctx.options.bracketSpacing ? line : softline;
-    content = [
-      open,
-      indent([spacing, ...parts]),
-      kind(ctx, last) === "rest_pattern" || !trailingCommaAllowed(ctx)
-        ? []
-        : ifBreak(synthetic(last, ",")),
-      danglingCommentsAfter(ctx, n),
-      spacing,
-      close,
-    ];
+    if (kind(ctx, last) !== "rest_pattern" && trailingCommaAllowed(ctx)) {
+      open(IF_BROKEN);
+      sToken(last, ",", true);
+      close();
+    }
+    // Dangling comments of a non-empty object sit after its last member (prettier attaches them there).
+    if (sctx.danglingComments(n).length > 0) {
+      sLine(0);
+      sDanglingComments(sctx, n);
+    }
+    sLine(spacing);
+    tok(ctx, closeBrace);
   }
-  if (isPattern && isHuggedParameter(ctx, n)) return content;
-  const { key, parent: realParent } = role(ctx, n);
-  if (
-    !shouldBreak &&
-    isPattern &&
-    ((kind(ctx, realParent) === "assignment_expression" && key === "left") ||
-      (kind(ctx, realParent) === "variable_declarator" && key === "name"))
-  )
-    return content;
-  return group(content, shouldBreak);
+  if (grouped) close();
 };
 
-/** Dangling comments of a non-empty object sit after its last member (prettier attaches them there). */
-const danglingCommentsAfter = (ctx: JsCtx, n: number): Doc => {
-  const docs = danglingComments(ctx, n);
-  return Array.isArray(docs) && docs.length === 0 ? [] : [line, docs];
-};
+export const objectCustoms = {
+  object: objectCustom,
+} satisfies Record<string, CustomRule<JsOptions>>;
 
 function commaAfter(
   x: HasTree,
@@ -309,20 +361,6 @@ const pair: JsRule = (n, ctx) => {
     field(ctx, n, "value"),
   );
 };
-
-const assignmentPattern: JsRule = (n, ctx) => [
-  p(ctx, field(ctx, n, "left")),
-  text(" "),
-  t(ctx, anonKid(ctx, n, "=")),
-  text(" "),
-  p(ctx, field(ctx, n, "right")),
-];
-
-const computedPropertyName: JsRule = (n, ctx) => [
-  t(ctx, anonKid(ctx, n, "[")),
-  p(ctx, items(ctx, n)[0]),
-  t(ctx, anonKid(ctx, n, "]")),
-];
 
 /** Prettier's printMethod, for object and class methods alike: modifiers, key, `?`, then the method value. */
 export const method: JsRule = (n, ctx) => {
@@ -484,21 +522,10 @@ export const array: JsRule = (n, ctx) => {
   return g;
 };
 
-const spread: JsRule = (n, ctx) => [
-  t(ctx, anonKid(ctx, n, "...")),
-  p(ctx, items(ctx, n)[0]),
-];
-
 export const objectRules: Record<string, JsRule> = {
-  object,
-  object_pattern: object,
   pair,
   pair_pattern: pair,
-  object_assignment_pattern: assignmentPattern,
-  computed_property_name: computedPropertyName,
   method_definition: method,
   array,
   array_pattern: array,
-  spread_element: spread,
-  rest_pattern: spread,
 };

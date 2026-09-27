@@ -1,19 +1,33 @@
 // Prettier's class printers (print/class.js, class-body.js) and the declaration half of print/decorators.js.
 
 import {
-  breakParent,
   type Doc,
-  group,
   hardline,
-  ifBreak,
   indent,
   join,
-  line,
-  softline,
   synthetic,
   text,
 } from "../../../fmt/doc.js";
+import type { CustomRule } from "../../../fmt/dsl/runtime.js";
+import type { StreamCtx } from "../../../fmt/stream-format.js";
 import { nextLineEmpty } from "../../../fmt/text.js";
+import {
+  capture,
+  close,
+  GROUP,
+  IF_BROKEN,
+  IF_FLAT,
+  INDENT,
+  jsCtx,
+  open,
+  place,
+  SOFT,
+  sBreakParent,
+  sHardline,
+  sLine,
+  sText,
+  sToken,
+} from "../sink.js";
 import { printAssignment } from "./assignment.js";
 import {
   method,
@@ -32,6 +46,7 @@ import {
   isMember,
   items,
   type JsCtx,
+  type JsOptions,
   type JsRule,
   kind,
   lastChildWhere,
@@ -118,110 +133,172 @@ function groupMode(ctx: JsCtx, n: number): boolean {
   return kind(ctx, implementsList[0]) === "nested_type_identifier";
 }
 
+/** `c` as the source token it is; nothing when absent. */
+const tok = (ctx: JsCtx, c: number | undefined) => {
+  if (c !== undefined) sToken(c, src(ctx, c));
+};
+
+/** `node` with its comments; nothing when absent. */
+const print = (sctx: StreamCtx<JsOptions>, node: number | undefined) => {
+  if (node !== undefined) sctx.print(node);
+};
+
+/** `doc` a line apart, in a group of its own, when `grouped`; else a space apart. */
+function clause(grouped: boolean, doc: () => void): void {
+  if (!grouped) {
+    sText(" ");
+    doc();
+    return;
+  }
+  sLine(0);
+  open(GROUP);
+  doc();
+  close();
+}
+
 /** The `extends` and `implements` clauses, the part of the class header that indents when it breaks. */
-function printHeritage(ctx: JsCtx, n: number, grouped: boolean): Doc {
+function printHeritage(
+  sctx: StreamCtx<JsOptions>,
+  n: number,
+  grouped: boolean,
+): void {
+  const { js: ctx } = jsCtx(sctx);
   const { h, ext, imp, superClass, implementsList } = heritage(ctx, n);
-  if (h === undefined) return [];
-  const parts: Doc[] = [];
+  if (h === undefined) return;
   if (superClass !== undefined) {
-    const keyword = t(ctx, anon(ctx, ext ?? h, "extends"));
-    let printed: Doc = [
-      p(ctx, superClass),
-      p(ctx, ext !== undefined ? field(ctx, ext, "type_arguments") : undefined),
-    ];
-    if (kind(ctx, parent(ctx, n)) === "assignment_expression")
-      printed = group(
-        ifBreak(
-          [
-            synthetic(superClass, "("),
-            indent([softline, printed]),
-            softline,
-            synthetic(superClass, ")"),
-          ],
-          printed,
-        ),
+    const superClassAndArgs = () => {
+      sctx.print(superClass);
+      print(
+        sctx,
+        ext !== undefined ? field(ctx, ext, "type_arguments") : undefined,
       );
-    const doc: Doc = [keyword, text(" "), printed];
-    parts.push(grouped ? [line, group(doc)] : [text(" "), doc]);
+    };
+    clause(grouped, () => {
+      tok(ctx, anon(ctx, ext ?? h, "extends"));
+      sText(" ");
+      if (kind(ctx, parent(ctx, n)) !== "assignment_expression") {
+        superClassAndArgs();
+        return;
+      }
+      // Printed once, placed in both branches.
+      const printed = capture(superClassAndArgs);
+      open(GROUP);
+      open(IF_BROKEN);
+      sToken(superClass, "(", true);
+      open(INDENT);
+      sLine(SOFT);
+      place(printed);
+      close();
+      sLine(SOFT);
+      sToken(superClass, ")", true);
+      close();
+      open(IF_FLAT);
+      place(printed);
+      close();
+      close();
+    });
   }
   if (imp !== undefined && implementsList.length > 0) {
-    const keyword = t(
+    const keyword = childWhere(
       ctx,
-      childWhere(
-        ctx,
-        imp,
-        (c) =>
-          !named(ctx, c) &&
-          (kind(ctx, c) === "implements" || kind(ctx, c) === "extends"),
-      ),
+      imp,
+      (c) =>
+        !named(ctx, c) &&
+        (kind(ctx, c) === "implements" || kind(ctx, c) === "extends"),
     );
     const commas = separators(ctx, imp, implementsList);
-    const list = join(
-      line,
-      implementsList.map((c, i) =>
-        i < implementsList.length - 1
-          ? [p(ctx, c), t(ctx, commas.get(c))]
-          : p(ctx, c),
-      ),
-    );
-    if (!hasMultipleHeritage(ctx, n)) {
-      const doc: Doc = [keyword, text(" "), list];
-      parts.push(grouped ? [line, group(doc)] : [text(" "), doc]);
-    } else parts.push([line, keyword, group(indent([line, list]))]);
+    const list = () =>
+      implementsList.forEach((c, i) => {
+        if (i > 0) sLine(0);
+        sctx.print(c);
+        if (i < implementsList.length - 1) tok(ctx, commas.get(c));
+      });
+    if (!hasMultipleHeritage(ctx, n))
+      clause(grouped, () => {
+        tok(ctx, keyword);
+        sText(" ");
+        list();
+      });
+    else {
+      sLine(0);
+      tok(ctx, keyword);
+      open(GROUP);
+      open(INDENT);
+      sLine(0);
+      list();
+      close();
+      close();
+    }
   }
-  return parts;
 }
 
 /** Prettier's printDecorators for a declaration: each on its own line above the class. */
 function printDeclarationDecorators(
-  ctx: JsCtx,
+  sctx: StreamCtx<JsOptions>,
   n: number,
-  decorators: readonly number[],
-): Doc {
-  if (decorators.length === 0) return [];
+): void {
+  const { js: ctx } = jsCtx(sctx);
+  const decorators = decoratorsOf(ctx, n);
+  if (decorators.length === 0) return;
   const up = parent(ctx, n);
   const exported =
     up !== undefined &&
     kind(ctx, up) === "export_statement" &&
     field(ctx, up, "declaration") === n;
-  return [
-    exported ? hardline : breakParent,
-    join(
-      line,
-      decorators.map((d) => p(ctx, d)),
-    ),
-    line,
-  ];
+  if (exported) sHardline();
+  else sBreakParent();
+  decorators.forEach((d, i) => {
+    if (i > 0) sLine(0);
+    sctx.print(d);
+  });
+  sLine(0);
 }
 
-const printClass: JsRule = (n, ctx) => {
+/** Prettier's printClass, for classes and interfaces. */
+const printClass: CustomRule<JsOptions> = (n, sctx) => {
+  const { js: ctx } = jsCtx(sctx);
+  printDeclarationDecorators(sctx, n);
   const grouped = groupMode(ctx, n);
-  const parts: Doc[] = [];
   const name = field(ctx, n, "name");
   for (const c of children(ctx, n)) {
     if (named(ctx, c)) break;
     const k = kind(ctx, c);
-    if (k === "abstract" || k === "declare") parts.push(t(ctx, c), text(" "));
+    if (k === "abstract" || k === "declare") {
+      tok(ctx, c);
+      sText(" ");
+    }
   }
   const isInterface = kind(ctx, n) === "interface_declaration";
-  parts.push(t(ctx, anon(ctx, n, isInterface ? "interface" : "class")));
-  const head: Doc[] = [];
-  if (name !== undefined) head.push(text(" "), p(ctx, name));
-  head.push(p(ctx, field(ctx, n, "type_parameters")));
-  const heritageDoc = printHeritage(ctx, n, grouped);
+  tok(ctx, anon(ctx, n, isInterface ? "interface" : "class"));
+  const head = () => {
+    if (name !== undefined) {
+      sText(" ");
+      sctx.print(name);
+    }
+    print(sctx, field(ctx, n, "type_parameters"));
+  };
   const body = field(ctx, n, "body");
   if (grouped) {
-    const contents: Doc[] = [...head, indent(heritageDoc)];
-    const g = group(contents);
-    parts.push(
-      g,
-      !isInterface && body !== undefined && items(ctx, body).length > 0
-        ? ifBreak(hardline, text(" "), g)
-        : text(" "),
-    );
-  } else parts.push(...head, heritageDoc, text(" "));
-  parts.push(p(ctx, body));
-  return [printDeclarationDecorators(ctx, n, decoratorsOf(ctx, n)), parts];
+    const g = open(GROUP);
+    head();
+    open(INDENT);
+    printHeritage(sctx, n, true);
+    close();
+    close();
+    if (!isInterface && body !== undefined && items(ctx, body).length > 0) {
+      open(IF_BROKEN, g);
+      sHardline();
+      close();
+      open(IF_FLAT, g);
+      sText(" ");
+      close();
+    } else sText(" ");
+  } else {
+    head();
+    printHeritage(sctx, n, false);
+    sText(" ");
+  }
+  print(sctx, body);
 };
 
 const nameText = (ctx: JsCtx, n: number) => {
@@ -319,6 +396,10 @@ const classBody: JsRule = (n, ctx) => {
   ];
 };
 
+export const classCustoms = {
+  class: printClass,
+} satisfies Record<string, CustomRule<JsOptions>>;
+
 /** Prettier's printClassProperty. */
 const classProperty: JsRule = (n, ctx) => {
   const key = field(ctx, n, "name") ?? field(ctx, n, "property");
@@ -343,29 +424,9 @@ const classProperty: JsRule = (n, ctx) => {
   ];
 };
 
-const staticBlock: JsRule = (n, ctx) => [
-  t(ctx, anon(ctx, n, "static")),
-  text(" "),
-  p(ctx, field(ctx, n, "body")),
-];
-
-const decorator: JsRule = (n, ctx) => [
-  t(
-    ctx,
-    childWhere(ctx, n, (c) => kind(ctx, c) === "@"),
-  ),
-  p(ctx, items(ctx, n)[0]),
-];
-
 export const classRules: Record<string, JsRule> = {
-  class: printClass,
-  class_declaration: printClass,
-  abstract_class_declaration: printClass,
-  interface_declaration: printClass,
   class_body: classBody,
   field_definition: classProperty,
   public_field_definition: classProperty,
   abstract_method_signature: method,
-  class_static_block: staticBlock,
-  decorator,
 };

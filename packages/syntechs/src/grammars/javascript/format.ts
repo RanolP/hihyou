@@ -52,5 +52,20 @@ export const javascript = format({
     ambient_declaration: () => custom("ambientDeclaration"),
     as_expression: () => custom("castExpression"),
     satisfies_expression: () => custom("castExpression"),
+
+    object: () => custom("object"),
+    object_pattern: () => custom("object"),
+    enum_body: () => custom("object"),
+    object_assignment_pattern: ($) => [$.left, space, "=", space, $.right],
+    computed_property_name: ($) => ["[", $.children, "]"],
+    spread_element: ($) => ["...", $.children],
+    rest_pattern: ($) => ["...", $.children],
+
+    class: () => custom("class"),
+    class_declaration: () => custom("class"),
+    abstract_class_declaration: () => custom("class"),
+    interface_declaration: () => custom("class"),
+    class_static_block: ($) => ["static", space, $.body],
+    decorator: ($) => ["@", $.children],
   },
 });

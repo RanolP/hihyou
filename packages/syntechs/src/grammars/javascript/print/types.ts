@@ -43,7 +43,7 @@ import {
   shouldGroupFunctionParameters,
   shouldHugTheOnlyFunctionParameter,
 } from "./functions.js";
-import { array, objectRules, printKey } from "./objects.js";
+import { array, printKey } from "./objects.js";
 import { role } from "./parens.js";
 import {
   type Args,
@@ -1013,7 +1013,6 @@ export const typeCustoms = {
 export const typeRules: Record<string, JsRule> = {
   union_type: unionType,
   type_alias_declaration: typeAlias,
-  enum_body: (n, ctx, args) => (objectRules.object as JsRule)(n, ctx, args),
   enum_assignment: enumAssignment,
   module: moduleDeclaration,
   internal_module: moduleDeclaration,
