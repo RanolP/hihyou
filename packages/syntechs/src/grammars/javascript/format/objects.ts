@@ -6,6 +6,8 @@ export const objects = {
   object: () => custom("object"),
   object_pattern: () => custom("object"),
   enum_body: () => custom("object"),
+  array: () => custom("array"),
+  array_pattern: () => custom("array"),
   object_assignment_pattern: ($) => [$.left, space, "=", space, $.right],
   computed_property_name: ($) => ["[", $.children, "]"],
   spread_element: ($) => ["...", $.children],

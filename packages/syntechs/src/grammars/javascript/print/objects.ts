@@ -3,29 +3,27 @@
 
 import {
   type Doc,
-  fill,
   group,
   hardline,
-  ifBreak,
-  indent,
   join,
   line,
-  softline,
-  synthetic,
   text,
   token,
 } from "../../../fmt/doc.js";
 import type { CustomRule } from "../../../fmt/dsl/runtime.js";
-import type { StreamCtx } from "../../../fmt/stream-format.js";
+import type { StreamCtx, StreamRule } from "../../../fmt/stream-format.js";
 import { lfAfter, newlineBetween, nextLineEmpty } from "../../../fmt/text.js";
 import { type FormatTree, firstLeaf } from "../../../fmt/tree.js";
 import {
   BROKEN,
   close,
+  FILL,
+  FILL_ITEM,
   GROUP,
   IF_BROKEN,
   INDENT,
   jsCtx,
+  onDoc,
   open,
   SOFT,
   sHardline,
@@ -43,8 +41,6 @@ import {
   CF,
   childWhere,
   children as childrenOf,
-  danglingComments,
-  danglingCommentsInList,
   field,
   type HasTree,
   hasComment,
@@ -332,10 +328,6 @@ const objectCustom: CustomRule<JsOptions> = (n, sctx) => {
   if (grouped) close();
 };
 
-export const objectCustoms = {
-  object: objectCustom,
-} satisfies Record<string, CustomRule<JsOptions>>;
-
 function commaAfter(
   x: HasTree,
   list: number,
@@ -443,15 +435,24 @@ function arrayElements(
 const isArrayOrObject = (x: HasTree, n: number | undefined) =>
   kind(x, n) === "array" || kind(x, n) === "object";
 
-export const array: JsRule = (n, ctx) => {
-  const open = t(ctx, anonKid(ctx, n, "["));
-  const close = t(
+/** Prettier's printArray, for arrays and array patterns (and, through `array`, tuple types). */
+const arrayCustom: StreamRule<JsOptions> = (n, sctx) => {
+  const { js: ctx } = jsCtx(sctx);
+  const openBracket = anonKid(ctx, n, "[");
+  const closeBracket = lastChildWhere(
     ctx,
-    lastChildWhere(ctx, n, (c) => !named(ctx, c) && kind(ctx, c) === "]"),
+    n,
+    (c) => !named(ctx, c) && kind(ctx, c) === "]",
   );
   const elements = arrayElements(ctx, n);
-  if (elements.length === 0)
-    return group([open, danglingCommentsInList(ctx, n), close]);
+  if (elements.length === 0) {
+    open(GROUP);
+    tok(ctx, openBracket);
+    sDanglingCommentsInList(sctx, n);
+    tok(ctx, closeBracket);
+    close();
+    return;
+  }
   const lastElem = elements.at(-1) as (typeof elements)[number];
   const canHaveTrailingComma = kind(ctx, lastElem.element) !== "rest_pattern";
   const needsForcedTrailingComma = lastElem.element === undefined;
@@ -466,66 +467,77 @@ export const array: JsRule = (n, ctx) => {
       })) ||
     hasComment(ctx, n, CF.Dangling | CF.Line);
   const concise = isConciselyPrintedArray(ctx, n);
-  const contents: Doc[] = [];
-  const g = group(contents, shouldBreak);
+  const g = open(GROUP, -1, shouldBreak ? BROKEN : 0);
   const lastNode = lastElem.element ?? n;
-  const trailingComma: Doc = !canHaveTrailingComma
-    ? []
-    : needsForcedTrailingComma
-      ? t(ctx, lastElem.comma)
-      : !trailingCommaAllowed(ctx)
-        ? []
-        : concise
-          ? ifBreak(synthetic(lastNode, ","), [], g)
-          : ifBreak(synthetic(lastNode, ","));
-  const body: Doc[] = [];
+  const trailingComma = () => {
+    if (!canHaveTrailingComma) return;
+    if (needsForcedTrailingComma) tok(ctx, lastElem.comma);
+    else if (trailingCommaAllowed(ctx)) {
+      // In the fill the comma follows the array's group, not the fill item it sits in.
+      open(IF_BROKEN, concise ? g : -1);
+      sToken(lastNode, ",", true);
+      close();
+    }
+  };
+  tok(ctx, openBracket);
+  open(INDENT);
+  sLine(SOFT);
   if (concise) {
-    const parts: Doc[] = [];
+    open(FILL);
     elements.forEach(({ element, comma }, i) => {
       const isLast = i === elements.length - 1;
-      parts.push([p(ctx, element), isLast ? trailingComma : t(ctx, comma)]);
+      open(FILL_ITEM);
+      if (element !== undefined) sctx.print(element);
+      if (isLast) trailingComma();
+      else tok(ctx, comma);
+      close();
       if (!isLast) {
         const next = elements[i + 1]?.element;
-        parts.push(
-          element !== undefined && nextLineEmpty(ctx.tree, element)
-            ? [hardline, hardline]
-            : next !== undefined && hasComment(ctx, next, CF.Leading | CF.Line)
-              ? hardline
-              : line,
-        );
+        if (element !== undefined && nextLineEmpty(ctx.tree, element)) {
+          sHardline();
+          sHardline();
+        } else if (
+          next !== undefined &&
+          hasComment(ctx, next, CF.Leading | CF.Line)
+        )
+          sHardline();
+        else sLine(0);
       }
     });
-    body.push(fill(parts));
+    close();
   } else {
     elements.forEach(({ element, comma }, i) => {
-      const isLast = i === elements.length - 1;
-      body.push(element !== undefined ? group(p(ctx, element)) : []);
-      if (!isLast)
-        body.push([
-          t(ctx, comma),
-          line,
-          element !== undefined && nextLineEmpty(ctx.tree, element)
-            ? softline
-            : [],
-        ]);
+      if (element !== undefined) {
+        open(GROUP);
+        sctx.print(element);
+        close();
+      }
+      if (i < elements.length - 1) {
+        tok(ctx, comma);
+        sLine(0);
+        if (element !== undefined && nextLineEmpty(ctx.tree, element))
+          sLine(SOFT);
+      }
     });
-    body.push(
-      needsForcedTrailingComma ? t(ctx, lastElem.comma) : trailingComma,
-    );
+    trailingComma();
   }
-  contents.push(
-    open,
-    indent([softline, body, danglingComments(ctx, n)]),
-    softline,
-    close,
-  );
-  return g;
+  sDanglingComments(sctx, n);
+  close();
+  sLine(SOFT);
+  tok(ctx, closeBracket);
+  close();
 };
+
+/** The array printer as a Doc rule, for the tuple types that still print by the Doc. */
+export const array: JsRule = onDoc(arrayCustom);
+
+export const objectCustoms = {
+  object: objectCustom,
+  array: arrayCustom,
+} satisfies Record<string, CustomRule<JsOptions>>;
 
 export const objectRules: Record<string, JsRule> = {
   pair,
   pair_pattern: pair,
   method_definition: method,
-  array,
-  array_pattern: array,
 };
