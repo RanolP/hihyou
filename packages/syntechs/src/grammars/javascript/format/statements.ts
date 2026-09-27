@@ -35,4 +35,5 @@ export const statements = {
   do_statement: () => custom("stmt.do"),
   while_statement: () => custom("stmt.while"),
   with_statement: () => custom("stmt.while"),
+  if_statement: () => custom("stmt.if"),
 } satisfies JsStructure;

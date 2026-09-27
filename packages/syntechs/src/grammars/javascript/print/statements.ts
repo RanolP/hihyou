@@ -752,6 +752,51 @@ export const statementCustoms = {
     close();
   },
 
+  /**
+   * Prettier's if-statement.js: the head and its consequent in a group; an `else` beside a block, below any other
+   * statement, with the comments between them in the gap.
+   */
+  "stmt.if": (node, ctx) => {
+    const s = jsCtx(ctx);
+    const js = s.js;
+    const consequent = field(js, node, "consequence");
+    const alternative = field(js, node, "alternative");
+    open(GROUP);
+    sTok(js, anon(js, node, "if"));
+    sText(" ");
+    condition(s, field(js, node, "condition"), true);
+    clause(s, consequent);
+    close();
+    if (alternative === undefined) return;
+    const isBlock = kind(js, consequent) === "statement_block";
+    let needSpace = isBlock;
+    if (!isBlock) sHardline();
+    const dangling = s.danglingComments(node);
+    const firstComment = dangling[0];
+    const lastComment = dangling.at(-1);
+    if (firstComment !== undefined && lastComment !== undefined) {
+      if (js.tree.lf(firstComment) >= 2) {
+        sHardline();
+        if (isBlock) sHardline();
+      } else if (js.tree.lf(firstComment) > 0) {
+        if (isBlock) sHardline();
+      } else sText(" ");
+      danglingLines(s, node);
+      if (s.isLineComment(lastComment) || lfAfter(js.tree, lastComment) > 0) sHardline();
+      else sText(" ");
+      needSpace = false;
+    }
+    if (needSpace) sText(" ");
+    // tree-sitter's else_clause holds `else` and the alternate statement.
+    const body = first(js, alternative);
+    withComments(s, alternative, () => {
+      sTok(js, anon(js, alternative, "else"));
+      open(GROUP);
+      clause(s, body, kind(js, body) === "if_statement");
+      close();
+    });
+  },
+
   "stmt.case": switchCase,
   "stmt.labeled": (node, ctx) => {
     const s = jsCtx(ctx);
@@ -849,23 +894,6 @@ const declaration: JsRule = (node, ctx, args) => {
   ]);
 };
 
-// Prettier's printClause (clause.js).
-function clauseDoc(ctx: JsCtx, body: number | undefined, elseIf = false): Doc {
-  if (body === undefined) return [];
-  const doc = ctx.print(body);
-  if (isEmpty(ctx, body))
-    return hasComment(ctx, body, CF.Leading) ? [text(" "), doc] : doc;
-  const isBlock = kind(ctx, body) === "statement_block";
-  const leading = getComments(ctx, body, CF.Leading)[0];
-  if (
-    leading !== undefined &&
-    (src(ctx, leading).includes("\n") || ctx.tree.lf(leading) > 0)
-  )
-    return isBlock ? [hardline, doc] : indent([hardline, doc]);
-  if (isBlock || elseIf) return [text(" "), doc];
-  return indent([line, doc]);
-}
-
 /**
  * The `(condition)` of an if, while, do-while or with statement, or a switch's discriminant: tree-sitter's
  * parenthesized_expression, whose parentheses are the statement's own.
@@ -895,59 +923,6 @@ function withParens(ctx: JsCtx, inner: number): Doc {
   if (!needsParens(expr, ctx)) return printed;
   return [synthetic(expr, "("), printed, synthetic(expr, ")")];
 }
-
-const conditionLayout =
-  (ctx: JsCtx) =>
-  (doc: Doc, node: number): Doc =>
-    shouldInlineCondition(ctx, unparen(ctx, node))
-      ? doc
-      : group([indent([softline, doc]), softline]);
-
-const ifStatement: JsRule = (node, ctx) => {
-  const consequent = field(ctx, node, "consequence");
-  const alternative = field(ctx, node, "alternative");
-  const opening = group([
-    t(ctx, anon(ctx, node, "if")),
-    text(" "),
-    parenthesized(ctx, field(ctx, node, "condition"), conditionLayout(ctx)),
-    clauseDoc(ctx, consequent),
-  ]);
-  if (alternative === undefined) return opening;
-  const isBlock = kind(ctx, consequent) === "statement_block";
-  const parts: Doc[] = [opening];
-  let needSpace = isBlock;
-  if (!isBlock) {
-    parts.push(hardline);
-    needSpace = false;
-  }
-  const dangling = getComments(ctx, node, CF.Dangling);
-  const firstComment = dangling[0];
-  const lastComment = dangling.at(-1);
-  if (firstComment !== undefined && lastComment !== undefined) {
-    if (ctx.tree.lf(firstComment) >= 2)
-      parts.push(isBlock ? [hardline, hardline] : hardline);
-    else if (ctx.tree.lf(firstComment) > 0) parts.push(isBlock ? hardline : []);
-    else parts.push(text(" "));
-    parts.push(
-      join(hardline, ctx.dangling(node)),
-      ctx.isLineComment(lastComment) || lfAfter(ctx.tree, lastComment) > 0
-        ? hardline
-        : text(" "),
-    );
-    needSpace = false;
-  }
-  // tree-sitter's else_clause holds `else` and the alternate statement.
-  const elseKw = anon(ctx, alternative, "else");
-  const body = first(ctx, alternative);
-  parts.push(
-    needSpace ? text(" ") : [],
-    ctx.withComments(alternative, [
-      t(ctx, elseKw),
-      group(clauseDoc(ctx, body, kind(ctx, body) === "if_statement")),
-    ]),
-  );
-  return parts;
-};
 
 const switchStatement: JsRule = (node, ctx) => {
   const body = field(ctx, node, "body");
@@ -1015,7 +990,6 @@ const variableDeclarator: JsRule = (node, ctx) => {
  */
 export const statementRules: Record<string, JsRule> = {
   expression_statement: expressionStatement,
-  if_statement: ifStatement,
   switch_statement: switchStatement,
   variable_declaration: declaration,
   lexical_declaration: declaration,
