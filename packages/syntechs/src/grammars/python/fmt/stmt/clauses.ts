@@ -53,17 +53,16 @@ function prefix(cs: readonly Comment[], p: (c: Comment) => boolean): number {
 }
 
 /**
- * The `else` of a `for` or `while`: `rest` are the statement's dangling comments after its body starts, the
- * own-line ones before `else` and the end-of-line ones after its colon.
+ * The comments around a `for`'s or `while`'s clauses: those on the header's colon, and of the rest (after its
+ * body starts) the own-line ones before `else` and the end-of-line ones after its colon.
  */
-function orElse(f: Fmt, s: For | While, rest: readonly Comment[]): Format {
-  const o = s.orelse;
-  if (!o) return [];
+export function loopComments(
+  f: Fmt,
+  s: For | While,
+): { colon: readonly Comment[]; beforeElse: readonly Comment[]; elseColon: readonly Comment[] } {
+  const [colon, rest] = splitAtBody(f, s, s.kind === "For" ? s.iter.end : s.test.end);
   const split = prefix(rest, (c) => c.line === "own");
-  return clause(f, f.tok(o.kw), o.colon, rest.slice(split), o.body, {
-    comments: rest.slice(0, split),
-    last: s.body.at(-1),
-  });
+  return { colon, beforeElse: rest.slice(0, split), elseColon: rest.slice(split) };
 }
 
 /** A `for`'s or `while`'s dangling comments: those on the header's colon, and the rest. */
@@ -250,43 +249,6 @@ export const clauseRules: StmtRules = {
   With: withStmt,
   Try: tryStmt,
   If: fromSpec,
-  While(f, s) {
-    const [colon, rest] = splitAtBody(f, s, s.test.end);
-    return [
-      clause(
-        f,
-        [f.tok(s.kw), space, maybeParenthesize(f, s.test, s, "ifBreaks")],
-        s.colon,
-        colon,
-        s.body,
-      ),
-      orElse(f, s, rest),
-    ];
-  },
-  For(f, s) {
-    const [colon, rest] = splitAtBody(f, s, s.iter.end);
-    const kws = s.kws.map((k) => f.tok(k));
-    const inKw = kws.pop();
-    const target =
-      s.target.kind === "Tuple"
-        ? formatExpr(f, s.target, "preserve", { tuple: "neverPreserve" })
-        : maybeParenthesize(f, s.target, s, "ifBreaks");
-    return [
-      clause(
-        f,
-        [
-          kws.map((k) => [k, space]),
-          target,
-          space,
-          inKw ?? [],
-          space,
-          maybeParenthesize(f, s.iter, s, "ifBreaks"),
-        ],
-        s.colon,
-        colon,
-        s.body,
-      ),
-      orElse(f, s, rest),
-    ];
-  },
+  While: fromSpec,
+  For: fromSpec,
 };

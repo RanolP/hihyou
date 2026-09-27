@@ -1,10 +1,11 @@
 // The customs stmt-compound.ts's `.via`s name: ruff's clause headers and bodies (statement/clause.rs).
 import type { StreamCtx } from "../../../fmt/stream-format.js";
 import type { Py, Stmt } from "../fmt/ast.js";
-import type { Fmt } from "../fmt/builders.js";
+import { type Fmt, space } from "../fmt/builders.js";
 import type { Comment } from "../fmt/comments.js";
-import { maybeParenthesize } from "../fmt/expr.js";
+import { formatExpr, maybeParenthesize } from "../fmt/expr.js";
 import { part, ruffOf, ruffStmtOf } from "../fmt/sink.js";
+import { loopComments } from "../fmt/stmt/clauses.js";
 import { clauseBody, leadingAlternateBranchComments } from "../fmt/stmt/suite.js";
 
 /** A clause as ruff's `clause` prints it: the comments around its header, and its body. */
@@ -36,6 +37,13 @@ function clauseOf(n: number, ctx: StreamCtx<unknown>): Clause {
       const last = (at === 0 ? s.body : (s.clauses[at - 1]?.body ?? [])).at(-1);
       return { f, alternate: { comments: cs.leading(c), last }, colon: cs.dangling(c), body: c.body };
     }
+    case "For":
+    case "While": {
+      const { colon, beforeElse, elseColon } = loopComments(f, s);
+      if (first) return { f, alternate: none, colon, body: s.body };
+      if (!s.orelse) break;
+      return { f, alternate: { comments: beforeElse, last: s.body.at(-1) }, colon: elseColon, body: s.orelse.body };
+    }
   }
   throw new Error(`python: ${kind} is no clause of a ${s.kind}`);
 }
@@ -44,6 +52,20 @@ export const stmtCompoundVia = {
   "compound.ifBreaks": (c: number) => {
     const { f, e } = ruffOf(c);
     part(maybeParenthesize(f, e, e.parent as Py, "ifBreaks"));
+  },
+  "compound.forTarget": (c: number) => {
+    const { f, e } = ruffOf(c);
+    part(
+      e.kind === "Tuple"
+        ? formatExpr(f, e, "preserve", { tuple: "neverPreserve" })
+        : maybeParenthesize(f, e, e.parent as Py, "ifBreaks"),
+    );
+  },
+  // `async` and the space after it, where the statement has one.
+  "compound.async": (token: number | undefined) => {
+    if (token === undefined) return;
+    const { f } = ruffStmtOf(token);
+    part([f.tok(token), space]);
   },
   // A clause's keyword, after the comments and blank lines that separate it from the clause before.
   "compound.alternate": (token: number | undefined, n: number, ctx: StreamCtx<unknown>) => {
