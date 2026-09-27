@@ -19,4 +19,9 @@ export const expr = {
     tok("from").via("expr.yieldFrom"),
     $.children.andThen((v) => [space, v.via("expr.yieldValue")]),
   ],
+
+  // Ruff lays out a whole chain of operators at once, `a and b and c` as one node.
+  binary_operator: () => custom("expr.binaryLike"),
+  boolean_operator: () => custom("expr.binaryLike"),
+  comparison_operator: () => custom("expr.binaryLike"),
 } satisfies Structure;

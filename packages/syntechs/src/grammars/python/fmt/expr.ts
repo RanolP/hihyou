@@ -751,7 +751,7 @@ function fields(f: Fmt, e: Expr, o: Opts): Format {
     case "BinOp":
     case "Compare":
     case "BoolOp":
-      return binaryLike(f, e);
+      return dslPart(e.ts);
     case "IfExp":
       return ifExp(f, e, o.ifNested === true);
     case "Lambda":
@@ -1639,7 +1639,7 @@ function sliceDoc(f: Fmt, parts: readonly Part[]): Format {
   return out;
 }
 
-function binaryLike(f: Fmt, e: BinOp | Compare | BoolOp): Format {
+export function binaryLike(f: Fmt, e: BinOp | Compare | BoolOp): Format {
   const parts = flatten(f, e);
   if (e.kind === "BoolOp") return f.inParensGroup(sliceDoc(f, parts));
   const strings: number[] = [];

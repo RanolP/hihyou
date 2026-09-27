@@ -1,8 +1,8 @@
 // The customs expr.ts's `.via`s name.
 import type { StreamCtx } from "../../../fmt/stream-format.js";
-import type { Py, UnaryOp } from "../fmt/ast.js";
+import type { BinOp, BoolOp, Compare, Py, UnaryOp } from "../fmt/ast.js";
 import { hard, space } from "../fmt/builders.js";
-import { formatExpr, maybeParenthesize, number, unaryNeedsLineBreak } from "../fmt/expr.js";
+import { binaryLike, formatExpr, maybeParenthesize, number, unaryNeedsLineBreak } from "../fmt/expr.js";
 import { part, ruffOf, sText, sToken } from "../fmt/sink.js";
 
 export const exprVia = {
@@ -40,5 +40,9 @@ export const exprVia = {
   "expr.yieldValue": (c: number) => {
     const { f, e } = ruffOf(c);
     part(maybeParenthesize(f, e, e.parent as Py, "optional"));
+  },
+  "expr.binaryLike": (c: number) => {
+    const { f, e } = ruffOf(c);
+    part(binaryLike(f, e as BinOp | Compare | BoolOp));
   },
 };
