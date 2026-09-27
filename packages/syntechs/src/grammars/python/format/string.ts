@@ -1,9 +1,16 @@
 // Strings: literals, concatenations, and f-string interpolations.
-import { custom } from "../../../fmt/dsl/dsl.js";
+import { custom, verbatim } from "../../../fmt/dsl/dsl.js";
 import type { Structure } from "../format.js";
 
-// A string's quotes, escapes, docstring and concatenation layout are all ruff's heuristics: one custom prints it.
+// A part's quotes are chosen once for the whole part (ruff's `FStringContext`), so the part's custom hands them to
+// each leaf as its args; the leaves print by them. A concatenation's layout is ruff's heuristics, one custom.
 export const string = {
-  string: () => custom("string.str"),
-  concatenated_string: () => custom("string.str"),
+  string: () => custom("string.part"),
+  string_start: () => custom("string.start"),
+  string_content: () => custom("string.content"),
+  string_end: () => custom("string.end"),
+  interpolation: () => custom("string.interpolation"),
+  type_conversion: () => verbatim,
+  format_specifier: () => verbatim,
+  concatenated_string: () => custom("string.concatenated"),
 } satisfies Structure;

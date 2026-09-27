@@ -11,7 +11,6 @@ import {
 } from "../builders.js";
 import type { Comment } from "../comments.js";
 import { lastChildInBody } from "../comments.js";
-import { hooks } from "../expr.js";
 import { formatStr } from "../strings.js";
 import {
   byteOffsetOf,
@@ -148,7 +147,7 @@ function docstring(f: Fmt, s: ExprStmt & { value: Str }, kind: SuiteKind): Forma
   const out: Format[] = [
     f.leading(cs.leading(s)),
     f.leading(cs.leading(v)),
-    formatStr(f, v, hooks, indentOf(f)),
+    formatStr(f, v, indentOf(f)),
     f.trailing(cs.trailing(v)),
   ];
   const trailing = cs.trailing(s);

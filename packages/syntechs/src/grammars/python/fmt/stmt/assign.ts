@@ -23,7 +23,6 @@ import {
   formatExpr,
   hasOwnParentheses,
   hasParentheses,
-  hooks,
   maybeParenthesize,
   needsParentheses,
   node,
@@ -174,8 +173,8 @@ const isInterpolatedStr = (e: Expr) =>
 export function leftToRight(f: Fmt, value: Expr, stmt: Stmt): Format {
   const str = value.kind === "Str" ? value : undefined;
   const canInline = shouldInlineComments(f, value, stmt);
-  const interpolated = str && interpolatedAssignment(f, str, hooks);
-  const implicit = str && implicitFlat(f, str, hooks);
+  const interpolated = str && interpolatedAssignment(f, str);
+  const implicit = str && implicitFlat(f, str);
   if (!canInline && !implicit && !interpolated)
     return maybeParenthesizeValue(f, value, stmt);
 
@@ -201,7 +200,7 @@ export function leftToRight(f: Fmt, value: Expr, stmt: Stmt): Format {
     expandedContents.push(
       lparen(value),
       blockIndent(
-        f.at({ k: "expr", g: expanded }, () => implicitExpanded(f, str, hooks)),
+        f.at({ k: "expr", g: expanded }, () => implicitExpanded(f, str)),
       ),
       rparen(value),
       inline,
@@ -247,8 +246,8 @@ export function rightToLeft(
 ): Format {
   const str = value.kind === "Str" ? value : undefined;
   const canInline = shouldInlineComments(f, value, stmt);
-  const interpolated = str && interpolatedAssignment(f, str, hooks);
-  const implicit = str && implicitFlat(f, str, hooks);
+  const interpolated = str && interpolatedAssignment(f, str);
+  const implicit = str && implicitFlat(f, str);
   if (
     !canInline &&
     !nonInlineableUsesBestFit(f, value, stmt) &&
@@ -340,7 +339,7 @@ export function rightToLeft(
     const expanded = group(expandedContents, true);
     expandedContents.push(
       softBlockIndent(
-        f.at({ k: "expr", g: expanded }, () => implicitExpanded(f, str, hooks)),
+        f.at({ k: "expr", g: expanded }, () => implicitExpanded(f, str)),
       ),
     );
     const splitTargetValueParenthesizedMultiline: Format = [

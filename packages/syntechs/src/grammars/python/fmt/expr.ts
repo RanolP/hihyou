@@ -67,7 +67,6 @@ import {
   sText,
 } from "./sink.js";
 import {
-  type Hooks,
   implicitConcatenated,
   isInterpolated,
   isMultilineStr,
@@ -1655,14 +1654,14 @@ export function binaryLike(f: Fmt, e: BinOp | Compare | BoolOp): Format {
       emit(
         operand.leadingBinary ? f.leading(operand.leadingBinary) : [],
         f.leading(cs.leading(s)),
-        implicitConcatenated(f, s, hooks),
+        implicitConcatenated(f, s),
         f.trailing(cs.trailing(s)),
         operand.trailingBinary ? f.trailing(operand.trailingBinary) : [],
       );
     } else
       emit(
         f.leading(cs.leading(s)),
-        implicitConcatenated(f, s, hooks),
+        implicitConcatenated(f, s),
         f.trailing(cs.trailing(s)),
       );
     const rightOp = parts[i + 1] as Operator | undefined;
@@ -1693,94 +1692,5 @@ export function binaryLike(f: Fmt, e: BinOp | Compare | BoolOp): Format {
   end();
   return stack[0] as Format[];
 }
-
-// ---- f-string interpolations ----
-
-export const hooks: Hooks = {
-  interpolation(f, interp, flags, multiline) {
-    const cs = f.comments;
-    const tree = f.tree;
-    const n = tree.count(interp);
-    let debug = false;
-    for (let i = 0; i < n; i++) {
-      const c = tree.child(interp, i);
-      if (!tree.named(c) && tree.kindName(c) === "=") debug = true;
-    }
-    const interpStart = startOf(tree, interp);
-    const interpEnd = endOf(tree, interp);
-    const inside = cs.all.filter(
-      (c) => c.start > interpStart && c.end < interpEnd,
-    );
-    if (debug || inside.length > 0) {
-      for (const c of inside) c.formatted = true;
-      return multilineToken(interp, f.text(interp));
-    }
-    const byField = (name: string): number => {
-      for (let i = 0; i < n; i++) {
-        const c = tree.child(interp, i);
-        if (tree.fieldName(c) === name) return c;
-      }
-      return NO_NODE;
-    };
-    const exprNode = byField("expression");
-    const open = tree.child(interp, 0);
-    const close = tree.child(interp, n - 1);
-    if (exprNode === NO_NODE) return f.tok(interp);
-    const conversion = byField("type_conversion");
-    const spec = byField("format_specifier");
-    const e = exprAst(tree, exprNode);
-    const multiline2 =
-      multiline &&
-      (flags.triple ||
-        hasLineBreak(
-          tree,
-          interpStart,
-          spec !== NO_NODE ? startOf(tree, spec) : interpEnd,
-        ));
-    const bracket = needsBracketSpacing(e)
-      ? multiline2
-        ? softOrSpace
-        : space
-      : [];
-    const saved = f.fstr;
-    f.fstr = {
-      k: saved.k === "nested" ? "nested" : "inside",
-      flags,
-      multiline: multiline2,
-    };
-    try {
-      return [
-        f.tok(open),
-        f.at(PAREN, () => {
-          const item: Format[] = [bracket, formatExpr(f, e)];
-          if (conversion !== NO_NODE) item.push(f.tok(conversion));
-          if (spec !== NO_NODE) item.push(f.tok(spec));
-          if (conversion === NO_NODE && spec === NO_NODE) item.push(bracket);
-          if (multiline)
-            return spec !== NO_NODE
-              ? group(indent([soft, item]))
-              : group(softBlockIndent(item));
-          return removeSoftLines(item);
-        }),
-        f.tok(close),
-      ];
-    } finally {
-      f.fstr = saved;
-    }
-  },
-};
-
-function needsBracketSpacing(e: Expr): boolean {
-  if (e.kind === "Tuple" && e.open === undefined && e.elts.length === 1)
-    return false;
-  const l = leftMost(e);
-  return (
-    l.kind === "Dict" ||
-    l.kind === "DictComp" ||
-    l.kind === "Set" ||
-    l.kind === "SetComp"
-  );
-}
-
 
 export { isInterpolated };

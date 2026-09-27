@@ -377,6 +377,12 @@ export function ruffOf(node: number): { f: Fmt; e: Expr } {
   return { f: ruff.f, e };
 }
 
+/** The `Fmt` printing, for a custom whose node was read as no expression or statement (a string's part). */
+export function ruffFmt(): Fmt {
+  if (!ruff) throw new Error("python sink: a custom outside the module rule");
+  return ruff.f;
+}
+
 /** The statement tree-sitter node `child` is a child of, for a `.via` custom that prints by the whole statement. */
 export function ruffStmtOf(child: number): { f: Fmt; s: Stmt } {
   const s = current && ruff?.stmts.get(current.tree.parent(child));
