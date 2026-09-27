@@ -2,22 +2,17 @@
 // literal printer (print/template-literal.js) and its comment printer (print/comment.js).
 
 import {
-  align,
   contentsOf,
   type Doc,
   flatOf,
-  group,
   hardline,
-  indent,
   isBroken,
   isDocs,
   isHardLine,
   isSoftLine,
   kindOf,
-  lineSuffixBoundary,
   literalToken,
   partsOf,
-  softline,
   text,
   textOf,
   token,
@@ -38,7 +33,23 @@ import {
   unparen,
 } from "./util.js";
 import type { CustomRule } from "../../../fmt/dsl/runtime.js";
-import { jsCtx, sLiteral, sToken } from "../sink.js";
+import {
+  capture,
+  close,
+  GROUP,
+  INDENT,
+  type JsStreamCtx,
+  jsCtx,
+  open,
+  openAlign,
+  type Part,
+  place,
+  SOFT,
+  sLine,
+  sLineSuffixBoundary,
+  sLiteral,
+  sToken,
+} from "../sink.js";
 import type { JsOptions } from "./util.js";
 
 const DOUBLE = '"';
@@ -147,25 +158,27 @@ function indentSize(value: string, tabWidth: number): number {
   );
 }
 
-/** Prettier's addAlignmentToDoc. */
-export function addAlignmentToDoc(
-  doc: Doc,
-  size: number,
-  tabWidth: number,
-): Doc {
-  if (size <= 0) return doc;
-  let aligned = doc;
-  for (let i = 0; i < Math.floor(size / tabWidth); i++)
-    aligned = indent(aligned);
-  aligned = align(size % tabWidth, aligned);
-  return align(Number.NEGATIVE_INFINITY, aligned);
+/** Prettier's addAlignmentToDoc: what `body` writes, at `size` columns past the root indentation. */
+function addAlignment(size: number, tabWidth: number, body: () => void): void {
+  if (size <= 0) {
+    body();
+    return;
+  }
+  const indents = Math.floor(size / tabWidth);
+  openAlign(Number.NEGATIVE_INFINITY);
+  openAlign(size % tabWidth);
+  for (let i = 0; i < indents; i++) open(INDENT);
+  body();
+  for (let i = 0; i < indents; i++) close();
+  close();
+  close();
 }
 
 /**
  * `doc` as prettier's printDocToString lays it out at an infinite width, when that is one line: every group
  * flat. `undefined` when it would hold a line break (a hard line, or a token spanning lines).
  */
-export function flatten(doc: Doc): Doc | undefined {
+function flatten(doc: Doc): Doc | undefined {
   let broken = false;
   const walk = (d: Doc): Doc => {
     if (broken) return [];
@@ -238,71 +251,76 @@ function quasis(ctx: JsCtx, node: number): string[] {
 }
 
 function printSubstitution(
-  ctx: JsCtx,
+  ctx: JsStreamCtx,
   sub: number,
   indentSizeOf: number,
   previousQuasi: string,
-  preserveIndentation = true,
-): Doc {
-  const open = anon(ctx, sub, "${");
-  const close = anon(ctx, sub, "}");
-  const expr = first(ctx, sub);
-  let doc: Doc = expr !== undefined ? ctx.print(expr) : [];
-  let hasNewline = src(ctx, sub).includes("\n");
+): void {
+  const js = ctx.js;
+  const openToken = anon(js, sub, "${");
+  const closeToken = anon(js, sub, "}");
+  const expr = first(js, sub);
+  let printed: Part = capture(() => {
+    if (expr !== undefined) ctx.print(expr);
+  });
+  let hasNewline = src(js, sub).includes("\n");
   if (!hasNewline) {
-    const flat = flatten(doc);
+    const flat = flatten(printed.doc);
     if (flat === undefined) hasNewline = true;
-    else doc = flat;
+    else printed = { doc: flat };
   }
-  if (
+  const indented =
     hasNewline &&
     expr !== undefined &&
-    (hasComment(ctx, expr) ||
-      INDENTED_WHEN_BROKEN.has(kind(ctx, unparen(ctx, expr))))
-  )
-    doc = [indent([softline, doc]), softline];
-  const wrap = (d: Doc) =>
-    group([
-      open !== undefined ? token(open, "${") : [],
-      d,
-      lineSuffixBoundary,
-      close !== undefined ? token(close, "}") : [],
-    ]);
-  if (!preserveIndentation) return wrap(doc);
-  doc =
-    indentSizeOf === 0 && previousQuasi.endsWith("\n")
-      ? align(Number.NEGATIVE_INFINITY, doc)
-      : addAlignmentToDoc(doc, indentSizeOf, ctx.options.tabWidth);
-  return wrap(doc);
+    (hasComment(js, expr) ||
+      INDENTED_WHEN_BROKEN.has(kind(js, unparen(js, expr))));
+  const body = () => {
+    if (!indented) {
+      place(printed);
+      return;
+    }
+    open(INDENT);
+    sLine(SOFT);
+    place(printed);
+    close();
+    sLine(SOFT);
+  };
+  open(GROUP);
+  if (openToken !== undefined) sToken(openToken, "${");
+  if (indentSizeOf === 0 && previousQuasi.endsWith("\n")) {
+    openAlign(Number.NEGATIVE_INFINITY);
+    body();
+    close();
+  } else addAlignment(indentSizeOf, js.options.tabWidth, body);
+  sLineSuffixBoundary();
+  if (closeToken !== undefined) sToken(closeToken, "}");
+  close();
 }
 
-/** The quasi leaves of a template printed as their source, a line break in them kept where it is. */
-const quasiLeaf = (ctx: JsCtx, c: number): Doc => {
-  const t = src(ctx, c);
-  return t.includes("\n") ? literalToken(c, t) : token(c, t);
-};
-
-const templateString: JsRule = (node, ctx) => {
-  const raws = quasis(ctx, node);
+const templateString: CustomRule<JsOptions> = (node, sctx) => {
+  const ctx = jsCtx(sctx);
+  const js = ctx.js;
+  const raws = quasis(js, node);
   let previous = 0;
   const sizes = raws.map((q) => {
-    const size = q.includes("\n")
-      ? indentSize(q, ctx.options.tabWidth)
-      : previous;
+    const size = q.includes("\n") ? indentSize(q, js.options.tabWidth) : previous;
     previous = size;
     return size;
   });
+  sLineSuffixBoundary();
   let i = 0;
-  const parts = children(ctx, node).map((c): Doc => {
-    if (kind(ctx, c) === "template_substitution") {
-      const doc = printSubstitution(ctx, c, sizes[i] ?? 0, raws[i] ?? "");
+  for (const c of children(js, node)) {
+    const k = kind(js, c);
+    if (k === "template_substitution") {
+      printSubstitution(ctx, c, sizes[i] ?? 0, raws[i] ?? "");
       i++;
-      return doc;
+    } else if (k !== "comment") {
+      // A quasi prints as its source, a line break in it kept where it is.
+      const t = src(js, c);
+      if (t.includes("\n")) sLiteral(c, t);
+      else sToken(c, t);
     }
-    if (kind(ctx, c) === "comment") return [];
-    return quasiLeaf(ctx, c);
-  });
-  return [lineSuffixBoundary, parts];
+  }
 };
 
 /** Prettier's printComment: a block comment whose lines all start with `*` is re-indented. */
@@ -334,8 +352,7 @@ export const literalCustoms = {
   number,
   regex,
   string,
+  templateString,
 } satisfies Record<string, CustomRule<JsOptions>>;
 
-export const literalRules: Record<string, JsRule> = {
-  template_string: templateString,
-};
+export const literalRules: Record<string, JsRule> = {};

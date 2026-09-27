@@ -6,4 +6,5 @@ export const literals = {
   number: () => custom("number"),
   regex: () => custom("regex"),
   string: () => custom("string"),
+  template_string: () => custom("templateString"),
 } satisfies JsStructure;
