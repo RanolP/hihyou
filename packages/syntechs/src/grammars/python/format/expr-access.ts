@@ -17,6 +17,8 @@ export const exprAccess = {
   // An annotation's wrapper, whose expression ruff reads in its place.
   type: ($) => $.children,
   list_splat: ($) => ["*", $.children.via("access.starredValue")],
+  // `(*a)`, which ruff reads as the splat inside, its parentheses dropped.
+  parenthesized_list_splat: ($) => $.children,
   dictionary_splat: ($) => ["**", $.children.via("access.starredValue")],
   keyword_argument: ($) => [$.name, "=", $.value.via("access.keywordValue")],
   splat_type:($) => ["*", "**", $.children.via("access.starredValue")],

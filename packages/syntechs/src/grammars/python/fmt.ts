@@ -27,6 +27,7 @@ import { stmtDefVia } from "./format/stmt-def.via.js";
 import { stmtMatchVia } from "./format/stmt-match.via.js";
 import { stmtSimpleVia } from "./format/stmt-simple.via.js";
 import { stringVia } from "./format/string.via.js";
+import { triviaVia } from "./format/trivia.via.js";
 import { language } from "./index.js";
 
 /** Ruff's `[format]` options by their `ruff.toml` names. */
@@ -65,6 +66,7 @@ const rules = gen.python({
   ...exprAccessVia,
   ...collectionVia,
   ...stringVia,
+  ...triviaVia,
 });
 
 /** Ruff 0.16.8's layout (stable style): the module is lowered to ruff's AST and printed by ports of its rules. */

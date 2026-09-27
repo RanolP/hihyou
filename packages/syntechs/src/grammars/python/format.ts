@@ -13,6 +13,7 @@ import { stmtDef } from "./format/stmt-def.js";
 import { stmtMatch } from "./format/stmt-match.js";
 import { stmtSimple } from "./format/stmt-simple.js";
 import { string } from "./format/string.js";
+import { trivia } from "./format/trivia.js";
 
 /** One domain's share of the spec's structure rules. */
 export type Structure = FormatSpec<typeof grammar, PythonOptions>["structure"];
@@ -30,5 +31,6 @@ export const python = format({
     ...exprAccess,
     ...collection,
     ...string,
+    ...trivia,
   },
 });
