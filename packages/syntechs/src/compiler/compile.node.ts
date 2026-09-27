@@ -20,6 +20,10 @@ export const GRAMMARS: Record<string, { src: string; comments: string[] }> = {
   },
   tsx: { src: "tree-sitter-typescript/tsx/src", comments: ["comment"] },
   python: { src: "tree-sitter-python/src", comments: ["comment"] },
+  kotlin: {
+    src: "tree-sitter-kotlin/src",
+    comments: ["line_comment", "multiline_comment"],
+  },
 };
 
 const only = process.argv.slice(2);

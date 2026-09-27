@@ -1,0 +1,15 @@
+Kotlin parse inputs, vendored unmodified.
+
+tree-sitter-kotlin/ -- the grammar's own test corpus and example, from
+https://github.com/fwcd/tree-sitter-kotlin at tag 0.3.8 (test/corpus/*.txt,
+examples/Logger.kt). MIT License, copied beside them as LICENSE.
+
+Apache License 2.0 (https://www.apache.org/licenses/LICENSE-2.0):
+  Delay.kt, Transform.kt -- https://github.com/Kotlin/kotlinx.coroutines at tag 1.8.1,
+    kotlinx-coroutines-core/common/src/Delay.kt and .../flow/operators/Transform.kt.
+    Copyright JetBrains s.r.o. and Kotlin Programming Language contributors.
+  Result.kt, Collections.kt -- https://github.com/JetBrains/kotlin at tag v2.0.0,
+    libraries/stdlib/src/kotlin/util/Result.kt and .../collections/Collections.kt.
+    Copyright JetBrains s.r.o. and Kotlin Programming Language contributors.
+  Okio.kt, build.gradle.kts -- https://github.com/square/okio at tag parent-3.9.0,
+    okio/src/commonMain/kotlin/okio/Okio.kt and build.gradle.kts. Copyright Square, Inc.

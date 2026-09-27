@@ -8,5 +8,13 @@ allowBuilds:
   tree-sitter-css: false
   tree-sitter-javascript: false
   tree-sitter-json: false
+  tree-sitter-kotlin: false
   tree-sitter-python: false
   tree-sitter-typescript: false
+packageExtensions:
+  # Its package.json marks `tree_sitter` optional, a typo for the `tree-sitter` peer, which pnpm would then
+  # install as the native node binding for every grammar.
+  tree-sitter-kotlin@0.3.8:
+    peerDependenciesMeta:
+      tree-sitter:
+        optional: true

@@ -2,10 +2,15 @@ import { expect, test } from "vitest";
 import { language as css } from "../grammars/css/index.js";
 import { language as javascript } from "../grammars/javascript/index.js";
 import { language as json } from "../grammars/json/index.js";
+import { language as kotlin } from "../grammars/kotlin/index.js";
 import { language as python } from "../grammars/python/index.js";
 import { language as tsx } from "../grammars/tsx/index.js";
 import { language as typescript } from "../grammars/typescript/index.js";
-import { type GrammarName, referenceMissing } from "./corpus.node.js";
+import {
+  type GrammarName,
+  kotlinInputs,
+  referenceMissing,
+} from "./corpus.node.js";
 import { parseTree } from "./index.js";
 import type { Language } from "./language.js";
 import { checkParity } from "./parity.node.js";
@@ -107,6 +112,19 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
       "class C:\n    def f(self):\n        return (\n    x = 1\n",
       // Tabs and spaces mixed, and an unterminated f-string replacement field.
       'if a:\n\tb\n        c\nd = f"{e"\n',
+    ],
+  ],
+  kotlin: [
+    kotlin,
+    [
+      // The vendored inputs are committed, so the whole of them runs here.
+      ...kotlinInputs().map((i) => i.text),
+      // Nested block comments, `?.` across a line break, templates with `$` and `\$`, a quote run ending `"""`.
+      'import a.b\nimport c.*\n\nval s = "x$y ${z} \\$ $" + """a "b" ""${q}"""""\n/* a /* b */ c */ val t = u\n  ?.v\nfun f() { if (a) b\n else c; ++d\n -1 }\n',
+      // Unterminated strings, then an unclosed block and a stray `else`.
+      'val a = "open\nval b = """never closed ${c\nfun g( { else }\n',
+      // An import list broken by a statement, an unclosed nested comment, and `in` vs an identifier after a newline.
+      "import a\nval x = 1\nimport b\nwhile (x\nin y) {}\n/* /* */",
     ],
   ],
 };

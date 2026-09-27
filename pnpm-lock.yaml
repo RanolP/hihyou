@@ -162,6 +162,8 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+packageExtensionsChecksum: sha256-dbr7Cp3Rge8Ng3dbeh61dUs2/7uX0vAUiMnS8UBhK7Q=
+
 importers:
 
   .:
@@ -295,6 +297,9 @@ importers:
       tree-sitter-json:
         specifier: 0.24.8
         version: 0.24.8
+      tree-sitter-kotlin:
+        specifier: 0.3.8
+        version: 0.3.8
       tree-sitter-python:
         specifier: 0.25.0
         version: 0.25.0
@@ -1389,6 +1394,9 @@ packages:
   narrow-emojis@0.0.3:
     resolution: {integrity: sha512-6H/TWaMtKVqtUtFOAmoXEeNf4gxOxFalT617XVOMsMy8LgNurv2seJJHHU/aL6twJDLVhhfiBe1vwiXGKkZdcA==}
 
+  node-addon-api@7.1.1:
+    resolution: {integrity: sha512-5m3bsyrjFWE1xf7nz7YXdN4udnVtXK6/Yfgn5qnahL6bCkf2yKt4k3nuTKAtT4r3IG8JNR2ncsIMdZuAzJjHQQ==}
+
   node-addon-api@8.9.2:
     resolution: {integrity: sha512-VijLXbi3UACN69I0JVXJsX4tjACjNoQDgv2gTF6sx2wWEi8tkSg2eX8p5gSIFi8z2+DL3oHmY6OyKce38SDolg==}
     engines: {node: ^18 || ^20 || >= 21}
@@ -1603,6 +1611,17 @@ packages:
       tree-sitter: ^0.21.1
     peerDependenciesMeta:
       tree-sitter:
+        optional: true
+
+  tree-sitter-kotlin@0.3.8:
+    resolution: {integrity: sha512-A4obq6bjzmYrA+F0JLLoheFPcofFkctNaZSpnDd+GPn1SfVZLY4/GG4C0cYVBTOShuPBGGAOPLM1JWLZQV4m1g==}
+    peerDependencies:
+      tree-sitter: ^0.21.0
+      tree_sitter: '*'
+    peerDependenciesMeta:
+      tree-sitter:
+        optional: true
+      tree_sitter:
         optional: true
 
   tree-sitter-python@0.25.0:
@@ -2446,6 +2465,8 @@ snapshots:
 
   narrow-emojis@0.0.3: {}
 
+  node-addon-api@7.1.1: {}
+
   node-addon-api@8.9.2: {}
 
   node-gyp-build@4.8.4: {}
@@ -2638,6 +2659,11 @@ snapshots:
   tree-sitter-json@0.24.8:
     dependencies:
       node-addon-api: 8.9.2
+      node-gyp-build: 4.8.4
+
+  tree-sitter-kotlin@0.3.8:
+    dependencies:
+      node-addon-api: 7.1.1
       node-gyp-build: 4.8.4
 
   tree-sitter-python@0.25.0:

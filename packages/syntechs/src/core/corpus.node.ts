@@ -5,6 +5,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -17,6 +18,8 @@ export const pkgRoot = resolve(import.meta.dirname, "../..");
 export const repoRoot = resolve(pkgRoot, "../..");
 const benchInputs = join(repoRoot, "research/parser-bench/inputs");
 const corpusDir = join(pkgRoot, "corpus");
+/** Vendored and committed, unlike corpusDir: see its NOTICE. */
+export const kotlinCorpusDir = join(pkgRoot, "src/grammars/kotlin/corpus");
 
 export const GRAMMAR_NAMES = [
   "json",
@@ -25,6 +28,7 @@ export const GRAMMAR_NAMES = [
   "typescript",
   "tsx",
   "python",
+  "kotlin",
 ] as const;
 export type GrammarName = (typeof GRAMMAR_NAMES)[number];
 
@@ -36,6 +40,7 @@ const GRAMMAR_DIRS: Record<GrammarName, [string, string]> = {
   typescript: ["tree-sitter-typescript/typescript", "tree-sitter-typescript"],
   tsx: ["tree-sitter-typescript/tsx", "tree-sitter-typescript"],
   python: ["tree-sitter-python", "tree-sitter-python"],
+  kotlin: ["tree-sitter-kotlin", "tree-sitter-kotlin"],
 };
 
 const EXTENSIONS: Record<GrammarName, string[]> = {
@@ -45,9 +50,10 @@ const EXTENSIONS: Record<GrammarName, string[]> = {
   typescript: [".ts", ".mts", ".cts"],
   tsx: [".tsx"],
   python: [".py"],
+  kotlin: [".kt", ".kts"],
 };
 
-/** Large real-world files: the parser-bench inputs, then what fetch-corpus.sh downloads. */
+/** Large real-world files: the parser-bench inputs, then what fetch-corpus.sh downloads, or what is vendored. */
 export const FETCHED: Record<GrammarName, string[]> = {
   json: [
     join(benchInputs, "big.json"),
@@ -69,6 +75,14 @@ export const FETCHED: Record<GrammarName, string[]> = {
       join(corpusDir, f),
     ),
   ],
+  kotlin: [
+    "Collections.kt",
+    "Result.kt",
+    "Delay.kt",
+    "Transform.kt",
+    "Okio.kt",
+    "build.gradle.kts",
+  ].map((f) => join(kotlinCorpusDir, f)),
 };
 
 export interface Input {
@@ -166,12 +180,38 @@ export function brokenInputs(sources: Input[], perSource: number): Input[] {
   return out;
 }
 
+/** The examples in a tree-sitter test corpus directory (`===` title, source, `---`, expected tree), sources only. */
+export function testCorpus(dir: string): Input[] {
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".txt"))
+    .flatMap((f) => {
+      const text = readFileSync(join(dir, f), "utf8").replaceAll("\r\n", "\n");
+      return [
+        ...text.matchAll(/^={3,}\n(.*)\n={3,}\n([\s\S]*?)\n-{3,}\n/gm),
+      ].map((m) => ({ name: `${f}: ${m[1]}`, text: m[2] as string }));
+    });
+}
+
+/** Kotlin's inputs with no syntax error: the grammar's test corpus and example, then the real-world files. */
+export function kotlinInputs(): Input[] {
+  const grammarDir = join(kotlinCorpusDir, "tree-sitter-kotlin");
+  return [
+    ...testCorpus(grammarDir),
+    ...[join(grammarDir, "Logger.kt"), ...FETCHED.kotlin].map((f) => ({
+      name: f.slice(repoRoot.length + 1),
+      text: readFileSync(f, "utf8"),
+    })),
+  ];
+}
+
 export function corpus(grammar: GrammarName): Input[] {
   const fetched = benchFiles(grammar);
-  const repo = repoFiles(grammar).map((f) => ({
-    name: f.slice(repoRoot.length + 1),
-    text: readFileSync(f, "utf8"),
-  }));
+  const repo = repoFiles(grammar)
+    .filter((f) => !FETCHED[grammar].includes(f))
+    .map((f) => ({
+      name: f.slice(repoRoot.length + 1),
+      text: readFileSync(f, "utf8"),
+    }));
   const whole = [...fetched, ...repo];
   return [...whole, ...brokenInputs(whole, grammar === "tsx" ? 8 : 20)];
 }
