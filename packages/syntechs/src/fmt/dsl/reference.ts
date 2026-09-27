@@ -59,8 +59,10 @@ export type Entry =
   | { readonly e: "brackets" }
   | { readonly e: "list"; readonly items: readonly number[] }
   | { readonly e: "end" }
-  /** After each item but the last: its separator token (-1: none in the source), and a blank line after it. */
-  | { readonly e: "sep"; readonly tok: number; readonly blank: boolean }
+  /** After each item but the last: its separator token (-1: none in the source). */
+  | { readonly e: "sep"; readonly tok: number }
+  /** After an item's separator: the source keeps a blank line there. */
+  | { readonly e: "blank" }
   /** Only while the enclosing frame stays flat: a space, inserted beside a padded bracket. */
   | { readonly e: "ifFlat"; readonly text: string }
   /** After the last item, only while the list breaks: a separator the source has no trailing copy of. */
@@ -144,9 +146,10 @@ export function flatten<O>(
         out.push({ e: "list", items });
         items.forEach((item, i) => {
           child(item);
-          if (i < seps.length)
-            out.push({ e: "sep", tok: seps[i] as number, blank: nextLineEmpty(t, item) });
-          else if (evalCond(x.trailing, ctx.options))
+          if (i < seps.length) {
+            out.push({ e: "sep", tok: seps[i] as number });
+            if (nextLineEmpty(t, item)) out.push({ e: "blank" });
+          } else if (evalCond(x.trailing, ctx.options))
             out.push({ e: "ifBroken", after: item, text: x.sep });
         });
         if (items.length === 0)
@@ -232,9 +235,17 @@ export function wrap<O>(
       close();
       return;
     }
-    // Per item: its entries [from, to) (leading comments, the child, trailing comments), the slot after it, and
-    // the comment facts the breaks read.
-    const parts: { from: number; to: number; after: Entry; leadingLine: boolean; endsLine: boolean }[] = [];
+    const always = w.expand === "always";
+    // Per item: its entries [from, to) (leading comments, the child, trailing comments), the slot after it, the
+    // comment facts the breaks read, and whether a kept blank line follows (an always-expanded list drops them).
+    const parts: {
+      from: number;
+      to: number;
+      after: Entry;
+      blank: boolean;
+      leadingLine: boolean;
+      endsLine: boolean;
+    }[] = [];
     let start = from + 1;
     for (let i = from + 1; i < to; i++) {
       const x = seq[i] as Entry;
@@ -242,12 +253,16 @@ export function wrap<O>(
       if (x.e === "sep" || x.e === "ifBroken") {
         if (part) part.after = x;
         start = i + 1;
+      } else if (x.e === "blank") {
+        if (part) part.blank = !always;
+        start = i + 1;
       } else if (x.e === "child") {
         const leading = seq.slice(start, i);
         parts.push({
           from: start,
           to: i + 1,
           after: { e: "end" },
+          blank: false,
           leadingLine: leading.some((y) => y.e === "comment" && y.line),
           endsLine: false,
         });
@@ -260,7 +275,6 @@ export function wrap<O>(
       const part = parts[i] as (typeof parts)[number];
       for (let j = part.from; j < part.to; j++) childOrComment(seq[j] as Entry);
     };
-    const always = w.expand === "always";
     const fillKinds = new Set(w.packWhenAllOf);
     const shouldBreak =
       always ||
@@ -293,7 +307,6 @@ export function wrap<O>(
         close();
       }
     };
-    const blank = (x: Entry | undefined) => !always && x?.e === "sep" && x.blank;
     const line = pad ? 0 : SOFT;
     tok(bracketOpen);
     open(INDENT);
@@ -307,7 +320,7 @@ export function wrap<O>(
         slot(part.after);
         close();
         if (next === undefined) return;
-        if (blank(part.after)) {
+        if (part.blank) {
           sHardline();
           sHardline();
         } else if (next.leadingLine) sHardline();
@@ -322,7 +335,7 @@ export function wrap<O>(
         slot(part.after);
         if (i === parts.length - 1) return;
         sLine(0);
-        if (blank(part.after)) {
+        if (part.blank) {
           if (w.blankLines === "force") sHardline();
           else sLine(SOFT);
         }
