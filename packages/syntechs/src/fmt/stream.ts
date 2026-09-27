@@ -257,6 +257,12 @@ let mergeable = false;
 // The interval table.
 let iKind = new Uint8Array(1024);
 let iFlag = new Uint8Array(1024);
+/** What an interval holds itself rather than through an interval inside it (the `OWN_` bits), which `flatBreaks` reads. */
+let iOwn = new Uint8Array(1024);
+/** It was opened broken: a group's or a choice's own shouldBreak. */
+const OWN_BROKEN = 1;
+/** A break parent (a hard line's included) was appended directly inside it. */
+const OWN_BP = 2;
 let iStart = new Int32Array(1024);
 let iEnd = new Int32Array(1024);
 /** The first interval opened after this one closed: skipping an interval skips its descendants in the table. */
@@ -428,12 +434,15 @@ export function sRuffLine(flags: number): void {
 export function sBreakParent(): void {
   bp++;
   xbp++;
+  if (op > 0) {
+    const k = oIdx[op - 1] as number;
+    iOwn[k] = (iOwn[k] as number) | OWN_BP;
+  }
 }
 
 export function sHardline(): void {
   sLine(HARD);
-  bp++;
-  xbp++;
+  sBreakParent();
 }
 
 /** Prettier's lineSuffixBoundary: a hard line here when line suffixes are pending, else nothing. */
@@ -451,6 +460,7 @@ export function open(kind: number, ref = -1, flags = 0): number {
   if (m === iKind.length) {
     iKind = grow8(iKind);
     iFlag = grow8(iFlag);
+    iOwn = grow8(iOwn);
     iStart = grow32(iStart);
     iEnd = grow32(iEnd);
     iNext = grow32(iNext);
@@ -466,6 +476,7 @@ export function open(kind: number, ref = -1, flags = 0): number {
   }
   iKind[m] = kind;
   iFlag[m] = flags;
+  iOwn[m] = flags & BROKEN ? OWN_BROKEN : 0;
   iStart[m] = n;
   iRef[m] = ref;
   iP0[m] = pos;
@@ -808,12 +819,28 @@ const flatSaves: number[] = [];
 /** Per `IF_BROKEN` still open: `xbp` at its start. */
 const ifbXbp: number[] = [];
 
-/** Opens a removeLines part; close it with `closeFlat`. */
-export function openFlat(): number {
+/**
+ * A flat part's `iRef` when `openFlat(true)` opened it, as the JS printer flattens a template substitution: a
+ * conditional group takes its first state rather than its last, as prettier's printDocToString does at an
+ * infinite width.
+ */
+const FIRST_STATES = 1;
+/** A print mode bit, set with `FORCED_BREAK` inside a `FIRST_STATES` flat part: a choice prints its first state. */
+const FIRST = 4;
+const isFirstStates = (k: number) => iKind[k] === FLATTEN && iRef[k] === FIRST_STATES;
+/** The mode flat part `k` gives what it holds, when it is entered in `mode`. */
+const flatMode = (k: number, mode: number) =>
+  (mode & FLAT) | FORCED_BREAK | (iRef[k] === FIRST_STATES ? FIRST : 0);
+
+/**
+ * Opens a removeLines part; close it with `closeFlat`. With `firstStates` it is the JS printer's flatten of a
+ * template substitution instead, which is the same except that a conditional group takes its first state.
+ */
+export function openFlat(firstStates = false): number {
   flatSaves.push(xbp, pos, lastLine);
   // The groups around measure it by a scan, which reads its mode, rather than by the width it was built with.
   hard++;
-  const k = open(FLATTEN);
+  const k = open(FLATTEN, firstStates ? FIRST_STATES : -1);
   // A line inside is removeLines' text, which no run of lines around goes on through.
   lastLine = -1;
   return k;
@@ -821,8 +848,19 @@ export function openFlat(): number {
 
 export function closeFlat(): void {
   const b = flatSaves.length - 3;
-  bp = (oBp[op - 1] as number) + (xbp > (flatSaves[b] as number) ? 1 : 0);
+  const k = oIdx[op - 1] as number;
+  const first = iRef[k] === FIRST_STATES;
+  bp = (oBp[op - 1] as number) + (!first && xbp > (flatSaves[b] as number) ? 1 : 0);
   close();
+  if (first) {
+    // `xbp` counted the break parents in each choice's last state, but this part keeps those in its first.
+    const keeps = flatBreaks(k, true, false);
+    xbp = (flatSaves[b] as number) + (keeps ? 1 : 0);
+    if (keeps) {
+      bp++;
+      iFlag[k] = (iFlag[k] as number) | BREAKS;
+    }
+  }
   lastLine = pos === flatSaves[b + 1] ? (flatSaves[b + 2] as number) : -1;
   flatSaves.length = b;
 }
@@ -970,7 +1008,7 @@ const isHardLine = (i: number) =>
  * removeLines keeps, and its hard lines count only where removeLines keeps them: a choice's in its last state,
  * an `ifBreak`'s in its flat branch.
  */
-function willBreakFlat(k: number): boolean {
+function willBreakFlat(k: number, first = isFirstStates(k)): boolean {
   const flags = iFlag[k] as number;
   if (flags & BREAKS && iKind[k] === FLATTEN) return true;
   if (!(flags & HARDS)) return false;
@@ -978,11 +1016,12 @@ function willBreakFlat(k: number): boolean {
     k,
     (x) => {
       if (iKind[x] === IF_BROKEN) return false;
+      if (isFirstStates(x)) return willBreakFlat(x) ? "stop" : false;
       if (iKind[x] !== CHOICE) return ((iFlag[x] as number) & HARDS) !== 0;
       const last = iRef[x] as number;
-      return last >= 0 && willBreakFlat(last) ? "stop" : false;
+      return last >= 0 && willBreakFlat(first ? x + 1 : last, first) ? "stop" : false;
     },
-    (i) => isHardLine(i) || (eKind[i] === JUMP && willBreakFlat(eStr[i] as number)),
+    (i) => isHardLine(i) || (eKind[i] === JUMP && willBreakFlat(eStr[i] as number, first)),
   );
 }
 
@@ -990,17 +1029,74 @@ function willBreakFlat(k: number): boolean {
  * The JS printer's canBreak: whether closed interval `k` holds a line, in any state of a choice or branch; inside
  * a flat part (`hardOnly`), a hard line, the only kind removeLines keeps.
  */
-export function canBreak(k: number, hardOnly = iKind[k] === FLATTEN): boolean {
+export function canBreak(
+  k: number,
+  hardOnly = iKind[k] === FLATTEN,
+  first = isFirstStates(k),
+): boolean {
   return walkIn(
     k,
-    (x) => hardOnly || iKind[x] !== FLATTEN || (canBreak(x, true) ? "stop" : false),
+    (x) => {
+      // A flattened substitution holds only its choices' first states and its ifBreaks' flat branches.
+      if (isFirstStates(x)) return canBreak(x, true, true) ? "stop" : false;
+      if (first) {
+        if (iKind[x] === IF_BROKEN) return false;
+        if (iKind[x] === CHOICE)
+          return (iRef[x] as number) >= 0 && canBreak(x + 1, true, true) ? "stop" : false;
+      }
+      return hardOnly || iKind[x] !== FLATTEN || (canBreak(x, true) ? "stop" : false);
+    },
     (i) =>
       (eKind[i] === LINE &&
         !((eFlag[i] as number) & BOUNDARY) &&
         (!hardOnly || ((eFlag[i] as number) & HARD) !== 0)) ||
-      (eKind[i] === JUMP && canBreak(eStr[i] as number, hardOnly)),
+      (eKind[i] === JUMP && canBreak(eStr[i] as number, hardOnly, first)),
   );
 }
+
+/**
+ * Whether closed interval `k`, printed flat, holds a break parent that stays there. A flat print takes a
+ * choice's first state when `first` holds, its last state otherwise, and an `ifBreak`'s flat branch. `strict` is
+ * the JS printer's flatten of a template substitution, which gives up on any part that would print a line break.
+ * So under `strict` a hard line counts too, as does a text or token holding a line break, and, when `first`
+ * holds, a group's or a choice's own shouldBreak, which removeLines drops.
+ */
+function flatBreaks(k: number, first: boolean, strict: boolean): boolean {
+  const own = (x: number) =>
+    ((iOwn[x] as number) & OWN_BP) !== 0 ||
+    (strict &&
+      first &&
+      ((iOwn[x] as number) & OWN_BROKEN) !== 0 &&
+      (iKind[x] === GROUP || iKind[x] === CHOICE));
+  if (own(k)) return true;
+  return walkIn(
+    k,
+    (x) => {
+      const kind = iKind[x] as number;
+      if (kind === IF_BROKEN) return false;
+      if (kind === FLATTEN) return flatBreaks(x, iRef[x] === FIRST_STATES, strict) ? "stop" : false;
+      if (own(x)) return "stop";
+      if (kind !== CHOICE) return true;
+      const last = iRef[x] as number;
+      return last >= 0 && flatBreaks(first ? x + 1 : last, first, strict) ? "stop" : false;
+    },
+    (i) => {
+      const kind = eKind[i] as number;
+      if (kind === JUMP) return flatBreaks(eStr[i] as number, first, strict);
+      if (!strict) return false;
+      if (kind === LINE) return isHardLine(i);
+      return (strs[eStr[i] as number] as string).includes("\n");
+    },
+  );
+}
+
+/**
+ * Whether the JS printer's flatten of a template substitution gives up on closed interval `k`. That is, whether
+ * `k`, printed at an infinite width with each choice in its first state, would hold a line break: a hard line, a
+ * break parent, a group that must break, or a text spanning lines. When it would not, `openFlat(true)` prints it
+ * that way.
+ */
+export const flattenBreaks = (k: number): boolean => flatBreaks(k, true, true);
 
 /**
  * The JS printer's docText: the text closed interval `k` prints when it holds only text in unbroken groups (no
@@ -1263,7 +1359,7 @@ export function printStream(layout: Layout): StreamPrinted {
           if (ruff) groupModes[k] = (broken ? BREAK : mode) + 1;
           if (e > i) {
             // BREAK, or FORCED_BREAK inside a flat part.
-            if (broken) mode &= FORCED_BREAK;
+            if (broken) mode &= FORCED_BREAK | FIRST;
             if (ls === lEnd.length) {
               lEnd = grow32(lEnd);
               lMode = grow8(lMode);
@@ -1285,7 +1381,7 @@ export function printStream(layout: Layout): StreamPrinted {
           }
         } else if (kind === FLATTEN) {
           cur++;
-          mode |= FORCED_BREAK;
+          mode = flatMode(k, mode);
           if (e > i) {
             if (ls === lEnd.length) {
               lEnd = grow32(lEnd);
@@ -1413,13 +1509,13 @@ export function printStream(layout: Layout): StreamPrinted {
           }
         } else if (kind === CHOICE) {
           // Prettier's fits reads the first state, or the last one when broken or measured broken; removeLines
-          // keeps the last one alone, no group around it.
+          // keeps the last one alone, no group around it, and a flattened substitution the first.
           const broken = mode < FORCED_BREAK && ((iFlag[k] as number) & BROKEN) !== 0;
           if (mustBeFlat && broken) return false;
           const md = broken ? BREAK : mode;
           if (ruff) groupModes[k] = md + 1;
           const last = iRef[k] as number;
-          const s = last < 0 ? -1 : broken || mode !== FLAT ? last : k + 1;
+          const s = last < 0 ? -1 : mode & FIRST || !(broken || mode !== FLAT) ? k + 1 : last;
           if (e > i) {
             if (ls === lEnd.length) {
               lEnd = grow32(lEnd);
@@ -1764,7 +1860,8 @@ export function printStream(layout: Layout): StreamPrinted {
               // it breaks, and it breaks only by what it holds.
               remeasure = false;
               cur++;
-              if (e > i) fpush(e, ti, (iFlag[k] as number) & BREAKS ? FORCED_BREAK : tm);
+              if (e > i)
+                fpush(e, ti, (iFlag[k] as number) & BREAKS ? FORCED_BREAK | (tm & FIRST) : tm);
               break;
             }
             const g = decideGroup(k, tm);
@@ -1975,8 +2072,8 @@ export function printStream(layout: Layout): StreamPrinted {
               break;
             }
             if (tm >= FORCED_BREAK) {
-              // removeLines keeps the last state alone, no group around it.
-              picked = iRef[k] as number;
+              // removeLines keeps the last state alone, no group around it; a flattened substitution the first.
+              picked = tm & FIRST ? k + 1 : (iRef[k] as number);
               if (e > i) fpush(e, ti, tm);
             } else {
               const g = decideChoice(k, tm);
@@ -1990,7 +2087,7 @@ export function printStream(layout: Layout): StreamPrinted {
           }
           case FLATTEN:
             cur++;
-            if (e > i) fpush(e, ti, tm | FORCED_BREAK);
+            if (e > i) fpush(e, ti, flatMode(k, tm));
             break;
           case STATE:
           case DEAD:

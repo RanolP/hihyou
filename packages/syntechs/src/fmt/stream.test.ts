@@ -35,6 +35,7 @@ import {
   canBreak,
   close,
   flatText,
+  flattenBreaks,
   sBreakParent,
   shape,
   willBreak,
@@ -596,6 +597,32 @@ describe("printStream matches printer.ts for a part printed flat as removeLines 
     expect(out).toBe("x\nlongstate");
   });
 
+  // The JS printer flattens `${a.map((x) => x)}` so: the hugged call's conditional group takes its first state.
+  it("prints and measures a flattened substitution's conditional group by its first state", () => {
+    const flattened = [text("s"), text(" "), text("t")];
+    const out = both(5, group([text("x"), line, flattened]), () => {
+      open(GROUP);
+      sText("x");
+      sLine(0);
+      openFlat(true);
+      openChoice(false);
+      openState();
+      open(GROUP);
+      sText("s");
+      sLine(0);
+      sText("t");
+      close();
+      closeState();
+      openState();
+      sText("longstate");
+      closeState();
+      closeChoice();
+      closeFlat();
+      close();
+    });
+    expect(out).toBe("x s t");
+  });
+
   it("prints a span flat through a jump in a flat part, and decided where it is jumped to outside one", () => {
     const s = group([text("aa"), line, text("bb")]);
     const out = both(3, [s, hardline, removeLines(s)], () => {
@@ -776,6 +803,54 @@ describe("the range queries answer what doc.ts's and the JS printer's Doc querie
     expect([canBreak(later), canBreak(viaJump), canBreak(boundary), canBreak(textOnly)]).toEqual(
       [true, true, false, false],
     );
+  });
+
+  // The JS printer's flatten of a template substitution reads a choice's first state, so a query reading the
+  // last one, as removeLines does, would flatten (or keep broken) the wrong substitutions.
+  it("a flattened substitution's queries read each choice's first state, and flattenBreaks every break in it", () => {
+    resetStream();
+    const hardFirst = () =>
+      choice([() => {
+        sText("a");
+        sHardline();
+      }, () => sText("b")]);
+    const hardLast = () =>
+      choice([() => sText("a"), () => {
+        sText("b");
+        sHardline();
+      }]);
+    const flat = (build: () => void) => {
+      const k = openFlat(true);
+      build();
+      closeFlat();
+      return k;
+    };
+    const first = flat(hardFirst);
+    const last = flat(hardLast);
+    expect([willBreak(first), willBreak(last), canBreak(first), canBreak(last)]).toEqual([
+      true,
+      false,
+      true,
+      false,
+    ]);
+    const viaJump = span(hardFirst);
+    const shouldBreak = span(() => {
+      open(GROUP, -1, BROKEN);
+      sText("a");
+      close();
+    });
+    const lined = span(() => sText("a\nb"));
+    const ifBroken = span(() => wrapped(IF_BROKEN, () => sHardline()));
+    expect(
+      [
+        span(hardFirst),
+        span(hardLast),
+        wrapped(INDENT, () => sJump(viaJump)),
+        shouldBreak,
+        lined,
+        ifBroken,
+      ].map(flattenBreaks),
+    ).toEqual([true, false, true, true, true, false]);
   });
 
   it("flatText reads text through unbroken groups and jumps, and gives up at a line or a break parent", () => {
