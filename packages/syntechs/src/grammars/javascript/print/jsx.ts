@@ -53,8 +53,10 @@ import {
 } from "./util.js";
 import type { CustomRule } from "../../../fmt/dsl/runtime.js";
 import {
+  BROKEN,
   close,
   GROUP,
+  IF_BROKEN,
   INDENT,
   type JsStreamCtx,
   jsCtx,
@@ -282,7 +284,6 @@ function printChildren(
 
 /** Prettier's printJsxElementInternal. */
 function printElementInternal(n: number, ctx: JsCtx): Doc {
-  if (isSelfClosing(ctx, n)) return printOpening(n, ctx, true);
   const open = field(ctx, n, "open_tag") as number;
   const close = field(ctx, n, "close_tag") as number;
   let children = jsxChildren(ctx, n);
@@ -465,27 +466,34 @@ const element: JsRule = (n, ctx) => {
   );
 };
 
-/** A tag's name as prettier's JSXIdentifier, JSXMemberExpression or JSXNamespacedName: never broken. */
-const printName = (ctx: JsCtx, name: number | undefined): Doc =>
-  name !== undefined ? ctx.withComments(name, token(name, src(ctx, name))) : [];
-
 /** Prettier's printJsxOpeningElement; a self-closing element is its own opening element. */
-function printOpening(n: number, ctx: JsCtx, selfClosing: boolean): Doc {
+function sOpening(s: JsStreamCtx, n: number, selfClosing: boolean): void {
+  const ctx = s.js;
   const name = field(ctx, n, "name");
-  if (name === undefined) return printFragmentTag(n, ctx, true);
+  if (name === undefined) {
+    sFragmentTag(s, n, true);
+    return;
+  }
   const typeArgs = field(ctx, n, "type_arguments");
   const attributes = fields(ctx, n, "attribute");
   const nameHasComments = hasComment(ctx, name) || hasComment(ctx, typeArgs);
-  const lt = t(ctx, anon(ctx, n, "<"));
-  const head: Doc = [lt, printName(ctx, name), p(ctx, typeArgs)];
+  const head = () => {
+    tokOf(ctx, anon(ctx, n, "<"));
+    sName(s, name);
+    if (typeArgs !== undefined) s.print(typeArgs);
+  };
   const end = lastChildWhere(ctx, n, (c) => {
     const k = kind(ctx, c);
     return !named(ctx, c) && (k === ">" || k === "/>");
   });
-  const closeTag: Doc = t(ctx, end);
+  const closeTag = () => tokOf(ctx, end);
 
-  if (selfClosing && attributes.length === 0 && !nameHasComments)
-    return [head, text(" "), closeTag];
+  if (selfClosing && attributes.length === 0 && !nameHasComments) {
+    head();
+    sText(" ");
+    closeTag();
+    return;
+  }
 
   const only = attributes[0];
   const onlyValue =
@@ -493,50 +501,73 @@ function printOpening(n: number, ctx: JsCtx, selfClosing: boolean): Doc {
       ? attrValue(ctx, only)
       : undefined;
   if (
+    only !== undefined &&
     attributes.length === 1 &&
     kind(ctx, only) === "jsx_attribute" &&
     isAttrString(ctx, onlyValue) &&
     !hasNewlineIn(ctx, onlyValue as number) &&
     !nameHasComments &&
     !hasComment(ctx, only)
-  )
-    return group([
-      head,
-      text(" "),
-      p(ctx, only),
-      selfClosing ? [text(" "), closeTag] : closeTag,
-    ]);
+  ) {
+    within(GROUP, () => {
+      head();
+      sText(" ");
+      s.print(only);
+      if (selfClosing) sText(" ");
+      closeTag();
+    });
+    return;
+  }
 
   const shouldBreak = attributes.some((a) => {
     const v = kind(ctx, a) === "jsx_attribute" ? attrValue(ctx, a) : undefined;
     return isAttrString(ctx, v) && hasNewlineIn(ctx, v as number);
   });
   const options = ctx.options as JsxOptions;
-  const attributeLine =
-    options.singleAttributePerLine && attributes.length > 1 ? hardline : line;
+  const hardAttributeLine =
+    options.singleAttributePerLine === true && attributes.length > 1;
 
-  let tail: Doc;
-  if (selfClosing) tail = [line, closeTag];
-  else if (bracketSameLine(ctx, attributes, nameHasComments)) tail = closeTag;
-  else tail = [softline, closeTag];
+  open(GROUP, -1, shouldBreak ? BROKEN : 0);
+  head();
+  within(INDENT, () => {
+    attributes.forEach((a, i) => {
+      const previous = attributes[i - 1];
+      if (previous !== undefined && nextLineEmpty(ctx.tree, previous)) {
+        sHardline();
+        sHardline();
+      } else if (hardAttributeLine) sHardline();
+      else sLine(0);
+      s.print(a);
+    });
+  });
+  if (selfClosing) sLine(0);
+  else if (!bracketSameLine(ctx, attributes, nameHasComments)) sLine(SOFT);
+  closeTag();
+  close();
+}
 
-  return group(
-    [
-      head,
-      indent(
-        attributes.map((a, i) => {
-          const previous = attributes[i - 1];
-          const sep =
-            previous !== undefined && nextLineEmpty(ctx.tree, previous)
-              ? [hardline, hardline]
-              : attributeLine;
-          return [sep, p(ctx, a)];
-        }),
-      ),
-      tail,
-    ],
-    shouldBreak,
-  );
+/**
+ * Prettier's printJsxElement with maybeWrapJsxElementInParens: `inner` between the element's own comments (see
+ * `printsOwnComments` in fmt.ts), so they sit inside the parentheses.
+ */
+function sElement(s: JsStreamCtx, n: number, inner: () => void): void {
+  const ctx = s.js;
+  const elem = () => withComments(s, n, inner);
+  const parent = role(ctx, n).parent;
+  if (parent === undefined || NO_WRAP_PARENTS.has(kind(ctx, parent))) {
+    elem();
+    return;
+  }
+  const parens = needsParens(n, ctx);
+  open(GROUP, -1, shouldBreakElement(ctx, n) ? BROKEN : 0);
+  if (!parens) within(IF_BROKEN, () => sToken(n, "(", true));
+  within(INDENT, () => {
+    sLine(SOFT);
+    elem();
+  });
+  sLine(SOFT);
+  if (!parens) within(IF_BROKEN, () => sToken(n, ")", true));
+  close();
 }
 
 function bracketSameLine(
@@ -641,26 +672,6 @@ const closing: CustomRule<JsOptions> = (n, sctx) => {
   }
   tokOf(ctx, anon(ctx, n, ">"));
 };
-
-/** Prettier's printJsxOpeningClosingFragment: `<>` or `</>` with the comments inside it. */
-function printFragmentTag(n: number, ctx: JsCtx, opening: boolean): Doc {
-  const dangling = ctx.comments(n).dangling;
-  const hasOwnLine = dangling.some((c) => ctx.isLineComment(c));
-  const lead = hasOwnLine
-    ? hardline
-    : dangling.length > 0 && !opening
-      ? text(" ")
-      : [];
-  return [
-    t(ctx, anon(ctx, n, opening ? "<" : "</")),
-    indent([lead, join(hardline, ctx.dangling(n))]),
-    hasOwnLine ? hardline : [],
-    t(
-      ctx,
-      lastChildWhere(ctx, n, (c) => !named(ctx, c) && kind(ctx, c) === ">"),
-    ),
-  ];
-}
 
 /** `n`'s dangling comments, one per line. */
 function sDangling(s: JsStreamCtx, n: number): void {
@@ -839,10 +850,13 @@ export const jsxCustoms = {
   jsxClosing: closing,
   jsxAttribute: attribute,
   jsxExpression: expression,
+  jsxOpening: (n, sctx) => sOpening(jsCtx(sctx), n, false),
+  jsxSelfClosing: (n, sctx) => {
+    const s = jsCtx(sctx);
+    sElement(s, n, () => sOpening(s, n, true));
+  },
 } satisfies Record<string, CustomRule<JsOptions>>;
 
 export const jsxRules: Record<string, JsRule> = {
   jsx_element: element,
-  jsx_self_closing_element: element,
-  jsx_opening_element: (n, ctx) => printOpening(n, ctx, false),
 };
