@@ -17,7 +17,7 @@ import { isJsxSpreadArgument, jsxIgnored, jsxRules } from "./print/jsx.js";
 import { literalRules, printComment } from "./print/literals.js";
 import { moduleRules } from "./print/modules.js";
 import { objectRules } from "./print/objects.js";
-import { operatorRules } from "./print/operators.js";
+import { operatorCustoms, operatorRules } from "./print/operators.js";
 import { needsParens } from "./print/parens.js";
 import {
   ignoredStatement,
@@ -132,7 +132,7 @@ export function jsRules(): Record<string, JsRule> {
     parenthesized_expression: parenthesized,
   };
   // The kinds the DSL spec (format.ts) lays out, recorded into Docs while the rest still print by the Doc.
-  for (const [name, rule] of gen.javascript<JsOptions>().rules) table[name] = onDoc(rule);
+  for (const [name, rule] of gen.javascript<JsOptions>({ ...operatorCustoms }).rules) table[name] = onDoc(rule);
   for (const [name, rule] of Object.entries(table)) table[name] = wrap(rule);
   return table;
 }

@@ -1,24 +1,40 @@
 // Prettier's expression printers for operators: binaryish.js, ternary-old.js, sequence-expression.js,
-// await-expression.js, assignment expressions and the unary, update and yield cases of estree.js.
+// await-expression.js, assignment expressions and the unary, update and yield cases of estree.js. The update and
+// yield cases are structure in format.ts; the ternary, unary, await and sequence layouts are its customs, written
+// against sink.ts.
 
+import type { CustomRule } from "../../../fmt/dsl/runtime.js";
 import {
-  align,
-  breakParent,
   type Doc,
-  dedent,
   group,
-  hardline,
-  ifBreak,
   indent,
   indentIfBreak,
   isDocs,
-  join,
   kindOf,
   line,
   softline,
-  synthetic,
   text,
 } from "../../../fmt/doc.js";
+import {
+  capture,
+  close,
+  GROUP,
+  IF_BROKEN,
+  IF_FLAT,
+  INDENT,
+  jsCtx,
+  type JsStreamCtx,
+  open,
+  openAlign,
+  type Part,
+  place,
+  SOFT,
+  sBreakParent,
+  sHardline,
+  sLine,
+  sText,
+  sToken,
+} from "../sink.js";
 import {
   isLoneShortArgument,
   logicalRight,
@@ -28,7 +44,6 @@ import {
 import { needsParens, role, shouldFlatten } from "./parens.js";
 import { mappedClauseOf, typeNeedsParens } from "./types.js";
 import {
-  type Args,
   anon,
   CF,
   callArguments,
@@ -45,6 +60,7 @@ import {
   isBlockComment,
   isJsx,
   isLogical,
+  type JsOptions,
   items,
   type JsCtx,
   type JsRule,
@@ -401,18 +417,44 @@ const bare = (h: HasTree, n: number): number => {
 const isTestKey = (key: string) =>
   key === "test" || key === "checkType" || key === "extendsType";
 
+/** The token `c`, as written; nothing when `c` is undefined. */
+const tok = (js: JsCtx, c: number | undefined) => {
+  if (c !== undefined) sToken(c, src(js, c));
+};
+
+/** `fn`'s output inside an interval of `kind` (GROUP, INDENT, IF_BROKEN, ...), naming group `ref`. */
+function within(kind: number, fn: () => void, ref = -1): number {
+  const id = open(kind, ref);
+  fn();
+  close();
+  return id;
+}
+
+/** `print` inside parentheses of `anchor` while its group breaks: prettier's `[ifBreak("("), indent([softline, x]), softline, ifBreak(")")]`. */
+function wrapInParens(anchor: number, print: () => void): void {
+  within(IF_BROKEN, () => sToken(anchor, "(", true));
+  within(INDENT, () => {
+    sLine(SOFT);
+    print();
+  });
+  sLine(SOFT);
+  within(IF_BROKEN, () => sToken(anchor, ")", true));
+}
+
 /** Prettier's printTernary (ternary-old.js), shared by `a ? b : c` and `A extends B ? C : D`. */
-const ternary: JsRule = (node, ctx, args) => {
-  if (ctx.options.experimentalTernaries) return printTernary(node, ctx, args);
-  const TERNARY = kind(ctx, node);
+const ternary: CustomRule<JsOptions> = (node, sctx) => {
+  const ctx = jsCtx(sctx);
+  const js = ctx.js;
+  if (js.options.experimentalTernaries) return printTernary(node, ctx);
+  const TERNARY = kind(js, node);
   const isType = TERNARY === "conditional_type";
-  const test = field(ctx, node, "condition") as number;
-  const consequent = field(ctx, node, "consequence") as number;
-  const alternate = field(ctx, node, "alternative") as number;
-  const question = t(ctx, anon(ctx, node, "?"));
-  const colon = t(ctx, anon(ctx, node, ":"));
-  const { parent, key } = ternaryRole(ctx, node);
-  const parentKind = kind(ctx, parent);
+  const test = field(js, node, "condition") as number;
+  const consequent = field(js, node, "consequence") as number;
+  const alternate = field(js, node, "alternative") as number;
+  const question = () => tok(js, anon(js, node, "?"));
+  const colon = () => tok(js, anon(js, node, ":"));
+  const { parent, key } = ternaryRole(js, node);
+  const parentKind = kind(js, parent);
   const isParentTest = parentKind === TERNARY && isTestKey(key);
   let forceNoIndent = parentKind === TERNARY && !isParentTest;
 
@@ -420,100 +462,111 @@ const ternary: JsRule = (node, ctx, args) => {
   let current = parent;
   while (
     current !== undefined &&
-    kind(ctx, current) === TERNARY &&
-    !isTestKey(ternaryRole(ctx, previous).key)
+    kind(js, current) === TERNARY &&
+    !isTestKey(ternaryRole(js, previous).key)
   ) {
     previous = current;
-    current = ternaryRole(ctx, current).parent;
+    current = ternaryRole(js, current).parent;
   }
   const firstNonConditionalParent = current ?? parent;
   const lastConditionalParent = previous;
 
-  const consequentInner = bare(ctx, consequent);
-  const alternateInner = bare(ctx, alternate);
-  const parts: Doc[] = [];
+  const consequentInner = bare(js, consequent);
+  const alternateInner = bare(js, alternate);
+  let parts: () => void;
   let jsxMode = false;
   if (
-    (test !== undefined && isJsx(ctx, unparen(ctx, test))) ||
-    isJsx(ctx, consequentInner) ||
-    isJsx(ctx, alternateInner) ||
-    chainContainsJsx(ctx, lastConditionalParent)
+    (test !== undefined && isJsx(js, unparen(js, test))) ||
+    isJsx(js, consequentInner) ||
+    isJsx(js, alternateInner) ||
+    chainContainsJsx(js, lastConditionalParent)
   ) {
     jsxMode = true;
     forceNoIndent = true;
-    const wrap = (anchor: number, doc: Doc): Doc => [
-      ifBreak(synthetic(anchor, "(")),
-      indent([softline, doc]),
-      softline,
-      ifBreak(synthetic(anchor, ")")),
-    ];
-    parts.push(
-      text(" "),
-      question,
-      text(" "),
-      isNil(ctx, consequentInner)
-        ? p(ctx, consequent)
-        : wrap(consequent, p(ctx, consequent)),
-      text(" "),
-      colon,
-      text(" "),
-      kind(ctx, alternateInner) === TERNARY || isNil(ctx, alternateInner)
-        ? p(ctx, alternate)
-        : wrap(alternate, p(ctx, alternate)),
-    );
+    parts = () => {
+      sText(" ");
+      question();
+      sText(" ");
+      if (isNil(js, consequentInner)) ctx.print(consequent);
+      else wrapInParens(consequent, () => ctx.print(consequent));
+      sText(" ");
+      colon();
+      sText(" ");
+      if (kind(js, alternateInner) === TERNARY || isNil(js, alternateInner))
+        ctx.print(alternate);
+      else wrapInParens(alternate, () => ctx.print(alternate));
+    };
   } else {
-    const printBranch = (n: number) =>
-      ctx.options.useTabs ? indent(p(ctx, n)) : align(2, p(ctx, n));
-    const nestedConsequent = kind(ctx, consequentInner) === TERNARY;
-    const part: Doc[] = [
-      line,
-      question,
-      text(" "),
-      nestedConsequent ? ifBreak([], synthetic(consequent, "(")) : [],
-      printBranch(consequent),
-      nestedConsequent ? ifBreak([], synthetic(consequent, ")")) : [],
-      line,
-      colon,
-      text(" "),
-      printBranch(alternate),
-    ];
-    parts.push(
-      parentKind !== TERNARY || key === "alternate" || isParentTest
+    const printBranch = (n: number) => {
+      if (js.options.useTabs) within(INDENT, () => ctx.print(n));
+      else {
+        openAlign(2);
+        ctx.print(n);
+        close();
+      }
+    };
+    const nestedConsequent = kind(js, consequentInner) === TERNARY;
+    const part = () => {
+      sLine(0);
+      question();
+      sText(" ");
+      if (nestedConsequent)
+        within(IF_FLAT, () => sToken(consequent, "(", true));
+      printBranch(consequent);
+      if (nestedConsequent)
+        within(IF_FLAT, () => sToken(consequent, ")", true));
+      sLine(0);
+      colon();
+      sText(" ");
+      printBranch(alternate);
+    };
+    parts =
+      parentKind !== TERNARY ||
+      key === "alternate" ||
+      isParentTest ||
+      js.options.useTabs
         ? part
-        : ctx.options.useTabs
-          ? part
-          : align(Math.max(0, ctx.options.tabWidth - 2), part),
-    );
+        : () => {
+            openAlign(Math.max(0, js.options.tabWidth - 2));
+            part();
+            close();
+          };
   }
-  const maybeGroup = (doc: Doc) =>
-    parent === firstNonConditionalParent ? group(doc) : doc;
   const breakClosingParen =
     !jsxMode && parentKind === "member_expression" && key === "object";
   const shouldExtraIndent = shouldExtraIndentForConditionalExpression(
-    ctx,
+    js,
     node,
   );
-  const testOnly: Doc = isType
-    ? [
-        p(ctx, field(ctx, node, "left")),
-        text(" "),
-        t(ctx, anon(ctx, node, "extends")),
-        text(" "),
-        p(ctx, field(ctx, node, "right")),
-      ]
-    : p(ctx, test);
-  const testDoc =
-    parentKind === TERNARY && key === "alternate"
-      ? align(2, testOnly)
-      : testOnly;
-  const result = maybeGroup([
-    testDoc,
-    forceNoIndent ? parts : indent(parts),
-    breakClosingParen && !shouldExtraIndent ? softline : [],
-  ]);
-  return isParentTest || shouldExtraIndent
-    ? group([indent([softline, result]), softline])
-    : result;
+  const testOnly = () => {
+    if (!isType) return ctx.print(test);
+    ctx.print(field(js, node, "left") as number);
+    sText(" ");
+    tok(js, anon(js, node, "extends"));
+    sText(" ");
+    ctx.print(field(js, node, "right") as number);
+  };
+  const result = () => {
+    const grouped = parent === firstNonConditionalParent;
+    if (grouped) open(GROUP);
+    if (parentKind === TERNARY && key === "alternate") {
+      openAlign(2);
+      testOnly();
+      close();
+    } else testOnly();
+    if (forceNoIndent) parts();
+    else within(INDENT, parts);
+    if (breakClosingParen && !shouldExtraIndent) sLine(SOFT);
+    if (grouped) close();
+  };
+  if (!(isParentTest || shouldExtraIndent)) return result();
+  within(GROUP, () => {
+    within(INDENT, () => {
+      sLine(SOFT);
+      result();
+    });
+    sLine(SOFT);
+  });
 };
 
 // Prettier's isSimpleExpressionByNodeCount: estree's single-node children, where a list (arguments,
@@ -564,42 +617,37 @@ const SAME_LINE_ASSIGNMENT_PARENTS = new Set([
   "pair",
 ]);
 
-const wrapInParens = (anchor: number, doc: Doc): Doc => [
-  ifBreak(synthetic(anchor, "(")),
-  indent([softline, doc]),
-  softline,
-  ifBreak(synthetic(anchor, ")")),
-];
-
 /** Prettier's printTernary (ternary.js) under experimentalTernaries, for `a ? b : c` and `A extends B ? C : D`. */
-function printTernary(node: number, ctx: JsCtx, args: Args): Doc {
-  const nodeKind = kind(ctx, node);
+function printTernary(node: number, ctx: JsStreamCtx): void {
+  const js = ctx.js;
+  const args = ctx.args;
+  const nodeKind = kind(js, node);
   const isConditionalExpression = nodeKind === TERNARY;
   const isTSConditional = !isConditionalExpression;
-  const test = field(ctx, node, "condition");
+  const test = field(js, node, "condition");
   const testNodes = isConditionalExpression
     ? [test]
-    : [field(ctx, node, "left"), field(ctx, node, "right")];
-  const consequentNode = field(ctx, node, "consequence") as number;
-  const alternateNode = field(ctx, node, "alternative") as number;
-  const { parent, key } = ternaryRole(ctx, node);
-  const isParentTernary = kind(ctx, parent) === nodeKind;
+    : [field(js, node, "left"), field(js, node, "right")];
+  const consequentNode = field(js, node, "consequence") as number;
+  const alternateNode = field(js, node, "alternative") as number;
+  const { parent, key } = ternaryRole(js, node);
+  const isParentTernary = kind(js, parent) === nodeKind;
   const isInTest = isParentTernary && isTestKey(key);
   const isInAlternate = isParentTernary && key === "alternate";
-  const isConsequentTernary = kind(ctx, bare(ctx, consequentNode)) === nodeKind;
-  const isAlternateTernary = kind(ctx, bare(ctx, alternateNode)) === nodeKind;
+  const isConsequentTernary = kind(js, bare(js, consequentNode)) === nodeKind;
+  const isAlternateTernary = kind(js, bare(js, alternateNode)) === nodeKind;
   const isInChain = isAlternateTernary || isInAlternate;
-  const isBigTabs = ctx.options.tabWidth > 2 || ctx.options.useTabs;
+  const isBigTabs = js.options.tabWidth > 2 || js.options.useTabs;
 
   let previous = node;
   let current = parent;
   while (
     current !== undefined &&
-    kind(ctx, current) === nodeKind &&
-    !isTestKey(ternaryRole(ctx, previous).key)
+    kind(js, current) === nodeKind &&
+    !isTestKey(ternaryRole(js, previous).key)
   ) {
     previous = current;
-    current = ternaryRole(ctx, current).parent;
+    current = ternaryRole(js, current).parent;
   }
   const firstNonConditionalParent = current ?? parent;
 
@@ -607,36 +655,33 @@ function printTernary(node: number, ctx: JsCtx, args: Args): Doc {
     args?.assignmentLayout !== undefined &&
     args.assignmentLayout !== "break-after-operator" &&
     parent !== undefined &&
-    SAME_LINE_ASSIGNMENT_PARENTS.has(kind(ctx, parent));
+    SAME_LINE_ASSIGNMENT_PARENTS.has(kind(js, parent));
   const isOnSameLineAsReturn =
-    isReturnOrThrow(ctx, parent) &&
+    isReturnOrThrow(js, parent) &&
     !(isConsequentTernary || isAlternateTernary);
   const isInJsx =
     isConditionalExpression &&
-    kind(ctx, firstNonConditionalParent) === "jsx_expression" &&
-    kind(ctx, parent !== undefined ? role(ctx, parent).parent : undefined) !==
+    kind(js, firstNonConditionalParent) === "jsx_expression" &&
+    kind(js, parent !== undefined ? role(js, parent).parent : undefined) !==
       "jsx_attribute";
 
-  const shouldExtraIndent = shouldExtraIndentForConditionalExpression(
-    ctx,
-    node,
-  );
+  const shouldExtraIndent = shouldExtraIndentForConditionalExpression(js, node);
   const breakClosingParen =
-    kind(ctx, parent) === "member_expression" && key === "object";
-  const breakTSClosingParen = isTSConditional && typeNeedsParens(ctx, node);
+    kind(js, parent) === "member_expression" && key === "object";
+  const breakTSClosingParen = isTSConditional && typeNeedsParens(js, node);
   const fillTab = !isBigTabs
     ? ""
-    : ctx.options.useTabs
+    : js.options.useTabs
       ? "\t"
-      : " ".repeat(ctx.options.tabWidth - 1);
+      : " ".repeat(js.options.tabWidth - 1);
 
   const hasMultilineBlockComments = [
     ...testNodes,
     consequentNode,
     alternateNode,
   ].some((n) =>
-    getComments(ctx, n).some(
-      (c) => isBlockComment(ctx, c) && hasNewlineIn(ctx, c),
+    getComments(js, n).some(
+      (c) => isBlockComment(js, c) && hasNewlineIn(js, c),
     ),
   );
   // A chain breaks as a whole, so only its outermost ternary is grouped.
@@ -644,15 +689,15 @@ function printTernary(node: number, ctx: JsCtx, args: Args): Doc {
     hasMultilineBlockComments || isConsequentTernary || isAlternateTernary;
 
   // `const result = foo != null ? foo : (\n  some + long + expression\n);` keeps a short consequent up.
-  const consequentInner = unparen(ctx, consequentNode);
+  const consequentInner = unparen(js, consequentNode);
   const tryToParenthesizeAlternate =
     !isInChain &&
     !isParentTernary &&
     !isTSConditional &&
     (isInJsx
-      ? kind(ctx, consequentInner) === "null"
-      : isLoneShortArgument(ctx, consequentNode) &&
-        isSimpleExpressionByNodeCount(ctx, test as number, 3));
+      ? kind(js, consequentInner) === "null"
+      : isLoneShortArgument(js, consequentNode) &&
+        isSimpleExpressionByNodeCount(js, test as number, 3));
 
   const shouldGroupTestAndConsequent =
     isInChain ||
@@ -660,164 +705,209 @@ function printTernary(node: number, ctx: JsCtx, args: Args): Doc {
     (isTSConditional && !isParentTernary) ||
     (isParentTernary &&
       isConditionalExpression &&
-      isSimpleExpressionByNodeCount(ctx, test as number, 1)) ||
+      isSimpleExpressionByNodeCount(js, test as number, 1)) ||
     tryToParenthesizeAlternate;
 
-  const alternateComments: Doc[] = [];
-  if (test !== undefined && ctx.dangling(test).length > 0)
-    alternateComments.push(join(hardline, ctx.dangling(test)));
-  if (ctx.dangling(node).length > 0)
-    alternateComments.push(join(hardline, ctx.dangling(node)));
+  const dangling = [
+    ...(test !== undefined ? [ctx.danglingComments(test)] : []),
+    ctx.danglingComments(node),
+  ].filter((cs) => cs.length > 0);
 
-  const question = t(ctx, anon(ctx, node, "?"));
-  const colon = t(ctx, anon(ctx, node, ":"));
-  let printedTest: Doc;
-  if (test !== undefined) {
-    printedTest = [
-      wrapInParens(test, p(ctx, test)),
-      kind(ctx, unparen(ctx, test)) === TERNARY ? breakParent : [],
-    ];
-  } else {
-    const ext = field(ctx, node, "right") as number;
-    printedTest = [
-      p(ctx, field(ctx, node, "left")),
-      text(" "),
-      t(ctx, anon(ctx, node, "extends")),
-      text(" "),
-      kind(ctx, bare(ctx, ext)) === nodeKind ||
-      (kind(ctx, bare(ctx, ext)) === "object_type" &&
-        mappedClauseOf(ctx, bare(ctx, ext)) !== undefined)
-        ? p(ctx, ext)
-        : group(wrapInParens(ext, p(ctx, ext))),
-    ];
-  }
-  const testGroup = group([printedTest, text(" "), question]);
-
-  const consequent = indent([
-    isConsequentTernary ||
-    (isInJsx && (isJsx(ctx, consequentInner) || isParentTernary || isInChain))
-      ? hardline
-      : line,
-    p(ctx, consequentNode),
-  ]);
-  // Unless in a chain, a broken test breaks the consequent too.
-  const testAndConsequentGroup = shouldGroupTestAndConsequent
-    ? group([
-        testGroup,
-        isInChain
-          ? consequent
-          : ifBreak(consequent, group(consequent), testGroup),
-      ])
-    : undefined;
-
-  const printedAlternate = p(ctx, alternateNode);
-  const printedAlternateWithParens =
-    tryToParenthesizeAlternate && testAndConsequentGroup !== undefined
-      ? ifBreak(
-          printedAlternate,
-          dedent(wrapInParens(alternateNode, printedAlternate)),
-          testAndConsequentGroup,
+  const testGroup = () =>
+    within(GROUP, () => {
+      if (test !== undefined) {
+        wrapInParens(test, () => ctx.print(test));
+        if (kind(js, unparen(js, test)) === TERNARY) sBreakParent();
+      } else {
+        const ext = field(js, node, "right") as number;
+        ctx.print(field(js, node, "left") as number);
+        sText(" ");
+        tok(js, anon(js, node, "extends"));
+        sText(" ");
+        if (
+          kind(js, bare(js, ext)) === nodeKind ||
+          (kind(js, bare(js, ext)) === "object_type" &&
+            mappedClauseOf(js, bare(js, ext)) !== undefined)
         )
-      : printedAlternate;
+          ctx.print(ext);
+        else within(GROUP, () => wrapInParens(ext, () => ctx.print(ext)));
+      }
+      sText(" ");
+      tok(js, anon(js, node, "?"));
+    });
 
-  const parts: Doc[] = [
-    testAndConsequentGroup ?? [testGroup, consequent],
-    alternateComments.length > 0
-      ? [indent([hardline, alternateComments]), hardline]
-      : isAlternateTernary
-        ? hardline
-        : tryToParenthesizeAlternate
-          ? ifBreak(line, text(" "), testAndConsequentGroup)
-          : line,
-    colon,
-    isAlternateTernary || !isBigTabs
-      ? text(" ")
-      : shouldGroupTestAndConsequent
-        ? ifBreak(
-            text(fillTab),
-            ifBreak(
-              text(isInChain || tryToParenthesizeAlternate ? " " : fillTab),
-              text(" "),
-            ),
-            testAndConsequentGroup,
-          )
-        : ifBreak(text(fillTab), text(" ")),
-    isAlternateTernary
-      ? printedAlternateWithParens
-      : group([
-          indent(printedAlternateWithParens),
-          isInJsx && !tryToParenthesizeAlternate ? softline : [],
-        ]),
-    breakClosingParen && !shouldExtraIndent ? softline : [],
-    shouldBreak ? breakParent : [],
-  ];
+  const consequent = () =>
+    within(INDENT, () => {
+      if (
+        isConsequentTernary ||
+        (isInJsx &&
+          (isJsx(js, consequentInner) || isParentTernary || isInChain))
+      )
+        sHardline();
+      else sLine(0);
+      ctx.print(consequentNode);
+    });
+
+  const parts = () => {
+    // Unless in a chain, a broken test breaks the consequent too.
+    let testAndConsequent = -1;
+    if (shouldGroupTestAndConsequent)
+      testAndConsequent = within(GROUP, () => {
+        const tg = testGroup();
+        if (isInChain) return consequent();
+        const printed = capture(consequent);
+        within(IF_BROKEN, () => place(printed), tg);
+        within(IF_FLAT, () => within(GROUP, () => place(printed)), tg);
+      });
+    else {
+      testGroup();
+      consequent();
+    }
+    const ifBroken = (broken: () => void, flat: () => void) => {
+      within(IF_BROKEN, broken, testAndConsequent);
+      within(IF_FLAT, flat, testAndConsequent);
+    };
+
+    if (dangling.length > 0) {
+      within(INDENT, () => {
+        sHardline();
+        for (const cs of dangling)
+          cs.forEach((c, i) => {
+            if (i > 0) sHardline();
+            ctx.comment(c);
+          });
+      });
+      sHardline();
+    } else if (isAlternateTernary) sHardline();
+    else if (tryToParenthesizeAlternate)
+      ifBroken(
+        () => sLine(0),
+        () => sText(" "),
+      );
+    else sLine(0);
+    tok(js, anon(js, node, ":"));
+    if (isAlternateTernary || !isBigTabs) sText(" ");
+    else if (shouldGroupTestAndConsequent)
+      ifBroken(
+        () => sText(fillTab),
+        () => {
+          within(IF_BROKEN, () =>
+            sText(isInChain || tryToParenthesizeAlternate ? " " : fillTab),
+          );
+          within(IF_FLAT, () => sText(" "));
+        },
+      );
+    else {
+      within(IF_BROKEN, () => sText(fillTab));
+      within(IF_FLAT, () => sText(" "));
+    }
+
+    const alternate = () => {
+      if (!(tryToParenthesizeAlternate && testAndConsequent !== -1))
+        return ctx.print(alternateNode);
+      const printed: Part = capture(() => ctx.print(alternateNode));
+      ifBroken(
+        () => place(printed),
+        () => {
+          openAlign(-1);
+          wrapInParens(alternateNode, () => place(printed));
+          close();
+        },
+      );
+    };
+    if (isAlternateTernary) alternate();
+    else
+      within(GROUP, () => {
+        within(INDENT, alternate);
+        if (isInJsx && !tryToParenthesizeAlternate) sLine(SOFT);
+      });
+    if (breakClosingParen && !shouldExtraIndent) sLine(SOFT);
+    if (shouldBreak) sBreakParent();
+  };
 
   // A one-line ternary bumped past `=` stays one line there.
   if (isOnSameLineAsAssignment && !shouldBreak)
-    return group(indent([softline, group(parts)]));
-  if (isOnSameLineAsAssignment || isOnSameLineAsReturn)
-    return group(indent(parts));
-  if (shouldExtraIndent || (isTSConditional && isInTest))
-    return group([
-      indent([softline, parts]),
-      breakTSClosingParen ? softline : [],
-    ]);
-  return parent === firstNonConditionalParent ? group(parts) : parts;
+    within(GROUP, () =>
+      within(INDENT, () => {
+        sLine(SOFT);
+        within(GROUP, parts);
+      }),
+    );
+  else if (isOnSameLineAsAssignment || isOnSameLineAsReturn)
+    within(GROUP, () => within(INDENT, parts));
+  else if (shouldExtraIndent || (isTSConditional && isInTest))
+    within(GROUP, () => {
+      within(INDENT, () => {
+        sLine(SOFT);
+        parts();
+      });
+      if (breakTSClosingParen) sLine(SOFT);
+    });
+  else if (parent === firstNonConditionalParent) within(GROUP, parts);
+  else parts();
 }
 
 // --- the rest --------------------------------------------------------------------------------------------------
 
-const unary: JsRule = (node, ctx) => {
-  const op = field(ctx, node, "operator");
-  const arg = field(ctx, node, "argument") as number;
-  const opText = op !== undefined ? src(ctx, op) : "";
-  const argDoc = p(ctx, arg);
-  return [
-    t(ctx, op),
-    /[a-z]$/.test(opText) ? text(" ") : [],
-    hasComment(ctx, arg)
-      ? group([
-          synthetic(arg, "("),
-          indent([softline, argDoc]),
-          softline,
-          synthetic(arg, ")"),
-        ])
-      : argDoc,
-  ];
+const unary: CustomRule<JsOptions> = (node, sctx) => {
+  const ctx = jsCtx(sctx);
+  const js = ctx.js;
+  const op = field(js, node, "operator");
+  const arg = field(js, node, "argument") as number;
+  tok(js, op);
+  if (op !== undefined && /[a-z]$/.test(src(js, op))) sText(" ");
+  if (!hasComment(js, arg)) return ctx.print(arg);
+  within(GROUP, () => {
+    sToken(arg, "(", true);
+    within(INDENT, () => {
+      sLine(SOFT);
+      ctx.print(arg);
+    });
+    sLine(SOFT);
+    sToken(arg, ")", true);
+  });
 };
 
-const update: JsRule = (node, ctx) =>
-  children(ctx, node).map((c) => (named(ctx, c) ? p(ctx, c) : t(ctx, c)));
-
-const awaitExpression: JsRule = (node, ctx) => {
-  const kw = t(ctx, anon(ctx, node, "await"));
-  const arg = items(ctx, node)[0];
-  if (arg === undefined) return kw;
-  let parts: Doc = [kw, text(" "), p(ctx, arg)];
-  const { parent, key } = role(ctx, node);
-  const parentKind = kind(ctx, parent);
+const awaitExpression: CustomRule<JsOptions> = (node, sctx) => {
+  const ctx = jsCtx(sctx);
+  const js = ctx.js;
+  const kw = () => tok(js, anon(js, node, "await"));
+  const arg = items(js, node)[0];
+  if (arg === undefined) return kw();
+  const parts = () => {
+    kw();
+    sText(" ");
+    ctx.print(arg);
+  };
+  const { parent, key } = role(js, node);
+  const parentKind = kind(js, parent);
   if (
-    (parentKind === "call_expression" && key === "callee") ||
-    ((parentKind === "member_expression" ||
-      parentKind === "subscript_expression") &&
-      key === "object")
-  ) {
-    parts = [indent([softline, parts]), softline];
-    let ancestor: number | undefined = parent;
-    while (
-      ancestor !== undefined &&
-      kind(ctx, ancestor) !== "await_expression" &&
-      kind(ctx, ancestor) !== "statement_block"
+    !(
+      (parentKind === "call_expression" && key === "callee") ||
+      ((parentKind === "member_expression" ||
+        parentKind === "subscript_expression") &&
+        key === "object")
     )
-      ancestor = parentOf(ctx, ancestor);
-    if (
-      ancestor === undefined ||
-      kind(ctx, ancestor) !== "await_expression" ||
-      !startsWith(ctx, items(ctx, ancestor)[0], node)
-    )
-      return group(parts);
-  }
-  return parts;
+  )
+    return parts();
+  let ancestor: number | undefined = parent;
+  while (
+    ancestor !== undefined &&
+    kind(js, ancestor) !== "await_expression" &&
+    kind(js, ancestor) !== "statement_block"
+  )
+    ancestor = parentOf(js, ancestor);
+  const grouped =
+    ancestor === undefined ||
+    kind(js, ancestor) !== "await_expression" ||
+    !startsWith(js, items(js, ancestor)[0], node);
+  if (grouped) open(GROUP);
+  within(INDENT, () => {
+    sLine(SOFT);
+    parts();
+  });
+  sLine(SOFT);
+  if (grouped) close();
 };
 
 /** Whether `target` is the leftmost node of expression `n` (prettier's startsWithNoLookaheadToken). */
@@ -857,46 +947,54 @@ function startsWith(
   return false;
 }
 
-const yieldExpression: JsRule = (node, ctx) => {
-  const arg = items(ctx, node)[0];
-  return [
-    t(ctx, anon(ctx, node, "yield")),
-    t(ctx, anon(ctx, node, "*")),
-    arg !== undefined ? [text(" "), p(ctx, arg)] : [],
-  ];
-};
-
-const sequence: JsRule = (node, ctx) => {
-  const expressions = items(ctx, node);
-  const commas = children(ctx, node).filter(
-    (c) => !named(ctx, c) && kind(ctx, c) === ",",
+const sequence: CustomRule<JsOptions> = (node, sctx) => {
+  const ctx = jsCtx(sctx);
+  const js = ctx.js;
+  const expressions = items(js, node);
+  const commas = children(js, node).filter(
+    (c) => !named(js, c) && kind(js, c) === ",",
   );
-  const { parent, key } = role(ctx, node);
-  const parentKind = kind(ctx, parent);
-  if (parentKind === "expression_statement" || parentKind === "for_statement") {
-    const parts: Doc[] = [];
+  const { parent, key } = role(js, node);
+  const parentKind = kind(js, parent);
+  if (parentKind === "expression_statement" || parentKind === "for_statement")
+    return void within(GROUP, () =>
+      expressions.forEach((e, i) => {
+        if (i === 0) return ctx.print(e);
+        tok(js, commas[i - 1]);
+        within(INDENT, () => {
+          sLine(0);
+          ctx.print(e);
+        });
+      }),
+    );
+  const parts = () =>
     expressions.forEach((e, i) => {
-      if (i === 0) parts.push(p(ctx, e));
-      else parts.push(t(ctx, commas[i - 1]), indent([line, p(ctx, e)]));
+      if (i > 0) {
+        tok(js, commas[i - 1]);
+        sLine(0);
+      }
+      ctx.print(e);
     });
-    return group(parts);
-  }
-  const parts: Doc[] = [];
-  expressions.forEach((e, i) => {
-    if (i > 0) parts.push(t(ctx, commas[i - 1]), line);
-    parts.push(p(ctx, e));
-  });
   const shouldIndent =
     (key === "argument" &&
-      isReturnOrThrow(ctx, parent) &&
-      needsParens(node, ctx)) ||
+      isReturnOrThrow(js, parent) &&
+      needsParens(node, js)) ||
     (key === "body" && parentKind === "arrow_function");
-  if (shouldIndent)
-    return group(ifBreak([indent([softline, parts]), softline], parts));
-  return group(parts);
+  if (!shouldIndent) return void within(GROUP, parts);
+  const printed = capture(parts);
+  within(GROUP, () => {
+    within(IF_BROKEN, () => {
+      within(INDENT, () => {
+        sLine(SOFT);
+        place(printed);
+      });
+      sLine(SOFT);
+    });
+    within(IF_FLAT, () => place(printed));
+  });
 };
 
-const assignment: JsRule = (node, ctx, _args?: Args) => {
+const assignment: JsRule = (node, ctx) => {
   const op = field(ctx, node, "operator") ?? anon(ctx, node, "=");
   return printAssignment(
     ctx,
@@ -909,13 +1007,14 @@ const assignment: JsRule = (node, ctx, _args?: Args) => {
 
 export const operatorRules: Record<string, JsRule> = {
   binary_expression: binary,
-  ternary_expression: ternary,
-  conditional_type: ternary,
-  unary_expression: unary,
-  update_expression: update,
-  await_expression: awaitExpression,
-  yield_expression: yieldExpression,
-  sequence_expression: sequence,
   assignment_expression: assignment,
   augmented_assignment_expression: assignment,
 };
+
+/** The customs of format.ts's operator kinds. */
+export const operatorCustoms = {
+  ternary,
+  unary,
+  await: awaitExpression,
+  sequence,
+} satisfies Record<string, CustomRule<JsOptions>>;
