@@ -639,11 +639,6 @@ const catchClause: JsRule = (node, ctx) => {
   ];
 };
 
-const finallyClause: JsRule = (node, ctx) => [
-  t(ctx, anon(ctx, node, "finally")),
-  text(" "),
-  p(ctx, field(ctx, node, "body")),
-];
 
 const switchStatement: JsRule = (node, ctx) => {
   const body = field(ctx, node, "body");
@@ -925,7 +920,6 @@ export const statementRules: Record<string, JsRule> = {
   do_statement: doStatement,
   try_statement: tryStatement,
   catch_clause: catchClause,
-  finally_clause: finallyClause,
   switch_statement: switchStatement,
   switch_case: switchCase,
   switch_default: switchCase,

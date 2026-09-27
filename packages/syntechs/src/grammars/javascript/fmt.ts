@@ -6,6 +6,7 @@ import {
   type Grammar,
   type Language,
 } from "../../fmt/rules.js";
+import * as gen from "./fmt.gen.js";
 import { grammar, language as parser } from "./index.js";
 import { jsAtoms, jsNormalize } from "./normalize.js";
 import { callRules } from "./print/calls.js";
@@ -24,6 +25,7 @@ import {
   statementRules,
 } from "./print/statements.js";
 import { typeRules } from "./print/types.js";
+import { onDoc } from "./sink.js";
 import {
   anon,
   type Args,
@@ -129,6 +131,8 @@ export function jsRules(): Record<string, JsRule> {
     ...jsxRules,
     parenthesized_expression: parenthesized,
   };
+  // The kinds the DSL spec (format.ts) lays out, recorded into Docs while the rest still print by the Doc.
+  for (const [name, rule] of gen.javascript<JsOptions>().rules) table[name] = onDoc(rule);
   for (const [name, rule] of Object.entries(table)) table[name] = wrap(rule);
   return table;
 }

@@ -5,10 +5,12 @@ import { writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import * as cssFormat from "../../grammars/css/format.js";
 import { grammar as cssGrammar } from "../../grammars/css/index.js";
+import * as javascriptFormat from "../../grammars/javascript/format.js";
 import * as jsonFormat from "../../grammars/json/format.js";
 import { grammar as jsonGrammar } from "../../grammars/json/index.js";
 import * as pythonFormat from "../../grammars/python/format.js";
 import { grammar as pythonGrammar } from "../../grammars/python/index.js";
+import { grammar as tsxGrammar } from "../../grammars/tsx/index.js";
 import type { DslGrammar, FormatIR } from "./dsl.js";
 import { emit } from "./emit.js";
 
@@ -21,6 +23,8 @@ const FORMATS: Record<
 > = {
   css: { specs: cssFormat, grammar: cssGrammar as DslGrammar },
   json: { specs: jsonFormat, grammar: jsonGrammar as DslGrammar },
+  // JS's rules move off the Doc a kind at a time, so they write through a sink that records Docs (sink.ts).
+  javascript: { specs: javascriptFormat, grammar: tsxGrammar as DslGrammar, sink: "./sink.js" },
   // Python's rules are parts of ruff's, which read their output as values (fmt/sink.ts).
   python: { specs: pythonFormat, grammar: pythonGrammar as DslGrammar, sink: "./fmt/sink.js" },
 };
