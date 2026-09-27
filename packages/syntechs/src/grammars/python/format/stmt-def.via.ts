@@ -1,10 +1,11 @@
 // The customs stmt-def.ts's `.via`s name: a definition's part as ruff lays it out, looked up by the definition.
+import type { StreamCtx } from "../../../fmt/stream-format.js";
 import type { ClassDef, Decorator, FunctionDef, Parameter } from "../fmt/ast.js";
 import { type Format, group } from "../fmt/elements.js";
 import { hard, space } from "../fmt/builders.js";
 import { args, formatExpr, maybeParenthesize, parameters } from "../fmt/expr.js";
 import { part, ruffOf, ruffStmtOf } from "../fmt/sink.js";
-import { body, decorators, splitDangling, typeParams } from "../fmt/stmt/defs.js";
+import { body, decorators, simpleType, splitDangling, typeParams } from "../fmt/stmt/defs.js";
 import { endOf, tokens } from "../fmt/trivia.js";
 
 export const stmtDefVia = {
@@ -28,6 +29,11 @@ export const stmtDefVia = {
     const { f, s } = ruffStmtOf(c);
     const tp = (s as FunctionDef | ClassDef).typeParams;
     if (tp) part(typeParams(f, tp));
+  },
+  // A definition's bound prints from its tokens (`ctx.args.boundTokens`), a type alias's as an expression.
+  "def.bound": (c: number, ctx: StreamCtx<unknown>) => {
+    const { f, e } = ruffOf(c);
+    part(ctx.args?.boundTokens === true ? simpleType(f, c) : formatExpr(f, e));
   },
   // Ruff's `format_function_header` from the parameters on: they and the return type break as one group.
   "def.signature": (c: number) => {

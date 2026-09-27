@@ -177,7 +177,7 @@ function typeParam(f: Fmt, n: number): Format {
         return unsupported(t, inner);
       const nameTok = unwrapType(t, name);
       if (t.kindName(nameTok) !== "identifier") return unsupported(t, inner);
-      return [f.tok(nameTok), f.tok(colon), space, simpleType(f, bound)];
+      return dslPart(inner, { boundTokens: true });
     }
     default:
       return unsupported(t, inner);
@@ -191,7 +191,7 @@ const unwrapType = (tree: FormatTree, n: number): number => {
   return x;
 };
 
-function simpleType(f: Fmt, n: number): Format {
+export function simpleType(f: Fmt, n: number): Format {
   const t = f.tree;
   const x = unwrapType(t, n);
   switch (t.kindName(x)) {

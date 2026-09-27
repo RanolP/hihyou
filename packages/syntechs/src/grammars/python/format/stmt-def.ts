@@ -34,6 +34,13 @@ export const stmtDef = {
     "=",
     $.value.via("def.default"),
   ],
+  // A type parameter's `T: bound`.
+  constrained_type: ($) => [
+    $.children.at(0).andThen((name) => name),
+    ":",
+    space,
+    $.children.at(1).andThen((bound) => bound.via("def.bound")),
+  ],
   positional_separator: () => ["/"],
   keyword_separator: () => ["*"],
   list_splat_pattern: ($) => ["*", $.children],

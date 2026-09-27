@@ -424,10 +424,8 @@ export function rightToLeft(
 
 /** Ruff's `FormatTypeVar` / `FormatTypeVarTuple` / `FormatParamSpec`. */
 function typeParam(f: Fmt, p: TypeParam): Format {
-  const out: Format[] = [p.star !== undefined ? f.tok(p.star) : [], f.tok(p.name)];
-  if (p.colon !== undefined && p.bound)
-    out.push(f.tok(p.colon), space, formatExpr(f, p.bound));
-  return out;
+  if (p.colon !== undefined && p.bound) return dslPart(p.ts);
+  return [p.star !== undefined ? f.tok(p.star) : [], f.tok(p.name)];
 }
 
 /** Ruff's `FormatTypeParams`: `[T, *Ts, **P]`, split one per line when it does not fit. */
