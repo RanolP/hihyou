@@ -3,18 +3,6 @@
 // mapped-type.js, method-signature.js, enum.js, module-declaration.js, binary-cast-expression.js) and the
 // TypeScript half of class-body.js.
 
-import {
-  align,
-  type Doc,
-  group,
-  hardline,
-  indent,
-  join,
-  line,
-  softline,
-  text,
-  token,
-} from "../../../fmt/doc.js";
 import type { CustomRule, TokenRule } from "../../../fmt/dsl/runtime.js";
 import type { StreamRule } from "../../../fmt/stream-format.js";
 import { lfAfter, newlineBetween, nextLineEmpty } from "../../../fmt/text.js";
@@ -34,6 +22,7 @@ import {
   onDoc,
   open,
   openChoice,
+  openAlign,
   openIndentIfBreak,
   openState,
   place,
@@ -43,14 +32,15 @@ import {
   sLineSuffixBoundary,
   sText,
   sToken,
+  withComments,
 } from "../sink.js";
-import { printAssignment } from "./assignment.js";
+import { sPrintAssignment } from "./assignment.js";
 import {
   printFunctionParameters,
   shouldGroupFunctionParameters,
   shouldHugTheOnlyFunctionParameter,
 } from "./functions.js";
-import { printKey } from "./objects.js";
+import { sPrintKey } from "./objects.js";
 import { role } from "./parens.js";
 import { semiCustoms } from "./semi.js";
 import {
@@ -74,11 +64,9 @@ import {
   kind,
   lastChildWhere,
   named,
-  p,
   parent,
   separators,
   src,
-  t,
   trailingCommaAllowed,
   unparen,
 } from "./util.js";
@@ -351,13 +339,15 @@ const unionType: CustomRule<JsOptions> = (n, sctx) => {
         sText(" ");
       }
       // A member aligns under its `|`, and its comments do only when one leads it.
-      const bare = js.printBare(x);
-      place({
-        doc:
-          js.comments(x).leading.length > 0
-            ? align(2, js.withComments(x, bare))
-            : js.withComments(x, align(2, bare)),
-      });
+      const aligned = (fn: () => void) => {
+        openAlign(2);
+        fn();
+        close();
+      };
+      const bare = () => ctx.printBare(x);
+      if (js.comments(x).leading.length > 0)
+        aligned(() => withComments(ctx, x, bare));
+      else withComments(ctx, x, () => aligned(bare));
     });
     close();
   };
@@ -588,25 +578,26 @@ const typeParameter: CustomRule<JsOptions> = (n, sctx) => {
 
 // --- declarations ---------------------------------------------------------------------------------------------
 
-/** A type alias up to its `;`, `.via("typeAlias")` on its name: printAssignment through the Doc bridge. */
+/** A type alias up to its `;`, `.via("typeAlias")` on its name: prettier's printAssignment. */
 const typeAlias: CustomRule<JsOptions> = (name, sctx) => {
-  const js = jsCtx(sctx).js;
+  const ctx = jsCtx(sctx);
+  const js = ctx.js;
   const n = parent(js, name)!;
-  const left: Doc = [
-    t(js, anonKid(js, n, "type")),
-    text(" "),
-    p(js, name),
-    p(js, field(js, n, "type_parameters")),
-  ];
-  place({
-    doc: printAssignment(
-      js,
-      n,
-      left,
-      [text(" "), t(js, anonKid(js, n, "="))],
-      field(js, n, "value"),
-    ),
-  });
+  sPrintAssignment(
+    ctx,
+    n,
+    () => {
+      tok(js, anonKid(js, n, "type"));
+      sText(" ");
+      ctx.print(name);
+      pr(ctx, field(js, n, "type_parameters"));
+    },
+    () => {
+      sText(" ");
+      tok(js, anonKid(js, n, "="));
+    },
+    field(js, n, "value"),
+  );
 };
 
 /** A module's body, `.via("moduleBody")`: a group of its own. */
@@ -996,7 +987,7 @@ function memberHead(ctx: JsStreamCtx, n: number): void {
     else tok(js, c);
     sText(" ");
   }
-  place({ doc: printKey(js, n) });
+  sPrintKey(ctx, n);
   if (key === undefined) return;
   tok(
     js,
@@ -1023,11 +1014,10 @@ const methodSignature: CustomRule<JsOptions> = (key, sctx) => {
   const parametersDoc = printFunctionParameters(js, n, false, true);
   const returnNode = field(js, n, "return_type");
   const returnType = capture(() => pr(ctx, returnNode));
-  place({
-    doc: shouldGroupFunctionParameters(js, n, returnType.doc)
-      ? group(parametersDoc)
-      : parametersDoc,
-  });
+  const groupParameters = shouldGroupFunctionParameters(js, n, returnType.doc);
+  if (groupParameters) open(GROUP);
+  place({ doc: parametersDoc });
+  if (groupParameters) close();
   if (returnNode !== undefined) {
     open(GROUP);
     place(returnType);
@@ -1100,11 +1090,10 @@ const functionType: CustomRule<JsOptions> = (n, sctx) => {
     tok(js, c);
     sText(" ");
   }
-  place({
-    doc: shouldGroupFunctionParameters(js, n, returnType.doc)
-      ? group(parametersDoc)
-      : parametersDoc,
-  });
+  const groupParameters = shouldGroupFunctionParameters(js, n, returnType.doc);
+  if (groupParameters) open(GROUP);
+  place({ doc: parametersDoc });
+  if (groupParameters) close();
   place(returnType);
   close();
   if (parenthesized) sToken(n, ")", true);
