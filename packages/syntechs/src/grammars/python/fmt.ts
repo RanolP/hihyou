@@ -7,7 +7,7 @@ import {
 } from "../../fmt/options.js";
 import { defineLanguage, type Language } from "../../fmt/rules.js";
 import { grammar } from "./bundle.js";
-import { type Expr, type Module, toAst } from "./fmt/ast.js";
+import { type Expr, type Module, type Stmt, toAst } from "./fmt/ast.js";
 import { Fmt, type PyOptions } from "./fmt/builders.js";
 import {
   attach,
@@ -36,7 +36,7 @@ const defaults: PythonOptions = {
 // give back (several ruff nodes share one tree-sitter node), so the placement pass hands both to the module rule.
 const ruffPlaced = new WeakMap<
   Comments,
-  | { module: Module; comments: RuffComments; byTs: Map<number, Expr> }
+  | { module: Module; comments: RuffComments; byTs: Map<number, Expr>; stmts: Map<number, Stmt> }
   | { error: unknown }
 >();
 
@@ -46,7 +46,7 @@ const module: CustomRule<PythonOptions> = (_, ctx) => {
   if (!ruff) throw new Error("python: the module printed without its placement pass");
   if ("error" in ruff) throw ruff.error;
   const f = new Fmt(ctx.tree, ctx.options, ruff.comments);
-  within(ctx, { f, byTs: ruff.byTs }, () => emit(formatModule(f, ruff.module)));
+  within(ctx, { f, byTs: ruff.byTs, stmts: ruff.stmts }, () => emit(formatModule(f, ruff.module)));
 };
 
 /** Ruff 0.16.8's layout (stable style): the module is lowered to ruff's AST and printed by ports of its rules. */
@@ -65,8 +65,9 @@ export const python: Language<PythonOptions> = {
       placeComments: (tree) => {
         let module: Module;
         const byTs = new Map<number, Expr>();
+        const stmts = new Map<number, Stmt>();
         try {
-          module = toAst(tree, byTs);
+          module = toAst(tree, byTs, stmts);
         } catch (error) {
           // A tree ruff's AST cannot be read from: its root prints as its source text, comments and all, when the
           // root is the broken node, and otherwise the module rule throws this, as it would have read the AST.
@@ -82,7 +83,7 @@ export const python: Language<PythonOptions> = {
           of: (n) => (n === tree.root || printing() ? undefined : byNode.of(n)),
           dangling: (n) => (printing() ? [] : byNode.dangling(n)),
         };
-        ruffPlaced.set(placed, { module, comments, byTs });
+        ruffPlaced.set(placed, { module, comments, byTs, stmts });
         return placed;
       },
     },

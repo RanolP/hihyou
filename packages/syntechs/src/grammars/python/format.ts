@@ -25,5 +25,7 @@ export const python = format({
       $.children.at(0).andThen((t) => [space, t.via("expr.ifBreaks")]),
       $.children.at(1).andThen((m) => [",", space, m.via("expr.ifBreaksParenthesized")]),
     ],
+    global_statement: ($) => ["global", space, $.children.at(0).andThen((n) => n.via("global.names"))],
+    nonlocal_statement: ($) => ["nonlocal", space, $.children.at(0).andThen((n) => n.via("global.names"))],
   },
 });

@@ -8,7 +8,7 @@ import {
   space,
 } from "../builders.js";
 import { formatExpr, maybeParenthesize, node } from "../expr.js";
-import { dslPart, part, ruffOf } from "../sink.js";
+import { dslPart, part, ruffOf, ruffStmtOf } from "../sink.js";
 import { leftToRight } from "./assign.js";
 import type { StmtRules } from "./suite.js";
 
@@ -29,20 +29,11 @@ function names(f: Fmt, s: Simple, sep: Format): Format {
   });
 }
 
-/** Ruff's `FormatStmtGlobal` / `FormatStmtNonlocal`: breaks with a backslash, since the names take no brackets. */
-function global(f: Fmt, s: Simple): Format {
-  if (f.comments.hasTrailing(s))
-    return [f.tok(s.kw), space, names(f, s, space)];
+/** Ruff's `FormatStmtGlobal` / `FormatStmtNonlocal` after the keyword: breaks with a backslash, since the names take no brackets. */
+function globalNames(f: Fmt, s: Simple): Format {
+  if (f.comments.hasTrailing(s)) return names(f, s, space);
   const backslash = ifBreak(synthetic(s.kw, "\\"));
-  return [
-    f.tok(s.kw),
-    space,
-    group([
-      backslash,
-      soft,
-      softBlockIndent(names(f, s, [space, backslash, soft])),
-    ]),
-  ];
+  return group([backslash, soft, softBlockIndent(names(f, s, [space, backslash, soft]))]);
 }
 
 function alias(f: Fmt, a: Alias): Format {
@@ -76,6 +67,11 @@ export const simpleVia = {
     const { f, e } = ruffOf(c);
     part(maybeParenthesize(f, e, e.parent as Simple, "ifBreaksParenthesized"));
   },
+  // Given the first name, prints them all: the layout is the statement's.
+  "global.names": (c: number) => {
+    const { f, s } = ruffStmtOf(c);
+    part(globalNames(f, s as Simple));
+  },
   "delete.targets": (c: number) => {
     const { f, e } = ruffOf(c);
     const s = e.parent as Simple;
@@ -106,8 +102,8 @@ export const simpleRules: StmtRules = {
   Raise: fromSpec,
   Assert: fromSpec,
   Delete: fromSpec,
-  Global: global,
-  Nonlocal: global,
+  Global: fromSpec,
+  Nonlocal: fromSpec,
   Import(f, s) {
     const comma = commaIn(f.tree, s.ts, s.kw);
     return [

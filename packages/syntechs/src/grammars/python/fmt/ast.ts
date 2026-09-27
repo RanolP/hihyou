@@ -507,16 +507,21 @@ const fail = (tree: FormatTree, n: number, why: string): never => {
 
 /**
  * Converts `root` (a tree-sitter `module`) to ruff's AST, rejecting any parse error first; `byTs` receives each
- * expression under the tree-sitter node it was read from, its parentheses included.
+ * expression under the tree-sitter node it was read from, its parentheses included, and `stmts` each statement.
  */
-export function toAst(tree: FormatTree, byTs = new Map<number, Expr>()): Module {
-  return new Reader(tree, byTs).module(tree.root);
+export function toAst(
+  tree: FormatTree,
+  byTs = new Map<number, Expr>(),
+  stmts = new Map<number, Stmt>(),
+): Module {
+  return new Reader(tree, byTs, stmts).module(tree.root);
 }
 
 class Reader {
   constructor(
     readonly tree: FormatTree,
     readonly byTs: Map<number, Expr>,
+    readonly stmts: Map<number, Stmt>,
   ) {}
 
   fail(n: number, why: string): never {
@@ -619,6 +624,12 @@ class Reader {
   }
 
   stmt(n: number): Stmt {
+    const s = this.readStmt(n);
+    this.stmts.set(n, s);
+    return s;
+  }
+
+  readStmt(n: number): Stmt {
     const kind = this.kind(n);
     switch (kind) {
       case "expression_statement":
@@ -2120,5 +2131,5 @@ export const isExpr = (p: Py): p is Expr => "parens" in p;
 
 /** Reads one expression on its own: an f-string interpolation's, which the module's AST keeps as a string. */
 export function exprAst(tree: FormatTree, n: number): Expr {
-  return new Reader(tree, new Map()).expr(n);
+  return new Reader(tree, new Map(), new Map()).expr(n);
 }

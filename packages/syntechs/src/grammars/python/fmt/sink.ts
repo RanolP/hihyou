@@ -1,5 +1,5 @@
 import * as stream from "../../../fmt/stream.js";
-import type { Expr } from "./ast.js";
+import type { Expr, Stmt } from "./ast.js";
 import type { Fmt } from "./builders.js";
 import type { StreamCtx } from "../../../fmt/stream-format.js";
 import {
@@ -124,6 +124,8 @@ export interface Ruff {
   readonly f: Fmt;
   /** Each expression by the tree-sitter node it was read from (`toAst`). */
   readonly byTs: ReadonlyMap<number, Expr>;
+  /** Each statement by the tree-sitter node it was read from. */
+  readonly stmts: ReadonlyMap<number, Stmt>;
 }
 
 let current: StreamCtx<unknown> | undefined;
@@ -149,6 +151,13 @@ export function ruffOf(node: number): { f: Fmt; e: Expr } {
   const e = ruff?.byTs.get(node);
   if (!ruff || !e) throw new Error("python sink: a .via custom on a node read as no expression");
   return { f: ruff.f, e };
+}
+
+/** The statement tree-sitter node `child` is a child of, for a `.via` custom that prints by the whole statement. */
+export function ruffStmtOf(child: number): { f: Fmt; s: Stmt } {
+  const s = current && ruff?.stmts.get(current.tree.parent(child));
+  if (!ruff || !s) throw new Error("python sink: a .via custom on a child of no statement");
+  return { f: ruff.f, s };
 }
 
 /** Writes `f`, a part ruff's rules built, where a `.via` custom prints: always inside a `dslPart` recording. */
