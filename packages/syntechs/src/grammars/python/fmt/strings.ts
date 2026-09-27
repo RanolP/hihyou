@@ -742,10 +742,6 @@ export function writeStr(f: Fmt, s: Str, docstringIndent?: string): void {
   );
 }
 
-/** `writeStr`, as a `Format` for ruff's rules. */
-export const formatStr = (f: Fmt, s: Str, docstringIndent?: string): Format =>
-  record(() => writeStr(f, s, docstringIndent));
-
 /** An implicit concatenation as an operand of a binary expression, which groups it itself. */
 export function implicitConcatenated(f: Fmt, s: Str): Format {
   const parts = s.parts.map((n) => partOf(f.tree, n));

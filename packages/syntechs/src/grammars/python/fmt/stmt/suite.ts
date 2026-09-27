@@ -1,11 +1,10 @@
-import type { Format } from "../elements.js";
 import type { ExprStmt, Module, Py, Stmt, Str } from "../ast.js";
 import { Unformattable } from "../ast.js";
 import { COMPOUND, type Fmt, TOP } from "../builders.js";
 import type { Comment } from "../comments.js";
 import { lastChildInBody } from "../comments.js";
-import { BLANK, COLLAPSE, close, HARD, INDENT, open, part, record, sDsl, sLine, sText } from "../sink.js";
-import { formatStr } from "../strings.js";
+import { BLANK, COLLAPSE, close, HARD, INDENT, open, sDsl, sLine, sText } from "../sink.js";
+import { writeStr } from "../strings.js";
 import {
   byteOffsetOf,
   linesAfter,
@@ -31,7 +30,7 @@ export type StmtRule<K extends Stmt["kind"]> = (
         : never
       : never
     : never,
-) => Format;
+) => void;
 export type StmtRules = { readonly [K in Stmt["kind"]]?: StmtRule<K> };
 
 /**
@@ -59,8 +58,8 @@ export function writeModule(f: Fmt, m: Module): void {
     const last = dangling.at(-1);
     if (last)
       f.at(TOP, () => {
-        part(f.leading(dangling.slice(0, -1)));
-        part(f.comment(last));
+        f.writeLeading(dangling.slice(0, -1));
+        f.writeComment(last);
       });
     return;
   }
@@ -79,11 +78,11 @@ function rejectSuppressions(f: Fmt): void {
 /** A statement with its leading and trailing comments (ruff's `FormatNodeRule::fmt`). */
 function writeStmt(f: Fmt, s: Stmt): void {
   const cs = f.comments;
-  part(f.leading(cs.leading(s)));
+  f.writeLeading(cs.leading(s));
   const def = defRules[s.kind] as StmtRule<typeof s.kind> | undefined;
-  if (def) part(def(f, s as never));
+  if (def) def(f, s as never);
   else sDsl(s.ts);
-  part(f.trailing(cs.trailing(s)));
+  f.writeTrailing(cs.trailing(s));
 }
 
 const isDefinition = (s: Stmt) =>
@@ -129,16 +128,16 @@ function indentOf(f: Fmt): string {
 function docstring(f: Fmt, s: ExprStmt & { value: Str }, kind: SuiteKind): void {
   const cs = f.comments;
   const v = s.value;
-  part(f.leading(cs.leading(s)));
-  part(f.leading(cs.leading(v)));
-  part(formatStr(f, v, indentOf(f)));
-  part(f.trailing(cs.trailing(v)));
+  f.writeLeading(cs.leading(s));
+  f.writeLeading(cs.leading(v));
+  writeStr(f, v, indentOf(f));
+  f.writeTrailing(cs.trailing(v));
   const trailing = cs.trailing(s);
   if (kind === "class") {
     const own = trailing.find((c) => c.line === "own");
     if (own && linesBefore(f.tree, own.start) < 2) emptyLine();
   }
-  part(f.trailing(trailing));
+  f.writeTrailing(trailing);
 }
 
 /** Ruff's `trailing_function_or_class_def`: the def or class that `s` ends with, through nested last bodies. */
@@ -301,17 +300,13 @@ export function writeClauseBody(
       return;
     }
   }
-  part(f.trailing(colonComments));
+  f.writeTrailing(colonComments);
   open(INDENT);
   hard();
   // The block, as its rule in format/stmt-compound.ts prints it: ruff's suite of this kind.
   if (body[0]) sDsl(blockOf(f, body[0]), { suite: kind });
   close();
 }
-
-/** `writeClauseBody`, as a `Format` for defs.ts's rules. */
-export const clauseBody = (...args: Parameters<typeof writeClauseBody>): Format =>
-  record(() => writeClauseBody(...args));
 
 /** Ruff's `leading_alternate_branch_comments`: the lines before `else`/`elif`/`except`/`finally` and its comments. */
 export function writeLeadingAlternateBranchComments(
@@ -325,8 +320,3 @@ export function writeLeadingAlternateBranchComments(
     f.writeLeading(comments);
   } else if (last) f.writeEmptyLines(linesAfterIgnoringTrivia(f.tree, last.end));
 }
-
-/** `writeLeadingAlternateBranchComments`, as a `Format` for stmt-match.via.ts. */
-export const leadingAlternateBranchComments = (
-  ...args: Parameters<typeof writeLeadingAlternateBranchComments>
-): Format => record(() => writeLeadingAlternateBranchComments(...args));

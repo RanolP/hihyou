@@ -1,4 +1,3 @@
-import type { Format } from "../elements.js";
 import type { FormatTree } from "../../../../fmt/tree.js";
 import type {
   ClassDef,
@@ -22,8 +21,8 @@ import {
   startOf,
 } from "../trivia.js";
 import {
-  clauseBody,
   type StmtRules,
+  writeClauseBody,
 } from "./suite.js";
 
 /** Ruff's definitions and `match` (statement/stmt_{function_def,class_def,match}.rs, other/decorator.rs). */
@@ -59,15 +58,13 @@ function writeEmptyLinesBeforeTrailingComments(f: Fmt, comments: readonly Commen
 
 /**
  * A definition as its rule in format.ts prints it, from its decorators when it has any; the blank lines that
- * separate it from its own leading and trailing comments, which ruff prints around it, stay here. Recorded, as
- * the statement rules lay out `Format`s.
+ * separate it from its own leading and trailing comments, which ruff prints around it, stay here.
  */
-const defFromSpec = (f: Fmt, s: FunctionDef | ClassDef): Format =>
-  sink.record(() => {
-    writeEmptyLinesAfterLeadingComments(f, f.comments.leading(s));
-    sink.sDsl(s.decorators.length > 0 ? f.tree.parent(s.ts) : s.ts);
-    writeEmptyLinesBeforeTrailingComments(f, f.comments.trailing(s));
-  });
+function defFromSpec(f: Fmt, s: FunctionDef | ClassDef): void {
+  writeEmptyLinesAfterLeadingComments(f, f.comments.leading(s));
+  sink.sDsl(s.decorators.length > 0 ? f.tree.parent(s.ts) : s.ts);
+  writeEmptyLinesBeforeTrailingComments(f, f.comments.trailing(s));
+}
 
 /** Ruff's `FormatDecorator`, with the decorator's own comments. */
 function writeDecorator(f: Fmt, d: Decorator): void {
@@ -241,11 +238,11 @@ const unsupported = (tree: FormatTree, n: number): never => {
 
 // ---- definitions ----
 
-/** `clauseBody`, refusing a backslash continuation after the colon. */
+/** `writeClauseBody`, refusing a backslash continuation after the colon. */
 export function writeBody(
   f: Fmt,
   header: { readonly ts: number; readonly colon: number },
-  stmts: Parameters<typeof clauseBody>[1],
+  stmts: Parameters<typeof writeClauseBody>[1],
   kind: "function" | "class" | "other",
   colonComments: readonly Comment[],
 ): void {
@@ -260,11 +257,11 @@ export function writeBody(
     throw new Unformattable(
       `backslash continuation before a body at ${byteEndOf(t, header.colon)}`,
     );
-  sink.part(clauseBody(f, stmts, kind, colonComments));
+  writeClauseBody(f, stmts, kind, colonComments);
 }
 
 // A statement its rule in format.ts prints.
-const fromSpec = (_: Fmt, s: Match) => sink.dslPart(s.ts);
+const fromSpec = (_: Fmt, s: Match) => sink.sDsl(s.ts);
 
 export const defRules: StmtRules = {
   Match: fromSpec,
