@@ -36,6 +36,13 @@ export const exprAccess = {
   // the custom given the first prints comma-separated.
   argument_list: ($) =>
     grpParen($.children.at(0).andThen((c) => c.via("access.argumentItems"))).via("access.argumentsFrame"),
+  // tree-sitter's `A[b].c` and `A[b] | c` in an annotation, which ruff reads as an attribute and a binary `|`.
+  member_type: ($) => [
+    $.children.at(0).andThen((v) => v.via("access.attributeValue")),
+    tok(".").via("access.dot"),
+    $.children.at(1).andThen((a) => a),
+  ],
+  union_type: () => custom("expr.binaryLike"),
   // Ruff's tuple layout for the mode its caller passes (`ctx.args.tuple`): every token of it sits in a group or
   // parentheses ruff decides on.
   expression_list: () => custom("access.tuple"),

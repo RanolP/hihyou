@@ -1,4 +1,4 @@
-python compatibility: 201/327 (61.47%), 89 refused (ok:false), 49 excluded
+python compatibility: 202/327 (61.77%), 88 refused (ok:false), 49 excluded
 
 Fixtures: ruff 0.16.8 crates/ruff_python_formatter/resources/test/fixtures/{black,ruff} (recursive), every option set of each `.options.json`, expected output from tests/snapshots (black cases without a snapshot: their `.expect` file). Options are passed by their ruff.toml names.
 
@@ -138,7 +138,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | ruff/pattern_match_regression_brackets.py | 1/1 | 100.00% | formatter-error: tuple subject in a match at 201 |
 | ruff/statement/class_definition.py | 1/1 | 78.26% | formatter-error: comment in type parameters at 2989 |
 | ruff/statement/function.py | 1/1 | 66.32% | formatter-error: comment in type parameters at 1334 |
-| ruff/statement/long_type_annotations.py | 1/1 | 69.82% | formatter-error: unsupported expression: union_type at 4 |
 | ruff/statement/match.py | 1/1 | 71.21% | formatter-error: long unparenthesized case pattern at 1521 |
 | ruff/statement/with.py | 2/2 | 70.13% | formatter-error: unsupported expression: as_pattern at 5094 |
 

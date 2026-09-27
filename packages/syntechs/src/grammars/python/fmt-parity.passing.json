@@ -200,6 +200,7 @@
   "ruff/statement/if.py#{}",
   "ruff/statement/import.py#{}",
   "ruff/statement/import_from.py#{}",
+  "ruff/statement/long_type_annotations.py#{}",
   "ruff/statement/module_comment.py#{}",
   "ruff/statement/nonlocal.py#{}",
   "ruff/statement/raise.py#{}",

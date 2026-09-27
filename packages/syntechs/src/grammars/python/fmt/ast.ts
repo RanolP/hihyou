@@ -1478,6 +1478,18 @@ class Reader {
           attr: this.needField(n, "attribute"),
         };
       }
+      case "member_type": {
+        // tree-sitter's `A[b].c` in an annotation, which ruff reads as an attribute.
+        const value = this.expr(this.named(n)[0] ?? this.fail(n, "empty member type"));
+        return {
+          ...base,
+          kind: "Attribute",
+          kids: [value],
+          value,
+          dot: this.need(n, "."),
+          attr: this.named(n)[1] ?? this.fail(n, "no member name"),
+        };
+      }
       case "call": {
         const func = this.expr(this.needField(n, "function"));
         const argNode = this.needField(n, "arguments");
@@ -1602,6 +1614,14 @@ class Reader {
           op: this.needField(n, "operator"),
           right,
         };
+      }
+      case "union_type": {
+        // tree-sitter's `A[b] | c` in an annotation, which ruff reads as a binary `|`.
+        const [l, r] = this.named(n);
+        if (l === undefined || r === undefined) return this.fail(n, "unsupported union type");
+        const left = this.expr(l);
+        const right = this.expr(r);
+        return { ...base, kind: "BinOp", kids: [left, right], left, op: this.need(n, "|"), right };
       }
       case "boolean_operator": {
         // Ruff lists `a and b and c` as one node; tree-sitter nests it to the left.

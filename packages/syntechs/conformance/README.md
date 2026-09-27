@@ -12,4 +12,4 @@ The oxfmt column scores that tool (`oxfmt 0.70.0`) on the same fixtures and opti
 | [css](css.snap.md) | prettier 3.9.9 | 65/151 | 43.05% | 0 | 6 | 76.16% |
 | [js](js.snap.md) | prettier 3.9.9 | 614/804 | 76.37% | 32 | 304 | 70.02% |
 | [ts](ts.snap.md) | prettier 3.9.9 | 531/653 | 81.32% | 28 | 76 | 75.04% |
-| [python](python.snap.md) | ruff 0.16.8 | 201/327 | 61.47% | 89 | 49 | - |
+| [python](python.snap.md) | ruff 0.16.8 | 202/327 | 61.77% | 88 | 49 | - |
