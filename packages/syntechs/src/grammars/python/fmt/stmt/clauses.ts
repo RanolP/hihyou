@@ -17,6 +17,7 @@ import {
   formatExpr,
   maybeParenthesize,
 } from "../expr.js";
+import { dslPart } from "../sink.js";
 import { startOf } from "../trivia.js";
 import type { StmtRules } from "./suite.js";
 import {
@@ -26,6 +27,9 @@ import {
 } from "./suite.js";
 
 /** Ruff's compound statements other than definitions (statement/stmt_{if,for,while,try,with}.rs). */
+
+// A statement its rule in format/stmt-compound.ts prints.
+const fromSpec = (_: Fmt, s: Stmt) => dslPart(s.ts);
 
 /** Ruff's `clause`: a header, its colon and the comments after it, then the indented body. */
 function clause(
@@ -245,32 +249,7 @@ function withStmt(f: Fmt, w: With): Format {
 export const clauseRules: StmtRules = {
   With: withStmt,
   Try: tryStmt,
-  If(f, s) {
-    const cs = f.comments;
-    const out: Format[] = [
-      clause(
-        f,
-        [f.tok(s.kw), space, maybeParenthesize(f, s.test, s, "ifBreaks")],
-        s.colon,
-        cs.dangling(s),
-        s.body,
-      ),
-    ];
-    let last: Py | undefined = s.body.at(-1);
-    for (const c of s.clauses) {
-      const header = c.test
-        ? [f.tok(c.kw), space, maybeParenthesize(f, c.test, c, "ifBreaks")]
-        : f.tok(c.kw);
-      out.push(
-        clause(f, header, c.colon, cs.dangling(c), c.body, {
-          comments: cs.leading(c),
-          last,
-        }),
-      );
-      last = c.body.at(-1);
-    }
-    return out;
-  },
+  If: fromSpec,
   While(f, s) {
     const [colon, rest] = splitAtBody(f, s, s.test.end);
     return [
