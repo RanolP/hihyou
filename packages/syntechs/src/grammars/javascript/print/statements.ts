@@ -5,6 +5,7 @@
 
 import { NO_NODE } from "../../../core/arena.js";
 import type { CustomRule, TokenRule } from "../../../fmt/dsl/runtime.js";
+import type { StreamRule } from "../../../fmt/stream-format.js";
 import { lfAfter, nextLineEmpty } from "../../../fmt/text.js";
 import { firstLeaf, type FormatTree, prevLeaf } from "../../../fmt/tree.js";
 import {
@@ -14,7 +15,6 @@ import {
   INDENT,
   type JsStreamCtx,
   jsCtx,
-  onDoc,
   open,
   SOFT,
   sHardline,
@@ -45,7 +45,6 @@ import {
   items,
   type JsCtx,
   type JsOptions,
-  type JsRule,
   kind,
   lastChildWhere,
   named,
@@ -949,8 +948,8 @@ const exprSemi: TokenRule<JsOptions> = (token, node, ctx) => {
 /** The rules format.ts names `custom` for the statements. */
 export const statementCustoms = { ...customs, "stmt.exprSemi": exprSemi };
 
-/** The statement kinds still printed by the Doc. */
-export const statementRules: Record<string, JsRule> = {
+/** The statement kinds the DSL spec does not name. */
+export const statementRules: Record<string, StreamRule<JsOptions>> = {
   // JavaScript's `using`, a kind the tsx grammar the spec is typed against lacks.
-  using_declaration: onDoc(statementCustoms["stmt.declaration"]),
+  using_declaration: statementCustoms["stmt.declaration"],
 };

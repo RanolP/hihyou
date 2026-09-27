@@ -6,6 +6,7 @@ import {
   type Grammar,
   type Language,
 } from "../../fmt/rules.js";
+import type { StreamRule } from "../../fmt/stream-format.js";
 import * as gen from "./fmt.gen.js";
 import { grammar, language as parser } from "./index.js";
 import { jsAtoms, jsNormalize } from "./normalize.js";
@@ -18,17 +19,18 @@ import { isJsxSpreadArgument, jsxCustoms, jsxIgnored } from "./print/jsx.js";
 import { literalCustoms, printComment } from "./print/literals.js";
 import { moduleCustoms } from "./print/modules.js";
 import { objectCustoms } from "./print/objects.js";
-import { operatorCustoms, operatorRules } from "./print/operators.js";
+import { operatorCustoms } from "./print/operators.js";
 import { needsParens } from "./print/parens.js";
 import { semiCustoms } from "./print/semi.js";
 import {
   ignoredStatement,
   STATEMENT_LIST_PARENTS,
+  sTok,
   statementCustoms,
   statementRules,
 } from "./print/statements.js";
 import { typeCustoms, typeRules } from "./print/types.js";
-import { onDoc, record } from "./sink.js";
+import { jsCtx, onDoc, record } from "./sink.js";
 import {
   anon,
   type Args,
@@ -42,8 +44,6 @@ import {
   type JsCtx,
   type JsOptions,
   type JsRule,
-  p,
-  t,
   unparen,
   verbatim,
 } from "./print/util.js";
@@ -68,18 +68,25 @@ const PE = "parenthesized_expression";
  * An expression's own parentheses print only where prettier's needsParens wants them; a nested pair collapses
  * into the outer one. The syntactic parentheses of `if (...)` and its kin are the statement's to print.
  */
-const parenthesized: JsRule = (n, ctx, args?: Args) => {
+const parenthesized: StreamRule<JsOptions> = (n, s) => {
+  const sctx = jsCtx(s);
+  const ctx = sctx.js;
+  const args = sctx.args;
   const inner = items(ctx, n)[0];
-  if (inner === undefined) return t(ctx, n);
-  if (kind(ctx, parent(ctx, n)) === PE) return p(ctx, inner, args);
-  if (!needsParens(unparen(ctx, n), ctx)) return p(ctx, inner, args);
+  if (inner === undefined) return sTok(ctx, n);
+  if (kind(ctx, parent(ctx, n)) === PE || !needsParens(unparen(ctx, n), ctx)) {
+    sctx.print(inner, args);
+    return;
+  }
   const open = anon(ctx, n, "(");
   const close = lastChildWhere(
     ctx,
     n,
     (c) => !named(ctx, c) && kind(ctx, c) === ")",
   );
-  return [t(ctx, open), p(ctx, inner, args), t(ctx, close)];
+  sTok(ctx, open);
+  sctx.print(inner, args);
+  sTok(ctx, close);
 };
 
 /** A node under a `// prettier-ignore` comment keeps its source text. */
@@ -121,13 +128,14 @@ function wrap(rule: JsRule): JsRule {
 
 /** The JavaScript and TypeScript rules as one table: the grammars share their node kinds. */
 export function jsRules(): Record<string, JsRule> {
-  const table: Record<string, JsRule> = {
+  const table: Record<string, JsRule> = {};
+  const extra: Record<string, StreamRule<JsOptions>> = {
     ...statementRules,
-    ...operatorRules,
     ...typeRules,
     parenthesized_expression: parenthesized,
   };
-  // The kinds the DSL spec (format.ts) lays out, recorded into Docs while the rest still print by the Doc.
+  for (const [name, rule] of Object.entries(extra)) table[name] = onDoc(rule);
+  // The kinds the DSL spec (format.ts) lays out.
   const customs = {
     ...statementCustoms,
     ...moduleCustoms,

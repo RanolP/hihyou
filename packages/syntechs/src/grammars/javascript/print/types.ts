@@ -19,7 +19,6 @@ import {
   INDENT,
   type JsStreamCtx,
   jsCtx,
-  onDoc,
   open,
   openChoice,
   openAlign,
@@ -60,7 +59,6 @@ import {
   items,
   type JsCtx,
   type JsOptions,
-  type JsRule,
   kind,
   lastChildWhere,
   named,
@@ -662,7 +660,7 @@ const castExpression: CustomRule<JsOptions> = (n, sctx) => {
   }
 };
 
-/** `<T>x`, TS-only: the tsx grammar the spec is typed against has no such kind, so typeRules runs it via onDoc. */
+/** `<T>x`, TS-only: the tsx grammar the spec is typed against has no such kind, so typeRules names it. */
 const typeAssertion: StreamRule<JsOptions> = (n, sctx) => {
   const ctx = jsCtx(sctx);
   const js = ctx.js;
@@ -1135,6 +1133,6 @@ export const typeCustoms = {
   moduleSemi,
 };
 
-export const typeRules: Record<string, JsRule> = {
-  type_assertion: onDoc(typeAssertion),
+export const typeRules: Record<string, StreamRule<JsOptions>> = {
+  type_assertion: typeAssertion,
 };

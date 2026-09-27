@@ -55,7 +55,6 @@ import {
   type JsOptions,
   items,
   type JsCtx,
-  type JsRule,
   kind,
   named,
   operator,
@@ -1064,8 +1063,6 @@ const assignment: CustomRule<JsOptions> = (node, sctx) => {
     field(js, node, "right"),
   );
 };
-
-export const operatorRules: Record<string, JsRule> = {};
 
 /** The customs of format.ts's operator kinds. */
 export const operatorCustoms = {
