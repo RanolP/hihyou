@@ -164,6 +164,15 @@ export class Fmt {
     dangling: readonly Comment[] = [],
     hug = false,
   ): Format {
+    return [left, this.parenthesizedContent(content, dangling, hug), right];
+  }
+
+  /** What `parenthesized` puts between its brackets, for a DSL rule that prints the brackets itself. */
+  parenthesizedContent(
+    content: () => Format,
+    dangling: readonly Comment[] = [],
+    hug = false,
+  ): Format {
     const level = this.level;
     return this.at(PAREN, () => {
       const c = content();
@@ -173,11 +182,9 @@ export class Fmt {
             ? c
             : group(softBlockIndent(c))
           : group([this.danglingOpenParen(dangling), softBlockIndent(c)]);
-      const inner =
-        level.k === "expr" && level.g
-          ? fitsExpanded(indented, level.g)
-          : indented;
-      return [left, inner, right];
+      return level.k === "expr" && level.g
+        ? fitsExpanded(indented, level.g)
+        : indented;
     });
   }
 

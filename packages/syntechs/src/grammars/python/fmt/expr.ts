@@ -780,7 +780,7 @@ function fields(f: Fmt, e: Expr, o: Opts): Format {
     case "Generator":
       return comp(f, e, o.genPreserve === true);
     case "DictComp":
-      return dictComp(f, e);
+      return dslPart(e.ts);
     case "Slice":
       return slice(f, e);
   }
@@ -1206,6 +1206,11 @@ function tuple(f: Fmt, e: Sequence, mode: TupleMode): Format {
     return f.at(PAREN, () => f.emptyParenthesized(open, dangling, close));
   const sequence = () =>
     f.joinCommaSeparated(sequenceEntries(f, e), e.end, comma);
+  const spec =
+    parenthesized &&
+    f.tree.kindName(e.ts) === "tuple" &&
+    (e.elts.length === 1 || !(mode === "neverPreserve" && dangling.length === 0));
+  if (spec) return dslPart(e.ts);
   if (e.elts.length === 1) {
     const single = e.elts[0] as Expr;
     if (mode === "preserve" && !parenthesized) {
@@ -1252,16 +1257,21 @@ function list(f: Fmt, e: Sequence): Format {
   const close = f.tok(e.close as number);
   if (e.elts.length === 0)
     return f.at(PAREN, () => f.emptyParenthesized(open, dangling, close));
+  if (f.tree.kindName(e.ts) !== "list_pattern") return dslPart(e.ts);
   return f.parenthesized(
     open,
-    () =>
-      f.joinCommaSeparated(
-        sequenceEntries(f, e),
-        e.end,
-        commaIn(f.tree, e.ts, e.ts),
-      ),
+    () => sequenceContent(f, e),
     close,
     dangling,
+  );
+}
+
+/** A list's or set's items between its brackets. */
+export function sequenceContent(f: Fmt, e: Sequence): Format {
+  return f.joinCommaSeparated(
+    sequenceEntries(f, e),
+    e.end,
+    commaIn(f.tree, e.ts, e.ts),
   );
 }
 
@@ -1271,46 +1281,10 @@ function dict(f: Fmt, e: Dict): Format {
   const close = f.tok(e.close);
   if (e.items.length === 0)
     return f.at(PAREN, () => f.emptyParenthesized(open, dangling, close));
-  const firstStart = itemStart(e.items[0] as Dict["items"][number]);
-  const openComments = dangling.filter((c) => c.end < firstStart);
-  let rest = dangling.filter((c) => c.end >= firstStart);
-  const content = () =>
-    f.joinCommaSeparated(
-      e.items.map((item) => {
-        const end = item.value.end;
-        const mine = rest.filter((c) => c.start < end);
-        rest = rest.filter((c) => c.start >= end);
-        let doc: Format;
-        if (item.key && item.colon !== undefined)
-          doc = group([
-            formatExpr(f, item.key),
-            f.tok(item.colon),
-            mine.length === 0 ? space : f.dangling(mine),
-            formatExpr(f, item.value),
-          ]);
-        else if (item.value.kind === "Starred") {
-          const s = item.value;
-          const cs = f.comments;
-          doc = [
-            f.leading(cs.leading(s)),
-            f.leading(cs.leading(s.value)),
-            group([
-              f.tok(s.op),
-              f.dangling(cs.dangling(s)),
-              formatExpr(f, s.value),
-            ]),
-            f.trailing(cs.trailing(s)),
-          ];
-        } else doc = formatExpr(f, item.value);
-        return { end, doc };
-      }),
-      e.end,
-      commaIn(f.tree, e.ts, e.ts),
-    );
-  return f.parenthesized(open, content, close, openComments);
+  return dslPart(e.ts);
 }
 
-function itemStart(i: Dict["items"][number]): number {
+export function itemStart(i: Dict["items"][number]): number {
   const k = i.key ?? i.value;
   return outer(k).start;
 }
@@ -1335,26 +1309,7 @@ function comp(f: Fmt, e: Comp, preserve: boolean): Format {
   return f.parenthesized(open, body, close, dangling);
 }
 
-function dictComp(f: Fmt, e: DictComp): Format {
-  const dangling = f.comments.dangling(e);
-  const firstStart = outer(e.key).start;
-  const openComments = dangling.filter((c) => c.end < firstStart);
-  const kv = dangling.filter((c) => c.end >= firstStart);
-  const content = () =>
-    group([
-      group(formatExpr(f, e.key)),
-      f.tok(e.colon),
-      kv.length === 0 ? space : f.dangling(kv),
-      formatExpr(f, e.value),
-      softOrSpace,
-      e.generators.flatMap((g, i) =>
-        i > 0 ? [softOrSpace, comprehension(f, g)] : [comprehension(f, g)],
-      ),
-    ]);
-  return f.parenthesized(f.tok(e.open), content, f.tok(e.close), openComments);
-}
-
-function comprehension(f: Fmt, c: Comprehension): Format {
+export function comprehension(f: Fmt, c: Comprehension): Format {
   const cs = f.comments;
   const spacer = (e: Expr, preserve: boolean) =>
     cs.hasLeading(e) && !(preserve && e.parens.length > 0)
