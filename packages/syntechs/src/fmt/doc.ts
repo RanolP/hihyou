@@ -11,7 +11,6 @@ export type TokenNode = number;
  * tables, so building allocates no object per doc and the printer walks integers. A JavaScript array is still a
  * doc, the concatenation of its elements, and it is kept by reference rather than copied: a caller may hand an
  * array to a builder and fill it afterwards, as when the contents must name the group around them.
- * `docMark`/`releaseDocs` bound the buffer to one format pass.
  */
 declare const handle: unique symbol;
 export type DocHandle = number & { readonly [handle]: true };
@@ -113,29 +112,6 @@ function str(s: string): number {
 // Handle 0 is no doc, so every doc is truthy and a slot can tell a handle from nothing.
 alloc(BREAK_PARENT, 0, 0, 0, 0);
 
-/** Where the buffer stands now; `releaseDocs` frees every doc built after it. */
-export interface DocMark {
-  readonly top: number;
-  readonly lists: number;
-  readonly strs: number;
-  readonly nodes: number;
-  readonly aligns: number;
-}
-export const docMark = (): DocMark => ({
-  top,
-  lists: lists.length,
-  strs: strs.length,
-  nodes: nodes.length,
-  aligns: aligns.length,
-});
-/** Frees every doc built since `mark`; their handles must not be used again. */
-export function releaseDocs(mark: DocMark): void {
-  top = mark.top;
-  lists.length = mark.lists;
-  strs.length = mark.strs;
-  nodes.length = mark.nodes;
-  aligns.length = mark.aligns;
-}
 /** How many nodes the buffer holds: every handle is below it. */
 export const docCount = (): number => top;
 
@@ -146,21 +122,13 @@ export const flagsOf = (d: DocHandle): number =>
   (buf[d * STRIDE] as number) >>> 8;
 export const slotA = (d: number): number => buf[d * STRIDE + 1] as number;
 export const slotB = (d: number): number => buf[d * STRIDE + 2] as number;
-export const slotC = (d: number): number => buf[d * STRIDE + 3] as number;
 
 export const kindOf = (d: DocHandle): DocKind =>
   KIND_NAMES[kindCode(d)] as DocKind;
-/** A token's or a text's text. */
-export const textOf = (d: DocHandle): string => strs[slotB(d)] as string;
-/** A token's source node. */
-export const nodeOf = (d: Token): TokenNode => nodes[slotA(d)] as TokenNode;
-export const isSynthetic = (d: Token): boolean =>
-  (flagsOf(d) & SYNTHETIC) !== 0;
-export const isLiteral = (d: Token): boolean => (flagsOf(d) & LITERAL) !== 0;
 export const isHardLine = (d: DocHandle): boolean => (flagsOf(d) & HARD) !== 0;
 export const isSoftLine = (d: DocHandle): boolean => (flagsOf(d) & SOFT) !== 0;
 /** Whether a group (or groupIfBreak) is marked broken: by its builder, or by the printer's break propagation. */
-export const isBroken = (d: DocHandle): boolean => (flagsOf(d) & BROKEN) !== 0;
+const isBroken = (d: DocHandle): boolean => (flagsOf(d) & BROKEN) !== 0;
 /** The contents of a group, groupIfBreak, indent, align, lineSuffix, fitsExpanded or bestFitParenthesize. */
 export const contentsOf = (d: DocHandle): Doc =>
   deref(kindCode(d) === BEST_FIT_PARENTHESIZE ? slotB(d) : slotA(d));
