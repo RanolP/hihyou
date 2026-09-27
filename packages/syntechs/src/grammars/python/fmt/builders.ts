@@ -11,7 +11,6 @@ import {
   COLLAPSE,
   HARD,
   lineOf,
-  lineSuffix,
   BLANK,
   SOFT,
   synthetic,
@@ -24,6 +23,7 @@ import { textWidth } from "../../../fmt/width.js";
 import type { Comment, Comments } from "./comments.js";
 import { isPragma, normalizeComment } from "./comments.js";
 import type { FState } from "./strings.js";
+import * as sink from "./sink.js";
 import { linesAfter, linesBefore, startOf, tokens } from "./trivia.js";
 
 /** Ruff's `format.*` options the Python rules read, by ruff's names. */
@@ -110,50 +110,102 @@ export class Fmt {
     }
   }
 
-  leading(cs: readonly Comment[]): Format {
-    const out: Format[] = [];
-    for (const c of cs) {
-      if (c.formatted) continue;
-      out.push(this.comment(c), this.emptyLines(linesAfter(this.tree, c.end)));
-    }
-    return out;
+  /** `comment`, written. */
+  writeComment(c: Comment): void {
+    c.formatted = true;
+    sink.sToken(c.ts, normalizeComment(this.tree.text(c.ts)));
   }
 
-  trailing(cs: readonly Comment[]): Format {
-    const out: Format[] = [];
+  /** `emptyLines`, written. */
+  writeEmptyLines(n: number): void {
+    const one = sink.HARD | sink.COLLAPSE;
+    const blank = one | sink.BLANK;
+    switch (this.level.k) {
+      case "top":
+        if (n <= 1) sink.sLine(one);
+        else {
+          sink.sLine(blank);
+          if (n > 2) sink.sLine(blank);
+        }
+        return;
+      case "compound":
+        sink.sLine(n <= 1 ? one : blank);
+        return;
+      default:
+        sink.sLine(one);
+    }
+  }
+
+  writeLeading(cs: readonly Comment[]): void {
+    for (const c of cs) {
+      if (c.formatted) continue;
+      this.writeComment(c);
+      this.writeEmptyLines(linesAfter(this.tree, c.end));
+    }
+  }
+
+  writeTrailing(cs: readonly Comment[]): void {
     let ownLine = false;
     for (const c of cs) {
       if (c.formatted) continue;
       ownLine ||= c.line === "own";
       if (ownLine) {
-        const lines = this.emptyLines(linesBefore(this.tree, c.start));
-        out.push(suffix([lines, this.comment(c)], 0), breakParent);
-      } else out.push(this.eolComment(c));
+        sink.open(sink.LINE_SUFFIX);
+        this.writeEmptyLines(linesBefore(this.tree, c.start));
+        this.writeComment(c);
+        sink.close();
+        sink.sBreakParent();
+      } else this.writeEolComment(c);
     }
-    return out;
   }
 
-  eolComment(c: Comment): Format {
+  writeEolComment(c: Comment): void {
     const s = normalizeComment(this.tree.text(c.ts));
-    const t = this.comment(c);
-    const reserved = isPragma(s) ? 0 : 2 + textWidth(s);
-    return [suffix([text("  "), t], reserved), breakParent];
+    // A pragma comment reserves no columns: the line it ends may overflow for it.
+    if (isPragma(s)) sink.open(sink.LINE_SUFFIX);
+    else sink.openReservedSuffix(2 + textWidth(s));
+    sink.sText("  ");
+    this.writeComment(c);
+    sink.close();
+    sink.sBreakParent();
   }
 
-  dangling(cs: readonly Comment[]): Format {
-    const out: Format[] = [];
+  writeDangling(cs: readonly Comment[]): void {
     let first = true;
     for (const c of cs) {
       if (c.formatted) continue;
-      if (first) out.push(c.line === "own" ? hard : text("  "));
-      out.push(this.comment(c), this.emptyLines(linesAfter(this.tree, c.end)));
+      if (first) {
+        if (c.line === "own") sink.sLine(sink.HARD | sink.COLLAPSE);
+        else sink.sText("  ");
+      }
+      this.writeComment(c);
+      this.writeEmptyLines(linesAfter(this.tree, c.end));
       first = false;
     }
-    return out;
+  }
+
+  writeDanglingOpenParen(cs: readonly Comment[]): void {
+    for (const c of cs) if (!c.formatted) this.writeEolComment(c);
+  }
+
+  leading(cs: readonly Comment[]): Format {
+    return sink.record(() => this.writeLeading(cs));
+  }
+
+  trailing(cs: readonly Comment[]): Format {
+    return sink.record(() => this.writeTrailing(cs));
+  }
+
+  eolComment(c: Comment): Format {
+    return sink.record(() => this.writeEolComment(c));
+  }
+
+  dangling(cs: readonly Comment[]): Format {
+    return sink.record(() => this.writeDangling(cs));
   }
 
   danglingOpenParen(cs: readonly Comment[]): Format {
-    return cs.filter((c) => !c.formatted).map((c) => this.eolComment(c));
+    return sink.record(() => this.writeDanglingOpenParen(cs));
   }
 
   /** Ruff's `parenthesized`: `left`, `content` indented on its own lines if it breaks, `right`. */
@@ -316,9 +368,6 @@ export class Fmt {
 }
 
 type Group2 = ReturnType<typeof group>;
-
-export const suffix = (contents: Format, reserved: number): Format =>
-  lineSuffix(contents, reserved);
 
 /** The comma token among `parent`'s children at or after position `from`, or a synthetic one after `anchor`. */
 export function commaIn(
