@@ -26,6 +26,7 @@ export const types = {
   parenthesized_type: () => custom("parenthesizedType"),
   infer_type: () => custom("inferType"),
   union_type: () => custom("unionType"),
+  tuple_type: () => custom("array"),
   intersection_type: () => custom("intersectionType"),
   type_parameters: () => custom("typeParameters"),
   type_arguments: () => custom("typeParameters"),

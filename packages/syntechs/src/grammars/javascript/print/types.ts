@@ -47,7 +47,7 @@ import {
   shouldGroupFunctionParameters,
   shouldHugTheOnlyFunctionParameter,
 } from "./functions.js";
-import { array, printKey } from "./objects.js";
+import { printKey } from "./objects.js";
 import { role } from "./parens.js";
 import {
   type Args,
@@ -1125,5 +1125,4 @@ export const typeRules: Record<string, JsRule> = {
   module: moduleDeclaration,
   internal_module: moduleDeclaration,
   type_assertion: typeAssertion,
-  tuple_type: array,
 };
