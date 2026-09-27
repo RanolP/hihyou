@@ -98,14 +98,10 @@ export interface LanguageSpec<G extends Grammar, O> {
   readonly placeComments?: PlaceComments<O>;
 }
 
-/**
- * A `Language` but for its `stream` rules, which the caller adds. The third parameter is the empty Doc rule
- * table Python still passes; it is ignored.
- */
+/** A `Language` but for its `stream` rules, which the caller adds. */
 export function defineLanguage<const G extends Grammar, O>(
   grammar: G,
   spec: LanguageSpec<G, O>,
-  _docRules?: () => Record<string, never>,
 ): Omit<Language<O>, "stream"> {
   return {
     comments: new Set(grammar.comments),

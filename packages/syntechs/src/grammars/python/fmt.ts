@@ -108,7 +108,6 @@ export const python: Language<PythonOptions> = {
         return placed;
       },
     },
-    () => ({}),
   ),
   stream: {
     ...rules,
