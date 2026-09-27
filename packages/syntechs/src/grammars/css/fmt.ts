@@ -20,7 +20,7 @@ import {
   sToken,
 } from "../../fmt/stream.js";
 import { atName, maybeLower, numberParts } from "../../fmt/dsl/normalizers.js";
-import { type CustomRule, printKid } from "../../fmt/dsl/runtime.js";
+import { type CustomRule, type PredicateRule, printKid } from "../../fmt/dsl/runtime.js";
 import type { StreamCtx, StreamRule } from "../../fmt/stream-format.js";
 import { newlineBetween } from "../../fmt/text.js";
 import { type FormatTree, firstLeaf, nextLeaf } from "../../fmt/tree.js";
@@ -361,17 +361,6 @@ const semicolon = (node: number, ctx: SCtx) => {
   if (semi !== undefined) sToken(semi, src(semi, ctx));
   else sToken(node, ";", true);
 };
-/**
- * Parameters kept as written, each separated by one space where the source had any gap (prettier's raw params).
- * A comment among them is attached to a parameter, so it prints with that parameter's entries rather than in a gap.
- */
-function raw(nodes: readonly number[], ctx: SCtx): void {
-  nodes.forEach((n, i) => {
-    const prev = nodes[i - 1];
-    if (prev !== undefined && apart(prev, n, ctx)) sText(" ");
-    printKid(ctx, n, () => sToken(n, src(n, ctx)));
-  });
-}
 const atToken = (at: number, ctx: SCtx) => sToken(at, atName(src(at, ctx)));
 const respell =
   (f: (t: string, node: number, ctx: SCtx) => string): SRule =>
@@ -399,37 +388,6 @@ export const customs = {
       ctx.print(block);
     }
   },
-  combinator: (node, ctx) => {
-    const kids = code(node, ctx);
-    kids.forEach((c, i) => {
-      if (ctx.tree.named(c)) {
-        const prev = kids[i - 1];
-        if (prev !== undefined) {
-          if (ctx.tree.named(prev)) sLine(0);
-          else sText(" ");
-        }
-        ctx.print(c);
-        return;
-      }
-      if (i > 0) sLine(0);
-      sToken(c, src(c, ctx));
-    });
-  },
-  featureQuery: (node, ctx) => {
-    const kids = code(node, ctx);
-    kids.forEach((c, i) => {
-      const prev = kids[i - 1];
-      if (
-        prev !== undefined &&
-        (kind(prev, ctx) === ":" ||
-          (kind(prev, ctx) !== "(" &&
-            kind(c, ctx) !== ")" &&
-            apart(prev, c, ctx)))
-      )
-        sText(" ");
-      printItem(c, ctx);
-    });
-  },
   declaration: (node, ctx) => {
     const kids = code(node, ctx);
     const colon = kids.findIndex(
@@ -447,7 +405,13 @@ export const customs = {
     const first = values[0];
     if (first !== undefined) {
       sText(" ");
-      if (src(first, ctx).startsWith("progid:")) raw(values, ctx);
+      // An IE filter's parameters as written, one space wherever the source has any gap (prettier's raw value).
+      if (src(first, ctx).startsWith("progid:"))
+        values.forEach((n, i) => {
+          const prev = values[i - 1];
+          if (prev !== undefined && apart(prev, n, ctx)) sText(" ");
+          printKid(ctx, n, () => sToken(n, src(n, ctx)));
+        });
       else valueList(values, ctx, src(prop, ctx).toLowerCase());
     }
     if (important !== undefined) {
@@ -472,15 +436,7 @@ export const customs = {
       });
     });
   },
-  binaryExpression: (node, ctx) => {
-    const calc = enclosingFunction(node, ctx) === "calc";
-    const kids = code(node, ctx);
-    kids.forEach((c, i) => {
-      const prev = kids[i - 1];
-      if (prev !== undefined && (calc || apart(prev, c, ctx))) sText(" ");
-      printItem(c, ctx);
-    });
-  },
+  inCalc: (node, ctx) => enclosingFunction(node, ctx) === "calc",
   media: (node, ctx) => {
     const [at, ...rest] = code(node, ctx);
     const block = rest.at(-1);
@@ -513,40 +469,7 @@ export const customs = {
     }
     semicolon(node, ctx);
   },
-  namespace: (node, ctx) => {
-    withoutSemicolon(node, ctx).forEach((c, i) => {
-      if (i > 0) sText(" ");
-      if (i === 0) atToken(c, ctx);
-      else printItem(c, ctx);
-    });
-    semicolon(node, ctx);
-  },
-  charset: (node, ctx) => {
-    const [at, ...rest] = withoutSemicolon(node, ctx);
-    if (at === undefined) return concat(node, ctx);
-    atToken(at, ctx);
-    if (rest.length > 0) {
-      sText(" ");
-      raw(rest, ctx);
-    }
-    semicolon(node, ctx);
-  },
-  atRule: (node, ctx) => {
-    const [at, ...rest] = code(node, ctx);
-    if (at === undefined) return concat(node, ctx);
-    const block = rest.find((c) => kind(c, ctx) === "block");
-    const params = rest.filter((c) => c !== block && kind(c, ctx) !== ";");
-    ctx.print(at);
-    if (params.length > 0) {
-      sText(" ");
-      raw(params, ctx);
-    }
-    if (block !== undefined) {
-      sText(" ");
-      ctx.print(block);
-    } else semicolon(node, ctx);
-  },
-} satisfies Record<string, CustomRule<CssOptions>>;
+} satisfies Record<string, CustomRule<CssOptions> | PredicateRule<CssOptions>>;
 
 /** CSS as prettier 3.9.9's postcss printer lays it out; the layouts are format.ts, generated into fmt.gen.ts. */
 export const css: Language<CssOptions> = {
