@@ -240,27 +240,81 @@ export function record(fn: () => void): Doc {
 
 // --- Part ---
 
-/** Something printed but not yet placed, which a rule reads (`willBreak`, `canBreak`, `flatText`) before placing it. */
+/**
+ * Something printed but not yet placed, which a rule reads (`willBreak`, `canBreak`, `flatText`) before placing it.
+ * Captured while recording, it is a Doc; on the stream, a span built where nothing prints it, which `place` jumps to.
+ */
 export interface Part {
+  /** The part as a Doc, for a Doc helper; a part captured on the stream has none, and reading it throws. */
   readonly doc: Doc;
+  /** On the stream: the closed span it was built in. */
+  readonly span?: number;
+  /** On the stream: a `removeLines` part. */
+  readonly flat?: boolean;
 }
 
-/** What `fn` writes, as a `Part` to query and then `place` (once or more; a part placed twice is shared). */
+function streamPart(span: number, flat = false): Part {
+  return {
+    span,
+    flat,
+    get doc(): Doc {
+      throw new Error("js sink: a part captured on the stream has no Doc; the Doc helper reading it has not moved");
+    },
+  };
+}
+
+/** Builds `fn` as a span inside a dead interval: closed, a jump target, printed only where a jump names it. */
+function detached(fn: () => void): number {
+  const d = stream.openDead();
+  try {
+    const t = stream.openSpan();
+    fn();
+    stream.closeSpan();
+    return t;
+  } finally {
+    stream.closeDead(d);
+  }
+}
+
+/**
+ * What `fn` writes, as a `Part` to query and then `place` (once or more; a part placed twice is shared). If `fn`
+ * throws (an ArgExpansionBailout), what it wrote is dropped.
+ */
 export function capture(fn: () => void): Part {
-  if (frames.length === 0) throw new Error("js sink: capture on the stream awaits the stream's detached regions");
-  return { doc: record(fn) };
+  if (frames.length > 0) return { doc: record(fn) };
+  return streamPart(detached(fn));
 }
 export function place(part: Part): void {
-  writeDoc(part.doc);
+  if (part.span === undefined) writeDoc(part.doc);
+  else if (frames.length > 0) throw new Error("js sink: a part captured on the stream placed inside a recording");
+  else stream.sJump(part.span);
 }
 /** Whether `part` holds a forced break: a hard line, a break-parent, or a group that must break. */
-export const willBreak = (part: Part): boolean => docWillBreak(part.doc);
+export const willBreak = (part: Part): boolean =>
+  part.span === undefined ? docWillBreak(part.doc) : stream.willBreak(part.span);
 /** Whether `part` holds a line that could break. */
-export const canBreak = (part: Part): boolean => docCanBreak(part.doc);
+export const canBreak = (part: Part): boolean =>
+  part.span === undefined ? docCanBreak(part.doc) : stream.canBreak(part.span);
 /** `part`'s text when it holds no line at all, else undefined. */
-export const flatText = (part: Part): string | undefined => docText(part.doc);
+export function flatText(part: Part): string | undefined {
+  if (part.span === undefined) return docText(part.doc);
+  // docText reads the lines removeLines turned into text; the stream's flatText reads no flat part.
+  if (part.flat) throw new Error("js sink: flatText of a removeLines part is not on the stream");
+  return stream.flatText(part.span);
+}
 /** `part` with its non-hard lines flat, its ifBreaks flat, and its groups no longer forced to break. */
-export const removeLines = (part: Part): Part => ({ doc: docRemoveLines(part.doc) });
+export function removeLines(part: Part): Part {
+  const t = part.span;
+  if (t === undefined) return { doc: docRemoveLines(part.doc) };
+  return streamPart(
+    detached(() => {
+      stream.openFlat();
+      stream.sJump(t);
+      stream.closeFlat();
+    }),
+    true,
+  );
+}
 
 /**
  * What `fn` writes, between the comments attached to `node`: for a rule that prints a child's own tokens rather

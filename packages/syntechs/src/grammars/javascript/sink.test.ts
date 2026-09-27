@@ -3,11 +3,14 @@ import { print } from "../../fmt/printer.js";
 import { printStream, resetStream } from "../../fmt/stream.js";
 import {
   BROKEN,
+  canBreak,
+  capture,
   close,
   closeChoice,
   closeState,
   FILL,
   FILL_ITEM,
+  flatText,
   GROUP,
   HARD,
   IF_BROKEN,
@@ -19,7 +22,9 @@ import {
   openChoice,
   openIndentIfBreak,
   openState,
+  place,
   record,
+  removeLines,
   SOFT,
   sBreakParent,
   sHardline,
@@ -28,6 +33,7 @@ import {
   sLiteral,
   sText,
   sToken,
+  willBreak,
 } from "./sink.js";
 
 // A moved rule writes sink ops; until the final switch they are recorded into Docs, and after it they go to the
@@ -255,6 +261,65 @@ describe("js sink: a recorded script prints as the same script written to the st
   for (const [name, script] of Object.entries(scripts)) it(name, () => both(script));
   it("200 random well-formed scripts", () => {
     for (let seed = 1; seed <= 200; seed++) both(random(seed));
+  });
+});
+
+// A part a rule queries before placing it: recorded, a Doc; on the stream, a span built where nothing prints it.
+// Queried, then placed twice around its removeLines copy, it must answer and print as the recorded part does, or
+// a rule's hug or break decision moves when the stream takes over.
+function bothParts(inner: () => void): void {
+  const answers: unknown[][] = [];
+  const run = () => {
+    const p = capture(inner);
+    const f = removeLines(p);
+    answers.push([willBreak(p), canBreak(p), flatText(p), willBreak(f), canBreak(f)]);
+    open(GROUP);
+    sText("<");
+    place(p);
+    sLine(0);
+    place(f);
+    sLine(SOFT);
+    place(p);
+    sText(">");
+    close();
+  };
+  run.toString = () => `parts of ${inner}`;
+  both(run);
+  for (let i = 0; i < answers.length; i += 2)
+    expect(answers[i + 1], `answers of ${inner}`).toEqual(answers[i]);
+}
+
+describe("js sink: a part captured on the stream answers and prints as the recorded one", () => {
+  const parts: Record<string, () => void> = {
+    ...scripts,
+    "text only": () => {
+      open(GROUP);
+      sText("a");
+      sToken(1, "b");
+      close();
+    },
+    "a hard line without a break parent": () => {
+      words(1);
+      sLine(HARD);
+      words(1, 1);
+    },
+  };
+  for (const [name, inner] of Object.entries(parts)) it(name, () => bothParts(inner));
+  it("100 random well-formed scripts", () => {
+    for (let seed = 1; seed <= 100; seed++) bothParts(random(seed));
+  });
+  it("drops what a capture that throws wrote, as a bailed-out hug", () => {
+    resetStream(false);
+    sText("a");
+    expect(() =>
+      capture(() => {
+        open(GROUP);
+        sText("x");
+        throw new Error("bail");
+      }),
+    ).toThrow("bail");
+    sText("b");
+    expect(printStream({ lineWidth: 80, indentWidth: 2, useTabs: false }).text).toBe("ab");
   });
 });
 
