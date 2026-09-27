@@ -60,6 +60,7 @@ export const python: Language<PythonOptions> = {
     {
       parser: language,
       atoms: ["string", "concatenated_string"],
+      dropped: ["line_continuation"],
       lineComments: { comment: "" },
       defaults,
       settings: ruffSettings,

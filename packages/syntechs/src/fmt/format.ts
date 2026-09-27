@@ -99,7 +99,7 @@ export function format<O>(
         const items: number[] = [];
         for (let i = 0, count = tree.count(node); i < count; i++) {
           const c = tree.child(node, i);
-          if (tree.named(c) && !isComment(c)) items.push(c);
+          if (tree.named(c) && !isComment(c) && !language.dropped.has(tree.kindName(c))) items.push(c);
         }
         return items;
       },

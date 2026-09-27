@@ -66,7 +66,7 @@ export interface Ctx<O = unknown> {
    * `print`: without it, those comments are lost.
    */
   withComments(node: number, printed: Doc): Doc;
-  /** The children that carry meaning: named, and not comments. */
+  /** The children that carry meaning: named, not comments, and not dropped (see `LanguageSpec.dropped`). */
   items(node: number): number[];
   /** Comments inside `node` next to none of its items, printed one per line. */
   dangling(node: number): Doc[];
@@ -110,6 +110,7 @@ export interface Language<O = unknown> {
   /** The parser `check` reads both texts with; see `LanguageSpec`. */
   readonly parser: Parser;
   readonly atoms: ReadonlySet<string>;
+  readonly dropped: ReadonlySet<string>;
   readonly normalize: Normalize;
   readonly layoutBlind: boolean;
   readonly printComment?: (comment: number, ctx: Ctx<O>) => Doc;
@@ -139,6 +140,11 @@ export interface LanguageSpec<G extends Grammar, O> {
    * own besides its children (CSS's `1.5px`, whose only child is the unit) is read whole without being listed.
    */
   readonly atoms?: readonly KindOf<G>[];
+  /**
+   * Named extras, not comments, that the layout drops (Python's `\` line continuation): no node's items hold
+   * them, so a rule never prints one.
+   */
+  readonly dropped?: readonly KindOf<G>[];
   /**
    * What `check` compares instead of raw token text, so that rules may respell, insert and drop tokens without
    * changing meaning. The default compares text as is, which rejects any respelling.
@@ -288,6 +294,7 @@ export function defineLanguage<
     settings: spec.settings,
     parser: spec.parser,
     atoms: new Set(spec.atoms),
+    dropped: new Set(spec.dropped),
     normalize: spec.normalize ?? identity,
     layoutBlind: spec.layoutBlind ?? spec.normalize === undefined,
     ...(spec.printComment && { printComment: spec.printComment }),
