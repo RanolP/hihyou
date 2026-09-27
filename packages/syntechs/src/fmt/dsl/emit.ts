@@ -123,11 +123,16 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
     line(`else sToken(${c}, t.text(${c}));`);
   };
   const bracket = (text: string) => printBracket(bound(text), text);
-  /** The child a ref names, -1 when absent: the `at`th of the list, a field's, or the first child in no field. */
-  const refChild = ({ name, at }: Ref) =>
-    at !== undefined || name === "children"
-      ? `(listItems(ctx, node, ${str(name)}, ${hasFields})[${at ?? 0}] ?? -1)`
-      : `fieldChild(t, node, ${str(name)})`;
+  /**
+   * The child a ref names, -1 when absent: the `at`th of the list (or of its `split`
+   * stretches), a field's, or the first child in no field.
+   */
+  const refChild = ({ name, at, split }: Ref) =>
+    split !== undefined
+      ? `splitChild(ctx, node, ${str(name)}, ${str(split)}, ${at ?? 0}, ${hasFields})`
+      : at !== undefined || name === "children"
+        ? `(listItems(ctx, node, ${str(name)}, ${hasFields})[${at ?? 0}] ?? -1)`
+        : `fieldChild(t, node, ${str(name)})`;
   /** Child `c` with the comments attached to it, as the reference's leading, child and trailing entries. */
   const child = (c: string, via?: string) => {
     // Through `ctx.print`, which leaves the comments to a node that prints its own (`printsOwnComments`).
@@ -482,6 +487,13 @@ export function emit(
       "}",
     );
   }
+  // Likewise only a spec with a `.split` imports splitChild.
+  if (parts.some((p) => p.includes("splitChild(")))
+    parts.splice(
+      parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
+      0,
+      'import { splitChild } from "../../fmt/dsl/runtime.js";',
+    );
   const extra = [...(tokenRules ? ["TokenRule"] : []), ...(frameRules ? ["FrameRule"] : [])];
   if (extra.length > 0)
     parts.splice(

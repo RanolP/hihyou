@@ -33,13 +33,15 @@ type TokenOf<G extends Grammar> = G["tokens"][number];
 // ---- IR: what a spec is once called, plain data ----
 
 /**
- * A field of the node, or (`name` "children") its children in no field; `at`: the one at that index among them;
- * `via`: printed by that custom rule in place of its own.
+ * A field of the node, or (`name` "children") its children in no field; `at`: the one at that index among them,
+ * or with `split`, the first of them in the `at`th stretch of the node between its `split` tokens; `via`: printed
+ * by that custom rule in place of its own.
  */
 export interface Ref {
   readonly t: "ref";
   readonly name: string;
   readonly at?: number;
+  readonly split?: string;
   readonly via?: string;
 }
 
@@ -147,6 +149,11 @@ export interface Node extends Piece<"node"> {
 export interface List extends Piece<"list"> {
   /** The `i`th of the children, absent when there are fewer. */
   at(i: number): Option<Node>;
+  /**
+   * The children cut at each `sep` token of the node, for a child known only by its place among them, like a
+   * slice's bounds: `.at(i)` is the first one in the `i`th stretch.
+   */
+  split(sep: string): { at(i: number): Option<Node> };
 }
 /** A child that may be absent: `andThen` prints what `f` makes of it when present, and nothing otherwise. */
 export interface Option<A> {
@@ -346,32 +353,44 @@ function plain(c: unknown): Cond {
 }
 
 const refOf = (x: unknown): Ref => {
-  const r = x as { name: string; at?: unknown; atIndex?: number; via?: unknown; viaName?: string };
+  const r = x as {
+    name: string;
+    at?: unknown;
+    atIndex?: number;
+    split?: unknown;
+    splitSep?: string;
+    via?: unknown;
+    viaName?: string;
+  };
   const at = r.atIndex ?? (typeof r.at === "number" ? r.at : undefined);
+  const split = r.splitSep ?? (typeof r.split === "string" ? r.split : undefined);
   const via = r.viaName ?? (typeof r.via === "string" ? r.via : undefined);
   return {
     t: "ref",
     name: r.name,
     ...(at === undefined ? {} : { at }),
+    ...(split === undefined ? {} : { split }),
     ...(via === undefined ? {} : { via }),
   };
 };
 
 /**
- * `$.<name>` (or `.at(i)` of it), a `Node`, a `List` and an `Option` at once; `atIndex` and `viaName` hold its
- * `.at` and `.via`, since those names are the methods.
+ * `$.<name>` (or `.at(i)` of it), a `Node`, a `List` and an `Option` at once; `atIndex`, `splitSep` and `viaName`
+ * hold its `.at`, `.split` and `.via`, since those names are the methods.
  */
-const nodeRef = (name: string, atIndex?: number, viaName?: string): unknown => ({
+const nodeRef = (name: string, atIndex?: number, viaName?: string, splitSep?: string): unknown => ({
   t: "ref",
   name,
   atIndex,
+  splitSep,
   viaName,
-  at: (i: number) => nodeRef(name, i),
-  via: (v: string) => nodeRef(name, atIndex, v),
+  at: (i: number) => nodeRef(name, i, undefined, splitSep),
+  split: (sep: string) => ({ at: (i: number) => nodeRef(name, i, undefined, sep) }),
+  via: (v: string) => nodeRef(name, atIndex, v, splitSep),
   andThen: (f: (a: unknown) => unknown): Tree => ({
     t: "opt",
-    ref: refOf(nodeRef(name, atIndex)),
-    then: toTree(f(nodeRef(name, atIndex, viaName))),
+    ref: refOf(nodeRef(name, atIndex, undefined, splitSep)),
+    then: toTree(f(nodeRef(name, atIndex, viaName, splitSep))),
   }),
 });
 

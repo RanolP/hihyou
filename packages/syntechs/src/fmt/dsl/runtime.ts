@@ -284,6 +284,26 @@ export function listItems<O>(
     : items;
 }
 
+/** The first of `listItems` in the `at`th stretch of the node's children between its `sep` tokens; -1 when none. */
+export function splitChild<O>(
+  ctx: StreamCtx<O>,
+  node: number,
+  name: string,
+  sep: string,
+  at: number,
+  kindHasFields: boolean,
+): number {
+  const items = new Set(listItems(ctx, node, name, kindHasFields));
+  const tree = ctx.tree;
+  let stretch = 0;
+  for (let i = 0, count = tree.count(node); i < count && stretch <= at; i++) {
+    const c = tree.child(node, i);
+    if (!tree.named(c) && tree.kindName(c) === sep) stretch++;
+    else if (stretch === at && items.has(c)) return c;
+  }
+  return -1;
+}
+
 /** For each item but the last, the separator token `sep` after it; -1 where the source has none. */
 export function separators(
   tree: FormatTree,

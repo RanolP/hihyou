@@ -54,6 +54,7 @@ import {
   fieldChild,
   listItems,
   separators,
+  splitChild,
   tokenChild,
   type TokenRule,
 } from "./runtime.js";
@@ -149,10 +150,12 @@ export function flatten<O>(
       return tokenChild(t, n, text, nth);
     };
     const owner = danglingOwner(tree);
-    const refChild = ({ name, at }: Ref) =>
-      at !== undefined || name === "children"
-        ? (listItems(ctx, n, name, kindHasFields)[at ?? 0] ?? -1)
-        : fieldChild(t, n, name);
+    const refChild = ({ name, at, split }: Ref) =>
+      split !== undefined
+        ? splitChild(ctx, n, name, split, at ?? 0, kindHasFields)
+        : at !== undefined || name === "children"
+          ? (listItems(ctx, n, name, kindHasFields)[at ?? 0] ?? -1)
+          : fieldChild(t, n, name);
     const dangling = () => {
       const cs = ctx.danglingComments(n);
       return cs;

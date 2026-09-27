@@ -144,6 +144,26 @@ it("`.at` reaches the IR, with a `.via` after it", () => {
   });
 });
 
+// A `.split` the IR loses prints a slice's upper bound as its lower one, since `a:` and `:a` hold one child each.
+it("`.split` reaches the IR with its `.at`, and a `.via` after them", () => {
+  const ir = format({
+    structure: {
+      object: ($) => [":", $.children.split(":").at(1).andThen((c) => c.via("bound"))],
+    },
+  });
+  expect(ir.structure["object"]).toEqual({
+    t: "seq",
+    parts: [
+      expect.anything(),
+      {
+        t: "opt",
+        ref: { t: "ref", name: "children", at: 1, split: ":" },
+        then: { t: "ref", name: "children", at: 1, split: ":", via: "bound" },
+      },
+    ],
+  });
+});
+
 // A `.via` the IR loses prints the child by its own rule, silently skipping the custom its parent named.
 it("`.via` reaches the IR on a required field and inside `andThen`", () => {
   const ir = format({
