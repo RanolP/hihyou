@@ -2100,7 +2100,10 @@ class Reader {
                 this.named(inner)[0] ?? this.fail(inner, "no name"),
                 this.kids(inner)[0],
               );
-        const annotation = this.expr(this.typeExpr(this.needField(c, "type")));
+        const type = this.needField(c, "type");
+        const annotation = this.expr(this.typeExpr(type));
+        // Also under the `type` node, which the spec hands `def.annotation`.
+        this.byTs.set(type, annotation);
         return this.link({
           ...p,
           kids: [annotation],
@@ -2113,6 +2116,7 @@ class Reader {
         const type = this.field(c, "type");
         const annotation =
           type !== undefined ? this.expr(this.typeExpr(type)) : undefined;
+        if (type !== undefined && annotation) this.byTs.set(type, annotation);
         const value = this.expr(this.needField(c, "value"));
         return this.link({
           ...base,

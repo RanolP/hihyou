@@ -1,10 +1,11 @@
 // The customs stmt-def.ts's `.via`s name: a definition's part as ruff lays it out, looked up by the definition.
-import type { ClassDef, Decorator, FunctionDef } from "../fmt/ast.js";
+import type { ClassDef, Decorator, FunctionDef, Parameter } from "../fmt/ast.js";
 import { type Format, group } from "../fmt/elements.js";
-import { space } from "../fmt/builders.js";
+import { hard, space } from "../fmt/builders.js";
 import { args, formatExpr, maybeParenthesize, parameters } from "../fmt/expr.js";
 import { part, ruffOf, ruffStmtOf } from "../fmt/sink.js";
 import { body, decorators, splitDangling, typeParams } from "../fmt/stmt/defs.js";
+import { endOf, tokens } from "../fmt/trivia.js";
 
 export const stmtDefVia = {
   // Given the first decorator, prints them all, then what separates the last from the header.
@@ -80,5 +81,35 @@ export const stmtDefVia = {
       f.trailing(trailingDef),
       body(f, def, def.body, def.kind === "FunctionDef" ? "function" : "class", trailingDef),
     ]);
+  },
+  // An annotation with a leading comment of its own starts on the next line, unless parenthesized.
+  "def.annotation": (c: number) => {
+    const { f, e } = ruffOf(c);
+    part([f.comments.hasLeading(e) && e.parens.length === 0 ? hard : space, formatExpr(f, e)]);
+  },
+  // A default whose leading comment follows the `=` starts on the next line.
+  "def.default": (c: number) => {
+    const { f, e } = ruffOf(c);
+    const p = e.parent as Parameter;
+    const cs = f.comments;
+    const lead = cs.leading(e)[0];
+    let breakLeading = false;
+    if (lead) {
+      let sawEq = false;
+      breakLeading = true;
+      const from = p.annotation ? p.annotation.end : endOf(f.tree, p.name);
+      for (const t of tokens(f.tree, from, lead.start)) {
+        if (t.kind === ")" && !sawEq) continue;
+        if (t.kind === "=" && !sawEq) {
+          sawEq = true;
+          continue;
+        }
+        if (t.kind === "(") breakLeading = false;
+        break;
+      }
+    }
+    const lineBreak = breakLeading;
+    const sp = p.annotation ? space : [];
+    part([lineBreak ? hard : sp, formatExpr(f, e)]);
   },
 };

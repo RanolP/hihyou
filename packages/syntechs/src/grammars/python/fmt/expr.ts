@@ -1121,43 +1121,10 @@ function firstTokenAfter(f: Fmt, at: number): string | undefined {
   return undefined;
 }
 
+/** Ruff's `FormatParameter`: its comments, then the parameter as its rule in format.ts prints it. */
 function parameter(f: Fmt, p: Parameter): Format {
   const cs = f.comments;
-  const out: Format[] = [f.leading(cs.leading(p))];
-  if (p.star !== undefined) out.push(f.tok(p.star));
-  out.push(f.tok(p.name));
-  if (p.annotation && p.colon !== undefined) {
-    out.push(f.tok(p.colon));
-    out.push(
-      cs.hasLeading(p.annotation) && p.annotation.parens.length === 0
-        ? hard
-        : space,
-    );
-    out.push(formatExpr(f, p.annotation));
-  }
-  if (p.default && p.eq !== undefined) {
-    const lead = cs.leading(p.default)[0];
-    let breakLeading = false;
-    if (lead) {
-      let sawEq = false;
-      breakLeading = true;
-      const from = p.annotation ? p.annotation.end : endOf(f.tree, p.name);
-      for (const t of tokens(f.tree, from, lead.start)) {
-        if (t.kind === ")" && !sawEq) continue;
-        if (t.kind === "=" && !sawEq) {
-          sawEq = true;
-          continue;
-        }
-        if (t.kind === "(") breakLeading = false;
-        break;
-      }
-    }
-    const lineBreak = breakLeading;
-    const sp = p.annotation ? space : [];
-    out.push(sp, f.tok(p.eq), lineBreak ? hard : sp, formatExpr(f, p.default));
-  }
-  out.push(f.trailing(cs.trailing(p)));
-  return out;
+  return [f.leading(cs.leading(p)), dslPart(p.ts), f.trailing(cs.trailing(p))];
 }
 
 function sequenceEntries(f: Fmt, e: Sequence, o: Opts = {}) {

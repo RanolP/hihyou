@@ -24,4 +24,16 @@ export const stmtDef = {
     ":",
     $.body.via("def.body"),
   ],
+  typed_parameter: ($) => [$.children, ":", $.type.via("def.annotation")],
+  default_parameter: ($) => [$.name, "=", $.value.via("def.default")],
+  typed_default_parameter: ($) => [
+    $.name,
+    ":",
+    $.type.via("def.annotation"),
+    space,
+    "=",
+    $.value.via("def.default"),
+  ],
+  list_splat_pattern: ($) => ["*", $.children],
+  dictionary_splat_pattern: ($) => ["**", $.children],
 } satisfies Structure;
