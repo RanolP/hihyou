@@ -22,6 +22,7 @@ import {
   token,
   withContents,
 } from "../../../fmt/doc.js";
+import type { Comments } from "../../../fmt/comments.js";
 import type { PrettierOptions } from "../../../fmt/options.js";
 import type { Ctx, PrintArgs, Rule } from "../../../fmt/rules.js";
 import { lfAfter } from "../../../fmt/text.js";
@@ -43,7 +44,21 @@ export interface JsOptions extends PrettierOptions {
   parser: "babel" | "typescript";
 }
 
-export type JsCtx = Ctx<JsOptions>;
+/** The tree queries the JS helpers read: the format's tree, its options, and where its comments attach. */
+export interface JsCtx extends HasTree {
+  readonly options: JsOptions;
+  readonly placement: Comments;
+  items(node: number): number[];
+  comments(node: number): {
+    readonly leading: readonly number[];
+    readonly trailing: readonly number[];
+    readonly dangling: readonly number[];
+  };
+  isLineComment(c: number): boolean;
+  isList(node: number): boolean;
+  hasComment(node: number, where: "leadingLine" | "trailingSameLine"): boolean;
+  hasDanglingLineComment(node: number): boolean;
+}
 export type JsRule = Rule<string, JsOptions>;
 export type Args = PrintArgs | undefined;
 
@@ -160,10 +175,6 @@ export function outer(x: HasTree, n: number): number {
 /** Whether `a` and `b` are both present and the same node. */
 export const same = (a: number | undefined, b: number | undefined) =>
   a !== undefined && a === b;
-
-/** Prints `node` with its comments; the rule table's rules receive `args`. */
-export const p = (ctx: JsCtx, node: number | undefined, args?: PrintArgs) =>
-  node !== undefined ? ctx.print(node, args) : [];
 
 export const STRING_KINDS = new Set(["string", "template_string"]);
 

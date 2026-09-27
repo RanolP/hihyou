@@ -28,9 +28,11 @@ import {
   willBreak as docWillBreak,
   withContents,
 } from "../../fmt/doc.js";
+import type { Ctx } from "../../fmt/rules.js";
 import * as stream from "../../fmt/stream.js";
 import { sDoc } from "../../fmt/stream-doc.js";
 import {
+  endsLine,
   printLeadingComments,
   printTrailingComments,
   type StreamCtx,
@@ -394,7 +396,7 @@ function docFlatten(doc: Doc): Doc | undefined {
  */
 export function withComments(ctx: JsStreamCtx, node: number, fn: () => void): void {
   if (frames.length > 0) {
-    put(ctx.js.withComments(node, record(fn)));
+    put((ctx.js as Ctx<JsOptions>).withComments(node, record(fn)));
     return;
   }
   printLeadingComments(ctx, node);
@@ -413,7 +415,7 @@ export function commentsOf(
   node: number,
 ): readonly [leading: () => void, trailing: () => void] | undefined {
   if (frames.length > 0) {
-    const wrapped = ctx.js.withComments(node, NO_PRINT);
+    const wrapped = (ctx.js as Ctx<JsOptions>).withComments(node, NO_PRINT);
     if (wrapped === NO_PRINT) return undefined;
     const [leading, , trailing] = wrapped as [Doc, Doc, Doc];
     return [() => writeDoc(leading), () => writeDoc(trailing)];
@@ -444,8 +446,36 @@ export interface JsStreamCtx extends StreamCtx<JsOptions> {
   readonly js: JsCtx;
 }
 
-/** The ctx a generated rule or a custom receives, as the JS ctx it is. */
-export const jsCtx = (ctx: StreamCtx<JsOptions>): JsStreamCtx => ctx as JsStreamCtx;
+const NO_COMMENTS = { leading: [], trailing: [], dangling: [] } as const;
+
+/** The ctx a generated rule or a custom receives, as the JS ctx: its queries attached on first use. */
+export function jsCtx(ctx: StreamCtx<JsOptions>): JsStreamCtx {
+  const own = ctx as Partial<JsStreamCtx> & StreamCtx<JsOptions>;
+  if (own.js !== undefined) return own as JsStreamCtx;
+  const js: JsCtx = {
+    tree: ctx.tree,
+    options: ctx.options,
+    placement: ctx.placement,
+    items: (node) => ctx.items(node),
+    comments(node) {
+      const leading = ctx.leadingComments(node);
+      const trailing = ctx.trailingComments(node);
+      const dangling = ctx.danglingComments(node);
+      if (leading.length === 0 && trailing.length === 0 && dangling.length === 0) return NO_COMMENTS;
+      return { leading, trailing, dangling };
+    },
+    isLineComment: (c) => ctx.isLineComment(c),
+    isList: (node) => ctx.isList(node),
+    hasComment: (node, where) =>
+      where === "leadingLine"
+        ? ctx.leadingComments(node).some((c) => ctx.isLineComment(c))
+        : ctx.trailingComments(node).some((c) => endsLine(ctx, node, c)),
+    hasDanglingLineComment: (node) => ctx.danglingComments(node).some((c) => ctx.isLineComment(c)),
+  };
+  // The Doc path printed a broken child through its parent's rule like any other (the fallback token, with the
+  // parent's ASI guard and parens around it), so the generated rules see no child as broken.
+  return Object.assign(own, { js, printBare: ctx.printNode, isBroken: () => false });
+}
 
 /**
  * `rule` as a Doc rule: it runs recorded, over a ctx whose prints are the Doc ctx's. The Doc ctx prints a

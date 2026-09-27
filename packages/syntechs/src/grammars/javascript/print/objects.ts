@@ -131,7 +131,9 @@ export function sPrintKey(ctx: JsStreamCtx, n: number): void {
   const js = ctx.js;
   const key = keyOf(js, n);
   if (key === undefined) return;
-  if (kind(js, key) === "computed_property_name") return ctx.print(key);
+  // The key's comments print here even where the key owns them (a member's head, reached through its key).
+  const print = () => withComments(ctx, key, () => ctx.printNode(key));
+  if (kind(js, key) === "computed_property_name") return print();
   const { quoteProps } = js.options;
   if (
     quoteProps === "consistent" &&
@@ -154,7 +156,7 @@ export function sPrintKey(ctx: JsStreamCtx, n: number): void {
       sToken(key, /^\d/.test(value) ? printNumber(value) : value),
     );
   }
-  ctx.print(key);
+  print();
 }
 
 // --- objects ----------------------------------------------------------------------------------------------------

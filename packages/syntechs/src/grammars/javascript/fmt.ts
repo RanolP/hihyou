@@ -1,5 +1,4 @@
 import type { Language as Parser } from "../../core/index.js";
-import { type Doc, synthetic } from "../../fmt/doc.js";
 import { prettierDefaults, prettierSettings } from "../../fmt/options.js";
 import {
   defineLanguage,
@@ -30,10 +29,9 @@ import {
   statementRules,
 } from "./print/statements.js";
 import { typeCustoms, typeRules } from "./print/types.js";
-import { jsCtx, onDoc, record } from "./sink.js";
+import { jsCtx, sToken } from "./sink.js";
 import {
   anon,
-  type Args,
   isIgnoreComment,
   isJsx,
   items,
@@ -43,9 +41,7 @@ import {
   parent,
   type JsCtx,
   type JsOptions,
-  type JsRule,
   unparen,
-  verbatim,
 } from "./print/util.js";
 
 const defaults: JsOptions = {
@@ -96,45 +92,34 @@ const isIgnored = (ctx: JsCtx, n: number) => {
   return isJsx(ctx, n) && jsxIgnored(ctx, n, (c) => isIgnoreComment(ctx, c));
 };
 
-// Kept on the ctx itself, which lives as long as one format: a lookup per node through a WeakMap keyed by ctx
-// cost more than the rules it saved.
-const CACHE = Symbol("printed");
-type Cached = JsCtx & { [CACHE]?: Map<number, Doc> };
-
 /**
- * Every rule runs through here: a node printed twice (a call's arguments tried hugged and then expanded) is
- * printed once, and a node the layout moved to where it needs parentheses the source did not give it gets them.
+ * The kid each head custom is reached through (`.via` on it in format/types.ts), by its parent's kind: the
+ * custom prints the whole head, the kid among it with the kid's comments, so the kid owns them.
  */
-function wrap(rule: JsRule): JsRule {
-  return (n, ctx, args?: Args) => {
-    let cache: Map<number, Doc> | undefined;
-    if (args === undefined) {
-      cache = (ctx as Cached)[CACHE] ??= new Map();
-      const hit = cache.get(n);
-      if (hit !== undefined) return hit;
-    }
-    let doc = !isIgnored(ctx, n)
-      ? rule(n, ctx, args)
-      : STATEMENT_LIST_PARENTS.has(kind(ctx, parent(ctx, n)) ?? "")
-        ? record(() => ignoredStatement(ctx, n))
-        : verbatim(ctx, n);
-    const k = kind(ctx, n);
-    if (k !== PE && kind(ctx, parent(ctx, n)) !== PE && needsParens(n, ctx))
-      doc = [synthetic(n, "("), doc, synthetic(n, ")")];
-    cache?.set(n, doc);
-    return doc;
-  };
-}
+const HEAD_VIA: Readonly<Record<string, string>> = {
+  type_alias_declaration: "name",
+  enum_assignment: "name",
+  property_signature: "name",
+  method_signature: "name",
+  call_signature: "parameters",
+  construct_signature: "parameters",
+  index_signature: "type",
+};
+
+const isHeadVia = (ctx: JsCtx, n: number) => {
+  const head = HEAD_VIA[kind(ctx, parent(ctx, n)) ?? ""];
+  return head !== undefined && head === ctx.tree.fieldName(n);
+};
 
 /** The JavaScript and TypeScript rules as one table: the grammars share their node kinds. */
-export function jsRules(): Record<string, JsRule> {
-  const table: Record<string, JsRule> = {};
-  const extra: Record<string, StreamRule<JsOptions>> = {
-    ...statementRules,
-    ...typeRules,
-    parenthesized_expression: parenthesized,
-  };
-  for (const [name, rule] of Object.entries(extra)) table[name] = onDoc(rule);
+export function jsRules(): ReadonlyMap<string, StreamRule<JsOptions>> {
+  const rules = new Map<string, StreamRule<JsOptions>>(
+    Object.entries({
+      ...statementRules,
+      ...typeRules,
+      parenthesized_expression: parenthesized,
+    }),
+  );
   // The kinds the DSL spec (format.ts) lays out.
   const customs = {
     ...statementCustoms,
@@ -150,9 +135,8 @@ export function jsRules(): Record<string, JsRule> {
     ...literalCustoms,
     ...semiCustoms,
   };
-  for (const [name, rule] of gen.javascript<JsOptions>(customs).rules) table[name] = onDoc(rule);
-  for (const [name, rule] of Object.entries(table)) table[name] = wrap(rule);
-  return table;
+  for (const [name, rule] of gen.javascript<JsOptions>(customs).rules) rules.set(name, rule);
+  return rules;
 }
 
 /** A prettier-compatible formatter for one of the JS-family grammars. */
@@ -161,23 +145,46 @@ export function jsLanguage(
   language: Parser,
   overrides: Partial<JsOptions> = {},
 ): Language<JsOptions> {
-  return defineLanguage(
-    g,
-    {
-      defaults: { ...defaults, ...overrides },
-      settings: prettierSettings,
-      parser: language,
-      atoms: jsAtoms,
-      normalize: jsNormalize,
-      lineComments: { comment: "//" } as never,
-      printComment: (c, ctx) => record(() => printComment(c, ctx)),
-      handleComment,
-      printsOwnComments: (n, ctx) =>
-        (isJsx(ctx, n) && !isIgnored(ctx as JsCtx, n)) ||
-        isJsxSpreadArgument(ctx, n),
+  const rules = jsRules();
+  return {
+    ...defineLanguage(
+      g,
+      {
+        defaults: { ...defaults, ...overrides },
+        settings: prettierSettings,
+        parser: language,
+        atoms: jsAtoms,
+        normalize: jsNormalize,
+        lineComments: { comment: "//" } as never,
+        handleComment,
+      },
+      () => ({}),
+    ),
+    stream: {
+      rules,
+      lists: new Set(),
+      printComment,
+      printsOwnComments: (n, s) => {
+        const ctx = jsCtx(s).js;
+        return (
+          (isJsx(ctx, n) && !isIgnored(ctx, n)) || isJsxSpreadArgument(ctx, n) || isHeadVia(ctx, n)
+        );
+      },
+      // A node with no rule prints as its token. A node with one prints as its source text under a
+      // prettier-ignore, and inside the parentheses the layout needs where it moved a node the source gave none.
+      wrap: (n, s, print) => {
+        if (!rules.has(s.tree.kindName(n))) return print();
+        const ctx = jsCtx(s).js;
+        const parens =
+          kind(ctx, n) !== PE && kind(ctx, parent(ctx, n)) !== PE && needsParens(n, ctx);
+        if (parens) sToken(n, "(", true);
+        if (!isIgnored(ctx, n)) print();
+        else if (STATEMENT_LIST_PARENTS.has(kind(ctx, parent(ctx, n)) ?? "")) ignoredStatement(ctx, n);
+        else sToken(n, ctx.tree.text(n));
+        if (parens) sToken(n, ")", true);
+      },
     },
-    () => jsRules() as never,
-  );
+  };
 }
 
 /** JavaScript (and JSX) as prettier's `babel` parser prints it. */

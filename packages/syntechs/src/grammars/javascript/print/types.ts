@@ -587,7 +587,7 @@ const typeAlias: CustomRule<JsOptions> = (name, sctx) => {
     () => {
       tok(js, anonKid(js, n, "type"));
       sText(" ");
-      ctx.print(name);
+      withComments(ctx, name, () => ctx.printNode(name));
       pr(ctx, field(js, n, "type_parameters"));
     },
     () => {
@@ -868,7 +868,9 @@ function mappedType(
   sLine(SOFT);
   tok(js, anonKid(js, signature, "]"));
   close();
-  pr(ctx, field(js, signature, "type"));
+  // The signature's type owns its comments: `indexSignature` prints them, reached through it.
+  const type = field(js, signature, "type");
+  if (type !== undefined) withComments(ctx, type, () => ctx.printNode(type));
   if (js.options.semi) {
     open(IF_BROKEN);
     if (sep !== undefined) sToken(sep, ";");
@@ -1054,7 +1056,7 @@ const indexSignature: CustomRule<JsOptions> = (type, sctx) => {
     close();
   }
   tok(js, anonKid(js, n, "]"));
-  ctx.printNode(type);
+  withComments(ctx, type, () => ctx.printNode(type));
 };
 
 /**
