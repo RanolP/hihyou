@@ -55,14 +55,17 @@ export const stmtCompound = {
     $.children.via("compound.body"),
   ],
   finally_clause: ($) => [tok("finally").via("compound.alternate"), ":", $.children.via("compound.body")],
-  // The with_clause and its with_items print by the items' layout, which ruff decides for the whole statement.
   with_statement: ($) => [
     tok("async").via("compound.async"),
     "with",
     space,
-    $.children.via("compound.withItems"),
+    $.children,
     ":",
     $.body.via("compound.body"),
   ],
+  // Given the first item, prints them all, commas and parentheses included, in the layout ruff decides for the
+  // whole statement; each item by its rule, in that layout.
+  with_clause: ($) => $.children.at(0).andThen((i) => i.via("compound.withItems")),
+  with_item: ($) => $.value.via("compound.withItem"),
   else_clause: ($) => [tok("else").via("compound.alternate"), ":", $.body.via("compound.body")],
 } satisfies Structure;

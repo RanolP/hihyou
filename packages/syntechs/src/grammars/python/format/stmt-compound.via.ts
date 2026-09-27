@@ -5,7 +5,15 @@ import { type Fmt, space } from "../fmt/builders.js";
 import type { Comment } from "../fmt/comments.js";
 import { formatExpr, maybeParenthesize } from "../fmt/expr.js";
 import { part, ruffOf, ruffStmtOf } from "../fmt/sink.js";
-import { exceptType, loopComments, tryCases, withComments, withItems } from "../fmt/stmt/clauses.js";
+import {
+  exceptType,
+  type ItemLayout,
+  loopComments,
+  tryCases,
+  withComments,
+  withItem,
+  withItems,
+} from "../fmt/stmt/clauses.js";
 import { clauseBody, leadingAlternateBranchComments } from "../fmt/stmt/suite.js";
 
 /** A clause as ruff's `clause` prints it: the comments around its header, and its body. */
@@ -87,10 +95,19 @@ export const stmtCompoundVia = {
     if (!h) throw new Error("python: an except type outside a try's handler");
     part(exceptType(f, h));
   },
-  "compound.withItems": (c: number) => {
-    const { f, s } = ruffStmtOf(c);
+  "compound.withItems": (c: number, ctx: StreamCtx<unknown>) => {
+    const { f, s } = ruffStmtOf(ctx.tree.parent(c));
     if (s.kind !== "With") throw new Error("python: a with clause outside a with");
     part(withItems(f, s));
+  },
+  // Given the item's value, prints the item in the layout its caller passes (`ctx.args`).
+  "compound.withItem": (c: number, ctx: StreamCtx<unknown>) => {
+    const n = ctx.tree.parent(c);
+    const { f, s } = ruffStmtOf(ctx.tree.parent(n));
+    const item = s.kind === "With" ? s.items.find((i) => i.ts === n) : undefined;
+    const args = ctx.args as { layout: ItemLayout; single: boolean } | undefined;
+    if (!item || !args) throw new Error("python: a with item outside a with's items");
+    part(withItem(f, item, args.layout, args.single));
   },
   // `async` and the space after it, where the statement has one.
   "compound.async": (token: number | undefined) => {

@@ -113,10 +113,10 @@ export function tryCases(
 }
 
 /** Ruff's `WithItemLayout`, and whether the item is the statement's only one. */
-type ItemLayout = "contextManagers" | "single" | "py38";
+export type ItemLayout = "contextManagers" | "single" | "py38";
 
 /** Ruff's `FormatWithItem`: the context manager, then `as` and the target. */
-function withItem(
+export function withItem(
   f: Fmt,
   item: WithItem,
   layout: ItemLayout,
@@ -179,11 +179,13 @@ export function withItems(f: Fmt, w: With): Format {
   const colonStart = startOf(f.tree, w.colon);
   const clauseNode = withClause(f, w);
   const single = w.items.length === 1 ? first : undefined;
+  // An item as its rule in format/stmt-compound.ts prints it, in the layout ruff chose for the statement.
+  const item = (i: WithItem, layout: ItemLayout, only: boolean) => dslPart(i.ts, { layout, single: only });
   const joined = () =>
     f.joinCommaSeparated(
       w.items.map((i) => ({
         end: i.end,
-        doc: withItem(f, i, "contextManagers", !!single),
+        doc: item(i, "contextManagers", !!single),
       })),
       colonStart,
       commaIn(f.tree, clauseNode, withKw),
@@ -208,18 +210,18 @@ export function withItems(f: Fmt, w: With): Format {
   else if (last && f.magicTrailingComma(last.end, colonStart))
     items = f.parenthesizeIfExpands(withKw, joined);
   else if (single && single.context.parens.length > 0)
-    items = withItem(f, single, "single", true);
+    items = item(single, "single", true);
   else if (!canParenthesize) {
     const comma = commaIn(f.tree, clauseNode, withKw);
     items = w.items.map((i, n) => [
       n > 0 ? [comma(w.items[n - 1]?.end ?? i.start), space] : [],
-      withItem(f, i, "py38", !!single),
+      item(i, "py38", !!single),
     ]);
   } else if (single && !single.vars)
-    items = withItem(f, single, "single", true);
+    items = item(single, "single", true);
   else if (single && canOmitOptionalParentheses(f, single.context))
     items = f.optionalParentheses(single.ts, () =>
-      withItem(f, single, "contextManagers", true),
+      item(single, "contextManagers", true),
     );
   else items = f.parenthesizeIfExpands(withKw, joined);
   return items;
