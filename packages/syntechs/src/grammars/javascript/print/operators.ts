@@ -4,11 +4,11 @@
 // against sink.ts.
 
 import type { CustomRule } from "../../../fmt/dsl/runtime.js";
-import { type Doc, text } from "../../../fmt/doc.js";
 import {
   BROKEN,
   capture,
   close,
+  commentsOf,
   GROUP,
   IF_BROKEN,
   IF_FLAT,
@@ -30,7 +30,7 @@ import {
 import {
   isLoneShortArgument,
   logicalRight,
-  printAssignment,
+  sPrintAssignment,
   shouldInlineLogicalExpression,
 } from "./assignment.js";
 import { needsParens, role, shouldFlatten } from "./parens.js";
@@ -59,10 +59,8 @@ import {
   kind,
   named,
   operator,
-  p,
   parent as parentOf,
   src,
-  t,
   unparen,
 } from "./util.js";
 
@@ -93,21 +91,20 @@ interface Binaryish {
   head: number;
 }
 
-const NO_PRINT: Doc[] = [];
 /**
  * `chain` inside `node`'s own comments, which prettier prints around the flat parts (a chain printed inline, not
- * through ctx.print). The comments stay Doc-built, as the Doc ctx lays them out, until the stream carries them.
+ * through ctx.print).
  */
-function withOwnComments(js: JsCtx, node: number, chain: Binaryish): Binaryish {
-  const wrapped = js.withComments(node, NO_PRINT);
-  if (wrapped === NO_PRINT) return chain;
-  const [leading, , trailing] = wrapped as [Doc, Doc, Doc];
+function withOwnComments(
+  ctx: JsStreamCtx,
+  node: number,
+  chain: Binaryish,
+): Binaryish {
+  const comments = commentsOf(ctx, node);
+  if (comments === undefined) return chain;
+  const [leading, trailing] = comments;
   return {
-    parts: [
-      () => place({ doc: leading }),
-      ...chain.parts,
-      () => place({ doc: trailing }),
-    ],
+    parts: [leading, ...chain.parts, trailing],
     head: chain.head + 1,
   };
 }
@@ -192,13 +189,13 @@ function printBinaryishExpressions(
   const rebalanced = printRebalancedChain(ctx, node);
   if (rebalanced)
     return isNested && hasComment(js, node)
-      ? withOwnComments(js, node, rebalanced)
+      ? withOwnComments(ctx, node, rebalanced)
       : rebalanced;
   let chain: Binaryish;
   if (isBinary(js, leftInner) && shouldFlatten(op, operator(js, leftInner))) {
     chain = printBinaryishExpressions(ctx, leftInner, true, isInsideParenthesis);
     if (left !== leftInner && hasComment(js, left))
-      chain = withOwnComments(js, left, chain);
+      chain = withOwnComments(ctx, left, chain);
   } else chain = { parts: [() => within(GROUP, () => ctx.print(left))], head: 0 };
 
   const shouldInline = shouldInlineLogicalExpression(js, node);
@@ -222,17 +219,20 @@ function printBinaryishExpressions(
     rightDoc = () => {
       sLine(0);
       // The right operand's own-line leading comments go above the operator, as prettier shifts them off.
-      const printed = js.print(right);
-      if (commentBeforeOperator && Array.isArray(printed)) {
-        const [comment = [], ...rest] = printed as Doc[];
-        place({ doc: comment });
+      const comments = commentBeforeOperator
+        ? commentsOf(ctx, right)
+        : undefined;
+      if (comments !== undefined) {
+        const [leading, trailing] = comments;
+        leading();
         tok(js, opTok);
         sText(" ");
-        place({ doc: rest });
+        ctx.printBare(right);
+        trailing();
       } else {
         tok(js, opTok);
         sText(" ");
-        place({ doc: printed });
+        ctx.print(right);
       }
     };
   else
@@ -262,7 +262,7 @@ function printBinaryishExpressions(
   );
   const result = { parts, head: chain.head };
   return isNested && hasComment(js, node)
-    ? withOwnComments(js, node, result)
+    ? withOwnComments(ctx, node, result)
     : result;
 }
 
@@ -1045,19 +1045,24 @@ const sequence: CustomRule<JsOptions> = (node, sctx) => {
   });
 };
 
-/** `a = b` and `a += b`, laid out by printAssignment, which is still Doc-built. */
+/** `a = b` and `a += b`, laid out by printAssignment. */
 const assignment: CustomRule<JsOptions> = (node, sctx) => {
-  const js = jsCtx(sctx).js;
+  const ctx = jsCtx(sctx);
+  const js = ctx.js;
+  const left = field(js, node, "left");
   const op = field(js, node, "operator") ?? anon(js, node, "=");
-  place({
-    doc: printAssignment(
-      js,
-      node,
-      p(js, field(js, node, "left")),
-      [text(" "), t(js, op)],
-      field(js, node, "right"),
-    ),
-  });
+  sPrintAssignment(
+    ctx,
+    node,
+    () => {
+      if (left !== undefined) ctx.print(left);
+    },
+    () => {
+      sText(" ");
+      tok(js, op);
+    },
+    field(js, node, "right"),
+  );
 };
 
 export const operatorRules: Record<string, JsRule> = {};
