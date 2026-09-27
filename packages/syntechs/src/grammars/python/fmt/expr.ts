@@ -745,11 +745,7 @@ function fields(f: Fmt, e: Expr, o: Opts): Format {
     case "Subscript":
       return subscript(f, e, o.chain ?? "default");
     case "Starred":
-      return [
-        f.tok(e.op),
-        f.dangling(f.comments.dangling(e)),
-        formatExpr(f, e.value),
-      ];
+      return dslPart(e.ts);
     case "UnaryOp":
       return dslPart(e.ts);
     case "BinOp":
