@@ -312,55 +312,81 @@ function shouldHugType(ctx: JsCtx, n: number): boolean {
   return kind(ctx, n) === "union_type" && shouldHugUnionType(ctx, n);
 }
 
-const opDoc = (
-  ctx: JsCtx,
-  op: number | undefined,
-  anchor: number,
-  kind: string,
-): Doc => (op !== undefined ? t(ctx, op) : synthetic(anchor, kind));
-
-const unionType: JsRule = (n, ctx, args?: Args) => {
-  if (isTransparentType(ctx, n)) return p(ctx, items(ctx, n)[0], args);
-  const { types, ops, lead } = flattenTypes(ctx, n);
-  const bar = (x: number) => opDoc(ctx, ops.get(x), x, "|");
-  if (shouldHugUnionType(ctx, n))
-    return join(
-      [],
-      types.map((x, i) =>
-        i === 0
-          ? p(ctx, x)
-          : [text(" "), bar(types[i - 1] as number), text(" "), p(ctx, x)],
-      ),
-    );
-  const printed = group(
-    types.map((x, i) => {
-      const b: Doc =
-        i === 0
-          ? ifBreak([
-              lead !== undefined ? t(ctx, lead) : synthetic(x, "|"),
-              text(" "),
-            ])
-          : [line, bar(types[i - 1] as number), text(" ")];
+/** Prettier's printUnionType. */
+const unionType: CustomRule<JsOptions> = (n, sctx) => {
+  const ctx = jsCtx(sctx);
+  const js = ctx.js;
+  const args = ctx.args;
+  if (isTransparentType(js, n)) return pr(ctx, items(js, n)[0], args);
+  const { types, ops, lead } = flattenTypes(js, n);
+  const bar = (x: number) => {
+    const op = ops.get(x);
+    if (op !== undefined) tok(js, op);
+    else sToken(x, "|", true);
+  };
+  if (shouldHugUnionType(js, n))
+    return types.forEach((x, i) => {
+      if (i > 0) {
+        sText(" ");
+        bar(types[i - 1] as number);
+        sText(" ");
+      }
+      ctx.print(x);
+    });
+  const printed = () => {
+    open(GROUP);
+    types.forEach((x, i) => {
+      if (i === 0) {
+        open(IF_BROKEN);
+        if (lead !== undefined) tok(js, lead);
+        else sToken(x, "|", true);
+        sText(" ");
+        close();
+      } else {
+        sLine(0);
+        bar(types[i - 1] as number);
+        sText(" ");
+      }
       // A member aligns under its `|`, and its comments do only when one leads it.
-      const bare = ctx.printBare(x);
-      return ctx.comments(x).leading.length > 0
-        ? [b, align(2, ctx.withComments(x, bare))]
-        : [b, ctx.withComments(x, align(2, bare))];
-    }),
-  );
-  const { parent: up, field: key } = typeRole(ctx, n);
-  const upKind = kind(ctx, up);
+      const bare = js.printBare(x);
+      place({
+        doc:
+          js.comments(x).leading.length > 0
+            ? align(2, js.withComments(x, bare))
+            : js.withComments(x, align(2, bare)),
+      });
+    });
+    close();
+  };
+  const { parent: up, field: key } = typeRole(js, n);
+  const upKind = kind(js, up);
   if (
-    kind(ctx, parent(ctx, n)) === "parenthesized_type" &&
-    typeNeedsParens(ctx, n)
-  )
-    return group([indent([softline, printed]), softline]);
-  if (upKind === "tuple_type" && items(ctx, up as number).length > 1)
-    return group([
-      indent([ifBreak([synthetic(n, "("), softline]), printed]),
-      softline,
-      ifBreak(synthetic(n, ")")),
-    ]);
+    kind(js, parent(js, n)) === "parenthesized_type" &&
+    typeNeedsParens(js, n)
+  ) {
+    open(GROUP);
+    open(INDENT);
+    sLine(SOFT);
+    printed();
+    close();
+    sLine(SOFT);
+    return close();
+  }
+  if (upKind === "tuple_type" && items(js, up as number).length > 1) {
+    open(GROUP);
+    open(INDENT);
+    open(IF_BROKEN);
+    sToken(n, "(", true);
+    sLine(SOFT);
+    close();
+    printed();
+    close();
+    sLine(SOFT);
+    open(IF_BROKEN);
+    sToken(n, ")", true);
+    close();
+    return close();
+  }
   const noIndent =
     upKind === "type_assertion" ||
     upKind === "tuple_type" ||
@@ -368,8 +394,13 @@ const unionType: JsRule = (n, ctx, args?: Args) => {
       (key === "consequence" || key === "alternative")) ||
     upKind === "type_arguments";
   if (args?.assignmentLayout === "break-after-operator" || noIndent)
-    return printed;
-  return group(indent([softline, printed]));
+    return printed();
+  open(GROUP);
+  open(INDENT);
+  sLine(SOFT);
+  printed();
+  close();
+  close();
 };
 
 const intersectionType: CustomRule<JsOptions> = (n, sctx) => {
@@ -1080,6 +1111,7 @@ const nodeCustoms = {
   indexSignature,
   functionType,
   signature,
+  unionType,
 } satisfies Record<string, CustomRule<JsOptions>>;
 
 export const typeCustoms = {
@@ -1088,7 +1120,6 @@ export const typeCustoms = {
 };
 
 export const typeRules: Record<string, JsRule> = {
-  union_type: unionType,
   type_alias_declaration: typeAlias,
   enum_assignment: enumAssignment,
   module: moduleDeclaration,

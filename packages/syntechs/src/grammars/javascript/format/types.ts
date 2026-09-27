@@ -25,6 +25,7 @@ export const types = {
   enum_declaration: () => inOrder(space),
   parenthesized_type: () => custom("parenthesizedType"),
   infer_type: () => custom("inferType"),
+  union_type: () => custom("unionType"),
   intersection_type: () => custom("intersectionType"),
   type_parameters: () => custom("typeParameters"),
   type_arguments: () => custom("typeParameters"),
