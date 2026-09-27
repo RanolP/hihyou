@@ -10,7 +10,6 @@ import {
   synthetic,
   text,
   token,
-  type Token,
   removeSoftLines,
   willBreak,
 } from "./elements.js";
@@ -853,49 +852,63 @@ export function number(raw: string): string {
 }
 
 /** A call's or class's arguments: an argument list prints by its rule; a sole generator's parentheses are ruff's. */
+export function writeArgs(f: Fmt, a: Arguments): void {
+  if (f.tree.kindName(a.ts) === "argument_list") sink.sDsl(a.ts);
+  else
+    writeArgumentsFrame(
+      f,
+      a,
+      () => f.writeTok(a.open),
+      () => writeArgumentItems(f, a),
+      () => f.writeTok(a.close),
+    );
+}
+
+/** `writeArgs` as a `Format`, for a caller still building one. */
 export function args(f: Fmt, a: Arguments): Format {
-  return f.tree.kindName(a.ts) === "argument_list"
-    ? dslPart(a.ts)
-    : argumentsFrame(f, a, f.tok(a.open), () => argumentItems(f, a), f.tok(a.close));
+  return record(() => writeArgs(f, a));
 }
 
 /** Ruff's frame of arguments: `items` between the brackets, or the dangling comments of an empty list. */
-export function argumentsFrame(f: Fmt, a: Arguments, open: Token, items: () => Format, close: Token): Format {
+export function writeArgumentsFrame(
+  f: Fmt,
+  a: Arguments,
+  open: () => void,
+  items: () => void,
+  close: () => void,
+): void {
   const dangling = f.comments.dangling(a);
   if (a.items.length === 0)
-    return f.at(PAREN, () => f.emptyParenthesized(open, dangling, close));
-  return f.parenthesized(open, items, close, dangling, argumentsHuggable(f, a));
+    f.at(PAREN, () => f.writeEmptyParenthesized(open, dangling, close));
+  else f.writeParenthesized(open, items, close, dangling, argumentsHuggable(f, a));
 }
 
 /** Ruff's arguments between their brackets, comma-separated in one group. */
-export function argumentItems(f: Fmt, a: Arguments): Format {
-  const comma = commaIn(f.tree, a.ts, a.ts);
+export function writeArgumentItems(f: Fmt, a: Arguments): void {
+  const comma = writeCommaIn(f.tree, a.ts, a.ts);
   const [single] = a.items;
+  sOpen(GROUP);
   if (a.items.length === 1 && single && isExpr(single)) {
-    const doc =
+    const write =
       single.kind === "Generator"
-        ? formatExpr(f, single, "preserve", { genPreserve: true })
-        : formatExpr(
-            f,
-            single,
-            singleArgumentParenthesized(f, single, a.end)
-              ? "always"
-              : "never",
-          );
-    return group(
-      f.joinCommaSeparated([{ end: single.end, doc }], a.end, comma),
-    );
-  }
-  return group(
-    f.joinCommaSeparated(
+        ? () => writeExpr(f, single, "preserve", { genPreserve: true })
+        : () =>
+            writeExpr(
+              f,
+              single,
+              singleArgumentParenthesized(f, single, a.end) ? "always" : "never",
+            );
+    f.writeJoinCommaSeparated([{ end: single.end, write }], a.end, comma);
+  } else
+    f.writeJoinCommaSeparated(
       a.items.map((i) => ({
         end: i.end,
-        doc: isExpr(i) ? formatExpr(f, i) : keyword(f, i),
+        write: () => (isExpr(i) ? writeExpr(f, i) : writeKeyword(f, i)),
       })),
       a.end,
       comma,
-    ),
-  );
+    );
+  sClose();
 }
 
 function singleArgumentParenthesized(f: Fmt, arg: Expr, end: number): boolean {
@@ -926,10 +939,11 @@ function argumentsHuggable(f: Fmt, a: Arguments): boolean {
   return !f.magicTrailingComma(arg.end, a.end);
 }
 
-export function keyword(f: Fmt, k: Keyword): Format {
+function writeKeyword(f: Fmt, k: Keyword): void {
   const cs = f.comments;
-  const body = dslPart(k.ts);
-  return [f.leading(cs.leading(k)), body, f.trailing(cs.trailing(k))];
+  f.writeLeading(cs.leading(k));
+  sink.sDsl(k.ts);
+  f.writeTrailing(cs.trailing(k));
 }
 
 export function unaryNeedsLineBreak(f: Fmt, e: UnaryOp): boolean {

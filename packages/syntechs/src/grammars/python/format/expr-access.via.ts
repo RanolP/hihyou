@@ -6,19 +6,19 @@ import { type Fmt, hard, soft } from "../fmt/builders.js";
 import type { Comment } from "../fmt/comments.js";
 import type { Format } from "../fmt/elements.js";
 import {
-  args,
-  argumentItems,
-  argumentsFrame,
   type Chain,
   chainValue,
   formatExpr,
   isCallLike,
   node,
   type TupleMode,
+  writeArgs,
+  writeArgumentItems,
+  writeArgumentsFrame,
   writeExpr,
   writeTuple,
 } from "../fmt/expr.js";
-import { COLLAPSE, frameParts, HARD, part, ruffOf, ruffStmtOf, sLine, sText } from "../fmt/sink.js";
+import { COLLAPSE, HARD, part, ruffOf, ruffStmtOf, sLine, sText } from "../fmt/sink.js";
 import { startOf, tokens } from "../fmt/trivia.js";
 
 /**
@@ -177,7 +177,8 @@ export const exprAccessVia = {
   // A call's dangling comments, then its arguments.
   "access.arguments": (c: number, ctx: StreamCtx<unknown>) => {
     const { f, e } = ruffOf(ctx.tree.parent(c));
-    part([f.dangling(f.comments.dangling(e)), args(f, (e as Call).args)]);
+    f.writeDangling(f.comments.dangling(e));
+    writeArgs(f, (e as Call).args);
   },
   "access.subscript": (c: number, ctx: StreamCtx<unknown>) => {
     const { f, e } = ruffOf(ctx.tree.parent(c));
@@ -191,12 +192,11 @@ export const exprAccessVia = {
   },
   "access.argumentsFrame": (n: number, ctx: StreamCtx<unknown>, frame: Frame) => {
     const { f, a } = argumentsOf(n, ctx);
-    const { open, body, close } = frameParts(frame);
-    part(argumentsFrame(f, a, open, body, close));
+    writeArgumentsFrame(f, a, frame.open, frame.body, frame.close);
   },
   "access.argumentItems": (c: number, ctx: StreamCtx<unknown>) => {
     const { f, a } = argumentsOf(ctx.tree.parent(c), ctx);
-    part(argumentItems(f, a));
+    writeArgumentItems(f, a);
   },
   "access.tuple": (n: number, ctx: StreamCtx<unknown>) => {
     const { f, e } = ruffOf(n);
