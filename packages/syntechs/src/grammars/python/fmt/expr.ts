@@ -1259,24 +1259,45 @@ function comp(f: Fmt, e: Comp, preserve: boolean): Format {
     e.open === undefined
   )
     return [group(formatExpr(f, e.elt)), softOrSpace, joined()];
+  if (e.open !== undefined) return dslPart(e.ts);
   const open = e.open !== undefined ? f.tok(e.open) : synthetic(e.ts, "(");
   const close = e.close !== undefined ? f.tok(e.close) : synthetic(e.ts, ")");
   return f.parenthesized(open, body, close, dangling);
 }
 
+/** Ruff's `FormatComprehension`: the `for` clause and each `if` clause from their DSL spec, between their comments. */
 export function comprehension(f: Fmt, c: Comprehension): Format {
   const cs = f.comments;
-  const spacer = (e: Expr, preserve: boolean) =>
-    cs.hasLeading(e) && !(preserve && e.parens.length > 0)
-      ? softOrSpace
-      : space;
-  const out: Format[] = [f.leading(cs.leading(c))];
-  const kws = c.kws;
-  const inKw = kws.at(-1) as number;
-  const forKw = kws.at(-2) as number;
-  if (kws.length === 3) out.push(f.tok(kws[0] as number), space);
+  const out: Format[] = [f.leading(cs.leading(c)), dslPart(c.ts)];
+  if (c.ifs.length > 0) {
+    const { ifs } = comprehensionComments(f, c);
+    const joined: Format[] = [];
+    for (const [i, cond] of c.ifs.entries()) {
+      if (i > 0) joined.push(softOrSpace);
+      joined.push(
+        f.leading((ifs[i] as ComprehensionComments["ifs"][number]).own),
+        dslPart(f.tree.parent(cond.kw)),
+      );
+    }
+    out.push(softOrSpace, joined);
+  }
+  out.push(f.trailing(cs.trailing(c)));
+  return out;
+}
+
+export interface ComprehensionComments {
+  readonly beforeTarget: Comment[];
+  readonly beforeIn: Comment[];
+  readonly trailingIn: Comment[];
+  /** Per `if` clause, the comments before its keyword: own-line ones lead it, end-of-line ones trail the keyword. */
+  readonly ifs: { readonly own: Comment[]; readonly eol: Comment[] }[];
+}
+
+/** Where a comprehension's dangling comments go among its clauses. */
+export function comprehensionComments(f: Fmt, c: Comprehension): ComprehensionComments {
+  const inKw = c.kws.at(-1) as number;
   const inStart = startOf(f.tree, inKw);
-  const dangling = cs.dangling(c);
+  const dangling = f.comments.dangling(c);
   const targetStart = outer(c.target).start;
   const iterStart = outer(c.iter).start;
   const beforeTarget = dangling.filter((d) => d.end < targetStart);
@@ -1285,41 +1306,23 @@ export function comprehension(f: Fmt, c: Comprehension): Format {
   const afterIn = afterTarget.filter((d) => d.end >= inStart);
   const trailingIn = afterIn.filter((d) => d.start < iterStart);
   let ifComments = afterIn.filter((d) => d.start >= iterStart);
-  out.push(
-    f.tok(forKw),
-    f.trailing(beforeTarget),
-    spacer(c.target, c.target.kind !== "Tuple"),
-    c.target.kind === "Tuple"
-      ? formatExpr(f, c.target, "preserve", { tuple: "never" })
-      : formatExpr(f, c.target),
-    beforeIn.length === 0 ? space : softOrSpace,
-    f.leading(beforeIn),
-    f.tok(inKw),
-    f.trailing(trailingIn),
-    spacer(c.iter, true),
-    formatExpr(f, c.iter),
-  );
-  if (c.ifs.length > 0) {
-    const joined: Format[] = [];
-    for (const [i, cond] of c.ifs.entries()) {
-      const kwStart = startOf(f.tree, cond.kw);
-      const mine = ifComments.filter((d) => d.start < kwStart);
-      ifComments = ifComments.filter((d) => d.start >= kwStart);
-      const own = mine.filter((d) => d.line === "own");
-      const eol = mine.filter((d) => d.line !== "own");
-      if (i > 0) joined.push(softOrSpace);
-      joined.push(
-        f.leading(own),
-        f.tok(cond.kw),
-        f.trailing(eol),
-        spacer(cond.test, true),
-        formatExpr(f, cond.test),
-      );
-    }
-    out.push(softOrSpace, joined);
-  }
-  out.push(f.trailing(cs.trailing(c)));
-  return out;
+  const ifs = c.ifs.map((cond) => {
+    const kwStart = startOf(f.tree, cond.kw);
+    const mine = ifComments.filter((d) => d.start < kwStart);
+    ifComments = ifComments.filter((d) => d.start >= kwStart);
+    return {
+      own: mine.filter((d) => d.line === "own"),
+      eol: mine.filter((d) => d.line !== "own"),
+    };
+  });
+  return { beforeTarget, beforeIn, trailingIn, ifs };
+}
+
+/** The space before a comprehension's part, a soft line when a comment leads it. */
+export function comprehensionSpacer(f: Fmt, e: Expr, preserve: boolean): Format {
+  return f.comments.hasLeading(e) && !(preserve && e.parens.length > 0)
+    ? softOrSpace
+    : space;
 }
 
 function slice(f: Fmt, e: Slice): Format {
