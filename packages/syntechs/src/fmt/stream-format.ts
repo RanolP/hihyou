@@ -1,4 +1,5 @@
 import type { Tree } from "../core/arena.js";
+import type { Comments } from "./comments.js";
 import {
   type Anchor,
   brokenNodes,
@@ -29,6 +30,8 @@ import { type FormatTree, firstLeaf } from "./tree.js";
 export interface StreamCtx<O = unknown> {
   readonly tree: FormatTree;
   readonly options: O;
+  /** What this format's placement pass returned (`LanguageSpec.placeComments`), for a rule that reads it whole. */
+  readonly placement: Comments;
   /** Appends `node` as its rule prints it, with its comments. */
   print(node: number): void;
   /** Appends `node` as its rule prints it (its text when it has none, or is broken), without its comments. */
@@ -143,9 +146,9 @@ export function formatStream<O>(
     if (!language) throw new Error("formatStream: a language without stream rules");
     if (base.printComment || base.printsOwnComments)
       throw new Error("formatStream: a language that prints its own comments");
-    resetStream();
     const resolved: O = { ...base.defaults, ...options };
     const settings = base.settings(resolved);
+    resetStream(settings.ruff === true);
     const rules: (StreamRule<O> | null)[] = [];
     const ruleOf = (n: number) => {
       const k = tree.kind(n);
@@ -179,6 +182,7 @@ export function formatStream<O>(
     const ctx: StreamCtx<O> = {
       tree,
       options: resolved,
+      placement: comments,
       // `printWithComments` of rules.ts.
       print(node) {
         printLeadingComments(ctx, node);
