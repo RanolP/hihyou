@@ -1,4 +1,4 @@
-import type { Layout } from "./printer.js";
+import type { Layout } from "./stream.js";
 
 /** `auto` takes the first line ending of the input, as prettier and ruff both do, and `lf` when it has none. */
 export type EndOfLine = "lf" | "crlf" | "cr" | "auto";

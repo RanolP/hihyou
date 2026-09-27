@@ -1,8 +1,3 @@
-import {
-  type Indentation,
-  type Layout,
-  render as renderIndentation,
-} from "./printer.js";
 import { textWidth } from "./width.js";
 
 /**
@@ -1160,6 +1155,80 @@ export interface StreamPrinted {
   lengths: Int32Array;
   synthetic: Uint8Array;
   at: Int32Array;
+}
+
+export interface Layout {
+  lineWidth: number;
+  indentWidth: number;
+  useTabs: boolean;
+  /**
+   * Measure as ruff's printer does rather than prettier's: a space counts where it stands, a group measured
+   * inside another records its mode for the `ifBreak`s that follow it, and any printed line break makes the
+   * next group measure afresh.
+   */
+  ruff?: boolean;
+}
+
+/** Prettier's indentation: each level an indent or an alignment, rendered to `value` spanning `length` columns. */
+export interface Indentation {
+  readonly value: string;
+  readonly length: number;
+  readonly queue: readonly (number | string | "indent")[];
+  /** The indentation one indent deeper, by id, built once: the printer and every width check step into it. */
+  indented: number;
+  /** The alignments already built from this one, by step. */
+  aligned: Map<number | string, number> | undefined;
+}
+
+// Prettier's generateIndent: alignment runs are spaces, or with tabs one tab each once an indent follows them.
+// A negative step drops the innermost level instead (prettier's dedent).
+export function renderIndentation(
+  from: Indentation,
+  step: number | string | "indent",
+  layout: Layout,
+): Indentation {
+  const queue =
+    typeof step === "number" && step < 0
+      ? from.queue.slice(0, -1)
+      : [...from.queue, step];
+  let value = "";
+  let length = 0;
+  let lastTabs = 0;
+  let lastSpaces = 0;
+  const flushSpaces = () => {
+    value += " ".repeat(lastSpaces);
+    length += lastSpaces;
+    lastTabs = 0;
+    lastSpaces = 0;
+  };
+  const flushTabs = () => {
+    value += "\t".repeat(lastTabs);
+    length += layout.indentWidth * lastTabs;
+    lastTabs = 0;
+    lastSpaces = 0;
+  };
+  for (const s of queue) {
+    if (s === "indent") {
+      if (layout.useTabs) {
+        flushTabs();
+        value += "\t";
+      } else {
+        flushSpaces();
+        value += " ".repeat(layout.indentWidth);
+      }
+      length += layout.indentWidth;
+    } else if (typeof s === "string") {
+      if (layout.useTabs) flushTabs();
+      else flushSpaces();
+      value += s;
+      length += s.length;
+    } else {
+      lastTabs += 1;
+      lastSpaces += s;
+    }
+  }
+  flushSpaces();
+  return { value, length, queue, indented: -1, aligned: undefined };
 }
 
 /** Prints the stream built since `resetStream`, as `printer.ts`'s `print` would print the equivalent Doc. */

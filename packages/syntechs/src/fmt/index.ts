@@ -11,7 +11,8 @@ export {
   ruffSettings,
   type Settings,
 } from "./options.js";
-export { type Layout, type Placed, print } from "./printer.js";
+export { type Placed, print } from "./printer.js";
+export type { Layout } from "./stream.js";
 export {
   type ByOptions,
   type Ctx,
