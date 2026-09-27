@@ -1,16 +1,26 @@
 // Prettier's assignment layouts (print/assignment.js): how `left = right`, a declarator, an object property
 // and a class property break.
 
-import {
-  type Doc,
-  group,
-  indent,
-  indentIfBreak,
-  line,
-  lineSuffixBoundary,
-  text,
-} from "../../../fmt/doc.js";
+import type { Doc } from "../../../fmt/doc.js";
 import { textWidth } from "../../../fmt/width.js";
+import {
+  capture,
+  canBreak,
+  close,
+  flatText,
+  GROUP,
+  INDENT,
+  type JsStreamCtx,
+  jsCtx,
+  onDoc,
+  open,
+  openIndentIfBreak,
+  type Part,
+  place,
+  sLine,
+  sLineSuffixBoundary,
+  sText,
+} from "../sink.js";
 import { printsAsMemberChain } from "./calls.js";
 import { printString } from "./literals.js";
 import { role } from "./parens.js";
@@ -19,9 +29,7 @@ import {
   CF,
   callArguments,
   callee,
-  canBreak,
   childWhere,
-  docText,
   field,
   first,
   type HasTree,
@@ -57,10 +65,89 @@ export type AssignmentLayout =
   | "chain-tail-arrow-chain"
   | "only-left";
 
+/** `fn`'s output inside an interval of `kind`; the interval's id. */
+function within(kind: number, fn: () => void): number {
+  const id = open(kind);
+  fn();
+  close();
+  return id;
+}
+
 /**
  * Prettier's printAssignment: `left`, `operator` (with its leading space), then `right` (printed with the chosen
- * layout as `assignmentLayout`) in one of its layouts.
+ * layout as `assignmentLayout`) in one of its layouts. `left` is captured, since the layout reads it.
  */
+export function sPrintAssignment(
+  ctx: JsStreamCtx,
+  node: number,
+  left: () => void,
+  operator: () => void,
+  right: number | undefined,
+): void {
+  const leftPart = capture(left);
+  const layout = chooseLayout(ctx.js, node, leftPart, right);
+  const printRight = () => {
+    if (right !== undefined) ctx.print(right, { assignmentLayout: layout });
+  };
+  const groupedLeft = () => within(GROUP, () => place(leftPart));
+  switch (layout) {
+    case "break-after-operator":
+      return void within(GROUP, () => {
+        groupedLeft();
+        operator();
+        within(GROUP, () =>
+          within(INDENT, () => {
+            sLine(0);
+            printRight();
+          }),
+        );
+      });
+    case "never-break-after-operator":
+      return void within(GROUP, () => {
+        groupedLeft();
+        operator();
+        sText(" ");
+        printRight();
+      });
+    case "fluid":
+      return void within(GROUP, () => {
+        groupedLeft();
+        operator();
+        const g = within(GROUP, () => within(INDENT, () => sLine(0)));
+        sLineSuffixBoundary();
+        openIndentIfBreak(g);
+        printRight();
+        close();
+      });
+    case "break-lhs":
+      return void within(GROUP, () => {
+        place(leftPart);
+        operator();
+        sText(" ");
+        within(GROUP, printRight);
+      });
+    case "chain":
+      groupedLeft();
+      operator();
+      sLine(0);
+      return printRight();
+    case "chain-tail":
+      groupedLeft();
+      operator();
+      return void within(INDENT, () => {
+        sLine(0);
+        printRight();
+      });
+    case "chain-tail-arrow-chain":
+      groupedLeft();
+      operator();
+      return printRight();
+    case "only-left":
+      return place(leftPart);
+  }
+}
+
+/** `sPrintAssignment` for a rule still on the Doc. */
 export function printAssignment(
   ctx: JsCtx,
   node: number,
@@ -68,35 +155,15 @@ export function printAssignment(
   operator: Doc,
   right: number | undefined,
 ): Doc {
-  const layout = chooseLayout(ctx, node, left, right);
-  const rightDoc: Doc =
-    right !== undefined ? ctx.print(right, { assignmentLayout: layout }) : [];
-  switch (layout) {
-    case "break-after-operator":
-      return group([group(left), operator, group(indent([line, rightDoc]))]);
-    case "never-break-after-operator":
-      return group([group(left), operator, text(" "), rightDoc]);
-    case "fluid": {
-      const g = group(indent(line));
-      return group([
-        group(left),
-        operator,
-        g,
-        lineSuffixBoundary,
-        indentIfBreak(rightDoc, g),
-      ]);
-    }
-    case "break-lhs":
-      return group([left, operator, text(" "), group(rightDoc)]);
-    case "chain":
-      return [group(left), operator, line, rightDoc];
-    case "chain-tail":
-      return [group(left), operator, indent([line, rightDoc])];
-    case "chain-tail-arrow-chain":
-      return [group(left), operator, rightDoc];
-    case "only-left":
-      return left;
-  }
+  return onDoc((n, s) =>
+    sPrintAssignment(
+      jsCtx(s),
+      n,
+      () => place({ doc: left }),
+      () => place({ doc: operator }),
+      right,
+    ),
+  )(node, ctx);
 }
 
 const isDeclarator = (x: HasTree, n: number | undefined) =>
@@ -110,7 +177,7 @@ const isObjectProperty = (x: HasTree, n: number) => kind(x, n) === "pair";
 function chooseLayout(
   ctx: JsCtx,
   node: number,
-  left: Doc,
+  left: Part,
   rightNode: number | undefined,
 ): AssignmentLayout {
   if (rightNode === undefined) return "only-left";
@@ -439,9 +506,9 @@ const isGenericType = (x: HasTree, n: number | undefined) =>
 function isObjectPropertyWithShortKey(
   ctx: JsCtx,
   node: number,
-  keyDoc: Doc,
+  keyPart: Part,
 ): boolean {
   if (!isObjectProperty(ctx, node)) return false;
-  const key = docText(keyDoc);
+  const key = flatText(keyPart);
   return key !== undefined && textWidth(key) < ctx.options.tabWidth + 3;
 }
