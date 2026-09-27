@@ -11,7 +11,7 @@ import { grammar, language as parser } from "./index.js";
 import { jsAtoms, jsNormalize } from "./normalize.js";
 import { assignmentCustoms } from "./print/assignment.js";
 import { callCustoms, callRules } from "./print/calls.js";
-import { classCustoms, classRules } from "./print/classes.js";
+import { classCustoms } from "./print/classes.js";
 import { handleComment } from "./print/comments.js";
 import { functionCustoms, functionRules } from "./print/functions.js";
 import { isJsxSpreadArgument, jsxCustoms, jsxIgnored, jsxRules } from "./print/jsx.js";
@@ -127,7 +127,6 @@ export function jsRules(): Record<string, JsRule> {
     ...callRules,
     ...functionRules,
     ...operatorRules,
-    ...classRules,
     ...typeRules,
     ...jsxRules,
     parenthesized_expression: parenthesized,

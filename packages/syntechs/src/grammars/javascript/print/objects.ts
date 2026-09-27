@@ -1,13 +1,7 @@
 // Prettier's object, array, property and key printers (print/object.js, array.js, property.js, key.js) and
 // printMethod (print/function.js).
 
-import {
-  type Doc,
-  group,
-  hardline,
-  join,
-  line,
-} from "../../../fmt/doc.js";
+import type { Doc } from "../../../fmt/doc.js";
 import type { CustomRule } from "../../../fmt/dsl/runtime.js";
 import type { StreamCtx, StreamRule } from "../../../fmt/stream-format.js";
 import { lfAfter, newlineBetween, nextLineEmpty } from "../../../fmt/text.js";
@@ -53,7 +47,6 @@ import {
   kind,
   lastChildWhere,
   named,
-  p,
   parent as parentOf,
   src,
   trailingCommaAllowed,
@@ -403,22 +396,6 @@ export function sPrintDecorators(
   if (decorators.some((d) => lfAfter(sctx.tree, d) > 0)) sHardline();
   else sLine(0);
   close();
-}
-
-/** `sPrintDecorators` for a rule still on the Doc. */
-export function printDecorators(
-  ctx: JsCtx,
-  decorators: readonly number[],
-): Doc {
-  if (decorators.length === 0) return [];
-  const broken = decorators.some((d) => lfAfter(ctx.tree, d) > 0);
-  return group([
-    join(
-      line,
-      decorators.map((d) => p(ctx, d)),
-    ),
-    broken ? hardline : line,
-  ]);
 }
 
 // --- arrays -----------------------------------------------------------------------------------------------------

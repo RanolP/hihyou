@@ -1,11 +1,5 @@
 // Prettier's class printers (print/class.js, class-body.js) and the declaration half of print/decorators.js.
 
-import {
-  type Doc,
-  hardline,
-  join,
-  text,
-} from "../../../fmt/doc.js";
 import type { CustomRule, TokenRule } from "../../../fmt/dsl/runtime.js";
 import type { StreamCtx } from "../../../fmt/stream-format.js";
 import { nextLineEmpty } from "../../../fmt/text.js";
@@ -26,12 +20,9 @@ import {
   sText,
   sToken,
 } from "../sink.js";
-import { printAssignment } from "./assignment.js";
-import { printMethodValue } from "./functions.js";
-import {
-  printKey,
-  printDecorators as printMemberDecorators,
-} from "./objects.js";
+import { sPrintAssignment } from "./assignment.js";
+import { sPrintMethodValue } from "./functions.js";
+import { sPrintDecorators, sPrintKey } from "./objects.js";
 import {
   anon,
   CF,
@@ -45,15 +36,12 @@ import {
   items,
   type JsCtx,
   type JsOptions,
-  type JsRule,
   kind,
   lastChildWhere,
   named,
-  p,
   parent,
   separators,
   src,
-  t,
 } from "./util.js";
 
 const FIELD_KINDS = new Set(["field_definition", "public_field_definition"]);
@@ -366,15 +354,14 @@ const classBody: CustomRule<JsOptions> = (n, sctx) => {
       members.push(c);
     }
   }
-  const dangling = ctx.dangling(n);
+  const dangling = sctx.danglingComments(n);
   tok(ctx, anon(ctx, n, "{"));
   if (members.length > 0 || dangling.length > 0) {
     open(INDENT);
     sHardline();
     members.forEach((m, i) => {
       const decorators = decoratorsBefore.get(m);
-      if (decorators !== undefined)
-        place({ doc: printMemberDecorators(ctx, decorators) });
+      if (decorators !== undefined) sPrintDecorators(sctx, decorators);
       sctx.print(m);
       const next = members[i + 1];
       if (next !== undefined) {
@@ -382,7 +369,10 @@ const classBody: CustomRule<JsOptions> = (n, sctx) => {
         if (nextLineEmpty(ctx.tree, m)) sHardline();
       }
     });
-    if (dangling.length > 0) place({ doc: join(hardline, dangling) });
+    dangling.forEach((c, i) => {
+      if (i > 0) sHardline();
+      sctx.comment(c);
+    });
     close();
     sHardline();
   }
@@ -422,51 +412,60 @@ const classSemi: TokenRule<JsOptions> = (token, n, sctx) => {
  * assignment of its value (if any) to its decorators, modifiers, key and type.
  */
 const classProperty: TokenRule<JsOptions> = (eq, n, sctx) => {
-  const { js: ctx } = jsCtx(sctx);
+  const s = jsCtx(sctx);
+  const ctx = s.js;
   const key = field(ctx, n, "name") ?? field(ctx, n, "property");
-  const parts: Doc[] = [printMemberDecorators(ctx, decoratorsOf(ctx, n))];
   const all = children(ctx, n);
-  for (const c of all) {
-    if (c === key) break;
-    if (isComment(ctx, c) || kind(ctx, c) === "decorator") continue;
-    parts.push(p(ctx, c), text(" "));
-  }
-  parts.push(printKey(ctx, n));
   const after = key !== undefined ? all.slice(all.indexOf(key) + 1) : [];
   const mark = after.find(
     (c) => !named(ctx, c) && (kind(ctx, c) === "?" || kind(ctx, c) === "!"),
   );
-  parts.push(t(ctx, mark), p(ctx, field(ctx, n, "type")));
-  const value = field(ctx, n, "value");
-  place({
-    doc: printAssignment(ctx, n, parts, [text(" "), t(ctx, eq)], value),
-  });
+  sPrintAssignment(
+    s,
+    n,
+    () => {
+      sPrintDecorators(sctx, decoratorsOf(ctx, n));
+      for (const c of all) {
+        if (c === key) break;
+        if (isComment(ctx, c) || kind(ctx, c) === "decorator") continue;
+        sctx.print(c);
+        sText(" ");
+      }
+      sPrintKey(s, n);
+      tok(ctx, mark);
+      print(sctx, field(ctx, n, "type"));
+    },
+    () => {
+      sText(" ");
+      tok(ctx, eq);
+    },
+    field(ctx, n, "value"),
+  );
 };
 
 /** Prettier's printMethod for an abstract method: decorators, modifiers, key, `?`, then the signature. */
 const abstractMethod: CustomRule<JsOptions> = (n, sctx) => {
-  const { js: ctx } = jsCtx(sctx);
+  const s = jsCtx(sctx);
+  const ctx = s.js;
   const name = field(ctx, n, "name");
   const kids = children(ctx, n);
-  place({
-    doc: printMemberDecorators(
-      ctx,
-      kids.filter((c) => kind(ctx, c) === "decorator"),
-    ),
-  });
+  sPrintDecorators(
+    sctx,
+    kids.filter((c) => kind(ctx, c) === "decorator"),
+  );
   for (const c of kids) {
     if (c === name) break;
     if (isComment(ctx, c) || kind(ctx, c) === "decorator") continue;
     sctx.print(c);
     if (kind(ctx, c) !== "*") sText(" ");
   }
-  place({ doc: printKey(ctx, n) });
+  sPrintKey(s, n);
   if (name !== undefined) {
     const mark = kids[kids.indexOf(name) + 1];
     if (mark !== undefined && !named(ctx, mark) && kind(ctx, mark) === "?")
       tok(ctx, mark);
   }
-  place({ doc: printMethodValue(ctx, n) });
+  sPrintMethodValue(s, n);
 };
 
 export const classCustoms = {
@@ -476,6 +475,3 @@ export const classCustoms = {
   "class.semi": classSemi,
   "class.abstractMethod": abstractMethod,
 } satisfies Record<string, CustomRule<JsOptions> | TokenRule<JsOptions>>;
-
-/** Empty: every class kind prints from the DSL spec. */
-export const classRules: Record<string, JsRule> = {};
