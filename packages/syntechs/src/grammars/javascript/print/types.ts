@@ -5,34 +5,37 @@
 
 import {
   align,
-  conditionalGroup,
   type Doc,
   group,
   hardline,
-  ifBreak,
   indent,
   join,
   line,
   softline,
-  synthetic,
   text,
   token,
 } from "../../../fmt/doc.js";
 import type { CustomRule, TokenRule } from "../../../fmt/dsl/runtime.js";
+import type { StreamRule } from "../../../fmt/stream-format.js";
 import { lfAfter, newlineBetween, nextLineEmpty } from "../../../fmt/text.js";
 import { firstLeaf } from "../../../fmt/tree.js";
 import {
   BROKEN,
   capture,
   close,
+  closeChoice,
+  closeState,
   GROUP,
   IF_BROKEN,
   IF_FLAT,
   INDENT,
   type JsStreamCtx,
   jsCtx,
+  onDoc,
   open,
+  openChoice,
   openIndentIfBreak,
+  openState,
   place,
   SOFT,
   sHardline,
@@ -73,7 +76,6 @@ import {
   named,
   p,
   parent,
-  semi,
   separators,
   src,
   t,
@@ -586,23 +588,25 @@ const typeParameter: CustomRule<JsOptions> = (n, sctx) => {
 
 // --- declarations ---------------------------------------------------------------------------------------------
 
-const typeAlias: JsRule = (n, ctx) => {
+/** A type alias up to its `;`, `.via("typeAlias")` on its name: printAssignment through the Doc bridge. */
+const typeAlias: CustomRule<JsOptions> = (name, sctx) => {
+  const js = jsCtx(sctx).js;
+  const n = parent(js, name)!;
   const left: Doc = [
-    t(ctx, anonKid(ctx, n, "type")),
+    t(js, anonKid(js, n, "type")),
     text(" "),
-    p(ctx, field(ctx, n, "name")),
-    p(ctx, field(ctx, n, "type_parameters")),
+    p(js, name),
+    p(js, field(js, n, "type_parameters")),
   ];
-  return [
-    printAssignment(
-      ctx,
+  place({
+    doc: printAssignment(
+      js,
       n,
       left,
-      [text(" "), t(ctx, anonKid(ctx, n, "="))],
-      field(ctx, n, "value"),
+      [text(" "), t(js, anonKid(js, n, "="))],
+      field(js, n, "value"),
     ),
-    semi(ctx, n),
-  ];
+  });
 };
 
 /** A module's body, `.via("moduleBody")`: a group of its own. */
@@ -667,37 +671,62 @@ const castExpression: CustomRule<JsOptions> = (n, sctx) => {
   }
 };
 
-const typeAssertion: JsRule = (n, ctx) => {
-  const args = childWhere(ctx, n, (c) => kind(ctx, c) === "type_arguments");
-  const expression = items(ctx, n).find((c) => c !== args);
-  const inner = args !== undefined ? items(ctx, args)[0] : undefined;
-  const cast =
-    args !== undefined
-      ? group([
-          t(ctx, anonKid(ctx, args, "<")),
-          indent([softline, p(ctx, inner)]),
-          softline,
-          t(ctx, lastAnonKid(ctx, args, ">")),
-        ])
-      : [];
-  const printed = p(ctx, expression);
+/** `<T>x`, TS-only: the tsx grammar the spec is typed against has no such kind, so typeRules runs it via onDoc. */
+const typeAssertion: StreamRule<JsOptions> = (n, sctx) => {
+  const ctx = jsCtx(sctx);
+  const js = ctx.js;
+  const args = childWhere(js, n, (c) => kind(js, c) === "type_arguments");
+  const expression = items(js, n).find((c) => c !== args);
+  const cast = capture(() => {
+    if (args === undefined) return;
+    open(GROUP);
+    tok(js, anonKid(js, args, "<"));
+    open(INDENT);
+    sLine(SOFT);
+    const inner = items(js, args)[0];
+    if (inner !== undefined) ctx.print(inner);
+    close();
+    sLine(SOFT);
+    tok(js, lastAnonKid(js, args, ">"));
+    close();
+  });
+  const printed = capture(() => {
+    if (expression !== undefined) ctx.print(expression);
+  });
   const bare =
-    expression !== undefined ? kind(ctx, unparen(ctx, expression)) : undefined;
-  if (bare === "array" || bare === "object") return group([cast, printed]);
-  const broken = group(
-    [
-      ifBreak(synthetic(n, "(")),
-      indent([softline, printed]),
-      softline,
-      ifBreak(synthetic(n, ")")),
-    ],
-    true,
-  );
-  return conditionalGroup([
-    [cast, printed],
-    [cast, broken],
-    [cast, printed],
-  ]);
+    expression !== undefined ? kind(js, unparen(js, expression)) : undefined;
+  if (bare === "array" || bare === "object") {
+    open(GROUP);
+    place(cast);
+    place(printed);
+    close();
+    return;
+  }
+  const state = (body: () => void) => {
+    openState();
+    place(cast);
+    body();
+    closeState();
+  };
+  openChoice(false);
+  state(() => place(printed));
+  state(() => {
+    open(GROUP, -1, BROKEN);
+    open(IF_BROKEN);
+    sToken(n, "(", true);
+    close();
+    open(INDENT);
+    sLine(SOFT);
+    place(printed);
+    close();
+    sLine(SOFT);
+    open(IF_BROKEN);
+    sToken(n, ")", true);
+    close();
+    close();
+  });
+  state(() => place(printed));
+  closeChoice();
 };
 
 // --- object types and interfaces ------------------------------------------------------------------------------
@@ -1104,6 +1133,7 @@ const nodeCustoms = {
   signature,
   unionType,
   moduleBody,
+  typeAlias,
 } satisfies Record<string, CustomRule<JsOptions>>;
 
 export const typeCustoms = {
@@ -1113,6 +1143,5 @@ export const typeCustoms = {
 };
 
 export const typeRules: Record<string, JsRule> = {
-  type_alias_declaration: typeAlias,
-  type_assertion: typeAssertion,
+  type_assertion: onDoc(typeAssertion),
 };

@@ -22,6 +22,10 @@ export const types = {
   readonly_type: () => inOrder(space),
   template_literal_type: () => inOrder(),
   template_type: ($) => ["${", $.children, "}"],
+  type_alias_declaration: ($) => [
+    $.name.via("typeAlias"),
+    tok(";").via("semi"),
+  ],
   enum_declaration: () => inOrder(space),
   enum_assignment: ($) => [
     $.name.via("memberKey"),
