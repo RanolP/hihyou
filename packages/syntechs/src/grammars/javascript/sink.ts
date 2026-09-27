@@ -20,7 +20,12 @@ import {
 } from "../../fmt/doc.js";
 import * as stream from "../../fmt/stream.js";
 import { sDoc } from "../../fmt/stream-doc.js";
-import type { StreamCtx, StreamRule } from "../../fmt/stream-format.js";
+import {
+  printLeadingComments,
+  printTrailingComments,
+  type StreamCtx,
+  type StreamRule,
+} from "../../fmt/stream-format.js";
 import { printComment } from "./print/literals.js";
 import {
   type Args,
@@ -256,6 +261,21 @@ export const canBreak = (part: Part): boolean => docCanBreak(part.doc);
 export const flatText = (part: Part): string | undefined => docText(part.doc);
 /** `part` with its non-hard lines flat, its ifBreaks flat, and its groups no longer forced to break. */
 export const removeLines = (part: Part): Part => ({ doc: docRemoveLines(part.doc) });
+
+/**
+ * What `fn` writes, between the comments attached to `node`: for a rule that prints a child's own tokens rather
+ * than through `print`, as a statement prints its `(condition)`. On the Doc, the Doc ctx places them, since the
+ * comment lists `onDoc` gives are empty.
+ */
+export function withComments(ctx: JsStreamCtx, node: number, fn: () => void): void {
+  if (frames.length > 0) {
+    put(ctx.js.withComments(node, record(fn)));
+    return;
+  }
+  printLeadingComments(ctx, node);
+  fn();
+  printTrailingComments(ctx, node);
+}
 
 /** Writes a Doc built by a rule still on the Doc. */
 function writeDoc(d: Doc): void {
