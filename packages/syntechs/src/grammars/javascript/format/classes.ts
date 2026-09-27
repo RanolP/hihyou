@@ -17,6 +17,7 @@ export const classes = {
   class_body: () => custom("class.body"),
   ...jsOnly,
   public_field_definition: () => [tok("=").via("class.property"), tok(";").via("class.semi")],
+  abstract_method_signature: () => custom("class.abstractMethod"),
   class_static_block: ($) => ["static", space, $.body],
   decorator: ($) => ["@", $.children],
 } satisfies JsStructure;

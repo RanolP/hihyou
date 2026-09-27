@@ -27,8 +27,8 @@ import {
   sToken,
 } from "../sink.js";
 import { printAssignment } from "./assignment.js";
+import { printMethodValue } from "./functions.js";
 import {
-  method,
   printKey,
   printDecorators as printMemberDecorators,
 } from "./objects.js";
@@ -443,13 +443,39 @@ const classProperty: TokenRule<JsOptions> = (eq, n, sctx) => {
   });
 };
 
+/** Prettier's printMethod for an abstract method: decorators, modifiers, key, `?`, then the signature. */
+const abstractMethod: CustomRule<JsOptions> = (n, sctx) => {
+  const { js: ctx } = jsCtx(sctx);
+  const name = field(ctx, n, "name");
+  const kids = children(ctx, n);
+  place({
+    doc: printMemberDecorators(
+      ctx,
+      kids.filter((c) => kind(ctx, c) === "decorator"),
+    ),
+  });
+  for (const c of kids) {
+    if (c === name) break;
+    if (isComment(ctx, c) || kind(ctx, c) === "decorator") continue;
+    sctx.print(c);
+    if (kind(ctx, c) !== "*") sText(" ");
+  }
+  place({ doc: printKey(ctx, n) });
+  if (name !== undefined) {
+    const mark = kids[kids.indexOf(name) + 1];
+    if (mark !== undefined && !named(ctx, mark) && kind(ctx, mark) === "?")
+      tok(ctx, mark);
+  }
+  place({ doc: printMethodValue(ctx, n) });
+};
+
 export const classCustoms = {
   class: printClass,
   "class.body": classBody,
   "class.property": classProperty,
   "class.semi": classSemi,
+  "class.abstractMethod": abstractMethod,
 } satisfies Record<string, CustomRule<JsOptions> | TokenRule<JsOptions>>;
 
-export const classRules: Record<string, JsRule> = {
-  abstract_method_signature: method,
-};
+/** Empty: every class kind prints from the DSL spec. */
+export const classRules: Record<string, JsRule> = {};
