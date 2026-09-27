@@ -32,14 +32,96 @@ export interface StreamCtx<O = unknown> {
   readonly options: O;
   /** Appends `node` as its rule prints it, with its comments. */
   print(node: number): void;
+  /** Appends `node` as its rule prints it (its text when it has none, or is broken), without its comments. */
+  printNode(node: number): void;
   items(node: number): number[];
+  /** The comments attached before (`leading`) or after (`trailing`) `node`, in source order. */
+  leadingComments(node: number): readonly number[];
+  trailingComments(node: number): readonly number[];
   danglingComments(node: number): readonly number[];
+  isLineComment(c: number): boolean;
   /** Appends comment `c`. */
   comment(c: number): void;
-  hasDanglingLineComment(node: number): boolean;
-  hasComment(node: number, where: "leadingLine" | "trailingSameLine"): boolean;
   isList(node: number): boolean;
 }
+
+/** What laying out comment `c` next to its node reads of it. */
+export interface CommentFacts {
+  readonly c: number;
+  /** A line comment, which ends its line. */
+  readonly line: boolean;
+  /** The line breaks before it (`tree.lf`) and after it (`lfAfter`). */
+  readonly lf: number;
+  readonly lfAfter: number;
+}
+
+export const commentFacts = (ctx: StreamCtx<unknown>, c: number): CommentFacts => ({
+  c,
+  line: ctx.isLineComment(c),
+  lf: ctx.tree.lf(c),
+  lfAfter: lfAfter(ctx.tree, c),
+});
+
+// Prettier's printLeadingComment and printTrailingComment (main/comments/print.js), one comment at a time.
+
+/** Leading comment `f`, then what separates it from its node. */
+export function printLeadingComment(ctx: StreamCtx<unknown>, f: CommentFacts): void {
+  ctx.comment(f.c);
+  if (f.line) sHardline();
+  else if (f.lfAfter === 0) sText(" ");
+  else if (f.lf > 0) sHardline();
+  else sLine(0);
+  if (f.lfAfter >= 2) sHardline();
+}
+
+/** How a trailing comment printed, which decides how the next one of the same node prints. */
+export interface Trailed {
+  readonly line: boolean;
+  readonly suffix: boolean;
+}
+
+/** Trailing comment `f`, after the trailing comment of the same node that printed as `previous`, if any. */
+export function printTrailingComment(
+  ctx: StreamCtx<unknown>,
+  f: CommentFacts,
+  previous: Trailed | undefined,
+): Trailed {
+  if ((previous?.suffix && !previous.line) || f.lf > 0) {
+    open(LINE_SUFFIX);
+    sHardline();
+    if (f.lf >= 2) sHardline();
+    ctx.comment(f.c);
+    close();
+    return { line: f.line, suffix: true };
+  }
+  if (f.line || previous?.suffix) {
+    open(LINE_SUFFIX);
+    sText(" ");
+    ctx.comment(f.c);
+    close();
+    if (f.line) sBreakParent();
+    return { line: f.line, suffix: true };
+  }
+  sText(" ");
+  ctx.comment(f.c);
+  return { line: f.line, suffix: false };
+}
+
+export function printLeadingComments(ctx: StreamCtx<unknown>, node: number): void {
+  for (const c of ctx.leadingComments(node)) printLeadingComment(ctx, commentFacts(ctx, c));
+}
+
+export function printTrailingComments(ctx: StreamCtx<unknown>, node: number): void {
+  let previous: Trailed | undefined;
+  for (const c of ctx.trailingComments(node))
+    previous = printTrailingComment(ctx, commentFacts(ctx, c), previous);
+}
+
+/** A trailing line comment of `node` on the line its first token starts, which must end that line. */
+export const endsLine = (ctx: StreamCtx<unknown>, node: number, c: number): boolean =>
+  ctx.isLineComment(c) &&
+  !newlineBetween(ctx.tree, firstLeaf(ctx.tree, node), c) &&
+  !ctx.tree.text(c).includes("\n");
 
 export type StreamRule<O = unknown> = (node: number, ctx: StreamCtx<O>) => void;
 
@@ -90,54 +172,23 @@ export function formatStream<O>(
     const broken = brokenNodes(tree);
     const isBroken = (node: number) => broken !== undefined && broken.has(node);
 
-    // `printWithComments` of rules.ts.
-    const print = (node: number) => {
+    const none: readonly number[] = [];
+    const printNode = (node: number) => {
       const rule = (!isBroken(node) && ruleOf(node)) || null;
-      const attached = comments.of(node);
-      if (attached)
-        for (const c of attached.leading) {
-          comment(c);
-          const lf = lfAfter(tree, c);
-          if (isLine(c)) sHardline();
-          else if (lf === 0) sText(" ");
-          else if (tree.lf(c) > 0) sHardline();
-          else sLine(0);
-          if (lf >= 2) sHardline();
-        }
       if (rule) rule(node, ctx);
       else sToken(node, tree.text(node));
-      if (!attached) return;
-      let previous: { line: boolean; suffix: boolean } | undefined;
-      for (const c of attached.trailing) {
-        const lineComment = isLine(c);
-        let suffix: boolean;
-        if ((previous?.suffix && !previous.line) || tree.lf(c) > 0) {
-          open(LINE_SUFFIX);
-          sHardline();
-          if (tree.lf(c) >= 2) sHardline();
-          comment(c);
-          close();
-          suffix = true;
-        } else if (lineComment || previous?.suffix) {
-          open(LINE_SUFFIX);
-          sText(" ");
-          comment(c);
-          close();
-          if (lineComment) sBreakParent();
-          suffix = true;
-        } else {
-          sText(" ");
-          comment(c);
-          suffix = false;
-        }
-        previous = { line: lineComment, suffix };
-      }
     };
 
     const ctx: StreamCtx<O> = {
       tree,
       options: resolved,
-      print,
+      // `printWithComments` of rules.ts.
+      print(node) {
+        printLeadingComments(ctx, node);
+        printNode(node);
+        printTrailingComments(ctx, node);
+      },
+      printNode,
       items(node) {
         const items: number[] = [];
         for (let i = 0, count = tree.count(node); i < count; i++) {
@@ -146,27 +197,18 @@ export function formatStream<O>(
         }
         return items;
       },
+      leadingComments: (node) => comments.of(node)?.leading ?? none,
+      trailingComments: (node) => comments.of(node)?.trailing ?? none,
       danglingComments: (node) => comments.dangling(node),
+      isLineComment: isLine,
       comment,
-      hasDanglingLineComment: (node) => comments.dangling(node).some(isLine),
-      hasComment(node, where) {
-        const attached = comments.of(node);
-        if (!attached) return false;
-        if (where === "leadingLine") return attached.leading.some(isLine);
-        return attached.trailing.some(
-          (c) =>
-            isLine(c) &&
-            !newlineBetween(tree, firstLeaf(tree, node), c) &&
-            !tree.text(c).includes("\n"),
-        );
-      },
       isList(node) {
         const rule = ruleOf(node);
         return rule !== null && language.lists.has(rule);
       },
     };
 
-    print(tree.root);
+    ctx.print(tree.root);
     sHardline();
     const printed = printStream(settings);
     const { text } = printed;

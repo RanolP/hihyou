@@ -7,7 +7,8 @@
 //            on the width.
 //   wrap     sequence + the kind's wrapping rule -> stream calls: groups, indents, lines and fills.
 //
-// A child is an opaque `child` entry that the core prints with its comments by its own kind's rules.
+// A child is an opaque `child` entry that the core prints by its own kind's rules; its comments are entries of
+// their own around it, which flatten puts there and wrap reads its comment-driven breaks from.
 import { newlineBetween, nextLineEmpty } from "../text.js";
 import { firstLeaf } from "../tree.js";
 import {
@@ -25,7 +26,17 @@ import {
   sText,
   sToken,
 } from "../stream.js";
-import type { StreamCtx, StreamRule, StreamRules } from "../stream-format.js";
+import {
+  type CommentFacts,
+  commentFacts,
+  endsLine,
+  printLeadingComment,
+  printTrailingComment,
+  type StreamCtx,
+  type StreamRule,
+  type StreamRules,
+  type Trailed,
+} from "../stream-format.js";
 import type { Cond, DslGrammar, FormatIR, Tree, Wrap } from "./dsl.js";
 import { fieldChild, listItems, separators, tokenChild } from "./runtime.js";
 
@@ -34,8 +45,15 @@ export type Entry =
   | { readonly e: "space" }
   | { readonly e: "hardline" }
   | { readonly e: "child"; readonly node: number; readonly kind: string }
-  /** A dangling comment. */
-  | { readonly e: "comment"; readonly c: number }
+  /**
+   * A comment attached before (`leading`) or after (`trailing`) the `child` entry next to it, or one of the
+   * node's comments next to no child (`dangling`); `endsLine`: a trailing line comment on its child's first line.
+   */
+  | ({
+      readonly e: "comment";
+      readonly at: "leading" | "trailing" | "dangling";
+      readonly endsLine: boolean;
+    } & CommentFacts)
   | { readonly e: "custom"; readonly name: string }
   /** Opens a frame: brackets (its first and last entries are the bracket tokens), or a list of `items`. */
   | { readonly e: "brackets" }
@@ -69,6 +87,17 @@ export function flatten<O>(
     bound.set(text, nth + 1);
     return tokenChild(t, node, text, nth);
   };
+  const comment = (c: number, at: "leading" | "trailing" | "dangling", ends = false): Entry => ({
+    e: "comment",
+    at,
+    endsLine: ends,
+    ...commentFacts(ctx, c),
+  });
+  const child = (c: number) => {
+    for (const x of ctx.leadingComments(c)) out.push(comment(x, "leading"));
+    out.push({ e: "child", node: c, kind: t.kindName(c) });
+    for (const x of ctx.trailingComments(c)) out.push(comment(x, "trailing", endsLine(ctx, c, x)));
+  };
   const walk = (x: Tree): void => {
     switch (x.t) {
       case "tok": {
@@ -78,7 +107,7 @@ export function flatten<O>(
       }
       case "ref": {
         const c = fieldChild(t, node, x.name);
-        if (c !== -1) out.push({ e: "child", node: c, kind: t.kindName(c) });
+        if (c !== -1) child(c);
         return;
       }
       case "opt":
@@ -114,14 +143,14 @@ export function flatten<O>(
         const seps = separators(t, node, items, x.sep);
         out.push({ e: "list", items });
         items.forEach((item, i) => {
-          out.push({ e: "child", node: item, kind: t.kindName(item) });
+          child(item);
           if (i < seps.length)
             out.push({ e: "sep", tok: seps[i] as number, blank: nextLineEmpty(t, item) });
           else if (evalCond(x.trailing, ctx.options))
             out.push({ e: "ifBroken", after: item, text: x.sep });
         });
         if (items.length === 0)
-          for (const c of ctx.danglingComments(node)) out.push({ e: "comment", c });
+          for (const c of ctx.danglingComments(node)) out.push(comment(c, "dangling"));
         out.push({ e: "end" });
         return;
       }
@@ -129,9 +158,9 @@ export function flatten<O>(
         const items = listItems(ctx, node, x.list.name, kindHasFields);
         items.forEach((item, i) => {
           if (i > 0) out.push({ e: "hardline" });
-          out.push({ e: "child", node: item, kind: t.kindName(item) });
+          child(item);
         });
-        for (const c of ctx.danglingComments(node)) out.push({ e: "comment", c });
+        for (const c of ctx.danglingComments(node)) out.push(comment(c, "dangling"));
         return;
       }
       case "verbatim":
@@ -166,6 +195,19 @@ export function wrap<O>(
   const tok = (x: Entry) => {
     if (x.e === "tok") sToken(x.node, x.text, x.synthetic);
   };
+  /** How the previous trailing comment of the child printing now printed. */
+  let trailed: Trailed | undefined;
+  /** Prints a child or comment entry; false for any other entry. */
+  const childOrComment = (x: Entry): boolean => {
+    if (x.e === "child") {
+      trailed = undefined;
+      ctx.printNode(x.node);
+    } else if (x.e !== "comment") return false;
+    else if (x.at === "leading") printLeadingComment(ctx, x);
+    else if (x.at === "trailing") trailed = printTrailingComment(ctx, x, trailed);
+    else ctx.comment(x.c);
+    return true;
+  };
 
   const list = (from: number, to: number, bracketOpen: Entry, bracketClose: Entry, pad: boolean) => {
     const frame = seq[from] as Extract<Entry, { e: "list" }>;
@@ -180,22 +222,44 @@ export function wrap<O>(
         sLine(SOFT);
         dangling.forEach((x, i) => {
           if (i > 0) sHardline();
-          if (x.e === "comment") ctx.comment(x.c);
+          childOrComment(x);
         });
         close();
-        if (ctx.hasDanglingLineComment(node)) sHardline();
+        if (dangling.some((x) => x.e === "comment" && x.line)) sHardline();
         else sLine(SOFT);
       }
       tok(bracketClose);
       close();
       return;
     }
-    const after: Entry[] = [];
+    // Per item: its entries [from, to) (leading comments, the child, trailing comments), the slot after it, and
+    // the comment facts the breaks read.
+    const parts: { from: number; to: number; after: Entry; leadingLine: boolean; endsLine: boolean }[] = [];
+    let start = from + 1;
     for (let i = from + 1; i < to; i++) {
       const x = seq[i] as Entry;
-      if (x.e === "sep" || x.e === "ifBroken") after[after.length - 1] = x;
-      else if (x.e === "child") after.push({ e: "end" });
+      const part = parts[parts.length - 1];
+      if (x.e === "sep" || x.e === "ifBroken") {
+        if (part) part.after = x;
+        start = i + 1;
+      } else if (x.e === "child") {
+        const leading = seq.slice(start, i);
+        parts.push({
+          from: start,
+          to: i + 1,
+          after: { e: "end" },
+          leadingLine: leading.some((y) => y.e === "comment" && y.line),
+          endsLine: false,
+        });
+      } else if (x.e === "comment" && x.at === "trailing" && part) {
+        part.to = i + 1;
+        if (x.endsLine) part.endsLine = true;
+      }
     }
+    const item = (i: number) => {
+      const part = parts[i] as (typeof parts)[number];
+      for (let j = part.from; j < part.to; j++) childOrComment(seq[j] as Entry);
+    };
     const always = w.expand === "always";
     const fillKinds = new Set(w.packWhenAllOf);
     const shouldBreak =
@@ -212,15 +276,12 @@ export function wrap<O>(
             (next === undefined || tree.kindName(next) === tree.kindName(item)) &&
             ctx.items(item).length > 1
           );
-        })) ||
-      ctx.hasDanglingLineComment(node);
+        }));
     const concise =
       !always &&
       items.length > 1 &&
       items.every(
-        (item) =>
-          fillKinds.has(tree.kindName(item)) &&
-          !ctx.hasComment(item, "trailingSameLine"),
+        (item, i) => fillKinds.has(tree.kindName(item)) && !parts[i]?.endsLine,
       );
     const listGroup = open(GROUP, -1, shouldBreak ? BROKEN : 0);
     const slot = (x: Entry | undefined) => {
@@ -239,29 +300,29 @@ export function wrap<O>(
     sLine(line);
     if (concise) {
       open(FILL);
-      items.forEach((item, i) => {
-        const next = items[i + 1];
+      parts.forEach((part, i) => {
+        const next = parts[i + 1];
         open(FILL_ITEM);
-        ctx.print(item);
-        slot(after[i]);
+        item(i);
+        slot(part.after);
         close();
         if (next === undefined) return;
-        if (blank(after[i])) {
+        if (blank(part.after)) {
           sHardline();
           sHardline();
-        } else if (ctx.hasComment(next, "leadingLine")) sHardline();
+        } else if (next.leadingLine) sHardline();
         else sLine(0);
       });
       close();
     } else {
-      items.forEach((item, i) => {
+      parts.forEach((part, i) => {
         if (w.itemsAsGroups) open(GROUP);
-        ctx.print(item);
+        item(i);
         if (w.itemsAsGroups) close();
-        slot(after[i]);
-        if (i === items.length - 1) return;
+        slot(part.after);
+        if (i === parts.length - 1) return;
         sLine(0);
-        if (blank(after[i])) {
+        if (blank(part.after)) {
           if (w.blankLines === "force") sHardline();
           else sLine(SOFT);
         }
@@ -287,10 +348,8 @@ export function wrap<O>(
           sHardline();
           break;
         case "child":
-          ctx.print(x.node);
-          break;
         case "comment":
-          ctx.comment(x.c);
+          childOrComment(x);
           break;
         case "custom": {
           const rule = custom[x.name];
@@ -326,11 +385,11 @@ export function wrap<O>(
           const end = endOf(i);
           for (let j = i + 1; j < end; j++) {
             const y = seq[j] as Entry;
-            if (y.e === "child") ctx.print(y.node);
-            else if (y.e === "sep") {
+            if (childOrComment(y)) continue;
+            if (y.e === "sep") {
               if (y.tok !== -1) sToken(y.tok, tree.text(y.tok));
               sLine(0);
-            } else if (y.e === "comment") ctx.comment(y.c);
+            }
           }
           i = end;
           break;
