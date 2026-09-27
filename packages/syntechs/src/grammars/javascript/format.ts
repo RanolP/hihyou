@@ -1,8 +1,8 @@
 // JS, TS and TSX's layout in the formatter DSL (src/fmt/dsl/dsl.ts); `pnpm generate` compiles it into fmt.gen.ts.
 // Typed against the tsx grammar, whose kinds and fields hold JS's and TS's. A kind whose layout is one of
 // prettier's heuristics (member chains, argument expansion, assignment layout, JSX, conditional groups) is a
-// `custom` rule, or a child printed `.via` one, written against sink.ts; the kinds not yet here still print by
-// the Doc rules of print/**. Each domain's kinds live in format/<domain>.ts, its customs in print/<domain>.ts.
+// `custom` rule, or a child printed `.via` one, written against sink.ts. Each domain's kinds live in
+// format/<domain>.ts, its customs in print/<domain>.ts.
 import { defineFormat, type FormatSpec } from "../../fmt/dsl/dsl.js";
 import type { grammar } from "../tsx/bundle.js";
 import { assignment } from "./format/assignment.js";

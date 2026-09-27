@@ -1,30 +1,7 @@
 import { NO_NODE } from "../../../core/arena.js";
-import {
-  brokenOf,
-  contentsOf,
-  type Doc,
-  fill,
-  flatOf,
-  group,
-  hardline,
-  indent,
-  isBroken,
-  isDocs,
-  isHardLine,
-  isSoftLine,
-  join,
-  kindOf,
-  partsOf,
-  softline,
-  statesOf,
-  text,
-  textOf,
-  token,
-  withContents,
-} from "../../../fmt/doc.js";
 import type { Comments } from "../../../fmt/comments.js";
 import type { PrettierOptions } from "../../../fmt/options.js";
-import type { Ctx, PrintArgs, Rule } from "../../../fmt/rules.js";
+import type { PrintArgs } from "../../../fmt/rules.js";
 import { lfAfter } from "../../../fmt/text.js";
 import type { FormatTree } from "../../../fmt/tree.js";
 
@@ -59,7 +36,6 @@ export interface JsCtx extends HasTree {
   hasComment(node: number, where: "leadingLine" | "trailingSameLine"): boolean;
   hasDanglingLineComment(node: number): boolean;
 }
-export type JsRule = Rule<string, JsOptions>;
 export type Args = PrintArgs | undefined;
 
 /**
@@ -128,9 +104,6 @@ export function lastChildWhere(
 
 /** The source `n` spans. */
 export const src = (x: HasTree, n: number) => x.tree.text(n);
-
-/** `n` printed as its source text, as one token. */
-export const verbatim = (x: HasTree, n: number): Doc => token(n, src(x, n));
 
 export const field = (x: HasTree, n: number, name: string) =>
   childWhere(x, n, (c) => x.tree.fieldName(c) === name);
@@ -353,47 +326,6 @@ export const hasComment = (
 
 export const isBlockComment = (ctx: JsCtx, c: number) => !ctx.isLineComment(c);
 
-/** Prettier's canBreak: whether `doc` holds any line. */
-export function canBreak(doc: Doc): boolean {
-  if (isDocs(doc)) return doc.some(canBreak);
-  switch (kindOf(doc)) {
-    case "line":
-      return true;
-    case "group":
-      return (
-        canBreak(contentsOf(doc)) || (statesOf(doc)?.some(canBreak) ?? false)
-      );
-    case "indent":
-    case "align":
-    case "lineSuffix":
-      return canBreak(contentsOf(doc));
-    case "fill":
-      return partsOf(doc).some(canBreak);
-    case "ifBreak":
-      return canBreak(brokenOf(doc)) || canBreak(flatOf(doc));
-    default:
-      return false;
-  }
-}
-
-/** The text `doc` prints when it is only text (prettier's cleanDoc giving a string), else undefined. */
-export function docText(doc: Doc): string | undefined {
-  if (isDocs(doc)) {
-    let out = "";
-    for (const d of doc) {
-      const t = docText(d);
-      if (t === undefined) return undefined;
-      out += t;
-    }
-    return out;
-  }
-  const kind = kindOf(doc);
-  if (kind === "token" || kind === "text") return textOf(doc);
-  if (kind === "group" && !statesOf(doc) && !isBroken(doc))
-    return docText(contentsOf(doc));
-  return undefined;
-}
-
 const IGNORE = /^(?:\/\/|\/\*)\s*prettier-ignore\s*(?:\*\/)?$/;
 
 /** Whether comment `c` is a `// prettier-ignore` or `/* prettier-ignore *\/`. */
@@ -478,10 +410,6 @@ export function separators(
   return out;
 }
 
-/** `c` printed as the token it is, or as `as` when given (a keyword respelled, a separator dropped with ""). */
-export const t = (ctx: JsCtx, c: number | undefined, as?: string): Doc =>
-  c !== undefined ? token(c, as ?? src(ctx, c)) : [];
-
 /** Thrown by a printer asked to hug a call's first or last argument that cannot be hugged; the call breaks all. */
 export class ArgExpansionBailout extends Error {
   override readonly name = "ArgExpansionBailout";
@@ -547,28 +475,3 @@ export const trailingCommaAllowed = (
   level === "all"
     ? ctx.options.trailingComma === "all"
     : ctx.options.trailingComma !== "none";
-
-/** Prettier's removeLines: every soft or plain line printed flat, every group unbroken. Hard lines stay. */
-export function removeLines(doc: Doc): Doc {
-  if (isDocs(doc)) return doc.map(removeLines);
-  switch (kindOf(doc)) {
-    case "line":
-      return isHardLine(doc) ? doc : isSoftLine(doc) ? [] : text(" ");
-    case "group": {
-      const states = statesOf(doc);
-      return states
-        ? removeLines(states.at(-1) as Doc)
-        : group(removeLines(contentsOf(doc)));
-    }
-    case "indent":
-    case "align":
-    case "lineSuffix":
-      return withContents(doc, removeLines(contentsOf(doc)));
-    case "fill":
-      return fill(partsOf(doc).map(removeLines));
-    case "ifBreak":
-      return removeLines(flatOf(doc));
-    default:
-      return doc;
-  }
-}

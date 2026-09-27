@@ -1,20 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { print } from "../../fmt/printer.js";
 import { printStream, resetStream } from "../../fmt/stream.js";
 import {
   BROKEN,
-  canBreak,
   capture,
   close,
   closeChoice,
   closeState,
   FILL,
   FILL_ITEM,
-  flatText,
   GROUP,
   HARD,
   IF_BROKEN,
-  IF_FLAT,
   INDENT,
   LINE_SUFFIX,
   open,
@@ -23,8 +19,6 @@ import {
   openIndentIfBreak,
   openState,
   place,
-  record,
-  removeLines,
   SOFT,
   sBreakParent,
   sHardline,
@@ -33,21 +27,30 @@ import {
   sLiteral,
   sText,
   sToken,
-  willBreak,
 } from "./sink.js";
 
-// A moved rule writes sink ops; until the final switch they are recorded into Docs, and after it they go to the
-// stream. Each script here prints the same both ways at every width, so a rule's output cannot move when the
-// stream takes over from the recording.
+// A part a rule queries before placing it is a span built where nothing prints it, which `place` jumps to. Placed,
+// it must print as the same writes made in place at every width, or a rule that captures a part to decide a hug or
+// a break moves what it prints.
 
 const widths = [4, 8, 12, 20, 40, 80];
 
-function both(script: () => void): void {
+function placedAsInPlace(script: () => void): void {
   for (const lineWidth of widths) {
     const layout = { lineWidth, indentWidth: 2, useTabs: false };
-    const want = print(record(script), layout).text;
+    const around = (body: () => void) => {
+      open(GROUP);
+      sText("<");
+      body();
+      sText(">");
+      close();
+    };
     resetStream(false);
-    script();
+    around(script);
+    const want = printStream(layout).text;
+    resetStream(false);
+    const part = capture(script);
+    around(() => place(part));
     expect(printStream(layout).text, `width ${lineWidth}: ${script}`).toBe(want);
   }
 }
@@ -78,16 +81,10 @@ const scripts: Record<string, () => void> = {
     words(2, 2);
     close();
   },
-  "ifBroken and ifFlat on a closed group": () => {
-    const g = open(GROUP);
-    words(4);
-    close();
-    open(IF_BROKEN, g);
-    sText(",");
-    close();
-    open(IF_FLAT, g);
-    sText(";");
-    close();
+  "a hard line without a break parent": () => {
+    words(1);
+    sLine(HARD);
+    words(1, 1);
   },
   "indentIfBreak and its negation": () => {
     const g = open(GROUP);
@@ -99,16 +96,6 @@ const scripts: Record<string, () => void> = {
     close();
     openIndentIfBreak(g, true);
     words(2, 4);
-    close();
-  },
-  "fill": () => {
-    open(FILL);
-    for (let i = 0; i < 8; i++) {
-      if (i > 0) sLine(0);
-      open(FILL_ITEM);
-      sToken(i, `item${i}`);
-      close();
-    }
     close();
   },
   // The concise array's trailing comma: an ifBroken in a fill item that follows the group still open around it.
@@ -192,7 +179,7 @@ function random(seed: number): () => void {
     trace.push(what);
   };
   const closed: number[] = [];
-  // A group's id is what `open` returns on this run, which differs between the recording and the stream.
+  // A group's id is what `open` returns on this run.
   const ids: number[] = [];
   let slots = 0;
   let token = 0;
@@ -200,9 +187,7 @@ function random(seed: number): () => void {
     const count = 1 + next(4);
     for (let i = 0; i < count; i++) {
       let pick = depth > 3 ? 0 : next(7);
-      // An ifBroken needs a group closed before it; with none, a token, as writing nothing makes an empty fill
-      // item, which printer.ts and stream.ts measure apart (stream.ts fits `group(fill([[]]), "t0", line, "t1")`
-      // in 4 columns), however it is written.
+      // An ifBroken needs a group closed before it; with none, a token.
       if (pick === 2 && closed.length === 0) pick = 0;
       if (pick <= 1) {
         const k = token++;
@@ -257,56 +242,10 @@ function random(seed: number): () => void {
   return run;
 }
 
-describe("js sink: a recorded script prints as the same script written to the stream", () => {
-  for (const [name, script] of Object.entries(scripts)) it(name, () => both(script));
-  it("200 random well-formed scripts", () => {
-    for (let seed = 1; seed <= 200; seed++) both(random(seed));
-  });
-});
-
-// A part a rule queries before placing it: recorded, a Doc; on the stream, a span built where nothing prints it.
-// Queried, then placed twice around its removeLines copy, it must answer and print as the recorded part does, or
-// a rule's hug or break decision moves when the stream takes over.
-function bothParts(inner: () => void): void {
-  const answers: unknown[][] = [];
-  const run = () => {
-    const p = capture(inner);
-    const f = removeLines(p);
-    answers.push([willBreak(p), canBreak(p), flatText(p), willBreak(f), canBreak(f)]);
-    open(GROUP);
-    sText("<");
-    place(p);
-    sLine(0);
-    place(f);
-    sLine(SOFT);
-    place(p);
-    sText(">");
-    close();
-  };
-  run.toString = () => `parts of ${inner}`;
-  both(run);
-  for (let i = 0; i < answers.length; i += 2)
-    expect(answers[i + 1], `answers of ${inner}`).toEqual(answers[i]);
-}
-
-describe("js sink: a part captured on the stream answers and prints as the recorded one", () => {
-  const parts: Record<string, () => void> = {
-    ...scripts,
-    "text only": () => {
-      open(GROUP);
-      sText("a");
-      sToken(1, "b");
-      close();
-    },
-    "a hard line without a break parent": () => {
-      words(1);
-      sLine(HARD);
-      words(1, 1);
-    },
-  };
-  for (const [name, inner] of Object.entries(parts)) it(name, () => bothParts(inner));
+describe("js sink: a captured part prints where it is placed as the same writes made there", () => {
+  for (const [name, script] of Object.entries(scripts)) it(name, () => placedAsInPlace(script));
   it("100 random well-formed scripts", () => {
-    for (let seed = 1; seed <= 100; seed++) bothParts(random(seed));
+    for (let seed = 1; seed <= 100; seed++) placedAsInPlace(random(seed));
   });
   it("drops what a capture that throws wrote, as a bailed-out hug", () => {
     resetStream(false);
@@ -321,28 +260,4 @@ describe("js sink: a part captured on the stream answers and prints as the recor
     sText("b");
     expect(printStream({ lineWidth: 80, indentWidth: 2, useTabs: false }).text).toBe("ab");
   });
-});
-
-it("a recording that throws drops what it wrote, so a bailed-out hug leaves nothing open", () => {
-  expect(() =>
-    record(() => {
-      open(GROUP);
-      sText("x");
-      throw new Error("bail");
-    }),
-  ).toThrow("bail");
-  expect(print(record(() => sText("y")), { lineWidth: 80, indentWidth: 2, useTabs: false }).text).toBe("y");
-});
-
-it("a recording that leaves an interval open fails", () => {
-  expect(() => record(() => void open(GROUP))).toThrow("left an interval open");
-});
-
-it("ifBroken on no recorded group fails rather than printing unconditioned", () => {
-  expect(() =>
-    record(() => {
-      open(IF_BROKEN, 99);
-      close();
-    }),
-  ).toThrow("no recorded group");
 });
