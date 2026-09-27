@@ -16,6 +16,19 @@ import {
   willBreak,
 } from "../../../fmt/doc.js";
 import { lfAfter, nextLineEmpty } from "../../../fmt/text.js";
+import {
+  BROKEN,
+  GROUP,
+  type JsStreamCtx,
+  jsCtx,
+  onDoc,
+  type Part,
+  place,
+  close as sClose,
+  open as sOpen,
+  sText,
+  sToken,
+} from "../sink.js";
 import { isTemplateOnItsOwnLine, isTestCall } from "./calls.js";
 import { role } from "./parens.js";
 import {
@@ -429,24 +442,40 @@ const functionRule: JsRule = (n, ctx, args?: Args) => {
 };
 
 /** Prettier's printMethodValue: the parameters, return type and body of a method. */
-export function printMethodValue(ctx: JsCtx, n: number): Doc {
-  const parametersDoc = printFunctionParameters(ctx, n);
-  const returnTypeDoc = printReturnType(ctx, n);
-  const shouldGroup = shouldGroupFunctionParameters(ctx, n, returnTypeDoc);
-  const body = field(ctx, n, "body");
-  return [
-    p(ctx, field(ctx, n, "type_parameters")),
-    group([
-      shouldBreakFunctionParameters(ctx, n)
-        ? group(parametersDoc, true)
-        : shouldGroup
-          ? group(parametersDoc)
-          : parametersDoc,
-      returnTypeDoc,
-    ]),
-    body !== undefined ? [text(" "), p(ctx, body)] : semi(ctx, n),
-  ];
+export function sPrintMethodValue(ctx: JsStreamCtx, n: number): void {
+  const js = ctx.js;
+  // The parameters and return type are still Doc printers (functions' domain); they reach the stream as parts.
+  const parameters: Part = { doc: printFunctionParameters(js, n) };
+  const returnType: Part = { doc: printReturnType(js, n) };
+  const shouldGroup = shouldGroupFunctionParameters(js, n, returnType.doc);
+  const typeParameters = field(js, n, "type_parameters");
+  if (typeParameters !== undefined) ctx.print(typeParameters);
+  const shouldBreak = shouldBreakFunctionParameters(js, n);
+  sOpen(GROUP);
+  if (shouldBreak || shouldGroup) {
+    sOpen(GROUP, -1, shouldBreak ? BROKEN : 0);
+    place(parameters);
+    sClose();
+  } else place(parameters);
+  place(returnType);
+  sClose();
+  const body = field(js, n, "body");
+  if (body !== undefined) {
+    sText(" ");
+    return ctx.print(body);
+  }
+  const c = lastChildWhere(js, n, (c) => !named(js, c) && kind(js, c) === ";");
+  const present = c !== undefined && src(js, c) !== "";
+  if (!js.options.semi) {
+    if (present) sToken(c, "");
+  } else if (present) sToken(c, ";");
+  else sToken(n, ";", true);
 }
+
+const printMethodValueDoc = onDoc((n, ctx) => sPrintMethodValue(jsCtx(ctx), n));
+/** `sPrintMethodValue` for a rule still on the Doc. */
+export const printMethodValue = (ctx: JsCtx, n: number): Doc =>
+  printMethodValueDoc(n, ctx);
 
 // --- arrow functions ----------------------------------------------------------------------------------------
 
