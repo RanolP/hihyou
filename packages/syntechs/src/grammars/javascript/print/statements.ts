@@ -23,6 +23,7 @@ import { firstLeaf, type FormatTree, prevLeaf } from "../../../fmt/tree.js";
 import {
   close,
   GROUP,
+  IF_BROKEN,
   INDENT,
   type JsStreamCtx,
   jsCtx,
@@ -32,10 +33,12 @@ import {
   sLine,
   sText,
   sToken,
+  withComments,
 } from "../sink.js";
 import { expressionNeedsAsiProtection } from "./asi.js";
 import { printAssignment } from "./assignment.js";
 import { needsParens } from "./parens.js";
+import { semiCustoms } from "./semi.js";
 import {
   anon,
   CF,
@@ -353,6 +356,56 @@ function shouldInlineCondition(ctx: JsCtx, n: number): boolean {
   );
 }
 
+/**
+ * A statement's test, laid out by `body`: indented on its own line when it breaks, in a group of its own when
+ * `grouped`, where prettier's shouldInlineCondition keeps a `!(a && b)` hugged.
+ */
+function conditionBody(s: JsStreamCtx, node: number, body: () => void, grouped: boolean): void {
+  if (grouped && shouldInlineCondition(s.js, unparen(s.js, node))) {
+    body();
+    return;
+  }
+  if (grouped) open(GROUP);
+  open(INDENT);
+  sLine(SOFT);
+  body();
+  close();
+  sLine(SOFT);
+  if (grouped) close();
+}
+
+/**
+ * The `(condition)` of an if, while, do-while or with statement, or a switch's discriminant: tree-sitter's
+ * parenthesized_expression, whose parentheses are the statement's own. Prettier prints the condition through
+ * needsParens, so `if ((a = b))` keeps a pair inside them.
+ */
+function condition(s: JsStreamCtx, pe: number | undefined, grouped: boolean): void {
+  if (pe === undefined) return;
+  const js = s.js;
+  if (kind(js, pe) !== "parenthesized_expression") {
+    conditionBody(s, pe, () => s.print(pe), grouped);
+    return;
+  }
+  const inner = first(js, pe);
+  withComments(s, pe, () => {
+    sTok(js, anon(js, pe, "("));
+    if (inner !== undefined)
+      conditionBody(
+        s,
+        inner,
+        () => {
+          const expr = unparen(js, inner);
+          const parens = needsParens(expr, js);
+          if (parens) sToken(expr, "(", true);
+          s.print(inner);
+          if (parens) sToken(expr, ")", true);
+        },
+        grouped,
+      );
+    sTok(js, lastChildWhere(js, pe, (c) => !named(js, c) && kind(js, c) === ")"));
+  });
+}
+
 // Prettier's returnArgumentHasLeadingComment (utilities/return-statement-has-leading-comment.js). Its argument
 // has no parentheses, so a comment inside `return (` counts for the expression they wrap.
 export function returnArgumentHasLeadingComment(
@@ -591,7 +644,6 @@ export const statementCustoms = {
     close();
   },
 
-  /** `while` and `with`. */
   "stmt.catch": (node, ctx) => {
     const s = jsCtx(ctx);
     const js = s.js;
@@ -631,6 +683,75 @@ export const statementCustoms = {
     pr(s, body);
   },
 
+  /**
+   * A return or throw argument (return-statement.js): parenthesized on lines of its own below a leading comment,
+   * and a binaryish or sequence expression parenthesized while it breaks.
+   */
+  "stmt.returnArg": (arg, ctx) => {
+    const s = jsCtx(ctx);
+    const js = s.js;
+    const inner = unparen(js, arg);
+    if (returnArgumentHasLeadingComment(js, arg)) {
+      sToken(arg, "(", true);
+      open(INDENT);
+      sHardline();
+      s.printNode(arg);
+      close();
+      sHardline();
+      sToken(arg, ")", true);
+    } else if (
+      isBinaryish(js, inner) ||
+      kind(js, inner) === "sequence_expression" ||
+      (ctx.options.experimentalTernaries && isChainedTernary(js, inner))
+    ) {
+      open(GROUP);
+      open(IF_BROKEN);
+      sToken(arg, "(", true);
+      close();
+      open(INDENT);
+      sLine(SOFT);
+      s.printNode(arg);
+      close();
+      sLine(SOFT);
+      open(IF_BROKEN);
+      sToken(arg, ")", true);
+      close();
+      close();
+    } else s.printNode(arg);
+  },
+
+  "stmt.do": (node, ctx) => {
+    const s = jsCtx(ctx);
+    const js = s.js;
+    const body = field(js, node, "body");
+    open(GROUP);
+    sTok(js, anon(js, node, "do"));
+    clause(s, body);
+    close();
+    if (kind(js, body) === "statement_block") sText(" ");
+    else sHardline();
+    sTok(js, anon(js, node, "while"));
+    sText(" ");
+    condition(s, field(js, node, "condition"), true);
+    semiCustoms.semi(
+      lastChildWhere(js, node, (c) => !named(js, c) && kind(js, c) === ";"),
+      node,
+      ctx,
+    );
+  },
+
+  /** `while` and `with`. */
+  "stmt.while": (node, ctx) => {
+    const s = jsCtx(ctx);
+    const js = s.js;
+    open(GROUP);
+    sTok(js, anon(js, node, "while") ?? anon(js, node, "with"));
+    sText(" ");
+    condition(s, field(js, node, "condition") ?? field(js, node, "object"), true);
+    clause(s, field(js, node, "body"));
+    close();
+  },
+
   "stmt.case": switchCase,
   "stmt.labeled": (node, ctx) => {
     const s = jsCtx(ctx);
@@ -668,38 +789,6 @@ const expressionStatement: JsRule = (node, ctx) => {
       own !== undefined ? token(own, "") : [],
     ];
   return [printed, semi(ctx, node, own)];
-};
-
-const returnStatement: JsRule = (node, ctx) => {
-  const kw = anon(ctx, node, "return") ?? anon(ctx, node, "throw");
-  const arg = items(ctx, node)[0];
-  let argDoc: Doc = [];
-  if (arg !== undefined) {
-    const printed = ctx.print(arg);
-    const inner = unparen(ctx, arg);
-    argDoc = returnArgumentHasLeadingComment(ctx, arg)
-      ? [
-          synthetic(arg, "("),
-          indent([hardline, printed]),
-          hardline,
-          synthetic(arg, ")"),
-        ]
-      : isBinaryish(ctx, inner) ||
-          kind(ctx, inner) === "sequence_expression" ||
-          (ctx.options.experimentalTernaries && isChainedTernary(ctx, inner))
-        ? group([
-            ifBreak(synthetic(arg, "(")),
-            indent([softline, printed]),
-            softline,
-            ifBreak(synthetic(arg, ")")),
-          ])
-        : printed;
-  }
-  return [
-    t(ctx, kw),
-    arg !== undefined ? [text(" "), argDoc] : [],
-    semi(ctx, node),
-  ];
 };
 
 const declaration: JsRule = (node, ctx, args) => {
@@ -860,29 +949,6 @@ const ifStatement: JsRule = (node, ctx) => {
   return parts;
 };
 
-const whileStatement: JsRule = (node, ctx) => {
-  const kw = anon(ctx, node, "while") ?? anon(ctx, node, "with");
-  const cond = field(ctx, node, "condition") ?? field(ctx, node, "object");
-  return group([
-    t(ctx, kw),
-    text(" "),
-    parenthesized(ctx, cond, conditionLayout(ctx)),
-    clauseDoc(ctx, field(ctx, node, "body")),
-  ]);
-};
-
-const doStatement: JsRule = (node, ctx) => {
-  const body = field(ctx, node, "body");
-  return [
-    group([t(ctx, anon(ctx, node, "do")), clauseDoc(ctx, body)]),
-    kind(ctx, body) === "statement_block" ? text(" ") : hardline,
-    t(ctx, anon(ctx, node, "while")),
-    text(" "),
-    parenthesized(ctx, field(ctx, node, "condition"), conditionLayout(ctx)),
-    semi(ctx, node),
-  ];
-};
-
 const switchStatement: JsRule = (node, ctx) => {
   const body = field(ctx, node, "body");
   const cases = body !== undefined ? items(ctx, body) : [];
@@ -950,12 +1016,7 @@ const variableDeclarator: JsRule = (node, ctx) => {
 export const statementRules: Record<string, JsRule> = {
   expression_statement: expressionStatement,
   if_statement: ifStatement,
-  while_statement: whileStatement,
-  with_statement: whileStatement,
   switch_statement: switchStatement,
-  do_statement: doStatement,
-  return_statement: returnStatement,
-  throw_statement: returnStatement,
   variable_declaration: declaration,
   lexical_declaration: declaration,
   using_declaration: declaration,

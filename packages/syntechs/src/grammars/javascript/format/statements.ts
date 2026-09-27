@@ -26,4 +26,13 @@ export const statements = {
   debugger_statement: () => ["debugger", tok(";").via("semi")],
   break_statement: ($) => ["break", $.label.andThen((l) => [space, l]), tok(";").via("semi")],
   continue_statement: ($) => ["continue", $.label.andThen((l) => [space, l]), tok(";").via("semi")],
+  return_statement: ($) => [
+    "return",
+    $.children.andThen((a) => [space, a.via("stmt.returnArg")]),
+    tok(";").via("semi"),
+  ],
+  throw_statement: ($) => ["throw", space, $.children.via("stmt.returnArg"), tok(";").via("semi")],
+  do_statement: () => custom("stmt.do"),
+  while_statement: () => custom("stmt.while"),
+  with_statement: () => custom("stmt.while"),
 } satisfies JsStructure;
