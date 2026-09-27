@@ -389,9 +389,14 @@ export function ruffStmtOf(child: number): { f: Fmt; s: Stmt } {
  * read them as `ctx.args`.
  */
 export function dslPart(node: number, args?: PrintArgs): Format {
+  return record(() => sDsl(node, args));
+}
+
+/** `dslPart`, written. */
+export function sDsl(node: number, args?: PrintArgs): void {
   const ctx = current;
   if (!ctx) throw new Error("python sink: dslPart outside the module rule");
-  // A broken node prints as its text straight into the stream, past this recording.
+  // A broken node prints as its text straight into the stream, past a recording.
   if (ctx.isBroken(node)) throw new Error("python sink: dslPart of a broken node");
-  return record(() => ctx.printNode(node, args));
+  ctx.printNode(node, args);
 }

@@ -1,6 +1,5 @@
 import { NO_NODE } from "../../../core/arena.js";
 import {
-  bestFitParenthesize,
   bestFitting,
   breakParent,
   type Format,
@@ -9,7 +8,6 @@ import {
   ifBreak,
   indent,
   synthetic,
-  type Token,
   text,
   token,
   removeSoftLines,
@@ -56,6 +54,7 @@ import {
   space,
 } from "./builders.js";
 import type { Comment } from "./comments.js";
+import * as sink from "./sink.js";
 import { dslPart } from "./sink.js";
 import {
   type Hooks,
@@ -112,50 +111,63 @@ export interface Opts {
 const isParenthesizedLevel = (l: Level) =>
   l.k === "paren" || (l.k === "expr" && l.g !== undefined);
 
-function parenTokens(e: Expr): [Token, Token] {
+/** Writers of `e`'s parentheses: the source's own, or synthetic ones. */
+function parenTokens(e: Expr): [() => void, () => void] {
   const p = e.parens[0];
   return p
-    ? [token(p.open, "("), token(p.close, ")")]
-    : [synthetic(e.ts, "("), synthetic(e.ts, ")")];
+    ? [() => sink.sToken(p.open, "("), () => sink.sToken(p.close, ")")]
+    : [() => sink.sToken(e.ts, "(", true), () => sink.sToken(e.ts, ")", true)];
 }
 
 /** Ruff's `FormatExpr`: `e` with its comments, in parentheses per `parens`. */
-export function formatExpr(
+export function writeExpr(
   f: Fmt,
   e: Expr,
   parens: Parens = "preserve",
   o: Opts = {},
-): Format {
+): void {
   const parenthesize =
     parens === "preserve" ? e.parens.length > 0 : parens === "always";
   if (parenthesize) {
     const cs = f.comments;
     const [open, close] = parenTokens(e);
     if (!cs.hasLeading(e) && !cs.hasTrailing(e))
-      return f.parenthesized(open, () => fields(f, e, o), close);
-    return withParenthesesComments(f, e, open, close, o);
+      f.writeParenthesized(open, () => writeFields(f, e, o), close);
+    else withParenthesesComments(f, e, open, close, o);
+    return;
   }
   const l = f.level;
-  return f.at(l.k === "top" || l.k === "compound" ? EXPR : l, () =>
-    node(f, e, o),
-  );
+  f.at(l.k === "top" || l.k === "compound" ? EXPR : l, () => writeNode(f, e, o));
+}
+
+export function formatExpr(
+  f: Fmt,
+  e: Expr,
+  parens: Parens = "preserve",
+  o: Opts = {},
+): Format {
+  return sink.record(() => writeExpr(f, e, parens, o));
 }
 
 /** Ruff's `FormatNodeRule::fmt`: the leading comments, the fields, the trailing comments. */
-export function node(f: Fmt, e: Expr, o: Opts = {}): Format {
+export function writeNode(f: Fmt, e: Expr, o: Opts = {}): void {
   const cs = f.comments;
-  const leading = f.leading(cs.leading(e));
-  const body = fields(f, e, o);
-  return [leading, body, f.trailing(cs.trailing(e))];
+  f.writeLeading(cs.leading(e));
+  writeFields(f, e, o);
+  f.writeTrailing(cs.trailing(e));
+}
+
+export function node(f: Fmt, e: Expr, o: Opts = {}): Format {
+  return sink.record(() => writeNode(f, e, o));
 }
 
 function withParenthesesComments(
   f: Fmt,
   e: Expr,
-  open: Token,
-  close: Token,
+  open: () => void,
+  close: () => void,
   o: Opts,
-): Format {
+): void {
   const cs = f.comments;
   const leading = cs.leading(e);
   const trailing = cs.trailing(e);
@@ -174,79 +186,84 @@ function withParenthesesComments(
     parenComment = [first];
     leadingInner = leadingInner.slice(1);
   } else leadingInner = [...leading];
-  const out: Format[] = [f.leading(leadingOuter)];
-  out.push(
-    f.parenthesized(
-      open,
-      () => [
-        f.leading(leadingInner),
-        fields(f, e, o),
-        f.trailing(trailingInner),
-      ],
-      close,
-      parenComment,
-    ),
-    f.trailing(trailingOuter),
+  f.writeLeading(leadingOuter);
+  f.writeParenthesized(
+    open,
+    () => {
+      f.writeLeading(leadingInner);
+      writeFields(f, e, o);
+      f.writeTrailing(trailingInner);
+    },
+    close,
+    parenComment,
   );
-  return out;
+  f.writeTrailing(trailingOuter);
 }
 
 /** Ruff's `maybe_parenthesize_expression`: `e` as a statement or clause holds it. */
+export function writeMaybeParenthesize(
+  f: Fmt,
+  e: Expr,
+  parent: Py,
+  mode: Parenthesize,
+): void {
+  const bare = () => writeExpr(f, e, "never");
+  if (mode === "optional" && e.parens.length > 0) {
+    writeExpr(f, e, "always");
+    return;
+  }
+  const cs = f.comments;
+  if (cs.hasLeading(e) || cs.hasTrailingOwnLine(e)) {
+    writeExpr(f, e, "always");
+    return;
+  }
+  const needs = needsParentheses(f, e, parent);
+  if (needs !== "always" && isParenthesizedLevel(f.level)) {
+    if (mode === "ifBreaksParenthesizedNested")
+      f.writeParenthesizeIfExpands(e.ts, bare, true);
+    else bare();
+    return;
+  }
+  const omitOr = () => {
+    if (canOmitOptionalParentheses(f, e)) f.writeOptionalParentheses(e.ts, bare);
+    else f.writeParenthesizeIfExpands(e.ts, bare);
+  };
+  switch (needs) {
+    case "multiline":
+      if (mode === "ifRequired") bare();
+      else omitOr();
+      return;
+    case "bestFit":
+      if (
+        mode === "ifBreaksParenthesized" ||
+        mode === "ifBreaksParenthesizedNested"
+      )
+        omitOr();
+      else if (mode === "optional" || mode === "ifRequired") bare();
+      else if (cs.hasTrailing(e)) writeExpr(f, e, "always");
+      else writeBestFit(f, e);
+      return;
+    case "never":
+      bare();
+      return;
+    default:
+      writeExpr(f, e, "always");
+  }
+}
+
 export function maybeParenthesize(
   f: Fmt,
   e: Expr,
   parent: Py,
   mode: Parenthesize,
 ): Format {
-  if (mode === "optional" && e.parens.length > 0)
-    return formatExpr(f, e, "always");
-  const cs = f.comments;
-  if (cs.hasLeading(e) || cs.hasTrailingOwnLine(e))
-    return formatExpr(f, e, "always");
-  let needs = needsParentheses(f, e, parent);
-  if (needs !== "always" && isParenthesizedLevel(f.level)) {
-    if (mode === "ifBreaksParenthesizedNested")
-      return f.parenthesizeIfExpands(
-        e.ts,
-        () => formatExpr(f, e, "never"),
-        true,
-      );
-    return formatExpr(f, e, "never");
-  }
-  const omitOr = () =>
-    canOmitOptionalParentheses(f, e)
-      ? f.optionalParentheses(e.ts, () => formatExpr(f, e, "never"))
-      : f.parenthesizeIfExpands(e.ts, () => formatExpr(f, e, "never"));
-  switch (needs) {
-    case "multiline":
-      return mode === "ifRequired" ? formatExpr(f, e, "never") : omitOr();
-    case "bestFit":
-      if (
-        mode === "ifBreaksParenthesized" ||
-        mode === "ifBreaksParenthesizedNested"
-      )
-        return omitOr();
-      if (mode === "optional" || mode === "ifRequired")
-        return formatExpr(f, e, "never");
-      if (cs.hasTrailing(e)) return formatExpr(f, e, "always");
-      return bestFit(f, e);
-    case "never":
-      return formatExpr(f, e, "never");
-    default:
-      needs = "always";
-      return formatExpr(f, e, "always");
-  }
+  return sink.record(() => writeMaybeParenthesize(f, e, parent, mode));
 }
 
-function bestFit(f: Fmt, e: Expr): Format {
-  const contents: Format[] = [];
-  const b = bestFitParenthesize(
-    synthetic(e.ts, "("),
-    contents,
-    synthetic(e.ts, ")"),
-  );
-  contents.push(f.at({ k: "expr", g: b }, () => formatExpr(f, e, "never")));
-  return b;
+function writeBestFit(f: Fmt, e: Expr): void {
+  const b = sink.openBestFitParenthesize(() => sink.sToken(e.ts, "(", true));
+  f.at({ k: "expr", g: sink.refTo(b) }, () => writeExpr(f, e, "never"));
+  sink.closeBestFitParenthesize(b, () => sink.sToken(e.ts, ")", true));
 }
 
 const isAnnotationOf = (e: Expr, parent: Py | undefined) =>
@@ -728,54 +745,60 @@ function chainValue(f: Fmt, v: Expr, layout: Chain): Format {
 
 // ---- the kinds ----
 
-function fields(f: Fmt, e: Expr, o: Opts): Format {
+function writeFields(f: Fmt, e: Expr, o: Opts): void {
   switch (e.kind) {
     case "Name":
     case "Bool":
     case "None":
     case "Ellipsis":
     case "Number":
-      return dslPart(e.ts);
     case "Str":
-      return dslPart(e.ts);
-    case "Attribute":
-      return attribute(f, e, o.chain ?? "default");
-    case "Call":
-      return call(f, e, o.chain ?? "default");
-    case "Subscript":
-      return subscript(f, e, o.chain ?? "default");
     case "Starred":
-      return dslPart(e.ts);
     case "UnaryOp":
-      return dslPart(e.ts);
     case "BinOp":
     case "Compare":
     case "BoolOp":
-      return dslPart(e.ts);
-    case "IfExp":
-      // An `else` branch's conditional continues the group of the one it is in.
-      return o.ifNested === true ? dslPart(e.ts) : f.inParensGroup(dslPart(e.ts));
-    case "Lambda":
-      return dslPart(e.ts, { lambdaAssign: o.lambdaAssign === true });
     case "Named":
     case "Await":
     case "Yield":
-      return dslPart(e.ts);
+    case "DictComp":
+      sink.sDsl(e.ts);
+      return;
+    case "IfExp":
+      // An `else` branch's conditional continues the group of the one it is in.
+      if (o.ifNested === true) sink.sDsl(e.ts);
+      else f.writeInParensGroup(() => sink.sDsl(e.ts));
+      return;
+    case "Lambda":
+      sink.sDsl(e.ts, { lambdaAssign: o.lambdaAssign === true });
+      return;
+    case "Attribute":
+      sink.part(attribute(f, e, o.chain ?? "default"));
+      return;
+    case "Call":
+      sink.part(call(f, e, o.chain ?? "default"));
+      return;
+    case "Subscript":
+      sink.part(subscript(f, e, o.chain ?? "default"));
+      return;
     case "Tuple":
-      return tuple(f, e, o.tuple ?? "default");
+      sink.part(tuple(f, e, o.tuple ?? "default"));
+      return;
     case "List":
     case "Set":
-      return list(f, e);
+      sink.part(list(f, e));
+      return;
     case "Dict":
-      return dict(f, e);
+      sink.part(dict(f, e));
+      return;
     case "ListComp":
     case "SetComp":
     case "Generator":
-      return comp(f, e, o.genPreserve === true);
-    case "DictComp":
-      return dslPart(e.ts);
+      sink.part(comp(f, e, o.genPreserve === true));
+      return;
     case "Slice":
-      return slice(f, e);
+      sink.part(slice(f, e));
+      return;
   }
 }
 
