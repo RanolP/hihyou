@@ -37,6 +37,8 @@ import {
   src,
   unparen,
 } from "./util.js";
+import type { CustomRule } from "../../../fmt/dsl/runtime.js";
+import type { JsOptions } from "./util.js";
 
 const DOUBLE = '"';
 const SINGLE = "'";
@@ -325,6 +327,9 @@ export function printComment(c: number, ctx: JsCtx): Doc {
   }
   return raw.includes("\n") ? literalToken(c, raw) : token(c, raw);
 }
+
+/** The customs format/literals.ts names, by the names its spec gives them. */
+export const literalCustoms = {} satisfies Record<string, CustomRule<JsOptions>>;
 
 export const literalRules: Record<string, JsRule> = {
   string,

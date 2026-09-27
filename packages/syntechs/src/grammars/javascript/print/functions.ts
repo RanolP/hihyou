@@ -54,6 +54,8 @@ import {
   trailingCommaAllowed,
   unparen,
 } from "./util.js";
+import type { CustomRule } from "../../../fmt/dsl/runtime.js";
+import type { JsOptions } from "./util.js";
 
 /** A parameter as prettier's AST would type it. */
 type ParamShape =
@@ -728,6 +730,9 @@ const assignmentPattern: JsRule = (n, ctx) => [
   text(" "),
   p(ctx, field(ctx, n, "right")),
 ];
+
+/** The customs format/functions.ts names, by the names its spec gives them. */
+export const functionCustoms = {} satisfies Record<string, CustomRule<JsOptions>>;
 
 export const functionRules: Record<string, JsRule> = {
   function_declaration: functionRule,

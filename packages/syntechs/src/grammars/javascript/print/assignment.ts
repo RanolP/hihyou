@@ -41,6 +41,11 @@ import {
   src,
   unparen,
 } from "./util.js";
+import type { CustomRule } from "../../../fmt/dsl/runtime.js";
+import type { JsOptions } from "./util.js";
+
+/** The customs format/assignment.ts names, by the names its spec gives them. */
+export const assignmentCustoms = {} satisfies Record<string, CustomRule<JsOptions>>;
 
 export type AssignmentLayout =
   | "break-after-operator"

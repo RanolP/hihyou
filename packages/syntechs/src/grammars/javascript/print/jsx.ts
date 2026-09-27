@@ -51,6 +51,7 @@ import {
   t,
   unparen,
 } from "./util.js";
+import type { CustomRule } from "../../../fmt/dsl/runtime.js";
 
 /** Options prettier's JSX printer reads that the rest of the JS printer does not. */
 type JsxOptions = JsOptions & {
@@ -742,6 +743,9 @@ export function jsxIgnored(
     ctx.comments(previous).dangling.some(isIgnore)
   );
 }
+
+/** The customs format/jsx.ts names, by the names its spec gives them. */
+export const jsxCustoms = {} satisfies Record<string, CustomRule<JsOptions>>;
 
 export const jsxRules: Record<string, JsRule> = {
   jsx_element: element,

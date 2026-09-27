@@ -58,6 +58,8 @@ import {
   trailingCommaAllowed,
   unparen,
 } from "./util.js";
+import type { CustomRule } from "../../../fmt/dsl/runtime.js";
+import type { JsOptions } from "./util.js";
 
 // Prettier labels a member chain's doc so that an assignment and a member lookup can see it; here the label is
 // kept per printed node.
@@ -1150,6 +1152,9 @@ const nonNull: JsRule = (n, ctx) => [
     childWhere(ctx, n, (c) => kind(ctx, c) === "!"),
   ),
 ];
+
+/** The customs format/calls.ts names, by the names its spec gives them. */
+export const callCustoms = {} satisfies Record<string, CustomRule<JsOptions>>;
 
 export const callRules: Record<string, JsRule> = {
   call_expression: call,
