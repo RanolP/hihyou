@@ -1,4 +1,4 @@
-import { NO_NODE } from "../../../core/arena.js";
+import { NO_NODE, type Tree } from "../../../core/arena.js";
 import { type FormatTree, firstLeaf } from "../../../fmt/tree.js";
 
 /**
@@ -75,6 +75,17 @@ export const startOf = (tree: FormatTree, n: number): number =>
   2 * tree.ord(firstLeaf(tree, n));
 export const endOf = (tree: FormatTree, n: number): number =>
   2 * tree.ord(lastLeaf(tree, n)) + 1;
+
+/**
+ * `n`'s real source byte offset, for a diagnostic message only: `FormatTree` (fmt/tree.ts) drops `Tree.start`
+ * so no layout decision can probe it, but an `Unformattable` message is thrown instead of formatting and never
+ * feeds back into a rule, so it reads the underlying `Tree` the formatter's tree always actually is.
+ */
+export const byteOffsetOf = (tree: FormatTree, n: number): number =>
+  (tree as unknown as Tree).start(firstLeaf(tree, n));
+/** The byte offset just past `n`, the counterpart to `byteOffsetOf`. */
+export const byteEndOf = (tree: FormatTree, n: number): number =>
+  (tree as unknown as Tree).end(lastLeaf(tree, n));
 
 /** The leaf a position belongs to: the one it starts or ends. */
 export const leafAt = (tree: FormatTree, pos: number): number =>

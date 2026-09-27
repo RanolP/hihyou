@@ -34,7 +34,7 @@ import {
   implicitFlat,
   interpolatedAssignment,
 } from "../strings.js";
-import { startOf } from "../trivia.js";
+import { byteOffsetOf, startOf } from "../trivia.js";
 import type { StmtRules } from "./suite.js";
 
 /**
@@ -437,7 +437,9 @@ function typeParam(f: Fmt, p: TypeParam): Doc {
 /** Ruff's `FormatTypeParams`: `[T, *Ts, **P]`, split one per line when it does not fit. */
 export function typeParams(f: Fmt, tp: TypeParams): Doc {
   if (f.comments.hasAnyIn(tp.start, tp.end))
-    throw new Unformattable(`comment in type parameters at ${tp.start}`);
+    throw new Unformattable(
+      `comment in type parameters at ${byteOffsetOf(f.tree, tp.ts)}`,
+    );
   const comma = commaIn(f.tree, tp.ts, tp.open);
   const entries = tp.params.map((p) => ({ end: p.end, doc: typeParam(f, p) }));
   return f.parenthesized(
@@ -456,10 +458,15 @@ export const assignRules: StmtRules = {
   Assign(f, s) {
     const [first, ...rest] = s.targets;
     if (!first)
-      throw new Unformattable(`assignment without target at ${s.start}`);
+      throw new Unformattable(
+        `assignment without target at ${byteOffsetOf(f.tree, s.ts)}`,
+      );
     const eq = (i: number) => {
       const t = s.ops[i];
-      if (t === undefined) throw new Unformattable(`missing = at ${s.start}`);
+      if (t === undefined)
+        throw new Unformattable(
+          `missing = at ${byteOffsetOf(f.tree, s.ts)}`,
+        );
       return f.tok(t);
     };
     const last = rest.at(-1);

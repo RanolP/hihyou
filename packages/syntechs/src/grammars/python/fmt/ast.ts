@@ -1,5 +1,5 @@
 import type { FormatTree } from "../../../fmt/tree.js";
-import { endOf, startOf } from "./trivia.js";
+import { byteOffsetOf, endOf, startOf } from "./trivia.js";
 
 /**
  * Ruff's AST, read off tree-sitter-python's tree, because ruff's layout rules and comment placement are written
@@ -500,7 +500,9 @@ export interface TypeAlias extends Base {
 export class Unformattable extends Error {}
 
 const fail = (tree: FormatTree, n: number, why: string): never => {
-  throw new Unformattable(`${why}: ${tree.kindName(n)} at ${startOf(tree, n)}`);
+  throw new Unformattable(
+    `${why}: ${tree.kindName(n)} at ${byteOffsetOf(tree, n)}`,
+  );
 };
 
 /** Converts `root` (a tree-sitter `module`) to ruff's AST, rejecting any parse error first. */

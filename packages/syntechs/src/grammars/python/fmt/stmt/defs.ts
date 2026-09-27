@@ -20,6 +20,8 @@ import {
 import type { Comment } from "../comments.js";
 import { args, formatExpr, maybeParenthesize, parameters } from "../expr.js";
 import {
+  byteEndOf,
+  byteOffsetOf,
   endOf,
   linesAfter,
   linesAfterIgnoringEndOfLineTrivia,
@@ -121,13 +123,17 @@ function splitDangling(
  */
 function typeParams(f: Fmt, tp: TypeParams): Doc {
   if (f.comments.has(tp) || f.comments.hasAnyIn(tp.start, tp.end))
-    throw new Unformattable(`comment in type parameters at ${tp.start}`);
+    throw new Unformattable(
+      `comment in type parameters at ${byteOffsetOf(f.tree, tp.ts)}`,
+    );
   const t = f.tree;
   const children = kids(t, tp.ts);
   const open = children.find((c) => t.kindName(c) === "[");
   const close = children.findLast((c) => t.kindName(c) === "]");
   if (open === undefined || close === undefined)
-    throw new Unformattable(`type parameters without brackets at ${tp.start}`);
+    throw new Unformattable(
+      `type parameters without brackets at ${byteOffsetOf(t, tp.ts)}`,
+    );
   const items = children.filter((c) => t.named(c));
   const entries = items.map((n) => ({
     end: endOf(t, n),
@@ -215,7 +221,7 @@ function simpleType(f: Fmt, n: number): Doc {
 
 const unsupported = (tree: FormatTree, n: number): never => {
   throw new Unformattable(
-    `unsupported type parameter ${tree.kindName(n)} at ${startOf(tree, n)}`,
+    `unsupported type parameter ${tree.kindName(n)} at ${byteOffsetOf(tree, n)}`,
   );
 };
 
@@ -239,7 +245,7 @@ function body(
     )
   )
     throw new Unformattable(
-      `backslash continuation before a body at ${colonEnd}`,
+      `backslash continuation before a body at ${byteEndOf(t, header.colon)}`,
     );
   return clauseBody(f, stmts, kind, colonComments);
 }
@@ -345,7 +351,7 @@ const outerEnd = (f: Fmt, p: Pat) =>
 
 const unsupportedPattern = (f: Fmt, n: number): never => {
   throw new Unformattable(
-    `unsupported pattern ${f.tree.kindName(n)} at ${startOf(f.tree, n)}`,
+    `unsupported pattern ${f.tree.kindName(n)} at ${byteOffsetOf(f.tree, n)}`,
   );
 };
 
@@ -835,7 +841,9 @@ function canPatternOmitOptionalParentheses(root: Pat): boolean {
 function matchCase(f: Fmt, c: MatchCase): Doc {
   const cs = f.comments;
   if (cs.has(c.pattern) || cs.hasAnyIn(c.pattern.start, c.pattern.end))
-    throw new Unformattable(`comment in a pattern at ${c.pattern.start}`);
+    throw new Unformattable(
+      `comment in a pattern at ${byteOffsetOf(f.tree, c.pattern.ts)}`,
+    );
   const dangling = cs.dangling(c);
   const p = readCasePattern(f, c);
   // `check` keeps a pattern's parentheses as meaning, so it would flag the ones ruff adds to split a long
@@ -847,7 +855,9 @@ function matchCase(f: Fmt, c: MatchCase): Doc {
     (p.k === "seq" && p.type !== "bare");
   // The colon's end column; a header spanning lines is measured on the colon's own line only.
   if (!bracketed && f.tree.col(c.colon) + 1 > f.options["line-length"])
-    throw new Unformattable(`long unparenthesized case pattern at ${c.start}`);
+    throw new Unformattable(
+      `long unparenthesized case pattern at ${byteOffsetOf(f.tree, c.ts)}`,
+    );
   const header: Doc[] = [f.tok(c.kw), space, maybeParenthesizePattern(f, p, c)];
   if (c.guardKw !== undefined && c.guard)
     header.push(
@@ -870,7 +880,9 @@ export const defRules: StmtRules = {
       kids(f.tree, s.ts).filter((c) => f.tree.fieldName(c) === "subject")
         .length > 1
     )
-      throw new Unformattable(`tuple subject in a match at ${s.start}`);
+      throw new Unformattable(
+        `tuple subject in a match at ${byteOffsetOf(f.tree, s.ts)}`,
+      );
     const header = [
       f.tok(s.kw),
       space,

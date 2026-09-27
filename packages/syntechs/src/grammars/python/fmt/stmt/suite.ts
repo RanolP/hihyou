@@ -14,6 +14,7 @@ import { lastChildInBody } from "../comments.js";
 import { hooks } from "../expr.js";
 import { formatStr } from "../strings.js";
 import {
+  byteOffsetOf,
   linesAfter,
   linesAfterIgnoringEndOfLineTrivia,
   linesAfterIgnoringTrivia,
@@ -83,13 +84,18 @@ export function formatModule(f: Fmt, m: Module): Doc {
 function rejectSuppressions(f: Fmt): void {
   for (const c of f.comments.all)
     if (/\bfmt:\s*(?:off|skip)\b|\byapf:\s*disable\b/.test(f.tree.text(c.ts)))
-      throw new Unformattable(`suppression comment at ${c.start}`);
+      throw new Unformattable(
+        `suppression comment at ${byteOffsetOf(f.tree, c.ts)}`,
+      );
 }
 
 /** A statement with its leading and trailing comments (ruff's `FormatNodeRule::fmt`). */
 export function formatStmt(f: Fmt, s: Stmt): Doc {
   const rule = rules()[s.kind] as StmtRule<typeof s.kind> | undefined;
-  if (!rule) throw new Unformattable(`no rule for ${s.kind} at ${s.start}`);
+  if (!rule)
+    throw new Unformattable(
+      `no rule for ${s.kind} at ${byteOffsetOf(f.tree, s.ts)}`,
+    );
   const cs = f.comments;
   const leading = f.leading(cs.leading(s));
   const body = rule(f, s as never);
