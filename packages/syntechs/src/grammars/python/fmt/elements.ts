@@ -202,9 +202,9 @@ export const bestFitting =
     b.bestFitting(variants, allLines);
 /** Ruff's `best_fit_parenthesize`: `contents` flat, else between `open` and `close` on lines of its own, else bare. */
 export function bestFitParenthesize(
-  open0: Token,
+  open0: Format,
   contents: Format,
-  close0: Token,
+  close0: Format,
 ): Group {
   const g = ((b: Buffer) =>
     b.bestFitParenthesize(g, open0, contents, close0)) as Group;
