@@ -6,7 +6,7 @@ import { Unformattable } from "../fmt/ast.js";
 import { COMPOUND, type Fmt, hard, space } from "../fmt/builders.js";
 import { type Format, indent } from "../fmt/elements.js";
 import { maybeParenthesize } from "../fmt/expr.js";
-import { dslPart, frameParts, part, ruffStmtOf } from "../fmt/sink.js";
+import { dslPart, part, ruffStmtOf, sText, sToken } from "../fmt/sink.js";
 import { body, kids } from "../fmt/stmt/defs.js";
 import {
   classArguments,
@@ -41,14 +41,14 @@ export const stmtMatchVia = {
   // A sub-pattern whose parentheses are its own.
   "match.pattern": (n: number, ctx: StreamCtx<unknown>) => {
     const f = fmtOf(n, ctx);
-    part(pattern(f, readPattern(f, n)));
+    pattern(f, readPattern(f, n));
   },
   // Given the first node of a keyword's value, prints it: `-` and a number are two nodes.
   "match.keywordValue": (n: number, ctx: StreamCtx<unknown>) => {
     const f = fmtOf(n, ctx);
     const kw = ctx.tree.parent(n);
     const [, , ...value] = kids(f.tree, kw);
-    part(pattern(f, readGroup(f, kw, value)));
+    pattern(f, readGroup(f, kw, value));
   },
   // The alternatives, a line before each `|` once the group they share breaks.
   "match.or": (n: number, ctx: StreamCtx<unknown>) => {
@@ -57,8 +57,12 @@ export const stmtMatchVia = {
     if (p.k !== "or") throw new Error("python match: match.or on no union pattern");
     for (const [i, item] of p.items.entries()) {
       const bar = p.bars[i - 1];
-      if (bar !== undefined) part([f.softLineOrSpace(), f.tok(bar), space]);
-      part(pattern(f, item));
+      if (bar !== undefined) {
+        part(f.softLineOrSpace());
+        sToken(bar, f.text(bar));
+        sText(" ");
+      }
+      pattern(f, item);
     }
   },
   // Given the real part, prints it with its sign, then the operator, a line before it once the group breaks.
@@ -66,32 +70,32 @@ export const stmtMatchVia = {
     const f = fmtOf(n, ctx);
     const p = readPattern(f, ctx.tree.parent(n));
     if (p.k !== "complex") throw new Error("python match: match.complexReal outside a complex pattern");
-    part([pattern(f, p.left), f.softLineOrSpace(), f.tok(p.op), space]);
+    pattern(f, p.left);
+    part(f.softLineOrSpace());
+    sToken(p.op, f.text(p.op));
+    sText(" ");
   },
   "match.sequence": (n: number, ctx: StreamCtx<unknown>, frame: Frame) => {
     const f = fmtOf(n, ctx);
     const p = readPattern(f, n);
     if (p.k !== "seq") throw new Error("python match: match.sequence on no sequence pattern");
-    const { open, close } = frameParts(frame);
-    part(sequence(f, p, open, close));
+    sequence(f, p, frame);
   },
   "match.mapping": (n: number, ctx: StreamCtx<unknown>, frame: Frame) => {
     const f = fmtOf(n, ctx);
     const p = readPattern(f, n);
     if (p.k !== "map") throw new Error("python match: match.mapping on no mapping pattern");
-    const { open, close } = frameParts(frame);
-    part(mapping(f, p, open, close));
+    mapping(f, p, frame);
   },
   "match.className": (n: number, ctx: StreamCtx<unknown>) => {
     const f = fmtOf(n, ctx);
-    part(kids(f.tree, n).map((x) => f.tok(x)));
+    for (const x of kids(f.tree, n)) sToken(x, f.text(x));
   },
   "match.classArguments": (n: number, ctx: StreamCtx<unknown>, frame: Frame) => {
     const f = fmtOf(n, ctx);
     const p = readPattern(f, n);
     if (p.k !== "class") throw new Error("python match: match.classArguments on no class pattern");
-    const { open, close } = frameParts(frame);
-    part(classArguments(f, p, open, close));
+    classArguments(f, p, frame);
   },
   "match.subject": (n: number) => {
     const { f, s: m } = ruffStmtOf(n);
@@ -134,7 +138,7 @@ export const stmtMatchVia = {
     // The colon's end column; a header spanning lines is measured on the colon's own line only.
     if (!bracketed && f.tree.col(c.colon) + 1 > f.options["line-length"])
       throw new Unformattable(`long unparenthesized case pattern at ${byteOffsetOf(f.tree, c.ts)}`);
-    part(maybeParenthesizePattern(f, p, c));
+    maybeParenthesizePattern(f, p, c);
   },
   "match.guard": (n: number, ctx: StreamCtx<unknown>) => {
     const { f, c } = caseOf(n, ctx);

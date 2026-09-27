@@ -1,9 +1,9 @@
-import { type Format, group, synthetic, type Token } from "../elements.js";
+import type { Frame } from "../../../../fmt/dsl/runtime.js";
 import type { Expr, MatchCase } from "../ast.js";
 import { exprAst, Unformattable } from "../ast.js";
-import { commaIn, type Fmt, space } from "../builders.js";
+import { commaIn, type Fmt } from "../builders.js";
 import { formatExpr, maybeParenthesize } from "../expr.js";
-import { dslPart } from "../sink.js";
+import { close, dslPart, frameParts, GROUP, open, part, record, sText, sToken } from "../sink.js";
 import { byteOffsetOf, endOf, startOf } from "../trivia.js";
 import { kids } from "./defs.js";
 
@@ -319,120 +319,140 @@ export function readGroup(f: Fmt, parent: number, nodes: number[]): Pat {
   return unsupportedPattern(f, a !== undefined ? a : parent);
 }
 
+/** Parentheses the pattern has none of in the source, anchored to `anchor`. */
+const syntheticParens = (anchor: number): Frame => ({
+  open: () => sToken(anchor, "(", true),
+  body: () => {},
+  close: () => sToken(anchor, ")", true),
+});
+
+/** Ruff's `parenthesized`: `frame`'s brackets around what `content` writes. */
+function parenthesized(f: Fmt, frame: Frame, content: () => void): void {
+  frame.open();
+  part(f.parenthesizedContent(() => record(content)));
+  frame.close();
+}
+
+/** Ruff's `empty_parenthesized`, for brackets holding nothing, their comments rejected before this runs. */
+function emptyParenthesized(f: Fmt, frame: Frame): void {
+  const { open, close } = frameParts(frame);
+  part(f.emptyParenthesized(open, [], close));
+}
+
 /** Ruff's `FormatPattern` with its `Parentheses` option. */
 export function pattern(
   f: Fmt,
   p: Pat,
   parens: "preserve" | "always" | "never" = "preserve",
-): Format {
+): void {
   const parenthesize =
     parens === "preserve" ? p.paren !== undefined : parens === "always";
   const fields = () =>
-    p.cp !== undefined ? dslPart(p.cp) : patternFields(f, p);
+    p.cp !== undefined ? part(dslPart(p.cp)) : patternFields(f, p);
   if (!parenthesize) return fields();
-  const open = p.paren ? f.tok(p.paren.open) : synthetic(p.node, "(");
-  const close = p.paren ? f.tok(p.paren.close) : synthetic(p.node, ")");
-  return f.parenthesized(open, fields, close);
+  const own = p.paren;
+  parenthesized(
+    f,
+    own
+      ? {
+          open: () => sToken(own.open, f.text(own.open)),
+          body: () => {},
+          close: () => sToken(own.close, f.text(own.close)),
+        }
+      : syntheticParens(p.node),
+    fields,
+  );
 }
 
-function patternFields(f: Fmt, p: Pat): Format {
+function patternFields(f: Fmt, p: Pat): void {
   switch (p.k) {
     case "expr":
-      return formatExpr(f, p.e, "never");
+      return part(formatExpr(f, p.e, "never"));
     case "neg":
-      return [f.tok(p.minus), formatExpr(f, p.e, "never")];
+      sToken(p.minus, f.text(p.minus));
+      return part(formatExpr(f, p.e, "never"));
     case "complex":
     case "or":
-      return f.inParensGroup(dslPart(p.node));
+      return part(f.inParensGroup(dslPart(p.node)));
     case "attr":
-      return p.parts.map((x) => f.tok(x));
+      for (const x of p.parts) sToken(x, f.text(x));
+      return;
     case "wild":
-      return f.tok(p.node);
-    case "star":
-      return dslPart(p.node);
-    case "as":
-      return dslPart(p.node);
+      return sToken(p.node, f.text(p.node));
     case "seq":
-      return p.type === "bare"
-        ? sequence(f, p, synthetic(p.node, "("), synthetic(p.node, ")"))
-        : dslPart(p.node);
+      if (p.type === "bare") return sequence(f, p, syntheticParens(p.node));
+      return part(dslPart(p.node));
+    case "star":
+    case "as":
     case "map":
     case "class":
-      return dslPart(p.node);
+      return part(dslPart(p.node));
   }
 }
 
-/** Ruff's `FormatPatternMatchSequence`, between `open` and `close`, synthetic for a tuple without parentheses. */
-export function sequence(
-  f: Fmt,
-  p: Pat & { k: "seq" },
-  open: Token,
-  close: Token,
-): Format {
+/** Ruff's `FormatPatternMatchSequence` in `frame`, synthetic for a tuple without parentheses. */
+export function sequence(f: Fmt, p: Pat & { k: "seq" }, frame: Frame): void {
   const [only] = p.items;
   const comma = commaIn(
     f.tree,
     p.commas,
     p.open !== undefined ? p.open : p.node,
   );
-  if (!only) return f.emptyParenthesized(open, [], close);
-  if (p.items.length === 1 && p.type !== "list") {
+  if (!only) return emptyParenthesized(f, frame);
+  if (p.items.length === 1 && p.type !== "list")
     // A one-element tuple keeps its parentheses, and its comma never makes it expand.
-    const open1 = p.type === "tuple" ? open : synthetic(p.node, "(");
-    const close1 = p.type === "tuple" ? close : synthetic(p.node, ")");
-    return f.parenthesized(
-      open1,
-      () => [pattern(f, only), comma(outerEnd(f, only))],
-      close1,
-    );
-  }
+    return parenthesized(f, frame, () => {
+      pattern(f, only);
+      part(comma(outerEnd(f, only)));
+    });
   const items = () =>
-    f.joinCommaSeparated(
-      p.items.map((x) => ({ end: outerEnd(f, x), doc: pattern(f, x) })),
-      p.end_,
-      comma,
+    part(
+      f.joinCommaSeparated(
+        p.items.map((x) => ({
+          end: outerEnd(f, x),
+          doc: record(() => pattern(f, x)),
+        })),
+        p.end_,
+        comma,
+      ),
     );
-  if (p.type === "bare") return f.optionalParentheses(p.node, items);
-  return f.parenthesized(open, items, close);
+  if (p.type === "bare")
+    return part(f.optionalParentheses(p.node, () => record(items)));
+  parenthesized(f, frame, items);
 }
 
-/** Ruff's `FormatPatternMatchMapping` between its braces, whose comments `match.casePattern` rejects before this runs. */
-export function mapping(
-  f: Fmt,
-  p: Pat & { k: "map" },
-  open: Token,
-  close: Token,
-): Format {
-  if (p.pairs.length === 0 && !p.rest)
-    return f.emptyParenthesized(open, [], close);
-  const entries: { end: number; doc: Format }[] = p.pairs.map(
-    ({ key, colon, value }) => ({
-      end: outerEnd(f, value),
-      doc: group([pattern(f, key), f.tok(colon), space, pattern(f, value)]),
+/** Ruff's `FormatPatternMatchMapping` in its braces' `frame`, whose comments `match.casePattern` rejects. */
+export function mapping(f: Fmt, p: Pat & { k: "map" }, frame: Frame): void {
+  if (p.pairs.length === 0 && !p.rest) return emptyParenthesized(f, frame);
+  const entries = p.pairs.map(({ key, colon, value }) => ({
+    end: outerEnd(f, value),
+    doc: record(() => {
+      open(GROUP);
+      pattern(f, key);
+      sToken(colon, f.text(colon));
+      sText(" ");
+      pattern(f, value);
+      close();
     }),
-  );
+  }));
   if (p.rest)
     entries.push({
       end: endOf(f.tree, p.rest.name),
       doc: dslPart(f.tree.parent(p.rest.star)),
     });
-  return f.parenthesized(
-    open,
-    () => f.joinCommaSeparated(entries, p.end, commaIn(f.tree, p.node, p.open)),
-    close,
+  parenthesized(f, frame, () =>
+    part(f.joinCommaSeparated(entries, p.end, commaIn(f.tree, p.node, p.open))),
   );
 }
 
-/** Ruff's `FormatPatternArguments`, a class pattern's parentheses and what they hold. */
+/** Ruff's `FormatPatternArguments`: a class pattern's parentheses' `frame` and what they hold. */
 export function classArguments(
   f: Fmt,
   p: Pat & { k: "class" },
-  open: Token,
-  close: Token,
-): Format {
+  frame: Frame,
+): void {
   const [only] = p.items;
-  if (!only && p.keywords.length === 0)
-    return f.emptyParenthesized(open, [], close);
+  if (!only && p.keywords.length === 0) return emptyParenthesized(f, frame);
   const comma = commaIn(f.tree, p.node, p.open);
   const entries = () =>
     only && p.items.length === 1 && p.keywords.length === 0
@@ -440,38 +460,44 @@ export function classArguments(
           {
             end: outerEnd(f, only),
             // A lone argument keeps its parentheses only when it has its own.
-            doc: pattern(f, only, only.paren ? "always" : "never"),
+            doc: record(() =>
+              pattern(f, only, only.paren ? "always" : "never"),
+            ),
           },
         ]
       : [
           ...p.items.map((x) => ({
             end: outerEnd(f, x),
-            doc: pattern(f, x),
+            doc: record(() => pattern(f, x)),
           })),
           ...p.keywords.map((k) => ({
             end: k.end,
             doc: dslPart(f.tree.parent(k.name)),
           })),
         ];
-  return f.parenthesized(
-    open,
-    () => group(f.joinCommaSeparated(entries(), p.end, comma)),
-    close,
-  );
+  parenthesized(f, frame, () => {
+    open(GROUP);
+    part(f.joinCommaSeparated(entries(), p.end, comma));
+    close();
+  });
 }
 
 /** Ruff's `maybe_parenthesize_pattern`, for a pattern without comments. */
-export function maybeParenthesizePattern(f: Fmt, p: Pat, c: MatchCase): Format {
+export function maybeParenthesizePattern(f: Fmt, p: Pat, c: MatchCase): void {
   switch (p.k) {
     case "expr":
       // Ruff's `BestFit` for a value or a capture, the expression's own layout.
-      return maybeParenthesize(f, p.e, c, "ifBreaks");
+      return part(maybeParenthesize(f, p.e, c, "ifBreaks"));
     case "or":
     case "as":
-    case "complex":
-      return canPatternOmitOptionalParentheses(p)
-        ? f.optionalParentheses(p.node, () => pattern(f, p, "never"))
-        : f.parenthesizeIfExpands(p.node, () => pattern(f, p, "never"));
+    case "complex": {
+      const content = () => record(() => pattern(f, p, "never"));
+      return part(
+        canPatternOmitOptionalParentheses(p)
+          ? f.optionalParentheses(p.node, content)
+          : f.parenthesizeIfExpands(p.node, content),
+      );
+    }
     default:
       return pattern(f, p, "never");
   }
