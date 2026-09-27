@@ -563,23 +563,25 @@ class Reader {
 
   /** The named children that carry code: not comments, not line continuations. */
   named(n: number): number[] {
+    const t = this.tree;
     const out: number[] = [];
-    for (const c of this.kids(n)) {
-      const kind = this.kind(c);
-      if (kind === "ERROR" || this.missing(c)) this.fail(c, "parse error");
-      if (
-        this.tree.named(c) &&
-        kind !== "comment" &&
-        kind !== "line_continuation"
-      )
+    for (let i = 0, count = t.count(n); i < count; i++) {
+      const c = t.child(n, i);
+      const kind = t.kindName(c);
+      if (kind === "ERROR" || t.missing(c)) this.fail(c, "parse error");
+      if (t.named(c) && kind !== "comment" && kind !== "line_continuation")
         out.push(c);
     }
     return out;
   }
 
+  // Index loops, not `kids`: these run for nearly every node read, and each `kids` call allocates an array.
   tok(n: number, kind: string): number | undefined {
-    for (const c of this.kids(n))
-      if (!this.tree.named(c) && this.kind(c) === kind) return c;
+    const t = this.tree;
+    for (let i = 0, count = t.count(n); i < count; i++) {
+      const c = t.child(n, i);
+      if (!t.named(c) && t.kindName(c) === kind) return c;
+    }
     return undefined;
   }
 
@@ -588,12 +590,22 @@ class Reader {
   }
 
   field(n: number, name: string): number | undefined {
-    for (const c of this.kids(n)) if (this.tree.fieldName(c) === name) return c;
+    const t = this.tree;
+    for (let i = 0, count = t.count(n); i < count; i++) {
+      const c = t.child(n, i);
+      if (t.fieldName(c) === name) return c;
+    }
     return undefined;
   }
 
   fields(n: number, name: string): number[] {
-    return this.kids(n).filter((c) => this.tree.fieldName(c) === name);
+    const t = this.tree;
+    const out: number[] = [];
+    for (let i = 0, count = t.count(n); i < count; i++) {
+      const c = t.child(n, i);
+      if (t.fieldName(c) === name) out.push(c);
+    }
+    return out;
   }
 
   needField(n: number, name: string): number {
@@ -1429,18 +1441,50 @@ class Reader {
     const e = this.link(this.bare(x, parens));
     this.byTs.set(n, e);
     // Also under the node inside the parentheses, which the rule of its kind (`dslPart(e.ts)`) prints.
-    this.byTs.set(x, e);
+    if (x !== n) this.byTs.set(x, e);
     return e;
   }
 
   /** The unnamed `,` children of `n`. */
   commas(n: number): number[] {
-    return this.kids(n).filter(
-      (c) => !this.tree.named(c) && this.kind(c) === ",",
-    );
+    const t = this.tree;
+    const out: number[] = [];
+    for (let i = 0, count = t.count(n); i < count; i++) {
+      const c = t.child(n, i);
+      if (!t.named(c) && t.kindName(c) === ",") out.push(c);
+    }
+    return out;
+  }
+
+  leaf(n: number, parens: Paren[], kind: Leaf["kind"]): Leaf {
+    return {
+      ts: n,
+      start: this.start(n),
+      end: this.end(n),
+      parent: undefined,
+      parens,
+      kind,
+      kids: [],
+    };
   }
 
   bare(n: number, parens: Paren[]): Expr {
+    const kind = this.kind(n);
+    // Leaves are most expressions: built as one literal, before `base`, which the others spread.
+    switch (kind) {
+      case "identifier":
+        return this.leaf(n, parens, "Name");
+      case "integer":
+      case "float":
+        return this.leaf(n, parens, "Number");
+      case "true":
+      case "false":
+        return this.leaf(n, parens, "Bool");
+      case "none":
+        return this.leaf(n, parens, "None");
+      case "ellipsis":
+        return this.leaf(n, parens, "Ellipsis");
+    }
     const base = {
       ts: n,
       start: this.start(n),
@@ -1448,21 +1492,7 @@ class Reader {
       parent: undefined,
       parens,
     };
-    const leaf = (kind: Leaf["kind"]): Leaf => ({ ...base, kind, kids: [] });
-    const kind = this.kind(n);
     switch (kind) {
-      case "identifier":
-        return leaf("Name");
-      case "integer":
-      case "float":
-        return leaf("Number");
-      case "true":
-      case "false":
-        return leaf("Bool");
-      case "none":
-        return leaf("None");
-      case "ellipsis":
-        return leaf("Ellipsis");
       case "string":
         return this.str(n, [n], parens);
       case "concatenated_string":
