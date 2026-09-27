@@ -36,8 +36,8 @@ import {
 } from "../sink.js";
 import { sPrintAssignment } from "./assignment.js";
 import {
-  printFunctionParameters,
-  shouldGroupFunctionParameters,
+  sPrintFunctionParameters,
+  sShouldGroupFunctionParameters,
   shouldHugTheOnlyFunctionParameter,
 } from "./functions.js";
 import { sPrintKey } from "./objects.js";
@@ -1011,12 +1011,14 @@ const methodSignature: CustomRule<JsOptions> = (key, sctx) => {
   if (n === undefined) return;
   open(GROUP);
   memberHead(ctx, n);
-  const parametersDoc = printFunctionParameters(js, n, false, true);
+  const parameters = capture(() =>
+    sPrintFunctionParameters(ctx, n, false, true),
+  );
   const returnNode = field(js, n, "return_type");
   const returnType = capture(() => pr(ctx, returnNode));
-  const groupParameters = shouldGroupFunctionParameters(js, n, returnType.doc);
+  const groupParameters = sShouldGroupFunctionParameters(js, n, returnType);
   if (groupParameters) open(GROUP);
-  place({ doc: parametersDoc });
+  place(parameters);
   if (groupParameters) close();
   if (returnNode !== undefined) {
     open(GROUP);
@@ -1064,7 +1066,9 @@ const indexSignature: CustomRule<JsOptions> = (type, sctx) => {
 const functionType: CustomRule<JsOptions> = (n, sctx) => {
   const ctx = jsCtx(sctx);
   const js = ctx.js;
-  const parametersDoc = printFunctionParameters(js, n, false, true);
+  const parameters = capture(() =>
+    sPrintFunctionParameters(ctx, n, false, true),
+  );
   const isSignature =
     kind(js, n) === "call_signature" || kind(js, n) === "construct_signature";
   const returnNode = field(js, n, "return_type") ?? field(js, n, "type");
@@ -1090,9 +1094,9 @@ const functionType: CustomRule<JsOptions> = (n, sctx) => {
     tok(js, c);
     sText(" ");
   }
-  const groupParameters = shouldGroupFunctionParameters(js, n, returnType.doc);
+  const groupParameters = sShouldGroupFunctionParameters(js, n, returnType);
   if (groupParameters) open(GROUP);
-  place({ doc: parametersDoc });
+  place(parameters);
   if (groupParameters) close();
   place(returnType);
   close();
