@@ -10,6 +10,7 @@ export const objects = {
   array_pattern: () => custom("array"),
   pair: () => custom("pair"),
   pair_pattern: () => custom("pair"),
+  method_definition: () => custom("method"),
   object_assignment_pattern: ($) => [$.left, space, "=", space, $.right],
   computed_property_name: ($) => ["[", $.children, "]"],
   spread_element: ($) => ["...", $.children],

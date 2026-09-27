@@ -7,7 +7,6 @@ import {
   hardline,
   join,
   line,
-  text,
   token,
 } from "../../../fmt/doc.js";
 import type { CustomRule } from "../../../fmt/dsl/runtime.js";
@@ -30,6 +29,7 @@ import {
   SOFT,
   sHardline,
   sLine,
+  sText,
   sToken,
   withComments,
 } from "../sink.js";
@@ -363,26 +363,25 @@ const pairCustom: CustomRule<JsOptions> = (n, sctx) => {
 };
 
 /** Prettier's printMethod, for object and class methods alike: modifiers, key, `?`, then the method value. */
-export const method: JsRule = (n, ctx) => {
-  const parts: Doc[] = [];
+const methodCustom: StreamRule<JsOptions> = (n, sctx) => {
+  const { js: ctx } = jsCtx(sctx);
   const name = field(ctx, n, "name");
   const kids = childrenOf(ctx, n);
+  const decorators = kids.filter((c) => kind(ctx, c) === "decorator");
+  place({ doc: printDecorators(ctx, decorators) });
   for (const c of kids) {
     if (c === name) break;
-    if (isComment(ctx, c)) continue;
-    if (kind(ctx, c) === "decorator") continue;
-    parts.push(p(ctx, c));
-    if (kind(ctx, c) !== "*") parts.push(text(" "));
+    if (isComment(ctx, c) || kind(ctx, c) === "decorator") continue;
+    sctx.print(c);
+    if (kind(ctx, c) !== "*") sText(" ");
   }
-  const decorators = kids.filter((c) => kind(ctx, c) === "decorator");
-  return [
-    printDecorators(ctx, decorators),
-    parts,
-    printKey(ctx, n),
-    t(ctx, name === undefined ? undefined : nextAnon(ctx, n, name, "?")),
-    printMethodValue(ctx, n),
-  ];
+  place({ doc: printKey(ctx, n) });
+  tok(ctx, name === undefined ? undefined : nextAnon(ctx, n, name, "?"));
+  place({ doc: printMethodValue(ctx, n) });
 };
+
+/** The method printer as a Doc rule, for the class members that still print by the Doc. */
+export const method: JsRule = onDoc(methodCustom);
 
 function nextAnon(
   x: HasTree,
@@ -543,8 +542,8 @@ export const objectCustoms = {
   object: objectCustom,
   array: arrayCustom,
   pair: pairCustom,
+  method: methodCustom,
 } satisfies Record<string, CustomRule<JsOptions>>;
 
 export const objectRules: Record<string, JsRule> = {
-  method_definition: method,
 };
