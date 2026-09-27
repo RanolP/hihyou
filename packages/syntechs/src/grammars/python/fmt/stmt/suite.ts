@@ -321,9 +321,9 @@ export function writeLeadingAlternateBranchComments(
 ): void {
   const first = comments[0];
   if (first) {
-    part(f.emptyLines(linesBefore(f.tree, first.start)));
-    part(f.leading(comments));
-  } else if (last) part(f.emptyLines(linesAfterIgnoringTrivia(f.tree, last.end)));
+    f.writeEmptyLines(linesBefore(f.tree, first.start));
+    f.writeLeading(comments);
+  } else if (last) f.writeEmptyLines(linesAfterIgnoringTrivia(f.tree, last.end));
 }
 
 /** `writeLeadingAlternateBranchComments`, as a `Format` for stmt-match.via.ts. */

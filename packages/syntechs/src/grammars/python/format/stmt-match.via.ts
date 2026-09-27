@@ -4,8 +4,8 @@ import type { StreamCtx } from "../../../fmt/stream-format.js";
 import type { Match, MatchCase } from "../fmt/ast.js";
 import { Unformattable } from "../fmt/ast.js";
 import { COMPOUND, type Fmt } from "../fmt/builders.js";
-import { maybeParenthesize } from "../fmt/expr.js";
-import { close, COLLAPSE, dslPart, HARD, INDENT, open, part, ruffStmtOf, sLine, sText, sToken } from "../fmt/sink.js";
+import { writeMaybeParenthesize } from "../fmt/expr.js";
+import { close, COLLAPSE, HARD, INDENT, open, ruffStmtOf, sDsl, sLine, sText, sToken } from "../fmt/sink.js";
 import { kids, writeBody } from "../fmt/stmt/defs.js";
 import {
   classArguments,
@@ -17,7 +17,7 @@ import {
   readPattern,
   sequence,
 } from "../fmt/stmt/match.js";
-import { leadingAlternateBranchComments } from "../fmt/stmt/suite.js";
+import { writeLeadingAlternateBranchComments } from "../fmt/stmt/suite.js";
 import { byteOffsetOf } from "../fmt/trivia.js";
 
 /** The case `child` (a child of a `case_clause`) is part of: the clause's block is the match's body. */
@@ -57,7 +57,7 @@ export const stmtMatchVia = {
     for (const [i, item] of p.items.entries()) {
       const bar = p.bars[i - 1];
       if (bar !== undefined) {
-        part(f.softLineOrSpace());
+        f.writeSoftLineOrSpace();
         sToken(bar, f.text(bar));
         sText(" ");
       }
@@ -70,7 +70,7 @@ export const stmtMatchVia = {
     const p = readPattern(f, ctx.tree.parent(n));
     if (p.k !== "complex") throw new Error("python match: match.complexReal outside a complex pattern");
     pattern(f, p.left);
-    part(f.softLineOrSpace());
+    f.writeSoftLineOrSpace();
     sToken(p.op, f.text(p.op));
     sText(" ");
   },
@@ -102,23 +102,23 @@ export const stmtMatchVia = {
     // The AST reads one subject, so `match a, b:` would lose the rest.
     if (kids(f.tree, s.ts).filter((c) => f.tree.fieldName(c) === "subject").length > 1)
       throw new Unformattable(`tuple subject in a match at ${byteOffsetOf(f.tree, s.ts)}`);
-    part(maybeParenthesize(f, s.subject, s, "ifBreaks"));
+    writeMaybeParenthesize(f, s.subject, s, "ifBreaks");
   },
   // Given the body, prints the colon's comments and every case, each through its rule in stmt-match.ts.
   "match.cases": (n: number) => {
     const { f, s: m } = ruffStmtOf(n);
     const s = m as Match;
     const cs = f.comments;
-    part(f.trailing(cs.dangling(s)));
+    f.writeTrailing(cs.dangling(s));
     f.at(COMPOUND, () => {
       let previous: MatchCase | undefined;
       for (const c of s.cases) {
         open(INDENT);
         sLine(HARD | COLLAPSE);
-        if (previous) part(leadingAlternateBranchComments(f, cs.leading(c), previous.body.at(-1)));
-        part(f.leading(cs.leading(c)));
-        part(dslPart(c.ts));
-        part(f.trailing(cs.trailing(c)));
+        if (previous) writeLeadingAlternateBranchComments(f, cs.leading(c), previous.body.at(-1));
+        f.writeLeading(cs.leading(c));
+        sDsl(c.ts);
+        f.writeTrailing(cs.trailing(c));
         close();
         previous = c;
       }
@@ -144,13 +144,13 @@ export const stmtMatchVia = {
     if (c.guardKw === undefined || !c.guard) return;
     sToken(c.guardKw, f.text(c.guardKw));
     sText(" ");
-    part(maybeParenthesize(f, c.guard, c, "ifBreaksParenthesized"));
+    writeMaybeParenthesize(f, c.guard, c, "ifBreaksParenthesized");
   },
   // The colon's comments, then the body.
   "match.caseBody": (n: number, ctx: StreamCtx<unknown>) => {
     const { f, c } = caseOf(n, ctx);
     const dangling = f.comments.dangling(c);
-    part(f.trailing(dangling));
+    f.writeTrailing(dangling);
     writeBody(f, c, c.body, "other", dangling);
   },
 };
