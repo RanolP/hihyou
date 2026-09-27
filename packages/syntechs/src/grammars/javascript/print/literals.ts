@@ -1,23 +1,7 @@
 // Prettier's literal printers (print/literal.js, utilities/print-string.js, print-number.js), its template
 // literal printer (print/template-literal.js) and its comment printer (print/comment.js).
 
-import {
-  contentsOf,
-  type Doc,
-  flatOf,
-  hardline,
-  isBroken,
-  isDocs,
-  isHardLine,
-  isSoftLine,
-  kindOf,
-  literalToken,
-  partsOf,
-  text,
-  textOf,
-  token,
-  withContents,
-} from "../../../fmt/doc.js";
+import { type Doc, hardline, literalToken, text, token } from "../../../fmt/doc.js";
 import { isDirective } from "./parens.js";
 import {
   anon,
@@ -35,6 +19,7 @@ import type { CustomRule } from "../../../fmt/dsl/runtime.js";
 import {
   capture,
   close,
+  flatten,
   GROUP,
   INDENT,
   type JsStreamCtx,
@@ -173,49 +158,6 @@ function addAlignment(size: number, tabWidth: number, body: () => void): void {
   close();
 }
 
-/**
- * `doc` as prettier's printDocToString lays it out at an infinite width, when that is one line: every group
- * flat. `undefined` when it would hold a line break (a hard line, or a token spanning lines).
- */
-function flatten(doc: Doc): Doc | undefined {
-  let broken = false;
-  const walk = (d: Doc): Doc => {
-    if (broken) return [];
-    if (isDocs(d)) return d.map(walk);
-    switch (kindOf(d)) {
-      case "token":
-        if (textOf(d).includes("\n")) broken = true;
-        return d;
-      case "text":
-        if (textOf(d).includes("\n")) broken = true;
-        return d;
-      case "line":
-        if (isHardLine(d)) broken = true;
-        return isSoftLine(d) ? [] : text(" ");
-      case "breakParent":
-        broken = true;
-        return [];
-      case "group":
-        if (isBroken(d)) broken = true;
-        return walk(contentsOf(d));
-      case "indent":
-      case "align":
-        return walk(contentsOf(d));
-      case "fill":
-        return partsOf(d).map(walk);
-      case "ifBreak":
-        return walk(flatOf(d));
-      case "lineSuffix":
-        return withContents(d, walk(contentsOf(d)));
-      // Ruff's layouts, which a JavaScript doc never holds.
-      default:
-        return d;
-    }
-  };
-  const out = walk(doc);
-  return broken ? undefined : out;
-}
-
 const INDENTED_WHEN_BROKEN = new Set([
   "identifier",
   "member_expression",
@@ -264,9 +206,9 @@ function printSubstitution(
   });
   let hasNewline = src(js, sub).includes("\n");
   if (!hasNewline) {
-    const flat = flatten(printed.doc);
+    const flat = flatten(printed);
     if (flat === undefined) hasNewline = true;
-    else printed = { doc: flat };
+    else printed = flat;
   }
   const indented =
     hasNewline &&

@@ -1,22 +1,32 @@
 import {
   breakParent,
   conditionalGroup,
+  contentsOf,
   type Doc,
   type DocHandle,
   align as docAlign,
   fill as docFill,
   group as docGroup,
+  flatOf,
   ifBreak,
   indent as docIndent,
   indentIfBreak,
+  isBroken,
+  isDocs,
+  isHardLine,
+  isSoftLine,
+  kindOf,
   lineOf,
   lineSuffix,
   lineSuffixBoundary,
   literalToken,
+  partsOf,
   synthetic,
   text,
+  textOf,
   token,
   willBreak as docWillBreak,
+  withContents,
 } from "../../fmt/doc.js";
 import * as stream from "../../fmt/stream.js";
 import { sDoc } from "../../fmt/stream-doc.js";
@@ -314,6 +324,67 @@ export function removeLines(part: Part): Part {
     }),
     true,
   );
+}
+
+/**
+ * `part` as prettier's printDocToString lays it out at an infinite width, when that is one line: every group
+ * flat, each conditional group in its first state. `undefined` when it would hold a line break (a hard line, a
+ * group that must break, or a token spanning lines). A template substitution prints so.
+ */
+export function flatten(part: Part): Part | undefined {
+  const t = part.span;
+  if (t === undefined) {
+    const doc = docFlatten(part.doc);
+    return doc === undefined ? undefined : { doc };
+  }
+  if (stream.flattenBreaks(t)) return undefined;
+  return streamPart(
+    detached(() => {
+      stream.openFlat(true);
+      stream.sJump(t);
+      stream.closeFlat();
+    }),
+    true,
+  );
+}
+
+function docFlatten(doc: Doc): Doc | undefined {
+  let broken = false;
+  const walk = (d: Doc): Doc => {
+    if (broken) return [];
+    if (isDocs(d)) return d.map(walk);
+    switch (kindOf(d)) {
+      case "token":
+        if (textOf(d).includes("\n")) broken = true;
+        return d;
+      case "text":
+        if (textOf(d).includes("\n")) broken = true;
+        return d;
+      case "line":
+        if (isHardLine(d)) broken = true;
+        return isSoftLine(d) ? [] : text(" ");
+      case "breakParent":
+        broken = true;
+        return [];
+      case "group":
+        if (isBroken(d)) broken = true;
+        return walk(contentsOf(d));
+      case "indent":
+      case "align":
+        return walk(contentsOf(d));
+      case "fill":
+        return partsOf(d).map(walk);
+      case "ifBreak":
+        return walk(flatOf(d));
+      case "lineSuffix":
+        return withContents(d, walk(contentsOf(d)));
+      // Ruff's layouts, which a JavaScript doc never holds.
+      default:
+        return d;
+    }
+  };
+  const out = walk(doc);
+  return broken ? undefined : out;
 }
 
 /**
