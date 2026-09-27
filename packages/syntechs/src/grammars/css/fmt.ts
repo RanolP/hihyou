@@ -19,12 +19,8 @@ import {
   sText,
   sToken,
 } from "../../fmt/stream.js";
-import {
-  printLeadingComments,
-  printTrailingComments,
-  type StreamCtx,
-  type StreamRule,
-} from "../../fmt/stream-format.js";
+import type { CustomRule, CustomSeq } from "../../fmt/dsl/runtime.js";
+import type { StreamCtx, StreamRule } from "../../fmt/stream-format.js";
 import { newlineBetween } from "../../fmt/text.js";
 import { type FormatTree, firstLeaf, nextLeaf } from "../../fmt/tree.js";
 import { grammar } from "./bundle.js";
@@ -435,15 +431,13 @@ const semicolon = (node: number, ctx: SCtx) => {
 };
 /**
  * Parameters kept as written, each separated by one space where the source had any gap (prettier's raw params).
- * A comment among them is attached to a parameter, so it prints with that parameter rather than in a gap.
+ * A comment among them is attached to a parameter, so it prints with that parameter's entries rather than in a gap.
  */
-function raw(nodes: readonly number[], ctx: SCtx): void {
+function raw(nodes: readonly number[], ctx: SCtx, seq: CustomSeq): void {
   nodes.forEach((n, i) => {
     const prev = nodes[i - 1];
     if (prev !== undefined && apart(prev, n, ctx)) sText(" ");
-    printLeadingComments(ctx, n);
-    sToken(n, src(n, ctx));
-    printTrailingComments(ctx, n);
+    seq.print(n, () => sToken(n, src(n, ctx)));
   });
 }
 const atToken = (at: number, ctx: SCtx) => sToken(at, atName(src(at, ctx)));
@@ -515,7 +509,7 @@ export const customs = {
       printItem(c, ctx);
     });
   },
-  declaration: (node, ctx) => {
+  declaration: (node, ctx, seq) => {
     const kids = code(node, ctx);
     const colon = kids.findIndex(
       (c) => !ctx.tree.named(c) && kind(c, ctx) === ":",
@@ -532,7 +526,7 @@ export const customs = {
     const first = values[0];
     if (first !== undefined) {
       sText(" ");
-      if (src(first, ctx).startsWith("progid:")) raw(values, ctx);
+      if (src(first, ctx).startsWith("progid:")) raw(values, ctx, seq);
       else valueList(values, ctx, src(prop, ctx).toLowerCase());
     }
     if (important !== undefined) {
@@ -606,17 +600,17 @@ export const customs = {
     });
     semicolon(node, ctx);
   },
-  charset: (node, ctx) => {
+  charset: (node, ctx, seq) => {
     const [at, ...rest] = withoutSemicolon(node, ctx);
     if (at === undefined) return concat(node, ctx);
     atToken(at, ctx);
     if (rest.length > 0) {
       sText(" ");
-      raw(rest, ctx);
+      raw(rest, ctx, seq);
     }
     semicolon(node, ctx);
   },
-  atRule: (node, ctx) => {
+  atRule: (node, ctx, seq) => {
     const [at, ...rest] = code(node, ctx);
     if (at === undefined) return concat(node, ctx);
     const block = rest.find((c) => kind(c, ctx) === "block");
@@ -624,14 +618,14 @@ export const customs = {
     ctx.print(at);
     if (params.length > 0) {
       sText(" ");
-      raw(params, ctx);
+      raw(params, ctx, seq);
     }
     if (block !== undefined) {
       sText(" ");
       ctx.print(block);
     } else semicolon(node, ctx);
   },
-} satisfies Record<string, SRule>;
+} satisfies Record<string, CustomRule<CssOptions>>;
 
 /** CSS as prettier 3.9.9's postcss printer lays it out; the layouts are format.ts, generated into fmt.gen.ts. */
 export const css: Language<CssOptions> = {
