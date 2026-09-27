@@ -1,16 +1,16 @@
-import { type Format, group, indent, synthetic } from "../elements.js";
+import { type Format, group, synthetic } from "../elements.js";
 import type { FormatTree } from "../../../../fmt/tree.js";
 import type {
   ClassDef,
   Decorator,
   Expr,
   FunctionDef,
+  Match,
   MatchCase,
   TypeParams,
 } from "../ast.js";
 import { exprAst, Unformattable } from "../ast.js";
 import {
-  COMPOUND,
   commaIn,
   emptyLine,
   type Fmt,
@@ -19,6 +19,7 @@ import {
 } from "../builders.js";
 import type { Comment } from "../comments.js";
 import { args, formatExpr, maybeParenthesize, parameters } from "../expr.js";
+import { dslPart } from "../sink.js";
 import {
   byteEndOf,
   byteOffsetOf,
@@ -31,13 +32,12 @@ import {
 import {
   clauseBody,
   clauseHeader,
-  leadingAlternateBranchComments,
   type StmtRules,
 } from "./suite.js";
 
 /** Ruff's definitions and `match` (statement/stmt_{function_def,class_def,match}.rs, other/decorator.rs). */
 
-const kids = (tree: FormatTree, n: number): number[] =>
+export const kids = (tree: FormatTree, n: number): number[] =>
   Array.from({ length: tree.count(n) }, (_, i) => tree.child(n, i));
 
 /** The blank lines a definition needs between itself and its leading comments: two at the top, else one. */
@@ -228,7 +228,7 @@ const unsupported = (tree: FormatTree, n: number): never => {
 // ---- definitions ----
 
 /** `clauseBody`, refusing a backslash continuation after the colon. */
-function body(
+export function body(
   f: Fmt,
   header: { readonly ts: number; readonly colon: number },
   stmts: Parameters<typeof clauseBody>[1],
@@ -355,7 +355,7 @@ const unsupportedPattern = (f: Fmt, n: number): never => {
 };
 
 /** The pattern after `case`: several top-level patterns (or one and a comma) are a tuple without parentheses. */
-function readCasePattern(f: Fmt, c: MatchCase): Pat {
+export function readCasePattern(f: Fmt, c: MatchCase): Pat {
   const t = f.tree;
   const clause = c.pattern.ts;
   const stop = startOf(t, c.guardKw !== undefined ? c.guardKw : c.colon);
@@ -753,7 +753,7 @@ function classPattern(f: Fmt, p: Pat & { k: "class" }): Format {
 }
 
 /** Ruff's `maybe_parenthesize_pattern`, for a pattern without comments. */
-function maybeParenthesizePattern(f: Fmt, p: Pat, c: MatchCase): Format {
+export function maybeParenthesizePattern(f: Fmt, p: Pat, c: MatchCase): Format {
   switch (p.k) {
     case "expr":
       // Ruff's `BestFit` for a value or a capture, the expression's own layout.
@@ -832,85 +832,11 @@ function canPatternOmitOptionalParentheses(root: Pat): boolean {
   );
 }
 
-// ---- match ----
-
-/** Ruff's `FormatMatchCase`, less its own leading and trailing comments. */
-function matchCase(f: Fmt, c: MatchCase): Format {
-  const cs = f.comments;
-  if (cs.has(c.pattern) || cs.hasAnyIn(c.pattern.start, c.pattern.end))
-    throw new Unformattable(
-      `comment in a pattern at ${byteOffsetOf(f.tree, c.pattern.ts)}`,
-    );
-  const dangling = cs.dangling(c);
-  const p = readCasePattern(f, c);
-  // `check` keeps a pattern's parentheses as meaning, so it would flag the ones ruff adds to split a long
-  // pattern; a header that already overflows is the case that can get them.
-  const bracketed =
-    p.paren !== undefined ||
-    p.k === "map" ||
-    p.k === "class" ||
-    (p.k === "seq" && p.type !== "bare");
-  // The colon's end column; a header spanning lines is measured on the colon's own line only.
-  if (!bracketed && f.tree.col(c.colon) + 1 > f.options["line-length"])
-    throw new Unformattable(
-      `long unparenthesized case pattern at ${byteOffsetOf(f.tree, c.ts)}`,
-    );
-  const header: Format[] = [f.tok(c.kw), space, maybeParenthesizePattern(f, p, c)];
-  if (c.guardKw !== undefined && c.guard)
-    header.push(
-      space,
-      f.tok(c.guardKw),
-      space,
-      maybeParenthesize(f, c.guard, c, "ifBreaksParenthesized"),
-    );
-  return [
-    clauseHeader(f, header, f.tok(c.colon), dangling),
-    body(f, c, c.body, "other", dangling),
-  ];
-}
+// A statement its rule in format.ts prints.
+const fromSpec = (_: Fmt, s: Match) => dslPart(s.ts);
 
 export const defRules: StmtRules = {
-  Match(f, s) {
-    const cs = f.comments;
-    // The AST reads one subject, so `match a, b:` would lose the rest.
-    if (
-      kids(f.tree, s.ts).filter((c) => f.tree.fieldName(c) === "subject")
-        .length > 1
-    )
-      throw new Unformattable(
-        `tuple subject in a match at ${byteOffsetOf(f.tree, s.ts)}`,
-      );
-    const header = [
-      f.tok(s.kw),
-      space,
-      maybeParenthesize(f, s.subject, s, "ifBreaks"),
-    ];
-    const cases = f.at(COMPOUND, () => {
-      const out: Format[] = [];
-      let previous: MatchCase | undefined;
-      for (const c of s.cases) {
-        const alternate = previous
-          ? leadingAlternateBranchComments(
-              f,
-              cs.leading(c),
-              previous.body.at(-1),
-            )
-          : [];
-        out.push(
-          indent([
-            hard,
-            alternate,
-            f.leading(cs.leading(c)),
-            matchCase(f, c),
-            f.trailing(cs.trailing(c)),
-          ]),
-        );
-        previous = c;
-      }
-      return out;
-    });
-    return [clauseHeader(f, header, f.tok(s.colon), cs.dangling(s)), cases];
-  },
+  Match: fromSpec,
   FunctionDef(f, s) {
     const [leadingDef, trailingDef] = splitDangling(f, s);
     return [
