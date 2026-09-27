@@ -331,6 +331,26 @@ export function withComments(ctx: JsStreamCtx, node: number, fn: () => void): vo
   printTrailingComments(ctx, node);
 }
 
+const NO_PRINT: Doc = [];
+/**
+ * The comments attached to `node` as two writes, its leading ones and its trailing ones, for a rule that lays out
+ * what goes between them across intervals of its own rather than inside one (a binaryish chain's flat parts, an
+ * operand's own-line comment moved above its operator); undefined when `node` has none.
+ */
+export function commentsOf(
+  ctx: JsStreamCtx,
+  node: number,
+): readonly [leading: () => void, trailing: () => void] | undefined {
+  if (frames.length > 0) {
+    const wrapped = ctx.js.withComments(node, NO_PRINT);
+    if (wrapped === NO_PRINT) return undefined;
+    const [leading, , trailing] = wrapped as [Doc, Doc, Doc];
+    return [() => writeDoc(leading), () => writeDoc(trailing)];
+  }
+  if (ctx.leadingComments(node).length === 0 && ctx.trailingComments(node).length === 0) return undefined;
+  return [() => printLeadingComments(ctx, node), () => printTrailingComments(ctx, node)];
+}
+
 /** Writes a Doc built by a rule still on the Doc. */
 function writeDoc(d: Doc): void {
   if (frames.length > 0) put(d);
