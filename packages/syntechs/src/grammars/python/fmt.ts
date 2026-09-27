@@ -99,7 +99,7 @@ export const python: Language<PythonOptions> = {
         const comments = attach(module, tree);
         const byNode = byTreeNode(comments);
         // The module rule prints every comment, the module's own among them and those of the parts the spec's
-        // rules print inside it (`dslPart`), so those rules see none.
+        // rules print inside it (`sDsl`), so those rules see none.
         const placed: Comments = {
           of: (n) => (n === tree.root || printing() ? undefined : byNode.of(n)),
           dangling: (n) => (printing() ? [] : byNode.dangling(n)),
@@ -111,8 +111,8 @@ export const python: Language<PythonOptions> = {
   ),
   stream: {
     ...rules,
-    // The core writes a node with no rule (a leaf) straight to the stream; through the sink it lands in the
-    // `dslPart` recording printing it.
+    // The core writes a node with no rule (a leaf) straight to the stream; through the sink it lands where the
+    // rule printing it (`sDsl`) writes.
     wrap: (node, ctx, print) =>
       rules.rules.has(ctx.tree.kindName(node)) ? print() : sToken(node, ctx.tree.text(node)),
   },
