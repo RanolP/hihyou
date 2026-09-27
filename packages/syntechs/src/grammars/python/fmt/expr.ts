@@ -1,19 +1,5 @@
 import { NO_NODE } from "../../../core/arena.js";
 import {
-  bestFitting,
-  breakParent,
-  type Format,
-  fitsExpanded,
-  group,
-  ifBreak,
-  indent,
-  synthetic,
-  text,
-  token,
-  removeSoftLines,
-  willBreak,
-} from "./elements.js";
-import {
   type Arguments,
   type Attribute,
   type BinOp,
@@ -41,15 +27,10 @@ import {
   type UnaryOp,
 } from "./ast.js";
 import {
-  blockIndent,
   EXPR,
   type Fmt,
-  hard,
   type Level,
   PAREN,
-  softBlockIndent,
-  softOrSpace,
-  space,
   writeCommaIn,
 } from "./builders.js";
 import type { Comment } from "./comments.js";
@@ -60,8 +41,6 @@ import {
   close as sClose,
   GROUP,
   open as sOpen,
-  part,
-  record,
   sLine,
   sText,
 } from "./sink.js";
@@ -145,15 +124,6 @@ export function writeExpr(
   }
   const l = f.level;
   f.at(l.k === "top" || l.k === "compound" ? EXPR : l, () => writeNode(f, e, o));
-}
-
-export function formatExpr(
-  f: Fmt,
-  e: Expr,
-  parens: Parens = "preserve",
-  o: Opts = {},
-): Format {
-  return sink.record(() => writeExpr(f, e, parens, o));
 }
 
 /** Ruff's `FormatNodeRule::fmt`: the leading comments, the fields, the trailing comments. */
@@ -951,50 +921,77 @@ export function writeLambdaParams(f: Fmt, e: Lambda, p: Parameters): void {
   sink.place(cs.hasAnyIn(p.start, p.end) || cs.has(p) ? params : sink.removeSoftLines(params));
 }
 
-export function lambdaBody(f: Fmt, e: Lambda, header: readonly Comment[]): Format {
+export function writeLambdaBody(f: Fmt, e: Lambda, header: readonly Comment[]): void {
   const cs = f.comments;
   const body = e.body;
   if (header.length > 0) {
     const split = header.findIndex((c) => c.line === "own");
     const trailingHeader = split < 0 ? header : header.slice(0, split);
     const leadingBody = split < 0 ? [] : header.slice(split);
-    if (body.parens.length > 0 && cs.hasLeading(body))
-      return [
-        f.trailing(header),
-        leadingBody.length === 0 ? space : hard,
-        formatExpr(f, body, "always"),
-      ];
-    return [
-      space,
-      synthetic(body.ts, "("),
-      f.trailing(trailingHeader),
-      blockIndent([f.leading(leadingBody), formatExpr(f, body, "never")]),
-      synthetic(body.ts, ")"),
-    ];
+    if (body.parens.length > 0 && cs.hasLeading(body)) {
+      f.writeTrailing(header);
+      if (leadingBody.length === 0) sText(" ");
+      else sLine(sink.HARD | COLLAPSE);
+      writeExpr(f, body, "always");
+      return;
+    }
+    sText(" ");
+    sink.sToken(body.ts, "(", true);
+    f.writeTrailing(trailingHeader);
+    sOpen(sink.INDENT);
+    sLine(sink.HARD | COLLAPSE);
+    f.writeLeading(leadingBody);
+    writeExpr(f, body, "never");
+    sClose();
+    sLine(sink.HARD | COLLAPSE);
+    sink.sToken(body.ts, ")", true);
+    return;
   }
-  if (cs.hasLeading(body) || cs.hasTrailingOwnLine(body))
-    return formatExpr(f, body, "always");
+  if (cs.hasLeading(body) || cs.hasTrailingOwnLine(body)) {
+    writeExpr(f, body, "always");
+    return;
+  }
   const needs = needsParentheses(f, body, e);
-  if (needs === "always") return formatExpr(f, body, "always");
-  if (needs === "multiline")
-    return f.parenthesizeIfExpands(body.ts, () => formatExpr(f, body, "never"));
-  if (body.kind === "Call" || body.kind === "Subscript") {
-    const unparenthesized = formatExpr(f, body, "never");
-    return [
-      willBreak(unparenthesized) ? breakParent : [],
-      bestFitting([
-        unparenthesized,
-        group(unparenthesized, true),
-        [
-          synthetic(body.ts, "("),
-          blockIndent(unparenthesized),
-          synthetic(body.ts, ")"),
-        ],
-      ]),
-    ];
+  if (needs === "always") {
+    writeExpr(f, body, "always");
+    return;
   }
-  if (hasOwnParentheses(f, body) !== undefined) return formatExpr(f, body);
-  return f.parenthesizeIfExpands(body.ts, () => formatExpr(f, body, "never"));
+  if (needs === "multiline") {
+    f.writeParenthesizeIfExpands(body.ts, () => writeExpr(f, body, "never"));
+    return;
+  }
+  if (body.kind === "Call" || body.kind === "Subscript") {
+    const unparenthesized = sink.capture(() => writeExpr(f, body, "never"));
+    if (sink.willBreak(unparenthesized)) sink.sBreakParent();
+    const k = sink.openBestFitting(false);
+    const variant = (write: () => void) => {
+      const v = sink.openVariant(k);
+      write();
+      sink.closeVariant(v);
+    };
+    variant(() => sink.place(unparenthesized));
+    variant(() => {
+      sOpen(GROUP, -1, sink.BROKEN);
+      sink.place(unparenthesized);
+      sClose();
+    });
+    variant(() => {
+      sink.sToken(body.ts, "(", true);
+      sOpen(sink.INDENT);
+      sLine(sink.HARD | COLLAPSE);
+      sink.place(unparenthesized);
+      sClose();
+      sLine(sink.HARD | COLLAPSE);
+      sink.sToken(body.ts, ")", true);
+    });
+    sClose();
+    return;
+  }
+  if (hasOwnParentheses(f, body) !== undefined) {
+    writeExpr(f, body);
+    return;
+  }
+  f.writeParenthesizeIfExpands(body.ts, () => writeExpr(f, body, "never"));
 }
 
 /**
@@ -1391,18 +1388,20 @@ function flatten(f: Fmt, root: BinOp | Compare | BoolOp): Part[] {
   return parts;
 }
 
-function operatorDoc(f: Fmt, o: Operator): Format {
+function writeOperator(f: Fmt, o: Operator): void {
   const t = o.tok;
   const words: number[] = [];
   for (let i = 0, n = f.tree.count(t); i < n; i++) {
     const c = f.tree.child(t, i);
     if (f.tree.kindName(c) !== "comment") words.push(c);
   }
-  const symbol =
-    words.length > 1
-      ? words.flatMap((w, i) => (i > 0 ? [space, f.tok(w)] : [f.tok(w)]))
-      : f.tok(t);
-  return [symbol, f.trailing(o.trailing)];
+  if (words.length > 1)
+    for (const [i, w] of words.entries()) {
+      if (i > 0) sText(" ");
+      f.writeTok(w);
+    }
+  else f.writeTok(t);
+  f.writeTrailing(o.trailing);
 }
 
 function hasUnparenthesizedLeadingComments(f: Fmt, o: Operand): boolean {
@@ -1416,9 +1415,12 @@ function hasUnparenthesizedLeadingComments(f: Fmt, o: Operand): boolean {
   return leading.length > 0;
 }
 
-function operandDoc(f: Fmt, o: Operand): Format {
+function writeOperand(f: Fmt, o: Operand): void {
   const e = o.e;
-  if (e.parens.length === 0) return formatExpr(f, e, "never");
+  if (e.parens.length === 0) {
+    writeExpr(f, e, "never");
+    return;
+  }
   const cs = f.comments;
   const leading = cs.leading(e);
   let beforeEnd = 0;
@@ -1435,11 +1437,10 @@ function operandDoc(f: Fmt, o: Operand): Format {
     }
   const after = trailing.slice(afterStart);
   for (const c of after) c.formatted = true;
-  const out: Format[] = [before.length > 0 ? f.leading(before) : []];
-  out.push(formatExpr(f, e, "always"));
+  f.writeLeading(before);
+  writeExpr(f, e, "always");
   for (const c of after) c.formatted = false;
-  out.push(after.length > 0 ? f.trailing(after) : []);
-  return out;
+  f.writeTrailing(after);
 }
 
 function tokenAfter(f: Fmt, from: number, to: number): string | undefined {
@@ -1463,20 +1464,21 @@ const isSimplePowerOperand = (f: Fmt, e: Expr): boolean => {
   }
 };
 
-function sliceDoc(f: Fmt, parts: readonly Part[]): Format {
+function writeSlice(f: Fmt, parts: readonly Part[]): void {
   const [only] = parts;
-  if (parts.length === 1 && only?.k === "operand") return operandDoc(f, only);
+  if (parts.length === 1 && only?.k === "operand") {
+    writeOperand(f, only);
+    return;
+  }
   let lowest = Prec.None;
   for (const p of parts)
     if (p.k === "operator" && p.prec > lowest) lowest = p.prec;
-  const out: Format[] = [];
   let last = -1;
   const sub = (from: number, to: number) => parts.slice(from, to);
   const piece = (s: readonly Part[]) => {
     const [one] = s;
-    return s.length === 1 && one?.k === "operand"
-      ? operandDoc(f, one)
-      : f.inParensGroup(sliceDoc(f, s));
+    if (s.length === 1 && one?.k === "operand") writeOperand(f, one);
+    else f.writeInParensGroup(() => writeSlice(f, s));
   };
   for (const [i, p] of parts.entries()) {
     if (p.k !== "operator" || p.prec !== lowest) continue;
@@ -1491,30 +1493,33 @@ function sliceDoc(f: Fmt, parts: readonly Part[]): Format {
       isSimplePowerOperand(f, rightFirst.e) &&
       leftLast.e.parens.length === 0 &&
       rightFirst.e.parens.length === 0;
-    if (leftFirst.leadingBinary) out.push(f.leading(leftFirst.leadingBinary));
-    out.push(piece(left));
-    if (leftLast.trailingBinary) out.push(f.trailing(leftLast.trailingBinary));
-    out.push(isPow ? f.softLine() : f.softLineOrSpace());
-    out.push(operatorDoc(f, p));
+    if (leftFirst.leadingBinary) f.writeLeading(leftFirst.leadingBinary);
+    piece(left);
+    if (leftLast.trailingBinary) f.writeTrailing(leftLast.trailingBinary);
+    if (isPow) f.writeSoftLine();
+    else f.writeSoftLineOrSpace();
+    writeOperator(f, p);
     if (
       p.trailing.length > 0 ||
       hasUnparenthesizedLeadingComments(f, rightFirst)
     )
-      out.push(hard);
-    else if (isPow) out.push(f.inParensIfBreaks(space));
-    else out.push(space);
+      sLine(sink.HARD | COLLAPSE);
+    else if (isPow) f.writeInParensIfBreaks(() => sText(" "));
+    else sText(" ");
     last = i;
   }
   const right = sub(last + 1, parts.length);
   const rightFirst = right[0] as Operand;
-  if (rightFirst.leadingBinary) out.push(f.leading(rightFirst.leadingBinary));
-  out.push(piece(right));
-  return out;
+  if (rightFirst.leadingBinary) f.writeLeading(rightFirst.leadingBinary);
+  piece(right);
 }
 
-export function binaryLike(f: Fmt, e: BinOp | Compare | BoolOp): Format {
+export function writeBinaryLike(f: Fmt, e: BinOp | Compare | BoolOp): void {
   const parts = flatten(f, e);
-  if (e.kind === "BoolOp") return f.inParensGroup(sliceDoc(f, parts));
+  if (e.kind === "BoolOp") {
+    f.writeInParensGroup(() => writeSlice(f, parts));
+    return;
+  }
   const strings: number[] = [];
   for (const [i, p] of parts.entries())
     if (
@@ -1524,16 +1529,21 @@ export function binaryLike(f: Fmt, e: BinOp | Compare | BoolOp): Format {
       p.e.parens.length === 0
     )
       strings.push(i);
-  if (strings.length === 0) return f.inParensGroup(sliceDoc(f, parts));
+  if (strings.length === 0) {
+    f.writeInParensGroup(() => writeSlice(f, parts));
+    return;
+  }
 
-  // The implicit concatenations each get a group of their own, the operands between them another.
+  // The implicit concatenations each get a group of their own, the operands between them another: each opened
+  // by `start` and closed by `end`, as `writeInParensGroup` would.
   const cs = f.comments;
-  const stack: Format[][] = [[]];
-  const emit = (...d: Format[]) => (stack.at(-1) as Format[]).push(...d);
-  const start = () => stack.push([]);
+  const l = f.level;
+  const start = () => {
+    if (l.k === "paren") sOpen(GROUP);
+    else if (l.k === "expr" && l.g) sOpen(sink.GROUP_IF_BROKEN, sink.idOf(l.g));
+  };
   const end = () => {
-    const d = stack.pop() as Format[];
-    emit(f.inParensGroup(d));
+    if (isParenthesizedLevel(l)) sClose();
   };
   start();
   if (strings[0] !== 0) start();
@@ -1549,31 +1559,25 @@ export function binaryLike(f: Fmt, e: BinOp | Compare | BoolOp): Format {
         const leftOperator = parts[leftOp] as Operator;
         const leftFirst = left[0] as Operand;
         const leftLast = left.at(-1) as Operand;
-        if (leftFirst.leadingBinary) emit(f.leading(leftFirst.leadingBinary));
-        emit(sliceDoc(f, left));
-        if (leftLast.trailingBinary) emit(f.trailing(leftLast.trailingBinary));
-        emit(f.softLineOrSpace(), operatorDoc(f, leftOperator));
+        if (leftFirst.leadingBinary) f.writeLeading(leftFirst.leadingBinary);
+        writeSlice(f, left);
+        if (leftLast.trailingBinary) f.writeTrailing(leftLast.trailingBinary);
+        f.writeSoftLineOrSpace();
+        writeOperator(f, leftOperator);
         end();
-        emit(
+        if (
           hasUnparenthesizedLeadingComments(f, operand) ||
-            leftOperator.trailing.length > 0
-            ? hard
-            : space,
-        );
+          leftOperator.trailing.length > 0
+        )
+          sLine(sink.HARD | COLLAPSE);
+        else sText(" ");
       }
-      emit(
-        operand.leadingBinary ? f.leading(operand.leadingBinary) : [],
-        f.leading(cs.leading(s)),
-        record(() => writeImplicitConcatenated(f, s)),
-        f.trailing(cs.trailing(s)),
-        operand.trailingBinary ? f.trailing(operand.trailingBinary) : [],
-      );
-    } else
-      emit(
-        f.leading(cs.leading(s)),
-        record(() => writeImplicitConcatenated(f, s)),
-        f.trailing(cs.trailing(s)),
-      );
+      if (operand.leadingBinary) f.writeLeading(operand.leadingBinary);
+    }
+    f.writeLeading(cs.leading(s));
+    writeImplicitConcatenated(f, s);
+    f.writeTrailing(cs.trailing(s));
+    if (i > 0 && operand.trailingBinary) f.writeTrailing(operand.trailingBinary);
     const rightOp = parts[i + 1] as Operator | undefined;
     if (!rightOp) {
       lastOp = undefined;
@@ -1582,13 +1586,15 @@ export function binaryLike(f: Fmt, e: BinOp | Compare | BoolOp): Format {
     start();
     const rightOperand = parts[i + 2] as Operand;
     const hasLeading = hasUnparenthesizedLeadingComments(f, rightOperand);
-    emit(hasLeading ? space : f.softLineOrSpace(), operatorDoc(f, rightOp));
-    emit(
+    if (hasLeading) sText(" ");
+    else f.writeSoftLineOrSpace();
+    writeOperator(f, rightOp);
+    if (
       (hasLeading && rightOperand.e.parens.length === 0) ||
-        rightOp.trailing.length > 0
-        ? hard
-        : space,
-    );
+      rightOp.trailing.length > 0
+    )
+      sLine(sink.HARD | COLLAPSE);
+    else sText(" ");
     lastOp = i + 1;
   }
   if (
@@ -1596,11 +1602,10 @@ export function binaryLike(f: Fmt, e: BinOp | Compare | BoolOp): Format {
     strings.at(-1) !== undefined &&
     (strings.at(-1) as number) + 1 === lastOp
   ) {
-    emit(sliceDoc(f, parts.slice(lastOp + 1)));
+    writeSlice(f, parts.slice(lastOp + 1));
     end();
   }
   end();
-  return stack[0] as Format[];
 }
 
 export { isInterpolated };

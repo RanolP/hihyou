@@ -1,20 +1,18 @@
 // The customs expr.ts's `.via`s name.
 import type { StreamCtx } from "../../../fmt/stream-format.js";
 import type { BinOp, BoolOp, Compare, IfExp, Lambda, Named, Py, UnaryOp } from "../fmt/ast.js";
-import { space } from "../fmt/builders.js";
-import { fitsExpanded } from "../fmt/elements.js";
 import {
-  binaryLike,
-  lambdaBody,
   lambdaHeader,
   number,
   unaryNeedsLineBreak,
+  writeBinaryLike,
   writeExpr,
+  writeLambdaBody,
   writeLambdaParams,
   writeMaybeParenthesize,
   writeNode,
 } from "../fmt/expr.js";
-import { close, COLLAPSE, GROUP, HARD, open, part, ruffOf, sLine, sText, sToken } from "../fmt/sink.js";
+import { close, COLLAPSE, GROUP, HARD, open, openFitsExpanded, ruffOf, sLine, sText, sToken } from "../fmt/sink.js";
 
 export const exprVia = {
   "expr.lambdaParams": (c: number, ctx: StreamCtx<unknown>) => {
@@ -27,8 +25,14 @@ export const exprVia = {
     const { f, e } = ruffOf(ctx.tree.parent(c));
     const l = e as Lambda;
     const header = lambdaHeader(f, l);
-    const body = lambdaBody(f, l, header);
-    part([header.length === 0 ? space : [], ctx.args?.lambdaAssign === true ? fitsExpanded(body) : body]);
+    if (header.length === 0) sText(" ");
+    if (ctx.args?.lambdaAssign !== true) {
+      writeLambdaBody(f, l, header);
+      return;
+    }
+    openFitsExpanded(-1);
+    writeLambdaBody(f, l, header);
+    close();
   },
   // A number read as ruff normalizes it; a pattern's number has no expression in the module's AST to look up.
   "expr.number": (c: number, ctx: StreamCtx<unknown>) => {
@@ -66,7 +70,7 @@ export const exprVia = {
   },
   "expr.binaryLike": (c: number) => {
     const { f, e } = ruffOf(c);
-    part(binaryLike(f, e as BinOp | Compare | BoolOp));
+    writeBinaryLike(f, e as BinOp | Compare | BoolOp);
   },
   "expr.ifBody": (c: number) => {
     const { f, e } = ruffOf(c);

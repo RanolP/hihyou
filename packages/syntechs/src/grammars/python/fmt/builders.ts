@@ -1,7 +1,6 @@
 import {
   type Format,
   type GroupRef,
-  ifBreak,
   indent,
   COLLAPSE,
   HARD,
@@ -361,11 +360,11 @@ export class Fmt {
     );
   }
 
-  softLine(): Format {
+  writeSoftLine(): void {
     const l = this.level;
-    if (l.k === "paren") return soft;
-    if (l.k === "expr" && l.g) return ifBreak(soft, [], l.g);
-    return [];
+    if (l.k === "paren") sink.sLine(sink.SOFT | sink.COLLAPSE);
+    else if (l.k === "expr" && l.g)
+      writeIfBroken(sink.idOf(l.g), () => sink.sLine(sink.SOFT | sink.COLLAPSE));
   }
 
   writeSoftLineOrSpace(): void {
@@ -403,11 +402,10 @@ export class Fmt {
     return sink.record(() => this.writeInParensGroup(() => sink.part(d)));
   }
 
-  inParensIfBreaks(d: Format): Format {
+  writeInParensIfBreaks(content: () => void): void {
     const l = this.level;
-    if (l.k === "paren") return ifBreak(d);
-    if (l.k === "expr" && l.g) return ifBreak(d, [], l.g);
-    return [];
+    if (l.k === "paren") writeIfBroken(-1, content);
+    else if (l.k === "expr" && l.g) writeIfBroken(sink.idOf(l.g), content);
   }
 
   /** Whether the source has a comma (ruff's magic trailing comma) after `end`, before `sequenceEnd`. */
