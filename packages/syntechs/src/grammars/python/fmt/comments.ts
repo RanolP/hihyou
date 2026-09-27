@@ -1,3 +1,4 @@
+import type { Comments as Placed } from "../../../fmt/comments.js";
 import type { FormatTree } from "../../../fmt/tree.js";
 import type {
   Attribute,
@@ -105,6 +106,9 @@ export class Comments {
   has(node: Key): boolean {
     const a = this.map.get(node);
     return !!a && a.leading.length + a.dangling.length + a.trailing.length > 0;
+  }
+  entries(): IterableIterator<[Key, Attached]> {
+    return this.map.entries();
   }
   /** Leading, dangling or trailing comments of `node` or any node inside it. */
   hasAnyIn(start: number, end: number): boolean {
@@ -311,6 +315,46 @@ export function attach(module: Module, tree: FormatTree): Comments {
   };
   visit(module);
   return comments;
+}
+
+/**
+ * `comments` keyed by tree-sitter node, as the shared placement pass returns them: each ruff node maps to the
+ * node it was read from (`ts`). Where ruff's node spans no tree-sitter node of its own that is the nearest one,
+ * so its comments are kept rather than dropped: a comprehension with `if`s maps to its `for_in_clause`, a case's
+ * pattern to its `case_clause`, a subscript's unparenthesized tuple to the `subscript`. Ruff nodes read from one
+ * tree-sitter node (a case and its pattern) share it, their comments merged in source order.
+ */
+export function byTreeNode(comments: Comments): Placed {
+  const attached = new Map<number, { leading: Comment[]; trailing: Comment[] }>();
+  const dangling = new Map<number, Comment[]>();
+  for (const [key, a] of comments.entries()) {
+    const n = treeNodeOf(key);
+    if (a.leading.length + a.trailing.length > 0) {
+      const at = attached.get(n) ?? { leading: [], trailing: [] };
+      attached.set(n, at);
+      at.leading.push(...a.leading);
+      at.trailing.push(...a.trailing);
+    }
+    if (a.dangling.length > 0) dangling.set(n, [...(dangling.get(n) ?? []), ...a.dangling]);
+  }
+  const handles = (cs: Comment[]) => cs.sort((x, y) => x.start - y.start).map((c) => c.ts);
+  const of = new Map<number, { leading: number[]; trailing: number[] }>();
+  for (const [n, a] of attached)
+    of.set(n, { leading: handles(a.leading), trailing: handles(a.trailing) });
+  const inside = new Map<number, number[]>();
+  for (const [n, cs] of dangling) inside.set(n, handles(cs));
+  return {
+    of: (n) => of.get(n),
+    dangling: (n) => inside.get(n) ?? NO_HANDLES,
+  };
+}
+
+const NO_HANDLES: readonly number[] = [];
+
+function treeNodeOf(key: Key): number {
+  if (typeof key === "number") return key;
+  if ("ts" in key && typeof key.ts === "number") return key.ts;
+  throw new Error("python comments: a comment attached to a node read from no tree-sitter node");
 }
 
 class Placer {

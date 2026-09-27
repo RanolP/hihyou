@@ -131,6 +131,7 @@ export function format<O>(
         };
       },
       isLineComment: isLine,
+      placement: comments,
     };
 
     const doc: Doc = [ctx.print(tree.root), hardline];

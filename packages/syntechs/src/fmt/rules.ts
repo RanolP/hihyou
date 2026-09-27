@@ -85,6 +85,8 @@ export interface Ctx<O = unknown> {
   };
   /** Whether comment `c` runs to the end of its line (see `LanguageSpec.lineComments`). */
   isLineComment(c: number): boolean;
+  /** What this format's placement pass returned (`LanguageSpec.placeComments`), for a rule that reads it whole. */
+  readonly placement: Comments;
 }
 
 /**
