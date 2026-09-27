@@ -6,26 +6,34 @@ import {
   bestFitting,
   breakParent,
   conditionalGroup,
+  contentsOf,
   dedent,
   fill,
   fitsExpanded,
+  flatOf,
   group,
   groupIfBreak,
   hardline,
   ifBreak,
   indent,
   indentIfBreak,
+  isDocs,
+  isHardLine,
+  isSoftLine,
+  kindOf,
   line,
   lineOf,
   lineSuffix,
   lineSuffixBoundary,
   literalToken,
+  partsOf,
   softline,
+  statesOf,
   text,
   token,
   willBreak as docWillBreak,
+  withContents,
 } from "./doc.js";
-import { removeLines } from "../grammars/javascript/print/util.js";
 import { print } from "./printer.js";
 import {
   BLANK,
@@ -517,6 +525,32 @@ describe("printStream matches printer.ts for a shared part printed through a jum
     expect(out).toBe("dd\ncc\ndde");
   });
 });
+
+/**
+ * Prettier's removeLines on a Doc: every soft or plain line printed flat, every group unbroken, hard lines kept.
+ * The Doc a flat interval must print the same as.
+ */
+function removeLines(doc: Doc): Doc {
+  if (isDocs(doc)) return doc.map(removeLines);
+  switch (kindOf(doc)) {
+    case "line":
+      return isHardLine(doc) ? doc : isSoftLine(doc) ? [] : text(" ");
+    case "group": {
+      const states = statesOf(doc);
+      return states ? removeLines(states.at(-1) as Doc) : group(removeLines(contentsOf(doc)));
+    }
+    case "indent":
+    case "align":
+    case "lineSuffix":
+      return withContents(doc, removeLines(contentsOf(doc)));
+    case "fill":
+      return fill(partsOf(doc).map(removeLines));
+    case "ifBreak":
+      return removeLines(flatOf(doc));
+    default:
+      return doc;
+  }
+}
 
 describe("printStream matches printer.ts for a part printed flat as removeLines rebuilds it", () => {
   const flat = (build: () => void) => {
