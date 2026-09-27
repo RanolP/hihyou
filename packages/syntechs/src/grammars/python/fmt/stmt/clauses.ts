@@ -77,24 +77,35 @@ function splitAtBody(
   return [dangling.slice(0, split), dangling.slice(split)];
 }
 
-/** Ruff's `FormatExceptHandlerExceptHandler`; its leading comments are the `try`'s to print. */
-function exceptHandler(f: Fmt, h: ExceptHandler): Format {
-  const [except, star] = h.kws.map((k) => f.tok(k));
-  const header: Format[] = [except ?? [], star ?? []];
+/** Ruff's `FormatExceptHandlerExceptHandler` after `except` and `*`: the type, then `as` and the name. */
+export function exceptType(f: Fmt, h: ExceptHandler): Format {
+  const header: Format[] = [];
   if (h.type) {
-    header.push(space, maybeParenthesize(f, h.type, h, "ifBreaks"));
+    header.push(maybeParenthesize(f, h.type, h, "ifBreaks"));
     if (h.asTok !== undefined && h.name !== undefined)
       header.push(space, f.tok(h.asTok), space, f.tok(h.name));
   }
-  return clause(f, header, h.colon, f.comments.dangling(h), h.body);
+  return header;
 }
 
-/** Ruff's `FormatStmtTry`: the `try`'s dangling comments go to the case whose body they end before. */
-function tryStmt(f: Fmt, s: Try): Format {
+/** One case of a `try` as ruff's `clause` prints it: the comments before its keyword and after its colon. */
+export interface TryCase {
+  readonly alternate: { readonly comments: readonly Comment[]; readonly last: Py | undefined };
+  readonly colon: readonly Comment[];
+}
+
+/**
+ * Ruff's `FormatStmtTry`: the `try`'s dangling comments go to the case whose body they end before. Gives each
+ * case (the `try`, a handler, or its `orelse` or `finalbody`) its comments, and the comments left after the last.
+ */
+export function tryCases(
+  f: Fmt,
+  s: Try,
+): { cases: Map<object, TryCase>; rest: readonly Comment[] } {
   const cs = f.comments;
   let dangling = cs.dangling(s);
   let previous: Stmt | undefined;
-  const out: Format[] = [];
+  const cases = new Map<object, TryCase>();
   const kase = (c: { kw: number; colon: number; body: Stmt[] }) => {
     const last = c.body.at(-1);
     if (!last) return;
@@ -102,26 +113,23 @@ function tryStmt(f: Fmt, s: Try): Format {
     const comments = dangling.slice(0, n);
     dangling = dangling.slice(n);
     const own = prefix(comments, (x) => x.line === "own");
-    out.push(
-      clause(f, f.tok(c.kw), c.colon, comments.slice(own), c.body, {
-        comments: comments.slice(0, own),
-        last: previous,
-      }),
-    );
+    cases.set(c, {
+      alternate: { comments: comments.slice(0, own), last: previous },
+      colon: comments.slice(own),
+    });
     previous = last;
   };
   kase(s);
   for (const h of s.handlers) {
-    out.push(
-      leadingAlternateBranchComments(f, cs.leading(h), previous),
-      exceptHandler(f, h),
-    );
+    cases.set(h, {
+      alternate: { comments: cs.leading(h), last: previous },
+      colon: cs.dangling(h),
+    });
     previous = h.body.at(-1);
   }
   if (s.orelse) kase(s.orelse);
   if (s.finalbody) kase(s.finalbody);
-  out.push(f.dangling(dangling));
-  return out;
+  return { cases, rest: dangling };
 }
 
 /** Ruff's `WithItemLayout`, and whether the item is the statement's only one. */
@@ -247,7 +255,7 @@ function withStmt(f: Fmt, w: With): Format {
 
 export const clauseRules: StmtRules = {
   With: withStmt,
-  Try: tryStmt,
+  Try: fromSpec,
   If: fromSpec,
   While: fromSpec,
   For: fromSpec,

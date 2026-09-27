@@ -41,5 +41,19 @@ export const stmtCompound = {
     $.body.via("compound.body"),
     $.alternative.andThen((e) => e),
   ],
-  else_clause:($) => [tok("else").via("compound.alternate"), ":", $.body.via("compound.body")],
+  try_statement: ($) => [
+    tok("try").via("compound.alternate"),
+    ":",
+    $.body.via("compound.body"),
+    lines($.children),
+  ],
+  except_clause: ($) => [
+    tok("except").via("compound.alternate"),
+    "*",
+    $.value.at(0).andThen((v) => [space, v.via("compound.exceptType")]),
+    ":",
+    $.children.via("compound.body"),
+  ],
+  finally_clause: ($) => [tok("finally").via("compound.alternate"), ":", $.children.via("compound.body")],
+  else_clause: ($) => [tok("else").via("compound.alternate"), ":", $.body.via("compound.body")],
 } satisfies Structure;

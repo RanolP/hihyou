@@ -5,7 +5,7 @@ import { type Fmt, space } from "../fmt/builders.js";
 import type { Comment } from "../fmt/comments.js";
 import { formatExpr, maybeParenthesize } from "../fmt/expr.js";
 import { part, ruffOf, ruffStmtOf } from "../fmt/sink.js";
-import { loopComments } from "../fmt/stmt/clauses.js";
+import { exceptType, loopComments, tryCases } from "../fmt/stmt/clauses.js";
 import { clauseBody, leadingAlternateBranchComments } from "../fmt/stmt/suite.js";
 
 /** A clause as ruff's `clause` prints it: the comments around its header, and its body. */
@@ -16,6 +16,8 @@ interface Clause {
   /** The comments after the colon. */
   readonly colon: readonly Comment[];
   readonly body: readonly Stmt[];
+  /** The statement's comments to print after the body: a `try`'s that no case took. */
+  readonly after?: readonly Comment[];
 }
 
 const none = { comments: [], last: undefined };
@@ -44,6 +46,19 @@ function clauseOf(n: number, ctx: StreamCtx<unknown>): Clause {
       if (!s.orelse) break;
       return { f, alternate: { comments: beforeElse, last: s.body.at(-1) }, colon: elseColon, body: s.orelse.body };
     }
+    case "Try": {
+      const c =
+        first ? s
+        : kind === "except_clause" ? s.handlers.find((h) => h.ts === n)
+        : kind === "else_clause" ? s.orelse
+        : s.finalbody;
+      const at = c && tryCases(f, s);
+      const kase = c && at?.cases.get(c);
+      if (!c || !at || !kase) break;
+      // The comments no case took print after the last.
+      const lastCase = s.finalbody ?? s.orelse ?? s.handlers.at(-1) ?? s;
+      return { f, ...kase, body: c.body, after: c === lastCase ? at.rest : [] };
+    }
   }
   throw new Error(`python: ${kind} is no clause of a ${s.kind}`);
 }
@@ -61,6 +76,14 @@ export const stmtCompoundVia = {
         : maybeParenthesize(f, e, e.parent as Py, "ifBreaks"),
     );
   },
+  // Given the type (or its `as` pattern), prints the handler's type, `as` and name.
+  "compound.exceptType": (c: number, ctx: StreamCtx<unknown>) => {
+    const n = ctx.tree.parent(c);
+    const { f, s } = ruffStmtOf(n);
+    const h = s.kind === "Try" ? s.handlers.find((x) => x.ts === n) : undefined;
+    if (!h) throw new Error("python: an except type outside a try's handler");
+    part(exceptType(f, h));
+  },
   // `async` and the space after it, where the statement has one.
   "compound.async": (token: number | undefined) => {
     if (token === undefined) return;
@@ -74,7 +97,7 @@ export const stmtCompoundVia = {
   },
   // A block: the comments after its clause's colon, then ruff's suite.
   "compound.body": (c: number, ctx: StreamCtx<unknown>) => {
-    const { f, colon, body } = clauseOf(ctx.tree.parent(c), ctx);
-    part(clauseBody(f, body, "other", colon));
+    const { f, colon, body, after = [] } = clauseOf(ctx.tree.parent(c), ctx);
+    part([clauseBody(f, body, "other", colon), f.dangling(after)]);
   },
 };
