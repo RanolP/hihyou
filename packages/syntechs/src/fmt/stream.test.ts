@@ -4,12 +4,14 @@ import {
   align,
   bestFitParenthesize,
   bestFitting,
+  conditionalGroup,
   dedent,
   fill,
   fitsExpanded,
   group,
   groupIfBreak,
   hardline,
+  ifBreak,
   indent,
   indentIfBreak,
   line,
@@ -28,11 +30,15 @@ import {
   COLLAPSE,
   close,
   closeBestFitParenthesize,
+  closeChoice,
+  closeState,
   closeVariant,
   FILL,
   FILL_ITEM,
   GROUP,
   GROUP_IF_BROKEN,
+  IF_BROKEN,
+  IF_FLAT,
   INDENT,
   HARD,
   LINE_SUFFIX,
@@ -40,7 +46,9 @@ import {
   openAlign,
   openBestFitParenthesize,
   openBestFitting,
+  openChoice,
   openFitsExpanded,
+  openState,
   openIndentIfBreak,
   openReservedSuffix,
   openVariant,
@@ -279,6 +287,97 @@ describe("printStream matches printer.ts", () => {
       },
     );
     expect(out).toBe("\n  a\n     b\nc");
+  });
+});
+
+describe("printStream matches printer.ts for conditional groups", () => {
+  const choice = (states: (() => void)[], broken = false) => {
+    openChoice(broken);
+    for (const s of states) {
+      openState();
+      s();
+      closeState();
+    }
+    closeChoice();
+  };
+
+  it("takes the first later state that fits flat, else the last one broken", () => {
+    const doc = (w: number) =>
+      both(
+        w,
+        conditionalGroup([
+          text("aaaaaaaaaaaa"),
+          text("bb"),
+          group([text("c"), line, text("d")]),
+        ]),
+        () =>
+          choice([
+            () => sText("aaaaaaaaaaaa"),
+            () => sText("bb"),
+            () => {
+              open(GROUP);
+              sText("c");
+              sLine(0);
+              sText("d");
+              close();
+            },
+          ]),
+      );
+    expect(doc(10)).toBe("bb");
+    expect(doc(1)).toBe("c\nd");
+  });
+
+  it("measures only the first state for the enclosing group, and a break inside a state leaves it flat", () => {
+    const out = both(
+      6,
+      group([
+        conditionalGroup([
+          [text("a"), hardline, text("b")],
+          text("a state too long to fit"),
+        ]),
+        line,
+        text("c"),
+      ]),
+      () => {
+        open(GROUP);
+        choice([
+          () => {
+            sText("a");
+            sHardline();
+            sText("b");
+          },
+          () => sText("a state too long to fit"),
+        ]);
+        sLine(0);
+        sText("c");
+        close();
+      },
+    );
+    expect(out).toBe("a\nb c");
+  });
+
+  it("finds a fill's next item past a separator holding an ifBreak", () => {
+    const out = both(
+      8,
+      fill([text("aaaa"), ifBreak(text("-"), text(" ")), text("bbbb")]),
+      () => {
+        open(FILL);
+        open(FILL_ITEM);
+        sText("aaaa");
+        close();
+        open(IF_BROKEN);
+        sText("-");
+        close();
+        open(IF_FLAT);
+        sText(" ");
+        close();
+        open(FILL_ITEM);
+        sText("bbbb");
+        close();
+        close();
+      },
+    );
+    expect(out).toBe("aaaa-bbbb");
   });
 });
 

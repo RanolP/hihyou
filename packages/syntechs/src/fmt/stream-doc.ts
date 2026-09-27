@@ -59,6 +59,10 @@ import {
   openBestFitParenthesize,
   openBestFitting,
   openFitsExpanded,
+  openChoice,
+  openState,
+  closeState,
+  closeChoice,
   openIndentIfBreak,
   openReservedSuffix,
   openVariant,
@@ -107,11 +111,23 @@ export function sDoc(doc: Doc): void {
       case D_LINE_SUFFIX_BOUNDARY:
         sLineSuffixBoundary();
         return;
-      case D_GROUP:
+      case D_GROUP: {
+        const states = statesOf(h);
+        if (states) {
+          groups.set(h, openChoice(isBroken(h)));
+          for (const s of states) {
+            openState();
+            emit(s);
+            closeState();
+          }
+          closeChoice();
+          return;
+        }
         groups.set(h, open(GROUP, -1, isBroken(h) ? BROKEN : 0));
         emit(contentsOf(h));
         close();
         return;
+      }
       case D_GROUP_IF_BREAK:
         open(
           GROUP_IF_BROKEN,
@@ -238,12 +254,14 @@ function check(doc: Doc, seen: Set<Doc>): void {
         if (flagsOf(h) & ~(SOFT | HARD | COLLAPSE | BLANK))
           throw new Unsupported("line flag");
         return false;
-      case D_GROUP:
-        if (statesOf(h)) throw new Unsupported("conditionalGroup");
+      case D_GROUP: {
         seen.add(d);
         groups.add(h);
-        walk(contentsOf(h));
+        const states = statesOf(h);
+        if (states) for (const s of states) walk(s);
+        else walk(contentsOf(h));
         return true;
+      }
       case D_LINE_SUFFIX:
       case D_INDENT:
       case D_ALIGN:

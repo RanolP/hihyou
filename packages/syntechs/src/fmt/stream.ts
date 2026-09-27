@@ -71,6 +71,23 @@ export const ALIGN = 16;
 const alignSteps: (number | string)[] = [];
 // --- end align ---
 
+// --- choice ---
+/**
+ * An interval kind: prettier's conditionalGroup, its `STATE` children in order (see `openChoice`). Its `iRef`
+ * holds its last state, -1 with none.
+ */
+export const CHOICE = 17;
+/** An interval kind: one state of a `CHOICE`, measured in O(1) as a group's contents are. */
+const STATE = 18;
+/**
+ * Per open choice, `CHOICE_SAVE` numbers: the builder's measure counters when it opened, the same after its
+ * first state, and how many states closed so far. Each state after the first is built from the counters at the
+ * opening, and the choice closes with the first state's: the enclosing intervals measure that state only.
+ */
+const choiceSaves: number[] = [];
+const CHOICE_SAVE = 13;
+// --- end choice ---
+
 const BREAK = 0;
 const FLAT = 1;
 type Mode = typeof BREAK | typeof FLAT;
@@ -275,6 +292,7 @@ export function resetStream(ruff = false): void {
   bndSfx = -1;
   lastSfx = -1;
   alignSteps.length = 0;
+  choiceSaves.length = 0;
 }
 
 function entry(kind: number, flag: number, str: number, node: number, w: number) {
@@ -443,6 +461,71 @@ export function open(kind: number, ref = -1, flags = 0): number {
 export function openAlign(n: number | string): number {
   alignSteps.push(n);
   return open(ALIGN, alignSteps.length - 1);
+}
+
+/**
+ * Opens prettier's conditionalGroup (`broken`: its shouldBreak). Append each state between `openState` and
+ * `closeState`, most compact first, then `closeChoice`. A break inside a state does not break the enclosing
+ * groups; `broken` does.
+ */
+export function openChoice(broken: boolean): number {
+  choiceSaves.push(pos, lastLine, runStart, lastSfx, bndM, bndSfx);
+  choiceSaves.push(0, 0, 0, 0, 0, 0, 0);
+  return open(CHOICE, -1, broken ? BROKEN : 0);
+}
+
+export function openState(): number {
+  const b = choiceSaves.length - CHOICE_SAVE;
+  if ((choiceSaves[b + 12] as number) > 0) {
+    // Measured from its own start, as prettier measures a state: no run of lines reaches in, so no line of
+    // it marks the enclosing intervals, which measure the first state only.
+    pos = choiceSaves[b] as number;
+    lastLine = -1;
+    lastSfx = choiceSaves[b + 3] as number;
+    bndM = choiceSaves[b + 4] as number;
+    bndSfx = choiceSaves[b + 5] as number;
+  }
+  return open(STATE);
+}
+
+export function closeState(): void {
+  const o = op - 1;
+  const k = oIdx[o] as number;
+  // As a fill item: a measure that must scan, not read the O(1) width.
+  const special =
+    hard > (oHard[o] as number) ||
+    bp > (oBp[o] as number) ||
+    refCount > (oRefs[o] as number) ||
+    noMeasure > 0;
+  close();
+  if (special) iFlag[k] = (iFlag[k] as number) | SPECIAL;
+  const b = choiceSaves.length - CHOICE_SAVE;
+  if ((choiceSaves[b + 12] as number) === 0) {
+    choiceSaves[b + 6] = pos;
+    choiceSaves[b + 7] = lastLine;
+    choiceSaves[b + 8] = runStart;
+    choiceSaves[b + 9] = lastSfx;
+    choiceSaves[b + 10] = bndM;
+    choiceSaves[b + 11] = bndSfx;
+  }
+  choiceSaves[b + 12] = (choiceSaves[b + 12] as number) + 1;
+  iRef[oIdx[op - 1] as number] = k;
+}
+
+export function closeChoice(): void {
+  const b = choiceSaves.length - CHOICE_SAVE;
+  if ((choiceSaves[b + 12] as number) > 0) {
+    pos = choiceSaves[b + 6] as number;
+    lastLine = choiceSaves[b + 7] as number;
+    runStart = choiceSaves[b + 8] as number;
+    lastSfx = choiceSaves[b + 9] as number;
+    bndM = choiceSaves[b + 10] as number;
+    bndSfx = choiceSaves[b + 11] as number;
+  }
+  choiceSaves.length = b;
+  const o = op - 1;
+  bp = (oBp[o] as number) + ((iFlag[oIdx[o] as number] as number) & BROKEN ? 1 : 0);
+  close();
 }
 
 /** Closes the innermost open interval. */
@@ -802,6 +885,38 @@ export function printStream(layout: Layout): StreamPrinted {
             xInd[xs] = ind;
             xs++;
           }
+        } else if (kind === CHOICE) {
+          // Prettier's fits reads the first state, or the last one when broken or measured broken.
+          const broken = ((iFlag[k] as number) & BROKEN) !== 0;
+          if (mustBeFlat && broken) return false;
+          const md = broken ? BREAK : mode;
+          if (ruff) groupModes[k] = md + 1;
+          const last = iRef[k] as number;
+          const s = last < 0 ? -1 : broken || mode === BREAK ? last : k + 1;
+          if (e > i) {
+            if (ls === lEnd.length) {
+              lEnd = grow32(lEnd);
+              lMode = grow8(lMode);
+            }
+            lEnd[ls] = e;
+            lMode[ls] = md;
+            ls++;
+          }
+          if (s < 0) {
+            i = e;
+            cur = iNext[k] as number;
+          } else {
+            i = iStart[s] as number;
+            cur = s + 1;
+          }
+          jumped = true;
+          break;
+        } else if (kind === STATE) {
+          // A state the enclosing choice did not take.
+          i = e;
+          cur = iNext[k] as number;
+          jumped = true;
+          break;
         } else cur++;
       }
       if (jumped) continue;
@@ -905,13 +1020,24 @@ export function printStream(layout: Layout): StreamPrinted {
             false,
           )
         : flatWidth(k) <= width);
-    const next = iNext[k] as number;
+    // The next item follows the separator's own intervals (an `ifBreak`), which only a scan measures.
+    let next = iNext[k] as number;
+    let separatorIntervals = false;
+    while (
+      next < m &&
+      iKind[next] !== FILL_ITEM &&
+      (iStart[next] as number) < fillEnd
+    ) {
+      separatorIntervals = true;
+      next = iNext[next] as number;
+    }
     if (
       next < m &&
       iKind[next] === FILL_ITEM &&
       (iStart[next] as number) < fillEnd
     ) {
       let special = ((flags | (iFlag[next] as number)) & SPECIAL) !== 0;
+      if (separatorIntervals) special = true;
       if ((flags | (iFlag[next] as number)) & BND) special = true;
       for (let s = iEnd[k] as number; s < (iStart[next] as number); s++)
         if (eKind[s] === LINE && (eFlag[s] as number) & HARD) special = true;
@@ -942,6 +1068,65 @@ export function printStream(layout: Layout): StreamPrinted {
     }
     return contentFits ? FLAT : BREAK;
   }
+
+  // --- choice ---
+  /** The state `decideChoice` took. */
+  let picked = 0;
+  /** Whether state `s` fits flat in `width`, measured as `decideGroup` measures a group's contents. */
+  function stateFits(s: number, width: number): boolean {
+    if (width < 0) return false;
+    const flags = iFlag[s] as number;
+    if (flags & SPECIAL || (flags & BND && sK.length > 0))
+      return measure(
+        iStart[s] as number,
+        iEnd[s] as number,
+        s + 1,
+        width,
+        false,
+        FLAT,
+        false,
+        true,
+      );
+    const w = flatWidth(s);
+    if (w > width) return false;
+    const e = iEnd[s] as number;
+    suffixIn = (flags & SFX) !== 0;
+    return measure(
+      e,
+      e,
+      iNext[s] as number,
+      width - w,
+      (flags & TRAIL) !== 0,
+      FLAT,
+      false,
+      true,
+    );
+  }
+  /**
+   * `printer.ts`'s printGroup for a conditional group: the first state flat when it fits, else the first later
+   * one that fits flat, else the last one broken; in a flat mode, the first state as the group's own mode. Sets
+   * `picked`.
+   */
+  function decideChoice(k: number, mode: number): Mode {
+    const broken = ((iFlag[k] as number) & BROKEN) !== 0;
+    const last = iRef[k] as number;
+    picked = k + 1;
+    if (mode === FLAT && !remeasure) return broken ? BREAK : FLAT;
+    remeasure = false;
+    if (ruff) groupModes[k] = FLAT + 1;
+    if (!broken) {
+      const width = lineWidth - column;
+      if (stateFits(k + 1, width)) return FLAT;
+      for (let s = iNext[k + 1] as number; s < last; s = iNext[s] as number)
+        if (stateFits(s, width)) {
+          picked = s;
+          return FLAT;
+        }
+    }
+    picked = last;
+    return BREAK;
+  }
+  // --- end choice ---
 
   const out: string[] = [];
   let current = "";
@@ -1194,6 +1379,27 @@ export function printStream(layout: Layout): StreamPrinted {
             cur++;
             if (e > i)
               fpush(e, modeOf(iRef[k] as number) === BREAK ? deeper(ti) : ti, tm);
+            break;
+          case CHOICE: {
+            if ((iRef[k] as number) < 0) {
+              i = e;
+              cur = iNext[k] as number;
+              jumped = true;
+              break;
+            }
+            const g = decideChoice(k, tm);
+            groupModes[k] = g + 1;
+            if (e > i) fpush(e, ti, g);
+            i = iStart[picked] as number;
+            cur = picked + 1;
+            jumped = true;
+            break;
+          }
+          case STATE:
+            // A state the enclosing choice did not take.
+            i = e;
+            cur = iNext[k] as number;
+            jumped = true;
             break;
           default:
             throw new Error(`printStream: unknown interval kind ${iKind[k]}`);
