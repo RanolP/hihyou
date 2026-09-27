@@ -946,10 +946,7 @@ function argumentsHuggable(f: Fmt, a: Arguments): boolean {
 
 export function keyword(f: Fmt, k: Keyword): Format {
   const cs = f.comments;
-  const body =
-    k.name !== undefined
-      ? [f.tok(k.name), f.tok(k.op), formatExpr(f, k.value)]
-      : [f.tok(k.op), formatExpr(f, k.value)];
+  const body = dslPart(k.ts);
   return [f.leading(cs.leading(k)), body, f.trailing(cs.trailing(k))];
 }
 
