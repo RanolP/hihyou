@@ -108,6 +108,13 @@ const grow32 = (a: Int32Array) => {
   g.set(a);
   return g;
 };
+/**
+ * Shortens save stack `a` to `len`: popping, as V8 takes `a.length = len` through the runtime even when nothing
+ * changes, and the builder shrinks a stack at every close.
+ */
+const truncate = (a: number[], len: number) => {
+  while (a.length > len) a.pop();
+};
 const grow8 = (a: Uint8Array) => {
   const g = new Uint8Array(a.length * 2);
   g.set(a);
@@ -571,7 +578,7 @@ export function closeChoice(): void {
   }
   // removeLines keeps the last state only.
   xbp = (choiceSaves[b + 13] as number) + xbp - (choiceSaves[b + 14] as number);
-  choiceSaves.length = b;
+  truncate(choiceSaves, b);
   const o = op - 1;
   bp = (oBp[o] as number) + ((iFlag[oIdx[o] as number] as number) & BROKEN ? 1 : 0);
   close();
@@ -731,7 +738,7 @@ export function closeSpan(): void {
   bndSfx = spanSaves[b + 5] as number;
   noMeasure = spanSaves[b + 6] as number;
   leadAt = spanSaves[b + 8] as number;
-  spanSaves.length = b;
+  truncate(spanSaves, b);
   // Its own groups and refs are counted where it was built; the rest is the effect around.
   transfer(bits & ~(S_HARD | S_BP | S_REFS | S_XBP), t, endLine, endRun, lead);
 }
@@ -875,7 +882,7 @@ export function closeFlat(): void {
     }
   }
   lastLine = pos === flatSaves[b + 1] ? (flatSaves[b + 2] as number) : -1;
-  flatSaves.length = b;
+  truncate(flatSaves, b);
 }
 // --- end flat ---
 
@@ -943,11 +950,11 @@ export function closeDead(d: number): void {
   bndSfx = deadSaves[b + 11] as number;
   leadAt = deadSaves[b + 12] as number;
   xbp = deadSaves[b + 13] as number;
-  choiceSaves.length = deadSaves[b + 14] as number;
-  spanSaves.length = deadSaves[b + 15] as number;
-  flatSaves.length = deadSaves[b + 16] as number;
-  ifbXbp.length = deadSaves[b + 17] as number;
-  deadSaves.length = b;
+  truncate(choiceSaves, deadSaves[b + 14] as number);
+  truncate(spanSaves, deadSaves[b + 15] as number);
+  truncate(flatSaves, deadSaves[b + 16] as number);
+  truncate(ifbXbp, deadSaves[b + 17] as number);
+  truncate(deadSaves, b);
   mergeable = false;
 }
 // --- end dead ---
