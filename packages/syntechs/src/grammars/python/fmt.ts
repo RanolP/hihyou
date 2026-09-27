@@ -18,9 +18,13 @@ import {
 import { emit } from "./fmt/elements.js";
 import { printing, within } from "./fmt/sink.js";
 import { normalize } from "./fmt/normalize.js";
-import { simpleVia } from "./fmt/stmt/simple.js";
 import { formatModule } from "./fmt/stmt/suite.js";
 import * as gen from "./fmt.gen.js";
+import { collectionVia } from "./format/collection.via.js";
+import { exprVia } from "./format/expr.via.js";
+import { stmtCompoundVia } from "./format/stmt-compound.via.js";
+import { stmtSimpleVia } from "./format/stmt-simple.via.js";
+import { stringVia } from "./format/string.via.js";
 import { language } from "./index.js";
 
 /** Ruff's `[format]` options by their `ruff.toml` names. */
@@ -89,5 +93,12 @@ export const python: Language<PythonOptions> = {
     },
     () => ({}),
   ),
-  stream: gen.python({ module, ...simpleVia }),
+  stream: gen.python({
+    module,
+    ...stmtSimpleVia,
+    ...stmtCompoundVia,
+    ...exprVia,
+    ...collectionVia,
+    ...stringVia,
+  }),
 };

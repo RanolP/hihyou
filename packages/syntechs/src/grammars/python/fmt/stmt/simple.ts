@@ -1,5 +1,5 @@
 import { type Format, group, ifBreak, synthetic } from "../elements.js";
-import type { Alias, Expr, Simple } from "../ast.js";
+import type { Alias, Simple } from "../ast.js";
 import {
   commaIn,
   type Fmt,
@@ -7,9 +7,8 @@ import {
   softBlockIndent,
   space,
 } from "../builders.js";
-import { formatExpr, maybeParenthesize, node } from "../expr.js";
-import { dslPart, part, ruffOf, ruffStmtOf } from "../sink.js";
-import { leftToRight } from "./assign.js";
+import { formatExpr, maybeParenthesize } from "../expr.js";
+import { dslPart } from "../sink.js";
 import type { StmtRules } from "./suite.js";
 
 /** Ruff's one-line statements (statement/stmt_{expr,pass,return,raise,assert,delete,global,import,...}.rs). */
@@ -30,7 +29,7 @@ function names(f: Fmt, s: Simple, sep: Format): Format {
 }
 
 /** Ruff's `FormatStmtGlobal` / `FormatStmtNonlocal` after the keyword: breaks with a backslash, since the names take no brackets. */
-function globalNames(f: Fmt, s: Simple): Format {
+export function globalNames(f: Fmt, s: Simple): Format {
   if (f.comments.hasTrailing(s)) return names(f, s, space);
   const backslash = ifBreak(synthetic(s.kw, "\\"));
   return group([backslash, soft, softBlockIndent(names(f, s, [space, backslash, soft]))]);
@@ -44,49 +43,6 @@ function alias(f: Fmt, a: Alias): Format {
   out.push(f.trailing(cs.dangling(a)), f.trailing(cs.trailing(a)));
   return out;
 }
-
-/** The customs format.ts's `.via`s name: a statement's child as ruff lays it out there. */
-export const simpleVia = {
-  "return.value": (c: number) => {
-    const { f, e } = ruffOf(c);
-    part(
-      e.kind === "Tuple" && !f.comments.hasLeading(e)
-        ? node(f, e, { tuple: "optionalParentheses" })
-        : leftToRight(f, e, e.parent as Simple),
-    );
-  },
-  "expr.optional": (c: number) => {
-    const { f, e } = ruffOf(c);
-    part(maybeParenthesize(f, e, e.parent as Simple, "optional"));
-  },
-  "expr.ifBreaks": (c: number) => {
-    const { f, e } = ruffOf(c);
-    part(maybeParenthesize(f, e, e.parent as Simple, "ifBreaks"));
-  },
-  "expr.ifBreaksParenthesized": (c: number) => {
-    const { f, e } = ruffOf(c);
-    part(maybeParenthesize(f, e, e.parent as Simple, "ifBreaksParenthesized"));
-  },
-  // Given the first name, prints them all: the layout is the statement's.
-  "global.names": (c: number) => {
-    const { f, s } = ruffStmtOf(c);
-    part(globalNames(f, s as Simple));
-  },
-  "delete.targets": (c: number) => {
-    const { f, e } = ruffOf(c);
-    const s = e.parent as Simple;
-    // `del a, b` has several targets; `del (a, b)` has one, a tuple.
-    const targets: Expr[] = e.kind === "Tuple" && e.open === undefined ? e.elts : [e];
-    const [single] = targets;
-    if (targets.length === 1 && single) {
-      part(maybeParenthesize(f, single, s, "ifBreaks"));
-      return;
-    }
-    const comma = commaIn(f.tree, e.ts, e.ts);
-    const entries = targets.map((t) => ({ end: t.end, doc: formatExpr(f, t) }));
-    part(f.parenthesizeIfExpands(s.kw, () => f.joinCommaSeparated(entries, s.end, comma)));
-  },
-};
 
 export const simpleRules: StmtRules = {
   Expr(f, s) {
