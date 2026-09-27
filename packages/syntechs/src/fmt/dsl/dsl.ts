@@ -1,13 +1,15 @@
 // The formatter DSL: a language's layout written per node kind, in two independent parts.
 //
 //   structure  what a node prints, in order: its source tokens, its children, spaces, and idioms such as
-//              `grpBrace(sepBy(",", $.children))`. Flattened, one node at a time, into a token sequence
-//              (`reference.ts`'s `flatten`) that says nothing about where lines break.
-//   wrapping   where that sequence breaks: groups, fill, and the break policy of a node's bracketed list, keyed
-//              by node kind, applied over the flattened sequence (`reference.ts`'s `wrap`).
+//              `grpBrace(sepBy(",", $.children))`. Flattened into a token sequence (`reference.ts`'s
+//              `flatten`) that says nothing about where lines break.
+//   wrapping   where that sequence breaks: groups, fill, and the break policy of each bracket or list frame,
+//              keyed by node kind and applied over the node's range of the sequence (`reference.ts`'s `wrap`).
 //
-// `generate.node.ts` compiles a spec ahead of time into straight-line stream calls (`emit.ts`), fusing the two
-// passes into one; a test holds the fused code to the two-pass reference, output and anchors.
+// The two are independent passes over the whole document: flatten builds one sequence for the whole token
+// tree, then wrapping runs over it, node range by node range. `generate.node.ts` compiles a spec ahead of time
+// into straight-line stream calls (`emit.ts`), fusing the two passes into one per node; a test holds the fused
+// code to the two-pass reference, output and anchors.
 import type { Grammar } from "../rules.js";
 
 /** What node-types.json says fills a field or the children in no field (see the bundle's `fieldTypes`). */
@@ -57,6 +59,8 @@ export type Tree =
       readonly close: string;
       readonly pad: Cond;
       readonly body: Tree;
+      /** The frame's name for the kind's wrapping rule (see `Wrap.frames`). */
+      readonly label: string;
     }
   | {
       readonly t: "sepBy";
@@ -69,9 +73,8 @@ export type Tree =
   | { readonly t: "verbatim" }
   | { readonly t: "custom"; readonly name: string };
 
-export interface Wrap {
-  /** The node's output is one group, which stays on one line or breaks as a unit. */
-  readonly group?: boolean;
+/** How one bracket or list frame of a node breaks. */
+export interface FrameWrap {
   /** Pack the list's items several to a line when every item is one of these kinds (prettier's number arrays). */
   readonly packWhenAllOf?: readonly string[];
   /** Break the list when 2+ items are all lists of one kind with 2+ items each (prettier's matrix rule). */
@@ -91,6 +94,25 @@ export interface Wrap {
    */
   readonly blankLines?: "force" | "ifBroken";
 }
+
+/**
+ * A node kind's wrapping, over the node's range of the sequence: any kind, whatever its structure. The frame
+ * options at the top apply to every frame of the node that `frames` does not name.
+ */
+export interface Wrap extends FrameWrap {
+  /** The node's output is one group, which stays on one line or breaks as a unit. */
+  readonly group?: boolean;
+  /**
+   * Per frame, its own options in place of the top-level ones. A frame is named by the field it lays out
+   * (`children` for the children in no field): a list idiom by its list, a bracket idiom by the field its body
+   * is, holds or lists, and `body` when the body is anything else. A kind with two lists names both here.
+   */
+  readonly frames?: { readonly [label: string]: FrameWrap };
+}
+
+/** The options `w` gives its node's frame `label`. */
+export const frameWrap = (w: Wrap, label: string): FrameWrap =>
+  w.frames?.[label] ?? w;
 
 /** A spec as data: each kind's structure tree and wrapping rule. */
 export interface FormatIR {
@@ -153,16 +175,30 @@ export type TokenTree<G extends Grammar, O> =
 /** A rule that prints the whole node: `verbatim` or `custom`. */
 type Whole = Piece<"whole">;
 
-type WrapOf<G extends Grammar, O> = Omit<Wrap, "packWhenAllOf" | "keepExpanded"> & {
+type FrameWrapOf<G extends Grammar, O> = Omit<
+  FrameWrap,
+  "packWhenAllOf" | "keepExpanded"
+> & {
   readonly packWhenAllOf?: readonly KindOf<G>[];
   readonly keepExpanded?: CondOf<O>;
+};
+
+/** The names a frame of kind `K` can have: its fields, `children`, and `body`. */
+type FrameName<G extends DslGrammar, K> =
+  | "body"
+  | (K extends keyof G["fieldTypes"] ? keyof G["fieldTypes"][K] & string : never)
+  | (K extends keyof G["childTypes"] ? "children" : never);
+
+type WrapOf<G extends DslGrammar, O, K> = FrameWrapOf<G, O> & {
+  readonly group?: boolean;
+  readonly frames?: { readonly [F in FrameName<G, K>]?: FrameWrapOf<G, O> };
 };
 
 export interface FormatSpec<G extends DslGrammar, O> {
   readonly structure: {
     readonly [K in KindOf<G>]?: ($: Fields<G, K>) => TokenTree<G, O> | Whole;
   };
-  readonly wrapping?: { readonly [K in KindOf<G>]?: WrapOf<G, O> };
+  readonly wrapping?: { readonly [K in KindOf<G>]?: WrapOf<G, O, K> };
 }
 
 // ---- builder ----
@@ -175,19 +211,41 @@ export const space: Piece<"space"> = piece({ t: "space" });
 /** The node's source text as one token. */
 export const verbatim: Whole = piece({ t: "verbatim" });
 
-/** The hand-written stream rule `name` prints the node; the generated module takes it as a parameter. */
+/**
+ * The hand-written rule `name` (a `CustomRule`, see `runtime.ts`) prints the node; the generated module takes it
+ * as a parameter. The node's structure is then its children in source order with their comments and kept blank
+ * lines, the `CustomSeq` the rule receives, and the rule is the node's wrapping: it lays those entries out.
+ */
 export const custom = (name: string): Whole => piece({ t: "custom", name });
 
 const brackets =
   (open: string, close: string) =>
-  <T, P = false>(body: T, o: { readonly pad?: P } = {}) =>
-    piece<{ brackets: T; pad: P }>({
+  <T, P = false>(body: T, o: { readonly pad?: P } = {}) => {
+    const tree = toTree(body);
+    return piece<{ brackets: T; pad: P }>({
       t: "brackets",
       open,
       close,
       pad: plain(o.pad),
-      body: toTree(body),
+      body: tree,
+      label: labelOf(tree),
     });
+  };
+
+/** A bracket frame's name: the field its body is, holds or lists, else `body`. */
+function labelOf(x: Tree): string {
+  switch (x.t) {
+    case "ref":
+      return x.name;
+    case "opt":
+      return x.ref.name;
+    case "sepBy":
+    case "lines":
+      return x.list.name;
+    default:
+      return "body";
+  }
+}
 
 /**
  * `body` between brackets, the node's own tokens where the source has them and synthetic ones where it does not;
@@ -282,13 +340,23 @@ export const defineFormat =
     const structure: Record<string, Tree> = {};
     for (const [kind, rule] of Object.entries(spec.structure))
       if (rule) structure[kind] = toTree((rule as (d: unknown) => unknown)(dollar));
+    const conds = <W extends FrameWrap>(rule: W): W =>
+      rule.keepExpanded === undefined
+        ? rule
+        : { ...rule, keepExpanded: plain(rule.keepExpanded) };
     const wrapping: Record<string, Wrap> = {};
     for (const [kind, w] of Object.entries(spec.wrapping ?? {})) {
-      const rule = w as Wrap;
+      const rule = conds(w as Wrap);
+      const { frames } = rule;
       wrapping[kind] =
-        rule.keepExpanded === undefined
+        frames === undefined
           ? rule
-          : { ...rule, keepExpanded: plain(rule.keepExpanded) };
+          : {
+              ...rule,
+              frames: Object.fromEntries(
+                Object.entries(frames).map(([f, fw]) => [f, conds(fw)]),
+              ),
+            };
     }
     return { structure, wrapping };
   };

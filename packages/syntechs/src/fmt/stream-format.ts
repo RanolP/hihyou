@@ -39,10 +39,13 @@ export interface StreamCtx<O = unknown> {
   leadingComments(node: number): readonly number[];
   trailingComments(node: number): readonly number[];
   danglingComments(node: number): readonly number[];
+  isComment(node: number): boolean;
   isLineComment(c: number): boolean;
   /** Appends comment `c`. */
   comment(c: number): void;
   isList(node: number): boolean;
+  /** Whether `node` lies in a region the parser could not read, which prints as its source text. */
+  isBroken(node: number): boolean;
 }
 
 /** What laying out comment `c` next to its node reads of it. */
@@ -200,12 +203,14 @@ export function formatStream<O>(
       leadingComments: (node) => comments.of(node)?.leading ?? none,
       trailingComments: (node) => comments.of(node)?.trailing ?? none,
       danglingComments: (node) => comments.dangling(node),
+      isComment,
       isLineComment: isLine,
       comment,
       isList(node) {
         const rule = ruleOf(node);
         return rule !== null && language.lists.has(rule);
       },
+      isBroken,
     };
 
     ctx.print(tree.root);

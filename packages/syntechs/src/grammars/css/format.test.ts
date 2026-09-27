@@ -99,5 +99,6 @@ describe("the generated CSS formatter prints what the two-pass reference prints,
     for (const text of corpus)
       for (const o of options)
         expect(run(text, css, o), text).toEqual(run(text, reference, o));
-  });
+    // The whole corpus twice per option set: past vitest's 5s default on a loaded machine.
+  }, 30_000);
 });

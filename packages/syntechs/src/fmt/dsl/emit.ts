@@ -1,13 +1,13 @@
 // A spec's IR as TypeScript: per kind, one stream rule making the calls the two passes of `reference.ts` make,
 // with the flattened sequence never built and each wrapping rule's choices decided while generating.
-import type { Cond, DslGrammar, FormatIR, Tree, Wrap } from "./dsl.js";
-import { holdsList } from "./reference.js";
+import { type Cond, type DslGrammar, type FormatIR, frameWrap, type Tree, type Wrap } from "./dsl.js";
+import { danglingOwner, holdsList } from "./reference.js";
 
 const str = (s: string) => JSON.stringify(s);
 /** The rule of `kind` as a local: `// A spec's IR as TypeScript: per kind, one stream rule making the calls the two passes of `reference.ts` make,
 // with the flattened sequence never built and each wrapping rule's choices decided while generating.
-import type { Cond, DslGrammar, FormatIR, Tree, Wrap } from "./dsl.js";
-import { holdsList } from "./reference.js";
+import { type Cond, type DslGrammar, type FormatIR, frameWrap, type Tree, type Wrap } from "./dsl.js";
+import { danglingOwner, holdsList } from "./reference.js";
 
  keeps a kind named like a keyword (`if`, `class`) a valid name. */
 const ident = (kind: string) => `$${kind.replace(/\W/g, "_")}`;
@@ -26,7 +26,10 @@ function optionKeys(ir: FormatIR): string[] {
     } else if (x.t === "sepBy") cond(x.trailing);
   };
   Object.values(ir.structure).forEach(walk);
-  for (const w of Object.values(ir.wrapping)) cond(w.keepExpanded);
+  for (const w of Object.values(ir.wrapping)) {
+    cond(w.keepExpanded);
+    for (const f of Object.values(w.frames ?? {})) cond(f.keepExpanded);
+  }
   return [...keys].sort();
 }
 
@@ -55,7 +58,7 @@ const cond = (c: Cond): string => {
 };
 
 /** The body of one kind's rule. */
-function emitRule(tree: Tree, w: Wrap, hasFields: boolean): string[] {
+function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
   const out: string[] = [];
   let depth = 1;
   let fresh = 0;
@@ -68,6 +71,8 @@ function emitRule(tree: Tree, w: Wrap, hasFields: boolean): string[] {
     line(tail);
   };
   const name = (base: string) => `${base}${fresh++}`;
+  /** The list idiom that prints the node's dangling comments. */
+  const owner = danglingOwner(tree);
 
   // The k-th literal spelled t binds to the k-th anonymous child spelled t: fixed ordinals unless an `opt` may
   // skip some, and then counters that only the literals actually printed advance.
@@ -112,7 +117,7 @@ function emitRule(tree: Tree, w: Wrap, hasFields: boolean): string[] {
     switch (x.t) {
       case "sepBy":
       case "lines":
-        return `(listItems(ctx, node, ${str(x.list.name)}, ${hasFields}).length === 0 && ctx.danglingComments(node).length === 0)`;
+        return `(listItems(ctx, node, ${str(x.list.name)}, ${hasFields}).length === 0${x === owner ? " && ctx.danglingComments(node).length === 0" : ""})`;
       case "ref":
         return `fieldChild(t, node, ${str(x.name)}) === -1`;
       case "opt": {
@@ -137,13 +142,14 @@ function emitRule(tree: Tree, w: Wrap, hasFields: boolean): string[] {
   };
 
   const list = (x: Extract<Tree, { t: "sepBy" }>, b: Extract<Tree, { t: "brackets" }>) => {
+    const w = frameWrap(rule, b.label);
     const always = w.expand === "always";
     // Bound in the order the reference flattens them: the list between holds no literal.
     const openTok = bound(b.open);
     const closeTok = bound(b.close);
     const its = items(x);
     block(`if (${its}.length === 0)`, () => {
-      line("const dangling = ctx.danglingComments(node);");
+      line(`const dangling = ${x === owner ? "ctx.danglingComments(node)" : "[] as number[]"};`);
       line("open(GROUP);");
       printBracket(openTok, b.open);
       block("if (dangling.length > 0)", () => {
@@ -240,6 +246,13 @@ function emitRule(tree: Tree, w: Wrap, hasFields: boolean): string[] {
       depth--;
       line("}");
     } else plain();
+    // Dangling comments after the items, each on a line of its own once the list breaks; a line comment breaks it.
+    if (x === owner)
+      block("for (const c of ctx.danglingComments(node))", () => {
+        line("sLine(0);");
+        line("ctx.comment(c);");
+        line("if (ctx.isLineComment(c)) sBreakParent();");
+      });
     line("close();");
     line("sLine(pad);");
     printBracket(closeTok, b.close);
@@ -272,7 +285,7 @@ function emitRule(tree: Tree, w: Wrap, hasFields: boolean): string[] {
         return;
       case "brackets": {
         if (x.body.t === "sepBy") return list(x.body, x);
-        line(`open(GROUP, -1, ${w.expand === "always" ? "BROKEN" : "0"});`);
+        line(`open(GROUP, -1, ${frameWrap(rule, x.label).expand === "always" ? "BROKEN" : "0"});`);
         bracket(x.open);
         const body = () => {
           line("open(INDENT);");
@@ -300,9 +313,7 @@ function emitRule(tree: Tree, w: Wrap, hasFields: boolean): string[] {
             line("sLine(0);");
           });
         });
-        block(`if (${its}.length === 0)`, () => {
-          line("for (const c of ctx.danglingComments(node)) ctx.comment(c);");
-        });
+        if (x === owner) line("for (const c of ctx.danglingComments(node)) ctx.comment(c);");
         return;
       }
       case "lines": {
@@ -311,13 +322,14 @@ function emitRule(tree: Tree, w: Wrap, hasFields: boolean): string[] {
           line("if (i > 0) sHardline();");
           line(`const item = ${its}[i] as number;`);
           child("item");
-          if (w.blankLines !== undefined)
+          if (frameWrap(rule, x.list.name).blankLines !== undefined)
             line(`if (i < ${its}.length - 1 && nextLineEmpty(t, item)) sHardline();`);
         });
-        block("for (const [i, c] of ctx.danglingComments(node).entries())", () => {
-          line("if (i > 0) sHardline();");
-          line("ctx.comment(c);");
-        });
+        if (x === owner)
+          block("for (const [i, c] of ctx.danglingComments(node).entries())", () => {
+            line("if (i > 0) sHardline();");
+            line("ctx.comment(c);");
+          });
         return;
       }
       case "inOrder": {
@@ -341,14 +353,14 @@ function emitRule(tree: Tree, w: Wrap, hasFields: boolean): string[] {
         line("sToken(node, t.text(node));");
         return;
       case "custom":
-        line(`custom[${str(x.name)}](node, ctx);`);
+        line(`custom[${str(x.name)}](node, ctx, customSeq(ctx, node));`);
         return;
     }
   };
 
-  if (w.group) line("open(GROUP);");
+  if (rule.group) line("open(GROUP);");
   walk(tree);
-  if (w.group) line("close();");
+  if (rule.group) line("close();");
   const head = ["const t = ctx.tree;"];
   if (counters.length > 0) head.push(`let ${counters.map((_, i) => `n${i} = 0`).join(", ")};`);
   return [...head.map((s) => `  ${s}`), ...out];
@@ -366,12 +378,14 @@ export function emit(
   const parts: string[] = [
     `// Generated from ${origin} by src/fmt/dsl/generate.node.ts (\`pnpm generate\`); do not edit.`,
     "import {",
-    "  BROKEN, close, FILL, FILL_ITEM, GROUP, IF_BROKEN, INDENT, open, SOFT, sHardline, sLine, sText, sToken,",
+    "  BROKEN, close, FILL, FILL_ITEM, GROUP, IF_BROKEN, INDENT, open, SOFT, sBreakParent, sHardline, sLine, sText, sToken,",
     '} from "../../fmt/stream.js";',
     "import {",
     "  endsLine, printLeadingComments, printTrailingComments, type StreamRule, type StreamRules,",
     '} from "../../fmt/stream-format.js";',
-    'import { fieldChild, listItems, separators, tokenChild } from "../../fmt/dsl/runtime.js";',
+    'import {',
+    '  type CustomRule, customSeq, fieldChild, listItems, separators, tokenChild,',
+    '} from "../../fmt/dsl/runtime.js";',
     'import { newlineBetween, nextLineEmpty } from "../../fmt/text.js";',
     'import { firstLeaf } from "../../fmt/tree.js";',
   ];
@@ -385,7 +399,7 @@ export function emit(
     const param =
       customs.length === 0
         ? ""
-        : `custom: { ${customs.map((c) => `readonly ${str(c)}: StreamRule<O>;`).join(" ")} }`;
+        : `custom: { ${customs.map((c) => `readonly ${str(c)}: CustomRule<O>;`).join(" ")} }`;
     parts.push("", `export function ${spec}<O extends ${options}>(${param}): StreamRules<O> {`);
     const kinds = Object.keys(ir.structure);
     for (const kind of kinds) {
