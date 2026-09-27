@@ -7,7 +7,7 @@
 //   node [--cpu-prof --cpu-prof-dir=<dir>] packages/syntechs/dist/fmt/phases.node.js warm <lang> [passes]
 //     The largest corpus input, warm: parse and format medians, and GC time inside each phase.
 //   node packages/syntechs/dist/fmt/phases.node.js analyze <file.cpuprofile>
-//     A --cpu-prof of `warm` split into parse / comment attachment / Doc build / printer / GC, plus the top-10
+//     A --cpu-prof of `warm` split into parse / comment attachment / rules / printer / GC, plus the top-10
 //     self-time functions under `format`.
 //
 // <lang> is a bench group: json, css, js, ts, python. `cold-child <dir>` is the instrumented child `cold` spawns;
@@ -364,9 +364,9 @@ interface ProfileNode {
 
 /**
  * Buckets each sample by the outermost frame on its stack that names a phase. The format sub-phases are the
- * generic pipeline's (fmt/comments.js attachComments, fmt/printer.js print) plus Python's own passes, which
+ * generic pipeline's (fmt/comments.js attachComments, fmt/stream.js printStream) plus Python's own passes, which
  * run inside its single `module` rule (python/fmt/ast.js toAst, python/fmt/comments.js attach); whatever else
- * runs under fmt/format.js `format` is Doc building by the rules.
+ * runs under fmt/format.js `format` is the rules building the stream.
  */
 function analyze(file: string) {
   const prof = JSON.parse(readFileSync(file, "utf8")) as {
@@ -386,10 +386,10 @@ function analyze(file: string) {
     if (is(n, "fmt/comments.js", "attachComments") || is(n, "python/fmt/comments.js", "attach"))
       return "format: comment attachment";
     if (is(n, "python/fmt/ast.js", "toAst")) return "format: python AST lowering (toAst)";
-    if (is(n, "fmt/printer.js", "print") || is(n, "fmt/stream.js", "printStream"))
+    if (is(n, "fmt/stream.js", "printStream"))
       return "format: printer";
     if (is(n, "fmt/format.js", "format") || is(n, "fmt/stream-format.js", "formatStream"))
-      return "format: Doc build (rules)";
+      return "format: rules (stream build)";
     return undefined;
   };
   // Stack for a node, root first.
@@ -409,7 +409,7 @@ function analyze(file: string) {
     for (const f of frames) {
       const p = phaseOf(f);
       if (!p) continue;
-      if (p === "format: Doc build (rules)") {
+      if (p === "format: rules (stream build)") {
         formatSeen = true;
         phase = p;
         continue;
