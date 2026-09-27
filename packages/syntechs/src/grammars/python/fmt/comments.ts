@@ -434,10 +434,23 @@ class Placer {
 
   /** Ruff's `comment_indentation_after`: the least indentation of the comments from the line after `preceding` to `c`. */
   private commentIndentationAfter(preceding: Py, c: Comment): number {
+    // `comments` is in source order: a comment starting before `preceding` ends has no line break after it, those
+    // ending by `c` are a run up to `c`, and once one has a line break before it every later one does. So this
+    // walks that run once, testing line breaks only up to the first, rather than scanning every comment's gap.
+    const all = this.comments;
+    let lo = 0;
+    for (let hi = all.length; lo < hi; ) {
+      const mid = (lo + hi) >> 1;
+      if ((all[mid] as Comment).start < preceding.end) lo = mid + 1;
+      else hi = mid;
+    }
     let min: number | undefined;
-    for (const x of this.comments) {
-      if (!hasLineBreak(this.tree, preceding.end, x.start) || x.end > c.end)
-        continue;
+    let broken = false;
+    for (let i = lo; i < all.length; i++) {
+      const x = all[i] as Comment;
+      if (x.end > c.end) break;
+      if (!broken && !hasLineBreak(this.tree, preceding.end, x.start)) continue;
+      broken = true;
       const indent = indentationAt(this.tree, x.start);
       if (indent !== undefined) min = Math.min(min ?? indent, indent);
     }
