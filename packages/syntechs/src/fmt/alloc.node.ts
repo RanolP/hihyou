@@ -120,7 +120,40 @@ async function size(lang: string) {
               }
           };
           for (const l of doc.lists) walk(l);
+          // What merging adjacent text at build time would remove: in each run of two or more adjacent
+          // TEXT items (or, `WithTokens`, TOKEN/TEXT items) in one array, every item past the first. `Flat`
+          // also joins runs across nested plain arrays, each array counted once.
+          const isText = (x: unknown, tokens: boolean) => {
+            if (typeof x !== "number") return false;
+            const k = doc.kindCode(x as never);
+            return k === doc.TEXT || (tokens && k === doc.TOKEN);
+          };
+          const removable = (tokens: boolean, flat: boolean) => {
+            let removed = 0;
+            let run = 0;
+            const end = () => {
+              if (run > 1) removed += run - 1;
+              run = 0;
+            };
+            const visit = (a: readonly unknown[]) => {
+              for (const x of a) {
+                if (isText(x, tokens)) run++;
+                else if (flat && typeof x !== "number")
+                  visit(x as readonly unknown[]);
+                else end();
+              }
+            };
+            for (const a of seen) {
+              visit(a);
+              end();
+            }
+            return removed;
+          };
           snap = {
+            removableText: removable(false, false),
+            removableTextFlat: removable(false, true),
+            removableWithTokens: removable(true, false),
+            removableWithTokensFlat: removable(true, true),
             docNodes: top - base,
             listSlots: doc.lists.length,
             arrays: seen.size,
