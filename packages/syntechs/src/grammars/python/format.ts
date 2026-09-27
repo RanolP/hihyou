@@ -14,5 +14,11 @@ export const python = format({
     break_statement: () => "break",
     continue_statement: () => "continue",
     return_statement: ($) => ["return", $.children.andThen((v) => [space, v.via("return.value")])],
+    raise_statement: ($) => [
+      "raise",
+      $.children.andThen((e) => [space, e.via("expr.optional")]),
+      $.cause.andThen((c) => [space, "from", space, c.via("expr.optional")]),
+    ],
+    delete_statement: ($) => ["del", space, $.children.via("delete.targets")],
   },
 });

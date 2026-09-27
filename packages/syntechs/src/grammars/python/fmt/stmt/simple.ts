@@ -64,6 +64,24 @@ export const simpleVia = {
         : leftToRight(f, e, e.parent as Simple),
     );
   },
+  "expr.optional": (c: number) => {
+    const { f, e } = ruffOf(c);
+    part(maybeParenthesize(f, e, e.parent as Simple, "optional"));
+  },
+  "delete.targets": (c: number) => {
+    const { f, e } = ruffOf(c);
+    const s = e.parent as Simple;
+    // `del a, b` has several targets; `del (a, b)` has one, a tuple.
+    const targets: Expr[] = e.kind === "Tuple" && e.open === undefined ? e.elts : [e];
+    const [single] = targets;
+    if (targets.length === 1 && single) {
+      part(maybeParenthesize(f, single, s, "ifBreaks"));
+      return;
+    }
+    const comma = commaIn(f.tree, e.ts, e.ts);
+    const entries = targets.map((t) => ({ end: t.end, doc: formatExpr(f, t) }));
+    part(f.parenthesizeIfExpands(s.kw, () => f.joinCommaSeparated(entries, s.end, comma)));
+  },
 };
 
 export const simpleRules: StmtRules = {
@@ -77,19 +95,7 @@ export const simpleRules: StmtRules = {
   Break: fromSpec,
   Continue: fromSpec,
   Return: fromSpec,
-  Raise(f, s) {
-    const [exc, cause] = s.values;
-    const out: Format[] = [f.tok(s.kw)];
-    if (exc) out.push(space, maybeParenthesize(f, exc, s, "optional"));
-    if (cause && s.sep !== undefined)
-      out.push(
-        space,
-        f.tok(s.sep),
-        space,
-        maybeParenthesize(f, cause, s, "optional"),
-      );
-    return out;
-  },
+  Raise: fromSpec,
   Assert(f, s) {
     const [test, msg] = s.values;
     const out: Format[] = [f.tok(s.kw)];
@@ -102,25 +108,7 @@ export const simpleRules: StmtRules = {
       );
     return out;
   },
-  Delete(f, s) {
-    const v = s.values[0];
-    if (!v) return f.tok(s.kw);
-    // `del a, b` has several targets; `del (a, b)` has one, a tuple.
-    const targets: Expr[] =
-      v.kind === "Tuple" && v.open === undefined ? v.elts : [v];
-    const [single] = targets;
-    if (targets.length === 1 && single)
-      return [f.tok(s.kw), space, maybeParenthesize(f, single, s, "ifBreaks")];
-    const comma = commaIn(f.tree, v.ts, v.ts);
-    const entries = targets.map((t) => ({ end: t.end, doc: formatExpr(f, t) }));
-    return [
-      f.tok(s.kw),
-      space,
-      f.parenthesizeIfExpands(s.kw, () =>
-        f.joinCommaSeparated(entries, s.end, comma),
-      ),
-    ];
-  },
+  Delete: fromSpec,
   Global: global,
   Nonlocal: global,
   Import(f, s) {
