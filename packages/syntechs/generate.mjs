@@ -5,25 +5,31 @@
 //
 // scripts/worktree-setup.sh sets HIHYOU_SKIP_GRAMMAR_GENERATE when it has already copied bundle.js files built
 // from a checkout on the same pnpm-lock.yaml, so a fresh worktree's install doesn't redo this work.
-if (process.env.HIHYOU_SKIP_GRAMMAR_GENERATE) {
-  console.log(
-    "generate.mjs: HIHYOU_SKIP_GRAMMAR_GENERATE set, reusing the copied grammar bundles",
-  );
-  process.exit(0);
-}
+//
+// The formatters, src/grammars/<name>/fmt.gen.ts, are generated from the bundles and each language's format.ts
+// every time, the copied bundles included: they are cheap, and a spec edit must reach them.
 
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
 
 const here = import.meta.dirname;
-const outfile = `${here}/dist/compiler/generate.mjs`;
-await build({
-  entryPoints: [`${here}/src/compiler/compile.node.ts`],
-  bundle: true,
-  platform: "node",
-  format: "esm",
-  packages: "external",
-  logLevel: "warning",
-  outfile,
-});
-await import(pathToFileURL(outfile).href);
+const run = async (entry, name) => {
+  const outfile = `${here}/dist/compiler/${name}`;
+  await build({
+    entryPoints: [`${here}/src/${entry}`],
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    packages: "external",
+    logLevel: "warning",
+    outfile,
+  });
+  await import(pathToFileURL(outfile).href);
+};
+
+if (process.env.HIHYOU_SKIP_GRAMMAR_GENERATE)
+  console.log(
+    "generate.mjs: HIHYOU_SKIP_GRAMMAR_GENERATE set, reusing the copied grammar bundles",
+  );
+else await run("compiler/compile.node.ts", "generate.mjs");
+await run("fmt/dsl/generate.node.ts", "fmt-generate.mjs");

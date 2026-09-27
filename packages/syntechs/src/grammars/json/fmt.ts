@@ -52,7 +52,7 @@ const printNumber = (raw: string) =>
         .replace(/(\.\d+?)0+(?=e|$)/, "$1")
         .replace(/\.(?=e|$)/, "");
 
-const number: StreamRule = (node, ctx) =>
+export const number: StreamRule = (node, ctx) =>
   sToken(node, printNumber(ctx.tree.text(node)));
 
 const fittingObject = (trailingSep: boolean) =>

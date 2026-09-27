@@ -7,3 +7,4 @@ research/parser-bench/inputs/
 packages/syntechs/corpus/
 # Language bundles are derived from the grammar packages; `pnpm install` regenerates them.
 packages/syntechs/src/grammars/*/bundle.js
+packages/syntechs/src/grammars/*/fmt.gen.ts
