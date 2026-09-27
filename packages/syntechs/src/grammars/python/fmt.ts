@@ -16,7 +16,7 @@ import {
   type Comments as RuffComments,
 } from "./fmt/comments.js";
 import { emit } from "./fmt/elements.js";
-import { printing, within } from "./fmt/sink.js";
+import { printing, sToken, within } from "./fmt/sink.js";
 import { normalize } from "./fmt/normalize.js";
 import { formatModule } from "./fmt/stmt/suite.js";
 import * as gen from "./fmt.gen.js";
@@ -55,6 +55,18 @@ const module: CustomRule<PythonOptions> = (_, ctx) => {
   const f = new Fmt(ctx.tree, ctx.options, ruff.comments);
   within(ctx, { f, byTs: ruff.byTs, stmts: ruff.stmts }, () => emit(formatModule(f, ruff.module)));
 };
+
+const rules = gen.python({
+  module,
+  ...stmtSimpleVia,
+  ...stmtCompoundVia,
+  ...stmtDefVia,
+  ...stmtMatchVia,
+  ...exprVia,
+  ...exprAccessVia,
+  ...collectionVia,
+  ...stringVia,
+});
 
 /** Ruff 0.16.8's layout (stable style): the module is lowered to ruff's AST and printed by ports of its rules. */
 export const python: Language<PythonOptions> = {
@@ -97,15 +109,11 @@ export const python: Language<PythonOptions> = {
     },
     () => ({}),
   ),
-  stream: gen.python({
-    module,
-    ...stmtSimpleVia,
-    ...stmtCompoundVia,
-    ...stmtDefVia,
-    ...stmtMatchVia,
-    ...exprVia,
-    ...exprAccessVia,
-    ...collectionVia,
-    ...stringVia,
-  }),
+  stream: {
+    ...rules,
+    // The core writes a node with no rule (a leaf) straight to the stream; through the sink it lands in the
+    // `dslPart` recording printing it.
+    wrap: (node, ctx, print) =>
+      rules.rules.has(ctx.tree.kindName(node)) ? print() : sToken(node, ctx.tree.text(node)),
+  },
 };

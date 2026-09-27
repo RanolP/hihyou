@@ -16,3 +16,9 @@ it("reads past a line continuation to a statement's children in no field", () =>
   expect(fmt("assert \\\n  x, y\n")).toBe("assert x, y\n");
   expect(fmt("del \\\n  a\n")).toBe("del a\n");
 });
+
+// A leaf a spec rule prints (keyword_argument's `$.name`) has no rule of its own, so the core wrote it straight to
+// the stream, ahead of the `dslPart` recording it belongs to: `f(a=1)` came out as `af(=1)`.
+it("records a leaf a spec rule prints in place", () => {
+  expect(fmt("f(a=1)\n")).toBe("f(a=1)\n");
+});
