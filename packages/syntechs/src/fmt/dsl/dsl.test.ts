@@ -15,6 +15,7 @@ import {
   grpBrace,
   grpBracket,
   grpParen,
+  inOrder,
   lines,
   option,
   parentIs,
@@ -23,10 +24,11 @@ import {
   text,
   tok,
   verbatim,
+  when,
 } from "./dsl.js";
 import { emit } from "./emit.js";
 import { referenceRules } from "./reference.js";
-import type { FrameRule } from "./runtime.js";
+import type { FrameRule, PredicateRule } from "./runtime.js";
 
 // Written out rather than imported: this project reads the bundles without allowJs, so their types are `any`
 // here. The shapes are node-types.json's, as the bundle's `fieldTypes` and `childTypes` carry them.
@@ -301,6 +303,54 @@ it("a bracket frame's `.via` rule runs for an empty body too, and the generated 
         expect(runs, text).toBeGreaterThan(0);
         expect(out, text).toEqual(run(text, reference, o));
       }
+  } finally {
+    rmSync(file);
+  }
+});
+
+// CSS's at-rules, feature queries and combinators are `inOrder`s with spacing rules: generated code that applied
+// them in another precedence than the reference, lost a verbatim child's comments, or printed an `except` kind raw
+// would respace or reformat them.
+it("`inOrder`'s spacing rules apply tight, then spaceWhen, then join, and the generated code prints what the reference prints", async () => {
+  const ir = defineFormat<typeof jsonGrammar, JsonOptions>()({
+    structure: {
+      document: ($) => lines($.children),
+      // After `{` both rules claim the pair and `tight` wins; after `,` only `spaceWhen` does.
+      object: () =>
+        inOrder({ join: "gap", tight: { after: ["{"], before: ["}", ","] }, spaceWhen: { after: ["{", ","] } }),
+      pair: () => inOrder({ join: "gap", spaceWhen: { when: when("spaced") } }),
+      array: () => inOrder({ join: "line", tight: { after: ["["], before: ["]", ","] }, verbatim: { except: ["object"] } }),
+      string: () => verbatim,
+      number: () => verbatim,
+    },
+    wrapping: { array: { group: true } },
+  });
+  const spaced: PredicateRule = (node, ctx) => ctx.tree.text(ctx.items(node)[0] as number) === '"s"';
+  const file = join(import.meta.dirname, "in-order-equivalence.gen.ts");
+  writeFileSync(file, emit({ inOrder: ir }, jsonGrammar as DslGrammar, "dsl.test.ts"));
+  try {
+    const gen = (await import(pathToFileURL(file).href)) as {
+      inOrder: (custom: { spaced: PredicateRule<JsonOptions> }) => StreamRules<JsonOptions>;
+    };
+    const generated = { ...json, stream: gen.inOrder({ spaced }) };
+    const reference = { ...json, stream: referenceRules<JsonOptions>(ir, jsonGrammar as DslGrammar, { spaced }) };
+    const run = (text: string, lang: Language<JsonOptions>, o: Partial<JsonOptions>) => {
+      const out = formatTree(parseTree(jsonLanguage, text), lang, o);
+      if (!out.ok) throw new Error(out.detail);
+      return out.text;
+    };
+    const cases: [string, Partial<JsonOptions>, string][] = [
+      // A gap where the source has one, and `when` spacing every pair of the `"s"` pair.
+      ['{ "a" :1,"s":2 }', {}, '{"a" :1, "s" : 2}\n'],
+      // Named children as their source text between their comments, but an `except` kind as its rule prints it.
+      ['[[1,  2], { "a":1 }, /* c */ 3]', {}, '[[1,  2], {"a":1}, /* c */ 3]\n'],
+      // A `line` join breaks with its group.
+      ['[[1,  2], { "a":1 }, /* c */ 3]', { printWidth: 20 }, '[[1,  2],\n{"a":1},\n/* c */ 3]\n'],
+    ];
+    for (const [text, o, want] of cases) {
+      expect(run(text, generated, o), text).toBe(want);
+      expect(run(text, reference, o), text).toBe(want);
+    }
   } finally {
     rmSync(file);
   }

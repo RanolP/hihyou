@@ -25,6 +25,8 @@ export type Entry =
     }
   | { readonly e: "space" }
   | { readonly e: "hardline" }
+  /** A space, or a line break where the enclosing group breaks (an `inOrder`'s `line` join). */
+  | { readonly e: "line" }
   /** A child node. In the whole-document sequence it opens the node's range, which an `exit` closes. */
   | {
       readonly e: "child";
@@ -120,6 +122,9 @@ export type FrameRule<O = unknown> = (
 
 /** A `custom` rule: prints `node`, its children through `ctx.print`. */
 export type CustomRule<O = unknown> = (node: number, ctx: StreamCtx<O>) => void;
+
+/** A `when(name)` condition: whether it holds for `node`. */
+export type PredicateRule<O = unknown> = (node: number, ctx: StreamCtx<O>) => boolean;
 
 /** Prints `kid` between the comments attached to it: `body` in place of the kid, else the kid as its rule prints it. */
 export function printKid(

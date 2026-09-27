@@ -41,6 +41,7 @@ import {
   type FormatIR,
   type FrameWrap,
   frameWrap,
+  type Pairs,
   type Ref,
   type Tree,
   type Wrap,
@@ -53,6 +54,7 @@ import {
   fieldChild,
   listItems,
   parentIs,
+  type PredicateRule,
   separators,
   splitChild,
   tokenChild,
@@ -62,17 +64,18 @@ import { normalizers } from "./normalizers.js";
 
 export type { Entry } from "./runtime.js";
 
-/** Whether `c` holds under `options`; a `parent` condition asks `at`, the tree and node it is about. */
-export const evalCond = (
-  c: Cond,
-  options: unknown,
-  at?: { readonly tree: FormatTree; readonly node: number },
-): boolean => {
+type Customs<O> = { readonly [name: string]: CustomRule<O> | TokenRule<O> | FrameRule<O> | PredicateRule<O> };
+
+/** Whether `c` holds for `node`, whose `when` conditions ask `custom`'s predicates. */
+export const evalCond = <O>(c: Cond, ctx: StreamCtx<O>, node: number, custom: Customs<O>): boolean => {
   if (typeof c === "boolean") return c;
-  if (c.t === "parent") {
-    if (!at) throw new Error("evalCond: a `parent` condition outside a `text` rule");
-    return parentIs(at.tree, at.node, c.kind);
+  if (c.t === "parent") return parentIs(ctx.tree, node, c.kind);
+  if (c.t === "rule") {
+    const rule = custom[c.name] as PredicateRule<O> | undefined;
+    if (!rule) throw new Error(`no custom rule ${c.name}`);
+    return rule(node, ctx);
   }
+  const options = ctx.options;
   const v = (options as Record<string, unknown>)[c.key];
   return c.op === "truthy" ? Boolean(v) : c.op === "is" ? v === c.value : v !== c.value;
 };
@@ -117,6 +120,7 @@ export function flatten<O>(
   grammar: DslGrammar,
   node: number,
   ctx: StreamCtx<O>,
+  custom: Customs<O>,
   flat: Flattened = { entries: [], start: new Map(), exit: new Map() },
 ): Flattened {
   const t = ctx.tree;
@@ -204,7 +208,7 @@ export function flatten<O>(
                 : { e: "tok", node: c, text: t.text(c), synthetic: false },
             );
           };
-          const pad = evalCond(x.pad, ctx.options);
+          const pad = evalCond(x.pad, ctx, n, custom);
           out.push(
             x.via === undefined
               ? { e: "brackets", label: x.label }
@@ -227,7 +231,7 @@ export function flatten<O>(
             if (i < seps.length) {
               out.push({ e: "sep", tok: seps[i] as number });
               if (nextLineEmpty(t, item)) out.push({ e: "blank" });
-            } else if (evalCond(x.trailing, ctx.options))
+            } else if (evalCond(x.trailing, ctx, n, custom))
               out.push({ e: "ifBroken", after: item, text: x.sep });
           });
           if (owner === x)
@@ -255,15 +259,34 @@ export function flatten<O>(
         }
         case "inOrder": {
           const items = new Set(ctx.items(n));
-          let first = true;
+          const matcher = (p: Pairs | undefined) => {
+            if (p === undefined) return () => false;
+            const all = p.when !== undefined && evalCond(p.when, ctx, n, custom);
+            return (a: number, b: number) =>
+              all || (p.after?.includes(t.kindName(a)) ?? false) || (p.before?.includes(t.kindName(b)) ?? false);
+          };
+          const tight = matcher(x.tight);
+          const spaced = matcher(x.spaceWhen);
+          let prev = -1;
           for (let i = 0, count = t.count(n); i < count; i++) {
             const c = t.child(n, i);
             const named = t.named(c);
             if (named && !items.has(c)) continue;
-            if (!first && x.space) out.push({ e: "space" });
-            first = false;
-            if (named) child(c);
-            else out.push({ e: "tok", node: c, text: t.text(c), synthetic: false });
+            if (prev !== -1 && !tight(prev, c)) {
+              if (spaced(prev, c) || x.join === "space") out.push({ e: "space" });
+              else if (x.join === "gap") {
+                if (!t.adjoins(prev, c)) out.push({ e: "space" });
+              } else if (x.join === "line") out.push({ e: "line" });
+            }
+            prev = c;
+            if (!named) out.push({ e: "tok", node: c, text: t.text(c), synthetic: false });
+            else if (x.verbatim === undefined || x.verbatim.except.includes(t.kindName(c))) child(c);
+            else {
+              const comments = !ctx.ownsComments(c);
+              if (comments) for (const y of ctx.leadingComments(c)) out.push(commentEntry(ctx, y, "leading"));
+              out.push({ e: "tok", node: c, text: t.text(c), synthetic: false });
+              if (comments) for (const y of ctx.trailingComments(c)) out.push(commentEntry(ctx, y, "trailing", c));
+            }
           }
           return;
         }
@@ -272,7 +295,7 @@ export function flatten<O>(
           return;
         case "text": {
           const raw = t.text(n);
-          const text = evalCond(x.when, ctx.options, { tree: t, node: n })
+          const text = evalCond(x.when, ctx, n, custom)
             ? (normalizers[x.fn] as (s: string, o: unknown) => string)(raw, ctx.options)
             : raw;
           out.push({ e: "tok", node: n, text, synthetic: false });
@@ -295,7 +318,7 @@ export function wrap<O>(
   flat: Flattened,
   at: number,
   ctx: StreamCtx<O>,
-  custom: { readonly [name: string]: CustomRule<O> | TokenRule<O> | FrameRule<O> },
+  custom: Customs<O>,
   grammar: DslGrammar,
 ): void {
   const seq = flat.entries;
@@ -319,7 +342,7 @@ export function wrap<O>(
   const printNode = (node: number) => {
     let i = flat.start.get(node);
     if (i === undefined) {
-      flatten(ir, grammar, node, ctx, flat);
+      flatten(ir, grammar, node, ctx, custom, flat);
       i = flat.start.get(node) as number;
     }
     wrapNode(i);
@@ -454,7 +477,7 @@ export function wrap<O>(
     const shouldBreak =
       always ||
       (w.keepExpanded !== undefined &&
-        evalCond(w.keepExpanded, ctx.options) &&
+        evalCond(w.keepExpanded, ctx, node, custom) &&
         newlineBetween(tree, firstLeaf(tree, node), firstLeaf(tree, first))) ||
       (w.breakMatrix === true &&
         items.length > 1 &&
@@ -532,6 +555,8 @@ export function wrap<O>(
       switch (x.e) {
         case "tok":
           tok(x);
+          // A verbatim child's trailing comments follow its token, and start afresh as a child's do.
+          trailed = undefined;
           break;
         case "tokVia": {
           const rule = custom[x.via] as TokenRule<O> | undefined;
@@ -541,6 +566,9 @@ export function wrap<O>(
         }
         case "space":
           sText(" ");
+          break;
+        case "line":
+          sLine(0);
           break;
         case "hardline":
           sHardline();
@@ -624,12 +652,13 @@ export function wrap<O>(
 export function referenceRules<O>(
   ir: FormatIR,
   grammar: DslGrammar,
-  custom: { readonly [name: string]: CustomRule<O> | TokenRule<O> | FrameRule<O> },
+  custom: Customs<O>,
 ): StreamRules<O> {
   const rules = new Map<string, StreamRule<O>>();
   const lists = new Set<StreamRule<O>>();
   // The core prints only the root through a rule: the reference flattens its whole subtree, then wraps it.
-  const rule: StreamRule<O> = (node, ctx) => wrap(ir, flatten(ir, grammar, node, ctx), 0, ctx, custom, grammar);
+  const rule: StreamRule<O> = (node, ctx) =>
+    wrap(ir, flatten(ir, grammar, node, ctx, custom), 0, ctx, custom, grammar);
   for (const [kind, tree] of Object.entries(ir.structure)) {
     const own: StreamRule<O> = (node, ctx) => rule(node, ctx);
     rules.set(kind, own);

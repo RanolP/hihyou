@@ -1,6 +1,15 @@
 // A spec's IR as TypeScript: per kind, one stream rule making the calls the two passes of `reference.ts` make,
 // with the flattened sequence never built and each wrapping rule's choices decided while generating.
-import { type Cond, type DslGrammar, type FormatIR, frameWrap, type Ref, type Tree, type Wrap } from "./dsl.js";
+import {
+  type Cond,
+  type DslGrammar,
+  type FormatIR,
+  frameWrap,
+  type Pairs,
+  type Ref,
+  type Tree,
+  type Wrap,
+} from "./dsl.js";
 import { type NormalizerName, normalizerOptions } from "./normalizers.js";
 import { danglingOwner, holdsList } from "./reference.js";
 
@@ -13,35 +22,47 @@ import { danglingOwner, holdsList } from "./reference.js";
  keeps a kind named like a keyword (`if`, `class`) a valid name. */
 const ident = (kind: string) => `$${kind.replace(/\W/g, "_")}`;
 
-function optionKeys(ir: FormatIR): string[] {
-  const keys = new Set<string>();
+/** Calls `visit` on every condition `ir` holds. */
+function eachCond(ir: FormatIR, visit: (c: Cond) => void): void {
   const cond = (c: Cond | undefined) => {
-    if (c !== undefined && typeof c !== "boolean" && c.t === "option") keys.add(c.key);
+    if (c !== undefined) visit(c);
   };
   const walk = (x: Tree): void => {
-    if (x.t === "text") {
-      cond(x.when);
-      for (const k of normalizerOptions[x.fn] ?? []) keys.add(k);
-    } else if (x.t === "seq") x.parts.forEach(walk);
+    if (x.t === "text") cond(x.when);
+    else if (x.t === "seq") x.parts.forEach(walk);
     else if (x.t === "opt") walk(x.then);
     else if (x.t === "brackets") {
       cond(x.pad);
       walk(x.body);
     } else if (x.t === "sepBy") cond(x.trailing);
+    else if (x.t === "inOrder") {
+      cond(x.tight?.when);
+      cond(x.spaceWhen?.when);
+    }
   };
   Object.values(ir.structure).forEach(walk);
   for (const w of Object.values(ir.wrapping)) {
     cond(w.keepExpanded);
     for (const f of Object.values(w.frames ?? {})) cond(f.keepExpanded);
   }
+}
+
+function optionKeys(ir: FormatIR): string[] {
+  const keys = new Set<string>();
+  eachCond(ir, (c) => {
+    if (typeof c !== "boolean" && c.t === "option") keys.add(c.key);
+  });
+  // A `text` rule's normalizer reads its options too (a `text` is only ever a whole rule).
+  for (const x of Object.values(ir.structure))
+    if (x.t === "text") for (const k of normalizerOptions[x.fn] ?? []) keys.add(k);
   return [...keys].sort();
 }
 
-type RuleType = "CustomRule" | "TokenRule" | "FrameRule";
+type RuleType = "CustomRule" | "TokenRule" | "FrameRule" | "PredicateRule";
 
 /**
- * The custom rules `ir` names, each as the rule type it takes: a node's (`CustomRule`), a token's (`TokenRule`) or
- * a bracket frame's (`FrameRule`).
+ * The custom rules `ir` names, each as the rule type it takes: a node's (`CustomRule`), a token's (`TokenRule`),
+ * a bracket frame's (`FrameRule`) or a `when` condition's (`PredicateRule`).
  */
 function customNames(ir: FormatIR): [string, RuleType][] {
   const names = new Map<string, RuleType>();
@@ -62,6 +83,9 @@ function customNames(ir: FormatIR): [string, RuleType][] {
     }
   };
   Object.values(ir.structure).forEach(walk);
+  eachCond(ir, (c) => {
+    if (typeof c !== "boolean" && c.t === "rule") add(c.name, "PredicateRule");
+  });
   return [...names].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
@@ -77,9 +101,14 @@ const hasOpt = (x: Tree): boolean =>
   (x.t === "seq" && x.parts.some(hasOpt)) ||
   (x.t === "brackets" && hasOpt(x.body));
 
+/** An expression true when the string `expr` is one of `kinds`, compared inline rather than through an array. */
+const oneOf = (expr: string, kinds: readonly string[]) =>
+  kinds.length === 1 ? `${expr} === ${str(kinds[0] as string)}` : `(${kinds.map((k) => `${expr} === ${str(k)}`).join(" || ")})`;
+
 const cond = (c: Cond): string => {
   if (typeof c === "boolean") return String(c);
   if (c.t === "parent") return `parentIs(t, node, ${str(c.kind)})`;
+  if (c.t === "rule") return `custom[${str(c.name)}](node, ctx)`;
   const v = `ctx.options.${c.key}`;
   if (c.op === "truthy") return `Boolean(${v})`;
   return `${v} ${c.op === "is" ? "===" : "!=="} ${JSON.stringify(c.value)}`;
@@ -401,18 +430,79 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
       }
       case "inOrder": {
         const its = name("items");
-        const first = name("first");
         line(`const ${its} = new Set(ctx.items(node));`);
-        if (x.space) line(`let ${first} = true;`);
+        if (!x.tight && !x.spaceWhen && !x.verbatim && (x.join === "none" || x.join === "space")) {
+          const space = x.join === "space";
+          const first = name("first");
+          if (space) line(`let ${first} = true;`);
+          block("for (let i = 0, count = t.count(node); i < count; i++)", () => {
+            line("const c = t.child(node, i);");
+            line("const named = t.named(c);");
+            line(`if (named && !${its}.has(c)) continue;`);
+            if (space) {
+              line(`if (!${first}) sText(" ");`);
+              line(`${first} = false;`);
+            }
+            block("if (named)", () => child("c"), "} else sToken(c, t.text(c));");
+          });
+          return;
+        }
+        // Which (prev, c) pairs a spacing rule claims: its `when` decided once per node, its kinds per pair.
+        const pairs = (p: Pairs | undefined): string | undefined => {
+          if (p === undefined) return undefined;
+          const tests: string[] = [];
+          if (p.when !== undefined) {
+            const all = name("all");
+            line(`const ${all} = ${cond(p.when)};`);
+            tests.push(all);
+          }
+          if (p.after?.length) tests.push(oneOf("t.kindName(prev)", p.after));
+          if (p.before?.length) tests.push(oneOf("t.kindName(c)", p.before));
+          return tests.length === 0 ? undefined : tests.join(" || ");
+        };
+        const tight = pairs(x.tight);
+        const spaced = pairs(x.spaceWhen);
+        const join =
+          x.join === "space"
+            ? 'sText(" ");'
+            : x.join === "gap"
+              ? 'if (!t.adjoins(prev, c)) sText(" ");'
+              : x.join === "line"
+                ? "sLine(0);"
+                : undefined;
+        const steps: [string, string][] = [];
+        if (tight !== undefined) steps.push([tight, "{}"]);
+        if (spaced !== undefined) steps.push([spaced, 'sText(" ");']);
+        const spacing = steps.length > 0 || join !== undefined;
+        if (spacing) line("let prev = -1;");
         block("for (let i = 0, count = t.count(node); i < count; i++)", () => {
           line("const c = t.child(node, i);");
           line("const named = t.named(c);");
           line(`if (named && !${its}.has(c)) continue;`);
-          if (x.space) {
-            line(`if (!${first}) sText(" ");`);
-            line(`${first} = false;`);
+          if (spacing) {
+            block("if (prev !== -1)", () => {
+              steps.forEach(([test, then], k) => line(`${k === 0 ? "if" : "else if"} (${test}) ${then}`));
+              if (join !== undefined) line(steps.length === 0 ? join : `else ${join}`);
+            });
+            line("prev = c;");
           }
-          block("if (named)", () => child("c"), "} else sToken(c, t.text(c));");
+          const printNamed = () => {
+            const v = x.verbatim;
+            if (v === undefined) return child("c");
+            const verbatim = () => {
+              line("const comments = !ctx.ownsComments(c);");
+              line("if (comments) printLeadingComments(ctx, c);");
+              line("sToken(c, t.text(c));");
+              line("if (comments) printTrailingComments(ctx, c);");
+            };
+            if (v.except.length === 0) return verbatim();
+            block(`if (${oneOf("t.kindName(c)", v.except)})`, () => child("c"), "} else {");
+            depth++;
+            verbatim();
+            depth--;
+            line("}");
+          };
+          block("if (named)", printNamed, "} else sToken(c, t.text(c));");
         });
         return;
       }
@@ -473,6 +563,7 @@ export function emit(
   // specs' output stays as it was.
   let tokenRules = false;
   let frameRules = false;
+  let predicateRules = false;
   for (const [spec, ir] of Object.entries(specs)) {
     const keys = optionKeys(ir);
     const customs = customNames(ir);
@@ -486,6 +577,7 @@ export function emit(
         : `custom: { ${customs.map(([c, type]) => `readonly ${str(c)}: ${type}<O>;`).join(" ")} }`;
     if (customs.some(([, type]) => type === "TokenRule")) tokenRules = true;
     if (customs.some(([, type]) => type === "FrameRule")) frameRules = true;
+    if (customs.some(([, type]) => type === "PredicateRule")) predicateRules = true;
     parts.push("", `export function ${spec}<O extends ${options}>(${param}): StreamRules<O> {`);
     const kinds = Object.keys(ir.structure);
     for (const kind of kinds) {
@@ -527,7 +619,11 @@ export function emit(
       0,
       `import { ${[...fns].sort().join(", ")} } from "../../fmt/dsl/normalizers.js";`,
     );
-  const extra = [...(tokenRules ? ["TokenRule"] : []), ...(frameRules ? ["FrameRule"] : [])];
+  const extra = [
+    ...(tokenRules ? ["TokenRule"] : []),
+    ...(frameRules ? ["FrameRule"] : []),
+    ...(predicateRules ? ["PredicateRule"] : []),
+  ];
   if (extra.length > 0)
     parts.splice(
       parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,

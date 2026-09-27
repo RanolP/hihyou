@@ -55,7 +55,22 @@ export type Cond =
       readonly value?: unknown;
     }
   /** The node's parent is of kind `kind`. */
-  | { readonly t: "parent"; readonly kind: string };
+  | { readonly t: "parent"; readonly kind: string }
+  /** The hand-written `PredicateRule` `name` (see `runtime.ts`), asked of the node (`when(name)`). */
+  | { readonly t: "rule"; readonly name: string };
+
+/**
+ * Which consecutive entries of an `inOrder` a spacing rule applies to: those after an entry of a kind (a token by
+ * its spelling) in `after`, those before one in `before`, or, while `when` holds for the node, all of them.
+ */
+export interface Pairs {
+  readonly after?: readonly string[];
+  readonly before?: readonly string[];
+  readonly when?: Cond;
+}
+
+/** What goes between two entries of an `inOrder` no spacing rule claims (see `inOrder`). */
+export type Join = "none" | "space" | "gap" | "line";
 
 export type Tree =
   /** A source token; `via`: printed by that token rule (`tok(text).via(name)`), present or not. */
@@ -82,7 +97,14 @@ export type Tree =
       readonly trailing: Cond;
     }
   | { readonly t: "lines"; readonly list: Ref }
-  | { readonly t: "inOrder"; readonly space: boolean }
+  | {
+      readonly t: "inOrder";
+      readonly join: Join;
+      readonly tight?: Pairs;
+      readonly spaceWhen?: Pairs;
+      /** Named children print as their source text, but those of a kind in `except`. */
+      readonly verbatim?: { readonly except: readonly string[] };
+    }
   | { readonly t: "verbatim" }
   /** The node's source text through normalizer `fn` (`normalizers.ts`) where `when` holds, else as written. */
   | { readonly t: "text"; readonly fn: NormalizerName; readonly when: Cond }
@@ -185,8 +207,14 @@ export interface OptionCond<K, V> {
   readonly key: K;
   readonly value?: V;
 }
+/** A condition a hand-written predicate decides (`when`). */
+export interface RuleCond {
+  readonly t: "rule";
+  readonly name: string;
+}
 export type CondOf<O> =
   | boolean
+  | RuleCond
   | { [K in keyof O & string]: OptionCond<K, O[K]> }[keyof O & string];
 
 /** What a structure rule returns: the grammar's tokens, children, idioms, and arrays of them (sequences). */
@@ -196,6 +224,7 @@ export type TokenTree<G extends Grammar, O> =
   | Piece<"space">
   | Piece<"lines">
   | Piece<"inOrder">
+  | Piece<{ inOrder: KindOf<G> | TokenOf<G>; cond: CondOf<O> }>
   | Piece<{ tok: TokenOf<G> }>
   | Piece<{ opt: TokenTree<G, O> }>
   | Piece<{ brackets: TokenTree<G, O>; pad: CondOf<O> }>
@@ -348,13 +377,60 @@ export const sepBy = <const S extends string, T = false>(
 export const lines = (list: List): Piece<"lines"> =>
   piece({ t: "lines", list: refOf(list) });
 
+/** Which consecutive entries of an `inOrder` a spacing rule applies to (see `Pairs`). */
+export interface PairsOf<K, C> {
+  readonly after?: readonly K[];
+  readonly before?: readonly K[];
+  readonly when?: C;
+}
+
+export interface InOrderOf<K, C> {
+  readonly join?: Join;
+  readonly tight?: PairsOf<K, C>;
+  readonly spaceWhen?: PairsOf<K, C>;
+  readonly verbatim?: true | { readonly except: readonly K[] };
+}
+
 /**
- * Every child of the node in source order, side by side, or a space apart with `space`: named children as their
- * rules print them, with their comments, and tokens as written. For a kind no field splits into parts (CSS's),
- * where only the order says what each child is.
+ * Every child of the node in source order: named children as their rules print them, with their comments, and
+ * tokens as written. For a kind no field splits into parts (CSS's), where only the order says what each child is.
+ *
+ * Between two entries goes, the first that applies: nothing where `tight` does, a space where `spaceWhen` does,
+ * else `join`: nothing (`none`, the default), a space (`space`, which `inOrder(space)` means too), a space where
+ * the source has any gap and nothing where it has none (`gap`), or a line (`line`), a space unless the enclosing
+ * group breaks. With `verbatim`, named children print as their source text between their comments, but those of a
+ * kind in `except`: prettier's raw at-rule parameters.
  */
-export const inOrder = (sep?: Piece<"space">): Piece<"inOrder"> =>
-  piece({ t: "inOrder", space: sep !== undefined });
+export function inOrder(sep?: Piece<"space">): Piece<"inOrder">;
+export function inOrder<const K extends string = never, C = false>(
+  o: InOrderOf<K, C>,
+): Piece<{ inOrder: K; cond: C }>;
+export function inOrder(o?: Piece<"space"> | InOrderOf<string, unknown>): unknown {
+  if (o === undefined || (o as unknown as Tree).t === "space")
+    return piece({ t: "inOrder", join: o === undefined ? "none" : "space" });
+  const opts = o as InOrderOf<string, unknown>;
+  const pairs = (p: PairsOf<string, unknown> | undefined): Pairs | undefined =>
+    p === undefined
+      ? undefined
+      : {
+          ...(p.after ? { after: p.after } : {}),
+          ...(p.before ? { before: p.before } : {}),
+          ...(p.when === undefined ? {} : { when: plain(p.when) }),
+        };
+  const tight = pairs(opts.tight);
+  const spaceWhen = pairs(opts.spaceWhen);
+  const v = opts.verbatim;
+  return piece({
+    t: "inOrder",
+    join: opts.join ?? "none",
+    ...(tight ? { tight } : {}),
+    ...(spaceWhen ? { spaceWhen } : {}),
+    ...(v === undefined ? {} : { verbatim: { except: v === true ? [] : v.except } }),
+  });
+}
+
+/** True where the hand-written `PredicateRule` `name` (see `runtime.ts`) says so of the node. */
+export const when = (name: string): RuleCond => ({ t: "rule", name });
 
 /** Option `key`, true when truthy; `.is(v)` and `.isNot(v)` compare it. */
 export const option = <const K extends string>(key: K) => ({
@@ -369,7 +445,8 @@ export const option = <const K extends string>(key: K) => ({
 
 function plain(c: unknown): Cond {
   if (c === undefined || typeof c === "boolean") return c === true;
-  const x = c as Exclude<Cond, boolean>;
+  if ((c as RuleCond).t === "rule") return { t: "rule", name: (c as RuleCond).name };
+  const x = c as Exclude<Cond, boolean | RuleCond>;
   if (x.t === "parent") return { t: "parent", kind: x.kind };
   const { key, op, value } = x;
   return op === "truthy"
