@@ -354,7 +354,9 @@ const ownSemicolon = (x: HasTree, n: number) => {
     : undefined;
 };
 
-const classBody: JsRule = (n, ctx) => {
+/** Prettier's printClassBody. */
+const classBody: CustomRule<JsOptions> = (n, sctx) => {
+  const { js: ctx } = jsCtx(sctx);
   // A method's decorators parse as its siblings in the class body; they print with the member they precede.
   const members: number[] = [];
   const decoratorsBefore = new Map<number, number[]>();
@@ -367,37 +369,36 @@ const classBody: JsRule = (n, ctx) => {
       members.push(c);
     }
   }
-  const parts: Doc[] = [];
-  members.forEach((m, i) => {
-    const decorators = decoratorsBefore.get(m);
-    parts.push(
-      decorators !== undefined
-        ? [printMemberDecorators(ctx, decorators), p(ctx, m)]
-        : p(ctx, m),
-    );
-    const next = members[i + 1];
-    if (needsSemicolonAfter(ctx, m, next)) parts.push(synthetic(m, ";"));
-    if (next !== undefined) {
-      parts.push(hardline);
-      if (nextLineEmpty(ctx.tree, m)) parts.push(hardline);
-    }
-  });
   const dangling = ctx.dangling(n);
-  if (dangling.length > 0) parts.push(join(hardline, dangling));
-  const open = t(ctx, anon(ctx, n, "{"));
-  const close = t(
+  tok(ctx, anon(ctx, n, "{"));
+  if (members.length > 0 || dangling.length > 0) {
+    open(INDENT);
+    sHardline();
+    members.forEach((m, i) => {
+      const decorators = decoratorsBefore.get(m);
+      if (decorators !== undefined)
+        place({ doc: printMemberDecorators(ctx, decorators) });
+      sctx.print(m);
+      const next = members[i + 1];
+      if (needsSemicolonAfter(ctx, m, next)) sToken(m, ";", true);
+      if (next !== undefined) {
+        sHardline();
+        if (nextLineEmpty(ctx.tree, m)) sHardline();
+      }
+    });
+    if (dangling.length > 0) place({ doc: join(hardline, dangling) });
+    close();
+    sHardline();
+  }
+  tok(
     ctx,
     lastChildWhere(ctx, n, (c) => !named(ctx, c) && kind(ctx, c) === "}"),
   );
-  return [
-    open,
-    parts.length > 0 ? [indent([hardline, parts]), hardline] : [],
-    close,
-  ];
 };
 
 export const classCustoms = {
   class: printClass,
+  "class.body": classBody,
 } satisfies Record<string, CustomRule<JsOptions>>;
 
 /** Prettier's printClassProperty. */
@@ -425,7 +426,6 @@ const classProperty: JsRule = (n, ctx) => {
 };
 
 export const classRules: Record<string, JsRule> = {
-  class_body: classBody,
   field_definition: classProperty,
   public_field_definition: classProperty,
   abstract_method_signature: method,

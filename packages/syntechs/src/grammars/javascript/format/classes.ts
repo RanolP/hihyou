@@ -7,6 +7,7 @@ export const classes = {
   class_declaration: () => custom("class"),
   abstract_class_declaration: () => custom("class"),
   interface_declaration: () => custom("class"),
+  class_body: () => custom("class.body"),
   class_static_block: ($) => ["static", space, $.body],
   decorator: ($) => ["@", $.children],
 } satisfies JsStructure;
