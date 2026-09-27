@@ -8,6 +8,7 @@ import {
   hardline,
   indent,
   line,
+  lineOf,
   lineSuffix,
   lineSuffixBoundary,
   literalToken,
@@ -15,11 +16,14 @@ import {
 } from "./doc.js";
 import { print } from "./printer.js";
 import {
+  BLANK,
+  COLLAPSE,
   close,
   FILL,
   FILL_ITEM,
   GROUP,
   INDENT,
+  HARD,
   LINE_SUFFIX,
   open,
   openAlign,
@@ -30,6 +34,7 @@ import {
   sLine,
   sLineSuffixBoundary,
   sLiteral,
+  sRuffLine,
   sText,
 } from "./stream.js";
 
@@ -326,5 +331,29 @@ describe("printStream matches printer.ts under ruff's measure", () => {
       sHardline();
     });
     expect(out).toBe("a\nb # c\nd\n");
+  });
+
+  it("collapses a broken line on an empty line and adds one empty line for a blank line", () => {
+    const collapse = lineOf(HARD | COLLAPSE);
+    const blank = lineOf(HARD | COLLAPSE | BLANK);
+    const doc = [
+      collapse,
+      text("a"),
+      blank,
+      collapse,
+      group([text("b"), collapse, text("c")]),
+    ];
+    const out = ruffBoth(80, doc, () => {
+      sRuffLine(HARD | COLLAPSE);
+      sText("a");
+      sRuffLine(HARD | COLLAPSE | BLANK);
+      sRuffLine(HARD | COLLAPSE);
+      open(GROUP);
+      sText("b");
+      sRuffLine(HARD | COLLAPSE);
+      sText("c");
+      close();
+    });
+    expect(out).toBe("a\n\nb\nc");
   });
 });

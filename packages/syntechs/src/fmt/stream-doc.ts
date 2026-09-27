@@ -36,7 +36,9 @@ import {
   textOf,
 } from "./doc.js";
 import {
+  BLANK,
   BROKEN,
+  COLLAPSE,
   close,
   FILL,
   FILL_ITEM,
@@ -54,6 +56,7 @@ import {
   sLine,
   sLineSuffixBoundary,
   sLiteral,
+  sRuffLine,
   sText,
   sToken,
 } from "./stream.js";
@@ -84,7 +87,8 @@ export function sDoc(doc: Doc): void {
         sText(textOf(h));
         return;
       case D_LINE:
-        sLine(flagsOf(h) & (SOFT | HARD));
+        if (flagsOf(h) & (COLLAPSE | BLANK)) sRuffLine(flagsOf(h));
+        else sLine(flagsOf(h) & (SOFT | HARD));
         return;
       case D_BREAK_PARENT:
         sBreakParent();
@@ -167,8 +171,8 @@ function check(doc: Doc, seen: Set<Doc>): void {
       case D_LINE_SUFFIX_BOUNDARY:
         return false;
       case D_LINE:
-        if (flagsOf(h) & ~(SOFT | HARD))
-          throw new Unsupported("collapsing or blank line");
+        if (flagsOf(h) & ~(SOFT | HARD | COLLAPSE | BLANK))
+          throw new Unsupported("line flag");
         return false;
       case D_GROUP:
         if (statesOf(h)) throw new Unsupported("conditionalGroup");

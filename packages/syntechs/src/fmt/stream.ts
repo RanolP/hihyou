@@ -90,6 +90,9 @@ const grow8 = (a: Uint8Array) => {
 // Ruff's layout kinds, numbered from 40, apart from the other kinds.
 /** One literal token holding a line break (`sLiteral`): its lines print as they are, the column restarting at 0. */
 const LITERAL_TOKEN = 40;
+/** Line flags (`doc.ts`'s): a broken line on a line still empty prints nothing, and one adds an empty line. */
+export const COLLAPSE = 4;
+export const BLANK = 8;
 // --- end ruff ---
 
 // The stream.
@@ -246,6 +249,16 @@ export function sLine(flags: number): void {
   if (flags & HARD) hard++;
   entry(LINE, flags, 0, 0, 0);
   mergeable = false;
+}
+
+/**
+ * A line with ruff's `COLLAPSE` and `BLANK` flags besides `SOFT`/`HARD`; measured as `sLine` measures the line
+ * without them. A hard line that collapses breaks every enclosing group by itself, as `printer.ts` propagates it.
+ */
+export function sRuffLine(flags: number): void {
+  sLine(flags & (SOFT | HARD));
+  eFlag[n - 1] = flags;
+  if (flags & HARD && flags & COLLAPSE) bp++;
 }
 
 /** Breaks every enclosing group. */
@@ -677,6 +690,8 @@ export function printStream(layout: Layout): StreamPrinted {
   let current = "";
   let length = 0;
   let column = 0;
+  /** Where the text of the current line starts, after its indentation: a `COLLAPSE` line reads it. */
+  let lineStart = 0;
   let tokens = 0;
   let placedEntry = new Int32Array(1024);
   let placedAt = new Int32Array(1024);
@@ -834,11 +849,13 @@ export function printStream(layout: Layout): StreamPrinted {
           // A suffix queued inside flushed suffix content prints before this line too.
           while (sK.length > 0) flushSuffixes();
           trimLineEnd();
-          endLine();
+          if (!(f & COLLAPSE) || length > lineStart) endLine();
+          if (f & BLANK) endLine();
           const indentation = indents[fInd[fp - 1] as number] as Indentation;
           current += indentation.value;
           length += indentation.value.length;
           column = indentation.length;
+          lineStart = length;
         }
       } else {
         const s = strs[eStr[i] as number] as string;

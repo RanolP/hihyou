@@ -184,4 +184,4 @@ describe.skipIf(!present)(
 
 // [lowered, printed]: the Docs the stream prints, of all the formatter printed.
 const JS_COVERED = [1135, 2260];
-const PY_COVERED = [15, 286];
+const PY_COVERED = [88, 286];
