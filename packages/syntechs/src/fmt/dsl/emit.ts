@@ -33,17 +33,24 @@ function optionKeys(ir: FormatIR): string[] {
   return [...keys].sort();
 }
 
-function customNames(ir: FormatIR): string[] {
-  const names = new Set<string>();
+/** The custom rules `ir` names, each as the rule type it takes: a node's (`CustomRule`) or a token's (`TokenRule`). */
+function customNames(ir: FormatIR): [string, "CustomRule" | "TokenRule"][] {
+  const names = new Map<string, "CustomRule" | "TokenRule">();
+  const add = (name: string, type: "CustomRule" | "TokenRule") => {
+    if ((names.get(name) ?? type) !== type)
+      throw new Error(`emit: custom rule ${name} names both a node's rule and a token's`);
+    names.set(name, type);
+  };
   const walk = (x: Tree): void => {
-    if (x.t === "custom") names.add(x.name);
-    else if (x.t === "ref" && x.via !== undefined) names.add(x.via);
+    if (x.t === "custom") add(x.name, "CustomRule");
+    else if (x.t === "ref" && x.via !== undefined) add(x.via, "CustomRule");
+    else if (x.t === "tok" && x.via !== undefined) add(x.via, "TokenRule");
     else if (x.t === "seq") x.parts.forEach(walk);
     else if (x.t === "opt") walk(x.then);
     else if (x.t === "brackets") walk(x.body);
   };
   Object.values(ir.structure).forEach(walk);
-  return [...names].sort();
+  return [...names].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
 const hasOpt = (x: Tree): boolean =>
@@ -277,7 +284,8 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
     switch (x.t) {
       case "tok": {
         const c = bound(x.text);
-        line(`if (${c} !== -1) sToken(${c}, t.text(${c}));`);
+        if (x.via === undefined) line(`if (${c} !== -1) sToken(${c}, t.text(${c}));`);
+        else line(`custom[${str(x.via)}](${c} === -1 ? undefined : ${c}, node, ctx);`);
         return;
       }
       case "ref": {
@@ -403,6 +411,8 @@ export function emit(
     'import { newlineBetween, nextLineEmpty } from "../../fmt/text.js";',
     'import { firstLeaf } from "../../fmt/tree.js";',
   ];
+  // Only a spec with a `tok(text).via` imports TokenRule, so the other specs' output stays as it was.
+  let tokenRules = false;
   for (const [spec, ir] of Object.entries(specs)) {
     const keys = optionKeys(ir);
     const customs = customNames(ir);
@@ -413,7 +423,8 @@ export function emit(
     const param =
       customs.length === 0
         ? ""
-        : `custom: { ${customs.map((c) => `readonly ${str(c)}: CustomRule<O>;`).join(" ")} }`;
+        : `custom: { ${customs.map(([c, type]) => `readonly ${str(c)}: ${type}<O>;`).join(" ")} }`;
+    if (customs.some(([, type]) => type === "TokenRule")) tokenRules = true;
     parts.push("", `export function ${spec}<O extends ${options}>(${param}): StreamRules<O> {`);
     const kinds = Object.keys(ir.structure);
     for (const kind of kinds) {
@@ -432,5 +443,11 @@ export function emit(
       "}",
     );
   }
+  if (tokenRules)
+    parts.splice(
+      parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
+      0,
+      'import type { TokenRule } from "../../fmt/dsl/runtime.js";',
+    );
   return `${parts.join("\n")}\n`;
 }

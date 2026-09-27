@@ -38,6 +38,13 @@ export type Entry =
       readonly via?: string;
     }
   | { readonly e: "exit" }
+  /** A `tok(text).via(name)` of `node`: `token` its source token, undefined where the source has none. */
+  | {
+      readonly e: "tokVia";
+      readonly token: number | undefined;
+      readonly node: number;
+      readonly via: string;
+    }
   /**
    * A comment attached before (`leading`) or after (`trailing`) the `child` entry next to it, or one of the
    * node's comments next to no child (`dangling`); `endsLine`: a trailing line comment on its child's first line.
@@ -99,6 +106,16 @@ export interface CustomSeq {
   /** Prints `kid` between the comments attached to it: `body` in place of the kid, else the kid as its rule prints it. */
   print(kid: number, body?: () => void): void;
 }
+
+/**
+ * A `tok(text).via(name)` rule: prints the token `text` of `node`, given its source token, or undefined where
+ * the source has none.
+ */
+export type TokenRule<O = unknown> = (
+  token: number | undefined,
+  node: number,
+  ctx: StreamCtx<O>,
+) => void;
 
 /** A `custom` rule: the node's wrapping, laying out its `CustomSeq`. */
 export type CustomRule<O = unknown> = (

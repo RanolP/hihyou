@@ -54,6 +54,7 @@ import {
   listItems,
   separators,
   tokenChild,
+  type TokenRule,
 } from "./runtime.js";
 
 export type { Entry } from "./runtime.js";
@@ -164,7 +165,9 @@ export function flatten<O>(
       switch (x.t) {
         case "tok": {
           const c = token(x.text);
-          if (c !== -1) out.push({ e: "tok", node: c, text: t.text(c), synthetic: false });
+          if (x.via !== undefined)
+            out.push({ e: "tokVia", token: c === -1 ? undefined : c, node: n, via: x.via });
+          else if (c !== -1) out.push({ e: "tok", node: c, text: t.text(c), synthetic: false });
           return;
         }
         case "ref": {
@@ -269,7 +272,7 @@ export function wrap<O>(
   flat: Flattened,
   at: number,
   ctx: StreamCtx<O>,
-  custom: { readonly [name: string]: CustomRule<O> },
+  custom: { readonly [name: string]: CustomRule<O> | TokenRule<O> },
   grammar: DslGrammar,
 ): void {
   const seq = flat.entries;
@@ -349,7 +352,7 @@ export function wrap<O>(
     const w = x.via === undefined ? (ir.wrapping[x.kind] ?? {}) : {};
     if (w.group) open(GROUP);
     if (t.t === "custom") {
-      const rule = custom[t.name];
+      const rule = custom[t.name] as CustomRule<O> | undefined;
       if (!rule) throw new Error(`no custom rule ${t.name}`);
       rule(x.node, inner, view(i + 1, end));
     } else render(i + 1, end, w, x.node);
@@ -532,6 +535,12 @@ export function wrap<O>(
         case "tok":
           tok(x);
           break;
+        case "tokVia": {
+          const rule = custom[x.via] as TokenRule<O> | undefined;
+          if (!rule) throw new Error(`no custom rule ${x.via}`);
+          rule(x.token, x.node, inner);
+          break;
+        }
         case "space":
           sText(" ");
           break;
@@ -609,7 +618,7 @@ export function wrap<O>(
 export function referenceRules<O>(
   ir: FormatIR,
   grammar: DslGrammar,
-  custom: { readonly [name: string]: CustomRule<O> },
+  custom: { readonly [name: string]: CustomRule<O> | TokenRule<O> },
 ): StreamRules<O> {
   const rules = new Map<string, StreamRule<O>>();
   const lists = new Set<StreamRule<O>>();

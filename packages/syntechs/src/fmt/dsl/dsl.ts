@@ -53,7 +53,8 @@ export type Cond =
     };
 
 export type Tree =
-  | { readonly t: "tok"; readonly text: string }
+  /** A source token; `via`: printed by that token rule (`tok(text).via(name)`), present or not. */
+  | { readonly t: "tok"; readonly text: string; readonly via?: string }
   | Ref
   | { readonly t: "opt"; readonly ref: Ref; readonly then: Tree }
   | { readonly t: "space" }
@@ -181,6 +182,7 @@ export type TokenTree<G extends Grammar, O> =
   | Piece<"space">
   | Piece<"lines">
   | Piece<"inOrder">
+  | Piece<{ tok: TokenOf<G> }>
   | Piece<{ opt: TokenTree<G, O> }>
   | Piece<{ brackets: TokenTree<G, O>; pad: CondOf<O> }>
   | Piece<{ sepBy: TokenOf<G>; trailing: CondOf<O> }>
@@ -231,6 +233,15 @@ export const verbatim: Whole = piece({ t: "verbatim" });
  * lines, the `CustomSeq` the rule receives, and the rule is the node's wrapping: it lays those entries out.
  */
 export const custom = (name: string): Whole => piece({ t: "custom", name });
+
+/**
+ * `tok(text).via(name)`: the node's token `text`, printed by the hand-written `TokenRule` `name` (see
+ * `runtime.ts`), given that token or undefined where the source has none, and the node. For a token the layout
+ * inserts, drops or respells, such as JS's `;` under `semi`.
+ */
+export const tok = <const S extends string>(text: S) => ({
+  via: (name: string) => piece<{ tok: S }>({ t: "tok", text, via: name }),
+});
 
 const brackets =
   (open: string, close: string) =>

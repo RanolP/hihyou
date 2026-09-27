@@ -6,6 +6,7 @@ import {
   option,
   sepBy,
   space,
+  tok,
 } from "./dsl.js";
 
 // Written out rather than imported: this project reads the bundles without allowJs, so their types are `any`
@@ -54,6 +55,12 @@ it("a typo'd kind, field, token, separator or option fails to typecheck, so a sp
       structure: {
         // @ts-expect-error: `;` is not a token
         pair: ($) => [$.key, ";", space, $.value],
+      },
+    }),
+    format({
+      structure: {
+        // @ts-expect-error: `;` is not a token, printed through a rule or not
+        pair: ($) => [$.key, ":", space, $.value, tok(";").via("semi")],
       },
     }),
     format({
@@ -143,5 +150,14 @@ it("`.via` reaches the IR on a required field and inside `andThen`", () => {
         },
       },
     ],
+  });
+});
+
+// A `tok(...).via` the IR loses prints the source token as written, silently skipping the rule that inserts or drops it.
+it("`tok(text).via(name)` reaches the IR as a token printed through its rule", () => {
+  const ir = format({ structure: { pair: ($) => [$.key, ":", $.value, tok(",").via("comma")] } });
+  expect(ir.structure["pair"]).toEqual({
+    t: "seq",
+    parts: [expect.anything(), expect.anything(), expect.anything(), { t: "tok", text: ",", via: "comma" }],
   });
 });
