@@ -1,7 +1,6 @@
 // Prettier's function printers: function.js, function-parameters.js, arrow-function.js.
 
 import {
-  breakParent,
   type Doc,
   group,
   hardline,
@@ -18,14 +17,16 @@ import {
 import { lfAfter, nextLineEmpty } from "../../../fmt/text.js";
 import {
   BROKEN,
+  close,
   GROUP,
   type JsStreamCtx,
   jsCtx,
   onDoc,
+  open,
   type Part,
   place,
-  close as sClose,
-  open as sOpen,
+  sBreakParent,
+  sLine,
   sText,
   sToken,
 } from "../sink.js";
@@ -68,6 +69,7 @@ import {
   unparen,
 } from "./util.js";
 import type { CustomRule } from "../../../fmt/dsl/runtime.js";
+import type { StreamCtx } from "../../../fmt/stream-format.js";
 import type { JsOptions } from "./util.js";
 
 /** A parameter as prettier's AST would type it. */
@@ -451,14 +453,14 @@ export function sPrintMethodValue(ctx: JsStreamCtx, n: number): void {
   const typeParameters = field(js, n, "type_parameters");
   if (typeParameters !== undefined) ctx.print(typeParameters);
   const shouldBreak = shouldBreakFunctionParameters(js, n);
-  sOpen(GROUP);
+  open(GROUP);
   if (shouldBreak || shouldGroup) {
-    sOpen(GROUP, -1, shouldBreak ? BROKEN : 0);
+    open(GROUP, -1, shouldBreak ? BROKEN : 0);
     place(parameters);
-    sClose();
+    close();
   } else place(parameters);
   place(returnType);
-  sClose();
+  close();
   const body = field(js, n, "body");
   if (body !== undefined) {
     sText(" ");
@@ -719,49 +721,59 @@ const arrow: JsRule = (node, ctx, args?: Args) => {
 
 // --- parameters ---------------------------------------------------------------------------------------------
 
+/** `c` as the source token it is; nothing when absent. */
+const tk = (ctx: JsCtx, c: number | undefined) => {
+  if (c !== undefined) sToken(c, src(ctx, c));
+};
+
+/** `node` with its comments; nothing when absent. */
+const pr = (s: StreamCtx<JsOptions>, node: number | undefined) => {
+  if (node !== undefined) s.print(node);
+};
+
 /** A TS parameter: modifiers, pattern, `?`, type, default. */
-const parameter: JsRule = (n, ctx) => {
-  const parts: Doc[] = [];
+const parameter: CustomRule<JsOptions> = (n, s) => {
+  const { js: ctx } = jsCtx(s);
   const decorators: number[] = [];
+  const modifiers: number[] = [];
   const pattern = field(ctx, n, "pattern") ?? field(ctx, n, "name");
   const value = field(ctx, n, "value");
   for (const c of children(ctx, n)) {
     if (c === pattern) break;
     if (isComment(ctx, c)) continue;
     if (kind(ctx, c) === "decorator") decorators.push(c);
-    else parts.push(p(ctx, c), text(" "));
+    else modifiers.push(c);
   }
-  parts.push(
-    p(ctx, pattern),
-    t(ctx, anon(ctx, n, "?")),
-    p(ctx, field(ctx, n, "type")),
-  );
-  if (value !== undefined)
-    parts.push(text(" "), t(ctx, anon(ctx, n, "=")), text(" "), p(ctx, value));
-  if (decorators.length === 0) return parts;
   // Prettier's print() wraps a decorated node as group([printDecorators, doc]).
-  const broken = decorators.some((d) => lfAfter(ctx.tree, d) > 0);
-  return group([
-    broken ? breakParent : [],
-    join(
-      line,
-      decorators.map((d) => p(ctx, d)),
-    ),
-    line,
-    parts,
-  ]);
+  if (decorators.length > 0) {
+    open(GROUP);
+    if (decorators.some((d) => lfAfter(ctx.tree, d) > 0)) sBreakParent();
+    decorators.forEach((d, i) => {
+      if (i > 0) sLine(0);
+      s.print(d);
+    });
+    sLine(0);
+  }
+  for (const c of modifiers) {
+    s.print(c);
+    sText(" ");
+  }
+  pr(s, pattern);
+  tk(ctx, anon(ctx, n, "?"));
+  pr(s, field(ctx, n, "type"));
+  if (value !== undefined) {
+    sText(" ");
+    tk(ctx, anon(ctx, n, "="));
+    sText(" ");
+    s.print(value);
+  }
+  if (decorators.length > 0) close();
 };
 
-const assignmentPattern: JsRule = (n, ctx) => [
-  p(ctx, field(ctx, n, "left")),
-  text(" "),
-  t(ctx, anon(ctx, n, "=")),
-  text(" "),
-  p(ctx, field(ctx, n, "right")),
-];
-
 /** The customs format/functions.ts names, by the names its spec gives them. */
-export const functionCustoms = {} satisfies Record<string, CustomRule<JsOptions>>;
+export const functionCustoms = {
+  parameter,
+} satisfies Record<string, CustomRule<JsOptions>>;
 
 export const functionRules: Record<string, JsRule> = {
   function_declaration: functionRule,
@@ -770,7 +782,4 @@ export const functionRules: Record<string, JsRule> = {
   generator_function_declaration: functionRule,
   function_signature: functionRule,
   arrow_function: arrow,
-  required_parameter: parameter,
-  optional_parameter: parameter,
-  assignment_pattern: assignmentPattern,
 };
