@@ -3,6 +3,7 @@ import type { Expr, Stmt } from "./ast.js";
 import type { Fmt } from "./builders.js";
 import type { PrintArgs } from "../../../fmt/rules.js";
 import type { StreamCtx } from "../../../fmt/stream-format.js";
+import type { Frame as DslFrame } from "../../../fmt/dsl/runtime.js";
 import * as el from "./elements.js";
 import type { Format, Group, GroupRef } from "./elements.js";
 
@@ -399,4 +400,18 @@ export function sDsl(node: number, args?: PrintArgs): void {
   // A broken node prints as its text straight into the stream, past a recording.
   if (ctx.isBroken(node)) throw new Error("python sink: dslPart of a broken node");
   ctx.printNode(node, args);
+}
+
+/**
+ * The frame a `FrameRule` lays out, as the parts ruff's `parenthesized` and `empty_parenthesized` take: the
+ * brackets as tokens, the body as the content they indent.
+ */
+export function frameParts(frame: DslFrame): { open: el.Token; body: () => Format; close: el.Token } {
+  const open = record(frame.open);
+  const close = record(frame.close);
+  return {
+    open: (b) => el.put(b, open),
+    body: () => record(frame.body),
+    close: (b) => el.put(b, close),
+  };
 }

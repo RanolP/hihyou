@@ -1,13 +1,30 @@
+import { rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { expect, it } from "vitest";
+import { parseTree } from "../../core/index.js";
+import { type JsonOptions, json } from "../../grammars/json/fmt.js";
+import { grammar as jsonGrammar, language as jsonLanguage } from "../../grammars/json/index.js";
+import { format as formatTree } from "../format.js";
+import type { Language } from "../rules.js";
+import { close, GROUP, INDENT, open, SOFT, sLine } from "../stream.js";
+import type { StreamRules } from "../stream-format.js";
 import {
+  type DslGrammar,
   defineFormat,
   grpBrace,
+  grpBracket,
   grpParen,
+  lines,
   option,
   sepBy,
   space,
   tok,
+  verbatim,
 } from "./dsl.js";
+import { emit } from "./emit.js";
+import { referenceRules } from "./reference.js";
+import type { FrameRule } from "./runtime.js";
 
 // Written out rather than imported: this project reads the bundles without allowJs, so their types are `any`
 // here. The shapes are node-types.json's, as the bundle's `fieldTypes` and `childTypes` carry them.
@@ -160,4 +177,71 @@ it("`tok(text).via(name)` reaches the IR as a token printed through its rule", (
     t: "seq",
     parts: [expect.anything(), expect.anything(), expect.anything(), { t: "tok", text: ",", via: "comma" }],
   });
+});
+
+// A frame's `.via` that the generated code runs differently from the reference, or skips for an empty list, would
+// print the brackets or the body where the rule did not put them, or lose an empty list's dangling comments
+// (Python's `f(  # c\n)`), which only the frame's rule prints.
+it("a bracket frame's `.via` rule runs for an empty body too, and the generated code prints what the reference prints", async () => {
+  const ir = defineFormat<typeof jsonGrammar, JsonOptions>()({
+    structure: {
+      document: ($) => lines($.children),
+      object: ($) => grpBrace(sepBy(",", $.children)).via("frame"),
+      array: ($) => grpBracket(sepBy(",", $.children)).via("frame"),
+      pair: ($) => [$.key, ":", space, $.value],
+      string: () => verbatim,
+      number: () => verbatim,
+    },
+  });
+  // Plain data: the builder's `via` method stays out of the IR.
+  expect(JSON.parse(JSON.stringify(ir.structure["array"]))).toEqual(ir.structure["array"]);
+  expect(ir.structure["array"]).toMatchObject({ t: "brackets", open: "[", via: "frame" });
+
+  let runs = 0;
+  // Ruff's `parenthesized` in brief: the brackets around an indented body, all in one group.
+  const frame: FrameRule = (_, __, f) => {
+    runs++;
+    open(GROUP);
+    f.open();
+    open(INDENT);
+    sLine(SOFT);
+    f.body();
+    close();
+    sLine(SOFT);
+    f.close();
+    close();
+  };
+  // The generated module imports its runtime relative to a folder two below src/, as fmt.gen.ts does from its
+  // grammar's; written beside this test for the run.
+  const file = join(import.meta.dirname, "frame-equivalence.gen.ts");
+  writeFileSync(file, emit({ frame: ir }, jsonGrammar as DslGrammar, "dsl.test.ts"));
+  try {
+    const gen = (await import(pathToFileURL(file).href)) as {
+      frame: (custom: { frame: FrameRule<JsonOptions> }) => StreamRules<JsonOptions>;
+    };
+    const generated = { ...json, stream: gen.frame({ frame }) };
+    const reference = {
+      ...json,
+      stream: referenceRules<JsonOptions>(ir, jsonGrammar as DslGrammar, { frame }),
+    };
+    const run = (text: string, lang: Language<JsonOptions>, o: Partial<JsonOptions>) =>
+      formatTree(parseTree(jsonLanguage, text), lang, o);
+    const texts = [
+      "[]",
+      "{}",
+      "[ // x\n]",
+      "{/* d */}",
+      '{"a": [1, 2], "b": {"c": [3, // y\n4]}}',
+      `[${"1234567890, ".repeat(12)}1]`,
+    ];
+    for (const text of texts)
+      for (const o of [{}, { printWidth: 20 }]) {
+        runs = 0;
+        const out = run(text, generated, o);
+        expect(runs, text).toBeGreaterThan(0);
+        expect(out, text).toEqual(run(text, reference, o));
+      }
+  } finally {
+    rmSync(file);
+  }
 });

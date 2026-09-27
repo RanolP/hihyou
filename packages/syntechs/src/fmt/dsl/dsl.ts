@@ -67,6 +67,8 @@ export type Tree =
       readonly body: Tree;
       /** The frame's name for the kind's wrapping rule (see `Wrap.frames`). */
       readonly label: string;
+      /** The frame is laid out by this `FrameRule` (`grpParen(body).via(name)`) in place of the wrapping rule. */
+      readonly via?: string;
     }
   | {
       readonly t: "sepBy";
@@ -243,17 +245,33 @@ export const tok = <const S extends string>(text: S) => ({
   via: (name: string) => piece<{ tok: S }>({ t: "tok", text, via: name }),
 });
 
+/** A bracket idiom's output, whose `via(name)` hands the same frame to a hand-written layout. */
+export type Brackets<T, P> = Piece<{ brackets: T; pad: P }> & {
+  /**
+   * The frame laid out by the hand-written `FrameRule` `name` (see `runtime.ts`), given the node and callbacks that
+   * print its opening bracket, its body and its closing bracket; it runs whether or not the body is empty. For a
+   * layout owning the whole frame, such as ruff's `parenthesized` with the dangling comments after its opening
+   * bracket, while the brackets stay the spec's tokens. The body binds no source token by its spelling (no literal,
+   * no nested bracket idiom), and the frame takes no `pad`.
+   */
+  via(name: string): Piece<{ brackets: T; pad: P }>;
+};
+
 const brackets =
   (open: string, close: string) =>
-  <T, P = false>(body: T, o: { readonly pad?: P } = {}) => {
+  <T, P = false>(body: T, o: { readonly pad?: P } = {}): Brackets<T, P> => {
     const tree = toTree(body);
-    return piece<{ brackets: T; pad: P }>({
+    const frame: Tree = {
       t: "brackets",
       open,
       close,
       pad: plain(o.pad),
       body: tree,
       label: labelOf(tree),
+    };
+    // `toTree` drops the method, so the IR stays plain data.
+    return Object.assign(piece<{ brackets: T; pad: P }>(frame), {
+      via: (name: string) => piece<{ brackets: T; pad: P }>({ ...frame, via: name }),
     });
   };
 
@@ -361,7 +379,12 @@ function toTree(x: unknown): Tree {
   if (typeof x === "string") return { t: "tok", text: x };
   if (Array.isArray(x)) return { t: "seq", parts: x.map(toTree) };
   const tree = x as Tree;
-  return tree.t === "ref" ? refOf(tree) : tree;
+  if (tree.t === "ref") return refOf(tree);
+  if (tree.t === "brackets" && typeof tree.via === "function") {
+    const { via: _, ...frame } = tree;
+    return frame;
+  }
+  return tree;
 }
 
 /** `$` as a spec's rules receive it: every property is a `Ref`, which also serves as an `Option`. */

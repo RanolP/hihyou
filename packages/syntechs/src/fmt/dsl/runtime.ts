@@ -58,7 +58,7 @@ export type Entry =
    * Opens a frame, which an `end` closes: brackets (its first and last entries are the bracket tokens), a
    * separated list of `items`, or `lines`; `label` names it for the kind's wrapping rule (`Wrap.frames`).
    */
-  | { readonly e: "brackets"; readonly label: string }
+  | { readonly e: "brackets"; readonly label: string; readonly via?: string }
   | {
       readonly e: "list";
       readonly items: readonly number[];
@@ -115,6 +115,24 @@ export type TokenRule<O = unknown> = (
   token: number | undefined,
   node: number,
   ctx: StreamCtx<O>,
+) => void;
+
+/**
+ * What a `FrameRule` lays out: each callback prints its part as the spec has it, the brackets from the source or
+ * synthetic where it has none, and the body as its idioms print it (a list: items, separators and lines, then the
+ * node's dangling comments).
+ */
+export interface Frame {
+  open(): void;
+  body(): void;
+  close(): void;
+}
+
+/** A `grpParen(body).via(name)` rule: lays out the bracket frame of `node`, empty or not. */
+export type FrameRule<O = unknown> = (
+  node: number,
+  ctx: StreamCtx<O>,
+  frame: Frame,
 ) => void;
 
 /** A `custom` rule: the node's wrapping, laying out its `CustomSeq`. */

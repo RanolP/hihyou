@@ -33,12 +33,17 @@ function optionKeys(ir: FormatIR): string[] {
   return [...keys].sort();
 }
 
-/** The custom rules `ir` names, each as the rule type it takes: a node's (`CustomRule`) or a token's (`TokenRule`). */
-function customNames(ir: FormatIR): [string, "CustomRule" | "TokenRule"][] {
-  const names = new Map<string, "CustomRule" | "TokenRule">();
-  const add = (name: string, type: "CustomRule" | "TokenRule") => {
-    if ((names.get(name) ?? type) !== type)
-      throw new Error(`emit: custom rule ${name} names both a node's rule and a token's`);
+type RuleType = "CustomRule" | "TokenRule" | "FrameRule";
+
+/**
+ * The custom rules `ir` names, each as the rule type it takes: a node's (`CustomRule`), a token's (`TokenRule`) or
+ * a bracket frame's (`FrameRule`).
+ */
+function customNames(ir: FormatIR): [string, RuleType][] {
+  const names = new Map<string, RuleType>();
+  const add = (name: string, type: RuleType) => {
+    const had = names.get(name) ?? type;
+    if (had !== type) throw new Error(`emit: custom rule ${name} is both a ${had} and a ${type}`);
     names.set(name, type);
   };
   const walk = (x: Tree): void => {
@@ -47,11 +52,21 @@ function customNames(ir: FormatIR): [string, "CustomRule" | "TokenRule"][] {
     else if (x.t === "tok" && x.via !== undefined) add(x.via, "TokenRule");
     else if (x.t === "seq") x.parts.forEach(walk);
     else if (x.t === "opt") walk(x.then);
-    else if (x.t === "brackets") walk(x.body);
+    else if (x.t === "brackets") {
+      if (x.via !== undefined) add(x.via, "FrameRule");
+      walk(x.body);
+    }
   };
   Object.values(ir.structure).forEach(walk);
   return [...names].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
 }
+
+/** Whether `x` binds a source token by its spelling: a literal, or a bracket idiom's brackets. */
+const bindsToken = (x: Tree): boolean =>
+  x.t === "tok" ||
+  x.t === "brackets" ||
+  (x.t === "seq" && x.parts.some(bindsToken)) ||
+  (x.t === "opt" && bindsToken(x.then));
 
 const hasOpt = (x: Tree): boolean =>
   x.t === "opt" ||
@@ -280,6 +295,26 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
     line("}");
   };
 
+  /**
+   * A `.via` bracket frame: both brackets bound before the rule runs, which is where the reference binds them as
+   * long as the body binds no token by its spelling, so the rule's calls, in any order or none, never shift which
+   * source token a later literal binds to.
+   */
+  const frame = (x: Extract<Tree, { t: "brackets" }>, via: string) => {
+    if (x.pad !== false) throw new Error(`emit: the frame printed by ${via} takes no pad`);
+    if (bindsToken(x.body))
+      throw new Error(`emit: the body of the frame printed by ${via} binds a token by its spelling`);
+    const openTok = bound(x.open);
+    const closeTok = bound(x.close);
+    line(`custom[${str(via)}](node, ctx, {`);
+    depth++;
+    block("open: () =>", () => printBracket(openTok, x.open), "},");
+    block("body: () =>", () => walk(x.body), "},");
+    block("close: () =>", () => printBracket(closeTok, x.close), "},");
+    depth--;
+    line("});");
+  };
+
   const walk = (x: Tree): void => {
     switch (x.t) {
       case "tok": {
@@ -304,6 +339,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
         x.parts.forEach(walk);
         return;
       case "brackets": {
+        if (x.via !== undefined) return frame(x, x.via);
         if (x.body.t === "sepBy") return list(x.body, x);
         line(`open(GROUP, -1, ${frameWrap(rule, x.label).expand === "always" ? "BROKEN" : "0"});`);
         bracket(x.open);
@@ -411,8 +447,10 @@ export function emit(
     'import { newlineBetween, nextLineEmpty } from "../../fmt/text.js";',
     'import { firstLeaf } from "../../fmt/tree.js";',
   ];
-  // Only a spec with a `tok(text).via` imports TokenRule, so the other specs' output stays as it was.
+  // Only a spec with a `tok(text).via` imports TokenRule, and one with a frame's `.via` FrameRule, so the other
+  // specs' output stays as it was.
   let tokenRules = false;
+  let frameRules = false;
   for (const [spec, ir] of Object.entries(specs)) {
     const keys = optionKeys(ir);
     const customs = customNames(ir);
@@ -425,6 +463,7 @@ export function emit(
         ? ""
         : `custom: { ${customs.map(([c, type]) => `readonly ${str(c)}: ${type}<O>;`).join(" ")} }`;
     if (customs.some(([, type]) => type === "TokenRule")) tokenRules = true;
+    if (customs.some(([, type]) => type === "FrameRule")) frameRules = true;
     parts.push("", `export function ${spec}<O extends ${options}>(${param}): StreamRules<O> {`);
     const kinds = Object.keys(ir.structure);
     for (const kind of kinds) {
@@ -443,11 +482,12 @@ export function emit(
       "}",
     );
   }
-  if (tokenRules)
+  const extra = [...(tokenRules ? ["TokenRule"] : []), ...(frameRules ? ["FrameRule"] : [])];
+  if (extra.length > 0)
     parts.splice(
       parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
       0,
-      'import type { TokenRule } from "../../fmt/dsl/runtime.js";',
+      `import type { ${extra.join(", ")} } from "../../fmt/dsl/runtime.js";`,
     );
   return `${parts.join("\n")}\n`;
 }

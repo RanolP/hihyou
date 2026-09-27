@@ -48,6 +48,7 @@ import {
   commentEntry,
   type CustomRule,
   type CustomSeq,
+  type FrameRule,
   customEntries,
   type Entry,
   fieldChild,
@@ -195,7 +196,11 @@ export function flatten<O>(
             );
           };
           const pad = evalCond(x.pad, ctx.options);
-          out.push({ e: "brackets", label: x.label });
+          out.push(
+            x.via === undefined
+              ? { e: "brackets", label: x.label }
+              : { e: "brackets", label: x.label, via: x.via },
+          );
           bracket(x.open);
           if (pad) out.push({ e: "ifFlat", text: " " });
           walk(x.body);
@@ -273,7 +278,7 @@ export function wrap<O>(
   flat: Flattened,
   at: number,
   ctx: StreamCtx<O>,
-  custom: { readonly [name: string]: CustomRule<O> | TokenRule<O> },
+  custom: { readonly [name: string]: CustomRule<O> | TokenRule<O> | FrameRule<O> },
   grammar: DslGrammar,
 ): void {
   const seq = flat.entries;
@@ -577,7 +582,15 @@ export function wrap<O>(
           const pad = (seq[i + 2] as Entry).e === "ifFlat";
           const body = i + 2 + (pad ? 1 : 0);
           const bodyEnd = end - 1 - (pad ? 1 : 0);
-          if ((seq[body] as Entry).e === "list" && endOf(body) === bodyEnd - 1)
+          if (x.via !== undefined) {
+            const rule = custom[x.via] as FrameRule<O> | undefined;
+            if (!rule) throw new Error(`no custom rule ${x.via}`);
+            rule(node, inner, {
+              open: () => tok(openTok),
+              body: () => render(body, bodyEnd, w, node),
+              close: () => tok(closeTok),
+            });
+          } else if ((seq[body] as Entry).e === "list" && endOf(body) === bodyEnd - 1)
             list(body, bodyEnd - 1, openTok, closeTok, pad, fw, node);
           else {
             open(GROUP, -1, fw.expand === "always" ? BROKEN : 0);
@@ -623,7 +636,7 @@ export function wrap<O>(
 export function referenceRules<O>(
   ir: FormatIR,
   grammar: DslGrammar,
-  custom: { readonly [name: string]: CustomRule<O> | TokenRule<O> },
+  custom: { readonly [name: string]: CustomRule<O> | TokenRule<O> | FrameRule<O> },
 ): StreamRules<O> {
   const rules = new Map<string, StreamRule<O>>();
   const lists = new Set<StreamRule<O>>();
