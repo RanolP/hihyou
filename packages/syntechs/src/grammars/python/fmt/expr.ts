@@ -1080,7 +1080,7 @@ export function parameters(
         const mine = rest.filter((c) => separatorOwns(p, i, c));
         const own = mine.filter((c) => c.line === "own");
         const eol = mine.filter((c) => c.line !== "own");
-        out.push(f.leading(own), f.tok(item.tok), f.trailing(eol));
+        out.push(f.leading(own), dslPart(item.ts), f.trailing(eol));
       } else out.push(parameter(f, item));
       lastEnd = item.end;
     }

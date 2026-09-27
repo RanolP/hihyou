@@ -34,6 +34,8 @@ export const stmtDef = {
     "=",
     $.value.via("def.default"),
   ],
+  positional_separator: () => ["/"],
+  keyword_separator: () => ["*"],
   list_splat_pattern: ($) => ["*", $.children],
   dictionary_splat_pattern: ($) => ["**", $.children],
 } satisfies Structure;

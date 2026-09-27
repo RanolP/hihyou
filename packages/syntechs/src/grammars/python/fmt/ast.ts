@@ -242,6 +242,8 @@ export interface Parameters extends Base {
 }
 export interface Separator {
   readonly kind: "Separator";
+  /** The `positional_separator` or `keyword_separator` node. */
+  readonly ts: number;
   readonly tok: number;
   readonly start: number;
   readonly end: number;
@@ -2045,6 +2047,7 @@ class Reader {
       if (ck === "positional_separator" || ck === "keyword_separator")
         return {
           kind: "Separator",
+          ts: c,
           tok: this.kids(c)[0] ?? c,
           start: this.start(c),
           end: this.end(c),
