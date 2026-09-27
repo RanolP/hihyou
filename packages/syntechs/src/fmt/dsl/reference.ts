@@ -146,6 +146,8 @@ export function flatten<O>(
       return tokenChild(t, n, text, nth);
     };
     const owner = danglingOwner(tree);
+    const refChild = (name: string) =>
+      name === "children" ? (listItems(ctx, n, name, kindHasFields)[0] ?? -1) : fieldChild(t, n, name);
     const dangling = () => {
       const cs = ctx.danglingComments(n);
       return cs;
@@ -163,12 +165,12 @@ export function flatten<O>(
           return;
         }
         case "ref": {
-          const c = fieldChild(t, n, x.name);
+          const c = refChild(x.name);
           if (c !== -1) child(c, x.via);
           return;
         }
         case "opt":
-          if (fieldChild(t, n, x.ref.name) !== -1) walk(x.then);
+          if (refChild(x.ref.name) !== -1) walk(x.then);
           return;
         case "space":
           out.push({ e: "space" });

@@ -101,6 +101,11 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
     line(`else sToken(${c}, t.text(${c}));`);
   };
   const bracket = (text: string) => printBracket(bound(text), text);
+  /** The child a ref names, -1 when absent: a field's, or the first of the children in no field. */
+  const refChild = (name: string) =>
+    name === "children"
+      ? `(listItems(ctx, node, "children", ${hasFields})[0] ?? -1)`
+      : `fieldChild(t, node, ${str(name)})`;
   /** Child `c` with the comments attached to it, as the reference's leading, child and trailing entries. */
   const child = (c: string, via?: string) => {
     line(`printLeadingComments(ctx, ${c});`);
@@ -124,10 +129,10 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
       case "lines":
         return `(listItems(ctx, node, ${str(x.list.name)}, ${hasFields}).length === 0${x === owner ? " && ctx.danglingComments(node).length === 0" : ""})`;
       case "ref":
-        return `fieldChild(t, node, ${str(x.name)}) === -1`;
+        return `${refChild(x.name)} === -1`;
       case "opt": {
         const then = emptyExpr(x.then);
-        const absent = `fieldChild(t, node, ${str(x.ref.name)}) === -1`;
+        const absent = `${refChild(x.ref.name)} === -1`;
         return then === "false" ? absent : `(${absent} || ${then})`;
       }
       case "seq": {
@@ -275,12 +280,12 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
       }
       case "ref": {
         const c = name("c");
-        line(`const ${c} = fieldChild(t, node, ${str(x.name)});`);
+        line(`const ${c} = ${refChild(x.name)};`);
         block(`if (${c} !== -1)`, () => child(c, x.via));
         return;
       }
       case "opt":
-        block(`if (fieldChild(t, node, ${str(x.ref.name)}) !== -1)`, () => walk(x.then));
+        block(`if (${refChild(x.ref.name)} !== -1)`, () => walk(x.then));
         return;
       case "space":
         line('sText(" ");');
