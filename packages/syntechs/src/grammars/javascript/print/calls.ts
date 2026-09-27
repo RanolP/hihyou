@@ -59,6 +59,18 @@ import {
   unparen,
 } from "./util.js";
 import type { CustomRule } from "../../../fmt/dsl/runtime.js";
+import {
+  close,
+  GROUP,
+  INDENT,
+  type JsStreamCtx,
+  jsCtx,
+  open,
+  SOFT,
+  sLine,
+  sLineSuffixBoundary,
+  sToken,
+} from "../sink.js";
 import type { JsOptions } from "./util.js";
 
 // Prettier labels a member chain's doc so that an assignment and a member lookup can see it; here the label is
@@ -713,10 +725,53 @@ function isNewCallee(x: HasTree, n: number): boolean {
   }
 }
 
-const member: JsRule = (n, ctx) => {
+/** `c` as the source token it is, into the sink; nothing when absent. */
+const sTok = (ctx: JsCtx, c: number | undefined) => {
+  if (c !== undefined) sToken(c, src(ctx, c));
+};
+
+/** printMemberLookup into the sink. */
+function sMemberLookup(sctx: JsStreamCtx, n: number): void {
+  const ctx = sctx.js;
+  const optional = childWhere(ctx, n, (c) => isOptionalChainToken(ctx, c));
+  if (kind(ctx, n) === "member_expression") {
+    sTok(ctx, optional);
+    sTok(
+      ctx,
+      childWhere(ctx, n, (c) => kind(ctx, c) === "."),
+    );
+    const property = field(ctx, n, "property");
+    if (property !== undefined) sctx.print(property);
+    return;
+  }
+  const index = field(ctx, n, "index");
+  const openBracket = childWhere(ctx, n, (c) => kind(ctx, c) === "[");
+  const closeBracket = lastChildWhere(ctx, n, (c) => kind(ctx, c) === "]");
+  if (index === undefined || kind(ctx, unparen(ctx, index)) === "number") {
+    sTok(ctx, optional);
+    sTok(ctx, openBracket);
+    if (index !== undefined) sctx.print(index);
+    sTok(ctx, closeBracket);
+    return;
+  }
+  open(GROUP);
+  sTok(ctx, optional);
+  sTok(ctx, openBracket);
+  open(INDENT);
+  sLine(SOFT);
+  sctx.print(index);
+  close();
+  sLine(SOFT);
+  sTok(ctx, closeBracket);
+  close();
+}
+
+/** Prettier's printMemberExpression, for `a.b` and `a[b]`. */
+const memberCustom: CustomRule<JsOptions> = (n, s) => {
+  const sctx = jsCtx(s);
+  const ctx = sctx.js;
   const object = objectOf(ctx, n);
-  const objectDoc = p(ctx, object);
-  const lookup = printMemberLookup(ctx, n);
+  if (object !== undefined) sctx.print(object);
   let firstNonMember = role(ctx, n);
   while (
     firstNonMember.parent !== undefined &&
@@ -746,11 +801,15 @@ const member: JsRule = (n, ctx) => {
         printsAsMemberChain(ctx, inner)));
   if (inner !== undefined && memberChains.get(ctx)?.has(inner))
     markMemberChain(ctx, n);
-  return [
-    objectDoc,
-    lineSuffixBoundary,
-    shouldInline ? lookup : group(indent([softline, lookup])),
-  ];
+  sLineSuffixBoundary();
+  if (shouldInline) sMemberLookup(sctx, n);  else {
+    open(GROUP);
+    open(INDENT);
+    sLine(SOFT);
+    sMemberLookup(sctx, n);
+    close();
+    close();
+  }
 };
 
 // --- member chains ------------------------------------------------------------------------------------------
@@ -1146,11 +1205,11 @@ const call: JsRule = (n, ctx) => {
 };
 
 /** The customs format/calls.ts names, by the names its spec gives them. */
-export const callCustoms = {} satisfies Record<string, CustomRule<JsOptions>>;
+export const callCustoms = {
+  member: memberCustom,
+} satisfies Record<string, CustomRule<JsOptions>>;
 
 export const callRules: Record<string, JsRule> = {
   call_expression: call,
   new_expression: call,
-  member_expression: member,
-  subscript_expression: member,
 };
