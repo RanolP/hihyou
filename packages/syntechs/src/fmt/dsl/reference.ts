@@ -61,7 +61,7 @@ export type Entry =
   | { readonly e: "end" }
   /** After each item but the last: its separator token (-1: none in the source). */
   | { readonly e: "sep"; readonly tok: number }
-  /** After an item's separator: the source keeps a blank line there. */
+  /** After an item's separator, or an item of `lines`: the source keeps a blank line there. */
   | { readonly e: "blank" }
   /** Only while the enclosing frame stays flat: a space, inserted beside a padded bracket. */
   | { readonly e: "ifFlat"; readonly text: string }
@@ -162,8 +162,26 @@ export function flatten<O>(
         items.forEach((item, i) => {
           if (i > 0) out.push({ e: "hardline" });
           child(item);
+          if (i < items.length - 1 && nextLineEmpty(t, item)) out.push({ e: "blank" });
         });
-        for (const c of ctx.danglingComments(node)) out.push(comment(c, "dangling"));
+        ctx.danglingComments(node).forEach((c, i) => {
+          if (i > 0) out.push({ e: "hardline" });
+          out.push(comment(c, "dangling"));
+        });
+        return;
+      }
+      case "inOrder": {
+        const items = new Set(ctx.items(node));
+        let first = true;
+        for (let i = 0, count = t.count(node); i < count; i++) {
+          const c = t.child(node, i);
+          const named = t.named(c);
+          if (named && !items.has(c)) continue;
+          if (!first && x.space) out.push({ e: "space" });
+          first = false;
+          if (named) child(c);
+          else out.push({ e: "tok", node: c, text: t.text(c), synthetic: false });
+        }
         return;
       }
       case "verbatim":
@@ -360,6 +378,10 @@ export function wrap<O>(
         case "hardline":
           sHardline();
           break;
+        case "blank":
+          // Only `lines` leave a blank entry outside a list frame.
+          if (w.blankLines !== undefined) sHardline();
+          break;
         case "child":
         case "comment":
           childOrComment(x);
@@ -380,12 +402,15 @@ export function wrap<O>(
           if ((seq[body] as Entry).e === "list" && endOf(body) === bodyEnd - 1)
             list(body, bodyEnd - 1, openTok, closeTok, pad);
           else {
-            open(GROUP);
+            open(GROUP, -1, w.expand === "always" ? BROKEN : 0);
             tok(openTok);
-            open(INDENT);
-            sLine(pad ? 0 : SOFT);
-            render(body, bodyEnd);
-            close();
+            // An empty body leaves only the line before the closing bracket: `{}` flat, `{` and `}` on two lines broken.
+            if (body < bodyEnd) {
+              open(INDENT);
+              sLine(pad ? 0 : SOFT);
+              render(body, bodyEnd);
+              close();
+            }
             sLine(pad ? 0 : SOFT);
             tok(closeTok);
             close();

@@ -107,6 +107,35 @@ function emitRule(tree: Tree, w: Wrap, hasFields: boolean): string[] {
     return v;
   };
 
+  /** An expression true when `x` flattens to no entries at all, as the reference's empty bracket body; "false" when it never does. */
+  const emptyExpr = (x: Tree): string => {
+    switch (x.t) {
+      case "sepBy":
+      case "lines":
+        return `(listItems(ctx, node, ${str(x.list.name)}, ${hasFields}).length === 0 && ctx.danglingComments(node).length === 0)`;
+      case "ref":
+        return `fieldChild(t, node, ${str(x.name)}) === -1`;
+      case "opt": {
+        const then = emptyExpr(x.then);
+        const absent = `fieldChild(t, node, ${str(x.ref.name)}) === -1`;
+        return then === "false" ? absent : `(${absent} || ${then})`;
+      }
+      case "seq": {
+        const parts = x.parts.map(emptyExpr);
+        if (parts.includes("false")) return "false";
+        return parts.length === 0 ? "true" : `(${parts.join(" && ")})`;
+      }
+      case "tok":
+      case "space":
+      case "brackets":
+      case "verbatim":
+      case "custom":
+        return "false";
+      case "inOrder":
+        throw new Error(`emit: a bracket idiom around \`${x.t}\` whose emptiness is not generated yet`);
+    }
+  };
+
   const list = (x: Extract<Tree, { t: "sepBy" }>, b: Extract<Tree, { t: "brackets" }>) => {
     const always = w.expand === "always";
     // Bound in the order the reference flattens them: the list between holds no literal.
@@ -241,18 +270,24 @@ function emitRule(tree: Tree, w: Wrap, hasFields: boolean): string[] {
       case "seq":
         x.parts.forEach(walk);
         return;
-      case "brackets":
+      case "brackets": {
         if (x.body.t === "sepBy") return list(x.body, x);
-        line("open(GROUP);");
+        line(`open(GROUP, -1, ${w.expand === "always" ? "BROKEN" : "0"});`);
         bracket(x.open);
-        line("open(INDENT);");
-        line(`sLine(${x.pad === false ? "SOFT" : `${cond(x.pad)} ? 0 : SOFT`});`);
-        walk(x.body);
-        line("close();");
+        const body = () => {
+          line("open(INDENT);");
+          line(`sLine(${x.pad === false ? "SOFT" : `${cond(x.pad)} ? 0 : SOFT`});`);
+          walk(x.body);
+          line("close();");
+        };
+        const empty = emptyExpr(x.body);
+        if (empty === "false") body();
+        else block(`if (!(${empty}))`, body);
         line(`sLine(${x.pad === false ? "SOFT" : `${cond(x.pad)} ? 0 : SOFT`});`);
         bracket(x.close);
         line("close();");
         return;
+      }
       case "sepBy": {
         const its = items(x);
         line(`const seps = separators(t, node, ${its}, ${str(x.sep)});`);
@@ -276,8 +311,30 @@ function emitRule(tree: Tree, w: Wrap, hasFields: boolean): string[] {
           line("if (i > 0) sHardline();");
           line(`const item = ${its}[i] as number;`);
           child("item");
+          if (w.blankLines !== undefined)
+            line(`if (i < ${its}.length - 1 && nextLineEmpty(t, item)) sHardline();`);
         });
-        line("for (const c of ctx.danglingComments(node)) ctx.comment(c);");
+        block("for (const [i, c] of ctx.danglingComments(node).entries())", () => {
+          line("if (i > 0) sHardline();");
+          line("ctx.comment(c);");
+        });
+        return;
+      }
+      case "inOrder": {
+        const its = name("items");
+        const first = name("first");
+        line(`const ${its} = new Set(ctx.items(node));`);
+        if (x.space) line(`let ${first} = true;`);
+        block("for (let i = 0, count = t.count(node); i < count; i++)", () => {
+          line("const c = t.child(node, i);");
+          line("const named = t.named(c);");
+          line(`if (named && !${its}.has(c)) continue;`);
+          if (x.space) {
+            line(`if (!${first}) sText(" ");`);
+            line(`${first} = false;`);
+          }
+          block("if (named)", () => child("c"), "} else sToken(c, t.text(c));");
+        });
         return;
       }
       case "verbatim":

@@ -3,6 +3,8 @@
 // and runs it after the bundles exist, since a spec reads its bundle's grammar.
 import { writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import * as cssFormat from "../../grammars/css/format.js";
+import { grammar as cssGrammar } from "../../grammars/css/index.js";
 import * as jsonFormat from "../../grammars/json/format.js";
 import { grammar as jsonGrammar } from "../../grammars/json/index.js";
 import type { DslGrammar, FormatIR } from "./dsl.js";
@@ -12,6 +14,7 @@ import { emit } from "./emit.js";
 const pkg = resolve(import.meta.dirname, "../..");
 
 const FORMATS: Record<string, { specs: Record<string, FormatIR>; grammar: DslGrammar }> = {
+  css: { specs: cssFormat, grammar: cssGrammar as DslGrammar },
   json: { specs: jsonFormat, grammar: jsonGrammar as DslGrammar },
 };
 

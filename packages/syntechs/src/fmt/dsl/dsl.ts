@@ -65,6 +65,7 @@ export type Tree =
       readonly trailing: Cond;
     }
   | { readonly t: "lines"; readonly list: Ref }
+  | { readonly t: "inOrder"; readonly space: boolean }
   | { readonly t: "verbatim" }
   | { readonly t: "custom"; readonly name: string };
 
@@ -79,9 +80,15 @@ export interface Wrap {
   readonly itemsAsGroups?: boolean;
   /** Keep the list broken when the source broke after its opening bracket (prettier's `objectWrap: "preserve"`). */
   readonly keepExpanded?: Cond;
-  /** "always" breaks every non-empty list, one item per line (prettier's json-stringify). */
+  /**
+   * "always" breaks every non-empty list, one item per line (prettier's json-stringify), and every bracket idiom
+   * around anything but a list (CSS's blocks).
+   */
   readonly expand?: "fit" | "always";
-  /** A kept blank line between items forces the list to break, or shows only when it breaks anyway (default). */
+  /**
+   * A kept blank line between items forces the list to break, or shows only when it breaks anyway (default).
+   * Between `lines`, which always break, either value keeps it, and leaving it unset drops it.
+   */
   readonly blankLines?: "force" | "ifBroken";
 }
 
@@ -137,6 +144,7 @@ export type TokenTree<G extends Grammar, O> =
   | Node
   | Piece<"space">
   | Piece<"lines">
+  | Piece<"inOrder">
   | Piece<{ opt: TokenTree<G, O> }>
   | Piece<{ brackets: TokenTree<G, O>; pad: CondOf<O> }>
   | Piece<{ sepBy: TokenOf<G>; trailing: CondOf<O> }>
@@ -205,9 +213,17 @@ export const sepBy = <const S extends string, T = false>(
     trailing: plain(o.trailing),
   });
 
-/** The items of `list` one per line, then the node's dangling comments. */
+/** The items of `list` one per line, then the node's dangling comments, one per line. */
 export const lines = (list: List): Piece<"lines"> =>
   piece({ t: "lines", list: refOf(list) });
+
+/**
+ * Every child of the node in source order, side by side, or a space apart with `space`: named children as their
+ * rules print them, with their comments, and tokens as written. For a kind no field splits into parts (CSS's),
+ * where only the order says what each child is.
+ */
+export const inOrder = (sep?: Piece<"space">): Piece<"inOrder"> =>
+  piece({ t: "inOrder", space: sep !== undefined });
 
 /** Option `key`, true when truthy; `.is(v)` and `.isNot(v)` compare it. */
 export const option = <const K extends string>(key: K) => ({

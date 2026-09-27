@@ -1,0 +1,78 @@
+// CSS's layout in the formatter DSL (src/fmt/dsl/dsl.ts); `pnpm generate` compiles it into fmt.gen.ts. No kind of
+// tree-sitter-css has fields, so a kind is laid out by its children in order (`inOrder`), a list of them, or, where
+// prettier's postcss printer decides by more than the structure, a `custom` rule of fmt.ts.
+import {
+  custom,
+  defineFormat,
+  grpBrace,
+  inOrder,
+  lines,
+  space,
+} from "../../fmt/dsl/dsl.js";
+import type { grammar } from "./bundle.js";
+import type { CssOptions } from "./fmt.js";
+
+const format = defineFormat<typeof grammar, CssOptions>();
+
+const spaced = () => inOrder(space);
+const adjacent = () => inOrder();
+/** Statements one per line, keeping one blank line where the source has any. */
+const statements = { blankLines: "force" } as const;
+
+/** CSS as prettier 3.9.9's postcss printer lays it out. */
+export const css = format({
+  structure: {
+    stylesheet: ($) => lines($.children),
+    block: ($) => grpBrace(lines($.children)),
+    keyframe_block_list: ($) => grpBrace(lines($.children)),
+    rule_set: spaced,
+    selectors: () => custom("selectors"),
+    keyframe_block: () => custom("keyframeBlock"),
+    from: () => custom("lower"),
+    to: () => custom("lower"),
+
+    declaration: () => custom("declaration"),
+    property_name: () => custom("maybeLower"),
+    integer_value: () => custom("dimension"),
+    float_value: () => custom("dimension"),
+    color_value: () => custom("lower"),
+    string_value: () => custom("string"),
+    plain_value: () => custom("plainValue"),
+    call_expression: adjacent,
+    arguments: () => custom("arguments"),
+    binary_expression: () => custom("binaryExpression"),
+    parenthesized_value: adjacent,
+
+    class_selector: adjacent,
+    id_selector: adjacent,
+    pseudo_element_selector: adjacent,
+    pseudo_class_selector: adjacent,
+    namespace_selector: adjacent,
+    attribute_selector: adjacent,
+    child_selector: () => custom("combinator"),
+    descendant_selector: () => custom("combinator"),
+    sibling_selector: () => custom("combinator"),
+    adjacent_sibling_selector: () => custom("combinator"),
+    class_name: () => custom("className"),
+    tag_name: () => custom("tagName"),
+
+    at_keyword: () => custom("atKeyword"),
+    media_statement: () => custom("media"),
+    supports_statement: spaced,
+    import_statement: () => custom("import"),
+    namespace_statement: () => custom("namespace"),
+    charset_statement: () => custom("charset"),
+    keyframes_statement: spaced,
+    at_rule: () => custom("atRule"),
+    binary_query: spaced,
+    unary_query: spaced,
+    parenthesized_query: adjacent,
+    feature_query: () => custom("featureQuery"),
+    feature_name: () => custom("maybeLower"),
+  },
+  wrapping: {
+    stylesheet: statements,
+    block: { ...statements, expand: "always" },
+    keyframe_block_list: { ...statements, expand: "always" },
+  },
+});
