@@ -476,7 +476,24 @@ interface NodeType {
   type: string;
   named: boolean;
   subtypes?: unknown;
-  fields?: Record<string, unknown>;
+  fields?: Record<string, NodeTypeSlot>;
+  children?: NodeTypeSlot;
+}
+
+interface NodeTypeSlot {
+  multiple: boolean;
+  required: boolean;
+  types: { type: string; named: boolean }[];
+}
+
+/**
+ * What node-types.json says fills one field, or the children in no field: whether one is always there, whether
+ * there can be several, and the kinds (or anonymous tokens) it can hold.
+ */
+export interface Slot {
+  required: boolean;
+  multiple: boolean;
+  types: string[];
 }
 
 /**
@@ -525,6 +542,29 @@ function structure(source: GrammarSource) {
       .filter(([, fs]) => fs.length > 0)
       .sort(([a], [b]) => (a < b ? -1 : 1)),
   );
+  const slot = (s: NodeTypeSlot): Slot => ({
+    required: s.required,
+    multiple: s.multiple,
+    types: sorted(s.types.map((t) => t.type)),
+  });
+  const kindTypes = nodeTypes
+    .filter((t) => t.named && !t.subtypes)
+    .sort((a, b) => (a.type < b.type ? -1 : 1));
+  const fieldTypes = Object.fromEntries(
+    kindTypes
+      .filter((t) => Object.keys(t.fields ?? {}).length > 0)
+      .map((t) => [
+        t.type,
+        Object.fromEntries(
+          Object.entries(t.fields ?? {})
+            .sort(([a], [b]) => (a < b ? -1 : 1))
+            .map(([f, s]) => [f, slot(s)]),
+        ),
+      ]),
+  );
+  const childTypes = Object.fromEntries(
+    kindTypes.flatMap((t) => (t.children ? [[t.type, slot(t.children)]] : [])),
+  );
   const lists: Record<string, ListShape[]> = {};
   for (const [rule, body] of Object.entries(g.rules)) {
     const found: ListShape[] = [];
@@ -540,6 +580,8 @@ function structure(source: GrammarSource) {
     ),
     tokens: sorted(nodeTypes.filter((t) => !t.named).map((t) => t.type)),
     fields,
+    fieldTypes,
+    childTypes,
     comments,
     extras,
     word: g.word ?? null,

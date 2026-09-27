@@ -21,3 +21,22 @@ test("a bundle's lists carry the separator, the brackets and the trailing separa
     { element: ["statement"], open: "{", close: "}" },
   ]);
 });
+
+// The formatter DSL types `$.field` from these: a lost `required` makes a required field an Option, and a lost
+// `multiple` makes a list a single node.
+test("a bundle's fields and children carry whether they are required and repeated, and what they hold", () => {
+  expect(json.fieldTypes.pair.key).toEqual({
+    required: true,
+    multiple: false,
+    types: ["string"],
+  });
+  expect(json.childTypes.object).toEqual({
+    required: false,
+    multiple: true,
+    types: ["pair"],
+  });
+  expect(typescript.fieldTypes.if_statement.alternative).toMatchObject({
+    required: false,
+    multiple: false,
+  });
+});
