@@ -169,7 +169,7 @@ export function format<O>(
 const NO_COMMENTS = { leading: [], trailing: [], dangling: [] } as const;
 
 /** The nodes with an `ERROR` or missing child, or undefined when the tree has none. */
-function brokenNodes(tree: Tree): Set<number> | undefined {
+export function brokenNodes(tree: Tree): Set<number> | undefined {
   let broken: Set<number> | undefined;
   for (let o = 0; o < tree.nodeCount; o++) {
     const n = tree.at(o);
@@ -182,7 +182,7 @@ function brokenNodes(tree: Tree): Set<number> | undefined {
 }
 
 // Prettier's guessEndOfLine (common/end-of-line.js); ruff's `auto` also takes the first line ending.
-function endOfLine(eol: EndOfLine, tree: Tree): string {
+export function endOfLine(eol: EndOfLine, tree: Tree): string {
   if (eol === "auto") return tree.lineEnding();
   return { lf: "\n", crlf: "\r\n", cr: "\r" }[eol];
 }
@@ -213,7 +213,7 @@ function anchorsOf(
  * inside tokens too (a block comment's), as prettier does by normalizing its input. Offsets must be asked in
  * ascending order: anchors run in output order, so one pass over the breaks moves them all.
  */
-function shiftForEndOfLine(text: string, eol: string) {
+export function shiftForEndOfLine(text: string, eol: string) {
   const breaks = [...text.matchAll(/\r\n?|\n/g)].filter((m) => m[0] !== eol);
   let next = 0;
   let shift = 0;

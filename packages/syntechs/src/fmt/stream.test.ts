@@ -1,0 +1,174 @@
+import { describe, expect, it } from "vitest";
+import {
+  type Doc,
+  fill,
+  group,
+  hardline,
+  line,
+  lineSuffix,
+  text,
+} from "./doc.js";
+import { print } from "./printer.js";
+import {
+  close,
+  FILL,
+  FILL_ITEM,
+  GROUP,
+  LINE_SUFFIX,
+  open,
+  printStream,
+  resetStream,
+  sHardline,
+  sLine,
+  sText,
+} from "./stream.js";
+
+const layout = (lineWidth: number) => ({
+  lineWidth,
+  indentWidth: 2,
+  useTabs: false,
+});
+
+/** Prints the stream `build` appends and the equivalent `doc`, which must agree. */
+function both(lineWidth: number, doc: Doc, build: () => void) {
+  resetStream();
+  build();
+  const stream = printStream(layout(lineWidth)).text;
+  expect(stream).toBe(print(doc, layout(lineWidth)).text);
+  return stream;
+}
+
+describe("printStream matches printer.ts", () => {
+  it("counts a run of flat lines as one space when measuring, as prettier's fits does", () => {
+    const out = both(3, group([text("a"), line, line, text("b")]), () => {
+      open(GROUP);
+      sText("a");
+      sLine(0);
+      sLine(0);
+      sText("b");
+      close();
+    });
+    expect(out).toBe("a  b");
+  });
+
+  it("counts the leading space of a group opened in the middle of a run of lines", () => {
+    const out = both(
+      1,
+      [text("a"), line, group([line, text("b")])],
+      () => {
+        sText("a");
+        sLine(0);
+        open(GROUP);
+        sLine(0);
+        sText("b");
+        close();
+      },
+    );
+    expect(out).toBe("a\n\nb");
+  });
+
+  it("measures the fill parts after the next separator in the fill's own mode, not the separator's", () => {
+    const out = both(
+      10,
+      fill([
+        [text("x"), hardline, group([text("a"), line, text("b")])],
+        line,
+        text("c"),
+        line,
+        text("dddddddddddd"),
+      ]),
+      () => {
+        open(FILL);
+        open(FILL_ITEM);
+        sText("x");
+        sHardline();
+        open(GROUP);
+        sText("a");
+        sLine(0);
+        sText("b");
+        close();
+        close();
+        sLine(0);
+        open(FILL_ITEM);
+        sText("c");
+        close();
+        sLine(0);
+        open(FILL_ITEM);
+        sText("dddddddddddd");
+        close();
+        close();
+      },
+    );
+    expect(out).toBe("x\na b c\ndddddddddddd");
+  });
+
+  it("measures a group inside a flushed line suffix against the queued suffixes, not the text already printed", () => {
+    const out = both(
+      12,
+      [
+        text("a"),
+        lineSuffix([text(" //"), group([text("b"), line, text("c")])]),
+        lineSuffix(text(" 12345")),
+        text("zz"),
+        hardline,
+      ],
+      () => {
+        sText("a");
+        open(LINE_SUFFIX);
+        sText(" //");
+        open(GROUP);
+        sText("b");
+        sLine(0);
+        sText("c");
+        close();
+        close();
+        open(LINE_SUFFIX);
+        sText(" 12345");
+        close();
+        sText("zz");
+        sHardline();
+      },
+    );
+    expect(out).toBe("azz //b\nc 12345\n");
+  });
+
+  it("prints a trailing fill separator in its item's mode, not the previous separator's", () => {
+    const out = both(5, fill([text("aaaa"), line, text("b"), line]), () => {
+      open(FILL);
+      open(FILL_ITEM);
+      sText("aaaa");
+      close();
+      sLine(0);
+      open(FILL_ITEM);
+      sText("b");
+      close();
+      sLine(0);
+      close();
+    });
+    expect(out).toBe("aaaa\nb ");
+  });
+
+  it("prints a line suffix queued inside a line suffix before the line break", () => {
+    const out = both(
+      80,
+      [
+        text("a"),
+        lineSuffix([text(" x"), lineSuffix(text(" y"))]),
+        hardline,
+        text("b"),
+      ],
+      () => {
+        sText("a");
+        open(LINE_SUFFIX);
+        sText(" x");
+        open(LINE_SUFFIX);
+        sText(" y");
+        close();
+        close();
+        sHardline();
+        sText("b");
+      },
+    );
+    expect(out).toBe("a x y\nb");
+  });
+});
