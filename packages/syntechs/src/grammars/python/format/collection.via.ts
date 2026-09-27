@@ -1,5 +1,5 @@
 // The customs collection.ts's `.via`s name: what ruff puts between a collection's brackets.
-import { fieldChild } from "../../../fmt/dsl/runtime.js";
+import { type Frame, fieldChild } from "../../../fmt/dsl/runtime.js";
 import type { StreamCtx } from "../../../fmt/stream-format.js";
 import {
   type Comp,
@@ -9,7 +9,7 @@ import {
   outer,
   type Sequence,
 } from "../fmt/ast.js";
-import { commaIn, space, softOrSpace } from "../fmt/builders.js";
+import { commaIn, PAREN, space, softOrSpace } from "../fmt/builders.js";
 import { type Format, group } from "../fmt/elements.js";
 import {
   type ComprehensionComments,
@@ -20,18 +20,31 @@ import {
   itemStart,
   sequenceContent,
 } from "../fmt/expr.js";
-import { dslPart, part, ruffOf } from "../fmt/sink.js";
+import { dslPart, frameParts, part, ruffOf } from "../fmt/sink.js";
 
 /** The expression a dict's item `c` starts with: a pair's key, else the `**` splat. */
 const itemExpr = (c: number, ctx: StreamCtx<unknown>) =>
   ruffOf(ctx.tree.kindName(c) === "pair" ? fieldChild(ctx.tree, c, "key") : c);
 
 export const collectionVia = {
+  // Ruff's frame of a list, set, tuple or dict: its dangling comments after the opening bracket, or all of them
+  // between the brackets of an empty one.
+  "collection.brackets": (node: number, _: StreamCtx<unknown>, frame: Frame) => {
+    const { f, e } = ruffOf(node);
+    const { open, body, close } = frameParts(frame);
+    const dangling = f.comments.dangling(e);
+    const first = e.kind === "Dict" ? e.items[0] : (e as Sequence).elts[0];
+    if (first === undefined)
+      part(f.at(PAREN, () => f.emptyParenthesized(open, dangling, close)));
+    else if (e.kind === "Dict") {
+      const firstStart = itemStart(first as Dict["items"][number]);
+      part(f.parenthesized(open, body, close, dangling.filter((c) => c.end < firstStart)));
+    } else part(f.parenthesized(open, body, close, dangling));
+  },
   // Given the first item, prints them all: the layout is the list's or set's.
   "collection.sequence": (c: number) => {
     const { f, e: first } = ruffOf(c);
-    const e = first.parent as Sequence;
-    part(f.parenthesizedContent(() => sequenceContent(f, e), f.comments.dangling(e)));
+    part(sequenceContent(f, first.parent as Sequence));
   },
   "collection.tuple": (c: number) => {
     const { f, e: first } = ruffOf(c);
@@ -39,22 +52,15 @@ export const collectionVia = {
     const comma = commaIn(f.tree, e.ts, e.ts);
     const [single] = e.elts;
     part(
-      f.parenthesizedContent(
-        () =>
-          e.elts.length === 1 && single
-            ? [formatExpr(f, single), comma(single.end)]
-            : sequenceContent(f, e),
-        f.comments.dangling(e),
-      ),
+      e.elts.length === 1 && single
+        ? [formatExpr(f, single), comma(single.end)]
+        : sequenceContent(f, e),
     );
   },
   "collection.dict": (c: number, ctx: StreamCtx<unknown>) => {
     const { f, e: first } = itemExpr(c, ctx);
     const e = first.parent as Dict;
-    const dangling = f.comments.dangling(e);
-    const firstStart = itemStart(e.items[0] as Dict["items"][number]);
-    const openComments = dangling.filter((c) => c.end < firstStart);
-    const content = () =>
+    part(
       f.joinCommaSeparated(
         e.items.map((item) => {
           const end = item.value.end;
@@ -74,8 +80,8 @@ export const collectionVia = {
         }),
         e.end,
         commaIn(f.tree, e.ts, e.ts),
-      );
-    part(f.parenthesizedContent(content, openComments));
+      ),
+    );
   },
   "collection.pairKey": (c: number) => {
     const { f, e } = ruffOf(c);

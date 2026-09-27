@@ -789,7 +789,7 @@ function writeFields(f: Fmt, e: Expr, o: Opts): void {
       sink.part(list(f, e));
       return;
     case "Dict":
-      sink.part(dict(f, e));
+      sink.sDsl(e.ts);
       return;
     case "ListComp":
     case "SetComp":
@@ -1157,15 +1157,15 @@ function tuple(f: Fmt, e: Sequence, mode: TupleMode): Format {
   const open = e.open !== undefined ? f.tok(e.open) : synthetic(e.ts, "(");
   const close = e.close !== undefined ? f.tok(e.close) : synthetic(e.ts, ")");
   const comma = commaIn(f.tree, e.ts, e.ts);
+  const spec =
+    parenthesized &&
+    f.tree.kindName(e.ts) === "tuple" &&
+    (e.elts.length <= 1 || !(mode === "neverPreserve" && dangling.length === 0));
+  if (spec) return dslPart(e.ts);
   if (e.elts.length === 0)
     return f.at(PAREN, () => f.emptyParenthesized(open, dangling, close));
   const sequence = () =>
     f.joinCommaSeparated(sequenceEntries(f, e), e.end, comma);
-  const spec =
-    parenthesized &&
-    f.tree.kindName(e.ts) === "tuple" &&
-    (e.elts.length === 1 || !(mode === "neverPreserve" && dangling.length === 0));
-  if (spec) return dslPart(e.ts);
   if (e.elts.length === 1) {
     const single = e.elts[0] as Expr;
     if (mode === "preserve" && !parenthesized) {
@@ -1207,12 +1207,12 @@ function tuple(f: Fmt, e: Sequence, mode: TupleMode): Format {
 }
 
 function list(f: Fmt, e: Sequence): Format {
+  if (f.tree.kindName(e.ts) !== "list_pattern") return dslPart(e.ts);
   const dangling = f.comments.dangling(e);
   const open = f.tok(e.open as number);
   const close = f.tok(e.close as number);
   if (e.elts.length === 0)
     return f.at(PAREN, () => f.emptyParenthesized(open, dangling, close));
-  if (f.tree.kindName(e.ts) !== "list_pattern") return dslPart(e.ts);
   return f.parenthesized(
     open,
     () => sequenceContent(f, e),
@@ -1228,15 +1228,6 @@ export function sequenceContent(f: Fmt, e: Sequence): Format {
     e.end,
     commaIn(f.tree, e.ts, e.ts),
   );
-}
-
-function dict(f: Fmt, e: Dict): Format {
-  const dangling = f.comments.dangling(e);
-  const open = f.tok(e.open);
-  const close = f.tok(e.close);
-  if (e.items.length === 0)
-    return f.at(PAREN, () => f.emptyParenthesized(open, dangling, close));
-  return dslPart(e.ts);
 }
 
 export function itemStart(i: Dict["items"][number]): number {
