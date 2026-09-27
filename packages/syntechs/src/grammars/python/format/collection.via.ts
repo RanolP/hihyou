@@ -9,18 +9,29 @@ import {
   outer,
   type Sequence,
 } from "../fmt/ast.js";
-import { commaIn, PAREN, space, softOrSpace } from "../fmt/builders.js";
+import { commaIn, PAREN, space } from "../fmt/builders.js";
 import { type Format, group } from "../fmt/elements.js";
 import {
   type ComprehensionComments,
-  comprehension,
   comprehensionComments,
-  comprehensionSpacer,
   formatExpr,
   itemStart,
   sequenceContent,
+  writeComprehensionBody,
+  writeComprehensionSpacer,
 } from "../fmt/expr.js";
-import { dslPart, frameParts, part, ruffOf } from "../fmt/sink.js";
+import {
+  COLLAPSE,
+  close as sClose,
+  dslPart,
+  frameParts,
+  GROUP,
+  open as sOpen,
+  part,
+  ruffOf,
+  sLine,
+  sText,
+} from "../fmt/sink.js";
 
 /** The expression a dict's item `c` starts with: a pair's key, else the `**` splat. */
 const itemExpr = (c: number, ctx: StreamCtx<unknown>) =>
@@ -112,48 +123,42 @@ export const collectionVia = {
   "collection.dictComp": (c: number, ctx: StreamCtx<unknown>) => {
     const { f, e: key } = ruffOf(fieldChild(ctx.tree, c, "key"));
     const e = key.parent as DictComp;
-    part(
-      group([
-        dslPart(c),
-        softOrSpace,
-        e.generators.flatMap((g, i) =>
-          i > 0 ? [softOrSpace, comprehension(f, g)] : [comprehension(f, g)],
-        ),
-      ]),
-    );
+    sOpen(GROUP);
+    writeComprehensionBody(f, e, () => part(dslPart(c)));
+    sClose();
   },
   // Given the element, prints a list, set or generator comprehension's body: the element and its clauses in one group.
   "collection.comp": (c: number) => {
     const { f, e: elt } = ruffOf(c);
     const e = elt.parent as Comp;
-    part(
-      group([
-        group(formatExpr(f, e.elt)),
-        softOrSpace,
-        e.generators.flatMap((g, i) =>
-          i > 0 ? [softOrSpace, comprehension(f, g)] : [comprehension(f, g)],
-        ),
-      ]),
-    );
+    sOpen(GROUP);
+    writeComprehensionBody(f, e, () => {
+      sOpen(GROUP);
+      part(formatExpr(f, e.elt));
+      sClose();
+    });
+    sClose();
   },
   "collection.async": (t: number | undefined, node: number, ctx: StreamCtx<unknown>) => {
     if (t === undefined) return;
     const { f } = ruffOf(fieldChild(ctx.tree, node, "left"));
-    part([f.tok(t), space]);
+    part(f.tok(t));
+    sText(" ");
   },
   // The for clause's target between the comments ruff keeps before and after it.
   "collection.forTarget": (c: number) => {
     const { f, e: target } = ruffOf(c);
     const { beforeTarget, beforeIn } = comprehensionComments(f, target.parent as Comprehension);
-    part([
-      f.trailing(beforeTarget),
-      comprehensionSpacer(f, target, target.kind !== "Tuple"),
+    part(f.trailing(beforeTarget));
+    writeComprehensionSpacer(f, target, target.kind !== "Tuple");
+    part(
       target.kind === "Tuple"
         ? formatExpr(f, target, "preserve", { tuple: "never" })
         : formatExpr(f, target),
-      beforeIn.length === 0 ? space : softOrSpace,
-      f.leading(beforeIn),
-    ]);
+    );
+    if (beforeIn.length === 0) sText(" ");
+    else sLine(COLLAPSE);
+    part(f.leading(beforeIn));
   },
   // Given the iterable's first expression, prints the whole iterable, an unparenthesized tuple included.
   "collection.forIter": (c: number, ctx: StreamCtx<unknown>) => {
@@ -161,13 +166,17 @@ export const collectionVia = {
     const { f, e: target } = ruffOf(fieldChild(ctx.tree, clause, "left"));
     const comp = target.parent as Comprehension;
     const { trailingIn } = comprehensionComments(f, comp);
-    part([f.trailing(trailingIn), comprehensionSpacer(f, comp.iter, true), formatExpr(f, comp.iter)]);
+    part(f.trailing(trailingIn));
+    writeComprehensionSpacer(f, comp.iter, true);
+    part(formatExpr(f, comp.iter));
   },
   "collection.ifTest": (c: number) => {
     const { f, e: test } = ruffOf(c);
     const comp = test.parent as Comprehension;
     const i = comp.ifs.findIndex((x) => x.test === test);
     const { eol } = comprehensionComments(f, comp).ifs[i] as ComprehensionComments["ifs"][number];
-    part([f.trailing(eol), comprehensionSpacer(f, test, true), formatExpr(f, test)]);
+    part(f.trailing(eol));
+    writeComprehensionSpacer(f, test, true);
+    part(formatExpr(f, test));
   },
 };

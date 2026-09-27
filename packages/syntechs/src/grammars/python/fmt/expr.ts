@@ -55,7 +55,17 @@ import {
 } from "./builders.js";
 import type { Comment } from "./comments.js";
 import * as sink from "./sink.js";
-import { dslPart } from "./sink.js";
+import {
+  COLLAPSE,
+  close as sClose,
+  dslPart,
+  GROUP,
+  open as sOpen,
+  part,
+  record,
+  sLine,
+  sText,
+} from "./sink.js";
 import {
   type Hooks,
   implicitConcatenated,
@@ -1237,43 +1247,53 @@ export function itemStart(i: Dict["items"][number]): number {
 
 function comp(f: Fmt, e: Comp, preserve: boolean): Format {
   const dangling = f.comments.dangling(e);
-  const joined = () =>
-    e.generators.flatMap((g, i) =>
-      i > 0 ? [softOrSpace, comprehension(f, g)] : [comprehension(f, g)],
-    );
-  const body = () =>
-    group([group(formatExpr(f, e.elt)), softOrSpace, joined()]);
+  const elt = () => {
+    sOpen(GROUP);
+    part(formatExpr(f, e.elt));
+    sClose();
+  };
   if (
     e.kind === "Generator" &&
     preserve &&
     dangling.length === 0 &&
     e.open === undefined
   )
-    return [group(formatExpr(f, e.elt)), softOrSpace, joined()];
+    return record(() => writeComprehensionBody(f, e, elt));
   if (e.open !== undefined) return dslPart(e.ts);
   const open = e.open !== undefined ? f.tok(e.open) : synthetic(e.ts, "(");
   const close = e.close !== undefined ? f.tok(e.close) : synthetic(e.ts, ")");
+  const body = () =>
+    record(() => {
+      sOpen(GROUP);
+      writeComprehensionBody(f, e, elt);
+      sClose();
+    });
   return f.parenthesized(open, body, close, dangling);
 }
 
+/** A comprehension's body as ruff prints it: `head` (its element, or its key and value), then each clause. */
+export function writeComprehensionBody(f: Fmt, e: Comp | DictComp, head: () => void): void {
+  head();
+  for (const g of e.generators) {
+    sLine(COLLAPSE);
+    writeComprehension(f, g);
+  }
+}
+
 /** Ruff's `FormatComprehension`: the `for` clause and each `if` clause from their DSL spec, between their comments. */
-export function comprehension(f: Fmt, c: Comprehension): Format {
+function writeComprehension(f: Fmt, c: Comprehension): void {
   const cs = f.comments;
-  const out: Format[] = [f.leading(cs.leading(c)), dslPart(c.ts)];
+  part(f.leading(cs.leading(c)));
+  part(dslPart(c.ts));
   if (c.ifs.length > 0) {
     const { ifs } = comprehensionComments(f, c);
-    const joined: Format[] = [];
     for (const [i, cond] of c.ifs.entries()) {
-      if (i > 0) joined.push(softOrSpace);
-      joined.push(
-        f.leading((ifs[i] as ComprehensionComments["ifs"][number]).own),
-        dslPart(f.tree.parent(cond.kw)),
-      );
+      sLine(COLLAPSE);
+      part(f.leading((ifs[i] as ComprehensionComments["ifs"][number]).own));
+      part(dslPart(f.tree.parent(cond.kw)));
     }
-    out.push(softOrSpace, joined);
   }
-  out.push(f.trailing(cs.trailing(c)));
-  return out;
+  part(f.trailing(cs.trailing(c)));
 }
 
 export interface ComprehensionComments {
@@ -1310,10 +1330,9 @@ export function comprehensionComments(f: Fmt, c: Comprehension): ComprehensionCo
 }
 
 /** The space before a comprehension's part, a soft line when a comment leads it. */
-export function comprehensionSpacer(f: Fmt, e: Expr, preserve: boolean): Format {
-  return f.comments.hasLeading(e) && !(preserve && e.parens.length > 0)
-    ? softOrSpace
-    : space;
+export function writeComprehensionSpacer(f: Fmt, e: Expr, preserve: boolean): void {
+  if (f.comments.hasLeading(e) && !(preserve && e.parens.length > 0)) sLine(COLLAPSE);
+  else sText(" ");
 }
 
 function slice(f: Fmt, e: Slice): Format {
