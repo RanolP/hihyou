@@ -20,31 +20,11 @@ import {
 import { dslPart } from "../sink.js";
 import { startOf } from "../trivia.js";
 import type { StmtRules } from "./suite.js";
-import {
-  clauseBody,
-  clauseHeader,
-  leadingAlternateBranchComments,
-} from "./suite.js";
 
 /** Ruff's compound statements other than definitions (statement/stmt_{if,for,while,try,with}.rs). */
 
 // A statement its rule in format/stmt-compound.ts prints.
 const fromSpec = (_: Fmt, s: Stmt) => dslPart(s.ts);
-
-/** Ruff's `clause`: a header, its colon and the comments after it, then the indented body. */
-function clause(
-  f: Fmt,
-  header: Format,
-  colon: number,
-  colonComments: readonly Comment[],
-  body: readonly Stmt[],
-  alternate?: { comments: readonly Comment[]; last: Py | undefined },
-): Format {
-  return [
-    clauseHeader(f, header, f.tok(colon), colonComments, alternate),
-    clauseBody(f, body, "other", colonComments),
-  ];
-}
 
 /** The length of the prefix of `cs` that `p` holds for (Rust's `partition_point`). */
 function prefix(cs: readonly Comment[], p: (c: Comment) => boolean): number {
@@ -189,13 +169,11 @@ function withClause(f: Fmt, w: With): number {
   return w.ts;
 }
 
-/** Ruff's `FormatStmtWith` with its `WithItemsLayout`. */
-function withStmt(f: Fmt, w: With): Format {
+/** Ruff's `FormatStmtWith`'s items, laid out by its `WithItemsLayout`. */
+export function withItems(f: Fmt, w: With): Format {
   const cs = f.comments;
-  const dangling = cs.dangling(w);
   const first = w.items[0];
-  const split = prefix(dangling, (c) => !!first && c.start < first.start);
-  const parenComments = dangling.slice(0, split);
+  const [parenComments] = withComments(f, w);
   const lastKw = w.kws.at(-1);
   const withKw = lastKw !== undefined ? lastKw : w.colon;
   const colonStart = startOf(f.tree, w.colon);
@@ -244,17 +222,19 @@ function withStmt(f: Fmt, w: With): Format {
       withItem(f, single, "contextManagers", true),
     );
   else items = f.parenthesizeIfExpands(withKw, joined);
-  return clause(
-    f,
-    [w.kws.map((k) => [f.tok(k), space]), items],
-    w.colon,
-    dangling.slice(split),
-    w.body,
-  );
+  return items;
+}
+
+/** A `with`'s dangling comments: those inside its parentheses, before the first item, and those on its colon. */
+export function withComments(f: Fmt, w: With): [readonly Comment[], readonly Comment[]] {
+  const dangling = f.comments.dangling(w);
+  const first = w.items[0];
+  const split = prefix(dangling, (c) => !!first && c.start < first.start);
+  return [dangling.slice(0, split), dangling.slice(split)];
 }
 
 export const clauseRules: StmtRules = {
-  With: withStmt,
+  With: fromSpec,
   Try: fromSpec,
   If: fromSpec,
   While: fromSpec,

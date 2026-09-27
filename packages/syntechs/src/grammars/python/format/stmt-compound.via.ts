@@ -5,7 +5,7 @@ import { type Fmt, space } from "../fmt/builders.js";
 import type { Comment } from "../fmt/comments.js";
 import { formatExpr, maybeParenthesize } from "../fmt/expr.js";
 import { part, ruffOf, ruffStmtOf } from "../fmt/sink.js";
-import { exceptType, loopComments, tryCases } from "../fmt/stmt/clauses.js";
+import { exceptType, loopComments, tryCases, withComments, withItems } from "../fmt/stmt/clauses.js";
 import { clauseBody, leadingAlternateBranchComments } from "../fmt/stmt/suite.js";
 
 /** A clause as ruff's `clause` prints it: the comments around its header, and its body. */
@@ -46,6 +46,9 @@ function clauseOf(n: number, ctx: StreamCtx<unknown>): Clause {
       if (!s.orelse) break;
       return { f, alternate: { comments: beforeElse, last: s.body.at(-1) }, colon: elseColon, body: s.orelse.body };
     }
+    case "With":
+      if (first) return { f, alternate: none, colon: withComments(f, s)[1], body: s.body };
+      break;
     case "Try": {
       const c =
         first ? s
@@ -83,6 +86,11 @@ export const stmtCompoundVia = {
     const h = s.kind === "Try" ? s.handlers.find((x) => x.ts === n) : undefined;
     if (!h) throw new Error("python: an except type outside a try's handler");
     part(exceptType(f, h));
+  },
+  "compound.withItems": (c: number) => {
+    const { f, s } = ruffStmtOf(c);
+    if (s.kind !== "With") throw new Error("python: a with clause outside a with");
+    part(withItems(f, s));
   },
   // `async` and the space after it, where the statement has one.
   "compound.async": (token: number | undefined) => {
