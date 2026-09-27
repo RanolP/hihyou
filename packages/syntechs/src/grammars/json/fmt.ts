@@ -4,9 +4,8 @@ import {
   prettierDefaults,
   prettierSettings,
 } from "../../fmt/options.js";
-import { sToken } from "../../fmt/stream.js";
 import { defineLanguage, type Language } from "../../fmt/rules.js";
-import type { StreamRules, StreamRule } from "../../fmt/stream-format.js";
+import type { StreamRules } from "../../fmt/stream-format.js";
 import { grammar } from "./bundle.js";
 import * as gen from "./fmt.gen.js";
 import { language } from "./index.js";
@@ -41,22 +40,6 @@ const spec = {
   layoutBlind: true,
 };
 
-// Prettier's number normalization (utilities/print-number.js): lower case, no redundant exponent sign,
-// zeroes or dot, and a leading digit.
-const printNumber = (raw: string) =>
-  raw.length === 1
-    ? raw
-    : raw
-        .toLowerCase()
-        .replace(/^([+-]?[\d.]+e)(?:\+|(-))?0*(?=\d)/, "$1$2")
-        .replace(/^([+-]?[\d.]+)e[+-]?0+$/, "$1")
-        .replace(/^([+-])?\./, "$10.")
-        .replace(/(\.\d+?)0+(?=e|$)/, "$1")
-        .replace(/\.(?=e|$)/, "");
-
-export const number: StreamRule = (node, ctx) =>
-  sToken(node, printNumber(ctx.tree.text(node)));
-
 // The layouts are src/grammars/json/format.ts, generated into fmt.gen.ts.
 const define = (stream: StreamRules<JsonOptions>): Language<JsonOptions> => ({
   ...defineLanguage(grammar, spec),
@@ -64,10 +47,10 @@ const define = (stream: StreamRules<JsonOptions>): Language<JsonOptions> => ({
 });
 
 /** JSON as prettier's `json` parser prints it: lists fit on a line when they can, comments allowed. */
-export const json = define(gen.json({ number }));
+export const json = define(gen.json());
 /** JSON with Comments (`.jsonc`, VS Code and Sublime settings) as prettier's `jsonc` parser prints it: like
  * `json`, plus a trailing comma in every broken list unless `trailingComma` is `none`. */
-export const jsonc = define(gen.jsonc({ number }));
+export const jsonc = define(gen.jsonc());
 
 /** JSON as prettier's `json-stringify` parser prints it, like `JSON.stringify(value, null, 2)`: every list broken. */
 export const jsonStringify = define(gen.jsonStringify());

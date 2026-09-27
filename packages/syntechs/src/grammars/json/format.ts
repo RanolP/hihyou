@@ -1,6 +1,5 @@
 // JSON's layout in the formatter DSL (src/fmt/dsl/dsl.ts); `pnpm generate` compiles it into fmt.gen.ts.
 import {
-  custom,
   defineFormat,
   grpBrace,
   grpBracket,
@@ -8,6 +7,7 @@ import {
   option,
   sepBy,
   space,
+  text,
   verbatim,
 } from "../../fmt/dsl/dsl.js";
 import type { grammar } from "./bundle.js";
@@ -30,7 +30,7 @@ const fitting = (trailingComma: boolean) => {
       array: ($) => grpBracket(sepBy(",", $.children, { trailing })),
       pair: ($) => [$.key, ":", space, $.value],
       string: () => verbatim,
-      number: () => custom("number"),
+      number: () => text("printNumber"),
     },
     wrapping: {
       object: {

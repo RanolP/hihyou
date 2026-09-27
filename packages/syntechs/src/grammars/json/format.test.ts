@@ -8,7 +8,7 @@ import { referenceRules } from "../../fmt/dsl/reference.js";
 import { format } from "../../fmt/format.js";
 import type { Language } from "../../fmt/rules.js";
 import { grammar, language } from "./index.js";
-import { type JsonOptions, json, jsonc, jsonStringify, number } from "./fmt.js";
+import { type JsonOptions, json, jsonc, jsonStringify } from "./fmt.js";
 import * as spec from "./format.js";
 
 const root = execFileSync("git", ["rev-parse", "--show-toplevel"], {
@@ -90,7 +90,7 @@ describe("the generated formatter prints what the two-pass reference prints, out
   it.each(languages)("%s", (_, generated, ir) => {
     const reference = {
       ...generated,
-      stream: referenceRules<JsonOptions>(ir, grammar as DslGrammar, { number }),
+      stream: referenceRules<JsonOptions>(ir, grammar as DslGrammar, {}),
     };
     for (const text of corpus)
       for (const o of options)
