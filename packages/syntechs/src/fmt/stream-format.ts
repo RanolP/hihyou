@@ -7,40 +7,25 @@ import {
   type Formatted,
   shiftForEndOfLine,
 } from "./format.js";
+import type { Language } from "./rules.js";
 import {
-  type ByOptions,
-  defineLanguage,
-  type Grammar,
-  type Language,
-  type LanguageSpec,
-  type ListOptions,
-  type SeqPart,
-} from "./rules.js";
-import {
-  BROKEN,
   close,
-  FILL,
-  FILL_ITEM,
-  GROUP,
-  IF_BROKEN,
-  INDENT,
   LINE_SUFFIX,
   open,
   printStream,
   resetStream,
-  SOFT,
   sBreakParent,
   sHardline,
   sLine,
   sText,
   sToken,
 } from "./stream.js";
-import { lfAfter, newlineBetween, nextLineEmpty } from "./text.js";
+import { lfAfter, newlineBetween } from "./text.js";
 import { type FormatTree, firstLeaf } from "./tree.js";
 
 /**
- * The stream path (see `stream.ts`) for the rule helpers JSON uses: a rule appends to the stream instead of
- * returning a Doc, and `format` hands a language defined by `defineStream` to `formatStream`.
+ * The stream path (see `stream.ts`) for the rules a formatter spec generates (`dsl/`): a rule appends to the stream instead of
+ * returning a Doc, and `format` hands a language with `stream` rules to `formatStream`.
  */
 export interface StreamCtx<O = unknown> {
   readonly tree: FormatTree;
@@ -63,248 +48,7 @@ export interface StreamRules<O = unknown> {
   readonly lists: ReadonlySet<StreamRule<O>>;
 }
 
-type FieldOf<G extends Grammar> = G["fields"][keyof G["fields"]][number];
-type KindOf<G extends Grammar> = G["kinds"][number];
-
-export interface StreamHelpers<G extends Grammar, O> {
-  list(options: ListOptions<G, O>): StreamRule<O>;
-  seq(...parts: readonly SeqPart<G>[]): StreamRule<O>;
-  block(): StreamRule<O>;
-  verbatim(): StreamRule<O>;
-  field<F extends FieldOf<G>>(name: F): { readonly field: F };
-  readonly space: { readonly space: true };
-}
-
-/** `defineLanguage`, with rules that append to the stream: `format` prints the language through `formatStream`. */
-export function defineStream<const G extends Grammar, O>(
-  grammar: G,
-  spec: LanguageSpec<G, O>,
-  define: (
-    h: StreamHelpers<G, O>,
-  ) => { [K in KindOf<G>]?: StreamRule<O> },
-): Language<O> {
-  const lists = new Set<StreamRule<O>>();
-  const h: StreamHelpers<G, O> = {
-    list(o) {
-      const rule = listRule(o as ListOptions<Grammar, O>);
-      lists.add(rule);
-      return rule;
-    },
-    seq: (...parts) => seqRule(parts as readonly SeqPart<Grammar>[]),
-    block: () => blockRule,
-    verbatim: () => verbatimRule,
-    field: (field) => ({ field }),
-    space: { space: true },
-  };
-  const rules = new Map<string, StreamRule<O>>();
-  for (const [kind, rule] of Object.entries(define(h)))
-    if (rule) rules.set(kind, rule as StreamRule<O>);
-  return { ...defineLanguage(grammar, spec, () => ({})), stream: { rules, lists } };
-}
-
-const verbatimRule: StreamRule = (node, ctx) =>
-  sToken(node, ctx.tree.text(node));
-
-const blockRule: StreamRule = (node, ctx) => {
-  const items = ctx.items(node);
-  for (let i = 0; i < items.length; i++) {
-    if (i > 0) sHardline();
-    ctx.print(items[i] as number);
-  }
-  for (const c of ctx.danglingComments(node)) ctx.comment(c);
-};
-
-function seqRule(parts: readonly SeqPart<Grammar>[]): StreamRule {
-  type Is = (tree: FormatTree, c: number, items: readonly number[]) => boolean;
-  const matchers = parts.map(
-    (part): { space: true } | { space: false; literal: boolean; is: Is } => {
-      if (typeof part === "string")
-        return {
-          space: false,
-          literal: true,
-          is: (tree, c) => !tree.named(c) && tree.kindName(c) === part,
-        };
-      if ("space" in part) return { space: true };
-      if ("field" in part)
-        return {
-          space: false,
-          literal: false,
-          is: (tree, c) => tree.fieldName(c) === part.field,
-        };
-      if ("kind" in part)
-        return {
-          space: false,
-          literal: false,
-          is: (tree, c) => tree.named(c) && tree.kindName(c) === part.kind,
-        };
-      return {
-        space: false,
-        literal: false,
-        is: (_, c, items) => c === items[part.nth],
-      };
-    },
-  );
-  const needsItems = parts.some((p) => typeof p === "object" && "nth" in p);
-  return (node, ctx) => {
-    const { tree } = ctx;
-    const items = needsItems ? ctx.items(node) : [];
-    const count = tree.count(node);
-    const used: number[] = [];
-    open(GROUP);
-    for (const mt of matchers) {
-      if (mt.space) {
-        sText(" ");
-        continue;
-      }
-      let at = 0;
-      while (
-        at < count &&
-        (!mt.is(tree, tree.child(node, at), items) || used.includes(at))
-      )
-        at++;
-      if (at === count) continue;
-      used.push(at);
-      const child = tree.child(node, at);
-      if (mt.literal) sToken(child, tree.text(child));
-      else ctx.print(child);
-    }
-    close();
-  };
-}
-
-// `listRule` of rules.ts, appending what its Doc holds, in the same order.
-function listRule<O>(o: ListOptions<Grammar, O>): StreamRule<O> {
-  const fillKinds: ReadonlySet<string> = new Set(o.fillIfAll);
-  const read = (v: ByOptions<O, boolean> | undefined, options: O) =>
-    typeof v === "function" ? v(options) : v === true;
-  return (node, ctx) => {
-    const { tree } = ctx;
-    const count = tree.count(node);
-    const isToken = (c: number, kind: string) =>
-      !tree.named(c) && tree.kindName(c) === kind;
-    const tok = (kind: string) => {
-      for (let i = 0; i < count; i++) {
-        const c = tree.child(node, i);
-        if (isToken(c, kind)) return sToken(c, tree.text(c));
-      }
-    };
-    const items = ctx.items(node);
-    const first = items[0];
-    if (first === undefined) {
-      const dangling = ctx.danglingComments(node);
-      open(GROUP);
-      tok(o.open);
-      if (dangling.length > 0) {
-        open(INDENT);
-        sLine(SOFT);
-        for (let i = 0; i < dangling.length; i++) {
-          if (i > 0) sHardline();
-          ctx.comment(dangling[i] as number);
-        }
-        close();
-        if (ctx.hasDanglingLineComment(node)) sHardline();
-        else sLine(SOFT);
-      }
-      tok(o.close);
-      close();
-      return;
-    }
-
-    const always = o.expand === "always";
-    const shouldBreak =
-      always ||
-      (read(o.keepExpanded, ctx.options) &&
-        newlineBetween(tree, firstLeaf(tree, node), firstLeaf(tree, first))) ||
-      (o.breakNestedLists === true &&
-        items.length > 1 &&
-        items.every((item, i) => {
-          const next = items[i + 1];
-          return (
-            ctx.isList(item) &&
-            (next === undefined ||
-              tree.kindName(next) === tree.kindName(item)) &&
-            ctx.items(item).length > 1
-          );
-        })) ||
-      ctx.hasDanglingLineComment(node);
-    const blankAfter = (item: number) => !always && nextLineEmpty(tree, item);
-    const seps: (number | undefined)[] = [];
-    let seen = 0;
-    for (let i = 0; i < count; i++) {
-      const c = tree.child(node, i);
-      if (c === items[seen]) seen++;
-      else if (seen > 0 && isToken(c, o.sep)) seps[seen - 1] ??= c;
-    }
-    const sep = (i: number) => {
-      const c = seps[i];
-      if (c !== undefined) sToken(c, tree.text(c));
-    };
-    const concise =
-      !always &&
-      items.length > 1 &&
-      items.every(
-        (item) =>
-          fillKinds.has(tree.kindName(item)) &&
-          !ctx.hasComment(item, "trailingSameLine"),
-      );
-
-    const listGroup = open(GROUP, -1, shouldBreak ? BROKEN : 0);
-    const last = items.at(-1) ?? first;
-    const trailingSep = read(o.trailingSep, ctx.options);
-    const trailing = () => {
-      if (!trailingSep) return;
-      open(IF_BROKEN, concise ? listGroup : -1);
-      sToken(last, o.sep, true);
-      close();
-    };
-    const pad = read(o.pad, ctx.options) ? 0 : SOFT;
-    tok(o.open);
-    open(INDENT);
-    sLine(pad);
-    if (concise) {
-      open(FILL);
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i] as number;
-        const next = items[i + 1];
-        open(FILL_ITEM);
-        ctx.print(item);
-        if (next === undefined) trailing();
-        else sep(i);
-        close();
-        if (next === undefined) break;
-        if (blankAfter(item)) {
-          sHardline();
-          sHardline();
-        } else if (ctx.hasComment(next, "leadingLine")) sHardline();
-        else sLine(0);
-      }
-      close();
-    } else {
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i] as number;
-        if (o.groupItems) open(GROUP);
-        ctx.print(item);
-        if (o.groupItems) close();
-        if (i === items.length - 1) {
-          trailing();
-          break;
-        }
-        sep(i);
-        sLine(0);
-        if (blankAfter(item)) {
-          if (o.blankLines === "force") sHardline();
-          else sLine(SOFT);
-        }
-      }
-    }
-    close();
-    sLine(pad);
-    tok(o.close);
-    close();
-  };
-}
-
-/** `format`, over the stream rules of `base` (a `defineStream` language). */
+/** `format`, over the stream rules of `base` (a language with `stream` rules). */
 export function formatStream<O>(
   tree: Tree,
   base: Language<O>,
