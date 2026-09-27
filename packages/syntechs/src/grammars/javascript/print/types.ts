@@ -49,6 +49,7 @@ import {
 } from "./functions.js";
 import { printKey } from "./objects.js";
 import { role } from "./parens.js";
+import { semiCustoms } from "./semi.js";
 import {
   type Args,
   anon,
@@ -604,27 +605,17 @@ const typeAlias: JsRule = (n, ctx) => {
   ];
 };
 
-const enumAssignment: JsRule = (n, ctx) => [
-  printKey(ctx, n),
-  text(" "),
-  t(ctx, anonKid(ctx, n, "=")),
-  text(" "),
-  p(ctx, field(ctx, n, "value")),
-];
+/** A module's body, `.via("moduleBody")`: a group of its own. */
+const moduleBody: CustomRule<JsOptions> = (body, sctx) => {
+  open(GROUP);
+  jsCtx(sctx).printNode(body);
+  close();
+};
 
-/** `module "m" { ... }`, `namespace N.M { ... }`. */
-const moduleDeclaration: JsRule = (n, ctx) => {
-  const body = field(ctx, n, "body");
-  const parts: Doc[] = [];
-  for (const c of children(ctx, n)) {
-    if (c === body || isComment(ctx, c)) continue;
-    if (parts.length > 0) parts.push(text(" "));
-    parts.push(named(ctx, c) ? p(ctx, c) : t(ctx, c));
-  }
-  return [
-    parts,
-    body !== undefined ? [text(" "), group(p(ctx, body))] : semi(ctx, n),
-  ];
+/** A module's `;` (`tok(";").via("moduleSemi")`): a statement's, where the module has no body. */
+const moduleSemi: TokenRule<JsOptions> = (token, n, ctx) => {
+  if (field(jsCtx(ctx).js, n, "body") === undefined)
+    semiCustoms.semi(token, n, ctx);
 };
 
 const ambientDeclaration: CustomRule<JsOptions> = (n, sctx) => {
@@ -1112,17 +1103,16 @@ const nodeCustoms = {
   functionType,
   signature,
   unionType,
+  moduleBody,
 } satisfies Record<string, CustomRule<JsOptions>>;
 
 export const typeCustoms = {
   ...nodeCustoms,
   memberSemi,
+  moduleSemi,
 };
 
 export const typeRules: Record<string, JsRule> = {
   type_alias_declaration: typeAlias,
-  enum_assignment: enumAssignment,
-  module: moduleDeclaration,
-  internal_module: moduleDeclaration,
   type_assertion: typeAssertion,
 };
