@@ -51,8 +51,7 @@ function compare(name: string, tally: Tally, run: () => void) {
     tally.docs++;
     let stream: ReturnType<typeof printStream>;
     try {
-      if (layout.ruff) throw new Unsupported("ruff measuring");
-      resetStream();
+      resetStream(layout.ruff);
       sDoc(doc);
       stream = printStream(layout);
     } catch (e) {
@@ -185,4 +184,4 @@ describe.skipIf(!present)(
 
 // [lowered, printed]: the Docs the stream prints, of all the formatter printed.
 const JS_COVERED = [669, 2260];
-const PY_COVERED = [0, 286];
+const PY_COVERED = [13, 286];

@@ -101,8 +101,11 @@ let runStart = -1;
 /** The groups the `ifBreak`s opened so far depend on, in opening order. */
 let refs = new Int32Array(64);
 let refCount = 0;
+/** Ruff's measure (`Layout.ruff`), fixed when the stream is reset: every flat space counts where it stands. */
+let ruffSpaces = false;
 
-export function resetStream(): void {
+export function resetStream(ruff = false): void {
+  ruffSpaces = ruff;
   n = 0;
   strs.length = 0;
   mergeable = false;
@@ -165,7 +168,8 @@ export function sToken(node: number, s: string, synthetic = false): void {
 /** A line: 0 (a space when flat), `SOFT` (nothing when flat) or `HARD` (always breaks; pair it with `sBreakParent`). */
 export function sLine(flags: number): void {
   if (noMeasure === 0 && flags === 0) {
-    if (lastLine === -1) {
+    if (ruffSpaces) pos += 1;
+    else if (lastLine === -1) {
       pos += 1;
       runStart = n;
     } else
@@ -277,7 +281,9 @@ export interface StreamPrinted {
 
 /** Prints the stream built since `resetStream`, as `printer.ts`'s `print` would print the equivalent Doc. */
 export function printStream(layout: Layout): StreamPrinted {
-  if (layout.ruff) throw new Error("printStream: ruff measuring is not supported");
+  const ruff = layout.ruff === true;
+  if (ruff !== ruffSpaces)
+    throw new Error("printStream: reset the stream with the layout's ruff");
   if (op !== 0) throw new Error(`printStream: ${op} intervals left open`);
   const lineWidth = layout.lineWidth;
   // Indentation by level: the stream has indents only, no alignment.
@@ -390,6 +396,8 @@ export function printStream(layout: Layout): StreamPrinted {
           const broken = ((iFlag[k] as number) & BROKEN) !== 0;
           if (mustBeFlat && broken) return false;
           cur++;
+          // Ruff records a measured group's mode for the `ifBreak`s after it.
+          if (ruff) groupModes[k] = (broken ? BREAK : mode) + 1;
           if (e > i) {
             if (broken) mode = BREAK;
             if (ls === lEnd.length) {
@@ -421,7 +429,10 @@ export function printStream(layout: Layout): StreamPrinted {
       if (eKind[i] === LINE) {
         const f = eFlag[i] as number;
         if (mode === FLAT && !(f & HARD)) {
-          if (!(f & SOFT)) pending = true;
+          if (!(f & SOFT)) {
+            if (ruff) width -= 1;
+            else pending = true;
+          }
         } else return true;
       } else if ((strs[eStr[i] as number] as string).length > 0) {
         if (pending) {
@@ -445,6 +456,8 @@ export function printStream(layout: Layout): StreamPrinted {
     const flags = iFlag[k] as number;
     if (mode === FLAT && !remeasure) return flags & BROKEN ? BREAK : FLAT;
     remeasure = false;
+    // Ruff measures a group's contents as flat, so an `ifBreak` on the group itself reads flat meanwhile.
+    if (ruff) groupModes[k] = FLAT + 1;
     if (flags & BROKEN) return BREAK;
     const width = lineWidth - column;
     if (width < 0) return BREAK;
@@ -659,7 +672,7 @@ export function printStream(layout: Layout): StreamPrinted {
           }
         } else {
           // A hard break inside a flat group: the next group must measure afresh.
-          if (md === FLAT) remeasure = true;
+          if (md === FLAT || ruff) remeasure = true;
           // A suffix queued inside flushed suffix content prints before this line too.
           while (sK.length > 0) flushSuffixes();
           trimLineEnd();

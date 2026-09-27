@@ -172,3 +172,27 @@ describe("printStream matches printer.ts", () => {
     expect(out).toBe("a x y\nb");
   });
 });
+
+/** As `both`, measuring as ruff does. */
+function ruffBoth(lineWidth: number, doc: Doc, build: () => void) {
+  const l = { ...layout(lineWidth), ruff: true };
+  resetStream(true);
+  build();
+  const stream = printStream(l).text;
+  expect(stream).toBe(print(doc, l).text);
+  return stream;
+}
+
+describe("printStream matches printer.ts under ruff's measure", () => {
+  it("counts every flat space where it stands, a run of lines included", () => {
+    const out = ruffBoth(3, group([text("a"), line, line, text("b")]), () => {
+      open(GROUP);
+      sText("a");
+      sLine(0);
+      sLine(0);
+      sText("b");
+      close();
+    });
+    expect(out).toBe("a\n\nb");
+  });
+});
