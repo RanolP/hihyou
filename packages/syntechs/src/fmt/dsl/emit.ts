@@ -14,12 +14,7 @@ import { type NormalizerName, normalizerOptions } from "./normalizers.js";
 import { danglingOwner, holdsList } from "./reference.js";
 
 const str = (s: string) => JSON.stringify(s);
-/** The rule of `kind` as a local: `// A spec's IR as TypeScript: per kind, one stream rule making the calls the two passes of `reference.ts` make,
-// with the flattened sequence never built and each wrapping rule's choices decided while generating.
-import { type Cond, type DslGrammar, type FormatIR, frameWrap, type Tree, type Wrap } from "./dsl.js";
-import { danglingOwner, holdsList } from "./reference.js";
-
- keeps a kind named like a keyword (`if`, `class`) a valid name. */
+/** The rule of `kind` as a local: `$` keeps a kind named like a keyword (`if`, `class`) a valid name. */
 const ident = (kind: string) => `$${kind.replace(/\W/g, "_")}`;
 
 /** Calls `visit` on every condition `ir` holds. */
