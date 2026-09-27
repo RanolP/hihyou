@@ -43,6 +43,23 @@ const SPECIAL = 4;
  */
 const LEAD = 8;
 
+// --- lineSuffixBoundary ---
+/**
+ * A line flag: the entry is prettier's lineSuffixBoundary, stored as a hard line that prints only while line
+ * suffixes are pending and that a measure fails on once it has seen a line suffix.
+ */
+export const BOUNDARY = 16;
+/** An interval flag: it holds a measured boundary, so it cannot fit flat while a line suffix is pending. */
+const BND = 64;
+/** An interval flag: it holds a measured line suffix, which a boundary measured after it fails on. */
+const SFX = 128;
+/** The interval count `m` when the last measured boundary was appended, and the last measured suffix then. */
+let bndM = -1;
+let bndSfx = -1;
+/** The last line suffix opened where a flat measure reads it. */
+let lastSfx = -1;
+// --- end lineSuffixBoundary ---
+
 const BREAK = 0;
 const FLAT = 1;
 type Mode = typeof BREAK | typeof FLAT;
@@ -117,6 +134,9 @@ export function resetStream(ruff = false): void {
   noMeasure = 0;
   lastLine = -1;
   refCount = 0;
+  bndM = -1;
+  bndSfx = -1;
+  lastSfx = -1;
 }
 
 function entry(kind: number, flag: number, str: number, node: number, w: number) {
@@ -196,6 +216,16 @@ export function sHardline(): void {
   bp++;
 }
 
+/** Prettier's lineSuffixBoundary: a hard line here when line suffixes are pending, else nothing. */
+export function sLineSuffixBoundary(): void {
+  if (noMeasure === 0) {
+    bndM = m;
+    bndSfx = lastSfx;
+  }
+  entry(LINE, HARD | BOUNDARY, 0, 0, 0);
+  mergeable = false;
+}
+
 /** Opens an interval at the end of the stream; `ref` is the group an `IF_BROKEN`/`IF_FLAT` asks (-1: the enclosing mode). */
 export function open(kind: number, ref = -1, flags = 0): number {
   if (m === iKind.length) {
@@ -224,6 +254,7 @@ export function open(kind: number, ref = -1, flags = 0): number {
   oHard[op] = hard;
   oRefs[op] = refCount;
   op++;
+  if (kind === LINE_SUFFIX && noMeasure === 0) lastSfx = m;
   if (kind === IF_BROKEN || kind === LINE_SUFFIX) noMeasure++;
   if (ref >= 0 && (kind === IF_BROKEN || kind === IF_FLAT)) {
     if (refCount === refs.length) refs = grow32(refs);
@@ -265,6 +296,12 @@ export function close(): void {
     )
       flags |= SPECIAL;
   }
+  if (bndM > k) {
+    flags |= BND;
+    // A suffix before the boundary, both inside: the flat measure always reaches the boundary having seen it.
+    if (bndSfx > k) flags |= SPECIAL;
+  }
+  if (lastSfx > k) flags |= SFX;
   iFlag[k] = flags;
   mergeable = false;
 }
@@ -359,6 +396,9 @@ export function printStream(layout: Layout): StreamPrinted {
     let lp = fp - 1;
     let ls = 0;
     let q = qAt;
+    // Prettier's hasLineSuffix: a boundary fails the measure once a suffix is pending or was measured.
+    let seenSuffix = suffixIn || sK.length > 0;
+    suffixIn = false;
     for (;;) {
       while (ls > 0 && (lEnd[ls - 1] as number) <= i) ls--;
       let mode: number;
@@ -419,6 +459,7 @@ export function printStream(layout: Layout): StreamPrinted {
             break;
           }
         } else if (kind === LINE_SUFFIX) {
+          seenSuffix = true;
           i = e;
           cur = iNext[k] as number;
           jumped = true;
@@ -428,6 +469,11 @@ export function printStream(layout: Layout): StreamPrinted {
       if (jumped) continue;
       if (eKind[i] === LINE) {
         const f = eFlag[i] as number;
+        if (f & BOUNDARY) {
+          if (seenSuffix) return false;
+          i++;
+          continue;
+        }
         if (mode === FLAT && !(f & HARD)) {
           if (!(f & SOFT)) {
             if (ruff) width -= 1;
@@ -451,6 +497,8 @@ export function printStream(layout: Layout): StreamPrinted {
     (iP0[k] as number) +
     ((iFlag[k] as number) & LEAD ? 1 : 0) -
     ((iFlag[k] as number) & TRAIL ? 1 : 0);
+  /** Whether the measure `measure` starts next begins past measured contents holding a line suffix. */
+  let suffixIn = false;
 
   function decideGroup(k: number, mode: number): Mode {
     const flags = iFlag[k] as number;
@@ -461,7 +509,7 @@ export function printStream(layout: Layout): StreamPrinted {
     if (flags & BROKEN) return BREAK;
     const width = lineWidth - column;
     if (width < 0) return BREAK;
-    if (flags & SPECIAL)
+    if (flags & SPECIAL || (flags & BND && sK.length > 0))
       return measure(
         iStart[k] as number,
         iEnd[k] as number,
@@ -477,6 +525,7 @@ export function printStream(layout: Layout): StreamPrinted {
     const w = flatWidth(k);
     if (w > width) return BREAK;
     const e = iEnd[k] as number;
+    suffixIn = (flags & SFX) !== 0;
     return measure(
       e,
       e,
@@ -501,7 +550,7 @@ export function printStream(layout: Layout): StreamPrinted {
     const flags = iFlag[k] as number;
     const contentFits =
       width >= 0 &&
-      (flags & SPECIAL
+      (flags & SPECIAL || (flags & BND && sK.length > 0)
         ? measure(
             iStart[k] as number,
             iEnd[k] as number,
@@ -520,6 +569,7 @@ export function printStream(layout: Layout): StreamPrinted {
       (iStart[next] as number) < fillEnd
     ) {
       let special = ((flags | (iFlag[next] as number)) & SPECIAL) !== 0;
+      if ((flags | (iFlag[next] as number)) & BND) special = true;
       for (let s = iEnd[k] as number; s < (iStart[next] as number); s++)
         if (eKind[s] === LINE && (eFlag[s] as number) & HARD) special = true;
       const pairFits =
@@ -664,6 +714,10 @@ export function printStream(layout: Layout): StreamPrinted {
       const md = fMode[fp - 1] as number;
       if (eKind[i] === LINE) {
         const f = eFlag[i] as number;
+        if (f & BOUNDARY && sK.length === 0) {
+          i++;
+          continue;
+        }
         if (md === FLAT && !(f & HARD)) {
           if (!(f & SOFT)) {
             current += " ";

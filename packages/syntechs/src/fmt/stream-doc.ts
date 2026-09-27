@@ -49,6 +49,7 @@ import {
   SOFT,
   sBreakParent,
   sLine,
+  sLineSuffixBoundary,
   sText,
   sToken,
 } from "./stream.js";
@@ -82,6 +83,9 @@ export function sDoc(doc: Doc): void {
         return;
       case D_BREAK_PARENT:
         sBreakParent();
+        return;
+      case D_LINE_SUFFIX_BOUNDARY:
+        sLineSuffixBoundary();
         return;
       case D_GROUP:
         groups.set(h, open(GROUP, -1, isBroken(h) ? BROKEN : 0));
@@ -152,6 +156,7 @@ function check(doc: Doc, seen: Set<Doc>): void {
         return false;
       case D_TEXT:
       case D_BREAK_PARENT:
+      case D_LINE_SUFFIX_BOUNDARY:
         return false;
       case D_LINE:
         if (flagsOf(h) & ~(SOFT | HARD))
@@ -185,7 +190,6 @@ function check(doc: Doc, seen: Set<Doc>): void {
         return true;
       }
       case D_ALIGN:
-      case D_LINE_SUFFIX_BOUNDARY:
       case D_BEST_FITTING:
       case D_BEST_FIT_PARENTHESIZE:
       case D_FITS_EXPANDED:
@@ -207,6 +211,7 @@ function holdsInterval(d: Doc): boolean {
     kind === D_TOKEN ||
     kind === D_TEXT ||
     kind === D_LINE ||
-    kind === D_BREAK_PARENT
+    kind === D_BREAK_PARENT ||
+    kind === D_LINE_SUFFIX_BOUNDARY
   );
 }

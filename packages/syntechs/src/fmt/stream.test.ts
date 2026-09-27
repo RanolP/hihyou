@@ -6,6 +6,7 @@ import {
   hardline,
   line,
   lineSuffix,
+  lineSuffixBoundary,
   text,
 } from "./doc.js";
 import { print } from "./printer.js";
@@ -20,6 +21,7 @@ import {
   resetStream,
   sHardline,
   sLine,
+  sLineSuffixBoundary,
   sText,
 } from "./stream.js";
 
@@ -170,6 +172,56 @@ describe("printStream matches printer.ts", () => {
       },
     );
     expect(out).toBe("a x y\nb");
+  });
+
+  it("breaks a group whose flat measure passes a line suffix and then reaches a boundary after it, as prettier's hasLineSuffix", () => {
+    const out = both(
+      80,
+      [
+        group([text("a"), line, text("b"), lineSuffix(text(" //"))]),
+        lineSuffixBoundary,
+        text("c"),
+      ],
+      () => {
+        open(GROUP);
+        sText("a");
+        sLine(0);
+        sText("b");
+        open(LINE_SUFFIX);
+        sText(" //");
+        close();
+        close();
+        sLineSuffixBoundary();
+        sText("c");
+      },
+    );
+    expect(out).toBe("a\nb //\nc");
+  });
+
+  it("breaks a group holding a boundary while a suffix is pending, and prints nothing for a boundary with none", () => {
+    const out = both(
+      80,
+      [
+        text("x"),
+        lineSuffixBoundary,
+        lineSuffix(text(" //")),
+        group([text("a"), line, lineSuffixBoundary, text("b")]),
+      ],
+      () => {
+        sText("x");
+        sLineSuffixBoundary();
+        open(LINE_SUFFIX);
+        sText(" //");
+        close();
+        open(GROUP);
+        sText("a");
+        sLine(0);
+        sLineSuffixBoundary();
+        sText("b");
+        close();
+      },
+    );
+    expect(out).toBe("xa //\nb");
   });
 });
 
