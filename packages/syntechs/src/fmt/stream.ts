@@ -106,6 +106,8 @@ const INDENT_IF_FLAT = 42;
 export function openIndentIfBreak(ref: number, negate = false): number {
   return open(negate ? INDENT_IF_FLAT : INDENT_IF_BROKEN, ref);
 }
+/** Ruff's `conditional_group`: a group while the group `iRef` prints broken, else its contents in the mode around. */
+export const GROUP_IF_BROKEN = 43;
 // --- end ruff ---
 
 // The stream.
@@ -354,7 +356,7 @@ export function close(): void {
   if (lastLine >= (iStart[k] as number)) flags |= TRAIL;
   const hasBp = bp > (oBp[op] as number);
   const hasHard = hard > (oHard[op] as number);
-  if (kind === GROUP) {
+  if (kind === GROUP || kind === GROUP_IF_BROKEN) {
     if (flags & BROKEN && !hasBp) bp++;
     if (hasBp) flags |= BROKEN;
     // Measured flat, a hard line stops the measure, and an `ifBreak` on a group decided before this one reads
@@ -563,6 +565,21 @@ export function printStream(layout: Layout): StreamPrinted {
           const s = strs[eStr[i] as number] as string;
           if (pending) width -= 1;
           return width - textWidth(s.slice(0, s.indexOf("\n"))) >= 0;
+        } else if (kind === GROUP_IF_BROKEN) {
+          cur++;
+          // Only a broken one under a broken condition changes the mode; it broke every group around it too.
+          if ((iFlag[k] as number) & BROKEN && modeOf(iRef[k] as number) === BREAK) {
+            if (mustBeFlat) return false;
+            if (e > i) {
+              if (ls === lEnd.length) {
+                lEnd = grow32(lEnd);
+                lMode = grow8(lMode);
+              }
+              lEnd[ls] = e;
+              lMode[ls] = BREAK;
+              ls++;
+            }
+          }
         } else cur++;
       }
       if (jumped) continue;
@@ -848,6 +865,13 @@ export function printStream(layout: Layout): StreamPrinted {
                 (iKind[k] === INDENT_IF_BROKEN) === (c === BREAK) ? deeper(ti) : ti,
                 tm,
               );
+            break;
+          }
+          case GROUP_IF_BROKEN: {
+            const g =
+              modeOf(iRef[k] as number) === BREAK ? decideGroup(k, tm) : tm;
+            cur++;
+            if (e > i) fpush(e, ti, g);
             break;
           }
           default:

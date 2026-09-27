@@ -5,6 +5,7 @@ import {
   dedent,
   fill,
   group,
+  groupIfBreak,
   hardline,
   indent,
   indentIfBreak,
@@ -23,6 +24,7 @@ import {
   FILL,
   FILL_ITEM,
   GROUP,
+  GROUP_IF_BROKEN,
   INDENT,
   HARD,
   LINE_SUFFIX,
@@ -380,5 +382,39 @@ describe("printStream matches printer.ts under ruff's measure", () => {
       }
     });
     expect(out).toBe("aaaa\nbc\n  dc\nd");
+  });
+
+  it("measures a groupIfBreak as a group only while its condition prints broken", () => {
+    const g = group([text("aaaa"), line, text("b")]);
+    const flat = group(text("x"));
+    const doc = [
+      g,
+      groupIfBreak([text("cc"), line, text("dd")], g),
+      hardline,
+      flat,
+      groupIfBreak([text("y"), line, text("z")], flat),
+    ];
+    const out = ruffBoth(4, doc, () => {
+      const k = open(GROUP);
+      sText("aaaa");
+      sLine(0);
+      sText("b");
+      close();
+      open(GROUP_IF_BROKEN, k);
+      sText("cc");
+      sLine(0);
+      sText("dd");
+      close();
+      sHardline();
+      const f = open(GROUP);
+      sText("x");
+      close();
+      open(GROUP_IF_BROKEN, f);
+      sText("y");
+      sLine(0);
+      sText("z");
+      close();
+    });
+    expect(out).toBe("aaaa\nbcc\ndd\nxy\nz");
   });
 });

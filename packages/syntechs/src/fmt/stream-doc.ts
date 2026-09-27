@@ -29,6 +29,7 @@ import {
   nodeOf,
   partsOf,
   reservedOf,
+  slotB,
   slotC,
   statesOf,
   TEXT as D_TEXT,
@@ -43,6 +44,7 @@ import {
   FILL,
   FILL_ITEM,
   GROUP,
+  GROUP_IF_BROKEN,
   HARD,
   IF_BROKEN,
   IF_FLAT,
@@ -99,6 +101,15 @@ export function sDoc(doc: Doc): void {
         return;
       case D_GROUP:
         groups.set(h, open(GROUP, -1, isBroken(h) ? BROKEN : 0));
+        emit(contentsOf(h));
+        close();
+        return;
+      case D_GROUP_IF_BREAK:
+        open(
+          GROUP_IF_BROKEN,
+          groups.get(slotB(h)) as number,
+          isBroken(h) ? BROKEN : 0,
+        );
         emit(contentsOf(h));
         close();
         return;
@@ -212,10 +223,15 @@ function check(doc: Doc, seen: Set<Doc>): void {
         walk(flatOf(h));
         return true;
       }
+      case D_GROUP_IF_BREAK:
+        if (!groups.has(slotB(h)))
+          throw new Unsupported("groupIfBreak on a group built after it");
+        seen.add(d);
+        walk(contentsOf(h));
+        return true;
       case D_BEST_FITTING:
       case D_BEST_FIT_PARENTHESIZE:
       case D_FITS_EXPANDED:
-      case D_GROUP_IF_BREAK:
         throw new Unsupported(kindOf(h));
       default:
         throw new Unsupported(`doc kind ${kind}`);
