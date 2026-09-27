@@ -196,11 +196,6 @@ export const stmtSimpleVia = {
     const close = s.close !== undefined ? f.tok(s.close) : synthetic(s.importKw, ")");
     part(f.parenthesized(open, list, close, dangling));
   },
-  // The dots and the names of `from a.b import`'s module, which ruff reads as tokens.
-  "simple.importModule": (c: number) => {
-    const { f, s } = ruffStmtOf(c);
-    part((s as ImportFrom).module.map((t) => f.tok(t)));
-  },
   "simple.deleteTargets":(c: number) => {
     const { f, e } = ruffOf(c);
     const s = e.parent as Simple;

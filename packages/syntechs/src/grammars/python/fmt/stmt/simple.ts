@@ -32,11 +32,7 @@ export function globalNames(f: Fmt, s: Simple): Format {
 
 export function alias(f: Fmt, a: Alias): Format {
   const cs = f.comments;
-  const out: Format[] = [f.leading(cs.leading(a)), a.name.map((t) => f.tok(t))];
-  if (a.asTok !== undefined && a.asname !== undefined)
-    out.push(space, f.tok(a.asTok), space, f.tok(a.asname));
-  out.push(f.trailing(cs.dangling(a)), f.trailing(cs.trailing(a)));
-  return out;
+  return [f.leading(cs.leading(a)), dslPart(a.ts), f.trailing(cs.dangling(a)), f.trailing(cs.trailing(a))];
 }
 
 export const simpleRules: StmtRules = {

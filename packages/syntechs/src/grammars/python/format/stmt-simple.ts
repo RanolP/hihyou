@@ -1,5 +1,5 @@
 // One-line statements.
-import { space } from "../../../fmt/dsl/dsl.js";
+import { inOrder, space } from "../../../fmt/dsl/dsl.js";
 import type { Structure } from "../format.js";
 
 export const stmtSimple = {
@@ -24,7 +24,7 @@ export const stmtSimple = {
   import_from_statement: ($) => [
     "from",
     space,
-    $.module_name.via("simple.importModule"),
+    $.module_name,
     space,
     "import",
     space,
@@ -41,6 +41,11 @@ export const stmtSimple = {
     $.name.at(0).andThen((n) => n.via("simple.importFromNames")),
   ],
   wildcard_import: () => "*",
+  // A module's or an import's name, its dots included, as written.
+  dotted_name: () => inOrder(),
+  import_prefix: () => inOrder(),
+  relative_import: () => inOrder(),
+  aliased_import: ($) => [$.name, space, "as", space, $.alias],
   // Ruff reads an expression, an assignment, an annotated or an augmented one here, each with its own layout.
   expression_statement: ($) => $.children.at(0).andThen((c) => c.via("simple.expressionStatement")),
   type_alias_statement: ($) => ["type", space, $.left.via("simple.typeAlias")],
