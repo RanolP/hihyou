@@ -228,13 +228,20 @@ export function openVariant(k: number): number {
   const v = open(VARIANT, k);
   iRef[k] = v;
   // Only the first variant counts toward the flat width around, as a flat measure reads only it.
-  if (v !== k + 1) noMeasure++;
+  if (v !== k + 1) {
+    noMeasure++;
+    // Ruff's RemoveSoftLinesBuffer keeps the first variant only: the break parents of the others do not count.
+    ifbXbp.push(xbp);
+  }
   return v;
 }
 
 export function closeVariant(v: number): void {
   close();
-  if (v !== (iRef[v] as number) + 1) noMeasure--;
+  if (v !== (iRef[v] as number) + 1) {
+    noMeasure--;
+    xbp = ifbXbp.pop() as number;
+  }
 }
 // --- end ruff ---
 
@@ -811,7 +818,7 @@ export const FLATTEN = 20;
 let xbp = 0;
 /** Per flat interval still open: `xbp`, `pos` and `lastLine` at its start. */
 const flatSaves: number[] = [];
-/** Per `IF_BROKEN` still open: `xbp` at its start. */
+/** Per `IF_BROKEN`, and best-fitting variant after the first, still open: `xbp` at its start. */
 const ifbXbp: number[] = [];
 
 /**
@@ -977,19 +984,33 @@ function walkIn(
  * group. A choice reads its first state only, as the Doc's contents are that state.
  */
 export function willBreak(k: number): boolean {
+  const kind = iKind[k] as number;
+  // Ruff's will_break reads a best-fitting's most expanded variant.
+  if (kind === BEST_FITTING || kind === BEST_FITTING_ALL)
+    return (iRef[k] as number) >= 0 && willBreak(iRef[k] as number);
   const flags = iFlag[k] as number;
   if (flags & (BROKEN | BREAKS)) return true;
-  if (iKind[k] === CHOICE) return (iRef[k] as number) >= 0 && willBreak(k + 1);
-  if (iKind[k] === FLATTEN) return willBreakFlat(k);
-  // The flags miss two breaks: a choice's first state breaks nothing around it, and a hard line need not come
-  // with a break parent. Only an interval that may hold either needs the walk.
-  if (!choiceSeen && !(flags & HARDS)) return false;
+  if (kind === CHOICE) return (iRef[k] as number) >= 0 && willBreak(k + 1);
+  if (kind === FLATTEN) return willBreakFlat(k);
+  // The flags miss three breaks: a choice's first state breaks nothing around it, nor do ruff's layouts (a
+  // best-fitting, a best-fit-parenthesize, a fitsExpanded), and a hard line need not come with a break parent.
+  // Only an interval that may hold one needs the walk.
+  const deep = choiceSeen || fittingSeen || expandsSeen;
+  if (!deep && !(flags & HARDS)) return false;
   return walkIn(
     k,
     (x) => {
       const kind = iKind[x] as number;
-      if (kind === CHOICE || kind === FLATTEN) return willBreak(x) ? "stop" : false;
-      return choiceSeen || ((iFlag[x] as number) & HARDS) !== 0;
+      if (kind === CHOICE || kind === FLATTEN || kind === BEST_FITTING || kind === BEST_FITTING_ALL)
+        return willBreak(x) ? "stop" : false;
+      // A best-fit-parenthesize's parentheses are not its contents.
+      if (kind === PAREN) return false;
+      if (
+        (kind === BEST_FIT_PARENTHESIZE || kind === FITS_EXPANDED || kind === FITS_EXPANDED_BREAKS) &&
+        (iFlag[x] as number) & BREAKS
+      )
+        return "stop";
+      return deep || ((iFlag[x] as number) & HARDS) !== 0;
     },
     (i) => isHardLine(i) || (eKind[i] === JUMP && willBreak(eStr[i] as number)),
   );
@@ -1010,9 +1031,13 @@ function willBreakFlat(k: number, first = isFirstStates(k)): boolean {
   return walkIn(
     k,
     (x) => {
-      if (iKind[x] === IF_BROKEN) return false;
+      const kind = iKind[x] as number;
+      // Ruff's RemoveSoftLinesBuffer keeps a best-fitting's first variant, a best-fit-parenthesize's contents.
+      if (kind === BEST_FITTING || kind === BEST_FITTING_ALL)
+        return (iRef[x] as number) >= 0 && willBreakFlat(x + 1, first) ? "stop" : false;
+      if (kind === IF_BROKEN || kind === PAREN) return false;
       if (isFirstStates(x)) return willBreakFlat(x) ? "stop" : false;
-      if (iKind[x] !== CHOICE) return ((iFlag[x] as number) & HARDS) !== 0;
+      if (kind !== CHOICE) return ((iFlag[x] as number) & HARDS) !== 0;
       const last = iRef[x] as number;
       return last >= 0 && willBreakFlat(first ? x + 1 : last, first) ? "stop" : false;
     },
@@ -1485,7 +1510,11 @@ export function printStream(layout: Layout): StreamPrinted {
         } else if (kind === GROUP_IF_BROKEN) {
           cur++;
           // Only a broken one under a broken condition changes the mode; it broke every group around it too.
-          if ((iFlag[k] as number) & BROKEN && modeOf(iRef[k] as number) === BREAK) {
+          if (
+            mode < FORCED_BREAK &&
+            (iFlag[k] as number) & BROKEN &&
+            modeOf(iRef[k] as number) === BREAK
+          ) {
             if (mustBeFlat) return false;
             if (e > i) {
               if (ls === lEnd.length) {
@@ -1533,7 +1562,7 @@ export function printStream(layout: Layout): StreamPrinted {
             pick[k] = k + 1;
             if (kind === BEST_FITTING_ALL && (iEnd[k + 1] as number) > allEnd)
               allEnd = iEnd[k + 1] as number;
-          } else pick[k] = iRef[k] as number;
+          } else pick[k] = mode >= FORCED_BREAK ? k + 1 : (iRef[k] as number);
         } else if (kind === VARIANT) {
           if (pick[iRef[k] as number] === k) cur++;
           else {
@@ -1558,7 +1587,9 @@ export function printStream(layout: Layout): StreamPrinted {
                 ? (xInd[xs - 1] as number)
                 : (fInd[lp >= floor ? lp : fp - 1] as number);
             let ind = base;
-            if (kind === INDENT) ind = deeper(base);
+            // Ruff's RemoveSoftLinesBuffer (elements.ts's) drops an indent inside a flat part.
+            if (ruff && mode >= FORCED_BREAK) ind = base;
+            else if (kind === INDENT) ind = deeper(base);
             else if (kind === ALIGN)
               ind = alignedFrom(base, alignSteps[iRef[k] as number] as number | string);
             else if (kind === PAREN_INDENT) {
@@ -1941,7 +1972,8 @@ export function printStream(layout: Layout): StreamPrinted {
           }
           case INDENT:
             cur++;
-            if (e > i) fpush(e, deeper(ti), tm);
+            // Ruff's RemoveSoftLinesBuffer (elements.ts's) drops an indent inside a flat part.
+            if (e > i) fpush(e, ruff && tm >= FORCED_BREAK ? ti : deeper(ti), tm);
             break;
           case IF_BROKEN:
           case IF_FLAT: {
@@ -1960,7 +1992,8 @@ export function printStream(layout: Layout): StreamPrinted {
             if ((iRef[k] as number) > 0) column += iRef[k] as number;
             sK.push(k);
             sI.push(ti);
-            sM.push(tm);
+            // Ruff's RemoveSoftLinesBuffer passes a line suffix through as it is.
+            sM.push(ruff ? tm & ~FORCED_BREAK : tm);
             i = e;
             cur = iNext[k] as number;
             jumped = true;
@@ -2027,14 +2060,16 @@ export function printStream(layout: Layout): StreamPrinted {
             if (e > i)
               fpush(
                 e,
-                (iKind[k] === INDENT_IF_BROKEN) === (c === BREAK) ? deeper(ti) : ti,
+                tm < FORCED_BREAK && (iKind[k] === INDENT_IF_BROKEN) === (c === BREAK)
+                  ? deeper(ti)
+                  : ti,
                 tm,
               );
             break;
           }
           case GROUP_IF_BROKEN: {
             const g =
-              modeOf(iRef[k] as number) === BREAK ? decideGroup(k, tm) : tm;
+              tm < FORCED_BREAK && modeOf(iRef[k] as number) === BREAK ? decideGroup(k, tm) : tm;
             cur++;
             if (e > i) fpush(e, ti, g);
             break;
@@ -2042,14 +2077,15 @@ export function printStream(layout: Layout): StreamPrinted {
           case FITS_EXPANDED:
           case FITS_EXPANDED_BREAKS: {
             const r = iRef[k] as number;
-            if (r < 0 || modeOf(r) === FLAT) remeasure = true;
+            if (tm < FORCED_BREAK && (r < 0 || modeOf(r) === FLAT)) remeasure = true;
             cur++;
             break;
           }
           case BEST_FIT_PARENTHESIZE: {
             groupModes[k] = FLAT + 1;
-            let g: Mode = FLAT;
-            if (tm !== FLAT || remeasure) {
+            // Inside a flat part, its contents alone, as ruff's RemoveSoftLinesBuffer (elements.ts's) keeps.
+            let g: number = tm >= FORCED_BREAK ? tm : FLAT;
+            if (tm < FORCED_BREAK && (tm !== FLAT || remeasure)) {
               remeasure = false;
               const width = lineWidth - column;
               if (!(width >= 0 && measure(i, e, k + 1, width, false, FLAT, false, true))) {
@@ -2074,7 +2110,8 @@ export function printStream(layout: Layout): StreamPrinted {
           case BEST_FITTING_ALL: {
             let v = iRef[k] as number;
             let g: Mode = BREAK;
-            if (tm === FLAT && !remeasure) {
+            // Inside a flat part, its first variant, as ruff's RemoveSoftLinesBuffer keeps.
+            if ((tm === FLAT && !remeasure) || tm >= FORCED_BREAK) {
               v = k + 1;
               g = FLAT;
             } else {
@@ -2112,7 +2149,7 @@ export function printStream(layout: Layout): StreamPrinted {
             const p = iRef[k] as number;
             if (pick[p] === k) {
               cur++;
-              if (e > i) fpush(e, ti, modeOf(p));
+              if (e > i) fpush(e, ti, tm >= FORCED_BREAK ? tm : modeOf(p));
             } else {
               i = e;
               cur = iNext[k] as number;
