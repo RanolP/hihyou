@@ -6,14 +6,10 @@ import {
   softBlockIndent,
   space,
 } from "../builders.js";
-import { formatExpr, maybeParenthesize } from "../expr.js";
 import { dslPart } from "../sink.js";
 import type { StmtRules } from "./suite.js";
 
 /** Ruff's one-line statements (statement/stmt_{expr,pass,return,raise,assert,delete,global,import,...}.rs). */
-
-// Ruff's `is_arithmetic_like`: an expression statement it wraps in optional parentheses to break.
-const arithmeticOps = new Set(["|", "^", "<<", ">>", "+", "-"]);
 
 // A statement its rule in format.ts prints.
 const fromSpec = (_: Fmt, s: { readonly ts: number }) => dslPart(s.ts);
@@ -44,12 +40,7 @@ export function alias(f: Fmt, a: Alias): Format {
 }
 
 export const simpleRules: StmtRules = {
-  Expr(f, s) {
-    const v = s.value;
-    if (v.kind === "BinOp" && arithmeticOps.has(f.tree.kindName(v.op)))
-      return maybeParenthesize(f, v, s, "optional");
-    return formatExpr(f, v);
-  },
+  Expr: fromSpec,
   Pass: fromSpec,
   Break: fromSpec,
   Continue: fromSpec,

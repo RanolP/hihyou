@@ -41,4 +41,7 @@ export const stmtSimple = {
     $.name.at(0).andThen((n) => n.via("simple.importFromNames")),
   ],
   wildcard_import: () => "*",
+  // Ruff reads an expression, an assignment, an annotated or an augmented one here, each with its own layout.
+  expression_statement: ($) => $.children.at(0).andThen((c) => c.via("simple.expressionStatement")),
+  type_alias_statement: ($) => ["type", space, $.left.via("simple.typeAlias")],
 } satisfies Structure;

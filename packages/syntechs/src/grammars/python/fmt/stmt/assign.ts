@@ -24,7 +24,6 @@ import {
   hasOwnParentheses,
   hasParentheses,
   hooks,
-  isSplittable,
   maybeParenthesize,
   needsParentheses,
   node,
@@ -34,6 +33,7 @@ import {
   implicitFlat,
   interpolatedAssignment,
 } from "../strings.js";
+import { dslPart } from "../sink.js";
 import { byteOffsetOf, startOf } from "../trivia.js";
 import type { StmtRules } from "./suite.js";
 
@@ -45,7 +45,7 @@ import type { StmtRules } from "./suite.js";
  */
 
 /** Ruff's `has_target_own_parentheses`. */
-function hasTargetOwnParentheses(f: Fmt, e: Expr): boolean {
+export function hasTargetOwnParentheses(f: Fmt, e: Expr): boolean {
   return e.kind === "Tuple" || hasOwnParentheses(f, e) !== undefined;
 }
 
@@ -74,7 +74,7 @@ function shouldParenthesizeTarget(f: Fmt, e: Expr): boolean {
 }
 
 /** Ruff's `FormatTargetWithEqualOperator`: a target and the `=` after it. */
-function targetWithEqual(
+export function targetWithEqual(
   f: Fmt,
   target: Expr,
   eq: Format,
@@ -93,7 +93,7 @@ function targetWithEqual(
 }
 
 /** Ruff's `AnyBeforeOperator::Expression`. */
-function beforeOperator(f: Fmt, e: Expr): Format {
+export function beforeOperator(f: Fmt, e: Expr): Format {
   const cs = f.comments;
   if (cs.hasLeading(e) || cs.hasTrailing(e)) return formatExpr(f, e);
   if (!shouldParenthesizeTarget(f, e)) return formatExpr(f, e, "never");
@@ -447,111 +447,15 @@ export function typeParams(f: Fmt, tp: TypeParams): Format {
 }
 
 /** Ruff's `is_invalid_type_expression`: a type alias value only kept as written. */
-const isInvalidTypeExpression = (e: Expr) =>
+export const isInvalidTypeExpression = (e: Expr) =>
   e.kind === "Named" || e.kind === "Await" || e.kind === "Yield";
 
+// Statements their rules in format/stmt-simple.ts print.
+const fromSpec = (_: Fmt, s: { readonly ts: number }) => dslPart(s.ts);
+
 export const assignRules: StmtRules = {
-  Assign(f, s) {
-    const [first, ...rest] = s.targets;
-    if (!first)
-      throw new Unformattable(
-        `assignment without target at ${byteOffsetOf(f.tree, s.ts)}`,
-      );
-    const eq = (i: number) => {
-      const t = s.ops[i];
-      if (t === undefined)
-        throw new Unformattable(`missing = at ${byteOffsetOf(f.tree, s.ts)}`);
-      return f.tok(t);
-    };
-    const last = rest.at(-1);
-    if (last) {
-      const out: Format[] = [targetWithEqual(f, first, eq(0), true)];
-      for (const [i, t] of rest.slice(0, -1).entries())
-        out.push(targetWithEqual(f, t, eq(i + 1), false));
-      out.push(
-        rightToLeft(
-          f,
-          () => beforeOperator(f, last),
-          eq(rest.length),
-          s.value,
-          s,
-        ),
-      );
-      return out;
-    }
-    if (hasTargetOwnParentheses(f, first) && first.parens.length === 0)
-      return rightToLeft(f, () => beforeOperator(f, first), eq(0), s.value, s);
-    return [targetWithEqual(f, first, eq(0), true), leftToRight(f, s.value, s)];
-  },
-  AnnAssign(f, s) {
-    const cs = f.comments;
-    const annotation = s.annotation;
-    const needs = needsParentheses(f, annotation, s);
-    const head: Format = [formatExpr(f, s.target), f.tok(s.colon), space];
-    if (s.value && s.eq !== undefined) {
-      if (needs !== "always" && isSplittable(annotation))
-        return [
-          head,
-          rightToLeft(
-            f,
-            () => beforeOperator(f, annotation),
-            f.tok(s.eq),
-            s.value,
-            s,
-          ),
-        ];
-      const parens =
-        cs.hasLeading(annotation) ||
-        cs.hasTrailing(annotation) ||
-        needs === "always"
-          ? "always"
-          : "never";
-      return [
-        head,
-        formatExpr(f, annotation, parens),
-        space,
-        f.tok(s.eq),
-        space,
-        leftToRight(f, s.value, s),
-      ];
-    }
-    if (needs === "always") return [head, formatExpr(f, annotation, "always")];
-    return [head, leftToRight(f, annotation, s)];
-  },
-  AugAssign(f, s) {
-    if (hasTargetOwnParentheses(f, s.target) && s.target.parens.length === 0)
-      return rightToLeft(
-        f,
-        () => beforeOperator(f, s.target),
-        f.tok(s.op),
-        s.value,
-        s,
-      );
-    return [
-      formatExpr(f, s.target),
-      space,
-      f.tok(s.op),
-      space,
-      leftToRight(f, s.value, s),
-    ];
-  },
-  TypeAlias(f, s) {
-    const head: Format = [f.tok(s.kw), space, formatExpr(f, s.name)];
-    const tp = s.typeParams;
-    if (isInvalidTypeExpression(s.value))
-      return [
-        head,
-        tp ? typeParams(f, tp) : [],
-        space,
-        f.tok(s.eq),
-        space,
-        formatExpr(f, s.value),
-      ];
-    if (tp)
-      return [
-        head,
-        rightToLeft(f, () => typeParams(f, tp), f.tok(s.eq), s.value, s),
-      ];
-    return [head, space, f.tok(s.eq), space, leftToRight(f, s.value, s)];
-  },
+  Assign: fromSpec,
+  AnnAssign: fromSpec,
+  AugAssign: fromSpec,
+  TypeAlias: fromSpec,
 };
