@@ -797,6 +797,41 @@ export const statementCustoms = {
     });
   },
 
+  /** Prettier's switch-statement.js: the cases one per line inside the braces, a blank line kept between two. */
+  "stmt.switch": (node, ctx) => {
+    const s = jsCtx(ctx);
+    const js = s.js;
+    const body = field(js, node, "body");
+    open(GROUP);
+    sTok(js, anon(js, node, "switch"));
+    sText(" ");
+    condition(s, field(js, node, "value"), false);
+    close();
+    if (body === undefined) return;
+    sText(" ");
+    const cases = items(js, body);
+    withComments(s, body, () => {
+      sTok(js, anon(js, body, "{"));
+      if (cases.length > 0) {
+        open(INDENT);
+        sHardline();
+        cases.forEach((c, i) => {
+          if (i > 0) sHardline();
+          s.print(c);
+          if (i < cases.length - 1 && nextLineEmpty(js.tree, c)) sHardline();
+        });
+        close();
+      } else if (s.danglingComments(body).length > 0) {
+        open(INDENT);
+        sHardline();
+        danglingLines(s, body);
+        close();
+      }
+      sHardline();
+      sTok(js, lastChildWhere(js, body, (c) => !named(js, c) && kind(js, c) === "}"));
+    });
+  },
+
   "stmt.case": switchCase,
   "stmt.labeled": (node, ctx) => {
     const s = jsCtx(ctx);
@@ -894,79 +929,6 @@ const declaration: JsRule = (node, ctx, args) => {
   ]);
 };
 
-/**
- * The `(condition)` of an if, while, do-while or with statement, or a switch's discriminant: tree-sitter's
- * parenthesized_expression, whose parentheses are the statement's own.
- */
-function parenthesized(
-  ctx: JsCtx,
-  pe: number | undefined,
-  layout: (inner: Doc, node: number) => Doc,
-): Doc {
-  if (pe === undefined) return [];
-  if (kind(ctx, pe) !== "parenthesized_expression")
-    return layout(ctx.print(pe), pe);
-  const inner = first(ctx, pe);
-  const open = t(ctx, anon(ctx, pe, "("));
-  const close = t(
-    ctx,
-    lastChildWhere(ctx, pe, (c) => !named(ctx, c) && kind(ctx, c) === ")"),
-  );
-  const doc = inner !== undefined ? layout(withParens(ctx, inner), inner) : [];
-  return ctx.withComments(pe, [open, doc, close]);
-}
-
-/** Prettier prints the condition through needsParens: `if ((a = b))` keeps a pair inside the statement's own. */
-function withParens(ctx: JsCtx, inner: number): Doc {
-  const printed = ctx.print(inner);
-  const expr = unparen(ctx, inner);
-  if (!needsParens(expr, ctx)) return printed;
-  return [synthetic(expr, "("), printed, synthetic(expr, ")")];
-}
-
-const switchStatement: JsRule = (node, ctx) => {
-  const body = field(ctx, node, "body");
-  const cases = body !== undefined ? items(ctx, body) : [];
-  const disc = field(ctx, node, "value");
-  const header = group([
-    t(ctx, anon(ctx, node, "switch")),
-    text(" "),
-    parenthesized(ctx, disc, (doc) => [indent([softline, doc]), softline]),
-  ]);
-  if (body === undefined) return header;
-  const open = t(ctx, anon(ctx, body, "{"));
-  const close = t(
-    ctx,
-    lastChildWhere(ctx, body, (c) => !named(ctx, c) && kind(ctx, c) === "}"),
-  );
-  const dangling = ctx.dangling(body);
-  return [
-    header,
-    text(" "),
-    ctx.withComments(body, [
-      open,
-      cases.length > 0
-        ? indent([
-            hardline,
-            join(
-              hardline,
-              cases.map((c, i) => [
-                ctx.print(c),
-                i < cases.length - 1 && nextLineEmpty(ctx.tree, c)
-                  ? hardline
-                  : [],
-              ]),
-            ),
-          ])
-        : dangling.length > 0
-          ? indent([hardline, join(hardline, dangling)])
-          : [],
-      hardline,
-      close,
-    ]),
-  ];
-};
-
 const variableDeclarator: JsRule = (node, ctx) => {
   const name = field(ctx, node, "name");
   const value = field(ctx, node, "value");
@@ -990,7 +952,6 @@ const variableDeclarator: JsRule = (node, ctx) => {
  */
 export const statementRules: Record<string, JsRule> = {
   expression_statement: expressionStatement,
-  switch_statement: switchStatement,
   variable_declaration: declaration,
   lexical_declaration: declaration,
   using_declaration: declaration,
