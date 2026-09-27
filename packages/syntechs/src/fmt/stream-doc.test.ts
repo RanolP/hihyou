@@ -12,7 +12,8 @@ import type { Doc } from "./doc.js";
 import { format } from "./format.js";
 import type * as Printer from "./printer.js";
 import type { Layout } from "./printer.js";
-import { printStream, resetStream } from "./stream.js";
+import type * as Stream from "./stream.js";
+import { closeDead, openDead, printStream, resetStream } from "./stream.js";
 import { sDoc, Unsupported } from "./stream-doc.js";
 
 // Every Doc a Doc-based formatter prints is also lowered by `sDoc` and printed by `printStream`, before the
@@ -52,6 +53,57 @@ vi.mock("../grammars/javascript/print/util.js", async (importOriginal) => {
   };
 });
 
+// Parts abandoned mid-build, as the JS printer abandons an argument it printed expanded (ArgExpansionBailout),
+// which must change nothing the live copy prints. Before its live copy each Doc is lowered twice inside a dead
+// interval: whole, and abandoned halfway with its intervals left open (`sToken` counts the tokens sDoc writes
+// and throws at `abortAt`). And before each live token goes a dead part a counter it leaked would show in: a
+// wide text, a forced break, and a group and an indent left open.
+class Abandoned extends Error {}
+let tokens = 0;
+let abortAt = -1;
+let live = false;
+vi.mock("./stream.js", async (importOriginal) => {
+  const real = await importOriginal<typeof Stream>();
+  return {
+    ...real,
+    sToken(...a: Parameters<typeof real.sToken>) {
+      if (tokens++ === abortAt) throw new Abandoned();
+      if (live) {
+        const d = real.openDead();
+        real.open(real.GROUP);
+        real.sText("x".repeat(100));
+        real.sLine(real.HARD);
+        real.sBreakParent();
+        real.open(real.INDENT);
+        real.sLine(real.SOFT);
+        real.closeDead(d);
+      }
+      real.sToken(...a);
+    },
+  };
+});
+
+function lowerDead(doc: Doc, flat: ReadonlyMap<Doc, Doc>): boolean {
+  tokens = 0;
+  let d = openDead();
+  sDoc(doc, flat);
+  closeDead(d);
+  if (tokens < 2) return false;
+  abortAt = tokens >> 1;
+  tokens = 0;
+  d = openDead();
+  try {
+    sDoc(doc, flat);
+    throw new Error("stream-doc.test: the abandoned copy ran to its end");
+  } catch (e) {
+    if (!(e instanceof Abandoned)) throw e;
+  } finally {
+    abortAt = -1;
+  }
+  closeDead(d);
+  return true;
+}
+
 interface Tally {
   docs: number;
   covered: number;
@@ -59,6 +111,8 @@ interface Tally {
   differ: string[];
   /** Parts removeLines rebuilt, which the stream printed flat instead. */
   flattened: number;
+  /** Docs whose abandoned copy stopped halfway. */
+  abandoned: number;
 }
 
 function compare(name: string, tally: Tally, run: () => void) {
@@ -70,7 +124,13 @@ function compare(name: string, tally: Tally, run: () => void) {
     let stream: ReturnType<typeof printStream>;
     try {
       resetStream(layout.ruff);
-      sDoc(doc, flat);
+      if (lowerDead(doc, flat)) tally.abandoned++;
+      live = true;
+      try {
+        sDoc(doc, flat);
+      } finally {
+        live = false;
+      }
       stream = printStream(layout);
     } catch (e) {
       if (!(e instanceof Unsupported)) throw e;
@@ -143,7 +203,7 @@ function jsCorpus(): [keyof typeof jsTargets, string, string][] {
 function report(label: string, t: Tally) {
   const skipped = [...t.skipped].sort((a, b) => b[1] - a[1]);
   console.log(
-    `${label}: ${t.covered}/${t.docs} docs lowered, ${t.flattened} flattened, ${t.differ.length} differ; skipped: ${skipped.map(([k, v]) => `${k} ${v}`).join(", ")}`,
+    `${label}: ${t.covered}/${t.docs} docs lowered, ${t.flattened} flattened, ${t.abandoned} abandoned halfway, ${t.differ.length} differ; skipped: ${skipped.map(([k, v]) => `${k} ${v}`).join(", ")}`,
   );
   if (t.differ.length) console.log(`${label} differ:`, t.differ.slice(0, 20));
 }
@@ -154,6 +214,7 @@ const newTally = (): Tally => ({
   skipped: new Map(),
   differ: [],
   flattened: 0,
+  abandoned: 0,
 });
 
 const present = existsSync(corpus);
@@ -178,6 +239,7 @@ describe.skipIf(!present)(
       expect([tally.covered, tally.docs]).toEqual(JS_COVERED);
       // The flat parts were compared at all: a removeLines call the mock no longer sees leaves none.
       expect(tally.flattened).toBeGreaterThan(0);
+      expect(tally.abandoned).toBeGreaterThan(0);
     }, 600_000);
   },
 );
