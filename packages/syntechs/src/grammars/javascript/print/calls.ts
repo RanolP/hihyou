@@ -14,7 +14,6 @@ import {
   callee,
   children,
   childWhere,
-  danglingCommentsInList,
   estreeType,
   field,
   first,
@@ -29,7 +28,6 @@ import {
   isTaggedTemplate,
   items,
   type JsCtx,
-  type JsRule,
   kind,
   lastChildWhere,
   objectOf,
@@ -65,6 +63,7 @@ import {
   sText,
   sToken,
   willBreak,
+  withComments,
 } from "../sink.js";
 import type { JsOptions } from "./util.js";
 
@@ -538,13 +537,20 @@ const sTypeArguments = (sctx: JsStreamCtx, n: number) => {
   sLineSuffixBoundary();
 };
 
-/**
- * What `fn` writes, with `node`'s comments around it: the Doc ctx prints them, since under `onDoc` the stream
- * ctx's comment lists are empty.
- */
-const commented = (ctx: JsCtx, node: number, fn: () => void): Part => ({
-  doc: ctx.withComments(node, capture(fn).doc),
-});
+/** Prettier's printDanglingCommentsInList over the sink. */
+function sDanglingCommentsInList(sctx: JsStreamCtx, n: number): void {
+  const dangling = sctx.danglingComments(n);
+  if (dangling.length === 0) return;
+  open(INDENT);
+  sLine(SOFT);
+  dangling.forEach((c, i) => {
+    if (i > 0) sHardline();
+    sctx.comment(c);
+  });
+  close();
+  if (dangling.some((c) => sctx.isLineComment(c))) sHardline();
+  else sLine(SOFT);
+}
 
 /** Prettier's printCallArguments over the call (or new expression) `n`. */
 function sCallArguments(sctx: JsStreamCtx, n: number): void {
@@ -558,7 +564,7 @@ function sCallArguments(sctx: JsStreamCtx, n: number): void {
     }
     return;
   }
-  place(commented(ctx, list, () => sArguments(sctx, n, list)));
+  withComments(sctx, list, () => sArguments(sctx, n, list));
 }
 
 /** Writes each of `states` as one state of a conditional group. */
@@ -580,7 +586,7 @@ function sArguments(sctx: JsStreamCtx, n: number, list: number): void {
   if (args.length === 0) {
     open(GROUP);
     sTok(ctx, openParen);
-    place({ doc: danglingCommentsInList(ctx, list) });
+    sDanglingCommentsInList(sctx, list);
     sTok(ctx, closeParen);
     close();
     return;
@@ -880,13 +886,11 @@ function sMemberChain(sctx: JsStreamCtx, n: number): void {
         node,
         hasTrailingEmptyLine,
         printed: capture(() => {
-          place(
-            commented(ctx, node, () => {
-              sOptional(ctx, node);
-              sTypeArguments(sctx, node);
-              sCallArguments(sctx, node);
-            }),
-          );
+          withComments(sctx, node, () => {
+            sOptional(ctx, node);
+            sTypeArguments(sctx, node);
+            sCallArguments(sctx, node);
+          });
           if (hasTrailingEmptyLine) sHardline();
         }),
       });
@@ -894,7 +898,9 @@ function sMemberChain(sctx: JsStreamCtx, n: number): void {
     } else if (isMember(ctx, node) && !needsParens(node, ctx)) {
       printedNodes.unshift({
         node,
-        printed: commented(ctx, node, () => sMemberLookup(sctx, node)),
+        printed: capture(() =>
+          withComments(sctx, node, () => sMemberLookup(sctx, node)),
+        ),
       });
       rec(objectOf(ctx, node) as number);
     } else if (
@@ -903,10 +909,12 @@ function sMemberChain(sctx: JsStreamCtx, n: number): void {
     ) {
       printedNodes.unshift({
         node,
-        printed: commented(ctx, node, () =>
-          sTok(
-            ctx,
-            childWhere(ctx, node, (c) => kind(ctx, c) === "!"),
+        printed: capture(() =>
+          withComments(sctx, node, () =>
+            sTok(
+              ctx,
+              childWhere(ctx, node, (c) => kind(ctx, c) === "!"),
+            ),
           ),
         ),
       });
@@ -1192,24 +1200,22 @@ const callCustom: CustomRule<JsOptions> = (n, s) => {
     sCallee(sctx, n);
     sOptional(ctx, n);
     place(typeArgs);
-    place(
-      commented(ctx, list, () => {
-        sTok(
-          ctx,
-          childWhere(ctx, list, (c) => kind(ctx, c) === "("),
-        );
-        args.forEach((a, i) => {
-          sctx.print(a);
-          if (i === args.length - 1) return;
-          sTok(ctx, commas.get(a));
-          sText(" ");
-        });
-        sTok(
-          ctx,
-          lastChildWhere(ctx, list, (c) => kind(ctx, c) === ")"),
-        );
-      }),
-    );
+    withComments(sctx, list, () => {
+      sTok(
+        ctx,
+        childWhere(ctx, list, (c) => kind(ctx, c) === "("),
+      );
+      args.forEach((a, i) => {
+        sctx.print(a);
+        if (i === args.length - 1) return;
+        sTok(ctx, commas.get(a));
+        sText(" ");
+      });
+      sTok(
+        ctx,
+        lastChildWhere(ctx, list, (c) => kind(ctx, c) === ")"),
+      );
+    });
     return;
   }
   const c = callee(ctx, n);
@@ -1237,5 +1243,3 @@ export const callCustoms = {
   call: callCustom,
   member: memberCustom,
 } satisfies Record<string, CustomRule<JsOptions>>;
-
-export const callRules: Record<string, JsRule> = {};

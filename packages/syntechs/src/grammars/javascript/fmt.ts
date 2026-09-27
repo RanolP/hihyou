@@ -10,7 +10,7 @@ import * as gen from "./fmt.gen.js";
 import { grammar, language as parser } from "./index.js";
 import { jsAtoms, jsNormalize } from "./normalize.js";
 import { assignmentCustoms } from "./print/assignment.js";
-import { callCustoms, callRules } from "./print/calls.js";
+import { callCustoms } from "./print/calls.js";
 import { classCustoms } from "./print/classes.js";
 import { handleComment } from "./print/comments.js";
 import { functionCustoms } from "./print/functions.js";
@@ -124,7 +124,6 @@ export function jsRules(): Record<string, JsRule> {
   const table: Record<string, JsRule> = {
     ...literalRules,
     ...statementRules,
-    ...callRules,
     ...operatorRules,
     ...typeRules,
     ...jsxRules,
