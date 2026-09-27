@@ -761,9 +761,13 @@ class Reader {
             });
           });
         const def = this.needField(n, "definition");
-        return this.kind(def) === "class_definition"
-          ? this.classDef(def, decorators, this.start(n))
-          : this.functionDef(def, decorators, this.start(n));
+        const s =
+          this.kind(def) === "class_definition"
+            ? this.classDef(def, decorators, this.start(n))
+            : this.functionDef(def, decorators, this.start(n));
+        // Also under the definition itself, so `ruffStmtOf` finds it from the definition's children.
+        this.stmts.set(def, s);
+        return s;
       }
       case "match_statement":
         return this.matchStmt(n);

@@ -18,7 +18,7 @@ import {
   space,
 } from "../builders.js";
 import type { Comment } from "../comments.js";
-import { args, formatExpr, maybeParenthesize, parameters } from "../expr.js";
+import { formatExpr, maybeParenthesize } from "../expr.js";
 import { dslPart } from "../sink.js";
 import {
   byteEndOf,
@@ -31,7 +31,6 @@ import {
 } from "../trivia.js";
 import {
   clauseBody,
-  clauseHeader,
   type StmtRules,
 } from "./suite.js";
 
@@ -68,19 +67,26 @@ function emptyLinesBeforeTrailingComments(
   return Array.from({ length: Math.max(0, want - actual) }, () => emptyLine);
 }
 
-/** Ruff's `FormatDecorator`, with the decorator's own comments. */
-function decorator(f: Fmt, d: Decorator): Format {
-  const cs = f.comments;
+/**
+ * A definition as its rule in format.ts prints it, from its decorators when it has any; the blank lines that
+ * separate it from its own leading and trailing comments, which ruff prints around it, stay here.
+ */
+function defFromSpec(f: Fmt, s: FunctionDef | ClassDef): Format {
   return [
-    f.leading(cs.leading(d)),
-    f.tok(d.at),
-    maybeParenthesize(f, d.expr, d, "optional"),
-    f.trailing(cs.trailing(d)),
+    emptyLinesAfterLeadingComments(f, f.comments.leading(s)),
+    dslPart(s.decorators.length > 0 ? f.tree.parent(s.ts) : s.ts),
+    emptyLinesBeforeTrailingComments(f, f.comments.trailing(s)),
   ];
 }
 
+/** Ruff's `FormatDecorator`, with the decorator's own comments. */
+function decorator(f: Fmt, d: Decorator): Format {
+  const cs = f.comments;
+  return [f.leading(cs.leading(d)), dslPart(d.ts), f.trailing(cs.trailing(d))];
+}
+
 /** Ruff's `FormatDecorators`: one per line, then the own-line comments between the last and the header. */
-function decorators(
+export function decorators(
   f: Fmt,
   list: readonly Decorator[],
   leadingDefinitionComments: readonly Comment[],
@@ -105,7 +111,7 @@ function decorators(
  * A definition's dangling comments: the own-line ones between its decorators and its header, then the ones
  * after its colon (ruff splits them at the first end-of-line one).
  */
-function splitDangling(
+export function splitDangling(
   f: Fmt,
   s: FunctionDef | ClassDef,
 ): [readonly Comment[], readonly Comment[]] {
@@ -121,7 +127,7 @@ function splitDangling(
  * bound is printed from its tokens and only in the shapes whose spacing is fixed: a name, a dotted name, or a
  * parenthesized tuple of those.
  */
-function typeParams(f: Fmt, tp: TypeParams): Format {
+export function typeParams(f: Fmt, tp: TypeParams): Format {
   if (f.comments.has(tp) || f.comments.hasAnyIn(tp.start, tp.end))
     throw new Unformattable(
       `comment in type parameters at ${byteOffsetOf(f.tree, tp.ts)}`,
@@ -247,55 +253,6 @@ export function body(
       `backslash continuation before a body at ${byteEndOf(t, header.colon)}`,
     );
   return clauseBody(f, stmts, kind, colonComments);
-}
-
-/** Ruff's `format_function_header`, less its colon. */
-function functionHeader(f: Fmt, s: FunctionDef): Format {
-  const cs = f.comments;
-  const out: Format[] = s.kws.map((k) => [f.tok(k), space]);
-  out.push(f.tok(s.name));
-  if (s.typeParams) out.push(typeParams(f, s.typeParams));
-  const p = s.params;
-  const emptyParams = p.items.length === 0 && !cs.has(p);
-  // Ruff's empty `soft_block_indent` prints nothing, where the shared `emptyParenthesized` still breaks.
-  const inner: Format[] = [
-    emptyParams && p.open !== undefined && p.close !== undefined
-      ? [f.tok(p.open), f.tok(p.close)]
-      : parameters(f, p, "preserve"),
-  ];
-  const ret = s.returns;
-  if (ret && s.arrow !== undefined) {
-    inner.push(space, f.tok(s.arrow), space);
-    if (ret.kind === "Tuple")
-      inner.push(formatExpr(f, ret, cs.hasLeading(ret) ? "always" : "never"));
-    // Parenthesized so the comment cannot become the header's own on the next run.
-    else if (cs.hasTrailing(ret)) inner.push(formatExpr(f, ret, "always"));
-    else
-      inner.push(
-        maybeParenthesize(
-          f,
-          ret,
-          s,
-          emptyParams ? "ifBreaksParenthesized" : "ifBreaks",
-        ),
-      );
-  }
-  out.push(group(inner));
-  return out;
-}
-
-/** Ruff's `class` header: an empty argument list is dropped, keeping its end-of-line comments. */
-function classHeader(f: Fmt, s: ClassDef): Format {
-  const out: Format[] = [f.tok(s.kw), space, f.tok(s.name)];
-  if (s.typeParams) out.push(typeParams(f, s.typeParams));
-  const a = s.args;
-  if (a) {
-    const dangling = f.comments.dangling(a);
-    if (a.items.length === 0 && dangling.every((c) => c.line === "eol"))
-      out.push(f.trailing(dangling));
-    else out.push(args(f, a));
-  }
-  return out;
 }
 
 // ---- patterns (pattern/*.rs) ----
@@ -837,24 +794,6 @@ const fromSpec = (_: Fmt, s: Match) => dslPart(s.ts);
 
 export const defRules: StmtRules = {
   Match: fromSpec,
-  FunctionDef(f, s) {
-    const [leadingDef, trailingDef] = splitDangling(f, s);
-    return [
-      emptyLinesAfterLeadingComments(f, f.comments.leading(s)),
-      decorators(f, s.decorators, leadingDef),
-      clauseHeader(f, functionHeader(f, s), f.tok(s.colon), trailingDef),
-      body(f, s, s.body, "function", trailingDef),
-      emptyLinesBeforeTrailingComments(f, f.comments.trailing(s)),
-    ];
-  },
-  ClassDef(f, s) {
-    const [leadingDef, trailingDef] = splitDangling(f, s);
-    return [
-      emptyLinesAfterLeadingComments(f, f.comments.leading(s)),
-      decorators(f, s.decorators, leadingDef),
-      clauseHeader(f, classHeader(f, s), f.tok(s.colon), trailingDef),
-      body(f, s, s.body, "class", trailingDef),
-      emptyLinesBeforeTrailingComments(f, f.comments.trailing(s)),
-    ];
-  },
+  FunctionDef: defFromSpec,
+  ClassDef: defFromSpec,
 };
