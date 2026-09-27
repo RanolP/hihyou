@@ -772,6 +772,7 @@ function writeFields(f: Fmt, e: Expr, o: Opts): void {
     case "Await":
     case "Yield":
     case "DictComp":
+    case "Slice":
       sink.sDsl(e.ts);
       return;
     case "IfExp":
@@ -805,9 +806,6 @@ function writeFields(f: Fmt, e: Expr, o: Opts): void {
     case "SetComp":
     case "Generator":
       sink.part(comp(f, e, o.genPreserve === true));
-      return;
-    case "Slice":
-      sink.part(slice(f, e));
       return;
   }
 }
@@ -1353,69 +1351,6 @@ export function comprehensionComments(f: Fmt, c: Comprehension): ComprehensionCo
 export function writeComprehensionSpacer(f: Fmt, e: Expr, preserve: boolean): void {
   if (f.comments.hasLeading(e) && !(preserve && e.parens.length > 0)) sLine(COLLAPSE);
   else sText(" ");
-}
-
-function slice(f: Fmt, e: Slice): Format {
-  const cs = f.comments;
-  const [c1, c2] = e.colons;
-  const { lower, upper, step } = e;
-  const simple = (x: Expr | undefined): boolean =>
-    x === undefined ||
-    x.kind === "Name" ||
-    x.kind === "Number" ||
-    x.kind === "Bool" ||
-    x.kind === "None" ||
-    x.kind === "Ellipsis" ||
-    x.kind === "Str" ||
-    (x.kind === "UnaryOp" && f.text(x.op) !== "not" && simple(x.operand));
-  const allSimple = simple(lower) && simple(upper) && simple(step);
-  const spaced = !allSimple;
-  const dangling = cs.dangling(e);
-  const c1Start = c1 === undefined ? undefined : startOf(f.tree, c1);
-  const c2Start = c2 === undefined ? undefined : startOf(f.tree, c2);
-  const firstColon = dangling.filter(
-    (c) => c1Start === undefined || c.start < c1Start,
-  );
-  const rest = dangling.filter(
-    (c) => c1Start !== undefined && c.start >= c1Start,
-  );
-  const secondColon = rest.filter(
-    (c) => c2Start === undefined || c.start < c2Start,
-  );
-  const afterSecond = rest.filter(
-    (c) => c2Start !== undefined && c.start >= c2Start,
-  );
-  const out: Format[] = [];
-  if (lower) out.push(formatExpr(f, lower));
-  if (c1 !== undefined) {
-    const hasSpaceBefore = spaced && lower !== undefined;
-    if (hasSpaceBefore) out.push(space);
-    if (firstColon.length > 0) out.push(f.dangling(firstColon));
-    else if (!hasSpaceBefore && lower !== undefined && spaced) out.push(space);
-    out.push(f.tok(c1));
-  }
-  if (upper) {
-    const lead = cs.leading(upper);
-    if (spaced || lead.length > 0) out.push(leadingSpace(lead, spaced));
-    out.push(formatExpr(f, upper));
-  }
-  if (c2 !== undefined) {
-    if (spaced && upper) out.push(space);
-    out.push(f.dangling(secondColon), f.tok(c2));
-    if (step) {
-      const lead = cs.leading(step);
-      if (spaced || lead.length > 0) out.push(leadingSpace(lead, spaced));
-      out.push(formatExpr(f, step));
-    }
-  } else if (secondColon.length > 0) out.push(f.dangling(secondColon));
-  out.push(f.dangling(afterSecond));
-  return out;
-}
-
-function leadingSpace(lead: readonly Comment[], spaced: boolean): Format {
-  const first = lead[0];
-  if (first) return first.line === "own" ? hard : text("  ");
-  return spaced ? space : [];
 }
 
 // ---- binary-like expressions (expression/binary_like.rs) ----
