@@ -702,21 +702,6 @@ const returnStatement: JsRule = (node, ctx) => {
   ];
 };
 
-const breakStatement: JsRule = (node, ctx) => {
-  const kw = anon(ctx, node, "break") ?? anon(ctx, node, "continue");
-  const label = field(ctx, node, "label");
-  return [
-    t(ctx, kw),
-    label !== undefined ? [text(" "), ctx.print(label)] : [],
-    semi(ctx, node),
-  ];
-};
-
-const debuggerStatement: JsRule = (node, ctx) => [
-  t(ctx, anon(ctx, node, "debugger")),
-  semi(ctx, node),
-];
-
 const declaration: JsRule = (node, ctx, args) => {
   const declarators = items(ctx, node).filter(
     (c) => kind(ctx, c) === "variable_declarator",
@@ -971,9 +956,6 @@ export const statementRules: Record<string, JsRule> = {
   do_statement: doStatement,
   return_statement: returnStatement,
   throw_statement: returnStatement,
-  break_statement: breakStatement,
-  continue_statement: breakStatement,
-  debugger_statement: debuggerStatement,
   variable_declaration: declaration,
   lexical_declaration: declaration,
   using_declaration: declaration,

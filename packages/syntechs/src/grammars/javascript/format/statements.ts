@@ -1,6 +1,6 @@
 // Statements (customs: print/statements.ts). A blank line kept after a statement's content, and a clause's body
 // beside or below its head, are customs.
-import { custom, space } from "../../../fmt/dsl/dsl.js";
+import { custom, space, tok } from "../../../fmt/dsl/dsl.js";
 import type { JsStructure } from "../format.js";
 
 export const statements = {
@@ -23,4 +23,7 @@ export const statements = {
   switch_case: () => custom("stmt.case"),
   switch_default: () => custom("stmt.case"),
   labeled_statement: () => custom("stmt.labeled"),
+  debugger_statement: () => ["debugger", tok(";").via("semi")],
+  break_statement: ($) => ["break", $.label.andThen((l) => [space, l]), tok(";").via("semi")],
+  continue_statement: ($) => ["continue", $.label.andThen((l) => [space, l]), tok(";").via("semi")],
 } satisfies JsStructure;

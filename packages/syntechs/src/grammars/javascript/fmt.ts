@@ -20,6 +20,7 @@ import { moduleCustoms, moduleRules } from "./print/modules.js";
 import { objectCustoms, objectRules } from "./print/objects.js";
 import { operatorCustoms, operatorRules } from "./print/operators.js";
 import { needsParens } from "./print/parens.js";
+import { semiCustoms } from "./print/semi.js";
 import {
   ignoredStatement,
   STATEMENT_LIST_PARENTS,
@@ -146,6 +147,7 @@ export function jsRules(): Record<string, JsRule> {
     ...functionCustoms,
     ...jsxCustoms,
     ...literalCustoms,
+    ...semiCustoms,
   };
   for (const [name, rule] of gen.javascript<JsOptions>(customs).rules) table[name] = onDoc(rule);
   for (const [name, rule] of Object.entries(table)) table[name] = wrap(rule);
