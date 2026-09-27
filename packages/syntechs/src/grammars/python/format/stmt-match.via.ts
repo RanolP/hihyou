@@ -6,15 +6,14 @@ import { COMPOUND, type Fmt, hard, space } from "../fmt/builders.js";
 import { type Format, indent } from "../fmt/elements.js";
 import { maybeParenthesize } from "../fmt/expr.js";
 import { dslPart, part, ruffStmtOf } from "../fmt/sink.js";
+import { body, kids } from "../fmt/stmt/defs.js";
 import {
-  body,
-  kids,
   maybeParenthesizePattern,
   pattern,
   readCasePattern,
   readGroup,
   readPattern,
-} from "../fmt/stmt/defs.js";
+} from "../fmt/stmt/match.js";
 import { leadingAlternateBranchComments } from "../fmt/stmt/suite.js";
 import { byteOffsetOf } from "../fmt/trivia.js";
 
