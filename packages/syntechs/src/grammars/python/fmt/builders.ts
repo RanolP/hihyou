@@ -1,16 +1,3 @@
-import {
-  type Format,
-  type GroupRef,
-  indent,
-  COLLAPSE,
-  HARD,
-  lineOf,
-  BLANK,
-  SOFT,
-  type Token,
-  text,
-  token,
-} from "./elements.js";
 import type { FormatTree } from "../../../fmt/tree.js";
 import { textWidth } from "../../../fmt/width.js";
 import type { Comment, Comments } from "./comments.js";
@@ -31,28 +18,18 @@ export interface PyOptions {
 
 /**
  * Ruff's `NodeLevel`: where the node being printed stands, which decides what an in-parentheses-only break
- * becomes and how many blank lines a comment keeps. `g` is the group of the optional parentheses around.
+ * becomes and how many blank lines a comment keeps. `g` is the stream id of the group of the optional parentheses around.
  */
 export type Level =
   | { readonly k: "top" }
   | { readonly k: "compound" }
-  | { readonly k: "expr"; readonly g: GroupRef | undefined }
+  | { readonly k: "expr"; readonly g: number | undefined }
   | { readonly k: "paren" };
 
 export const TOP: Level = { k: "top" };
 export const COMPOUND: Level = { k: "compound" };
 export const PAREN: Level = { k: "paren" };
 export const EXPR: Level = { k: "expr", g: undefined };
-
-// Ruff's lines: breaking on a line that is still empty prints nothing, so they never stack into blank lines.
-export const hard = lineOf(HARD | COLLAPSE);
-export const soft = lineOf(SOFT | COLLAPSE);
-export const softOrSpace = lineOf(COLLAPSE);
-export const emptyLine = lineOf(HARD | COLLAPSE | BLANK);
-export const space = text(" ");
-
-export const blockIndent = (d: Format): Format => [indent([hard, d]), hard];
-export const softBlockIndent = (d: Format): Format => [indent([soft, d]), soft];
 
 /** The state one formatting run threads through the rules. */
 export class Fmt {
@@ -82,39 +59,17 @@ export class Fmt {
     return this.tree.text(n);
   }
 
-  tok(n: number, as?: string): Token {
-    return token(n, as ?? this.tree.text(n));
-  }
-
-  /** `tok`, written. */
   writeTok(n: number, as?: string): void {
     sink.sToken(n, as ?? this.tree.text(n));
   }
 
   /** A comment as printed; marks it printed. */
-  comment(c: Comment): Token {
-    c.formatted = true;
-    return token(c.ts, normalizeComment(this.tree.text(c.ts)));
-  }
-
-  emptyLines(n: number): Format {
-    switch (this.level.k) {
-      case "top":
-        return n <= 1 ? hard : n === 2 ? emptyLine : [emptyLine, emptyLine];
-      case "compound":
-        return n <= 1 ? hard : emptyLine;
-      default:
-        return hard;
-    }
-  }
-
-  /** `comment`, written. */
   writeComment(c: Comment): void {
     c.formatted = true;
     sink.sToken(c.ts, normalizeComment(this.tree.text(c.ts)));
   }
 
-  /** `emptyLines`, written. */
+  /** Ruff's empty lines after a comment: how many blank lines the level keeps of the `n` line breaks. */
   writeEmptyLines(n: number): void {
     const one = sink.HARD | sink.COLLAPSE;
     const blank = one | sink.BLANK;
@@ -186,26 +141,6 @@ export class Fmt {
     for (const c of cs) if (!c.formatted) this.writeEolComment(c);
   }
 
-  leading(cs: readonly Comment[]): Format {
-    return sink.record(() => this.writeLeading(cs));
-  }
-
-  trailing(cs: readonly Comment[]): Format {
-    return sink.record(() => this.writeTrailing(cs));
-  }
-
-  eolComment(c: Comment): Format {
-    return sink.record(() => this.writeEolComment(c));
-  }
-
-  dangling(cs: readonly Comment[]): Format {
-    return sink.record(() => this.writeDangling(cs));
-  }
-
-  danglingOpenParen(cs: readonly Comment[]): Format {
-    return sink.record(() => this.writeDanglingOpenParen(cs));
-  }
-
   /** Ruff's `parenthesized`: `left`, `content` indented on its own lines if it breaks, `right`. */
   writeParenthesized(
     left: () => void,
@@ -228,7 +163,7 @@ export class Fmt {
     const level = this.level;
     this.at(PAREN, () => {
       const g = level.k === "expr" ? level.g : undefined;
-      if (g) sink.openFitsExpanded(sink.idOf(g));
+      if (g !== undefined) sink.openFitsExpanded(g);
       if (dangling.length === 0 && hug) content();
       else {
         sink.open(sink.GROUP);
@@ -240,43 +175,15 @@ export class Fmt {
         sink.sLine(sink.SOFT | sink.COLLAPSE);
         sink.close();
       }
-      if (g) sink.close();
+      if (g !== undefined) sink.close();
     });
-  }
-
-  parenthesized(
-    left: Token,
-    content: () => Format,
-    right: Token,
-    dangling: readonly Comment[] = [],
-    hug = false,
-  ): Format {
-    return sink.record(() =>
-      this.writeParenthesized(
-        () => sink.part(left),
-        () => sink.part(content()),
-        () => sink.part(right),
-        dangling,
-        hug,
-      ),
-    );
-  }
-
-  parenthesizedContent(
-    content: () => Format,
-    dangling: readonly Comment[] = [],
-    hug = false,
-  ): Format {
-    return sink.record(() =>
-      this.writeParenthesizedContent(() => sink.part(content()), dangling, hug),
-    );
   }
 
   /** Ruff's `optional_parentheses`: parentheses only when `content` must break, whose groups see them. */
   writeOptionalParentheses(anchor: number, content: () => void): void {
     const g = sink.open(sink.GROUP);
     this.writeParenthesesOf(g, anchor, () =>
-      this.at({ k: "expr", g: sink.refTo(g) }, content),
+      this.at({ k: "expr", g }, content),
     );
     sink.close();
   }
@@ -308,22 +215,6 @@ export class Fmt {
     writeIfBroken(g, () => sink.sToken(anchor, ")", true));
   }
 
-  optionalParentheses(anchor: number, content: () => Format): Format {
-    return sink.record(() =>
-      this.writeOptionalParentheses(anchor, () => sink.part(content())),
-    );
-  }
-
-  parenthesizeIfExpands(
-    anchor: number,
-    content: () => Format,
-    indented = true,
-  ): Format {
-    return sink.record(() =>
-      this.writeParenthesizeIfExpands(anchor, () => sink.part(content()), indented),
-    );
-  }
-
   /** Ruff's `empty_parenthesized`. */
   writeEmptyParenthesized(
     left: () => void,
@@ -346,32 +237,18 @@ export class Fmt {
     sink.close();
   }
 
-  emptyParenthesized(
-    left: Token,
-    dangling: readonly Comment[],
-    right: Token,
-  ): Format {
-    return sink.record(() =>
-      this.writeEmptyParenthesized(
-        () => sink.part(left),
-        dangling,
-        () => sink.part(right),
-      ),
-    );
-  }
-
   writeSoftLine(): void {
     const l = this.level;
     if (l.k === "paren") sink.sLine(sink.SOFT | sink.COLLAPSE);
-    else if (l.k === "expr" && l.g)
-      writeIfBroken(sink.idOf(l.g), () => sink.sLine(sink.SOFT | sink.COLLAPSE));
+    else if (l.k === "expr" && l.g !== undefined)
+      writeIfBroken(l.g, () => sink.sLine(sink.SOFT | sink.COLLAPSE));
   }
 
   writeSoftLineOrSpace(): void {
     const l = this.level;
     if (l.k === "paren") sink.sLine(sink.COLLAPSE);
-    else if (l.k === "expr" && l.g) {
-      const g = sink.idOf(l.g);
+    else if (l.k === "expr" && l.g !== undefined) {
+      const g = l.g;
       sink.open(sink.IF_BROKEN, g);
       sink.sLine(sink.COLLAPSE);
       sink.close();
@@ -381,31 +258,23 @@ export class Fmt {
     } else sink.sText(" ");
   }
 
-  softLineOrSpace(): Format {
-    return sink.record(() => this.writeSoftLineOrSpace());
-  }
-
   writeInParensGroup(content: () => void): void {
     const l = this.level;
     if (l.k === "paren") {
       sink.open(sink.GROUP);
       content();
       sink.close();
-    } else if (l.k === "expr" && l.g) {
-      sink.open(sink.GROUP_IF_BROKEN, sink.idOf(l.g));
+    } else if (l.k === "expr" && l.g !== undefined) {
+      sink.open(sink.GROUP_IF_BROKEN, l.g);
       content();
       sink.close();
     } else content();
   }
 
-  inParensGroup(d: Format): Format {
-    return sink.record(() => this.writeInParensGroup(() => sink.part(d)));
-  }
-
   writeInParensIfBreaks(content: () => void): void {
     const l = this.level;
     if (l.k === "paren") writeIfBroken(-1, content);
-    else if (l.k === "expr" && l.g) writeIfBroken(sink.idOf(l.g), content);
+    else if (l.k === "expr" && l.g !== undefined) writeIfBroken(l.g, content);
   }
 
   /** Whether the source has a comma (ruff's magic trailing comma) after `end`, before `sequenceEnd`. */

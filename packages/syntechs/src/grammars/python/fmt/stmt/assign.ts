@@ -28,9 +28,7 @@ import {
   openBestFitting,
   openVariant,
   type Part,
-  part,
   place,
-  refTo,
   removeSoftLines,
   SOFT,
   sLine,
@@ -43,7 +41,6 @@ import {
   interpolatedAssignment,
   writeImplicitExpanded,
 } from "../strings.js";
-import { dslPart } from "../sink.js";
 import * as sink from "../sink.js";
 import type { Frame } from "../../../../fmt/dsl/runtime.js";
 import { byteOffsetOf, startOf } from "../trivia.js";
@@ -252,7 +249,7 @@ export function leftToRight(f: Fmt, value: Expr, stmt: Stmt): void {
           lparen(value);
           blockIndent(
             () =>
-              f.at({ k: "expr", g: refTo(g) }, () =>
+              f.at({ k: "expr", g }, () =>
                 writeImplicitExpanded(f, str),
               ),
             true,
@@ -277,7 +274,7 @@ export function leftToRight(f: Fmt, value: Expr, stmt: Stmt): void {
   }
 
   const b = openBestFitParenthesize(() => lparen(value));
-  f.at({ k: "expr", g: refTo(b) }, () => writeExpr(f, value, "never"));
+  f.at({ k: "expr", g: b }, () => writeExpr(f, value, "never"));
   if (comments.length === 0) return closeBestFitParenthesize(b, () => rparen(value));
   open(IF_BROKEN, b);
   place(inline);
@@ -414,7 +411,7 @@ export function rightToLeft(
     const expanded = capture(() => {
       const g = open(GROUP, -1, BROKEN);
       blockIndent(() =>
-        f.at({ k: "expr", g: refTo(g) }, () =>
+        f.at({ k: "expr", g }, () =>
           writeImplicitExpanded(f, str),
         ),
       );

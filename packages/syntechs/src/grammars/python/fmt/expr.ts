@@ -243,7 +243,7 @@ export function writeMaybeParenthesize(
 
 function writeBestFit(f: Fmt, e: Expr): void {
   const b = sink.openBestFitParenthesize(() => sink.sToken(e.ts, "(", true));
-  f.at({ k: "expr", g: sink.refTo(b) }, () => writeExpr(f, e, "never"));
+  f.at({ k: "expr", g: b }, () => writeExpr(f, e, "never"));
   sink.closeBestFitParenthesize(b, () => sink.sToken(e.ts, ")", true));
 }
 
@@ -1540,7 +1540,7 @@ export function writeBinaryLike(f: Fmt, e: BinOp | Compare | BoolOp): void {
   const l = f.level;
   const start = () => {
     if (l.k === "paren") sOpen(GROUP);
-    else if (l.k === "expr" && l.g) sOpen(sink.GROUP_IF_BROKEN, sink.idOf(l.g));
+    else if (l.k === "expr" && l.g !== undefined) sOpen(sink.GROUP_IF_BROKEN, l.g);
   };
   const end = () => {
     if (isParenthesizedLevel(l)) sClose();

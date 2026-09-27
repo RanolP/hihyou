@@ -16,7 +16,7 @@ import {
   writeExpr,
   writeMaybeParenthesize,
 } from "../expr.js";
-import { part, sDsl, sText, sToken } from "../sink.js";
+import { sDsl, sText, sToken } from "../sink.js";
 import { startOf } from "../trivia.js";
 
 /** Ruff's compound statements other than definitions (statement/stmt_{if,for,while,try,with}.rs). */
