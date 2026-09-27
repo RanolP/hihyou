@@ -3,8 +3,8 @@ import type { StreamCtx } from "../../../fmt/stream-format.js";
 import type { Py, Stmt } from "../fmt/ast.js";
 import type { Fmt } from "../fmt/builders.js";
 import type { Comment } from "../fmt/comments.js";
-import { formatExpr, maybeParenthesize } from "../fmt/expr.js";
-import { part, ruffOf, ruffStmtOf, sText, sToken } from "../fmt/sink.js";
+import { writeExpr, writeMaybeParenthesize } from "../fmt/expr.js";
+import { ruffOf, ruffStmtOf, sText, sToken } from "../fmt/sink.js";
 import {
   exceptType,
   type ItemLayout,
@@ -82,15 +82,12 @@ function clauseOf(n: number, ctx: StreamCtx<unknown>): Clause {
 export const stmtCompoundVia = {
   "compound.ifBreaks": (c: number) => {
     const { f, e } = ruffOf(c);
-    part(maybeParenthesize(f, e, e.parent as Py, "ifBreaks"));
+    writeMaybeParenthesize(f, e, e.parent as Py, "ifBreaks");
   },
   "compound.forTarget": (c: number) => {
     const { f, e } = ruffOf(c);
-    part(
-      e.kind === "Tuple"
-        ? formatExpr(f, e, "preserve", { tuple: "neverPreserve" })
-        : maybeParenthesize(f, e, e.parent as Py, "ifBreaks"),
-    );
+    if (e.kind === "Tuple") writeExpr(f, e, "preserve", { tuple: "neverPreserve" });
+    else writeMaybeParenthesize(f, e, e.parent as Py, "ifBreaks");
   },
   // Given the type (or its `as` pattern), prints the handler's type, `as` and name.
   "compound.exceptType": (c: number, ctx: StreamCtx<unknown>) => {
@@ -140,6 +137,6 @@ export const stmtCompoundVia = {
   "compound.body": (c: number, ctx: StreamCtx<unknown>) => {
     const { f, colon, body, after = [] } = clauseOf(ctx.tree.parent(c), ctx);
     writeClauseBody(f, body, "other", colon);
-    part(f.dangling(after));
+    f.writeDangling(after);
   },
 };

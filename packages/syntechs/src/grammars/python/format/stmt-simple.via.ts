@@ -12,8 +12,8 @@ import {
   Unformattable,
 } from "../fmt/ast.js";
 import { type Fmt, writeCommaIn } from "../fmt/builders.js";
-import { formatExpr, isSplittable, maybeParenthesize, needsParentheses, node } from "../fmt/expr.js";
-import { part, ruffOf, ruffStmtOf, sText, sToken } from "../fmt/sink.js";
+import { isSplittable, needsParentheses, writeExpr, writeMaybeParenthesize, writeNode } from "../fmt/expr.js";
+import { ruffOf, ruffStmtOf, sText, sToken } from "../fmt/sink.js";
 import {
   beforeOperator,
   hasTargetOwnParentheses,
@@ -62,7 +62,7 @@ function annAssign(f: Fmt, s: AnnAssign): void {
   const cs = f.comments;
   const annotation = s.annotation;
   const needs = needsParentheses(f, annotation, s);
-  part(formatExpr(f, s.target));
+  writeExpr(f, s.target);
   f.writeTok(s.colon);
   space();
   const eqTok = s.eq;
@@ -81,13 +81,13 @@ function annAssign(f: Fmt, s: AnnAssign): void {
       needs === "always"
         ? "always"
         : "never";
-    part(formatExpr(f, annotation, parens));
+    writeExpr(f, annotation, parens);
     space();
     f.writeTok(eqTok);
     space();
     return leftToRight(f, s.value, s);
   }
-  if (needs === "always") part(formatExpr(f, annotation, "always"));
+  if (needs === "always") writeExpr(f, annotation, "always");
   else leftToRight(f, annotation, s);
 }
 
@@ -100,7 +100,7 @@ function augAssign(f: Fmt, s: AugAssign): void {
       s.value,
       s,
     );
-  part(formatExpr(f, s.target));
+  writeExpr(f, s.target);
   space();
   f.writeTok(s.op);
   space();
@@ -109,14 +109,14 @@ function augAssign(f: Fmt, s: AugAssign): void {
 
 // A type alias after `type`, as ruff lays it out: its name, then its parameters, `=` and value.
 function typeAlias(f: Fmt, s: TypeAlias): void {
-  part(formatExpr(f, s.name));
+  writeExpr(f, s.name);
   const tp = s.typeParams;
   if (isInvalidTypeExpression(s.value)) {
     if (tp) typeParams(f, tp);
     space();
     f.writeTok(s.eq);
     space();
-    part(formatExpr(f, s.value));
+    writeExpr(f, s.value);
   } else if (tp)
     rightToLeft(f, () => typeParams(f, tp), () => f.writeTok(s.eq), s.value, s);
   else {
@@ -136,11 +136,9 @@ export const stmtSimpleVia = {
       return;
     }
     const v = s.value;
-    part(
-      v.kind === "BinOp" && arithmeticOps.has(f.tree.kindName(v.op))
-        ? maybeParenthesize(f, v, s, "optional")
-        : formatExpr(f, v),
-    );
+    if (v.kind === "BinOp" && arithmeticOps.has(f.tree.kindName(v.op)))
+      writeMaybeParenthesize(f, v, s, "optional");
+    else writeExpr(f, v);
   },
   // The whole statement: an assignment is its statement's only child.
   "simple.assignment": (n: number) => {
@@ -158,20 +156,20 @@ export const stmtSimpleVia = {
   "simple.returnValue": (c: number) => {
     const { f, e } = ruffOf(c);
     if (e.kind === "Tuple" && !f.comments.hasLeading(e))
-      part(node(f, e, { tuple: "optionalParentheses" }));
+      writeNode(f, e, { tuple: "optionalParentheses" });
     else leftToRight(f, e, e.parent as Simple);
   },
   "simple.optional": (c: number) => {
     const { f, e } = ruffOf(c);
-    part(maybeParenthesize(f, e, e.parent as Simple, "optional"));
+    writeMaybeParenthesize(f, e, e.parent as Simple, "optional");
   },
   "simple.ifBreaks": (c: number) => {
     const { f, e } = ruffOf(c);
-    part(maybeParenthesize(f, e, e.parent as Simple, "ifBreaks"));
+    writeMaybeParenthesize(f, e, e.parent as Simple, "ifBreaks");
   },
   "simple.ifBreaksParenthesized": (c: number) => {
     const { f, e } = ruffOf(c);
-    part(maybeParenthesize(f, e, e.parent as Simple, "ifBreaksParenthesized"));
+    writeMaybeParenthesize(f, e, e.parent as Simple, "ifBreaksParenthesized");
   },
   // Given the first name, prints them all: the layout is the statement's.
   "simple.globalNames": (c: number) => {
@@ -213,14 +211,11 @@ export const stmtSimpleVia = {
     const targets: Expr[] = e.kind === "Tuple" && e.open === undefined ? e.elts : [e];
     const [single] = targets;
     if (targets.length === 1 && single) {
-      part(maybeParenthesize(f, single, s, "ifBreaks"));
+      writeMaybeParenthesize(f, single, s, "ifBreaks");
       return;
     }
     const comma = writeCommaIn(f.tree, e.ts, e.ts);
-    const entries = targets.map((t) => {
-      const doc = formatExpr(f, t);
-      return { end: t.end, write: () => part(doc) };
-    });
+    const entries = targets.map((t) => ({ end: t.end, write: () => writeExpr(f, t) }));
     f.writeParenthesizeIfExpands(s.kw, () => f.writeJoinCommaSeparated(entries, s.end, comma));
   },
   "simple.python2": (n: number, ctx: StreamCtx<unknown>) => {

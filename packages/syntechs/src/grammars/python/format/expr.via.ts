@@ -1,20 +1,20 @@
 // The customs expr.ts's `.via`s name.
 import type { StreamCtx } from "../../../fmt/stream-format.js";
 import type { BinOp, BoolOp, Compare, IfExp, Lambda, Named, Py, UnaryOp } from "../fmt/ast.js";
-import { hard, space } from "../fmt/builders.js";
-import { fitsExpanded, group } from "../fmt/elements.js";
+import { space } from "../fmt/builders.js";
+import { fitsExpanded } from "../fmt/elements.js";
 import {
   binaryLike,
-  formatExpr,
   lambdaBody,
   lambdaHeader,
-  maybeParenthesize,
-  node,
   number,
   unaryNeedsLineBreak,
+  writeExpr,
   writeLambdaParams,
+  writeMaybeParenthesize,
+  writeNode,
 } from "../fmt/expr.js";
-import { part, ruffOf, sText, sToken } from "../fmt/sink.js";
+import { close, COLLAPSE, GROUP, HARD, open, part, ruffOf, sLine, sText, sToken } from "../fmt/sink.js";
 
 export const exprVia = {
   "expr.lambdaParams": (c: number, ctx: StreamCtx<unknown>) => {
@@ -46,15 +46,14 @@ export const exprVia = {
       f.text(operand.op) === "**"
         ? "always"
         : "preserve";
-    part([
-      f.trailing(f.comments.dangling(e)),
-      lineBreak ? hard : op === "not" ? space : [],
-      formatExpr(f, operand, parens),
-    ]);
+    f.writeTrailing(f.comments.dangling(e));
+    if (lineBreak) sLine(HARD | COLLAPSE);
+    else if (op === "not") sText(" ");
+    writeExpr(f, operand, parens);
   },
   "expr.awaitValue": (c: number) => {
     const { f, e } = ruffOf(c);
-    part(maybeParenthesize(f, e, e.parent as Py, "ifBreaks"));
+    writeMaybeParenthesize(f, e, e.parent as Py, "ifBreaks");
   },
   "expr.yieldFrom": (token: number | undefined, _: number, ctx: StreamCtx<unknown>) => {
     if (token === undefined) return;
@@ -63,7 +62,7 @@ export const exprVia = {
   },
   "expr.yieldValue": (c: number) => {
     const { f, e } = ruffOf(c);
-    part(maybeParenthesize(f, e, e.parent as Py, "optional"));
+    writeMaybeParenthesize(f, e, e.parent as Py, "optional");
   },
   "expr.binaryLike": (c: number) => {
     const { f, e } = ruffOf(c);
@@ -72,28 +71,38 @@ export const exprVia = {
   "expr.ifBody": (c: number) => {
     const { f, e } = ruffOf(c);
     const x = e.parent as IfExp;
-    part([formatExpr(f, e), f.softLineOrSpace(), f.leading(f.comments.leading(x.test))]);
+    writeExpr(f, e);
+    f.writeSoftLineOrSpace();
+    f.writeLeading(f.comments.leading(x.test));
   },
   "expr.ifTest": (c: number) => {
     const { f, e } = ruffOf(c);
     const x = e.parent as IfExp;
-    part([formatExpr(f, e), f.softLineOrSpace(), f.leading(f.comments.leading(x.orelse))]);
+    writeExpr(f, e);
+    f.writeSoftLineOrSpace();
+    f.writeLeading(f.comments.leading(x.orelse));
   },
   "expr.ifOrelse": (c: number) => {
     const { f, e: orelse } = ruffOf(c);
-    part(
-      orelse.kind === "IfExp" && orelse.parens.length === 0
-        ? node(f, orelse, { ifNested: true })
-        : f.inParensGroup(formatExpr(f, orelse)),
-    );
+    if (orelse.kind === "IfExp" && orelse.parens.length === 0)
+      writeNode(f, orelse, { ifNested: true });
+    else f.writeInParensGroup(() => writeExpr(f, orelse));
   },
   "expr.namedTarget": (c: number) => {
     const { f, e } = ruffOf(c);
-    part(group([formatExpr(f, e), f.softLineOrSpace()]));
+    open(GROUP);
+    writeExpr(f, e);
+    f.writeSoftLineOrSpace();
+    close();
   },
   "expr.namedValue": (c: number) => {
     const { f, e } = ruffOf(c);
     const dangling = f.comments.dangling(e.parent as Named);
-    part([dangling.length === 0 ? space : [f.dangling(dangling), hard], formatExpr(f, e)]);
+    if (dangling.length === 0) sText(" ");
+    else {
+      f.writeDangling(dangling);
+      sLine(HARD | COLLAPSE);
+    }
+    writeExpr(f, e);
   },
 };
