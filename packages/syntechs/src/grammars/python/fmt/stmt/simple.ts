@@ -1,7 +1,6 @@
 import { type Format, group, ifBreak, synthetic } from "../elements.js";
 import type { Alias, Simple } from "../ast.js";
 import {
-  commaIn,
   type Fmt,
   soft,
   softBlockIndent,
@@ -17,7 +16,7 @@ import type { StmtRules } from "./suite.js";
 const arithmeticOps = new Set(["|", "^", "<<", ">>", "+", "-"]);
 
 // A statement its rule in format.ts prints.
-const fromSpec = (_: Fmt, s: Simple) => dslPart(s.ts);
+const fromSpec = (_: Fmt, s: { readonly ts: number }) => dslPart(s.ts);
 
 function names(f: Fmt, s: Simple, sep: Format): Format {
   return s.names.map((n, i) => {
@@ -35,7 +34,7 @@ export function globalNames(f: Fmt, s: Simple): Format {
   return group([backslash, soft, softBlockIndent(names(f, s, [space, backslash, soft]))]);
 }
 
-function alias(f: Fmt, a: Alias): Format {
+export function alias(f: Fmt, a: Alias): Format {
   const cs = f.comments;
   const out: Format[] = [f.leading(cs.leading(a)), a.name.map((t) => f.tok(t))];
   if (a.asTok !== undefined && a.asname !== undefined)
@@ -60,38 +59,6 @@ export const simpleRules: StmtRules = {
   Delete: fromSpec,
   Global: fromSpec,
   Nonlocal: fromSpec,
-  Import(f, s) {
-    const comma = commaIn(f.tree, s.ts, s.kw);
-    return [
-      f.tok(s.kw),
-      space,
-      s.names.map((a, i) =>
-        i === 0
-          ? alias(f, a)
-          : [comma(s.names[i - 1]?.end ?? a.start), space, alias(f, a)],
-      ),
-    ];
-  },
-  ImportFrom(f, s) {
-    const head: Format = [
-      f.tok(s.fromKw),
-      space,
-      s.module.map((t) => f.tok(t)),
-      space,
-      f.tok(s.importKw),
-      space,
-    ];
-    if (s.star !== undefined) return [head, f.tok(s.star)];
-    const comma = commaIn(f.tree, s.ts, s.importKw);
-    const entries = s.names.map((a) => ({ end: a.end, doc: alias(f, a) }));
-    const list = () => f.joinCommaSeparated(entries, s.end, comma, true);
-    const dangling = f.comments.dangling(s);
-    if (dangling.length === 0)
-      return [head, f.parenthesizeIfExpands(s.importKw, list)];
-    const open =
-      s.open !== undefined ? f.tok(s.open) : synthetic(s.importKw, "(");
-    const close =
-      s.close !== undefined ? f.tok(s.close) : synthetic(s.importKw, ")");
-    return [head, f.parenthesized(open, list, close, dangling)];
-  },
+  Import: fromSpec,
+  ImportFrom: fromSpec,
 };
