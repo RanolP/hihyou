@@ -1,5 +1,5 @@
 // TypeScript types (customs: print/types.ts).
-import { custom, inOrder, space } from "../../../fmt/dsl/dsl.js";
+import { custom, inOrder, space, tok } from "../../../fmt/dsl/dsl.js";
 import type { JsStructure } from "../format.js";
 
 export const types = {
@@ -32,4 +32,19 @@ export const types = {
   ambient_declaration: () => custom("ambientDeclaration"),
   as_expression: () => custom("castExpression"),
   satisfies_expression: () => custom("castExpression"),
+  object_type: () => custom("typeBody"),
+  interface_body: () => custom("typeBody"),
+  property_signature: ($) => [
+    $.name.via("memberKey"),
+    $.type.andThen((t) => t),
+    tok(";").via("memberSemi"),
+  ],
+  method_signature: ($) => [
+    $.name.via("methodSignature"),
+    tok(";").via("memberSemi"),
+  ],
+  index_signature: ($) => [
+    $.type.via("indexSignature"),
+    tok(";").via("memberSemi"),
+  ],
 } satisfies JsStructure;

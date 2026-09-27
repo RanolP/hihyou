@@ -18,10 +18,12 @@ import {
   text,
   token,
 } from "../../../fmt/doc.js";
-import type { CustomRule } from "../../../fmt/dsl/runtime.js";
+import type { CustomRule, TokenRule } from "../../../fmt/dsl/runtime.js";
 import { lfAfter, newlineBetween, nextLineEmpty } from "../../../fmt/text.js";
 import { firstLeaf } from "../../../fmt/tree.js";
 import {
+  BROKEN,
+  capture,
   close,
   GROUP,
   IF_BROKEN,
@@ -31,7 +33,9 @@ import {
   jsCtx,
   open,
   openIndentIfBreak,
+  place,
   SOFT,
+  sHardline,
   sLine,
   sLineSuffixBoundary,
   sText,
@@ -739,6 +743,43 @@ function memberSemicolon(ctx: JsCtx, n: number): Doc {
   return ifBreak(sep !== undefined ? token(sep, "") : [], put(";"));
 }
 
+/**
+ * A type member's separator, which a spec writes as `tok(";").via("memberSemi")`: prettier's
+ * printClassMemberSemicolon. The separator is the body's child after the member, never the member's own, so the
+ * rule finds it from the member; it prints as `;`, is dropped, or shows only while the body breaks (or stays flat).
+ */
+const memberSemi: TokenRule<JsOptions> = (_token, n, sctx) => {
+  const js = jsCtx(sctx).js;
+  const up = parent(js, n);
+  if (up === undefined) return;
+  const sep = memberSeparator(js, n);
+  const put = (text: string) => {
+    if (sep !== undefined) sToken(sep, text);
+    else if (text) sToken(n, text, true);
+  };
+  const drop = () => tok(js, sep, "");
+  const within = (frame: number, write: () => void) => {
+    open(frame);
+    write();
+    close();
+  };
+  const upKind = kind(js, up);
+  if (upKind === "interface_body" || upKind === "class_body")
+    return put(js.options.semi ? ";" : "");
+  if (upKind !== "object_type") return drop();
+  const members = items(js, up);
+  const next = members[members.indexOf(n) + 1];
+  if (next === undefined) {
+    if (!js.options.semi) return put("");
+    within(IF_BROKEN, () => put(";"));
+    if (sep !== undefined) within(IF_FLAT, drop);
+    return;
+  }
+  if (js.options.semi || needsInterfaceSemicolon(js, n, next)) return put(";");
+  if (sep !== undefined) within(IF_BROKEN, drop);
+  within(IF_FLAT, () => put(";"));
+};
+
 export const mappedClauseOf = (x: HasTree, n: number) => {
   const members = items(x, n);
   const only = members[0];
@@ -753,73 +794,79 @@ export const mappedClauseOf = (x: HasTree, n: number) => {
   return clause !== undefined ? { signature, clause } : undefined;
 };
 
+/** `n`'s dangling comments, one per line. */
+function danglingLines(ctx: JsStreamCtx, n: number): void {
+  ctx.danglingComments(n).forEach((c, i) => {
+    if (i > 0) sHardline();
+    ctx.comment(c);
+  });
+}
+
 /** Prettier's printTypeScriptMappedType, over tree-sitter's `{ [K in T]: V }` object type. */
 function mappedType(
-  ctx: JsCtx,
+  ctx: JsStreamCtx,
   n: number,
   signature: number,
   clause: number,
-): Doc {
-  const open = anonKid(ctx, n, "{");
-  const close = lastAnonKid(ctx, n, "}");
+): void {
+  const js = ctx.js;
+  const openBrace = anonKid(js, n, "{");
   let shouldBreak = false;
   // A line break between `{` and the first thing after it, a comment included.
-  if (ctx.options.objectWrap === "preserve" && open !== undefined)
-    shouldBreak = lfAfter(ctx.tree, open) > 0;
-  const spacing = ctx.options.bracketSpacing ? line : softline;
-  const readonlyKw = anonKid(ctx, signature, "readonly");
-  const sign = field(ctx, signature, "sign");
-  const name = field(ctx, clause, "name");
-  const type = field(ctx, clause, "type");
-  const alias = field(ctx, clause, "alias");
-  const valueAnnotation = field(ctx, signature, "type");
-  const sep = memberSeparator(ctx, signature);
-  const dangling = ctx.dangling(n);
-  return group(
-    [
-      t(ctx, open),
-      indent([
-        spacing,
-        dangling.length > 0 ? [join(hardline, dangling), hardline] : [],
-        readonlyKw !== undefined
-          ? [t(ctx, sign), t(ctx, readonlyKw), text(" ")]
-          : [],
-        group([
-          t(ctx, anonKid(ctx, signature, "[")),
-          indent([
-            softline,
-            p(ctx, name),
-            text(" "),
-            t(ctx, anonKid(ctx, clause, "in")),
-            text(" "),
-            p(ctx, type),
-            alias !== undefined
-              ? [
-                  text(" "),
-                  t(ctx, anonKid(ctx, clause, "as")),
-                  text(" "),
-                  p(ctx, alias),
-                ]
-              : [],
-          ]),
-          softline,
-          t(ctx, anonKid(ctx, signature, "]")),
-        ]),
-        p(ctx, valueAnnotation),
-        ctx.options.semi
-          ? ifBreak(
-              sep !== undefined ? token(sep, ";") : synthetic(signature, ";"),
-              sep !== undefined ? token(sep, "") : [],
-            )
-          : sep !== undefined
-            ? token(sep, "")
-            : [],
-      ]),
-      spacing,
-      t(ctx, close),
-    ],
-    shouldBreak,
-  );
+  if (js.options.objectWrap === "preserve" && openBrace !== undefined)
+    shouldBreak = lfAfter(js.tree, openBrace) > 0;
+  const spacing = js.options.bracketSpacing ? 0 : SOFT;
+  const readonlyKw = anonKid(js, signature, "readonly");
+  const alias = field(js, clause, "alias");
+  const sep = memberSeparator(js, signature);
+  open(GROUP, -1, shouldBreak ? BROKEN : 0);
+  tok(js, openBrace);
+  open(INDENT);
+  sLine(spacing);
+  if (ctx.danglingComments(n).length > 0) {
+    danglingLines(ctx, n);
+    sHardline();
+  }
+  if (readonlyKw !== undefined) {
+    tok(js, field(js, signature, "sign"));
+    tok(js, readonlyKw);
+    sText(" ");
+  }
+  open(GROUP);
+  tok(js, anonKid(js, signature, "["));
+  open(INDENT);
+  sLine(SOFT);
+  pr(ctx, field(js, clause, "name"));
+  sText(" ");
+  tok(js, anonKid(js, clause, "in"));
+  sText(" ");
+  pr(ctx, field(js, clause, "type"));
+  if (alias !== undefined) {
+    sText(" ");
+    tok(js, anonKid(js, clause, "as"));
+    sText(" ");
+    ctx.print(alias);
+  }
+  close();
+  sLine(SOFT);
+  tok(js, anonKid(js, signature, "]"));
+  close();
+  pr(ctx, field(js, signature, "type"));
+  if (js.options.semi) {
+    open(IF_BROKEN);
+    if (sep !== undefined) sToken(sep, ";");
+    else sToken(signature, ";", true);
+    close();
+    if (sep !== undefined) {
+      open(IF_FLAT);
+      sToken(sep, "");
+      close();
+    }
+  } else tok(js, sep, "");
+  close();
+  sLine(spacing);
+  tok(js, lastAnonKid(js, n, "}"));
+  close();
 }
 
 /** Whether an object type is the annotation of a function's hugged only parameter. */
@@ -837,131 +884,159 @@ function isHuggedParameterType(ctx: JsCtx, n: number): boolean {
   );
 }
 
-/** Prettier's printClassBody for `TSTypeLiteral` and `TSInterfaceBody`. */
-const typeBody: JsRule = (n, ctx) => {
-  const isObjectType = kind(ctx, n) === "object_type";
-  const mapped = isObjectType ? mappedClauseOf(ctx, n) : undefined;
+/** Prettier's printClassBody for `TSTypeLiteral` and `TSInterfaceBody`; each member prints its own separator. */
+const typeBody: CustomRule<JsOptions> = (n, sctx) => {
+  const ctx = jsCtx(sctx);
+  const js = ctx.js;
+  const isObjectType = kind(js, n) === "object_type";
+  const mapped = isObjectType ? mappedClauseOf(js, n) : undefined;
   if (mapped !== undefined)
     return mappedType(ctx, n, mapped.signature, mapped.clause);
-  const members = items(ctx, n);
-  const parts: Doc[] = [];
-  members.forEach((m, i) => {
-    parts.push(p(ctx, m));
-    const next = members[i + 1];
-    if (!isObjectType && needsInterfaceSemicolon(ctx, m, next))
-      parts.push(synthetic(m, ";"));
-    if (next !== undefined) {
-      parts.push(isObjectType ? line : hardline);
-      if (nextLineEmpty(ctx.tree, m)) parts.push(hardline);
+  const members = items(js, n);
+  const hasDangling = ctx.danglingComments(n).length > 0;
+  const openBrace = anonKid(js, n, "{");
+  const closeBrace = lastAnonKid(js, n, "}");
+  const parts = () => {
+    members.forEach((m, i) => {
+      ctx.print(m);
+      const next = members[i + 1];
+      if (!isObjectType && needsInterfaceSemicolon(js, m, next))
+        sToken(m, ";", true);
+      if (next !== undefined) {
+        if (isObjectType) sLine(0);
+        else sHardline();
+        if (nextLineEmpty(js.tree, m)) sHardline();
+      }
+    });
+    if (hasDangling) danglingLines(ctx, n);
+  };
+  const empty = members.length === 0 && !hasDangling;
+  if (!isObjectType) {
+    tok(js, openBrace);
+    if (!empty) {
+      open(INDENT);
+      sHardline();
+      parts();
+      close();
+      sHardline();
     }
-  });
-  const dangling = ctx.dangling(n);
-  if (dangling.length > 0) parts.push(join(hardline, dangling));
-  const open = t(ctx, anonKid(ctx, n, "{"));
-  const close = t(ctx, lastAnonKid(ctx, n, "}"));
-  if (!isObjectType)
-    return [
-      open,
-      parts.length > 0 ? [indent([hardline, parts]), hardline] : [],
-      close,
-    ];
+    return tok(js, closeBrace);
+  }
+  if (empty) {
+    open(GROUP);
+    tok(js, openBrace);
+    tok(js, closeBrace);
+    return close();
+  }
   const shouldBreak =
-    hasComment(ctx, n, CF.Dangling | CF.Line) ||
-    (ctx.options.objectWrap === "preserve" &&
+    hasComment(js, n, CF.Dangling | CF.Line) ||
+    (js.options.objectWrap === "preserve" &&
       members[0] !== undefined &&
       newlineBetween(
-        ctx.tree,
-        firstLeaf(ctx.tree, n),
-        firstLeaf(ctx.tree, members[0]),
+        js.tree,
+        firstLeaf(js.tree, n),
+        firstLeaf(js.tree, members[0]),
       ));
-  if (parts.length === 0) return group([open, close]);
   const spacing =
-    !ctx.options.bracketSpacing || (members.length === 0 && !shouldBreak)
-      ? softline
-      : line;
-  const content: Doc = [open, indent([spacing, ...parts]), spacing, close];
-  if (isHuggedParameterType(ctx, n)) return content;
-  return group(content, shouldBreak);
+    !js.options.bracketSpacing || (members.length === 0 && !shouldBreak)
+      ? SOFT
+      : 0;
+  const grouped = !isHuggedParameterType(js, n);
+  if (grouped) open(GROUP, -1, shouldBreak ? BROKEN : 0);
+  tok(js, openBrace);
+  open(INDENT);
+  sLine(spacing);
+  parts();
+  close();
+  sLine(spacing);
+  tok(js, closeBrace);
+  if (grouped) close();
 };
 
-/** The children of `n` after its key, where a `?` stands. */
-const afterKey = (ctx: JsCtx, n: number, key: number | undefined) => {
-  if (key === undefined) return [];
-  const kids = children(ctx, n);
-  return kids.slice(kids.indexOf(key) + 1);
-};
-
-const propertySignature: JsRule = (n, ctx) => {
-  const key = field(ctx, n, "name");
-  const parts: Doc[] = [];
-  for (const c of children(ctx, n)) {
+/**
+ * The modifiers before a member's key, the key as prettier's printKey prints it, and the `?` after it. A spec
+ * reaches it through the member's key (`$.name.via("memberKey")`), so it prints from the member, the key's parent.
+ */
+function memberHead(ctx: JsStreamCtx, n: number): void {
+  const js = ctx.js;
+  const key = field(js, n, "name");
+  const kids = children(js, n);
+  for (const c of kids) {
     if (c === key) break;
-    if (!isComment(ctx, c))
-      parts.push(named(ctx, c) ? p(ctx, c) : t(ctx, c), text(" "));
+    if (isComment(js, c)) continue;
+    if (named(js, c)) ctx.print(c);
+    else tok(js, c);
+    sText(" ");
   }
-  const after = afterKey(ctx, n, key);
-  return [
-    parts,
-    printKey(ctx, n),
-    t(
-      ctx,
-      after.find((c) => !named(ctx, c) && kind(ctx, c) === "?"),
-    ),
-    p(ctx, field(ctx, n, "type")),
-    memberSemicolon(ctx, n),
-  ];
-};
-
-const methodSignature: JsRule = (n, ctx) => {
-  const key = field(ctx, n, "name");
-  const parts: Doc[] = [];
-  for (const c of children(ctx, n)) {
-    if (c === key) break;
-    if (!isComment(ctx, c))
-      parts.push(named(ctx, c) ? p(ctx, c) : t(ctx, c), text(" "));
-  }
-  const after = afterKey(ctx, n, key);
-  parts.push(
-    printKey(ctx, n),
-    t(
-      ctx,
-      after.find((c) => !named(ctx, c) && kind(ctx, c) === "?"),
-    ),
+  place({ doc: printKey(js, n) });
+  if (key === undefined) return;
+  tok(
+    js,
+    kids
+      .slice(kids.indexOf(key) + 1)
+      .find((c) => !named(js, c) && kind(js, c) === "?"),
   );
-  const parametersDoc = printFunctionParameters(ctx, n, false, true);
-  const returnNode = field(ctx, n, "return_type");
-  const returnTypeDoc = returnNode !== undefined ? p(ctx, returnNode) : [];
-  parts.push(
-    shouldGroupFunctionParameters(ctx, n, returnTypeDoc)
+}
+
+const memberKey: CustomRule<JsOptions> = (key, sctx) => {
+  const ctx = jsCtx(sctx);
+  const n = parent(ctx.js, key);
+  if (n !== undefined) memberHead(ctx, n);
+};
+
+/** A method signature up to its separator, reached through its key (`$.name.via("methodSignature")`). */
+const methodSignature: CustomRule<JsOptions> = (key, sctx) => {
+  const ctx = jsCtx(sctx);
+  const js = ctx.js;
+  const n = parent(js, key);
+  if (n === undefined) return;
+  open(GROUP);
+  memberHead(ctx, n);
+  const parametersDoc = printFunctionParameters(js, n, false, true);
+  const returnNode = field(js, n, "return_type");
+  const returnType = capture(() => pr(ctx, returnNode));
+  place({
+    doc: shouldGroupFunctionParameters(js, n, returnType.doc)
       ? group(parametersDoc)
       : parametersDoc,
-  );
-  if (returnNode !== undefined) parts.push(group(returnTypeDoc));
-  return [group(parts), memberSemicolon(ctx, n)];
+  });
+  if (returnNode !== undefined) {
+    open(GROUP);
+    place(returnType);
+    close();
+  }
+  close();
 };
 
-const indexSignature: JsRule = (n, ctx) => {
-  const name = field(ctx, n, "name");
-  const indexType = field(ctx, n, "index_type");
-  const colon = anonKid(ctx, n, ":");
-  const parts: Doc[] = [];
-  for (const c of children(ctx, n)) {
-    if (!named(ctx, c) && kind(ctx, c) === "[") break;
-    if (!isComment(ctx, c))
-      parts.push(named(ctx, c) ? p(ctx, c) : t(ctx, c), text(" "));
+/** An index signature up to its separator, reached through its type (`$.type.via("indexSignature")`). */
+const indexSignature: CustomRule<JsOptions> = (type, sctx) => {
+  const ctx = jsCtx(sctx);
+  const js = ctx.js;
+  const n = parent(js, type);
+  if (n === undefined) return;
+  const name = field(js, n, "name");
+  for (const c of children(js, n)) {
+    if (!named(js, c) && kind(js, c) === "[") break;
+    if (isComment(js, c)) continue;
+    if (named(js, c)) ctx.print(c);
+    else tok(js, c);
+    sText(" ");
   }
-  const parameter: Doc =
-    name !== undefined
-      ? [p(ctx, name), t(ctx, colon), text(" "), p(ctx, indexType)]
-      : [];
-  return [
-    parts,
-    t(ctx, anonKid(ctx, n, "[")),
-    name !== undefined ? group([indent([softline, parameter]), softline]) : [],
-    t(ctx, anonKid(ctx, n, "]")),
-    p(ctx, field(ctx, n, "type")),
-    memberSemicolon(ctx, n),
-  ];
+  tok(js, anonKid(js, n, "["));
+  if (name !== undefined) {
+    open(GROUP);
+    open(INDENT);
+    sLine(SOFT);
+    ctx.print(name);
+    tok(js, anonKid(js, n, ":"));
+    sText(" ");
+    pr(ctx, field(js, n, "index_type"));
+    close();
+    sLine(SOFT);
+    close();
+  }
+  tok(js, anonKid(js, n, "]"));
+  ctx.printNode(type);
 };
 
 /** Prettier's printFunctionType, for function and constructor types and call and construct signatures. */
@@ -1000,7 +1075,7 @@ const functionType: JsRule = (n, ctx) => {
 };
 
 /** The TypeScript kinds format.ts lays out by hand, by the names its spec gives them. */
-export const typeCustoms = {
+const nodeCustoms = {
   parenthesizedType,
   inferType,
   intersectionType,
@@ -1008,7 +1083,16 @@ export const typeCustoms = {
   typeParameter,
   ambientDeclaration,
   castExpression,
+  typeBody,
+  memberKey,
+  methodSignature,
+  indexSignature,
 } satisfies Record<string, CustomRule<JsOptions>>;
+
+export const typeCustoms = {
+  ...nodeCustoms,
+  memberSemi,
+};
 
 export const typeRules: Record<string, JsRule> = {
   union_type: unionType,
@@ -1017,11 +1101,6 @@ export const typeRules: Record<string, JsRule> = {
   module: moduleDeclaration,
   internal_module: moduleDeclaration,
   type_assertion: typeAssertion,
-  object_type: typeBody,
-  interface_body: typeBody,
-  property_signature: propertySignature,
-  method_signature: methodSignature,
-  index_signature: indexSignature,
   call_signature: functionType,
   construct_signature: functionType,
   function_type: functionType,
