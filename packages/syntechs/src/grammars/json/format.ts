@@ -38,9 +38,9 @@ const fitting = (trailingComma: boolean) => {
         blankLines: "force",
       },
       array: {
-        fillIfAll: ["number"],
-        breakNestedLists: true,
-        groupItems: true,
+        packWhenAllOf: ["number"],
+        breakMatrix: true,
+        itemsAsGroups: true,
         blankLines: "ifBroken",
       },
       pair,

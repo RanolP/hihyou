@@ -191,13 +191,13 @@ export function wrap<O>(
       else if (x.e === "child") after.push({ e: "end" });
     }
     const always = w.expand === "always";
-    const fillKinds = new Set(w.fillIfAll);
+    const fillKinds = new Set(w.packWhenAllOf);
     const shouldBreak =
       always ||
       (w.keepExpanded !== undefined &&
         evalCond(w.keepExpanded, ctx.options) &&
         newlineBetween(tree, firstLeaf(tree, node), firstLeaf(tree, first))) ||
-      (w.breakNestedLists === true &&
+      (w.breakMatrix === true &&
         items.length > 1 &&
         items.every((item, i) => {
           const next = items[i + 1];
@@ -249,9 +249,9 @@ export function wrap<O>(
       close();
     } else {
       items.forEach((item, i) => {
-        if (w.groupItems) open(GROUP);
+        if (w.itemsAsGroups) open(GROUP);
         ctx.print(item);
-        if (w.groupItems) close();
+        if (w.itemsAsGroups) close();
         slot(after[i]);
         if (i === items.length - 1) return;
         sLine(0);
@@ -357,7 +357,7 @@ export function referenceRules<O>(
   return { rules, lists };
 }
 
-/** Whether `tree` lays out a separated list, which makes its kind a list to `breakNestedLists`. */
+/** Whether `tree` lays out a separated list, which makes its kind a list to `breakMatrix`. */
 export function holdsList(tree: Tree): boolean {
   switch (tree.t) {
     case "sepBy":

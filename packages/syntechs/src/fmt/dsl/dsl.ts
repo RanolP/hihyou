@@ -72,11 +72,11 @@ export interface Wrap {
   /** The node's output is one group, which stays on one line or breaks as a unit. */
   readonly group?: boolean;
   /** Pack the list's items several to a line when every item is one of these kinds (prettier's number arrays). */
-  readonly fillIfAll?: readonly string[];
+  readonly packWhenAllOf?: readonly string[];
   /** Break the list when 2+ items are all lists of one kind with 2+ items each (prettier's matrix rule). */
-  readonly breakNestedLists?: boolean;
+  readonly breakMatrix?: boolean;
   /** Each item of the list is a group of its own, staying flat or breaking on its own. */
-  readonly groupItems?: boolean;
+  readonly itemsAsGroups?: boolean;
   /** Keep the list broken when the source broke after its opening bracket (prettier's `objectWrap: "preserve"`). */
   readonly keepExpanded?: Cond;
   /** "always" breaks every non-empty list, one item per line (prettier's json-stringify). */
@@ -145,8 +145,8 @@ export type TokenTree<G extends Grammar, O> =
 /** A rule that prints the whole node: `verbatim` or `custom`. */
 type Whole = Piece<"whole">;
 
-type WrapOf<G extends Grammar, O> = Omit<Wrap, "fillIfAll" | "keepExpanded"> & {
-  readonly fillIfAll?: readonly KindOf<G>[];
+type WrapOf<G extends Grammar, O> = Omit<Wrap, "packWhenAllOf" | "keepExpanded"> & {
+  readonly packWhenAllOf?: readonly KindOf<G>[];
   readonly keepExpanded?: CondOf<O>;
 };
 

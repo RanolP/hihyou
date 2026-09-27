@@ -135,15 +135,15 @@ function emitRule(tree: Tree, w: Wrap, hasFields: boolean): string[] {
       breaks.push(
         `(${cond(w.keepExpanded)} && newlineBetween(t, firstLeaf(t, node), firstLeaf(t, first)))`,
       );
-    if (w.breakNestedLists)
+    if (w.breakMatrix)
       breaks.push(
         `(${its}.length > 1 && ${its}.every((item, i) => { const next = ${its}[i + 1]; return ctx.isList(item) && (next === undefined || t.kindName(next) === t.kindName(item)) && ctx.items(item).length > 1; }))`,
       );
     breaks.push("ctx.hasDanglingLineComment(node)");
-    const fills = !always && (w.fillIfAll?.length ?? 0) > 0;
+    const fills = !always && (w.packWhenAllOf?.length ?? 0) > 0;
     if (fills)
       line(
-        `const concise = ${its}.length > 1 && ${its}.every((item) => ${JSON.stringify(w.fillIfAll)}.includes(t.kindName(item)) && !ctx.hasComment(item, "trailingSameLine"));`,
+        `const concise = ${its}.length > 1 && ${its}.every((item) => ${JSON.stringify(w.packWhenAllOf)}.includes(t.kindName(item)) && !ctx.hasComment(item, "trailingSameLine"));`,
       );
     line(`const listGroup = open(GROUP, -1, ${breaks.join(" || ")} ? BROKEN : 0);`);
     const trailing = x.trailing === false ? undefined : cond(x.trailing);
@@ -170,9 +170,9 @@ function emitRule(tree: Tree, w: Wrap, hasFields: boolean): string[] {
     const plain = () =>
       block(`for (let i = 0; i < ${its}.length; i++)`, () => {
         line(`const item = ${its}[i] as number;`);
-        if (w.groupItems) line("open(GROUP);");
+        if (w.itemsAsGroups) line("open(GROUP);");
         line("ctx.print(item);");
-        if (w.groupItems) line("close();");
+        if (w.itemsAsGroups) line("close();");
         slot("i");
         line("if (i === last) break;");
         line("sLine(0);");
