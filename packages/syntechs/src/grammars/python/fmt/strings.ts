@@ -17,7 +17,6 @@ import {
   IF_BROKEN,
   IF_FLAT,
   open,
-  part as sPart,
   record,
   sBreakParent,
   sLiteral,
@@ -436,10 +435,6 @@ function needsChaperone(fl: Flags, trimEnd: string): boolean {
 }
 
 /** A string spanning lines (a triple-quoted one) breaks every group around it, as ruff's multiline text does. */
-export const multilineToken = (n: number, text: string): Format =>
-  record(() => sMultiline(n, text));
-
-/** `multilineToken`, written where the rule printing prints. */
 export function sMultiline(n: number, text: string): void {
   if (!text.includes("\n")) return sToken(n, text);
   sLiteral(n, text);
@@ -700,10 +695,10 @@ function writeExpanded(
     const trailing = between.filter(
       (c: Comment) => c.line === "eol" && c.start > pEnd && c.end < nextStart,
     );
-    if (i > 0) sPart(f.softLineOrSpace());
-    sPart(f.leading([...leading, ...f.comments.leading(p.node)]));
+    if (i > 0) f.writeSoftLineOrSpace();
+    f.writeLeading([...leading, ...f.comments.leading(p.node)]);
     sDsl(p.node);
-    sPart(f.trailing([...trailing, ...f.comments.trailing(p.node)]));
+    f.writeTrailing([...trailing, ...f.comments.trailing(p.node)]);
   }
 }
 
@@ -736,20 +731,14 @@ export function writeStr(f: Fmt, s: Str, docstringIndent?: string): void {
   if (!parenthesized) {
     if (merged) return writeFlat(f, parts, merged);
     if (docstringIndent !== undefined)
-      return sPart(
-        f.parenthesizeIfExpands(s.ts, () =>
-          record(() => writeExpanded(f, s, parts, true)),
-        ),
+      return f.writeParenthesizeIfExpands(s.ts, () =>
+        writeExpanded(f, s, parts, true),
       );
   }
-  sPart(
-    f.inParensGroup(
-      record(() =>
-        merged
-          ? writeExpandedOrFlat(f, s, parts, merged)
-          : writeExpanded(f, s, parts, true),
-      ),
-    ),
+  f.writeInParensGroup(() =>
+    merged
+      ? writeExpandedOrFlat(f, s, parts, merged)
+      : writeExpanded(f, s, parts, true),
   );
 }
 

@@ -3,7 +3,7 @@ import { NO_NODE } from "../../../core/arena.js";
 import type { StreamCtx } from "../../../fmt/stream-format.js";
 import { exprAst, type Expr, type Str } from "../fmt/ast.js";
 import { PAREN } from "../fmt/builders.js";
-import { formatExpr, leftMost } from "../fmt/expr.js";
+import { leftMost, writeExpr } from "../fmt/expr.js";
 import {
   capture,
   close,
@@ -11,7 +11,6 @@ import {
   GROUP,
   INDENT,
   open,
-  part,
   place,
   removeSoftLines,
   ruffFmt,
@@ -125,7 +124,7 @@ export const stringVia = {
     };
     const item = () => {
       bracket();
-      part(formatExpr(f, e));
+      writeExpr(f, e);
       if (conversion !== NO_NODE) ctx.printNode(conversion);
       if (spec !== NO_NODE) ctx.printNode(spec);
       if (conversion === NO_NODE && spec === NO_NODE) bracket();

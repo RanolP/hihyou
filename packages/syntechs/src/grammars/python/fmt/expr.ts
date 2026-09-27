@@ -71,7 +71,6 @@ import {
   implicitConcatenated,
   isInterpolated,
   isMultilineStr,
-  multilineToken,
   partOf,
 } from "./strings.js";
 import {
