@@ -27,19 +27,22 @@ const itemExpr = (c: number, ctx: StreamCtx<unknown>) =>
   ruffOf(ctx.tree.kindName(c) === "pair" ? fieldChild(ctx.tree, c, "key") : c);
 
 export const collectionVia = {
-  // Ruff's frame of a list, set, tuple or dict: its dangling comments after the opening bracket, or all of them
-  // between the brackets of an empty one.
+  // Ruff's frame of a collection or comprehension: its dangling comments after the opening bracket (a dict's and a
+  // dict comprehension's only those before the first item), or all of them between the brackets of an empty one.
   "collection.brackets": (node: number, _: StreamCtx<unknown>, frame: Frame) => {
     const { f, e } = ruffOf(node);
     const { open, body, close } = frameParts(frame);
     const dangling = f.comments.dangling(e);
-    const first = e.kind === "Dict" ? e.items[0] : (e as Sequence).elts[0];
-    if (first === undefined)
-      part(f.at(PAREN, () => f.emptyParenthesized(open, dangling, close)));
-    else if (e.kind === "Dict") {
-      const firstStart = itemStart(first as Dict["items"][number]);
-      part(f.parenthesized(open, body, close, dangling.filter((c) => c.end < firstStart)));
-    } else part(f.parenthesized(open, body, close, dangling));
+    if (e.kind === "Dict" || e.kind === "DictComp") {
+      const first = e.kind === "Dict" ? e.items[0] : e;
+      if (first === undefined)
+        return part(f.at(PAREN, () => f.emptyParenthesized(open, dangling, close)));
+      const firstStart = e.kind === "Dict" ? itemStart(first as Dict["items"][number]) : outer(e.key).start;
+      return part(f.parenthesized(open, body, close, dangling.filter((c) => c.end < firstStart)));
+    }
+    if (e.kind !== "ListComp" && e.kind !== "SetComp" && e.kind !== "Generator" && (e as Sequence).elts.length === 0)
+      return part(f.at(PAREN, () => f.emptyParenthesized(open, dangling, close)));
+    part(f.parenthesized(open, body, close, dangling));
   },
   // Given the first item, prints them all: the layout is the list's or set's.
   "collection.sequence": (c: number) => {
@@ -109,32 +112,29 @@ export const collectionVia = {
   "collection.dictComp": (c: number, ctx: StreamCtx<unknown>) => {
     const { f, e: key } = ruffOf(fieldChild(ctx.tree, c, "key"));
     const e = key.parent as DictComp;
-    const dangling = f.comments.dangling(e);
-    const firstStart = outer(e.key).start;
-    const openComments = dangling.filter((c) => c.end < firstStart);
-    const content = () =>
+    part(
       group([
         dslPart(c),
         softOrSpace,
         e.generators.flatMap((g, i) =>
           i > 0 ? [softOrSpace, comprehension(f, g)] : [comprehension(f, g)],
         ),
-      ]);
-    part(f.parenthesizedContent(content, openComments));
+      ]),
+    );
   },
   // Given the element, prints a list, set or generator comprehension's body: the element and its clauses in one group.
   "collection.comp": (c: number) => {
     const { f, e: elt } = ruffOf(c);
     const e = elt.parent as Comp;
-    const content = () =>
+    part(
       group([
         group(formatExpr(f, e.elt)),
         softOrSpace,
         e.generators.flatMap((g, i) =>
           i > 0 ? [softOrSpace, comprehension(f, g)] : [comprehension(f, g)],
         ),
-      ]);
-    part(f.parenthesizedContent(content, f.comments.dangling(e)));
+      ]),
+    );
   },
   "collection.async": (t: number | undefined, node: number, ctx: StreamCtx<unknown>) => {
     if (t === undefined) return;
