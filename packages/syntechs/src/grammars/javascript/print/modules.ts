@@ -1,8 +1,8 @@
 // Prettier's import and export printers (print/module.js). Their layouts are format.ts's; what it names `custom`
 // is `moduleCustoms`, written against sink.ts.
 
-import { type Doc, hardline, join, text } from "../../../fmt/doc.js";
 import type { CustomRule } from "../../../fmt/dsl/runtime.js";
+import type { StreamCtx } from "../../../fmt/stream-format.js";
 import {
   capture,
   close,
@@ -11,15 +11,16 @@ import {
   INDENT,
   type JsStreamCtx,
   jsCtx,
-  onDoc,
   open,
   place,
   removeLines,
   SOFT,
+  sHardline,
   sLine,
   sText,
   sToken,
 } from "../sink.js";
+import { semiCustoms } from "./semi.js";
 import { sTok } from "./statements.js";
 import {
   childWhere,
@@ -29,16 +30,12 @@ import {
   hasComment,
   items,
   type JsOptions,
-  type JsRule,
   kind,
   lastChildWhere,
   named as isNamed,
-  p,
   parent,
-  semi,
   separators,
   src,
-  t,
   trailingCommaAllowed,
 } from "./util.js";
 
@@ -138,38 +135,40 @@ function printSpecifiers(s: JsStreamCtx, clauses: readonly number[]): void {
   }
 }
 
-/** Prettier's printImportDeclaration and printExportDeclaration; its `;` keeps it on the Doc until `tok(";").via("semi")` lands. */
-const moduleStatement: JsRule = (n, ctx) => {
-  const all = childrenOf(ctx, n);
-  const decorators = all.filter((c) => kind(ctx, c) === "decorator");
-  const children = all.filter(
-    (c) => kind(ctx, c) !== "decorator" && !(kind(ctx, c) === ";" && !isNamed(ctx, c)),
-  );
-  const specifiers = children.filter((c) => NAMED.has(kind(ctx, c)) || kind(ctx, c) === "namespace_export");
-  const pieces: Doc[] = [];
-  for (const c of children) {
-    if (specifiers.includes(c)) {
-      if (c === specifiers[0]) pieces.push(onDoc((_, sctx) => printSpecifiers(jsCtx(sctx), specifiers))(n, ctx));
-    } else pieces.push(isNamed(ctx, c) ? p(ctx, c) : t(ctx, c));
+/**
+ * Prettier's printImportDeclaration and printExportDeclaration. Its `;` is util.ts's semi() (the last one) rather
+ * than `tok(";")`'s first, and an export of a declaration, or of a default function or class, has none.
+ */
+function printModuleStatement(s: JsStreamCtx, n: number, ctx: StreamCtx<JsOptions>): void {
+  const js = s.js;
+  const all = childrenOf(js, n);
+  const decorators = all.filter((c) => kind(js, c) === "decorator");
+  const isSemi = (c: number) => kind(js, c) === ";" && !isNamed(js, c);
+  const children = all.filter((c) => kind(js, c) !== "decorator" && !isSemi(c));
+  const specifiers = children.filter((c) => NAMED.has(kind(js, c)) || kind(js, c) === "namespace_export");
+  for (const d of decorators) {
+    s.print(d);
+    sHardline();
   }
-  const parts = join(text(" "), pieces);
-  const declaration = field(ctx, n, "declaration");
-  const value = field(ctx, n, "value");
-  const needsSemi = declaration === undefined && !(value !== undefined && DECLARATION_VALUES.has(kind(ctx, value)));
-  return [
-    decorators.length > 0 ? [join(hardline, decorators.map((d) => p(ctx, d))), hardline] : [],
-    parts,
-    needsSemi ? semi(ctx, n) : [],
-  ];
-};
-
-export const moduleRules: Record<string, JsRule> = {
-  import_statement: moduleStatement,
-  export_statement: moduleStatement,
-};
+  let first = true;
+  for (const c of children) {
+    if (specifiers.includes(c) && c !== specifiers[0]) continue;
+    if (!first) sText(" ");
+    first = false;
+    if (c === specifiers[0]) printSpecifiers(s, specifiers);
+    else if (isNamed(js, c)) s.print(c);
+    else sTok(js, c);
+  }
+  const value = field(js, n, "value");
+  if (field(js, n, "declaration") !== undefined) return;
+  if (value !== undefined && DECLARATION_VALUES.has(kind(js, value))) return;
+  semiCustoms.semi(all.findLast(isSemi), n, ctx);
+}
 
 /** The rules format.ts names `custom` for imports and exports. */
 export const moduleCustoms = {
+  "module.statement": (n, ctx) => printModuleStatement(jsCtx(ctx), n, ctx),
+
   "module.clause": (n, ctx) => {
     const s = jsCtx(ctx);
     printSpecifiers(s, items(s.js, n));

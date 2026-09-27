@@ -16,7 +16,7 @@ import { handleComment } from "./print/comments.js";
 import { functionCustoms, functionRules } from "./print/functions.js";
 import { isJsxSpreadArgument, jsxCustoms, jsxIgnored, jsxRules } from "./print/jsx.js";
 import { literalCustoms, literalRules, printComment } from "./print/literals.js";
-import { moduleCustoms, moduleRules } from "./print/modules.js";
+import { moduleCustoms } from "./print/modules.js";
 import { objectCustoms, objectRules } from "./print/objects.js";
 import { operatorCustoms, operatorRules } from "./print/operators.js";
 import { needsParens } from "./print/parens.js";
@@ -129,7 +129,6 @@ export function jsRules(): Record<string, JsRule> {
     ...objectRules,
     ...operatorRules,
     ...classRules,
-    ...moduleRules,
     ...typeRules,
     ...jsxRules,
     parenthesized_expression: parenthesized,
