@@ -13,8 +13,8 @@ import { textWidth } from "./width.js";
  * and whether it holds a forced break is known when it closes: measuring a group reads its own contents in O(1)
  * and scans only what follows it, up to the next line break.
  *
- * The semantics are `printer.ts`'s for the subset JSON builds (no best-fitting, literal lines or ruff
- * measuring); `stream-format.ts` compares the two on the same input.
+ * The semantics are `printer.ts`'s, ruff's measure and layout kinds included, but for conditional groups;
+ * `stream-format.ts` compares the two on the same input, and `stream-doc.ts` lowers a formatter's Doc onto it.
  */
 
 // Entry kinds.
@@ -176,6 +176,38 @@ function parenLine() {
   sLine(HARD);
   hard = h;
 }
+
+/** Ruff's `best_fitting`; see `openBestFitting`. `iRef` holds its last variant. */
+const BEST_FITTING = 49;
+/** A `BEST_FITTING` measuring every line of a variant, not only the first. */
+const BEST_FITTING_ALL = 50;
+/** One variant of the best-fitting `iRef`; its first variant is the interval after it. */
+const VARIANT = 51;
+/** Whether the stream holds a best-fitting, so the printer keeps the variant each one picked. */
+let fittingSeen = false;
+
+/**
+ * Opens ruff's `best_fitting`: the first of its variants that fits flat (`allLines`: on every line) prints
+ * flat, else the last prints broken; a flat measure reads the first, a broken one the last. Append each variant
+ * between `openVariant` and `closeVariant`, then `close` it. Its breaks do not break the groups around.
+ */
+export function openBestFitting(allLines: boolean): number {
+  fittingSeen = true;
+  return open(allLines ? BEST_FITTING_ALL : BEST_FITTING);
+}
+
+export function openVariant(k: number): number {
+  const v = open(VARIANT, k);
+  iRef[k] = v;
+  // Only the first variant counts toward the flat width around, as a flat measure reads only it.
+  if (v !== k + 1) noMeasure++;
+  return v;
+}
+
+export function closeVariant(v: number): void {
+  close();
+  if (v !== (iRef[v] as number) + 1) noMeasure--;
+}
 // --- end ruff ---
 
 // The stream.
@@ -227,6 +259,7 @@ let ruffSpaces = false;
 export function resetStream(ruff = false): void {
   ruffSpaces = ruff;
   expandsSeen = false;
+  fittingSeen = false;
   n = 0;
   strs.length = 0;
   mergeable = false;
@@ -428,7 +461,12 @@ export function close(): void {
   if (kind === FITS_EXPANDED) {
     if (hasBp) iKind[k] = FITS_EXPANDED_BREAKS;
     bp = oBp[op] as number;
-  } else if (kind === BEST_FIT_PARENTHESIZE) bp = oBp[op] as number;
+  } else if (
+    kind === BEST_FIT_PARENTHESIZE ||
+    kind === BEST_FITTING ||
+    kind === BEST_FITTING_ALL
+  )
+    bp = oBp[op] as number;
   if (kind === GROUP || kind === GROUP_IF_BROKEN) {
     if (flags & BROKEN && !hasBp) bp++;
     if (hasBp) flags |= BROKEN;
@@ -547,6 +585,8 @@ export function printStream(layout: Layout): StreamPrinted {
    */
   const parenOn = (r: number, from: number) =>
     r === parenK || (modeOf(r) === BREAK && (iStart[r] as number) < from);
+  /** Each best-fitting's variant to read: the one it printed, or the one the measure entering it reads. */
+  const pick = new Int32Array(fittingSeen ? m : 0);
   // --- end ruff ---
 
   let remeasure = false;
@@ -712,6 +752,22 @@ export function printStream(layout: Layout): StreamPrinted {
             jumped = true;
             break;
           }
+        } else if (kind === BEST_FITTING || kind === BEST_FITTING_ALL) {
+          cur++;
+          // Flat, its first variant in the mode, every line of it measured when it asks; else its last.
+          if (mode === FLAT) {
+            pick[k] = k + 1;
+            if (kind === BEST_FITTING_ALL && (iEnd[k + 1] as number) > allEnd)
+              allEnd = iEnd[k + 1] as number;
+          } else pick[k] = iRef[k] as number;
+        } else if (kind === VARIANT) {
+          if (pick[iRef[k] as number] === k) cur++;
+          else {
+            i = e;
+            cur = iNext[k] as number;
+            jumped = true;
+            break;
+          }
         } else if (
           overflows &&
           (kind === INDENT ||
@@ -761,7 +817,7 @@ export function printStream(layout: Layout): StreamPrinted {
             if (ruff) width -= 1;
             else pending = true;
           }
-        } else if (i < allEnd) {
+        } else if (i < allEnd && mode !== FLAT) {
           while (xs > 0 && (xEnd[xs - 1] as number) <= i) xs--;
           const ind =
             xs > 0 ? (xInd[xs - 1] as number) : (fInd[lp >= floor ? lp : fp - 1] as number);
@@ -1074,6 +1130,56 @@ export function printStream(layout: Layout): StreamPrinted {
             }
             cur++;
             if (e > i) fpush(e, ti, g);
+            break;
+          }
+          case BEST_FITTING:
+          case BEST_FITTING_ALL: {
+            let v = iRef[k] as number;
+            let g: Mode = BREAK;
+            if (tm === FLAT && !remeasure) {
+              v = k + 1;
+              g = FLAT;
+            } else {
+              remeasure = false;
+              const width = lineWidth - column;
+              for (let x = k + 1; x !== (iRef[k] as number); x = iNext[x] as number) {
+                pick[k] = x;
+                if (
+                  width >= 0 &&
+                  measure(
+                    iStart[x] as number,
+                    iEnd[x] as number,
+                    x + 1,
+                    width,
+                    false,
+                    FLAT,
+                    false,
+                    true,
+                    iKind[k] === BEST_FITTING_ALL,
+                  )
+                ) {
+                  v = x;
+                  g = FLAT;
+                  break;
+                }
+              }
+            }
+            pick[k] = v;
+            // Its variant's mode; no ifBreak asks a best-fitting's.
+            groupModes[k] = g + 1;
+            cur++;
+            break;
+          }
+          case VARIANT: {
+            const p = iRef[k] as number;
+            if (pick[p] === k) {
+              cur++;
+              if (e > i) fpush(e, ti, modeOf(p));
+            } else {
+              i = e;
+              cur = iNext[k] as number;
+              jumped = true;
+            }
             break;
           }
           case PAREN:

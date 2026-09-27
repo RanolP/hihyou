@@ -1,5 +1,6 @@
 import {
   ALIGN as D_ALIGN,
+  ALL_LINES,
   alignOf,
   BEST_FIT_PARENTHESIZE as D_BEST_FIT_PARENTHESIZE,
   BEST_FITTING as D_BEST_FITTING,
@@ -21,7 +22,6 @@ import {
   isLiteral,
   isSynthetic,
   kindCode,
-  kindOf,
   LINE as D_LINE,
   LINE_SUFFIX as D_LINE_SUFFIX,
   LINE_SUFFIX_BOUNDARY as D_LINE_SUFFIX_BOUNDARY,
@@ -36,6 +36,7 @@ import {
   TEXT as D_TEXT,
   TOKEN as D_TOKEN,
   textOf,
+  variantsOf,
 } from "./doc.js";
 import {
   BLANK,
@@ -43,6 +44,7 @@ import {
   COLLAPSE,
   close,
   closeBestFitParenthesize,
+  closeVariant,
   FILL,
   FILL_ITEM,
   GROUP,
@@ -55,9 +57,11 @@ import {
   open,
   openAlign,
   openBestFitParenthesize,
+  openBestFitting,
   openFitsExpanded,
   openIndentIfBreak,
   openReservedSuffix,
+  openVariant,
   SOFT,
   sBreakParent,
   sLine,
@@ -129,6 +133,16 @@ export function sDoc(doc: Doc): void {
         closeBestFitParenthesize(k, () => emit(slotC(h) as Doc));
         return;
       }
+      case D_BEST_FITTING: {
+        const k = openBestFitting((flagsOf(h) & ALL_LINES) !== 0);
+        for (const variant of variantsOf(h)) {
+          const v = openVariant(k);
+          emit(variant);
+          closeVariant(v);
+        }
+        close();
+        return;
+      }
       case D_INDENT:
         open(INDENT);
         emit(contentsOf(h));
@@ -186,11 +200,26 @@ export function sDoc(doc: Doc): void {
 function check(doc: Doc, seen: Set<Doc>): void {
   const groups = new Set<number>();
   const shared = new Set<Doc>();
+  // --- ruff ---
+  // Only one variant of a bestFitting prints, so a part its variants share is built once per variant. A part
+  // records the innermost variant it was first seen in; seen again in another variant of that bestFitting, it
+  // is not shared.
+  const variantOf = new Map<Doc, [DocHandle, number]>();
+  const activeVariant = new Map<DocHandle, number>();
+  let inVariant: [DocHandle, number] | undefined;
+  const variantShared = (d: Doc): boolean => {
+    const first = variantOf.get(d);
+    if (first === undefined) return false;
+    const now = activeVariant.get(first[0]);
+    return now !== undefined && now !== first[1];
+  };
+  // --- end ruff ---
   const walk = (d: Doc): boolean => {
     if (seen.has(d)) {
-      if (!shared.has(d)) shared.add(d);
+      if (!variantShared(d) && !shared.has(d)) shared.add(d);
       return false;
     }
+    if (inVariant !== undefined) variantOf.set(d, inVariant);
     let intervals = false;
     if (isDocs(d)) {
       seen.add(d);
@@ -257,8 +286,19 @@ function check(doc: Doc, seen: Set<Doc>): void {
         groups.add(h);
         walk(contentsOf(h));
         return true;
-      case D_BEST_FITTING:
-        throw new Unsupported(kindOf(h));
+      case D_BEST_FITTING: {
+        seen.add(d);
+        const outer = inVariant;
+        const variants = variantsOf(h);
+        for (let j = 0; j < variants.length; j++) {
+          inVariant = [h, j];
+          activeVariant.set(h, j);
+          walk(variants[j] as Doc);
+        }
+        activeVariant.delete(h);
+        inVariant = outer;
+        return true;
+      }
       default:
         throw new Unsupported(`doc kind ${kind}`);
     }

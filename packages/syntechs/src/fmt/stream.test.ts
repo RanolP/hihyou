@@ -3,6 +3,7 @@ import {
   type Doc,
   align,
   bestFitParenthesize,
+  bestFitting,
   dedent,
   fill,
   fitsExpanded,
@@ -23,9 +24,11 @@ import {
 import { print } from "./printer.js";
 import {
   BLANK,
+  BROKEN,
   COLLAPSE,
   close,
   closeBestFitParenthesize,
+  closeVariant,
   FILL,
   FILL_ITEM,
   GROUP,
@@ -36,9 +39,11 @@ import {
   open,
   openAlign,
   openBestFitParenthesize,
+  openBestFitting,
   openFitsExpanded,
   openIndentIfBreak,
   openReservedSuffix,
+  openVariant,
   printStream,
   resetStream,
   sHardline,
@@ -500,5 +505,56 @@ describe("printStream matches printer.ts under ruff's measure", () => {
       }
     });
     expect(out).toBe("x = aa bb\nx = (\n  aaaa\n  bbbb\n)\nx = cccccccccccc\nd\n");
+  });
+
+  it("prints a bestFitting's first variant that fits flat, on every line when it asks, else its last broken", () => {
+    const cases: [boolean, Doc[], (() => void)[]][] = [
+      [false, [text("aaaaaaaaaa"), text("bbbb"), [text("c"), line, text("d")]], [
+        () => sText("aaaaaaaaaa"),
+        () => sText("bbbb"),
+        () => {
+          sText("c");
+          sLine(0);
+          sText("d");
+        },
+      ]],
+      [false, [text("aaaaaaaaaa"), [text("cc"), line, text("dd")]], [
+        () => sText("aaaaaaaaaa"),
+        () => {
+          sText("cc");
+          sLine(0);
+          sText("dd");
+        },
+      ]],
+      [true, [group([text("a"), hardline, text("123456789")], true), text("e")], [
+        () => {
+          open(GROUP, -1, BROKEN);
+          sText("a");
+          sHardline();
+          sText("123456789");
+          close();
+        },
+        () => sText("e"),
+      ]],
+    ];
+    const doc = cases.map(([allLines, variants]) => [
+      text("x="),
+      bestFitting(variants, allLines),
+      hardline,
+    ]);
+    const out = ruffBoth(8, doc, () => {
+      for (const [allLines, , builds] of cases) {
+        sText("x=");
+        const k = openBestFitting(allLines);
+        for (const build of builds) {
+          const v = openVariant(k);
+          build();
+          closeVariant(v);
+        }
+        close();
+        sHardline();
+      }
+    });
+    expect(out).toBe("x=bbbb\nx=cc\ndd\nx=e\n");
   });
 });
