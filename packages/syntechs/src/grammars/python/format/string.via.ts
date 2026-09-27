@@ -22,7 +22,6 @@ import {
   sToken,
 } from "../fmt/sink.js";
 import {
-  formatStr,
   isInterpolated,
   normalizeString,
   partArgs,
@@ -30,6 +29,7 @@ import {
   partOf,
   quotesOf,
   sMultiline,
+  writeStr,
 } from "../fmt/strings.js";
 import { endOf, hasLineBreak, startOf } from "../fmt/trivia.js";
 
@@ -51,7 +51,7 @@ export const stringVia = {
   // A concatenation's layout: its parts joined into one string when they merge, else each on its own.
   "string.concatenated": (c: number) => {
     const { f, e } = ruffOf(c);
-    part(formatStr(f, e as Str));
+    writeStr(f, e as Str);
   },
   // A part printed on its own takes the quotes `chooseQuotes` picks; a concatenation passes those it merges into.
   "string.part": (c: number, ctx: StreamCtx<unknown>) => {

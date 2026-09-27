@@ -1,10 +1,4 @@
-import {
-  breakParent,
-  type Format,
-  ifBreak,
-  literalToken,
-  token,
-} from "./elements.js";
+import type { Format } from "./elements.js";
 import type { FormatTree } from "../../../fmt/tree.js";
 import type { Str } from "./ast.js";
 import type { Fmt } from "./builders.js";
@@ -16,7 +10,19 @@ import {
   hasLineBreak,
   startOf,
 } from "./trivia.js";
-import { dslPart, sBreakParent, sLiteral, sToken } from "./sink.js";
+import {
+  close,
+  dslPart,
+  sDsl,
+  IF_BROKEN,
+  IF_FLAT,
+  open,
+  part as sPart,
+  record,
+  sBreakParent,
+  sLiteral,
+  sToken,
+} from "./sink.js";
 
 /**
  * Ruff's string formatting (string/{mod,normalize,implicit,docstring}.rs): the prefix and quotes each part
@@ -431,7 +437,7 @@ function needsChaperone(fl: Flags, trimEnd: string): boolean {
 
 /** A string spanning lines (a triple-quoted one) breaks every group around it, as ruff's multiline text does. */
 export const multilineToken = (n: number, text: string): Format =>
-  text.includes("\n") ? [literalToken(n, text), breakParent] : token(n, text);
+  record(() => sMultiline(n, text));
 
 /** `multilineToken`, written where the rule printing prints. */
 export function sMultiline(n: number, text: string): void {
@@ -476,16 +482,16 @@ export const partArgs = (f: Fmt, part: Part): PartArgs => ({
 });
 
 /** Ruff's `FormatStringLiteral` for a docstring: its quotes preferring double, its lines re-indented by `indent`. */
-function docstringPart(f: Fmt, part: Part, indent: string): Format {
+function docstringPart(f: Fmt, part: Part, indent: string): void {
   const style = f.options["quote-style"];
   const fl = chooseQuotes(f, part, style !== "preserve" ? "double" : style);
   const raw = contentOf(f.tree, part);
   const first = raw.search(/[\\"'\r]/);
   const content = first < 0 ? raw : normalizeString(raw, first, fl, false);
   const doc = docstring(content, fl, indent, f.options["indent-width"]);
-  if (doc !== undefined) return multilineToken(part.node, doc);
+  if (doc !== undefined) return sMultiline(part.node, doc);
   const q = quotesOf(fl);
-  return multilineToken(part.node, fl.prefix + q + content + q);
+  sMultiline(part.node, fl.prefix + q + content + q);
 }
 
 /** A docstring's leading whitespace as ruff measures it: columns with tabs to the next multiple of 8, and its length. */
@@ -647,26 +653,24 @@ function mergedFlags(
 }
 
 /** Ruff's `FormatImplicitConcatenatedStringFlat`: every part's content between one pair of quotes. */
-function flat(f: Fmt, parts: readonly Part[], fl: Flags): Format {
-  return parts.map((p, i) =>
-    dslPart(p.node, {
+function writeFlat(f: Fmt, parts: readonly Part[], fl: Flags): void {
+  for (const [i, p] of parts.entries())
+    sDsl(p.node, {
       flags: fl,
       multiline: isInterpolated(p.flags) && layoutMultiline(f, p),
       opens: i === 0,
       closes: i === parts.length - 1,
       joined: !isInterpolated(p.flags),
-    } satisfies PartArgs),
-  );
+    } satisfies PartArgs);
 }
 
 /** Ruff's `FormatImplicitConcatenatedStringExpanded`: each part on its own, joined by in-parentheses-only lines. */
-function expanded(
+function writeExpanded(
   f: Fmt,
   s: Str,
   parts: readonly Part[],
   multipart: boolean,
-): Format {
-  const out: Format[] = [];
+): void {
   if (
     multipart &&
     parts.some(
@@ -679,7 +683,7 @@ function expanded(
         ),
     )
   )
-    out.push(breakParent);
+    sBreakParent();
   // Comments between parts attach to the string; each goes to the part it follows on its line, else the next.
   const between = f.comments.dangling(s);
   for (const [i, p] of parts.entries()) {
@@ -696,47 +700,72 @@ function expanded(
     const trailing = between.filter(
       (c: Comment) => c.line === "eol" && c.start > pEnd && c.end < nextStart,
     );
-    if (i > 0) out.push(f.softLineOrSpace());
-    out.push(
-      f.leading([...leading, ...f.comments.leading(p.node)]),
-      dslPart(p.node),
-      f.trailing([...trailing, ...f.comments.trailing(p.node)]),
-    );
+    if (i > 0) sPart(f.softLineOrSpace());
+    sPart(f.leading([...leading, ...f.comments.leading(p.node)]));
+    sDsl(p.node);
+    sPart(f.trailing([...trailing, ...f.comments.trailing(p.node)]));
   }
-  return out;
+}
+
+/** The parts expanded when the enclosing group breaks, else merged into `fl`'s one string. */
+function writeExpandedOrFlat(
+  f: Fmt,
+  s: Str,
+  parts: readonly Part[],
+  fl: Flags,
+): void {
+  open(IF_BROKEN);
+  writeExpanded(f, s, parts, false);
+  close();
+  open(IF_FLAT);
+  writeFlat(f, parts, fl);
+  close();
 }
 
 /** Ruff's `FormatExprStringLiteral` / `FormatExprFString` / bytes, for the whole expression `s`. */
-export function formatStr(f: Fmt, s: Str, docstringIndent?: string): Format {
+export function writeStr(f: Fmt, s: Str, docstringIndent?: string): void {
   const parts = s.parts.map((n) => partOf(f.tree, n));
   const [only] = parts;
   if (parts.length === 1 && only)
     return docstringIndent === undefined
-      ? dslPart(only.node)
+      ? sDsl(only.node)
       : docstringPart(f, only, docstringIndent);
   const parenthesized =
     f.level.k === "paren" || (f.level.k === "expr" && f.level.g !== undefined);
   const merged = mergedFlags(f, s, parts);
   if (!parenthesized) {
-    if (merged) return flat(f, parts, merged);
+    if (merged) return writeFlat(f, parts, merged);
     if (docstringIndent !== undefined)
-      return f.parenthesizeIfExpands(s.ts, () => expanded(f, s, parts, true));
+      return sPart(
+        f.parenthesizeIfExpands(s.ts, () =>
+          record(() => writeExpanded(f, s, parts, true)),
+        ),
+      );
   }
-  if (merged) {
-    const flatDoc = flat(f, parts, merged);
-    const exp = expanded(f, s, parts, false);
-    return f.inParensGroup(ifBreak(exp, flatDoc));
-  }
-  return f.inParensGroup(expanded(f, s, parts, true));
+  sPart(
+    f.inParensGroup(
+      record(() =>
+        merged
+          ? writeExpandedOrFlat(f, s, parts, merged)
+          : writeExpanded(f, s, parts, true),
+      ),
+    ),
+  );
 }
+
+/** `writeStr`, as a `Format` for ruff's rules. */
+export const formatStr = (f: Fmt, s: Str, docstringIndent?: string): Format =>
+  record(() => writeStr(f, s, docstringIndent));
 
 /** An implicit concatenation as an operand of a binary expression, which groups it itself. */
 export function implicitConcatenated(f: Fmt, s: Str): Format {
   const parts = s.parts.map((n) => partOf(f.tree, n));
   const merged = mergedFlags(f, s, parts);
-  return merged
-    ? ifBreak(expanded(f, s, parts, false), flat(f, parts, merged))
-    : expanded(f, s, parts, true);
+  return record(() =>
+    merged
+      ? writeExpandedOrFlat(f, s, parts, merged)
+      : writeExpanded(f, s, parts, true),
+  );
 }
 
 /**
@@ -747,13 +776,13 @@ export function implicitFlat(f: Fmt, s: Str): (() => Format) | undefined {
   if (s.parts.length < 2) return undefined;
   const parts = s.parts.map((n) => partOf(f.tree, n));
   const merged = mergedFlags(f, s, parts);
-  return merged && (() => flat(f, parts, merged));
+  return merged && (() => record(() => writeFlat(f, parts, merged)));
 }
 
 /** Ruff's `FormatImplicitConcatenatedStringExpanded` with `ImplicitConcatenatedLayout::MaybeFlat`. */
 export function implicitExpanded(f: Fmt, s: Str): Format {
   const parts = s.parts.map((n) => partOf(f.tree, n));
-  return expanded(f, s, parts, false);
+  return record(() => writeExpanded(f, s, parts, false));
 }
 
 /**
