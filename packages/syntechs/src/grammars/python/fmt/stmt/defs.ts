@@ -1,4 +1,4 @@
-import type { Format, Token } from "../elements.js";
+import type { Format } from "../elements.js";
 import type { FormatTree } from "../../../../fmt/tree.js";
 import type {
   ClassDef,
@@ -17,6 +17,8 @@ import {
 } from "../builders.js";
 import type { Comment } from "../comments.js";
 import { dslPart } from "../sink.js";
+import * as sink from "../sink.js";
+import type { Frame } from "../../../../fmt/dsl/runtime.js";
 import {
   byteEndOf,
   byteOffsetOf,
@@ -122,9 +124,9 @@ export function splitDangling(
 /**
  * Ruff's `FormatTypeParams`. Tree-sitter reads a bound as a type expression the AST does not convert, so a
  * bound is printed from its tokens and only in the shapes whose spacing is fixed: a name, a dotted name, or a
- * parenthesized tuple of those. `openTok` and `closeTok` print the brackets (the frame of the kind's rule).
+ * parenthesized tuple of those, in the brackets of `frame` (the kind's rule's).
  */
-export function typeParams(f: Fmt, tp: TypeParams, openTok: Token, closeTok: Token): Format {
+export function writeTypeParams(f: Fmt, tp: TypeParams, frame: Frame): void {
   if (f.comments.has(tp) || f.comments.hasAnyIn(tp.start, tp.end))
     throw new Unformattable(
       `comment in type parameters at ${byteOffsetOf(f.tree, tp.ts)}`,
@@ -138,24 +140,26 @@ export function typeParams(f: Fmt, tp: TypeParams, openTok: Token, closeTok: Tok
       `type parameters without brackets at ${byteOffsetOf(t, tp.ts)}`,
     );
   const items = children.filter((c) => t.named(c));
+  // `joinCommaSeparated` lays out its entries as `Format`s.
   const entries = items.map((n) => ({
     end: endOf(t, n),
-    doc: typeParam(f, n),
+    doc: sink.record(() => writeTypeParam(f, n)),
   }));
   const comma = commaIn(t, tp.ts, open);
-  return f.parenthesized(
-    openTok,
-    () => f.joinCommaSeparated(entries, tp.end, comma),
-    closeTok,
-  );
+  frame.open();
+  sink.part(f.parenthesizedContent(() => f.joinCommaSeparated(entries, tp.end, comma)));
+  frame.close();
 }
 
-function typeParam(f: Fmt, n: number): Format {
+const writeTok = (f: Fmt, n: number) => sink.sToken(n, f.text(n));
+
+function writeTypeParam(f: Fmt, n: number): void {
   const t = f.tree;
   const inner = unwrapType(t, n);
   switch (t.kindName(inner)) {
     case "identifier":
-      return f.tok(inner);
+      writeTok(f, inner);
+      return;
     case "splat_type": {
       const [star, name] = kids(t, inner);
       if (
@@ -164,7 +168,9 @@ function typeParam(f: Fmt, n: number): Format {
         t.kindName(name) !== "identifier"
       )
         return unsupported(t, inner);
-      return [f.tok(star), f.tok(name)];
+      writeTok(f, star);
+      writeTok(f, name);
+      return;
     }
     case "constrained_type": {
       const [name, colon, bound] = kids(t, inner);
@@ -177,7 +183,8 @@ function typeParam(f: Fmt, n: number): Format {
         return unsupported(t, inner);
       const nameTok = unwrapType(t, name);
       if (t.kindName(nameTok) !== "identifier") return unsupported(t, inner);
-      return dslPart(inner, { boundTokens: true });
+      sink.part(dslPart(inner, { boundTokens: true }));
+      return;
     }
     default:
       return unsupported(t, inner);
@@ -191,34 +198,35 @@ const unwrapType = (tree: FormatTree, n: number): number => {
   return x;
 };
 
-export function simpleType(f: Fmt, n: number): Format {
+export function writeSimpleType(f: Fmt, n: number): void {
   const t = f.tree;
   const x = unwrapType(t, n);
   switch (t.kindName(x)) {
     case "identifier":
-      return f.tok(x);
+      writeTok(f, x);
+      return;
     case "attribute":
-      return kids(t, x).map((c) => {
+      for (const c of kids(t, x)) {
         const k = t.kindName(c);
-        return k === "." || k === "identifier"
-          ? f.tok(c)
-          : k === "attribute"
-            ? simpleType(f, c)
-            : unsupported(t, c);
-      });
+        if (k === "." || k === "identifier") writeTok(f, c);
+        else if (k === "attribute") writeSimpleType(f, c);
+        else unsupported(t, c);
+      }
+      return;
     case "tuple": {
       const cs = kids(t, x);
-      return cs.map((c) => {
+      for (const c of cs) {
         const k = t.kindName(c);
-        return k === "(" || k === ")"
-          ? f.tok(c)
-          : k === ","
-            ? [f.tok(c), c === cs.at(-2) ? [] : space]
-            : simpleType(f, c);
-      });
+        if (k === "(" || k === ")") writeTok(f, c);
+        else if (k === ",") {
+          writeTok(f, c);
+          if (c !== cs.at(-2)) sink.sText(" ");
+        } else writeSimpleType(f, c);
+      }
+      return;
     }
     default:
-      return unsupported(t, x);
+      unsupported(t, x);
   }
 }
 

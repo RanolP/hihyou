@@ -2,12 +2,12 @@
 import type { StreamCtx } from "../../../fmt/stream-format.js";
 import type { Frame } from "../../../fmt/dsl/runtime.js";
 import type { ClassDef, Decorator, FunctionDef, Lambda, Parameter, TypeAlias } from "../fmt/ast.js";
-import { aliasTypeParams } from "../fmt/stmt/assign.js";
+import { writeAliasTypeParams } from "../fmt/stmt/assign.js";
 import { type Format, group } from "../fmt/elements.js";
 import { hard, space } from "../fmt/builders.js";
 import { args, formatExpr, maybeParenthesize, writeParameters } from "../fmt/expr.js";
-import { dslPart, frameParts, part, ruffOf, ruffStmtOf } from "../fmt/sink.js";
-import { body, decorators, simpleType, splitDangling, typeParams } from "../fmt/stmt/defs.js";
+import { dslPart, part, ruffOf, ruffStmtOf } from "../fmt/sink.js";
+import { body, decorators, splitDangling, writeSimpleType, writeTypeParams } from "../fmt/stmt/defs.js";
 import { endOf, tokens } from "../fmt/trivia.js";
 
 export const stmtDefVia = {
@@ -29,7 +29,6 @@ export const stmtDefVia = {
   },
   // A definition's or a type alias's (under its `generic_type`) type parameters in their brackets.
   "def.typeParams": (node: number, ctx: StreamCtx<unknown>, frame: Frame) => {
-    const { open, close } = frameParts(frame);
     const t = ctx.tree;
     const parent = t.parent(node);
     if (t.kindName(parent) === "generic_type") {
@@ -40,17 +39,18 @@ export const stmtDefVia = {
       // A subscript's `list[int]` is a `generic_type` too, whose brackets ruff prints as a subscript's.
       if (s.kind !== "TypeAlias" || tp?.ts !== node)
         throw new Error("python: def.typeParams on a generic_type's brackets other than a type alias's");
-      part(aliasTypeParams(f, tp, open, close));
+      writeAliasTypeParams(f, tp, frame);
     } else {
       const { f, s } = ruffStmtOf(node);
       const tp = (s as FunctionDef | ClassDef).typeParams;
-      if (tp) part(typeParams(f, tp, open, close));
+      if (tp) writeTypeParams(f, tp, frame);
     }
   },
   // A definition's bound prints from its tokens (`ctx.args.boundTokens`), a type alias's as an expression.
   "def.bound": (c: number, ctx: StreamCtx<unknown>) => {
     const { f, e } = ruffOf(c);
-    part(ctx.args?.boundTokens === true ? simpleType(f, c) : formatExpr(f, e));
+    if (ctx.args?.boundTokens === true) writeSimpleType(f, c);
+    else part(formatExpr(f, e));
   },
   // Ruff's `format_function_header` from the parameters on: they and the return type break as one group.
   "def.signature": (c: number) => {

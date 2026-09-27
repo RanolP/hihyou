@@ -6,7 +6,6 @@ import {
   ifBreak,
   removeSoftLines,
   synthetic,
-  type Token,
   willBreak,
 } from "../elements.js";
 import type { Expr, Stmt, TypeParam, TypeParams } from "../ast.js";
@@ -34,6 +33,8 @@ import {
   interpolatedAssignment,
 } from "../strings.js";
 import { dslPart } from "../sink.js";
+import * as sink from "../sink.js";
+import type { Frame } from "../../../../fmt/dsl/runtime.js";
 import { byteOffsetOf, startOf } from "../trivia.js";
 import type { StmtRules } from "./suite.js";
 
@@ -424,27 +425,31 @@ export function rightToLeft(
 }
 
 /** Ruff's `FormatTypeVar` / `FormatTypeVarTuple` / `FormatParamSpec`. */
-function typeParam(f: Fmt, p: TypeParam): Format {
-  if (p.colon !== undefined && p.bound) return dslPart(p.ts);
-  return [p.star !== undefined ? f.tok(p.star) : [], f.tok(p.name)];
+function writeTypeParam(f: Fmt, p: TypeParam): void {
+  if (p.colon !== undefined && p.bound) sink.part(dslPart(p.ts));
+  else {
+    if (p.star !== undefined) sink.sToken(p.star, f.text(p.star));
+    sink.sToken(p.name, f.text(p.name));
+  }
 }
 
 /** A type alias's type parameters, as their rule prints them. */
 export const typeParams = (_: Fmt, tp: TypeParams): Format => dslPart(tp.ts);
 
-/** Ruff's `FormatTypeParams`: `[T, *Ts, **P]`, split one per line when it does not fit, between `open` and `close`. */
-export function aliasTypeParams(f: Fmt, tp: TypeParams, open: Token, close: Token): Format {
+/** Ruff's `FormatTypeParams`: `[T, *Ts, **P]`, split one per line when it does not fit, in `frame`'s brackets. */
+export function writeAliasTypeParams(f: Fmt, tp: TypeParams, frame: Frame): void {
   if (f.comments.hasAnyIn(tp.start, tp.end))
     throw new Unformattable(
       `comment in type parameters at ${byteOffsetOf(f.tree, tp.ts)}`,
     );
   const comma = commaIn(f.tree, tp.ts, tp.open);
-  const entries = tp.params.map((p) => ({ end: p.end, doc: typeParam(f, p) }));
-  return f.parenthesized(
-    open,
-    () => f.joinCommaSeparated(entries, startOf(f.tree, tp.close), comma),
-    close,
+  // `joinCommaSeparated` lays out its entries as `Format`s.
+  const entries = tp.params.map((p) => ({ end: p.end, doc: sink.record(() => writeTypeParam(f, p)) }));
+  frame.open();
+  sink.part(
+    f.parenthesizedContent(() => f.joinCommaSeparated(entries, startOf(f.tree, tp.close), comma)),
   );
+  frame.close();
 }
 
 /** Ruff's `is_invalid_type_expression`: a type alias value only kept as written. */
