@@ -734,9 +734,8 @@ function fields(f: Fmt, e: Expr, o: Opts): Format {
     case "Bool":
     case "None":
     case "Ellipsis":
-      return f.tok(e.ts);
     case "Number":
-      return f.tok(e.ts, number(f.text(e.ts)));
+      return dslPart(e.ts);
     case "Str":
       return dslPart(e.ts);
     case "Attribute":
