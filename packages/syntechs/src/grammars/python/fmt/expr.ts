@@ -99,7 +99,7 @@ export type Parenthesize =
   | "ifBreaksParenthesized"
   | "ifBreaksParenthesizedNested";
 type Needs = "always" | "never" | "multiline" | "bestFit";
-type Chain = "default" | "nonFluent" | "fluent";
+export type Chain = "default" | "nonFluent" | "fluent";
 export type TupleMode =
   | "default"
   | "preserve"
@@ -297,7 +297,7 @@ const isAnnotationOf = (e: Expr, parent: Py | undefined) =>
   (parent?.kind === "AnnAssign" && parent.annotation === e) ||
   (parent?.kind === "FunctionDef" && parent.returns === e);
 
-const isCallLike = (e: Expr): e is Attribute | Call | Subscript =>
+export const isCallLike = (e: Expr): e is Attribute | Call | Subscript =>
   e.kind === "Attribute" || e.kind === "Call" || e.kind === "Subscript";
 
 /** Ruff's `NeedsParentheses`: whether `e`, standing in `parent`, needs parentheses to parse or to break. */
@@ -764,7 +764,7 @@ function applyInNode(f: Fmt, e: Expr, chain: Chain): Chain {
 }
 
 /** The value of an attribute, call or subscript, continuing the chain `layout`. */
-function chainValue(f: Fmt, v: Expr, layout: Chain): Format {
+export function chainValue(f: Fmt, v: Expr, layout: Chain): Format {
   if (v.parens.length > 0) return formatExpr(f, v, "always");
   if (isCallLike(v)) return node(f, v, { chain: layout });
   return formatExpr(f, v, "never");
@@ -801,14 +801,17 @@ function writeFields(f: Fmt, e: Expr, o: Opts): void {
       sink.sDsl(e.ts, { lambdaAssign: o.lambdaAssign === true });
       return;
     case "Attribute":
-      sink.part(attribute(f, e, o.chain ?? "default"));
-      return;
     case "Call":
-      sink.part(call(f, e, o.chain ?? "default"));
+    case "Subscript": {
+      // The rule continues the chain `layout`; a fluent chain starting here is one group.
+      const chain = o.chain ?? "default";
+      const layout = applyInNode(f, e, chain);
+      const grouped = chain === "default" && layout === "fluent";
+      if (grouped) sink.open(sink.GROUP);
+      sink.sDsl(e.ts, { chain: layout });
+      if (grouped) sink.close();
       return;
-    case "Subscript":
-      sink.part(subscript(f, e, o.chain ?? "default"));
-      return;
+    }
     case "Tuple":
       writeTuple(f, e, o.tuple ?? "default");
       return;
@@ -843,79 +846,6 @@ export function number(raw: string): string {
     .replace(/E/, "e")
     .replace(/e\+/, "e");
   return complex ? `${out}j` : out;
-}
-
-function attribute(f: Fmt, e: Attribute, chain: Chain): Format {
-  const cs = f.comments;
-  const layout = applyInNode(f, e, chain);
-  const v = e.value;
-  const parenthesizeValue = isBaseTenNumber(f, v) || v.parens.length > 0;
-  const out: Format[] = [];
-  if (layout === "fluent")
-    out.push(
-      parenthesizeValue
-        ? formatExpr(f, v, "always")
-        : isCallLike(v)
-          ? node(f, v, { chain: layout })
-          : formatExpr(f, v, "never"),
-    );
-  else out.push(formatExpr(f, v, parenthesizeValue ? "always" : "never"));
-  let lastClose: number | undefined;
-  for (const t of tokens(f.tree, v.end)) {
-    if (t.kind !== ")") break;
-    lastClose = t.end;
-  }
-  const eol =
-    lastClose !== undefined &&
-    cs
-      .trailing(v)
-      .some((c) => c.line === "eol" && c.start > (lastClose as number));
-  if (eol) out.push(hard);
-  else if (
-    layout === "fluent" &&
-    (parenthesizeValue || v.kind === "Call" || v.kind === "Subscript")
-  )
-    out.push(soft);
-  const dangling = cs.dangling(e);
-  const before = dangling.filter((c) => c.start < startOf(f.tree, e.dot));
-  const after = dangling.filter((c) => c.start >= startOf(f.tree, e.dot));
-  out.push(f.dangling(before), f.tok(e.dot), f.dangling(after), f.tok(e.attr));
-  return chain === "default" && layout === "fluent" ? group(out) : out;
-}
-
-function isBaseTenNumber(f: Fmt, e: Expr): boolean {
-  if (e.kind !== "Number") return false;
-  const t = f.text(e.ts);
-  return !/^0[bBoOxX]/.test(t);
-}
-
-function call(f: Fmt, e: Call, chain: Chain): Format {
-  const layout = applyInNode(f, e, chain);
-  const out = [
-    chainValue(f, e.func, layout),
-    f.dangling(f.comments.dangling(e)),
-    args(f, e.args),
-  ];
-  return chain === "default" && layout === "fluent" ? group(out) : out;
-}
-
-function subscript(f: Fmt, e: Subscript, chain: Chain): Format {
-  const layout = applyInNode(f, e, chain);
-  const s = e.slice;
-  const inner = () =>
-    s.kind === "Tuple"
-      ? formatExpr(f, s, "preserve", { tuple: "preserve" })
-      : formatExpr(f, s);
-  const out = [
-    chainValue(f, e.value, layout),
-    f.parenthesized(
-      f.tok(e.open),
-      inner,
-      f.tok(e.close),
-      f.comments.dangling(e),
-    ),
-  ];
-  return chain === "default" && layout === "fluent" ? group(out) : out;
 }
 
 export function args(f: Fmt, a: Arguments): Format {

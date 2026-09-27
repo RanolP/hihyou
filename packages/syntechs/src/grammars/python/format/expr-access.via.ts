@@ -1,11 +1,12 @@
 // The customs expr-access.ts's `.via`s name.
 import type { StreamCtx } from "../../../fmt/stream-format.js";
-import type { Expr, Py, Slice } from "../fmt/ast.js";
-import type { Fmt } from "../fmt/builders.js";
+import type { Attribute, Call, Expr, Py, Slice, Subscript } from "../fmt/ast.js";
+import { type Fmt, hard, soft } from "../fmt/builders.js";
 import type { Comment } from "../fmt/comments.js";
-import { formatExpr, writeExpr } from "../fmt/expr.js";
+import type { Format } from "../fmt/elements.js";
+import { args, type Chain, chainValue, formatExpr, isCallLike, node, writeExpr } from "../fmt/expr.js";
 import { COLLAPSE, HARD, part, ruffOf, sLine, sText } from "../fmt/sink.js";
-import { startOf } from "../fmt/trivia.js";
+import { startOf, tokens } from "../fmt/trivia.js";
 
 /**
  * Ruff's slice layout: spaces around the colons unless every bound is simple, and the dangling comments split into
@@ -47,6 +48,23 @@ function writeSliceBound(f: Fmt, x: Expr, spaced: boolean): void {
 
 const sliceOf = (n: number) => ruffOf(n) as { f: Fmt; e: Slice };
 
+/** The call chain layout the attribute, call or subscript printing now continues (`fields` passes it). */
+const layoutOf = (ctx: StreamCtx<unknown>): Chain => (ctx.args?.chain as Chain | undefined) ?? "nonFluent";
+
+function isBaseTenNumber(f: Fmt, e: Expr): boolean {
+  if (e.kind !== "Number") return false;
+  return !/^0[bBoOxX]/.test(f.text(e.ts));
+}
+
+/** A subscript's slice between its brackets, a tuple keeping its own parentheses or none. */
+function subscriptContent(f: Fmt, e: Subscript): Format {
+  const s = e.slice;
+  return f.parenthesizedContent(
+    () => (s.kind === "Tuple" ? formatExpr(f, s, "preserve", { tuple: "preserve" }) : formatExpr(f, s)),
+    f.comments.dangling(e),
+  );
+}
+
 export const exprAccessVia = {
   "access.sliceLower": (c: number, ctx: StreamCtx<unknown>) => {
     const { f, e } = sliceOf(ctx.tree.parent(c));
@@ -87,6 +105,66 @@ export const exprAccessVia = {
     const { f } = ruffOf(ctx.tree.parent(c));
     const { content, dangling } = ctx.args as { content: () => void; dangling: readonly Comment[] };
     f.writeParenthesizedContent(content, dangling);
+  },
+  // The value, then the line break before the dot: an end-of-line comment after the value's closing parenthesis
+  // forces one, and a fluent chain breaks before each dot that follows a call, subscript or parenthesized value.
+  "access.attributeValue": (c: number, ctx: StreamCtx<unknown>) => {
+    const { f, e: v } = ruffOf(c);
+    const layout = layoutOf(ctx);
+    const parenthesizeValue = isBaseTenNumber(f, v) || v.parens.length > 0;
+    const out: Format[] = [];
+    if (layout === "fluent")
+      out.push(
+        parenthesizeValue
+          ? formatExpr(f, v, "always")
+          : isCallLike(v)
+            ? node(f, v, { chain: layout })
+            : formatExpr(f, v, "never"),
+      );
+    else out.push(formatExpr(f, v, parenthesizeValue ? "always" : "never"));
+    let lastClose: number | undefined;
+    for (const t of tokens(f.tree, v.end)) {
+      if (t.kind !== ")") break;
+      lastClose = t.end;
+    }
+    const eol =
+      lastClose !== undefined &&
+      f.comments.trailing(v).some((c) => c.line === "eol" && c.start > (lastClose as number));
+    if (eol) out.push(hard);
+    else if (layout === "fluent" && (parenthesizeValue || v.kind === "Call" || v.kind === "Subscript"))
+      out.push(soft);
+    part(out);
+  },
+  // The dot, between the attribute's dangling comments before and after it.
+  "access.dot": (token: number | undefined, n: number) => {
+    const { f, e } = ruffOf(n);
+    const { dot } = e as Attribute;
+    const dangling = f.comments.dangling(e);
+    const at = startOf(f.tree, dot);
+    part([
+      f.dangling(dangling.filter((c) => c.start < at)),
+      token === undefined ? [] : f.tok(token),
+      f.dangling(dangling.filter((c) => c.start >= at)),
+    ]);
+  },
+  "access.chainValue": (c: number, ctx: StreamCtx<unknown>) => {
+    const { f, e } = ruffOf(c);
+    part(chainValue(f, e, layoutOf(ctx)));
+  },
+  // A call's dangling comments, then its arguments.
+  "access.arguments": (c: number, ctx: StreamCtx<unknown>) => {
+    const { f, e } = ruffOf(ctx.tree.parent(c));
+    part([f.dangling(f.comments.dangling(e)), args(f, (e as Call).args)]);
+  },
+  "access.subscript": (c: number, ctx: StreamCtx<unknown>) => {
+    const { f, e } = ruffOf(ctx.tree.parent(c));
+    part(subscriptContent(f, e as Subscript));
+  },
+  // A generic type's type_parameter: its brackets and what is between them.
+  "access.typeSubscript": (c: number, ctx: StreamCtx<unknown>) => {
+    const { f, e } = ruffOf(ctx.tree.parent(c));
+    const s = e as Subscript;
+    part([f.tok(s.open), subscriptContent(f, s), f.tok(s.close)]);
   },
   "access.keywordValue": (c: number) => {
     const { f, e } = ruffOf(c);
