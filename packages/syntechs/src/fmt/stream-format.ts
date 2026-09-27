@@ -53,6 +53,11 @@ export interface StreamCtx<O = unknown> {
   isList(node: number): boolean;
   /** Whether `node` lies in a region the parser could not read, which prints as its source text. */
   isBroken(node: number): boolean;
+  /**
+   * Whether `node`'s rule prints the node's comments itself (`StreamRules.printsOwnComments`), so whatever prints
+   * `node` inside its comments (`print`, a custom's kid, a `.via` child) leaves them to it.
+   */
+  ownsComments(node: number): boolean;
 }
 
 /** What laying out comment `c` next to its node reads of it. */
@@ -224,7 +229,7 @@ export function formatStream<O>(
       placement: comments,
       // `printWithComments` of rules.ts.
       print(node, args) {
-        if (printsOwnComments && !isBroken(node) && printsOwnComments(node, ctx)) {
+        if (ctx.ownsComments(node)) {
           printNode(node, args);
           return;
         }
@@ -255,6 +260,8 @@ export function formatStream<O>(
         return rule !== null && language.lists.has(rule);
       },
       isBroken,
+      ownsComments: (node) =>
+        printsOwnComments !== undefined && !isBroken(node) && printsOwnComments(node, ctx),
     };
 
     ctx.print(tree.root);

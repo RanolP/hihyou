@@ -328,6 +328,8 @@ export function onDoc(rule: StreamRule<JsOptions>): JsRule {
       comment: (c) => writeDoc(printComment(c, js)),
       isList: (node) => js.isList(node),
       isBroken: () => false,
+      // The Doc ctx prints every comment, a node's own included, so none is left to the rule.
+      ownsComments: () => false,
     };
     return record(() => rule(n, ctx));
   };

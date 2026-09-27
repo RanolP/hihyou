@@ -157,9 +157,10 @@ export function flatten<O>(
       return cs;
     };
     const child = (c: number, via?: string) => {
-      for (const x of ctx.leadingComments(c)) out.push(commentEntry(ctx, x, "leading"));
+      const comments = !ctx.ownsComments(c);
+      if (comments) for (const x of ctx.leadingComments(c)) out.push(commentEntry(ctx, x, "leading"));
       walkNode(c, via);
-      for (const x of ctx.trailingComments(c)) out.push(commentEntry(ctx, x, "trailing", c));
+      if (comments) for (const x of ctx.trailingComments(c)) out.push(commentEntry(ctx, x, "trailing", c));
     };
     const walk = (x: Tree): void => {
       switch (x.t) {
@@ -305,6 +306,10 @@ export function wrap<O>(
     ...ctx,
     printNode,
     print(node) {
+      if (ctx.ownsComments(node)) {
+        printNode(node);
+        return;
+      }
       for (const c of ctx.leadingComments(node))
         printLeadingComment(inner, commentEntry(inner, c, "leading"));
       printNode(node);

@@ -140,15 +140,18 @@ export function customEntries(ctx: StreamCtx<unknown>, node: number): Entry[] {
   const out: Entry[] = [];
   const kids = kidsOf(ctx, node);
   kids.forEach((c, i) => {
-    for (const x of ctx.leadingComments(c))
-      out.push(commentEntry(ctx, x, "leading"));
+    const comments = !ctx.ownsComments(c);
+    if (comments)
+      for (const x of ctx.leadingComments(c))
+        out.push(commentEntry(ctx, x, "leading"));
     out.push(
       t.named(c)
         ? { e: "child", node: c, kind: t.kindName(c) }
         : { e: "tok", node: c, text: t.text(c), synthetic: false },
     );
-    for (const x of ctx.trailingComments(c))
-      out.push(commentEntry(ctx, x, "trailing", c));
+    if (comments)
+      for (const x of ctx.trailingComments(c))
+        out.push(commentEntry(ctx, x, "trailing", c));
     if (i < kids.length - 1 && nextLineEmpty(t, c)) out.push({ e: "blank" });
   });
   for (const x of ctx.danglingComments(node))
@@ -162,11 +165,12 @@ export function printKid(
   kid: number,
   body?: () => void,
 ): void {
-  printLeadingComments(ctx, kid);
+  const comments = !ctx.ownsComments(kid);
+  if (comments) printLeadingComments(ctx, kid);
   if (body) body();
   else if (ctx.tree.named(kid)) ctx.printNode(kid);
   else sToken(kid, ctx.tree.text(kid));
-  printTrailingComments(ctx, kid);
+  if (comments) printTrailingComments(ctx, kid);
 }
 
 /**
