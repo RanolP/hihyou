@@ -7,7 +7,6 @@ import {
   flatOf,
   group,
   hardline,
-  ifBreak,
   indent,
   isBroken,
   isDocs,
@@ -128,12 +127,6 @@ export const fields = (x: HasTree, n: number, name: string) =>
 /** The anonymous token `text` among `n`'s children. */
 export const anon = (x: HasTree, n: number, text: string) =>
   childWhere(x, n, (c) => !x.tree.named(c) && x.tree.kindName(c) === text);
-
-/** The anonymous token `text` of `n` printed as itself, or nothing when `n` has none. */
-export function tok(ctx: JsCtx, n: number, text: string): Doc {
-  const c = anon(ctx, n, text);
-  return c !== undefined ? token(c, src(ctx, c)) : [];
-}
 
 /** The `;` ending statement `n`: its own when the source has one, else inserted, or dropped when `semi` is off. */
 export function semi(ctx: JsCtx, n: number, own?: number): Doc {
@@ -550,14 +543,6 @@ export function isConciselyPrintedArray(ctx: JsCtx, n: number): boolean {
   );
 }
 
-/** Prettier's printDanglingComments: `n`'s dangling comments one per line, optionally indented on their own line. */
-export function danglingComments(ctx: JsCtx, n: number, indented = false): Doc {
-  const docs = ctx.dangling(n);
-  if (docs.length === 0) return [];
-  const doc = join(hardline, docs);
-  return indented ? indent([hardline, doc]) : doc;
-}
-
 /** Prettier's printDanglingCommentsInList. */
 export function danglingCommentsInList(ctx: JsCtx, n: number): Doc {
   const docs = ctx.dangling(n);
@@ -576,16 +561,6 @@ export const trailingCommaAllowed = (
   level === "all"
     ? ctx.options.trailingComma === "all"
     : ctx.options.trailingComma !== "none";
-
-/** A trailing `,` when the enclosing group breaks and `trailingComma` allows it, anchored to `last`. */
-export const trailingComma = (
-  ctx: JsCtx,
-  last: number | undefined,
-  level: "es5" | "all" = "es5",
-): Doc =>
-  last !== undefined && trailingCommaAllowed(ctx, level)
-    ? ifBreak(synthetic(last, ","))
-    : [];
 
 /** Prettier's removeLines: every soft or plain line printed flat, every group unbroken. Hard lines stay. */
 export function removeLines(doc: Doc): Doc {
