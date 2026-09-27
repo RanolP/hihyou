@@ -6,7 +6,7 @@ import { Unformattable } from "../fmt/ast.js";
 import { COMPOUND, type Fmt } from "../fmt/builders.js";
 import { maybeParenthesize } from "../fmt/expr.js";
 import { close, COLLAPSE, dslPart, HARD, INDENT, open, part, ruffStmtOf, sLine, sText, sToken } from "../fmt/sink.js";
-import { body, kids } from "../fmt/stmt/defs.js";
+import { kids, writeBody } from "../fmt/stmt/defs.js";
 import {
   classArguments,
   mapping,
@@ -151,6 +151,6 @@ export const stmtMatchVia = {
     const { f, c } = caseOf(n, ctx);
     const dangling = f.comments.dangling(c);
     part(f.trailing(dangling));
-    part(body(f, c, c.body, "other", dangling));
+    writeBody(f, c, c.body, "other", dangling);
   },
 };

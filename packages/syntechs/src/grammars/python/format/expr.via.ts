@@ -8,11 +8,11 @@ import {
   formatExpr,
   lambdaBody,
   lambdaHeader,
-  lambdaParams,
   maybeParenthesize,
   node,
   number,
   unaryNeedsLineBreak,
+  writeLambdaParams,
 } from "../fmt/expr.js";
 import { part, ruffOf, sText, sToken } from "../fmt/sink.js";
 
@@ -20,7 +20,7 @@ export const exprVia = {
   "expr.lambdaParams": (c: number, ctx: StreamCtx<unknown>) => {
     const { f, e } = ruffOf(ctx.tree.parent(c));
     const l = e as Lambda;
-    if (l.params) part(lambdaParams(f, l, l.params));
+    if (l.params) writeLambdaParams(f, l, l.params);
   },
   // An assignment's lambda (`ctx.args.lambdaAssign`, from ruff's caller) fits its body expanded.
   "expr.lambdaBody": (c: number, ctx: StreamCtx<unknown>) => {

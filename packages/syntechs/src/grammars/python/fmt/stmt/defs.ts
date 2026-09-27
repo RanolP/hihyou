@@ -8,13 +8,8 @@ import type {
   TypeParams,
 } from "../ast.js";
 import { Unformattable } from "../ast.js";
-import {
-  commaIn,
-  type Fmt,
-  space,
-} from "../builders.js";
+import type { Fmt } from "../builders.js";
 import type { Comment } from "../comments.js";
-import { dslPart } from "../sink.js";
 import * as sink from "../sink.js";
 import type { Frame } from "../../../../fmt/dsl/runtime.js";
 import {
@@ -70,7 +65,7 @@ function writeEmptyLinesBeforeTrailingComments(f: Fmt, comments: readonly Commen
 const defFromSpec = (f: Fmt, s: FunctionDef | ClassDef): Format =>
   sink.record(() => {
     writeEmptyLinesAfterLeadingComments(f, f.comments.leading(s));
-    sink.part(dslPart(s.decorators.length > 0 ? f.tree.parent(s.ts) : s.ts));
+    sink.sDsl(s.decorators.length > 0 ? f.tree.parent(s.ts) : s.ts);
     writeEmptyLinesBeforeTrailingComments(f, f.comments.trailing(s));
   });
 
@@ -78,7 +73,7 @@ const defFromSpec = (f: Fmt, s: FunctionDef | ClassDef): Format =>
 function writeDecorator(f: Fmt, d: Decorator): void {
   const cs = f.comments;
   f.writeLeading(cs.leading(d));
-  sink.part(dslPart(d.ts));
+  sink.sDsl(d.ts);
   f.writeTrailing(cs.trailing(d));
 }
 
@@ -135,16 +130,28 @@ export function writeTypeParams(f: Fmt, tp: TypeParams, frame: Frame): void {
     throw new Unformattable(
       `type parameters without brackets at ${byteOffsetOf(t, tp.ts)}`,
     );
-  const items = children.filter((c) => t.named(c));
-  // `joinCommaSeparated` lays out its entries as `Format`s.
-  const entries = items.map((n) => ({
-    end: endOf(t, n),
-    doc: sink.record(() => writeTypeParam(f, n)),
-  }));
-  const comma = commaIn(t, tp.ts, open);
-  frame.open();
-  sink.part(f.parenthesizedContent(() => f.joinCommaSeparated(entries, tp.end, comma)));
-  frame.close();
+  const entries = children
+    .filter((c) => t.named(c))
+    .map((n) => ({ end: endOf(t, n), write: () => writeTypeParam(f, n) }));
+  f.writeParenthesized(
+    frame.open,
+    () => f.writeJoinCommaSeparated(entries, tp.end, writeCommaIn(t, tp.ts, open)),
+    frame.close,
+  );
+}
+
+/** Builders' `commaIn`, written: the comma among `parent`'s children at or after `from`, or one synthetic after `anchor`. */
+export function writeCommaIn(tree: FormatTree, parent: number, anchor: number): (from: number) => void {
+  return (from) => {
+    for (let i = 0, n = tree.count(parent); i < n; i++) {
+      const c = tree.child(parent, i);
+      if (!tree.named(c) && tree.kindName(c) === "," && startOf(tree, c) >= from) {
+        sink.sToken(c, ",");
+        return;
+      }
+    }
+    sink.sToken(anchor, ",", true);
+  };
 }
 
 const writeTok = (f: Fmt, n: number) => sink.sToken(n, f.text(n));
@@ -179,7 +186,7 @@ function writeTypeParam(f: Fmt, n: number): void {
         return unsupported(t, inner);
       const nameTok = unwrapType(t, name);
       if (t.kindName(nameTok) !== "identifier") return unsupported(t, inner);
-      sink.part(dslPart(inner, { boundTokens: true }));
+      sink.sDsl(inner, { boundTokens: true });
       return;
     }
     default:
@@ -255,11 +262,9 @@ export function writeBody(
     );
   sink.part(clauseBody(f, stmts, kind, colonComments));
 }
-/** `writeBody`, recorded for a caller still laying out `Format`s. */
-export const body = (...a: Parameters<typeof writeBody>): Format => sink.record(() => writeBody(...a));
 
 // A statement its rule in format.ts prints.
-const fromSpec = (_: Fmt, s: Match) => dslPart(s.ts);
+const fromSpec = (_: Fmt, s: Match) => sink.dslPart(s.ts);
 
 export const defRules: StmtRules = {
   Match: fromSpec,

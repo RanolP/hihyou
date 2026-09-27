@@ -1,6 +1,6 @@
 import type { Expr, Stmt, TypeParam, TypeParams } from "../ast.js";
 import { Unformattable } from "../ast.js";
-import { commaIn, type Fmt } from "../builders.js";
+import type { Fmt } from "../builders.js";
 import type { Comment } from "../comments.js";
 import {
   canOmitOptionalParentheses,
@@ -47,6 +47,7 @@ import { dslPart } from "../sink.js";
 import * as sink from "../sink.js";
 import type { Frame } from "../../../../fmt/dsl/runtime.js";
 import { byteOffsetOf, startOf } from "../trivia.js";
+import { writeCommaIn } from "./defs.js";
 
 /**
  * Ruff's assignments (statement/stmt_{assign,ann_assign,aug_assign,type_alias}.rs) and the layout of a
@@ -497,7 +498,7 @@ export function rightToLeft(
 
 /** Ruff's `FormatTypeVar` / `FormatTypeVarTuple` / `FormatParamSpec`. */
 function writeTypeParam(f: Fmt, p: TypeParam): void {
-  if (p.colon !== undefined && p.bound) sink.part(dslPart(p.ts));
+  if (p.colon !== undefined && p.bound) sink.sDsl(p.ts);
   else {
     if (p.star !== undefined) sink.sToken(p.star, f.text(p.star));
     sink.sToken(p.name, f.text(p.name));
@@ -513,14 +514,12 @@ export function writeAliasTypeParams(f: Fmt, tp: TypeParams, frame: Frame): void
     throw new Unformattable(
       `comment in type parameters at ${byteOffsetOf(f.tree, tp.ts)}`,
     );
-  const comma = commaIn(f.tree, tp.ts, tp.open);
-  // `joinCommaSeparated` lays out its entries as `Format`s.
-  const entries = tp.params.map((p) => ({ end: p.end, doc: sink.record(() => writeTypeParam(f, p)) }));
-  frame.open();
-  sink.part(
-    f.parenthesizedContent(() => f.joinCommaSeparated(entries, startOf(f.tree, tp.close), comma)),
+  const entries = tp.params.map((p) => ({ end: p.end, write: () => writeTypeParam(f, p) }));
+  f.writeParenthesized(
+    frame.open,
+    () => f.writeJoinCommaSeparated(entries, startOf(f.tree, tp.close), writeCommaIn(f.tree, tp.ts, tp.open)),
+    frame.close,
   );
-  frame.close();
 }
 
 /** Ruff's `is_invalid_type_expression`: a type alias value only kept as written. */

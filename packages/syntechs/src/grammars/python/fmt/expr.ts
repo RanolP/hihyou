@@ -1010,14 +1010,12 @@ export function lambdaHeader(f: Fmt, e: Lambda): readonly Comment[] {
 export function writeLambdaParams(f: Fmt, e: Lambda, p: Parameters): void {
   const cs = f.comments;
   const before = cs.dangling(e).filter((c) => c.end < p.start);
-  const params = sink.capture(() => sink.part(dslPart(p.ts)));
+  const params = sink.capture(() => sink.sDsl(p.ts));
   if (before.length > 0) f.writeDangling(before);
   else if (cs.hasLeading(p)) sink.sLine(sink.HARD | sink.COLLAPSE);
   else sink.sText(" ");
   sink.place(cs.hasAnyIn(p.start, p.end) || cs.has(p) ? params : sink.removeSoftLines(params));
 }
-export const lambdaParams = (f: Fmt, e: Lambda, p: Parameters): Format =>
-  sink.record(() => writeLambdaParams(f, e, p));
 
 export function lambdaBody(f: Fmt, e: Lambda, header: readonly Comment[]): Format {
   const cs = f.comments;
@@ -1104,7 +1102,7 @@ export function writeParameters(
       if (item.kind === "Separator") {
         const mine = rest.filter((c) => separatorOwns(p, i, c));
         f.writeLeading(mine.filter((c) => c.line === "own"));
-        sink.part(dslPart(item.ts));
+        sink.sDsl(item.ts);
         f.writeTrailing(mine.filter((c) => c.line !== "own"));
       } else writeParameter(f, item);
       lastEnd = item.end;
@@ -1135,8 +1133,7 @@ export function writeParameters(
   }
   f.at(PAREN, () => {
     if (p.items.length === 0) {
-      const { open, close } = sink.frameParts(mode);
-      sink.part(f.emptyParenthesized(open, dangling, close));
+      f.writeEmptyParenthesized(mode.open, dangling, mode.close);
       return;
     }
     // Ruff builds the parameters before the comments after the `(`; the two share no comment.
@@ -1188,7 +1185,7 @@ function firstTokenAfter(f: Fmt, at: number): string | undefined {
 function writeParameter(f: Fmt, p: Parameter): void {
   const cs = f.comments;
   f.writeLeading(cs.leading(p));
-  sink.part(dslPart(p.ts));
+  sink.sDsl(p.ts);
   f.writeTrailing(cs.trailing(p));
 }
 

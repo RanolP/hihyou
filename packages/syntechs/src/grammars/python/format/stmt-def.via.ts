@@ -3,17 +3,17 @@ import type { StreamCtx } from "../../../fmt/stream-format.js";
 import type { Frame } from "../../../fmt/dsl/runtime.js";
 import type { ClassDef, Decorator, FunctionDef, Lambda, Parameter, TypeAlias } from "../fmt/ast.js";
 import { writeAliasTypeParams } from "../fmt/stmt/assign.js";
-import { args, formatExpr, maybeParenthesize, writeParameters } from "../fmt/expr.js";
+import { args, writeExpr, writeMaybeParenthesize, writeParameters } from "../fmt/expr.js";
 import {
   close,
   COLLAPSE,
-  dslPart,
   GROUP,
   HARD,
   open,
   part,
   ruffOf,
   ruffStmtOf,
+  sDsl,
   sLine,
   sText,
   sToken,
@@ -37,7 +37,7 @@ export const stmtDefVia = {
   },
   "def.decorator": (c: number) => {
     const { f, e } = ruffOf(c);
-    part(maybeParenthesize(f, e, e.parent as Decorator, "optional"));
+    writeMaybeParenthesize(f, e, e.parent as Decorator, "optional");
   },
   "def.async": (token: number | undefined) => {
     if (token === undefined) return;
@@ -68,7 +68,7 @@ export const stmtDefVia = {
   "def.bound": (c: number, ctx: StreamCtx<unknown>) => {
     const { f, e } = ruffOf(c);
     if (ctx.args?.boundTokens === true) writeSimpleType(f, c);
-    else part(formatExpr(f, e));
+    else writeExpr(f, e);
   },
   // Ruff's `format_function_header` from the parameters on: they and the return type break as one group.
   "def.signature": (c: number) => {
@@ -78,25 +78,16 @@ export const stmtDefVia = {
     const p = s.params;
     const emptyParams = p.items.length === 0 && !cs.has(p);
     open(GROUP);
-    part(dslPart(p.ts));
+    sDsl(p.ts);
     const ret = s.returns;
     if (ret && s.arrow !== undefined) {
       sText(" ");
       sToken(s.arrow, f.text(s.arrow));
       sText(" ");
-      if (ret.kind === "Tuple")
-        part(formatExpr(f, ret, cs.hasLeading(ret) ? "always" : "never"));
+      if (ret.kind === "Tuple") writeExpr(f, ret, cs.hasLeading(ret) ? "always" : "never");
       // Parenthesized so the comment cannot become the header's own on the next run.
-      else if (cs.hasTrailing(ret)) part(formatExpr(f, ret, "always"));
-      else
-        part(
-          maybeParenthesize(
-            f,
-            ret,
-            s,
-            emptyParams ? "ifBreaksParenthesized" : "ifBreaks",
-          ),
-        );
+      else if (cs.hasTrailing(ret)) writeExpr(f, ret, "always");
+      else writeMaybeParenthesize(f, ret, s, emptyParams ? "ifBreaksParenthesized" : "ifBreaks");
     }
     close();
   },
@@ -141,7 +132,7 @@ export const stmtDefVia = {
     const { f, e } = ruffOf(c);
     if (f.comments.hasLeading(e) && e.parens.length === 0) sLine(HARD | COLLAPSE);
     else sText(" ");
-    part(formatExpr(f, e));
+    writeExpr(f, e);
   },
   // A default whose leading comment follows the `=` starts on the next line.
   "def.default": (c: number) => {
@@ -166,6 +157,6 @@ export const stmtDefVia = {
     }
     if (breakLeading) sLine(HARD | COLLAPSE);
     else if (p.annotation) sText(" ");
-    part(formatExpr(f, e));
+    writeExpr(f, e);
   },
 };
