@@ -19,6 +19,7 @@ import {
   sText,
   sToken,
 } from "../../fmt/stream.js";
+import { atName, maybeLower, numberParts } from "../../fmt/dsl/normalizers.js";
 import type { CustomRule, CustomSeq } from "../../fmt/dsl/runtime.js";
 import type { StreamCtx, StreamRule } from "../../fmt/stream-format.js";
 import { newlineBetween } from "../../fmt/text.js";
@@ -65,48 +66,7 @@ function breaksBetween(a: number, b: number, ctx: SCtx): boolean {
   );
 }
 
-// Prettier lowercases a name unless it could be a preprocessor's or a custom one (utils `maybeToLowerCase`).
-const maybeLower = (t: string) =>
-  /[$@#]/.test(t) ||
-  t.startsWith("%") ||
-  t.startsWith("--") ||
-  t.startsWith(":--") ||
-  (t.includes("(") && t.includes(")"))
-    ? t
-    : t.toLowerCase();
-const atName = (t: string) => `@${maybeLower(t.slice(1))}`;
 const cssWideKeywords = new Set(["initial", "inherit", "unset", "revert"]);
-
-// Prettier's `printCssNumber` and unit table (utils/print-number.js, print-unit.js).
-const printNumber = (raw: string) =>
-  (raw.length === 1
-    ? raw
-    : raw
-        .toLowerCase()
-        .replace(/^([+-]?[\d.]+e)(?:\+|(-))?0*(?=\d)/, "$1$2")
-        .replace(/^([+-]?[\d.]+)e[+-]?0+$/, "$1")
-        .replace(/^([+-])?\./, "$10.")
-        .replace(/(\.\d+?)0+(?=e|$)/, "$1")
-        .replace(/\.(?=e|$)/, "")
-  ).replace(/\.0(?=$|e)/, "");
-const units = new Map(
-  (
-    "em rem ex rex cap rcap ch rch ic ric lh rlh vw svw lvw dvw vh svh lvh dvh vi svi lvi dvi vb svb lvb dvb " +
-    "vmin svmin lvmin dvmin vmax svmax lvmax dvmax cm mm Q in pt pc px deg grad rad turn s ms Hz kHz dpi dpcm " +
-    "dppx x cqw cqh cqi cqb cqmin cqmax fr"
-  )
-    .split(" ")
-    .map((u) => [u.toLowerCase(), u]),
-);
-const numberParts = /^([+-]?(?:\d*\.\d+|\d+\.?)(?:e[+-]?\d+)?)([a-z]*)(.*)$/is;
-function printDimension(t: string): string {
-  const m = numberParts.exec(t);
-  if (!m) return t;
-  const [, num = "", unit = "", rest = ""] = m;
-  const lower = unit.toLowerCase();
-  if (unit !== "" && lower !== "n" && !units.has(lower)) return t;
-  return printNumber(num) + (units.get(lower) ?? unit) + rest;
-}
 
 // A CSS string's value: its escapes resolved (css-syntax-3 §4.3.7), so a requoted string compares equal.
 const cook = (quoted: string) =>
@@ -120,34 +80,6 @@ const cook = (quoted: string) =>
         return String.fromCodePoint(cp > 0x10ffff || cp === 0 ? 0xfffd : cp);
       },
     );
-
-// Prettier's `printString`: the preferred quote unless the content holds more of it than of the other.
-function requote(quoted: string, singleQuote: boolean): string {
-  const content = quoted.slice(1, -1);
-  const [preferred, alternate] = singleQuote ? ["'", '"'] : ['"', "'"];
-  let p = 0;
-  let a = 0;
-  for (const c of content) {
-    if (c === preferred) p++;
-    else if (c === alternate) a++;
-  }
-  const q = p > a ? alternate : preferred;
-  if (quoted.startsWith(q)) return quoted;
-  const other = q === '"' ? "'" : '"';
-  return (
-    q +
-    content.replace(/\\(["'\\])|(["'])/g, (m, escaped, bare) =>
-      escaped
-        ? escaped === other
-          ? other
-          : m
-        : bare === q
-          ? `\\${bare}`
-          : bare,
-    ) +
-    q
-  );
-}
 
 const within = (n: number, k: string, ctx: SCtx) => {
   const p = ctx.tree.parent(n);
@@ -448,17 +380,6 @@ const respell =
 
 /** The rules `custom` names in format.ts. */
 export const customs = {
-  lower: respell((t) => t.toLowerCase()),
-  maybeLower: respell((t) => maybeLower(t)),
-  dimension: respell((t) => printDimension(t)),
-  string: respell((t, _, ctx) => requote(t, ctx.options.singleQuote)),
-  atKeyword: respell((t) => atName(t)),
-  className: respell((t, node, ctx) =>
-    within(node, "pseudo_class_selector", ctx) ? t.toLowerCase() : t,
-  ),
-  tagName: respell((t, node, ctx) =>
-    within(node, "pseudo_element_selector", ctx) ? t.toLowerCase() : t,
-  ),
   plainValue: respell((t, node, ctx) => {
     if (within(node, "attribute_selector", ctx)) {
       const q = ctx.options.singleQuote ? "'" : '"';
