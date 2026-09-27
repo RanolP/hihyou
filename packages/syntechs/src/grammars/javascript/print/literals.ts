@@ -26,7 +26,6 @@ import {
   first,
   hasComment,
   type JsCtx,
-  type JsRule,
   kind,
   parent,
   src,
@@ -354,5 +353,3 @@ export const literalCustoms = {
   string,
   templateString,
 } satisfies Record<string, CustomRule<JsOptions>>;
-
-export const literalRules: Record<string, JsRule> = {};

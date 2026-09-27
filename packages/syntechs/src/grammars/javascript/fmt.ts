@@ -14,8 +14,8 @@ import { callCustoms } from "./print/calls.js";
 import { classCustoms } from "./print/classes.js";
 import { handleComment } from "./print/comments.js";
 import { functionCustoms } from "./print/functions.js";
-import { isJsxSpreadArgument, jsxCustoms, jsxIgnored, jsxRules } from "./print/jsx.js";
-import { literalCustoms, literalRules, printComment } from "./print/literals.js";
+import { isJsxSpreadArgument, jsxCustoms, jsxIgnored } from "./print/jsx.js";
+import { literalCustoms, printComment } from "./print/literals.js";
 import { moduleCustoms } from "./print/modules.js";
 import { objectCustoms } from "./print/objects.js";
 import { operatorCustoms, operatorRules } from "./print/operators.js";
@@ -122,11 +122,9 @@ function wrap(rule: JsRule): JsRule {
 /** The JavaScript and TypeScript rules as one table: the grammars share their node kinds. */
 export function jsRules(): Record<string, JsRule> {
   const table: Record<string, JsRule> = {
-    ...literalRules,
     ...statementRules,
     ...operatorRules,
     ...typeRules,
-    ...jsxRules,
     parenthesized_expression: parenthesized,
   };
   // The kinds the DSL spec (format.ts) lays out, recorded into Docs while the rest still print by the Doc.

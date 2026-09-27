@@ -51,7 +51,6 @@ import {
   isTaggedTemplate,
   type JsCtx,
   type JsOptions,
-  type JsRule,
   kind,
   lastChildWhere,
   named,
@@ -916,5 +915,3 @@ export const jsxCustoms = {
     sElement(s, n, () => sOpening(s, n, true));
   },
 } satisfies Record<string, CustomRule<JsOptions>>;
-
-export const jsxRules: Record<string, JsRule> = {};
