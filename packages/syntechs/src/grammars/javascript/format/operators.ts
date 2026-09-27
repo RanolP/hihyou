@@ -1,8 +1,10 @@
-// Binary, unary, update, yield, await, sequence and ternary operators (customs: print/operators.ts).
+// Assignment, binary, unary, update, yield, await, sequence and ternary operators (customs: print/operators.ts).
 import { custom, inOrder, space } from "../../../fmt/dsl/dsl.js";
 import type { JsStructure } from "../format.js";
 
 export const operators = {
+  assignment_expression: () => custom("assignment"),
+  augmented_assignment_expression: () => custom("assignment"),
   binary_expression: () => custom("binary"),
   update_expression: () => inOrder(),
   yield_expression: ($) => ["yield", "*", $.children.andThen((a) => [space, a])],

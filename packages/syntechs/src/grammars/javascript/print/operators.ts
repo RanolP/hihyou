@@ -1045,24 +1045,26 @@ const sequence: CustomRule<JsOptions> = (node, sctx) => {
   });
 };
 
-const assignment: JsRule = (node, ctx) => {
-  const op = field(ctx, node, "operator") ?? anon(ctx, node, "=");
-  return printAssignment(
-    ctx,
-    node,
-    p(ctx, field(ctx, node, "left")),
-    [text(" "), t(ctx, op)],
-    field(ctx, node, "right"),
-  );
+/** `a = b` and `a += b`, laid out by printAssignment, which is still Doc-built. */
+const assignment: CustomRule<JsOptions> = (node, sctx) => {
+  const js = jsCtx(sctx).js;
+  const op = field(js, node, "operator") ?? anon(js, node, "=");
+  place({
+    doc: printAssignment(
+      js,
+      node,
+      p(js, field(js, node, "left")),
+      [text(" "), t(js, op)],
+      field(js, node, "right"),
+    ),
+  });
 };
 
-export const operatorRules: Record<string, JsRule> = {
-  assignment_expression: assignment,
-  augmented_assignment_expression: assignment,
-};
+export const operatorRules: Record<string, JsRule> = {};
 
 /** The customs of format.ts's operator kinds. */
 export const operatorCustoms = {
+  assignment,
   binary,
   ternary,
   unary,
