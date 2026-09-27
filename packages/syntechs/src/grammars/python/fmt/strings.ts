@@ -1,4 +1,3 @@
-import type { Format } from "./elements.js";
 import type { FormatTree } from "../../../fmt/tree.js";
 import type { Str } from "./ast.js";
 import type { Fmt } from "./builders.js";
@@ -12,12 +11,10 @@ import {
 } from "./trivia.js";
 import {
   close,
-  dslPart,
   sDsl,
   IF_BROKEN,
   IF_FLAT,
   open,
-  record,
   sBreakParent,
   sLiteral,
   sToken,
@@ -743,46 +740,43 @@ export function writeStr(f: Fmt, s: Str, docstringIndent?: string): void {
 }
 
 /** An implicit concatenation as an operand of a binary expression, which groups it itself. */
-export function implicitConcatenated(f: Fmt, s: Str): Format {
+export function writeImplicitConcatenated(f: Fmt, s: Str): void {
   const parts = s.parts.map((n) => partOf(f.tree, n));
   const merged = mergedFlags(f, s, parts);
-  return record(() =>
-    merged
-      ? writeExpandedOrFlat(f, s, parts, merged)
-      : writeExpanded(f, s, parts, true),
-  );
+  if (merged) writeExpandedOrFlat(f, s, parts, merged);
+  else writeExpanded(f, s, parts, true);
 }
 
 /**
- * Ruff's `FormatImplicitConcatenatedStringFlat::new`: when `s`'s parts merge, what prints them as one string.
- * Printing is deferred so a caller can mark the comments it moves before the parts are printed.
+ * Ruff's `FormatImplicitConcatenatedStringFlat::new`: when `s`'s parts merge, what writes them as one string.
+ * Writing is deferred so a caller can mark the comments it moves before the parts are written.
  */
-export function implicitFlat(f: Fmt, s: Str): (() => Format) | undefined {
+export function implicitFlat(f: Fmt, s: Str): (() => void) | undefined {
   if (s.parts.length < 2) return undefined;
   const parts = s.parts.map((n) => partOf(f.tree, n));
   const merged = mergedFlags(f, s, parts);
-  return merged && (() => record(() => writeFlat(f, parts, merged)));
+  return merged && (() => writeFlat(f, parts, merged));
 }
 
 /** Ruff's `FormatImplicitConcatenatedStringExpanded` with `ImplicitConcatenatedLayout::MaybeFlat`. */
-export function implicitExpanded(f: Fmt, s: Str): Format {
+export function writeImplicitExpanded(f: Fmt, s: Str): void {
   const parts = s.parts.map((n) => partOf(f.tree, n));
-  return record(() => writeExpanded(f, s, parts, false));
+  writeExpanded(f, s, parts, false);
 }
 
 /**
  * Ruff's `format_interpolated_string_assignment`: a lone f- or t-string whose interpolations span lines, and
- * which is not otherwise multiline, printed on its own (deferred, as `implicitFlat`); undefined for any other string.
+ * which is not otherwise multiline, written on its own (deferred, as `implicitFlat`); undefined for any other string.
  */
 export function interpolatedAssignment(
   f: Fmt,
   s: Str,
-): (() => Format) | undefined {
+): (() => void) | undefined {
   const [node] = s.parts;
   if (s.parts.length !== 1 || node === undefined) return undefined;
   const part = partOf(f.tree, node);
   if (!isInterpolated(part.flags) || !layoutMultiline(f, part))
     return undefined;
   if (isMultilineStr(f, s)) return undefined;
-  return () => dslPart(node);
+  return () => sDsl(node);
 }

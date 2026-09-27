@@ -66,10 +66,10 @@ import {
   sText,
 } from "./sink.js";
 import {
-  implicitConcatenated,
   isInterpolated,
   isMultilineStr,
   partOf,
+  writeImplicitConcatenated,
 } from "./strings.js";
 import {
   endOf,
@@ -1577,14 +1577,14 @@ export function binaryLike(f: Fmt, e: BinOp | Compare | BoolOp): Format {
       emit(
         operand.leadingBinary ? f.leading(operand.leadingBinary) : [],
         f.leading(cs.leading(s)),
-        implicitConcatenated(f, s),
+        record(() => writeImplicitConcatenated(f, s)),
         f.trailing(cs.trailing(s)),
         operand.trailingBinary ? f.trailing(operand.trailingBinary) : [],
       );
     } else
       emit(
         f.leading(cs.leading(s)),
-        implicitConcatenated(f, s),
+        record(() => writeImplicitConcatenated(f, s)),
         f.trailing(cs.trailing(s)),
       );
     const rightOp = parts[i + 1] as Operator | undefined;

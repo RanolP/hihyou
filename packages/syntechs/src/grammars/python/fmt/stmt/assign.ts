@@ -39,9 +39,9 @@ import {
   willBreak,
 } from "../sink.js";
 import {
-  implicitExpanded,
   implicitFlat,
   interpolatedAssignment,
+  writeImplicitExpanded,
 } from "../strings.js";
 import { dslPart } from "../sink.js";
 import * as sink from "../sink.js";
@@ -240,7 +240,7 @@ export function leftToRight(f: Fmt, value: Expr, stmt: Stmt): void {
     });
 
   if (str && implicit) {
-    const raw = capture(() => part(implicit()));
+    const raw = capture(implicit);
     const isInterpolated = isInterpolatedStr(str);
     const flat = isInterpolated ? removeSoftLines(raw) : raw;
     if (isInterpolated && willBreak(flat)) return fallback();
@@ -254,7 +254,7 @@ export function leftToRight(f: Fmt, value: Expr, stmt: Stmt): void {
           blockIndent(
             () =>
               f.at({ k: "expr", g: refTo(g) }, () =>
-                part(implicitExpanded(f, str)),
+                writeImplicitExpanded(f, str),
               ),
             true,
           );
@@ -268,7 +268,7 @@ export function leftToRight(f: Fmt, value: Expr, stmt: Stmt): void {
   }
 
   if (interpolated) {
-    const raw = capture(() => part(interpolated()));
+    const raw = capture(interpolated);
     const flat = removeSoftLines(raw);
     if (willBreak(flat)) return fallback();
     return bestFitting(
@@ -349,10 +349,10 @@ export function rightToLeft(
   }
 
   // The interpolated string as it prints with its line breaks, which the flat layouts leave out.
-  const interpolatedRaw = interpolated ? capture(() => part(interpolated())) : undefined;
+  const interpolatedRaw = interpolated ? capture(interpolated) : undefined;
   let formatValue: Part;
   if (str && implicit) {
-    const raw = capture(() => part(implicit()));
+    const raw = capture(implicit);
     formatValue = isInterpolatedStr(str) ? removeSoftLines(raw) : raw;
   } else if (interpolatedRaw !== undefined)
     formatValue = removeSoftLines(interpolatedRaw);
@@ -416,7 +416,7 @@ export function rightToLeft(
       const g = open(GROUP, -1, BROKEN);
       blockIndent(() =>
         f.at({ k: "expr", g: refTo(g) }, () =>
-          part(implicitExpanded(f, str)),
+          writeImplicitExpanded(f, str),
         ),
       );
       close();
