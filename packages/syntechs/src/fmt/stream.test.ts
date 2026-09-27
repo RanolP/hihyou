@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   type Doc,
   align,
+  bestFitParenthesize,
   dedent,
   fill,
   fitsExpanded,
@@ -17,12 +18,14 @@ import {
   literalToken,
   softline,
   text,
+  token,
 } from "./doc.js";
 import { print } from "./printer.js";
 import {
   BLANK,
   COLLAPSE,
   close,
+  closeBestFitParenthesize,
   FILL,
   FILL_ITEM,
   GROUP,
@@ -32,6 +35,7 @@ import {
   LINE_SUFFIX,
   open,
   openAlign,
+  openBestFitParenthesize,
   openFitsExpanded,
   openIndentIfBreak,
   openReservedSuffix,
@@ -44,6 +48,7 @@ import {
   sRuffLine,
   SOFT,
   sText,
+  sToken,
 } from "./stream.js";
 
 const layout = (lineWidth: number) => ({
@@ -456,5 +461,44 @@ describe("printStream matches printer.ts under ruff's measure", () => {
       close();
     });
     expect(out).toBe("\n  f([\n    aaaaaaaaaaaa\n  ]) x");
+  });
+
+  it("prints a bestFitParenthesize flat, else parenthesized when every line fits, else bare with its groups remeasured", () => {
+    const cases: [Doc, () => void][] = [
+      [[text("aa"), line, text("bb")], () => {
+        sText("aa");
+        sLine(0);
+        sText("bb");
+      }],
+      [group([text("aaaa"), line, text("bbbb")]), () => {
+        open(GROUP);
+        sText("aaaa");
+        sLine(0);
+        sText("bbbb");
+        close();
+      }],
+      [[text("cccccccccccc"), group([line, text("d")])], () => {
+        sText("cccccccccccc");
+        open(GROUP);
+        sLine(0);
+        sText("d");
+        close();
+      }],
+    ];
+    const doc = cases.map(([contents]) => [
+      text("x = "),
+      bestFitParenthesize(token(0, "("), contents, token(0, ")")),
+      hardline,
+    ]);
+    const out = ruffBoth(10, doc, () => {
+      for (const [, build] of cases) {
+        sText("x = ");
+        const k = openBestFitParenthesize(() => sToken(0, "("));
+        build();
+        closeBestFitParenthesize(k, () => sToken(0, ")"));
+        sHardline();
+      }
+    });
+    expect(out).toBe("x = aa bb\nx = (\n  aaaa\n  bbbb\n)\nx = cccccccccccc\nd\n");
   });
 });

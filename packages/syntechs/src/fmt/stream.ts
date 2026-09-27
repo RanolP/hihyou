@@ -125,6 +125,57 @@ export function openFitsExpanded(whenFlat: number): number {
   hard++;
   return open(FITS_EXPANDED, whenFlat);
 }
+
+/** Ruff's `best_fit_parenthesize`; see `openBestFitParenthesize`. */
+export const BEST_FIT_PARENTHESIZE = 46;
+/** A part of the best-fit-parenthesize `iRef` printed only when it is parenthesized: a parenthesis and its line. */
+const PAREN = 47;
+/** The contents of the best-fit-parenthesize `iRef`, indented when it is parenthesized. */
+const PAREN_INDENT = 48;
+
+/**
+ * Opens ruff's `best_fit_parenthesize`: its contents print flat when they fit, else parenthesized on lines of
+ * their own (`open`, then the contents indented, then `close`) when every line of that fits, else flat after
+ * all with each group inside measuring itself. `open` and `close` are appended here; append the contents, then
+ * call `closeBestFitParenthesize`. Its breaks do not break the groups around.
+ */
+export function openBestFitParenthesize(open0: () => void): number {
+  expandsSeen = true;
+  const k = open(BEST_FIT_PARENTHESIZE);
+  openParen(k);
+  open0();
+  close();
+  noMeasure--;
+  open(PAREN_INDENT, k);
+  openParen(k);
+  parenLine();
+  close();
+  noMeasure--;
+  return k;
+}
+
+export function closeBestFitParenthesize(k: number, close0: () => void): void {
+  close();
+  openParen(k);
+  parenLine();
+  close0();
+  close();
+  noMeasure--;
+  close();
+}
+
+// A paren part is measured with no width, as the broken branch of an ifBreak is.
+function openParen(k: number) {
+  open(PAREN, k);
+  noMeasure++;
+}
+
+// The line of a paren part breaks only when the part prints, so no group around counts it as a hard line.
+function parenLine() {
+  const h = hard;
+  sLine(HARD);
+  hard = h;
+}
 // --- end ruff ---
 
 // The stream.
@@ -377,7 +428,7 @@ export function close(): void {
   if (kind === FITS_EXPANDED) {
     if (hasBp) iKind[k] = FITS_EXPANDED_BREAKS;
     bp = oBp[op] as number;
-  }
+  } else if (kind === BEST_FIT_PARENTHESIZE) bp = oBp[op] as number;
   if (kind === GROUP || kind === GROUP_IF_BROKEN) {
     if (flags & BROKEN && !hasBp) bp++;
     if (hasBp) flags |= BROKEN;
@@ -488,6 +539,14 @@ export function printStream(layout: Layout): StreamPrinted {
   // The indentation intervals a measure enters, innermost last: read only by the lines inside a fitsExpanded.
   let xEnd = new Int32Array(16);
   let xInd = new Int32Array(16);
+  /** The best-fit-parenthesize a measure reads parenthesized, else -1. */
+  let parenK = -1;
+  /**
+   * Whether a measure from `from` reads the parentheses of the best-fit-parenthesize `r`: when it measures `r`
+   * parenthesized, or `r` printed parenthesized before it. One it enters it reads bare, as ruff's fits does.
+   */
+  const parenOn = (r: number, from: number) =>
+    r === parenK || (modeOf(r) === BREAK && (iStart[r] as number) < from);
   // --- end ruff ---
 
   let remeasure = false;
@@ -512,6 +571,7 @@ export function printStream(layout: Layout): StreamPrinted {
     mode0: Mode,
     mustBeFlat: boolean,
     rest: boolean,
+    all = false,
   ): boolean {
     let i = from;
     let lp = fp - 1;
@@ -522,6 +582,8 @@ export function printStream(layout: Layout): StreamPrinted {
     suffixIn = false;
     // Where the last fitsExpanded measured broken ends: before it, lines restart the width and none is checked.
     let ovEnd = -1;
+    // Where the lines measured each (`all`, and a fitsExpanded's) end: before it, a line restarts the width.
+    let allEnd = all ? to : -1;
     let xs = 0;
     for (;;) {
       while (ls > 0 && (lEnd[ls - 1] as number) <= i) ls--;
@@ -596,8 +658,9 @@ export function printStream(layout: Layout): StreamPrinted {
         } else if (kind === LITERAL_TOKEN) {
           if (ruff && mustBeFlat) return false;
           const s = strs[eStr[i] as number] as string;
-          if (i < ovEnd) {
+          if (i < allEnd) {
             width = lineWidth - textWidth(s.slice(s.lastIndexOf("\n") + 1));
+            if (width < 0 && i >= ovEnd) return false;
             i = e;
             cur = iNext[k] as number;
             jumped = true;
@@ -635,14 +698,27 @@ export function printStream(layout: Layout): StreamPrinted {
               ls++;
               mode = BREAK;
               if (e > ovEnd) ovEnd = e;
+              if (e > allEnd) allEnd = e;
             }
           } else if (mode === FLAT && kind === FITS_EXPANDED_BREAKS) return false;
+        } else if (kind === BEST_FIT_PARENTHESIZE) {
+          if (ruff) groupModes[k] = mode + 1;
+          cur++;
+        } else if (kind === PAREN) {
+          if (parenOn(iRef[k] as number, from)) cur++;
+          else {
+            i = e;
+            cur = iNext[k] as number;
+            jumped = true;
+            break;
+          }
         } else if (
           overflows &&
           (kind === INDENT ||
             kind === ALIGN ||
             kind === INDENT_IF_BROKEN ||
-            kind === INDENT_IF_FLAT)
+            kind === INDENT_IF_FLAT ||
+            kind === PAREN_INDENT)
         ) {
           cur++;
           if (e > i) {
@@ -655,7 +731,9 @@ export function printStream(layout: Layout): StreamPrinted {
             if (kind === INDENT) ind = deeper(base);
             else if (kind === ALIGN)
               ind = alignedFrom(base, alignSteps[iRef[k] as number] as number | string);
-            else {
+            else if (kind === PAREN_INDENT) {
+              if (parenOn(iRef[k] as number, from)) ind = deeper(base);
+            } else {
               const r = iRef[k] as number;
               const c = r >= 0 ? modeOf(r) : mode;
               if ((kind === INDENT_IF_BROKEN) === (c === BREAK)) ind = deeper(base);
@@ -683,7 +761,7 @@ export function printStream(layout: Layout): StreamPrinted {
             if (ruff) width -= 1;
             else pending = true;
           }
-        } else if (i < ovEnd) {
+        } else if (i < allEnd) {
           while (xs > 0 && (xEnd[xs - 1] as number) <= i) xs--;
           const ind =
             xs > 0 ? (xInd[xs - 1] as number) : (fInd[lp >= floor ? lp : fp - 1] as number);
@@ -974,6 +1052,43 @@ export function printStream(layout: Layout): StreamPrinted {
             cur++;
             break;
           }
+          case BEST_FIT_PARENTHESIZE: {
+            groupModes[k] = FLAT + 1;
+            let g: Mode = FLAT;
+            if (tm !== FLAT || remeasure) {
+              remeasure = false;
+              const width = lineWidth - column;
+              if (!(width >= 0 && measure(i, e, k + 1, width, false, FLAT, false, true))) {
+                groupModes[k] = BREAK + 1;
+                parenK = k;
+                const ok =
+                  width >= 0 && measure(i, e, k + 1, width, false, BREAK, false, true, true);
+                parenK = -1;
+                if (ok) g = BREAK;
+                else {
+                  // Bare after all, but each group inside measures itself rather than printing flat on trust.
+                  groupModes[k] = FLAT + 1;
+                  remeasure = true;
+                }
+              }
+            }
+            cur++;
+            if (e > i) fpush(e, ti, g);
+            break;
+          }
+          case PAREN:
+            if (modeOf(iRef[k] as number) === BREAK) cur++;
+            else {
+              i = e;
+              cur = iNext[k] as number;
+              jumped = true;
+            }
+            break;
+          case PAREN_INDENT:
+            cur++;
+            if (e > i)
+              fpush(e, modeOf(iRef[k] as number) === BREAK ? deeper(ti) : ti, tm);
+            break;
           default:
             throw new Error(`printStream: unknown interval kind ${iKind[k]}`);
         }

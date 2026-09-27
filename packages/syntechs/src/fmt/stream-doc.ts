@@ -29,6 +29,7 @@ import {
   nodeOf,
   partsOf,
   reservedOf,
+  slotA,
   slotB,
   slotC,
   statesOf,
@@ -41,6 +42,7 @@ import {
   BROKEN,
   COLLAPSE,
   close,
+  closeBestFitParenthesize,
   FILL,
   FILL_ITEM,
   GROUP,
@@ -52,6 +54,7 @@ import {
   LINE_SUFFIX,
   open,
   openAlign,
+  openBestFitParenthesize,
   openFitsExpanded,
   openIndentIfBreak,
   openReservedSuffix,
@@ -119,6 +122,13 @@ export function sDoc(doc: Doc): void {
         emit(contentsOf(h));
         close();
         return;
+      case D_BEST_FIT_PARENTHESIZE: {
+        const k = openBestFitParenthesize(() => emit(slotA(h) as Doc));
+        groups.set(h, k);
+        emit(contentsOf(h));
+        closeBestFitParenthesize(k, () => emit(slotC(h) as Doc));
+        return;
+      }
       case D_INDENT:
         open(INDENT);
         emit(contentsOf(h));
@@ -241,8 +251,13 @@ function check(doc: Doc, seen: Set<Doc>): void {
         seen.add(d);
         walk(contentsOf(h));
         return true;
-      case D_BEST_FITTING:
       case D_BEST_FIT_PARENTHESIZE:
+        seen.add(d);
+        // An ifBreak may ask it, as a group.
+        groups.add(h);
+        walk(contentsOf(h));
+        return true;
+      case D_BEST_FITTING:
         throw new Unsupported(kindOf(h));
       default:
         throw new Unsupported(`doc kind ${kind}`);
