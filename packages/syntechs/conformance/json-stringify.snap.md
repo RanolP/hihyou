@@ -3,7 +3,6 @@ json-stringify compatibility: 7/14 (50.00%), 0 refused (ok:false), 0 excluded
 Other formatters on the same fixtures, fixtures passed:
 
 - oxfmt 0.70.0: 6/14 (42.86%)
-- dprint dprint-plugin-json 0.24.0: 6/14 (42.86%)
 
 Fixtures: prettier 3.9.9 tests/format/{json/json} (recursive), every spec call listing parser `json-stringify`, expected output from its __snapshots__.
 

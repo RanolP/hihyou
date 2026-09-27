@@ -3,7 +3,6 @@ json compatibility: 13/20 (65.00%), 0 refused (ok:false), 0 excluded
 Other formatters on the same fixtures, fixtures passed:
 
 - oxfmt 0.70.0: 19/20 (95.00%)
-- dprint dprint-plugin-json 0.24.0: 14/20 (70.00%)
 
 Fixtures: prettier 3.9.9 tests/format/{json/json,json/with-comment} (recursive), every spec call listing parser `json`, expected output from its __snapshots__.
 

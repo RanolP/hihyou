@@ -3,7 +3,6 @@ css compatibility: 65/151 (43.05%), 0 refused (ok:false), 6 excluded
 Other formatters on the same fixtures, fixtures passed:
 
 - oxfmt 0.70.0: 115/151 (76.16%)
-- dprint dprint_plugin_malva 0.16.0: 50/151 (33.11%)
 
 Fixtures: prettier 3.9.9 tests/format/{css} (recursive), every spec call listing parser `css`, expected output from its __snapshots__.
 

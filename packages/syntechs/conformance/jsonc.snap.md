@@ -3,7 +3,6 @@ jsonc compatibility: 7/9 (77.78%), 0 refused (ok:false), 0 excluded
 Other formatters on the same fixtures, fixtures passed:
 
 - oxfmt 0.70.0: 5/9 (55.56%)
-- dprint dprint-plugin-json 0.24.0: 5/9 (55.56%)
 
 Fixtures: prettier 3.9.9 tests/format/{json/jsonc,json/with-comment} (recursive), every spec call listing parser `jsonc`, expected output from its __snapshots__.
 

@@ -3,7 +3,6 @@ js compatibility: 614/804 (76.37%), 32 refused (ok:false), 304 excluded
 Other formatters on the same fixtures, fixtures passed:
 
 - oxfmt 0.70.0: 563/804 (70.02%)
-- dprint dprint-plugin-typescript 0.96.1: 253/804 (31.47%)
 
 Fixtures: prettier 3.9.9 tests/format/{js,jsx} (recursive), every spec call listing parser `babel` or `acorn` or `espree` or `meriyah` or `oxc`, expected output from its __snapshots__.
 

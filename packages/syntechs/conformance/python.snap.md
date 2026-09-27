@@ -82,7 +82,7 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | black/cases/jupytext_markdown_fmt.py | 1/1 | 100.00% | formatter-error: suppression comment at 0 |
 | black/cases/pattern_matching_extras.py | 1/1 | 100.00% | formatter-error: tuple subject in a match at 515 |
 | black/cases/pattern_matching_long.py | 1/1 | 33.33% | formatter-error: long unparenthesized case pattern at 62 |
-| black/cases/pattern_matching_style.py | 1/1 | 46.81% | formatter-error: comment in a pattern at 479 |
+| black/cases/pattern_matching_style.py | 1/1 | 46.81% | formatter-error: comment in a pattern at 474 |
 | black/cases/pattern_matching_trailing_comma.py | 1/1 | 59.46% | formatter-error: tuple subject in a match at 0 |
 | black/cases/pattern_matching_with_if_stmt.py | 1/1 | 51.35% | formatter-error: long unparenthesized case pattern at 120 |
 | black/cases/pep_572_remove_parens.py | 1/1 | 98.55% | check: input "(" at 846 is output as "x" at 835, which means "x", not "(" |
@@ -98,7 +98,7 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | ruff/expression/dict_comp.py | 1/1 | 99.07% | check: input comment "# if2" is missing from the output |
 | ruff/expression/fstring.py | 2/2 | 57.40% | formatter-error: parse error: ERROR at 21682 |
 | ruff/expression/fstring_multiline_replacement_field.py | 2/2 | 68.75% | check: input "f\"aaaaaaaaaaa {[ttttteeeeeeeeest,]} more {\n    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa |
-| ruff/expression/join_implicit_concatenated_string.py | 1/1 | 64.27% | formatter-error: long unparenthesized case pattern at 8280 |
+| ruff/expression/join_implicit_concatenated_string.py | 1/1 | 97.62% | check: input "f\"{'Hy \\\"User\\\"'}\" 'more'" at 470 is output as "f\"{'Hy \"User\"'}more\"" at 455, which means "0:S\u |
 | ruff/expression/lambda.py | 1/1 | 99.11% | check: input comment "# 2" is missing from the output |
 | ruff/expression/list_comp.py | 1/1 | 98.99% | check: input comment "# if2" is missing from the output |
 | ruff/expression/list_comp_py315.py | 1/1 | 73.53% | formatter-error: parse error: ERROR at 250 |
@@ -132,8 +132,8 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | ruff/fmt_skip/trailing_semi.py | 1/1 | 60.00% | formatter-error: suppression comment at 8 |
 | ruff/fmt_skip/type_params.py | 1/1 | 82.50% | formatter-error: suppression comment at 26 |
 | ruff/newlines.py | 1/1 | 89.65% | formatter-error: suppression comment at 2388 |
-| ruff/parentheses/opening_parentheses_comment_empty.py | 1/1 | 89.39% | formatter-error: comment in a pattern at 600 |
-| ruff/parentheses/opening_parentheses_comment_value.py | 1/1 | 56.97% | formatter-error: comment in a pattern at 611 |
+| ruff/parentheses/opening_parentheses_comment_empty.py | 1/1 | 89.39% | formatter-error: comment in a pattern at 595 |
+| ruff/parentheses/opening_parentheses_comment_value.py | 1/1 | 56.97% | formatter-error: comment in a pattern at 606 |
 | ruff/pattern/pattern_maybe_parenthesize.py | 1/1 | 84.53% | formatter-error: long unparenthesized case pattern at 1135 |
 | ruff/pattern_match_regression_brackets.py | 1/1 | 100.00% | formatter-error: tuple subject in a match at 201 |
 | ruff/statement/class_definition.py | 1/1 | 78.26% | formatter-error: comment in type parameters at 2989 |
