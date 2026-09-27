@@ -4,18 +4,9 @@
 // against sink.ts.
 
 import type { CustomRule } from "../../../fmt/dsl/runtime.js";
+import { type Doc, text } from "../../../fmt/doc.js";
 import {
-  type Doc,
-  group,
-  indent,
-  indentIfBreak,
-  isDocs,
-  kindOf,
-  line,
-  softline,
-  text,
-} from "../../../fmt/doc.js";
-import {
+  BROKEN,
   capture,
   close,
   GROUP,
@@ -26,6 +17,7 @@ import {
   type JsStreamCtx,
   open,
   openAlign,
+  openIndentIfBreak,
   type Part,
   place,
   SOFT,
@@ -91,138 +83,187 @@ const isReturnOrThrow = (x: HasTree, n: number | undefined) => {
   const k = kind(x, n);
   return k === "return_statement" || k === "throw_statement";
 };
-
-const flatten = (d: Doc): Doc[] =>
-  Array.isArray(d) ? d.flatMap(flatten) : [d as Doc];
-
 // --- binaryish -------------------------------------------------------------------------------------------------
+
+/** One element of prettier's flat binaryish parts list, written when run. */
+type Emit = () => void;
+/** A chain's parts; `head` indexes its leftmost operand's group, which the caller keeps out of the indent. */
+interface Binaryish {
+  parts: Emit[];
+  head: number;
+}
+
+const NO_PRINT: Doc[] = [];
+/**
+ * `chain` inside `node`'s own comments, which prettier prints around the flat parts (a chain printed inline, not
+ * through ctx.print). The comments stay Doc-built, as the Doc ctx lays them out, until the stream carries them.
+ */
+function withOwnComments(js: JsCtx, node: number, chain: Binaryish): Binaryish {
+  const wrapped = js.withComments(node, NO_PRINT);
+  if (wrapped === NO_PRINT) return chain;
+  const [leading, , trailing] = wrapped as [Doc, Doc, Doc];
+  return {
+    parts: [
+      () => place({ doc: leading }),
+      ...chain.parts,
+      () => place({ doc: trailing }),
+    ],
+    head: chain.head + 1,
+  };
+}
 
 /**
  * Prettier's parser rebalances `a || (b || c)` into `(a || b) || c`, so a logical chain whose right operand
  * repeats its operator prints as one flat chain. Undefined when `node` is no such chain, or when a comment
  * sits on a node the rebalance would drop.
  */
-function printRebalancedChain(ctx: JsCtx, node: number): Doc[] | undefined {
-  const op = operator(ctx, node);
-  const right = unparen(ctx, field(ctx, node, "right") as number);
-  if (
-    !isLogical(ctx, node) ||
-    !isLogical(ctx, right) ||
-    operator(ctx, right) !== op
-  )
+function printRebalancedChain(
+  ctx: JsStreamCtx,
+  node: number,
+): Binaryish | undefined {
+  const js = ctx.js;
+  const op = operator(js, node);
+  const right = unparen(js, field(js, node, "right") as number);
+  if (!isLogical(js, node) || !isLogical(js, right) || operator(js, right) !== op)
     return undefined;
   const operands: number[] = [];
   const ops: number[] = [];
   let clean = true;
   const walk = (c: number, top = false) => {
-    const inner = unparen(ctx, c);
-    if (!top && !(isLogical(ctx, inner) && operator(ctx, inner) === op)) {
+    const inner = unparen(js, c);
+    if (!top && !(isLogical(js, inner) && operator(js, inner) === op)) {
       operands.push(c);
       return;
     }
-    if (!top && (hasComment(ctx, c) || hasComment(ctx, inner))) clean = false;
-    walk(field(ctx, inner, "left") as number);
-    ops.push(field(ctx, inner, "operator") as number);
-    walk(field(ctx, inner, "right") as number);
+    if (!top && (hasComment(js, c) || hasComment(js, inner))) clean = false;
+    walk(field(js, inner, "left") as number);
+    ops.push(field(js, inner, "operator") as number);
+    walk(field(js, inner, "right") as number);
   };
   walk(node, true);
-  if (!clean || operands.slice(1).some((o) => hasComment(ctx, o, CF.Leading)))
+  if (!clean || operands.slice(1).some((o) => hasComment(js, o, CF.Leading)))
     return undefined;
-  const atStart = ctx.options.experimentalOperatorPosition === "start";
+  const atStart = js.options.experimentalOperatorPosition === "start";
   const [head, ...rest] = operands as [number, ...number[]];
-  const parts: Doc[] = [group(p(ctx, head))];
+  const parts: Emit[] = [() => within(GROUP, () => ctx.print(head))];
   rest.forEach((operand, i) => {
-    const opDoc = t(ctx, ops[i]);
-    const inner = unparen(ctx, operand);
-    const innerKind = kind(ctx, inner);
+    const opTok = ops[i];
+    const inner = unparen(js, operand);
+    const innerKind = kind(js, inner);
     const inline =
       ((innerKind === "object" || innerKind === "array") &&
-        items(ctx, inner).length > 0) ||
+        items(js, inner).length > 0) ||
       innerKind === "jsx_element" ||
       innerKind === "jsx_self_closing_element";
-    let rightDoc: Doc = inline
-      ? [opDoc, text(" "), p(ctx, operand)]
-      : atStart
-        ? [line, opDoc, text(" "), p(ctx, operand)]
-        : [opDoc, line, p(ctx, operand)];
-    if (i === 0 && hasComment(ctx, head, CF.Trailing | CF.Line))
-      rightDoc = group(rightDoc, true);
-    parts.push(!atStart || inline ? text(" ") : [], rightDoc);
+    const rightDoc = () => {
+      if (inline) {
+        tok(js, opTok);
+        sText(" ");
+      } else if (atStart) {
+        sLine(0);
+        tok(js, opTok);
+        sText(" ");
+      } else {
+        tok(js, opTok);
+        sLine(0);
+      }
+      ctx.print(operand);
+    };
+    const broken = i === 0 && hasComment(js, head, CF.Trailing | CF.Line);
+    if (!atStart || inline) parts.push(() => sText(" "));
+    parts.push(
+      broken ? () => within(GROUP, rightDoc, -1, BROKEN) : rightDoc,
+    );
   });
-  return parts;
+  return { parts, head: 0 };
 }
 
 function printBinaryishExpressions(
-  ctx: JsCtx,
+  ctx: JsStreamCtx,
   node: number,
   isNested: boolean,
   isInsideParenthesis: boolean,
-): Doc[] {
-  const left = field(ctx, node, "left") as number;
-  const right = field(ctx, node, "right") as number;
-  const leftInner = unparen(ctx, left);
-  const op = operator(ctx, node);
+): Binaryish {
+  const js = ctx.js;
+  const left = field(js, node, "left") as number;
+  const right = field(js, node, "right") as number;
+  const leftInner = unparen(js, left);
+  const op = operator(js, node);
   const rebalanced = printRebalancedChain(ctx, node);
-  if (rebalanced) {
-    if (isNested && hasComment(ctx, node))
-      return flatten(ctx.withComments(node, rebalanced));
-    return rebalanced;
-  }
-  let parts: Doc[] = [];
-  if (isBinary(ctx, leftInner) && shouldFlatten(op, operator(ctx, leftInner))) {
-    let nested = printBinaryishExpressions(
-      ctx,
-      leftInner,
-      true,
-      isInsideParenthesis,
-    );
-    if (left !== leftInner && hasComment(ctx, left))
-      nested = flatten(ctx.withComments(left, nested));
-    parts = nested;
-  } else parts.push(group(p(ctx, left)));
+  if (rebalanced)
+    return isNested && hasComment(js, node)
+      ? withOwnComments(js, node, rebalanced)
+      : rebalanced;
+  let chain: Binaryish;
+  if (isBinary(js, leftInner) && shouldFlatten(op, operator(js, leftInner))) {
+    chain = printBinaryishExpressions(ctx, leftInner, true, isInsideParenthesis);
+    if (left !== leftInner && hasComment(js, left))
+      chain = withOwnComments(js, left, chain);
+  } else chain = { parts: [() => within(GROUP, () => ctx.print(left))], head: 0 };
 
-  const shouldInline = shouldInlineLogicalExpression(ctx, node);
-  const opDoc = t(ctx, field(ctx, node, "operator"));
-  const atStart = ctx.options.experimentalOperatorPosition === "start";
-  const commentBeforeOperator = hasLeadingOwnLineComment(ctx, right);
-  let rightDoc: Doc;
+  const shouldInline = shouldInlineLogicalExpression(js, node);
+  const opTok = field(js, node, "operator");
+  const atStart = js.options.experimentalOperatorPosition === "start";
+  const commentBeforeOperator = hasLeadingOwnLineComment(js, right);
+  let rightDoc: Emit;
   if (shouldInline)
-    rightDoc = [
-      opDoc,
-      commentBeforeOperator
-        ? indent([line, p(ctx, right)])
-        : [text(" "), p(ctx, right)],
-    ];
-  else if (atStart) {
-    let rightContent = p(ctx, right);
-    let comment: Doc = [];
-    // The right operand's own-line leading comments go above the operator, as prettier shifts them off.
-    if (commentBeforeOperator && Array.isArray(rightContent)) {
-      const [first = [], ...rest] = rightContent as Doc[];
-      comment = first;
-      rightContent = rest;
-    }
-    rightDoc = [line, comment, opDoc, text(" "), rightContent];
-  } else rightDoc = [opDoc, line, p(ctx, right)];
+    rightDoc = () => {
+      tok(js, opTok);
+      if (!commentBeforeOperator) {
+        sText(" ");
+        ctx.print(right);
+      } else
+        within(INDENT, () => {
+          sLine(0);
+          ctx.print(right);
+        });
+    };
+  else if (atStart)
+    rightDoc = () => {
+      sLine(0);
+      // The right operand's own-line leading comments go above the operator, as prettier shifts them off.
+      const printed = js.print(right);
+      if (commentBeforeOperator && Array.isArray(printed)) {
+        const [comment = [], ...rest] = printed as Doc[];
+        place({ doc: comment });
+        tok(js, opTok);
+        sText(" ");
+        place({ doc: rest });
+      } else {
+        tok(js, opTok);
+        sText(" ");
+        place({ doc: printed });
+      }
+    };
+  else
+    rightDoc = () => {
+      tok(js, opTok);
+      sLine(0);
+      ctx.print(right);
+    };
 
-  const { parent } = role(ctx, node);
-  const shouldBreak = hasComment(ctx, left, CF.Trailing | CF.Line);
-  const estree = estreeKind(ctx, node);
+  const { parent } = role(js, node);
+  const shouldBreak = hasComment(js, left, CF.Trailing | CF.Line);
+  const estree = estreeKind(js, node);
   const shouldGroup =
     shouldBreak ||
     (!(isInsideParenthesis && estree === "LogicalExpression") &&
-      estreeKind(ctx, parent) !== estree &&
-      estreeKind(ctx, leftInner) !== estree &&
-      estreeKind(ctx, unparen(ctx, right)) !== estree);
-  if (shouldGroup) rightDoc = group(rightDoc, shouldBreak);
+      estreeKind(js, parent) !== estree &&
+      estreeKind(js, leftInner) !== estree &&
+      estreeKind(js, unparen(js, right)) !== estree);
+  const parts = [...chain.parts];
+  if (!atStart || shouldInline || commentBeforeOperator)
+    parts.push(() => sText(" "));
+  const printRight = rightDoc;
   parts.push(
-    !atStart || shouldInline || commentBeforeOperator ? text(" ") : [],
-    rightDoc,
+    shouldGroup
+      ? () => within(GROUP, printRight, -1, shouldBreak ? BROKEN : 0)
+      : printRight,
   );
-  // Flat, as prettier's cleanDoc leaves it, so the caller still finds the leftmost operand's group.
-  if (isNested && hasComment(ctx, node))
-    return flatten(ctx.withComments(node, parts));
-  return parts;
+  const result = { parts, head: chain.head };
+  return isNested && hasComment(js, node)
+    ? withOwnComments(js, node, result)
+    : result;
 }
 
 const isBooleanTypeCoercion = (ctx: JsCtx, n: number | undefined) =>
@@ -232,42 +273,54 @@ const isBooleanTypeCoercion = (ctx: JsCtx, n: number | undefined) =>
   kind(ctx, callee(ctx, n)) === "identifier" &&
   src(ctx, callee(ctx, n) as number) === "Boolean";
 
-const binary: JsRule = (node, ctx) => {
-  const { parent, key } = role(ctx, node);
-  const parentKind = kind(ctx, parent);
+/** Prettier's printBinaryishExpression: the chain flat, and where its operands after the first indent. */
+const binary: CustomRule<JsOptions> = (node, sctx) => {
+  const ctx = jsCtx(sctx);
+  const js = ctx.js;
+  const { parent, key } = role(js, node);
+  const parentKind = kind(js, parent);
   const isInsideParenthesis =
     key !== "body" &&
     (parentKind === "if_statement" ||
       parentKind === "while_statement" ||
       parentKind === "switch_statement" ||
       parentKind === "do_statement");
-  const parts = printBinaryishExpressions(
+  const { parts, head } = printBinaryishExpressions(
     ctx,
     node,
     false,
     isInsideParenthesis,
   );
-  if (isInsideParenthesis) return parts;
+  const run = (list: Emit[]) => {
+    for (const emit of list) emit();
+  };
+  if (isInsideParenthesis) return run(parts);
   if (
-    (key === "callee" && isCallOrNew(ctx, parent)) ||
-    (parentKind === "unary_expression" && !hasComment(ctx, node)) ||
+    (key === "callee" && isCallOrNew(js, parent)) ||
+    (parentKind === "unary_expression" && !hasComment(js, node)) ||
     (parentKind === "member_expression" && key === "object")
   )
-    return group([indent([softline, ...parts]), softline]);
+    return void within(GROUP, () => {
+      within(INDENT, () => {
+        sLine(SOFT);
+        run(parts);
+      });
+      sLine(SOFT);
+    });
   const grandparent =
-    parent !== undefined ? role(ctx, parent).parent : undefined;
+    parent !== undefined ? role(js, parent).parent : undefined;
   const shouldNotIndent =
-    isReturnOrThrow(ctx, parent) ||
+    isReturnOrThrow(js, parent) ||
     (parentKind === "jsx_expression" &&
-      kind(ctx, grandparent) === "jsx_attribute") ||
+      kind(js, grandparent) === "jsx_attribute") ||
     (key === "body" && parentKind === "arrow_function") ||
     (key !== "body" && parentKind === "for_statement") ||
     (parentKind === "ternary_expression" &&
-      !isReturnOrThrow(ctx, grandparent) &&
-      !isCallOrNew(ctx, grandparent)) ||
+      !isReturnOrThrow(js, grandparent) &&
+      !isCallOrNew(js, grandparent)) ||
     parentKind === "template_substitution" ||
     (key === "argument" && parentKind === "unary_expression") ||
-    (key === "arguments" && isBooleanTypeCoercion(ctx, parent));
+    (key === "arguments" && isBooleanTypeCoercion(js, parent));
   const shouldIndentIfInlining =
     parentKind === "assignment_expression" ||
     parentKind === "augmented_assignment_expression" ||
@@ -275,32 +328,30 @@ const binary: JsRule = (node, ctx) => {
     parentKind === "public_field_definition" ||
     parentKind === "field_definition" ||
     parentKind === "pair";
-  const leftInner = unparen(ctx, field(ctx, node, "left") as number);
-  const right = logicalRight(ctx, node) as number;
+  const leftInner = unparen(js, field(js, node, "left") as number);
+  const right = logicalRight(js, node) as number;
   const samePrecedenceSubExpression =
-    (isBinary(ctx, leftInner) &&
-      shouldFlatten(operator(ctx, node), operator(ctx, leftInner))) ||
-    right !== field(ctx, node, "right");
+    (isBinary(js, leftInner) &&
+      shouldFlatten(operator(js, node), operator(js, leftInner))) ||
+    right !== field(js, node, "right");
   if (
     shouldNotIndent ||
-    (shouldInlineLogicalExpression(ctx, node) &&
-      !samePrecedenceSubExpression) ||
-    (!shouldInlineLogicalExpression(ctx, node) && shouldIndentIfInlining)
+    (shouldInlineLogicalExpression(js, node) && !samePrecedenceSubExpression) ||
+    (!shouldInlineLogicalExpression(js, node) && shouldIndentIfInlining)
   )
-    return group(parts);
-  if (parts.length === 0) return [];
-  const hasJsx = isJsx(ctx, unparen(ctx, right));
-  const firstGroupIndex = parts.findIndex(
-    (part) => !isDocs(part) && kindOf(part) === "group",
-  );
-  const headParts = parts.slice(
-    0,
-    firstGroupIndex === -1 ? 1 : firstGroupIndex + 1,
-  );
-  const rest = parts.slice(headParts.length, hasJsx ? -1 : undefined);
-  const chain = group([...headParts, indent(rest)]);
-  if (!hasJsx) return chain;
-  return group([chain, indentIfBreak(parts.at(-1) as Doc, chain)]);
+    return void within(GROUP, () => run(parts));
+  const hasJsx = isJsx(js, unparen(js, right));
+  const printChain = () => {
+    run(parts.slice(0, head + 1));
+    within(INDENT, () => run(parts.slice(head + 1, hasJsx ? -1 : undefined)));
+  };
+  if (!hasJsx) return void within(GROUP, printChain);
+  within(GROUP, () => {
+    const chain = within(GROUP, printChain);
+    openIndentIfBreak(chain);
+    (parts.at(-1) as Emit)();
+    close();
+  });
 };
 
 // --- ternary ---------------------------------------------------------------------------------------------------
@@ -423,8 +474,8 @@ const tok = (js: JsCtx, c: number | undefined) => {
 };
 
 /** `fn`'s output inside an interval of `kind` (GROUP, INDENT, IF_BROKEN, ...), naming group `ref`. */
-function within(kind: number, fn: () => void, ref = -1): number {
-  const id = open(kind, ref);
+function within(kind: number, fn: () => void, ref = -1, flags = 0): number {
+  const id = open(kind, ref, flags);
   fn();
   close();
   return id;
@@ -1006,13 +1057,13 @@ const assignment: JsRule = (node, ctx) => {
 };
 
 export const operatorRules: Record<string, JsRule> = {
-  binary_expression: binary,
   assignment_expression: assignment,
   augmented_assignment_expression: assignment,
 };
 
 /** The customs of format.ts's operator kinds. */
 export const operatorCustoms = {
+  binary,
   ternary,
   unary,
   await: awaitExpression,
