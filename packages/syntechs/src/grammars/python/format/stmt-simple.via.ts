@@ -1,4 +1,5 @@
 // The customs stmt-simple.ts's `.via`s name: a one-line statement's child as ruff lays it out there.
+import type { StreamCtx } from "../../../fmt/stream-format.js";
 import { type Expr, type Import, type ImportFrom, type Simple, Unformattable } from "../fmt/ast.js";
 import { commaIn, space } from "../fmt/builders.js";
 import { type Format, synthetic } from "../fmt/elements.js";
@@ -20,14 +21,8 @@ import { byteOffsetOf } from "../fmt/trivia.js";
 // Ruff's `is_arithmetic_like`: an expression statement it wraps in optional parentheses to break.
 const arithmeticOps = new Set(["|", "^", "<<", ">>", "+", "-"]);
 
-// An expression statement's four layouts, as ruff reads the statement.
-const expressionStatement: StmtRules = {
-  Expr(f, s) {
-    const v = s.value;
-    if (v.kind === "BinOp" && arithmeticOps.has(f.tree.kindName(v.op)))
-      return maybeParenthesize(f, v, s, "optional");
-    return formatExpr(f, v);
-  },
+// An assignment statement's three layouts, as ruff reads the statement.
+const assignment: StmtRules = {
   Assign(f, s) {
     const [first, ...rest] = s.targets;
     if (!first)
@@ -139,10 +134,24 @@ const typeAlias: StmtRules = {
 
 export const stmtSimpleVia = {
   // Given the statement's first child, prints the whole statement.
-  "simple.expressionStatement": (c: number) => {
+  "simple.expressionStatement": (c: number, ctx: StreamCtx<unknown>) => {
     const { f, s } = ruffStmtOf(c);
-    const rule = expressionStatement[s.kind] as StmtRule<typeof s.kind> | undefined;
-    if (!rule) throw new Error(`python: an expression statement read as ${s.kind}`);
+    if (s.kind !== "Expr") {
+      ctx.printNode(c);
+      return;
+    }
+    const v = s.value;
+    part(
+      v.kind === "BinOp" && arithmeticOps.has(f.tree.kindName(v.op))
+        ? maybeParenthesize(f, v, s, "optional")
+        : formatExpr(f, v),
+    );
+  },
+  // The whole statement: an assignment is its statement's only child.
+  "simple.assignment": (n: number) => {
+    const { f, s } = ruffStmtOf(n);
+    const rule = assignment[s.kind] as StmtRule<typeof s.kind> | undefined;
+    if (!rule) throw new Error(`python: an assignment read as ${s.kind}`);
     part(rule(f, s as never));
   },
   "simple.typeAlias": (c: number) => {

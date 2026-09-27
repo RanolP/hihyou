@@ -1,5 +1,5 @@
 // One-line statements.
-import { inOrder, space } from "../../../fmt/dsl/dsl.js";
+import { custom, inOrder, space } from "../../../fmt/dsl/dsl.js";
 import type { Structure } from "../format.js";
 
 export const stmtSimple = {
@@ -46,7 +46,10 @@ export const stmtSimple = {
   import_prefix: () => inOrder(),
   relative_import: () => inOrder(),
   aliased_import: ($) => [$.name, space, "as", space, $.alias],
-  // Ruff reads an expression, an assignment, an annotated or an augmented one here, each with its own layout.
+  // An expression by ruff's layout of an expression statement; an assignment by its own rule.
   expression_statement: ($) => $.children.at(0).andThen((c) => c.via("simple.expressionStatement")),
+  // Ruff lays out the targets, the operator and the value at once, `a = b = c` as one statement.
+  assignment: () => custom("simple.assignment"),
+  augmented_assignment: () => custom("simple.assignment"),
   type_alias_statement: ($) => ["type", space, $.left.via("simple.typeAlias")],
 } satisfies Structure;
