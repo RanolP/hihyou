@@ -52,6 +52,7 @@ import {
   sBreakParent,
   sLine,
   sLineSuffixBoundary,
+  sLiteral,
   sText,
   sToken,
 } from "./stream.js";
@@ -75,7 +76,8 @@ export function sDoc(doc: Doc): void {
     const h = d as DocHandle;
     switch (kindCode(h)) {
       case D_TOKEN:
-        sToken(nodeOf(h), textOf(h), isSynthetic(h));
+        if (isLiteral(h)) sLiteral(nodeOf(h), textOf(h));
+        else sToken(nodeOf(h), textOf(h), isSynthetic(h));
         return;
       case D_TEXT:
         sText(textOf(h));
@@ -158,9 +160,6 @@ function check(doc: Doc, seen: Set<Doc>): void {
     const kind = kindCode(h);
     switch (kind) {
       case D_TOKEN:
-        if (isLiteral(h) && textOf(h).includes("\n"))
-          throw new Unsupported("literal token");
-        return false;
       case D_TEXT:
       case D_BREAK_PARENT:
       case D_LINE_SUFFIX_BOUNDARY:

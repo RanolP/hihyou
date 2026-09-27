@@ -10,6 +10,7 @@ import {
   line,
   lineSuffix,
   lineSuffixBoundary,
+  literalToken,
   text,
 } from "./doc.js";
 import { print } from "./printer.js";
@@ -27,6 +28,7 @@ import {
   sHardline,
   sLine,
   sLineSuffixBoundary,
+  sLiteral,
   sText,
 } from "./stream.js";
 
@@ -277,5 +279,26 @@ describe("printStream matches printer.ts under ruff's measure", () => {
       close();
     });
     expect(out).toBe("a\n\nb");
+  });
+
+  it("measures a literal token to its first line break and restarts the column after its last", () => {
+    const doc = [
+      group([text("a"), line, literalToken(0, "bb\n  cccc"), line, text("d")]),
+      group([line, text("ee")]),
+    ];
+    const out = ruffBoth(8, doc, () => {
+      open(GROUP);
+      sText("a");
+      sLine(0);
+      sLiteral(0, "bb\n  cccc");
+      sLine(0);
+      sText("d");
+      close();
+      open(GROUP);
+      sLine(0);
+      sText("ee");
+      close();
+    });
+    expect(out).toBe("a bb\n  cccc d\nee");
   });
 });

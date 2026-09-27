@@ -86,6 +86,12 @@ const grow8 = (a: Uint8Array) => {
   return g;
 };
 
+// --- ruff ---
+// Ruff's layout kinds, numbered from 40, apart from the other kinds.
+/** One literal token holding a line break (`sLiteral`): its lines print as they are, the column restarting at 0. */
+const LITERAL_TOKEN = 40;
+// --- end ruff ---
+
 // The stream.
 let eKind = new Uint8Array(4096);
 let eFlag = new Uint8Array(4096);
@@ -195,6 +201,21 @@ export function sToken(node: number, s: string, synthetic = false): void {
   strs.push(s);
   entry(TOKEN, synthetic ? 1 : 0, strs.length - 1, node, w);
   mergeable = false;
+}
+
+/**
+ * A token whose line breaks are literal (`doc.ts`'s `literalToken`): a measure ends at its first line break and
+ * the column restarts after the last. Counted as a hard line, so a group holding it scans rather than measure O(1).
+ */
+export function sLiteral(node: number, s: string): void {
+  if (!s.includes("\n")) {
+    sToken(node, s);
+    return;
+  }
+  open(LITERAL_TOKEN);
+  sToken(node, s);
+  hard++;
+  close();
 }
 
 /** A line: 0 (a space when flat), `SOFT` (nothing when flat) or `HARD` (always breaks; pair it with `sBreakParent`). */
@@ -499,6 +520,11 @@ export function printStream(layout: Layout): StreamPrinted {
           cur = iNext[k] as number;
           jumped = true;
           break;
+        } else if (kind === LITERAL_TOKEN) {
+          if (ruff && mustBeFlat) return false;
+          const s = strs[eStr[i] as number] as string;
+          if (pending) width -= 1;
+          return width - textWidth(s.slice(0, s.indexOf("\n"))) >= 0;
         } else cur++;
       }
       if (jumped) continue;
@@ -749,6 +775,27 @@ export function printStream(layout: Layout): StreamPrinted {
                 tm,
               );
             break;
+          case LITERAL_TOKEN: {
+            // Its lines are finished as they are: a line end trims only the line being printed.
+            const s = strs[eStr[i] as number] as string;
+            if (tokens === placedAt.length) {
+              placedAt = grow32(placedAt);
+              placedEntry = grow32(placedEntry);
+            }
+            placedEntry[tokens] = i;
+            placedAt[tokens] = length;
+            tokens++;
+            const lastBreak = s.lastIndexOf("\n");
+            out.push(current + s.slice(0, lastBreak + 1));
+            current = s.slice(lastBreak + 1);
+            length += s.length;
+            column = textWidth(current);
+            if (ruff) remeasure = true;
+            i = e;
+            cur = iNext[k] as number;
+            jumped = true;
+            break;
+          }
           default:
             throw new Error(`printStream: unknown interval kind ${iKind[k]}`);
         }
