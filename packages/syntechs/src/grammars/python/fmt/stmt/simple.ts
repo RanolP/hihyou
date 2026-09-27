@@ -68,6 +68,14 @@ export const simpleVia = {
     const { f, e } = ruffOf(c);
     part(maybeParenthesize(f, e, e.parent as Simple, "optional"));
   },
+  "expr.ifBreaks": (c: number) => {
+    const { f, e } = ruffOf(c);
+    part(maybeParenthesize(f, e, e.parent as Simple, "ifBreaks"));
+  },
+  "expr.ifBreaksParenthesized": (c: number) => {
+    const { f, e } = ruffOf(c);
+    part(maybeParenthesize(f, e, e.parent as Simple, "ifBreaksParenthesized"));
+  },
   "delete.targets": (c: number) => {
     const { f, e } = ruffOf(c);
     const s = e.parent as Simple;
@@ -96,18 +104,7 @@ export const simpleRules: StmtRules = {
   Continue: fromSpec,
   Return: fromSpec,
   Raise: fromSpec,
-  Assert(f, s) {
-    const [test, msg] = s.values;
-    const out: Format[] = [f.tok(s.kw)];
-    if (test) out.push(space, maybeParenthesize(f, test, s, "ifBreaks"));
-    if (msg && s.sep !== undefined)
-      out.push(
-        f.tok(s.sep),
-        space,
-        maybeParenthesize(f, msg, s, "ifBreaksParenthesized"),
-      );
-    return out;
-  },
+  Assert: fromSpec,
   Delete: fromSpec,
   Global: global,
   Nonlocal: global,

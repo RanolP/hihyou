@@ -20,5 +20,10 @@ export const python = format({
       $.cause.andThen((c) => [space, "from", space, c.via("expr.optional")]),
     ],
     delete_statement: ($) => ["del", space, $.children.via("delete.targets")],
+    assert_statement: ($) => [
+      "assert",
+      $.children.at(0).andThen((t) => [space, t.via("expr.ifBreaks")]),
+      $.children.at(1).andThen((m) => [",", space, m.via("expr.ifBreaksParenthesized")]),
+    ],
   },
 });
