@@ -60,6 +60,8 @@ import {
   closeSpan,
   openFlat,
   closeFlat,
+  openDead,
+  closeDead,
   sJump,
   openFitsExpanded,
   openState,
@@ -608,6 +610,54 @@ describe("printStream matches printer.ts for a part printed flat as removeLines 
       flat(() => sJump(t));
     });
     expect(out).toBe("aa\nbb\naa bb");
+  });
+});
+
+describe("printStream matches printer.ts with a part abandoned mid-build, as ArgExpansionBailout abandons one", () => {
+  it("neither prints nor measures an abandoned part, nor lets its break parents and open intervals reach around", () => {
+    let g = -1;
+    const out = both(5, group([text("aa"), line, text("bb")]), () => {
+      g = open(GROUP);
+      sText("aa");
+      sLine(0);
+      const d = openDead();
+      open(GROUP);
+      sText("a long abandoned text");
+      sHardline();
+      open(IF_BROKEN);
+      sBreakParent();
+      sLine(0);
+      closeDead(d);
+      sText("bb");
+      close();
+    });
+    expect(out).toBe("aa bb");
+    expect(willBreak(g)).toBe(false);
+    expect(canBreak(g)).toBe(true);
+  });
+
+  it("prints a span closed inside an abandoned part through a jump, decided where it is jumped to", () => {
+    const s = group([text("aa"), line, text("bb")]);
+    const build = () => {
+      const d = openDead();
+      open(GROUP);
+      const t = openSpan();
+      open(GROUP);
+      sText("aa");
+      sLine(0);
+      sText("bb");
+      close();
+      closeSpan();
+      sHardline();
+      closeDead(d);
+      open(GROUP);
+      sText("cc");
+      sLine(0);
+      sJump(t);
+      close();
+    };
+    expect(both(12, group([text("cc"), line, s]), build)).toBe("cc aa bb");
+    expect(both(5, group([text("cc"), line, s]), build)).toBe("cc\naa bb");
   });
 });
 

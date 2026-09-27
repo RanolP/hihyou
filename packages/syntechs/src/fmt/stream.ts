@@ -311,6 +311,7 @@ export function resetStream(ruff = false): void {
   xbp = 0;
   flatSaves.length = 0;
   ifbXbp.length = 0;
+  deadSaves.length = 0;
 }
 
 function entry(kind: number, flag: number, str: number, node: number, w: number) {
@@ -821,6 +822,79 @@ export function closeFlat(): void {
 }
 // --- end flat ---
 
+// --- dead ---
+/**
+ * An interval kind: a part built and then abandoned, as the JS printer abandons an argument it printed expanded
+ * when that print throws ArgExpansionBailout. The stream has no rewind, so the part stays, never printed nor
+ * measured, and the builder's counters return to where it opened. A span closed inside stays a jump target.
+ */
+export const DEAD = 21;
+/** Per dead interval still open: the interval, `op`, and the builder state it was opened in (`DEAD_SAVE` numbers). */
+const deadSaves: number[] = [];
+const DEAD_SAVE = 18;
+
+/** Opens a part that may be abandoned; `closeDead` it however far its build got. */
+export function openDead(): number {
+  const d = open(DEAD);
+  deadSaves.push(
+    d,
+    op - 1,
+    pos,
+    bp,
+    hard,
+    noMeasure,
+    lastLine,
+    runStart,
+    refCount,
+    lastSfx,
+    bndM,
+    bndSfx,
+    leadAt,
+    xbp,
+    choiceSaves.length,
+    spanSaves.length,
+    flatSaves.length,
+    ifbXbp.length,
+  );
+  lastLine = -1;
+  return d;
+}
+
+/** Closes dead interval `d`, with every interval opened inside it still open, and restores the counters. */
+export function closeDead(d: number): void {
+  let b = deadSaves.length - DEAD_SAVE;
+  // A dead interval opened inside `d` and left open closes with it.
+  while (deadSaves[b] !== d) b -= DEAD_SAVE;
+  const o = deadSaves[b + 1] as number;
+  for (let x = op - 1; x >= o; x--) {
+    const k = oIdx[x] as number;
+    iEnd[k] = n;
+    iNext[k] = m;
+    iP1[k] = pos;
+  }
+  op = o;
+  pos = deadSaves[b + 2] as number;
+  iP1[d] = pos;
+  bp = deadSaves[b + 3] as number;
+  hard = deadSaves[b + 4] as number;
+  noMeasure = deadSaves[b + 5] as number;
+  lastLine = deadSaves[b + 6] as number;
+  runStart = deadSaves[b + 7] as number;
+  refCount = deadSaves[b + 8] as number;
+  lastSfx = deadSaves[b + 9] as number;
+  bndM = deadSaves[b + 10] as number;
+  bndSfx = deadSaves[b + 11] as number;
+  leadAt = deadSaves[b + 12] as number;
+  xbp = deadSaves[b + 13] as number;
+  choiceSaves.length = deadSaves[b + 14] as number;
+  spanSaves.length = deadSaves[b + 15] as number;
+  flatSaves.length = deadSaves[b + 16] as number;
+  ifbXbp.length = deadSaves[b + 17] as number;
+  deadSaves.length = b;
+  mergeable = false;
+}
+// --- end dead ---
+
 // --- queries ---
 // What a rule asks of a part it built, as `doc.ts`'s and the JS printer's Doc queries ask of a Doc: the part is a
 // closed interval, a span when it is only a sequence. Each reads the interval's own entries and intervals, and the
@@ -842,7 +916,7 @@ function walkIn(
   for (;;) {
     let skipped = false;
     while (cur < stop && iStart[cur] === i) {
-      const go = enter(cur);
+      const go = iKind[cur] === DEAD ? false : enter(cur);
       if (go === "stop") return true;
       if (go) cur++;
       else {
@@ -1330,8 +1404,8 @@ export function printStream(layout: Layout): StreamPrinted {
           }
           jumped = true;
           break;
-        } else if (kind === STATE) {
-          // A state the enclosing choice did not take.
+        } else if (kind === STATE || kind === DEAD) {
+          // A state the enclosing choice did not take, or an abandoned part.
           i = e;
           cur = iNext[k] as number;
           jumped = true;
@@ -1885,7 +1959,8 @@ export function printStream(layout: Layout): StreamPrinted {
             if (e > i) fpush(e, ti, tm | FORCED_BREAK);
             break;
           case STATE:
-            // A state the enclosing choice did not take.
+          case DEAD:
+            // A state the enclosing choice did not take, or an abandoned part.
             i = e;
             cur = iNext[k] as number;
             jumped = true;
