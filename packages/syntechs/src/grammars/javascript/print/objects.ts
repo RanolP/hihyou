@@ -25,6 +25,7 @@ import {
   jsCtx,
   onDoc,
   open,
+  place,
   SOFT,
   sHardline,
   sLine,
@@ -343,15 +344,19 @@ function commaAfter(
   return undefined;
 }
 
-const pair: JsRule = (n, ctx) => {
+/** A property or a pattern's property: an assignment of its value to its key, through the Doc-only printAssignment. */
+const pairCustom: CustomRule<JsOptions> = (n, sctx) => {
+  const { js: ctx } = jsCtx(sctx);
   const colon = anonKid(ctx, n, ":");
-  return printAssignment(
-    ctx,
-    n,
-    printKey(ctx, n),
-    t(ctx, colon),
-    field(ctx, n, "value"),
-  );
+  place({
+    doc: printAssignment(
+      ctx,
+      n,
+      printKey(ctx, n),
+      t(ctx, colon),
+      field(ctx, n, "value"),
+    ),
+  });
 };
 
 /** Prettier's printMethod, for object and class methods alike: modifiers, key, `?`, then the method value. */
@@ -534,10 +539,9 @@ export const array: JsRule = onDoc(arrayCustom);
 export const objectCustoms = {
   object: objectCustom,
   array: arrayCustom,
+  pair: pairCustom,
 } satisfies Record<string, CustomRule<JsOptions>>;
 
 export const objectRules: Record<string, JsRule> = {
-  pair,
-  pair_pattern: pair,
   method_definition: method,
 };
