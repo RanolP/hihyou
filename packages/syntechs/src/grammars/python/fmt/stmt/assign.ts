@@ -1,12 +1,13 @@
 import {
   bestFitParenthesize,
   bestFitting,
-  type Doc,
+  type Format,
   group,
   ifBreak,
+  removeSoftLines,
   synthetic,
   willBreak,
-} from "../../../../fmt/doc.js";
+} from "../elements.js";
 import type { Expr, Stmt, TypeParam, TypeParams } from "../ast.js";
 import { Unformattable } from "../ast.js";
 import {
@@ -27,7 +28,6 @@ import {
   maybeParenthesize,
   needsParentheses,
   node,
-  removeSoftLines,
 } from "../expr.js";
 import {
   implicitExpanded,
@@ -77,11 +77,11 @@ function shouldParenthesizeTarget(f: Fmt, e: Expr): boolean {
 function targetWithEqual(
   f: Fmt,
   target: Expr,
-  eq: Doc,
+  eq: Format,
   preserveParentheses: boolean,
-): Doc {
+): Format {
   const cs = f.comments;
-  let doc: Doc;
+  let doc: Format;
   if (preserveParentheses || cs.hasLeading(target) || cs.hasTrailing(target))
     doc = formatExpr(f, target);
   else if (shouldParenthesizeTarget(f, target))
@@ -93,7 +93,7 @@ function targetWithEqual(
 }
 
 /** Ruff's `AnyBeforeOperator::Expression`. */
-function beforeOperator(f: Fmt, e: Expr): Doc {
+function beforeOperator(f: Fmt, e: Expr): Format {
   const cs = f.comments;
   if (cs.hasLeading(e) || cs.hasTrailing(e)) return formatExpr(f, e);
   if (!shouldParenthesizeTarget(f, e)) return formatExpr(f, e, "never");
@@ -129,7 +129,7 @@ function nonInlineableUsesBestFit(f: Fmt, value: Expr, stmt: Stmt): boolean {
 }
 
 /** Ruff's `MaybeParenthesizeValue`. */
-function maybeParenthesizeValue(f: Fmt, value: Expr, stmt: Stmt): Doc {
+function maybeParenthesizeValue(f: Fmt, value: Expr, stmt: Stmt): Format {
   if (value.kind === "Lambda" && !f.comments.hasLeading(value))
     return f.parenthesizeIfExpands(value.ts, () =>
       node(f, value, { lambdaAssign: true }),
@@ -157,7 +157,7 @@ function inlinedComments(
 }
 
 /** Prints `comments` once, marking them printed so the value and the statement leave them out. */
-function inlineDoc(f: Fmt, comments: readonly Comment[]): Doc {
+function inlineDoc(f: Fmt, comments: readonly Comment[]): Format {
   return f.trailing(comments);
 }
 
@@ -171,7 +171,7 @@ const isInterpolatedStr = (e: Expr) =>
   e.kind === "Str" && (e.flavor === "f" || e.flavor === "t");
 
 /** Ruff's `FormatStatementsLastExpression::LeftToRight`: `value` after its statement's operator. */
-export function leftToRight(f: Fmt, value: Expr, stmt: Stmt): Doc {
+export function leftToRight(f: Fmt, value: Expr, stmt: Stmt): Format {
   const str = value.kind === "Str" ? value : undefined;
   const canInline = shouldInlineComments(f, value, stmt);
   const interpolated = str && interpolatedAssignment(f, str, hooks);
@@ -196,7 +196,7 @@ export function leftToRight(f: Fmt, value: Expr, stmt: Stmt): Doc {
       [lparen(value), softBlockIndent([flat, inline]), rparen(value)],
       true,
     );
-    const expandedContents: Doc[] = [];
+    const expandedContents: Format[] = [];
     const expanded = group(expandedContents, true);
     expandedContents.push(
       lparen(value),
@@ -226,7 +226,7 @@ export function leftToRight(f: Fmt, value: Expr, stmt: Stmt): Doc {
     );
   }
 
-  const contents: Doc[] = [];
+  const contents: Format[] = [];
   const b = bestFitParenthesize(lparen(value), contents, rparen(value));
   contents.push(f.at({ k: "expr", g: b }, () => formatExpr(f, value, "never")));
   if (comments.length === 0) return b;
@@ -240,11 +240,11 @@ export function leftToRight(f: Fmt, value: Expr, stmt: Stmt): Doc {
  */
 export function rightToLeft(
   f: Fmt,
-  before: () => Doc,
-  op: Doc,
+  before: () => Format,
+  op: Format,
   value: Expr,
   stmt: Stmt,
-): Doc {
+): Format {
   const str = value.kind === "Str" ? value : undefined;
   const canInline = shouldInlineComments(f, value, stmt);
   const interpolated = str && interpolatedAssignment(f, str, hooks);
@@ -284,7 +284,7 @@ export function rightToLeft(
 
   // The interpolated string as it prints with its line breaks, which the flat layouts leave out.
   const interpolatedRaw = interpolated?.();
-  let formatValue: Doc;
+  let formatValue: Format;
   if (str && implicit) {
     const raw = implicit();
     formatValue = isInterpolatedStr(str) ? removeSoftLines(raw) : raw;
@@ -292,8 +292,8 @@ export function rightToLeft(
     formatValue = removeSoftLines(interpolatedRaw);
   else formatValue = formatExpr(f, value, "never");
 
-  const singleLine: Doc = [last, space, op, space, formatValue, inline];
-  const flatTargetParenthesizeValue: Doc = [
+  const singleLine: Format = [last, space, op, space, formatValue, inline];
+  const flatTargetParenthesizeValue: Format = [
     last,
     space,
     op,
@@ -302,7 +302,7 @@ export function rightToLeft(
     group(softBlockIndent([formatValue, inline]), true),
     rparen(value),
   ];
-  const splitTargetFlatValue: Doc = [
+  const splitTargetFlatValue: Format = [
     group(last, true),
     space,
     op,
@@ -323,7 +323,7 @@ export function rightToLeft(
       splitTargetFlatValue,
     ]);
 
-  const splitTargetValueParenthesizedFlat: Doc = [
+  const splitTargetValueParenthesizedFlat: Format = [
     group(last, true),
     space,
     op,
@@ -336,14 +336,14 @@ export function rightToLeft(
   if (str && implicit) {
     if (isInterpolatedStr(str) && willBreak(formatValue))
       return fallback(comments);
-    const expandedContents: Doc[] = [];
+    const expandedContents: Format[] = [];
     const expanded = group(expandedContents, true);
     expandedContents.push(
       softBlockIndent(
         f.at({ k: "expr", g: expanded }, () => implicitExpanded(f, str, hooks)),
       ),
     );
-    const splitTargetValueParenthesizedMultiline: Doc = [
+    const splitTargetValueParenthesizedMultiline: Format = [
       group(last, true),
       space,
       op,
@@ -386,8 +386,8 @@ export function rightToLeft(
 
   if (interpolatedRaw !== undefined) {
     if (willBreak(formatValue)) return fallback(comments);
-    const regular: Doc = [interpolatedRaw, inline];
-    const splitTargetRegular: Doc = [
+    const regular: Format = [interpolatedRaw, inline];
+    const splitTargetRegular: Format = [
       group(last, true),
       space,
       op,
@@ -424,15 +424,15 @@ export function rightToLeft(
 }
 
 /** Ruff's `FormatTypeVar` / `FormatTypeVarTuple` / `FormatParamSpec`. */
-function typeParam(f: Fmt, p: TypeParam): Doc {
-  const out: Doc[] = [p.star !== undefined ? f.tok(p.star) : [], f.tok(p.name)];
+function typeParam(f: Fmt, p: TypeParam): Format {
+  const out: Format[] = [p.star !== undefined ? f.tok(p.star) : [], f.tok(p.name)];
   if (p.colon !== undefined && p.bound)
     out.push(f.tok(p.colon), space, formatExpr(f, p.bound));
   return out;
 }
 
 /** Ruff's `FormatTypeParams`: `[T, *Ts, **P]`, split one per line when it does not fit. */
-export function typeParams(f: Fmt, tp: TypeParams): Doc {
+export function typeParams(f: Fmt, tp: TypeParams): Format {
   if (f.comments.hasAnyIn(tp.start, tp.end))
     throw new Unformattable(
       `comment in type parameters at ${byteOffsetOf(f.tree, tp.ts)}`,
@@ -465,7 +465,7 @@ export const assignRules: StmtRules = {
     };
     const last = rest.at(-1);
     if (last) {
-      const out: Doc[] = [targetWithEqual(f, first, eq(0), true)];
+      const out: Format[] = [targetWithEqual(f, first, eq(0), true)];
       for (const [i, t] of rest.slice(0, -1).entries())
         out.push(targetWithEqual(f, t, eq(i + 1), false));
       out.push(
@@ -487,7 +487,7 @@ export const assignRules: StmtRules = {
     const cs = f.comments;
     const annotation = s.annotation;
     const needs = needsParentheses(f, annotation, s);
-    const head: Doc = [formatExpr(f, s.target), f.tok(s.colon), space];
+    const head: Format = [formatExpr(f, s.target), f.tok(s.colon), space];
     if (s.value && s.eq !== undefined) {
       if (needs !== "always" && isSplittable(annotation))
         return [
@@ -536,7 +536,7 @@ export const assignRules: StmtRules = {
     ];
   },
   TypeAlias(f, s) {
-    const head: Doc = [f.tok(s.kw), space, formatExpr(f, s.name)];
+    const head: Format = [f.tok(s.kw), space, formatExpr(f, s.name)];
     const tp = s.typeParams;
     if (isInvalidTypeExpression(s.value))
       return [

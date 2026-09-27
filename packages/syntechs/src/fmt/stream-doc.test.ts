@@ -4,12 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 import { type Language as Parser, parseTree } from "../core/index.js";
 import { javascript } from "../grammars/javascript/fmt.js";
 import { language as jsParser } from "../grammars/javascript/index.js";
-import { python } from "../grammars/python/fmt.js";
-import { language as pyParser } from "../grammars/python/index.js";
 import { language as tsxParser } from "../grammars/tsx/index.js";
 import { tsx, typescript } from "../grammars/typescript/fmt.js";
 import { language as tsParser } from "../grammars/typescript/index.js";
-import { ruffSuite } from "./conformance/ruff.node.js";
 import type { Doc } from "./doc.js";
 import { format } from "./format.js";
 import type * as Printer from "./printer.js";
@@ -158,30 +155,8 @@ describe.skipIf(!present)(
       expect(tally.differ).toEqual([]);
       expect([tally.covered, tally.docs]).toEqual(JS_COVERED);
     }, 600_000);
-
-    it("Python corpus", () => {
-      const tally = newTally();
-      const root = join(corpus, "ruff-0.16.8/crates/ruff_python_formatter");
-      const cases: [string, string, object][] = [];
-      for (const f of ["base_events.py", "dataclasses.py", "typing.py"]) {
-        const p = join(corpus, f);
-        if (existsSync(p)) cases.push([f, readFileSync(p, "utf8"), {}]);
-      }
-      if (existsSync(root))
-        for (const c of ruffSuite(root).cases)
-          for (const r of c.runs)
-            cases.push([`${c.fixture}#${r.label}`, c.text, r.options]);
-      for (const [name, text, options] of cases) {
-        const tree = parseTree(pyParser, text);
-        compare(name, tally, () => format(tree, python, options));
-      }
-      report("python", tally);
-      expect(tally.differ).toEqual([]);
-      expect([tally.covered, tally.docs]).toEqual(PY_COVERED);
-    }, 600_000);
   },
 );
 
 // [lowered, printed]: the Docs the stream prints, of all the formatter printed.
 const JS_COVERED = [1549, 2260];
-const PY_COVERED = [264, 286];

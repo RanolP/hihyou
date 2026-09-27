@@ -1,4 +1,4 @@
-import { type Doc, indent } from "../../../../fmt/doc.js";
+import { type Format, indent } from "../elements.js";
 import type { ExprStmt, Module, Py, Stmt, Str } from "../ast.js";
 import { Unformattable } from "../ast.js";
 import {
@@ -41,7 +41,7 @@ export type StmtRule<K extends Stmt["kind"]> = (
         : never
       : never
     : never,
-) => Doc;
+) => Format;
 export type StmtRules = { readonly [K in Stmt["kind"]]?: StmtRule<K> };
 
 /**
@@ -58,7 +58,7 @@ const rules = (): StmtRules => {
 };
 
 /** Ruff's `FormatModModule`. */
-export function formatModule(f: Fmt, m: Module): Doc {
+export function formatModule(f: Fmt, m: Module): Format {
   rejectSuppressions(f);
   const cs = f.comments;
   if (m.body.length === 0) {
@@ -90,7 +90,7 @@ function rejectSuppressions(f: Fmt): void {
 }
 
 /** A statement with its leading and trailing comments (ruff's `FormatNodeRule::fmt`). */
-export function formatStmt(f: Fmt, s: Stmt): Doc {
+export function formatStmt(f: Fmt, s: Stmt): Format {
   const rule = rules()[s.kind] as StmtRule<typeof s.kind> | undefined;
   if (!rule)
     throw new Unformattable(
@@ -142,10 +142,10 @@ function indentOf(f: Fmt): string {
 }
 
 /** Ruff's `FormatDocstringStmt`. */
-function docstring(f: Fmt, s: ExprStmt & { value: Str }, kind: SuiteKind): Doc {
+function docstring(f: Fmt, s: ExprStmt & { value: Str }, kind: SuiteKind): Format {
   const cs = f.comments;
   const v = s.value;
-  const out: Doc[] = [
+  const out: Format[] = [
     f.leading(cs.leading(s)),
     f.leading(cs.leading(v)),
     formatStr(f, v, hooks, indentOf(f)),
@@ -197,7 +197,7 @@ export function formatSuite(
   f: Fmt,
   body: readonly Stmt[],
   kind: SuiteKind,
-): Doc {
+): Format {
   const first = body[0];
   if (!first) return [];
   const cs = f.comments;
@@ -206,7 +206,7 @@ export function formatSuite(
   f.depth = top ? 0 : f.depth + 1;
   try {
     return f.at(top ? TOP : COMPOUND, () => {
-      const out: Doc[] = [];
+      const out: Format[] = [];
       const firstDoc = asDocstring(f, first, kind);
       if (kind === "other" && isDefinition(first) && !cs.hasLeading(first))
         out.push(emptyLine);
@@ -242,7 +242,7 @@ function between(
   following: Stmt,
   kind: SuiteKind,
   afterDocstring: boolean,
-): Doc {
+): Format {
   const cs = f.comments;
   const top = kind === "top";
   if (isDefinition(following) || trailingDefinition(f, preceding)) {
@@ -294,11 +294,11 @@ function between(
  */
 export function clauseHeader(
   f: Fmt,
-  header: Doc,
-  colon: Doc,
+  header: Format,
+  colon: Format,
   colonComments: readonly Comment[],
   alternate?: { comments: readonly Comment[]; last: Py | undefined },
-): Doc {
+): Format {
   return [
     alternate
       ? leadingAlternateBranchComments(f, alternate.comments, alternate.last)
@@ -320,7 +320,7 @@ export function clauseBody(
   body: readonly Stmt[],
   kind: SuiteKind,
   colonComments: readonly Comment[],
-): Doc {
+): Format {
   if (kind === "function" || kind === "class") {
     const ellipsis = onlyEllipsis(f, body);
     if (ellipsis && colonComments.length === 0)
@@ -337,7 +337,7 @@ export function leadingAlternateBranchComments(
   f: Fmt,
   comments: readonly Comment[],
   last: Py | undefined,
-): Doc {
+): Format {
   const first = comments[0];
   if (first)
     return [

@@ -1,6 +1,6 @@
 import {
   breakParent,
-  type Doc,
+  type Format,
   fitsExpanded,
   type GroupRef,
   group,
@@ -17,9 +17,8 @@ import {
   synthetic,
   type Token,
   text,
-  textOf,
   token,
-} from "../../../fmt/doc.js";
+} from "./elements.js";
 import type { FormatTree } from "../../../fmt/tree.js";
 import { textWidth } from "../../../fmt/width.js";
 import type { Comment, Comments } from "./comments.js";
@@ -59,8 +58,8 @@ export const softOrSpace = lineOf(COLLAPSE);
 export const emptyLine = lineOf(HARD | COLLAPSE | BLANK);
 export const space = text(" ");
 
-export const blockIndent = (d: Doc): Doc => [indent([hard, d]), hard];
-export const softBlockIndent = (d: Doc): Doc => [indent([soft, d]), soft];
+export const blockIndent = (d: Format): Format => [indent([hard, d]), hard];
+export const softBlockIndent = (d: Format): Format => [indent([soft, d]), soft];
 
 /** The state one formatting run threads through the rules. */
 export class Fmt {
@@ -100,7 +99,7 @@ export class Fmt {
     return token(c.ts, normalizeComment(this.tree.text(c.ts)));
   }
 
-  emptyLines(n: number): Doc {
+  emptyLines(n: number): Format {
     switch (this.level.k) {
       case "top":
         return n <= 1 ? hard : n === 2 ? emptyLine : [emptyLine, emptyLine];
@@ -111,8 +110,8 @@ export class Fmt {
     }
   }
 
-  leading(cs: readonly Comment[]): Doc {
-    const out: Doc[] = [];
+  leading(cs: readonly Comment[]): Format {
+    const out: Format[] = [];
     for (const c of cs) {
       if (c.formatted) continue;
       out.push(this.comment(c), this.emptyLines(linesAfter(this.tree, c.end)));
@@ -120,8 +119,8 @@ export class Fmt {
     return out;
   }
 
-  trailing(cs: readonly Comment[]): Doc {
-    const out: Doc[] = [];
+  trailing(cs: readonly Comment[]): Format {
+    const out: Format[] = [];
     let ownLine = false;
     for (const c of cs) {
       if (c.formatted) continue;
@@ -134,14 +133,15 @@ export class Fmt {
     return out;
   }
 
-  eolComment(c: Comment): Doc {
+  eolComment(c: Comment): Format {
+    const s = normalizeComment(this.tree.text(c.ts));
     const t = this.comment(c);
-    const reserved = isPragma(textOf(t)) ? 0 : 2 + textWidth(textOf(t));
+    const reserved = isPragma(s) ? 0 : 2 + textWidth(s);
     return [suffix([text("  "), t], reserved), breakParent];
   }
 
-  dangling(cs: readonly Comment[]): Doc {
-    const out: Doc[] = [];
+  dangling(cs: readonly Comment[]): Format {
+    const out: Format[] = [];
     let first = true;
     for (const c of cs) {
       if (c.formatted) continue;
@@ -152,18 +152,18 @@ export class Fmt {
     return out;
   }
 
-  danglingOpenParen(cs: readonly Comment[]): Doc {
+  danglingOpenParen(cs: readonly Comment[]): Format {
     return cs.filter((c) => !c.formatted).map((c) => this.eolComment(c));
   }
 
   /** Ruff's `parenthesized`: `left`, `content` indented on its own lines if it breaks, `right`. */
   parenthesized(
     left: Token,
-    content: () => Doc,
+    content: () => Format,
     right: Token,
     dangling: readonly Comment[] = [],
     hug = false,
-  ): Doc {
+  ): Format {
     const level = this.level;
     return this.at(PAREN, () => {
       const c = content();
@@ -182,8 +182,8 @@ export class Fmt {
   }
 
   /** Ruff's `optional_parentheses`: parentheses only when `content` must break, whose groups see them. */
-  optionalParentheses(anchor: number, content: () => Doc): Doc {
-    const contents: Doc[] = [];
+  optionalParentheses(anchor: number, content: () => Format): Format {
+    const contents: Format[] = [];
     const g = group(contents);
     const c = this.at({ k: "expr", g }, content);
     contents.push(
@@ -198,11 +198,11 @@ export class Fmt {
   /** Ruff's `parenthesize_if_expands`. */
   parenthesizeIfExpands(
     anchor: number,
-    content: () => Doc,
+    content: () => Format,
     indented = true,
   ): Group2 {
     const c = this.at(PAREN, content);
-    const contents: Doc[] = [];
+    const contents: Format[] = [];
     const g = group(contents);
     if (indented)
       contents.push(
@@ -225,7 +225,7 @@ export class Fmt {
     left: Token,
     dangling: readonly Comment[],
     right: Token,
-  ): Doc {
+  ): Format {
     const split = dangling.findIndex((c) => c.line === "own");
     const eol = split < 0 ? dangling : dangling.slice(0, split);
     const own = split < 0 ? [] : dangling.slice(split);
@@ -238,14 +238,14 @@ export class Fmt {
     ]);
   }
 
-  softLine(): Doc {
+  softLine(): Format {
     const l = this.level;
     if (l.k === "paren") return soft;
     if (l.k === "expr" && l.g) return ifBreak(soft, [], l.g);
     return [];
   }
 
-  softLineOrSpace(): Doc {
+  softLineOrSpace(): Format {
     const l = this.level;
     if (l.k === "paren") return softOrSpace;
     if (l.k === "expr" && l.g)
@@ -253,14 +253,14 @@ export class Fmt {
     return space;
   }
 
-  inParensGroup(d: Doc): Doc {
+  inParensGroup(d: Format): Format {
     const l = this.level;
     if (l.k === "paren") return group(d);
     if (l.k === "expr" && l.g) return groupIfBreak(d, l.g);
     return d;
   }
 
-  inParensIfBreaks(d: Doc): Doc {
+  inParensIfBreaks(d: Format): Format {
     const l = this.level;
     if (l.k === "paren") return ifBreak(d);
     if (l.k === "expr" && l.g) return ifBreak(d, [], l.g);
@@ -282,12 +282,12 @@ export class Fmt {
    * `commas` finds the source comma after an entry, so the self-check sees the input's own commas.
    */
   joinCommaSeparated(
-    entries: readonly { end: number; doc: Doc; sep?: Doc }[],
+    entries: readonly { end: number; doc: Format; sep?: Format }[],
     sequenceEnd: number,
     comma: (after: number) => Token,
     oneOrMore = false,
-  ): Doc {
-    const out: Doc[] = [];
+  ): Format {
+    const out: Format[] = [];
     for (const [i, e] of entries.entries()) {
       if (i > 0) {
         const prev = entries[i - 1] as { end: number };
@@ -310,7 +310,7 @@ export class Fmt {
 
 type Group2 = ReturnType<typeof group>;
 
-export const suffix = (contents: Doc, reserved: number): Doc =>
+export const suffix = (contents: Format, reserved: number): Format =>
   lineSuffix(contents, reserved);
 
 /** The comma token among `parent`'s children at or after position `from`, or a synthetic one after `anchor`. */

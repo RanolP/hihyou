@@ -1,4 +1,4 @@
-import { type Doc, synthetic } from "../../../../fmt/doc.js";
+import { type Format, synthetic } from "../elements.js";
 import { firstLeaf } from "../../../../fmt/tree.js";
 import type {
   ExceptHandler,
@@ -30,12 +30,12 @@ import {
 /** Ruff's `clause`: a header, its colon and the comments after it, then the indented body. */
 function clause(
   f: Fmt,
-  header: Doc,
+  header: Format,
   colon: number,
   colonComments: readonly Comment[],
   body: readonly Stmt[],
   alternate?: { comments: readonly Comment[]; last: Py | undefined },
-): Doc {
+): Format {
   return [
     clauseHeader(f, header, f.tok(colon), colonComments, alternate),
     clauseBody(f, body, "other", colonComments),
@@ -52,7 +52,7 @@ function prefix(cs: readonly Comment[], p: (c: Comment) => boolean): number {
  * The `else` of a `for` or `while`: `rest` are the statement's dangling comments after its body starts, the
  * own-line ones before `else` and the end-of-line ones after its colon.
  */
-function orElse(f: Fmt, s: For | While, rest: readonly Comment[]): Doc {
+function orElse(f: Fmt, s: For | While, rest: readonly Comment[]): Format {
   const o = s.orelse;
   if (!o) return [];
   const split = prefix(rest, (c) => c.line === "own");
@@ -75,9 +75,9 @@ function splitAtBody(
 }
 
 /** Ruff's `FormatExceptHandlerExceptHandler`; its leading comments are the `try`'s to print. */
-function exceptHandler(f: Fmt, h: ExceptHandler): Doc {
+function exceptHandler(f: Fmt, h: ExceptHandler): Format {
   const [except, star] = h.kws.map((k) => f.tok(k));
-  const header: Doc[] = [except ?? [], star ?? []];
+  const header: Format[] = [except ?? [], star ?? []];
   if (h.type) {
     header.push(space, maybeParenthesize(f, h.type, h, "ifBreaks"));
     if (h.asTok !== undefined && h.name !== undefined)
@@ -87,11 +87,11 @@ function exceptHandler(f: Fmt, h: ExceptHandler): Doc {
 }
 
 /** Ruff's `FormatStmtTry`: the `try`'s dangling comments go to the case whose body they end before. */
-function tryStmt(f: Fmt, s: Try): Doc {
+function tryStmt(f: Fmt, s: Try): Format {
   const cs = f.comments;
   let dangling = cs.dangling(s);
   let previous: Stmt | undefined;
-  const out: Doc[] = [];
+  const out: Format[] = [];
   const kase = (c: { kw: number; colon: number; body: Stmt[] }) => {
     const last = c.body.at(-1);
     if (!last) return;
@@ -130,7 +130,7 @@ function withItem(
   item: WithItem,
   layout: ItemLayout,
   single: boolean,
-): Doc {
+): Format {
   const cs = f.comments;
   const ctx = item.context;
   const parenthesized = ctx.parens.length > 0;
@@ -147,7 +147,7 @@ function withItem(
         : (item.vars || !single) && parenthesized
           ? maybeParenthesize(f, ctx, item, "ifBreaksParenthesizedNested")
           : formatExpr(f, ctx, "never");
-  const out: Doc[] = [f.leading(cs.leading(item)), head];
+  const out: Format[] = [f.leading(cs.leading(item)), head];
   const vars = item.vars;
   if (vars && item.asTok !== undefined) {
     const as = cs.dangling(item);
@@ -179,7 +179,7 @@ function withClause(f: Fmt, w: With): number {
 }
 
 /** Ruff's `FormatStmtWith` with its `WithItemsLayout`. */
-function withStmt(f: Fmt, w: With): Doc {
+function withStmt(f: Fmt, w: With): Format {
   const cs = f.comments;
   const dangling = cs.dangling(w);
   const first = w.items[0];
@@ -205,7 +205,7 @@ function withStmt(f: Fmt, w: With): Doc {
     !(tv && /^py3[0-8]$/.test(tv)) ||
     (w.items.length > 1 &&
       f.tree.kindName(firstLeaf(f.tree, clauseNode)) === "(");
-  let items: Doc;
+  let items: Format;
   if (
     parenComments.length > 0 ||
     (single && (cs.hasLeading(single) || cs.hasTrailing(single)))
@@ -247,7 +247,7 @@ export const clauseRules: StmtRules = {
   Try: tryStmt,
   If(f, s) {
     const cs = f.comments;
-    const out: Doc[] = [
+    const out: Format[] = [
       clause(
         f,
         [f.tok(s.kw), space, maybeParenthesize(f, s.test, s, "ifBreaks")],

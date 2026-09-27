@@ -1,4 +1,4 @@
-import { type Doc, group, indent, synthetic } from "../../../../fmt/doc.js";
+import { type Format, group, indent, synthetic } from "../elements.js";
 import type { FormatTree } from "../../../../fmt/tree.js";
 import type {
   ClassDef,
@@ -47,7 +47,7 @@ const definitionGap = (f: Fmt) => (f.level.k === "top" ? 2 : 1);
 function emptyLinesAfterLeadingComments(
   f: Fmt,
   comments: readonly Comment[],
-): Doc {
+): Format {
   const last = comments.findLast((c) => c.line === "own");
   if (!last) return [];
   const actual = Math.max(0, linesAfter(f.tree, last.end) - 1);
@@ -60,7 +60,7 @@ function emptyLinesAfterLeadingComments(
 function emptyLinesBeforeTrailingComments(
   f: Fmt,
   comments: readonly Comment[],
-): Doc {
+): Format {
   const first = comments.find((c) => c.line === "own");
   if (!first) return [];
   const actual = Math.max(0, linesBefore(f.tree, first.start) - 1);
@@ -69,7 +69,7 @@ function emptyLinesBeforeTrailingComments(
 }
 
 /** Ruff's `FormatDecorator`, with the decorator's own comments. */
-function decorator(f: Fmt, d: Decorator): Doc {
+function decorator(f: Fmt, d: Decorator): Format {
   const cs = f.comments;
   return [
     f.leading(cs.leading(d)),
@@ -84,10 +84,10 @@ function decorators(
   f: Fmt,
   list: readonly Decorator[],
   leadingDefinitionComments: readonly Comment[],
-): Doc {
+): Format {
   const last = list.at(-1);
   if (!last) return [];
-  const out: Doc[] = list.map((d, i) =>
+  const out: Format[] = list.map((d, i) =>
     i === 0 ? decorator(f, d) : [hard, decorator(f, d)],
   );
   if (leadingDefinitionComments.length === 0) out.push(hard);
@@ -121,7 +121,7 @@ function splitDangling(
  * bound is printed from its tokens and only in the shapes whose spacing is fixed: a name, a dotted name, or a
  * parenthesized tuple of those.
  */
-function typeParams(f: Fmt, tp: TypeParams): Doc {
+function typeParams(f: Fmt, tp: TypeParams): Format {
   if (f.comments.has(tp) || f.comments.hasAnyIn(tp.start, tp.end))
     throw new Unformattable(
       `comment in type parameters at ${byteOffsetOf(f.tree, tp.ts)}`,
@@ -147,7 +147,7 @@ function typeParams(f: Fmt, tp: TypeParams): Doc {
   );
 }
 
-function typeParam(f: Fmt, n: number): Doc {
+function typeParam(f: Fmt, n: number): Format {
   const t = f.tree;
   const inner = unwrapType(t, n);
   switch (t.kindName(inner)) {
@@ -188,7 +188,7 @@ const unwrapType = (tree: FormatTree, n: number): number => {
   return x;
 };
 
-function simpleType(f: Fmt, n: number): Doc {
+function simpleType(f: Fmt, n: number): Format {
   const t = f.tree;
   const x = unwrapType(t, n);
   switch (t.kindName(x)) {
@@ -234,7 +234,7 @@ function body(
   stmts: Parameters<typeof clauseBody>[1],
   kind: "function" | "class" | "other",
   colonComments: readonly Comment[],
-): Doc {
+): Format {
   const t = f.tree;
   const colonEnd = endOf(t, header.colon);
   // `check` reads a backslash alone on the line after a colon as a dedent, so it would flag the correct output.
@@ -250,15 +250,15 @@ function body(
 }
 
 /** Ruff's `format_function_header`, less its colon. */
-function functionHeader(f: Fmt, s: FunctionDef): Doc {
+function functionHeader(f: Fmt, s: FunctionDef): Format {
   const cs = f.comments;
-  const out: Doc[] = s.kws.map((k) => [f.tok(k), space]);
+  const out: Format[] = s.kws.map((k) => [f.tok(k), space]);
   out.push(f.tok(s.name));
   if (s.typeParams) out.push(typeParams(f, s.typeParams));
   const p = s.params;
   const emptyParams = p.items.length === 0 && !cs.has(p);
   // Ruff's empty `soft_block_indent` prints nothing, where the shared `emptyParenthesized` still breaks.
-  const inner: Doc[] = [
+  const inner: Format[] = [
     emptyParams && p.open !== undefined && p.close !== undefined
       ? [f.tok(p.open), f.tok(p.close)]
       : parameters(f, p, "preserve"),
@@ -285,8 +285,8 @@ function functionHeader(f: Fmt, s: FunctionDef): Doc {
 }
 
 /** Ruff's `class` header: an empty argument list is dropped, keeping its end-of-line comments. */
-function classHeader(f: Fmt, s: ClassDef): Doc {
-  const out: Doc[] = [f.tok(s.kw), space, f.tok(s.name)];
+function classHeader(f: Fmt, s: ClassDef): Format {
+  const out: Format[] = [f.tok(s.kw), space, f.tok(s.name)];
   if (s.typeParams) out.push(typeParams(f, s.typeParams));
   const a = s.args;
   if (a) {
@@ -610,7 +610,7 @@ function pattern(
   f: Fmt,
   p: Pat,
   parens: "preserve" | "always" | "never" = "preserve",
-): Doc {
+): Format {
   const parenthesize =
     parens === "preserve" ? p.paren !== undefined : parens === "always";
   if (!parenthesize) return patternFields(f, p);
@@ -619,7 +619,7 @@ function pattern(
   return f.parenthesized(open, () => patternFields(f, p), close);
 }
 
-function patternFields(f: Fmt, p: Pat): Doc {
+function patternFields(f: Fmt, p: Pat): Format {
   switch (p.k) {
     case "expr":
       return formatExpr(f, p.e, "never");
@@ -660,7 +660,7 @@ function patternFields(f: Fmt, p: Pat): Doc {
 }
 
 /** Ruff's `FormatPatternMatchSequence`. */
-function sequence(f: Fmt, p: Pat & { k: "seq" }): Doc {
+function sequence(f: Fmt, p: Pat & { k: "seq" }): Format {
   const open = p.open !== undefined ? f.tok(p.open) : synthetic(p.node, "(");
   const close = p.close !== undefined ? f.tok(p.close) : synthetic(p.node, ")");
   const [only] = p.items;
@@ -691,12 +691,12 @@ function sequence(f: Fmt, p: Pat & { k: "seq" }): Doc {
 }
 
 /** Ruff's `FormatPatternMatchMapping`, whose comments `defs` rejects before this runs. */
-function mapping(f: Fmt, p: Pat & { k: "map" }): Doc {
+function mapping(f: Fmt, p: Pat & { k: "map" }): Format {
   const open = f.tok(p.open);
   const close = f.tok(p.close);
   if (p.pairs.length === 0 && !p.rest)
     return f.emptyParenthesized(open, [], close);
-  const entries: { end: number; doc: Doc }[] = p.pairs.map(
+  const entries: { end: number; doc: Format }[] = p.pairs.map(
     ({ key, colon, value }) => ({
       end: outerEnd(f, value),
       doc: group([pattern(f, key), f.tok(colon), space, pattern(f, value)]),
@@ -715,7 +715,7 @@ function mapping(f: Fmt, p: Pat & { k: "map" }): Doc {
 }
 
 /** Ruff's `FormatPatternMatchClass` and `FormatPatternArguments`. */
-function classPattern(f: Fmt, p: Pat & { k: "class" }): Doc {
+function classPattern(f: Fmt, p: Pat & { k: "class" }): Format {
   const cls = p.cls.map((x) => f.tok(x));
   const open = f.tok(p.open);
   const close = f.tok(p.close);
@@ -753,7 +753,7 @@ function classPattern(f: Fmt, p: Pat & { k: "class" }): Doc {
 }
 
 /** Ruff's `maybe_parenthesize_pattern`, for a pattern without comments. */
-function maybeParenthesizePattern(f: Fmt, p: Pat, c: MatchCase): Doc {
+function maybeParenthesizePattern(f: Fmt, p: Pat, c: MatchCase): Format {
   switch (p.k) {
     case "expr":
       // Ruff's `BestFit` for a value or a capture, the expression's own layout.
@@ -835,7 +835,7 @@ function canPatternOmitOptionalParentheses(root: Pat): boolean {
 // ---- match ----
 
 /** Ruff's `FormatMatchCase`, less its own leading and trailing comments. */
-function matchCase(f: Fmt, c: MatchCase): Doc {
+function matchCase(f: Fmt, c: MatchCase): Format {
   const cs = f.comments;
   if (cs.has(c.pattern) || cs.hasAnyIn(c.pattern.start, c.pattern.end))
     throw new Unformattable(
@@ -855,7 +855,7 @@ function matchCase(f: Fmt, c: MatchCase): Doc {
     throw new Unformattable(
       `long unparenthesized case pattern at ${byteOffsetOf(f.tree, c.ts)}`,
     );
-  const header: Doc[] = [f.tok(c.kw), space, maybeParenthesizePattern(f, p, c)];
+  const header: Format[] = [f.tok(c.kw), space, maybeParenthesizePattern(f, p, c)];
   if (c.guardKw !== undefined && c.guard)
     header.push(
       space,
@@ -886,7 +886,7 @@ export const defRules: StmtRules = {
       maybeParenthesize(f, s.subject, s, "ifBreaks"),
     ];
     const cases = f.at(COMPOUND, () => {
-      const out: Doc[] = [];
+      const out: Format[] = [];
       let previous: MatchCase | undefined;
       for (const c of s.cases) {
         const alternate = previous

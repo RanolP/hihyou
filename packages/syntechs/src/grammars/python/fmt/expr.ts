@@ -3,24 +3,18 @@ import {
   bestFitParenthesize,
   bestFitting,
   breakParent,
-  contentsOf,
-  type Doc,
+  type Format,
   fitsExpanded,
-  flatOf,
   group,
   ifBreak,
   indent,
-  isDocs,
-  isHardLine,
-  isSoftLine,
-  kindOf,
   synthetic,
   type Token,
   text,
   token,
-  variantsOf,
+  removeSoftLines,
   willBreak,
-} from "../../../fmt/doc.js";
+} from "./elements.js";
 import {
   type Arguments,
   type Attribute,
@@ -131,7 +125,7 @@ export function formatExpr(
   e: Expr,
   parens: Parens = "preserve",
   o: Opts = {},
-): Doc {
+): Format {
   const parenthesize =
     parens === "preserve" ? e.parens.length > 0 : parens === "always";
   if (parenthesize) {
@@ -148,7 +142,7 @@ export function formatExpr(
 }
 
 /** Ruff's `FormatNodeRule::fmt`: the leading comments, the fields, the trailing comments. */
-export function node(f: Fmt, e: Expr, o: Opts = {}): Doc {
+export function node(f: Fmt, e: Expr, o: Opts = {}): Format {
   const cs = f.comments;
   const leading = f.leading(cs.leading(e));
   const body = fields(f, e, o);
@@ -161,7 +155,7 @@ function withParenthesesComments(
   open: Token,
   close: Token,
   o: Opts,
-): Doc {
+): Format {
   const cs = f.comments;
   const leading = cs.leading(e);
   const trailing = cs.trailing(e);
@@ -180,7 +174,7 @@ function withParenthesesComments(
     parenComment = [first];
     leadingInner = leadingInner.slice(1);
   } else leadingInner = [...leading];
-  const out: Doc[] = [f.leading(leadingOuter)];
+  const out: Format[] = [f.leading(leadingOuter)];
   out.push(
     f.parenthesized(
       open,
@@ -203,7 +197,7 @@ export function maybeParenthesize(
   e: Expr,
   parent: Py,
   mode: Parenthesize,
-): Doc {
+): Format {
   if (mode === "optional" && e.parens.length > 0)
     return formatExpr(f, e, "always");
   const cs = f.comments;
@@ -244,8 +238,8 @@ export function maybeParenthesize(
   }
 }
 
-function bestFit(f: Fmt, e: Expr): Doc {
-  const contents: Doc[] = [];
+function bestFit(f: Fmt, e: Expr): Format {
+  const contents: Format[] = [];
   const b = bestFitParenthesize(
     synthetic(e.ts, "("),
     contents,
@@ -726,7 +720,7 @@ function applyInNode(f: Fmt, e: Expr, chain: Chain): Chain {
 }
 
 /** The value of an attribute, call or subscript, continuing the chain `layout`. */
-function chainValue(f: Fmt, v: Expr, layout: Chain): Doc {
+function chainValue(f: Fmt, v: Expr, layout: Chain): Format {
   if (v.parens.length > 0) return formatExpr(f, v, "always");
   if (isCallLike(v)) return node(f, v, { chain: layout });
   return formatExpr(f, v, "never");
@@ -734,7 +728,7 @@ function chainValue(f: Fmt, v: Expr, layout: Chain): Doc {
 
 // ---- the kinds ----
 
-function fields(f: Fmt, e: Expr, o: Opts): Doc {
+function fields(f: Fmt, e: Expr, o: Opts): Format {
   switch (e.kind) {
     case "Name":
     case "Bool":
@@ -822,12 +816,12 @@ export function number(raw: string): string {
   return complex ? `${out}j` : out;
 }
 
-function attribute(f: Fmt, e: Attribute, chain: Chain): Doc {
+function attribute(f: Fmt, e: Attribute, chain: Chain): Format {
   const cs = f.comments;
   const layout = applyInNode(f, e, chain);
   const v = e.value;
   const parenthesizeValue = isBaseTenNumber(f, v) || v.parens.length > 0;
-  const out: Doc[] = [];
+  const out: Format[] = [];
   if (layout === "fluent")
     out.push(
       parenthesizeValue
@@ -866,7 +860,7 @@ function isBaseTenNumber(f: Fmt, e: Expr): boolean {
   return !/^0[bBoOxX]/.test(t);
 }
 
-function call(f: Fmt, e: Call, chain: Chain): Doc {
+function call(f: Fmt, e: Call, chain: Chain): Format {
   const layout = applyInNode(f, e, chain);
   const out = [
     chainValue(f, e.func, layout),
@@ -876,7 +870,7 @@ function call(f: Fmt, e: Call, chain: Chain): Doc {
   return chain === "default" && layout === "fluent" ? group(out) : out;
 }
 
-function subscript(f: Fmt, e: Subscript, chain: Chain): Doc {
+function subscript(f: Fmt, e: Subscript, chain: Chain): Format {
   const layout = applyInNode(f, e, chain);
   const s = e.slice;
   const inner = () =>
@@ -895,7 +889,7 @@ function subscript(f: Fmt, e: Subscript, chain: Chain): Doc {
   return chain === "default" && layout === "fluent" ? group(out) : out;
 }
 
-export function args(f: Fmt, a: Arguments): Doc {
+export function args(f: Fmt, a: Arguments): Format {
   const cs = f.comments;
   const dangling = cs.dangling(a);
   const open = f.tok(a.open);
@@ -962,7 +956,7 @@ function argumentsHuggable(f: Fmt, a: Arguments): boolean {
   return !f.magicTrailingComma(arg.end, a.end);
 }
 
-export function keyword(f: Fmt, k: Keyword): Doc {
+export function keyword(f: Fmt, k: Keyword): Format {
   const cs = f.comments;
   const body =
     k.name !== undefined
@@ -979,7 +973,7 @@ function unaryNeedsLineBreak(f: Fmt, e: UnaryOp): boolean {
   return p !== undefined && leading.some((c) => c.start < p.start);
 }
 
-function unary(f: Fmt, e: UnaryOp): Doc {
+function unary(f: Fmt, e: UnaryOp): Format {
   const op = f.text(e.op);
   const operand = e.operand;
   const lineBreak = unaryNeedsLineBreak(f, e);
@@ -997,7 +991,7 @@ function unary(f: Fmt, e: UnaryOp): Doc {
   ];
 }
 
-function ifExp(f: Fmt, e: IfExp, nested: boolean): Doc {
+function ifExp(f: Fmt, e: IfExp, nested: boolean): Format {
   const cs = f.comments;
   const orelse = e.orelse;
   const inner = [
@@ -1018,10 +1012,10 @@ function ifExp(f: Fmt, e: IfExp, nested: boolean): Doc {
   return nested ? inner : f.inParensGroup(inner);
 }
 
-function lambda(f: Fmt, e: Lambda, assignment: boolean): Doc {
+function lambda(f: Fmt, e: Lambda, assignment: boolean): Format {
   const cs = f.comments;
   const dangling = cs.dangling(e);
-  const out: Doc[] = [f.tok(e.lambdaTok)];
+  const out: Format[] = [f.tok(e.lambdaTok)];
   let header: readonly Comment[] = dangling;
   const p = e.params;
   if (p) {
@@ -1043,7 +1037,7 @@ function lambda(f: Fmt, e: Lambda, assignment: boolean): Doc {
   return out;
 }
 
-function lambdaBody(f: Fmt, e: Lambda, header: readonly Comment[]): Doc {
+function lambdaBody(f: Fmt, e: Lambda, header: readonly Comment[]): Format {
   const cs = f.comments;
   const body = e.body;
   if (header.length > 0) {
@@ -1094,7 +1088,7 @@ export function parameters(
   f: Fmt,
   p: Parameters,
   mode: "preserve" | "never",
-): Doc {
+): Format {
   const cs = f.comments;
   const dangling = cs.dangling(p);
   let parenComments: Comment[] = [];
@@ -1113,7 +1107,7 @@ export function parameters(
     }
   }
   const inner = () => {
-    const out: Doc[] = [];
+    const out: Format[] = [];
     const sep = isParenthesizedLevel(f.level) ? softOrSpace : space;
     let lastEnd: number | undefined;
     for (const [i, item] of p.items.entries()) {
@@ -1188,9 +1182,9 @@ function firstTokenAfter(f: Fmt, at: number): string | undefined {
   return undefined;
 }
 
-function parameter(f: Fmt, p: Parameter): Doc {
+function parameter(f: Fmt, p: Parameter): Format {
   const cs = f.comments;
-  const out: Doc[] = [f.leading(cs.leading(p))];
+  const out: Format[] = [f.leading(cs.leading(p))];
   if (p.star !== undefined) out.push(f.tok(p.star));
   out.push(f.tok(p.name));
   if (p.annotation && p.colon !== undefined) {
@@ -1234,7 +1228,7 @@ function sequenceEntries(f: Fmt, e: Sequence, o: Opts = {}) {
   }));
 }
 
-function tuple(f: Fmt, e: Sequence, mode: TupleMode): Doc {
+function tuple(f: Fmt, e: Sequence, mode: TupleMode): Format {
   const cs = f.comments;
   const dangling = cs.dangling(e);
   const parenthesized = e.open !== undefined;
@@ -1285,7 +1279,7 @@ function tuple(f: Fmt, e: Sequence, mode: TupleMode): Doc {
   }
 }
 
-function list(f: Fmt, e: Sequence): Doc {
+function list(f: Fmt, e: Sequence): Format {
   const dangling = f.comments.dangling(e);
   const open = f.tok(e.open as number);
   const close = f.tok(e.close as number);
@@ -1304,7 +1298,7 @@ function list(f: Fmt, e: Sequence): Doc {
   );
 }
 
-function dict(f: Fmt, e: Dict): Doc {
+function dict(f: Fmt, e: Dict): Format {
   const dangling = f.comments.dangling(e);
   const open = f.tok(e.open);
   const close = f.tok(e.close);
@@ -1319,7 +1313,7 @@ function dict(f: Fmt, e: Dict): Doc {
         const end = item.value.end;
         const mine = rest.filter((c) => c.start < end);
         rest = rest.filter((c) => c.start >= end);
-        let doc: Doc;
+        let doc: Format;
         if (item.key && item.colon !== undefined)
           doc = group([
             formatExpr(f, item.key),
@@ -1354,7 +1348,7 @@ function itemStart(i: Dict["items"][number]): number {
   return outer(k).start;
 }
 
-function comp(f: Fmt, e: Comp, preserve: boolean): Doc {
+function comp(f: Fmt, e: Comp, preserve: boolean): Format {
   const dangling = f.comments.dangling(e);
   const joined = () =>
     e.generators.flatMap((g, i) =>
@@ -1374,7 +1368,7 @@ function comp(f: Fmt, e: Comp, preserve: boolean): Doc {
   return f.parenthesized(open, body, close, dangling);
 }
 
-function dictComp(f: Fmt, e: DictComp): Doc {
+function dictComp(f: Fmt, e: DictComp): Format {
   const dangling = f.comments.dangling(e);
   const firstStart = outer(e.key).start;
   const openComments = dangling.filter((c) => c.end < firstStart);
@@ -1393,13 +1387,13 @@ function dictComp(f: Fmt, e: DictComp): Doc {
   return f.parenthesized(f.tok(e.open), content, f.tok(e.close), openComments);
 }
 
-function comprehension(f: Fmt, c: Comprehension): Doc {
+function comprehension(f: Fmt, c: Comprehension): Format {
   const cs = f.comments;
   const spacer = (e: Expr, preserve: boolean) =>
     cs.hasLeading(e) && !(preserve && e.parens.length > 0)
       ? softOrSpace
       : space;
-  const out: Doc[] = [f.leading(cs.leading(c))];
+  const out: Format[] = [f.leading(cs.leading(c))];
   const kws = c.kws;
   const inKw = kws.at(-1) as number;
   const forKw = kws.at(-2) as number;
@@ -1429,7 +1423,7 @@ function comprehension(f: Fmt, c: Comprehension): Doc {
     formatExpr(f, c.iter),
   );
   if (c.ifs.length > 0) {
-    const joined: Doc[] = [];
+    const joined: Format[] = [];
     for (const [i, cond] of c.ifs.entries()) {
       const kwStart = startOf(f.tree, cond.kw);
       const mine = ifComments.filter((d) => d.start < kwStart);
@@ -1451,7 +1445,7 @@ function comprehension(f: Fmt, c: Comprehension): Doc {
   return out;
 }
 
-function slice(f: Fmt, e: Slice): Doc {
+function slice(f: Fmt, e: Slice): Format {
   const cs = f.comments;
   const [c1, c2] = e.colons;
   const { lower, upper, step } = e;
@@ -1481,7 +1475,7 @@ function slice(f: Fmt, e: Slice): Doc {
   const afterSecond = rest.filter(
     (c) => c2Start !== undefined && c.start >= c2Start,
   );
-  const out: Doc[] = [];
+  const out: Format[] = [];
   if (lower) out.push(formatExpr(f, lower));
   if (c1 !== undefined) {
     const hasSpaceBefore = spaced && lower !== undefined;
@@ -1508,7 +1502,7 @@ function slice(f: Fmt, e: Slice): Doc {
   return out;
 }
 
-function leadingSpace(lead: readonly Comment[], spaced: boolean): Doc {
+function leadingSpace(lead: readonly Comment[], spaced: boolean): Format {
   const first = lead[0];
   if (first) return first.line === "own" ? hard : text("  ");
   return spaced ? space : [];
@@ -1602,7 +1596,7 @@ function flatten(f: Fmt, root: BinOp | Compare | BoolOp): Part[] {
   return parts;
 }
 
-function operatorDoc(f: Fmt, o: Operator): Doc {
+function operatorDoc(f: Fmt, o: Operator): Format {
   const t = o.tok;
   const words: number[] = [];
   for (let i = 0, n = f.tree.count(t); i < n; i++) {
@@ -1627,7 +1621,7 @@ function hasUnparenthesizedLeadingComments(f: Fmt, o: Operand): boolean {
   return leading.length > 0;
 }
 
-function operandDoc(f: Fmt, o: Operand): Doc {
+function operandDoc(f: Fmt, o: Operand): Format {
   const e = o.e;
   if (e.parens.length === 0) return formatExpr(f, e, "never");
   const cs = f.comments;
@@ -1646,7 +1640,7 @@ function operandDoc(f: Fmt, o: Operand): Doc {
     }
   const after = trailing.slice(afterStart);
   for (const c of after) c.formatted = true;
-  const out: Doc[] = [before.length > 0 ? f.leading(before) : []];
+  const out: Format[] = [before.length > 0 ? f.leading(before) : []];
   out.push(formatExpr(f, e, "always"));
   for (const c of after) c.formatted = false;
   out.push(after.length > 0 ? f.trailing(after) : []);
@@ -1674,13 +1668,13 @@ const isSimplePowerOperand = (f: Fmt, e: Expr): boolean => {
   }
 };
 
-function sliceDoc(f: Fmt, parts: readonly Part[]): Doc {
+function sliceDoc(f: Fmt, parts: readonly Part[]): Format {
   const [only] = parts;
   if (parts.length === 1 && only?.k === "operand") return operandDoc(f, only);
   let lowest = Prec.None;
   for (const p of parts)
     if (p.k === "operator" && p.prec > lowest) lowest = p.prec;
-  const out: Doc[] = [];
+  const out: Format[] = [];
   let last = -1;
   const sub = (from: number, to: number) => parts.slice(from, to);
   const piece = (s: readonly Part[]) => {
@@ -1723,7 +1717,7 @@ function sliceDoc(f: Fmt, parts: readonly Part[]): Doc {
   return out;
 }
 
-function binaryLike(f: Fmt, e: BinOp | Compare | BoolOp): Doc {
+function binaryLike(f: Fmt, e: BinOp | Compare | BoolOp): Format {
   const parts = flatten(f, e);
   if (e.kind === "BoolOp") return f.inParensGroup(sliceDoc(f, parts));
   const strings: number[] = [];
@@ -1739,11 +1733,11 @@ function binaryLike(f: Fmt, e: BinOp | Compare | BoolOp): Doc {
 
   // The implicit concatenations each get a group of their own, the operands between them another.
   const cs = f.comments;
-  const stack: Doc[][] = [[]];
-  const emit = (...d: Doc[]) => (stack.at(-1) as Doc[]).push(...d);
+  const stack: Format[][] = [[]];
+  const emit = (...d: Format[]) => (stack.at(-1) as Format[]).push(...d);
   const start = () => stack.push([]);
   const end = () => {
-    const d = stack.pop() as Doc[];
+    const d = stack.pop() as Format[];
     emit(f.inParensGroup(d));
   };
   start();
@@ -1811,7 +1805,7 @@ function binaryLike(f: Fmt, e: BinOp | Compare | BoolOp): Doc {
     end();
   }
   end();
-  return stack[0] as Doc[];
+  return stack[0] as Format[];
 }
 
 // ---- f-string interpolations ----
@@ -1872,7 +1866,7 @@ export const hooks: Hooks = {
       return [
         f.tok(open),
         f.at(PAREN, () => {
-          const item: Doc[] = [bracket, formatExpr(f, e)];
+          const item: Format[] = [bracket, formatExpr(f, e)];
           if (conversion !== NO_NODE) item.push(f.tok(conversion));
           if (spec !== NO_NODE) item.push(f.tok(spec));
           if (conversion === NO_NODE && spec === NO_NODE) item.push(bracket);
@@ -1902,27 +1896,5 @@ function needsBracketSpacing(e: Expr): boolean {
   );
 }
 
-/** Ruff's `RemoveSoftLinesBuffer`: the doc as it prints when nothing in it may break. */
-export function removeSoftLines(d: Doc): Doc {
-  if (isDocs(d)) return d.map(removeSoftLines);
-  switch (kindOf(d)) {
-    case "line":
-      if (isHardLine(d)) return d;
-      return isSoftLine(d) ? [] : space;
-    case "ifBreak":
-      return removeSoftLines(flatOf(d));
-    case "group":
-    case "groupIfBreak":
-    case "fitsExpanded":
-    case "bestFitParenthesize":
-      return removeSoftLines(contentsOf(d));
-    case "indent":
-      return removeSoftLines(contentsOf(d));
-    case "bestFitting":
-      return removeSoftLines(variantsOf(d)[0] ?? []);
-    default:
-      return d;
-  }
-}
 
 export { isInterpolated };

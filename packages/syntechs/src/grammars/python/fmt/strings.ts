@@ -1,10 +1,10 @@
 import {
   breakParent,
-  type Doc,
+  type Format,
   ifBreak,
   literalToken,
   token,
-} from "../../../fmt/doc.js";
+} from "./elements.js";
 import type { FormatTree } from "../../../fmt/tree.js";
 import type { Str } from "./ast.js";
 import type { Fmt } from "./builders.js";
@@ -430,11 +430,11 @@ function needsChaperone(fl: Flags, trimEnd: string): boolean {
 
 export interface Hooks {
   /** Prints an f-string interpolation, with the enclosing string's flags and layout in `f.fstr`. */
-  interpolation(f: Fmt, interp: number, flags: Flags, multiline: boolean): Doc;
+  interpolation(f: Fmt, interp: number, flags: Flags, multiline: boolean): Format;
 }
 
 /** A string spanning lines (a triple-quoted one) breaks every group around it, as ruff's multiline text does. */
-export const multilineToken = (n: number, text: string): Doc =>
+export const multilineToken = (n: number, text: string): Format =>
   text.includes("\n") ? [literalToken(n, text), breakParent] : token(n, text);
 
 /** Ruff's `InterpolatedStringLayout`: multiline when an interpolation spans lines. */
@@ -452,7 +452,7 @@ function interpolatedElements(
   part: Part,
   fl: Flags,
   hooks: Hooks,
-): Doc[] {
+): Format[] {
   const multiline = layoutMultiline(f, part);
   const saved = f.fstr;
   f.fstr = {
@@ -477,7 +477,7 @@ export function formatPart(
   part: Part,
   hooks: Hooks,
   docstringIndent?: string,
-): Doc {
+): Format {
   if (isInterpolated(part.flags)) {
     const fl = chooseQuotes(f, part);
     const q = quotesOf(fl);
@@ -668,8 +668,8 @@ function mergedFlags(
 }
 
 /** Ruff's `FormatImplicitConcatenatedStringFlat`: every part's content between one pair of quotes. */
-function flat(f: Fmt, parts: readonly Part[], fl: Flags, hooks: Hooks): Doc {
-  const out: Doc[] = [];
+function flat(f: Fmt, parts: readonly Part[], fl: Flags, hooks: Hooks): Format {
+  const out: Format[] = [];
   const q = quotesOf(fl);
   for (const [i, p] of parts.entries()) {
     out.push(token(p.start, i === 0 ? fl.prefix + q : ""));
@@ -692,8 +692,8 @@ function expanded(
   parts: readonly Part[],
   hooks: Hooks,
   multipart: boolean,
-): Doc {
-  const out: Doc[] = [];
+): Format {
+  const out: Format[] = [];
   if (
     multipart &&
     parts.some(
@@ -739,7 +739,7 @@ export function formatStr(
   s: Str,
   hooks: Hooks,
   docstringIndent?: string,
-): Doc {
+): Format {
   const parts = s.parts.map((n) => partOf(f.tree, n));
   if (parts.length === 1)
     return formatPart(f, parts[0] as Part, hooks, docstringIndent);
@@ -762,7 +762,7 @@ export function formatStr(
 }
 
 /** An implicit concatenation as an operand of a binary expression, which groups it itself. */
-export function implicitConcatenated(f: Fmt, s: Str, hooks: Hooks): Doc {
+export function implicitConcatenated(f: Fmt, s: Str, hooks: Hooks): Format {
   const parts = s.parts.map((n) => partOf(f.tree, n));
   const merged = mergedFlags(f, s, parts);
   return merged
@@ -781,7 +781,7 @@ export function implicitFlat(
   f: Fmt,
   s: Str,
   hooks: Hooks,
-): (() => Doc) | undefined {
+): (() => Format) | undefined {
   if (s.parts.length < 2) return undefined;
   const parts = s.parts.map((n) => partOf(f.tree, n));
   const merged = mergedFlags(f, s, parts);
@@ -789,7 +789,7 @@ export function implicitFlat(
 }
 
 /** Ruff's `FormatImplicitConcatenatedStringExpanded` with `ImplicitConcatenatedLayout::MaybeFlat`. */
-export function implicitExpanded(f: Fmt, s: Str, hooks: Hooks): Doc {
+export function implicitExpanded(f: Fmt, s: Str, hooks: Hooks): Format {
   const parts = s.parts.map((n) => partOf(f.tree, n));
   return expanded(f, s, parts, hooks, false);
 }
@@ -802,7 +802,7 @@ export function interpolatedAssignment(
   f: Fmt,
   s: Str,
   hooks: Hooks,
-): (() => Doc) | undefined {
+): (() => Format) | undefined {
   const [node] = s.parts;
   if (s.parts.length !== 1 || node === undefined) return undefined;
   const part = partOf(f.tree, node);

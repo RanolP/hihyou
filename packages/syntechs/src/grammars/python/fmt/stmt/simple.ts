@@ -1,4 +1,4 @@
-import { type Doc, group, ifBreak, synthetic } from "../../../../fmt/doc.js";
+import { type Format, group, ifBreak, synthetic } from "../elements.js";
 import type { Alias, Expr, Simple } from "../ast.js";
 import {
   commaIn,
@@ -18,7 +18,7 @@ const arithmeticOps = new Set(["|", "^", "<<", ">>", "+", "-"]);
 
 const keywordOnly = (f: Fmt, s: Simple) => f.tok(s.kw);
 
-function names(f: Fmt, s: Simple, sep: Doc): Doc {
+function names(f: Fmt, s: Simple, sep: Format): Format {
   return s.names.map((n, i) => {
     const comma = s.commas[i - 1];
     return i === 0 || comma === undefined
@@ -28,7 +28,7 @@ function names(f: Fmt, s: Simple, sep: Doc): Doc {
 }
 
 /** Ruff's `FormatStmtGlobal` / `FormatStmtNonlocal`: breaks with a backslash, since the names take no brackets. */
-function global(f: Fmt, s: Simple): Doc {
+function global(f: Fmt, s: Simple): Format {
   if (f.comments.hasTrailing(s))
     return [f.tok(s.kw), space, names(f, s, space)];
   const backslash = ifBreak(synthetic(s.kw, "\\"));
@@ -43,9 +43,9 @@ function global(f: Fmt, s: Simple): Doc {
   ];
 }
 
-function alias(f: Fmt, a: Alias): Doc {
+function alias(f: Fmt, a: Alias): Format {
   const cs = f.comments;
-  const out: Doc[] = [f.leading(cs.leading(a)), a.name.map((t) => f.tok(t))];
+  const out: Format[] = [f.leading(cs.leading(a)), a.name.map((t) => f.tok(t))];
   if (a.asTok !== undefined && a.asname !== undefined)
     out.push(space, f.tok(a.asTok), space, f.tok(a.asname));
   out.push(f.trailing(cs.dangling(a)), f.trailing(cs.trailing(a)));
@@ -71,7 +71,7 @@ export const simpleRules: StmtRules = {
   },
   Raise(f, s) {
     const [exc, cause] = s.values;
-    const out: Doc[] = [f.tok(s.kw)];
+    const out: Format[] = [f.tok(s.kw)];
     if (exc) out.push(space, maybeParenthesize(f, exc, s, "optional"));
     if (cause && s.sep !== undefined)
       out.push(
@@ -84,7 +84,7 @@ export const simpleRules: StmtRules = {
   },
   Assert(f, s) {
     const [test, msg] = s.values;
-    const out: Doc[] = [f.tok(s.kw)];
+    const out: Format[] = [f.tok(s.kw)];
     if (test) out.push(space, maybeParenthesize(f, test, s, "ifBreaks"));
     if (msg && s.sep !== undefined)
       out.push(
@@ -128,7 +128,7 @@ export const simpleRules: StmtRules = {
     ];
   },
   ImportFrom(f, s) {
-    const head: Doc = [
+    const head: Format = [
       f.tok(s.fromKw),
       space,
       s.module.map((t) => f.tok(t)),
