@@ -4,7 +4,7 @@ import { type Expr, type Import, type ImportFrom, type Simple, Unformattable } f
 import { commaIn, space } from "../fmt/builders.js";
 import { type Format, synthetic } from "../fmt/elements.js";
 import { formatExpr, isSplittable, maybeParenthesize, needsParentheses, node } from "../fmt/expr.js";
-import { part, ruffOf, ruffStmtOf } from "../fmt/sink.js";
+import { part, record, ruffOf, ruffStmtOf, sText, sToken } from "../fmt/sink.js";
 import {
   beforeOperator,
   hasTargetOwnParentheses,
@@ -181,29 +181,38 @@ export const stmtSimpleVia = {
   // Given the first name, prints them all: the layout is the statement's.
   "simple.globalNames": (c: number) => {
     const { f, s } = ruffStmtOf(c);
-    part(globalNames(f, s as Simple));
+    globalNames(f, s as Simple);
   },
   // Given the first alias, prints them all, commas and parentheses included.
   "simple.importNames": (c: number) => {
     const { f, s } = ruffStmtOf(c);
     const { names, kw, ts } = s as Import;
     const comma = commaIn(f.tree, ts, kw);
-    part(names.map((a, i) => (i === 0 ? alias(f, a) : [comma(names[i - 1]?.end ?? a.start), space, alias(f, a)])));
+    names.forEach((a, i) => {
+      if (i > 0) {
+        part(comma(names[i - 1]?.end ?? a.start));
+        sText(" ");
+      }
+      alias(f, a);
+    });
   },
   "simple.importFromNames": (c: number) => {
     const { f, s: st } = ruffStmtOf(c);
     const s = st as ImportFrom;
     const comma = commaIn(f.tree, s.ts, s.importKw);
-    const entries = s.names.map((a) => ({ end: a.end, doc: alias(f, a) }));
+    const entries = s.names.map((a) => ({ end: a.end, doc: record(() => alias(f, a)) }));
     const list = () => f.joinCommaSeparated(entries, s.end, comma, true);
     const dangling = f.comments.dangling(s);
     if (dangling.length === 0) {
       part(f.parenthesizeIfExpands(s.importKw, list));
       return;
     }
-    const open = s.open !== undefined ? f.tok(s.open) : synthetic(s.importKw, "(");
-    const close = s.close !== undefined ? f.tok(s.close) : synthetic(s.importKw, ")");
-    part(f.parenthesized(open, list, close, dangling));
+    // A parenthesis as written, or one added at `import`.
+    const paren = (t: number | undefined, p: string) =>
+      t !== undefined ? sToken(t, f.text(t)) : sToken(s.importKw, p, true);
+    paren(s.open, "(");
+    part(f.parenthesizedContent(list, dangling));
+    paren(s.close, ")");
   },
   "simple.deleteTargets":(c: number) => {
     const { f, e } = ruffOf(c);

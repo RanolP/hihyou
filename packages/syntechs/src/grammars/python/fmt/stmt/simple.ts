@@ -1,32 +1,54 @@
-import { type Format, group, ifBreak, synthetic } from "../elements.js";
 import type { Alias, Simple } from "../ast.js";
-import {
-  type Fmt,
-  soft,
-  softBlockIndent,
-  space,
-} from "../builders.js";
-import { dslPart } from "../sink.js";
+import type { Fmt } from "../builders.js";
+import { close, COLLAPSE, GROUP, IF_BROKEN, INDENT, open, part, SOFT, sDsl, sLine, sText, sToken } from "../sink.js";
 
 /** Ruff's one-line statements (statement/stmt_{expr,pass,return,raise,assert,delete,global,import,...}.rs). */
 
-function names(f: Fmt, s: Simple, sep: Format): Format {
-  return s.names.map((n, i) => {
+const soft = () => sLine(SOFT | COLLAPSE);
+
+function names(f: Fmt, s: Simple, sep: () => void): void {
+  s.names.forEach((n, i) => {
     const comma = s.commas[i - 1];
-    return i === 0 || comma === undefined
-      ? f.tok(n)
-      : [f.tok(comma), sep, f.tok(n)];
+    if (i > 0 && comma !== undefined) {
+      sToken(comma, f.text(comma));
+      sep();
+    }
+    sToken(n, f.text(n));
   });
 }
 
 /** Ruff's `FormatStmtGlobal` / `FormatStmtNonlocal` after the keyword: breaks with a backslash, since the names take no brackets. */
-export function globalNames(f: Fmt, s: Simple): Format {
-  if (f.comments.hasTrailing(s)) return names(f, s, space);
-  const backslash = ifBreak(synthetic(s.kw, "\\"));
-  return group([backslash, soft, softBlockIndent(names(f, s, [space, backslash, soft]))]);
+export function globalNames(f: Fmt, s: Simple): void {
+  if (f.comments.hasTrailing(s)) {
+    names(f, s, () => sText(" "));
+    return;
+  }
+  const backslash = () => {
+    open(IF_BROKEN);
+    sToken(s.kw, "\\", true);
+    close();
+  };
+  open(GROUP);
+  backslash();
+  soft();
+  // Ruff's `soft_block_indent`.
+  open(INDENT);
+  soft();
+  names(f, s, () => {
+    sText(" ");
+    backslash();
+    soft();
+  });
+  close();
+  soft();
+  close();
 }
 
-export function alias(f: Fmt, a: Alias): Format {
+/** An import's alias with its comments. */
+export function alias(f: Fmt, a: Alias): void {
   const cs = f.comments;
-  return [f.leading(cs.leading(a)), dslPart(a.ts), f.trailing(cs.dangling(a)), f.trailing(cs.trailing(a))];
+  part(f.leading(cs.leading(a)));
+  sDsl(a.ts);
+  part(f.trailing(cs.dangling(a)));
+  part(f.trailing(cs.trailing(a)));
 }
