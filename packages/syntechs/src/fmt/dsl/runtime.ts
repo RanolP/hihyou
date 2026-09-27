@@ -228,19 +228,31 @@ export function printEntries(
 
 /** The `CustomSeq` of `node` for a generated rule: its entries built only when read. */
 export function customSeq(ctx: StreamCtx<unknown>, node: number): CustomSeq {
-  let entries: Entry[] | undefined;
-  let kids: number[] | undefined;
-  return {
-    get entries() {
-      entries ??= customEntries(ctx, node);
-      return entries;
-    },
-    get kids() {
-      kids ??= kidsOf(ctx, node);
-      return kids;
-    },
-    print: (kid, body) => printKid(ctx, kid, body),
-  };
+  return new LazySeq(ctx, node);
+}
+
+// A class, not an object literal with getters: V8 builds a literal with accessors on its slow path, and every
+// custom rule call builds one of these.
+class LazySeq implements CustomSeq {
+  private e: Entry[] | undefined = undefined;
+  private k: number[] | undefined = undefined;
+  private readonly ctx: StreamCtx<unknown>;
+  private readonly node: number;
+  constructor(ctx: StreamCtx<unknown>, node: number) {
+    this.ctx = ctx;
+    this.node = node;
+  }
+  get entries(): Entry[] {
+    this.e ??= customEntries(this.ctx, this.node);
+    return this.e;
+  }
+  get kids(): number[] {
+    this.k ??= kidsOf(this.ctx, this.node);
+    return this.k;
+  }
+  print(kid: number, body?: () => void): void {
+    printKid(this.ctx, kid, body);
+  }
 }
 
 /** The first child of `node` in field `name`; -1 when there is none. */
