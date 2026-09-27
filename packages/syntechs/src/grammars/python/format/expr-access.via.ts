@@ -2,6 +2,7 @@
 import type { StreamCtx } from "../../../fmt/stream-format.js";
 import type { Expr, Py, Slice } from "../fmt/ast.js";
 import type { Fmt } from "../fmt/builders.js";
+import type { Comment } from "../fmt/comments.js";
 import { formatExpr, writeExpr } from "../fmt/expr.js";
 import { COLLAPSE, HARD, part, ruffOf, sLine, sText } from "../fmt/sink.js";
 import { startOf } from "../fmt/trivia.js";
@@ -81,6 +82,11 @@ export const exprAccessVia = {
     const { spaced, afterSecond } = sliceLayout(f, e);
     writeSliceBound(f, e.step as Expr, spaced);
     f.writeDangling(afterSecond);
+  },
+  "access.parenthesized": (c: number, ctx: StreamCtx<unknown>) => {
+    const { f } = ruffOf(ctx.tree.parent(c));
+    const { content, dangling } = ctx.args as { content: () => void; dangling: readonly Comment[] };
+    f.writeParenthesizedContent(content, dangling);
   },
   "access.keywordValue": (c: number) => {
     const { f, e } = ruffOf(c);

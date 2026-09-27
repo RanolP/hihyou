@@ -142,7 +142,7 @@ export function writeExpr(
     const cs = f.comments;
     const [open, close] = parenTokens(e);
     if (!cs.hasLeading(e) && !cs.hasTrailing(e))
-      f.writeParenthesized(open, () => writeFields(f, e, o), close);
+      writeInParens(f, e, open, () => writeFields(f, e, o), close, []);
     else withParenthesesComments(f, e, open, close, o);
     return;
   }
@@ -171,6 +171,21 @@ export function node(f: Fmt, e: Expr, o: Opts = {}): Format {
   return sink.record(() => writeNode(f, e, o));
 }
 
+/** `content` in parentheses: `e`'s own print by their parenthesized_expression's rule, given the content. */
+function writeInParens(
+  f: Fmt,
+  e: Expr,
+  open: () => void,
+  content: () => void,
+  close: () => void,
+  dangling: readonly Comment[],
+): void {
+  const p = e.parens[0];
+  if (p && f.tree.kindName(p.wrapper) === "parenthesized_expression")
+    sink.sDsl(p.wrapper, { content, dangling });
+  else f.writeParenthesized(open, content, close, dangling);
+}
+
 function withParenthesesComments(
   f: Fmt,
   e: Expr,
@@ -197,7 +212,9 @@ function withParenthesesComments(
     leadingInner = leadingInner.slice(1);
   } else leadingInner = [...leading];
   f.writeLeading(leadingOuter);
-  f.writeParenthesized(
+  writeInParens(
+    f,
+    e,
     open,
     () => {
       f.writeLeading(leadingInner);

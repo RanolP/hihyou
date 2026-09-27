@@ -11,6 +11,11 @@ export const exprAccess = {
     tok(":").via("access.sliceStepColon"),
     $.children.split(":").at(2).andThen((s) => s.via("access.sliceStep")),
   ],
+  // Parentheses ruff keeps, around the content its caller passes (`ctx.args.content`, with the comments after the
+  // `(` in `ctx.args.dangling`); the ones it drops or adds never reach this rule.
+  parenthesized_expression: ($) => ["(", $.children.via("access.parenthesized"), ")"],
+  // An annotation's wrapper, whose expression ruff reads in its place.
+  type: ($) => $.children,
   list_splat: ($) => ["*", $.children.via("access.starredValue")],
   dictionary_splat: ($) => ["**", $.children.via("access.starredValue")],
   keyword_argument: ($) => [$.name, "=", $.value.via("access.keywordValue")],
