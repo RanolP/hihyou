@@ -172,13 +172,14 @@ export function jsLanguage(
       wrap: (n, s, print, args) => {
         if (!rules.has(s.tree.kindName(n))) return print();
         if (args !== undefined) return wrapped(n, s, print);
-        const cache = ((s as Cached)[CACHE] ??= new Map());
-        const hit = cache.get(n);
-        if (hit !== undefined) return sJump(hit);
+        const cache = ((s as Cached)[CACHE] ??= new Int32Array(s.tree.nodeCount));
+        const at = s.tree.ord(n);
+        const hit = cache[at] as number;
+        if (hit !== 0) return sJump(hit - 1);
         const t = openSpan();
         wrapped(n, s, print);
         closeSpan();
-        cache.set(n, t);
+        cache[at] = t + 1;
       },
     },
   };
@@ -188,7 +189,8 @@ export function jsLanguage(
 // printed again (an argument printed plain, then hugged), so its second print jumps to the span its first built
 // rather than running its rules again, which nested hugs would repeat at every level.
 const CACHE = Symbol("printed");
-type Cached = { [CACHE]?: Map<number, number> };
+/** By node ordinal, the span its first print built, plus one (0: not printed yet). */
+type Cached = { [CACHE]?: Int32Array };
 
 function wrapped(n: number, s: StreamCtx<JsOptions>, print: () => void): void {
   const ctx = jsCtx(s).js;

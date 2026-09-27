@@ -319,7 +319,6 @@ export function resetStream(ruff = false): void {
   alignSteps.length = 0;
   choiceSaves.length = 0;
   spanSaves.length = 0;
-  spanBits.clear();
   leadAt = -1;
   xbp = 0;
   flatSaves.length = 0;
@@ -650,7 +649,7 @@ let leadAt = -1;
 const spanSaves: number[] = [];
 const SPAN_SAVE = 10;
 /** Per closed span: what its contents do to the counters around (the `S_` bits). Its `iRef` holds `S_REFS`'s group. */
-const spanBits = new Map<number, number>();
+let spanBits = new Int32Array(1024);
 const S_HARD = 1;
 const S_BP = 2;
 /** Its first measured entry is a line: in a run of lines around, that line's space was already counted. */
@@ -669,6 +668,11 @@ const S_BND_SFX = 256;
 const S_REFS = 512;
 /** It holds a break parent removeLines keeps (`xbp`). */
 const S_XBP = 1024;
+/**
+ * It holds an `ifBreak` on a group inside it, which only a print through a jump reads differently: the first
+ * jump runs `scanInnerRefs`, so a span printed only where it was built (a node's print cache) never scans.
+ */
+const S_INNER = 2048;
 
 /** Opens the span a shared part is built in; close it with `closeSpan`, then print it again with `sJump`. */
 export function openSpan(): number {
@@ -703,7 +707,7 @@ export function closeSpan(): void {
     bits |= S_REFS;
     iRef[t] = first;
   }
-  if (inner) scanInnerRefs(t);
+  if (inner) bits |= S_INNER;
   const endLine = lastLine;
   const endRun = runStart;
   const lead = leadAt;
@@ -717,7 +721,8 @@ export function closeSpan(): void {
   if (flags & SFX) bits |= S_SFX;
   if (flags & BND) bits |= S_BND;
   if (flags & SPECIAL) bits |= S_BND_SFX;
-  spanBits.set(t, bits);
+  while (t >= spanBits.length) spanBits = grow32(spanBits);
+  spanBits[t] = bits;
   pos = spanSaves[b] as number;
   lastLine = spanSaves[b + 1] as number;
   runStart = spanSaves[b + 2] as number;
@@ -733,10 +738,15 @@ export function closeSpan(): void {
 
 /** Prints the closed span `t` here again: a `JUMP` entry, measured as the span's contents would be here. */
 export function sJump(t: number): void {
+  const bits = spanBits[t] as number;
+  if (bits & S_INNER) {
+    spanBits[t] = bits & ~S_INNER;
+    scanInnerRefs(t);
+  }
   const j = n;
   entry(JUMP, 0, t, 0, 0);
   mergeable = false;
-  transfer(spanBits.get(t) as number, t, j, j, j);
+  transfer(bits, t, j, j, j);
 }
 
 /** Applies span `t`'s effect on the counters around, its last line at `endLine`, its run from `endRun`. */
@@ -784,8 +794,9 @@ function transfer(bits: number, t: number, endLine: number, endRun: number, lead
  * before, as prettier's printer reads a shared group's: the groups holding it measure by a scan, which reads it.
  */
 function scanInnerRefs(t: number) {
-  const held = new Int32Array(m - t + 1);
-  for (let x = t; x < m; x++) {
+  const end = iNext[t] as number;
+  const held = new Int32Array(end - t + 1);
+  for (let x = t; x < end; x++) {
     const kind = iKind[x] as number;
     held[x - t + 1] =
       (held[x - t] as number) +
