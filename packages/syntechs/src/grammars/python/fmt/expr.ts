@@ -164,10 +164,6 @@ export function writeNode(f: Fmt, e: Expr, o: Opts = {}): void {
   f.writeTrailing(cs.trailing(e));
 }
 
-export function node(f: Fmt, e: Expr, o: Opts = {}): Format {
-  return sink.record(() => writeNode(f, e, o));
-}
-
 /** `content` in parentheses: `e`'s own print by their parenthesized_expression's rule, given the content. */
 function writeInParens(
   f: Fmt,
@@ -273,15 +269,6 @@ export function writeMaybeParenthesize(
     default:
       writeExpr(f, e, "always");
   }
-}
-
-export function maybeParenthesize(
-  f: Fmt,
-  e: Expr,
-  parent: Py,
-  mode: Parenthesize,
-): Format {
-  return sink.record(() => writeMaybeParenthesize(f, e, parent, mode));
 }
 
 function writeBestFit(f: Fmt, e: Expr): void {
