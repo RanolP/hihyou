@@ -123,10 +123,7 @@ export function compile(source: GrammarSource): string {
       (/\.supertype = true/.test(body) ? FLAG_SUPERTYPE : 0);
   }
 
-  const fieldNames: string[] = Array.from(
-    { length: fieldCount + 1 },
-    () => "",
-  );
+  const fieldNames: string[] = Array.from({ length: fieldCount + 1 }, () => "");
   for (const m of need(
     block(/ts_field_names\[\] = \{/, fieldCount === 0),
   ).matchAll(/\[(\w+)\] = ("(?:[^"\\]|\\.)*")/g))
@@ -751,7 +748,8 @@ function charValue(lit: string): number {
   throw new Error(`unknown char literal ${t}`);
 }
 
-const ACCEPT = /^result = true; lexer\.resultSymbol = \d+; lexer\.markEnd\(\);$/;
+const ACCEPT =
+  /^result = true; lexer\.resultSymbol = \d+; lexer\.markEnd\(\);$/;
 const IF_ADVANCE =
   /^if \(([^]*)\) \{ (skip = true; )?state = (\d+); continue; \}$/;
 const ADVANCE_MAP =

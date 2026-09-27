@@ -113,7 +113,7 @@ export function segments(
   );
   for (const h of ordered) kinds.fill(h.kind, h.from, h.to);
   const out: { text: string; kind?: HighlightKind }[] = [];
-  for (let i = 0; i < line.text.length; ) {
+  for (let i = 0; i < line.text.length;) {
     const kind = kinds[i];
     let j = i + 1;
     while (j < line.text.length && kinds[j] === kind) j++;

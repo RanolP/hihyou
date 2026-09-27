@@ -1,7 +1,14 @@
 // The inputs parity and benchmarks run on, per grammar, and the native tree-sitter reference they compare to.
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { Language } from "./language.js";
@@ -204,9 +211,14 @@ export function referenceMissing(): string | undefined {
   const problems: string[] = [];
   const cli = run("tree-sitter", ["--version"]);
   if (cli.status !== 0 || !cli.stdout.includes(CLI_VERSION))
-    problems.push(`tree-sitter ${CLI_VERSION} (got: ${(cli.error?.message ?? cli.stdout + cli.stderr).trim()})`);
+    problems.push(
+      `tree-sitter ${CLI_VERSION} (got: ${(cli.error?.message ?? cli.stdout + cli.stderr).trim()})`,
+    );
   const zig = run("zig", ["version"]);
-  if (zig.status !== 0) problems.push(`zig (got: ${(zig.error?.message ?? zig.stdout + zig.stderr).trim()})`);
+  if (zig.status !== 0)
+    problems.push(
+      `zig (got: ${(zig.error?.message ?? zig.stdout + zig.stderr).trim()})`,
+    );
   missing =
     problems.length > 0
       ? `the parity reference needs ${problems.join(" and ")} on PATH: run \`mise install\` at the repo root`
@@ -218,10 +230,17 @@ export function referenceMissing(): string | undefined {
 function referenceLibrary(grammar: GrammarName): string {
   const [dir, pkg] = GRAMMAR_DIRS[grammar];
   const modules = join(pkgRoot, "node_modules");
-  const { version } = JSON.parse(readFileSync(join(modules, pkg, "package.json"), "utf8")) as {
+  const { version } = JSON.parse(
+    readFileSync(join(modules, pkg, "package.json"), "utf8"),
+  ) as {
     version: string;
   };
-  const ext = process.platform === "win32" ? ".dll" : process.platform === "darwin" ? ".dylib" : ".so";
+  const ext =
+    process.platform === "win32"
+      ? ".dll"
+      : process.platform === "darwin"
+        ? ".dylib"
+        : ".so";
   const cache = join(modules, ".cache", "tree-sitter-cli");
   const lib = join(cache, `${grammar}-${version}-${CLI_VERSION}${ext}`);
   if (existsSync(lib)) return lib;
@@ -233,7 +252,8 @@ function referenceLibrary(grammar: GrammarName): string {
     CRATE_CC_NO_DEFAULTS: "1",
     CFLAGS: process.platform === "win32" ? "-O2" : "-O2 -fPIC",
   });
-  if (r.status !== 0 || !existsSync(lib)) throw failure(`tree-sitter build ${grammar}`, r);
+  if (r.status !== 0 || !existsSync(lib))
+    throw failure(`tree-sitter build ${grammar}`, r);
   return lib;
 }
 
@@ -248,8 +268,16 @@ export interface ReferenceNode {
   end: number;
 }
 
-const UNESCAPE: Record<string, string> = { n: "\n", r: "\r", t: "\t", "0": "\0", v: "\v", f: "\f" };
-const unescape = (s: string) => s.replace(/\\(.)/g, (_, c: string) => UNESCAPE[c] ?? c);
+const UNESCAPE: Record<string, string> = {
+  n: "\n",
+  r: "\r",
+  t: "\t",
+  "0": "\0",
+  v: "\v",
+  f: "\f",
+};
+const unescape = (s: string) =>
+  s.replace(/\\(.)/g, (_, c: string) => UNESCAPE[c] ?? c);
 const log10 = (n: number) => String(n).length - 1;
 
 /**
@@ -257,11 +285,17 @@ const log10 = (n: number) => String(n).length - 1;
  * (the root sits at one), one more space for an error-free node inside an error, then the node. The pads are
  * sized from the widest source line; the root starts at its row and column, so its first pad yields that width.
  */
-function readCst(lines: string[], text: string, tokens: Set<string>): ReferenceNode[] {
+function readCst(
+  lines: string[],
+  text: string,
+  tokens: Set<string>,
+): ReferenceNode[] {
   // Parsed as UTF-16LE, a column counts bytes from the row's start, two per UTF-16 unit; rows break at `\n`.
   const rowStart = [0];
-  for (let i = text.indexOf("\n"); i >= 0; i = text.indexOf("\n", i + 1)) rowStart.push(i + 1);
-  const index = (row: string, col: string) => (rowStart[Number(row)] as number) + Number(col) / 2;
+  for (let i = text.indexOf("\n"); i >= 0; i = text.indexOf("\n", i + 1))
+    rowStart.push(i + 1);
+  const index = (row: string, col: string) =>
+    (rowStart[Number(row)] as number) + Number(col) / 2;
   const nodes: ReferenceNode[] = [];
   let width = 0;
   for (const line of lines) {
@@ -279,29 +313,57 @@ function readCst(lines: string[], text: string, tokens: Set<string>): ReferenceN
     ];
     // A named leaf spanning lines prints its text on continuation lines.
     if (rest.startsWith("`")) continue;
-    if (nodes.length === 0) width = pad1.length + log10(Number(sr)) + log10(Number(sc));
+    if (nodes.length === 0)
+      width = pad1.length + log10(Number(sr)) + log10(Number(sc));
     const pad2 = Math.max(1, width - log10(Number(er)) - log10(Number(ec)));
     const depth = ((spaces.length - pad2) >> 1) - 1;
     const prev = nodes.at(-1);
     if (depth < 0 || (prev ? depth > prev.depth + 1 : depth !== 0))
-      throw new Error(`CST line at depth ${depth} after ${prev?.depth}: ${JSON.stringify(line)}`);
+      throw new Error(
+        `CST line at depth ${depth} after ${prev?.depth}: ${JSON.stringify(line)}`,
+      );
     const start = index(sr, sc);
     const end = index(er, ec);
     if (rest.startsWith('MISSING: "')) {
-      nodes.push({ depth, kind: rest.slice(10, -1), named: false, missing: true, field: undefined, start, end });
+      nodes.push({
+        depth,
+        kind: rest.slice(10, -1),
+        named: false,
+        missing: true,
+        field: undefined,
+        start,
+        end,
+      });
     } else if (rest.startsWith('"')) {
-      nodes.push({ depth, kind: unescape(rest.slice(1, -1)), named: false, missing: false, field: undefined, start, end });
+      nodes.push({
+        depth,
+        kind: unescape(rest.slice(1, -1)),
+        named: false,
+        missing: false,
+        field: undefined,
+        start,
+        end,
+      });
     } else {
       const n = /^(?:([^\s:]+): )?(•)?(\S+)(?: `.*`)?$/.exec(rest);
       if (!n) throw new Error(`unreadable CST node: ${JSON.stringify(line)}`);
       // `•` marks a node holding an error: on an empty leaf, a MISSING token (which the CST prints like an empty
       // one), or an empty nonterminal whose only child is a hidden MISSING token. Only a token can be missing.
       const kind = n[3] as string;
-      nodes.push({ depth, kind, named: true, missing: n[2] !== undefined && tokens.has(kind), field: n[1], start, end });
+      nodes.push({
+        depth,
+        kind,
+        named: true,
+        missing: n[2] !== undefined && tokens.has(kind),
+        field: n[1],
+        start,
+        end,
+      });
     }
   }
   for (const [i, n] of nodes.entries())
-    if (n.missing && n.named) n.missing = n.start === n.end && !((nodes[i + 1]?.depth ?? 0) > n.depth);
+    if (n.missing && n.named)
+      n.missing = n.start === n.end && !((nodes[i + 1]?.depth ?? 0) > n.depth);
   return nodes;
 }
 
@@ -312,11 +374,18 @@ function readCst(lines: string[], text: string, tokens: Set<string>): ReferenceN
  * recovery costs bytes, so a UTF-8 parse can recover differently from the UTF-16 one compared here.
  */
 function tokenKinds(lang: Language): Set<string> {
-  return new Set(lang.symbolNames.filter((_, s) => s < lang.tokenCount || s >= lang.symbolCount));
+  return new Set(
+    lang.symbolNames.filter(
+      (_, s) => s < lang.tokenCount || s >= lang.symbolCount,
+    ),
+  );
 }
 
 /** Writes each text as UTF-16LE (lone surrogates survive, and columns map straight to UTF-16 indices). */
-function withInputs<T>(texts: string[], fn: (paths: string[], dir: string) => T): T {
+function withInputs<T>(
+  texts: string[],
+  fn: (paths: string[], dir: string) => T,
+): T {
   const dir = mkdtempSync(join(tmpdir(), "syntechs-reference-"));
   try {
     const paths = texts.map((text, i) => {
@@ -330,27 +399,56 @@ function withInputs<T>(texts: string[], fn: (paths: string[], dir: string) => T)
   }
 }
 
-function parseArgs(grammar: GrammarName, dir: string, paths: string[], output: string[]): string[] {
+function parseArgs(
+  grammar: GrammarName,
+  dir: string,
+  paths: string[],
+  output: string[],
+): string[] {
   const list = join(dir, "paths.txt");
   writeFileSync(list, paths.join("\n"));
-  return ["parse", ...output, "--time", "--encoding", "utf16-le", "-l", referenceLibrary(grammar), "--lang-name", grammar, "--paths", list];
+  return [
+    "parse",
+    ...output,
+    "--time",
+    "--encoding",
+    "utf16-le",
+    "-l",
+    referenceLibrary(grammar),
+    "--lang-name",
+    grammar,
+    "--paths",
+    list,
+  ];
 }
 
 /**
  * The reference trees for many inputs, parsed by the tree-sitter CLI a batch per call. Throws when the CLI or zig
  * is missing (check `referenceMissing` first) or its output does not read back.
  */
-export function referenceTrees(grammar: GrammarName, texts: string[], lang: Language): ReferenceNode[][] {
+export function referenceTrees(
+  grammar: GrammarName,
+  texts: string[],
+  lang: Language,
+): ReferenceNode[][] {
   const tokens = tokenKinds(lang);
   return withInputs(texts, (paths, dir) => {
     const out: ReferenceNode[][] = [];
-    for (let from = 0; from < texts.length; ) {
+    for (let from = 0; from < texts.length;) {
       let to = from + 1;
-      for (let size = (texts[from] as string).length; to < texts.length && size < 1 << 20; to++)
+      for (
+        let size = (texts[from] as string).length;
+        to < texts.length && size < 1 << 20;
+        to++
+      )
         size += (texts[to] as string).length;
-      const r = run("tree-sitter", parseArgs(grammar, dir, paths.slice(from, to), ["--cst"]));
+      const r = run(
+        "tree-sitter",
+        parseArgs(grammar, dir, paths.slice(from, to), ["--cst"]),
+      );
       // The CLI exits non-zero when any input holds an ERROR or MISSING node, so only unreadable output fails.
-      if (r.error || r.signal || r.stdout === "") throw failure(`tree-sitter parse ${grammar}`, r);
+      if (r.error || r.signal || r.stdout === "")
+        throw failure(`tree-sitter parse ${grammar}`, r);
       let lines: string[] = [];
       for (const line of r.stdout.split("\n")) {
         // `--time` ends each file with `<path>\tParse: ...`; tabs inside the CST are escaped.
@@ -360,11 +458,17 @@ export function referenceTrees(grammar: GrammarName, texts: string[], lang: Lang
         }
         const i = out.length;
         if (!line.startsWith(paths[i] as string))
-          throw new Error(`tree-sitter parse ${grammar}: expected ${paths[i]}, got ${JSON.stringify(line)}`);
+          throw new Error(
+            `tree-sitter parse ${grammar}: expected ${paths[i]}, got ${JSON.stringify(line)}`,
+          );
         out.push(readCst(lines, texts[i] as string, tokens));
         lines = [];
       }
-      if (out.length !== to) throw failure(`tree-sitter parse ${grammar}: ${out.length} of ${to} inputs read`, r);
+      if (out.length !== to)
+        throw failure(
+          `tree-sitter parse ${grammar}: ${out.length} of ${to} inputs read`,
+          r,
+        );
       from = to;
     }
     return out;
@@ -372,11 +476,22 @@ export function referenceTrees(grammar: GrammarName, texts: string[], lang: Lang
 }
 
 /** The CLI's own parse time for one text, the median ms of `runs` after `warmup`, spawn and output excluded. */
-export function referenceParseMs(grammar: GrammarName, text: string, warmup: number, runs: number): number {
+export function referenceParseMs(
+  grammar: GrammarName,
+  text: string,
+  warmup: number,
+  runs: number,
+): number {
   return withInputs([text], ([path], dir) => {
-    const r = run("tree-sitter", parseArgs(grammar, dir, Array(warmup + runs).fill(path), ["--quiet"]));
-    const ms = [...r.stdout.matchAll(/\tParse:\s+([\d.]+) ms/g)].map((m) => Number(m[1]));
-    if (ms.length !== warmup + runs) throw failure(`tree-sitter parse --time ${grammar}`, r);
+    const r = run(
+      "tree-sitter",
+      parseArgs(grammar, dir, Array(warmup + runs).fill(path), ["--quiet"]),
+    );
+    const ms = [...r.stdout.matchAll(/\tParse:\s+([\d.]+) ms/g)].map((m) =>
+      Number(m[1]),
+    );
+    if (ms.length !== warmup + runs)
+      throw failure(`tree-sitter parse --time ${grammar}`, r);
     return ms.slice(warmup).sort((a, b) => a - b)[runs >> 1] as number;
   });
 }

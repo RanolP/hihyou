@@ -82,8 +82,7 @@ export function format<O>(
     // still format.
     // Found in one walk up front: most trees have none, and then `print` asks no node's children.
     const broken = brokenNodes(tree);
-    const isBroken = (node: number) =>
-      broken !== undefined && broken.has(node);
+    const isBroken = (node: number) => broken !== undefined && broken.has(node);
 
     const ctx: Ctx<O> = {
       tree,

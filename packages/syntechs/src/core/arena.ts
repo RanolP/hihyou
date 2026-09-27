@@ -68,7 +68,10 @@ export class TreeBuilder {
     private readonly lang: Language,
     private readonly source: string,
   ) {
-    const words = Math.max(MIN_WORDS, Math.ceil(source.length * (WORDS_PER_CHAR[lang.name] ?? 1)));
+    const words = Math.max(
+      MIN_WORDS,
+      Math.ceil(source.length * (WORDS_PER_CHAR[lang.name] ?? 1)),
+    );
     this.data = new Uint32Array(words);
     this.ords = new Uint32Array(Math.ceil(words / WORDS_PER_NODE));
   }
@@ -79,7 +82,13 @@ export class TreeBuilder {
   }
 
   /** `kind` is a public symbol id (aliases resolved); `flags` is any of `NAMED | MISSING | FIXED`. */
-  leaf(kind: number, field: number, flags: number, start: number, end: number): void {
+  leaf(
+    kind: number,
+    field: number,
+    flags: number,
+    start: number,
+    end: number,
+  ): void {
     const lf = lineBreaks(this.source, this.lastEnd, start);
     this.lastEnd = end;
     const head = kind | (field << FIELD_SHIFT) | flags | (lf << LF_SHIFT);
@@ -139,12 +148,23 @@ export class TreeBuilder {
   /** The tree, rooted at the one node left unparented; the builder must not be used afterwards. */
   finish(errorChars: number): Tree {
     if (this.kids.length !== 1)
-      throw new RangeError(`a tree needs exactly one root, the builder holds ${this.kids.length}`);
+      throw new RangeError(
+        `a tree needs exactly one root, the builder holds ${this.kids.length}`,
+      );
     const root = this.kids[0] as number;
     this.data[root + PARENT] = root;
     const source = this.source;
     const trailingLf = lineBreaks(source, this.lastEnd, source.length);
-    return new Tree(this.data, this.ords, this.count, root, errorChars, trailingLf, this.lang, source);
+    return new Tree(
+      this.data,
+      this.ords,
+      this.count,
+      root,
+      errorChars,
+      trailingLf,
+      this.lang,
+      source,
+    );
   }
 
   private close(h: number): void {
@@ -174,7 +194,11 @@ function lineBreaks(source: string, from: number, to: number): number {
   for (let i = from; i < to && lf < LF_MAX; i++) {
     const c = source.charCodeAt(i);
     // A CRLF counts once; a CR whose LF opens the token still ends a line in the gap.
-    if (c === 10 || (c === 13 && (i + 1 === to || source.charCodeAt(i + 1) !== 10))) lf++;
+    if (
+      c === 10 ||
+      (c === 13 && (i + 1 === to || source.charCodeAt(i + 1) !== 10))
+    )
+      lf++;
   }
   return lf;
 }
@@ -252,7 +276,9 @@ export class Tree {
   /** Number of children; 0 for a leaf. */
   count(n: number): number {
     const data = this.data;
-    return ((data[n] as number) & INNER) === 0 ? 0 : (data[n + COUNT] as number);
+    return ((data[n] as number) & INNER) === 0
+      ? 0
+      : (data[n + COUNT] as number);
   }
 
   /** The `i`th child, `0 <= i < count(n)`, in source order. */
@@ -281,7 +307,9 @@ export class Tree {
   /** The node with ordinal `ord`. */
   at(ord: number): number {
     if (ord < 0 || ord >= this.nodeCount)
-      throw new RangeError(`no ordinal ${ord} in a tree of ${this.nodeCount} nodes`);
+      throw new RangeError(
+        `no ordinal ${ord} in a tree of ${this.nodeCount} nodes`,
+      );
     return this.ords[ord] as number;
   }
 
@@ -319,7 +347,11 @@ export class Tree {
   /** The source's line ending as prettier's guessEndOfLine reads it: after the first `\r`, else `\n`. */
   lineEnding(): "\n" | "\r\n" | "\r" {
     const cr = this.source.indexOf("\r");
-    return cr === -1 ? "\n" : this.source.charAt(cr + 1) === "\n" ? "\r\n" : "\r";
+    return cr === -1
+      ? "\n"
+      : this.source.charAt(cr + 1) === "\n"
+        ? "\r\n"
+        : "\r";
   }
 
   /** A leaf's text with comment and JSX-text whitespace runs collapsed to one space; "" for an inner node. */
@@ -328,6 +360,9 @@ export class Tree {
     if ((head & INNER) !== 0) return "";
     const kind = head & 0xffff;
     const modes = labelModes(this.lang);
-    return labelText(kind < modes.length ? (modes[kind] as number) : LABEL_TOKEN, this.text(n));
+    return labelText(
+      kind < modes.length ? (modes[kind] as number) : LABEL_TOKEN,
+      this.text(n),
+    );
   }
 }

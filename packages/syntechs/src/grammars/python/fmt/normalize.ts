@@ -185,11 +185,7 @@ function numberForm(text: string): string {
 const closers = new Set([")", "]", "}"]);
 
 /** Whether `l`, a punctuation leaf, is one ruff may add or drop without changing meaning. */
-function optional(
-  tree: Tree,
-  l: Lexeme,
-  next: Lexeme | undefined,
-): boolean {
+function optional(tree: Tree, l: Lexeme, next: Lexeme | undefined): boolean {
   const n = l.node;
   const parent = tree.parent(n);
   const parentKind = parent === NO_NODE ? undefined : tree.kindName(parent);
@@ -254,8 +250,7 @@ function form(
 ): string | undefined {
   const k = tree.kindName(l.node);
   if (k === "line_continuation" || l.text.trim() === "") return undefined;
-  if (k === "string" || k === "concatenated_string")
-    return stringForm(tree, l);
+  if (k === "string" || k === "concatenated_string") return stringForm(tree, l);
   if (k === "integer" || k === "float") return numberForm(l.text);
   if (!tree.named(l.node) && optional(tree, l, next)) return undefined;
   return l.text;

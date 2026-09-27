@@ -127,10 +127,7 @@ function printHeritage(ctx: JsCtx, n: number, grouped: boolean): Doc {
     const keyword = t(ctx, anon(ctx, ext ?? h, "extends"));
     let printed: Doc = [
       p(ctx, superClass),
-      p(
-        ctx,
-        ext !== undefined ? field(ctx, ext, "type_arguments") : undefined,
-      ),
+      p(ctx, ext !== undefined ? field(ctx, ext, "type_arguments") : undefined),
     ];
     if (kind(ctx, parent(ctx, n)) === "assignment_expression")
       printed = group(

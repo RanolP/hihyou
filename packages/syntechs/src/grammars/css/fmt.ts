@@ -20,11 +20,7 @@ import {
 } from "../../fmt/options.js";
 import { type Ctx, defineLanguage, type Rule } from "../../fmt/rules.js";
 import { newlineBetween, nextLineEmpty } from "../../fmt/text.js";
-import {
-  type FormatTree,
-  firstLeaf,
-  nextLeaf,
-} from "../../fmt/tree.js";
+import { type FormatTree, firstLeaf, nextLeaf } from "../../fmt/tree.js";
 import { grammar } from "./bundle.js";
 import { language } from "./index.js";
 
@@ -197,13 +193,9 @@ function meaning(tree: Tree, node: number, t: string): string {
     case "property_name":
       return maybeLower(t);
     case "class_name":
-      return parentKind === "pseudo_class_selector"
-        ? t.toLowerCase()
-        : t;
+      return parentKind === "pseudo_class_selector" ? t.toLowerCase() : t;
     case "tag_name":
-      return parentKind === "pseudo_element_selector"
-        ? t.toLowerCase()
-        : t;
+      return parentKind === "pseudo_element_selector" ? t.toLowerCase() : t;
     case "plain_value":
       if (parentKind === "attribute_selector")
         return /^["']/.test(t) ? cook(t) : t;
@@ -371,8 +363,7 @@ const combinators = new Set([
  */
 function parts(n: number, ctx: Ctx): number {
   const kids = code(n, ctx);
-  const named = (c: number | undefined) =>
-    c !== undefined && ctx.tree.named(c);
+  const named = (c: number | undefined) => c !== undefined && ctx.tree.named(c);
   if (combinators.has(kind(n, ctx)))
     return kids.reduce((sum, c) => sum + (named(c) ? parts(c, ctx) : 0), 1);
   const left = kids[0];
@@ -547,7 +538,9 @@ export const css = defineLanguage(
         ? ctx.tree.parent(node)
         : undefined;
       const name =
-        call === undefined ? undefined : childOfKind(call, "function_name", ctx);
+        call === undefined
+          ? undefined
+          : childOfKind(call, "function_name", ctx);
       if (name !== undefined && src(name, ctx).toLowerCase() === "url")
         return code(node, ctx).map((c) => printItem(c, ctx));
       return parenList(node, ctx, (items) =>
@@ -670,7 +663,9 @@ export const css = defineLanguage(
       return [
         ctx.print(at),
         params.length > 0 ? [text(" "), raw(params, ctx)] : [],
-        block !== undefined ? [text(" "), ctx.print(block)] : semicolon(node, ctx),
+        block !== undefined
+          ? [text(" "), ctx.print(block)]
+          : semicolon(node, ctx),
       ];
     },
     binary_query: spaced,

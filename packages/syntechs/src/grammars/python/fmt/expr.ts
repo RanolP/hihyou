@@ -98,7 +98,11 @@ export type Parenthesize =
 type Needs = "always" | "never" | "multiline" | "bestFit";
 type Chain = "default" | "nonFluent" | "fluent";
 export type TupleMode =
-  "default" | "preserve" | "optionalParentheses" | "never" | "neverPreserve";
+  | "default"
+  | "preserve"
+  | "optionalParentheses"
+  | "never"
+  | "neverPreserve";
 
 export interface Opts {
   chain?: Chain;
@@ -963,7 +967,7 @@ export function keyword(f: Fmt, k: Keyword): Doc {
   const body =
     k.name !== undefined
       ? [f.tok(k.name), f.tok(k.op), formatExpr(f, k.value)]
-    : [f.tok(k.op), formatExpr(f, k.value)];
+      : [f.tok(k.op), formatExpr(f, k.value)];
   return [f.leading(cs.leading(k)), body, f.trailing(cs.trailing(k))];
 }
 
@@ -1132,9 +1136,7 @@ export function parameters(
       const comma =
         lastEnd !== undefined ? commaBefore(f, p, lastEnd) : undefined;
       out.push(
-        ifBreak(
-          comma !== undefined ? f.tok(comma, ",") : synthetic(p.ts, ","),
-        ),
+        ifBreak(comma !== undefined ? f.tok(comma, ",") : synthetic(p.ts, ",")),
       );
       if (!f.options["skip-magic-trailing-comma"] && trailingComma)
         out.push(hard);

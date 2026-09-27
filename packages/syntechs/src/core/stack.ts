@@ -146,11 +146,7 @@ function linkPending(self: StackNode, i: number): boolean {
     : ((self.more as StackLink[])[i - 1] as StackLink).isPending;
 }
 
-function setLinkSubtree(
-  self: StackNode,
-  i: number,
-  subtree: Subtree,
-): void {
+function setLinkSubtree(self: StackNode, i: number, subtree: Subtree): void {
   if (i === 0) self.subtree0 = subtree;
   else ((self.more as StackLink[])[i - 1] as StackLink).subtree = subtree;
 }

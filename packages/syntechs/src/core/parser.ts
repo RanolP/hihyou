@@ -184,7 +184,10 @@ class Parser {
     isInError: boolean,
     cost: number,
   ): boolean {
-    if (this.finishedTree !== NONE && this.subtrees.errorCost(this.finishedTree) <= cost)
+    if (
+      this.finishedTree !== NONE &&
+      this.subtrees.errorCost(this.finishedTree) <= cost
+    )
       return true;
     const stack = this.stack;
     const position = stack.position(version);
@@ -714,11 +717,7 @@ class Parser {
         const errorTree = errorTrees[0] as Subtree;
         if (subtrees.childCount(errorTree) > 0) {
           slice.subtrees.unshift(
-            subtrees.newNode(
-              SYM_ERROR_REPEAT,
-              subtrees.children(errorTree),
-              0,
-            ),
+            subtrees.newNode(SYM_ERROR_REPEAT, subtrees.children(errorTree), 0),
           );
         }
       }
@@ -857,7 +856,7 @@ class Parser {
     const la = lookahead;
 
     let didInsertMissingToken = false;
-    for (let v = version; v < versionCount; ) {
+    for (let v = version; v < versionCount;) {
       if (!didInsertMissingToken) {
         const state = stack.state(v);
         for (
@@ -876,7 +875,10 @@ class Parser {
             const missing = subtrees.newMissingLeaf(missingSymbol, state, 0, 0);
             stack.push(withMissing, missing, false, stateAfterMissing);
             if (
-              this.doAllPotentialReductions(withMissing, subtrees.leafSymbol(la))
+              this.doAllPotentialReductions(
+                withMissing,
+                subtrees.leafSymbol(la),
+              )
             ) {
               didInsertMissingToken = true;
               break;

@@ -103,7 +103,7 @@ export function attachComments<O>(
       let enclosing = node;
       let at: number = c;
       let after = false;
-      for (let up = tree.parent(enclosing); up !== NO_NODE; ) {
+      for (let up = tree.parent(enclosing); up !== NO_NODE;) {
         const i = indexIn(enclosing, at);
         if (!someCode(enclosing, i + 1, tree.count(enclosing))) after = true;
         else if (!someCode(enclosing, 0, i)) after = false;

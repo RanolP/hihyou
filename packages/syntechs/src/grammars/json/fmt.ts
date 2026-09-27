@@ -25,7 +25,9 @@ const normalize: Normalize = (lexemes, _text, tree) =>
   lexemes.map((l, i) => {
     const next = lexemes[i + 1]?.text;
     if (l.text === "," && (next === "]" || next === "}")) return undefined;
-    return tree.kindName(l.node) === "number" ? (decimalValue(l.text) ?? l.text) : l.text;
+    return tree.kindName(l.node) === "number"
+      ? (decimalValue(l.text) ?? l.text)
+      : l.text;
   });
 
 const spec = {

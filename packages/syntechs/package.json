@@ -3,9 +3,6 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "scripts": {
-    "generate": "node generate.mjs"
-  },
   "exports": {
     "./core": {
       "@hihyou/source": "./src/core/index.ts",
@@ -37,6 +34,9 @@
       "types": "./dist/grammars/*/fmt.d.ts",
       "default": "./dist/grammars/*/fmt.js"
     }
+  },
+  "scripts": {
+    "generate": "node generate.mjs"
   },
   "dependencies": {
     "diff": "9.0.0",

@@ -240,8 +240,7 @@ function body(
   // `check` reads a backslash alone on the line after a colon as a dedent, so it would flag the correct output.
   if (
     kids(t, header.ts).some(
-      (c) =>
-        t.kindName(c) === "line_continuation" && startOf(t, c) >= colonEnd,
+      (c) => t.kindName(c) === "line_continuation" && startOf(t, c) >= colonEnd,
     )
   )
     throw new Unformattable(
@@ -663,8 +662,7 @@ function patternFields(f: Fmt, p: Pat): Doc {
 /** Ruff's `FormatPatternMatchSequence`. */
 function sequence(f: Fmt, p: Pat & { k: "seq" }): Doc {
   const open = p.open !== undefined ? f.tok(p.open) : synthetic(p.node, "(");
-  const close =
-    p.close !== undefined ? f.tok(p.close) : synthetic(p.node, ")");
+  const close = p.close !== undefined ? f.tok(p.close) : synthetic(p.node, ")");
   const [only] = p.items;
   const comma = commaIn(
     f.tree,
@@ -711,8 +709,7 @@ function mapping(f: Fmt, p: Pat & { k: "map" }): Doc {
     });
   return f.parenthesized(
     open,
-    () =>
-      f.joinCommaSeparated(entries, p.end, commaIn(f.tree, p.node, p.open)),
+    () => f.joinCommaSeparated(entries, p.end, commaIn(f.tree, p.node, p.open)),
     close,
   );
 }
@@ -912,10 +909,7 @@ export const defRules: StmtRules = {
       }
       return out;
     });
-    return [
-      clauseHeader(f, header, f.tok(s.colon), cs.dangling(s)),
-      cases,
-    ];
+    return [clauseHeader(f, header, f.tok(s.colon), cs.dangling(s)), cases];
   },
   FunctionDef(f, s) {
     const [leadingDef, trailingDef] = splitDangling(f, s);

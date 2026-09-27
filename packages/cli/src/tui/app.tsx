@@ -176,15 +176,17 @@ export function App({ doc, load, size }: Props) {
           ) : !view ? (
             <Text dimColor>loading...</Text>
           ) : (
-            displayRows.slice(top, top + diffHeight - 3).map((row, i) => (
-              <RowLine
-                key={top + i}
-                view={view}
-                row={row}
-                split={split}
-                width={diffWidth - 2}
-              />
-            ))
+            displayRows
+              .slice(top, top + diffHeight - 3)
+              .map((row, i) => (
+                <RowLine
+                  key={top + i}
+                  view={view}
+                  row={row}
+                  split={split}
+                  width={diffWidth - 2}
+                />
+              ))
           )}
         </Box>
       </Box>

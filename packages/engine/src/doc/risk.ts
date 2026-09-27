@@ -2,7 +2,12 @@ import { NO_NODE } from "syntechs/core";
 import type { RawEdit } from "syntechs/diff";
 import type { Tree } from "../parse/tree.js";
 import type { Risk, RiskSignal } from "./schema.js";
-import { ancestry, isExported, isIdentifier, signatureOwner } from "./syntax-context.js";
+import {
+  ancestry,
+  isExported,
+  isIdentifier,
+  signatureOwner,
+} from "./syntax-context.js";
 
 /**
  * Points per edit showing the signal, and the most edits counted, so a hundred renamed call sites
@@ -73,7 +78,9 @@ export function signalsOf(edit: RawEdit, ta?: Tree, tb?: Tree): RiskSignal[] {
     if (
       (owner !== undefined && isExported(tree, owner)) ||
       (tree.kindName(node) === "export_statement" && edit.kind !== "move") ||
-      (tree.fieldName(node) === "name" && parent !== NO_NODE && isExported(tree, parent))
+      (tree.fieldName(node) === "name" &&
+        parent !== NO_NODE &&
+        isExported(tree, parent))
     )
       signals.add("exported-api");
   }
@@ -83,7 +90,8 @@ export function signalsOf(edit: RawEdit, ta?: Tree, tb?: Tree): RiskSignal[] {
 /** Each signal counted once per edit that shows it. */
 export function riskOf(perEdit: Iterable<RiskSignal[]>): Risk {
   const counts = new Map<RiskSignal, number>();
-  for (const signals of perEdit) for (const s of signals) counts.set(s, (counts.get(s) ?? 0) + 1);
+  for (const signals of perEdit)
+    for (const s of signals) counts.set(s, (counts.get(s) ?? 0) + 1);
   const reasons = [...counts]
     .map(([signal, count]) => ({
       signal,

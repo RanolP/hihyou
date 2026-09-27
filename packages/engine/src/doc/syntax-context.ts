@@ -9,7 +9,11 @@ export function* ancestry(tree: Tree, n: number): Generator<number> {
 }
 
 /** The first child of `n` that `test` accepts. */
-export function findChild(tree: Tree, n: number, test: (c: number) => boolean): number | undefined {
+export function findChild(
+  tree: Tree,
+  n: number,
+  test: (c: number) => boolean,
+): number | undefined {
   for (let i = 0, count = tree.count(n); i < count; i++) {
     const c = tree.child(n, i);
     if (test(c)) return c;
@@ -17,7 +21,12 @@ export function findChild(tree: Tree, n: number, test: (c: number) => boolean): 
   return undefined;
 }
 
-const signatureFields = new Set(["parameters", "parameter", "return_type", "type_parameters"]);
+const signatureFields = new Set([
+  "parameters",
+  "parameter",
+  "return_type",
+  "type_parameters",
+]);
 
 /** The function whose parameters, return type or type parameters hold `n`, if any. */
 export function signatureOwner(tree: Tree, n: number): number | undefined {
@@ -36,7 +45,9 @@ export function functionName(tree: Tree, fn: number): string | undefined {
   const name = nameOf(tree, fn);
   if (name !== undefined) return name;
   const p = tree.parent(fn);
-  return p !== NO_NODE && tree.kindName(p) === "variable_declarator" ? nameOf(tree, p) : undefined;
+  return p !== NO_NODE && tree.kindName(p) === "variable_declarator"
+    ? nameOf(tree, p)
+    : undefined;
 }
 
 /**
@@ -58,19 +69,28 @@ export function isExported(tree: Tree, decl: number): boolean {
   if (parentKind(d) === "export_statement") return true;
   const name = nameOf(tree, d);
   if (parentKind(d) === "decorated_definition") d = tree.parent(d);
-  return parentKind(d) === "module" && name !== undefined && !name.startsWith("_");
+  return (
+    parentKind(d) === "module" && name !== undefined && !name.startsWith("_")
+  );
 }
 
 /** An identifier the edit names in its own right: a variable, property or type name. */
 export function isIdentifier(tree: Tree, n: number): boolean {
-  return tree.named(n) && tree.count(n) === 0 && tree.kindName(n).endsWith("identifier");
+  return (
+    tree.named(n) &&
+    tree.count(n) === 0 &&
+    tree.kindName(n).endsWith("identifier")
+  );
 }
 
 /**
  * The function called where `n` sits among a call's arguments, if it does: its name, and for a member
  * call (`P.pad(...)`) the expression it is looked up on.
  */
-export function calleeOf(tree: Tree, n: number): { name: string; object?: number } | undefined {
+export function calleeOf(
+  tree: Tree,
+  n: number,
+): { name: string; object?: number } | undefined {
   for (const p of ancestry(tree, n)) {
     if (tree.fieldName(p) !== "arguments") continue;
     const call = tree.parent(p);

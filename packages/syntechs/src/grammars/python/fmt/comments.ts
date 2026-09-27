@@ -428,8 +428,7 @@ class Placer {
       else return undefined;
     }
     const commentIndent = this.commentIndentationAfter(preceding, d.c);
-    const precedingIndent =
-      indentationAt(this.tree, preceding.start) ?? 0;
+    const precedingIndent = indentationAt(this.tree, preceding.start) ?? 0;
     if (commentIndent === precedingIndent) return undefined;
     let parent: Py | undefined;
     let child: Py = last;
@@ -743,21 +742,14 @@ class Placer {
       d.c.start < e.test.start
     )
       return leading(e.test);
-    if (
-      startOf(this.tree, e.elseTok) < d.c.start &&
-      d.c.start < e.orelse.start
-    )
+    if (startOf(this.tree, e.elseTok) < d.c.start && d.c.start < e.orelse.start)
       return leading(e.orelse);
     return undefined;
   }
 
   private unaryOp(d: Decorated, u: UnaryOp): Placement {
     let upTo = u.operand.start;
-    for (const t of tokens(
-      this.tree,
-      endOf(this.tree, u.op),
-      u.operand.start,
-    ))
+    for (const t of tokens(this.tree, endOf(this.tree, u.op), u.operand.start))
       if (t.kind === "(") {
         upTo = t.start;
         break;
@@ -895,4 +887,3 @@ export function normalizeComment(raw: string): string {
   }
   return `# ${content}`;
 }
-

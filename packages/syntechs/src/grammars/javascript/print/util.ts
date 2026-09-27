@@ -294,8 +294,7 @@ function isSimpleMemberChain(x: HasTree, n: number): boolean {
   return false;
 }
 
-export const hasNewlineIn = (x: HasTree, n: number) =>
-  src(x, n).includes("\n");
+export const hasNewlineIn = (x: HasTree, n: number) => src(x, n).includes("\n");
 
 const TYPE_ANNOTATIONS = new Set([
   "type_annotation",
@@ -363,8 +362,7 @@ export const hasComment = (
   fn?: (c: number) => boolean,
 ) => getComments(ctx, n, flags, fn).length > 0;
 
-export const isBlockComment = (ctx: JsCtx, c: number) =>
-  !ctx.isLineComment(c);
+export const isBlockComment = (ctx: JsCtx, c: number) => !ctx.isLineComment(c);
 
 /** Prettier's canBreak: whether `doc` holds any line. */
 export function canBreak(doc: Doc): boolean {
@@ -547,22 +545,13 @@ export function isConciselyPrintedArray(ctx: JsCtx, n: number): boolean {
     elements.every(
       (e) =>
         isSignedNumber(ctx, e) &&
-        !hasComment(
-          ctx,
-          e,
-          CF.Trailing | CF.Line,
-          (c) => ctx.tree.lf(c) === 0,
-        ),
+        !hasComment(ctx, e, CF.Trailing | CF.Line, (c) => ctx.tree.lf(c) === 0),
     )
   );
 }
 
 /** Prettier's printDanglingComments: `n`'s dangling comments one per line, optionally indented on their own line. */
-export function danglingComments(
-  ctx: JsCtx,
-  n: number,
-  indented = false,
-): Doc {
+export function danglingComments(ctx: JsCtx, n: number, indented = false): Doc {
   const docs = ctx.dangling(n);
   if (docs.length === 0) return [];
   const doc = join(hardline, docs);

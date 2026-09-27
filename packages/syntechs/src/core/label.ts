@@ -22,7 +22,8 @@ export function labelModes(lang: Language): Uint8Array {
   let modes = modesOf.get(lang);
   if (modes) return modes;
   modes = new Uint8Array(lang.symbolNames.length);
-  for (let s = 0; s < modes.length; s++) modes[s] = labelMode(lang.symbolNames[s] as string);
+  for (let s = 0; s < modes.length; s++)
+    modes[s] = labelMode(lang.symbolNames[s] as string);
   modesOf.set(lang, modes);
   return modes;
 }

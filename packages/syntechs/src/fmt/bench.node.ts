@@ -297,10 +297,7 @@ async function main() {
 
       let totals = { ours: 0, prettier: 0, oxfmt: 0, ruff: 0 };
       for (const [label, inputs] of sets) {
-        const bytes = inputs.reduce(
-          (n, i) => n + Buffer.byteLength(i.text),
-          0,
-        );
+        const bytes = inputs.reduce((n, i) => n + Buffer.byteLength(i.text), 0);
         const ours = implemented
           ? await timed(() => {
               for (const i of inputs)
@@ -321,7 +318,8 @@ async function main() {
             const problem = out.ok
               ? check(lang, i.text, out.text)
               : `${out.reason}: ${out.detail}`;
-            if (problem) failures.push(`${g.id} ${label} ${i.name}: ${problem}`);
+            if (problem)
+              failures.push(`${g.id} ${label} ${i.name}: ${problem}`);
           }
 
         let pretty: number | undefined;
@@ -329,7 +327,8 @@ async function main() {
         let rf: number | undefined;
         let oursFolder: number | undefined;
         if (g.prettier && g.oxfmtExt) {
-          const extOf = (i: Input) => (g.oxfmtExt as (g: GrammarName) => string)(i.grammar);
+          const extOf = (i: Input) =>
+            (g.oxfmtExt as (g: GrammarName) => string)(i.grammar);
           if (oxfmtBin === undefined) {
             oxfmtBin = resolveBin("oxfmt");
             console.log(`oxfmt CLI: ${oxfmtBin}`);

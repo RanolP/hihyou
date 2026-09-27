@@ -129,7 +129,9 @@ for (const [grammar, [lang, texts]] of Object.entries(CASES) as [
     if (missing) ctx.skip(missing);
     const r = await checkParity(
       grammar,
-      texts.map((text, i) => ({ name: `case${i}`, text })).filter(({ text }) => !NOT_NATIVE.test(text)),
+      texts
+        .map((text, i) => ({ name: `case${i}`, text }))
+        .filter(({ text }) => !NOT_NATIVE.test(text)),
       lang,
     );
     expect(
@@ -148,14 +150,22 @@ for (const [grammar, [lang, texts]] of Object.entries(CASES) as [
       const tree = parseTree(lang, text);
       const broken: string[] = [];
       const root = tree.root;
-      if (/\S/.test(text.slice(0, tree.start(root)) + text.slice(tree.end(root))))
-        broken.push(`text outside the root ${tree.start(root)}-${tree.end(root)}`);
+      if (
+        /\S/.test(text.slice(0, tree.start(root)) + text.slice(tree.end(root)))
+      )
+        broken.push(
+          `text outside the root ${tree.start(root)}-${tree.end(root)}`,
+        );
       const stack = [root];
       for (let n = stack.pop(); n !== undefined; n = stack.pop()) {
         let at = tree.start(n);
         for (let i = 0; i < tree.count(n); i++) {
           const c = tree.child(n, i);
-          if (tree.start(c) < at || tree.end(c) > tree.end(n) || tree.end(c) < tree.start(c))
+          if (
+            tree.start(c) < at ||
+            tree.end(c) > tree.end(n) ||
+            tree.end(c) < tree.start(c)
+          )
             broken.push(
               `${tree.kindName(c)} ${tree.start(c)}-${tree.end(c)} in ${tree.kindName(n)} ${tree.start(n)}-${tree.end(n)} after ${at}`,
             );

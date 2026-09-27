@@ -47,9 +47,7 @@ const beforeSemicolon = (c: CommentContext): CommentTarget | undefined => {
   let node = enclosing;
   for (
     let up = parent(c, node);
-    up !== undefined &&
-    parent(c, up) !== undefined &&
-    lastCode(c, up) === node;
+    up !== undefined && parent(c, up) !== undefined && lastCode(c, up) === node;
     up = parent(c, node)
   )
     node = up;
@@ -67,11 +65,7 @@ const beforeSemicolon = (c: CommentContext): CommentTarget | undefined => {
 const lastMember = (x: HasTree, n: number): number => {
   let member = n;
   while (kind(x, member) === "union_type") {
-    const last = lastChildWhere(
-      x,
-      member,
-      (c) => named(x, c) && isCode(x, c),
-    );
+    const last = lastChildWhere(x, member, (c) => named(x, c) && isCode(x, c));
     if (last === undefined) break;
     member = last;
   }

@@ -24,7 +24,7 @@ function indentDepth(line: string): number {
 
 function lines(text: string, indentMatters: boolean): Line[] {
   const out: Line[] = [];
-  for (let start = 0; start <= text.length; ) {
+  for (let start = 0; start <= text.length;) {
     const nl = text.indexOf("\n", start);
     const end = nl === -1 ? text.length : nl;
     const line = text.slice(start, end);

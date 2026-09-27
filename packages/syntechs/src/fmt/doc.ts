@@ -227,8 +227,7 @@ function tokenOf(node: TokenNode, s: string, flags: number): Token {
  * string's quotes), and the language's `normalize` decides whether `check` finds the meaning held. Either way
  * the node's range is where it came from.
  */
-export const token = (node: TokenNode, s: string): Token =>
-  tokenOf(node, s, 0);
+export const token = (node: TokenNode, s: string): Token => tokenOf(node, s, 0);
 /**
  * A token no source token stands for, anchored to `anchor`, the nearest source node: one a rule inserted (a
  * trailing `,`, a `;`), which `normalize` must declare optional.

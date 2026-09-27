@@ -20,11 +20,7 @@ import {
   text,
   token,
 } from "../../../fmt/doc.js";
-import {
-  lfAfter,
-  newlineBetween,
-  nextLineEmpty,
-} from "../../../fmt/text.js";
+import { lfAfter, newlineBetween, nextLineEmpty } from "../../../fmt/text.js";
 import { firstLeaf } from "../../../fmt/tree.js";
 import { printAssignment } from "./assignment.js";
 import {
@@ -125,9 +121,7 @@ const TYPE_OPERATORS = new Set(["index_type_query", "readonly_type"]);
 
 /** Whether `n` is the object side of `T[K]`. */
 const isLookupObject = (x: HasTree, n: number, up: number | undefined) =>
-  up !== undefined &&
-  kind(x, up) === "lookup_type" &&
-  items(x, up)[0] === n;
+  up !== undefined && kind(x, up) === "lookup_type" && items(x, up)[0] === n;
 
 /** The type an infer, function or constructor type ends in, for the constrained-infer rule. */
 function returnType(x: HasTree, n: number): number | undefined {
@@ -163,7 +157,8 @@ export function typeNeedsParens(x: HasTree, n: number): boolean {
         if (key === "right") {
           const r = returnType(x, n);
           // `asserts x is T` wraps the predicate prettier reads as TSTypePredicate.
-          const predicate = kind(x, r) === "asserts" ? first(x, r as number) : r;
+          const predicate =
+            kind(x, r) === "asserts" ? first(x, r as number) : r;
           const inner =
             kind(x, predicate) === "type_predicate"
               ? field(x, predicate as number, "type")
@@ -599,11 +594,7 @@ const moduleDeclaration: JsRule = (n, ctx) => {
 };
 
 const ambientDeclaration: JsRule = (n, ctx) => {
-  const block = childWhere(
-    ctx,
-    n,
-    (c) => kind(ctx, c) === "statement_block",
-  );
+  const block = childWhere(ctx, n, (c) => kind(ctx, c) === "statement_block");
   if (block !== undefined) {
     const rest = children(ctx, n).filter(
       (c) => c !== block && !isComment(ctx, c),
@@ -834,10 +825,7 @@ function isHuggedParameterType(ctx: JsCtx, n: number): boolean {
   if (kind(ctx, annotation) !== "type_annotation") return false;
   const param = parent(ctx, annotation);
   const paramKind = kind(ctx, param);
-  if (
-    paramKind !== "required_parameter" &&
-    paramKind !== "optional_parameter"
-  )
+  if (paramKind !== "required_parameter" && paramKind !== "optional_parameter")
     return false;
   const list = parent(ctx, param);
   return (

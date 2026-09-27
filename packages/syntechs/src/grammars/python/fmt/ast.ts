@@ -550,7 +550,11 @@ class Reader {
     for (const c of this.kids(n)) {
       const kind = this.kind(c);
       if (kind === "ERROR" || this.missing(c)) this.fail(c, "parse error");
-      if (this.tree.named(c) && kind !== "comment" && kind !== "line_continuation")
+      if (
+        this.tree.named(c) &&
+        kind !== "comment" &&
+        kind !== "line_continuation"
+      )
         out.push(c);
     }
     return out;
@@ -1862,7 +1866,9 @@ class Reader {
         ? start
         : Math.min(start, ...elts.map((e) => outer(e).start));
     const outerEnd =
-      close !== undefined ? end : Math.max(end, ...elts.map((e) => outer(e).end));
+      close !== undefined
+        ? end
+        : Math.max(end, ...elts.map((e) => outer(e).end));
     return {
       kind: "Tuple",
       ts: n,

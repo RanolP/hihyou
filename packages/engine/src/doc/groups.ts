@@ -65,23 +65,34 @@ export function groupEdits(
     moves.set(key, d);
     d.members.push(m);
     const a = "a" in m.c.edit ? m.c.edit.a : undefined;
-    const name = m.c.whole && a !== undefined ? nameOf(m.c.ta as Tree, a) : undefined;
+    const name =
+      m.c.whole && a !== undefined ? nameOf(m.c.ta as Tree, a) : undefined;
     if (name !== undefined) d.names.push(name);
   }
   for (const [key, { names, members }] of moves) {
     const [from = 0, to = 0] = key.split("\0").map(Number);
-    add({ kind: "move", fromPath: oldPath(from), toPath: path(to), names }, members);
+    add(
+      { kind: "move", fromPath: oldPath(from), toPath: path(to), names },
+      members,
+    );
   }
 
   for (const [i, f] of files.entries()) {
-    if ((f.status !== "renamed" && f.status !== "copied") || !f.oldPath) continue;
+    if ((f.status !== "renamed" && f.status !== "copied") || !f.oldPath)
+      continue;
     const before = importKey(f.oldPath);
     const after = importKey(f.path);
     const members = free().filter(({ c: { edit, ta, tb, from, to } }) => {
-      if (edit.kind !== "update" || edit.a === undefined || edit.b === undefined) return false;
+      if (
+        edit.kind !== "update" ||
+        edit.a === undefined ||
+        edit.b === undefined
+      )
+        return false;
       const at = ta as Tree;
       const bt = tb as Tree;
-      if (!/^string_(fragment|content)$/.test(at.kindName(edit.a))) return false;
+      if (!/^string_(fragment|content)$/.test(at.kindName(edit.a)))
+        return false;
       return (
         resolveImport(oldPath(from), at.label(edit.a)) === before &&
         resolveImport(path(to), bt.label(edit.b)) === after
@@ -104,11 +115,13 @@ export function groupEdits(
   const renames = new Map<string, Map<number, Member[]>>();
   for (const m of free()) {
     const { edit } = m.c;
-    if (edit.kind !== "update" || edit.a === undefined || edit.b === undefined) continue;
+    if (edit.kind !== "update" || edit.a === undefined || edit.b === undefined)
+      continue;
     const ta = m.c.ta as Tree;
     const tb = m.c.tb as Tree;
     if (!isIdentifier(ta, edit.a) || !isIdentifier(tb, edit.b)) continue;
-    if (ta.label(edit.a) === tb.label(edit.b) || isProperty(tb, edit.b)) continue;
+    if (ta.label(edit.a) === tb.label(edit.b) || isProperty(tb, edit.b))
+      continue;
     const key = `${ta.label(edit.a)}\0${tb.label(edit.b)}`;
     const perFile = renames.get(key) ?? new Map<number, Member[]>();
     renames.set(key, perFile);
@@ -117,7 +130,9 @@ export function groupEdits(
   }
   const declares = (m: Member) => {
     const n = node(m.c);
-    return n !== undefined && n[0].fieldName(n[1]) === "name" && !specifier(...n);
+    return (
+      n !== undefined && n[0].fieldName(n[1]) === "name" && !specifier(...n)
+    );
   };
   for (const [key, perFile] of renames) {
     const [from = "", to = ""] = key.split("\0");
@@ -132,13 +147,16 @@ export function groupEdits(
         const n = node(m.c);
         if (!n || !specifier(...n)) continue;
         const target = importedFrom(...n, sidePath(m, y));
-        x = [...perFile.keys()].find((f) => f !== y && importKey(path(f)) === target);
+        x = [...perFile.keys()].find(
+          (f) => f !== y && importKey(path(f)) === target,
+        );
         if (x !== undefined) break;
       }
       if (x !== undefined) root.set(find(y), find(x));
     }
     const joined = new Map<number, Member[]>();
-    for (const [f, ms] of perFile) joined.set(find(f), [...(joined.get(find(f)) ?? []), ...ms]);
+    for (const [f, ms] of perFile)
+      joined.set(find(f), [...(joined.get(find(f)) ?? []), ...ms]);
     for (const members of joined.values()) {
       if (members.length < 2) continue;
       const first = members.find(declares) ?? members[0];
@@ -154,11 +172,15 @@ export function groupEdits(
     }
   }
 
-  const signatures = new Map<string, { file: number; name: string; members: Member[] }>();
+  const signatures = new Map<
+    string,
+    { file: number; name: string; members: Member[] }
+  >();
   for (const m of free()) {
     const n = node(m.c);
     const owner = n && signatureOwner(...n);
-    const name = n && owner !== undefined ? functionName(n[0], owner) : undefined;
+    const name =
+      n && owner !== undefined ? functionName(n[0], owner) : undefined;
     if (name === undefined) continue;
     const file = home(m);
     const key = `${file}\0${name}`;
@@ -167,7 +189,9 @@ export function groupEdits(
     signatures.set(key, s);
   }
   // A change inside one signature is never a call site of another, whichever is declared first.
-  const inSignature = new Set([...signatures.values()].flatMap((s) => s.members));
+  const inSignature = new Set(
+    [...signatures.values()].flatMap((s) => s.members),
+  );
   for (const { file, name, members } of signatures.values()) {
     const calls = free().filter((m) => {
       const n = node(m.c);
@@ -223,7 +247,9 @@ function specifier(tree: Tree, n: number): boolean {
   return (
     tree.kindName(p) === "dotted_name" &&
     tree.fieldName(p) !== "module_name" &&
-    /^(import_from_statement|aliased_import)$/.test(pp === NO_NODE ? "" : tree.kindName(pp))
+    /^(import_from_statement|aliased_import)$/.test(
+      pp === NO_NODE ? "" : tree.kindName(pp),
+    )
   );
 }
 
@@ -253,11 +279,20 @@ const importKinds = /^(import_statement|import_from_statement)$/;
  * The module named by the import or re-export statement holding `n`, as an `importKey`: a JS/TS `source`
  * string, or a Python relative `module_name` (`.pad` is a sibling, `..x` in the parent package).
  */
-function importedFrom(tree: Tree, n: number, importer: string): string | undefined {
+function importedFrom(
+  tree: Tree,
+  n: number,
+  importer: string,
+): string | undefined {
   for (const p of ancestry(tree, n)) {
     if (tree.kindName(p) === "import_from_statement") {
-      const module = findChild(tree, p, (c) => tree.fieldName(c) === "module_name");
-      if (module === undefined || tree.kindName(module) !== "relative_import") return undefined;
+      const module = findChild(
+        tree,
+        p,
+        (c) => tree.fieldName(c) === "module_name",
+      );
+      if (module === undefined || tree.kindName(module) !== "relative_import")
+        return undefined;
       const count = tree.count(module);
       const prefix = count > 0 ? tree.child(module, 0) : undefined;
       const dotted = count > 1 ? tree.child(module, 1) : undefined;
@@ -276,8 +311,12 @@ function importedFrom(tree: Tree, n: number, importer: string): string | undefin
     const spec =
       source === undefined
         ? undefined
-        : findChild(tree, source, (c) => /^string_(fragment|content)$/.test(tree.kindName(c)));
-    return spec !== undefined ? resolveImport(importer, tree.label(spec)) : undefined;
+        : findChild(tree, source, (c) =>
+            /^string_(fragment|content)$/.test(tree.kindName(c)),
+          );
+    return spec !== undefined
+      ? resolveImport(importer, tree.label(spec))
+      : undefined;
   }
   return undefined;
 }
@@ -299,10 +338,14 @@ function imports(
     if (field === "source" || field === "module_name") return false;
     const ns = inNamespace || tree.kindName(n) === "namespace_import";
     const count = tree.count(n);
-    if (count === 0) return ns === namespace && isIdentifier(tree, n) && tree.label(n) === binding;
+    if (count === 0)
+      return (
+        ns === namespace && isIdentifier(tree, n) && tree.label(n) === binding
+      );
     const alias = findChild(tree, n, (c) => tree.fieldName(c) === "alias");
     if (alias !== undefined) return binds(alias, ns);
-    for (let i = 0; i < count; i++) if (binds(tree.child(n, i), ns)) return true;
+    for (let i = 0; i < count; i++)
+      if (binds(tree.child(n, i), ns)) return true;
     return false;
   };
   for (let i = 0, count = tree.count(root); i < count; i++) {

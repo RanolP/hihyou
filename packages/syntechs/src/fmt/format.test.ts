@@ -128,8 +128,7 @@ describe("format", () => {
       { ...spec, atoms: ["string"], normalize: cooked },
       (h) => ({
         ...rules(h),
-        string: (node, ctx) =>
-          token(node, to(ctx.tree.text(node))),
+        string: (node, ctx) => token(node, to(ctx.tree.text(node))),
       }),
     );
 

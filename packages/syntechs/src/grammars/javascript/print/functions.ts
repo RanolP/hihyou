@@ -341,8 +341,7 @@ function parametersDoc(
   }
   const decorated = params.some(
     (param) =>
-      childWhere(ctx, param, (c) => kind(ctx, c) === "decorator") !==
-      undefined,
+      childWhere(ctx, param, (c) => kind(ctx, c) === "decorator") !== undefined,
   );
   if ((hug && !decorated) || inTestCall) return [open, ...printed, close];
   const last = params.at(-1) as number;
@@ -451,7 +450,7 @@ export function printMethodValue(ctx: JsCtx, n: number): Doc {
 
 /** Whether `n`'s leftmost token belongs to an object literal (prettier's startsWithNoLookaheadToken). */
 function startsWithObject(h: HasTree, n: number): boolean {
-  for (let x: number | undefined = n; x !== undefined; ) {
+  for (let x: number | undefined = n; x !== undefined;) {
     const k = kind(h, x);
     if (k === "object") return true;
     switch (k) {
@@ -564,7 +563,7 @@ const arrow: JsRule = (node, ctx, args?: Args) => {
   let functionBody = bodyOf(node);
   let bodyNode = functionBody;
 
-  for (let x = node; ; ) {
+  for (let x = node; ;) {
     const signature = printArrowSignature(ctx, x, args);
     signatureDocs.push(
       signatureDocs.length === 0 ? signature : ctx.withComments(x, signature),

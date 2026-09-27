@@ -43,7 +43,7 @@ export function hasNewlineInRange(text: string, from: number, to: number) {
 
 /** Whether the line after the one holding `i` is blank, skipping separators and comments that end that line. */
 export function isNextLineEmpty(text: string, i: number): boolean {
-  for (let old = -1; i !== old; ) {
+  for (let old = -1; i !== old;) {
     old = i;
     while (i < text.length && ",; \t".includes(text.charAt(i))) i++;
     if (text.startsWith("/*", i)) {
@@ -94,7 +94,7 @@ export function newlineBetween(
   from: number,
   to: number,
 ): boolean {
-  for (let l = from; l !== to && l !== NO_NODE; ) {
+  for (let l = from; l !== to && l !== NO_NODE;) {
     if (tree.text(l).includes("\n")) return true;
     l = nextLeaf(tree, l);
     if (l !== NO_NODE && tree.lf(l) > 0) return true;

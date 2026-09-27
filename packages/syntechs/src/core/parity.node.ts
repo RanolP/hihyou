@@ -47,7 +47,8 @@ function reference(ref: ReferenceNode[], text: string): Walk {
   const path: { kind: string; id: number }[] = [];
   for (const [k, r] of ref.entries()) {
     path.length = r.depth;
-    if (r.kind === "ERROR" && !path.some((p) => p.kind === "ERROR")) errorChars += r.end - r.start;
+    if (r.kind === "ERROR" && !path.some((p) => p.kind === "ERROR"))
+      errorChars += r.end - r.start;
     const leaf = (ref[k + 1]?.depth ?? -1) <= r.depth;
     let label = "";
     if (leaf) {
@@ -59,8 +60,12 @@ function reference(ref: ReferenceNode[], text: string): Walk {
       } else label = token;
     }
     const id = lines.length;
-    lines.push(nodeLine(r.depth, r.kind, r.named, r.missing, r.start, r.end, r.field));
-    syntax.push(`${id} ${r.kind} p${path.at(-1)?.id ?? "-"} ${JSON.stringify(label)}`);
+    lines.push(
+      nodeLine(r.depth, r.kind, r.named, r.missing, r.start, r.end, r.field),
+    );
+    syntax.push(
+      `${id} ${r.kind} p${path.at(-1)?.id ?? "-"} ${JSON.stringify(label)}`,
+    );
     path.push({ kind: r.kind, id });
   }
   syntax.push(`errorChars ${errorChars}`);
@@ -78,10 +83,21 @@ function ours(lang: Language, text: string): Walk {
     const id = lines.length;
     const kind = tree.kindName(n);
     lines.push(
-      nodeLine(depth, kind, tree.named(n), tree.missing(n), tree.start(n), tree.end(n), tree.fieldName(n)),
+      nodeLine(
+        depth,
+        kind,
+        tree.named(n),
+        tree.missing(n),
+        tree.start(n),
+        tree.end(n),
+        tree.fieldName(n),
+      ),
     );
-    syntax.push(`${id} ${kind} p${parent < 0 ? "-" : parent} ${JSON.stringify(tree.label(n))}`);
-    for (let i = tree.count(n) - 1; i >= 0; i--) stack.push([tree.child(n, i), depth + 1, id]);
+    syntax.push(
+      `${id} ${kind} p${parent < 0 ? "-" : parent} ${JSON.stringify(tree.label(n))}`,
+    );
+    for (let i = tree.count(n) - 1; i >= 0; i--)
+      stack.push([tree.child(n, i), depth + 1, id]);
   }
   syntax.push(`errorChars ${tree.errorChars}`);
   return { lines, syntax };
@@ -129,7 +145,12 @@ export async function checkParity(
   for (const [k, input] of inputs.entries()) {
     const expected = reference(refs[k] as ReferenceNode[], input.text);
     nodes += expected.lines.length;
-    if (expected.lines.some((l) => l.includes(" ERROR ") || l.includes("(MISSING)"))) withErrors++;
+    if (
+      expected.lines.some(
+        (l) => l.includes(" ERROR ") || l.includes("(MISSING)"),
+      )
+    )
+      withErrors++;
     let actual: Walk;
     try {
       actual = ours(lang, input.text);
@@ -174,7 +195,9 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const showAt = args.indexOf("--show");
   const show = showAt >= 0 ? Number(args[showAt + 1]) : 3;
-  const names = args.filter((a, i) => !a.startsWith("--") && (showAt < 0 || i !== showAt + 1));
+  const names = args.filter(
+    (a, i) => !a.startsWith("--") && (showAt < 0 || i !== showAt + 1),
+  );
   const grammars = (names.length > 0 ? names : GRAMMAR_NAMES) as GrammarName[];
   const missing = referenceMissing();
   if (missing) throw new Error(missing);
@@ -191,7 +214,9 @@ async function main(): Promise<void> {
         `  ${d.input.name} (${d.input.text.length} chars): first ${d.stage} divergence at line ${d.index}`,
       );
       if (d.error) {
-        console.log(`    threw: ${d.error.split("\n").slice(0, 6).join("\n    ")}`);
+        console.log(
+          `    threw: ${d.error.split("\n").slice(0, 6).join("\n    ")}`,
+        );
         continue;
       }
       for (let k = Math.max(0, d.index - 2); k < d.index + 3; k++) {
@@ -203,5 +228,8 @@ async function main(): Promise<void> {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]?.replaceAll("\\", "/").replace(/^\/?/, "/")}`)
+if (
+  import.meta.url ===
+  `file://${process.argv[1]?.replaceAll("\\", "/").replace(/^\/?/, "/")}`
+)
   await main();

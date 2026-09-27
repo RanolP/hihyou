@@ -1,9 +1,4 @@
-export {
-  check,
-  decimalValue,
-  type Lexeme,
-  type Normalize,
-} from "./check.js";
+export { check, decimalValue, type Lexeme, type Normalize } from "./check.js";
 export * from "./doc.js";
 export { type Anchor, type Formatted, format } from "./format.js";
 export {

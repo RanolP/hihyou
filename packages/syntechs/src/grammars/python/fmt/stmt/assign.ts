@@ -425,10 +425,7 @@ export function rightToLeft(
 
 /** Ruff's `FormatTypeVar` / `FormatTypeVarTuple` / `FormatParamSpec`. */
 function typeParam(f: Fmt, p: TypeParam): Doc {
-  const out: Doc[] = [
-    p.star !== undefined ? f.tok(p.star) : [],
-    f.tok(p.name),
-  ];
+  const out: Doc[] = [p.star !== undefined ? f.tok(p.star) : [], f.tok(p.name)];
   if (p.colon !== undefined && p.bound)
     out.push(f.tok(p.colon), space, formatExpr(f, p.bound));
   return out;
@@ -444,8 +441,7 @@ export function typeParams(f: Fmt, tp: TypeParams): Doc {
   const entries = tp.params.map((p) => ({ end: p.end, doc: typeParam(f, p) }));
   return f.parenthesized(
     f.tok(tp.open),
-    () =>
-      f.joinCommaSeparated(entries, startOf(f.tree, tp.close), comma),
+    () => f.joinCommaSeparated(entries, startOf(f.tree, tp.close), comma),
     f.tok(tp.close),
   );
 }
@@ -464,9 +460,7 @@ export const assignRules: StmtRules = {
     const eq = (i: number) => {
       const t = s.ops[i];
       if (t === undefined)
-        throw new Unformattable(
-          `missing = at ${byteOffsetOf(f.tree, s.ts)}`,
-        );
+        throw new Unformattable(`missing = at ${byteOffsetOf(f.tree, s.ts)}`);
       return f.tok(t);
     };
     const last = rest.at(-1);

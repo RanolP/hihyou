@@ -2,10 +2,10 @@
   "name": "@hihyou/cli",
   "version": "0.0.0",
   "private": true,
-  "type": "module",
   "bin": {
     "hihyou": "./dist/main.js"
   },
+  "type": "module",
   "dependencies": {
     "@hihyou/engine": "workspace:*",
     "@hihyou/present": "workspace:*",

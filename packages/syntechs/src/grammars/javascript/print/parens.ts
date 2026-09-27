@@ -157,13 +157,18 @@ export function shouldFlatten(parentOp: string, nodeOp: string): boolean {
     (parentOp === "%" && MULTIPLICATIVE.has(nodeOp))
   )
     return false;
-  if (nodeOp !== parentOp && MULTIPLICATIVE.has(nodeOp) && MULTIPLICATIVE.has(parentOp))
+  if (
+    nodeOp !== parentOp &&
+    MULTIPLICATIVE.has(nodeOp) &&
+    MULTIPLICATIVE.has(parentOp)
+  )
     return false;
   if (BITSHIFT.has(parentOp) && BITSHIFT.has(nodeOp)) return false;
   return true;
 }
 
-const isBitwise = (op: string) => BITSHIFT.has(op) || op === "|" || op === "^" || op === "&";
+const isBitwise = (op: string) =>
+  BITSHIFT.has(op) || op === "|" || op === "^" || op === "&";
 
 export const operatorOf = (x: HasTree, n: number) => {
   const o = field(x, n, "operator");
@@ -173,9 +178,11 @@ export const operatorOf = (x: HasTree, n: number) => {
   return "";
 };
 
-const isBinaryish = (x: HasTree, n: number) => kind(x, n) === "binary_expression";
+const isBinaryish = (x: HasTree, n: number) =>
+  kind(x, n) === "binary_expression";
 const isLogical = (x: HasTree, n: number) =>
-  kind(x, n) === "binary_expression" && ["&&", "||", "??"].includes(operatorOf(x, n));
+  kind(x, n) === "binary_expression" &&
+  ["&&", "||", "??"].includes(operatorOf(x, n));
 const isAsLike = (x: HasTree, n: number) =>
   kind(x, n) === "as_expression" || kind(x, n) === "satisfies_expression";
 
@@ -184,7 +191,11 @@ const isPrefix = (x: HasTree, n: number) =>
   x.tree.count(n) > 0 && fieldName(x, x.tree.child(n, 0)) === "operator";
 
 /** Prettier's startsWithNoLookaheadToken walk: the leftmost node `n` begins with. */
-function leftmostIs(x: HasTree, n: number | undefined, target: number): boolean {
+function leftmostIs(
+  x: HasTree,
+  n: number | undefined,
+  target: number,
+): boolean {
   while (n !== undefined) {
     if (n === target) return true;
     switch (kind(x, n)) {
@@ -228,8 +239,13 @@ function leftmostIs(x: HasTree, n: number | undefined, target: number): boolean 
   return false;
 }
 
-function findAncestor(x: HasTree, n: number, test: (a: number) => boolean): number | undefined {
-  for (let a = parentOf(x, n); a !== undefined; a = parentOf(x, a)) if (test(a)) return a;
+function findAncestor(
+  x: HasTree,
+  n: number,
+  test: (a: number) => boolean,
+): number | undefined {
+  for (let a = parentOf(x, n); a !== undefined; a = parentOf(x, a))
+    if (test(a)) return a;
   return undefined;
 }
 
@@ -282,12 +298,21 @@ export function needsParens(n: number, ctx: JsCtx): boolean {
         ) === undefined
       );
     if (text === "let") {
-      const forIn = findAncestor(ctx, n, (a) => kind(ctx, a) === "for_in_statement");
-      if (forIn !== undefined && leftmostIs(ctx, field(ctx, forIn, "left"), n)) return true;
+      const forIn = findAncestor(
+        ctx,
+        n,
+        (a) => kind(ctx, a) === "for_in_statement",
+      );
+      if (forIn !== undefined && leftmostIs(ctx, field(ctx, forIn, "left"), n))
+        return true;
       if (key === "object" && pk === "subscript_expression") {
         const statement = findAncestor(ctx, n, (a) => {
           const k = kind(ctx, a);
-          return k === "expression_statement" || k === "for_statement" || k === "for_in_statement";
+          return (
+            k === "expression_statement" ||
+            k === "for_statement" ||
+            k === "for_in_statement"
+          );
         });
         const head =
           statement === undefined
@@ -307,7 +332,10 @@ export function needsParens(n: number, ctx: JsCtx): boolean {
       CAST_KEYWORDS.has(text)
     ) {
       let a: number | undefined = parent;
-      while (a !== undefined && (isAsLike(ctx, a) || kind(ctx, a) === "parenthesized_expression"))
+      while (
+        a !== undefined &&
+        (isAsLike(ctx, a) || kind(ctx, a) === "parenthesized_expression")
+      )
         a = parentOf(ctx, a);
       return kind(ctx, a) === "expression_statement";
     }
@@ -315,11 +343,20 @@ export function needsParens(n: number, ctx: JsCtx): boolean {
   }
 
   if (STATEMENT_EXPRESSION_KINDS.has(nk)) {
-    const statement = findAncestor(ctx, n, (a) => kind(ctx, a) === "expression_statement");
-    if (statement !== undefined && leftmostIs(ctx, first(ctx, statement), n)) return true;
+    const statement = findAncestor(
+      ctx,
+      n,
+      (a) => kind(ctx, a) === "expression_statement",
+    );
+    if (statement !== undefined && leftmostIs(ctx, first(ctx, statement), n))
+      return true;
   }
   if (nk === "object") {
-    const arrow = findAncestor(ctx, n, (a) => kind(ctx, a) === "arrow_function");
+    const arrow = findAncestor(
+      ctx,
+      n,
+      (a) => kind(ctx, a) === "arrow_function",
+    );
     const body = arrow === undefined ? undefined : field(ctx, arrow, "body");
     if (
       body !== undefined &&
@@ -372,7 +409,10 @@ export function needsParens(n: number, ctx: JsCtx): boolean {
         const prefix = isPrefix(ctx, n);
         const op = operatorOf(ctx, n);
         const pop = operatorOf(ctx, parent);
-        return prefix && ((op === "++" && pop === "+") || (op === "--" && pop === "-"));
+        return (
+          prefix &&
+          ((op === "++" && pop === "+") || (op === "--" && pop === "-"))
+        );
       }
       switch (pk) {
         case "unary_expression": {
@@ -411,7 +451,10 @@ export function needsParens(n: number, ctx: JsCtx): boolean {
       return !inForHead(ctx, n);
     case "yield_expression":
     case "await_expression":
-      if (nk === "yield_expression" && (pk === "await_expression" || pk === "type_assertion"))
+      if (
+        nk === "yield_expression" &&
+        (pk === "await_expression" || pk === "type_assertion")
+      )
         return true;
       switch (pk) {
         case "unary_expression":
@@ -439,7 +482,8 @@ export function needsParens(n: number, ctx: JsCtx): boolean {
         const g = kind(ctx, parentOf(ctx, parent));
         // A string statement that is no directive would become one without its parens.
         return (
-          (g === "program" || g === "statement_block") && !(top === n && isDirective(ctx, parent))
+          (g === "program" || g === "statement_block") &&
+          !(top === n && isDirective(ctx, parent))
         );
       }
       return false;
@@ -460,7 +504,9 @@ export function needsParens(n: number, ctx: JsCtx): boolean {
         case "type_assertion":
           return true;
         case "jsx_expression":
-          return kind(ctx, parentOf(ctx, parent)) === "jsx_opening_element" || false;
+          return (
+            kind(ctx, parentOf(ctx, parent)) === "jsx_opening_element" || false
+          );
         case "new_expression":
           return key === "callee";
         case "call_expression":
@@ -520,7 +566,8 @@ export function needsParens(n: number, ctx: JsCtx): boolean {
       if (key === "callee" && pk === "new_expression") {
         for (let c: number | undefined = n; c !== undefined;) {
           const ck = kind(ctx, c);
-          if (ck === "call_expression" && !isTaggedTemplate(ctx, c)) return true;
+          if (ck === "call_expression" && !isTaggedTemplate(ctx, c))
+            return true;
           if (isMember(ctx, c)) c = objectOf(ctx, c);
           else if (isTaggedTemplate(ctx, c)) c = callee(ctx, c);
           else if (ck === "non_null_expression") c = first(ctx, c);
@@ -533,7 +580,9 @@ export function needsParens(n: number, ctx: JsCtx): boolean {
     case "jsx_self_closing_element":
       return (
         key === "callee" ||
-        (key === "left" && pk === "binary_expression" && operatorOf(ctx, parent) === "<") ||
+        (key === "left" &&
+          pk === "binary_expression" &&
+          operatorOf(ctx, parent) === "<") ||
         (!(key === "declaration" && pk === "export_statement") &&
           ![
             "array",
@@ -567,18 +616,30 @@ export function needsParens(n: number, ctx: JsCtx): boolean {
 
 /** Prettier's isPathInForStatementInitializer: any depth, even inside a function in the initializer. */
 function inForInit(x: HasTree, n: number): boolean {
-  for (let c = n, p = parentOf(x, c); p !== undefined; c = p, p = parentOf(x, c))
-    if (kind(x, p) === "for_statement" && fieldName(x, c) === "initializer") return true;
+  for (
+    let c = n, p = parentOf(x, c);
+    p !== undefined;
+    c = p, p = parentOf(x, c)
+  )
+    if (kind(x, p) === "for_statement" && fieldName(x, c) === "initializer")
+      return true;
   return false;
 }
 
-function binaryishNeedsParens(n: number, parent: number, key: string, ctx: JsCtx): boolean {
+function binaryishNeedsParens(
+  n: number,
+  parent: number,
+  key: string,
+  ctx: JsCtx,
+): boolean {
   switch (kind(ctx, parent)) {
     case "as_expression":
     case "satisfies_expression":
       return !isAsLike(ctx, n);
     case "ternary_expression":
-      return isAsLike(ctx, n) || (isLogical(ctx, n) && operatorOf(ctx, n) === "??");
+      return (
+        isAsLike(ctx, n) || (isLogical(ctx, n) && operatorOf(ctx, n) === "??")
+      );
     case "call_expression":
       return key === "callee" || key === "quasi";
     case "new_expression":
@@ -601,9 +662,13 @@ function binaryishNeedsParens(n: number, parent: number, key: string, ctx: JsCtx
     case "assignment_expression":
     case "augmented_assignment_expression":
     case "assignment_pattern":
-      return key === "left" && (kind(ctx, n) === "type_assertion" || isAsLike(ctx, n));
+      return (
+        key === "left" &&
+        (kind(ctx, n) === "type_assertion" || isAsLike(ctx, n))
+      );
     case "binary_expression": {
-      if (!isBinaryish(ctx, n) && kind(ctx, n) !== "type_assertion") return true;
+      if (!isBinaryish(ctx, n) && kind(ctx, n) !== "type_assertion")
+        return true;
       if (isLogical(ctx, n) && isLogical(ctx, parent))
         return operatorOf(ctx, parent) !== operatorOf(ctx, n);
       const op = operatorOf(ctx, n);
@@ -624,13 +689,25 @@ function binaryishNeedsParens(n: number, parent: number, key: string, ctx: JsCtx
   }
 }
 
-function assignmentNeedsParens(x: HasTree, n: number, parent: number, key: string): boolean {
+function assignmentNeedsParens(
+  x: HasTree,
+  n: number,
+  parent: number,
+  key: string,
+): boolean {
   const pk = kind(x, parent);
-  if (pk === "for_statement" && (key === "update" || fieldName(x, outer(x, n)) === "initializer"))
+  if (
+    pk === "for_statement" &&
+    (key === "update" || fieldName(x, outer(x, n)) === "initializer")
+  )
     return false;
   if (pk === "expression_statement")
     return kind(x, unparen(x, field(x, n, "left") ?? n)) === "object_pattern";
-  if (pk === "assignment_expression" || pk === "augmented_assignment_expression") return false;
+  if (
+    pk === "assignment_expression" ||
+    pk === "augmented_assignment_expression"
+  )
+    return false;
   if (pk === "sequence_expression") {
     const g = parentOf(x, parent);
     if (kind(x, g) === "for_statement") return false;
@@ -638,7 +715,12 @@ function assignmentNeedsParens(x: HasTree, n: number, parent: number, key: strin
   return true;
 }
 
-function optionalChainNeedsParens(x: HasTree, n: number, parent: number, key: string): boolean {
+function optionalChainNeedsParens(
+  x: HasTree,
+  n: number,
+  parent: number,
+  key: string,
+): boolean {
   // `(a?.b).c`: the parentheses end the chain, so they stay; tree-sitter shows them only in the source.
   const top = outer(x, n);
   if (top === n) return false;
@@ -676,7 +758,10 @@ function isDecoratorMemberish(x: HasTree, n: number): boolean {
     return false;
   };
   return (
-    simple(n) || (kind(x, n) === "call_expression" && !isOptional(x, n) && simple(callee(x, n)))
+    simple(n) ||
+    (kind(x, n) === "call_expression" &&
+      !isOptional(x, n) &&
+      simple(callee(x, n)))
   );
 }
 
@@ -716,9 +801,14 @@ function exportDefaultNeedsParens(x: HasTree, n: number): boolean {
 
 export { argument };
 
-const EXPORT_WRAPPED = new Set(["function_expression", "generator_function", "class"]);
+const EXPORT_WRAPPED = new Set([
+  "function_expression",
+  "generator_function",
+  "class",
+]);
 
-const inForHead = (x: HasTree, n: number) => kind(x, parentOf(x, outer(x, n))) === "for_statement";
+const inForHead = (x: HasTree, n: number) =>
+  kind(x, parentOf(x, outer(x, n))) === "for_statement";
 
 const FUNCTION_BODY_PARENTS = new Set([
   "function_declaration",

@@ -1,7 +1,14 @@
 // The visible tree, walked the way tree-sitter's tree_cursor.c walks it (aliases, hidden nodes, inherited
 // fields), and appended to the typed-array arena.
 
-import { FIXED, isFixed, MISSING, NAMED as NAMED_NODE, type Tree, TreeBuilder } from "./arena.js";
+import {
+  FIXED,
+  isFixed,
+  MISSING,
+  NAMED as NAMED_NODE,
+  type Tree,
+  TreeBuilder,
+} from "./arena.js";
 import { jsxText, LABEL_JSX_TEXT, labelModes } from "./label.js";
 import {
   aliasAt,
@@ -28,11 +35,18 @@ import {
   VISIBLE,
 } from "./subtree.js";
 
-function fieldFor(lang: Language, productionId: number, structuralIndex: number): number {
+function fieldFor(
+  lang: Language,
+  productionId: number,
+  structuralIndex: number,
+): number {
   const start = lang.fieldSliceIndex[productionId] as number;
   const end = start + (lang.fieldSliceLength[productionId] as number);
   for (let i = start; i < end; i++) {
-    if (lang.fieldEntryInherited[i] === 0 && lang.fieldEntryChild[i] === structuralIndex)
+    if (
+      lang.fieldEntryInherited[i] === 0 &&
+      lang.fieldEntryChild[i] === structuralIndex
+    )
       return lang.fieldEntryField[i] as number;
   }
   return 0;
@@ -70,7 +84,12 @@ function symbols(lang: Language): Symbols {
     const named = (symbolFlags(lang, symbol) & FLAG_NAMED) !== 0;
     s.kind.push(kind);
     s.named.push(named);
-    if (symbol > 0 && symbol < lang.tokenCount && !named && !external.has(symbol))
+    if (
+      symbol > 0 &&
+      symbol < lang.tokenCount &&
+      !named &&
+      !external.has(symbol)
+    )
       s.fixedLength[symbol] = kind.length;
   }
   symbolsOf.set(lang, s);
@@ -97,15 +116,27 @@ function leave(
 ): void {
   const kind = publicSymbol(lang, symbol);
   const end = start + (w[tree + SIZE] as number);
-  let flags = (named ? NAMED_NODE : 0) | (((w[tree + FLAGS] as number) & IS_MISSING) !== 0 ? MISSING : 0);
+  let flags =
+    (named ? NAMED_NODE : 0) |
+    (((w[tree + FLAGS] as number) & IS_MISSING) !== 0 ? MISSING : 0);
   if (mark !== b.mark()) {
     b.inner(kind, field, flags, start, end, mark);
     return;
   }
-  if (sym.label[symbol] === LABEL_JSX_TEXT && jsxText(source.slice(start, end)) === "") return;
+  if (
+    sym.label[symbol] === LABEL_JSX_TEXT &&
+    jsxText(source.slice(start, end)) === ""
+  )
+    return;
   if (flags === 0) {
-    const length = symbol === w[tree + SYMBOL] ? (sym.fixedLength[symbol] ?? -1) : -1;
-    if (length >= 0 ? end - start === length : isFixed(lang, kind, source, start, end)) flags = FIXED;
+    const length =
+      symbol === w[tree + SYMBOL] ? (sym.fixedLength[symbol] ?? -1) : -1;
+    if (
+      length >= 0
+        ? end - start === length
+        : isFixed(lang, kind, source, start, end)
+    )
+      flags = FIXED;
   }
   b.leaf(kind, field, flags, start, end);
 }
@@ -114,7 +145,11 @@ function leave(
  * The arena form of the visible tree under the parser's `root`: each visible node appended as it leaves, so
  * in postorder, less the layout-only JSX text. Reads the parser's records straight out of `subtrees.words`.
  */
-export function buildTree(subtrees: Subtrees, root: Subtree, source: string): Tree {
+export function buildTree(
+  subtrees: Subtrees,
+  root: Subtree,
+  source: string,
+): Tree {
   const lang = subtrees.lang;
   const w = subtrees.words;
   const sym = symbols(lang);
@@ -170,7 +205,10 @@ export function buildTree(subtrees: Subtrees, root: Subtree, source: string): Tr
     }
     const child = w[tree + CHILDREN + i] as number;
     const childFlags = w[child + FLAGS] as number;
-    const start = i === 0 ? (position[d] as number) : (position[d] as number) + (w[child + PADDING] as number);
+    const start =
+      i === 0
+        ? (position[d] as number)
+        : (position[d] as number) + (w[child + PADDING] as number);
     position[d] = start + (w[child + SIZE] as number);
     index[d] = i + 1;
     let alias = 0;
@@ -189,7 +227,10 @@ export function buildTree(subtrees: Subtrees, root: Subtree, source: string): Tr
     const hasChildren = (w[child + CHILD_COUNT] as number) > 0;
     if ((childFlags & VISIBLE) !== 0 || alias !== 0) {
       const symbol = alias !== 0 ? alias : (w[child + SYMBOL] as number);
-      const named = alias !== 0 ? (sym.named[alias] as boolean) : (childFlags & NAMED) !== 0;
+      const named =
+        alias !== 0
+          ? (sym.named[alias] as boolean)
+          : (childFlags & NAMED) !== 0;
       const error = symbol === SYM_ERROR;
       if (error && errors === 0) errorChars += w[child + SIZE] as number;
       if (hasChildren) {
@@ -205,7 +246,20 @@ export function buildTree(subtrees: Subtrees, root: Subtree, source: string): Tr
         openStart[depth] = start;
         openMark[depth] = b.mark();
         depth++;
-      } else leave(b, lang, sym, source, w, child, symbol, named, field, start, b.mark());
+      } else
+        leave(
+          b,
+          lang,
+          sym,
+          source,
+          w,
+          child,
+          symbol,
+          named,
+          field,
+          start,
+          b.mark(),
+        );
     } else if (hasChildren) {
       trees[depth] = child;
       index[depth] = 0;

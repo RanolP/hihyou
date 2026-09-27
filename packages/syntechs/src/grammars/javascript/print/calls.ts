@@ -400,8 +400,7 @@ export function couldExpandArg(
       bk === "array"
     )
       return true;
-    if (bk === "arrow_function" && couldExpandArg(ctx, body, true))
-      return true;
+    if (bk === "arrow_function" && couldExpandArg(ctx, body, true)) return true;
     if (!arrowChainRecursion) {
       if (bk === "ternary_expression") return true;
       if (isCallExpression(ctx, body)) return true;
@@ -519,8 +518,7 @@ function isReactHookCallWithDepsArray(
     );
   };
   if (args.length === 2) return valid(0);
-  if (args.length === 3)
-    return kind(ctx, args[0]) === "identifier" && valid(1);
+  if (args.length === 3) return kind(ctx, args[0]) === "identifier" && valid(1);
 
   return false;
 }
@@ -658,8 +656,7 @@ function argumentsDoc(ctx: JsCtx, n: number, list: number): Doc {
   return group(contents, printedArguments.some(willBreak) || anyArgEmptyLine);
 }
 
-const ifBreakComma = (anchor: number): Doc =>
-  ifBreak(synthetic(anchor, ","));
+const ifBreakComma = (anchor: number): Doc => ifBreak(synthetic(anchor, ","));
 
 // --- member expressions -------------------------------------------------------------------------------------
 
@@ -1153,7 +1150,6 @@ const nonNull: JsRule = (n, ctx) => [
     childWhere(ctx, n, (c) => kind(ctx, c) === "!"),
   ),
 ];
-
 
 export const callRules: Record<string, JsRule> = {
   call_expression: call,

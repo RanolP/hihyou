@@ -114,7 +114,7 @@ interface RawEntry {
 function parseRawDiff(out: string): RawEntry[] {
   const fields = out.split("\0");
   const entries: RawEntry[] = [];
-  for (let i = 0; i + 1 < fields.length; ) {
+  for (let i = 0; i + 1 < fields.length;) {
     const [oldMode, newMode, oldId, newId, status = ""] = (fields[i++] ?? "")
       .slice(1)
       .split(" ");

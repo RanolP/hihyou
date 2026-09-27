@@ -69,7 +69,11 @@ const parenthesized: JsRule = (n, ctx, args?: Args) => {
   if (kind(ctx, parent(ctx, n)) === PE) return p(ctx, inner, args);
   if (!needsParens(unparen(ctx, n), ctx)) return p(ctx, inner, args);
   const open = anon(ctx, n, "(");
-  const close = lastChildWhere(ctx, n, (c) => !named(ctx, c) && kind(ctx, c) === ")");
+  const close = lastChildWhere(
+    ctx,
+    n,
+    (c) => !named(ctx, c) && kind(ctx, c) === ")",
+  );
   return [t(ctx, open), p(ctx, inner, args), t(ctx, close)];
 };
 

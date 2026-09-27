@@ -322,7 +322,11 @@ export function commaIn(
   return (from) => {
     for (let i = 0, n = tree.count(parent); i < n; i++) {
       const c = tree.child(parent, i);
-      if (!tree.named(c) && tree.kindName(c) === "," && startOf(tree, c) >= from)
+      if (
+        !tree.named(c) &&
+        tree.kindName(c) === "," &&
+        startOf(tree, c) >= from
+      )
         return token(c, ",");
     }
     return synthetic(anchor, ",");

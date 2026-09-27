@@ -67,7 +67,8 @@ const isIdent = (c: string) => /[\p{L}\p{N}_]/u.test(c);
 
 /** The last leaf of `n`: `n` itself when it is one. */
 export function lastLeaf(tree: FormatTree, n: number): number {
-  for (let c = tree.count(n); c > 0; c = tree.count(n)) n = tree.child(n, c - 1);
+  for (let c = tree.count(n); c > 0; c = tree.count(n))
+    n = tree.child(n, c - 1);
   return n;
 }
 

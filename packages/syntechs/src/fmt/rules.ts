@@ -69,10 +69,7 @@ export interface Ctx<O = unknown> {
    * Whether `node` has a leading line comment (`leadingLine`), or a trailing line comment on the line where
    * `node` starts (`trailingSameLine`).
    */
-  hasComment(
-    node: number,
-    where: "leadingLine" | "trailingSameLine",
-  ): boolean;
+  hasComment(node: number, where: "leadingLine" | "trailingSameLine"): boolean;
   isList(node: number): boolean;
   /** Every comment attached to `node`: before it, after it, and inside it next to none of its items. */
   comments(node: number): {
@@ -301,7 +298,11 @@ type SeqMatcher =
   | {
       readonly space: false;
       readonly literal: boolean;
-      readonly is: (tree: FormatTree, c: number, items: readonly number[]) => boolean;
+      readonly is: (
+        tree: FormatTree,
+        c: number,
+        items: readonly number[],
+      ) => boolean;
     };
 
 const noItems: readonly number[] = [];
@@ -322,7 +323,9 @@ function seqRule(parts: readonly SeqPart<Grammar>[]): Rule {
     if ("field" in part)
       return named((tree, c) => tree.fieldName(c) === part.field);
     if ("kind" in part)
-      return named((tree, c) => tree.named(c) && tree.kindName(c) === part.kind);
+      return named(
+        (tree, c) => tree.named(c) && tree.kindName(c) === part.kind,
+      );
     return named((_, c, items) => c === items[part.nth]);
   });
   const needsItems = parts.some((p) => typeof p === "object" && "nth" in p);

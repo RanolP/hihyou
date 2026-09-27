@@ -49,7 +49,9 @@ export function crossFileMoves(
   opts: MatchOptions = defaultMatchOptions,
 ): { claimed: (Claimed | undefined)[]; edits: CrossEdit[] } {
   const intern = new Map<string, number>();
-  const iso = mappings.map((m) => m && { a: isoIds(m.a, intern), b: isoIds(m.b, intern) });
+  const iso = mappings.map(
+    (m) => m && { a: isoIds(m.a, intern), b: isoIds(m.b, intern) },
+  );
   const claimed = mappings.map(
     (m) =>
       m && {
@@ -78,14 +80,16 @@ export function crossFileMoves(
           const size = s.size[i] as number;
           if (size < minMoveSize || table[i] !== -1) continue;
           const n = s.node(i);
-          if (s.tree.named(n) && !inImport(s.tree, n)) out.push({ file, i, size, n, tree: s.tree });
+          if (s.tree.named(n) && !inImport(s.tree, n))
+            out.push({ file, i, size, n, tree: s.tree });
         }
         return out;
       })
       .sort((p, q) => q.size - p.size);
   const fromA = candidates("a");
   const intoB = candidates("b");
-  const isClaimed = (side: "a" | "b", c: Candidate) => claimed[c.file]?.[side][c.i] === 1;
+  const isClaimed = (side: "a" | "b", c: Candidate) =>
+    claimed[c.file]?.[side][c.i] === 1;
 
   const claim = (x: Candidate, y: Candidate) => {
     for (const [side, c] of [
@@ -134,7 +138,9 @@ export function crossFileMoves(
   const identical = (x: Candidate) => {
     const id = iso[x.file]?.a[x.i];
     if (id === undefined) return false;
-    const y = byIso.get(id)?.find((y) => y.file !== x.file && !isClaimed("b", y));
+    const y = byIso
+      .get(id)
+      ?.find((y) => y.file !== x.file && !isClaimed("b", y));
     if (!y) return false;
     claim(x, y);
     edits.push(move(x, y));
@@ -210,7 +216,8 @@ export function nameOf(tree: Tree, n: number): string | undefined {
     if (tree.named(c)) named.push(c);
   }
   const name = named.find((c) => tree.fieldName(c) === "name");
-  if (name !== undefined) return tree.count(name) === 0 ? tree.label(name) : undefined;
+  if (name !== undefined)
+    return tree.count(name) === 0 ? tree.label(name) : undefined;
   const inner =
     named.find((c) => {
       const field = tree.fieldName(c);

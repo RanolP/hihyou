@@ -84,7 +84,11 @@ function valueForm(
       return `num:${decimalValue(t.replaceAll("_", "")) ?? t.toLowerCase()}`;
     case "regex": {
       const slash = t.lastIndexOf("/");
-      return `re:${t.slice(0, slash)}/${t.slice(slash + 1).split("").sort().join("")}`;
+      return `re:${t.slice(0, slash)}/${t
+        .slice(slash + 1)
+        .split("")
+        .sort()
+        .join("")}`;
     }
     // Prettier sorts a regex's flags.
     case "regex_flags":
@@ -362,11 +366,7 @@ const LOGICAL = new Set(["&&", "||", "??"]);
 
 function logicalOperator(tree: Tree, n: number): string | undefined {
   if (tree.kindName(n) !== "binary_expression") return undefined;
-  const operator = findChild(
-    tree,
-    n,
-    (c) => tree.fieldName(c) === "operator",
-  );
+  const operator = findChild(tree, n, (c) => tree.fieldName(c) === "operator");
   const op = operator === NO_NODE ? undefined : tree.kindName(operator);
   return op !== undefined && LOGICAL.has(op) ? op : undefined;
 }
@@ -474,10 +474,7 @@ export function hasOptionalChain(tree: Tree, n: number): boolean {
       kind !== "call_expression"
     )
       return kind === "non_null_expression"
-        ? hasOptionalChain(
-            tree,
-            tree.count(n) > 0 ? tree.child(n, 0) : NO_NODE,
-          )
+        ? hasOptionalChain(tree, tree.count(n) > 0 ? tree.child(n, 0) : NO_NODE)
         : false;
     if (
       findChild(tree, n, (c) => {

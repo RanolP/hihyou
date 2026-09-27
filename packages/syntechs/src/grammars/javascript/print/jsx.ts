@@ -450,9 +450,7 @@ const element: JsRule = (n, ctx) => {
 
 /** A tag's name as prettier's JSXIdentifier, JSXMemberExpression or JSXNamespacedName: never broken. */
 const printName = (ctx: JsCtx, name: number | undefined): Doc =>
-  name !== undefined
-    ? ctx.withComments(name, token(name, src(ctx, name)))
-    : [];
+  name !== undefined ? ctx.withComments(name, token(name, src(ctx, name))) : [];
 
 /** Prettier's printJsxOpeningElement; a self-closing element is its own opening element. */
 function printOpening(n: number, ctx: JsCtx, selfClosing: boolean): Doc {

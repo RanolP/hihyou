@@ -44,8 +44,7 @@ async function main() {
     if (!grammar) {
       grammar = (
         (await import(
-          new URL(`../grammars/${spec.grammar}/index.js`, import.meta.url)
-            .href
+          new URL(`../grammars/${spec.grammar}/index.js`, import.meta.url).href
         )) as { language: Grammar }
       ).language;
       grammars.set(spec.grammar, grammar);

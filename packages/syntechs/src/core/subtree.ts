@@ -230,7 +230,9 @@ export class Subtrees {
   nodeCountOf(t: Subtree): number {
     const w = this.words;
     let count =
-      w[t + CHILD_COUNT] === 0 ? 0 : (w[t + VISIBLE_DESCENDANT_COUNT] as number);
+      w[t + CHILD_COUNT] === 0
+        ? 0
+        : (w[t + VISIBLE_DESCENDANT_COUNT] as number);
     if (((w[t + FLAGS] as number) & VISIBLE) !== 0) count++;
     if (w[t + SYMBOL] === SYM_ERROR_REPEAT) count++;
     return count;
@@ -253,7 +255,10 @@ export class Subtrees {
   }
 
   externalStateEq(a: Subtree, b: Subtree): boolean {
-    return bytesEqual(this.externalScannerState(a), this.externalScannerState(b));
+    return bytesEqual(
+      this.externalScannerState(a),
+      this.externalScannerState(b),
+    );
   }
 
   lastExternalToken(tree: Subtree): Subtree {
@@ -299,7 +304,10 @@ export class Subtrees {
     )
       return NO_SUBTREES;
     const out: Subtree[] = [];
-    while (self.length > 0 && this.flag(self[self.length - 1] as Subtree, EXTRA))
+    while (
+      self.length > 0 &&
+      this.flag(self[self.length - 1] as Subtree, EXTRA)
+    )
       out.push(self.pop() as Subtree);
     out.reverse();
     return out;
@@ -396,7 +404,16 @@ export class Subtrees {
     padding: number,
     paddingRows: number,
   ): Subtree {
-    const t = this.newLeaf(symbol, padding, paddingRows, 0, 0, state, false, false);
+    const t = this.newLeaf(
+      symbol,
+      padding,
+      paddingRows,
+      0,
+      0,
+      state,
+      false,
+      false,
+    );
     this.setFlag(t, IS_MISSING, true);
     return t;
   }
@@ -515,7 +532,8 @@ export class Subtrees {
       } else if (grandchildCount > 0) {
         visibleChildCount += w[child + VISIBLE_CHILD_COUNT] as number;
       }
-      if ((childFlags & HAS_EXTERNAL_TOKENS) !== 0) flags |= HAS_EXTERNAL_TOKENS;
+      if ((childFlags & HAS_EXTERNAL_TOKENS) !== 0)
+        flags |= HAS_EXTERNAL_TOKENS;
       if (childSymbol === SYM_ERROR) {
         flags |= FRAGILE_LEFT | FRAGILE_RIGHT;
         parseState = STATE_NONE;

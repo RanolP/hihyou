@@ -143,7 +143,7 @@ function lastLeaf(tree: FormatTree, n: number): number {
 function textThrough(tree: FormatTree, n: number, end: number): string {
   let s = tree.text(n);
   const stop = lastLeaf(tree, end);
-  for (let l = lastLeaf(tree, n); l !== stop && l !== NO_NODE; ) {
+  for (let l = lastLeaf(tree, n); l !== stop && l !== NO_NODE;) {
     s = s.slice(0, s.length - tree.text(l).length);
     l = prevLeaf(tree, l);
     const before = tree.text(l);
@@ -188,8 +188,7 @@ export function statementSequence(
 function isNextLineEmptyAfter(ctx: JsCtx, n: number): boolean {
   const end = contentEnd(ctx, n);
   return (
-    nextLineEmpty(ctx.tree, end) ||
-    (end !== n && nextLineEmpty(ctx.tree, n))
+    nextLineEmpty(ctx.tree, end) || (end !== n && nextLineEmpty(ctx.tree, n))
   );
 }
 
@@ -419,8 +418,7 @@ const ifStatement: JsRule = (node, ctx) => {
   if (firstComment !== undefined && lastComment !== undefined) {
     if (ctx.tree.lf(firstComment) >= 2)
       parts.push(isBlock ? [hardline, hardline] : hardline);
-    else if (ctx.tree.lf(firstComment) > 0)
-      parts.push(isBlock ? hardline : []);
+    else if (ctx.tree.lf(firstComment) > 0) parts.push(isBlock ? hardline : []);
     else parts.push(text(" "));
     parts.push(
       join(hardline, ctx.dangling(node)),
@@ -708,8 +706,7 @@ const switchCase: JsRule = (node, ctx) => {
   if (consequent.length > 0) {
     const cons = statementSequence(ctx, body);
     parts.push(
-      consequent.length === 1 &&
-        kind(ctx, consequent[0]) === "statement_block"
+      consequent.length === 1 && kind(ctx, consequent[0]) === "statement_block"
         ? [text(" "), cons]
         : indent([hardline, cons]),
     );
@@ -892,11 +889,7 @@ const declaration: JsRule = (node, ctx, args) => {
       }),
     ),
     // The last declarator's `,` in a recovered tree is not expected; a for-head's `;` is the for's own.
-    forInit
-      ? own !== undefined
-        ? token(own, ";")
-        : []
-      : semi(ctx, node, own),
+    forInit ? (own !== undefined ? token(own, ";") : []) : semi(ctx, node, own),
   ]);
 };
 

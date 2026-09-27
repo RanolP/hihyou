@@ -46,7 +46,9 @@ async function warm(grammar: GrammarName): Promise<void> {
   for (const input of benchFiles(grammar)) {
     const nodes = parseTree(lang, input.text).nodeCount;
     const ours = time(() => parseTree(lang, input.text));
-    const theirs = missing ? Number.NaN : referenceParseMs(grammar, input.text, WARMUP, RUNS);
+    const theirs = missing
+      ? Number.NaN
+      : referenceParseMs(grammar, input.text, WARMUP, RUNS);
     const name = input.name.split(/[\\/]/).at(-1);
     console.log(
       `${name}\t${(input.text.length / 1024).toFixed(0)}\t${nodes}\t${ours.toFixed(1)}\t${theirs.toFixed(1)}\t${(ours / theirs).toFixed(2)}x`,
