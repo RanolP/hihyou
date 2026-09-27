@@ -88,7 +88,11 @@ function openFrame(kind: number, ref = -1, flags = 0, align: number | string = 0
     parent.list.push(parent.parts);
     parent.parts = [];
   }
-  frames.push({ kind, id, ref, flags, align, parts: [], list: [] });
+  const parts: Doc[] = [];
+  // A group's handle exists from its open, holding the parts it is still being written into, so an ifBreak
+  // inside it can follow it (the concise array's trailing comma follows the array, not the fill item it sits in).
+  if (kind === stream.GROUP) groups[id] = docGroup(parts, (flags & stream.BROKEN) !== 0);
+  frames.push({ kind, id, ref, flags, align, parts, list: [] });
   return id;
 }
 
@@ -96,7 +100,7 @@ function groupOf(ref: number): DocHandle | undefined {
   if (ref < 0) return undefined;
   const g = groups[ref];
   if (g === undefined)
-    throw new Error(`js sink: interval refers to ${ref}, which is no recorded group closed before it`);
+    throw new Error(`js sink: interval refers to ${ref}, which is no recorded group`);
   return g;
 }
 
@@ -106,7 +110,7 @@ function closeFrame(): void {
   let d: Doc;
   switch (f.kind) {
     case stream.GROUP:
-      d = groups[f.id] = docGroup(parts, (f.flags & stream.BROKEN) !== 0);
+      d = groups[f.id] as DocHandle;
       break;
     case stream.INDENT:
       d = docIndent(parts);

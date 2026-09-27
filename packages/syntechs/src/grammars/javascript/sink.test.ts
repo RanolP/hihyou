@@ -105,6 +105,31 @@ const scripts: Record<string, () => void> = {
     }
     close();
   },
+  // The concise array's trailing comma: an ifBroken in a fill item that follows the group still open around it.
+  "ifBroken on its own open group, inside a fill": () => {
+    const g = open(GROUP);
+    sText("[");
+    open(INDENT);
+    sLine(SOFT);
+    open(FILL);
+    for (let i = 0; i < 6; i++) {
+      if (i > 0) sLine(0);
+      open(FILL_ITEM);
+      sToken(i, `item${i}`);
+      if (i < 5) sText(",");
+      else {
+        open(IF_BROKEN, g);
+        sText(",");
+        close();
+      }
+      close();
+    }
+    close();
+    close();
+    sLine(SOFT);
+    sText("]");
+    close();
+  },
   "align by width and by string": () => {
     open(GROUP);
     openAlign(3);
