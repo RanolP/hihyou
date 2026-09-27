@@ -48,6 +48,11 @@ const SPECIAL = 4;
  * entry: prettier's fits, measuring it from its start, counts that space, which the running width counted before it.
  */
 const LEAD = 8;
+/**
+ * It may hold a hard line: what the `hard` counter counts (a literal token and a flat part too), so `willBreak`
+ * scans for a hard line only in the intervals that hold one, which a break parent need not accompany.
+ */
+const HARDS = 16;
 /** It holds a break parent (a hard line's included) or a broken group, which breaks the groups around it. */
 const BREAKS = 32;
 
@@ -578,6 +583,7 @@ export function close(): void {
   const hasBp = bp > (oBp[op] as number);
   const hasHard = hard > (oHard[op] as number);
   if (hasBp) flags |= BREAKS;
+  if (hasHard) flags |= HARDS;
   if (kind === FITS_EXPANDED) {
     if (hasBp) iKind[k] = FITS_EXPANDED_BREAKS;
     bp = oBp[op] as number;
@@ -941,14 +947,42 @@ export function willBreak(k: number): boolean {
   const flags = iFlag[k] as number;
   if (flags & (BROKEN | BREAKS)) return true;
   if (iKind[k] === CHOICE) return (iRef[k] as number) >= 0 && willBreak(k + 1);
-  // Only a choice's first state breaks nothing around it, so only a stream with a choice needs the walk. A flat
-  // part's flags already count what removeLines keeps.
-  if (!choiceSeen || iKind[k] === FLATTEN) return false;
+  if (iKind[k] === FLATTEN) return willBreakFlat(k);
+  // The flags miss two breaks: a choice's first state breaks nothing around it, and a hard line need not come
+  // with a break parent. Only an interval that may hold either needs the walk.
+  if (!choiceSeen && !(flags & HARDS)) return false;
   return walkIn(
     k,
-    (x) =>
-      iKind[x] === CHOICE ? (willBreak(x) ? "stop" : false) : iKind[x] !== FLATTEN,
-    (i) => eKind[i] === JUMP && willBreak(eStr[i] as number),
+    (x) => {
+      const kind = iKind[x] as number;
+      if (kind === CHOICE || kind === FLATTEN) return willBreak(x) ? "stop" : false;
+      return choiceSeen || ((iFlag[x] as number) & HARDS) !== 0;
+    },
+    (i) => isHardLine(i) || (eKind[i] === JUMP && willBreak(eStr[i] as number)),
+  );
+}
+
+const isHardLine = (i: number) =>
+  eKind[i] === LINE && ((eFlag[i] as number) & (HARD | BOUNDARY)) === HARD;
+
+/**
+ * `willBreak` of a flat part, as doc.ts asks it of what removeLines rebuilt: its flags count the break parents
+ * removeLines keeps, and its hard lines count only where removeLines keeps them: a choice's in its last state,
+ * an `ifBreak`'s in its flat branch.
+ */
+function willBreakFlat(k: number): boolean {
+  const flags = iFlag[k] as number;
+  if (flags & BREAKS && iKind[k] === FLATTEN) return true;
+  if (!(flags & HARDS)) return false;
+  return walkIn(
+    k,
+    (x) => {
+      if (iKind[x] === IF_BROKEN) return false;
+      if (iKind[x] !== CHOICE) return ((iFlag[x] as number) & HARDS) !== 0;
+      const last = iRef[x] as number;
+      return last >= 0 && willBreakFlat(last) ? "stop" : false;
+    },
+    (i) => isHardLine(i) || (eKind[i] === JUMP && willBreakFlat(eStr[i] as number)),
   );
 }
 

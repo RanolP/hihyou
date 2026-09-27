@@ -721,6 +721,51 @@ describe("the range queries answer what doc.ts's and the JS printer's Doc querie
     ]);
   });
 
+  // A hard line appended without its break parent breaks nothing around it, so a willBreak reading only flags
+  // would call it unbreaking, where doc.ts's willBreak sees the hard line.
+  it("willBreak sees a hard line without a break parent, where removeLines keeps it, and not in a literal token", () => {
+    const lone = lineOf(HARD);
+    const cases: [Doc, () => number][] = [
+      [group([text("a"), lone]), () => wrapped(GROUP, () => {
+        sText("a");
+        sLine(HARD);
+      })],
+      [indent(ifBreak([lone], [])), () => wrapped(INDENT, () => wrapped(IF_BROKEN, () => sLine(HARD)))],
+      [indent([literalToken(0, "a\nb")]), () => wrapped(INDENT, () => sLiteral(0, "a\nb"))],
+      [removeLines(ifBreak([lone], [text("a")])), () => {
+        const k = openFlat();
+        wrapped(IF_BROKEN, () => sLine(HARD));
+        wrapped(IF_FLAT, () => sText("a"));
+        closeFlat();
+        return k;
+      }],
+      [removeLines(conditionalGroup([text("a"), [text("b"), lone]])), () => {
+        const k = openFlat();
+        choice([() => sText("a"), () => {
+          sText("b");
+          sLine(HARD);
+        }]);
+        closeFlat();
+        return k;
+      }],
+      [removeLines(conditionalGroup([[text("a"), lone], text("b")])), () => {
+        const k = openFlat();
+        choice([() => {
+          sText("a");
+          sLine(HARD);
+        }, () => sText("b")]);
+        closeFlat();
+        return k;
+      }],
+    ];
+    resetStream();
+    const t = span(() => sLine(HARD));
+    const viaJump = wrapped(INDENT, () => sJump(t));
+    expect(cases.map(([doc]) => docWillBreak(doc))).toEqual([true, true, false, false, true, false]);
+    expect(cases.map(([, build]) => willBreak(build()))).toEqual(cases.map(([doc]) => docWillBreak(doc)));
+    expect(willBreak(viaJump)).toBe(true);
+  });
+
   it("canBreak sees a line in any state and through a jump, and no line in a boundary", () => {
     resetStream();
     const later = choice([() => sText("a"), () => sLine(SOFT)]);
