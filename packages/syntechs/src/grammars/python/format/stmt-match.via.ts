@@ -3,10 +3,9 @@ import type { Frame } from "../../../fmt/dsl/runtime.js";
 import type { StreamCtx } from "../../../fmt/stream-format.js";
 import type { Match, MatchCase } from "../fmt/ast.js";
 import { Unformattable } from "../fmt/ast.js";
-import { COMPOUND, type Fmt, hard, space } from "../fmt/builders.js";
-import { type Format, indent } from "../fmt/elements.js";
+import { COMPOUND, type Fmt } from "../fmt/builders.js";
 import { maybeParenthesize } from "../fmt/expr.js";
-import { dslPart, part, ruffStmtOf, sText, sToken } from "../fmt/sink.js";
+import { close, COLLAPSE, dslPart, HARD, INDENT, open, part, ruffStmtOf, sLine, sText, sToken } from "../fmt/sink.js";
 import { body, kids } from "../fmt/stmt/defs.js";
 import {
   classArguments,
@@ -111,19 +110,19 @@ export const stmtMatchVia = {
     const s = m as Match;
     const cs = f.comments;
     part(f.trailing(cs.dangling(s)));
-    const cases = f.at(COMPOUND, () => {
-      const out: Format[] = [];
+    f.at(COMPOUND, () => {
       let previous: MatchCase | undefined;
       for (const c of s.cases) {
-        const alternate = previous
-          ? leadingAlternateBranchComments(f, cs.leading(c), previous.body.at(-1))
-          : [];
-        out.push(indent([hard, alternate, f.leading(cs.leading(c)), dslPart(c.ts), f.trailing(cs.trailing(c))]));
+        open(INDENT);
+        sLine(HARD | COLLAPSE);
+        if (previous) part(leadingAlternateBranchComments(f, cs.leading(c), previous.body.at(-1)));
+        part(f.leading(cs.leading(c)));
+        part(dslPart(c.ts));
+        part(f.trailing(cs.trailing(c)));
+        close();
         previous = c;
       }
-      return out;
     });
-    part(cases);
   },
   // Given the first pattern, prints them all: several are one tuple without parentheses.
   "match.casePattern": (n: number, ctx: StreamCtx<unknown>) => {
@@ -142,13 +141,16 @@ export const stmtMatchVia = {
   },
   "match.guard": (n: number, ctx: StreamCtx<unknown>) => {
     const { f, c } = caseOf(n, ctx);
-    if (c.guardKw !== undefined && c.guard)
-      part([f.tok(c.guardKw), space, maybeParenthesize(f, c.guard, c, "ifBreaksParenthesized")]);
+    if (c.guardKw === undefined || !c.guard) return;
+    sToken(c.guardKw, f.text(c.guardKw));
+    sText(" ");
+    part(maybeParenthesize(f, c.guard, c, "ifBreaksParenthesized"));
   },
   // The colon's comments, then the body.
   "match.caseBody": (n: number, ctx: StreamCtx<unknown>) => {
     const { f, c } = caseOf(n, ctx);
     const dangling = f.comments.dangling(c);
-    part([f.trailing(dangling), body(f, c, c.body, "other", dangling)]);
+    part(f.trailing(dangling));
+    part(body(f, c, c.body, "other", dangling));
   },
 };
