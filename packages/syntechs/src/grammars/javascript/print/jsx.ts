@@ -52,6 +52,22 @@ import {
   unparen,
 } from "./util.js";
 import type { CustomRule } from "../../../fmt/dsl/runtime.js";
+import {
+  close,
+  GROUP,
+  INDENT,
+  type JsStreamCtx,
+  jsCtx,
+  open,
+  SOFT,
+  sHardline,
+  sLine,
+  sLineSuffixBoundary,
+  sLiteral,
+  sText,
+  sToken,
+  withComments,
+} from "../sink.js";
 
 /** Options prettier's JSX printer reads that the rest of the JS printer does not. */
 type JsxOptions = JsOptions & {
@@ -554,7 +570,9 @@ const isAttrString = (x: HasTree, v: number | undefined) =>
   kind(x, v) === "string";
 
 /** Prettier's printJsxAttribute: a string value requoted by `jsxSingleQuote`, its quotes as entities. */
-const attribute: JsRule = (n, ctx) => {
+const attribute: CustomRule<JsOptions> = (n, sctx) => {
+  const s = jsCtx(sctx);
+  const ctx = s.js;
   const eq = anon(ctx, n, "=");
   const name = childWhere(
     ctx,
@@ -564,41 +582,64 @@ const attribute: JsRule = (n, ctx) => {
       !isComment(ctx, c) &&
       (eq === undefined || ctx.tree.ord(c) < ctx.tree.ord(eq)),
   );
+  if (name !== undefined) s.print(name);
   const value = eq !== undefined ? attrValue(ctx, n) : undefined;
-  const parts: Doc[] = [p(ctx, name)];
-  if (eq !== undefined && value !== undefined) {
-    let res: Doc;
-    if (isAttrString(ctx, value)) {
-      const raw = src(ctx, value)
-        .slice(1, -1)
-        .replaceAll("&apos;", "'")
-        .replaceAll("&quot;", '"');
-      const quote = preferredQuote(raw, ctx.options.jsxSingleQuote);
-      const escaped =
-        quote === '"'
-          ? raw.replaceAll('"', "&quot;")
-          : raw.replaceAll("'", "&apos;");
-      res = ctx.withComments(
-        value,
-        literalToken(value, quote + escaped + quote),
-      );
-    } else res = p(ctx, value);
-    parts.push(t(ctx, eq), res);
+  if (eq === undefined || value === undefined) return;
+  tokOf(ctx, eq);
+  if (!isAttrString(ctx, value)) {
+    s.print(value);
+    return;
   }
-  return parts;
+  const raw = src(ctx, value)
+    .slice(1, -1)
+    .replaceAll("&apos;", "'")
+    .replaceAll("&quot;", '"');
+  const quote = preferredQuote(raw, ctx.options.jsxSingleQuote);
+  const escaped =
+    quote === '"'
+      ? raw.replaceAll('"', "&quot;")
+      : raw.replaceAll("'", "&apos;");
+  withComments(s, value, () => sLiteral(value, quote + escaped + quote));
+};
+
+/** `c` as the source token it is; nothing when absent. */
+const tokOf = (ctx: JsCtx, c: number | undefined) => {
+  if (c !== undefined) sToken(c, src(ctx, c));
+};
+
+/** What `fn` writes inside an interval of `kind`. */
+function within(kind: number, fn: () => void, ref = -1): void {
+  open(kind, ref);
+  fn();
+  close();
+}
+
+/** A tag's name as prettier's JSXIdentifier, JSXMemberExpression or JSXNamespacedName: never broken. */
+const sName = (s: JsStreamCtx, name: number | undefined) => {
+  if (name !== undefined) withComments(s, name, () => tokOf(s.js, name));
 };
 
 /** Prettier's printJsxClosingElement. */
-const closing: JsRule = (n, ctx) => {
+const closing: CustomRule<JsOptions> = (n, sctx) => {
+  const s = jsCtx(sctx);
+  const ctx = s.js;
   const name = field(ctx, n, "name");
-  if (name === undefined) return printFragmentTag(n, ctx, false);
-  const printed = printName(ctx, name);
-  let middle: Doc = printed;
-  if (hasComment(ctx, name, CF.Leading | CF.Line))
-    middle = [indent([hardline, printed]), hardline];
-  else if (hasComment(ctx, name, CF.Leading | CF.Block))
-    middle = [text(" "), printed];
-  return [t(ctx, anon(ctx, n, "</")), middle, t(ctx, anon(ctx, n, ">"))];
+  if (name === undefined) {
+    sFragmentTag(s, n, false);
+    return;
+  }
+  tokOf(ctx, anon(ctx, n, "</"));
+  if (hasComment(ctx, name, CF.Leading | CF.Line)) {
+    within(INDENT, () => {
+      sHardline();
+      sName(s, name);
+    });
+    sHardline();
+  } else {
+    if (hasComment(ctx, name, CF.Leading | CF.Block)) sText(" ");
+    sName(s, name);
+  }
+  tokOf(ctx, anon(ctx, n, ">"));
 };
 
 /** Prettier's printJsxOpeningClosingFragment: `<>` or `</>` with the comments inside it. */
@@ -621,50 +662,99 @@ function printFragmentTag(n: number, ctx: JsCtx, opening: boolean): Doc {
   ];
 }
 
-/** Prettier's printJsxExpressionContainer, printJsxEmptyExpression and printJsxSpreadAttributeOrChild. */
-const expression: JsRule = (n, ctx) => {
-  const open = t(ctx, anon(ctx, n, "{"));
-  const close = t(
+/** `n`'s dangling comments, one per line. */
+function sDangling(s: JsStreamCtx, n: number): void {
+  s.danglingComments(n).forEach((c, i) => {
+    if (i > 0) sHardline();
+    s.comment(c);
+  });
+}
+
+/** Prettier's printJsxOpeningClosingFragment over the sink: `<>` or `</>` with the comments inside it. */
+function sFragmentTag(s: JsStreamCtx, n: number, opening: boolean): void {
+  const ctx = s.js;
+  const dangling = s.danglingComments(n);
+  const hasOwnLine = dangling.some((c) => s.isLineComment(c));
+  tokOf(ctx, anon(ctx, n, opening ? "<" : "</"));
+  within(INDENT, () => {
+    if (hasOwnLine) sHardline();
+    else if (dangling.length > 0 && !opening) sText(" ");
+    sDangling(s, n);
+  });
+  if (hasOwnLine) sHardline();
+  tokOf(
     ctx,
-    lastChildWhere(ctx, n, (c) => !named(ctx, c) && kind(ctx, c) === "}"),
+    lastChildWhere(ctx, n, (c) => !named(ctx, c) && kind(ctx, c) === ">"),
   );
+}
+
+/** Prettier's printJsxExpressionContainer, printJsxEmptyExpression and printJsxSpreadAttributeOrChild. */
+const expression: CustomRule<JsOptions> = (n, sctx) => {
+  const s = jsCtx(sctx);
+  const ctx = s.js;
+  const openBrace = () => tokOf(ctx, anon(ctx, n, "{"));
+  const closeBrace = () =>
+    tokOf(
+      ctx,
+      lastChildWhere(ctx, n, (c) => !named(ctx, c) && kind(ctx, c) === "}"),
+    );
   const e = first(ctx, n);
   if (e === undefined) {
-    const lineComment = ctx
-      .comments(n)
-      .dangling.some((c) => ctx.isLineComment(c));
-    return group([
-      open,
-      danglingComments(ctx, n, lineComment),
-      lineComment ? hardline : [],
-      lineSuffixBoundary,
-      close,
-    ]);
+    const lineComment = s.danglingComments(n).some((c) => s.isLineComment(c));
+    within(GROUP, () => {
+      openBrace();
+      if (lineComment) {
+        within(INDENT, () => {
+          sHardline();
+          sDangling(s, n);
+        });
+        sHardline();
+      } else sDangling(s, n);
+      sLineSuffixBoundary();
+      closeBrace();
+    });
+    return;
   }
   if (kind(ctx, e) === "spread_element") {
     // Prettier's printJsxSpreadAttributeOrChild: the argument's comments go around `...`, and a commented
     // spread goes on its own lines inside the braces once anything breaks.
     const arg = first(ctx, e);
-    const spread =
-      arg !== undefined
-        ? ctx.withComments(
-            e,
-            ctx.withComments(arg, [t(ctx, anon(ctx, e, "...")), p(ctx, arg)]),
-          )
-        : p(ctx, e);
-    if (!hasComment(ctx, e) && !hasComment(ctx, arg))
-      return [open, spread, close];
-    return [open, indent([softline, spread]), softline, close];
+    const spread = () => {
+      if (arg === undefined) s.print(e);
+      else
+        withComments(s, e, () =>
+          withComments(s, arg, () => {
+            tokOf(ctx, anon(ctx, e, "..."));
+            s.print(arg);
+          }),
+        );
+    };
+    openBrace();
+    if (!hasComment(ctx, e) && !hasComment(ctx, arg)) spread();
+    else {
+      within(INDENT, () => {
+        sLine(SOFT);
+        spread();
+      });
+      sLine(SOFT);
+    }
+    closeBrace();
+    return;
   }
-  if (shouldInline(ctx, unparen(ctx, e), parentOf(ctx, n)))
-    return group([open, p(ctx, e), lineSuffixBoundary, close]);
-  return group([
-    open,
-    indent([softline, p(ctx, e)]),
-    softline,
-    lineSuffixBoundary,
-    close,
-  ]);
+  const inline = shouldInline(ctx, unparen(ctx, e), parentOf(ctx, n));
+  within(GROUP, () => {
+    openBrace();
+    if (inline) s.print(e);
+    else {
+      within(INDENT, () => {
+        sLine(SOFT);
+        s.print(e);
+      });
+      sLine(SOFT);
+    }
+    sLineSuffixBoundary();
+    closeBrace();
+  });
 };
 
 function shouldInline(
@@ -745,13 +835,14 @@ export function jsxIgnored(
 }
 
 /** The customs format/jsx.ts names, by the names its spec gives them. */
-export const jsxCustoms = {} satisfies Record<string, CustomRule<JsOptions>>;
+export const jsxCustoms = {
+  jsxClosing: closing,
+  jsxAttribute: attribute,
+  jsxExpression: expression,
+} satisfies Record<string, CustomRule<JsOptions>>;
 
 export const jsxRules: Record<string, JsRule> = {
   jsx_element: element,
   jsx_self_closing_element: element,
   jsx_opening_element: (n, ctx) => printOpening(n, ctx, false),
-  jsx_closing_element: closing,
-  jsx_attribute: attribute,
-  jsx_expression: expression,
 };
