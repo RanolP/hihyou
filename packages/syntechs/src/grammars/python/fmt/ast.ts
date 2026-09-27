@@ -505,13 +505,19 @@ const fail = (tree: FormatTree, n: number, why: string): never => {
   );
 };
 
-/** Converts `root` (a tree-sitter `module`) to ruff's AST, rejecting any parse error first. */
-export function toAst(tree: FormatTree): Module {
-  return new Reader(tree).module(tree.root);
+/**
+ * Converts `root` (a tree-sitter `module`) to ruff's AST, rejecting any parse error first; `byTs` receives each
+ * expression under the tree-sitter node it was read from, its parentheses included.
+ */
+export function toAst(tree: FormatTree, byTs = new Map<number, Expr>()): Module {
+  return new Reader(tree, byTs).module(tree.root);
 }
 
 class Reader {
-  constructor(readonly tree: FormatTree) {}
+  constructor(
+    readonly tree: FormatTree,
+    readonly byTs: Map<number, Expr>,
+  ) {}
 
   fail(n: number, why: string): never {
     return fail(this.tree, n, why);
@@ -1399,8 +1405,9 @@ class Reader {
       });
       x = only;
     }
-    const e = this.bare(x, parens);
-    return this.link(e);
+    const e = this.link(this.bare(x, parens));
+    this.byTs.set(n, e);
+    return e;
   }
 
   /** The unnamed `,` children of `n`. */
@@ -2113,5 +2120,5 @@ export const isExpr = (p: Py): p is Expr => "parens" in p;
 
 /** Reads one expression on its own: an f-string interpolation's, which the module's AST keeps as a string. */
 export function exprAst(tree: FormatTree, n: number): Expr {
-  return new Reader(tree).expr(n);
+  return new Reader(tree, new Map()).expr(n);
 }

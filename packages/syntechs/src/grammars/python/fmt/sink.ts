@@ -1,4 +1,6 @@
 import * as stream from "../../../fmt/stream.js";
+import type { Expr } from "./ast.js";
+import type { Fmt } from "./builders.js";
 import type { StreamCtx } from "../../../fmt/stream-format.js";
 import {
   breakParent,
@@ -26,7 +28,8 @@ type Op =
   | { readonly t: "line"; readonly flags: number }
   | { readonly t: "bp" }
   | { readonly t: "open"; readonly kind: number; readonly ref: number; readonly flags: number }
-  | { readonly t: "close" };
+  | { readonly t: "close" }
+  | { readonly t: "part"; readonly f: Format };
 
 let ops: Op[] | undefined;
 let opens = 0;
@@ -84,6 +87,9 @@ function toFormat(rec: readonly Op[]): Format {
         case "bp":
           out.push(breakParent);
           break;
+        case "part":
+          out.push(o.f);
+          break;
         case "close":
           return out;
         case "open": {
@@ -113,17 +119,42 @@ function toFormat(rec: readonly Op[]): Format {
   return out;
 }
 
-let current: StreamCtx<unknown> | undefined;
+/** What a custom rule `.via` names reads to print its child by ruff's rules. */
+export interface Ruff {
+  readonly f: Fmt;
+  /** Each expression by the tree-sitter node it was read from (`toAst`). */
+  readonly byTs: ReadonlyMap<number, Expr>;
+}
 
-/** Runs `fn` with `ctx` as the context `dslPart` prints through: the module rule's. */
-export function within<T>(ctx: StreamCtx<unknown>, fn: () => T): T {
-  const outer = current;
+let current: StreamCtx<unknown> | undefined;
+let ruff: Ruff | undefined;
+
+/** Runs `fn` with `ctx` as the context `dslPart` prints through, the module rule's, and `r` as `ruffOf`'s. */
+export function within<T>(ctx: StreamCtx<unknown>, r: Ruff, fn: () => T): T {
+  const outer = [current, ruff] as const;
   current = ctx;
+  ruff = r;
   try {
     return fn();
   } finally {
-    current = outer;
+    [current, ruff] = outer;
   }
+}
+
+/** Whether the module rule is printing: ruff's rules then print every comment. */
+export const printing = (): boolean => current !== undefined;
+
+/** The expression tree-sitter node `node` was read as, with the `Fmt` printing it. */
+export function ruffOf(node: number): { f: Fmt; e: Expr } {
+  const e = ruff?.byTs.get(node);
+  if (!ruff || !e) throw new Error("python sink: a .via custom on a node read as no expression");
+  return { f: ruff.f, e };
+}
+
+/** Writes `f`, a part ruff's rules built, where a `.via` custom prints: always inside a `dslPart` recording. */
+export function part(f: Format): void {
+  if (!ops) throw new Error("python sink: a ruff part outside a dslPart recording");
+  ops.push({ t: "part", f });
 }
 
 /** Tree-sitter node `node` as its rule of Python's DSL spec prints it, without its comments (ruff prints those). */

@@ -8,7 +8,7 @@ import {
   space,
 } from "../builders.js";
 import { formatExpr, maybeParenthesize, node } from "../expr.js";
-import { dslPart } from "../sink.js";
+import { dslPart, part, ruffOf } from "../sink.js";
 import { leftToRight } from "./assign.js";
 import type { StmtRules } from "./suite.js";
 
@@ -17,8 +17,8 @@ import type { StmtRules } from "./suite.js";
 // Ruff's `is_arithmetic_like`: an expression statement it wraps in optional parentheses to break.
 const arithmeticOps = new Set(["|", "^", "<<", ">>", "+", "-"]);
 
-// A statement of one keyword: its rule in format.ts.
-const keywordOnly = (_: Fmt, s: Simple) => dslPart(s.ts);
+// A statement its rule in format.ts prints.
+const fromSpec = (_: Fmt, s: Simple) => dslPart(s.ts);
 
 function names(f: Fmt, s: Simple, sep: Format): Format {
   return s.names.map((n, i) => {
@@ -54,6 +54,18 @@ function alias(f: Fmt, a: Alias): Format {
   return out;
 }
 
+/** The customs format.ts's `.via`s name: a statement's child as ruff lays it out there. */
+export const simpleVia = {
+  "return.value": (c: number) => {
+    const { f, e } = ruffOf(c);
+    part(
+      e.kind === "Tuple" && !f.comments.hasLeading(e)
+        ? node(f, e, { tuple: "optionalParentheses" })
+        : leftToRight(f, e, e.parent as Simple),
+    );
+  },
+};
+
 export const simpleRules: StmtRules = {
   Expr(f, s) {
     const v = s.value;
@@ -61,16 +73,10 @@ export const simpleRules: StmtRules = {
       return maybeParenthesize(f, v, s, "optional");
     return formatExpr(f, v);
   },
-  Pass: keywordOnly,
-  Break: keywordOnly,
-  Continue: keywordOnly,
-  Return(f, s) {
-    const v = s.values[0];
-    if (!v) return f.tok(s.kw);
-    if (v.kind === "Tuple" && !f.comments.hasLeading(v))
-      return [f.tok(s.kw), space, node(f, v, { tuple: "optionalParentheses" })];
-    return [f.tok(s.kw), space, leftToRight(f, v, s)];
-  },
+  Pass: fromSpec,
+  Break: fromSpec,
+  Continue: fromSpec,
+  Return: fromSpec,
   Raise(f, s) {
     const [exc, cause] = s.values;
     const out: Format[] = [f.tok(s.kw)];

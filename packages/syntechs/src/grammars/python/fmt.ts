@@ -7,7 +7,7 @@ import {
 } from "../../fmt/options.js";
 import { defineLanguage, type Language } from "../../fmt/rules.js";
 import { grammar } from "./bundle.js";
-import { type Module, toAst } from "./fmt/ast.js";
+import { type Expr, type Module, toAst } from "./fmt/ast.js";
 import { Fmt, type PyOptions } from "./fmt/builders.js";
 import {
   attach,
@@ -16,8 +16,9 @@ import {
   type Comments as RuffComments,
 } from "./fmt/comments.js";
 import { emit } from "./fmt/elements.js";
-import { within } from "./fmt/sink.js";
+import { printing, within } from "./fmt/sink.js";
 import { normalize } from "./fmt/normalize.js";
+import { simpleVia } from "./fmt/stmt/simple.js";
 import { formatModule } from "./fmt/stmt/suite.js";
 import * as gen from "./fmt.gen.js";
 import { language } from "./index.js";
@@ -35,7 +36,8 @@ const defaults: PythonOptions = {
 // give back (several ruff nodes share one tree-sitter node), so the placement pass hands both to the module rule.
 const ruffPlaced = new WeakMap<
   Comments,
-  { module: Module; comments: RuffComments } | { error: unknown }
+  | { module: Module; comments: RuffComments; byTs: Map<number, Expr> }
+  | { error: unknown }
 >();
 
 // The one custom rule of the spec (src/grammars/python/format.ts, generated into fmt.gen.ts): ruff's rules.
@@ -43,9 +45,8 @@ const module: CustomRule<PythonOptions> = (_, ctx) => {
   const ruff = ruffPlaced.get(ctx.placement);
   if (!ruff) throw new Error("python: the module printed without its placement pass");
   if ("error" in ruff) throw ruff.error;
-  within(ctx, () =>
-    emit(formatModule(new Fmt(ctx.tree, ctx.options, ruff.comments), ruff.module)),
-  );
+  const f = new Fmt(ctx.tree, ctx.options, ruff.comments);
+  within(ctx, { f, byTs: ruff.byTs }, () => emit(formatModule(f, ruff.module)));
 };
 
 /** Ruff 0.16.8's layout (stable style): the module is lowered to ruff's AST and printed by ports of its rules. */
@@ -63,8 +64,9 @@ export const python: Language<PythonOptions> = {
       comment: (raw) => raw.split(/[ \t]+(?=#)/).map(normalizeComment),
       placeComments: (tree) => {
         let module: Module;
+        const byTs = new Map<number, Expr>();
         try {
-          module = toAst(tree);
+          module = toAst(tree, byTs);
         } catch (error) {
           // A tree ruff's AST cannot be read from: its root prints as its source text, comments and all, when the
           // root is the broken node, and otherwise the module rule throws this, as it would have read the AST.
@@ -74,16 +76,17 @@ export const python: Language<PythonOptions> = {
         }
         const comments = attach(module, tree);
         const byNode = byTreeNode(comments);
-        // The module rule prints every comment, the module's own among them.
+        // The module rule prints every comment, the module's own among them and those of the parts the spec's
+        // rules print inside it (`dslPart`), so those rules see none.
         const placed: Comments = {
-          of: (n) => (n === tree.root ? undefined : byNode.of(n)),
-          dangling: byNode.dangling,
+          of: (n) => (n === tree.root || printing() ? undefined : byNode.of(n)),
+          dangling: (n) => (printing() ? [] : byNode.dangling(n)),
         };
-        ruffPlaced.set(placed, { module, comments });
+        ruffPlaced.set(placed, { module, comments, byTs });
         return placed;
       },
     },
     () => ({}),
   ),
-  stream: gen.python({ module }),
+  stream: gen.python({ module, ...simpleVia }),
 };
