@@ -528,16 +528,6 @@ export function isConciselyPrintedArray(ctx: JsCtx, n: number): boolean {
   );
 }
 
-/** Prettier's printDanglingCommentsInList. */
-export function danglingCommentsInList(ctx: JsCtx, n: number): Doc {
-  const docs = ctx.dangling(n);
-  if (docs.length === 0) return [];
-  return [
-    indent([softline, join(hardline, docs)]),
-    ctx.hasDanglingLineComment(n) ? hardline : softline,
-  ];
-}
-
 /** Prettier's shouldPrintTrailingComma. */
 export const trailingCommaAllowed = (
   ctx: JsCtx,

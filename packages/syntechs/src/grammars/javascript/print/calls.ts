@@ -80,9 +80,10 @@ function markMemberChain(ctx: JsCtx, n: number) {
 }
 
 /** Whether `n` prints as a member chain (prettier's `label.memberChain` on its doc). */
-export function printsAsMemberChain(ctx: JsCtx, n: number): boolean {
+export function printsAsMemberChain(sctx: JsStreamCtx, n: number): boolean {
+  const ctx = sctx.js;
   const inner = unparen(ctx, n);
-  ctx.print(inner);
+  capture(() => sctx.print(inner));
   return memberChains.get(ctx)?.has(inner) ?? false;
 }
 
@@ -818,7 +819,7 @@ const memberCustom: CustomRule<JsOptions> = (n, s) => {
       kind(ctx, parent) === "variable_declarator") &&
       inner !== undefined &&
       ((isCallExpression(ctx, inner) && callArguments(ctx, inner).length > 0) ||
-        printsAsMemberChain(ctx, inner)));
+        (memberChains.get(ctx)?.has(inner) ?? false)));
   if (inner !== undefined && memberChains.get(ctx)?.has(inner))
     markMemberChain(ctx, n);
   sLineSuffixBoundary();
@@ -1190,7 +1191,7 @@ const callCustom: CustomRule<JsOptions> = (n, s) => {
   const list = argumentsNode(ctx, n);
   if (
     list !== undefined &&
-    ctx.dangling(list).length === 0 &&
+    ctx.comments(list).dangling.length === 0 &&
     ((args.length === 1 && isTemplateOnItsOwnLine(ctx, args[0] as number)) ||
       isSimpleModuleImport(ctx, n) ||
       isCommonJsOrAmdModuleDefinition(ctx, n) ||

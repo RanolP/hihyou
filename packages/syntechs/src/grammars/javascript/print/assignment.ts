@@ -82,7 +82,7 @@ export function sPrintAssignment(
   right: number | undefined,
 ): void {
   const leftPart = capture(left);
-  const layout = chooseLayout(ctx.js, node, leftPart, right);
+  const layout = chooseLayout(ctx, node, leftPart, right);
   const printRight = () => {
     if (right !== undefined) ctx.print(right, { assignmentLayout: layout });
   };
@@ -153,11 +153,12 @@ const isArrow = (x: HasTree, n: number | undefined) =>
 const isObjectProperty = (x: HasTree, n: number) => kind(x, n) === "pair";
 
 function chooseLayout(
-  ctx: JsCtx,
+  s: JsStreamCtx,
   node: number,
   left: Part,
   rightNode: number | undefined,
 ): AssignmentLayout {
+  const ctx = s.js;
   if (rightNode === undefined) return "only-left";
   const right = unparen(ctx, rightNode);
   const isTail = !isAssignment(ctx, right);
@@ -209,7 +210,7 @@ function chooseLayout(
   )
     return "break-lhs";
   const hasShortKey = isObjectPropertyWithShortKey(ctx, node, left);
-  if (shouldBreakAfterOperator(ctx, rightNode, hasShortKey))
+  if (shouldBreakAfterOperator(s, rightNode, hasShortKey))
     return "break-after-operator";
   if (isComplexTypeAliasParams(ctx, node)) return "break-lhs";
   const rightKind = kind(ctx, right);
@@ -257,10 +258,11 @@ export function shouldInlineLogicalExpression(x: HasTree, n: number): boolean {
 }
 
 function shouldBreakAfterOperator(
-  ctx: JsCtx,
+  s: JsStreamCtx,
   rightNode: number,
   hasShortKey: boolean,
 ): boolean {
+  const ctx = s.js;
   const right = unparen(ctx, rightNode);
   if (isBinaryish(ctx, right) && !shouldInlineLogicalExpression(ctx, right))
     return true;
@@ -314,21 +316,22 @@ function shouldBreakAfterOperator(
     } else break;
   }
   return (
-    kind(ctx, n) === "string" || isPoorlyBreakableMemberOrCallChain(ctx, n)
+    kind(ctx, n) === "string" || isPoorlyBreakableMemberOrCallChain(s, n)
   );
 }
 
 function isPoorlyBreakableMemberOrCallChain(
-  ctx: JsCtx,
+  s: JsStreamCtx,
   n: number,
   deep = false,
 ): boolean {
+  const ctx = s.js;
   n = unparen(ctx, n);
   const k = kind(ctx, n);
   if (k === "call_expression" || k === "new_expression") {
     if (kind(ctx, field(ctx, n, "arguments")) === "template_string")
       return false;
-    if (printsAsMemberChain(ctx, n)) return false;
+    if (printsAsMemberChain(s, n)) return false;
     const args = callArguments(ctx, n);
     const poor =
       args.length === 0 ||
@@ -338,15 +341,15 @@ function isPoorlyBreakableMemberOrCallChain(
     if (!poor) return false;
     if (isCallWithComplexTypeArguments(ctx, n)) return false;
     const c = callee(ctx, n);
-    return c !== undefined && isPoorlyBreakableMemberOrCallChain(ctx, c, true);
+    return c !== undefined && isPoorlyBreakableMemberOrCallChain(s, c, true);
   }
   if (isMember(ctx, n)) {
     const o = objectOf(ctx, n);
-    return o !== undefined && isPoorlyBreakableMemberOrCallChain(ctx, o, true);
+    return o !== undefined && isPoorlyBreakableMemberOrCallChain(s, o, true);
   }
   if (k === "non_null_expression") {
     const o = first(ctx, n);
-    return o !== undefined && isPoorlyBreakableMemberOrCallChain(ctx, o, deep);
+    return o !== undefined && isPoorlyBreakableMemberOrCallChain(s, o, deep);
   }
   return deep && (k === "identifier" || k === "this");
 }

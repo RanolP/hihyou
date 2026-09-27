@@ -402,7 +402,7 @@ export function canPrintParamsWithoutParens(ctx: JsCtx, fn: number): boolean {
   const list = field(ctx, fn, "parameters");
   return (
     field(ctx, fn, "type_parameters") === undefined &&
-    !(list !== undefined && ctx.dangling(list).length > 0) &&
+    !(list !== undefined && ctx.comments(list).dangling.length > 0) &&
     shape === "Identifier" &&
     kind(ctx, param) !== "this" &&
     type === undefined &&
