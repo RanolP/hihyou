@@ -2,8 +2,9 @@
 // holds it to this. Test-only: nothing in the production path imports it.
 //
 //   flatten  structure -> the node's token sequence: tokens, children, spaces, hard lines, and frames around a
-//            bracket idiom and a list, whose separators and trailing separator are slots. No line breaks but
-//            hard ones: nothing here depends on the width.
+//            bracket idiom and a list, whose separators are slots and whose pad and trailing separator are
+//            mode-conditional entries (`ifFlat`, `ifBroken`). No line breaks but hard ones: nothing here depends
+//            on the width.
 //   wrap     sequence + the kind's wrapping rule -> stream calls: groups, indents, lines and fills.
 //
 // A child is an opaque `child` entry that the core prints with its comments by its own kind's rules.
@@ -37,13 +38,15 @@ export type Entry =
   | { readonly e: "comment"; readonly c: number }
   | { readonly e: "custom"; readonly name: string }
   /** Opens a frame: brackets (its first and last entries are the bracket tokens), or a list of `items`. */
-  | { readonly e: "brackets"; readonly pad: boolean }
+  | { readonly e: "brackets" }
   | { readonly e: "list"; readonly items: readonly number[] }
   | { readonly e: "end" }
   /** After each item but the last: its separator token (-1: none in the source), and a blank line after it. */
   | { readonly e: "sep"; readonly tok: number; readonly blank: boolean }
-  /** After the last item: a separator the list prints only while broken. */
-  | { readonly e: "trailing"; readonly after: number; readonly text: string };
+  /** Only while the enclosing frame stays flat: a space, inserted beside a padded bracket. */
+  | { readonly e: "ifFlat"; readonly text: string }
+  /** After the last item, only while the list breaks: a separator the source has no trailing copy of. */
+  | { readonly e: "ifBroken"; readonly after: number; readonly text: string };
 
 export const evalCond = (c: Cond, options: unknown): boolean => {
   if (typeof c === "boolean") return c;
@@ -96,9 +99,12 @@ export function flatten<O>(
               : { e: "tok", node: c, text: t.text(c), synthetic: false },
           );
         };
-        out.push({ e: "brackets", pad: evalCond(x.pad, ctx.options) });
+        const pad = evalCond(x.pad, ctx.options);
+        out.push({ e: "brackets" });
         bracket(x.open);
+        if (pad) out.push({ e: "ifFlat", text: " " });
         walk(x.body);
+        if (pad) out.push({ e: "ifFlat", text: " " });
         bracket(x.close);
         out.push({ e: "end" });
         return;
@@ -112,7 +118,7 @@ export function flatten<O>(
           if (i < seps.length)
             out.push({ e: "sep", tok: seps[i] as number, blank: nextLineEmpty(t, item) });
           else if (evalCond(x.trailing, ctx.options))
-            out.push({ e: "trailing", after: item, text: x.sep });
+            out.push({ e: "ifBroken", after: item, text: x.sep });
         });
         if (items.length === 0)
           for (const c of ctx.danglingComments(node)) out.push({ e: "comment", c });
@@ -187,7 +193,7 @@ export function wrap<O>(
     const after: Entry[] = [];
     for (let i = from + 1; i < to; i++) {
       const x = seq[i] as Entry;
-      if (x.e === "sep" || x.e === "trailing") after[after.length - 1] = x;
+      if (x.e === "sep" || x.e === "ifBroken") after[after.length - 1] = x;
       else if (x.e === "child") after.push({ e: "end" });
     }
     const always = w.expand === "always";
@@ -220,7 +226,7 @@ export function wrap<O>(
     const slot = (x: Entry | undefined) => {
       if (x?.e === "sep") {
         if (x.tok !== -1) sToken(x.tok, tree.text(x.tok));
-      } else if (x?.e === "trailing") {
+      } else if (x?.e === "ifBroken") {
         open(IF_BROKEN, concise ? listGroup : -1);
         sToken(x.after, x.text, true);
         close();
@@ -296,17 +302,19 @@ export function wrap<O>(
           const end = endOf(i);
           const openTok = seq[i + 1] as Entry;
           const closeTok = seq[end - 1] as Entry;
-          const body = i + 2;
-          if ((seq[body] as Entry).e === "list" && endOf(body) === end - 2)
-            list(body, end - 2, openTok, closeTok, x.pad);
+          const pad = (seq[i + 2] as Entry).e === "ifFlat";
+          const body = i + 2 + (pad ? 1 : 0);
+          const bodyEnd = end - 1 - (pad ? 1 : 0);
+          if ((seq[body] as Entry).e === "list" && endOf(body) === bodyEnd - 1)
+            list(body, bodyEnd - 1, openTok, closeTok, pad);
           else {
             open(GROUP);
             tok(openTok);
             open(INDENT);
-            sLine(x.pad ? 0 : SOFT);
-            render(body, end - 1);
+            sLine(pad ? 0 : SOFT);
+            render(body, bodyEnd);
             close();
-            sLine(x.pad ? 0 : SOFT);
+            sLine(pad ? 0 : SOFT);
             tok(closeTok);
             close();
           }
