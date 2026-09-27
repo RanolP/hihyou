@@ -8,8 +8,8 @@ import { textWidth } from "./width.js";
  * and whether it holds a forced break is known when it closes: measuring a group reads its own contents in O(1)
  * and scans only what follows it, up to the next line break.
  *
- * The semantics are those of `printer.ts`, the Doc printer it replaces, ruff's measure and layout kinds
- * included; `stream.test.ts` compares the two on the same input.
+ * The semantics are those of prettier's Doc printer, ruff's measure and layout kinds included; `stream.test.ts`
+ * pins them.
  */
 
 // Entry kinds.
@@ -97,7 +97,7 @@ let choiceSeen = false;
 const BREAK = 0;
 const FLAT = 1;
 /**
- * Inside a `FLATTEN` interval: removeLines' modes, the flat or broken mode `printer.ts` gives the part rebuilt
+ * Inside a `FLATTEN` interval: removeLines' modes, the flat or broken mode prettier's printer gives the part rebuilt
  * (`FORCED_BREAK | mode`). Every line but a hard one prints flat, and nothing is decided.
  */
 const FORCED_BREAK = 2;
@@ -118,7 +118,7 @@ const grow8 = (a: Uint8Array) => {
 // Ruff's layout kinds, numbered from 40, apart from the other kinds.
 /** One literal token holding a line break (`sLiteral`): its lines print as they are, the column restarting at 0. */
 const LITERAL_TOKEN = 40;
-/** Line flags (`doc.ts`'s): a broken line on a line still empty prints nothing, and one adds an empty line. */
+/** Line flags: a broken line on a line still empty prints nothing, and one adds an empty line. */
 export const COLLAPSE = 4;
 export const BLANK = 8;
 /** Its contents indented when the group `iRef` (-1: the enclosing mode) prints broken; see `openIndentIfBreak`. */
@@ -374,7 +374,7 @@ export function sToken(node: number, s: string, synthetic = false): void {
 }
 
 /**
- * A token whose line breaks are literal (`doc.ts`'s `literalToken`): a measure ends at its first line break and
+ * A token whose line breaks are literal (prettier's `literalline`): a measure ends at its first line break and
  * the column restarts after the last. Counted as a hard line, so a group holding it scans rather than measure O(1).
  */
 export function sLiteral(node: number, s: string): void {
@@ -424,7 +424,7 @@ export function sLine(flags: number): void {
 
 /**
  * A line with ruff's `COLLAPSE` and `BLANK` flags besides `SOFT`/`HARD`; measured as `sLine` measures the line
- * without them. A hard line that collapses breaks every enclosing group by itself, as `printer.ts` propagates it.
+ * without them. A hard line that collapses breaks every enclosing group by itself, as prettier's propagateBreaks does.
  */
 export function sRuffLine(flags: number): void {
   sLine(flags & (SOFT | HARD));
@@ -781,7 +781,7 @@ function transfer(bits: number, t: number, endLine: number, endRun: number, lead
 
 /**
  * Printed again through a jump, an `ifBreak` on a group inside span `t` reads that group's mode from the print
- * before, as `printer.ts` reads a shared group's: the groups holding it measure by a scan, which reads it.
+ * before, as prettier's printer reads a shared group's: the groups holding it measure by a scan, which reads it.
  */
 function scanInnerRefs(t: number) {
   const held = new Int32Array(m - t + 1);
@@ -942,7 +942,7 @@ export function closeDead(d: number): void {
 // --- end dead ---
 
 // --- queries ---
-// What a rule asks of a part it built, as `doc.ts`'s and the JS printer's Doc queries ask of a Doc: the part is a
+// What a rule asks of a part it built, as prettier's and the JS printer's Doc queries ask of a Doc: the part is a
 // closed interval, a span when it is only a sequence. Each reads the interval's own entries and intervals, and the
 // span of each jump among them.
 
@@ -980,7 +980,7 @@ function walkIn(
 }
 
 /**
- * `doc.ts`'s willBreak: whether closed interval `k` holds a break parent (a hard line's included) or a broken
+ * Prettier's willBreak: whether closed interval `k` holds a break parent (a hard line's included) or a broken
  * group. A choice reads its first state only, as the Doc's contents are that state.
  */
 export function willBreak(k: number): boolean {
@@ -1020,7 +1020,7 @@ const isHardLine = (i: number) =>
   eKind[i] === LINE && ((eFlag[i] as number) & (HARD | BOUNDARY)) === HARD;
 
 /**
- * `willBreak` of a flat part, as doc.ts asks it of what removeLines rebuilt: its flags count the break parents
+ * `willBreak` of a flat part, as prettier asks it of what removeLines rebuilt: its flags count the break parents
  * removeLines keeps, and its hard lines count only where removeLines keeps them: a choice's in its last state,
  * an `ifBreak`'s in its flat branch.
  */
@@ -1256,14 +1256,14 @@ export function renderIndentation(
   return { value, length, queue, indented: -1, aligned: undefined };
 }
 
-/** Prints the stream built since `resetStream`, as `printer.ts`'s `print` would print the equivalent Doc. */
+/** Prints the stream built since `resetStream`, as prettier's printer would print the equivalent Doc. */
 export function printStream(layout: Layout): StreamPrinted {
   const ruff = layout.ruff === true;
   if (ruff !== ruffSpaces)
     throw new Error("printStream: reset the stream with the layout's ruff");
   if (op !== 0) throw new Error(`printStream: ${op} intervals left open`);
   const lineWidth = layout.lineWidth;
-  // Indentations by id, as `printer.ts` builds them: each one step (an indent or an alignment) deeper than
+  // Indentations by id, as prettier's printer builds them: each one step (an indent or an alignment) deeper than
   // another, built once.
   const indents: Indentation[] = [
     { value: "", length: 0, queue: [], indented: -1, aligned: undefined },
@@ -1865,7 +1865,7 @@ export function printStream(layout: Layout): StreamPrinted {
     );
   }
   /**
-   * `printer.ts`'s printGroup for a conditional group: the first state flat when it fits, else the first later
+   * Prettier's printGroup for a conditional group: the first state flat when it fits, else the first later
    * one that fits flat, else the last one broken; in a flat mode, the first state as the group's own mode. Sets
    * `picked`.
    */
@@ -1956,7 +1956,7 @@ export function printStream(layout: Layout): StreamPrinted {
         switch (iKind[k]) {
           case GROUP: {
             if (tm >= FORCED_BREAK) {
-              // printer.ts decides removeLines' group, which clears a pending remeasure, but only a hard line in
+              // Prettier decides removeLines' group, which clears a pending remeasure, but only a hard line in
               // it breaks, and it breaks only by what it holds.
               remeasure = false;
               cur++;
