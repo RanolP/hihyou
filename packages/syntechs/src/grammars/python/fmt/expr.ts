@@ -751,7 +751,7 @@ function fields(f: Fmt, e: Expr, o: Opts): Format {
         formatExpr(f, e.value),
       ];
     case "UnaryOp":
-      return unary(f, e);
+      return dslPart(e.ts);
     case "BinOp":
     case "Compare":
     case "BoolOp":
@@ -770,15 +770,8 @@ function fields(f: Fmt, e: Expr, o: Opts): Format {
       ];
     }
     case "Await":
-      return [f.tok(e.kw), space, maybeParenthesize(f, e.value, e, "ifBreaks")];
-    case "Yield": {
-      const kw = e.kws.flatMap((k, i) =>
-        i > 0 ? [space, f.tok(k)] : [f.tok(k)],
-      );
-      return e.value
-        ? [kw, space, maybeParenthesize(f, e.value, e, "optional")]
-        : kw;
-    }
+    case "Yield":
+      return dslPart(e.ts);
     case "Tuple":
       return tuple(f, e, o.tuple ?? "default");
     case "List":
@@ -964,30 +957,12 @@ export function keyword(f: Fmt, k: Keyword): Format {
   return [f.leading(cs.leading(k)), body, f.trailing(cs.trailing(k))];
 }
 
-function unaryNeedsLineBreak(f: Fmt, e: UnaryOp): boolean {
+export function unaryNeedsLineBreak(f: Fmt, e: UnaryOp): boolean {
   const leading = f.comments.leading(e.operand);
   if (leading.length === 0) return false;
   if (e.operand.parens.length === 0) return true;
   const p = e.operand.parens[0];
   return p !== undefined && leading.some((c) => c.start < p.start);
-}
-
-function unary(f: Fmt, e: UnaryOp): Format {
-  const op = f.text(e.op);
-  const operand = e.operand;
-  const lineBreak = unaryNeedsLineBreak(f, e);
-  const parens: "always" | "preserve" =
-    operand.kind === "BinOp" &&
-    operand.parens.length === 0 &&
-    f.text(operand.op) === "**"
-      ? "always"
-      : "preserve";
-  return [
-    f.tok(e.op),
-    f.trailing(f.comments.dangling(e)),
-    lineBreak ? hard : op === "not" ? space : [],
-    formatExpr(f, operand, parens),
-  ];
 }
 
 function ifExp(f: Fmt, e: IfExp, nested: boolean): Format {
