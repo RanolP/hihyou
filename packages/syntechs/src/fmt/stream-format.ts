@@ -7,7 +7,7 @@ import {
   type Formatted,
   shiftForEndOfLine,
 } from "./format.js";
-import type { Language } from "./rules.js";
+import type { Language, PrintArgs } from "./rules.js";
 import {
   close,
   LINE_SUFFIX,
@@ -32,10 +32,15 @@ export interface StreamCtx<O = unknown> {
   readonly options: O;
   /** What this format's placement pass returned (`LanguageSpec.placeComments`), for a rule that reads it whole. */
   readonly placement: Comments;
-  /** Appends `node` as its rule prints it, with its comments. */
-  print(node: number): void;
+  /** Appends `node` as its rule prints it, with its comments; `args` reach that rule, as `ctx.args`. */
+  print(node: number, args?: PrintArgs): void;
   /** Appends `node` as its rule prints it (its text when it has none, or is broken), without its comments. */
-  printNode(node: number): void;
+  printNode(node: number, args?: PrintArgs): void;
+  /**
+   * What the node printing now was passed (prettier's `print(path, args)`), read while its rule prints. Not a
+   * rule parameter, where it would clash with a custom rule's `CustomSeq`.
+   */
+  readonly args: PrintArgs | undefined;
   items(node: number): number[];
   /** The comments attached before (`leading`) or after (`trailing`) `node`, in source order. */
   leadingComments(node: number): readonly number[];
@@ -133,6 +138,20 @@ export type StreamRule<O = unknown> = (node: number, ctx: StreamCtx<O>) => void;
 export interface StreamRules<O = unknown> {
   readonly rules: ReadonlyMap<string, StreamRule<O>>;
   readonly lists: ReadonlySet<StreamRule<O>>;
+  /** Appends comment `c` as printed, when it is not its source text (`LanguageSpec.printComment`). */
+  readonly printComment?: (c: number, ctx: StreamCtx<O>) => void;
+  /**
+   * Whether `node`'s rule prints the node's comments itself (`LanguageSpec.printsOwnComments`), with
+   * `printLeadingComments` and `printTrailingComments`, so they can go inside what the rule wraps around them.
+   */
+  readonly printsOwnComments?: (node: number, ctx: StreamCtx<O>) => boolean;
+  /**
+   * Prints every node that is not broken, inside its comments, in place of its rule, which `print` appends:
+   * prettier's genericPrint around a printer's own (the parentheses needsParens adds), its prettier-ignore
+   * (the source text instead of `print`), and its cache of printed nodes (a span the first print builds, which
+   * a later print jumps to).
+   */
+  readonly wrap?: (node: number, ctx: StreamCtx<O>, print: () => void, args: PrintArgs | undefined) => void;
 }
 
 /** `format`, over the stream rules of `base` (a language with `stream` rules). */
@@ -144,8 +163,11 @@ export function formatStream<O>(
   try {
     const language = base.stream;
     if (!language) throw new Error("formatStream: a language without stream rules");
-    if (base.printComment || base.printsOwnComments)
-      throw new Error("formatStream: a language that prints its own comments");
+    if (
+      (base.printComment && !language.printComment) ||
+      (base.printsOwnComments && !language.printsOwnComments)
+    )
+      throw new Error("formatStream: a language whose comment hooks have no stream form");
     const resolved: O = { ...base.defaults, ...options };
     const settings = base.settings(resolved);
     resetStream(settings.ruff === true);
@@ -165,18 +187,35 @@ export function formatStream<O>(
       return prefix !== undefined && tree.text(n).startsWith(prefix);
     };
     const comments = base.placeComments(tree, isComment, resolved);
-    const comment = (c: number) => {
-      const t = tree.text(c);
-      sToken(c, isLine(c) ? t.trimEnd() : t);
-    };
+    const printComment = language.printComment;
+    const comment = printComment
+      ? (c: number) => printComment(c, ctx)
+      : (c: number) => {
+          const t = tree.text(c);
+          sToken(c, isLine(c) ? t.trimEnd() : t);
+        };
     const broken = brokenNodes(tree);
     const isBroken = (node: number) => broken !== undefined && broken.has(node);
 
     const none: readonly number[] = [];
-    const printNode = (node: number) => {
-      const rule = (!isBroken(node) && ruleOf(node)) || null;
-      if (rule) rule(node, ctx);
-      else sToken(node, tree.text(node));
+    const { wrap, printsOwnComments } = language;
+    let current: PrintArgs | undefined;
+    const printNode = (node: number, args?: PrintArgs) => {
+      if (isBroken(node)) {
+        sToken(node, tree.text(node));
+        return;
+      }
+      const rule = ruleOf(node);
+      if (!rule) {
+        if (wrap) wrap(node, ctx, () => sToken(node, tree.text(node)), args);
+        else sToken(node, tree.text(node));
+        return;
+      }
+      const outer = current;
+      current = args;
+      if (wrap) wrap(node, ctx, () => rule(node, ctx), args);
+      else rule(node, ctx);
+      current = outer;
     };
 
     const ctx: StreamCtx<O> = {
@@ -184,12 +223,19 @@ export function formatStream<O>(
       options: resolved,
       placement: comments,
       // `printWithComments` of rules.ts.
-      print(node) {
+      print(node, args) {
+        if (printsOwnComments && !isBroken(node) && printsOwnComments(node, ctx)) {
+          printNode(node, args);
+          return;
+        }
         printLeadingComments(ctx, node);
-        printNode(node);
+        printNode(node, args);
         printTrailingComments(ctx, node);
       },
       printNode,
+      get args() {
+        return current;
+      },
       items(node) {
         const items: number[] = [];
         for (let i = 0, count = tree.count(node); i < count; i++) {

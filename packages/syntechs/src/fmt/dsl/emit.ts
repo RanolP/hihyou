@@ -108,12 +108,14 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
       : `fieldChild(t, node, ${str(name)})`;
   /** Child `c` with the comments attached to it, as the reference's leading, child and trailing entries. */
   const child = (c: string, via?: string) => {
-    line(`printLeadingComments(ctx, ${c});`);
-    if (via === undefined) line(`ctx.printNode(${c});`);
-    else {
-      line(`if (ctx.isBroken(${c})) ctx.printNode(${c});`);
-      line(`else custom[${str(via)}](${c}, ctx, customSeq(ctx, ${c}));`);
+    // Through `ctx.print`, which leaves the comments to a node that prints its own (`printsOwnComments`).
+    if (via === undefined) {
+      line(`ctx.print(${c});`);
+      return;
     }
+    line(`printLeadingComments(ctx, ${c});`);
+    line(`if (ctx.isBroken(${c})) ctx.printNode(${c});`);
+    line(`else custom[${str(via)}](${c}, ctx, customSeq(ctx, ${c}));`);
     line(`printTrailingComments(ctx, ${c});`);
   };
   const items = (x: Extract<Tree, { t: "sepBy" | "lines" }>) => {
