@@ -17,18 +17,25 @@ import {
 import { lfAfter, nextLineEmpty } from "../../../fmt/text.js";
 import {
   BROKEN,
+  capture,
   close,
   GROUP,
+  IF_BROKEN,
+  INDENT,
   type JsStreamCtx,
   jsCtx,
   onDoc,
   open,
   type Part,
   place,
+  removeLines as partRemoveLines,
+  SOFT,
   sBreakParent,
+  sHardline,
   sLine,
   sText,
   sToken,
+  willBreak as partWillBreak,
 } from "../sink.js";
 import { isTemplateOnItsOwnLine, isTestCall } from "./calls.js";
 import { role } from "./parens.js";
@@ -41,7 +48,6 @@ import {
   callee,
   childWhere,
   children,
-  danglingCommentsInList,
   field,
   first,
   hasComment,
@@ -70,6 +76,7 @@ import {
 } from "./util.js";
 import type { CustomRule } from "../../../fmt/dsl/runtime.js";
 import type { StreamCtx } from "../../../fmt/stream-format.js";
+import { semiCustoms } from "./semi.js";
 import type { JsOptions } from "./util.js";
 
 /** A parameter as prettier's AST would type it. */
@@ -292,88 +299,137 @@ function isDecoratedFunction(ctx: JsCtx, fn: number): boolean {
   return false;
 }
 
-/** Prettier's printFunctionParameters for function `fn`, whose `formal_parameters` holds the list. */
-export function printFunctionParameters(
+/**
+ * `fn`'s parameter list as prettier's printFunctionParameters prints it, as a Doc for the rules still on it (a
+ * method's value, a function type).
+ */
+export const printFunctionParameters = (
   ctx: JsCtx,
   fn: number,
   expand = false,
   withTypeParameters = false,
-): Doc {
-  const typeParametersNode = withTypeParameters
-    ? field(ctx, fn, "type_parameters")
-    : undefined;
-  const typeParametersDoc = p(ctx, typeParametersNode);
+): Doc =>
+  onDoc((n, s) => printParameters(s, n, expand, withTypeParameters))(fn, ctx);
+
+/**
+ * What `fn` writes, with `node`'s own comments around it. The Doc ctx's withComments: under `onDoc` the stream ctx
+ * prints a node's comments only around the node's own rule, and `formal_parameters` has none.
+ */
+function withComments(s: StreamCtx<JsOptions>, node: number, fn: () => void): void {
+  place(commented(s, node, capture(fn)));
+}
+const commented = (s: StreamCtx<JsOptions>, node: number, part: Part): Part => ({
+  doc: jsCtx(s).js.withComments(node, part.doc),
+});
+
+/** Prettier's printFunctionParameters for function `fn`, whose `formal_parameters` holds the list. */
+function printParameters(
+  s: StreamCtx<JsOptions>,
+  fn: number,
+  expand = false,
+  withTypeParameters = false,
+): void {
+  const { js: ctx } = jsCtx(s);
+  const typeParameters = capture(() =>
+    pr(s, withTypeParameters ? field(ctx, fn, "type_parameters") : undefined),
+  );
+  place(typeParameters);
   const list = field(ctx, fn, "parameters");
   if (list === undefined) {
     // A lone parameter without parentheses, printed with them.
-    const single = field(ctx, fn, "parameter");
-    return [
-      typeParametersDoc,
-      synthetic(fn, "("),
-      p(ctx, single),
-      synthetic(fn, ")"),
-    ];
+    sToken(fn, "(", true);
+    pr(s, field(ctx, fn, "parameter"));
+    sToken(fn, ")", true);
+    return;
   }
-  return [
-    typeParametersDoc,
-    ctx.withComments(
-      list,
-      parametersDoc(ctx, fn, list, expand, typeParametersDoc),
-    ),
-  ];
+  withComments(s, list, () =>
+    printParameterList(s, fn, list, expand, typeParameters),
+  );
 }
 
 /** The last anonymous `text` token among `n`'s children. */
 const lastAnon = (ctx: JsCtx, n: number, text: string) =>
   lastChildWhere(ctx, n, (c) => !named(ctx, c) && kind(ctx, c) === text);
 
-function parametersDoc(
-  ctx: JsCtx,
+function printParameterList(
+  s: StreamCtx<JsOptions>,
   fn: number,
   list: number,
   expand: boolean,
-  typeParametersDoc: Doc,
-): Doc {
-  const open = t(ctx, anon(ctx, list, "("));
-  const close = t(ctx, lastAnon(ctx, list, ")"));
+  typeParameters: Part,
+): void {
+  const { js: ctx } = jsCtx(s);
+  const openParen = anon(ctx, list, "(");
+  const closeParen = lastAnon(ctx, list, ")");
   const params = items(ctx, list);
-  if (params.length === 0)
-    return [open, danglingCommentsInList(ctx, list), close];
+  if (params.length === 0) {
+    // Prettier's printDanglingCommentsInList.
+    tk(ctx, openParen);
+    const dangling = s.danglingComments(list);
+    if (dangling.length > 0) {
+      open(INDENT);
+      sLine(SOFT);
+      dangling.forEach((c, i) => {
+        if (i > 0) sHardline();
+        s.comment(c);
+      });
+      close();
+      if (dangling.some((c) => s.isLineComment(c))) sHardline();
+      else sLine(SOFT);
+    }
+    tk(ctx, closeParen);
+    return;
+  }
   const commas = separators(ctx, list, params);
   const inTestCall = isTestCall(ctx, role(ctx, fn).parent);
   const hug = shouldHugTheOnlyFunctionParameter(ctx, fn);
-  const printed: Doc[] = [];
-  params.forEach((param, index) => {
-    printed.push(p(ctx, param));
-    if (index === params.length - 1) return;
-    printed.push(t(ctx, commas.get(param)));
-    if (inTestCall || hug) printed.push(text(" "));
-    else if (nextLineEmpty(ctx.tree, param)) printed.push(hardline, hardline);
-    else printed.push(line);
-  });
+  const printed = capture(() =>
+    params.forEach((param, index) => {
+      s.print(param);
+      if (index === params.length - 1) return;
+      tk(ctx, commas.get(param));
+      if (inTestCall || hug) sText(" ");
+      else if (nextLineEmpty(ctx.tree, param)) {
+        sHardline();
+        sHardline();
+      } else sLine(0);
+    }),
+  );
   if (expand && !isDecoratedFunction(ctx, fn)) {
-    if (willBreak(typeParametersDoc) || willBreak(printed))
+    if (partWillBreak(typeParameters) || partWillBreak(printed))
       throw new ArgExpansionBailout();
-    return group([open, removeLines(printed), close]);
+    open(GROUP);
+    tk(ctx, openParen);
+    place(partRemoveLines(printed));
+    tk(ctx, closeParen);
+    close();
+    return;
   }
   const decorated = params.some(
     (param) =>
       childWhere(ctx, param, (c) => kind(ctx, c) === "decorator") !== undefined,
   );
-  if ((hug && !decorated) || inTestCall) return [open, ...printed, close];
+  tk(ctx, openParen);
+  if ((hug && !decorated) || inTestCall) {
+    place(printed);
+    tk(ctx, closeParen);
+    return;
+  }
   const last = params.at(-1) as number;
   const hasRest =
     paramShape(ctx, last).shape === "RestElement" ||
     kind(ctx, paramShape(ctx, last).pattern) === "rest_pattern";
-  return [
-    open,
-    indent([softline, ...printed]),
-    !hasRest && trailingCommaAllowed(ctx, "all")
-      ? ifBreak(synthetic(last, ","))
-      : [],
-    softline,
-    close,
-  ];
+  open(INDENT);
+  sLine(SOFT);
+  place(printed);
+  close();
+  if (!hasRest && trailingCommaAllowed(ctx, "all")) {
+    open(IF_BROKEN);
+    sToken(last, ",", true);
+    close();
+  }
+  sLine(SOFT);
+  tk(ctx, closeParen);
 }
 
 /** Prettier's printReturnType. */
@@ -399,11 +455,9 @@ export function canPrintParamsWithoutParens(ctx: JsCtx, fn: number): boolean {
   );
 }
 
-/** The keyword tokens before a function's name or parameters: `async`, `function`, `*`. */
-const keyword = (ctx: JsCtx, n: number, kind: string): Doc =>
-  t(ctx, anon(ctx, n, kind));
-
-const functionRule: JsRule = (n, ctx, args?: Args) => {
+/** Prettier's printFunction, for function declarations, expressions and signatures. */
+const printFunction: CustomRule<JsOptions> = (n, s) => {
+  const { js: ctx, args } = jsCtx(s);
   let shouldExpandParameters = false;
   const k = kind(ctx, n);
   if (
@@ -416,31 +470,37 @@ const functionRule: JsRule = (n, ctx, args?: Args) => {
       isCall(ctx, parent) &&
       (callArguments(ctx, parent).length > 1 ||
         parameters(ctx, n).every((x) => {
-          const s = paramShape(ctx, x);
-          return s.shape === "Identifier" && s.type === undefined;
+          const shape = paramShape(ctx, x);
+          return shape.shape === "Identifier" && shape.type === undefined;
         }))
     )
       shouldExpandParameters = true;
   }
-  const parametersDoc = printFunctionParameters(ctx, n, shouldExpandParameters);
-  const returnTypeDoc = printReturnType(ctx, n);
-  const shouldGroup = shouldGroupFunctionParameters(ctx, n, returnTypeDoc);
-  const declare = anon(ctx, n, "declare");
-  const async = anon(ctx, n, "async");
-  const star = anon(ctx, n, "*");
-  const name = field(ctx, n, "name");
+  const params = capture(() => printParameters(s, n, shouldExpandParameters));
+  const returnType = capture(() => pr(s, field(ctx, n, "return_type")));
+  const shouldGroup = shouldGroupFunctionParameters(ctx, n, returnType.doc);
+  for (const keyword of ["declare", "async"]) {
+    const c = anon(ctx, n, keyword);
+    if (c === undefined) continue;
+    tk(ctx, c);
+    sText(" ");
+  }
+  tk(ctx, anon(ctx, n, "function"));
+  tk(ctx, anon(ctx, n, "*"));
+  sText(" ");
+  pr(s, field(ctx, n, "name"));
+  pr(s, field(ctx, n, "type_parameters"));
+  open(GROUP);
+  if (shouldGroup) open(GROUP);
+  place(params);
+  if (shouldGroup) close();
+  place(returnType);
+  close();
   const body = field(ctx, n, "body");
-  return [
-    declare !== undefined ? [t(ctx, declare), text(" ")] : [],
-    async !== undefined ? [t(ctx, async), text(" ")] : [],
-    keyword(ctx, n, "function"),
-    star !== undefined ? t(ctx, star) : [],
-    text(" "),
-    p(ctx, name),
-    p(ctx, field(ctx, n, "type_parameters")),
-    group([shouldGroup ? group(parametersDoc) : parametersDoc, returnTypeDoc]),
-    body !== undefined ? [text(" "), p(ctx, body)] : semi(ctx, n),
-  ];
+  if (body !== undefined) {
+    sText(" ");
+    s.print(body);
+  } else semiCustoms.semi(lastAnon(ctx, n, ";"), n, s);
 };
 
 /** Prettier's printMethodValue: the parameters, return type and body of a method. */
@@ -772,14 +832,10 @@ const parameter: CustomRule<JsOptions> = (n, s) => {
 
 /** The customs format/functions.ts names, by the names its spec gives them. */
 export const functionCustoms = {
+  function: printFunction,
   parameter,
 } satisfies Record<string, CustomRule<JsOptions>>;
 
 export const functionRules: Record<string, JsRule> = {
-  function_declaration: functionRule,
-  function_expression: functionRule,
-  generator_function: functionRule,
-  generator_function_declaration: functionRule,
-  function_signature: functionRule,
   arrow_function: arrow,
 };
