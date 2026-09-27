@@ -11,6 +11,7 @@ import {
 } from "../builders.js";
 import type { Comment } from "../comments.js";
 import { lastChildInBody } from "../comments.js";
+import { dslPart } from "../sink.js";
 import { formatStr } from "../strings.js";
 import {
   byteOffsetOf,
@@ -308,6 +309,12 @@ export function clauseHeader(
   ];
 }
 
+/** The block `s` stands in: a decorated definition's statement node is the definition, inside its decorators'. */
+function blockOf(f: Fmt, s: Stmt): number {
+  const p = f.tree.parent(s.ts);
+  return (s.kind === "FunctionDef" || s.kind === "ClassDef") && s.decorators.length > 0 ? f.tree.parent(p) : p;
+}
+
 /**
  * Ruff's `FormatClauseBody`: a function or class body of only `...` stays on the header's line; any other body
  * goes indented on the lines below. `colonComments` are the header's trailing comments, printed here too
@@ -327,7 +334,8 @@ export function clauseBody(
   }
   return [
     f.trailing(colonComments),
-    indent([hard, formatSuite(f, body, kind)]),
+    // The block, as its rule in format/stmt-compound.ts prints it: ruff's suite of this kind.
+    indent([hard, body[0] ? dslPart(blockOf(f, body[0]), { suite: kind }) : []]),
   ];
 }
 

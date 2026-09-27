@@ -14,7 +14,12 @@ import {
   withItem,
   withItems,
 } from "../fmt/stmt/clauses.js";
-import { clauseBody, leadingAlternateBranchComments } from "../fmt/stmt/suite.js";
+import {
+  clauseBody,
+  formatSuite,
+  leadingAlternateBranchComments,
+  type SuiteKind,
+} from "../fmt/stmt/suite.js";
 
 /** A clause as ruff's `clause` prints it: the comments around its header, and its body. */
 interface Clause {
@@ -119,6 +124,16 @@ export const stmtCompoundVia = {
   "compound.alternate": (token: number | undefined, n: number, ctx: StreamCtx<unknown>) => {
     const { f, alternate } = clauseOf(n, ctx);
     part([leadingAlternateBranchComments(f, alternate.comments, alternate.last), token === undefined ? [] : f.tok(token)]);
+  },
+  // The block's statements as ruff's suite of the kind its clause passes (`ctx.args`).
+  "compound.suite": (n: number, ctx: StreamCtx<unknown>) => {
+    const items = ctx.items(n);
+    const [first] = items;
+    const kind = (ctx.args as { suite?: SuiteKind } | undefined)?.suite;
+    if (first === undefined || !kind) throw new Error("python: a block outside a clause's body");
+    // A statement's keyword or first child looks up the statement.
+    const { f } = ruffStmtOf(ctx.tree.child(first, 0));
+    part(formatSuite(f, items.map((c) => ruffStmtOf(ctx.tree.child(c, 0)).s), kind));
   },
   // A block: the comments after its clause's colon, then ruff's suite.
   "compound.body": (c: number, ctx: StreamCtx<unknown>) => {

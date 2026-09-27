@@ -1,10 +1,12 @@
 // Compound statements, their clauses, and blocks.
-import { lines, space, tok } from "../../../fmt/dsl/dsl.js";
+import { custom, lines, space, tok } from "../../../fmt/dsl/dsl.js";
 import type { Structure } from "../format.js";
 
-// A block is always printed by its clause's `compound.body` (ruff's suite), and a clause keyword by
-// `compound.alternate`, which prints the comments and blank lines before it.
+// A block is printed by its clause's `compound.body`, which prints the comments after the colon and indents it,
+// and a clause keyword by `compound.alternate`, which prints the comments and blank lines before it.
 export const stmtCompound = {
+  // Ruff's suite: the statements and the blank lines between them, by the suite kind its caller passes.
+  block: () => custom("compound.suite"),
   if_statement: ($) => [
     "if",
     space,

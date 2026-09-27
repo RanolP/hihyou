@@ -22,3 +22,9 @@ it("reads past a line continuation to a statement's children in no field", () =>
 it("records a leaf a spec rule prints in place", () => {
   expect(fmt("f(a=1)\n")).toBe("f(a=1)\n");
 });
+
+// A decorated definition's statement node is the definition, whose parent is the decorated_definition, so a body
+// opening with one printed that definition as its whole block and dropped the statements after it.
+it("prints a whole block that opens with a decorated definition", () => {
+  expect(fmt("if a:\n    @d\n    def f(): pass\n    x = 1\n")).toBe("if a:\n\n    @d\n    def f():\n        pass\n\n    x = 1\n");
+});
