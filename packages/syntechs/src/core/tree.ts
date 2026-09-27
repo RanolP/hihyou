@@ -387,8 +387,15 @@ export class DirectTree {
     const productionId = w[parent + PRODUCTION_ID] as number;
     const start = position + (w[parent + PADDING] as number);
     let s = 0;
+    // Where children[i] starts: the parent's start already holds the first child's padding.
+    let childStart = start;
     for (let i = 0; i < n; i++) {
       const c = children[i] as Subtree;
+      if (i > 0) {
+        const prev = children[i - 1] as Subtree;
+        childStart +=
+          (w[prev + SIZE] as number) + (w[c + PADDING] as number);
+      }
       if ((w[c + KIDS] as number) < 0) {
         this.fail();
         return;
@@ -404,11 +411,7 @@ export class DirectTree {
         i + 1 < n
           ? (w[(children[i + 1] as Subtree) + MARK] as number)
           : b.mark();
-      if (
-        !this.patch(c, cf, alias, field, from, to, () =>
-          childStart(w, children, i, start),
-        )
-      ) {
+      if (!this.patch(c, cf, alias, field, from, to, childStart)) {
         this.fail();
         return;
       }
@@ -568,8 +571,8 @@ export class DirectTree {
   }
 
   /**
-   * Gives child `c`, whose entries run from `from` to `to`, the alias and field its parent's production
-   * names. False where the result would differ from `buildTree`'s.
+   * Gives child `c`, whose entries run from `from` to `to` and whose text starts at `start`, the alias and
+   * field its parent's production names. False where the result would differ from `buildTree`'s.
    */
   private patch(
     c: Subtree,
@@ -578,7 +581,7 @@ export class DirectTree {
     field: number,
     from: number,
     to: number,
-    start: () => number,
+    start: number,
   ): boolean {
     const b = this.b;
     const sym = this.sym;
@@ -626,7 +629,7 @@ export class DirectTree {
         alias,
         sym.named[alias] as boolean,
         field,
-        start(),
+        start,
         from,
       );
       return true;
@@ -727,7 +730,7 @@ export class DirectTree {
             field,
             to - kids,
             to,
-            () => start,
+            start,
           )
         )
           return false;
@@ -785,19 +788,4 @@ export class DirectTree {
     w[root + KIDS] = b.mark() - rootMark;
     return true;
   }
-}
-
-/** Where `children[i]` starts, in a node starting at `start`. */
-function childStart(
-  w: Int32Array,
-  children: readonly Subtree[],
-  i: number,
-  start: number,
-): number {
-  let p = start;
-  for (let j = 0; j < i; j++) {
-    const c = children[j] as Subtree;
-    p += (j === 0 ? 0 : (w[c + PADDING] as number)) + (w[c + SIZE] as number);
-  }
-  return i === 0 ? p : p + (w[(children[i] as Subtree) + PADDING] as number);
 }
