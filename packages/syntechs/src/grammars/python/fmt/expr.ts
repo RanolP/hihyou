@@ -764,10 +764,10 @@ function applyInNode(f: Fmt, e: Expr, chain: Chain): Chain {
 }
 
 /** The value of an attribute, call or subscript, continuing the chain `layout`. */
-export function chainValue(f: Fmt, v: Expr, layout: Chain): Format {
-  if (v.parens.length > 0) return formatExpr(f, v, "always");
-  if (isCallLike(v)) return node(f, v, { chain: layout });
-  return formatExpr(f, v, "never");
+export function writeChainValue(f: Fmt, v: Expr, layout: Chain): void {
+  if (v.parens.length > 0) writeExpr(f, v, "always");
+  else if (isCallLike(v)) writeNode(f, v, { chain: layout });
+  else writeExpr(f, v, "never");
 }
 
 // ---- the kinds ----

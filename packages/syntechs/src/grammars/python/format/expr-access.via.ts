@@ -2,24 +2,39 @@
 import type { Frame } from "../../../fmt/dsl/runtime.js";
 import type { StreamCtx } from "../../../fmt/stream-format.js";
 import type { Arguments, Attribute, Call, ClassDef, Expr, Py, Sequence, Slice, Subscript } from "../fmt/ast.js";
-import { type Fmt, hard, soft } from "../fmt/builders.js";
+import type { Fmt } from "../fmt/builders.js";
 import type { Comment } from "../fmt/comments.js";
-import type { Format } from "../fmt/elements.js";
 import {
   type Chain,
-  chainValue,
-  formatExpr,
   isCallLike,
-  node,
   type TupleMode,
   writeArgs,
   writeArgumentItems,
   writeArgumentsFrame,
+  writeChainValue,
   writeExpr,
+  writeNode,
   writeTuple,
 } from "../fmt/expr.js";
-import { COLLAPSE, HARD, part, ruffOf, ruffStmtOf, sLine, sText } from "../fmt/sink.js";
+import { COLLAPSE, HARD, ruffOf, ruffStmtOf, SOFT, sLine, sText } from "../fmt/sink.js";
 import { startOf, tokens } from "../fmt/trivia.js";
+
+/** The call chain layout the attribute, call or subscript printing now continues (`fields` passes it). */
+const layoutOf = (ctx: StreamCtx<unknown>): Chain => (ctx.args?.chain as Chain | undefined) ?? "nonFluent";
+
+function isBaseTenNumber(f: Fmt, e: Expr): boolean {
+  if (e.kind !== "Number") return false;
+  return !/^0[bBoOxX]/.test(f.text(e.ts));
+}
+
+/** A subscript's slice between its brackets, a tuple keeping its own parentheses or none. */
+function writeSubscriptContent(f: Fmt, e: Subscript): void {
+  const s = e.slice;
+  f.writeParenthesizedContent(
+    () => (s.kind === "Tuple" ? writeExpr(f, s, "preserve", { tuple: "preserve" }) : writeExpr(f, s)),
+    f.comments.dangling(e),
+  );
+}
 
 /**
  * Ruff's slice layout: spaces around the colons unless every bound is simple, and the dangling comments split into
@@ -71,23 +86,6 @@ function argumentsOf(n: number, ctx: StreamCtx<unknown>): { f: Fmt; a: Arguments
 
 const sliceOf = (n: number) => ruffOf(n) as { f: Fmt; e: Slice };
 
-/** The call chain layout the attribute, call or subscript printing now continues (`fields` passes it). */
-const layoutOf = (ctx: StreamCtx<unknown>): Chain => (ctx.args?.chain as Chain | undefined) ?? "nonFluent";
-
-function isBaseTenNumber(f: Fmt, e: Expr): boolean {
-  if (e.kind !== "Number") return false;
-  return !/^0[bBoOxX]/.test(f.text(e.ts));
-}
-
-/** A subscript's slice between its brackets, a tuple keeping its own parentheses or none. */
-function subscriptContent(f: Fmt, e: Subscript): Format {
-  const s = e.slice;
-  return f.parenthesizedContent(
-    () => (s.kind === "Tuple" ? formatExpr(f, s, "preserve", { tuple: "preserve" }) : formatExpr(f, s)),
-    f.comments.dangling(e),
-  );
-}
-
 export const exprAccessVia = {
   "access.sliceLower": (c: number, ctx: StreamCtx<unknown>) => {
     const { f, e } = sliceOf(ctx.tree.parent(c));
@@ -135,16 +133,8 @@ export const exprAccessVia = {
     const { f, e: v } = ruffOf(c);
     const layout = layoutOf(ctx);
     const parenthesizeValue = isBaseTenNumber(f, v) || v.parens.length > 0;
-    const out: Format[] = [];
-    if (layout === "fluent")
-      out.push(
-        parenthesizeValue
-          ? formatExpr(f, v, "always")
-          : isCallLike(v)
-            ? node(f, v, { chain: layout })
-            : formatExpr(f, v, "never"),
-      );
-    else out.push(formatExpr(f, v, parenthesizeValue ? "always" : "never"));
+    if (layout === "fluent" && !parenthesizeValue && isCallLike(v)) writeNode(f, v, { chain: layout });
+    else writeExpr(f, v, parenthesizeValue ? "always" : "never");
     let lastClose: number | undefined;
     for (const t of tokens(f.tree, v.end)) {
       if (t.kind !== ")") break;
@@ -153,10 +143,9 @@ export const exprAccessVia = {
     const eol =
       lastClose !== undefined &&
       f.comments.trailing(v).some((c) => c.line === "eol" && c.start > (lastClose as number));
-    if (eol) out.push(hard);
+    if (eol) sLine(HARD | COLLAPSE);
     else if (layout === "fluent" && (parenthesizeValue || v.kind === "Call" || v.kind === "Subscript"))
-      out.push(soft);
-    part(out);
+      sLine(SOFT | COLLAPSE);
   },
   // The dot, between the attribute's dangling comments before and after it.
   "access.dot": (token: number | undefined, n: number) => {
@@ -164,15 +153,13 @@ export const exprAccessVia = {
     const { dot } = e as Attribute;
     const dangling = f.comments.dangling(e);
     const at = startOf(f.tree, dot);
-    part([
-      f.dangling(dangling.filter((c) => c.start < at)),
-      token === undefined ? [] : f.tok(token),
-      f.dangling(dangling.filter((c) => c.start >= at)),
-    ]);
+    f.writeDangling(dangling.filter((c) => c.start < at));
+    if (token !== undefined) f.writeTok(token);
+    f.writeDangling(dangling.filter((c) => c.start >= at));
   },
   "access.chainValue": (c: number, ctx: StreamCtx<unknown>) => {
     const { f, e } = ruffOf(c);
-    part(chainValue(f, e, layoutOf(ctx)));
+    writeChainValue(f, e, layoutOf(ctx));
   },
   // A call's dangling comments, then its arguments.
   "access.arguments": (c: number, ctx: StreamCtx<unknown>) => {
@@ -182,13 +169,15 @@ export const exprAccessVia = {
   },
   "access.subscript": (c: number, ctx: StreamCtx<unknown>) => {
     const { f, e } = ruffOf(ctx.tree.parent(c));
-    part(subscriptContent(f, e as Subscript));
+    writeSubscriptContent(f, e as Subscript);
   },
   // A generic type's type_parameter: its brackets and what is between them.
   "access.typeSubscript": (c: number, ctx: StreamCtx<unknown>) => {
     const { f, e } = ruffOf(ctx.tree.parent(c));
     const s = e as Subscript;
-    part([f.tok(s.open), subscriptContent(f, s), f.tok(s.close)]);
+    f.writeTok(s.open);
+    writeSubscriptContent(f, s);
+    f.writeTok(s.close);
   },
   "access.argumentsFrame": (n: number, ctx: StreamCtx<unknown>, frame: Frame) => {
     const { f, a } = argumentsOf(n, ctx);
@@ -204,11 +193,12 @@ export const exprAccessVia = {
   },
   "access.keywordValue": (c: number) => {
     const { f, e } = ruffOf(c);
-    part(formatExpr(f, e));
+    writeExpr(f, e);
   },
   // The splat's dangling comments, between its star and its value, print with the value.
   "access.starredValue": (c: number) => {
     const { f, e } = ruffOf(c);
-    part([f.dangling(f.comments.dangling(e.parent as Py)), formatExpr(f, e)]);
+    f.writeDangling(f.comments.dangling(e.parent as Py));
+    writeExpr(f, e);
   },
 };
