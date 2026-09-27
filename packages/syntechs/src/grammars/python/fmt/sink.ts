@@ -24,16 +24,30 @@ export {
   SOFT,
 } from "../../../fmt/stream.js";
 
-export function sToken(node: number, s: string, synthetic = false): void {
-  stream.sToken(node, s, synthetic);
-}
-export function sText(s: string): void {
-  stream.sText(s);
-}
-/** A token whose line breaks print as they are, the column restarting after the last. */
-export function sLiteral(node: number, s: string): void {
-  stream.sLiteral(node, s);
-}
+// The stream's own writers, re-exported rather than wrapped: a wrapper is one more call per token on every
+// cold (not yet inlined) path. `sLiteral`: a token whose line breaks print as they are. `open`: a `GROUP`
+// (`BROKEN`: built broken), an `INDENT`, an `IF_BROKEN`/`IF_FLAT` on the group `ref` (-1: the enclosing mode),
+// a `GROUP_IF_BROKEN` (ruff's `conditional_group`) or a `LINE_SUFFIX`, closed by `close`. The `openBestFitting`
+// variants go between `openVariant` and `closeVariant`; `openBestFitParenthesize` writes `open0`, then the
+// contents, then `closeBestFitParenthesize`.
+export {
+  close,
+  closeBestFitParenthesize,
+  closeVariant,
+  open,
+  openBestFitParenthesize,
+  openBestFitting,
+  openFitsExpanded,
+  openIndentIfBreak,
+  openReservedSuffix,
+  openVariant,
+  sBreakParent,
+  sHardline,
+  sLiteral,
+  sText,
+  sToken,
+} from "../../../fmt/stream.js";
+
 /** A line: `SOFT` (nothing when flat) or a space when flat, `HARD` always breaking; `COLLAPSE` and `BLANK` are ruff's. */
 export function sLine(flags: number): void {
   if (flags & (stream.COLLAPSE | stream.BLANK)) stream.sRuffLine(flags);
@@ -41,57 +55,6 @@ export function sLine(flags: number): void {
 }
 /** `sLine`, by the name the stream gives a line with ruff's flags. */
 export const sRuffLine = sLine;
-export function sBreakParent(): void {
-  stream.sBreakParent();
-}
-export function sHardline(): void {
-  sLine(stream.HARD);
-  sBreakParent();
-}
-
-/**
- * Opens a `GROUP` (`BROKEN`: built broken), an `INDENT`, an `IF_BROKEN`/`IF_FLAT` on the group `ref` (-1: the
- * enclosing mode), a `GROUP_IF_BROKEN` on the group `ref` (ruff's `conditional_group`) or a `LINE_SUFFIX`. Close
- * it with `close`.
- */
-export function open(kind: number, ref = -1, flags = 0): number {
-  return stream.open(kind, ref, flags);
-}
-/** Opens a line suffix whose `reserved` columns count against the line now (ruff's trailing comments). */
-export function openReservedSuffix(reserved: number): number {
-  return stream.openReservedSuffix(reserved);
-}
-/** Ruff's `indent_if_group_breaks`: the contents indented when the group `ref` prints broken. */
-export function openIndentIfBreak(ref: number): number {
-  return stream.openIndentIfBreak(ref);
-}
-/** Ruff's `fits_expanded`, while the group `whenFlat` (-1: always) prints flat. */
-export function openFitsExpanded(whenFlat: number): number {
-  return stream.openFitsExpanded(whenFlat);
-}
-/** Ruff's `best_fitting`: each variant between `openVariant` and `closeVariant`, then `close`. */
-export function openBestFitting(allLines: boolean): number {
-  return stream.openBestFitting(allLines);
-}
-export function openVariant(k: number): number {
-  return stream.openVariant(k);
-}
-export function closeVariant(v: number): void {
-  stream.closeVariant(v);
-}
-/**
- * Ruff's `best_fit_parenthesize`: `open0` written here, then the contents, then `closeBestFitParenthesize`. The
- * id it returns is a group other intervals may ask.
- */
-export function openBestFitParenthesize(open0: () => void): number {
-  return stream.openBestFitParenthesize(open0);
-}
-export function closeBestFitParenthesize(k: number, close0: () => void): void {
-  stream.closeBestFitParenthesize(k, close0);
-}
-export function close(): void {
-  stream.close();
-}
 
 // --- Part ---
 

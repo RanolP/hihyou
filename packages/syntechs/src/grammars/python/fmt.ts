@@ -15,7 +15,7 @@ import {
   normalizeComment,
   type Comments as RuffComments,
 } from "./fmt/comments.js";
-import { printing, sToken, within } from "./fmt/sink.js";
+import { printing, within } from "./fmt/sink.js";
 import { normalize } from "./fmt/normalize.js";
 import { writeModule } from "./fmt/stmt/suite.js";
 import * as gen from "./fmt.gen.js";
@@ -109,11 +109,5 @@ export const python: Language<PythonOptions> = {
       },
     },
   ),
-  stream: {
-    ...rules,
-    // The core writes a node with no rule (a leaf) straight to the stream; through the sink it lands where the
-    // rule printing it (`sDsl`) writes.
-    wrap: (node, ctx, print) =>
-      rules.rules.has(ctx.tree.kindName(node)) ? print() : sToken(node, ctx.tree.text(node)),
-  },
+  stream: rules,
 };
