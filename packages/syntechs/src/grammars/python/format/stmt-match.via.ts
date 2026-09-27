@@ -47,6 +47,24 @@ export const stmtMatchVia = {
     const [, , ...value] = kids(f.tree, kw);
     part(pattern(f, readGroup(f, kw, value)));
   },
+  // The alternatives, a line before each `|` once the group they share breaks.
+  "match.or": (n: number, ctx: StreamCtx<unknown>) => {
+    const f = fmtOf(n, ctx);
+    const p = readPattern(f, n);
+    if (p.k !== "or") throw new Error("python match: match.or on no union pattern");
+    for (const [i, item] of p.items.entries()) {
+      const bar = p.bars[i - 1];
+      if (bar !== undefined) part([f.softLineOrSpace(), f.tok(bar), space]);
+      part(pattern(f, item));
+    }
+  },
+  // Given the real part, prints it with its sign, then the operator, a line before it once the group breaks.
+  "match.complexReal": (n: number, ctx: StreamCtx<unknown>) => {
+    const f = fmtOf(n, ctx);
+    const p = readPattern(f, ctx.tree.parent(n));
+    if (p.k !== "complex") throw new Error("python match: match.complexReal outside a complex pattern");
+    part([pattern(f, p.left), f.softLineOrSpace(), f.tok(p.op), space]);
+  },
   "match.subject": (n: number) => {
     const { f, s: m } = ruffStmtOf(n);
     const s = m as Match;

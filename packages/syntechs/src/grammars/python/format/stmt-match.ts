@@ -1,5 +1,5 @@
 // match statements, their case clauses, and patterns.
-import { space } from "../../../fmt/dsl/dsl.js";
+import { custom, space } from "../../../fmt/dsl/dsl.js";
 import type { Structure } from "../format.js";
 
 export const stmtMatch = {
@@ -20,6 +20,13 @@ export const stmtMatch = {
   ],
   // A wildcard, a negative number (`-` and the number), or one pattern; a `(p)` tuple's parentheses are p's own.
   case_pattern: ($) => ["_", "-", $.children.andThen((p) => p.via("match.pattern"))],
+  // Ruff lays out every `|` at once, each line break by where the pattern stands.
+  union_pattern: () => custom("match.or"),
+  // `-` is the real part's sign or the operator, which only their order tells apart: the real part's custom prints both.
+  complex_pattern: ($) => [
+    $.children.at(0).andThen((r) => r.via("match.complexReal")),
+    $.children.at(1).andThen((i) => i),
+  ],
   as_pattern: ($) => [
     $.children.at(0).andThen((p) => p.via("match.pattern")),
     space,

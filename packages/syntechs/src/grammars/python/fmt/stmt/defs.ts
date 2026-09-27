@@ -590,13 +590,8 @@ function patternFields(f: Fmt, p: Pat): Format {
     case "neg":
       return [f.tok(p.minus), formatExpr(f, p.e, "never")];
     case "complex":
-      return f.inParensGroup([
-        pattern(f, p.left),
-        f.softLineOrSpace(),
-        f.tok(p.op),
-        space,
-        pattern(f, p.right),
-      ]);
+    case "or":
+      return f.inParensGroup(dslPart(p.node));
     case "attr":
       return p.parts.map((x) => f.tok(x));
     case "wild":
@@ -605,15 +600,6 @@ function patternFields(f: Fmt, p: Pat): Format {
       return dslPart(p.node);
     case "as":
       return dslPart(p.node);
-    case "or":
-      return f.inParensGroup(
-        p.items.map((item, i) => {
-          const bar = p.bars[i - 1];
-          return bar !== undefined
-            ? [f.softLineOrSpace(), f.tok(bar), space, pattern(f, item)]
-            : pattern(f, item);
-        }),
-      );
     case "seq":
       return sequence(f, p);
     case "map":
