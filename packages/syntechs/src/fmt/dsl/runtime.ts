@@ -1,19 +1,15 @@
 // What the generated formatters (`fmt.gen.ts`) and the two-pass reference (`reference.ts`) share: how a spec's
 // references bind to a node's children, so both print the same source token for the same spec token; the
-// entries of the flattened sequence; and the sequence a `custom` rule receives.
+// entries of the flattened sequence; and the types of the hand-written rules a spec names.
 import { sToken } from "../stream.js";
 import {
   type CommentFacts,
   commentFacts,
   endsLine,
-  printLeadingComment,
   printLeadingComments,
-  printTrailingComment,
   printTrailingComments,
   type StreamCtx,
-  type Trailed,
 } from "../stream-format.js";
-import { nextLineEmpty } from "../text.js";
 import type { FormatTree } from "../tree.js";
 
 /**
@@ -68,7 +64,7 @@ export type Entry =
   | { readonly e: "end" }
   /** After each item but the last: its separator token (-1: none in the source). */
   | { readonly e: "sep"; readonly tok: number }
-  /** After an item's separator, an item of `lines`, or a child of a `custom` node: the source keeps a blank line there. */
+  /** After an item's separator or an item of `lines`: the source keeps a blank line there. */
   | { readonly e: "blank" }
   /** Only while the enclosing frame stays flat: a space, inserted beside a padded bracket. */
   | { readonly e: "ifFlat"; readonly text: string }
@@ -93,19 +89,6 @@ export const commentEntry = (
   endsLine: at === "trailing" && endsLine(ctx, node, c),
   ...commentFacts(ctx, c),
 });
-
-/**
- * What a `custom` rule receives: the node's structure as the flattened sequence has it, each child (named or a
- * token) in source order between its comment entries, a `blank` after a child the source follows with a blank
- * line (not after the last), then the node's dangling comments.
- */
-export interface CustomSeq {
-  readonly entries: readonly Entry[];
-  /** The children, named ones and tokens, in source order: every child but comments. */
-  readonly kids: readonly number[];
-  /** Prints `kid` between the comments attached to it: `body` in place of the kid, else the kid as its rule prints it. */
-  print(kid: number, body?: () => void): void;
-}
 
 /**
  * A `tok(text).via(name)` rule: prints the token `text` of `node`, given its source token, or undefined where
@@ -135,49 +118,10 @@ export type FrameRule<O = unknown> = (
   frame: Frame,
 ) => void;
 
-/** A `custom` rule: the node's wrapping, laying out its `CustomSeq`. */
-export type CustomRule<O = unknown> = (
-  node: number,
-  ctx: StreamCtx<O>,
-  seq: CustomSeq,
-) => void;
+/** A `custom` rule: prints `node`, its children through `ctx.print`. */
+export type CustomRule<O = unknown> = (node: number, ctx: StreamCtx<O>) => void;
 
-const kidsOf = (ctx: StreamCtx<unknown>, node: number): number[] => {
-  const t = ctx.tree;
-  const out: number[] = [];
-  for (let i = 0, count = t.count(node); i < count; i++) {
-    const c = t.child(node, i);
-    if (!ctx.isComment(c)) out.push(c);
-  }
-  return out;
-};
-
-/** The entries of `custom` node `node`, as `CustomSeq.entries` holds them. */
-export function customEntries(ctx: StreamCtx<unknown>, node: number): Entry[] {
-  const t = ctx.tree;
-  const out: Entry[] = [];
-  const kids = kidsOf(ctx, node);
-  kids.forEach((c, i) => {
-    const comments = !ctx.ownsComments(c);
-    if (comments)
-      for (const x of ctx.leadingComments(c))
-        out.push(commentEntry(ctx, x, "leading"));
-    out.push(
-      t.named(c)
-        ? { e: "child", node: c, kind: t.kindName(c) }
-        : { e: "tok", node: c, text: t.text(c), synthetic: false },
-    );
-    if (comments)
-      for (const x of ctx.trailingComments(c))
-        out.push(commentEntry(ctx, x, "trailing", c));
-    if (i < kids.length - 1 && nextLineEmpty(t, c)) out.push({ e: "blank" });
-  });
-  for (const x of ctx.danglingComments(node))
-    out.push(commentEntry(ctx, x, "dangling"));
-  return out;
-}
-
-/** Prints `kid` of a custom node between its comments (`CustomSeq.print`). */
+/** Prints `kid` between the comments attached to it: `body` in place of the kid, else the kid as its rule prints it. */
 export function printKid(
   ctx: StreamCtx<unknown>,
   kid: number,
@@ -189,70 +133,6 @@ export function printKid(
   else if (ctx.tree.named(kid)) ctx.printNode(kid);
   else sToken(kid, ctx.tree.text(kid));
   if (comments) printTrailingComments(ctx, kid);
-}
-
-/**
- * Prints `entries` of a `CustomSeq` in order: children as their rules print them, tokens as written, comments
- * as prettier places them next to their neighbour, dangling ones as they are; `blank` prints a kept blank line
- * (nothing by default).
- */
-export function printEntries(
-  ctx: StreamCtx<unknown>,
-  entries: readonly Entry[],
-  blank?: () => void,
-): void {
-  let trailed: Trailed | undefined;
-  for (const x of entries)
-    switch (x.e) {
-      case "child":
-        trailed = undefined;
-        ctx.printNode(x.node);
-        break;
-      case "tok":
-        trailed = undefined;
-        sToken(x.node, x.text, x.synthetic);
-        break;
-      case "comment":
-        if (x.at === "leading") printLeadingComment(ctx, x);
-        else if (x.at === "trailing")
-          trailed = printTrailingComment(ctx, x, trailed);
-        else ctx.comment(x.c);
-        break;
-      case "blank":
-        blank?.();
-        break;
-      default:
-        break;
-    }
-}
-
-/** The `CustomSeq` of `node` for a generated rule: its entries built only when read. */
-export function customSeq(ctx: StreamCtx<unknown>, node: number): CustomSeq {
-  return new LazySeq(ctx, node);
-}
-
-// A class, not an object literal with getters: V8 builds a literal with accessors on its slow path, and every
-// custom rule call builds one of these.
-class LazySeq implements CustomSeq {
-  private e: Entry[] | undefined = undefined;
-  private k: number[] | undefined = undefined;
-  private readonly ctx: StreamCtx<unknown>;
-  private readonly node: number;
-  constructor(ctx: StreamCtx<unknown>, node: number) {
-    this.ctx = ctx;
-    this.node = node;
-  }
-  get entries(): Entry[] {
-    this.e ??= customEntries(this.ctx, this.node);
-    return this.e;
-  }
-  get kids(): number[] {
-    this.k ??= kidsOf(this.ctx, this.node);
-    return this.k;
-  }
-  print(kid: number, body?: () => void): void {
-    printKid(this.ctx, kid, body);
-  }
 }
 
 /** The first child of `node` in field `name`; -1 when there is none. */

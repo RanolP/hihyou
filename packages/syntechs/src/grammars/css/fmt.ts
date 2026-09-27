@@ -20,7 +20,7 @@ import {
   sToken,
 } from "../../fmt/stream.js";
 import { atName, maybeLower, numberParts } from "../../fmt/dsl/normalizers.js";
-import type { CustomRule, CustomSeq } from "../../fmt/dsl/runtime.js";
+import { type CustomRule, printKid } from "../../fmt/dsl/runtime.js";
 import type { StreamCtx, StreamRule } from "../../fmt/stream-format.js";
 import { newlineBetween } from "../../fmt/text.js";
 import { type FormatTree, firstLeaf, nextLeaf } from "../../fmt/tree.js";
@@ -365,11 +365,11 @@ const semicolon = (node: number, ctx: SCtx) => {
  * Parameters kept as written, each separated by one space where the source had any gap (prettier's raw params).
  * A comment among them is attached to a parameter, so it prints with that parameter's entries rather than in a gap.
  */
-function raw(nodes: readonly number[], ctx: SCtx, seq: CustomSeq): void {
+function raw(nodes: readonly number[], ctx: SCtx): void {
   nodes.forEach((n, i) => {
     const prev = nodes[i - 1];
     if (prev !== undefined && apart(prev, n, ctx)) sText(" ");
-    seq.print(n, () => sToken(n, src(n, ctx)));
+    printKid(ctx, n, () => sToken(n, src(n, ctx)));
   });
 }
 const atToken = (at: number, ctx: SCtx) => sToken(at, atName(src(at, ctx)));
@@ -430,7 +430,7 @@ export const customs = {
       printItem(c, ctx);
     });
   },
-  declaration: (node, ctx, seq) => {
+  declaration: (node, ctx) => {
     const kids = code(node, ctx);
     const colon = kids.findIndex(
       (c) => !ctx.tree.named(c) && kind(c, ctx) === ":",
@@ -447,7 +447,7 @@ export const customs = {
     const first = values[0];
     if (first !== undefined) {
       sText(" ");
-      if (src(first, ctx).startsWith("progid:")) raw(values, ctx, seq);
+      if (src(first, ctx).startsWith("progid:")) raw(values, ctx);
       else valueList(values, ctx, src(prop, ctx).toLowerCase());
     }
     if (important !== undefined) {
@@ -521,17 +521,17 @@ export const customs = {
     });
     semicolon(node, ctx);
   },
-  charset: (node, ctx, seq) => {
+  charset: (node, ctx) => {
     const [at, ...rest] = withoutSemicolon(node, ctx);
     if (at === undefined) return concat(node, ctx);
     atToken(at, ctx);
     if (rest.length > 0) {
       sText(" ");
-      raw(rest, ctx, seq);
+      raw(rest, ctx);
     }
     semicolon(node, ctx);
   },
-  atRule: (node, ctx, seq) => {
+  atRule: (node, ctx) => {
     const [at, ...rest] = code(node, ctx);
     if (at === undefined) return concat(node, ctx);
     const block = rest.find((c) => kind(c, ctx) === "block");
@@ -539,7 +539,7 @@ export const customs = {
     ctx.print(at);
     if (params.length > 0) {
       sText(" ");
-      raw(params, ctx, seq);
+      raw(params, ctx);
     }
     if (block !== undefined) {
       sText(" ");

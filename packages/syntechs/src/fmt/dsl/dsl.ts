@@ -261,9 +261,8 @@ export const text = <const W = never>(fn: NormalizerName, when?: W): Piece<{ tex
 export const parentIs = <const K extends string>(kind: K): ParentCond<K> => ({ t: "parent", kind });
 
 /**
- * The hand-written rule `name` (a `CustomRule`, see `runtime.ts`) prints the node; the generated module takes it
- * as a parameter. The node's structure is then its children in source order with their comments and kept blank
- * lines, the `CustomSeq` the rule receives, and the rule is the node's wrapping: it lays those entries out.
+ * The hand-written rule `name` (a `CustomRule`, see `runtime.ts`) prints the node, its structure and its wrapping
+ * both, reaching its children through `ctx.print`; the generated module takes it as a parameter.
  */
 export const custom = (name: string): Whole => piece({ t: "custom", name });
 

@@ -7,7 +7,8 @@
 //            its `child` entry and closed by an `exit`. No line breaks but hard ones: nothing here depends on the
 //            width.
 //   wrap     sequence -> stream calls, node range by node range, each under its kind's wrapping rule: groups,
-//            indents, lines and fills. A `custom` kind's rule lays out its range itself.
+//            indents, lines and fills. A `custom` kind's range is empty: its rule prints the node itself, and
+//            each child it prints is flattened as it reaches it.
 import { newlineBetween, nextLineEmpty } from "../text.js";
 import { type FormatTree, firstLeaf } from "../tree.js";
 import {
@@ -47,9 +48,7 @@ import {
 import {
   commentEntry,
   type CustomRule,
-  type CustomSeq,
   type FrameRule,
-  customEntries,
   type Entry,
   fieldChild,
   listItems,
@@ -144,12 +143,8 @@ export function flatten<O>(
       }
       const kind = t.kindName(n);
       const tree: Tree = via === undefined ? (ir.structure[kind] as Tree) : { t: "custom", name: via };
-      if (tree.t === "custom") {
-        for (const x of customEntries(ctx, n))
-          if (x.e === "child") walkNode(x.node);
-          else out.push(x);
-        return;
-      }
+      // A custom rule prints its children itself, and `wrap` flattens each as the rule reaches it.
+      if (tree.t === "custom") return;
       structure(n, tree, kind in grammar.fieldTypes);
     }, via);
 
@@ -320,7 +315,7 @@ export function wrap<O>(
     if (x.e === "tok") sToken(x.node, x.text, x.synthetic);
   };
 
-  /** Prints `node` from its range, flattening it on demand when a custom rule reaches past its own children. */
+  /** Prints `node` from its range, flattening it first when a custom rule reaches it. */
   const printNode = (node: number) => {
     let i = flat.start.get(node);
     if (i === undefined) {
@@ -346,35 +341,6 @@ export function wrap<O>(
     },
   };
 
-  /** The `CustomSeq` of the custom node whose range is (`from`, `to`): its own entries, read off the sequence. */
-  const view = (from: number, to: number): CustomSeq => {
-    const own: number[] = [];
-    for (let i = from; i < to; i = next(i)) own.push(i);
-    const entries = own.map((i) => seq[i] as Entry);
-    const kids = entries.flatMap((x) => (x.e === "child" || x.e === "tok" ? [x.node] : []));
-    return {
-      entries,
-      kids,
-      print(kid, body) {
-        const k = entries.findIndex((x) => (x.e === "child" || x.e === "tok") && x.node === kid);
-        if (k === -1) throw new Error(`custom: ${kid} is not a child of this node`);
-        let j = k;
-        while (j > 0 && entries[j - 1]?.e === "comment") j--;
-        for (; j < k; j++) printLeadingComment(inner, entries[j] as Extract<Entry, { e: "comment" }>);
-        const x = entries[k] as Entry;
-        if (body) body();
-        else if (x.e === "child") wrapNode(own[k] as number);
-        else tok(x);
-        let trailed: Trailed | undefined;
-        for (let m = k + 1; m < entries.length; m++) {
-          const y = entries[m] as Entry;
-          if (y.e !== "comment" || y.at !== "trailing") break;
-          trailed = printTrailingComment(inner, y, trailed);
-        }
-      },
-    };
-  };
-
   function wrapNode(i: number): void {
     const x = seq[i] as Extract<Entry, { e: "child" }>;
     const end = exitOf(i);
@@ -386,7 +352,7 @@ export function wrap<O>(
     if (t.t === "custom") {
       const rule = custom[t.name] as CustomRule<O> | undefined;
       if (!rule) throw new Error(`no custom rule ${t.name}`);
-      rule(x.node, inner, view(i + 1, end));
+      rule(x.node, inner);
     } else render(i + 1, end, w, x.node);
     if (w.group) close();
   }

@@ -147,7 +147,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
     }
     line(`printKid(ctx, ${c}, () => {`);
     line(`  if (ctx.isBroken(${c})) ctx.printNode(${c});`);
-    line(`  else custom[${str(via)}](${c}, ctx, customSeq(ctx, ${c}));`);
+    line(`  else custom[${str(via)}](${c}, ctx);`);
     line(`});`);
   };
   const items = (x: Extract<Tree, { t: "sepBy" | "lines" }>) => {
@@ -431,7 +431,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
         return;
       }
       case "custom":
-        line(`custom[${str(x.name)}](node, ctx, customSeq(ctx, node));`);
+        line(`custom[${str(x.name)}](node, ctx);`);
         return;
     }
   };
@@ -464,7 +464,7 @@ export function emit(
     "  endsLine, printLeadingComments, printTrailingComments, type StreamRule, type StreamRules,",
     '} from "../../fmt/stream-format.js";',
     'import {',
-    '  type CustomRule, customSeq, fieldChild, listItems, printKid, separators, tokenChild,',
+    '  type CustomRule, fieldChild, listItems, printKid, separators, tokenChild,',
     '} from "../../fmt/dsl/runtime.js";',
     'import { newlineBetween, nextLineEmpty } from "../../fmt/text.js";',
     'import { firstLeaf } from "../../fmt/tree.js";',

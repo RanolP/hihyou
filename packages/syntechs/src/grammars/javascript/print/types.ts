@@ -1104,9 +1104,9 @@ const functionType: CustomRule<JsOptions> = (n, sctx) => {
 };
 
 /** A call or construct signature up to its separator, reached through its parameters (`.via("signature")`). */
-const signature: CustomRule<JsOptions> = (parameters, sctx, seq) => {
+const signature: CustomRule<JsOptions> = (parameters, sctx) => {
   const n = parent(jsCtx(sctx).js, parameters);
-  if (n !== undefined) functionType(n, sctx, seq);
+  if (n !== undefined) functionType(n, sctx);
 };
 
 /** The TypeScript kinds format.ts lays out by hand, by the names its spec gives them. */

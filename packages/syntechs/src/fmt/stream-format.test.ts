@@ -12,7 +12,7 @@ import {
   type StreamRule,
   type StreamRules,
 } from "./stream-format.js";
-import { customSeq, printEntries } from "./dsl/runtime.js";
+import { printKid } from "./dsl/runtime.js";
 
 // JSON's stream language with `hooks` over its rules, as a language moving off Docs (JS) declares them.
 type Rules = StreamRules<typeof json.defaults>;
@@ -56,30 +56,26 @@ describe("formatStream's hooks let a language print as prettier's printer hooks 
   });
 
   // A custom that printed its kid between the kid's comments printed a comment-owning kid's comments twice.
-  it("leaves a comment-owning kid's comments to its rule when a custom prints the kid or its entries", () => {
-    const owning = {
-      printsOwnComments: (node: number, ctx: StreamCtx) => ctx.tree.kindName(node) === "number",
-    };
-    const number: StreamRule = (node, ctx) => {
-      sText("(");
-      printLeadingComments(ctx, node);
-      sToken(node, ctx.tree.text(node));
-      printTrailingComments(ctx, node);
-      sText(")");
-    };
-    const byKid = withHooks(owning, {
-      number,
-      array: (node, ctx) => {
-        const seq = customSeq(ctx, node);
-        for (const k of seq.kids) seq.print(k);
+  it("leaves a comment-owning kid's comments to its rule when a custom prints the kid", () => {
+    const lang = withHooks(
+      { printsOwnComments: (node: number, ctx: StreamCtx) => ctx.tree.kindName(node) === "number" },
+      {
+        number: (node, ctx) => {
+          sText("(");
+          printLeadingComments(ctx, node);
+          sToken(node, ctx.tree.text(node));
+          printTrailingComments(ctx, node);
+          sText(")");
+        },
+        array: (node, ctx) => {
+          for (let i = 0, count = ctx.tree.count(node); i < count; i++) {
+            const c = ctx.tree.child(node, i);
+            if (ctx.tree.kindName(c) !== "comment") printKid(ctx, c);
+          }
+        },
       },
-    });
-    const byEntries = withHooks(owning, {
-      number,
-      array: (node, ctx) => printEntries(ctx, customSeq(ctx, node).entries),
-    });
-    expect(run(byKid, "[/* c */ 1]")).toBe("[(/* c */ 1)]\n");
-    expect(run(byEntries, "[/* c */ 1]")).toBe("[(/* c */ 1)]\n");
+    );
+    expect(run(lang, "[/* c */ 1]")).toBe("[(/* c */ 1)]\n");
   });
 
   it("wraps a node's rule inside its comments, as prettier's parentheses go inside them", () => {

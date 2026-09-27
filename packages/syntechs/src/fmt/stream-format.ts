@@ -38,7 +38,7 @@ export interface StreamCtx<O = unknown> {
   printNode(node: number, args?: PrintArgs): void;
   /**
    * What the node printing now was passed (prettier's `print(path, args)`), read while its rule prints. Not a
-   * rule parameter, where it would clash with a custom rule's `CustomSeq`.
+   * rule parameter, so every rule keeps the one `(node, ctx)` shape.
    */
   readonly args: PrintArgs | undefined;
   items(node: number): number[];
