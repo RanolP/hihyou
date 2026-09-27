@@ -7,7 +7,6 @@ import { referenceRules } from "../../fmt/dsl/reference.js";
 import { format } from "../../fmt/format.js";
 import type { Language } from "../../fmt/rules.js";
 import { css, type CssOptions, customs } from "./fmt.js";
-import * as gen from "./fmt.gen.js";
 import * as spec from "./format.js";
 import { grammar, language } from "./index.js";
 
@@ -88,7 +87,6 @@ const options: Partial<CssOptions>[] = [
 const run = (text: string, lang: Language<CssOptions>, o: Partial<CssOptions>) =>
   format(parseTree(language, text), lang, o);
 
-const generated = { ...css, stream: gen.css(customs) };
 const reference = {
   ...css,
   stream: referenceRules<CssOptions>(spec.css, grammar as DslGrammar, customs),
@@ -100,15 +98,6 @@ describe("the generated CSS formatter prints what the two-pass reference prints,
   it("over the corpus, prettier's fixtures and edge cases", () => {
     for (const text of corpus)
       for (const o of options)
-        expect(run(text, generated, o), text).toEqual(run(text, reference, o));
-  });
-});
-
-// Moving CSS onto the DSL is a refactor: any change here is a layout the hand-written Doc rules never printed.
-describe("the generated CSS formatter prints what the hand-written Doc rules print, output and anchors", () => {
-  it("over the corpus, prettier's fixtures and edge cases", () => {
-    for (const text of corpus)
-      for (const o of options)
-        expect(run(text, generated, o), text).toEqual(run(text, css, o));
+        expect(run(text, css, o), text).toEqual(run(text, reference, o));
   });
 });
