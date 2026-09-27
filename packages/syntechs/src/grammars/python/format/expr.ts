@@ -12,7 +12,7 @@ export const expr = {
   ellipsis: () => verbatim,
 
   not_operator: ($) => ["not", $.argument.via("expr.unaryOperand")],
-  unary_operator: ($) => ["+", "-", "~", $.argument.via("expr.unaryOperand")],
+  unary_operator: ($) => [$.operator, $.argument.via("expr.unaryOperand")],
   await: ($) => ["await", space, $.children.via("expr.awaitValue")],
   yield: ($) => [
     "yield",
