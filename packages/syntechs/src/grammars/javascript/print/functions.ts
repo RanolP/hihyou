@@ -1,6 +1,6 @@
 // Prettier's function printers: function.js, function-parameters.js, arrow-function.js.
 
-import { type Doc, group, text, willBreak } from "../../../fmt/doc.js";
+import type { Doc } from "../../../fmt/doc.js";
 import { lfAfter, nextLineEmpty } from "../../../fmt/text.js";
 import {
   BROKEN,
@@ -48,12 +48,10 @@ import {
   isJsx,
   items,
   type JsCtx,
-  type JsRule,
   kind,
   lastChildWhere,
   named,
   objectOf,
-  p,
   parameters,
   parent,
   semi,
@@ -192,11 +190,11 @@ export function shouldHugTheOnlyFunctionParameter(
   return false;
 }
 
-/** Prettier's shouldGroupFunctionParameters. */
-export function shouldGroupFunctionParameters(
+/** Prettier's shouldGroupFunctionParameters, over `fn`'s printed return type. */
+export function sShouldGroupFunctionParameters(
   x: HasTree,
   fn: number,
-  returnTypeDoc: Doc,
+  printedReturnType: Part,
 ): boolean {
   const returnType = returnTypeNode(x, fn);
   if (returnType === undefined) return false;
@@ -215,9 +213,16 @@ export function shouldGroupFunctionParameters(
   }
   return (
     parameters(x, fn).length === 1 &&
-    (isObjectType(x, returnType) || willBreak(returnTypeDoc))
+    (isObjectType(x, returnType) || partWillBreak(printedReturnType))
   );
 }
+
+/** `sShouldGroupFunctionParameters` for a rule still on the Doc (types.ts's methodSignature and functionType). */
+export const shouldGroupFunctionParameters = (
+  x: HasTree,
+  fn: number,
+  returnTypeDoc: Doc,
+): boolean => sShouldGroupFunctionParameters(x, fn, { doc: returnTypeDoc });
 
 function shouldBreakFunctionParameters(x: HasTree, fn: number): boolean {
   const params = parameters(x, fn);
@@ -287,20 +292,19 @@ function isDecoratedFunction(ctx: JsCtx, fn: number): boolean {
   return false;
 }
 
-/**
- * `fn`'s parameter list as prettier's printFunctionParameters prints it, as a Doc for the rules still on it (a
- * method's value, a function type).
- */
+/** `sPrintFunctionParameters` as a Doc, for the rules still on it (types.ts's methodSignature and functionType). */
 export const printFunctionParameters = (
   ctx: JsCtx,
   fn: number,
   expand = false,
   withTypeParameters = false,
 ): Doc =>
-  onDoc((n, s) => printParameters(s, n, expand, withTypeParameters))(fn, ctx);
+  onDoc((n, s) =>
+    sPrintFunctionParameters(s, n, expand, withTypeParameters),
+  )(fn, ctx);
 
 /** Prettier's printFunctionParameters for function `fn`, whose `formal_parameters` holds the list. */
-function printParameters(
+export function sPrintFunctionParameters(
   s: StreamCtx<JsOptions>,
   fn: number,
   expand = false,
@@ -410,10 +414,6 @@ function printParameterList(
   tk(ctx, closeParen);
 }
 
-/** Prettier's printReturnType. */
-const printReturnType = (ctx: JsCtx, fn: number): Doc =>
-  p(ctx, field(ctx, fn, "return_type"));
-
 /** Prettier's canPrintParamsWithoutParens. */
 export function canPrintParamsWithoutParens(ctx: JsCtx, fn: number): boolean {
   const params = parameters(ctx, fn);
@@ -454,9 +454,9 @@ const printFunction: CustomRule<JsOptions> = (n, s) => {
     )
       shouldExpandParameters = true;
   }
-  const params = capture(() => printParameters(s, n, shouldExpandParameters));
+  const params = capture(() => sPrintFunctionParameters(s, n, shouldExpandParameters));
   const returnType = capture(() => pr(s, field(ctx, n, "return_type")));
-  const shouldGroup = shouldGroupFunctionParameters(ctx, n, returnType.doc);
+  const shouldGroup = sShouldGroupFunctionParameters(ctx, n, returnType);
   for (const keyword of ["declare", "async"]) {
     const c = anon(ctx, n, keyword);
     if (c === undefined) continue;
@@ -484,10 +484,9 @@ const printFunction: CustomRule<JsOptions> = (n, s) => {
 /** Prettier's printMethodValue: the parameters, return type and body of a method. */
 export function sPrintMethodValue(ctx: JsStreamCtx, n: number): void {
   const js = ctx.js;
-  // The parameters and return type are still Doc printers (functions' domain); they reach the stream as parts.
-  const parameters: Part = { doc: printFunctionParameters(js, n) };
-  const returnType: Part = { doc: printReturnType(js, n) };
-  const shouldGroup = shouldGroupFunctionParameters(js, n, returnType.doc);
+  const parameters = capture(() => sPrintFunctionParameters(ctx, n));
+  const returnType = capture(() => pr(ctx, field(js, n, "return_type")));
+  const shouldGroup = sShouldGroupFunctionParameters(js, n, returnType);
   const typeParameters = field(js, n, "type_parameters");
   if (typeParameters !== undefined) ctx.print(typeParameters);
   const shouldBreak = shouldBreakFunctionParameters(js, n);
@@ -513,7 +512,7 @@ export function sPrintMethodValue(ctx: JsStreamCtx, n: number): void {
 }
 
 const printMethodValueDoc = onDoc((n, ctx) => sPrintMethodValue(jsCtx(ctx), n));
-/** `sPrintMethodValue` for a rule still on the Doc. */
+/** `sPrintMethodValue` for a rule still on the Doc (classes.ts's and objects.ts's methods). */
 export const printMethodValue = (ctx: JsCtx, n: number): Doc =>
   printMethodValueDoc(n, ctx);
 
@@ -612,7 +611,7 @@ function printArrowSignature(s: StreamCtx<JsOptions>, n: number, args: Args): vo
     const returnType = capture(() => pr(s, field(ctx, n, "return_type")));
     if (expand && partWillBreak(returnType)) throw new ArgExpansionBailout();
     open(GROUP);
-    printParameters(s, n, expand, true);
+    sPrintFunctionParameters(s, n, expand, true);
     if (expand) {
       open(GROUP);
       place(removeLines(returnType));
@@ -862,6 +861,3 @@ export const functionCustoms = {
   arrow,
   parameter,
 } satisfies Record<string, CustomRule<JsOptions>>;
-
-export const functionRules: Record<string, JsRule> = {
-};

@@ -13,7 +13,7 @@ import { assignmentCustoms } from "./print/assignment.js";
 import { callCustoms, callRules } from "./print/calls.js";
 import { classCustoms } from "./print/classes.js";
 import { handleComment } from "./print/comments.js";
-import { functionCustoms, functionRules } from "./print/functions.js";
+import { functionCustoms } from "./print/functions.js";
 import { isJsxSpreadArgument, jsxCustoms, jsxIgnored, jsxRules } from "./print/jsx.js";
 import { literalCustoms, literalRules, printComment } from "./print/literals.js";
 import { moduleCustoms } from "./print/modules.js";
@@ -125,7 +125,6 @@ export function jsRules(): Record<string, JsRule> {
     ...literalRules,
     ...statementRules,
     ...callRules,
-    ...functionRules,
     ...operatorRules,
     ...typeRules,
     ...jsxRules,
