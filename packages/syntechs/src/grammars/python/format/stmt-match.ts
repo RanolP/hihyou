@@ -1,5 +1,5 @@
 // match statements, their case clauses, and patterns.
-import { custom, space } from "../../../fmt/dsl/dsl.js";
+import { custom, grpBrace, grpBracket, grpParen, space } from "../../../fmt/dsl/dsl.js";
 import type { Structure } from "../format.js";
 
 export const stmtMatch = {
@@ -26,6 +26,15 @@ export const stmtMatch = {
   complex_pattern: ($) => [
     $.children.at(0).andThen((r) => r.via("match.complexReal")),
     $.children.at(1).andThen((i) => i),
+  ],
+  // Ruff's frames own the brackets' comments, the commas and a lone item's layout, so their rules print the items.
+  list_pattern: () => grpBracket([]).via("match.sequence"),
+  // A `(p)` without a comma never reaches this rule: its parentheses are p's own.
+  tuple_pattern: () => grpParen([]).via("match.sequence"),
+  dict_pattern: () => grpBrace([]).via("match.mapping"),
+  class_pattern: ($) => [
+    $.children.at(0).andThen((c) => c.via("match.className")),
+    grpParen([]).via("match.classArguments"),
   ],
   as_pattern: ($) => [
     $.children.at(0).andThen((p) => p.via("match.pattern")),

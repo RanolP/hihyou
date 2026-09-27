@@ -1,4 +1,4 @@
-import { type Format, group, synthetic } from "../elements.js";
+import { type Format, group, synthetic, type Token } from "../elements.js";
 import type { Expr, MatchCase } from "../ast.js";
 import { exprAst, Unformattable } from "../ast.js";
 import { commaIn, type Fmt, space } from "../builders.js";
@@ -14,7 +14,7 @@ import { kids } from "./defs.js";
  * parenthesized pattern (it reads `(p)` as a one-element tuple without a comma) nor for `-1` (two sibling
  * tokens), so this model folds both in: `paren` holds a pattern's outermost redundant parentheses.
  */
-type Pat = {
+export type Pat = {
   readonly node: number;
   readonly start: number;
   readonly end: number;
@@ -353,18 +353,22 @@ function patternFields(f: Fmt, p: Pat): Format {
     case "as":
       return dslPart(p.node);
     case "seq":
-      return sequence(f, p);
+      return p.type === "bare"
+        ? sequence(f, p, synthetic(p.node, "("), synthetic(p.node, ")"))
+        : dslPart(p.node);
     case "map":
-      return mapping(f, p);
     case "class":
-      return classPattern(f, p);
+      return dslPart(p.node);
   }
 }
 
-/** Ruff's `FormatPatternMatchSequence`. */
-function sequence(f: Fmt, p: Pat & { k: "seq" }): Format {
-  const open = p.open !== undefined ? f.tok(p.open) : synthetic(p.node, "(");
-  const close = p.close !== undefined ? f.tok(p.close) : synthetic(p.node, ")");
+/** Ruff's `FormatPatternMatchSequence`, between `open` and `close`, synthetic for a tuple without parentheses. */
+export function sequence(
+  f: Fmt,
+  p: Pat & { k: "seq" },
+  open: Token,
+  close: Token,
+): Format {
   const [only] = p.items;
   const comma = commaIn(
     f.tree,
@@ -392,10 +396,13 @@ function sequence(f: Fmt, p: Pat & { k: "seq" }): Format {
   return f.parenthesized(open, items, close);
 }
 
-/** Ruff's `FormatPatternMatchMapping`, whose comments `defs` rejects before this runs. */
-function mapping(f: Fmt, p: Pat & { k: "map" }): Format {
-  const open = f.tok(p.open);
-  const close = f.tok(p.close);
+/** Ruff's `FormatPatternMatchMapping` between its braces, whose comments `match.casePattern` rejects before this runs. */
+export function mapping(
+  f: Fmt,
+  p: Pat & { k: "map" },
+  open: Token,
+  close: Token,
+): Format {
   if (p.pairs.length === 0 && !p.rest)
     return f.emptyParenthesized(open, [], close);
   const entries: { end: number; doc: Format }[] = p.pairs.map(
@@ -416,14 +423,16 @@ function mapping(f: Fmt, p: Pat & { k: "map" }): Format {
   );
 }
 
-/** Ruff's `FormatPatternMatchClass` and `FormatPatternArguments`. */
-function classPattern(f: Fmt, p: Pat & { k: "class" }): Format {
-  const cls = p.cls.map((x) => f.tok(x));
-  const open = f.tok(p.open);
-  const close = f.tok(p.close);
+/** Ruff's `FormatPatternArguments`, a class pattern's parentheses and what they hold. */
+export function classArguments(
+  f: Fmt,
+  p: Pat & { k: "class" },
+  open: Token,
+  close: Token,
+): Format {
   const [only] = p.items;
   if (!only && p.keywords.length === 0)
-    return [cls, f.emptyParenthesized(open, [], close)];
+    return f.emptyParenthesized(open, [], close);
   const comma = commaIn(f.tree, p.node, p.open);
   const entries = () =>
     only && p.items.length === 1 && p.keywords.length === 0
@@ -444,14 +453,11 @@ function classPattern(f: Fmt, p: Pat & { k: "class" }): Format {
             doc: dslPart(f.tree.parent(k.name)),
           })),
         ];
-  return [
-    cls,
-    f.parenthesized(
-      open,
-      () => group(f.joinCommaSeparated(entries(), p.end, comma)),
-      close,
-    ),
-  ];
+  return f.parenthesized(
+    open,
+    () => group(f.joinCommaSeparated(entries(), p.end, comma)),
+    close,
+  );
 }
 
 /** Ruff's `maybe_parenthesize_pattern`, for a pattern without comments. */

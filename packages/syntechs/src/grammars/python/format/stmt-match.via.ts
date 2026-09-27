@@ -1,18 +1,22 @@
 // The customs stmt-match.ts's `.via`s name: a match's subject and cases, a case's header parts and body.
+import type { Frame } from "../../../fmt/dsl/runtime.js";
 import type { StreamCtx } from "../../../fmt/stream-format.js";
 import type { Match, MatchCase } from "../fmt/ast.js";
 import { Unformattable } from "../fmt/ast.js";
 import { COMPOUND, type Fmt, hard, space } from "../fmt/builders.js";
 import { type Format, indent } from "../fmt/elements.js";
 import { maybeParenthesize } from "../fmt/expr.js";
-import { dslPart, part, ruffStmtOf } from "../fmt/sink.js";
+import { dslPart, frameParts, part, ruffStmtOf } from "../fmt/sink.js";
 import { body, kids } from "../fmt/stmt/defs.js";
 import {
+  classArguments,
+  mapping,
   maybeParenthesizePattern,
   pattern,
   readCasePattern,
   readGroup,
   readPattern,
+  sequence,
 } from "../fmt/stmt/match.js";
 import { leadingAlternateBranchComments } from "../fmt/stmt/suite.js";
 import { byteOffsetOf } from "../fmt/trivia.js";
@@ -63,6 +67,31 @@ export const stmtMatchVia = {
     const p = readPattern(f, ctx.tree.parent(n));
     if (p.k !== "complex") throw new Error("python match: match.complexReal outside a complex pattern");
     part([pattern(f, p.left), f.softLineOrSpace(), f.tok(p.op), space]);
+  },
+  "match.sequence": (n: number, ctx: StreamCtx<unknown>, frame: Frame) => {
+    const f = fmtOf(n, ctx);
+    const p = readPattern(f, n);
+    if (p.k !== "seq") throw new Error("python match: match.sequence on no sequence pattern");
+    const { open, close } = frameParts(frame);
+    part(sequence(f, p, open, close));
+  },
+  "match.mapping": (n: number, ctx: StreamCtx<unknown>, frame: Frame) => {
+    const f = fmtOf(n, ctx);
+    const p = readPattern(f, n);
+    if (p.k !== "map") throw new Error("python match: match.mapping on no mapping pattern");
+    const { open, close } = frameParts(frame);
+    part(mapping(f, p, open, close));
+  },
+  "match.className": (n: number, ctx: StreamCtx<unknown>) => {
+    const f = fmtOf(n, ctx);
+    part(kids(f.tree, n).map((x) => f.tok(x)));
+  },
+  "match.classArguments": (n: number, ctx: StreamCtx<unknown>, frame: Frame) => {
+    const f = fmtOf(n, ctx);
+    const p = readPattern(f, n);
+    if (p.k !== "class") throw new Error("python match: match.classArguments on no class pattern");
+    const { open, close } = frameParts(frame);
+    part(classArguments(f, p, open, close));
   },
   "match.subject": (n: number) => {
     const { f, s: m } = ruffStmtOf(n);
