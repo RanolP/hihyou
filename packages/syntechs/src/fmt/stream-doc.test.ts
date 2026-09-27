@@ -7,6 +7,7 @@ import { language as jsParser } from "../grammars/javascript/index.js";
 import { language as tsxParser } from "../grammars/tsx/index.js";
 import { tsx, typescript } from "../grammars/typescript/fmt.js";
 import { language as tsParser } from "../grammars/typescript/index.js";
+import type * as Util from "../grammars/javascript/print/util.js";
 import type { Doc } from "./doc.js";
 import { format } from "./format.js";
 import type * as Printer from "./printer.js";
@@ -36,20 +37,40 @@ vi.mock("./printer.js", async (importOriginal) => {
   };
 });
 
+// Each part the JS printer runs removeLines on, by the part removeLines rebuilt: `sDoc` appends the part itself
+// in a flat interval, which must print what the rebuilt part prints.
+const flattened = new Map<Doc, Doc>();
+vi.mock("../grammars/javascript/print/util.js", async (importOriginal) => {
+  const real = await importOriginal<typeof Util>();
+  return {
+    ...real,
+    removeLines(doc: Doc) {
+      const out = real.removeLines(doc);
+      if (out !== doc) flattened.set(out, doc);
+      return out;
+    },
+  };
+});
+
 interface Tally {
   docs: number;
   covered: number;
   skipped: Map<string, number>;
   differ: string[];
+  /** Parts removeLines rebuilt, which the stream printed flat instead. */
+  flattened: number;
 }
 
 function compare(name: string, tally: Tally, run: () => void) {
   onPrint = (doc, layout) => {
     tally.docs++;
+    const flat = new Map(flattened);
+    flattened.clear();
+    tally.flattened += flat.size;
     let stream: ReturnType<typeof printStream>;
     try {
       resetStream(layout.ruff);
-      sDoc(doc);
+      sDoc(doc, flat);
       stream = printStream(layout);
     } catch (e) {
       if (!(e instanceof Unsupported)) throw e;
@@ -122,7 +143,7 @@ function jsCorpus(): [keyof typeof jsTargets, string, string][] {
 function report(label: string, t: Tally) {
   const skipped = [...t.skipped].sort((a, b) => b[1] - a[1]);
   console.log(
-    `${label}: ${t.covered}/${t.docs} docs lowered, ${t.differ.length} differ; skipped: ${skipped.map(([k, v]) => `${k} ${v}`).join(", ")}`,
+    `${label}: ${t.covered}/${t.docs} docs lowered, ${t.flattened} flattened, ${t.differ.length} differ; skipped: ${skipped.map(([k, v]) => `${k} ${v}`).join(", ")}`,
   );
   if (t.differ.length) console.log(`${label} differ:`, t.differ.slice(0, 20));
 }
@@ -132,6 +153,7 @@ const newTally = (): Tally => ({
   covered: 0,
   skipped: new Map(),
   differ: [],
+  flattened: 0,
 });
 
 const present = existsSync(corpus);
@@ -154,6 +176,8 @@ describe.skipIf(!present)(
       report("js", tally);
       expect(tally.differ).toEqual([]);
       expect([tally.covered, tally.docs]).toEqual(JS_COVERED);
+      // The flat parts were compared at all: a removeLines call the mock no longer sees leaves none.
+      expect(tally.flattened).toBeGreaterThan(0);
     }, 600_000);
   },
 );

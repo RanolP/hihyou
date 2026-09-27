@@ -25,6 +25,7 @@ import {
   token,
   willBreak as docWillBreak,
 } from "./doc.js";
+import { removeLines } from "../grammars/javascript/print/util.js";
 import { print } from "./printer.js";
 import {
   BLANK,
@@ -57,6 +58,8 @@ import {
   openChoice,
   openSpan,
   closeSpan,
+  openFlat,
+  closeFlat,
   sJump,
   openFitsExpanded,
   openState,
@@ -494,6 +497,102 @@ describe("printStream matches printer.ts for a shared part printed through a jum
       sText("e");
     });
     expect(out).toBe("dd\ncc\ndde");
+  });
+});
+
+describe("printStream matches printer.ts for a part printed flat as removeLines rebuilds it", () => {
+  const flat = (build: () => void) => {
+    openFlat();
+    build();
+    closeFlat();
+  };
+
+  it("prints a flat part's lines flat and its ifBreak's flat branch where its own group would break", () => {
+    const inner = group([text("bbbb"), line, ifBreak(text(","), text(";")), softline, text("c")]);
+    const out = both(4, removeLines(inner), () =>
+      flat(() => {
+        open(GROUP);
+        sText("bbbb");
+        sLine(0);
+        open(IF_BROKEN);
+        sText(",");
+        close();
+        open(IF_FLAT);
+        sText(";");
+        close();
+        sLine(SOFT);
+        sText("c");
+        close();
+      }),
+    );
+    expect(out).toBe("bbbb ;c");
+  });
+
+  it("drops a group's own shouldBreak inside a flat part, so the groups around stay flat", () => {
+    const out = both(80, group([text("a"), line, removeLines(group(text("b"), true))]), () => {
+      open(GROUP);
+      sText("a");
+      sLine(0);
+      flat(() => {
+        open(GROUP, -1, BROKEN);
+        sText("b");
+        close();
+      });
+      close();
+    });
+    expect(out).toBe("a b");
+  });
+
+  it("keeps a hard line's break parent inside a flat part, so the groups around break", () => {
+    const out = both(80, group([text("a"), line, removeLines([text("b"), hardline, text("c")])]), () => {
+      open(GROUP);
+      sText("a");
+      sLine(0);
+      flat(() => {
+        sText("b");
+        sHardline();
+        sText("c");
+      });
+      close();
+    });
+    expect(out).toBe("a\nb\nc");
+  });
+
+  it("measures a flat part's conditional group by its last state, the one it prints", () => {
+    const cg = conditionalGroup([text("s"), text("longstate")]);
+    const out = both(8, group([text("x"), line, removeLines(cg)]), () => {
+      open(GROUP);
+      sText("x");
+      sLine(0);
+      flat(() => {
+        openChoice(false);
+        openState();
+        sText("s");
+        closeState();
+        openState();
+        sText("longstate");
+        closeState();
+        closeChoice();
+      });
+      close();
+    });
+    expect(out).toBe("x\nlongstate");
+  });
+
+  it("prints a span flat through a jump in a flat part, and decided where it is jumped to outside one", () => {
+    const s = group([text("aa"), line, text("bb")]);
+    const out = both(3, [s, hardline, removeLines(s)], () => {
+      const t = openSpan();
+      open(GROUP);
+      sText("aa");
+      sLine(0);
+      sText("bb");
+      close();
+      closeSpan();
+      sHardline();
+      flat(() => sJump(t));
+    });
+    expect(out).toBe("aa\nbb\naa bb");
   });
 });
 

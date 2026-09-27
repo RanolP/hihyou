@@ -89,13 +89,18 @@ const STATE = 18;
  * opening, and the choice closes with the first state's: the enclosing intervals measure that state only.
  */
 const choiceSaves: number[] = [];
-const CHOICE_SAVE = 13;
+const CHOICE_SAVE = 15;
 /** Whether the stream holds a choice, whose state breaks reach no `BREAKS` flag around it (see `willBreak`). */
 let choiceSeen = false;
 // --- end choice ---
 
 const BREAK = 0;
 const FLAT = 1;
+/**
+ * Inside a `FLATTEN` interval: removeLines' modes, the flat or broken mode `printer.ts` gives the part rebuilt
+ * (`FORCED_BREAK | mode`). Every line but a hard one prints flat, and nothing is decided.
+ */
+const FORCED_BREAK = 2;
 type Mode = typeof BREAK | typeof FLAT;
 
 const grow32 = (a: Int32Array) => {
@@ -303,6 +308,9 @@ export function resetStream(ruff = false): void {
   spanSaves.length = 0;
   spanBits.clear();
   leadAt = -1;
+  xbp = 0;
+  flatSaves.length = 0;
+  ifbXbp.length = 0;
 }
 
 function entry(kind: number, flag: number, str: number, node: number, w: number) {
@@ -413,11 +421,13 @@ export function sRuffLine(flags: number): void {
 /** Breaks every enclosing group. */
 export function sBreakParent(): void {
   bp++;
+  xbp++;
 }
 
 export function sHardline(): void {
   sLine(HARD);
   bp++;
+  xbp++;
 }
 
 /** Prettier's lineSuffixBoundary: a hard line here when line suffixes are pending, else nothing. */
@@ -459,7 +469,10 @@ export function open(kind: number, ref = -1, flags = 0): number {
   oRefs[op] = refCount;
   op++;
   if (kind === LINE_SUFFIX && noMeasure === 0) lastSfx = m;
-  if (kind === IF_BROKEN || kind === LINE_SUFFIX) noMeasure++;
+  if (kind === IF_BROKEN) {
+    noMeasure++;
+    ifbXbp.push(xbp);
+  } else if (kind === LINE_SUFFIX) noMeasure++;
   if (ref >= 0 && (kind === IF_BROKEN || kind === IF_FLAT)) {
     if (refCount === refs.length) refs = grow32(refs);
     refs[refCount++] = ref;
@@ -485,7 +498,7 @@ export function openAlign(n: number | string): number {
 export function openChoice(broken: boolean): number {
   choiceSeen = true;
   choiceSaves.push(pos, lastLine, runStart, lastSfx, bndM, bndSfx);
-  choiceSaves.push(0, 0, 0, 0, 0, 0, 0);
+  choiceSaves.push(0, 0, 0, 0, 0, 0, 0, xbp, xbp);
   return open(CHOICE, -1, broken ? BROKEN : 0);
 }
 
@@ -500,6 +513,7 @@ export function openState(): number {
     bndM = choiceSaves[b + 4] as number;
     bndSfx = choiceSaves[b + 5] as number;
   }
+  choiceSaves[b + 14] = xbp;
   return open(STATE);
 }
 
@@ -537,6 +551,8 @@ export function closeChoice(): void {
     bndM = choiceSaves[b + 10] as number;
     bndSfx = choiceSaves[b + 11] as number;
   }
+  // removeLines keeps the last state only.
+  xbp = (choiceSaves[b + 13] as number) + xbp - (choiceSaves[b + 14] as number);
   choiceSaves.length = b;
   const o = op - 1;
   bp = (oBp[o] as number) + ((iFlag[oIdx[o] as number] as number) & BROKEN ? 1 : 0);
@@ -551,7 +567,11 @@ export function close(): void {
   iEnd[k] = n;
   iNext[k] = m;
   iP1[k] = pos;
-  if (kind === IF_BROKEN || kind === LINE_SUFFIX) noMeasure--;
+  if (kind === IF_BROKEN) {
+    noMeasure--;
+    // removeLines keeps an ifBreak's flat branch only.
+    xbp = ifbXbp.pop() as number;
+  } else if (kind === LINE_SUFFIX) noMeasure--;
   let flags = iFlag[k] as number;
   if (lastLine >= (iStart[k] as number)) flags |= TRAIL;
   const hasBp = bp > (oBp[op] as number);
@@ -608,7 +628,7 @@ const FRESH = -2;
 let leadAt = -1;
 /** Per span still open: the builder state it was opened in (`SPAN_SAVE` numbers). */
 const spanSaves: number[] = [];
-const SPAN_SAVE = 9;
+const SPAN_SAVE = 10;
 /** Per closed span: what its contents do to the counters around (the `S_` bits). Its `iRef` holds `S_REFS`'s group. */
 const spanBits = new Map<number, number>();
 const S_HARD = 1;
@@ -627,10 +647,12 @@ const S_BND = 128;
 const S_BND_SFX = 256;
 /** It holds an `ifBreak` on a group; `iRef` holds the first such group. */
 const S_REFS = 512;
+/** It holds a break parent removeLines keeps (`xbp`). */
+const S_XBP = 1024;
 
 /** Opens the span a shared part is built in; close it with `closeSpan`, then print it again with `sJump`. */
 export function openSpan(): number {
-  spanSaves.push(pos, lastLine, runStart, lastSfx, bndM, bndSfx, noMeasure, refCount, leadAt);
+  spanSaves.push(pos, lastLine, runStart, lastSfx, bndM, bndSfx, noMeasure, refCount, leadAt, xbp);
   lastLine = FRESH;
   runStart = -1;
   lastSfx = -1;
@@ -648,6 +670,7 @@ export function closeSpan(): void {
     (hard > (oHard[o] as number) ? S_HARD : 0) | (bp > (oBp[o] as number) ? S_BP : 0);
   close();
   const b = spanSaves.length - SPAN_SAVE;
+  if (xbp > (spanSaves[b + 9] as number)) bits |= S_XBP;
   const refs0 = spanSaves[b + 7] as number;
   let first = -1;
   let inner = false;
@@ -685,7 +708,7 @@ export function closeSpan(): void {
   leadAt = spanSaves[b + 8] as number;
   spanSaves.length = b;
   // Its own groups and refs are counted where it was built; the rest is the effect around.
-  transfer(bits & ~(S_HARD | S_BP | S_REFS), t, endLine, endRun, lead);
+  transfer(bits & ~(S_HARD | S_BP | S_REFS | S_XBP), t, endLine, endRun, lead);
 }
 
 /** Prints the closed span `t` here again: a `JUMP` entry, measured as the span's contents would be here. */
@@ -700,6 +723,7 @@ export function sJump(t: number): void {
 function transfer(bits: number, t: number, endLine: number, endRun: number, lead: number) {
   if (bits & S_HARD) hard++;
   if (bits & S_BP) bp++;
+  if (bits & S_XBP) xbp++;
   if (bits & S_REFS) {
     if (refCount === refs.length) refs = grow32(refs);
     refs[refCount++] = iRef[t] as number;
@@ -758,6 +782,45 @@ function scanInnerRefs(t: number) {
 }
 // --- end span ---
 
+// --- flat ---
+/**
+ * An interval kind: prettier's removeLines as a print mode rather than a rebuild, so `FLATTEN{sJump(t)}` prints a
+ * shared part flat without building it again. Inside, every line but a hard one prints flat, an `ifBreak` takes
+ * its flat branch, a conditional group its last state, and no group or fill item decides anything; a jump prints
+ * its span the same way. A break parent (a hard line's included) still breaks the groups around; a group's own
+ * shouldBreak does not.
+ */
+export const FLATTEN = 20;
+/**
+ * The break parents removeLines keeps: those appended, not a group's shouldBreak, nor one in a conditional group's
+ * state before the last or in an `ifBreak`'s broken branch.
+ */
+let xbp = 0;
+/** Per flat interval still open: `xbp`, `pos` and `lastLine` at its start. */
+const flatSaves: number[] = [];
+/** Per `IF_BROKEN` still open: `xbp` at its start. */
+const ifbXbp: number[] = [];
+
+/** Opens a removeLines part; close it with `closeFlat`. */
+export function openFlat(): number {
+  flatSaves.push(xbp, pos, lastLine);
+  // The groups around measure it by a scan, which reads its mode, rather than by the width it was built with.
+  hard++;
+  const k = open(FLATTEN);
+  // A line inside is removeLines' text, which no run of lines around goes on through.
+  lastLine = -1;
+  return k;
+}
+
+export function closeFlat(): void {
+  const b = flatSaves.length - 3;
+  bp = (oBp[op - 1] as number) + (xbp > (flatSaves[b] as number) ? 1 : 0);
+  close();
+  lastLine = pos === flatSaves[b + 1] ? (flatSaves[b + 2] as number) : -1;
+  flatSaves.length = b;
+}
+// --- end flat ---
+
 // --- queries ---
 // What a rule asks of a part it built, as `doc.ts`'s and the JS printer's Doc queries ask of a Doc: the part is a
 // closed interval, a span when it is only a sequence. Each reads the interval's own entries and intervals, and the
@@ -804,23 +867,30 @@ export function willBreak(k: number): boolean {
   const flags = iFlag[k] as number;
   if (flags & (BROKEN | BREAKS)) return true;
   if (iKind[k] === CHOICE) return (iRef[k] as number) >= 0 && willBreak(k + 1);
-  // Only a choice's first state breaks nothing around it, so only a stream with a choice needs the walk.
-  if (!choiceSeen) return false;
+  // Only a choice's first state breaks nothing around it, so only a stream with a choice needs the walk. A flat
+  // part's flags already count what removeLines keeps.
+  if (!choiceSeen || iKind[k] === FLATTEN) return false;
   return walkIn(
     k,
-    (x) => (iKind[x] === CHOICE ? (willBreak(x) ? "stop" : false) : true),
+    (x) =>
+      iKind[x] === CHOICE ? (willBreak(x) ? "stop" : false) : iKind[x] !== FLATTEN,
     (i) => eKind[i] === JUMP && willBreak(eStr[i] as number),
   );
 }
 
-/** The JS printer's canBreak: whether closed interval `k` holds a line, in any state of a choice or branch. */
-export function canBreak(k: number): boolean {
+/**
+ * The JS printer's canBreak: whether closed interval `k` holds a line, in any state of a choice or branch; inside
+ * a flat part (`hardOnly`), a hard line, the only kind removeLines keeps.
+ */
+export function canBreak(k: number, hardOnly = iKind[k] === FLATTEN): boolean {
   return walkIn(
     k,
-    () => true,
+    (x) => hardOnly || iKind[x] !== FLATTEN || (canBreak(x, true) ? "stop" : false),
     (i) =>
-      (eKind[i] === LINE && !((eFlag[i] as number) & BOUNDARY)) ||
-      (eKind[i] === JUMP && canBreak(eStr[i] as number)),
+      (eKind[i] === LINE &&
+        !((eFlag[i] as number) & BOUNDARY) &&
+        (!hardOnly || ((eFlag[i] as number) & HARD) !== 0)) ||
+      (eKind[i] === JUMP && canBreak(eStr[i] as number, hardOnly)),
   );
 }
 
@@ -1076,13 +1146,16 @@ export function printStream(layout: Layout): StreamPrinted {
         const e = iEnd[k] as number;
         const kind = iKind[k] as number;
         if (kind === GROUP) {
-          const broken = ((iFlag[k] as number) & BROKEN) !== 0;
+          // removeLines rebuilds a group without its own shouldBreak: broken only by what it holds.
+          const broken =
+            ((iFlag[k] as number) & (mode < FORCED_BREAK ? BROKEN : BREAKS)) !== 0;
           if (mustBeFlat && broken) return false;
           cur++;
           // Ruff records a measured group's mode for the `ifBreak`s after it.
           if (ruff) groupModes[k] = (broken ? BREAK : mode) + 1;
           if (e > i) {
-            if (broken) mode = BREAK;
+            // BREAK, or FORCED_BREAK inside a flat part.
+            if (broken) mode &= FORCED_BREAK;
             if (ls === lEnd.length) {
               lEnd = grow32(lEnd);
               lMode = grow8(lMode);
@@ -1093,13 +1166,26 @@ export function printStream(layout: Layout): StreamPrinted {
           }
         } else if (kind === IF_BROKEN || kind === IF_FLAT) {
           const r = iRef[k] as number;
-          const c = r >= 0 ? modeOf(r) : mode;
+          // Inside a flat part, never BREAK: the flat branch.
+          const c = r >= 0 && mode < FORCED_BREAK ? modeOf(r) : mode;
           if ((kind === IF_BROKEN) === (c === BREAK)) cur++;
           else {
             i = e;
             cur = iNext[k] as number;
             jumped = true;
             break;
+          }
+        } else if (kind === FLATTEN) {
+          cur++;
+          mode |= FORCED_BREAK;
+          if (e > i) {
+            if (ls === lEnd.length) {
+              lEnd = grow32(lEnd);
+              lMode = grow8(lMode);
+            }
+            lEnd[ls] = e;
+            lMode[ls] = mode;
+            ls++;
           }
         } else if (kind === LINE_SUFFIX) {
           seenSuffix = true;
@@ -1218,13 +1304,14 @@ export function printStream(layout: Layout): StreamPrinted {
             xs++;
           }
         } else if (kind === CHOICE) {
-          // Prettier's fits reads the first state, or the last one when broken or measured broken.
-          const broken = ((iFlag[k] as number) & BROKEN) !== 0;
+          // Prettier's fits reads the first state, or the last one when broken or measured broken; removeLines
+          // keeps the last one alone, no group around it.
+          const broken = mode < FORCED_BREAK && ((iFlag[k] as number) & BROKEN) !== 0;
           if (mustBeFlat && broken) return false;
           const md = broken ? BREAK : mode;
           if (ruff) groupModes[k] = md + 1;
           const last = iRef[k] as number;
-          const s = last < 0 ? -1 : broken || mode === BREAK ? last : k + 1;
+          const s = last < 0 ? -1 : broken || mode !== FLAT ? last : k + 1;
           if (e > i) {
             if (ls === lEnd.length) {
               lEnd = grow32(lEnd);
@@ -1287,12 +1374,19 @@ export function printStream(layout: Layout): StreamPrinted {
           i++;
           continue;
         }
-        if (mode === FLAT && !(f & HARD)) {
+        if (mode !== BREAK && !(f & HARD)) {
           if (!(f & SOFT)) {
-            if (ruff) width -= 1;
+            if (mode !== FLAT) {
+              // removeLines' text " ".
+              if (pending) {
+                width -= 1;
+                pending = false;
+              }
+              width -= 1;
+            } else if (ruff) width -= 1;
             else pending = true;
           }
-        } else if (i < allEnd && mode !== FLAT) {
+        } else if (i < allEnd && !(mode & FLAT)) {
           while (xs > 0 && (xEnd[xs - 1] as number) <= i) xs--;
           const ind =
             xs > 0 ? (xInd[xs - 1] as number) : (fInd[lp >= floor ? lp : fp - 1] as number);
@@ -1557,6 +1651,14 @@ export function printStream(layout: Layout): StreamPrinted {
         const ti = fInd[top] as number;
         switch (iKind[k]) {
           case GROUP: {
+            if (tm >= FORCED_BREAK) {
+              // printer.ts decides removeLines' group, which clears a pending remeasure, but only a hard line in
+              // it breaks, and it breaks only by what it holds.
+              remeasure = false;
+              cur++;
+              if (e > i) fpush(e, ti, (iFlag[k] as number) & BREAKS ? FORCED_BREAK : tm);
+              break;
+            }
             const g = decideGroup(k, tm);
             groupModes[k] = g + 1;
             cur++;
@@ -1570,7 +1672,8 @@ export function printStream(layout: Layout): StreamPrinted {
           case IF_BROKEN:
           case IF_FLAT: {
             const r = iRef[k] as number;
-            const c = r >= 0 ? modeOf(r) : tm;
+            // Inside a flat part, never BREAK: the flat branch.
+            const c = r >= 0 && tm < FORCED_BREAK ? modeOf(r) : tm;
             if ((iKind[k] === IF_BROKEN) === (c === BREAK)) cur++;
             else {
               i = e;
@@ -1593,6 +1696,11 @@ export function printStream(layout: Layout): StreamPrinted {
             if (e > i) fpush(e, ti, tm);
             break;
           case FILL_ITEM: {
+            if (tm >= FORCED_BREAK) {
+              cur++;
+              if (e > i) fpush(e, ti, tm);
+              break;
+            }
             const cm = decideItem(k, fEnd[top] as number);
             fMode[top] = separatorMode;
             fSep[top] = separatorEnd;
@@ -1751,14 +1859,24 @@ export function printStream(layout: Layout): StreamPrinted {
               jumped = true;
               break;
             }
-            const g = decideChoice(k, tm);
-            groupModes[k] = g + 1;
-            if (e > i) fpush(e, ti, g);
+            if (tm >= FORCED_BREAK) {
+              // removeLines keeps the last state alone, no group around it.
+              picked = iRef[k] as number;
+              if (e > i) fpush(e, ti, tm);
+            } else {
+              const g = decideChoice(k, tm);
+              groupModes[k] = g + 1;
+              if (e > i) fpush(e, ti, g);
+            }
             i = iStart[picked] as number;
             cur = picked + 1;
             jumped = true;
             break;
           }
+          case FLATTEN:
+            cur++;
+            if (e > i) fpush(e, ti, tm | FORCED_BREAK);
+            break;
           case STATE:
             // A state the enclosing choice did not take.
             i = e;
@@ -1797,15 +1915,15 @@ export function printStream(layout: Layout): StreamPrinted {
           i++;
           continue;
         }
-        if (md === FLAT && !(f & HARD)) {
+        if (md !== BREAK && !(f & HARD)) {
           if (!(f & SOFT)) {
             current += " ";
             length += 1;
             column += 1;
           }
         } else {
-          // A hard break inside a flat group: the next group must measure afresh.
-          if (md === FLAT || ruff) remeasure = true;
+          // A hard break inside a flat group (FLAT or FORCED_BREAK | FLAT): the next group must measure afresh.
+          if (md & FLAT || ruff) remeasure = true;
           // A suffix queued inside flushed suffix content prints before this line too.
           while (sK.length > 0) flushSuffixes();
           trimLineEnd();

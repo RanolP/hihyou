@@ -63,6 +63,8 @@ import {
   openState,
   closeState,
   closeChoice,
+  openFlat,
+  closeFlat,
   openSpan,
   closeSpan,
   sJump,
@@ -86,9 +88,10 @@ export class Unsupported extends Error {}
  * Appends `doc` to the stream (see `stream.ts`) so that `printStream` prints what `printer.ts`'s `print` prints
  * for it: the same text, and the same tokens at the same offsets. It is how a Doc-building formatter moves onto
  * the stream one construct at a time, and how the equivalence harness checks the stream against the printer.
+ * `flat` maps a part removeLines rebuilt to the part it was rebuilt from, which is appended in a flat interval.
  */
-export function sDoc(doc: Doc): void {
-  const shared = check(doc, new Set());
+export function sDoc(doc: Doc, flat?: ReadonlyMap<Doc, Doc>): void {
+  const shared = check(doc, new Set(), flat);
   const groups = new Map<number, number>();
   // A shared part holding intervals is built once, as a span, and jumped to wherever else it appears.
   const spans = new Map<Doc, number>();
@@ -107,6 +110,13 @@ export function sDoc(doc: Doc): void {
     emitPart(d);
   };
   const emitPart = (d: Doc): void => {
+    const source = flat?.get(d);
+    if (source !== undefined) {
+      openFlat();
+      emit(source);
+      closeFlat();
+      return;
+    }
     if (isDocs(d)) {
       for (const x of d) emit(x);
       return;
@@ -232,7 +242,7 @@ export function sDoc(doc: Doc): void {
  * Throws `Unsupported` for anything in `doc` the stream cannot print yet: a kind it lacks, or a group an
  * `ifBreak` names before the group itself is built. Returns the parts `doc` shares that hold intervals.
  */
-function check(doc: Doc, seen: Set<Doc>): Set<Doc> {
+function check(doc: Doc, seen: Set<Doc>, flat: ReadonlyMap<Doc, Doc> | undefined): Set<Doc> {
   const groups = new Set<number>();
   const shared = new Set<Doc>();
   // --- ruff ---
@@ -255,6 +265,12 @@ function check(doc: Doc, seen: Set<Doc>): Set<Doc> {
       return false;
     }
     if (inVariant !== undefined) variantOf.set(d, inVariant);
+    const source = flat?.get(d);
+    if (source !== undefined) {
+      seen.add(d);
+      walk(source);
+      return true;
+    }
     let intervals = false;
     if (isDocs(d)) {
       seen.add(d);
