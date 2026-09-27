@@ -38,7 +38,7 @@ import {
   unparen,
 } from "./util.js";
 import type { CustomRule } from "../../../fmt/dsl/runtime.js";
-import { jsCtx, sToken } from "../sink.js";
+import { jsCtx, sLiteral, sToken } from "../sink.js";
 import type { JsOptions } from "./util.js";
 
 const DOUBLE = '"';
@@ -103,20 +103,22 @@ function printDirective(raw: string, singleQuote: boolean): string {
   return raw;
 }
 
-const string: JsRule = (node, ctx) => {
-  const raw = src(ctx, node);
-  const statement = parent(ctx, node);
+const string: CustomRule<JsOptions> = (node, ctx) => {
+  const js = jsCtx(ctx).js;
+  const raw = src(js, node);
+  const statement = parent(js, node);
   if (
     statement !== undefined &&
-    kind(ctx, statement) === "expression_statement" &&
-    isDirective(ctx, statement)
-  )
-    return token(node, printDirective(raw, ctx.options.singleQuote));
+    kind(js, statement) === "expression_statement" &&
+    isDirective(js, statement)
+  ) {
+    sToken(node, printDirective(raw, js.options.singleQuote));
+    return;
+  }
   // A line continuation keeps its break, which the printer must not indent.
-  const printed = printString(raw, ctx.options.singleQuote);
-  return printed.includes("\n")
-    ? literalToken(node, printed)
-    : token(node, printed);
+  const printed = printString(raw, js.options.singleQuote);
+  if (printed.includes("\n")) sLiteral(node, printed);
+  else sToken(node, printed);
 };
 
 const number: CustomRule<JsOptions> = (node, ctx) =>
@@ -331,9 +333,9 @@ export function printComment(c: number, ctx: JsCtx): Doc {
 export const literalCustoms = {
   number,
   regex,
+  string,
 } satisfies Record<string, CustomRule<JsOptions>>;
 
 export const literalRules: Record<string, JsRule> = {
-  string,
   template_string: templateString,
 };

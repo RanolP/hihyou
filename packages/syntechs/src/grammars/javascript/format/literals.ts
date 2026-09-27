@@ -5,4 +5,5 @@ import type { JsStructure } from "../format.js";
 export const literals = {
   number: () => custom("number"),
   regex: () => custom("regex"),
+  string: () => custom("string"),
 } satisfies JsStructure;
