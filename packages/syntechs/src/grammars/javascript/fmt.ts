@@ -24,7 +24,7 @@ import {
   STATEMENT_LIST_PARENTS,
   statementRules,
 } from "./print/statements.js";
-import { typeRules } from "./print/types.js";
+import { typeCustoms, typeRules } from "./print/types.js";
 import { onDoc } from "./sink.js";
 import {
   anon,
@@ -132,7 +132,8 @@ export function jsRules(): Record<string, JsRule> {
     parenthesized_expression: parenthesized,
   };
   // The kinds the DSL spec (format.ts) lays out, recorded into Docs while the rest still print by the Doc.
-  for (const [name, rule] of gen.javascript<JsOptions>({ ...operatorCustoms }).rules) table[name] = onDoc(rule);
+  for (const [name, rule] of gen.javascript<JsOptions>({ ...operatorCustoms, ...typeCustoms }).rules)
+    table[name] = onDoc(rule);
   for (const [name, rule] of Object.entries(table)) table[name] = wrap(rule);
   return table;
 }

@@ -11,17 +11,32 @@ import {
   hardline,
   ifBreak,
   indent,
-  indentIfBreak,
   join,
   line,
-  lineSuffixBoundary,
   softline,
   synthetic,
   text,
   token,
 } from "../../../fmt/doc.js";
+import type { CustomRule } from "../../../fmt/dsl/runtime.js";
 import { lfAfter, newlineBetween, nextLineEmpty } from "../../../fmt/text.js";
 import { firstLeaf } from "../../../fmt/tree.js";
+import {
+  close,
+  GROUP,
+  IF_BROKEN,
+  IF_FLAT,
+  INDENT,
+  type JsStreamCtx,
+  jsCtx,
+  open,
+  openIndentIfBreak,
+  SOFT,
+  sLine,
+  sLineSuffixBoundary,
+  sText,
+  sToken,
+} from "../sink.js";
 import { printAssignment } from "./assignment.js";
 import {
   printFunctionParameters,
@@ -46,6 +61,7 @@ import {
   isMember,
   items,
   type JsCtx,
+  type JsOptions,
   type JsRule,
   kind,
   lastChildWhere,
@@ -67,14 +83,19 @@ const anonKids = (x: HasTree, n: number) =>
 const lastAnonKid = (x: HasTree, n: number, text: string) =>
   lastChildWhere(x, n, (c) => !named(x, c) && kind(x, c) === text);
 
-/** `n`'s children printed one after another, each separated by a space: the shape of every keyword-led type. */
-const words = (ctx: JsCtx, n: number): Doc =>
-  join(
-    text(" "),
-    children(ctx, n)
-      .filter((c) => !isComment(ctx, c))
-      .map((c) => (named(ctx, c) ? p(ctx, c) : t(ctx, c))),
-  );
+// The customs below write through the sink (see sink.ts); these print a token or a child that may be absent.
+const tok = (js: JsCtx, c: number | undefined, as?: string) => {
+  if (c !== undefined) sToken(c, as ?? src(js, c));
+};
+const pr = (ctx: JsStreamCtx, c: number | undefined, args?: Args) => {
+  if (c !== undefined) ctx.print(c, args);
+};
+const spaced = (ctx: JsStreamCtx, kids: readonly number[]) =>
+  kids.forEach((c, i) => {
+    if (i > 0) sText(" ");
+    if (named(ctx.js, c)) ctx.print(c);
+    else tok(ctx.js, c);
+  });
 
 // --- where a type stands --------------------------------------------------------------------------------------
 
@@ -193,99 +214,30 @@ export function typeNeedsParens(x: HasTree, n: number): boolean {
 }
 
 /** Source parentheses around a type stay only where prettier would print them. */
-const parenthesizedType: JsRule = (n, ctx, args) => {
-  const inner = first(ctx, n);
-  if (inner === undefined) return t(ctx, n);
-  if (unparenType(ctx, inner) !== inner || !typeNeedsParens(ctx, inner))
-    return p(ctx, inner, args);
-  return [
-    t(ctx, anonKid(ctx, n, "(")),
-    p(ctx, inner),
-    t(ctx, lastAnonKid(ctx, n, ")")),
-  ];
+const parenthesizedType: CustomRule<JsOptions> = (n, sctx) => {
+  const ctx = jsCtx(sctx);
+  const js = ctx.js;
+  const inner = first(js, n);
+  if (inner === undefined) return tok(js, n);
+  if (unparenType(js, inner) !== inner || !typeNeedsParens(js, inner))
+    return ctx.print(inner, ctx.args);
+  tok(js, anonKid(js, n, "("));
+  ctx.print(inner);
+  tok(js, lastAnonKid(js, n, ")"));
 };
-
-// --- annotations ----------------------------------------------------------------------------------------------
-
-/** `: T`, `?: T`, `-?: T`: the annotation's own token, then the type. */
-const annotation: JsRule = (n, ctx) => {
-  const [tok] = anonKids(ctx, n);
-  return [t(ctx, tok), text(" "), p(ctx, items(ctx, n)[0])];
-};
-
-const typePredicate: JsRule = (n, ctx) => {
-  const type = field(ctx, n, "type");
-  return [
-    p(ctx, field(ctx, n, "name")),
-    type !== undefined
-      ? [text(" "), t(ctx, anonKid(ctx, n, "is")), text(" "), p(ctx, type)]
-      : [],
-  ];
-};
-
-// --- simple compound types ------------------------------------------------------------------------------------
-
-const arrayType: JsRule = (n, ctx) => [
-  p(ctx, items(ctx, n)[0]),
-  t(ctx, anonKid(ctx, n, "[")),
-  t(ctx, anonKid(ctx, n, "]")),
-];
-
-const lookupType: JsRule = (n, ctx) => {
-  const [object, index] = items(ctx, n);
-  return [
-    p(ctx, object),
-    t(ctx, anonKid(ctx, n, "[")),
-    p(ctx, index),
-    t(ctx, anonKid(ctx, n, "]")),
-  ];
-};
-
-const optionalType: JsRule = (n, ctx) => [
-  p(ctx, items(ctx, n)[0]),
-  t(ctx, anonKid(ctx, n, "?")),
-];
-const restType: JsRule = (n, ctx) => [
-  t(ctx, anonKid(ctx, n, "...")),
-  p(ctx, items(ctx, n)[0]),
-];
-const genericType: JsRule = (n, ctx) => [
-  p(ctx, field(ctx, n, "name")),
-  p(ctx, field(ctx, n, "type_arguments")),
-];
-
-const typeQuery: JsRule = (n, ctx) => {
-  const [expr, ...rest] = items(ctx, n);
-  return [
-    t(ctx, anonKid(ctx, n, "typeof")),
-    text(" "),
-    p(ctx, expr),
-    rest.map((r) => p(ctx, r)),
-  ];
-};
-
-const templateLiteralType: JsRule = (n, ctx) =>
-  children(ctx, n).map((c) =>
-    named(ctx, c) && kind(ctx, c) === "template_type" ? p(ctx, c) : t(ctx, c),
-  );
-
-const templateType: JsRule = (n, ctx) => [
-  t(ctx, anonKid(ctx, n, "${")),
-  p(ctx, items(ctx, n)[0]),
-  t(ctx, anonKid(ctx, n, "}")),
-];
 
 /** `infer U` and `infer U extends C`, the constraint laid out as a type parameter's. */
-const inferType: JsRule = (n, ctx) => {
-  const [name, constraint] = items(ctx, n);
-  const parts: Doc[] = [
-    t(ctx, anonKid(ctx, n, "infer")),
-    text(" "),
-    p(ctx, name),
-  ];
+const inferType: CustomRule<JsOptions> = (n, sctx) => {
+  const ctx = jsCtx(sctx);
+  const js = ctx.js;
+  const [name, constraint] = items(js, n);
+  open(GROUP);
+  tok(js, anonKid(js, n, "infer"));
+  sText(" ");
+  pr(ctx, name);
   if (constraint !== undefined)
-    parts.push(printConstraint(ctx, anonKid(ctx, n, "extends"), constraint));
-  return group(parts);
+    printConstraint(ctx, anonKid(js, n, "extends"), constraint);
+  close();
 };
 
 // --- unions and intersections ---------------------------------------------------------------------------------
@@ -416,44 +368,75 @@ const unionType: JsRule = (n, ctx, args?: Args) => {
   return group(indent([softline, printed]));
 };
 
-const intersectionType: JsRule = (n, ctx, args) => {
-  if (isTransparentType(ctx, n)) return p(ctx, items(ctx, n)[0], args);
-  const { types, ops } = flattenTypes(ctx, n);
+const intersectionType: CustomRule<JsOptions> = (n, sctx) => {
+  const ctx = jsCtx(sctx);
+  const js = ctx.js;
+  if (isTransparentType(js, n)) return pr(ctx, items(js, n)[0], ctx.args);
+  const { types, ops } = flattenTypes(js, n);
+  const indented = (x: number) => {
+    open(INDENT);
+    ctx.print(x);
+    close();
+  };
   let wasIndented = false;
-  return group(
-    types.map((x, i) => {
-      const doc = p(ctx, x);
-      if (i === 0) return doc;
-      const previous = types[i - 1] as number;
-      const amp = opDoc(ctx, ops.get(previous), previous, "&");
-      const isObject = kind(ctx, bare(ctx, x)) === "object_type";
-      const previousIsObject = kind(ctx, bare(ctx, previous)) === "object_type";
-      if (previousIsObject && isObject)
-        return [text(" "), amp, text(" "), wasIndented ? indent(doc) : doc];
-      if (
-        (!previousIsObject && !isObject) ||
-        hasComment(ctx, x, CF.Leading, (c) => lfAfter(ctx.tree, c) > 0)
-      )
-        return ctx.options.experimentalOperatorPosition === "start"
-          ? indent([line, amp, text(" "), doc])
-          : indent([text(" "), amp, line, doc]);
-      if (i > 1) wasIndented = true;
-      return [text(" "), amp, text(" "), i > 1 ? indent(doc) : doc];
-    }),
-  );
+  open(GROUP);
+  types.forEach((x, i) => {
+    if (i === 0) return ctx.print(x);
+    const previous = types[i - 1] as number;
+    const op = ops.get(previous);
+    const amp = () =>
+      op !== undefined ? tok(js, op) : sToken(previous, "&", true);
+    const isObject = kind(js, bare(js, x)) === "object_type";
+    const previousIsObject = kind(js, bare(js, previous)) === "object_type";
+    if (previousIsObject && isObject) {
+      sText(" ");
+      amp();
+      sText(" ");
+      return wasIndented ? indented(x) : ctx.print(x);
+    }
+    if (
+      (!previousIsObject && !isObject) ||
+      hasComment(js, x, CF.Leading, (c) => lfAfter(js.tree, c) > 0)
+    ) {
+      open(INDENT);
+      if (js.options.experimentalOperatorPosition === "start") {
+        sLine(0);
+        amp();
+        sText(" ");
+      } else {
+        sText(" ");
+        amp();
+        sLine(0);
+      }
+      ctx.print(x);
+      return close();
+    }
+    if (i > 1) wasIndented = true;
+    sText(" ");
+    amp();
+    sText(" ");
+    return i > 1 ? indented(x) : ctx.print(x);
+  });
+  close();
 };
 
 // --- type parameters ------------------------------------------------------------------------------------------
 
 /** Prettier's printTypeParameters, for `<...>` lists of parameters and of arguments alike. */
-const typeParameters: JsRule = (n, ctx) => {
+const typeParameters: CustomRule<JsOptions> = (n, sctx) => {
+  const sc = jsCtx(sctx);
+  const ctx = sc.js;
   const params = items(ctx, n);
-  const open = t(ctx, anonKid(ctx, n, "<"));
-  const close = t(ctx, lastAnonKid(ctx, n, ">"));
+  const openTok = anonKid(ctx, n, "<");
+  const closeTok = lastAnonKid(ctx, n, ">");
   const commas = separators(ctx, n, params);
   const lastComma =
     params.length > 0 ? commas.get(params.at(-1) as number) : undefined;
-  if (params.length === 0) return [open, ctx.dangling(n), close];
+  if (params.length === 0) {
+    tok(ctx, openTok);
+    for (const c of sc.danglingComments(n)) sc.comment(c);
+    return tok(ctx, closeTok);
+  }
   const up = parent(ctx, n);
   const annotated = parent(ctx, up);
   const declarator = parent(ctx, annotated);
@@ -475,11 +458,18 @@ const typeParameters: JsRule = (n, ctx) => {
           lfAfter(ctx.tree, comments.at(-1) as number) > 0)
       );
     });
-  const printed = params.map((x, i) =>
-    i < params.length - 1 ? [p(ctx, x), t(ctx, commas.get(x))] : p(ctx, x),
-  );
-  if (shouldInline)
-    return [open, join(text(" "), printed), t(ctx, lastComma, ""), close];
+  const printed = (sep: () => void) =>
+    params.forEach((x, i) => {
+      if (i > 0) sep();
+      sc.print(x);
+      if (i < params.length - 1) tok(ctx, commas.get(x));
+    });
+  if (shouldInline) {
+    tok(ctx, openTok);
+    printed(() => sText(" "));
+    tok(ctx, lastComma, "");
+    return tok(ctx, closeTok);
+  }
   // `<T,>` in a TSX arrow keeps its comma: without it the list would read as a JSX tag.
   const forced =
     kind(ctx, n) === "type_parameters" &&
@@ -487,64 +477,75 @@ const typeParameters: JsRule = (n, ctx) => {
     field(ctx, params[0] as number, "constraint") === undefined &&
     kind(ctx, up) === "arrow_function" &&
     lastComma !== undefined;
-  const trailing: Doc =
-    kind(ctx, n) === "type_arguments"
-      ? t(ctx, lastComma, "")
-      : forced
-        ? t(ctx, lastComma)
-        : trailingCommaAllowed(ctx, "all")
-          ? lastComma !== undefined
-            ? ifBreak(t(ctx, lastComma), t(ctx, lastComma, ""))
-            : ifBreak(synthetic(params.at(-1) as number, ","))
-          : t(ctx, lastComma, "");
-  return group([
-    open,
-    indent([softline, join(line, printed)]),
-    trailing,
-    softline,
-    close,
-  ]);
+  open(GROUP);
+  tok(ctx, openTok);
+  open(INDENT);
+  sLine(SOFT);
+  printed(() => sLine(0));
+  close();
+  if (kind(ctx, n) === "type_arguments") tok(ctx, lastComma, "");
+  else if (forced) tok(ctx, lastComma);
+  else if (!trailingCommaAllowed(ctx, "all")) tok(ctx, lastComma, "");
+  else if (lastComma !== undefined) {
+    open(IF_BROKEN);
+    tok(ctx, lastComma);
+    close();
+    open(IF_FLAT);
+    tok(ctx, lastComma, "");
+    close();
+  } else {
+    open(IF_BROKEN);
+    sToken(params.at(-1) as number, ",", true);
+    close();
+  }
+  sLine(SOFT);
+  tok(ctx, closeTok);
+  close();
 };
 
 /** ` extends C` with the constraint moved to the next line, indented, when it does not fit. */
 function printConstraint(
-  ctx: JsCtx,
+  ctx: JsStreamCtx,
   keyword: number | undefined,
   type: number | undefined,
-): Doc {
-  const g = group(indent(line));
-  return [
-    text(" "),
-    t(ctx, keyword),
-    g,
-    lineSuffixBoundary,
-    indentIfBreak(p(ctx, type), g),
-  ];
+): void {
+  sText(" ");
+  tok(ctx.js, keyword);
+  const g = open(GROUP);
+  open(INDENT);
+  sLine(0);
+  close();
+  close();
+  sLineSuffixBoundary();
+  openIndentIfBreak(g);
+  pr(ctx, type);
+  close();
 }
 
-const typeParameter: JsRule = (n, ctx) => {
-  const parts: Doc[] = [];
-  const name = field(ctx, n, "name");
-  for (const c of children(ctx, n)) {
+const typeParameter: CustomRule<JsOptions> = (n, sctx) => {
+  const ctx = jsCtx(sctx);
+  const js = ctx.js;
+  open(GROUP);
+  const name = field(js, n, "name");
+  for (const c of children(js, n)) {
     if (c === name) break;
-    if (!isComment(ctx, c)) parts.push(t(ctx, c), text(" "));
+    if (!isComment(js, c)) {
+      tok(js, c);
+      sText(" ");
+    }
   }
-  parts.push(p(ctx, name));
-  const constraint = field(ctx, n, "constraint");
+  pr(ctx, name);
+  const constraint = field(js, n, "constraint");
   if (constraint !== undefined)
-    parts.push(
-      printConstraint(
-        ctx,
-        anonKid(ctx, constraint, "extends"),
-        items(ctx, constraint)[0],
-      ),
+    printConstraint(
+      ctx,
+      anonKid(js, constraint, "extends"),
+      items(js, constraint)[0],
     );
-  const value = field(ctx, n, "value");
+  const value = field(js, n, "value");
   if (value !== undefined)
-    parts.push(
-      printConstraint(ctx, anonKid(ctx, value, "="), items(ctx, value)[0]),
-    );
-  return group(parts);
+    printConstraint(ctx, anonKid(js, value, "="), items(js, value)[0]);
+  close();
 };
 
 // --- declarations ---------------------------------------------------------------------------------------------
@@ -567,8 +568,6 @@ const typeAlias: JsRule = (n, ctx) => {
     semi(ctx, n),
   ];
 };
-
-const enumDeclaration: JsRule = (n, ctx) => words(ctx, n);
 
 const enumAssignment: JsRule = (n, ctx) => [
   printKey(ctx, n),
@@ -593,49 +592,53 @@ const moduleDeclaration: JsRule = (n, ctx) => {
   ];
 };
 
-const ambientDeclaration: JsRule = (n, ctx) => {
-  const block = childWhere(ctx, n, (c) => kind(ctx, c) === "statement_block");
-  if (block !== undefined) {
-    const rest = children(ctx, n).filter(
-      (c) => c !== block && !isComment(ctx, c),
-    );
-    return [
-      join(
-        text(" "),
-        rest.map((c) => (named(ctx, c) ? p(ctx, c) : t(ctx, c))),
-      ),
-      text(" "),
-      group(p(ctx, block)),
-    ];
-  }
-  return words(ctx, n);
+const ambientDeclaration: CustomRule<JsOptions> = (n, sctx) => {
+  const ctx = jsCtx(sctx);
+  const js = ctx.js;
+  const block = childWhere(js, n, (c) => kind(js, c) === "statement_block");
+  spaced(
+    ctx,
+    children(js, n).filter((c) => c !== block && !isComment(js, c)),
+  );
+  if (block === undefined) return;
+  sText(" ");
+  open(GROUP);
+  ctx.print(block);
+  close();
 };
 
 // --- casts ----------------------------------------------------------------------------------------------------
 
 /** Prettier's printBinaryCastExpression: `x as T`, `x satisfies T`. */
-const castExpression: JsRule = (n, ctx) => {
-  const [expression, type] = items(ctx, n);
-  const keyword = anonKids(ctx, n).find(
-    (c) => kind(ctx, c) === "as" || kind(ctx, c) === "satisfies",
+const castExpression: CustomRule<JsOptions> = (n, sctx) => {
+  const ctx = jsCtx(sctx);
+  const js = ctx.js;
+  const [expression, type] = items(js, n);
+  const keyword = anonKids(js, n).find(
+    (c) => kind(js, c) === "as" || kind(js, c) === "satisfies",
   );
-  const constKw = type !== undefined ? undefined : anonKid(ctx, n, "const");
-  const parts: Doc[] = [
-    p(ctx, expression),
-    text(" "),
-    t(ctx, keyword),
-    text(" "),
-    type !== undefined ? p(ctx, type) : t(ctx, constKw),
-  ];
-  const { parent: up, key } = role(ctx, n);
-  if (
+  const { parent: up, key } = role(js, n);
+  const grouped =
     (key === "callee" &&
-      (kind(ctx, up) === "call_expression" ||
-        kind(ctx, up) === "new_expression")) ||
-    (key === "object" && isMember(ctx, up))
-  )
-    return group([indent([softline, ...parts]), softline]);
-  return parts;
+      (kind(js, up) === "call_expression" ||
+        kind(js, up) === "new_expression")) ||
+    (key === "object" && isMember(js, up));
+  if (grouped) {
+    open(GROUP);
+    open(INDENT);
+    sLine(SOFT);
+  }
+  pr(ctx, expression);
+  sText(" ");
+  tok(js, keyword);
+  sText(" ");
+  if (type !== undefined) ctx.print(type);
+  else tok(js, anonKid(js, n, "const"));
+  if (grouped) {
+    close();
+    sLine(SOFT);
+    close();
+  }
 };
 
 const typeAssertion: JsRule = (n, ctx) => {
@@ -996,42 +999,24 @@ const functionType: JsRule = (n, ctx) => {
   return [group(parts), isSignature ? memberSemicolon(ctx, n) : []];
 };
 
+/** The TypeScript kinds format.ts lays out by hand, by the names its spec gives them. */
+export const typeCustoms = {
+  parenthesizedType,
+  inferType,
+  intersectionType,
+  typeParameters,
+  typeParameter,
+  ambientDeclaration,
+  castExpression,
+} satisfies Record<string, CustomRule<JsOptions>>;
+
 export const typeRules: Record<string, JsRule> = {
-  parenthesized_type: parenthesizedType,
-  literal_type: (n, ctx) => p(ctx, first(ctx, n)),
-  type_annotation: annotation,
-  opting_type_annotation: annotation,
-  omitting_type_annotation: annotation,
-  adding_type_annotation: annotation,
-  type_predicate_annotation: annotation,
-  asserts_annotation: annotation,
-  asserts: (n, ctx) => words(ctx, n),
-  type_predicate: typePredicate,
-  array_type: arrayType,
-  lookup_type: lookupType,
-  optional_type: optionalType,
-  rest_type: restType,
-  generic_type: genericType,
-  type_query: typeQuery,
-  index_type_query: (n, ctx) => words(ctx, n),
-  readonly_type: (n, ctx) => words(ctx, n),
-  template_literal_type: templateLiteralType,
-  template_type: templateType,
-  infer_type: inferType,
   union_type: unionType,
-  intersection_type: intersectionType,
-  type_parameters: typeParameters,
-  type_arguments: typeParameters,
-  type_parameter: typeParameter,
   type_alias_declaration: typeAlias,
-  enum_declaration: enumDeclaration,
   enum_body: (n, ctx, args) => (objectRules.object as JsRule)(n, ctx, args),
   enum_assignment: enumAssignment,
   module: moduleDeclaration,
   internal_module: moduleDeclaration,
-  ambient_declaration: ambientDeclaration,
-  as_expression: castExpression,
-  satisfies_expression: castExpression,
   type_assertion: typeAssertion,
   object_type: typeBody,
   interface_body: typeBody,
