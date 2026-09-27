@@ -10,5 +10,8 @@ const format = defineFormat<typeof grammar, PythonOptions>();
 export const python = format({
   structure: {
     module: () => custom("module"),
+    pass_statement: () => "pass",
+    break_statement: () => "break",
+    continue_statement: () => "continue",
   },
 });

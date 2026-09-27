@@ -16,6 +16,7 @@ import {
   type Comments as RuffComments,
 } from "./fmt/comments.js";
 import { emit } from "./fmt/elements.js";
+import { within } from "./fmt/sink.js";
 import { normalize } from "./fmt/normalize.js";
 import { formatModule } from "./fmt/stmt/suite.js";
 import * as gen from "./fmt.gen.js";
@@ -42,7 +43,9 @@ const module: CustomRule<PythonOptions> = (_, ctx) => {
   const ruff = ruffPlaced.get(ctx.placement);
   if (!ruff) throw new Error("python: the module printed without its placement pass");
   if ("error" in ruff) throw ruff.error;
-  emit(formatModule(new Fmt(ctx.tree, ctx.options, ruff.comments), ruff.module));
+  within(ctx, () =>
+    emit(formatModule(new Fmt(ctx.tree, ctx.options, ruff.comments), ruff.module)),
+  );
 };
 
 /** Ruff 0.16.8's layout (stable style): the module is lowered to ruff's AST and printed by ports of its rules. */

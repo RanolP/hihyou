@@ -368,18 +368,20 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
 
 /**
  * The module `fmt.gen.ts` of the specs `specs` (export name -> IR): per spec, a function taking the spec's
- * `custom` rules and returning its stream rules, typed by the options it reads.
+ * `custom` rules and returning its stream rules, typed by the options it reads. The rules write through `sink`,
+ * a module with the stream's writing functions (by default the stream itself).
  */
 export function emit(
   specs: { readonly [name: string]: FormatIR },
   grammar: DslGrammar,
   origin: string,
+  sink = "../../fmt/stream.js",
 ): string {
   const parts: string[] = [
     `// Generated from ${origin} by src/fmt/dsl/generate.node.ts (\`pnpm generate\`); do not edit.`,
     "import {",
     "  BROKEN, close, FILL, FILL_ITEM, GROUP, IF_BROKEN, INDENT, open, SOFT, sBreakParent, sHardline, sLine, sText, sToken,",
-    '} from "../../fmt/stream.js";',
+    `} from ${str(sink)};`,
     "import {",
     "  endsLine, printLeadingComments, printTrailingComments, type StreamRule, type StreamRules,",
     '} from "../../fmt/stream-format.js";',

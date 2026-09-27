@@ -15,14 +15,18 @@ import { emit } from "./emit.js";
 // Run as generate.mjs's bundle, dist/compiler/fmt-generate.mjs.
 const pkg = resolve(import.meta.dirname, "../..");
 
-const FORMATS: Record<string, { specs: Record<string, FormatIR>; grammar: DslGrammar }> = {
+const FORMATS: Record<
+  string,
+  { specs: Record<string, FormatIR>; grammar: DslGrammar; sink?: string }
+> = {
   css: { specs: cssFormat, grammar: cssGrammar as DslGrammar },
   json: { specs: jsonFormat, grammar: jsonGrammar as DslGrammar },
-  python: { specs: pythonFormat, grammar: pythonGrammar as DslGrammar },
+  // Python's rules are parts of ruff's, which read their output as values (fmt/sink.ts).
+  python: { specs: pythonFormat, grammar: pythonGrammar as DslGrammar, sink: "./fmt/sink.js" },
 };
 
-for (const [name, { specs, grammar }] of Object.entries(FORMATS)) {
+for (const [name, { specs, grammar, sink }] of Object.entries(FORMATS)) {
   const out = join(pkg, "src", "grammars", name, "fmt.gen.ts");
-  writeFileSync(out, emit(specs, grammar, `src/grammars/${name}/format.ts`));
+  writeFileSync(out, emit(specs, grammar, `src/grammars/${name}/format.ts`, sink));
   console.log(`wrote ${out}`);
 }

@@ -8,6 +8,7 @@ import {
   space,
 } from "../builders.js";
 import { formatExpr, maybeParenthesize, node } from "../expr.js";
+import { dslPart } from "../sink.js";
 import { leftToRight } from "./assign.js";
 import type { StmtRules } from "./suite.js";
 
@@ -16,7 +17,8 @@ import type { StmtRules } from "./suite.js";
 // Ruff's `is_arithmetic_like`: an expression statement it wraps in optional parentheses to break.
 const arithmeticOps = new Set(["|", "^", "<<", ">>", "+", "-"]);
 
-const keywordOnly = (f: Fmt, s: Simple) => f.tok(s.kw);
+// A statement of one keyword: its rule in format.ts.
+const keywordOnly = (_: Fmt, s: Simple) => dslPart(s.ts);
 
 function names(f: Fmt, s: Simple, sep: Format): Format {
   return s.names.map((n, i) => {
