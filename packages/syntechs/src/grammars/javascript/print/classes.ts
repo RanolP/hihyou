@@ -3,12 +3,10 @@
 import {
   type Doc,
   hardline,
-  indent,
   join,
-  synthetic,
   text,
 } from "../../../fmt/doc.js";
-import type { CustomRule } from "../../../fmt/dsl/runtime.js";
+import type { CustomRule, TokenRule } from "../../../fmt/dsl/runtime.js";
 import type { StreamCtx } from "../../../fmt/stream-format.js";
 import { nextLineEmpty } from "../../../fmt/text.js";
 import {
@@ -53,7 +51,6 @@ import {
   named,
   p,
   parent,
-  semi,
   separators,
   src,
   t,
@@ -380,7 +377,6 @@ const classBody: CustomRule<JsOptions> = (n, sctx) => {
         place({ doc: printMemberDecorators(ctx, decorators) });
       sctx.print(m);
       const next = members[i + 1];
-      if (needsSemicolonAfter(ctx, m, next)) sToken(m, ";", true);
       if (next !== undefined) {
         sHardline();
         if (nextLineEmpty(ctx.tree, m)) sHardline();
@@ -396,13 +392,37 @@ const classBody: CustomRule<JsOptions> = (n, sctx) => {
   );
 };
 
-export const classCustoms = {
-  class: printClass,
-  "class.body": classBody,
-} satisfies Record<string, CustomRule<JsOptions>>;
+/** The member of `n`'s class body after `n`, a decorator of it aside. */
+function nextMember(x: HasTree, n: number): number | undefined {
+  const up = parent(x, n);
+  if (up === undefined) return undefined;
+  const members = items(x, up).filter((c) => kind(x, c) !== "decorator");
+  return members[members.indexOf(n) + 1];
+}
 
-/** Prettier's printClassProperty. */
-const classProperty: JsRule = (n, ctx) => {
+/**
+ * A class property's `;`, which a spec writes as `tok(";").via("class.semi")`: the body's `;` after the property
+ * (it parses as the body's, not the property's), or one added; under `semi: false`, only the one ASI needs.
+ */
+const classSemi: TokenRule<JsOptions> = (token, n, sctx) => {
+  const { js: ctx } = jsCtx(sctx);
+  const own = ownSemicolon(ctx, n) ?? token;
+  const present = own !== undefined && src(ctx, own) !== "";
+  if (ctx.options.semi) {
+    if (present) sToken(own, ";");
+    else sToken(n, ";", true);
+    return;
+  }
+  if (present) sToken(own, "");
+  if (needsSemicolonAfter(ctx, n, nextMember(ctx, n))) sToken(n, ";", true);
+};
+
+/**
+ * Prettier's printClassProperty, which a spec writes as `tok("=").via("class.property")`: the property as an
+ * assignment of its value (if any) to its decorators, modifiers, key and type.
+ */
+const classProperty: TokenRule<JsOptions> = (eq, n, sctx) => {
+  const { js: ctx } = jsCtx(sctx);
   const key = field(ctx, n, "name") ?? field(ctx, n, "property");
   const parts: Doc[] = [printMemberDecorators(ctx, decoratorsOf(ctx, n))];
   const all = children(ctx, n);
@@ -418,15 +438,18 @@ const classProperty: JsRule = (n, ctx) => {
   );
   parts.push(t(ctx, mark), p(ctx, field(ctx, n, "type")));
   const value = field(ctx, n, "value");
-  const eq = after.find((c) => !named(ctx, c) && kind(ctx, c) === "=");
-  return [
-    printAssignment(ctx, n, parts, [text(" "), t(ctx, eq)], value),
-    semi(ctx, n, ownSemicolon(ctx, n)),
-  ];
+  place({
+    doc: printAssignment(ctx, n, parts, [text(" "), t(ctx, eq)], value),
+  });
 };
 
+export const classCustoms = {
+  class: printClass,
+  "class.body": classBody,
+  "class.property": classProperty,
+  "class.semi": classSemi,
+} satisfies Record<string, CustomRule<JsOptions> | TokenRule<JsOptions>>;
+
 export const classRules: Record<string, JsRule> = {
-  field_definition: classProperty,
-  public_field_definition: classProperty,
   abstract_method_signature: method,
 };
