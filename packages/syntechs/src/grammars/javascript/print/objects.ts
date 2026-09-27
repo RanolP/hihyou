@@ -7,7 +7,6 @@ import {
   hardline,
   join,
   line,
-  token,
 } from "../../../fmt/doc.js";
 import type { CustomRule } from "../../../fmt/dsl/runtime.js";
 import type { StreamCtx, StreamRule } from "../../../fmt/stream-format.js";
@@ -25,7 +24,6 @@ import {
   jsCtx,
   onDoc,
   open,
-  place,
   SOFT,
   sHardline,
   sLine,
@@ -33,9 +31,9 @@ import {
   sToken,
   withComments,
 } from "../sink.js";
-import { printAssignment } from "./assignment.js";
+import { sPrintAssignment } from "./assignment.js";
 import {
-  printMethodValue,
+  sPrintMethodValue,
   shouldHugTheOnlyFunctionParameter,
 } from "./functions.js";
 import { printNumber, printString } from "./literals.js";
@@ -52,14 +50,12 @@ import {
   items,
   type JsCtx,
   type JsOptions,
-  type JsRule,
   kind,
   lastChildWhere,
   named,
   p,
   parent as parentOf,
   src,
-  t,
   trailingCommaAllowed,
 } from "./util.js";
 
@@ -347,41 +343,40 @@ function commaAfter(
   return undefined;
 }
 
-/** A property or a pattern's property: an assignment of its value to its key, through the Doc-only printAssignment. */
+/** A property or a pattern's property: an assignment of its value to its key. */
 const pairCustom: CustomRule<JsOptions> = (n, sctx) => {
-  const { js: ctx } = jsCtx(sctx);
+  const s = jsCtx(sctx);
+  const ctx = s.js;
   const colon = anonKid(ctx, n, ":");
-  place({
-    doc: printAssignment(
-      ctx,
-      n,
-      printKey(ctx, n),
-      t(ctx, colon),
-      field(ctx, n, "value"),
-    ),
-  });
+  sPrintAssignment(
+    s,
+    n,
+    () => sPrintKey(s, n),
+    () => tok(ctx, colon),
+    field(ctx, n, "value"),
+  );
 };
 
 /** Prettier's printMethod, for object and class methods alike: modifiers, key, `?`, then the method value. */
 const methodCustom: StreamRule<JsOptions> = (n, sctx) => {
-  const { js: ctx } = jsCtx(sctx);
+  const s = jsCtx(sctx);
+  const ctx = s.js;
   const name = field(ctx, n, "name");
   const kids = childrenOf(ctx, n);
-  const decorators = kids.filter((c) => kind(ctx, c) === "decorator");
-  place({ doc: printDecorators(ctx, decorators) });
+  sPrintDecorators(
+    sctx,
+    kids.filter((c) => kind(ctx, c) === "decorator"),
+  );
   for (const c of kids) {
     if (c === name) break;
     if (isComment(ctx, c) || kind(ctx, c) === "decorator") continue;
     sctx.print(c);
     if (kind(ctx, c) !== "*") sText(" ");
   }
-  place({ doc: printKey(ctx, n) });
+  sPrintKey(s, n);
   tok(ctx, name === undefined ? undefined : nextAnon(ctx, n, name, "?"));
-  place({ doc: printMethodValue(ctx, n) });
+  sPrintMethodValue(s, n);
 };
-
-/** The method printer as a Doc rule, for the class members that still print by the Doc. */
-export const method: JsRule = onDoc(methodCustom);
 
 function nextAnon(
   x: HasTree,
@@ -395,6 +390,22 @@ function nextAnon(
 }
 
 /** Prettier's printClassMemberDecorators. */
+export function sPrintDecorators(
+  sctx: StreamCtx<JsOptions>,
+  decorators: readonly number[],
+): void {
+  if (decorators.length === 0) return;
+  open(GROUP);
+  decorators.forEach((d, i) => {
+    if (i > 0) sLine(0);
+    sctx.print(d);
+  });
+  if (decorators.some((d) => lfAfter(sctx.tree, d) > 0)) sHardline();
+  else sLine(0);
+  close();
+}
+
+/** `sPrintDecorators` for a rule still on the Doc. */
 export function printDecorators(
   ctx: JsCtx,
   decorators: readonly number[],
@@ -535,15 +546,9 @@ const arrayCustom: StreamRule<JsOptions> = (n, sctx) => {
   close();
 };
 
-/** The array printer as a Doc rule, for the tuple types that still print by the Doc. */
-export const array: JsRule = onDoc(arrayCustom);
-
 export const objectCustoms = {
   object: objectCustom,
   array: arrayCustom,
   pair: pairCustom,
   method: methodCustom,
 } satisfies Record<string, CustomRule<JsOptions>>;
-
-export const objectRules: Record<string, JsRule> = {
-};
