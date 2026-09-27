@@ -105,3 +105,29 @@ it("a typo'd kind, field, token, separator or option fails to typecheck, so a sp
   ];
   expect(specs).toBeTypeOf("function");
 });
+
+// A `.via` the IR loses prints the child by its own rule, silently skipping the custom its parent named.
+it("`.via` reaches the IR on a required field and inside `andThen`", () => {
+  const ir = format({
+    structure: {
+      if_statement: ($) => [
+        $.condition.via("cond"),
+        $.alternative.andThen((a) => [space, a.via("alt")]),
+      ],
+    },
+  });
+  expect(ir.structure["if_statement"]).toEqual({
+    t: "seq",
+    parts: [
+      { t: "ref", name: "condition", via: "cond" },
+      {
+        t: "opt",
+        ref: { t: "ref", name: "alternative" },
+        then: {
+          t: "seq",
+          parts: [expect.anything(), { t: "ref", name: "alternative", via: "alt" }],
+        },
+      },
+    ],
+  });
+});

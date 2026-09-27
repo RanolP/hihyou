@@ -32,10 +32,14 @@ type TokenOf<G extends Grammar> = G["tokens"][number];
 
 // ---- IR: what a spec is once called, plain data ----
 
-/** A field of the node, or (`name` "children") its children in no field. */
+/**
+ * A field of the node, or (`name` "children") its children in no field; `via`: printed by that custom rule in
+ * place of its own.
+ */
 export interface Ref {
   readonly t: "ref";
   readonly name: string;
+  readonly via?: string;
 }
 
 export type Cond =
@@ -128,7 +132,13 @@ export interface Piece<T> {
   readonly [brand]: T;
 }
 /** A child node, printed as its own rule prints it, with its comments. */
-export type Node = Piece<"node">;
+export interface Node extends Piece<"node"> {
+  /**
+   * The child printed by the custom rule `name` (a `CustomRule`, given the child) in place of its own rule, with
+   * its comments: a hand-written layout at one position, such as a parenthesization its parent decides.
+   */
+  via(name: string): Node;
+}
 /** Several children, which only a list idiom (`sepBy`, `lines`) lays out. */
 export type List = Piece<"list">;
 /** A child that may be absent: `andThen` prints what `f` makes of it when present, and nothing otherwise. */
@@ -302,7 +312,24 @@ function plain(c: unknown): Cond {
     : { t: "option", key, op, value };
 }
 
-const refOf = (x: unknown): Ref => ({ t: "ref", name: (x as Ref).name });
+const refOf = (x: unknown): Ref => {
+  const { name, via, viaName } = x as { name: string; via?: unknown; viaName?: string };
+  const v = viaName ?? (typeof via === "string" ? via : undefined);
+  return v === undefined ? { t: "ref", name } : { t: "ref", name, via: v };
+};
+
+/** `$.<name>`, a `Node` and an `Option` at once; `viaName` holds its `.via`, since `via` is the method. */
+const nodeRef = (name: string, viaName?: string): unknown => ({
+  t: "ref",
+  name,
+  viaName,
+  via: (v: string) => nodeRef(name, v),
+  andThen: (f: (a: unknown) => unknown): Tree => ({
+    t: "opt",
+    ref: { t: "ref", name },
+    then: toTree(f(nodeRef(name, viaName))),
+  }),
+});
 
 function toTree(x: unknown): Tree {
   if (typeof x === "string") return { t: "tok", text: x };
@@ -316,17 +343,7 @@ const dollar = new Proxy(
   {},
   {
     get: (_, name) =>
-      typeof name !== "string"
-        ? undefined
-        : {
-            t: "ref",
-            name,
-            andThen: (f: (a: unknown) => unknown): Tree => ({
-              t: "opt",
-              ref: { t: "ref", name },
-              then: toTree(f({ t: "ref", name })),
-            }),
-          },
+      typeof name !== "string" ? undefined : nodeRef(name),
   },
 );
 

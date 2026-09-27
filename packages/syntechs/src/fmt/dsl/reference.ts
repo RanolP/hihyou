@@ -108,23 +108,27 @@ export function flatten<O>(
   const t = ctx.tree;
   const out = flat.entries;
 
-  const range = (n: number, body: () => void) => {
+  const range = (n: number, body: () => void, via?: string) => {
     const at = out.length;
     flat.start.set(n, at);
-    out.push({ e: "child", node: n, kind: t.kindName(n) });
+    out.push(
+      via === undefined
+        ? { e: "child", node: n, kind: t.kindName(n) }
+        : { e: "child", node: n, kind: t.kindName(n), via },
+    );
     body();
     flat.exit.set(at, out.length);
     out.push({ e: "exit" });
   };
 
-  const walkNode = (n: number): void =>
+  const walkNode = (n: number, via?: string): void =>
     range(n, () => {
-      if (!ruled(ir, ctx, n)) {
+      if (via === undefined ? !ruled(ir, ctx, n) : ctx.isBroken(n)) {
         out.push({ e: "tok", node: n, text: t.text(n), synthetic: false });
         return;
       }
       const kind = t.kindName(n);
-      const tree = ir.structure[kind] as Tree;
+      const tree: Tree = via === undefined ? (ir.structure[kind] as Tree) : { t: "custom", name: via };
       if (tree.t === "custom") {
         for (const x of customEntries(ctx, n))
           if (x.e === "child") walkNode(x.node);
@@ -132,7 +136,7 @@ export function flatten<O>(
         return;
       }
       structure(n, tree, kind in grammar.fieldTypes);
-    });
+    }, via);
 
   const structure = (n: number, tree: Tree, kindHasFields: boolean) => {
     const bound = new Map<string, number>();
@@ -146,9 +150,9 @@ export function flatten<O>(
       const cs = ctx.danglingComments(n);
       return cs;
     };
-    const child = (c: number) => {
+    const child = (c: number, via?: string) => {
       for (const x of ctx.leadingComments(c)) out.push(commentEntry(ctx, x, "leading"));
-      walkNode(c);
+      walkNode(c, via);
       for (const x of ctx.trailingComments(c)) out.push(commentEntry(ctx, x, "trailing", c));
     };
     const walk = (x: Tree): void => {
@@ -160,7 +164,7 @@ export function flatten<O>(
         }
         case "ref": {
           const c = fieldChild(t, n, x.name);
-          if (c !== -1) child(c);
+          if (c !== -1) child(c, x.via);
           return;
         }
         case "opt":
@@ -334,9 +338,10 @@ export function wrap<O>(
   function wrapNode(i: number): void {
     const x = seq[i] as Extract<Entry, { e: "child" }>;
     const end = exitOf(i);
-    if (!ruled(ir, ctx, x.node)) return render(i + 1, end, {}, x.node);
-    const t = ir.structure[x.kind] as Tree;
-    const w = ir.wrapping[x.kind] ?? {};
+    if (x.via === undefined ? !ruled(ir, ctx, x.node) : ctx.isBroken(x.node))
+      return render(i + 1, end, {}, x.node);
+    const t: Tree = x.via === undefined ? (ir.structure[x.kind] as Tree) : { t: "custom", name: x.via };
+    const w = x.via === undefined ? (ir.wrapping[x.kind] ?? {}) : {};
     if (w.group) open(GROUP);
     if (t.t === "custom") {
       const rule = custom[t.name];

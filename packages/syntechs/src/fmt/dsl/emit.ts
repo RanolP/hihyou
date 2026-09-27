@@ -37,6 +37,7 @@ function customNames(ir: FormatIR): string[] {
   const names = new Set<string>();
   const walk = (x: Tree): void => {
     if (x.t === "custom") names.add(x.name);
+    else if (x.t === "ref" && x.via !== undefined) names.add(x.via);
     else if (x.t === "seq") x.parts.forEach(walk);
     else if (x.t === "opt") walk(x.then);
     else if (x.t === "brackets") walk(x.body);
@@ -101,9 +102,13 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
   };
   const bracket = (text: string) => printBracket(bound(text), text);
   /** Child `c` with the comments attached to it, as the reference's leading, child and trailing entries. */
-  const child = (c: string) => {
+  const child = (c: string, via?: string) => {
     line(`printLeadingComments(ctx, ${c});`);
-    line(`ctx.printNode(${c});`);
+    if (via === undefined) line(`ctx.printNode(${c});`);
+    else {
+      line(`if (ctx.isBroken(${c})) ctx.printNode(${c});`);
+      line(`else custom[${str(via)}](${c}, ctx, customSeq(ctx, ${c}));`);
+    }
     line(`printTrailingComments(ctx, ${c});`);
   };
   const items = (x: Extract<Tree, { t: "sepBy" | "lines" }>) => {
@@ -271,7 +276,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
       case "ref": {
         const c = name("c");
         line(`const ${c} = fieldChild(t, node, ${str(x.name)});`);
-        block(`if (${c} !== -1)`, () => child(c));
+        block(`if (${c} !== -1)`, () => child(c, x.via));
         return;
       }
       case "opt":

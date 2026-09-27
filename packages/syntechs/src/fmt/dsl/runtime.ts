@@ -30,7 +30,13 @@ export type Entry =
   | { readonly e: "space" }
   | { readonly e: "hardline" }
   /** A child node. In the whole-document sequence it opens the node's range, which an `exit` closes. */
-  | { readonly e: "child"; readonly node: number; readonly kind: string }
+  | {
+      readonly e: "child";
+      readonly node: number;
+      readonly kind: string;
+      /** Printed by this custom rule in place of its own (`Node.via`). */
+      readonly via?: string;
+    }
   | { readonly e: "exit" }
   /**
    * A comment attached before (`leading`) or after (`trailing`) the `child` entry next to it, or one of the
