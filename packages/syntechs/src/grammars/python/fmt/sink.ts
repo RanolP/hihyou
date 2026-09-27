@@ -118,6 +118,11 @@ export function idOf(g: GroupRef): number {
   return RECORDED + handles.length - 1;
 }
 
+/** The group (or best-fit-parenthesize) `id` names, for a Format of ruff's rules or a `Level` to ask. */
+export function refTo(id: number): GroupRef {
+  return id >= RECORDED ? handleOf(id) : { k: id };
+}
+
 export function sToken(node: number, s: string, synthetic = false): void {
   if (frames.length > 0) put(synthetic ? el.synthetic(node, s) : el.token(node, s));
   else stream.sToken(node, s, synthetic);

@@ -1,10 +1,8 @@
 import {
   type Format,
   type GroupRef,
-  group,
   ifBreak,
   indent,
-  indentIfBreak,
   COLLAPSE,
   HARD,
   lineOf,
@@ -277,42 +275,55 @@ export class Fmt {
   }
 
   /** Ruff's `optional_parentheses`: parentheses only when `content` must break, whose groups see them. */
-  optionalParentheses(anchor: number, content: () => Format): Format {
-    const contents: Format[] = [];
-    const g = group(contents);
-    const c = this.at({ k: "expr", g }, content);
-    contents.push(
-      ifBreak(synthetic(anchor, "("), [], g),
-      indentIfBreak([soft, c], g),
-      soft,
-      ifBreak(synthetic(anchor, ")"), [], g),
+  writeOptionalParentheses(anchor: number, content: () => void): void {
+    const g = sink.open(sink.GROUP);
+    this.writeParenthesesOf(g, anchor, () =>
+      this.at({ k: "expr", g: sink.refTo(g) }, content),
     );
-    return g;
+    sink.close();
   }
 
   /** Ruff's `parenthesize_if_expands`. */
+  writeParenthesizeIfExpands(
+    anchor: number,
+    content: () => void,
+    indented = true,
+  ): void {
+    const g = sink.open(sink.GROUP);
+    if (indented) this.writeParenthesesOf(g, anchor, () => this.at(PAREN, content));
+    else {
+      writeIfBroken(g, () => sink.sToken(anchor, "(", true));
+      this.at(PAREN, content);
+      writeIfBroken(g, () => sink.sToken(anchor, ")", true));
+    }
+    sink.close();
+  }
+
+  /** Synthetic parentheses around `content`, on lines of its own, while the group `g` breaks. */
+  private writeParenthesesOf(g: number, anchor: number, content: () => void): void {
+    writeIfBroken(g, () => sink.sToken(anchor, "(", true));
+    sink.openIndentIfBreak(g);
+    sink.sLine(sink.SOFT | sink.COLLAPSE);
+    content();
+    sink.close();
+    sink.sLine(sink.SOFT | sink.COLLAPSE);
+    writeIfBroken(g, () => sink.sToken(anchor, ")", true));
+  }
+
+  optionalParentheses(anchor: number, content: () => Format): Format {
+    return sink.record(() =>
+      this.writeOptionalParentheses(anchor, () => sink.part(content())),
+    );
+  }
+
   parenthesizeIfExpands(
     anchor: number,
     content: () => Format,
     indented = true,
-  ): Group2 {
-    const c = this.at(PAREN, content);
-    const contents: Format[] = [];
-    const g = group(contents);
-    if (indented)
-      contents.push(
-        ifBreak(synthetic(anchor, "("), [], g),
-        indentIfBreak([soft, c], g),
-        soft,
-        ifBreak(synthetic(anchor, ")"), [], g),
-      );
-    else
-      contents.push(
-        ifBreak(synthetic(anchor, "("), [], g),
-        c,
-        ifBreak(synthetic(anchor, ")"), [], g),
-      );
-    return g;
+  ): Format {
+    return sink.record(() =>
+      this.writeParenthesizeIfExpands(anchor, () => sink.part(content()), indented),
+    );
   }
 
   /** Ruff's `empty_parenthesized`. */
@@ -464,7 +475,11 @@ export class Fmt {
   }
 }
 
-type Group2 = ReturnType<typeof group>;
+function writeIfBroken(g: number, content: () => void): void {
+  sink.open(sink.IF_BROKEN, g);
+  content();
+  sink.close();
+}
 
 /** The comma token among `parent`'s children at or after position `from`, or a synthetic one after `anchor`. */
 export function commaIn(
