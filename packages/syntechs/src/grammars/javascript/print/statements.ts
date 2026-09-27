@@ -3,7 +3,6 @@
 // switch-statement.js, return-statement.js, variable-declaration.js, and estree.js's small statements.
 // Their layouts are format.ts's; what it names `custom` is `statementCustoms`, written against sink.ts.
 
-import { type Doc, token } from "../../../fmt/doc.js";
 import { NO_NODE } from "../../../core/arena.js";
 import type { CustomRule, TokenRule } from "../../../fmt/dsl/runtime.js";
 import { lfAfter, nextLineEmpty } from "../../../fmt/text.js";
@@ -163,11 +162,11 @@ function textThrough(tree: FormatTree, n: number, end: number): string {
  * Prettier's printIgnored for a statement: its source up to its content end, then the `;` the `semi` option
  * asks for, wherever the source put it. Comments ahead of that `;` stay in the text.
  */
-export function ignoredStatement(ctx: JsCtx, n: number): Doc {
+export function ignoredStatement(ctx: JsCtx, n: number): void {
   let text = textThrough(ctx.tree, n, contentEnd(ctx, n, true));
   if (ctx.options.semi && endsWithSemi(ctx, n)) text += ";";
   else if (needsAsiGuard(ctx, n)) text = `;${text}`;
-  return token(n, text);
+  sToken(n, text);
 }
 
 // ---- sink helpers ----

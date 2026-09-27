@@ -109,7 +109,7 @@ function wrap(rule: JsRule): JsRule {
     let doc = !isIgnored(ctx, n)
       ? rule(n, ctx, args)
       : STATEMENT_LIST_PARENTS.has(kind(ctx, parent(ctx, n)) ?? "")
-        ? ignoredStatement(ctx, n)
+        ? record(() => ignoredStatement(ctx, n))
         : verbatim(ctx, n);
     const k = kind(ctx, n);
     if (k !== PE && kind(ctx, parent(ctx, n)) !== PE && needsParens(n, ctx))
