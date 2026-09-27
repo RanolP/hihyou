@@ -8,6 +8,7 @@ export const functions = {
   generator_function: () => custom("function"),
   generator_function_declaration: () => custom("function"),
   function_signature: () => custom("function"),
+  arrow_function: () => custom("arrow"),
   required_parameter: () => custom("parameter"),
   optional_parameter: () => custom("parameter"),
   assignment_pattern: ($) => [$.left, space, "=", space, $.right],

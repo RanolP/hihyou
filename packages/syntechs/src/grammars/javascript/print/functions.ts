@@ -1,19 +1,6 @@
 // Prettier's function printers: function.js, function-parameters.js, arrow-function.js.
 
-import {
-  type Doc,
-  group,
-  hardline,
-  ifBreak,
-  indent,
-  indentIfBreak,
-  join,
-  line,
-  softline,
-  synthetic,
-  text,
-  willBreak,
-} from "../../../fmt/doc.js";
+import { type Doc, group, text, willBreak } from "../../../fmt/doc.js";
 import { lfAfter, nextLineEmpty } from "../../../fmt/text.js";
 import {
   BROKEN,
@@ -21,14 +8,16 @@ import {
   close,
   GROUP,
   IF_BROKEN,
+  IF_FLAT,
   INDENT,
   type JsStreamCtx,
   jsCtx,
   onDoc,
   open,
+  openIndentIfBreak,
   type Part,
   place,
-  removeLines as partRemoveLines,
+  removeLines,
   SOFT,
   sBreakParent,
   sHardline,
@@ -66,11 +55,9 @@ import {
   p,
   parameters,
   parent,
-  removeLines,
   semi,
   separators,
   src,
-  t,
   trailingCommaAllowed,
   unparen,
 } from "./util.js";
@@ -400,7 +387,7 @@ function printParameterList(
       throw new ArgExpansionBailout();
     open(GROUP);
     tk(ctx, openParen);
-    place(partRemoveLines(printed));
+    place(removeLines(printed));
     tk(ctx, closeParen);
     close();
     return;
@@ -602,10 +589,18 @@ const isCallLike = (x: HasTree, n: number | undefined) => {
   return k === "call_expression" || k === "new_expression";
 };
 
-function printArrowSignature(ctx: JsCtx, n: number, args: Args): Doc {
-  const parts: Doc[] = [];
+/** `c` printed as nothing, a parenthesis or comma the layout drops; nothing when absent. */
+const drop = (c: number | undefined) => {
+  if (c !== undefined) sToken(c, "");
+};
+
+function printArrowSignature(s: StreamCtx<JsOptions>, n: number, args: Args): void {
+  const { js: ctx } = jsCtx(s);
   const async = anon(ctx, n, "async");
-  if (async !== undefined) parts.push(t(ctx, async), text(" "));
+  if (async !== undefined) {
+    tk(ctx, async);
+    sText(" ");
+  }
   if (
     ctx.options.arrowParens === "avoid" &&
     canPrintParamsWithoutParens(ctx, n)
@@ -614,40 +609,48 @@ function printArrowSignature(ctx: JsCtx, n: number, args: Args): Doc {
     if (list !== undefined) {
       // `(a) => a` loses its parentheses.
       const param = parameters(ctx, n)[0] as number;
-      parts.push(
-        ctx.withComments(list, [
-          t(ctx, anon(ctx, list, "("), ""),
-          p(ctx, param),
-          t(ctx, lastAnon(ctx, list, ","), ""),
-          t(ctx, lastAnon(ctx, list, ")"), ""),
-        ]),
-      );
-    } else parts.push(p(ctx, field(ctx, n, "parameter")));
+      withComments(s, list, () => {
+        drop(anon(ctx, list, "("));
+        s.print(param);
+        drop(lastAnon(ctx, list, ","));
+        drop(lastAnon(ctx, list, ")"));
+      });
+    } else pr(s, field(ctx, n, "parameter"));
   } else {
     const expand = Boolean(args?.expandLastArg || args?.expandFirstArg);
-    let returnTypeDoc = printReturnType(ctx, n);
+    const returnType = capture(() => pr(s, field(ctx, n, "return_type")));
+    if (expand && partWillBreak(returnType)) throw new ArgExpansionBailout();
+    open(GROUP);
+    printParameters(s, n, expand, true);
     if (expand) {
-      if (willBreak(returnTypeDoc)) throw new ArgExpansionBailout();
-      returnTypeDoc = group(removeLines(returnTypeDoc));
-    }
-    parts.push(
-      group([printFunctionParameters(ctx, n, expand, true), returnTypeDoc]),
-    );
+      open(GROUP);
+      place(removeLines(returnType));
+      close();
+    } else place(returnType);
+    close();
   }
-  const dangling = ctx.dangling(n);
-  if (dangling.length > 0) parts.push(text(" "), join(hardline, dangling));
-  return parts;
+  const dangling = s.danglingComments(n);
+  if (dangling.length > 0) {
+    sText(" ");
+    dangling.forEach((c, i) => {
+      if (i > 0) sHardline();
+      s.comment(c);
+    });
+  }
 }
 
-const arrowToken = (ctx: JsCtx, n: number): Doc => [
-  text(" "),
-  t(ctx, anon(ctx, n, "=>")),
-];
+const arrowToken = (ctx: JsCtx, n: number) => {
+  sText(" ");
+  tk(ctx, anon(ctx, n, "=>"));
+};
 
-const arrow: JsRule = (node, ctx, args?: Args) => {
-  const signatureDocs: Doc[] = [];
+/** Prettier's printArrowFunction: a chain of curried arrows, and the body beside or below the last `=>`. */
+const arrow: CustomRule<JsOptions> = (node, s) => {
+  const js = jsCtx(s);
+  const { js: ctx, args } = js;
+  const signatures: Part[] = [];
   const arrows: number[] = [];
-  let bodyDoc: Doc = [];
+  let bodyPart: Part | undefined;
   let shouldBreakChain = false;
   const bodyOf = (x: number) => field(ctx, x, "body") as number;
   const isArrow = (x: number) => kind(ctx, x) === "arrow_function";
@@ -657,9 +660,9 @@ const arrow: JsRule = (node, ctx, args?: Args) => {
   let bodyNode = functionBody;
 
   for (let x = node; ;) {
-    const signature = printArrowSignature(ctx, x, args);
-    signatureDocs.push(
-      signatureDocs.length === 0 ? signature : ctx.withComments(x, signature),
+    const signature = capture(() => printArrowSignature(s, x, args));
+    signatures.push(
+      signatures.length === 0 ? signature : commented(s, x, signature),
     );
     arrows.push(x);
     if (shouldPrintAsChain) {
@@ -672,7 +675,7 @@ const arrow: JsRule = (node, ctx, args?: Args) => {
     const body = bodyOf(x);
     if (!shouldPrintAsChain || !isArrow(unparen(ctx, body))) {
       bodyNode = body;
-      bodyDoc = p(ctx, body, args);
+      bodyPart = capture(() => js.print(body, args));
       functionBody = unparen(ctx, body);
       break;
     }
@@ -690,41 +693,46 @@ const arrow: JsRule = (node, ctx, args?: Args) => {
 
   const { parent, key } = role(ctx, node);
   const isCallee = key === "callee" && isCallLike(ctx, parent);
+  const chainBreak = shouldBreakChain ? BROKEN : 0;
 
   // Prettier's printArrowFunctionSignatures.
-  const joinSignatures = () => {
-    const out: Doc[] = [];
-    signatureDocs.forEach((s, i) => {
-      if (i > 0) out.push(arrowToken(ctx, arrows[i - 1] as number), line);
-      out.push(s);
+  const joinSignatures = (from: number) =>
+    signatures.slice(from).forEach((signature, i) => {
+      if (i > 0) {
+        arrowToken(ctx, arrows[from + i - 1] as number);
+        sLine(0);
+      }
+      place(signature);
     });
-    return out;
+  const printSignatures = () => {
+    if (signatures.length === 1) place(signatures[0] as Part);
+    else if (
+      (key !== "callee" && isCallLike(ctx, parent)) ||
+      isBinaryish(ctx, parent)
+    ) {
+      open(GROUP, -1, chainBreak);
+      place(signatures[0] as Part);
+      arrowToken(ctx, arrows[0] as number);
+      open(INDENT);
+      sLine(0);
+      joinSignatures(1);
+      close();
+      close();
+    } else if (
+      (key === "callee" && isCallLike(ctx, parent)) ||
+      args?.assignmentLayout
+    ) {
+      open(GROUP, -1, chainBreak);
+      joinSignatures(0);
+      close();
+    } else {
+      open(GROUP, -1, chainBreak);
+      open(INDENT);
+      joinSignatures(0);
+      close();
+      close();
+    }
   };
-  let signaturesDoc: Doc;
-  if (signatureDocs.length === 1) signaturesDoc = signatureDocs[0] as Doc;
-  else if (
-    (key !== "callee" && isCallLike(ctx, parent)) ||
-    isBinaryish(ctx, parent)
-  ) {
-    const rest: Doc[] = [];
-    signatureDocs.slice(1).forEach((s, i) => {
-      if (i > 0) rest.push(arrowToken(ctx, arrows[i] as number), line);
-      rest.push(s);
-    });
-    signaturesDoc = group(
-      [
-        signatureDocs[0] as Doc,
-        arrowToken(ctx, arrows[0] as number),
-        indent([line, rest]),
-      ],
-      shouldBreakChain,
-    );
-  } else if (
-    (key === "callee" && isCallLike(ctx, parent)) ||
-    args?.assignmentLayout
-  )
-    signaturesDoc = group(joinSignatures(), shouldBreakChain);
-  else signaturesDoc = group(indent(joinSignatures()), shouldBreakChain);
 
   let shouldBreakSignatures = false;
   let shouldIndentSignatures = false;
@@ -739,44 +747,67 @@ const arrow: JsRule = (node, ctx, args?: Args) => {
   }
 
   // Prettier's printArrowFunctionBody.
-  const trailingComma =
-    args?.expandLastArg && trailingCommaAllowed(ctx, "all")
-      ? ifBreak(synthetic(node, ","))
-      : [];
-  const trailingSpace =
-    (args?.expandLastArg || kind(ctx, parent) === "jsx_expression") &&
-    !hasComment(ctx, node)
-      ? softline
-      : [];
-  let body: Doc;
-  if (shouldPutBodyOnSameLine && shouldAddParensIfNotBreak(ctx, functionBody))
-    body = [
-      text(" "),
-      group([
-        ifBreak([], synthetic(node, "(")),
-        indent([softline, bodyDoc]),
-        ifBreak([], synthetic(node, ")")),
-        trailingComma,
-        trailingSpace,
-      ]),
-    ];
-  else
-    body = shouldPutBodyOnSameLine
-      ? [text(" "), bodyDoc]
-      : [indent([line, bodyDoc]), trailingComma, trailingSpace];
+  const printTrailing = () => {
+    if (args?.expandLastArg && trailingCommaAllowed(ctx, "all")) {
+      open(IF_BROKEN);
+      sToken(node, ",", true);
+      close();
+    }
+    if (
+      (args?.expandLastArg || kind(ctx, parent) === "jsx_expression") &&
+      !hasComment(ctx, node)
+    )
+      sLine(SOFT);
+  };
+  const printBody = () => {
+    const body = bodyPart as Part;
+    if (shouldPutBodyOnSameLine && shouldAddParensIfNotBreak(ctx, functionBody)) {
+      sText(" ");
+      open(GROUP);
+      open(IF_FLAT);
+      sToken(node, "(", true);
+      close();
+      open(INDENT);
+      sLine(SOFT);
+      place(body);
+      close();
+      open(IF_FLAT);
+      sToken(node, ")", true);
+      close();
+      printTrailing();
+      close();
+    } else if (shouldPutBodyOnSameLine) {
+      sText(" ");
+      place(body);
+    } else {
+      open(INDENT);
+      sLine(0);
+      place(body);
+      close();
+      printTrailing();
+    }
+  };
 
-  const chainGroup = group(
-    shouldIndentSignatures
-      ? indent([shouldPrintSoftlineInIndent ? softline : [], signaturesDoc])
-      : signaturesDoc,
-    shouldBreakSignatures,
-  );
-  return group([
-    chainGroup,
-    arrowToken(ctx, arrows.at(-1) as number),
-    shouldPrintAsChain ? indentIfBreak(body, chainGroup) : group(body),
-    shouldPrintAsChain && isCallee ? ifBreak(softline, [], chainGroup) : [],
-  ]);
+  open(GROUP);
+  const chainGroup = open(GROUP, -1, shouldBreakSignatures ? BROKEN : 0);
+  if (shouldIndentSignatures) {
+    open(INDENT);
+    if (shouldPrintSoftlineInIndent) sLine(SOFT);
+    printSignatures();
+    close();
+  } else printSignatures();
+  close();
+  arrowToken(ctx, arrows.at(-1) as number);
+  if (shouldPrintAsChain) openIndentIfBreak(chainGroup);
+  else open(GROUP);
+  printBody();
+  close();
+  if (shouldPrintAsChain && isCallee) {
+    open(IF_BROKEN, chainGroup);
+    sLine(SOFT);
+    close();
+  }
+  close();
 };
 
 // --- parameters ---------------------------------------------------------------------------------------------
@@ -833,9 +864,9 @@ const parameter: CustomRule<JsOptions> = (n, s) => {
 /** The customs format/functions.ts names, by the names its spec gives them. */
 export const functionCustoms = {
   function: printFunction,
+  arrow,
   parameter,
 } satisfies Record<string, CustomRule<JsOptions>>;
 
 export const functionRules: Record<string, JsRule> = {
-  arrow_function: arrow,
 };
