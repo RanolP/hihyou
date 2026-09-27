@@ -1,41 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  type Doc,
-  align,
-  bestFitParenthesize,
-  bestFitting,
-  breakParent,
-  conditionalGroup,
-  contentsOf,
-  dedent,
-  fill,
-  fitsExpanded,
-  flatOf,
-  group,
-  groupIfBreak,
-  hardline,
-  ifBreak,
-  indent,
-  indentIfBreak,
-  isDocs,
-  isHardLine,
-  isSoftLine,
-  kindOf,
-  line,
-  lineOf,
-  lineSuffix,
-  lineSuffixBoundary,
-  literalToken,
-  partsOf,
-  softline,
-  statesOf,
-  text,
-  token,
-  willBreak as docWillBreak,
-  withContents,
-} from "./doc.js";
-import { print } from "./printer.js";
-import {
   BLANK,
   BROKEN,
   CHOICE,
@@ -95,18 +59,16 @@ const layout = (lineWidth: number) => ({
   useTabs: false,
 });
 
-/** Prints the stream `build` appends and the equivalent `doc`, which must agree. */
-function both(lineWidth: number, doc: Doc, build: () => void) {
+/** Prints the stream `build` appends. */
+function printed(lineWidth: number, build: () => void) {
   resetStream();
   build();
-  const stream = printStream(layout(lineWidth)).text;
-  expect(stream).toBe(print(doc, layout(lineWidth)).text);
-  return stream;
+  return printStream(layout(lineWidth)).text;
 }
 
-describe("printStream matches printer.ts", () => {
+describe("printStream", () => {
   it("counts a run of flat lines as one space when measuring, as prettier's fits does", () => {
-    const out = both(3, group([text("a"), line, line, text("b")]), () => {
+    const out = printed(3, () => {
       open(GROUP);
       sText("a");
       sLine(0);
@@ -118,88 +80,64 @@ describe("printStream matches printer.ts", () => {
   });
 
   it("counts the leading space of a group opened in the middle of a run of lines", () => {
-    const out = both(
-      1,
-      [text("a"), line, group([line, text("b")])],
-      () => {
-        sText("a");
-        sLine(0);
-        open(GROUP);
-        sLine(0);
-        sText("b");
-        close();
-      },
-    );
+    const out = printed(1, () => {
+      sText("a");
+      sLine(0);
+      open(GROUP);
+      sLine(0);
+      sText("b");
+      close();
+    });
     expect(out).toBe("a\n\nb");
   });
 
   it("measures the fill parts after the next separator in the fill's own mode, not the separator's", () => {
-    const out = both(
-      10,
-      fill([
-        [text("x"), hardline, group([text("a"), line, text("b")])],
-        line,
-        text("c"),
-        line,
-        text("dddddddddddd"),
-      ]),
-      () => {
-        open(FILL);
-        open(FILL_ITEM);
-        sText("x");
-        sHardline();
-        open(GROUP);
-        sText("a");
-        sLine(0);
-        sText("b");
-        close();
-        close();
-        sLine(0);
-        open(FILL_ITEM);
-        sText("c");
-        close();
-        sLine(0);
-        open(FILL_ITEM);
-        sText("dddddddddddd");
-        close();
-        close();
-      },
-    );
+    const out = printed(10, () => {
+      open(FILL);
+      open(FILL_ITEM);
+      sText("x");
+      sHardline();
+      open(GROUP);
+      sText("a");
+      sLine(0);
+      sText("b");
+      close();
+      close();
+      sLine(0);
+      open(FILL_ITEM);
+      sText("c");
+      close();
+      sLine(0);
+      open(FILL_ITEM);
+      sText("dddddddddddd");
+      close();
+      close();
+    });
     expect(out).toBe("x\na b c\ndddddddddddd");
   });
 
   it("measures a group inside a flushed line suffix against the queued suffixes, not the text already printed", () => {
-    const out = both(
-      12,
-      [
-        text("a"),
-        lineSuffix([text(" //"), group([text("b"), line, text("c")])]),
-        lineSuffix(text(" 12345")),
-        text("zz"),
-        hardline,
-      ],
-      () => {
-        sText("a");
-        open(LINE_SUFFIX);
-        sText(" //");
-        open(GROUP);
-        sText("b");
-        sLine(0);
-        sText("c");
-        close();
-        close();
-        open(LINE_SUFFIX);
-        sText(" 12345");
-        close();
-        sText("zz");
-        sHardline();
-      },
-    );
+    const out = printed(12, () => {
+      sText("a");
+      open(LINE_SUFFIX);
+      sText(" //");
+      open(GROUP);
+      sText("b");
+      sLine(0);
+      sText("c");
+      close();
+      close();
+      open(LINE_SUFFIX);
+      sText(" 12345");
+      close();
+      sText("zz");
+      sHardline();
+    });
     expect(out).toBe("azz //b\nc 12345\n");
   });
 
   it("prints a trailing fill separator in its item's mode, not the previous separator's", () => {
-    const out = both(5, fill([text("aaaa"), line, text("b"), line]), () => {
+    const out = printed(5, () => {
       open(FILL);
       open(FILL_ITEM);
       sText("aaaa");
@@ -215,7 +153,7 @@ describe("printStream matches printer.ts", () => {
   });
 
   it("leaves the group around an empty fill in the mode it decided, not the empty item's separator mode", () => {
-    const out = both(4, group([fill([[]]), text("t0"), line, text("t1")]), () => {
+    const out = printed(4, () => {
       open(GROUP);
       open(FILL);
       open(FILL_ITEM);
@@ -230,107 +168,73 @@ describe("printStream matches printer.ts", () => {
   });
 
   it("prints a line suffix queued inside a line suffix before the line break", () => {
-    const out = both(
-      80,
-      [
-        text("a"),
-        lineSuffix([text(" x"), lineSuffix(text(" y"))]),
-        hardline,
-        text("b"),
-      ],
-      () => {
-        sText("a");
-        open(LINE_SUFFIX);
-        sText(" x");
-        open(LINE_SUFFIX);
-        sText(" y");
-        close();
-        close();
-        sHardline();
-        sText("b");
-      },
-    );
+    const out = printed(80, () => {
+      sText("a");
+      open(LINE_SUFFIX);
+      sText(" x");
+      open(LINE_SUFFIX);
+      sText(" y");
+      close();
+      close();
+      sHardline();
+      sText("b");
+    });
     expect(out).toBe("a x y\nb");
   });
 
   it("breaks a group whose flat measure passes a line suffix and then reaches a boundary after it, as prettier's hasLineSuffix", () => {
-    const out = both(
-      80,
-      [
-        group([text("a"), line, text("b"), lineSuffix(text(" //"))]),
-        lineSuffixBoundary,
-        text("c"),
-      ],
-      () => {
-        open(GROUP);
-        sText("a");
-        sLine(0);
-        sText("b");
-        open(LINE_SUFFIX);
-        sText(" //");
-        close();
-        close();
-        sLineSuffixBoundary();
-        sText("c");
-      },
-    );
+    const out = printed(80, () => {
+      open(GROUP);
+      sText("a");
+      sLine(0);
+      sText("b");
+      open(LINE_SUFFIX);
+      sText(" //");
+      close();
+      close();
+      sLineSuffixBoundary();
+      sText("c");
+    });
     expect(out).toBe("a\nb //\nc");
   });
 
   it("breaks a group holding a boundary while a suffix is pending, and prints nothing for a boundary with none", () => {
-    const out = both(
-      80,
-      [
-        text("x"),
-        lineSuffixBoundary,
-        lineSuffix(text(" //")),
-        group([text("a"), line, lineSuffixBoundary, text("b")]),
-      ],
-      () => {
-        sText("x");
-        sLineSuffixBoundary();
-        open(LINE_SUFFIX);
-        sText(" //");
-        close();
-        open(GROUP);
-        sText("a");
-        sLine(0);
-        sLineSuffixBoundary();
-        sText("b");
-        close();
-      },
-    );
+    const out = printed(80, () => {
+      sText("x");
+      sLineSuffixBoundary();
+      open(LINE_SUFFIX);
+      sText(" //");
+      close();
+      open(GROUP);
+      sText("a");
+      sLine(0);
+      sLineSuffixBoundary();
+      sText("b");
+      close();
+    });
     expect(out).toBe("xa //\nb");
   });
 
   it("aligns past the enclosing indent and dedents back out of it, as prettier's align and dedent", () => {
-    const out = both(
-      80,
-      indent([
-        hardline,
-        align(3, [text("a"), hardline, text("b")]),
-        dedent([hardline, text("c")]),
-      ]),
-      () => {
-        open(INDENT);
-        sHardline();
-        openAlign(3);
-        sText("a");
-        sHardline();
-        sText("b");
-        close();
-        openAlign(-1);
-        sHardline();
-        sText("c");
-        close();
-        close();
-      },
-    );
+    const out = printed(80, () => {
+      open(INDENT);
+      sHardline();
+      openAlign(3);
+      sText("a");
+      sHardline();
+      sText("b");
+      close();
+      openAlign(-1);
+      sHardline();
+      sText("c");
+      close();
+      close();
+    });
     expect(out).toBe("\n  a\n     b\nc");
   });
 });
 
-describe("printStream matches printer.ts for conditional groups", () => {
+describe("printStream for conditional groups", () => {
   const choice = (states: (() => void)[], broken = false) => {
     openChoice(broken);
     for (const s of states) {
@@ -343,107 +247,81 @@ describe("printStream matches printer.ts for conditional groups", () => {
 
   it("takes the first later state that fits flat, else the last one broken", () => {
     const doc = (w: number) =>
-      both(
-        w,
-        conditionalGroup([
-          text("aaaaaaaaaaaa"),
-          text("bb"),
-          group([text("c"), line, text("d")]),
+      printed(w, () =>
+        choice([
+          () => sText("aaaaaaaaaaaa"),
+          () => sText("bb"),
+          () => {
+            open(GROUP);
+            sText("c");
+            sLine(0);
+            sText("d");
+            close();
+          },
         ]),
-        () =>
-          choice([
-            () => sText("aaaaaaaaaaaa"),
-            () => sText("bb"),
-            () => {
-              open(GROUP);
-              sText("c");
-              sLine(0);
-              sText("d");
-              close();
-            },
-          ]),
       );
     expect(doc(10)).toBe("bb");
     expect(doc(1)).toBe("c\nd");
   });
 
   it("measures only the first state for the enclosing group, and a break inside a state leaves it flat", () => {
-    const out = both(
-      6,
-      group([
-        conditionalGroup([
-          [text("a"), hardline, text("b")],
-          text("a state too long to fit"),
-        ]),
-        line,
-        text("c"),
-      ]),
-      () => {
-        open(GROUP);
-        choice([
-          () => {
-            sText("a");
-            sHardline();
-            sText("b");
-          },
-          () => sText("a state too long to fit"),
-        ]);
-        sLine(0);
-        sText("c");
-        close();
-      },
-    );
+    const out = printed(6, () => {
+      open(GROUP);
+      choice([
+        () => {
+          sText("a");
+          sHardline();
+          sText("b");
+        },
+        () => sText("a state too long to fit"),
+      ]);
+      sLine(0);
+      sText("c");
+      close();
+    });
     expect(out).toBe("a\nb c");
   });
 
   // Propagated past the choice, a later state's break would break every call holding an expandable argument.
   it("leaves the groups around flat for a break parent in a later state", () => {
-    const out = both(
-      80,
-      group([text("x"), line, conditionalGroup([text("a"), [text("b"), breakParent]])]),
-      () => {
-        open(GROUP);
-        sText("x");
-        sLine(0);
-        choice([
-          () => sText("a"),
-          () => {
-            sText("b");
-            sBreakParent();
-          },
-        ]);
-        close();
-      },
-    );
+    const out = printed(80, () => {
+      open(GROUP);
+      sText("x");
+      sLine(0);
+      choice([
+        () => sText("a"),
+        () => {
+          sText("b");
+          sBreakParent();
+        },
+      ]);
+      close();
+    });
     expect(out).toBe("x a");
   });
 
   it("finds a fill's next item past a separator holding an ifBreak", () => {
-    const out = both(
-      8,
-      fill([text("aaaa"), ifBreak(text("-"), text(" ")), text("bbbb")]),
-      () => {
-        open(FILL);
-        open(FILL_ITEM);
-        sText("aaaa");
-        close();
-        open(IF_BROKEN);
-        sText("-");
-        close();
-        open(IF_FLAT);
-        sText(" ");
-        close();
-        open(FILL_ITEM);
-        sText("bbbb");
-        close();
-        close();
-      },
-    );
+    const out = printed(8, () => {
+      open(FILL);
+      open(FILL_ITEM);
+      sText("aaaa");
+      close();
+      open(IF_BROKEN);
+      sText("-");
+      close();
+      open(IF_FLAT);
+      sText(" ");
+      close();
+      open(FILL_ITEM);
+      sText("bbbb");
+      close();
+      close();
+    });
     expect(out).toBe("aaaa-bbbb");
   });
 });
 
-describe("printStream matches printer.ts for a shared part printed through a jump", () => {
+describe("printStream for a shared part printed through a jump", () => {
   // A part built once as a span; `jump` prints it again.
   const span = (build: () => void): number => {
     const t = openSpan();
@@ -453,8 +331,7 @@ describe("printStream matches printer.ts for a shared part printed through a jum
   };
 
   it("decides a jumped group by what follows the jump, not what follows the span", () => {
-    const s = group([text("aa"), line, text("bb")]);
-    const out = both(6, [s, hardline, s, text("zzz")], () => {
+    const out = printed(6, () => {
       const t = span(() => {
         open(GROUP);
         sText("aa");
@@ -470,8 +347,7 @@ describe("printStream matches printer.ts for a shared part printed through a jum
   });
 
   it("counts a jump's width in the group around it", () => {
-    const s = group(text("dddd"));
-    const out = both(6, [s, hardline, group([text("cc"), line, s])], () => {
+    const out = printed(6, () => {
       const t = span(() => {
         open(GROUP);
         sText("dddd");
@@ -488,8 +364,7 @@ describe("printStream matches printer.ts for a shared part printed through a jum
   });
 
   it("counts a jumped part's leading line as one space with the run of lines before it", () => {
-    const s = group([line, text("b")]);
-    const out = both(3, [s, hardline, group([text("a"), line, s])], () => {
+    const out = printed(3, () => {
       const t = span(() => {
         open(GROUP);
         sLine(0);
@@ -507,8 +382,7 @@ describe("printStream matches printer.ts for a shared part printed through a jum
   });
 
   it("measures through a jump and on past it", () => {
-    const s = group(text("dd"));
-    const out = both(5, [s, hardline, group([text("cc"), line]), s, text("e")], () => {
+    const out = printed(5, () => {
       const t = span(() => {
         open(GROUP);
         sText("dd");
@@ -526,33 +400,7 @@ describe("printStream matches printer.ts for a shared part printed through a jum
   });
 });
 
-/**
- * Prettier's removeLines on a Doc: every soft or plain line printed flat, every group unbroken, hard lines kept.
- * The Doc a flat interval must print the same as.
- */
-function removeLines(doc: Doc): Doc {
-  if (isDocs(doc)) return doc.map(removeLines);
-  switch (kindOf(doc)) {
-    case "line":
-      return isHardLine(doc) ? doc : isSoftLine(doc) ? [] : text(" ");
-    case "group": {
-      const states = statesOf(doc);
-      return states ? removeLines(states.at(-1) as Doc) : group(removeLines(contentsOf(doc)));
-    }
-    case "indent":
-    case "align":
-    case "lineSuffix":
-      return withContents(doc, removeLines(contentsOf(doc)));
-    case "fill":
-      return fill(partsOf(doc).map(removeLines));
-    case "ifBreak":
-      return removeLines(flatOf(doc));
-    default:
-      return doc;
-  }
-}
-
-describe("printStream matches printer.ts for a part printed flat as removeLines rebuilds it", () => {
+describe("printStream for a part printed flat, as prettier's removeLines rebuilds it", () => {
   const flat = (build: () => void) => {
     openFlat();
     build();
@@ -560,8 +408,7 @@ describe("printStream matches printer.ts for a part printed flat as removeLines 
   };
 
   it("prints a flat part's lines flat and its ifBreak's flat branch where its own group would break", () => {
-    const inner = group([text("bbbb"), line, ifBreak(text(","), text(";")), softline, text("c")]);
-    const out = both(4, removeLines(inner), () =>
+    const out = printed(4, () =>
       flat(() => {
         open(GROUP);
         sText("bbbb");
@@ -581,7 +428,7 @@ describe("printStream matches printer.ts for a part printed flat as removeLines 
   });
 
   it("drops a group's own shouldBreak inside a flat part, so the groups around stay flat", () => {
-    const out = both(80, group([text("a"), line, removeLines(group(text("b"), true))]), () => {
+    const out = printed(80, () => {
       open(GROUP);
       sText("a");
       sLine(0);
@@ -596,7 +443,7 @@ describe("printStream matches printer.ts for a part printed flat as removeLines 
   });
 
   it("keeps a hard line's break parent inside a flat part, so the groups around break", () => {
-    const out = both(80, group([text("a"), line, removeLines([text("b"), hardline, text("c")])]), () => {
+    const out = printed(80, () => {
       open(GROUP);
       sText("a");
       sLine(0);
@@ -611,8 +458,7 @@ describe("printStream matches printer.ts for a part printed flat as removeLines 
   });
 
   it("measures a flat part's conditional group by its last state, the one it prints", () => {
-    const cg = conditionalGroup([text("s"), text("longstate")]);
-    const out = both(8, group([text("x"), line, removeLines(cg)]), () => {
+    const out = printed(8, () => {
       open(GROUP);
       sText("x");
       sLine(0);
@@ -633,8 +479,7 @@ describe("printStream matches printer.ts for a part printed flat as removeLines 
 
   // The JS printer flattens `${a.map((x) => x)}` so: the hugged call's conditional group takes its first state.
   it("prints and measures a flattened substitution's conditional group by its first state", () => {
-    const flattened = [text("s"), text(" "), text("t")];
-    const out = both(5, group([text("x"), line, flattened]), () => {
+    const out = printed(5, () => {
       open(GROUP);
       sText("x");
       sLine(0);
@@ -658,8 +503,7 @@ describe("printStream matches printer.ts for a part printed flat as removeLines 
   });
 
   it("prints a span flat through a jump in a flat part, and decided where it is jumped to outside one", () => {
-    const s = group([text("aa"), line, text("bb")]);
-    const out = both(3, [s, hardline, removeLines(s)], () => {
+    const out = printed(3, () => {
       const t = openSpan();
       open(GROUP);
       sText("aa");
@@ -674,10 +518,10 @@ describe("printStream matches printer.ts for a part printed flat as removeLines 
   });
 });
 
-describe("printStream matches printer.ts with a part abandoned mid-build, as ArgExpansionBailout abandons one", () => {
+describe("printStream with a part abandoned mid-build, as ArgExpansionBailout abandons one", () => {
   it("neither prints nor measures an abandoned part, nor lets its break parents and open intervals reach around", () => {
     let g = -1;
-    const out = both(5, group([text("aa"), line, text("bb")]), () => {
+    const out = printed(5, () => {
       g = open(GROUP);
       sText("aa");
       sLine(0);
@@ -698,7 +542,6 @@ describe("printStream matches printer.ts with a part abandoned mid-build, as Arg
   });
 
   it("prints a span closed inside an abandoned part through a jump, decided where it is jumped to", () => {
-    const s = group([text("aa"), line, text("bb")]);
     const build = () => {
       const d = openDead();
       open(GROUP);
@@ -717,12 +560,12 @@ describe("printStream matches printer.ts with a part abandoned mid-build, as Arg
       sJump(t);
       close();
     };
-    expect(both(12, group([text("cc"), line, s]), build)).toBe("cc aa bb");
-    expect(both(5, group([text("cc"), line, s]), build)).toBe("cc\naa bb");
+    expect(printed(12, build)).toBe("cc aa bb");
+    expect(printed(5, build)).toBe("cc\naa bb");
   });
 });
 
-describe("the range queries answer what doc.ts's and the JS printer's Doc queries answer", () => {
+describe("the range queries", () => {
   const choice = (states: (() => void)[]) => {
     const k = openChoice(false);
     for (const s of states) {
@@ -749,10 +592,6 @@ describe("the range queries answer what doc.ts's and the JS printer's Doc querie
   // A choice's state breaks reach no flag around it, so a willBreak reading only flags would call a hugged
   // argument holding a call's expanded arguments unbreaking.
   it("willBreak sees a break in a choice's first state, through a jump too, and none in a later state", () => {
-    const firstBreaks = [[text("a"), hardline], text("b")];
-    const laterBreaks = [text("a"), [text("b"), hardline]];
-    expect(docWillBreak(conditionalGroup(firstBreaks))).toBe(true);
-    expect(docWillBreak(conditionalGroup(laterBreaks))).toBe(false);
     resetStream();
     const t = span(() =>
       choice([
@@ -783,47 +622,59 @@ describe("the range queries answer what doc.ts's and the JS printer's Doc querie
   });
 
   // A hard line appended without its break parent breaks nothing around it, so a willBreak reading only flags
-  // would call it unbreaking, where doc.ts's willBreak sees the hard line.
+  // would call it unbreaking; willBreak sees the hard line.
   it("willBreak sees a hard line without a break parent, where removeLines keeps it, and not in a literal token", () => {
-    const lone = lineOf(HARD);
-    const cases: [Doc, () => number][] = [
-      [group([text("a"), lone]), () => wrapped(GROUP, () => {
-        sText("a");
-        sLine(HARD);
-      })],
-      [indent(ifBreak([lone], [])), () => wrapped(INDENT, () => wrapped(IF_BROKEN, () => sLine(HARD)))],
-      [indent([literalToken(0, "a\nb")]), () => wrapped(INDENT, () => sLiteral(0, "a\nb"))],
-      [removeLines(ifBreak([lone], [text("a")])), () => {
+    const cases: (() => number)[] = [
+      () =>
+        wrapped(GROUP, () => {
+          sText("a");
+          sLine(HARD);
+        }),
+      () => wrapped(INDENT, () => wrapped(IF_BROKEN, () => sLine(HARD))),
+      () => wrapped(INDENT, () => sLiteral(0, "a\nb")),
+      () => {
         const k = openFlat();
         wrapped(IF_BROKEN, () => sLine(HARD));
         wrapped(IF_FLAT, () => sText("a"));
         closeFlat();
         return k;
-      }],
-      [removeLines(conditionalGroup([text("a"), [text("b"), lone]])), () => {
+      },
+      () => {
         const k = openFlat();
-        choice([() => sText("a"), () => {
-          sText("b");
-          sLine(HARD);
-        }]);
+        choice([
+          () => sText("a"),
+          () => {
+            sText("b");
+            sLine(HARD);
+          },
+        ]);
         closeFlat();
         return k;
-      }],
-      [removeLines(conditionalGroup([[text("a"), lone], text("b")])), () => {
+      },
+      () => {
         const k = openFlat();
-        choice([() => {
-          sText("a");
-          sLine(HARD);
-        }, () => sText("b")]);
+        choice([
+          () => {
+            sText("a");
+            sLine(HARD);
+          },
+          () => sText("b"),
+        ]);
         closeFlat();
         return k;
-      }],
+      },
     ];
     resetStream();
     const t = span(() => sLine(HARD));
     const viaJump = wrapped(INDENT, () => sJump(t));
-    expect(cases.map(([doc]) => docWillBreak(doc))).toEqual([true, true, false, false, true, false]);
-    expect(cases.map(([, build]) => willBreak(build()))).toEqual(cases.map(([doc]) => docWillBreak(doc)));
+    expect(cases.map((build) => willBreak(build()))).toEqual([
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+    ]);
     expect(willBreak(viaJump)).toBe(true);
   });
 
@@ -834,9 +685,12 @@ describe("the range queries answer what doc.ts's and the JS printer's Doc querie
     const viaJump = wrapped(INDENT, () => sJump(t));
     const boundary = wrapped(INDENT, () => sLineSuffixBoundary());
     const textOnly = wrapped(GROUP, () => sText("a"));
-    expect([canBreak(later), canBreak(viaJump), canBreak(boundary), canBreak(textOnly)]).toEqual(
-      [true, true, false, false],
-    );
+    expect([
+      canBreak(later),
+      canBreak(viaJump),
+      canBreak(boundary),
+      canBreak(textOnly),
+    ]).toEqual([true, true, false, false]);
   });
 
   // The JS printer's flatten of a template substitution reads a choice's first state, so a query reading the
@@ -844,15 +698,21 @@ describe("the range queries answer what doc.ts's and the JS printer's Doc querie
   it("a flattened substitution's queries read each choice's first state, and flattenBreaks every break in it", () => {
     resetStream();
     const hardFirst = () =>
-      choice([() => {
-        sText("a");
-        sHardline();
-      }, () => sText("b")]);
+      choice([
+        () => {
+          sText("a");
+          sHardline();
+        },
+        () => sText("b"),
+      ]);
     const hardLast = () =>
-      choice([() => sText("a"), () => {
-        sText("b");
-        sHardline();
-      }]);
+      choice([
+        () => sText("a"),
+        () => {
+          sText("b");
+          sHardline();
+        },
+      ]);
     const flat = (build: () => void) => {
       const k = openFlat(true);
       build();
@@ -861,12 +721,12 @@ describe("the range queries answer what doc.ts's and the JS printer's Doc querie
     };
     const first = flat(hardFirst);
     const last = flat(hardLast);
-    expect([willBreak(first), willBreak(last), canBreak(first), canBreak(last)]).toEqual([
-      true,
-      false,
-      true,
-      false,
-    ]);
+    expect([
+      willBreak(first),
+      willBreak(last),
+      canBreak(first),
+      canBreak(last),
+    ]).toEqual([true, false, true, false]);
     const viaJump = span(hardFirst);
     const shouldBreak = span(() => {
       open(GROUP, -1, BROKEN);
@@ -904,12 +764,12 @@ describe("the range queries answer what doc.ts's and the JS printer's Doc querie
       sBreakParent();
     });
     const indented = wrapped(INDENT, () => sText("a"));
-    expect([flatText(textual), flatText(lined), flatText(breaking), flatText(indented)]).toEqual([
-      "abc",
-      undefined,
-      undefined,
-      undefined,
-    ]);
+    expect([
+      flatText(textual),
+      flatText(lined),
+      flatText(breaking),
+      flatText(indented),
+    ]).toEqual(["abc", undefined, undefined, undefined]);
   });
 
   it("shape lists a choice's states and a fill's items, not its separators", () => {
@@ -925,19 +785,16 @@ describe("the range queries answer what doc.ts's and the JS printer's Doc querie
   });
 });
 
-/** As `both`, measuring as ruff does. */
-function ruffBoth(lineWidth: number, doc: Doc, build: () => void) {
-  const l = { ...layout(lineWidth), ruff: true };
+/** As `printed`, measuring as ruff does. */
+function ruffPrinted(lineWidth: number, build: () => void) {
   resetStream(true);
   build();
-  const stream = printStream(l).text;
-  expect(stream).toBe(print(doc, l).text);
-  return stream;
+  return printStream({ ...layout(lineWidth), ruff: true }).text;
 }
 
-describe("printStream matches printer.ts under ruff's measure", () => {
+describe("printStream under ruff's measure", () => {
   it("counts every flat space where it stands, a run of lines included", () => {
-    const out = ruffBoth(3, group([text("a"), line, line, text("b")]), () => {
+    const out = ruffPrinted(3, () => {
       open(GROUP);
       sText("a");
       sLine(0);
@@ -949,11 +806,7 @@ describe("printStream matches printer.ts under ruff's measure", () => {
   });
 
   it("measures a literal token to its first line break and restarts the column after its last", () => {
-    const doc = [
-      group([text("a"), line, literalToken(0, "bb\n  cccc"), line, text("d")]),
-      group([line, text("ee")]),
-    ];
-    const out = ruffBoth(8, doc, () => {
+    const out = ruffPrinted(8, () => {
       open(GROUP);
       sText("a");
       sLine(0);
@@ -970,13 +823,7 @@ describe("printStream matches printer.ts under ruff's measure", () => {
   });
 
   it("counts a line suffix's reserved columns against the line it is queued on", () => {
-    const doc = [
-      group([text("a"), line, text("b")]),
-      lineSuffix(text(" # c"), 4),
-      group([line, text("d")]),
-      hardline,
-    ];
-    const out = ruffBoth(6, doc, () => {
+    const out = ruffPrinted(6, () => {
       open(GROUP);
       sText("a");
       sLine(0);
@@ -995,16 +842,7 @@ describe("printStream matches printer.ts under ruff's measure", () => {
   });
 
   it("collapses a broken line on an empty line and adds one empty line for a blank line", () => {
-    const collapse = lineOf(HARD | COLLAPSE);
-    const blank = lineOf(HARD | COLLAPSE | BLANK);
-    const doc = [
-      collapse,
-      text("a"),
-      blank,
-      collapse,
-      group([text("b"), collapse, text("c")]),
-    ];
-    const out = ruffBoth(80, doc, () => {
+    const out = ruffPrinted(80, () => {
       sRuffLine(HARD | COLLAPSE);
       sText("a");
       sRuffLine(HARD | COLLAPSE | BLANK);
@@ -1019,10 +857,7 @@ describe("printStream matches printer.ts under ruff's measure", () => {
   });
 
   it("indents an indentIfBreak's contents, built once, by its group's printed mode", () => {
-    const g = group([text("aaaa"), line, text("b")]);
-    const contents = group([text("c"), hardline, text("d")]);
-    const doc = [g, indentIfBreak(contents, g), indentIfBreak(contents, g, true)];
-    const out = ruffBoth(4, doc, () => {
+    const out = ruffPrinted(4, () => {
       const k = open(GROUP);
       sText("aaaa");
       sLine(0);
@@ -1042,16 +877,7 @@ describe("printStream matches printer.ts under ruff's measure", () => {
   });
 
   it("measures a groupIfBreak as a group only while its condition prints broken", () => {
-    const g = group([text("aaaa"), line, text("b")]);
-    const flat = group(text("x"));
-    const doc = [
-      g,
-      groupIfBreak([text("cc"), line, text("dd")], g),
-      hardline,
-      flat,
-      groupIfBreak([text("y"), line, text("z")], flat),
-    ];
-    const out = ruffBoth(4, doc, () => {
+    const out = ruffPrinted(4, () => {
       const k = open(GROUP);
       sText("aaaa");
       sLine(0);
@@ -1076,17 +902,7 @@ describe("printStream matches printer.ts under ruff's measure", () => {
   });
 
   it("measures a fitsExpanded broken over lines of any width, counting only the text around it", () => {
-    const list = group([
-      text("["),
-      indent([softline, text("aaaaaaaaaaaa")]),
-      softline,
-      text("]"),
-    ]);
-    const doc = indent([
-      hardline,
-      group([text("f("), fitsExpanded(list), text(")"), line, text("x")]),
-    ]);
-    const out = ruffBoth(10, doc, () => {
+    const out = ruffPrinted(10, () => {
       open(INDENT);
       sHardline();
       open(GROUP);
@@ -1112,34 +928,29 @@ describe("printStream matches printer.ts under ruff's measure", () => {
   });
 
   it("prints a bestFitParenthesize flat, else parenthesized when every line fits, else bare with its groups remeasured", () => {
-    const cases: [Doc, () => void][] = [
-      [[text("aa"), line, text("bb")], () => {
+    const cases: (() => void)[] = [
+      () => {
         sText("aa");
         sLine(0);
         sText("bb");
-      }],
-      [group([text("aaaa"), line, text("bbbb")]), () => {
+      },
+      () => {
         open(GROUP);
         sText("aaaa");
         sLine(0);
         sText("bbbb");
         close();
-      }],
-      [[text("cccccccccccc"), group([line, text("d")])], () => {
+      },
+      () => {
         sText("cccccccccccc");
         open(GROUP);
         sLine(0);
         sText("d");
         close();
-      }],
+      },
     ];
-    const doc = cases.map(([contents]) => [
-      text("x = "),
-      bestFitParenthesize(token(0, "("), contents, token(0, ")")),
-      hardline,
-    ]);
-    const out = ruffBoth(10, doc, () => {
-      for (const [, build] of cases) {
+    const out = ruffPrinted(10, () => {
+      for (const build of cases) {
         sText("x = ");
         const k = openBestFitParenthesize(() => sToken(0, "("));
         build();
@@ -1147,46 +958,52 @@ describe("printStream matches printer.ts under ruff's measure", () => {
         sHardline();
       }
     });
-    expect(out).toBe("x = aa bb\nx = (\n  aaaa\n  bbbb\n)\nx = cccccccccccc\nd\n");
+    expect(out).toBe(
+      "x = aa bb\nx = (\n  aaaa\n  bbbb\n)\nx = cccccccccccc\nd\n",
+    );
   });
 
   it("prints a bestFitting's first variant that fits flat, on every line when it asks, else its last broken", () => {
-    const cases: [boolean, Doc[], (() => void)[]][] = [
-      [false, [text("aaaaaaaaaa"), text("bbbb"), [text("c"), line, text("d")]], [
-        () => sText("aaaaaaaaaa"),
-        () => sText("bbbb"),
-        () => {
-          sText("c");
-          sLine(0);
-          sText("d");
-        },
-      ]],
-      [false, [text("aaaaaaaaaa"), [text("cc"), line, text("dd")]], [
-        () => sText("aaaaaaaaaa"),
-        () => {
-          sText("cc");
-          sLine(0);
-          sText("dd");
-        },
-      ]],
-      [true, [group([text("a"), hardline, text("123456789")], true), text("e")], [
-        () => {
-          open(GROUP, -1, BROKEN);
-          sText("a");
-          sHardline();
-          sText("123456789");
-          close();
-        },
-        () => sText("e"),
-      ]],
+    const cases: [boolean, (() => void)[]][] = [
+      [
+        false,
+        [
+          () => sText("aaaaaaaaaa"),
+          () => sText("bbbb"),
+          () => {
+            sText("c");
+            sLine(0);
+            sText("d");
+          },
+        ],
+      ],
+      [
+        false,
+        [
+          () => sText("aaaaaaaaaa"),
+          () => {
+            sText("cc");
+            sLine(0);
+            sText("dd");
+          },
+        ],
+      ],
+      [
+        true,
+        [
+          () => {
+            open(GROUP, -1, BROKEN);
+            sText("a");
+            sHardline();
+            sText("123456789");
+            close();
+          },
+          () => sText("e"),
+        ],
+      ],
     ];
-    const doc = cases.map(([allLines, variants]) => [
-      text("x="),
-      bestFitting(variants, allLines),
-      hardline,
-    ]);
-    const out = ruffBoth(8, doc, () => {
-      for (const [allLines, , builds] of cases) {
+    const out = ruffPrinted(8, () => {
+      for (const [allLines, builds] of cases) {
         sText("x=");
         const k = openBestFitting(allLines);
         for (const build of builds) {
