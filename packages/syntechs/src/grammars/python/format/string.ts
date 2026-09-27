@@ -12,5 +12,9 @@ export const string = {
   interpolation: () => custom("string.interpolation"),
   type_conversion: () => verbatim,
   format_specifier: () => verbatim,
+  // Unreached: string_content prints its own text and format_specifier prints verbatim, neither descending here.
+  escape_sequence: () => verbatim,
+  escape_interpolation: () => verbatim,
+  format_expression: () => verbatim,
   concatenated_string: () => custom("string.concatenated"),
 } satisfies Structure;
