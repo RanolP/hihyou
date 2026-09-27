@@ -1,6 +1,5 @@
 import { NO_NODE, type Tree } from "../core/arena.js";
 import { SYM_ERROR } from "../core/language.js";
-import { attachComments } from "./comments.js";
 import { type Doc, docMark, hardline, releaseDocs, token } from "./doc.js";
 import type { EndOfLine } from "./options.js";
 import { type Placed, type PlacedToken, print } from "./printer.js";
@@ -66,12 +65,7 @@ export function format<O>(
       const prefix = language.lineComments.get(tree.kindName(n));
       return prefix !== undefined && tree.text(n).startsWith(prefix);
     };
-    const comments = attachComments(
-      tree,
-      isComment,
-      language.handleComment,
-      resolved,
-    );
+    const comments = language.placeComments(tree, isComment, resolved);
     const commentToken = (c: number): Doc => {
       if (language.printComment) return language.printComment(c, ctx);
       const t = tree.text(c);

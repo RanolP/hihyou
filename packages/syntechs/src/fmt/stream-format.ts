@@ -1,5 +1,4 @@
 import type { Tree } from "../core/arena.js";
-import { attachComments } from "./comments.js";
 import {
   type Anchor,
   brokenNodes,
@@ -162,12 +161,7 @@ export function formatStream<O>(
       const prefix = base.lineComments.get(tree.kindName(n));
       return prefix !== undefined && tree.text(n).startsWith(prefix);
     };
-    const comments = attachComments(
-      tree,
-      isComment,
-      base.handleComment,
-      resolved,
-    );
+    const comments = base.placeComments(tree, isComment, resolved);
     const comment = (c: number) => {
       const t = tree.text(c);
       sToken(c, isLine(c) ? t.trimEnd() : t);

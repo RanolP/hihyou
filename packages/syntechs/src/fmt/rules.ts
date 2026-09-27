@@ -1,6 +1,11 @@
 import type { Language as Parser } from "../core/language.js";
 import { identity, type Normalize } from "./check.js";
-import type { CommentHandler, Comments } from "./comments.js";
+import {
+  attachComments,
+  type CommentHandler,
+  type Comments,
+  type PlaceComments,
+} from "./comments.js";
 import {
   breakParent,
   type Doc,
@@ -107,6 +112,7 @@ export interface Language<O = unknown> {
   readonly layoutBlind: boolean;
   readonly printComment?: (comment: number, ctx: Ctx<O>) => Doc;
   readonly handleComment?: CommentHandler<O>;
+  readonly placeComments: PlaceComments<O>;
   readonly printsOwnComments?: (node: number, ctx: Ctx<O>) => boolean;
   /** How `check` spells a comment before comparing; see `LanguageSpec`. */
   readonly comment: ((text: string) => string | readonly string[]) | undefined;
@@ -161,6 +167,11 @@ export interface LanguageSpec<G extends Grammar, O> {
   readonly printComment?: (comment: number, ctx: Ctx<O>) => Doc;
   /** Where a comment attaches when not where the core would put it (see `CommentHandler`). */
   readonly handleComment?: CommentHandler<O>;
+  /**
+   * The language's own comment placement, when its tool places comments by another algorithm than prettier's
+   * (ruff's); it replaces `attachComments`, and `handleComment` with it.
+   */
+  readonly placeComments?: PlaceComments<O>;
   /**
    * Whether `node`'s rule prints the node's comments itself, through `ctx.withComments`, so they can go inside
    * something the rule wraps around them (prettier's willPrintOwnComments: a JSX element's parentheses).
@@ -279,6 +290,10 @@ export function defineLanguage<
     layoutBlind: spec.layoutBlind ?? spec.normalize === undefined,
     ...(spec.printComment && { printComment: spec.printComment }),
     ...(spec.handleComment && { handleComment: spec.handleComment }),
+    placeComments:
+      spec.placeComments ??
+      ((tree, isComment, options) =>
+        attachComments(tree, isComment, spec.handleComment, options)),
     ...(spec.printsOwnComments && {
       printsOwnComments: spec.printsOwnComments,
     }),

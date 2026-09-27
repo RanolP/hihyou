@@ -14,6 +14,17 @@ export interface Comments {
   dangling(node: number): readonly number[];
 }
 
+/**
+ * The pass between the tree and flatten: it says, once per format, which node each comment of `tree` prints
+ * before, after or inside, so the rules only read the result. A language owns it (`LanguageSpec.placeComments`);
+ * the default is `attachComments` with the language's `handleComment`.
+ */
+export type PlaceComments<O = unknown> = (
+  tree: FormatTree,
+  isComment: (n: number) => boolean,
+  options: O,
+) => Comments;
+
 /** Where prettier's attach classifies a comment: alone on its line, ending one, or between code on one line. */
 export type Placement = "ownLine" | "endOfLine" | "remaining";
 
