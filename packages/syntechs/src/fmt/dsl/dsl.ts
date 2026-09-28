@@ -139,7 +139,11 @@ export type Tree =
   | { readonly t: "self" }
   /** Where `when` holds, the node is input the formatter must not touch, and the file stays as written (`Bail`). */
   | { readonly t: "bail"; readonly reason: string; readonly when: Cond }
-  | SplitOn;
+  | SplitOn
+  /** `then` where `when` holds of the node, else `else`. */
+  | { readonly t: "either"; readonly when: Cond; readonly then: Tree; readonly else: Tree }
+  /** The node's token `text` respelled by normalizer `fn` (`normalizers.ts`), where the source has it. */
+  | { readonly t: "spell"; readonly text: string; readonly fn: NormalizerName };
 
 /** How a `splitOn` entry prints its items: side by side, a space between, or as `words`. */
 export type SplitItem =
@@ -305,6 +309,8 @@ export type TokenTree<G extends Grammar, O> =
   | Piece<"self">
   | Piece<{ bail: CondIn<G, O> }>
   | Piece<{ splitOn: KindOf<G> | TokenOf<G>; cond: CondIn<G, O> }>
+  | Piece<{ either: CondIn<G, O>; then: TokenTree<G, O>; else: TokenTree<G, O> }>
+  | Piece<{ spell: TokenOf<G> }>
   | readonly TokenTree<G, O>[];
 
 /** `tok(text).synth(when)`'s and `tok(text).andThen(f)`'s output. */
@@ -637,6 +643,21 @@ export const splitOn = <const S extends string, const K extends string = never, 
     layout: layout(o.layout ?? {}),
   });
 };
+
+/**
+ * `then` where `when` holds of the node, else `otherwise`: a layout chosen by what the node is, like CSS's
+ * `url(...)` arguments printed as written. A literal after it must bind the same source token whichever ran.
+ */
+export const either = <const C, const A, const B>(
+  when: C,
+  then: A,
+  otherwise: B,
+): Piece<{ either: C; then: A; else: B }> =>
+  piece({ t: "either", when: plain(when), then: toTree(then), else: toTree(otherwise) });
+
+/** The node's token `text` respelled by the normalizer `fn`, where the source has it: CSS's `@MEDIA` as `@media`. */
+export const spell = <const S extends string>(text: S, fn: NormalizerName): Piece<{ spell: S }> =>
+  piece({ t: "spell", text, fn });
 
 function plain(c: unknown): Cond {
   if (c === undefined || typeof c === "boolean") return c === true;

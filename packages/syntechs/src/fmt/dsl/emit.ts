@@ -32,7 +32,11 @@ function eachCond(ir: FormatIR, visit: (c: Cond) => void): void {
     if (x.t === "text" || x.t === "bail") cond(x.when);
     else if (x.t === "seq") x.parts.forEach(walk);
     else if (x.t === "opt") walk(x.then);
-    else if (x.t === "tokIf") {
+    else if (x.t === "either") {
+      cond(x.when);
+      walk(x.then);
+      walk(x.else);
+    } else if (x.t === "tokIf") {
       cond(x.synth);
       walk(x.then);
     } else if (x.t === "brackets") {
@@ -70,7 +74,25 @@ function optionKeys(ir: FormatIR): string[] {
   // A `text` rule's normalizer reads its options too (a `text` is only ever a whole rule).
   for (const x of Object.values(ir.structure))
     if (x.t === "text") for (const k of normalizerOptions[x.fn] ?? []) keys.add(k);
+  for (const fn of spellFns(ir)) for (const k of normalizerOptions[fn] ?? []) keys.add(k);
   return [...keys].sort();
+}
+
+/** The normalizers `ir`'s `spell`s name. */
+function spellFns(ir: FormatIR): Set<NormalizerName> {
+  const fns = new Set<NormalizerName>();
+  const walk = (x: Tree): void => {
+    if (x.t === "spell") fns.add(x.fn);
+    else if (x.t === "seq") x.parts.forEach(walk);
+    else if (x.t === "opt" || x.t === "tokIf") walk(x.then);
+    else if (x.t === "brackets") walk(x.body);
+    else if (x.t === "either") {
+      walk(x.then);
+      walk(x.else);
+    }
+  };
+  Object.values(ir.structure).forEach(walk);
+  return fns;
 }
 
 type RuleType = "CustomRule" | "TokenRule" | "FrameRule" | "PredicateRule";
@@ -92,7 +114,10 @@ function customNames(ir: FormatIR): [string, RuleType][] {
     else if (x.t === "tok" && x.via !== undefined) add(x.via, "TokenRule");
     else if (x.t === "seq") x.parts.forEach(walk);
     else if (x.t === "opt" || x.t === "tokIf") walk(x.then);
-    else if (x.t === "brackets") {
+    else if (x.t === "either") {
+      walk(x.then);
+      walk(x.else);
+    } else if (x.t === "brackets") {
       if (x.via !== undefined) add(x.via, "FrameRule");
       walk(x.body);
     }
@@ -108,7 +133,9 @@ function customNames(ir: FormatIR): [string, RuleType][] {
 const bindsToken = (x: Tree): boolean =>
   x.t === "tok" ||
   x.t === "tokIf" ||
+  x.t === "spell" ||
   x.t === "brackets" ||
+  (x.t === "either" && (bindsToken(x.then) || bindsToken(x.else))) ||
   (x.t === "seq" && x.parts.some(bindsToken)) ||
   (x.t === "opt" && bindsToken(x.then));
 
@@ -117,6 +144,7 @@ const hasOpt = (x: Tree): boolean =>
   x.t === "opt" ||
   (x.t === "tokIf" && bindsToken(x.then)) ||
   (x.t === "seq" && x.parts.some(hasOpt)) ||
+  (x.t === "either" && (hasOpt(x.then) || hasOpt(x.else))) ||
   (x.t === "brackets" && hasOpt(x.body));
 
 /** An expression true when the string `expr` is one of `kinds`, compared inline rather than through an array. */
@@ -187,7 +215,11 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
   const dynamic = hasOpt(tree);
   const ordinals = new Map<string, number>();
   const counters: string[] = [];
+  /** Texts whose ordinal depends on which branch of an `either` ran. */
+  const divergent = new Set<string>();
   const ordinal = (text: string) => {
+    if (divergent.has(text))
+      throw new Error(`emit: a literal ${str(text)} after an either whose branches bind it a different number of times`);
     if (!dynamic) {
       const nth = ordinals.get(text) ?? 0;
       ordinals.set(text, nth + 1);
@@ -266,6 +298,8 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
       case "custom":
         return "false";
       case "inOrder":
+      case "either":
+      case "spell":
         throw new Error(`emit: a bracket idiom around \`${x.t}\` whose emptiness is not generated yet`);
       case "splitOn": {
         const run = splitRun(x);
@@ -728,6 +762,28 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
       case "splitOn":
         split(x);
         return;
+      case "spell": {
+        const c = bound(x.text);
+        const opts = normalizerOptions[x.fn] ? ", ctx.options" : "";
+        line(`if (${c} !== -1) sToken(${c}, ${x.fn}(t.text(${c})${opts}));`);
+        return;
+      }
+      case "either": {
+        // Each branch binds from the ordinals before it; a text the branches bind a different number of times
+        // leaves the ordinal of its next literal unknown, which makes that literal an error.
+        const before = new Map(ordinals);
+        block(`if (${when(x.when)})`, () => walk(x.then), "} else {");
+        const then = new Map(ordinals);
+        ordinals.clear();
+        for (const [k, v] of before) ordinals.set(k, v);
+        depth++;
+        walk(x.else);
+        depth--;
+        line("}");
+        for (const k of new Set([...then.keys(), ...ordinals.keys()]))
+          if ((then.get(k) ?? 0) !== (ordinals.get(k) ?? 0)) divergent.add(k);
+        return;
+      }
     }
   };
 
@@ -836,6 +892,7 @@ export function emit(
   const fns = new Set<NormalizerName>();
   for (const ir of Object.values(specs))
     for (const x of Object.values(ir.structure)) if (x.t === "text") fns.add(x.fn);
+  for (const ir of Object.values(specs)) for (const fn of spellFns(ir)) fns.add(fn);
   if (fns.size > 0)
     parts.splice(
       parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,

@@ -19,7 +19,7 @@ import {
   sText,
   sToken,
 } from "../../fmt/stream.js";
-import { atName, maybeLower, numberParts } from "../../fmt/dsl/normalizers.js";
+import { maybeLower, numberParts } from "../../fmt/dsl/normalizers.js";
 import { type CustomRule, type PredicateRule, printKid } from "../../fmt/dsl/runtime.js";
 import type { StreamCtx, StreamRule } from "../../fmt/stream-format.js";
 import { newlineBetween } from "../../fmt/text.js";
@@ -197,8 +197,6 @@ function parts(n: number, ctx: SCtx): number {
     ? parts(left, ctx) + 1
     : 1;
 }
-const withoutSemicolon = (node: number, ctx: SCtx) =>
-  code(node, ctx).filter((c) => kind(c, ctx) !== ";");
 
 // ---- the rules format.ts names as `custom`: prettier's heuristics, and the leaves it respells ----
 
@@ -302,54 +300,12 @@ function valueList(
   close();
   close();
 }
-/** `(a, b)` breaking inside the parentheses, for function arguments and pseudo-class selectors alike. */
-function parenList(
-  node: number,
-  ctx: SCtx,
-  item: (items: readonly number[]) => void,
-): void {
-  const kids = code(node, ctx);
-  const first = kids[0];
-  const last = kids.at(-1);
-  if (
-    first === undefined ||
-    last === undefined ||
-    kind(first, ctx) !== "(" ||
-    kind(last, ctx) !== ")"
-  ) {
-    for (const c of kids) printItem(c, ctx);
-    return;
-  }
-  open(GROUP);
-  sToken(first, src(first, ctx));
-  open(INDENT);
-  sLine(SOFT);
-  commaGroups(kids.slice(1, -1), ctx).forEach((g, i) => {
-    if (i > 0) sLine(0);
-    item(g.items);
-    printComma(g.comma, ctx);
-  });
-  close();
-  sLine(SOFT);
-  sToken(last, src(last, ctx));
-  close();
-}
-/** Prettier indents a selector of more than two nodes as it breaks. */
-const selector = (n: number, ctx: SCtx) => {
-  if (parts(n, ctx) <= 2) return ctx.print(n);
-  open(GROUP);
-  open(INDENT);
-  ctx.print(n);
-  close();
-  close();
-};
 /** The statement's own `;`, or one prettier adds. */
 const semicolon = (node: number, ctx: SCtx) => {
   const semi = anon(node, ";", ctx);
   if (semi !== undefined) sToken(semi, src(semi, ctx));
   else sToken(node, ";", true);
 };
-const atToken = (at: number, ctx: SCtx) => sToken(at, atName(src(at, ctx)));
 const respell =
   (f: (t: string, node: number, ctx: SCtx) => string): SRule =>
   (node, ctx) =>
@@ -400,55 +356,13 @@ export const customs = {
     }
     semicolon(node, ctx);
   },
-  arguments: (node, ctx) => {
-    const call = within(node, "call_expression", ctx)
-      ? ctx.tree.parent(node)
-      : undefined;
-    const name =
-      call === undefined ? undefined : childOfKind(call, "function_name", ctx);
-    if (name !== undefined && src(name, ctx).toLowerCase() === "url")
-      return concat(node, ctx);
-    parenList(node, ctx, (items) => {
-      if (call !== undefined) return words(items, ctx, false);
-      items.forEach((n, i) => {
-        if (i > 0) sText(" ");
-        selector(n, ctx);
-      });
-    });
+  /** A `url()` function's arguments, which prettier prints as written. */
+  urlArguments: (node, ctx) => {
+    if (!within(node, "call_expression", ctx)) return false;
+    const name = childOfKind(ctx.tree.parent(node), "function_name", ctx);
+    return name !== undefined && src(name, ctx).toLowerCase() === "url";
   },
   inCalc: (node, ctx) => enclosingFunction(node, ctx) === "calc",
-  media: (node, ctx) => {
-    const [at, ...rest] = code(node, ctx);
-    const block = rest.at(-1);
-    if (at === undefined || block === undefined || kind(block, ctx) !== "block")
-      return concat(node, ctx);
-    atToken(at, ctx);
-    const queries = commaGroups(rest.slice(0, -1), ctx);
-    if (queries.length > 0) {
-      sText(" ");
-      open(GROUP);
-      open(INDENT);
-      queries.forEach((g, i) => {
-        if (i > 0) sLine(0);
-        for (const n of g.items) printItem(n, ctx);
-        printComma(g.comma, ctx);
-      });
-      close();
-      close();
-    }
-    sText(" ");
-    ctx.print(block);
-  },
-  import: (node, ctx) => {
-    const [at, ...rest] = withoutSemicolon(node, ctx);
-    if (at === undefined) return concat(node, ctx);
-    atToken(at, ctx);
-    if (rest.length > 0) {
-      sText(" ");
-      valueList(rest, ctx, undefined);
-    }
-    semicolon(node, ctx);
-  },
 } satisfies Record<string, CustomRule<CssOptions> | PredicateRule<CssOptions>>;
 
 /** CSS as prettier 3.9.9's postcss printer lays it out; the layouts are format.ts, generated into fmt.gen.ts. */

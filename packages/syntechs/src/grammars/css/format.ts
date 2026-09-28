@@ -4,14 +4,20 @@
 import {
   custom,
   defineFormat,
+  either,
+  entryCount,
   grpBrace,
+  grpParen,
   inOrder,
   lines,
   parentIs,
   space,
+  spell,
   splitOn,
   text,
+  tok,
   when,
+  words,
 } from "../../fmt/dsl/dsl.js";
 import type { grammar } from "./bundle.js";
 import type { CssOptions } from "./fmt.js";
@@ -25,6 +31,12 @@ const combinator = () => inOrder({ join: "line", spaceWhen: { after: [">", "~", 
 /** Selectors one per line, one of more than two parts indenting as it breaks; then each `trail` child after a space. */
 const selectorList = (trail: "block"[] = []) =>
   splitOn(",", { trail, wrapItem: when("longSelector"), layout: { group: true, between: "hardline" } });
+/** The statement's own `;`, or one prettier adds. */
+const semicolon = tok(";").synth(true);
+/** Comma-separated values packed several to a line, indented once they break. */
+const packed = { group: true, indent: true, between: "line", fill: true } as const;
+/** `layout` for two entries or more; a lone entry prints bare. */
+const loneBare = <L>(layout: L) => ({ when: entryCount(1), then: {}, else: layout });
 /** Statements one per line, keeping one blank line where the source has any. */
 const statements = { blankLines: "force" } as const;
 
@@ -48,7 +60,25 @@ export const css = format({
     string_value: () => text("requote"),
     plain_value: () => custom("plainValue"),
     call_expression: adjacent,
-    arguments: () => custom("arguments"),
+    // A function's as written inside `url()`, else broken inside the parentheses: a function's as words, a
+    // pseudo-class's as selectors.
+    arguments: () =>
+      either(
+        when("urlArguments"),
+        adjacent(),
+        either(
+          parentIs("call_expression"),
+          grpParen(splitOn(",", { except: ["(", ")"], item: words(), layout: { between: "line" } })),
+          grpParen(
+            splitOn(",", {
+              except: ["(", ")"],
+              item: "space",
+              wrapItem: when("longSelector"),
+              layout: { between: "line" },
+            }),
+          ),
+        ),
+      ),
     // Spaced around the operator as written, and always inside `calc()`.
     binary_expression: () => inOrder({ join: "gap", spaceWhen: { when: when("inCalc") } }),
     parenthesized_value: adjacent,
@@ -67,9 +97,18 @@ export const css = format({
     tag_name: () => text("lower", parentIs("pseudo_element_selector")),
 
     at_keyword: () => text("atName"),
-    media_statement: () => custom("media"),
+    media_statement: () => [
+      spell("@media", "atName"),
+      space,
+      splitOn(",", { except: ["@media"], trail: ["block"], layout: { group: true, indent: true, between: "line" } }),
+    ],
     supports_statement: spaced,
-    import_statement: () => custom("import"),
+    import_statement: () => [
+      spell("@import", "atName"),
+      space,
+      splitOn(",", { except: ["@import", ";"], item: words(), layout: loneBare(packed) }),
+      semicolon,
+    ],
     namespace_statement: () => inOrder({ join: "space", tight: { before: [";"] } }),
     // Prettier's raw at-rule parameters: as written, one space wherever the source has any gap.
     charset_statement: () =>

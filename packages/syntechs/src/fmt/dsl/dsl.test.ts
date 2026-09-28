@@ -15,6 +15,7 @@ import {
   bail,
   type DslGrammar,
   defineFormat,
+  either,
   fieldIs,
   grpBrace,
   grpBracket,
@@ -466,4 +467,13 @@ it("`bail(reason, when)` leaves the file unformatted exactly where the reference
   } finally {
     rmSync(file);
   }
+});
+
+// Without the check, the generated code would bind a literal after `either` by the ordinal of whichever branch it
+// emitted last, printing the wrong source token where the other branch ran.
+it("emit refuses a literal whose ordinal depends on which branch of `either` ran", () => {
+  const ir = defineFormat<typeof jsonGrammar, JsonOptions>()({
+    structure: { array: () => [either(parentIs("array"), "[", []), "["] },
+  });
+  expect(() => emit({ either: ir }, jsonGrammar as DslGrammar, "dsl.test.ts")).toThrow(/after an either/);
 });

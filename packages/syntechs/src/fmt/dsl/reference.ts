@@ -148,6 +148,8 @@ export function danglingOwner(tree: Tree): Tree | undefined {
     case "opt":
     case "tokIf":
       return danglingOwner(tree.then);
+    case "either":
+      return danglingOwner(tree.then) ?? danglingOwner(tree.else);
     default:
       return undefined;
   }
@@ -367,6 +369,16 @@ export function flatten<O>(
         }
         case "custom":
           throw new Error("flatten: `custom` is a whole rule, never part of one");
+        case "either":
+          walk(evalCond(x.when, ctx, n, custom, kindHasFields) ? x.then : x.else);
+          return;
+        case "spell": {
+          const c = token(x.text);
+          if (c === -1) return;
+          const fn = normalizers[x.fn] as (s: string, o: unknown) => string;
+          out.push({ e: "tok", node: c, text: fn(t.text(c), ctx.options), synthetic: false });
+          return;
+        }
         case "splitOn": {
           const run = splitRun(ctx, n, x.sep, x.except, x.trail);
           const holds = (c: Cond) => evalCond(c, ctx, n, custom, kindHasFields, run);
@@ -881,6 +893,8 @@ export function holdsList(tree: Tree): boolean {
     case "opt":
     case "tokIf":
       return holdsList(tree.then);
+    case "either":
+      return holdsList(tree.then) || holdsList(tree.else);
     default:
       return false;
   }
