@@ -218,7 +218,4 @@ export const stmtSimpleVia = {
     const entries = targets.map((t) => ({ end: t.end, write: () => writeExpr(f, t) }));
     f.writeParenthesizeIfExpands(s.kw, () => f.writeJoinCommaSeparated(entries, s.end, comma));
   },
-  "simple.python2": (n: number, ctx: StreamCtx<unknown>) => {
-    throw new Unformattable(`Python 2: ${ctx.tree.kindName(n)} at ${byteOffsetOf(ctx.tree, n)}`);
-  },
 };

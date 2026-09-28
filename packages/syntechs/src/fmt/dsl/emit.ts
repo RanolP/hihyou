@@ -27,7 +27,7 @@ function eachCond(ir: FormatIR, visit: (c: Cond) => void): void {
     else if (c.t === "all" || c.t === "any") c.cs.forEach(cond);
   };
   const walk = (x: Tree): void => {
-    if (x.t === "text") cond(x.when);
+    if (x.t === "text" || x.t === "bail") cond(x.when);
     else if (x.t === "seq") x.parts.forEach(walk);
     else if (x.t === "opt") walk(x.then);
     else if (x.t === "tokIf") {
@@ -231,6 +231,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
       }
       case "tokIf":
       case "self":
+      case "bail":
         throw new Error(`emit: a bracket idiom around \`${x.t}\` whose emptiness is not generated yet`);
       case "tok":
       case "space":
@@ -417,6 +418,11 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
         if (!self) throw new Error("emit: `self` outside a token's `andThen`");
         self();
         return;
+      case "bail": {
+        const raise = `throw new Bail(t, node, ${str(x.reason)});`;
+        line(x.when === true ? raise : `if (${when(x.when)}) ${raise}`);
+        return;
+      }
       case "ref": {
         const c = name("c");
         line(`const ${c} = ${refChild(x)};`);
@@ -668,6 +674,12 @@ export function emit(
       parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
       0,
       'import { parentIs } from "../../fmt/dsl/runtime.js";',
+    );
+  if (parts.some((p) => p.includes("new Bail(")))
+    parts.splice(
+      parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
+      0,
+      'import { Bail } from "../../fmt/dsl/runtime.js";',
     );
   // The normalizers the `text` rules name, each called directly (a `text` is only ever a whole rule).
   const fns = new Set<NormalizerName>();

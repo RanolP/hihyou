@@ -126,7 +126,9 @@ export type Tree =
    * token, such as an inserted `;`, counting as none); where `when` fails, the source's prints as nothing.
    */
   | { readonly t: "tokIf"; readonly text: string; readonly synth?: Cond; readonly then: Tree }
-  | { readonly t: "self" };
+  | { readonly t: "self" }
+  /** Where `when` holds, the node is input the formatter must not touch, and the file stays as written (`Bail`). */
+  | { readonly t: "bail"; readonly reason: string; readonly when: Cond };
 
 /** How one bracket or list frame of a node breaks. */
 export interface FrameWrap {
@@ -249,6 +251,7 @@ export type TokenTree<G extends Grammar, O> =
   | Piece<{ sepBy: TokenOf<G>; trailing: CondOf<O> }>
   | Piece<{ tokIf: TokenOf<G>; synth: CondIn<G, O>; then: TokenTree<G, O> }>
   | Piece<"self">
+  | Piece<{ bail: CondIn<G, O> }>
   | readonly TokenTree<G, O>[];
 
 /** `tok(text).synth(when)`'s and `tok(text).andThen(f)`'s output. */
@@ -368,6 +371,13 @@ const tokIfTree = (text: string, when: unknown, then: unknown): Tree =>
 const tokIf = <S extends string, W>(text: S, when: unknown) => ({
   andThen: <T>(f: (t: Piece<"self">) => T): TokIf<S, W, T> => piece(tokIfTree(text, when, f(self))),
 });
+
+/**
+ * The node, where `when` holds (always, without it), is input the formatter must not touch, such as Python 2's
+ * `print` statement: formatting stops with `reason`, and the file stays as written.
+ */
+export const bail = <const W = true>(reason: string, when?: W): Piece<{ bail: W }> =>
+  piece({ t: "bail", reason, when: when === undefined ? true : plain(when) });
 
 /** Where a `tok(...).andThen(f)` prints its token, in what `f` returns. */
 const self: Piece<"self"> = piece({ t: "self" });

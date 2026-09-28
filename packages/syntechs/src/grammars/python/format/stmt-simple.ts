@@ -1,5 +1,5 @@
 // One-line statements.
-import { custom, inOrder, space } from "../../../fmt/dsl/dsl.js";
+import { bail, custom, inOrder, space } from "../../../fmt/dsl/dsl.js";
 import type { Structure } from "../format.js";
 
 export const stmtSimple = {
@@ -53,7 +53,7 @@ export const stmtSimple = {
   augmented_assignment: () => custom("simple.assignment"),
   type_alias_statement: ($) => ["type", space, $.left.via("simple.typeAlias")],
   // Python 2, which ruff does not parse: the file is left as written.
-  print_statement: () => custom("simple.python2"),
-  exec_statement: () => custom("simple.python2"),
-  chevron: () => custom("simple.python2"),
+  print_statement: () => bail("Python 2"),
+  exec_statement: () => bail("Python 2"),
+  chevron: () => bail("Python 2"),
 } satisfies Structure;

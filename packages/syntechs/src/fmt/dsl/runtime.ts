@@ -10,7 +10,8 @@ import {
   printTrailingComments,
   type StreamCtx,
 } from "../stream-format.js";
-import type { FormatTree } from "../tree.js";
+import type { Tree } from "../../core/arena.js";
+import { type FormatTree, firstLeaf } from "../tree.js";
 
 /**
  * An entry of the flattened sequence (`reference.ts`'s `flatten`): the whole document as tokens, spaces, hard
@@ -223,6 +224,16 @@ export function separators(
       seps[seen - 1] = c;
   }
   return seps;
+}
+
+/**
+ * Thrown by a `bail(reason)` rule: `node` is input the formatter must not touch (Python 2), so the file stays as
+ * written. The offset is for the message only, read off the `Tree` a `FormatTree` always is.
+ */
+export class Bail extends Error {
+  constructor(tree: FormatTree, node: number, reason: string) {
+    super(`${reason}: ${tree.kindName(node)} at ${(tree as unknown as Tree).start(firstLeaf(tree, node))}`);
+  }
 }
 
 /** Whether `node`'s parent is of kind `kind` (a `parentIs` condition). */

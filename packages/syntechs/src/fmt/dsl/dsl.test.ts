@@ -12,6 +12,7 @@ import type { StreamRules } from "../stream-format.js";
 import {
   all,
   any,
+  bail,
   type DslGrammar,
   defineFormat,
   fieldIs,
@@ -436,6 +437,32 @@ it("`tok(t).synth(when).andThen(f)` prints the token and `f` exactly where the r
     const want = '{"a": 1, "b"[2]}\n';
     expect(run(text, generated)).toBe(want);
     expect(run(text, reference)).toBe(want);
+  } finally {
+    rmSync(file);
+  }
+});
+
+// A `bail` that did not throw, or threw where its condition fails, would format input the spec must leave alone
+// (Python 2), or leave alone input it formats.
+it("`bail(reason, when)` leaves the file unformatted exactly where the reference does", async () => {
+  const ir = defineFormat<typeof jsonGrammar, JsonOptions>()({
+    structure: {
+      document: ($) => lines($.children),
+      array: ($) => [bail("nested", parentIs("array")), grpBracket(sepBy(",", $.children))],
+      number: () => verbatim,
+    },
+  });
+  const file = join(import.meta.dirname, "bail-equivalence.gen.ts");
+  writeFileSync(file, emit({ bail: ir }, jsonGrammar as DslGrammar, "dsl.test.ts"));
+  try {
+    const gen = (await import(pathToFileURL(file).href)) as {
+      bail: (custom: object) => StreamRules<JsonOptions>;
+    };
+    for (const stream of [gen.bail({}), referenceRules<JsonOptions>(ir, jsonGrammar as DslGrammar, {})]) {
+      const run = (text: string) => formatTree(parseTree(jsonLanguage, text), { ...json, stream }, {});
+      expect(run("[1]")).toMatchObject({ ok: true, text: "[1]\n" });
+      expect(run("[[1]]")).toMatchObject({ ok: false, reason: "formatter-error", detail: "nested: array at 1" });
+    }
   } finally {
     rmSync(file);
   }

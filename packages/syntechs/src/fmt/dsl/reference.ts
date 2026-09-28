@@ -47,6 +47,7 @@ import {
   type Wrap,
 } from "./dsl.js";
 import {
+  Bail,
   commentEntry,
   type CustomRule,
   type FrameRule,
@@ -231,6 +232,9 @@ export function flatten<O>(
         case "self":
           if (!self) throw new Error("reference: `self` outside a token's `andThen`");
           out.push(self);
+          return;
+        case "bail":
+          if (evalCond(x.when, ctx, n, custom, kindHasFields)) throw new Bail(t, n, x.reason);
           return;
         case "ref": {
           const c = refChild(x);
