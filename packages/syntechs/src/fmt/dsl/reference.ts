@@ -116,6 +116,8 @@ export const evalCond = <O>(
     }
     case "field":
       return ctx.tree.fieldName(node) === c.name;
+    case "empty":
+      return ctx.items(node).length === 0 && ctx.danglingComments(node).length === 0;
     case "has":
       return hasChild(ctx, node, c.name, c.kind, kindHasFields);
     case "kind":
@@ -327,6 +329,7 @@ export function flatten<O>(
           return;
         }
         case "lines": {
+          if (x.attach !== undefined) throw new Error("flatten: `lines` with `attach` is generated only, not referenced yet");
           const items = listItems(ctx, n, x.list.name, kindHasFields).slice(x.list.from ?? 0);
           // Nothing to lay out leaves no frame, so a bracket body of only this is empty.
           if (items.length === 0 && (owner !== x || dangling().length === 0)) return;

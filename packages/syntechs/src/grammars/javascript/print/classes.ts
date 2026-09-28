@@ -339,49 +339,6 @@ const ownSemicolon = (x: HasTree, n: number) => {
     : undefined;
 };
 
-/** Prettier's printClassBody. */
-const classBody: CustomRule<JsOptions> = (n, sctx) => {
-  const { js: ctx } = jsCtx(sctx);
-  // A method's decorators parse as its siblings in the class body; they print with the member they precede.
-  const members: number[] = [];
-  const decoratorsBefore = new Map<number, number[]>();
-  let pending: number[] = [];
-  for (const c of items(ctx, n)) {
-    if (kind(ctx, c) === "decorator") pending.push(c);
-    else {
-      if (pending.length > 0) decoratorsBefore.set(c, pending);
-      pending = [];
-      members.push(c);
-    }
-  }
-  const dangling = sctx.danglingComments(n);
-  tok(ctx, anon(ctx, n, "{"));
-  if (members.length > 0 || dangling.length > 0) {
-    open(INDENT);
-    sHardline();
-    members.forEach((m, i) => {
-      const decorators = decoratorsBefore.get(m);
-      if (decorators !== undefined) sPrintDecorators(sctx, decorators);
-      sctx.print(m);
-      const next = members[i + 1];
-      if (next !== undefined) {
-        sHardline();
-        if (nextLineEmpty(ctx.tree, m)) sHardline();
-      }
-    });
-    dangling.forEach((c, i) => {
-      if (i > 0) sHardline();
-      sctx.comment(c);
-    });
-    close();
-    sHardline();
-  }
-  tok(
-    ctx,
-    lastChildWhere(ctx, n, (c) => !named(ctx, c) && kind(ctx, c) === "}"),
-  );
-};
-
 /** The member of `n`'s class body after `n`, a decorator of it aside. */
 function nextMember(x: HasTree, n: number): number | undefined {
   const up = parent(x, n);
@@ -470,7 +427,6 @@ const abstractMethod: CustomRule<JsOptions> = (n, sctx) => {
 
 export const classCustoms = {
   class: printClass,
-  "class.body": classBody,
   "class.property": classProperty,
   "class.semi": classSemi,
   "class.abstractMethod": abstractMethod,

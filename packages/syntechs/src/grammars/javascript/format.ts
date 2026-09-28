@@ -38,4 +38,7 @@ export const javascript = format({
     ...jsx,
     ...literals,
   },
+  wrapping: {
+    class_body: { blankLines: "force" },
+  },
 });

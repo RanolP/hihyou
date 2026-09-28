@@ -170,6 +170,8 @@ const cond = (c: Cond, hasFields: boolean, self = "node", run?: string): string 
       return `custom[${str(c.name)}](${[self, "ctx", ...c.args.map(str)].join(", ")})`;
     case "field":
       return `t.fieldName(${self}) === ${str(c.name)}`;
+    case "empty":
+      return `(ctx.items(${self}).length === 0 && ctx.danglingComments(${self}).length === 0)`;
     case "has":
       // Another node's kind, and so whether it has fields, is known only at run time; taking it to have them
       // still finds its children in no field, which are all of them when it has none.
@@ -674,8 +676,35 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
         return;
       }
       case "lines": {
-        const its = items(x);
-        block(`for (let i = 0; i < ${its}.length; i++)`, () => {
+        let its = x.attach === undefined ? items(x) : "";
+        if (x.attach !== undefined) {
+          // Every item of the node in source order: the attached ones, and the rest as the lines (a grammar may put
+          // them in a field, like tree-sitter-javascript's class_body `member`, where `children` would miss them).
+          const attached = name("attached");
+          its = name("run");
+          line(`const ${attached} = listItems(ctx, node, ${str(x.attach)}, ${hasFields});`);
+          line(`const ${its} = ctx.items(node);`);
+          block(`for (let i = 0, a = 0; i < ${its}.length; i++)`, () => {
+            // `a`: the first item since the last one printed, the start of the attached run before `item`.
+            line(`const item = ${its}[i] as number;`);
+            line(`if (${attached}.includes(item)) continue;`);
+            line("if (a > 0) sHardline();");
+            block("if (a < i)", () => {
+              line("open(GROUP);");
+              block("for (let j = a; j < i; j++)", () => {
+                line("if (j > a) sLine(0);");
+                line(`ctx.print(${its}[j] as number);`);
+              });
+              line(`if (${its}.slice(a, i).some((d) => lfAfter(t, d) > 0)) sHardline();`);
+              line("else sLine(0);");
+              line("close();");
+            });
+            child("item");
+            line("a = i + 1;");
+            if (frameWrap(rule, x.list.name).blankLines !== undefined)
+              line(`if (i < ${its}.length - 1 && nextLineEmpty(t, item)) sHardline();`);
+          });
+        } else block(`for (let i = 0; i < ${its}.length; i++)`, () => {
           line("if (i > 0) sHardline();");
           line(`const item = ${its}[i] as number;`);
           child("item");
@@ -953,6 +982,12 @@ export function emit(
       parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
       0,
       'import { firstTextIs } from "../../fmt/dsl/runtime.js";',
+    );
+  if (parts.some((p) => p.includes("lfAfter(")))
+    parts.splice(
+      parts.indexOf('import { newlineBetween, nextLineEmpty } from "../../fmt/text.js";') + 1,
+      0,
+      'import { lfAfter } from "../../fmt/text.js";',
     );
   // The stream's layout calls only the specs with layout frames make, imported from the sink.
   const layout = ["openIndentIfBreak", "sLineSuffixBoundary"].filter((f) => parts.some((p) => p.includes(`${f}(`)));

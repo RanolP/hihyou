@@ -1,5 +1,15 @@
 // Classes, interfaces and decorators (customs: print/classes.ts).
-import { custom, type FormatSpec, space, tok } from "../../../fmt/dsl/dsl.js";
+import {
+  custom,
+  either,
+  type FormatSpec,
+  hardline,
+  indent,
+  isEmpty,
+  lines,
+  space,
+  tok,
+} from "../../../fmt/dsl/dsl.js";
 import type { grammar } from "../bundle.js";
 import type { JsStructure } from "../format.js";
 import type { JsOptions } from "../print/util.js";
@@ -14,7 +24,12 @@ export const classes = {
   class_declaration: () => custom("class"),
   abstract_class_declaration: () => custom("class"),
   interface_declaration: () => custom("class"),
-  class_body: () => custom("class.body"),
+  // A method's decorators parse as its siblings in the class body; they print with the member they precede.
+  class_body: ($) => [
+    "{",
+    either(isEmpty, [], [indent([hardline, lines($.children, { attach: $.decorator })]), hardline]),
+    "}",
+  ],
   ...jsOnly,
   public_field_definition: () => [tok("=").via("class.property"), tok(";").via("class.semi")],
   abstract_method_signature: () => custom("class.abstractMethod"),

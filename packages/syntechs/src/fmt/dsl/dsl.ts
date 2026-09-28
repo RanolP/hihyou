@@ -107,6 +107,8 @@ export type LogicCond =
   | { readonly t: "field"; readonly name: string }
   /** The node's field `name` (`children`: its children in no field) holds a child, of `kind` if given (`has`). */
   | { readonly t: "has"; readonly name: string; readonly kind?: string }
+  /** The node holds no item and no dangling comment (`isEmpty`). */
+  | { readonly t: "empty" }
   | { readonly t: "not"; readonly c: Cond }
   | { readonly t: "all" | "any"; readonly cs: readonly Cond[] }
   /** The node is of one of `kinds` (`kindIs`). */
@@ -151,7 +153,8 @@ export type Tree =
       readonly list: Ref;
       readonly trailing: Cond;
     }
-  | { readonly t: "lines"; readonly list: Ref }
+  /** `attach`: the field whose children print with the next item, before it (see `lines`). */
+  | { readonly t: "lines"; readonly list: Ref; readonly attach?: string }
   | {
       readonly t: "inOrder";
       readonly join: Join;
@@ -387,6 +390,9 @@ export interface HasCond<K> {
   readonly name: string;
   readonly kind?: K;
 }
+export interface EmptyCond {
+  readonly t: "empty";
+}
 export interface NotCond<C> {
   readonly t: "not";
   readonly c: C;
@@ -409,6 +415,7 @@ export type CondIn<G extends Grammar, O> =
   | ParentCond<KindOf<G>>
   | FieldCond
   | HasCond<KindOf<G>>
+  | EmptyCond
   | NotCond<CondIn<G, O>>
   | AllCond<CondIn<G, O>>
   | KindCond<KindOf<G>>
@@ -590,8 +597,22 @@ export const sepBy = <const S extends string, T = false>(
   });
 
 /** The items of `list` one per line, then the node's dangling comments, one per line. */
-export const lines = (list: List): Piece<"lines"> =>
-  piece({ t: "lines", list: refOf(list) });
+export const lines = (
+  list: List,
+  o: {
+    /**
+     * Children that print before the next item rather than on lines of their own, like a class member's
+     * decorators: joined by a line in a group, then a line break where the source breaks after one of them, else a
+     * line. With it, the lines are every other item of the node, whatever field holds them.
+     */
+    readonly attach?: List;
+  } = {},
+): Piece<"lines"> =>
+  piece(
+    o.attach === undefined
+      ? { t: "lines", list: refOf(list) }
+      : { t: "lines", list: refOf(list), attach: refOf(o.attach).name },
+  );
 
 /** Which consecutive entries of an `inOrder` a spacing rule applies to (see `Pairs`). */
 export interface PairsOf<K, C> {
@@ -657,6 +678,9 @@ export const fieldIs = (name: string): FieldCond => ({ t: "field", name });
 /** The node's field `name` (`children`: its children in no field) holds a child, of `kind` when given. */
 export const has = <const K extends string = never>(name: string, kind?: K): HasCond<K> =>
   kind === undefined ? { t: "has", name } : { t: "has", name, kind };
+
+/** The node holds no item, in any field, and no comment next to none of its children: an empty body. */
+export const isEmpty: EmptyCond = { t: "empty" };
 
 export const not = <const C>(c: C): NotCond<C> => ({ t: "not", c });
 
@@ -819,6 +843,8 @@ function plain(c: unknown): Cond {
       return { t: "field", name: x.name };
     case "has":
       return x.kind === undefined ? { t: "has", name: x.name } : { t: "has", name: x.name, kind: x.kind };
+    case "empty":
+      return { t: "empty" };
     case "not":
       return { t: "not", c: plain(x.c) };
     case "all":
