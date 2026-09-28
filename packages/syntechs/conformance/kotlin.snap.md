@@ -1,4 +1,4 @@
-kotlin compatibility: 378/752 (50.27%), 55 refused (ok:false), 12 excluded
+kotlin compatibility: 385/753 (51.13%), 55 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -10,10 +10,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | :------ | :---------: | :---------: |
 | annotations.txt: Multi-annotations | 0/1 | 0.00% |
 | comments.txt: Comments | 0/1 | 76.19% |
-| functions.txt: Anonymous function with body | 0/1 | 16.67% |
-| newlines.txt: Colon after newline | 0/1 | 0.00% |
 | source-files.txt: Multiple Imports On A Single Line | 0/1 | 50.00% |
-| types.txt: Type references | 0/1 | 50.00% |
 | packages\syntechs\src\grammars\kotlin\corpus\Collections.kt | 0/1 | 92.93% |
 | packages\syntechs\src\grammars\kotlin\corpus\Result.kt | 0/1 | 94.78% |
 | packages\syntechs\src\grammars\kotlin\corpus\Delay.kt | 0/1 | 92.75% |
@@ -42,8 +39,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/call/breakBeforeLambda.kt | 0/1 | 28.57% |
 | ktfmt/format/call/callArgsStickToFunctionName.kt | 0/1 | 60.00% |
 | ktfmt/format/call/callChain.kt | 0/1 | 24.39% |
-| ktfmt/format/call/callChainOnTheSameLineBeforeLambda.kt | 0/1 | 13.33% |
-| ktfmt/format/call/chainStartingWithLambda.kts | 0/1 | 33.33% |
+| ktfmt/format/call/callChainOnTheSameLineBeforeLambda.kt | 0/1 | 86.67% |
 | ktfmt/format/call/chainWithBlockAfterDereferencing.kt | 0/1 | 66.67% |
 | ktfmt/format/call/chainWithBlockAfterDereferencing2.kt | 0/1 | 66.67% |
 | ktfmt/format/call/chainWithDereferences.kt | 0/1 | 50.00% |
@@ -120,7 +116,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/import/usedImportsFromSamePackage.kt | 0/1 | 94.12% |
 | ktfmt/format/kdoc/basic.kt | 0/1 | 0.00% |
 | ktfmt/format/kdoc/codeBlockStability.kt | 0/1 | 92.31% |
-| ktfmt/format/kdoc/codeBlockStability2.kt | 0/1 | 0.00% |
 | ktfmt/format/kdoc/codeBlockWithTripleBacktick.kt | 0/1 | 93.33% |
 | ktfmt/format/kdoc/codeBlocks.kt | 0/1 | 97.14% |
 | ktfmt/format/kdoc/nestedKDoc.kt | 0/1 | 0.00% |
@@ -145,7 +140,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/lambda/preserveLambdaBreaksDanglingBracket.kt | 0/1 | 75.00% |
 | ktfmt/format/lambda/preserveLambdaBreaksDisabled.kt | 0/1 | 75.00% |
 | ktfmt/format/lambda/preserveLambdaBreaksMixed.kt | 0/1 | 81.82% |
-| ktfmt/format/lambda/preserveLambdaBreaksNonTrailingLambdas.kt | 0/1 | 18.18% |
+| ktfmt/format/lambda/preserveLambdaBreaksNonTrailingLambdas.kt | 0/1 | 81.82% |
 | ktfmt/format/lambda/preserveLambdaBreaksSingleStatement.kt | 0/1 | 75.00% |
 | ktfmt/format/lambda/qualifiedExpressionsWithLambdas.kt | 0/1 | 79.69% |
 | ktfmt/format/lambda/twoLambdas.kt | 0/1 | 50.00% |
@@ -164,7 +159,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/misc/explicitBackingField.kt | 0/1 | 71.43% |
 | ktfmt/format/misc/explicitBackingFieldWithoutType.kt | 0/1 | 75.00% |
 | ktfmt/format/misc/explicitBackingWithPrivateSet.kt | 0/1 | 80.00% |
-| ktfmt/format/misc/forLoopWithLongCondition.kt | 0/1 | 14.29% |
 | ktfmt/format/misc/gh243.kt | 0/1 | 76.19% |
 | ktfmt/format/misc/labels.kt | 0/1 | 78.79% |
 | ktfmt/format/misc/redundantSemicolons.kt | 0/1 | 95.65% |
@@ -173,7 +167,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/misc/trailingCommaOnSingleParameter.kt | 0/1 | 50.00% |
 | ktfmt/format/misc/trailingCommaOnSingleParameter2.kt | 0/1 | 50.00% |
 | ktfmt/format/misc/trailingCommas.kt | 0/1 | 22.81% |
-| ktfmt/format/misc/unaryPostfix.kt | 0/1 | 18.18% |
+| ktfmt/format/misc/unaryPostfix.kt | 0/1 | 90.00% |
 | ktfmt/format/misc/unaryPrefix.kt | 0/1 | 57.89% |
 | ktfmt/format/property/backingFieldWithChainedScopingFunction.kt | 0/1 | 46.15% |
 | ktfmt/format/property/backingFieldWithChainedScopingFunction2.kt | 0/1 | 46.15% |
@@ -213,6 +207,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/type/nestedQualifiedTypes.kt | 0/1 | 40.00% |
 | ktfmt/format/type/trailingCommasInFunctionTypes.kt | 0/1 | 50.00% |
 | ktfmt/format/when/guards.kt | 0/1 | 58.33% |
+| ktfmt/format/when/isAndIn.kt | 0/1 | 53.85% |
 | ktfmt/format/when/lineBreaks.kt | 0/1 | 21.74% |
 | ktfmt/format/when/multilineCondition.kt | 0/1 | 86.67% |
 | ktfmt/format/when/multipleConditions.kt | 0/1 | 76.92% |
@@ -283,14 +278,13 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/kdoc/testHtmlLists.kt | 0/1 | 50.00% |
 | ktfmt/kdoc/testVariousMarkup.kt | 0/1 | 75.52% |
 | ktfmt/kdoc/testListContinuations.kt | 0/1 | 83.33% |
-| ktfmt/kdoc/testTODO.kt | 0/1 | 0.00% |
+| ktfmt/kdoc/testTODO.kt | 0/1 | 37.21% |
 | ktfmt/kdoc/testReorderTags.kt | 0/1 | 83.33% |
 | ktfmt/kdoc/testNoReorderSample.kt | 0/1 | 91.89% |
 | ktfmt/kdoc/testKDocOrdering.kt | 0/1 | 92.31% |
 | ktfmt/kdoc/testHtml.kt | 0/1 | 50.11% |
 | ktfmt/kdoc/testPreserveParagraph.kt | 0/1 | 0.00% |
 | ktfmt/kdoc/testNestedBullets.kt | 0/1 | 50.00% |
-| ktfmt/kdoc/testGreedyLineBreak.kt | 0/1 | 0.00% |
 | ktfmt/kdoc/test193246766.kt | 0/1 | 33.33% |
 | ktfmt/kdoc/test203584301.kt | 0/1 | 72.73% |
 | ktfmt/kdoc/test209435082.kt | 0/1 | 50.00% |
@@ -392,7 +386,7 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 # Excluded
 
-## ktfmt rejects the input (12)
+## ktfmt rejects the input (11)
 
 - expressions.txt: Safe Navigation
 - expressions.txt: Less than for comparison
@@ -405,4 +399,3 @@ The formatter threw (ok:false), or `check` found that its output says something 
 - ktfmt/format/annotation/desctucturingDeclaration.kt
 - ktfmt/format/misc/nameBasedDestructuringDeclaration.kt
 - ktfmt/format/misc/twoModifierLists.kt
-- ktfmt/format/when/isAndIn.kt

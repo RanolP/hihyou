@@ -76,11 +76,9 @@ export function formatAll(
   const jarPath = ktfmtJar();
   const dir = mkdtempSync(join(tmpdir(), "syntechs-ktfmt-"));
   try {
-    const paths = inputs.map(({ name, text }, i) => {
-      const path = join(dir, `${i}${name.endsWith(".kts") ? ".kts" : ".kt"}`);
-      writeFileSync(path, text);
-      return path;
-    });
+    const paths = inputs.map(({ name }, i) =>
+      join(dir, `${i}${name.endsWith(".kts") ? ".kts" : ".kt"}`),
+    );
     const out: (string | Error | undefined)[] = paths.map(() => undefined);
     // A FormattingError ktfmt throws on one file (its printer failing, not the parser) ends the whole run
     // after reporting that file, so the files it had not reached run again until every one has a report.
@@ -89,6 +87,10 @@ export function formatAll(
         out[i] === undefined ? [i] : [],
       );
       if (pending.length === 0) return out as (string | Error)[];
+      // ktfmt formats files in parallel and in place, so the run that crashed can leave an unreported file
+      // half-written (often empty); every round starts again from the original text.
+      for (const i of pending)
+        writeFileSync(paths[i] as string, (inputs[i] as { text: string }).text);
       // ktfmt formats in place; an argfile keeps a long input list off the command line.
       const args = join(dir, "args.txt");
       writeFileSync(
@@ -103,7 +105,8 @@ export function formatAll(
       for (const i of pending) {
         const path = paths[i] as string;
         const name = inputs[i]?.name ?? path;
-        const own = lines.filter((l) => l.includes(path));
+        // `${path}:` and not `path` alone, which would also match `1.kt` inside `10.kt`'s lines.
+        const own = lines.filter((l) => l.startsWith(`${path}:`));
         if (lines.includes(`Done formatting ${path}`))
           out[i] = readFileSync(path, "utf8");
         else if (own.length > 0)
