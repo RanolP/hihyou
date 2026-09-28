@@ -72,7 +72,7 @@ const operators = new Set(
   (
     "unaryPlus unaryMinus not inc dec plus minus times div rem mod rangeTo rangeUntil contains get set invoke " +
     "plusAssign minusAssign timesAssign divAssign remAssign modAssign equals compareTo iterator next hasNext " +
-    "getValue setValue provideDelegate and or xor shl shr ushr inv"
+    "getValue setValue provideDelegate assign and or xor shl shr ushr inv"
   ).split(" "),
 );
 
@@ -95,7 +95,7 @@ const imports: ImportRule<KotlinOptions> = {
       (path === -1 ? "" : spelled(tree, path)) +
       (wildcard ? ".*" : "") +
       (alias === -1 ? "" : ` as ${spelled(tree, alias).replace(/^as/, "")}`)
-    );
+    ).replaceAll("`", ""); // ktfmt sorts by the unescaped name.
   },
   binds: (tree, imp) => {
     if (childOf(tree, imp, "wildcard_import") !== -1) return undefined;
@@ -103,9 +103,11 @@ const imports: ImportRule<KotlinOptions> = {
     if (alias !== -1) return spelled(tree, alias).replace(/^as/, "").replaceAll("`", "");
     const path = childOf(tree, imp, "identifier");
     if (path === -1) return undefined;
-    return tree.text(tree.child(path, tree.count(path) - 1)).replaceAll("`", "");
+    // An escaped segment may hold dots (`com.example.Foo.bar`); ktfmt's FqName binds the part after the last one.
+    return tree.text(tree.child(path, tree.count(path) - 1)).replaceAll("`", "").split(".").pop();
   },
   identifiers: new Set(["simple_identifier", "type_identifier"]),
+  name: (text) => text.replaceAll("`", ""),
   skip: new Set(["import_list", "package_header"]),
   commentNames: kdocNames,
   implicit: (name) => operators.has(name) || /^component\d+$/.test(name),

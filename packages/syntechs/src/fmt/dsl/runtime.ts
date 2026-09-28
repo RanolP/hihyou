@@ -179,6 +179,8 @@ export interface ImportRule<O = unknown> {
   binds(tree: FormatTree, imp: number): string | undefined;
   /** Kinds whose text uses the name it spells. */
   readonly identifiers: ReadonlySet<string>;
+  /** The name identifier `text` spells, like Kotlin's without its backticks; the text itself by default. */
+  name?(text: string): string;
   /** Kinds whose identifiers are no use: the imports themselves, a package header. */
   readonly skip: ReadonlySet<string>;
   /** The names comment `text` refers to, like a doc comment's links. */
@@ -194,27 +196,26 @@ export interface ImportBlock {
   readonly last: number;
 }
 
-/** The identifier texts and comment references of the whole file, outside `rule.skip`. */
+/** The identifier names and comment references of the whole file; identifiers under `rule.skip` spell no use. */
 function usedNames<O>(ctx: StreamCtx<O>, rule: ImportRule<O>): Set<string> {
   const tree = ctx.tree;
   const used = new Set<string>();
-  const stack = [tree.root];
-  for (let n = stack.pop(); n !== undefined; n = stack.pop()) {
-    const kind = tree.kindName(n);
+  // A comment under a skipped kind, however deep (the parser may put the file's next doc comment inside the
+  // import list), still refers to names.
+  const stack: [number, boolean][] = [[tree.root, false]];
+  for (let top = stack.pop(); top !== undefined; top = stack.pop()) {
+    const [n, skipped] = top;
     if (ctx.isComment(n)) {
       if (rule.commentNames) for (const name of rule.commentNames(tree.text(n))) used.add(name);
       continue;
     }
-    if (rule.identifiers.has(kind)) used.add(tree.text(n));
-    if (rule.skip.has(kind)) {
-      // A comment inside an import still refers to names.
-      for (let i = 0, count = tree.count(n); i < count; i++) {
-        const c = tree.child(n, i);
-        if (ctx.isComment(c)) stack.push(c);
-      }
-      continue;
+    const kind = tree.kindName(n);
+    const skip = skipped || rule.skip.has(kind);
+    if (!skip && rule.identifiers.has(kind)) {
+      const text = tree.text(n);
+      used.add(rule.name ? rule.name(text) : text);
     }
-    for (let i = 0, count = tree.count(n); i < count; i++) stack.push(tree.child(n, i));
+    for (let i = 0, count = tree.count(n); i < count; i++) stack.push([tree.child(n, i), skip]);
   }
   return used;
 }

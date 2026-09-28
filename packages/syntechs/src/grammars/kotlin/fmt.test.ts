@@ -57,3 +57,10 @@ test("keepImports sorts the imports but keeps every line, unused and duplicate o
 test("by default the imports are sorted, deduplicated and pruned of unused ones, as ktfmt does", () => {
   expect(run(importsInput, false)).toBe("import b.Used\nimport c.*\n\nfun f(x: Used) = x\n");
 });
+
+// A regression here breaks the formatted file's compile: each import is used, but only through a KDoc link in a
+// file without a package header, a backticked name, or the `=` operator convention (#80).
+test("pruning keeps imports used only by KDoc, backticked names or operator conventions", () => {
+  const used = "import a.Bag\nimport a.`when`\nimport b.assign\n\n/** Fits a [Bag]. */\nfun f() = `when`()\n";
+  expect(run(used, false)).toBe(used);
+});
