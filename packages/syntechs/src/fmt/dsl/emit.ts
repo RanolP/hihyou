@@ -695,7 +695,11 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
         return;
       }
       case "lines": {
-        let its = x.attach === undefined ? items(x) : "";
+        let its = x.attach !== undefined ? "" : x.tokens ? name("items") : items(x);
+        if (x.tokens)
+          line(
+            `const ${its} = Array.from({ length: t.count(node) }, (_, i) => t.child(node, i)).filter((c) => !ctx.isComment(c) && (!t.named(c) || ctx.items(node).includes(c)));`,
+          );
         if (x.attach !== undefined) {
           // Every item of the node in source order: the attached ones, and the rest as the lines (a grammar may put
           // them in a field, like tree-sitter-javascript's class_body `member`, where `children` would miss them).
@@ -739,6 +743,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
             line(
               `if (i > 0${frameWrap(rule, x.list.name).blankLines === undefined ? "" : ` && !nextLineEmpty(t, ${its}[i - 1] as number)`} && ${cond(x.blank, false, "item")}) sHardline();`,
             );
+          if (x.tokens) line("if (!t.named(item)) sToken(item, t.text(item)); else");
           child("item");
           if (frameWrap(rule, x.list.name).blankLines !== undefined)
             line(`if (i < ${its}.length - 1 && nextLineEmpty(t, item)) sHardline();`);

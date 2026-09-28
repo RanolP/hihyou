@@ -86,7 +86,7 @@ export const kotlin = format({
     import_alias: () => inOrder(space),
     identifier: () => inOrder(),
     file_annotation: () => inOrder(),
-    statements: ($) => lines($.children),
+    statements: ($) => lines($.children, { tokens: true }),
 
     modifiers: () =>
       either(
@@ -110,7 +110,12 @@ export const kotlin = format({
       ),
     enum_entry: () => spaced(),
     primary_constructor: ($) =>
-      either(has("children", "modifiers"), bail("a primary constructor with modifiers"), grpParen(sepBy(",", $.children, { trailing: true }))),
+      either(
+        has("children", "modifiers"),
+        // `internal constructor(...)`: spaced off the class name, which prints tight before this node.
+        [space, spaced({ tightBefore: ["("] })],
+        grpParen(sepBy(",", $.children, { trailing: true })),
+      ),
     class_parameter: () => spaced({ tightBefore: [":"] }),
     delegation_specifier: () => spaced(),
     constructor_invocation: () => inOrder(),
@@ -145,6 +150,8 @@ export const kotlin = format({
     type_arguments: () => adjacent,
     type_parameters: () => adjacent,
     type_parameter: () => inOrder(space),
+    type_constraints: () => spaced(),
+    type_constraint: () => spaced(),
     type_projection: () => inOrder(space),
     function_type: () => spaced(),
     function_type_parameters: () => adjacent,

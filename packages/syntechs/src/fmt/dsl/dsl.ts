@@ -165,7 +165,7 @@ export type Tree =
    * but the first where it holds of the item; `follow`: an item where it holds goes on the next line, indented
    * (see `lines`).
    */
-  | { readonly t: "lines"; readonly list: Ref; readonly attach?: string; readonly blank?: Cond; readonly follow?: Cond }
+  | { readonly t: "lines"; readonly list: Ref; readonly attach?: string; readonly blank?: Cond; readonly follow?: Cond; readonly tokens?: true }
   | {
       readonly t: "inOrder";
       readonly join: Join;
@@ -655,6 +655,8 @@ export const lines = (
      * (Kotlin's getter, which the grammar makes a sibling of its property).
      */
     readonly follow?: unknown;
+    /** The node's tokens are lines too, as written: tree-sitter-kotlin's `null` statement is an anonymous child. */
+    readonly tokens?: boolean;
   } = {},
 ): Piece<"lines"> =>
   piece({
@@ -663,6 +665,7 @@ export const lines = (
     ...(o.attach === undefined ? {} : { attach: refOf(o.attach).name }),
     ...(o.blank === undefined ? {} : { blank: plain(o.blank) }),
     ...(o.follow === undefined ? {} : { follow: plain(o.follow) }),
+    ...(o.tokens ? { tokens: true } : {}),
   });
 
 /** Which consecutive entries of an `inOrder` a spacing rule applies to (see `Pairs`). */
