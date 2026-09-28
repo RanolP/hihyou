@@ -9,6 +9,7 @@ import {
   lines,
   parentIs,
   space,
+  splitOn,
   text,
   when,
 } from "../../fmt/dsl/dsl.js";
@@ -21,6 +22,9 @@ const spaced = () => inOrder(space);
 const adjacent = () => inOrder();
 /** Selectors on either side of a combinator: a line between, and after the combinator's token a space. */
 const combinator = () => inOrder({ join: "line", spaceWhen: { after: [">", "~", "+"] } });
+/** Selectors one per line, one of more than two parts indenting as it breaks; then each `trail` child after a space. */
+const selectorList = (trail: "block"[] = []) =>
+  splitOn(",", { trail, wrapItem: when("longSelector"), layout: { group: true, between: "hardline" } });
 /** Statements one per line, keeping one blank line where the source has any. */
 const statements = { blankLines: "force" } as const;
 
@@ -31,8 +35,8 @@ export const css = format({
     block: ($) => grpBrace(lines($.children)),
     keyframe_block_list: ($) => grpBrace(lines($.children)),
     rule_set: spaced,
-    selectors: () => custom("selectors"),
-    keyframe_block: () => custom("keyframeBlock"),
+    selectors: () => selectorList(),
+    keyframe_block: () => selectorList(["block"]),
     from: () => text("lower"),
     to: () => text("lower"),
 

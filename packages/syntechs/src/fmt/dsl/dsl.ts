@@ -58,7 +58,17 @@ export type Cond =
   | { readonly t: "parent"; readonly kind: string }
   /** The hand-written `PredicateRule` `name` (see `runtime.ts`), asked of the node (`when(name)`). */
   | { readonly t: "rule"; readonly name: string }
-  | LogicCond;
+  | LogicCond
+  | SplitCond;
+
+/**
+ * Conditions on a `splitOn` run, valid only inside one (its `keepLines` and `layout`): it has `n` entries
+ * (`entryCount`); an entry has several items (`many`) or a first item whose text starts with one of `startsWith`
+ * (`anyEntry`).
+ */
+export type SplitCond =
+  | { readonly t: "entryCount"; readonly n: number }
+  | { readonly t: "anyEntry"; readonly many: boolean; readonly startsWith: readonly string[] };
 
 /** Conditions on where the node sits and what it holds, and their negation and combinations. */
 export type LogicCond =
@@ -128,7 +138,49 @@ export type Tree =
   | { readonly t: "tokIf"; readonly text: string; readonly synth?: Cond; readonly then: Tree }
   | { readonly t: "self" }
   /** Where `when` holds, the node is input the formatter must not touch, and the file stays as written (`Bail`). */
-  | { readonly t: "bail"; readonly reason: string; readonly when: Cond };
+  | { readonly t: "bail"; readonly reason: string; readonly when: Cond }
+  | SplitOn;
+
+/** How a `splitOn` entry prints its items: side by side, a space between, or as `words`. */
+export type SplitItem =
+  | { readonly t: "adjacent" }
+  | { readonly t: "space" }
+  /**
+   * Packed several to a line in a group of their own, items the source wrote without a gap staying joined; with
+   * `keepLines`, one line per source line once the source breaks between any two.
+   */
+  | { readonly t: "words"; readonly keepLines: Cond };
+
+/** Where a `splitOn` run breaks: flags on its entries, or a choice between two layouts. */
+export type SplitLayout =
+  | {
+      /** The entries are one group. */
+      readonly group?: boolean;
+      /** Indented, from a break before the first (`first`) onward. */
+      readonly indent?: boolean;
+      /** Before the first entry: a line break only where the group breaks (`soft`), or always (`hard`). */
+      readonly first?: "soft" | "hard";
+      /** Between entries: a space unless the group breaks (`line`), or a line break (`hardline`); else nothing. */
+      readonly between?: "line" | "hardline";
+      /** Entries pack several to a line. */
+      readonly fill?: boolean;
+    }
+  | { readonly when: Cond; readonly then: SplitLayout; readonly else: SplitLayout };
+
+/**
+ * The node's children but comments and `except` kinds, cut into entries at each `sep` token, which prints at the
+ * end of the entry before it; then each child of a `trail` kind, after a space.
+ */
+export interface SplitOn {
+  readonly t: "splitOn";
+  readonly sep: string;
+  readonly except: readonly string[];
+  readonly trail: readonly string[];
+  readonly item: SplitItem;
+  /** Each named item where this holds of it prints in a group and an indent of its own. */
+  readonly wrapItem: Cond;
+  readonly layout: SplitLayout;
+}
 
 /** How one bracket or list frame of a node breaks. */
 export interface FrameWrap {
@@ -252,6 +304,7 @@ export type TokenTree<G extends Grammar, O> =
   | Piece<{ tokIf: TokenOf<G>; synth: CondIn<G, O>; then: TokenTree<G, O> }>
   | Piece<"self">
   | Piece<{ bail: CondIn<G, O> }>
+  | Piece<{ splitOn: KindOf<G> | TokenOf<G>; cond: CondIn<G, O> }>
   | readonly TokenTree<G, O>[];
 
 /** `tok(text).synth(when)`'s and `tok(text).andThen(f)`'s output. */
@@ -289,7 +342,8 @@ export type CondIn<G extends Grammar, O> =
   | FieldCond
   | HasCond<KindOf<G>>
   | NotCond<CondIn<G, O>>
-  | AllCond<CondIn<G, O>>;
+  | AllCond<CondIn<G, O>>
+  | SplitCond;
 
 /** `text`'s output, its `when` checked against the grammar's kinds and the options. */
 type Text<G extends Grammar, O> = Piece<{ text: CondIn<G, O> }>;
@@ -532,6 +586,58 @@ export const option = <const K extends string>(key: K) => ({
     ({ t: "option", key, op: "isNot", value }) as OptionCond<K, V>,
 });
 
+/** A `splitOn` item mode: the entry's items as words (see `SplitItem`); `keepLines` decided once per node. */
+export const words = <const C = false>(o: { readonly keepLines?: C } = {}) =>
+  ({ t: "words", keepLines: o.keepLines }) as { readonly t: "words"; readonly keepLines?: C };
+
+/** Inside a `splitOn`: the run has `n` entries. */
+export const entryCount = (n: number): SplitCond => ({ t: "entryCount", n });
+
+/** Inside a `splitOn`: an entry has several items (`many`), or a first item starting with one of `startsWith`. */
+export const anyEntry = (o: { readonly many?: boolean; readonly startsWith?: readonly string[] }): SplitCond => ({
+  t: "anyEntry",
+  many: o.many === true,
+  startsWith: o.startsWith ?? [],
+});
+
+/** A `splitOn` layout, its conditions checked against the grammar's kinds and the options through `C`. */
+export type SplitLayoutOf<C> =
+  | Extract<SplitLayout, { readonly group?: boolean }>
+  | { readonly when: C; readonly then: SplitLayoutOf<C>; readonly else: SplitLayoutOf<C> };
+
+export interface SplitOnOf<K, C> {
+  readonly except?: readonly K[];
+  readonly trail?: readonly K[];
+  readonly item?: "adjacent" | "space" | { readonly t: "words"; readonly keepLines?: C };
+  readonly wrapItem?: C;
+  readonly layout?: SplitLayoutOf<C>;
+}
+
+/**
+ * The node's children but comments and `except` kinds, cut into entries at each top-level `sep` token; each entry
+ * prints its items as `item` says (`adjacent` by default), each named item where `wrapItem` holds in a group and an
+ * indent of its own, then its separator. `layout` places the entries; with no flag set it prints them one after
+ * another, so a lone entry prints bare. Then each child of a `trail` kind, after a space. For a list whose items are
+ * runs of children rather than single ones, like CSS's comma-separated values, selectors and queries.
+ */
+export const splitOn = <const S extends string, const K extends string = never, const C = false>(
+  sep: S,
+  o: SplitOnOf<K, C> = {},
+): Piece<{ splitOn: S | K; cond: C }> => {
+  const layout = (l: SplitLayoutOf<unknown>): SplitLayout =>
+    "when" in l ? { when: plain(l.when), then: layout(l.then), else: layout(l.else) } : l;
+  const item = o.item ?? "adjacent";
+  return piece({
+    t: "splitOn",
+    sep,
+    except: o.except ?? [],
+    trail: o.trail ?? [],
+    item: typeof item === "string" ? { t: item } : { t: "words", keepLines: plain(item.keepLines) },
+    wrapItem: plain(o.wrapItem),
+    layout: layout(o.layout ?? {}),
+  });
+};
+
 function plain(c: unknown): Cond {
   if (c === undefined || typeof c === "boolean") return c === true;
   const x = c as Exclude<Cond, boolean>;
@@ -549,6 +655,10 @@ function plain(c: unknown): Cond {
     case "all":
     case "any":
       return { t: x.t, cs: x.cs.map(plain) };
+    case "entryCount":
+      return { t: "entryCount", n: x.n };
+    case "anyEntry":
+      return { t: "anyEntry", many: x.many, startsWith: x.startsWith };
   }
   const { key, op, value } = x;
   return op === "truthy"

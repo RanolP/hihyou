@@ -11,7 +11,8 @@ import {
   type StreamCtx,
 } from "../stream-format.js";
 import type { Tree } from "../../core/arena.js";
-import { type FormatTree, firstLeaf } from "../tree.js";
+import { newlineBetween } from "../text.js";
+import { type FormatTree, firstLeaf, nextLeaf } from "../tree.js";
 
 /**
  * An entry of the flattened sequence (`reference.ts`'s `flatten`): the whole document as tokens, spaces, hard
@@ -76,7 +77,33 @@ export type Entry =
       readonly e: "ifBroken";
       readonly after: number;
       readonly text: string;
-    };
+    }
+  /**
+   * Opens a `splitOn` run of `entry` frames, which an `end` closes, with the flags of the layout its conditions
+   * chose.
+   */
+  | {
+      readonly e: "split";
+      readonly group: boolean;
+      readonly indent: boolean;
+      readonly first: "soft" | "hard" | undefined;
+      readonly between: "line" | "hardline" | undefined;
+      readonly fill: boolean;
+    }
+  /**
+   * Opens an entry of a `splitOn` run: its `count` items with a `joint` between each two, then a `sep`; `grid`: its
+   * words keep the source's lines.
+   */
+  | {
+      readonly e: "entry";
+      readonly item: "adjacent" | "space" | "words";
+      readonly count: number;
+      readonly grid: boolean;
+    }
+  /** Between two items of an entry: whether the source has a gap (`apart`) or a line break (`breaks`) there. */
+  | { readonly e: "joint"; readonly apart: boolean; readonly breaks: boolean }
+  /** Opens a `splitOn` item in a group and an indent of its own, which an `end` closes. */
+  | { readonly e: "wrap" };
 
 export type CommentEntry = Extract<Entry, { e: "comment" }>;
 
@@ -256,6 +283,91 @@ export function hasChild<O>(
   for (let i = 0, count = tree.count(node); i < count; i++) {
     const c = tree.child(node, i);
     if (tree.fieldName(c) === name && (kind === undefined || tree.kindName(c) === kind)) return true;
+  }
+  return false;
+}
+
+/** An entry of a `splitOn` run: its items in source order, and the separator token ending it (-1: none). */
+export interface SplitEntry {
+  readonly items: number[];
+  sep: number;
+}
+
+/** A `splitOn` run: its entries, and the children of its `trail` kinds, which print after it. */
+export interface SplitRun {
+  readonly entries: SplitEntry[];
+  readonly trail: number[];
+}
+
+/**
+ * The children of `node` but comments and `except` and `trail` kinds, cut at each `sep` token, which ends the
+ * entry before it; a last entry left empty (by a trailing separator, or no children at all) is dropped.
+ */
+export function splitRun<O>(
+  ctx: StreamCtx<O>,
+  node: number,
+  sep: string,
+  except: readonly string[],
+  trail: readonly string[],
+): SplitRun {
+  const tree = ctx.tree;
+  let entry: SplitEntry = { items: [], sep: -1 };
+  const entries = [entry];
+  const trailing: number[] = [];
+  for (let i = 0, count = tree.count(node); i < count; i++) {
+    const c = tree.child(node, i);
+    const named = tree.named(c);
+    if (named && ctx.isComment(c)) continue;
+    const kind = tree.kindName(c);
+    if (except.includes(kind)) continue;
+    if (trail.includes(kind)) trailing.push(c);
+    else if (!named && kind === sep) {
+      entry.sep = c;
+      entries.push((entry = { items: [], sep: -1 }));
+    } else entry.items.push(c);
+  }
+  if (entry.items.length === 0) entries.pop();
+  return { entries, trail: trailing };
+}
+
+/** Whether an entry has several items (`many`), or a first item whose text starts with one of `startsWith`. */
+export function someEntry(
+  tree: FormatTree,
+  entries: readonly SplitEntry[],
+  many: boolean,
+  startsWith: readonly string[],
+): boolean {
+  return entries.some(({ items }) => {
+    if (many && items.length > 1) return true;
+    const first = items[0];
+    if (first === undefined || startsWith.length === 0) return false;
+    const text = tree.text(first);
+    return startsWith.some((s) => text.startsWith(s));
+  });
+}
+
+/** Whether a line break lies between the end of `a` and the start of the later `b`. */
+export function breaksBetween(tree: FormatTree, a: number, b: number): boolean {
+  const after = nextLeaf(tree, a);
+  return tree.lf(after) > 0 || newlineBetween(tree, after, firstLeaf(tree, b));
+}
+
+/**
+ * Whether the source text of `node`'s first child but comments, lowercased, is one of `is` or starts with one of
+ * `prefix` (a `firstText` condition).
+ */
+export function firstTextIs<O>(
+  ctx: StreamCtx<O>,
+  node: number,
+  is: readonly string[],
+  prefix: readonly string[],
+): boolean {
+  const tree = ctx.tree;
+  for (let i = 0, count = tree.count(node); i < count; i++) {
+    const c = tree.child(node, i);
+    if (tree.named(c) && ctx.isComment(c)) continue;
+    const text = tree.text(c).toLowerCase();
+    return is.includes(text) || prefix.some((p) => text.startsWith(p));
   }
   return false;
 }

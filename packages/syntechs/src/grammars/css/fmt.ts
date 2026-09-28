@@ -343,18 +343,6 @@ const selector = (n: number, ctx: SCtx) => {
   close();
   close();
 };
-/** A selector list, one selector per line. */
-function selectorList(items: readonly number[], ctx: SCtx): void {
-  open(GROUP);
-  commaGroups(items, ctx).forEach((g, i) => {
-    if (i > 0) sHardline();
-    for (const n of g.items)
-      if (ctx.tree.named(n)) selector(n, ctx);
-      else sToken(n, src(n, ctx));
-    printComma(g.comma, ctx);
-  });
-  close();
-}
 /** The statement's own `;`, or one prettier adds. */
 const semicolon = (node: number, ctx: SCtx) => {
   const semi = anon(node, ";", ctx);
@@ -378,16 +366,8 @@ export const customs = {
       return t.replace(/(?<=[^\s+-])\+(?=\S)/g, " + ");
     return cssWideKeywords.has(t.toLowerCase()) ? t.toLowerCase() : t;
   }),
-  selectors: (node, ctx) => selectorList(code(node, ctx), ctx),
-  keyframeBlock: (node, ctx) => {
-    const kids = code(node, ctx);
-    const block = kids.at(-1);
-    selectorList(kids.slice(0, -1), ctx);
-    if (block !== undefined) {
-      sText(" ");
-      ctx.print(block);
-    }
-  },
+  /** Prettier indents a selector of more than two nodes as it breaks. */
+  longSelector: (node, ctx) => parts(node, ctx) > 2,
   declaration: (node, ctx) => {
     const kids = code(node, ctx);
     const colon = kids.findIndex(

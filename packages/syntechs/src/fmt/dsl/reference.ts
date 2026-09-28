@@ -59,6 +59,10 @@ import {
   type PredicateRule,
   separators,
   splitChild,
+  type SplitRun,
+  splitRun,
+  someEntry,
+  breaksBetween,
   tokenChild,
   type TokenRule,
 } from "./runtime.js";
@@ -78,9 +82,18 @@ export const evalCond = <O>(
   node: number,
   custom: Customs<O>,
   kindHasFields: boolean,
+  run?: SplitRun,
 ): boolean => {
   if (typeof c === "boolean") return c;
+  const split = () => {
+    if (run === undefined) throw new Error(`a ${c.t} condition outside a splitOn`);
+    return run;
+  };
   switch (c.t) {
+    case "entryCount":
+      return split().entries.length === c.n;
+    case "anyEntry":
+      return someEntry(ctx.tree, split().entries, c.many, c.startsWith);
     case "parent":
       return parentIs(ctx.tree, node, c.kind);
     case "rule": {
@@ -93,11 +106,11 @@ export const evalCond = <O>(
     case "has":
       return hasChild(ctx, node, c.name, c.kind, kindHasFields);
     case "not":
-      return !evalCond(c.c, ctx, node, custom, kindHasFields);
+      return !evalCond(c.c, ctx, node, custom, kindHasFields, run);
     case "all":
-      return c.cs.every((x) => evalCond(x, ctx, node, custom, kindHasFields));
+      return c.cs.every((x) => evalCond(x, ctx, node, custom, kindHasFields, run));
     case "any":
-      return c.cs.some((x) => evalCond(x, ctx, node, custom, kindHasFields));
+      return c.cs.some((x) => evalCond(x, ctx, node, custom, kindHasFields, run));
     case "option": {
       const v = (ctx.options as Record<string, unknown>)[c.key];
       return c.op === "truthy" ? Boolean(v) : c.op === "is" ? v === c.value : v !== c.value;
@@ -354,6 +367,47 @@ export function flatten<O>(
         }
         case "custom":
           throw new Error("flatten: `custom` is a whole rule, never part of one");
+        case "splitOn": {
+          const run = splitRun(ctx, n, x.sep, x.except, x.trail);
+          const holds = (c: Cond) => evalCond(c, ctx, n, custom, kindHasFields, run);
+          if (run.entries.length > 0) {
+            let layout = x.layout;
+            while ("when" in layout) layout = holds(layout.when) ? layout.then : layout.else;
+            out.push({
+              e: "split",
+              group: layout.group === true,
+              indent: layout.indent === true,
+              first: layout.first,
+              between: layout.between,
+              fill: layout.fill === true,
+            });
+            const keepLines = x.item.t === "words" && holds(x.item.keepLines);
+            for (const { items, sep } of run.entries) {
+              const breaks = items.map((c, i) => i > 0 && breaksBetween(t, items[i - 1] as number, c));
+              out.push({ e: "entry", item: x.item.t, count: items.length, grid: keepLines && breaks.includes(true) });
+              items.forEach((c, i) => {
+                if (i > 0)
+                  out.push({ e: "joint", apart: !t.adjoins(items[i - 1] as number, c), breaks: breaks[i] === true });
+                if (!t.named(c)) {
+                  out.push({ e: "tok", node: c, text: t.text(c), synthetic: false });
+                  return;
+                }
+                const wrapped = evalCond(x.wrapItem, ctx, c, custom, t.kindName(c) in grammar.fieldTypes);
+                if (wrapped) out.push({ e: "wrap" });
+                child(c);
+                if (wrapped) out.push({ e: "end" });
+              });
+              out.push({ e: "sep", tok: sep });
+              out.push({ e: "end" });
+            }
+            out.push({ e: "end" });
+          }
+          for (const c of run.trail) {
+            out.push({ e: "space" });
+            child(c);
+          }
+          return;
+        }
       }
     };
     walk(tree);
@@ -381,7 +435,8 @@ export function wrap<O>(
   const endOf = (i: number) => {
     for (let depth = 0; ; i = next(i)) {
       const e = (seq[i] as Entry).e;
-      if (e === "brackets" || e === "list" || e === "lines") depth++;
+      if (e === "brackets" || e === "list" || e === "lines" || e === "split" || e === "entry" || e === "wrap")
+        depth++;
       else if (e === "end" && --depth === 0) return i;
     }
   };
@@ -600,6 +655,86 @@ export function wrap<O>(
     close();
   };
 
+  /** A `splitOn` run's entries, at `from` to its `end` at `to`, under the layout its `split` entry chose. */
+  const split = (from: number, to: number, node: number) => {
+    const x = seq[from] as Extract<Entry, { e: "split" }>;
+    if (x.group) open(GROUP);
+    if (x.indent) open(INDENT);
+    if (x.first === "soft") sLine(SOFT);
+    else if (x.first === "hard") sHardline();
+    if (x.fill) open(FILL);
+    for (let i = from + 1, k = 0; i < to; i = endOf(i) + 1, k++) {
+      if (k > 0) {
+        if (x.between === "line") sLine(0);
+        else if (x.between === "hardline") sHardline();
+      }
+      if (x.fill) open(FILL_ITEM);
+      entry(i, endOf(i), node);
+      if (x.fill) close();
+    }
+    if (x.fill) close();
+    if (x.indent) close();
+    if (x.group) close();
+  };
+  /** A `splitOn` entry at `from` to its `end` at `to`: its items as its `item` mode prints them, then its separator. */
+  const entry = (from: number, to: number, node: number) => {
+    const x = seq[from] as Extract<Entry, { e: "entry" }>;
+    // Each item's entries [from, to), and the joint before each but the first.
+    const spans: [number, number][] = [];
+    const joints: Extract<Entry, { e: "joint" }>[] = [];
+    let start = from + 1;
+    let sep = -1;
+    for (let i = from + 1; i < to; i = next(i)) {
+      const y = seq[i] as Entry;
+      if (y.e === "joint" || y.e === "sep") {
+        spans.push([start, i]);
+        start = i + 1;
+        if (y.e === "joint") joints.push(y);
+        else sep = y.tok;
+      }
+    }
+    const item = (k: number) => {
+      const [a, b] = spans[k] as [number, number];
+      render(a, b, {}, node);
+    };
+    if (x.item !== "words" || x.count === 1)
+      for (let k = 0; k < x.count; k++) {
+        if (k > 0 && x.item === "space") sText(" ");
+        item(k);
+      }
+    else if (x.count > 1) {
+      open(GROUP);
+      open(INDENT);
+      open(FILL);
+      if (x.grid) {
+        open(FILL_ITEM);
+        close();
+        sHardline();
+      }
+      open(FILL_ITEM);
+      item(0);
+      for (let k = 1; k < x.count; k++) {
+        const j = joints[k - 1] as Extract<Entry, { e: "joint" }>;
+        if (!j.apart) item(k);
+        else if (x.grid && !j.breaks) {
+          sText(" ");
+          item(k);
+        } else {
+          close();
+          if (x.grid) sHardline();
+          else sLine(0);
+          open(FILL_ITEM);
+          item(k);
+        }
+      }
+      close();
+      close();
+      close();
+      close();
+    }
+    if (sep !== -1) sToken(sep, tree.text(sep));
+  };
+
   const render = (from: number, to: number, w: Wrap, node: number): void => {
     for (let i = from; i < to; i = next(i)) {
       const x = seq[i] as Entry;
@@ -673,6 +808,22 @@ export function wrap<O>(
             tok(closeTok);
             close();
           }
+          i = end;
+          break;
+        }
+        case "split": {
+          const end = endOf(i);
+          split(i, end, node);
+          i = end;
+          break;
+        }
+        case "wrap": {
+          const end = endOf(i);
+          open(GROUP);
+          open(INDENT);
+          render(i + 1, end, {}, node);
+          close();
+          close();
           i = end;
           break;
         }

@@ -7,6 +7,8 @@ import {
   frameWrap,
   type Pairs,
   type Ref,
+  type SplitLayout,
+  type SplitOn,
   type Tree,
   type Wrap,
 } from "./dsl.js";
@@ -40,6 +42,17 @@ function eachCond(ir: FormatIR, visit: (c: Cond) => void): void {
     else if (x.t === "inOrder") {
       cond(x.tight?.when);
       cond(x.spaceWhen?.when);
+    } else if (x.t === "splitOn") {
+      cond(x.wrapItem);
+      if (x.item.t === "words") cond(x.item.keepLines);
+      const layout = (l: SplitLayout): void => {
+        if ("when" in l) {
+          cond(l.when);
+          layout(l.then);
+          layout(l.else);
+        }
+      };
+      layout(x.layout);
     }
   };
   Object.values(ir.structure).forEach(walk);
@@ -110,27 +123,39 @@ const hasOpt = (x: Tree): boolean =>
 const oneOf = (expr: string, kinds: readonly string[]) =>
   kinds.length === 1 ? `${expr} === ${str(kinds[0] as string)}` : `(${kinds.map((k) => `${expr} === ${str(k)}`).join(" || ")})`;
 
-/** `c` as an expression over the rule's `t`, `node` and `ctx`; `hasFields`: whether the node's kind has fields. */
-const cond = (c: Cond, hasFields: boolean): string => {
+/**
+ * `c` as an expression over the rule's `t`, `node` and `ctx`; `hasFields`: whether the node's kind has fields.
+ * `self` names the node asked about in place of `node` (a `splitOn` item), and `run` the `splitOn` run in scope.
+ */
+const cond = (c: Cond, hasFields: boolean, self = "node", run?: string): string => {
   if (typeof c === "boolean") return String(c);
   switch (c.t) {
     case "parent":
-      return `parentIs(t, node, ${str(c.kind)})`;
+      return `parentIs(t, ${self}, ${str(c.kind)})`;
     case "rule":
-      return `custom[${str(c.name)}](node, ctx)`;
+      return `custom[${str(c.name)}](${self}, ctx)`;
     case "field":
-      return `t.fieldName(node) === ${str(c.name)}`;
+      return `t.fieldName(${self}) === ${str(c.name)}`;
     case "has":
+      // An item's kind, and so whether it has fields, is known only at run time.
+      if (self !== "node") throw new Error("emit: a `has` condition on a splitOn item");
       return c.kind === undefined && c.name !== "children"
         ? `fieldChild(t, node, ${str(c.name)}) !== -1`
         : `hasChild(ctx, node, ${str(c.name)}, ${c.kind === undefined ? "undefined" : str(c.kind)}, ${hasFields})`;
+    case "entryCount":
+    case "anyEntry": {
+      if (run === undefined || self !== "node") throw new Error(`emit: a ${c.t} condition outside a splitOn's run`);
+      return c.t === "entryCount"
+        ? `${run}.entries.length === ${c.n}`
+        : `someEntry(t, ${run}.entries, ${c.many}, ${JSON.stringify(c.startsWith)})`;
+    }
     case "not":
-      return `!(${cond(c.c, hasFields)})`;
+      return `!(${cond(c.c, hasFields, self, run)})`;
     case "all":
     case "any":
       return c.cs.length === 0
         ? String(c.t === "all")
-        : `(${c.cs.map((x) => cond(x, hasFields)).join(c.t === "all" ? " && " : " || ")})`;
+        : `(${c.cs.map((x) => cond(x, hasFields, self, run)).join(c.t === "all" ? " && " : " || ")})`;
     case "option": {
       const v = `ctx.options.${c.key}`;
       if (c.op === "truthy") return `Boolean(${v})`;
@@ -242,7 +267,124 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
         return "false";
       case "inOrder":
         throw new Error(`emit: a bracket idiom around \`${x.t}\` whose emptiness is not generated yet`);
+      case "splitOn": {
+        const run = splitRun(x);
+        return `(${run}.entries.length === 0 && ${run}.trail.length === 0)`;
+      }
     }
+  };
+
+  /** The variable holding `x`'s run, computed at its first use: a bracket body's emptiness, or its printing. */
+  const runs = new Map<SplitOn, string>();
+  const splitRun = (x: SplitOn) => {
+    let run = runs.get(x);
+    if (run === undefined) {
+      run = name("run");
+      runs.set(x, run);
+      line(
+        `const ${run} = splitRun(ctx, node, ${str(x.sep)}, ${JSON.stringify(x.except)}, ${JSON.stringify(x.trail)});`,
+      );
+    }
+    return run;
+  };
+  /** A `splitOn`: a local printing one entry, then per layout its conditions chose, the entries it places. */
+  const split = (x: SplitOn) => {
+    const run = splitRun(x);
+    const printItem = name("item");
+    block(`const ${printItem} = (c: number) =>`, () => {
+      line("if (!t.named(c)) sToken(c, t.text(c));");
+      if (x.wrapItem === false) line("else ctx.print(c);");
+      else
+        block(`else if (${cond(x.wrapItem, false, "c")})`, () => {
+          line("open(GROUP);");
+          line("open(INDENT);");
+          line("ctx.print(c);");
+          line("close();");
+          line("close();");
+        }, "} else ctx.print(c);");
+    }, "};");
+    const printEntry = name("entry");
+    const keep = x.item.t === "words" && x.item.keepLines !== false ? name("keep") : undefined;
+    if (keep !== undefined && x.item.t === "words")
+      line(`const ${keep} = ${cond(x.item.keepLines, hasFields, "node", run)};`);
+    block(`const ${printEntry} = (e: SplitEntry) =>`, () => {
+      line("const items = e.items;");
+      if (x.item.t === "adjacent") line(`for (const c of items) ${printItem}(c);`);
+      else if (x.item.t === "space")
+        block("for (let i = 0; i < items.length; i++)", () => {
+          line('if (i > 0) sText(" ");');
+          line(`${printItem}(items[i] as number);`);
+        });
+      else {
+        line(`if (items.length === 1) ${printItem}(items[0] as number);`);
+        block("else if (items.length > 1)", () => {
+          if (keep !== undefined)
+            line(
+              `const grid = ${keep} && items.some((c, i) => i > 0 && breaksBetween(t, items[i - 1] as number, c));`,
+            );
+          line("open(GROUP);");
+          line("open(INDENT);");
+          line("open(FILL);");
+          if (keep !== undefined)
+            block("if (grid)", () => {
+              line("open(FILL_ITEM);");
+              line("close();");
+              line("sHardline();");
+            });
+          line("open(FILL_ITEM);");
+          line(`${printItem}(items[0] as number);`);
+          block("for (let i = 1; i < items.length; i++)", () => {
+            line("const prev = items[i - 1] as number;");
+            line("const c = items[i] as number;");
+            line(`if (t.adjoins(prev, c)) ${printItem}(c);`);
+            if (keep !== undefined)
+              block("else if (grid && !breaksBetween(t, prev, c))", () => {
+                line('sText(" ");');
+                line(`${printItem}(c);`);
+              });
+            block("else", () => {
+              line("close();");
+              line(keep !== undefined ? "if (grid) sHardline();" : "sLine(0);");
+              if (keep !== undefined) line("else sLine(0);");
+              line("open(FILL_ITEM);");
+              line(`${printItem}(c);`);
+            });
+          });
+          for (let k = 0; k < 4; k++) line("close();");
+        });
+      }
+      line("if (e.sep !== -1) sToken(e.sep, t.text(e.sep));");
+    }, "};");
+    const place = (l: SplitLayout): void => {
+      if ("when" in l) {
+        block(`if (${cond(l.when, hasFields, "node", run)})`, () => place(l.then), "} else {");
+        depth++;
+        place(l.else);
+        depth--;
+        line("}");
+        return;
+      }
+      if (l.group) line("open(GROUP);");
+      if (l.indent) line("open(INDENT);");
+      if (l.first === "soft") line("sLine(SOFT);");
+      else if (l.first === "hard") line("sHardline();");
+      if (l.fill) line("open(FILL);");
+      block(`for (let i = 0; i < ${run}.entries.length; i++)`, () => {
+        if (l.between === "line") line("if (i > 0) sLine(0);");
+        else if (l.between === "hardline") line("if (i > 0) sHardline();");
+        if (l.fill) line("open(FILL_ITEM);");
+        line(`${printEntry}(${run}.entries[i] as SplitEntry);`);
+        if (l.fill) line("close();");
+      });
+      if (l.fill) line("close();");
+      if (l.indent) line("close();");
+      if (l.group) line("close();");
+    };
+    block(`if (${run}.entries.length > 0)`, () => place(x.layout));
+    block(`for (const c of ${run}.trail)`, () => {
+      line('sText(" ");');
+      line("ctx.print(c);");
+    });
   };
 
   const list = (x: Extract<Tree, { t: "sepBy" }>, b: Extract<Tree, { t: "brackets" }>) => {
@@ -583,6 +725,9 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
       case "custom":
         line(`custom[${str(x.name)}](node, ctx);`);
         return;
+      case "splitOn":
+        split(x);
+        return;
     }
   };
 
@@ -674,6 +819,12 @@ export function emit(
       parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
       0,
       'import { parentIs } from "../../fmt/dsl/runtime.js";',
+    );
+  if (parts.some((p) => p.includes("splitRun(")))
+    parts.splice(
+      parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
+      0,
+      `import { ${["breaksBetween", "someEntry"].filter((f) => parts.some((p) => p.includes(`${f}(`))).map((f) => `${f}, `).join("")}type SplitEntry, splitRun } from "../../fmt/dsl/runtime.js";`,
     );
   if (parts.some((p) => p.includes("new Bail(")))
     parts.splice(
