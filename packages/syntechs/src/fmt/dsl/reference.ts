@@ -52,6 +52,7 @@ import {
   type FrameRule,
   type Entry,
   fieldChild,
+  hasChild,
   listItems,
   parentIs,
   type PredicateRule,
@@ -66,18 +67,41 @@ export type { Entry } from "./runtime.js";
 
 type Customs<O> = { readonly [name: string]: CustomRule<O> | TokenRule<O> | FrameRule<O> | PredicateRule<O> };
 
-/** Whether `c` holds for `node`, whose `when` conditions ask `custom`'s predicates. */
-export const evalCond = <O>(c: Cond, ctx: StreamCtx<O>, node: number, custom: Customs<O>): boolean => {
+/**
+ * Whether `c` holds for `node`, whose `when` conditions ask `custom`'s predicates; `kindHasFields`: whether
+ * the node's kind has fields, which decides the children `has("children")` reads.
+ */
+export const evalCond = <O>(
+  c: Cond,
+  ctx: StreamCtx<O>,
+  node: number,
+  custom: Customs<O>,
+  kindHasFields: boolean,
+): boolean => {
   if (typeof c === "boolean") return c;
-  if (c.t === "parent") return parentIs(ctx.tree, node, c.kind);
-  if (c.t === "rule") {
-    const rule = custom[c.name] as PredicateRule<O> | undefined;
-    if (!rule) throw new Error(`no custom rule ${c.name}`);
-    return rule(node, ctx);
+  switch (c.t) {
+    case "parent":
+      return parentIs(ctx.tree, node, c.kind);
+    case "rule": {
+      const rule = custom[c.name] as PredicateRule<O> | undefined;
+      if (!rule) throw new Error(`no custom rule ${c.name}`);
+      return rule(node, ctx);
+    }
+    case "field":
+      return ctx.tree.fieldName(node) === c.name;
+    case "has":
+      return hasChild(ctx, node, c.name, c.kind, kindHasFields);
+    case "not":
+      return !evalCond(c.c, ctx, node, custom, kindHasFields);
+    case "all":
+      return c.cs.every((x) => evalCond(x, ctx, node, custom, kindHasFields));
+    case "any":
+      return c.cs.some((x) => evalCond(x, ctx, node, custom, kindHasFields));
+    case "option": {
+      const v = (ctx.options as Record<string, unknown>)[c.key];
+      return c.op === "truthy" ? Boolean(v) : c.op === "is" ? v === c.value : v !== c.value;
+    }
   }
-  const options = ctx.options;
-  const v = (options as Record<string, unknown>)[c.key];
-  return c.op === "truthy" ? Boolean(v) : c.op === "is" ? v === c.value : v !== c.value;
 };
 
 /** The flattened document: its entries, and where each node's range opens and closes. */
@@ -208,7 +232,7 @@ export function flatten<O>(
                 : { e: "tok", node: c, text: t.text(c), synthetic: false },
             );
           };
-          const pad = evalCond(x.pad, ctx, n, custom);
+          const pad = evalCond(x.pad, ctx, n, custom, kindHasFields);
           out.push(
             x.via === undefined
               ? { e: "brackets", label: x.label }
@@ -231,7 +255,7 @@ export function flatten<O>(
             if (i < seps.length) {
               out.push({ e: "sep", tok: seps[i] as number });
               if (nextLineEmpty(t, item)) out.push({ e: "blank" });
-            } else if (evalCond(x.trailing, ctx, n, custom))
+            } else if (evalCond(x.trailing, ctx, n, custom, kindHasFields))
               out.push({ e: "ifBroken", after: item, text: x.sep });
           });
           if (owner === x)
@@ -261,7 +285,7 @@ export function flatten<O>(
           const items = new Set(ctx.items(n));
           const matcher = (p: Pairs | undefined) => {
             if (p === undefined) return () => false;
-            const all = p.when !== undefined && evalCond(p.when, ctx, n, custom);
+            const all = p.when !== undefined && evalCond(p.when, ctx, n, custom, kindHasFields);
             return (a: number, b: number) =>
               all || (p.after?.includes(t.kindName(a)) ?? false) || (p.before?.includes(t.kindName(b)) ?? false);
           };
@@ -295,7 +319,7 @@ export function flatten<O>(
           return;
         case "text": {
           const raw = t.text(n);
-          const text = evalCond(x.when, ctx, n, custom)
+          const text = evalCond(x.when, ctx, n, custom, kindHasFields)
             ? (normalizers[x.fn] as (s: string, o: unknown) => string)(raw, ctx.options)
             : raw;
           out.push({ e: "tok", node: n, text, synthetic: false });
@@ -477,7 +501,7 @@ export function wrap<O>(
     const shouldBreak =
       always ||
       (w.keepExpanded !== undefined &&
-        evalCond(w.keepExpanded, ctx, node, custom) &&
+        evalCond(w.keepExpanded, ctx, node, custom, ctx.tree.kindName(node) in grammar.fieldTypes) &&
         newlineBetween(tree, firstLeaf(tree, node), firstLeaf(tree, first))) ||
       (w.breakMatrix === true &&
         items.length > 1 &&

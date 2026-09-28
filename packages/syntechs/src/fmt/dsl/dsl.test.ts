@@ -10,13 +10,18 @@ import type { Language } from "../rules.js";
 import { close, GROUP, INDENT, open, SOFT, sLine } from "../stream.js";
 import type { StreamRules } from "../stream-format.js";
 import {
+  all,
+  any,
   type DslGrammar,
   defineFormat,
+  fieldIs,
   grpBrace,
   grpBracket,
   grpParen,
+  has,
   inOrder,
   lines,
+  not,
   option,
   parentIs,
   sepBy,
@@ -129,6 +134,12 @@ it("a typo'd kind, field, token, separator or option fails to typecheck, so a sp
       structure: {
         // @ts-expect-error: `bracketSpaceing` is not an option
         pair: () => text("lower", option("bracketSpaceing")),
+      },
+    }),
+    format({
+      structure: {
+        // @ts-expect-error: `objects` is not a kind, under a `has` inside a combinator
+        pair: () => text("lower", not(has("children", "objects"))),
       },
     }),
     format({
@@ -351,6 +362,45 @@ it("`inOrder`'s spacing rules apply tight, then spaceWhen, then join, and the ge
       expect(run(text, generated, o), text).toBe(want);
       expect(run(text, reference, o), text).toBe(want);
     }
+  } finally {
+    rmSync(file);
+  }
+});
+
+// A combinator the generated code evaluated differently from the reference (an `any` read as `all`, a `not`
+// dropped, `has` reading the wrong children) would respell where the spec says not to.
+it("`not`, `all`, `any`, `fieldIs` and `has` hold where the reference says, in the generated code", async () => {
+  const ir = defineFormat<typeof jsonGrammar, JsonOptions>()({
+    structure: {
+      document: ($) => lines($.children),
+      object: ($) => grpBrace(sepBy(",", $.children)),
+      pair: ($) => [$.key, ":", space, $.value],
+      // A key, but not one inside an array's object, and never under the `keep` predicate.
+      string: () =>
+        text("lower", all(fieldIs("key"), not(any(when("keep"), has("value", "array"))))),
+      // An array respells when it holds a string, or when it is a pair's value holding an object.
+      array: () => text("lower", any(has("children", "string"), all(fieldIs("value"), has("children", "object")))),
+      number: () => verbatim,
+    },
+  });
+  const keep: PredicateRule = (node, ctx) => ctx.tree.text(node) === '"K"';
+  const file = join(import.meta.dirname, "logic-equivalence.gen.ts");
+  writeFileSync(file, emit({ logic: ir }, jsonGrammar as DslGrammar, "dsl.test.ts"));
+  try {
+    const gen = (await import(pathToFileURL(file).href)) as {
+      logic: (custom: { keep: PredicateRule<JsonOptions> }) => StreamRules<JsonOptions>;
+    };
+    const generated = { ...json, stream: gen.logic({ keep }) };
+    const reference = { ...json, stream: referenceRules<JsonOptions>(ir, jsonGrammar as DslGrammar, { keep }) };
+    const run = (text: string, lang: Language<JsonOptions>) => {
+      const out = formatTree(parseTree(jsonLanguage, text), lang, {});
+      if (!out.ok) throw new Error(out.detail);
+      return out.text;
+    };
+    const text = '{"A": "B", "K": 1, "C": ["X", 1], "D": [1], "E": [{"F": 2}]}';
+    const want = '{"a": "B", "K": 1, "c": ["x", 1], "d": [1], "e": [{"f": 2}]}\n';
+    expect(run(text, generated)).toBe(want);
+    expect(run(text, reference)).toBe(want);
   } finally {
     rmSync(file);
   }

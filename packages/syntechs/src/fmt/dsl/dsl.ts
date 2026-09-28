@@ -57,7 +57,17 @@ export type Cond =
   /** The node's parent is of kind `kind`. */
   | { readonly t: "parent"; readonly kind: string }
   /** The hand-written `PredicateRule` `name` (see `runtime.ts`), asked of the node (`when(name)`). */
-  | { readonly t: "rule"; readonly name: string };
+  | { readonly t: "rule"; readonly name: string }
+  | LogicCond;
+
+/** Conditions on where the node sits and what it holds, and their negation and combinations. */
+export type LogicCond =
+  /** The node is in its parent's field `name` (`fieldIs`). */
+  | { readonly t: "field"; readonly name: string }
+  /** The node's field `name` (`children`: its children in no field) holds a child, of `kind` if given (`has`). */
+  | { readonly t: "has"; readonly name: string; readonly kind?: string }
+  | { readonly t: "not"; readonly c: Cond }
+  | { readonly t: "all" | "any"; readonly cs: readonly Cond[] };
 
 /**
  * Which consecutive entries of an `inOrder` a spacing rule applies to: those after an entry of a kind (a token by
@@ -234,13 +244,39 @@ export type TokenTree<G extends Grammar, O> =
 /** A rule that prints the whole node: `verbatim` or `custom`. */
 type Whole = Piece<"whole">;
 
-/** A `text` rule's `when` on where its node sits (`parentIs`). */
+/** A condition on where the node sits (`parentIs`). */
 export interface ParentCond<K> {
   readonly t: "parent";
   readonly kind: K;
 }
+export interface FieldCond {
+  readonly t: "field";
+  readonly name: string;
+}
+export interface HasCond<K> {
+  readonly t: "has";
+  readonly name: string;
+  readonly kind?: K;
+}
+export interface NotCond<C> {
+  readonly t: "not";
+  readonly c: C;
+}
+export interface AllCond<C> {
+  readonly t: "all" | "any";
+  readonly cs: readonly C[];
+}
+/** Every condition, checked against the grammar's kinds and the options. */
+export type CondIn<G extends Grammar, O> =
+  | CondOf<O>
+  | ParentCond<KindOf<G>>
+  | FieldCond
+  | HasCond<KindOf<G>>
+  | NotCond<CondIn<G, O>>
+  | AllCond<CondIn<G, O>>;
+
 /** `text`'s output, its `when` checked against the grammar's kinds and the options. */
-type Text<G extends Grammar, O> = Piece<{ text: CondOf<O> | ParentCond<KindOf<G>> }>;
+type Text<G extends Grammar, O> = Piece<{ text: CondIn<G, O> }>;
 
 type FrameWrapOf<G extends Grammar, O> = Omit<
   FrameWrap,
@@ -432,6 +468,17 @@ export function inOrder(o?: Piece<"space"> | InOrderOf<string, unknown>): unknow
 /** True where the hand-written `PredicateRule` `name` (see `runtime.ts`) says so of the node. */
 export const when = (name: string): RuleCond => ({ t: "rule", name });
 
+/** The node is in its parent's field `name`. */
+export const fieldIs = (name: string): FieldCond => ({ t: "field", name });
+
+/** The node's field `name` (`children`: its children in no field) holds a child, of `kind` when given. */
+export const has = <const K extends string = never>(name: string, kind?: K): HasCond<K> =>
+  kind === undefined ? { t: "has", name } : { t: "has", name, kind };
+
+export const not = <const C>(c: C): NotCond<C> => ({ t: "not", c });
+export const all = <const C extends readonly unknown[]>(...cs: C): AllCond<C[number]> => ({ t: "all", cs });
+export const any = <const C extends readonly unknown[]>(...cs: C): AllCond<C[number]> => ({ t: "any", cs });
+
 /** Option `key`, true when truthy; `.is(v)` and `.isNot(v)` compare it. */
 export const option = <const K extends string>(key: K) => ({
   t: "option" as const,
@@ -445,9 +492,22 @@ export const option = <const K extends string>(key: K) => ({
 
 function plain(c: unknown): Cond {
   if (c === undefined || typeof c === "boolean") return c === true;
-  if ((c as RuleCond).t === "rule") return { t: "rule", name: (c as RuleCond).name };
-  const x = c as Exclude<Cond, boolean | RuleCond>;
-  if (x.t === "parent") return { t: "parent", kind: x.kind };
+  const x = c as Exclude<Cond, boolean>;
+  switch (x.t) {
+    case "rule":
+      return { t: "rule", name: x.name };
+    case "parent":
+      return { t: "parent", kind: x.kind };
+    case "field":
+      return { t: "field", name: x.name };
+    case "has":
+      return x.kind === undefined ? { t: "has", name: x.name } : { t: "has", name: x.name, kind: x.kind };
+    case "not":
+      return { t: "not", c: plain(x.c) };
+    case "all":
+    case "any":
+      return { t: x.t, cs: x.cs.map(plain) };
+  }
   const { key, op, value } = x;
   return op === "truthy"
     ? { t: "option", key, op }

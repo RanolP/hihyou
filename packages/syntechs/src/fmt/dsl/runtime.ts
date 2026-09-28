@@ -230,3 +230,21 @@ export function parentIs(tree: FormatTree, node: number, kind: string): boolean 
   const p = tree.parent(node);
   return p !== -1 && tree.kindName(p) === kind;
 }
+
+/** Whether `node`'s field `name` (`children`: its `listItems`) holds a child, of `kind` if given (a `has` condition). */
+export function hasChild<O>(
+  ctx: StreamCtx<O>,
+  node: number,
+  name: string,
+  kind: string | undefined,
+  kindHasFields: boolean,
+): boolean {
+  const tree = ctx.tree;
+  if (name === "children")
+    return listItems(ctx, node, name, kindHasFields).some((c) => kind === undefined || tree.kindName(c) === kind);
+  for (let i = 0, count = tree.count(node); i < count; i++) {
+    const c = tree.child(node, i);
+    if (tree.fieldName(c) === name && (kind === undefined || tree.kindName(c) === kind)) return true;
+  }
+  return false;
+}

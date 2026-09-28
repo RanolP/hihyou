@@ -19,8 +19,12 @@ const ident = (kind: string) => `$${kind.replace(/\W/g, "_")}`;
 
 /** Calls `visit` on every condition `ir` holds. */
 function eachCond(ir: FormatIR, visit: (c: Cond) => void): void {
-  const cond = (c: Cond | undefined) => {
-    if (c !== undefined) visit(c);
+  const cond = (c: Cond | undefined): void => {
+    if (c === undefined) return;
+    visit(c);
+    if (typeof c === "boolean") return;
+    if (c.t === "not") cond(c.c);
+    else if (c.t === "all" || c.t === "any") c.cs.forEach(cond);
   };
   const walk = (x: Tree): void => {
     if (x.t === "text") cond(x.when);
@@ -100,18 +104,39 @@ const hasOpt = (x: Tree): boolean =>
 const oneOf = (expr: string, kinds: readonly string[]) =>
   kinds.length === 1 ? `${expr} === ${str(kinds[0] as string)}` : `(${kinds.map((k) => `${expr} === ${str(k)}`).join(" || ")})`;
 
-const cond = (c: Cond): string => {
+/** `c` as an expression over the rule's `t`, `node` and `ctx`; `hasFields`: whether the node's kind has fields. */
+const cond = (c: Cond, hasFields: boolean): string => {
   if (typeof c === "boolean") return String(c);
-  if (c.t === "parent") return `parentIs(t, node, ${str(c.kind)})`;
-  if (c.t === "rule") return `custom[${str(c.name)}](node, ctx)`;
-  const v = `ctx.options.${c.key}`;
-  if (c.op === "truthy") return `Boolean(${v})`;
-  return `${v} ${c.op === "is" ? "===" : "!=="} ${JSON.stringify(c.value)}`;
+  switch (c.t) {
+    case "parent":
+      return `parentIs(t, node, ${str(c.kind)})`;
+    case "rule":
+      return `custom[${str(c.name)}](node, ctx)`;
+    case "field":
+      return `t.fieldName(node) === ${str(c.name)}`;
+    case "has":
+      return c.kind === undefined && c.name !== "children"
+        ? `fieldChild(t, node, ${str(c.name)}) !== -1`
+        : `hasChild(ctx, node, ${str(c.name)}, ${c.kind === undefined ? "undefined" : str(c.kind)}, ${hasFields})`;
+    case "not":
+      return `!(${cond(c.c, hasFields)})`;
+    case "all":
+    case "any":
+      return c.cs.length === 0
+        ? String(c.t === "all")
+        : `(${c.cs.map((x) => cond(x, hasFields)).join(c.t === "all" ? " && " : " || ")})`;
+    case "option": {
+      const v = `ctx.options.${c.key}`;
+      if (c.op === "truthy") return `Boolean(${v})`;
+      return `${v} ${c.op === "is" ? "===" : "!=="} ${JSON.stringify(c.value)}`;
+    }
+  }
 };
 
 /** The body of one kind's rule. */
 function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
   const out: string[] = [];
+  const when = (c: Cond) => cond(c, hasFields);
   let depth = 1;
   let fresh = 0;
   const line = (s: string) => out.push(`${"  ".repeat(depth)}${s}`);
@@ -243,7 +268,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
     if (always) breaks.push("true");
     if (w.keepExpanded !== undefined && w.keepExpanded !== false)
       breaks.push(
-        `(${cond(w.keepExpanded)} && newlineBetween(t, firstLeaf(t, node), firstLeaf(t, first)))`,
+        `(${when(w.keepExpanded)} && newlineBetween(t, firstLeaf(t, node), firstLeaf(t, first)))`,
       );
     if (w.breakMatrix)
       breaks.push(
@@ -257,7 +282,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
     line(
       `const listGroup = open(GROUP, -1, ${breaks.length === 0 ? "0" : `${breaks.join(" || ")} ? BROKEN : 0`});`,
     );
-    const trailing = x.trailing === false ? undefined : cond(x.trailing);
+    const trailing = x.trailing === false ? undefined : when(x.trailing);
     const slot = (i: string) => {
       block(`if (${i} < last)`, () => {
         line(`const s = seps[${i}] as number;`);
@@ -272,7 +297,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
         line("}");
       }
     };
-    const pad = b.pad === false ? "SOFT" : `${cond(b.pad)} ? 0 : SOFT`;
+    const pad = b.pad === false ? "SOFT" : `${when(b.pad)} ? 0 : SOFT`;
     line(`const pad = ${pad};`);
     printBracket(openTok, b.open);
     line("open(INDENT);");
@@ -380,14 +405,14 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
         bracket(x.open);
         const body = () => {
           line("open(INDENT);");
-          line(`sLine(${x.pad === false ? "SOFT" : `${cond(x.pad)} ? 0 : SOFT`});`);
+          line(`sLine(${x.pad === false ? "SOFT" : `${when(x.pad)} ? 0 : SOFT`});`);
           walk(x.body);
           line("close();");
         };
         const empty = emptyExpr(x.body);
         if (empty === "false") body();
         else block(`if (!(${empty}))`, body);
-        line(`sLine(${x.pad === false ? "SOFT" : `${cond(x.pad)} ? 0 : SOFT`});`);
+        line(`sLine(${x.pad === false ? "SOFT" : `${when(x.pad)} ? 0 : SOFT`});`);
         bracket(x.close);
         line("close();");
         return;
@@ -448,7 +473,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
           const tests: string[] = [];
           if (p.when !== undefined) {
             const all = name("all");
-            line(`const ${all} = ${cond(p.when)};`);
+            line(`const ${all} = ${when(p.when)};`);
             tests.push(all);
           }
           if (p.after?.length) tests.push(oneOf("t.kindName(prev)", p.after));
@@ -512,7 +537,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
         }
         const raw = name("raw");
         line(`const ${raw} = t.text(node);`);
-        line(`sToken(node, ${cond(x.when)} ? ${call(raw)} : ${raw});`);
+        line(`sToken(node, ${when(x.when)} ? ${call(raw)} : ${raw});`);
         return;
       }
       case "custom":
@@ -597,6 +622,12 @@ export function emit(
       parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
       0,
       'import { splitChild } from "../../fmt/dsl/runtime.js";',
+    );
+  if (parts.some((p) => p.includes("hasChild(")))
+    parts.splice(
+      parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
+      0,
+      'import { hasChild } from "../../fmt/dsl/runtime.js";',
     );
   if (parts.some((p) => p.includes("parentIs(")))
     parts.splice(
