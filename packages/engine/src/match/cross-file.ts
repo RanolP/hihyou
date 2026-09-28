@@ -1,6 +1,8 @@
 import {
   type Claimed,
+  classifyMove,
   defaultMatchOptions,
+  defaultMoveOptions,
   type EditScript,
   editScript,
   isoIds,
@@ -8,6 +10,7 @@ import {
   MatchBudgetExceeded,
   type MatchOptions,
   match,
+  type MoveOptions,
 } from "syntechs/diff";
 import { NO_NODE } from "syntechs/core";
 import type { RawEdit } from "syntechs/diff";
@@ -28,11 +31,8 @@ export type CrossEdit = {
   whole?: true;
 };
 
-/** Below this many nodes a subtree is too common (`return null;`) to claim that it moved. */
-const minMoveSize = 8;
-
 /**
- * Import lines clear `minMoveSize` on punctuation alone, and the same import turns up in many files, so
+ * Import lines clear `MoveOptions.minNodes` on punctuation alone, and the same import turns up in many files, so
  * pairing them across files reports noise as moves.
  */
 const importKinds = /^(import_statement|import_from_statement)$/;
@@ -41,12 +41,13 @@ const importKinds = /^(import_statement|import_from_statement)$/;
  * Pairs code deleted from one file with code inserted into another, so a declaration that moved
  * between files is one move rather than a delete here and an insert there. First identical subtrees,
  * largest first; then declarations of the same kind and name, matched inside for the edits made
- * on the way. Paired subtrees are claimed out of their files' mappings, and any same-file match
- * inside them is dropped in favour of the cross-file pairing.
+ * on the way, unless `classifyMove` calls the pair `replaced`. Paired subtrees are claimed out of their
+ * files' mappings, and any same-file match inside them is dropped in favour of the cross-file pairing.
  */
 export function crossFileMoves(
   mappings: (Mapping | undefined)[],
   opts: MatchOptions = defaultMatchOptions,
+  moveOpts: MoveOptions = defaultMoveOptions,
 ): { claimed: (Claimed | undefined)[]; edits: CrossEdit[] } {
   const intern = new Map<string, number>();
   const iso = mappings.map(
@@ -78,7 +79,7 @@ export function crossFileMoves(
         const out: Candidate[] = [];
         for (let i = 1; i < s.nodes.length; i++) {
           const size = s.size[i] as number;
-          if (size < minMoveSize || table[i] !== -1) continue;
+          if (size < moveOpts.minNodes || table[i] !== -1) continue;
           const n = s.node(i);
           if (s.tree.named(n) && !inImport(s.tree, n))
             out.push({ file, i, size, n, tree: s.tree });
@@ -88,8 +89,18 @@ export function crossFileMoves(
       .sort((p, q) => q.size - p.size);
   const fromA = candidates("a");
   const intoB = candidates("b");
-  const isClaimed = (side: "a" | "b", c: Candidate) =>
-    claimed[c.file]?.[side][c.i] === 1;
+  // A declaration judged rewritten is delete plus new code whole, like an in-file move `classifyMove`
+  // rejects, so no piece of it (a parameter list both versions share) may pair up on its own afterwards.
+  const declined = mappings.map((m) => ({
+    a: new Uint8Array(m?.a.nodes.length ?? 0),
+    b: new Uint8Array(m?.b.nodes.length ?? 0),
+  }));
+  const isTaken = (side: "a" | "b", c: Candidate) =>
+    claimed[c.file]?.[side][c.i] === 1 || declined[c.file]?.[side][c.i] === 1;
+  const decline = (x: Candidate, y: Candidate) => {
+    declined[x.file]?.a.fill(1, x.i, x.i + x.size);
+    declined[y.file]?.b.fill(1, y.i, y.i + y.size);
+  };
 
   const claim = (x: Candidate, y: Candidate) => {
     for (const [side, c] of [
@@ -110,7 +121,7 @@ export function crossFileMoves(
       }
     }
   };
-  const move = (x: Candidate, y: Candidate): CrossEdit => ({
+  const move = (x: Candidate, y: Candidate, edited = false): CrossEdit => ({
     from: x.file,
     to: y.file,
     whole: true,
@@ -121,6 +132,7 @@ export function crossFileMoves(
       node: x.tree.kindName(x.n),
       a: x.n,
       b: y.n,
+      ...(edited && { edited: true as const }),
     },
     ta: x.tree,
     tb: y.tree,
@@ -138,9 +150,7 @@ export function crossFileMoves(
   const identical = (x: Candidate) => {
     const id = iso[x.file]?.a[x.i];
     if (id === undefined) return false;
-    const y = byIso
-      .get(id)
-      ?.find((y) => y.file !== x.file && !isClaimed("b", y));
+    const y = byIso.get(id)?.find((y) => y.file !== x.file && !isTaken("b", y));
     if (!y) return false;
     claim(x, y);
     edits.push(move(x, y));
@@ -166,24 +176,31 @@ export function crossFileMoves(
     const name = nameOf(x.tree, x.n);
     if (name === undefined) return;
     const key = `${x.tree.kindName(x.n)}\0${name}`;
-    const xs = namedA.get(key)?.filter((c) => !isClaimed("a", c)) ?? [];
-    const ys = namedB.get(key)?.filter((c) => !isClaimed("b", c)) ?? [];
+    const xs = namedA.get(key)?.filter((c) => !isTaken("a", c)) ?? [];
+    const ys = namedB.get(key)?.filter((c) => !isTaken("b", c)) ?? [];
     const [y] = ys;
     if (xs.length !== 1 || ys.length !== 1 || !y || y.file === x.file) return;
     if (Math.min(x.size, y.size) < Math.max(x.size, y.size) / 2) return;
     const ma = mappings[x.file];
     const mb = mappings[y.file];
     if (!ma || !mb) return;
-    let inner: EditScript;
+    let pair: Mapping;
     try {
       // Views of the two subtrees, so the inner edits name nodes of the real trees, ancestors reachable.
-      inner = editScript(match(ma.a.sub(x.n), mb.b.sub(y.n), opts));
+      pair = match(ma.a.sub(x.n), mb.b.sub(y.n), opts);
     } catch (error) {
       if (error instanceof MatchBudgetExceeded) return;
       throw error;
     }
+    // A same-named declaration rewritten from scratch stays a delete there and an insert here.
+    const kind = classifyMove(pair, 0, 0, moveOpts);
+    if (kind === "replaced") {
+      decline(x, y);
+      return;
+    }
+    const inner: EditScript = editScript(pair, undefined, moveOpts);
     claim(x, y);
-    edits.push(move(x, y));
+    edits.push(move(x, y, kind === "edited"));
     for (const e of inner.edits)
       edits.push({
         from: x.file,
@@ -195,7 +212,7 @@ export function crossFileMoves(
   };
 
   // Largest first, so a declaration edited on the way pairs whole before its unchanged body could pair alone.
-  for (const x of fromA) if (!isClaimed("a", x) && !identical(x)) sameName(x);
+  for (const x of fromA) if (!isTaken("a", x) && !identical(x)) sameName(x);
   return { claimed, edits };
 }
 

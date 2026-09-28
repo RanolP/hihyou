@@ -14,4 +14,11 @@ export {
   type MatchOptions,
   match,
 } from "./matcher.js";
+export {
+  classifyMove,
+  defaultMoveOptions,
+  type MoveClass,
+  type MoveOptions,
+  type SameLeaf,
+} from "./move.js";
 export { Side } from "./side.js";

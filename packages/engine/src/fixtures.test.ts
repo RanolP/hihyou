@@ -382,10 +382,11 @@ describe("fixtures", () => {
     ).toBeLessThanOrEqual(2);
   });
 
-  it("swap-arguments: swapping two arguments moves one argument and never reports the comma as moved", async () => {
+  it("swap-arguments: an argument swapped past another is too small to call moved, so it is one delete plus one insert of that argument, never touching the comma", async () => {
     const file = await onlyFile("swap-arguments");
     expect(file.edits).toEqual([
-      expect.objectContaining({ kind: "move", node: "identifier" }),
+      expect.objectContaining({ kind: "delete", node: "identifier" }),
+      expect.objectContaining({ kind: "insert", node: "identifier" }),
     ]);
   });
 

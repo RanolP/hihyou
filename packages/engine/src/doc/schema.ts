@@ -36,11 +36,16 @@ export const Edit = z.discriminatedUnion("kind", [
     ...common,
     ...across,
   }),
-  /** A node that changed parent or order, or moved to another file; edits inside it are reported separately. */
+  /**
+   * A node that changed parent or order, or moved to another file; edits inside it are reported separately.
+   * `edited`: its content changed on the way too, keeping at least half its tokens; absent for a pure move.
+   * A node that kept less than half, or is under 8 nodes, is reported as a delete plus an insert instead.
+   */
   z.object({
     kind: z.literal("move"),
     old: Range,
     new: Range,
+    edited: z.literal(true).optional(),
     ...common,
     ...across,
   }),

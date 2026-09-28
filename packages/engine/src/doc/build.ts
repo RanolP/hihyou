@@ -277,6 +277,7 @@ function toDocEdits(
               old: range(from, 0, e.old),
               new: range(to, 1, e.new),
               ...common,
+              ...(e.kind === "move" && e.edited && { edited: true as const }),
               ...(from !== i &&
                 fromFile && { from: fromFile.oldPath ?? fromFile.path }),
               ...(to !== i && toFile && { to: toFile.path }),
