@@ -660,7 +660,10 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
       case "brackets": {
         if (x.via !== undefined) return frame(x, x.via);
         if (x.body.t === "sepBy") return list(x.body, x);
-        line(`open(GROUP, -1, ${frameWrap(rule, x.label).expand === "always" ? "BROKEN" : "0"});`);
+        const bw = frameWrap(rule, x.label);
+        line(
+          `open(GROUP, -1, ${bw.expand === "always" ? "BROKEN" : bw.breakWhen !== undefined && bw.breakWhen !== false ? `${when(bw.breakWhen)} ? BROKEN : 0` : "0"});`,
+        );
         bracket(x.open);
         const body = () => {
           line("open(INDENT);");

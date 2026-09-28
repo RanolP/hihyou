@@ -24,6 +24,7 @@ import {
   sepBy,
   space,
   spansLines,
+  splitOn,
   text,
   verbatim,
   when,
@@ -118,9 +119,12 @@ export const kotlin = format({
     type_alias: () => spaced({ tightBefore: ["type_parameters"] }),
 
     function_declaration: () => spaced({ tightBefore: [":"] }),
-    function_value_parameters: ($) =>
-      either(has("children", "parameter_modifiers"), bail("parameter modifiers"), grpParen(sepBy(",", $.children, { trailing: true }))),
+    // A parameter's modifiers and default are its siblings, so an entry is the run between two commas.
+    function_value_parameters: () =>
+      grpParen(splitOn(",", { except: ["(", ")"], item: "space", layout: { between: "line" } })),
     parameter: () => spaced({ tightBefore: [":"] }),
+    parameter_modifiers: () => inOrder(space),
+    parameter_modifier: () => inOrder(),
     function_body: () => spaced({ braces: true, hang: true }),
     anonymous_function: () => spaced({ tightBefore: [":"] }),
     property_declaration: () =>
@@ -177,7 +181,7 @@ export const kotlin = format({
     this_expression: () => inOrder(),
     super_expression: () => inOrder(),
     callable_reference: () => inOrder(),
-    jump_expression: () => inOrder(space),
+    jump_expression: () => inOrder({ join: "space", tight: { after: ["return@", "break@", "continue@"] } }),
     additive_expression: binary,
     multiplicative_expression: binary,
     comparison_expression: binary,
