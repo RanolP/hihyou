@@ -59,6 +59,13 @@ export function ktfmtMissing(): string | undefined {
   return undefined;
 }
 
+/** The pinned ktfmt jar's path; throws when ktfmt cannot run. */
+export function ktfmtJar(): string {
+  const missing = jar === undefined ? ktfmtMissing() : undefined;
+  if (missing) throw new Error(missing);
+  return jar as string;
+}
+
 /**
  * Each input formatted by ktfmt, or the Error it reported for that input (a syntax error). An input's `name`
  * picks its kind by extension: `.kts` is a script, anything else a `.kt` file. Throws when ktfmt cannot run.
@@ -66,8 +73,7 @@ export function ktfmtMissing(): string | undefined {
 export function formatAll(
   inputs: { name: string; text: string }[],
 ): (string | Error)[] {
-  const missing = jar === undefined ? ktfmtMissing() : undefined;
-  if (missing) throw new Error(missing);
+  const jarPath = ktfmtJar();
   const dir = mkdtempSync(join(tmpdir(), "syntechs-ktfmt-"));
   try {
     const paths = inputs.map(({ name, text }, i) => {
@@ -78,7 +84,7 @@ export function formatAll(
     // ktfmt formats in place; an argfile keeps a long input list off the command line.
     const args = join(dir, "args.txt");
     writeFileSync(args, ["--kotlinlang-style", ...paths].join("\n"));
-    const r = run("java", ["-jar", jar as string, `@${args}`]);
+    const r = run("java", ["-jar", jarPath, `@${args}`]);
     if (r.error || r.signal) throw failure("ktfmt", r);
     // stderr reports each file: `Done formatting <path>`, or lines naming it (`<path>:<line>:<col>: error: ...`
     // for a syntax error) when it was left as it was. It exits 1 when any file failed.

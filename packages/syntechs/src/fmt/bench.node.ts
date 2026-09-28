@@ -14,6 +14,14 @@
 // than resolving, stat-ing and compiling ~60 modules one by one. All four pay their own process/Node startup, so the comparison is apples to apples. The pre-existing in-process
 // syntechs timing (parse + format only, no process startup) is kept as a secondary "in-process" column; it is
 // not used for the ratio or the verdict.
+//
+// Kotlin's reference is ktfmt --kotlinlang-style, timed folder-level the same way (`java -jar` on the directory),
+// and again in one warm JVM (conformance/KtfmtWarm.java), since JVM startup alone takes about a second; the verdict
+// divides syntechs' folder time by ktfmt's folder time, and reports the ratio to the warm JVM beside it.
+//
+// An input the formatter bails on (`format` returns ok: false because a rule threw) stays in every timing, as
+// the CLI and the in-process loop meet it: it costs its parse plus the partial format up to the throw, and is
+// written back untouched. The verdict line counts those bailed inputs, so a fast time bought by bailing shows.
 
 import { execFileSync, spawnSync } from "node:child_process";
 import {
@@ -29,10 +37,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "tsdown";
 import * as prettier from "prettier";
-import { benchFiles, type GrammarName } from "../core/corpus.node.js";
+import { benchFiles, type GrammarName, pkgRoot } from "../core/corpus.node.js";
 import { parseTree } from "../core/index.js";
 import type { Language as Grammar } from "../core/language.js";
 import { check } from "./check.js";
+import { ktfmtJar } from "./conformance/ktfmt.node.js";
 import { oxfmt } from "./conformance/references.node.js";
 import { TARGETS } from "./conformance.node.js";
 import { format } from "./format.js";
@@ -54,9 +63,11 @@ interface Group {
   /** The conformance target whose fmt module and fixtures this language uses. */
   target: string;
   corpus: GrammarName[];
-  /** prettier's parser and oxfmt's file extension by grammar; absent for Python, which only ruff formats. */
+  /** prettier's parser and oxfmt's file extension by grammar; absent for Python and Kotlin. */
   prettier?: (g: GrammarName) => string;
   oxfmtExt?: (g: GrammarName) => string;
+  /** Kotlin's reference is ktfmt; without this or `prettier`, it is ruff. */
+  ktfmt?: true;
 }
 
 const GROUPS: Group[] = [
@@ -89,6 +100,7 @@ const GROUPS: Group[] = [
     oxfmtExt: (g) => (g === "tsx" ? "tsx" : "ts"),
   },
   { id: "python", target: "python", corpus: ["python"] },
+  { id: "kotlin", target: "kotlin", corpus: ["kotlin"], ktfmt: true },
 ];
 
 async function timed(
@@ -221,6 +233,50 @@ const runRuff =
       throw new Error(`ruff exited ${r.status}: ${r.stderr.slice(0, 500)}`);
   };
 
+const ktExt = (i: Input) => (i.name.endsWith(".kts") ? "kts" : "kt");
+
+const runKtfmt =
+  (jar: string) =>
+  (dir: string): void => {
+    const r = spawnSync("java", ["-jar", jar, "--kotlinlang-style", dir], {
+      cwd: REPO_ROOT,
+      encoding: "utf8",
+    });
+    if (r.status !== 0)
+      throw new Error(
+        `ktfmt exited ${r.status}${r.error ? ` (${r.error.message})` : ""}: ${r.stderr.slice(0, 500)}`,
+      );
+  };
+
+/** ktfmt's median pass over `inputs` in one warm JVM (KtfmtWarm.java), JVM startup and file I/O excluded. */
+function ktfmtWarmMs(jar: string, inputs: Input[]): number {
+  const dir = mkdtempSync(join(tmpdir(), "syntechs-bench-kt-"));
+  try {
+    for (const [i, input] of inputs.entries())
+      writeFileSync(join(dir, `${i}.${ktExt(input)}`), input.text);
+    const harness = join(
+      pkgRoot,
+      "src",
+      "fmt",
+      "conformance",
+      "KtfmtWarm.java",
+    );
+    const r = spawnSync(
+      "java",
+      ["-cp", jar, harness, dir, String(WARMUP), String(RUNS)],
+      { cwd: REPO_ROOT, encoding: "utf8" },
+    );
+    const ms = Number(r.stdout.trim());
+    if (r.status !== 0 || !Number.isFinite(ms))
+      throw new Error(
+        `KtfmtWarm exited ${r.status}${r.error ? ` (${r.error.message})` : ""}: ${r.stdout.slice(0, 200)}${r.stderr.slice(0, 1000)}`,
+      );
+    return ms;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 const cell = (x: number | undefined, digits = 1) =>
   x === undefined ? "-" : x.toFixed(digits);
 
@@ -317,8 +373,19 @@ async function main() {
         set[1] = kept;
       }
 
-      let totals = { ours: 0, prettier: 0, oxfmt: 0, ruff: 0 };
+      let totals = {
+        ours: 0,
+        prettier: 0,
+        oxfmt: 0,
+        ruff: 0,
+        ktfmt: 0,
+        ktfmtWarm: 0,
+        parse: 0,
+      };
+      let bailed = 0;
+      let inputCount = 0;
       for (const [label, inputs] of sets) {
+        inputCount += inputs.length;
         const bytes = inputs.reduce((n, i) => n + Buffer.byteLength(i.text), 0);
         const ours = implemented
           ? await timed(() => {
@@ -329,6 +396,14 @@ async function main() {
                 );
             })
           : undefined;
+        // With no formatter yet, the parse alone: the floor any formatter for the language starts from.
+        const parsedOnly =
+          !implemented && inputs.every((i) => grammars.has(i.grammar))
+            ? await timed(() => {
+                for (const i of inputs)
+                  parseTree(grammars.get(i.grammar) as Grammar, i.text);
+              })
+            : undefined;
         // Correctness apart from the timing: `format` does not check its output, so the bench checks each once.
         if (implemented)
           for (const i of inputs) {
@@ -340,6 +415,7 @@ async function main() {
             const problem = out.ok
               ? check(lang, i.text, out.text)
               : `${out.reason}: ${out.detail}`;
+            if (!out.ok) bailed++;
             if (problem)
               failures.push(`${g.id} ${label} ${i.name}: ${problem}`);
           }
@@ -347,8 +423,16 @@ async function main() {
         let pretty: number | undefined;
         let ox: number | undefined;
         let rf: number | undefined;
+        let kt: number | undefined;
+        let ktWarm: number | undefined;
         let oursFolder: number | undefined;
-        if (g.prettier && g.oxfmtExt) {
+        if (g.ktfmt) {
+          const jar = ktfmtJar();
+          kt = folderTime(inputs, ktExt, runKtfmt(jar)).ms;
+          ktWarm = ktfmtWarmMs(jar, inputs);
+          if (implemented)
+            oursFolder = folderTime(inputs, ktExt, runNode(CLI_PATH, [])).ms;
+        } else if (g.prettier && g.oxfmtExt) {
           const extOf = (i: Input) =>
             (g.oxfmtExt as (g: GrammarName) => string)(i.grammar);
           if (oxfmtBin === undefined) {
@@ -387,31 +471,34 @@ async function main() {
           if (implemented)
             oursFolder = folderTime(inputs, extOf, runNode(CLI_PATH, [])).ms;
         }
-        const ref = rf ?? ox;
+        const ref = rf ?? kt ?? ox;
         totals = {
           ours: totals.ours + (oursFolder ?? 0),
           prettier: totals.prettier + (pretty ?? 0),
           oxfmt: totals.oxfmt + (ox ?? 0),
           ruff: totals.ruff + (rf ?? 0),
+          ktfmt: totals.ktfmt + (kt ?? 0),
+          ktfmtWarm: totals.ktfmtWarm + (ktWarm ?? 0),
+          parse: totals.parse + (parsedOnly?.warm ?? 0),
         };
         const mbs = (ms: number | undefined) =>
           ms === undefined ? undefined : bytes / 1e6 / (ms / 1e3);
         rows.push(
-          `| ${g.id} | ${label} | ${inputs.length} | ${(bytes / 1024).toFixed(0)} | ${oursFolder !== undefined ? `${cell(oursFolder)} (${cell(mbs(oursFolder), 2)} MB/s)` : implemented ? "-" : "not implemented"} | ${ours ? cell(ours.warm) : "-"} | ${pretty === undefined ? "-" : `${cell(pretty)} (${cell(mbs(pretty), 2)} MB/s)`} | ${ox === undefined ? "-" : `${cell(ox)} (${cell(mbs(ox), 2)} MB/s)`} | ${rf === undefined ? "-" : cell(rf)} | ${oursFolder && ref ? cell(oursFolder / ref, 2) : "-"} | ${oursFolder && pretty ? cell(oursFolder / pretty, 2) : "-"} |`,
+          `| ${g.id} | ${label} | ${inputs.length} | ${(bytes / 1024).toFixed(0)} | ${oursFolder !== undefined ? `${cell(oursFolder)} (${cell(mbs(oursFolder), 2)} MB/s)` : implemented ? "-" : "not implemented"} | ${ours ? cell(ours.warm) : parsedOnly ? `parse only ${cell(parsedOnly.warm)}` : "-"} | ${pretty === undefined ? "-" : `${cell(pretty)} (${cell(mbs(pretty), 2)} MB/s)`} | ${ox === undefined ? "-" : `${cell(ox)} (${cell(mbs(ox), 2)} MB/s)`} | ${rf === undefined ? "-" : cell(rf)} | ${kt === undefined ? "-" : `${cell(kt)} (warm JVM ${cell(ktWarm)})`} | ${oursFolder && ref ? cell(oursFolder / ref, 2) : "-"} | ${oursFolder && pretty ? cell(oursFolder / pretty, 2) : "-"} |`,
         );
       }
       if (!implemented) {
         verdicts.push(
-          `${g.id}: not implemented (no fmt module export \`${target.export}\`)`,
+          `${g.id}: not implemented (no fmt module export \`${target.export}\`)${totals.parse ? `; syntechs parse only ${totals.parse.toFixed(1)} ms in-process` : ""}${g.ktfmt ? `; ktfmt ${totals.ktfmt.toFixed(1)} ms folder, ${totals.ktfmtWarm.toFixed(1)} ms warm JVM` : ""}`,
         );
         continue;
       }
-      const ref = g.prettier ? totals.oxfmt : totals.ruff;
-      const refName = g.prettier ? "oxfmt" : "ruff";
+      const ref = g.prettier ? totals.oxfmt : g.ktfmt ? totals.ktfmt : totals.ruff;
+      const refName = g.prettier ? "oxfmt" : g.ktfmt ? "ktfmt" : "ruff";
       const vsRef = totals.ours / ref;
       const pass = vsRef <= 5 && (!g.prettier || totals.ours < totals.prettier);
       verdicts.push(
-        `${g.id}: ${pass ? "PASS" : "FAIL"} (syntechs ${totals.ours.toFixed(1)} ms folder = ${vsRef.toFixed(2)}x ${refName}${g.prettier ? `, ${(totals.ours / totals.prettier).toFixed(2)}x prettier` : ""}; load ${loadMs.toFixed(0)} ms not counted)`,
+        `${g.id}: ${pass ? "PASS" : "FAIL"} (syntechs ${totals.ours.toFixed(1)} ms folder = ${vsRef.toFixed(2)}x ${refName}${g.prettier ? `, ${(totals.ours / totals.prettier).toFixed(2)}x prettier` : ""}${g.ktfmt ? `, ${(totals.ours / totals.ktfmtWarm).toFixed(2)}x ktfmt warm JVM (${totals.ktfmtWarm.toFixed(1)} ms)` : ""}; ${bailed}/${inputCount} inputs bailed, timed as met; load ${loadMs.toFixed(0)} ms not counted)`,
       );
     }
   } finally {
@@ -423,14 +510,14 @@ async function main() {
     `\nWarm = median of ${RUNS} passes after ${WARMUP}; each pass is one whole-process CLI invocation over the input directory. ms per pass over the set.\n`,
   );
   console.log(
-    "| Language | Inputs | Files | KB | syntechs folder ms | syntechs in-process ms | prettier folder ms | oxfmt folder ms | ruff folder ms | syntechs / oxfmt (ruff) | syntechs / prettier |",
+    "| Language | Inputs | Files | KB | syntechs folder ms | syntechs in-process ms | prettier folder ms | oxfmt folder ms | ruff folder ms | ktfmt folder ms | syntechs / oxfmt (ruff, ktfmt) | syntechs / prettier |",
   );
   console.log(
-    "| :-- | :-- | --: | --: | --: | --: | --: | --: | --: | --: | --: |",
+    "| :-- | :-- | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: |",
   );
   for (const r of rows) console.log(r);
   console.log(
-    "\nTarget: syntechs <= 5x oxfmt and < prettier (Python: <= 5x ruff), over corpus + fixtures, all folder-level. The in-process column (parse + format, no process startup) is a secondary diagnostic, not the verdict.",
+    "\nTarget: syntechs <= 5x oxfmt and < prettier (Python: <= 5x ruff; Kotlin: <= 5x ktfmt folder), over corpus + fixtures, all folder-level. The in-process column (parse + format, no process startup) is a secondary diagnostic, not the verdict.",
   );
   for (const v of verdicts) console.log(v);
   console.log(

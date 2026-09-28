@@ -26,6 +26,11 @@ const javascript: Spec = {
   fmt: () => import("../grammars/javascript/fmt.js"),
   export: "javascript",
 };
+const kotlin: Spec = {
+  grammar: () => import("../grammars/kotlin/index.js"),
+  fmt: () => import("../grammars/kotlin/fmt.js"),
+  export: "kotlin",
+};
 const typescript = () => import("../grammars/typescript/fmt.js");
 const EXT: Record<string, Spec> = {
   ".json": {
@@ -55,6 +60,8 @@ const EXT: Record<string, Spec> = {
     fmt: () => import("../grammars/python/fmt.js"),
     export: "python",
   },
+  ".kt": kotlin,
+  ".kts": kotlin,
 };
 
 const dir = process.argv[2];
