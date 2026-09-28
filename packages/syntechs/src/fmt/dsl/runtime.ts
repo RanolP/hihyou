@@ -1,7 +1,7 @@
 // What the generated formatters (`fmt.gen.ts`) and the two-pass reference (`reference.ts`) share: how a spec's
 // references bind to a node's children, so both print the same source token for the same spec token; the
 // entries of the flattened sequence; and the types of the hand-written rules a spec names.
-import { sToken } from "../stream.js";
+import { sHardline, sToken } from "../stream.js";
 import {
   type CommentFacts,
   commentFacts,
@@ -165,6 +165,147 @@ export type ParensRule<O = unknown> = (node: number, mode: string, ctx: StreamCt
 
 /** A `when(name)` or `pred(name, ...args)` condition: whether it holds for `node`, given `args`. */
 export type PredicateRule<O = unknown> = (node: number, ctx: StreamCtx<O>, ...args: string[]) => boolean;
+
+/**
+ * A language's imports, which `lines`'s `imports` option names: the key they sort by, the name each binds, and
+ * what spells a use of a name. Unused-import detection is syntactic, like ktfmt's RedundantImportDetector: an
+ * import is unused when no identifier outside `skip`, no name a comment refers to, and no implicit use matches
+ * the name it binds.
+ */
+export interface ImportRule<O = unknown> {
+  /** The key imports sort by, compared by code unit; equal keys keep their source order. */
+  key(tree: FormatTree, imp: number, ctx: StreamCtx<O>): string;
+  /** The name `imp` binds (its simple name or alias); undefined when it is never unused, like a wildcard. */
+  binds(tree: FormatTree, imp: number): string | undefined;
+  /** Kinds whose text uses the name it spells. */
+  readonly identifiers: ReadonlySet<string>;
+  /** Kinds whose identifiers are no use: the imports themselves, a package header. */
+  readonly skip: ReadonlySet<string>;
+  /** The names comment `text` refers to, like a doc comment's links. */
+  commentNames?(text: string): Iterable<string>;
+  /** Whether `name` counts as used though no identifier spells it, like an operator convention's. */
+  implicit?(name: string): boolean;
+}
+
+/** A run of import lists printed as one: its imports in print order, between the run's outer comments. */
+export interface ImportBlock {
+  readonly imports: readonly number[];
+  readonly first: number;
+  readonly last: number;
+}
+
+/** The identifier texts and comment references of the whole file, outside `rule.skip`. */
+function usedNames<O>(ctx: StreamCtx<O>, rule: ImportRule<O>): Set<string> {
+  const tree = ctx.tree;
+  const used = new Set<string>();
+  const stack = [tree.root];
+  for (let n = stack.pop(); n !== undefined; n = stack.pop()) {
+    const kind = tree.kindName(n);
+    if (ctx.isComment(n)) {
+      if (rule.commentNames) for (const name of rule.commentNames(tree.text(n))) used.add(name);
+      continue;
+    }
+    if (rule.identifiers.has(kind)) used.add(tree.text(n));
+    if (rule.skip.has(kind)) {
+      // A comment inside an import still refers to names.
+      for (let i = 0, count = tree.count(n); i < count; i++) {
+        const c = tree.child(n, i);
+        if (ctx.isComment(c)) stack.push(c);
+      }
+      continue;
+    }
+    for (let i = 0, count = tree.count(n); i < count; i++) stack.push(tree.child(n, i));
+  }
+  return used;
+}
+
+/** The texts of `node`'s leaves, in order. */
+function leafTexts(tree: FormatTree, node: number, out: string[] = []): string[] {
+  const count = tree.count(node);
+  if (count === 0) out.push(tree.text(node));
+  for (let i = 0; i < count; i++) leafTexts(tree, tree.child(node, i), out);
+  return out;
+}
+
+/**
+ * `items` with each run of consecutive `kind` items (import lists) folded into its first, which `blocks` maps to
+ * the run's imports: sorted by `rule.key`, and, unless the `keepImports` option is set, without exact duplicates
+ * or unused imports; a run left with none is dropped. A run with comments between its lists, or a broken list,
+ * stays as written; an import with a comment of its own is never dropped.
+ */
+export function importBlocks<O>(
+  ctx: StreamCtx<O>,
+  items: readonly number[],
+  kind: string,
+  rule: ImportRule<O>,
+): { items: number[]; blocks: Map<number, ImportBlock> } {
+  const tree = ctx.tree;
+  const out: number[] = [];
+  const blocks = new Map<number, ImportBlock>();
+  const keep = (ctx.options as { readonly keepImports?: unknown }).keepImports === true;
+  let used: Set<string> | undefined;
+  const commented = (n: number) => ctx.leadingComments(n).length > 0 || ctx.trailingComments(n).length > 0;
+  for (let i = 0; i < items.length; ) {
+    const first = items[i] as number;
+    if (tree.kindName(first) !== kind) {
+      out.push(first);
+      i++;
+      continue;
+    }
+    let j = i + 1;
+    while (j < items.length && tree.kindName(items[j] as number) === kind) j++;
+    const run = items.slice(i, j);
+    i = j;
+    const last = run[run.length - 1] as number;
+    if (
+      run.some(
+        (l, k) =>
+          ctx.isBroken(l) ||
+          ctx.danglingComments(l).length > 0 ||
+          (k > 0 && ctx.leadingComments(l).length > 0) ||
+          (l !== last && ctx.trailingComments(l).length > 0),
+      )
+    ) {
+      out.push(...run);
+      continue;
+    }
+    const all = run.flatMap((l) => ctx.items(l));
+    let imports = all
+      .map((imp, at) => ({ imp, at, key: rule.key(tree, imp, ctx) }))
+      .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : a.at - b.at))
+      .map((e) => e.imp);
+    if (!keep) {
+      used ??= usedNames(ctx, rule);
+      const seen = new Set<string>();
+      imports = imports.filter((imp) => {
+        if (commented(imp)) return true;
+        const text = leafTexts(tree, imp).join(" ");
+        if (seen.has(text)) return false;
+        seen.add(text);
+        const name = rule.binds(tree, imp);
+        return name === undefined || (used as Set<string>).has(name) || rule.implicit?.(name) === true;
+      });
+      if (imports.length === 0) {
+        if (!commented(first) && !commented(last)) continue;
+        // The run's comments need a place to stay.
+        imports = all;
+      }
+    }
+    out.push(first);
+    blocks.set(first, { imports, first, last });
+  }
+  return { items: out, blocks };
+}
+
+/** Prints an `importBlocks` block: its imports one per line, between the comments around its run. */
+export function printImports<O>(ctx: StreamCtx<O>, block: ImportBlock): void {
+  printLeadingComments(ctx, block.first);
+  for (let i = 0; i < block.imports.length; i++) {
+    if (i > 0) sHardline();
+    ctx.print(block.imports[i] as number);
+  }
+  printTrailingComments(ctx, block.last);
+}
 
 /** Prints `kid` between the comments attached to it: `body` in place of the kid, else the kid as its rule prints it. */
 export function printKid(

@@ -71,3 +71,12 @@ export const ruffSettings = (o: RuffOptions): Settings => ({
   ruff: true,
   endOfLine: ruffEndOfLine[o["line-ending"]],
 });
+
+/** What a language whose layout sorts its imports reads (`lines`'s `imports`, dsl.ts). */
+export interface ImportOptions {
+  /**
+   * Keeps every import line, only sorting them: no duplicate or unused import is dropped. A diff viewer sets it,
+   * since dropping an import from the formatted side would hide an import the change adds or removes.
+   */
+  keepImports: boolean;
+}

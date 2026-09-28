@@ -336,7 +336,7 @@ export function flatten<O>(
           return;
         }
         case "lines": {
-          if (x.attach !== undefined || x.blank !== undefined || x.follow !== undefined || x.tokens)
+          if (x.attach !== undefined || x.blank !== undefined || x.follow !== undefined || x.tokens || x.imports)
             throw new Error("flatten: `lines` with `attach`, `blank` or `follow` is generated only, not referenced yet");
           const items = listItems(ctx, n, x.list.name, kindHasFields).slice(x.list.from ?? 0);
           // Nothing to lay out leaves no frame, so a bracket body of only this is empty.

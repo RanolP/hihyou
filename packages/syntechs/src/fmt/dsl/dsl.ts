@@ -166,7 +166,16 @@ export type Tree =
    * but the first where it holds of the item; `follow`: an item where it holds goes on the next line, indented
    * (see `lines`).
    */
-  | { readonly t: "lines"; readonly list: Ref; readonly attach?: string; readonly blank?: Cond; readonly follow?: Cond; readonly tokens?: true }
+  | {
+      readonly t: "lines";
+      readonly list: Ref;
+      readonly attach?: string;
+      readonly blank?: Cond;
+      readonly follow?: Cond;
+      readonly tokens?: true;
+      /** Each run of consecutive `kind` items prints as one import block by the `ImportRule` `via` (see `lines`). */
+      readonly imports?: { readonly kind: string; readonly via: string };
+    }
   | {
       readonly t: "inOrder";
       readonly join: Join;
@@ -662,6 +671,12 @@ export const lines = (
     readonly follow?: unknown;
     /** The node's tokens are lines too, as written: tree-sitter-kotlin's `null` statement is an anonymous child. */
     readonly tokens?: boolean;
+    /**
+     * Items of kind `kind` are import lists: each run of them prints as one block of their imports, sorted, without
+     * duplicates or unused ones unless the `keepImports` option is set, by the `ImportRule` `via` (runtime.ts); a
+     * run left with no import prints nothing.
+     */
+    readonly imports?: { readonly kind: string; readonly via: string };
   } = {},
 ): Piece<"lines"> =>
   piece({
@@ -671,6 +686,7 @@ export const lines = (
     ...(o.blank === undefined ? {} : { blank: plain(o.blank) }),
     ...(o.follow === undefined ? {} : { follow: plain(o.follow) }),
     ...(o.tokens ? { tokens: true } : {}),
+    ...(o.imports === undefined ? {} : { imports: o.imports }),
   });
 
 /** Which consecutive entries of an `inOrder` a spacing rule applies to (see `Pairs`). */

@@ -103,7 +103,7 @@ function spellFns(ir: FormatIR): Set<NormalizerName> {
   return fns;
 }
 
-type RuleType = "CustomRule" | "TokenRule" | "FrameRule" | "PredicateRule" | "ParensRule";
+type RuleType = "CustomRule" | "TokenRule" | "FrameRule" | "PredicateRule" | "ParensRule" | "ImportRule";
 
 /**
  * The custom rules `ir` names, each as the rule type it takes: a node's (`CustomRule`), a token's (`TokenRule`),
@@ -121,6 +121,7 @@ function customNames(ir: FormatIR): [string, RuleType][] {
     else if (x.t === "ref" && x.via !== undefined) add(x.via, "CustomRule");
     else if (x.t === "ref" && x.parens !== undefined) add("parens", "ParensRule");
     else if (x.t === "tok" && x.via !== undefined) add(x.via, "TokenRule");
+    else if (x.t === "lines" && x.imports !== undefined) add(x.imports.via, "ImportRule");
     else if (x.t === "seq") x.parts.forEach(walk);
     else if (x.t === "opt" || x.t === "tokIf") walk(x.then);
     else if (x.t === "layout") walk(x.body);
@@ -700,6 +701,11 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
           line(
             `const ${its} = Array.from({ length: t.count(node) }, (_, i) => t.child(node, i)).filter((c) => !ctx.isComment(c) && (!t.named(c) || ctx.items(node).includes(c)));`,
           );
+        const imports = x.imports !== undefined && x.attach === undefined ? name("imports") : undefined;
+        if (imports !== undefined && x.imports !== undefined) {
+          line(`const ${imports} = importBlocks(ctx, ${its}, ${str(x.imports.kind)}, custom[${str(x.imports.via)}]);`);
+          its = `${imports}.items`;
+        }
         if (x.attach !== undefined) {
           // Every item of the node in source order: the attached ones, and the rest as the lines (a grammar may put
           // them in a field, like tree-sitter-javascript's class_body `member`, where `children` would miss them).
@@ -744,6 +750,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
               `if (i > 0${frameWrap(rule, x.list.name).blankLines === undefined ? "" : ` && !nextLineEmpty(t, ${its}[i - 1] as number)`} && ${cond(x.blank, false, "item")}) sHardline();`,
             );
           if (x.tokens) line("if (!t.named(item)) sToken(item, t.text(item)); else");
+          if (imports !== undefined) line(`if (${imports}.blocks.has(item)) printImports(ctx, ${imports}.blocks.get(item) as ImportBlock); else`);
           child("item");
           if (frameWrap(rule, x.list.name).blankLines !== undefined)
             line(`if (i < ${its}.length - 1 && nextLineEmpty(t, item)) sHardline();`);
@@ -989,6 +996,7 @@ export function emit(
   let frameRules = false;
   let predicateRules = false;
   let parensRules = false;
+  let importRules = false;
   for (const [spec, ir] of Object.entries(specs)) {
     const keys = optionKeys(ir);
     const customs = customNames(ir);
@@ -1004,6 +1012,7 @@ export function emit(
     if (customs.some(([, type]) => type === "FrameRule")) frameRules = true;
     if (customs.some(([, type]) => type === "PredicateRule")) predicateRules = true;
     if (customs.some(([, type]) => type === "ParensRule")) parensRules = true;
+    if (customs.some(([, type]) => type === "ImportRule")) importRules = true;
     parts.push("", `export function ${spec}<O extends ${options}>(${param}): StreamRules<O> {`);
     const kinds = Object.keys(ir.structure);
     for (const kind of kinds) {
@@ -1032,6 +1041,12 @@ export function emit(
       parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
       0,
       'import { splitChild } from "../../fmt/dsl/runtime.js";',
+    );
+  if (parts.some((p) => p.includes("importBlocks(")))
+    parts.splice(
+      parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
+      0,
+      'import { type ImportBlock, importBlocks, printImports } from "../../fmt/dsl/runtime.js";',
     );
   if (parts.some((p) => p.includes("hasChild(")))
     parts.splice(
@@ -1106,6 +1121,7 @@ export function emit(
     ...(frameRules ? ["FrameRule"] : []),
     ...(predicateRules ? ["PredicateRule"] : []),
     ...(parensRules ? ["ParensRule"] : []),
+    ...(importRules ? ["ImportRule"] : []),
   ];
   if (extra.length > 0)
     parts.splice(

@@ -1,21 +1,40 @@
 import type { Normalize } from "../../fmt/check.js";
-import { type PrettierOptions, prettierDefaults, prettierSettings } from "../../fmt/options.js";
+import {
+  type ImportOptions,
+  type PrettierOptions,
+  prettierDefaults,
+  prettierSettings,
+} from "../../fmt/options.js";
 import { defineLanguage, type Language } from "../../fmt/rules.js";
 import { docCommentWords, kdoc } from "../../fmt/dsl/doc-comment.js";
-import type { PredicateRule } from "../../fmt/dsl/runtime.js";
+import type { ImportRule, PredicateRule } from "../../fmt/dsl/runtime.js";
+import type { FormatTree } from "../../fmt/tree.js";
 import { grammar } from "./bundle.js";
 import * as gen from "./fmt.gen.js";
 import { language } from "./index.js";
 
-/** ktfmt's `--kotlinlang-style`: 100 columns, 4-space indent; it takes no other layout option. */
-export type KotlinOptions = PrettierOptions;
+/**
+ * ktfmt's `--kotlinlang-style`: 100 columns, 4-space indent; it takes no other layout option. It sorts the
+ * imports and drops duplicate and unused ones, which `keepImports` turns off.
+ */
+export type KotlinOptions = PrettierOptions & ImportOptions;
 
-const defaults: KotlinOptions = { ...prettierDefaults, printWidth: 100, tabWidth: 4 };
+const defaults: KotlinOptions = { ...prettierDefaults, printWidth: 100, tabWidth: 4, keepImports: false };
 
-// ktfmt drops `;` between statements and adds a trailing comma to a broken list; neither changes meaning.
+/** Whether `node` lies inside an `import_list`, whose imports the formatter may reorder and drop. */
+const inImports = (tree: FormatTree, node: number) => {
+  for (let n = node; ; n = tree.parent(n)) {
+    if (tree.kindName(n) === "import_list") return true;
+    if (n === tree.root) return false;
+  }
+};
+
+// ktfmt drops `;` between statements and adds a trailing comma to a broken list; neither changes meaning. It
+// sorts the imports and drops unused ones, so `check` compares only the code around them.
 const closers = new Set([")", "]", "}", ">", ";"]);
-const normalize: Normalize = (lexemes) =>
+const normalize: Normalize = (lexemes, _text, tree) =>
   lexemes.map((l, i) => {
+    if (inImports(tree, l.node)) return undefined;
     if (l.text === ";") return undefined;
     const next = lexemes[i + 1]?.text;
     if (l.text === "," && next !== undefined && closers.has(next)) return undefined;
@@ -33,6 +52,63 @@ const annotationCount = (node: number, tree: { count(n: number): number; child(n
       if (tree.kindName(tree.child(c, j)) === "constructor_invocation") args = true;
   }
   return { n, args };
+};
+
+/** The texts of `node`'s leaves, joined. */
+const spelled = (tree: FormatTree, node: number): string => {
+  if (tree.count(node) === 0) return tree.text(node);
+  let s = "";
+  for (let i = 0; i < tree.count(node); i++) s += spelled(tree, tree.child(node, i));
+  return s;
+};
+const childOf = (tree: FormatTree, node: number, kind: string) => {
+  for (let i = 0; i < tree.count(node); i++) if (tree.kindName(tree.child(node, i)) === kind) return tree.child(node, i);
+  return -1;
+};
+
+// ktfmt 0.64's RedundantImportDetector keeps an import named by an operator convention, since a call through the
+// operator never spells the name.
+const operators = new Set(
+  (
+    "unaryPlus unaryMinus not inc dec plus minus times div rem mod rangeTo rangeUntil contains get set invoke " +
+    "plusAssign minusAssign timesAssign divAssign remAssign modAssign equals compareTo iterator next hasNext " +
+    "getValue setValue provideDelegate and or xor shl shr ushr inv"
+  ).split(" "),
+);
+
+/** The names a KDoc comment refers to: its `[links]` and the subject of `@see`, `@throws` and the like. */
+function kdocNames(text: string): string[] {
+  if (!text.startsWith("/**")) return [];
+  const names: string[] = [];
+  for (const m of text.matchAll(/\[([\w.`]+)\]|@(?:see|throws|exception|sample|param|property)\s+([\w.`]+)/g))
+    for (const part of (m[1] ?? m[2] ?? "").split(".")) if (part) names.push(part.replaceAll("`", ""));
+  return names;
+}
+
+/** Kotlin's imports as ktfmt sorts and prunes them. */
+const imports: ImportRule<KotlinOptions> = {
+  key: (tree, imp) => {
+    const path = childOf(tree, imp, "identifier");
+    const alias = childOf(tree, imp, "import_alias");
+    const wildcard = childOf(tree, imp, "wildcard_import") !== -1;
+    return (
+      (path === -1 ? "" : spelled(tree, path)) +
+      (wildcard ? ".*" : "") +
+      (alias === -1 ? "" : ` as ${spelled(tree, alias).replace(/^as/, "")}`)
+    );
+  },
+  binds: (tree, imp) => {
+    if (childOf(tree, imp, "wildcard_import") !== -1) return undefined;
+    const alias = childOf(tree, imp, "import_alias");
+    if (alias !== -1) return spelled(tree, alias).replace(/^as/, "").replaceAll("`", "");
+    const path = childOf(tree, imp, "identifier");
+    if (path === -1) return undefined;
+    return tree.text(tree.child(path, tree.count(path) - 1)).replaceAll("`", "");
+  },
+  identifiers: new Set(["simple_identifier", "type_identifier"]),
+  skip: new Set(["import_list", "package_header"]),
+  commentNames: kdocNames,
+  implicit: (name) => operators.has(name) || /^component\d+$/.test(name),
 };
 
 /** The rules `when` names in format.ts. */
@@ -58,5 +134,5 @@ export const kotlin: Language<KotlinOptions> = {
     hiddenTokens: true,
     atoms: ["string_literal", "character_literal"],
   }),
-  stream: gen.kotlin(customs),
+  stream: gen.kotlin({ ...customs, imports }),
 };

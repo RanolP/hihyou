@@ -37,3 +37,23 @@ test("KDoc reflow changes only the whitespace between the comment's words", () =
   expect(out.text).not.toBe(input);
   expect(kdocWords(out.text)).toEqual(kdocWords(input));
 });
+
+const run = (text: string, keepImports: boolean) => {
+  const out = format(parseTree(kotlin.parser, text), kotlin, { keepImports });
+  if (!out.ok) throw new Error(out.detail);
+  return out.text;
+};
+
+const importsInput = "import b.Used\nimport a.Unused\nimport b.Used\n\nimport c.*\nfun f(x: Used) = x\n";
+
+// A regression here drops an import line from the diff viewer's formatted side, hiding an import the change
+// adds or removes: the viewer always sets `keepImports`.
+test("keepImports sorts the imports but keeps every line, unused and duplicate ones too", () => {
+  expect(run(importsInput, true)).toBe(
+    "import a.Unused\nimport b.Used\nimport b.Used\nimport c.*\n\nfun f(x: Used) = x\n",
+  );
+});
+
+test("by default the imports are sorted, deduplicated and pruned of unused ones, as ktfmt does", () => {
+  expect(run(importsInput, false)).toBe("import b.Used\nimport c.*\n\nfun f(x: Used) = x\n");
+});

@@ -80,7 +80,7 @@ const follow = kindIs("getter", "setter");
 
 export const kotlin = format({
   structure: {
-    source_file: ($) => lines($.children, { blank, follow }),
+    source_file: ($) => lines($.children, { blank, follow, imports: { kind: "import_list", via: "imports" } }),
     package_header: () => inOrder(space),
     import_list: ($) => lines($.children),
     import_header: () => spaced(),

@@ -98,7 +98,8 @@ function run<O>(
       reason: "formatter-error",
       message: "the file has a syntax error",
     };
-  const out = format(tree, language, options);
+  // Always: an import the formatter dropped as unused or duplicate would hide an import the change adds or removes.
+  const out = format(tree, language, { ...options, keepImports: true } as Partial<O>);
   return out.ok
     ? { ok: true, text: out.text }
     : { ok: false, reason: out.reason, message: out.detail };
