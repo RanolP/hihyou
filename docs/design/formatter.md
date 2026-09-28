@@ -1,6 +1,6 @@
 # The syntechs formatter: design decisions
 
-The formatter in `packages/syntechs/src/fmt` lays out code for display in review (see `docs/design/diff-model.md` for why viewers reformat at all). This page records the decisions that fix its shape. `docs/research/formatter.md` is the earlier survey; its recommendation of a dprint-core port driven by interpreted rules was superseded by the generated stream code described here.
+The formatter in `packages/syntechs/src/fmt` lays out code for display in review (see `docs/design/product.md` ("Diff model") for why viewers reformat at all). This page records the decisions that fix its shape. `docs/research/formatter.md` is the earlier survey; its recommendation of a dprint-core port driven by interpreted rules was superseded by the generated stream code described here.
 
 ## Whose style: repo config, then the reviewer's overrides
 
@@ -51,3 +51,24 @@ Conceptually the passes are independent, and contributors reason about them that
 ### Comment placement is its own pass
 
 Deciding which node a comment belongs to is a pass of its own, before flatten: tree, then language-owned comment placement, then flatten, then wrapping. The default placement is a shared prettier-style attach (`packages/syntechs/src/fmt/comments.ts`); a language can supply its own (`LanguageSpec.placeComments`), as Python does with its port of ruff's placement. Overriding only a `handleComment` hook was rejected for Python: on the ruff corpus the shared attach disagreed with ruff on 33.6% of 4,409 comments and saw different neighbours for 26%, because of differences in the node model (parentheses, blocks, nested boolean operators, comprehension clauses).
+
+## Performance and parity targets
+
+syntechs replaces external formatters and highlighters at runtime (`docs/design/runtime.md`), so it has to prove two things against them: that its output matches, and that it is fast enough to run in a browser page. Both must be reached in TypeScript alone.
+
+### Formatter
+
+"we shall have parity matrix as oxfmt has before. also our goal is 5x slower than oxfmt, faster than prettier."
+
+- **Parity** is tracked like oxc's `tasks/prettier_conformance`: a committed per-language snapshot scoring the formatter on the reference tools' own fixtures, with compatibility N/M and each failing fixture's match percentage. References are prettier's `tests/format` for JSON, CSS, JavaScript, TypeScript and TSX, ruff's formatter fixtures for Python, and ktfmt for Kotlin. The matrix lives in `packages/syntechs/conformance/README.md`.
+- **Speed** is parse plus format, measured by the folder-level bench (`packages/syntechs/src/fmt/bench.node.ts`). The target is at most 5x the time of the native reference (oxfmt for JS, TS, JSON and CSS; ruff for Python) and faster than prettier. `docs/research/perf-phases.md` splits where that time goes.
+
+### HTML highlighting backend
+
+The planned `html` backend must match shiki per character and run at least 3x faster than warm shiki's faster engine. `docs/research/html-backend.md` records the target and its fixed constraints.
+
+### Measured: Doc item count is not the lever
+
+Reducing how many Doc items the printer walks does not make formatting faster; per-token work dominates. An experiment merged adjacent `TOKEN`/`TEXT` items into one run item in a post-build pass, keeping output and anchors byte-identical. It cut printer and `fits` item pops by 36-55%, yet format got slower in every language (TypeScript 550 to 625 ms, JSON 128 to 162 ms): the pass cost 15-100 ms while the printer saved at most about 5%. A build with the new printer but without the pass ran at the old speed. The printer's cost is per-token work (placement records, string building, `trimLineEnd` in `packages/syntechs/src/fmt/stream.ts`), not stepping between items. Together with the allocation measurement in `docs/research/perf-phases.md` ("Doc size and allocations", which caps allocation removal at about 10-20% of format time), this is why the formatter emits straight into the linear stream rather than building and shrinking a Doc.
+
+A Doc-size or item-count reduction is worth trying again only if it happens at build time with no extra pass. The levers left are per-token placement records, rule dispatch during layout, the parser, and cold JIT.
