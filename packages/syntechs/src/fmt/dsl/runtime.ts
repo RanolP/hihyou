@@ -163,8 +163,8 @@ export type CustomRule<O = unknown> = (node: number, ctx: StreamCtx<O>) => void;
  */
 export type ParensRule<O = unknown> = (node: number, mode: string, ctx: StreamCtx<O>) => void;
 
-/** A `when(name)` condition: whether it holds for `node`. */
-export type PredicateRule<O = unknown> = (node: number, ctx: StreamCtx<O>) => boolean;
+/** A `when(name)` or `pred(name, ...args)` condition: whether it holds for `node`, given `args`. */
+export type PredicateRule<O = unknown> = (node: number, ctx: StreamCtx<O>, ...args: string[]) => boolean;
 
 /** Prints `kid` between the comments attached to it: `body` in place of the kid, else the kid as its rule prints it. */
 export function printKid(

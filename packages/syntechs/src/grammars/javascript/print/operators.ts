@@ -899,69 +899,8 @@ function printTernary(node: number, ctx: JsStreamCtx): void {
 
 // --- the rest --------------------------------------------------------------------------------------------------
 
-const unary: CustomRule<JsOptions> = (node, sctx) => {
-  const ctx = jsCtx(sctx);
-  const js = ctx.js;
-  const op = field(js, node, "operator");
-  const arg = field(js, node, "argument") as number;
-  tok(js, op);
-  if (op !== undefined && /[a-z]$/.test(src(js, op))) sText(" ");
-  if (!hasComment(js, arg)) return ctx.print(arg);
-  within(GROUP, () => {
-    sToken(arg, "(", true);
-    within(INDENT, () => {
-      sLine(SOFT);
-      ctx.print(arg);
-    });
-    sLine(SOFT);
-    sToken(arg, ")", true);
-  });
-};
-
-const awaitExpression: CustomRule<JsOptions> = (node, sctx) => {
-  const ctx = jsCtx(sctx);
-  const js = ctx.js;
-  const kw = () => tok(js, anon(js, node, "await"));
-  const arg = items(js, node)[0];
-  if (arg === undefined) return kw();
-  const parts = () => {
-    kw();
-    sText(" ");
-    ctx.print(arg);
-  };
-  const { parent, key } = role(js, node);
-  const parentKind = kind(js, parent);
-  if (
-    !(
-      (parentKind === "call_expression" && key === "callee") ||
-      ((parentKind === "member_expression" ||
-        parentKind === "subscript_expression") &&
-        key === "object")
-    )
-  )
-    return parts();
-  let ancestor: number | undefined = parent;
-  while (
-    ancestor !== undefined &&
-    kind(js, ancestor) !== "await_expression" &&
-    kind(js, ancestor) !== "statement_block"
-  )
-    ancestor = parentOf(js, ancestor);
-  const grouped =
-    ancestor === undefined ||
-    kind(js, ancestor) !== "await_expression" ||
-    !startsWith(js, items(js, ancestor)[0], node);
-  if (grouped) open(GROUP);
-  within(INDENT, () => {
-    sLine(SOFT);
-    parts();
-  });
-  sLine(SOFT);
-  if (grouped) close();
-};
-
 /** Whether `target` is the leftmost node of expression `n` (prettier's startsWithNoLookaheadToken). */
-function startsWith(
+export function startsWith(
   ctx: HasTree,
   n: number | undefined,
   target: number,
@@ -997,53 +936,6 @@ function startsWith(
   return false;
 }
 
-const sequence: CustomRule<JsOptions> = (node, sctx) => {
-  const ctx = jsCtx(sctx);
-  const js = ctx.js;
-  const expressions = items(js, node);
-  const commas = children(js, node).filter(
-    (c) => !named(js, c) && kind(js, c) === ",",
-  );
-  const { parent, key } = role(js, node);
-  const parentKind = kind(js, parent);
-  if (parentKind === "expression_statement" || parentKind === "for_statement")
-    return void within(GROUP, () =>
-      expressions.forEach((e, i) => {
-        if (i === 0) return ctx.print(e);
-        tok(js, commas[i - 1]);
-        within(INDENT, () => {
-          sLine(0);
-          ctx.print(e);
-        });
-      }),
-    );
-  const parts = () =>
-    expressions.forEach((e, i) => {
-      if (i > 0) {
-        tok(js, commas[i - 1]);
-        sLine(0);
-      }
-      ctx.print(e);
-    });
-  const shouldIndent =
-    (key === "argument" &&
-      isReturnOrThrow(js, parent) &&
-      needsParens(node, js)) ||
-    (key === "body" && parentKind === "arrow_function");
-  if (!shouldIndent) return void within(GROUP, parts);
-  const printed = capture(parts);
-  within(GROUP, () => {
-    within(IF_BROKEN, () => {
-      within(INDENT, () => {
-        sLine(SOFT);
-        place(printed);
-      });
-      sLine(SOFT);
-    });
-    within(IF_FLAT, () => place(printed));
-  });
-};
-
 /** `a = b` and `a += b`, laid out by printAssignment. */
 const assignment: CustomRule<JsOptions> = (node, sctx) => {
   const ctx = jsCtx(sctx);
@@ -1069,7 +961,4 @@ export const operatorCustoms = {
   assignment,
   binary,
   ternary,
-  unary,
-  await: awaitExpression,
-  sequence,
 } satisfies Record<string, CustomRule<JsOptions>>;

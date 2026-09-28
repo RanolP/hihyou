@@ -126,7 +126,7 @@ function customNames(ir: FormatIR): [string, RuleType][] {
   };
   Object.values(ir.structure).forEach(walk);
   eachCond(ir, (c) => {
-    if (typeof c !== "boolean" && c.t === "rule") add(c.name, "PredicateRule");
+    if (typeof c !== "boolean" && (c.t === "rule" || c.t === "pred")) add(c.name, "PredicateRule");
   });
   return [...names].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
 }
@@ -166,6 +166,8 @@ const cond = (c: Cond, hasFields: boolean, self = "node", run?: string): string 
       return `parentIs(t, ${self}, ${str(c.kind)})`;
     case "rule":
       return `custom[${str(c.name)}](${self}, ctx)`;
+    case "pred":
+      return `custom[${str(c.name)}](${[self, "ctx", ...c.args.map(str)].join(", ")})`;
     case "field":
       return `t.fieldName(${self}) === ${str(c.name)}`;
     case "has":
@@ -284,7 +286,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
   };
   const items = (x: Extract<Tree, { t: "sepBy" | "lines" }>) => {
     const v = name("items");
-    line(`const ${v} = listItems(ctx, node, ${str(x.list.name)}, ${hasFields});`);
+    line(`const ${v} = listItems(ctx, node, ${str(x.list.name)}, ${hasFields})${x.list.from ? `.slice(${x.list.from})` : ""};`);
     return v;
   };
 
@@ -293,7 +295,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
     switch (x.t) {
       case "sepBy":
       case "lines":
-        return `(listItems(ctx, node, ${str(x.list.name)}, ${hasFields}).length === 0${x === owner ? " && ctx.danglingComments(node).length === 0" : ""})`;
+        return `(listItems(ctx, node, ${str(x.list.name)}, ${hasFields})${x.list.from ? `.slice(${x.list.from})` : ""}.length === 0${x === owner ? " && ctx.danglingComments(node).length === 0" : ""})`;
       case "ref":
         return `${refChild(x)} === -1`;
       case "opt": {

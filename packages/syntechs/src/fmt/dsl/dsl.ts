@@ -46,6 +46,8 @@ export interface Ref {
   readonly via?: string;
   /** Printed by the language's `ParensRule` in mode `parens` (`Node.parens`), in place of its own rule. */
   readonly parens?: string;
+  /** A list's children from index `from` on (`.from(i)`). */
+  readonly from?: number;
 }
 
 export type Cond =
@@ -60,10 +62,22 @@ export type Cond =
   | { readonly t: "parent"; readonly kind: string }
   /** The hand-written `PredicateRule` `name` (see `runtime.ts`), asked of the node (`when(name)`). */
   | { readonly t: "rule"; readonly name: string }
+  | PredCond
   | LogicCond
   | SplitCond
   | FirstTextCond
   | { readonly t: "ancestor"; readonly kinds: readonly string[]; readonly stop: readonly string[] | "*"; readonly holds: Cond };
+
+/**
+ * The hand-written `PredicateRule` `name`, asked of the node with `args` (`pred(name, ...args)`): a query the
+ * grammar cannot state, parameterized so one predicate serves many kinds, like where the node sits once
+ * parentheses are seen through.
+ */
+export interface PredCond {
+  readonly t: "pred";
+  readonly name: string;
+  readonly args: readonly string[];
+}
 
 /**
  * The source text of the node's first child but comments (with `after`, of its first child after its first `after`
@@ -294,6 +308,8 @@ export interface List extends Piece<"list"> {
    * slice's bounds: `.at(i)` is the first one in the `i`th stretch.
    */
   split(sep: string): { at(i: number): Option<Node> };
+  /** The children from the `i`th on, for a list idiom over all but the first few. */
+  from(i: number): List;
 }
 /** A child that may be absent: `andThen` prints what `f` makes of it when present, and nothing otherwise. */
 export interface Option<A> {
@@ -399,6 +415,7 @@ export type CondIn<G extends Grammar, O> =
   | AllBeforeCond<CondIn<G, O>>
   | SplitCond
   | FirstTextCond
+  | PredCond
   | AncestorCond<KindOf<G>, CondIn<G, O>>;
 
 /**
@@ -757,6 +774,12 @@ export const either = <const C, const A, const B>(
   piece({ t: "either", when: plain(when), then: toTree(then), else: toTree(otherwise) });
 
 /** The node's token `text` respelled by the normalizer `fn`, where the source has it: CSS's `@MEDIA` as `@media`. */
+/**
+ * True where the hand-written `PredicateRule` `name` (see `runtime.ts`), given `args`, says so of the node: a general
+ * query the grammar cannot state, such as JS's `pred("role", "call_expression", "callee")`.
+ */
+export const pred = (name: string, ...args: readonly string[]): PredCond => ({ t: "pred", name, args });
+
 export const spell = <const S extends string>(text: S, fn: NormalizerName): Piece<{ spell: S }> =>
   piece({ t: "spell", text, fn });
 
@@ -788,6 +811,8 @@ function plain(c: unknown): Cond {
   switch (x.t) {
     case "rule":
       return { t: "rule", name: x.name };
+    case "pred":
+      return { t: "pred", name: x.name, args: x.args };
     case "parent":
       return { t: "parent", kind: x.kind };
     case "field":
@@ -828,10 +853,13 @@ const refOf = (x: unknown): Ref => {
     via?: unknown;
     viaName?: string;
     parensMode?: string;
+    from?: unknown;
+    fromIndex?: number;
   };
   const at = r.atIndex ?? (typeof r.at === "number" ? r.at : undefined);
   const split = r.splitSep ?? (typeof r.split === "string" ? r.split : undefined);
   const via = r.viaName ?? (typeof r.via === "string" ? r.via : undefined);
+  const from = r.fromIndex ?? (typeof r.from === "number" ? r.from : undefined);
   return {
     t: "ref",
     name: r.name,
@@ -839,6 +867,7 @@ const refOf = (x: unknown): Ref => {
     ...(split === undefined ? {} : { split }),
     ...(via === undefined ? {} : { via }),
     ...(r.parensMode === undefined ? {} : { parens: r.parensMode }),
+    ...(from === undefined ? {} : { from }),
   };
 };
 
@@ -852,6 +881,7 @@ const nodeRef = (
   viaName?: string,
   splitSep?: string,
   parensMode?: string,
+  fromIndex?: number,
 ): unknown => ({
   t: "ref",
   name,
@@ -859,6 +889,8 @@ const nodeRef = (
   splitSep,
   viaName,
   parensMode,
+  fromIndex,
+  from: (i: number) => nodeRef(name, undefined, undefined, undefined, undefined, i),
   at: (i: number) => nodeRef(name, i, undefined, splitSep),
   split: (sep: string) => ({ at: (i: number) => nodeRef(name, i, undefined, sep) }),
   via: (v: string) => nodeRef(name, atIndex, v, splitSep),

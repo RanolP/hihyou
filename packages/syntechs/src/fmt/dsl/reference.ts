@@ -108,10 +108,11 @@ export const evalCond = <O>(
       return ancestorWhere(ctx.tree, node, c.kinds, c.stop, (a) => evalCond(c.holds, ctx, a, custom, false));
     case "parent":
       return parentIs(ctx.tree, node, c.kind);
-    case "rule": {
+    case "rule":
+    case "pred": {
       const rule = custom[c.name] as PredicateRule<O> | undefined;
       if (!rule) throw new Error(`no custom rule ${c.name}`);
-      return rule(node, ctx);
+      return c.t === "rule" ? rule(node, ctx) : rule(node, ctx, ...c.args);
     }
     case "field":
       return ctx.tree.fieldName(node) === c.name;
@@ -309,7 +310,7 @@ export function flatten<O>(
           return;
         }
         case "sepBy": {
-          const items = listItems(ctx, n, x.list.name, kindHasFields);
+          const items = listItems(ctx, n, x.list.name, kindHasFields).slice(x.list.from ?? 0);
           const seps = separators(t, n, items, x.sep);
           out.push({ e: "list", items, label: x.list.name });
           items.forEach((item, i) => {
@@ -326,7 +327,7 @@ export function flatten<O>(
           return;
         }
         case "lines": {
-          const items = listItems(ctx, n, x.list.name, kindHasFields);
+          const items = listItems(ctx, n, x.list.name, kindHasFields).slice(x.list.from ?? 0);
           // Nothing to lay out leaves no frame, so a bracket body of only this is empty.
           if (items.length === 0 && (owner !== x || dangling().length === 0)) return;
           out.push({ e: "lines", label: x.list.name });

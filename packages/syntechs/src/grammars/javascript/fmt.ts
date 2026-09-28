@@ -20,6 +20,7 @@ import { literalCustoms, printComment } from "./print/literals.js";
 import { moduleCustoms } from "./print/modules.js";
 import { objectCustoms } from "./print/objects.js";
 import { operatorCustoms } from "./print/operators.js";
+import { jsPreds } from "./print/preds.js";
 import { needsParens } from "./print/parens.js";
 import { semiCustoms } from "./print/semi.js";
 import {
@@ -135,6 +136,7 @@ export function jsRules(): ReadonlyMap<string, StreamRule<JsOptions>> {
     ...jsxCustoms,
     ...literalCustoms,
     ...semiCustoms,
+    ...jsPreds,
   };
   for (const [name, rule] of gen.javascript<JsOptions>(customs).rules) rules.set(name, rule);
   return rules;
