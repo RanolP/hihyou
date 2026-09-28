@@ -4,7 +4,7 @@ import type { Py, Stmt } from "../fmt/ast.js";
 import type { Fmt } from "../fmt/builders.js";
 import type { Comment } from "../fmt/comments.js";
 import { writeExpr, writeMaybeParenthesize } from "../fmt/expr.js";
-import { ruffOf, ruffStmtOf, sText, sToken } from "../fmt/sink.js";
+import { ruffOf, ruffStmtOf, sToken } from "../fmt/sink.js";
 import {
   exceptType,
   type ItemLayout,
@@ -110,12 +110,6 @@ export const stmtCompoundVia = {
     const args = ctx.args as { layout: ItemLayout; single: boolean } | undefined;
     if (!item || !args) throw new Error("python: a with item outside a with's items");
     withItem(f, item, args.layout, args.single);
-  },
-  // `async` and the space after it, where the statement has one.
-  "compound.async": (token: number | undefined, _: number, ctx: StreamCtx<unknown>) => {
-    if (token === undefined) return;
-    sToken(token, ctx.tree.text(token));
-    sText(" ");
   },
   // A clause's keyword, after the comments and blank lines that separate it from the clause before.
   "compound.alternate": (token: number | undefined, n: number, ctx: StreamCtx<unknown>) => {

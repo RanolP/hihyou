@@ -16,7 +16,7 @@ export const expr = {
   await: ($) => ["await", space, $.children.via("expr.awaitValue")],
   yield: ($) => [
     "yield",
-    tok("from").via("expr.yieldFrom"),
+    tok("from").andThen((f) => [space, f]),
     $.children.andThen((v) => [space, v.via("expr.yieldValue")]),
   ],
 

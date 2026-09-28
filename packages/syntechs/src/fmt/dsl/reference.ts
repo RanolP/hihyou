@@ -132,6 +132,7 @@ export function danglingOwner(tree: Tree): Tree | undefined {
     case "brackets":
       return danglingOwner(tree.body);
     case "opt":
+    case "tokIf":
       return danglingOwner(tree.then);
     default:
       return undefined;
@@ -200,6 +201,8 @@ export function flatten<O>(
       walkNode(c, via);
       if (comments) for (const x of ctx.trailingComments(c)) out.push(commentEntry(ctx, x, "trailing", c));
     };
+    /** The entry of the innermost `tokIf` being walked (its `self`). */
+    let self: Entry | undefined;
     const walk = (x: Tree): void => {
       switch (x.t) {
         case "tok": {
@@ -209,6 +212,26 @@ export function flatten<O>(
           else if (c !== -1) out.push({ e: "tok", node: c, text: t.text(c), synthetic: false });
           return;
         }
+        case "tokIf": {
+          const c = token(x.text);
+          const present = c !== -1 && (x.synth === undefined || t.text(c) !== "");
+          const shows = x.synth === undefined ? present : evalCond(x.synth, ctx, n, custom, kindHasFields);
+          if (!shows) {
+            if (present) out.push({ e: "tok", node: c, text: "", synthetic: false });
+            return;
+          }
+          const outer = self;
+          self = present
+            ? { e: "tok", node: c, text: t.text(c), synthetic: false }
+            : { e: "tok", node: n, text: x.text, synthetic: true };
+          walk(x.then);
+          self = outer;
+          return;
+        }
+        case "self":
+          if (!self) throw new Error("reference: `self` outside a token's `andThen`");
+          out.push(self);
+          return;
         case "ref": {
           const c = refChild(x);
           if (c !== -1) child(c, x.via);
@@ -701,6 +724,7 @@ export function holdsList(tree: Tree): boolean {
     case "brackets":
       return holdsList(tree.body);
     case "opt":
+    case "tokIf":
       return holdsList(tree.then);
     default:
       return false;

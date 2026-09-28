@@ -86,10 +86,6 @@ export const stmtMatchVia = {
     if (p.k !== "map") throw new Error("python match: match.mapping on no mapping pattern");
     mapping(f, p, frame);
   },
-  "match.className": (n: number, ctx: StreamCtx<unknown>) => {
-    const f = fmtOf(n, ctx);
-    for (const x of kids(f.tree, n)) sToken(x, f.text(x));
-  },
   "match.classArguments": (n: number, ctx: StreamCtx<unknown>, frame: Frame) => {
     const f = fmtOf(n, ctx);
     const p = readPattern(f, n);

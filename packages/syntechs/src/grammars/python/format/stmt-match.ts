@@ -33,7 +33,7 @@ export const stmtMatch = {
   tuple_pattern: () => grpParen([]).via("match.sequence"),
   dict_pattern: () => grpBrace([]).via("match.mapping"),
   class_pattern: ($) => [
-    $.children.at(0).andThen((c) => c.via("match.className")),
+    $.children.at(0).andThen((c) => c),
     grpParen([]).via("match.classArguments"),
   ],
   as_pattern: ($) => [

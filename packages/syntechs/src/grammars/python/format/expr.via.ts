@@ -11,7 +11,7 @@ import {
   writeMaybeParenthesize,
   writeNode,
 } from "../fmt/expr.js";
-import { close, COLLAPSE, GROUP, HARD, open, openFitsExpanded, ruffOf, sLine, sText, sToken } from "../fmt/sink.js";
+import { close, COLLAPSE, GROUP, HARD, open, openFitsExpanded, ruffOf, sLine, sText } from "../fmt/sink.js";
 
 export const exprVia = {
   "expr.lambdaParams": (c: number, ctx: StreamCtx<unknown>) => {
@@ -53,11 +53,6 @@ export const exprVia = {
   "expr.awaitValue": (c: number) => {
     const { f, e } = ruffOf(c);
     writeMaybeParenthesize(f, e, e.parent as Py, "ifBreaks");
-  },
-  "expr.yieldFrom": (token: number | undefined, _: number, ctx: StreamCtx<unknown>) => {
-    if (token === undefined) return;
-    sText(" ");
-    sToken(token, ctx.tree.text(token));
   },
   "expr.yieldValue": (c: number) => {
     const { f, e } = ruffOf(c);

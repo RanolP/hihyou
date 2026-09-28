@@ -1,5 +1,5 @@
 // TypeScript types (customs: print/types.ts).
-import { custom, inOrder, space, tok } from "../../../fmt/dsl/dsl.js";
+import { all, custom, has, inOrder, not, option, space, tok } from "../../../fmt/dsl/dsl.js";
 import type { JsStructure } from "../format.js";
 
 export const types = {
@@ -24,7 +24,7 @@ export const types = {
   template_type: ($) => ["${", $.children, "}"],
   type_alias_declaration: ($) => [
     $.name.via("typeAlias"),
-    tok(";").via("semi"),
+    tok(";").synth(option("semi")),
   ],
   enum_declaration: () => inOrder(space),
   enum_assignment: ($) => [
@@ -39,14 +39,14 @@ export const types = {
     space,
     $.name,
     $.body.andThen((b) => [space, b.via("moduleBody")]),
-    tok(";").via("moduleSemi"),
+    tok(";").synth(all(option("semi"), not(has("body")))),
   ],
   internal_module: ($) => [
     "namespace",
     space,
     $.name,
     $.body.andThen((b) => [space, b.via("moduleBody")]),
-    tok(";").via("moduleSemi"),
+    tok(";").synth(all(option("semi"), not(has("body")))),
   ],
   parenthesized_type: () => custom("parenthesizedType"),
   infer_type: () => custom("inferType"),

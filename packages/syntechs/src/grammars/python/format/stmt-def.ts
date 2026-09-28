@@ -6,7 +6,7 @@ export const stmtDef = {
   decorated_definition: ($) => [$.children.at(0).andThen((d) => d.via("def.decorators")), $.definition],
   decorator: ($) => ["@", $.children.via("def.decorator")],
   function_definition: ($) => [
-    tok("async").via("def.async"),
+    tok("async").andThen((a) => [a, space]),
     "def",
     space,
     $.name,

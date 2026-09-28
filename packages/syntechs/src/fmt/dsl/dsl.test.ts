@@ -405,3 +405,38 @@ it("`not`, `all`, `any`, `fieldIs` and `has` hold where the reference says, in t
     rmSync(file);
   }
 });
+
+// A `synth` token the generated code printed where its condition fails, or an `andThen` whose parts it printed
+// without the token, would keep a `:` (and its space) the spec drops.
+it("`tok(t).synth(when).andThen(f)` prints the token and `f` exactly where the reference does", async () => {
+  const ir = defineFormat<typeof jsonGrammar, JsonOptions>()({
+    structure: {
+      document: ($) => lines($.children),
+      object: ($) => grpBrace(sepBy(",", $.children)),
+      pair: ($) => [$.key, tok(":").synth(not(has("value", "array"))).andThen((c) => [c, space]), $.value],
+      array: ($) => grpBracket(sepBy(",", $.children)),
+      string: () => verbatim,
+      number: () => verbatim,
+    },
+  });
+  const file = join(import.meta.dirname, "tok-if-equivalence.gen.ts");
+  writeFileSync(file, emit({ tokIf: ir }, jsonGrammar as DslGrammar, "dsl.test.ts"));
+  try {
+    const gen = (await import(pathToFileURL(file).href)) as {
+      tokIf: (custom: object) => StreamRules<JsonOptions>;
+    };
+    const generated = { ...json, stream: gen.tokIf({}) };
+    const reference = { ...json, stream: referenceRules<JsonOptions>(ir, jsonGrammar as DslGrammar, {}) };
+    const run = (text: string, lang: Language<JsonOptions>) => {
+      const out = formatTree(parseTree(jsonLanguage, text), lang, {});
+      if (!out.ok) throw new Error(out.detail);
+      return out.text;
+    };
+    const text = '{"a":1, "b":[2]}';
+    const want = '{"a": 1, "b"[2]}\n';
+    expect(run(text, generated)).toBe(want);
+    expect(run(text, reference)).toBe(want);
+  } finally {
+    rmSync(file);
+  }
+});

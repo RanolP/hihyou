@@ -23,7 +23,7 @@ export const stmtCompound = {
     $.consequence.via("compound.body"),
   ],
   for_statement: ($) => [
-    tok("async").via("compound.async"),
+    tok("async").andThen((a) => [a, space]),
     "for",
     space,
     $.left.via("compound.forTarget"),
@@ -58,7 +58,7 @@ export const stmtCompound = {
   ],
   finally_clause: ($) => [tok("finally").via("compound.alternate"), ":", $.children.via("compound.body")],
   with_statement: ($) => [
-    tok("async").via("compound.async"),
+    tok("async").andThen((a) => [a, space]),
     "with",
     space,
     $.children,

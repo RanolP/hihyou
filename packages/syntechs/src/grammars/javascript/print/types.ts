@@ -41,7 +41,6 @@ import {
 } from "./functions.js";
 import { sPrintKey } from "./objects.js";
 import { role } from "./parens.js";
-import { semiCustoms } from "./semi.js";
 import {
   type Args,
   anon,
@@ -605,12 +604,6 @@ const moduleBody: CustomRule<JsOptions> = (body, sctx) => {
   close();
 };
 
-/** A module's `;` (`tok(";").via("moduleSemi")`): a statement's, where the module has no body. */
-const moduleSemi: TokenRule<JsOptions> = (token, n, ctx) => {
-  if (field(jsCtx(ctx).js, n, "body") === undefined)
-    semiCustoms.semi(token, n, ctx);
-};
-
 const ambientDeclaration: CustomRule<JsOptions> = (n, sctx) => {
   const ctx = jsCtx(sctx);
   const js = ctx.js;
@@ -1132,7 +1125,6 @@ const nodeCustoms = {
 export const typeCustoms = {
   ...nodeCustoms,
   memberSemi,
-  moduleSemi,
 };
 
 export const typeRules: Record<string, StreamRule<JsOptions>> = {

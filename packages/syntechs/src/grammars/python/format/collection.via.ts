@@ -133,12 +133,6 @@ export const collectionVia = {
     });
     sClose();
   },
-  "collection.async": (t: number | undefined, node: number, ctx: StreamCtx<unknown>) => {
-    if (t === undefined) return;
-    const { f } = ruffOf(fieldChild(ctx.tree, node, "left"));
-    f.writeTok(t);
-    sText(" ");
-  },
   // The for clause's target between the comments ruff keeps before and after it.
   "collection.forTarget": (c: number) => {
     const { f, e: target } = ruffOf(c);

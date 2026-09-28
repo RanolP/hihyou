@@ -4,7 +4,7 @@
 // Their layouts are format.ts's; what it names `custom` is `statementCustoms`, written against sink.ts.
 
 import { NO_NODE } from "../../../core/arena.js";
-import type { CustomRule, TokenRule } from "../../../fmt/dsl/runtime.js";
+import type { CustomRule, PredicateRule } from "../../../fmt/dsl/runtime.js";
 import type { StreamRule } from "../../../fmt/stream-format.js";
 import { lfAfter, nextLineEmpty } from "../../../fmt/text.js";
 import { firstLeaf, type FormatTree, prevLeaf } from "../../../fmt/tree.js";
@@ -279,15 +279,6 @@ function needsAsiGuard(ctx: JsCtx, node: number): boolean {
   );
 }
 
-const BODY_HOLDERS = new Set([
-  "do_statement",
-  "for_in_statement",
-  "for_statement",
-  "labeled_statement",
-  "with_statement",
-  "while_statement",
-]);
-
 // Prettier's printClause (clause.js).
 function clause(s: JsStreamCtx, body: number | undefined, elseIf = false): void {
   if (body === undefined) return;
@@ -493,18 +484,6 @@ const customs = {
   },
 
   "stmt.block": (node, ctx) => printBlock(jsCtx(ctx), node),
-
-  /** Prettier's isMeaningfulEmptyStatement: an empty body keeps its `;`, any other empty statement vanishes. */
-  "stmt.empty": (node, ctx) => {
-    const up = parent(ctx, node);
-    const role = fieldName(ctx, node);
-    const meaningful =
-      up !== undefined &&
-      ((kind(ctx, up) === "if_statement" && role === "consequence") ||
-        kind(ctx, up) === "else_clause" ||
-        (BODY_HOLDERS.has(kind(ctx, up)) && role === "body"));
-    sToken(node, meaningful ? ";" : "");
-  },
 
   "stmt.else": (node, ctx) => {
     const s = jsCtx(ctx);
@@ -935,16 +914,11 @@ const asiGuarded = (ctx: JsCtx, statement: number) =>
   kind(ctx, first(ctx, statement)) !== "internal_module" &&
   needsAsiGuard(ctx, statement);
 
-/** An expression statement's `;`: none after a guarded one or a namespace, else the `semi` option's. */
-const exprSemi: TokenRule<JsOptions> = (token, node, ctx) => {
-  const js = jsCtx(ctx).js;
-  if (asiGuarded(js, node) || kind(js, first(js, node)) === "internal_module") {
-    if (token !== undefined) sToken(token, "");
-  } else semiCustoms.semi(token, node, ctx);
-};
+/** An expression statement that needsAsiGuard puts a `;` before, and so none after. */
+const asiGuardedStatement: PredicateRule<JsOptions> = (node, ctx) => asiGuarded(jsCtx(ctx).js, node);
 
 /** The rules format.ts names `custom` for the statements. */
-export const statementCustoms = { ...customs, "stmt.exprSemi": exprSemi };
+export const statementCustoms = { ...customs, "stmt.asiGuarded": asiGuardedStatement };
 
 /** The statement kinds the DSL spec does not name. */
 export const statementRules: Record<string, StreamRule<JsOptions>> = {

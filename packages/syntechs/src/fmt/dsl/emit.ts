@@ -30,7 +30,10 @@ function eachCond(ir: FormatIR, visit: (c: Cond) => void): void {
     if (x.t === "text") cond(x.when);
     else if (x.t === "seq") x.parts.forEach(walk);
     else if (x.t === "opt") walk(x.then);
-    else if (x.t === "brackets") {
+    else if (x.t === "tokIf") {
+      cond(x.synth);
+      walk(x.then);
+    } else if (x.t === "brackets") {
       cond(x.pad);
       walk(x.body);
     } else if (x.t === "sepBy") cond(x.trailing);
@@ -75,7 +78,7 @@ function customNames(ir: FormatIR): [string, RuleType][] {
     else if (x.t === "ref" && x.via !== undefined) add(x.via, "CustomRule");
     else if (x.t === "tok" && x.via !== undefined) add(x.via, "TokenRule");
     else if (x.t === "seq") x.parts.forEach(walk);
-    else if (x.t === "opt") walk(x.then);
+    else if (x.t === "opt" || x.t === "tokIf") walk(x.then);
     else if (x.t === "brackets") {
       if (x.via !== undefined) add(x.via, "FrameRule");
       walk(x.body);
@@ -91,12 +94,15 @@ function customNames(ir: FormatIR): [string, RuleType][] {
 /** Whether `x` binds a source token by its spelling: a literal, or a bracket idiom's brackets. */
 const bindsToken = (x: Tree): boolean =>
   x.t === "tok" ||
+  x.t === "tokIf" ||
   x.t === "brackets" ||
   (x.t === "seq" && x.parts.some(bindsToken)) ||
   (x.t === "opt" && bindsToken(x.then));
 
+/** Whether some literal of `x` may go unprinted: under an `opt`, or beside a token in its `andThen`. */
 const hasOpt = (x: Tree): boolean =>
   x.t === "opt" ||
+  (x.t === "tokIf" && bindsToken(x.then)) ||
   (x.t === "seq" && x.parts.some(hasOpt)) ||
   (x.t === "brackets" && hasOpt(x.body));
 
@@ -223,6 +229,9 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
         if (parts.includes("false")) return "false";
         return parts.length === 0 ? "true" : `(${parts.join(" && ")})`;
       }
+      case "tokIf":
+      case "self":
+        throw new Error(`emit: a bracket idiom around \`${x.t}\` whose emptiness is not generated yet`);
       case "tok":
       case "space":
       case "brackets":
@@ -375,6 +384,8 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
     line("});");
   };
 
+  /** Prints the token of the innermost `tokIf` being walked (its `self`). */
+  let self: (() => void) | undefined;
   const walk = (x: Tree): void => {
     switch (x.t) {
       case "tok": {
@@ -383,6 +394,29 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
         else line(`custom[${str(x.via)}](${c} === -1 ? undefined : ${c}, node, ctx);`);
         return;
       }
+      case "tokIf": {
+        const c = bound(x.text);
+        const outer = self;
+        if (x.synth === undefined) {
+          self = () => line(`sToken(${c}, t.text(${c}));`);
+          block(`if (${c} !== -1)`, () => walk(x.then));
+        } else {
+          // A zero-width source token (an inserted `;`) counts as none.
+          const p = name("p");
+          line(`const ${p} = ${c} !== -1 && t.text(${c}) !== "";`);
+          self = () => {
+            line(`if (${p}) sToken(${c}, t.text(${c}));`);
+            line(`else sToken(node, ${str(x.text)}, true);`);
+          };
+          block(`if (${when(x.synth)})`, () => walk(x.then), `} else if (${p}) sToken(${c}, "");`);
+        }
+        self = outer;
+        return;
+      }
+      case "self":
+        if (!self) throw new Error("emit: `self` outside a token's `andThen`");
+        self();
+        return;
       case "ref": {
         const c = name("c");
         line(`const ${c} = ${refChild(x)};`);

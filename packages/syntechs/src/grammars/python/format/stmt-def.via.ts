@@ -38,12 +38,6 @@ export const stmtDefVia = {
     const { f, e } = ruffOf(c);
     writeMaybeParenthesize(f, e, e.parent as Decorator, "optional");
   },
-  "def.async": (token: number | undefined) => {
-    if (token === undefined) return;
-    const { f } = ruffStmtOf(token);
-    sToken(token, f.text(token));
-    sText(" ");
-  },
   // A definition's or a type alias's (under its `generic_type`) type parameters in their brackets.
   "def.typeParams": (node: number, ctx: StreamCtx<unknown>, frame: Frame) => {
     const t = ctx.tree;

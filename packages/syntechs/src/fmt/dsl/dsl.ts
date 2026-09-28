@@ -118,7 +118,15 @@ export type Tree =
   | { readonly t: "verbatim" }
   /** The node's source text through normalizer `fn` (`normalizers.ts`) where `when` holds, else as written. */
   | { readonly t: "text"; readonly fn: NormalizerName; readonly when: Cond }
-  | { readonly t: "custom"; readonly name: string };
+  | { readonly t: "custom"; readonly name: string }
+  /**
+   * `tok(text).synth(when)` or `tok(text).andThen(f)`: the node's token `text`, with `then` printed where it
+   * shows (`self` in it marks the token). Without `synth`, it shows where the source has it. With `synth`, it
+   * shows exactly where `when` holds: the source's own, or a synthetic one where the source has none (a zero-width
+   * token, such as an inserted `;`, counting as none); where `when` fails, the source's prints as nothing.
+   */
+  | { readonly t: "tokIf"; readonly text: string; readonly synth?: Cond; readonly then: Tree }
+  | { readonly t: "self" };
 
 /** How one bracket or list frame of a node breaks. */
 export interface FrameWrap {
@@ -239,7 +247,12 @@ export type TokenTree<G extends Grammar, O> =
   | Piece<{ opt: TokenTree<G, O> }>
   | Piece<{ brackets: TokenTree<G, O>; pad: CondOf<O> }>
   | Piece<{ sepBy: TokenOf<G>; trailing: CondOf<O> }>
+  | Piece<{ tokIf: TokenOf<G>; synth: CondIn<G, O>; then: TokenTree<G, O> }>
+  | Piece<"self">
   | readonly TokenTree<G, O>[];
+
+/** `tok(text).synth(when)`'s and `tok(text).andThen(f)`'s output. */
+export type TokIf<S, W, T> = Piece<{ tokIf: S; synth: W; then: T }>;
 
 /** A rule that prints the whole node: `verbatim` or `custom`. */
 type Whole = Piece<"whole">;
@@ -338,7 +351,26 @@ export const custom = (name: string): Whole => piece({ t: "custom", name });
  */
 export const tok = <const S extends string>(text: S) => ({
   via: (name: string) => piece<{ tok: S }>({ t: "tok", text, via: name }),
+  ...tokIf<S, false>(text, undefined),
+  /**
+   * The token exactly where `when` holds: the source's own, or a synthetic one where the source has none (a
+   * zero-width token counting as none); where `when` fails, the source's prints as nothing. For a token the layout
+   * inserts or drops, such as JS's `;` under `semi`. `.andThen(f)` prints `f` of it where it shows.
+   */
+  synth: <const W>(when: W): TokIf<S, W, Piece<"self">> & ReturnType<typeof tokIf<S, W>> =>
+    Object.assign(tokIf<S, W>(text, when).andThen((t) => t), tokIf<S, W>(text, when)),
 });
+
+const tokIfTree = (text: string, when: unknown, then: unknown): Tree =>
+  when === undefined ? { t: "tokIf", text, then: toTree(then) } : { t: "tokIf", text, synth: plain(when), then: toTree(then) };
+
+/** `f` of the token, printed only where the token shows: the spaces around a token the source may lack. */
+const tokIf = <S extends string, W>(text: S, when: unknown) => ({
+  andThen: <T>(f: (t: Piece<"self">) => T): TokIf<S, W, T> => piece(tokIfTree(text, when, f(self))),
+});
+
+/** Where a `tok(...).andThen(f)` prints its token, in what `f` returns. */
+const self: Piece<"self"> = piece({ t: "self" });
 
 /** A bracket idiom's output, whose `via(name)` hands the same frame to a hand-written layout. */
 export type Brackets<T, P> = Piece<{ brackets: T; pad: P }> & {
@@ -564,6 +596,10 @@ function toTree(x: unknown): Tree {
   if (tree.t === "brackets" && typeof tree.via === "function") {
     const { via: _, ...frame } = tree;
     return frame;
+  }
+  if (tree.t === "tokIf" && "andThen" in tree) {
+    const { andThen: _, ...plainTree } = tree as Tree & { andThen: unknown };
+    return plainTree;
   }
   return tree;
 }

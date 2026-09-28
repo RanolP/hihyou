@@ -1,5 +1,5 @@
 // Collections and comprehensions: lists, tuples, sets, and dicts.
-import { grpBrace, grpBracket, grpParen, tok } from "../../../fmt/dsl/dsl.js";
+import { grpBrace, grpBracket, grpParen, space, tok } from "../../../fmt/dsl/dsl.js";
 import type { Structure } from "../format.js";
 
 // Ruff lays out a collection's brackets and items as one frame (`parenthesized`, or `empty_parenthesized` when it
@@ -22,7 +22,7 @@ export const collection = {
   generator_expression: ($) => grpParen($.body.via("collection.comp")).via("collection.brackets"),
   // Ruff's comments around the keywords print with the parts beside them.
   for_in_clause: ($) => [
-    tok("async").via("collection.async"),
+    tok("async").andThen((a) => [a, space]),
     "for",
     $.left.via("collection.forTarget"),
     "in",
