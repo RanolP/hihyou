@@ -63,7 +63,7 @@ export type Cond =
   | LogicCond
   | SplitCond
   | FirstTextCond
-  | { readonly t: "ancestor"; readonly kind: string; readonly stop: readonly string[]; readonly holds: Cond };
+  | { readonly t: "ancestor"; readonly kinds: readonly string[]; readonly stop: readonly string[] | "*"; readonly holds: Cond };
 
 /**
  * The source text of the node's first child but comments (with `after`, of its first child after its first `after`
@@ -94,7 +94,11 @@ export type LogicCond =
   /** The node's field `name` (`children`: its children in no field) holds a child, of `kind` if given (`has`). */
   | { readonly t: "has"; readonly name: string; readonly kind?: string }
   | { readonly t: "not"; readonly c: Cond }
-  | { readonly t: "all" | "any"; readonly cs: readonly Cond[] };
+  | { readonly t: "all" | "any"; readonly cs: readonly Cond[] }
+  /** The node is of one of `kinds` (`kindIs`). */
+  | { readonly t: "kind"; readonly kinds: readonly string[] }
+  /** `c` holds of every item (named, not a comment) before the node among its parent's (`allBefore`). */
+  | { readonly t: "allBefore"; readonly c: Cond };
 
 /**
  * Which consecutive entries of an `inOrder` a spacing rule applies to: those after an entry of a kind (a token by
@@ -365,6 +369,14 @@ export interface AllCond<C> {
   readonly t: "all" | "any";
   readonly cs: readonly C[];
 }
+export interface KindCond<K> {
+  readonly t: "kind";
+  readonly kinds: readonly K[];
+}
+export interface AllBeforeCond<C> {
+  readonly t: "allBefore";
+  readonly c: C;
+}
 /** Every condition, checked against the grammar's kinds and the options. */
 export type CondIn<G extends Grammar, O> =
   | CondOf<O>
@@ -373,15 +385,20 @@ export type CondIn<G extends Grammar, O> =
   | HasCond<KindOf<G>>
   | NotCond<CondIn<G, O>>
   | AllCond<CondIn<G, O>>
+  | KindCond<KindOf<G>>
+  | AllBeforeCond<CondIn<G, O>>
   | SplitCond
   | FirstTextCond
   | AncestorCond<KindOf<G>, CondIn<G, O>>;
 
-/** The nearest ancestor of kind `kind`, met before any of a `stop` kind, is one where `holds` holds (`ancestor`). */
+/**
+ * The nearest ancestor of one of `kinds`, met before any of a `stop` kind (`"*"`: before any other kind, so only the
+ * parent), is one where `holds` holds (`ancestor`).
+ */
 export interface AncestorCond<K, C> {
   readonly t: "ancestor";
-  readonly kind: K;
-  readonly stop: readonly K[];
+  readonly kinds: readonly K[];
+  readonly stop: readonly K[] | "*";
   readonly holds: C;
 }
 
@@ -615,6 +632,13 @@ export const has = <const K extends string = never>(name: string, kind?: K): Has
   kind === undefined ? { t: "has", name } : { t: "has", name, kind };
 
 export const not = <const C>(c: C): NotCond<C> => ({ t: "not", c });
+
+/** The node is of one of `kinds`; under `ancestor` or `allBefore`, the node they ask about. */
+export const kindIs = <const K extends string>(...kinds: K[]): KindCond<K> => ({ t: "kind", kinds });
+
+/** `c` holds of every item before the node among its parent's items: JS's directive prologue. */
+export const allBefore = <const C>(c: C): AllBeforeCond<C> => ({ t: "allBefore", c });
+
 export const all = <const C extends readonly unknown[]>(...cs: C): AllCond<C[number]> => ({ t: "all", cs });
 export const any = <const C extends readonly unknown[]>(...cs: C): AllCond<C[number]> => ({ t: "any", cs });
 
@@ -658,14 +682,20 @@ export const firstText = (o: {
 });
 
 /**
- * The node's nearest ancestor of kind `kind` exists, no ancestor of a `stop` kind lies before it, and `holds` (true
- * without it) holds of it: what the node sits inside, like the function around a CSS value.
+ * The node's nearest ancestor of kind `kind` (or one of them) exists, no ancestor of a `stop` kind lies before it,
+ * and `holds` (true without it) holds of it: what the node sits inside, like the function around a CSS value.
+ * `stop: "*"` stops at any other kind, so only the parent counts: `ancestor(k, { stop: "*" })` is `parentIs(k)`.
  */
 export const ancestor = <const K extends string, const C = true>(
-  kind: K,
-  o: { readonly stop?: readonly K[]; readonly holds?: C } = {},
+  kind: K | readonly K[],
+  o: { readonly stop?: readonly K[] | "*"; readonly holds?: C } = {},
 ): AncestorCond<K, C> =>
-  ({ t: "ancestor", kind, stop: o.stop ?? [], holds: o.holds ?? true }) as AncestorCond<K, C>;
+  ({
+    t: "ancestor",
+    kinds: typeof kind === "string" ? [kind] : kind,
+    stop: o.stop ?? [],
+    holds: o.holds ?? true,
+  }) as AncestorCond<K, C>;
 
 /** A `splitOn` layout, its conditions checked against the grammar's kinds and the options through `C`. */
 export type SplitLayoutOf<C> =
@@ -737,6 +767,10 @@ function plain(c: unknown): Cond {
     case "all":
     case "any":
       return { t: x.t, cs: x.cs.map(plain) };
+    case "kind":
+      return { t: "kind", kinds: x.kinds };
+    case "allBefore":
+      return { t: "allBefore", c: plain(x.c) };
     case "entryCount":
       return { t: "entryCount", n: x.n };
     case "anyEntry":
@@ -744,7 +778,7 @@ function plain(c: unknown): Cond {
     case "firstText":
       return firstText(x);
     case "ancestor":
-      return { t: "ancestor", kind: x.kind, stop: x.stop, holds: plain(x.holds) };
+      return { t: "ancestor", kinds: x.kinds, stop: x.stop, holds: plain(x.holds) };
   }
   const { key, op, value } = x;
   return op === "truthy"

@@ -1,7 +1,6 @@
 // Prettier's literal printers (print/literal.js, utilities/print-string.js, print-number.js), its template
 // literal printer (print/template-literal.js) and its comment printer (print/comment.js).
 
-import { isDirective } from "./parens.js";
 import {
   anon,
   children,
@@ -10,11 +9,9 @@ import {
   type HasTree,
   type JsCtx,
   kind,
-  parent,
   src,
   unparen,
 } from "./util.js";
-import { printString } from "../../../fmt/dsl/normalizers.js";
 import type { CustomRule } from "../../../fmt/dsl/runtime.js";
 import {
   capture,
@@ -37,39 +34,6 @@ import {
   sToken,
 } from "../sink.js";
 import type { JsOptions } from "./util.js";
-
-const DOUBLE = '"';
-const SINGLE = "'";
-
-function printDirective(raw: string, singleQuote: boolean): string {
-  const content = raw.slice(1, -1);
-  if (
-    content === "use strict" ||
-    !(content.includes('"') || content.includes("'"))
-  ) {
-    const q = singleQuote ? SINGLE : DOUBLE;
-    return q + content + q;
-  }
-  return raw;
-}
-
-const string: CustomRule<JsOptions> = (node, ctx) => {
-  const js = jsCtx(ctx).js;
-  const raw = src(js, node);
-  const statement = parent(js, node);
-  if (
-    statement !== undefined &&
-    kind(js, statement) === "expression_statement" &&
-    isDirective(js, statement)
-  ) {
-    sToken(node, printDirective(raw, js.options.singleQuote));
-    return;
-  }
-  // A line continuation keeps its break, which the printer must not indent.
-  const printed = printString(raw, js.options.singleQuote);
-  if (printed.includes("\n")) sLiteral(node, printed);
-  else sToken(node, printed);
-};
 
 // Prettier's getAlignmentSize and getIndentSize (utilities/get-alignment-size.js, get-indent-size.js).
 function alignmentSize(s: string, tabWidth: number): number {
@@ -242,6 +206,5 @@ export function printComment(
 
 /** The customs format/literals.ts names, by the names its spec gives them. */
 export const literalCustoms = {
-  string,
   templateString,
 } satisfies Record<string, CustomRule<JsOptions>>;

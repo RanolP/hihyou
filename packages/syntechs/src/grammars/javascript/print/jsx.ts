@@ -27,13 +27,11 @@ import {
   sHardline,
   sLine,
   sLineSuffixBoundary,
-  sLiteral,
   sText,
   sToken,
   willBreak,
   withComments,
 } from "../sink.js";
-import { preferredQuote } from "../../../fmt/dsl/normalizers.js";
 import { needsParens, role } from "./parens.js";
 import {
   anon,
@@ -655,39 +653,6 @@ function attrValue(ctx: JsCtx, a: number): number | undefined {
 const isAttrString = (x: HasTree, v: number | undefined) =>
   kind(x, v) === "string";
 
-/** Prettier's printJsxAttribute: a string value requoted by `jsxSingleQuote`, its quotes as entities. */
-const attribute: CustomRule<JsOptions> = (n, sctx) => {
-  const s = jsCtx(sctx);
-  const ctx = s.js;
-  const eq = anon(ctx, n, "=");
-  const name = childWhere(
-    ctx,
-    n,
-    (c) =>
-      named(ctx, c) &&
-      !isComment(ctx, c) &&
-      (eq === undefined || ctx.tree.ord(c) < ctx.tree.ord(eq)),
-  );
-  if (name !== undefined) s.print(name);
-  const value = eq !== undefined ? attrValue(ctx, n) : undefined;
-  if (eq === undefined || value === undefined) return;
-  tokOf(ctx, eq);
-  if (!isAttrString(ctx, value)) {
-    s.print(value);
-    return;
-  }
-  const raw = src(ctx, value)
-    .slice(1, -1)
-    .replaceAll("&apos;", "'")
-    .replaceAll("&quot;", '"');
-  const quote = preferredQuote(raw, ctx.options.jsxSingleQuote);
-  const escaped =
-    quote === '"'
-      ? raw.replaceAll('"', "&quot;")
-      : raw.replaceAll("'", "&apos;");
-  withComments(s, value, () => sLiteral(value, quote + escaped + quote));
-};
-
 /** `c` as the source token it is; nothing when absent. */
 const tokOf = (ctx: JsCtx, c: number | undefined) => {
   if (c !== undefined) sToken(c, src(ctx, c));
@@ -903,7 +868,6 @@ export function jsxIgnored(
 /** The customs format/jsx.ts names, by the names its spec gives them. */
 export const jsxCustoms = {
   jsxClosing: closing,
-  jsxAttribute: attribute,
   jsxExpression: expression,
   jsxElement: (n, sctx) => {
     const s = jsCtx(sctx);

@@ -25,7 +25,7 @@ function eachCond(ir: FormatIR, visit: (c: Cond) => void): void {
     if (c === undefined) return;
     visit(c);
     if (typeof c === "boolean") return;
-    if (c.t === "not") cond(c.c);
+    if (c.t === "not" || c.t === "allBefore") cond(c.c);
     else if (c.t === "ancestor") cond(c.holds);
     else if (c.t === "all" || c.t === "any") c.cs.forEach(cond);
   };
@@ -72,14 +72,12 @@ function optionKeys(ir: FormatIR): string[] {
   eachCond(ir, (c) => {
     if (typeof c !== "boolean" && c.t === "option") keys.add(c.key);
   });
-  // A `text` rule's normalizer reads its options too (a `text` is only ever a whole rule).
-  for (const x of Object.values(ir.structure))
-    if (x.t === "text") for (const k of normalizerOptions[x.fn] ?? []) keys.add(k);
+  // A normalizer reads its options too.
   for (const fn of spellFns(ir)) for (const k of normalizerOptions[fn] ?? []) keys.add(k);
   return [...keys].sort();
 }
 
-/** The normalizers `ir`'s `spell`s name. */
+/** The normalizers `ir`'s `text`s and `spell`s name. */
 function spellFns(ir: FormatIR): Set<NormalizerName> {
   const fns = new Set<NormalizerName>();
   const walk = (x: Tree): void => {
@@ -167,11 +165,17 @@ const cond = (c: Cond, hasFields: boolean, self = "node", run?: string): string 
     case "field":
       return `t.fieldName(${self}) === ${str(c.name)}`;
     case "has":
-      // An item's kind, and so whether it has fields, is known only at run time.
-      if (self !== "node") throw new Error("emit: a `has` condition on a splitOn item");
+      // Another node's kind, and so whether it has fields, is known only at run time; taking it to have them
+      // still finds its children in no field, which are all of them when it has none.
       return c.kind === undefined && c.name !== "children"
-        ? `fieldChild(t, node, ${str(c.name)}) !== -1`
-        : `hasChild(ctx, node, ${str(c.name)}, ${c.kind === undefined ? "undefined" : str(c.kind)}, ${hasFields})`;
+        ? `fieldChild(t, ${self}, ${str(c.name)}) !== -1`
+        : `hasChild(ctx, ${self}, ${str(c.name)}, ${c.kind === undefined ? "undefined" : str(c.kind)}, ${self === "node" ? hasFields : true})`;
+    case "kind":
+      return oneOf(`t.kindName(${self})`, c.kinds);
+    case "allBefore": {
+      const b = `b${self}`;
+      return `allBefore(ctx, ${self}, (${b}) => ${cond(c.c, false, b)})`;
+    }
     case "entryCount":
     case "anyEntry": {
       if (run === undefined || self !== "node") throw new Error(`emit: a ${c.t} condition outside a splitOn's run`);
@@ -184,7 +188,7 @@ const cond = (c: Cond, hasFields: boolean, self = "node", run?: string): string 
     case "ancestor": {
       // An ancestor's kind, and so whether it has fields, is known only at run time.
       const a = `a${self}`;
-      return `ancestorWhere(t, ${self}, ${str(c.kind)}, ${JSON.stringify(c.stop)}, (${a}) => ${cond(c.holds, false, a)})`;
+      return `ancestorWhere(t, ${self}, ${JSON.stringify(c.kinds)}, ${JSON.stringify(c.stop)}, (${a}) => ${cond(c.holds, false, a)})`;
     }
     case "not":
       return `!(${cond(c.c, hasFields, self, run)})`;
@@ -758,14 +762,15 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
         line("sToken(node, t.text(node));");
         return;
       case "text": {
+        // sLiteral: a spelling across lines (a string's line continuation) breaks the lines around it.
         const call = (s: string) => `${x.fn}(${s}${normalizerOptions[x.fn] ? ", ctx.options" : ""})`;
         if (x.when === true) {
-          line(`sToken(node, ${call("t.text(node)")});`);
+          line(`sLiteral(node, ${call("t.text(node)")});`);
           return;
         }
         const raw = name("raw");
         line(`const ${raw} = t.text(node);`);
-        line(`sToken(node, ${when(x.when)} ? ${call(raw)} : ${raw});`);
+        line(`sLiteral(node, ${when(x.when)} ? ${call(raw)} : ${raw});`);
         return;
       }
       case "custom":
@@ -884,6 +889,14 @@ export function emit(
       0,
       'import { hasChild } from "../../fmt/dsl/runtime.js";',
     );
+  for (const f of ["allBefore"].filter((f) => parts.some((p) => p.includes(`${f}(`))))
+    parts.splice(
+      parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
+      0,
+      `import { ${f} } from "../../fmt/dsl/runtime.js";`,
+    );
+  if (parts.some((p) => p.includes("sLiteral(")))
+    parts.splice(parts.indexOf(`} from ${str(sink)};`) + 1, 0, `import { sLiteral } from ${str(sink)};`);
   if (parts.some((p) => p.includes("parentIs(")))
     parts.splice(
       parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
@@ -914,10 +927,8 @@ export function emit(
       0,
       'import { Bail } from "../../fmt/dsl/runtime.js";',
     );
-  // The normalizers the `text` rules name, each called directly (a `text` is only ever a whole rule).
+  // The normalizers the rules name, each called directly.
   const fns = new Set<NormalizerName>();
-  for (const ir of Object.values(specs))
-    for (const x of Object.values(ir.structure)) if (x.t === "text") fns.add(x.fn);
   for (const ir of Object.values(specs)) for (const fn of spellFns(ir)) fns.add(fn);
   if (fns.size > 0)
     parts.splice(

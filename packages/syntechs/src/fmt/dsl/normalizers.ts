@@ -124,6 +124,20 @@ export const spacePlus = (t: string): string => t.replace(/(?<=[^\s+-])\+(?=\S)/
 const cssWideKeywords = new Set(["initial", "inherit", "unset", "revert"]);
 /** A CSS-wide keyword lowercased, anything else as written. */
 export const cssWide = (t: string): string => (cssWideKeywords.has(t.toLowerCase()) ? t.toLowerCase() : t);
+/** Prettier's directive: requoted only where no quote inside would need escaping, or `use strict`. */
+export const directive = (raw: string, o: { readonly singleQuote?: unknown }): string => {
+  const content = raw.slice(1, -1);
+  if (content !== "use strict" && (content.includes('"') || content.includes("'"))) return raw;
+  const q = o.singleQuote === true ? SINGLE : DOUBLE;
+  return q + content + q;
+};
+
+/** Prettier's JSX attribute string: requoted by `jsxSingleQuote`, its quotes as `&quot;` or `&apos;`. */
+export const jsxString = (raw: string, o: { readonly jsxSingleQuote?: unknown }): string => {
+  const content = raw.slice(1, -1).replaceAll("&apos;", SINGLE).replaceAll("&quot;", DOUBLE);
+  const q = preferredQuote(content, o.jsxSingleQuote === true);
+  return q + content.replaceAll(q, q === DOUBLE ? "&quot;" : "&apos;") + q;
+};
 
 /** A regex's flags in code-point order, as prettier prints them. */
 export const sortRegexFlags = (t: string): string => [...t].sort().join("");
@@ -142,6 +156,8 @@ export const normalizers = {
   quote,
   spacePlus,
   cssWide,
+  directive,
+  jsxString,
   sortRegexFlags,
   trimEnd,
 } satisfies Record<string, (t: string, o: never) => string>;
@@ -152,4 +168,6 @@ export type NormalizerName = keyof typeof normalizers;
 export const normalizerOptions: { readonly [N in NormalizerName]?: readonly string[] } = {
   requote: ["singleQuote"],
   quote: ["singleQuote"],
+  directive: ["singleQuote"],
+  jsxString: ["jsxSingleQuote"],
 };

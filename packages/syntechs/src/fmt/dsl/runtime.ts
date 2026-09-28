@@ -277,6 +277,17 @@ export function parentIs(tree: FormatTree, node: number, kind: string): boolean 
   return p !== -1 && tree.kindName(p) === kind;
 }
 
+/** Whether `holds` of every item before `node` among its parent's items (an `allBefore` condition). */
+export function allBefore<O>(ctx: StreamCtx<O>, node: number, holds: (c: number) => boolean): boolean {
+  const p = ctx.tree.parent(node);
+  if (p === -1) return true;
+  for (const c of ctx.items(p)) {
+    if (c === node) return true;
+    if (!holds(c)) return false;
+  }
+  return true;
+}
+
 /** Whether `node`'s field `name` (`children`: its `listItems`) holds a child, of `kind` if given (a `has` condition). */
 export function hasChild<O>(
   ctx: StreamCtx<O>,
@@ -361,20 +372,20 @@ export function breaksBetween(tree: FormatTree, a: number, b: number): boolean {
 }
 
 /**
- * Whether `node`'s nearest proper ancestor of kind `kind` exists with no ancestor of a `stop` kind before it, and
- * `holds` holds of it (an `ancestor` condition).
+ * Whether `node`'s nearest proper ancestor of one of `kinds` exists with no ancestor of a `stop` kind (`"*"`: of any
+ * other kind) before it, and `holds` holds of it (an `ancestor` condition).
  */
 export function ancestorWhere(
   tree: FormatTree,
   node: number,
-  kind: string,
-  stop: readonly string[],
+  kinds: readonly string[],
+  stop: readonly string[] | "*",
   holds: (a: number) => boolean,
 ): boolean {
   for (let p = tree.parent(node); p !== -1; p = tree.parent(p)) {
     const k = tree.kindName(p);
-    if (k === kind) return holds(p);
-    if (stop.includes(k)) return false;
+    if (kinds.includes(k)) return holds(p);
+    if (stop === "*" || stop.includes(k)) return false;
   }
   return false;
 }

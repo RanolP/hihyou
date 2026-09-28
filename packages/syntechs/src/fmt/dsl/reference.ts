@@ -55,6 +55,7 @@ import {
   ancestorWhere,
   fieldChild,
   firstTextIs,
+  allBefore,
   hasChild,
   listItems,
   parentIs,
@@ -102,7 +103,7 @@ export const evalCond = <O>(
     case "firstText":
       return firstTextIs(ctx, node, c.after, c.is, c.prefix, c.anyCase);
     case "ancestor":
-      return ancestorWhere(ctx.tree, node, c.kind, c.stop, (a) => evalCond(c.holds, ctx, a, custom, false));
+      return ancestorWhere(ctx.tree, node, c.kinds, c.stop, (a) => evalCond(c.holds, ctx, a, custom, false));
     case "parent":
       return parentIs(ctx.tree, node, c.kind);
     case "rule": {
@@ -114,6 +115,10 @@ export const evalCond = <O>(
       return ctx.tree.fieldName(node) === c.name;
     case "has":
       return hasChild(ctx, node, c.name, c.kind, kindHasFields);
+    case "kind":
+      return c.kinds.includes(ctx.tree.kindName(node));
+    case "allBefore":
+      return allBefore(ctx, node, (p) => evalCond(c.c, ctx, p, custom, true, run));
     case "not":
       return !evalCond(c.c, ctx, node, custom, kindHasFields, run);
     case "all":
