@@ -23,6 +23,7 @@ import {
   prettierSuite,
   type Suite,
 } from "./conformance/prettier.node.js";
+import { ktfmt, ktfmtSuite } from "./conformance/ktfmt.node.js";
 import { oxfmt } from "./conformance/references.node.js";
 import {
   type FixtureResult,
@@ -194,6 +195,15 @@ export const TARGETS: Target[] = [
     source: `Fixtures: ${RUFF} crates/ruff_python_formatter/resources/test/fixtures/{black,ruff} (recursive), every option set of each \`.options.json\`, expected output from tests/snapshots (black cases without a snapshot: their \`.expect\` file). Options are passed by their ruff.toml names.`,
     suite: () => ruffSuite(ruffRoot),
   },
+  {
+    id: "kotlin",
+    reference: ktfmt.name,
+    fmt: "kotlin",
+    export: "kotlin",
+    grammar: () => "kotlin",
+    source: `Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files), expected output from ${ktfmt.name} run on each.`,
+    suite: ktfmtSuite,
+  },
 ];
 
 /** The ts target formats .tsx fixtures and prettier's jsx/ dir with the tsx grammar's `tsx` export. */
@@ -291,6 +301,14 @@ async function scoreReferences(cases: Case[]): Promise<ReferenceScore[]> {
   return scores;
 }
 
+const unformattedScore = (cases: Case[]): ReferenceScore => ({
+  name: "unformatted input (no formatter yet)",
+  passed: cases.filter((c) =>
+    c.runs.every((r) => r.asRecorded(c.text) === r.expected),
+  ).length,
+  total: cases.length,
+});
+
 async function main() {
   const args = process.argv.slice(2);
   const diffAt = args.indexOf("--diff");
@@ -346,8 +364,13 @@ async function main() {
       source: t.source,
       results,
       excluded,
-      // oxfmt formats the prettier-family languages only.
-      references: t.reference === PRETTIER ? await scoreReferences(cases) : [],
+      references: [
+        // oxfmt formats the prettier-family languages only.
+        ...(t.reference === PRETTIER ? await scoreReferences(cases) : []),
+        // With no formatter, what a viewer shows is the input as written: this is how much of it already reads
+        // as the reference prints it.
+        ...(results === "not implemented" ? [unformattedScore(cases)] : []),
+      ],
     });
     writeFileSync(join(outDir, `${t.id}.snap.md`), snapshot);
     console.log(snapshot.split("\n", 1)[0]);

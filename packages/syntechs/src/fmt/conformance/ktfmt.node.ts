@@ -12,7 +12,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { repoRoot } from "../../core/corpus.node.js";
+import { kotlinInputs, repoRoot } from "../../core/corpus.node.js";
+import type { Suite } from "./prettier.node.js";
 import type { Reference } from "./references.node.js";
 
 /** Must match `http:ktfmt` in mise.toml. */
@@ -110,3 +111,37 @@ export const ktfmt: Reference = {
     return out as string;
   },
 };
+
+/**
+ * ktfmt ships no fixture suite to fetch, so the Kotlin cases are the inputs parity runs on (the grammar's test
+ * corpus and the vendored real-world files), each expected to print as ktfmt prints it. An input ktfmt rejects
+ * is excluded. Throws when ktfmt cannot run.
+ */
+export function ktfmtSuite(): Suite {
+  const inputs = kotlinInputs();
+  const outs = formatAll(inputs);
+  const suite: Suite = { cases: [], excluded: [] };
+  for (const [i, input] of inputs.entries()) {
+    const out = outs[i];
+    if (out instanceof Error)
+      suite.excluded.push({
+        fixture: input.name,
+        reason: "ktfmt rejects the input",
+      });
+    else
+      suite.cases.push({
+        fixture: input.name,
+        file: input.name,
+        text: input.text,
+        runs: [
+          {
+            label: "--kotlinlang-style",
+            options: {},
+            expected: out as string,
+            asRecorded: (s) => s,
+          },
+        ],
+      });
+  }
+  return suite;
+}

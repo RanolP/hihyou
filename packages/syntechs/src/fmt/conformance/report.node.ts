@@ -194,7 +194,13 @@ const referenceCell = (r: MatrixRow, tool: string) => {
 
 const toolNames = (rows: MatrixRow[]) =>
   [
-    ...new Set(rows.flatMap((r) => r.references.map((x) => `\`${x.name}\``))),
+    ...new Set(
+      rows.flatMap((r) =>
+        r.references
+          .filter((x) => x.name.startsWith("oxfmt "))
+          .map((x) => `\`${x.name}\``),
+      ),
+    ),
   ].join(", ");
 
 export function renderMatrix(rows: MatrixRow[]): string {
