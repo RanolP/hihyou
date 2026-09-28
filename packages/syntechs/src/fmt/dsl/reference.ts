@@ -336,8 +336,8 @@ export function flatten<O>(
           return;
         }
         case "lines": {
-          if (x.attach !== undefined || x.blank !== undefined)
-            throw new Error("flatten: `lines` with `attach` or `blank` is generated only, not referenced yet");
+          if (x.attach !== undefined || x.blank !== undefined || x.follow !== undefined)
+            throw new Error("flatten: `lines` with `attach`, `blank` or `follow` is generated only, not referenced yet");
           const items = listItems(ctx, n, x.list.name, kindHasFields).slice(x.list.from ?? 0);
           // Nothing to lay out leaves no frame, so a bracket body of only this is empty.
           if (items.length === 0 && (owner !== x || dangling().length === 0)) return;
@@ -823,6 +823,7 @@ export function wrap<O>(
           break;
         case "doc":
           if (x.kind === "softline") sLine(SOFT);
+          else if (x.kind === "breakParent") sBreakParent();
           else sLineSuffixBoundary();
           break;
         case "layout": {

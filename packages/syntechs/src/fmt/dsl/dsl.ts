@@ -162,9 +162,10 @@ export type Tree =
     }
   /**
    * `attach`: the field whose children print with the next item, before it; `blank`: a blank line before each item
-   * but the first where it holds of the item (see `lines`).
+   * but the first where it holds of the item; `follow`: an item where it holds goes on the next line, indented
+   * (see `lines`).
    */
-  | { readonly t: "lines"; readonly list: Ref; readonly attach?: string; readonly blank?: Cond }
+  | { readonly t: "lines"; readonly list: Ref; readonly attach?: string; readonly blank?: Cond; readonly follow?: Cond }
   | {
       readonly t: "inOrder";
       readonly join: Join;
@@ -210,7 +211,7 @@ export type Tree =
 /** A layout frame: a group, an indent, or an indent only while the group `id` breaks. */
 export type LayoutKind = "group" | "indent" | "indentIfBreak";
 /** A line: a space or break, nothing or a break, always a break, or where pending line-end comments flush. */
-export type DocKind = "line" | "softline" | "hardline" | "lineSuffixBoundary";
+export type DocKind = "line" | "softline" | "hardline" | "lineSuffixBoundary" | "breakParent";
 
 /** How a `splitOn` entry prints its items: side by side, a space between, or as `words`. */
 export type SplitItem =
@@ -386,7 +387,11 @@ export type TokenTree<G extends Grammar, O> =
   | Piece<"self">
   | Piece<{ bail: CondIn<G, O> }>
   | Piece<{ splitOn: KindOf<G> | TokenOf<G>; cond: CondIn<G, O> }>
-  | Piece<{ either: CondIn<G, O>; then: TokenTree<G, O> | Text<G, O>; else: TokenTree<G, O> | Text<G, O> }>
+  | Piece<{
+      either: CondIn<G, O>;
+      then: TokenTree<G, O> | Text<G, O> | readonly [Piece<"doc">, Text<G, O>];
+      else: TokenTree<G, O> | Text<G, O>;
+    }>
   | Piece<{ spell: TokenOf<G> }>
   | Piece<"doc">
   | readonly TokenTree<G, O>[];
@@ -645,6 +650,11 @@ export const lines = (
     readonly attach?: List;
     /** A blank line before each item but the first where this holds of the item, whatever the source has. */
     readonly blank?: unknown;
+    /**
+     * An item where this holds continues the item before it: on the next line, indented, with no blank line
+     * (Kotlin's getter, which the grammar makes a sibling of its property).
+     */
+    readonly follow?: unknown;
   } = {},
 ): Piece<"lines"> =>
   piece({
@@ -652,6 +662,7 @@ export const lines = (
     list: refOf(list),
     ...(o.attach === undefined ? {} : { attach: refOf(o.attach).name }),
     ...(o.blank === undefined ? {} : { blank: plain(o.blank) }),
+    ...(o.follow === undefined ? {} : { follow: plain(o.follow) }),
   });
 
 /** Which consecutive entries of an `inOrder` a spacing rule applies to (see `Pairs`). */
@@ -886,6 +897,8 @@ export const softline: Piece<"doc"> = piece({ t: "doc", kind: "softline" });
 export const hardline: Piece<"doc"> = piece({ t: "doc", kind: "hardline" });
 /** Where the line comments pending at the end of the line print, a break with them. */
 export const lineSuffixBoundary: Piece<"doc"> = piece({ t: "doc", kind: "lineSuffixBoundary" });
+/** Prettier's breakParent: every group around it breaks. */
+export const breakParent: Piece<"doc"> = piece({ t: "doc", kind: "breakParent" });
 
 function plain(c: unknown): Cond {
   if (c === undefined || typeof c === "boolean") return c === true;

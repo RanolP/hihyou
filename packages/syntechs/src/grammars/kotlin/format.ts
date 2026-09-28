@@ -5,6 +5,7 @@ import {
   all,
   any,
   bail,
+  breakParent,
   defineFormat,
   either,
   group,
@@ -72,10 +73,12 @@ const blank = not(
   ),
 );
 
+// The grammar makes a property's accessors its siblings; they continue it.
+const follow = kindIs("getter", "setter");
 
 export const kotlin = format({
   structure: {
-    source_file: ($) => lines($.children, { blank }),
+    source_file: ($) => lines($.children, { blank, follow }),
     package_header: () => inOrder(space),
     import_list: ($) => lines($.children),
     import_header: () => spaced(),
@@ -97,7 +100,7 @@ export const kotlin = format({
     object_declaration: () => spaced(),
     companion_object: () => spaced(),
     class_body: ($) =>
-      either(isEmpty, ["{", "}"], ["{", indent([hardline, lines($.children, { blank })]), hardline, "}"]),
+      either(isEmpty, ["{", "}"], ["{", indent([hardline, lines($.children, { blank, follow })]), hardline, "}"]),
     enum_class_body: ($) =>
       either(
         any(has("children", "function_declaration"), has("children", "property_declaration")),
@@ -147,7 +150,13 @@ export const kotlin = format({
     assignment: () => spaced({ hang: true }),
     directly_assignable_expression: () => inOrder(),
     call_expression: () => inOrder(),
-    call_suffix: () => inOrder({ spaceWhen: { before: ["annotated_lambda"] } }),
+    // A trailing lambda alone (`forEach { }`) is spaced off its callee, which prints before this node.
+    call_suffix: () =>
+      either(
+        not(any(has("children", "value_arguments"), has("children", "type_arguments"))),
+        [space, inOrder()],
+        inOrder({ spaceWhen: { before: ["annotated_lambda"] } }),
+      ),
     value_arguments: ($) => grpParen(sepBy(",", $.children, { trailing: true })),
     value_argument: () => inOrder({ join: "space", tight: { after: ["*"] } }),
     annotated_lambda: () => inOrder(space),
@@ -191,7 +200,8 @@ export const kotlin = format({
     for_statement: () => spaced(),
     while_statement: () => spaced(),
 
-    string_literal: () => text("trimEnd"),
+    // A multiline string breaks the group it sits in, so it starts a line of its own after `=`.
+    string_literal: () => either(spansLines, [breakParent, text("trimEnd")], text("trimEnd")),
     character_literal: () => verbatim,
     unsigned_literal: () => verbatim,
     long_literal: () => verbatim,

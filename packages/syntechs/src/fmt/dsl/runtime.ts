@@ -109,7 +109,7 @@ export type Entry =
   /** Opens a `group`, `indent` or `indentIfBreak` frame, which an `end` closes. */
   | { readonly e: "layout"; readonly kind: "group" | "indent" | "indentIfBreak"; readonly id?: string }
   /** A `softline` or `lineSuffixBoundary` (a `line` or `hardline` is its own entry). */
-  | { readonly e: "doc"; readonly kind: "softline" | "lineSuffixBoundary" };
+  | { readonly e: "doc"; readonly kind: "softline" | "lineSuffixBoundary" | "breakParent" };
 
 export type CommentEntry = Extract<Entry, { e: "comment" }>;
 

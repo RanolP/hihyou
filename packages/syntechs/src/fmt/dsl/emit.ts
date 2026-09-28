@@ -45,8 +45,10 @@ function eachCond(ir: FormatIR, visit: (c: Cond) => void): void {
       cond(x.pad);
       walk(x.body);
     } else if (x.t === "sepBy") cond(x.trailing);
-    else if (x.t === "lines") cond(x.blank);
-    else if (x.t === "inOrder") {
+    else if (x.t === "lines") {
+      cond(x.blank);
+      cond(x.follow);
+    } else if (x.t === "inOrder") {
       cond(x.tight?.when);
       cond(x.spaceWhen?.when);
       cond(x.hardWhen?.when);
@@ -719,8 +721,16 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
               line(`if (i < ${its}.length - 1 && nextLineEmpty(t, item)) sHardline();`);
           });
         } else block(`for (let i = 0; i < ${its}.length; i++)`, () => {
-          line("if (i > 0) sHardline();");
           line(`const item = ${its}[i] as number;`);
+          if (x.follow !== undefined && x.follow !== false)
+            block(`if (i > 0 && ${cond(x.follow, false, "item")})`, () => {
+              line("open(INDENT);");
+              line("sHardline();");
+              child("item");
+              line("close();");
+              line("continue;");
+            });
+          line("if (i > 0) sHardline();");
           if (x.blank !== undefined && x.blank !== false)
             // Past a blank line the source kept already, where `blankLines` keeps them.
             line(
@@ -889,6 +899,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
           x.kind === "line" ? "sLine(0);"
           : x.kind === "softline" ? "sLine(SOFT);"
           : x.kind === "hardline" ? "sHardline();"
+          : x.kind === "breakParent" ? "sBreakParent();"
           : "sLineSuffixBoundary();",
         );
         return;
