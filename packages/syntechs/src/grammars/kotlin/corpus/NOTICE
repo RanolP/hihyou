@@ -13,3 +13,11 @@ Apache License 2.0 (https://www.apache.org/licenses/LICENSE-2.0):
     Copyright JetBrains s.r.o. and Kotlin Programming Language contributors.
   Okio.kt, build.gradle.kts -- https://github.com/square/okio at tag parent-3.9.0,
     okio/src/commonMain/kotlin/okio/Okio.kt and build.gradle.kts. Copyright Square, Inc.
+
+ktfmt/ -- the inputs of ktfmt's own tests, from https://github.com/facebook/ktfmt at commit
+c223b51121d3a6b13e528c890b0d0f2eea40c25b (main as of 2026-09-29): every
+core/src/test/resources/cases/**/*.input, kept at its path under cases/ (the .output files are not
+vendored), and core/src/test/kotlin/org/jetbrains/ktfmt/kdoc/KDocFormatterTest.kt as
+KDocFormatterTest.kt.txt (renamed only so the repo's *.kt sweeps skip it; the corpus loader extracts its
+comments). Apache License 2.0, copied beside them as LICENSE. Copyright Meta Platforms, Inc. and
+affiliates; KDocFormatterTest.kt also Copyright Tor Norbye.

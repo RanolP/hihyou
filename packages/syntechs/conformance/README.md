@@ -13,4 +13,4 @@ The oxfmt column scores that tool (`oxfmt 0.70.0`) on the same fixtures and opti
 | [js](js.snap.md) | prettier 3.9.9 | 614/804 | 76.37% | 32 | 304 | 70.02% |
 | [ts](ts.snap.md) | prettier 3.9.9 | 531/653 | 81.32% | 28 | 76 | 75.04% |
 | [python](python.snap.md) | ruff 0.16.8 | 202/327 | 61.77% | 88 | 49 | - |
-| [kotlin](kotlin.snap.md) | ktfmt 0.64 --kotlinlang-style | 82/94 | 87.23% | 1 | 7 | - |
+| [kotlin](kotlin.snap.md) | ktfmt 0.64 --kotlinlang-style | 341/752 | 45.35% | 55 | 12 | - |

@@ -204,6 +204,66 @@ export function kotlinInputs(): Input[] {
   ];
 }
 
+/** Kotlin's raw-string `.trimIndent()`: drops a blank first and last line, then the lines' common indent. */
+function trimIndent(s: string): string {
+  const lines = s.split("\n");
+  if (lines[0]?.trim() === "") lines.shift();
+  if (lines.at(-1)?.trim() === "") lines.pop();
+  const indent = Math.min(
+    ...lines
+      .filter((l) => l.trim() !== "")
+      .map((l) => l.length - l.trimStart().length),
+  );
+  return lines.map((l) => l.slice(indent)).join("\n");
+}
+
+/**
+ * The comment each test of ktfmt's KDocFormatterTest.kt formats: its first raw string, when that is a
+ * `.trimIndent()`ed comment with no template in it but `${"$"}` (a literal `$`).
+ */
+function kdocInputs(file: string): Input[] {
+  const src = readFileSync(file, "utf8").replaceAll("\r\n", "\n");
+  return src
+    .split(/\n {2}@Test\n/)
+    .slice(1)
+    .flatMap((body) => {
+      const name = /fun (\w+)\(/.exec(body)?.[1];
+      const m = /"""([\s\S]*?)"""\s*\.trimIndent\(\)/.exec(body);
+      const raw = m?.[1]?.replaceAll('${"$"}', "\0");
+      if (!name || raw === undefined || /\$[{\w]/.test(raw)) return [];
+      const text = trimIndent(raw.replaceAll("\0", "$"));
+      return /^\/[*/]/.test(text)
+        ? [{ name: `ktfmt/kdoc/${name}.kt`, text: `${text}\n` }]
+        : [];
+    });
+}
+
+/**
+ * The inputs of ktfmt's own tests (vendored under src/grammars/kotlin/corpus/ktfmt, see its NOTICE): every
+ * `.input` file case, named by its path under `cases/` and read as a script when its directive header says
+ * `// FILE_TYPE SCRIPT` or it starts with a shebang, then KDocFormatterTest.kt's comments. Some hold syntax
+ * tree-sitter-kotlin cannot parse, so, unlike kotlinInputs, they feed the ktfmt conformance set only.
+ */
+export function ktfmtInputs(): Input[] {
+  const root = join(kotlinCorpusDir, "ktfmt");
+  const cases = join(root, "cases");
+  const files = readdirSync(cases, { recursive: true, encoding: "utf8" })
+    .filter((f) => f.endsWith(".input"))
+    .map((f) => f.replaceAll("\\", "/"))
+    .sort();
+  return [
+    ...files.map((f) => {
+      const text = readFileSync(join(cases, f), "utf8");
+      const script = /^(#!|(\/\/.*\n)*\/\/ FILE_TYPE SCRIPT\s*\n)/.test(text);
+      return {
+        name: `ktfmt/${f.slice(0, -".input".length)}${script ? ".kts" : ".kt"}`,
+        text,
+      };
+    }),
+    ...kdocInputs(join(root, "KDocFormatterTest.kt.txt")),
+  ];
+}
+
 export function corpus(grammar: GrammarName): Input[] {
   const fetched = benchFiles(grammar);
   const repo = repoFiles(grammar)

@@ -201,7 +201,7 @@ export const TARGETS: Target[] = [
     fmt: "kotlin",
     export: "kotlin",
     grammar: () => "kotlin",
-    source: `Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files), expected output from ${ktfmt.name} run on each.`,
+    source: `Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ${ktfmt.name} run on each.`,
     suite: ktfmtSuite,
   },
 ];
