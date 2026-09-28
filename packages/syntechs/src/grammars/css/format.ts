@@ -3,6 +3,7 @@
 // prettier's postcss printer decides by more than the structure, a `custom` rule of fmt.ts.
 import {
   all,
+  ancestor,
   anyEntry,
   type CondIn,
   custom,
@@ -44,6 +45,8 @@ const packed = { group: true, indent: true, between: "line", fill: true } as con
 /** `layout` for two entries or more; a lone entry prints bare. */
 const loneBare = <L>(layout: L) => ({ when: entryCount(1), then: {}, else: layout });
 type Cond = CondIn<typeof grammar, CssOptions>;
+/** A function call's name is `name`, in any case. */
+const calledAs = (name: string) => firstText({ is: [name], anyCase: true });
 /**
  * A declaration's comma list: a lone entry bare; one entry per line once an entry has several words (prettier's
  * `shouldBreakList`), but in a custom property; else packed after an optional break past the colon.
@@ -101,13 +104,29 @@ export const css = format({
     float_value: () => text("unitCase"),
     color_value: () => text("lower"),
     string_value: () => text("requote"),
-    plain_value: () => custom("plainValue"),
+    // Quoted inside `[attr=value]`, an `an+b` spaced around its `+`, else a CSS-wide keyword lowercased.
+    plain_value: () =>
+      either(
+        parentIs("attribute_selector"),
+        text("quote"),
+        either(
+          all(
+            parentIs("arguments"),
+            ancestor("pseudo_class_selector", {
+              stop: ["call_expression"],
+              holds: firstText({ after: ":", prefix: ["nth-"], anyCase: true }),
+            }),
+          ),
+          text("spacePlus"),
+          text("cssWide"),
+        ),
+      ),
     call_expression: adjacent,
     // A function's as written inside `url()`, else broken inside the parentheses: a function's as words, a
     // pseudo-class's as selectors.
     arguments: () =>
       either(
-        when("urlArguments"),
+        all(parentIs("call_expression"), ancestor("call_expression", { holds: calledAs("url") })),
         adjacent(),
         either(
           parentIs("call_expression"),
@@ -123,7 +142,11 @@ export const css = format({
         ),
       ),
     // Spaced around the operator as written, and always inside `calc()`.
-    binary_expression: () => inOrder({ join: "gap", spaceWhen: { when: when("inCalc") } }),
+    binary_expression: () =>
+      inOrder({
+        join: "gap",
+        spaceWhen: { when: ancestor("call_expression", { stop: ["declaration", "block"], holds: calledAs("calc") }) },
+      }),
     parenthesized_value: adjacent,
 
     class_selector: adjacent,

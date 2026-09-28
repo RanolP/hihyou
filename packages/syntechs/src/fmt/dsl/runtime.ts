@@ -353,6 +353,25 @@ export function breaksBetween(tree: FormatTree, a: number, b: number): boolean {
 }
 
 /**
+ * Whether `node`'s nearest proper ancestor of kind `kind` exists with no ancestor of a `stop` kind before it, and
+ * `holds` holds of it (an `ancestor` condition).
+ */
+export function ancestorWhere(
+  tree: FormatTree,
+  node: number,
+  kind: string,
+  stop: readonly string[],
+  holds: (a: number) => boolean,
+): boolean {
+  for (let p = tree.parent(node); p !== -1; p = tree.parent(p)) {
+    const k = tree.kindName(p);
+    if (k === kind) return holds(p);
+    if (stop.includes(k)) return false;
+  }
+  return false;
+}
+
+/**
  * Whether the source text of `node`'s first child but comments (with `after`, its first after its first `after`
  * token), lowercased with `anyCase`, is one of `is` or starts with one of `prefix` (a `firstText` condition).
  */

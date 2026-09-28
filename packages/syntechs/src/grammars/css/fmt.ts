@@ -6,10 +6,9 @@ import {
   prettierSettings,
 } from "../../fmt/options.js";
 import { defineLanguage, type Language } from "../../fmt/rules.js";
-import { sToken } from "../../fmt/stream.js";
 import { maybeLower, numberParts } from "../../fmt/dsl/normalizers.js";
-import type { CustomRule, PredicateRule } from "../../fmt/dsl/runtime.js";
-import type { StreamCtx, StreamRule } from "../../fmt/stream-format.js";
+import type { PredicateRule } from "../../fmt/dsl/runtime.js";
+import type { StreamCtx } from "../../fmt/stream-format.js";
 import type { FormatTree } from "../../fmt/tree.js";
 import { grammar } from "./bundle.js";
 import * as gen from "./fmt.gen.js";
@@ -23,9 +22,7 @@ export interface CssOptions extends PrettierOptions {
 const defaults: CssOptions = { ...prettierDefaults, singleQuote: false };
 
 type SCtx = StreamCtx<CssOptions>;
-type SRule = StreamRule<CssOptions>;
 
-const src = (n: number, ctx: SCtx) => ctx.tree.text(n);
 const kind = (n: number, ctx: SCtx) => ctx.tree.kindName(n);
 const children = (n: number, tree: FormatTree) => {
   const out: number[] = [];
@@ -38,8 +35,6 @@ const isComment = (n: number, ctx: SCtx) =>
 /** Every child but comments, which reach the output attached to their neighbours. */
 const code = (n: number, ctx: SCtx) =>
   children(n, ctx.tree).filter((c) => !isComment(c, ctx));
-const childOfKind = (n: number, k: string, ctx: SCtx) =>
-  children(n, ctx.tree).find((c) => kind(c, ctx) === k);
 
 const cssWideKeywords = new Set(["initial", "inherit", "unset", "revert"]);
 
@@ -56,30 +51,6 @@ const cook = (quoted: string) =>
       },
     );
 
-const within = (n: number, k: string, ctx: SCtx) => {
-  const p = ctx.tree.parent(n);
-  return p !== NO_NODE && kind(p, ctx) === k;
-};
-/** An `an+b` argument, which postcss-selector-parser reads as `an + b` (the `+` a combinator). */
-function nthArgument(n: number, ctx: SCtx): boolean {
-  if (!within(n, "arguments", ctx)) return false;
-  const pseudo = ctx.tree.parent(ctx.tree.parent(n));
-  if (pseudo === NO_NODE) return false;
-  const name = childOfKind(pseudo, "class_name", ctx);
-  return name !== undefined && /^nth-/i.test(src(name, ctx));
-}
-/** The name of the nearest function around `n`, lowercased, as prettier's `insideValueFunctionNode` asks. */
-function enclosingFunction(n: number, ctx: SCtx): string | undefined {
-  for (let p = ctx.tree.parent(n); p !== NO_NODE; p = ctx.tree.parent(p)) {
-    const k = kind(p, ctx);
-    if (k === "call_expression") {
-      const name = childOfKind(p, "function_name", ctx);
-      return name === undefined ? undefined : src(name, ctx).toLowerCase();
-    }
-    if (k === "declaration" || k === "block") return undefined;
-  }
-  return undefined;
-}
 
 // What a token means, whatever prettier's spelling of it: a string by its cooked value, a number by its exact
 // value and its unit, and hex colors, keywords and names by their case-folded form where CSS ignores case.
@@ -154,34 +125,11 @@ function parts(n: number, ctx: SCtx): number {
     : 1;
 }
 
-// ---- the rules format.ts names as `custom`: prettier's heuristics, and the leaves it respells ----
-
-const respell =
-  (f: (t: string, node: number, ctx: SCtx) => string): SRule =>
-  (node, ctx) =>
-    sToken(node, f(src(node, ctx), node, ctx));
-
-/** The rules `custom` names in format.ts. */
+/** The rules `when` names in format.ts. */
 export const customs = {
-  plainValue: respell((t, node, ctx) => {
-    if (within(node, "attribute_selector", ctx)) {
-      const q = ctx.options.singleQuote ? "'" : '"';
-      return /["']/.test(t) ? t : q + t + q;
-    }
-    if (nthArgument(node, ctx))
-      return t.replace(/(?<=[^\s+-])\+(?=\S)/g, " + ");
-    return cssWideKeywords.has(t.toLowerCase()) ? t.toLowerCase() : t;
-  }),
   /** Prettier indents a selector of more than two nodes as it breaks. */
   longSelector: (node, ctx) => parts(node, ctx) > 2,
-  /** A `url()` function's arguments, which prettier prints as written. */
-  urlArguments: (node, ctx) => {
-    if (!within(node, "call_expression", ctx)) return false;
-    const name = childOfKind(ctx.tree.parent(node), "function_name", ctx);
-    return name !== undefined && src(name, ctx).toLowerCase() === "url";
-  },
-  inCalc: (node, ctx) => enclosingFunction(node, ctx) === "calc",
-} satisfies Record<string, CustomRule<CssOptions> | PredicateRule<CssOptions>>;
+} satisfies Record<string, PredicateRule<CssOptions>>;
 
 /** CSS as prettier 3.9.9's postcss printer lays it out; the layouts are format.ts, generated into fmt.gen.ts. */
 export const css: Language<CssOptions> = {

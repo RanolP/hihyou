@@ -26,6 +26,7 @@ function eachCond(ir: FormatIR, visit: (c: Cond) => void): void {
     visit(c);
     if (typeof c === "boolean") return;
     if (c.t === "not") cond(c.c);
+    else if (c.t === "ancestor") cond(c.holds);
     else if (c.t === "all" || c.t === "any") c.cs.forEach(cond);
   };
   const walk = (x: Tree): void => {
@@ -82,7 +83,7 @@ function optionKeys(ir: FormatIR): string[] {
 function spellFns(ir: FormatIR): Set<NormalizerName> {
   const fns = new Set<NormalizerName>();
   const walk = (x: Tree): void => {
-    if (x.t === "spell") fns.add(x.fn);
+    if (x.t === "spell" || x.t === "text") fns.add(x.fn);
     else if (x.t === "seq") x.parts.forEach(walk);
     else if (x.t === "opt" || x.t === "tokIf") walk(x.then);
     else if (x.t === "brackets") walk(x.body);
@@ -179,6 +180,11 @@ const cond = (c: Cond, hasFields: boolean, self = "node", run?: string): string 
     }
     case "firstText":
       return `firstTextIs(ctx, ${self}, ${c.after === undefined ? "undefined" : str(c.after)}, ${JSON.stringify(c.is)}, ${JSON.stringify(c.prefix)}, ${c.anyCase})`;
+    case "ancestor": {
+      // An ancestor's kind, and so whether it has fields, is known only at run time.
+      const a = `a${self}`;
+      return `ancestorWhere(t, ${self}, ${str(c.kind)}, ${JSON.stringify(c.stop)}, (${a}) => ${cond(c.holds, false, a)})`;
+    }
     case "not":
       return `!(${cond(c.c, hasFields, self, run)})`;
     case "all":
@@ -885,6 +891,12 @@ export function emit(
       parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
       0,
       `import { ${["breaksBetween", "someEntry"].filter((f) => parts.some((p) => p.includes(`${f}(`))).map((f) => `${f}, `).join("")}type SplitEntry, splitRun } from "../../fmt/dsl/runtime.js";`,
+    );
+  if (parts.some((p) => p.includes("ancestorWhere(")))
+    parts.splice(
+      parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
+      0,
+      'import { ancestorWhere } from "../../fmt/dsl/runtime.js";',
     );
   if (parts.some((p) => p.includes("firstTextIs(")))
     parts.splice(

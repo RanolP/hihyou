@@ -111,6 +111,20 @@ export function unitCase(t: string): string {
 export const requote = (raw: string, o: { readonly singleQuote?: unknown }): string =>
   printString(raw, o.singleQuote === true);
 
+/** Bare text in the preferred quote (`singleQuote`); text holding a quote as written. Prettier's attribute values. */
+export const quote = (t: string, o: { readonly singleQuote?: unknown }): string => {
+  if (/["']/.test(t)) return t;
+  const q = o.singleQuote === true ? SINGLE : DOUBLE;
+  return q + t + q;
+};
+
+/** A `+` between two operands spaced (`2n+1` as `2n + 1`), a sign left as written: postcss-selector-parser's `an+b`. */
+export const spacePlus = (t: string): string => t.replace(/(?<=[^\s+-])\+(?=\S)/g, " + ");
+
+const cssWideKeywords = new Set(["initial", "inherit", "unset", "revert"]);
+/** A CSS-wide keyword lowercased, anything else as written. */
+export const cssWide = (t: string): string => (cssWideKeywords.has(t.toLowerCase()) ? t.toLowerCase() : t);
+
 /** A regex's flags in code-point order, as prettier prints them. */
 export const sortRegexFlags = (t: string): string => [...t].sort().join("");
 
@@ -125,6 +139,9 @@ export const normalizers = {
   atName,
   unitCase,
   requote,
+  quote,
+  spacePlus,
+  cssWide,
   sortRegexFlags,
   trimEnd,
 } satisfies Record<string, (t: string, o: never) => string>;
@@ -134,4 +151,5 @@ export type NormalizerName = keyof typeof normalizers;
 /** The options each normalizer reads, which a spec using it then requires. */
 export const normalizerOptions: { readonly [N in NormalizerName]?: readonly string[] } = {
   requote: ["singleQuote"],
+  quote: ["singleQuote"],
 };

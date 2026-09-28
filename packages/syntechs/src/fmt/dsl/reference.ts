@@ -52,6 +52,7 @@ import {
   type CustomRule,
   type FrameRule,
   type Entry,
+  ancestorWhere,
   fieldChild,
   firstTextIs,
   hasChild,
@@ -97,6 +98,8 @@ export const evalCond = <O>(
       return someEntry(ctx.tree, split().entries, c.many, c.startsWith);
     case "firstText":
       return firstTextIs(ctx, node, c.after, c.is, c.prefix, c.anyCase);
+    case "ancestor":
+      return ancestorWhere(ctx.tree, node, c.kind, c.stop, (a) => evalCond(c.holds, ctx, a, custom, false));
     case "parent":
       return parentIs(ctx.tree, node, c.kind);
     case "rule": {

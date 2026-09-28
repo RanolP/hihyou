@@ -60,7 +60,8 @@ export type Cond =
   | { readonly t: "rule"; readonly name: string }
   | LogicCond
   | SplitCond
-  | FirstTextCond;
+  | FirstTextCond
+  | { readonly t: "ancestor"; readonly kind: string; readonly stop: readonly string[]; readonly holds: Cond };
 
 /**
  * The source text of the node's first child but comments (with `after`, of its first child after its first `after`
@@ -316,7 +317,7 @@ export type TokenTree<G extends Grammar, O> =
   | Piece<"space">
   | Piece<"lines">
   | Piece<"inOrder">
-  | Piece<{ inOrder: KindOf<G> | TokenOf<G>; cond: CondOf<O> }>
+  | Piece<{ inOrder: KindOf<G> | TokenOf<G>; cond: CondIn<G, O> }>
   | Piece<{ tok: TokenOf<G> }>
   | Piece<{ opt: TokenTree<G, O> }>
   | Piece<{ brackets: TokenTree<G, O>; pad: CondOf<O> }>
@@ -325,7 +326,7 @@ export type TokenTree<G extends Grammar, O> =
   | Piece<"self">
   | Piece<{ bail: CondIn<G, O> }>
   | Piece<{ splitOn: KindOf<G> | TokenOf<G>; cond: CondIn<G, O> }>
-  | Piece<{ either: CondIn<G, O>; then: TokenTree<G, O>; else: TokenTree<G, O> }>
+  | Piece<{ either: CondIn<G, O>; then: TokenTree<G, O> | Text<G, O>; else: TokenTree<G, O> | Text<G, O> }>
   | Piece<{ spell: TokenOf<G> }>
   | readonly TokenTree<G, O>[];
 
@@ -366,7 +367,16 @@ export type CondIn<G extends Grammar, O> =
   | NotCond<CondIn<G, O>>
   | AllCond<CondIn<G, O>>
   | SplitCond
-  | FirstTextCond;
+  | FirstTextCond
+  | AncestorCond<KindOf<G>, CondIn<G, O>>;
+
+/** The nearest ancestor of kind `kind`, met before any of a `stop` kind, is one where `holds` holds (`ancestor`). */
+export interface AncestorCond<K, C> {
+  readonly t: "ancestor";
+  readonly kind: K;
+  readonly stop: readonly K[];
+  readonly holds: C;
+}
 
 /** `text`'s output, its `when` checked against the grammar's kinds and the options. */
 type Text<G extends Grammar, O> = Piece<{ text: CondIn<G, O> }>;
@@ -640,6 +650,16 @@ export const firstText = (o: {
   anyCase: o.anyCase === true,
 });
 
+/**
+ * The node's nearest ancestor of kind `kind` exists, no ancestor of a `stop` kind lies before it, and `holds` (true
+ * without it) holds of it: what the node sits inside, like the function around a CSS value.
+ */
+export const ancestor = <const K extends string, const C = true>(
+  kind: K,
+  o: { readonly stop?: readonly K[]; readonly holds?: C } = {},
+): AncestorCond<K, C> =>
+  ({ t: "ancestor", kind, stop: o.stop ?? [], holds: o.holds ?? true }) as AncestorCond<K, C>;
+
 /** A `splitOn` layout, its conditions checked against the grammar's kinds and the options through `C`. */
 export type SplitLayoutOf<C> =
   | Extract<SplitLayout, { readonly group?: boolean }>
@@ -716,6 +736,8 @@ function plain(c: unknown): Cond {
       return { t: "anyEntry", many: x.many, startsWith: x.startsWith };
     case "firstText":
       return firstText(x);
+    case "ancestor":
+      return { t: "ancestor", kind: x.kind, stop: x.stop, holds: plain(x.holds) };
   }
   const { key, op, value } = x;
   return op === "truthy"
