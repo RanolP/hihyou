@@ -105,7 +105,11 @@ export type Entry =
   /** Between two items of an entry: whether the source has a gap (`apart`) or a line break (`breaks`) there. */
   | { readonly e: "joint"; readonly apart: boolean; readonly breaks: boolean }
   /** Opens a `splitOn` item in a group and an indent of its own, which an `end` closes. */
-  | { readonly e: "wrap" };
+  | { readonly e: "wrap" }
+  /** Opens a `group`, `indent` or `indentIfBreak` frame, which an `end` closes. */
+  | { readonly e: "layout"; readonly kind: "group" | "indent" | "indentIfBreak"; readonly id?: string }
+  /** A `softline` or `lineSuffixBoundary` (a `line` or `hardline` is its own entry). */
+  | { readonly e: "doc"; readonly kind: "softline" | "lineSuffixBoundary" };
 
 export type CommentEntry = Extract<Entry, { e: "comment" }>;
 

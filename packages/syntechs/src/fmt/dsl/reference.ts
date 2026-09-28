@@ -20,10 +20,12 @@ import {
   IF_BROKEN,
   INDENT,
   open,
+  openIndentIfBreak,
   SOFT,
   sBreakParent,
   sHardline,
   sLine,
+  sLineSuffixBoundary,
   sText,
   sToken,
 } from "../stream.js";
@@ -158,6 +160,7 @@ export function danglingOwner(tree: Tree): Tree | undefined {
       }
       return undefined;
     case "brackets":
+    case "layout":
       return danglingOwner(tree.body);
     case "opt":
     case "tokIf":
@@ -390,6 +393,14 @@ export function flatten<O>(
         case "either":
           walk(evalCond(x.when, ctx, n, custom, kindHasFields) ? x.then : x.else);
           return;
+        case "layout":
+          out.push(x.id === undefined ? { e: "layout", kind: x.kind } : { e: "layout", kind: x.kind, id: x.id });
+          walk(x.body);
+          out.push({ e: "end" });
+          return;
+        case "doc":
+          out.push(x.kind === "line" || x.kind === "hardline" ? { e: x.kind } : { e: "doc", kind: x.kind });
+          return;
         case "spell": {
           const c = token(x.text);
           if (c === -1) return;
@@ -465,7 +476,7 @@ export function wrap<O>(
   const endOf = (i: number) => {
     for (let depth = 0; ; i = next(i)) {
       const e = (seq[i] as Entry).e;
-      if (e === "brackets" || e === "list" || e === "lines" || e === "split" || e === "entry" || e === "wrap")
+      if (e === "brackets" || e === "list" || e === "lines" || e === "split" || e === "entry" || e === "wrap" || e === "layout")
         depth++;
       else if (e === "end" && --depth === 0) return i;
     }
@@ -769,6 +780,8 @@ export function wrap<O>(
     if (sep !== -1) sToken(sep, tree.text(sep));
   };
 
+  /** The handle of each named group opened so far. */
+  const groups = new Map<string, number>();
   const render = (from: number, to: number, w: Wrap, node: number): void => {
     for (let i = from; i < to; i = next(i)) {
       const x = seq[i] as Entry;
@@ -793,6 +806,22 @@ export function wrap<O>(
         case "hardline":
           sHardline();
           break;
+        case "doc":
+          if (x.kind === "softline") sLine(SOFT);
+          else sLineSuffixBoundary();
+          break;
+        case "layout": {
+          const end = endOf(i);
+          if (x.kind === "indentIfBreak") openIndentIfBreak(groups.get(x.id as string) as number);
+          else {
+            const g = open(x.kind === "group" ? GROUP : INDENT);
+            if (x.id !== undefined) groups.set(x.id, g);
+          }
+          render(i + 1, end, w, node);
+          close();
+          i = end;
+          break;
+        }
         case "child":
         case "comment":
           childOrComment(i);
@@ -911,6 +940,7 @@ export function holdsList(tree: Tree): boolean {
     case "seq":
       return tree.parts.some(holdsList);
     case "brackets":
+    case "layout":
       return holdsList(tree.body);
     case "opt":
     case "tokIf":

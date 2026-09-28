@@ -22,13 +22,11 @@ import {
   open,
   openChoice,
   openAlign,
-  openIndentIfBreak,
   openState,
   place,
   SOFT,
   sHardline,
   sLine,
-  sLineSuffixBoundary,
   sText,
   sToken,
   withComments,
@@ -216,20 +214,6 @@ const parenthesizedType: CustomRule<JsOptions> = (n, sctx) => {
   tok(js, anonKid(js, n, "("));
   ctx.print(inner);
   tok(js, lastAnonKid(js, n, ")"));
-};
-
-/** `infer U` and `infer U extends C`, the constraint laid out as a type parameter's. */
-const inferType: CustomRule<JsOptions> = (n, sctx) => {
-  const ctx = jsCtx(sctx);
-  const js = ctx.js;
-  const [name, constraint] = items(js, n);
-  open(GROUP);
-  tok(js, anonKid(js, n, "infer"));
-  sText(" ");
-  pr(ctx, name);
-  if (constraint !== undefined)
-    printConstraint(ctx, anonKid(js, n, "extends"), constraint);
-  close();
 };
 
 // --- unions and intersections ---------------------------------------------------------------------------------
@@ -528,50 +512,6 @@ const typeParameters: CustomRule<JsOptions> = (n, sctx) => {
   close();
 };
 
-/** ` extends C` with the constraint moved to the next line, indented, when it does not fit. */
-function printConstraint(
-  ctx: JsStreamCtx,
-  keyword: number | undefined,
-  type: number | undefined,
-): void {
-  sText(" ");
-  tok(ctx.js, keyword);
-  const g = open(GROUP);
-  open(INDENT);
-  sLine(0);
-  close();
-  close();
-  sLineSuffixBoundary();
-  openIndentIfBreak(g);
-  pr(ctx, type);
-  close();
-}
-
-const typeParameter: CustomRule<JsOptions> = (n, sctx) => {
-  const ctx = jsCtx(sctx);
-  const js = ctx.js;
-  open(GROUP);
-  const name = field(js, n, "name");
-  for (const c of children(js, n)) {
-    if (c === name) break;
-    if (!isComment(js, c)) {
-      tok(js, c);
-      sText(" ");
-    }
-  }
-  pr(ctx, name);
-  const constraint = field(js, n, "constraint");
-  if (constraint !== undefined)
-    printConstraint(
-      ctx,
-      anonKid(js, constraint, "extends"),
-      items(js, constraint)[0],
-    );
-  const value = field(js, n, "value");
-  if (value !== undefined)
-    printConstraint(ctx, anonKid(js, value, "="), items(js, value)[0]);
-  close();
-};
 
 // --- declarations ---------------------------------------------------------------------------------------------
 
@@ -1105,10 +1045,8 @@ const signature: CustomRule<JsOptions> = (parameters, sctx) => {
 /** The TypeScript kinds format.ts lays out by hand, by the names its spec gives them. */
 const nodeCustoms = {
   parenthesizedType,
-  inferType,
   intersectionType,
   typeParameters,
-  typeParameter,
   ambientDeclaration,
   castExpression,
   typeBody,

@@ -1,6 +1,24 @@
 // TypeScript types (customs: print/types.ts).
-import { all, custom, has, inOrder, not, option, space, tok } from "../../../fmt/dsl/dsl.js";
+import {
+  all,
+  custom,
+  group,
+  has,
+  indent,
+  indentIfBreak,
+  inOrder,
+  line,
+  lineSuffixBoundary,
+  not,
+  option,
+  space,
+  tok,
+} from "../../../fmt/dsl/dsl.js";
 import type { JsStructure } from "../format.js";
+
+/** After a type parameter's `extends` or `=`: `type` on the next line, indented, when it does not fit. */
+const bound = <T>(type: T) =>
+  [group(indent(line), { id: "bound" }), lineSuffixBoundary, indentIfBreak("bound", type)] as const;
 
 export const types = {
   literal_type: ($) => $.children,
@@ -49,13 +67,21 @@ export const types = {
     tok(";").synth(all(option("semi"), not(has("body")))),
   ],
   parenthesized_type: () => custom("parenthesizedType"),
-  infer_type: () => custom("inferType"),
+  infer_type: ($) =>
+    group([
+      "infer",
+      space,
+      $.children.at(0).andThen((name) => name),
+      tok("extends").andThen((e) => [space, e, ...bound($.children.at(1).andThen((type) => type))]),
+    ]),
   union_type: () => custom("unionType"),
   tuple_type: () => custom("array"),
   intersection_type: () => custom("intersectionType"),
   type_parameters: () => custom("typeParameters"),
   type_arguments: () => custom("typeParameters"),
-  type_parameter: () => custom("typeParameter"),
+  type_parameter: () => group(inOrder(space)),
+  constraint: ($) => ["extends", ...bound($.children)],
+  default_type: ($) => ["=", ...bound($.children)],
   ambient_declaration: () => custom("ambientDeclaration"),
   as_expression: () => custom("castExpression"),
   satisfies_expression: () => custom("castExpression"),

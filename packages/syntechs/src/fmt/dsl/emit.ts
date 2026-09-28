@@ -33,6 +33,7 @@ function eachCond(ir: FormatIR, visit: (c: Cond) => void): void {
     if (x.t === "text" || x.t === "bail") cond(x.when);
     else if (x.t === "seq") x.parts.forEach(walk);
     else if (x.t === "opt") walk(x.then);
+    else if (x.t === "layout") walk(x.body);
     else if (x.t === "either") {
       cond(x.when);
       walk(x.then);
@@ -114,6 +115,7 @@ function customNames(ir: FormatIR): [string, RuleType][] {
     else if (x.t === "tok" && x.via !== undefined) add(x.via, "TokenRule");
     else if (x.t === "seq") x.parts.forEach(walk);
     else if (x.t === "opt" || x.t === "tokIf") walk(x.then);
+    else if (x.t === "layout") walk(x.body);
     else if (x.t === "either") {
       walk(x.then);
       walk(x.else);
@@ -137,6 +139,7 @@ const bindsToken = (x: Tree): boolean =>
   x.t === "brackets" ||
   (x.t === "either" && (bindsToken(x.then) || bindsToken(x.else))) ||
   (x.t === "seq" && x.parts.some(bindsToken)) ||
+  (x.t === "layout" && bindsToken(x.body)) ||
   (x.t === "opt" && bindsToken(x.then));
 
 /** Whether some literal of `x` may go unprinted: under an `opt`, or beside a token in its `andThen`. */
@@ -145,6 +148,7 @@ const hasOpt = (x: Tree): boolean =>
   (x.t === "tokIf" && bindsToken(x.then)) ||
   (x.t === "seq" && x.parts.some(hasOpt)) ||
   (x.t === "either" && (hasOpt(x.then) || hasOpt(x.else))) ||
+  (x.t === "layout" && hasOpt(x.body)) ||
   (x.t === "brackets" && hasOpt(x.body));
 
 /** An expression true when the string `expr` is one of `kinds`, compared inline rather than through an array. */
@@ -220,6 +224,8 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
     line(tail);
   };
   const name = (base: string) => `${base}${fresh++}`;
+  /** The variable holding each named group's handle. */
+  const groups = new Map<string, string>();
   /** The list idiom that prints the node's dangling comments. */
   const owner = danglingOwner(tree);
 
@@ -310,7 +316,10 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
       case "verbatim":
       case "text":
       case "custom":
+      case "doc":
         return "false";
+      case "layout":
+        return emptyExpr(x.body);
       case "inOrder":
       case "either":
       case "spell":
@@ -779,6 +788,28 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
       case "splitOn":
         split(x);
         return;
+      case "doc":
+        line(
+          x.kind === "line" ? "sLine(0);"
+          : x.kind === "softline" ? "sLine(SOFT);"
+          : x.kind === "hardline" ? "sHardline();"
+          : "sLineSuffixBoundary();",
+        );
+        return;
+      case "layout": {
+        if (x.kind === "group" && x.id !== undefined) {
+          const g = name("g");
+          groups.set(x.id, g);
+          line(`const ${g} = open(GROUP);`);
+        } else if (x.kind === "indentIfBreak") {
+          const g = groups.get(x.id as string);
+          if (g === undefined) throw new Error(`emit: indentIfBreak of group ${str(x.id as string)}, which no group before it names`);
+          line(`openIndentIfBreak(${g});`);
+        } else line(`open(${x.kind === "group" ? "GROUP" : "INDENT"});`);
+        walk(x.body);
+        line("close();");
+        return;
+      }
       case "spell": {
         const c = bound(x.text);
         const opts = normalizerOptions[x.fn] ? ", ctx.options" : "";
@@ -921,6 +952,9 @@ export function emit(
       0,
       'import { firstTextIs } from "../../fmt/dsl/runtime.js";',
     );
+  // The stream's layout calls only the specs with layout frames make, imported from the sink.
+  const layout = ["openIndentIfBreak", "sLineSuffixBoundary"].filter((f) => parts.some((p) => p.includes(`${f}(`)));
+  if (layout.length > 0) parts.splice(parts.indexOf(`} from ${str(sink)};`) + 1, 0, `import { ${layout.join(", ")} } from ${str(sink)};`);
   if (parts.some((p) => p.includes("new Bail(")))
     parts.splice(
       parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,

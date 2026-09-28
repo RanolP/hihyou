@@ -166,7 +166,16 @@ export type Tree =
   /** `then` where `when` holds of the node, else `else`. */
   | { readonly t: "either"; readonly when: Cond; readonly then: Tree; readonly else: Tree }
   /** The node's token `text` respelled by normalizer `fn` (`normalizers.ts`), where the source has it. */
-  | { readonly t: "spell"; readonly text: string; readonly fn: NormalizerName };
+  | { readonly t: "spell"; readonly text: string; readonly fn: NormalizerName }
+  /** `body` in a layout frame of kind `kind`; a `group`'s `id` names it, an `indentIfBreak`'s the group it follows. */
+  | { readonly t: "layout"; readonly kind: LayoutKind; readonly id?: string; readonly body: Tree }
+  /** A line break of kind `kind` (see `line`, `softline`, `hardline`, `lineSuffixBoundary`). */
+  | { readonly t: "doc"; readonly kind: DocKind };
+
+/** A layout frame: a group, an indent, or an indent only while the group `id` breaks. */
+export type LayoutKind = "group" | "indent" | "indentIfBreak";
+/** A line: a space or break, nothing or a break, always a break, or where pending line-end comments flush. */
+export type DocKind = "line" | "softline" | "hardline" | "lineSuffixBoundary";
 
 /** How a `splitOn` entry prints its items: side by side, a space between, or as `words`. */
 export type SplitItem =
@@ -339,6 +348,7 @@ export type TokenTree<G extends Grammar, O> =
   | Piece<{ splitOn: KindOf<G> | TokenOf<G>; cond: CondIn<G, O> }>
   | Piece<{ either: CondIn<G, O>; then: TokenTree<G, O> | Text<G, O>; else: TokenTree<G, O> | Text<G, O> }>
   | Piece<{ spell: TokenOf<G> }>
+  | Piece<"doc">
   | readonly TokenTree<G, O>[];
 
 /** `tok(text).synth(when)`'s and `tok(text).andThen(f)`'s output. */
@@ -749,6 +759,28 @@ export const either = <const C, const A, const B>(
 /** The node's token `text` respelled by the normalizer `fn`, where the source has it: CSS's `@MEDIA` as `@media`. */
 export const spell = <const S extends string>(text: S, fn: NormalizerName): Piece<{ spell: S }> =>
   piece({ t: "spell", text, fn });
+
+// A layout frame types as its body, so the spec checks the body's tokens and options where it stands.
+const layout = <T>(kind: LayoutKind, body: T, id?: string): T =>
+  ({ t: "layout", kind, ...(id === undefined ? {} : { id }), body: toTree(body) }) satisfies Tree as unknown as T;
+
+/** `body` in a group, which breaks as a whole; `id` names it for an `indentIfBreak`. */
+export const group = <const T>(body: T, o: { readonly id?: string } = {}): T => layout("group", body, o.id);
+
+/** `body` indented one level where its lines break. */
+export const indent = <const T>(body: T): T => layout("indent", body);
+
+/** `body` indented one level only while the group named `id` breaks. */
+export const indentIfBreak = <const T>(id: string, body: T): T => layout("indentIfBreak", body, id);
+
+/** A space, or a line break where the enclosing group breaks. */
+export const line: Piece<"doc"> = piece({ t: "doc", kind: "line" });
+/** Nothing, or a line break where the enclosing group breaks. */
+export const softline: Piece<"doc"> = piece({ t: "doc", kind: "softline" });
+/** A line break, which breaks every group around it. */
+export const hardline: Piece<"doc"> = piece({ t: "doc", kind: "hardline" });
+/** Where the line comments pending at the end of the line print, a break with them. */
+export const lineSuffixBoundary: Piece<"doc"> = piece({ t: "doc", kind: "lineSuffixBoundary" });
 
 function plain(c: unknown): Cond {
   if (c === undefined || typeof c === "boolean") return c === true;
