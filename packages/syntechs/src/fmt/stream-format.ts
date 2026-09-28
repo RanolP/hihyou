@@ -154,6 +154,8 @@ export interface StreamRules<O = unknown> {
    * willPrintOwnComments: a JSX element's parentheses).
    */
   readonly printsOwnComments?: (node: number, ctx: StreamCtx<O>) => boolean;
+  /** Whether a node with no rule and a named child fails the format, rather than printing as written. */
+  readonly bailUnknown?: boolean;
   /**
    * Prints every node that is not broken, inside its comments, in place of its rule, which `print` appends:
    * prettier's genericPrint around a printer's own (the parentheses needsParens adds), its prettier-ignore
@@ -200,6 +202,13 @@ export function formatStream<O>(
     const broken = brokenNodes(tree);
     const isBroken = (node: number) => broken !== undefined && broken.has(node);
 
+    const hasNamedChild = (node: number) => {
+      for (let i = 0, count = tree.count(node); i < count; i++) {
+        const c = tree.child(node, i);
+        if (tree.named(c) && !isComment(c)) return true;
+      }
+      return false;
+    };
     const none: readonly number[] = [];
     const { wrap, printsOwnComments } = language;
     let current: PrintArgs | undefined;
@@ -210,6 +219,8 @@ export function formatStream<O>(
       }
       const rule = ruleOf(node);
       if (!rule) {
+        if (language.bailUnknown === true && hasNamedChild(node))
+          throw new Error(`no rule: ${tree.kindName(node)} at ${tree.start(node)}`);
         if (wrap) wrap(node, ctx, () => sToken(node, tree.text(node)), args);
         else sToken(node, tree.text(node));
         return;

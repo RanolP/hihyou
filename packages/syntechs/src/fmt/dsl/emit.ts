@@ -25,7 +25,7 @@ function eachCond(ir: FormatIR, visit: (c: Cond) => void): void {
     if (c === undefined) return;
     visit(c);
     if (typeof c === "boolean") return;
-    if (c.t === "not" || c.t === "allBefore") cond(c.c);
+    if (c.t === "not" || c.t === "allBefore" || c.t === "prevItem" || c.t === "lastItem") cond(c.c);
     else if (c.t === "ancestor") cond(c.holds);
     else if (c.t === "all" || c.t === "any") c.cs.forEach(cond);
   };
@@ -45,9 +45,11 @@ function eachCond(ir: FormatIR, visit: (c: Cond) => void): void {
       cond(x.pad);
       walk(x.body);
     } else if (x.t === "sepBy") cond(x.trailing);
+    else if (x.t === "lines") cond(x.blank);
     else if (x.t === "inOrder") {
       cond(x.tight?.when);
       cond(x.spaceWhen?.when);
+      cond(x.hardWhen?.when);
     } else if (x.t === "splitOn") {
       cond(x.wrapItem);
       if (x.item.t === "words") cond(x.item.keepLines);
@@ -64,7 +66,11 @@ function eachCond(ir: FormatIR, visit: (c: Cond) => void): void {
   Object.values(ir.structure).forEach(walk);
   for (const w of Object.values(ir.wrapping)) {
     cond(w.keepExpanded);
-    for (const f of Object.values(w.frames ?? {})) cond(f.keepExpanded);
+    cond(w.breakWhen);
+    for (const f of Object.values(w.frames ?? {})) {
+      cond(f.keepExpanded);
+      cond(f.breakWhen);
+    }
   }
 }
 
@@ -184,6 +190,13 @@ const cond = (c: Cond, hasFields: boolean, self = "node", run?: string): string 
       const b = `b${self}`;
       return `allBefore(ctx, ${self}, (${b}) => ${cond(c.c, false, b)})`;
     }
+    case "prevItem":
+    case "lastItem": {
+      const b = `b${self}`;
+      return `${c.t}(ctx, ${self}, (${b}) => ${cond(c.c, false, b)})`;
+    }
+    case "spansLines":
+      return `t.text(${self}).includes("\\n")`;
     case "entryCount":
     case "anyEntry": {
       if (run === undefined || self !== "node") throw new Error(`emit: a ${c.t} condition outside a splitOn's run`);
@@ -479,6 +492,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
     line(`const seps = separators(t, node, ${its}, ${str(x.sep)});`);
     const breaks: string[] = [];
     if (always) breaks.push("true");
+    if (w.breakWhen !== undefined && w.breakWhen !== false) breaks.push(`(${when(w.breakWhen)})`);
     if (w.keepExpanded !== undefined && w.keepExpanded !== false)
       breaks.push(
         `(${when(w.keepExpanded)} && newlineBetween(t, firstLeaf(t, node), firstLeaf(t, first)))`,
@@ -707,6 +721,11 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
         } else block(`for (let i = 0; i < ${its}.length; i++)`, () => {
           line("if (i > 0) sHardline();");
           line(`const item = ${its}[i] as number;`);
+          if (x.blank !== undefined && x.blank !== false)
+            // Past a blank line the source kept already, where `blankLines` keeps them.
+            line(
+              `if (i > 0${frameWrap(rule, x.list.name).blankLines === undefined ? "" : ` && !nextLineEmpty(t, ${its}[i - 1] as number)`} && ${cond(x.blank, false, "item")}) sHardline();`,
+            );
           child("item");
           if (frameWrap(rule, x.list.name).blankLines !== undefined)
             line(`if (i < ${its}.length - 1 && nextLineEmpty(t, item)) sHardline();`);
@@ -722,7 +741,8 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
         const its = name("items");
         line(`const ${its} = new Set(ctx.items(node));`);
         const skip = x.skip?.length ? `if (${oneOf("t.kindName(c)", x.skip)}) continue;` : undefined;
-        if (!x.tight && !x.spaceWhen && !x.verbatim && !skip && (x.join === "none" || x.join === "space")) {
+        const extended = x.hardWhen !== undefined || x.hangAfter !== undefined || x.lineBefore !== undefined || x.braces === true;
+        if (!x.tight && !x.spaceWhen && !x.verbatim && !skip && !extended && (x.join === "none" || x.join === "space")) {
           const space = x.join === "space";
           const first = name("first");
           if (space) line(`let ${first} = true;`);
@@ -762,15 +782,59 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
                 ? "sLine(0);"
                 : undefined;
         const steps: [string, string][] = [];
+        if (x.braces) steps.push(["inBraces", '{ if (t.kindName(c) === "}") { close(); inBraces = false; } sHardline(); }']);
+        const hard = pairs(x.hardWhen);
+        if (hard !== undefined) steps.push([hard, "sHardline();"]);
+        if (x.lineBefore?.length) steps.push([oneOf("t.kindName(c)", x.lineBefore), "{ open(INDENT); sHardline(); frames = 1; }"]);
+        if (x.hangAfter?.length)
+          steps.push([oneOf("t.kindName(prev)", x.hangAfter), "{ open(GROUP); open(INDENT); sLine(0); frames = 2; }"]);
         if (tight !== undefined) steps.push([tight, "{}"]);
         if (spaced !== undefined) steps.push([spaced, 'sText(" ");']);
         const spacing = steps.length > 0 || join !== undefined;
         if (spacing) line("let prev = -1;");
+        if (x.lineBefore?.length || x.hangAfter?.length) line("let frames = 0;");
+        if (x.braces) line("let inBraces = false;");
         block("for (let i = 0, count = t.count(node); i < count; i++)", () => {
           line("const c = t.child(node, i);");
           line("const named = t.named(c);");
           line(`if (named && !${its}.has(c)) continue;`);
           if (skip) line(skip);
+          if (x.braces)
+            // A `{` whose `}` is the next child prints `{}`, the node's dangling comments indented between.
+            block('if (!named && t.kindName(c) === "{" && !inBraces)', () => {
+              if (spacing) block("if (prev !== -1)", () => {
+                const outside = steps.filter(([test]) => test !== "inBraces");
+                outside.forEach(([test, then], k) => line(`${k === 0 ? "if" : "else if"} (${test}) ${then}`));
+                if (join !== undefined) line(outside.length === 0 ? join : `else ${join}`);
+              });
+              line("sToken(c, t.text(c));");
+              line("let j = i + 1;");
+              line(`while (j < count && t.named(t.child(node, j)) && !${its}.has(t.child(node, j))) j++;`);
+              line("const nx = j < count ? t.child(node, j) : -1;");
+              block('if (nx !== -1 && !t.named(nx) && t.kindName(nx) === "}")', () => {
+                line("const dangling = ctx.danglingComments(node);");
+                block("if (dangling.length > 0)", () => {
+                  line("open(INDENT);");
+                  block("for (const d of dangling)", () => {
+                    line("sHardline();");
+                    line("ctx.comment(d);");
+                  });
+                  line("close();");
+                  line("sHardline();");
+                });
+                line("sToken(nx, t.text(nx));");
+                line("prev = nx;");
+                line("i = j;");
+              }, "} else {");
+              depth++;
+              line("open(INDENT);");
+              line("inBraces = true;");
+              line("prev = -1;");
+              line("sHardline();");
+              depth--;
+              line("}");
+              line("continue;");
+            });
           if (spacing) {
             block("if (prev !== -1)", () => {
               steps.forEach(([test, then], k) => line(`${k === 0 ? "if" : "else if"} (${test}) ${then}`));
@@ -795,6 +859,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
             line("}");
           };
           block("if (named)", printNamed, "} else sToken(c, t.text(c));");
+          if (x.lineBefore?.length || x.hangAfter?.length) line("for (; frames > 0; frames--) close();");
         });
         return;
       }
@@ -934,6 +999,7 @@ export function emit(
       "  return {",
       `    rules: new Map<string, StreamRule<O>>([${kinds.map((k) => `[${str(k)}, ${ident(k)}]`).join(", ")}]),`,
       `    lists: new Set<StreamRule<O>>([${lists.map(ident).join(", ")}]),`,
+      ...(ir.unknown === "bail" ? ["    bailUnknown: true,"] : []),
       "  };",
       "}",
     );
@@ -951,7 +1017,7 @@ export function emit(
       0,
       'import { hasChild } from "../../fmt/dsl/runtime.js";',
     );
-  for (const f of ["allBefore"].filter((f) => parts.some((p) => p.includes(`${f}(`))))
+  for (const f of ["allBefore", "prevItem", "lastItem"].filter((f) => parts.some((p) => p.includes(`${f}(`))))
     parts.splice(
       parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
       0,

@@ -58,6 +58,8 @@ import {
   fieldChild,
   firstTextIs,
   allBefore,
+  lastItem,
+  prevItem,
   hasChild,
   listItems,
   parentIs,
@@ -124,6 +126,11 @@ export const evalCond = <O>(
       return c.kinds.includes(ctx.tree.kindName(node));
     case "allBefore":
       return allBefore(ctx, node, (p) => evalCond(c.c, ctx, p, custom, true, run));
+    case "prevItem":
+    case "lastItem":
+      return (c.t === "prevItem" ? prevItem : lastItem)(ctx, node, (p) => evalCond(c.c, ctx, p, custom, true, run));
+    case "spansLines":
+      return ctx.tree.text(node).includes("\n");
     case "not":
       return !evalCond(c.c, ctx, node, custom, kindHasFields, run);
     case "all":
@@ -329,7 +336,8 @@ export function flatten<O>(
           return;
         }
         case "lines": {
-          if (x.attach !== undefined) throw new Error("flatten: `lines` with `attach` is generated only, not referenced yet");
+          if (x.attach !== undefined || x.blank !== undefined)
+            throw new Error("flatten: `lines` with `attach` or `blank` is generated only, not referenced yet");
           const items = listItems(ctx, n, x.list.name, kindHasFields).slice(x.list.from ?? 0);
           // Nothing to lay out leaves no frame, so a bracket body of only this is empty.
           if (items.length === 0 && (owner !== x || dangling().length === 0)) return;
@@ -348,6 +356,8 @@ export function flatten<O>(
           return;
         }
         case "inOrder": {
+          if (x.hardWhen || x.hangAfter || x.lineBefore || x.braces)
+            throw new Error("flatten: `inOrder` with hardWhen, hangAfter, lineBefore or braces is generated only");
           const items = new Set(ctx.items(n));
           const matcher = (p: Pairs | undefined) => {
             if (p === undefined) return () => false;
@@ -631,6 +641,7 @@ export function wrap<O>(
     const fillKinds = new Set(w.packWhenAllOf);
     const shouldBreak =
       always ||
+      (w.breakWhen !== undefined && evalCond(w.breakWhen, ctx, node, custom, ctx.tree.kindName(node) in grammar.fieldTypes)) ||
       (w.keepExpanded !== undefined &&
         evalCond(w.keepExpanded, ctx, node, custom, ctx.tree.kindName(node) in grammar.fieldTypes) &&
         newlineBetween(tree, firstLeaf(tree, node), firstLeaf(tree, first))) ||

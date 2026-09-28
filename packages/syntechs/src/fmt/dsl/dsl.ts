@@ -114,7 +114,14 @@ export type LogicCond =
   /** The node is of one of `kinds` (`kindIs`). */
   | { readonly t: "kind"; readonly kinds: readonly string[] }
   /** `c` holds of every item (named, not a comment) before the node among its parent's (`allBefore`). */
-  | { readonly t: "allBefore"; readonly c: Cond };
+  | { readonly t: "allBefore"; readonly c: Cond }
+  /**
+   * `c` holds of the item just before the node among its parent's (`prevItem`), or of the node's own last item
+   * (`lastItem`); false where there is none.
+   */
+  | { readonly t: "prevItem" | "lastItem"; readonly c: Cond }
+  /** The node's source text spans more than one line (`spansLines`). */
+  | { readonly t: "spansLines" };
 
 /**
  * Which consecutive entries of an `inOrder` a spacing rule applies to: those after an entry of a kind (a token by
@@ -153,8 +160,11 @@ export type Tree =
       readonly list: Ref;
       readonly trailing: Cond;
     }
-  /** `attach`: the field whose children print with the next item, before it (see `lines`). */
-  | { readonly t: "lines"; readonly list: Ref; readonly attach?: string }
+  /**
+   * `attach`: the field whose children print with the next item, before it; `blank`: a blank line before each item
+   * but the first where it holds of the item (see `lines`).
+   */
+  | { readonly t: "lines"; readonly list: Ref; readonly attach?: string; readonly blank?: Cond }
   | {
       readonly t: "inOrder";
       readonly join: Join;
@@ -164,6 +174,14 @@ export type Tree =
       readonly verbatim?: { readonly except: readonly string[] };
       /** Children of these kinds (tokens by their spelling) print nothing, as if absent. */
       readonly skip?: readonly string[];
+      /** A line break between the pairs this claims, before `tight`, `spaceWhen` and `join` are asked. */
+      readonly hardWhen?: Pairs;
+      /** The child after a token of these goes after a line, indented, in a group of its own (a hanging break). */
+      readonly hangAfter?: readonly string[];
+      /** A child of these kinds goes on a line of its own, indented. */
+      readonly lineBefore?: readonly string[];
+      /** The children between a `{` and its `}` go one per line, indented; `{}` holding none stays `{}`. */
+      readonly braces?: boolean;
     }
   | { readonly t: "verbatim" }
   /** The node's source text through normalizer `fn` (`normalizers.ts`) where `when` holds, else as written. */
@@ -255,6 +273,8 @@ export interface FrameWrap {
    * Between `lines`, which always break, either value keeps it, and leaving it unset drops it.
    */
   readonly blankLines?: "force" | "ifBroken";
+  /** Break the list where this holds of the node. */
+  readonly breakWhen?: Cond;
 }
 
 /**
@@ -280,6 +300,7 @@ export const frameWrap = (w: Wrap, label: string): FrameWrap =>
 export interface FormatIR {
   readonly structure: { readonly [kind: string]: Tree };
   readonly wrapping: { readonly [kind: string]: Wrap };
+  readonly unknown?: "bail";
 }
 
 // ---- the typed surface: brands only the typecheck sees ----
@@ -409,6 +430,13 @@ export interface AllBeforeCond<C> {
   readonly t: "allBefore";
   readonly c: C;
 }
+export interface ItemCond<C> {
+  readonly t: "prevItem" | "lastItem";
+  readonly c: C;
+}
+export interface SpansLinesCond {
+  readonly t: "spansLines";
+}
 /** Every condition, checked against the grammar's kinds and the options. */
 export type CondIn<G extends Grammar, O> =
   | CondOf<O>
@@ -420,6 +448,8 @@ export type CondIn<G extends Grammar, O> =
   | AllCond<CondIn<G, O>>
   | KindCond<KindOf<G>>
   | AllBeforeCond<CondIn<G, O>>
+  | ItemCond<CondIn<G, O>>
+  | SpansLinesCond
   | SplitCond
   | FirstTextCond
   | PredCond
@@ -441,10 +471,11 @@ type Text<G extends Grammar, O> = Piece<{ text: CondIn<G, O> }>;
 
 type FrameWrapOf<G extends Grammar, O> = Omit<
   FrameWrap,
-  "packWhenAllOf" | "keepExpanded"
+  "packWhenAllOf" | "keepExpanded" | "breakWhen"
 > & {
   readonly packWhenAllOf?: readonly KindOf<G>[];
   readonly keepExpanded?: CondOf<O>;
+  readonly breakWhen?: CondIn<G, O>;
 };
 
 /** The names a frame of kind `K` can have: its fields, `children`, and `body`. */
@@ -463,6 +494,12 @@ export interface FormatSpec<G extends DslGrammar, O> {
     readonly [K in KindOf<G>]?: ($: Fields<G, K>) => TokenTree<G, O> | Whole | Text<G, O>;
   };
   readonly wrapping?: { readonly [K in KindOf<G>]?: WrapOf<G, O, K> };
+  /**
+   * `"bail"`: a kind with no rule here that has named children leaves the file unformatted, rather than printing
+   * as written; for a spec still growing its rules, where the source's layout of an unhandled node is not the
+   * formatter's.
+   */
+  readonly unknown?: "bail";
 }
 
 // ---- builder ----
@@ -606,13 +643,16 @@ export const lines = (
      * line. With it, the lines are every other item of the node, whatever field holds them.
      */
     readonly attach?: List;
+    /** A blank line before each item but the first where this holds of the item, whatever the source has. */
+    readonly blank?: unknown;
   } = {},
 ): Piece<"lines"> =>
-  piece(
-    o.attach === undefined
-      ? { t: "lines", list: refOf(list) }
-      : { t: "lines", list: refOf(list), attach: refOf(o.attach).name },
-  );
+  piece({
+    t: "lines",
+    list: refOf(list),
+    ...(o.attach === undefined ? {} : { attach: refOf(o.attach).name }),
+    ...(o.blank === undefined ? {} : { blank: plain(o.blank) }),
+  });
 
 /** Which consecutive entries of an `inOrder` a spacing rule applies to (see `Pairs`). */
 export interface PairsOf<K, C> {
@@ -627,6 +667,10 @@ export interface InOrderOf<K, C> {
   readonly spaceWhen?: PairsOf<K, C>;
   readonly verbatim?: true | { readonly except: readonly K[] };
   readonly skip?: readonly K[];
+  readonly hardWhen?: PairsOf<K, C>;
+  readonly hangAfter?: readonly K[];
+  readonly lineBefore?: readonly K[];
+  readonly braces?: boolean;
 }
 
 /**
@@ -658,6 +702,7 @@ export function inOrder(o?: Piece<"space"> | InOrderOf<string, unknown>): unknow
         };
   const tight = pairs(opts.tight);
   const spaceWhen = pairs(opts.spaceWhen);
+  const hardWhen = pairs(opts.hardWhen);
   const v = opts.verbatim;
   return piece({
     t: "inOrder",
@@ -666,6 +711,10 @@ export function inOrder(o?: Piece<"space"> | InOrderOf<string, unknown>): unknow
     ...(spaceWhen ? { spaceWhen } : {}),
     ...(v === undefined ? {} : { verbatim: { except: v === true ? [] : v.except } }),
     ...(opts.skip?.length ? { skip: opts.skip } : {}),
+    ...(hardWhen ? { hardWhen } : {}),
+    ...(opts.hangAfter?.length ? { hangAfter: opts.hangAfter } : {}),
+    ...(opts.lineBefore?.length ? { lineBefore: opts.lineBefore } : {}),
+    ...(opts.braces ? { braces: true } : {}),
   });
 }
 
@@ -689,6 +738,15 @@ export const kindIs = <const K extends string>(...kinds: K[]): KindCond<K> => ({
 
 /** `c` holds of every item before the node among its parent's items: JS's directive prologue. */
 export const allBefore = <const C>(c: C): AllBeforeCond<C> => ({ t: "allBefore", c });
+
+/** `c` holds of the item just before the node among its parent's items: a blank line only between unlike items. */
+export const prevItem = <const C>(c: C): ItemCond<C> => ({ t: "prevItem", c });
+
+/** `c` holds of the node's last item. */
+export const lastItem = <const C>(c: C): ItemCond<C> => ({ t: "lastItem", c });
+
+/** The node's source text spans more than one line: a list the author broke, which ktfmt keeps broken. */
+export const spansLines: SpansLinesCond = { t: "spansLines" };
 
 export const all = <const C extends readonly unknown[]>(...cs: C): AllCond<C[number]> => ({ t: "all", cs });
 export const any = <const C extends readonly unknown[]>(...cs: C): AllCond<C[number]> => ({ t: "any", cs });
@@ -854,6 +912,11 @@ function plain(c: unknown): Cond {
       return { t: "kind", kinds: x.kinds };
     case "allBefore":
       return { t: "allBefore", c: plain(x.c) };
+    case "prevItem":
+    case "lastItem":
+      return { t: x.t, c: plain(x.c) };
+    case "spansLines":
+      return { t: "spansLines" };
     case "entryCount":
       return { t: "entryCount", n: x.n };
     case "anyEntry":
@@ -964,9 +1027,13 @@ export const defineFormat =
     for (const [kind, rule] of Object.entries(spec.structure))
       if (rule) structure[kind] = toTree((rule as (d: unknown) => unknown)(dollar));
     const conds = <W extends FrameWrap>(rule: W): W =>
-      rule.keepExpanded === undefined
+      rule.keepExpanded === undefined && rule.breakWhen === undefined
         ? rule
-        : { ...rule, keepExpanded: plain(rule.keepExpanded) };
+        : {
+            ...rule,
+            ...(rule.keepExpanded === undefined ? {} : { keepExpanded: plain(rule.keepExpanded) }),
+            ...(rule.breakWhen === undefined ? {} : { breakWhen: plain(rule.breakWhen) }),
+          };
     const wrapping: Record<string, Wrap> = {};
     for (const [kind, w] of Object.entries(spec.wrapping ?? {})) {
       const rule = conds(w as Wrap);
@@ -981,5 +1048,5 @@ export const defineFormat =
               ),
             };
     }
-    return { structure, wrapping };
+    return spec.unknown === undefined ? { structure, wrapping } : { structure, wrapping, unknown: spec.unknown };
   };

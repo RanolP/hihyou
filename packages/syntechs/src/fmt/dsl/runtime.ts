@@ -292,6 +292,22 @@ export function allBefore<O>(ctx: StreamCtx<O>, node: number, holds: (c: number)
   return true;
 }
 
+/** Whether `holds` of the item just before `node` among its parent's items (a `prevItem` condition). */
+export function prevItem<O>(ctx: StreamCtx<O>, node: number, holds: (c: number) => boolean): boolean {
+  const p = ctx.tree.parent(node);
+  if (p === -1) return false;
+  const items = ctx.items(p);
+  const i = items.indexOf(node);
+  return i > 0 && holds(items[i - 1] as number);
+}
+
+/** Whether `holds` of `node`'s last item (a `lastItem` condition). */
+export function lastItem<O>(ctx: StreamCtx<O>, node: number, holds: (c: number) => boolean): boolean {
+  const items = ctx.items(node);
+  const last = items[items.length - 1];
+  return last !== undefined && holds(last);
+}
+
 /** Whether `node`'s field `name` (`children`: its `listItems`) holds a child, of `kind` if given (a `has` condition). */
 export function hasChild<O>(
   ctx: StreamCtx<O>,
