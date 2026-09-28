@@ -11,6 +11,7 @@
 // into straight-line stream calls (`emit.ts`), fusing the two passes into one per node; a test holds the fused
 // code to the two-pass reference, output and anchors.
 import type { Grammar } from "../rules.js";
+import type { DocCommentStyle } from "./doc-comment.js";
 import type { NormalizerName } from "./normalizers.js";
 
 /** What node-types.json says fills a field or the children in no field (see the bundle's `fieldTypes`). */
@@ -302,6 +303,8 @@ export interface FormatIR {
   readonly structure: { readonly [kind: string]: Tree };
   readonly wrapping: { readonly [kind: string]: Wrap };
   readonly unknown?: "bail";
+  /** Doc comments of this style reflowed (doc-comment.ts); other comments print as written. */
+  readonly docComment?: DocCommentStyle;
 }
 
 // ---- the typed surface: brands only the typecheck sees ----
@@ -505,6 +508,8 @@ export interface FormatSpec<G extends DslGrammar, O> {
    * formatter's.
    */
   readonly unknown?: "bail";
+  /** Reflows the doc comments of this style to the print width, keeping their code, lists and tags as blocks. */
+  readonly docComment?: DocCommentStyle;
 }
 
 // ---- builder ----
@@ -1064,5 +1069,10 @@ export const defineFormat =
               ),
             };
     }
-    return spec.unknown === undefined ? { structure, wrapping } : { structure, wrapping, unknown: spec.unknown };
+    return {
+      structure,
+      wrapping,
+      ...(spec.unknown === undefined ? {} : { unknown: spec.unknown }),
+      ...(spec.docComment === undefined ? {} : { docComment: spec.docComment }),
+    };
   };

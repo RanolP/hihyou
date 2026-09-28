@@ -29,6 +29,7 @@ import {
   verbatim,
   when,
 } from "../../fmt/dsl/dsl.js";
+import { kdoc } from "../../fmt/dsl/doc-comment.js";
 import type { grammar } from "./bundle.js";
 import type { KotlinOptions } from "./fmt.js";
 
@@ -232,4 +233,5 @@ export const kotlin = format({
     primary_constructor: { breakWhen: spansLines },
   },
   unknown: "bail",
+  docComment: kdoc,
 });

@@ -1019,6 +1019,9 @@ export function emit(
       `    rules: new Map<string, StreamRule<O>>([${kinds.map((k) => `[${str(k)}, ${ident(k)}]`).join(", ")}]),`,
       `    lists: new Set<StreamRule<O>>([${lists.map(ident).join(", ")}]),`,
       ...(ir.unknown === "bail" ? ["    bailUnknown: true,"] : []),
+      ...(ir.docComment === undefined
+        ? []
+        : [`    printComment: (c, ctx) => printDocComment(c, ctx, ${JSON.stringify(ir.docComment)}),`]),
       "  };",
       "}",
     );
@@ -1067,6 +1070,12 @@ export function emit(
       parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
       0,
       'import { firstTextIs } from "../../fmt/dsl/runtime.js";',
+    );
+  if (parts.some((p) => p.includes("printDocComment(")))
+    parts.splice(
+      parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
+      0,
+      'import { printDocComment } from "../../fmt/dsl/doc-comment.js";',
     );
   if (parts.some((p) => p.includes("lfAfter(")))
     parts.splice(

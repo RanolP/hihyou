@@ -1,6 +1,7 @@
 import type { Normalize } from "../../fmt/check.js";
 import { type PrettierOptions, prettierDefaults, prettierSettings } from "../../fmt/options.js";
 import { defineLanguage, type Language } from "../../fmt/rules.js";
+import { docCommentWords, kdoc } from "../../fmt/dsl/doc-comment.js";
 import type { PredicateRule } from "../../fmt/dsl/runtime.js";
 import { grammar } from "./bundle.js";
 import * as gen from "./fmt.gen.js";
@@ -51,6 +52,8 @@ export const kotlin: Language<KotlinOptions> = {
     defaults,
     settings: prettierSettings,
     normalize,
+    // KDoc is reflowed, which changes only the whitespace between its words.
+    comment: (t) => docCommentWords(t, kdoc),
     layoutBlind: true,
     hiddenTokens: true,
     atoms: ["string_literal", "character_literal"],
