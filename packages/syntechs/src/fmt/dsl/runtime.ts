@@ -34,8 +34,10 @@ export type Entry =
       readonly e: "child";
       readonly node: number;
       readonly kind: string;
-      /** Printed by this custom rule in place of its own (`Node.via`). */
+      /** Printed by this custom rule in place of its own (`Node.via`); `parens` for the `ParensRule`. */
       readonly via?: string;
+      /** The `ParensRule`'s mode (`Node.parens`). */
+      readonly parens?: string;
     }
   | { readonly e: "exit" }
   /** A `tok(text).via(name)` of `node`: `token` its source token, undefined where the source has none. */
@@ -150,6 +152,12 @@ export type FrameRule<O = unknown> = (
 
 /** A `custom` rule: prints `node`, its children through `ctx.print`. */
 export type CustomRule<O = unknown> = (node: number, ctx: StreamCtx<O>) => void;
+
+/**
+ * The language's one `parens` rule: prints child `node` in the parenthesization mode its parent names
+ * (`$.x.parens(mode)`), deciding by the language's precedence whether the parentheses show.
+ */
+export type ParensRule<O = unknown> = (node: number, mode: string, ctx: StreamCtx<O>) => void;
 
 /** A `when(name)` condition: whether it holds for `node`. */
 export type PredicateRule<O = unknown> = (node: number, ctx: StreamCtx<O>) => boolean;

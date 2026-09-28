@@ -58,6 +58,7 @@ import {
   hasChild,
   listItems,
   parentIs,
+  type ParensRule,
   type PredicateRule,
   separators,
   splitChild,
@@ -72,7 +73,9 @@ import { normalizers } from "./normalizers.js";
 
 export type { Entry } from "./runtime.js";
 
-type Customs<O> = { readonly [name: string]: CustomRule<O> | TokenRule<O> | FrameRule<O> | PredicateRule<O> };
+type Customs<O> = {
+  readonly [name: string]: CustomRule<O> | TokenRule<O> | FrameRule<O> | PredicateRule<O> | ParensRule<O>;
+};
 
 /**
  * Whether `c` holds for `node`, whose `when` conditions ask `custom`'s predicates; `kindHasFields`: whether
@@ -173,20 +176,22 @@ export function flatten<O>(
   const t = ctx.tree;
   const out = flat.entries;
 
-  const range = (n: number, body: () => void, via?: string) => {
+  const range = (n: number, body: () => void, via?: string, parens?: string) => {
     const at = out.length;
     flat.start.set(n, at);
     out.push(
       via === undefined
         ? { e: "child", node: n, kind: t.kindName(n) }
-        : { e: "child", node: n, kind: t.kindName(n), via },
+        : parens === undefined
+          ? { e: "child", node: n, kind: t.kindName(n), via }
+          : { e: "child", node: n, kind: t.kindName(n), via, parens },
     );
     body();
     flat.exit.set(at, out.length);
     out.push({ e: "exit" });
   };
 
-  const walkNode = (n: number, via?: string): void =>
+  const walkNode = (n: number, via?: string, parens?: string): void =>
     range(n, () => {
       if (via === undefined ? !ruled(ir, ctx, n) : ctx.isBroken(n)) {
         out.push({ e: "tok", node: n, text: t.text(n), synthetic: false });
@@ -197,7 +202,7 @@ export function flatten<O>(
       // A custom rule prints its children itself, and `wrap` flattens each as the rule reaches it.
       if (tree.t === "custom") return;
       structure(n, tree, kind in grammar.fieldTypes);
-    }, via);
+    }, via, parens);
 
   const structure = (n: number, tree: Tree, kindHasFields: boolean) => {
     const bound = new Map<string, number>();
@@ -217,10 +222,11 @@ export function flatten<O>(
       const cs = ctx.danglingComments(n);
       return cs;
     };
-    const child = (c: number, via?: string) => {
+    const child = (c: number, via?: string, parens?: string) => {
       const comments = !ctx.ownsComments(c);
       if (comments) for (const x of ctx.leadingComments(c)) out.push(commentEntry(ctx, x, "leading"));
-      walkNode(c, via);
+      // A `parens` child prints by the language's `ParensRule`, a custom rule by another name.
+      walkNode(c, parens === undefined ? via : "parens", parens);
       if (comments) for (const x of ctx.trailingComments(c)) out.push(commentEntry(ctx, x, "trailing", c));
     };
     /** The entry of the innermost `tokIf` being walked (its `self`). */
@@ -259,7 +265,7 @@ export function flatten<O>(
           return;
         case "ref": {
           const c = refChild(x);
-          if (c !== -1) child(c, x.via);
+          if (c !== -1) child(c, x.via, x.parens);
           return;
         }
         case "opt":
@@ -497,7 +503,11 @@ export function wrap<O>(
     const t: Tree = x.via === undefined ? (ir.structure[x.kind] as Tree) : { t: "custom", name: x.via };
     const w = x.via === undefined ? (ir.wrapping[x.kind] ?? {}) : {};
     if (w.group) open(GROUP);
-    if (t.t === "custom") {
+    if (x.parens !== undefined) {
+      const rule = custom.parens as ParensRule<O> | undefined;
+      if (!rule) throw new Error("no parens rule");
+      rule(x.node, x.parens, inner);
+    } else if (t.t === "custom") {
       const rule = custom[t.name] as CustomRule<O> | undefined;
       if (!rule) throw new Error(`no custom rule ${t.name}`);
       rule(x.node, inner);

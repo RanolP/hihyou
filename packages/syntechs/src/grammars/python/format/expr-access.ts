@@ -51,6 +51,6 @@ export const exprAccess = {
   // `(*a)`, which ruff reads as the splat inside, its parentheses dropped.
   parenthesized_list_splat: ($) => $.children,
   dictionary_splat: ($) => ["**", $.children.via("access.starredValue")],
-  keyword_argument: ($) => [$.name, "=", $.value.via("access.keywordValue")],
+  keyword_argument: ($) => [$.name, "=", $.value.parens("preserve")],
   splat_type:($) => ["*", "**", $.children.via("access.starredValue")],
 } satisfies Structure;

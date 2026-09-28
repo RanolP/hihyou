@@ -9,14 +9,14 @@ export const stmtSimple = {
   return_statement: ($) => ["return", $.children.andThen((v) => [space, v.via("simple.returnValue")])],
   raise_statement: ($) => [
     "raise",
-    $.children.andThen((e) => [space, e.via("simple.optional")]),
-    $.cause.andThen((c) => [space, "from", space, c.via("simple.optional")]),
+    $.children.andThen((e) => [space, e.parens("optional")]),
+    $.cause.andThen((c) => [space, "from", space, c.parens("optional")]),
   ],
   delete_statement: ($) => ["del", space, $.children.via("simple.deleteTargets")],
   assert_statement: ($) => [
     "assert",
-    $.children.at(0).andThen((t) => [space, t.via("simple.ifBreaks")]),
-    $.children.at(1).andThen((m) => [",", space, m.via("simple.ifBreaksParenthesized")]),
+    $.children.at(0).andThen((t) => [space, t.parens("ifBreaks")]),
+    $.children.at(1).andThen((m) => [",", space, m.parens("ifBreaksParenthesized")]),
   ],
   global_statement: ($) => ["global", space, $.children.at(0).andThen((n) => n.via("simple.globalNames"))],
   nonlocal_statement: ($) => ["nonlocal", space, $.children.at(0).andThen((n) => n.via("simple.globalNames"))],

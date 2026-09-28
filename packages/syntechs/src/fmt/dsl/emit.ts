@@ -96,7 +96,7 @@ function spellFns(ir: FormatIR): Set<NormalizerName> {
   return fns;
 }
 
-type RuleType = "CustomRule" | "TokenRule" | "FrameRule" | "PredicateRule";
+type RuleType = "CustomRule" | "TokenRule" | "FrameRule" | "PredicateRule" | "ParensRule";
 
 /**
  * The custom rules `ir` names, each as the rule type it takes: a node's (`CustomRule`), a token's (`TokenRule`),
@@ -112,6 +112,7 @@ function customNames(ir: FormatIR): [string, RuleType][] {
   const walk = (x: Tree): void => {
     if (x.t === "custom") add(x.name, "CustomRule");
     else if (x.t === "ref" && x.via !== undefined) add(x.via, "CustomRule");
+    else if (x.t === "ref" && x.parens !== undefined) add("parens", "ParensRule");
     else if (x.t === "tok" && x.via !== undefined) add(x.via, "TokenRule");
     else if (x.t === "seq") x.parts.forEach(walk);
     else if (x.t === "opt" || x.t === "tokIf") walk(x.then);
@@ -259,15 +260,16 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
         ? `(listItems(ctx, node, ${str(name)}, ${hasFields})[${at ?? 0}] ?? -1)`
         : `fieldChild(t, node, ${str(name)})`;
   /** Child `c` with the comments attached to it, as the reference's leading, child and trailing entries. */
-  const child = (c: string, via?: string) => {
+  const child = (c: string, via?: string, parens?: string) => {
     // Through `ctx.print`, which leaves the comments to a node that prints its own (`printsOwnComments`).
-    if (via === undefined) {
+    if (via === undefined && parens === undefined) {
       line(`ctx.print(${c});`);
       return;
     }
     line(`printKid(ctx, ${c}, () => {`);
     line(`  if (ctx.isBroken(${c})) ctx.printNode(${c});`);
-    line(`  else custom[${str(via)}](${c}, ctx);`);
+    if (via !== undefined) line(`  else custom[${str(via)}](${c}, ctx);`);
+    else line(`  else custom.parens(${c}, ${str(parens as string)}, ctx);`);
     line(`});`);
   };
   const items = (x: Extract<Tree, { t: "sepBy" | "lines" }>) => {
@@ -610,7 +612,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
       case "ref": {
         const c = name("c");
         line(`const ${c} = ${refChild(x)};`);
-        block(`if (${c} !== -1)`, () => child(c, x.via));
+        block(`if (${c} !== -1)`, () => child(c, x.via, x.parens));
         return;
       }
       case "opt":
@@ -835,6 +837,7 @@ export function emit(
   let tokenRules = false;
   let frameRules = false;
   let predicateRules = false;
+  let parensRules = false;
   for (const [spec, ir] of Object.entries(specs)) {
     const keys = optionKeys(ir);
     const customs = customNames(ir);
@@ -849,6 +852,7 @@ export function emit(
     if (customs.some(([, type]) => type === "TokenRule")) tokenRules = true;
     if (customs.some(([, type]) => type === "FrameRule")) frameRules = true;
     if (customs.some(([, type]) => type === "PredicateRule")) predicateRules = true;
+    if (customs.some(([, type]) => type === "ParensRule")) parensRules = true;
     parts.push("", `export function ${spec}<O extends ${options}>(${param}): StreamRules<O> {`);
     const kinds = Object.keys(ir.structure);
     for (const kind of kinds) {
@@ -925,6 +929,7 @@ export function emit(
     ...(tokenRules ? ["TokenRule"] : []),
     ...(frameRules ? ["FrameRule"] : []),
     ...(predicateRules ? ["PredicateRule"] : []),
+    ...(parensRules ? ["ParensRule"] : []),
   ];
   if (extra.length > 0)
     parts.splice(

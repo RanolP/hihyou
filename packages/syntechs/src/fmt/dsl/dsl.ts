@@ -44,6 +44,8 @@ export interface Ref {
   readonly at?: number;
   readonly split?: string;
   readonly via?: string;
+  /** Printed by the language's `ParensRule` in mode `parens` (`Node.parens`), in place of its own rule. */
+  readonly parens?: string;
 }
 
 export type Cond =
@@ -264,6 +266,11 @@ export interface Node extends Piece<"node"> {
    * its comments: a hand-written layout at one position, such as a parenthesization its parent decides.
    */
   via(name: string): Node;
+  /**
+   * The child printed by the language's one `ParensRule` (see `runtime.ts`) in mode `mode`, with its comments: the
+   * parentheses its parent asks for, such as ruff's `Parenthesize::IfBreaks`, which the language's precedence decides.
+   */
+  parens(mode: string): Node;
 }
 /** Several children, which only a list idiom (`sepBy`, `lines`) lays out, or one of them by index. */
 export interface List extends Piece<"list"> {
@@ -754,6 +761,7 @@ const refOf = (x: unknown): Ref => {
     splitSep?: string;
     via?: unknown;
     viaName?: string;
+    parensMode?: string;
   };
   const at = r.atIndex ?? (typeof r.at === "number" ? r.at : undefined);
   const split = r.splitSep ?? (typeof r.split === "string" ? r.split : undefined);
@@ -764,6 +772,7 @@ const refOf = (x: unknown): Ref => {
     ...(at === undefined ? {} : { at }),
     ...(split === undefined ? {} : { split }),
     ...(via === undefined ? {} : { via }),
+    ...(r.parensMode === undefined ? {} : { parens: r.parensMode }),
   };
 };
 
@@ -771,19 +780,27 @@ const refOf = (x: unknown): Ref => {
  * `$.<name>` (or `.at(i)` of it), a `Node`, a `List` and an `Option` at once; `atIndex`, `splitSep` and `viaName`
  * hold its `.at`, `.split` and `.via`, since those names are the methods.
  */
-const nodeRef = (name: string, atIndex?: number, viaName?: string, splitSep?: string): unknown => ({
+const nodeRef = (
+  name: string,
+  atIndex?: number,
+  viaName?: string,
+  splitSep?: string,
+  parensMode?: string,
+): unknown => ({
   t: "ref",
   name,
   atIndex,
   splitSep,
   viaName,
+  parensMode,
   at: (i: number) => nodeRef(name, i, undefined, splitSep),
   split: (sep: string) => ({ at: (i: number) => nodeRef(name, i, undefined, sep) }),
   via: (v: string) => nodeRef(name, atIndex, v, splitSep),
+  parens: (mode: string) => nodeRef(name, atIndex, undefined, splitSep, mode),
   andThen: (f: (a: unknown) => unknown): Tree => ({
     t: "opt",
     ref: refOf(nodeRef(name, atIndex, undefined, splitSep)),
-    then: toTree(f(nodeRef(name, atIndex, viaName, splitSep))),
+    then: toTree(f(nodeRef(name, atIndex, viaName, splitSep, parensMode))),
   }),
 });
 

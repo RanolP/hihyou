@@ -191,10 +191,6 @@ export const exprAccessVia = {
     const { f, e } = ruffOf(n);
     writeTuple(f, e as Sequence, (ctx.args?.tuple as TupleMode | undefined) ?? "default");
   },
-  "access.keywordValue": (c: number) => {
-    const { f, e } = ruffOf(c);
-    writeExpr(f, e);
-  },
   // The splat's dangling comments, between its star and its value, print with the value.
   "access.starredValue": (c: number) => {
     const { f, e } = ruffOf(c);

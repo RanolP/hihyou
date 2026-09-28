@@ -3,6 +3,7 @@ import type { StreamCtx } from "../../../fmt/stream-format.js";
 import type { BinOp, BoolOp, Compare, IfExp, Lambda, Named, Py, UnaryOp } from "../fmt/ast.js";
 import {
   lambdaHeader,
+  type Parenthesize,
   unaryNeedsLineBreak,
   writeBinaryLike,
   writeExpr,
@@ -14,6 +15,13 @@ import {
 import { close, COLLAPSE, GROUP, HARD, open, openFitsExpanded, ruffOf, sLine, sText } from "../fmt/sink.js";
 
 export const exprVia = {
+  // The rule every `$.x.parens(mode)` names: ruff's `Parentheses` (keep the source's, always, never) outright, and
+  // its `Parenthesize` modes by what the expression's parent needs.
+  parens: (c: number, mode: string) => {
+    const { f, e } = ruffOf(c);
+    if (mode === "preserve" || mode === "always" || mode === "never") writeExpr(f, e, mode);
+    else writeMaybeParenthesize(f, e, e.parent as Py, mode as Parenthesize);
+  },
   "expr.lambdaParams": (c: number, ctx: StreamCtx<unknown>) => {
     const { f, e } = ruffOf(ctx.tree.parent(c));
     const l = e as Lambda;
@@ -49,14 +57,6 @@ export const exprVia = {
     if (lineBreak) sLine(HARD | COLLAPSE);
     else if (op === "not") sText(" ");
     writeExpr(f, operand, parens);
-  },
-  "expr.awaitValue": (c: number) => {
-    const { f, e } = ruffOf(c);
-    writeMaybeParenthesize(f, e, e.parent as Py, "ifBreaks");
-  },
-  "expr.yieldValue": (c: number) => {
-    const { f, e } = ruffOf(c);
-    writeMaybeParenthesize(f, e, e.parent as Py, "optional");
   },
   "expr.binaryLike": (c: number) => {
     const { f, e } = ruffOf(c);

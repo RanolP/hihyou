@@ -4,7 +4,7 @@ import type { Structure } from "../format.js";
 
 export const stmtDef = {
   decorated_definition: ($) => [$.children.at(0).andThen((d) => d.via("def.decorators")), $.definition],
-  decorator: ($) => ["@", $.children.via("def.decorator")],
+  decorator: ($) => ["@", $.children.parens("optional")],
   function_definition: ($) => [
     tok("async").andThen((a) => [a, space]),
     "def",

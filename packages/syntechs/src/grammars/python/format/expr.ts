@@ -13,11 +13,11 @@ export const expr = {
 
   not_operator: ($) => ["not", $.argument.via("expr.unaryOperand")],
   unary_operator: ($) => [$.operator, $.argument.via("expr.unaryOperand")],
-  await: ($) => ["await", space, $.children.via("expr.awaitValue")],
+  await: ($) => ["await", space, $.children.parens("ifBreaks")],
   yield: ($) => [
     "yield",
     tok("from").andThen((f) => [space, f]),
-    $.children.andThen((v) => [space, v.via("expr.yieldValue")]),
+    $.children.andThen((v) => [space, v.parens("optional")]),
   ],
 
   // Ruff lays out a whole chain of operators at once, `a and b and c` as one node.

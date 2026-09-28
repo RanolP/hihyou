@@ -80,10 +80,6 @@ function clauseOf(n: number, ctx: StreamCtx<unknown>): Clause {
 }
 
 export const stmtCompoundVia = {
-  "compound.ifBreaks": (c: number) => {
-    const { f, e } = ruffOf(c);
-    writeMaybeParenthesize(f, e, e.parent as Py, "ifBreaks");
-  },
   "compound.forTarget": (c: number) => {
     const { f, e } = ruffOf(c);
     if (e.kind === "Tuple") writeExpr(f, e, "preserve", { tuple: "neverPreserve" });

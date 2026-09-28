@@ -34,10 +34,6 @@ export const stmtDefVia = {
     const [leadingDef] = splitDangling(f, def);
     writeDecorators(f, def.decorators, leadingDef);
   },
-  "def.decorator": (c: number) => {
-    const { f, e } = ruffOf(c);
-    writeMaybeParenthesize(f, e, e.parent as Decorator, "optional");
-  },
   // A definition's or a type alias's (under its `generic_type`) type parameters in their brackets.
   "def.typeParams": (node: number, ctx: StreamCtx<unknown>, frame: Frame) => {
     const t = ctx.tree;

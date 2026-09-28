@@ -10,7 +10,7 @@ export const stmtCompound = {
   if_statement: ($) => [
     "if",
     space,
-    $.condition.via("compound.ifBreaks"),
+    $.condition.parens("ifBreaks"),
     ":",
     $.consequence.via("compound.body"),
     lines($.alternative),
@@ -18,7 +18,7 @@ export const stmtCompound = {
   elif_clause: ($) => [
     tok("elif").via("compound.alternate"),
     space,
-    $.condition.via("compound.ifBreaks"),
+    $.condition.parens("ifBreaks"),
     ":",
     $.consequence.via("compound.body"),
   ],
@@ -30,7 +30,7 @@ export const stmtCompound = {
     space,
     "in",
     space,
-    $.right.via("compound.ifBreaks"),
+    $.right.parens("ifBreaks"),
     ":",
     $.body.via("compound.body"),
     $.alternative.andThen((e) => e),
@@ -38,7 +38,7 @@ export const stmtCompound = {
   while_statement: ($) => [
     "while",
     space,
-    $.condition.via("compound.ifBreaks"),
+    $.condition.parens("ifBreaks"),
     ":",
     $.body.via("compound.body"),
     $.alternative.andThen((e) => e),

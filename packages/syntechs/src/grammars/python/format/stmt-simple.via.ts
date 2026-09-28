@@ -159,18 +159,6 @@ export const stmtSimpleVia = {
       writeNode(f, e, { tuple: "optionalParentheses" });
     else leftToRight(f, e, e.parent as Simple);
   },
-  "simple.optional": (c: number) => {
-    const { f, e } = ruffOf(c);
-    writeMaybeParenthesize(f, e, e.parent as Simple, "optional");
-  },
-  "simple.ifBreaks": (c: number) => {
-    const { f, e } = ruffOf(c);
-    writeMaybeParenthesize(f, e, e.parent as Simple, "ifBreaks");
-  },
-  "simple.ifBreaksParenthesized": (c: number) => {
-    const { f, e } = ruffOf(c);
-    writeMaybeParenthesize(f, e, e.parent as Simple, "ifBreaksParenthesized");
-  },
   // Given the first name, prints them all: the layout is the statement's.
   "simple.globalNames": (c: number) => {
     const { f, s } = ruffStmtOf(c);
