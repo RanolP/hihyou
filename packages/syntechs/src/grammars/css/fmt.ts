@@ -6,24 +6,11 @@ import {
   prettierSettings,
 } from "../../fmt/options.js";
 import { defineLanguage, type Language } from "../../fmt/rules.js";
-import {
-  close,
-  FILL,
-  FILL_ITEM,
-  GROUP,
-  INDENT,
-  open,
-  SOFT,
-  sHardline,
-  sLine,
-  sText,
-  sToken,
-} from "../../fmt/stream.js";
+import { sToken } from "../../fmt/stream.js";
 import { maybeLower, numberParts } from "../../fmt/dsl/normalizers.js";
-import { type CustomRule, type PredicateRule, printKid } from "../../fmt/dsl/runtime.js";
+import type { CustomRule, PredicateRule } from "../../fmt/dsl/runtime.js";
 import type { StreamCtx, StreamRule } from "../../fmt/stream-format.js";
-import { newlineBetween } from "../../fmt/text.js";
-import { type FormatTree, firstLeaf, nextLeaf } from "../../fmt/tree.js";
+import type { FormatTree } from "../../fmt/tree.js";
 import { grammar } from "./bundle.js";
 import * as gen from "./fmt.gen.js";
 import { language } from "./index.js";
@@ -51,20 +38,8 @@ const isComment = (n: number, ctx: SCtx) =>
 /** Every child but comments, which reach the output attached to their neighbours. */
 const code = (n: number, ctx: SCtx) =>
   children(n, ctx.tree).filter((c) => !isComment(c, ctx));
-const anon = (n: number, k: string, ctx: SCtx) =>
-  children(n, ctx.tree).find((c) => !ctx.tree.named(c) && kind(c, ctx) === k);
 const childOfKind = (n: number, k: string, ctx: SCtx) =>
   children(n, ctx.tree).find((c) => kind(c, ctx) === k);
-/** Whether the source wrote anything, even whitespace, between `a` and the later `b`. */
-const apart = (a: number, b: number, ctx: SCtx) => !ctx.tree.adjoins(a, b);
-/** Whether a line break lies between the end of `a` and the start of the later `b`. */
-function breaksBetween(a: number, b: number, ctx: SCtx): boolean {
-  const after = nextLeaf(ctx.tree, a);
-  return (
-    ctx.tree.lf(after) > 0 ||
-    newlineBetween(ctx.tree, after, firstLeaf(ctx.tree, b))
-  );
-}
 
 const cssWideKeywords = new Set(["initial", "inherit", "unset", "revert"]);
 
@@ -153,25 +128,6 @@ const normalize: Normalize = (lexemes, _text, tree) =>
     return meaning(tree, l.node, l.text);
   });
 
-/** The children split at their top-level commas, each run with the comma that ends it. */
-function commaGroups(nodes: readonly number[], ctx: SCtx) {
-  const groups: { items: number[]; comma?: number }[] = [{ items: [] }];
-  for (const c of nodes) {
-    const last = groups.at(-1);
-    if (!last) continue;
-    if (!ctx.tree.named(c) && kind(c, ctx) === ",") {
-      last.comma = c;
-      groups.push({ items: [] });
-    } else last.items.push(c);
-  }
-  if (groups.length > 1 && groups.at(-1)?.items.length === 0) groups.pop();
-  return groups;
-}
-
-const multiWord = (items: readonly number[], ctx: SCtx) =>
-  items.length > 1 ||
-  (items[0] !== undefined && /^[+-]/.test(src(items[0], ctx)));
-
 const combinators = new Set([
   "child_selector",
   "descendant_selector",
@@ -200,112 +156,6 @@ function parts(n: number, ctx: SCtx): number {
 
 // ---- the rules format.ts names as `custom`: prettier's heuristics, and the leaves it respells ----
 
-const printItem = (n: number, ctx: SCtx) => {
-  if (ctx.tree.named(n)) ctx.print(n);
-  else sToken(n, src(n, ctx));
-};
-const printComma = (comma: number | undefined, ctx: SCtx) => {
-  if (comma !== undefined) sToken(comma, src(comma, ctx));
-};
-/** Children printed side by side, as the source wrote them. */
-const concat: SRule = (node, ctx) => {
-  for (const c of code(node, ctx)) printItem(c, ctx);
-};
-/**
- * Space-separated words (prettier's comma_group), packed several to a line. Words the source wrote without a
- * gap stay joined: tree-sitter splits `16px/2` as `16` and `px/2`.
- */
-function words(items: readonly number[], ctx: SCtx, grid: boolean): void {
-  const first = items[0];
-  if (first === undefined) return;
-  if (items.length === 1) return printItem(first, ctx);
-  const gridBreaks =
-    grid &&
-    items.some((n, i) => i > 0 && breaksBetween(items[i - 1] ?? n, n, ctx));
-  open(GROUP);
-  open(INDENT);
-  open(FILL);
-  if (gridBreaks) {
-    open(FILL_ITEM);
-    close();
-    sHardline();
-  }
-  open(FILL_ITEM);
-  printItem(first, ctx);
-  for (const [i, n] of items.entries()) {
-    const prev = items[i - 1];
-    if (prev === undefined) continue;
-    if (!apart(prev, n, ctx)) printItem(n, ctx);
-    else if (gridBreaks && !breaksBetween(prev, n, ctx)) {
-      sText(" ");
-      printItem(n, ctx);
-    } else {
-      close();
-      if (gridBreaks) sHardline();
-      else sLine(0);
-      open(FILL_ITEM);
-      printItem(n, ctx);
-    }
-  }
-  close();
-  close();
-  close();
-  close();
-}
-/**
- * A declaration's (or `@import`'s) value. A comma list breaks one entry per line when an entry has several words
- * (prettier's `isSCSSMapItemNode`-free `shouldBreakList`), else it packs after an optional break past the colon.
- */
-function valueList(
-  values: readonly number[],
-  ctx: SCtx,
-  prop: string | undefined,
-): void {
-  const groups = commaGroups(values, ctx);
-  const grid =
-    prop !== undefined &&
-    groups.length === 1 &&
-    (prop === "grid" || prop.startsWith("grid-template"));
-  const entry = (g: (typeof groups)[number]) => {
-    words(g.items, ctx, grid);
-    printComma(g.comma, ctx);
-  };
-  const only = groups[0];
-  if (groups.length === 1 && only) return entry(only);
-  if (
-    prop !== undefined &&
-    !prop.startsWith("--") &&
-    groups.some((g) => multiWord(g.items, ctx))
-  ) {
-    open(INDENT);
-    sHardline();
-    groups.forEach((g, i) => {
-      if (i > 0) sHardline();
-      entry(g);
-    });
-    close();
-    return;
-  }
-  open(GROUP);
-  open(INDENT);
-  if (prop !== undefined) sLine(SOFT);
-  open(FILL);
-  groups.forEach((g, i) => {
-    if (i > 0) sLine(0);
-    open(FILL_ITEM);
-    entry(g);
-    close();
-  });
-  close();
-  close();
-  close();
-}
-/** The statement's own `;`, or one prettier adds. */
-const semicolon = (node: number, ctx: SCtx) => {
-  const semi = anon(node, ";", ctx);
-  if (semi !== undefined) sToken(semi, src(semi, ctx));
-  else sToken(node, ";", true);
-};
 const respell =
   (f: (t: string, node: number, ctx: SCtx) => string): SRule =>
   (node, ctx) =>
@@ -324,38 +174,6 @@ export const customs = {
   }),
   /** Prettier indents a selector of more than two nodes as it breaks. */
   longSelector: (node, ctx) => parts(node, ctx) > 2,
-  declaration: (node, ctx) => {
-    const kids = code(node, ctx);
-    const colon = kids.findIndex(
-      (c) => !ctx.tree.named(c) && kind(c, ctx) === ":",
-    );
-    const prop = kids[0];
-    if (prop === undefined || colon !== 1) return concat(node, ctx);
-    const important = kids.find((c) => kind(c, ctx) === "important");
-    const values = kids
-      .slice(colon + 1)
-      .filter((c) => c !== important && kind(c, ctx) !== ";");
-    ctx.print(prop);
-    const colonTok = kids[colon] ?? prop;
-    sToken(colonTok, src(colonTok, ctx));
-    const first = values[0];
-    if (first !== undefined) {
-      sText(" ");
-      // An IE filter's parameters as written, one space wherever the source has any gap (prettier's raw value).
-      if (src(first, ctx).startsWith("progid:"))
-        values.forEach((n, i) => {
-          const prev = values[i - 1];
-          if (prev !== undefined && apart(prev, n, ctx)) sText(" ");
-          printKid(ctx, n, () => sToken(n, src(n, ctx)));
-        });
-      else valueList(values, ctx, src(prop, ctx).toLowerCase());
-    }
-    if (important !== undefined) {
-      sText(" ");
-      ctx.print(important);
-    }
-    semicolon(node, ctx);
-  },
   /** A `url()` function's arguments, which prettier prints as written. */
   urlArguments: (node, ctx) => {
     if (!within(node, "call_expression", ctx)) return false;

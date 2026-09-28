@@ -2,17 +2,23 @@
 // tree-sitter-css has fields, so a kind is laid out by its children in order (`inOrder`), a list of them, or, where
 // prettier's postcss printer decides by more than the structure, a `custom` rule of fmt.ts.
 import {
+  all,
+  anyEntry,
+  type CondIn,
   custom,
   defineFormat,
   either,
   entryCount,
+  firstText,
   grpBrace,
   grpParen,
   inOrder,
   lines,
+  not,
   parentIs,
   space,
   spell,
+  type SplitLayoutOf,
   splitOn,
   text,
   tok,
@@ -37,6 +43,16 @@ const semicolon = tok(";").synth(true);
 const packed = { group: true, indent: true, between: "line", fill: true } as const;
 /** `layout` for two entries or more; a lone entry prints bare. */
 const loneBare = <L>(layout: L) => ({ when: entryCount(1), then: {}, else: layout });
+type Cond = CondIn<typeof grammar, CssOptions>;
+/**
+ * A declaration's comma list: a lone entry bare; one entry per line once an entry has several words (prettier's
+ * `shouldBreakList`), but in a custom property; else packed after an optional break past the colon.
+ */
+const valueLayout: SplitLayoutOf<Cond> = loneBare({
+  when: all(not(firstText({ prefix: ["--"] })), anyEntry({ many: true, startsWith: ["+", "-"] })),
+  then: { indent: true, first: "hard", between: "hardline" },
+  else: { group: true, indent: true, first: "soft", between: "line", fill: true },
+});
 /** Statements one per line, keeping one blank line where the source has any. */
 const statements = { blankLines: "force" } as const;
 
@@ -52,7 +68,34 @@ export const css = format({
     from: () => text("lower"),
     to: () => text("lower"),
 
-    declaration: () => custom("declaration"),
+    // An IE filter's (`progid:...`) value as written, one space wherever the source has any gap (prettier's raw
+    // value); else the comma list, a grid template's keeping its lines.
+    declaration: ($) => [
+      either(
+        firstText({ after: ":", prefix: ["progid:"] }),
+        inOrder({
+          join: "gap",
+          tight: { before: [":"] },
+          spaceWhen: { after: [":"], before: ["important"] },
+          verbatim: { except: ["property_name", "important"] },
+          skip: [";"],
+        }),
+        [
+          $.children.at(0).andThen((p) => p),
+          ":",
+          space,
+          splitOn(",", {
+            except: ["property_name", ":", ";"],
+            trail: ["important"],
+            item: words({
+              keepLines: all(entryCount(1), firstText({ is: ["grid"], prefix: ["grid-template"], anyCase: true })),
+            }),
+            layout: valueLayout,
+          }),
+        ],
+      ),
+      semicolon,
+    ],
     property_name: () => text("maybeLower"),
     integer_value: () => text("unitCase"),
     float_value: () => text("unitCase"),

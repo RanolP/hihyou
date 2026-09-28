@@ -177,6 +177,8 @@ const cond = (c: Cond, hasFields: boolean, self = "node", run?: string): string 
         ? `${run}.entries.length === ${c.n}`
         : `someEntry(t, ${run}.entries, ${c.many}, ${JSON.stringify(c.startsWith)})`;
     }
+    case "firstText":
+      return `firstTextIs(ctx, ${self}, ${c.after === undefined ? "undefined" : str(c.after)}, ${JSON.stringify(c.is)}, ${JSON.stringify(c.prefix)}, ${c.anyCase})`;
     case "not":
       return `!(${cond(c.c, hasFields, self, run)})`;
     case "all":
@@ -667,7 +669,8 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
       case "inOrder": {
         const its = name("items");
         line(`const ${its} = new Set(ctx.items(node));`);
-        if (!x.tight && !x.spaceWhen && !x.verbatim && (x.join === "none" || x.join === "space")) {
+        const skip = x.skip?.length ? `if (${oneOf("t.kindName(c)", x.skip)}) continue;` : undefined;
+        if (!x.tight && !x.spaceWhen && !x.verbatim && !skip && (x.join === "none" || x.join === "space")) {
           const space = x.join === "space";
           const first = name("first");
           if (space) line(`let ${first} = true;`);
@@ -715,6 +718,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
           line("const c = t.child(node, i);");
           line("const named = t.named(c);");
           line(`if (named && !${its}.has(c)) continue;`);
+          if (skip) line(skip);
           if (spacing) {
             block("if (prev !== -1)", () => {
               steps.forEach(([test, then], k) => line(`${k === 0 ? "if" : "else if"} (${test}) ${then}`));
@@ -881,6 +885,12 @@ export function emit(
       parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
       0,
       `import { ${["breaksBetween", "someEntry"].filter((f) => parts.some((p) => p.includes(`${f}(`))).map((f) => `${f}, `).join("")}type SplitEntry, splitRun } from "../../fmt/dsl/runtime.js";`,
+    );
+  if (parts.some((p) => p.includes("firstTextIs(")))
+    parts.splice(
+      parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
+      0,
+      'import { firstTextIs } from "../../fmt/dsl/runtime.js";',
     );
   if (parts.some((p) => p.includes("new Bail(")))
     parts.splice(

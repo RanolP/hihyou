@@ -59,7 +59,21 @@ export type Cond =
   /** The hand-written `PredicateRule` `name` (see `runtime.ts`), asked of the node (`when(name)`). */
   | { readonly t: "rule"; readonly name: string }
   | LogicCond
-  | SplitCond;
+  | SplitCond
+  | FirstTextCond;
+
+/**
+ * The source text of the node's first child but comments (with `after`, of its first child after its first `after`
+ * token), lowercased with `anyCase`, is one of `is` or starts with one of `prefix` (`firstText`): what a child names,
+ * like the property a CSS declaration sets.
+ */
+export interface FirstTextCond {
+  readonly t: "firstText";
+  readonly after?: string;
+  readonly is: readonly string[];
+  readonly prefix: readonly string[];
+  readonly anyCase: boolean;
+}
 
 /**
  * Conditions on a `splitOn` run, valid only inside one (its `keepLines` and `layout`): it has `n` entries
@@ -124,6 +138,8 @@ export type Tree =
       readonly spaceWhen?: Pairs;
       /** Named children print as their source text, but those of a kind in `except`. */
       readonly verbatim?: { readonly except: readonly string[] };
+      /** Children of these kinds (tokens by their spelling) print nothing, as if absent. */
+      readonly skip?: readonly string[];
     }
   | { readonly t: "verbatim" }
   /** The node's source text through normalizer `fn` (`normalizers.ts`) where `when` holds, else as written. */
@@ -349,7 +365,8 @@ export type CondIn<G extends Grammar, O> =
   | HasCond<KindOf<G>>
   | NotCond<CondIn<G, O>>
   | AllCond<CondIn<G, O>>
-  | SplitCond;
+  | SplitCond
+  | FirstTextCond;
 
 /** `text`'s output, its `when` checked against the grammar's kinds and the options. */
 type Text<G extends Grammar, O> = Piece<{ text: CondIn<G, O> }>;
@@ -527,6 +544,7 @@ export interface InOrderOf<K, C> {
   readonly tight?: PairsOf<K, C>;
   readonly spaceWhen?: PairsOf<K, C>;
   readonly verbatim?: true | { readonly except: readonly K[] };
+  readonly skip?: readonly K[];
 }
 
 /**
@@ -537,7 +555,8 @@ export interface InOrderOf<K, C> {
  * else `join`: nothing (`none`, the default), a space (`space`, which `inOrder(space)` means too), a space where
  * the source has any gap and nothing where it has none (`gap`), or a line (`line`), a space unless the enclosing
  * group breaks. With `verbatim`, named children print as their source text between their comments, but those of a
- * kind in `except`: prettier's raw at-rule parameters.
+ * kind in `except`: prettier's raw at-rule parameters. Children of a kind in `skip` print nothing, for one the
+ * layout prints after it, like a `;` that `tok(";").synth` adds where the source lacks one.
  */
 export function inOrder(sep?: Piece<"space">): Piece<"inOrder">;
 export function inOrder<const K extends string = never, C = false>(
@@ -564,6 +583,7 @@ export function inOrder(o?: Piece<"space"> | InOrderOf<string, unknown>): unknow
     ...(tight ? { tight } : {}),
     ...(spaceWhen ? { spaceWhen } : {}),
     ...(v === undefined ? {} : { verbatim: { except: v === true ? [] : v.except } }),
+    ...(opts.skip?.length ? { skip: opts.skip } : {}),
   });
 }
 
@@ -604,6 +624,20 @@ export const anyEntry = (o: { readonly many?: boolean; readonly startsWith?: rea
   t: "anyEntry",
   many: o.many === true,
   startsWith: o.startsWith ?? [],
+});
+
+/** The text of the node's first child (after its first `after` token) is one of `is` or starts with a `prefix`. */
+export const firstText = (o: {
+  readonly after?: string;
+  readonly is?: readonly string[];
+  readonly prefix?: readonly string[];
+  readonly anyCase?: boolean;
+}): FirstTextCond => ({
+  t: "firstText",
+  ...(o.after === undefined ? {} : { after: o.after }),
+  is: o.is ?? [],
+  prefix: o.prefix ?? [],
+  anyCase: o.anyCase === true,
 });
 
 /** A `splitOn` layout, its conditions checked against the grammar's kinds and the options through `C`. */
@@ -680,6 +714,8 @@ function plain(c: unknown): Cond {
       return { t: "entryCount", n: x.n };
     case "anyEntry":
       return { t: "anyEntry", many: x.many, startsWith: x.startsWith };
+    case "firstText":
+      return firstText(x);
   }
   const { key, op, value } = x;
   return op === "truthy"

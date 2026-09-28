@@ -53,6 +53,7 @@ import {
   type FrameRule,
   type Entry,
   fieldChild,
+  firstTextIs,
   hasChild,
   listItems,
   parentIs,
@@ -94,6 +95,8 @@ export const evalCond = <O>(
       return split().entries.length === c.n;
     case "anyEntry":
       return someEntry(ctx.tree, split().entries, c.many, c.startsWith);
+    case "firstText":
+      return firstTextIs(ctx, node, c.after, c.is, c.prefix, c.anyCase);
     case "parent":
       return parentIs(ctx.tree, node, c.kind);
     case "rule": {
@@ -338,6 +341,7 @@ export function flatten<O>(
             const c = t.child(n, i);
             const named = t.named(c);
             if (named && !items.has(c)) continue;
+            if (x.skip?.includes(t.kindName(c))) continue;
             if (prev !== -1 && !tight(prev, c)) {
               if (spaced(prev, c) || x.join === "space") out.push({ e: "space" });
               else if (x.join === "gap") {

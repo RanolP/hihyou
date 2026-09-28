@@ -353,20 +353,28 @@ export function breaksBetween(tree: FormatTree, a: number, b: number): boolean {
 }
 
 /**
- * Whether the source text of `node`'s first child but comments, lowercased, is one of `is` or starts with one of
- * `prefix` (a `firstText` condition).
+ * Whether the source text of `node`'s first child but comments (with `after`, its first after its first `after`
+ * token), lowercased with `anyCase`, is one of `is` or starts with one of `prefix` (a `firstText` condition).
  */
 export function firstTextIs<O>(
   ctx: StreamCtx<O>,
   node: number,
+  after: string | undefined,
   is: readonly string[],
   prefix: readonly string[],
+  anyCase: boolean,
 ): boolean {
   const tree = ctx.tree;
+  let passed = after === undefined;
   for (let i = 0, count = tree.count(node); i < count; i++) {
     const c = tree.child(node, i);
-    if (tree.named(c) && ctx.isComment(c)) continue;
-    const text = tree.text(c).toLowerCase();
+    const named = tree.named(c);
+    if (named && ctx.isComment(c)) continue;
+    if (!passed) {
+      passed = !named && tree.kindName(c) === after;
+      continue;
+    }
+    const text = anyCase ? tree.text(c).toLowerCase() : tree.text(c);
     return is.includes(text) || prefix.some((p) => text.startsWith(p));
   }
   return false;
