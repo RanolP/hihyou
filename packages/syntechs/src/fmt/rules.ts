@@ -37,6 +37,7 @@ export interface Language<O = unknown> {
   readonly dropped: ReadonlySet<string>;
   readonly normalize: Normalize;
   readonly layoutBlind: boolean;
+  readonly hiddenTokens: boolean;
   readonly placeComments: PlaceComments<O>;
   /** How `check` spells a comment before comparing; see `LanguageSpec`. */
   readonly comment: ((text: string) => string | readonly string[]) | undefined;
@@ -78,6 +79,12 @@ export interface LanguageSpec<G extends Grammar, O> {
    */
   readonly layoutBlind?: boolean;
   /**
+   * The grammar keeps some tokens out of the tree (tree-sitter-kotlin's `;` and nullable `?`): `check` reads the
+   * text a node holds outside its children as lexemes of their own, split at blanks, rather than reading the node
+   * whole, so a layout that drops or moves such a token is compared token by token.
+   */
+  readonly hiddenTokens?: boolean;
+  /**
    * A comment as the formatter respells it, which `check` applies to both sides before comparing (ruff writes
    * `#x` as `# x`). The default compares comments as written. Several strings compare as several comments:
    * ruff joins trailing comments onto one line, where `# a  # b` reads back as one.
@@ -118,6 +125,7 @@ export function defineLanguage<const G extends Grammar, O>(
     dropped: new Set(spec.dropped),
     normalize: spec.normalize ?? identity,
     layoutBlind: spec.layoutBlind ?? spec.normalize === undefined,
+    hiddenTokens: spec.hiddenTokens ?? false,
     placeComments:
       spec.placeComments ??
       ((tree, isComment, options) =>

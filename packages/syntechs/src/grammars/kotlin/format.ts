@@ -133,7 +133,8 @@ export const kotlin = format({
     setter: () => spaced({ tightBefore: [":", "("] }),
 
     user_type: () => inOrder(),
-    nullable_type: () => inOrder(),
+    // The grammar hides the `?`, so no rule could print it: the type prints as written.
+    nullable_type: () => verbatim,
     type_arguments: () => adjacent,
     type_parameters: () => adjacent,
     type_parameter: () => inOrder(space),
@@ -192,6 +193,13 @@ export const kotlin = format({
 
     string_literal: () => text("trimEnd"),
     character_literal: () => verbatim,
+    unsigned_literal: () => verbatim,
+    long_literal: () => verbatim,
+    type_projection_modifiers: () => inOrder(space),
+    type_parameter_modifiers: () => inOrder(space),
+    try_expression: () => spaced({ braces: true }),
+    catch_block: () => spaced({ braces: true, tightBefore: [":"] }),
+    finally_block: () => spaced({ braces: true }),
   },
   wrapping: {
     source_file: { blankLines: "force" },

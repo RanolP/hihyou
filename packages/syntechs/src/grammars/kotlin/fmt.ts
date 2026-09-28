@@ -52,6 +52,8 @@ export const kotlin: Language<KotlinOptions> = {
     settings: prettierSettings,
     normalize,
     layoutBlind: true,
+    hiddenTokens: true,
+    atoms: ["string_literal", "character_literal"],
   }),
   stream: gen.kotlin(customs),
 };

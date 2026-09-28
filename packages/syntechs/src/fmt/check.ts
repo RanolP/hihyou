@@ -138,6 +138,21 @@ function read<O>(language: Language<O>, text: string): Read {
     }
     if (kind === "ERROR") out.errors.push({ start, end });
     const count = tree.count(n);
+    if (count > 0 && language.hiddenTokens && !language.atoms.has(kind)) {
+      let at = start;
+      const gap = (to: number) => {
+        for (const m of text.slice(at, to).matchAll(/\S+/g))
+          out.lexemes.push({ node: n, text: m[0], at: at + m.index });
+      };
+      for (let i = 0; i < count; i++) {
+        const c = tree.child(n, i);
+        gap(tree.start(c));
+        at = tree.end(c);
+      }
+      gap(end);
+      for (let i = count - 1; i >= 0; i--) stack.push(tree.child(n, i));
+      continue;
+    }
     if (count === 0 || language.atoms.has(kind) || ownsText(tree, n, text)) {
       if (end > start)
         out.lexemes.push({ node: n, text: text.slice(start, end), at: start });
@@ -145,6 +160,8 @@ function read<O>(language: Language<O>, text: string): Read {
     }
     for (let i = count - 1; i >= 0; i--) stack.push(tree.child(n, i));
   }
+  // Hidden tokens are read with their node, before its children: back into source order.
+  if (language.hiddenTokens) out.lexemes.sort((a, b) => a.at - b.at);
   return out;
 }
 
