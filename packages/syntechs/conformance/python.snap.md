@@ -1,4 +1,4 @@
-python compatibility: 257/327 (78.59%), 32 refused (ok:false), 49 excluded
+python compatibility: 260/327 (79.51%), 29 refused (ok:false), 49 excluded
 
 Fixtures: ruff 0.16.8 crates/ruff_python_formatter/resources/test/fixtures/{black,ruff} (recursive), every option set of each `.options.json`, expected output from tests/snapshots (black cases without a snapshot: their `.expect` file). Options are passed by their ruff.toml names.
 
@@ -67,15 +67,12 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | black/cases/remove_parens_from_lhs.py | 1/1 | 100.00% | formatter-error: unsupported pattern: list_splat_pattern at 203 |
 | black/cases/type_param_defaults.py | 1/1 | 29.03% | formatter-error: parse error: ERROR at 7 |
 | black/cases/type_params.py | 1/1 | 20.90% | formatter-error: unsupported type parameter lambda at 542 |
-| ruff/expression/dict_comp.py | 1/1 | 99.07% | check: input comment "# if2" is missing from the output |
 | ruff/expression/fstring.py | 2/2 | 57.40% | formatter-error: parse error: ERROR at 21682 |
 | ruff/expression/fstring_multiline_replacement_field.py | 2/2 | 68.75% | check: input "f\"aaaaaaaaaaa {[ttttteeeeeeeeest,]} more {\n    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa |
 | ruff/expression/join_implicit_concatenated_string.py | 1/1 | 97.62% | check: input "f\"{'Hy \\\"User\\\"'}\" 'more'" at 470 is output as "f\"{'Hy \"User\"'}more\"" at 455, which means "0:S\u |
 | ruff/expression/lambda.py | 1/1 | 99.11% | check: input comment "# 2" is missing from the output |
-| ruff/expression/list_comp.py | 1/1 | 98.99% | check: input comment "# if2" is missing from the output |
 | ruff/expression/list_comp_py315.py | 1/1 | 73.53% | formatter-error: parse error: ERROR at 250 |
 | ruff/expression/nested_string_quote_style.py | 4/4 | 87.50% | check: input "f'\"double\" quotes and {\"nested string with \\\"double\\\" quotes\"}'" at 881 is output as "f'\"double\" |
-| ruff/expression/set_comp.py | 1/1 | 96.61% | check: input comment "# if2" is missing from the output |
 | ruff/expression/tstring.py | 1/1 | 55.30% | formatter-error: parse error: ERROR at 21234 |
 | ruff/fmt_skip/type_params.py | 1/1 | 82.50% | formatter-error: comment in type parameters at 68 |
 | ruff/parentheses/opening_parentheses_comment_empty.py | 1/1 | 89.39% | formatter-error: comment in a pattern at 595 |
