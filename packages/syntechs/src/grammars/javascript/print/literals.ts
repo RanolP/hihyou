@@ -29,6 +29,7 @@ import {
   sLine,
   sLineSuffixBoundary,
   sHardline,
+  sBreakParent,
   sLiteral,
   sText,
   sToken,
@@ -200,8 +201,13 @@ export function printComment(
       return;
     }
   }
-  if (raw.includes("\n")) sLiteral(c, raw);
-  else sToken(c, raw);
+  if (!raw.includes("\n")) {
+    sToken(c, raw);
+    return;
+  }
+  // replaceEndOfLine's literalline carries a break parent: the groups around a multi-line comment break.
+  sLiteral(c, raw);
+  sBreakParent();
 }
 
 /** The customs format/literals.ts names, by the names its spec gives them. */

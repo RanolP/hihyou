@@ -136,6 +136,67 @@ const blockFirst = (x: HasTree, block: number): CommentTarget => {
     : { node: block, as: "dangling" };
 };
 
+const FUNCTIONS = new Set([
+  "function_declaration",
+  "function_expression",
+  "generator_function",
+  "generator_function_declaration",
+  "method_definition",
+]);
+
+/**
+ * `function f() // c` then `{` on the next line: a line comment between a function's parameters and its body moves
+ * into the body (handleLastFunctionArgComments). An arrow keeps it before its body.
+ */
+const functionBody = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, following, placement, text } = c;
+  if (
+    placement === "remaining" ||
+    text.startsWith("/*") ||
+    !FUNCTIONS.has(kind(c, enclosing)) ||
+    following === undefined ||
+    following !== field(c, enclosing, "body")
+  )
+    return;
+  return blockFirst(c, following);
+};
+
+const HEAD_BODY = new Map([
+  ["if_statement", "consequence"],
+  ["while_statement", "body"],
+  ["with_statement", "body"],
+  ["for_statement", "body"],
+  ["for_in_statement", "body"],
+]);
+
+/**
+ * `if (a) // c` then the body on the next line: a comment after a statement's head leads its body, which prints it
+ * before the body, `{` below it (handleIfStatementComments, handleWhileComments, handleForComments). The head's
+ * parentheses are a node of their own in tree-sitter, except in a `for`, whose comments before `)` stay put.
+ */
+const statementBody = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { comment, enclosing, preceding, following, text, tree } = c;
+  const body = HEAD_BODY.get(kind(c, enclosing));
+  // Before `else`: a comment on the line of a non-block consequent trails it, any other dangles on the `if`,
+  // which prints it between the consequent and `else`. tree-sitter puts one after `else` in the else_clause.
+  if (
+    kind(c, enclosing) === "if_statement" &&
+    preceding !== undefined &&
+    preceding === field(c, enclosing, "consequence") &&
+    following === field(c, enclosing, "alternative")
+  ) {
+    const oneLine = text.startsWith("//") || !text.includes("\n");
+    return kind(c, preceding) !== "statement_block" && oneLine && tree.lf(comment) === 0
+      ? { node: preceding, as: "trailing" }
+      : { node: enclosing, as: "dangling" };
+  }
+  if (body === undefined || following === undefined || following !== field(c, enclosing, body))
+    return;
+  const kids = children(c, enclosing);
+  const close = kids.findLastIndex((k) => kind(c, k) === ")" && !named(c, k));
+  return kids.indexOf(comment) > close ? { node: following, as: "leading" } : undefined;
+};
+
 const TRY_PARTS = new Set(["try_statement", "catch_clause", "finally_clause"]);
 
 /** `try /* c *\/ {}`: a comment before a try, catch or finally block moves into it (handleTryStatementComments). */
@@ -307,6 +368,8 @@ const handlers = [
   unionMember,
   typeAliasValue,
   methodName,
+  functionBody,
+  statementBody,
   tryBlock,
   classHeader,
   declaratorValue,
