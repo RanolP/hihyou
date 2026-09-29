@@ -89,6 +89,7 @@
   "black/cases/one_element_subscript.py#{}",
   "black/cases/parenthesized_context_managers.py#{\"target_version\":\"3.10\"}",
   "black/cases/pattern_matching_complex.py#{\"target_version\":\"3.10\"}",
+  "black/cases/pattern_matching_extras.py#{\"target_version\":\"3.10\"}",
   "black/cases/pattern_matching_generic.py#{\"target_version\":\"3.10\"}",
   "black/cases/pattern_matching_long.py#{\"target_version\":\"3.10\"}",
   "black/cases/pattern_matching_simple.py#{\"target_version\":\"3.10\"}",

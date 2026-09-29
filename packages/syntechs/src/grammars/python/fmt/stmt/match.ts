@@ -51,7 +51,14 @@ export type Pat = {
       open: number;
       close: number;
       items: Pat[];
-      keywords: { name: number; eq: number; value: Pat; end: number }[];
+      keywords: {
+        name: number;
+        eq: number;
+        value: Pat;
+        end: number;
+        /** The `as` and name of `k=p as n`, which tree-sitter reads as `(k=p) as n`. */
+        alias: { as: number; name: number } | undefined;
+      }[];
     }
   | { k: "as"; pattern: Pat; as: number; name: number }
   | { k: "or"; items: Pat[]; bars: number[] }
@@ -260,15 +267,19 @@ export function readPattern(f: Fmt, n: number): Pat {
         return unsupportedPattern(f, n);
       if (kind(cls) !== "dotted_name") return unsupportedPattern(f, cls);
       const items: Pat[] = [];
-      const keywords: {
-        name: number;
-        eq: number;
-        value: Pat;
-        end: number;
-      }[] = [];
+      const keywords: (Pat & { k: "class" })["keywords"] = [];
       for (const x of cs.slice(at + 1, -1)) {
         if (kind(x) === ",") continue;
-        const kw = t.count(x) === 1 ? t.child(x, 0) : undefined;
+        let kw = t.count(x) === 1 ? t.child(x, 0) : undefined;
+        let alias: { as: number; name: number } | undefined;
+        if (kw !== undefined && kind(kw) === "as_pattern") {
+          const [inner, as, name] = kids(t, kw);
+          const k = inner !== undefined && t.count(inner) === 1 ? t.child(inner, 0) : undefined;
+          if (k !== undefined && kind(k) === "keyword_pattern" && as !== undefined && name !== undefined) {
+            alias = { as, name };
+            kw = k;
+          }
+        }
         if (kw !== undefined && kind(kw) === "keyword_pattern") {
           const [name, eq, ...value] = kids(t, kw);
           if (name === undefined || eq === undefined || kind(eq) !== "=")
@@ -277,7 +288,8 @@ export function readPattern(f: Fmt, n: number): Pat {
             name,
             eq,
             value: readGroup(f, kw, value),
-            end: endOf(t, kw),
+            end: endOf(t, alias ? alias.name : kw),
+            alias,
           });
         } else if (keywords.length > 0) return unsupportedPattern(f, x);
         else items.push(readPattern(f, x));
@@ -520,7 +532,14 @@ export function classArguments(
           ...p.items.map((x) => ({ end: outerEnd(f, x), write: () => pattern(f, x) })),
           ...p.keywords.map((k) => ({
             end: k.end,
-            write: () => sDsl(f.tree.parent(k.name)),
+            write: () => {
+              sDsl(f.tree.parent(k.name));
+              if (k.alias === undefined) return;
+              sText(" ");
+              sToken(k.alias.as, f.text(k.alias.as));
+              sText(" ");
+              sToken(k.alias.name, f.text(k.alias.name));
+            },
           })),
         ];
   f.writeParenthesized(
