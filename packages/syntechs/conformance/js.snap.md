@@ -1,4 +1,4 @@
-js compatibility: 676/804 (84.08%), 25 refused (ok:false), 304 excluded
+js compatibility: 683/804 (84.95%), 25 refused (ok:false), 304 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -48,13 +48,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/comments/while-like/while.js | 0/1 | 97.62% |
 | js/comments/while-like/with.js | 0/1 | 98.00% |
 | js/conditional/comments.js | 0/2 | 77.26% |
-| js/decorator-auto-accessors/basic.js | 1/2 | 83.33% |
-| js/decorator-auto-accessors/comments.js | 1/2 | 90.00% |
-| js/decorator-auto-accessors/computed.js | 1/2 | 83.33% |
-| js/decorator-auto-accessors/private.js | 1/2 | 83.33% |
-| js/decorator-auto-accessors/static-computed.js | 1/2 | 83.33% |
-| js/decorator-auto-accessors/static-private.js | 1/2 | 83.33% |
-| js/decorator-auto-accessors/static.js | 1/2 | 83.33% |
 | js/decorators/member-expression.js | 0/1 | 90.91% |
 | js/decorators/parens.js | 0/1 | 75.00% |
 | js/decorators/class-expression/class-expression.js | 0/2 | 55.56% |

@@ -159,6 +159,25 @@ const methodName = (c: CommentContext<JsOptions>): CommentTarget | undefined => 
   return { node: preceding, as: "trailing" };
 };
 
+const FIELDS = new Set(["field_definition", "public_field_definition"]);
+
+/**
+ * `@dec()\n// c\naccessor b;`: a comment after a field's decorators trails the last one, above the modifiers, as
+ * classHeader does for a class's.
+ */
+const fieldDecorator = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, preceding, following, placement } = c;
+  if (
+    placement === "remaining" ||
+    !FIELDS.has(kind(c, enclosing)) ||
+    preceding === undefined ||
+    kind(c, preceding) !== "decorator" ||
+    (following !== undefined && kind(c, following) === "decorator")
+  )
+    return;
+  return { node: preceding, as: "trailing" };
+};
+
 /** A block's first statement leads with the comment, or an empty block holds it (addBlockStatementFirstComment). */
 const blockFirst = (x: HasTree, block: number): CommentTarget => {
   const first = children(x, block).find(
@@ -433,6 +452,7 @@ const handlers = [
   typeAliasValue,
   assignmentPattern,
   methodName,
+  fieldDecorator,
   functionBody,
   statementBody,
   tryBlock,
