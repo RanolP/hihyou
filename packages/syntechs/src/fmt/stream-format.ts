@@ -172,6 +172,8 @@ export interface StreamRules<O = unknown> {
    * a later print jumps to).
    */
   readonly wrap?: (node: number, ctx: StreamCtx<O>, print: () => void, args: PrintArgs | undefined) => void;
+  /** Whether the output ends with a line break, as it does unless this says not: ruff prints a blank file as "". */
+  readonly finalLine?: (ctx: StreamCtx<O>) => boolean;
 }
 
 /** `format`: lays `tree` out on the stream by the `stream` rules of `base`, and prints it. */
@@ -287,7 +289,7 @@ export function formatStream<O>(
     };
 
     ctx.print(tree.root);
-    sHardline();
+    if (language.finalLine?.(ctx) !== false) sHardline();
     const printed = printStream(settings);
     const { text } = printed;
     const eol = endOfLine(settings.endOfLine, tree);

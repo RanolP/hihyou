@@ -115,6 +115,9 @@ export const python: Language<PythonOptions> = {
       if (headed.has(ctx.tree.kindName(n))) skipClauseHeader(n, ctx);
       print();
     },
+    // Ruff's `FormatModModule`: a module of no statement and no comment keeps a line only if its source has one.
+    // Such a module's root is a node of no width at the end, so its `lf` counts the line breaks of the whole file.
+    finalLine: ({ tree }) => tree.count(tree.root) > 0 || tree.lf(tree.root) > 0,
   },
 };
 
