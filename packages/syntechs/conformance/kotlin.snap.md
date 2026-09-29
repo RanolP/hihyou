@@ -1,4 +1,4 @@
-kotlin compatibility: 686/753 (91.10%), 5 refused (ok:false), 11 excluded
+kotlin compatibility: 687/753 (91.24%), 5 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -38,9 +38,8 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/misc/contextParameters.kt | 0/1 | 61.54% |
 | ktfmt/format/misc/contextReceivers.kt | 0/1 | 64.00% |
 | ktfmt/format/misc/labels.kt | 0/1 | 78.79% |
-| ktfmt/format/misc/redundantSemicolons.kt | 0/1 | 95.65% |
-| ktfmt/format/misc/semicolonsBetweenCalls.kt | 0/1 | 73.42% |
-| ktfmt/format/misc/semicolonsInEmptyBodies.kt | 0/1 | 61.54% |
+| ktfmt/format/misc/semicolonsBetweenCalls.kt | 0/1 | 96.20% |
+| ktfmt/format/misc/semicolonsInEmptyBodies.kt | 0/1 | 69.23% |
 | ktfmt/format/misc/trailingCommas.kt | 0/1 | 22.81% |
 | ktfmt/format/misc/unaryPostfix.kt | 0/1 | 90.00% |
 | ktfmt/format/misc/unaryPrefix.kt | 0/1 | 57.89% |

@@ -6,13 +6,13 @@ import {
   prettierDefaults,
   prettierSettings,
 } from "../../fmt/options.js";
-import { defineLanguage, type Language } from "../../fmt/rules.js";
+import { defineLanguage, type Language, type PrintArgs } from "../../fmt/rules.js";
+import { sText, sToken } from "../../fmt/stream.js";
 import { docCommentWords, kdoc } from "../../fmt/dsl/doc-comment.js";
 import type { ImportRule, PredicateRule } from "../../fmt/dsl/runtime.js";
 import { newlineBetween } from "../../fmt/text.js";
 import { type FormatTree, firstLeaf, prevLeaf } from "../../fmt/tree.js";
 import type { StreamCtx, StreamRule, StreamRules } from "../../fmt/stream-format.js";
-import { sText, sToken } from "../../fmt/stream.js";
 import { grammar } from "./bundle.js";
 import { binary, binaryKinds } from "./binary.js";
 import { chained } from "./chain.js";
@@ -357,6 +357,58 @@ const hugsDeclaration = (node: number, ctx: { readonly tree: FormatTree }) =>
   (declarations.has(ctx.tree.kindName(ctx.tree.parent(node))) || backingField(ctx.tree, ctx.tree.parent(node))) &&
   lambdaOrScoping(ctx.tree, node, true);
 
+/** Whether statement `node` starts with a lambda, which a `;` must keep apart from the statement before it. */
+const startsWithLambda = (tree: FormatTree, node: number) => {
+  const leaf = firstLeaf(tree, node);
+  return tree.text(leaf) === "{" && tree.kindName(tree.parent(leaf)) === "lambda_literal";
+};
+
+/**
+ * Statements, but a `;` stays before one that starts with a lambda, which would otherwise become the trailing
+ * lambda of a call before it (ktfmt's RedundantSemicolonDetector keeps it). The grammar hides the `;`.
+ */
+const statements =
+  <O>(rule: StreamRule<O> | undefined): StreamRule<O> =>
+  (node, ctx) => {
+    const t = ctx.tree;
+    const items = ctx.items(node);
+    rule?.(
+      node,
+      Object.assign(Object.create(ctx) as typeof ctx, {
+        print: (n: number, args?: PrintArgs) => {
+          ctx.print(n, args);
+          const i = items.indexOf(n);
+          if (i !== -1 && i < items.length - 1 && startsWithLambda(t, items[i + 1] as number)) sToken(n, ";", true);
+        },
+      }),
+    );
+  };
+
+/**
+ * An `if` whose then branch is empty (`if (c) ; else x`, or none at all) as ktfmt prints it: the `;` goes and the
+ * empty branch keeps its spaces, two between `)` and `else`.
+ */
+const ifExpression = <O>(node: number, ctx: StreamCtx<O>) => {
+  const t = ctx.tree;
+  const items = new Set(ctx.items(node));
+  let prev = -1;
+  for (let i = 0; i < t.count(node); i++) {
+    const c = t.child(node, i);
+    const named = t.named(c);
+    if (named && !items.has(c)) continue;
+    const next = i + 1 < t.count(node) ? t.child(node, i + 1) : -1;
+    if (prev !== -1 && t.text(prev) !== "(" && t.text(c) !== ")") sText(" ");
+    if (named) ctx.print(c);
+    else if (t.text(c) === ";" && next !== -1 && t.text(next) === "else") {
+      // The spaces around the empty branch are the joins on either side of it.
+    } else {
+      if (t.text(c) === "else" && t.text(prev) === ")") sText(" ");
+      sToken(c, t.text(c));
+    }
+    prev = c;
+  }
+};
+
 /**
  * The generated rules, but a member chain prints from its root as ktfmt lays one out (chain.ts), a trimmed
  * multiline string is re-indented as ktfmt does (trimmed-string.ts), a lambda with no statements prints its
@@ -366,6 +418,8 @@ function withChains<O>(stream: StreamRules<O>): StreamRules<O> {
   const rules = new Map(stream.rules);
   for (const kind of ["navigation_expression", "call_expression", "indexing_expression", "postfix_expression"])
     rules.set(kind, chained(stream.rules.get(kind), hugsDeclaration));
+  rules.set("statements", statements(stream.rules.get("statements")));
+  rules.set("if_expression", ifExpression);
   rules.set("string_literal", trimmedStrings(stream.rules.get("string_literal")));
   rules.set("lambda_literal", lambdas(stream.rules.get("lambda_literal")));
   rules.set("lambda_parameters", lambdaParameters);

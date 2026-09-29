@@ -116,3 +116,11 @@ test("trailing commas drop from lambda parameters and one-line type lists, and a
     "fun <A, B> f() {\n    g<Int>()\n    a { x, y ->\n        z\n    }\n    h<\n        A,\n        B,\n    >()\n}\n",
   );
 });
+
+// A regression here drops the `;` before a statement that starts with a lambda, which makes the lambda the trailing
+// lambda of the call before it and changes what the code does; `check` ignores `;`, so only this test sees it.
+test("a `;` before a statement that starts with a lambda stays", () => {
+  expect(run("fun f() {\n  foo(0); { dead -> lambda }\n  if (c) ; else 6\n}\n", false)).toBe(
+    "fun f() {\n    foo(0);\n    { dead -> lambda }\n    if (c)  else 6\n}\n",
+  );
+});
