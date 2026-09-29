@@ -1,4 +1,4 @@
-python compatibility: 285/327 (87.16%), 15 refused (ok:false), 49 excluded
+python compatibility: 287/327 (87.77%), 14 refused (ok:false), 49 excluded
 
 Fixtures: ruff 0.16.8 crates/ruff_python_formatter/resources/test/fixtures/{black,ruff} (recursive), every option set of each `.options.json`, expected output from tests/snapshots (black cases without a snapshot: their `.expect` file). Options are passed by their ruff.toml names.
 
@@ -31,7 +31,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ruff/fmt_on_off/indent.py | 0/3 | 65.49% |
 | ruff/statement/function.py | 0/1 | 99.60% |
 | ruff/statement/lazy_import.py | 0/1 | 68.97% |
-| ruff/statement/try.py | 1/2 | 99.58% |
 | ruff/statement/type_alias.py | 0/1 | 37.75% |
 | ruff/tab_width.py | 1/3 | 76.08% |
 | ruff/trailing_comments.py | 0/1 | 86.11% |
@@ -45,7 +44,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | black/cases/pattern_matching_style.py | 1/1 | 46.81% | formatter-error: unsupported pattern comment at 498 |
 | black/cases/pep_701.py | 1/1 | 93.33% | check: input "f\"{'\\''}\"" at 2276 is output as "f\"{\"'\"}\"" at 2230, which means "0:S\u0000{\"\"\"}\u0000", not "0:S |
 | black/cases/preview_long_strings__regression.py | 1/1 | 96.81% | check: input "F\"{F'{humanize_number(pos)}.': <{pound_len+2}} \"\n    F\"{balance: <{bal_len + 5}} \"\n    F\"<<{author. |
-| black/cases/remove_except_types_parens.py | 1/1 | 95.12% | check: input "," at 721 is output as ":" at 713, which means ":", not "," |
 | black/cases/remove_for_brackets.py | 1/1 | 96.00% | check: input "(" at 672 is output as "k" at 692, which means "k", not "(" |
 | black/cases/type_param_defaults.py | 1/1 | 29.03% | formatter-error: parse error: ERROR at 7 |
 | black/cases/type_params.py | 1/1 | 20.90% | formatter-error: unsupported type parameter lambda at 542 |

@@ -56,7 +56,17 @@ function splitAtBody(
 /** Ruff's `FormatExceptHandlerExceptHandler` after `except` and `*`: the type, then `as` and the name. */
 export function exceptType(f: Fmt, h: ExceptHandler): void {
   if (!h.type) return;
-  writeMaybeParenthesize(f, h.type, h, "ifBreaks");
+  const tv = (f.options as { "target-version"?: string })["target-version"];
+  // PEP 758: from Python 3.14 the types need no parentheses, unless an `as` follows or one is starred.
+  if (
+    h.type.kind === "Tuple" &&
+    h.asTok === undefined &&
+    tv !== undefined &&
+    Number(tv.slice(3)) >= 14 &&
+    !h.type.elts.some((e) => e.kind === "Starred")
+  )
+    writeExpr(f, h.type, "preserve", { tuple: "neverPreserve" });
+  else writeMaybeParenthesize(f, h.type, h, "ifBreaks");
   if (h.asTok !== undefined && h.name !== undefined) {
     sText(" ");
     tok(f, h.asTok);

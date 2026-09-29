@@ -13,7 +13,7 @@ import {
  * depth, as Python's tokenizer counts INDENT and DEDENT.
  */
 
-/** Parents under which a tuple's parentheses are optional: a statement's value or target, a subscript, `yield`, a match's subject. */
+/** Parents under which a tuple's parentheses are optional: a statement's value or target, a subscript, `yield`, a match's subject, an `except`'s types (PEP 758). */
 const bareTupleParents = new Set([
   "expression_statement",
   "for_statement",
@@ -24,6 +24,7 @@ const bareTupleParents = new Set([
   "delete_statement",
   "yield",
   "match_statement",
+  "except_clause",
 ]);
 
 /** Parents whose `:` ends a compound statement's header. */

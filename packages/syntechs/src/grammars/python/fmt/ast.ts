@@ -1209,7 +1209,8 @@ class Reader {
       if (kind === "except_clause") {
         const block = this.named(c).find((x) => this.kind(x) === "block");
         const hbody = block !== undefined ? this.body(block) : [];
-        const value = this.field(c, "value");
+        const values = this.fields(c, "value");
+        const value = values[0];
         let type: Expr | undefined;
         let asTok: number | undefined;
         let name: number | undefined;
@@ -1221,8 +1222,18 @@ class Reader {
             target !== undefined
               ? (this.named(target)[0] ?? target)
               : undefined;
-        } else if (value !== undefined) type = this.expr(value);
-        // `except A, B:` is Python 2 unless it is `except (A, B)`; tree-sitter reads the second as the alias.
+        } else if (values.length > 1)
+          // PEP 758's `except A, B:`, the tuple without its parentheses.
+          type = this.tupleOf(
+            c,
+            values,
+            undefined,
+            undefined,
+            this.start(values[0] as number),
+            this.end(values.at(-1) as number),
+          );
+        else if (value !== undefined) type = this.expr(value);
+        // The grammar's `alias` field: an `as` target outside an `as_pattern`, which the rules never print.
         const alias = this.field(c, "alias");
         if (alias !== undefined) this.fail(c, "Python 2 except");
         handlers.push(
