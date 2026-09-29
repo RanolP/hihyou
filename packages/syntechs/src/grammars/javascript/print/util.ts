@@ -157,6 +157,17 @@ export function unparen(x: HasTree, n: number): number {
   return n;
 }
 
+/** Through parentheses and non-null assertions: `(f(x)!)!` to `f(x)`. */
+export function unassert(x: HasTree, n: number): number {
+  n = unparen(x, n);
+  while (x.tree.kindName(n) === "non_null_expression") {
+    const inner = first(x, n);
+    if (inner === undefined) return n;
+    n = unparen(x, inner);
+  }
+  return n;
+}
+
 /** The outermost parenthesized_expression wrapping `n` below any type cast's parentheses, or `n` itself. */
 export function outer(x: HasTree, n: number): number {
   for (

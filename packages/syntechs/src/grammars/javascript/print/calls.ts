@@ -37,6 +37,7 @@ import {
   separators,
   src,
   trailingCommaAllowed,
+  unassert,
   unparen,
 } from "./util.js";
 import type { CustomRule } from "../../../fmt/dsl/runtime.js";
@@ -321,7 +322,7 @@ function isFunctionCompositionArguments(
   if (args.length <= 1) return false;
   let count = 0;
   for (const raw of args) {
-    const arg = unparen(x, raw);
+    const arg = unassert(x, raw);
     if (isFunctionOrArrow(x, arg)) {
       count += 1;
       if (count > 1) return true;
@@ -402,7 +403,7 @@ export function couldExpandArg(
     if (bk === "arrow_function" && couldExpandArg(ctx, body, true)) return true;
     if (!arrowChainRecursion) {
       if (bk === "ternary_expression") return true;
-      if (isCallExpression(ctx, body)) return true;
+      if (isCallExpression(ctx, unassert(ctx, body))) return true;
     }
   }
   return false;
@@ -787,6 +788,11 @@ const memberCustom: CustomRule<JsOptions> = (n, s) => {
   const parent = role(ctx, n).parent;
   const property = field(ctx, n, "property");
   const inner = object !== undefined ? unparen(ctx, object) : undefined;
+  // `f(x)!.y` and `f(x).y!` hug like `f(x).y`: the assertions are looked through on both sides.
+  const asserted = object !== undefined ? unassert(ctx, object) : undefined;
+  let owner = parent;
+  while (kind(ctx, owner) === "non_null_expression")
+    owner = role(ctx, owner as number).parent;
   const fnp = firstNonMember.parent;
   const shouldInline =
     (kind(ctx, fnp) === "assignment_expression" ||
@@ -799,11 +805,12 @@ const memberCustom: CustomRule<JsOptions> = (n, s) => {
     (kind(ctx, inner) === "identifier" &&
       kind(ctx, property) === "property_identifier" &&
       !isMember(ctx, parent)) ||
-    ((kind(ctx, parent) === "assignment_expression" ||
-      kind(ctx, parent) === "variable_declarator") &&
-      inner !== undefined &&
-      ((isCallExpression(ctx, inner) && callArguments(ctx, inner).length > 0) ||
-        (memberChains.get(ctx)?.has(inner) ?? false)));
+    ((kind(ctx, owner) === "assignment_expression" ||
+      kind(ctx, owner) === "variable_declarator") &&
+      asserted !== undefined &&
+      ((isCallExpression(ctx, asserted) &&
+        callArguments(ctx, asserted).length > 0) ||
+        (memberChains.get(ctx)?.has(asserted) ?? false)));
   if (inner !== undefined && memberChains.get(ctx)?.has(inner))
     markMemberChain(ctx, n);
   sLineSuffixBoundary();

@@ -46,6 +46,7 @@ import {
   parent,
   separators,
   src,
+  unassert,
 } from "./util.js";
 
 const FIELD_KINDS = new Set(["field_definition", "public_field_definition"]);
@@ -116,7 +117,7 @@ function groupMode(ctx: JsCtx, n: number): boolean {
     if (kind(ctx, parent(ctx, n)) === "assignment_expression") return false;
     return (
       field(ctx, ext ?? n, "type_arguments") === undefined &&
-      isMember(ctx, superClass)
+      isMember(ctx, unassert(ctx, superClass))
     );
   }
   return kind(ctx, implementsList[0]) === "nested_type_identifier";

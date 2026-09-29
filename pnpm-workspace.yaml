@@ -27,3 +27,7 @@ patchedDependencies:
   # Import attributes after `export ... from` and under the older `assert` keyword; grammar.js and its generated
   # src/ only, changed the same way.
   tree-sitter-javascript@0.25.0: patches/tree-sitter-javascript@0.25.0.patch
+  # `a + b!` parsed as `(a + b)!`: `!` binds at 'member' precedence, as in TypeScript, not the unordered 'unary'.
+  # Same workflow in typescript/ and tsx/, except the src/tree_sitter/ header hunks stay: upstream's headers
+  # predate the ABI 15 parser.c the newer CLI writes, and the native parity build needs them.
+  tree-sitter-typescript@0.23.2: patches/tree-sitter-typescript@0.23.2.patch

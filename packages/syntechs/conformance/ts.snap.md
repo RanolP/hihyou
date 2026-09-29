@@ -1,4 +1,4 @@
-ts compatibility: 559/653 (85.60%), 19 refused (ok:false), 76 excluded
+ts compatibility: 567/653 (86.83%), 19 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -15,15 +15,9 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/argument-expansion/arrow-with-return-type.ts | 0/1 | 77.78% |
 | typescript/arrow/comments/issue-11100.ts | 0/1 | 40.91% |
 | typescript/as/comments/18160.ts | 0/1 | 81.25% |
-| typescript/assignment/lone-arg.ts | 0/1 | 41.18% |
-| typescript/binary-expressions/chain-expression.ts | 0/1 | 76.47% |
 | typescript/call/callee-comments.ts | 0/1 | 69.44% |
 | typescript/cast/assert-and-assign.ts | 0/1 | 50.00% |
-| typescript/chain-expression/issue-15785-1.ts | 0/1 | 66.67% |
-| typescript/chain-expression/issue-15785-2.ts | 0/1 | 77.78% |
-| typescript/chain-expression/test2.ts | 0/1 | 80.00% |
 | typescript/class/declare-field.ts | 0/1 | 75.00% |
-| typescript/class-and-interface/heritage-break/member-expression-like.ts | 0/1 | 75.00% |
 | typescript/comments/11662.ts | 0/1 | 0.00% |
 | typescript/comments/16065.ts | 0/1 | 81.82% |
 | typescript/comments/16889.ts | 0/1 | 97.39% |
@@ -71,9 +65,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/satisfies-operators/lhs.ts | 0/2 | 90.00% |
 | typescript/template-literals/expressions.ts | 0/1 | 0.00% |
 | typescript/template-literals/member-expression.ts | 0/1 | 57.14% |
-| typescript/ternaries/indent.ts | 0/1 | 95.80% |
 | typescript/trailing-comma/trailing.ts | 2/3 | 97.78% |
-| typescript/tsx/optional-chaining.tsx | 0/1 | 73.33% |
 | typescript/type-arguments-bit-shift-left-like/4.ts | 0/1 | 0.00% |
 | typescript/type-parameters-arguments/18041.ts | 0/1 | 45.71% |
 | typescript/type-parameters-arguments/const.ts | 0/1 | 90.63% |
@@ -104,7 +96,7 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | typescript/decorators/comments.ts | 1/1 | 60.00% | check: input "static" at 55 is output as "static" at 36, which means "key:static@name\|1/4", not "static@\|-1/4" |
 | typescript/decorators/decorators-comments.ts | 1/1 | 88.57% | check: input "readonly" at 295 is output as "readonly" at 251, which means "key:readonly@name\|1/29", not "readonly@\|-1/2 |
 | typescript/end-of-line/multiline.ts | 2/3 | 71.43% | check: input "\\\n" at 511 is output as "\\\r" at 486, which means "\\\r@\|3/35", not "\\\n@\|3/35" |
-| typescript/import-export/empty-import.ts | 1/1 | 32.43% | check: output comment "// comment // comment" matches no input comment |
+| typescript/import-export/empty-import.ts | 1/1 | 64.86% | check: output comment "// comment } from \"a\";" matches no input comment |
 | typescript/interface/long-type-parameters/long-type-parameters.ts | 2/2 | 75.65% | check: input comment "// always extends RectConfig" is missing from the output |
 | typescript/interface/no-semi/14040.ts | 1/1 | 100.00% | check: the output has a syntax error at 712, which the input has not |
 | typescript/interface/no-semi/18858.ts | 1/1 | 100.00% | check: the output has a syntax error at 406, which the input has not |
