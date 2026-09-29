@@ -1,4 +1,4 @@
-kotlin compatibility: 692/753 (91.90%), 2 refused (ok:false), 11 excluded
+kotlin compatibility: 696/753 (92.43%), 2 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -16,10 +16,8 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | packages/syntechs/src/grammars/kotlin/corpus/Transform.kt | 0/1 | 98.98% |
 | packages/syntechs/src/grammars/kotlin/corpus/Okio.kt | 0/1 | 97.44% |
 | ktfmt/format/annotation/exception.kt | 0/1 | 61.54% |
-| ktfmt/format/annotation/expressions2.kt | 0/1 | 78.05% |
 | ktfmt/format/annotation/functionTypes.kt | 0/1 | 60.00% |
-| ktfmt/format/annotation/multipleAnnotations.kt | 0/1 | 85.71% |
-| ktfmt/format/annotation/noNewLineAfterAnnotations.kt | 0/1 | 79.49% |
+| ktfmt/format/annotation/noNewLineAfterAnnotations.kt | 0/1 | 80.52% |
 | ktfmt/format/binary/binaryExpressionWithRanges.kt | 0/1 | 52.63% |
 | ktfmt/format/call/arrayAccessInTheCallChain.kt | 0/1 | 58.33% |
 | ktfmt/format/call/callArgsStickToFunctionName.kt | 0/1 | 60.00% |
@@ -60,8 +58,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/google/trailingCommasAlwaysRemoved.kt | 0/1 | 88.00% |
 | ktfmt/google/trailingCommasNotAdded.kt | 0/1 | 79.07% |
 | ktfmt/google/trailingCommasSingleElementLists.kt | 0/1 | 82.61% |
-| ktfmt/new_codestyle/annotation/AnnotationOnExpression.kt | 0/1 | 90.63% |
-| ktfmt/new_codestyle/annotation/AnnotationOnExpressionFullWidth.kt | 0/1 | 87.50% |
 | ktfmt/new_codestyle/annotation/AnnotationsEverywhere.kt | 0/1 | 96.97% |
 | ktfmt/new_codestyle/annotation/AnnotationsOnParameters.kt | 0/1 | 82.61% |
 | ktfmt/new_codestyle/annotation/AnnotationsOnTypes.kt | 0/1 | 93.20% |

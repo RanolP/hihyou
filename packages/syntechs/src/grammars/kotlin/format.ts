@@ -132,7 +132,11 @@ export const kotlin = format({
     identifier: () => inOrder(),
     file_annotation: () => inOrder(),
     // Inside the hanging group a lambda's `{` (or `->`) opens, so the break it forces reaches that group too.
-    statements: ($) => [either(when("lambdaWrittenBroken"), breakParent, []), lines($.children, { tokens: true })],
+    // `@Suppress("X") b = f()` keeps its annotation, which the grammar makes a statement of its own, on the line.
+    statements: ($) => [
+      either(when("lambdaWrittenBroken"), breakParent, []),
+      lines($.children, { tokens: true, sameLine: when("annotatedOnItsLine") }),
+    ],
 
     // A declaration's annotations each go on a line of their own once the declaration (the `group` `decl` puts
     // it in) breaks, a block body's included; the keyword modifiers after them stay on one line.
@@ -284,14 +288,19 @@ export const kotlin = format({
     spread_expression: () => inOrder(),
     // An annotated expression (`@Suppress("X") f()`) keeps the gap the source has after the annotation: where it
     // has none, the grammar took an annotation's arguments (`@Suppress("X")` above a declaration it misparses) for
-    // the expression, and a space would change what the code means. ktfmt keeps the line break the source has
-    // after an expression's annotations.
+    // the expression, and a space would change what the code means. Where the annotation covers the whole
+    // expression, not just a binary one's first operand, ktfmt breaks the line after it once the expression
+    // does not fit on it (`annotationHangs`), and always before a `return` (`annotationLineBroken`).
     prefix_expression: () =>
-      inOrder({
-        join: "gap",
-        hardWhen: { when: when("annotationLineBroken") },
-        tight: { after: ["!", "-", "+", "++", "--"] },
-      }),
+      either(
+        when("annotationHangs"),
+        group(inOrder({ join: "line" })),
+        inOrder({
+          join: "gap",
+          hardWhen: { when: when("annotationLineBroken") },
+          tight: { after: ["!", "-", "+", "++", "--"] },
+        }),
+      ),
     postfix_expression: () => inOrder(),
     this_expression: () => inOrder(),
     super_expression: () => inOrder(),

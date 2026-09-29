@@ -48,6 +48,7 @@ function eachCond(ir: FormatIR, visit: (c: Cond) => void): void {
     else if (x.t === "lines") {
       cond(x.blank);
       cond(x.follow);
+      cond(x.sameLine);
     } else if (x.t === "inOrder") {
       cond(x.tight?.when);
       cond(x.spaceWhen?.when);
@@ -784,7 +785,9 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
                 line(`if (i < ${its}.length - 1 && nextLineEmpty(t, item)) sHardline();`);
               line("continue;");
             });
-          line("if (i > 0) sHardline();");
+          if (x.sameLine !== undefined && x.sameLine !== false)
+            line(`if (i > 0) { if (${cond(x.sameLine, false, "item")}) sText(" "); else sHardline(); }`);
+          else line("if (i > 0) sHardline();");
           if (x.blank !== undefined && x.blank !== false)
             // Past a blank line the source kept already, where `blankLines` keeps them.
             line(

@@ -52,6 +52,20 @@ const normalize: Normalize = (lexemes, _text, tree) =>
     return l.text;
   });
 
+/** An annotated expression: one `prefix_expression` per annotation, nested. */
+const annotated = (t: FormatTree, n: number) =>
+  t.kindName(n) === "prefix_expression" && t.kindName(t.child(n, 0)) === "annotation";
+
+/** The outermost of the annotated expressions nesting `n`. */
+const annotatedTop = (t: FormatTree, n: number) => {
+  let top = n;
+  while (top !== t.root && annotated(t, t.parent(top))) top = t.parent(top);
+  return top;
+};
+
+/** Kotlin reads an annotation before a binary expression on its line as annotating the first operand alone. */
+const binaryOperand = (kind: string) => binaryKinds.has(kind) || kind === "as_expression" || kind === "range_expression";
+
 const annotationCount = (node: number, tree: FormatTree) => {
   let n = 0;
   for (let i = 0; i < tree.count(node); i++) if (tree.kindName(tree.child(node, i)) === "annotation") n++;
@@ -285,17 +299,43 @@ export const customs = {
   },
   /**
    * Of an annotated expression, which nests one `prefix_expression` per annotation: ktfmt keeps the annotations on
-   * one line, and breaks the line before the expression they annotate where the source breaks one among them.
+   * one line, and breaks the line before a `return` they annotate, and before a binary expression where the source
+   * breaks one among them at the start of a statement (Kotlin then reads them as annotating the whole expression,
+   * not its first operand).
    */
   annotationLineBroken: (node, ctx) => {
     const t = ctx.tree;
-    const annotated = (n: number) =>
-      t.kindName(n) === "prefix_expression" && t.kindName(t.child(n, 0)) === "annotation";
     const operand = t.child(node, t.count(node) - 1);
-    if (!annotated(node) || annotated(operand)) return false;
-    let top = node;
-    while (top !== t.root && annotated(t.parent(top))) top = t.parent(top);
-    return newlineBetween(t, firstLeaf(t, top), firstLeaf(t, operand));
+    if (!annotated(t, node) || annotated(t, operand)) return false;
+    if (t.kindName(operand) === "jump_expression") return true;
+    const top = annotatedTop(t, node);
+    return (
+      binaryOperand(t.kindName(operand)) &&
+      t.kindName(t.parent(top)) === "statements" &&
+      newlineBetween(t, firstLeaf(t, top), firstLeaf(t, operand))
+    );
+  },
+  /**
+   * Of an annotated expression whose annotations cover all of it (it is no binary expression, whose first operand
+   * alone Kotlin reads them as annotating): ktfmt breaks the line after the annotations where the expression does
+   * not fit on theirs. Not where the source has no gap after the annotation (see `prefix_expression`).
+   */
+  annotationHangs: (node, ctx) => {
+    const t = ctx.tree;
+    const operand = t.child(node, t.count(node) - 1);
+    if (!annotated(t, node) || annotated(t, operand) || t.count(node) !== 2) return false;
+    const kind = t.kindName(operand);
+    if (binaryOperand(kind) || kind === "jump_expression" || kind === "lambda_literal") return false;
+    return !t.adjoins(t.child(node, 0), operand);
+  },
+  /** An item of `statements` right after an annotation the grammar made a statement, on the annotation's line. */
+  annotatedOnItsLine: (node, ctx) => {
+    const t = ctx.tree;
+    const p = t.parent(node);
+    let prev = -1;
+    for (let i = 0; i < t.count(p) && t.child(p, i) !== node; i++)
+      if (!ctx.isComment(t.child(p, i))) prev = t.child(p, i);
+    return prev !== -1 && t.kindName(prev) === "annotation" && !newlineBetween(t, firstLeaf(t, prev), firstLeaf(t, node));
   },
   /**
    * ktfmt (its trailing-comma pass) breaks a parenthesized list of two or more items that the source writes across
