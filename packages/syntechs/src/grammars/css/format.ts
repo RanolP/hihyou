@@ -122,6 +122,11 @@ export const css = format({
       ),
       semicolon,
     ],
+    // `--name: {...}`: the block laid out as a rule's, then the `;` a declaration ends with.
+    custom_property_set: () => [inOrder({ spaceWhen: { after: [":"] }, skip: [";"] }), semicolon],
+    // postcss-nested-props: a rule whose selector is `name:` and any values, as written.
+    nested_property: () =>
+      inOrder({ join: "gap", tight: { before: [":"] }, spaceWhen: { after: [":"], before: ["block"] } }),
     property_name: () => text("maybeLower"),
     integer_value: () => text("unitCase"),
     float_value: () => text("unitCase"),

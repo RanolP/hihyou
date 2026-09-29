@@ -9,6 +9,9 @@ const PSEUDO_CLASS_SELECTOR_COLON = 1;
 const ERROR_RECOVERY = 2;
 const CUSTOM_SELECTOR_START = 3;
 const CUSTOM_SELECTOR_END = 4;
+const CUSTOM_PROPERTY_SET_NAME = 5;
+const CUSTOM_PROPERTY_RAW_NAME = 6;
+const CUSTOM_PROPERTY_RAW_VALUE = 7;
 
 const HASH = 35;
 const DOT = 46;
@@ -24,6 +27,13 @@ const SLASH = 47;
 const AT = 64;
 const EQUALS = 61;
 const UNDERSCORE = 95;
+const LPAREN = 40;
+const RPAREN = 41;
+const RBRACKET = 93;
+const DQUOTE = 34;
+const SQUOTE = 39;
+const BACKSLASH = 92;
+const NEWLINE = 10;
 const CUSTOM_SELECTOR = "custom-selector";
 
 interface State {
@@ -37,6 +47,89 @@ function scanCustomSelectorEnd(lexer: Lexer, state: State): boolean {
   lexer.resultSymbol = CUSTOM_SELECTOR_END;
   state.inCustomSelector = false;
   return true;
+}
+
+/** The lookahead, read afresh where TypeScript would keep it narrowed across an `advance`. */
+const peek = (lexer: Lexer): number => lexer.lookahead;
+
+/**
+ * Past one piece of a raw value: a string, a `/* *\/` comment, or a character, counting open brackets in
+ * `depth.n`. Whether the piece is more than whitespace.
+ */
+function advancePiece(lexer: Lexer, depth: { n: number }): boolean {
+  const c = lexer.lookahead;
+  lexer.advance(false);
+  if (c === DQUOTE || c === SQUOTE) {
+    while (!lexer.eof() && lexer.lookahead !== c && lexer.lookahead !== NEWLINE) {
+      if (lexer.lookahead === BACKSLASH) lexer.advance(false);
+      lexer.advance(false);
+    }
+    if (lexer.lookahead === c) lexer.advance(false);
+  } else if (c === SLASH && lexer.lookahead === STAR) {
+    lexer.advance(false);
+    while (!lexer.eof()) {
+      if (lexer.lookahead !== STAR) {
+        lexer.advance(false);
+        continue;
+      }
+      lexer.advance(false);
+      if (peek(lexer) === SLASH) {
+        lexer.advance(false);
+        break;
+      }
+    }
+  } else if (c === LBRACE || c === LPAREN || c === LBRACKET) depth.n++;
+  else if (c === RBRACE || c === RPAREN || c === RBRACKET) depth.n--;
+  return !iswspace(c);
+}
+
+/**
+ * `--name: {`: postcss 8 reads a declaration whose value runs to the `;` outside brackets, and prettier lays it
+ * out as a rule's block only when that value is one `{...}` group. The name's token says which; the colon and the
+ * value are left to the grammar.
+ */
+function scanCustomPropertyName(lexer: Lexer, valid: Uint8Array): boolean {
+  lexer.advance(false);
+  if (lexer.lookahead !== MINUS) return false;
+  lexer.advance(false);
+  for (;;) {
+    const c: number = lexer.lookahead;
+    if (!(iswalnum(c) || c === MINUS || c === UNDERSCORE || c >= 0xa0)) break;
+    lexer.advance(false);
+  }
+  lexer.markEnd();
+  while (iswspace(lexer.lookahead)) lexer.advance(false);
+  if (peek(lexer) !== COLON) return false;
+  lexer.advance(false);
+  while (iswspace(lexer.lookahead)) lexer.advance(false);
+  if (peek(lexer) !== LBRACE) return false;
+  const depth = { n: 0 };
+  do advancePiece(lexer, depth);
+  while (depth.n > 0 && !lexer.eof());
+  if (depth.n > 0) return false;
+  while (iswspace(lexer.lookahead)) lexer.advance(false);
+  const c: number = lexer.lookahead;
+  const oneGroup = c === SEMI || c === RBRACE || lexer.eof();
+  lexer.resultSymbol = oneGroup ? CUSTOM_PROPERTY_SET_NAME : CUSTOM_PROPERTY_RAW_NAME;
+  return valid[lexer.resultSymbol] !== 0;
+}
+
+/** The raw value itself, as written up to the `;` or the block's `}` outside brackets, less trailing whitespace. */
+function scanCustomPropertyRawValue(lexer: Lexer): boolean {
+  while (iswspace(lexer.lookahead)) lexer.advance(true);
+  const depth = { n: 0 };
+  let any = false;
+  while (
+    !lexer.eof() &&
+    !(depth.n <= 0 && (lexer.lookahead === SEMI || lexer.lookahead === RBRACE))
+  ) {
+    if (advancePiece(lexer, depth)) {
+      lexer.markEnd();
+      any = true;
+    }
+  }
+  lexer.resultSymbol = CUSTOM_PROPERTY_RAW_VALUE;
+  return any;
 }
 
 function scan(lexer: Lexer, valid: Uint8Array, state: State): boolean {
@@ -101,6 +194,13 @@ function scan(lexer: Lexer, valid: Uint8Array, state: State): boolean {
     }
   }
 
+  if (valid[CUSTOM_PROPERTY_RAW_VALUE]) return scanCustomPropertyRawValue(lexer);
+
+  if (valid[CUSTOM_PROPERTY_SET_NAME] || valid[CUSTOM_PROPERTY_RAW_NAME]) {
+    while (iswspace(lexer.lookahead)) lexer.advance(true);
+    if (lexer.lookahead === MINUS) return scanCustomPropertyName(lexer, valid);
+  }
+
   if (valid[PSEUDO_CLASS_SELECTOR_COLON]) {
     while (iswspace(lexer.lookahead)) lexer.advance(true);
     if (lexer.lookahead === COLON) {
@@ -109,6 +209,9 @@ function scan(lexer: Lexer, valid: Uint8Array, state: State): boolean {
       lexer.markEnd();
       lexer.resultSymbol = PSEUDO_CLASS_SELECTOR_COLON;
       if (state.inCustomSelector) return true;
+      // `font: {` and `font: 20px fantasy {` are postcss-nested-props, rules whose selector ends in the colon.
+      const next: number = lexer.lookahead;
+      if (iswspace(next) || next === LBRACE) return false;
       // A `{` makes it a pseudo-class selector, a `;` a property, unless inside a comment.
       let inComment = false;
       while (
