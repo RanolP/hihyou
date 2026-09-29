@@ -14,6 +14,7 @@ import {
   open as openStream,
   openSpan,
   SOFT,
+  sBreakParent,
   sJump,
   sLine,
 } from "../../fmt/stream.js";
@@ -310,6 +311,8 @@ function wrapped(n: number, s: StreamCtx<JsOptions>, print: () => void): void {
   if (!isIgnored(ctx, n)) {
     if (parens) printInParens(ctx, n, print);
     else print();
+    // Prettier prints a string through replaceEndOfLine: its literal line break breaks the groups around it.
+    if (kind(ctx, n) === "string" && ctx.tree.text(n).includes("\n")) sBreakParent();
   } else if (STATEMENT_LIST_PARENTS.has(kind(ctx, parent(ctx, n)) ?? "")) ignoredStatement(ctx, n);
   else sToken(n, ctx.tree.text(n));
   if (parens) sToken(n, ")", true);

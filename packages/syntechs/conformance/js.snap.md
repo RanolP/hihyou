@@ -1,4 +1,4 @@
-js compatibility: 742/804 (92.29%), 11 refused (ok:false), 304 excluded
+js compatibility: 748/804 (93.03%), 11 refused (ok:false), 304 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -23,7 +23,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/comments/blank.js | 0/2 | 92.31% |
 | js/comments/export.js | 0/2 | 94.81% |
 | js/comments/function-declaration.js | 0/2 | 80.95% |
-| js/comments/issue-3532.js | 0/2 | 91.67% |
 | js/comments/jsdoc-nestled-dangling.js | 0/2 | 93.02% |
 | js/comments/jsdoc-nestled.js | 0/2 | 89.29% |
 | js/comments/return-statement.js | 0/2 | 98.34% |
@@ -36,7 +35,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/comments/while-like/while.js | 0/1 | 97.62% |
 | js/comments/while-like/with.js | 0/1 | 98.00% |
 | js/destructuring/issue-5988.js | 0/1 | 0.00% |
-| js/embeded/indention/19518.js | 0/1 | 46.38% |
+| js/embeded/indention/19518.js | 0/1 | 64.94% |
 | js/embeded/indention/indention-2.js | 0/1 | 23.53% |
 | js/embeded/indention/indention.js | 0/1 | 63.27% |
 | js/empty-paren-comment/empty_paren_comment.js | 0/1 | 91.43% |
@@ -49,18 +48,13 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/method-chain/break-last-member.js | 0/1 | 85.29% |
 | js/newline/backslash_2028.js | 0/1 | 40.00% |
 | js/newline/backslash_2029.js | 0/1 | 40.00% |
-| js/object-prop-break-in/test.js | 0/1 | 89.55% |
 | js/reserved-word/yield.js | 0/1 | 93.33% |
 | js/sequence-break/break.js | 0/1 | 85.29% |
 | js/sequence-expression/ignore.js | 0/1 | 72.73% |
 | js/sequence-expression/parenthesized.js | 0/1 | 85.71% |
-| js/strings/multiline-literal.js | 0/2 | 70.00% |
 | js/switch/comments.js | 0/1 | 90.37% |
 | js/switch/comments2.js | 0/1 | 84.21% |
-| js/template/graphql.js | 0/1 | 82.76% |
-| js/template/inline.js | 0/1 | 94.34% |
 | js/template-literals/expression-break.js | 0/1 | 80.00% |
-| js/template-literals/indention.js | 0/1 | 29.75% |
 | js/test-declarations/jest-each-template-string.js | 0/2 | 27.78% |
 | js/test-declarations/jest-each.js | 0/2 | 63.24% |
 

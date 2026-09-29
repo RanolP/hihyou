@@ -166,10 +166,13 @@ const templateString: CustomRule<JsOptions> = (node, sctx) => {
       printSubstitution(ctx, c, sizes[i] ?? 0, raws[i] ?? "");
       i++;
     } else if (k !== "comment") {
-      // A quasi prints as its source, a line break in it kept where it is.
+      // A quasi prints as its source, a line break in it kept where it is. Prettier's literalline carries a
+      // break parent, so a multi-line template breaks the groups around it.
       const t = src(js, c);
-      if (t.includes("\n")) sLiteral(c, t);
-      else sToken(c, t);
+      if (t.includes("\n")) {
+        sLiteral(c, t);
+        sBreakParent();
+      } else sToken(c, t);
     }
   }
 };
