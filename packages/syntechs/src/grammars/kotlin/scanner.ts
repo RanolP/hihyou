@@ -176,18 +176,8 @@ function scanAutomaticSemicolon(lexer: Lexer): boolean {
 
   if (sameline) {
     switch (la(lexer)) {
-      // Not before an `else`, nor a modifier starting with `e`, which tree-sitter-kotlin 0.3.8 cut off the modifier
-      // before it (`expect enum class`). Before any other word starting with `e` it inserts one, as the C scanner
-      // does, though that ends `return emptyList()` at `return`: the parity test pins the C scanner's trees.
-      case 101: {
-        // e
-        let word = "";
-        while (word !== "else" && isWordChar(la(lexer))) {
-          word += String.fromCharCode(la(lexer));
-          lexer.advance(true);
-        }
-        return word !== "else" && !/^(enum|expect|external)$/.test(word);
-      }
+      // Upstream scanner.c returns `!scan_for_word("lse")` here, ending a statement before any other word starting
+      // with `e` on the same line (`return emit(x)` as a bare `return`, then `emit(x)`); the pnpm patch drops it too.
       case 105: // i
         return scanForWord(lexer, "mport");
       case 59: // ;

@@ -1,0 +1,17 @@
+diff --git a/src/scanner.c b/src/scanner.c
+index a9979ade8b67a2c132cbee71793364bcff745f2f..38bc1413167f992adc2849f2058891b56994b1ce 100644
+--- a/src/scanner.c
++++ b/src/scanner.c
+@@ -285,10 +285,8 @@ static bool scan_automatic_semicolon(TSLexer *lexer) {
+ 
+   if (sameline) {
+     switch (lexer->lookahead) {
+-      // Don't insert a semicolon before an else
+-      case 'e':
+-        return !scan_for_word(lexer, "lse", 3);
+-
++      // No semicolon before a word starting with `e` on the same line: `!scan_for_word("lse")` cut
++      // `return emit(x)` into a bare `return` and `emit(x)`.
+       case 'i':
+         return scan_for_word(lexer, "mport", 5);
+ 

@@ -1,4 +1,4 @@
-kotlin compatibility: 646/753 (85.79%), 13 refused (ok:false), 11 excluded
+kotlin compatibility: 651/753 (86.45%), 6 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -10,10 +10,10 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | :------ | :---------: | :---------: |
 | comments.txt: Comments | 0/1 | 76.19% |
 | source-files.txt: Multiple Imports On A Single Line | 0/1 | 50.00% |
-| packages/syntechs/src/grammars/kotlin/corpus/Collections.kt | 0/1 | 96.55% |
+| packages/syntechs/src/grammars/kotlin/corpus/Collections.kt | 0/1 | 96.81% |
 | packages/syntechs/src/grammars/kotlin/corpus/Result.kt | 0/1 | 99.56% |
 | packages/syntechs/src/grammars/kotlin/corpus/Delay.kt | 0/1 | 97.97% |
-| packages/syntechs/src/grammars/kotlin/corpus/Transform.kt | 0/1 | 92.98% |
+| packages/syntechs/src/grammars/kotlin/corpus/Transform.kt | 0/1 | 98.98% |
 | packages/syntechs/src/grammars/kotlin/corpus/Okio.kt | 0/1 | 97.44% |
 | packages/syntechs/src/grammars/kotlin/corpus/build.gradle.kts | 0/1 | 98.92% |
 | ktfmt/format/annotation/exception.kt | 0/1 | 61.54% |
@@ -21,7 +21,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/annotation/functionTypes.kt | 0/1 | 60.00% |
 | ktfmt/format/annotation/multipleAnnotations.kt | 0/1 | 85.71% |
 | ktfmt/format/annotation/noNewLineAfterAnnotations.kt | 0/1 | 79.49% |
-| ktfmt/format/binary/associativity.kt | 0/1 | 72.73% |
 | ktfmt/format/binary/binaryExpressionWithRanges.kt | 0/1 | 52.63% |
 | ktfmt/format/call/arrayAccessInTheCallChain.kt | 0/1 | 58.33% |
 | ktfmt/format/call/callArgsStickToFunctionName.kt | 0/1 | 60.00% |
@@ -40,6 +39,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/class/secondaryConstructorDelegate2.kt | 0/1 | 52.63% |
 | ktfmt/format/comment/shebang.kts | 0/1 | 88.89% |
 | ktfmt/format/function/trailingCommasInDefinitions.kt | 0/1 | 90.57% |
+| ktfmt/format/if/blocks.kt | 0/1 | 21.05% |
 | ktfmt/format/if/comment.kt | 0/1 | 61.54% |
 | ktfmt/format/import/importList.kt | 0/1 | 37.50% |
 | ktfmt/format/import/importsInKDoc.kt | 0/1 | 94.55% |
@@ -87,7 +87,9 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/google/fqNestedTypes.kt | 0/1 | 38.10% |
 | ktfmt/google/ifWithMaxWidthCondition.kt | 0/1 | 47.06% |
 | ktfmt/google/longFunctionTypeWrapping.kt | 0/1 | 23.53% |
+| ktfmt/google/missingTrailingCommas.kt | 0/1 | 85.29% |
 | ktfmt/google/namedArgumentsWithValueExpression.kt | 0/1 | 47.06% |
+| ktfmt/google/redundantTrailingCommas.kt | 0/1 | 66.67% |
 | ktfmt/google/secondaryConstructorNoArgs.kt | 0/1 | 47.06% |
 | ktfmt/google/singleLambdaArgument.kt | 0/1 | 68.75% |
 | ktfmt/google/trailingCommasAlwaysRemoved.kt | 0/1 | 56.00% |
@@ -109,19 +111,12 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| ktfmt/format/annotation/collectionLiterals.kt | 1/1 | 82.50% | formatter-error: no rule: collection_literal at 58 |
 | ktfmt/format/class/trailingCommentAfterMethod.kt | 1/1 | 93.48% | check: output comment "// Hanging after fn // Trailing after fn" matches no input comment |
 | ktfmt/format/function/varargs.kt | 1/1 | 50.00% | formatter-error: no rule: spread_expression at 38 |
-| ktfmt/format/if/blocks.kt | 1/1 | 18.18% | formatter-error: no rule: do_while_statement at 34 |
-| ktfmt/format/misc/doWhile.kt | 1/1 | 42.86% | formatter-error: no rule: do_while_statement at 18 |
 | ktfmt/format/property/propertiesWithAccessors.kt | 1/1 | 27.78% | formatter-error: no rule: parameter_with_optional_type at 95 |
 | ktfmt/format/property/propertiesWithAccessors2.kt | 1/1 | 44.44% | formatter-error: no rule: parameter_with_optional_type at 119 |
-| ktfmt/google/arrayLiteralInAnnotation.kt | 1/1 | 36.11% | formatter-error: no rule: collection_literal at 38 |
-| ktfmt/google/comments2.kt | 1/1 | 30.00% | formatter-error: no rule: collection_literal at 38 |
-| ktfmt/google/missingTrailingCommas.kt | 1/1 | 19.18% | formatter-error: no rule: collection_literal at 334 |
-| ktfmt/google/redundantTrailingCommas.kt | 1/1 | 50.00% | formatter-error: no rule: collection_literal at 120 |
-| ktfmt/google/trailingCommasNotAdded.kt | 1/1 | 21.74% | formatter-error: no rule: collection_literal at 112 |
-| ktfmt/new_codestyle/annotation/AnnotationArguments.kt | 1/1 | 100.00% | formatter-error: no rule: collection_literal at 26 |
+| ktfmt/google/comments2.kt | 1/1 | 67.92% | check: input comment "// Comment" is missing from the output |
+| ktfmt/google/trailingCommasNotAdded.kt | 1/1 | 79.07% | check: input comment "//" is missing from the output |
 
 # Excluded
 

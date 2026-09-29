@@ -11,7 +11,7 @@ import { docCommentWords, kdoc } from "../../fmt/dsl/doc-comment.js";
 import type { ImportRule, PredicateRule } from "../../fmt/dsl/runtime.js";
 import { newlineBetween } from "../../fmt/text.js";
 import { type FormatTree, firstLeaf, prevLeaf } from "../../fmt/tree.js";
-import type { StreamRules } from "../../fmt/stream-format.js";
+import type { StreamCtx, StreamRules } from "../../fmt/stream-format.js";
 import { grammar } from "./bundle.js";
 import { binary, binaryKinds } from "./binary.js";
 import { chained } from "./chain.js";
@@ -180,6 +180,13 @@ function backingField(t: FormatTree, node: number): boolean {
 /** The items of the lists `writtenBroken` asks about: call arguments, and function and constructor parameters. */
 const listed = new Set(["value_argument", "parameter", "class_parameter"]);
 
+/**
+ * A collection literal's elements. tree-sitter-kotlin 0.3.8 takes no trailing comma there, and recovers the one
+ * before a comment or a line break as an empty identifier after it, which is no element.
+ */
+const collectionItems = <O>(ctx: StreamCtx<O>, node: number) =>
+  ctx.items(node).filter((c) => ctx.tree.text(c) !== "");
+
 /** The rules `when` names in format.ts. */
 export const customs = {
   /**
@@ -220,9 +227,16 @@ export const customs = {
   writtenBroken: (node, ctx) => {
     const t = ctx.tree;
     if (!t.text(node).includes("\n")) return false;
+    if (t.kindName(node) === "collection_literal") return ctx.items(node).length > 1;
     let items = 0;
     for (let i = 0; i < t.count(node); i++) if (listed.has(t.kindName(t.child(node, i)))) items++;
     return items > 1;
+  },
+  /** Of a collection literal: it is a named argument's value, after its `=`. */
+  namedValue: (node, ctx) => {
+    const t = ctx.tree;
+    const arg = t.parent(node);
+    return t.kindName(arg) === "value_argument" && childOf(t, arg, "=") !== -1;
   },
   backingField:(node, ctx) => backingField(ctx.tree, node),
   /** Of a class or its primary constructor: a comment comes before the constructor, which ktfmt puts on a line of its own. */
@@ -283,6 +297,26 @@ function withChains<O>(stream: StreamRules<O>): StreamRules<O> {
   rules.set("string_literal", trimmedStrings(stream.rules.get("string_literal")));
   rules.set("lambda_literal", lambdas(stream.rules.get("lambda_literal")));
   for (const kind of binaryKinds) rules.set(kind, binary(stream.rules.get(kind)));
+  const collection = stream.rules.get("collection_literal");
+  if (collection !== undefined)
+    rules.set("collection_literal", (node, ctx) => {
+      // The comments around the empty identifier a trailing comma leaves print after the elements, as the list's own.
+      const items = collectionItems(ctx, node);
+      const dangling = [
+        ...ctx.danglingComments(node),
+        ...ctx
+          .items(node)
+          .filter((c) => !items.includes(c))
+          .flatMap((c) => [...ctx.leadingComments(c), ...ctx.trailingComments(c)]),
+      ].sort((a, b) => a - b);
+      collection(
+        node,
+        Object.assign(Object.create(ctx) as typeof ctx, {
+          items: (n: number) => (n === node ? items : ctx.items(n)),
+          danglingComments: (n: number) => (n === node ? dangling : ctx.danglingComments(n)),
+        }),
+      );
+    });
   return { ...stream, rules };
 }
 

@@ -37,3 +37,15 @@ test("an `in` condition on its own line starts a new `when` entry", () => {
   expect(kinds).toContain("range_test");
   expect(kinds).not.toContain("check_expression");
 });
+
+// A regression here cuts `return emit(x)` into a bare `return` and a separate `emit(x)`, which changes what it means.
+test("a returned expression starting with `e` stays the return's value", () => {
+  const tree = parseTree(language, "fun f() {\n  if (c) return emit(x)\n  return@f else1\n}\n");
+  const jumps: number[] = [];
+  const stack = [tree.root];
+  for (let n = stack.pop(); n !== undefined; n = stack.pop()) {
+    if (tree.kindName(n) === "jump_expression") jumps.push(tree.count(n));
+    for (let i = 0; i < tree.count(n); i++) stack.push(tree.child(n, i));
+  }
+  expect(jumps.sort()).toEqual([2, 3]);
+});
