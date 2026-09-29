@@ -150,7 +150,20 @@ export const kotlin = format({
             tight: { before: [...before, "type_parameters"] as never[], after: [...after, "modifiers"] as never[] },
           }),
         ),
-        decl(spaced({ tightBefore: ["type_parameters", "primary_constructor"] })),
+        either(
+          when("whereAfterDelegation"),
+          decl(
+            inOrder({
+              join: "space",
+              tight: {
+                before: [...before, "type_parameters", "primary_constructor"] as never[],
+                after: [...after, "modifiers"] as never[],
+              },
+              lineBefore: ["type_constraints"],
+            }),
+          ),
+          decl(spaced({ tightBefore: ["type_parameters", "primary_constructor"] })),
+        ),
       ),
     object_declaration: () => decl(spaced()),
     object_literal: () => spaced(),

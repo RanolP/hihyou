@@ -165,6 +165,10 @@ function scanAutomaticSemicolon(lexer: Lexer): boolean {
 
   if (!scanWhitespaceAndComments(lexer)) return false;
 
+  // Not before a `where` that continues a class or function header on its own line (`class Foo<T>()\n  where T :
+  // Bar`). Any other word starting with `w` on a new line gets one, as the checks below would give it.
+  if (!sameline && la(lexer) === 119) return !(scanForWord(lexer, "here") && iswspace(la(lexer)));
+
   // Not before a primary constructor written on the line after its class's name (`class Foo\n@Inject constructor(`),
   // which the C scanner would cut off from its class.
   if (!sameline && afterClassName(lexer) && (la(lexer) === 64 || iswalpha(la(lexer))))
@@ -172,9 +176,18 @@ function scanAutomaticSemicolon(lexer: Lexer): boolean {
 
   if (sameline) {
     switch (la(lexer)) {
-      // Not before an `else`.
-      case 101: // e
-        return !scanForWord(lexer, "lse");
+      // Not before an `else`, nor a modifier starting with `e`, which tree-sitter-kotlin 0.3.8 cut off the modifier
+      // before it (`expect enum class`). Before any other word starting with `e` it inserts one, as the C scanner
+      // does, though that ends `return emptyList()` at `return`: the parity test pins the C scanner's trees.
+      case 101: {
+        // e
+        let word = "";
+        while (word !== "else" && isWordChar(la(lexer))) {
+          word += String.fromCharCode(la(lexer));
+          lexer.advance(true);
+        }
+        return word !== "else" && !/^(enum|expect|external)$/.test(word);
+      }
       case 105: // i
         return scanForWord(lexer, "mport");
       case 59: // ;

@@ -235,6 +235,19 @@ export const customs = {
       if (t.child(owner, i) === ctor) return t.kindName(t.child(owner, i - 1)).endsWith("comment");
     return false;
   },
+  /**
+   * Of a class: its `where` follows a delegation (`: Bar by bar`), which ktfmt puts on a line of its own, since
+   * `bar where T` on one line would read as an infix call.
+   */
+  whereAfterDelegation: (node, ctx) => {
+    const t = ctx.tree;
+    for (let i = 1; i < t.count(node); i++) {
+      if (t.kindName(t.child(node, i)) !== "type_constraints") continue;
+      const prev = t.child(node, i - 1);
+      return t.kindName(prev) === "delegation_specifier" && childOf(t, prev, "explicit_delegation") !== -1;
+    }
+    return false;
+  },
   /** ktfmt gives a broken argument list a trailing comma only when it holds two or more arguments. */
   manyArguments: (node, ctx) => ctx.items(node).length > 1,
   /** Of a declaration's initializer or delegate, or a function's `=` body: a lambda, a scoping function, or a chain on one. */

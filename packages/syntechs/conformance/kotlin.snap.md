@@ -1,4 +1,4 @@
-kotlin compatibility: 641/753 (85.13%), 13 refused (ok:false), 11 excluded
+kotlin compatibility: 646/753 (85.79%), 13 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -35,10 +35,8 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/class/emptyEnumWithSemicolon2.kt | 0/1 | 0.00% |
 | ktfmt/format/class/emptyEnumWithSemicolon3.kt | 0/1 | 25.00% |
 | ktfmt/format/class/emptyEnumWithSemicolon6.kt | 0/1 | 50.00% |
-| ktfmt/format/class/expectEnum.kt | 0/1 | 0.00% |
 | ktfmt/format/class/functionalInterface.kt | 0/1 | 57.14% |
 | ktfmt/format/class/functionalInterfaceWithTypeParams.kt | 0/1 | 66.67% |
-| ktfmt/format/class/lineBreakOnTypeSpecifier.kt | 0/1 | 57.14% |
 | ktfmt/format/class/secondaryConstructorDelegate2.kt | 0/1 | 52.63% |
 | ktfmt/format/comment/shebang.kts | 0/1 | 88.89% |
 | ktfmt/format/function/trailingCommasInDefinitions.kt | 0/1 | 90.57% |
@@ -77,9 +75,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/string/nestedMultilineString2.kt | 0/1 | 96.97% |
 | ktfmt/format/type/castsWithBreaks.kt | 0/1 | 67.86% |
 | ktfmt/format/type/classExpression.kt | 0/1 | 66.67% |
-| ktfmt/format/type/compondBoundOnClassDelegate.kt | 0/1 | 40.00% |
-| ktfmt/format/type/generics2.kt | 0/1 | 33.33% |
-| ktfmt/format/type/generics3.kt | 0/1 | 30.00% |
 | ktfmt/format/type/intersections.kt | 0/1 | 75.00% |
 | ktfmt/format/type/nestedQualifiedTypes.kt | 0/1 | 40.00% |
 | ktfmt/format/type/trailingCommasInFunctionTypes.kt | 0/1 | 60.00% |
