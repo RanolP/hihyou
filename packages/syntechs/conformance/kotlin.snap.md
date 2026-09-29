@@ -1,4 +1,4 @@
-kotlin compatibility: 571/753 (75.83%), 36 refused (ok:false), 11 excluded
+kotlin compatibility: 580/753 (77.03%), 36 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -94,21 +94,13 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/property/backingFieldWithChainedScopingFunction2.kt | 0/1 | 71.43% |
 | ktfmt/format/property/backingFieldWithChainedScopingFunction3.kt | 0/1 | 40.00% |
 | ktfmt/format/property/trailingCommasInProperties.kt | 0/1 | 72.73% |
-| ktfmt/format/string/callAfterMultilineString.kt | 0/1 | 90.91% |
-| ktfmt/format/string/commentAfterMultilineString4.kt | 0/1 | 58.82% |
+| ktfmt/format/string/commentAfterMultilineString4.kt | 0/1 | 35.29% |
 | ktfmt/format/string/multiDollarString.kt | 0/1 | 33.33% |
 | ktfmt/format/string/multilineStringLiterals.kt | 0/1 | 92.86% |
 | ktfmt/format/string/multilineStringsWithTemplateExpressions.kt | 0/1 | 96.30% |
 | ktfmt/format/string/multilineStringsWithTemplateExpressions2.kt | 0/1 | 40.00% |
 | ktfmt/format/string/nestedMultilineString2.kt | 0/1 | 96.97% |
-| ktfmt/format/string/trimIndentHandling.kt | 0/1 | 40.00% |
-| ktfmt/format/string/trimIndentHandling2.kt | 0/1 | 44.44% |
-| ktfmt/format/string/trimMarginAndTrimIndent.kts | 0/1 | 38.30% |
-| ktfmt/format/string/trimMarginHandling.kt | 0/1 | 47.06% |
-| ktfmt/format/string/trimMarginHandling2.kt | 0/1 | 44.44% |
-| ktfmt/format/string/trimMarginHandling3.kt | 0/1 | 46.15% |
-| ktfmt/format/string/trimMarginHandling4.kt | 0/1 | 72.73% |
-| ktfmt/format/string/trimMarginHandling5.kt | 0/1 | 57.14% |
+| ktfmt/format/string/trimMarginAndTrimIndent.kts | 0/1 | 91.67% |
 | ktfmt/format/string/whitespaces.kt | 0/1 | 78.95% |
 | ktfmt/format/type/castsWithBreaks.kt | 0/1 | 67.86% |
 | ktfmt/format/type/classExpression.kt | 0/1 | 66.67% |
@@ -126,7 +118,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/google/anonymousFunction.kt | 0/1 | 85.71% |
 | ktfmt/google/anonymousFunctionWithReceiver.kt | 0/1 | 85.71% |
 | ktfmt/google/basic.kt | 0/1 | 97.62% |
-| ktfmt/google/callAfterMultiLineString2.kt | 0/1 | 86.67% |
 | ktfmt/google/casts.kt | 0/1 | 42.86% |
 | ktfmt/google/classTypeParams.kt | 0/1 | 63.29% |
 | ktfmt/google/comments.kt | 0/1 | 55.56% |

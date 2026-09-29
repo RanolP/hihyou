@@ -16,6 +16,7 @@ import { grammar } from "./bundle.js";
 import { chained } from "./chain.js";
 import * as gen from "./fmt.gen.js";
 import { language } from "./index.js";
+import { trimmedString, trimmedStrings } from "./trimmed-string.js";
 
 /**
  * ktfmt's `--kotlinlang-style`: 100 columns, 4-space indent; it takes no other layout option. It sorts the
@@ -40,6 +41,8 @@ const normalize: Normalize = (lexemes, _text, tree) =>
   lexemes.map((l, i) => {
     if (inImports(tree, l.node)) return undefined;
     if (l.text === ";") return undefined;
+    const trimmed = trimmedString(tree, l.node);
+    if (trimmed !== undefined) return (trimmed.margin ? "|" : "") + trimmed.lines.join("\n");
     const next = lexemes[i + 1]?.text;
     if (l.text === "," && next !== undefined && closers.has(next)) return undefined;
     return l.text;
@@ -220,11 +223,15 @@ const hugsDeclaration = (node: number, ctx: { readonly tree: FormatTree }) =>
   declarations.has(ctx.tree.kindName(ctx.tree.parent(node))) &&
   lambdaOrScoping(ctx.tree, node, true);
 
-/** The generated rules, but a member chain prints from its root as ktfmt lays one out (chain.ts). */
+/**
+ * The generated rules, but a member chain prints from its root as ktfmt lays one out (chain.ts), and a trimmed
+ * multiline string is re-indented as ktfmt does (trimmed-string.ts).
+ */
 function withChains<O>(stream: StreamRules<O>): StreamRules<O> {
   const rules = new Map(stream.rules);
   for (const kind of ["navigation_expression", "call_expression", "indexing_expression", "postfix_expression"])
     rules.set(kind, chained(stream.rules.get(kind), hugsDeclaration));
+  rules.set("string_literal", trimmedStrings(stream.rules.get("string_literal")));
   return { ...stream, rules };
 }
 
