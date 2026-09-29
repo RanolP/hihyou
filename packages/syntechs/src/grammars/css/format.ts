@@ -196,6 +196,13 @@ export const css = format({
       }),
       semicolon,
     ],
+    // The name, then the queries as `@media`'s; the name and a query written without a gap between stay joined.
+    custom_media_statement: () =>
+      inOrder({
+        join: "gap",
+        tight: { before: [",", ";"] },
+        spaceWhen: { after: ["@custom-media", ","] },
+      }),
     keyframes_statement: spaced,
     at_rule: () =>
       inOrder({
@@ -208,7 +215,9 @@ export const css = format({
     unary_query: spaced,
     parenthesized_query: adjacent,
     feature_query: () =>
-      inOrder({ join: "gap", tight: { after: ["("], before: [")"] }, spaceWhen: { after: [":"] } }),
+      inOrder({ join: "gap", tight: { after: ["("], before: [")", ":"] }, spaceWhen: { after: [":"] } }),
+    // prettier's media feature: as written, one space wherever the source has any gap.
+    range_query: () => inOrder({ join: "gap", tight: { after: ["("], before: [")"] } }),
     feature_name: () => text("maybeLower"),
   },
   wrapping: {

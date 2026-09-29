@@ -165,7 +165,7 @@ settings:
 packageExtensionsChecksum: sha256-dbr7Cp3Rge8Ng3dbeh61dUs2/7uX0vAUiMnS8UBhK7Q=
 
 patchedDependencies:
-  tree-sitter-css@0.25.0: f46e71a023801118e39e61aea627d9b515c857f9a49e43a85a16ffb35abb3b1b
+  tree-sitter-css@0.25.0: f456fab79aa25db57aea087621e6a4a365ac831932fa4f5375467779d7300784
   tree-sitter-javascript@0.25.0: 4800f06a0fc03f0ae0fcae15868f7baa7bbba979ac10ae37a421089f20de3b56
   tree-sitter-typescript@0.23.2: 8a3baee905fd843a3c9c39cf7f593d476e0616ad4c9f9894ec31b4f2acc4c0bb
 
@@ -295,7 +295,7 @@ importers:
         version: 3.9.9
       tree-sitter-css:
         specifier: 0.25.0
-        version: 0.25.0(patch_hash=f46e71a023801118e39e61aea627d9b515c857f9a49e43a85a16ffb35abb3b1b)
+        version: 0.25.0(patch_hash=f456fab79aa25db57aea087621e6a4a365ac831932fa4f5375467779d7300784)
       tree-sitter-javascript:
         specifier: 0.25.0
         version: 0.25.0(patch_hash=4800f06a0fc03f0ae0fcae15868f7baa7bbba979ac10ae37a421089f20de3b56)
@@ -4109,7 +4109,7 @@ snapshots:
 
   tree-kill@1.2.2: {}
 
-  tree-sitter-css@0.25.0(patch_hash=f46e71a023801118e39e61aea627d9b515c857f9a49e43a85a16ffb35abb3b1b):
+  tree-sitter-css@0.25.0(patch_hash=f456fab79aa25db57aea087621e6a4a365ac831932fa4f5375467779d7300784):
     dependencies:
       node-addon-api: 8.9.2
       node-gyp-build: 4.8.4

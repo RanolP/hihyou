@@ -1,4 +1,4 @@
-css compatibility: 88/151 (58.28%), 0 refused (ok:false), 6 excluded
+css compatibility: 94/151 (62.25%), 0 refused (ok:false), 6 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -13,7 +13,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
 | css/atrule/at-root.css | 0/1 | 79.16% |
-| css/atrule/custom-media.css | 0/1 | 4.84% |
 | css/atrule/debug.css | 0/1 | 12.90% |
 | css/atrule/each.css | 0/1 | 4.90% |
 | css/atrule/extend.css | 0/1 | 41.30% |
@@ -22,7 +21,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | css/atrule/function.css | 0/1 | 17.32% |
 | css/atrule/import.css | 0/1 | 45.09% |
 | css/atrule/include.css | 0/1 | 34.48% |
-| css/atrule/media.css | 0/1 | 94.66% |
 | css/atrule/mixin.css | 0/1 | 8.89% |
 | css/atrule/page.css | 0/1 | 61.54% |
 | css/atrule/return.css | 0/1 | 29.89% |
@@ -33,12 +31,11 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | css/attribute/spaces.css | 0/2 | 77.82% |
 | css/atword/atword.css | 0/1 | 0.00% |
 | css/bom/bom.css | 0/1 | 72.73% |
-| css/case/case.css | 0/1 | 98.41% |
 | css/character-escaping/character_escaping.css | 0/1 | 16.56% |
 | css/color/color-adjuster.css | 0/1 | 96.77% |
 | css/comments/15948.css | 0/1 | 16.67% |
 | css/comments/17479.css | 0/1 | 46.51% |
-| css/comments/at-rules.css | 0/1 | 39.44% |
+| css/comments/at-rules.css | 0/1 | 40.38% |
 | css/comments/custom-properties.css | 0/1 | 53.85% |
 | css/comments/declaration.css | 0/1 | 60.12% |
 | css/comments/selectors.css | 0/1 | 58.22% |
@@ -53,7 +50,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | css/indent/indent.css | 0/1 | 78.26% |
 | css/inline-url/inline_url.css | 0/1 | 91.84% |
 | css/modules/modules.css | 0/1 | 99.20% |
-| css/numbers/numbers.css | 0/1 | 34.67% |
+| css/numbers/numbers.css | 0/1 | 37.33% |
 | css/parens/empty-lines.css | 0/1 | 31.58% |
 | css/parens/parens.css | 0/1 | 54.25% |
 | css/postcss-8-improment/empty-props.css | 0/1 | 50.00% |
@@ -65,11 +62,8 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | css/quotes/quotes.css | 0/2 | 74.59% |
 | css/selector-list/selectors.css | 0/1 | 76.15% |
 | css/stylefmt-repo/at-media/at-media.css | 0/1 | 95.24% |
-| css/stylefmt-repo/cssnext-example/cssnext-example.css | 0/1 | 96.67% |
-| css/stylefmt-repo/custom-media-queries/custom-media-queries.css | 0/1 | 70.59% |
 | css/stylefmt-repo/ie-hacks/ie-hacks.css | 0/1 | 43.48% |
 | css/stylefmt-repo/important/important.css | 0/1 | 66.67% |
-| css/stylefmt-repo/media-queries-ranges/media-queries-ranges.css | 0/1 | 90.91% |
 | css/stylefmt-repo/nested-mixin/nested-mixin.css | 0/1 | 88.00% |
 | css/stylefmt-repo/nested-mixin-2/nested-mixin-2.css | 0/1 | 25.00% |
 | css/trailing-comma/var-func.css | 0/1 | 57.14% |

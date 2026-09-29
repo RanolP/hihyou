@@ -83,6 +83,13 @@ const edgeCases: [string, string][] = [
     "@media screen and (-webkit-min-device-pixel-ratio:2),(min-resolution:192dpi){a{b:c}}",
   ],
   ["media-range", "@media (min-width:768px) and (max-width:991.98px){a{b:c}}"],
+  // `@MEDIA` parsed as a generic at-rule, whose parameters kept their source text.
+  ["uppercase-media", "@MEDIA screen  and (min-width :1px){a{b:c}}"],
+  // `@custom-media` and a range feature were parse errors, printed as raw source.
+  [
+    "custom-media",
+    "@custom-media  --a ( min-width:1PX )  and (  400px<width  <= 700px ) ;@custom-media --b(width>=1px),print;",
+  ],
   ["supports", "@supports not (display:grid){a{b:c}}"],
   [
     "keyframes",
@@ -230,13 +237,6 @@ const divergences: [string, string, Partial<CssOptions>, string][] = [
     "@keyframes x{FROM{a:b}}",
     {},
     "@keyframes x{FROM{a:b}}\n",
-  ],
-  // `@MEDIA` parses as a generic at-rule, whose parameters keep their source text.
-  [
-    "uppercase-media",
-    "@MEDIA (min-width:1px){a{b:c}}",
-    {},
-    "@media (min-width:1px) {\n  a {\n    b: c;\n  }\n}\n",
   ],
   // The core ends every file with a newline; prettier prints an empty file as nothing.
   ["empty-file", "", {}, "\n"],
