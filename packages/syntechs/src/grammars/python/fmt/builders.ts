@@ -215,7 +215,7 @@ export class Fmt {
     writeIfBroken(g, () => sink.sToken(anchor, ")", true));
   }
 
-  /** Ruff's `empty_parenthesized`. */
+  /** Ruff's `empty_parenthesized`: with no own-line comment, `soft_block_indent` of nothing prints nothing, so `()` never breaks. */
   writeEmptyParenthesized(
     left: () => void,
     dangling: readonly Comment[],
@@ -227,12 +227,14 @@ export class Fmt {
     sink.open(sink.GROUP);
     left();
     this.writeTrailing(eol);
-    if (eol.length > 0 && own.length > 0) sink.sLine(sink.HARD | sink.COLLAPSE);
-    sink.open(sink.INDENT);
-    sink.sLine(sink.SOFT | sink.COLLAPSE);
-    this.writeDangling(own);
-    sink.close();
-    sink.sLine(sink.SOFT | sink.COLLAPSE);
+    if (eol.length > 0) sink.sLine(sink.HARD | sink.COLLAPSE);
+    if (own.length > 0) {
+      sink.open(sink.INDENT);
+      sink.sLine(sink.SOFT | sink.COLLAPSE);
+      this.writeDangling(own);
+      sink.close();
+      sink.sLine(sink.SOFT | sink.COLLAPSE);
+    }
     right();
     sink.close();
   }

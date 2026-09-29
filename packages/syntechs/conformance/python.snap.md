@@ -1,4 +1,4 @@
-python compatibility: 263/327 (80.43%), 25 refused (ok:false), 49 excluded
+python compatibility: 272/327 (83.18%), 24 refused (ok:false), 49 excluded
 
 Fixtures: ruff 0.16.8 crates/ruff_python_formatter/resources/test/fixtures/{black,ruff} (recursive), every option set of each `.options.json`, expected output from tests/snapshots (black cases without a snapshot: their `.expect` file). Options are passed by their ruff.toml names.
 
@@ -11,19 +11,14 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | black/cases/attribute_access_on_number_literals.py | 0/1 | 90.91% |
 | black/cases/comments_in_blocks.py | 0/1 | 98.68% |
 | black/cases/comments_non_breaking_space.py | 0/1 | 86.96% |
-| black/cases/context_managers_38.py | 0/1 | 84.21% |
-| black/cases/context_managers_autodetect_38.py | 0/1 | 92.31% |
 | black/cases/expression.py | 0/1 | 54.95% |
 | black/cases/fmtskip10.py | 0/1 | 94.12% |
 | black/cases/import_comments.py | 0/1 | 84.44% |
 | black/cases/pep_750.py | 0/1 | 90.67% |
-| black/cases/power_op_newline.py | 0/1 | 76.92% |
-| black/cases/preview_cantfit.py | 0/1 | 96.97% |
 | black/cases/preview_hug_parens_with_braces_and_square_brackets.py | 0/1 | 48.53% |
 | black/cases/preview_hug_parens_with_braces_and_square_brackets_no_ll1.py | 0/1 | 37.61% |
 | black/cases/preview_import_line_collapse.py | 0/1 | 99.43% |
 | black/cases/preview_long_dict_values.py | 0/1 | 90.30% |
-| black/cases/preview_wrap_comprehension_in.py | 0/1 | 95.77% |
 | black/cases/remove_with_brackets.py | 0/1 | 98.68% |
 | ruff/docstring_code_examples.py | 4/10 | 94.91% |
 | ruff/docstring_code_examples_dynamic_line_width.py | 0/4 | 57.97% |
@@ -31,16 +26,13 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ruff/empty_now_newline.py | 0/1 | 0.00% |
 | ruff/empty_whitespace.py | 0/1 | 0.00% |
 | ruff/expression/binary_implicit_string.py | 0/1 | 98.52% |
-| ruff/expression/call.py | 0/1 | 98.53% |
+| ruff/expression/call.py | 0/1 | 99.08% |
 | ruff/expression/compare.py | 0/1 | 98.68% |
 | ruff/expression/join_implicit_concatenated_string_assignment.py | 0/1 | 97.11% |
 | ruff/expression/join_implicit_concatenated_string_preserve.py | 0/2 | 88.64% |
 | ruff/expression/slice.py | 0/1 | 94.07% |
-| ruff/fluent.py | 0/1 | 72.22% |
 | ruff/fmt_on_off/indent.py | 0/3 | 65.49% |
-| ruff/parentheses/call_chains.py | 0/1 | 99.38% |
 | ruff/skip_magic_trailing_comma.py | 0/2 | 95.76% |
-| ruff/statement/assignment_split_value_first.py | 0/1 | 99.35% |
 | ruff/statement/function.py | 0/1 | 99.60% |
 | ruff/statement/lazy_import.py | 0/1 | 68.97% |
 | ruff/statement/try.py | 1/2 | 99.58% |
@@ -55,7 +47,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
 | black/cases/backslash_before_indent.py | 1/1 | 84.21% | formatter-error: backslash continuation before a body at 14 |
-| black/cases/cantfit.py | 1/1 | 97.30% | check: input "(" at 1689 is missing from the output |
 | black/cases/comment_after_escaped_newline.py | 1/1 | 47.06% | formatter-error: backslash continuation before a body at 10 |
 | black/cases/pattern_matching_extras.py | 1/1 | 100.00% | formatter-error: unsupported pattern keyword_pattern at 1519 |
 | black/cases/pattern_matching_style.py | 1/1 | 46.81% | formatter-error: comment in a pattern at 474 |
@@ -63,7 +54,7 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | black/cases/pep_701.py | 1/1 | 93.33% | check: input "f\"{'\\''}\"" at 2276 is output as "f\"{\"'\"}\"" at 2230, which means "0:S\u0000{\"\"\"}\u0000", not "0:S |
 | black/cases/preview_long_strings__regression.py | 1/1 | 96.81% | check: input "F\"{F'{humanize_number(pos)}.': <{pound_len+2}} \"\n    F\"{balance: <{bal_len + 5}} \"\n    F\"<<{author. |
 | black/cases/remove_except_types_parens.py | 1/1 | 95.12% | check: input "," at 721 is output as ":" at 713, which means ":", not "," |
-| black/cases/remove_for_brackets.py | 1/1 | 90.20% | check: input "(" at 672 is output as "k" at 693, which means "k", not "(" |
+| black/cases/remove_for_brackets.py | 1/1 | 96.00% | check: input "(" at 672 is output as "k" at 692, which means "k", not "(" |
 | black/cases/remove_parens_from_lhs.py | 1/1 | 100.00% | formatter-error: unsupported pattern: list_splat_pattern at 203 |
 | black/cases/type_param_defaults.py | 1/1 | 29.03% | formatter-error: parse error: ERROR at 7 |
 | black/cases/type_params.py | 1/1 | 20.90% | formatter-error: unsupported type parameter lambda at 542 |

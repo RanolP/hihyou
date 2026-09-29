@@ -87,6 +87,34 @@ function namedCount(tree: Tree, n: number): number {
   return named;
 }
 
+/**
+ * Whether `t` is an empty tuple among a `del`'s targets, which deletes nothing: ruff prints `del (),` as `del ()`,
+ * so its parentheses and the comma after it may come and go.
+ */
+function emptyDelTarget(tree: Tree, t: number): boolean {
+  if (t === NO_NODE || tree.kindName(t) !== "tuple" || namedCount(tree, t) !== 0) return false;
+  for (let p = tree.parent(t); p !== NO_NODE; p = tree.parent(p)) {
+    const k = tree.kindName(p);
+    if (k === "delete_statement") return true;
+    if (k !== "tuple" && k !== "list" && k !== "expression_list" && k !== "parenthesized_expression")
+      return false;
+  }
+  return false;
+}
+
+/** The sibling before `n` that is no comment, or NO_NODE. */
+function previousSibling(tree: Tree, n: number): number {
+  const parent = tree.parent(n);
+  if (parent === NO_NODE) return NO_NODE;
+  let before = NO_NODE;
+  for (let i = 0, count = tree.count(parent); i < count; i++) {
+    const c = tree.child(parent, i);
+    if (c === n) return before;
+    if (tree.kindName(c) !== "comment") before = c;
+  }
+  return NO_NODE;
+}
+
 /** Whether `t`, a `tuple_pattern`, is in a case's pattern, rather than an assignment or `for` target. */
 function inCase(tree: Tree, t: number): boolean {
   const parent = tree.parent(t);
@@ -240,6 +268,7 @@ function optional(tree: Tree, l: Lexeme, next: Lexeme | undefined): boolean {
     case ")":
       if (parent === NO_NODE) return false;
       if (parentKind === "parenthesized_expression") return true;
+      if (emptyDelTarget(tree, parent)) return true;
       if (parentKind === "tuple_pattern" && inCase(tree, parent))
         return optionalCaseParens(tree, parent);
       if (parentKind === "tuple" || parentKind === "tuple_pattern") {
@@ -267,6 +296,7 @@ function optional(tree: Tree, l: Lexeme, next: Lexeme | undefined): boolean {
       }
       return false;
     case ",": {
+      if (emptyDelTarget(tree, previousSibling(tree, n))) return true;
       // A bare tuple's trailing comma (`for x in 1, 2,:`), which ruff drops or keeps inside added parentheses.
       if (
         (parentKind === "expression_list" || parentKind === "pattern_list") &&
