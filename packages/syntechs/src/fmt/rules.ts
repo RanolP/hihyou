@@ -1,3 +1,4 @@
+import type { Tree } from "../core/index.js";
 import type { Language as Parser } from "../core/language.js";
 import { identity, type Normalize } from "./check.js";
 import {
@@ -41,6 +42,11 @@ export interface Language<O = unknown> {
   readonly placeComments: PlaceComments<O>;
   /** How `check` spells a comment before comparing; see `LanguageSpec`. */
   readonly comment: ((text: string) => string | readonly string[]) | undefined;
+  /**
+   * Whether `check` leaves comment `node` out on both sides, since the formatter may drop it with the code it
+   * belongs to: ktfmt drops an unused import with its trailing comment.
+   */
+  readonly ignoresComment?: (tree: Tree, node: number) => boolean;
   /** The rules that lay the tree out on the linear stream (`stream.ts`), which `format` prints by. */
   readonly stream: StreamRules<O>;
 }

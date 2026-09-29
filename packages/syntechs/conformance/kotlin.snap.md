@@ -1,4 +1,4 @@
-kotlin compatibility: 674/753 (89.51%), 5 refused (ok:false), 11 excluded
+kotlin compatibility: 680/753 (90.31%), 5 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -33,13 +33,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/function/trailingCommasInDefinitions.kt | 0/1 | 90.57% |
 | ktfmt/format/if/blocks.kt | 0/1 | 21.05% |
 | ktfmt/format/if/comment.kt | 0/1 | 61.54% |
-| ktfmt/format/import/importList.kt | 0/1 | 37.50% |
-| ktfmt/format/import/importsInKDoc.kt | 0/1 | 94.55% |
-| ktfmt/format/import/importsWithTrailingExprs.kt | 0/1 | 66.67% |
-| ktfmt/format/import/importsWithTrailingExprs2.kt | 0/1 | 66.67% |
-| ktfmt/format/import/importsWithTrailingExprs3.kt | 0/1 | 66.67% |
-| ktfmt/format/import/keepUnusedImports.kt | 0/1 | 85.71% |
-| ktfmt/format/import/usedImportsFromSamePackage.kt | 0/1 | 94.12% |
+| ktfmt/format/import/importList.kt | 0/1 | 62.50% |
 | ktfmt/format/lambda/lambdaArg.kt | 0/1 | 72.22% |
 | ktfmt/format/lambda/lambdaWithFullType.kt | 0/1 | 44.44% |
 | ktfmt/format/misc/commentStability.kt | 0/1 | 70.59% |

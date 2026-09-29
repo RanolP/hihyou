@@ -79,12 +79,18 @@ const operators = new Set(
   ).split(" "),
 );
 
-/** The names a KDoc comment refers to: its `[links]` and the subject of `@see`, `@throws` and the like. */
+/**
+ * The names a KDoc comment refers to: the first segment of its `[links]` and of the subject of `@see`, `@throws`
+ * and the like. ktfmt counts neither `[R.layout.test]`'s later segments nor `@param`'s and `@property`'s subject,
+ * which names a parameter, not an import.
+ */
 function kdocNames(text: string): string[] {
   if (!text.startsWith("/**")) return [];
   const names: string[] = [];
-  for (const m of text.matchAll(/\[([\w.`]+)\]|@(?:see|throws|exception|sample|param|property)\s+([\w.`]+)/g))
-    for (const part of (m[1] ?? m[2] ?? "").split(".")) if (part) names.push(part.replaceAll("`", ""));
+  for (const m of text.matchAll(/\[([\w.`]+)\]|@(?:see|throws|exception|sample)\s+([\w.`]+)/g)) {
+    const first = (m[1] ?? m[2] ?? "").split(".")[0];
+    if (first) names.push(first.replaceAll("`", ""));
+  }
   return names;
 }
 
@@ -114,7 +120,47 @@ const imports: ImportRule<KotlinOptions> = {
   skip: new Set(["import_list", "package_header"]),
   commentNames: kdocNames,
   implicit: (name) => operators.has(name) || /^component\d+$/.test(name),
+  // ktfmt drops `import com.example.Sample` in `package com.example` (and `import Foo` in the root package), used
+  // or not, since the name is in scope already; an alias, a wildcard, and an import whose name another import
+  // binds too (it picks the overload) stay.
+  redundant: (tree, imp) => {
+    const path = childOf(tree, imp, "identifier");
+    if (path === -1 || childOf(tree, imp, "import_alias") !== -1 || childOf(tree, imp, "wildcard_import") !== -1)
+      return false;
+    const header = childOf(tree, tree.root, "package_header");
+    const pkg = header === -1 ? -1 : childOf(tree, header, "identifier");
+    // ktfmt's FqName splits an escaped segment at its dots too.
+    const name = spelled(tree, path).replaceAll("`", "");
+    const parent = name.slice(0, Math.max(name.lastIndexOf("."), 0));
+    if (parent !== (pkg === -1 ? "" : spelled(tree, pkg).replaceAll("`", ""))) return false;
+    const bound = imports.binds(tree, imp);
+    for (let i = 0; i < tree.count(tree.root); i++) {
+      const list = tree.child(tree.root, i);
+      if (tree.kindName(list) !== "import_list") continue;
+      for (let j = 0; j < tree.count(list); j++) {
+        const other = tree.child(list, j);
+        if (other !== imp && tree.kindName(other) === "import_header" && imports.binds(tree, other) === bound)
+          return false;
+      }
+    }
+    return true;
+  },
 };
+
+/**
+ * Whether `comment` ends an import's line (`import a.B // note`): it trails the import, so it moves with the
+ * import as the imports sort and goes with it when ktfmt drops the import. A comment on a line of its own (the
+ * next import's, or the file's KDoc, which the parser may also put inside the import) stays where it stands.
+ */
+function endsImport(tree: FormatTree, comment: number): boolean {
+  const header = tree.parent(comment);
+  if (tree.kindName(header) !== "import_header" || tree.lf(comment) > 0) return false;
+  for (let i = tree.count(header) - 1; ; i--) {
+    const kid = tree.child(header, i);
+    if (kid === comment) return true;
+    if (!tree.kindName(kid).endsWith("comment")) return false;
+  }
+}
 
 /**
  * A scoping function call, which ktfmt (its `isLambdaOrScopingFunction`) keeps on the line of the `=` before it:
@@ -319,6 +365,10 @@ export const kotlin: Language<KotlinOptions> = {
   ...defineLanguage(grammar, {
     parser: language,
     lineComments: { line_comment: "//" },
+    // The parser puts an import's comment inside its import_header, where at the list's first import the core
+    // would hoist it to lead the whole list.
+    handleComment: ({ tree, comment }) =>
+      endsImport(tree, comment) ? { node: tree.parent(comment), as: "trailing" } : undefined,
     defaults,
     settings: prettierSettings,
     normalize,
@@ -330,5 +380,6 @@ export const kotlin: Language<KotlinOptions> = {
     hiddenTokens: true,
     atoms: ["string_literal", "character_literal"],
   }),
+  ignoresComment: endsImport,
   stream: withChains(gen.kotlin({ ...customs, imports, enumBody })),
 };

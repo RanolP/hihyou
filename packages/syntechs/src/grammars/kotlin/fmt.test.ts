@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import { parseTree } from "../../core/index.js";
+import { check } from "../../fmt/check.js";
 import { format } from "../../fmt/format.js";
 import { kotlin } from "./fmt.js";
 import { language } from "./index.js";
@@ -63,6 +64,18 @@ test("by default the imports are sorted, deduplicated and pruned of unused ones,
 test("pruning keeps imports used only by KDoc, backticked names or operator conventions", () => {
   const used = "import a.Bag\nimport a.`when`\nimport b.assign\n\n/** Fits a [Bag]. */\nfun f() = `when`()\n";
   expect(run(used, false)).toBe(used);
+});
+
+// A regression here detaches an import's trailing comment from it (it hoists above the whole list, or stays when
+// the import is dropped), or keeps an import of the file's own package, as 6 ktfmt import fixtures caught.
+test("an import's trailing comment moves and goes with it, and an own-package import is dropped", () => {
+  const input =
+    "package p\n\nimport b.Used /* why */\nimport a.Unused // note\nimport p.Here\nimport a.Other\nfun f(x: Used, y: Other) = Here\n";
+  expect(run(input, false)).toBe(
+    "package p\n\nimport a.Other\nimport b.Used /* why */\n\nfun f(x: Used, y: Other) = Here\n",
+  );
+  const out = format(parseTree(kotlin.parser, input), kotlin, {});
+  expect(out.ok && check(kotlin, input, out.text)).toBeUndefined();
 });
 
 // A regression here puts back the blank line ktfmt drops between prose ending in `:` and the code block it

@@ -209,6 +209,8 @@ export interface ImportRule<O = unknown> {
   commentNames?(text: string): Iterable<string>;
   /** Whether `name` counts as used though no identifier spells it, like an operator convention's. */
   implicit?(name: string): boolean;
+  /** Whether `imp` is dropped however it is used, like Kotlin's import of a name from the file's own package. */
+  redundant?(tree: FormatTree, imp: number): boolean;
 }
 
 /** A run of import lists printed as one: its imports in print order, between the run's outer comments. */
@@ -254,7 +256,8 @@ function leafTexts(tree: FormatTree, node: number, out: string[] = []): string[]
  * `items` with each run of consecutive `kind` items (import lists) folded into its first, which `blocks` maps to
  * the run's imports: sorted by `rule.key`, and, unless the `keepImports` option is set, without exact duplicates
  * or unused imports; a run left with none is dropped. A run with comments between its lists, or a broken list,
- * stays as written; an import with a comment of its own is never dropped.
+ * stays as written. An import with a comment before it is never dropped; one with only a comment after it goes
+ * with that comment, as ktfmt drops an unused `import a.B // note`.
  */
 export function importBlocks<O>(
   ctx: StreamCtx<O>,
@@ -301,10 +304,11 @@ export function importBlocks<O>(
       used ??= usedNames(ctx, rule);
       const seen = new Set<string>();
       imports = imports.filter((imp) => {
-        if (commented(imp)) return true;
+        if (ctx.leadingComments(imp).length > 0) return true;
         const text = leafTexts(tree, imp).join(" ");
         if (seen.has(text)) return false;
         seen.add(text);
+        if (rule.redundant?.(tree, imp) === true) return false;
         const name = rule.binds(tree, imp);
         return name === undefined || (used as Set<string>).has(name) || rule.implicit?.(name) === true;
       });
