@@ -10,6 +10,7 @@
     { "path": "packages/cli" },
     { "path": "packages/ui" },
     { "path": "packages/gui" },
-    { "path": "packages/github" }
+    { "path": "packages/github" },
+    { "path": "packages/website" }
   ]
 }
