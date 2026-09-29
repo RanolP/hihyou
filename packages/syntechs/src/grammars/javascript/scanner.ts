@@ -102,13 +102,11 @@ function scanAutomaticSemicolon(
     if (la(lexer) === 47) {
       const result = scanWhitespaceAndComments(lexer, scanned, false);
       if (result === REJECT) return false;
-      if (
-        result === ACCEPT &&
-        commentCondition &&
-        la(lexer) !== 44 &&
-        la(lexer) !== 61
-      )
-        return true;
+      if (result === ACCEPT && commentCondition) {
+        // A block comment spanning lines may still be followed by `=` on a later line.
+        while (iswspace(la(lexer))) lexer.advance(true);
+        if (la(lexer) !== 44 && la(lexer) !== 61) return true;
+      }
     }
     if (la(lexer) === 125) return true;
     if (lexer.isAtIncludedRangeStart()) return true;

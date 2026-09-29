@@ -1,4 +1,4 @@
-js compatibility: 689/804 (85.70%), 23 refused (ok:false), 304 excluded
+js compatibility: 710/804 (88.31%), 21 refused (ok:false), 304 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -39,7 +39,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/comments/trailing-jsdocs.js | 0/2 | 76.00% |
 | js/comments/variable-declarator.js | 0/2 | 95.10% |
 | js/comments-closure-typecast/iife.js | 0/1 | 76.92% |
-| js/comments/assignment/variable-declarator.js | 0/1 | 15.38% |
 | js/comments/in-list/dangling-comment-in-list.js | 0/1 | 95.95% |
 | js/comments/tagged-template-literal/11662.js | 0/1 | 80.00% |
 | js/comments/while-like/if.js | 0/1 | 98.00% |
@@ -47,8 +46,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/comments/while-like/while.js | 0/1 | 97.62% |
 | js/comments/while-like/with.js | 0/1 | 98.00% |
 | js/conditional/comments.js | 0/2 | 77.26% |
-| js/decorators/member-expression.js | 0/1 | 90.91% |
-| js/decorators/parens.js | 0/1 | 75.00% |
 | js/decorators/class-expression/class-expression.js | 0/2 | 55.56% |
 | js/decorators/class-expression/member-expression.js | 0/2 | 0.00% |
 | js/decorators/class-expression/super-class.js | 0/2 | 14.29% |
@@ -58,23 +55,8 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/embeded/indention/indention.js | 0/1 | 63.27% |
 | js/empty-paren-comment/empty_paren_comment.js | 0/1 | 91.43% |
 | js/explicit-resource-management/for-await-using-of-comments.js | 0/1 | 0.00% |
-| js/explicit-resource-management/using-declarations.js | 0/1 | 87.50% |
-| js/explicit-resource-management/valid-await-expr-using-in.js | 0/1 | 66.67% |
-| js/explicit-resource-management/valid-await-expr-using-instanceof.js | 0/1 | 66.67% |
-| js/explicit-resource-management/valid-await-expr-using.js | 0/1 | 50.00% |
-| js/explicit-resource-management/valid-await-using-asi-assignment.js | 0/1 | 57.14% |
-| js/explicit-resource-management/valid-await-using-binding-escaped.js | 0/1 | 66.67% |
-| js/explicit-resource-management/valid-module-block-top-level-await-using-binding.js | 0/1 | 28.57% |
-| js/explicit-resource-management/valid-module-block-top-level-using-binding.js | 0/1 | 28.57% |
-| js/explicit-resource-management/valid-using-as-identifier-computed-member.js | 0/1 | 0.00% |
-| js/explicit-resource-management/valid-using-as-identifier-expression-statement.js | 0/1 | 0.00% |
-| js/explicit-resource-management/valid-using-as-identifier-for-in.js | 0/1 | 75.00% |
-| js/explicit-resource-management/valid-using-as-identifier-for-init.js | 0/1 | 0.00% |
-| js/explicit-resource-management/valid-using-as-identifier-in.js | 0/1 | 66.67% |
-| js/explicit-resource-management/valid-using-binding-escaped.js | 0/1 | 66.67% |
 | js/export/blank-line-between-specifiers.js | 0/2 | 95.00% |
 | js/export-default/function_tostring.js | 0/1 | 0.00% |
-| js/export-star/export-star-as-reserved-word.js | 0/1 | 50.00% |
 | js/for/for-in-with-initializer.js | 0/1 | 38.71% |
 | js/function/iife.js | 0/1 | 22.68% |
 | js/function/issue-12967.js | 0/1 | 0.00% |
@@ -103,7 +85,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/template-literals/indention.js | 0/1 | 29.75% |
 | js/test-declarations/jest-each-template-string.js | 0/2 | 27.78% |
 | js/test-declarations/jest-each.js | 0/2 | 63.24% |
-| jsx/jsx/html_escape.js | 2/4 | 66.67% |
 
 # Refused
 
@@ -122,10 +103,8 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | js/decorators/comments.js | 1/1 | 93.94% | check: output comment "// B export // C" matches no input comment |
 | js/decorators-export/after_export.js | 1/1 | 76.92% | check: input "export" at 0 is output as "export" at 0, which means "export@\|0/2", not "export@\|-1/2" |
 | js/directives/issue-7346.js | 1/1 | 100.00% | check: input "'bar'" at 78 is output as "\"bar\"" at 79, which means "str:bar@\|0/7", not "str:bar@\|0/6" |
-| js/explicit-resource-management/valid-await-using-comments.js | 1/1 | 70.97% | check: input comment "/*8*/" is missing from the output |
+| js/explicit-resource-management/valid-await-using-comments.js | 1/1 | 82.35% | check: input comment "/*8*/" is missing from the output |
 | js/for-of/comments.js | 1/1 | 100.00% | check: output comment "//2b //2c" matches no input comment |
-| js/identifier/for-of/let.js | 1/1 | 69.23% | check: input "let" at 107 is output as "let" at 104, which means "let@kind\|-1/10", not "let@object\|0/11" |
-| js/identifier/parentheses/let.js | 2/2 | 88.18% | check: the output has a syntax error at 43, which the input has not |
 | js/import/comments.js | 2/2 | 63.41% | check: output comment "//comment2 //comment1" matches no input comment |
 | js/import/empty-import/empty-import.js | 1/1 | 64.86% | check: output comment "// comment } from \"a\";" matches no input comment |
 | js/logical-expressions/in-unary-expression.js | 1/1 | 71.62% | check: input "!" at 107 is output as "!" at 107, which means "!@operator\|-1/5", not "!@operator\|-1/4" |

@@ -160,6 +160,8 @@ function valueForm(
     // Prettier sorts a regex's flags.
     case "regex_flags":
       return `flags:${[...t].sort().join("")}`;
+    case "identifier":
+      return cook(t);
     default:
       return t;
   }

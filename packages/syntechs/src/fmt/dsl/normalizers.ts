@@ -238,6 +238,7 @@ export const normalizers = {
   quoteKey,
   numberKey,
   rawNumberKey,
+  cook,
 } satisfies Record<string, (t: string, o: never) => string>;
 
 export type NormalizerName = keyof typeof normalizers;

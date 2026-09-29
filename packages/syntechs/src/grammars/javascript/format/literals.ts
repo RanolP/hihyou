@@ -31,6 +31,8 @@ const directive = ancestor("expression_statement", {
 });
 
 export const literals = {
+  // Babel's name for `\u0061b` is `ab`, which prettier prints.
+  identifier: () => text("cook"),
   number: () => text("printNumber"),
   regex: ($) => ["/", $.pattern, "/", $.flags.andThen((f) => f)],
   regex_flags: () => text("sortRegexFlags"),
