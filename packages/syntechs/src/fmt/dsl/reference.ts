@@ -438,7 +438,7 @@ export function flatten<O>(
               fill: layout.fill === true,
             });
             const keepLines = x.item.t === "words" && holds(x.item.keepLines);
-            for (const { items, sep } of run.entries) {
+            for (const [k, { items, sep }] of run.entries.entries()) {
               const breaks = items.map((c, i) => i > 0 && breaksBetween(t, items[i - 1] as number, c));
               out.push({ e: "entry", item: x.item.t, count: items.length, grid: keepLines && breaks.includes(true) });
               items.forEach((c, i) => {
@@ -453,7 +453,9 @@ export function flatten<O>(
                 child(c);
                 if (wrapped) out.push({ e: "end" });
               });
-              out.push({ e: "sep", tok: sep });
+              if (x.trailing && k === run.entries.length - 1)
+                out.push({ e: "ifBroken", after: items[items.length - 1] as number, text: x.sep });
+              else out.push({ e: "sep", tok: sep });
               out.push({ e: "end" });
             }
             out.push({ e: "end" });
@@ -744,14 +746,14 @@ export function wrap<O>(
     const spans: [number, number][] = [];
     const joints: Extract<Entry, { e: "joint" }>[] = [];
     let start = from + 1;
-    let sep = -1;
+    let sep: Extract<Entry, { e: "sep" | "ifBroken" }> | undefined;
     for (let i = from + 1; i < to; i = next(i)) {
       const y = seq[i] as Entry;
-      if (y.e === "joint" || y.e === "sep") {
+      if (y.e === "joint" || y.e === "sep" || y.e === "ifBroken") {
         spans.push([start, i]);
         start = i + 1;
         if (y.e === "joint") joints.push(y);
-        else sep = y.tok;
+        else sep = y;
       }
     }
     const item = (k: number) => {
@@ -793,7 +795,12 @@ export function wrap<O>(
       close();
       close();
     }
-    if (sep !== -1) sToken(sep, tree.text(sep));
+    if (sep?.e === "sep" && sep.tok !== -1) sToken(sep.tok, tree.text(sep.tok));
+    else if (sep?.e === "ifBroken") {
+      open(IF_BROKEN, -1);
+      sToken(sep.after, sep.text, true);
+      close();
+    }
   };
 
   /** The handle of each named group opened so far. */

@@ -127,7 +127,7 @@ export const kotlin = format({
     function_declaration: () => spaced({ tightBefore: [":"] }),
     // A parameter's modifiers and default are its siblings, so an entry is the run between two commas.
     function_value_parameters: () =>
-      grpParen(splitOn(",", { except: ["(", ")"], item: "space", layout: { between: "line" } })),
+      grpParen(splitOn(",", { except: ["(", ")"], item: "space", trailing: true, layout: { between: "line" } })),
     parameter: () => spaced({ tightBefore: [":"] }),
     parameter_modifiers: () => inOrder(space),
     parameter_modifier: () => inOrder(),
@@ -228,9 +228,9 @@ export const kotlin = format({
     class_body: { blankLines: "force" },
     statements: { blankLines: "force" },
     enum_class_body: { expand: "always" },
-    value_arguments: { breakWhen: spansLines },
-    function_value_parameters: { breakWhen: spansLines },
-    primary_constructor: { breakWhen: spansLines },
+    value_arguments: { breakWhen: when("writtenBroken") },
+    function_value_parameters: { breakWhen: when("writtenBroken") },
+    primary_constructor: { breakWhen: when("writtenBroken") },
   },
   unknown: "bail",
   docComment: kdoc,

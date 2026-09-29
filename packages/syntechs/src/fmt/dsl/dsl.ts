@@ -261,6 +261,8 @@ export interface SplitOn {
   readonly item: SplitItem;
   /** Each named item where this holds of it prints in a group and an indent of its own. */
   readonly wrapItem: Cond;
+  /** The last entry's separator: the source's is dropped, and one prints only while the enclosing group breaks. */
+  readonly trailing: boolean;
   readonly layout: SplitLayout;
 }
 
@@ -854,13 +856,15 @@ export interface SplitOnOf<K, C> {
   readonly trail?: readonly K[];
   readonly item?: "adjacent" | "space" | { readonly t: "words"; readonly keepLines?: C };
   readonly wrapItem?: C;
+  readonly trailing?: boolean;
   readonly layout?: SplitLayoutOf<C>;
 }
 
 /**
  * The node's children but comments and `except` kinds, cut into entries at each top-level `sep` token; each entry
  * prints its items as `item` says (`adjacent` by default), each named item where `wrapItem` holds in a group and an
- * indent of its own, then its separator. `layout` places the entries; with no flag set it prints them one after
+ * indent of its own, then its separator; with `trailing`, the last entry's separator prints only while the enclosing
+ * group breaks, as `sepBy`'s does. `layout` places the entries; with no flag set it prints them one after
  * another, so a lone entry prints bare. Then each child of a `trail` kind, after a space. For a list whose items are
  * runs of children rather than single ones, like CSS's comma-separated values, selectors and queries.
  */
@@ -878,6 +882,7 @@ export const splitOn = <const S extends string, const K extends string = never, 
     trail: o.trail ?? [],
     item: typeof item === "string" ? { t: item } : { t: "words", keepLines: plain(item.keepLines) },
     wrapItem: plain(o.wrapItem),
+    trailing: o.trailing ?? false,
     layout: layout(o.layout ?? {}),
   });
 };

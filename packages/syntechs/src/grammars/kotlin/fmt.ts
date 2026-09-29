@@ -113,12 +113,26 @@ const imports: ImportRule<KotlinOptions> = {
   implicit: (name) => operators.has(name) || /^component\d+$/.test(name),
 };
 
+/** The items of the lists `writtenBroken` asks about: call arguments, and function and constructor parameters. */
+const listed = new Set(["value_argument", "parameter", "class_parameter"]);
+
 /** The rules `when` names in format.ts. */
 export const customs = {
   /** ktfmt puts each annotation of a declaration on its own line once there are two or more and one has arguments. */
   annotationsBreak: (node, ctx) => {
     const { n, args } = annotationCount(node, ctx.tree);
     return n > 1 && args;
+  },
+  /**
+   * ktfmt (its trailing-comma pass) breaks a parenthesized list of two or more items that the source writes across
+   * lines, and gives it a trailing comma; a single item never forces the break, nor does a trailing comma.
+   */
+  writtenBroken: (node, ctx) => {
+    const t = ctx.tree;
+    if (!t.text(node).includes("\n")) return false;
+    let items = 0;
+    for (let i = 0; i < t.count(node); i++) if (listed.has(t.kindName(t.child(node, i)))) items++;
+    return items > 1;
   },
 } satisfies Record<string, PredicateRule<KotlinOptions>>;
 

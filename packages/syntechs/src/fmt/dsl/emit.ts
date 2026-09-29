@@ -384,7 +384,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
     const keep = x.item.t === "words" && x.item.keepLines !== false ? name("keep") : undefined;
     if (keep !== undefined && x.item.t === "words")
       line(`const ${keep} = ${cond(x.item.keepLines, hasFields, "node", run)};`);
-    block(`const ${printEntry} = (e: SplitEntry) =>`, () => {
+    block(`const ${printEntry} = (e: SplitEntry${x.trailing ? ", last: boolean" : ""}) =>`, () => {
       line("const items = e.items;");
       if (x.item.t === "adjacent") line(`for (const c of items) ${printItem}(c);`);
       else if (x.item.t === "space")
@@ -430,7 +430,17 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
           for (let k = 0; k < 4; k++) line("close();");
         });
       }
-      line("if (e.sep !== -1) sToken(e.sep, t.text(e.sep));");
+      if (x.trailing)
+        block(
+          "if (last)",
+          () => {
+            line("open(IF_BROKEN, -1);");
+            line(`sToken(e.items[e.items.length - 1] as number, ${str(x.sep)}, true);`);
+            line("close();");
+          },
+          "} else if (e.sep !== -1) sToken(e.sep, t.text(e.sep));",
+        );
+      else line("if (e.sep !== -1) sToken(e.sep, t.text(e.sep));");
     }, "};");
     const place = (l: SplitLayout): void => {
       if ("when" in l) {
@@ -450,7 +460,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
         if (l.between === "line") line("if (i > 0) sLine(0);");
         else if (l.between === "hardline") line("if (i > 0) sHardline();");
         if (l.fill) line("open(FILL_ITEM);");
-        line(`${printEntry}(${run}.entries[i] as SplitEntry);`);
+        line(`${printEntry}(${run}.entries[i] as SplitEntry${x.trailing ? `, i === ${run}.entries.length - 1` : ""});`);
         if (l.fill) line("close();");
       });
       if (l.fill) line("close();");
