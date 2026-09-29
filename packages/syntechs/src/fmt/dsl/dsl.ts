@@ -266,7 +266,10 @@ export interface SplitOn {
 
 /** How one bracket or list frame of a node breaks. */
 export interface FrameWrap {
-  /** Pack the list's items several to a line when every item is one of these kinds (prettier's number arrays). */
+  /**
+   * Pack the list's items several to a line when every item is one of these kinds, or a `+`/`-` sign before one
+   * (prettier's number arrays).
+   */
   readonly packWhenAllOf?: readonly string[];
   /** Break the list when 2+ items are all lists of one kind with 2+ items each (prettier's matrix rule). */
   readonly breakMatrix?: boolean;

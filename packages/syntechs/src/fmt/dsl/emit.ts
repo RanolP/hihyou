@@ -507,7 +507,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
     const fills = !always && (w.packWhenAllOf?.length ?? 0) > 0;
     if (fills)
       line(
-        `const concise = ${its}.length > 1 && ${its}.every((item) => ${JSON.stringify(w.packWhenAllOf)}.includes(t.kindName(item)) && !ctx.trailingComments(item).some((c) => endsLine(ctx, item, c)));`,
+        `const concise = ${its}.length > 1 && ${its}.every((item) => packable(t, item, ${JSON.stringify(w.packWhenAllOf)}) &&!ctx.trailingComments(item).some((c) => endsLine(ctx, item, c)));`,
       );
     line(
       `const listGroup = open(GROUP, -1, ${breaks.length === 0 ? "0" : `${breaks.join(" || ")} ? BROKEN : 0`});`,
@@ -1054,7 +1054,7 @@ export function emit(
       0,
       'import { hasChild } from "../../fmt/dsl/runtime.js";',
     );
-  for (const f of ["allBefore", "prevItem", "lastItem"].filter((f) => parts.some((p) => p.includes(`${f}(`))))
+  for (const f of ["allBefore", "prevItem", "lastItem", "packable"].filter((f) => parts.some((p) => p.includes(`${f}(`))))
     parts.splice(
       parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
       0,

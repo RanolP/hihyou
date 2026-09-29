@@ -7,12 +7,12 @@ import { parseTree, type Tree } from "../core/index.js";
 import { css } from "../grammars/css/fmt.js";
 import { language as cssGrammar } from "../grammars/css/index.js";
 import { jsonLanguageFor } from "../grammars/json/fmt.js";
-import { language as jsonGrammar } from "../grammars/json/index.js";
+import { language as jsonParser } from "../grammars/javascript/index.js";
 import { format } from "./index.js";
 
 const targets = {
   json: {
-    grammar: jsonGrammar,
+    grammar: jsonParser, // prettier reads JSON as a JS expression
     run: (tree: Tree, path: string) => format(tree, jsonLanguageFor(path)),
   },
   css: {

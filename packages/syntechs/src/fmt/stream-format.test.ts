@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseTree } from "../core/index.js";
 import { json } from "../grammars/json/fmt.js";
-import { language as jsonParser } from "../grammars/json/index.js";
+import { language as jsonParser } from "../grammars/javascript/index.js";
 import { format } from "./format.js";
 import type { PrintArgs } from "./rules.js";
 import { closeSpan, openSpan, sJump, sText, sToken } from "./stream.js";

@@ -6,8 +6,8 @@ import { join, resolve } from "node:path";
 import * as cssFormat from "../../grammars/css/format.js";
 import { grammar as cssGrammar } from "../../grammars/css/index.js";
 import * as javascriptFormat from "../../grammars/javascript/format.js";
+import { grammar as javascriptGrammar } from "../../grammars/javascript/index.js";
 import * as jsonFormat from "../../grammars/json/format.js";
-import { grammar as jsonGrammar } from "../../grammars/json/index.js";
 import * as kotlinFormat from "../../grammars/kotlin/format.js";
 import { grammar as kotlinGrammar } from "../../grammars/kotlin/index.js";
 import * as pythonFormat from "../../grammars/python/format.js";
@@ -24,7 +24,8 @@ const FORMATS: Record<
   { specs: Record<string, FormatIR>; grammar: DslGrammar; sink?: string }
 > = {
   css: { specs: cssFormat, grammar: cssGrammar as DslGrammar },
-  json: { specs: jsonFormat, grammar: jsonGrammar as DslGrammar },
+  // Prettier reads JSON as a JS expression, so JSON5's forms parse (see json/format.ts).
+  json: { specs: jsonFormat, grammar: javascriptGrammar as DslGrammar },
   kotlin: { specs: kotlinFormat, grammar: kotlinGrammar as DslGrammar },
   // JS's rules move off the Doc a kind at a time, so they write through a sink that records Docs (sink.ts).
   javascript: { specs: javascriptFormat, grammar: tsxGrammar as DslGrammar, sink: "./sink.js" },

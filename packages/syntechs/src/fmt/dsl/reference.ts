@@ -62,6 +62,7 @@ import {
   prevItem,
   hasChild,
   listItems,
+  packable,
   parentIs,
   type ParensRule,
   type PredicateRule,
@@ -638,7 +639,7 @@ export function wrap<O>(
       const part = parts[i] as (typeof parts)[number];
       for (let j = part.from; j < part.to; j = next(j)) childOrComment(j);
     };
-    const fillKinds = new Set(w.packWhenAllOf);
+    const fillKinds = w.packWhenAllOf ?? [];
     const shouldBreak =
       always ||
       (w.breakWhen !== undefined && evalCond(w.breakWhen, ctx, node, custom, ctx.tree.kindName(node) in grammar.fieldTypes)) ||
@@ -658,7 +659,7 @@ export function wrap<O>(
     const concise =
       !always &&
       items.length > 1 &&
-      items.every((item, i) => fillKinds.has(tree.kindName(item)) && !parts[i]?.endsLine);
+      items.every((item, i) => packable(tree, item, fillKinds) && !parts[i]?.endsLine);
     const listGroup = open(GROUP, -1, shouldBreak ? BROKEN : 0);
     const slot = (x: Entry | undefined) => {
       if (x?.e === "sep") {

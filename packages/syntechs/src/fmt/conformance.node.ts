@@ -154,17 +154,17 @@ const prettier = (
 });
 
 export const TARGETS: Target[] = [
-  prettier("json", "json", "json", () => "json", {
+  prettier("json", "json", "json", () => "javascript", {
     dirs: ["json/json", "json/with-comment"],
     parsers: ["json"],
     ignore: [],
   }),
-  prettier("jsonc", "json", "jsonc", () => "json", {
+  prettier("jsonc", "json", "jsonc", () => "javascript", {
     dirs: ["json/jsonc", "json/with-comment"],
     parsers: ["jsonc"],
     ignore: [],
   }),
-  prettier("json-stringify", "json", "jsonStringify", () => "json", {
+  prettier("json-stringify", "json", "jsonStringify", () => "javascript", {
     dirs: ["json/json"],
     parsers: ["json-stringify"],
     ignore: [],

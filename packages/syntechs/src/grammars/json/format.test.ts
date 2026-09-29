@@ -7,7 +7,7 @@ import type { DslGrammar, FormatIR } from "../../fmt/dsl/dsl.js";
 import { referenceRules } from "../../fmt/dsl/reference.js";
 import { format } from "../../fmt/format.js";
 import type { Language } from "../../fmt/rules.js";
-import { grammar, language } from "./index.js";
+import { grammar, language } from "../javascript/index.js";
 import { type JsonOptions, json, jsonc, jsonStringify } from "./fmt.js";
 import * as spec from "./format.js";
 

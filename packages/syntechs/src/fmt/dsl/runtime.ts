@@ -331,6 +331,17 @@ export function fieldChild(tree: FormatTree, node: number, name: string): number
   return -1;
 }
 
+/**
+ * An item a `packWhenAllOf` list packs: one of `kinds`, or a `+` or `-` sign before one (`-1`, which a grammar
+ * like javascript's parses as a unary expression, as prettier's signed numeric literal).
+ */
+export function packable(t: FormatTree, item: number, kinds: readonly string[]): boolean {
+  if (kinds.includes(t.kindName(item))) return true;
+  if (t.count(item) !== 2) return false;
+  const sign = t.text(t.child(item, 0));
+  return (sign === "+" || sign === "-") && kinds.includes(t.kindName(t.child(item, 1)));
+}
+
 /** The `nth` anonymous child of `node` spelled `text` (a spec's `nth` token `text` binds to it); -1 when none. */
 export function tokenChild(
   tree: FormatTree,

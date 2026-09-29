@@ -1,4 +1,4 @@
-json-stringify compatibility: 7/14 (50.00%), 0 refused (ok:false), 0 excluded
+json-stringify compatibility: 13/14 (92.86%), 1 refused (ok:false), 0 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -12,13 +12,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
-| json/json/array.json | 0/1 | 36.36% |
-| json/json/json5.json | 0/1 | 7.84% |
-| json/json/json6.json | 0/1 | 27.07% |
-| json/json/pass1.json | 0/1 | 1.50% |
-| json/json/positive-number.json | 0/1 | 0.00% |
-| json/json/propertyKey.json | 0/1 | 8.16% |
-| json/json/single-quote.json | 0/1 | 0.00% |
 
 # Refused
 
@@ -26,3 +19,4 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
+| json/json/json6.json | 1/1 | 84.34% | check: input "," at 686 is output as "]" at 862, which means "]", not "," |

@@ -144,6 +144,26 @@ export const sortRegexFlags = (t: string): string => [...t].sort().join("");
 
 export const trimEnd = (t: string): string => t.trimEnd();
 
+/** A string literal in double quotes, as prettier's JSON printers write every one; a double-quoted one as written. */
+export const doubleQuote = (raw: string): string =>
+  raw.startsWith(DOUBLE) ? raw : makeString(raw.slice(1, -1), DOUBLE);
+
+/** A bare object key quoted, as prettier's JSON printers quote one (`a: 1` as `"a": 1`). */
+export const quoteKey = (t: string): string => DOUBLE + t + DOUBLE;
+
+// Prettier's printPropertyKey quotes a numeric key in JSON where its spelling is a plain number that reads
+// back as the same string (`0`, `0.1`), and leaves any other (`1e2`, `1.0`, `999...9`) a number.
+const quotedNumber = (printed: string): string =>
+  /^(?:\d+|\d+\.\d+)$/.test(printed) && String(Number(printed)) === printed
+    ? DOUBLE + printed + DOUBLE
+    : printed;
+
+/** A numeric object key through `printNumber`, quoted where prettier's `json` and `jsonc` quote it. */
+export const numberKey = (raw: string): string => quotedNumber(printNumber(raw));
+
+/** A numeric object key as written, quoted where prettier's `json-stringify` quotes it. */
+export const rawNumberKey = (raw: string): string => quotedNumber(raw);
+
 /** Every normalizer `text` can name. */
 export const normalizers = {
   printNumber,
@@ -160,6 +180,10 @@ export const normalizers = {
   jsxString,
   sortRegexFlags,
   trimEnd,
+  doubleQuote,
+  quoteKey,
+  numberKey,
+  rawNumberKey,
 } satisfies Record<string, (t: string, o: never) => string>;
 
 export type NormalizerName = keyof typeof normalizers;

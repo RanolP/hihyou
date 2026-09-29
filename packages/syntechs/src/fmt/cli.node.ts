@@ -34,7 +34,7 @@ const kotlin: Spec = {
 const typescript = () => import("../grammars/typescript/fmt.js");
 const EXT: Record<string, Spec> = {
   ".json": {
-    grammar: () => import("../grammars/json/index.js"),
+    grammar: () => import("../grammars/javascript/index.js"),
     fmt: () => import("../grammars/json/fmt.js"),
     export: "json",
   },
