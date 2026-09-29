@@ -111,8 +111,28 @@ const parenthesized: StreamRule<JsOptions> = (n, s) => {
     return;
   }
   sTok(ctx, open);
-  printInParens(ctx, unparen(ctx, n), () => sctx.print(inner, args));
+  if (isCommentedIife(ctx, n)) {
+    // Prettier prints the callee's comments itself (willPrintOwnComments), inside its parentheses, indented.
+    openStream(INDENT);
+    sLine(SOFT);
+    sctx.print(inner, args);
+    closeStream();
+    sLine(SOFT);
+  } else printInParens(ctx, unparen(ctx, n), () => sctx.print(inner, args));
   sTok(ctx, close);
+};
+
+const IIFE_CALLEES = new Set(["function_expression", "arrow_function"]);
+
+/** `(// c⏎function () {})()`: a commented function called or tagged right where it is written. */
+const isCommentedIife = (ctx: JsCtx, n: number) => {
+  const fn = unparen(ctx, n);
+  return (
+    IIFE_CALLEES.has(kind(ctx, fn)) &&
+    kind(ctx, parent(ctx, n)) === "call_expression" &&
+    ctx.tree.fieldName(n) === "function" &&
+    hasComment(ctx, fn)
+  );
 };
 
 /** Prettier's printClass for a decorated class expression in parentheses: `(`, the class indented on its own lines, `)`. */

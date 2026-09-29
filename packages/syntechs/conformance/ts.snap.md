@@ -1,4 +1,4 @@
-ts compatibility: 614/653 (94.03%), 13 refused (ok:false), 76 excluded
+ts compatibility: 615/653 (94.18%), 13 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -13,9 +13,9 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
 | typescript/argument-expansion/arrow-with-return-type.ts | 0/1 | 77.78% |
-| typescript/arrow/comments/issue-11100.ts | 0/1 | 40.91% |
+| typescript/arrow/comments/issue-11100.ts | 0/1 | 56.52% |
 | typescript/as/comments/18160.ts | 0/1 | 81.25% |
-| typescript/call/callee-comments.ts | 0/1 | 69.44% |
+| typescript/call/callee-comments.ts | 0/1 | 74.36% |
 | typescript/comments/11662.ts | 0/1 | 80.00% |
 | typescript/comments/16065.ts | 0/1 | 81.82% |
 | typescript/comments/16889.ts | 0/1 | 97.39% |
@@ -35,7 +35,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/template-literals/member-expression.ts | 0/1 | 57.14% |
 | typescript/trailing-comma/trailing.ts | 2/3 | 97.78% |
 | typescript/type-parameters-arguments/long-function-arg.ts | 0/1 | 18.18% |
-| typescript/type-parameters-arguments/print-width-120/issue-7542.tsx | 0/1 | 88.89% |
 | typescript/union/consistent-with-flow/prettier-ignore.ts | 0/1 | 60.00% |
 | jsx/jsx/html_escape.js | 2/4 | 66.67% |
 
@@ -47,7 +46,7 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | :------ | :----------: | :---------: | :----------- |
 | typescript/chain-expression/tagged-template-literals.ts | 1/1 | 72.31% | check: input "a" at 37 is output as "a" at 33, which means "a@object\|0/12", not "a@object\|0/13" |
 | typescript/comments/mapped-types.ts | 1/1 | 80.00% | check: input comment "// commentA" is missing from the output |
-| typescript/conditional-types/comments.ts | 2/2 | 77.53% | check: input "any instanceof B\n  /**\n  * Comment\n  */\n    ? B \| C\n    : D" at 1337 is output as "any" at 1332, whic |
+| typescript/conditional-types/comments.ts | 2/2 | 94.21% | check: input "any instanceof B\n  /**\n  * Comment\n  */\n    ? B \| C\n    : D" at 1337 is output as "any" at 1364, whic |
 | typescript/conditional-types/conditional-types.ts | 2/2 | 100.00% | check: input "new" at 1298 is output as "new" at 1327, which means "new@\|-1/175", not "new@\|-1/174" |
 | typescript/end-of-line/multiline.ts | 2/3 | 71.43% | check: input "\\\n" at 511 is output as "\\\r" at 486, which means "\\\r@\|3/35", not "\\\n@\|3/35" |
 | typescript/import-export/empty-import.ts | 1/1 | 64.86% | check: output comment "// comment } from \"a\";" matches no input comment |

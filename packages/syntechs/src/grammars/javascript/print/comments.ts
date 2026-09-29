@@ -3,10 +3,14 @@ import type {
   CommentHandler,
   CommentTarget,
 } from "../../../fmt/comments.js";
+import { newlineBetween } from "../../../fmt/text.js";
 import { firstLeaf, nextLeaf } from "../../../fmt/tree.js";
 import { heritage } from "./classes.js";
+import { STATEMENT_LIST_PARENTS } from "./statements.js";
 import { flattenTypes, unparenType } from "./types.js";
 import {
+  callArguments,
+  callee,
   children,
   field,
   fieldName,
@@ -36,6 +40,12 @@ const codeAfter = (x: HasTree, n: number, child: number) => {
 
 const lastCode = (x: HasTree, n: number) =>
   lastChildWhere(x, n, (c) => isCode(x, c));
+
+/** Whether a line break stands between node `n` and the comment after it (prettier's hasNewlineInRange). */
+const newlineAfter = (c: CommentContext<JsOptions>, n: number) => {
+  const after = nextLeaf(c.tree, n);
+  return c.tree.lf(after) > 0 || newlineBetween(c.tree, after, c.comment);
+};
 
 /**
  * A comment before a statement's closing `;` sits between that statement and the next: prettier's statement ends
@@ -313,6 +323,56 @@ const functionBody = (c: CommentContext<JsOptions>): CommentTarget | undefined =
   return blockFirst(c, following);
 };
 
+/**
+ * `() => // c` then the body: prettier's arrow has no node for empty parentheses, so a comment after `=>` has only
+ * the body beside it and leads it, where the core would trail the tree's empty formal_parameters.
+ */
+const arrowBody = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { comment, enclosing, preceding, following } = c;
+  if (
+    kind(c, enclosing) !== "arrow_function" ||
+    preceding === undefined ||
+    kind(c, preceding) !== "formal_parameters" ||
+    following === undefined ||
+    following !== field(c, enclosing, "body") ||
+    children(c, preceding).some((p) => named(c, p) && isCode(c, p))
+  )
+    return;
+  const kids = children(c, enclosing);
+  const arrow = kids.findIndex((k) => kind(c, k) === "=>");
+  return arrow !== -1 && kids.indexOf(comment) > arrow ? { node: following, as: "leading" } : undefined;
+};
+
+const CALLS = new Set(["call_expression", "new_expression"]);
+
+/**
+ * `f⏎// c⏎()` or `f?./* c *\/()`: prettier's arguments are a bare list, so a comment before the `(` trails the
+ * callee, but on a line of its own leads the first argument there is.
+ */
+const beforeArguments = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, preceding, following, placement } = c;
+  if (
+    !CALLS.has(kind(c, enclosing)) ||
+    preceding === undefined ||
+    following === undefined ||
+    !(
+      (following === field(c, enclosing, "arguments") && kind(c, following) === "arguments") ||
+      kind(c, following) === "optional_chain"
+    )
+  )
+    return;
+  const first = callArguments(c, enclosing)[0];
+  if (placement === "ownLine" && first !== undefined) return { node: first, as: "leading" };
+  const fn = callee(c, enclosing);
+  return fn === undefined ? undefined : { node: fn, as: "trailing" };
+};
+
+/** `a: // c` then the body: a comment in a labeled statement leads the statement (handleLabeledStatementComments). */
+const labeled = (c: CommentContext<JsOptions>): CommentTarget | undefined =>
+  c.placement !== "remaining" && kind(c, c.enclosing) === "labeled_statement"
+    ? { node: c.enclosing, as: "leading" }
+    : undefined;
+
 const HEAD_BODY = new Map([
   ["if_statement", "consequence"],
   ["while_statement", "body"],
@@ -350,22 +410,51 @@ const statementBody = (c: CommentContext<JsOptions>): CommentTarget | undefined 
 };
 
 /**
- * `for // c\n(;;);`: an empty initializer or test is an empty_statement to tree-sitter and nothing to babel,
- * whose comment then leads the next node there is, the body at the latest.
+ * `a; // b\n;// c`: prettier attaches no comment to an empty statement, so a comment beside a stray `;` in a
+ * statement list takes the statements around it as neighbours, on a line of its own leading the next, else trailing
+ * the one before.
+ */
+const besideEmptyStatement = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { comment, enclosing, preceding, following, placement } = c;
+  const isStray = (n: number | undefined) => n !== undefined && kind(c, n) === "empty_statement";
+  if (!STATEMENT_LIST_PARENTS.has(kind(c, enclosing)) || !(isStray(preceding) || isStray(following))) return;
+  const kids = children(c, enclosing);
+  const at = kids.indexOf(comment);
+  const real = (n: number) => named(c, n) && isCode(c, n) && !isStray(n);
+  const before = kids.slice(0, at).findLast(real);
+  const after = kids.slice(at + 1).find(real);
+  // Mid-line, the comment leads a statement right after it, with nothing but space between them.
+  const touching = after !== undefined && nextLeaf(c.tree, comment) === firstLeaf(c.tree, after);
+  if (before !== undefined && (placement === "endOfLine" || (placement === "remaining" && !touching) || after === undefined))
+    return { node: before, as: "trailing" };
+  return after === undefined ? { node: enclosing, as: "dangling" } : { node: after, as: "leading" };
+};
+
+/**
+ * `for // c\n(;;);` or `for (a; /* c *\/;)`: an empty initializer or test is an empty_statement to tree-sitter and
+ * nothing to babel, so a comment beside one takes babel's neighbours, the code around it with the empty parts
+ * skipped, and prettier's attach places it there: before the body at the latest, else after the code before it,
+ * since a `;` or `)` stands between the comment and whatever follows.
  */
 const forEmptyPart = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
-  const { comment, enclosing, following } = c;
-  if (
-    kind(c, enclosing) !== "for_statement" ||
-    following === undefined ||
-    kind(c, following) !== "empty_statement" ||
-    fieldName(c, following) === "body"
-  )
-    return;
-  const next = codeAfter(c, enclosing, comment).find(
-    (n) => named(c, n) && (kind(c, n) !== "empty_statement" || fieldName(c, n) === "body"),
-  );
-  return next === undefined ? undefined : { node: next, as: "leading" };
+  const { comment, enclosing, preceding, following, placement } = c;
+  const isEmptyPart = (n: number | undefined) =>
+    n !== undefined && kind(c, n) === "empty_statement" && fieldName(c, n) !== "body";
+  if (kind(c, enclosing) !== "for_statement" || !(isEmptyPart(following) || isEmptyPart(preceding))) return;
+  const kids = children(c, enclosing);
+  const at = kids.indexOf(comment);
+  const close = kids.findLastIndex((k) => kind(c, k) === ")" && !named(c, k));
+  // After the `)`, statementBody leads the body.
+  if (at > close) return;
+  const real = (n: number) => named(c, n) && isCode(c, n) && !isEmptyPart(n);
+  let before = kids.slice(0, at).findLast(real);
+  // A declaring initializer holds its `;`, which babel's does not: the comment trails its last declarator.
+  if (before !== undefined && fieldName(c, before) === "initializer" && kind(c, lastCode(c, before)) === ";")
+    before = lastChildWhere(c, before, (n) => named(c, n) && isCode(c, n));
+  const after = kids.slice(at + 1).find(real);
+  if (before !== undefined && (placement !== "ownLine" || after === undefined))
+    return { node: before, as: "trailing" };
+  return after === undefined ? undefined : { node: after, as: "leading" };
 };
 
 /**
@@ -477,9 +566,8 @@ const CONDITIONALS = new Set(["ternary_expression", "conditional_type"]);
 /**
  * A comment before a conditional's branch, off the line of the code before it, leads the branch; under
  * experimentalTernaries one before the alternate dangles on the conditional, which prints it after `:`, unless
- * it is a one-line block comment (handleConditionalExpressionComments). Off the line: `placement` stands in for
- * prettier's newline test between the preceding node and the comment, which it matches but for a comment that
- * ends a line after a token such as `?` that opened it.
+ * it is a one-line block comment (handleConditionalExpressionComments). Off the line: a line break between the
+ * preceding node and the comment, so `a⏎? // c⏎b` leads `b` though the comment ends the line of its `?`.
  */
 const conditional = (
   c: CommentContext<JsOptions>,
@@ -489,7 +577,7 @@ const conditional = (
     return;
   if (
     following === undefined ||
-    (preceding !== undefined && placement !== "ownLine")
+    (preceding !== undefined && !newlineAfter(c, preceding))
   )
     return;
   const oneLineBlock = text.startsWith("/*") && !text.includes("\n");
@@ -626,11 +714,31 @@ const afterOpenParen = (c: CommentContext<JsOptions>): CommentTarget | undefined
     : { node: preceding, as: "trailing" };
 };
 
+/**
+ * `(a, b /* c *\/);`: a comment before the `)` of a statement's parenthesized expression trails the statement,
+ * after its `;`, as one between the `)` and the `;` does.
+ */
+const beforeStatementCloseParen = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, preceding, following } = c;
+  if (
+    preceding === undefined ||
+    following !== undefined ||
+    kind(c, enclosing) !== "parenthesized_expression" ||
+    isCastParen(c, enclosing)
+  )
+    return;
+  const statement = parent(c, outer(c, enclosing));
+  return statement !== undefined && kind(c, statement) === "expression_statement"
+    ? { node: statement, as: "trailing" }
+    : undefined;
+};
+
 // In prettier's order within each placement: typeCast and conditional run early, nestedConditional last.
 const handlers = [
   typeCast,
   importAttribute,
   memberProperty,
+  beforeArguments,
   conditional,
   typeBeforeSemicolon,
   beforeSemicolon,
@@ -643,10 +751,12 @@ const handlers = [
   methodName,
   fieldDecorator,
   functionBody,
+  arrowBody,
   forEmptyPart,
   specifier,
   statementBody,
   tryBlock,
+  labeled,
   classHeader,
   declaratorValue,
   nestedConditional,
@@ -655,7 +765,7 @@ const handlers = [
 
 export const handleComment: CommentHandler<JsOptions> = (original) => {
   const c = outOfTypeParens(original);
-  for (const h of [afterOpenParen, ...handlers]) {
+  for (const h of [afterOpenParen, beforeStatementCloseParen, besideEmptyStatement, ...handlers]) {
     const target = h(c);
     if (target) return target;
   }

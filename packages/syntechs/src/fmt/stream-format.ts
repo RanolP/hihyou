@@ -106,7 +106,7 @@ export function printTrailingComment(
   f: CommentFacts,
   previous: Trailed | undefined,
 ): Trailed {
-  if ((previous?.suffix && !previous.line) || f.lf > 0) {
+  if ((previous?.suffix && previous.line) || f.lf > 0) {
     open(LINE_SUFFIX);
     sHardline();
     if (f.lf >= 2) sHardline();

@@ -5,6 +5,7 @@ import {
   BROKEN,
   capture,
   close,
+  commentsOf,
   GROUP,
   IF_BROKEN,
   IF_FLAT,
@@ -624,15 +625,18 @@ const arrow: CustomRule<JsOptions> = (node, s) => {
   let functionBody = bodyOf(node);
   let bodyNode = functionBody;
 
+  // The trailing comments of the chained arrows after the head, innermost first, which print after the body.
+  const bodyComments: Part[] = [];
   for (let x = node; ;) {
-    // A chained arrow is printed through its head, so its own comments go around its signature.
-    const head = signatures.length === 0;
+    // A chained arrow is printed through its head: its leading comments go before its signature.
+    const own = signatures.length === 0 ? undefined : commentsOf(js, x);
     signatures.push(
       capture(() => {
-        if (head) printArrowSignature(s, x, args);
-        else withComments(js, x, () => printArrowSignature(s, x, args));
+        own?.[0]();
+        printArrowSignature(s, x, args);
       }),
     );
+    if (own !== undefined) bodyComments.unshift(capture(own[1]));
     arrows.push(x);
     if (shouldPrintAsChain) {
       const params = parameters(ctx, x);
@@ -745,13 +749,16 @@ const arrow: CustomRule<JsOptions> = (node, s) => {
       close();
       printTrailing();
       close();
+      bodyComments.forEach(place);
     } else if (shouldPutBodyOnSameLine) {
       sText(" ");
       place(body);
+      bodyComments.forEach(place);
     } else {
       open(INDENT);
       sLine(0);
       place(body);
+      bodyComments.forEach(place);
       close();
       printTrailing();
     }

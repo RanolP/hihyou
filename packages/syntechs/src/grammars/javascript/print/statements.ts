@@ -613,11 +613,25 @@ const customs = {
     }
     sText(" ");
     sTok(js, anon(js, node, "("));
-    for (const k of fields(js, node, "kind")) {
+    const kinds = fields(js, node, "kind");
+    const left = field(js, node, "left");
+    // Babel's left is a declaration that starts at its kind, so a comment before the kind leads it from there.
+    const kindAt = kinds[0] === undefined ? undefined : js.tree.ord(kinds[0]);
+    const beforeKind =
+      left === undefined || kindAt === undefined
+        ? []
+        : s.leadingComments(left).filter((c) => js.tree.ord(c) < kindAt);
+    for (const c of beforeKind) printLeadingComment(s, commentFacts(s, c));
+    for (const k of kinds) {
       sTok(js, k);
       sText(" ");
     }
-    pr(s, field(js, node, "left"));
+    if (left !== undefined && beforeKind.length > 0) {
+      for (const c of s.leadingComments(left))
+        if (!beforeKind.includes(c)) printLeadingComment(s, commentFacts(s, c));
+      s.printNode(left);
+      printTrailingComments(s, left);
+    } else pr(s, left);
     if (value !== undefined) {
       sText(" ");
       sTok(js, anon(js, node, "="));
