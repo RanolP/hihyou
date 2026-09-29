@@ -1,4 +1,4 @@
-css compatibility: 117/151 (77.48%), 0 refused (ok:false), 6 excluded
+css compatibility: 120/151 (79.47%), 0 refused (ok:false), 6 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -12,10 +12,8 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
-| css/atrule/each.css | 0/1 | 39.57% |
 | css/atrule/import.css | 0/1 | 45.09% |
 | css/atrule/supports.css | 0/1 | 14.39% |
-| css/atrule/while.css | 0/1 | 65.82% |
 | css/atword/atword.css | 0/1 | 0.00% |
 | css/bom/bom.css | 0/1 | 80.00% |
 | css/character-escaping/character_escaping.css | 0/1 | 16.56% |
@@ -37,7 +35,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | css/parens/parens.css | 0/1 | 83.13% |
 | css/postcss-8-improment/empty-props.css | 0/1 | 50.00% |
 | css/postcss-8-improment/test.css | 0/1 | 80.00% |
-| css/postcss-plugins/postcss-mixins.css | 0/1 | 81.25% |
 | css/postcss-plugins/postcss-simple-vars.css | 0/1 | 73.68% |
 | css/quotes/quotes.css | 0/2 | 74.59% |
 | css/selector-list/selectors.css | 0/1 | 76.15% |

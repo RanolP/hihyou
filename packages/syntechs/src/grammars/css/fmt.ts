@@ -261,6 +261,13 @@ export function valueMath(node: number, ctx: SCtx): void {
   }
 }
 
+/**
+ * Two items of a Sass value written without a gap, which prettier keeps joined, but not after a paren group:
+ * postcss-value-parser reads `($i)>(0)` as the group `($i)` and the function `>(0)`, two words.
+ */
+const adjoinsWord = (ctx: SCtx, prev: number, c: number) =>
+  ctx.tree.adjoins(prev, c) && kind(prev, ctx) !== "parenthesized_value";
+
 /** A comma-split entry's items as words: packed in a fill of their own, items written without a gap joined. */
 function words(items: number[], ctx: SCtx, joined: (prev: number, c: number) => boolean): void {
   const t = ctx.tree;
@@ -293,7 +300,7 @@ export function sassDirective(node: number, ctx: SCtx): void {
   sText(" ");
   const first = run.entries[0]?.items[0];
   const joined = (prev: number, c: number) =>
-    t.adjoins(prev, c) ||
+    adjoinsWord(ctx, prev, c) ||
     (prev === first &&
       kind(prev, ctx) === "plain_value" &&
       kind(c, ctx) === "parenthesized_value" &&
@@ -350,7 +357,7 @@ export function sassList(node: number, ctx: SCtx): void {
     sLine(SOFT);
     run.entries.forEach((e, i) => {
       if (i > 0) sLine(0);
-      words(e.items, ctx, (prev, c) => t.adjoins(prev, c));
+      words(e.items, ctx, (prev, c) => adjoinsWord(ctx, prev, c));
       if (e.sep !== -1) sToken(e.sep, t.text(e.sep));
       const last = e.items[e.items.length - 1];
       const group = e.items.length > 1 || (last !== undefined && kind(last, ctx) === "keyword_argument");
