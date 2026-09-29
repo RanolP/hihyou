@@ -1,4 +1,4 @@
-css compatibility: 94/151 (62.25%), 0 refused (ok:false), 6 excluded
+css compatibility: 100/151 (66.23%), 0 refused (ok:false), 6 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -12,30 +12,26 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
-| css/atrule/at-root.css | 0/1 | 79.16% |
-| css/atrule/debug.css | 0/1 | 12.90% |
-| css/atrule/each.css | 0/1 | 4.90% |
+| css/atrule/at-root.css | 0/1 | 92.35% |
+| css/atrule/debug.css | 0/1 | 17.39% |
+| css/atrule/each.css | 0/1 | 12.80% |
 | css/atrule/extend.css | 0/1 | 41.30% |
-| css/atrule/font-feature-values.css | 0/1 | 21.69% |
-| css/atrule/for.css | 0/1 | 0.00% |
+| css/atrule/for.css | 0/1 | 53.16% |
 | css/atrule/function.css | 0/1 | 17.32% |
 | css/atrule/import.css | 0/1 | 45.09% |
-| css/atrule/include.css | 0/1 | 34.48% |
-| css/atrule/mixin.css | 0/1 | 8.89% |
-| css/atrule/page.css | 0/1 | 61.54% |
-| css/atrule/return.css | 0/1 | 29.89% |
+| css/atrule/include.css | 0/1 | 35.64% |
+| css/atrule/mixin.css | 0/1 | 35.36% |
+| css/atrule/page.css | 0/1 | 97.67% |
+| css/atrule/return.css | 0/1 | 34.94% |
 | css/atrule/supports.css | 0/1 | 14.39% |
-| css/atrule/while.css | 0/1 | 7.65% |
-| css/attribute/insensitive.css | 0/2 | 72.22% |
-| css/attribute/sensitive.css | 0/2 | 55.88% |
-| css/attribute/spaces.css | 0/2 | 77.82% |
+| css/atrule/while.css | 0/1 | 47.62% |
 | css/atword/atword.css | 0/1 | 0.00% |
 | css/bom/bom.css | 0/1 | 72.73% |
 | css/character-escaping/character_escaping.css | 0/1 | 16.56% |
 | css/color/color-adjuster.css | 0/1 | 96.77% |
 | css/comments/15948.css | 0/1 | 16.67% |
 | css/comments/17479.css | 0/1 | 46.51% |
-| css/comments/at-rules.css | 0/1 | 40.38% |
+| css/comments/at-rules.css | 0/1 | 47.71% |
 | css/comments/custom-properties.css | 0/1 | 53.85% |
 | css/comments/declaration.css | 0/1 | 60.12% |
 | css/comments/selectors.css | 0/1 | 58.22% |
@@ -55,17 +51,15 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | css/parens/parens.css | 0/1 | 54.25% |
 | css/postcss-8-improment/empty-props.css | 0/1 | 50.00% |
 | css/postcss-8-improment/test.css | 0/1 | 80.00% |
-| css/postcss-plugins/postcss-mixins.css | 0/1 | 68.75% |
+| css/postcss-plugins/postcss-mixins.css | 0/1 | 81.25% |
 | css/postcss-plugins/postcss-nested-props.css | 0/1 | 53.85% |
-| css/postcss-plugins/postcss-nesting.css | 0/1 | 94.23% |
+| css/postcss-plugins/postcss-nesting.css | 0/1 | 97.63% |
 | css/postcss-plugins/postcss-simple-vars.css | 0/1 | 73.68% |
 | css/quotes/quotes.css | 0/2 | 74.59% |
 | css/selector-list/selectors.css | 0/1 | 76.15% |
 | css/stylefmt-repo/at-media/at-media.css | 0/1 | 95.24% |
 | css/stylefmt-repo/ie-hacks/ie-hacks.css | 0/1 | 43.48% |
 | css/stylefmt-repo/important/important.css | 0/1 | 66.67% |
-| css/stylefmt-repo/nested-mixin/nested-mixin.css | 0/1 | 88.00% |
-| css/stylefmt-repo/nested-mixin-2/nested-mixin-2.css | 0/1 | 25.00% |
 | css/trailing-comma/var-func.css | 0/1 | 57.14% |
 | css/url/url.css | 0/1 | 90.00% |
 | css/variables/apply-rule.css | 0/1 | 92.06% |

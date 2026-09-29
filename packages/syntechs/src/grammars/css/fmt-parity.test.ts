@@ -23,6 +23,8 @@ const optionSets: [string, Partial<CssOptions>][] = [
 
 const edgeCases: [string, string][] = [
   ["empty-rule", ".a{}"],
+  ["page-pseudo", "@page :first{margin:1in}"],
+  ["attribute-flag", '[type="a"   I]{b:c}'],
   [
     "comments",
     "/* head */\na { color : red ; /* trail */\n  /* lead */\n  b: c }\n\n/* end */\n",
@@ -199,8 +201,6 @@ describe.skipIf(!present)(
 
 // Input, options, then today's output, which differs from prettier's.
 const divergences: [string, string, Partial<CssOptions>, string][] = [
-  // tree-sitter-css reads `@page :first` as an ERROR, so the rule keeps its source text.
-  ["page-pseudo", "@page :first{margin:1in}", {}, "@page :first{margin:1in}\n"],
   // An empty declaration is an ERROR, so the whole block keeps its source text.
   ["double-semicolon", "a{color:red;;}", {}, "a {color:red;;}\n"],
   // tree-sitter-css reads the `%` of a decimal keyframe selector as an ERROR, so the block keeps its source

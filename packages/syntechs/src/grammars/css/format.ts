@@ -14,6 +14,7 @@ import {
   grpBrace,
   grpParen,
   inOrder,
+  isEmpty,
   lines,
   not,
   parentIs,
@@ -154,7 +155,10 @@ export const css = format({
     pseudo_element_selector: adjacent,
     pseudo_class_selector: adjacent,
     namespace_selector: adjacent,
-    attribute_selector: adjacent,
+    // `[name=value flag]`: tight but for the space before a case-sensitivity flag, and `ns|name` joined.
+    attribute_selector: () => inOrder({ spaceWhen: { before: ["attribute_flag"] } }),
+    // A plain name is one leaf, kept as written (`trimEnd` changes no identifier); `ns|name` is joined.
+    attribute_name: () => either(isEmpty, text("trimEnd"), adjacent()),
     child_selector: combinator,
     descendant_selector: combinator,
     sibling_selector: combinator,
