@@ -380,6 +380,12 @@ export const customs = {
     return items > 1;
   },
   backingField:(node, ctx) => backingField(ctx.tree, node),
+  /** Of a bracketed list: the source ends it with a comma before its closing bracket. */
+  commaWritten: (node, ctx) => {
+    const t = ctx.tree;
+    const n = t.count(node);
+    return n > 2 && t.kindName(t.child(node, n - 2)) === ",";
+  },
   /** Of a class or its primary constructor: a comment comes before the constructor, which ktfmt puts on a line of its own. */
   /** Of a class: a line comment trails its primary constructor before its body (see `commentedBeforeBody`). */
   commentedBody: (node, ctx) => {

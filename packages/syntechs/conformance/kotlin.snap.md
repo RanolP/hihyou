@@ -1,4 +1,4 @@
-kotlin compatibility: 701/753 (93.09%), 0 refused (ok:false), 11 excluded
+kotlin compatibility: 703/753 (93.36%), 0 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -37,16 +37,15 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/misc/labels.kt | 0/1 | 78.79% |
 | ktfmt/format/misc/semicolonsBetweenCalls.kt | 0/1 | 96.20% |
 | ktfmt/format/misc/semicolonsInEmptyBodies.kt | 0/1 | 69.23% |
-| ktfmt/format/misc/trailingCommas.kt | 0/1 | 22.81% |
+| ktfmt/format/misc/trailingCommas.kt | 0/1 | 66.10% |
 | ktfmt/format/misc/unaryPostfix.kt | 0/1 | 90.00% |
 | ktfmt/format/misc/unaryPrefix.kt | 0/1 | 57.89% |
 | ktfmt/format/property/backingFieldWithChainedScopingFunction3.kt | 0/1 | 76.92% |
-| ktfmt/format/property/trailingCommasInProperties.kt | 0/1 | 72.73% |
 | ktfmt/format/string/multiDollarString.kt | 0/1 | 44.44% |
 | ktfmt/format/type/classExpression.kt | 0/1 | 66.67% |
 | ktfmt/format/type/intersections.kt | 0/1 | 75.00% |
 | ktfmt/format/type/nestedQualifiedTypes.kt | 0/1 | 50.00% |
-| ktfmt/google/comments.kt | 0/1 | 85.71% |
+| ktfmt/google/comments.kt | 0/1 | 85.45% |
 | ktfmt/google/comments2.kt | 0/1 | 91.53% |
 | ktfmt/google/forcedBreaksInFunCalls.kt | 0/1 | 88.00% |
 | ktfmt/google/fqNestedTypes.kt | 0/1 | 40.00% |
@@ -58,7 +57,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/new_codestyle/annotation/AnnotationsEverywhere.kt | 0/1 | 96.97% |
 | ktfmt/new_codestyle/annotation/AnnotationsOnParameters.kt | 0/1 | 82.61% |
 | ktfmt/new_codestyle/annotation/AnnotationsOnTypes.kt | 0/1 | 93.20% |
-| ktfmt/new_codestyle/annotation/DeclarationAnnotations.kt | 0/1 | 93.62% |
 | ktfmt/new_codestyle/annotation/UseSiteTargets.kt | 0/1 | 90.48% |
 
 # Refused

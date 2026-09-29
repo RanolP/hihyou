@@ -63,6 +63,7 @@ const spaced = (
     readonly hang?: boolean;
     /** The rule naming the right sides that stay on the `=`'s line (see `hug`). */
     readonly hug?: "hugged" | "huggedChain";
+    readonly skip?: readonly string[];
   } = {},
 ) =>
   inOrder({
@@ -71,6 +72,7 @@ const spaced = (
     ...(o.braces ? { braces: true } : {}),
     ...(o.hang ? { hangAfter: ["=", "+=", "-=", "*=", "/=", "%="] as never[] } : {}),
     ...(o.hug ? { hug: when(o.hug) } : {}),
+    ...(o.skip ? { skip: o.skip as never[] } : {}),
   });
 
 /** Adjacent children, with a space after each `,`. */
@@ -261,9 +263,12 @@ export const kotlin = format({
     // `by lazy { }`: the delegate hangs off `by` as an initializer hangs off `=`.
     property_delegate: () => inOrder({ join: "space", hangAfter: ["by"], hug: when("huggedChain") }),
     variable_declaration: () => spaced({ tightBefore: [":"] }),
-    multi_variable_declaration: () => adjacent,
+    // ktfmt keeps a written trailing comma in a destructuring or an index, and breaks the list around it.
+    multi_variable_declaration: ($) =>
+      either(when("commaWritten"), grpParen(sepBy(",", $.children, { trailing: true })), adjacent),
     getter: () => decl(spaced({ tightBefore: [":", "("] })),
-    setter: () => decl(spaced({ tightBefore: [":", "("] })),
+    // ktfmt drops a trailing comma after the parameter, as it does after a `catch`'s.
+    setter: () => decl(spaced({ tightBefore: [":", "("], skip: [","] })),
 
     user_type: () => inOrder(),
     // The grammar hides the `?`, so no rule could print it: the type prints as written.
@@ -317,7 +322,8 @@ export const kotlin = format({
     navigation_expression: () => inOrder(),
     navigation_suffix: () => inOrder(),
     indexing_expression: () => inOrder(),
-    indexing_suffix: () => adjacent,
+    indexing_suffix: ($) =>
+      either(when("commaWritten"), grpBracket(sepBy(",", $.children, { trailing: true })), adjacent),
     // `[a, b]`, in an annotation's arguments. As a named argument's value it hangs off the `=` (`value_argument`).
     collection_literal: ($) => grpBracket(sepBy(",", $.children, { trailing: true })),
     parenthesized_expression: () => inOrder(),
@@ -385,7 +391,7 @@ export const kotlin = format({
     type_projection_modifiers: () => inOrder(space),
     type_parameter_modifiers: () => inOrder(space),
     try_expression: () => spaced({ braces: true }),
-    catch_block: () => spaced({ braces: true, tightBefore: [":"] }),
+    catch_block: () => spaced({ braces: true, tightBefore: [":"], skip: [","] }),
     finally_block: () => spaced({ braces: true }),
   },
   wrapping: {
@@ -399,6 +405,8 @@ export const kotlin = format({
     type_arguments: { breakWhen: when("writtenBroken") },
     type_parameters: { breakWhen: when("writtenBroken") },
     primary_constructor: { breakWhen: when("writtenBroken") },
+    multi_variable_declaration: { breakWhen: when("commaWritten") },
+    indexing_suffix: { breakWhen: when("commaWritten") },
   },
   unknown: "bail",
   docComment: kdoc,
