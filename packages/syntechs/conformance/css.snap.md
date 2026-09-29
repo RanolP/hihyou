@@ -1,4 +1,4 @@
-css compatibility: 81/151 (53.64%), 0 refused (ok:false), 6 excluded
+css compatibility: 84/151 (55.63%), 0 refused (ok:false), 6 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -50,18 +50,18 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | css/custom-properties/emoji.css | 0/1 | 83.33% |
 | css/empty/empty.css | 0/1 | 85.71% |
 | css/escaped-attribute/test.css | 0/1 | 87.50% |
-| css/fill-value/fill.css | 0/1 | 84.62% |
+| css/fill-value/fill.css | 0/1 | 95.50% |
 | css/font/font.css | 0/1 | 79.41% |
 | css/grid/grid.css | 0/1 | 94.64% |
 | css/indent/indent.css | 0/1 | 78.26% |
 | css/inline-url/inline_url.css | 0/1 | 91.84% |
 | css/modules/modules.css | 0/1 | 99.20% |
 | css/numbers/numbers.css | 0/1 | 34.67% |
-| css/parens/empty-lines.css | 0/1 | 30.00% |
+| css/parens/empty-lines.css | 0/1 | 31.58% |
 | css/parens/parens.css | 0/1 | 54.25% |
 | css/postcss-8-improment/empty-props.css | 0/1 | 50.00% |
 | css/postcss-8-improment/test.css | 0/1 | 80.00% |
-| css/postcss-plugins/postcss-mixins.css | 0/1 | 49.23% |
+| css/postcss-plugins/postcss-mixins.css | 0/1 | 68.75% |
 | css/postcss-plugins/postcss-nested-props.css | 0/1 | 53.85% |
 | css/postcss-plugins/postcss-nesting.css | 0/1 | 94.23% |
 | css/postcss-plugins/postcss-simple-vars.css | 0/1 | 73.68% |
@@ -73,12 +73,9 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | css/stylefmt-repo/custom-selectors/custom-selectors.css | 0/1 | 23.53% |
 | css/stylefmt-repo/ie-hacks/ie-hacks.css | 0/1 | 43.48% |
 | css/stylefmt-repo/important/important.css | 0/1 | 66.67% |
-| css/stylefmt-repo/lowercase/lowercase.css | 0/1 | 29.55% |
 | css/stylefmt-repo/media-queries-ranges/media-queries-ranges.css | 0/1 | 90.91% |
 | css/stylefmt-repo/nested-mixin/nested-mixin.css | 0/1 | 88.00% |
 | css/stylefmt-repo/nested-mixin-2/nested-mixin-2.css | 0/1 | 25.00% |
-| css/stylefmt-repo/non-nested-combinator/non-nested-combinator.css | 0/1 | 86.96% |
-| css/stylefmt-repo/shorthand-with-sass-variables/shorthand-with-sass-variables.css | 0/1 | 66.67% |
 | css/trailing-comma/var-func.css | 0/1 | 57.14% |
 | css/url/url.css | 0/1 | 90.00% |
 | css/variables/apply-rule.css | 0/1 | 92.06% |

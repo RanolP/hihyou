@@ -109,6 +109,8 @@ const edgeCases: [string, string][] = [
   ["front-matter-toml", "+++\ntitle = 'T'\n\n+++\n\n\n/* c */"],
   // A suffixed `&` and a descendant ending in `&` were parse errors, printed as raw source.
   ["nesting-suffix", ".a{&__b,&-c{d:e}.f &{g:h}}"],
+  // A Sass `$variable`, declared or read, was a parse error, printed as raw source.
+  ["sass-variable", "$a:RGB(0,0,0);.b{border:1px solid $a;$c:d}"],
   // A rule or declaration after a prettier-ignore comment was laid out like any other.
   [
     "prettier-ignore",
