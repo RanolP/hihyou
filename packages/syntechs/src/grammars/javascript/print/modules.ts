@@ -159,11 +159,15 @@ function printModuleStatement(s: JsStreamCtx, n: number, ctx: StreamCtx<JsOption
     sHardline();
   }
   let first = true;
+  let afterLineComment = false;
   for (const c of children) {
     if (specifiers.includes(c) && c !== specifiers[0]) continue;
     if (printedWithChild.has(c)) continue;
+    // Prettier's dangling `export //c` ends the line and keeps the space: `export //c\n {};`.
+    if (afterLineComment) sHardline();
     if (!first) sText(" ");
     first = false;
+    afterLineComment = isComment(js, c) && src(js, c).startsWith("//");
     if (c === specifiers[0]) printSpecifiers(s, specifiers);
     else if (isNamed(js, c)) s.print(c);
     else sTok(js, c);

@@ -519,7 +519,17 @@ const customs = {
     // Prettier keeps a byte order mark.
     if (ctx.tree.bom) sText("﻿");
     statementsOrEmpties(s, items(s.js, node));
-    danglingLines(s, node);
+    // Babel's Program ends before a comment-only file's comments, so prettier prints them as its trailing
+    // comments: one on the same line follows a space, and a blank line before one is kept.
+    s.danglingComments(node).forEach((c, i) => {
+      const lf = s.js.tree.lf(c);
+      if (i > 0 && lf === 0) sText(" ");
+      else if (i > 0) {
+        sHardline();
+        if (lf > 1) sHardline();
+      }
+      s.comment(c);
+    });
   },
 
   "stmt.block": (node, ctx) => printBlock(jsCtx(ctx), node),

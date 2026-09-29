@@ -11,6 +11,7 @@ const LOGICAL_OR = 4;
 const ESCAPE_SEQUENCE = 5;
 const REGEX_PATTERN = 6;
 const JSX_TEXT = 7;
+const STATEMENT_CONTINUES = 8;
 
 const LS = 0x2028;
 const PS = 0x2029;
@@ -93,6 +94,7 @@ function scanWhitespaceAndComments(
 function scanAutomaticSemicolon(
   lexer: Lexer,
   commentCondition: boolean,
+  statementContinues: boolean,
   scanned: { comment: boolean },
 ): boolean {
   lexer.resultSymbol = AUTOMATIC_SEMICOLON;
@@ -116,6 +118,14 @@ function scanAutomaticSemicolon(
   }
   lexer.advance(true);
   if (scanWhitespaceAndComments(lexer, scanned, true) === REJECT) return false;
+
+  // `let` or `export` before a line break and a name or `{` starts a declaration, not a statement of its own.
+  const next = la(lexer);
+  if (
+    statementContinues &&
+    (next === 123 || next === 95 || next === 36 || next === 92 || iswalpha(next))
+  )
+    return false;
 
   switch (la(lexer)) {
     case 96: // `
@@ -234,7 +244,12 @@ export function scan(lexer: Lexer, valid: Uint8Array): boolean {
   if (valid[JSX_TEXT] && scanJsxText(lexer)) return true;
   if (valid[AUTOMATIC_SEMICOLON]) {
     const scanned = { comment: false };
-    const ret = scanAutomaticSemicolon(lexer, !valid[LOGICAL_OR], scanned);
+    const ret = scanAutomaticSemicolon(
+      lexer,
+      !valid[LOGICAL_OR],
+      !!valid[STATEMENT_CONTINUES],
+      scanned,
+    );
     if (!ret && !scanned.comment && valid[TERNARY_QMARK] && la(lexer) === 63)
       return scanTernaryQmark(lexer);
     return ret;

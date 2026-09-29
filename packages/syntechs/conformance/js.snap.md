@@ -1,4 +1,4 @@
-js compatibility: 770/804 (95.77%), 9 refused (ok:false), 304 excluded
+js compatibility: 773/804 (96.14%), 9 refused (ok:false), 304 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -18,11 +18,8 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/arrows/issue-17421.js | 0/2 | 90.60% |
 | js/arrows/parenthesized-body/issue-18776.js | 0/1 | 85.71% |
 | js/classes/multiple-static.js | 0/1 | 40.00% |
-| js/comments/blank.js | 0/2 | 92.31% |
-| js/comments/export.js | 0/2 | 94.81% |
 | js/comments/function-declaration.js | 0/2 | 80.95% |
 | js/comments/return-statement.js | 0/2 | 98.34% |
-| js/comments/variable-declarator.js | 0/2 | 95.10% |
 | js/comments/in-list/dangling-comment-in-list.js | 0/1 | 95.95% |
 | js/comments/while-like/switch.js | 0/1 | 86.67% |
 | js/embeded/indention/19518.js | 0/1 | 64.94% |
@@ -46,7 +43,7 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | :------ | :----------: | :---------: | :----------- |
 | js/comments/break-continue-statements-3.js | 2/2 | 95.83% | check: output comment "// breaking comment;" matches no input comment |
 | js/comments/trailing_space.js | 2/2 | 100.00% | check: input "#!/there/is-space-here->         " at 0 is output as "#!/there/is-space-here->" at 0, which means "#!/ther |
-| js/decorators/comments.js | 1/1 | 93.94% | check: output comment "// B export // C" matches no input comment |
+| js/decorators/comments.js | 1/1 | 92.54% | check: output comment "// B" matches no input comment |
 | js/decorators-export/after_export.js | 1/1 | 76.92% | check: input "export" at 0 is output as "export" at 0, which means "export@\|0/2", not "export@\|-1/2" |
 | js/directives/issue-7346.js | 1/1 | 100.00% | check: input "'bar'" at 78 is output as "\"bar\"" at 79, which means "str:bar@\|0/7", not "str:bar@\|0/6" |
 | js/for-of/comments.js | 1/1 | 100.00% | check: output comment "//2b //2c" matches no input comment |
