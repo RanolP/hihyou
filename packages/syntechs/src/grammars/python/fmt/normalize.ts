@@ -403,15 +403,20 @@ export const normalize: Normalize = (lexemes, text, tree) => {
   let pending: number | undefined;
   let prev: Lexeme | undefined;
   let prevEnd = 0;
+  // A logical line opened by a backslash takes its indent from the first token after it, as CPython's tokenizer does.
+  let lineOpen = false;
   for (const [i, l] of lexemes.entries()) {
     const f = form(tree, l, lexemes[i + 1]);
     const continued =
       prev !== undefined && tree.kindName(prev.node) === "line_continuation";
-    if (
+    const startsLine: boolean =
       brackets === 0 &&
-      !continued &&
-      (prev === undefined || hasNewline(text, prevEnd, l.at))
-    ) {
+      (lineOpen ||
+        (!continued && (prev === undefined || hasNewline(text, prevEnd, l.at))));
+    lineOpen = startsLine && tree.kindName(l.node) === "line_continuation";
+    if (lineOpen) {
+      // The line's indent waits for its first token past the backslash.
+    } else if (startsLine) {
       const col = column(text, l.at);
       while (col < (indents.at(-1) ?? 0)) indents.pop();
       if (col > (indents.at(-1) ?? 0)) indents.push(col);

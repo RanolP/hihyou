@@ -13,13 +13,10 @@ import * as sink from "../sink.js";
 import { hasSkip, writeSkipped } from "./verbatim.js";
 import type { Frame } from "../../../../fmt/dsl/runtime.js";
 import {
-  byteEndOf,
   byteOffsetOf,
-  endOf,
   linesAfter,
   linesAfterIgnoringEndOfLineTrivia,
   linesBefore,
-  startOf,
 } from "../trivia.js";
 import {
   type StmtRules,
@@ -226,25 +223,14 @@ const unsupported = (tree: FormatTree, n: number): never => {
 
 // ---- definitions ----
 
-/** `writeClauseBody`, refusing a backslash continuation after the colon. */
+/** `writeClauseBody` for a header; a backslash continuation after its colon drops with the line break. */
 export function writeBody(
   f: Fmt,
-  header: { readonly ts: number; readonly colon: number },
+  _header: { readonly ts: number; readonly colon: number },
   stmts: Parameters<typeof writeClauseBody>[1],
   kind: "function" | "class" | "other",
   colonComments: readonly Comment[],
 ): void {
-  const t = f.tree;
-  const colonEnd = endOf(t, header.colon);
-  // `check` reads a backslash alone on the line after a colon as a dedent, so it would flag the correct output.
-  if (
-    kids(t, header.ts).some(
-      (c) => t.kindName(c) === "line_continuation" && startOf(t, c) >= colonEnd,
-    )
-  )
-    throw new Unformattable(
-      `backslash continuation before a body at ${byteEndOf(t, header.colon)}`,
-    );
   writeClauseBody(f, stmts, kind, colonComments);
 }
 

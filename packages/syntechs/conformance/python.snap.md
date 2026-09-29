@@ -1,4 +1,4 @@
-python compatibility: 283/327 (86.54%), 17 refused (ok:false), 49 excluded
+python compatibility: 285/327 (87.16%), 15 refused (ok:false), 49 excluded
 
 Fixtures: ruff 0.16.8 crates/ruff_python_formatter/resources/test/fixtures/{black,ruff} (recursive), every option set of each `.options.json`, expected output from tests/snapshots (black cases without a snapshot: their `.expect` file). Options are passed by their ruff.toml names.
 
@@ -42,8 +42,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| black/cases/backslash_before_indent.py | 1/1 | 84.21% | formatter-error: backslash continuation before a body at 14 |
-| black/cases/comment_after_escaped_newline.py | 1/1 | 47.06% | formatter-error: backslash continuation before a body at 10 |
 | black/cases/pattern_matching_style.py | 1/1 | 46.81% | formatter-error: unsupported pattern comment at 498 |
 | black/cases/pep_701.py | 1/1 | 93.33% | check: input "f\"{'\\''}\"" at 2276 is output as "f\"{\"'\"}\"" at 2230, which means "0:S\u0000{\"\"\"}\u0000", not "0:S |
 | black/cases/preview_long_strings__regression.py | 1/1 | 96.81% | check: input "F\"{F'{humanize_number(pos)}.': <{pound_len+2}} \"\n    F\"{balance: <{bal_len + 5}} \"\n    F\"<<{author. |
