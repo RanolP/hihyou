@@ -117,6 +117,14 @@ test("trailing commas drop from lambda parameters and one-line type lists, and a
   );
 });
 
+// A regression here keeps a `when` entry's trailing comma, which puts `->` on a line of its own.
+test("a trailing comma drops from a when entry's conditions", () => {
+  const input = "fun f() {\n    when (a) {\n        is A, //\n        is B, -> 1\n        2, -> 3\n    }\n}\n";
+  expect(run(input, false)).toBe(
+    "fun f() {\n    when (a) {\n        is A, //\n        is B -> 1\n        2 -> 3\n    }\n}\n",
+  );
+});
+
 // A regression here drops the `;` before a statement that starts with a lambda, which makes the lambda the trailing
 // lambda of the call before it and changes what the code does; `check` ignores `;`, so only this test sees it.
 test("a `;` before a statement that starts with a lambda stays", () => {

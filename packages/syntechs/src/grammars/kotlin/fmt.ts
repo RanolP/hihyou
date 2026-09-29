@@ -464,6 +464,34 @@ const ifExpression = <O>(node: number, ctx: StreamCtx<O>) => {
  * multiline string is re-indented as ktfmt does (trimmed-string.ts), a lambda with no statements prints its
  * comments as its body (lambda.ts), and a line comment past the width wraps.
  */
+/**
+ * A trailing comma after a `when` entry's last condition (`is A, is B, -> x`), which tree-sitter-kotlin 0.3.8
+ * recovers as an ERROR after a lone condition, else as a separator before an empty one. ktfmt drops it, so the
+ * generated rule sees a tree without them. A comment on the empty condition keeps both, as its only place to print.
+ */
+const whenEntry =
+  <O>(generated: StreamRule<O> | undefined): StreamRule<O> =>
+  (node, ctx) => {
+    const t = ctx.tree;
+    const kids = Array.from({ length: t.count(node) }, (_, i) => t.child(node, i));
+    const empty = (n: number | undefined) =>
+      n !== undefined &&
+      t.kindName(n) === "when_condition" &&
+      t.text(n) === "" &&
+      ctx.leadingComments(n).length + ctx.trailingComments(n).length === 0;
+    const kept = kids.filter((c, i) =>
+      t.kindName(c) === "ERROR"
+        ? !recoveredComma(t, c)
+        : !(empty(c) && t.kindName(kids[i - 1]!) === ",") && !(t.kindName(c) === "," && empty(kids[i + 1])),
+    );
+    if (kept.length === kids.length) return generated?.(node, ctx);
+    const tree: FormatTree = Object.assign(Object.create(t) as FormatTree, {
+      count: (n: number) => (n === node ? kept.length : t.count(n)),
+      child: (n: number, i: number) => (n === node ? kept[i]! : t.child(n, i)),
+    });
+    generated?.(node, Object.assign(Object.create(ctx) as typeof ctx, { tree }));
+  };
+
 function withChains<O>(stream: StreamRules<O>): StreamRules<O> {
   const rules = new Map(stream.rules);
   for (const kind of ["navigation_expression", "call_expression", "indexing_expression", "postfix_expression"])
@@ -473,6 +501,7 @@ function withChains<O>(stream: StreamRules<O>): StreamRules<O> {
   rules.set("string_literal", trimmedStrings(stream.rules.get("string_literal")));
   rules.set("lambda_literal", lambdas(stream.rules.get("lambda_literal")));
   rules.set("lambda_parameters", lambdaParameters);
+  rules.set("when_entry", whenEntry(stream.rules.get("when_entry")));
   for (const kind of binaryKinds) rules.set(kind, binary(stream.rules.get(kind)));
   for (const kind of recovering) {
     const generated = rules.get(kind);
@@ -505,7 +534,8 @@ function withChains<O>(stream: StreamRules<O>): StreamRules<O> {
     rules,
     wrapsLineComments: true,
     recovered: (error, t) =>
-      recoveredComma(t, error) && (recovering as readonly string[]).includes(t.kindName(t.parent(error))),
+      recoveredComma(t, error) &&
+      (recovering as readonly string[]).concat("when_entry").includes(t.kindName(t.parent(error))),
   };
 }
 
