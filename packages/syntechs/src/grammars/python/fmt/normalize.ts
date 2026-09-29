@@ -115,6 +115,33 @@ function previousSibling(tree: Tree, n: number): number {
   return NO_NODE;
 }
 
+/**
+ * Whether `t`, a `tuple`, is a `with`'s whole item list as tree-sitter reads it where CPython reads parenthesized
+ * items: `with ((x := a, y := b)):`, one tuple in more parentheses, which ruff prints in one pair, or `with (a,):`,
+ * one item and a trailing comma, which ruff prints as `with a:` once the comma is no magic one. `with (*a,):` stays
+ * a tuple, since no item can be a starred or unparenthesized named expression. `comma` asks about the latter only.
+ */
+function withItemsTuple(tree: Tree, t: number, comma: boolean): boolean {
+  let item = tree.parent(t);
+  let wrapped = false;
+  while (item !== NO_NODE && tree.kindName(item) === "parenthesized_expression") {
+    item = tree.parent(item);
+    wrapped = true;
+  }
+  if (item === NO_NODE || tree.kindName(item) !== "with_item") return false;
+  const clause = tree.parent(item);
+  if (clause === NO_NODE || tree.kindName(clause) !== "with_clause" || namedCount(tree, clause) !== 1)
+    return false;
+  if (wrapped || tree.kindName(tree.child(clause, 0)) === "(") return !comma;
+  if (namedCount(tree, t) !== 1) return false;
+  for (let i = 0, count = tree.count(t); i < count; i++) {
+    const c = tree.child(t, i);
+    if (tree.named(c) && tree.kindName(c) !== "comment")
+      return tree.kindName(c) !== "list_splat" && tree.kindName(c) !== "named_expression";
+  }
+  return false;
+}
+
 /** Whether `t`, a `tuple_pattern`, is in a case's pattern, rather than an assignment or `for` target. */
 function inCase(tree: Tree, t: number): boolean {
   const parent = tree.parent(t);
@@ -271,6 +298,7 @@ function optional(tree: Tree, l: Lexeme, next: Lexeme | undefined): boolean {
       if (emptyDelTarget(tree, parent)) return true;
       if (parentKind === "tuple_pattern" && inCase(tree, parent))
         return optionalCaseParens(tree, parent);
+      if (parentKind === "tuple" && withItemsTuple(tree, parent, false)) return true;
       if (parentKind === "tuple" || parentKind === "tuple_pattern") {
         // Around a tuple already in parentheses, the tuple's own are the ones ruff may keep or drop.
         let outer = tree.parent(parent);
@@ -310,6 +338,7 @@ function optional(tree: Tree, l: Lexeme, next: Lexeme | undefined): boolean {
       if (parentKind === "match_statement" && next?.text === ":")
         return namedCount(tree, parent) > 2;
       if (!next || !closers.has(next.text)) return false;
+      if (parentKind === "tuple" && withItemsTuple(tree, parent, true)) return true;
       // A one-element tuple's comma is what makes it a tuple, in a subscript's brackets too.
       if (
         parentKind === "tuple" ||

@@ -1079,15 +1079,51 @@ class Reader {
     const clause =
       this.named(n).find((c) => this.kind(c) === "with_clause") ??
       this.fail(n, "no with clause");
-    // `with (a as b):` parses as one item whose value is a parenthesized `as`; the parentheses are the statement's.
+    // `with (a as b):` parses as one item whose value is a parenthesized `as`, and `with (a,):` as one whose value is
+    // a one-element tuple; CPython reads both as parenthesized items, so the parentheses are the statement's.
     let parens: number | undefined;
-    const items = this.named(clause).map((item): WithItem => {
-      let value = this.needField(item, "value");
+    const clauseItems = this.named(clause);
+    const values = clauseItems.map((item) => this.needField(item, "value"));
+    const noItem = (value: number) =>
+      ["list_splat", "named_expression"].includes(this.kind(value));
+    const lp = this.tok(clause, "(");
+    const rp = this.tok(clause, ")");
+    // `with (a, *b):` and `with (x := a, y := b):` hold what no item can be, so CPython reads one tuple item: its
+    // WithItem stands at the first tree-sitter item, whose rule prints the whole tuple.
+    const first = clauseItems[0];
+    if (
+      lp !== undefined &&
+      rp !== undefined &&
+      first !== undefined &&
+      values.some(noItem)
+    ) {
+      const tuple = this.tupleOf(clause, values, lp, rp);
+      const item = this.link({
+        kind: "WithItem",
+        ts: first,
+        start: tuple.start,
+        end: tuple.end,
+        kids: [tuple],
+        parent: undefined,
+        context: tuple,
+        asTok: undefined,
+        vars: undefined,
+      });
+      return this.withOf(n, [item], undefined, undefined);
+    }
+    const items = clauseItems.map((item, i): WithItem => {
+      let value = values[i] as number;
       const inner = this.named(value)[0];
       if (
-        this.kind(value) === "parenthesized_expression" &&
         inner !== undefined &&
-        this.kind(inner) === "as_pattern"
+        ((this.kind(value) === "parenthesized_expression" &&
+          this.kind(inner) === "as_pattern") ||
+          (clauseItems.length === 1 &&
+            this.kind(value) === "tuple" &&
+            this.named(value).length === 1 &&
+            this.tok(value, ",") !== undefined &&
+            this.tok(value, "(") !== undefined &&
+            !noItem(inner)))
       ) {
         parens = value;
         value = inner;
@@ -1115,6 +1151,17 @@ class Reader {
         vars,
       });
     });
+    return parens !== undefined
+      ? this.withOf(n, items, this.need(parens, "("), this.need(parens, ")"))
+      : this.withOf(n, items, lp, rp);
+  }
+
+  withOf(
+    n: number,
+    items: WithItem[],
+    open: number | undefined,
+    close: number | undefined,
+  ): With {
     const body = this.body(this.needField(n, "body"));
     return this.link({
       kind: "With",
@@ -1126,11 +1173,9 @@ class Reader {
       kws: [this.tok(n, "async"), this.need(n, "with")].filter(
         (k) => k !== undefined,
       ),
-      open:
-        parens !== undefined ? this.need(parens, "(") : this.tok(clause, "("),
+      open,
       items,
-      close:
-        parens !== undefined ? this.need(parens, ")") : this.tok(clause, ")"),
+      close,
       colon: this.need(n, ":"),
       body,
     });

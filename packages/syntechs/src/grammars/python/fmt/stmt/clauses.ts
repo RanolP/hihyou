@@ -163,7 +163,8 @@ export function withItems(f: Fmt, w: With): void {
   const lastKw = w.kws.at(-1);
   const withKw = lastKw !== undefined ? lastKw : w.colon;
   const colonStart = startOf(f.tree, w.colon);
-  const clauseNode = withClause(f, w);
+  // The node holding the items' commas: the parentheses' own node for a `with (a,):` read as items.
+  const clauseNode = w.open !== undefined ? f.tree.parent(w.open) : withClause(f, w);
   const single = w.items.length === 1 ? first : undefined;
   // Each item prints by its rule in format/stmt-compound.ts, in the layout ruff chose for the statement.
   const comma = writeCommaIn(f.tree, clauseNode, withKw);

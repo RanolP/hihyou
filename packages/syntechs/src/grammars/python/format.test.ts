@@ -41,3 +41,13 @@ it("lets ruff add or drop only the parentheses that change no pattern's meaning"
   expect(cases("[(a, b)]", "[a, b]")).toBeDefined();
   expect(cases("(a,)", "a")).toBeDefined();
 });
+
+// tree-sitter reads `with (a, *b):` as two items and `with (a,):` as one tuple item, the reverse of CPython: the
+// formatter dropped the tuple's parentheses, making `*b` an item, and kept `(a,)` though ruff prints `with a:`.
+it("reads a with's parentheses as CPython does: a tuple item, or parenthesized items", () => {
+  expect(fmt("with (a, *b):\n    pass\n")).toBe("with (a, *b):\n    pass\n");
+  expect(fmt("with (x := a, y := b):\n    pass\n")).toBe("with (x := a, y := b):\n    pass\n");
+  expect(fmt("with (a,):\n    pass\n")).toBe("with (\n    a,\n):\n    pass\n");
+  expect(check(python, "with (a,):\n    pass\n", "with a:\n    pass\n")).toBeUndefined();
+  expect(check(python, "with (*a,):\n    pass\n", "with a:\n    pass\n")).toBeDefined();
+});

@@ -1,4 +1,4 @@
-python compatibility: 272/327 (83.18%), 24 refused (ok:false), 49 excluded
+python compatibility: 275/327 (84.10%), 23 refused (ok:false), 49 excluded
 
 Fixtures: ruff 0.16.8 crates/ruff_python_formatter/resources/test/fixtures/{black,ruff} (recursive), every option set of each `.options.json`, expected output from tests/snapshots (black cases without a snapshot: their `.expect` file). Options are passed by their ruff.toml names.
 
@@ -19,7 +19,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | black/cases/preview_hug_parens_with_braces_and_square_brackets_no_ll1.py | 0/1 | 37.61% |
 | black/cases/preview_import_line_collapse.py | 0/1 | 99.43% |
 | black/cases/preview_long_dict_values.py | 0/1 | 90.30% |
-| black/cases/remove_with_brackets.py | 0/1 | 98.68% |
 | ruff/docstring_code_examples.py | 4/10 | 94.91% |
 | ruff/docstring_code_examples_dynamic_line_width.py | 0/4 | 57.97% |
 | ruff/docstring_tab_indentation.py | 0/2 | 92.00% |
@@ -32,7 +31,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ruff/expression/join_implicit_concatenated_string_preserve.py | 0/2 | 88.64% |
 | ruff/expression/slice.py | 0/1 | 94.07% |
 | ruff/fmt_on_off/indent.py | 0/3 | 65.49% |
-| ruff/skip_magic_trailing_comma.py | 0/2 | 95.76% |
 | ruff/statement/function.py | 0/1 | 99.60% |
 | ruff/statement/lazy_import.py | 0/1 | 68.97% |
 | ruff/statement/try.py | 1/2 | 99.58% |
@@ -50,7 +48,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | black/cases/comment_after_escaped_newline.py | 1/1 | 47.06% | formatter-error: backslash continuation before a body at 10 |
 | black/cases/pattern_matching_extras.py | 1/1 | 100.00% | formatter-error: unsupported pattern keyword_pattern at 1519 |
 | black/cases/pattern_matching_style.py | 1/1 | 46.81% | formatter-error: comment in a pattern at 474 |
-| black/cases/pep_572_remove_parens.py | 1/1 | 98.55% | check: input "(" at 846 is output as "x" at 835, which means "x", not "(" |
 | black/cases/pep_701.py | 1/1 | 93.33% | check: input "f\"{'\\''}\"" at 2276 is output as "f\"{\"'\"}\"" at 2230, which means "0:S\u0000{\"\"\"}\u0000", not "0:S |
 | black/cases/preview_long_strings__regression.py | 1/1 | 96.81% | check: input "F\"{F'{humanize_number(pos)}.': <{pound_len+2}} \"\n    F\"{balance: <{bal_len + 5}} \"\n    F\"<<{author. |
 | black/cases/remove_except_types_parens.py | 1/1 | 95.12% | check: input "," at 721 is output as ":" at 713, which means ":", not "," |
