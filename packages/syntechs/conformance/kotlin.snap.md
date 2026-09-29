@@ -1,4 +1,4 @@
-kotlin compatibility: 467/753 (62.02%), 47 refused (ok:false), 11 excluded
+kotlin compatibility: 480/753 (63.75%), 47 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -198,16 +198,15 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/new_codestyle/annotation/AnnotationsOnTypes.kt | 0/1 | 93.20% |
 | ktfmt/new_codestyle/calls/gh633-2.kt | 0/1 | 43.59% |
 | ktfmt/new_codestyle/calls/gh633.kt | 0/1 | 67.05% |
-| ktfmt/kdoc/testMultiLineLink.kt | 0/1 | 69.23% |
+| ktfmt/kdoc/testMultiLineLink.kt | 0/1 | 64.29% |
 | ktfmt/kdoc/testSeparateParagraphMarkers1.kt | 0/1 | 57.14% |
 | ktfmt/kdoc/testList1.kt | 0/1 | 20.00% |
 | ktfmt/kdoc/testIndentedList.kt | 0/1 | 42.86% |
 | ktfmt/kdoc/testHorizontalRuler.kt | 0/1 | 60.00% |
 | ktfmt/kdoc/testQuoteOnlyOnFirstLine.kt | 0/1 | 53.33% |
 | ktfmt/kdoc/testNoBreakUrl.kt | 0/1 | 60.00% |
-| ktfmt/kdoc/testAsciiArt.kt | 0/1 | 80.00% |
-| ktfmt/kdoc/testAsciiArt3.kt | 0/1 | 43.75% |
-| ktfmt/kdoc/testBrokenAsciiArt.kt | 0/1 | 64.86% |
+| ktfmt/kdoc/testAsciiArt.kt | 0/1 | 75.86% |
+| ktfmt/kdoc/testAsciiArt3.kt | 0/1 | 55.56% |
 | ktfmt/kdoc/testHtmlLists.kt | 0/1 | 50.00% |
 | ktfmt/kdoc/testVariousMarkup.kt | 0/1 | 75.52% |
 | ktfmt/kdoc/testListContinuations.kt | 0/1 | 83.33% |
@@ -225,23 +224,11 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/kdoc/testNPE.kt | 0/1 | 50.00% |
 | ktfmt/kdoc/testQuotedBug.kt | 0/1 | 72.73% |
 | ktfmt/kdoc/testListBreaking.kt | 0/1 | 66.67% |
-| ktfmt/kdoc/testNewList.kt | 0/1 | 71.43% |
 | ktfmt/kdoc/testSplashScreen.kt | 0/1 | 64.56% |
 | ktfmt/kdoc/testRaggedIndentation.kt | 0/1 | 53.85% |
-| ktfmt/kdoc/testTables.kt | 0/1 | 60.00% |
-| ktfmt/kdoc/testTableMixedWithHtml.kt | 0/1 | 25.00% |
-| ktfmt/kdoc/testTableExtraCells.kt | 0/1 | 28.57% |
-| ktfmt/kdoc/testTables2.kt | 0/1 | 33.33% |
-| ktfmt/kdoc/testTables3.kt | 0/1 | 52.63% |
-| ktfmt/kdoc/testTables4.kt | 0/1 | 60.00% |
-| ktfmt/kdoc/testTablesEmptyCells.kt | 0/1 | 18.18% |
-| ktfmt/kdoc/testTables5.kt | 0/1 | 38.10% |
-| ktfmt/kdoc/testTables6.kt | 0/1 | 46.15% |
-| ktfmt/kdoc/testTables7.kt | 0/1 | 66.67% |
-| ktfmt/kdoc/testTables7b.kt | 0/1 | 66.67% |
 | ktfmt/kdoc/testBulletsUnderParamTags.kt | 0/1 | 90.00% |
 | ktfmt/kdoc/testPreTag3.kt | 0/1 | 41.67% |
-| ktfmt/kdoc/testMarkupAcrossLines.kt | 0/1 | 33.33% |
+| ktfmt/kdoc/testMarkupAcrossLines.kt | 0/1 | 46.15% |
 | ktfmt/kdoc/testLineBreak.kt | 0/1 | 75.00% |
 | ktfmt/kdoc/testConvertMarkup2.kt | 0/1 | 61.54% |
 | ktfmt/kdoc/testFencedCodeBlockWithContinuationInListItem.kt | 0/1 | 88.89% |

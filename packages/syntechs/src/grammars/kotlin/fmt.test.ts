@@ -73,3 +73,12 @@ test("KDoc code blocks hug the prose that introduces them, as ktfmt prints them"
     "/**\n * Like so:\n * ```\n * code\n * ```\n *\n * Then.\n * <pre>\n * x\n * </pre>\n */\nfun f() {}\n",
   );
 });
+
+// A regression here stops realigning KDoc tables, or refuses a `:--` column the realigned table prints as plain
+// dashes, which failed 11 ktfmt table fixtures.
+test("KDoc tables are realigned as ktfmt prints them", () => {
+  const input = "/**\n * Values:\n *\n * |a|bb|\n * |:--|---:|\n * |x|1|\n */\nfun f() {}\n";
+  expect(run(input, false)).toBe(
+    "/**\n * Values:\n *\n * | a   | bb  |\n * |-----|----:|\n * | x   |   1 |\n */\nfun f() {}\n",
+  );
+});

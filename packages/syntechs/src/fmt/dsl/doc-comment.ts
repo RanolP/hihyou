@@ -4,11 +4,17 @@
 // `docCommentWords` lets `check` hold it to.
 import {
   close,
+  closeChoice,
+  closeState,
   FILL,
   FILL_ITEM,
   GROUP,
   open,
   openAlign,
+  openChoice,
+  openReservedSuffix,
+  openState,
+  sBreakParent,
   sHardline,
   sLine,
   sText,
@@ -42,17 +48,43 @@ interface Prose {
   readonly hang: number;
   readonly blankBefore: boolean;
 }
-/** Lines printed as written after the prefix: a fenced (`fence`) or indented code block, `<pre>`, a table. */
+/** Lines printed as written after the prefix: a fenced (`fence`) or indented code block, `<pre>`. */
 interface Verbatim {
-  readonly t: "fence" | "code" | "pre" | "table";
+  readonly t: "fence" | "code" | "pre";
   readonly lines: string[];
   readonly blankBefore: boolean;
 }
-export type DocBlock = Prose | Verbatim;
+/** A column's alignment; ktfmt prints a left-aligned one (`:--`) as it does an unmarked one. */
+type Align = "left" | "center" | "right";
+/** A markdown table, its columns realigned: a header row, a divider (`aligns`), then the body rows. */
+interface Table {
+  readonly t: "table";
+  /** The header row, then the body rows, each its cells' trimmed text; a body row may have more or fewer cells. */
+  readonly rows: string[][];
+  readonly aligns: Align[];
+  readonly blankBefore: boolean;
+}
+export type DocBlock = Prose | Verbatim | Table;
 
 const listMarker = /^(?:[-*+]|\d+[.)])(?=\s|$)/;
 const fence = /^(```|~~~)/;
 const split = (s: string) => s.split(/\s+/).filter((w) => w !== "");
+
+/** A table row's cells: split at each unescaped `|`, less the leading and trailing one. */
+function cells(line: string): string[] {
+  let s = line.trim();
+  if (s.startsWith("|")) s = s.slice(1);
+  if (s.endsWith("|") && !s.endsWith("\\|")) s = s.slice(0, -1);
+  return s.split(/(?<!\\)\|/).map((c) => c.trim());
+}
+
+/** The column alignments of divider row `line`, or undefined when it is none: each cell `-`s, `:`-marked, 3+ long. */
+function divider(line: string): Align[] | undefined {
+  if (!line.includes("|")) return undefined;
+  const cs = cells(line);
+  if (!cs.every((c) => c.length >= 3 && /^:?-+:?$/.test(c))) return undefined;
+  return cs.map((c) => (!c.endsWith(":") ? "left" : c.startsWith(":") ? "center" : "right"));
+}
 
 /** The comment's lines between its delimiters, each without its indentation, prefix and the space after it. */
 function innerLines(text: string, style: DocCommentStyle): string[] {
@@ -99,14 +131,13 @@ export function parseDocComment(text: string, style: DocCommentStyle): DocBlock[
       i = j;
       cur = undefined;
     };
+    // A table: a row with a `|`, a divider of as many cells, then the rows up to the first without a `|`. Only a
+    // block's first line starts one; a paragraph's next line never does.
+    const aligns = cur === undefined && line.includes("|") ? divider(lines[i + 1] ?? "") : undefined;
     const f = fence.exec(trimmed);
     if (f) verbatim("fence", i + 1, (l) => l.trimStart().startsWith(f[1] as string));
     else if (/^<pre\b/i.test(trimmed)) verbatim("pre", i, (l) => /<\/pre>/i.test(l));
-    else if (trimmed.startsWith("|")) {
-      let j = i;
-      while ((lines[j + 1] ?? "").trimStart().startsWith("|")) j++;
-      verbatim("table", j, () => true);
-    } else if (indentOf(line) >= 4 && cur === undefined) {
+    else if (indentOf(line) >= 4 && cur === undefined) {
       // An indented code block runs through the blank lines that more indented lines follow.
       let j = i;
       for (let k = i + 1; k < lines.length; k++) {
@@ -116,6 +147,11 @@ export function parseDocComment(text: string, style: DocCommentStyle): DocBlock[
         j = k;
       }
       verbatim("code", j, () => true);
+    } else if (aligns !== undefined && aligns.length === cells(line).length) {
+      const rows = [cells(line)];
+      for (i += 2; i < lines.length && (lines[i] as string).includes("|"); i++) rows.push(cells(lines[i] as string));
+      i--;
+      blocks.push({ t: "table", rows, aligns, blankBefore });
     } else if (trimmed.startsWith(style.tag) && trimmed.length > style.tag.length && !/\s/.test(trimmed[style.tag.length] as string)) {
       cur = { t: "tag", words: split(trimmed), lead: "", hang: style.tagHang, blankBefore };
       blocks.push(cur);
@@ -137,24 +173,27 @@ export function parseDocComment(text: string, style: DocCommentStyle): DocBlock[
 
 const isCode = (b: DocBlock) => b.t === "code" || b.t === "fence";
 /**
- * Whether a blank line goes between `a` and `b`: the tags follow the prose after one and each other without. A
- * `<pre>` hugs what precedes it, and a fenced block the prose that introduces it (ending in `:` or `,`) or
- * another verbatim block; after a fenced block, a list item keeps the source's spacing.
+ * Whether a blank line goes between `a` and `b`: the tags follow the prose after one and each other without, and
+ * a header follows one. A `<pre>` hugs what precedes it, a fenced block the prose that introduces it (ending in
+ * `:` or `,`) or another verbatim block, and a table its header; after a fenced block or a table, a list item
+ * keeps the source's spacing.
  */
 function blankBetween(a: DocBlock, b: DocBlock): boolean {
   if (b.t === "tag") return a.t !== "tag";
   if (b.t === "pre") return false;
-  if (b.t === "fence") return !("lines" in a || /[:,]$/.test(a.words[a.words.length - 1] ?? ""));
+  if (b.t === "fence") return a.t === "table" || !("lines" in a || /[:,]$/.test(a.words[a.words.length - 1] ?? ""));
+  if (b.t === "header") return true;
   if (a.t === "tag") return true;
   if (isCode(a) && isCode(b)) return false;
-  if (a.t === "fence" && b.t === "item") return b.blankBefore;
+  if ((a.t === "fence" || a.t === "table") && b.t === "item") return b.blankBefore;
+  if (a.t === "header" && b.t === "table") return false;
   if (isCode(a) || isCode(b) || a.t === "table" || b.t === "table") return true;
   return b.blankBefore;
 }
 
 /** A word that would read as markup at the start of a line (a tag, a list marker, a header), so it never starts one. */
 function canStartLine(word: string, style: DocCommentStyle): boolean {
-  return !(word.startsWith(style.tag) || listMarker.test(word) || word.startsWith("#") || word.startsWith("|"));
+  return !(word.startsWith(style.tag) || listMarker.test(word) || word.startsWith("#"));
 }
 
 /**
@@ -162,8 +201,89 @@ function canStartLine(word: string, style: DocCommentStyle): boolean {
  * `check` compares, since reflow may change only the whitespace between a doc comment's words.
  */
 export function docCommentWords(text: string, style: DocCommentStyle): string {
-  if (!isDoc(text, style)) return text;
-  return innerLines(text, style).flatMap(split).join(" ");
+  const blocks = parseDocComment(text, style);
+  if (!blocks) return text;
+  return blocks
+    .flatMap((b) => {
+      if ("lines" in b) return b.lines.flatMap(split);
+      if (b.t !== "table") return b.words;
+      // Realigning a table pads its cells, adds its outer `|`s and fills its short rows: its words are its cells'.
+      const row = (r: readonly string[]) => {
+        let end = r.length;
+        while (end > 0 && r[end - 1] === "") end--;
+        return `| ${r.slice(0, end).map((c) => split(c).join(" ")).join(" | ")} |`;
+      };
+      const [header, ...body] = b.rows;
+      return [header as string[], b.aligns, ...body].map(row);
+    })
+    .join(" ");
+}
+
+/** `text` padded to `width` as `align` places it; a centered text's odd space goes after it. */
+function pad(text: string, width: number, align: Align): string {
+  const room = width - text.length;
+  if (align === "right") return " ".repeat(room) + text;
+  if (align === "center") {
+    const before = Math.floor(room / 2);
+    return " ".repeat(before) + text + " ".repeat(room - before);
+  }
+  return text + " ".repeat(room);
+}
+
+/**
+ * Prints table `t` as ktfmt realigns one: each column as wide as its widest cell (3 at least), the header's
+ * cells left-aligned and the body's as the divider says, the short rows filled with empty cells. A row's cells
+ * sit between `| ` and ` |` when every row then ends within 2 columns past the width, else between bare `|`s.
+ * A body row's cells past the header's print as they are, widening no other row.
+ */
+function printTable(t: Table): void {
+  const count = t.aligns.length;
+  const widths: number[] = [];
+  for (const r of t.rows)
+    r.forEach((c, i) => {
+      widths[i] = Math.max(widths[i] ?? 3, c.length);
+    });
+  const rows = t.rows.map((r, j) =>
+    Array.from({ length: Math.max(r.length, count) }, (_, i) =>
+      pad(r[i] ?? "", widths[i] as number, j > 0 && i < count ? (t.aligns[i] as Align) : "left"),
+    ),
+  );
+  const dashes = t.aligns.map((a, i) => (spaced: boolean) => {
+    const n = (widths[i] as number) + (spaced ? 2 : 0);
+    if (a === "center") return `:${"-".repeat(n - 2)}:`;
+    if (a === "right") return `${"-".repeat(n - 1)}:`;
+    return "-".repeat(n);
+  });
+  const lines = (spaced: boolean) => [
+    spaced ? `| ${(rows[0] as string[]).join(" | ")} |` : `|${(rows[0] as string[]).join("|")}|`,
+    `|${dashes.map((d) => d(spaced)).join("|")}|`,
+    ...rows.slice(1).map((r) => (spaced ? `| ${r.join(" | ")} |` : `|${r.join("|")}|`)),
+  ];
+  const spaced = lines(true);
+  const widest = Math.max(...spaced.map((l) => l.length));
+  // The rows break the comment, which the choice's own lines would not.
+  sBreakParent();
+  openChoice(false);
+  openState();
+  // A state is measured to its first line break: the header row, whose last 2 columns print from a suffix that
+  // reserves what makes it measure as the widest row less the 2 columns ktfmt allows past the width.
+  const header = spaced[0] as string;
+  sText(header.slice(0, -2));
+  openReservedSuffix(widest - header.length);
+  sText(header.slice(-2));
+  close();
+  for (const l of spaced.slice(1)) {
+    sHardline();
+    sText(l);
+  }
+  closeState();
+  openState();
+  lines(false).forEach((l, j) => {
+    if (j > 0) sHardline();
+    sText(l);
+  });
+  closeState();
+  closeChoice();
 }
 
 /**
@@ -191,6 +311,10 @@ export function printDocComment<O>(c: number, ctx: StreamCtx<O>, style: DocComme
         if (j > 0) sHardline();
         if (l !== "") sText(l);
       });
+      return;
+    }
+    if (b.t === "table") {
+      printTable(b);
       return;
     }
     if (b.lead !== "") sText(b.lead);
