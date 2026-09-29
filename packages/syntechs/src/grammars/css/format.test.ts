@@ -6,7 +6,13 @@ import type { DslGrammar } from "../../fmt/dsl/dsl.js";
 import { referenceRules } from "../../fmt/dsl/reference.js";
 import { format } from "../../fmt/format.js";
 import type { Language } from "../../fmt/rules.js";
-import { css, type CssOptions, customs, frontMatterFirst } from "./fmt.js";
+import {
+  css,
+  type CssOptions,
+  customs,
+  frontMatterFirst,
+  prettierIgnored,
+} from "./fmt.js";
 import * as spec from "./format.js";
 import { grammar, language } from "./index.js";
 
@@ -96,6 +102,7 @@ const reference = {
   stream: {
     ...referenceRules<CssOptions>(spec.css, grammar as DslGrammar, customs),
     wrap: frontMatterFirst,
+    keepsSource: prettierIgnored,
   },
 };
 

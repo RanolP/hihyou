@@ -106,6 +106,8 @@ const normalize: Normalize = (lexemes, _text, tree) =>
     return meaning(tree, l.node, l.text);
   });
 
+const statementLists = new Set(["stylesheet", "block"]);
+
 const combinators = new Set([
   "child_selector",
   "descendant_selector",
@@ -137,6 +139,26 @@ export const customs = {
   /** Prettier indents a selector of more than two nodes as it breaks. */
   longSelector: (node, ctx) => parts(node, ctx) > 2,
 } satisfies Record<string, PredicateRule<CssOptions>>;
+
+/**
+ * Prettier's printNodeSequence: a statement whose previous sibling is a `/* prettier-ignore *\/` comment prints as
+ * written. Ordinals run in postorder, so the node just before `node`'s leftmost leaf is its previous sibling.
+ */
+export function prettierIgnored(node: number, ctx: SCtx): boolean {
+  const { tree } = ctx;
+  const parent = tree.parent(node);
+  if (parent === NO_NODE || !statementLists.has(kind(parent, ctx))) return false;
+  let first = node;
+  while (tree.count(first) > 0) first = tree.child(first, 0);
+  const ord = tree.ord(first);
+  if (ord === 0) return false;
+  const prev = tree.at(ord - 1);
+  return (
+    kind(prev, ctx) === "comment" &&
+    tree.parent(prev) === tree.parent(node) &&
+    /^\/\*\s*prettier-ignore\s*\*\/$/.test(tree.text(prev))
+  );
+}
 
 /** Prettier's css-root: the front matter, then a blank line before the stylesheet unless it is empty. */
 export function frontMatterFirst(
@@ -172,5 +194,9 @@ export const css: Language<CssOptions> = {
     normalize,
     layoutBlind: true,
   }),
-  stream: { ...gen.css(customs), wrap: frontMatterFirst },
+  stream: {
+    ...gen.css(customs),
+    wrap: frontMatterFirst,
+    keepsSource: prettierIgnored,
+  },
 };

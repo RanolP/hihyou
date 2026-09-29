@@ -107,6 +107,11 @@ const edgeCases: [string, string][] = [
   // Front matter once parsed as selectors, lowercased and joined onto the first rule's line.
   ["front-matter", "---\ntitle: Title\n\n---\na{b:c}"],
   ["front-matter-toml", "+++\ntitle = 'T'\n\n+++\n\n\n/* c */"],
+  // A rule or declaration after a prettier-ignore comment was laid out like any other.
+  [
+    "prettier-ignore",
+    "/* prettier-ignore */\n.a  >  .b{}\n.c{\n  /* prettier-ignore */\n  d:     e;\n  f:g}",
+  ],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");

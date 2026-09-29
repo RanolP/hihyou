@@ -51,7 +51,10 @@ export interface StreamCtx<O = unknown> {
   /** Appends comment `c`. */
   comment(c: number): void;
   isList(node: number): boolean;
-  /** Whether `node` lies in a region the parser could not read, which prints as its source text. */
+  /**
+   * Whether `node` lies in a region the parser could not read, or is one the language keeps as written
+   * (`StreamRules.keepsSource`), either of which prints as its source text.
+   */
   isBroken(node: number): boolean;
   /**
    * Whether `node`'s rule prints the node's comments itself (`StreamRules.printsOwnComments`), so whatever prints
@@ -148,6 +151,8 @@ export interface StreamRules<O = unknown> {
    * lines all start with `*`).
    */
   readonly printComment?: (c: number, ctx: StreamCtx<O>) => void;
+  /** Whether `node` prints as its source text though it parsed, as a broken node does (prettier-ignore). */
+  readonly keepsSource?: (node: number, ctx: StreamCtx<O>) => boolean;
   /**
    * Whether `node`'s rule prints the node's comments itself, with `printLeadingComments` and
    * `printTrailingComments`, so they can go inside what the rule wraps around them (prettier's
@@ -200,7 +205,10 @@ export function formatStream<O>(
           sToken(c, isLine(c) ? t.trimEnd() : t);
         };
     const broken = brokenNodes(tree);
-    const isBroken = (node: number) => broken !== undefined && broken.has(node);
+    const { keepsSource } = language;
+    const isBroken = (node: number) =>
+      (broken !== undefined && broken.has(node)) ||
+      (keepsSource !== undefined && keepsSource(node, ctx));
 
     const hasNamedChild = (node: number) => {
       for (let i = 0, count = tree.count(node); i < count; i++) {

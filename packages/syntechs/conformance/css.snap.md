@@ -1,4 +1,4 @@
-css compatibility: 76/151 (50.33%), 0 refused (ok:false), 6 excluded
+css compatibility: 78/151 (51.66%), 0 refused (ok:false), 6 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -44,7 +44,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | css/comments/at-rules.css | 0/1 | 39.44% |
 | css/comments/custom-properties.css | 0/1 | 53.85% |
 | css/comments/declaration.css | 0/1 | 60.12% |
-| css/comments/prettier-ignore.css | 0/1 | 80.00% |
 | css/comments/selectors.css | 0/1 | 52.82% |
 | css/comments/types.css | 0/1 | 92.86% |
 | css/composes/composes.css | 0/1 | 57.14% |
@@ -86,7 +85,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | css/trailing-comma/var-func.css | 0/1 | 57.14% |
 | css/url/url.css | 0/1 | 90.00% |
 | css/variables/apply-rule.css | 0/1 | 92.06% |
-| css/yaml/ignore.css | 0/1 | 76.92% |
 
 # Refused
 
