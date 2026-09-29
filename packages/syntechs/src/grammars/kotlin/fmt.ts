@@ -45,7 +45,7 @@ const normalize: Normalize = (lexemes, _text, tree) =>
     if (inImports(tree, l.node)) return undefined;
     if (l.text === ";") return undefined;
     const trimmed = trimmedString(tree, l.node);
-    if (trimmed !== undefined) return (trimmed.margin ? "|" : "") + trimmed.lines.join("\n");
+    if (trimmed !== undefined) return trimmed.prefix + (trimmed.margin ? "|" : "") + trimmed.lines.join("\n");
     const next = lexemes[i + 1]?.text;
     if (l.text === "," && next !== undefined && closers.has(next)) return undefined;
     return l.text;

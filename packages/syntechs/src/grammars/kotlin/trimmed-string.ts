@@ -5,8 +5,9 @@ import { HARD, sBreakParent, sLine, sText, sToken } from "../../fmt/stream.js";
 import type { StreamRule } from "../../fmt/stream-format.js";
 import type { FormatTree } from "../../fmt/tree.js";
 
-// ktfmt's simpleTemplateExpressionRegex, which it runs on each line: a `$` that starts a template.
-const template = /\$((\{?[A-Za-z_\s])|\{$)/;
+// ktfmt's simpleTemplateExpressionRegex, which it runs on each line: a `$` that starts a template. A multi-dollar
+// string's template starts with as many `$`s as its prefix (`$$"""`) has.
+const template = (dollars: number) => new RegExp(`\\\${${dollars}}((\\{?[A-Za-z_\\s])|\\{$)`);
 
 /**
  * The content lines ktfmt prints string literal `node` with, and whether it trims a margin; undefined when ktfmt
@@ -17,8 +18,9 @@ const template = /\$((\{?[A-Za-z_\s])|\{$)/;
 export function trimmedString(
   t: FormatTree,
   node: number,
-): { readonly margin: boolean; readonly lines: readonly string[] } | undefined {
-  const text = t.text(node);
+): { readonly prefix: string; readonly margin: boolean; readonly lines: readonly string[] } | undefined {
+  const prefix = /^\$*/.exec(t.text(node))?.[0] ?? "";
+  const text = t.text(node).slice(prefix.length);
   if (!text.startsWith('"""') || !text.endsWith('"""') || !text.includes("\n")) return;
   const nav = t.parent(node);
   if (t.kindName(nav) !== "navigation_expression" || t.child(nav, 0) !== node) return;
@@ -33,7 +35,8 @@ export function trimmedString(
   for (let p = t.parent(node); p !== t.root; p = t.parent(p)) if (t.kindName(p) === "string_literal") return;
 
   const raw = text.slice(3, -3).split("\n");
-  if (raw.some((l) => template.test(l))) return;
+  const templateStart = template(Math.max(1, prefix.length));
+  if (raw.some((l) => templateStart.test(l))) return;
   const margin = name === "trimMargin";
   const first = raw[0] as string;
   const last = raw[raw.length - 1] as string;
@@ -53,7 +56,7 @@ export function trimmedString(
   ];
   // A line prints after the indentation (and a margin's `|`) unless it is empty and trimIndent drops both.
   if (lines.some((l) => /[ \t]$/.test(l) && (margin || l.length > 0))) return;
-  return { margin, lines };
+  return { prefix, margin, lines };
 }
 
 /** The string literal rule, but a trimmed multiline string prints as `trimmedString` lays it out. */
@@ -65,7 +68,7 @@ export function trimmedStrings<O>(rule: StreamRule<O> | undefined): StreamRule<O
       return;
     }
     sBreakParent();
-    sToken(node, '"""');
+    sToken(node, `${s.prefix}"""`);
     for (const line of s.lines) {
       sLine(HARD);
       if (s.margin || line.length > 0) sText((s.margin ? "|" : "") + line);

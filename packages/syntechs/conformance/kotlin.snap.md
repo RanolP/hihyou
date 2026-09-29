@@ -1,4 +1,4 @@
-kotlin compatibility: 663/753 (88.05%), 5 refused (ok:false), 11 excluded
+kotlin compatibility: 666/753 (88.45%), 5 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -59,10 +59,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/misc/unaryPrefix.kt | 0/1 | 57.89% |
 | ktfmt/format/property/backingFieldWithChainedScopingFunction3.kt | 0/1 | 76.92% |
 | ktfmt/format/property/trailingCommasInProperties.kt | 0/1 | 72.73% |
-| ktfmt/format/string/multiDollarString.kt | 0/1 | 33.33% |
-| ktfmt/format/string/multilineStringsWithTemplateExpressions.kt | 0/1 | 96.30% |
-| ktfmt/format/string/multilineStringsWithTemplateExpressions2.kt | 0/1 | 40.00% |
-| ktfmt/format/string/nestedMultilineString2.kt | 0/1 | 96.97% |
+| ktfmt/format/string/multiDollarString.kt | 0/1 | 44.44% |
 | ktfmt/format/type/castsWithBreaks.kt | 0/1 | 67.86% |
 | ktfmt/format/type/classExpression.kt | 0/1 | 66.67% |
 | ktfmt/format/type/intersections.kt | 0/1 | 75.00% |

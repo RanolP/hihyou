@@ -15,6 +15,8 @@ const STRING_CONTENT = 6;
 const DELIMITER_LENGTH = 3;
 const BUFFER_SIZE = 1024;
 const QUOTE = 34;
+/** The most `$`s a multi-dollar string's prefix may have, so its stack entry still fits a byte. */
+const MAX_DOLLARS = 100;
 
 /** Read through a call so TypeScript does not keep a narrowing across `advance`. */
 const la = (lexer: Lexer): number => lexer.lookahead;
@@ -294,13 +296,16 @@ function scanImportListDelimiter(lexer: Lexer): boolean {
 }
 
 class KotlinScanner implements ExternalScanner {
-  /** Each open string's delimiter: `"`, or `"` + 1 for a triple-quoted one. */
+  /**
+   * Each open string's delimiter: `"`, + 1 for a triple-quoted one, + 2 for each `$` past the first that its
+   * interpolations take (a multi-dollar string, `$$"""`), so a plain string's entry stays the C scanner's byte.
+   */
   stack: number[] = [];
 
-  private push(triple: boolean): void {
+  private push(triple: boolean, dollars: number): void {
     if (this.stack.length >= BUFFER_SIZE)
       throw new Error("kotlin scanner: string delimiter stack overflow");
-    this.stack.push(triple ? QUOTE + 1 : QUOTE);
+    this.stack.push(QUOTE + (triple ? 1 : 0) + 2 * (dollars - 1));
   }
 
   private pop(): void {
@@ -309,26 +314,33 @@ class KotlinScanner implements ExternalScanner {
   }
 
   private scanStringStart(lexer: Lexer): boolean {
+    // A multi-dollar string's `$`s: each interpolation in it takes as many.
+    let dollars = 1;
+    if (la(lexer) === 36) {
+      for (dollars = 0; la(lexer) === 36 && dollars < MAX_DOLLARS; dollars++) lexer.advance(false);
+      if (dollars < 2) return false;
+    }
     if (la(lexer) !== QUOTE) return false;
     lexer.advance(false);
     lexer.markEnd();
     for (let count = 1; count < DELIMITER_LENGTH; count++) {
       if (la(lexer) !== QUOTE) {
-        this.push(false);
+        this.push(false, dollars);
         return true;
       }
       lexer.advance(false);
     }
     lexer.markEnd();
-    this.push(true);
+    this.push(true, dollars);
     return true;
   }
 
   private scanStringContent(lexer: Lexer): boolean {
     if (this.stack.length === 0) return false;
-    let endChar = this.stack.at(-1) as number;
-    const isTriple = (endChar & 1) !== 0;
-    if (isTriple) endChar -= 1;
+    const entry = (this.stack.at(-1) as number) - QUOTE;
+    const isTriple = (entry & 1) !== 0;
+    const dollars = (entry >> 1) + 1;
+    const endChar = QUOTE;
     let hasContent = false;
     while (la(lexer) !== 0) {
       if (la(lexer) === 36) {
@@ -338,8 +350,19 @@ class KotlinScanner implements ExternalScanner {
           lexer.resultSymbol = STRING_CONTENT;
           return true;
         }
-        lexer.advance(false);
-        if (iswalpha(la(lexer)) || la(lexer) === 123) return false;
+        // The grammar lexes an interpolation's last `$` with the `{` or name after it, so a run of `$`s long
+        // enough to start one is content up to that last `$`, which a later call leaves to the grammar (counting
+        // the run's `$`s before it, which are content by then); a shorter run, or one no `{` or name follows, is
+        // all content.
+        const s = lexer.input;
+        let ahead = lexer.pos;
+        while (s.charCodeAt(ahead) === 36) ahead++;
+        let behind = lexer.pos;
+        while (behind > 0 && s.charCodeAt(behind - 1) === 36) behind--;
+        const next = s.charCodeAt(ahead);
+        const interpolates = ahead - behind >= dollars && (iswalpha(next) || next === 123);
+        if (interpolates && ahead - lexer.pos === 1) return false;
+        while (lexer.pos < ahead - (interpolates ? 1 : 0)) lexer.advance(false);
         lexer.resultSymbol = STRING_CONTENT;
         lexer.markEnd();
         return true;
