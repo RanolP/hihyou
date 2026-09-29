@@ -23,6 +23,8 @@ const optionSets: [string, Partial<CssOptions>][] = [
 
 const edgeCases: [string, string][] = [
   ["empty-rule", ".a{}"],
+  ["page-pseudo", "@page :first{margin:1in}"],
+  ["attribute-flag", '[type="a"   I]{b:c}'],
   [
     "comments",
     "/* head */\na { color : red ; /* trail */\n  /* lead */\n  b: c }\n\n/* end */\n",
@@ -83,6 +85,13 @@ const edgeCases: [string, string][] = [
     "@media screen and (-webkit-min-device-pixel-ratio:2),(min-resolution:192dpi){a{b:c}}",
   ],
   ["media-range", "@media (min-width:768px) and (max-width:991.98px){a{b:c}}"],
+  // `@MEDIA` parsed as a generic at-rule, whose parameters kept their source text.
+  ["uppercase-media", "@MEDIA screen  and (min-width :1px){a{b:c}}"],
+  // `@custom-media` and a range feature were parse errors, printed as raw source.
+  [
+    "custom-media",
+    "@custom-media  --a ( min-width:1PX )  and (  400px<width  <= 700px ) ;@custom-media --b(width>=1px),print;",
+  ],
   ["supports", "@supports not (display:grid){a{b:c}}"],
   [
     "keyframes",
@@ -104,6 +113,18 @@ const edgeCases: [string, string][] = [
     "a{filter:progid:DXImageTransform.Microsoft.gradient(startColorstr='#80000000')}",
   ],
   ["crlf", "a{\r\n  b:c;\r\n  /* x\r\n  y */\r\n\r\n\r\n  d:e\r\n}\r\n"],
+  // Front matter once parsed as selectors, lowercased and joined onto the first rule's line.
+  ["front-matter", "---\ntitle: Title\n\n---\na{b:c}"],
+  ["front-matter-toml", "+++\ntitle = 'T'\n\n+++\n\n\n/* c */"],
+  // A suffixed `&` and a descendant ending in `&` were parse errors, printed as raw source.
+  ["nesting-suffix", ".a{&__b,&-c{d:e}.f &{g:h}}"],
+  // A Sass `$variable`, declared or read, was a parse error, printed as raw source.
+  ["sass-variable", "$a:RGB(0,0,0);.b{border:1px solid $a;$c:d}"],
+  // A rule or declaration after a prettier-ignore comment was laid out like any other.
+  [
+    "prettier-ignore",
+    "/* prettier-ignore */\n.a  >  .b{}\n.c{\n  /* prettier-ignore */\n  d:     e;\n  f:g}",
+  ],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");
@@ -180,8 +201,6 @@ describe.skipIf(!present)(
 
 // Input, options, then today's output, which differs from prettier's.
 const divergences: [string, string, Partial<CssOptions>, string][] = [
-  // tree-sitter-css reads `@page :first` as an ERROR, so the rule keeps its source text.
-  ["page-pseudo", "@page :first{margin:1in}", {}, "@page :first{margin:1in}\n"],
   // An empty declaration is an ERROR, so the whole block keeps its source text.
   ["double-semicolon", "a{color:red;;}", {}, "a {color:red;;}\n"],
   // tree-sitter-css reads the `%` of a decimal keyframe selector as an ERROR, so the block keeps its source
@@ -218,13 +237,6 @@ const divergences: [string, string, Partial<CssOptions>, string][] = [
     "@keyframes x{FROM{a:b}}",
     {},
     "@keyframes x{FROM{a:b}}\n",
-  ],
-  // `@MEDIA` parses as a generic at-rule, whose parameters keep their source text.
-  [
-    "uppercase-media",
-    "@MEDIA (min-width:1px){a{b:c}}",
-    {},
-    "@media (min-width:1px) {\n  a {\n    b: c;\n  }\n}\n",
   ],
   // The core ends every file with a newline; prettier prints an empty file as nothing.
   ["empty-file", "", {}, "\n"],

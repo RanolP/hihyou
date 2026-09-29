@@ -1,6 +1,7 @@
 // The inputs parity and benchmarks run on, per grammar, and the native tree-sitter reference they compare to.
 
 import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -326,7 +327,10 @@ export function referenceMissing(): string | undefined {
   return missing;
 }
 
-/** The grammar compiled by zig into a shared library the CLI loads, built once per grammar version. */
+/**
+ * The grammar compiled by zig into a shared library the CLI loads, built once per grammar source: the key hashes
+ * the C sources, because a pnpm patch (pnpm-workspace.yaml's patchedDependencies) changes them under one version.
+ */
 function referenceLibrary(grammar: GrammarName): string {
   const [dir, pkg] = GRAMMAR_DIRS[grammar];
   const modules = join(pkgRoot, "node_modules");
@@ -335,6 +339,12 @@ function referenceLibrary(grammar: GrammarName): string {
   ) as {
     version: string;
   };
+  const hash = createHash("sha256");
+  for (const file of ["parser.c", "scanner.c"]) {
+    const path = join(modules, dir, "src", file);
+    if (existsSync(path)) hash.update(readFileSync(path));
+  }
+  const source = hash.digest("hex").slice(0, 12);
   const ext =
     process.platform === "win32"
       ? ".dll"
@@ -342,7 +352,10 @@ function referenceLibrary(grammar: GrammarName): string {
         ? ".dylib"
         : ".so";
   const cache = join(modules, ".cache", "tree-sitter-cli");
-  const lib = join(cache, `${grammar}-${version}-${CLI_VERSION}${ext}`);
+  const lib = join(
+    cache,
+    `${grammar}-${version}-${source}-${CLI_VERSION}${ext}`,
+  );
   if (existsSync(lib)) return lib;
   mkdirSync(cache, { recursive: true });
   // The cc crate's default flags carry a Rust target triple (`x86_64-pc-windows-msvc`) that zig cannot parse, so

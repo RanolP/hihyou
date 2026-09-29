@@ -3,7 +3,7 @@ import type { Comments } from "../../../fmt/comments.js";
 import type { PrettierOptions } from "../../../fmt/options.js";
 import type { PrintArgs } from "../../../fmt/rules.js";
 import { lfAfter } from "../../../fmt/text.js";
-import type { FormatTree } from "../../../fmt/tree.js";
+import { type FormatTree, prevLeaf } from "../../../fmt/tree.js";
 
 /** The prettier options its JavaScript and TypeScript printers read, by prettier's names. */
 export interface JsOptions extends PrettierOptions {
@@ -44,6 +44,7 @@ export type Args = PrintArgs | undefined;
  */
 export interface HasTree {
   readonly tree: FormatTree;
+  readonly options: Pick<JsOptions, "parser">;
 }
 
 export function kind(x: HasTree, n: number): string;
@@ -72,6 +73,29 @@ export function children(x: HasTree, n: number): number[] {
   const out: number[] = [];
   for (let i = 0; i < count; i++) out.push(tree.child(n, i));
   return out;
+}
+
+/**
+ * TypeScript takes a class member's or parameter property's modifiers in any order; prettier prints them in
+ * this one. check's normalize (normalize.ts) reads the same order, so the two must change together.
+ */
+export const MODIFIER_ORDER = [
+  "declare",
+  "accessibility_modifier",
+  "static",
+  "abstract",
+  "override_modifier",
+  "readonly",
+  "accessor",
+];
+
+/** `kids` with its modifiers in prettier's order; anything else (`async`, `get`, `*`) keeps its place after them. */
+export function inModifierOrder(x: HasTree, kids: readonly number[]): number[] {
+  const rank = (c: number) => {
+    const r = MODIFIER_ORDER.indexOf(kind(x, c));
+    return r < 0 ? MODIFIER_ORDER.length : r;
+  };
+  return [...kids].sort((a, b) => rank(a) - rank(b));
 }
 
 /** The first child of `n` that passes `is`. */
@@ -124,9 +148,31 @@ export const isComment = (x: HasTree, n: number) => {
 export const first = (x: HasTree, n: number) =>
   childWhere(x, n, (c) => x.tree.named(c) && !isComment(x, c));
 
-/** Through the parentheses around an expression, to the expression. */
+/** Prettier's isTypeCastComment: a `/**` block comment naming `@type` or `@satisfies`, the Closure type cast. */
+export const isTypeCastComment = (x: HasTree, c: number) => {
+  if (kind(x, c) !== "comment") return false;
+  const text = src(x, c);
+  return text.startsWith("/**") && text.endsWith("*/") && /@(?:type|satisfies)\b/.test(text);
+};
+
+/** The statements whose `(...)` tree-sitter parses as a parenthesized_expression though it is their own syntax. */
+const OWN_PARENS = new Set(["if_statement", "while_statement", "do_statement", "switch_statement", "with_statement"]);
+
+/**
+ * Parentheses prettier keeps as a node of their own (babel's ParenthesizedExpression, which its postprocess keeps
+ * only here): those right after a type cast comment, `/** @type {T} *\/ (x)`, whose cast they delimit. Prettier's
+ * TypeScript parser has no such node.
+ */
+export function isCastParen(x: HasTree, n: number): boolean {
+  if (x.options.parser === "typescript" || x.tree.kindName(n) !== "parenthesized_expression") return false;
+  if (OWN_PARENS.has(kind(x, parent(x, n)) ?? "")) return false;
+  const before = prevLeaf(x.tree, n);
+  return before !== NO_NODE && isTypeCastComment(x, before);
+}
+
+/** Through the parentheses around an expression, to the expression: to a type cast's parentheses at most. */
 export function unparen(x: HasTree, n: number): number {
-  while (x.tree.kindName(n) === "parenthesized_expression") {
+  while (x.tree.kindName(n) === "parenthesized_expression" && !isCastParen(x, n)) {
     const inner = first(x, n);
     if (inner === undefined) return n;
     n = inner;
@@ -134,11 +180,22 @@ export function unparen(x: HasTree, n: number): number {
   return n;
 }
 
-/** The outermost parenthesized_expression wrapping `n`, or `n` itself. */
+/** Through parentheses and non-null assertions: `(f(x)!)!` to `f(x)`. */
+export function unassert(x: HasTree, n: number): number {
+  n = unparen(x, n);
+  while (x.tree.kindName(n) === "non_null_expression") {
+    const inner = first(x, n);
+    if (inner === undefined) return n;
+    n = unparen(x, inner);
+  }
+  return n;
+}
+
+/** The outermost parenthesized_expression wrapping `n` below any type cast's parentheses, or `n` itself. */
 export function outer(x: HasTree, n: number): number {
   for (
     let p = parent(x, n);
-    p !== undefined && x.tree.kindName(p) === "parenthesized_expression";
+    p !== undefined && x.tree.kindName(p) === "parenthesized_expression" && !isCastParen(x, p);
     p = parent(x, p)
   )
     n = p;
@@ -216,6 +273,20 @@ export const isStringLiteral = (x: HasTree, n: number | undefined) =>
 
 export const isTemplate = (x: HasTree, n: number | undefined) =>
   kind(x, n) === "template_string";
+
+const SIMPLE_TYPE_KINDS = new Set([
+  "type_identifier",
+  "nested_type_identifier",
+  "this_type",
+  "literal_type",
+  "template_literal_type",
+]);
+
+/** Prettier's isSimpleType: a keyword, literal or template literal type, or a reference without type arguments. */
+export const isSimpleType = (x: HasTree, n: number | undefined) =>
+  n !== undefined &&
+  (SIMPLE_TYPE_KINDS.has(kind(x, n)) ||
+    (kind(x, n) === "predefined_type" && !src(x, n).startsWith("unique")));
 
 const LITERAL_KINDS = new Set([
   "string",
@@ -323,6 +394,19 @@ export const hasComment = (
   flags = 0,
   fn?: (c: number) => boolean,
 ) => getComments(ctx, n, flags, fn).length > 0;
+
+/**
+ * Prettier's hasComment for the expression `n`, whose parentheses its AST lacks: tree-sitter attaches a comment
+ * between two pairs of them, `!(\n// c\n(a || b))`, to the inner pair.
+ */
+export function hasCommentThroughParens(ctx: JsCtx, n: number): boolean {
+  for (let m: number | undefined = outer(ctx, n); m !== undefined; ) {
+    if (hasComment(ctx, m)) return true;
+    if (ctx.tree.kindName(m) !== "parenthesized_expression" || isCastParen(ctx, m)) return false;
+    m = first(ctx, m);
+  }
+  return false;
+}
 
 export const isBlockComment = (ctx: JsCtx, c: number) => !ctx.isLineComment(c);
 

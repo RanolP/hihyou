@@ -1,7 +1,11 @@
 // Prettier's class printers (print/class.js, class-body.js) and the declaration half of print/decorators.js.
 
 import type { CustomRule, TokenRule } from "../../../fmt/dsl/runtime.js";
-import type { StreamCtx } from "../../../fmt/stream-format.js";
+import {
+  printLeadingComments,
+  printTrailingComments,
+  type StreamCtx,
+} from "../../../fmt/stream-format.js";
 import { nextLineEmpty } from "../../../fmt/text.js";
 import {
   capture,
@@ -31,6 +35,7 @@ import {
   field,
   type HasTree,
   hasComment,
+  inModifierOrder,
   isComment,
   isMember,
   items,
@@ -42,6 +47,7 @@ import {
   parent,
   separators,
   src,
+  unassert,
 } from "./util.js";
 
 const FIELD_KINDS = new Set(["field_definition", "public_field_definition"]);
@@ -59,7 +65,7 @@ const heritageOf = (x: HasTree, n: number) =>
   childWhere(x, n, (c) => kind(x, c) === "class_heritage");
 
 /** The superclass expression and the `implements` list of a class, with the nodes that own their keywords. */
-function heritage(x: HasTree, n: number) {
+export function heritage(x: HasTree, n: number) {
   // An interface's `extends A, B` is a list, like a class's `implements`.
   const list = childWhere(x, n, (c) => kind(x, c) === "extends_type_clause");
   if (list !== undefined)
@@ -112,7 +118,7 @@ function groupMode(ctx: JsCtx, n: number): boolean {
     if (kind(ctx, parent(ctx, n)) === "assignment_expression") return false;
     return (
       field(ctx, ext ?? n, "type_arguments") === undefined &&
-      isMember(ctx, superClass)
+      isMember(ctx, unassert(ctx, superClass))
     );
   }
   return kind(ctx, implementsList[0]) === "nested_type_identifier";
@@ -255,12 +261,19 @@ const printClass: CustomRule<JsOptions> = (n, sctx) => {
   }
   const isInterface = kind(ctx, n) === "interface_declaration";
   tok(ctx, anon(ctx, n, isInterface ? "interface" : "class"));
+  // The name's and type parameters' trailing comments indent, so one on its own line lines up with `extends`.
+  const withIndentedTrailing = (part: number | undefined) => {
+    if (part === undefined) return;
+    printLeadingComments(sctx, part);
+    jsCtx(sctx).printBare(part);
+    open(INDENT);
+    printTrailingComments(sctx, part);
+    close();
+  };
   const head = () => {
-    if (name !== undefined) {
-      sText(" ");
-      sctx.print(name);
-    }
-    print(sctx, field(ctx, n, "type_parameters"));
+    if (name !== undefined) sText(" ");
+    withIndentedTrailing(name);
+    withIndentedTrailing(field(ctx, n, "type_parameters"));
   };
   const body = field(ctx, n, "body");
   if (grouped) {
@@ -382,8 +395,8 @@ const classProperty: TokenRule<JsOptions> = (eq, n, sctx) => {
     n,
     () => {
       sPrintDecorators(sctx, decoratorsOf(ctx, n));
-      for (const c of all) {
-        if (c === key) break;
+      const before = key !== undefined ? all.slice(0, all.indexOf(key)) : all;
+      for (const c of inModifierOrder(ctx, before)) {
         if (isComment(ctx, c) || kind(ctx, c) === "decorator") continue;
         sctx.print(c);
         sText(" ");
@@ -410,8 +423,8 @@ const abstractMethod: CustomRule<JsOptions> = (n, sctx) => {
     sctx,
     kids.filter((c) => kind(ctx, c) === "decorator"),
   );
-  for (const c of kids) {
-    if (c === name) break;
+  const before = name !== undefined ? kids.slice(0, kids.indexOf(name)) : kids;
+  for (const c of inModifierOrder(ctx, before)) {
     if (isComment(ctx, c) || kind(ctx, c) === "decorator") continue;
     sctx.print(c);
     if (kind(ctx, c) !== "*") sText(" ");

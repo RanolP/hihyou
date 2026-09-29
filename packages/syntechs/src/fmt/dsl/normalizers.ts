@@ -144,6 +144,79 @@ export const sortRegexFlags = (t: string): string => [...t].sort().join("");
 
 export const trimEnd = (t: string): string => t.trimEnd();
 
+/** A string literal in double quotes, as prettier's JSON printers write every one; a double-quoted one as written. */
+export const doubleQuote = (raw: string): string =>
+  raw.startsWith(DOUBLE) ? raw : makeString(raw.slice(1, -1), DOUBLE);
+
+const SIMPLE_ESCAPES: Readonly<Record<string, string>> = {
+  n: "\n",
+  t: "\t",
+  r: "\r",
+  b: "\b",
+  f: "\f",
+  v: "\v",
+};
+
+/** A string literal's value from its source between the quotes, escapes resolved as the spec cooks them. */
+export function cook(raw: string): string {
+  if (!raw.includes("\\")) return raw;
+  let out = "";
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw.charAt(i);
+    if (c !== "\\") {
+      out += c;
+      continue;
+    }
+    const e = raw.charAt(++i);
+    const simple = SIMPLE_ESCAPES[e];
+    if (simple !== undefined) out += simple;
+    else if (e === "x") {
+      out += String.fromCharCode(Number.parseInt(raw.slice(i + 1, i + 3), 16));
+      i += 2;
+    } else if (e === "u") {
+      if (raw.charAt(i + 1) === "{") {
+        const close = raw.indexOf("}", i);
+        out += String.fromCodePoint(
+          Number.parseInt(raw.slice(i + 2, close), 16),
+        );
+        i = close;
+      } else {
+        out += String.fromCharCode(
+          Number.parseInt(raw.slice(i + 1, i + 5), 16),
+        );
+        i += 4;
+      }
+    } else if (e >= "0" && e <= "7") {
+      const m = /^[0-7]{1,3}/.exec(raw.slice(i, i + 3))?.[0] ?? e;
+      const digits = Number.parseInt(m, 8) > 255 ? m.slice(0, 2) : m;
+      out += String.fromCharCode(Number.parseInt(digits, 8));
+      i += digits.length - 1;
+    } else if (e === "\r") {
+      if (raw.charAt(i + 1) === "\n") i++;
+    } else if (e !== "\n" && e !== " " && e !== " ") out += e;
+  }
+  return out;
+}
+
+/** A template literal with no substitution as the JSON string of its value, as `json-stringify` prints one. */
+export const jsonString = (raw: string): string => JSON.stringify(cook(raw.slice(1, -1)));
+
+/** A bare object key quoted, as prettier's JSON printers quote one (`a: 1` as `"a": 1`). */
+export const quoteKey = (t: string): string => DOUBLE + t + DOUBLE;
+
+// Prettier's printPropertyKey quotes a numeric key in JSON where its spelling is a plain number that reads
+// back as the same string (`0`, `0.1`), and leaves any other (`1e2`, `1.0`, `999...9`) a number.
+const quotedNumber = (printed: string): string =>
+  /^(?:\d+|\d+\.\d+)$/.test(printed) && String(Number(printed)) === printed
+    ? DOUBLE + printed + DOUBLE
+    : printed;
+
+/** A numeric object key through `printNumber`, quoted where prettier's `json` and `jsonc` quote it. */
+export const numberKey = (raw: string): string => quotedNumber(printNumber(raw));
+
+/** A numeric object key as written, quoted where prettier's `json-stringify` quotes it. */
+export const rawNumberKey = (raw: string): string => quotedNumber(raw);
+
 /** Every normalizer `text` can name. */
 export const normalizers = {
   printNumber,
@@ -160,6 +233,12 @@ export const normalizers = {
   jsxString,
   sortRegexFlags,
   trimEnd,
+  doubleQuote,
+  jsonString,
+  quoteKey,
+  numberKey,
+  rawNumberKey,
+  cook,
 } satisfies Record<string, (t: string, o: never) => string>;
 
 export type NormalizerName = keyof typeof normalizers;

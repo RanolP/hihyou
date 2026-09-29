@@ -10,15 +10,13 @@ import { Unformattable } from "../ast.js";
 import { type Fmt, writeCommaIn } from "../builders.js";
 import type { Comment } from "../comments.js";
 import * as sink from "../sink.js";
+import { hasSkip, writeSkipped } from "./verbatim.js";
 import type { Frame } from "../../../../fmt/dsl/runtime.js";
 import {
-  byteEndOf,
   byteOffsetOf,
-  endOf,
   linesAfter,
   linesAfterIgnoringEndOfLineTrivia,
   linesBefore,
-  startOf,
 } from "../trivia.js";
 import {
   type StmtRules,
@@ -69,6 +67,12 @@ function defFromSpec(f: Fmt, s: FunctionDef | ClassDef): void {
 /** Ruff's `FormatDecorator`, with the decorator's own comments. */
 function writeDecorator(f: Fmt, d: Decorator): void {
   const cs = f.comments;
+  // The placement gives the comments after the decorator's line to its expression, where ruff's has them.
+  const after = [...cs.trailing(d.expr).filter((c) => c.start > d.expr.end), ...cs.trailing(d)];
+  if (hasSkip(f, after)) {
+    writeSkipped(f, d, d.expr, after);
+    return;
+  }
   f.writeLeading(cs.leading(d));
   sink.sDsl(d.ts);
   f.writeTrailing(cs.trailing(d));
@@ -115,25 +119,20 @@ export function splitDangling(
  * parenthesized tuple of those, in the brackets of `frame` (the kind's rule's).
  */
 export function writeTypeParams(f: Fmt, tp: TypeParams, frame: Frame): void {
-  if (f.comments.has(tp) || f.comments.hasAnyIn(tp.start, tp.end))
-    throw new Unformattable(
-      `comment in type parameters at ${byteOffsetOf(f.tree, tp.ts)}`,
-    );
-  const t = f.tree;
-  const children = kids(t, tp.ts);
-  const open = children.find((c) => t.kindName(c) === "[");
-  const close = children.findLast((c) => t.kindName(c) === "]");
-  if (open === undefined || close === undefined)
-    throw new Unformattable(
-      `type parameters without brackets at ${byteOffsetOf(t, tp.ts)}`,
-    );
-  const entries = children
-    .filter((c) => t.named(c))
-    .map((n) => ({ end: endOf(t, n), write: () => writeTypeParam(f, n) }));
+  const cs = f.comments;
+  const entries = tp.params.map((p) => ({
+    end: p.end,
+    write: () => {
+      f.writeLeading(cs.leading(p));
+      writeTypeParam(f, p.ts);
+      f.writeTrailing(cs.trailing(p));
+    },
+  }));
   f.writeParenthesized(
     frame.open,
-    () => f.writeJoinCommaSeparated(entries, tp.end, writeCommaIn(t, tp.ts, open)),
+    () => f.writeJoinCommaSeparated(entries, tp.end, writeCommaIn(f.tree, tp.ts, tp.open)),
     frame.close,
+    cs.dangling(tp),
   );
 }
 
@@ -224,25 +223,14 @@ const unsupported = (tree: FormatTree, n: number): never => {
 
 // ---- definitions ----
 
-/** `writeClauseBody`, refusing a backslash continuation after the colon. */
+/** `writeClauseBody` for a header; a backslash continuation after its colon drops with the line break. */
 export function writeBody(
   f: Fmt,
-  header: { readonly ts: number; readonly colon: number },
+  _header: { readonly ts: number; readonly colon: number },
   stmts: Parameters<typeof writeClauseBody>[1],
   kind: "function" | "class" | "other",
   colonComments: readonly Comment[],
 ): void {
-  const t = f.tree;
-  const colonEnd = endOf(t, header.colon);
-  // `check` reads a backslash alone on the line after a colon as a dedent, so it would flag the correct output.
-  if (
-    kids(t, header.ts).some(
-      (c) => t.kindName(c) === "line_continuation" && startOf(t, c) >= colonEnd,
-    )
-  )
-    throw new Unformattable(
-      `backslash continuation before a body at ${byteEndOf(t, header.colon)}`,
-    );
   writeClauseBody(f, stmts, kind, colonComments);
 }
 

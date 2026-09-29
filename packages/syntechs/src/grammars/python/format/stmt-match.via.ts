@@ -12,6 +12,7 @@ import {
   mapping,
   maybeParenthesizePattern,
   pattern,
+  patternCommentsPrintable,
   readCasePattern,
   readGroup,
   readPattern,
@@ -19,6 +20,7 @@ import {
 } from "../fmt/stmt/match.js";
 import { writeLeadingAlternateBranchComments } from "../fmt/stmt/suite.js";
 import { byteOffsetOf } from "../fmt/trivia.js";
+import { closeSkippedClause } from "../fmt/stmt/verbatim.js";
 
 /** The case `child` (a child of a `case_clause`) is part of: the clause's block is the match's body. */
 function caseOf(child: number, ctx: StreamCtx<unknown>): { f: Fmt; c: MatchCase } {
@@ -95,9 +97,6 @@ export const stmtMatchVia = {
   "match.subject": (n: number) => {
     const { f, s: m } = ruffStmtOf(n);
     const s = m as Match;
-    // The AST reads one subject, so `match a, b:` would lose the rest.
-    if (kids(f.tree, s.ts).filter((c) => f.tree.fieldName(c) === "subject").length > 1)
-      throw new Unformattable(`tuple subject in a match at ${byteOffsetOf(f.tree, s.ts)}`);
     writeMaybeParenthesize(f, s.subject, s, "ifBreaks");
   },
   // Given the body, prints the colon's comments and every case, each through its rule in stmt-match.ts.
@@ -105,6 +104,7 @@ export const stmtMatchVia = {
     const { f, s: m } = ruffStmtOf(n);
     const s = m as Match;
     const cs = f.comments;
+    closeSkippedClause(f);
     f.writeTrailing(cs.dangling(s));
     f.at(COMPOUND, () => {
       let previous: MatchCase | undefined;
@@ -124,15 +124,11 @@ export const stmtMatchVia = {
   "match.casePattern": (n: number, ctx: StreamCtx<unknown>) => {
     const { f, c } = caseOf(n, ctx);
     const cs = f.comments;
-    if (cs.has(c.pattern) || cs.hasAnyIn(c.pattern.start, c.pattern.end))
-      throw new Unformattable(`comment in a pattern at ${byteOffsetOf(f.tree, c.pattern.ts)}`);
     const p = readCasePattern(f, c);
-    // `check` keeps a pattern's parentheses as meaning, so it would flag the ones ruff adds to split a long
-    // pattern; a header that already overflows is the case that can get them.
-    const bracketed = p.paren !== undefined || p.k === "map" || p.k === "class" || (p.k === "seq" && p.type !== "bare");
-    // The colon's end column; a header spanning lines is measured on the colon's own line only.
-    if (!bracketed && f.tree.col(c.colon) + 1 > f.options["line-length"])
-      throw new Unformattable(`long unparenthesized case pattern at ${byteOffsetOf(f.tree, c.ts)}`);
+    const inside = cs.all.filter((x) => x.start >= c.pattern.start && x.end <= c.pattern.end);
+    const attached = [...cs.leading(c.pattern), ...cs.dangling(c.pattern), ...cs.trailing(c.pattern)];
+    if (!patternCommentsPrintable(f, p, [...inside, ...attached]))
+      throw new Unformattable(`comment in a pattern at ${byteOffsetOf(f.tree, c.pattern.ts)}`);
     maybeParenthesizePattern(f, p, c);
   },
   "match.guard": (n: number, ctx: StreamCtx<unknown>) => {
@@ -145,6 +141,7 @@ export const stmtMatchVia = {
   // The colon's comments, then the body.
   "match.caseBody": (n: number, ctx: StreamCtx<unknown>) => {
     const { f, c } = caseOf(n, ctx);
+    if (closeSkippedClause(f)) return;
     const dangling = f.comments.dangling(c);
     f.writeTrailing(dangling);
     writeBody(f, c, c.body, "other", dangling);

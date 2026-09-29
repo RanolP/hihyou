@@ -12,8 +12,12 @@ import {
   entryCount,
   firstText,
   grpBrace,
+  group,
   grpParen,
+  has,
+  indent,
   inOrder,
+  isEmpty,
   lines,
   not,
   parentIs,
@@ -56,6 +60,25 @@ const valueLayout: SplitLayoutOf<Cond> = loneBare({
   then: { indent: true, first: "hard", between: "hardline" },
   else: { group: true, indent: true, first: "soft", between: "line", fill: true },
 });
+/**
+ * The at-rules whose prelude prettier parses as a value (Sass's control flow, mixins and functions, and
+ * postcss-mixins'), by their case-sensitive name.
+ */
+const directive = firstText({
+  is: ["if", "else", "for", "each", "while", "debug", "mixin", "include", "function", "return"]
+    .concat(["define-mixin", "add-mixin"])
+    .map((n) => `@${n}`),
+});
+/** Inside a `directive`'s prelude. */
+const inDirective = ancestor(["at_rule", "postcss_statement"], { stop: ["block"], holds: directive });
+/**
+ * A `directive`'s prelude as a value: its comma list packed and indented once it breaks, each entry's words filled
+ * in a group of its own.
+ */
+const directivePrelude = (trail: "block"[]) =>
+  splitOn(",", { except: ["at_keyword", ";"], trail, item: words(), layout: loneBare(packed) });
+const directiveMath = () =>
+  either(when("tightDivision"), inOrder(), inOrder({ join: "line", spaceWhen: { before: ["+", "-", "*", "/"] } }));
 /** Statements one per line, keeping one blank line where the source has any. */
 const statements = { blankLines: "force" } as const;
 
@@ -99,6 +122,11 @@ export const css = format({
       ),
       semicolon,
     ],
+    // `--name: {...}`: the block laid out as a rule's, then the `;` a declaration ends with.
+    custom_property_set: () => [inOrder({ spaceWhen: { after: [":"] }, skip: [";"] }), semicolon],
+    // postcss-nested-props: a rule whose selector is `name:` and any values, as written.
+    nested_property: () =>
+      inOrder({ join: "gap", tight: { before: [":"] }, spaceWhen: { after: [":"], before: ["block"] } }),
     property_name: () => text("maybeLower"),
     integer_value: () => text("unitCase"),
     float_value: () => text("unitCase"),
@@ -142,24 +170,34 @@ export const css = format({
         ),
       ),
     // Spaced around the operator as written, and always inside `calc()`.
+    // In a `directive`'s prelude, prettier's math in a value: the operator ends its line as the chain's one group
+    // breaks, but a `/` written without spaces, which may be no division, stays so.
     binary_expression: () =>
-      inOrder({
-        join: "gap",
-        spaceWhen: { when: ancestor("call_expression", { stop: ["declaration", "block"], holds: calledAs("calc") }) },
-      }),
-    parenthesized_value: adjacent,
+      either(
+        inDirective,
+        either(parentIs("binary_expression"), directiveMath(), group(indent(directiveMath()))),
+        inOrder({
+          join: "gap",
+          spaceWhen: { when: ancestor("call_expression", { stop: ["declaration", "block"], holds: calledAs("calc") }) },
+        }),
+      ),
+    // Broken inside the parentheses in a `directive`'s prelude, as prettier's paren group.
+    parenthesized_value: () => either(inDirective, grpParen(splitOn(",", { except: ["(", ")"] })), adjacent()),
 
     class_selector: adjacent,
     id_selector: adjacent,
     pseudo_element_selector: adjacent,
     pseudo_class_selector: adjacent,
     namespace_selector: adjacent,
-    attribute_selector: adjacent,
+    // `[name=value flag]`: tight but for the space before a case-sensitivity flag, and `ns|name` joined.
+    attribute_selector: () => inOrder({ spaceWhen: { before: ["attribute_flag"] } }),
+    // A plain name is one leaf, kept as written (`trimEnd` changes no identifier); `ns|name` is joined.
+    attribute_name: () => either(isEmpty, text("trimEnd"), adjacent()),
     child_selector: combinator,
     descendant_selector: combinator,
     sibling_selector: combinator,
     adjacent_sibling_selector: combinator,
-    class_name: () => text("lower", parentIs("pseudo_class_selector")),
+    class_name: () => text("maybeLower", parentIs("pseudo_class_selector")),
     tag_name: () => text("lower", parentIs("pseudo_element_selector")),
 
     at_keyword: () => text("atName"),
@@ -184,19 +222,55 @@ export const css = format({
         spaceWhen: { after: ["@charset"] },
         verbatim: true,
       }),
-    keyframes_statement: spaced,
-    at_rule: () =>
+    // The name, then the selectors on its line or, past the width, one per line under it.
+    custom_selector_statement: ($) => [
+      "@custom-selector",
+      space,
+      $.children.at(0).andThen((n) => n),
+      splitOn(",", {
+        except: ["@custom-selector", "custom_selector_name", ";"],
+        wrapItem: when("longSelector"),
+        layout: { group: true, indent: true, first: "line", between: "line" },
+      }),
+      semicolon,
+    ],
+    // The name, then the queries as `@media`'s; the name and a query written without a gap between stay joined.
+    custom_media_statement: () =>
       inOrder({
         join: "gap",
-        tight: { before: [";"] },
-        spaceWhen: { after: ["at_keyword"], before: ["block"] },
-        verbatim: { except: ["at_keyword", "block"] },
+        tight: { before: [",", ";"] },
+        spaceWhen: { after: ["@custom-media", ","] },
       }),
+    keyframes_statement: spaced,
+    at_rule: ($) =>
+      either(
+        directive,
+        either(
+          has("children", "block"),
+          [$.children.at(0).andThen((n) => n), space, directivePrelude(["block"])],
+          [$.children.at(0).andThen((n) => n), space, directivePrelude([]), semicolon],
+        ),
+        inOrder({
+          join: "gap",
+          tight: { before: [";"] },
+          // `@page:first` stays joined: postcss reads a name up to the first gap.
+          spaceWhen: { before: ["block"] },
+          verbatim: { except: ["at_keyword", "block"] },
+        }),
+      ),
+    postcss_statement: ($) =>
+      either(
+        directive,
+        [$.children.at(0).andThen((n) => n), space, directivePrelude([]), semicolon],
+        inOrder({ join: "gap", tight: { before: [";"] }, spaceWhen: { after: ["at_keyword"] }, verbatim: true }),
+      ),
     binary_query: spaced,
     unary_query: spaced,
     parenthesized_query: adjacent,
     feature_query: () =>
-      inOrder({ join: "gap", tight: { after: ["("], before: [")"] }, spaceWhen: { after: [":"] } }),
+      inOrder({ join: "gap", tight: { after: ["("], before: [")", ":"] }, spaceWhen: { after: [":"] } }),
+    // prettier's media feature: as written, one space wherever the source has any gap.
+    range_query: () => inOrder({ join: "gap", tight: { after: ["("], before: [")"] } }),
     feature_name: () => text("maybeLower"),
   },
   wrapping: {

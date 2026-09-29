@@ -70,6 +70,73 @@ function scanMultilineComment(lexer: Lexer): boolean {
   }
 }
 
+const isWordChar = (c: number) => iswalpha(c) || iswdigit(c) || c === 95; // _
+
+/**
+ * Whether the text before the marked end is a class's name and its type parameters (`class Foo<T>`), past the
+ * whitespace and block comments after them. A look back the C scanner cannot take: this port holds the whole input.
+ */
+function afterClassName(lexer: Lexer): boolean {
+  const s = lexer.input;
+  let i = lexer.tokenEnd;
+  const skipBack = () => {
+    for (;;) {
+      while (i > 0 && iswspace(s.charCodeAt(i - 1))) i--;
+      if (!s.startsWith("*/", i - 2)) return;
+      const open = s.lastIndexOf("/*", i - 3);
+      if (open < 0) return;
+      i = open;
+    }
+  };
+  skipBack();
+  if (s.charCodeAt(i - 1) === 62) {
+    // >
+    let depth = 0;
+    for (; i > 0; i--) {
+      const c = s.charCodeAt(i - 1);
+      if (c === 62 && s.charCodeAt(i - 2) !== 45) depth++;
+      else if (c === 60 && --depth === 0) break;
+    }
+    if (i === 0) return false;
+    i--;
+    skipBack();
+  }
+  const nameEnd = i;
+  while (i > 0 && isWordChar(s.charCodeAt(i - 1))) i--;
+  if (i === nameEnd) return false;
+  skipBack();
+  return i >= 5 && s.startsWith("class", i - 5) && (i === 5 || !isWordChar(s.charCodeAt(i - 6)));
+}
+
+/** Whether annotations and modifier keywords, then `constructor`, come next; advances past them. */
+function constructorAhead(lexer: Lexer): boolean {
+  for (;;) {
+    while (iswspace(la(lexer))) lexer.advance(true);
+    if (la(lexer) === 64) {
+      // @: the annotation's name, dotted, then its arguments.
+      lexer.advance(true);
+      while (isWordChar(la(lexer)) || la(lexer) === 46 || la(lexer) === 58) lexer.advance(true);
+      if (la(lexer) === 40) {
+        let depth = 0;
+        do {
+          if (la(lexer) === 40) depth++;
+          else if (la(lexer) === 41) depth--;
+          else if (lexer.eof()) return false;
+          lexer.advance(true);
+        } while (depth > 0);
+      }
+      continue;
+    }
+    let word = "";
+    while (isWordChar(la(lexer))) {
+      word += String.fromCharCode(la(lexer));
+      lexer.advance(true);
+    }
+    if (word === "constructor") return true;
+    if (!/^(public|protected|private|internal|expect|actual)$/.test(word)) return false;
+  }
+}
+
 function scanAutomaticSemicolon(lexer: Lexer): boolean {
   lexer.resultSymbol = AUTOMATIC_SEMICOLON;
   lexer.markEnd();
@@ -97,6 +164,11 @@ function scanAutomaticSemicolon(lexer: Lexer): boolean {
   }
 
   if (!scanWhitespaceAndComments(lexer)) return false;
+
+  // Not before a primary constructor written on the line after its class's name (`class Foo\n@Inject constructor(`),
+  // which the C scanner would cut off from its class.
+  if (!sameline && afterClassName(lexer) && (la(lexer) === 64 || iswalpha(la(lexer))))
+    return !constructorAhead(lexer);
 
   if (sameline) {
     switch (la(lexer)) {
@@ -146,13 +218,8 @@ function scanAutomaticSemicolon(lexer: Lexer): boolean {
       return la(lexer) !== 61;
     case 101: // e
       return !scanForWord(lexer, "lse");
-    // Before an identifier or an import, but not `in` or `instanceof`.
-    case 105: // i
-      lexer.advance(true);
-      if (la(lexer) !== 110) return true;
-      lexer.advance(true);
-      if (!iswalpha(la(lexer))) return false;
-      return !scanForWord(lexer, "stanceof");
+    // tree-sitter-kotlin 0.3.8 took JavaScript's exception here and inserted none before `in` or `instanceof`,
+    // but Kotlin continues no expression with an `in` on the next line: it starts a `when` entry's condition.
     case 59: // ;
       lexer.advance(false);
       lexer.markEnd();

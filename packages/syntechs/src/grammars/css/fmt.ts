@@ -8,18 +8,26 @@ import {
 import { defineLanguage, type Language } from "../../fmt/rules.js";
 import { maybeLower, numberParts } from "../../fmt/dsl/normalizers.js";
 import type { PredicateRule } from "../../fmt/dsl/runtime.js";
+import { sHardline, sText } from "../../fmt/stream.js";
 import type { StreamCtx } from "../../fmt/stream-format.js";
 import type { FormatTree } from "../../fmt/tree.js";
 import { grammar } from "./bundle.js";
 import * as gen from "./fmt.gen.js";
+import { frontMatterLines, parseFrontMatter } from "./front-matter.js";
 import { language } from "./index.js";
 
 /** The prettier options its postcss printer reads (3.9.9); `bracketSpacing` and `objectWrap` go unread. */
 export interface CssOptions extends PrettierOptions {
   singleQuote: boolean;
+  /** `off` prints front matter as written; `auto` lays YAML's out (see `frontMatterLines`). */
+  embeddedLanguageFormatting: "auto" | "off";
 }
 
-const defaults: CssOptions = { ...prettierDefaults, singleQuote: false };
+const defaults: CssOptions = {
+  ...prettierDefaults,
+  singleQuote: false,
+  embeddedLanguageFormatting: "auto",
+};
 
 type SCtx = StreamCtx<CssOptions>;
 
@@ -51,7 +59,6 @@ const cook = (quoted: string) =>
       },
     );
 
-
 // What a token means, whatever prettier's spelling of it: a string by its cooked value, a number by its exact
 // value and its unit, and hex colors, keywords and names by their case-folded form where CSS ignores case.
 function meaning(tree: Tree, node: number, t: string): string {
@@ -76,7 +83,7 @@ function meaning(tree: Tree, node: number, t: string): string {
     case "property_name":
       return maybeLower(t);
     case "class_name":
-      return parentKind === "pseudo_class_selector" ? t.toLowerCase() : t;
+      return parentKind === "pseudo_class_selector" ? maybeLower(t) : t;
     case "tag_name":
       return parentKind === "pseudo_element_selector" ? t.toLowerCase() : t;
     case "plain_value":
@@ -98,6 +105,8 @@ const normalize: Normalize = (lexemes, _text, tree) =>
       return undefined;
     return meaning(tree, l.node, l.text);
   });
+
+const statementLists = new Set(["stylesheet", "block"]);
 
 const combinators = new Set([
   "child_selector",
@@ -129,7 +138,59 @@ function parts(n: number, ctx: SCtx): number {
 export const customs = {
   /** Prettier indents a selector of more than two nodes as it breaks. */
   longSelector: (node, ctx) => parts(node, ctx) > 2,
+  /** A binary expression's `/` written with no gap on either side, which prettier keeps so. */
+  tightDivision: (node, ctx) => {
+    const [left, op, right] = children(node, ctx.tree);
+    return (
+      op !== undefined &&
+      kind(op, ctx) === "/" &&
+      ctx.tree.adjoins(left as number, op) &&
+      ctx.tree.adjoins(op, right as number)
+    );
+  },
 } satisfies Record<string, PredicateRule<CssOptions>>;
+
+/**
+ * Prettier's printNodeSequence: a statement whose previous sibling is a `/* prettier-ignore *\/` comment prints as
+ * written. Ordinals run in postorder, so the node just before `node`'s leftmost leaf is its previous sibling.
+ */
+export function prettierIgnored(node: number, ctx: SCtx): boolean {
+  const { tree } = ctx;
+  const parent = tree.parent(node);
+  if (parent === NO_NODE || !statementLists.has(kind(parent, ctx))) return false;
+  let first = node;
+  while (tree.count(first) > 0) first = tree.child(first, 0);
+  const ord = tree.ord(first);
+  if (ord === 0) return false;
+  const prev = tree.at(ord - 1);
+  return (
+    kind(prev, ctx) === "comment" &&
+    tree.parent(prev) === tree.parent(node) &&
+    /^\/\*\s*prettier-ignore\s*\*\/$/.test(tree.text(prev))
+  );
+}
+
+/** Prettier's css-root: the front matter, then a blank line before the stylesheet unless it is empty. */
+export function frontMatterFirst(
+  node: number,
+  ctx: SCtx,
+  print: () => void,
+): void {
+  const fm =
+    node === ctx.tree.root ? parseFrontMatter(ctx.tree.frontMatter) : undefined;
+  if (fm) {
+    frontMatterLines(
+      fm,
+      ctx.options.embeddedLanguageFormatting !== "off",
+    ).forEach((line, i) => {
+      if (i > 0) sHardline();
+      sText(line);
+    });
+    sHardline();
+    if (ctx.tree.count(node) > 0) sHardline();
+  }
+  print();
+}
 
 /** CSS as prettier 3.9.9's postcss printer lays it out; the layouts are format.ts, generated into fmt.gen.ts. */
 export const css: Language<CssOptions> = {
@@ -143,5 +204,9 @@ export const css: Language<CssOptions> = {
     normalize,
     layoutBlind: true,
   }),
-  stream: gen.css(customs),
+  stream: {
+    ...gen.css(customs),
+    wrap: frontMatterFirst,
+    keepsSource: prettierIgnored,
+  },
 };

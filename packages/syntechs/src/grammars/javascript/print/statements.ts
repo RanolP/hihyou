@@ -5,7 +5,12 @@
 
 import { NO_NODE } from "../../../core/arena.js";
 import type { CustomRule, PredicateRule } from "../../../fmt/dsl/runtime.js";
-import type { StreamRule } from "../../../fmt/stream-format.js";
+import {
+  commentFacts,
+  printLeadingComment,
+  printTrailingComments,
+  type StreamRule,
+} from "../../../fmt/stream-format.js";
 import { lfAfter, nextLineEmpty } from "../../../fmt/text.js";
 import { firstLeaf, type FormatTree, prevLeaf } from "../../../fmt/tree.js";
 import {
@@ -42,6 +47,7 @@ import {
   isBinaryish,
   isComment,
   isJsx,
+  isTypeCastComment,
   items,
   type JsCtx,
   type JsOptions,
@@ -195,12 +201,34 @@ function danglingLines(s: JsStreamCtx, node: number): void {
 function statementSequence(s: JsStreamCtx, statements: readonly number[]): void {
   const js = s.js;
   const last = statements.findLast((x) => !isEmpty(js, x));
-  for (const x of statements) {
+  statements.forEach((x, i) => {
     s.print(x);
-    if (isEmpty(js, x) || x === last) continue;
+    if (isEmpty(js, x) || x === last) return;
     sHardline();
-    if (isNextLineEmptyAfter(js, x)) sHardline();
-  }
+    const next = statements[i + 1];
+    if (
+      isNextLineEmptyAfter(js, x) ||
+      (next !== undefined &&
+        semiLeftOut(js, x, next) &&
+        nextLineEmpty(js.tree, next))
+    )
+      sHardline();
+  });
+}
+
+/**
+ * Whether `next`, an empty statement, is the `;` babel reads as `n`'s own: tree-sitter ends a statement at the
+ * line break after a comment (`continue // c\n;`) and leaves the `;` on the next line a statement of its own.
+ */
+function semiLeftOut(x: HasTree, n: number, next: number): boolean {
+  if (!isEmpty(x, next)) return false;
+  const body = lastBody(x, n);
+  if (body !== undefined) return semiLeftOut(x, body, next);
+  const own = children(x, n).at(-1);
+  return (
+    SEMI_ENDED.has(kind(x, n)) &&
+    !(own !== undefined && kind(x, own) === ";" && src(x, own) !== "")
+  );
 }
 
 /** The statements of a list, as a sequence when one is no empty statement, else each printed for its `;`. */
@@ -230,6 +258,7 @@ const NO_HARDLINE_IN_EMPTY_BLOCK = new Set([
   "class_static_block",
   "internal_module",
   "module",
+  "global_module",
 ]);
 
 /** A statement block: `{`, the statements indented, `}` (prettier's printBlock and printBlockBody). */
@@ -903,9 +932,21 @@ const customs = {
   "stmt.asiGuard": (expr, ctx) => {
     const js = jsCtx(ctx).js;
     const statement = parent(js, expr);
-    if (statement !== undefined && asiGuarded(js, statement))
+    if (statement === undefined || !asiGuarded(js, statement)) {
+      jsCtx(ctx).printNode(expr);
+      return;
+    }
+    if (!castLedAsi(js, statement)) {
       sToken(statement, ";", true);
+      jsCtx(ctx).printNode(expr);
+      return;
+    }
+    const leading = js.comments(statement).leading;
+    for (const c of leading.slice(0, -1)) printLeadingComment(ctx, commentFacts(ctx, c));
+    sToken(statement, ";", true);
+    printLeadingComment(ctx, commentFacts(ctx, leading.at(-1) as number));
     jsCtx(ctx).printNode(expr);
+    printTrailingComments(ctx, statement);
   },
 } satisfies Record<string, CustomRule<JsOptions>>;
 
@@ -913,6 +954,15 @@ const customs = {
 const asiGuarded = (ctx: JsCtx, statement: number) =>
   kind(ctx, first(ctx, statement)) !== "internal_module" &&
   needsAsiGuard(ctx, statement);
+
+/**
+ * A guarded statement whose last leading comment is a type cast: the `;` goes between that comment and the
+ * ones before it, so the cast stays next to its parentheses, and the statement prints its own comments.
+ */
+export const castLedAsi = (ctx: JsCtx, statement: number): boolean => {
+  const last = ctx.comments(statement).leading.at(-1);
+  return last !== undefined && isTypeCastComment(ctx, last) && asiGuarded(ctx, statement);
+};
 
 /** An expression statement that needsAsiGuard puts a `;` before, and so none after. */
 const asiGuardedStatement: PredicateRule<JsOptions> = (node, ctx) => asiGuarded(jsCtx(ctx).js, node);

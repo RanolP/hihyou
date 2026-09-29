@@ -4,7 +4,11 @@
 // TypeScript half of class-body.js.
 
 import type { CustomRule, TokenRule } from "../../../fmt/dsl/runtime.js";
-import type { StreamRule } from "../../../fmt/stream-format.js";
+import {
+  printLeadingComments,
+  printTrailingComments,
+  type StreamRule,
+} from "../../../fmt/stream-format.js";
 import { lfAfter, newlineBetween, nextLineEmpty } from "../../../fmt/text.js";
 import { firstLeaf } from "../../../fmt/tree.js";
 import {
@@ -32,6 +36,7 @@ import {
   withComments,
 } from "../sink.js";
 import { sPrintAssignment } from "./assignment.js";
+import { isTestCall } from "./calls.js";
 import {
   sPrintFunctionParameters,
   sShouldGroupFunctionParameters,
@@ -53,6 +58,7 @@ import {
   hasComment,
   isComment,
   isMember,
+  isSimpleType,
   items,
   type JsCtx,
   type JsOptions,
@@ -268,25 +274,33 @@ export function shouldHugUnionType(ctx: JsCtx, n: number): boolean {
   return types.every((x) => x === object || isVoidType(ctx, bare(ctx, x)));
 }
 
-const isSimpleType = (ctx: JsCtx, n: number) => {
-  const k = kind(ctx, n);
-  return (
-    (k === "predefined_type" && !src(ctx, n).startsWith("unique")) ||
-    k === "type_identifier" ||
-    k === "nested_type_identifier" ||
-    k === "this_type"
-  );
-};
-
 /** Prettier's shouldHugType. */
 function shouldHugType(ctx: JsCtx, n: number): boolean {
   if (isSimpleType(ctx, n) || kind(ctx, n) === "object_type") return true;
   return kind(ctx, n) === "union_type" && shouldHugUnionType(ctx, n);
 }
 
+/**
+ * Prettier's shouldUnionTypePrintOwnComments: a union prints its comments itself, around its members and inside
+ * the indent it opens (`a: // c` above `| A | B`, or `extends A | B // c` breaking after `extends`), unless it hugs,
+ * is a member of another union or intersection, or is one of several tuple elements.
+ */
+export const unionOwnsComments = (x: JsCtx, n: number) => {
+  if (kind(x, n) !== "union_type" || isTransparentType(x, n) || !hasComment(x, n)) return false;
+  const up = typeRole(x, n).parent;
+  if (UNION_LIKE.has(kind(x, up) ?? "")) return false;
+  if (kind(x, up) === "tuple_type" && items(x, up as number).length > 1) return false;
+  return !shouldHugUnionType(x, n);
+};
+
 /** Prettier's printUnionType. */
 const unionType: CustomRule<JsOptions> = (n, sctx) => {
   const ctx = jsCtx(sctx);
+  printUnionType(ctx, n, unionOwnsComments(ctx.js, n));
+};
+
+/** Union `n`, with its own comments around its members when it `owns` them. */
+function printUnionType(ctx: JsStreamCtx, n: number, owns: boolean) {
   const js = ctx.js;
   const args = ctx.args;
   if (isTransparentType(js, n)) return pr(ctx, items(js, n)[0], args);
@@ -296,7 +310,25 @@ const unionType: CustomRule<JsOptions> = (n, sctx) => {
     if (op !== undefined) tok(js, op);
     else sToken(x, "|", true);
   };
-  if (shouldHugUnionType(js, n))
+  const hug = shouldHugUnionType(js, n);
+  const { parent: up, field: key } = typeRole(js, n);
+  const upKind = kind(js, up);
+  const parenthesized =
+    kind(js, parent(js, n)) === "parenthesized_type" && typeNeedsParens(js, n);
+  const inTuple = upKind === "tuple_type" && items(js, up as number).length > 1;
+  const noIndent =
+    upKind === "type_assertion" ||
+    upKind === "tuple_type" ||
+    (upKind === "conditional_type" &&
+      (key === "consequence" || key === "alternative")) ||
+    upKind === "type_arguments";
+  const indented =
+    !hug &&
+    !parenthesized &&
+    !inTuple &&
+    !noIndent &&
+    args?.assignmentLayout !== "break-after-operator";
+  if (hug)
     return types.forEach((x, i) => {
       if (i > 0) {
         sText(" ");
@@ -306,6 +338,7 @@ const unionType: CustomRule<JsOptions> = (n, sctx) => {
       ctx.print(x);
     });
   const printed = () => {
+    if (owns) printLeadingComments(ctx, n);
     open(GROUP);
     types.forEach((x, i) => {
       if (i === 0) {
@@ -331,13 +364,9 @@ const unionType: CustomRule<JsOptions> = (n, sctx) => {
       else withComments(ctx, x, () => aligned(bare));
     });
     close();
+    if (owns) printTrailingComments(ctx, n);
   };
-  const { parent: up, field: key } = typeRole(js, n);
-  const upKind = kind(js, up);
-  if (
-    kind(js, parent(js, n)) === "parenthesized_type" &&
-    typeNeedsParens(js, n)
-  ) {
+  if (parenthesized) {
     open(GROUP);
     open(INDENT);
     sLine(SOFT);
@@ -346,7 +375,7 @@ const unionType: CustomRule<JsOptions> = (n, sctx) => {
     sLine(SOFT);
     return close();
   }
-  if (upKind === "tuple_type" && items(js, up as number).length > 1) {
+  if (inTuple) {
     open(GROUP);
     open(INDENT);
     open(IF_BROKEN);
@@ -361,21 +390,14 @@ const unionType: CustomRule<JsOptions> = (n, sctx) => {
     close();
     return close();
   }
-  const noIndent =
-    upKind === "type_assertion" ||
-    upKind === "tuple_type" ||
-    (upKind === "conditional_type" &&
-      (key === "consequence" || key === "alternative")) ||
-    upKind === "type_arguments";
-  if (args?.assignmentLayout === "break-after-operator" || noIndent)
-    return printed();
+  if (!indented) return printed();
   open(GROUP);
   open(INDENT);
   sLine(SOFT);
   printed();
   close();
   close();
-};
+}
 
 const intersectionType: CustomRule<JsOptions> = (n, sctx) => {
   const ctx = jsCtx(sctx);
@@ -455,10 +477,13 @@ const typeParameters: CustomRule<JsOptions> = (n, sctx) => {
     kind(ctx, annotated) === "type_annotation" &&
     kind(ctx, declarator) === "variable_declarator" &&
     kind(ctx, field(ctx, declarator as number, "value")) === "arrow_function";
+  // Prettier's grandparent: the call an arrow is an argument of, past the `arguments` node its AST lacks.
+  const grand =
+    kind(ctx, annotated) === "arguments" ? parent(ctx, annotated) : annotated;
   const shouldInline =
     !isArrowFunctionVariable &&
-    params.length === 1 &&
-    shouldHugType(ctx, params[0] as number) &&
+    (isTestCall(ctx, grand, parent(ctx, grand)) ||
+      (params.length === 1 && shouldHugType(ctx, params[0] as number))) &&
     !params.some((x) => {
       const comments = getComments(ctx, x, CF.Leading | CF.Trailing);
       return (

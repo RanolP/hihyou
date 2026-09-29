@@ -48,6 +48,15 @@ const long = (name: string) => `${name}${"x".repeat(30)}`;
 
 const edgeCases: [string, Target, string][] = [
   ["empty-statement-list", "js", "let a = 1;;\n\n\n\nlet b = 2"],
+  // An array keeps the blank line after an item's comma, an object the one after the item.
+  [
+    "blank-after-comma",
+    "js",
+    `x = [${long("a")}\n,\n\nb, c\n\n,d];\ny = [1\n,\n\n2];\nz = { ${long("a")}\n,\n\nb, c\n\n,d };`,
+  ],
+  // Tree-sitter leaves the `;` after a comment's line break a statement of its own; babel reads it as the
+  // statement's, so the blank line after it stays.
+  ["semi-after-comment", "js", "for (;;) continue // c\n;\n\nx;\na;\n;\n\nb;"],
   ["quotes", "js", `const a = "it's", b = 'say "hi"', c = 'plain';`],
   ["numbers", "js", "x = [0XAB, 1E5, .5, 5., 0.50, 1_000n, 0B11, 0O7];"],
   [
@@ -149,6 +158,12 @@ const edgeCases: [string, Target, string][] = [
     "ts",
     "class A implements B { private readonly a = 1; protected abstract b(): void; constructor(public c: string) { super() } }",
   ],
+  // Modifiers written out of prettier's order must parse, print in its order, and pass `check`.
+  [
+    "member-modifiers-any-order",
+    "ts",
+    "class A { override public readonly x = 1; readonly static declare y: number; constructor(readonly private a: string) { super() } }",
+  ],
   [
     "namespaces",
     "ts",
@@ -227,8 +242,8 @@ const corpusDir = join(import.meta.dirname, "../../../corpus");
 // The fetched corpus is gitignored, so this runs where `fetch-corpus.sh` has run. Each count is pinned exactly:
 // a regression lowers it, and closing a gap raises it, which shows up as a test change.
 const ratchet: [Target, string, number, number][] = [
-  ["js", "jquery.js", 1403, 1406],
-  ["js", "lodash.js", 2813, 2817],
+  ["js", "jquery.js", 1405, 1406],
+  ["js", "lodash.js", 2816, 2817],
   ["tsx", "App.tsx", 1551, 1562],
   ["tsx", "LayerUI.tsx", 152, 152],
 ];

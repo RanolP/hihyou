@@ -11,5 +11,5 @@ export const modules = {
   namespace_import: () => inOrder(space),
   namespace_export: () => inOrder(space),
   import_attribute: () => custom("module.attribute"),
-  import_require_clause: ($) => [$.children, space, "=", space, "require", "(", $.source, ")"],
+  import_require_clause: () => custom("module.require"),
 } satisfies JsStructure;

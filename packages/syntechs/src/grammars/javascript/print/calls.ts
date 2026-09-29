@@ -5,7 +5,8 @@
 import { NO_NODE } from "../../../core/arena.js";
 import { nextLineEmpty } from "../../../fmt/text.js";
 import { nextLeaf } from "../../../fmt/tree.js";
-import { needsParens, role } from "./parens.js";
+import { textWidth } from "../../../fmt/width.js";
+import { awaitsHere, needsParens, role } from "./parens.js";
 import {
   ArgExpansionBailout,
   argument,
@@ -25,6 +26,7 @@ import {
   isJsx,
   isMember,
   isOptionalChainToken,
+  isSimpleType,
   isTaggedTemplate,
   items,
   type JsCtx,
@@ -36,6 +38,7 @@ import {
   separators,
   src,
   trailingCommaAllowed,
+  unassert,
   unparen,
 } from "./util.js";
 import type { CustomRule } from "../../../fmt/dsl/runtime.js";
@@ -239,7 +242,7 @@ export function isSimpleCallArgument(
   const child = (c: number) => isSimpleCallArgument(ctx, c, depth - 1);
   if (k === "regex") {
     const pattern = field(ctx, n, "pattern");
-    return pattern !== undefined ? [...src(ctx, pattern)].length <= 5 : true;
+    return pattern !== undefined ? textWidth(src(ctx, pattern)) <= 5 : true;
   }
   if (LITERALS.has(k) || SINGLE_WORD.has(k)) return true;
   if (k === "template_string")
@@ -320,7 +323,7 @@ function isFunctionCompositionArguments(
   if (args.length <= 1) return false;
   let count = 0;
   for (const raw of args) {
-    const arg = unparen(x, raw);
+    const arg = unassert(x, raw);
     if (isFunctionOrArrow(x, arg)) {
       count += 1;
       if (count > 1) return true;
@@ -401,26 +404,9 @@ export function couldExpandArg(
     if (bk === "arrow_function" && couldExpandArg(ctx, body, true)) return true;
     if (!arrowChainRecursion) {
       if (bk === "ternary_expression") return true;
-      if (isCallExpression(ctx, body)) return true;
+      if (isCallExpression(ctx, unassert(ctx, body))) return true;
     }
   }
-  return false;
-}
-
-const SIMPLE_TYPE_KINDS = new Set([
-  "predefined_type",
-  "type_identifier",
-  "literal_type",
-  "this_type",
-]);
-
-/** Prettier's isSimpleType over a type node. */
-function isSimpleType(x: HasTree, n: number | undefined): boolean {
-  if (n === undefined) return false;
-  const k = kind(x, n);
-  if (SIMPLE_TYPE_KINDS.has(k)) return true;
-  if (k === "generic_type") return false;
-  if (k === "nested_type_identifier") return true;
   return false;
 }
 
@@ -746,6 +732,19 @@ function isNewCallee(x: HasTree, n: number): boolean {
   }
 }
 
+// A member chain in a type (`import("x").A.B`, `typeof a.b`) is prettier's TSImportType qualifier or
+// TSQualifiedName, which it joins with bare dots and never breaks.
+const isInType = (x: HasTree, n: number | undefined) => {
+  const k = kind(x, n);
+  return (
+    k === "type_annotation" ||
+    k === "type_query" ||
+    k === "generic_type" ||
+    k === "type_arguments" ||
+    (k?.endsWith("_type") ?? false)
+  );
+};
+
 /** `c` as the source token it is, into the sink; nothing when absent. */
 const sTok = (ctx: JsCtx, c: number | undefined) => {
   if (c !== undefined) sToken(c, src(ctx, c));
@@ -803,6 +802,11 @@ const memberCustom: CustomRule<JsOptions> = (n, s) => {
   const parent = role(ctx, n).parent;
   const property = field(ctx, n, "property");
   const inner = object !== undefined ? unparen(ctx, object) : undefined;
+  // `f(x)!.y` and `f(x).y!` hug like `f(x).y`: the assertions are looked through on both sides.
+  const asserted = object !== undefined ? unassert(ctx, object) : undefined;
+  let owner = parent;
+  while (kind(ctx, owner) === "non_null_expression")
+    owner = role(ctx, owner as number).parent;
   const fnp = firstNonMember.parent;
   const shouldInline =
     (kind(ctx, fnp) === "assignment_expression" ||
@@ -811,15 +815,17 @@ const memberCustom: CustomRule<JsOptions> = (n, s) => {
         "identifier"
       : false) ||
     isNewCallee(ctx, n) ||
+    isInType(ctx, fnp) ||
     kind(ctx, n) === "subscript_expression" ||
     (kind(ctx, inner) === "identifier" &&
       kind(ctx, property) === "property_identifier" &&
       !isMember(ctx, parent)) ||
-    ((kind(ctx, parent) === "assignment_expression" ||
-      kind(ctx, parent) === "variable_declarator") &&
-      inner !== undefined &&
-      ((isCallExpression(ctx, inner) && callArguments(ctx, inner).length > 0) ||
-        (memberChains.get(ctx)?.has(inner) ?? false)));
+    ((kind(ctx, owner) === "assignment_expression" ||
+      kind(ctx, owner) === "variable_declarator") &&
+      asserted !== undefined &&
+      ((isCallExpression(ctx, asserted) &&
+        callArguments(ctx, asserted).length > 0) ||
+        (memberChains.get(ctx)?.has(asserted) ?? false)));
   if (inner !== undefined && memberChains.get(ctx)?.has(inner))
     markMemberChain(ctx, n);
   sLineSuffixBoundary();
@@ -868,6 +874,7 @@ function sMemberChain(sctx: JsStreamCtx, n: number): void {
     if (kind(ctx, node) === "parenthesized_expression") {
       const inner = unparen(ctx, node);
       const kept =
+        inner === node ||
         hasComment(ctx, node) ||
         childWhere(ctx, node, (c) => kind(ctx, c) === "comment") !==
           undefined ||
@@ -1170,6 +1177,14 @@ const sCallee = (sctx: JsStreamCtx, n: number) => {
   }
   const c = callee(ctx, n);
   if (c !== undefined) sctx.print(c);
+  // `await (x).y` in an async function: tree-sitter reads a call of `await`, babel an await of `(x).y`.
+  if (
+    c !== undefined &&
+    kind(ctx, c) === "identifier" &&
+    src(ctx, c) === "await" &&
+    awaitsHere(ctx, n)
+  )
+    sText(" ");
   sLineSuffixBoundary();
 };
 

@@ -13,7 +13,7 @@ import {
  * depth, as Python's tokenizer counts INDENT and DEDENT.
  */
 
-/** Parents under which a tuple's parentheses are optional: a statement's value or target, a subscript, `yield`. */
+/** Parents under which a tuple's parentheses are optional: a statement's value or target, a subscript, `yield`, a match's subject. */
 const bareTupleParents = new Set([
   "expression_statement",
   "for_statement",
@@ -23,6 +23,7 @@ const bareTupleParents = new Set([
   "subscript",
   "delete_statement",
   "yield",
+  "match_statement",
 ]);
 
 /** Parents whose `:` ends a compound statement's header. */
@@ -84,6 +85,104 @@ function namedCount(tree: Tree, n: number): number {
     if (tree.named(c) && tree.kindName(c) !== "comment") named++;
   }
   return named;
+}
+
+/**
+ * Whether `t` is an empty tuple among a `del`'s targets, which deletes nothing: ruff prints `del (),` as `del ()`,
+ * so its parentheses and the comma after it may come and go.
+ */
+function emptyDelTarget(tree: Tree, t: number): boolean {
+  if (t === NO_NODE || tree.kindName(t) !== "tuple" || namedCount(tree, t) !== 0) return false;
+  for (let p = tree.parent(t); p !== NO_NODE; p = tree.parent(p)) {
+    const k = tree.kindName(p);
+    if (k === "delete_statement") return true;
+    if (k !== "tuple" && k !== "list" && k !== "expression_list" && k !== "parenthesized_expression")
+      return false;
+  }
+  return false;
+}
+
+/** The sibling before `n` that is no comment, or NO_NODE. */
+function previousSibling(tree: Tree, n: number): number {
+  const parent = tree.parent(n);
+  if (parent === NO_NODE) return NO_NODE;
+  let before = NO_NODE;
+  for (let i = 0, count = tree.count(parent); i < count; i++) {
+    const c = tree.child(parent, i);
+    if (c === n) return before;
+    if (tree.kindName(c) !== "comment") before = c;
+  }
+  return NO_NODE;
+}
+
+/**
+ * Whether `t`, a `tuple`, is a `with`'s whole item list as tree-sitter reads it where CPython reads parenthesized
+ * items: `with ((x := a, y := b)):`, one tuple in more parentheses, which ruff prints in one pair, or `with (a,):`,
+ * one item and a trailing comma, which ruff prints as `with a:` once the comma is no magic one. `with (*a,):` stays
+ * a tuple, since no item can be a starred or unparenthesized named expression. `comma` asks about the latter only.
+ */
+function withItemsTuple(tree: Tree, t: number, comma: boolean): boolean {
+  let item = tree.parent(t);
+  let wrapped = false;
+  while (item !== NO_NODE && tree.kindName(item) === "parenthesized_expression") {
+    item = tree.parent(item);
+    wrapped = true;
+  }
+  if (item === NO_NODE || tree.kindName(item) !== "with_item") return false;
+  const clause = tree.parent(item);
+  if (clause === NO_NODE || tree.kindName(clause) !== "with_clause" || namedCount(tree, clause) !== 1)
+    return false;
+  if (wrapped || tree.kindName(tree.child(clause, 0)) === "(") return !comma;
+  if (namedCount(tree, t) !== 1) return false;
+  for (let i = 0, count = tree.count(t); i < count; i++) {
+    const c = tree.child(t, i);
+    if (tree.named(c) && tree.kindName(c) !== "comment")
+      return tree.kindName(c) !== "list_splat" && tree.kindName(c) !== "named_expression";
+  }
+  return false;
+}
+
+/** Whether `t`, a `tuple_pattern`, is in a case's pattern, rather than an assignment or `for` target. */
+function inCase(tree: Tree, t: number): boolean {
+  const parent = tree.parent(t);
+  return parent !== NO_NODE && tree.kindName(parent) === "case_pattern";
+}
+
+/** How many patterns a `case` lists before its guard or colon; several make one tuple without parentheses. */
+function casePatternCount(tree: Tree, clause: number): number {
+  let patterns = 0;
+  for (let i = 0, count = tree.count(clause); i < count; i++)
+    if (tree.kindName(tree.child(clause, i)) === "case_pattern") patterns++;
+  return patterns;
+}
+
+/** Whether `t`, a `tuple_pattern` in a case, is `(p)`: parentheses that only group p. */
+function grouping(tree: Tree, t: number): boolean {
+  let named = 0;
+  for (let i = 0, count = tree.count(t); i < count; i++) {
+    const c = tree.child(t, i);
+    if (tree.named(c)) {
+      if (tree.kindName(c) !== "comment") named++;
+    } else if (tree.text(c) === ",") return false;
+  }
+  return named === 1;
+}
+
+/**
+ * Whether the parentheses of `t`, a `tuple_pattern` in a case, are ones ruff may add or drop: they group one
+ * pattern, or they hold the case's whole pattern (behind any grouping ones), a tuple with or without them.
+ */
+function optionalCaseParens(tree: Tree, t: number): boolean {
+  if (grouping(tree, t)) return true;
+  for (let p = tree.parent(t); ; ) {
+    const up = tree.parent(p);
+    if (up === NO_NODE) return false;
+    const k = tree.kindName(up);
+    if (k === "case_clause") return casePatternCount(tree, up) === 1;
+    if (k !== "tuple_pattern" || !grouping(tree, up)) return false;
+    p = tree.parent(up);
+    if (p === NO_NODE || tree.kindName(p) !== "case_pattern") return false;
+  }
 }
 
 const simpleEscapes: Record<string, string> = {
@@ -196,6 +295,10 @@ function optional(tree: Tree, l: Lexeme, next: Lexeme | undefined): boolean {
     case ")":
       if (parent === NO_NODE) return false;
       if (parentKind === "parenthesized_expression") return true;
+      if (emptyDelTarget(tree, parent)) return true;
+      if (parentKind === "tuple_pattern" && inCase(tree, parent))
+        return optionalCaseParens(tree, parent);
+      if (parentKind === "tuple" && withItemsTuple(tree, parent, false)) return true;
       if (parentKind === "tuple" || parentKind === "tuple_pattern") {
         // Around a tuple already in parentheses, the tuple's own are the ones ruff may keep or drop.
         let outer = tree.parent(parent);
@@ -221,13 +324,21 @@ function optional(tree: Tree, l: Lexeme, next: Lexeme | undefined): boolean {
       }
       return false;
     case ",": {
+      if (emptyDelTarget(tree, previousSibling(tree, n))) return true;
       // A bare tuple's trailing comma (`for x in 1, 2,:`), which ruff drops or keeps inside added parentheses.
       if (
         (parentKind === "expression_list" || parentKind === "pattern_list") &&
         tree.child(parent, tree.count(parent) - 1) === n
       )
         return namedCount(tree, parent) > 1;
+      // A case's bare tuple's trailing comma (`case a, b,:`), which ruff drops or keeps inside added parentheses.
+      if (parentKind === "case_clause" && next?.text === ":")
+        return casePatternCount(tree, parent) > 1;
+      // So is a match's bare subject tuple's (`match a, b,:`).
+      if (parentKind === "match_statement" && next?.text === ":")
+        return namedCount(tree, parent) > 2;
       if (!next || !closers.has(next.text)) return false;
+      if (parentKind === "tuple" && withItemsTuple(tree, parent, true)) return true;
       // A one-element tuple's comma is what makes it a tuple, in a subscript's brackets too.
       if (
         parentKind === "tuple" ||
@@ -292,15 +403,20 @@ export const normalize: Normalize = (lexemes, text, tree) => {
   let pending: number | undefined;
   let prev: Lexeme | undefined;
   let prevEnd = 0;
+  // A logical line opened by a backslash takes its indent from the first token after it, as CPython's tokenizer does.
+  let lineOpen = false;
   for (const [i, l] of lexemes.entries()) {
     const f = form(tree, l, lexemes[i + 1]);
     const continued =
       prev !== undefined && tree.kindName(prev.node) === "line_continuation";
-    if (
+    const startsLine: boolean =
       brackets === 0 &&
-      !continued &&
-      (prev === undefined || hasNewline(text, prevEnd, l.at))
-    ) {
+      (lineOpen ||
+        (!continued && (prev === undefined || hasNewline(text, prevEnd, l.at))));
+    lineOpen = startsLine && tree.kindName(l.node) === "line_continuation";
+    if (lineOpen) {
+      // The line's indent waits for its first token past the backslash.
+    } else if (startsLine) {
       const col = column(text, l.at);
       while (col < (indents.at(-1) ?? 0)) indents.pop();
       if (col > (indents.at(-1) ?? 0)) indents.push(col);

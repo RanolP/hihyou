@@ -1,4 +1,6 @@
+import { NO_NODE } from "../../core/arena.js";
 import { decimalValue, type Normalize } from "../../fmt/check.js";
+import { cook } from "../../fmt/dsl/normalizers.js";
 import {
   type PrettierOptions,
   prettierDefaults,
@@ -6,9 +8,8 @@ import {
 } from "../../fmt/options.js";
 import { defineLanguage, type Language } from "../../fmt/rules.js";
 import type { StreamRules } from "../../fmt/stream-format.js";
-import { grammar } from "./bundle.js";
+import { grammar, language } from "../javascript/index.js";
 import * as gen from "./fmt.gen.js";
-import { language } from "./index.js";
 
 /**
  * The prettier options its JSON printers read (prettier 3.9.9 ignores `singleQuote` and `quoteProps` there);
@@ -20,19 +21,30 @@ export interface JsonOptions extends PrettierOptions {
 
 const defaults: JsonOptions = { ...prettierDefaults, trailingComma: "all" };
 
-// A number means its value, whatever its spelling, and a comma before a closing bracket (jsonc's trailing
-// comma) means nothing.
+// A string means its value whatever its quotes or backticks, a key its name whether quoted or not, a number
+// its value whatever its spelling; a comma means nothing but an array's hole, which means `null`
+// (`json-stringify` prints it so); a `+` sign (`json-stringify` drops it) means nothing.
 const normalize: Normalize = (lexemes, _text, tree) =>
   lexemes.map((l, i) => {
-    const next = lexemes[i + 1]?.text;
-    if (l.text === "," && (next === "]" || next === "}")) return undefined;
-    return tree.kindName(l.node) === "number"
-      ? (decimalValue(l.text) ?? l.text)
-      : l.text;
+    const parent = tree.parent(l.node);
+    const parentKind = parent === NO_NODE ? undefined : tree.kindName(parent);
+    if (l.text === ",") {
+      const previous = lexemes[i - 1]?.text;
+      return previous === "," || previous === "[" ? "null" : undefined;
+    }
+    if (l.text === "+" && parentKind === "unary_expression") return undefined;
+    const kind = tree.kindName(l.node);
+    if (parentKind === "pair" && tree.fieldName(l.node) === "key")
+      return `key:${kind === "string" ? cook(l.text.slice(1, -1)) : kind === "number" ? String(Number(l.text)) : l.text}`;
+    if (kind === "string" || kind === "template_string")
+      return `str:${cook(l.text.slice(1, -1))}`;
+    if (kind === "number") return decimalValue(l.text) ?? l.text.toLowerCase();
+    return l.text;
   });
 
 const spec = {
   parser: language,
+  atoms: ["string", "template_string"] as const,
   lineComments: { comment: "//" },
   defaults,
   settings: prettierSettings,

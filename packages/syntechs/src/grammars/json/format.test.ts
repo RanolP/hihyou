@@ -7,7 +7,7 @@ import type { DslGrammar, FormatIR } from "../../fmt/dsl/dsl.js";
 import { referenceRules } from "../../fmt/dsl/reference.js";
 import { format } from "../../fmt/format.js";
 import type { Language } from "../../fmt/rules.js";
-import { grammar, language } from "./index.js";
+import { grammar, language } from "../javascript/index.js";
 import { type JsonOptions, json, jsonc, jsonStringify } from "./fmt.js";
 import * as spec from "./format.js";
 
@@ -59,6 +59,11 @@ const edgeCases = [
   "[/* a */ 1, /* b */\n2]",
   "/* a */ /* b */ 1 // c\n// d",
   '{"a": [ // x\n 1, 2], "b": {} // y\n}',
+  "[[,], [1, , 2,,,,], [1, , 2,]]",
+  `[,"${"a".repeat(40)}", , "${"b".repeat(40)}", ,]`,
+  `["${"a".repeat(40)}",\n\n, "${"b".repeat(40)}"]`,
+  "[[1,2], ,[3,4]]",
+  '{"a": [,1,,], "c": `x\\u{1F409}\\`\n`}',
 ];
 
 const corpus = [

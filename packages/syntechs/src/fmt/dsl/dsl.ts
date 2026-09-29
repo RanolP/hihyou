@@ -160,6 +160,10 @@ export type Tree =
       readonly sep: string;
       readonly list: Ref;
       readonly trailing: Cond;
+      /** What a hole prints as (see `sepBy`'s `holes`); undefined: the list has none. */
+      readonly holes?: string;
+      /** A blank line is kept when it follows an item's separator, not the item (see `sepBy`). */
+      readonly blankAfterSep?: true;
     }
   /**
    * `attach`: the field whose children print with the next item, before it; `blank`: a blank line before each item
@@ -189,6 +193,8 @@ export type Tree =
       readonly hardWhen?: Pairs;
       /** The child after a token of these goes after a line, indented, in a group of its own (a hanging break). */
       readonly hangAfter?: readonly string[];
+      /** Of the child after a `hangAfter` token: where it holds, the child follows a space instead of hanging. */
+      readonly hug?: Cond;
       /** A child of these kinds goes on a line of its own, indented. */
       readonly lineBefore?: readonly string[];
       /** The children between a `{` and its `}` go one per line, indented; `{}` holding none stays `{}`. */
@@ -240,8 +246,11 @@ export type SplitLayout =
       readonly group?: boolean;
       /** Indented, from a break before the first (`first`) onward. */
       readonly indent?: boolean;
-      /** Before the first entry: a line break only where the group breaks (`soft`), or always (`hard`). */
-      readonly first?: "soft" | "hard";
+      /**
+       * Before the first entry: a line break only where the group breaks, else nothing (`soft`) or a space
+       * (`line`); or always (`hard`).
+       */
+      readonly first?: "soft" | "line" | "hard";
       /** Between entries: a space unless the group breaks (`line`), or a line break (`hardline`); else nothing. */
       readonly between?: "line" | "hardline";
       /** Entries pack several to a line. */
@@ -261,12 +270,17 @@ export interface SplitOn {
   readonly item: SplitItem;
   /** Each named item where this holds of it prints in a group and an indent of its own. */
   readonly wrapItem: Cond;
+  /** The last entry's separator: the source's is dropped, and one prints only while the enclosing group breaks. */
+  readonly trailing: boolean;
   readonly layout: SplitLayout;
 }
 
 /** How one bracket or list frame of a node breaks. */
 export interface FrameWrap {
-  /** Pack the list's items several to a line when every item is one of these kinds (prettier's number arrays). */
+  /**
+   * Pack the list's items several to a line when every item is one of these kinds, or a `+`/`-` sign before one
+   * (prettier's number arrays).
+   */
   readonly packWhenAllOf?: readonly string[];
   /** Break the list when 2+ items are all lists of one kind with 2+ items each (prettier's matrix rule). */
   readonly breakMatrix?: boolean;
@@ -643,13 +657,28 @@ export const grpBracket = brackets("[", "]");
 export const sepBy = <const S extends string, T = false>(
   sep: S,
   list: List,
-  o: { readonly trailing?: T } = {},
+  o: {
+    readonly trailing?: T;
+    /**
+     * The list has holes, a `sep` right after the opening bracket or another `sep` (`[1, , 2]`), each printed as
+     * this text and never packed or grouped. An empty one keeps its own `sep` even when last, which it needs to
+     * stay a hole.
+     */
+    readonly holes?: string;
+    /**
+     * Keep a blank line where the line after an item's separator is blank (`1\n,\n\n2`), where by default the
+     * line after the item itself must be (`1\n\n,2`): prettier's arrays against its objects and argument lists.
+     */
+    readonly blankAfterSep?: boolean;
+  } = {},
 ) =>
   piece<{ sepBy: S; trailing: T }>({
     t: "sepBy",
     sep,
     list: refOf(list),
     trailing: plain(o.trailing),
+    ...(o.holes === undefined ? {} : { holes: o.holes }),
+    ...(o.blankAfterSep === true ? { blankAfterSep: true } : {}),
   });
 
 /** The items of `list` one per line, then the node's dangling comments, one per line. */
@@ -704,6 +733,7 @@ export interface InOrderOf<K, C> {
   readonly skip?: readonly K[];
   readonly hardWhen?: PairsOf<K, C>;
   readonly hangAfter?: readonly K[];
+  readonly hug?: C;
   readonly lineBefore?: readonly K[];
   readonly braces?: boolean;
 }
@@ -748,6 +778,7 @@ export function inOrder(o?: Piece<"space"> | InOrderOf<string, unknown>): unknow
     ...(opts.skip?.length ? { skip: opts.skip } : {}),
     ...(hardWhen ? { hardWhen } : {}),
     ...(opts.hangAfter?.length ? { hangAfter: opts.hangAfter } : {}),
+    ...(opts.hug === undefined ? {} : { hug: plain(opts.hug) }),
     ...(opts.lineBefore?.length ? { lineBefore: opts.lineBefore } : {}),
     ...(opts.braces ? { braces: true } : {}),
   });
@@ -851,13 +882,15 @@ export interface SplitOnOf<K, C> {
   readonly trail?: readonly K[];
   readonly item?: "adjacent" | "space" | { readonly t: "words"; readonly keepLines?: C };
   readonly wrapItem?: C;
+  readonly trailing?: boolean;
   readonly layout?: SplitLayoutOf<C>;
 }
 
 /**
  * The node's children but comments and `except` kinds, cut into entries at each top-level `sep` token; each entry
  * prints its items as `item` says (`adjacent` by default), each named item where `wrapItem` holds in a group and an
- * indent of its own, then its separator. `layout` places the entries; with no flag set it prints them one after
+ * indent of its own, then its separator; with `trailing`, the last entry's separator prints only while the enclosing
+ * group breaks, as `sepBy`'s does. `layout` places the entries; with no flag set it prints them one after
  * another, so a lone entry prints bare. Then each child of a `trail` kind, after a space. For a list whose items are
  * runs of children rather than single ones, like CSS's comma-separated values, selectors and queries.
  */
@@ -875,6 +908,7 @@ export const splitOn = <const S extends string, const K extends string = never, 
     trail: o.trail ?? [],
     item: typeof item === "string" ? { t: item } : { t: "words", keepLines: plain(item.keepLines) },
     wrapItem: plain(o.wrapItem),
+    trailing: o.trailing ?? false,
     layout: layout(o.layout ?? {}),
   });
 };

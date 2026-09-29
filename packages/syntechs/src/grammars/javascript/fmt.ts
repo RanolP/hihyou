@@ -6,7 +6,17 @@ import {
   type Language,
 } from "../../fmt/rules.js";
 import type { StreamCtx, StreamRule } from "../../fmt/stream-format.js";
-import { closeSpan, openSpan, sJump } from "../../fmt/stream.js";
+import {
+  close as closeStream,
+  closeSpan,
+  GROUP,
+  INDENT,
+  open as openStream,
+  openSpan,
+  SOFT,
+  sJump,
+  sLine,
+} from "../../fmt/stream.js";
 import * as gen from "./fmt.gen.js";
 import { grammar, language as parser } from "./index.js";
 import { jsAtoms, jsNormalize } from "./normalize.js";
@@ -21,20 +31,27 @@ import { moduleCustoms } from "./print/modules.js";
 import { objectCustoms } from "./print/objects.js";
 import { operatorCustoms } from "./print/operators.js";
 import { jsPreds } from "./print/preds.js";
-import { needsParens } from "./print/parens.js";
+import { isDecoratedClass, needsParens } from "./print/parens.js";
 import { semiCustoms } from "./print/semi.js";
 import {
+  castLedAsi,
   ignoredStatement,
   STATEMENT_LIST_PARENTS,
   sTok,
   statementCustoms,
   statementRules,
 } from "./print/statements.js";
-import { typeCustoms, typeRules } from "./print/types.js";
-import { jsCtx, sToken } from "./sink.js";
+import { typeCustoms, typeRules, unionOwnsComments, unparenType } from "./print/types.js";
+import { jsCtx, sToken, withComments } from "./sink.js";
 import {
   anon,
+  children,
+  hasComment,
+  isArrayLike,
+  isComment,
+  isCastParen,
   isIgnoreComment,
+  isObjectOrRecord,
   isJsx,
   items,
   kind,
@@ -72,6 +89,7 @@ const parenthesized: StreamRule<JsOptions> = (n, s) => {
   const args = sctx.args;
   const inner = items(ctx, n)[0];
   if (inner === undefined) return sTok(ctx, n);
+  if (isCastParen(ctx, n)) return castParens(sctx, n, inner);
   if (kind(ctx, parent(ctx, n)) === PE || !needsParens(unparen(ctx, n), ctx)) {
     sctx.print(inner, args);
     return;
@@ -82,16 +100,83 @@ const parenthesized: StreamRule<JsOptions> = (n, s) => {
     n,
     (c) => !named(ctx, c) && kind(ctx, c) === ")",
   );
+  // A unary operator prints a commented argument inside parentheses of its own, which stand for the source's, so
+  // the argument's comments print outside the argument's own pair: `!(/* c */ (x = y))`.
+  if (kind(ctx, parent(ctx, n)) === "unary_expression") {
+    withComments(sctx, inner, () => {
+      sTok(ctx, open);
+      sctx.printNode(inner, args);
+      sTok(ctx, close);
+    });
+    return;
+  }
   sTok(ctx, open);
-  sctx.print(inner, args);
+  printInParens(ctx, unparen(ctx, n), () => sctx.print(inner, args));
   sTok(ctx, close);
 };
 
+/** Prettier's printClass for a decorated class expression in parentheses: `(`, the class indented on its own lines, `)`. */
+function printInParens(ctx: JsCtx, n: number, print: () => void): void {
+  if (!isDecoratedClass(ctx, n)) return print();
+  openStream(INDENT);
+  sLine(0);
+  print();
+  closeStream();
+  sLine(0);
+}
+
+/**
+ * A type cast's parentheses, as prettier prints its ParenthesizedExpression: hugging an object or array with no
+ * comment, else a group that breaks inside them. Parentheses nested in them collapse into them.
+ */
+function castParens(sctx: ReturnType<typeof jsCtx>, n: number, inner: number): void {
+  const ctx = sctx.js;
+  const expr = unparen(ctx, inner);
+  const open = anon(ctx, n, "(");
+  const close = lastChildWhere(ctx, n, (c) => !named(ctx, c) && kind(ctx, c) === ")");
+  const hug = !hasComment(ctx, expr) && (isObjectOrRecord(ctx, expr) || isArrayLike(ctx, expr));
+  if (hug) {
+    sTok(ctx, open);
+    sctx.print(inner, sctx.args);
+    sTok(ctx, close);
+    return;
+  }
+  openStream(GROUP);
+  sTok(ctx, open);
+  openStream(INDENT);
+  sLine(SOFT);
+  sctx.print(inner, sctx.args);
+  closeStream();
+  sLine(SOFT);
+  sTok(ctx, close);
+  closeStream();
+}
+
 /** A node under a `// prettier-ignore` comment keeps its source text. */
-const isIgnored = (ctx: JsCtx, n: number) => {
-  for (const c of ctx.comments(n).leading)
-    if (isIgnoreComment(ctx, c)) return true;
-  return isJsx(ctx, n) && jsxIgnored(ctx, n, (c) => isIgnoreComment(ctx, c));
+const isIgnored = (ctx: JsCtx, n: number) =>
+  (!isUnion(ctx, n) && ledByIgnore(ctx, n)) ||
+  firstOfIgnoredUnion(ctx, n) ||
+  (isJsx(ctx, n) && jsxIgnored(ctx, n, (c) => isIgnoreComment(ctx, c)));
+
+const ledByIgnore = (ctx: JsCtx, n: number) =>
+  ctx.comments(n).leading.some((c) => isIgnoreComment(ctx, c));
+
+const isUnion = (ctx: JsCtx, n: number) => kind(ctx, unparenType(ctx, n)) === "union_type";
+
+/**
+ * `// prettier-ignore` above a union, or above its parentheses, keeps only the union's first member's source text
+ * (handleUnionTypeComments): prettier moves the ignore onto `types[0]`.
+ */
+const firstOfIgnoredUnion = (ctx: JsCtx, n: number) => {
+  for (let at = n, up = parent(ctx, n); up !== undefined; at = up, up = parent(ctx, up)) {
+    if (kind(ctx, up) !== "union_type" || children(ctx, up).find((c) => named(ctx, c) && !isComment(ctx, c)) !== at)
+      return false;
+    for (let w: number | undefined = up; w !== undefined; w = parent(ctx, w)) {
+      if (ledByIgnore(ctx, w)) return true;
+      if (kind(ctx, parent(ctx, w)) !== "parenthesized_type") break;
+    }
+  }
+  return false;
 };
 
 /**
@@ -166,7 +251,11 @@ export function jsLanguage(
       printsOwnComments: (n, s) => {
         const ctx = jsCtx(s).js;
         return (
-          (isJsx(ctx, n) && !isIgnored(ctx, n)) || isJsxSpreadArgument(ctx, n) || isHeadVia(ctx, n)
+          (isJsx(ctx, n) && !isIgnored(ctx, n)) ||
+          isJsxSpreadArgument(ctx, n) ||
+          isHeadVia(ctx, n) ||
+          (kind(ctx, n) === "expression_statement" && castLedAsi(ctx, n)) ||
+          (unionOwnsComments(ctx, n) && !isIgnored(ctx, n))
         );
       },
       // A node with no rule prints as its token. A node with one prints as its source text under a
@@ -198,8 +287,10 @@ function wrapped(n: number, s: StreamCtx<JsOptions>, print: () => void): void {
   const ctx = jsCtx(s).js;
   const parens = kind(ctx, n) !== PE && kind(ctx, parent(ctx, n)) !== PE && needsParens(n, ctx);
   if (parens) sToken(n, "(", true);
-  if (!isIgnored(ctx, n)) print();
-  else if (STATEMENT_LIST_PARENTS.has(kind(ctx, parent(ctx, n)) ?? "")) ignoredStatement(ctx, n);
+  if (!isIgnored(ctx, n)) {
+    if (parens) printInParens(ctx, n, print);
+    else print();
+  } else if (STATEMENT_LIST_PARENTS.has(kind(ctx, parent(ctx, n)) ?? "")) ignoredStatement(ctx, n);
   else sToken(n, ctx.tree.text(n));
   if (parens) sToken(n, ")", true);
 }

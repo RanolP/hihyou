@@ -12,7 +12,7 @@ import {
   fieldName,
   first,
   type HasTree,
-  hasComment,
+  hasCommentThroughParens,
   isCall,
   isMember,
   isOptional,
@@ -114,6 +114,7 @@ export function role(x: HasTree, n: number): Role {
     case "non_null_expression":
     case "type_assertion":
     case "jsx_expression":
+    case "instantiation_expression":
       return { parent, key: "expression", top };
     case "computed_property_name":
       return { parent, key: "key", top };
@@ -274,6 +275,9 @@ export function needsParens(n: number, ctx: JsCtx): boolean {
   if (parent === undefined) return false;
   const nk = kind(ctx, n);
   const pk = kind(ctx, parent);
+  // A type cast's parentheses (the only ones `role` stops at) are all an expression needs.
+  if (pk === "parenthesized_expression") return false;
+  if (top !== n && isAwaitCall(ctx, parent)) return true;
   // `return (\n// comment\na, b\n)`: the statement's own parentheses already hold the argument.
   if (
     (pk === "return_statement" || pk === "throw_statement") &&
@@ -386,7 +390,8 @@ export function needsParens(n: number, ctx: JsCtx): boolean {
             "update_expression",
             "yield_expression",
           ].includes(nk) ||
-          isTaggedTemplate(ctx, n)
+          isTaggedTemplate(ctx, n) ||
+          isDecoratedClass(ctx, n)
         )
           return true;
       }
@@ -462,6 +467,7 @@ export function needsParens(n: number, ctx: JsCtx): boolean {
         case "as_expression":
         case "satisfies_expression":
         case "non_null_expression":
+        case "instantiation_expression":
           return true;
         case "binary_expression":
           return true;
@@ -571,7 +577,10 @@ export function needsParens(n: number, ctx: JsCtx): boolean {
           if (isMember(ctx, c)) c = objectOf(ctx, c);
           else if (isTaggedTemplate(ctx, c)) c = callee(ctx, c);
           else if (ck === "non_null_expression") c = first(ctx, c);
-          else if (ck === "parenthesized_expression") return false;
+          // Prettier's AST has no parentheses to stop at, `new (a())!()` printing as `new (a()!)()`, except the
+          // ChainExpression they keep: `new (a?.())!()`.
+          else if (ck === "parenthesized_expression" && !isChain(ctx, first(ctx, c)))
+            c = first(ctx, c);
           else return false;
         }
       }
@@ -655,7 +664,7 @@ function binaryishNeedsParens(
       return true;
     case "unary_expression":
       // The unary printer parenthesizes and indents an argument that has comments itself.
-      return !hasComment(ctx, n);
+      return !hasCommentThroughParens(ctx, n);
     case "member_expression":
     case "subscript_expression":
       return key === "object";
@@ -724,17 +733,9 @@ function optionalChainNeedsParens(
   // `(a?.b).c`: the parentheses end the chain, so they stay; tree-sitter shows them only in the source.
   const top = outer(x, n);
   if (top === n) return false;
-  const chained = (y: number | undefined): boolean => {
-    while (y !== undefined) {
-      if (isOptional(x, y)) return true;
-      if (kind(x, y) === "non_null_expression") y = first(x, y);
-      else if (isMember(x, y)) y = objectOf(x, y);
-      else if (isCall(x, y)) y = callee(x, y);
-      else return false;
-    }
-    return false;
-  };
-  if (!chained(n)) return false;
+  if (!isChain(x, n)) return false;
+  // `(a?.b)?.c`: a `?.` link continues the chain, so it reads as `a?.b?.c` and the parentheses go.
+  if (isOptional(x, parent) && key !== "quasi") return false;
   const pk = kind(x, parent);
   return (
     (key === "object" && isMember(x, parent)) ||
@@ -743,6 +744,57 @@ function optionalChainNeedsParens(
     pk === "non_null_expression" ||
     (key === "quasi" && isTaggedTemplate(x, parent))
   );
+}
+
+const FUNCTION_SCOPES = new Set([
+  "function_declaration",
+  "function_expression",
+  "generator_function",
+  "generator_function_declaration",
+  "arrow_function",
+  "method_definition",
+]);
+const NON_ASYNC_SCOPES = new Set([
+  "field_definition",
+  "public_field_definition",
+  "class_static_block",
+]);
+
+/** Whether `await` at `n` is an operator, as babel reads it: in an async function or at a module's top level. */
+export function awaitsHere(x: HasTree, n: number): boolean {
+  for (let a = parentOf(x, n); a !== undefined; a = parentOf(x, a)) {
+    const k = kind(x, a);
+    if (FUNCTION_SCOPES.has(k))
+      return childWhere(x, a, (c) => kind(x, c) === "async") !== undefined;
+    if (NON_ASYNC_SCOPES.has(k)) return false;
+  }
+  return true;
+}
+
+/**
+ * tree-sitter reads `await (x)` as an await expression and `await (x).y` as a call of `await` wherever it
+ * stands. Outside an async function babel reads a call instead: `await(x)`, whose parentheses stay.
+ */
+export const isAwaitCall = (x: HasTree, n: number): boolean =>
+  kind(x, n) === "await_expression" &&
+  kind(x, argument(x, n)) === "parenthesized_expression" &&
+  !awaitsHere(x, n);
+
+/** A class expression with decorators, which prettier parenthesizes as `(` indent(line, class) line `)`. */
+export const isDecoratedClass = (x: HasTree, n: number): boolean =>
+  kind(x, n) === "class" &&
+  childWhere(x, n, (c) => kind(x, c) === "decorator") !== undefined;
+
+/** Whether `y` is an optional chain, prettier's ChainExpression: a `?.` link somewhere down its callee/object path. */
+function isChain(x: HasTree, y: number | undefined): boolean {
+  while (y !== undefined) {
+    if (isOptional(x, y)) return true;
+    if (kind(x, y) === "non_null_expression") y = first(x, y);
+    else if (isMember(x, y)) y = objectOf(x, y);
+    else if (isCall(x, y)) y = callee(x, y);
+    else return false;
+  }
+  return false;
 }
 
 function isDecoratorMemberish(x: HasTree, n: number): boolean {
@@ -761,6 +813,7 @@ function isDecoratorMemberish(x: HasTree, n: number): boolean {
     simple(n) ||
     (kind(x, n) === "call_expression" &&
       !isOptional(x, n) &&
+      !isTaggedTemplate(x, n) &&
       simple(callee(x, n)))
   );
 }

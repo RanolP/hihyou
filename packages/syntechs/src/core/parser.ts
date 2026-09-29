@@ -8,6 +8,7 @@ import {
   ACTION_REDUCE,
   ACTION_SHIFT,
   actionCount,
+  frontMatterLength,
   hasActions,
   hasReduceAction,
   isReservedWord,
@@ -140,7 +141,7 @@ class Parser {
     this.subtrees = new Subtrees(lang, text.length);
     this.stack = new Stack(this.subtrees);
     this.direct = new DirectTree(this.subtrees, text);
-    this.lexer.setInput(text);
+    this.lexer.setInput(text, frontMatterLength(lang, text));
     this.scanner = lang.createScanner?.();
     this.validTokens = validTokensOf(lang);
   }

@@ -3,15 +3,24 @@ import type {
   CommentHandler,
   CommentTarget,
 } from "../../../fmt/comments.js";
+import { firstLeaf, nextLeaf } from "../../../fmt/tree.js";
+import { heritage } from "./classes.js";
+import { flattenTypes, unparenType } from "./types.js";
 import {
   children,
+  field,
   fieldName,
   type HasTree,
+  isCastParen,
+  isIgnoreComment,
+  isTypeCastComment,
   type JsOptions,
   kind,
   lastChildWhere,
   named,
+  outer,
   parent,
+  unparen,
 } from "./util.js";
 
 // Prettier's handleComments for estree (language-js/comments/handle-comments.js), over tree-sitter's tree: each
@@ -33,7 +42,7 @@ const lastCode = (x: HasTree, n: number) =>
  * before the comment. On a line of its own it leads the next statement (`a\n// c\n;[]`), else it trails the
  * statement (`const a = 1 /* c *\/;` prints `const a = 1; /* c *\/`).
  */
-const beforeSemicolon = (c: CommentContext): CommentTarget | undefined => {
+const beforeSemicolon = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   const { comment, enclosing, following, placement } = c;
   // A `for` head's initializer is a statement, `;` and all.
   if (
@@ -61,6 +70,39 @@ const beforeSemicolon = (c: CommentContext): CommentTarget | undefined => {
     : { node, as: "trailing" };
 };
 
+const TYPE_BODIES = new Set(["object_type", "interface_body"]);
+// Declarations whose TS AST range takes in their `;`, so a comment before it is inside them.
+const SEMI_INSIDE = new Set(["type_alias_declaration", "function_signature"]);
+
+/**
+ * `type A = B /* c *\/;` and `{ a: B /* c *\/; }`: a block comment before the `;` of a type alias, an overload
+ * signature, a type member or a class's index signature trails the type before it and prints before the `;`, since the TS AST's node for them
+ * spans their `;`. After a signature's parameters, with no return type, or exported, where the export statement spans
+ * the `;` instead, `beforeSemicolon` moves the comment past it.
+ */
+const typeBeforeSemicolon = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { comment, enclosing, preceding, text } = c;
+  if (preceding === undefined || !text.startsWith("/*")) return;
+  const all = children(c, enclosing);
+  const next = all.slice(all.indexOf(comment) + 1).find((n) => isCode(c, n));
+  if (next === undefined || kind(c, next) !== ";") return;
+  if (
+    TYPE_BODIES.has(kind(c, enclosing)) ||
+    (kind(c, enclosing) === "class_body" && kind(c, preceding) === "index_signature")
+  ) {
+    const last = lastCode(c, preceding);
+    return last !== undefined && named(c, last) && kind(c, last) !== "formal_parameters"
+      ? { node: last, as: "trailing" }
+      : undefined;
+  }
+  if (!SEMI_INSIDE.has(kind(c, enclosing)) || kind(c, preceding) === "formal_parameters") return;
+  let up = parent(c, enclosing);
+  if (up !== undefined && kind(c, up) === "ambient_declaration") up = parent(c, up);
+  return up !== undefined && kind(c, up) === "export_statement"
+    ? undefined
+    : { node: preceding, as: "trailing" };
+};
+
 /** tree-sitter nests `A | B | C` as `(A | B) | C`; prettier's union is flat. */
 const lastMember = (x: HasTree, n: number): number => {
   let member = n;
@@ -73,7 +115,7 @@ const lastMember = (x: HasTree, n: number): number => {
 };
 
 /** A comment between union members trails the member before it (handleUnionTypeComments). */
-const unionMember = (c: CommentContext): CommentTarget | undefined => {
+const unionMember = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   const { enclosing, preceding, placement } = c;
   if (
     kind(c, enclosing) !== "union_type" ||
@@ -84,10 +126,124 @@ const unionMember = (c: CommentContext): CommentTarget | undefined => {
   return { node: lastMember(c, preceding), as: "trailing" };
 };
 
+/**
+ * `/* c *\/ A | B`: a one-line block comment with only spaces between it and a union leads the union's first
+ * member, so it prints after that member's `|` (prettier's shouldMoveCommentToFirstUnionMember).
+ */
+const unionHead = (c: CommentContext<JsOptions>, node: number): number => {
+  if (kind(c, node) !== "union_type" || !c.text.startsWith("/*") || c.text.includes("\n")) return node;
+  if (isIgnoreComment(c, c.comment)) return node;
+  const head = firstLeaf(c.tree, node);
+  if (c.tree.lf(head) > 0 || nextLeaf(c.tree, c.comment) !== head) return node;
+  const { types } = flattenTypes(c, node);
+  return types.length > 1 ? (types[0] as number) : node;
+};
+
+/** `type A =⏎/* c *\/ A | B`: the comment before a union leads its first member (the last own-line handler). */
+const firstUnionMember = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { following, placement } = c;
+  if (placement === "endOfLine" || following === undefined) return;
+  const head = unionHead(c, following);
+  return head === following ? undefined : { node: head, as: "leading" };
+};
+
+const LAST_UNION_HOLDERS =new Set(["intersection_type", "union_type"]);
+
+/**
+ * `(A | B // c⏎)[]`, `& X` or `| X`: a comment ending the line after a union trails its last member, inside the
+ * union's parentheses (handleLastUnionElementInExpression).
+ */
+const lastUnionMember = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, preceding, following, placement } = c;
+  if (placement !== "endOfLine" || preceding === undefined) return;
+  const union = unparenType(c, preceding);
+  if (union === undefined || kind(c, union) !== "union_type") return;
+  const holder = kind(c, enclosing);
+  if (!LAST_UNION_HOLDERS.has(holder) && !(holder === "array_type" && following === undefined)) return;
+  return { node: lastMember(c, union), as: "trailing" };
+};
+
+/**
+ * Prettier's AST has no node for a type's parentheses, so a comment inside them with only `(` or `)` on one side
+ * has the parenthesized type's neighbours: `& (⏎// c⏎A | B)` leads the whole `(A | B)`, above its `(`.
+ */
+const outOfTypeParens = (c: CommentContext<JsOptions>): CommentContext<JsOptions> => {
+  let hoisted = c;
+  if (c.placement === "remaining") return c;
+  for (;;) {
+    const { enclosing, preceding, following } = hoisted;
+    const up = parent(c, enclosing);
+    if (
+      kind(c, enclosing) !== "parenthesized_type" ||
+      up === undefined ||
+      (preceding === undefined) === (following === undefined)
+    )
+      return hoisted;
+    const kids = children(c, up).filter((k) => named(c, k) && isCode(c, k));
+    const i = kids.indexOf(enclosing);
+    hoisted =
+      preceding === undefined
+        ? { ...hoisted, enclosing: up, preceding: kids[i - 1], following: enclosing }
+        : { ...hoisted, enclosing: up, preceding: enclosing, following: kids[i + 1] };
+  }
+};
+
+/**
+ * `type A = // c` then the type on the next line: a comment after the alias's `=` leads its type, where the core
+ * would trail it after the alias's name (prettier 3.9's handleVariableDeclaratorComments over a type alias).
+ */
+const typeAliasValue = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { comment, enclosing, following } = c;
+  if (
+    kind(c, enclosing) !== "type_alias_declaration" ||
+    following === undefined ||
+    fieldName(c, following) !== "value"
+  )
+    return;
+  const kids = children(c, enclosing);
+  const eq = kids.findIndex((k) => kind(c, k) === "=");
+  return eq !== -1 && kids.indexOf(comment) > eq
+    ? { node: unionHead(c, following), as: "leading" }
+    : undefined;
+};
+
+/**
+ * `import a = require( // c⏎ "a")`: prettier's TSExternalModuleReference holds `require(...)`, so a comment after
+ * its `(` leads the source, where the core would trail it after the name.
+ */
+const requireSource = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { comment, enclosing, following } = c;
+  if (kind(c, enclosing) !== "import_require_clause" || following === undefined) return;
+  const kids = children(c, enclosing);
+  const paren = kids.findIndex((k) => kind(c, k) === "(");
+  return paren !== -1 && kids.indexOf(comment) > paren ? { node: following, as: "leading" } : undefined;
+};
+
+const BOUNDS = new Set(["constraint", "default_type"]);
+
+/**
+ * `T extends // c⏎ X` or `T = // c⏎ X`: prettier's TSTypeParameter has no node around `extends X` or `= X`, so a comment
+ * ending the line after the keyword trails what precedes it, the name or the constraint. Its line suffix then breaks
+ * the bound's group and indents the type under it.
+ */
+const typeParameterBound = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, preceding, placement } = c;
+  if (placement !== "endOfLine" || preceding !== undefined || !BOUNDS.has(kind(c, enclosing))) return;
+  const holder = parent(c, enclosing);
+  if (holder === undefined) return;
+  const code = (n: number) => children(c, n).filter((k) => named(c, k) && isCode(c, k));
+  const kids = code(holder);
+  const before = kids[kids.indexOf(enclosing) - 1];
+  if (before === undefined) return;
+  // Prettier's constraint is the type itself, `extends` and all being TSTypeParameter's own.
+  const node = kind(c, before) === "constraint" ? (code(before).at(-1) ?? before) : before;
+  return { node, as: "trailing" };
+};
+
 const METHODS = new Set(["method_definition", "method_signature"]);
 
 /** `m /* c *\/ () {}`: the comment trails the method's name (handleMethodNameComments). */
-const methodName = (c: CommentContext): CommentTarget | undefined => {
+const methodName = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   const { enclosing, preceding, following } = c;
   if (
     !METHODS.has(kind(c, enclosing)) ||
@@ -103,6 +259,25 @@ const methodName = (c: CommentContext): CommentTarget | undefined => {
   return { node: preceding, as: "trailing" };
 };
 
+const FIELDS = new Set(["field_definition", "public_field_definition"]);
+
+/**
+ * `@dec()\n// c\naccessor b;`: a comment after a field's decorators trails the last one, above the modifiers, as
+ * classHeader does for a class's.
+ */
+const fieldDecorator = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, preceding, following, placement } = c;
+  if (
+    placement === "remaining" ||
+    !FIELDS.has(kind(c, enclosing)) ||
+    preceding === undefined ||
+    kind(c, preceding) !== "decorator" ||
+    (following !== undefined && kind(c, following) === "decorator")
+  )
+    return;
+  return { node: preceding, as: "trailing" };
+};
+
 /** A block's first statement leads with the comment, or an empty block holds it (addBlockStatementFirstComment). */
 const blockFirst = (x: HasTree, block: number): CommentTarget => {
   const first = children(x, block).find(
@@ -113,10 +288,101 @@ const blockFirst = (x: HasTree, block: number): CommentTarget => {
     : { node: block, as: "dangling" };
 };
 
+const FUNCTIONS = new Set([
+  "function_declaration",
+  "function_expression",
+  "generator_function",
+  "generator_function_declaration",
+  "method_definition",
+]);
+
+/**
+ * `function f() // c` then `{` on the next line: a line comment between a function's parameters and its body moves
+ * into the body (handleLastFunctionArgComments). An arrow keeps it before its body.
+ */
+const functionBody = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, following, placement, text } = c;
+  if (
+    placement === "remaining" ||
+    text.startsWith("/*") ||
+    !FUNCTIONS.has(kind(c, enclosing)) ||
+    following === undefined ||
+    following !== field(c, enclosing, "body")
+  )
+    return;
+  return blockFirst(c, following);
+};
+
+const HEAD_BODY = new Map([
+  ["if_statement", "consequence"],
+  ["while_statement", "body"],
+  ["with_statement", "body"],
+  ["for_statement", "body"],
+  ["for_in_statement", "body"],
+]);
+
+/**
+ * `if (a) // c` then the body on the next line: a comment after a statement's head leads its body, which prints it
+ * before the body, `{` below it (handleIfStatementComments, handleWhileComments, handleForComments). The head's
+ * parentheses are a node of their own in tree-sitter, except in a `for`, whose comments before `)` stay put.
+ */
+const statementBody = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { comment, enclosing, preceding, following, text, tree } = c;
+  const body = HEAD_BODY.get(kind(c, enclosing));
+  // Before `else`: a comment on the line of a non-block consequent trails it, any other dangles on the `if`,
+  // which prints it between the consequent and `else`. tree-sitter puts one after `else` in the else_clause.
+  if (
+    kind(c, enclosing) === "if_statement" &&
+    preceding !== undefined &&
+    preceding === field(c, enclosing, "consequence") &&
+    following === field(c, enclosing, "alternative")
+  ) {
+    const oneLine = text.startsWith("//") || !text.includes("\n");
+    return kind(c, preceding) !== "statement_block" && oneLine && tree.lf(comment) === 0
+      ? { node: preceding, as: "trailing" }
+      : { node: enclosing, as: "dangling" };
+  }
+  if (body === undefined || following === undefined || following !== field(c, enclosing, body))
+    return;
+  const kids = children(c, enclosing);
+  const close = kids.findLastIndex((k) => kind(c, k) === ")" && !named(c, k));
+  return kids.indexOf(comment) > close ? { node: following, as: "leading" } : undefined;
+};
+
+/**
+ * `for // c\n(;;);`: an empty initializer or test is an empty_statement to tree-sitter and nothing to babel,
+ * whose comment then leads the next node there is, the body at the latest.
+ */
+const forEmptyPart = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { comment, enclosing, following } = c;
+  if (
+    kind(c, enclosing) !== "for_statement" ||
+    following === undefined ||
+    kind(c, following) !== "empty_statement" ||
+    fieldName(c, following) === "body"
+  )
+    return;
+  const next = codeAfter(c, enclosing, comment).find(
+    (n) => named(c, n) && (kind(c, n) !== "empty_statement" || fieldName(c, n) === "body"),
+  );
+  return next === undefined ? undefined : { node: next, as: "leading" };
+};
+
+/**
+ * `{ a as // c\nb }`: a comment inside an import or export specifier, ending its line or on one of its own, leads
+ * it (handleImportSpecifierComments).
+ */
+const specifier = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const k = kind(c, c.enclosing);
+  return c.placement !== "remaining" && (k === "import_specifier" || k === "export_specifier")
+    ? { node: c.enclosing, as: "leading" }
+    : undefined;
+};
+
 const TRY_PARTS = new Set(["try_statement", "catch_clause", "finally_clause"]);
 
 /** `try /* c *\/ {}`: a comment before a try, catch or finally block moves into it (handleTryStatementComments). */
-const tryBlock = (c: CommentContext): CommentTarget | undefined => {
+const tryBlock = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   const { enclosing, preceding, following, placement } = c;
   if (
     !TRY_PARTS.has(kind(c, enclosing)) ||
@@ -131,6 +397,79 @@ const tryBlock = (c: CommentContext): CommentTarget | undefined => {
     ? lastChildWhere(c, following, (n) => kind(c, n) === "statement_block")
     : undefined;
   return body !== undefined ? blockFirst(c, body) : undefined;
+};
+
+const CLASS_LIKE = new Set([
+  "class",
+  "class_declaration",
+  "abstract_class_declaration",
+  "interface_declaration",
+]);
+// tree-sitter's wrappers around a class's `extends` and `implements`, which prettier's AST has not: a comment
+// in one is a comment in the class header.
+const HERITAGE_PARTS = new Set([
+  "class_heritage",
+  "extends_clause",
+  "implements_clause",
+  "extends_type_clause",
+]);
+
+/**
+ * A comment in a class or interface header (handleClassComments): with decorators it trails the last one; before
+ * the body it moves into it; before the superclass or the first `implements`/`extends` type it trails the name,
+ * type parameters or superclass before it, which the header prints, where the core would attach it to a
+ * heritage wrapper the header never prints.
+ */
+const classHeader = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { comment, enclosing, preceding, following, placement, tree } = c;
+  // Prettier runs this only for own-line and end-of-line comments. One between code on its line before a
+  // wrapper (`class A /* c */ extends B`) has the keyword between it and the superclass, so prettier's tie-break
+  // trails it after the name, where the core's would lead the wrapper.
+  if (placement === "remaining")
+    return preceding !== undefined &&
+      following !== undefined &&
+      HERITAGE_PARTS.has(kind(c, following))
+      ? { node: preceding, as: "trailing" }
+      : undefined;
+  let cls: number | undefined = enclosing;
+  while (cls !== undefined && HERITAGE_PARTS.has(kind(c, cls)))
+    cls = parent(c, cls);
+  if (cls === undefined || !CLASS_LIKE.has(kind(c, cls))) return;
+  const decorators = children(c, cls).filter((n) => kind(c, n) === "decorator");
+  if (
+    decorators.length > 0 &&
+    (following === undefined || kind(c, following) !== "decorator")
+  )
+    return { node: decorators.at(-1) as number, as: "trailing" };
+  const body = field(c, cls, "body");
+  if (body !== undefined && following === body) return blockFirst(c, body);
+  const before = (n: number) =>
+    tree.ord(comment) < tree.ord(firstLeaf(tree, n));
+  const after = (n: number | undefined) =>
+    n !== undefined && tree.ord(comment) > tree.ord(n);
+  const name = field(c, cls, "name");
+  const typeParameters = field(c, cls, "type_parameters");
+  const head = after(typeParameters)
+    ? typeParameters
+    : after(name)
+      ? name
+      : undefined;
+  const { ext, superClass, implementsList } = heritage(c, cls);
+  if (superClass !== undefined && before(superClass))
+    return head !== undefined ? { node: head, as: "trailing" } : undefined;
+  const first = implementsList[0];
+  if (first === undefined || !before(first)) return;
+  // The superclass prints with its type arguments, so a comment after those trails them.
+  const superArgs =
+    ext !== undefined ? field(c, ext, "type_arguments") : undefined;
+  const trailed = after(superArgs)
+    ? superArgs
+    : after(superClass)
+      ? superClass
+      : head;
+  return trailed !== undefined
+    ? { node: trailed, as: "trailing" }
+    : undefined;
 };
 
 const CONDITIONALS = new Set(["ternary_expression", "conditional_type"]);
@@ -173,20 +512,165 @@ const nestedConditional = (
     : undefined;
 };
 
-// In prettier's order within each placement: conditional runs early, nestedConditional last.
+/** A type cast comment ending its line leads what follows it, the expression it casts (handleTypeCastComments). */
+const typeCast = (c: CommentContext<JsOptions>): CommentTarget | undefined =>
+  c.placement === "endOfLine" && c.following !== undefined && isTypeCastComment(c, c.comment)
+    ? { node: c.following, as: "leading" }
+    : undefined;
+
+const DECLARATORS = new Set([
+  "variable_declarator",
+  "assignment_expression",
+  "augmented_assignment_expression",
+  "type_alias_declaration",
+]);
+const LITERAL_VALUES = new Set(["object", "array", "template_string", "object_type"]);
+
+/**
+ * `const a = /* c *\/⏎ value`: a comment ending the line after `=` leads the value when it is a block comment or
+ * the value is an object, array or template literal (handleVariableDeclaratorComments).
+ */
+const declaratorValue = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, following, placement } = c;
+  if (placement !== "endOfLine" || following === undefined || !DECLARATORS.has(kind(c, enclosing)))
+    return;
+  const tagged =
+    kind(c, following) === "call_expression" &&
+    kind(c, field(c, following, "arguments")) === "template_string";
+  return LITERAL_VALUES.has(kind(c, following)) || tagged || c.text.startsWith("/*")
+    ? { node: unionHead(c, following), as: "leading" }
+    : undefined;
+};
+
+/**
+ * `from "a" /* c *\/ with /* c *\/ {}` or `with { /* c *\/ }`: prettier's attributes are a bare list with no node
+ * around `with` and `{}`, so a comment beside the keyword or in an empty `{}` trails the source, before `with`.
+ */
+const importAttribute = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, preceding, following } = c;
+  const inObject = kind(c, enclosing) === "object";
+  const attribute = inObject ? parent(c, enclosing) : enclosing;
+  let statement: number | undefined;
+  if (following !== undefined && kind(c, following) === "import_attribute")
+    statement = enclosing;
+  else if (
+    attribute !== undefined &&
+    kind(c, attribute) === "import_attribute" &&
+    !(inObject && (preceding !== undefined || following !== undefined))
+  )
+    statement = parent(c, attribute);
+  const source = statement === undefined ? undefined : field(c, statement, "source");
+  return source === undefined ? undefined : { node: source, as: "trailing" };
+};
+
+const ASSIGNMENT_PATTERNS = new Set(["assignment_pattern", "object_assignment_pattern"]);
+
+/** `[a] =\n// c\nb` in a pattern: the comment leads the whole default, `// c\n[a] = b` (handleAssignmentPatternComments). */
+const assignmentPattern = (c: CommentContext<JsOptions>): CommentTarget | undefined =>
+  c.placement === "ownLine" && ASSIGNMENT_PATTERNS.has(kind(c, c.enclosing))
+    ? { node: c.enclosing, as: "leading" }
+    : undefined;
+
+const MEMBERS = new Set(["member_expression", "subscript_expression"]);
+const MEMBER_PROPERTIES = new Set(["property_identifier", "identifier"]);
+
+/**
+ * `a⏎// c⏎.b`, `?.b` or `[b]`: an own-line comment before a member's identifier leads the whole member, and a member chain
+ * prints it before that lookup (handleMemberExpressionComments). Left to the core it would lead the property,
+ * after the `.`, and would lead the `?.` token, which prints no comments. Prettier's `?.` is a flag, not a node, so
+ * the property follows the comment there too.
+ */
+const memberProperty = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, following } = c;
+  if (c.placement !== "ownLine" || !MEMBERS.has(kind(c, enclosing)) || following === undefined) return;
+  const property =
+    kind(c, following) === "optional_chain"
+      ? (field(c, enclosing, "property") ?? field(c, enclosing, "index"))
+      : following;
+  return property !== undefined && MEMBER_PROPERTIES.has(kind(c, property))
+    ? { node: enclosing, as: "leading" }
+    : undefined;
+};
+
+/**
+ * `a && ( // c⏎b)`: prettier's AST has no parentheses, so a comment after an expression's `(` and before its code
+ * sits between that expression and the node before it in the parent, and prettier places it there: this end-of-line
+ * one trails `a`. The parent's handlers run on that view first.
+ */
+const afterOpenParen = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, following, placement } = c;
+  if (
+    placement === "remaining" ||
+    c.preceding !== undefined ||
+    following === undefined ||
+    kind(c, enclosing) !== "parenthesized_expression" ||
+    isCastParen(c, enclosing)
+  )
+    return;
+  const top = outer(c, enclosing);
+  const holder = parent(c, top);
+  // An arrow's body keeps it, as prettier's does.
+  if (holder === undefined || kind(c, holder) === "arrow_function") return;
+  const all = children(c, holder);
+  const preceding = all
+    .slice(0, all.indexOf(top))
+    .findLast((n) => named(c, n) && isCode(c, n));
+  if (preceding === undefined) return;
+  const view = { ...c, enclosing: holder, preceding, following: unparen(c, following) };
+  for (const h of handlers) {
+    const target = h(view);
+    if (target) return target;
+  }
+  return placement === "ownLine"
+    ? { node: view.following, as: "leading" }
+    : { node: preceding, as: "trailing" };
+};
+
+// In prettier's order within each placement: typeCast and conditional run early, nestedConditional last.
 const handlers = [
+  typeCast,
+  importAttribute,
+  memberProperty,
   conditional,
+  typeBeforeSemicolon,
   beforeSemicolon,
+  lastUnionMember,
   unionMember,
+  typeAliasValue,
+  typeParameterBound,
+  requireSource,
+  assignmentPattern,
   methodName,
+  fieldDecorator,
+  functionBody,
+  forEmptyPart,
+  specifier,
+  statementBody,
   tryBlock,
+  classHeader,
+  declaratorValue,
   nestedConditional,
+  firstUnionMember,
 ];
 
-export const handleComment: CommentHandler<JsOptions> = (c) => {
-  for (const h of handlers) {
+export const handleComment: CommentHandler<JsOptions> = (original) => {
+  const c = outOfTypeParens(original);
+  for (const h of [afterOpenParen, ...handlers]) {
     const target = h(c);
     if (target) return target;
   }
-  return undefined;
+  if (c === original) return undefined;
+  // The core's own placement, over the neighbours outside the parentheses.
+  const { preceding, following } = c;
+  if (c.placement === "ownLine")
+    return following !== undefined
+      ? { node: following, as: "leading" }
+      : preceding !== undefined
+        ? { node: preceding, as: "trailing" }
+        : undefined;
+  return preceding !== undefined
+    ? { node: preceding, as: "trailing" }
+    : following !== undefined
+      ? { node: following, as: "leading" }
+      : undefined;
 };

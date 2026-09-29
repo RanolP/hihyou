@@ -28,6 +28,7 @@ import {
   parentIs,
   sepBy,
   space,
+  splitOn,
   text,
   tok,
   verbatim,
@@ -438,6 +439,36 @@ it("`tok(t).synth(when).andThen(f)` prints the token and `f` exactly where the r
     const want = '{"a": 1, "b"[2]}\n';
     expect(run(text, generated)).toBe(want);
     expect(run(text, reference)).toBe(want);
+  } finally {
+    rmSync(file);
+  }
+});
+
+// Kotlin's parameter lists print their last separator this way: without it a broken list would lose ktfmt's
+// trailing comma, or a flat one would keep a stray comma before its `)`.
+it("`splitOn`'s `trailing` prints the last separator only while the group breaks, where the reference does", async () => {
+  const ir = defineFormat<typeof jsonGrammar, JsonOptions>()({
+    structure: {
+      document: ($) => lines($.children),
+      array: () => grpBracket(splitOn(",", { except: ["[", "]"], trailing: true, layout: { between: "line" } })),
+      number: () => verbatim,
+    },
+  });
+  const file = join(import.meta.dirname, "split-trailing-equivalence.gen.ts");
+  writeFileSync(file, emit({ splitTrailing: ir }, jsonGrammar as DslGrammar, "dsl.test.ts"));
+  try {
+    const gen = (await import(pathToFileURL(file).href)) as {
+      splitTrailing: (custom: object) => StreamRules<JsonOptions>;
+    };
+    for (const stream of [gen.splitTrailing({}), referenceRules<JsonOptions>(ir, jsonGrammar as DslGrammar, {})]) {
+      const run = (text: string, o: Partial<JsonOptions>) => {
+        const out = formatTree(parseTree(jsonLanguage, text), { ...json, stream }, o);
+        if (!out.ok) throw new Error(out.detail);
+        return out.text;
+      };
+      expect(run("[1,2]", {})).toBe("[1, 2]\n");
+      expect(run("[1234567, 1234567]", { printWidth: 10 })).toBe("[\n  1234567,\n  1234567,\n]\n");
+    }
   } finally {
     rmSync(file);
   }

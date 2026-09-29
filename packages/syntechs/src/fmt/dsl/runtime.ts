@@ -1,7 +1,25 @@
 // What the generated formatters (`fmt.gen.ts`) and the two-pass reference (`reference.ts`) share: how a spec's
 // references bind to a node's children, so both print the same source token for the same spec token; the
 // entries of the flattened sequence; and the types of the hand-written rules a spec names.
-import { sHardline, sToken } from "../stream.js";
+import {
+  close,
+  closeChoice,
+  closeDead,
+  closeSpan,
+  closeState,
+  GROUP,
+  INDENT,
+  open,
+  openChoice,
+  openDead,
+  openSpan,
+  openState,
+  sHardline,
+  sJump,
+  sLine,
+  sText,
+  sToken,
+} from "../stream.js";
 import {
   type CommentFacts,
   commentFacts,
@@ -70,6 +88,8 @@ export type Entry =
   | { readonly e: "end" }
   /** After each item but the last: its separator token (-1: none in the source). */
   | { readonly e: "sep"; readonly tok: number }
+  /** An item of a list with holes that is a hole, printed as `text`, anchored at its separator `tok`. */
+  | { readonly e: "hole"; readonly tok: number; readonly text: string }
   /** After an item's separator or an item of `lines`: the source keeps a blank line there. */
   | { readonly e: "blank" }
   /** Only while the enclosing frame stays flat: a space, inserted beside a padded bracket. */
@@ -88,7 +108,7 @@ export type Entry =
       readonly e: "split";
       readonly group: boolean;
       readonly indent: boolean;
-      readonly first: "soft" | "hard" | undefined;
+      readonly first: "soft" | "line" | "hard" | undefined;
       readonly between: "line" | "hardline" | undefined;
       readonly fill: boolean;
     }
@@ -331,6 +351,17 @@ export function fieldChild(tree: FormatTree, node: number, name: string): number
   return -1;
 }
 
+/**
+ * An item a `packWhenAllOf` list packs: one of `kinds`, or a `+` or `-` sign before one (`-1`, which a grammar
+ * like javascript's parses as a unary expression, as prettier's signed numeric literal).
+ */
+export function packable(t: FormatTree, item: number, kinds: readonly string[]): boolean {
+  if (kinds.includes(t.kindName(item))) return true;
+  if (t.count(item) !== 2) return false;
+  const sign = t.text(t.child(item, 0));
+  return (sign === "+" || sign === "-") && kinds.includes(t.kindName(t.child(item, 1)));
+}
+
 /** The `nth` anonymous child of `node` spelled `text` (a spec's `nth` token `text` binds to it); -1 when none. */
 export function tokenChild(
   tree: FormatTree,
@@ -405,6 +436,41 @@ export function separators(
       seps[seen - 1] = c;
   }
   return seps;
+}
+
+/** A hole's slot in `holeSlots`. */
+export const HOLE = -1;
+
+/**
+ * A list with holes (`[1, , 2]`) as its slots: its items, and `HOLE` for each separator `sep` that follows the
+ * node's start or another separator; with the separator after each slot (a hole's is its own), -1 where none.
+ */
+export function holeSlots(
+  tree: FormatTree,
+  node: number,
+  items: readonly number[],
+  sep: string,
+): { slots: number[]; seps: number[] } {
+  const slots: number[] = [];
+  const seps: number[] = [];
+  let seen = 0;
+  let expecting = true;
+  for (let i = 0, count = tree.count(node); i < count; i++) {
+    const c = tree.child(node, i);
+    if (c === items[seen]) {
+      seen++;
+      slots.push(c);
+      seps.push(-1);
+      expecting = false;
+    } else if (!tree.named(c) && tree.kindName(c) === sep) {
+      if (expecting) {
+        slots.push(HOLE);
+        seps.push(c);
+      } else seps[seps.length - 1] = c;
+      expecting = true;
+    }
+  }
+  return { slots, seps };
 }
 
 /**
@@ -578,4 +644,34 @@ export function firstTextIs<O>(
     return is.includes(text) || prefix.some((p) => text.startsWith(p));
   }
   return false;
+}
+
+/**
+ * Child `c` of an `inOrder`'s `hug`: after a space where its text up to its first forced line break fits (prettier's
+ * conditionalGroup), else hanging on a line of its own, indented, as `hangAfter` prints any other child.
+ */
+export function printHugged<O>(ctx: StreamCtx<O>, c: number): void {
+  const d = openDead();
+  let span: number;
+  try {
+    span = openSpan();
+    ctx.print(c);
+    closeSpan();
+  } finally {
+    closeDead(d);
+  }
+  openChoice(false);
+  openState();
+  sText(" ");
+  sJump(span);
+  closeState();
+  openState();
+  open(GROUP);
+  open(INDENT);
+  sLine(0);
+  sJump(span);
+  close();
+  close();
+  closeState();
+  closeChoice();
 }

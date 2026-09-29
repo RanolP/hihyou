@@ -54,6 +54,7 @@ import {
   named,
   parent as parentOf,
   src,
+  unassert,
   unparen,
 } from "./util.js";
 
@@ -804,6 +805,8 @@ function shouldInline(
       return true;
     case "call_expression":
       return true;
+    case "non_null_expression":
+      return kind(ctx, unassert(ctx, e)) === "call_expression";
     case "await_expression": {
       const arg = first(ctx, e);
       return (

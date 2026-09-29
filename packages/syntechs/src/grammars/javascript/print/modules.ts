@@ -23,11 +23,13 @@ import {
 import { semiCustoms } from "./semi.js";
 import { sTok } from "./statements.js";
 import {
+  CF,
   childWhere,
   children as childrenOf,
   field,
   getComments,
   hasComment,
+  isComment,
   items,
   type JsOptions,
   kind,
@@ -146,6 +148,12 @@ function printModuleStatement(s: JsStreamCtx, n: number, ctx: StreamCtx<JsOption
   const isSemi = (c: number) => kind(js, c) === ";" && !isNamed(js, c);
   const children = all.filter((c) => kind(js, c) !== "decorator" && !isSemi(c));
   const specifiers = children.filter((c) => NAMED.has(kind(js, c)) || kind(js, c) === "namespace_export");
+  // A comment attached to a child that `s.print` prints comes out with that child; any other prints where it sits.
+  const printedWithChild = new Set(
+    children
+      .filter((c) => isNamed(js, c) && !isComment(js, c) && !specifiers.includes(c))
+      .flatMap((c) => getComments(js, c, CF.Leading | CF.Trailing)),
+  );
   for (const d of decorators) {
     s.print(d);
     sHardline();
@@ -153,6 +161,7 @@ function printModuleStatement(s: JsStreamCtx, n: number, ctx: StreamCtx<JsOption
   let first = true;
   for (const c of children) {
     if (specifiers.includes(c) && c !== specifiers[0]) continue;
+    if (printedWithChild.has(c)) continue;
     if (!first) sText(" ");
     first = false;
     if (c === specifiers[0]) printSpecifiers(s, specifiers);
@@ -172,6 +181,32 @@ export const moduleCustoms = {
   "module.clause": (n, ctx) => {
     const s = jsCtx(ctx);
     printSpecifiers(s, items(s.js, n));
+  },
+
+  /**
+   * `a = require("a")`, prettier's TSExternalModuleReference printed as a call: a commented source breaks inside the
+   * parentheses, with no trailing comma; an uncommented one never breaks.
+   */
+  "module.require": (n, ctx) => {
+    const s = jsCtx(ctx);
+    const js = s.js;
+    const source = field(js, n, "source");
+    for (const c of childrenOf(js, n)) {
+      if (isComment(js, c)) continue;
+      const k = kind(js, c);
+      if (k === "=") sText(" ");
+      if (c === source && hasComment(js, c)) {
+        open(GROUP);
+        open(INDENT);
+        sLine(SOFT);
+        s.print(c);
+        close();
+        sLine(SOFT);
+        close();
+      } else if (isNamed(js, c)) s.print(c);
+      else sTok(js, c);
+      if (k === "=") sText(" ");
+    }
   },
 
   /** `with { type: "json" }`: a lone `type` attribute never breaks. */

@@ -6,11 +6,11 @@ The oxfmt column scores that tool (`oxfmt 0.70.0`) on the same fixtures and opti
 
 | Language | Reference | Passed | Compatibility | ok:false | Excluded | oxfmt |
 | :------- | :-------- | -----: | ------------: | -------: | -------: | ----: |
-| [json](json.snap.md) | prettier 3.9.9 | 13/20 | 65.00% | 0 | 0 | 95.00% |
-| [jsonc](jsonc.snap.md) | prettier 3.9.9 | 7/9 | 77.78% | 0 | 0 | 55.56% |
-| [json-stringify](json-stringify.snap.md) | prettier 3.9.9 | 7/14 | 50.00% | 0 | 0 | 42.86% |
-| [css](css.snap.md) | prettier 3.9.9 | 65/151 | 43.05% | 0 | 6 | 76.16% |
-| [js](js.snap.md) | prettier 3.9.9 | 614/804 | 76.37% | 32 | 304 | 70.02% |
-| [ts](ts.snap.md) | prettier 3.9.9 | 531/653 | 81.32% | 28 | 76 | 75.04% |
-| [python](python.snap.md) | ruff 0.16.8 | 202/327 | 61.77% | 88 | 49 | - |
-| [kotlin](kotlin.snap.md) | ktfmt 0.64 --kotlinlang-style | 385/753 | 51.13% | 55 | 11 | - |
+| [json](json.snap.md) | prettier 3.9.9 | 20/20 | 100.00% | 0 | 0 | 95.00% |
+| [jsonc](jsonc.snap.md) | prettier 3.9.9 | 9/9 | 100.00% | 0 | 0 | 55.56% |
+| [json-stringify](json-stringify.snap.md) | prettier 3.9.9 | 14/14 | 100.00% | 0 | 0 | 42.86% |
+| [css](css.snap.md) | prettier 3.9.9 | 107/151 | 70.86% | 0 | 6 | 76.16% |
+| [js](js.snap.md) | prettier 3.9.9 | 725/804 | 90.17% | 14 | 304 | 70.02% |
+| [ts](ts.snap.md) | prettier 3.9.9 | 614/653 | 94.03% | 13 | 76 | 75.04% |
+| [python](python.snap.md) | ruff 0.16.8 | 285/327 | 87.16% | 15 | 49 | - |
+| [kotlin](kotlin.snap.md) | ktfmt 0.64 --kotlinlang-style | 641/753 | 85.13% | 13 | 11 | - |

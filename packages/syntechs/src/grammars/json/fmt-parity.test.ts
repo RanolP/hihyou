@@ -6,13 +6,11 @@ import { parseTree } from "../../core/index.js";
 import { check } from "../../fmt/check.js";
 import { format } from "../../fmt/format.js";
 import { type JsonOptions, jsonLanguageFor } from "./fmt.js";
-import { language } from "./index.js";
+import { language } from "../javascript/index.js";
 
 // Byte parity with prettier 3.9.9 at its defaults. Not covered, because prettier's comment handlers move
 // tokens there: a comment between a key and its value (`{"a": // c\n1}`), and a block comment between an
-// array item and its comma on a broken line. Nor is an exponent with a `+` (`1e+5`): tree-sitter-json 0.24.8
-// rejects it, so its list keeps the source text. Nor, as `divergences` below pins, a trailing comma (tree-sitter
-// repairs it, so its list keeps the source text, where prettier drops the comma) or a JSDoc-style block comment
+// array item and its comma on a broken line. Nor, as `divergences` below pins, a JSDoc-style block comment
 // (prettier re-indents its ` *` lines).
 
 const numbers = (n: number) =>
@@ -37,6 +35,8 @@ const edgeCases: [string, string][] = [
   ["collapsed.json", '{"a":1,\n"b":2}'],
   ["blank-lines.json", '{"a":1,\n\n\n"b":2,\n"c":[\n1,\n\n2]}'],
   ["blank-lines-strings.json", '["a",\n\n"b"]'],
+  // An array keeps the blank line after an item's comma, an object the one after the item.
+  ["blank-after-comma.json", '{"a":1\n,\n\n"b":[1\n,\n\n2, 3\n\n,4],"c":["a"\n,\n\n{}]}'],
   ["long-line.json", `{"key":"${"x".repeat(90)}","k2":1}`],
   ["fits-exactly.json", `{"k":"${"x".repeat(69)}"}`],
   ["one-over.json", `{"k":"${"x".repeat(70)}"}`],
@@ -86,6 +86,18 @@ const edgeCases: [string, string][] = [
     '{"name":"x","files":[],"keywords":["a","b"],"n":1.50,\n\n"o":{}}',
   ],
   ["composer.json", '{"require":{"php":">=8"}}'],
+  // Prettier reads JSON as a JS expression, so JSON5's forms format rather than stay as written.
+  ["trailing-comma-array.json", "[1,2,]"],
+  ["trailing-comma-array.jsonc", "[\n  1,\n  2,\n]"],
+  ["tsconfig.json", '{"compilerOptions": {"strict": true,}, "include": ["src"]}'],
+  ["exponent-plus.json", "[1e+5, 2E+10]"],
+  ["json5.json", "{a: 'x', 'b': +1, 2: 0x1F, c: [-Infinity, -1, .5]}"],
+  // Array holes: printed empty, a last one keeping its comma; `json-stringify` prints each as `null`, and a
+  // template literal as a string.
+  ["holes.json", "[[,], [1, , 2,,,,], [1, , 2,]]"],
+  ["holes-broken.jsonc", `[,"${"a".repeat(40)}", , "${"b".repeat(40)}", ,]`],
+  ["holes-blank.json", `["${"a".repeat(40)}",\n\n, "${"b".repeat(40)}"]`],
+  ["package.json", '{"a": [,1,,], "b": [,], "c": `x\\u{1F409}\\`\n`}'],
 ];
 
 function corpus(): [string, string][] {
@@ -158,15 +170,6 @@ describe("a prettier option lays out as prettier applies it to JSON, so a repo's
 
 // Input, then today's output, which differs from prettier's.
 const divergences: [string, string, string][] = [
-  // tree-sitter-json inserts a missing value after the comma, so the list keeps its source text.
-  ["trailing-comma-array.json", "[1,2,]", "[1,2,]\n"],
-  ["trailing-comma-array.jsonc", "[\n  1,\n  2,\n]", "[\n  1,\n  2,\n]\n"],
-  // tree-sitter-json wraps the comma in an ERROR, so the inner object keeps its source text.
-  [
-    "tsconfig.json",
-    '{"compilerOptions": {"strict": true,}, "include": ["src"]}',
-    '{ "compilerOptions": {"strict": true,}, "include": ["src"] }\n',
-  ],
   // Prettier re-indents a block comment whose lines all start with `*`; its source text stays here.
   [
     "jsdoc.json",

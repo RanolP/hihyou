@@ -64,3 +64,32 @@ test("pruning keeps imports used only by KDoc, backticked names or operator conv
   const used = "import a.Bag\nimport a.`when`\nimport b.assign\n\n/** Fits a [Bag]. */\nfun f() = `when`()\n";
   expect(run(used, false)).toBe(used);
 });
+
+// A regression here puts back the blank line ktfmt drops between prose ending in `:` and the code block it
+// introduces, and before a `<pre>`, which failed 16 ktfmt fixtures.
+test("KDoc code blocks hug the prose that introduces them, as ktfmt prints them", () => {
+  const input = "/**\n * Like so:\n *\n * ```\n * code\n * ```\n * Then.\n *\n * <pre>\n * x\n * </pre>\n */\nfun f() {}\n";
+  expect(run(input, false)).toBe(
+    "/**\n * Like so:\n * ```\n * code\n * ```\n *\n * Then.\n * <pre>\n * x\n * </pre>\n */\nfun f() {}\n",
+  );
+});
+
+// A regression here stops realigning KDoc tables, or refuses a `:--` column the realigned table prints as plain
+// dashes, which failed 11 ktfmt table fixtures.
+test("KDoc tables are realigned as ktfmt prints them", () => {
+  const input = "/**\n * Values:\n *\n * |a|bb|\n * |:--|---:|\n * |x|1|\n */\nfun f() {}\n";
+  expect(run(input, false)).toBe(
+    "/**\n * Values:\n *\n * | a   | bb  |\n * |-----|----:|\n * | x   |   1 |\n */\nfun f() {}\n",
+  );
+});
+
+// A regression here glues an annotation to what it annotates (`@A List`, `@S("X") return`), which changes the
+// code's meaning and refused 11 ktfmt annotation fixtures; or stops putting a declaration's annotations on lines of
+// their own once the declaration breaks.
+test("annotations stay apart from what they annotate, on lines of their own once the declaration breaks", () => {
+  const input =
+    '@A @B(1) fun f() = 1\n\n@A @B(1) fun g() {\n    val x: (@A List<Int>) -> Unit = h\n    @[C D] var y = 2\n    @S("X")\n    return z\n}\n';
+  expect(run(input, false)).toBe(
+    '@A @B(1) fun f() = 1\n\n@A\n@B(1)\nfun g() {\n    val x: (@A List<Int>) -> Unit = h\n    @[C D]\n    var y = 2\n    @S("X")\n    return z\n}\n',
+  );
+});

@@ -1247,7 +1247,7 @@ export interface ComprehensionComments {
   readonly beforeTarget: Comment[];
   readonly beforeIn: Comment[];
   readonly trailingIn: Comment[];
-  /** Per `if` clause, the comments before its keyword: own-line ones lead it, end-of-line ones trail the keyword. */
+  /** Per `if` clause, the comments before its test: own-line ones lead its keyword, end-of-line ones trail it. */
   readonly ifs: { readonly own: Comment[]; readonly eol: Comment[] }[];
 }
 
@@ -1265,9 +1265,9 @@ export function comprehensionComments(f: Fmt, c: Comprehension): ComprehensionCo
   const trailingIn = afterIn.filter((d) => d.start < iterStart);
   let ifComments = afterIn.filter((d) => d.start >= iterStart);
   const ifs = c.ifs.map((cond) => {
-    const kwStart = startOf(f.tree, cond.kw);
-    const mine = ifComments.filter((d) => d.start < kwStart);
-    ifComments = ifComments.filter((d) => d.start >= kwStart);
+    const testStart = outer(cond.test).start;
+    const mine = ifComments.filter((d) => d.start < testStart);
+    ifComments = ifComments.filter((d) => d.start >= testStart);
     return {
       own: mine.filter((d) => d.line === "own"),
       eol: mine.filter((d) => d.line !== "own"),

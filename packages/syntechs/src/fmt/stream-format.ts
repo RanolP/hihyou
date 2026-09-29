@@ -48,10 +48,15 @@ export interface StreamCtx<O = unknown> {
   danglingComments(node: number): readonly number[];
   isComment(node: number): boolean;
   isLineComment(c: number): boolean;
+  /** Whether block comment `c` ends its line as a line comment does (`StreamRules.commentEndsLine`). */
+  endsItsLine?(c: number): boolean;
   /** Appends comment `c`. */
   comment(c: number): void;
   isList(node: number): boolean;
-  /** Whether `node` lies in a region the parser could not read, which prints as its source text. */
+  /**
+   * Whether `node` lies in a region the parser could not read, or is one the language keeps as written
+   * (`StreamRules.keepsSource`), either of which prints as its source text.
+   */
   isBroken(node: number): boolean;
   /**
    * Whether `node`'s rule prints the node's comments itself (`StreamRules.printsOwnComments`), so whatever prints
@@ -72,7 +77,7 @@ export interface CommentFacts {
 
 export const commentFacts = (ctx: StreamCtx<unknown>, c: number): CommentFacts => ({
   c,
-  line: ctx.isLineComment(c),
+  line: ctx.isLineComment(c) || ctx.endsItsLine?.(c) === true,
   lf: ctx.tree.lf(c),
   lfAfter: lfAfter(ctx.tree, c),
 });
@@ -148,6 +153,10 @@ export interface StreamRules<O = unknown> {
    * lines all start with `*`).
    */
   readonly printComment?: (c: number, ctx: StreamCtx<O>) => void;
+  /** Whether block comment `c` ends its line all the same: ktfmt breaks after a KDoc wherever it stood. */
+  readonly commentEndsLine?: (c: number, ctx: StreamCtx<O>) => boolean;
+  /** Whether `node` prints as its source text though it parsed, as a broken node does (prettier-ignore). */
+  readonly keepsSource?: (node: number, ctx: StreamCtx<O>) => boolean;
   /**
    * Whether `node`'s rule prints the node's comments itself, with `printLeadingComments` and
    * `printTrailingComments`, so they can go inside what the rule wraps around them (prettier's
@@ -163,6 +172,8 @@ export interface StreamRules<O = unknown> {
    * a later print jumps to).
    */
   readonly wrap?: (node: number, ctx: StreamCtx<O>, print: () => void, args: PrintArgs | undefined) => void;
+  /** Whether the output ends with a line break, as it does unless this says not: ruff prints a blank file as "". */
+  readonly finalLine?: (ctx: StreamCtx<O>) => boolean;
 }
 
 /** `format`: lays `tree` out on the stream by the `stream` rules of `base`, and prints it. */
@@ -200,7 +211,10 @@ export function formatStream<O>(
           sToken(c, isLine(c) ? t.trimEnd() : t);
         };
     const broken = brokenNodes(tree);
-    const isBroken = (node: number) => broken !== undefined && broken.has(node);
+    const { keepsSource } = language;
+    const isBroken = (node: number) =>
+      (broken !== undefined && broken.has(node)) ||
+      (keepsSource !== undefined && keepsSource(node, ctx));
 
     const hasNamedChild = (node: number) => {
       for (let i = 0, count = tree.count(node); i < count; i++) {
@@ -210,7 +224,7 @@ export function formatStream<O>(
       return false;
     };
     const none: readonly number[] = [];
-    const { wrap, printsOwnComments } = language;
+    const { wrap, printsOwnComments, commentEndsLine } = language;
     let current: PrintArgs | undefined;
     const printNode = (node: number, args?: PrintArgs) => {
       if (isBroken(node)) {
@@ -263,6 +277,7 @@ export function formatStream<O>(
       danglingComments: (node) => comments.dangling(node),
       isComment,
       isLineComment: isLine,
+      ...(commentEndsLine === undefined ? {} : { endsItsLine: (c: number) => commentEndsLine(c, ctx) }),
       comment,
       isList(node) {
         const rule = ruleOf(node);
@@ -274,7 +289,7 @@ export function formatStream<O>(
     };
 
     ctx.print(tree.root);
-    sHardline();
+    if (language.finalLine?.(ctx) !== false) sHardline();
     const printed = printStream(settings);
     const { text } = printed;
     const eol = endOfLine(settings.endOfLine, tree);

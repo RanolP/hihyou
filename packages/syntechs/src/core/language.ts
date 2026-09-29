@@ -82,6 +82,18 @@ export interface Language {
   lex: LexFn;
   keywordLex: LexFn | undefined;
   createScanner: (() => ExternalScanner) | undefined;
+  /**
+   * How long the front matter is that `text` (past a byte order mark) opens with, 0 for none: a block in another
+   * language (YAML between `---` lines) that the lexer skips as padding, as it skips the byte order mark. No
+   * tree-sitter grammar has one; the tools that format the language (prettier's CSS) read it apart.
+   */
+  frontMatter?: (text: string) => number;
+}
+
+/** How long `lang`'s front matter is at the start of `text`, past a byte order mark; 0 for none. */
+export function frontMatterLength(lang: Language, text: string): number {
+  if (lang.frontMatter === undefined) return 0;
+  return lang.frontMatter(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text);
 }
 
 // ---- table decoding ----------------------------------------------------------------------------------------

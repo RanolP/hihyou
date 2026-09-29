@@ -1,5 +1,6 @@
 import { NO_NODE, type Tree } from "../../core/arena.js";
 import { decimalValue, type Lexeme, type Normalize } from "../../fmt/check.js";
+import { cook } from "../../fmt/dsl/normalizers.js";
 
 /**
  * What a JS/TS token means: its value (a string's cooked text, a number's value, a key's name) and where it
@@ -11,17 +12,87 @@ import { decimalValue, type Lexeme, type Normalize } from "../../fmt/check.js";
 export const jsNormalize: Normalize = (lexemes, text, tree) => {
   const jsx = new JsxTexts(text, tree);
   const places = new Places(tree, (n) => jsx.isText(n));
-  return lexemes.map((l, i) => {
+  const forms = lexemes.map((l, i) => {
     const run = jsx.runOf(l.node);
     // Prettier merges adjacent JSX spaces into one, which HTML renders alike.
     if (run)
       return jsx.first(run)
         ? `jsx:${run.value.replace(/ {2,}/g, " ")}@${places.at(run.element)}`
         : undefined;
+    // A modifier stands in its member, not at its own position among the others: prettier reorders them.
+    const member = modifierOf(tree, l);
+    if (member !== undefined) return `mod:${l.text}@${places.at(member)}`;
     const value = valueForm(tree, l, l.node, lexemes, i);
     return value === undefined ? undefined : `${value}@${places.of(l.node)}`;
   });
+  return inModifierOrder(lexemes, forms);
 };
+
+/** A member's or parameter's modifier keyword: its rank in prettier's order (print/util.ts's MODIFIER_ORDER). */
+const MODIFIER_RANK: Readonly<Record<string, number>> = {
+  declare: 0,
+  public: 1,
+  private: 1,
+  protected: 1,
+  static: 2,
+  abstract: 3,
+  override: 4,
+  readonly: 5,
+  accessor: 6,
+  // A type parameter's, which format/types.ts's type_parameter prints in this order.
+  const: 7,
+  in: 8,
+};
+const MODIFIER_NODES = new Set(["accessibility_modifier", "override_modifier"]);
+const MODIFIER_HOLDERS = new Set([
+  "public_field_definition",
+  "method_definition",
+  "method_signature",
+  "abstract_method_signature",
+  "index_signature",
+  "required_parameter",
+  "optional_parameter",
+  "type_parameter",
+]);
+
+/** The member or parameter whose modifier `l` is; undefined when `l` is none. */
+function modifierOf(tree: Tree, l: Lexeme): number | undefined {
+  if (MODIFIER_RANK[l.text] === undefined) return undefined;
+  let n = l.node;
+  // `public` and `override` stand in a node of their own, or lex as it.
+  if (!tree.named(n) && MODIFIER_NODES.has(parentKind(tree, n) ?? ""))
+    n = tree.parent(n);
+  if (tree.named(n) && !MODIFIER_NODES.has(tree.kindName(n))) return undefined;
+  const p = tree.parent(n);
+  return p !== NO_NODE && MODIFIER_HOLDERS.has(tree.kindName(p))
+    ? p
+    : undefined;
+}
+
+/**
+ * `forms` with each run of adjacent modifiers sorted into prettier's order, which the formatter prints them in
+ * whatever order the source had: the order means nothing.
+ */
+function inModifierOrder(
+  lexemes: readonly Lexeme[],
+  forms: (string | undefined)[],
+): (string | undefined)[] {
+  const rank = (i: number) =>
+    forms[i]?.startsWith("mod:") ? MODIFIER_RANK[lexemes[i]!.text] : undefined;
+  for (let i = 0; i < forms.length; i++) {
+    let end = i;
+    while (rank(end) !== undefined && rank(end + 1) !== undefined) end++;
+    if (end > i) {
+      const run = forms
+        .slice(i, end + 1)
+        .map((form, k) => ({ r: rank(i + k)!, form }));
+      run.sort((a, b) => a.r - b.r);
+      run.forEach((x, k) => (forms[i + k] = x.form));
+    }
+    i = end;
+  }
+  return forms;
+}
 
 /** The kinds `check` reads whole: a string's quotes and fragments are separate leaves. */
 export const jsAtoms = ["string"] as const;
@@ -93,6 +164,8 @@ function valueForm(
     // Prettier sorts a regex's flags.
     case "regex_flags":
       return `flags:${[...t].sort().join("")}`;
+    case "identifier":
+      return cook(t);
     default:
       return t;
   }
@@ -160,61 +233,12 @@ function codeChildren(tree: Tree, n: number): number {
 const decodeQuotes = (s: string) =>
   s.replaceAll("&quot;", '"').replaceAll("&apos;", "'");
 
-const SIMPLE_ESCAPES: Readonly<Record<string, string>> = {
-  n: "\n",
-  t: "\t",
-  r: "\r",
-  b: "\b",
-  f: "\f",
-  v: "\v",
-};
-
-/** A string literal's value from its source between the quotes, escapes resolved as the spec cooks them. */
-export function cook(raw: string): string {
-  if (!raw.includes("\\")) return raw;
-  let out = "";
-  for (let i = 0; i < raw.length; i++) {
-    const c = raw.charAt(i);
-    if (c !== "\\") {
-      out += c;
-      continue;
-    }
-    const e = raw.charAt(++i);
-    const simple = SIMPLE_ESCAPES[e];
-    if (simple !== undefined) out += simple;
-    else if (e === "x") {
-      out += String.fromCharCode(Number.parseInt(raw.slice(i + 1, i + 3), 16));
-      i += 2;
-    } else if (e === "u") {
-      if (raw.charAt(i + 1) === "{") {
-        const close = raw.indexOf("}", i);
-        out += String.fromCodePoint(
-          Number.parseInt(raw.slice(i + 2, close), 16),
-        );
-        i = close;
-      } else {
-        out += String.fromCharCode(
-          Number.parseInt(raw.slice(i + 1, i + 5), 16),
-        );
-        i += 4;
-      }
-    } else if (e >= "0" && e <= "7") {
-      const m = /^[0-7]{1,3}/.exec(raw.slice(i, i + 3))?.[0] ?? e;
-      const digits = Number.parseInt(m, 8) > 255 ? m.slice(0, 2) : m;
-      out += String.fromCharCode(Number.parseInt(digits, 8));
-      i += digits.length - 1;
-    } else if (e === "\r") {
-      if (raw.charAt(i + 1) === "\n") i++;
-    } else if (e !== "\n" && e !== " " && e !== " ") out += e;
-  }
-  return out;
-}
-
 /**
  * Where a node stands: its field and position under each ancestor, interned as numbers. Parentheses around an
  * expression, and the parentheses of an arrow's single plain parameter, are see-through: `(a)` stands where `a`
  * does. They are not where dropping them would change the meaning in a way the tree does not show: around an
- * optional chain that is then called or read (`(a?.b).c`), and around a string statement (a directive).
+ * optional chain that is then called or read through a plain link (`(a?.b).c`), and around a string statement
+ * (a directive).
  *
  * A chain of one logical operator is flat: prettier drops the parens of `a && (b && c)`, which regroups the tree
  * without changing what it means, so each operand and operator stands at its index in the whole chain.
@@ -458,11 +482,20 @@ function parensMatter(tree: Tree, pe: number): boolean {
     (pk === "member_expression" || pk === "subscript_expression") &&
     field === "object";
   const calls = pk === "call_expression" && field === "function";
+  // `(a?.b)?.c` reads as `a?.b?.c`: a `?.` link continues the chain the parentheses would end.
+  if ((reads || calls) && hasOptionalLink(tree, tree.parent(pe))) return false;
   return (
     (reads || calls || pk === "non_null_expression") &&
     hasOptionalChain(tree, inner)
   );
 }
+
+/** Whether the member or call `n` is itself a `?.` link. */
+const hasOptionalLink = (tree: Tree, n: number) =>
+  findChild(tree, n, (c) => {
+    const k = tree.kindName(c);
+    return k === "optional_chain" || k === "?.";
+  }) !== NO_NODE;
 
 /** Whether the chain `n` heads (`NO_NODE` for none) holds a `?.`. */
 export function hasOptionalChain(tree: Tree, n: number): boolean {
@@ -476,13 +509,7 @@ export function hasOptionalChain(tree: Tree, n: number): boolean {
       return kind === "non_null_expression"
         ? hasOptionalChain(tree, tree.count(n) > 0 ? tree.child(n, 0) : NO_NODE)
         : false;
-    if (
-      findChild(tree, n, (c) => {
-        const k = tree.kindName(c);
-        return k === "optional_chain" || k === "?.";
-      }) !== NO_NODE
-    )
-      return true;
+    if (hasOptionalLink(tree, n)) return true;
     n = findChild(tree, n, (c) => {
       const f = tree.fieldName(c);
       return f === "object" || f === "function";

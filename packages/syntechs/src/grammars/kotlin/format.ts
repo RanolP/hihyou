@@ -4,12 +4,12 @@
 import {
   all,
   any,
-  bail,
   breakParent,
+  custom,
   defineFormat,
   either,
+  firstText,
   group,
-  grpBrace,
   grpParen,
   hardline,
   has,
@@ -18,6 +18,7 @@ import {
   isEmpty,
   kindIs,
   lastItem,
+  line,
   lines,
   not,
   prevItem,
@@ -53,12 +54,21 @@ const before = [
 const after = ["(", "[", ".", "?.", "::"] as const;
 
 /** Children joined by spaces, but around the punctuation in `before`/`after` and the extra kinds given. */
-const spaced = (o: { readonly tightBefore?: readonly string[]; readonly braces?: boolean; readonly hang?: boolean } = {}) =>
+const spaced = (
+  o: {
+    readonly tightBefore?: readonly string[];
+    readonly braces?: boolean;
+    readonly hang?: boolean;
+    /** The rule naming the right sides that stay on the `=`'s line (see `hug`). */
+    readonly hug?: "hugged" | "huggedChain";
+  } = {},
+) =>
   inOrder({
     join: "space",
     tight: { before: [...before, ...(o.tightBefore ?? [])] as never[], after: [...after, "modifiers"] as never[] },
     ...(o.braces ? { braces: true } : {}),
     ...(o.hang ? { hangAfter: ["=", "+=", "-=", "*=", "/=", "%="] as never[] } : {}),
+    ...(o.hug ? { hug: when(o.hug) } : {}),
   });
 
 /** Adjacent children, with a space after each `,`. */
@@ -75,8 +85,37 @@ const blank = not(
   ),
 );
 
-// The grammar makes a property's accessors its siblings; they continue it.
-const follow = kindIs("getter", "setter");
+// The modifiers other than annotations, which never break apart.
+const keywordModifiers = [
+  "visibility_modifier",
+  "function_modifier",
+  "class_modifier",
+  "member_modifier",
+  "inheritance_modifier",
+  "property_modifier",
+  "platform_modifier",
+  "parameter_modifier",
+] as const;
+
+/** A declaration: one group, which its annotations' lines break with (see `modifiers`). */
+const decl = <T>(body: T) => group(body);
+
+// The grammar makes a property's accessors and explicit backing field its siblings; they continue it.
+const follow = any(kindIs("getter", "setter"), when("backingField"));
+
+const property = (skip: readonly string[]) =>
+  decl(
+    inOrder({
+      join: "space",
+      tight: { before: [...before, ":"] as never[], after: [...after, "modifiers"] as never[] },
+      skip: skip as never[],
+      hangAfter: ["="],
+      hug: when("huggedChain"),
+      lineBefore: ["getter", "setter"],
+    }),
+  );
+
+const ctorLine = either(when("commentedConstructor"), [], line);
 
 export const kotlin = format({
   structure: {
@@ -87,63 +126,83 @@ export const kotlin = format({
     import_alias: () => inOrder(space),
     identifier: () => inOrder(),
     file_annotation: () => inOrder(),
-    statements: ($) => lines($.children, { tokens: true }),
+    // Inside the hanging group a lambda's `{` (or `->`) opens, so the break it forces reaches that group too.
+    statements: ($) => [either(when("lambdaWrittenBroken"), breakParent, []), lines($.children, { tokens: true })],
 
-    modifiers: () =>
-      either(
-        when("annotationsBreak"),
-        [inOrder({ join: "space", hardWhen: { after: ["annotation"] } }), either(lastItem(kindIs("annotation")), hardline, space)],
-        [inOrder(space), space],
-      ),
-    annotation: () => inOrder({ tight: { after: ["@", "[", "use_site_target"] }, spaceWhen: { before: ["user_type"] } }),
+    // A declaration's annotations each go on a line of their own once the declaration (the `group` `decl` puts
+    // it in) breaks, a block body's included; the keyword modifiers after them stay on one line.
+    modifiers: () => [
+      either(when("annotationsBreak"), breakParent, []),
+      inOrder({ join: "line", spaceWhen: { after: keywordModifiers } }),
+      either(lastItem(kindIs("annotation")), line, space),
+    ],
+    // `@field:[Inject Named("x")]`: the annotations a bracket groups are spaced apart.
+    annotation: () => inOrder({ join: "space", tight: { after: ["@", "[", "use_site_target"], before: ["]"] } }),
     use_site_target: () => inOrder(),
 
-    class_declaration: () => spaced({ tightBefore: ["type_parameters", "primary_constructor"] }),
-    object_declaration: () => spaced(),
-    companion_object: () => spaced(),
+    class_declaration: () =>
+      either(
+        when("commentedConstructor"),
+        decl(
+          inOrder({
+            join: "space",
+            hardWhen: { before: ["primary_constructor"] },
+            tight: { before: [...before, "type_parameters"] as never[], after: [...after, "modifiers"] as never[] },
+          }),
+        ),
+        decl(spaced({ tightBefore: ["type_parameters", "primary_constructor"] })),
+      ),
+    object_declaration: () => decl(spaced()),
+    object_literal: () => spaced(),
+    companion_object: () => decl(spaced()),
     class_body: ($) =>
       either(isEmpty, ["{", "}"], ["{", indent([hardline, lines($.children, { blank, follow })]), hardline, "}"]),
-    enum_class_body: ($) =>
-      either(
-        any(has("children", "function_declaration"), has("children", "property_declaration")),
-        bail("an enum body with members"),
-        grpBrace(sepBy(",", $.children, { trailing: true })),
-      ),
-    enum_entry: () => spaced(),
+    enum_class_body: () => custom("enumBody"),
+    enum_entry: () => decl(spaced()),
+    // `class Foo @Inject constructor(...)`: once the header overflows, `constructor` and its modifiers go on a line
+    // of their own at the class's indent, each annotation on its own line; the parameters then break only if they
+    // still overflow. A comment before it puts it on a line of its own (see `class_declaration`).
     primary_constructor: ($) =>
       either(
         has("children", "modifiers"),
-        // `internal constructor(...)`: spaced off the class name, which prints tight before this node.
-        [space, spaced({ tightBefore: ["("] })],
-        grpParen(sepBy(",", $.children, { trailing: true })),
+        group([
+          ctorLine,
+          $.children.at(0).andThen((m) => m),
+          "constructor",
+          grpParen(sepBy(",", $.children.from(1), { trailing: true })),
+        ]),
+        either(
+          firstText({ is: ["constructor"] }),
+          group([ctorLine, "constructor", grpParen(sepBy(",", $.children, { trailing: true }))]),
+          grpParen(sepBy(",", $.children, { trailing: true })),
+        ),
       ),
-    class_parameter: () => spaced({ tightBefore: [":"] }),
+    class_parameter: () => decl(spaced({ tightBefore: [":"] })),
     delegation_specifier: () => spaced(),
+    explicit_delegation: () => spaced(),
     constructor_invocation: () => inOrder(),
-    secondary_constructor: () => spaced({ braces: true }),
+    secondary_constructor: () => decl(spaced({ braces: true })),
+    anonymous_initializer: () => decl(spaced({ braces: true })),
     constructor_delegation_call: () => inOrder(),
-    type_alias: () => spaced({ tightBefore: ["type_parameters"] }),
+    type_alias: () => decl(spaced({ tightBefore: ["type_parameters"] })),
 
-    function_declaration: () => spaced({ tightBefore: [":"] }),
+    function_declaration: () => decl(spaced({ tightBefore: [":"] })),
     // A parameter's modifiers and default are its siblings, so an entry is the run between two commas.
     function_value_parameters: () =>
-      grpParen(splitOn(",", { except: ["(", ")"], item: "space", layout: { between: "line" } })),
+      grpParen(splitOn(",", { except: ["(", ")"], item: "space", trailing: true, layout: { between: "line" } })),
     parameter: () => spaced({ tightBefore: [":"] }),
     parameter_modifiers: () => inOrder(space),
     parameter_modifier: () => inOrder(),
-    function_body: () => spaced({ braces: true, hang: true }),
+    function_body: () => spaced({ braces: true, hang: true, hug: "huggedChain" }),
     anonymous_function: () => spaced({ tightBefore: [":"] }),
-    property_declaration: () =>
-      inOrder({
-        join: "space",
-        tight: { before: [...before, ":"] as never[], after: [...after, "modifiers"] as never[] },
-        hangAfter: ["="],
-        lineBefore: ["getter", "setter"],
-      }),
+    // An explicit backing field the grammar recovers as a property prints without the `val` it lacks.
+    property_declaration: () => either(when("backingField"), property(["binding_pattern_kind"]), property([])),
+    // `by lazy { }`: the delegate hangs off `by` as an initializer hangs off `=`.
+    property_delegate: () => inOrder({ join: "space", hangAfter: ["by"], hug: when("huggedChain") }),
     variable_declaration: () => spaced({ tightBefore: [":"] }),
     multi_variable_declaration: () => adjacent,
-    getter: () => spaced({ tightBefore: [":", "("] }),
-    setter: () => spaced({ tightBefore: [":", "("] }),
+    getter: () => decl(spaced({ tightBefore: [":", "("] })),
+    setter: () => decl(spaced({ tightBefore: [":", "("] })),
 
     user_type: () => inOrder(),
     // The grammar hides the `?`, so no rule could print it: the type prints as written.
@@ -155,11 +214,14 @@ export const kotlin = format({
     type_constraint: () => spaced(),
     type_projection: () => inOrder(space),
     function_type: () => spaced(),
-    function_type_parameters: () => adjacent,
-    parenthesized_type: () => inOrder(),
+    function_type_parameters: () => inOrder({ spaceWhen: { after: [",", "type_modifiers"] } }),
+    parenthesized_type: () => inOrder({ spaceWhen: { after: ["type_modifiers"] } }),
     type_modifiers: () => inOrder(space),
 
-    assignment: () => spaced({ hang: true }),
+    // ktfmt keeps a lambda or scoping function on the `=`'s line, but hangs a chain on one.
+    // An explicit backing field the grammar reads as an assignment to `field` hugs as a property's initializer does.
+    assignment: () =>
+      either(when("backingField"), spaced({ hang: true, hug: "huggedChain" }), spaced({ hang: true, hug: "hugged" })),
     directly_assignable_expression: () => inOrder(),
     call_expression: () => inOrder(),
     // A trailing lambda alone (`forEach { }`) is spaced off its callee, which prints before this node.
@@ -169,22 +231,28 @@ export const kotlin = format({
         [space, inOrder()],
         inOrder({ spaceWhen: { before: ["annotated_lambda"] } }),
       ),
-    value_arguments: ($) => grpParen(sepBy(",", $.children, { trailing: true })),
+    value_arguments: ($) => grpParen(sepBy(",", $.children, { trailing: when("manyArguments") })),
     value_argument: () => inOrder({ join: "space", tight: { after: ["*"] } }),
-    annotated_lambda: () => inOrder(space),
-    lambda_literal: () =>
-      either(
-        isEmpty,
-        ["{", "}"],
-        group(inOrder({ join: "line", hangAfter: ["{", "->"], spaceWhen: { before: ["->"] } })),
-      ),
+    annotated_lambda: () => inOrder({ join: "space", tight: { after: ["label"] } }),
+    // One with no statements prints in lambda.ts.
+    lambda_literal: () => group(inOrder({ join: "line", hangAfter: ["{", "->"], spaceWhen: { before: ["->"] } })),
     lambda_parameters: () => adjacent,
+    // A member chain prints from its root in chain.ts.
     navigation_expression: () => inOrder(),
     navigation_suffix: () => inOrder(),
     indexing_expression: () => inOrder(),
     indexing_suffix: () => adjacent,
     parenthesized_expression: () => inOrder(),
-    prefix_expression: () => inOrder(),
+    // An annotated expression (`@Suppress("X") f()`) keeps the gap the source has after the annotation: where it
+    // has none, the grammar took an annotation's arguments (`@Suppress("X")` above a declaration it misparses) for
+    // the expression, and a space would change what the code means. ktfmt keeps the line break the source has
+    // after an expression's annotations.
+    prefix_expression: () =>
+      inOrder({
+        join: "gap",
+        hardWhen: { when: when("annotationLineBroken") },
+        tight: { after: ["!", "-", "+", "++", "--"] },
+      }),
     postfix_expression: () => inOrder(),
     this_expression: () => inOrder(),
     super_expression: () => inOrder(),
@@ -202,12 +270,21 @@ export const kotlin = format({
     check_expression: binary,
     range_expression: () => inOrder(),
     type_test: () => inOrder(space),
+    range_test: () => inOrder(space),
 
     if_expression: () => spaced(),
     control_structure_body: () => inOrder({ braces: true }),
     when_expression: () => spaced({ braces: true }),
     when_subject: () => spaced(),
-    when_entry: () => spaced(),
+    // ktfmt puts each condition on a line of its own, and hangs the body off `->` but for a block or a lambda.
+    when_entry: () =>
+      inOrder({
+        join: "space",
+        tight: { before: [","] },
+        hardWhen: { after: [","] },
+        hangAfter: ["->"],
+        hug: firstText({ prefix: ["{"] }),
+      }),
     when_condition: () => inOrder(space),
     for_statement: () => spaced(),
     while_statement: () => spaced(),
@@ -227,10 +304,10 @@ export const kotlin = format({
     source_file: { blankLines: "force" },
     class_body: { blankLines: "force" },
     statements: { blankLines: "force" },
-    enum_class_body: { expand: "always" },
-    value_arguments: { breakWhen: spansLines },
-    function_value_parameters: { breakWhen: spansLines },
-    primary_constructor: { breakWhen: spansLines },
+    when_expression: { blankLines: "force" },
+    value_arguments: { breakWhen: when("writtenBroken") },
+    function_value_parameters: { breakWhen: when("writtenBroken") },
+    primary_constructor: { breakWhen: when("writtenBroken") },
   },
   unknown: "bail",
   docComment: kdoc,

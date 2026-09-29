@@ -47,6 +47,7 @@ import {
   getComments,
   type HasTree,
   hasComment,
+  hasCommentThroughParens,
   hasLeadingOwnLineComment,
   hasNewlineIn,
   isBlockComment,
@@ -110,8 +111,9 @@ function withOwnComments(
 
 /**
  * Prettier's parser rebalances `a || (b || c)` into `(a || b) || c`, so a logical chain whose right operand
- * repeats its operator prints as one flat chain. Undefined when `node` is no such chain, or when a comment
- * sits on a node the rebalance would drop.
+ * repeats its operator prints as one flat chain. A dropped node's leading comments, `a &&⏎// c⏎(b && d)`, lead
+ * the first operand after it, as prettier attaches them to the rebalanced tree. Undefined when `node` is no such
+ * chain, or when another comment sits on a node the rebalance would drop.
  */
 function printRebalancedChain(
   ctx: JsStreamCtx,
@@ -122,16 +124,28 @@ function printRebalancedChain(
   const right = unparen(js, field(js, node, "right") as number);
   if (!isLogical(js, node) || !isLogical(js, right) || operator(js, right) !== op)
     return undefined;
+  const atStart = js.options.experimentalOperatorPosition === "start";
   const operands: number[] = [];
   const ops: number[] = [];
+  // The dropped nodes whose leading comments each operand prints before itself.
+  const lifted = new Map<number, number[]>();
+  let pending: number[] = [];
   let clean = true;
   const walk = (c: number, top = false) => {
     const inner = unparen(js, c);
     if (!top && !(isLogical(js, inner) && operator(js, inner) === op)) {
+      if (pending.length > 0) lifted.set(operands.length, pending);
+      pending = [];
       operands.push(c);
       return;
     }
-    if (!top && (hasComment(js, c) || hasComment(js, inner))) clean = false;
+    if (!top)
+      for (const dropped of new Set([c, inner])) {
+        if (!hasComment(js, dropped)) continue;
+        if (atStart || operands.length === 0 || hasComment(js, dropped, CF.Trailing | CF.Dangling))
+          clean = false;
+        else pending.push(dropped);
+      }
     walk(field(js, inner, "left") as number);
     ops.push(field(js, inner, "operator") as number);
     walk(field(js, inner, "right") as number);
@@ -139,7 +153,6 @@ function printRebalancedChain(
   walk(node, true);
   if (!clean || operands.slice(1).some((o) => hasComment(js, o, CF.Leading)))
     return undefined;
-  const atStart = js.options.experimentalOperatorPosition === "start";
   const [head, ...rest] = operands as [number, ...number[]];
   const parts: Emit[] = [() => within(GROUP, () => ctx.print(head))];
   rest.forEach((operand, i) => {
@@ -163,6 +176,7 @@ function printRebalancedChain(
         tok(js, opTok);
         sLine(0);
       }
+      for (const dropped of lifted.get(i + 1) ?? []) commentsOf(ctx, dropped)?.[0]();
       ctx.print(operand);
     };
     const broken = i === 0 && hasComment(js, head, CF.Trailing | CF.Line);
@@ -296,7 +310,7 @@ const binary: CustomRule<JsOptions> = (node, sctx) => {
   if (isInsideParenthesis) return run(parts);
   if (
     (key === "callee" && isCallOrNew(js, parent)) ||
-    (parentKind === "unary_expression" && !hasComment(js, node)) ||
+    (parentKind === "unary_expression" && !hasCommentThroughParens(js, node)) ||
     (parentKind === "member_expression" && key === "object")
   )
     return void within(GROUP, () => {

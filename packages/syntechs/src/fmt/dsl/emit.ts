@@ -52,6 +52,7 @@ function eachCond(ir: FormatIR, visit: (c: Cond) => void): void {
       cond(x.tight?.when);
       cond(x.spaceWhen?.when);
       cond(x.hardWhen?.when);
+      cond(x.hug);
     } else if (x.t === "splitOn") {
       cond(x.wrapItem);
       if (x.item.t === "words") cond(x.item.keepLines);
@@ -384,7 +385,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
     const keep = x.item.t === "words" && x.item.keepLines !== false ? name("keep") : undefined;
     if (keep !== undefined && x.item.t === "words")
       line(`const ${keep} = ${cond(x.item.keepLines, hasFields, "node", run)};`);
-    block(`const ${printEntry} = (e: SplitEntry) =>`, () => {
+    block(`const ${printEntry} = (e: SplitEntry${x.trailing ? ", last: boolean" : ""}) =>`, () => {
       line("const items = e.items;");
       if (x.item.t === "adjacent") line(`for (const c of items) ${printItem}(c);`);
       else if (x.item.t === "space")
@@ -430,7 +431,17 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
           for (let k = 0; k < 4; k++) line("close();");
         });
       }
-      line("if (e.sep !== -1) sToken(e.sep, t.text(e.sep));");
+      if (x.trailing)
+        block(
+          "if (last)",
+          () => {
+            line("open(IF_BROKEN, -1);");
+            line(`sToken(e.items[e.items.length - 1] as number, ${str(x.sep)}, true);`);
+            line("close();");
+          },
+          "} else if (e.sep !== -1) sToken(e.sep, t.text(e.sep));",
+        );
+      else line("if (e.sep !== -1) sToken(e.sep, t.text(e.sep));");
     }, "};");
     const place = (l: SplitLayout): void => {
       if ("when" in l) {
@@ -444,13 +455,14 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
       if (l.group) line("open(GROUP);");
       if (l.indent) line("open(INDENT);");
       if (l.first === "soft") line("sLine(SOFT);");
+      else if (l.first === "line") line("sLine(0);");
       else if (l.first === "hard") line("sHardline();");
       if (l.fill) line("open(FILL);");
       block(`for (let i = 0; i < ${run}.entries.length; i++)`, () => {
         if (l.between === "line") line("if (i > 0) sLine(0);");
         else if (l.between === "hardline") line("if (i > 0) sHardline();");
         if (l.fill) line("open(FILL_ITEM);");
-        line(`${printEntry}(${run}.entries[i] as SplitEntry);`);
+        line(`${printEntry}(${run}.entries[i] as SplitEntry${x.trailing ? `, i === ${run}.entries.length - 1` : ""});`);
         if (l.fill) line("close();");
       });
       if (l.fill) line("close();");
@@ -470,7 +482,17 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
     // Bound in the order the reference flattens them: the list between holds no literal.
     const openTok = bound(b.open);
     const closeTok = bound(b.close);
-    const its = items(x);
+    const holes = x.holes;
+    if (holes !== undefined && w.keepExpanded !== undefined && w.keepExpanded !== false)
+      throw new Error("emit: a list with holes that keeps its expansion is not generated yet");
+    let its = items(x);
+    if (holes !== undefined) {
+      const slots = name("slots");
+      line(`const ${slots} = holeSlots(t, node, ${its}, ${str(x.sep)});`);
+      its = `${slots}.slots`;
+    }
+    // An item, not a hole: every test that reads the item's node is guarded by it.
+    const real = (item: string) => (holes === undefined ? "" : `${item} !== HOLE && `);
     block(`if (${its}.length === 0)`, () => {
       line(`const dangling = ${x === owner ? "ctx.danglingComments(node)" : "[] as number[]"};`);
       line("open(GROUP);");
@@ -492,7 +514,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
     depth++;
     line(`const first = ${its}[0] as number;`);
     line(`const last = ${its}.length - 1;`);
-    line(`const seps = separators(t, node, ${its}, ${str(x.sep)});`);
+    line(`const seps = ${holes === undefined ? `separators(t, node, ${its}, ${str(x.sep)})` : `${its.slice(0, -".slots".length)}.seps`};`);
     const breaks: string[] = [];
     if (always) breaks.push("true");
     if (w.breakWhen !== undefined && w.breakWhen !== false) breaks.push(`(${when(w.breakWhen)})`);
@@ -502,22 +524,24 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
       );
     if (w.breakMatrix)
       breaks.push(
-        `(${its}.length > 1 && ${its}.every((item, i) => { const next = ${its}[i + 1]; return ctx.isList(item) && (next === undefined || t.kindName(next) === t.kindName(item)) && ctx.items(item).length > 1; }))`,
+        `(${its}.length > 1 && ${its}.every((item, i) => { const next = ${its}[i + 1]; return ${real("item")}${holes === undefined ? "" : "next !== HOLE && "}ctx.isList(item) && (next === undefined || t.kindName(next) === t.kindName(item)) && ctx.items(item).length > 1; }))`,
       );
     const fills = !always && (w.packWhenAllOf?.length ?? 0) > 0;
     if (fills)
       line(
-        `const concise = ${its}.length > 1 && ${its}.every((item) => ${JSON.stringify(w.packWhenAllOf)}.includes(t.kindName(item)) && !ctx.trailingComments(item).some((c) => endsLine(ctx, item, c)));`,
+        `const concise = ${its}.length > 1 && ${its}.every((item) => ${real("item")}packable(t, item, ${JSON.stringify(w.packWhenAllOf)}) &&!ctx.trailingComments(item).some((c) => endsLine(ctx, item, c)));`,
       );
     line(
       `const listGroup = open(GROUP, -1, ${breaks.length === 0 ? "0" : `${breaks.join(" || ")} ? BROKEN : 0`});`,
     );
     const trailing = x.trailing === false ? undefined : when(x.trailing);
     const slot = (i: string) => {
-      block(`if (${i} < last)`, () => {
+      // An empty hole last keeps its own separator, without which it is no hole.
+      const lastHole = holes === "" ? ` || ${its}[last] === HOLE` : "";
+      block(`if (${i} < last${lastHole})`, () => {
         line(`const s = seps[${i}] as number;`);
         line("if (s !== -1) sToken(s, t.text(s));");
-      }, trailing === undefined ? "}" : `} else if (${trailing}) {`);
+      }, trailing === undefined ? "}" : `} else if (${holes === undefined ? "" : `${its}[last] !== HOLE && `}${trailing}) {`);
       if (trailing !== undefined) {
         depth++;
         line(`open(IF_BROKEN, ${fills ? "concise ? listGroup : -1" : "-1"});`);
@@ -532,13 +556,27 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
     printBracket(openTok, b.open);
     line("open(INDENT);");
     line("sLine(pad);");
-    const blank = (item: string) => (always ? "false" : `nextLineEmpty(t, ${item})`);
+    const blank = (item: string) =>
+      always
+        ? "false"
+        : x.blankAfterSep
+          ? `${real(item)}seps[i] !== -1 && nextLineEmpty(t, seps[i] as number)`
+          : `${real(item)}nextLineEmpty(t, ${item})`;
+    const printItem = () => {
+      if (w.itemsAsGroups) line("open(GROUP);");
+      child("item");
+      if (w.itemsAsGroups) line("close();");
+    };
     const plain = () =>
       block(`for (let i = 0; i < ${its}.length; i++)`, () => {
         line(`const item = ${its}[i] as number;`);
-        if (w.itemsAsGroups) line("open(GROUP);");
-        child("item");
-        if (w.itemsAsGroups) line("close();");
+        if (holes === undefined) printItem();
+        else
+          block(
+            "if (item !== HOLE)",
+            printItem,
+            holes === "" ? "}" : `} else sToken(seps[i] as number, ${str(holes)}, true);`,
+          );
         slot("i");
         line("if (i === last) break;");
         line("sLine(0);");
@@ -681,6 +719,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
         return;
       }
       case "sepBy": {
+        if (x.holes !== undefined) throw new Error("emit: a list with holes outside brackets is not generated yet");
         const its = items(x);
         line(`const seps = separators(t, node, ${its}, ${str(x.sep)});`);
         block(`for (let i = 0; i < ${its}.length; i++)`, () => {
@@ -741,6 +780,8 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
               line("sHardline();");
               child("item");
               line("close();");
+              if (frameWrap(rule, x.list.name).blankLines !== undefined)
+                line(`if (i < ${its}.length - 1 && nextLineEmpty(t, item)) sHardline();`);
               line("continue;");
             });
           line("if (i > 0) sHardline();");
@@ -807,18 +848,26 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
                 ? "sLine(0);"
                 : undefined;
         const steps: [string, string][] = [];
-        if (x.braces) steps.push(["inBraces", '{ if (t.kindName(c) === "}") { close(); inBraces = false; } sHardline(); }']);
+        // Where the kind's `blankLines` is set, a blank line the source has between two children in the braces stays.
+        const blank = rule.blankLines === undefined ? "" : " else if (nextLineEmpty(t, prev)) sHardline();";
+        if (x.braces)
+          steps.push(["inBraces", `{ if (t.kindName(c) === "}") { close(); inBraces = false; }${blank} sHardline(); }`]);
         const hard = pairs(x.hardWhen);
         if (hard !== undefined) steps.push([hard, "sHardline();"]);
         if (x.lineBefore?.length) steps.push([oneOf("t.kindName(c)", x.lineBefore), "{ open(INDENT); sHardline(); frames = 1; }"]);
-        if (x.hangAfter?.length)
-          steps.push([oneOf("t.kindName(prev)", x.hangAfter), "{ open(GROUP); open(INDENT); sLine(0); frames = 2; }"]);
+        if (x.hangAfter?.length) {
+          const hang = oneOf("t.kindName(prev)", x.hangAfter);
+          // A hugged child prints its own space or hanging break (`printHugged`).
+          if (x.hug !== undefined) steps.push([`${hang} && named && ${cond(x.hug, false, "c")}`, "hugged = true;"]);
+          steps.push([hang, "{ open(GROUP); open(INDENT); sLine(0); frames = 2; }"]);
+        }
         if (tight !== undefined) steps.push([tight, "{}"]);
         if (spaced !== undefined) steps.push([spaced, 'sText(" ");']);
         const spacing = steps.length > 0 || join !== undefined;
         if (spacing) line("let prev = -1;");
         if (x.lineBefore?.length || x.hangAfter?.length) line("let frames = 0;");
         if (x.braces) line("let inBraces = false;");
+        if (x.hug !== undefined) line("let hugged = false;");
         block("for (let i = 0, count = t.count(node); i < count; i++)", () => {
           line("const c = t.child(node, i);");
           line("const named = t.named(c);");
@@ -883,7 +932,16 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
             depth--;
             line("}");
           };
-          block("if (named)", printNamed, "} else sToken(c, t.text(c));");
+          if (x.hug !== undefined)
+            block("if (hugged)", () => {
+              line("printHugged(ctx, c);");
+              line("hugged = false;");
+            }, "} else if (named) {");
+          else line("if (named) {");
+          depth++;
+          printNamed();
+          depth--;
+          line("} else sToken(c, t.text(c));");
           if (x.lineBefore?.length || x.hangAfter?.length) line("for (; frames > 0; frames--) close();");
         });
         return;
@@ -1030,7 +1088,9 @@ export function emit(
       ...(ir.unknown === "bail" ? ["    bailUnknown: true,"] : []),
       ...(ir.docComment === undefined
         ? []
-        : [`    printComment: (c, ctx) => printDocComment(c, ctx, ${JSON.stringify(ir.docComment)}),`]),
+        : [`    printComment: (c, ctx) => printDocComment(c, ctx, ${JSON.stringify(ir.docComment)}),`,
+            `    commentEndsLine: (c, ctx) => isDocComment(ctx.tree.text(c), ${JSON.stringify(ir.docComment)}),`,
+          ]),
       "  };",
       "}",
     );
@@ -1048,13 +1108,19 @@ export function emit(
       0,
       'import { type ImportBlock, importBlocks, printImports } from "../../fmt/dsl/runtime.js";',
     );
+  if (parts.some((p) => p.includes("holeSlots(")))
+    parts.splice(
+      parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
+      0,
+      'import { HOLE, holeSlots } from "../../fmt/dsl/runtime.js";',
+    );
   if (parts.some((p) => p.includes("hasChild(")))
     parts.splice(
       parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
       0,
       'import { hasChild } from "../../fmt/dsl/runtime.js";',
     );
-  for (const f of ["allBefore", "prevItem", "lastItem"].filter((f) => parts.some((p) => p.includes(`${f}(`))))
+  for (const f of ["allBefore", "prevItem", "lastItem", "packable", "printHugged"].filter((f) => parts.some((p) => p.includes(`${f}(`))))
     parts.splice(
       parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
       0,
@@ -1090,7 +1156,7 @@ export function emit(
     parts.splice(
       parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
       0,
-      'import { printDocComment } from "../../fmt/dsl/doc-comment.js";',
+      'import { isDocComment, printDocComment } from "../../fmt/dsl/doc-comment.js";',
     );
   if (parts.some((p) => p.includes("lfAfter(")))
     parts.splice(

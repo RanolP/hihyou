@@ -4,8 +4,8 @@
 import type { PredicateRule } from "../../../fmt/dsl/runtime.js";
 import { jsCtx } from "../sink.js";
 import { startsWith } from "./operators.js";
-import { needsParens, role } from "./parens.js";
-import { field, hasComment, items, kind, type JsOptions, parent } from "./util.js";
+import { isAwaitCall, needsParens, role } from "./parens.js";
+import { field, hasCommentThroughParens, items, kind, type JsOptions, parent } from "./util.js";
 
 export const jsPreds = {
   /** Seen through parentheses, the node sits in a `parentKind` under prettier's key `key` (any key without it). */
@@ -14,11 +14,14 @@ export const jsPreds = {
     const r = role(js, node);
     return kind(js, r.parent) === parentKind && (key === undefined || r.key === key);
   },
-  /** The node's field `name` holds a child with comments attached. */
+  /** The node's field `name` holds a child with comments attached, seen through parentheses as prettier's AST has none. */
   commented: (node, s, name) => {
     const js = jsCtx(s).js;
-    return hasComment(js, field(js, node, name as string));
+    const child = field(js, node, name as string);
+    return child !== undefined && hasCommentThroughParens(js, child);
   },
+  /** An `await (x)` babel reads as a call of `await`, outside an async function. */
+  awaitCall: (node, s) => isAwaitCall(jsCtx(s).js, node),
   /** The node needs parentheses where it sits. */
   needsParens: (node, s) => needsParens(node, jsCtx(s).js),
   /**

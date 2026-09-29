@@ -530,6 +530,16 @@ class Reader {
     readonly stmts: Map<number, Stmt>,
   ) {}
 
+  /** The `c as d` a with item's conditional ends in, which `withStmt` reads as the item's `as`. */
+  readonly conditionalAliases = new Set<number>();
+
+  /** The context `c` of `c as d` in `conditionalAliases`, found by the conditional's rule under `c as d` too. */
+  aliased(n: number): Expr {
+    const e = this.expr(this.named(n)[0] ?? this.fail(n, "no context"));
+    this.byTs.set(n, e);
+    return e;
+  }
+
   fail(n: number, why: string): never {
     return fail(this.tree, n, why);
   }
@@ -1079,15 +1089,51 @@ class Reader {
     const clause =
       this.named(n).find((c) => this.kind(c) === "with_clause") ??
       this.fail(n, "no with clause");
-    // `with (a as b):` parses as one item whose value is a parenthesized `as`; the parentheses are the statement's.
+    // `with (a as b):` parses as one item whose value is a parenthesized `as`, and `with (a,):` as one whose value is
+    // a one-element tuple; CPython reads both as parenthesized items, so the parentheses are the statement's.
     let parens: number | undefined;
-    const items = this.named(clause).map((item): WithItem => {
-      let value = this.needField(item, "value");
+    const clauseItems = this.named(clause);
+    const values = clauseItems.map((item) => this.needField(item, "value"));
+    const noItem = (value: number) =>
+      ["list_splat", "named_expression"].includes(this.kind(value));
+    const lp = this.tok(clause, "(");
+    const rp = this.tok(clause, ")");
+    // `with (a, *b):` and `with (x := a, y := b):` hold what no item can be, so CPython reads one tuple item: its
+    // WithItem stands at the first tree-sitter item, whose rule prints the whole tuple.
+    const first = clauseItems[0];
+    if (
+      lp !== undefined &&
+      rp !== undefined &&
+      first !== undefined &&
+      values.some(noItem)
+    ) {
+      const tuple = this.tupleOf(clause, values, lp, rp);
+      const item = this.link({
+        kind: "WithItem",
+        ts: first,
+        start: tuple.start,
+        end: tuple.end,
+        kids: [tuple],
+        parent: undefined,
+        context: tuple,
+        asTok: undefined,
+        vars: undefined,
+      });
+      return this.withOf(n, [item], undefined, undefined);
+    }
+    const items = clauseItems.map((item, i): WithItem => {
+      let value = values[i] as number;
       const inner = this.named(value)[0];
       if (
-        this.kind(value) === "parenthesized_expression" &&
         inner !== undefined &&
-        this.kind(inner) === "as_pattern"
+        ((this.kind(value) === "parenthesized_expression" &&
+          this.kind(inner) === "as_pattern") ||
+          (clauseItems.length === 1 &&
+            this.kind(value) === "tuple" &&
+            this.named(value).length === 1 &&
+            this.tok(value, ",") !== undefined &&
+            this.tok(value, "(") !== undefined &&
+            !noItem(inner)))
       ) {
         parens = value;
         value = inner;
@@ -1095,10 +1141,18 @@ class Reader {
       let context: Expr;
       let asTok: number | undefined;
       let vars: Expr | undefined;
-      if (this.kind(value) === "as_pattern") {
-        const [ctx, target] = this.named(value);
-        context = this.expr(ctx ?? this.fail(value, "no context"));
-        asTok = this.need(value, "as");
+      // Tree-sitter reads `a if b else c as d` as `a if b else (c as d)`: the conditional is the context.
+      let alias: number | undefined;
+      for (let x = value; this.kind(x) === "conditional_expression"; ) {
+        x = this.named(x).at(-1) ?? this.fail(x, "bad conditional");
+        if (this.kind(x) === "as_pattern") alias = x;
+      }
+      if (alias !== undefined) this.conditionalAliases.add(alias);
+      if (this.kind(value) === "as_pattern" || alias !== undefined) {
+        const as = alias ?? value;
+        const [ctx, target] = this.named(as);
+        context = this.expr(alias !== undefined ? value : (ctx ?? this.fail(value, "no context")));
+        asTok = this.need(as, "as");
         const t =
           target !== undefined ? (this.named(target)[0] ?? target) : undefined;
         vars = t !== undefined ? this.expr(t) : undefined;
@@ -1115,6 +1169,17 @@ class Reader {
         vars,
       });
     });
+    return parens !== undefined
+      ? this.withOf(n, items, this.need(parens, "("), this.need(parens, ")"))
+      : this.withOf(n, items, lp, rp);
+  }
+
+  withOf(
+    n: number,
+    items: WithItem[],
+    open: number | undefined,
+    close: number | undefined,
+  ): With {
     const body = this.body(this.needField(n, "body"));
     return this.link({
       kind: "With",
@@ -1126,11 +1191,9 @@ class Reader {
       kws: [this.tok(n, "async"), this.need(n, "with")].filter(
         (k) => k !== undefined,
       ),
-      open:
-        parens !== undefined ? this.need(parens, "(") : this.tok(clause, "("),
+      open,
       items,
-      close:
-        parens !== undefined ? this.need(parens, ")") : this.tok(clause, ")"),
+      close,
       colon: this.need(n, ":"),
       body,
     });
@@ -1343,7 +1406,21 @@ class Reader {
   }
 
   matchStmt(n: number): Match {
-    const subject = this.expr(this.needField(n, "subject"));
+    // `match a, b:` is one tuple; tree-sitter lists its items in the statement.
+    const subjects = this.fields(n, "subject");
+    const subject =
+      subjects.length > 1 || this.commas(n).length > 0
+        ? this.link(
+            this.tupleOf(
+              n,
+              subjects,
+              undefined,
+              undefined,
+              this.end(this.need(n, "match")),
+              this.start(this.need(n, ":")),
+            ),
+          )
+        : this.expr(subjects[0] ?? this.fail(n, "no subject"));
     const block = this.needField(n, "body");
     const cases = this.named(block).map((c): MatchCase => {
       const patternNode =
@@ -1559,6 +1636,7 @@ class Reader {
         };
       }
       case "list_splat":
+      case "list_splat_pattern":
       case "dictionary_splat": {
         const value = this.expr(
           this.named(n)[0] ?? this.fail(n, "empty splat"),
@@ -1685,10 +1763,20 @@ class Reader {
         };
       }
       case "conditional_expression": {
-        const [body, test, orelse] = this.named(n).map((c) => this.expr(c));
+        const nodes = this.named(n);
+        const [body, test, orelse] = nodes.map((c) =>
+          this.conditionalAliases.has(c) ? this.aliased(c) : this.expr(c),
+        );
         if (!body || !test || !orelse) return this.fail(n, "bad conditional");
+        const last = nodes.at(-1);
         return {
           ...base,
+          // Short of a with item's `as`, which tree-sitter reads into the last branch.
+          end:
+            last !== undefined &&
+            (this.conditionalAliases.has(last) || this.kind(last) === "conditional_expression")
+              ? orelse.end
+              : base.end,
           kind: "IfExp",
           kids: [body, test, orelse],
           body,
@@ -1868,7 +1956,6 @@ class Reader {
         return this.expr(this.typeExpr(n));
       case "case_pattern":
       case "splat_pattern":
-      case "list_splat_pattern":
       case "dictionary_splat_pattern":
         return this.fail(n, "unsupported pattern");
       default:

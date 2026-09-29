@@ -10,6 +10,7 @@ export type FormatTree = Pick<
   | "nodeCount"
   | "trailingLf"
   | "bom"
+  | "frontMatter"
   | "kind"
   | "kindName"
   | "named"

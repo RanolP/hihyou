@@ -25,6 +25,7 @@ import {
   writeTypeParams,
 } from "../fmt/stmt/defs.js";
 import { endOf, tokens } from "../fmt/trivia.js";
+import { closeSkippedClause } from "../fmt/stmt/verbatim.js";
 
 export const stmtDefVia = {
   // Given the first decorator, prints them all, then what separates the last from the header.
@@ -56,8 +57,11 @@ export const stmtDefVia = {
   // A definition's bound prints from its tokens (`ctx.args.boundTokens`), a type alias's as an expression.
   "def.bound": (c: number, ctx: StreamCtx<unknown>) => {
     const { f, e } = ruffOf(c);
-    if (ctx.args?.boundTokens === true) writeSimpleType(f, c);
-    else writeExpr(f, e);
+    if (ctx.args?.boundTokens === true) {
+      f.writeLeading(f.comments.leading(e));
+      writeSimpleType(f, c);
+      f.writeTrailing(f.comments.trailing(e));
+    } else writeExpr(f, e);
   },
   // Ruff's `format_function_header` from the parameters on: they and the return type break as one group.
   "def.signature": (c: number) => {
@@ -112,6 +116,7 @@ export const stmtDefVia = {
   "def.body": (c: number) => {
     const { f, s } = ruffStmtOf(c);
     const def = s as FunctionDef | ClassDef;
+    if (closeSkippedClause(f)) return;
     const [, trailingDef] = splitDangling(f, def);
     f.writeTrailing(trailingDef);
     writeBody(f, def, def.body, def.kind === "FunctionDef" ? "function" : "class", trailingDef);

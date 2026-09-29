@@ -25,8 +25,22 @@ export class Lexer {
   tokenEndRow = 0;
   resultSymbol = 0;
 
-  setInput(input: string): void {
+  /** Where the padding the first token skips ends, past a byte order mark and `setInput`'s front matter; its rows. */
+  private skipEnd = 0;
+  private skipRows = 0;
+
+  /** `frontMatter` is how long the front matter is that the input opens with past a byte order mark, if any. */
+  setInput(input: string, frontMatter = 0): void {
     this.input = input;
+    const bom = input.charCodeAt(0) === BOM ? 1 : 0;
+    this.skipEnd = frontMatter > 0 ? bom + frontMatter : 0;
+    this.skipRows = 0;
+    for (
+      let i = input.indexOf("\n");
+      i >= 0 && i < this.skipEnd;
+      i = input.indexOf("\n", i + 1)
+    )
+      this.skipRows++;
     this.reset(0, 0);
   }
 
@@ -125,6 +139,8 @@ export class Lexer {
     this.resultSymbol = 0;
     if (this.pos === 0 && this.lookahead === BOM && !this.eof())
       this.advance(true);
+    if (this.pos < this.skipEnd)
+      this.advanceTo(this.skipEnd, this.skipRows - this.row, true);
   }
 
   finish(): void {

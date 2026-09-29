@@ -1,5 +1,6 @@
 // The customs stmt-compound.ts's `.via`s name: ruff's clause headers and bodies (statement/clause.rs).
 import type { StreamCtx } from "../../../fmt/stream-format.js";
+import { firstLeaf } from "../../../fmt/tree.js";
 import type { Py, Stmt } from "../fmt/ast.js";
 import type { Fmt } from "../fmt/builders.js";
 import type { Comment } from "../fmt/comments.js";
@@ -14,12 +15,14 @@ import {
   withItem,
   withItems,
 } from "../fmt/stmt/clauses.js";
+import { splitDangling } from "../fmt/stmt/defs.js";
 import {
   type SuiteKind,
   writeClauseBody,
   writeLeadingAlternateBranchComments,
   writeSuite,
 } from "../fmt/stmt/suite.js";
+import { closeSkippedClause, openSkippedClause } from "../fmt/stmt/verbatim.js";
 
 /** A clause as ruff's `clause` prints it: the comments around its header, and its body. */
 interface Clause {
@@ -34,6 +37,32 @@ interface Clause {
 }
 
 const none = { comments: [], last: undefined };
+
+/**
+ * Keeps the header of clause `n` as written under a `fmt: skip` (`openSkippedClause`): a compound statement's
+ * first clause, a definition or a match or case clause, before its rule prints it. The clauses after a
+ * statement's first keep theirs in `compound.alternate`, after the comments before them.
+ */
+export function skipClauseHeader(n: number, ctx: StreamCtx<unknown>): void {
+  const t = ctx.tree;
+  const kind = t.kindName(n);
+  if (kind === "case_clause") {
+    const { f, s } = ruffStmtOf(t.parent(n));
+    const c = s.kind === "Match" ? s.cases.find((k) => k.ts === n) : undefined;
+    if (c) openSkippedClause(f, c.start, c.body[0]?.start ?? c.end, c.body, f.comments.dangling(c));
+    return;
+  }
+  const { f, s } = ruffStmtOf(t.child(n, 0));
+  const start = 2 * t.ord(firstLeaf(t, n));
+  if (s.kind === "FunctionDef" || s.kind === "ClassDef")
+    openSkippedClause(f, start, s.body[0]?.start ?? s.end, s.body, splitDangling(f, s)[1]);
+  else if (s.kind === "Match")
+    openSkippedClause(f, start, s.cases[0]?.start ?? s.end, [], f.comments.dangling(s));
+  else if (s.kind !== "Try") {
+    const { colon, body } = clauseOf(n, ctx);
+    openSkippedClause(f, start, body[0]?.start ?? s.end, body, colon);
+  }
+}
 
 /** The clause tree-sitter node `n` is: a compound statement's first, or one after it. */
 function clauseOf(n: number, ctx: StreamCtx<unknown>): Clause {
@@ -109,9 +138,11 @@ export const stmtCompoundVia = {
   },
   // A clause's keyword, after the comments and blank lines that separate it from the clause before.
   "compound.alternate": (token: number | undefined, n: number, ctx: StreamCtx<unknown>) => {
-    const { f, alternate } = clauseOf(n, ctx);
+    const { f, alternate, colon, body } = clauseOf(n, ctx);
     writeLeadingAlternateBranchComments(f, alternate.comments, alternate.last);
-    if (token !== undefined) sToken(token, ctx.tree.text(token));
+    if (token === undefined) return;
+    const start = 2 * ctx.tree.ord(token);
+    if (!openSkippedClause(f, start, body[0]?.start ?? start, body, colon)) sToken(token, ctx.tree.text(token));
   },
   // The block's statements as ruff's suite of the kind its clause passes (`ctx.args`).
   "compound.suite": (n: number, ctx: StreamCtx<unknown>) => {
@@ -126,7 +157,7 @@ export const stmtCompoundVia = {
   // A block: the comments after its clause's colon, then ruff's suite.
   "compound.body": (c: number, ctx: StreamCtx<unknown>) => {
     const { f, colon, body, after = [] } = clauseOf(ctx.tree.parent(c), ctx);
-    writeClauseBody(f, body, "other", colon);
+    if (!closeSkippedClause(f)) writeClauseBody(f, body, "other", colon);
     f.writeDangling(after);
   },
 };
