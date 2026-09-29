@@ -165,7 +165,8 @@ const decodeQuotes = (s: string) =>
  * Where a node stands: its field and position under each ancestor, interned as numbers. Parentheses around an
  * expression, and the parentheses of an arrow's single plain parameter, are see-through: `(a)` stands where `a`
  * does. They are not where dropping them would change the meaning in a way the tree does not show: around an
- * optional chain that is then called or read (`(a?.b).c`), and around a string statement (a directive).
+ * optional chain that is then called or read through a plain link (`(a?.b).c`), and around a string statement
+ * (a directive).
  *
  * A chain of one logical operator is flat: prettier drops the parens of `a && (b && c)`, which regroups the tree
  * without changing what it means, so each operand and operator stands at its index in the whole chain.
@@ -409,11 +410,20 @@ function parensMatter(tree: Tree, pe: number): boolean {
     (pk === "member_expression" || pk === "subscript_expression") &&
     field === "object";
   const calls = pk === "call_expression" && field === "function";
+  // `(a?.b)?.c` reads as `a?.b?.c`: a `?.` link continues the chain the parentheses would end.
+  if ((reads || calls) && hasOptionalLink(tree, tree.parent(pe))) return false;
   return (
     (reads || calls || pk === "non_null_expression") &&
     hasOptionalChain(tree, inner)
   );
 }
+
+/** Whether the member or call `n` is itself a `?.` link. */
+const hasOptionalLink = (tree: Tree, n: number) =>
+  findChild(tree, n, (c) => {
+    const k = tree.kindName(c);
+    return k === "optional_chain" || k === "?.";
+  }) !== NO_NODE;
 
 /** Whether the chain `n` heads (`NO_NODE` for none) holds a `?.`. */
 export function hasOptionalChain(tree: Tree, n: number): boolean {
@@ -427,13 +437,7 @@ export function hasOptionalChain(tree: Tree, n: number): boolean {
       return kind === "non_null_expression"
         ? hasOptionalChain(tree, tree.count(n) > 0 ? tree.child(n, 0) : NO_NODE)
         : false;
-    if (
-      findChild(tree, n, (c) => {
-        const k = tree.kindName(c);
-        return k === "optional_chain" || k === "?.";
-      }) !== NO_NODE
-    )
-      return true;
+    if (hasOptionalLink(tree, n)) return true;
     n = findChild(tree, n, (c) => {
       const f = tree.fieldName(c);
       return f === "object" || f === "function";

@@ -1,4 +1,4 @@
-ts compatibility: 541/653 (82.85%), 28 refused (ok:false), 76 excluded
+ts compatibility: 544/653 (83.31%), 28 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -19,11 +19,8 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/binary-expressions/chain-expression.ts | 0/1 | 76.47% |
 | typescript/call/callee-comments.ts | 0/1 | 69.44% |
 | typescript/cast/assert-and-assign.ts | 0/1 | 50.00% |
-| typescript/chain-expression/call-expression.ts | 0/1 | 98.57% |
 | typescript/chain-expression/issue-15785-1.ts | 0/1 | 66.67% |
 | typescript/chain-expression/issue-15785-2.ts | 0/1 | 77.78% |
-| typescript/chain-expression/member-chain.ts | 0/1 | 69.70% |
-| typescript/chain-expression/member-expression.ts | 0/1 | 98.63% |
 | typescript/chain-expression/test2.ts | 0/1 | 80.00% |
 | typescript/class/declare-field.ts | 0/1 | 75.00% |
 | typescript/class-and-interface/heritage-break/member-expression-like.ts | 0/1 | 75.00% |
@@ -103,7 +100,7 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| typescript/chain-expression/new-expression.ts | 1/1 | 76.47% | check: input "new" at 281 is output as "new" at 227, which means "new@\|-1/82", not "new@\|-1/80" |
+| typescript/chain-expression/new-expression.ts | 1/1 | 77.94% | check: input "new" at 281 is output as "new" at 227, which means "new@\|-1/82", not "new@\|-1/80" |
 | typescript/chain-expression/tagged-template-literals.ts | 1/1 | 72.31% | check: input "a" at 37 is output as "a" at 33, which means "a@object\|0/12", not "a@object\|0/13" |
 | typescript/class-comment/class-implements.ts | 1/1 | 80.92% | check: input comment "// comment" is missing from the output |
 | typescript/class-comment/declare.ts | 1/1 | 66.67% | check: input comment "// extends b   // 2" is missing from the output |

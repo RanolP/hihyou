@@ -1,4 +1,4 @@
-js compatibility: 635/804 (78.98%), 31 refused (ok:false), 304 excluded
+js compatibility: 640/804 (79.60%), 31 refused (ok:false), 304 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -26,10 +26,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/async/nested.js | 0/1 | 14.29% |
 | js/async/simple-nested-await.js | 0/1 | 50.00% |
 | js/await/await-with-parens.js | 0/1 | 76.19% |
-| js/chain-expression/call-expression.js | 0/1 | 96.00% |
-| js/chain-expression/member-chain.js | 0/1 | 57.14% |
-| js/chain-expression/member-expression.js | 0/1 | 96.43% |
-| js/chain-expression/new-expression.js | 0/1 | 95.83% |
 | js/class-comment/misc.js | 0/1 | 72.73% |
 | js/classes/multiple-static.js | 0/1 | 40.00% |
 | js/comments/11273.js | 0/2 | 57.14% |
@@ -131,7 +127,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/newline/backslash_2028.js | 0/1 | 40.00% |
 | js/newline/backslash_2029.js | 0/1 | 40.00% |
 | js/object-prop-break-in/test.js | 0/1 | 89.55% |
-| js/optional-chaining/chaining.js | 0/1 | 97.70% |
 | js/preserve-line/member-chain.js | 0/1 | 85.07% |
 | js/reserved-word/yield.js | 0/1 | 93.33% |
 | js/sequence-break/break.js | 0/1 | 85.29% |

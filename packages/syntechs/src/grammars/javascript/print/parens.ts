@@ -737,6 +737,8 @@ function optionalChainNeedsParens(
     return false;
   };
   if (!chained(n)) return false;
+  // `(a?.b)?.c`: a `?.` link continues the chain, so it reads as `a?.b?.c` and the parentheses go.
+  if (isOptional(x, parent) && key !== "quasi") return false;
   const pk = kind(x, parent);
   return (
     (key === "object" && isMember(x, parent)) ||
