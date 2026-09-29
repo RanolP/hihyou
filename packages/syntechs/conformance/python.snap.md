@@ -1,4 +1,4 @@
-python compatibility: 287/327 (87.77%), 14 refused (ok:false), 49 excluded
+python compatibility: 290/327 (88.69%), 14 refused (ok:false), 49 excluded
 
 Fixtures: ruff 0.16.8 crates/ruff_python_formatter/resources/test/fixtures/{black,ruff} (recursive), every option set of each `.options.json`, expected output from tests/snapshots (black cases without a snapshot: their `.expect` file). Options are passed by their ruff.toml names.
 
@@ -19,9 +19,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | black/cases/preview_hug_parens_with_braces_and_square_brackets_no_ll1.py | 0/1 | 37.61% |
 | black/cases/preview_import_line_collapse.py | 0/1 | 99.43% |
 | black/cases/preview_long_dict_values.py | 0/1 | 90.30% |
-| ruff/docstring_code_examples.py | 4/10 | 94.91% |
-| ruff/docstring_code_examples_dynamic_line_width.py | 0/4 | 57.97% |
-| ruff/docstring_tab_indentation.py | 0/2 | 92.00% |
 | ruff/expression/binary_implicit_string.py | 0/1 | 98.52% |
 | ruff/expression/call.py | 0/1 | 99.08% |
 | ruff/expression/compare.py | 0/1 | 98.68% |

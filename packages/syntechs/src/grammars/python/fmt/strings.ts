@@ -2,6 +2,7 @@ import type { FormatTree } from "../../../fmt/tree.js";
 import type { Str } from "./ast.js";
 import type { Fmt } from "./builders.js";
 import type { Comment } from "./comments.js";
+import { docstring } from "./docstring.js";
 import {
   endOf,
   FILE_END,
@@ -193,7 +194,12 @@ export function preferredQuoteStyle(
         if (literal.includes(p.flags.quote)) return "preserve";
       }
   }
-  if (part.flags.triple) return "double";
+  if (part.flags.triple) {
+    // A code example in a docstring takes the quotes the docstring does not.
+    const doc = f.options.docstringQuote;
+    if (doc === undefined) return "double";
+    return doc === '"' ? "single" : "double";
+  }
   return preferred;
 }
 
@@ -442,17 +448,6 @@ export function normalizeString(
   return last === 0 ? input : out + input.slice(last);
 }
 
-/** Ruff's `needs_chaperone_space`: a space before the closing quotes so they do not join the content. */
-function needsChaperone(fl: Flags, trimEnd: string): boolean {
-  const slashes = (s: string) => s.length - s.replace(/\\+$/, "").length;
-  if (slashes(trimEnd) % 2 === 1) return true;
-  return (
-    fl.triple &&
-    trimEnd.endsWith(fl.quote) &&
-    slashes(trimEnd.slice(0, -1)) % 2 === 0
-  );
-}
-
 /** A string spanning lines (a triple-quoted one) breaks every group around it, as ruff's multiline text does. */
 export function sMultiline(n: number, text: string): void {
   if (!text.includes("\n")) return sToken(n, text);
@@ -496,95 +491,20 @@ export const partArgs = (f: Fmt, part: Part): PartArgs => ({
 });
 
 /** Ruff's `FormatStringLiteral` for a docstring: its quotes preferring double, its lines re-indented by `indent`. */
-function docstringPart(f: Fmt, part: Part, indent: string): void {
+export function docstringText(f: Fmt, part: Part, indent: string): string {
   const style = f.options["quote-style"];
   const fl = chooseQuotes(f, part, style !== "preserve" ? "double" : style);
   const raw = contentOf(f.tree, part);
   const first = raw.search(/[\\"'\r]/);
   const content = first < 0 ? raw : normalizeString(raw, first, fl, false);
-  const doc = docstring(content, fl, indent, f.options["indent-width"]);
-  if (doc !== undefined) return sMultiline(part.node, doc);
+  const code =
+    f.docCode && f.options["docstring-code-format"]
+      ? { format: f.docCode, depth: f.depth, options: f.options }
+      : undefined;
+  const doc = docstring(content, fl, indent, f.options["indent-style"], code);
+  if (doc !== undefined) return doc;
   const q = quotesOf(fl);
-  sMultiline(part.node, fl.prefix + q + content + q);
-}
-
-/** A docstring's leading whitespace as ruff measures it: columns with tabs to the next multiple of 8, and its length. */
-function indentation(line: string): { columns: number; length: number } {
-  let columns = 0;
-  let length = 0;
-  for (const c of line) {
-    if (c === " ") columns++;
-    else if (c === "\t") columns += 8 - (columns % 8);
-    else break;
-    length++;
-  }
-  return { columns, length };
-}
-
-/** Ruff's `docstring::format`, as the text of one token whose later lines carry `indent`; undefined to print as a plain string. */
-function docstring(
-  content: string,
-  fl: Flags,
-  indent: string,
-  _indentWidth: number,
-): string | undefined {
-  if (/\\[ \t\f]*\n/.test(content)) return undefined;
-  const q = quotesOf(fl);
-  const lines = content.split("\n");
-  const first = lines[0] ?? "";
-  let out = fl.prefix + q;
-  let lineEmpty = false;
-  const write = (s: string) => {
-    if (lineEmpty) out += indent;
-    out += s;
-    lineEmpty = false;
-  };
-  const hardBreak = () => {
-    if (!lineEmpty) out += "\n";
-    lineEmpty = true;
-  };
-  const trimEnd = first.trimEnd();
-  const trimBoth = trimEnd.trimStart();
-  if (trimBoth.startsWith(fl.quote)) out += " ";
-  if (trimEnd !== "") out += trimBoth;
-  if (content.slice(first.length).trim() === "") {
-    if (needsChaperone(fl, trimEnd) || (trimEnd === "" && content !== ""))
-      out += " ";
-    return out + q;
-  }
-  hardBreak();
-  const rest = lines.slice(1);
-  let stripped: { columns: number; length: number } | undefined;
-  for (const l of rest) {
-    if (l.trim() === "") continue;
-    const ind = indentation(l);
-    if (!stripped || ind.columns < stripped.columns) stripped = ind;
-  }
-  const strip = stripped ?? { columns: 0, length: 0 };
-  for (const [i, line] of rest.entries()) {
-    const last = i === rest.length - 1;
-    const te = line.trimEnd();
-    if (te === "") {
-      if (!last) {
-        if (!lineEmpty) out += "\n";
-        out += "\n";
-        lineEmpty = true;
-      }
-      continue;
-    }
-    const lead = /^\s*/.exec(te)?.[0] ?? "";
-    if (/[^ ]/.test(lead))
-      write(
-        " ".repeat(Math.max(0, indentation(te).columns - strip.columns)) +
-          te.trimStart(),
-      );
-    else write(te.slice(strip.length));
-    if (!last) hardBreak();
-  }
-  const tail = content.replace(/[^\S\n]+$/, "");
-  if (needsChaperone(fl, tail)) write(" ");
-  write(q);
-  return out;
+  return fl.prefix + q + content + q;
 }
 
 /** Ruff's `StringLike::is_multiline`. */
@@ -743,7 +663,7 @@ export function writeStr(f: Fmt, s: Str, docstringIndent?: string): void {
   if (parts.length === 1 && only)
     return docstringIndent === undefined
       ? sDsl(only.node)
-      : docstringPart(f, only, docstringIndent);
+      : sMultiline(only.node, docstringText(f, only, docstringIndent));
   const parenthesized =
     f.level.k === "paren" || (f.level.k === "expr" && f.level.g !== undefined);
   const merged = mergedFlags(f, s, parts);

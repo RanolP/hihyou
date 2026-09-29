@@ -250,6 +250,9 @@ function stringValue(
   return { bytes, value };
 }
 
+/** Ruff's code example openings in a docstring: a doctest, a Markdown fence, a reStructuredText block. */
+const codeExample = />>>|```|~~~|::/;
+
 function stringForm(tree: Tree, l: Lexeme): string {
   const parts: number[] = [];
   if (tree.kindName(l.node) === "concatenated_string") {
@@ -266,11 +269,16 @@ function stringForm(tree: Tree, l: Lexeme): string {
     value += v.value;
   }
   if (isDocstring(tree, l.node))
-    value = value
-      .split("\n")
-      .map((s) => s.trim())
-      .filter((s) => s !== "")
-      .join("\n");
+    value = codeExample.test(value)
+      ? // `docstring-code-format` formats the examples as code, which re-spaces them and adds or drops the
+        // punctuation it may, and a doctest's `...` lines come and go with its lines; the check does not see the
+        // options, so a docstring with an example compares loosely.
+        value.replace(/^([ \t]*)\.\.\.(?=\s|$)/gm, "$1").replace(/[\s,;()'"\\]+/g, "")
+      : value
+          .split("\n")
+          .map((s) => s.trim())
+          .filter((s) => s !== "")
+          .join("\n");
   return `S${bytes ? "b" : ""}${value}`;
 }
 

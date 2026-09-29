@@ -2,7 +2,8 @@ import type { FormatTree } from "../../../fmt/tree.js";
 import { textWidth } from "../../../fmt/width.js";
 import type { Comment, Comments } from "./comments.js";
 import { isPragma, normalizeComment } from "./comments.js";
-import type { FState } from "./strings.js";
+import type { CodeFormatter, CodeLineLength } from "./docstring.js";
+import type { FState, Quote } from "./strings.js";
 import * as sink from "./sink.js";
 import { linesAfter, linesBefore, startOf, tokens } from "./trivia.js";
 
@@ -14,6 +15,10 @@ export interface PyOptions {
   "line-ending": "auto" | "lf" | "cr-lf" | "native";
   "quote-style": "double" | "single" | "preserve";
   "skip-magic-trailing-comma": boolean;
+  "docstring-code-format": boolean;
+  "docstring-code-line-length": CodeLineLength;
+  /** Set only while a docstring's code example is formatted: that docstring's quote (ruff's `DocstringContext`). */
+  docstringQuote?: Quote;
 }
 
 /**
@@ -38,6 +43,8 @@ export class Fmt {
   depth = 0;
   /** Whether an f-string's interpolation is being printed, and that string's quotes. */
   fstr: FState = { k: "outside" };
+  /** The docstrings' code examples, formatted before the module prints (`docstring-code-format`). */
+  docCode: CodeFormatter | undefined;
 
   constructor(
     readonly tree: FormatTree,
