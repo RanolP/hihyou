@@ -86,6 +86,25 @@ const unionMember = (c: CommentContext<JsOptions>): CommentTarget | undefined =>
   return { node: lastMember(c, preceding), as: "trailing" };
 };
 
+/**
+ * `type A = // c` then the type on the next line: a comment after the alias's `=` leads its type, where the core
+ * would trail it after the alias's name (prettier 3.9's handleVariableDeclaratorComments over a type alias).
+ */
+const typeAliasValue = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { comment, enclosing, following } = c;
+  if (
+    kind(c, enclosing) !== "type_alias_declaration" ||
+    following === undefined ||
+    fieldName(c, following) !== "value"
+  )
+    return;
+  const kids = children(c, enclosing);
+  const eq = kids.findIndex((k) => kind(c, k) === "=");
+  return eq !== -1 && kids.indexOf(comment) > eq
+    ? { node: following, as: "leading" }
+    : undefined;
+};
+
 const METHODS = new Set(["method_definition", "method_signature"]);
 
 /** `m /* c *\/ () {}`: the comment trails the method's name (handleMethodNameComments). */
@@ -211,6 +230,7 @@ const handlers = [
   conditional,
   beforeSemicolon,
   unionMember,
+  typeAliasValue,
   methodName,
   tryBlock,
   declaratorValue,

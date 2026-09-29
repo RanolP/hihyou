@@ -4,7 +4,11 @@
 // TypeScript half of class-body.js.
 
 import type { CustomRule, TokenRule } from "../../../fmt/dsl/runtime.js";
-import type { StreamRule } from "../../../fmt/stream-format.js";
+import {
+  printLeadingComments,
+  printTrailingComments,
+  type StreamRule,
+} from "../../../fmt/stream-format.js";
 import { lfAfter, newlineBetween, nextLineEmpty } from "../../../fmt/text.js";
 import { firstLeaf } from "../../../fmt/tree.js";
 import {
@@ -51,6 +55,7 @@ import {
   getComments,
   type HasTree,
   hasComment,
+  hasLeadingOwnLineComment,
   isComment,
   isMember,
   items,
@@ -284,9 +289,35 @@ function shouldHugType(ctx: JsCtx, n: number): boolean {
   return kind(ctx, n) === "union_type" && shouldHugUnionType(ctx, n);
 }
 
+/** Where a union led by a comment that ends its line prints that comment inside the union's indent. */
+const OWN_COMMENT_UNION_PARENTS = new Set([
+  "type_annotation",
+  "as_expression",
+  "satisfies_expression",
+]);
+
+/**
+ * A union led by a comment that ends its line, as an annotation's type or after `as` (`a: // c` above
+ * `| A | B`), prints its comments itself: where it indents its members, the comment goes inside that indent, on
+ * a line of its own, with no line break before the first `|` (prettier's shouldAddStartLine). A type
+ * parameter's bound keeps `extends // c` on its line.
+ */
+export const unionOwnsComments = (x: JsCtx, n: number) =>
+  kind(x, n) === "union_type" &&
+  !isTransparentType(x, n) &&
+  OWN_COMMENT_UNION_PARENTS.has(kind(x, typeRole(x, n).parent) ?? "") &&
+  hasLeadingOwnLineComment(x, n);
+
 /** Prettier's printUnionType. */
 const unionType: CustomRule<JsOptions> = (n, sctx) => {
   const ctx = jsCtx(sctx);
+  if (!unionOwnsComments(ctx.js, n)) return printUnionType(ctx, n, () => {});
+  printUnionType(ctx, n, () => printLeadingComments(ctx, n));
+  printTrailingComments(ctx, n);
+};
+
+/** Union `n`, calling `leading` where its leading comments go. */
+function printUnionType(ctx: JsStreamCtx, n: number, leading: () => void) {
   const js = ctx.js;
   const args = ctx.args;
   if (isTransparentType(js, n)) return pr(ctx, items(js, n)[0], args);
@@ -296,7 +327,26 @@ const unionType: CustomRule<JsOptions> = (n, sctx) => {
     if (op !== undefined) tok(js, op);
     else sToken(x, "|", true);
   };
-  if (shouldHugUnionType(js, n))
+  const hug = shouldHugUnionType(js, n);
+  const { parent: up, field: key } = typeRole(js, n);
+  const upKind = kind(js, up);
+  const parenthesized =
+    kind(js, parent(js, n)) === "parenthesized_type" && typeNeedsParens(js, n);
+  const inTuple = upKind === "tuple_type" && items(js, up as number).length > 1;
+  const noIndent =
+    upKind === "type_assertion" ||
+    upKind === "tuple_type" ||
+    (upKind === "conditional_type" &&
+      (key === "consequence" || key === "alternative")) ||
+    upKind === "type_arguments";
+  const indented =
+    !hug &&
+    !parenthesized &&
+    !inTuple &&
+    !noIndent &&
+    args?.assignmentLayout !== "break-after-operator";
+  if (!indented) leading();
+  if (hug)
     return types.forEach((x, i) => {
       if (i > 0) {
         sText(" ");
@@ -332,12 +382,7 @@ const unionType: CustomRule<JsOptions> = (n, sctx) => {
     });
     close();
   };
-  const { parent: up, field: key } = typeRole(js, n);
-  const upKind = kind(js, up);
-  if (
-    kind(js, parent(js, n)) === "parenthesized_type" &&
-    typeNeedsParens(js, n)
-  ) {
+  if (parenthesized) {
     open(GROUP);
     open(INDENT);
     sLine(SOFT);
@@ -346,7 +391,7 @@ const unionType: CustomRule<JsOptions> = (n, sctx) => {
     sLine(SOFT);
     return close();
   }
-  if (upKind === "tuple_type" && items(js, up as number).length > 1) {
+  if (inTuple) {
     open(GROUP);
     open(INDENT);
     open(IF_BROKEN);
@@ -361,21 +406,15 @@ const unionType: CustomRule<JsOptions> = (n, sctx) => {
     close();
     return close();
   }
-  const noIndent =
-    upKind === "type_assertion" ||
-    upKind === "tuple_type" ||
-    (upKind === "conditional_type" &&
-      (key === "consequence" || key === "alternative")) ||
-    upKind === "type_arguments";
-  if (args?.assignmentLayout === "break-after-operator" || noIndent)
-    return printed();
+  if (!indented) return printed();
   open(GROUP);
   open(INDENT);
   sLine(SOFT);
+  leading();
   printed();
   close();
   close();
-};
+}
 
 const intersectionType: CustomRule<JsOptions> = (n, sctx) => {
   const ctx = jsCtx(sctx);

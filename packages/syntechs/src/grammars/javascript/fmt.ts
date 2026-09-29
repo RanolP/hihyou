@@ -41,7 +41,7 @@ import {
   statementCustoms,
   statementRules,
 } from "./print/statements.js";
-import { typeCustoms, typeRules } from "./print/types.js";
+import { typeCustoms, typeRules, unionOwnsComments } from "./print/types.js";
 import { jsCtx, sToken } from "./sink.js";
 import {
   anon,
@@ -212,7 +212,8 @@ export function jsLanguage(
           (isJsx(ctx, n) && !isIgnored(ctx, n)) ||
           isJsxSpreadArgument(ctx, n) ||
           isHeadVia(ctx, n) ||
-          (kind(ctx, n) === "expression_statement" && castLedAsi(ctx, n))
+          (kind(ctx, n) === "expression_statement" && castLedAsi(ctx, n)) ||
+          (unionOwnsComments(ctx, n) && !isIgnored(ctx, n))
         );
       },
       // A node with no rule prints as its token. A node with one prints as its source text under a
