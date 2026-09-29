@@ -5,7 +5,8 @@
 import { NO_NODE } from "../../../core/arena.js";
 import { nextLineEmpty } from "../../../fmt/text.js";
 import { nextLeaf } from "../../../fmt/tree.js";
-import { needsParens, role } from "./parens.js";
+import { textWidth } from "../../../fmt/width.js";
+import { awaitsHere, needsParens, role } from "./parens.js";
 import {
   ArgExpansionBailout,
   argument,
@@ -241,7 +242,7 @@ export function isSimpleCallArgument(
   const child = (c: number) => isSimpleCallArgument(ctx, c, depth - 1);
   if (k === "regex") {
     const pattern = field(ctx, n, "pattern");
-    return pattern !== undefined ? [...src(ctx, pattern)].length <= 5 : true;
+    return pattern !== undefined ? textWidth(src(ctx, pattern)) <= 5 : true;
   }
   if (LITERALS.has(k) || SINGLE_WORD.has(k)) return true;
   if (k === "template_string")
@@ -1176,6 +1177,14 @@ const sCallee = (sctx: JsStreamCtx, n: number) => {
   }
   const c = callee(ctx, n);
   if (c !== undefined) sctx.print(c);
+  // `await (x).y` in an async function: tree-sitter reads a call of `await`, babel an await of `(x).y`.
+  if (
+    c !== undefined &&
+    kind(ctx, c) === "identifier" &&
+    src(ctx, c) === "await" &&
+    awaitsHere(ctx, n)
+  )
+    sText(" ");
   sLineSuffixBoundary();
 };
 

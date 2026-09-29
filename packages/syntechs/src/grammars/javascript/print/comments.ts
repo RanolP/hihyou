@@ -252,6 +252,36 @@ const statementBody = (c: CommentContext<JsOptions>): CommentTarget | undefined 
   return kids.indexOf(comment) > close ? { node: following, as: "leading" } : undefined;
 };
 
+/**
+ * `for // c\n(;;);`: an empty initializer or test is an empty_statement to tree-sitter and nothing to babel,
+ * whose comment then leads the next node there is, the body at the latest.
+ */
+const forEmptyPart = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { comment, enclosing, following } = c;
+  if (
+    kind(c, enclosing) !== "for_statement" ||
+    following === undefined ||
+    kind(c, following) !== "empty_statement" ||
+    fieldName(c, following) === "body"
+  )
+    return;
+  const next = codeAfter(c, enclosing, comment).find(
+    (n) => named(c, n) && (kind(c, n) !== "empty_statement" || fieldName(c, n) === "body"),
+  );
+  return next === undefined ? undefined : { node: next, as: "leading" };
+};
+
+/**
+ * `{ a as // c\nb }`: a comment inside an import or export specifier, ending its line or on one of its own, leads
+ * it (handleImportSpecifierComments).
+ */
+const specifier = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const k = kind(c, c.enclosing);
+  return c.placement !== "remaining" && (k === "import_specifier" || k === "export_specifier")
+    ? { node: c.enclosing, as: "leading" }
+    : undefined;
+};
+
 const TRY_PARTS = new Set(["try_statement", "catch_clause", "finally_clause"]);
 
 /** `try /* c *\/ {}`: a comment before a try, catch or finally block moves into it (handleTryStatementComments). */
@@ -513,6 +543,8 @@ const handlers = [
   methodName,
   fieldDecorator,
   functionBody,
+  forEmptyPart,
+  specifier,
   statementBody,
   tryBlock,
   classHeader,

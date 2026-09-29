@@ -1,4 +1,4 @@
-js compatibility: 715/804 (88.93%), 17 refused (ok:false), 304 excluded
+js compatibility: 724/804 (90.05%), 15 refused (ok:false), 304 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -23,13 +23,10 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/arrows/parenthesized-body/issue-18776.js | 0/1 | 85.71% |
 | js/assignment/destructuring-heuristic.js | 0/1 | 84.00% |
 | js/async/nested.js | 0/1 | 14.29% |
-| js/async/simple-nested-await.js | 0/1 | 50.00% |
-| js/await/await-with-parens.js | 0/1 | 76.19% |
 | js/classes/multiple-static.js | 0/1 | 40.00% |
 | js/comments/11273.js | 0/2 | 57.14% |
 | js/comments/blank.js | 0/2 | 92.31% |
-| js/comments/export-and-import.js | 0/2 | 78.05% |
-| js/comments/export.js | 0/2 | 86.67% |
+| js/comments/export.js | 0/2 | 94.81% |
 | js/comments/function-declaration.js | 0/2 | 80.95% |
 | js/comments/issue-3532.js | 0/2 | 91.67% |
 | js/comments/jsdoc-nestled-dangling.js | 0/2 | 93.02% |
@@ -46,9 +43,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/comments/while-like/while.js | 0/1 | 97.62% |
 | js/comments/while-like/with.js | 0/1 | 98.00% |
 | js/conditional/comments.js | 0/2 | 77.26% |
-| js/decorators/class-expression/class-expression.js | 0/2 | 55.56% |
-| js/decorators/class-expression/member-expression.js | 0/2 | 0.00% |
-| js/decorators/class-expression/super-class.js | 0/2 | 14.29% |
 | js/destructuring/issue-5988.js | 0/1 | 0.00% |
 | js/embeded/indention/19518.js | 0/1 | 46.38% |
 | js/embeded/indention/indention-2.js | 0/1 | 23.53% |
@@ -66,7 +60,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/label/comment.js | 0/1 | 53.33% |
 | js/last-argument-expansion/edge_case.js | 0/1 | 74.63% |
 | js/method-chain/break-last-member.js | 0/1 | 85.29% |
-| js/method-chain/issue-11298.js | 0/1 | 20.00% |
 | js/newline/backslash_2028.js | 0/1 | 40.00% |
 | js/newline/backslash_2029.js | 0/1 | 40.00% |
 | js/object-prop-break-in/test.js | 0/1 | 89.55% |
@@ -94,15 +87,13 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | js/call/no-argument/no-arguments.js | 1/1 | 64.86% | check: input comment "// 108" is missing from the output |
 | js/chain-expression/tagged-template-literals.js | 1/1 | 61.90% | check: input "a" at 23 is output as "a" at 22, which means "a@object\|0/4", not "a@object\|0/5" |
 | js/comments/break-continue-statements-3.js | 2/2 | 95.83% | check: output comment "// breaking comment;" matches no input comment |
-| js/comments/dangling_for.js | 2/2 | 28.57% | check: input comment "// comment" is missing from the output |
 | js/comments/empty-statements.js | 2/2 | 17.39% | check: output comment "// second // third // first" matches no input comment |
 | js/comments/trailing_space.js | 2/2 | 100.00% | check: input "#!/there/is-space-here->         " at 0 is output as "#!/there/is-space-here->" at 0, which means "#!/ther |
 | js/decorators/comments.js | 1/1 | 93.94% | check: output comment "// B export // C" matches no input comment |
 | js/decorators-export/after_export.js | 1/1 | 76.92% | check: input "export" at 0 is output as "export" at 0, which means "export@\|0/2", not "export@\|-1/2" |
 | js/directives/issue-7346.js | 1/1 | 100.00% | check: input "'bar'" at 78 is output as "\"bar\"" at 79, which means "str:bar@\|0/7", not "str:bar@\|0/6" |
-| js/explicit-resource-management/valid-await-using-comments.js | 1/1 | 82.35% | check: input comment "/*8*/" is missing from the output |
+| js/explicit-resource-management/valid-await-using-comments.js | 1/1 | 76.47% | check: input comment "/*9*/" is missing from the output |
 | js/for-of/comments.js | 1/1 | 100.00% | check: output comment "//2b //2c" matches no input comment |
-| js/import/comments.js | 2/2 | 63.41% | check: output comment "//comment2 //comment1" matches no input comment |
 | js/import/empty-import/empty-import.js | 1/1 | 64.86% | check: output comment "// comment } from \"a\";" matches no input comment |
 | js/new-expression/new-expression.js | 1/1 | 88.89% | check: input "new" at 80 is output as "new" at 86, which means "new@\|-1/16", not "new@\|-1/14" |
 | js/quotes/strings.js | 2/2 | 100.00% | check: input "\"abc\"" at 497 is output as "\"abc\"" at 498, which means "str:abc@\|0/4", not "str:abc@\|0/3" |

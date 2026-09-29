@@ -31,7 +31,7 @@ import { moduleCustoms } from "./print/modules.js";
 import { objectCustoms } from "./print/objects.js";
 import { operatorCustoms } from "./print/operators.js";
 import { jsPreds } from "./print/preds.js";
-import { needsParens } from "./print/parens.js";
+import { isDecoratedClass, needsParens } from "./print/parens.js";
 import { semiCustoms } from "./print/semi.js";
 import {
   castLedAsi,
@@ -109,9 +109,19 @@ const parenthesized: StreamRule<JsOptions> = (n, s) => {
     return;
   }
   sTok(ctx, open);
-  sctx.print(inner, args);
+  printInParens(ctx, unparen(ctx, n), () => sctx.print(inner, args));
   sTok(ctx, close);
 };
+
+/** Prettier's printClass for a decorated class expression in parentheses: `(`, the class indented on its own lines, `)`. */
+function printInParens(ctx: JsCtx, n: number, print: () => void): void {
+  if (!isDecoratedClass(ctx, n)) return print();
+  openStream(INDENT);
+  sLine(0);
+  print();
+  closeStream();
+  sLine(0);
+}
 
 /**
  * A type cast's parentheses, as prettier prints its ParenthesizedExpression: hugging an object or array with no
@@ -255,8 +265,10 @@ function wrapped(n: number, s: StreamCtx<JsOptions>, print: () => void): void {
   const ctx = jsCtx(s).js;
   const parens = kind(ctx, n) !== PE && kind(ctx, parent(ctx, n)) !== PE && needsParens(n, ctx);
   if (parens) sToken(n, "(", true);
-  if (!isIgnored(ctx, n)) print();
-  else if (STATEMENT_LIST_PARENTS.has(kind(ctx, parent(ctx, n)) ?? "")) ignoredStatement(ctx, n);
+  if (!isIgnored(ctx, n)) {
+    if (parens) printInParens(ctx, n, print);
+    else print();
+  } else if (STATEMENT_LIST_PARENTS.has(kind(ctx, parent(ctx, n)) ?? "")) ignoredStatement(ctx, n);
   else sToken(n, ctx.tree.text(n));
   if (parens) sToken(n, ")", true);
 }

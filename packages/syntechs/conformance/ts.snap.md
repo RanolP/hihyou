@@ -1,4 +1,4 @@
-ts compatibility: 594/653 (90.96%), 16 refused (ok:false), 76 excluded
+ts compatibility: 595/653 (91.12%), 16 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -44,7 +44,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/satisfies-operators/lhs.ts | 0/2 | 90.00% |
 | typescript/template-literals/member-expression.ts | 0/1 | 57.14% |
 | typescript/trailing-comma/trailing.ts | 2/3 | 97.78% |
-| typescript/type-arguments-bit-shift-left-like/4.ts | 0/1 | 0.00% |
 | typescript/type-parameters-arguments/18041.ts | 0/1 | 45.71% |
 | typescript/type-parameters-arguments/const.ts | 0/1 | 90.63% |
 | typescript/type-parameters-arguments/constraints-and-default-2.ts | 0/1 | 96.83% |

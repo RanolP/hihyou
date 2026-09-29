@@ -276,6 +276,7 @@ export function needsParens(n: number, ctx: JsCtx): boolean {
   const pk = kind(ctx, parent);
   // A type cast's parentheses (the only ones `role` stops at) are all an expression needs.
   if (pk === "parenthesized_expression") return false;
+  if (top !== n && isAwaitCall(ctx, parent)) return true;
   // `return (\n// comment\na, b\n)`: the statement's own parentheses already hold the argument.
   if (
     (pk === "return_statement" || pk === "throw_statement") &&
@@ -388,7 +389,8 @@ export function needsParens(n: number, ctx: JsCtx): boolean {
             "update_expression",
             "yield_expression",
           ].includes(nk) ||
-          isTaggedTemplate(ctx, n)
+          isTaggedTemplate(ctx, n) ||
+          isDecoratedClass(ctx, n)
         )
           return true;
       }
@@ -748,6 +750,45 @@ function optionalChainNeedsParens(
     (key === "quasi" && isTaggedTemplate(x, parent))
   );
 }
+
+const FUNCTION_SCOPES = new Set([
+  "function_declaration",
+  "function_expression",
+  "generator_function",
+  "generator_function_declaration",
+  "arrow_function",
+  "method_definition",
+]);
+const NON_ASYNC_SCOPES = new Set([
+  "field_definition",
+  "public_field_definition",
+  "class_static_block",
+]);
+
+/** Whether `await` at `n` is an operator, as babel reads it: in an async function or at a module's top level. */
+export function awaitsHere(x: HasTree, n: number): boolean {
+  for (let a = parentOf(x, n); a !== undefined; a = parentOf(x, a)) {
+    const k = kind(x, a);
+    if (FUNCTION_SCOPES.has(k))
+      return childWhere(x, a, (c) => kind(x, c) === "async") !== undefined;
+    if (NON_ASYNC_SCOPES.has(k)) return false;
+  }
+  return true;
+}
+
+/**
+ * tree-sitter reads `await (x)` as an await expression and `await (x).y` as a call of `await` wherever it
+ * stands. Outside an async function babel reads a call instead: `await(x)`, whose parentheses stay.
+ */
+export const isAwaitCall = (x: HasTree, n: number): boolean =>
+  kind(x, n) === "await_expression" &&
+  kind(x, argument(x, n)) === "parenthesized_expression" &&
+  !awaitsHere(x, n);
+
+/** A class expression with decorators, which prettier parenthesizes as `(` indent(line, class) line `)`. */
+export const isDecoratedClass = (x: HasTree, n: number): boolean =>
+  kind(x, n) === "class" &&
+  childWhere(x, n, (c) => kind(x, c) === "decorator") !== undefined;
 
 function isDecoratorMemberish(x: HasTree, n: number): boolean {
   const simple = (y: number | undefined): boolean => {

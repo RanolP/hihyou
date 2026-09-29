@@ -38,16 +38,21 @@ export const operators = {
     either(pred("commented", "argument"), grpParen($.argument), $.argument),
   ],
   // Prettier's await-expression.js: at the head of a member chain, the await breaks inside parentheses of its
-  // own, grouped unless it starts an enclosing await, whose group then decides.
+  // own, grouped unless it starts an enclosing await, whose group then decides. Outside an async function babel
+  // reads `await (x)` as a call.
   await_expression: ($) =>
     either(
-      all(has("children"), headOfChain),
+      pred("awaitCall"),
+      ["await", $.children],
       either(
-        pred("startsAncestor", "await_expression", "statement_block"),
-        [indent([softline, "await", space, $.children]), softline],
-        group([indent([softline, "await", space, $.children]), softline]),
+        all(has("children"), headOfChain),
+        either(
+          pred("startsAncestor", "await_expression", "statement_block"),
+          [indent([softline, "await", space, $.children]), softline],
+          group([indent([softline, "await", space, $.children]), softline]),
+        ),
+        ["await", either(has("children"), [space, $.children], [])],
       ),
-      ["await", either(has("children"), [space, $.children], [])],
     ),
   // Prettier's sequence-expression.js: a statement's sequence indents all but its first expression; a returned,
   // thrown or arrow-body one breaks inside the parentheses around it.

@@ -4,7 +4,7 @@
 import type { PredicateRule } from "../../../fmt/dsl/runtime.js";
 import { jsCtx } from "../sink.js";
 import { startsWith } from "./operators.js";
-import { needsParens, role } from "./parens.js";
+import { isAwaitCall, needsParens, role } from "./parens.js";
 import { field, hasCommentThroughParens, items, kind, type JsOptions, parent } from "./util.js";
 
 export const jsPreds = {
@@ -20,6 +20,8 @@ export const jsPreds = {
     const child = field(js, node, name as string);
     return child !== undefined && hasCommentThroughParens(js, child);
   },
+  /** An `await (x)` babel reads as a call of `await`, outside an async function. */
+  awaitCall: (node, s) => isAwaitCall(jsCtx(s).js, node),
   /** The node needs parentheses where it sits. */
   needsParens: (node, s) => needsParens(node, jsCtx(s).js),
   /**
