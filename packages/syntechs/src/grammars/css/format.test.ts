@@ -12,6 +12,7 @@ import {
   customs,
   frontMatterFirst,
   prettierIgnored,
+  valueMath,
 } from "./fmt.js";
 import * as spec from "./format.js";
 import { grammar, language } from "./index.js";
@@ -100,7 +101,10 @@ const reference = {
   ...css,
   // The front matter's printing is fmt.ts's, around the root, in both.
   stream: {
-    ...referenceRules<CssOptions>(spec.css, grammar as DslGrammar, customs),
+    ...referenceRules<CssOptions>(spec.css, grammar as DslGrammar, {
+      ...customs,
+      valueMath,
+    }),
     wrap: frontMatterFirst,
     keepsSource: prettierIgnored,
   },

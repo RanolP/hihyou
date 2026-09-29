@@ -13,10 +13,8 @@ import {
   entryCount,
   firstText,
   grpBrace,
-  group,
   grpParen,
   has,
-  indent,
   inOrder,
   isEmpty,
   lines,
@@ -32,6 +30,7 @@ import {
   words,
 } from "../../fmt/dsl/dsl.js";
 import type { grammar } from "./bundle.js";
+import { directives } from "./directive.js";
 import type { CssOptions } from "./fmt.js";
 
 const format = defineFormat<typeof grammar, CssOptions>();
@@ -61,15 +60,8 @@ const valueLayout: SplitLayoutOf<Cond> = loneBare({
   then: { indent: true, first: "hard", between: "hardline" },
   else: { group: true, indent: true, first: "soft", between: "line", fill: true },
 });
-/**
- * The at-rules whose prelude prettier parses as a value (Sass's control flow, mixins and functions, and
- * postcss-mixins'), by their case-sensitive name.
- */
-const directive = firstText({
-  is: ["if", "else", "for", "each", "while", "debug", "mixin", "include", "function", "return"]
-    .concat(["define-mixin", "add-mixin"])
-    .map((n) => `@${n}`),
-});
+/** An at-rule whose prelude prettier parses as a value. */
+const directive = firstText({ is: directives });
 /** Inside a `directive`'s prelude. */
 const inDirective = ancestor(["at_rule", "postcss_statement"], { stop: ["block"], holds: directive });
 /**
@@ -78,8 +70,6 @@ const inDirective = ancestor(["at_rule", "postcss_statement"], { stop: ["block"]
  */
 const directivePrelude = (trail: "block"[]) =>
   splitOn(",", { except: ["at_keyword", ";"], trail, item: words(), layout: loneBare(packed) });
-const directiveMath = () =>
-  either(when("tightDivision"), inOrder(), inOrder({ join: "line", spaceWhen: { before: ["+", "-", "*", "/"] } }));
 /** Statements one per line, keeping one blank line where the source has any. */
 const statements = { blankLines: "force" } as const;
 
@@ -176,18 +166,8 @@ export const css = format({
           ),
         ),
       ),
-    // Spaced around the operator as written, and always inside `calc()`.
-    // In a `directive`'s prelude, prettier's math in a value: the operator ends its line as the chain's one group
-    // breaks, but a `/` written without spaces, which may be no division, stays so.
-    binary_expression: () =>
-      either(
-        inDirective,
-        either(parentIs("binary_expression"), directiveMath(), group(indent(directiveMath()))),
-        inOrder({
-          join: "gap",
-          spaceWhen: { when: ancestor("call_expression", { stop: ["declaration", "block"], holds: calledAs("calc") }) },
-        }),
-      ),
+    // Prettier's math in a value, which fmt.ts's `valueMath` lays out as its operands and operators in a row.
+    binary_expression: () => custom("valueMath"),
     // Broken inside the parentheses in a `directive`'s prelude, as prettier's paren group.
     parenthesized_value: () => either(inDirective, grpParen(splitOn(",", { except: ["(", ")"] })), adjacent()),
 

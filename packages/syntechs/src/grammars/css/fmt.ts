@@ -7,12 +7,13 @@ import {
 } from "../../fmt/options.js";
 import { defineLanguage, type Language } from "../../fmt/rules.js";
 import { maybeLower, numberParts } from "../../fmt/dsl/normalizers.js";
-import type { PredicateRule } from "../../fmt/dsl/runtime.js";
-import { sHardline, sText } from "../../fmt/stream.js";
+import { ancestorWhere, firstTextIs, parentIs, type PredicateRule } from "../../fmt/dsl/runtime.js";
+import { close, FILL, FILL_ITEM, GROUP, INDENT, open, sHardline, sLine, sText, sToken } from "../../fmt/stream.js";
 import type { StreamCtx } from "../../fmt/stream-format.js";
 import type { FormatTree } from "../../fmt/tree.js";
 import { grammar } from "./bundle.js";
 import * as gen from "./fmt.gen.js";
+import { directives } from "./directive.js";
 import { frontMatterLines, parseFrontMatter } from "./front-matter.js";
 import { language } from "./index.js";
 
@@ -138,17 +139,76 @@ function parts(n: number, ctx: SCtx): number {
 export const customs = {
   /** Prettier indents a selector of more than two nodes as it breaks. */
   longSelector: (node, ctx) => parts(node, ctx) > 2,
-  /** A binary expression's `/` written with no gap on either side, which prettier keeps so. */
-  tightDivision: (node, ctx) => {
-    const [left, op, right] = children(node, ctx.tree);
-    return (
-      op !== undefined &&
-      kind(op, ctx) === "/" &&
-      ctx.tree.adjoins(left as number, op) &&
-      ctx.tree.adjoins(op, right as number)
-    );
-  },
 } satisfies Record<string, PredicateRule<CssOptions>>;
+
+/** A binary expression's `/` written with no gap on either side, which prettier keeps so. */
+function tightDivision(node: number, ctx: SCtx): boolean {
+  const [left, op, right] = children(node, ctx.tree);
+  return (
+    op !== undefined &&
+    kind(op, ctx) === "/" &&
+    ctx.tree.adjoins(left as number, op) &&
+    ctx.tree.adjoins(op, right as number)
+  );
+}
+
+const operators = new Set(["+", "-", "*", "/"]);
+
+/**
+ * Prettier's math in a value, which postcss-value-parser reads as a flat run of words and operators where the
+ * grammar nests it leftwards: so the outermost expression lays the chain out, the inner ones adding only their
+ * operands and operators. In a value, an operator follows its left operand after a space and the right operand
+ * follows it after a line, all packed in one fill (printCommaSeparatedValueGroup's `indent(fill(...))`); an
+ * operator written without a gap stays joined, but inside `calc()` every one is spaced. In a Sass directive's
+ * prelude the chain is one group instead, a `/` written without gaps staying so.
+ */
+export function valueMath(node: number, ctx: SCtx): void {
+  const t = ctx.tree;
+  const outermost = !parentIs(t, node, "binary_expression");
+  const directive = ancestorWhere(t, node, ["at_rule", "postcss_statement"], ["block"], (a) =>
+    firstTextIs(ctx, a, undefined, directives, [], false),
+  );
+  const calc =
+    !directive &&
+    ancestorWhere(t, node, ["call_expression"], ["declaration", "block"], (a) =>
+      firstTextIs(ctx, a, undefined, ["calc"], [], true),
+    );
+  const tight = directive && tightDivision(node, ctx);
+  if (outermost) {
+    open(GROUP);
+    open(INDENT);
+    if (!directive) {
+      open(FILL);
+      open(FILL_ITEM);
+    }
+  }
+  const items = new Set(ctx.items(node));
+  let prev = -1;
+  for (const c of children(node, t)) {
+    const named = t.named(c);
+    if (named && !items.has(c)) continue;
+    if (prev !== -1 && !tight && (directive || calc || !t.adjoins(prev, c))) {
+      if (operators.has(kind(c, ctx))) sText(" ");
+      else if (directive) sLine(0);
+      else {
+        close();
+        sLine(0);
+        open(FILL_ITEM);
+      }
+    }
+    prev = c;
+    if (named) ctx.print(c);
+    else sToken(c, t.text(c));
+  }
+  if (outermost) {
+    if (!directive) {
+      close();
+      close();
+    }
+    close();
+    close();
+  }
+}
 
 /**
  * Prettier's printNodeSequence: a statement whose previous sibling is a `/* prettier-ignore *\/` comment prints as
@@ -205,7 +265,7 @@ export const css: Language<CssOptions> = {
     layoutBlind: true,
   }),
   stream: {
-    ...gen.css(customs),
+    ...gen.css({ ...customs, valueMath }),
     wrap: frontMatterFirst,
     keepsSource: prettierIgnored,
   },
