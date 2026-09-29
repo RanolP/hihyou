@@ -478,14 +478,18 @@ export function prettierIgnored(node: number, ctx: SCtx): boolean {
   );
 }
 
-/** Prettier's css-root: the front matter, then a blank line before the stylesheet unless it is empty. */
+/**
+ * Prettier's css-root: the front matter, then a blank line before the stylesheet unless it is empty; before both, a
+ * byte order mark the source opens with, which prettier keeps.
+ */
 export function frontMatterFirst(
   node: number,
   ctx: SCtx,
   print: () => void,
 ): void {
-  const fm =
-    node === ctx.tree.root ? parseFrontMatter(ctx.tree.frontMatter) : undefined;
+  const root = node === ctx.tree.root;
+  if (root && ctx.tree.bom) sText("﻿");
+  const fm = root ? parseFrontMatter(ctx.tree.frontMatter) : undefined;
   if (fm) {
     frontMatterLines(
       fm,
