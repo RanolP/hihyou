@@ -160,6 +160,8 @@ export type Tree =
       readonly sep: string;
       readonly list: Ref;
       readonly trailing: Cond;
+      /** What a hole prints as (see `sepBy`'s `holes`); undefined: the list has none. */
+      readonly holes?: string;
     }
   /**
    * `attach`: the field whose children print with the next item, before it; `blank`: a blank line before each item
@@ -648,13 +650,22 @@ export const grpBracket = brackets("[", "]");
 export const sepBy = <const S extends string, T = false>(
   sep: S,
   list: List,
-  o: { readonly trailing?: T } = {},
+  o: {
+    readonly trailing?: T;
+    /**
+     * The list has holes, a `sep` right after the opening bracket or another `sep` (`[1, , 2]`), each printed as
+     * this text and never packed or grouped. An empty one keeps its own `sep` even when last, which it needs to
+     * stay a hole.
+     */
+    readonly holes?: string;
+  } = {},
 ) =>
   piece<{ sepBy: S; trailing: T }>({
     t: "sepBy",
     sep,
     list: refOf(list),
     trailing: plain(o.trailing),
+    ...(o.holes === undefined ? {} : { holes: o.holes }),
   });
 
 /** The items of `list` one per line, then the node's dangling comments, one per line. */

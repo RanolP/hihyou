@@ -1,4 +1,4 @@
-json compatibility: 18/20 (90.00%), 1 refused (ok:false), 0 excluded
+json compatibility: 19/20 (95.00%), 0 refused (ok:false), 0 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -20,4 +20,3 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| json/json/json6.json | 3/3 | 97.96% | check: input "," at 686 is output as "]" at 749, which means "]", not "," |

@@ -61,6 +61,8 @@ import {
   lastItem,
   prevItem,
   hasChild,
+  HOLE,
+  holeSlots,
   listItems,
   packable,
   parentIs,
@@ -321,6 +323,25 @@ export function flatten<O>(
         }
         case "sepBy": {
           const items = listItems(ctx, n, x.list.name, kindHasFields).slice(x.list.from ?? 0);
+          if (x.holes !== undefined) {
+            const { slots, seps } = holeSlots(t, n, items, x.sep);
+            out.push({ e: "list", items: slots, label: x.list.name });
+            slots.forEach((item, i) => {
+              const last = i === slots.length - 1;
+              if (item === HOLE) out.push({ e: "hole", tok: seps[i] as number, text: x.holes as string });
+              else child(item);
+              // An empty hole last keeps its own separator, without which it is no hole.
+              if (!last || (item === HOLE && x.holes === "")) {
+                out.push({ e: "sep", tok: seps[i] as number });
+                if (item !== HOLE && nextLineEmpty(t, item)) out.push({ e: "blank" });
+              } else if (item !== HOLE && evalCond(x.trailing, ctx, n, custom, kindHasFields))
+                out.push({ e: "ifBroken", after: item, text: x.sep });
+            });
+            if (owner === x)
+              for (const c of dangling()) out.push(commentEntry(ctx, c, "dangling"));
+            out.push({ e: "end" });
+            return;
+          }
           const seps = separators(t, n, items, x.sep);
           out.push({ e: "list", items, label: x.list.name });
           items.forEach((item, i) => {
@@ -606,6 +627,7 @@ export function wrap<O>(
       blank: boolean;
       leadingLine: boolean;
       endsLine: boolean;
+      hole?: Extract<Entry, { e: "hole" }>;
     }[] = [];
     const dangling: Extract<Entry, { e: "comment" }>[] = [];
     let start = from + 1;
@@ -618,6 +640,8 @@ export function wrap<O>(
       } else if (x.e === "blank") {
         if (part) part.blank = !always;
         start = i + 1;
+      } else if (x.e === "hole") {
+        parts.push({ from: start, to: i + 1, after: { e: "end" }, blank: false, leadingLine: false, endsLine: false, hole: x });
       } else if (x.e === "child") {
         let leadingLine = false;
         for (let j = start; j < i; j++) {
@@ -639,7 +663,13 @@ export function wrap<O>(
     }
     const item = (i: number) => {
       const part = parts[i] as (typeof parts)[number];
+      if (part.hole) {
+        if (part.hole.text !== "") sToken(part.hole.tok, part.hole.text, true);
+        return;
+      }
+      if (w.itemsAsGroups && !concise) open(GROUP);
       for (let j = part.from; j < part.to; j = next(j)) childOrComment(j);
+      if (w.itemsAsGroups && !concise) close();
     };
     const fillKinds = w.packWhenAllOf ?? [];
     const shouldBreak =
@@ -653,6 +683,8 @@ export function wrap<O>(
         items.every((item, i) => {
           const nx = items[i + 1];
           return (
+            item !== HOLE &&
+            nx !== HOLE &&
             ctx.isList(item) &&
             (nx === undefined || tree.kindName(nx) === tree.kindName(item)) &&
             ctx.items(item).length > 1
@@ -661,7 +693,7 @@ export function wrap<O>(
     const concise =
       !always &&
       items.length > 1 &&
-      items.every((item, i) => packable(tree, item, fillKinds) && !parts[i]?.endsLine);
+      items.every((item, i) => item !== HOLE && packable(tree, item, fillKinds) && !parts[i]?.endsLine);
     const listGroup = open(GROUP, -1, shouldBreak ? BROKEN : 0);
     const slot = (x: Entry | undefined) => {
       if (x?.e === "sep") {
@@ -694,9 +726,7 @@ export function wrap<O>(
       close();
     } else {
       parts.forEach((part, i) => {
-        if (w.itemsAsGroups) open(GROUP);
         item(i);
-        if (w.itemsAsGroups) close();
         slot(part.after);
         if (i === parts.length - 1) return;
         sLine(0);

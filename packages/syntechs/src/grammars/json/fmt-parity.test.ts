@@ -90,6 +90,12 @@ const edgeCases: [string, string][] = [
   ["tsconfig.json", '{"compilerOptions": {"strict": true,}, "include": ["src"]}'],
   ["exponent-plus.json", "[1e+5, 2E+10]"],
   ["json5.json", "{a: 'x', 'b': +1, 2: 0x1F, c: [-Infinity, -1, .5]}"],
+  // Array holes: printed empty, a last one keeping its comma; `json-stringify` prints each as `null`, and a
+  // template literal as a string.
+  ["holes.json", "[[,], [1, , 2,,,,], [1, , 2,]]"],
+  ["holes-broken.jsonc", `[,"${"a".repeat(40)}", , "${"b".repeat(40)}", ,]`],
+  ["holes-blank.json", `["${"a".repeat(40)}",\n\n, "${"b".repeat(40)}"]`],
+  ["package.json", '{"a": [,1,,], "b": [,], "c": `x\\u{1F409}\\`\n`}'],
 ];
 
 function corpus(): [string, string][] {

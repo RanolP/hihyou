@@ -70,6 +70,8 @@ export type Entry =
   | { readonly e: "end" }
   /** After each item but the last: its separator token (-1: none in the source). */
   | { readonly e: "sep"; readonly tok: number }
+  /** An item of a list with holes that is a hole, printed as `text`, anchored at its separator `tok`. */
+  | { readonly e: "hole"; readonly tok: number; readonly text: string }
   /** After an item's separator or an item of `lines`: the source keeps a blank line there. */
   | { readonly e: "blank" }
   /** Only while the enclosing frame stays flat: a space, inserted beside a padded bracket. */
@@ -416,6 +418,41 @@ export function separators(
       seps[seen - 1] = c;
   }
   return seps;
+}
+
+/** A hole's slot in `holeSlots`. */
+export const HOLE = -1;
+
+/**
+ * A list with holes (`[1, , 2]`) as its slots: its items, and `HOLE` for each separator `sep` that follows the
+ * node's start or another separator; with the separator after each slot (a hole's is its own), -1 where none.
+ */
+export function holeSlots(
+  tree: FormatTree,
+  node: number,
+  items: readonly number[],
+  sep: string,
+): { slots: number[]; seps: number[] } {
+  const slots: number[] = [];
+  const seps: number[] = [];
+  let seen = 0;
+  let expecting = true;
+  for (let i = 0, count = tree.count(node); i < count; i++) {
+    const c = tree.child(node, i);
+    if (c === items[seen]) {
+      seen++;
+      slots.push(c);
+      seps.push(-1);
+      expecting = false;
+    } else if (!tree.named(c) && tree.kindName(c) === sep) {
+      if (expecting) {
+        slots.push(HOLE);
+        seps.push(c);
+      } else seps[seps.length - 1] = c;
+      expecting = true;
+    }
+  }
+  return { slots, seps };
 }
 
 /**

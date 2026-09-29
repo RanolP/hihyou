@@ -1,4 +1,4 @@
-json-stringify compatibility: 13/14 (92.86%), 1 refused (ok:false), 0 excluded
+json-stringify compatibility: 14/14 (100.00%), 0 refused (ok:false), 0 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -19,4 +19,3 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| json/json/json6.json | 1/1 | 84.34% | check: input "," at 686 is output as "]" at 862, which means "]", not "," |

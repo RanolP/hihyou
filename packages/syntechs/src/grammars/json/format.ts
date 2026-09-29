@@ -4,12 +4,14 @@
 // expression, so they accept JSON5 and more (single-quoted strings, bare and numeric keys, trailing commas,
 // `+1`, hex, `Infinity`), which tree-sitter-json only recovers from as ERROR nodes.
 import {
+  bail,
   defineFormat,
   either,
   fieldIs,
   firstText,
   grpBrace,
   grpBracket,
+  has,
   lines,
   option,
   sepBy,
@@ -43,7 +45,7 @@ const fitting = (trailingComma: boolean) => {
         grpBrace(sepBy(",", $.children, { trailing }), {
           pad: option("bracketSpacing"),
         }),
-      array: ($) => grpBracket(sepBy(",", $.children, { trailing })),
+      array: ($) => grpBracket(sepBy(",", $.children, { trailing, holes: "" })),
       pair: ($) => [$.key, ":", space, $.value],
       unary_expression: ($) => [$.operator, $.argument],
       string: () => text("doubleQuote"),
@@ -76,11 +78,15 @@ export const jsonStringify = format({
     expression_statement: ($) => $.children,
     statement_block: ($) => grpBrace(sepBy(",", $.children)),
     object: ($) => grpBrace(sepBy(",", $.children)),
-    array: ($) => grpBracket(sepBy(",", $.children)),
+    // `JSON.stringify` writes a hole as `null`.
+    array: ($) => grpBracket(sepBy(",", $.children, { holes: "null" })),
     pair: ($) => [$.key, ":", space, $.value],
     unary_expression: ($) =>
       either(firstText({ is: ["+"] }), $.argument, [$.operator, $.argument]),
     string: () => text("doubleQuote"),
+    // Prettier's JSON parsers refuse a substitution.
+    template_string: () =>
+      either(has("children", "template_substitution"), bail("a template literal with a substitution"), text("jsonString")),
     property_identifier: () => text("quoteKey"),
     number: () => text("rawNumberKey", fieldIs("key")),
   },

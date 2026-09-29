@@ -148,6 +148,59 @@ export const trimEnd = (t: string): string => t.trimEnd();
 export const doubleQuote = (raw: string): string =>
   raw.startsWith(DOUBLE) ? raw : makeString(raw.slice(1, -1), DOUBLE);
 
+const SIMPLE_ESCAPES: Readonly<Record<string, string>> = {
+  n: "\n",
+  t: "\t",
+  r: "\r",
+  b: "\b",
+  f: "\f",
+  v: "\v",
+};
+
+/** A string literal's value from its source between the quotes, escapes resolved as the spec cooks them. */
+export function cook(raw: string): string {
+  if (!raw.includes("\\")) return raw;
+  let out = "";
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw.charAt(i);
+    if (c !== "\\") {
+      out += c;
+      continue;
+    }
+    const e = raw.charAt(++i);
+    const simple = SIMPLE_ESCAPES[e];
+    if (simple !== undefined) out += simple;
+    else if (e === "x") {
+      out += String.fromCharCode(Number.parseInt(raw.slice(i + 1, i + 3), 16));
+      i += 2;
+    } else if (e === "u") {
+      if (raw.charAt(i + 1) === "{") {
+        const close = raw.indexOf("}", i);
+        out += String.fromCodePoint(
+          Number.parseInt(raw.slice(i + 2, close), 16),
+        );
+        i = close;
+      } else {
+        out += String.fromCharCode(
+          Number.parseInt(raw.slice(i + 1, i + 5), 16),
+        );
+        i += 4;
+      }
+    } else if (e >= "0" && e <= "7") {
+      const m = /^[0-7]{1,3}/.exec(raw.slice(i, i + 3))?.[0] ?? e;
+      const digits = Number.parseInt(m, 8) > 255 ? m.slice(0, 2) : m;
+      out += String.fromCharCode(Number.parseInt(digits, 8));
+      i += digits.length - 1;
+    } else if (e === "\r") {
+      if (raw.charAt(i + 1) === "\n") i++;
+    } else if (e !== "\n" && e !== " " && e !== " ") out += e;
+  }
+  return out;
+}
+
+/** A template literal with no substitution as the JSON string of its value, as `json-stringify` prints one. */
+export const jsonString = (raw: string): string => JSON.stringify(cook(raw.slice(1, -1)));
+
 /** A bare object key quoted, as prettier's JSON printers quote one (`a: 1` as `"a": 1`). */
 export const quoteKey = (t: string): string => DOUBLE + t + DOUBLE;
 
@@ -181,6 +234,7 @@ export const normalizers = {
   sortRegexFlags,
   trimEnd,
   doubleQuote,
+  jsonString,
   quoteKey,
   numberKey,
   rawNumberKey,
