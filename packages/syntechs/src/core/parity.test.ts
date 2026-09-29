@@ -89,6 +89,8 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
       "let s = `x${y}` + `unterminated ${z",
       // Function-signature ASI inside a class body, and a broken generic parameter list.
       "class C { m(): void\n  n() {} }\nfunction f<T(a: T): {\n",
+      // A type's `<` on the next line starts a new member, while an expression's `<` continues the comparison.
+      "interface I { a: typeof b\n  <T>(): void; c: C\n  <U>(): U }\nx = a\n< b\n",
     ],
   ],
   tsx: [

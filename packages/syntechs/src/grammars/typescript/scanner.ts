@@ -105,7 +105,6 @@ function scanAutomaticSemicolon(
     case 42: // *
     case 37: // %
     case 62: // >
-    case 60: // <
     case 61: // =
     case 63: // ?
     case 94: // ^
@@ -117,9 +116,12 @@ function scanAutomaticSemicolon(
     case 123: // {
       if (valid[FUNCTION_SIGNATURE_AUTOMATIC_SEMICOLON]) return false;
       break;
-    // Before `(` or `[` only while parsing a type, which is when a binary operator is not valid.
+    // Before `(`, `[` or `<` only while parsing a type, which is when a binary operator is not valid. TypeScript
+    // takes a type reference's or a `typeof` query's type arguments only on the same line, so `typeof a` then
+    // `<T>(): void` on the next line of an interface are two members.
     case 40:
     case 91:
+    case 60:
       if (valid[LOGICAL_OR]) return false;
       break;
     case 43:

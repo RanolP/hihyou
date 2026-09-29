@@ -340,8 +340,12 @@ function referenceLibrary(grammar: GrammarName): string {
     version: string;
   };
   const hash = createHash("sha256");
-  for (const file of ["parser.c", "scanner.c"]) {
-    const path = join(modules, dir, "src", file);
+  // tree-sitter-typescript's scanner.c only includes common/scanner.h, where its scanning logic lives.
+  for (const path of [
+    join(modules, dir, "src", "parser.c"),
+    join(modules, dir, "src", "scanner.c"),
+    join(modules, pkg, "common", "scanner.h"),
+  ]) {
     if (existsSync(path)) hash.update(readFileSync(path));
   }
   const source = hash.digest("hex").slice(0, 12);

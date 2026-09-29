@@ -322,6 +322,8 @@ export function jsLanguage(
     stream: {
       rules,
       lists: new Set(),
+      // Prettier prints a program of no statement and no comment as the empty string, not a lone line break.
+      finalLine: ({ tree }) => tree.count(tree.root) > 0,
       printComment,
       commentEnd: (c, s) => {
         let end = c;
