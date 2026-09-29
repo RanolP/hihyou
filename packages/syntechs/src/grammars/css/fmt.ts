@@ -138,6 +138,16 @@ function parts(n: number, ctx: SCtx): number {
 export const customs = {
   /** Prettier indents a selector of more than two nodes as it breaks. */
   longSelector: (node, ctx) => parts(node, ctx) > 2,
+  /** A binary expression's `/` written with no gap on either side, which prettier keeps so. */
+  tightDivision: (node, ctx) => {
+    const [left, op, right] = children(node, ctx.tree);
+    return (
+      op !== undefined &&
+      kind(op, ctx) === "/" &&
+      ctx.tree.adjoins(left as number, op) &&
+      ctx.tree.adjoins(op, right as number)
+    );
+  },
 } satisfies Record<string, PredicateRule<CssOptions>>;
 
 /**

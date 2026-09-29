@@ -1,4 +1,4 @@
-css compatibility: 100/151 (66.23%), 0 refused (ok:false), 6 excluded
+css compatibility: 104/151 (68.87%), 0 refused (ok:false), 6 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -13,18 +13,14 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
 | css/atrule/at-root.css | 0/1 | 92.35% |
-| css/atrule/debug.css | 0/1 | 17.39% |
-| css/atrule/each.css | 0/1 | 12.80% |
+| css/atrule/each.css | 0/1 | 19.84% |
 | css/atrule/extend.css | 0/1 | 41.30% |
-| css/atrule/for.css | 0/1 | 53.16% |
 | css/atrule/function.css | 0/1 | 17.32% |
 | css/atrule/import.css | 0/1 | 45.09% |
 | css/atrule/include.css | 0/1 | 35.64% |
 | css/atrule/mixin.css | 0/1 | 35.36% |
-| css/atrule/page.css | 0/1 | 97.67% |
-| css/atrule/return.css | 0/1 | 34.94% |
 | css/atrule/supports.css | 0/1 | 14.39% |
-| css/atrule/while.css | 0/1 | 47.62% |
+| css/atrule/while.css | 0/1 | 65.82% |
 | css/atword/atword.css | 0/1 | 0.00% |
 | css/bom/bom.css | 0/1 | 72.73% |
 | css/character-escaping/character_escaping.css | 0/1 | 16.56% |
@@ -46,7 +42,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | css/indent/indent.css | 0/1 | 78.26% |
 | css/inline-url/inline_url.css | 0/1 | 91.84% |
 | css/modules/modules.css | 0/1 | 99.20% |
-| css/numbers/numbers.css | 0/1 | 37.33% |
+| css/numbers/numbers.css | 0/1 | 38.67% |
 | css/parens/empty-lines.css | 0/1 | 31.58% |
 | css/parens/parens.css | 0/1 | 54.25% |
 | css/postcss-8-improment/empty-props.css | 0/1 | 50.00% |
