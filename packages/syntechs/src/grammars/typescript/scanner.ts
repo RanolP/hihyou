@@ -41,7 +41,10 @@ function scanTemplateChars(lexer: Lexer): boolean {
   }
 }
 
-/** Only a line comment counts as `scanned`, as in the C scanner. */
+/**
+ * Any comment counts as `scanned`, as in the JavaScript scanner. The C scanner counts only a line comment, so
+ * `a⏎/* c *\/⏎? b : d` scanned the ternary `?` over the block comment and the tree lost it.
+ */
 function scanWhitespaceAndComments(
   lexer: Lexer,
   scanned: { comment: boolean },
@@ -61,6 +64,7 @@ function scanWhitespaceAndComments(
           lexer.advance(true);
           if (la(lexer) === 47) {
             lexer.advance(true);
+            scanned.comment = true;
             break;
           }
         } else lexer.advance(true);

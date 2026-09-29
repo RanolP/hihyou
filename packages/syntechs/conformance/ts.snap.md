@@ -1,4 +1,4 @@
-ts compatibility: 620/653 (94.95%), 9 refused (ok:false), 76 excluded
+ts compatibility: 625/653 (95.71%), 7 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -27,14 +27,11 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/definite/without-annotation.ts | 0/1 | 91.67% |
 | typescript/import-require/type-imports.ts | 0/1 | 56.00% |
 | typescript/instantiation-expression/inferface-asi.ts | 0/1 | 36.36% |
-| typescript/interface/ignore.ts | 0/2 | 86.79% |
-| typescript/last-argument-expansion/decorated-function.tsx | 0/1 | 90.91% |
 | typescript/non-null/braces.ts | 0/1 | 94.12% |
 | typescript/property-signature/consistent-with-flow/comments.ts | 0/1 | 80.00% |
 | typescript/template-literals/member-expression.ts | 0/1 | 57.14% |
 | typescript/trailing-comma/trailing.ts | 2/3 | 97.78% |
 | typescript/type-parameters-arguments/long-function-arg.ts | 0/1 | 18.18% |
-| typescript/union/consistent-with-flow/prettier-ignore.ts | 0/1 | 60.00% |
 | jsx/jsx/html_escape.js | 2/4 | 66.67% |
 
 # Refused
@@ -43,7 +40,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| typescript/conditional-types/comments.ts | 2/2 | 94.21% | check: input "any instanceof B\n  /**\n  * Comment\n  */\n    ? B \| C\n    : D" at 1337 is output as "any" at 1364, whic |
 | typescript/end-of-line/multiline.ts | 2/3 | 100.00% | check: input "\\\n" at 511 is output as "\\\r" at 512, which means "\\\r@\|3/35", not "\\\n@\|3/35" |
 | typescript/import-export/empty-import.ts | 1/1 | 64.86% | check: output comment "// comment } from \"a\";" matches no input comment |
 | typescript/interface/long-type-parameters/long-type-parameters.ts | 2/2 | 75.65% | check: input comment "// always extends RectConfig" is missing from the output |
@@ -51,7 +47,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | typescript/interface/no-semi/18858.ts | 1/1 | 100.00% | check: the output has a syntax error at 406, which the input has not |
 | typescript/mapped-type/issue-11098.ts | 1/1 | 93.07% | check: input "[" at 520 is output as "}" at 509, which means "}@\|-1/43", not "[@\|-1/45" |
 | typescript/mapped-type/break-mode/break-mode.ts | 1/1 | 96.30% | check: input "[" at 90 is output as "[" at 97, which means "[@\|-1/16", not "[@\|-1/15" |
-| typescript/union/consistent-with-flow/18647.ts | 1/1 | 75.00% | check: input "any instanceof B\n  /**\n  * Comment\n  */\n    ? B \| C\n    : D" at 139 is output as "any" at 147, which  |
 
 # Excluded
 

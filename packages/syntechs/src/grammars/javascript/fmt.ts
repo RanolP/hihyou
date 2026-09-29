@@ -42,7 +42,13 @@ import {
   statementCustoms,
   statementRules,
 } from "./print/statements.js";
-import { typeCustoms, typeRules, unionOwnsComments, unparenType } from "./print/types.js";
+import {
+  ignoredMemberSeparator,
+  typeCustoms,
+  typeRules,
+  unionOwnsComments,
+  unparenType,
+} from "./print/types.js";
 import { jsCtx, sToken, withComments } from "./sink.js";
 import {
   anon,
@@ -184,6 +190,7 @@ function castParens(sctx: ReturnType<typeof jsCtx>, n: number, inner: number): v
 const isIgnored = (ctx: JsCtx, n: number) =>
   (!isUnion(ctx, n) && ledByIgnore(ctx, n)) ||
   firstOfIgnoredUnion(ctx, n) ||
+  afterIgnoreInUnion(ctx, n) ||
   (isJsx(ctx, n) && jsxIgnored(ctx, n, (c) => isIgnoreComment(ctx, c)));
 
 const ledByIgnore = (ctx: JsCtx, n: number) =>
@@ -203,6 +210,29 @@ const firstOfIgnoredUnion = (ctx: JsCtx, n: number) => {
       if (ledByIgnore(ctx, w)) return true;
       if (kind(ctx, parent(ctx, w)) !== "parenthesized_type") break;
     }
+  }
+  return false;
+};
+
+/**
+ * `A⏎// prettier-ignore⏎| B`: an ignore comment between union members trails `A` but keeps `B`'s source text
+ * (handleUnionTypeComments sets `prettierIgnore` on the following member). tree-sitter nests the union to the left,
+ * so the comment is a child of `B`'s union, or ends the nested union before it.
+ */
+const afterIgnoreInUnion = (ctx: JsCtx, n: number) => {
+  const up = parent(ctx, n);
+  if (up === undefined || kind(ctx, up) !== "union_type") return false;
+  const kids = children(ctx, up);
+  for (let i = kids.indexOf(n) - 1; i >= 0; i--) {
+    const k = kids[i] as number;
+    if (isComment(ctx, k)) {
+      if (isIgnoreComment(ctx, k)) return true;
+    } else if (kind(ctx, k) === "union_type") {
+      const inner = children(ctx, k);
+      for (let j = inner.length - 1; j >= 0 && isComment(ctx, inner[j] as number); j--)
+        if (isIgnoreComment(ctx, inner[j] as number)) return true;
+      return false;
+    } else if (named(ctx, k)) return false;
   }
   return false;
 };
@@ -322,7 +352,11 @@ function wrapped(n: number, s: StreamCtx<JsOptions>, print: () => void): void {
     // Prettier prints a string through replaceEndOfLine: its literal line break breaks the groups around it.
     if (kind(ctx, n) === "string" && ctx.tree.text(n).includes("\n")) sBreakParent();
   } else if (STATEMENT_LIST_PARENTS.has(kind(ctx, parent(ctx, n)) ?? "")) ignoredStatement(ctx, n);
-  else sToken(n, ctx.tree.text(n));
+  else {
+    sToken(n, ctx.tree.text(n));
+    const sep = ignoredMemberSeparator(ctx, n);
+    if (sep !== undefined) sToken(sep, ctx.tree.text(sep));
+  }
   if (parens) sToken(n, ")", true);
 }
 

@@ -272,7 +272,11 @@ function isDecoratedFunction(ctx: JsCtx, fn: number): boolean {
           ).length === 1))
     );
   }
-  if (holderKind === "export_statement" && up.key === "declaration")
+  // `export default` and TypeScript's `export =` (TSExportAssignment).
+  if (
+    holderKind === "export_statement" &&
+    (up.key === "declaration" || anon(ctx, holder, "=") !== undefined)
+  )
     return true;
   if (holderKind === "assignment_expression" && up.key === "right") {
     const left = field(ctx, holder, "left");

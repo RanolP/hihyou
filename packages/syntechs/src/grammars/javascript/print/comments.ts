@@ -584,7 +584,8 @@ const CONDITIONALS = new Set(["ternary_expression", "conditional_type"]);
 /**
  * A comment before a conditional's branch, off the line of the code before it, leads the branch; under
  * experimentalTernaries one before the alternate dangles on the conditional, which prints it after `:`, unless
- * it is a one-line block comment (handleConditionalExpressionComments). Off the line: a line break between the
+ * it is a one-line block comment (handleConditionalExpressionComments). Only an expression's: prettier checks
+ * `alternate`, a field TSConditionalType lacks (its is `falseType`), so a conditional type's comment leads the branch. Off the line: a line break between the
  * preceding node and the comment, so `a⏎? // c⏎b` leads `b` though the comment ends the line of its `?`.
  */
 const conditional = (
@@ -600,6 +601,7 @@ const conditional = (
     return;
   const oneLineBlock = text.startsWith("/*") && !text.includes("\n");
   return options.experimentalTernaries &&
+    kind(c, enclosing) === "ternary_expression" &&
     fieldName(c, following) === "alternative" &&
     !oneLineBlock
     ? { node: enclosing, as: "dangling" }

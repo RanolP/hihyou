@@ -358,7 +358,16 @@ function printUnionType(ctx: JsStreamCtx, n: number, owns: boolean) {
         fn();
         close();
       };
-      const bare = () => ctx.printBare(x);
+      // `A & B | C` prints `(A & B) | C`: prettier's needsParens parenthesizes an intersection in a union,
+      // around an ignored member's source text too. The grammar needs no source parens there, so they are added.
+      const bare =
+        kind(js, x) === "intersection_type" && !isTransparentType(js, x)
+          ? () => {
+              sToken(x, "(", true);
+              ctx.printBare(x);
+              sToken(x, ")", true);
+            }
+          : () => ctx.printBare(x);
       if (js.comments(x).leading.length > 0)
         aligned(() => withComments(ctx, x, bare));
       else withComments(ctx, x, () => aligned(bare));
@@ -690,6 +699,14 @@ function memberSeparator(x: HasTree, n: number): number | undefined {
   }
   return undefined;
 }
+
+/**
+ * The source separator an ignored type member keeps: the TS AST's member spans its `;` or `,`, so prettier-ignore
+ * prints it with the member's text, and prints none where the source has none.
+ */
+export const ignoredMemberSeparator = (x: HasTree, n: number) =>
+  TYPE_MEMBER_BODIES.has(kind(x, parent(x, n)) ?? "") ? memberSeparator(x, n) : undefined;
+const TYPE_MEMBER_BODIES = new Set(["interface_body", "object_type"]);
 
 const isKeywordProperty = (ctx: JsCtx, n: number) => {
   if (
