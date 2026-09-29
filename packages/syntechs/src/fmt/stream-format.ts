@@ -14,6 +14,7 @@ import {
   open,
   printStream,
   resetStream,
+  type StreamPrinted,
   sBreakParent,
   sHardline,
   sLine,
@@ -174,6 +175,8 @@ export interface StreamRules<O = unknown> {
   readonly wrap?: (node: number, ctx: StreamCtx<O>, print: () => void, args: PrintArgs | undefined) => void;
   /** Whether the output ends with a line break, as it does unless this says not: ruff prints a blank file as "". */
   readonly finalLine?: (ctx: StreamCtx<O>) => boolean;
+  /** Whether a line comment past the width wraps as google-java-format's does (`wrapLineComments`): ktfmt's. */
+  readonly wrapsLineComments?: boolean;
 }
 
 /** `format`: lays `tree` out on the stream by the `stream` rules of `base`, and prints it. */
@@ -291,6 +294,7 @@ export function formatStream<O>(
     ctx.print(tree.root);
     if (language.finalLine?.(ctx) !== false) sHardline();
     const printed = printStream(settings);
+    if (language.wrapsLineComments) wrapLineComments(printed, isLine, settings.lineWidth);
     const { text } = printed;
     const eol = endOfLine(settings.endOfLine, tree);
     const rewrite = eol !== "\n" || text.includes("\r");
@@ -323,4 +327,41 @@ export function formatStream<O>(
       detail: e instanceof Error ? e.message : String(e),
     };
   }
+}
+
+/**
+ * google-java-format's wrapLineComments, which ktfmt's KDocCommentsHelper keeps: a line comment reaching past
+ * `width` breaks before its last blank that keeps the line within the width, and goes on as `//` at the column
+ * the comment starts. The line comments are the printed tokens, so this rewrites `printed` in place, shifting the
+ * tokens after each break.
+ */
+function wrapLineComments(printed: StreamPrinted, isLine: (n: number) => boolean, width: number): void {
+  const { text, nodes, lengths, at } = printed;
+  let out = "";
+  let from = 0;
+  let shift = 0;
+  for (let t = 0; t < at.length; t++) {
+    const start = at[t] as number;
+    at[t] = start + shift;
+    const length = lengths[t] as number;
+    if (!isLine(nodes[t] as number)) continue;
+    const column = start - (text.lastIndexOf("\n", start - 1) + 1);
+    let line = text.slice(start, start + length);
+    if (line.length + column <= width) continue;
+    const lines: string[] = [];
+    while (line.length + column > width) {
+      let idx = width - column;
+      while (idx >= 2 && !/\s/.test(line[idx] as string)) idx--;
+      if (idx <= 2) break;
+      lines.push(line.slice(0, idx).trim());
+      line = `//${line.slice(idx)}`;
+    }
+    lines.push(line.trim());
+    const wrapped = lines.join(`\n${" ".repeat(column)}`);
+    out += text.slice(from, start) + wrapped;
+    from = start + length;
+    shift += wrapped.length - length;
+    lengths[t] = wrapped.length;
+  }
+  if (from > 0) printed.text = out + text.slice(from);
 }

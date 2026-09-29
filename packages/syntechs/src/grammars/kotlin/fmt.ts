@@ -287,8 +287,8 @@ const hugsDeclaration = (node: number, ctx: { readonly tree: FormatTree }) =>
 
 /**
  * The generated rules, but a member chain prints from its root as ktfmt lays one out (chain.ts), a trimmed
- * multiline string is re-indented as ktfmt does (trimmed-string.ts), and a lambda with no statements prints its
- * comments as its body (lambda.ts).
+ * multiline string is re-indented as ktfmt does (trimmed-string.ts), a lambda with no statements prints its
+ * comments as its body (lambda.ts), and a line comment past the width wraps.
  */
 function withChains<O>(stream: StreamRules<O>): StreamRules<O> {
   const rules = new Map(stream.rules);
@@ -317,7 +317,7 @@ function withChains<O>(stream: StreamRules<O>): StreamRules<O> {
         }),
       );
     });
-  return { ...stream, rules };
+  return { ...stream, rules, wrapsLineComments: true };
 }
 
 /** Kotlin as ktfmt 0.64 `--kotlinlang-style` lays it out; the layouts are format.ts, generated into fmt.gen.ts. */
@@ -328,8 +328,10 @@ export const kotlin: Language<KotlinOptions> = {
     defaults,
     settings: prettierSettings,
     normalize,
-    // KDoc is reflowed, which changes only the whitespace between its words.
-    comment: (t) => docCommentWords(t, kdoc),
+    // KDoc is reflowed, and a line comment past the width wraps into several, which changes only the whitespace
+    // between their words.
+    comment: (t) =>
+      t.startsWith("//") ? t.slice(2).split(/\s+/).filter((w) => w !== "") : docCommentWords(t, kdoc),
     layoutBlind: true,
     hiddenTokens: true,
     atoms: ["string_literal", "character_literal"],
