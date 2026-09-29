@@ -305,8 +305,10 @@ export const kotlin = format({
     disjunction_expression: binary,
     elvis_expression: binary,
     infix_expression: binary,
-    as_expression: binary,
-    check_expression: binary,
+    // `a as T`, `a is T`: ktfmt's block of the operand, the operator and the type, broken before and after the
+    // operator together, indented, once it overflows or the type breaks (`in` prints in binary.ts).
+    as_expression: () => group(indent(inOrder({ join: "line" }))),
+    check_expression: () => group(indent(inOrder({ join: "line" }))),
     range_expression: () => inOrder(),
     type_test: () => inOrder(space),
     range_test: () => inOrder(space),
