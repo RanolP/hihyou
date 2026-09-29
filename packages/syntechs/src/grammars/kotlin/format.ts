@@ -23,7 +23,6 @@ import {
   not,
   prevItem,
   sepBy,
-  softline,
   space,
   spansLines,
   splitOn,
@@ -212,13 +211,8 @@ export const kotlin = format({
         group(inOrder({ join: "line", hangAfter: ["{", "->"], spaceWhen: { before: ["->"] } })),
       ),
     lambda_parameters: () => adjacent,
-    // Once the lambda of the scoping function a chain starts at breaks, ktfmt puts each selector on its own line.
-    navigation_expression: ($) =>
-      either(
-        when("scopingChain"),
-        group([$.children.at(0).andThen((r) => r), indent([softline, $.children.at(1).andThen((s) => s)])]),
-        inOrder(),
-      ),
+    // A member chain prints from its root in chain.ts.
+    navigation_expression: () => inOrder(),
     navigation_suffix: () => inOrder(),
     indexing_expression: () => inOrder(),
     indexing_suffix: () => adjacent,

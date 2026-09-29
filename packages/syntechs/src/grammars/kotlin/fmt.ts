@@ -11,7 +11,9 @@ import { docCommentWords, kdoc } from "../../fmt/dsl/doc-comment.js";
 import type { ImportRule, PredicateRule } from "../../fmt/dsl/runtime.js";
 import { newlineBetween } from "../../fmt/text.js";
 import { type FormatTree, firstLeaf, prevLeaf } from "../../fmt/tree.js";
+import type { StreamRules } from "../../fmt/stream-format.js";
 import { grammar } from "./bundle.js";
+import { chained } from "./chain.js";
 import * as gen from "./fmt.gen.js";
 import { language } from "./index.js";
 
@@ -201,11 +203,6 @@ export const customs = {
   huggedChain: (node, ctx) => lambdaOrScoping(ctx.tree, node, true),
   /** Of an assignment's right side: a lambda or a scoping function, but no chain on one. */
   hugged: (node, ctx) => lambdaOrScoping(ctx.tree, node, false),
-  /** Of a member access: its chain starts at a scoping function (`run { }.x`). */
-  scopingChain: (node, ctx) => {
-    const head = chainHead(ctx.tree, node);
-    return head !== -1 && scopingCall(ctx.tree, head, false);
-  },
   /** Of a lambda's `statements`: ktfmt keeps the lambda broken when the source breaks the line before them. */
   lambdaWrittenBroken: (node, ctx) => {
     const lambda = ctx.tree.parent(node);
@@ -215,6 +212,21 @@ export const customs = {
     );
   },
 } satisfies Record<string, PredicateRule<KotlinOptions>>;
+
+/** Kinds whose `=` or `by` keeps a lambda, a scoping function or a chain on one on its line. */
+const declarations = new Set(["property_declaration", "property_delegate", "function_body"]);
+const hugsDeclaration = (node: number, ctx: { readonly tree: FormatTree }) =>
+  node !== ctx.tree.root &&
+  declarations.has(ctx.tree.kindName(ctx.tree.parent(node))) &&
+  lambdaOrScoping(ctx.tree, node, true);
+
+/** The generated rules, but a member chain prints from its root as ktfmt lays one out (chain.ts). */
+function withChains<O>(stream: StreamRules<O>): StreamRules<O> {
+  const rules = new Map(stream.rules);
+  for (const kind of ["navigation_expression", "call_expression", "indexing_expression", "postfix_expression"])
+    rules.set(kind, chained(stream.rules.get(kind), hugsDeclaration));
+  return { ...stream, rules };
+}
 
 /** Kotlin as ktfmt 0.64 `--kotlinlang-style` lays it out; the layouts are format.ts, generated into fmt.gen.ts. */
 export const kotlin: Language<KotlinOptions> = {
@@ -230,5 +242,5 @@ export const kotlin: Language<KotlinOptions> = {
     hiddenTokens: true,
     atoms: ["string_literal", "character_literal"],
   }),
-  stream: gen.kotlin({ ...customs, imports }),
+  stream: withChains(gen.kotlin({ ...customs, imports })),
 };
