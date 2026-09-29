@@ -7,7 +7,7 @@ import { newlineBetween } from "../../../fmt/text.js";
 import { firstLeaf, nextLeaf } from "../../../fmt/tree.js";
 import { heritage } from "./classes.js";
 import { STATEMENT_LIST_PARENTS } from "./statements.js";
-import { flattenTypes, unparenType } from "./types.js";
+import { flattenTypes, mappedClauseOf, unparenType } from "./types.js";
 import {
   callArguments,
   callee,
@@ -733,9 +733,40 @@ const beforeStatementCloseParen = (c: CommentContext<JsOptions>): CommentTarget 
     : undefined;
 };
 
+/**
+ * A mapped type is one node in prettier's AST, where tree-sitter nests an index signature and its clause in an
+ * object type. A comment before its `[` (a `readonly` included) dangles on the mapped type (handleTSMappedTypeComments);
+ * one after `[` and before the clause leads the key, and one after the clause, before the value's `:`, trails the
+ * constraint (or the `as` type), the node before it in prettier's AST.
+ */
+const mappedTypeParts = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { comment, enclosing } = c;
+  const object =
+    kind(c, enclosing) === "index_signature" ? parent(c, enclosing) : enclosing;
+  if (object === undefined || kind(c, object) !== "object_type") return;
+  const mapped = mappedClauseOf(c, object);
+  if (mapped === undefined) return;
+  const { signature, clause } = mapped;
+  if (enclosing === object)
+    return c.following === signature ? { node: object, as: "dangling" } : undefined;
+  const kids = children(c, signature);
+  const at = kids.indexOf(comment);
+  const bracket = kids.findIndex((k) => !named(c, k) && kind(c, k) === "[");
+  const clauseAt = kids.indexOf(clause);
+  if (at < bracket) return { node: object, as: "dangling" };
+  if (at < clauseAt) {
+    const key = field(c, clause, "name");
+    return key !== undefined ? { node: key, as: "leading" } : undefined;
+  }
+  if (c.following !== undefined && kind(c, c.following) !== "type_annotation") return;
+  const last = field(c, clause, "alias") ?? field(c, clause, "type");
+  return last !== undefined ? { node: last, as: "trailing" } : undefined;
+};
+
 // In prettier's order within each placement: typeCast and conditional run early, nestedConditional last.
 const handlers = [
   typeCast,
+  mappedTypeParts,
   importAttribute,
   memberProperty,
   beforeArguments,

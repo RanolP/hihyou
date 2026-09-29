@@ -798,9 +798,21 @@ function mappedType(
   tok(js, openBrace);
   open(INDENT);
   sLine(spacing);
-  if (ctx.danglingComments(n).length > 0) {
-    danglingLines(ctx, n);
+  // One per line; the last breaks the line after it only when it is a line comment, ends its line or runs long.
+  const dangling = ctx.danglingComments(n);
+  dangling.forEach((c, i) => {
+    if (i === dangling.length - 1) return;
+    ctx.comment(c);
     sHardline();
+  });
+  const last = dangling.at(-1);
+  if (last !== undefined) {
+    open(GROUP);
+    ctx.comment(last);
+    if (src(js, last).startsWith("//") || lfAfter(js.tree, last) > 0)
+      sHardline();
+    else sLine(0);
+    close();
   }
   if (readonlyKw !== undefined) {
     tok(js, field(js, signature, "sign"));
