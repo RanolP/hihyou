@@ -95,7 +95,8 @@ function isKeySafeToUnquote(ctx: JsCtx, n: number): boolean {
     return true;
   return (
     !isTypeScript(ctx) &&
-    k !== "import_attribute" &&
+    // An attribute is `pair` > `object` > `import_attribute` here, an ImportAttribute to prettier.
+    kind(ctx, parentOf(ctx, parentOf(ctx, n))) !== "import_attribute" &&
     isSimpleNumber(value) &&
     String(Number(value)) === value
   );
