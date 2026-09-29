@@ -698,7 +698,7 @@ const customs = {
 
   /**
    * A return or throw argument (return-statement.js): parenthesized on lines of its own below a leading comment,
-   * and a binaryish or sequence expression parenthesized while it breaks.
+   * and a binaryish expression parenthesized while it breaks. A sequence breaks inside its own parentheses.
    */
   "stmt.returnArg": (arg, ctx) => {
     const s = jsCtx(ctx);
@@ -714,7 +714,6 @@ const customs = {
       sToken(arg, ")", true);
     } else if (
       isBinaryish(js, inner) ||
-      kind(js, inner) === "sequence_expression" ||
       (ctx.options.experimentalTernaries && isChainedTernary(js, inner))
     ) {
       open(GROUP);
