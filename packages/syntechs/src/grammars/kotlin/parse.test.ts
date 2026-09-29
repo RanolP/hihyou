@@ -24,3 +24,16 @@ test("every vendored Kotlin input parses with no ERROR or MISSING node", () => {
   }
   expect(broken).toEqual([]);
 });
+
+// A regression here reads a `when` entry that starts with `in` as `previousBody in range`, merging two entries.
+test("an `in` condition on its own line starts a new `when` entry", () => {
+  const tree = parseTree(language, "fun f() {\n  when (x) {\n    1 -> a\n    in 1..3 -> b\n  }\n}\n");
+  const kinds: string[] = [];
+  const stack = [tree.root];
+  for (let n = stack.pop(); n !== undefined; n = stack.pop()) {
+    kinds.push(tree.kindName(n));
+    for (let i = 0; i < tree.count(n); i++) stack.push(tree.child(n, i));
+  }
+  expect(kinds).toContain("range_test");
+  expect(kinds).not.toContain("check_expression");
+});

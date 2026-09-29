@@ -1,4 +1,4 @@
-kotlin compatibility: 615/753 (81.67%), 20 refused (ok:false), 11 excluded
+kotlin compatibility: 621/753 (82.47%), 20 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -10,7 +10,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | :------ | :---------: | :---------: |
 | comments.txt: Comments | 0/1 | 76.19% |
 | source-files.txt: Multiple Imports On A Single Line | 0/1 | 50.00% |
-| packages/syntechs/src/grammars/kotlin/corpus/Collections.kt | 0/1 | 95.09% |
+| packages/syntechs/src/grammars/kotlin/corpus/Collections.kt | 0/1 | 96.38% |
 | packages/syntechs/src/grammars/kotlin/corpus/Result.kt | 0/1 | 99.56% |
 | packages/syntechs/src/grammars/kotlin/corpus/Delay.kt | 0/1 | 97.97% |
 | packages/syntechs/src/grammars/kotlin/corpus/Transform.kt | 0/1 | 92.98% |
@@ -91,11 +91,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/type/nestedQualifiedTypes.kt | 0/1 | 40.00% |
 | ktfmt/format/type/trailingCommasInFunctionTypes.kt | 0/1 | 60.00% |
 | ktfmt/format/when/guards.kt | 0/1 | 58.33% |
-| ktfmt/format/when/isAndIn.kt | 0/1 | 53.85% |
-| ktfmt/format/when/lineBreaks.kt | 0/1 | 44.00% |
-| ktfmt/format/when/multipleConditions.kt | 0/1 | 76.92% |
-| ktfmt/format/when/newLinesBetweenClauses.kt | 0/1 | 72.00% |
-| ktfmt/format/when/whenWithSubject.kt | 0/1 | 78.26% |
 | ktfmt/google/anonymousFunction.kt | 0/1 | 85.71% |
 | ktfmt/google/anonymousFunctionWithReceiver.kt | 0/1 | 85.71% |
 | ktfmt/google/basic.kt | 0/1 | 97.62% |
@@ -112,10 +107,9 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/google/namedArgumentsWithValueExpression.kt | 0/1 | 47.06% |
 | ktfmt/google/secondaryConstructorNoArgs.kt | 0/1 | 47.06% |
 | ktfmt/google/singleLambdaArgument.kt | 0/1 | 62.50% |
-| ktfmt/google/trailingCommasAlwaysRemoved.kt | 0/1 | 52.17% |
+| ktfmt/google/trailingCommasAlwaysRemoved.kt | 0/1 | 56.00% |
 | ktfmt/google/trailingCommasSingleElementLists.kt | 0/1 | 58.54% |
 | ktfmt/google/trailingLambdaAfterArgumentBreak.kt | 0/1 | 92.31% |
-| ktfmt/google/when.kt | 0/1 | 36.00% |
 | ktfmt/google/whenWithMaxWidthCondition.kt | 0/1 | 42.11% |
 | ktfmt/google/whileMaxWidthCondition.kt | 0/1 | 47.06% |
 | ktfmt/kotlinlang/nestedCalls.kts | 0/1 | 63.16% |

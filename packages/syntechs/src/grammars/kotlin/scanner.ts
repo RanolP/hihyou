@@ -218,13 +218,8 @@ function scanAutomaticSemicolon(lexer: Lexer): boolean {
       return la(lexer) !== 61;
     case 101: // e
       return !scanForWord(lexer, "lse");
-    // Before an identifier or an import, but not `in` or `instanceof`.
-    case 105: // i
-      lexer.advance(true);
-      if (la(lexer) !== 110) return true;
-      lexer.advance(true);
-      if (!iswalpha(la(lexer))) return false;
-      return !scanForWord(lexer, "stanceof");
+    // tree-sitter-kotlin 0.3.8 took JavaScript's exception here and inserted none before `in` or `instanceof`,
+    // but Kotlin continues no expression with an `in` on the next line: it starts a `when` entry's condition.
     case 59: // ;
       lexer.advance(false);
       lexer.markEnd();

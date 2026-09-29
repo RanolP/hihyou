@@ -848,7 +848,10 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
                 ? "sLine(0);"
                 : undefined;
         const steps: [string, string][] = [];
-        if (x.braces) steps.push(["inBraces", '{ if (t.kindName(c) === "}") { close(); inBraces = false; } sHardline(); }']);
+        // Where the kind's `blankLines` is set, a blank line the source has between two children in the braces stays.
+        const blank = rule.blankLines === undefined ? "" : " else if (nextLineEmpty(t, prev)) sHardline();";
+        if (x.braces)
+          steps.push(["inBraces", `{ if (t.kindName(c) === "}") { close(); inBraces = false; }${blank} sHardline(); }`]);
         const hard = pairs(x.hardWhen);
         if (hard !== undefined) steps.push([hard, "sHardline();"]);
         if (x.lineBefore?.length) steps.push([oneOf("t.kindName(c)", x.lineBefore), "{ open(INDENT); sHardline(); frames = 1; }"]);

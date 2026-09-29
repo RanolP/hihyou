@@ -274,12 +274,21 @@ export const kotlin = format({
     check_expression: binary,
     range_expression: () => inOrder(),
     type_test: () => inOrder(space),
+    range_test: () => inOrder(space),
 
     if_expression: () => spaced(),
     control_structure_body: () => inOrder({ braces: true }),
     when_expression: () => spaced({ braces: true }),
     when_subject: () => spaced(),
-    when_entry: () => spaced(),
+    // ktfmt puts each condition on a line of its own, and hangs the body off `->` but for a block or a lambda.
+    when_entry: () =>
+      inOrder({
+        join: "space",
+        tight: { before: [","] },
+        hardWhen: { after: [","] },
+        hangAfter: ["->"],
+        hug: firstText({ prefix: ["{"] }),
+      }),
     when_condition: () => inOrder(space),
     for_statement: () => spaced(),
     while_statement: () => spaced(),
@@ -299,6 +308,7 @@ export const kotlin = format({
     source_file: { blankLines: "force" },
     class_body: { blankLines: "force" },
     statements: { blankLines: "force" },
+    when_expression: { blankLines: "force" },
     value_arguments: { breakWhen: when("writtenBroken") },
     function_value_parameters: { breakWhen: when("writtenBroken") },
     primary_constructor: { breakWhen: when("writtenBroken") },
