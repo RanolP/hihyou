@@ -1,4 +1,4 @@
-ts compatibility: 555/653 (84.99%), 19 refused (ok:false), 76 excluded
+ts compatibility: 559/653 (85.60%), 19 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -72,7 +72,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/template-literals/expressions.ts | 0/1 | 0.00% |
 | typescript/template-literals/member-expression.ts | 0/1 | 57.14% |
 | typescript/ternaries/indent.ts | 0/1 | 95.80% |
-| typescript/test-declarations/test_declarations.ts | 0/2 | 50.00% |
 | typescript/trailing-comma/trailing.ts | 2/3 | 97.78% |
 | typescript/tsx/optional-chaining.tsx | 0/1 | 73.33% |
 | typescript/type-arguments-bit-shift-left-like/4.ts | 0/1 | 0.00% |
@@ -81,9 +80,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/type-parameters-arguments/constraints-and-default-2.ts | 0/1 | 96.83% |
 | typescript/type-parameters-arguments/long-function-arg.ts | 0/1 | 18.18% |
 | typescript/type-parameters-arguments/tagged-template-expression.ts | 0/1 | 75.00% |
-| typescript/type-parameters-arguments/consistent/simple-types.ts | 0/1 | 28.57% |
-| typescript/type-parameters-arguments/consistent/template-literal-types.ts | 0/1 | 0.00% |
-| typescript/type-parameters-arguments/consistent/typescript-only.ts | 0/1 | 70.59% |
 | typescript/type-parameters-arguments/print-width-120/issue-7542.tsx | 0/1 | 88.89% |
 | typescript/union/union-parens.ts | 0/1 | 99.07% |
 | typescript/union/comments/18379.ts | 0/1 | 54.17% |

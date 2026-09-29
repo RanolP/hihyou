@@ -36,6 +36,7 @@ import {
   withComments,
 } from "../sink.js";
 import { sPrintAssignment } from "./assignment.js";
+import { isTestCall } from "./calls.js";
 import {
   sPrintFunctionParameters,
   sShouldGroupFunctionParameters,
@@ -58,6 +59,7 @@ import {
   hasLeadingOwnLineComment,
   isComment,
   isMember,
+  isSimpleType,
   items,
   type JsCtx,
   type JsOptions,
@@ -273,16 +275,6 @@ export function shouldHugUnionType(ctx: JsCtx, n: number): boolean {
   return types.every((x) => x === object || isVoidType(ctx, bare(ctx, x)));
 }
 
-const isSimpleType = (ctx: JsCtx, n: number) => {
-  const k = kind(ctx, n);
-  return (
-    (k === "predefined_type" && !src(ctx, n).startsWith("unique")) ||
-    k === "type_identifier" ||
-    k === "nested_type_identifier" ||
-    k === "this_type"
-  );
-};
-
 /** Prettier's shouldHugType. */
 function shouldHugType(ctx: JsCtx, n: number): boolean {
   if (isSimpleType(ctx, n) || kind(ctx, n) === "object_type") return true;
@@ -494,10 +486,13 @@ const typeParameters: CustomRule<JsOptions> = (n, sctx) => {
     kind(ctx, annotated) === "type_annotation" &&
     kind(ctx, declarator) === "variable_declarator" &&
     kind(ctx, field(ctx, declarator as number, "value")) === "arrow_function";
+  // Prettier's grandparent: the call an arrow is an argument of, past the `arguments` node its AST lacks.
+  const grand =
+    kind(ctx, annotated) === "arguments" ? parent(ctx, annotated) : annotated;
   const shouldInline =
     !isArrowFunctionVariable &&
-    params.length === 1 &&
-    shouldHugType(ctx, params[0] as number) &&
+    (isTestCall(ctx, grand, parent(ctx, grand)) ||
+      (params.length === 1 && shouldHugType(ctx, params[0] as number))) &&
     !params.some((x) => {
       const comments = getComments(ctx, x, CF.Leading | CF.Trailing);
       return (

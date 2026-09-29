@@ -25,6 +25,7 @@ import {
   isJsx,
   isMember,
   isOptionalChainToken,
+  isSimpleType,
   isTaggedTemplate,
   items,
   type JsCtx,
@@ -404,23 +405,6 @@ export function couldExpandArg(
       if (isCallExpression(ctx, body)) return true;
     }
   }
-  return false;
-}
-
-const SIMPLE_TYPE_KINDS = new Set([
-  "predefined_type",
-  "type_identifier",
-  "literal_type",
-  "this_type",
-]);
-
-/** Prettier's isSimpleType over a type node. */
-function isSimpleType(x: HasTree, n: number | undefined): boolean {
-  if (n === undefined) return false;
-  const k = kind(x, n);
-  if (SIMPLE_TYPE_KINDS.has(k)) return true;
-  if (k === "generic_type") return false;
-  if (k === "nested_type_identifier") return true;
   return false;
 }
 

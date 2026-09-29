@@ -240,6 +240,20 @@ export const isStringLiteral = (x: HasTree, n: number | undefined) =>
 export const isTemplate = (x: HasTree, n: number | undefined) =>
   kind(x, n) === "template_string";
 
+const SIMPLE_TYPE_KINDS = new Set([
+  "type_identifier",
+  "nested_type_identifier",
+  "this_type",
+  "literal_type",
+  "template_literal_type",
+]);
+
+/** Prettier's isSimpleType: a keyword, literal or template literal type, or a reference without type arguments. */
+export const isSimpleType = (x: HasTree, n: number | undefined) =>
+  n !== undefined &&
+  (SIMPLE_TYPE_KINDS.has(kind(x, n)) ||
+    (kind(x, n) === "predefined_type" && !src(x, n).startsWith("unique")));
+
 const LITERAL_KINDS = new Set([
   "string",
   "number",
