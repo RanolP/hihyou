@@ -114,6 +114,7 @@ export function role(x: HasTree, n: number): Role {
     case "non_null_expression":
     case "type_assertion":
     case "jsx_expression":
+    case "instantiation_expression":
       return { parent, key: "expression", top };
     case "computed_property_name":
       return { parent, key: "key", top };
@@ -466,6 +467,7 @@ export function needsParens(n: number, ctx: JsCtx): boolean {
         case "as_expression":
         case "satisfies_expression":
         case "non_null_expression":
+        case "instantiation_expression":
           return true;
         case "binary_expression":
           return true;
@@ -575,7 +577,10 @@ export function needsParens(n: number, ctx: JsCtx): boolean {
           if (isMember(ctx, c)) c = objectOf(ctx, c);
           else if (isTaggedTemplate(ctx, c)) c = callee(ctx, c);
           else if (ck === "non_null_expression") c = first(ctx, c);
-          else if (ck === "parenthesized_expression") return false;
+          // Prettier's AST has no parentheses to stop at, `new (a())!()` printing as `new (a()!)()`, except the
+          // ChainExpression they keep: `new (a?.())!()`.
+          else if (ck === "parenthesized_expression" && !isChain(ctx, first(ctx, c)))
+            c = first(ctx, c);
           else return false;
         }
       }
@@ -728,17 +733,7 @@ function optionalChainNeedsParens(
   // `(a?.b).c`: the parentheses end the chain, so they stay; tree-sitter shows them only in the source.
   const top = outer(x, n);
   if (top === n) return false;
-  const chained = (y: number | undefined): boolean => {
-    while (y !== undefined) {
-      if (isOptional(x, y)) return true;
-      if (kind(x, y) === "non_null_expression") y = first(x, y);
-      else if (isMember(x, y)) y = objectOf(x, y);
-      else if (isCall(x, y)) y = callee(x, y);
-      else return false;
-    }
-    return false;
-  };
-  if (!chained(n)) return false;
+  if (!isChain(x, n)) return false;
   // `(a?.b)?.c`: a `?.` link continues the chain, so it reads as `a?.b?.c` and the parentheses go.
   if (isOptional(x, parent) && key !== "quasi") return false;
   const pk = kind(x, parent);
@@ -790,6 +785,18 @@ export const isDecoratedClass = (x: HasTree, n: number): boolean =>
   kind(x, n) === "class" &&
   childWhere(x, n, (c) => kind(x, c) === "decorator") !== undefined;
 
+/** Whether `y` is an optional chain, prettier's ChainExpression: a `?.` link somewhere down its callee/object path. */
+function isChain(x: HasTree, y: number | undefined): boolean {
+  while (y !== undefined) {
+    if (isOptional(x, y)) return true;
+    if (kind(x, y) === "non_null_expression") y = first(x, y);
+    else if (isMember(x, y)) y = objectOf(x, y);
+    else if (isCall(x, y)) y = callee(x, y);
+    else return false;
+  }
+  return false;
+}
+
 function isDecoratorMemberish(x: HasTree, n: number): boolean {
   const simple = (y: number | undefined): boolean => {
     if (y === undefined) return false;
@@ -806,6 +813,7 @@ function isDecoratorMemberish(x: HasTree, n: number): boolean {
     simple(n) ||
     (kind(x, n) === "call_expression" &&
       !isOptional(x, n) &&
+      !isTaggedTemplate(x, n) &&
       simple(callee(x, n)))
   );
 }

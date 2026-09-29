@@ -63,9 +63,10 @@ export const types = {
     "namespace",
     space,
     $.name,
-    $.body.andThen((b) => [space, b.via("moduleBody")]),
-    tok(";").synth(all(option("semi"), not(has("body")))),
+    space,
+    $.body.via("moduleBody"),
   ],
+  global_module: ($) => ["global", space, $.body.via("moduleBody")],
   parenthesized_type: () => custom("parenthesizedType"),
   infer_type: ($) =>
     group([
@@ -79,7 +80,15 @@ export const types = {
   intersection_type: () => custom("intersectionType"),
   type_parameters: () => custom("typeParameters"),
   type_arguments: () => custom("typeParameters"),
-  type_parameter: () => group(inOrder(space)),
+  // `const` ahead of `in`, whichever order the source has them in.
+  type_parameter: ($) =>
+    group([
+      tok("const").andThen((c) => [c, space]),
+      tok("in").andThen((i) => [i, space]),
+      $.name,
+      $.constraint.andThen((c) => [space, c]),
+      $.value.andThen((v) => [space, v]),
+    ]),
   constraint: ($) => ["extends", ...bound($.children)],
   default_type: ($) => ["=", ...bound($.children)],
   ambient_declaration: () => custom("ambientDeclaration"),
@@ -107,7 +116,7 @@ export const types = {
   function_type: () => custom("functionType"),
   constructor_type: () => custom("functionType"),
   index_signature: ($) => [
-    $.type.via("indexSignature"),
+    $.type.andThen((t) => t.via("indexSignature")),
     tok(";").via("memberSemi"),
   ],
 } satisfies JsStructure;

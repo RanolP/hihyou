@@ -39,6 +39,9 @@ const MODIFIER_RANK: Readonly<Record<string, number>> = {
   override: 4,
   readonly: 5,
   accessor: 6,
+  // A type parameter's, which format/types.ts's type_parameter prints in this order.
+  const: 7,
+  in: 8,
 };
 const MODIFIER_NODES = new Set(["accessibility_modifier", "override_modifier"]);
 const MODIFIER_HOLDERS = new Set([
@@ -49,6 +52,7 @@ const MODIFIER_HOLDERS = new Set([
   "index_signature",
   "required_parameter",
   "optional_parameter",
+  "type_parameter",
 ]);
 
 /** The member or parameter whose modifier `l` is; undefined when `l` is none. */

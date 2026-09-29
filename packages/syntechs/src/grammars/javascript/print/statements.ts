@@ -258,6 +258,7 @@ const NO_HARDLINE_IN_EMPTY_BLOCK = new Set([
   "class_static_block",
   "internal_module",
   "module",
+  "global_module",
 ]);
 
 /** A statement block: `{`, the statements indented, `}` (prettier's printBlock and printBlockBody). */
