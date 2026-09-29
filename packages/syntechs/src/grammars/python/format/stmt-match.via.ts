@@ -12,6 +12,7 @@ import {
   mapping,
   maybeParenthesizePattern,
   pattern,
+  patternCommentsPrintable,
   readCasePattern,
   readGroup,
   readPattern,
@@ -123,9 +124,12 @@ export const stmtMatchVia = {
   "match.casePattern": (n: number, ctx: StreamCtx<unknown>) => {
     const { f, c } = caseOf(n, ctx);
     const cs = f.comments;
-    if (cs.has(c.pattern) || cs.hasAnyIn(c.pattern.start, c.pattern.end))
+    const p = readCasePattern(f, c);
+    const inside = cs.all.filter((x) => x.start >= c.pattern.start && x.end <= c.pattern.end);
+    const attached = [...cs.leading(c.pattern), ...cs.dangling(c.pattern), ...cs.trailing(c.pattern)];
+    if (!patternCommentsPrintable(f, p, [...inside, ...attached]))
       throw new Unformattable(`comment in a pattern at ${byteOffsetOf(f.tree, c.pattern.ts)}`);
-    maybeParenthesizePattern(f, readCasePattern(f, c), c);
+    maybeParenthesizePattern(f, p, c);
   },
   "match.guard": (n: number, ctx: StreamCtx<unknown>) => {
     const { f, c } = caseOf(n, ctx);

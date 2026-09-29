@@ -4,7 +4,8 @@ import { exprAst, Unformattable } from "../ast.js";
 import { type Fmt, writeCommaIn } from "../builders.js";
 import { writeExpr, writeMaybeParenthesize } from "../expr.js";
 import { close, GROUP, open, sDsl, sText, sToken } from "../sink.js";
-import { byteOffsetOf, endOf, startOf } from "../trivia.js";
+import type { Comment } from "../comments.js";
+import { byteOffsetOf, endOf, firstToken, startOf } from "../trivia.js";
 import { kids } from "./defs.js";
 
 /** Ruff's match patterns (pattern/*.rs), which a `match` statement's cases hold. */
@@ -319,6 +320,65 @@ export function readGroup(f: Fmt, parent: number, nodes: number[]): Pat {
   return unsupportedPattern(f, a !== undefined ? a : parent);
 }
 
+/**
+ * The end-of-line comments right after the opening bracket `open`, which ruff prints right after the bracket:
+ * a parenthesized pattern's leading comment (`FormatPattern`'s open parenthesis comment), or a sequence's,
+ * mapping's or class pattern's dangling one.
+ */
+function openComments(f: Fmt, open: number): Comment[] {
+  const from = endOf(f.tree, open);
+  return f.comments.all.filter(
+    (c) =>
+      c.line === "eol" &&
+      c.start >= from &&
+      firstToken(f.tree, from, c.start) === undefined,
+  );
+}
+
+/** Every opening bracket the pattern prints, each one's end-of-line comment printed after it. */
+function openBrackets(p: Pat): number[] {
+  const out = p.paren !== undefined ? [p.paren.open] : [];
+  switch (p.k) {
+    case "complex":
+      return [...out, ...openBrackets(p.left), ...openBrackets(p.right)];
+    case "seq":
+      return [
+        ...out,
+        ...(p.open !== undefined ? [p.open] : []),
+        ...p.items.flatMap(openBrackets),
+      ];
+    case "map":
+      return [
+        ...out,
+        p.open,
+        ...p.pairs.flatMap((x) => [...openBrackets(x.key), ...openBrackets(x.value)]),
+      ];
+    case "class":
+      return [
+        ...out,
+        p.open,
+        ...p.items.flatMap(openBrackets),
+        ...p.keywords.flatMap((k) => openBrackets(k.value)),
+      ];
+    case "as":
+      return [...out, ...openBrackets(p.pattern)];
+    case "or":
+      return [...out, ...p.items.flatMap(openBrackets)];
+    default:
+      return out;
+  }
+}
+
+/** Whether every one of `comments`, a case pattern's, follows one of its opening brackets, the only place it prints one. */
+export function patternCommentsPrintable(
+  f: Fmt,
+  p: Pat,
+  comments: readonly Comment[],
+): boolean {
+  const printed = new Set(openBrackets(p).flatMap((b) => openComments(f, b)));
+  return comments.every((c) => printed.has(c));
+}
+
 /** Parentheses the pattern has none of in the source, anchored to `anchor`. */
 const syntheticParens = (anchor: number): Frame => ({
   open: () => sToken(anchor, "(", true),
@@ -345,6 +405,7 @@ export function pattern(
     () => sToken(own.open, f.text(own.open)),
     fields,
     () => sToken(own.close, f.text(own.close)),
+    openComments(f, own.open),
   );
 }
 
@@ -382,7 +443,8 @@ export function sequence(f: Fmt, p: Pat & { k: "seq" }, frame: Frame): void {
     p.commas,
     p.open !== undefined ? p.open : p.node,
   );
-  if (!only) return f.writeEmptyParenthesized(frame.open, [], frame.close);
+  const dangling = p.open !== undefined ? openComments(f, p.open) : [];
+  if (!only) return f.writeEmptyParenthesized(frame.open, dangling, frame.close);
   if (p.items.length === 1 && p.type !== "list")
     // A one-element tuple keeps its parentheses, and its comma never makes it expand.
     return f.writeParenthesized(
@@ -392,6 +454,7 @@ export function sequence(f: Fmt, p: Pat & { k: "seq" }, frame: Frame): void {
         comma(outerEnd(f, only));
       },
       frame.close,
+      dangling,
     );
   const items = () =>
     f.writeJoinCommaSeparated(
@@ -400,13 +463,14 @@ export function sequence(f: Fmt, p: Pat & { k: "seq" }, frame: Frame): void {
       comma,
     );
   if (p.type === "bare") return f.writeOptionalParentheses(p.node, items);
-  f.writeParenthesized(frame.open, items, frame.close);
+  f.writeParenthesized(frame.open, items, frame.close, dangling);
 }
 
-/** Ruff's `FormatPatternMatchMapping` in its braces' `frame`, whose comments `match.casePattern` rejects. */
+/** Ruff's `FormatPatternMatchMapping` in its braces' `frame`. */
 export function mapping(f: Fmt, p: Pat & { k: "map" }, frame: Frame): void {
+  const dangling = openComments(f, p.open);
   if (p.pairs.length === 0 && !p.rest)
-    return f.writeEmptyParenthesized(frame.open, [], frame.close);
+    return f.writeEmptyParenthesized(frame.open, dangling, frame.close);
   const entries = p.pairs.map(({ key, colon, value }) => ({
     end: outerEnd(f, value),
     write: () => {
@@ -428,6 +492,7 @@ export function mapping(f: Fmt, p: Pat & { k: "map" }, frame: Frame): void {
     frame.open,
     () => f.writeJoinCommaSeparated(entries, p.end, writeCommaIn(f.tree, p.node, p.open)),
     frame.close,
+    dangling,
   );
 }
 
@@ -438,8 +503,9 @@ export function classArguments(
   frame: Frame,
 ): void {
   const [only] = p.items;
+  const dangling = openComments(f, p.open);
   if (!only && p.keywords.length === 0)
-    return f.writeEmptyParenthesized(frame.open, [], frame.close);
+    return f.writeEmptyParenthesized(frame.open, dangling, frame.close);
   const comma = writeCommaIn(f.tree, p.node, p.open);
   const entries =
     only && p.items.length === 1 && p.keywords.length === 0
@@ -465,14 +531,20 @@ export function classArguments(
       close();
     },
     frame.close,
+    dangling,
   );
 }
 
-/** Ruff's `maybe_parenthesize_pattern`, for a pattern without comments. */
+/** Ruff's `maybe_parenthesize_pattern`, for a pattern whose only comments follow its opening brackets. */
 export function maybeParenthesizePattern(f: Fmt, p: Pat, c: MatchCase): void {
+  // A comment after the pattern's own `(` is its leading comment, which keeps the parentheses.
+  if (p.paren !== undefined && openComments(f, p.paren.open).length > 0)
+    return pattern(f, p, "always");
   switch (p.k) {
     case "expr":
-      // Ruff's `BestFit` for a value or a capture, the expression's own layout.
+      // A capture is ruff's `Multiline`, parenthesized once it breaks even if it still overflows; a value is `BestFit`.
+      if (p.capture)
+        return f.writeParenthesizeIfExpands(p.node, () => pattern(f, p, "never"));
       return writeMaybeParenthesize(f, p.e, c, "ifBreaks");
     case "or":
     case "as":

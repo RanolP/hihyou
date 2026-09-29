@@ -1,4 +1,4 @@
-python compatibility: 277/327 (84.71%), 23 refused (ok:false), 49 excluded
+python compatibility: 280/327 (85.63%), 20 refused (ok:false), 49 excluded
 
 Fixtures: ruff 0.16.8 crates/ruff_python_formatter/resources/test/fixtures/{black,ruff} (recursive), every option set of each `.options.json`, expected output from tests/snapshots (black cases without a snapshot: their `.expect` file). Options are passed by their ruff.toml names.
 
@@ -45,7 +45,7 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | black/cases/backslash_before_indent.py | 1/1 | 84.21% | formatter-error: backslash continuation before a body at 14 |
 | black/cases/comment_after_escaped_newline.py | 1/1 | 47.06% | formatter-error: backslash continuation before a body at 10 |
 | black/cases/pattern_matching_extras.py | 1/1 | 100.00% | formatter-error: unsupported pattern keyword_pattern at 1519 |
-| black/cases/pattern_matching_style.py | 1/1 | 46.81% | formatter-error: comment in a pattern at 474 |
+| black/cases/pattern_matching_style.py | 1/1 | 46.81% | formatter-error: unsupported pattern comment at 498 |
 | black/cases/pep_701.py | 1/1 | 93.33% | check: input "f\"{'\\''}\"" at 2276 is output as "f\"{\"'\"}\"" at 2230, which means "0:S\u0000{\"\"\"}\u0000", not "0:S |
 | black/cases/preview_long_strings__regression.py | 1/1 | 96.81% | check: input "F\"{F'{humanize_number(pos)}.': <{pound_len+2}} \"\n    F\"{balance: <{bal_len + 5}} \"\n    F\"<<{author. |
 | black/cases/remove_except_types_parens.py | 1/1 | 95.12% | check: input "," at 721 is output as ":" at 713, which means ":", not "," |
@@ -60,9 +60,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | ruff/expression/list_comp_py315.py | 1/1 | 73.53% | formatter-error: parse error: ERROR at 250 |
 | ruff/expression/nested_string_quote_style.py | 4/4 | 87.50% | check: input "f'\"double\" quotes and {\"nested string with \\\"double\\\" quotes\"}'" at 881 is output as "f'\"double\" |
 | ruff/expression/tstring.py | 1/1 | 55.30% | formatter-error: parse error: ERROR at 21234 |
-| ruff/parentheses/opening_parentheses_comment_empty.py | 1/1 | 89.39% | formatter-error: comment in a pattern at 595 |
-| ruff/parentheses/opening_parentheses_comment_value.py | 1/1 | 56.97% | formatter-error: comment in a pattern at 606 |
-| ruff/pattern/pattern_maybe_parenthesize.py | 1/1 | 84.53% | formatter-error: comment in a pattern at 5868 |
 | ruff/statement/match.py | 1/1 | 71.21% | formatter-error: comment in a pattern at 2288 |
 | ruff/statement/with.py | 2/2 | 70.13% | formatter-error: unsupported expression: as_pattern at 5094 |
 
