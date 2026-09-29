@@ -231,7 +231,7 @@ export const kotlin = format({
         [space, inOrder()],
         inOrder({ spaceWhen: { before: ["annotated_lambda"] } }),
       ),
-    value_arguments: ($) => grpParen(sepBy(",", $.children, { trailing: true })),
+    value_arguments: ($) => grpParen(sepBy(",", $.children, { trailing: when("manyArguments") })),
     value_argument: () => inOrder({ join: "space", tight: { after: ["*"] } }),
     annotated_lambda: () => inOrder({ join: "space", tight: { after: ["label"] } }),
     lambda_literal: () =>

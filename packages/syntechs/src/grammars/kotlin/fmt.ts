@@ -223,7 +223,7 @@ export const customs = {
     for (let i = 0; i < t.count(node); i++) if (listed.has(t.kindName(t.child(node, i)))) items++;
     return items > 1;
   },
-  backingField: (node, ctx) => backingField(ctx.tree, node),
+  backingField:(node, ctx) => backingField(ctx.tree, node),
   /** Of a class or its primary constructor: a comment comes before the constructor, which ktfmt puts on a line of its own. */
   commentedConstructor: (node, ctx) => {
     const t = ctx.tree;
@@ -234,6 +234,8 @@ export const customs = {
       if (t.child(owner, i) === ctor) return t.kindName(t.child(owner, i - 1)).endsWith("comment");
     return false;
   },
+  /** ktfmt gives a broken argument list a trailing comma only when it holds two or more arguments. */
+  manyArguments: (node, ctx) => ctx.items(node).length > 1,
   /** Of a declaration's initializer or delegate, or a function's `=` body: a lambda, a scoping function, or a chain on one. */
   huggedChain: (node, ctx) => lambdaOrScoping(ctx.tree, node, true),
   /** Of an assignment's right side: a lambda or a scoping function, but no chain on one. */

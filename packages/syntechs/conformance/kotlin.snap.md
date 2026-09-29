@@ -1,4 +1,4 @@
-kotlin compatibility: 621/753 (82.47%), 20 refused (ok:false), 11 excluded
+kotlin compatibility: 634/753 (84.20%), 20 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -10,20 +10,18 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | :------ | :---------: | :---------: |
 | comments.txt: Comments | 0/1 | 76.19% |
 | source-files.txt: Multiple Imports On A Single Line | 0/1 | 50.00% |
-| packages/syntechs/src/grammars/kotlin/corpus/Collections.kt | 0/1 | 96.38% |
+| packages/syntechs/src/grammars/kotlin/corpus/Collections.kt | 0/1 | 96.55% |
 | packages/syntechs/src/grammars/kotlin/corpus/Result.kt | 0/1 | 99.56% |
 | packages/syntechs/src/grammars/kotlin/corpus/Delay.kt | 0/1 | 97.97% |
 | packages/syntechs/src/grammars/kotlin/corpus/Transform.kt | 0/1 | 92.98% |
 | packages/syntechs/src/grammars/kotlin/corpus/Okio.kt | 0/1 | 97.44% |
-| packages/syntechs/src/grammars/kotlin/corpus/build.gradle.kts | 0/1 | 97.83% |
+| packages/syntechs/src/grammars/kotlin/corpus/build.gradle.kts | 0/1 | 98.92% |
 | ktfmt/format/annotation/exception.kt | 0/1 | 61.54% |
 | ktfmt/format/annotation/expressions2.kt | 0/1 | 78.05% |
 | ktfmt/format/annotation/functionTypes.kt | 0/1 | 60.00% |
 | ktfmt/format/annotation/multipleAnnotations.kt | 0/1 | 85.71% |
 | ktfmt/format/binary/associativity.kt | 0/1 | 72.73% |
 | ktfmt/format/binary/binaryExpressionWithRanges.kt | 0/1 | 52.63% |
-| ktfmt/format/call/anonymousFun.kt | 0/1 | 88.89% |
-| ktfmt/format/call/anonymousFunWithReceiver.kt | 0/1 | 88.89% |
 | ktfmt/format/call/arrayAccessInTheCallChain.kt | 0/1 | 58.33% |
 | ktfmt/format/call/callArgsStickToFunctionName.kt | 0/1 | 60.00% |
 | ktfmt/format/call/chainWithDereferences.kt | 0/1 | 50.00% |
@@ -45,7 +43,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/function/assignmentWithScopeFunction.kt | 0/1 | 44.19% |
 | ktfmt/format/function/trailingCommasInDefinitions.kt | 0/1 | 90.57% |
 | ktfmt/format/if/comment.kt | 0/1 | 61.54% |
-| ktfmt/format/if/expr.kt | 0/1 | 91.67% |
 | ktfmt/format/import/importList.kt | 0/1 | 37.50% |
 | ktfmt/format/import/importsInKDoc.kt | 0/1 | 94.55% |
 | ktfmt/format/import/importsWithTrailingExprs.kt | 0/1 | 66.67% |
@@ -53,11 +50,10 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/import/importsWithTrailingExprs3.kt | 0/1 | 66.67% |
 | ktfmt/format/import/keepUnusedImports.kt | 0/1 | 85.71% |
 | ktfmt/format/import/usedImportsFromSamePackage.kt | 0/1 | 94.12% |
-| ktfmt/format/lambda/lambdaArg.kt | 0/1 | 66.67% |
+| ktfmt/format/lambda/lambdaArg.kt | 0/1 | 72.22% |
 | ktfmt/format/lambda/lambdaWithFullType.kt | 0/1 | 44.44% |
 | ktfmt/format/misc/addingTrailingCommaOnMaxWidth.kt | 0/1 | 75.00% |
 | ktfmt/format/misc/addingTrailingCommaWhenBreakingParameterList2.kt | 0/1 | 88.00% |
-| ktfmt/format/misc/combination.kt | 0/1 | 97.73% |
 | ktfmt/format/misc/commentStability.kt | 0/1 | 70.59% |
 | ktfmt/format/misc/commentStability2.kt | 0/1 | 0.00% |
 | ktfmt/format/misc/commentStability3-2.kts | 0/1 | 93.02% |
@@ -76,12 +72,9 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/property/backingFieldWithChainedScopingFunction3.kt | 0/1 | 76.92% |
 | ktfmt/format/property/trailingCommasInProperties.kt | 0/1 | 72.73% |
 | ktfmt/format/string/multiDollarString.kt | 0/1 | 33.33% |
-| ktfmt/format/string/multilineStringLiterals.kt | 0/1 | 92.86% |
 | ktfmt/format/string/multilineStringsWithTemplateExpressions.kt | 0/1 | 96.30% |
 | ktfmt/format/string/multilineStringsWithTemplateExpressions2.kt | 0/1 | 40.00% |
 | ktfmt/format/string/nestedMultilineString2.kt | 0/1 | 96.97% |
-| ktfmt/format/string/trimMarginAndTrimIndent.kts | 0/1 | 91.67% |
-| ktfmt/format/string/whitespaces.kt | 0/1 | 78.95% |
 | ktfmt/format/type/castsWithBreaks.kt | 0/1 | 67.86% |
 | ktfmt/format/type/classExpression.kt | 0/1 | 66.67% |
 | ktfmt/format/type/compondBoundOnClassDelegate.kt | 0/1 | 40.00% |
@@ -91,25 +84,19 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/type/nestedQualifiedTypes.kt | 0/1 | 40.00% |
 | ktfmt/format/type/trailingCommasInFunctionTypes.kt | 0/1 | 60.00% |
 | ktfmt/format/when/guards.kt | 0/1 | 58.33% |
-| ktfmt/google/anonymousFunction.kt | 0/1 | 85.71% |
-| ktfmt/google/anonymousFunctionWithReceiver.kt | 0/1 | 85.71% |
-| ktfmt/google/basic.kt | 0/1 | 97.62% |
 | ktfmt/google/casts.kt | 0/1 | 42.86% |
 | ktfmt/google/classTypeParams.kt | 0/1 | 63.29% |
-| ktfmt/google/comments.kt | 0/1 | 56.88% |
-| ktfmt/google/forcedBreaksInFunCalls.kt | 0/1 | 69.44% |
+| ktfmt/google/comments.kt | 0/1 | 60.55% |
+| ktfmt/google/forcedBreaksInFunCalls.kt | 0/1 | 80.56% |
 | ktfmt/google/forwardPropagationOfBreaks3.kt | 0/1 | 66.67% |
 | ktfmt/google/fqNestedTypes.kt | 0/1 | 38.10% |
-| ktfmt/google/ifWithElse.kt | 0/1 | 90.00% |
 | ktfmt/google/ifWithMaxWidthCondition.kt | 0/1 | 47.06% |
 | ktfmt/google/longFunctionTypeWrapping.kt | 0/1 | 23.53% |
-| ktfmt/google/multiLineStringAsFunctionParam.kt | 0/1 | 91.67% |
 | ktfmt/google/namedArgumentsWithValueExpression.kt | 0/1 | 47.06% |
 | ktfmt/google/secondaryConstructorNoArgs.kt | 0/1 | 47.06% |
-| ktfmt/google/singleLambdaArgument.kt | 0/1 | 62.50% |
+| ktfmt/google/singleLambdaArgument.kt | 0/1 | 68.75% |
 | ktfmt/google/trailingCommasAlwaysRemoved.kt | 0/1 | 56.00% |
-| ktfmt/google/trailingCommasSingleElementLists.kt | 0/1 | 58.54% |
-| ktfmt/google/trailingLambdaAfterArgumentBreak.kt | 0/1 | 92.31% |
+| ktfmt/google/trailingCommasSingleElementLists.kt | 0/1 | 63.41% |
 | ktfmt/google/whenWithMaxWidthCondition.kt | 0/1 | 42.11% |
 | ktfmt/google/whileMaxWidthCondition.kt | 0/1 | 47.06% |
 | ktfmt/kotlinlang/nestedCalls.kts | 0/1 | 63.16% |
