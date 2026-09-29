@@ -234,12 +234,8 @@ export const kotlin = format({
     value_arguments: ($) => grpParen(sepBy(",", $.children, { trailing: when("manyArguments") })),
     value_argument: () => inOrder({ join: "space", tight: { after: ["*"] } }),
     annotated_lambda: () => inOrder({ join: "space", tight: { after: ["label"] } }),
-    lambda_literal: () =>
-      either(
-        isEmpty,
-        ["{", "}"],
-        group(inOrder({ join: "line", hangAfter: ["{", "->"], spaceWhen: { before: ["->"] } })),
-      ),
+    // One with no statements prints in lambda.ts.
+    lambda_literal: () => group(inOrder({ join: "line", hangAfter: ["{", "->"], spaceWhen: { before: ["->"] } })),
     lambda_parameters: () => adjacent,
     // A member chain prints from its root in chain.ts.
     navigation_expression: () => inOrder(),

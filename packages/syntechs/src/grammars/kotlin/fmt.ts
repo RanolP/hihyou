@@ -16,6 +16,7 @@ import { grammar } from "./bundle.js";
 import { binary, binaryKinds } from "./binary.js";
 import { chained } from "./chain.js";
 import { enumBody } from "./enum-body.js";
+import { lambdas } from "./lambda.js";
 import * as gen from "./fmt.gen.js";
 import { language } from "./index.js";
 import { trimmedString, trimmedStrings } from "./trimmed-string.js";
@@ -258,14 +259,16 @@ const hugsDeclaration = (node: number, ctx: { readonly tree: FormatTree }) =>
   lambdaOrScoping(ctx.tree, node, true);
 
 /**
- * The generated rules, but a member chain prints from its root as ktfmt lays one out (chain.ts), and a trimmed
- * multiline string is re-indented as ktfmt does (trimmed-string.ts).
+ * The generated rules, but a member chain prints from its root as ktfmt lays one out (chain.ts), a trimmed
+ * multiline string is re-indented as ktfmt does (trimmed-string.ts), and a lambda with no statements prints its
+ * comments as its body (lambda.ts).
  */
 function withChains<O>(stream: StreamRules<O>): StreamRules<O> {
   const rules = new Map(stream.rules);
   for (const kind of ["navigation_expression", "call_expression", "indexing_expression", "postfix_expression"])
     rules.set(kind, chained(stream.rules.get(kind), hugsDeclaration));
   rules.set("string_literal", trimmedStrings(stream.rules.get("string_literal")));
+  rules.set("lambda_literal", lambdas(stream.rules.get("lambda_literal")));
   for (const kind of binaryKinds) rules.set(kind, binary(stream.rules.get(kind)));
   return { ...stream, rules };
 }

@@ -1,4 +1,4 @@
-kotlin compatibility: 634/753 (84.20%), 20 refused (ok:false), 11 excluded
+kotlin compatibility: 641/753 (85.13%), 13 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -20,6 +20,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/annotation/expressions2.kt | 0/1 | 78.05% |
 | ktfmt/format/annotation/functionTypes.kt | 0/1 | 60.00% |
 | ktfmt/format/annotation/multipleAnnotations.kt | 0/1 | 85.71% |
+| ktfmt/format/annotation/noNewLineAfterAnnotations.kt | 0/1 | 79.49% |
 | ktfmt/format/binary/associativity.kt | 0/1 | 72.73% |
 | ktfmt/format/binary/binaryExpressionWithRanges.kt | 0/1 | 52.63% |
 | ktfmt/format/call/arrayAccessInTheCallChain.kt | 0/1 | 58.33% |
@@ -40,7 +41,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/class/lineBreakOnTypeSpecifier.kt | 0/1 | 57.14% |
 | ktfmt/format/class/secondaryConstructorDelegate2.kt | 0/1 | 52.63% |
 | ktfmt/format/comment/shebang.kts | 0/1 | 88.89% |
-| ktfmt/format/function/assignmentWithScopeFunction.kt | 0/1 | 44.19% |
 | ktfmt/format/function/trailingCommasInDefinitions.kt | 0/1 | 90.57% |
 | ktfmt/format/if/comment.kt | 0/1 | 61.54% |
 | ktfmt/format/import/importList.kt | 0/1 | 37.50% |
@@ -115,16 +115,9 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
 | ktfmt/format/annotation/collectionLiterals.kt | 1/1 | 82.50% | formatter-error: no rule: collection_literal at 58 |
-| ktfmt/format/annotation/noNewLineAfterAnnotations.kt | 1/1 | 82.67% | check: input comment "//" is missing from the output |
-| ktfmt/format/class/trailingCommentAfterMethod.kt | 1/1 | 91.11% | check: output comment "// Hanging after fn // Trailing after fn" matches no input comment |
+| ktfmt/format/class/trailingCommentAfterMethod.kt | 1/1 | 93.48% | check: output comment "// Hanging after fn // Trailing after fn" matches no input comment |
 | ktfmt/format/function/varargs.kt | 1/1 | 50.00% | formatter-error: no rule: spread_expression at 38 |
 | ktfmt/format/if/blocks.kt | 1/1 | 18.18% | formatter-error: no rule: do_while_statement at 34 |
-| ktfmt/format/lambda/lambdaWithMultipleStatementsAndComments2.kt | 1/1 | 65.00% | check: input comment "/* no-op */" is missing from the output |
-| ktfmt/format/lambda/lambdaWithOnlyComments.kt | 1/1 | 0.00% | check: input comment "/* do nothing */" is missing from the output |
-| ktfmt/format/lambda/lambdaWithOnlyComments2.kt | 1/1 | 22.22% | check: input comment "/* do nothing */" is missing from the output |
-| ktfmt/format/lambda/lambdaWithOptionalArrow.kt | 1/1 | 83.33% | check: input "->" at 10 is output as "}" at 9, which means "}", not "->" |
-| ktfmt/format/lambda/lastParameterWithComment.kt | 1/1 | 64.29% | check: input comment "// no-op" is missing from the output |
-| ktfmt/format/lambda/lastParameterWithComment2.kt | 1/1 | 80.95% | check: input comment "/* no-op */" is missing from the output |
 | ktfmt/format/misc/doWhile.kt | 1/1 | 42.86% | formatter-error: no rule: do_while_statement at 18 |
 | ktfmt/format/property/propertiesWithAccessors.kt | 1/1 | 27.78% | formatter-error: no rule: parameter_with_optional_type at 95 |
 | ktfmt/format/property/propertiesWithAccessors2.kt | 1/1 | 44.44% | formatter-error: no rule: parameter_with_optional_type at 119 |
