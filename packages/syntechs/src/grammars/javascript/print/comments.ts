@@ -373,6 +373,24 @@ const labeled = (c: CommentContext<JsOptions>): CommentTarget | undefined =>
     ? { node: c.enclosing, as: "leading" }
     : undefined;
 
+/**
+ * `default: // c` before the case's first statement: the comment dangles on the case, which prints it after the
+ * `:`, but a line comment before a block moves into it (handleSwitchDefaultCaseComments).
+ */
+const switchDefault = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, following, placement, text } = c;
+  if (
+    placement === "ownLine" ||
+    kind(c, enclosing) !== "switch_default" ||
+    following === undefined ||
+    following !== children(c, enclosing).find((n) => named(c, n) && isCode(c, n))
+  )
+    return;
+  return kind(c, following) === "statement_block" && text.startsWith("//")
+    ? blockFirst(c, following)
+    : { node: enclosing, as: "dangling" };
+};
+
 const HEAD_BODY = new Map([
   ["if_statement", "consequence"],
   ["while_statement", "body"],
@@ -788,6 +806,7 @@ const handlers = [
   statementBody,
   tryBlock,
   labeled,
+  switchDefault,
   classHeader,
   declaratorValue,
   nestedConditional,

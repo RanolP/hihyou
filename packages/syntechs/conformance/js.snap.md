@@ -1,4 +1,4 @@
-js compatibility: 755/804 (93.91%), 9 refused (ok:false), 304 excluded
+js compatibility: 757/804 (94.15%), 9 refused (ok:false), 304 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -47,8 +47,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/sequence-break/break.js | 0/1 | 85.29% |
 | js/sequence-expression/ignore.js | 0/1 | 72.73% |
 | js/sequence-expression/parenthesized.js | 0/1 | 85.71% |
-| js/switch/comments.js | 0/1 | 90.37% |
-| js/switch/comments2.js | 0/1 | 84.21% |
 | js/template-literals/expression-break.js | 0/1 | 80.00% |
 | js/test-declarations/jest-each-template-string.js | 0/2 | 27.78% |
 | js/test-declarations/jest-each.js | 0/2 | 63.24% |
