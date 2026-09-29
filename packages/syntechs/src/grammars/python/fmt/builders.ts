@@ -292,6 +292,8 @@ export class Fmt {
   /** Whether the source has a comma (ruff's magic trailing comma) after `end`, before `sequenceEnd`. */
   magicTrailingComma(end: number, sequenceEnd: number): boolean {
     if (this.options["skip-magic-trailing-comma"]) return false;
+    // A field that may not break (a flat one, or one without a line break before PEP 701) ignores its magic commas.
+    if (this.fstr.k !== "outside" && !this.fstr.multiline) return false;
     for (const t of tokens(this.tree, end, sequenceEnd)) {
       if (t.kind === ")") continue;
       return t.kind === ",";

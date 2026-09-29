@@ -281,22 +281,31 @@ function fieldForm(tree: Tree, n: number, text: string, at: number): string {
     const v = stringsValue(tree, n, text, at);
     return `\u0001${v.bytes ? "b" : ""}${v.value}\u0001`;
   }
+  // A format spec's literal characters may escape a quote, which the output respells for its own quotes.
   const slice = (from: number, to: number) =>
-    text.slice(from - at, to - at).replace(/\s+/g, "");
-  let out = "";
+    text.slice(from - at, to - at).replace(/\s+/g, "").replace(/\\(["'])/g, "$1");
+  // A bare tuple, `{a, b}`'s `a, b`, means its parenthesized form, which ruff prints.
+  const bare = k === "expression_list";
+  // A one-element tuple's comma is what makes it a tuple, so it stays.
+  const tuple = bare || k === "tuple";
+  const count = tree.count(n);
+  const single = tuple && namedCount(tree, n) === 1;
+  let out = bare ? "(" : "";
   let last = tree.start(n);
-  for (let i = 0, count = tree.count(n); i < count; i++) {
+  for (let i = 0; i < count; i++) {
     const c = tree.child(n, i);
     // The text between children is a hidden token: a format spec's literal characters.
     out += slice(last, tree.start(c));
     const ck = tree.kindName(c);
     // A trailing comma comes and goes as the collection splits.
     const trailing =
-      ck === "," && i + 1 < count && /^[)\]}]$/.test(tree.kindName(tree.child(n, i + 1)));
+      ck === "," &&
+      !single &&
+      (i + 1 < count ? /^[)\]}]$/.test(tree.kindName(tree.child(n, i + 1))) : bare);
     if (ck !== "comment" && !trailing) out += fieldForm(tree, c, text, at);
     last = tree.end(c);
   }
-  return out + slice(last, tree.end(n));
+  return out + slice(last, tree.end(n)) + (bare ? ")" : "");
 }
 
 /** Ruff's code example openings in a docstring: a doctest, a Markdown fence, a reStructuredText block. */

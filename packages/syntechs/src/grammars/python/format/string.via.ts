@@ -11,6 +11,7 @@ import {
   close,
   COLLAPSE,
   GROUP,
+  HARD,
   INDENT,
   open,
   place,
@@ -30,9 +31,10 @@ import {
   partOf,
   quotesOf,
   sMultiline,
+  supportsPep701,
   writeStr,
 } from "../fmt/strings.js";
-import { endOf, hasLineBreak, startOf } from "../fmt/trivia.js";
+import { endOf, hasLineBreak, linesBefore, startOf } from "../fmt/trivia.js";
 
 /** The args a string part's custom hands its leaves; every leaf prints only under a part. */
 function argsOf(ctx: StreamCtx<unknown>): PartArgs {
@@ -77,13 +79,14 @@ export const stringVia = {
     if (joined) sToken(c, normalizeString(text, 0, flags, isInterpolated(flags)));
     else sMultiline(c, normalizeString(text, 0, flags, false));
   },
-  // A format spec: its literal characters (hidden tokens between the children) as written, its fields formatted.
+  // A format spec: its literal characters (hidden tokens between the children) escaped for the string's quotes, its fields formatted.
   "string.spec": (spec: number, ctx: StreamCtx<unknown>) => {
     const tree = ctx.tree;
+    const { flags } = argsOf(ctx);
     // A line break in the literal breaks the field's group around it, as ruff's multiline text does.
     const literal = (s: string) => {
-      if (s.includes("\n")) sMultiline(spec, s);
-      else if (s !== "") sText(s);
+      if (s.includes("\n")) sMultiline(spec, normalizeString(s, 0, flags, false));
+      else if (s !== "") sText(normalizeString(s, 0, flags, false));
     };
     const text = tree.text(spec);
     let last = 0;
@@ -162,7 +165,7 @@ export const stringVia = {
     );
     const multiline2 =
       multiline &&
-      (flags.triple || hasLineBreak(tree, interpStart, spec !== NO_NODE ? startOf(tree, spec) : interpEnd));
+      (supportsPep701(f) || flags.triple || hasLineBreak(tree, interpStart, spec !== NO_NODE ? startOf(tree, spec) : interpEnd));
     const spaced = needsBracketSpacing(e);
     const bracket = () => {
       if (!spaced) return;
@@ -171,7 +174,16 @@ export const stringVia = {
     };
     const item = () => {
       bracket();
+      // Before a spec, the expression's own-line trailing comments print at once rather than as line suffixes the
+      // spec's boundary flushes, so the expression's own groups measure only up to them and stay flat when they fit.
+      const own = spec !== NO_NODE ? cs.trailing(e).filter((c) => c.line === "own" && !c.formatted) : [];
+      for (const c of own) c.formatted = true;
       writeExpr(f, e);
+      for (const c of own) {
+        f.writeEmptyLines(linesBefore(tree, c.start));
+        f.writeComment(c);
+      }
+      if (own.length > 0) sLine(HARD | COLLAPSE);
       if (conversion !== NO_NODE) ctx.printNode(conversion);
       // The expression's trailing comments print before the spec, which would otherwise read them as its text.
       if (spec !== NO_NODE) {

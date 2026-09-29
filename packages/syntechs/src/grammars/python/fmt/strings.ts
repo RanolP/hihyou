@@ -128,6 +128,29 @@ function formatSpec(tree: FormatTree, interp: number): number | undefined {
   return undefined;
 }
 
+/** A format spec's literal characters, its nested fields cut out. */
+function specLiteral(tree: FormatTree, spec: number): string {
+  let text = tree.text(spec);
+  for (let i = 0; i < tree.count(spec); i++) {
+    const c = tree.child(spec, i);
+    if (tree.kindName(c) === "format_expression") text = text.replace(tree.text(c), "");
+  }
+  return text;
+}
+
+/** Whether a spec literal under a debug field (`field` itself, or `debug`, an enclosing one) holds an opposite quote. */
+function debugSpecQuote(tree: FormatTree, field: number, debug: boolean, fl: Flags): boolean {
+  const spec = formatSpec(tree, field);
+  if (spec === undefined) return false;
+  const d = debug || isDebug(tree, field);
+  if (d && containsOppositeQuote(specLiteral(tree, spec), fl)) return true;
+  for (let i = 0; i < tree.count(spec); i++) {
+    const c = tree.child(spec, i);
+    if (tree.kindName(c) === "format_expression" && debugSpecQuote(tree, c, d, fl)) return true;
+  }
+  return false;
+}
+
 /** Ruff's `contains_opposite_quote`. */
 function containsOppositeQuote(content: string, fl: Flags): boolean {
   if (fl.triple) return content.includes(opposite(fl.quote).repeat(3));
@@ -182,6 +205,17 @@ export function preferredQuoteStyle(
       return opposite(state.flags.quote) === '"' ? "double" : "single";
   }
   if (preferred === "preserve") return "preserve";
+  // A field's format spec is the string's own text, so a quote its literal holds pins the quotes (ruff#13935).
+  // A nested field's spec is not the field's literal: it prints escaped for whatever quotes the string takes.
+  // A debug field's spec, at any depth, prints verbatim, so any quote in it pins them too.
+  if (isInterpolated(part.flags))
+    for (const e of part.elements) {
+      if (f.tree.kindName(e) !== "interpolation") continue;
+      const spec = formatSpec(f.tree, e);
+      if (spec === undefined) continue;
+      if (containsOppositeQuote(specLiteral(f.tree, spec), part.flags)) return "preserve";
+      if (debugSpecQuote(f.tree, e, false, part.flags)) return "preserve";
+    }
   // Before PEP 701 an f-string keeps its quotes when changing them would clash with a quote its fields hold
   // verbatim. A t-string needs Python 3.14, so it never has that constraint.
   if (!pep701 && part.flags.prefix.includes("f")) {
@@ -190,13 +224,6 @@ export function preferredQuoteStyle(
     );
     for (const i of interps) {
       if (isDebug(f.tree, i) && containsOppositeQuote(f.text(i), part.flags))
-        return "preserve";
-      const spec = formatSpec(f.tree, i);
-      if (
-        spec !== undefined &&
-        isDebug(f.tree, i) &&
-        containsOppositeQuote(f.text(spec), part.flags)
-      )
         return "preserve";
     }
     for (const i of interps)
