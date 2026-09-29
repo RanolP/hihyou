@@ -1,4 +1,4 @@
-css compatibility: 65/151 (43.05%), 0 refused (ok:false), 6 excluded
+css compatibility: 76/151 (50.33%), 0 refused (ok:false), 6 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -53,9 +53,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | css/escaped-attribute/test.css | 0/1 | 87.50% |
 | css/fill-value/fill.css | 0/1 | 84.62% |
 | css/font/font.css | 0/1 | 79.41% |
-| css/front-matter/custom-parser.css | 0/1 | 26.67% |
-| css/front-matter/empty.css | 0/1 | 36.36% |
-| css/front-matter/embedded-language-formatting/yaml.css | 0/1 | 18.18% |
 | css/grid/grid.css | 0/1 | 94.64% |
 | css/indent/indent.css | 0/1 | 78.26% |
 | css/inline-url/inline_url.css | 0/1 | 91.84% |
@@ -89,15 +86,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | css/trailing-comma/var-func.css | 0/1 | 57.14% |
 | css/url/url.css | 0/1 | 90.00% |
 | css/variables/apply-rule.css | 0/1 | 92.06% |
-| css/yaml/comment_after.css | 0/1 | 26.67% |
-| css/yaml/empty.css | 0/1 | 44.44% |
-| css/yaml/empty_newlines.css | 0/1 | 44.44% |
-| css/yaml/ignore.css | 0/1 | 16.67% |
-| css/yaml/malformed-2.css | 0/1 | 66.67% |
-| css/yaml/only_comments.css | 0/1 | 88.89% |
-| css/yaml/with_comments.css | 0/1 | 33.33% |
-| css/yaml/without-newline-after.css | 0/1 | 36.36% |
-| css/yaml/yaml.css | 0/1 | 36.36% |
+| css/yaml/ignore.css | 0/1 | 76.92% |
 
 # Refused
 

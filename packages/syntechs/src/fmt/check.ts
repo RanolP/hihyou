@@ -119,6 +119,16 @@ interface Read {
 function read<O>(language: Language<O>, text: string): Read {
   const tree = parseTree(language.parser, text);
   const out: Read = { tree, lexemes: [], comments: [], errors: [] };
+  // Front matter compares as a comment does, but for its blank lines, which a formatter may drop.
+  const { frontMatter } = tree;
+  if (frontMatter)
+    out.comments.push(
+      frontMatter
+        .split(/\r?\n|\r/)
+        .map((l) => l.trim())
+        .filter((l) => l !== "")
+        .join("\n"),
+    );
   const stack: number[] = [tree.root];
   for (let n = stack.pop(); n !== undefined; n = stack.pop()) {
     const kind = tree.kindName(n);

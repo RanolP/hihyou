@@ -8,18 +8,26 @@ import {
 import { defineLanguage, type Language } from "../../fmt/rules.js";
 import { maybeLower, numberParts } from "../../fmt/dsl/normalizers.js";
 import type { PredicateRule } from "../../fmt/dsl/runtime.js";
+import { sHardline, sText } from "../../fmt/stream.js";
 import type { StreamCtx } from "../../fmt/stream-format.js";
 import type { FormatTree } from "../../fmt/tree.js";
 import { grammar } from "./bundle.js";
 import * as gen from "./fmt.gen.js";
+import { frontMatterLines, parseFrontMatter } from "./front-matter.js";
 import { language } from "./index.js";
 
 /** The prettier options its postcss printer reads (3.9.9); `bracketSpacing` and `objectWrap` go unread. */
 export interface CssOptions extends PrettierOptions {
   singleQuote: boolean;
+  /** `off` prints front matter as written; `auto` lays YAML's out (see `frontMatterLines`). */
+  embeddedLanguageFormatting: "auto" | "off";
 }
 
-const defaults: CssOptions = { ...prettierDefaults, singleQuote: false };
+const defaults: CssOptions = {
+  ...prettierDefaults,
+  singleQuote: false,
+  embeddedLanguageFormatting: "auto",
+};
 
 type SCtx = StreamCtx<CssOptions>;
 
@@ -50,7 +58,6 @@ const cook = (quoted: string) =>
         return String.fromCodePoint(cp > 0x10ffff || cp === 0 ? 0xfffd : cp);
       },
     );
-
 
 // What a token means, whatever prettier's spelling of it: a string by its cooked value, a number by its exact
 // value and its unit, and hex colors, keywords and names by their case-folded form where CSS ignores case.
@@ -131,6 +138,28 @@ export const customs = {
   longSelector: (node, ctx) => parts(node, ctx) > 2,
 } satisfies Record<string, PredicateRule<CssOptions>>;
 
+/** Prettier's css-root: the front matter, then a blank line before the stylesheet unless it is empty. */
+export function frontMatterFirst(
+  node: number,
+  ctx: SCtx,
+  print: () => void,
+): void {
+  const fm =
+    node === ctx.tree.root ? parseFrontMatter(ctx.tree.frontMatter) : undefined;
+  if (fm) {
+    frontMatterLines(
+      fm,
+      ctx.options.embeddedLanguageFormatting !== "off",
+    ).forEach((line, i) => {
+      if (i > 0) sHardline();
+      sText(line);
+    });
+    sHardline();
+    if (ctx.tree.count(node) > 0) sHardline();
+  }
+  print();
+}
+
 /** CSS as prettier 3.9.9's postcss printer lays it out; the layouts are format.ts, generated into fmt.gen.ts. */
 export const css: Language<CssOptions> = {
   ...defineLanguage(grammar, {
@@ -143,5 +172,5 @@ export const css: Language<CssOptions> = {
     normalize,
     layoutBlind: true,
   }),
-  stream: gen.css(customs),
+  stream: { ...gen.css(customs), wrap: frontMatterFirst },
 };

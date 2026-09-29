@@ -6,7 +6,7 @@ import type { DslGrammar } from "../../fmt/dsl/dsl.js";
 import { referenceRules } from "../../fmt/dsl/reference.js";
 import { format } from "../../fmt/format.js";
 import type { Language } from "../../fmt/rules.js";
-import { css, type CssOptions, customs } from "./fmt.js";
+import { css, type CssOptions, customs, frontMatterFirst } from "./fmt.js";
 import * as spec from "./format.js";
 import { grammar, language } from "./index.js";
 
@@ -84,12 +84,19 @@ const options: Partial<CssOptions>[] = [
   { printWidth: 40 },
 ];
 
-const run = (text: string, lang: Language<CssOptions>, o: Partial<CssOptions>) =>
-  format(parseTree(language, text), lang, o);
+const run = (
+  text: string,
+  lang: Language<CssOptions>,
+  o: Partial<CssOptions>,
+) => format(parseTree(language, text), lang, o);
 
 const reference = {
   ...css,
-  stream: referenceRules<CssOptions>(spec.css, grammar as DslGrammar, customs),
+  // The front matter's printing is fmt.ts's, around the root, in both.
+  stream: {
+    ...referenceRules<CssOptions>(spec.css, grammar as DslGrammar, customs),
+    wrap: frontMatterFirst,
+  },
 };
 
 // The generated rules fuse the two passes; a divergence from the reference would change a layout the spec

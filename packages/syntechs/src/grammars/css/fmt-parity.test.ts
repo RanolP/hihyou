@@ -104,6 +104,9 @@ const edgeCases: [string, string][] = [
     "a{filter:progid:DXImageTransform.Microsoft.gradient(startColorstr='#80000000')}",
   ],
   ["crlf", "a{\r\n  b:c;\r\n  /* x\r\n  y */\r\n\r\n\r\n  d:e\r\n}\r\n"],
+  // Front matter once parsed as selectors, lowercased and joined onto the first rule's line.
+  ["front-matter", "---\ntitle: Title\n\n---\na{b:c}"],
+  ["front-matter-toml", "+++\ntitle = 'T'\n\n+++\n\n\n/* c */"],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");

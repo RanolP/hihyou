@@ -8,7 +8,7 @@
 // Bits 30 and 31 stay clear in every word, so a value read out is a small integer in V8 with or without
 // pointer compression and never boxes when it lands in a Map key or an object field.
 
-import { type Language, symbolName } from "./language.js";
+import { frontMatterLength, type Language, symbolName } from "./language.js";
 import { LABEL_TOKEN, labelModes, labelText } from "./label.js";
 
 /** Head flag: the node is named. Pass to `TreeBuilder.leaf` / `inner`. */
@@ -315,6 +315,15 @@ export class Tree {
   /** The source starts with a byte order mark, which the lexer skips as padding before the root. */
   get bom(): boolean {
     return this.source.charCodeAt(0) === 0xfeff;
+  }
+
+  /** The front matter the source opens with (see `Language.frontMatter`), which the lexer skips; "" for none. */
+  get frontMatter(): string {
+    const from = this.bom ? 1 : 0;
+    return this.source.slice(
+      from,
+      from + frontMatterLength(this.lang, this.source),
+    );
   }
 
   /** Public symbol id, aliases resolved. */
