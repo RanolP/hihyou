@@ -13,7 +13,7 @@ import {
  * depth, as Python's tokenizer counts INDENT and DEDENT.
  */
 
-/** Parents under which a tuple's parentheses are optional: a statement's value or target, a subscript, `yield`. */
+/** Parents under which a tuple's parentheses are optional: a statement's value or target, a subscript, `yield`, a match's subject. */
 const bareTupleParents = new Set([
   "expression_statement",
   "for_statement",
@@ -23,6 +23,7 @@ const bareTupleParents = new Set([
   "subscript",
   "delete_statement",
   "yield",
+  "match_statement",
 ]);
 
 /** Parents whose `:` ends a compound statement's header. */
@@ -84,6 +85,49 @@ function namedCount(tree: Tree, n: number): number {
     if (tree.named(c) && tree.kindName(c) !== "comment") named++;
   }
   return named;
+}
+
+/** Whether `t`, a `tuple_pattern`, is in a case's pattern, rather than an assignment or `for` target. */
+function inCase(tree: Tree, t: number): boolean {
+  const parent = tree.parent(t);
+  return parent !== NO_NODE && tree.kindName(parent) === "case_pattern";
+}
+
+/** How many patterns a `case` lists before its guard or colon; several make one tuple without parentheses. */
+function casePatternCount(tree: Tree, clause: number): number {
+  let patterns = 0;
+  for (let i = 0, count = tree.count(clause); i < count; i++)
+    if (tree.kindName(tree.child(clause, i)) === "case_pattern") patterns++;
+  return patterns;
+}
+
+/** Whether `t`, a `tuple_pattern` in a case, is `(p)`: parentheses that only group p. */
+function grouping(tree: Tree, t: number): boolean {
+  let named = 0;
+  for (let i = 0, count = tree.count(t); i < count; i++) {
+    const c = tree.child(t, i);
+    if (tree.named(c)) {
+      if (tree.kindName(c) !== "comment") named++;
+    } else if (tree.text(c) === ",") return false;
+  }
+  return named === 1;
+}
+
+/**
+ * Whether the parentheses of `t`, a `tuple_pattern` in a case, are ones ruff may add or drop: they group one
+ * pattern, or they hold the case's whole pattern (behind any grouping ones), a tuple with or without them.
+ */
+function optionalCaseParens(tree: Tree, t: number): boolean {
+  if (grouping(tree, t)) return true;
+  for (let p = tree.parent(t); ; ) {
+    const up = tree.parent(p);
+    if (up === NO_NODE) return false;
+    const k = tree.kindName(up);
+    if (k === "case_clause") return casePatternCount(tree, up) === 1;
+    if (k !== "tuple_pattern" || !grouping(tree, up)) return false;
+    p = tree.parent(up);
+    if (p === NO_NODE || tree.kindName(p) !== "case_pattern") return false;
+  }
 }
 
 const simpleEscapes: Record<string, string> = {
@@ -196,6 +240,8 @@ function optional(tree: Tree, l: Lexeme, next: Lexeme | undefined): boolean {
     case ")":
       if (parent === NO_NODE) return false;
       if (parentKind === "parenthesized_expression") return true;
+      if (parentKind === "tuple_pattern" && inCase(tree, parent))
+        return optionalCaseParens(tree, parent);
       if (parentKind === "tuple" || parentKind === "tuple_pattern") {
         // Around a tuple already in parentheses, the tuple's own are the ones ruff may keep or drop.
         let outer = tree.parent(parent);
@@ -227,6 +273,12 @@ function optional(tree: Tree, l: Lexeme, next: Lexeme | undefined): boolean {
         tree.child(parent, tree.count(parent) - 1) === n
       )
         return namedCount(tree, parent) > 1;
+      // A case's bare tuple's trailing comma (`case a, b,:`), which ruff drops or keeps inside added parentheses.
+      if (parentKind === "case_clause" && next?.text === ":")
+        return casePatternCount(tree, parent) > 1;
+      // So is a match's bare subject tuple's (`match a, b,:`).
+      if (parentKind === "match_statement" && next?.text === ":")
+        return namedCount(tree, parent) > 2;
       if (!next || !closers.has(next.text)) return false;
       // A one-element tuple's comma is what makes it a tuple, in a subscript's brackets too.
       if (

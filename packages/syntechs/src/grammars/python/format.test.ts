@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { parseTree } from "../../core/index.js";
+import { check } from "../../fmt/check.js";
 import { format } from "../../fmt/format.js";
 import { python } from "./fmt.js";
 import { language } from "./index.js";
@@ -27,4 +28,16 @@ it("records a leaf a spec rule prints in place", () => {
 // opening with one printed that definition as its whole block and dropped the statements after it.
 it("prints a whole block that opens with a decorated definition", () => {
   expect(fmt("if a:\n    @d\n    def f(): pass\n    x = 1\n")).toBe("if a:\n\n    @d\n    def f():\n        pass\n\n    x = 1\n");
+});
+
+// `check` read every pattern parenthesis as meaning, so it flagged the ones ruff adds around a long case pattern or a
+// bare tuple subject; the ones it now lets go must stay those, never a nested tuple pattern's or a one-tuple's.
+it("lets ruff add or drop only the parentheses that change no pattern's meaning", () => {
+  const cases = (a: string, b: string) =>
+    check(python, `match x:\n    case ${a}:\n        pass\n`, `match x:\n    case ${b}:\n        pass\n`);
+  expect(cases("a, b,", "(a, b)")).toBeUndefined();
+  expect(cases("A | B", "(A | B)")).toBeUndefined();
+  expect(check(python, "match a, b,:\n    case _:\n        pass\n", "match (a, b):\n    case _:\n        pass\n")).toBeUndefined();
+  expect(cases("[(a, b)]", "[a, b]")).toBeDefined();
+  expect(cases("(a,)", "a")).toBeDefined();
 });

@@ -1343,7 +1343,21 @@ class Reader {
   }
 
   matchStmt(n: number): Match {
-    const subject = this.expr(this.needField(n, "subject"));
+    // `match a, b:` is one tuple; tree-sitter lists its items in the statement.
+    const subjects = this.fields(n, "subject");
+    const subject =
+      subjects.length > 1 || this.commas(n).length > 0
+        ? this.link(
+            this.tupleOf(
+              n,
+              subjects,
+              undefined,
+              undefined,
+              this.end(this.need(n, "match")),
+              this.start(this.need(n, ":")),
+            ),
+          )
+        : this.expr(subjects[0] ?? this.fail(n, "no subject"));
     const block = this.needField(n, "body");
     const cases = this.named(block).map((c): MatchCase => {
       const patternNode =

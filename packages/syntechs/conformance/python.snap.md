@@ -1,4 +1,4 @@
-python compatibility: 253/327 (77.37%), 36 refused (ok:false), 49 excluded
+python compatibility: 257/327 (78.59%), 32 refused (ok:false), 49 excluded
 
 Fixtures: ruff 0.16.8 crates/ruff_python_formatter/resources/test/fixtures/{black,ruff} (recursive), every option set of each `.options.json`, expected output from tests/snapshots (black cases without a snapshot: their `.expect` file). Options are passed by their ruff.toml names.
 
@@ -57,11 +57,8 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | black/cases/cantfit.py | 1/1 | 97.30% | check: input "(" at 1689 is missing from the output |
 | black/cases/comment_after_escaped_newline.py | 1/1 | 47.06% | formatter-error: backslash continuation before a body at 10 |
 | black/cases/generics_wrapping.py | 1/1 | 56.48% | formatter-error: comment in type parameters at 1546 |
-| black/cases/pattern_matching_extras.py | 1/1 | 100.00% | formatter-error: tuple subject in a match at 515 |
-| black/cases/pattern_matching_long.py | 1/1 | 33.33% | formatter-error: long unparenthesized case pattern at 62 |
+| black/cases/pattern_matching_extras.py | 1/1 | 100.00% | formatter-error: unsupported pattern keyword_pattern at 1519 |
 | black/cases/pattern_matching_style.py | 1/1 | 46.81% | formatter-error: comment in a pattern at 474 |
-| black/cases/pattern_matching_trailing_comma.py | 1/1 | 59.46% | formatter-error: tuple subject in a match at 0 |
-| black/cases/pattern_matching_with_if_stmt.py | 1/1 | 51.35% | formatter-error: long unparenthesized case pattern at 120 |
 | black/cases/pep_572_remove_parens.py | 1/1 | 98.55% | check: input "(" at 846 is output as "x" at 835, which means "x", not "(" |
 | black/cases/pep_701.py | 1/1 | 93.33% | check: input "f\"{'\\''}\"" at 2276 is output as "f\"{\"'\"}\"" at 2230, which means "0:S\u0000{\"\"\"}\u0000", not "0:S |
 | black/cases/preview_long_strings__regression.py | 1/1 | 96.81% | check: input "F\"{F'{humanize_number(pos)}.': <{pound_len+2}} \"\n    F\"{balance: <{bal_len + 5}} \"\n    F\"<<{author. |
@@ -83,11 +80,10 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | ruff/fmt_skip/type_params.py | 1/1 | 82.50% | formatter-error: comment in type parameters at 68 |
 | ruff/parentheses/opening_parentheses_comment_empty.py | 1/1 | 89.39% | formatter-error: comment in a pattern at 595 |
 | ruff/parentheses/opening_parentheses_comment_value.py | 1/1 | 56.97% | formatter-error: comment in a pattern at 606 |
-| ruff/pattern/pattern_maybe_parenthesize.py | 1/1 | 84.53% | formatter-error: long unparenthesized case pattern at 1135 |
-| ruff/pattern_match_regression_brackets.py | 1/1 | 100.00% | formatter-error: tuple subject in a match at 201 |
+| ruff/pattern/pattern_maybe_parenthesize.py | 1/1 | 84.53% | formatter-error: comment in a pattern at 5868 |
 | ruff/statement/class_definition.py | 1/1 | 78.26% | formatter-error: comment in type parameters at 2989 |
 | ruff/statement/function.py | 1/1 | 66.32% | formatter-error: comment in type parameters at 1334 |
-| ruff/statement/match.py | 1/1 | 71.21% | formatter-error: long unparenthesized case pattern at 1521 |
+| ruff/statement/match.py | 1/1 | 71.21% | formatter-error: comment in a pattern at 2288 |
 | ruff/statement/with.py | 2/2 | 70.13% | formatter-error: unsupported expression: as_pattern at 5094 |
 
 # Excluded
