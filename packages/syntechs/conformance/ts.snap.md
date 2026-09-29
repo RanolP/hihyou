@@ -31,7 +31,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/comments/16065.ts | 0/1 | 81.82% |
 | typescript/comments/16889.ts | 0/1 | 97.39% |
 | typescript/comments/method_types.ts | 0/1 | 82.05% |
-| typescript/comments/type-literals.ts | 0/1 | 89.66% |
 | typescript/comments/first-argument/first-argument.ts | 0/1 | 65.45% |
 | typescript/compiler/indexSignatureWithInitializer.ts | 0/1 | 87.50% |
 | typescript/conditional-types/parentheses.ts | 0/2 | 86.00% |
@@ -63,7 +62,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/interface2/comments-ts-only/18278.ts | 0/1 | 82.61% |
 | typescript/intersection/intersection-parens.ts | 1/3 | 99.29% |
 | typescript/intersection/consistent-with-flow/intersection-parens.ts | 0/1 | 97.67% |
-| typescript/intersection/consistent-with-flow/single-member.ts | 0/1 | 82.00% |
+| typescript/intersection/consistent-with-flow/single-member.ts | 0/1 | 89.11% |
 | typescript/last-argument-expansion/decorated-function.tsx | 0/1 | 90.91% |
 | typescript/mapped-type/issue-11098.ts | 0/1 | 87.13% |
 | typescript/method-chain/comment.ts | 0/1 | 0.00% |
@@ -97,7 +96,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/union/5849.ts | 0/1 | 87.88% |
 | typescript/union/7725.ts | 0/1 | 76.47% |
 | typescript/union/union-parens.ts | 0/1 | 99.07% |
-| typescript/union/comments/18106.ts | 0/1 | 74.16% |
+| typescript/union/comments/18106.ts | 0/1 | 83.52% |
 | typescript/union/comments/18379.ts | 0/1 | 54.17% |
 | typescript/union/comments/18389.ts | 0/1 | 76.92% |
 | typescript/union/consistent-with-flow/18819.ts | 0/1 | 66.67% |
@@ -106,6 +105,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/union/consistent-with-flow/leading-comments.ts | 0/1 | 78.26% |
 | typescript/union/consistent-with-flow/prettier-ignore.ts | 0/1 | 60.00% |
 | jsx/ignore/spread.js | 0/1 | 75.68% |
+| jsx/jsx/html_escape.js | 2/4 | 66.67% |
 
 # Refused
 
@@ -127,15 +127,15 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | typescript/end-of-line/multiline.ts | 2/3 | 71.43% | check: input "\\\n" at 511 is output as "\\\r" at 486, which means "\\\r@\|3/35", not "\\\n@\|3/35" |
 | typescript/import-export/empty-import.ts | 1/1 | 32.43% | check: output comment "// comment // comment" matches no input comment |
 | typescript/interface/comments-generic.ts | 2/2 | 89.66% | check: input comment "// 2" is missing from the output |
+| typescript/interface/long-type-parameters/long-type-parameters.ts | 2/2 | 75.65% | check: input comment "// always extends RectConfig" is missing from the output |
+| typescript/interface/no-semi/14040.ts | 1/1 | 100.00% | check: the output has a syntax error at 712, which the input has not |
+| typescript/interface/no-semi/18858.ts | 1/1 | 100.00% | check: the output has a syntax error at 406, which the input has not |
 | typescript/interface2/comments-declare.ts | 1/1 | 88.89% | check: input comment "// 2" is missing from the output |
 | typescript/interface2/comments.ts | 1/1 | 73.24% | check: input comment "// comment2" is missing from the output |
 | typescript/interface2/comments-ts-and-flow/18216-mutiple-clauses.ts | 1/1 | 89.47% | check: input comment "// Comment" is missing from the output |
 | typescript/interface2/comments-ts-and-flow/18216-type-parameters-mutiple-clauses.ts | 1/1 | 89.47% | check: input comment "// Comment" is missing from the output |
 | typescript/interface2/comments-ts-and-flow/18216-type-parameters.ts | 1/1 | 42.86% | check: input comment "// Comment" is missing from the output |
 | typescript/interface2/comments-ts-and-flow/18216.ts | 1/1 | 52.94% | check: input comment "// Comment" is missing from the output |
-| typescript/interface/long-type-parameters/long-type-parameters.ts | 2/2 | 75.65% | check: input comment "// always extends RectConfig" is missing from the output |
-| typescript/interface/no-semi/14040.ts | 1/1 | 100.00% | check: the output has a syntax error at 712, which the input has not |
-| typescript/interface/no-semi/18858.ts | 1/1 | 100.00% | check: the output has a syntax error at 406, which the input has not |
 | typescript/mapped-type/break-mode/break-mode.ts | 1/1 | 96.30% | check: input "[" at 90 is output as "[" at 97, which means "[@\|-1/16", not "[@\|-1/15" |
 | typescript/parentheses/yield.ts | 1/1 | 40.00% | check: input "yield" at 41 is output as "yield" at 42, which means "yield@\|-1/8", not "yield@\|-1/9" |
 | typescript/type-parameters-arguments/19505.ts | 1/1 | 98.18% | check: input comment "// dangling comment" is missing from the output |

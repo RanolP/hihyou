@@ -868,6 +868,7 @@ function sMemberChain(sctx: JsStreamCtx, n: number): void {
     if (kind(ctx, node) === "parenthesized_expression") {
       const inner = unparen(ctx, node);
       const kept =
+        inner === node ||
         hasComment(ctx, node) ||
         childWhere(ctx, node, (c) => kind(ctx, c) === "comment") !==
           undefined ||

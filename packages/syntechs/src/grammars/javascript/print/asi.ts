@@ -4,7 +4,7 @@
 import { canPrintParamsWithoutParens } from "./functions.js";
 import { needsParens } from "./parens.js";
 import { leftSide } from "./statements.js";
-import { field, type JsCtx, kind, unparen } from "./util.js";
+import { field, isCastParen, type JsCtx, kind, unparen } from "./util.js";
 
 const ALWAYS = new Set([
   "type_assertion",
@@ -18,6 +18,7 @@ const ALWAYS = new Set([
 
 export function expressionNeedsAsiProtection(ctx: JsCtx, n: number): boolean {
   const k = kind(ctx, n);
+  if (isCastParen(ctx, n)) return true;
   if (k === "parenthesized_expression") {
     const inner = unparen(ctx, n);
     if (

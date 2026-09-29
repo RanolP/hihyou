@@ -234,6 +234,13 @@ export function attachComments<O>(
     }
     breakTies();
   }
+  // Enclosing nodes are visited one at a time, so a handler that moves a comment out of its enclosing node
+  // (`a // c\n;[]`: the comment before `;` leads the next statement) can append it out of source order.
+  const bySource = (a: number, b: number) => tree.ord(a) - tree.ord(b);
+  for (const a of attached.values()) {
+    a.leading.sort(bySource);
+    a.trailing.sort(bySource);
+  }
 
   return {
     of: (n) => attached.get(n),

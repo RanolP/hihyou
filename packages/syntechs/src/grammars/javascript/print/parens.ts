@@ -274,6 +274,8 @@ export function needsParens(n: number, ctx: JsCtx): boolean {
   if (parent === undefined) return false;
   const nk = kind(ctx, n);
   const pk = kind(ctx, parent);
+  // A type cast's parentheses (the only ones `role` stops at) are all an expression needs.
+  if (pk === "parenthesized_expression") return false;
   // `return (\n// comment\na, b\n)`: the statement's own parentheses already hold the argument.
   if (
     (pk === "return_statement" || pk === "throw_statement") &&

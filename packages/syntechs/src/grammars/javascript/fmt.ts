@@ -6,7 +6,17 @@ import {
   type Language,
 } from "../../fmt/rules.js";
 import type { StreamCtx, StreamRule } from "../../fmt/stream-format.js";
-import { closeSpan, openSpan, sJump } from "../../fmt/stream.js";
+import {
+  close as closeStream,
+  closeSpan,
+  GROUP,
+  INDENT,
+  open as openStream,
+  openSpan,
+  SOFT,
+  sJump,
+  sLine,
+} from "../../fmt/stream.js";
 import * as gen from "./fmt.gen.js";
 import { grammar, language as parser } from "./index.js";
 import { jsAtoms, jsNormalize } from "./normalize.js";
@@ -24,6 +34,7 @@ import { jsPreds } from "./print/preds.js";
 import { needsParens } from "./print/parens.js";
 import { semiCustoms } from "./print/semi.js";
 import {
+  castLedAsi,
   ignoredStatement,
   STATEMENT_LIST_PARENTS,
   sTok,
@@ -34,7 +45,11 @@ import { typeCustoms, typeRules } from "./print/types.js";
 import { jsCtx, sToken } from "./sink.js";
 import {
   anon,
+  hasComment,
+  isArrayLike,
+  isCastParen,
   isIgnoreComment,
+  isObjectOrRecord,
   isJsx,
   items,
   kind,
@@ -72,6 +87,7 @@ const parenthesized: StreamRule<JsOptions> = (n, s) => {
   const args = sctx.args;
   const inner = items(ctx, n)[0];
   if (inner === undefined) return sTok(ctx, n);
+  if (isCastParen(ctx, n)) return castParens(sctx, n, inner);
   if (kind(ctx, parent(ctx, n)) === PE || !needsParens(unparen(ctx, n), ctx)) {
     sctx.print(inner, args);
     return;
@@ -86,6 +102,33 @@ const parenthesized: StreamRule<JsOptions> = (n, s) => {
   sctx.print(inner, args);
   sTok(ctx, close);
 };
+
+/**
+ * A type cast's parentheses, as prettier prints its ParenthesizedExpression: hugging an object or array with no
+ * comment, else a group that breaks inside them. Parentheses nested in them collapse into them.
+ */
+function castParens(sctx: ReturnType<typeof jsCtx>, n: number, inner: number): void {
+  const ctx = sctx.js;
+  const expr = unparen(ctx, inner);
+  const open = anon(ctx, n, "(");
+  const close = lastChildWhere(ctx, n, (c) => !named(ctx, c) && kind(ctx, c) === ")");
+  const hug = !hasComment(ctx, expr) && (isObjectOrRecord(ctx, expr) || isArrayLike(ctx, expr));
+  if (hug) {
+    sTok(ctx, open);
+    sctx.print(inner, sctx.args);
+    sTok(ctx, close);
+    return;
+  }
+  openStream(GROUP);
+  sTok(ctx, open);
+  openStream(INDENT);
+  sLine(SOFT);
+  sctx.print(inner, sctx.args);
+  closeStream();
+  sLine(SOFT);
+  sTok(ctx, close);
+  closeStream();
+}
 
 /** A node under a `// prettier-ignore` comment keeps its source text. */
 const isIgnored = (ctx: JsCtx, n: number) => {
@@ -166,7 +209,10 @@ export function jsLanguage(
       printsOwnComments: (n, s) => {
         const ctx = jsCtx(s).js;
         return (
-          (isJsx(ctx, n) && !isIgnored(ctx, n)) || isJsxSpreadArgument(ctx, n) || isHeadVia(ctx, n)
+          (isJsx(ctx, n) && !isIgnored(ctx, n)) ||
+          isJsxSpreadArgument(ctx, n) ||
+          isHeadVia(ctx, n) ||
+          (kind(ctx, n) === "expression_statement" && castLedAsi(ctx, n))
         );
       },
       // A node with no rule prints as its token. A node with one prints as its source text under a

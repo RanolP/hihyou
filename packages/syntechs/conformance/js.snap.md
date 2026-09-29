@@ -1,4 +1,4 @@
-js compatibility: 614/804 (76.37%), 32 refused (ok:false), 304 excluded
+js compatibility: 635/804 (78.98%), 31 refused (ok:false), 304 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -22,8 +22,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/arrows/comments/comment-before-arrow.js | 0/1 | 66.67% |
 | js/arrows/parenthesized-body/issue-18776.js | 0/1 | 85.71% |
 | js/assignment/destructuring-heuristic.js | 0/1 | 84.00% |
-| js/assignment-comments/function.js | 0/1 | 84.91% |
-| js/assignment-comments/number.js | 0/1 | 87.50% |
+| js/assignment-comments/function.js | 0/1 | 92.73% |
 | js/async/nested.js | 0/1 | 14.29% |
 | js/async/simple-nested-await.js | 0/1 | 50.00% |
 | js/await/await-with-parens.js | 0/1 | 76.19% |
@@ -34,7 +33,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/class-comment/misc.js | 0/1 | 72.73% |
 | js/classes/multiple-static.js | 0/1 | 40.00% |
 | js/comments/11273.js | 0/2 | 57.14% |
-| js/comments/array-and-object.js | 0/2 | 62.50% |
 | js/comments/blank.js | 0/2 | 92.31% |
 | js/comments/export-and-import.js | 0/2 | 78.05% |
 | js/comments/export.js | 0/2 | 86.67% |
@@ -44,30 +42,11 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/comments/issues.js | 0/2 | 83.58% |
 | js/comments/jsdoc-nestled-dangling.js | 0/2 | 93.02% |
 | js/comments/jsdoc-nestled.js | 0/2 | 81.36% |
-| js/comments/jsdoc.js | 1/2 | 96.15% |
 | js/comments/return-statement.js | 0/2 | 98.34% |
 | js/comments/tagged-template-literal.js | 0/2 | 92.86% |
 | js/comments/trailing-jsdocs.js | 0/2 | 76.00% |
-| js/comments/variable-declarator.js | 0/2 | 71.11% |
-| js/comments-closure-typecast/array-and-object.js | 0/1 | 69.23% |
-| js/comments-closure-typecast/binary-expr.js | 0/1 | 0.00% |
-| js/comments-closure-typecast/closure-compiler-type-cast.js | 0/1 | 68.25% |
-| js/comments-closure-typecast/comment-placement.js | 0/1 | 61.54% |
-| js/comments-closure-typecast/extra-spaces-and-asterisks.js | 0/1 | 0.00% |
-| js/comments-closure-typecast/iife-issue-5850-isolated.js | 0/1 | 0.00% |
-| js/comments-closure-typecast/iife.js | 0/1 | 18.18% |
-| js/comments-closure-typecast/issue-4124.js | 0/1 | 35.00% |
-| js/comments-closure-typecast/issue-9358.js | 0/1 | 0.00% |
-| js/comments-closure-typecast/member.js | 0/1 | 0.00% |
-| js/comments-closure-typecast/nested.js | 0/1 | 12.50% |
-| js/comments-closure-typecast/object-with-comment.js | 0/1 | 28.57% |
-| js/comments-closure-typecast/satisfies.js | 0/1 | 33.33% |
-| js/comments-closure-typecast/superclass.js | 0/1 | 0.00% |
-| js/comments-closure-typecast/ways-to-specify-type.js | 0/1 | 15.38% |
-| js/comments-closure-typecast/no-semi/comments.js | 0/1 | 72.22% |
-| js/comments-closure-typecast/no-semi/multiline.js | 0/1 | 60.00% |
-| js/comments-closure-typecast/no-semi/not-on-same-line.js | 0/1 | 81.82% |
-| js/comments-closure-typecast/no-semi/with-other-comments.js | 0/1 | 50.00% |
+| js/comments/variable-declarator.js | 0/2 | 95.10% |
+| js/comments-closure-typecast/iife.js | 0/1 | 76.92% |
 | js/comments/assignment/variable-declarator.js | 0/1 | 15.38% |
 | js/comments/function/18146.js | 0/1 | 58.06% |
 | js/comments/function/between-parentheses-and-function-body.js | 0/1 | 52.63% |
@@ -170,6 +149,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/test-declarations/jest-each.js | 0/2 | 63.24% |
 | js/throw_statement/comment.js | 0/1 | 43.24% |
 | jsx/ignore/spread.js | 0/1 | 75.68% |
+| jsx/jsx/html_escape.js | 2/4 | 66.67% |
 
 # Refused
 
@@ -186,7 +166,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | js/comments/empty-statements.js | 2/2 | 17.39% | check: output comment "// second // third // first" matches no input comment |
 | js/comments/return-statement-2.js | 2/2 | 84.67% | check: input "!" at 433 is output as "!" at 438, which means "!@operator\|-1/29", not "!@operator\|-1/27" |
 | js/comments/trailing_space.js | 2/2 | 100.00% | check: input "#!/there/is-space-here->         " at 0 is output as "#!/there/is-space-here->" at 0, which means "#!/ther |
-| js/comments-closure-typecast/issue-8045.js | 1/1 | 46.15% | check: input "fooBarBaz" at 446 is output as "fooBarBaz" at 434, which means "fooBarBaz@\|0/14", not "fooBarBaz@\|0/13" |
 | js/comments/between-head-and-body/between-head-and-body.js | 1/1 | 60.15% | check: input comment "// 14" is missing from the output |
 | js/comments/between-head-and-body/empty-statement.js | 1/1 | 51.35% | check: input comment "// 14" is missing from the output |
 | js/comments/between-head-and-body/non-block.js | 1/1 | 64.25% | check: input comment "// 14" is missing from the output |

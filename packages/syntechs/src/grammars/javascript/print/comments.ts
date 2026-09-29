@@ -5,8 +5,10 @@ import type {
 } from "../../../fmt/comments.js";
 import {
   children,
+  field,
   fieldName,
   type HasTree,
+  isTypeCastComment,
   type JsOptions,
   kind,
   lastChildWhere,
@@ -33,7 +35,7 @@ const lastCode = (x: HasTree, n: number) =>
  * before the comment. On a line of its own it leads the next statement (`a\n// c\n;[]`), else it trails the
  * statement (`const a = 1 /* c *\/;` prints `const a = 1; /* c *\/`).
  */
-const beforeSemicolon = (c: CommentContext): CommentTarget | undefined => {
+const beforeSemicolon = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   const { comment, enclosing, following, placement } = c;
   // A `for` head's initializer is a statement, `;` and all.
   if (
@@ -73,7 +75,7 @@ const lastMember = (x: HasTree, n: number): number => {
 };
 
 /** A comment between union members trails the member before it (handleUnionTypeComments). */
-const unionMember = (c: CommentContext): CommentTarget | undefined => {
+const unionMember = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   const { enclosing, preceding, placement } = c;
   if (
     kind(c, enclosing) !== "union_type" ||
@@ -87,7 +89,7 @@ const unionMember = (c: CommentContext): CommentTarget | undefined => {
 const METHODS = new Set(["method_definition", "method_signature"]);
 
 /** `m /* c *\/ () {}`: the comment trails the method's name (handleMethodNameComments). */
-const methodName = (c: CommentContext): CommentTarget | undefined => {
+const methodName = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   const { enclosing, preceding, following } = c;
   if (
     !METHODS.has(kind(c, enclosing)) ||
@@ -116,7 +118,7 @@ const blockFirst = (x: HasTree, block: number): CommentTarget => {
 const TRY_PARTS = new Set(["try_statement", "catch_clause", "finally_clause"]);
 
 /** `try /* c *\/ {}`: a comment before a try, catch or finally block moves into it (handleTryStatementComments). */
-const tryBlock = (c: CommentContext): CommentTarget | undefined => {
+const tryBlock = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   const { enclosing, preceding, following, placement } = c;
   if (
     !TRY_PARTS.has(kind(c, enclosing)) ||
@@ -173,13 +175,45 @@ const nestedConditional = (
     : undefined;
 };
 
-// In prettier's order within each placement: conditional runs early, nestedConditional last.
+/** A type cast comment ending its line leads what follows it, the expression it casts (handleTypeCastComments). */
+const typeCast = (c: CommentContext<JsOptions>): CommentTarget | undefined =>
+  c.placement === "endOfLine" && c.following !== undefined && isTypeCastComment(c, c.comment)
+    ? { node: c.following, as: "leading" }
+    : undefined;
+
+const DECLARATORS = new Set([
+  "variable_declarator",
+  "assignment_expression",
+  "augmented_assignment_expression",
+  "type_alias_declaration",
+]);
+const LITERAL_VALUES = new Set(["object", "array", "template_string", "object_type"]);
+
+/**
+ * `const a = /* c *\/⏎ value`: a comment ending the line after `=` leads the value when it is a block comment or
+ * the value is an object, array or template literal (handleVariableDeclaratorComments).
+ */
+const declaratorValue = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, following, placement } = c;
+  if (placement !== "endOfLine" || following === undefined || !DECLARATORS.has(kind(c, enclosing)))
+    return;
+  const tagged =
+    kind(c, following) === "call_expression" &&
+    kind(c, field(c, following, "arguments")) === "template_string";
+  return LITERAL_VALUES.has(kind(c, following)) || tagged || c.text.startsWith("/*")
+    ? { node: following, as: "leading" }
+    : undefined;
+};
+
+// In prettier's order within each placement: typeCast and conditional run early, nestedConditional last.
 const handlers = [
+  typeCast,
   conditional,
   beforeSemicolon,
   unionMember,
   methodName,
   tryBlock,
+  declaratorValue,
   nestedConditional,
 ];
 

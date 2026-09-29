@@ -5,7 +5,12 @@
 
 import { NO_NODE } from "../../../core/arena.js";
 import type { CustomRule, PredicateRule } from "../../../fmt/dsl/runtime.js";
-import type { StreamRule } from "../../../fmt/stream-format.js";
+import {
+  commentFacts,
+  printLeadingComment,
+  printTrailingComments,
+  type StreamRule,
+} from "../../../fmt/stream-format.js";
 import { lfAfter, nextLineEmpty } from "../../../fmt/text.js";
 import { firstLeaf, type FormatTree, prevLeaf } from "../../../fmt/tree.js";
 import {
@@ -42,6 +47,7 @@ import {
   isBinaryish,
   isComment,
   isJsx,
+  isTypeCastComment,
   items,
   type JsCtx,
   type JsOptions,
@@ -903,9 +909,21 @@ const customs = {
   "stmt.asiGuard": (expr, ctx) => {
     const js = jsCtx(ctx).js;
     const statement = parent(js, expr);
-    if (statement !== undefined && asiGuarded(js, statement))
+    if (statement === undefined || !asiGuarded(js, statement)) {
+      jsCtx(ctx).printNode(expr);
+      return;
+    }
+    if (!castLedAsi(js, statement)) {
       sToken(statement, ";", true);
+      jsCtx(ctx).printNode(expr);
+      return;
+    }
+    const leading = js.comments(statement).leading;
+    for (const c of leading.slice(0, -1)) printLeadingComment(ctx, commentFacts(ctx, c));
+    sToken(statement, ";", true);
+    printLeadingComment(ctx, commentFacts(ctx, leading.at(-1) as number));
     jsCtx(ctx).printNode(expr);
+    printTrailingComments(ctx, statement);
   },
 } satisfies Record<string, CustomRule<JsOptions>>;
 
@@ -913,6 +931,15 @@ const customs = {
 const asiGuarded = (ctx: JsCtx, statement: number) =>
   kind(ctx, first(ctx, statement)) !== "internal_module" &&
   needsAsiGuard(ctx, statement);
+
+/**
+ * A guarded statement whose last leading comment is a type cast: the `;` goes between that comment and the
+ * ones before it, so the cast stays next to its parentheses, and the statement prints its own comments.
+ */
+export const castLedAsi = (ctx: JsCtx, statement: number): boolean => {
+  const last = ctx.comments(statement).leading.at(-1);
+  return last !== undefined && isTypeCastComment(ctx, last) && asiGuarded(ctx, statement);
+};
 
 /** An expression statement that needsAsiGuard puts a `;` before, and so none after. */
 const asiGuardedStatement: PredicateRule<JsOptions> = (node, ctx) => asiGuarded(jsCtx(ctx).js, node);
