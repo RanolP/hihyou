@@ -264,7 +264,14 @@ export const kotlin = format({
         [space, inOrder()],
         inOrder({ spaceWhen: { before: ["annotated_lambda"] } }),
       ),
-    value_arguments: ($) => grpParen(sepBy(",", $.children, { trailing: when("manyArguments"), imaginary: true })),
+    // ktfmt hugs a sole unnamed lambda argument to the parentheses (`doIt({`), which then break inside the lambda,
+    // and drops its trailing comma.
+    value_arguments: ($) =>
+      either(
+        when("soleLambda"),
+        inOrder({ skip: [","] }),
+        grpParen(sepBy(",", $.children, { trailing: when("manyArguments"), imaginary: true })),
+      ),
     // A named argument's value hangs off its `=` once it does not fit on that line, but a lambda stays there.
     value_argument: () =>
       either(

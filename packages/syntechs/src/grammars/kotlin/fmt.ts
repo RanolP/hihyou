@@ -374,6 +374,16 @@ export const customs = {
     }
     return false;
   },
+  /** Of call arguments: one, unnamed, a lambda (`doIt({ })`), with no comment beside it but a trailing comma. */
+  soleLambda: (node, ctx) => {
+    const t = ctx.tree;
+    const n = t.count(node);
+    if (n !== 3 && !(n === 4 && t.kindName(t.child(node, 2)) === ",")) return false;
+    const arg = t.child(node, 1);
+    return (
+      t.kindName(arg) === "value_argument" && t.count(arg) === 1 && t.kindName(t.child(arg, 0)) === "lambda_literal"
+    );
+  },
   /** ktfmt gives a broken argument list a trailing comma only when it holds two or more arguments. */
   manyArguments: (node, ctx) => ctx.items(node).length > 1,
   /** Of a declaration's initializer or delegate, or a function's `=` body: a lambda, a scoping function, or a chain on one. */

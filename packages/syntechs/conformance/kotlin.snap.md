@@ -1,4 +1,4 @@
-kotlin compatibility: 696/753 (92.43%), 2 refused (ok:false), 11 excluded
+kotlin compatibility: 698/753 (92.70%), 2 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -30,7 +30,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/if/blocks.kt | 0/1 | 21.05% |
 | ktfmt/format/if/comment.kt | 0/1 | 61.54% |
 | ktfmt/format/import/importList.kt | 0/1 | 62.50% |
-| ktfmt/format/lambda/lambdaArg.kt | 0/1 | 72.22% |
 | ktfmt/format/lambda/lambdaWithFullType.kt | 0/1 | 44.44% |
 | ktfmt/format/misc/commentStability.kt | 0/1 | 70.59% |
 | ktfmt/format/misc/contextParameters.kt | 0/1 | 61.54% |
@@ -54,7 +53,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/google/longFunctionTypeWrapping.kt | 0/1 | 33.33% |
 | ktfmt/google/redundantTrailingCommas.kt | 0/1 | 83.33% |
 | ktfmt/google/secondaryConstructorNoArgs.kt | 0/1 | 47.06% |
-| ktfmt/google/singleLambdaArgument.kt | 0/1 | 68.75% |
 | ktfmt/google/trailingCommasAlwaysRemoved.kt | 0/1 | 88.00% |
 | ktfmt/google/trailingCommasNotAdded.kt | 0/1 | 79.07% |
 | ktfmt/google/trailingCommasSingleElementLists.kt | 0/1 | 82.61% |
