@@ -42,7 +42,7 @@ import {
   statementRules,
 } from "./print/statements.js";
 import { typeCustoms, typeRules, unionOwnsComments } from "./print/types.js";
-import { jsCtx, sToken } from "./sink.js";
+import { jsCtx, sToken, withComments } from "./sink.js";
 import {
   anon,
   hasComment,
@@ -98,6 +98,16 @@ const parenthesized: StreamRule<JsOptions> = (n, s) => {
     n,
     (c) => !named(ctx, c) && kind(ctx, c) === ")",
   );
+  // A unary operator prints a commented argument inside parentheses of its own, which stand for the source's, so
+  // the argument's comments print outside the argument's own pair: `!(/* c */ (x = y))`.
+  if (kind(ctx, parent(ctx, n)) === "unary_expression") {
+    withComments(sctx, inner, () => {
+      sTok(ctx, open);
+      sctx.printNode(inner, args);
+      sTok(ctx, close);
+    });
+    return;
+  }
   sTok(ctx, open);
   sctx.print(inner, args);
   sTok(ctx, close);

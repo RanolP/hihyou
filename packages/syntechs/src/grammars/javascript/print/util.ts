@@ -395,6 +395,19 @@ export const hasComment = (
   fn?: (c: number) => boolean,
 ) => getComments(ctx, n, flags, fn).length > 0;
 
+/**
+ * Prettier's hasComment for the expression `n`, whose parentheses its AST lacks: tree-sitter attaches a comment
+ * between two pairs of them, `!(\n// c\n(a || b))`, to the inner pair.
+ */
+export function hasCommentThroughParens(ctx: JsCtx, n: number): boolean {
+  for (let m: number | undefined = outer(ctx, n); m !== undefined; ) {
+    if (hasComment(ctx, m)) return true;
+    if (ctx.tree.kindName(m) !== "parenthesized_expression" || isCastParen(ctx, m)) return false;
+    m = first(ctx, m);
+  }
+  return false;
+}
+
 export const isBlockComment = (ctx: JsCtx, c: number) => !ctx.isLineComment(c);
 
 const IGNORE = /^(?:\/\/|\/\*)\s*prettier-ignore\s*(?:\*\/)?$/;

@@ -1,4 +1,4 @@
-js compatibility: 710/804 (88.31%), 21 refused (ok:false), 304 excluded
+js compatibility: 715/804 (88.93%), 17 refused (ok:false), 304 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -61,7 +61,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/function/iife.js | 0/1 | 22.68% |
 | js/function/issue-12967.js | 0/1 | 0.00% |
 | js/if/condition-break/boolean-expression.js | 0/1 | 97.01% |
-| js/if/condition-break/unary-expression.js | 0/1 | 97.06% |
 | js/import-attributes/long-sources.js | 0/1 | 86.54% |
 | js/import-attributes/quote-props/quoted-keys.js | 1/3 | 86.67% |
 | js/label/comment.js | 0/1 | 53.33% |
@@ -94,11 +93,9 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | :------ | :----------: | :---------: | :----------- |
 | js/call/no-argument/no-arguments.js | 1/1 | 64.86% | check: input comment "// 108" is missing from the output |
 | js/chain-expression/tagged-template-literals.js | 1/1 | 61.90% | check: input "a" at 23 is output as "a" at 22, which means "a@object\|0/4", not "a@object\|0/5" |
-| js/comments/15661.js | 2/2 | 17.74% | check: input "!" at 0 is output as "!" at 0, which means "!@operator\|-1/4", not "!@operator\|-1/3" |
 | js/comments/break-continue-statements-3.js | 2/2 | 95.83% | check: output comment "// breaking comment;" matches no input comment |
 | js/comments/dangling_for.js | 2/2 | 28.57% | check: input comment "// comment" is missing from the output |
 | js/comments/empty-statements.js | 2/2 | 17.39% | check: output comment "// second // third // first" matches no input comment |
-| js/comments/return-statement-2.js | 2/2 | 84.67% | check: input "!" at 433 is output as "!" at 438, which means "!@operator\|-1/29", not "!@operator\|-1/27" |
 | js/comments/trailing_space.js | 2/2 | 100.00% | check: input "#!/there/is-space-here->         " at 0 is output as "#!/there/is-space-here->" at 0, which means "#!/ther |
 | js/decorators/comments.js | 1/1 | 93.94% | check: output comment "// B export // C" matches no input comment |
 | js/decorators-export/after_export.js | 1/1 | 76.92% | check: input "export" at 0 is output as "export" at 0, which means "export@\|0/2", not "export@\|-1/2" |
@@ -107,10 +104,8 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | js/for-of/comments.js | 1/1 | 100.00% | check: output comment "//2b //2c" matches no input comment |
 | js/import/comments.js | 2/2 | 63.41% | check: output comment "//comment2 //comment1" matches no input comment |
 | js/import/empty-import/empty-import.js | 1/1 | 64.86% | check: output comment "// comment } from \"a\";" matches no input comment |
-| js/logical-expressions/in-unary-expression.js | 1/1 | 71.62% | check: input "!" at 107 is output as "!" at 107, which means "!@operator\|-1/5", not "!@operator\|-1/4" |
 | js/new-expression/new-expression.js | 1/1 | 88.89% | check: input "new" at 80 is output as "new" at 86, which means "new@\|-1/16", not "new@\|-1/14" |
 | js/quotes/strings.js | 2/2 | 100.00% | check: input "\"abc\"" at 497 is output as "\"abc\"" at 498, which means "str:abc@\|0/4", not "str:abc@\|0/3" |
-| js/unary-expression/comments.js | 1/1 | 16.74% | check: input "!" at 108 is output as "!" at 82, which means "!@operator\|-1/19", not "!@operator\|-1/18" |
 | js/v8_intrinsic/intrinsic_call.js | 1/1 | 45.45% | check: input "IsAsmWasmCode" at 138 is output as ")" at 112, which means ")@\|-1/13", not "IsAsmWasmCode@function\|0/14" |
 | jsx/comments/in-end-tag.js | 1/1 | 32.08% | check: input ">" at 503 is output as ">" at 503, which means ">@\|-1/71", not ">@\|-1/62" |
 

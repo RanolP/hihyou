@@ -12,7 +12,7 @@ import {
   fieldName,
   first,
   type HasTree,
-  hasComment,
+  hasCommentThroughParens,
   isCall,
   isMember,
   isOptional,
@@ -657,7 +657,7 @@ function binaryishNeedsParens(
       return true;
     case "unary_expression":
       // The unary printer parenthesizes and indents an argument that has comments itself.
-      return !hasComment(ctx, n);
+      return !hasCommentThroughParens(ctx, n);
     case "member_expression":
     case "subscript_expression":
       return key === "object";

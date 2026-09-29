@@ -10,12 +10,15 @@ import {
   field,
   fieldName,
   type HasTree,
+  isCastParen,
   isTypeCastComment,
   type JsOptions,
   kind,
   lastChildWhere,
   named,
+  outer,
   parent,
+  unparen,
 } from "./util.js";
 
 // Prettier's handleComments for estree (language-js/comments/handle-comments.js), over tree-sitter's tree: each
@@ -462,6 +465,40 @@ const memberProperty = (c: CommentContext<JsOptions>): CommentTarget | undefined
     : undefined;
 };
 
+/**
+ * `a && ( // c⏎b)`: prettier's AST has no parentheses, so a comment after an expression's `(` and before its code
+ * sits between that expression and the node before it in the parent, and prettier places it there: this end-of-line
+ * one trails `a`. The parent's handlers run on that view first.
+ */
+const afterOpenParen = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, following, placement } = c;
+  if (
+    placement === "remaining" ||
+    c.preceding !== undefined ||
+    following === undefined ||
+    kind(c, enclosing) !== "parenthesized_expression" ||
+    isCastParen(c, enclosing)
+  )
+    return;
+  const top = outer(c, enclosing);
+  const holder = parent(c, top);
+  // An arrow's body keeps it, as prettier's does.
+  if (holder === undefined || kind(c, holder) === "arrow_function") return;
+  const all = children(c, holder);
+  const preceding = all
+    .slice(0, all.indexOf(top))
+    .findLast((n) => named(c, n) && isCode(c, n));
+  if (preceding === undefined) return;
+  const view = { ...c, enclosing: holder, preceding, following: unparen(c, following) };
+  for (const h of handlers) {
+    const target = h(view);
+    if (target) return target;
+  }
+  return placement === "ownLine"
+    ? { node: view.following, as: "leading" }
+    : { node: preceding, as: "trailing" };
+};
+
 // In prettier's order within each placement: typeCast and conditional run early, nestedConditional last.
 const handlers = [
   typeCast,
@@ -484,7 +521,7 @@ const handlers = [
 ];
 
 export const handleComment: CommentHandler<JsOptions> = (c) => {
-  for (const h of handlers) {
+  for (const h of [afterOpenParen, ...handlers]) {
     const target = h(c);
     if (target) return target;
   }
