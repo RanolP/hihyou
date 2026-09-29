@@ -193,6 +193,8 @@ export type Tree =
       readonly hardWhen?: Pairs;
       /** The child after a token of these goes after a line, indented, in a group of its own (a hanging break). */
       readonly hangAfter?: readonly string[];
+      /** Of the child after a `hangAfter` token: where it holds, the child follows a space instead of hanging. */
+      readonly hug?: Cond;
       /** A child of these kinds goes on a line of its own, indented. */
       readonly lineBefore?: readonly string[];
       /** The children between a `{` and its `}` go one per line, indented; `{}` holding none stays `{}`. */
@@ -728,6 +730,7 @@ export interface InOrderOf<K, C> {
   readonly skip?: readonly K[];
   readonly hardWhen?: PairsOf<K, C>;
   readonly hangAfter?: readonly K[];
+  readonly hug?: C;
   readonly lineBefore?: readonly K[];
   readonly braces?: boolean;
 }
@@ -772,6 +775,7 @@ export function inOrder(o?: Piece<"space"> | InOrderOf<string, unknown>): unknow
     ...(opts.skip?.length ? { skip: opts.skip } : {}),
     ...(hardWhen ? { hardWhen } : {}),
     ...(opts.hangAfter?.length ? { hangAfter: opts.hangAfter } : {}),
+    ...(opts.hug === undefined ? {} : { hug: plain(opts.hug) }),
     ...(opts.lineBefore?.length ? { lineBefore: opts.lineBefore } : {}),
     ...(opts.braces ? { braces: true } : {}),
   });

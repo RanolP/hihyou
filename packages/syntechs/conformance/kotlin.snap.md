@@ -1,4 +1,4 @@
-kotlin compatibility: 448/753 (59.50%), 55 refused (ok:false), 11 excluded
+kotlin compatibility: 467/753 (62.02%), 47 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -13,8 +13,8 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | source-files.txt: Multiple Imports On A Single Line | 0/1 | 50.00% |
 | packages/syntechs/src/grammars/kotlin/corpus/Collections.kt | 0/1 | 94.33% |
 | packages/syntechs/src/grammars/kotlin/corpus/Result.kt | 0/1 | 98.38% |
-| packages/syntechs/src/grammars/kotlin/corpus/Delay.kt | 0/1 | 94.74% |
-| packages/syntechs/src/grammars/kotlin/corpus/Transform.kt | 0/1 | 80.53% |
+| packages/syntechs/src/grammars/kotlin/corpus/Delay.kt | 0/1 | 95.32% |
+| packages/syntechs/src/grammars/kotlin/corpus/Transform.kt | 0/1 | 92.98% |
 | packages/syntechs/src/grammars/kotlin/corpus/Okio.kt | 0/1 | 95.48% |
 | packages/syntechs/src/grammars/kotlin/corpus/build.gradle.kts | 0/1 | 94.20% |
 | ktfmt/format/annotation/annotationOnProperty.kt | 0/1 | 66.67% |
@@ -47,8 +47,9 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/call/dereferenceLambdaAndTwoInvocations.kts | 0/1 | 20.00% |
 | ktfmt/format/call/dirrefentIndentations.kt | 0/1 | 78.05% |
 | ktfmt/format/call/functionReference.kt | 0/1 | 88.00% |
-| ktfmt/format/call/gh589.kt | 0/1 | 47.69% |
+| ktfmt/format/call/gh589.kt | 0/1 | 70.15% |
 | ktfmt/format/call/gh633-2.kt | 0/1 | 43.59% |
+| ktfmt/format/call/gh633.kt | 0/1 | 67.05% |
 | ktfmt/format/call/multiLineArgumentsStartWithLambda.kts | 0/1 | 58.82% |
 | ktfmt/format/call/multiLineArgumentsWithPrefixAndTrail.kts | 0/1 | 44.44% |
 | ktfmt/format/call/multiLineArgumentsWithSuper.kts | 0/1 | 58.82% |
@@ -80,9 +81,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/comment/blockComment.kt | 0/1 | 62.50% |
 | ktfmt/format/comment/shebang.kts | 0/1 | 88.89% |
 | ktfmt/format/enums/CommaWithSemicolon.kt | 0/1 | 80.00% |
-| ktfmt/format/function/assignmentWithScopeFunction.kt | 0/1 | 14.29% |
-| ktfmt/format/function/dotQualifiedScopeFun.kt | 0/1 | 40.35% |
-| ktfmt/format/function/exprBodyWithScopeFun.kt | 0/1 | 30.77% |
+| ktfmt/format/function/assignmentWithScopeFunction.kt | 0/1 | 44.19% |
 | ktfmt/format/function/parametersBreakWithLambda.kt | 0/1 | 55.17% |
 | ktfmt/format/function/trailingCommasInDefinitions.kt | 0/1 | 90.57% |
 | ktfmt/format/if/comment.kt | 0/1 | 61.54% |
@@ -97,15 +96,10 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/kdoc/basic.kt | 0/1 | 0.00% |
 | ktfmt/format/kdoc/nestedKDoc.kt | 0/1 | 0.00% |
 | ktfmt/format/lambda/lambdaArg.kt | 0/1 | 66.67% |
-| ktfmt/format/lambda/lambdaAssignment.kt | 0/1 | 33.33% |
 | ktfmt/format/lambda/lambdaChain.kt | 0/1 | 64.29% |
 | ktfmt/format/lambda/lambdaChain2.kt | 0/1 | 25.00% |
 | ktfmt/format/lambda/lambdaConditionaBreak.kt | 0/1 | 40.00% |
 | ktfmt/format/lambda/lambdaWithFullType.kt | 0/1 | 44.44% |
-| ktfmt/format/lambda/lambdaWithMissingOptionalArrow.kt | 0/1 | 30.77% |
-| ktfmt/format/lambda/lambdaWithMultipleStatements.kt | 0/1 | 35.71% |
-| ktfmt/format/lambda/lambdaWithMultipleStatementsAndComments.kt | 0/1 | 23.81% |
-| ktfmt/format/lambda/lambdaWithRequiredArrow.kt | 0/1 | 30.77% |
 | ktfmt/format/lambda/nestedMultiLineLambdas.kt | 0/1 | 77.27% |
 | ktfmt/format/lambda/qualifiedExpressionsWithLambdas.kt | 0/1 | 79.69% |
 | ktfmt/format/lambda/twoLambdas.kt | 0/1 | 40.00% |
@@ -119,8 +113,8 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/misc/commentStability3.kt | 0/1 | 92.68% |
 | ktfmt/format/misc/commentStability4.kt | 0/1 | 76.92% |
 | ktfmt/format/misc/commentsRepectMaxWidth.kt | 0/1 | 66.67% |
-| ktfmt/format/misc/contextParameters.kt | 0/1 | 45.00% |
-| ktfmt/format/misc/contextReceivers.kt | 0/1 | 50.98% |
+| ktfmt/format/misc/contextParameters.kt | 0/1 | 61.54% |
+| ktfmt/format/misc/contextReceivers.kt | 0/1 | 64.00% |
 | ktfmt/format/misc/explicitBackingField.kt | 0/1 | 71.43% |
 | ktfmt/format/misc/explicitBackingFieldWithoutType.kt | 0/1 | 75.00% |
 | ktfmt/format/misc/explicitBackingWithPrivateSet.kt | 0/1 | 80.00% |
@@ -132,14 +126,9 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/misc/trailingCommas.kt | 0/1 | 22.81% |
 | ktfmt/format/misc/unaryPostfix.kt | 0/1 | 90.00% |
 | ktfmt/format/misc/unaryPrefix.kt | 0/1 | 57.89% |
-| ktfmt/format/property/backingFieldWithChainedScopingFunction.kt | 0/1 | 46.15% |
-| ktfmt/format/property/backingFieldWithChainedScopingFunction2.kt | 0/1 | 46.15% |
-| ktfmt/format/property/backingFieldWithChainedScopingFunction3.kt | 0/1 | 57.14% |
-| ktfmt/format/property/propertyWithChainedScopingFunction.kt | 0/1 | 0.00% |
-| ktfmt/format/property/propertyWithChainedScopingFunction2.kt | 0/1 | 0.00% |
-| ktfmt/format/property/propertyWithChainedScopingFunction3.kt | 0/1 | 0.00% |
-| ktfmt/format/property/propertyWithChainedScopingFunction4.kt | 0/1 | 0.00% |
-| ktfmt/format/property/propertyWithChainedScopingFunction5.kt | 0/1 | 0.00% |
+| ktfmt/format/property/backingFieldWithChainedScopingFunction.kt | 0/1 | 71.43% |
+| ktfmt/format/property/backingFieldWithChainedScopingFunction2.kt | 0/1 | 71.43% |
+| ktfmt/format/property/backingFieldWithChainedScopingFunction3.kt | 0/1 | 80.00% |
 | ktfmt/format/property/trailingCommasInProperties.kt | 0/1 | 72.73% |
 | ktfmt/format/string/callAfterMultilineString.kt | 0/1 | 80.95% |
 | ktfmt/format/string/commentAfterMultilineString.kt | 0/1 | 54.55% |
@@ -177,7 +166,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/when/whenWithSubject.kt | 0/1 | 78.26% |
 | ktfmt/google/anonymousFunction.kt | 0/1 | 85.71% |
 | ktfmt/google/anonymousFunctionWithReceiver.kt | 0/1 | 85.71% |
-| ktfmt/google/assignedLambda.kt | 0/1 | 33.33% |
 | ktfmt/google/basic.kt | 0/1 | 54.55% |
 | ktfmt/google/callAfterMultiLineString.kt | 0/1 | 72.22% |
 | ktfmt/google/callAfterMultiLineString2.kt | 0/1 | 71.43% |
@@ -189,7 +177,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/google/forcedBreaksInFunCalls.kt | 0/1 | 69.44% |
 | ktfmt/google/forwardPropagationOfBreaks3.kt | 0/1 | 66.67% |
 | ktfmt/google/fqNestedTypes.kt | 0/1 | 38.10% |
-| ktfmt/google/if.kt | 0/1 | 33.33% |
+| ktfmt/google/if.kt | 0/1 | 40.00% |
 | ktfmt/google/ifWithElse.kt | 0/1 | 90.00% |
 | ktfmt/google/ifWithMaxWidthCondition.kt | 0/1 | 47.06% |
 | ktfmt/google/indentAfterABreak.kt | 0/1 | 51.85% |
@@ -209,6 +197,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/new_codestyle/annotation/AnnotationsOnParameters.kt | 0/1 | 82.61% |
 | ktfmt/new_codestyle/annotation/AnnotationsOnTypes.kt | 0/1 | 93.20% |
 | ktfmt/new_codestyle/calls/gh633-2.kt | 0/1 | 43.59% |
+| ktfmt/new_codestyle/calls/gh633.kt | 0/1 | 67.05% |
 | ktfmt/kdoc/testMultiLineLink.kt | 0/1 | 69.23% |
 | ktfmt/kdoc/testSeparateParagraphMarkers1.kt | 0/1 | 57.14% |
 | ktfmt/kdoc/testList1.kt | 0/1 | 20.00% |
@@ -274,7 +263,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | ktfmt/format/annotation/functionTypes.kt | 1/1 | 53.33% | check: input "Inject" at 194 is output as "InjectNamed" at 180, which means "InjectNamed", not "Inject" |
 | ktfmt/format/annotation/multipleAnnotations.kt | 1/1 | 63.16% | check: input "Annotation" at 158 is output as "Annotationreturn" at 157, which means "Annotationreturn", not "Annotation |
 | ktfmt/format/annotation/noNewLineAfterAnnotations.kt | 1/1 | 64.94% | check: input comment "//" is missing from the output |
-| ktfmt/format/call/gh633.kt | 1/1 | 31.58% | formatter-error: no rule: property_delegate at 255 |
 | ktfmt/format/class/blankLineBetweenMembers.kt | 1/1 | 13.79% | formatter-error: an enum body with members: enum_class_body at 72 |
 | ktfmt/format/class/emptyCompanionObject.kt | 1/1 | 53.85% | formatter-error: no rule: anonymous_initializer at 52 |
 | ktfmt/format/class/emptyEnumWithSemicolon4.kt | 1/1 | 42.86% | formatter-error: an enum body with members: enum_class_body at 17 |
@@ -288,22 +276,16 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | ktfmt/format/class/trailingCommentAfterMethod.kt | 1/1 | 91.11% | check: output comment "// Hanging after fn // Trailing after fn" matches no input comment |
 | ktfmt/format/function/varargs.kt | 1/1 | 50.00% | formatter-error: no rule: spread_expression at 38 |
 | ktfmt/format/if/blocks.kt | 1/1 | 18.18% | formatter-error: no rule: do_while_statement at 34 |
-| ktfmt/format/lambda/lambdaWithMultipleStatementsAndComments2.kt | 1/1 | 23.81% | check: input comment "/* no-op */" is missing from the output |
+| ktfmt/format/lambda/lambdaWithMultipleStatementsAndComments2.kt | 1/1 | 65.00% | check: input comment "/* no-op */" is missing from the output |
 | ktfmt/format/lambda/lambdaWithOnlyComments.kt | 1/1 | 0.00% | check: input comment "/* do nothing */" is missing from the output |
-| ktfmt/format/lambda/lambdaWithOnlyComments2.kt | 1/1 | 14.29% | check: input comment "/* do nothing */" is missing from the output |
-| ktfmt/format/lambda/lambdaWithOptionalArrow.kt | 1/1 | 15.38% | check: input "->" at 10 is output as "}" at 9, which means "}", not "->" |
+| ktfmt/format/lambda/lambdaWithOnlyComments2.kt | 1/1 | 22.22% | check: input comment "/* do nothing */" is missing from the output |
+| ktfmt/format/lambda/lambdaWithOptionalArrow.kt | 1/1 | 83.33% | check: input "->" at 10 is output as "}" at 9, which means "}", not "->" |
 | ktfmt/format/lambda/lastParameterWithComment.kt | 1/1 | 64.29% | check: input comment "// no-op" is missing from the output |
 | ktfmt/format/lambda/lastParameterWithComment2.kt | 1/1 | 80.95% | check: input comment "/* no-op */" is missing from the output |
 | ktfmt/format/misc/doWhile.kt | 1/1 | 42.86% | formatter-error: no rule: do_while_statement at 18 |
 | ktfmt/format/misc/semicolonsInEnums.kt | 1/1 | 66.67% | formatter-error: an enum body with members: enum_class_body at 118 |
-| ktfmt/format/property/delegation.kt | 1/1 | 100.00% | formatter-error: no rule: property_delegate at 6 |
-| ktfmt/format/property/delegation2.kt | 1/1 | 60.00% | formatter-error: no rule: property_delegate at 41 |
-| ktfmt/format/property/delegationWithChainedScopingFunction.kt | 1/1 | 60.00% | formatter-error: no rule: property_delegate at 8 |
-| ktfmt/format/property/delegationWithChainedScopingFunction2.kt | 1/1 | 60.00% | formatter-error: no rule: property_delegate at 8 |
-| ktfmt/format/property/delegationWithChainedScopingFunction3.kt | 1/1 | 60.00% | formatter-error: no rule: property_delegate at 8 |
-| ktfmt/format/property/lineCommentAboveDelegate.kt | 1/1 | 21.05% | formatter-error: no rule: property_delegate at 25 |
 | ktfmt/format/property/propertiesWithAccessors.kt | 1/1 | 27.78% | formatter-error: no rule: parameter_with_optional_type at 95 |
-| ktfmt/format/property/propertiesWithAccessors2.kt | 1/1 | 44.44% | formatter-error: no rule: property_delegate at 59 |
+| ktfmt/format/property/propertiesWithAccessors2.kt | 1/1 | 44.44% | formatter-error: no rule: parameter_with_optional_type at 119 |
 | ktfmt/format/type/compondBoundOnClassDelegate.kt | 1/1 | 100.00% | formatter-error: no rule: explicit_delegation at 17 |
 | ktfmt/format/type/nullableTypes.kts | 1/1 | 82.35% | check: input "Anno" at 269 is output as "AnnoInt" at 269, which means "AnnoInt", not "Anno" |
 | ktfmt/google/arrayLiteralInAnnotation.kt | 1/1 | 36.11% | formatter-error: no rule: collection_literal at 38 |
@@ -319,7 +301,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | ktfmt/new_codestyle/annotation/AnnotationsWithComments.kt | 1/1 | 76.19% | check: input "Anno2" at 131 is output as "Anno2f" at 130, which means "Anno2f", not "Anno2" |
 | ktfmt/new_codestyle/annotation/DeclarationAnnotations.kt | 1/1 | 93.62% | check: input "Anno" at 740 is output as "Annoset" at 745, which means "Annoset", not "Anno" |
 | ktfmt/new_codestyle/annotation/UseSiteTargets.kt | 1/1 | 52.94% | check: input "Inject" at 219 is output as "InjectNamed" at 219, which means "InjectNamed", not "Inject" |
-| ktfmt/new_codestyle/calls/gh633.kt | 1/1 | 31.58% | formatter-error: no rule: property_delegate at 255 |
 
 # Excluded
 

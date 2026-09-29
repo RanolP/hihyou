@@ -22,6 +22,7 @@ import {
   not,
   prevItem,
   sepBy,
+  softline,
   space,
   spansLines,
   splitOn,
@@ -53,12 +54,21 @@ const before = [
 const after = ["(", "[", ".", "?.", "::"] as const;
 
 /** Children joined by spaces, but around the punctuation in `before`/`after` and the extra kinds given. */
-const spaced = (o: { readonly tightBefore?: readonly string[]; readonly braces?: boolean; readonly hang?: boolean } = {}) =>
+const spaced = (
+  o: {
+    readonly tightBefore?: readonly string[];
+    readonly braces?: boolean;
+    readonly hang?: boolean;
+    /** The rule naming the right sides that stay on the `=`'s line (see `hug`). */
+    readonly hug?: "hugged" | "huggedChain";
+  } = {},
+) =>
   inOrder({
     join: "space",
     tight: { before: [...before, ...(o.tightBefore ?? [])] as never[], after: [...after, "modifiers"] as never[] },
     ...(o.braces ? { braces: true } : {}),
     ...(o.hang ? { hangAfter: ["=", "+=", "-=", "*=", "/=", "%="] as never[] } : {}),
+    ...(o.hug ? { hug: when(o.hug) } : {}),
   });
 
 /** Adjacent children, with a space after each `,`. */
@@ -132,15 +142,18 @@ export const kotlin = format({
     parameter: () => spaced({ tightBefore: [":"] }),
     parameter_modifiers: () => inOrder(space),
     parameter_modifier: () => inOrder(),
-    function_body: () => spaced({ braces: true, hang: true }),
+    function_body: () => spaced({ braces: true, hang: true, hug: "huggedChain" }),
     anonymous_function: () => spaced({ tightBefore: [":"] }),
     property_declaration: () =>
       inOrder({
         join: "space",
         tight: { before: [...before, ":"] as never[], after: [...after, "modifiers"] as never[] },
         hangAfter: ["="],
+        hug: when("huggedChain"),
         lineBefore: ["getter", "setter"],
       }),
+    // `by lazy { }`: the delegate hangs off `by` as an initializer hangs off `=`.
+    property_delegate: () => inOrder({ join: "space", hangAfter: ["by"], hug: when("huggedChain") }),
     variable_declaration: () => spaced({ tightBefore: [":"] }),
     multi_variable_declaration: () => adjacent,
     getter: () => spaced({ tightBefore: [":", "("] }),
@@ -160,7 +173,8 @@ export const kotlin = format({
     parenthesized_type: () => inOrder(),
     type_modifiers: () => inOrder(space),
 
-    assignment: () => spaced({ hang: true }),
+    // ktfmt keeps a lambda or scoping function on the `=`'s line, but hangs a chain on one.
+    assignment: () => spaced({ hang: true, hug: "hugged" }),
     directly_assignable_expression: () => inOrder(),
     call_expression: () => inOrder(),
     // A trailing lambda alone (`forEach { }`) is spaced off its callee, which prints before this node.
@@ -172,7 +186,7 @@ export const kotlin = format({
       ),
     value_arguments: ($) => grpParen(sepBy(",", $.children, { trailing: true })),
     value_argument: () => inOrder({ join: "space", tight: { after: ["*"] } }),
-    annotated_lambda: () => inOrder(space),
+    annotated_lambda: () => inOrder({ join: "space", tight: { after: ["label"] } }),
     lambda_literal: () =>
       either(
         isEmpty,
@@ -180,7 +194,13 @@ export const kotlin = format({
         group(inOrder({ join: "line", hangAfter: ["{", "->"], spaceWhen: { before: ["->"] } })),
       ),
     lambda_parameters: () => adjacent,
-    navigation_expression: () => inOrder(),
+    // Once the lambda of the scoping function a chain starts at breaks, ktfmt puts each selector on its own line.
+    navigation_expression: ($) =>
+      either(
+        when("scopingChain"),
+        group([$.children.at(0).andThen((r) => r), indent([softline, $.children.at(1).andThen((s) => s)])]),
+        inOrder(),
+      ),
     navigation_suffix: () => inOrder(),
     indexing_expression: () => inOrder(),
     indexing_suffix: () => adjacent,

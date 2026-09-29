@@ -52,6 +52,7 @@ function eachCond(ir: FormatIR, visit: (c: Cond) => void): void {
       cond(x.tight?.when);
       cond(x.spaceWhen?.when);
       cond(x.hardWhen?.when);
+      cond(x.hug);
     } else if (x.t === "splitOn") {
       cond(x.wrapItem);
       if (x.item.t === "words") cond(x.item.keepLines);
@@ -848,14 +849,19 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
         const hard = pairs(x.hardWhen);
         if (hard !== undefined) steps.push([hard, "sHardline();"]);
         if (x.lineBefore?.length) steps.push([oneOf("t.kindName(c)", x.lineBefore), "{ open(INDENT); sHardline(); frames = 1; }"]);
-        if (x.hangAfter?.length)
-          steps.push([oneOf("t.kindName(prev)", x.hangAfter), "{ open(GROUP); open(INDENT); sLine(0); frames = 2; }"]);
+        if (x.hangAfter?.length) {
+          const hang = oneOf("t.kindName(prev)", x.hangAfter);
+          // A hugged child prints its own space or hanging break (`printHugged`).
+          if (x.hug !== undefined) steps.push([`${hang} && named && ${cond(x.hug, false, "c")}`, "hugged = true;"]);
+          steps.push([hang, "{ open(GROUP); open(INDENT); sLine(0); frames = 2; }"]);
+        }
         if (tight !== undefined) steps.push([tight, "{}"]);
         if (spaced !== undefined) steps.push([spaced, 'sText(" ");']);
         const spacing = steps.length > 0 || join !== undefined;
         if (spacing) line("let prev = -1;");
         if (x.lineBefore?.length || x.hangAfter?.length) line("let frames = 0;");
         if (x.braces) line("let inBraces = false;");
+        if (x.hug !== undefined) line("let hugged = false;");
         block("for (let i = 0, count = t.count(node); i < count; i++)", () => {
           line("const c = t.child(node, i);");
           line("const named = t.named(c);");
@@ -920,7 +926,16 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
             depth--;
             line("}");
           };
-          block("if (named)", printNamed, "} else sToken(c, t.text(c));");
+          if (x.hug !== undefined)
+            block("if (hugged)", () => {
+              line("printHugged(ctx, c);");
+              line("hugged = false;");
+            }, "} else if (named) {");
+          else line("if (named) {");
+          depth++;
+          printNamed();
+          depth--;
+          line("} else sToken(c, t.text(c));");
           if (x.lineBefore?.length || x.hangAfter?.length) line("for (; frames > 0; frames--) close();");
         });
         return;
@@ -1097,7 +1112,7 @@ export function emit(
       0,
       'import { hasChild } from "../../fmt/dsl/runtime.js";',
     );
-  for (const f of ["allBefore", "prevItem", "lastItem", "packable"].filter((f) => parts.some((p) => p.includes(`${f}(`))))
+  for (const f of ["allBefore", "prevItem", "lastItem", "packable", "printHugged"].filter((f) => parts.some((p) => p.includes(`${f}(`))))
     parts.splice(
       parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
       0,

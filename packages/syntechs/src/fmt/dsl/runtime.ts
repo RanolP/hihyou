@@ -1,7 +1,25 @@
 // What the generated formatters (`fmt.gen.ts`) and the two-pass reference (`reference.ts`) share: how a spec's
 // references bind to a node's children, so both print the same source token for the same spec token; the
 // entries of the flattened sequence; and the types of the hand-written rules a spec names.
-import { sHardline, sToken } from "../stream.js";
+import {
+  close,
+  closeChoice,
+  closeDead,
+  closeSpan,
+  closeState,
+  GROUP,
+  INDENT,
+  open,
+  openChoice,
+  openDead,
+  openSpan,
+  openState,
+  sHardline,
+  sJump,
+  sLine,
+  sText,
+  sToken,
+} from "../stream.js";
 import {
   type CommentFacts,
   commentFacts,
@@ -626,4 +644,34 @@ export function firstTextIs<O>(
     return is.includes(text) || prefix.some((p) => text.startsWith(p));
   }
   return false;
+}
+
+/**
+ * Child `c` of an `inOrder`'s `hug`: after a space where its text up to its first forced line break fits (prettier's
+ * conditionalGroup), else hanging on a line of its own, indented, as `hangAfter` prints any other child.
+ */
+export function printHugged<O>(ctx: StreamCtx<O>, c: number): void {
+  const d = openDead();
+  let span: number;
+  try {
+    span = openSpan();
+    ctx.print(c);
+    closeSpan();
+  } finally {
+    closeDead(d);
+  }
+  openChoice(false);
+  openState();
+  sText(" ");
+  sJump(span);
+  closeState();
+  openState();
+  open(GROUP);
+  open(INDENT);
+  sLine(0);
+  sJump(span);
+  close();
+  close();
+  closeState();
+  closeChoice();
 }

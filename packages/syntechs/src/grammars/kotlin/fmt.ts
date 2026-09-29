@@ -1,3 +1,4 @@
+import { NO_NODE } from "../../core/arena.js";
 import type { Normalize } from "../../fmt/check.js";
 import {
   type ImportOptions,
@@ -9,7 +10,7 @@ import { defineLanguage, type Language } from "../../fmt/rules.js";
 import { docCommentWords, kdoc } from "../../fmt/dsl/doc-comment.js";
 import type { ImportRule, PredicateRule } from "../../fmt/dsl/runtime.js";
 import { newlineBetween } from "../../fmt/text.js";
-import { type FormatTree, firstLeaf } from "../../fmt/tree.js";
+import { type FormatTree, firstLeaf, prevLeaf } from "../../fmt/tree.js";
 import { grammar } from "./bundle.js";
 import * as gen from "./fmt.gen.js";
 import { language } from "./index.js";
@@ -114,6 +115,48 @@ const imports: ImportRule<KotlinOptions> = {
   implicit: (name) => operators.has(name) || /^component\d+$/.test(name),
 };
 
+/**
+ * A scoping function call, which ktfmt (its `isLambdaOrScopingFunction`) keeps on the line of the `=` before it:
+ * a trailing lambda alone, unannotated, after a name or, where `member`, a name's member (`scope.launch label@{`).
+ */
+function scopingCall(tree: FormatTree, node: number, member: boolean): boolean {
+  if (tree.kindName(node) !== "call_expression" || tree.count(node) !== 2) return false;
+  const suffix = tree.child(node, 1);
+  if (tree.count(suffix) !== 1 || tree.kindName(tree.child(suffix, 0)) !== "annotated_lambda") return false;
+  const lambda = tree.child(suffix, 0);
+  for (let i = 0; i < tree.count(lambda); i++) if (tree.kindName(tree.child(lambda, i)) === "annotation") return false;
+  const callee = tree.child(node, 0);
+  if (tree.kindName(callee) === "simple_identifier") return true;
+  return (
+    member &&
+    tree.kindName(callee) === "navigation_expression" &&
+    tree.kindName(tree.child(callee, 0)) === "simple_identifier"
+  );
+}
+
+/** The first receiver of a member chain (`a` of `a.b(c).d`), or -1 when `node` is no chain. */
+function chainHead(tree: FormatTree, node: number): number {
+  let n = node;
+  for (;;) {
+    const kind = tree.kindName(n);
+    if (kind === "navigation_expression") n = tree.child(n, 0);
+    else if (kind === "call_expression" && tree.kindName(tree.child(n, 0)) === "navigation_expression")
+      n = tree.child(n, 0);
+    else return n === node ? -1 : n;
+  }
+}
+
+/** Whether ktfmt keeps `node`, the right side of an `=`, on the `=`'s line: a lambda or a scoping function. */
+function lambdaOrScoping(t: FormatTree, node: number, chained: boolean): boolean {
+  // A line comment before it ends the line, so the right side cannot stay on it.
+  const before = prevLeaf(t, node);
+  if (before !== NO_NODE && t.kindName(before) === "line_comment") return false;
+  if (t.kindName(node) === "lambda_literal" || scopingCall(t, node, true)) return true;
+  if (!chained) return false;
+  const head = chainHead(t, node);
+  return head !== -1 && scopingCall(t, head, false);
+}
+
 /** The items of the lists `writtenBroken` asks about: call arguments, and function and constructor parameters. */
 const listed = new Set(["value_argument", "parameter", "class_parameter"]);
 
@@ -134,6 +177,15 @@ export const customs = {
     let items = 0;
     for (let i = 0; i < t.count(node); i++) if (listed.has(t.kindName(t.child(node, i)))) items++;
     return items > 1;
+  },
+  /** Of a declaration's initializer or delegate, or a function's `=` body: a lambda, a scoping function, or a chain on one. */
+  huggedChain: (node, ctx) => lambdaOrScoping(ctx.tree, node, true),
+  /** Of an assignment's right side: a lambda or a scoping function, but no chain on one. */
+  hugged: (node, ctx) => lambdaOrScoping(ctx.tree, node, false),
+  /** Of a member access: its chain starts at a scoping function (`run { }.x`). */
+  scopingChain: (node, ctx) => {
+    const head = chainHead(ctx.tree, node);
+    return head !== -1 && scopingCall(ctx.tree, head, false);
   },
   /** Of a lambda's `statements`: ktfmt keeps the lambda broken when the source breaks the line before them. */
   lambdaWrittenBroken: (node, ctx) => {
