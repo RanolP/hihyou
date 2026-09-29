@@ -1,4 +1,4 @@
-js compatibility: 667/804 (82.96%), 25 refused (ok:false), 304 excluded
+js compatibility: 676/804 (84.08%), 25 refused (ok:false), 304 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -22,7 +22,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/arrows/comments/comment-before-arrow.js | 0/1 | 66.67% |
 | js/arrows/parenthesized-body/issue-18776.js | 0/1 | 85.71% |
 | js/assignment/destructuring-heuristic.js | 0/1 | 84.00% |
-| js/assignment-comments/function.js | 0/1 | 92.73% |
 | js/async/nested.js | 0/1 | 14.29% |
 | js/async/simple-nested-await.js | 0/1 | 50.00% |
 | js/await/await-with-parens.js | 0/1 | 76.19% |
@@ -62,14 +61,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/decorators/class-expression/member-expression.js | 0/2 | 0.00% |
 | js/decorators/class-expression/super-class.js | 0/2 | 14.29% |
 | js/destructuring/issue-5988.js | 0/1 | 0.00% |
-| js/discard-binding/array-pattern.js | 0/1 | 81.08% |
-| js/discard-binding/basic.js | 0/1 | 40.00% |
-| js/discard-binding/discard-binding-for-await-using-binding.js | 0/1 | 28.57% |
-| js/discard-binding/discard-binding-for-using-binding.js | 0/1 | 57.14% |
-| js/discard-binding/function-parameter.js | 0/1 | 86.36% |
-| js/discard-binding/object-pattern.js | 0/1 | 67.39% |
-| js/discard-binding/unary-expression-void.js | 0/1 | 83.33% |
-| js/discard-binding/using-variable-declarator.js | 0/1 | 73.97% |
 | js/embeded/indention/19518.js | 0/1 | 46.38% |
 | js/embeded/indention/indention-2.js | 0/1 | 23.53% |
 | js/embeded/indention/indention.js | 0/1 | 63.27% |
@@ -85,7 +76,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/explicit-resource-management/valid-module-block-top-level-using-binding.js | 0/1 | 28.57% |
 | js/explicit-resource-management/valid-using-as-identifier-computed-member.js | 0/1 | 0.00% |
 | js/explicit-resource-management/valid-using-as-identifier-expression-statement.js | 0/1 | 0.00% |
-| js/explicit-resource-management/valid-using-as-identifier-for-in.js | 0/1 | 88.89% |
+| js/explicit-resource-management/valid-using-as-identifier-for-in.js | 0/1 | 75.00% |
 | js/explicit-resource-management/valid-using-as-identifier-for-init.js | 0/1 | 0.00% |
 | js/explicit-resource-management/valid-using-as-identifier-in.js | 0/1 | 66.67% |
 | js/explicit-resource-management/valid-using-binding-escaped.js | 0/1 | 66.67% |

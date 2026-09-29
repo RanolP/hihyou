@@ -381,6 +381,14 @@ const importAttribute = (c: CommentContext<JsOptions>): CommentTarget | undefine
   return source === undefined ? undefined : { node: source, as: "trailing" };
 };
 
+const ASSIGNMENT_PATTERNS = new Set(["assignment_pattern", "object_assignment_pattern"]);
+
+/** `[a] =\n// c\nb` in a pattern: the comment leads the whole default, `// c\n[a] = b` (handleAssignmentPatternComments). */
+const assignmentPattern = (c: CommentContext<JsOptions>): CommentTarget | undefined =>
+  c.placement === "ownLine" && ASSIGNMENT_PATTERNS.has(kind(c, c.enclosing))
+    ? { node: c.enclosing, as: "leading" }
+    : undefined;
+
 // In prettier's order within each placement: typeCast and conditional run early, nestedConditional last.
 const handlers = [
   typeCast,
@@ -389,6 +397,7 @@ const handlers = [
   beforeSemicolon,
   unionMember,
   typeAliasValue,
+  assignmentPattern,
   methodName,
   functionBody,
   statementBody,
