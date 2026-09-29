@@ -84,6 +84,22 @@ const INDENTED_WHEN_BROKEN = new Set([
   "satisfies_expression",
 ]);
 
+/** Prettier's isMemberExpression(skipChainExpression(expr)): `a.b!` and `(a?.b)!` indent as `a.b` does. */
+function isMemberUnderNonNull(js: JsCtx, expr: number): boolean {
+  let inner: number | undefined = unparen(js, expr);
+  while (inner !== undefined && kind(js, inner) === "non_null_expression") {
+    const operand = first(js, inner);
+    inner = operand === undefined ? undefined : unparen(js, operand);
+  }
+  if (inner === undefined) return false;
+  const k = kind(js, inner);
+  return k === "member_expression" || k === "subscript_expression";
+}
+
+/** A `${...}`: a template string's expression, or a template literal type's type, which prettier prints alike. */
+const isSubstitution = (k: string) =>
+  k === "template_substitution" || k === "template_type";
+
 /**
  * The raw text of each quasi of a template string, between its backticks and substitutions. The children
  * (backticks, string_fragment, escape_sequence, template_substitution) tile the template's span with no gap,
@@ -96,7 +112,7 @@ function quasis(ctx: JsCtx, node: number): string[] {
   let at = 0;
   for (const c of children(ctx, node)) {
     const length = src(ctx, c).length;
-    if (kind(ctx, c) === "template_substitution") {
+    if (isSubstitution(kind(ctx, c))) {
       out.push(whole.slice(from, at));
       from = at + length;
     }
@@ -129,7 +145,8 @@ function printSubstitution(
     hasNewline &&
     expr !== undefined &&
     (hasComment(js, expr) ||
-      INDENTED_WHEN_BROKEN.has(kind(js, unparen(js, expr))));
+      INDENTED_WHEN_BROKEN.has(kind(js, unparen(js, expr))) ||
+      isMemberUnderNonNull(js, expr));
   const body = () => {
     if (!indented) {
       place(printed);
@@ -253,7 +270,7 @@ const templateString: CustomRule<JsOptions> = (node, sctx) => {
   let i = 0;
   for (const c of children(js, node)) {
     const k = kind(js, c);
-    if (k === "template_substitution") {
+    if (isSubstitution(k)) {
       printSubstitution(ctx, c, sizes[i] ?? 0, raws[i] ?? "");
       i++;
     } else if (k !== "comment") {

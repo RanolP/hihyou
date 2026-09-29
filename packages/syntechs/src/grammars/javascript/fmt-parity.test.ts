@@ -244,7 +244,7 @@ const corpusDir = join(import.meta.dirname, "../../../corpus");
 const ratchet: [Target, string, number, number][] = [
   ["js", "jquery.js", 1405, 1406],
   ["js", "lodash.js", 2816, 2817],
-  ["tsx", "App.tsx", 1552, 1562],
+  ["tsx", "App.tsx", 1554, 1562],
   ["tsx", "LayerUI.tsx", 152, 152],
 ];
 

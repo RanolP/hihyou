@@ -1,4 +1,4 @@
-ts compatibility: 639/653 (97.86%), 2 refused (ok:false), 76 excluded
+ts compatibility: 642/653 (98.32%), 2 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -12,7 +12,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
-| typescript/argument-expansion/arrow-with-return-type.ts | 0/1 | 77.78% |
 | typescript/comments/method_types.ts | 0/1 | 82.05% |
 | typescript/compiler/indexSignatureWithInitializer.ts | 0/1 | 87.50% |
 | typescript/conformance/types/moduleDeclaration/kind-detection.ts | 0/1 | 0.00% |
@@ -20,9 +19,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/definite/without-annotation.ts | 0/1 | 91.67% |
 | typescript/import-require/type-imports.ts | 0/1 | 56.00% |
 | typescript/non-null/braces.ts | 0/1 | 94.12% |
-| typescript/template-literals/member-expression.ts | 0/1 | 57.14% |
 | typescript/trailing-comma/trailing.ts | 2/3 | 97.78% |
-| typescript/type-parameters-arguments/long-function-arg.ts | 0/1 | 18.18% |
 | jsx/jsx/html_escape.js | 2/4 | 66.67% |
 
 # Refused

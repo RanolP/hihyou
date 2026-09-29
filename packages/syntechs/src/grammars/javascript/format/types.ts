@@ -38,7 +38,7 @@ export const types = {
   type_query: ($) => ["typeof", space, $.children],
   index_type_query: () => inOrder(space),
   readonly_type: () => inOrder(space),
-  template_literal_type: () => inOrder(),
+  template_literal_type: () => custom("templateString"),
   template_type: ($) => ["${", $.children, "}"],
   type_alias_declaration: ($) => [
     $.name.via("typeAlias"),

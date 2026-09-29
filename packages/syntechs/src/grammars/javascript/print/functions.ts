@@ -299,8 +299,14 @@ export function sPrintFunctionParameters(
   const typeParameters = capture(() =>
     pr(s, withTypeParameters ? field(ctx, fn, "type_parameters") : undefined),
   );
-  place(typeParameters);
   const list = field(ctx, fn, "parameters");
+  // printParameterList's hugged branch, where prettier prints the type parameters flat too.
+  const flat =
+    expand &&
+    list !== undefined &&
+    items(ctx, list).length > 0 &&
+    !isDecoratedFunction(ctx, fn);
+  place(flat ? removeLines(typeParameters) : typeParameters);
   if (list === undefined) {
     // A lone parameter without parentheses, printed with them.
     sToken(fn, "(", true);
