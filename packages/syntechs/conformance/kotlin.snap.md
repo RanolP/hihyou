@@ -1,4 +1,4 @@
-kotlin compatibility: 480/753 (63.75%), 47 refused (ok:false), 11 excluded
+kotlin compatibility: 493/753 (65.47%), 36 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -8,23 +8,18 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
-| annotations.txt: Multi-annotations | 0/1 | 0.00% |
 | comments.txt: Comments | 0/1 | 76.19% |
 | source-files.txt: Multiple Imports On A Single Line | 0/1 | 50.00% |
-| packages/syntechs/src/grammars/kotlin/corpus/Collections.kt | 0/1 | 94.33% |
-| packages/syntechs/src/grammars/kotlin/corpus/Result.kt | 0/1 | 98.38% |
-| packages/syntechs/src/grammars/kotlin/corpus/Delay.kt | 0/1 | 95.32% |
+| packages/syntechs/src/grammars/kotlin/corpus/Collections.kt | 0/1 | 94.91% |
+| packages/syntechs/src/grammars/kotlin/corpus/Result.kt | 0/1 | 99.12% |
+| packages/syntechs/src/grammars/kotlin/corpus/Delay.kt | 0/1 | 97.97% |
 | packages/syntechs/src/grammars/kotlin/corpus/Transform.kt | 0/1 | 92.98% |
-| packages/syntechs/src/grammars/kotlin/corpus/Okio.kt | 0/1 | 95.48% |
+| packages/syntechs/src/grammars/kotlin/corpus/Okio.kt | 0/1 | 97.44% |
 | packages/syntechs/src/grammars/kotlin/corpus/build.gradle.kts | 0/1 | 94.20% |
-| ktfmt/format/annotation/annotationOnProperty.kt | 0/1 | 66.67% |
-| ktfmt/format/annotation/arrayOfAnnotations.kt | 0/1 | 57.14% |
-| ktfmt/format/annotation/arrayOfAnnotationsWithUseSite.kt | 0/1 | 57.14% |
-| ktfmt/format/annotation/basic.kt | 0/1 | 50.00% |
 | ktfmt/format/annotation/exception.kt | 0/1 | 61.54% |
-| ktfmt/format/annotation/expressions.kt | 0/1 | 52.63% |
-| ktfmt/format/annotation/functionDeclarations.kt | 0/1 | 62.50% |
-| ktfmt/format/annotation/return.kt | 0/1 | 57.14% |
+| ktfmt/format/annotation/expressions2.kt | 0/1 | 78.05% |
+| ktfmt/format/annotation/functionTypes.kt | 0/1 | 60.00% |
+| ktfmt/format/annotation/multipleAnnotations.kt | 0/1 | 85.71% |
 | ktfmt/format/binary/associativity.kt | 0/1 | 72.73% |
 | ktfmt/format/binary/binaryExpressionWithRanges.kt | 0/1 | 76.92% |
 | ktfmt/format/binary/commentBeforeBinaryOperator.kt | 0/1 | 62.50% |
@@ -173,7 +168,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/google/chainedCalls.kt | 0/1 | 43.48% |
 | ktfmt/google/chainedCallsIndents.kt | 0/1 | 78.05% |
 | ktfmt/google/classTypeParams.kt | 0/1 | 63.29% |
-| ktfmt/google/comments.kt | 0/1 | 54.21% |
+| ktfmt/google/comments.kt | 0/1 | 55.56% |
 | ktfmt/google/forcedBreaksInFunCalls.kt | 0/1 | 69.44% |
 | ktfmt/google/forwardPropagationOfBreaks3.kt | 0/1 | 66.67% |
 | ktfmt/google/fqNestedTypes.kt | 0/1 | 38.10% |
@@ -194,8 +189,11 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/google/whenWithMaxWidthCondition.kt | 0/1 | 42.11% |
 | ktfmt/google/whileMaxWidthCondition.kt | 0/1 | 47.06% |
 | ktfmt/kotlinlang/nestedCalls.kts | 0/1 | 63.16% |
+| ktfmt/new_codestyle/annotation/AnnotationsEverywhere.kt | 0/1 | 93.75% |
 | ktfmt/new_codestyle/annotation/AnnotationsOnParameters.kt | 0/1 | 82.61% |
 | ktfmt/new_codestyle/annotation/AnnotationsOnTypes.kt | 0/1 | 93.20% |
+| ktfmt/new_codestyle/annotation/DeclarationAnnotations.kt | 0/1 | 93.62% |
+| ktfmt/new_codestyle/annotation/UseSiteTargets.kt | 0/1 | 90.48% |
 | ktfmt/new_codestyle/calls/gh633-2.kt | 0/1 | 43.59% |
 | ktfmt/new_codestyle/calls/gh633.kt | 0/1 | 67.05% |
 | ktfmt/kdoc/testMultiLineLink.kt | 0/1 | 64.29% |
@@ -242,14 +240,8 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
 | classes.txt: Enum classes | 1/1 | 46.15% | formatter-error: an enum body with members: enum_class_body at 89 |
-| ktfmt/format/annotation/annotationEverywhere.kt | 1/1 | 33.33% | check: input "Fancy" at 75 is output as "Fancy1" at 79, which means "Fancy1", not "Fancy" |
-| ktfmt/format/annotation/annotationInFunctionTypes.kt | 1/1 | 0.00% | check: input "Anno" at 16 is output as "AnnoList" at 16, which means "AnnoList", not "Anno" |
-| ktfmt/format/annotation/annotationWithUseSiteTargets.kt | 1/1 | 60.00% | check: input "Inject" at 28 is output as "InjectNamed" at 30, which means "InjectNamed", not "Inject" |
 | ktfmt/format/annotation/collectionLiterals.kt | 1/1 | 82.50% | formatter-error: no rule: collection_literal at 58 |
-| ktfmt/format/annotation/expressions2.kt | 1/1 | 56.41% | check: input "Anno2" at 323 is output as "Anno2f" at 346, which means "Anno2f", not "Anno2" |
-| ktfmt/format/annotation/functionTypes.kt | 1/1 | 53.33% | check: input "Inject" at 194 is output as "InjectNamed" at 180, which means "InjectNamed", not "Inject" |
-| ktfmt/format/annotation/multipleAnnotations.kt | 1/1 | 63.16% | check: input "Annotation" at 158 is output as "Annotationreturn" at 157, which means "Annotationreturn", not "Annotation |
-| ktfmt/format/annotation/noNewLineAfterAnnotations.kt | 1/1 | 64.94% | check: input comment "//" is missing from the output |
+| ktfmt/format/annotation/noNewLineAfterAnnotations.kt | 1/1 | 82.67% | check: input comment "//" is missing from the output |
 | ktfmt/format/class/blankLineBetweenMembers.kt | 1/1 | 13.79% | formatter-error: an enum body with members: enum_class_body at 72 |
 | ktfmt/format/class/emptyCompanionObject.kt | 1/1 | 53.85% | formatter-error: no rule: anonymous_initializer at 52 |
 | ktfmt/format/class/emptyEnumWithSemicolon4.kt | 1/1 | 42.86% | formatter-error: an enum body with members: enum_class_body at 17 |
@@ -274,7 +266,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | ktfmt/format/property/propertiesWithAccessors.kt | 1/1 | 27.78% | formatter-error: no rule: parameter_with_optional_type at 95 |
 | ktfmt/format/property/propertiesWithAccessors2.kt | 1/1 | 44.44% | formatter-error: no rule: parameter_with_optional_type at 119 |
 | ktfmt/format/type/compondBoundOnClassDelegate.kt | 1/1 | 100.00% | formatter-error: no rule: explicit_delegation at 17 |
-| ktfmt/format/type/nullableTypes.kts | 1/1 | 82.35% | check: input "Anno" at 269 is output as "AnnoInt" at 269, which means "AnnoInt", not "Anno" |
 | ktfmt/google/arrayLiteralInAnnotation.kt | 1/1 | 36.11% | formatter-error: no rule: collection_literal at 38 |
 | ktfmt/google/comments2.kt | 1/1 | 30.00% | formatter-error: no rule: collection_literal at 38 |
 | ktfmt/google/missingTrailingCommas.kt | 1/1 | 19.18% | formatter-error: no rule: collection_literal at 334 |
@@ -284,10 +275,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | ktfmt/new_codestyle/annotation/AnnotationArguments.kt | 1/1 | 100.00% | formatter-error: no rule: collection_literal at 26 |
 | ktfmt/new_codestyle/annotation/AnnotationOnExpression.kt | 1/1 | 85.48% | formatter-error: no rule: object_literal at 808 |
 | ktfmt/new_codestyle/annotation/AnnotationOnExpressionFullWidth.kt | 1/1 | 83.20% | formatter-error: no rule: object_literal at 813 |
-| ktfmt/new_codestyle/annotation/AnnotationsEverywhere.kt | 1/1 | 66.67% | check: input "Anno" at 208 is output as "Anno1" at 222, which means "Anno1", not "Anno" |
-| ktfmt/new_codestyle/annotation/AnnotationsWithComments.kt | 1/1 | 76.19% | check: input "Anno2" at 131 is output as "Anno2f" at 130, which means "Anno2f", not "Anno2" |
-| ktfmt/new_codestyle/annotation/DeclarationAnnotations.kt | 1/1 | 93.62% | check: input "Anno" at 740 is output as "Annoset" at 745, which means "Annoset", not "Anno" |
-| ktfmt/new_codestyle/annotation/UseSiteTargets.kt | 1/1 | 52.94% | check: input "Inject" at 219 is output as "InjectNamed" at 219, which means "InjectNamed", not "Inject" |
 
 # Excluded
 

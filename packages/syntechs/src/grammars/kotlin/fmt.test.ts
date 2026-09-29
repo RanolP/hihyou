@@ -82,3 +82,14 @@ test("KDoc tables are realigned as ktfmt prints them", () => {
     "/**\n * Values:\n *\n * | a   | bb  |\n * |-----|----:|\n * | x   |   1 |\n */\nfun f() {}\n",
   );
 });
+
+// A regression here glues an annotation to what it annotates (`@A List`, `@S("X") return`), which changes the
+// code's meaning and refused 11 ktfmt annotation fixtures; or stops putting a declaration's annotations on lines of
+// their own once the declaration breaks.
+test("annotations stay apart from what they annotate, on lines of their own once the declaration breaks", () => {
+  const input =
+    '@A @B(1) fun f() = 1\n\n@A @B(1) fun g() {\n    val x: (@A List<Int>) -> Unit = h\n    @[C D] var y = 2\n    @S("X")\n    return z\n}\n';
+  expect(run(input, false)).toBe(
+    '@A @B(1) fun f() = 1\n\n@A\n@B(1)\nfun g() {\n    val x: (@A List<Int>) -> Unit = h\n    @[C D]\n    var y = 2\n    @S("X")\n    return z\n}\n',
+  );
+});

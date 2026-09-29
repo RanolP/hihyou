@@ -43,17 +43,10 @@ const normalize: Normalize = (lexemes, _text, tree) =>
     return l.text;
   });
 
-const annotationCount = (node: number, tree: { count(n: number): number; child(n: number, i: number): number; kindName(n: number): string }) => {
+const annotationCount = (node: number, tree: FormatTree) => {
   let n = 0;
-  let args = false;
-  for (let i = 0; i < tree.count(node); i++) {
-    const c = tree.child(node, i);
-    if (tree.kindName(c) !== "annotation") continue;
-    n++;
-    for (let j = 0; j < tree.count(c); j++)
-      if (tree.kindName(tree.child(c, j)) === "constructor_invocation") args = true;
-  }
-  return { n, args };
+  for (let i = 0; i < tree.count(node); i++) if (tree.kindName(tree.child(node, i)) === "annotation") n++;
+  return n;
 };
 
 /** The texts of `node`'s leaves, joined. */
@@ -162,10 +155,36 @@ const listed = new Set(["value_argument", "parameter", "class_parameter"]);
 
 /** The rules `when` names in format.ts. */
 export const customs = {
-  /** ktfmt puts each annotation of a declaration on its own line once there are two or more and one has arguments. */
+  /**
+   * Of a declaration's modifiers: ktfmt breaks the line after a bracketed annotation (`@field:[A B]`), and after the
+   * annotations of a property whose accessors follow it on lines of their own.
+   */
   annotationsBreak: (node, ctx) => {
-    const { n, args } = annotationCount(node, ctx.tree);
-    return n > 1 && args;
+    const t = ctx.tree;
+    for (let i = 0; i < t.count(node); i++) {
+      const c = t.child(node, i);
+      if (t.kindName(c) === "annotation" && childOf(t, c, "[") !== -1) return true;
+    }
+    const decl = t.parent(node);
+    if (t.kindName(decl) !== "property_declaration" || annotationCount(node, t) === 0) return false;
+    const owner = t.parent(decl);
+    for (let i = 0; i < t.count(owner) - 1; i++)
+      if (t.child(owner, i) === decl) return /^[gs]etter$/.test(t.kindName(t.child(owner, i + 1)));
+    return false;
+  },
+  /**
+   * Of an annotated expression, which nests one `prefix_expression` per annotation: ktfmt keeps the annotations on
+   * one line, and breaks the line before the expression they annotate where the source breaks one among them.
+   */
+  annotationLineBroken: (node, ctx) => {
+    const t = ctx.tree;
+    const annotated = (n: number) =>
+      t.kindName(n) === "prefix_expression" && t.kindName(t.child(n, 0)) === "annotation";
+    const operand = t.child(node, t.count(node) - 1);
+    if (!annotated(node) || annotated(operand)) return false;
+    let top = node;
+    while (top !== t.root && annotated(t.parent(top))) top = t.parent(top);
+    return newlineBetween(t, firstLeaf(t, top), firstLeaf(t, operand));
   },
   /**
    * ktfmt (its trailing-comma pass) breaks a parenthesized list of two or more items that the source writes across
