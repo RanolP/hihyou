@@ -360,9 +360,31 @@ const declaratorValue = (c: CommentContext<JsOptions>): CommentTarget | undefine
     : undefined;
 };
 
+/**
+ * `from "a" /* c *\/ with /* c *\/ {}` or `with { /* c *\/ }`: prettier's attributes are a bare list with no node
+ * around `with` and `{}`, so a comment beside the keyword or in an empty `{}` trails the source, before `with`.
+ */
+const importAttribute = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, preceding, following } = c;
+  const inObject = kind(c, enclosing) === "object";
+  const attribute = inObject ? parent(c, enclosing) : enclosing;
+  let statement: number | undefined;
+  if (following !== undefined && kind(c, following) === "import_attribute")
+    statement = enclosing;
+  else if (
+    attribute !== undefined &&
+    kind(c, attribute) === "import_attribute" &&
+    !(inObject && (preceding !== undefined || following !== undefined))
+  )
+    statement = parent(c, attribute);
+  const source = statement === undefined ? undefined : field(c, statement, "source");
+  return source === undefined ? undefined : { node: source, as: "trailing" };
+};
+
 // In prettier's order within each placement: typeCast and conditional run early, nestedConditional last.
 const handlers = [
   typeCast,
+  importAttribute,
   conditional,
   beforeSemicolon,
   unionMember,

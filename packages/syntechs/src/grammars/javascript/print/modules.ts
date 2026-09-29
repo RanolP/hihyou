@@ -23,11 +23,13 @@ import {
 import { semiCustoms } from "./semi.js";
 import { sTok } from "./statements.js";
 import {
+  CF,
   childWhere,
   children as childrenOf,
   field,
   getComments,
   hasComment,
+  isComment,
   items,
   type JsOptions,
   kind,
@@ -146,6 +148,12 @@ function printModuleStatement(s: JsStreamCtx, n: number, ctx: StreamCtx<JsOption
   const isSemi = (c: number) => kind(js, c) === ";" && !isNamed(js, c);
   const children = all.filter((c) => kind(js, c) !== "decorator" && !isSemi(c));
   const specifiers = children.filter((c) => NAMED.has(kind(js, c)) || kind(js, c) === "namespace_export");
+  // A comment attached to a child that `s.print` prints comes out with that child; any other prints where it sits.
+  const printedWithChild = new Set(
+    children
+      .filter((c) => isNamed(js, c) && !isComment(js, c) && !specifiers.includes(c))
+      .flatMap((c) => getComments(js, c, CF.Leading | CF.Trailing)),
+  );
   for (const d of decorators) {
     s.print(d);
     sHardline();
@@ -153,6 +161,7 @@ function printModuleStatement(s: JsStreamCtx, n: number, ctx: StreamCtx<JsOption
   let first = true;
   for (const c of children) {
     if (specifiers.includes(c) && c !== specifiers[0]) continue;
+    if (printedWithChild.has(c)) continue;
     if (!first) sText(" ");
     first = false;
     if (c === specifiers[0]) printSpecifiers(s, specifiers);

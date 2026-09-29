@@ -24,3 +24,6 @@ patchedDependencies:
   # change it: `pnpm patch tree-sitter-css@0.25.0`, edit, `tree-sitter generate` in that directory, then
   # `pnpm patch-commit <dir>` (drop the src/tree_sitter/ header hunks the newer CLI rewrites).
   tree-sitter-css@0.25.0: patches/tree-sitter-css@0.25.0.patch
+  # Import attributes after `export ... from` and under the older `assert` keyword; grammar.js and its generated
+  # src/ only, changed the same way.
+  tree-sitter-javascript@0.25.0: patches/tree-sitter-javascript@0.25.0.patch

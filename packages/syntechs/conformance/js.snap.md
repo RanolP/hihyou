@@ -1,4 +1,4 @@
-js compatibility: 654/804 (81.34%), 27 refused (ok:false), 304 excluded
+js compatibility: 667/804 (82.96%), 25 refused (ok:false), 304 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -97,18 +97,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/function/issue-12967.js | 0/1 | 0.00% |
 | js/if/condition-break/boolean-expression.js | 0/1 | 97.01% |
 | js/if/condition-break/unary-expression.js | 0/1 | 97.06% |
-| js/import-assertions/empty.js | 0/1 | 14.29% |
-| js/import-assertions/re-export.js | 0/1 | 85.71% |
-| js/import-assertions/without-from.js | 0/1 | 0.00% |
-| js/import-assertions/bracket-spacing/empty.js | 0/1 | 0.00% |
-| js/import-assertions/bracket-spacing/re-export.js | 0/1 | 0.00% |
-| js/import-assertions/bracket-spacing/static-import.js | 0/1 | 0.00% |
-| js/import-attributes/empty.js | 0/1 | 57.14% |
-| js/import-attributes/keyword-detect.js | 0/1 | 30.77% |
 | js/import-attributes/long-sources.js | 0/1 | 86.54% |
-| js/import-attributes/re-export.js | 0/1 | 85.71% |
-| js/import-attributes/bracket-spacing/empty.js | 0/1 | 0.00% |
-| js/import-attributes/bracket-spacing/re-export.js | 0/1 | 0.00% |
 | js/import-attributes/quote-props/quoted-keys.js | 1/3 | 86.67% |
 | js/label/comment.js | 0/1 | 53.33% |
 | js/last-argument-expansion/edge_case.js | 0/1 | 74.63% |
@@ -150,7 +139,7 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | js/comments/empty-statements.js | 2/2 | 17.39% | check: output comment "// second // third // first" matches no input comment |
 | js/comments/return-statement-2.js | 2/2 | 84.67% | check: input "!" at 433 is output as "!" at 438, which means "!@operator\|-1/29", not "!@operator\|-1/27" |
 | js/comments/trailing_space.js | 2/2 | 100.00% | check: input "#!/there/is-space-here->         " at 0 is output as "#!/there/is-space-here->" at 0, which means "#!/ther |
-| js/decorators/comments.js | 1/1 | 93.94% | check: output comment "// B // C export // C" matches no input comment |
+| js/decorators/comments.js | 1/1 | 93.94% | check: output comment "// B export // C" matches no input comment |
 | js/decorators-export/after_export.js | 1/1 | 76.92% | check: input "export" at 0 is output as "export" at 0, which means "export@\|0/2", not "export@\|-1/2" |
 | js/directives/issue-7346.js | 1/1 | 100.00% | check: input "'bar'" at 78 is output as "\"bar\"" at 79, which means "str:bar@\|0/7", not "str:bar@\|0/6" |
 | js/explicit-resource-management/valid-await-using-comments.js | 1/1 | 70.97% | check: input comment "/*8*/" is missing from the output |
@@ -158,9 +147,7 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | js/identifier/for-of/let.js | 1/1 | 69.23% | check: input "let" at 107 is output as "let" at 104, which means "let@kind\|-1/10", not "let@object\|0/11" |
 | js/identifier/parentheses/let.js | 2/2 | 88.18% | check: the output has a syntax error at 43, which the input has not |
 | js/import/comments.js | 2/2 | 63.41% | check: output comment "//comment2 //comment1" matches no input comment |
-| js/import-assertions/keyword-detect.js | 1/1 | 20.00% | check: output comment "/* with */" matches no input comment |
-| js/import/empty-import/empty-import-2.js | 1/1 | 50.00% | check: output comment "/* 😄😄😄😄 */" matches no input comment |
-| js/import/empty-import/empty-import.js | 1/1 | 32.43% | check: output comment "// comment // comment" matches no input comment |
+| js/import/empty-import/empty-import.js | 1/1 | 64.86% | check: output comment "// comment } from \"a\";" matches no input comment |
 | js/logical-expressions/in-unary-expression.js | 1/1 | 71.62% | check: input "!" at 107 is output as "!" at 107, which means "!@operator\|-1/5", not "!@operator\|-1/4" |
 | js/new-expression/new-expression.js | 1/1 | 88.89% | check: input "new" at 80 is output as "new" at 86, which means "new@\|-1/16", not "new@\|-1/14" |
 | js/optional-chaining/comments.js | 1/1 | 71.91% | check: input comment "// Comment" is missing from the output |
