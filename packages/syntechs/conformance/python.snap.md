@@ -1,4 +1,4 @@
-python compatibility: 282/327 (86.24%), 18 refused (ok:false), 49 excluded
+python compatibility: 283/327 (86.54%), 17 refused (ok:false), 49 excluded
 
 Fixtures: ruff 0.16.8 crates/ruff_python_formatter/resources/test/fixtures/{black,ruff} (recursive), every option set of each `.options.json`, expected output from tests/snapshots (black cases without a snapshot: their `.expect` file). Options are passed by their ruff.toml names.
 
@@ -59,7 +59,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | ruff/expression/nested_string_quote_style.py | 4/4 | 87.50% | check: input "f'\"double\" quotes and {\"nested string with \\\"double\\\" quotes\"}'" at 881 is output as "f'\"double\" |
 | ruff/expression/tstring.py | 1/1 | 55.30% | formatter-error: parse error: ERROR at 21234 |
 | ruff/statement/match.py | 1/1 | 71.21% | formatter-error: comment in a pattern at 2288 |
-| ruff/statement/with.py | 2/2 | 70.13% | formatter-error: unsupported expression: as_pattern at 5094 |
 
 # Excluded
 

@@ -530,6 +530,16 @@ class Reader {
     readonly stmts: Map<number, Stmt>,
   ) {}
 
+  /** The `c as d` a with item's conditional ends in, which `withStmt` reads as the item's `as`. */
+  readonly conditionalAliases = new Set<number>();
+
+  /** The context `c` of `c as d` in `conditionalAliases`, found by the conditional's rule under `c as d` too. */
+  aliased(n: number): Expr {
+    const e = this.expr(this.named(n)[0] ?? this.fail(n, "no context"));
+    this.byTs.set(n, e);
+    return e;
+  }
+
   fail(n: number, why: string): never {
     return fail(this.tree, n, why);
   }
@@ -1131,10 +1141,18 @@ class Reader {
       let context: Expr;
       let asTok: number | undefined;
       let vars: Expr | undefined;
-      if (this.kind(value) === "as_pattern") {
-        const [ctx, target] = this.named(value);
-        context = this.expr(ctx ?? this.fail(value, "no context"));
-        asTok = this.need(value, "as");
+      // Tree-sitter reads `a if b else c as d` as `a if b else (c as d)`: the conditional is the context.
+      let alias: number | undefined;
+      for (let x = value; this.kind(x) === "conditional_expression"; ) {
+        x = this.named(x).at(-1) ?? this.fail(x, "bad conditional");
+        if (this.kind(x) === "as_pattern") alias = x;
+      }
+      if (alias !== undefined) this.conditionalAliases.add(alias);
+      if (this.kind(value) === "as_pattern" || alias !== undefined) {
+        const as = alias ?? value;
+        const [ctx, target] = this.named(as);
+        context = this.expr(alias !== undefined ? value : (ctx ?? this.fail(value, "no context")));
+        asTok = this.need(as, "as");
         const t =
           target !== undefined ? (this.named(target)[0] ?? target) : undefined;
         vars = t !== undefined ? this.expr(t) : undefined;
@@ -1745,10 +1763,20 @@ class Reader {
         };
       }
       case "conditional_expression": {
-        const [body, test, orelse] = this.named(n).map((c) => this.expr(c));
+        const nodes = this.named(n);
+        const [body, test, orelse] = nodes.map((c) =>
+          this.conditionalAliases.has(c) ? this.aliased(c) : this.expr(c),
+        );
         if (!body || !test || !orelse) return this.fail(n, "bad conditional");
+        const last = nodes.at(-1);
         return {
           ...base,
+          // Short of a with item's `as`, which tree-sitter reads into the last branch.
+          end:
+            last !== undefined &&
+            (this.conditionalAliases.has(last) || this.kind(last) === "conditional_expression")
+              ? orelse.end
+              : base.end,
           kind: "IfExp",
           kids: [body, test, orelse],
           body,

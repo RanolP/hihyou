@@ -1,4 +1,3 @@
-import { firstLeaf } from "../../../../fmt/tree.js";
 import type {
   ExceptHandler,
   For,
@@ -181,8 +180,8 @@ export function withItems(f: Fmt, w: With): void {
   const tv = (f.options as { "target-version"?: string })["target-version"];
   const canParenthesize =
     !(tv && /^py3[0-8]$/.test(tv)) ||
-    (w.items.length > 1 &&
-      f.tree.kindName(firstLeaf(f.tree, clauseNode)) === "(");
+    // Ruff's `are_with_items_parenthesized`: a `(` before the first item, not one that opens its context.
+    (w.items.length > 1 && w.open !== undefined);
   // A parenthesis as written, or one added at the last `with`.
   const paren = (t: number | undefined, p: string) =>
     t !== undefined ? tok(f, t) : sToken(withKw, p, true);
