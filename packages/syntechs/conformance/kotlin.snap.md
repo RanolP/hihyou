@@ -1,4 +1,4 @@
-kotlin compatibility: 432/753 (57.37%), 55 refused (ok:false), 11 excluded
+kotlin compatibility: 448/753 (59.50%), 55 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -13,8 +13,8 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | source-files.txt: Multiple Imports On A Single Line | 0/1 | 50.00% |
 | packages/syntechs/src/grammars/kotlin/corpus/Collections.kt | 0/1 | 94.33% |
 | packages/syntechs/src/grammars/kotlin/corpus/Result.kt | 0/1 | 98.38% |
-| packages/syntechs/src/grammars/kotlin/corpus/Delay.kt | 0/1 | 93.91% |
-| packages/syntechs/src/grammars/kotlin/corpus/Transform.kt | 0/1 | 79.74% |
+| packages/syntechs/src/grammars/kotlin/corpus/Delay.kt | 0/1 | 94.74% |
+| packages/syntechs/src/grammars/kotlin/corpus/Transform.kt | 0/1 | 80.53% |
 | packages/syntechs/src/grammars/kotlin/corpus/Okio.kt | 0/1 | 95.48% |
 | packages/syntechs/src/grammars/kotlin/corpus/build.gradle.kts | 0/1 | 94.20% |
 | ktfmt/format/annotation/annotationOnProperty.kt | 0/1 | 66.67% |
@@ -95,9 +95,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/import/keepUnusedImports.kt | 0/1 | 85.71% |
 | ktfmt/format/import/usedImportsFromSamePackage.kt | 0/1 | 94.12% |
 | ktfmt/format/kdoc/basic.kt | 0/1 | 0.00% |
-| ktfmt/format/kdoc/codeBlockStability.kt | 0/1 | 92.31% |
-| ktfmt/format/kdoc/codeBlockWithTripleBacktick.kt | 0/1 | 93.33% |
-| ktfmt/format/kdoc/codeBlocks.kt | 0/1 | 97.14% |
 | ktfmt/format/kdoc/nestedKDoc.kt | 0/1 | 0.00% |
 | ktfmt/format/lambda/lambdaArg.kt | 0/1 | 66.67% |
 | ktfmt/format/lambda/lambdaAssignment.kt | 0/1 | 33.33% |
@@ -213,12 +210,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/new_codestyle/annotation/AnnotationsOnTypes.kt | 0/1 | 93.20% |
 | ktfmt/new_codestyle/calls/gh633-2.kt | 0/1 | 43.59% |
 | ktfmt/kdoc/testMultiLineLink.kt | 0/1 | 69.23% |
-| ktfmt/kdoc/testPreStability.kt | 0/1 | 88.89% |
-| ktfmt/kdoc/testPreStability2.kt | 0/1 | 94.12% |
-| ktfmt/kdoc/testPreformattedText2.kt | 0/1 | 94.74% |
-| ktfmt/kdoc/testPreformattedTextWithBlankLines.kt | 0/1 | 94.12% |
-| ktfmt/kdoc/testPreformattedTextWithBlankLinesAndTrailingSpaces.kt | 0/1 | 94.12% |
-| ktfmt/kdoc/testPreformattedTextSeparation.kt | 0/1 | 96.30% |
 | ktfmt/kdoc/testSeparateParagraphMarkers1.kt | 0/1 | 57.14% |
 | ktfmt/kdoc/testList1.kt | 0/1 | 20.00% |
 | ktfmt/kdoc/testIndentedList.kt | 0/1 | 42.86% |
@@ -243,7 +234,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/kdoc/test209435082.kt | 0/1 | 50.00% |
 | ktfmt/kdoc/testKnit.kt | 0/1 | 31.11% |
 | ktfmt/kdoc/testNPE.kt | 0/1 | 50.00% |
-| ktfmt/kdoc/testExtraNewlines.kt | 0/1 | 97.87% |
 | ktfmt/kdoc/testQuotedBug.kt | 0/1 | 72.73% |
 | ktfmt/kdoc/testListBreaking.kt | 0/1 | 66.67% |
 | ktfmt/kdoc/testNewList.kt | 0/1 | 71.43% |
@@ -261,18 +251,12 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/kdoc/testTables7.kt | 0/1 | 66.67% |
 | ktfmt/kdoc/testTables7b.kt | 0/1 | 66.67% |
 | ktfmt/kdoc/testBulletsUnderParamTags.kt | 0/1 | 90.00% |
-| ktfmt/kdoc/testPreTag.kt | 0/1 | 94.12% |
 | ktfmt/kdoc/testPreTag3.kt | 0/1 | 41.67% |
-| ktfmt/kdoc/testPreConversion2.kt | 0/1 | 94.74% |
 | ktfmt/kdoc/testMarkupAcrossLines.kt | 0/1 | 33.33% |
 | ktfmt/kdoc/testLineBreak.kt | 0/1 | 75.00% |
-| ktfmt/kdoc/testDocTagsInsidePreformatted.kt | 0/1 | 96.77% |
 | ktfmt/kdoc/testConvertMarkup2.kt | 0/1 | 61.54% |
-| ktfmt/kdoc/testFencedCodeBlockInListItem.kt | 0/1 | 87.50% |
-| ktfmt/kdoc/testFencedCodeBlockWithContinuationInListItem.kt | 0/1 | 84.21% |
-| ktfmt/kdoc/testMultipleFencedCodeBlocksInListItem.kt | 0/1 | 81.48% |
-| ktfmt/kdoc/testFencedCodeBlockAtEndOfListItem.kt | 0/1 | 92.31% |
-| ktfmt/kdoc/testFencedCodeBlockInNumberedListItem.kt | 0/1 | 87.50% |
+| ktfmt/kdoc/testFencedCodeBlockWithContinuationInListItem.kt | 0/1 | 88.89% |
+| ktfmt/kdoc/testMultipleFencedCodeBlocksInListItem.kt | 0/1 | 91.67% |
 | ktfmt/kdoc/testNestedWithinQuoted.kt | 0/1 | 36.36% |
 
 # Refused

@@ -42,9 +42,9 @@ interface Prose {
   readonly hang: number;
   readonly blankBefore: boolean;
 }
-/** Lines printed as written after the prefix: a fenced or indented code block, `<pre>`, a table. */
+/** Lines printed as written after the prefix: a fenced (`fence`) or indented code block, `<pre>`, a table. */
 interface Verbatim {
-  readonly t: "code" | "pre" | "table";
+  readonly t: "fence" | "code" | "pre" | "table";
   readonly lines: string[];
   readonly blankBefore: boolean;
 }
@@ -93,12 +93,14 @@ export function parseDocComment(text: string, style: DocCommentStyle): DocBlock[
     const verbatim = (t: Verbatim["t"], from: number, last: (l: string) => boolean) => {
       let j = from;
       while (j < lines.length - 1 && !last(lines[j] as string)) j++;
+      // An unclosed block runs to the comment's end, but not through the blank lines before its `*/`.
+      while (j > i && (lines[j] as string).trim() === "") j--;
       blocks.push({ t, lines: lines.slice(i, j + 1), blankBefore });
       i = j;
       cur = undefined;
     };
     const f = fence.exec(trimmed);
-    if (f) verbatim("code", i + 1, (l) => l.trimStart().startsWith(f[1] as string));
+    if (f) verbatim("fence", i + 1, (l) => l.trimStart().startsWith(f[1] as string));
     else if (/^<pre\b/i.test(trimmed)) verbatim("pre", i, (l) => /<\/pre>/i.test(l));
     else if (trimmed.startsWith("|")) {
       let j = i;
@@ -133,12 +135,19 @@ export function parseDocComment(text: string, style: DocCommentStyle): DocBlock[
   return blocks;
 }
 
-const isCode = (b: DocBlock) => b.t === "code";
-/** Whether a blank line goes between `a` and `b`: the tags follow the prose after one and each other without. */
+const isCode = (b: DocBlock) => b.t === "code" || b.t === "fence";
+/**
+ * Whether a blank line goes between `a` and `b`: the tags follow the prose after one and each other without. A
+ * `<pre>` hugs what precedes it, and a fenced block the prose that introduces it (ending in `:` or `,`) or
+ * another verbatim block; after a fenced block, a list item keeps the source's spacing.
+ */
 function blankBetween(a: DocBlock, b: DocBlock): boolean {
   if (b.t === "tag") return a.t !== "tag";
+  if (b.t === "pre") return false;
+  if (b.t === "fence") return !("lines" in a || /[:,]$/.test(a.words[a.words.length - 1] ?? ""));
   if (a.t === "tag") return true;
   if (isCode(a) && isCode(b)) return false;
+  if (a.t === "fence" && b.t === "item") return b.blankBefore;
   if (isCode(a) || isCode(b) || a.t === "table" || b.t === "table") return true;
   return b.blankBefore;
 }

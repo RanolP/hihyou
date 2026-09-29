@@ -64,3 +64,12 @@ test("pruning keeps imports used only by KDoc, backticked names or operator conv
   const used = "import a.Bag\nimport a.`when`\nimport b.assign\n\n/** Fits a [Bag]. */\nfun f() = `when`()\n";
   expect(run(used, false)).toBe(used);
 });
+
+// A regression here puts back the blank line ktfmt drops between prose ending in `:` and the code block it
+// introduces, and before a `<pre>`, which failed 16 ktfmt fixtures.
+test("KDoc code blocks hug the prose that introduces them, as ktfmt prints them", () => {
+  const input = "/**\n * Like so:\n *\n * ```\n * code\n * ```\n * Then.\n *\n * <pre>\n * x\n * </pre>\n */\nfun f() {}\n";
+  expect(run(input, false)).toBe(
+    "/**\n * Like so:\n * ```\n * code\n * ```\n *\n * Then.\n * <pre>\n * x\n * </pre>\n */\nfun f() {}\n",
+  );
+});
