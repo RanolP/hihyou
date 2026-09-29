@@ -123,6 +123,13 @@ const parenthesized: StreamRule<JsOptions> = (n, s) => {
   sTok(ctx, close);
 };
 
+/** Babel's v8intrinsic `%DebugPrint`, which only the JavaScript grammar parses, so the tsx-typed spec has no kind for it. */
+const v8Intrinsic: StreamRule<JsOptions> = (n, s) => {
+  const sctx = jsCtx(s);
+  sTok(sctx.js, anon(sctx.js, n, "%"));
+  for (const name of items(sctx.js, n)) sctx.print(name);
+};
+
 const IIFE_CALLEES = new Set(["function_expression", "arrow_function"]);
 
 /** `(// c⏎function () {})()`: a commented function called or tagged right where it is written. */
@@ -226,6 +233,7 @@ export function jsRules(): ReadonlyMap<string, StreamRule<JsOptions>> {
       ...statementRules,
       ...typeRules,
       parenthesized_expression: parenthesized,
+      v8_intrinsic: v8Intrinsic,
     }),
   );
   // The kinds the DSL spec (format.ts) lays out.

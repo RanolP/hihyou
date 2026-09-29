@@ -1,4 +1,4 @@
-js compatibility: 748/804 (93.03%), 11 refused (ok:false), 304 excluded
+js compatibility: 755/804 (93.91%), 9 refused (ok:false), 304 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -18,7 +18,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/arrows/issue-17421.js | 0/2 | 87.02% |
 | js/arrows/parenthesized-body/issue-18776.js | 0/1 | 85.71% |
 | js/assignment/destructuring-heuristic.js | 0/1 | 84.00% |
-| js/async/nested.js | 0/1 | 14.29% |
 | js/classes/multiple-static.js | 0/1 | 40.00% |
 | js/comments/blank.js | 0/2 | 92.31% |
 | js/comments/export.js | 0/2 | 94.81% |
@@ -30,17 +29,13 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/comments/variable-declarator.js | 0/2 | 95.10% |
 | js/comments/in-list/dangling-comment-in-list.js | 0/1 | 95.95% |
 | js/comments/tagged-template-literal/11662.js | 0/1 | 80.00% |
-| js/comments/while-like/if.js | 0/1 | 98.00% |
-| js/comments/while-like/switch.js | 0/1 | 84.44% |
-| js/comments/while-like/while.js | 0/1 | 97.62% |
-| js/comments/while-like/with.js | 0/1 | 98.00% |
+| js/comments/while-like/switch.js | 0/1 | 86.67% |
 | js/destructuring/issue-5988.js | 0/1 | 0.00% |
 | js/embeded/indention/19518.js | 0/1 | 64.94% |
 | js/embeded/indention/indention-2.js | 0/1 | 23.53% |
 | js/embeded/indention/indention.js | 0/1 | 63.27% |
 | js/empty-paren-comment/empty_paren_comment.js | 0/1 | 91.43% |
 | js/export/blank-line-between-specifiers.js | 0/2 | 95.00% |
-| js/export-default/function_tostring.js | 0/1 | 0.00% |
 | js/for/for-in-with-initializer.js | 0/1 | 38.71% |
 | js/if/condition-break/boolean-expression.js | 0/1 | 97.01% |
 | js/import-attributes/long-sources.js | 0/1 | 86.54% |
@@ -64,7 +59,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| js/chain-expression/tagged-template-literals.js | 1/1 | 61.90% | check: input "a" at 23 is output as "a" at 22, which means "a@object\|0/4", not "a@object\|0/5" |
 | js/comments/break-continue-statements-3.js | 2/2 | 95.83% | check: output comment "// breaking comment;" matches no input comment |
 | js/comments/trailing_space.js | 2/2 | 100.00% | check: input "#!/there/is-space-here->         " at 0 is output as "#!/there/is-space-here->" at 0, which means "#!/ther |
 | js/decorators/comments.js | 1/1 | 93.94% | check: output comment "// B export // C" matches no input comment |
@@ -73,7 +67,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | js/for-of/comments.js | 1/1 | 100.00% | check: output comment "//2b //2c" matches no input comment |
 | js/import/empty-import/empty-import.js | 1/1 | 64.86% | check: output comment "// comment } from \"a\";" matches no input comment |
 | js/quotes/strings.js | 2/2 | 100.00% | check: input "\"abc\"" at 497 is output as "\"abc\"" at 498, which means "str:abc@\|0/4", not "str:abc@\|0/3" |
-| js/v8_intrinsic/intrinsic_call.js | 1/1 | 45.45% | check: input "IsAsmWasmCode" at 138 is output as ")" at 112, which means ")@\|-1/13", not "IsAsmWasmCode@function\|0/14" |
 | jsx/comments/in-end-tag.js | 1/1 | 32.08% | check: input ">" at 503 is output as ">" at 503, which means ">@\|-1/71", not ">@\|-1/62" |
 
 # Excluded

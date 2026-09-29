@@ -399,10 +399,20 @@ function condition(s: JsStreamCtx, pe: number | undefined, grouped: boolean): vo
         inner,
         () => {
           const expr = unparen(js, inner);
-          const parens = needsParens(expr, js);
-          if (parens) sToken(expr, "(", true);
-          s.print(inner);
-          if (parens) sToken(expr, ")", true);
+          if (!needsParens(expr, js)) {
+            s.print(inner);
+            return;
+          }
+          // Prettier's AST has no source parentheses, so the comments inside them print around the pair
+          // needsParens adds: `if ((a, b) /* c */)`.
+          const around = (n: number): void =>
+            withComments(s, n, () => {
+              if (n !== expr) return around(first(js, n)!);
+              sToken(expr, "(", true);
+              s.printNode(expr);
+              sToken(expr, ")", true);
+            });
+          around(inner);
         },
         grouped,
       );

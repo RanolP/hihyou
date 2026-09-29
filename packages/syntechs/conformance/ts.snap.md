@@ -1,4 +1,4 @@
-ts compatibility: 619/653 (94.79%), 10 refused (ok:false), 76 excluded
+ts compatibility: 620/653 (94.95%), 9 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -43,7 +43,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| typescript/chain-expression/tagged-template-literals.ts | 1/1 | 72.31% | check: input "a" at 37 is output as "a" at 33, which means "a@object\|0/12", not "a@object\|0/13" |
 | typescript/conditional-types/comments.ts | 2/2 | 94.21% | check: input "any instanceof B\n  /**\n  * Comment\n  */\n    ? B \| C\n    : D" at 1337 is output as "any" at 1364, whic |
 | typescript/end-of-line/multiline.ts | 2/3 | 100.00% | check: input "\\\n" at 511 is output as "\\\r" at 512, which means "\\\r@\|3/35", not "\\\n@\|3/35" |
 | typescript/import-export/empty-import.ts | 1/1 | 64.86% | check: output comment "// comment } from \"a\";" matches no input comment |

@@ -277,7 +277,7 @@ export function needsParens(n: number, ctx: JsCtx): boolean {
   const pk = kind(ctx, parent);
   // A type cast's parentheses (the only ones `role` stops at) are all an expression needs.
   if (pk === "parenthesized_expression") return false;
-  if (top !== n && isAwaitCall(ctx, parent)) return true;
+  if (top !== n && isAwaitCallArguments(ctx, top)) return true;
   // `return (\n// comment\na, b\n)`: the statement's own parentheses already hold the argument.
   if (
     (pk === "return_statement" || pk === "throw_statement") &&
@@ -742,7 +742,7 @@ function optionalChainNeedsParens(
     (key === "callee" && pk !== "new_expression" && isCall(x, parent)) ||
     (key === "callee" && pk === "new_expression") ||
     pk === "non_null_expression" ||
-    (key === "quasi" && isTaggedTemplate(x, parent))
+    (key === "callee" && isTaggedTemplate(x, parent))
   );
 }
 
@@ -772,13 +772,28 @@ export function awaitsHere(x: HasTree, n: number): boolean {
 }
 
 /**
- * tree-sitter reads `await (x)` as an await expression and `await (x).y` as a call of `await` wherever it
- * stands. Outside an async function babel reads a call instead: `await(x)`, whose parentheses stay.
+ * tree-sitter reads `await (x)` and `await (x).y` as await expressions wherever they stand. Outside an async
+ * function babel reads a call of `await` instead: `await(x)` and `await(x).y`, whose parentheses stay.
  */
 export const isAwaitCall = (x: HasTree, n: number): boolean =>
   kind(x, n) === "await_expression" &&
-  kind(x, argument(x, n)) === "parenthesized_expression" &&
+  awaitCallParen(x, n) !== undefined &&
   !awaitsHere(x, n);
+
+/** The parenthesized_expression that starts await `n`'s argument: `(x)` in `await (x).y`. */
+function awaitCallParen(x: HasTree, n: number): number | undefined {
+  let y = argument(x, n);
+  while (y !== undefined && kind(x, y) !== "parenthesized_expression")
+    y = isMember(x, y) ? objectOf(x, y) : kind(x, y) === "call_expression" ? callee(x, y) : undefined;
+  return y;
+}
+
+/** Whether `top`, a parenthesized_expression, is the argument list of a call of `await` that babel reads. */
+function isAwaitCallArguments(x: HasTree, top: number): boolean {
+  let a = parentOf(x, top);
+  while (a !== undefined && (isMember(x, a) || kind(x, a) === "call_expression")) a = parentOf(x, a);
+  return a !== undefined && isAwaitCall(x, a) && awaitCallParen(x, a) === top;
+}
 
 /** A class expression with decorators, which prettier parenthesizes as `(` indent(line, class) line `)`. */
 export const isDecoratedClass = (x: HasTree, n: number): boolean =>
@@ -818,7 +833,7 @@ function isDecoratorMemberish(x: HasTree, n: number): boolean {
   );
 }
 
-function exportDefaultNeedsParens(x: HasTree, n: number): boolean {
+function exportDefaultNeedsParens(x: JsCtx, n: number): boolean {
   if (kind(x, n) === "sequence_expression") return true;
   // `export default (function () {})()`: an expression that starts with a function or class.
   let y: number | undefined = n;
@@ -844,6 +859,12 @@ function exportDefaultNeedsParens(x: HasTree, n: number): boolean {
       case "satisfies_expression":
       case "non_null_expression":
         y = first(x, y);
+        break;
+      case "parenthesized_expression":
+        // Prettier's AST has no source parentheses; a pair needsParens keeps is enough on its own:
+        // `export default (function () {})()`, but `export default (function () {}.toString())`.
+        y = unparen(x, y);
+        if (needsParens(y, x)) return false;
         break;
       default:
         y = undefined;
