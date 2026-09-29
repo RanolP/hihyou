@@ -352,7 +352,15 @@ function wrapped(n: number, s: StreamCtx<JsOptions>, print: () => void): void {
     // Prettier prints a string through replaceEndOfLine: its literal line break breaks the groups around it.
     if (kind(ctx, n) === "string" && ctx.tree.text(n).includes("\n")) sBreakParent();
   } else if (STATEMENT_LIST_PARENTS.has(kind(ctx, parent(ctx, n)) ?? "")) ignoredStatement(ctx, n);
-  else {
+  else if (kind(ctx, n) === PE && !isCastParen(ctx, n)) {
+    // Prettier's AST has no parentheses: an ignored expression keeps the source text inside its own, and gets
+    // the parentheses needsParens adds: `+((a), (b))` keeps one pair around `(a), (b)`, a statement's `((a))` none.
+    const inner = unparen(ctx, n);
+    const own = kind(ctx, parent(ctx, n)) !== PE && needsParens(inner, ctx);
+    if (own) sToken(n, "(", true);
+    sToken(inner, ctx.tree.text(inner));
+    if (own) sToken(n, ")", true);
+  } else {
     sToken(n, ctx.tree.text(n));
     const sep = ignoredMemberSeparator(ctx, n);
     if (sep !== undefined) sToken(sep, ctx.tree.text(sep));

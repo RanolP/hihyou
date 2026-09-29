@@ -1,4 +1,4 @@
-js compatibility: 762/804 (94.78%), 9 refused (ok:false), 304 excluded
+js compatibility: 766/804 (95.27%), 9 refused (ok:false), 304 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -38,11 +38,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/if/condition-break/boolean-expression.js | 0/1 | 97.01% |
 | js/import-attributes/long-sources.js | 0/1 | 86.54% |
 | js/import-attributes/quote-props/quoted-keys.js | 1/3 | 86.67% |
-| js/newline/backslash_2028.js | 0/1 | 40.00% |
-| js/newline/backslash_2029.js | 0/1 | 40.00% |
 | js/reserved-word/yield.js | 0/1 | 93.33% |
-| js/sequence-break/break.js | 0/1 | 85.29% |
-| js/sequence-expression/ignore.js | 0/1 | 72.73% |
 | js/sequence-expression/parenthesized.js | 0/1 | 85.71% |
 | js/template-literals/expression-break.js | 0/1 | 80.00% |
 
