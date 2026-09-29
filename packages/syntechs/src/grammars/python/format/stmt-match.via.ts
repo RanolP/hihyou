@@ -19,6 +19,7 @@ import {
 } from "../fmt/stmt/match.js";
 import { writeLeadingAlternateBranchComments } from "../fmt/stmt/suite.js";
 import { byteOffsetOf } from "../fmt/trivia.js";
+import { closeSkippedClause } from "../fmt/stmt/verbatim.js";
 
 /** The case `child` (a child of a `case_clause`) is part of: the clause's block is the match's body. */
 function caseOf(child: number, ctx: StreamCtx<unknown>): { f: Fmt; c: MatchCase } {
@@ -105,6 +106,7 @@ export const stmtMatchVia = {
     const { f, s: m } = ruffStmtOf(n);
     const s = m as Match;
     const cs = f.comments;
+    closeSkippedClause(f);
     f.writeTrailing(cs.dangling(s));
     f.at(COMPOUND, () => {
       let previous: MatchCase | undefined;
@@ -145,6 +147,7 @@ export const stmtMatchVia = {
   // The colon's comments, then the body.
   "match.caseBody": (n: number, ctx: StreamCtx<unknown>) => {
     const { f, c } = caseOf(n, ctx);
+    if (closeSkippedClause(f)) return;
     const dangling = f.comments.dangling(c);
     f.writeTrailing(dangling);
     writeBody(f, c, c.body, "other", dangling);

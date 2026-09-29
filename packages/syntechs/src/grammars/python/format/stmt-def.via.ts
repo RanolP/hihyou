@@ -25,6 +25,7 @@ import {
   writeTypeParams,
 } from "../fmt/stmt/defs.js";
 import { endOf, tokens } from "../fmt/trivia.js";
+import { closeSkippedClause } from "../fmt/stmt/verbatim.js";
 
 export const stmtDefVia = {
   // Given the first decorator, prints them all, then what separates the last from the header.
@@ -112,6 +113,7 @@ export const stmtDefVia = {
   "def.body": (c: number) => {
     const { f, s } = ruffStmtOf(c);
     const def = s as FunctionDef | ClassDef;
+    if (closeSkippedClause(f)) return;
     const [, trailingDef] = splitDangling(f, def);
     f.writeTrailing(trailingDef);
     writeBody(f, def, def.body, def.kind === "FunctionDef" ? "function" : "class", trailingDef);

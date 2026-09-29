@@ -22,7 +22,7 @@ import * as gen from "./fmt.gen.js";
 import { collectionVia } from "./format/collection.via.js";
 import { exprVia } from "./format/expr.via.js";
 import { exprAccessVia } from "./format/expr-access.via.js";
-import { stmtCompoundVia } from "./format/stmt-compound.via.js";
+import { skipClauseHeader, stmtCompoundVia } from "./format/stmt-compound.via.js";
 import { stmtDefVia } from "./format/stmt-def.via.js";
 import { stmtMatchVia } from "./format/stmt-match.via.js";
 import { stmtSimpleVia } from "./format/stmt-simple.via.js";
@@ -109,5 +109,23 @@ export const python: Language<PythonOptions> = {
       },
     },
   ),
-  stream: rules,
+  stream: {
+    ...rules,
+    wrap: (n, ctx, print) => {
+      if (headed.has(ctx.tree.kindName(n))) skipClauseHeader(n, ctx);
+      print();
+    },
+  },
 };
+
+// The clauses whose header their own rule prints first; the others' print in `compound.alternate`.
+const headed = new Set([
+  "if_statement",
+  "for_statement",
+  "while_statement",
+  "with_statement",
+  "function_definition",
+  "class_definition",
+  "match_statement",
+  "case_clause",
+]);

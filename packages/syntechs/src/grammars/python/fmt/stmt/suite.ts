@@ -1,18 +1,26 @@
 import type { ExprStmt, Module, Py, Stmt, Str } from "../ast.js";
-import { Unformattable } from "../ast.js";
 import { COMPOUND, type Fmt, TOP } from "../builders.js";
 import type { Comment } from "../comments.js";
 import { lastChildInBody } from "../comments.js";
 import { BLANK, COLLAPSE, close, HARD, INDENT, open, sDsl, sLine, sText } from "../sink.js";
 import { writeStr } from "../strings.js";
 import {
-  byteOffsetOf,
   linesAfter,
   linesAfterIgnoringEndOfLineTrivia,
   linesAfterIgnoringTrivia,
   linesBefore,
 } from "../trivia.js";
 import { defRules } from "./defs.js";
+import {
+  hasSkip,
+  isOff,
+  resetSkippedClause,
+  type SuiteCursor,
+  sameLine,
+  writeSkipped,
+  writeSuppressedFromLeading,
+  writeSuppressedFromTrailing,
+} from "./verbatim.js";
 
 /**
  * Ruff's module and suite formatting (module/mod_module.rs, statement/suite.rs, statement/clause.rs): the blank
@@ -45,7 +53,7 @@ const emptyLine = () => sLine(HARD | COLLAPSE | BLANK);
 
 /** Ruff's `FormatModModule`. */
 export function writeModule(f: Fmt, m: Module): void {
-  rejectSuppressions(f);
+  resetSkippedClause();
   const cs = f.comments;
   if (m.body.length === 0) {
     // A file of only comments: ruff holds them as the module's dangling comments, the placement here as leading.
@@ -66,18 +74,13 @@ export function writeModule(f: Fmt, m: Module): void {
   writeSuite(f, m.body, "top");
 }
 
-/** `fmt: off`, `fmt: skip` and `yapf: disable` ask for source text kept as written, which this port does not do. */
-function rejectSuppressions(f: Fmt): void {
-  for (const c of f.comments.all)
-    if (/\bfmt:\s*(?:off|skip)\b|\byapf:\s*disable\b/.test(f.tree.text(c.ts)))
-      throw new Unformattable(
-        `suppression comment at ${byteOffsetOf(f.tree, c.ts)}`,
-      );
-}
-
 /** A statement with its leading and trailing comments (ruff's `FormatNodeRule::fmt`). */
 function writeStmt(f: Fmt, s: Stmt): void {
   const cs = f.comments;
+  if (!isCompound(s) && hasSkip(f, cs.trailing(s))) {
+    writeSkipped(f, s, s);
+    return;
+  }
   f.writeLeading(cs.leading(s));
   const def = defRules[s.kind] as StmtRule<typeof s.kind> | undefined;
   if (def) def(f, s as never);
@@ -193,23 +196,47 @@ export function writeSuite(
         const start = cs.leading(first)[0]?.start ?? first.start;
         if (linesBefore(f.tree, start) > 1) emptyLine();
       }
-      if (firstDoc) docstring(f, firstDoc, kind);
-      else writeStmt(f, first);
-      let emptyLineAfterDocstring =
-        (firstDoc !== undefined && kind === "class") ||
-        (top && firstDoc !== undefined);
-
-      let preceding = first;
-      for (const following of body.slice(1)) {
+      const cursor: SuiteCursor = {
+        body,
+        i: 1,
+        write: (s) => {
+          if (s === first && firstDoc && !hasSkip(f, cs.trailing(s))) docstring(f, firstDoc, kind);
+          else writeStmt(f, s);
+        },
+      };
+      const suppressed = (s: Stmt) =>
+        cs.leading(s).some((c) => isOff(f, c)) || cs.trailing(s).some((c) => isOff(f, c));
+      let emptyLineAfterDocstring = firstDoc !== undefined && (kind === "class" || top) && !suppressed(first);
+      let preceding = writeFrom(f, first, cursor);
+      for (let following = body[cursor.i++]; following; following = body[cursor.i++]) {
         between(f, preceding, following, kind, emptyLineAfterDocstring);
-        writeStmt(f, following);
-        preceding = following;
+        preceding = writeFrom(f, following, cursor);
         emptyLineAfterDocstring = false;
       }
     });
   } finally {
     f.depth = savedDepth;
   }
+}
+
+/**
+ * Ruff's suite loop body: `s`, the statement at `cursor.i - 1`, by its rule, or as written from a `fmt: off` it
+ * holds, or with the statements after it on its line when the last ends with a `fmt: skip`. Returns the last
+ * statement printed, which the loop goes on after.
+ */
+function writeFrom(f: Fmt, s: Stmt, cursor: SuiteCursor): Stmt {
+  const cs = f.comments;
+  if (cs.leading(s).some((c) => isOff(f, c))) return writeSuppressedFromLeading(f, s, cursor);
+  if (cs.trailing(s).some((c) => isOff(f, c))) return writeSuppressedFromTrailing(f, s, cursor);
+  const j = sameLine(f, cursor.body, cursor.i - 1);
+  const last = cursor.body[j] as Stmt;
+  if (last !== s && cursor.body.slice(cursor.i - 1, j + 1).every((x) => !isCompound(x)) && hasSkip(f, cs.trailing(last))) {
+    cursor.i = j + 1;
+    writeSkipped(f, s, last);
+    return last;
+  }
+  cursor.write(s);
+  return s;
 }
 
 /** The line breaks between two statements of a suite. */

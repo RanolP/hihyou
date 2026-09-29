@@ -10,6 +10,7 @@ import { Unformattable } from "../ast.js";
 import { type Fmt, writeCommaIn } from "../builders.js";
 import type { Comment } from "../comments.js";
 import * as sink from "../sink.js";
+import { hasSkip, writeSkipped } from "./verbatim.js";
 import type { Frame } from "../../../../fmt/dsl/runtime.js";
 import {
   byteEndOf,
@@ -69,6 +70,12 @@ function defFromSpec(f: Fmt, s: FunctionDef | ClassDef): void {
 /** Ruff's `FormatDecorator`, with the decorator's own comments. */
 function writeDecorator(f: Fmt, d: Decorator): void {
   const cs = f.comments;
+  // The placement gives the comments after the decorator's line to its expression, where ruff's has them.
+  const after = [...cs.trailing(d.expr).filter((c) => c.start > d.expr.end), ...cs.trailing(d)];
+  if (hasSkip(f, after)) {
+    writeSkipped(f, d, d.expr, after);
+    return;
+  }
   f.writeLeading(cs.leading(d));
   sink.sDsl(d.ts);
   f.writeTrailing(cs.trailing(d));
