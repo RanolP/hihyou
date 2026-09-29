@@ -181,6 +181,12 @@ function valueForm(
     // The interpreter line's trailing blanks, which prettier trims, reach no program.
     case "hash_bang_line":
       return t.trimEnd();
+    // A template's value reads every line break in its source as `\n`, so prettier's `endOfLine` may rewrite them.
+    case "string_fragment":
+    case "escape_sequence":
+      return parentKind(tree, node) === "template_string"
+        ? t.replace(/\r\n?/g, "\n")
+        : t;
     default:
       return t;
   }

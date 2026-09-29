@@ -1,4 +1,4 @@
-ts compatibility: 638/653 (97.70%), 3 refused (ok:false), 76 excluded
+ts compatibility: 639/653 (97.86%), 2 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -31,7 +31,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| typescript/end-of-line/multiline.ts | 2/3 | 100.00% | check: input "\\\n" at 511 is output as "\\\r" at 512, which means "\\\r@\|3/35", not "\\\n@\|3/35" |
 | typescript/import-export/empty-import.ts | 1/1 | 64.86% | check: output comment "// comment } from \"a\";" matches no input comment |
 | typescript/interface/long-type-parameters/long-type-parameters.ts | 2/2 | 75.65% | check: input comment "// always extends RectConfig" is missing from the output |
 
