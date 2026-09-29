@@ -75,3 +75,25 @@ function bareLambda(node: number, ctx: StreamCtx<unknown>): void {
 }
 
 const lineLike = (ctx: StreamCtx<unknown>, c: number) => ctx.isLineComment(c) || ctx.endsItsLine?.(c) === true;
+
+/**
+ * A lambda's parameters, which ktfmt keeps on the `{`'s line whatever their width, but a line comment after a
+ * parameter ends the line, and the next parameter starts one of its own.
+ */
+export const lambdaParameters: StreamRule<unknown> = (node, ctx) => {
+  const t = ctx.tree;
+  const items = new Set(ctx.items(node));
+  let item = -1;
+  for (let i = 0; i < t.count(node); i++) {
+    const c = t.child(node, i);
+    if (t.named(c) && !items.has(c)) continue;
+    if (t.kindName(c) === ",") {
+      sToken(c, ",");
+      if (ctx.trailingComments(item).some((k) => ctx.isLineComment(k))) sHardline();
+      else sText(" ");
+      continue;
+    }
+    ctx.print(c);
+    item = c;
+  }
+};

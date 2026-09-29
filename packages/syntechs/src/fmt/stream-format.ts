@@ -159,6 +159,11 @@ export interface StreamRules<O = unknown> {
   /** Whether `node` prints as its source text though it parsed, as a broken node does (prettier-ignore). */
   readonly keepsSource?: (node: number, ctx: StreamCtx<O>) => boolean;
   /**
+   * Whether `ERROR` node `error` is a recovery the rules print around, like a stray trailing comma they drop, so
+   * its parent formats rather than printing as written.
+   */
+  readonly recovered?: (error: number, tree: FormatTree) => boolean;
+  /**
    * Whether `node`'s rule prints the node's comments itself, with `printLeadingComments` and
    * `printTrailingComments`, so they can go inside what the rule wraps around them (prettier's
    * willPrintOwnComments: a JSX element's parentheses).
@@ -213,7 +218,8 @@ export function formatStream<O>(
           const t = tree.text(c);
           sToken(c, isLine(c) ? t.trimEnd() : t);
         };
-    const broken = brokenNodes(tree);
+    const { recovered } = language;
+    const broken = brokenNodes(tree, recovered && ((n) => recovered(n, tree)));
     const { keepsSource } = language;
     const isBroken = (node: number) =>
       (broken !== undefined && broken.has(node)) ||

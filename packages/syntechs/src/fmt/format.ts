@@ -38,12 +38,15 @@ export function format<O>(
   return formatStream(tree, language, options);
 }
 
-/** The nodes with an `ERROR` or missing child, or undefined when the tree has none. */
-export function brokenNodes(tree: Tree): Set<number> | undefined {
+/**
+ * The nodes with an `ERROR` or missing child, or undefined when the tree has none; an `ERROR` that `recovered`
+ * holds of leaves its parent formatted.
+ */
+export function brokenNodes(tree: Tree, recovered?: (error: number) => boolean): Set<number> | undefined {
   let broken: Set<number> | undefined;
   for (let o = 0; o < tree.nodeCount; o++) {
     const n = tree.at(o);
-    if (tree.kind(n) === SYM_ERROR || tree.missing(n)) {
+    if ((tree.kind(n) === SYM_ERROR && recovered?.(n) !== true) || tree.missing(n)) {
       const parent = tree.parent(n);
       if (parent !== NO_NODE) (broken ??= new Set()).add(parent);
     }

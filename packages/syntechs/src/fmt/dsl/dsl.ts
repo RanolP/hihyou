@@ -653,6 +653,7 @@ function labelOf(x: Tree): string {
 export const grpParen = brackets("(", ")");
 export const grpBrace = brackets("{", "}");
 export const grpBracket = brackets("[", "]");
+export const grpAngle = brackets("<", ">");
 
 /**
  * The items of `list`, each followed by its source separator `sep`; with `trailing`, a synthetic one after the

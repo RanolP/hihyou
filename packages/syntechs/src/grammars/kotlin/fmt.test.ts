@@ -106,3 +106,13 @@ test("annotations stay apart from what they annotate, on lines of their own once
     '@A @B(1) fun f() = 1\n\n@A\n@B(1)\nfun g() {\n    val x: (@A List<Int>) -> Unit = h\n    @[C D]\n    var y = 2\n    @S("X")\n    return z\n}\n',
   );
 });
+
+// A regression here prints a lambda or a type list with a trailing comma as written (the grammar recovers the comma
+// as an ERROR), keeps that comma where ktfmt drops it, or stops breaking a type list the source breaks.
+test("trailing commas drop from lambda parameters and one-line type lists, and a broken type list keeps one", () => {
+  const input =
+    "fun <A, B,> f() {\n    g<Int,>()\n    a {\n        x,\n        y, ->\n        z\n    }\n    h<\n        A,\n        B\n    >()\n}\n";
+  expect(run(input, false)).toBe(
+    "fun <A, B> f() {\n    g<Int>()\n    a { x, y ->\n        z\n    }\n    h<\n        A,\n        B,\n    >()\n}\n",
+  );
+});

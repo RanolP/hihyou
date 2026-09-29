@@ -11,6 +11,7 @@ import {
   firstText,
   group,
   grpBracket,
+  grpAngle,
   grpParen,
   hardline,
   has,
@@ -76,6 +77,9 @@ const spaced = (
 const adjacent = inOrder({ spaceWhen: { after: [","] } });
 
 const binary = () => inOrder(space);
+
+const typeList = (children: Parameters<typeof sepBy>[1]) =>
+  grpAngle(sepBy(",", children, { trailing: when("manyArguments"), imaginary: true }));
 
 // ktfmt puts a blank line before every declaration of a file or class body but between two properties (or two file
 // annotations), where it keeps the source's.
@@ -229,8 +233,9 @@ export const kotlin = format({
     user_type: () => inOrder(),
     // The grammar hides the `?`, so no rule could print it: the type prints as written.
     nullable_type: () => verbatim,
-    type_arguments: () => adjacent,
-    type_parameters: () => adjacent,
+    // One the source keeps on one line prints in fmt.ts.
+    type_arguments: ($) => typeList($.children),
+    type_parameters: ($) => typeList($.children),
     type_parameter: () => inOrder(space),
     type_constraints: () => spaced(),
     type_constraint: () => spaced(),
@@ -264,6 +269,7 @@ export const kotlin = format({
     annotated_lambda: () => inOrder({ join: "space", tight: { after: ["label"] } }),
     // One with no statements prints in lambda.ts.
     lambda_literal: () => group(inOrder({ join: "line", hangAfter: ["{", "->"], spaceWhen: { before: ["->"] } })),
+    // Prints in lambda.ts.
     lambda_parameters: () => adjacent,
     // A member chain prints from its root in chain.ts.
     navigation_expression: () => inOrder(),
@@ -339,6 +345,8 @@ export const kotlin = format({
     value_arguments: { breakWhen: when("writtenBroken") },
     function_value_parameters: { breakWhen: when("writtenBroken") },
     collection_literal: { breakWhen: when("writtenBroken") },
+    type_arguments: { breakWhen: when("writtenBroken") },
+    type_parameters: { breakWhen: when("writtenBroken") },
     primary_constructor: { breakWhen: when("writtenBroken") },
   },
   unknown: "bail",

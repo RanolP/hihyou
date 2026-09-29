@@ -11,12 +11,13 @@ import { docCommentWords, kdoc } from "../../fmt/dsl/doc-comment.js";
 import type { ImportRule, PredicateRule } from "../../fmt/dsl/runtime.js";
 import { newlineBetween } from "../../fmt/text.js";
 import { type FormatTree, firstLeaf, prevLeaf } from "../../fmt/tree.js";
-import type { StreamCtx, StreamRules } from "../../fmt/stream-format.js";
+import type { StreamCtx, StreamRule, StreamRules } from "../../fmt/stream-format.js";
+import { sText, sToken } from "../../fmt/stream.js";
 import { grammar } from "./bundle.js";
 import { binary, binaryKinds } from "./binary.js";
 import { chained } from "./chain.js";
 import { enumBody } from "./enum-body.js";
-import { lambdas } from "./lambda.js";
+import { lambdaParameters, lambdas } from "./lambda.js";
 import * as gen from "./fmt.gen.js";
 import { language } from "./index.js";
 import { trimmedString, trimmedStrings } from "./trimmed-string.js";
@@ -39,7 +40,7 @@ const inImports = (tree: FormatTree, node: number) => {
 
 // ktfmt drops `;` between statements and adds a trailing comma to a broken list; neither changes meaning. It
 // sorts the imports and drops unused ones, so `check` compares only the code around them.
-const closers = new Set([")", "]", "}", ">", ";"]);
+const closers = new Set([")", "]", "}", ">", ";", "->"]);
 const normalize: Normalize = (lexemes, _text, tree) =>
   lexemes.map((l, i) => {
     if (inImports(tree, l.node)) return undefined;
@@ -227,11 +228,41 @@ function backingField(t: FormatTree, node: number): boolean {
 const listed = new Set(["value_argument", "parameter", "class_parameter"]);
 
 /**
- * A collection literal's elements. tree-sitter-kotlin 0.3.8 takes no trailing comma there, and recovers the one
- * before a comment or a line break as an empty identifier after it, which is no element.
+ * A trailing comma as tree-sitter-kotlin 0.3.8 recovers it where it takes none: in a collection literal, a type
+ * argument or parameter list, a function type's parameters or before a lambda's `->`. It reads the comma as an
+ * ERROR, or keeps it as a separator and reads an empty item after it. ktfmt drops the comma where the list fits
+ * (and always before `->`), so the formatter prints neither and lets the list add its own.
  */
-const collectionItems = <O>(ctx: StreamCtx<O>, node: number) =>
-  ctx.items(node).filter((c) => ctx.tree.text(c) !== "");
+const recoveredComma = (t: FormatTree, c: number) =>
+  t.text(c) === "" || (t.kindName(c) === "ERROR" && t.count(c) === 1 && t.text(t.child(c, 0)) === ",");
+
+/** The kinds whose lists `recoveredComma` recovers a trailing comma in. */
+const recovering = [
+  "collection_literal",
+  "type_arguments",
+  "type_parameters",
+  "function_type_parameters",
+  "lambda_literal",
+] as const;
+
+/**
+ * A type list the source keeps on one line, which ktfmt leaves there: it breaks the lists around one for width
+ * first, which a group here would not. A trailing comma drops, as ktfmt drops it from a list that fits.
+ */
+const flatTypeList = <O>(node: number, ctx: StreamCtx<O>) => {
+  const t = ctx.tree;
+  const items = ctx.items(node).filter((c) => !recoveredComma(t, c));
+  const last = items[items.length - 1] ?? -1;
+  for (let i = 0; i < t.count(node); i++) {
+    const c = t.child(node, i);
+    if (t.named(c) && !items.includes(c)) continue;
+    if (t.kindName(c) !== ",") ctx.print(c);
+    else if (t.ord(c) < t.ord(last)) {
+      sToken(c, ",");
+      sText(" ");
+    }
+  }
+};
 
 /** The rules `when` names in format.ts. */
 export const customs = {
@@ -273,7 +304,8 @@ export const customs = {
   writtenBroken: (node, ctx) => {
     const t = ctx.tree;
     if (!t.text(node).includes("\n")) return false;
-    if (t.kindName(node) === "collection_literal") return ctx.items(node).length > 1;
+    if (/^(collection_literal|type_arguments|type_parameters)$/.test(t.kindName(node)))
+      return ctx.items(node).length > 1;
     let items = 0;
     for (let i = 0; i < t.count(node); i++) if (listed.has(t.kindName(t.child(node, i)))) items++;
     return items > 1;
@@ -336,12 +368,18 @@ function withChains<O>(stream: StreamRules<O>): StreamRules<O> {
     rules.set(kind, chained(stream.rules.get(kind), hugsDeclaration));
   rules.set("string_literal", trimmedStrings(stream.rules.get("string_literal")));
   rules.set("lambda_literal", lambdas(stream.rules.get("lambda_literal")));
+  rules.set("lambda_parameters", lambdaParameters);
   for (const kind of binaryKinds) rules.set(kind, binary(stream.rules.get(kind)));
-  const collection = stream.rules.get("collection_literal");
-  if (collection !== undefined)
-    rules.set("collection_literal", (node, ctx) => {
-      // The comments around the empty identifier a trailing comma leaves print after the elements, as the list's own.
-      const items = collectionItems(ctx, node);
+  for (const kind of recovering) {
+    const generated = rules.get(kind);
+    if (generated === undefined) continue;
+    const rule: StreamRule<O> =
+      kind === "type_arguments" || kind === "type_parameters"
+        ? (node, ctx) => (ctx.tree.text(node).includes("\n") ? generated(node, ctx) : flatTypeList(node, ctx))
+        : generated;
+    rules.set(kind, (node, ctx) => {
+      // The comments around the empty item a trailing comma leaves print after the items, as the list's own.
+      const items = ctx.items(node).filter((c) => !recoveredComma(ctx.tree, c));
       const dangling = [
         ...ctx.danglingComments(node),
         ...ctx
@@ -349,7 +387,7 @@ function withChains<O>(stream: StreamRules<O>): StreamRules<O> {
           .filter((c) => !items.includes(c))
           .flatMap((c) => [...ctx.leadingComments(c), ...ctx.trailingComments(c)]),
       ].sort((a, b) => a - b);
-      collection(
+      rule(
         node,
         Object.assign(Object.create(ctx) as typeof ctx, {
           items: (n: number) => (n === node ? items : ctx.items(n)),
@@ -357,7 +395,14 @@ function withChains<O>(stream: StreamRules<O>): StreamRules<O> {
         }),
       );
     });
-  return { ...stream, rules, wrapsLineComments: true };
+  }
+  return {
+    ...stream,
+    rules,
+    wrapsLineComments: true,
+    recovered: (error, t) =>
+      recoveredComma(t, error) && (recovering as readonly string[]).includes(t.kindName(t.parent(error))),
+  };
 }
 
 /** Kotlin as ktfmt 0.64 `--kotlinlang-style` lays it out; the layouts are format.ts, generated into fmt.gen.ts. */

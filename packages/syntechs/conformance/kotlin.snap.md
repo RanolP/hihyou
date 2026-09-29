@@ -1,4 +1,4 @@
-kotlin compatibility: 680/753 (90.31%), 5 refused (ok:false), 11 excluded
+kotlin compatibility: 686/753 (91.10%), 5 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -25,12 +25,10 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/call/callArgsStickToFunctionName.kt | 0/1 | 60.00% |
 | ktfmt/format/call/chainWithDereferences.kt | 0/1 | 50.00% |
 | ktfmt/format/call/functionReference.kt | 0/1 | 88.00% |
-| ktfmt/format/call/trailingCommaInLambda.kt | 0/1 | 45.45% |
-| ktfmt/format/call/trailingCommasInCalls.kt | 0/1 | 75.00% |
+| ktfmt/format/call/trailingCommasInCalls.kt | 0/1 | 93.33% |
 | ktfmt/format/class/emptyCompanionObject.kt | 0/1 | 92.31% |
 | ktfmt/format/class/secondaryConstructorDelegate2.kt | 0/1 | 52.63% |
 | ktfmt/format/comment/shebang.kts | 0/1 | 88.89% |
-| ktfmt/format/function/trailingCommasInDefinitions.kt | 0/1 | 90.57% |
 | ktfmt/format/if/blocks.kt | 0/1 | 21.05% |
 | ktfmt/format/if/comment.kt | 0/1 | 61.54% |
 | ktfmt/format/import/importList.kt | 0/1 | 62.50% |
@@ -49,26 +47,22 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/property/backingFieldWithChainedScopingFunction3.kt | 0/1 | 76.92% |
 | ktfmt/format/property/trailingCommasInProperties.kt | 0/1 | 72.73% |
 | ktfmt/format/string/multiDollarString.kt | 0/1 | 44.44% |
-| ktfmt/format/type/castsWithBreaks.kt | 0/1 | 67.86% |
+| ktfmt/format/type/castsWithBreaks.kt | 0/1 | 69.70% |
 | ktfmt/format/type/classExpression.kt | 0/1 | 66.67% |
 | ktfmt/format/type/intersections.kt | 0/1 | 75.00% |
-| ktfmt/format/type/nestedQualifiedTypes.kt | 0/1 | 40.00% |
-| ktfmt/format/type/trailingCommasInFunctionTypes.kt | 0/1 | 60.00% |
+| ktfmt/format/type/nestedQualifiedTypes.kt | 0/1 | 50.00% |
 | ktfmt/format/when/guards.kt | 0/1 | 58.33% |
-| ktfmt/google/casts.kt | 0/1 | 42.86% |
-| ktfmt/google/classTypeParams.kt | 0/1 | 63.29% |
-| ktfmt/google/comments.kt | 0/1 | 60.55% |
-| ktfmt/google/forcedBreaksInFunCalls.kt | 0/1 | 80.56% |
-| ktfmt/google/forwardPropagationOfBreaks3.kt | 0/1 | 66.67% |
-| ktfmt/google/fqNestedTypes.kt | 0/1 | 38.10% |
-| ktfmt/google/longFunctionTypeWrapping.kt | 0/1 | 23.53% |
-| ktfmt/google/missingTrailingCommas.kt | 0/1 | 85.29% |
-| ktfmt/google/redundantTrailingCommas.kt | 0/1 | 66.67% |
+| ktfmt/google/casts.kt | 0/1 | 56.52% |
+| ktfmt/google/comments.kt | 0/1 | 85.71% |
+| ktfmt/google/forcedBreaksInFunCalls.kt | 0/1 | 88.00% |
+| ktfmt/google/fqNestedTypes.kt | 0/1 | 40.00% |
+| ktfmt/google/longFunctionTypeWrapping.kt | 0/1 | 33.33% |
+| ktfmt/google/redundantTrailingCommas.kt | 0/1 | 83.33% |
 | ktfmt/google/secondaryConstructorNoArgs.kt | 0/1 | 47.06% |
 | ktfmt/google/singleLambdaArgument.kt | 0/1 | 68.75% |
-| ktfmt/google/trailingCommasAlwaysRemoved.kt | 0/1 | 56.00% |
+| ktfmt/google/trailingCommasAlwaysRemoved.kt | 0/1 | 88.00% |
 | ktfmt/google/trailingCommasNotAdded.kt | 0/1 | 79.07% |
-| ktfmt/google/trailingCommasSingleElementLists.kt | 0/1 | 63.41% |
+| ktfmt/google/trailingCommasSingleElementLists.kt | 0/1 | 82.61% |
 | ktfmt/new_codestyle/annotation/AnnotationOnExpression.kt | 0/1 | 90.63% |
 | ktfmt/new_codestyle/annotation/AnnotationOnExpressionFullWidth.kt | 0/1 | 87.50% |
 | ktfmt/new_codestyle/annotation/AnnotationsEverywhere.kt | 0/1 | 96.97% |
