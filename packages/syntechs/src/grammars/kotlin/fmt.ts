@@ -8,7 +8,8 @@ import {
 import { defineLanguage, type Language } from "../../fmt/rules.js";
 import { docCommentWords, kdoc } from "../../fmt/dsl/doc-comment.js";
 import type { ImportRule, PredicateRule } from "../../fmt/dsl/runtime.js";
-import type { FormatTree } from "../../fmt/tree.js";
+import { newlineBetween } from "../../fmt/text.js";
+import { type FormatTree, firstLeaf } from "../../fmt/tree.js";
 import { grammar } from "./bundle.js";
 import * as gen from "./fmt.gen.js";
 import { language } from "./index.js";
@@ -133,6 +134,14 @@ export const customs = {
     let items = 0;
     for (let i = 0; i < t.count(node); i++) if (listed.has(t.kindName(t.child(node, i)))) items++;
     return items > 1;
+  },
+  /** Of a lambda's `statements`: ktfmt keeps the lambda broken when the source breaks the line before them. */
+  lambdaWrittenBroken: (node, ctx) => {
+    const lambda = ctx.tree.parent(node);
+    return (
+      ctx.tree.kindName(lambda) === "lambda_literal" &&
+      newlineBetween(ctx.tree, firstLeaf(ctx.tree, lambda), firstLeaf(ctx.tree, node))
+    );
   },
 } satisfies Record<string, PredicateRule<KotlinOptions>>;
 

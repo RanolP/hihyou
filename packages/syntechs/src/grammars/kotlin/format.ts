@@ -87,7 +87,8 @@ export const kotlin = format({
     import_alias: () => inOrder(space),
     identifier: () => inOrder(),
     file_annotation: () => inOrder(),
-    statements: ($) => lines($.children, { tokens: true }),
+    // Inside the hanging group a lambda's `{` (or `->`) opens, so the break it forces reaches that group too.
+    statements: ($) => [either(when("lambdaWrittenBroken"), breakParent, []), lines($.children, { tokens: true })],
 
     modifiers: () =>
       either(
