@@ -1,5 +1,7 @@
 // Scoring one target's runs, and the snapshot and matrix files that commit the score.
 
+import { execFileSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
 import { diffArrays } from "diff";
 
 /** One fixture under one option set, compared with the reference's expected output. */
@@ -221,4 +223,44 @@ export function renderMatrix(rows: MatrixRow[]): string {
     }),
     "",
   ].join("\n");
+}
+
+/**
+ * Where a machine-readable result came from, for the scorecard the website publishes: the commit measured (CI's
+ * `GITHUB_SHA`, else the checkout's HEAD), when, and the tool versions it ran against.
+ */
+export interface RunInfo {
+  commit: string;
+  date: string;
+  node: string;
+  tools: Record<string, string>;
+}
+
+export function runInfo(tools: Record<string, string>): RunInfo {
+  const commit =
+    process.env.GITHUB_SHA ??
+    execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: import.meta.dirname,
+      encoding: "utf8",
+    }).trim();
+  return {
+    commit,
+    date: new Date().toISOString(),
+    node: process.version,
+    tools,
+  };
+}
+
+/** The value of `--json <path>` in `args`; throws when the flag has no path after it. */
+export function jsonPathArg(args: string[]): string | undefined {
+  const at = args.indexOf("--json");
+  if (at === -1) return undefined;
+  const path = args[at + 1];
+  if (path === undefined || path.startsWith("--"))
+    throw new Error(`--json needs a file path, got ${path ?? "nothing"}`);
+  return path;
+}
+
+export function writeJson(path: string, value: unknown): void {
+  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 }
