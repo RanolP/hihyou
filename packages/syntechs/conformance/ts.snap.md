@@ -1,4 +1,4 @@
-ts compatibility: 630/653 (96.48%), 5 refused (ok:false), 76 excluded
+ts compatibility: 638/653 (97.70%), 3 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -13,11 +13,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
 | typescript/argument-expansion/arrow-with-return-type.ts | 0/1 | 77.78% |
-| typescript/arrow/comments/issue-11100.ts | 0/1 | 56.52% |
-| typescript/as/comments/18160.ts | 0/1 | 81.25% |
-| typescript/call/callee-comments.ts | 0/1 | 74.36% |
-| typescript/comments/16065.ts | 0/1 | 81.82% |
-| typescript/comments/16889.ts | 0/1 | 97.39% |
 | typescript/comments/method_types.ts | 0/1 | 82.05% |
 | typescript/compiler/indexSignatureWithInitializer.ts | 0/1 | 87.50% |
 | typescript/conformance/types/moduleDeclaration/kind-detection.ts | 0/1 | 0.00% |
@@ -25,7 +20,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/definite/without-annotation.ts | 0/1 | 91.67% |
 | typescript/import-require/type-imports.ts | 0/1 | 56.00% |
 | typescript/non-null/braces.ts | 0/1 | 94.12% |
-| typescript/property-signature/consistent-with-flow/comments.ts | 0/1 | 80.00% |
 | typescript/template-literals/member-expression.ts | 0/1 | 57.14% |
 | typescript/trailing-comma/trailing.ts | 2/3 | 97.78% |
 | typescript/type-parameters-arguments/long-function-arg.ts | 0/1 | 18.18% |
@@ -40,8 +34,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | typescript/end-of-line/multiline.ts | 2/3 | 100.00% | check: input "\\\n" at 511 is output as "\\\r" at 512, which means "\\\r@\|3/35", not "\\\n@\|3/35" |
 | typescript/import-export/empty-import.ts | 1/1 | 64.86% | check: output comment "// comment } from \"a\";" matches no input comment |
 | typescript/interface/long-type-parameters/long-type-parameters.ts | 2/2 | 75.65% | check: input comment "// always extends RectConfig" is missing from the output |
-| typescript/mapped-type/issue-11098.ts | 1/1 | 93.07% | check: input "[" at 520 is output as "}" at 509, which means "}@\|-1/43", not "[@\|-1/45" |
-| typescript/mapped-type/break-mode/break-mode.ts | 1/1 | 96.30% | check: input "[" at 90 is output as "[" at 97, which means "[@\|-1/16", not "[@\|-1/15" |
 
 # Excluded
 

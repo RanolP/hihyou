@@ -15,7 +15,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/arrays/numbers-with-holes.js | 0/1 | 57.78% |
 | js/arrays/preserve_empty_lines.js | 0/1 | 90.00% |
 | js/arrows/arrow_function_expression.js | 0/2 | 94.29% |
-| js/arrows/issue-17421.js | 0/2 | 87.02% |
+| js/arrows/issue-17421.js | 0/2 | 90.60% |
 | js/arrows/parenthesized-body/issue-18776.js | 0/1 | 85.71% |
 | js/classes/multiple-static.js | 0/1 | 40.00% |
 | js/comments/blank.js | 0/2 | 92.31% |

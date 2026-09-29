@@ -73,6 +73,24 @@ function scanWhitespaceAndComments(
   }
 }
 
+const isIdentifierChar = (c: number): boolean =>
+  iswalpha(c) || iswdigit(c) || c === 95 || c === 36;
+
+/** At `[`: whether `[ name in` follows, which only a mapped type clause starts. */
+function startsMappedTypeClause(lexer: Lexer): boolean {
+  lexer.advance(true);
+  while (iswspace(la(lexer))) lexer.advance(true);
+  if (!isIdentifierChar(la(lexer))) return false;
+  while (isIdentifierChar(la(lexer))) lexer.advance(true);
+  if (!iswspace(la(lexer))) return false;
+  while (iswspace(la(lexer))) lexer.advance(true);
+  if (la(lexer) !== 105) return false;
+  lexer.advance(true);
+  if (la(lexer) !== 110) return false;
+  lexer.advance(true);
+  return !isIdentifierChar(la(lexer));
+}
+
 function scanAutomaticSemicolon(
   lexer: Lexer,
   valid: Uint8Array,
@@ -120,10 +138,13 @@ function scanAutomaticSemicolon(
     // takes a type reference's or a `typeof` query's type arguments only on the same line, so `typeof a` then
     // `<T>(): void` on the next line of an interface are two members.
     case 40:
-    case 91:
     case 60:
       if (valid[LOGICAL_OR]) return false;
       break;
+    case 91:
+      if (valid[LOGICAL_OR]) return false;
+      // `readonly` then a mapped type clause on the next line is one modifier, as TypeScript reads it.
+      return !startsMappedTypeClause(lexer);
     case 43:
       lexer.advance(true);
       return la(lexer) === 43;

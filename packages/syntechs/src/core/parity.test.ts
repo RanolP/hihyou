@@ -91,6 +91,8 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
       "class C { m(): void\n  n() {} }\nfunction f<T(a: T): {\n",
       // A type's `<` on the next line starts a new member, while an expression's `<` continues the comparison.
       "interface I { a: typeof b\n  <T>(): void; c: C\n  <U>(): U }\nx = a\n< b\n",
+      // `readonly` then a mapped type clause on the next line is one modifier; an index signature's `[` is a new member.
+      "type M = { readonly\n  [K in T]: V }\ninterface J { a: A\n  [k: string]: B }\nx = a\n[0]\n",
     ],
   ],
   tsx: [
