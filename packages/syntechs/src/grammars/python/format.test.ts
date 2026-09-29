@@ -51,3 +51,10 @@ it("reads a with's parentheses as CPython does: a tuple item, or parenthesized i
   expect(check(python, "with (a,):\n    pass\n", "with a:\n    pass\n")).toBeUndefined();
   expect(check(python, "with (*a,):\n    pass\n", "with a:\n    pass\n")).toBeDefined();
 });
+
+// tree-sitter-python 0.25 had no PEP 696 default, so `T=int` failed the parse, and a definition printed a bound
+// only from its tokens, refusing `T: lambda: 42`: both now print as expressions, the default as ` = `.
+it("prints a type parameter's bound and default as expressions", () => {
+  expect(fmt("type X[T:int=int, *Ts=*int, **P=[int]] = int\n")).toBe("type X[T: int = int, *Ts = *int, **P = [int]] = int\n");
+  expect(fmt("def f[T=lambda: 42, U: a or b](): pass\n")).toBe("def f[T = lambda: 42, U: a or b]():\n    pass\n");
+});

@@ -1,4 +1,4 @@
-python compatibility: 290/327 (88.69%), 14 refused (ok:false), 49 excluded
+python compatibility: 294/327 (89.91%), 12 refused (ok:false), 49 excluded
 
 Fixtures: ruff 0.16.8 crates/ruff_python_formatter/resources/test/fixtures/{black,ruff} (recursive), every option set of each `.options.json`, expected output from tests/snapshots (black cases without a snapshot: their `.expect` file). Options are passed by their ruff.toml names.
 
@@ -28,8 +28,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ruff/fmt_on_off/indent.py | 0/3 | 65.49% |
 | ruff/statement/function.py | 0/1 | 99.60% |
 | ruff/statement/lazy_import.py | 0/1 | 68.97% |
-| ruff/statement/type_alias.py | 0/1 | 37.75% |
-| ruff/tab_width.py | 1/3 | 76.08% |
 | ruff/trailing_comments.py | 0/1 | 86.11% |
 
 # Refused
@@ -42,8 +40,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | black/cases/pep_701.py | 1/1 | 93.33% | check: input "f\"{'\\''}\"" at 2276 is output as "f\"{\"'\"}\"" at 2230, which means "0:S\u0000{\"\"\"}\u0000", not "0:S |
 | black/cases/preview_long_strings__regression.py | 1/1 | 96.81% | check: input "F\"{F'{humanize_number(pos)}.': <{pound_len+2}} \"\n    F\"{balance: <{bal_len + 5}} \"\n    F\"<<{author. |
 | black/cases/remove_for_brackets.py | 1/1 | 96.00% | check: input "(" at 672 is output as "k" at 692, which means "k", not "(" |
-| black/cases/type_param_defaults.py | 1/1 | 29.03% | formatter-error: parse error: ERROR at 7 |
-| black/cases/type_params.py | 1/1 | 20.90% | formatter-error: unsupported type parameter lambda at 542 |
 | ruff/expression/fstring.py | 2/2 | 57.40% | formatter-error: parse error: ERROR at 21682 |
 | ruff/expression/fstring_multiline_replacement_field.py | 2/2 | 68.75% | check: input "f\"aaaaaaaaaaa {[ttttteeeeeeeeest,]} more {\n    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa |
 | ruff/expression/join_implicit_concatenated_string.py | 1/1 | 97.62% | check: input "f\"{'Hy \\\"User\\\"'}\" 'more'" at 470 is output as "f\"{'Hy \"User\"'}more\"" at 455, which means "0:S\u |

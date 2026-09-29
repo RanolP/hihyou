@@ -168,6 +168,8 @@
   "black/cases/type_aliases.py#{\"target_version\":\"3.12\"}",
   "black/cases/type_comment_syntax_error.py#{}",
   "black/cases/type_expansion.py#{\"preview\":\"enabled\",\"target_version\":\"3.12\"}",
+  "black/cases/type_param_defaults.py#{\"target_version\":\"3.13\"}",
+  "black/cases/type_params.py#{\"target_version\":\"3.12\"}",
   "black/cases/typed_params_trailing_comma.py#{}",
   "black/cases/walrus_in_dict.py#{\"preview\":\"enabled\"}",
   "black/cases/whitespace.py#{}",
@@ -311,11 +313,14 @@
   "ruff/statement/top_level.py#{}",
   "ruff/statement/try.py#{\"target_version\":\"3.13\"}",
   "ruff/statement/try.py#{\"target_version\":\"3.14\"}",
+  "ruff/statement/type_alias.py#{}",
   "ruff/statement/while.py#{}",
   "ruff/statement/with.py#{\"target_version\":\"3.8\"}",
   "ruff/statement/with.py#{\"target_version\":\"3.9\",\"preview\":\"enabled\"}",
   "ruff/statement/with_39.py#{\"target_version\":\"3.9\",\"preview\":\"enabled\"}",
   "ruff/tab_width.py#{\"indent_width\":2}",
+  "ruff/tab_width.py#{\"indent_width\":4}",
+  "ruff/tab_width.py#{\"indent_width\":8}",
   "ruff/trailing_pragma_nested.py#{}",
   "ruff/trivia.py#{}"
 ]

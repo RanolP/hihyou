@@ -116,6 +116,8 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
       "class C:\n    def f(self):\n        return (\n    x = 1\n",
       // Tabs and spaces mixed, and an unterminated f-string replacement field.
       'if a:\n\tb\n        c\nd = f"{e"\n',
+      // PEP 696 type parameter defaults, which only the patched grammar reads.
+      "def f[T = int, *Ts = *tuple[int], **P = [int]](): pass\nclass C[T: str = str]: ...\ntype A[T = int] = list[T]\n",
     ],
   ],
   kotlin: [

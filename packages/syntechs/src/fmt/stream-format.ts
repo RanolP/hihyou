@@ -194,7 +194,8 @@ export function formatStream<O>(
     const language = base.stream;
     const resolved: O = { ...base.defaults, ...options };
     const settings = base.settings(resolved);
-    resetStream(settings.ruff === true);
+    const ruff = settings.ruff === true;
+    resetStream(ruff, ruff ? settings.indentWidth : 0);
     const rules: (StreamRule<O> | null)[] = [];
     const ruleOf = (n: number) => {
       const k = tree.kind(n);

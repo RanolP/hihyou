@@ -33,6 +33,9 @@ patchedDependencies:
   # ktfmt formats although the compiler rejects it). Changed as css is, except the src/tree_sitter/ header hunks
   # stay, as in typescript, because the newer CLI writes an ABI 15 parser.c.
   tree-sitter-kotlin@0.3.8: patches/tree-sitter-kotlin@0.3.8.patch
+  # PEP 696 type parameter defaults, `def f[T = int]()`, as a `type_default` in `type_parameter`; grammar.js and
+  # its generated src/ only, changed the same way as css's.
+  tree-sitter-python@0.25.0: patches/tree-sitter-python@0.25.0.patch
   # `a + b!` parsed as `(a + b)!`: `!` binds at 'member' precedence, as in TypeScript, not the unordered 'unary'.
   # Same workflow in typescript/ and tsx/, except the src/tree_sitter/ header hunks stay: upstream's headers
   # predate the ABI 15 parser.c the newer CLI writes, and the native parity build needs them.

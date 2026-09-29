@@ -136,7 +136,7 @@ function formatDocCode(
     }
     done.set(k, out);
   }
-  if (wanted.size > 0) resetStream(true);
+  if (wanted.size > 0) resetStream(true, options["indent-width"]);
   return (code, width, quote) => done.get(key(code, width, quote));
 }
 

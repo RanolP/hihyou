@@ -312,7 +312,7 @@ export interface TypeParams extends Base {
   readonly params: TypeParam[];
   readonly close: number;
 }
-/** `T`, `T: bound`, `*Ts` or `**P`. */
+/** `T`, `T: bound`, `*Ts` or `**P`, each with an optional PEP 696 default: `T = int`. */
 export interface TypeParam extends Base {
   readonly kind: "TypeParam";
   /** `*` or `**`. */
@@ -320,6 +320,8 @@ export interface TypeParam extends Base {
   readonly name: number;
   readonly colon: number | undefined;
   readonly bound: Expr | undefined;
+  readonly eq?: number;
+  readonly default?: Expr;
 }
 
 export type Stmt =
@@ -1367,6 +1369,17 @@ class Reader {
       parent: undefined,
     };
     switch (this.kind(p)) {
+      case "type_default": {
+        const param = this.typeParam(this.needField(p, "name"));
+        const value = this.expr(this.needField(p, "value"));
+        return this.link({
+          ...param,
+          ...base,
+          kids: [...param.kids, value],
+          eq: this.need(p, "="),
+          default: value,
+        });
+      }
       case "identifier":
         return {
           ...base,

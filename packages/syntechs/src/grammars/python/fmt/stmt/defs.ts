@@ -6,14 +6,13 @@ import type {
   Match,
   TypeParams,
 } from "../ast.js";
-import { Unformattable } from "../ast.js";
 import { type Fmt, writeCommaIn } from "../builders.js";
 import type { Comment } from "../comments.js";
 import * as sink from "../sink.js";
+import { writeTypeParam } from "./assign.js";
 import { hasSkip, writeSkipped } from "./verbatim.js";
 import type { Frame } from "../../../../fmt/dsl/runtime.js";
 import {
-  byteOffsetOf,
   linesAfter,
   linesAfterIgnoringEndOfLineTrivia,
   linesBefore,
@@ -113,18 +112,14 @@ export function splitDangling(
 
 // ---- type parameters (type_param/*.rs) ----
 
-/**
- * Ruff's `FormatTypeParams`. Tree-sitter reads a bound as a type expression the AST does not convert, so a
- * bound is printed from its tokens and only in the shapes whose spacing is fixed: a name, a dotted name, or a
- * parenthesized tuple of those, in the brackets of `frame` (the kind's rule's).
- */
+/** Ruff's `FormatTypeParams`, in the brackets of `frame` (the kind's rule's). */
 export function writeTypeParams(f: Fmt, tp: TypeParams, frame: Frame): void {
   const cs = f.comments;
   const entries = tp.params.map((p) => ({
     end: p.end,
     write: () => {
       f.writeLeading(cs.leading(p));
-      writeTypeParam(f, p.ts);
+      writeTypeParam(f, p);
       f.writeTrailing(cs.trailing(p));
     },
   }));
@@ -135,91 +130,6 @@ export function writeTypeParams(f: Fmt, tp: TypeParams, frame: Frame): void {
     cs.dangling(tp),
   );
 }
-
-const writeTok = (f: Fmt, n: number) => sink.sToken(n, f.text(n));
-
-function writeTypeParam(f: Fmt, n: number): void {
-  const t = f.tree;
-  const inner = unwrapType(t, n);
-  switch (t.kindName(inner)) {
-    case "identifier":
-      writeTok(f, inner);
-      return;
-    case "splat_type": {
-      const [star, name] = kids(t, inner);
-      if (
-        star === undefined ||
-        name === undefined ||
-        t.kindName(name) !== "identifier"
-      )
-        return unsupported(t, inner);
-      writeTok(f, star);
-      writeTok(f, name);
-      return;
-    }
-    case "constrained_type": {
-      const [name, colon, bound] = kids(t, inner);
-      if (
-        name === undefined ||
-        colon === undefined ||
-        bound === undefined ||
-        t.kindName(colon) !== ":"
-      )
-        return unsupported(t, inner);
-      const nameTok = unwrapType(t, name);
-      if (t.kindName(nameTok) !== "identifier") return unsupported(t, inner);
-      sink.sDsl(inner, { boundTokens: true });
-      return;
-    }
-    default:
-      return unsupported(t, inner);
-  }
-}
-
-const unwrapType = (tree: FormatTree, n: number): number => {
-  let x = n;
-  while (tree.kindName(x) === "type" && tree.count(x) === 1)
-    x = tree.child(x, 0);
-  return x;
-};
-
-export function writeSimpleType(f: Fmt, n: number): void {
-  const t = f.tree;
-  const x = unwrapType(t, n);
-  switch (t.kindName(x)) {
-    case "identifier":
-      writeTok(f, x);
-      return;
-    case "attribute":
-      for (const c of kids(t, x)) {
-        const k = t.kindName(c);
-        if (k === "." || k === "identifier") writeTok(f, c);
-        else if (k === "attribute") writeSimpleType(f, c);
-        else unsupported(t, c);
-      }
-      return;
-    case "tuple": {
-      const cs = kids(t, x);
-      for (const c of cs) {
-        const k = t.kindName(c);
-        if (k === "(" || k === ")") writeTok(f, c);
-        else if (k === ",") {
-          writeTok(f, c);
-          if (c !== cs.at(-2)) sink.sText(" ");
-        } else writeSimpleType(f, c);
-      }
-      return;
-    }
-    default:
-      unsupported(t, x);
-  }
-}
-
-const unsupported = (tree: FormatTree, n: number): never => {
-  throw new Unformattable(
-    `unsupported type parameter ${tree.kindName(n)} at ${byteOffsetOf(tree, n)}`,
-  );
-};
 
 // ---- definitions ----
 
