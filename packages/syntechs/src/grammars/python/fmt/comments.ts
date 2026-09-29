@@ -258,6 +258,38 @@ export function attach(module: Module, tree: FormatTree): Comments {
     formatted: false,
   }));
   comments.all.push(...pending);
+  placeIn(comments, tree, module, pending);
+  return comments;
+}
+
+/**
+ * Attaches the comments inside an f-string field to its expression, read on its own (`exprAst`), as ruff places
+ * them, and returns those before the expression: the field's dangling comments, printed after its `{`.
+ */
+export function attachInterpolation(
+  comments: Comments,
+  tree: FormatTree,
+  expr: Expr,
+  inside: readonly Comment[],
+): Comment[] {
+  const { start, end } = outer(expr);
+  const open = (c: Comment) => c.start < start && c.line === "eol";
+  placeIn(
+    comments,
+    tree,
+    expr,
+    inside.filter((c) => c.end < end && !open(c)),
+  );
+  for (const c of inside) if (c.start > end) comments.pushTrailing(expr, c);
+  return inside.filter(open);
+}
+
+function placeIn(
+  comments: Comments,
+  tree: FormatTree,
+  top: Py,
+  pending: readonly Comment[],
+): void {
   const placer = new Placer(tree, comments.all);
   let next = 0;
   const parents: Py[] = [];
@@ -313,8 +345,7 @@ export function attach(module: Module, tree: FormatTree): Comments {
       });
     preceding = node;
   };
-  visit(module);
-  return comments;
+  visit(top);
 }
 
 /**

@@ -147392,7 +147392,7 @@ index c7ca6bf7cb920fc90c1de0234ba5d5b9433ba317..9ac464d7def807b774ea9a3441a2b447
      [ts_external_token_comment] = true,
      [ts_external_token_except] = true,
 diff --git a/src/scanner.c b/src/scanner.c
-index 1fc77cdbdee6c7d33c183dc8c2bc3b64c9b0a410..b5727827451d86c24a58d463d09bb7e739713e15 100644
+index 1fc77cdbdee6c7d33c183dc8c2bc3b64c9b0a410..467f0397e74686c6f220ae5d19d4d22d83ab7ae3 100644
 --- a/src/scanner.c
 +++ b/src/scanner.c
 @@ -31,6 +31,9 @@ typedef enum {
@@ -147405,7 +147405,43 @@ index 1fc77cdbdee6c7d33c183dc8c2bc3b64c9b0a410..b5727827451d86c24a58d463d09bb7e7
  typedef struct {
      char flags;
  } Delimiter;
-@@ -219,13 +222,13 @@ bool tree_sitter_python_external_scanner_scan(void *payload, TSLexer *lexer, con
+@@ -88,6 +91,17 @@ typedef struct {
+     bool inside_interpolated_string;
+ } Scanner;
+ 
++// Whether any open string is an f- or t-string. Upstream tracks only the innermost string, so a nested string's
++// end let a replacement field's next line dedent.
++static inline bool any_format(Scanner *scanner) {
++    for (uint32_t i = 0; i < scanner->delimiters.size; i++) {
++        if (is_format(array_get(&scanner->delimiters, i))) {
++            return true;
++        }
++    }
++    return false;
++}
++
+ static inline void advance(TSLexer *lexer) { lexer->advance(lexer, false); }
+ 
+ static inline void skip(TSLexer *lexer) { lexer->advance(lexer, true); }
+@@ -177,7 +191,7 @@ bool tree_sitter_python_external_scanner_scan(void *payload, TSLexer *lexer, con
+                                 lexer->mark_end(lexer);
+                                 array_pop(&scanner->delimiters);
+                                 lexer->result_symbol = STRING_END;
+-                                scanner->inside_interpolated_string = false;
++                                scanner->inside_interpolated_string = any_format(scanner);
+                             }
+                             return true;
+                         }
+@@ -195,7 +209,7 @@ bool tree_sitter_python_external_scanner_scan(void *payload, TSLexer *lexer, con
+                     advance(lexer);
+                     array_pop(&scanner->delimiters);
+                     lexer->result_symbol = STRING_END;
+-                    scanner->inside_interpolated_string = false;
++                    scanner->inside_interpolated_string = any_format(scanner);
+                 }
+                 lexer->mark_end(lexer);
+                 return true;
+@@ -219,13 +233,13 @@ bool tree_sitter_python_external_scanner_scan(void *payload, TSLexer *lexer, con
              indent_length = 0;
              skip(lexer);
          } else if (lexer->lookahead == ' ') {
@@ -147421,7 +147457,7 @@ index 1fc77cdbdee6c7d33c183dc8c2bc3b64c9b0a410..b5727827451d86c24a58d463d09bb7e7
              skip(lexer);
          } else if (lexer->lookahead == '#' && (valid_symbols[INDENT] || valid_symbols[DEDENT] ||
                                                 valid_symbols[NEWLINE] || valid_symbols[EXCEPT])) {
-@@ -266,10 +269,11 @@ bool tree_sitter_python_external_scanner_scan(void *payload, TSLexer *lexer, con
+@@ -266,10 +280,11 @@ bool tree_sitter_python_external_scanner_scan(void *payload, TSLexer *lexer, con
  
      if (found_end_of_line) {
          if (scanner->indents.size > 0) {
@@ -147435,7 +147471,7 @@ index 1fc77cdbdee6c7d33c183dc8c2bc3b64c9b0a410..b5727827451d86c24a58d463d09bb7e7
                  lexer->result_symbol = INDENT;
                  return true;
              }
-@@ -277,8 +281,14 @@ bool tree_sitter_python_external_scanner_scan(void *payload, TSLexer *lexer, con
+@@ -277,8 +292,14 @@ bool tree_sitter_python_external_scanner_scan(void *payload, TSLexer *lexer, con
              bool next_tok_is_string_start =
                  lexer->lookahead == '\"' || lexer->lookahead == '\'' || lexer->lookahead == '`';
  
@@ -147451,3 +147487,12 @@ index 1fc77cdbdee6c7d33c183dc8c2bc3b64c9b0a410..b5727827451d86c24a58d463d09bb7e7
                    !within_brackets)) &&
                  indent_length < current_indent_length && !scanner->inside_interpolated_string &&
  
+@@ -350,7 +371,7 @@ bool tree_sitter_python_external_scanner_scan(void *payload, TSLexer *lexer, con
+         if (end_character(&delimiter)) {
+             array_push(&scanner->delimiters, delimiter);
+             lexer->result_symbol = STRING_START;
+-            scanner->inside_interpolated_string = is_format(&delimiter);
++            scanner->inside_interpolated_string = any_format(scanner);
+             return true;
+         }
+         if (has_flags) {

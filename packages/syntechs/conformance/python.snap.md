@@ -1,4 +1,4 @@
-python compatibility: 296/327 (90.52%), 7 refused (ok:false), 49 excluded
+python compatibility: 299/327 (91.44%), 7 refused (ok:false), 49 excluded
 
 Fixtures: ruff 0.16.8 crates/ruff_python_formatter/resources/test/fixtures/{black,ruff} (recursive), every option set of each `.options.json`, expected output from tests/snapshots (black cases without a snapshot: their `.expect` file). Options are passed by their ruff.toml names.
 
@@ -14,8 +14,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | black/cases/expression.py | 0/1 | 54.95% |
 | black/cases/fmtskip10.py | 0/1 | 94.12% |
 | black/cases/import_comments.py | 0/1 | 84.44% |
-| black/cases/pep_701.py | 0/1 | 98.45% |
-| black/cases/pep_750.py | 0/1 | 94.74% |
 | black/cases/preview_hug_parens_with_braces_and_square_brackets.py | 0/1 | 48.53% |
 | black/cases/preview_hug_parens_with_braces_and_square_brackets_no_ll1.py | 0/1 | 37.61% |
 | black/cases/preview_import_line_collapse.py | 0/1 | 99.43% |
@@ -26,7 +24,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ruff/expression/compare.py | 0/1 | 98.68% |
 | ruff/expression/fstring_multiline_replacement_field.py | 0/2 | 68.75% |
 | ruff/expression/join_implicit_concatenated_string.py | 0/1 | 98.70% |
-| ruff/expression/join_implicit_concatenated_string_assignment.py | 0/1 | 97.11% |
 | ruff/expression/join_implicit_concatenated_string_preserve.py | 1/2 | 95.45% |
 | ruff/expression/slice.py | 0/1 | 94.07% |
 | ruff/statement/function.py | 0/1 | 99.60% |
@@ -41,10 +38,10 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | :------ | :----------: | :---------: | :----------- |
 | black/cases/pattern_matching_style.py | 1/1 | 46.81% | formatter-error: unsupported pattern comment at 498 |
 | black/cases/remove_for_brackets.py | 1/1 | 96.00% | check: input "(" at 672 is output as "k" at 692, which means "k", not "(" |
-| ruff/expression/fstring.py | 2/2 | 89.91% | check: input "f\"{ {}, }\"" at 24184 is output as "f\"{({},)}\"" at 24326, which means "S\u0000{({})}\u0000", not "S\u00 |
+| ruff/expression/fstring.py | 2/2 | 97.59% | check: input "f\"{ {}, }\"" at 24184 is output as "f\"{({},)}\"" at 24270, which means "S\u0000{({})}\u0000", not "S\u00 |
 | ruff/expression/lambda.py | 1/1 | 99.11% | check: input comment "# 2" is missing from the output |
 | ruff/expression/list_comp_py315.py | 1/1 | 73.53% | formatter-error: parse error: ERROR at 250 |
-| ruff/expression/tstring.py | 1/1 | 91.01% | check: input "t\"{ {}, }\"" at 23737 is output as "t\"{({},)}\"" at 23856, which means "S\u0000{({})}\u0000", not "S\u00 |
+| ruff/expression/tstring.py | 1/1 | 97.97% | check: input "t\"{ {}, }\"" at 23737 is output as "t\"{({},)}\"" at 23788, which means "S\u0000{({})}\u0000", not "S\u00 |
 | ruff/statement/match.py | 1/1 | 71.21% | formatter-error: comment in a pattern at 2288 |
 
 # Excluded

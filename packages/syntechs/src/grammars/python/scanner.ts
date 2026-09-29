@@ -43,6 +43,14 @@ class PythonScanner implements ExternalScanner {
   delimiters: number[] = [];
   insideInterpolatedString = false;
 
+  /**
+   * Whether any open string is an f- or t-string. Upstream tracks only the innermost string, so a nested string's
+   * end let a replacement field's next line dedent: `f"""{\n    f"a" +\n  1\n}"""` inside a block.
+   */
+  anyFormat(): boolean {
+    return this.delimiters.some((d) => (d & FORMAT) !== 0);
+  }
+
   scan(lexer: Lexer, valid: Uint8Array): boolean {
     const errorRecoveryMode =
       valid[STRING_CONTENT] !== 0 && valid[INDENT] !== 0;
@@ -130,7 +138,7 @@ class PythonScanner implements ExternalScanner {
                   lexer.markEnd();
                   this.delimiters.pop();
                   lexer.resultSymbol = STRING_END;
-                  this.insideInterpolatedString = false;
+                  this.insideInterpolatedString = this.anyFormat();
                 }
                 return true;
               }
@@ -147,7 +155,7 @@ class PythonScanner implements ExternalScanner {
             lexer.advance(false);
             this.delimiters.pop();
             lexer.resultSymbol = STRING_END;
-            this.insideInterpolatedString = false;
+            this.insideInterpolatedString = this.anyFormat();
           }
           lexer.markEnd();
           return true;
@@ -274,7 +282,7 @@ class PythonScanner implements ExternalScanner {
       if (endCharacter(delimiter)) {
         this.delimiters.push(delimiter);
         lexer.resultSymbol = STRING_START;
-        this.insideInterpolatedString = (delimiter & FORMAT) !== 0;
+        this.insideInterpolatedString = this.anyFormat();
         return true;
       }
       if (hasFlags) return false;

@@ -124,6 +124,8 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
       // scanner reads it as inside the bracket), then a block opened during error recovery, which still dedents.
       "def f():\n  (a +\nb)\n  c\n",
       'g = 1, *"ten"\ndef f():\n    x\ny\nfor a in b:\n    pass\n',
+      // A nested string's end inside an f-string's field, whose next line must not dedent (patched scanner).
+      'if a:\n    foo = f"""x {\n    f"a" +\n  1\n} y\n"""\n',
       // PEP 696 type parameter defaults, which only the patched grammar reads.
       "def f[T = int, *Ts = *tuple[int], **P = [int]](): pass\nclass C[T: str = str]: ...\ntype A[T = int] = list[T]\n",
     ],

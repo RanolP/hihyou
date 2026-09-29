@@ -1,8 +1,10 @@
 // The customs string.ts's rules name.
 import { NO_NODE } from "../../../core/arena.js";
 import type { StreamCtx } from "../../../fmt/stream-format.js";
+import { sLineSuffixBoundary } from "../../../fmt/stream.js";
 import { exprAst, type Expr, type Str } from "../fmt/ast.js";
 import { PAREN } from "../fmt/builders.js";
+import { attachInterpolation } from "../fmt/comments.js";
 import { leftMost, writeExpr } from "../fmt/expr.js";
 import {
   capture,
@@ -114,11 +116,6 @@ export const stringVia = {
     const interpStart = startOf(tree, interp);
     const interpEnd = endOf(tree, interp);
     const inside = cs.all.filter((c) => c.start > interpStart && c.end < interpEnd);
-    if (debug || inside.length > 0) {
-      for (const c of inside) c.formatted = true;
-      sMultiline(interp, f.text(interp));
-      return;
-    }
     const byField = (name: string): number => {
       for (let i = 0; i < n; i++) {
         const c = tree.child(interp, i);
@@ -135,7 +132,34 @@ export const stringVia = {
     const rbrace = tree.child(interp, n - 1);
     const conversion = byField("type_conversion");
     const spec = byField("format_specifier");
+    // A debug field's text through its `=` is its output, so it prints as written, comments and all; ruff's
+    // `debug_text`. Its conversion and spec follow with no whitespace, as for any field.
+    if (debug) {
+      for (const c of inside) c.formatted = true;
+      // The tree keeps no offsets, so the text through `=` is what remains once the tail is cut off the end.
+      let head = tree.text(interp).slice(0, -1).trimEnd();
+      for (const t of [spec, conversion])
+        if (t !== NO_NODE) head = head.slice(0, -tree.text(t).trimEnd().length).trimEnd();
+      sMultiline(interp, head + tree.text(interp).slice(head.length).match(/^\s*/)?.[0]);
+      if (conversion !== NO_NODE) ctx.printNode(conversion);
+      // The spec is literal text through the `}`, whitespace included.
+      if (spec !== NO_NODE) {
+        const whole = tree.text(interp);
+        sMultiline(spec, whole.slice(whole.lastIndexOf(tree.text(spec)), -1));
+      }
+      sToken(rbrace, f.text(rbrace));
+      return;
+    }
     const e = exprAst(tree, exprNode);
+    // A layout that tries this field more than once (best fitting) prints its comments in each attempt.
+    for (const c of inside) c.formatted = false;
+    // A format spec's own fields place theirs.
+    const dangling = attachInterpolation(
+      cs,
+      tree,
+      e,
+      spec === NO_NODE ? inside : inside.filter((c) => c.end < startOf(tree, spec)),
+    );
     const multiline2 =
       multiline &&
       (flags.triple || hasLineBreak(tree, interpStart, spec !== NO_NODE ? startOf(tree, spec) : interpEnd));
@@ -149,7 +173,11 @@ export const stringVia = {
       bracket();
       writeExpr(f, e);
       if (conversion !== NO_NODE) ctx.printNode(conversion);
-      if (spec !== NO_NODE) ctx.printNode(spec, ctx.args);
+      // The expression's trailing comments print before the spec, which would otherwise read them as its text.
+      if (spec !== NO_NODE) {
+        sLineSuffixBoundary();
+        ctx.printNode(spec, ctx.args);
+      }
       if (conversion === NO_NODE && spec === NO_NODE) bracket();
     };
     const saved = f.fstr;
@@ -162,6 +190,7 @@ export const stringVia = {
         if (!multiline) return place(removeSoftLines(capture(item)));
         // Ruff's `group(indent([soft, item]))` with a spec, else `group(soft_block_indent(item))`.
         open(GROUP);
+        f.writeDanglingOpenParen(dangling);
         open(INDENT);
         sLine(SOFT | COLLAPSE);
         item();
