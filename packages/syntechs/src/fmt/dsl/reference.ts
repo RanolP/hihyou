@@ -756,6 +756,7 @@ export function wrap<O>(
     if (x.group) open(GROUP);
     if (x.indent) open(INDENT);
     if (x.first === "soft") sLine(SOFT);
+    else if (x.first === "line") sLine(0);
     else if (x.first === "hard") sHardline();
     if (x.fill) open(FILL);
     for (let i = from + 1, k = 0; i < to; i = endOf(i) + 1, k++) {

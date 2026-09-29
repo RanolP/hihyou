@@ -455,6 +455,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
       if (l.group) line("open(GROUP);");
       if (l.indent) line("open(INDENT);");
       if (l.first === "soft") line("sLine(SOFT);");
+      else if (l.first === "line") line("sLine(0);");
       else if (l.first === "hard") line("sHardline();");
       if (l.fill) line("open(FILL);");
       block(`for (let i = 0; i < ${run}.entries.length; i++)`, () => {

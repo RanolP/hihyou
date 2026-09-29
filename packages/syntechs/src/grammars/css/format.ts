@@ -159,7 +159,7 @@ export const css = format({
     descendant_selector: combinator,
     sibling_selector: combinator,
     adjacent_sibling_selector: combinator,
-    class_name: () => text("lower", parentIs("pseudo_class_selector")),
+    class_name: () => text("maybeLower", parentIs("pseudo_class_selector")),
     tag_name: () => text("lower", parentIs("pseudo_element_selector")),
 
     at_keyword: () => text("atName"),
@@ -184,6 +184,18 @@ export const css = format({
         spaceWhen: { after: ["@charset"] },
         verbatim: true,
       }),
+    // The name, then the selectors on its line or, past the width, one per line under it.
+    custom_selector_statement: ($) => [
+      "@custom-selector",
+      space,
+      $.children.at(0).andThen((n) => n),
+      splitOn(",", {
+        except: ["@custom-selector", "custom_selector_name", ";"],
+        wrapItem: when("longSelector"),
+        layout: { group: true, indent: true, first: "line", between: "line" },
+      }),
+      semicolon,
+    ],
     keyframes_statement: spaced,
     at_rule: () =>
       inOrder({

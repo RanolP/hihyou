@@ -83,7 +83,7 @@ function meaning(tree: Tree, node: number, t: string): string {
     case "property_name":
       return maybeLower(t);
     case "class_name":
-      return parentKind === "pseudo_class_selector" ? t.toLowerCase() : t;
+      return parentKind === "pseudo_class_selector" ? maybeLower(t) : t;
     case "tag_name":
       return parentKind === "pseudo_element_selector" ? t.toLowerCase() : t;
     case "plain_value":

@@ -108,7 +108,7 @@ export type Entry =
       readonly e: "split";
       readonly group: boolean;
       readonly indent: boolean;
-      readonly first: "soft" | "hard" | undefined;
+      readonly first: "soft" | "line" | "hard" | undefined;
       readonly between: "line" | "hardline" | undefined;
       readonly fill: boolean;
     }

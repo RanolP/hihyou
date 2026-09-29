@@ -1,4 +1,4 @@
-css compatibility: 84/151 (55.63%), 0 refused (ok:false), 6 excluded
+css compatibility: 88/151 (58.28%), 0 refused (ok:false), 6 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -14,7 +14,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | :------ | :---------: | :---------: |
 | css/atrule/at-root.css | 0/1 | 79.16% |
 | css/atrule/custom-media.css | 0/1 | 4.84% |
-| css/atrule/custom-selector.css | 0/1 | 8.85% |
 | css/atrule/debug.css | 0/1 | 12.90% |
 | css/atrule/each.css | 0/1 | 4.90% |
 | css/atrule/extend.css | 0/1 | 41.30% |
@@ -29,14 +28,12 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | css/atrule/return.css | 0/1 | 29.89% |
 | css/atrule/supports.css | 0/1 | 14.39% |
 | css/atrule/while.css | 0/1 | 7.65% |
-| css/attribute/custom-selector.css | 0/2 | 5.00% |
 | css/attribute/insensitive.css | 0/2 | 72.22% |
 | css/attribute/sensitive.css | 0/2 | 55.88% |
-| css/attribute/spaces.css | 0/2 | 40.98% |
+| css/attribute/spaces.css | 0/2 | 77.82% |
 | css/atword/atword.css | 0/1 | 0.00% |
 | css/bom/bom.css | 0/1 | 72.73% |
 | css/case/case.css | 0/1 | 98.41% |
-| css/case/custom-selectors.css | 0/1 | 90.91% |
 | css/character-escaping/character_escaping.css | 0/1 | 16.56% |
 | css/color/color-adjuster.css | 0/1 | 96.77% |
 | css/comments/15948.css | 0/1 | 16.67% |
@@ -68,9 +65,8 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | css/quotes/quotes.css | 0/2 | 74.59% |
 | css/selector-list/selectors.css | 0/1 | 76.15% |
 | css/stylefmt-repo/at-media/at-media.css | 0/1 | 95.24% |
-| css/stylefmt-repo/cssnext-example/cssnext-example.css | 0/1 | 95.00% |
+| css/stylefmt-repo/cssnext-example/cssnext-example.css | 0/1 | 96.67% |
 | css/stylefmt-repo/custom-media-queries/custom-media-queries.css | 0/1 | 70.59% |
-| css/stylefmt-repo/custom-selectors/custom-selectors.css | 0/1 | 23.53% |
 | css/stylefmt-repo/ie-hacks/ie-hacks.css | 0/1 | 43.48% |
 | css/stylefmt-repo/important/important.css | 0/1 | 66.67% |
 | css/stylefmt-repo/media-queries-ranges/media-queries-ranges.css | 0/1 | 90.91% |

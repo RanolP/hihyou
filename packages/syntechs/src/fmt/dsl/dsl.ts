@@ -246,8 +246,11 @@ export type SplitLayout =
       readonly group?: boolean;
       /** Indented, from a break before the first (`first`) onward. */
       readonly indent?: boolean;
-      /** Before the first entry: a line break only where the group breaks (`soft`), or always (`hard`). */
-      readonly first?: "soft" | "hard";
+      /**
+       * Before the first entry: a line break only where the group breaks, else nothing (`soft`) or a space
+       * (`line`); or always (`hard`).
+       */
+      readonly first?: "soft" | "line" | "hard";
       /** Between entries: a space unless the group breaks (`line`), or a line break (`hardline`); else nothing. */
       readonly between?: "line" | "hardline";
       /** Entries pack several to a line. */
