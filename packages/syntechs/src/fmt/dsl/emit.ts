@@ -780,6 +780,8 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
               line("sHardline();");
               child("item");
               line("close();");
+              if (frameWrap(rule, x.list.name).blankLines !== undefined)
+                line(`if (i < ${its}.length - 1 && nextLineEmpty(t, item)) sHardline();`);
               line("continue;");
             });
           line("if (i > 0) sHardline();");

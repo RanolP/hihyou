@@ -157,6 +157,25 @@ function lambdaOrScoping(t: FormatTree, node: number, chained: boolean): boolean
   return head !== -1 && scopingCall(t, head, false);
 }
 
+/**
+ * An explicit backing field (`val x: T` then `field = v` on its own line), which tree-sitter-kotlin 0.3.8 predates:
+ * in a class body it recovers one as a property with a missing `val`, and at the top level it reads an assignment
+ * to `field` after a property. ktfmt indents one under its property, as it does an accessor.
+ */
+function backingField(t: FormatTree, node: number): boolean {
+  const kind = t.kindName(node);
+  if (kind === "property_declaration") {
+    const binding = t.child(node, 0);
+    return t.kindName(binding) === "binding_pattern_kind" && t.missing(t.child(binding, 0));
+  }
+  if (kind !== "assignment" || t.text(t.child(node, 0)) !== "field") return false;
+  const owner = t.parent(node);
+  if (t.kindName(owner) !== "source_file" && t.kindName(owner) !== "class_body") return false;
+  for (let i = 1; i < t.count(owner); i++)
+    if (t.child(owner, i) === node) return /^(property_declaration|getter|setter)$/.test(t.kindName(t.child(owner, i - 1)));
+  return false;
+}
+
 /** The items of the lists `writtenBroken` asks about: call arguments, and function and constructor parameters. */
 const listed = new Set(["value_argument", "parameter", "class_parameter"]);
 
@@ -204,6 +223,17 @@ export const customs = {
     for (let i = 0; i < t.count(node); i++) if (listed.has(t.kindName(t.child(node, i)))) items++;
     return items > 1;
   },
+  backingField: (node, ctx) => backingField(ctx.tree, node),
+  /** Of a class or its primary constructor: a comment comes before the constructor, which ktfmt puts on a line of its own. */
+  commentedConstructor: (node, ctx) => {
+    const t = ctx.tree;
+    const ctor = t.kindName(node) === "primary_constructor" ? node : childOf(t, node, "primary_constructor");
+    if (ctor === -1) return false;
+    const owner = t.parent(ctor);
+    for (let i = 1; i < t.count(owner); i++)
+      if (t.child(owner, i) === ctor) return t.kindName(t.child(owner, i - 1)).endsWith("comment");
+    return false;
+  },
   /** Of a declaration's initializer or delegate, or a function's `=` body: a lambda, a scoping function, or a chain on one. */
   huggedChain: (node, ctx) => lambdaOrScoping(ctx.tree, node, true),
   /** Of an assignment's right side: a lambda or a scoping function, but no chain on one. */
@@ -222,7 +252,7 @@ export const customs = {
 const declarations = new Set(["property_declaration", "property_delegate", "function_body"]);
 const hugsDeclaration = (node: number, ctx: { readonly tree: FormatTree }) =>
   node !== ctx.tree.root &&
-  declarations.has(ctx.tree.kindName(ctx.tree.parent(node))) &&
+  (declarations.has(ctx.tree.kindName(ctx.tree.parent(node))) || backingField(ctx.tree, ctx.tree.parent(node))) &&
   lambdaOrScoping(ctx.tree, node, true);
 
 /**
