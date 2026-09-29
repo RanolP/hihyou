@@ -524,6 +524,9 @@ export interface PartArgs {
   readonly closes: boolean;
   /** A literal part merged into one string: its contents print as one plain token, braces escaped for an f-string. */
   readonly joined: boolean;
+  /** A joined part of a docstring that trims its leading or trailing whitespace (ruff's `FormatLiteralContent`). */
+  readonly trimStart?: boolean;
+  readonly trimEnd?: boolean;
 }
 
 /** A part printed on its own, with the quotes `chooseQuotes` picks for it. */
@@ -589,11 +592,7 @@ function mergedFlags(
         { ...p, flags: { ...p.flags, triple: false } },
         "double",
       );
-      if (
-        style === "preserve" &&
-        f.fstr.k === "outside" &&
-        f.options["quote-style"] !== "preserve"
-      ) {
+      if (style === "preserve" && f.fstr.k === "outside") {
         if (preserve !== undefined && preserve !== p.flags.quote)
           return undefined;
         preserve = p.flags.quote;
@@ -631,8 +630,20 @@ function mergedFlags(
   return { prefix, quote, triple: false };
 }
 
-/** Ruff's `FormatImplicitConcatenatedStringFlat`: every part's content between one pair of quotes. */
-function writeFlat(f: Fmt, parts: readonly Part[], fl: Flags): void {
+/**
+ * Ruff's `FormatImplicitConcatenatedStringFlat`: every part's content between one pair of quotes. A docstring
+ * trims the merged string's ends: every part up to the first that holds more than whitespace trims its start,
+ * and every part from the last such one on trims its end.
+ */
+function writeFlat(
+  f: Fmt,
+  parts: readonly Part[],
+  fl: Flags,
+  docstring = false,
+): void {
+  const blank = parts.map((p) => contentOf(f.tree, p).trim() === "");
+  const first = docstring ? blank.indexOf(false) : -1;
+  const last = docstring ? blank.lastIndexOf(false) : parts.length;
   for (const [i, p] of parts.entries())
     sDsl(p.node, {
       flags: fl,
@@ -640,6 +651,8 @@ function writeFlat(f: Fmt, parts: readonly Part[], fl: Flags): void {
       opens: i === 0,
       closes: i === parts.length - 1,
       joined: !isInterpolated(p.flags),
+      trimStart: docstring && (first === -1 || i <= first),
+      trimEnd: docstring && i >= last,
     } satisfies PartArgs);
 }
 
@@ -713,7 +726,13 @@ export function writeStr(f: Fmt, s: Str, docstringIndent?: string): void {
     f.level.k === "paren" || (f.level.k === "expr" && f.level.g !== undefined);
   const merged = mergedFlags(f, s, parts);
   if (!parenthesized) {
-    if (merged) return writeFlat(f, parts, merged);
+    if (merged)
+      return writeFlat(
+        f,
+        parts,
+        merged,
+        docstringIndent !== undefined && s.flavor === "str",
+      );
     if (docstringIndent !== undefined)
       return f.writeParenthesizeIfExpands(s.ts, () =>
         writeExpanded(f, s, parts, true),

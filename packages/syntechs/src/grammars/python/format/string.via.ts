@@ -74,9 +74,18 @@ export const stringVia = {
   },
   // A literal joined into a merged f-string escapes its braces; an f-string's own literals already do.
   "string.content": (c: number, ctx: StreamCtx<unknown>) => {
-    const { flags, joined } = argsOf(ctx);
+    const { flags, joined, trimStart, trimEnd } = argsOf(ctx);
     const text = ctx.tree.text(c);
-    if (joined) sToken(c, normalizeString(text, 0, flags, isInterpolated(flags)));
+    if (joined) {
+      let s = normalizeString(text, 0, flags, isInterpolated(flags));
+      if (trimStart) s = s.trimStart();
+      if (trimEnd) {
+        s = s.trimEnd();
+        // A trailing backslash would escape the closing quote, so a space stays after an odd run of them.
+        if ((/\\*$/.exec(s)?.[0].length ?? 0) % 2 === 1) s += " ";
+      }
+      sToken(c, s);
+    }
     else sMultiline(c, normalizeString(text, 0, flags, false));
   },
   // A format spec: its literal characters (hidden tokens between the children) escaped for the string's quotes, its fields formatted.
