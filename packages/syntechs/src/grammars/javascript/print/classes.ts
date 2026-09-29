@@ -1,7 +1,11 @@
 // Prettier's class printers (print/class.js, class-body.js) and the declaration half of print/decorators.js.
 
 import type { CustomRule, TokenRule } from "../../../fmt/dsl/runtime.js";
-import type { StreamCtx } from "../../../fmt/stream-format.js";
+import {
+  printLeadingComments,
+  printTrailingComments,
+  type StreamCtx,
+} from "../../../fmt/stream-format.js";
 import { nextLineEmpty } from "../../../fmt/text.js";
 import {
   capture,
@@ -59,7 +63,7 @@ const heritageOf = (x: HasTree, n: number) =>
   childWhere(x, n, (c) => kind(x, c) === "class_heritage");
 
 /** The superclass expression and the `implements` list of a class, with the nodes that own their keywords. */
-function heritage(x: HasTree, n: number) {
+export function heritage(x: HasTree, n: number) {
   // An interface's `extends A, B` is a list, like a class's `implements`.
   const list = childWhere(x, n, (c) => kind(x, c) === "extends_type_clause");
   if (list !== undefined)
@@ -255,12 +259,19 @@ const printClass: CustomRule<JsOptions> = (n, sctx) => {
   }
   const isInterface = kind(ctx, n) === "interface_declaration";
   tok(ctx, anon(ctx, n, isInterface ? "interface" : "class"));
+  // The name's and type parameters' trailing comments indent, so one on its own line lines up with `extends`.
+  const withIndentedTrailing = (part: number | undefined) => {
+    if (part === undefined) return;
+    printLeadingComments(sctx, part);
+    jsCtx(sctx).printBare(part);
+    open(INDENT);
+    printTrailingComments(sctx, part);
+    close();
+  };
   const head = () => {
-    if (name !== undefined) {
-      sText(" ");
-      sctx.print(name);
-    }
-    print(sctx, field(ctx, n, "type_parameters"));
+    if (name !== undefined) sText(" ");
+    withIndentedTrailing(name);
+    withIndentedTrailing(field(ctx, n, "type_parameters"));
   };
   const body = field(ctx, n, "body");
   if (grouped) {

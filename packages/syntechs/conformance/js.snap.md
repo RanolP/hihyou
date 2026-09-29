@@ -1,4 +1,4 @@
-js compatibility: 640/804 (79.60%), 31 refused (ok:false), 304 excluded
+js compatibility: 641/804 (79.73%), 30 refused (ok:false), 304 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -154,7 +154,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | :------ | :----------: | :---------: | :----------- |
 | js/call/no-argument/no-arguments.js | 1/1 | 64.86% | check: input comment "// 108" is missing from the output |
 | js/chain-expression/tagged-template-literals.js | 1/1 | 61.90% | check: input "a" at 23 is output as "a" at 22, which means "a@object\|0/4", not "a@object\|0/5" |
-| js/class-comment/superclass.js | 1/1 | 68.24% | check: input comment "// comment 2" is missing from the output |
 | js/comments/15661.js | 2/2 | 17.74% | check: input "!" at 0 is output as "!" at 0, which means "!@operator\|-1/4", not "!@operator\|-1/3" |
 | js/comments/break-continue-statements-3.js | 2/2 | 95.83% | check: output comment "// breaking comment;" matches no input comment |
 | js/comments/dangling_for.js | 2/2 | 28.57% | check: input comment "// comment" is missing from the output |

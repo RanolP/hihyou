@@ -3,6 +3,8 @@ import type {
   CommentHandler,
   CommentTarget,
 } from "../../../fmt/comments.js";
+import { firstLeaf } from "../../../fmt/tree.js";
+import { heritage } from "./classes.js";
 import {
   children,
   field,
@@ -154,6 +156,79 @@ const tryBlock = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   return body !== undefined ? blockFirst(c, body) : undefined;
 };
 
+const CLASS_LIKE = new Set([
+  "class",
+  "class_declaration",
+  "abstract_class_declaration",
+  "interface_declaration",
+]);
+// tree-sitter's wrappers around a class's `extends` and `implements`, which prettier's AST has not: a comment
+// in one is a comment in the class header.
+const HERITAGE_PARTS = new Set([
+  "class_heritage",
+  "extends_clause",
+  "implements_clause",
+  "extends_type_clause",
+]);
+
+/**
+ * A comment in a class or interface header (handleClassComments): with decorators it trails the last one; before
+ * the body it moves into it; before the superclass or the first `implements`/`extends` type it trails the name,
+ * type parameters or superclass before it, which the header prints, where the core would attach it to a
+ * heritage wrapper the header never prints.
+ */
+const classHeader = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { comment, enclosing, preceding, following, placement, tree } = c;
+  // Prettier runs this only for own-line and end-of-line comments. One between code on its line before a
+  // wrapper (`class A /* c */ extends B`) has the keyword between it and the superclass, so prettier's tie-break
+  // trails it after the name, where the core's would lead the wrapper.
+  if (placement === "remaining")
+    return preceding !== undefined &&
+      following !== undefined &&
+      HERITAGE_PARTS.has(kind(c, following))
+      ? { node: preceding, as: "trailing" }
+      : undefined;
+  let cls: number | undefined = enclosing;
+  while (cls !== undefined && HERITAGE_PARTS.has(kind(c, cls)))
+    cls = parent(c, cls);
+  if (cls === undefined || !CLASS_LIKE.has(kind(c, cls))) return;
+  const decorators = children(c, cls).filter((n) => kind(c, n) === "decorator");
+  if (
+    decorators.length > 0 &&
+    (following === undefined || kind(c, following) !== "decorator")
+  )
+    return { node: decorators.at(-1) as number, as: "trailing" };
+  const body = field(c, cls, "body");
+  if (body !== undefined && following === body) return blockFirst(c, body);
+  const before = (n: number) =>
+    tree.ord(comment) < tree.ord(firstLeaf(tree, n));
+  const after = (n: number | undefined) =>
+    n !== undefined && tree.ord(comment) > tree.ord(n);
+  const name = field(c, cls, "name");
+  const typeParameters = field(c, cls, "type_parameters");
+  const head = after(typeParameters)
+    ? typeParameters
+    : after(name)
+      ? name
+      : undefined;
+  const { ext, superClass, implementsList } = heritage(c, cls);
+  if (superClass !== undefined && before(superClass))
+    return head !== undefined ? { node: head, as: "trailing" } : undefined;
+  const first = implementsList[0];
+  if (first === undefined || !before(first)) return;
+  // The superclass prints with its type arguments, so a comment after those trails them.
+  const superArgs =
+    ext !== undefined ? field(c, ext, "type_arguments") : undefined;
+  const trailed = after(superArgs)
+    ? superArgs
+    : after(superClass)
+      ? superClass
+      : head;
+  return trailed !== undefined
+    ? { node: trailed, as: "trailing" }
+    : undefined;
+};
+
 const CONDITIONALS = new Set(["ternary_expression", "conditional_type"]);
 
 /**
@@ -233,6 +308,7 @@ const handlers = [
   typeAliasValue,
   methodName,
   tryBlock,
+  classHeader,
   declaratorValue,
   nestedConditional,
 ];

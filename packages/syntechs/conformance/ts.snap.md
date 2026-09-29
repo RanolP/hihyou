@@ -1,4 +1,4 @@
-ts compatibility: 544/653 (83.31%), 28 refused (ok:false), 76 excluded
+ts compatibility: 553/653 (84.69%), 19 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -102,8 +102,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | :------ | :----------: | :---------: | :----------- |
 | typescript/chain-expression/new-expression.ts | 1/1 | 77.94% | check: input "new" at 281 is output as "new" at 227, which means "new@\|-1/82", not "new@\|-1/80" |
 | typescript/chain-expression/tagged-template-literals.ts | 1/1 | 72.31% | check: input "a" at 37 is output as "a" at 33, which means "a@object\|0/12", not "a@object\|0/13" |
-| typescript/class-comment/class-implements.ts | 1/1 | 80.92% | check: input comment "// comment" is missing from the output |
-| typescript/class-comment/declare.ts | 1/1 | 66.67% | check: input comment "// extends b   // 2" is missing from the output |
 | typescript/comments/mapped-types.ts | 1/1 | 80.00% | check: input comment "// commentA" is missing from the output |
 | typescript/compiler/commentInNamespaceDeclarationWithIdentifierPathName.ts | 1/1 | 57.14% | check: input "namespace" at 1 is output as "namespace" at 1, which means "namespace@\|-1/2", not "namespace@\|-1/3" |
 | typescript/conditional-types/comments.ts | 2/2 | 67.64% | check: input "any instanceof B\n  /**\n  * Comment\n  */\n    ? B \| C\n    : D" at 1337 is output as "any" at 1286, whic |
@@ -113,16 +111,9 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | typescript/decorators/decorators-comments.ts | 1/1 | 88.57% | check: input "readonly" at 295 is output as "readonly" at 251, which means "key:readonly@name\|1/29", not "readonly@\|-1/2 |
 | typescript/end-of-line/multiline.ts | 2/3 | 71.43% | check: input "\\\n" at 511 is output as "\\\r" at 486, which means "\\\r@\|3/35", not "\\\n@\|3/35" |
 | typescript/import-export/empty-import.ts | 1/1 | 32.43% | check: output comment "// comment // comment" matches no input comment |
-| typescript/interface/comments-generic.ts | 2/2 | 89.66% | check: input comment "// 2" is missing from the output |
 | typescript/interface/long-type-parameters/long-type-parameters.ts | 2/2 | 75.65% | check: input comment "// always extends RectConfig" is missing from the output |
 | typescript/interface/no-semi/14040.ts | 1/1 | 100.00% | check: the output has a syntax error at 712, which the input has not |
 | typescript/interface/no-semi/18858.ts | 1/1 | 100.00% | check: the output has a syntax error at 406, which the input has not |
-| typescript/interface2/comments-declare.ts | 1/1 | 88.89% | check: input comment "// 2" is missing from the output |
-| typescript/interface2/comments.ts | 1/1 | 73.24% | check: input comment "// comment2" is missing from the output |
-| typescript/interface2/comments-ts-and-flow/18216-mutiple-clauses.ts | 1/1 | 89.47% | check: input comment "// Comment" is missing from the output |
-| typescript/interface2/comments-ts-and-flow/18216-type-parameters-mutiple-clauses.ts | 1/1 | 89.47% | check: input comment "// Comment" is missing from the output |
-| typescript/interface2/comments-ts-and-flow/18216-type-parameters.ts | 1/1 | 42.86% | check: input comment "// Comment" is missing from the output |
-| typescript/interface2/comments-ts-and-flow/18216.ts | 1/1 | 52.94% | check: input comment "// Comment" is missing from the output |
 | typescript/mapped-type/break-mode/break-mode.ts | 1/1 | 96.30% | check: input "[" at 90 is output as "[" at 97, which means "[@\|-1/16", not "[@\|-1/15" |
 | typescript/parentheses/yield.ts | 1/1 | 40.00% | check: input "yield" at 41 is output as "yield" at 42, which means "yield@\|-1/8", not "yield@\|-1/9" |
 | typescript/type-parameters-arguments/19505.ts | 1/1 | 98.18% | check: input comment "// dangling comment" is missing from the output |
