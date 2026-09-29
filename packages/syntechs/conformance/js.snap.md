@@ -1,4 +1,4 @@
-js compatibility: 759/804 (94.40%), 9 refused (ok:false), 304 excluded
+js compatibility: 762/804 (94.78%), 9 refused (ok:false), 304 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -17,7 +17,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/arrows/arrow_function_expression.js | 0/2 | 94.29% |
 | js/arrows/issue-17421.js | 0/2 | 87.02% |
 | js/arrows/parenthesized-body/issue-18776.js | 0/1 | 85.71% |
-| js/assignment/destructuring-heuristic.js | 0/1 | 84.00% |
 | js/classes/multiple-static.js | 0/1 | 40.00% |
 | js/comments/blank.js | 0/2 | 92.31% |
 | js/comments/export.js | 0/2 | 94.81% |
@@ -30,7 +29,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/comments/in-list/dangling-comment-in-list.js | 0/1 | 95.95% |
 | js/comments/tagged-template-literal/11662.js | 0/1 | 80.00% |
 | js/comments/while-like/switch.js | 0/1 | 86.67% |
-| js/destructuring/issue-5988.js | 0/1 | 0.00% |
 | js/embeded/indention/19518.js | 0/1 | 64.94% |
 | js/embeded/indention/indention-2.js | 0/1 | 23.53% |
 | js/embeded/indention/indention.js | 0/1 | 63.27% |
@@ -40,7 +38,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/if/condition-break/boolean-expression.js | 0/1 | 97.01% |
 | js/import-attributes/long-sources.js | 0/1 | 86.54% |
 | js/import-attributes/quote-props/quoted-keys.js | 1/3 | 86.67% |
-| js/method-chain/break-last-member.js | 0/1 | 85.29% |
 | js/newline/backslash_2028.js | 0/1 | 40.00% |
 | js/newline/backslash_2029.js | 0/1 | 40.00% |
 | js/reserved-word/yield.js | 0/1 | 93.33% |

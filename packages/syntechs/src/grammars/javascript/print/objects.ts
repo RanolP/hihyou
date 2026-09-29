@@ -272,7 +272,7 @@ const objectCustom: CustomRule<JsOptions> = (n, sctx) => {
       !shouldBreak &&
       isPattern &&
       ((kind(ctx, realParent) === "assignment_expression" && key === "left") ||
-        (kind(ctx, realParent) === "variable_declarator" && key === "name"))
+        (kind(ctx, realParent) === "variable_declarator" && key === "id"))
     );
   const openBrace = anonKid(ctx, n, "{");
   const closeBrace = lastChildWhere(
