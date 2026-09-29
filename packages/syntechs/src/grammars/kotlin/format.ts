@@ -4,12 +4,11 @@
 import {
   all,
   any,
-  bail,
   breakParent,
+  custom,
   defineFormat,
   either,
   group,
-  grpBrace,
   grpParen,
   hardline,
   has,
@@ -131,12 +130,7 @@ export const kotlin = format({
     companion_object: () => decl(spaced()),
     class_body: ($) =>
       either(isEmpty, ["{", "}"], ["{", indent([hardline, lines($.children, { blank, follow })]), hardline, "}"]),
-    enum_class_body: ($) =>
-      either(
-        any(has("children", "function_declaration"), has("children", "property_declaration")),
-        bail("an enum body with members"),
-        grpBrace(sepBy(",", $.children, { trailing: true })),
-      ),
+    enum_class_body: () => custom("enumBody"),
     enum_entry: () => decl(spaced()),
     primary_constructor: ($) =>
       either(
@@ -269,7 +263,6 @@ export const kotlin = format({
     source_file: { blankLines: "force" },
     class_body: { blankLines: "force" },
     statements: { blankLines: "force" },
-    enum_class_body: { expand: "always" },
     value_arguments: { breakWhen: when("writtenBroken") },
     function_value_parameters: { breakWhen: when("writtenBroken") },
     primary_constructor: { breakWhen: when("writtenBroken") },

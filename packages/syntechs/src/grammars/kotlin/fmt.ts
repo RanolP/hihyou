@@ -14,6 +14,7 @@ import { type FormatTree, firstLeaf, prevLeaf } from "../../fmt/tree.js";
 import type { StreamRules } from "../../fmt/stream-format.js";
 import { grammar } from "./bundle.js";
 import { chained } from "./chain.js";
+import { enumBody } from "./enum-body.js";
 import * as gen from "./fmt.gen.js";
 import { language } from "./index.js";
 import { trimmedString, trimmedStrings } from "./trimmed-string.js";
@@ -249,5 +250,5 @@ export const kotlin: Language<KotlinOptions> = {
     hiddenTokens: true,
     atoms: ["string_literal", "character_literal"],
   }),
-  stream: withChains(gen.kotlin({ ...customs, imports })),
+  stream: withChains(gen.kotlin({ ...customs, imports, enumBody })),
 };

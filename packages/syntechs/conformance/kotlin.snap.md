@@ -1,4 +1,4 @@
-kotlin compatibility: 580/753 (77.03%), 36 refused (ok:false), 11 excluded
+kotlin compatibility: 591/753 (78.49%), 28 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -41,8 +41,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/class/emptyEnumWithSemicolon2.kt | 0/1 | 0.00% |
 | ktfmt/format/class/emptyEnumWithSemicolon3.kt | 0/1 | 25.00% |
 | ktfmt/format/class/emptyEnumWithSemicolon6.kt | 0/1 | 50.00% |
-| ktfmt/format/class/enumWithCommaAndSemicolon.kt | 0/1 | 80.00% |
-| ktfmt/format/class/enumWithoutTrailingComma.kt | 0/1 | 80.00% |
 | ktfmt/format/class/expectEnum.kt | 0/1 | 0.00% |
 | ktfmt/format/class/functionalInterface.kt | 0/1 | 57.14% |
 | ktfmt/format/class/functionalInterfaceWithTypeParams.kt | 0/1 | 66.67% |
@@ -54,7 +52,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/class/trailingCommaInExplicitConstructors.kt | 0/1 | 73.68% |
 | ktfmt/format/comment/blockComment.kt | 0/1 | 62.50% |
 | ktfmt/format/comment/shebang.kts | 0/1 | 88.89% |
-| ktfmt/format/enums/CommaWithSemicolon.kt | 0/1 | 80.00% |
 | ktfmt/format/function/assignmentWithScopeFunction.kt | 0/1 | 44.19% |
 | ktfmt/format/function/trailingCommasInDefinitions.kt | 0/1 | 90.57% |
 | ktfmt/format/if/comment.kt | 0/1 | 61.54% |
@@ -152,15 +149,9 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| classes.txt: Enum classes | 1/1 | 46.15% | formatter-error: an enum body with members: enum_class_body at 89 |
 | ktfmt/format/annotation/collectionLiterals.kt | 1/1 | 82.50% | formatter-error: no rule: collection_literal at 58 |
 | ktfmt/format/annotation/noNewLineAfterAnnotations.kt | 1/1 | 82.67% | check: input comment "//" is missing from the output |
-| ktfmt/format/class/blankLineBetweenMembers.kt | 1/1 | 13.79% | formatter-error: an enum body with members: enum_class_body at 72 |
 | ktfmt/format/class/emptyCompanionObject.kt | 1/1 | 53.85% | formatter-error: no rule: anonymous_initializer at 52 |
-| ktfmt/format/class/emptyEnumWithSemicolon4.kt | 1/1 | 42.86% | formatter-error: an enum body with members: enum_class_body at 17 |
-| ktfmt/format/class/emptyEnumWithSemicolon5.kt | 1/1 | 50.00% | check: the output has a syntax error at 31, which the input has not |
-| ktfmt/format/class/enumWithMethods.kt | 1/1 | 33.33% | formatter-error: an enum body with members: enum_class_body at 25 |
-| ktfmt/format/class/enumWithSemicolon.kt | 1/1 | 46.15% | formatter-error: an enum body with members: enum_class_body at 22 |
 | ktfmt/format/class/initBlock.kt | 1/1 | 40.00% | formatter-error: no rule: anonymous_initializer at 14 |
 | ktfmt/format/class/interfaceDelegation.kt | 1/1 | 100.00% | formatter-error: no rule: explicit_delegation at 32 |
 | ktfmt/format/class/objectExpr.kt | 1/1 | 66.67% | formatter-error: no rule: object_literal at 24 |
@@ -175,7 +166,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | ktfmt/format/lambda/lastParameterWithComment.kt | 1/1 | 64.29% | check: input comment "// no-op" is missing from the output |
 | ktfmt/format/lambda/lastParameterWithComment2.kt | 1/1 | 80.95% | check: input comment "/* no-op */" is missing from the output |
 | ktfmt/format/misc/doWhile.kt | 1/1 | 42.86% | formatter-error: no rule: do_while_statement at 18 |
-| ktfmt/format/misc/semicolonsInEnums.kt | 1/1 | 66.67% | formatter-error: an enum body with members: enum_class_body at 118 |
 | ktfmt/format/property/propertiesWithAccessors.kt | 1/1 | 27.78% | formatter-error: no rule: parameter_with_optional_type at 95 |
 | ktfmt/format/property/propertiesWithAccessors2.kt | 1/1 | 44.44% | formatter-error: no rule: parameter_with_optional_type at 119 |
 | ktfmt/format/type/compondBoundOnClassDelegate.kt | 1/1 | 100.00% | formatter-error: no rule: explicit_delegation at 17 |
@@ -183,7 +173,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | ktfmt/google/comments2.kt | 1/1 | 30.00% | formatter-error: no rule: collection_literal at 38 |
 | ktfmt/google/missingTrailingCommas.kt | 1/1 | 19.18% | formatter-error: no rule: collection_literal at 334 |
 | ktfmt/google/redundantTrailingCommas.kt | 1/1 | 50.00% | formatter-error: no rule: collection_literal at 120 |
-| ktfmt/google/trailingCommasInEnums.kt | 1/1 | 62.79% | formatter-error: an enum body with members: enum_class_body at 174 |
 | ktfmt/google/trailingCommasNotAdded.kt | 1/1 | 21.74% | formatter-error: no rule: collection_literal at 112 |
 | ktfmt/new_codestyle/annotation/AnnotationArguments.kt | 1/1 | 100.00% | formatter-error: no rule: collection_literal at 26 |
 | ktfmt/new_codestyle/annotation/AnnotationOnExpression.kt | 1/1 | 85.48% | formatter-error: no rule: object_literal at 808 |
