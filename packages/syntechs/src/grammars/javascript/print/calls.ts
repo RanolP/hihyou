@@ -731,6 +731,19 @@ function isNewCallee(x: HasTree, n: number): boolean {
   }
 }
 
+// A member chain in a type (`import("x").A.B`, `typeof a.b`) is prettier's TSImportType qualifier or
+// TSQualifiedName, which it joins with bare dots and never breaks.
+const isInType = (x: HasTree, n: number | undefined) => {
+  const k = kind(x, n);
+  return (
+    k === "type_annotation" ||
+    k === "type_query" ||
+    k === "generic_type" ||
+    k === "type_arguments" ||
+    (k?.endsWith("_type") ?? false)
+  );
+};
+
 /** `c` as the source token it is, into the sink; nothing when absent. */
 const sTok = (ctx: JsCtx, c: number | undefined) => {
   if (c !== undefined) sToken(c, src(ctx, c));
@@ -801,6 +814,7 @@ const memberCustom: CustomRule<JsOptions> = (n, s) => {
         "identifier"
       : false) ||
     isNewCallee(ctx, n) ||
+    isInType(ctx, fnp) ||
     kind(ctx, n) === "subscript_expression" ||
     (kind(ctx, inner) === "identifier" &&
       kind(ctx, property) === "property_identifier" &&

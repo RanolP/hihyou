@@ -1,4 +1,4 @@
-ts compatibility: 583/653 (89.28%), 16 refused (ok:false), 76 excluded
+ts compatibility: 594/653 (90.96%), 16 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -17,7 +17,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/as/comments/18160.ts | 0/1 | 81.25% |
 | typescript/call/callee-comments.ts | 0/1 | 69.44% |
 | typescript/cast/assert-and-assign.ts | 0/1 | 50.00% |
-| typescript/comments/11662.ts | 0/1 | 0.00% |
+| typescript/comments/11662.ts | 0/1 | 80.00% |
 | typescript/comments/16065.ts | 0/1 | 81.82% |
 | typescript/comments/16889.ts | 0/1 | 97.39% |
 | typescript/comments/method_types.ts | 0/1 | 82.05% |
@@ -28,17 +28,9 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/conformance/types/moduleDeclaration/kind-detection.ts | 0/1 | 0.00% |
 | typescript/custom/abstract/abstractNewlineHandling.ts | 0/1 | 86.96% |
 | typescript/decorators/decorator-type-assertion.ts | 0/1 | 40.00% |
-| typescript/definite/definite.ts | 0/1 | 85.71% |
 | typescript/definite/without-annotation.ts | 0/1 | 91.67% |
-| typescript/explicit-resource-management/await-using-with-type-declaration.ts | 0/1 | 66.67% |
-| typescript/explicit-resource-management/using-with-type-declaration.ts | 0/1 | 66.67% |
-| typescript/export/export-type-star-from-2.ts | 0/1 | 66.67% |
-| typescript/export/export-type-star-from.ts | 0/1 | 0.00% |
 | typescript/import-require/comments.ts | 0/1 | 70.00% |
 | typescript/import-require/type-imports.ts | 0/1 | 56.00% |
-| typescript/import-type/import-type.ts | 0/2 | 87.10% |
-| typescript/import-type/long-module-name/long-module-name.ts | 0/1 | 40.00% |
-| typescript/import-type/long-module-name/long-module-name3.ts | 0/1 | 66.67% |
 | typescript/instantiation-expression/inferface-asi.ts | 0/1 | 36.36% |
 | typescript/instantiation-expression/logical-expr.ts | 0/1 | 91.67% |
 | typescript/interface/ignore.ts | 0/2 | 86.79% |
@@ -49,9 +41,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/non-null/braces.ts | 0/1 | 94.12% |
 | typescript/parentheses/await.ts | 0/1 | 66.67% |
 | typescript/property-signature/consistent-with-flow/comments.ts | 0/1 | 80.00% |
-| typescript/satisfies-operators/expression-statement.ts | 0/2 | 83.78% |
 | typescript/satisfies-operators/lhs.ts | 0/2 | 90.00% |
-| typescript/template-literals/expressions.ts | 0/1 | 0.00% |
 | typescript/template-literals/member-expression.ts | 0/1 | 57.14% |
 | typescript/trailing-comma/trailing.ts | 2/3 | 97.78% |
 | typescript/type-arguments-bit-shift-left-like/4.ts | 0/1 | 0.00% |
@@ -59,7 +49,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/type-parameters-arguments/const.ts | 0/1 | 90.63% |
 | typescript/type-parameters-arguments/constraints-and-default-2.ts | 0/1 | 96.83% |
 | typescript/type-parameters-arguments/long-function-arg.ts | 0/1 | 18.18% |
-| typescript/type-parameters-arguments/tagged-template-expression.ts | 0/1 | 75.00% |
 | typescript/type-parameters-arguments/print-width-120/issue-7542.tsx | 0/1 | 88.89% |
 | typescript/union/comments/18379.ts | 0/1 | 54.17% |
 | typescript/union/comments/18389.ts | 0/1 | 76.92% |
