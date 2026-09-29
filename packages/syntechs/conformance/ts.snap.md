@@ -1,4 +1,4 @@
-ts compatibility: 617/653 (94.49%), 11 refused (ok:false), 76 excluded
+ts compatibility: 619/653 (94.79%), 10 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -21,7 +21,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/comments/16889.ts | 0/1 | 97.39% |
 | typescript/comments/method_types.ts | 0/1 | 82.05% |
 | typescript/compiler/indexSignatureWithInitializer.ts | 0/1 | 87.50% |
-| typescript/conditional-types/parentheses.ts | 0/2 | 86.00% |
 | typescript/conformance/classes/classDeclarations/classAbstractKeyword/classAbstractWithInterface.ts | 0/1 | 0.00% |
 | typescript/conformance/types/moduleDeclaration/kind-detection.ts | 0/1 | 0.00% |
 | typescript/custom/abstract/abstractNewlineHandling.ts | 0/1 | 86.96% |
@@ -46,7 +45,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | :------ | :----------: | :---------: | :----------- |
 | typescript/chain-expression/tagged-template-literals.ts | 1/1 | 72.31% | check: input "a" at 37 is output as "a" at 33, which means "a@object\|0/12", not "a@object\|0/13" |
 | typescript/conditional-types/comments.ts | 2/2 | 94.21% | check: input "any instanceof B\n  /**\n  * Comment\n  */\n    ? B \| C\n    : D" at 1337 is output as "any" at 1364, whic |
-| typescript/conditional-types/conditional-types.ts | 2/2 | 100.00% | check: input "new" at 1298 is output as "new" at 1327, which means "new@\|-1/175", not "new@\|-1/174" |
 | typescript/end-of-line/multiline.ts | 2/3 | 100.00% | check: input "\\\n" at 511 is output as "\\\r" at 512, which means "\\\r@\|3/35", not "\\\n@\|3/35" |
 | typescript/import-export/empty-import.ts | 1/1 | 64.86% | check: output comment "// comment } from \"a\";" matches no input comment |
 | typescript/interface/long-type-parameters/long-type-parameters.ts | 2/2 | 75.65% | check: input comment "// always extends RectConfig" is missing from the output |
