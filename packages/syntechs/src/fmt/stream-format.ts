@@ -48,6 +48,8 @@ export interface StreamCtx<O = unknown> {
   danglingComments(node: number): readonly number[];
   isComment(node: number): boolean;
   isLineComment(c: number): boolean;
+  /** Whether block comment `c` ends its line as a line comment does (`StreamRules.commentEndsLine`). */
+  endsItsLine?(c: number): boolean;
   /** Appends comment `c`. */
   comment(c: number): void;
   isList(node: number): boolean;
@@ -75,7 +77,7 @@ export interface CommentFacts {
 
 export const commentFacts = (ctx: StreamCtx<unknown>, c: number): CommentFacts => ({
   c,
-  line: ctx.isLineComment(c),
+  line: ctx.isLineComment(c) || ctx.endsItsLine?.(c) === true,
   lf: ctx.tree.lf(c),
   lfAfter: lfAfter(ctx.tree, c),
 });
@@ -151,6 +153,8 @@ export interface StreamRules<O = unknown> {
    * lines all start with `*`).
    */
   readonly printComment?: (c: number, ctx: StreamCtx<O>) => void;
+  /** Whether block comment `c` ends its line all the same: ktfmt breaks after a KDoc wherever it stood. */
+  readonly commentEndsLine?: (c: number, ctx: StreamCtx<O>) => boolean;
   /** Whether `node` prints as its source text though it parsed, as a broken node does (prettier-ignore). */
   readonly keepsSource?: (node: number, ctx: StreamCtx<O>) => boolean;
   /**
@@ -218,7 +222,7 @@ export function formatStream<O>(
       return false;
     };
     const none: readonly number[] = [];
-    const { wrap, printsOwnComments } = language;
+    const { wrap, printsOwnComments, commentEndsLine } = language;
     let current: PrintArgs | undefined;
     const printNode = (node: number, args?: PrintArgs) => {
       if (isBroken(node)) {
@@ -271,6 +275,7 @@ export function formatStream<O>(
       danglingComments: (node) => comments.dangling(node),
       isComment,
       isLineComment: isLine,
+      ...(commentEndsLine === undefined ? {} : { endsItsLine: (c: number) => commentEndsLine(c, ctx) }),
       comment,
       isList(node) {
         const rule = ruleOf(node);

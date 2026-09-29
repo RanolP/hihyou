@@ -1083,7 +1083,9 @@ export function emit(
       ...(ir.unknown === "bail" ? ["    bailUnknown: true,"] : []),
       ...(ir.docComment === undefined
         ? []
-        : [`    printComment: (c, ctx) => printDocComment(c, ctx, ${JSON.stringify(ir.docComment)}),`]),
+        : [`    printComment: (c, ctx) => printDocComment(c, ctx, ${JSON.stringify(ir.docComment)}),`,
+            `    commentEndsLine: (c, ctx) => isDocComment(ctx.tree.text(c), ${JSON.stringify(ir.docComment)}),`,
+          ]),
       "  };",
       "}",
     );
@@ -1149,7 +1151,7 @@ export function emit(
     parts.splice(
       parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
       0,
-      'import { printDocComment } from "../../fmt/dsl/doc-comment.js";',
+      'import { isDocComment, printDocComment } from "../../fmt/dsl/doc-comment.js";',
     );
   if (parts.some((p) => p.includes("lfAfter(")))
     parts.splice(
