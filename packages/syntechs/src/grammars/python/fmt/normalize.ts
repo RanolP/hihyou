@@ -245,29 +245,66 @@ function stringValue(
       if (interpolated) v = v.replace(/\{\{/g, "{").replace(/\}\}/g, "}");
       value += v;
     } else if (k === "interpolation")
-      value += `\0${t.replace(/\s+/g, "").replace(/'/g, '"')}\0`;
+      value += `\0${fieldForm(tree, c, text, at)}\0`;
   }
   return { bytes, value };
+}
+
+/** A string or concatenation's value, its parts joined, as ruff may join them. */
+function stringsValue(
+  tree: Tree,
+  n: number,
+  text: string,
+  at: number,
+): { bytes: boolean; value: string } {
+  if (tree.kindName(n) !== "concatenated_string")
+    return stringValue(tree, n, text, at);
+  let bytes = false;
+  let value = "";
+  for (let i = 0, count = tree.count(n); i < count; i++) {
+    const c = tree.child(n, i);
+    if (tree.kindName(c) !== "string") continue;
+    const v = stringValue(tree, c, text, at);
+    bytes ||= v.bytes;
+    value += v.value;
+  }
+  return { bytes, value };
+}
+
+/**
+ * An interpolation's form: its tokens without blanks, each nested string by its value, since ruff respells a
+ * nested string's quotes and escapes (PEP 701 lets it reuse the enclosing quotes).
+ */
+function fieldForm(tree: Tree, n: number, text: string, at: number): string {
+  const k = tree.kindName(n);
+  if (k === "string" || k === "concatenated_string") {
+    const v = stringsValue(tree, n, text, at);
+    return `\u0001${v.bytes ? "b" : ""}${v.value}\u0001`;
+  }
+  const slice = (from: number, to: number) =>
+    text.slice(from - at, to - at).replace(/\s+/g, "");
+  let out = "";
+  let last = tree.start(n);
+  for (let i = 0, count = tree.count(n); i < count; i++) {
+    const c = tree.child(n, i);
+    // The text between children is a hidden token: a format spec's literal characters.
+    out += slice(last, tree.start(c));
+    const ck = tree.kindName(c);
+    // A trailing comma comes and goes as the collection splits.
+    const trailing =
+      ck === "," && i + 1 < count && /^[)\]}]$/.test(tree.kindName(tree.child(n, i + 1)));
+    if (ck !== "comment" && !trailing) out += fieldForm(tree, c, text, at);
+    last = tree.end(c);
+  }
+  return out + slice(last, tree.end(n));
 }
 
 /** Ruff's code example openings in a docstring: a doctest, a Markdown fence, a reStructuredText block. */
 const codeExample = />>>|```|~~~|::/;
 
 function stringForm(tree: Tree, l: Lexeme): string {
-  const parts: number[] = [];
-  if (tree.kindName(l.node) === "concatenated_string") {
-    for (let i = 0, count = tree.count(l.node); i < count; i++) {
-      const c = tree.child(l.node, i);
-      if (tree.kindName(c) === "string") parts.push(c);
-    }
-  } else parts.push(l.node);
-  let bytes = false;
-  let value = "";
-  for (const p of parts) {
-    const v = stringValue(tree, p, l.text, l.at);
-    bytes ||= v.bytes;
-    value += v.value;
-  }
+  const { bytes, value: joined } = stringsValue(tree, l.node, l.text, l.at);
+  let value = joined;
   if (isDocstring(tree, l.node))
     value = codeExample.test(value)
       ? // `docstring-code-format` formats the examples as code, which re-spaces them and adds or drops the

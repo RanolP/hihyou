@@ -17,6 +17,9 @@ export interface PyOptions {
   "skip-magic-trailing-comma": boolean;
   "docstring-code-format": boolean;
   "docstring-code-line-length": CodeLineLength;
+  /** `py3NN`; unset reads as ruff's default, py310. */
+  "target-version"?: string;
+  "nested-string-quote-style"?: "alternating" | "preferred";
   /** Set only while a docstring's code example is formatted: that docstring's quote (ruff's `DocstringContext`). */
   docstringQuote?: Quote;
 }

@@ -1,4 +1,4 @@
-python compatibility: 294/327 (89.91%), 12 refused (ok:false), 49 excluded
+python compatibility: 295/327 (90.21%), 7 refused (ok:false), 49 excluded
 
 Fixtures: ruff 0.16.8 crates/ruff_python_formatter/resources/test/fixtures/{black,ruff} (recursive), every option set of each `.options.json`, expected output from tests/snapshots (black cases without a snapshot: their `.expect` file). Options are passed by their ruff.toml names.
 
@@ -14,16 +14,20 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | black/cases/expression.py | 0/1 | 54.95% |
 | black/cases/fmtskip10.py | 0/1 | 94.12% |
 | black/cases/import_comments.py | 0/1 | 84.44% |
-| black/cases/pep_750.py | 0/1 | 90.67% |
+| black/cases/pep_701.py | 0/1 | 98.45% |
+| black/cases/pep_750.py | 0/1 | 94.74% |
 | black/cases/preview_hug_parens_with_braces_and_square_brackets.py | 0/1 | 48.53% |
 | black/cases/preview_hug_parens_with_braces_and_square_brackets_no_ll1.py | 0/1 | 37.61% |
 | black/cases/preview_import_line_collapse.py | 0/1 | 99.43% |
 | black/cases/preview_long_dict_values.py | 0/1 | 90.30% |
+| black/cases/preview_long_strings__regression.py | 0/1 | 97.13% |
 | ruff/expression/binary_implicit_string.py | 0/1 | 98.52% |
 | ruff/expression/call.py | 0/1 | 99.08% |
 | ruff/expression/compare.py | 0/1 | 98.68% |
+| ruff/expression/fstring_multiline_replacement_field.py | 0/2 | 68.75% |
+| ruff/expression/join_implicit_concatenated_string.py | 0/1 | 98.70% |
 | ruff/expression/join_implicit_concatenated_string_assignment.py | 0/1 | 97.11% |
-| ruff/expression/join_implicit_concatenated_string_preserve.py | 0/2 | 88.64% |
+| ruff/expression/join_implicit_concatenated_string_preserve.py | 1/2 | 95.45% |
 | ruff/expression/slice.py | 0/1 | 94.07% |
 | ruff/fmt_on_off/indent.py | 0/3 | 65.49% |
 | ruff/statement/function.py | 0/1 | 99.60% |
@@ -37,15 +41,10 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
 | black/cases/pattern_matching_style.py | 1/1 | 46.81% | formatter-error: unsupported pattern comment at 498 |
-| black/cases/pep_701.py | 1/1 | 93.33% | check: input "f\"{'\\''}\"" at 2276 is output as "f\"{\"'\"}\"" at 2230, which means "0:S\u0000{\"\"\"}\u0000", not "0:S |
-| black/cases/preview_long_strings__regression.py | 1/1 | 96.81% | check: input "F\"{F'{humanize_number(pos)}.': <{pound_len+2}} \"\n    F\"{balance: <{bal_len + 5}} \"\n    F\"<<{author. |
 | black/cases/remove_for_brackets.py | 1/1 | 96.00% | check: input "(" at 672 is output as "k" at 692, which means "k", not "(" |
 | ruff/expression/fstring.py | 2/2 | 57.40% | formatter-error: parse error: ERROR at 21682 |
-| ruff/expression/fstring_multiline_replacement_field.py | 2/2 | 68.75% | check: input "f\"aaaaaaaaaaa {[ttttteeeeeeeeest,]} more {\n    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa |
-| ruff/expression/join_implicit_concatenated_string.py | 1/1 | 97.62% | check: input "f\"{'Hy \\\"User\\\"'}\" 'more'" at 470 is output as "f\"{'Hy \"User\"'}more\"" at 455, which means "0:S\u |
 | ruff/expression/lambda.py | 1/1 | 99.11% | check: input comment "# 2" is missing from the output |
 | ruff/expression/list_comp_py315.py | 1/1 | 73.53% | formatter-error: parse error: ERROR at 250 |
-| ruff/expression/nested_string_quote_style.py | 4/4 | 87.50% | check: input "f'\"double\" quotes and {\"nested string with \\\"double\\\" quotes\"}'" at 881 is output as "f'\"double\" |
 | ruff/expression/tstring.py | 1/1 | 55.30% | formatter-error: parse error: ERROR at 21234 |
 | ruff/statement/match.py | 1/1 | 71.21% | formatter-error: comment in a pattern at 2288 |
 

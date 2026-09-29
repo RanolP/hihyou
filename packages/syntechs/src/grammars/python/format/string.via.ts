@@ -75,6 +75,29 @@ export const stringVia = {
     if (joined) sToken(c, normalizeString(text, 0, flags, isInterpolated(flags)));
     else sMultiline(c, normalizeString(text, 0, flags, false));
   },
+  // A format spec: its literal characters (hidden tokens between the children) as written, its fields formatted.
+  "string.spec": (spec: number, ctx: StreamCtx<unknown>) => {
+    const tree = ctx.tree;
+    // A line break in the literal breaks the field's group around it, as ruff's multiline text does.
+    const literal = (s: string) => {
+      if (s.includes("\n")) sMultiline(spec, s);
+      else if (s !== "") sText(s);
+    };
+    const text = tree.text(spec);
+    let last = 0;
+    for (let i = 0, n = tree.count(spec); i < n; i++) {
+      const c = tree.child(spec, i);
+      // Literal characters hold no brace, so a field (or the leading `:`) is found where it starts.
+      const at = text.indexOf(tree.text(c), last);
+      if (at > last) literal(text.slice(last, at));
+      ctx.printNode(c, ctx.args);
+      last = at + tree.text(c).length;
+    }
+    // The spec runs to the field's `}`, but tree-sitter leaves a trailing line break (never part of a literal
+    // token) outside the node.
+    const field = tree.text(tree.parent(spec));
+    literal(text.slice(last) + field.slice(field.lastIndexOf(text) + text.length, -1));
+  },
   // Ruff's `FormatInterpolatedElement`. Its expression reads the enclosing string's quotes and layout from
   // `f.fstr`, dynamic context rather than args, since they reach any string or collection nested at any depth.
   "string.interpolation": (interp: number, ctx: StreamCtx<unknown>) => {
@@ -126,11 +149,13 @@ export const stringVia = {
       bracket();
       writeExpr(f, e);
       if (conversion !== NO_NODE) ctx.printNode(conversion);
-      if (spec !== NO_NODE) ctx.printNode(spec);
+      if (spec !== NO_NODE) ctx.printNode(spec, ctx.args);
       if (conversion === NO_NODE && spec === NO_NODE) bracket();
     };
     const saved = f.fstr;
-    f.fstr = { k: saved.k === "outside" ? "inside" : "nested", flags, multiline: multiline2 };
+    // A format spec's field belongs to the string its enclosing field does, one level no deeper (ruff#28218).
+    if (tree.kindName(interp) !== "format_expression")
+      f.fstr = { k: saved.k === "outside" ? "inside" : "nested", flags, multiline: multiline2 };
     try {
       sToken(lbrace, f.text(lbrace));
       f.at(PAREN, () => {

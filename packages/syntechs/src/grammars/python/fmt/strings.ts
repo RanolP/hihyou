@@ -155,18 +155,36 @@ function descendants(
   return out;
 }
 
-/** Ruff's `preferred_quote_style`, for a target before Python 3.12 (no PEP 701). */
+/** Whether the target reads PEP 701 f-strings (3.12+), where a nested string may reuse its enclosing quotes. */
+export function supportsPep701(f: Fmt): boolean {
+  const m = /^py3(\d+)$/.exec(f.options["target-version"] ?? "");
+  return m !== null && Number(m[1]) >= 12;
+}
+
+/** Ruff's `preferred_quote_style`. */
 export function preferredQuoteStyle(
   f: Fmt,
   part: Part,
   preferred: QuoteStyle,
 ): QuoteStyle {
   const state = f.fstr;
-  if (state.k === "nested") return "preserve";
-  if (state.k === "inside" && (!state.flags.triple || part.flags.triple))
-    return opposite(state.flags.quote) === '"' ? "double" : "single";
+  const pep701 = supportsPep701(f);
+  if (state.k !== "outside") {
+    if (!pep701 && state.k === "nested") return "preserve";
+    // `nested-string-quote-style = "preferred"` lets a nested string take the preferred quotes once PEP 701 allows it.
+    const alternating =
+      !pep701 || f.options["nested-string-quote-style"] !== "preferred";
+    if (
+      alternating &&
+      (!state.flags.triple || part.flags.triple) &&
+      (!pep701 || preferred !== "preserve")
+    )
+      return opposite(state.flags.quote) === '"' ? "double" : "single";
+  }
   if (preferred === "preserve") return "preserve";
-  if (isInterpolated(part.flags)) {
+  // Before PEP 701 an f-string keeps its quotes when changing them would clash with a quote its fields hold
+  // verbatim. A t-string needs Python 3.14, so it never has that constraint.
+  if (!pep701 && part.flags.prefix.includes("f")) {
     const interps = part.elements.filter(
       (e) => f.tree.kindName(e) === "interpolation",
     );
