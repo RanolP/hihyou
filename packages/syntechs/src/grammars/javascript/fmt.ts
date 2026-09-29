@@ -41,12 +41,14 @@ import {
   statementCustoms,
   statementRules,
 } from "./print/statements.js";
-import { typeCustoms, typeRules, unionOwnsComments } from "./print/types.js";
+import { typeCustoms, typeRules, unionOwnsComments, unparenType } from "./print/types.js";
 import { jsCtx, sToken, withComments } from "./sink.js";
 import {
   anon,
+  children,
   hasComment,
   isArrayLike,
+  isComment,
   isCastParen,
   isIgnoreComment,
   isObjectOrRecord,
@@ -151,10 +153,30 @@ function castParens(sctx: ReturnType<typeof jsCtx>, n: number, inner: number): v
 }
 
 /** A node under a `// prettier-ignore` comment keeps its source text. */
-const isIgnored = (ctx: JsCtx, n: number) => {
-  for (const c of ctx.comments(n).leading)
-    if (isIgnoreComment(ctx, c)) return true;
-  return isJsx(ctx, n) && jsxIgnored(ctx, n, (c) => isIgnoreComment(ctx, c));
+const isIgnored = (ctx: JsCtx, n: number) =>
+  (!isUnion(ctx, n) && ledByIgnore(ctx, n)) ||
+  firstOfIgnoredUnion(ctx, n) ||
+  (isJsx(ctx, n) && jsxIgnored(ctx, n, (c) => isIgnoreComment(ctx, c)));
+
+const ledByIgnore = (ctx: JsCtx, n: number) =>
+  ctx.comments(n).leading.some((c) => isIgnoreComment(ctx, c));
+
+const isUnion = (ctx: JsCtx, n: number) => kind(ctx, unparenType(ctx, n)) === "union_type";
+
+/**
+ * `// prettier-ignore` above a union, or above its parentheses, keeps only the union's first member's source text
+ * (handleUnionTypeComments): prettier moves the ignore onto `types[0]`.
+ */
+const firstOfIgnoredUnion = (ctx: JsCtx, n: number) => {
+  for (let at = n, up = parent(ctx, n); up !== undefined; at = up, up = parent(ctx, up)) {
+    if (kind(ctx, up) !== "union_type" || children(ctx, up).find((c) => named(ctx, c) && !isComment(ctx, c)) !== at)
+      return false;
+    for (let w: number | undefined = up; w !== undefined; w = parent(ctx, w)) {
+      if (ledByIgnore(ctx, w)) return true;
+      if (kind(ctx, parent(ctx, w)) !== "parenthesized_type") break;
+    }
+  }
+  return false;
 };
 
 /**

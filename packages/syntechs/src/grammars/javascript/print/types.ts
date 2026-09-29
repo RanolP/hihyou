@@ -56,7 +56,6 @@ import {
   getComments,
   type HasTree,
   hasComment,
-  hasLeadingOwnLineComment,
   isComment,
   isMember,
   isSimpleType,
@@ -281,35 +280,27 @@ function shouldHugType(ctx: JsCtx, n: number): boolean {
   return kind(ctx, n) === "union_type" && shouldHugUnionType(ctx, n);
 }
 
-/** Where a union led by a comment that ends its line prints that comment inside the union's indent. */
-const OWN_COMMENT_UNION_PARENTS = new Set([
-  "type_annotation",
-  "as_expression",
-  "satisfies_expression",
-]);
-
 /**
- * A union led by a comment that ends its line, as an annotation's type or after `as` (`a: // c` above
- * `| A | B`), prints its comments itself: where it indents its members, the comment goes inside that indent, on
- * a line of its own, with no line break before the first `|` (prettier's shouldAddStartLine). A type
- * parameter's bound keeps `extends // c` on its line.
+ * Prettier's shouldUnionTypePrintOwnComments: a union prints its comments itself, around its members and inside
+ * the indent it opens (`a: // c` above `| A | B`, or `extends A | B // c` breaking after `extends`), unless it hugs,
+ * is a member of another union or intersection, or is one of several tuple elements.
  */
-export const unionOwnsComments = (x: JsCtx, n: number) =>
-  kind(x, n) === "union_type" &&
-  !isTransparentType(x, n) &&
-  OWN_COMMENT_UNION_PARENTS.has(kind(x, typeRole(x, n).parent) ?? "") &&
-  hasLeadingOwnLineComment(x, n);
+export const unionOwnsComments = (x: JsCtx, n: number) => {
+  if (kind(x, n) !== "union_type" || isTransparentType(x, n) || !hasComment(x, n)) return false;
+  const up = typeRole(x, n).parent;
+  if (UNION_LIKE.has(kind(x, up) ?? "")) return false;
+  if (kind(x, up) === "tuple_type" && items(x, up as number).length > 1) return false;
+  return !shouldHugUnionType(x, n);
+};
 
 /** Prettier's printUnionType. */
 const unionType: CustomRule<JsOptions> = (n, sctx) => {
   const ctx = jsCtx(sctx);
-  if (!unionOwnsComments(ctx.js, n)) return printUnionType(ctx, n, () => {});
-  printUnionType(ctx, n, () => printLeadingComments(ctx, n));
-  printTrailingComments(ctx, n);
+  printUnionType(ctx, n, unionOwnsComments(ctx.js, n));
 };
 
-/** Union `n`, calling `leading` where its leading comments go. */
-function printUnionType(ctx: JsStreamCtx, n: number, leading: () => void) {
+/** Union `n`, with its own comments around its members when it `owns` them. */
+function printUnionType(ctx: JsStreamCtx, n: number, owns: boolean) {
   const js = ctx.js;
   const args = ctx.args;
   if (isTransparentType(js, n)) return pr(ctx, items(js, n)[0], args);
@@ -337,7 +328,6 @@ function printUnionType(ctx: JsStreamCtx, n: number, leading: () => void) {
     !inTuple &&
     !noIndent &&
     args?.assignmentLayout !== "break-after-operator";
-  if (!indented) leading();
   if (hug)
     return types.forEach((x, i) => {
       if (i > 0) {
@@ -348,6 +338,7 @@ function printUnionType(ctx: JsStreamCtx, n: number, leading: () => void) {
       ctx.print(x);
     });
   const printed = () => {
+    if (owns) printLeadingComments(ctx, n);
     open(GROUP);
     types.forEach((x, i) => {
       if (i === 0) {
@@ -373,6 +364,7 @@ function printUnionType(ctx: JsStreamCtx, n: number, leading: () => void) {
       else withComments(ctx, x, () => aligned(bare));
     });
     close();
+    if (owns) printTrailingComments(ctx, n);
   };
   if (parenthesized) {
     open(GROUP);
@@ -402,7 +394,6 @@ function printUnionType(ctx: JsStreamCtx, n: number, leading: () => void) {
   open(GROUP);
   open(INDENT);
   sLine(SOFT);
-  leading();
   printed();
   close();
   close();

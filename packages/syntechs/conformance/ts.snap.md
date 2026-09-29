@@ -1,4 +1,4 @@
-ts compatibility: 595/653 (91.12%), 16 refused (ok:false), 76 excluded
+ts compatibility: 603/653 (92.34%), 15 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -21,7 +21,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/comments/16065.ts | 0/1 | 81.82% |
 | typescript/comments/16889.ts | 0/1 | 97.39% |
 | typescript/comments/method_types.ts | 0/1 | 82.05% |
-| typescript/comments/first-argument/first-argument.ts | 0/1 | 65.45% |
 | typescript/compiler/indexSignatureWithInitializer.ts | 0/1 | 87.50% |
 | typescript/conditional-types/parentheses.ts | 0/2 | 86.00% |
 | typescript/conformance/classes/classDeclarations/classAbstractKeyword/classAbstractWithInterface.ts | 0/1 | 0.00% |
@@ -29,7 +28,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/custom/abstract/abstractNewlineHandling.ts | 0/1 | 86.96% |
 | typescript/decorators/decorator-type-assertion.ts | 0/1 | 40.00% |
 | typescript/definite/without-annotation.ts | 0/1 | 91.67% |
-| typescript/import-require/comments.ts | 0/1 | 70.00% |
 | typescript/import-require/type-imports.ts | 0/1 | 56.00% |
 | typescript/instantiation-expression/inferface-asi.ts | 0/1 | 36.36% |
 | typescript/instantiation-expression/logical-expr.ts | 0/1 | 91.67% |
@@ -44,14 +42,9 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/satisfies-operators/lhs.ts | 0/2 | 90.00% |
 | typescript/template-literals/member-expression.ts | 0/1 | 57.14% |
 | typescript/trailing-comma/trailing.ts | 2/3 | 97.78% |
-| typescript/type-parameters-arguments/18041.ts | 0/1 | 45.71% |
 | typescript/type-parameters-arguments/const.ts | 0/1 | 90.63% |
-| typescript/type-parameters-arguments/constraints-and-default-2.ts | 0/1 | 96.83% |
 | typescript/type-parameters-arguments/long-function-arg.ts | 0/1 | 18.18% |
 | typescript/type-parameters-arguments/print-width-120/issue-7542.tsx | 0/1 | 88.89% |
-| typescript/union/comments/18379.ts | 0/1 | 54.17% |
-| typescript/union/comments/18389.ts | 0/1 | 76.92% |
-| typescript/union/consistent-with-flow/leading-comments.ts | 0/1 | 91.67% |
 | typescript/union/consistent-with-flow/prettier-ignore.ts | 0/1 | 60.00% |
 | jsx/jsx/html_escape.js | 2/4 | 66.67% |
 
@@ -76,7 +69,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | typescript/parentheses/yield.ts | 1/1 | 40.00% | check: input "yield" at 41 is output as "yield" at 42, which means "yield@\|-1/8", not "yield@\|-1/9" |
 | typescript/type-parameters-arguments/19505.ts | 1/1 | 98.18% | check: input comment "// dangling comment" is missing from the output |
 | typescript/union/consistent-with-flow/18647.ts | 1/1 | 75.00% | check: input "any instanceof B\n  /**\n  * Comment\n  */\n    ? B \| C\n    : D" at 139 is output as "any" at 147, which  |
-| typescript/union/consistent-with-flow/union-last-comment.ts | 1/1 | 64.71% | check: output comment "// Comment2 // Final comment1" matches no input comment |
 
 # Excluded
 

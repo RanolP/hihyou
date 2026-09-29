@@ -183,6 +183,32 @@ export const moduleCustoms = {
     printSpecifiers(s, items(s.js, n));
   },
 
+  /**
+   * `a = require("a")`, prettier's TSExternalModuleReference printed as a call: a commented source breaks inside the
+   * parentheses, with no trailing comma; an uncommented one never breaks.
+   */
+  "module.require": (n, ctx) => {
+    const s = jsCtx(ctx);
+    const js = s.js;
+    const source = field(js, n, "source");
+    for (const c of childrenOf(js, n)) {
+      if (isComment(js, c)) continue;
+      const k = kind(js, c);
+      if (k === "=") sText(" ");
+      if (c === source && hasComment(js, c)) {
+        open(GROUP);
+        open(INDENT);
+        sLine(SOFT);
+        s.print(c);
+        close();
+        sLine(SOFT);
+        close();
+      } else if (isNamed(js, c)) s.print(c);
+      else sTok(js, c);
+      if (k === "=") sText(" ");
+    }
+  },
+
   /** `with { type: "json" }`: a lone `type` attribute never breaks. */
   "module.attribute": (n, ctx) => {
     const s = jsCtx(ctx);
