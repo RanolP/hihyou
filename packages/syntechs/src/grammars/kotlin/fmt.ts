@@ -13,6 +13,7 @@ import { newlineBetween } from "../../fmt/text.js";
 import { type FormatTree, firstLeaf, prevLeaf } from "../../fmt/tree.js";
 import type { StreamRules } from "../../fmt/stream-format.js";
 import { grammar } from "./bundle.js";
+import { binary, binaryKinds } from "./binary.js";
 import { chained } from "./chain.js";
 import { enumBody } from "./enum-body.js";
 import * as gen from "./fmt.gen.js";
@@ -233,6 +234,7 @@ function withChains<O>(stream: StreamRules<O>): StreamRules<O> {
   for (const kind of ["navigation_expression", "call_expression", "indexing_expression", "postfix_expression"])
     rules.set(kind, chained(stream.rules.get(kind), hugsDeclaration));
   rules.set("string_literal", trimmedStrings(stream.rules.get("string_literal")));
+  for (const kind of binaryKinds) rules.set(kind, binary(stream.rules.get(kind)));
   return { ...stream, rules };
 }
 

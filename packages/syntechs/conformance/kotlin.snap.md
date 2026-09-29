@@ -1,4 +1,4 @@
-kotlin compatibility: 591/753 (78.49%), 28 refused (ok:false), 11 excluded
+kotlin compatibility: 599/753 (79.55%), 28 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -15,20 +15,16 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | packages/syntechs/src/grammars/kotlin/corpus/Delay.kt | 0/1 | 97.97% |
 | packages/syntechs/src/grammars/kotlin/corpus/Transform.kt | 0/1 | 92.98% |
 | packages/syntechs/src/grammars/kotlin/corpus/Okio.kt | 0/1 | 97.44% |
-| packages/syntechs/src/grammars/kotlin/corpus/build.gradle.kts | 0/1 | 94.57% |
+| packages/syntechs/src/grammars/kotlin/corpus/build.gradle.kts | 0/1 | 97.83% |
 | ktfmt/format/annotation/exception.kt | 0/1 | 61.54% |
 | ktfmt/format/annotation/expressions2.kt | 0/1 | 78.05% |
 | ktfmt/format/annotation/functionTypes.kt | 0/1 | 60.00% |
 | ktfmt/format/annotation/multipleAnnotations.kt | 0/1 | 85.71% |
 | ktfmt/format/binary/associativity.kt | 0/1 | 72.73% |
-| ktfmt/format/binary/binaryExpressionWithRanges.kt | 0/1 | 76.92% |
-| ktfmt/format/binary/commentBeforeBinaryOperator.kt | 0/1 | 62.50% |
-| ktfmt/format/binary/lineCommentBeforeOperator.kt | 0/1 | 62.50% |
-| ktfmt/format/binary/longBinaryOperations.kt | 0/1 | 46.15% |
-| ktfmt/format/binary/multiOperandChain.kt | 0/1 | 58.82% |
+| ktfmt/format/binary/binaryExpressionWithRanges.kt | 0/1 | 52.63% |
 | ktfmt/format/call/anonymousFun.kt | 0/1 | 88.89% |
 | ktfmt/format/call/anonymousFunWithReceiver.kt | 0/1 | 88.89% |
-| ktfmt/format/call/arrayAccessInTheCallChain.kt | 0/1 | 63.64% |
+| ktfmt/format/call/arrayAccessInTheCallChain.kt | 0/1 | 58.33% |
 | ktfmt/format/call/callArgsStickToFunctionName.kt | 0/1 | 60.00% |
 | ktfmt/format/call/chainWithDereferences.kt | 0/1 | 50.00% |
 | ktfmt/format/call/functionReference.kt | 0/1 | 88.00% |
@@ -50,7 +46,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/class/secondaryConstructor2.kt | 0/1 | 85.71% |
 | ktfmt/format/class/secondaryConstructorDelegate2.kt | 0/1 | 52.63% |
 | ktfmt/format/class/trailingCommaInExplicitConstructors.kt | 0/1 | 73.68% |
-| ktfmt/format/comment/blockComment.kt | 0/1 | 62.50% |
 | ktfmt/format/comment/shebang.kts | 0/1 | 88.89% |
 | ktfmt/format/function/assignmentWithScopeFunction.kt | 0/1 | 44.19% |
 | ktfmt/format/function/trailingCommasInDefinitions.kt | 0/1 | 90.57% |
@@ -79,7 +74,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/misc/explicitBackingField.kt | 0/1 | 71.43% |
 | ktfmt/format/misc/explicitBackingFieldWithoutType.kt | 0/1 | 75.00% |
 | ktfmt/format/misc/explicitBackingWithPrivateSet.kt | 0/1 | 80.00% |
-| ktfmt/format/misc/gh243.kt | 0/1 | 69.57% |
 | ktfmt/format/misc/labels.kt | 0/1 | 78.79% |
 | ktfmt/format/misc/redundantSemicolons.kt | 0/1 | 95.65% |
 | ktfmt/format/misc/semicolonsBetweenCalls.kt | 0/1 | 73.42% |
@@ -91,7 +85,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/property/backingFieldWithChainedScopingFunction2.kt | 0/1 | 71.43% |
 | ktfmt/format/property/backingFieldWithChainedScopingFunction3.kt | 0/1 | 40.00% |
 | ktfmt/format/property/trailingCommasInProperties.kt | 0/1 | 72.73% |
-| ktfmt/format/string/commentAfterMultilineString4.kt | 0/1 | 35.29% |
 | ktfmt/format/string/multiDollarString.kt | 0/1 | 33.33% |
 | ktfmt/format/string/multilineStringLiterals.kt | 0/1 | 92.86% |
 | ktfmt/format/string/multilineStringsWithTemplateExpressions.kt | 0/1 | 96.30% |
@@ -123,7 +116,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/google/fqNestedTypes.kt | 0/1 | 38.10% |
 | ktfmt/google/ifWithElse.kt | 0/1 | 90.00% |
 | ktfmt/google/ifWithMaxWidthCondition.kt | 0/1 | 47.06% |
-| ktfmt/google/longBinaryOps.kt | 0/1 | 41.67% |
 | ktfmt/google/longFunctionTypeWrapping.kt | 0/1 | 23.53% |
 | ktfmt/google/multiLineStringAsFunctionParam.kt | 0/1 | 91.67% |
 | ktfmt/google/namedArgumentsWithValueExpression.kt | 0/1 | 47.06% |
