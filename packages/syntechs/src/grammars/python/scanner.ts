@@ -24,6 +24,8 @@ const TRIPLE = 32;
 const BYTES = 64;
 
 const BUFFER_SIZE = 1024;
+/** An indent level's high bit: the level was opened during error recovery. Indentation counts to 0x7fff. */
+const RECOVERED = 0x8000;
 
 function endCharacter(flags: number): number {
   if (flags & SINGLE_QUOTE) return 39;
@@ -169,13 +171,13 @@ class PythonScanner implements ExternalScanner {
         indentLength = 0;
         lexer.advance(true);
       } else if (c === 32) {
-        indentLength = (indentLength + 1) & 0xffff;
+        indentLength = (indentLength + 1) & 0x7fff;
         lexer.advance(true);
       } else if (c === 13 || c === 12) {
         indentLength = 0;
         lexer.advance(true);
       } else if (c === 9) {
-        indentLength = (indentLength + 8) & 0xffff;
+        indentLength = (indentLength + 8) & 0x7fff;
         lexer.advance(true);
       } else if (
         c === 35 &&
@@ -202,18 +204,26 @@ class PythonScanner implements ExternalScanner {
 
     if (foundEndOfLine) {
       if (this.indents.length > 0) {
-        const currentIndentLength = this.indents.at(-1) as number;
+        const top = this.indents.at(-1) as number;
+        const currentIndentLength = top & ~RECOVERED;
         if (valid[INDENT] && indentLength > currentIndentLength) {
-          this.indents.push(indentLength);
+          this.indents.push(
+            indentLength | (errorRecoveryMode ? RECOVERED : 0),
+          );
           lexer.resultSymbol = INDENT;
           return true;
         }
         const nextIsStringStart =
           la(lexer) === 34 || la(lexer) === 39 || la(lexer) === 96;
+        // Where an operand is expected, a line break outside brackets is an error, so it is read as inside
+        // brackets even when no closing bracket is valid yet (`(a +\nb)`). A block opened during error recovery
+        // still takes the dedent that closes it, or its level would outlive the error.
+        const continuesOperand =
+          valid[STRING_START] && (nextIsStringStart || !(top & RECOVERED));
         if (
           (valid[DEDENT] ||
             (!valid[NEWLINE] &&
-              !(valid[STRING_START] && nextIsStringStart) &&
+              !continuesOperand &&
               !withinBrackets)) &&
           indentLength < currentIndentLength &&
           !this.insideInterpolatedString &&

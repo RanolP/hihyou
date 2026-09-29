@@ -147391,3 +147391,63 @@ index c7ca6bf7cb920fc90c1de0234ba5d5b9433ba317..9ac464d7def807b774ea9a3441a2b447
      [ts_external_token_string_start] = true,
      [ts_external_token_comment] = true,
      [ts_external_token_except] = true,
+diff --git a/src/scanner.c b/src/scanner.c
+index 1fc77cdbdee6c7d33c183dc8c2bc3b64c9b0a410..b5727827451d86c24a58d463d09bb7e739713e15 100644
+--- a/src/scanner.c
++++ b/src/scanner.c
+@@ -31,6 +31,9 @@ typedef enum {
+     Bytes = 1 << 6,
+ } Flags;
+ 
++// An indent level's high bit: the level was opened during error recovery. Indentation counts to 0x7fff.
++#define RECOVERED 0x8000
++
+ typedef struct {
+     char flags;
+ } Delimiter;
+@@ -219,13 +222,13 @@ bool tree_sitter_python_external_scanner_scan(void *payload, TSLexer *lexer, con
+             indent_length = 0;
+             skip(lexer);
+         } else if (lexer->lookahead == ' ') {
+-            indent_length++;
++            indent_length = (indent_length + 1) & 0x7fff;
+             skip(lexer);
+         } else if (lexer->lookahead == '\r' || lexer->lookahead == '\f') {
+             indent_length = 0;
+             skip(lexer);
+         } else if (lexer->lookahead == '\t') {
+-            indent_length += 8;
++            indent_length = (indent_length + 8) & 0x7fff;
+             skip(lexer);
+         } else if (lexer->lookahead == '#' && (valid_symbols[INDENT] || valid_symbols[DEDENT] ||
+                                                valid_symbols[NEWLINE] || valid_symbols[EXCEPT])) {
+@@ -266,10 +269,11 @@ bool tree_sitter_python_external_scanner_scan(void *payload, TSLexer *lexer, con
+ 
+     if (found_end_of_line) {
+         if (scanner->indents.size > 0) {
+-            uint16_t current_indent_length = *array_back(&scanner->indents);
++            uint16_t top = *array_back(&scanner->indents);
++            uint16_t current_indent_length = top & ~RECOVERED;
+ 
+             if (valid_symbols[INDENT] && indent_length > current_indent_length) {
+-                array_push(&scanner->indents, indent_length);
++                array_push(&scanner->indents, indent_length | (error_recovery_mode ? RECOVERED : 0));
+                 lexer->result_symbol = INDENT;
+                 return true;
+             }
+@@ -277,8 +281,14 @@ bool tree_sitter_python_external_scanner_scan(void *payload, TSLexer *lexer, con
+             bool next_tok_is_string_start =
+                 lexer->lookahead == '\"' || lexer->lookahead == '\'' || lexer->lookahead == '`';
+ 
++            // Where an operand is expected, a line break outside brackets is an error, so it is read as inside
++            // brackets even when no closing bracket is valid yet (`(a +\nb)`). A block opened during error
++            // recovery still takes the dedent that closes it, or its level would outlive the error.
++            bool continues_operand =
++                valid_symbols[STRING_START] && (next_tok_is_string_start || !(top & RECOVERED));
++
+             if ((valid_symbols[DEDENT] ||
+-                 (!valid_symbols[NEWLINE] && !(valid_symbols[STRING_START] && next_tok_is_string_start) &&
++                 (!valid_symbols[NEWLINE] && !continues_operand &&
+                   !within_brackets)) &&
+                 indent_length < current_indent_length && !scanner->inside_interpolated_string &&
+ 

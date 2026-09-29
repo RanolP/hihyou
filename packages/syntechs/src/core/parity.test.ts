@@ -120,6 +120,10 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
       "class C:\n    def f(self):\n        return (\n    x = 1\n",
       // Tabs and spaces mixed, and an unterminated f-string replacement field.
       'if a:\n\tb\n        c\nd = f"{e"\n',
+      // A bracket's next operand dedented below its block, where no closing bracket is valid yet (the patched
+      // scanner reads it as inside the bracket), then a block opened during error recovery, which still dedents.
+      "def f():\n  (a +\nb)\n  c\n",
+      'g = 1, *"ten"\ndef f():\n    x\ny\nfor a in b:\n    pass\n',
       // PEP 696 type parameter defaults, which only the patched grammar reads.
       "def f[T = int, *Ts = *tuple[int], **P = [int]](): pass\nclass C[T: str = str]: ...\ntype A[T = int] = list[T]\n",
     ],
