@@ -52,6 +52,8 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
       "@media screen { a { b: c }\n}} d { e: f }",
       // The descendant-operator scanner before a pseudo-class that is really a declaration.
       "a b:hover { c: d } e f:g; h",
+      // The descendant-operator scanner before a quoted string, a selector part.
+      "one \"two\" three {} one 'two' three {}",
       // Custom property sets, one `{...}` group (a block) or more (a raw value with a string and a comment), and
       // postcss-nested-props, whose colon the pseudo-class scanner must leave alone.
       ":root { --b : { c: d; }; --e: {f:g;} /* } */ --h: 'i}'; j: { k: l } m: 1px/2 n { o: p } }\n--a: {x:y;}",

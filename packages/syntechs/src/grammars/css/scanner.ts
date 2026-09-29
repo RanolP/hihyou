@@ -152,6 +152,9 @@ function scan(lexer: Lexer, valid: Uint8Array, state: State): boolean {
       c === LBRACKET ||
       c === MINUS ||
       c === AMP ||
+      // postcss reads a quoted string as a selector part (`one "two" three`).
+      c === DQUOTE ||
+      c === SQUOTE ||
       iswalnum(c)
     )
       return true;
