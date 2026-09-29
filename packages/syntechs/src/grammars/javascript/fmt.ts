@@ -60,10 +60,12 @@ import {
   isIgnoreComment,
   isObjectOrRecord,
   isJsx,
+  isNestledComment,
   items,
   kind,
   lastChildWhere,
   named,
+  nestledComment,
   parent,
   type JsCtx,
   type JsOptions,
@@ -293,20 +295,39 @@ export function jsLanguage(
   overrides: Partial<JsOptions> = {},
 ): Language<JsOptions> {
   const rules = jsRules();
+  const base = defineLanguage(g, {
+    defaults: { ...defaults, ...overrides },
+    settings: prettierSettings,
+    parser: language,
+    atoms: jsAtoms,
+    normalize: jsNormalize,
+    lineComments: { comment: "//" } as never,
+    handleComment,
+  });
   return {
-    ...defineLanguage(g, {
-      defaults: { ...defaults, ...overrides },
-      settings: prettierSettings,
-      parser: language,
-      atoms: jsAtoms,
-      normalize: jsNormalize,
-      lineComments: { comment: "//" } as never,
-      handleComment,
-    }),
+    ...base,
+    // A comment nestled onto the one before it (`*//**`) is part of that one, which prettier's parser merged
+    // them into: it attaches nowhere, and prints with it.
+    placeComments: (tree, isComment, options) => {
+      const placed = base.placeComments(tree, isComment, options);
+      const own = (list: readonly number[]) => list.filter((c) => !isNestledComment(tree, c));
+      return {
+        of: (n) => {
+          const a = placed.of(n);
+          return a && { leading: own(a.leading), trailing: own(a.trailing) };
+        },
+        dangling: (n) => own(placed.dangling(n)),
+      };
+    },
     stream: {
       rules,
       lists: new Set(),
       printComment,
+      commentEnd: (c, s) => {
+        let end = c;
+        for (let n = nestledComment(s.tree, c); n !== undefined; n = nestledComment(s.tree, n)) end = n;
+        return end;
+      },
       printsOwnComments: (n, s) => {
         const ctx = jsCtx(s).js;
         return (

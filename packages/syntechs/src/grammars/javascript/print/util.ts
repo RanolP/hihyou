@@ -3,7 +3,7 @@ import type { Comments } from "../../../fmt/comments.js";
 import type { PrettierOptions } from "../../../fmt/options.js";
 import type { PrintArgs } from "../../../fmt/rules.js";
 import { lfAfter } from "../../../fmt/text.js";
-import { type FormatTree, prevLeaf } from "../../../fmt/tree.js";
+import { type FormatTree, nextLeaf, prevLeaf } from "../../../fmt/tree.js";
 
 /** The prettier options its JavaScript and TypeScript printers read, by prettier's names. */
 export interface JsOptions extends PrettierOptions {
@@ -470,12 +470,28 @@ export const hasLeadingOwnLineComment = (ctx: JsCtx, n: number) =>
 
 /** Prettier's isIndentableBlockComment: a multi-line block comment whose lines all start with `*`. */
 export function isIndentableBlockComment(ctx: JsCtx, c: number): boolean {
-  if (ctx.isLineComment(c)) return false;
-  const raw = src(ctx, c);
-  if (!raw.startsWith("/*") || !raw.includes("\n")) return false;
-  return `*${raw.slice(2, -2)}*`
-    .split("\n")
-    .every((l) => l.trimStart().startsWith("*"));
+  return !ctx.isLineComment(c) && indentable(src(ctx, c));
+}
+
+const indentable = (raw: string) =>
+  raw.startsWith("/*") &&
+  raw.includes("\n") &&
+  `*${raw.slice(2, -2)}*`.split("\n").every((l) => l.trimStart().startsWith("*"));
+
+/**
+ * The comment prettier's parsers (babel's and typescript's postprocess) merge onto comment `c`, so the two print
+ * as one: an indentable block comment that starts right where `c`, itself one, ends (`*//**`).
+ */
+export function nestledComment(tree: FormatTree, c: number): number | undefined {
+  const next = nextLeaf(tree, c);
+  if (next === NO_NODE || tree.kindName(next) !== "comment" || !tree.adjoins(c, next)) return undefined;
+  return indentable(tree.text(c)) && indentable(tree.text(next)) ? next : undefined;
+}
+
+/** Whether comment `c` is merged onto the one before it (`nestledComment`), which prints it. */
+export function isNestledComment(tree: FormatTree, c: number): boolean {
+  const prev = prevLeaf(tree, c);
+  return prev !== NO_NODE && tree.kindName(prev) === "comment" && nestledComment(tree, prev) === c;
 }
 
 export const LOGICAL_OPERATORS = new Set(["&&", "||", "??"]);

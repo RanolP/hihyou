@@ -11,6 +11,7 @@ import {
   jestEach,
   type JsCtx,
   kind,
+  nestledComment,
   src,
   unparen,
 } from "./util.js";
@@ -267,11 +268,19 @@ const templateString: CustomRule<JsOptions> = (node, sctx) => {
   }
 };
 
-/** Prettier's printComment: a block comment whose lines all start with `*` is re-indented. */
+/**
+ * Prettier's printComment: a block comment whose lines all start with `*` is re-indented. The comments nestled
+ * onto it print with it, as the one comment prettier's parser merged them into.
+ */
 export function printComment(
   c: number,
   ctx: HasTree & { isLineComment(c: number): boolean },
 ): void {
+  for (let n: number | undefined = c; n !== undefined; n = nestledComment(ctx.tree, n))
+    printOneComment(n, ctx);
+}
+
+function printOneComment(c: number, ctx: HasTree & { isLineComment(c: number): boolean }): void {
   const raw = src(ctx, c);
   if (ctx.isLineComment(c)) {
     sToken(c, raw.trimEnd());
