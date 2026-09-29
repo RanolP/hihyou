@@ -1,4 +1,4 @@
-ts compatibility: 573/653 (87.75%), 17 refused (ok:false), 76 excluded
+ts compatibility: 582/653 (89.13%), 16 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -17,7 +17,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/as/comments/18160.ts | 0/1 | 81.25% |
 | typescript/call/callee-comments.ts | 0/1 | 69.44% |
 | typescript/cast/assert-and-assign.ts | 0/1 | 50.00% |
-| typescript/class/declare-field.ts | 0/1 | 75.00% |
 | typescript/comments/11662.ts | 0/1 | 0.00% |
 | typescript/comments/16065.ts | 0/1 | 81.82% |
 | typescript/comments/16889.ts | 0/1 | 97.39% |
@@ -25,16 +24,9 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/comments/first-argument/first-argument.ts | 0/1 | 65.45% |
 | typescript/compiler/indexSignatureWithInitializer.ts | 0/1 | 87.50% |
 | typescript/conditional-types/parentheses.ts | 0/2 | 86.00% |
-| typescript/conformance/classes/classDeclarations/classAbstractKeyword/classAbstractMixedWithModifiers.ts | 0/1 | 13.33% |
-| typescript/conformance/classes/classDeclarations/classAbstractKeyword/classAbstractSingleLineDecl.ts | 0/1 | 66.67% |
 | typescript/conformance/classes/classDeclarations/classAbstractKeyword/classAbstractWithInterface.ts | 0/1 | 0.00% |
-| typescript/conformance/classes/constructorDeclarations/constructorParameters/readonlyInConstructorParameters.ts | 0/1 | 92.31% |
-| typescript/conformance/types/interfaceDeclaration/interfaceDeclaration.ts | 0/1 | 80.00% |
 | typescript/conformance/types/moduleDeclaration/kind-detection.ts | 0/1 | 0.00% |
 | typescript/custom/abstract/abstractNewlineHandling.ts | 0/1 | 86.96% |
-| typescript/custom/abstract/abstractProperties.ts | 0/1 | 25.00% |
-| typescript/decorator-auto-accessors/decorator-auto-accessors-new-line.ts | 0/1 | 76.92% |
-| typescript/decorator-auto-accessors/no-semi/decorator-auto-accessor-like-property-name.ts | 0/1 | 75.00% |
 | typescript/decorators/decorator-type-assertion.ts | 0/1 | 40.00% |
 | typescript/definite/definite.ts | 0/1 | 85.71% |
 | typescript/definite/without-annotation.ts | 0/1 | 91.67% |
@@ -88,7 +80,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | typescript/compiler/commentInNamespaceDeclarationWithIdentifierPathName.ts | 1/1 | 57.14% | check: input "namespace" at 1 is output as "namespace" at 1, which means "namespace@\|-1/2", not "namespace@\|-1/3" |
 | typescript/conditional-types/comments.ts | 2/2 | 77.53% | check: input "any instanceof B\n  /**\n  * Comment\n  */\n    ? B \| C\n    : D" at 1337 is output as "any" at 1332, whic |
 | typescript/conditional-types/conditional-types.ts | 2/2 | 100.00% | check: input "new" at 1298 is output as "new" at 1327, which means "new@\|-1/175", not "new@\|-1/174" |
-| typescript/decorator-auto-accessors/decorator-auto-accessors-type-annotations.ts | 1/1 | 75.00% | check: input "prop2" at 68 is output as "prop2" at 68, which means "key:prop2@name\|0/8", not "prop2@\|0/8" |
 | typescript/end-of-line/multiline.ts | 2/3 | 71.43% | check: input "\\\n" at 511 is output as "\\\r" at 486, which means "\\\r@\|3/35", not "\\\n@\|3/35" |
 | typescript/import-export/empty-import.ts | 1/1 | 64.86% | check: output comment "// comment } from \"a\";" matches no input comment |
 | typescript/interface/long-type-parameters/long-type-parameters.ts | 2/2 | 75.65% | check: input comment "// always extends RectConfig" is missing from the output |

@@ -42,6 +42,7 @@ import {
   type HasTree,
   isBinaryish,
   isCall,
+  inModifierOrder,
   isComment,
   isJsx,
   items,
@@ -813,7 +814,7 @@ const parameter: CustomRule<JsOptions> = (n, s) => {
     });
     sLine(0);
   }
-  for (const c of modifiers) {
+  for (const c of inModifierOrder(ctx, modifiers)) {
     s.print(c);
     sText(" ");
   }

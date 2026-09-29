@@ -158,6 +158,12 @@ const edgeCases: [string, Target, string][] = [
     "ts",
     "class A implements B { private readonly a = 1; protected abstract b(): void; constructor(public c: string) { super() } }",
   ],
+  // Modifiers written out of prettier's order must parse, print in its order, and pass `check`.
+  [
+    "member-modifiers-any-order",
+    "ts",
+    "class A { override public readonly x = 1; readonly static declare y: number; constructor(readonly private a: string) { super() } }",
+  ],
   [
     "namespaces",
     "ts",

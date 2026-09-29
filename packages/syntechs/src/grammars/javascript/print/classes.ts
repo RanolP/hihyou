@@ -35,6 +35,7 @@ import {
   field,
   type HasTree,
   hasComment,
+  inModifierOrder,
   isComment,
   isMember,
   items,
@@ -394,8 +395,8 @@ const classProperty: TokenRule<JsOptions> = (eq, n, sctx) => {
     n,
     () => {
       sPrintDecorators(sctx, decoratorsOf(ctx, n));
-      for (const c of all) {
-        if (c === key) break;
+      const before = key !== undefined ? all.slice(0, all.indexOf(key)) : all;
+      for (const c of inModifierOrder(ctx, before)) {
         if (isComment(ctx, c) || kind(ctx, c) === "decorator") continue;
         sctx.print(c);
         sText(" ");
@@ -422,8 +423,8 @@ const abstractMethod: CustomRule<JsOptions> = (n, sctx) => {
     sctx,
     kids.filter((c) => kind(ctx, c) === "decorator"),
   );
-  for (const c of kids) {
-    if (c === name) break;
+  const before = name !== undefined ? kids.slice(0, kids.indexOf(name)) : kids;
+  for (const c of inModifierOrder(ctx, before)) {
     if (isComment(ctx, c) || kind(ctx, c) === "decorator") continue;
     sctx.print(c);
     if (kind(ctx, c) !== "*") sText(" ");

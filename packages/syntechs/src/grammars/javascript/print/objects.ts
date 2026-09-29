@@ -37,6 +37,7 @@ import {
   field,
   type HasTree,
   hasComment,
+  inModifierOrder,
   isComment,
   isConciselyPrintedArray,
   items,
@@ -356,8 +357,8 @@ const methodCustom: StreamRule<JsOptions> = (n, sctx) => {
     sctx,
     kids.filter((c) => kind(ctx, c) === "decorator"),
   );
-  for (const c of kids) {
-    if (c === name) break;
+  const before = name !== undefined ? kids.slice(0, kids.indexOf(name)) : kids;
+  for (const c of inModifierOrder(ctx, before)) {
     if (isComment(ctx, c) || kind(ctx, c) === "decorator") continue;
     sctx.print(c);
     if (kind(ctx, c) !== "*") sText(" ");

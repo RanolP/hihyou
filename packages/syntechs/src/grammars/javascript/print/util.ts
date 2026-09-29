@@ -75,6 +75,29 @@ export function children(x: HasTree, n: number): number[] {
   return out;
 }
 
+/**
+ * TypeScript takes a class member's or parameter property's modifiers in any order; prettier prints them in
+ * this one. check's normalize (normalize.ts) reads the same order, so the two must change together.
+ */
+export const MODIFIER_ORDER = [
+  "declare",
+  "accessibility_modifier",
+  "static",
+  "abstract",
+  "override_modifier",
+  "readonly",
+  "accessor",
+];
+
+/** `kids` with its modifiers in prettier's order; anything else (`async`, `get`, `*`) keeps its place after them. */
+export function inModifierOrder(x: HasTree, kids: readonly number[]): number[] {
+  const rank = (c: number) => {
+    const r = MODIFIER_ORDER.indexOf(kind(x, c));
+    return r < 0 ? MODIFIER_ORDER.length : r;
+  };
+  return [...kids].sort((a, b) => rank(a) - rank(b));
+}
+
 /** The first child of `n` that passes `is`. */
 export function childWhere(
   x: HasTree,

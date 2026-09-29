@@ -12,17 +12,83 @@ import { cook } from "../../fmt/dsl/normalizers.js";
 export const jsNormalize: Normalize = (lexemes, text, tree) => {
   const jsx = new JsxTexts(text, tree);
   const places = new Places(tree, (n) => jsx.isText(n));
-  return lexemes.map((l, i) => {
+  const forms = lexemes.map((l, i) => {
     const run = jsx.runOf(l.node);
     // Prettier merges adjacent JSX spaces into one, which HTML renders alike.
     if (run)
       return jsx.first(run)
         ? `jsx:${run.value.replace(/ {2,}/g, " ")}@${places.at(run.element)}`
         : undefined;
+    // A modifier stands in its member, not at its own position among the others: prettier reorders them.
+    const member = modifierOf(tree, l);
+    if (member !== undefined) return `mod:${l.text}@${places.at(member)}`;
     const value = valueForm(tree, l, l.node, lexemes, i);
     return value === undefined ? undefined : `${value}@${places.of(l.node)}`;
   });
+  return inModifierOrder(lexemes, forms);
 };
+
+/** A member's or parameter's modifier keyword: its rank in prettier's order (print/util.ts's MODIFIER_ORDER). */
+const MODIFIER_RANK: Readonly<Record<string, number>> = {
+  declare: 0,
+  public: 1,
+  private: 1,
+  protected: 1,
+  static: 2,
+  abstract: 3,
+  override: 4,
+  readonly: 5,
+  accessor: 6,
+};
+const MODIFIER_NODES = new Set(["accessibility_modifier", "override_modifier"]);
+const MODIFIER_HOLDERS = new Set([
+  "public_field_definition",
+  "method_definition",
+  "method_signature",
+  "abstract_method_signature",
+  "index_signature",
+  "required_parameter",
+  "optional_parameter",
+]);
+
+/** The member or parameter whose modifier `l` is; undefined when `l` is none. */
+function modifierOf(tree: Tree, l: Lexeme): number | undefined {
+  if (MODIFIER_RANK[l.text] === undefined) return undefined;
+  let n = l.node;
+  // `public` and `override` stand in a node of their own, or lex as it.
+  if (!tree.named(n) && MODIFIER_NODES.has(parentKind(tree, n) ?? ""))
+    n = tree.parent(n);
+  if (tree.named(n) && !MODIFIER_NODES.has(tree.kindName(n))) return undefined;
+  const p = tree.parent(n);
+  return p !== NO_NODE && MODIFIER_HOLDERS.has(tree.kindName(p))
+    ? p
+    : undefined;
+}
+
+/**
+ * `forms` with each run of adjacent modifiers sorted into prettier's order, which the formatter prints them in
+ * whatever order the source had: the order means nothing.
+ */
+function inModifierOrder(
+  lexemes: readonly Lexeme[],
+  forms: (string | undefined)[],
+): (string | undefined)[] {
+  const rank = (i: number) =>
+    forms[i]?.startsWith("mod:") ? MODIFIER_RANK[lexemes[i]!.text] : undefined;
+  for (let i = 0; i < forms.length; i++) {
+    let end = i;
+    while (rank(end) !== undefined && rank(end + 1) !== undefined) end++;
+    if (end > i) {
+      const run = forms
+        .slice(i, end + 1)
+        .map((form, k) => ({ r: rank(i + k)!, form }));
+      run.sort((a, b) => a.r - b.r);
+      run.forEach((x, k) => (forms[i + k] = x.form));
+    }
+    i = end;
+  }
+  return forms;
+}
 
 /** The kinds `check` reads whole: a string's quotes and fragments are separate leaves. */
 export const jsAtoms = ["string"] as const;
