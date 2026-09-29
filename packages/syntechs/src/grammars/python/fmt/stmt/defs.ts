@@ -122,25 +122,20 @@ export function splitDangling(
  * parenthesized tuple of those, in the brackets of `frame` (the kind's rule's).
  */
 export function writeTypeParams(f: Fmt, tp: TypeParams, frame: Frame): void {
-  if (f.comments.has(tp) || f.comments.hasAnyIn(tp.start, tp.end))
-    throw new Unformattable(
-      `comment in type parameters at ${byteOffsetOf(f.tree, tp.ts)}`,
-    );
-  const t = f.tree;
-  const children = kids(t, tp.ts);
-  const open = children.find((c) => t.kindName(c) === "[");
-  const close = children.findLast((c) => t.kindName(c) === "]");
-  if (open === undefined || close === undefined)
-    throw new Unformattable(
-      `type parameters without brackets at ${byteOffsetOf(t, tp.ts)}`,
-    );
-  const entries = children
-    .filter((c) => t.named(c))
-    .map((n) => ({ end: endOf(t, n), write: () => writeTypeParam(f, n) }));
+  const cs = f.comments;
+  const entries = tp.params.map((p) => ({
+    end: p.end,
+    write: () => {
+      f.writeLeading(cs.leading(p));
+      writeTypeParam(f, p.ts);
+      f.writeTrailing(cs.trailing(p));
+    },
+  }));
   f.writeParenthesized(
     frame.open,
-    () => f.writeJoinCommaSeparated(entries, tp.end, writeCommaIn(t, tp.ts, open)),
+    () => f.writeJoinCommaSeparated(entries, tp.end, writeCommaIn(f.tree, tp.ts, tp.open)),
     frame.close,
+    cs.dangling(tp),
   );
 }
 

@@ -57,8 +57,11 @@ export const stmtDefVia = {
   // A definition's bound prints from its tokens (`ctx.args.boundTokens`), a type alias's as an expression.
   "def.bound": (c: number, ctx: StreamCtx<unknown>) => {
     const { f, e } = ruffOf(c);
-    if (ctx.args?.boundTokens === true) writeSimpleType(f, c);
-    else writeExpr(f, e);
+    if (ctx.args?.boundTokens === true) {
+      f.writeLeading(f.comments.leading(e));
+      writeSimpleType(f, c);
+      f.writeTrailing(f.comments.trailing(e));
+    } else writeExpr(f, e);
   },
   // Ruff's `format_function_header` from the parameters on: they and the return type break as one group.
   "def.signature": (c: number) => {

@@ -1,4 +1,4 @@
-python compatibility: 260/327 (79.51%), 29 refused (ok:false), 49 excluded
+python compatibility: 263/327 (80.43%), 25 refused (ok:false), 49 excluded
 
 Fixtures: ruff 0.16.8 crates/ruff_python_formatter/resources/test/fixtures/{black,ruff} (recursive), every option set of each `.options.json`, expected output from tests/snapshots (black cases without a snapshot: their `.expect` file). Options are passed by their ruff.toml names.
 
@@ -41,6 +41,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ruff/parentheses/call_chains.py | 0/1 | 99.38% |
 | ruff/skip_magic_trailing_comma.py | 0/2 | 95.76% |
 | ruff/statement/assignment_split_value_first.py | 0/1 | 99.35% |
+| ruff/statement/function.py | 0/1 | 99.60% |
 | ruff/statement/lazy_import.py | 0/1 | 68.97% |
 | ruff/statement/try.py | 1/2 | 99.58% |
 | ruff/statement/type_alias.py | 0/1 | 37.75% |
@@ -56,7 +57,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | black/cases/backslash_before_indent.py | 1/1 | 84.21% | formatter-error: backslash continuation before a body at 14 |
 | black/cases/cantfit.py | 1/1 | 97.30% | check: input "(" at 1689 is missing from the output |
 | black/cases/comment_after_escaped_newline.py | 1/1 | 47.06% | formatter-error: backslash continuation before a body at 10 |
-| black/cases/generics_wrapping.py | 1/1 | 56.48% | formatter-error: comment in type parameters at 1546 |
 | black/cases/pattern_matching_extras.py | 1/1 | 100.00% | formatter-error: unsupported pattern keyword_pattern at 1519 |
 | black/cases/pattern_matching_style.py | 1/1 | 46.81% | formatter-error: comment in a pattern at 474 |
 | black/cases/pep_572_remove_parens.py | 1/1 | 98.55% | check: input "(" at 846 is output as "x" at 835, which means "x", not "(" |
@@ -74,12 +74,9 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | ruff/expression/list_comp_py315.py | 1/1 | 73.53% | formatter-error: parse error: ERROR at 250 |
 | ruff/expression/nested_string_quote_style.py | 4/4 | 87.50% | check: input "f'\"double\" quotes and {\"nested string with \\\"double\\\" quotes\"}'" at 881 is output as "f'\"double\" |
 | ruff/expression/tstring.py | 1/1 | 55.30% | formatter-error: parse error: ERROR at 21234 |
-| ruff/fmt_skip/type_params.py | 1/1 | 82.50% | formatter-error: comment in type parameters at 68 |
 | ruff/parentheses/opening_parentheses_comment_empty.py | 1/1 | 89.39% | formatter-error: comment in a pattern at 595 |
 | ruff/parentheses/opening_parentheses_comment_value.py | 1/1 | 56.97% | formatter-error: comment in a pattern at 606 |
 | ruff/pattern/pattern_maybe_parenthesize.py | 1/1 | 84.53% | formatter-error: comment in a pattern at 5868 |
-| ruff/statement/class_definition.py | 1/1 | 78.26% | formatter-error: comment in type parameters at 2989 |
-| ruff/statement/function.py | 1/1 | 66.32% | formatter-error: comment in type parameters at 1334 |
 | ruff/statement/match.py | 1/1 | 71.21% | formatter-error: comment in a pattern at 2288 |
 | ruff/statement/with.py | 2/2 | 70.13% | formatter-error: unsupported expression: as_pattern at 5094 |
 

@@ -1,5 +1,4 @@
 import type { Expr, Stmt, TypeParam, TypeParams } from "../ast.js";
-import { Unformattable } from "../ast.js";
 import { type Fmt, writeCommaIn } from "../builders.js";
 import type { Comment } from "../comments.js";
 import {
@@ -43,7 +42,7 @@ import {
 } from "../strings.js";
 import * as sink from "../sink.js";
 import type { Frame } from "../../../../fmt/dsl/runtime.js";
-import { byteOffsetOf, startOf } from "../trivia.js";
+import { startOf } from "../trivia.js";
 
 /**
  * Ruff's assignments (statement/stmt_{assign,ann_assign,aug_assign,type_alias}.rs) and the layout of a
@@ -506,15 +505,20 @@ export const typeParams = (_: Fmt, tp: TypeParams): void => sink.sDsl(tp.ts);
 
 /** Ruff's `FormatTypeParams`: `[T, *Ts, **P]`, split one per line when it does not fit, in `frame`'s brackets. */
 export function writeAliasTypeParams(f: Fmt, tp: TypeParams, frame: Frame): void {
-  if (f.comments.hasAnyIn(tp.start, tp.end))
-    throw new Unformattable(
-      `comment in type parameters at ${byteOffsetOf(f.tree, tp.ts)}`,
-    );
-  const entries = tp.params.map((p) => ({ end: p.end, write: () => writeTypeParam(f, p) }));
+  const cs = f.comments;
+  const entries = tp.params.map((p) => ({
+    end: p.end,
+    write: () => {
+      f.writeLeading(cs.leading(p));
+      writeTypeParam(f, p);
+      f.writeTrailing(cs.trailing(p));
+    },
+  }));
   f.writeParenthesized(
     frame.open,
     () => f.writeJoinCommaSeparated(entries, startOf(f.tree, tp.close), writeCommaIn(f.tree, tp.ts, tp.open)),
     frame.close,
+    cs.dangling(tp),
   );
 }
 
