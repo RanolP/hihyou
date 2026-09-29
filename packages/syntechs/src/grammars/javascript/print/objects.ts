@@ -41,6 +41,7 @@ import {
   isComment,
   isConciselyPrintedArray,
   items,
+  jestEach,
   type JsCtx,
   type JsOptions,
   kind,
@@ -449,7 +450,8 @@ const arrayCustom: StreamRule<JsOptions> = (n, sctx) => {
   const canHaveTrailingComma = kind(ctx, lastElem.element) !== "rest_pattern";
   const needsForcedTrailingComma = lastElem.element === undefined;
   const shouldBreak =
-    (elements.length > 1 &&
+    (!jestEach.printing &&
+      elements.length > 1 &&
       elements.every(({ element }, i) => {
         if (!isArrayOrObject(ctx, element)) return false;
         const next = elements[i + 1]?.element;

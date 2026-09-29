@@ -1176,6 +1176,12 @@ export function flatText(k: number): string | undefined {
   return failed ? undefined : out;
 }
 
+/**
+ * The width closed interval `k` measured flat as it was built, a conditional group's first state: what a group's
+ * fits reads. The JS printer pads a jest `each` table's cells by it.
+ */
+export const flatWidth = (k: number): number => (iP1[k] as number) - (iP0[k] as number);
+
 /** What closed interval `k` is: its kind (`GROUP`, `CHOICE`, `FILL`, `SPAN`, ...) and its parts in order. */
 export interface Shape {
   readonly kind: number;

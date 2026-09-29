@@ -327,6 +327,52 @@ function isSimpleMemberChain(x: HasTree, n: number): boolean {
   return false;
 }
 
+const JEST_EACH_TRIGGER = /^[fx]?(?:describe|it|test)$/;
+
+function fieldChild(tree: FormatTree, n: number, name: string): number {
+  for (let i = 0; i < tree.count(n); i++) {
+    const c = tree.child(n, i);
+    if (tree.fieldName(c) === name) return c;
+  }
+  return NO_NODE;
+}
+
+/** The object of member expression `n` (not an optional chain, as prettier's MemberExpression) whose property matches `names`. */
+function eachOf(tree: FormatTree, n: number, names: RegExp): number {
+  if (n === NO_NODE || tree.kindName(n) !== "member_expression") return NO_NODE;
+  for (let i = 0; i < tree.count(n); i++)
+    if (tree.kindName(tree.child(n, i)) === "optional_chain") return NO_NODE;
+  const property = fieldChild(tree, n, "property");
+  if (property === NO_NODE || tree.kindName(property) !== "property_identifier")
+    return NO_NODE;
+  return names.test(tree.text(property)) ? fieldChild(tree, n, "object") : NO_NODE;
+}
+
+const isTrigger = (tree: FormatTree, n: number) =>
+  n !== NO_NODE &&
+  tree.kindName(n) === "identifier" &&
+  JEST_EACH_TRIGGER.test(tree.text(n));
+
+/**
+ * Prettier's isJestEachTemplateLiteral: `template` is the table of `describe.each`, `it.only.each`, `xtest.skip.each`
+ * and the like, which prettier reprints as an aligned table. check's normalize (normalize.ts) reads its text so.
+ */
+export function isJestEachTemplate(tree: FormatTree, template: number): boolean {
+  const call = tree.parent(template);
+  if (
+    call === NO_NODE ||
+    tree.kindName(call) !== "call_expression" ||
+    tree.fieldName(template) !== "arguments"
+  )
+    return false;
+  const object = eachOf(tree, fieldChild(tree, call, "function"), /^each$/);
+  if (isTrigger(tree, object)) return true;
+  return isTrigger(tree, eachOf(tree, object, /^(?:only|skip)$/));
+}
+
+/** Prettier's `options.__inJestEach`: set while a jest `each` table prints its cells. */
+export const jestEach = { printing: false };
+
 export const hasNewlineIn = (x: HasTree, n: number) => src(x, n).includes("\n");
 
 const TYPE_ANNOTATIONS = new Set([

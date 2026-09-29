@@ -1,6 +1,7 @@
 import { NO_NODE, type Tree } from "../../core/arena.js";
 import { decimalValue, type Lexeme, type Normalize } from "../../fmt/check.js";
 import { cook } from "../../fmt/dsl/normalizers.js";
+import { isJestEachTemplate } from "./print/util.js";
 
 /**
  * What a JS/TS token means: its value (a string's cooked text, a number's value, a key's name) and where it
@@ -22,10 +23,21 @@ export const jsNormalize: Normalize = (lexemes, text, tree) => {
     // A modifier stands in its member, not at its own position among the others: prettier reorders them.
     const member = modifierOf(tree, l);
     if (member !== undefined) return `mod:${l.text}@${places.at(member)}`;
+    // Prettier realigns a jest `each` table, whose cells jest splits on `|` and whitespace.
+    if (isJestEachFragment(tree, l.node)) {
+      const cells = l.text.replace(/[\s|]+/g, "");
+      return cells === "" ? undefined : `each:${cells}@${places.of(l.node)}`;
+    }
     const value = valueForm(tree, l, l.node, lexemes, i);
     return value === undefined ? undefined : `${value}@${places.of(l.node)}`;
   });
   return inModifierOrder(lexemes, forms);
+};
+
+const isJestEachFragment = (tree: Tree, n: number) => {
+  if (tree.kindName(n) !== "string_fragment") return false;
+  const p = tree.parent(n);
+  return p !== NO_NODE && tree.kindName(p) === "template_string" && isJestEachTemplate(tree, p);
 };
 
 /** A member's or parameter's modifier keyword: its rank in prettier's order (print/util.ts's MODIFIER_ORDER). */
