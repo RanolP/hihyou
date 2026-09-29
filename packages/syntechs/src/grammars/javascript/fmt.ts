@@ -302,6 +302,8 @@ export function jsLanguage(
     atoms: jsAtoms,
     normalize: jsNormalize,
     lineComments: { comment: "//" } as never,
+    // Prettier may print a trailing line comment after another (`y); //2b //2c`), which reads back as one.
+    comment: (raw) => (raw.startsWith("//") ? raw.split(/[ \t]+(?=\/\/)/) : raw),
     handleComment,
   });
   return {
