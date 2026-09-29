@@ -183,12 +183,12 @@ export const kotlin = format({
           ctorLine,
           $.children.at(0).andThen((m) => m),
           "constructor",
-          grpParen(sepBy(",", $.children.from(1), { trailing: true })),
+          grpParen(sepBy(",", $.children.from(1), { trailing: true, imaginary: true })),
         ]),
         either(
           firstText({ is: ["constructor"] }),
-          group([ctorLine, "constructor", grpParen(sepBy(",", $.children, { trailing: true }))]),
-          grpParen(sepBy(",", $.children, { trailing: true })),
+          group([ctorLine, "constructor", grpParen(sepBy(",", $.children, { trailing: true, imaginary: true }))]),
+          grpParen(sepBy(",", $.children, { trailing: true, imaginary: true })),
         ),
       ),
     class_parameter: () => decl(spaced({ tightBefore: [":"] })),
@@ -203,7 +203,15 @@ export const kotlin = format({
     function_declaration: () => decl(spaced({ tightBefore: [":"] })),
     // A parameter's modifiers and default are its siblings, so an entry is the run between two commas.
     function_value_parameters: () =>
-      grpParen(splitOn(",", { except: ["(", ")"], item: "space", trailing: true, layout: { between: "line" } })),
+      grpParen(
+        splitOn(",", {
+          except: ["(", ")"],
+          item: "space",
+          trailing: true,
+          imaginary: true,
+          layout: { between: "line" },
+        }),
+      ),
     parameter: () => spaced({ tightBefore: [":"] }),
     parameter_modifiers: () => inOrder(space),
     parameter_modifier: () => inOrder(),
@@ -245,9 +253,14 @@ export const kotlin = format({
         [space, inOrder()],
         inOrder({ spaceWhen: { before: ["annotated_lambda"] } }),
       ),
-    value_arguments: ($) => grpParen(sepBy(",", $.children, { trailing: when("manyArguments") })),
-    // A named argument's collection literal spaces itself off the `=` (see `collection_literal`).
-    value_argument: () => inOrder({ join: "space", tight: { after: ["*"], before: ["collection_literal"] } }),
+    value_arguments: ($) => grpParen(sepBy(",", $.children, { trailing: when("manyArguments"), imaginary: true })),
+    // A named argument's value hangs off its `=` once it does not fit on that line, but a lambda stays there.
+    value_argument: () =>
+      either(
+        has("children", "lambda_literal"),
+        inOrder({ join: "space", tight: { after: ["*"] } }),
+        inOrder({ join: "space", tight: { after: ["*"] }, hangAfter: ["="] }),
+      ),
     annotated_lambda: () => inOrder({ join: "space", tight: { after: ["label"] } }),
     // One with no statements prints in lambda.ts.
     lambda_literal: () => group(inOrder({ join: "line", hangAfter: ["{", "->"], spaceWhen: { before: ["->"] } })),
@@ -257,14 +270,8 @@ export const kotlin = format({
     navigation_suffix: () => inOrder(),
     indexing_expression: () => inOrder(),
     indexing_suffix: () => adjacent,
-    // `[a, b]`, in an annotation's arguments. As a named argument's value, it goes on a line of its own after the
-    // `=` when it does not fit on the `=`'s line, as ktfmt's visitArgument breaks there (an independent break).
-    collection_literal: ($) =>
-      either(
-        when("namedValue"),
-        group(indent([line, grpBracket(sepBy(",", $.children, { trailing: true }))])),
-        grpBracket(sepBy(",", $.children, { trailing: true })),
-      ),
+    // `[a, b]`, in an annotation's arguments. As a named argument's value it hangs off the `=` (`value_argument`).
+    collection_literal: ($) => grpBracket(sepBy(",", $.children, { trailing: true })),
     parenthesized_expression: () => inOrder(),
     // An annotated expression (`@Suppress("X") f()`) keeps the gap the source has after the annotation: where it
     // has none, the grammar took an annotation's arguments (`@Suppress("X")` above a declaration it misparses) for

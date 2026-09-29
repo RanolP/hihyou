@@ -337,7 +337,7 @@ export function flatten<O>(
                 out.push({ e: "sep", tok: seps[i] as number });
                 if (item !== HOLE && blankAfter(item, seps[i] as number)) out.push({ e: "blank" });
               } else if (item !== HOLE && evalCond(x.trailing, ctx, n, custom, kindHasFields))
-                out.push({ e: "ifBroken", after: item, text: x.sep });
+                out.push({ e: "ifBroken", after: item, text: x.sep, ...(x.imaginary ? { imaginary: true } : {}) });
             });
             if (owner === x)
               for (const c of dangling()) out.push(commentEntry(ctx, c, "dangling"));
@@ -352,7 +352,7 @@ export function flatten<O>(
               out.push({ e: "sep", tok: seps[i] as number });
               if (blankAfter(item, seps[i] as number)) out.push({ e: "blank" });
             } else if (evalCond(x.trailing, ctx, n, custom, kindHasFields))
-              out.push({ e: "ifBroken", after: item, text: x.sep });
+              out.push({ e: "ifBroken", after: item, text: x.sep, ...(x.imaginary ? { imaginary: true } : {}) });
           });
           if (owner === x)
             for (const c of dangling()) out.push(commentEntry(ctx, c, "dangling"));
@@ -477,7 +477,12 @@ export function flatten<O>(
                 if (wrapped) out.push({ e: "end" });
               });
               if (x.trailing && k === run.entries.length - 1)
-                out.push({ e: "ifBroken", after: items[items.length - 1] as number, text: x.sep });
+                out.push({
+                  e: "ifBroken",
+                  after: items[items.length - 1] as number,
+                  text: x.sep,
+                  ...(x.imaginary ? { imaginary: true } : {}),
+                });
               else out.push({ e: "sep", tok: sep });
               out.push({ e: "end" });
             }
@@ -702,7 +707,7 @@ export function wrap<O>(
         if (x.tok !== -1) sToken(x.tok, tree.text(x.tok));
       } else if (x?.e === "ifBroken") {
         open(IF_BROKEN, concise ? listGroup : -1);
-        sToken(x.after, x.text, true);
+        sToken(x.after, x.text, true, x.imaginary);
         close();
       }
     };
@@ -831,7 +836,7 @@ export function wrap<O>(
     if (sep?.e === "sep" && sep.tok !== -1) sToken(sep.tok, tree.text(sep.tok));
     else if (sep?.e === "ifBroken") {
       open(IF_BROKEN, -1);
-      sToken(sep.after, sep.text, true);
+      sToken(sep.after, sep.text, true, sep.imaginary);
       close();
     }
   };

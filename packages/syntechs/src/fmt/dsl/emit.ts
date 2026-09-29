@@ -436,7 +436,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
           "if (last)",
           () => {
             line("open(IF_BROKEN, -1);");
-            line(`sToken(e.items[e.items.length - 1] as number, ${str(x.sep)}, true);`);
+            line(`sToken(e.items[e.items.length - 1] as number, ${str(x.sep)}, true${x.imaginary ? ", true" : ""});`);
             line("close();");
           },
           "} else if (e.sep !== -1) sToken(e.sep, t.text(e.sep));",
@@ -545,7 +545,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
       if (trailing !== undefined) {
         depth++;
         line(`open(IF_BROKEN, ${fills ? "concise ? listGroup : -1" : "-1"});`);
-        line(`sToken(${its}[last] as number, ${str(x.sep)}, true);`);
+        line(`sToken(${its}[last] as number, ${str(x.sep)}, true${x.imaginary ? ", true" : ""});`);
         line("close();");
         depth--;
         line("}");

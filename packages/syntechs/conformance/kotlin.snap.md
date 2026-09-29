@@ -1,4 +1,4 @@
-kotlin compatibility: 657/753 (87.25%), 5 refused (ok:false), 11 excluded
+kotlin compatibility: 663/753 (88.05%), 5 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -12,7 +12,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | source-files.txt: Multiple Imports On A Single Line | 0/1 | 50.00% |
 | packages/syntechs/src/grammars/kotlin/corpus/Collections.kt | 0/1 | 96.90% |
 | packages/syntechs/src/grammars/kotlin/corpus/Result.kt | 0/1 | 99.56% |
-| packages/syntechs/src/grammars/kotlin/corpus/Delay.kt | 0/1 | 98.84% |
+| packages/syntechs/src/grammars/kotlin/corpus/Delay.kt | 0/1 | 99.71% |
 | packages/syntechs/src/grammars/kotlin/corpus/Transform.kt | 0/1 | 98.98% |
 | packages/syntechs/src/grammars/kotlin/corpus/Okio.kt | 0/1 | 97.44% |
 | ktfmt/format/annotation/exception.kt | 0/1 | 61.54% |
@@ -25,8 +25,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/call/callArgsStickToFunctionName.kt | 0/1 | 60.00% |
 | ktfmt/format/call/chainWithDereferences.kt | 0/1 | 50.00% |
 | ktfmt/format/call/functionReference.kt | 0/1 | 88.00% |
-| ktfmt/format/call/namedArgsWithValueExpr.kt | 0/1 | 57.14% |
-| ktfmt/format/call/nestedCalls.kts | 0/1 | 63.16% |
 | ktfmt/format/call/trailingCommaInLambda.kt | 0/1 | 45.45% |
 | ktfmt/format/call/trailingCommasInCalls.kt | 0/1 | 75.00% |
 | ktfmt/format/class/emptyCompanionObject.kt | 0/1 | 92.31% |
@@ -49,8 +47,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/import/usedImportsFromSamePackage.kt | 0/1 | 94.12% |
 | ktfmt/format/lambda/lambdaArg.kt | 0/1 | 72.22% |
 | ktfmt/format/lambda/lambdaWithFullType.kt | 0/1 | 44.44% |
-| ktfmt/format/misc/addingTrailingCommaOnMaxWidth.kt | 0/1 | 75.00% |
-| ktfmt/format/misc/addingTrailingCommaWhenBreakingParameterList2.kt | 0/1 | 88.00% |
 | ktfmt/format/misc/commentStability.kt | 0/1 | 70.59% |
 | ktfmt/format/misc/contextParameters.kt | 0/1 | 61.54% |
 | ktfmt/format/misc/contextReceivers.kt | 0/1 | 64.00% |
@@ -82,7 +78,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/google/ifWithMaxWidthCondition.kt | 0/1 | 47.06% |
 | ktfmt/google/longFunctionTypeWrapping.kt | 0/1 | 23.53% |
 | ktfmt/google/missingTrailingCommas.kt | 0/1 | 85.29% |
-| ktfmt/google/namedArgumentsWithValueExpression.kt | 0/1 | 47.06% |
 | ktfmt/google/redundantTrailingCommas.kt | 0/1 | 66.67% |
 | ktfmt/google/secondaryConstructorNoArgs.kt | 0/1 | 47.06% |
 | ktfmt/google/singleLambdaArgument.kt | 0/1 | 68.75% |
@@ -91,7 +86,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/google/trailingCommasSingleElementLists.kt | 0/1 | 63.41% |
 | ktfmt/google/whenWithMaxWidthCondition.kt | 0/1 | 42.11% |
 | ktfmt/google/whileMaxWidthCondition.kt | 0/1 | 47.06% |
-| ktfmt/kotlinlang/nestedCalls.kts | 0/1 | 63.16% |
 | ktfmt/new_codestyle/annotation/AnnotationOnExpression.kt | 0/1 | 90.63% |
 | ktfmt/new_codestyle/annotation/AnnotationOnExpressionFullWidth.kt | 0/1 | 87.50% |
 | ktfmt/new_codestyle/annotation/AnnotationsEverywhere.kt | 0/1 | 96.97% |

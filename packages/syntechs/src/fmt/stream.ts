@@ -370,9 +370,12 @@ export function sText(s: string): void {
   mergeable = true;
 }
 
-/** A source token (or, `synthetic`, one a rule inserted, anchored to `node`): an entry of its own, for its anchor. */
-export function sToken(node: number, s: string, synthetic = false): void {
-  const w = textWidth(s);
+/**
+ * A source token (or, `synthetic`, one a rule inserted, anchored to `node`): an entry of its own, for its anchor.
+ * An `imaginary` one counts no width toward its line, as ktfmt's trailing comma, which it adds after the layout.
+ */
+export function sToken(node: number, s: string, synthetic = false, imaginary = false): void {
+  const w = imaginary ? 0 : textWidth(s);
   measured(s, w);
   strs.push(s);
   entry(TOKEN, synthetic ? 1 : 0, strs.length - 1, node, w);

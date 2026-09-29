@@ -99,6 +99,8 @@ export type Entry =
       readonly e: "ifBroken";
       readonly after: number;
       readonly text: string;
+      /** It counts no width toward its line (see `sepBy`'s `imaginary`). */
+      readonly imaginary?: true;
     }
   /**
    * Opens a `splitOn` run of `entry` frames, which an `end` closes, with the flags of the layout its conditions

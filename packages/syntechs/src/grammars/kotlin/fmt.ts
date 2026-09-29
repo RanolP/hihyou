@@ -232,12 +232,6 @@ export const customs = {
     for (let i = 0; i < t.count(node); i++) if (listed.has(t.kindName(t.child(node, i)))) items++;
     return items > 1;
   },
-  /** Of a collection literal: it is a named argument's value, after its `=`. */
-  namedValue: (node, ctx) => {
-    const t = ctx.tree;
-    const arg = t.parent(node);
-    return t.kindName(arg) === "value_argument" && childOf(t, arg, "=") !== -1;
-  },
   backingField:(node, ctx) => backingField(ctx.tree, node),
   /** Of a class or its primary constructor: a comment comes before the constructor, which ktfmt puts on a line of its own. */
   commentedConstructor: (node, ctx) => {

@@ -160,6 +160,8 @@ export type Tree =
       readonly sep: string;
       readonly list: Ref;
       readonly trailing: Cond;
+      /** The trailing separator counts no width toward its line (see `sepBy`). */
+      readonly imaginary?: true;
       /** What a hole prints as (see `sepBy`'s `holes`); undefined: the list has none. */
       readonly holes?: string;
       /** A blank line is kept when it follows an item's separator, not the item (see `sepBy`). */
@@ -272,6 +274,8 @@ export interface SplitOn {
   readonly wrapItem: Cond;
   /** The last entry's separator: the source's is dropped, and one prints only while the enclosing group breaks. */
   readonly trailing: boolean;
+  /** That trailing separator counts no width toward its line (see `sepBy`). */
+  readonly imaginary?: true;
   readonly layout: SplitLayout;
 }
 
@@ -660,6 +664,11 @@ export const sepBy = <const S extends string, T = false>(
   o: {
     readonly trailing?: T;
     /**
+     * The trailing separator counts no width toward the line it ends, as ktfmt's, which it adds after laying the
+     * list out: an item that fits only without it still stays on its line.
+     */
+    readonly imaginary?: boolean;
+    /**
      * The list has holes, a `sep` right after the opening bracket or another `sep` (`[1, , 2]`), each printed as
      * this text and never packed or grouped. An empty one keeps its own `sep` even when last, which it needs to
      * stay a hole.
@@ -677,6 +686,7 @@ export const sepBy = <const S extends string, T = false>(
     sep,
     list: refOf(list),
     trailing: plain(o.trailing),
+    ...(o.imaginary === true ? { imaginary: true } : {}),
     ...(o.holes === undefined ? {} : { holes: o.holes }),
     ...(o.blankAfterSep === true ? { blankAfterSep: true } : {}),
   });
@@ -883,6 +893,8 @@ export interface SplitOnOf<K, C> {
   readonly item?: "adjacent" | "space" | { readonly t: "words"; readonly keepLines?: C };
   readonly wrapItem?: C;
   readonly trailing?: boolean;
+  /** As `sepBy`'s. */
+  readonly imaginary?: boolean;
   readonly layout?: SplitLayoutOf<C>;
 }
 
@@ -909,6 +921,7 @@ export const splitOn = <const S extends string, const K extends string = never, 
     item: typeof item === "string" ? { t: item } : { t: "words", keepLines: plain(item.keepLines) },
     wrapItem: plain(o.wrapItem),
     trailing: o.trailing ?? false,
+    ...(o.imaginary === true ? { imaginary: true } : {}),
     layout: layout(o.layout ?? {}),
   });
 };
