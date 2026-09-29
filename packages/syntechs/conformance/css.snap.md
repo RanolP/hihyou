@@ -1,4 +1,4 @@
-css compatibility: 78/151 (51.66%), 0 refused (ok:false), 6 excluded
+css compatibility: 81/151 (53.64%), 0 refused (ok:false), 6 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -44,7 +44,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | css/comments/at-rules.css | 0/1 | 39.44% |
 | css/comments/custom-properties.css | 0/1 | 53.85% |
 | css/comments/declaration.css | 0/1 | 60.12% |
-| css/comments/selectors.css | 0/1 | 52.82% |
+| css/comments/selectors.css | 0/1 | 58.22% |
 | css/comments/types.css | 0/1 | 92.86% |
 | css/composes/composes.css | 0/1 | 57.14% |
 | css/custom-properties/emoji.css | 0/1 | 83.33% |
@@ -63,8 +63,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | css/postcss-8-improment/test.css | 0/1 | 80.00% |
 | css/postcss-plugins/postcss-mixins.css | 0/1 | 49.23% |
 | css/postcss-plugins/postcss-nested-props.css | 0/1 | 53.85% |
-| css/postcss-plugins/postcss-nested.css | 0/1 | 28.57% |
-| css/postcss-plugins/postcss-nesting.css | 0/1 | 94.86% |
+| css/postcss-plugins/postcss-nesting.css | 0/1 | 94.23% |
 | css/postcss-plugins/postcss-simple-vars.css | 0/1 | 73.68% |
 | css/quotes/quotes.css | 0/2 | 74.59% |
 | css/selector-list/selectors.css | 0/1 | 76.15% |
@@ -76,8 +75,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | css/stylefmt-repo/important/important.css | 0/1 | 66.67% |
 | css/stylefmt-repo/lowercase/lowercase.css | 0/1 | 29.55% |
 | css/stylefmt-repo/media-queries-ranges/media-queries-ranges.css | 0/1 | 90.91% |
-| css/stylefmt-repo/nested-indention/nested-indention.css | 0/1 | 28.24% |
-| css/stylefmt-repo/nested-indention-2/nested-indention-2.css | 0/1 | 34.15% |
 | css/stylefmt-repo/nested-mixin/nested-mixin.css | 0/1 | 88.00% |
 | css/stylefmt-repo/nested-mixin-2/nested-mixin-2.css | 0/1 | 25.00% |
 | css/stylefmt-repo/non-nested-combinator/non-nested-combinator.css | 0/1 | 86.96% |

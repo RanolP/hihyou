@@ -107,6 +107,8 @@ const edgeCases: [string, string][] = [
   // Front matter once parsed as selectors, lowercased and joined onto the first rule's line.
   ["front-matter", "---\ntitle: Title\n\n---\na{b:c}"],
   ["front-matter-toml", "+++\ntitle = 'T'\n\n+++\n\n\n/* c */"],
+  // A suffixed `&` and a descendant ending in `&` were parse errors, printed as raw source.
+  ["nesting-suffix", ".a{&__b,&-c{d:e}.f &{g:h}}"],
   // A rule or declaration after a prettier-ignore comment was laid out like any other.
   [
     "prettier-ignore",

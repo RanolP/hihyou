@@ -18,3 +18,9 @@ packageExtensions:
     peerDependenciesMeta:
       tree-sitter:
         optional: true
+patchedDependencies:
+  # Syntax the upstream grammar lacks. The patch carries grammar.js, scanner.c and the src/ that mise.toml's
+  # `tree-sitter generate` writes from them; packages/syntechs/src/grammars/css/scanner.ts ports scanner.c. To
+  # change it: `pnpm patch tree-sitter-css@0.25.0`, edit, `tree-sitter generate` in that directory, then
+  # `pnpm patch-commit <dir>` (drop the src/tree_sitter/ header hunks the newer CLI rewrites).
+  tree-sitter-css@0.25.0: patches/tree-sitter-css@0.25.0.patch

@@ -1,4 +1,4 @@
-// Port of tree-sitter-css 0.25.0 src/scanner.c. Stateless.
+// Port of tree-sitter-css 0.25.0 src/scanner.c as patches/tree-sitter-css@0.25.0.patch leaves it. Stateless.
 
 import type { ExternalScanner, Lexer } from "../../core/lexer.js";
 import { iswalnum, iswspace } from "../../core/wctype.js";
@@ -12,6 +12,7 @@ const DOT = 46;
 const LBRACKET = 91;
 const MINUS = 45;
 const STAR = 42;
+const AMP = 38;
 const COLON = 58;
 const SEMI = 59;
 const LBRACE = 123;
@@ -33,6 +34,7 @@ function scan(lexer: Lexer, valid: Uint8Array): boolean {
       c === LBRACKET ||
       c === MINUS ||
       c === STAR ||
+      c === AMP ||
       iswalnum(c)
     )
       return true;
