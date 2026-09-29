@@ -372,9 +372,10 @@ export function flatten<O>(
             if (i < items.length - 1 && nextLineEmpty(t, item)) out.push({ e: "blank" });
           });
           if (owner === x)
-            dangling().forEach((c, i) => {
+            dangling().forEach((c, i, cs) => {
               if (i > 0) out.push({ e: "hardline" });
               out.push(commentEntry(ctx, c, "dangling"));
+              if (i < cs.length - 1 && nextLineEmpty(t, c)) out.push({ e: "blank" });
             });
           out.push({ e: "end" });
           return;

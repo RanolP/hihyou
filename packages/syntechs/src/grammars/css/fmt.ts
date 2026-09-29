@@ -5,6 +5,7 @@ import {
   prettierDefaults,
   prettierSettings,
 } from "../../fmt/options.js";
+import type { CommentHandler } from "../../fmt/comments.js";
 import { defineLanguage, type Language } from "../../fmt/rules.js";
 import { maybeLower, numberParts } from "../../fmt/dsl/normalizers.js";
 import {
@@ -505,14 +506,52 @@ export function important(node: number): void {
 }
 
 /**
+ * Postcss's `between` of a declaration: the comments after its name and before its value, around the `:`. They
+ * attach to the declaration (`handleComment`) for `declarationColon` to print.
+ */
+const handleComment: CommentHandler<CssOptions> = ({ tree, enclosing, preceding }) =>
+  preceding !== undefined &&
+  tree.kindName(enclosing) === "declaration" &&
+  tree.kindName(preceding) === "property_name" &&
+  !/:\s*progid:/i.test(tree.text(enclosing))
+    ? { node: enclosing, as: "dangling" }
+    : undefined;
+
+/**
+ * A declaration's `:` with the comments of its `between` (`handleComment`), which prettier prints as written but
+ * trimmed: the first joined to the name, each later one joined to what precedes it where the source joins them, else
+ * after a space, or on a line of its own where the source breaks.
+ */
+export function declarationColon(colon: number | undefined, node: number, ctx: SCtx): void {
+  const t = ctx.tree;
+  const between = ctx.danglingComments(node);
+  if (colon === undefined) return sToken(node, ":", true);
+  // Postcss's `between` starts right after the name, trimmed.
+  let prev = -1;
+  const put = (c: number, print: () => void) => {
+    if (prev !== -1 && t.lf(c) > 0) sHardline();
+    else if (prev !== -1 && !t.adjoins(prev, c)) sText(" ");
+    print();
+    prev = c;
+  };
+  open(INDENT);
+  for (const c of between) if (t.ord(c) < t.ord(colon)) put(c, () => ctx.comment(c));
+  put(colon, () => sToken(colon, ":"));
+  for (const c of between) if (t.ord(c) > t.ord(colon)) put(c, () => ctx.comment(c));
+  close();
+}
+
+/**
  * A declaration's `;`, the source's or one of its own. After an empty value (`--empty:  ;`) prettier keeps the gap
- * before it as written, postcss's raw value: one space where the gap holds a line break or a comment.
+ * before it as written, postcss's raw value: one space where the gap holds a line break or a comment; after a comment
+ * of the `between` (`declarationColon`), the gap past that comment.
  */
 export function declarationEnd(semi: number | undefined, node: number, ctx: SCtx): void {
   const t = ctx.tree;
   if (semi === undefined || t.text(semi) === "") return sToken(node, ";", true);
   const colon = code(node, ctx).find((c) => kind(c, ctx) === ":");
-  if (colon !== undefined && customs.emptyValue(node, ctx) && !t.adjoins(colon, semi)) {
+  const last = colon === undefined ? undefined : ctx.danglingComments(node).filter((c) => t.ord(c) > t.ord(colon)).at(-1);
+  if (colon !== undefined && customs.emptyValue(node, ctx) && !t.adjoins(last ?? colon, semi)) {
     const plain = t.lf(semi) === 0 && code(node, ctx).length === t.count(node);
     sText(plain ? " ".repeat(t.col(semi) - t.col(colon) - 1) : " ");
   }
@@ -523,6 +562,7 @@ export function declarationEnd(semi: number | undefined, node: number, ctx: SCtx
 export const handWritten = {
   ...customs,
   important,
+  declarationColon,
   declarationEnd,
   valueMath,
   atRule,
@@ -542,6 +582,7 @@ export const css: Language<CssOptions> = {
     defaults,
     settings: prettierSettings,
     normalize,
+    handleComment,
     layoutBlind: true,
   }),
   stream: {

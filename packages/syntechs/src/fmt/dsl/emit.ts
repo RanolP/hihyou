@@ -799,11 +799,17 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
           if (frameWrap(rule, x.list.name).blankLines !== undefined)
             line(`if (i < ${its}.length - 1 && nextLineEmpty(t, item)) sHardline();`);
         });
-        if (x === owner)
-          block("for (const [i, c] of ctx.danglingComments(node).entries())", () => {
+        if (x === owner) {
+          // Comments alone in the list keep the source's blank lines too, where `blankLines` keeps them.
+          const keep = frameWrap(rule, x.list.name).blankLines !== undefined;
+          const cs = keep ? name("dangling") : "ctx.danglingComments(node)";
+          if (keep) line(`const ${cs} = ctx.danglingComments(node);`);
+          block(`for (const [i, c] of ${cs}.entries())`, () => {
             line("if (i > 0) sHardline();");
             line("ctx.comment(c);");
+            if (keep) line(`if (i < ${cs}.length - 1 && nextLineEmpty(t, c)) sHardline();`);
           });
+        }
         return;
       }
       case "inOrder": {

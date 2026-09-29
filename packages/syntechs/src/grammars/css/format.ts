@@ -86,7 +86,7 @@ export const css = format({
 
     // An IE filter's (`progid:...`) value as written, one space wherever the source has any gap (prettier's raw
     // value); else the comma list, a grid template's keeping its lines, and an empty value's gap as written (fmt.ts's
-    // `declarationEnd`).
+    // `declarationEnd`). The comments around the `:` print as postcss's `between` (fmt.ts's `declarationColon`).
     declaration: ($) => [
       either(
         firstText({ after: ":", prefix: ["progid:"] }),
@@ -99,7 +99,7 @@ export const css = format({
         }),
         [
           $.children.at(0).andThen((p) => p),
-          ":",
+          tok(":").via("declarationColon"),
           either(when("emptyValue"), [], space),
           splitOn(",", {
             except: ["property_name", ":", ";"],
