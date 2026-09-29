@@ -217,6 +217,8 @@ export const kotlin = format({
         }),
       ),
     parameter: () => spaced({ tightBefore: [":"] }),
+    // A setter's `set(value)` parameter, whose type may be left out.
+    parameter_with_optional_type: () => spaced({ tightBefore: [":"] }),
     parameter_modifiers: () => inOrder(space),
     parameter_modifier: () => inOrder(),
     function_body: () => spaced({ braces: true, hang: true, hug: "huggedChain" }),
@@ -279,6 +281,7 @@ export const kotlin = format({
     // `[a, b]`, in an annotation's arguments. As a named argument's value it hangs off the `=` (`value_argument`).
     collection_literal: ($) => grpBracket(sepBy(",", $.children, { trailing: true })),
     parenthesized_expression: () => inOrder(),
+    spread_expression: () => inOrder(),
     // An annotated expression (`@Suppress("X") f()`) keeps the gap the source has after the annotation: where it
     // has none, the grammar took an annotation's arguments (`@Suppress("X")` above a declaration it misparses) for
     // the expression, and a space would change what the code means. ktfmt keeps the line break the source has
