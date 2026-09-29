@@ -1,4 +1,4 @@
-js compatibility: 766/804 (95.27%), 9 refused (ok:false), 304 excluded
+js compatibility: 770/804 (95.77%), 9 refused (ok:false), 304 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -21,13 +21,9 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/comments/blank.js | 0/2 | 92.31% |
 | js/comments/export.js | 0/2 | 94.81% |
 | js/comments/function-declaration.js | 0/2 | 80.95% |
-| js/comments/jsdoc-nestled-dangling.js | 0/2 | 93.02% |
-| js/comments/jsdoc-nestled.js | 0/2 | 89.29% |
 | js/comments/return-statement.js | 0/2 | 98.34% |
-| js/comments/tagged-template-literal.js | 0/2 | 92.86% |
 | js/comments/variable-declarator.js | 0/2 | 95.10% |
 | js/comments/in-list/dangling-comment-in-list.js | 0/1 | 95.95% |
-| js/comments/tagged-template-literal/11662.js | 0/1 | 80.00% |
 | js/comments/while-like/switch.js | 0/1 | 86.67% |
 | js/embeded/indention/19518.js | 0/1 | 64.94% |
 | js/embeded/indention/indention-2.js | 0/1 | 23.53% |

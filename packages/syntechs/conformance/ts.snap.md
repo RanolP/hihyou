@@ -1,4 +1,4 @@
-ts compatibility: 625/653 (95.71%), 7 refused (ok:false), 76 excluded
+ts compatibility: 626/653 (95.87%), 7 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -16,7 +16,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/arrow/comments/issue-11100.ts | 0/1 | 56.52% |
 | typescript/as/comments/18160.ts | 0/1 | 81.25% |
 | typescript/call/callee-comments.ts | 0/1 | 74.36% |
-| typescript/comments/11662.ts | 0/1 | 80.00% |
 | typescript/comments/16065.ts | 0/1 | 81.82% |
 | typescript/comments/16889.ts | 0/1 | 97.39% |
 | typescript/comments/method_types.ts | 0/1 | 82.05% |
