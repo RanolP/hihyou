@@ -323,6 +323,8 @@ export function flatten<O>(
         }
         case "sepBy": {
           const items = listItems(ctx, n, x.list.name, kindHasFields).slice(x.list.from ?? 0);
+          const blankAfter = (item: number, sep: number) =>
+            x.blankAfterSep ? sep !== -1 && nextLineEmpty(t, sep) : nextLineEmpty(t, item);
           if (x.holes !== undefined) {
             const { slots, seps } = holeSlots(t, n, items, x.sep);
             out.push({ e: "list", items: slots, label: x.list.name });
@@ -333,7 +335,7 @@ export function flatten<O>(
               // An empty hole last keeps its own separator, without which it is no hole.
               if (!last || (item === HOLE && x.holes === "")) {
                 out.push({ e: "sep", tok: seps[i] as number });
-                if (item !== HOLE && nextLineEmpty(t, item)) out.push({ e: "blank" });
+                if (item !== HOLE && blankAfter(item, seps[i] as number)) out.push({ e: "blank" });
               } else if (item !== HOLE && evalCond(x.trailing, ctx, n, custom, kindHasFields))
                 out.push({ e: "ifBroken", after: item, text: x.sep });
             });
@@ -348,7 +350,7 @@ export function flatten<O>(
             child(item);
             if (i < seps.length) {
               out.push({ e: "sep", tok: seps[i] as number });
-              if (nextLineEmpty(t, item)) out.push({ e: "blank" });
+              if (blankAfter(item, seps[i] as number)) out.push({ e: "blank" });
             } else if (evalCond(x.trailing, ctx, n, custom, kindHasFields))
               out.push({ e: "ifBroken", after: item, text: x.sep });
           });

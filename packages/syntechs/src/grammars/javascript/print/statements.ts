@@ -201,12 +201,34 @@ function danglingLines(s: JsStreamCtx, node: number): void {
 function statementSequence(s: JsStreamCtx, statements: readonly number[]): void {
   const js = s.js;
   const last = statements.findLast((x) => !isEmpty(js, x));
-  for (const x of statements) {
+  statements.forEach((x, i) => {
     s.print(x);
-    if (isEmpty(js, x) || x === last) continue;
+    if (isEmpty(js, x) || x === last) return;
     sHardline();
-    if (isNextLineEmptyAfter(js, x)) sHardline();
-  }
+    const next = statements[i + 1];
+    if (
+      isNextLineEmptyAfter(js, x) ||
+      (next !== undefined &&
+        semiLeftOut(js, x, next) &&
+        nextLineEmpty(js.tree, next))
+    )
+      sHardline();
+  });
+}
+
+/**
+ * Whether `next`, an empty statement, is the `;` babel reads as `n`'s own: tree-sitter ends a statement at the
+ * line break after a comment (`continue // c\n;`) and leaves the `;` on the next line a statement of its own.
+ */
+function semiLeftOut(x: HasTree, n: number, next: number): boolean {
+  if (!isEmpty(x, next)) return false;
+  const body = lastBody(x, n);
+  if (body !== undefined) return semiLeftOut(x, body, next);
+  const own = children(x, n).at(-1);
+  return (
+    SEMI_ENDED.has(kind(x, n)) &&
+    !(own !== undefined && kind(x, own) === ";" && src(x, own) !== "")
+  );
 }
 
 /** The statements of a list, as a sequence when one is no empty statement, else each printed for its `;`. */

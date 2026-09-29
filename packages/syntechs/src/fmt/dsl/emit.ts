@@ -554,7 +554,12 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
     printBracket(openTok, b.open);
     line("open(INDENT);");
     line("sLine(pad);");
-    const blank = (item: string) => (always ? "false" : `${real(item)}nextLineEmpty(t, ${item})`);
+    const blank = (item: string) =>
+      always
+        ? "false"
+        : x.blankAfterSep
+          ? `${real(item)}seps[i] !== -1 && nextLineEmpty(t, seps[i] as number)`
+          : `${real(item)}nextLineEmpty(t, ${item})`;
     const printItem = () => {
       if (w.itemsAsGroups) line("open(GROUP);");
       child("item");

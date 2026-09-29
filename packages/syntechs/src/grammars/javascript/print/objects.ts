@@ -470,6 +470,9 @@ const arrayCustom: StreamRule<JsOptions> = (n, sctx) => {
       close();
     }
   };
+  // Unlike objects and argument lists, prettier's array measures the blank line after an element's comma.
+  const blankAfter = (comma: number | undefined) =>
+    comma !== undefined && nextLineEmpty(ctx.tree, comma);
   tok(ctx, openBracket);
   open(INDENT);
   sLine(SOFT);
@@ -484,7 +487,7 @@ const arrayCustom: StreamRule<JsOptions> = (n, sctx) => {
       close();
       if (!isLast) {
         const next = elements[i + 1]?.element;
-        if (element !== undefined && nextLineEmpty(ctx.tree, element)) {
+        if (element !== undefined && blankAfter(comma)) {
           sHardline();
           sHardline();
         } else if (
@@ -506,8 +509,7 @@ const arrayCustom: StreamRule<JsOptions> = (n, sctx) => {
       if (i < elements.length - 1) {
         tok(ctx, comma);
         sLine(0);
-        if (element !== undefined && nextLineEmpty(ctx.tree, element))
-          sLine(SOFT);
+        if (element !== undefined && blankAfter(comma)) sLine(SOFT);
       }
     });
     trailingComma();

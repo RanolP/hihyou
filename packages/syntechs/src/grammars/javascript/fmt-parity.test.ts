@@ -48,6 +48,15 @@ const long = (name: string) => `${name}${"x".repeat(30)}`;
 
 const edgeCases: [string, Target, string][] = [
   ["empty-statement-list", "js", "let a = 1;;\n\n\n\nlet b = 2"],
+  // An array keeps the blank line after an item's comma, an object the one after the item.
+  [
+    "blank-after-comma",
+    "js",
+    `x = [${long("a")}\n,\n\nb, c\n\n,d];\ny = [1\n,\n\n2];\nz = { ${long("a")}\n,\n\nb, c\n\n,d };`,
+  ],
+  // Tree-sitter leaves the `;` after a comment's line break a statement of its own; babel reads it as the
+  // statement's, so the blank line after it stays.
+  ["semi-after-comment", "js", "for (;;) continue // c\n;\n\nx;\na;\n;\n\nb;"],
   ["quotes", "js", `const a = "it's", b = 'say "hi"', c = 'plain';`],
   ["numbers", "js", "x = [0XAB, 1E5, .5, 5., 0.50, 1_000n, 0B11, 0O7];"],
   [

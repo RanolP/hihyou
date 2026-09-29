@@ -35,6 +35,8 @@ const edgeCases: [string, string][] = [
   ["collapsed.json", '{"a":1,\n"b":2}'],
   ["blank-lines.json", '{"a":1,\n\n\n"b":2,\n"c":[\n1,\n\n2]}'],
   ["blank-lines-strings.json", '["a",\n\n"b"]'],
+  // An array keeps the blank line after an item's comma, an object the one after the item.
+  ["blank-after-comma.json", '{"a":1\n,\n\n"b":[1\n,\n\n2, 3\n\n,4],"c":["a"\n,\n\n{}]}'],
   ["long-line.json", `{"key":"${"x".repeat(90)}","k2":1}`],
   ["fits-exactly.json", `{"k":"${"x".repeat(69)}"}`],
   ["one-over.json", `{"k":"${"x".repeat(70)}"}`],

@@ -45,7 +45,10 @@ const fitting = (trailingComma: boolean) => {
         grpBrace(sepBy(",", $.children, { trailing }), {
           pad: option("bracketSpacing"),
         }),
-      array: ($) => grpBracket(sepBy(",", $.children, { trailing, holes: "" })),
+      array: ($) =>
+        grpBracket(
+          sepBy(",", $.children, { trailing, holes: "", blankAfterSep: true }),
+        ),
       pair: ($) => [$.key, ":", space, $.value],
       unary_expression: ($) => [$.operator, $.argument],
       string: () => text("doubleQuote"),
@@ -79,7 +82,8 @@ export const jsonStringify = format({
     statement_block: ($) => grpBrace(sepBy(",", $.children)),
     object: ($) => grpBrace(sepBy(",", $.children)),
     // `JSON.stringify` writes a hole as `null`.
-    array: ($) => grpBracket(sepBy(",", $.children, { holes: "null" })),
+    array: ($) =>
+      grpBracket(sepBy(",", $.children, { holes: "null", blankAfterSep: true })),
     pair: ($) => [$.key, ":", space, $.value],
     unary_expression: ($) =>
       either(firstText({ is: ["+"] }), $.argument, [$.operator, $.argument]),

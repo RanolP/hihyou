@@ -1,4 +1,4 @@
-js compatibility: 641/804 (79.73%), 30 refused (ok:false), 304 excluded
+js compatibility: 642/804 (79.85%), 30 refused (ok:false), 304 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -13,7 +13,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
 | js/arrays/numbers-with-holes.js | 0/1 | 57.78% |
-| js/arrays/preserve_empty_lines.js | 0/1 | 88.41% |
+| js/arrays/preserve_empty_lines.js | 0/1 | 90.00% |
 | js/arrows/arrow-chain-with-trailing-comments.js | 0/2 | 75.00% |
 | js/arrows/arrow_function_expression.js | 0/2 | 94.29% |
 | js/arrows/comment.js | 0/2 | 67.57% |
@@ -96,7 +96,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/export/blank-line-between-specifiers.js | 0/2 | 95.00% |
 | js/export-default/function_tostring.js | 0/1 | 0.00% |
 | js/export-star/export-star-as-reserved-word.js | 0/1 | 50.00% |
-| js/for/continue-and-break-comment-without-blocks.js | 0/1 | 94.66% |
 | js/for/for-in-with-initializer.js | 0/1 | 38.71% |
 | js/function/iife.js | 0/1 | 22.68% |
 | js/function/issue-12967.js | 0/1 | 0.00% |

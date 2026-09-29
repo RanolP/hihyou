@@ -162,6 +162,8 @@ export type Tree =
       readonly trailing: Cond;
       /** What a hole prints as (see `sepBy`'s `holes`); undefined: the list has none. */
       readonly holes?: string;
+      /** A blank line is kept when it follows an item's separator, not the item (see `sepBy`). */
+      readonly blankAfterSep?: true;
     }
   /**
    * `attach`: the field whose children print with the next item, before it; `blank`: a blank line before each item
@@ -658,6 +660,11 @@ export const sepBy = <const S extends string, T = false>(
      * stay a hole.
      */
     readonly holes?: string;
+    /**
+     * Keep a blank line where the line after an item's separator is blank (`1\n,\n\n2`), where by default the
+     * line after the item itself must be (`1\n\n,2`): prettier's arrays against its objects and argument lists.
+     */
+    readonly blankAfterSep?: boolean;
   } = {},
 ) =>
   piece<{ sepBy: S; trailing: T }>({
@@ -666,6 +673,7 @@ export const sepBy = <const S extends string, T = false>(
     list: refOf(list),
     trailing: plain(o.trailing),
     ...(o.holes === undefined ? {} : { holes: o.holes }),
+    ...(o.blankAfterSep === true ? { blankAfterSep: true } : {}),
   });
 
 /** The items of `list` one per line, then the node's dangling comments, one per line. */

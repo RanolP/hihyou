@@ -1,4 +1,4 @@
-json compatibility: 19/20 (95.00%), 0 refused (ok:false), 0 excluded
+json compatibility: 20/20 (100.00%), 0 refused (ok:false), 0 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -12,7 +12,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
-| json/json/pass1.json | 0/3 | 99.16% |
 
 # Refused
 
