@@ -7,7 +7,7 @@ import { createRequire } from "node:module";
 import { format as oxfmtFormat } from "oxfmt";
 
 const require = createRequire(import.meta.url);
-const versionOf = (pkg: string): string =>
+export const versionOf = (pkg: string): string =>
   (
     JSON.parse(
       readFileSync(require.resolve(`${pkg}/package.json`), "utf8"),

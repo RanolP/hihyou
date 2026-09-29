@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "docs",
+    // VitePress compiles these files itself; tsc only checks them.
+    "outDir": "dist",
+    "emitDeclarationOnly": true,
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
+    "types": ["node"]
+  },
+  "include": ["docs/**/*.ts", "docs/.vitepress/**/*.ts"]
+}

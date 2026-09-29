@@ -1,0 +1,91 @@
+# Measures syntechs (conformance against the reference formatters, speed against them and oxfmt), builds the
+# website's scorecard from those results only, and publishes it to GitHub Pages.
+name: site
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time; a newer push supersedes a queued one, never a running one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Where the conformance and bench JSON land, and where the website's data loader reads them.
+      - run: echo "SCORECARD_DIR=$RUNNER_TEMP/scorecard" >> "$GITHUB_ENV"
+
+      # node, pnpm, ruff, java and the ktfmt jar (`http:ktfmt`, which ktfmt.node.ts finds with `mise where`).
+      - uses: jdx/mise-action@v5
+
+      - name: Tool versions
+        run: |
+          mise ls --current
+          mise where http:ktfmt@0.64
+          ls "$(mise where http:ktfmt@0.64)"
+          mise which ruff
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm run build
+
+      - name: Cache fetched inputs
+        uses: actions/cache@v6
+        with:
+          path: |
+            packages/syntechs/corpus
+            research/parser-bench/inputs
+          key: inputs-${{ hashFiles('packages/syntechs/fetch-corpus.sh', 'research/parser-bench/fetch-inputs.sh') }}
+
+      - name: Fetch inputs
+        run: |
+          [ -d research/parser-bench/inputs ] || bash research/parser-bench/fetch-inputs.sh
+          [ -d packages/syntechs/corpus ] || bash packages/syntechs/fetch-corpus.sh
+          ls -l research/parser-bench/inputs packages/syntechs/corpus
+
+      - name: Conformance
+        run: |
+          mkdir -p "$SCORECARD_DIR"
+          node packages/syntechs/dist/fmt/conformance.node.js --json "$SCORECARD_DIR/conformance.json"
+          cat packages/syntechs/conformance/README.md
+
+      - name: Bench
+        run: node packages/syntechs/dist/fmt/bench.node.js --json "$SCORECARD_DIR/bench.json"
+
+      - name: Results
+        run: |
+          ls -l "$SCORECARD_DIR"
+          cat "$SCORECARD_DIR/conformance.json" "$SCORECARD_DIR/bench.json"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: scorecard
+          path: ${{ env.SCORECARD_DIR }}
+          if-no-files-found: error
+
+      - run: pnpm --filter website build
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: packages/website/docs/.vitepress/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

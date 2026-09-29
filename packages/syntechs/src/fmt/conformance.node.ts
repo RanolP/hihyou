@@ -2,12 +2,13 @@
 // (prettier 3.9.9's tests/format, ruff 0.16.8's formatter fixtures), fetched by fetch-corpus.sh. Writes
 // conformance/<target>.snap.md per target and conformance/README.md, the matrix, and commits both.
 //
-//   node packages/syntechs/dist/fmt/conformance.node.js [target...] [--diff <fixture substring>] [--only <substring>]...
+//   node packages/syntechs/dist/fmt/conformance.node.js [target...] [--diff <fixture substring>] [--only <substring>]... [--json <path>]
 //
 // A language joins the matrix with one entry in TARGETS: its fmt module export and its fixture directories.
 // `--only` (repeatable) runs just the fixtures whose path matches one of the given substrings, prints
 // passed/total and the failing fixture names, and writes no snapshot or README — for a worker checking a slice
-// of the matrix without producing a diff the others would have to reconcile.
+// of the matrix without producing a diff the others would have to reconcile. `--json` also writes the matrix rows,
+// with the commit and tool versions, for the website's scorecard.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -32,9 +33,12 @@ import {
   type MatrixRow,
   type ReferenceScore,
   type Run,
+  jsonPathArg,
   readHeader,
   renderMatrix,
   renderSnapshot,
+  runInfo,
+  writeJson,
 } from "./conformance/report.node.js";
 import { ruffSuite } from "./conformance/ruff.node.js";
 import { format } from "./format.js";
@@ -314,9 +318,11 @@ async function main() {
   const diffAt = args.indexOf("--diff");
   const diff = diffAt === -1 ? undefined : args[diffAt + 1];
   const only = args.filter((_a, i) => args[i - 1] === "--only");
+  const json = jsonPathArg(args);
   const wanted = args.filter((a, i) => {
     if (diffAt !== -1 && (i === diffAt || i === diffAt + 1)) return false;
     if (a === "--only" || args[i - 1] === "--only") return false;
+    if (a === "--json" || args[i - 1] === "--json") return false;
     return true;
   });
   const unknown = wanted.filter((w) => !TARGETS.some((t) => t.id === w));
@@ -385,6 +391,16 @@ async function main() {
     rows.push({ id: t.id, reference: t.reference, ...readHeader(snapshot) });
   }
   writeFileSync(join(outDir, "README.md"), renderMatrix(rows));
+  if (json)
+    writeJson(json, {
+      ...runInfo({
+        prettier: PRETTIER,
+        ruff: RUFF,
+        ktfmt: ktfmt.name,
+        oxfmt: oxfmt.name,
+      }),
+      rows,
+    });
 }
 
 // The benchmark imports TARGETS; only running this file writes the snapshots.
