@@ -441,10 +441,32 @@ const assignmentPattern = (c: CommentContext<JsOptions>): CommentTarget | undefi
     ? { node: c.enclosing, as: "leading" }
     : undefined;
 
+const MEMBERS = new Set(["member_expression", "subscript_expression"]);
+const MEMBER_PROPERTIES = new Set(["property_identifier", "identifier"]);
+
+/**
+ * `a⏎// c⏎.b`, `?.b` or `[b]`: an own-line comment before a member's identifier leads the whole member, and a member chain
+ * prints it before that lookup (handleMemberExpressionComments). Left to the core it would lead the property,
+ * after the `.`, and would lead the `?.` token, which prints no comments. Prettier's `?.` is a flag, not a node, so
+ * the property follows the comment there too.
+ */
+const memberProperty = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, following } = c;
+  if (c.placement !== "ownLine" || !MEMBERS.has(kind(c, enclosing)) || following === undefined) return;
+  const property =
+    kind(c, following) === "optional_chain"
+      ? (field(c, enclosing, "property") ?? field(c, enclosing, "index"))
+      : following;
+  return property !== undefined && MEMBER_PROPERTIES.has(kind(c, property))
+    ? { node: enclosing, as: "leading" }
+    : undefined;
+};
+
 // In prettier's order within each placement: typeCast and conditional run early, nestedConditional last.
 const handlers = [
   typeCast,
   importAttribute,
+  memberProperty,
   conditional,
   typeBeforeSemicolon,
   beforeSemicolon,

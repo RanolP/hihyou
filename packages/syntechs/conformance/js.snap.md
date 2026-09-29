@@ -1,4 +1,4 @@
-js compatibility: 683/804 (84.95%), 25 refused (ok:false), 304 excluded
+js compatibility: 689/804 (85.70%), 23 refused (ok:false), 304 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -32,7 +32,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/comments/export.js | 0/2 | 86.67% |
 | js/comments/function-declaration.js | 0/2 | 80.95% |
 | js/comments/issue-3532.js | 0/2 | 91.67% |
-| js/comments/issues.js | 0/2 | 85.93% |
 | js/comments/jsdoc-nestled-dangling.js | 0/2 | 93.02% |
 | js/comments/jsdoc-nestled.js | 0/2 | 81.36% |
 | js/comments/return-statement.js | 0/2 | 98.34% |
@@ -86,12 +85,10 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/label/comment.js | 0/1 | 53.33% |
 | js/last-argument-expansion/edge_case.js | 0/1 | 74.63% |
 | js/method-chain/break-last-member.js | 0/1 | 85.29% |
-| js/method-chain/comment.js | 0/1 | 76.27% |
 | js/method-chain/issue-11298.js | 0/1 | 20.00% |
 | js/newline/backslash_2028.js | 0/1 | 40.00% |
 | js/newline/backslash_2029.js | 0/1 | 40.00% |
 | js/object-prop-break-in/test.js | 0/1 | 89.55% |
-| js/preserve-line/member-chain.js | 0/1 | 85.07% |
 | js/reserved-word/yield.js | 0/1 | 93.33% |
 | js/sequence-break/break.js | 0/1 | 85.29% |
 | js/sequence-expression/ignore.js | 0/1 | 72.73% |
@@ -106,7 +103,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/template-literals/indention.js | 0/1 | 29.75% |
 | js/test-declarations/jest-each-template-string.js | 0/2 | 27.78% |
 | js/test-declarations/jest-each.js | 0/2 | 63.24% |
-| js/throw_statement/comment.js | 0/1 | 43.24% |
 | jsx/jsx/html_escape.js | 2/4 | 66.67% |
 
 # Refused
@@ -134,9 +130,7 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | js/import/empty-import/empty-import.js | 1/1 | 64.86% | check: output comment "// comment } from \"a\";" matches no input comment |
 | js/logical-expressions/in-unary-expression.js | 1/1 | 71.62% | check: input "!" at 107 is output as "!" at 107, which means "!@operator\|-1/5", not "!@operator\|-1/4" |
 | js/new-expression/new-expression.js | 1/1 | 88.89% | check: input "new" at 80 is output as "new" at 86, which means "new@\|-1/16", not "new@\|-1/14" |
-| js/optional-chaining/comments.js | 1/1 | 71.91% | check: input comment "// Comment" is missing from the output |
 | js/quotes/strings.js | 2/2 | 100.00% | check: input "\"abc\"" at 497 is output as "\"abc\"" at 498, which means "str:abc@\|0/4", not "str:abc@\|0/3" |
-| js/return/comment.js | 1/1 | 57.14% | check: input comment "//comment" is missing from the output |
 | js/unary-expression/comments.js | 1/1 | 16.74% | check: input "!" at 108 is output as "!" at 82, which means "!@operator\|-1/19", not "!@operator\|-1/18" |
 | js/v8_intrinsic/intrinsic_call.js | 1/1 | 45.45% | check: input "IsAsmWasmCode" at 138 is output as ")" at 112, which means ")@\|-1/13", not "IsAsmWasmCode@function\|0/14" |
 | jsx/comments/in-end-tag.js | 1/1 | 32.08% | check: input ">" at 503 is output as ">" at 503, which means ">@\|-1/71", not ">@\|-1/62" |

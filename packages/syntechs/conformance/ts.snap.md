@@ -1,4 +1,4 @@
-ts compatibility: 582/653 (89.13%), 16 refused (ok:false), 76 excluded
+ts compatibility: 583/653 (89.28%), 16 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -44,7 +44,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/interface/ignore.ts | 0/2 | 86.79% |
 | typescript/last-argument-expansion/decorated-function.tsx | 0/1 | 90.91% |
 | typescript/mapped-type/issue-11098.ts | 0/1 | 87.13% |
-| typescript/method-chain/comment.ts | 0/1 | 0.00% |
 | typescript/module/global.ts | 0/1 | 38.10% |
 | typescript/new/with-member-expression.ts | 0/1 | 88.00% |
 | typescript/non-null/braces.ts | 0/1 | 94.12% |
