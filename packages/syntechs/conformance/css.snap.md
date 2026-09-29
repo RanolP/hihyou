@@ -1,4 +1,4 @@
-css compatibility: 107/151 (70.86%), 0 refused (ok:false), 6 excluded
+css compatibility: 110/151 (72.85%), 0 refused (ok:false), 6 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -12,9 +12,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
-| css/atrule/at-root.css | 0/1 | 92.35% |
 | css/atrule/each.css | 0/1 | 19.84% |
-| css/atrule/extend.css | 0/1 | 41.30% |
 | css/atrule/function.css | 0/1 | 17.32% |
 | css/atrule/import.css | 0/1 | 45.09% |
 | css/atrule/include.css | 0/1 | 35.64% |
@@ -43,11 +41,10 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | css/modules/modules.css | 0/1 | 99.20% |
 | css/numbers/numbers.css | 0/1 | 38.67% |
 | css/parens/empty-lines.css | 0/1 | 31.58% |
-| css/parens/parens.css | 0/1 | 54.25% |
+| css/parens/parens.css | 0/1 | 81.25% |
 | css/postcss-8-improment/empty-props.css | 0/1 | 50.00% |
 | css/postcss-8-improment/test.css | 0/1 | 80.00% |
 | css/postcss-plugins/postcss-mixins.css | 0/1 | 81.25% |
-| css/postcss-plugins/postcss-nesting.css | 0/1 | 97.63% |
 | css/postcss-plugins/postcss-simple-vars.css | 0/1 | 73.68% |
 | css/quotes/quotes.css | 0/2 | 74.59% |
 | css/selector-list/selectors.css | 0/1 | 76.15% |

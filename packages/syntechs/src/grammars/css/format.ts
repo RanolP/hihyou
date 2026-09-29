@@ -4,6 +4,7 @@
 import {
   all,
   ancestor,
+  any,
   anyEntry,
   type CondIn,
   custom,
@@ -89,7 +90,13 @@ export const css = format({
     block: ($) => grpBrace(lines($.children)),
     keyframe_block_list: ($) => grpBrace(lines($.children)),
     rule_set: spaced,
-    selectors: () => selectorList(),
+    // After `@nest` and `@extend`, prettier's selectors share a line, indented once they break.
+    selectors: () =>
+      either(
+        any(parentIs("nest_statement"), parentIs("extend_statement")),
+        splitOn(",", { wrapItem: when("longSelector"), layout: { group: true, indent: true, between: "line" } }),
+        selectorList(),
+      ),
     keyframe_block: () => selectorList(["block"]),
     from: () => text("lower"),
     to: () => text("lower"),
@@ -186,6 +193,7 @@ export const css = format({
 
     class_selector: adjacent,
     id_selector: adjacent,
+    placeholder_selector: adjacent,
     pseudo_element_selector: adjacent,
     pseudo_class_selector: adjacent,
     namespace_selector: adjacent,
@@ -242,6 +250,10 @@ export const css = format({
         spaceWhen: { after: ["@custom-media", ","] },
       }),
     keyframes_statement: spaced,
+    // `@at-root`'s selectors are a rule's, or its `(with: ...)` query; `@nest`'s and `@extend`'s see `selectors`.
+    at_root_statement: spaced,
+    nest_statement: spaced,
+    extend_statement: () => [inOrder({ join: "space", skip: [";"] }), semicolon],
     at_rule: ($) =>
       either(
         directive,
