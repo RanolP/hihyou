@@ -1,4 +1,4 @@
-python compatibility: 281/327 (85.93%), 19 refused (ok:false), 49 excluded
+python compatibility: 282/327 (86.24%), 18 refused (ok:false), 49 excluded
 
 Fixtures: ruff 0.16.8 crates/ruff_python_formatter/resources/test/fixtures/{black,ruff} (recursive), every option set of each `.options.json`, expected output from tests/snapshots (black cases without a snapshot: their `.expect` file). Options are passed by their ruff.toml names.
 
@@ -49,7 +49,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | black/cases/preview_long_strings__regression.py | 1/1 | 96.81% | check: input "F\"{F'{humanize_number(pos)}.': <{pound_len+2}} \"\n    F\"{balance: <{bal_len + 5}} \"\n    F\"<<{author. |
 | black/cases/remove_except_types_parens.py | 1/1 | 95.12% | check: input "," at 721 is output as ":" at 713, which means ":", not "," |
 | black/cases/remove_for_brackets.py | 1/1 | 96.00% | check: input "(" at 672 is output as "k" at 692, which means "k", not "(" |
-| black/cases/remove_parens_from_lhs.py | 1/1 | 100.00% | formatter-error: unsupported pattern: list_splat_pattern at 203 |
 | black/cases/type_param_defaults.py | 1/1 | 29.03% | formatter-error: parse error: ERROR at 7 |
 | black/cases/type_params.py | 1/1 | 20.90% | formatter-error: unsupported type parameter lambda at 542 |
 | ruff/expression/fstring.py | 2/2 | 57.40% | formatter-error: parse error: ERROR at 21682 |

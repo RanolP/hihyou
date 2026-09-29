@@ -1618,6 +1618,7 @@ class Reader {
         };
       }
       case "list_splat":
+      case "list_splat_pattern":
       case "dictionary_splat": {
         const value = this.expr(
           this.named(n)[0] ?? this.fail(n, "empty splat"),
@@ -1927,7 +1928,6 @@ class Reader {
         return this.expr(this.typeExpr(n));
       case "case_pattern":
       case "splat_pattern":
-      case "list_splat_pattern":
       case "dictionary_splat_pattern":
         return this.fail(n, "unsupported pattern");
       default:

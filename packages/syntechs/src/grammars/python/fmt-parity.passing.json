@@ -141,6 +141,7 @@
   "black/cases/remove_lone_list_item_parens.py#{}",
   "black/cases/remove_newline_after_code_block_open.py#{}",
   "black/cases/remove_parens.py#{}",
+  "black/cases/remove_parens_from_lhs.py#{\"preview\":\"enabled\"}",
   "black/cases/remove_redundant_parens_in_case_guard.py#{\"line_width\":79,\"target_version\":\"3.10\"}",
   "black/cases/remove_with_brackets.py#{}",
   "black/cases/return_annotation_brackets.py#{}",
