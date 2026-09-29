@@ -4,8 +4,22 @@ import { close, INDENT, open, sHardline, sToken } from "../../fmt/stream.js";
 import type { StreamCtx } from "../../fmt/stream-format.js";
 import { tokenChild } from "../../fmt/dsl/runtime.js";
 import { nextLineEmpty } from "../../fmt/text.js";
+import { nextLeaf } from "../../fmt/tree.js";
+import { NO_NODE } from "../../core/arena.js";
 
 const isProperty = (ctx: StreamCtx<unknown>, n: number) => ctx.tree.kindName(n) === "property_declaration";
+
+// Whether a line holding only `;`s follows dangling comment `c`. ktfmt deletes a redundant `;` but not its line,
+// which then prints as a blank one: `// a\n;\n// b` prints `// a`, a blank line, `// b`.
+function semicolonLineAfter(ctx: StreamCtx<unknown>, c: number): boolean {
+  const t = ctx.tree;
+  let l = nextLeaf(t, c);
+  if (l === NO_NODE || t.lf(l) === 0 || t.text(l) !== ";") return false;
+  for (let next = nextLeaf(t, l); next !== NO_NODE && t.lf(next) === 0 && t.text(next) === ";"; next = nextLeaf(t, l))
+    l = next;
+  const next = nextLeaf(t, l);
+  return next === NO_NODE || t.lf(next) > 0;
+}
 
 /**
  * One entry per line, the source's blank lines between them dropped. Two or more entries end in a trailing comma,
@@ -68,6 +82,7 @@ export function enumBody(node: number, ctx: StreamCtx<unknown>): void {
   for (const c of dangling) {
     if (items.length > 0 || c !== dangling[0]) sHardline();
     ctx.comment(c);
+    if (semicolonLineAfter(ctx, c)) sHardline();
   }
   close();
   sHardline();
