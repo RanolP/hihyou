@@ -25,6 +25,10 @@ const edgeCases: [string, string][] = [
   ["empty-rule", ".a{}"],
   ["page-pseudo", "@page :first{margin:1in}"],
   ["attribute-flag", '[type="a"   I]{b:c}'],
+  ["double-semicolon", "a{color:red;;}"],
+  ["uppercase-important", "a{margin:0 !IMPORTANT;padding:0 !  important}"],
+  ["empty-value", ":root{--a:;--b:  ;c:d}"],
+  ["ie-hacks", ".a{*zoom:1;_width:2px;+color:red;*+color:red\\9}"],
   [
     "comments",
     "/* head */\na { color : red ; /* trail */\n  /* lead */\n  b: c }\n\n/* end */\n",
@@ -213,8 +217,6 @@ describe.skipIf(!present)(
 
 // Input, options, then today's output, which differs from prettier's.
 const divergences: [string, string, Partial<CssOptions>, string][] = [
-  // An empty declaration is an ERROR, so the whole block keeps its source text.
-  ["double-semicolon", "a{color:red;;}", {}, "a {color:red;;}\n"],
   // tree-sitter-css reads the `%` of a decimal keyframe selector as an ERROR, so the block keeps its source
   // indentation where prettier re-indents it.
   [
@@ -230,13 +232,7 @@ const divergences: [string, string, Partial<CssOptions>, string][] = [
     {},
     `a {\n  background-image: url("${"x".repeat(60)}") /*rtl:url("${"y".repeat(20)}")*/;\n}\n`,
   ],
-  // tree-sitter-css knows only lowercase `!important` and `from`; the uppercase ones are ERRORs.
-  [
-    "uppercase-important",
-    "a{margin:0 !IMPORTANT}",
-    {},
-    "a {margin:0 !IMPORTANT}\n",
-  ],
+  // tree-sitter-css knows only lowercase `from`; an uppercase one is an ERROR.
   [
     "uppercase-from",
     "@keyframes x{FROM{a:b}}",

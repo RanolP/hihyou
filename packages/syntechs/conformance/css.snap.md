@@ -1,4 +1,4 @@
-css compatibility: 120/151 (79.47%), 0 refused (ok:false), 6 excluded
+css compatibility: 125/151 (82.78%), 0 refused (ok:false), 6 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -14,7 +14,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | :------ | :---------: | :---------: |
 | css/atrule/import.css | 0/1 | 45.09% |
 | css/atrule/supports.css | 0/1 | 14.39% |
-| css/atword/atword.css | 0/1 | 0.00% |
+| css/atword/atword.css | 0/1 | 66.67% |
 | css/bom/bom.css | 0/1 | 80.00% |
 | css/character-escaping/character_escaping.css | 0/1 | 16.56% |
 | css/color/color-adjuster.css | 0/1 | 96.77% |
@@ -23,25 +23,20 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | css/comments/at-rules.css | 0/1 | 47.71% |
 | css/comments/custom-properties.css | 0/1 | 92.31% |
 | css/comments/declaration.css | 0/1 | 60.12% |
-| css/comments/selectors.css | 0/1 | 58.22% |
+| css/comments/selectors.css | 0/1 | 59.56% |
 | css/comments/types.css | 0/1 | 92.86% |
 | css/composes/composes.css | 0/1 | 57.14% |
-| css/empty/empty.css | 0/1 | 85.71% |
 | css/escaped-attribute/test.css | 0/1 | 87.50% |
 | css/font/font.css | 0/1 | 79.41% |
 | css/inline-url/inline_url.css | 0/1 | 97.92% |
 | css/modules/modules.css | 0/1 | 99.20% |
 | css/numbers/numbers.css | 0/1 | 38.67% |
 | css/parens/parens.css | 0/1 | 83.13% |
-| css/postcss-8-improment/empty-props.css | 0/1 | 50.00% |
 | css/postcss-8-improment/test.css | 0/1 | 80.00% |
 | css/postcss-plugins/postcss-simple-vars.css | 0/1 | 73.68% |
 | css/quotes/quotes.css | 0/2 | 74.59% |
 | css/selector-list/selectors.css | 0/1 | 76.15% |
 | css/stylefmt-repo/at-media/at-media.css | 0/1 | 95.24% |
-| css/stylefmt-repo/ie-hacks/ie-hacks.css | 0/1 | 43.48% |
-| css/stylefmt-repo/important/important.css | 0/1 | 66.67% |
-| css/trailing-comma/var-func.css | 0/1 | 57.14% |
 | css/url/url.css | 0/1 | 90.00% |
 
 # Refused

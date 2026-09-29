@@ -85,7 +85,8 @@ export const css = format({
     to: () => text("lower"),
 
     // An IE filter's (`progid:...`) value as written, one space wherever the source has any gap (prettier's raw
-    // value); else the comma list, a grid template's keeping its lines.
+    // value); else the comma list, a grid template's keeping its lines, and an empty value's gap as written (fmt.ts's
+    // `declarationEnd`).
     declaration: ($) => [
       either(
         firstText({ after: ":", prefix: ["progid:"] }),
@@ -99,7 +100,7 @@ export const css = format({
         [
           $.children.at(0).andThen((p) => p),
           ":",
-          space,
+          either(when("emptyValue"), [], space),
           splitOn(",", {
             except: ["property_name", ":", ";"],
             trail: ["important"],
@@ -110,7 +111,7 @@ export const css = format({
           }),
         ],
       ),
-      semicolon,
+      tok(";").via("declarationEnd"),
     ],
     // `--name: {...}`: the block laid out as a rule's, then the `;` a declaration ends with.
     custom_property_set: () => [inOrder({ spaceWhen: { after: [":"] }, skip: [";"] }), semicolon],
@@ -118,6 +119,7 @@ export const css = format({
     nested_property: () =>
       inOrder({ join: "gap", tight: { before: [":"] }, spaceWhen: { after: [":"], before: ["block"] } }),
     property_name: () => text("maybeLower"),
+    important: () => custom("important"),
     integer_value: () => text("unitCase"),
     float_value: () => text("unitCase"),
     color_value: () => text("lower"),

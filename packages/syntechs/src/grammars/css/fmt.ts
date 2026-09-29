@@ -108,6 +108,8 @@ function meaning(tree: Tree, node: number, t: string): string {
       return t.toLowerCase();
     case "property_name":
       return maybeLower(t);
+    case "important":
+      return "!important";
     case "class_name":
       return parentKind === "pseudo_class_selector" ? maybeLower(t) : t;
     case "tag_name":
@@ -123,11 +125,13 @@ function meaning(tree: Tree, node: number, t: string): string {
   }
 }
 
-// A `;` that ends the last statement of a block or of the file means nothing, so prettier may add one there.
+// A `;` that ends the last statement of a block or of the file means nothing, so prettier may add one there; nor
+// does an empty statement's (`a: b;;`), which postcss drops.
 const normalize: Normalize = (lexemes, _text, tree) =>
   lexemes.map((l, i) => {
     const next = lexemes[i + 1]?.text;
-    if (l.text === ";" && (next === undefined || next === "}"))
+    const prev = lexemes[i - 1]?.text;
+    if (l.text === ";" && (next === undefined || next === "}" || next === ";" || prev === "{"))
       return undefined;
     return meaning(tree, l.node, l.text);
   });
@@ -164,6 +168,8 @@ function parts(n: number, ctx: SCtx): number {
 export const customs = {
   /** Prettier indents a selector of more than two nodes as it breaks. */
   longSelector: (node, ctx) => parts(node, ctx) > 2,
+  /** A declaration with nothing between its `:` and its `;` (`--empty:;`). */
+  emptyValue: (node, ctx) => code(node, ctx).every((c) => !ctx.tree.named(c) || kind(c, ctx) === "property_name"),
 } satisfies Record<string, PredicateRule<CssOptions>>;
 
 /** A binary expression's `/` written with no gap on either side, which prettier keeps so. */
@@ -493,9 +499,31 @@ export function frontMatterFirst(
   print();
 }
 
+/** `!important` in any case and with any gap after the `!`, which prettier prints as `!important`. */
+export function important(node: number): void {
+  sToken(node, "!important");
+}
+
+/**
+ * A declaration's `;`, the source's or one of its own. After an empty value (`--empty:  ;`) prettier keeps the gap
+ * before it as written, postcss's raw value: one space where the gap holds a line break or a comment.
+ */
+export function declarationEnd(semi: number | undefined, node: number, ctx: SCtx): void {
+  const t = ctx.tree;
+  if (semi === undefined || t.text(semi) === "") return sToken(node, ";", true);
+  const colon = code(node, ctx).find((c) => kind(c, ctx) === ":");
+  if (colon !== undefined && customs.emptyValue(node, ctx) && !t.adjoins(colon, semi)) {
+    const plain = t.lf(semi) === 0 && code(node, ctx).length === t.count(node);
+    sText(plain ? " ".repeat(t.col(semi) - t.col(colon) - 1) : " ");
+  }
+  sToken(semi, ";");
+}
+
 /** The hand-written rules format.ts names. */
 export const handWritten = {
   ...customs,
+  important,
+  declarationEnd,
   valueMath,
   atRule,
   postcssStatement,
