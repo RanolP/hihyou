@@ -1,4 +1,4 @@
-css compatibility: 113/151 (74.83%), 0 refused (ok:false), 6 excluded
+css compatibility: 117/151 (77.48%), 0 refused (ok:false), 6 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -12,11 +12,8 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
-| css/atrule/each.css | 0/1 | 19.84% |
-| css/atrule/function.css | 0/1 | 17.32% |
+| css/atrule/each.css | 0/1 | 39.57% |
 | css/atrule/import.css | 0/1 | 45.09% |
-| css/atrule/include.css | 0/1 | 35.64% |
-| css/atrule/mixin.css | 0/1 | 35.36% |
 | css/atrule/supports.css | 0/1 | 14.39% |
 | css/atrule/while.css | 0/1 | 65.82% |
 | css/atword/atword.css | 0/1 | 0.00% |
@@ -37,8 +34,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | css/inline-url/inline_url.css | 0/1 | 97.92% |
 | css/modules/modules.css | 0/1 | 99.20% |
 | css/numbers/numbers.css | 0/1 | 38.67% |
-| css/parens/empty-lines.css | 0/1 | 31.58% |
-| css/parens/parens.css | 0/1 | 81.25% |
+| css/parens/parens.css | 0/1 | 83.13% |
 | css/postcss-8-improment/empty-props.css | 0/1 | 50.00% |
 | css/postcss-8-improment/test.css | 0/1 | 80.00% |
 | css/postcss-plugins/postcss-mixins.css | 0/1 | 81.25% |

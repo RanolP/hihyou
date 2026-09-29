@@ -7,9 +7,34 @@ import {
 } from "../../fmt/options.js";
 import { defineLanguage, type Language } from "../../fmt/rules.js";
 import { maybeLower, numberParts } from "../../fmt/dsl/normalizers.js";
-import { ancestorWhere, breaksBetween, firstTextIs, parentIs, type PredicateRule } from "../../fmt/dsl/runtime.js";
-import { close, FILL, FILL_ITEM, GROUP, INDENT, open, sHardline, sLine, sText, sToken } from "../../fmt/stream.js";
-import type { StreamCtx } from "../../fmt/stream-format.js";
+import {
+  ancestorWhere,
+  breaksBetween,
+  firstTextIs,
+  parentIs,
+  type PredicateRule,
+  type SplitEntry,
+  splitRun,
+} from "../../fmt/dsl/runtime.js";
+import {
+  close,
+  FILL,
+  FILL_ITEM,
+  GROUP,
+  INDENT,
+  open,
+  SOFT,
+  sHardline,
+  sLine,
+  sText,
+  sToken,
+} from "../../fmt/stream.js";
+import { nextLineEmpty } from "../../fmt/text.js";
+import {
+  printLeadingComments,
+  printTrailingComments,
+  type StreamCtx,
+} from "../../fmt/stream-format.js";
 import { firstLeaf, type FormatTree, nextLeaf } from "../../fmt/tree.js";
 import { grammar } from "./bundle.js";
 import * as gen from "./fmt.gen.js";
@@ -236,6 +261,189 @@ export function valueMath(node: number, ctx: SCtx): void {
   }
 }
 
+/** A comma-split entry's items as words: packed in a fill of their own, items written without a gap joined. */
+function words(items: number[], ctx: SCtx, joined: (prev: number, c: number) => boolean): void {
+  const t = ctx.tree;
+  const item = (c: number) => (t.named(c) ? ctx.print(c) : sToken(c, t.text(c)));
+  if (items.every((c, i) => i === 0 || joined(items[i - 1] as number, c))) return items.forEach(item);
+  open(GROUP);
+  open(INDENT);
+  open(FILL);
+  open(FILL_ITEM);
+  items.forEach((c, i) => {
+    if (i > 0 && !joined(items[i - 1] as number, c)) {
+      close();
+      sLine(0);
+      open(FILL_ITEM);
+    }
+    item(c);
+  });
+  for (let k = 0; k < 4; k++) close();
+}
+
+/**
+ * A Sass directive's prelude (`@mixin`, `@include`, `@each`, ...), which prettier parses as a value: its comma list
+ * packed and indented once it breaks, each entry's words filled. Before parsing, prettier joins the first word to
+ * a `(` after it (`@mixin name (...)`), but after `@else`'s `if`.
+ */
+export function sassDirective(node: number, ctx: SCtx): void {
+  const t = ctx.tree;
+  const run = splitRun(ctx, node, ",", ["at_keyword", ";"], ["block"]);
+  ctx.print(t.child(node, 0));
+  sText(" ");
+  const first = run.entries[0]?.items[0];
+  const joined = (prev: number, c: number) =>
+    t.adjoins(prev, c) ||
+    (prev === first &&
+      kind(prev, ctx) === "plain_value" &&
+      kind(c, ctx) === "parenthesized_value" &&
+      !t.text(prev).startsWith("if"));
+  const entries = run.entries;
+  if (entries.length === 1) words((entries[0] as SplitEntry).items, ctx, joined);
+  else if (entries.length > 1) {
+    open(GROUP);
+    open(INDENT);
+    open(FILL);
+    entries.forEach((e, i) => {
+      if (i > 0) sLine(0);
+      open(FILL_ITEM);
+      words(e.items, ctx, joined);
+      if (e.sep !== -1) sToken(e.sep, t.text(e.sep));
+      close();
+    });
+    close();
+    close();
+    close();
+  }
+  if (entries.length === 1 && (entries[0] as SplitEntry).sep !== -1) {
+    const sep = (entries[0] as SplitEntry).sep;
+    sToken(sep, t.text(sep));
+  }
+  for (const c of run.trail) {
+    sText(" ");
+    ctx.print(c);
+  }
+  if (run.trail.length > 0) return;
+  const semi = children(node, t).find((c) => kind(c, ctx) === ";" && t.text(c) !== "");
+  if (semi === undefined) sToken(node, ";", true);
+  else sToken(semi, t.text(semi));
+}
+
+/**
+ * A Sass argument list, list or map in a directive's prelude: prettier's paren group, its entries one per line once
+ * it breaks. After an entry of several words (a `name: value` pair among them), a blank line the source has stays and
+ * breaks the group (printCommaSeparatedValueGroup's SCSS map rule).
+ */
+export function sassList(node: number, ctx: SCtx): void {
+  const t = ctx.tree;
+  const token = (text: string) => children(node, t).find((c) => !t.named(c) && t.text(c) === text);
+  const bracket = (text: string) => {
+    const c = token(text);
+    if (c === undefined) sToken(node, text, true);
+    else sToken(c, t.text(c));
+  };
+  const run = splitRun(ctx, node, ",", ["(", ")"], []);
+  open(GROUP);
+  bracket("(");
+  if (run.entries.length > 0) {
+    open(INDENT);
+    sLine(SOFT);
+    run.entries.forEach((e, i) => {
+      if (i > 0) sLine(0);
+      words(e.items, ctx, (prev, c) => t.adjoins(prev, c));
+      if (e.sep !== -1) sToken(e.sep, t.text(e.sep));
+      const last = e.items[e.items.length - 1];
+      const group = e.items.length > 1 || (last !== undefined && kind(last, ctx) === "keyword_argument");
+      if (i < run.entries.length - 1 && group && last !== undefined && nextLineEmpty(t, last)) sHardline();
+    });
+    close();
+  }
+  sLine(SOFT);
+  bracket(")");
+  close();
+}
+
+const isDirective = (n: number, ctx: SCtx) => firstTextIs(ctx, n, undefined, directives, [], false);
+const inDirective = (n: number, ctx: SCtx) =>
+  ancestorWhere(ctx.tree, n, ["at_rule", "postcss_statement"], ["block"], (a) => isDirective(a, ctx));
+/** Inside a Sass variable's value (`$map: (...)`), which prettier lays out as a directive's (its SCSS map). */
+const inVariable = (n: number, ctx: SCtx) =>
+  ancestorWhere(ctx.tree, n, ["declaration"], ["block"], (a) => firstTextIs(ctx, a, undefined, [], ["$"], false));
+
+/**
+ * Prettier's raw at-rule params: the children as written, one space wherever the source has a gap and wherever
+ * `spaced` says, none before the `;`; a child `own` names prints by its own rule.
+ */
+function raw(node: number, ctx: SCtx, own: (c: number) => boolean, spaced: (prev: number, c: number) => boolean) {
+  const t = ctx.tree;
+  const items = new Set(ctx.items(node));
+  let prev = -1;
+  for (const c of children(node, t)) {
+    const named = t.named(c);
+    if (named && !items.has(c)) continue;
+    if (prev !== -1 && kind(c, ctx) !== ";" && (spaced(prev, c) || !t.adjoins(prev, c))) sText(" ");
+    prev = c;
+    if (named && own(c)) ctx.print(c);
+    else if (named) {
+      const comments = !ctx.ownsComments(c);
+      if (comments) printLeadingComments(ctx, c);
+      sToken(c, t.text(c));
+      if (comments) printTrailingComments(ctx, c);
+    } else sToken(c, t.text(c));
+  }
+}
+
+/** A Sass directive, else as written; `@page:first` stays joined, as postcss reads a name up to the first gap. */
+export function atRule(node: number, ctx: SCtx): void {
+  if (isDirective(node, ctx)) return sassDirective(node, ctx);
+  const own = (c: number) => kind(c, ctx) === "at_keyword" || kind(c, ctx) === "block";
+  raw(node, ctx, own, (_, c) => kind(c, ctx) === "block");
+}
+
+/** A Sass directive or postcss-mixins' `@define-mixin`, else as written. */
+export function postcssStatement(node: number, ctx: SCtx): void {
+  if (isDirective(node, ctx)) return sassDirective(node, ctx);
+  raw(node, ctx, () => false, (prev) => kind(prev, ctx) === "at_keyword");
+}
+
+/**
+ * Sass's `name: value`: the value after a space, hanging under the name once past the width, but a map hugging the
+ * name (`$key: (`).
+ */
+export function keywordArgument(node: number, ctx: SCtx): void {
+  const t = ctx.tree;
+  const items = new Set(ctx.items(node));
+  const hug = children(node, t).some((c) => kind(c, ctx) === "parenthesized_value");
+  let prev = -1;
+  for (const c of children(node, t)) {
+    const named = t.named(c);
+    if (named && !items.has(c)) continue;
+    const hang = prev !== -1 && !hug && kind(prev, ctx) === ":";
+    if (hang) {
+      open(GROUP);
+      open(INDENT);
+      sLine(0);
+    } else if (prev !== -1 && kind(c, ctx) !== ":") sText(" ");
+    prev = c;
+    if (named) ctx.print(c);
+    else sToken(c, t.text(c));
+    if (hang) {
+      close();
+      close();
+    }
+  }
+}
+
+/** A Sass list or map (in a directive, or a `$variable`'s value) by `sassList`, else as written without gaps. */
+export function parenthesizedValue(node: number, ctx: SCtx): void {
+  if (inDirective(node, ctx) || inVariable(node, ctx)) return sassList(node, ctx);
+  const t = ctx.tree;
+  const items = new Set(ctx.items(node));
+  for (const c of children(node, t))
+    if (!t.named(c)) sToken(c, t.text(c));
+    else if (items.has(c)) ctx.print(c);
+}
+
 /**
  * Prettier's printNodeSequence: a statement whose previous sibling is a `/* prettier-ignore *\/` comment prints as
  * written. Ordinals run in postorder, so the node just before `node`'s leftmost leaf is its previous sibling.
@@ -278,6 +486,17 @@ export function frontMatterFirst(
   print();
 }
 
+/** The hand-written rules format.ts names. */
+export const handWritten = {
+  ...customs,
+  valueMath,
+  atRule,
+  postcssStatement,
+  parenthesizedValue,
+  keywordArgument,
+  sassList,
+};
+
 /** CSS as prettier 3.9.9's postcss printer lays it out; the layouts are format.ts, generated into fmt.gen.ts. */
 export const css: Language<CssOptions> = {
   ...defineLanguage(grammar, {
@@ -291,7 +510,7 @@ export const css: Language<CssOptions> = {
     layoutBlind: true,
   }),
   stream: {
-    ...gen.css({ ...customs, valueMath }),
+    ...gen.css(handWritten),
     wrap: frontMatterFirst,
     keepsSource: prettierIgnored,
   },

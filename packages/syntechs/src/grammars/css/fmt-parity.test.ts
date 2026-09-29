@@ -114,6 +114,16 @@ const edgeCases: [string, string][] = [
     "progid",
     "a{filter:progid:DXImageTransform.Microsoft.gradient(startColorstr='#80000000')}",
   ],
+  // `name='#hex'` pairs, once an ERROR before tree-sitter-css read Sass's `name: value` arguments.
+  [
+    "progid-arguments",
+    "a{filter:progid:X.y(startColorstr='#80000000', endColorstr='#80000000')}",
+  ],
+  // Sass's argument lists and maps, which printed as written while tree-sitter-css read them as ERRORs.
+  [
+    "sass-arguments",
+    "@mixin m ( $a, $b: 10, $args... ) {}\n@include m(1, $b: (k: v, l: w));\n$map: (a: 1,\n\n b: 2);",
+  ],
   ["crlf", "a{\r\n  b:c;\r\n  /* x\r\n  y */\r\n\r\n\r\n  d:e\r\n}\r\n"],
   // Front matter once parsed as selectors, lowercased and joined onto the first rule's line.
   ["front-matter", "---\ntitle: Title\n\n---\na{b:c}"],
@@ -219,13 +229,6 @@ const divergences: [string, string, Partial<CssOptions>, string][] = [
     `a{background-image:url("${"x".repeat(60)}") /*rtl:url("${"y".repeat(20)}")*/;}`,
     {},
     `a {\n  background-image: url("${"x".repeat(60)}") /*rtl:url("${"y".repeat(20)}")*/;\n}\n`,
-  ],
-  // tree-sitter-css reads some `name='#hex'` argument lists of `progid:...()` as an ERROR.
-  [
-    "progid-arguments",
-    "a{filter:progid:X.y(startColorstr='#80000000', endColorstr='#80000000')}",
-    {},
-    "a {filter:progid:X.y(startColorstr='#80000000', endColorstr='#80000000')}\n",
   ],
   // tree-sitter-css knows only lowercase `!important` and `from`; the uppercase ones are ERRORs.
   [

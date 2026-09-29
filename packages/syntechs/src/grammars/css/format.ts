@@ -14,7 +14,6 @@ import {
   firstText,
   grpBrace,
   grpParen,
-  has,
   inOrder,
   isEmpty,
   lines,
@@ -64,12 +63,6 @@ const valueLayout: SplitLayoutOf<Cond> = loneBare({
 const directive = firstText({ is: directives });
 /** Inside a `directive`'s prelude. */
 const inDirective = ancestor(["at_rule", "postcss_statement"], { stop: ["block"], holds: directive });
-/**
- * A `directive`'s prelude as a value: its comma list packed and indented once it breaks, each entry's words filled
- * in a group of its own.
- */
-const directivePrelude = (trail: "block"[]) =>
-  splitOn(",", { except: ["at_keyword", ";"], trail, item: words(), layout: loneBare(packed) });
 /** Statements one per line, keeping one blank line where the source has any. */
 const statements = { blankLines: "force" } as const;
 
@@ -146,7 +139,13 @@ export const css = format({
           text("cssWide"),
         ),
       ),
-    call_expression: adjacent,
+    // In a `directive`'s prelude, a Sass argument list as fmt.ts's `sassList` lays it out, but `url()`'s.
+    call_expression: ($) =>
+      either(
+        all(inDirective, not(calledAs("url"))),
+        [$.children.at(0).andThen((n) => n), $.children.at(1).andThen((n) => n.via("sassList"))],
+        adjacent(),
+      ),
     // A function's as written inside `url()`, else broken inside the parentheses: a function's as words, a
     // pseudo-class's as selectors.
     arguments: () =>
@@ -168,8 +167,11 @@ export const css = format({
       ),
     // Prettier's math in a value, which fmt.ts's `valueMath` lays out as its operands and operators in a row.
     binary_expression: () => custom("valueMath"),
-    // Broken inside the parentheses in a `directive`'s prelude, as prettier's paren group.
-    parenthesized_value: () => either(inDirective, grpParen(splitOn(",", { except: ["(", ")"] })), adjacent()),
+    // A Sass list or map (fmt.ts's `sassList`) in a `directive`'s prelude or a `$variable`'s value, else joined.
+    parenthesized_value: () => custom("parenthesizedValue"),
+    // Sass's `name: value` (fmt.ts's `keywordArgument`); `$args...` joined.
+    keyword_argument: () => custom("keywordArgument"),
+    rest_argument: adjacent,
 
     class_selector: adjacent,
     id_selector: adjacent,
@@ -234,28 +236,10 @@ export const css = format({
     at_root_statement: spaced,
     nest_statement: spaced,
     extend_statement: () => [inOrder({ join: "space", skip: [";"] }), semicolon],
-    at_rule: ($) =>
-      either(
-        directive,
-        either(
-          has("children", "block"),
-          [$.children.at(0).andThen((n) => n), space, directivePrelude(["block"])],
-          [$.children.at(0).andThen((n) => n), space, directivePrelude([]), semicolon],
-        ),
-        inOrder({
-          join: "gap",
-          tight: { before: [";"] },
-          // `@page:first` stays joined: postcss reads a name up to the first gap.
-          spaceWhen: { before: ["block"] },
-          verbatim: { except: ["at_keyword", "block"] },
-        }),
-      ),
-    postcss_statement: ($) =>
-      either(
-        directive,
-        [$.children.at(0).andThen((n) => n), space, directivePrelude([]), semicolon],
-        inOrder({ join: "gap", tight: { before: [";"] }, spaceWhen: { after: ["at_keyword"] }, verbatim: true }),
-      ),
+    // A `directive`'s prelude as a value (fmt.ts's `sassDirective`), else prettier's raw params: as written, one
+    // space wherever the source has any gap.
+    at_rule: () => custom("atRule"),
+    postcss_statement: () => custom("postcssStatement"),
     binary_query: spaced,
     unary_query: spaced,
     parenthesized_query: adjacent,
