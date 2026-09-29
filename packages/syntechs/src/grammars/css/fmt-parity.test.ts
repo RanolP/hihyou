@@ -62,6 +62,8 @@ const edgeCases: [string, string][] = [
     "grid",
     'a{grid-template-areas:"a b"\n  "c d";grid-template-columns:[full-start] 1fr\n  [full-end]}',
   ],
+  // The `/` makes the tail a binary expression, which must keep the grid's source lines too.
+  ["grid-slash", 'a{grid-template:\n  "a a" 20px\n  "b b" 20px\n  / 1fr 2fr;grid:1fr / auto 1fr}'],
   ["strings", `a{content:"it's";b:'say "hi"';c:'both \\' and "';d:'x'}`],
   [
     "selectors",

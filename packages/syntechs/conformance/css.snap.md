@@ -1,4 +1,4 @@
-css compatibility: 112/151 (74.17%), 0 refused (ok:false), 6 excluded
+css compatibility: 113/151 (74.83%), 0 refused (ok:false), 6 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -34,7 +34,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | css/empty/empty.css | 0/1 | 85.71% |
 | css/escaped-attribute/test.css | 0/1 | 87.50% |
 | css/font/font.css | 0/1 | 79.41% |
-| css/grid/grid.css | 0/1 | 94.64% |
 | css/inline-url/inline_url.css | 0/1 | 97.92% |
 | css/modules/modules.css | 0/1 | 99.20% |
 | css/numbers/numbers.css | 0/1 | 38.67% |

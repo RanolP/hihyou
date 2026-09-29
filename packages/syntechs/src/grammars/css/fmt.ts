@@ -7,10 +7,10 @@ import {
 } from "../../fmt/options.js";
 import { defineLanguage, type Language } from "../../fmt/rules.js";
 import { maybeLower, numberParts } from "../../fmt/dsl/normalizers.js";
-import { ancestorWhere, firstTextIs, parentIs, type PredicateRule } from "../../fmt/dsl/runtime.js";
+import { ancestorWhere, breaksBetween, firstTextIs, parentIs, type PredicateRule } from "../../fmt/dsl/runtime.js";
 import { close, FILL, FILL_ITEM, GROUP, INDENT, open, sHardline, sLine, sText, sToken } from "../../fmt/stream.js";
 import type { StreamCtx } from "../../fmt/stream-format.js";
-import type { FormatTree } from "../../fmt/tree.js";
+import { firstLeaf, type FormatTree, nextLeaf } from "../../fmt/tree.js";
 import { grammar } from "./bundle.js";
 import * as gen from "./fmt.gen.js";
 import { directives } from "./directive.js";
@@ -155,6 +155,27 @@ function tightDivision(node: number, ctx: SCtx): boolean {
 const operators = new Set(["+", "-", "*", "/"]);
 
 /**
+ * Whether `node` sits in a `grid`/`grid-template*` declaration whose value the source breaks across lines, which
+ * prettier then prints a line per source line (format.ts's `keepLines`), words within a line a space apart.
+ */
+function gridLines(node: number, ctx: SCtx): boolean {
+  const t = ctx.tree;
+  let decl = t.parent(node);
+  while (decl !== NO_NODE && kind(decl, ctx) === "binary_expression") decl = t.parent(decl);
+  if (decl === NO_NODE || kind(decl, ctx) !== "declaration") return false;
+  if (!firstTextIs(ctx, decl, undefined, ["grid"], ["grid-template"], true)) return false;
+  const kids = children(decl, t);
+  const colon = kids.findIndex((c) => kind(c, ctx) === ":");
+  const first = kids[colon + 1];
+  if (colon === -1 || first === undefined) return false;
+  // Postorder numbers a node after its leaves, so the declaration's leaves are those before it.
+  const end = t.ord(decl);
+  for (let l = nextLeaf(t, firstLeaf(t, first)); l !== NO_NODE && t.ord(l) < end; l = nextLeaf(t, l))
+    if (t.lf(l) > 0 && kind(l, ctx) !== ";") return true;
+  return false;
+}
+
+/**
  * Prettier's math in a value, which postcss-value-parser reads as a flat run of words and operators where the
  * grammar nests it leftwards: so the outermost expression lays the chain out, the inner ones adding only their
  * operands and operators. In a value, an operator follows its left operand after a space and the right operand
@@ -174,10 +195,12 @@ export function valueMath(node: number, ctx: SCtx): void {
       firstTextIs(ctx, a, undefined, ["calc"], [], true),
     );
   const tight = directive && tightDivision(node, ctx);
+  // A grid's lines are the enclosing entry's, already indented: no indent or fill of the chain's own.
+  const grid = !directive && gridLines(node, ctx);
   if (outermost) {
     open(GROUP);
-    open(INDENT);
-    if (!directive) {
+    if (!grid) open(INDENT);
+    if (!directive && !grid) {
       open(FILL);
       open(FILL_ITEM);
     }
@@ -188,7 +211,10 @@ export function valueMath(node: number, ctx: SCtx): void {
     const named = t.named(c);
     if (named && !items.has(c)) continue;
     if (prev !== -1 && !tight && (directive || calc || !t.adjoins(prev, c))) {
-      if (operators.has(kind(c, ctx))) sText(" ");
+      if (grid) {
+        if (breaksBetween(t, prev, c)) sHardline();
+        else sText(" ");
+      } else if (operators.has(kind(c, ctx))) sText(" ");
       else if (directive) sLine(0);
       else {
         close();
@@ -201,11 +227,11 @@ export function valueMath(node: number, ctx: SCtx): void {
     else sToken(c, t.text(c));
   }
   if (outermost) {
-    if (!directive) {
+    if (!directive && !grid) {
       close();
       close();
     }
-    close();
+    if (!grid) close();
     close();
   }
 }
