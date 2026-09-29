@@ -65,6 +65,39 @@ const beforeSemicolon = (c: CommentContext<JsOptions>): CommentTarget | undefine
     : { node, as: "trailing" };
 };
 
+const TYPE_BODIES = new Set(["object_type", "interface_body"]);
+// Declarations whose TS AST range takes in their `;`, so a comment before it is inside them.
+const SEMI_INSIDE = new Set(["type_alias_declaration", "function_signature"]);
+
+/**
+ * `type A = B /* c *\/;` and `{ a: B /* c *\/; }`: a block comment before the `;` of a type alias, an overload
+ * signature, a type member or a class's index signature trails the type before it and prints before the `;`, since the TS AST's node for them
+ * spans their `;`. After a signature's parameters, with no return type, or exported, where the export statement spans
+ * the `;` instead, `beforeSemicolon` moves the comment past it.
+ */
+const typeBeforeSemicolon = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { comment, enclosing, preceding, text } = c;
+  if (preceding === undefined || !text.startsWith("/*")) return;
+  const all = children(c, enclosing);
+  const next = all.slice(all.indexOf(comment) + 1).find((n) => isCode(c, n));
+  if (next === undefined || kind(c, next) !== ";") return;
+  if (
+    TYPE_BODIES.has(kind(c, enclosing)) ||
+    (kind(c, enclosing) === "class_body" && kind(c, preceding) === "index_signature")
+  ) {
+    const last = lastCode(c, preceding);
+    return last !== undefined && named(c, last) && kind(c, last) !== "formal_parameters"
+      ? { node: last, as: "trailing" }
+      : undefined;
+  }
+  if (!SEMI_INSIDE.has(kind(c, enclosing)) || kind(c, preceding) === "formal_parameters") return;
+  let up = parent(c, enclosing);
+  if (up !== undefined && kind(c, up) === "ambient_declaration") up = parent(c, up);
+  return up !== undefined && kind(c, up) === "export_statement"
+    ? undefined
+    : { node: preceding, as: "trailing" };
+};
+
 /** tree-sitter nests `A | B | C` as `(A | B) | C`; prettier's union is flat. */
 const lastMember = (x: HasTree, n: number): number => {
   let member = n;
@@ -394,6 +427,7 @@ const handlers = [
   typeCast,
   importAttribute,
   conditional,
+  typeBeforeSemicolon,
   beforeSemicolon,
   unionMember,
   typeAliasValue,
