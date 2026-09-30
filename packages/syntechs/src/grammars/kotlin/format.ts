@@ -101,11 +101,12 @@ const typeList =(children: Parameters<typeof sepBy>[1]) =>
   grpAngle(sepBy(",", children, { trailing: when("manyItems"), imaginary: true }));
 
 // ktfmt puts a blank line before every declaration of a file or class body but between two properties (or two file
-// annotations), where it keeps the source's.
+// annotations) and after a shebang, where it keeps the source's.
 const blank = not(
   any(
     all(kindIs("property_declaration"), prevItem(kindIs("property_declaration"))),
     all(kindIs("file_annotation"), prevItem(kindIs("file_annotation"))),
+    prevItem(kindIs("shebang_line")),
   ),
 );
 
@@ -148,11 +149,20 @@ export const kotlin = format({
 
     // A declaration's annotations each go on a line of their own once the declaration (the `group` `decl` puts
     // it in) breaks, a block body's included; the keyword modifiers after them stay on one line.
+    // Context parameters (`context(a: A)`) put the rest of the declaration on the next line.
     modifiers: () => [
-      either(when("annotationsBreak"), breakParent, []),
+      either(any(when("annotationsBreak"), has("children", "context_parameters")), breakParent, []),
       inOrder({ join: "line", spaceWhen: { after: keywordModifiers } }),
-      either(lastItem(kindIs("annotation")), line, space),
+      either(lastItem(kindIs("annotation", "context_parameters")), line, space),
     ],
+    // ktfmt breaks the list at each comma, not indented, with the `)` on the last line; a comment after the `(`
+    // starts a line of its own.
+    context_parameters: () =>
+      either(
+        when("commentAfterParen"),
+        group(inOrder({ join: "line", tight: { after: ["context"], before: [",", ")"] } })),
+        group(inOrder({ join: "line", tight: { after: ["context", "("], before: [",", ")"] } })),
+      ),
     // `@field:[Inject Named("x")]`: the annotations a bracket groups are spaced apart.
     annotation: () => inOrder({ join: "space", tight: { after: ["@", "[", "use_site_target"], before: ["]"] } }),
     use_site_target: () => inOrder(),

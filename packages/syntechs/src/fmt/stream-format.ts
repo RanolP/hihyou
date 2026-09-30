@@ -187,8 +187,8 @@ export interface StreamRules<O = unknown> {
   readonly wrap?: (node: number, ctx: StreamCtx<O>, print: () => void, args: PrintArgs | undefined) => void;
   /** Whether the output ends with a line break, as it does unless this says not: ruff prints a blank file as "". */
   readonly finalLine?: (ctx: StreamCtx<O>) => boolean;
-  /** Whether a line comment past the width wraps as google-java-format's does (`wrapLineComments`): ktfmt's. */
-  readonly wrapsLineComments?: boolean;
+  /** Whether printed comments rewrite as google-java-format's do (`rewriteComments`): ktfmt's. */
+  readonly rewritesComments?: boolean;
 }
 
 /** `format`: lays `tree` out on the stream by the `stream` rules of `base`, and prints it. */
@@ -309,7 +309,7 @@ export function formatStream<O>(
     ctx.print(tree.root);
     if (language.finalLine?.(ctx) !== false) sHardline();
     const printed = printStream(settings);
-    if (language.wrapsLineComments) wrapLineComments(printed, isLine, settings.lineWidth);
+    if (language.rewritesComments) rewriteComments(printed, tree, isComment, isLine, settings.lineWidth);
     const { text } = printed;
     const eol = endOfLine(settings.endOfLine, tree);
     const rewrite = eol !== "\n" || text.includes("\r");
@@ -345,12 +345,18 @@ export function formatStream<O>(
 }
 
 /**
- * google-java-format's wrapLineComments, which ktfmt's KDocCommentsHelper keeps: a line comment reaching past
- * `width` breaks before its last blank that keeps the line within the width, and goes on as `//` at the column
- * the comment starts. The line comments are the printed tokens, so this rewrites `printed` in place, shifting the
- * tokens after each break.
+ * google-java-format's comment rewriting, which ktfmt's KDocCommentsHelper keeps, on the printed comment tokens:
+ * a line comment reaching past `width` wraps (`wrapLineComment`), and a block comment printed as its source text
+ * re-indents its lines to the column it now starts at (`indentBlockComment`). This rewrites `printed` in place,
+ * shifting the tokens after each rewritten one.
  */
-function wrapLineComments(printed: StreamPrinted, isLine: (n: number) => boolean, width: number): void {
+function rewriteComments(
+  printed: StreamPrinted,
+  tree: FormatTree,
+  isComment: (n: number) => boolean,
+  isLine: (n: number) => boolean,
+  width: number,
+): void {
   const { text, nodes, lengths, at } = printed;
   let out = "";
   let from = 0;
@@ -359,24 +365,56 @@ function wrapLineComments(printed: StreamPrinted, isLine: (n: number) => boolean
     const start = at[t] as number;
     at[t] = start + shift;
     const length = lengths[t] as number;
-    if (!isLine(nodes[t] as number)) continue;
-    const column = start - (text.lastIndexOf("\n", start - 1) + 1);
-    let line = text.slice(start, start + length);
-    if (line.length + column <= width) continue;
-    const lines: string[] = [];
-    while (line.length + column > width) {
-      let idx = width - column;
-      while (idx >= 2 && !/\s/.test(line[idx] as string)) idx--;
-      if (idx <= 2) break;
-      lines.push(line.slice(0, idx).trim());
-      line = `//${line.slice(idx)}`;
-    }
-    lines.push(line.trim());
-    const wrapped = lines.join(`\n${" ".repeat(column)}`);
-    out += text.slice(from, start) + wrapped;
+    const node = nodes[t] as number;
+    if (!isComment(node)) continue;
+    const token = text.slice(start, start + length);
+    const before = text.slice(from, start);
+    const nl = before.lastIndexOf("\n");
+    const column = nl !== -1 ? before.length - nl - 1 : out.length - (out.lastIndexOf("\n") + 1) + before.length;
+    const rewritten = isLine(node)
+      ? wrapLineComment(token, column, width)
+      : token.includes("\n") && token === tree.text(node)
+        ? indentBlockComment(token, column)
+        : token;
+    if (rewritten === token) continue;
+    out += before + rewritten;
     from = start + length;
-    shift += wrapped.length - length;
-    lengths[t] = wrapped.length;
+    shift += rewritten.length - length;
+    lengths[t] = rewritten.length;
   }
   if (from > 0) printed.text = out + text.slice(from);
+}
+
+/**
+ * google-java-format's wrapLineComments: a line comment reaching past `width` breaks before its last blank that
+ * keeps the line within the width, and goes on as `//` at the column the comment starts.
+ */
+function wrapLineComment(comment: string, column: number, width: number): string {
+  let line = comment;
+  if (line.length + column <= width) return comment;
+  const lines: string[] = [];
+  while (line.length + column > width) {
+    let idx = width - column;
+    while (idx >= 2 && !/\s/.test(line[idx] as string)) idx--;
+    if (idx <= 2) break;
+    lines.push(line.slice(0, idx).trim());
+    line = `//${line.slice(idx)}`;
+  }
+  lines.push(line.trim());
+  return lines.join(`\n${" ".repeat(column)}`);
+}
+
+/**
+ * google-java-format's indentJavadoc and preserveIndentation, for a block comment starting at `column`, its line
+ * ends trimmed: where every later line starts with `*`, those go one column in from the `/*`; else they keep
+ * their indentation relative to the least indented of them.
+ */
+function indentBlockComment(comment: string, column: number): string {
+  const [first, ...rest] = comment.split("\n").map((l) => l.trimEnd());
+  if (rest.every((l) => l.trimStart().startsWith("*")))
+    return [first, ...rest.map((l) => " ".repeat(column + 1) + l.trim())].join("\n");
+  let min = Number.MAX_SAFE_INTEGER;
+  for (const l of rest) if (l.trim() !== "") min = Math.min(min, l.length - l.trimStart().length);
+  const indent = (l: string) => (l === "" ? "" : " ".repeat(column) + l.slice(Math.min(min, l.length)));
+  return [first, ...rest.map(indent)].join("\n");
 }

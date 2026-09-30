@@ -513,6 +513,13 @@ export const customs = {
       t.kindName(arg) === "value_argument" && t.count(arg) === 1 && t.kindName(t.child(arg, 0)) === "lambda_literal"
     );
   },
+  /** Of `context(...)`: a comment follows the `(`, which ktfmt puts on a line of its own. */
+  commentAfterParen: (node, ctx) => {
+    const t = ctx.tree;
+    for (let i = 0; i + 1 < t.count(node); i++)
+      if (t.kindName(t.child(node, i)) === "(") return t.kindName(t.child(node, i + 1)).endsWith("comment");
+    return false;
+  },
   /**
    * Of a class body, or a block's statements: the source leaves a blank line after the `{`, which ktfmt keeps but
    * in a lambda. Not before statements with a comment ahead of them, which prints before this rule runs.
@@ -722,7 +729,7 @@ function withChains<O>(stream: StreamRules<O>): StreamRules<O> {
   return {
     ...stream,
     rules,
-    wrapsLineComments: true,
+    rewritesComments: true,
     printsOwnComments: commentedBeforeBody,
     recovered: (error, t) =>
       recoveredComma(t, error) &&

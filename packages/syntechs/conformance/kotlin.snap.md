@@ -1,4 +1,4 @@
-kotlin compatibility: 726/753 (96.41%), 0 refused (ok:false), 11 excluded
+kotlin compatibility: 730/753 (96.95%), 0 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -8,7 +8,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
-| comments.txt: Comments | 0/1 | 76.19% |
+| comments.txt: Comments | 0/1 | 85.71% |
 | source-files.txt: Multiple Imports On A Single Line | 0/1 | 50.00% |
 | packages/syntechs/src/grammars/kotlin/corpus/Collections.kt | 0/1 | 99.31% |
 | ktfmt/format/annotation/exception.kt | 0/1 | 61.54% |
@@ -20,11 +20,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/call/functionReference.kt | 0/1 | 88.00% |
 | ktfmt/format/call/trailingCommasInCalls.kt | 0/1 | 93.33% |
 | ktfmt/format/class/emptyCompanionObject.kt | 0/1 | 92.31% |
-| ktfmt/format/comment/shebang.kts | 0/1 | 88.89% |
-| ktfmt/format/import/importList.kt | 0/1 | 62.50% |
 | ktfmt/format/misc/commentStability.kt | 0/1 | 70.59% |
-| ktfmt/format/misc/contextParameters.kt | 0/1 | 61.54% |
-| ktfmt/format/misc/contextReceivers.kt | 0/1 | 64.00% |
 | ktfmt/format/misc/labels.kt | 0/1 | 78.79% |
 | ktfmt/format/misc/semicolonsBetweenCalls.kt | 0/1 | 96.20% |
 | ktfmt/format/misc/semicolonsInEmptyBodies.kt | 0/1 | 69.23% |
