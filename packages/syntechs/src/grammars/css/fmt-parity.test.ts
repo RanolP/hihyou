@@ -114,6 +114,8 @@ const edgeCases: [string, string][] = [
   ["other-at-rules", "@container (min-width:400px){a{b:c}}"],
   // A `@layer` list was kept as written; oxfmt spaces it after its commas.
   ["layer-list", "@layer a,b;@layer c , d;@LAYER e\n,f;"],
+  // A comment among it printed next to its neighbour, spaced; oxfmt keeps the list as written, each gap one space.
+  ["layer-list-comment", "@layer a,/* c */b;@layer a/* c */,b;@LAYER  a,/* c */\n  b , c;@layer /* c */ a,b;"],
   // A paren group in a value lost its gaps, `(1 2)` printing `(12)`.
   ["value-parens", "a{b:foo( (1 ,2) );c:(a  b,c) x (1 2);d:foo((1,2),(3 +4))}"],
   // A custom property's or Sass variable's value holding a paren group was kept as written; oxfmt keeps it only

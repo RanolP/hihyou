@@ -530,7 +530,8 @@ const inVariable = (n: number, ctx: SCtx) =>
 
 /**
  * Prettier's raw at-rule params: the children as written, one space wherever the source has a gap and wherever
- * `spaced` says, none before the `;`; a child `own` names prints by its own rule.
+ * `spaced` says, none before the `;`; a child `own` names prints by its own rule. With `comments`, the node's
+ * comments (dangling on it, `handleComment`) print in place among them.
  */
 function raw(
   node: number,
@@ -538,12 +539,19 @@ function raw(
   own: (c: number) => boolean,
   spaced: (prev: number, c: number) => boolean,
   tight: (c: number) => boolean = () => false,
+  comments = false,
 ) {
   const t = ctx.tree;
   const items = new Set(ctx.items(node));
   let prev = -1;
   for (const c of children(node, t)) {
     const named = t.named(c);
+    if (comments && isComment(c, ctx)) {
+      if (prev !== -1 && !t.adjoins(prev, c)) sText(" ");
+      prev = c;
+      ctx.comment(c);
+      continue;
+    }
     if (named && !items.has(c)) continue;
     if (prev !== -1 && kind(c, ctx) !== ";" && !tight(c) && (spaced(prev, c) || !t.adjoins(prev, c))) sText(" ");
     prev = c;
@@ -563,13 +571,17 @@ export function atRule(node: number, ctx: SCtx): void {
   const own = (c: number) => kind(c, ctx) === "at_keyword" || kind(c, ctx) === "block";
   const block = (c: number) => kind(c, ctx) === "block";
   const comma = (c: number) => kind(c, ctx) === ",";
-  // oxfmt prints a `@layer` list one space after each comma and none before one, unless a comment is among it.
-  if (layerList(node, ctx)) return raw(node, ctx, own, (prev, c) => block(c) || comma(prev), comma);
+  // oxfmt prints a `@layer` list one space after each comma and none before one, unless a comment is among it:
+  // then the list as written, each gap one space, its comments in place.
+  if (layerList(node, ctx.tree)) {
+    if (children(node, ctx.tree).some((c) => isComment(c, ctx))) return raw(node, ctx, own, (_, c) => block(c), undefined, true);
+    return raw(node, ctx, own, (prev, c) => block(c) || comma(prev), comma);
+  }
   raw(node, ctx, own, (_, c) => block(c));
 }
 
-const layerList = (node: number, ctx: SCtx) =>
-  /^@layer$/i.test(ctx.tree.text(ctx.tree.child(node, 0))) && !children(node, ctx.tree).some((c) => isComment(c, ctx));
+const layerList = (node: number, t: FormatTree) =>
+  t.kindName(node) === "at_rule" && /^@layer$/i.test(t.text(t.child(node, 0)));
 
 /** A Sass directive or postcss-mixins' `@define-mixin`, else as written. */
 export function postcssStatement(node: number, ctx: SCtx): void {
@@ -689,7 +701,7 @@ const handleComment: CommentHandler<CssOptions> = ({ tree, enclosing, preceding,
   const ownComments =
     tree.kindName(enclosing) === "import_statement" ||
     (valueArguments(tree, enclosing) && !rawArguments(enclosing, tree));
-  if (ownComments && text.startsWith("/*"))
+  if ((ownComments && text.startsWith("/*")) || layerList(enclosing, tree))
     return { node: enclosing, as: "dangling" };
   if (tree.kindName(enclosing) === "rule_set" && following !== undefined && tree.kindName(following) === "block")
     return { node: enclosing, as: "dangling" };
