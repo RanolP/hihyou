@@ -6,7 +6,7 @@ Three hard constraints shape every package. They rule out whole classes of solut
 
 hihyou must run fully in a browser: "we may run on browser without any server". The GUI and a GitHub extension must work as static or in-page code, so a backend such as a `hihyou serve` command can be a convenience at most, never a requirement.
 
-- `@hihyou/engine` and `@hihyou/present` stay free of Node APIs. Node-only code goes behind a `./node` export (for example `@hihyou/engine/node`, which holds the git-CLI source).
+- `@hihyou/engine` stays free of Node APIs. Node-only code goes behind a `./node` export (for example `@hihyou/engine/node`, which holds the git-CLI source).
 - File contents reach a browser shell through a browser-side `Vcs` implementation rather than a server. The planned one reads the GitHub API with proper caching and is shared by the GUI and the extension.
 
 ## Pure TypeScript: no wasm, no Rust
