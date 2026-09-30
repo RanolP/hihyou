@@ -62,6 +62,13 @@ const edgeCases: [string, Target, string][] = [
   ["semi-after-comment", "js", "for (;;) continue // c\n;\n\nx;\na;\n;\n\nb;\nc;\n\n;\nd;\n\n// e\n;(f)"],
   // A comment ending the line after a computed-member callee stays on the callee, past the call.
   ["subscript-callee-comment", "js", "a[0] // c\n(1)\nf // c\n(1)\nb[0] // c\n(x, // d\n2)"],
+  // Any comment trailing a chain's member broke the chain; oxfmt breaks it only for one between a `.` member's object
+  // and property or ending its line, so a computed member's stays past the one-line chain.
+  [
+    "chain-member-comment",
+    "js",
+    "a[0] // c\n(1).b()\na[0] /* c */\n(1).b()\na // c\n.b().c()\na /* c */ .b().c().d()\na[0](1) // c\n.b()\na.x // c\n(1).b()",
+  ],
   ["quotes", "js", `const a = "it's", b = 'say "hi"', c = 'plain';`],
   ["numbers", "js", "x = [0XAB, 1E5, .5, 5., 0.50, 1_000n, 0B11, 0O7];"],
   [

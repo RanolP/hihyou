@@ -973,6 +973,24 @@ function sMemberChain(sctx: JsStreamCtx, n: number): void {
     return comment !== undefined && ctx.tree.lf(comment) === 0 && newlineBetween(ctx.tree, comment, paren);
   };
 
+  /**
+   * oxfmt's `has_comment_in_member`: a comment between a `.` member's object and property, or ending the member's
+   * line, which alone of a chain's comments breaks it (`a[0] // c⏎(1).b()` stays one line, the comment after it).
+   */
+  const memberComment = (x: number) => {
+    if (kind(ctx, x) !== "member_expression") return false;
+    const t = ctx.tree;
+    const property = field(ctx, x, "property");
+    if (property === undefined) return false;
+    for (let l = prevLeaf(t, property); l !== NO_NODE && (kind(ctx, l) === "comment" || /^\??\.$/.test(t.text(l))); l = prevLeaf(t, l))
+      if (kind(ctx, l) === "comment") return true;
+    for (let l = nextLeaf(t, x); l !== NO_NODE && kind(ctx, l) === "comment" && t.lf(l) === 0; l = nextLeaf(t, l)) {
+      const after = nextLeaf(t, l);
+      if (t.text(l).startsWith("//") || after === NO_NODE || t.lf(after) > 0) return true;
+    }
+    return false;
+  };
+
   const groups: Printed[][] = [];
   let currentGroup: Printed[] = [printedNodes[0] as Printed];
   let i = 1;
@@ -1052,6 +1070,7 @@ function sMemberChain(sctx: JsStreamCtx, n: number): void {
     groups.length >= 2 &&
     (groups[1] as Printed[]).length > 0 &&
     !hasComment(ctx, (groups[1] as Printed[])[0]?.node) &&
+    !memberComment((groups[1] as Printed[])[0]?.node as number) &&
     !(groups[1]?.length === 1 && groups[2]?.[0] !== undefined && argsAfterEndOfLineComment(groups[2][0].node)) &&
     shouldNotWrap(groups);
 
@@ -1066,7 +1085,7 @@ function sMemberChain(sctx: JsStreamCtx, n: number): void {
   const nodeHasComment =
     flat.some((x) => isCallNode(x.node) && argsAfterEndOfLineComment(x.node)) ||
     flat.slice(1, -1).some((x) => hasComment(ctx, x.node, CF.Leading)) ||
-    flat.slice(0, -1).some((x) => hasComment(ctx, x.node, CF.Trailing)) ||
+    flat.some((x) => memberComment(x.node)) ||
     (groups[cutoff] !== undefined &&
       hasComment(ctx, groups[cutoff][0]?.node, CF.Leading));
 
