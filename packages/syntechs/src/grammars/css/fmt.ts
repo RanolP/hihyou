@@ -433,6 +433,17 @@ function gridLines(node: number, ctx: SCtx): boolean {
   return false;
 }
 
+/** A node of a declaration's comma entry that holds other items too, which the entry packs in a fill. */
+function amongWords(node: number, ctx: SCtx): boolean {
+  const t = ctx.tree;
+  if (!parentIs(t, node, "declaration")) return false;
+  const siblings = children(t.parent(node), t);
+  const i = siblings.indexOf(node);
+  return [siblings[i - 1], siblings[i + 1]].some(
+    (n) => n !== undefined && t.named(n) && !["property_name", "important", "ERROR"].includes(kind(n, ctx)),
+  );
+}
+
 /**
  * Prettier's math in a value, which postcss-value-parser reads as a flat run of words and operators where the
  * grammar nests it leftwards: so the outermost expression lays the chain out, the inner ones adding only their
@@ -455,7 +466,10 @@ export function valueMath(node: number, ctx: SCtx): void {
   const tight = directive && tightDivision(node, ctx);
   // A grid's lines are the enclosing entry's, already indented: no indent or fill of the chain's own.
   const grid = !directive && gridLines(node, ctx);
-  if (outermost) {
+  // A chain among other words of a declaration's entry shares that entry's fill, each operand and operator an item
+  // of it, as oxc-css-parser reads them as values of the one list.
+  const own = outermost && !(!directive && !grid && amongWords(node, ctx));
+  if (own) {
     open(GROUP);
     if (!grid) open(INDENT);
     if (!directive && !grid) {
@@ -517,7 +531,7 @@ export function valueMath(node: number, ctx: SCtx): void {
     if (named) emit(c);
     else sToken(c, t.text(c));
   }
-  if (outermost) {
+  if (own) {
     if (!directive && !grid) {
       close();
       close();

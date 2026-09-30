@@ -207,6 +207,11 @@ const edgeCases: [string, string][] = [
     "value-colon",
     'a{b:a:b (1);c:a :b;d:1px:2px;e:a::b;f:x(a:b);g:"a":b, c;h:x(http://a);filter:progid:DX.a(b=1);--i:a :b}',
   ],
+  // A math chain after other words was one item of the entry's fill, so the fill broke before its first operand.
+  [
+    "math-chain-in-fill",
+    `a{b:${"x ".repeat(36)}// c;d:${"x ".repeat(37)}/ c;e:${"x ".repeat(37)}* c;f:${"x ".repeat(30)}// c // d // e // f}`,
+  ],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");
