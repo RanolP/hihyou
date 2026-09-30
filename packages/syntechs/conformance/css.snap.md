@@ -1,4 +1,4 @@
-css compatibility: 151/151 (100.00%), 0 refused (ok:false), 6 excluded
+css compatibility: 141/151 (93.38%), 0 refused (ok:false), 6 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -12,6 +12,16 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
+| css/comments/declaration.css | 0/1 | 98.88% |
+| css/fill-value/fill.css | 0/1 | 96.36% |
+| css/parens/empty-lines.css | 0/1 | 31.58% |
+| css/parens/parens.css | 0/1 | 93.13% |
+| css/postcss-8-improment/test.css | 0/1 | 88.24% |
+| css/postcss-plugins/postcss-nesting.css | 0/1 | 97.66% |
+| css/postcss-plugins/postcss-simple-vars.css | 0/1 | 77.78% |
+| css/stylefmt-repo/at-media/at-media.css | 0/1 | 95.24% |
+| css/stylefmt-repo/cssnext-example/cssnext-example.css | 0/1 | 98.31% |
+| css/stylefmt-repo/media-queries-ranges/media-queries-ranges.css | 0/1 | 90.91% |
 
 # Refused
 

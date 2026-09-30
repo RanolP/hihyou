@@ -1,4 +1,4 @@
-js compatibility: 789/789 (100.00%), 0 refused (ok:false), 319 excluded
+js compatibility: 747/789 (94.68%), 0 refused (ok:false), 319 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -12,6 +12,48 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
+| js/arrows/arrow-chain-with-trailing-comments.js | 0/2 | 93.75% |
+| js/arrows/issue-17421.js | 0/2 | 88.70% |
+| js/assignment-comments/string.js | 0/1 | 96.59% |
+| js/binary-expressions/mutiple-comments/17192.js | 1/2 | 95.83% |
+| js/call/no-argument/no-arguments.js | 0/1 | 57.53% |
+| js/class-comment/misc.js | 0/1 | 66.67% |
+| js/class-comment/superclass.js | 0/1 | 70.33% |
+| js/comments/empty-statements.js | 0/2 | 90.91% |
+| js/comments/function-declaration.js | 0/2 | 92.80% |
+| js/comments/return-statement-2.js | 0/2 | 87.32% |
+| js/comments/return-statement.js | 0/2 | 97.25% |
+| js/comments/tagged-template-literal.js | 0/2 | 89.66% |
+| js/comments/try.js | 0/2 | 66.67% |
+| js/comments-closure-typecast/iife.js | 0/1 | 76.92% |
+| js/comments/assignment/variable-declarator.js | 0/1 | 88.00% |
+| js/comments/between-head-and-body/between-head-and-body.js | 0/1 | 90.85% |
+| js/comments/between-head-and-body/empty-statement.js | 0/1 | 86.05% |
+| js/comments/first-argument/first-argument.js | 0/1 | 92.98% |
+| js/comments/function/18146.js | 0/1 | 51.80% |
+| js/comments/function/between-parentheses-and-function-body.js | 0/1 | 47.62% |
+| js/comments/in-list/dangling-comment-in-list.js | 0/1 | 95.91% |
+| js/explicit-resource-management/valid-await-using-comments.js | 0/1 | 88.24% |
+| js/for/9812-2.js | 0/1 | 88.89% |
+| js/for/continue-and-break-comment-without-blocks.js | 0/1 | 67.59% |
+| js/for-of/comments.js | 0/1 | 44.83% |
+| js/function/iife.js | 0/1 | 14.89% |
+| js/function/issue-12967.js | 0/1 | 0.00% |
+| js/if/expr_and_same_line_comments.js | 0/1 | 81.93% |
+| js/if/issue-15168.js | 0/1 | 91.43% |
+| js/if/non-block.js | 0/1 | 82.35% |
+| js/if/condition-break/boolean-expression.js | 0/1 | 94.03% |
+| js/if/condition-break/unary-expression.js | 0/1 | 61.38% |
+| js/label/comment.js | 0/1 | 58.82% |
+| js/last-argument-expansion/dangling-comment-in-arrow-function.js | 0/1 | 0.00% |
+| js/logical-expressions/in-unary-expression.js | 0/1 | 79.49% |
+| js/sequence-expression/parenthesized-trailing-comment-unstable.js | 0/1 | 66.67% |
+| js/sequence-expression/parenthesized.js | 0/1 | 85.71% |
+| js/switch/comments.js | 0/1 | 94.74% |
+| js/template-literals/expressions.js | 0/1 | 97.64% |
+| js/test-declarations/jest-each.js | 0/2 | 95.71% |
+| js/trailing-comma/trailing_whitespace.js | 0/3 | 96.55% |
+| js/try/try.js | 0/1 | 44.44% |
 
 # Refused
 
