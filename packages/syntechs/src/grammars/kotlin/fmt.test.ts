@@ -117,6 +117,18 @@ test("trailing commas drop from lambda parameters and one-line type lists, and a
   );
 });
 
+// A regression here gives a lone broken parameter a trailing comma, moves the comment after a recovered trailing
+// comma onto a line of its own, or carries a comment out of an accessor's parentheses or past its annotation's line.
+test("a lone item drops its comma and keeps its comment, as do an accessor's parentheses and an annotation", () => {
+  const input =
+    "class K {\n    fun f(\n        a: Int, //\n    ) {\n        g<\n            Int, //\n        >()\n    }\n\n" +
+    "    @A //\n    fun h() {}\n\n    val x: Int\n        get(\n            // c\n        ) = 0\n}\n";
+  expect(run(input, false)).toBe(
+    "class K {\n    fun f(\n        a: Int //\n    ) {\n        g<\n            Int //\n        >()\n    }\n\n" +
+      "    @A //\n    fun h() {}\n\n    val x: Int\n        get(\n            // c\n        ) = 0\n}\n",
+  );
+});
+
 // A regression here keeps a `when` entry's trailing comma, which puts `->` on a line of its own.
 test("a trailing comma drops from a when entry's conditions", () => {
   const input = "fun f() {\n    when (a) {\n        is A, //\n        is B, -> 1\n        2, -> 3\n    }\n}\n";

@@ -80,8 +80,21 @@ const adjacent = inOrder({ spaceWhen: { after: [","] } });
 
 const binary = () => inOrder(space);
 
-const typeList = (children: Parameters<typeof sepBy>[1]) =>
-  grpAngle(sepBy(",", children, { trailing: when("manyArguments"), imaginary: true }));
+// A parameter list's entries, `many` of them ending in a trailing comma while the list breaks. A lone parameter's
+// only top-level comma is a written trailing one, which ktfmt drops.
+const parameterList = (many: boolean) =>
+  grpParen(
+    splitOn(",", {
+      except: many ? ["(", ")"] : ["(", ")", ","],
+      item: "space",
+      trailing: many,
+      imaginary: true,
+      layout: { between: "line" },
+    }),
+  );
+
+const typeList =(children: Parameters<typeof sepBy>[1]) =>
+  grpAngle(sepBy(",", children, { trailing: when("manyItems"), imaginary: true }));
 
 // ktfmt puts a blank line before every declaration of a file or class body but between two properties (or two file
 // annotations), where it keeps the source's.
@@ -216,12 +229,12 @@ export const kotlin = format({
           ctorLine,
           $.children.at(0).andThen((m) => m),
           "constructor",
-          grpParen(sepBy(",", $.children.from(1), { trailing: true, imaginary: true })),
+          grpParen(sepBy(",", $.children.from(1), { trailing: when("manyItems"), imaginary: true })),
         ]),
         either(
           firstText({ is: ["constructor"] }),
-          group([ctorLine, "constructor", grpParen(sepBy(",", $.children, { trailing: true, imaginary: true }))]),
-          grpParen(sepBy(",", $.children, { trailing: true, imaginary: true })),
+          group([ctorLine, "constructor", grpParen(sepBy(",", $.children, { trailing: when("manyItems"), imaginary: true }))]),
+          grpParen(sepBy(",", $.children, { trailing: when("manyItems"), imaginary: true })),
         ),
       ),
     class_parameter: () => decl(spaced({ tightBefore: [":"] })),
@@ -239,15 +252,7 @@ export const kotlin = format({
     function_value_parameters: ($) =>
       either(
         has("children", "parameter"),
-        grpParen(
-          splitOn(",", {
-            except: ["(", ")"],
-            item: "space",
-            trailing: true,
-            imaginary: true,
-            layout: { between: "line" },
-          }),
-        ),
+        either(when("manyItems"), parameterList(true), parameterList(false)),
         grpParen(sepBy(",", $.children)),
       ),
     parameter: () => spaced({ tightBefore: [":"] }),
@@ -305,7 +310,7 @@ export const kotlin = format({
       either(
         when("soleLambda"),
         inOrder({ skip: [","] }),
-        grpParen(sepBy(",", $.children, { trailing: when("manyArguments"), imaginary: true })),
+        grpParen(sepBy(",", $.children, { trailing: when("manyItems"), imaginary: true })),
       ),
     // A named argument's value hangs off its `=` once it does not fit on that line, but a lambda stays there.
     value_argument: () =>
@@ -326,7 +331,7 @@ export const kotlin = format({
     indexing_suffix: ($) =>
       either(when("commaWritten"), grpBracket(sepBy(",", $.children, { trailing: true })), adjacent),
     // `[a, b]`, in an annotation's arguments. As a named argument's value it hangs off the `=` (`value_argument`).
-    collection_literal: ($) => grpBracket(sepBy(",", $.children, { trailing: true })),
+    collection_literal: ($) => grpBracket(sepBy(",", $.children, { trailing: when("manyItems") })),
     parenthesized_expression: () => inOrder(),
     spread_expression: () => inOrder(),
     // An annotated expression (`@Suppress("X") f()`) keeps the gap the source has after the annotation: where it

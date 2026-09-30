@@ -280,6 +280,79 @@ const listed = new Set(["value_argument", "parameter", "class_parameter"]);
 const recoveredComma = (t: FormatTree, c: number) =>
   t.text(c) === "" || (t.kindName(c) === "ERROR" && t.count(c) === 1 && t.text(t.child(c, 0)) === ",");
 
+/**
+ * The last item of a `recovering` list whose recovered trailing comma a comment ends the line of (`[0, //`): the
+ * comment trails that item, as it would after a comma the grammar reads as a separator, rather than the list.
+ */
+const itemBeforeComma = (t: FormatTree, comment: number) => {
+  const comma = prevLeaf(t, comment);
+  if (comma === NO_NODE || t.text(comma) !== ",") return undefined;
+  const error = t.parent(comma);
+  const list = t.kindName(error) === "ERROR" ? t.parent(error) : error;
+  if (!(recovering as readonly string[]).includes(t.kindName(list))) return undefined;
+  let last: number | undefined;
+  let after = false;
+  for (let i = 0; i < t.count(list); i++) {
+    const c = t.child(list, i);
+    if (c === comma || c === error) after = true;
+    else if (!after && t.named(c) && !recoveredComma(t, c) && !t.kindName(c).endsWith("comment")) last = c;
+    else if (after && t.named(c) && !recoveredComma(t, c) && !t.kindName(c).endsWith("comment")) return undefined;
+  }
+  return last;
+};
+
+/** The `(` and `)` of an accessor (`get()`, `set(value)`) that a comment lies between, else undefined. */
+const commentedAccessorParens = (t: FormatTree, comment: number) => {
+  const accessor = t.parent(comment);
+  if (!/^[gs]etter$/.test(t.kindName(accessor))) return undefined;
+  const open = childOf(t, accessor, "(");
+  const close = childOf(t, accessor, ")");
+  return open !== -1 && t.ord(open) < t.ord(comment) && t.ord(comment) < t.ord(close) ? accessor : undefined;
+};
+
+/**
+ * An accessor with comments between its parentheses, which the accessor holds as dangling (see handleComment):
+ * ktfmt breaks the parentheses and puts each comment and the parameter on a line of its own, dropping a trailing
+ * comma. Otherwise the accessor prints by its generated rule.
+ */
+const accessor =
+  <O>(generated: StreamRule<O> | undefined): StreamRule<O> =>
+  (node, ctx) => {
+    const t = ctx.tree;
+    const inner = ctx.danglingComments(node).filter((c) => commentedAccessorParens(t, c) === node);
+    if (inner.length === 0) return generated?.(node, ctx);
+    let inside = false;
+    let prev = false;
+    for (let i = 0; i < t.count(node); i++) {
+      const c = t.child(node, i);
+      const kind = t.kindName(c);
+      if (ctx.isComment(c) && !inner.includes(c)) continue;
+      if (inside) {
+        if (kind === ")") {
+          inside = false;
+          close();
+          sHardline();
+          sToken(c, ")");
+        } else if (inner.includes(c)) {
+          sHardline();
+          ctx.comment(c);
+        } else if (kind !== ",") {
+          sHardline();
+          ctx.print(c);
+        }
+      } else {
+        if (prev && kind !== "(" && kind !== ":") sText(" ");
+        if (kind === "(") {
+          sToken(c, "(");
+          open(INDENT);
+          inside = true;
+        } else if (t.named(c)) ctx.print(c);
+        else sToken(c, t.text(c));
+      }
+      prev = true;
+    }
+  };
+
 /** The kinds whose lists `recoveredComma` recovers a trailing comma in. */
 const recovering = [
   "collection_literal",
@@ -443,8 +516,17 @@ export const customs = {
     const brace = childOf(t, owner, "{");
     return brace !== -1 && nextLineEmpty(t, brace);
   },
-  /** ktfmt gives a broken argument list a trailing comma only when it holds two or more arguments. */
-  manyArguments: (node, ctx) => ctx.items(node).length > 1,
+  /**
+   * ktfmt gives a broken list a trailing comma only when it holds two or more items, and drops a written one from a
+   * single item. A parameter's modifiers and default are the list's children too, so a parameter list counts only
+   * its parameters.
+   */
+  manyItems: (node, ctx) => {
+    const t = ctx.tree;
+    const items = ctx.items(node).filter((c) => !recoveredComma(t, c));
+    const params = items.filter((c) => listed.has(t.kindName(c)));
+    return (params.length > 0 ? params : items).length > 1;
+  },
   /** Of a declaration's initializer or delegate, or a function's `=` body: a lambda, a scoping function, or a chain on one. */
   huggedChain: (node, ctx) => lambdaOrScoping(ctx.tree, node, true),
   /** Of an assignment's right side: a lambda or a scoping function, but no chain on one. */
@@ -567,6 +649,7 @@ function withChains<O>(stream: StreamRules<O>): StreamRules<O> {
   rules.set("lambda_literal", lambdas(stream.rules.get("lambda_literal")));
   rules.set("lambda_parameters", lambdaParameters);
   rules.set("when_entry", whenEntry(stream.rules.get("when_entry")));
+  for (const kind of ["getter", "setter"]) rules.set(kind, accessor(stream.rules.get(kind)));
   rules.set("primary_constructor", ctorComments(stream.rules.get("primary_constructor")));
   for (const kind of binaryKinds) rules.set(kind, binary(stream.rules.get(kind)));
   for (const kind of recovering) {
@@ -613,15 +696,26 @@ export const kotlin: Language<KotlinOptions> = {
     lineComments: { line_comment: "//" },
     // The parser puts an import's comment inside its import_header, where at the list's first import the core
     // would hoist it to lead the whole list.
-    handleComment: ({ tree, comment, preceding, following }) =>
-      endsImport(tree, comment)
+    handleComment: ({ tree, comment, preceding, following, placement }) => {
+      // A line comment ends its line even where the grammar's recovered empty item starts right after it.
+      const endsLine = placement === "endOfLine" || tree.kindName(comment) === "line_comment";
+      const item = endsLine ? itemBeforeComma(tree, comment) : undefined;
+      if (item !== undefined) return { node: item, as: "trailing" };
+      const accessor = commentedAccessorParens(tree, comment);
+      if (accessor !== undefined) return { node: accessor, as: "dangling" };
+      // A comment ending the line of a declaration's modifiers trails the last, which prints before the line the
+      // modifiers end in, rather than the modifiers, which would carry it past that line.
+      if (placement === "endOfLine" && preceding !== undefined && tree.kindName(preceding) === "modifiers")
+        return { node: tree.child(preceding, tree.count(preceding) - 1), as: "trailing" };
+      return endsImport(tree, comment)
         ? { node: tree.parent(comment), as: "trailing" }
         : preceding !== undefined &&
             following !== undefined &&
             tree.kindName(preceding) === "primary_constructor" &&
             tree.kindName(following) === "class_body"
           ? { node: preceding, as: "trailing" }
-          : undefined,
+          : undefined;
+    },
     defaults,
     settings: prettierSettings,
     normalize,

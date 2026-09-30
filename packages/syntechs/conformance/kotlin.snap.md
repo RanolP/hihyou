@@ -1,4 +1,4 @@
-kotlin compatibility: 711/753 (94.42%), 0 refused (ok:false), 11 excluded
+kotlin compatibility: 716/753 (95.09%), 0 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -10,9 +10,9 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | :------ | :---------: | :---------: |
 | comments.txt: Comments | 0/1 | 76.19% |
 | source-files.txt: Multiple Imports On A Single Line | 0/1 | 50.00% |
-| packages/syntechs/src/grammars/kotlin/corpus/Collections.kt | 0/1 | 96.90% |
-| packages/syntechs/src/grammars/kotlin/corpus/Result.kt | 0/1 | 99.56% |
-| packages/syntechs/src/grammars/kotlin/corpus/Transform.kt | 0/1 | 98.98% |
+| packages/syntechs/src/grammars/kotlin/corpus/Collections.kt | 0/1 | 97.24% |
+| packages/syntechs/src/grammars/kotlin/corpus/Result.kt | 0/1 | 99.85% |
+| packages/syntechs/src/grammars/kotlin/corpus/Transform.kt | 0/1 | 99.66% |
 | packages/syntechs/src/grammars/kotlin/corpus/Okio.kt | 0/1 | 97.44% |
 | ktfmt/format/annotation/exception.kt | 0/1 | 61.54% |
 | ktfmt/format/annotation/functionTypes.kt | 0/1 | 60.00% |
@@ -39,17 +39,12 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/misc/unaryPostfix.kt | 0/1 | 90.00% |
 | ktfmt/format/property/backingFieldWithChainedScopingFunction3.kt | 0/1 | 76.92% |
 | ktfmt/format/string/multiDollarString.kt | 0/1 | 44.44% |
-| ktfmt/google/comments.kt | 0/1 | 85.45% |
-| ktfmt/google/comments2.kt | 0/1 | 91.53% |
-| ktfmt/google/forcedBreaksInFunCalls.kt | 0/1 | 88.00% |
 | ktfmt/google/longFunctionTypeWrapping.kt | 0/1 | 33.33% |
-| ktfmt/google/redundantTrailingCommas.kt | 0/1 | 83.33% |
 | ktfmt/google/secondaryConstructorNoArgs.kt | 0/1 | 47.06% |
 | ktfmt/google/trailingCommasNotAdded.kt | 0/1 | 88.89% |
-| ktfmt/google/trailingCommasSingleElementLists.kt | 0/1 | 84.44% |
+| ktfmt/google/trailingCommasSingleElementLists.kt | 0/1 | 93.33% |
 | ktfmt/new_codestyle/annotation/AnnotationsOnParameters.kt | 0/1 | 82.61% |
 | ktfmt/new_codestyle/annotation/AnnotationsOnTypes.kt | 0/1 | 93.20% |
-| ktfmt/new_codestyle/annotation/UseSiteTargets.kt | 0/1 | 90.48% |
 
 # Refused
 
