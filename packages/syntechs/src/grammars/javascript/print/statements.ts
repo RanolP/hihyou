@@ -366,9 +366,9 @@ const isLogicalNot = (x: HasTree, n: number | undefined) =>
   kind(x, n) === "unary_expression" &&
   kind(x, field(x, n as number, "operator")) === "!";
 
-// Prettier's shouldInlineCondition (miscellaneous.js).
+// Prettier's shouldInlineCondition (miscellaneous.js); oxfmt inlines none.
 function shouldInlineCondition(ctx: JsCtx, n: number): boolean {
-  if (hasComment(ctx, n) || !isLogicalNot(ctx, n)) return false;
+  if (ctx.options.compat === "oxfmt" || hasComment(ctx, n) || !isLogicalNot(ctx, n)) return false;
   let a = unparen(ctx, field(ctx, n, "argument") ?? n);
   if (isLogicalNot(ctx, a)) a = unparen(ctx, field(ctx, a, "argument") ?? a);
   return (
