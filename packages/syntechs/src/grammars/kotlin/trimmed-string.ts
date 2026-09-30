@@ -1,7 +1,7 @@
 // A multiline string that `.trimIndent()` or `.trimMargin()` trims, re-indented as ktfmt 0.64's
 // MultilineStringFormatter does after it prints: the content lines at the indentation of the line the string
 // starts on (after a `|` for trimMargin), the closing `"""` on a line of its own.
-import { HARD, sBreakParent, sLine, sText, sToken } from "../../fmt/stream.js";
+import { HARD, sBreakParent, sKeptText, sLine, sText, sToken } from "../../fmt/stream.js";
 import type { StreamRule } from "../../fmt/stream-format.js";
 import type { FormatTree } from "../../fmt/tree.js";
 
@@ -12,8 +12,7 @@ const template = (dollars: number) => new RegExp(`\\\${${dollars}}((\\{?[A-Za-z_
 /**
  * The content lines ktfmt prints string literal `node` with, and whether it trims a margin; undefined when ktfmt
  * leaves the string as written: it is not a multiline raw string, no `.trimIndent()` or `.trimMargin()` follows
- * it, it holds a template or sits in another string. A string whose printed lines would end in whitespace is left
- * as written too, since the printer trims every line end.
+ * it, it holds a template or sits in another string.
  */
 export function trimmedString(
   t: FormatTree,
@@ -54,8 +53,6 @@ export function trimmedString(
     ...middle.map(trim),
     ...(blank(last) ? [] : [trim(last)]),
   ];
-  // A line prints after the indentation (and a margin's `|`) unless it is empty and trimIndent drops both.
-  if (lines.some((l) => /[ \t]$/.test(l) && (margin || l.length > 0))) return;
   return { prefix, margin, lines };
 }
 
@@ -71,7 +68,8 @@ export function trimmedStrings<O>(rule: StreamRule<O> | undefined): StreamRule<O
     sToken(node, `${s.prefix}"""`);
     for (const line of s.lines) {
       sLine(HARD);
-      if (s.margin || line.length > 0) sText((s.margin ? "|" : "") + line);
+      // A line prints after the indentation (and a margin's `|`) unless it is empty and trimIndent drops both.
+      if (s.margin || line.length > 0) sKeptText((s.margin ? "|" : "") + line);
     }
     // trimMargin closes on its last line when that line is empty: `|"""`.
     if (!(s.margin && s.lines.at(-1) === "")) sLine(HARD);

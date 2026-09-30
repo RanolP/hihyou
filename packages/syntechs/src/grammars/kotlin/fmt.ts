@@ -10,7 +10,7 @@ import {
 import { defineLanguage, type Language, type PrintArgs } from "../../fmt/rules.js";
 import { close, GROUP, HARD, IF_BROKEN, IF_FLAT, INDENT, open, sHardline, sLine, SOFT, sText, sToken } from "../../fmt/stream.js";
 import { docCommentWords, kdoc } from "../../fmt/dsl/doc-comment.js";
-import type { ImportRule, PredicateRule } from "../../fmt/dsl/runtime.js";
+import { type ImportRule, importBlocks, type PredicateRule } from "../../fmt/dsl/runtime.js";
 import { newlineBetween, nextLineEmpty } from "../../fmt/text.js";
 import { type FormatTree, firstLeaf, nextLeaf, prevLeaf } from "../../fmt/tree.js";
 import {
@@ -198,6 +198,88 @@ const imports: ImportRule<KotlinOptions> = {
     return true;
   },
 };
+
+/**
+ * The file rule, but a file left blank once ktfmt drops its unused imports prints as ktfmt 0.64 does: its Formatter
+ * returns blank code unformatted, so the line breaks around the imports stay, and the imports' span, which it
+ * rewrote as the distinct imports one per line before it dropped them, leaves the breaks between those.
+ */
+const blankFile =
+  <O>(rule: StreamRule<O> | undefined): StreamRule<O> =>
+  (node, outer) => {
+    const ctx = outer as unknown as StreamCtx<KotlinOptions>;
+    const t = ctx.tree;
+    const lists = ctx.items(node);
+    const commented = (n: number): boolean => {
+      if (ctx.isComment(n)) return true;
+      for (let i = 0; i < t.count(n); i++) if (commented(t.child(n, i))) return true;
+      return false;
+    };
+    if (
+      lists.some((l) => t.kindName(l) !== "import_list") ||
+      commented(node) ||
+      importBlocks(ctx, lists, "import_list", imports).items.length > 0
+    ) {
+      rule?.(node, outer);
+      return;
+    }
+    const all = lists.flatMap((l) => ctx.items(l));
+    const distinct = new Set(all.map((imp) => imports.key(t, imp, ctx))).size;
+    // The final line break prints after the file's rule; an empty file prints only that one.
+    const breaks = t.lf(node) + Math.max(distinct - 1, 0) + t.trailingLf;
+    for (let i = 1; i < breaks; i++) sLine(HARD);
+  };
+
+/** The kinds a Kotlin file declares at its top level; any other item is a statement, which only a script holds. */
+const topLevel = new Set([
+  "shebang_line",
+  "file_annotation",
+  "package_header",
+  "import_list",
+  "class_declaration",
+  "object_declaration",
+  "function_declaration",
+  "property_declaration",
+  "getter",
+  "setter",
+  "type_alias",
+]);
+
+/**
+ * The file rule, but a statement that ends the file with a comment on the line after it prints that comment
+ * right after it, on its line, as ktfmt 0.64 does (`1 + 2// c`): its parser reads such a statement as an error
+ * element, which drops the line break before the comment.
+ */
+const gluedComment =
+  <O>(rule: StreamRule<O> | undefined): StreamRule<O> =>
+  (node, ctx) => {
+    const last = ctx.items(node).at(-1);
+    const first = last === undefined ? undefined : ctx.trailingComments(last)[0];
+    if (
+      last === undefined ||
+      first === undefined ||
+      topLevel.has(ctx.tree.kindName(last)) ||
+      ctx.isBroken(last) ||
+      ctx.ownsComments(last) ||
+      ctx.tree.lf(first) !== 1
+    ) {
+      rule?.(node, ctx);
+      return;
+    }
+    const print: StreamCtx<O>["print"] = (n, args) => {
+      if (n !== last) {
+        ctx.print(n, args);
+        return;
+      }
+      printLeadingComments(ctx, n);
+      ctx.printNode(n, args);
+      ctx.comment(first);
+      let previous: Trailed = { line: ctx.isLineComment(first), suffix: false };
+      for (const c of ctx.trailingComments(n).slice(1))
+        previous = printTrailingComment(ctx, commentFacts(ctx, c), previous);
+    };
+    rule?.(node, Object.assign(Object.create(ctx) as typeof ctx, { print }));
+  };
 
 /**
  * Whether `comment` ends an import's line (`import a.B // note`): it trails the import, so it moves with the
@@ -1067,6 +1149,7 @@ function withChains<O>(stream: StreamRules<O>): StreamRules<O> {
   for (const kind of ["navigation_expression", "call_expression", "indexing_expression", "postfix_expression"])
     rules.set(kind, chained(stream.rules.get(kind), hugsDeclaration));
   rules.set("statements", statements(stream.rules.get("statements")));
+  rules.set("source_file", gluedComment(blankFile(stream.rules.get("source_file"))));
   rules.set("if_expression", ifExpression);
   rules.set("companion_object", companionObject(supertypes(stream.rules.get("companion_object"))));
   for (const kind of ["class_declaration", "object_declaration"]) rules.set(kind, supertypes(stream.rules.get(kind)));

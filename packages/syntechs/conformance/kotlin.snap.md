@@ -1,4 +1,4 @@
-kotlin compatibility: 750/753 (99.60%), 0 refused (ok:false), 11 excluded
+kotlin compatibility: 753/753 (100.00%), 0 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -8,9 +8,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
-| comments.txt: Comments | 0/1 | 85.71% |
-| source-files.txt: Multiple Imports On A Single Line | 0/1 | 50.00% |
-| ktfmt/format/string/multiDollarString.kt | 0/1 | 44.44% |
 
 # Refused
 

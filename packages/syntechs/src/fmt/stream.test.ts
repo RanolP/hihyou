@@ -44,6 +44,7 @@ import {
   printStream,
   resetStream,
   sHardline,
+  sKeptText,
   sLine,
   sLineSuffixBoundary,
   sLiteral,
@@ -820,6 +821,18 @@ describe("printStream under ruff's measure", () => {
       close();
     });
     expect(out).toBe("a bb\n  cccc d\nee");
+  });
+
+  // Kotlin's `|   ` line inside a trimMargin string would lose its spaces, changing the string's value.
+  it("keeps the trailing whitespace of kept text at a line end, trimming only what follows it", () => {
+    const out = printed(80, () => {
+      sKeptText("|  ");
+      sText(" ");
+      sHardline();
+      sText("a ");
+      sHardline();
+    });
+    expect(out).toBe("|  \na\n");
   });
 
   it("counts a line suffix's reserved columns against the line it is queued on", () => {
