@@ -1,8 +1,8 @@
 // Runs inside VS Code for the Web's extension host (a web worker: no Node, no process.env), loaded by
-// test/web.mjs on this repository with the file below edited.
+// test/web.mjs on a fresh repository with the file below edited.
 const vscode = require("vscode");
 
-const touched = "packages/vscode/src/review.ts";
+const touched = "hello.ts";
 
 function check(ok, message) {
   if (!ok) throw new Error(`hihyou web e2e: ${message}`);
