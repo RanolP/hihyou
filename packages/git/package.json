@@ -1,0 +1,19 @@
+{
+  "name": "@hihyou/git",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "@hihyou/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "bench": "tsc -b && node bench/run.mjs ../.."
+  },
+  "dependencies": {
+    "@hihyou/engine": "workspace:*"
+  }
+}
