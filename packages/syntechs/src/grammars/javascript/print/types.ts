@@ -8,11 +8,14 @@ import {
   commentFacts,
   printLeadingComment,
   printLeadingComments,
+  printTrailingComment,
   printTrailingComments,
+  type Trailed,
   type StreamRule,
 } from "../../../fmt/stream-format.js";
 import { lfAfter, newlineBetween, nextLineEmpty } from "../../../fmt/text.js";
-import { firstLeaf } from "../../../fmt/tree.js";
+import { NO_NODE } from "../../../core/arena.js";
+import { firstLeaf, nextLeaf, prevLeaf } from "../../../fmt/tree.js";
 import {
   BROKEN,
   capture,
@@ -59,6 +62,7 @@ import {
   type HasTree,
   hasComment,
   isComment,
+  isIgnoreComment,
   isMember,
   isSimpleType,
   items,
@@ -644,6 +648,54 @@ const ambientDeclaration: CustomRule<JsOptions> = (n, sctx) => {
 
 // --- casts ----------------------------------------------------------------------------------------------------
 
+/**
+ * oxfmt's slots for the comments between a cast's expression and its type (as_or_satisfies_expression.rs): the
+ * run before the operator that stays on the expression's line and spans no lines trails the expression (`glued`);
+ * the run after it still on the operator's line prints there (`after`), unless a union takes it or comments moved
+ * from before the operator are pending; the `rest` leads the type, which breaks onto its own line when a glued line
+ * comment rides the operator or a rest comment ends its line on a line of its own or spanning lines. Undefined
+ * when there are none, or an ignore comment is among them, which the type's own leading pass keeps.
+ */
+export interface CastGap {
+  glued: number[];
+  after: number[];
+  rest: number[];
+  ownLine: boolean;
+}
+
+export function castGap(x: HasTree, n: number): CastGap | undefined {
+  const t = x.tree;
+  const keyword = anonKids(x, n).find((c) => kind(x, c) === "as" || kind(x, c) === "satisfies");
+  if (keyword === undefined) return;
+  const before: number[] = [];
+  for (let l = prevLeaf(t, keyword); l !== NO_NODE; l = prevLeaf(t, l)) {
+    if (isComment(x, l)) before.unshift(l);
+    else if (kind(x, l) !== ")" || kind(x, parent(x, l)) !== "parenthesized_expression") break;
+  }
+  const after: number[] = [];
+  for (let l = nextLeaf(t, keyword); l !== NO_NODE && isComment(x, l); l = nextLeaf(t, l)) after.push(l);
+  const all = [...before, ...after];
+  if (all.length === 0 || all.some((c) => isIgnoreComment(x, c))) return;
+  const spans = (c: number) => t.text(c).startsWith("/*") && t.text(c).includes("\n");
+  const ownLineBefore = (c: number) => t.lf(c) > 0;
+  const endsLine = (c: number) => lfAfter(t, c) > 0;
+  const isLine = (c: number) => t.text(c).startsWith("//");
+  let g = 0;
+  while (g < before.length && !ownLineBefore(before[g] as number) && !spans(before[g] as number)) g++;
+  const type = items(x, n)[1];
+  const union = type !== undefined && kind(x, type) === "union_type" && items(x, type).length > 1;
+  let a = 0;
+  if (!union && g === before.length)
+    while (a < after.length && !ownLineBefore(after[a] as number) && !(spans(after[a] as number) && endsLine(after[a] as number)))
+      a++;
+  const glued = before.slice(0, g);
+  const rest = [...before.slice(g), ...after.slice(a)];
+  const promoted = (c: number) => endsLine(c) && (ownLineBefore(c) || spans(c));
+  const ownLine =
+    glued.some(isLine) || after.slice(0, a).some(isLine) || (!union && rest.some(promoted));
+  return { glued, after: after.slice(0, a), rest, ownLine };
+}
+
 /** Prettier's printBinaryCastExpression: `x as T`, `x satisfies T`. */
 const castExpression: CustomRule<JsOptions> = (n, sctx) => {
   const ctx = jsCtx(sctx);
@@ -663,12 +715,23 @@ const castExpression: CustomRule<JsOptions> = (n, sctx) => {
     open(INDENT);
     sLine(SOFT);
   }
+  const gap = js.options.compat === "oxfmt" ? castGap(js, n) : undefined;
   pr(ctx, expression);
   sText(" ");
   tok(js, keyword);
-  sText(" ");
+  let trailed: Trailed | undefined;
+  for (const c of gap?.after ?? []) trailed = printTrailingComment(ctx, commentFacts(ctx, c), trailed);
+  if (gap?.ownLine) {
+    open(INDENT);
+    sHardline();
+  } else sText(" ");
   if (type !== undefined) ctx.print(type);
-  else tok(js, anonKid(js, n, "const"));
+  else {
+    // `as const` has no type node to lead, so the cast holds the rest.
+    for (const c of gap?.rest ?? []) printLeadingComment(ctx, commentFacts(ctx, c));
+    tok(js, anonKid(js, n, "const"));
+  }
+  if (gap?.ownLine) close();
   if (grouped) {
     close();
     sLine(SOFT);

@@ -8,7 +8,7 @@ import { newlineBetween } from "../../../fmt/text.js";
 import { firstLeaf, nextLeaf, prevLeaf } from "../../../fmt/tree.js";
 import { heritage } from "./classes.js";
 import { STATEMENT_LIST_PARENTS } from "./statements.js";
-import { flattenTypes, mappedClauseOf, unparenType } from "./types.js";
+import { castGap, flattenTypes, mappedClauseOf, unparenType } from "./types.js";
 import {
   callArguments,
   callee,
@@ -19,6 +19,7 @@ import {
   isCastParen,
   isIgnoreComment,
   isTypeCastComment,
+  items,
   type JsOptions,
   kind,
   lastChildWhere,
@@ -545,6 +546,25 @@ const beforeArguments = (c: CommentContext<JsOptions>): CommentTarget | undefine
 };
 
 const AS_EXPRESSIONS = new Set(["as_expression", "satisfies_expression"]);
+
+/**
+ * The comments between a cast's expression and its type, under oxfmt, in castGap's slots: the glued run trails the
+ * expression, the cast holds the run after the operator, and the rest leads the type (or the cast, for `as const`).
+ */
+const oxfmtCast = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  if (c.options.compat !== "oxfmt") return;
+  let n: number | undefined = c.enclosing;
+  while (n !== undefined && kind(c, n) === "parenthesized_expression") n = parent(c, n);
+  if (n === undefined || !AS_EXPRESSIONS.has(kind(c, n))) return;
+  const gap = castGap(c, n);
+  if (gap === undefined) return;
+  const [expression, type] = items(c, n);
+  if (expression !== undefined && gap.glued.includes(c.comment)) return { node: expression, as: "trailing" };
+  if (gap.after.includes(c.comment)) return { node: n, as: "dangling" };
+  if (gap.rest.includes(c.comment))
+    return type !== undefined ? { node: type, as: "leading" } : { node: n, as: "dangling" };
+  return;
+};
 
 /**
  * `1 as /*⏎c⏎*\/ Foo`: a block comment spanning lines after the expression leads the type, or trails the whole
@@ -1326,6 +1346,7 @@ const oxfmtAfterDroppedParen = (c: CommentContext<JsOptions>): CommentTarget | u
 // In prettier's order within each placement: typeCast and conditional run early, nestedConditional last.
 const handlers = [
   oxfmtTypeAliasHead,
+  oxfmtCast,
   oxfmtReturnSequence,
   oxfmtChainHead,
   oxfmtMemberObject,
