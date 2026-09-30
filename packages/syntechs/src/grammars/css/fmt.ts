@@ -846,20 +846,36 @@ function unparsedUrl(n: number, ctx: SCtx): boolean {
   return children(n, t).some((c) => unparsedUrl(c, ctx));
 }
 
+/** The functions oxc-css-parser reads with the calc grammar, the one place its CSS grammar takes a `( … )` group. */
+const mathFunctions = new Set(
+  "calc -webkit-calc -moz-calc min max clamp sin cos tan asin acos atan sqrt exp abs sign hypot round mod rem atan2 pow log".split(
+    " ",
+  ),
+);
+
 /**
- * A Sass variable's or custom property's value kept as written: one holding a `( … )` group anywhere
- * (`$map: (a: 1)`, `foo( (1, 2) )`), or a `{ … }` outside any function (`[1, {"a":1}]`, `function(x) { … }`).
+ * A Sass variable's or custom property's value kept as written: one oxc-css-parser's typed grammar cannot read to
+ * its end, so it falls back to raw tokens that oxfmt prints verbatim. That grammar takes a `( … )` group only as a
+ * calc operand (`calc((1px + 2px) * 2)`) holding one calc sum (`(1px +2px)` is two values), so any other group
+ * (`$map: (a: 1)`, `fn( (1) )`) makes the value raw; so does a `{ … }` outside any function (`[1, {"a":1}]`,
+ * `function(x) { … }`).
  */
 function rawValue(decl: number, ctx: SCtx): boolean {
   const t = ctx.tree;
   if (!/^(\$|--)/.test(t.text(t.child(decl, 0)))) return false;
-  const raw = (n: number, inCall: boolean): boolean =>
+  const calcSum = (paren: number) => code(paren, ctx).filter((c) => t.named(c)).length === 1;
+  const raw = (n: number, inCall: boolean, inMath: boolean): boolean =>
     children(n, t).some((c) => {
       const k = kind(c, ctx);
-      if (k === "parenthesized_value" || (k === "brace_value" && !inCall)) return true;
-      return raw(c, inCall || k === "call_expression");
+      if (k === "parenthesized_value" && !(inMath && calcSum(c))) return true;
+      if (k === "brace_value" && !inCall) return true;
+      const math =
+        k === "call_expression"
+          ? mathFunctions.has(t.text(t.child(c, 0)).toLowerCase())
+          : inMath && (k === "arguments" || k === "binary_expression" || k === "parenthesized_value");
+      return raw(c, inCall || k === "call_expression", math);
     });
-  return raw(decl, false);
+  return raw(decl, false, false);
 }
 
 /** The source between `prev` and `c`, less any whitespace ending a line. */

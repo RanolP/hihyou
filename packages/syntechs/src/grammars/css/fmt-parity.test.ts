@@ -116,6 +116,12 @@ const edgeCases: [string, string][] = [
   ["layer-list", "@layer a,b;@layer c , d;@LAYER e\n,f;"],
   // A paren group in a value lost its gaps, `(1 2)` printing `(12)`.
   ["value-parens", "a{b:foo( (1 ,2) );c:(a  b,c) x (1 2);d:foo((1,2),(3 +4))}"],
+  // A custom property's or Sass variable's value holding a paren group was kept as written; oxfmt keeps it only
+  // where oxc-css-parser's typed grammar rejects the group, which it takes solely as a calc operand of one sum.
+  [
+    "custom-property-calc-parens",
+    ".card-header-long-selector-name{--bs-card-inner-border-radius:calc(var(--bs-border-radius) - (var(--bs-border-width)));--a:calc( (1px + 2px) * 2 );--b:max( (1px), 2px );$c:fn(calc( (1px) ));--d:fn( (1) );--e:calc( (1px+2px) );--f:calc( (1px, 2px) );--g:-o-calc( (1px) );--h:(1) calc((2))}",
+  ],
   // An at-rule's params print as raw text, which once dropped the comments attached to them.
   ["at-rule-param-comment", "@counter-style /* c */ thumbs {}"],
   [
@@ -196,7 +202,7 @@ const chunks = (s: string) => s.split(/\n(?=[^\s}])/);
 const ratchet: [string, Partial<CssOptions>, string, number, number][] = [
   ["defaults", {}, "normalize.css", 96, 96],
   ["defaults", {}, "animate.css", 328, 328],
-  ["defaults", {}, "bootstrap.css", 1638, 1641],
+  ["defaults", {}, "bootstrap.css", 1641, 1641],
   [
     "singleQuote, tabWidth 4, printWidth 100",
     optionSets[1]?.[1] ?? {},
