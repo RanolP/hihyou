@@ -212,6 +212,8 @@ const edgeCases: [string, string][] = [
     "math-chain-in-fill",
     `a{b:${"x ".repeat(36)}// c;d:${"x ".repeat(37)}/ c;e:${"x ".repeat(37)}* c;f:${"x ".repeat(30)}// c // d // e // f}`,
   ],
+  // A word CSS Syntax lexes as an ident then more tokens (`a/c`) counted as one value, so its list stayed packed.
+  ["ident-then-more-list", "a{b:a/c, d;c:d, a-b/c;e:a%c, d;f:a/c,d/e;g:U+0-7F, a}"],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");

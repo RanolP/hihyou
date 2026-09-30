@@ -204,6 +204,15 @@ function parts(n: number, ctx: SCtx): number {
     : 1;
 }
 
+/**
+ * A word the grammar reads whole but CSS Syntax lexes as an ident then more tokens (`a/c`, `a*1`, `a%c`), but a
+ * unicode range (`U+0025-00FF`), one token to oxc-css-parser.
+ */
+const identThenMore = (n: number, ctx: SCtx) =>
+  kind(n, ctx) === "plain_value" &&
+  !/^u\+[\da-f?]/i.test(ctx.tree.text(n)) &&
+  new RegExp(String.raw`^-?(?:-|${nameStart})${nameChar}*(?!${nameChar})[^]`).test(ctx.tree.text(n));
+
 /** The rules `when` names in format.ts. */
 export const customs = {
   /** Prettier indents a selector of more than two nodes as it breaks. */
@@ -223,7 +232,8 @@ export const customs = {
   mathEntry: (node, ctx) =>
     code(node, ctx).some(
       (c, i, all) =>
-        ["binary_expression", "unary_expression"].includes(kind(c, ctx)) &&
+        (["binary_expression", "unary_expression"].includes(kind(c, ctx)) ||
+          identThenMore(c, ctx)) &&
         ![all[i - 1], all[i + 1]].some(
           (n) => n !== undefined && ctx.tree.named(n) && !["property_name", "important"].includes(kind(n, ctx)),
         ),
