@@ -313,7 +313,7 @@ Everything above is evidence except where marked.
 
 ```sh
 # once, in a fresh worktree
-bash scripts/worktree-setup.sh
+node scripts/worktree-setup.js
 pnpm run build
 
 node packages/syntechs/dist/fmt/phases.node.js cold json   # also css, js, ts, python

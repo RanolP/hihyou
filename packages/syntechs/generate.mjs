@@ -3,7 +3,7 @@
 // in a deep checkout. The compiler is TypeScript and the TypeScript build needs the bundles, so esbuild bundles
 // it first.
 //
-// scripts/worktree-setup.sh sets HIHYOU_SKIP_GRAMMAR_GENERATE when it has already copied bundle.js files built
+// scripts/worktree-setup.js sets HIHYOU_SKIP_GRAMMAR_GENERATE when it has already copied bundle.js files built
 // from a checkout on the same pnpm-lock.yaml and grammar packages, so a fresh worktree's install doesn't redo this work.
 //
 // The formatters, src/grammars/<name>/fmt.gen.ts, are generated from the bundles and each language's format.ts

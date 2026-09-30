@@ -3,8 +3,9 @@ dist/
 *.tsbuildinfo
 coverage/
 .claude/
-research/parser-bench/inputs/
-packages/syntechs/corpus/
+# No trailing slash: scripts/worktree-setup.js makes these symlinks, which a directory-only pattern misses.
+research/parser-bench/inputs
+packages/syntechs/corpus
 # A grammar package tracks only its manifest and patch; its postinstall assembles the rest, from .cache/.
 packages/syntechs/grammars/*/*
 !packages/syntechs/grammars/*/package.json
