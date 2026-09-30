@@ -1,10 +1,10 @@
-// Regenerates the language bundles: `node packages/syntechs/generate.mjs [grammar...]`. The root postinstall runs
+// Regenerates the language bundles: `node packages/syntechs/generate.mjs [grammar...]`. syntechs' postinstall runs
 // it with plain node, not a nested `pnpm run`, whose task-state files overflow Windows' 260-character path limit
 // in a deep checkout. The compiler is TypeScript and the TypeScript build needs the bundles, so esbuild bundles
 // it first.
 //
 // scripts/worktree-setup.sh sets HIHYOU_SKIP_GRAMMAR_GENERATE when it has already copied bundle.js files built
-// from a checkout on the same pnpm-lock.yaml, so a fresh worktree's install doesn't redo this work.
+// from a checkout on the same pnpm-lock.yaml and grammar packages, so a fresh worktree's install doesn't redo this work.
 //
 // The formatters, src/grammars/<name>/fmt.gen.ts, are generated from the bundles and each language's format.ts
 // every time, the copied bundles included: they are cheap, and a spec edit must reach them.

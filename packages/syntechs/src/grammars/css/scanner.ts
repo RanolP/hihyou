@@ -1,4 +1,4 @@
-// Port of tree-sitter-css 0.25.0 src/scanner.c as patches/tree-sitter-css@0.25.0.patch leaves it. Its one byte of
+// Port of tree-sitter-css 0.25.0 src/scanner.c as packages/syntechs/grammars/tree-sitter-css/grammar.patch leaves it. Its one byte of
 // state: whether it is inside `@custom-selector ... ;`, whose selectors end in `;` rather than `{`.
 
 import type { ExternalScanner, Lexer } from "../../core/lexer.js";

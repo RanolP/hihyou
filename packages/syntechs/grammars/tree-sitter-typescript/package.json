@@ -1,0 +1,37 @@
+{
+  "name": "tree-sitter-typescript",
+  "version": "0.23.2",
+  "private": true,
+  "scripts": {
+    "postinstall": "node ../build.mjs"
+  },
+  "grammar": {
+    "sources": [
+      {
+        "repo": "tree-sitter/tree-sitter-typescript",
+        "commit": "f975a621f4e7f532fe322e13c4f79495e0a7b2e7",
+        "files": {
+          "tree-sitter.json": "4f39daa6a0bde84506cdeaf0b4460ed262df880030b3e6073868d0c746932291",
+          "common/define-grammar.js": "c2ac6894e0db6164f56dc339788d9da2da60ce1f81d888e6b74a74fc81db818f",
+          "common/scanner.h": "da66ef2bd14a3f7ea743e25ba068c6c9aae2c3509db200ff80c4a0e6116e564c",
+          "typescript/grammar.js": "7e4109889b2ce2731dde89f82f545a12f1e54a286f72bc874f1aed9965c5d5ae",
+          "typescript/src/scanner.c": "9125013b42cb888379d9be909f1d73dfb75a37626c2cdbf4122718a2b431a6d3",
+          "tsx/grammar.js": "19b7bc89bac1dfbb64e01ca15ca52345056028c2582d71762efd675af947a0f6",
+          "tsx/src/scanner.c": "d563cd30b2f39718c9ae4292795c5ce03a2ad01954ba3a86ef84c2781a736673"
+        }
+      },
+      {
+        "repo": "tree-sitter/tree-sitter-javascript",
+        "commit": "3a837b6f3658ca3618f2022f8707e29739c91364",
+        "into": "node_modules/tree-sitter-javascript",
+        "files": {
+          "grammar.js": "230e330dd914d94297e5e58d53942cd5debf9c069852da93b6a6b1daae1967dc"
+        }
+      }
+    ],
+    "generate": [
+      "typescript",
+      "tsx"
+    ]
+  }
+}

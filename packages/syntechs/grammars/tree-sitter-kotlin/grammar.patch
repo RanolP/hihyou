@@ -1,0 +1,632 @@
+scanner.c: no automatic semicolon before a same-line word starting with `e`, which cut
+`return emit(x)` into `return` and `emit(x)`. packages/syntechs/src/grammars/kotlin/scanner.ts ports the
+same change. grammar.js: `fun interface`, an enum body's repeated `;`, and an `=` in an if/when/while
+condition (which ktfmt formats although the compiler rejects it), and an annotated declaration winning over
+an annotated expression when both parse.
+
+--- a/grammar.js
++++ b/grammar.js
+@@ -70,26 +70,25 @@
+     // "expect" as a plaform modifier conflicts with expect as an identifier
+     [$.platform_modifier, $.simple_identifier],
+     // "data", "inner" as class modifier or id
+     [$.class_modifier, $.simple_identifier],
++    // "context" as context parameters or an identifier (a call to `context`)
++    [$.context_parameters, $.simple_identifier],
+ 
+     // "<x>.<y> = z assignment conflicts with <x>.<y>() function call"
+     [$._postfix_unary_expression, $._expression],
+ 
+     // ambiguity between generics and comparison operations (foo < b > c)
+-    [$.call_expression, $.range_expression, $.comparison_expression],
+-    [$.call_expression, $.elvis_expression, $.comparison_expression],
+-    [$.call_expression, $.check_expression, $.comparison_expression],
+-    [$.call_expression, $.additive_expression, $.comparison_expression],
+-    [$.call_expression, $.infix_expression, $.comparison_expression],
+-    [$.call_expression, $.multiplicative_expression, $.comparison_expression],
+-    [$.type_arguments, $._comparison_operator],
++    [$._unary_expression, $.call_expression],
++    [$._expression, $.call_expression],
+ 
+     // ambiguity between prefix expressions and annotations before functions
+     [$._statement, $.prefix_expression],
+     [$._statement, $.prefix_expression, $.modifiers],
+     [$.prefix_expression, $.when_subject],
+     [$.prefix_expression, $.value_argument],
++    // an annotated expression's dynamic precedence leaves annotation-then-expression to runtime
++    [$.prefix_expression],
+ 
+     // ambiguity between multiple user types and class property/function declarations
+     [$.user_type],
+     [$.user_type, $.anonymous_function],
+@@ -118,8 +117,9 @@
+     $.multiline_comment,
+     $._string_start,
+     $._string_end,
+     $.string_content,
++    $._constructor_ahead,
+   ],
+ 
+   extras: $ => [
+     $.line_comment,
+@@ -128,8 +128,10 @@
+   ],
+ 
+   word: $ => $._alpha_identifier,
+ 
++  inline: $ => [$._typed_callee],
++
+   rules: {
+     // ====================
+     // Syntax grammar
+     // ====================
+@@ -171,9 +173,9 @@
+       optional(choice(seq(".", $.wildcard_import), $.import_alias)),
+       $._semi
+     ),
+ 
+-    wildcard_import: _ => token.immediate("*"),
++    wildcard_import: _ => "*",
+ 
+     import_alias: $ => seq("as", alias($.simple_identifier, $.type_identifier)),
+ 
+     top_level_object: $ => seq($._declaration, optional($._semi)),
+@@ -210,9 +212,9 @@
+ 
+     class_declaration: $ => prec.right(choice(
+       seq(
+         optional($.modifiers),
+-        choice("class", "interface"),
++        choice("class", seq(optional("fun"), "interface")),
+         alias($.simple_identifier, $.type_identifier),
+         optional($.type_parameters),
+         optional($.primary_constructor),
+         optional(seq(":", $._delegation_specifiers)),
+@@ -230,10 +232,12 @@
+         optional($.enum_class_body)
+       )
+     )),
+ 
++    // `_constructor_ahead` is never lexed: where the parser could take it, scanner.c inserts no semicolon before
++    // a `constructor` (after its annotations and modifiers) on a later line, which then continues the class header.
+     primary_constructor: $ => seq(
+-      optional(seq(optional($.modifiers), "constructor")),
++      optional(seq(optional($._constructor_ahead), optional($.modifiers), "constructor")),
+       $._class_parameters
+     ),
+ 
+     class_body: $ => seq("{", optional($._class_member_declarations), "}"),
+@@ -261,14 +265,15 @@
+       // $._annotated_delegation_specifier, // TODO: Annotations cause ambiguities with type modifiers
+       ","
+     )),
+ 
+-    delegation_specifier: $ => prec.left(choice(
++    // Annotations on a supertype (`: @Ann("arg") Base(), @Ann I`) belong to its specifier.
++    delegation_specifier: $ => prec.left(seq(repeat($.annotation), choice(
+       $.constructor_invocation,
+       $.explicit_delegation,
+       $.user_type,
+       $.function_type
+-    )),
++    ))),
+ 
+     constructor_invocation: $ => seq($.user_type, $.value_arguments),
+ 
+     _annotated_delegation_specifier: $ => seq(repeat($.annotation), $.delegation_specifier),
+@@ -395,19 +400,21 @@
+         $.function_body
+       ))
+     )),
+ 
+-    setter: $ => prec.right(seq(
++    // An annotated `@A set(value) {}` after a getter would otherwise read as an annotated call with a lambda.
++    setter: $ => prec.dynamic(1, prec.right(seq(
+       optional($.modifiers),
+       "set",
+       optional(seq(
+         "(",
+         $.parameter_with_optional_type,
++        optional(","),
+         ")",
+         optional(seq(":", $._type)),
+         $.function_body
+       ))
+-    )),
++    ))),
+ 
+     parameters_with_optional_type: $ => seq("(", sep1($.parameter_with_optional_type, ","), ")"),
+ 
+     parameter_with_optional_type: $ => seq(
+@@ -442,9 +449,9 @@
+ 
+     enum_class_body: $ => seq(
+       "{",
+       optional($._enum_entries),
+-      optional(seq(";", optional($._class_member_declarations))),
++      optional(seq(repeat1(";"), optional($._class_member_declarations))),
+       "}"
+     ),
+ 
+     _enum_entries: $ => seq(sep1($.enum_entry, ","), optional(",")),
+@@ -478,11 +485,13 @@
+ 
+     not_nullable_type: $ => seq(
+       optional($.type_modifiers),
+       choice($.user_type, $.parenthesized_user_type),
+-      '&',
+-      optional($.type_modifiers),
+-      choice($.user_type, $.parenthesized_user_type),
++      repeat1(seq(
++        '&',
++        optional($.type_modifiers),
++        choice($.user_type, $.parenthesized_user_type),
++      )),
+     ),
+ 
+     nullable_type: $ => seq(
+       choice($._type_reference, $.parenthesized_type),
+@@ -544,20 +553,22 @@
+     ),
+ 
+     _statement: $ => choice(
+       $._declaration,
+-      seq(
+-        repeat(choice($.label, $.annotation)),
+-        choice(
+-          $.assignment,
+-          $._loop_statement,
+-          $._expression
+-        )
+-      )
++      $._unannotated_statement,
++      // Costs more than any realistic run of annotated prefix_expressions, so an annotated expression statement
++      // keeps its prefix_expression shape; only a label or an assignment, which prefix_expression cannot hold, lands here.
++      prec.dynamic(-16, seq(repeat1(choice($.label, $.annotation)), $._unannotated_statement))
+     ),
+ 
++    _unannotated_statement: $ => choice(
++      $.assignment,
++      $._loop_statement,
++      $._expression
++    ),
++
+     label: $ => token(seq(
+-      /[a-zA-Z_][a-zA-Z_0-9]*/,
++      choice(/[a-zA-Z_][a-zA-Z_0-9]*/, /`[^\r\n`]+`/),
+       "@"
+     )),
+ 
+     control_structure_body: $ => choice($._block, $._statement),
+@@ -583,9 +594,9 @@
+ 
+     while_statement: $ => seq(
+       "while",
+       "(",
+-      $._expression,
++      $._condition,
+       ")",
+       choice(";", $.control_structure_body)
+     ),
+ 
+@@ -593,9 +604,9 @@
+       "do",
+       optional($.control_structure_body),
+       "while",
+       "(",
+-      $._expression,
++      $._condition,
+       ")",
+     )),
+ 
+     // See also https://github.com/tree-sitter/tree-sitter/issues/160
+@@ -631,15 +642,33 @@
+     ),
+ 
+     postfix_expression: $ => prec.left(PREC.POSTFIX, seq($._expression, $._postfix_unary_operator)),
+ 
+-    call_expression: $ => prec.left(PREC.POSTFIX, seq($._expression, $.call_suffix)),
++    // Type arguments only follow a postfix-level callee, as in Kotlin's postfixUnarySuffix: `a ?: C.g<T>(r)` calls
++    // `C.g`, never `a ?: C.g`, which a comparison would otherwise tie with.
++    call_expression: $ => choice(
++      prec.left(PREC.POSTFIX, seq($._expression, $.call_suffix)),
++      seq($._typed_callee, alias($._typed_call_suffix, $.call_suffix))
++    ),
+ 
++    _typed_callee: $ => choice(
++      $._primary_expression,
++      $.postfix_expression,
++      $.call_expression,
++      $.indexing_expression,
++      $.navigation_expression
++    ),
++
+     indexing_expression: $ => prec.left(PREC.POSTFIX, seq($._expression, $.indexing_suffix)),
+ 
+     navigation_expression: $ => prec.left(PREC.POSTFIX, seq($._expression, $.navigation_suffix)),
+ 
+-    prefix_expression: $ => prec.right(seq(choice($.annotation, $.label, $._prefix_unary_operator), $._expression)),
++    prefix_expression: $ => choice(
++      prec.right(seq(choice($.label, $._prefix_unary_operator), $._expression)),
++      // An annotated expression loses to an annotated declaration when both parse, so `@A("x")\nclass C` stays
++      // one class rather than the statement `@A ("x")` and a class, and `@A class C {}` is not `class` infix `C`.
++      prec.right(prec.dynamic(-1, seq($.annotation, $._expression)))
++    ),
+ 
+     as_expression: $ => prec.left(PREC.AS, seq($._expression, $._as_operator, $._type)),
+ 
+     spread_expression: $ => prec.left(PREC.SPREAD, seq("*", $._expression)),
+@@ -664,9 +693,9 @@
+     multiplicative_expression: $ => prec.left(PREC.MULTIPLICATIVE, seq($._expression, $._multiplicative_operator, $._expression)),
+ 
+     additive_expression: $ => prec.left(PREC.ADDITIVE, seq($._expression, $._additive_operator, $._expression)),
+ 
+-    range_expression: $ => prec.left(PREC.RANGE, seq($._expression, "..", $._expression)),
++    range_expression: $ => prec.left(PREC.RANGE, seq($._expression, choice("..", "..<"), $._expression)),
+ 
+     infix_expression: $ => prec.left(PREC.INFIX, seq($._expression, $.simple_identifier, $._expression)),
+ 
+     elvis_expression: $ => prec.left(PREC.ELVIS, seq($._expression, "?:", $._expression)),
+@@ -684,9 +713,9 @@
+     disjunction_expression: $ => prec.left(PREC.DISJUNCTION, seq($._expression, "||", $._expression)),
+ 
+     // Suffixes
+ 
+-    indexing_suffix: $ => seq("[", sep1($._expression, ","), "]"),
++    indexing_suffix: $ => seq("[", sep1($._expression, ","), optional(","), "]"),
+ 
+     navigation_suffix: $ => seq(
+       $._member_access_operator,
+       choice(
+@@ -695,17 +724,23 @@
+         "class"
+       )
+     ),
+ 
+-    call_suffix: $ => prec.left(seq(
+-      // this introduces ambiguities with 'less than' for comparisons
+-      optional($.type_arguments),
+-      choice(
+-        seq(optional($.value_arguments), $.annotated_lambda),
+-        $.value_arguments
+-      )
++    call_suffix: $ => $._call_arguments,
++
++    _typed_call_suffix: $ => prec.left(choice(
++      // this introduces ambiguities with 'less than' for comparisons, which Kotlin resolves to type arguments
++      // before a call's arguments (`convert<Int>(x)`) and to a comparison otherwise
++      prec.dynamic(1, seq($.type_arguments, $._call_arguments)),
++      // Kotlin's bare type-argument suffix, `Ctor<A, B>` with no call
++      prec(-1, prec.dynamic(-1, $.type_arguments))
+     )),
+ 
++    _call_arguments: $ => prec.left(choice(
++      seq(optional($.value_arguments), $.annotated_lambda),
++      $.value_arguments
++    )),
++
+     annotated_lambda: $ => seq(
+       repeat($.annotation),
+       optional($.label),
+       $.lambda_literal
+@@ -749,9 +784,9 @@
+     ),
+ 
+     parenthesized_expression: $ => seq("(", $._expression, ")"),
+ 
+-    collection_literal: $ => seq("[", $._expression, repeat(seq(",", $._expression)), "]"),
++    collection_literal: $ => seq("[", $._expression, repeat(seq(",", $._expression)), optional(","), "]"),
+ 
+     _literal_constant: $ => choice(
+       $.boolean_literal,
+       $.integer_literal,
+@@ -786,16 +821,17 @@
+ 
+     multi_variable_declaration: $ => seq(
+       '(',
+       sep1($.variable_declaration, ','),
++      optional(','),
+       ')'
+     ),
+ 
+-    lambda_parameters: $ => sep1($._lambda_parameter, ","),
++    lambda_parameters: $ => seq(sep1($._lambda_parameter, ","), optional(",")),
+ 
+     _lambda_parameter: $ => choice(
+       $.variable_declaration,
+-      $.multi_variable_declaration
++      seq($.multi_variable_declaration, optional(seq(":", $._type)))
+     ),
+ 
+     anonymous_function: $ => prec.right(seq(
+       "fun",
+@@ -828,9 +864,9 @@
+     )),
+ 
+     if_expression: $ => prec.right(seq(
+       "if",
+-      "(", $._expression, ")",
++      "(", $._condition, ")",
+       choice(
+         $.control_structure_body,
+         ";",
+         seq(
+@@ -849,12 +885,21 @@
+         "val",
+         $.variable_declaration,
+         "="
+       )),
+-      $._expression,
++      $._condition,
+       ")",
+     ),
+ 
++    // ktfmt reads an `=` inside a condition, `if (a && b = c)`, as an assignment of `a && b`, which the
++    // compiler rejects later; parse it so the condition formats instead of turning into an ERROR.
++    _condition: $ => choice(
++      $._expression,
++      alias($._condition_assignment, $.assignment)
++    ),
++
++    _condition_assignment: $ => prec.right(PREC.ASSIGNMENT, seq($._expression, "=", $._expression)),
++
+     when_expression: $ => seq(
+       "when",
+       optional($.when_subject),
+       "{",
+@@ -863,16 +908,20 @@
+     ),
+ 
+     when_entry: $ => seq(
+       choice(
+-        seq($.when_condition, repeat(seq(",", $.when_condition))),
+-        "else"
++        // A trailing comma closes the conditions, before `->` and never before a guard.
++        seq($.when_condition, repeat(seq(",", $.when_condition)), optional(choice(",", $.when_guard))),
++        seq("else", optional($.when_guard))
+       ),
+       "->",
+       $.control_structure_body,
+       optional($._semi)
+     ),
+ 
++    // Kotlin 2.2's guard, `is Cat if !cat.hungry ->` and `else if x ->`.
++    when_guard: $ => seq("if", $._expression),
++
+     when_condition: $ => choice(
+       $._expression,
+       $.range_test,
+       $.type_test
+@@ -897,8 +946,9 @@
+       repeat($.annotation),
+       $.simple_identifier,
+       ":",
+       $._type,
++      optional(","),
+       ")",
+       $._block,
+     ),
+ 
+@@ -912,11 +962,15 @@
+       "break",
+       $._break_at
+     ),
+ 
++    // `?::` is one token after a nullable receiver (`String?::isNullOrEmpty`), since the longest match would lex
++    // `?:` and then `:`.
+     callable_reference: $ => seq(
+-      optional(alias($.simple_identifier, $.type_identifier)), // TODO
+-      "::",
++      choice(
++        seq(alias($.simple_identifier, $.type_identifier), optional($.type_arguments), choice("::", "?::")),
++        "::"
++      ),
+       choice($.simple_identifier, "class")
+     ),
+ 
+     _assignment_and_operator: $ => choice("+=", "-=", "*=", "/=", "%="),
+@@ -974,8 +1028,9 @@
+ 
+     parameter_modifiers: $ => repeat1(choice($.annotation, $.parameter_modifier)),
+ 
+     _modifier: $ => choice(
++      $.context_parameters,
+       $.class_modifier,
+       $.member_modifier,
+       $.visibility_modifier,
+       $.function_modifier,
+@@ -986,10 +1041,20 @@
+     ),
+ 
+     type_modifiers: $ => repeat1($._type_modifier),
+ 
+-    _type_modifier: $ => choice($.annotation, "suspend"),
++    _type_modifier: $ => choice($.annotation, "suspend", $.context_parameters),
+ 
++    // `context(a: A, _: B)` context parameters or `context(A, B)` context receivers, before a declaration or
++    // a function type.
++    context_parameters: $ => seq(
++      "context",
++      "(",
++      sep1(choice($.parameter, $._type), ","),
++      optional(","),
++      ")"
++    ),
++
+     class_modifier: $ => choice(
+       "sealed",
+       "annotation",
+       "data",
+@@ -1096,9 +1161,10 @@
+       "inner",
+       "value",
+       "actual",
+       "set",
+-      "get"
++      "get",
++      "context"
+       // TODO: More soft keywords
+     ),
+ 
+     identifier: $ => sep1($.simple_identifier, "."),
+--- a/src/scanner.c
++++ b/src/scanner.c
+@@ -13,8 +13,9 @@
+   MULTILINE_COMMENT,
+   STRING_START,
+   STRING_END,
+   STRING_CONTENT,
++  CONSTRUCTOR_AHEAD,
+ };
+ 
+ /* Pretty much all of this code is taken from the Julia tree-sitter
+    parser.
+@@ -244,9 +245,48 @@
+     }
+     return true;
+ }
+ 
+-static bool scan_automatic_semicolon(TSLexer *lexer) {
++static bool is_word_char(int32_t c) { return iswalpha(c) || iswdigit(c) || c == '_'; }
++
++// Whether annotations and modifier keywords, then `constructor`, come next; skips past them.
++static bool constructor_ahead(TSLexer *lexer) {
++  static const char *const modifiers[] = {"public", "protected", "private", "internal", "expect", "actual"};
++  for (;;) {
++    while (iswspace(lexer->lookahead)) skip(lexer);
++    if (lexer->lookahead == '@') {
++      // The annotation's name, dotted, then its arguments.
++      skip(lexer);
++      while (is_word_char(lexer->lookahead) || lexer->lookahead == '.' || lexer->lookahead == ':') skip(lexer);
++      if (lexer->lookahead == '(') {
++        int depth = 0;
++        do {
++          if (lexer->lookahead == '(') depth++;
++          else if (lexer->lookahead == ')') depth--;
++          else if (lexer->eof(lexer)) return false;
++          skip(lexer);
++        } while (depth > 0);
++      }
++      continue;
++    }
++    char word[12];
++    unsigned len = 0;
++    while (is_word_char(lexer->lookahead)) {
++      if (len < sizeof word - 1) word[len] = (char)lexer->lookahead;
++      len++;
++      skip(lexer);
++    }
++    if (len >= sizeof word) return false;
++    word[len] = '\0';
++    if (strcmp(word, "constructor") == 0) return true;
++    bool modifier = false;
++    for (unsigned i = 0; i < sizeof modifiers / sizeof *modifiers; i++)
++      if (strcmp(word, modifiers[i]) == 0) modifier = true;
++    if (!modifier) return false;
++  }
++}
++
++static bool scan_automatic_semicolon(TSLexer *lexer, const bool *valid_symbols) {
+   lexer->result_symbol = AUTOMATIC_SEMICOLON;
+   lexer->mark_end(lexer);
+ 
+   bool sameline = true;
+@@ -282,14 +322,22 @@
+   // Skip whitespace and comments
+   if (!scan_whitespace_and_comments(lexer))
+     return false;
+ 
++  // Not before a `where` that continues a class or function header on its own line (`class Foo<T>()\n  where T :
++  // Bar`). Any other word starting with `w` on a new line gets one, as the checks below would give it.
++  if (!sameline && lexer->lookahead == 'w') return !(scan_for_word(lexer, "here", 4) && iswspace(lexer->lookahead));
++
++  // Not before a primary constructor on a line after its class's name (`class Foo\n@Inject constructor(`), where
++  // the grammar's never-lexed CONSTRUCTOR_AHEAD is valid; error recovery, which makes every token valid, excluded.
++  if (!sameline && valid_symbols[CONSTRUCTOR_AHEAD] && !valid_symbols[STRING_CONTENT] &&
++      (lexer->lookahead == '@' || iswalpha(lexer->lookahead)))
++    return !constructor_ahead(lexer);
++
+   if (sameline) {
+     switch (lexer->lookahead) {
+-      // Don't insert a semicolon before an else
+-      case 'e':
+-        return !scan_for_word(lexer, "lse", 3);
+-
++      // No semicolon before a word starting with `e` on the same line: `!scan_for_word("lse")` cut
++      // `return emit(x)` into a bare `return` and `emit(x)`.
+       case 'i':
+         return scan_for_word(lexer, "mport", 5);
+ 
+       case ';':
+@@ -311,46 +359,43 @@
+     case '>':
+     case '<':
+     case '=':
+     case '{':
+-    case '[':
+     case '(':
+     case '?':
+     case '|':
+     case '&':
+     case '/':
+       return false;
+ 
+-    // Insert a semicolon before `--` and `++`, but not before binary `+` or `-`.
+-    // Insert before +/-Float
++    // Kotlin continues no expression with a binary `+` or `-`, or an index `[`, on the next line: they start a
++    // statement (`+a`, `[0, 1]`). A `->` there continues a `when` entry's conditions.
+     case '+':
+-      skip(lexer);
+-      if (lexer->lookahead == '+') return true;
+-      return iswdigit(lexer->lookahead);
++    case '[':
++      return true;
+ 
+     case '-':
+       skip(lexer);
+-      if (lexer->lookahead == '-') return true;
+-      return iswdigit(lexer->lookahead);
++      return lexer->lookahead != '>';
+ 
+     // Don't insert a semicolon before `!=`, but do insert one before a unary `!`.
+     case '!':
+       skip(lexer);
+       return lexer->lookahead != '=';
+ 
++    // Kotlin continues an expression with `as` or `as?` on the next line, but not with a word such as `asList`.
++    case 'a':
++      skip(lexer);
++      if (lexer->lookahead != 's') return true;
++      skip(lexer);
++      return iswalnum(lexer->lookahead) || lexer->lookahead == '_';
++
+     // Don't insert a semicolon before an else
+     case 'e':
+       return !scan_for_word(lexer, "lse", 3);
+ 
+-    // Don't insert a semicolon before `in` or `instanceof`, but do insert one
+-    // before an identifier or an import.
+-    case 'i':
+-      skip(lexer);
+-      if (lexer->lookahead != 'n') return true;
+-      skip(lexer);
+-      if (!iswalpha(lexer->lookahead)) return false;
+-      return !scan_for_word(lexer, "stanceof", 8);
+-
++    // tree-sitter-kotlin 0.3.8 took JavaScript's exception here and inserted none before `in` or `instanceof`,
++    // but Kotlin continues no expression with an `in` on the next line: it starts a `when` entry's condition.
+     case ';':
+       advance(lexer);
+       lexer->mark_end(lexer);
+       return true;
+@@ -459,9 +504,9 @@
+ }
+ 
+ bool tree_sitter_kotlin_external_scanner_scan(void *payload, TSLexer *lexer, const bool *valid_symbols) {
+   if (valid_symbols[AUTOMATIC_SEMICOLON]) {
+-    bool ret = scan_automatic_semicolon(lexer);
++    bool ret = scan_automatic_semicolon(lexer, valid_symbols);
+     if (!ret && valid_symbols[SAFE_NAV] && lexer->lookahead == '?') {
+       return scan_safe_nav(lexer);
+     }
+ 

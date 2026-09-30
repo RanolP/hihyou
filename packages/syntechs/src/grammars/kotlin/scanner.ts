@@ -149,7 +149,7 @@ function scanAutomaticSemicolon(lexer: Lexer, valid: Uint8Array): boolean {
   if (sameline) {
     switch (la(lexer)) {
       // Upstream scanner.c returns `!scan_for_word("lse")` here, ending a statement before any other word starting
-      // with `e` on the same line (`return emit(x)` as a bare `return`, then `emit(x)`); the pnpm patch drops it too.
+      // with `e` on the same line (`return emit(x)` as a bare `return`, then `emit(x)`); grammar.patch drops it too.
       case 105: // i
         return scanForWord(lexer, "mport");
       case 59: // ;

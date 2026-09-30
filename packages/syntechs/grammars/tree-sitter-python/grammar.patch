@@ -1,0 +1,251 @@
+PEP 696 type parameter defaults, `def f[T = int]()`, as a `type_default` in `type_parameter`;
+PEP 810 `lazy` imports; PEP 798 unpacking in a comprehension's element; a starred element in a bare tuple,
+`a = 1, *b`; and `&` binding tighter than `^`, which upstream inverts. scanner.c's changes are ported in
+packages/syntechs/src/grammars/python/scanner.ts.
+
+--- a/grammar.js
++++ b/grammar.js
+@@ -23,10 +23,11 @@
+   and: 11,
+   not: 12,
+   compare: 13,
+   bitwise_or: 14,
+-  bitwise_and: 15,
+-  xor: 16,
++  // Python's `&` binds tighter than `^`, which upstream had the other way round.
++  xor: 15,
++  bitwise_and: 16,
+   shift: 17,
+   plus: 18,
+   times: 19,
+   unary: 20,
+@@ -148,9 +149,11 @@
+       $.exec_statement,
+       $.type_alias_statement,
+     ),
+ 
++    // PEP 810 lazy imports, `lazy import a` and `lazy from a import b`; `lazy` stays a name everywhere else.
+     import_statement: $ => seq(
++      optional('lazy'),
+       'import',
+       $._import_list,
+     ),
+ 
+@@ -171,8 +174,9 @@
+       ),
+     ),
+ 
+     import_from_statement: $ => seq(
++      optional('lazy'),
+       'from',
+       field('module_name', choice(
+         $.relative_import,
+         $.dotted_name,
+@@ -467,13 +471,20 @@
+       field('body', $._suite),
+     ),
+     type_parameter: $ => seq(
+       '[',
+-      commaSep1($.type),
++      commaSep1(choice($.type, $.type_default)),
+       optional(','),
+       ']',
+     ),
+ 
++    // PEP 696: a type parameter's default, `T = int`, `T: int = int`, `*Ts = *int`, `**P = [int]`.
++    type_default: $ => seq(
++      field('name', $.type),
++      '=',
++      field('value', $.type),
++    ),
++
+     parenthesized_list_splat: $ => prec(PREC.parenthesized_list_splat, seq(
+       '(',
+       choice(
+         alias($.parenthesized_list_splat, $.parenthesized_expression),
+@@ -521,16 +532,17 @@
+       repeat($._statement),
+       $._dedent,
+     ),
+ 
++    // A starred element, `a = 1, *b`, is valid in a bare tuple as in a parenthesized one.
+     expression_list: $ => prec.right(seq(
+-      $.expression,
++      choice($.expression, $.list_splat),
+       choice(
+         ',',
+         seq(
+           repeat1(seq(
+             ',',
+-            $.expression,
++            choice($.expression, $.list_splat),
+           )),
+           optional(','),
+         ),
+       ),
+@@ -991,32 +1003,33 @@
+       ':',
+       field('value', $.expression),
+     ),
+ 
++    // PEP 798 unpacking in a comprehension's element, `[*x for x in y]` and `{**d for d in ds}`.
+     list_comprehension: $ => seq(
+       '[',
+-      field('body', $.expression),
++      field('body', choice($.expression, $.list_splat)),
+       $._comprehension_clauses,
+       ']',
+     ),
+ 
+     dictionary_comprehension: $ => seq(
+       '{',
+-      field('body', $.pair),
++      field('body', choice($.pair, $.dictionary_splat)),
+       $._comprehension_clauses,
+       '}',
+     ),
+ 
+     set_comprehension: $ => seq(
+       '{',
+-      field('body', $.expression),
++      field('body', choice($.expression, $.list_splat)),
+       $._comprehension_clauses,
+       '}',
+     ),
+ 
+     generator_expression: $ => seq(
+       '(',
+-      field('body', $.expression),
++      field('body', choice($.expression, $.list_splat)),
+       $._comprehension_clauses,
+       ')',
+     ),
+ 
+@@ -1174,9 +1187,9 @@
+         ),
+         $.identifier,
+       )),
+       alias(
+-        choice('type', 'match'),
++        choice('type', 'match', 'lazy'),
+         $.identifier,
+       ),
+     ),
+ 
+--- a/src/scanner.c
++++ b/src/scanner.c
+@@ -30,8 +30,11 @@
+     Triple = 1 << 5,
+     Bytes = 1 << 6,
+ } Flags;
+ 
++// An indent level's high bit: the level was opened during error recovery. Indentation counts to 0x7fff.
++#define RECOVERED 0x8000
++
+ typedef struct {
+     char flags;
+ } Delimiter;
+ 
+@@ -87,8 +90,19 @@
+     Array(Delimiter) delimiters;
+     bool inside_interpolated_string;
+ } Scanner;
+ 
++// Whether any open string is an f- or t-string. Upstream tracks only the innermost string, so a nested string's
++// end let a replacement field's next line dedent.
++static inline bool any_format(Scanner *scanner) {
++    for (uint32_t i = 0; i < scanner->delimiters.size; i++) {
++        if (is_format(array_get(&scanner->delimiters, i))) {
++            return true;
++        }
++    }
++    return false;
++}
++
+ static inline void advance(TSLexer *lexer) { lexer->advance(lexer, false); }
+ 
+ static inline void skip(TSLexer *lexer) { lexer->advance(lexer, true); }
+ 
+@@ -176,9 +190,9 @@
+                                 advance(lexer);
+                                 lexer->mark_end(lexer);
+                                 array_pop(&scanner->delimiters);
+                                 lexer->result_symbol = STRING_END;
+-                                scanner->inside_interpolated_string = false;
++                                scanner->inside_interpolated_string = any_format(scanner);
+                             }
+                             return true;
+                         }
+                         lexer->mark_end(lexer);
+@@ -194,9 +208,9 @@
+                 } else {
+                     advance(lexer);
+                     array_pop(&scanner->delimiters);
+                     lexer->result_symbol = STRING_END;
+-                    scanner->inside_interpolated_string = false;
++                    scanner->inside_interpolated_string = any_format(scanner);
+                 }
+                 lexer->mark_end(lexer);
+                 return true;
+ 
+@@ -218,15 +232,15 @@
+             found_end_of_line = true;
+             indent_length = 0;
+             skip(lexer);
+         } else if (lexer->lookahead == ' ') {
+-            indent_length++;
++            indent_length = (indent_length + 1) & 0x7fff;
+             skip(lexer);
+         } else if (lexer->lookahead == '\r' || lexer->lookahead == '\f') {
+             indent_length = 0;
+             skip(lexer);
+         } else if (lexer->lookahead == '\t') {
+-            indent_length += 8;
++            indent_length = (indent_length + 8) & 0x7fff;
+             skip(lexer);
+         } else if (lexer->lookahead == '#' && (valid_symbols[INDENT] || valid_symbols[DEDENT] ||
+                                                valid_symbols[NEWLINE] || valid_symbols[EXCEPT])) {
+             // If we haven't found an EOL yet,
+@@ -265,21 +279,28 @@
+     }
+ 
+     if (found_end_of_line) {
+         if (scanner->indents.size > 0) {
+-            uint16_t current_indent_length = *array_back(&scanner->indents);
++            uint16_t top = *array_back(&scanner->indents);
++            uint16_t current_indent_length = top & ~RECOVERED;
+ 
+             if (valid_symbols[INDENT] && indent_length > current_indent_length) {
+-                array_push(&scanner->indents, indent_length);
++                array_push(&scanner->indents, indent_length | (error_recovery_mode ? RECOVERED : 0));
+                 lexer->result_symbol = INDENT;
+                 return true;
+             }
+ 
+             bool next_tok_is_string_start =
+                 lexer->lookahead == '\"' || lexer->lookahead == '\'' || lexer->lookahead == '`';
+ 
++            // Where an operand is expected, a line break outside brackets is an error, so it is read as inside
++            // brackets even when no closing bracket is valid yet (`(a +\nb)`). A block opened during error
++            // recovery still takes the dedent that closes it, or its level would outlive the error.
++            bool continues_operand =
++                valid_symbols[STRING_START] && (next_tok_is_string_start || !(top & RECOVERED));
++
+             if ((valid_symbols[DEDENT] ||
+-                 (!valid_symbols[NEWLINE] && !(valid_symbols[STRING_START] && next_tok_is_string_start) &&
++                 (!valid_symbols[NEWLINE] && !continues_operand &&
+                   !within_brackets)) &&
+                 indent_length < current_indent_length && !scanner->inside_interpolated_string &&
+ 
+                 // Wait to create a dedent token until we've consumed any
+@@ -349,9 +370,9 @@
+ 
+         if (end_character(&delimiter)) {
+             array_push(&scanner->delimiters, delimiter);
+             lexer->result_symbol = STRING_START;
+-            scanner->inside_interpolated_string = is_format(&delimiter);
++            scanner->inside_interpolated_string = any_format(scanner);
+             return true;
+         }
+         if (has_flags) {
+             return false;

@@ -329,7 +329,7 @@ export function referenceMissing(): string | undefined {
 
 /**
  * The grammar compiled by zig into a shared library the CLI loads, built once per grammar source: the key hashes
- * the C sources, because a pnpm patch (pnpm-workspace.yaml's patchedDependencies) changes them under one version.
+ * the C sources, because a grammar's grammar.patch (packages/syntechs/grammars/) changes them under one version.
  */
 function referenceLibrary(grammar: GrammarName): string {
   const [dir, pkg] = GRAMMAR_DIRS[grammar];
