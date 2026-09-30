@@ -176,6 +176,9 @@ function scssOnly(tree: Tree): boolean {
   const starts: number[] = [];
   for (let o = 0; o < tree.nodeCount; o++) {
     const n = tree.at(o);
+    // A `//` inside a word (`x(http://a)`) opens a line comment too, which leaves SCSS a broken value; an unquoted
+    // `url()`'s argument is one token to it.
+    if (tree.kindName(n) === "plain_value" && tree.text(n).includes("//") && !inUrl(tree, n)) return true;
     if (tree.named(n)) continue;
     const up = tree.parent(n);
     if (tree.text(n) === ":" && up !== NO_NODE) {
@@ -188,6 +191,12 @@ function scssOnly(tree: Tree): boolean {
     starts.push(tree.start(n));
   }
   return starts.some((s) => ends.has(s));
+}
+
+function inUrl(tree: Tree, n: number): boolean {
+  for (let up = tree.parent(n); up !== NO_NODE; up = tree.parent(up))
+    if (tree.kindName(up) === "call_expression") return /^url$/i.test(tree.text(tree.child(up, 0)));
+  return false;
 }
 
 // embed/graphql.js's printEmbedGraphQL, for the quasis that hold only comments and whitespace: there is no

@@ -226,6 +226,8 @@ const edgeCases: [string, Target, string][] = [
   ["css-embed-line-comment", "js", "css`a{b: a // e;}`;\n"],
   // Nor does prettier space a `:` in an embedded value (`a :b`, `x(a:b)`), which oxfmt does in a CSS file.
   ["css-embed-value-colon", "js", "css`\n  b: a :b;\n  c: x(a:b);\n`;\n"],
+  // A `//` inside a word (`x(http://a)`) is a line comment to SCSS too, which leaves the value broken: source kept.
+  ["css-embed-url-in-word", "js", "css`b: x(http://a);`;\ncss`b: url(http://a);`;\n"],
   [
     "comments-prettier-moves",
     "ts",
