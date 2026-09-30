@@ -1,4 +1,4 @@
-css@oxfmt compatibility: 136/138 (98.55%), 0 refused (ok:false), 19 excluded
+css@oxfmt compatibility: 138/138 (100.00%), 0 refused (ok:false), 19 excluded
 
 Fixtures: those of the css target, every option set, expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults. A fixture oxfmt rejects under any of its option sets is excluded.
 
@@ -8,8 +8,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
-| css/parens/empty-lines.css | 0/1 | 31.58% |
-| css/postcss-8-improment/test.css | 0/1 | 88.24% |
 
 # Refused
 

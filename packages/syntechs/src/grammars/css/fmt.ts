@@ -196,7 +196,7 @@ export const customs = {
   longSelector: (node, ctx) => parts(node, ctx) > 2,
   /** A declaration with nothing between its `:` and its `;` (`--empty:;`). */
   emptyValue: (node, ctx) => code(node, ctx).every((c) => !ctx.tree.named(c) || kind(c, ctx) === "property_name"),
-  unparsedValue: (node, ctx) => unparsedUrl(node, ctx),
+  unparsedValue: (node, ctx) => unparsedUrl(node, ctx) || oxfmtRawValue(node, ctx),
   /** A media query list holding a comment, which `mediaQueries` prints as postcss-media-query-parser splits it. */
   mediaComments: (node, ctx) => mediaAtoms(node, ctx).some((c) => isComment(c, ctx)),
   ownWord: (node, ctx) => ownWord(node, ctx),
@@ -851,6 +851,23 @@ function unparsedUrl(n: number, ctx: SCtx): boolean {
     if (t.text(name).toLowerCase() === "url" && /\\[()]/.test(text) && /^\(\s|\s\)$/.test(text)) return true;
   }
   return children(n, t).some((c) => unparsedUrl(c, ctx));
+}
+
+/**
+ * A Sass variable's or custom property's value that oxfmt keeps as written: one holding a `( … )` group anywhere
+ * (`$map: (a: 1)`, `foo( (1, 2) )`), or a `{ … }` outside any function (`[1, {"a":1}]`, `function(x) { … }`).
+ */
+function oxfmtRawValue(decl: number, ctx: SCtx): boolean {
+  if (ctx.options.compat !== "oxfmt") return false;
+  const t = ctx.tree;
+  if (!/^(\$|--)/.test(t.text(t.child(decl, 0)))) return false;
+  const raw = (n: number, inCall: boolean): boolean =>
+    children(n, t).some((c) => {
+      const k = kind(c, ctx);
+      if (k === "parenthesized_value" || (k === "brace_value" && !inCall)) return true;
+      return raw(c, inCall || k === "call_expression");
+    });
+  return raw(decl, false);
 }
 
 /** The source between `prev` and `c`, less any whitespace ending a line. */

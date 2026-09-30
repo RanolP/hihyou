@@ -100,10 +100,10 @@ export const css = format({
     from: () => text("lower"),
     to: () => text("lower"),
 
-    // A value postcss-value-parser fails on (fmt.ts's `unparsedValue`) as written; an IE filter's (`progid:...`)
-    // value, one space wherever the source has any gap (prettier's raw value); else the comma list, a grid template's
-    // keeping its lines, and an empty value's gap as written (fmt.ts's `declarationEnd`). The comments around the `:`
-    // print as postcss's `between` (fmt.ts's `declarationColon`).
+    // A value postcss-value-parser fails on, or oxfmt keeps raw (fmt.ts's `unparsedValue`), as written; an IE
+    // filter's (`progid:...`) value, one space wherever the source has any gap (prettier's raw value); else the comma
+    // list, a grid template's keeping its lines, and an empty value's gap as written (fmt.ts's `declarationEnd`). The
+    // comments around the `:` print as postcss's `between` (fmt.ts's `declarationColon`).
     declaration: ($) => [
       either(
         when("unparsedValue"),
