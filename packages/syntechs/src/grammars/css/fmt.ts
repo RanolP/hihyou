@@ -149,7 +149,7 @@ const normalize: Normalize = (lexemes, _text, tree) => {
       tree.kindName(tree.child(parent, 0)) === "call_expression"
     );
   };
-  return lexemes.map((l, i) => {
+  const forms = lexemes.map((l, i) => {
     const next = lexemes[i + 1]?.text;
     const prev = lexemes[i - 1]?.text;
     if (l.text === ";" && (next === undefined || next === "}" || next === ";" || prev === "{"))
@@ -158,6 +158,23 @@ const normalize: Normalize = (lexemes, _text, tree) => {
     if (sign(i - 1)) return meaning(tree, l.node, `${prev}${l.text}`);
     return meaning(tree, l.node, l.text);
   });
+  // `a*b`, one word to tree-sitter, is three tokens to oxc-css-parser, which prints `a * b` (`colonThenRawTokens`):
+  // a value's `*` and `/` join the words around them into one form.
+  const inValue = (node: number) => {
+    for (let up = tree.parent(node); up !== NO_NODE; up = tree.parent(up))
+      if (tree.kindName(up) === "declaration") return true;
+    return false;
+  };
+  for (let i = 1; i + 1 < lexemes.length; i++) {
+    const l = lexemes[i] as (typeof lexemes)[number];
+    if ((l.text !== "*" && l.text !== "/") || forms[i] === undefined || !inValue(l.node)) continue;
+    let p = i - 1;
+    while (p > 0 && forms[p] === undefined) p--;
+    if (forms[p] === undefined || forms[i + 1] === undefined) continue;
+    forms[p] = `${forms[p]}${l.text}${forms[i + 1]}`;
+    forms[i] = forms[i + 1] = undefined;
+  }
+  return forms;
 };
 
 const statementLists = new Set(["stylesheet", "block"]);
@@ -988,8 +1005,9 @@ function rawTokens(nodes: number[], ctx: SCtx): { tokens: RawToken[]; tail: numb
     if (isComment(n, ctx)) comments.push(n);
     else if (k === "call_expression" && /^url$/i.test(t.text(t.child(n, 0)))) push("url", "", n, glued);
     else if (k === "string_value") push("string", t.text(n), n, glued);
-    else if (k === "plain_value") push("ident", t.text(n), n, glued);
-    else if (t.count(n) > 0 && !["integer_value", "float_value", "color_value"].includes(k))
+    // `a:b` stays one word: tree-sitter-css reads no `a: b` in a value back.
+    else if (k === "plain_value" && t.text(n).includes(":")) push("ident", t.text(n), n, glued);
+    else if (t.count(n) > 0 && !["integer_value", "float_value", "color_value", "plain_value"].includes(k))
       return children(n, t).forEach(visit);
     else {
       let joined = glued;

@@ -142,6 +142,9 @@ const edgeCases: [string, string][] = [
     "raw-value-fill",
     "a{b: x bar(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb cccccccccccccccccccccc c) foo((1));c: foo(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, (1) cccccccccccccccccccccc);d: foo((1)), bar;e: .50em 1E3 RED 'x' (1)}",
   ],
+  // oxc-css-parser splits `a*b` and `a/b` in a raw value into three tokens and prints a space around `*` and a
+  // `/` next to a word; syntechs kept the word whole.
+  ["raw-value-operator", "a{b:a*b (1);c:a/b (1);d:a*b*c/d 1px/2px (1)}"],
   // An at-rule's params print as raw text, which once dropped the comments attached to them.
   ["at-rule-param-comment", "@counter-style /* c */ thumbs {}"],
   [
