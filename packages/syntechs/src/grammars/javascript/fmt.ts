@@ -22,6 +22,8 @@ import {
   sJump,
   sLine,
 } from "../../fmt/stream.js";
+import { NO_NODE } from "../../core/arena.js";
+import { nextLeaf } from "../../fmt/tree.js";
 import * as gen from "./fmt.gen.js";
 import { grammar, language as parser } from "./index.js";
 import { jsAtoms, jsNormalize } from "./normalize.js";
@@ -237,7 +239,15 @@ const oxfmtIgnored = (ctx: JsCtx, n: number) => {
   if (unparenType(ctx, n) !== n) return false;
   for (let w: number | undefined = n; w !== undefined && unparenType(ctx, w) === n; w = parent(ctx, w))
     if (ledByIgnore(ctx, w)) return true;
-  return false;
+  return trailedByIgnore(ctx, n);
+};
+
+/** oxc's has_trailing_suppression_comment: `A | B // prettier-ignore`, the ignore right after the node's end. */
+const trailedByIgnore = (ctx: JsCtx, n: number) => {
+  let last = n;
+  for (let c: number | undefined = n; c !== undefined; c = lastChildWhere(ctx, c, (k) => !isComment(ctx, k))) last = c;
+  const after = nextLeaf(ctx.tree, last);
+  return after !== NO_NODE && isComment(ctx, after) && ctx.tree.lf(after) === 0 && isIgnoreComment(ctx, after);
 };
 
 /**

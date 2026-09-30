@@ -241,6 +241,22 @@ const LAST_UNION_HOLDERS =new Set(["intersection_type", "union_type"]);
  * `(A | B // c⏎)[]`, `& X` or `| X`: a comment ending the line after a union trails its last member, inside the
  * union's parentheses (handleLastUnionElementInExpression).
  */
+/**
+ * oxfmt: `(A | B // prettier-ignore⏎)`: an ignore comment right after a union keeps the whole union's source
+ * (has_trailing_suppression_comment) and trails it.
+ */
+const oxfmtUnionIgnore = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  if (c.options.compat !== "oxfmt" || c.tree.lf(c.comment) > 0 || !isIgnoreComment(c, c.comment)) return;
+  const before = prevLeaf(c.tree, c.comment);
+  if (before === NO_NODE) return;
+  let union: number | undefined;
+  for (let n = before, up = parent(c, n); up !== undefined && lastCode(c, up) === n; n = up, up = parent(c, up)) {
+    if (kind(c, up) === "union_type") union = up;
+    else if (union !== undefined) break;
+  }
+  return union === undefined ? undefined : { node: union, as: "trailing" };
+};
+
 const lastUnionMember = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   const { enclosing, preceding, following, placement } = c;
   if (placement !== "endOfLine" || preceding === undefined) return;
@@ -1389,6 +1405,7 @@ const oxfmtAfterDroppedParen = (c: CommentContext<JsOptions>): CommentTarget | u
 const handlers = [
   oxfmtTypeAliasHead,
   oxfmtCast,
+  oxfmtUnionIgnore,
   oxfmtSignatureToken,
   oxfmtTypeMemberEnd,
   oxfmtReturnSequence,

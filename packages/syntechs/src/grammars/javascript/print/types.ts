@@ -225,6 +225,15 @@ const parenthesizedType: CustomRule<JsOptions> = (n, sctx) => {
     return ctx.print(inner, ctx.args);
   tok(js, anonKid(js, n, "("));
   ctx.print(inner);
+  // oxfmt: `(A | B // prettier-ignore⏎)`, the `)` below the line comment that keeps the union as written.
+  const lastTrailing = ctx.trailingComments(inner).at(-1);
+  if (
+    js.options.compat === "oxfmt" &&
+    lastTrailing !== undefined &&
+    isIgnoreComment(js, lastTrailing) &&
+    src(js, lastTrailing).startsWith("//")
+  )
+    sHardline();
   tok(js, lastAnonKid(js, n, ")"));
 };
 
