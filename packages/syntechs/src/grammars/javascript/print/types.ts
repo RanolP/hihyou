@@ -5,6 +5,8 @@
 
 import type { CustomRule, TokenRule } from "../../../fmt/dsl/runtime.js";
 import {
+  commentFacts,
+  printLeadingComment,
   printLeadingComments,
   printTrailingComments,
   type StreamRule,
@@ -337,9 +339,24 @@ function printUnionType(ctx: JsStreamCtx, n: number, owns: boolean) {
       }
       ctx.print(x);
     });
-  const printed = () => {
-    if (owns) printLeadingComments(ctx, n);
-    open(GROUP);
+  const oxfmt = js.options.compat === "oxfmt";
+  // oxfmt keeps a line comment after `a:` on that line, and the union's trailing comments out of its indent.
+  const first = ctx.leadingComments(n)[0];
+  const head =
+    oxfmt &&
+    owns &&
+    indented &&
+    first !== undefined &&
+    ctx.isLineComment(first) &&
+    js.tree.lf(first) === 0
+      ? first
+      : undefined;
+  const trailOutside = oxfmt && owns && indented;
+  const printed = (grouped = true) => {
+    if (owns)
+      for (const c of ctx.leadingComments(n))
+        if (c !== head) printLeadingComment(ctx, commentFacts(ctx, c));
+    if (grouped) open(GROUP);
     types.forEach((x, i) => {
       if (i === 0) {
         open(IF_BROKEN);
@@ -372,8 +389,8 @@ function printUnionType(ctx: JsStreamCtx, n: number, owns: boolean) {
         aligned(() => withComments(ctx, x, bare));
       else withComments(ctx, x, () => aligned(bare));
     });
-    close();
-    if (owns) printTrailingComments(ctx, n);
+    if (grouped) close();
+    if (owns && !trailOutside) printTrailingComments(ctx, n);
   };
   if (parenthesized) {
     open(GROUP);
@@ -399,13 +416,19 @@ function printUnionType(ctx: JsStreamCtx, n: number, owns: boolean) {
     close();
     return close();
   }
-  if (!indented) return printed();
+  // prettier 3.9 keeps a union that fits once moved to its own line on that line; oxfmt breaks it at every `|`,
+  // so its `|`s break with the group that moves it there.
+  if (!indented)
+    return printed(!oxfmt || args?.assignmentLayout !== "break-after-operator");
+  if (head !== undefined) ctx.comment(head);
   open(GROUP);
   open(INDENT);
-  sLine(SOFT);
-  printed();
+  if (head !== undefined) sHardline();
+  else sLine(SOFT);
+  printed(!oxfmt);
   close();
   close();
+  if (trailOutside) printTrailingComments(ctx, n);
 }
 
 const intersectionType: CustomRule<JsOptions> = (n, sctx) => {

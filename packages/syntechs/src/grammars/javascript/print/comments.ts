@@ -4,7 +4,7 @@ import type {
   CommentTarget,
 } from "../../../fmt/comments.js";
 import { newlineBetween } from "../../../fmt/text.js";
-import { firstLeaf, nextLeaf } from "../../../fmt/tree.js";
+import { firstLeaf, nextLeaf, prevLeaf } from "../../../fmt/tree.js";
 import { heritage } from "./classes.js";
 import { STATEMENT_LIST_PARENTS } from "./statements.js";
 import { flattenTypes, mappedClauseOf, unparenType } from "./types.js";
@@ -1014,8 +1014,31 @@ const afterDeclare = (c: CommentContext<JsOptions>): CommentTarget | undefined =
   return name !== undefined ? { node: name, as: "leading" } : undefined;
 };
 
+/**
+ * `type A = // c` above the type: oxfmt keeps the line comment on the head's line, trailing what stands before the
+ * `=`, where prettier leads the type with it. Above an object type it moves below `=` as prettier's does.
+ */
+const oxfmtTypeAliasHead = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, following } = c;
+  if (
+    c.options.compat !== "oxfmt" ||
+    c.placement !== "endOfLine" ||
+    !c.text.startsWith("//") ||
+    kind(c, enclosing) !== "type_alias_declaration" ||
+    following === undefined ||
+    kind(c, unparenType(c, following) ?? following) === "object_type"
+  )
+    return;
+  const op = prevLeaf(c.tree, c.comment);
+  if (kind(c, op) !== "=" || parent(c, op) !== enclosing) return;
+  const kids = children(c, enclosing);
+  const before = kids.slice(0, kids.indexOf(op)).findLast((k) => named(c, k) && isCode(c, k));
+  return before !== undefined ? { node: before, as: "trailing" } : undefined;
+};
+
 // In prettier's order within each placement: typeCast and conditional run early, nestedConditional last.
 const handlers = [
+  oxfmtTypeAliasHead,
   afterDeclare,
   typeCast,
   mappedTypeParts,
