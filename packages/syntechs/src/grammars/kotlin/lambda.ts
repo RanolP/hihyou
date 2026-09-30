@@ -1,7 +1,12 @@
 // A lambda with no statements, as ktfmt 0.64 `--kotlinlang-style` prints it: `{}`, `{ -> }`, `{ x -> }`, or its
 // comments alone.
 import { close, GROUP, INDENT, open, sHardline, sLine, sText, sToken } from "../../fmt/stream.js";
-import { printLeadingComments, type StreamCtx, type StreamRule } from "../../fmt/stream-format.js";
+import {
+  printLeadingComments,
+  printTrailingComments,
+  type StreamCtx,
+  type StreamRule,
+} from "../../fmt/stream-format.js";
 import { tokenChild } from "../../fmt/dsl/runtime.js";
 
 const kidOf = (ctx: StreamCtx<unknown>, node: number, kind: string) => {
@@ -12,7 +17,58 @@ const kidOf = (ctx: StreamCtx<unknown>, node: number, kind: string) => {
 
 /** `rule`, the generated one, but for a lambda with no statements, which `bareLambda` prints. */
 export function lambdas<O>(rule: StreamRule<O> | undefined): StreamRule<O> {
-  return (node, ctx) => (kidOf(ctx, node, "statements") === -1 ? bareLambda(node, ctx) : rule?.(node, ctx));
+  return (node, ctx) => {
+    if (kidOf(ctx, node, "statements") === -1) bareLambda(node, ctx);
+    else if (!commentedHeader(node, ctx)) rule?.(node, ctx);
+  };
+}
+
+/**
+ * A lambda whose header holds a line comment before its `->`, which ktfmt prints on lines of their own: without
+ * parameters, the comments and the `->` at the lambda's own indent (`{`, `//`, `->`); with them, the parameters
+ * indented on the next line, and the `->` on the line after the comment, one space in (`a //`, ` ->`). Returns
+ * whether it printed the lambda.
+ */
+function commentedHeader(node: number, ctx: StreamCtx<unknown>): boolean {
+  const t = ctx.tree;
+  const arrow = tokenChild(t, node, "->", 0);
+  if (arrow === -1) return false;
+  const params = kidOf(ctx, node, "lambda_parameters");
+  const statements = kidOf(ctx, node, "statements");
+  const before = (c: number) => t.ord(c) < t.ord(arrow);
+  const header =
+    params === -1 ? ctx.leadingComments(statements).filter(before) : ctx.trailingComments(params).filter(before);
+  if (!header.some((c) => lineLike(ctx, c))) return false;
+
+  sToken(tokenChild(t, node, "{", 0), "{");
+  if (params === -1) {
+    for (const c of header) {
+      sHardline();
+      ctx.comment(c);
+    }
+    sHardline();
+    sToken(arrow, "->");
+    open(INDENT);
+  } else {
+    open(INDENT);
+    sHardline();
+    ctx.print(params);
+    sHardline();
+    sText(" ");
+    sToken(arrow, "->");
+  }
+  for (const c of ctx.leadingComments(statements)) {
+    if (header.includes(c)) continue;
+    sHardline();
+    ctx.comment(c);
+  }
+  sHardline();
+  ctx.printNode(statements);
+  printTrailingComments(ctx, statements);
+  close();
+  sHardline();
+  sToken(tokenChild(t, node, "}", 0), "}");
+  return true;
 }
 
 /**

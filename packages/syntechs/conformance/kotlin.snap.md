@@ -1,4 +1,4 @@
-kotlin compatibility: 722/753 (95.88%), 0 refused (ok:false), 11 excluded
+kotlin compatibility: 724/753 (96.15%), 0 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -35,8 +35,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/string/multiDollarString.kt | 0/1 | 44.44% |
 | ktfmt/google/longFunctionTypeWrapping.kt | 0/1 | 33.33% |
 | ktfmt/google/secondaryConstructorNoArgs.kt | 0/1 | 47.06% |
-| ktfmt/google/trailingCommasNotAdded.kt | 0/1 | 88.89% |
-| ktfmt/google/trailingCommasSingleElementLists.kt | 0/1 | 93.33% |
 | ktfmt/new_codestyle/annotation/AnnotationsOnParameters.kt | 0/1 | 82.61% |
 | ktfmt/new_codestyle/annotation/AnnotationsOnTypes.kt | 0/1 | 93.20% |
 
