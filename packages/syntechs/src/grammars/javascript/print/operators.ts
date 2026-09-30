@@ -266,7 +266,13 @@ function printBinaryishExpressions(
       estreeKind(js, leftInner) !== estree &&
       estreeKind(js, unparen(js, right)) !== estree);
   const parts = [...chain.parts];
-  if (!atStart || shouldInline || commentBeforeOperator)
+  // Prettier's space before a comment-led right operand at the line's start doubles the one before a line
+  // comment trailing the left; oxfmt prints one.
+  if (
+    !atStart ||
+    shouldInline ||
+    (commentBeforeOperator && js.options.compat !== "oxfmt")
+  )
     parts.push(() => sText(" "));
   const printRight = rightDoc;
   parts.push(
