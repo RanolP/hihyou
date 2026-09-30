@@ -1,0 +1,68 @@
+{
+  "name": "hihyou-vscode",
+  "displayName": "Hihyou",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Structural split diff review for the local repository and its GitHub pull requests.",
+  "publisher": "ranolp",
+  "main": "./dist/extension.js",
+  "browser": "./dist/web/extension.js",
+  "scripts": {
+    "build": "node build.mjs",
+    "test:e2e": "node build.mjs && node test/run.mjs"
+  },
+  "dependencies": {
+    "@hihyou/engine": "workspace:*",
+    "@hihyou/git": "workspace:*",
+    "@hihyou/github": "workspace:*",
+    "@hihyou/ui": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/vscode": "1.100.0",
+    "@vscode/test-electron": "3.1.0",
+    "esbuild": "0.28.2"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "hihyou.reviewWorkingTree",
+        "title": "Review Working Tree Changes",
+        "category": "Hihyou"
+      },
+      {
+        "command": "hihyou.reviewStaged",
+        "title": "Review Staged Changes",
+        "category": "Hihyou"
+      },
+      {
+        "command": "hihyou.reviewCommit",
+        "title": "Review Commit…",
+        "category": "Hihyou"
+      },
+      {
+        "command": "hihyou.reviewRange",
+        "title": "Review Branch or Tag Since It Left HEAD…",
+        "category": "Hihyou"
+      },
+      {
+        "command": "hihyou.reviewPullRequest",
+        "title": "Review GitHub Pull Request…",
+        "category": "Hihyou"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "hihyou.reviewPullRequest",
+          "when": "hihyou.hasGitHubRemote"
+        }
+      ]
+    }
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "engines": {
+    "vscode": "^1.100.0"
+  }
+}

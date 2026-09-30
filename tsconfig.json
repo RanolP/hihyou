@@ -9,6 +9,8 @@
     { "path": "packages/ui" },
     { "path": "packages/gui" },
     { "path": "packages/github" },
+    { "path": "packages/vscode" },
+    { "path": "packages/vscode/tsconfig.node.json" },
     { "path": "packages/website" }
   ]
 }

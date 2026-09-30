@@ -16,3 +16,6 @@ packages/syntechs/src/grammars/*/bundle.js
 packages/syntechs/src/grammars/*/fmt.gen.ts
 # VitePress's cache; its build output lands in docs/.vitepress/dist, which dist/ above covers.
 packages/website/docs/.vitepress/cache/
+# The VS Code builds @vscode/test-electron and @vscode/test-web download to run the extension's integration tests.
+packages/vscode/.vscode-test/
+packages/vscode/.vscode-test-web/
