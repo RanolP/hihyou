@@ -1150,6 +1150,33 @@ const oxfmtChainHead = (c: CommentContext<JsOptions>): CommentTarget | undefined
   return head !== following ? { node: head, as: "leading" } : undefined;
 };
 
+/**
+ * `a // c⏎.b.c`: outside a member chain (a member access with no call), oxfmt prints a line comment after the
+ * object past the whole access, `a.b.c; // c`, where prettier keeps it after the object.
+ */
+const oxfmtMemberObject = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, preceding } = c;
+  if (
+    c.options.compat !== "oxfmt" ||
+    !c.text.startsWith("//") ||
+    c.following === undefined ||
+    !MEMBERS.has(kind(c, enclosing)) ||
+    preceding === undefined ||
+    field(c, enclosing, "object") !== preceding
+  )
+    return;
+  let node = enclosing;
+  for (
+    let up = parent(c, node);
+    up !== undefined && MEMBERS.has(kind(c, up)) && field(c, up, "object") === node;
+    up = parent(c, node)
+  )
+    node = up;
+  const holder = parent(c, node);
+  if (holder !== undefined && CALLS.has(kind(c, holder)) && field(c, holder, "function") === node) return;
+  return { node, as: "trailing" };
+};
+
 // Where parentheses around a right-most value print nothing, so a comment inside them is past the value's end.
 const BARE_RIGHT = new Set([
   "assignment_expression",
@@ -1210,6 +1237,7 @@ const handlers = [
   oxfmtTypeAliasHead,
   oxfmtReturnSequence,
   oxfmtChainHead,
+  oxfmtMemberObject,
   afterDeclare,
   typeCast,
   mappedTypeParts,
