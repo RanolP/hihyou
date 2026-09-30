@@ -7,7 +7,7 @@ import {
 } from "../../fmt/options.js";
 import type { CommentHandler } from "../../fmt/comments.js";
 import { defineLanguage, type Language } from "../../fmt/rules.js";
-import { maybeLower, numberParts } from "../../fmt/dsl/normalizers.js";
+import { atName, maybeLower, numberParts } from "../../fmt/dsl/normalizers.js";
 import {
   ancestorWhere,
   breaksBetween,
@@ -27,6 +27,7 @@ import {
   SOFT,
   sHardline,
   sLine,
+  sLiteral,
   sText,
   sToken,
 } from "../../fmt/stream.js";
@@ -171,6 +172,7 @@ export const customs = {
   longSelector: (node, ctx) => parts(node, ctx) > 2,
   /** A declaration with nothing between its `:` and its `;` (`--empty:;`). */
   emptyValue: (node, ctx) => code(node, ctx).every((c) => !ctx.tree.named(c) || kind(c, ctx) === "property_name"),
+  unparsedValue: (node, ctx) => unparsedUrl(node, ctx),
 } satisfies Record<string, PredicateRule<CssOptions>>;
 
 /** A binary expression's `/` written with no gap on either side, which prettier keeps so. */
@@ -585,6 +587,11 @@ const handleComment: CommentHandler<CssOptions> = ({ tree, enclosing, preceding,
 /** The nodes whose children prettier prints as a sequence of statements (printNodeSequence). */
 const statementSequences = new Set([...statementLists, "keyframe_block_list"]);
 
+/** A stylesheet that failed to parse prints as written, its own final line break included. */
+export function finalLine({ tree, isBroken }: SCtx): boolean {
+  return !(isBroken(tree.root) && tree.trailingLf > 0);
+}
+
 /**
  * Prettier's printNodeSequence, where a comment is a statement: a comment leading a statement ends its line, as a
  * line comment does, unless another comment follows it on that line.
@@ -640,12 +647,94 @@ export function declarationEnd(semi: number | undefined, node: number, ctx: SCtx
   sToken(semi, ";");
 }
 
+/**
+ * An unquoted `url()` padded with whitespace and holding an escaped paren (`url( a\(b )`), which
+ * postcss-value-parser fails on: prettier then prints the whole value as written.
+ */
+function unparsedUrl(n: number, ctx: SCtx): boolean {
+  const t = ctx.tree;
+  if (kind(n, ctx) === "call_expression" && t.count(n) === 2) {
+    const [name, args] = [t.child(n, 0), t.child(n, 1)];
+    const text = t.text(args);
+    if (t.text(name).toLowerCase() === "url" && /\\[()]/.test(text) && /^\(\s|\s\)$/.test(text)) return true;
+  }
+  return children(n, t).some((c) => unparsedUrl(c, ctx));
+}
+
+/** The source between `prev` and `c`, less any whitespace ending a line. */
+function gapBefore(prev: number, c: number, t: FormatTree): string {
+  if (t.lf(c) > 0) return "\n".repeat(t.lf(c)) + " ".repeat(t.col(c));
+  if (t.adjoins(prev, c)) return "";
+  const text = t.text(prev);
+  const end = text.includes("\n") ? text.length - text.lastIndexOf("\n") - 1 : t.col(prev) + text.length;
+  return " ".repeat(t.col(c) - end);
+}
+
+/** The `:` of a declaration whose value prettier keeps as written (`unparsedValue`), one space, then the value. */
+export function colonThenSource(colon: number | undefined, node: number, ctx: SCtx): void {
+  const t = ctx.tree;
+  const parts = code(node, ctx);
+  declarationColon(colon, node, ctx);
+  const from = colon === undefined ? 1 : parts.indexOf(colon) + 1;
+  const value = parts.slice(from).filter((c) => kind(c, ctx) !== ";" && kind(c, ctx) !== "important");
+  let prev = -1;
+  for (const c of value) {
+    sLiteral(c, (prev === -1 ? " " : gapBefore(prev, c, t)) + t.text(c));
+    prev = c;
+  }
+  const important = parts.find((c) => kind(c, ctx) === "important");
+  if (important !== undefined) {
+    sText(" ");
+    ctx.print(important);
+  }
+}
+
+/**
+ * `@import`'s prelude, which prettier parses as a value: its comma list one entry per line once past the width, each
+ * entry's words packed after a line of their own, all at one indent (`url(...)` then `  projection tv`).
+ */
+export function importStatement(node: number, ctx: SCtx): void {
+  const t = ctx.tree;
+  const parts = children(node, t);
+  const at = parts.find((c) => kind(c, ctx) === "@import");
+  if (at !== undefined) sToken(at, atName(t.text(at)));
+  sText(" ");
+  const item = (c: number) => (t.named(c) ? ctx.print(c) : sToken(c, t.text(c)));
+  const run = splitRun(ctx, node, ",", ["@import", ";"], ["block"]);
+  open(GROUP);
+  open(INDENT);
+  run.entries.forEach((e, i) => {
+    if (i > 0) sLine(0);
+    open(FILL);
+    e.items.forEach((c, j) => {
+      if (j > 0) sLine(0);
+      open(FILL_ITEM);
+      item(c);
+      close();
+    });
+    close();
+    if (e.sep !== -1) sToken(e.sep, t.text(e.sep));
+  });
+  close();
+  close();
+  for (const c of run.trail) {
+    sText(" ");
+    ctx.print(c);
+  }
+  if (run.trail.length > 0) return;
+  const semi = parts.find((c) => kind(c, ctx) === ";");
+  if (semi !== undefined && t.text(semi) !== "") sToken(semi, ";");
+  else sToken(node, ";", true);
+}
+
 /** The hand-written rules format.ts names. */
 export const handWritten = {
   ...customs,
   important,
   declarationColon,
   declarationEnd,
+  colonThenSource,
+  importStatement,
   valueMath,
   atRule,
   postcssStatement,
@@ -672,5 +761,6 @@ export const css: Language<CssOptions> = {
     wrap: frontMatterFirst,
     commentEndsLine: statementComment,
     keepsSource: prettierIgnored,
+    finalLine,
   },
 };

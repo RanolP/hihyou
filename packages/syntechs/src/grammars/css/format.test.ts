@@ -9,6 +9,7 @@ import type { Language } from "../../fmt/rules.js";
 import {
   css,
   type CssOptions,
+  finalLine,
   frontMatterFirst,
   handWritten,
   prettierIgnored,
@@ -105,6 +106,7 @@ const reference = {
     wrap: frontMatterFirst,
     commentEndsLine: statementComment,
     keepsSource: prettierIgnored,
+    finalLine,
   },
 };
 

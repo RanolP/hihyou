@@ -12,6 +12,7 @@ const CUSTOM_SELECTOR_END = 4;
 const CUSTOM_PROPERTY_SET_NAME = 5;
 const CUSTOM_PROPERTY_RAW_NAME = 6;
 const CUSTOM_PROPERTY_RAW_VALUE = 7;
+const URL_RAW = 8;
 
 const HASH = 35;
 const DOT = 46;
@@ -132,8 +133,33 @@ function scanCustomPropertyRawValue(lexer: Lexer): boolean {
   return any;
 }
 
+/**
+ * An unquoted `url()`'s content, which postcss-value-parser reads as one word: up to the `)`, a `\` escaping the
+ * character after it, less the whitespace around it. A `(` or a quote makes it no such word, so the arguments parse
+ * as any function's (`url(var(--a))`).
+ */
+function scanUrlRaw(lexer: Lexer): boolean {
+  while (iswspace(lexer.lookahead)) lexer.advance(true);
+  let any = false;
+  while (lexer.lookahead !== RPAREN) {
+    const c = lexer.lookahead;
+    if (lexer.eof() || c === LPAREN || c === DQUOTE || c === SQUOTE) return false;
+    lexer.advance(false);
+    if (c === BACKSLASH) {
+      if (lexer.eof() || lexer.lookahead === NEWLINE) return false;
+      lexer.advance(false);
+    } else if (iswspace(c)) continue;
+    lexer.markEnd();
+    any = true;
+  }
+  lexer.resultSymbol = URL_RAW;
+  return any;
+}
+
 function scan(lexer: Lexer, valid: Uint8Array, state: State): boolean {
   if (valid[ERROR_RECOVERY]) return false;
+
+  if (valid[URL_RAW]) return scanUrlRaw(lexer);
 
   if (iswspace(lexer.lookahead) && valid[DESCENDANT_OP]) {
     lexer.resultSymbol = DESCENDANT_OP;

@@ -187,7 +187,7 @@ const ratchet: [string, Partial<CssOptions>, string, number, number][] = [
     "singleQuote, tabWidth 4, printWidth 100",
     optionSets[1]?.[1] ?? {},
     "animate.css",
-    324,
+    328,
     328,
   ],
   [
@@ -217,14 +217,6 @@ describe.skipIf(!present)(
 
 // Input, options, then today's output, which differs from prettier's.
 const divergences: [string, string, Partial<CssOptions>, string][] = [
-  // tree-sitter-css reads the `%` of a decimal keyframe selector as an ERROR, so the block keeps its source
-  // indentation where prettier re-indents it.
-  [
-    "decimal-keyframe",
-    "@keyframes x {\n  6.5% {\n    a: b;\n  }\n}\n",
-    { tabWidth: 4 },
-    "@keyframes x {\n    6.5% {\n    a: b;\n  }\n}\n",
-  ],
   // Prettier moves a block comment after a value to its own line once the value breaks; here it stays attached.
   [
     "value-comment",

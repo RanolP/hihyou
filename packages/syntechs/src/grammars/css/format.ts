@@ -37,14 +37,12 @@ const format = defineFormat<typeof grammar, CssOptions>();
 const spaced = () => inOrder(space);
 const adjacent = () => inOrder();
 /** Selectors on either side of a combinator: a line between, and after the combinator's token a space. */
-const combinator = () => inOrder({ join: "line", spaceWhen: { after: [">", "~", "+"] } });
+const combinator = () => inOrder({ join: "line", spaceWhen: { after: [">", ">>>", "~", "+"] } });
 /** Selectors one per line, one of more than two parts indenting as it breaks; then each `trail` child after a space. */
 const selectorList = (trail: "block"[] = []) =>
   splitOn(",", { trail, wrapItem: when("longSelector"), layout: { group: true, between: "hardline" } });
 /** The statement's own `;`, or one prettier adds. */
 const semicolon = tok(";").synth(true);
-/** Comma-separated values packed several to a line, indented once they break. */
-const packed = { group: true, indent: true, between: "line", fill: true } as const;
 /** `layout` for two entries or more; a lone entry prints bare. */
 const loneBare = <L>(layout: L) => ({ when: entryCount(1), then: {}, else: layout });
 type Cond = CondIn<typeof grammar, CssOptions>;
@@ -84,42 +82,47 @@ export const css = format({
     from: () => text("lower"),
     to: () => text("lower"),
 
-    // An IE filter's (`progid:...`) value as written, one space wherever the source has any gap (prettier's raw
-    // value); else the comma list, a grid template's keeping its lines, and an empty value's gap as written (fmt.ts's
-    // `declarationEnd`). The comments around the `:` print as postcss's `between` (fmt.ts's `declarationColon`).
+    // A value postcss-value-parser fails on (fmt.ts's `unparsedValue`) as written; an IE filter's (`progid:...`)
+    // value, one space wherever the source has any gap (prettier's raw value); else the comma list, a grid template's
+    // keeping its lines, and an empty value's gap as written (fmt.ts's `declarationEnd`). The comments around the `:`
+    // print as postcss's `between` (fmt.ts's `declarationColon`).
     declaration: ($) => [
       either(
-        firstText({ after: ":", prefix: ["progid:"] }),
-        inOrder({
-          join: "gap",
-          tight: { before: [":"] },
-          spaceWhen: { after: [":"], before: ["important"] },
-          verbatim: { except: ["property_name", "important"] },
-          skip: [";"],
-        }),
-        [
-          $.children.at(0).andThen((p) => p),
-          tok(":").via("declarationColon"),
-          either(when("emptyValue"), [], space),
-          // A CSS Modules `composes` value prints with its lines removed (prettier's css-decl), its words on one line.
-          either(
-            firstText({ is: ["composes"], anyCase: true }),
-            splitOn(",", {
-              except: ["property_name", ":", ";"],
-              trail: ["important"],
-              item: "space",
-              layout: { group: true, between: "line" },
-            }),
-            splitOn(",", {
-              except: ["property_name", ":", ";"],
-              trail: ["important"],
-              item: words({
-                keepLines: all(entryCount(1), firstText({ is: ["grid"], prefix: ["grid-template"], anyCase: true })),
+        when("unparsedValue"),
+        [$.children.at(0).andThen((p) => p), tok(":").via("colonThenSource")],
+        either(
+          firstText({ after: ":", prefix: ["progid:"] }),
+          inOrder({
+            join: "gap",
+            tight: { before: [":"] },
+            spaceWhen: { after: [":"], before: ["important"] },
+            verbatim: { except: ["property_name", "important"] },
+            skip: [";"],
+          }),
+          [
+            $.children.at(0).andThen((p) => p),
+            tok(":").via("declarationColon"),
+            either(when("emptyValue"), [], space),
+            // A CSS Modules `composes` value prints with its lines removed (prettier's css-decl), its words on one line.
+            either(
+              firstText({ is: ["composes"], anyCase: true }),
+              splitOn(",", {
+                except: ["property_name", ":", ";"],
+                trail: ["important"],
+                item: "space",
+                layout: { group: true, between: "line" },
               }),
-              layout: valueLayout,
-            }),
-          ),
-        ],
+              splitOn(",", {
+                except: ["property_name", ":", ";"],
+                trail: ["important"],
+                item: words({
+                  keepLines: all(entryCount(1), firstText({ is: ["grid"], prefix: ["grid-template"], anyCase: true })),
+                }),
+                layout: valueLayout,
+              }),
+            ),
+          ],
+        ),
       ),
       tok(";").via("declarationEnd"),
     ],
@@ -209,12 +212,7 @@ export const css = format({
       splitOn(",", { except: ["@media"], trail: ["block"], layout: { group: true, indent: true, between: "line" } }),
     ],
     supports_statement: spaced,
-    import_statement: () => [
-      spell("@import", "atName"),
-      space,
-      splitOn(",", { except: ["@import", ";"], item: words(), layout: loneBare(packed) }),
-      semicolon,
-    ],
+    import_statement: () => custom("importStatement"),
     namespace_statement: () => inOrder({ join: "space", tight: { before: [";"] } }),
     // Prettier's raw at-rule parameters: as written, one space wherever the source has any gap.
     charset_statement: () =>
