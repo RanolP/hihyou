@@ -413,15 +413,28 @@ const intersectionType: CustomRule<JsOptions> = (n, sctx) => {
   const js = ctx.js;
   if (isTransparentType(js, n)) return pr(ctx, items(js, n)[0], ctx.args);
   const { types, ops } = flattenTypes(js, n);
+  // tree-sitter nests `A & B & C` as `(A & B) & C`; a comment after `B` trails the inner node, which the flat
+  // list never prints, so it prints after `B`, where prettier's flat intersection has it.
+  const member = (x: number) => {
+    ctx.print(x);
+    for (
+      let up = parent(js, x), last = x;
+      up !== undefined && up !== n && kind(js, up) === "intersection_type";
+      last = up, up = parent(js, up)
+    ) {
+      if (lastChildWhere(js, up, (c) => named(js, c) && !isComment(js, c)) !== last) break;
+      printTrailingComments(ctx, up);
+    }
+  };
   const indented = (x: number) => {
     open(INDENT);
-    ctx.print(x);
+    member(x);
     close();
   };
   let wasIndented = false;
   open(GROUP);
   types.forEach((x, i) => {
-    if (i === 0) return ctx.print(x);
+    if (i === 0) return member(x);
     const previous = types[i - 1] as number;
     const op = ops.get(previous);
     const amp = () =>
@@ -432,7 +445,7 @@ const intersectionType: CustomRule<JsOptions> = (n, sctx) => {
       sText(" ");
       amp();
       sText(" ");
-      return wasIndented ? indented(x) : ctx.print(x);
+      return wasIndented ? indented(x) : member(x);
     }
     if (
       (!previousIsObject && !isObject) ||
@@ -448,14 +461,14 @@ const intersectionType: CustomRule<JsOptions> = (n, sctx) => {
         amp();
         sLine(0);
       }
-      ctx.print(x);
+      member(x);
       return close();
     }
     if (i > 1) wasIndented = true;
     sText(" ");
     amp();
     sText(" ");
-    return i > 1 ? indented(x) : ctx.print(x);
+    return i > 1 ? indented(x) : member(x);
   });
   close();
 };
@@ -528,7 +541,7 @@ const typeParameters: CustomRule<JsOptions> = (n, sctx) => {
   close();
   if (kind(ctx, n) === "type_arguments") tok(ctx, lastComma, "");
   else if (forced) tok(ctx, lastComma);
-  else if (!trailingCommaAllowed(ctx, "all")) tok(ctx, lastComma, "");
+  else if (!trailingCommaAllowed(ctx, "es5")) tok(ctx, lastComma, "");
   else if (lastComma !== undefined) {
     open(IF_BROKEN);
     tok(ctx, lastComma);

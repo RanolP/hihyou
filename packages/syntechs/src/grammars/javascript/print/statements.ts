@@ -928,13 +928,21 @@ const customs = {
     const js = s.js;
     const value = field(js, node, "value");
     const eq = anon(js, node, "=");
+    const name = field(js, node, "name");
+    // `c!`: prettier's identifier prints its definite `!`, so the name's comments go after it (`c! /* */`).
+    const bang = anon(js, node, "!");
     const left = () => {
       for (const c of children(js, node))
-        if (c === value || c === eq || isComment(js, c)) continue;
+        if (c === value || c === eq || c === bang || isComment(js, c)) continue;
+        else if (c === name && bang !== undefined)
+          withComments(s, c, () => {
+            s.printBare(c);
+            sTok(js, bang);
+          });
         else if (named(js, c)) s.print(c);
         else sTok(js, c);
     };
-    if (field(js, node, "name") === undefined) {
+    if (name === undefined) {
       left();
       return;
     }

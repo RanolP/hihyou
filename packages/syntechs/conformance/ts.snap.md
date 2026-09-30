@@ -1,4 +1,4 @@
-ts compatibility: 646/653 (98.93%), 1 refused (ok:false), 76 excluded
+ts compatibility: 652/653 (99.85%), 0 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -13,11 +13,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
 | typescript/comments/method_types.ts | 0/1 | 82.05% |
-| typescript/compiler/indexSignatureWithInitializer.ts | 0/1 | 87.50% |
-| typescript/conformance/types/moduleDeclaration/kind-detection.ts | 0/1 | 0.00% |
-| typescript/definite/without-annotation.ts | 0/1 | 91.67% |
-| typescript/non-null/braces.ts | 0/1 | 94.12% |
-| typescript/trailing-comma/trailing.ts | 2/3 | 97.78% |
 
 # Refused
 
@@ -25,7 +20,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| typescript/interface/long-type-parameters/long-type-parameters.ts | 2/2 | 75.65% | check: input comment "// always extends RectConfig" is missing from the output |
 
 # Excluded
 

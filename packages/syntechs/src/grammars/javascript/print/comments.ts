@@ -928,8 +928,23 @@ const mappedTypeParts = (c: CommentContext<JsOptions>): CommentTarget | undefine
   return last !== undefined ? { node: last, as: "trailing" } : undefined;
 };
 
+/**
+ * `declare /* c *\/ namespace A {}`: prettier's `declare` is a flag of the declaration, so a comment after it is
+ * inside the declaration, before its name, and prints there (`declare namespace /* c *\/ A {}`).
+ */
+const afterDeclare = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, preceding, following } = c;
+  if (kind(c, enclosing) !== "ambient_declaration" || preceding !== undefined || following === undefined)
+    return;
+  const name =
+    field(c, following, "name") ??
+    children(c, following).find((k) => kind(c, k) === "variable_declarator");
+  return name !== undefined ? { node: name, as: "leading" } : undefined;
+};
+
 // In prettier's order within each placement: typeCast and conditional run early, nestedConditional last.
 const handlers = [
+  afterDeclare,
   typeCast,
   mappedTypeParts,
   importAttribute,

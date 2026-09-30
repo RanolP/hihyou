@@ -24,6 +24,7 @@ import {
   outer,
   parent as parentOf,
   src,
+  unassert,
   unparen,
 } from "./util.js";
 
@@ -379,6 +380,8 @@ export function needsParens(n: number, ctx: JsCtx): boolean {
     case "class_heritage":
     case "extends_clause":
       if (key === "superClass") {
+        // Prettier looks through non-null assertions: `extends ({}!)`.
+        const base = unassert(ctx, n);
         if (
           [
             "arrow_function",
@@ -393,9 +396,9 @@ export function needsParens(n: number, ctx: JsCtx): boolean {
             "unary_expression",
             "update_expression",
             "yield_expression",
-          ].includes(nk) ||
-          isTaggedTemplate(ctx, n) ||
-          isDecoratedClass(ctx, n)
+          ].includes(kind(ctx, base)) ||
+          isTaggedTemplate(ctx, base) ||
+          isDecoratedClass(ctx, base)
         )
           return true;
       }
@@ -725,6 +728,12 @@ function assignmentNeedsParens(
     const g = parentOf(x, parent);
     if (kind(x, g) === "for_statement") return false;
   }
+  // Prettier parenthesizes a computed key's assignment everywhere except a TS property signature's (`[x = ""]: T`).
+  if (
+    pk === "computed_property_name" &&
+    kind(x, parentOf(x, parent)) === "property_signature"
+  )
+    return false;
   return true;
 }
 
