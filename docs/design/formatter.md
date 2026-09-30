@@ -4,7 +4,7 @@ The formatter in `packages/syntechs/src/fmt` lays out code for display in review
 
 ## Whose style: repo config, then the reviewer's overrides
 
-The formatter reads prettier and ruff configuration under those tools' own option names: "the formatter shall be aware of prettierrc or ruff config." Precedence is per option: the formatter's defaults, then the repo's `.prettierrc` or ruff config, then only the options the reviewer explicitly set ("respect user's one if overriden"). An option the reviewer never set comes from the repo. `packages/present/src/format-config.ts` implements the discovery and the merge.
+The formatter reads prettier and ruff configuration under those tools' own option names: "the formatter shall be aware of prettierrc or ruff config." Precedence is per option: the formatter's defaults, then the repo's `.prettierrc` or ruff config, then only the options the reviewer explicitly set ("respect user's one if overriden"). An option the reviewer never set comes from the repo. Config discovery and merging are implementation details of the (yet-unwritten) review core engine.
 
 Stylistic token rewrites that keep meaning are allowed: quotes, semicolons, trailing commas, redundant parentheses, number and hex normalization. "stylistic changes (e.g. singleQuote) shall be acceptable since it doesn't replace semantics."
 
