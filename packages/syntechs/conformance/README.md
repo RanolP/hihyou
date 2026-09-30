@@ -10,7 +10,7 @@ The oxfmt column scores that tool (`oxfmt 0.70.0`) on the same fixtures and opti
 | [jsonc](jsonc.snap.md) | prettier 3.9.9 | 9/9 | 100.00% | 0 | 0 | 100.00% |
 | [json-stringify](json-stringify.snap.md) | prettier 3.9.9 | 14/14 | 100.00% | 0 | 0 | 100.00% |
 | [css](css.snap.md) | prettier 3.9.9 | 144/151 | 95.36% | 0 | 6 | 85.43% |
-| [js](js.snap.md) | prettier 3.9.9 | 797/804 | 99.13% | 0 | 304 | 90.17% |
+| [js](js.snap.md) | prettier 3.9.9 | 782/789 | 99.11% | 0 | 319 | 91.89% |
 | [ts](ts.snap.md) | prettier 3.9.9 | 653/653 | 100.00% | 0 | 76 | 90.66% |
 | [python](python.snap.md) | ruff 0.16.8 | 322/327 | 98.47% | 0 | 49 | - |
 | [kotlin](kotlin.snap.md) | ktfmt 0.64 --kotlinlang-style | 726/753 | 96.41% | 0 | 11 | - |

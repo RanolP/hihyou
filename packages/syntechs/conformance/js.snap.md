@@ -1,8 +1,8 @@
-js compatibility: 797/804 (99.13%), 0 refused (ok:false), 304 excluded
+js compatibility: 782/789 (99.11%), 0 refused (ok:false), 319 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
-- oxfmt 0.70.0: 725/804 (90.17%)
+- oxfmt 0.70.0: 725/789 (91.89%)
 
 Fixtures: prettier 3.9.9 tests/format/{js,jsx} (recursive), every spec call listing parser `babel` or `acorn` or `espree` or `meriyah` or `oxc`, expected output from its __snapshots__.
 
@@ -82,7 +82,7 @@ The formatter threw (ok:false), or `check` found that its output says something 
 - jsx/cursor/in-jsx-text.js
 - jsx/cursor/in-tag.js
 
-## ignored syntax (not in the grammar or not the parser's) (176)
+## ignored syntax (not in the grammar or not the parser's) (191)
 
 - js/arrows-bind/arrows-bind.js
 - js/async-do-expressions/async-do-expressions.js
@@ -151,6 +151,21 @@ The formatter threw (ok:false), or `check` found that its output says something 
 - js/destructuring-private-fields/for-lhs.js
 - js/destructuring-private-fields/nested-bindings.js
 - js/destructuring-private-fields/valid-multiple-bindings.js
+- js/discard-binding/array-pattern.js
+- js/discard-binding/basic.js
+- js/discard-binding/discard-binding-arrow-params.js
+- js/discard-binding/discard-binding-assignment.js
+- js/discard-binding/discard-binding-async-arrow-params.js
+- js/discard-binding/discard-binding-bindings.js
+- js/discard-binding/discard-binding-for-await-using-binding.js
+- js/discard-binding/discard-binding-for-bindings.js
+- js/discard-binding/discard-binding-for-lhs.js
+- js/discard-binding/discard-binding-for-using-binding.js
+- js/discard-binding/function-parameter.js
+- js/discard-binding/object-pattern.js
+- js/discard-binding/unary-expression-void.js
+- js/discard-binding/using-variable-declarator.js
+- js/discard-binding/using.js
 - js/do/call-arguments.js
 - js/do/do.js
 - js/export-default/escaped/default-escaped.js

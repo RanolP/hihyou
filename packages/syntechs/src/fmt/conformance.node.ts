@@ -121,6 +121,9 @@ const JS_IGNORE = [
   "js/ternaries/parenthesis/await-expression.js",
   "js/await/like-call.js",
   "js/quotes/objects.js",
+
+  // experimental proposal syntax (below TC39 Stage 4), ignored until it ships
+  "js/discard-binding/",
 ];
 
 /** The same list's CSS entries: postcss-conditionals and YAML front matter, which no CSS grammar has. */
