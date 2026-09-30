@@ -17,9 +17,9 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | css/atword/atword.css | 0/1 | 66.67% |
 | css/color/color-adjuster.css | 0/1 | 96.77% |
 | css/comments/17479.css | 0/1 | 46.51% |
-| css/comments/at-rules.css | 0/1 | 47.71% |
-| css/comments/declaration.css | 0/1 | 67.43% |
-| css/comments/selectors.css | 0/1 | 59.56% |
+| css/comments/at-rules.css | 0/1 | 60.18% |
+| css/comments/declaration.css | 0/1 | 77.78% |
+| css/comments/selectors.css | 0/1 | 71.64% |
 | css/modules/modules.css | 0/1 | 99.20% |
 | css/parens/parens.css | 0/1 | 83.13% |
 | css/postcss-8-improment/test.css | 0/1 | 80.00% |

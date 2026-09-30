@@ -568,15 +568,36 @@ export function important(node: number): void {
 
 /**
  * Postcss's `between` of a declaration: the comments after its name and before its value, around the `:`. They
- * attach to the declaration (`handleComment`) for `declarationColon` to print.
+ * attach to the declaration (`handleComment`) for `declarationColon` to print. Among statements, postcss's comment
+ * is a statement of its own: one that starts the line the statement before it ends trails that statement.
  */
-const handleComment: CommentHandler<CssOptions> = ({ tree, enclosing, preceding }) =>
-  preceding !== undefined &&
-  tree.kindName(enclosing) === "declaration" &&
-  tree.kindName(preceding) === "property_name" &&
-  !/:\s*progid:/i.test(tree.text(enclosing))
+const handleComment: CommentHandler<CssOptions> = ({ tree, enclosing, preceding, placement }) => {
+  if (preceding === undefined) return undefined;
+  if (statementSequences.has(tree.kindName(enclosing)) && placement !== "ownLine")
+    return { node: preceding, as: "trailing" };
+  return tree.kindName(enclosing) === "declaration" &&
+    tree.kindName(preceding) === "property_name" &&
+    !/:\s*progid:/i.test(tree.text(enclosing))
     ? { node: enclosing, as: "dangling" }
     : undefined;
+};
+
+/** The nodes whose children prettier prints as a sequence of statements (printNodeSequence). */
+const statementSequences = new Set([...statementLists, "keyframe_block_list"]);
+
+/**
+ * Prettier's printNodeSequence, where a comment is a statement: a comment leading a statement ends its line, as a
+ * line comment does, unless another comment follows it on that line.
+ */
+export function statementComment(c: number, ctx: SCtx): boolean {
+  const t = ctx.tree;
+  const next = nextLeaf(t, c);
+  if (next === NO_NODE || (isComment(next, ctx) && t.lf(next) === 0)) return false;
+  let statement = next;
+  for (let p = t.parent(statement); p !== NO_NODE && !statementSequences.has(kind(p, ctx)); p = t.parent(p))
+    statement = p;
+  return ctx.leadingComments(statement).includes(c);
+}
 
 /**
  * A declaration's `:` with the comments of its `between` (`handleComment`), which prettier prints as written but
@@ -649,6 +670,7 @@ export const css: Language<CssOptions> = {
   stream: {
     ...gen.css(handWritten),
     wrap: frontMatterFirst,
+    commentEndsLine: statementComment,
     keepsSource: prettierIgnored,
   },
 };
