@@ -1,4 +1,4 @@
-js@oxfmt compatibility: 743/767 (96.87%), 0 refused (ok:false), 341 excluded
+js@oxfmt compatibility: 750/767 (97.78%), 0 refused (ok:false), 341 excluded
 
 Fixtures: those of the js target, every option set, expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults. A fixture oxfmt rejects under any of its option sets is excluded.
 
@@ -12,19 +12,12 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/assignment-comments/string.js | 0/1 | 96.59% |
 | js/binary-expressions/mutiple-comments/17192.js | 1/2 | 95.83% |
 | js/call/no-argument/no-arguments.js | 0/1 | 83.08% |
-| js/comments/empty-statements.js | 0/2 | 90.91% |
 | js/comments/return-statement-2.js | 0/2 | 87.32% |
 | js/comments/return-statement.js | 0/2 | 97.25% |
 | js/comments/tagged-template-literal.js | 0/2 | 89.66% |
 | js/comments/assignment/variable-declarator.js | 0/1 | 88.00% |
 | js/comments/first-argument/first-argument.js | 0/1 | 92.98% |
 | js/comments/in-list/dangling-comment-in-list.js | 0/1 | 95.91% |
-| js/explicit-resource-management/valid-await-using-comments.js | 0/1 | 88.24% |
-| js/for/continue-and-break-comment-without-blocks.js | 0/1 | 67.59% |
-| js/for-of/comments.js | 0/1 | 44.83% |
-| js/if/expr_and_same_line_comments.js | 0/1 | 81.93% |
-| js/if/issue-15168.js | 0/1 | 91.43% |
-| js/if/non-block.js | 0/1 | 82.35% |
 | js/if/condition-break/boolean-expression.js | 0/1 | 94.74% |
 | js/if/condition-break/unary-expression.js | 0/1 | 61.38% |
 | js/logical-expressions/in-unary-expression.js | 0/1 | 79.49% |

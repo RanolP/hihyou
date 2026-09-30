@@ -8,8 +8,10 @@ import type { CustomRule, PredicateRule } from "../../../fmt/dsl/runtime.js";
 import {
   commentFacts,
   printLeadingComment,
+  printTrailingComment,
   printTrailingComments,
   type StreamRule,
+  type Trailed,
 } from "../../../fmt/stream-format.js";
 import { lfAfter, nextLineEmpty } from "../../../fmt/text.js";
 import { firstLeaf, type FormatTree, prevLeaf } from "../../../fmt/tree.js";
@@ -26,6 +28,7 @@ import {
   sBreakParent,
   sHardline,
   sLine,
+  sLineSuffixBoundary,
   sText,
   sToken,
   withComments,
@@ -216,8 +219,11 @@ function statementSequence(s: JsStreamCtx, statements: readonly number[]): void 
     if (isEmpty(js, x) || x === last) return;
     sHardline();
     const next = statements[i + 1];
+    // oxfmt measures the gap after the statement's last comment, which a stray `;` can put on a later line.
+    const lastTrailing = js.options.compat === "oxfmt" ? s.trailingComments(x).at(-1) : undefined;
     if (
       isNextLineEmptyAfter(js, x) ||
+      (lastTrailing !== undefined && nextLineEmpty(js.tree, lastTrailing)) ||
       (next !== undefined &&
         semiLeftOut(js, x, next) &&
         nextLineEmpty(js.tree, next))
@@ -587,22 +593,65 @@ const customs = {
       if (c !== undefined) sToken(c, ";");
       else sToken(node, ";", true);
     };
-    const initSemiTok = () => {
-      if (!initIsDeclaration) semiTok(initSemi);
+    const rparen = lastChildWhere(js, node, (c) => !named(js, c) && kind(js, c) === ")");
+    // oxfmt's write_for_head_slot: a comment in the head prints before the `;` or `)` after it, one ending its line
+    // after a `;` right after that `;`.
+    const inHead = (c: number) =>
+      js.options.compat === "oxfmt" && rparen !== undefined && js.tree.ord(c) < js.tree.ord(rparen);
+    let pending = s.danglingComments(node).filter(inHead);
+    const ordOf = (n: number | undefined) => (n === undefined ? Infinity : js.tree.ord(n));
+    /**
+     * Prints the pending comments `take` picks; `lineStart` when a line separator was just printed, `lineEnd` when
+     * one follows.
+     */
+    const flush = (take: (c: number) => boolean, lineStart = false, lineEnd = false) => {
+      let previous: Trailed | undefined;
+      const picked = pending.filter(take);
+      picked.forEach((c, i) => {
+        if (js.tree.lf(c) > 0) {
+          if (!lineStart || i > 0) sHardline();
+          else sBreakParent();
+          if (js.tree.lf(c) > 1) sHardline();
+          s.comment(c);
+          if (s.isLineComment(c) && !(lineEnd && i === picked.length - 1)) sHardline();
+        } else if (lineStart && previous === undefined && !s.isLineComment(c)) {
+          s.comment(c);
+          previous = { line: false, suffix: false };
+        } else previous = printTrailingComment(s, commentFacts(s, c), previous);
+      });
+      pending = pending.filter((c) => !take(c));
     };
-    if (s.danglingComments(node).length > 0) {
-      danglingLines(s, node);
+    const before = (token: number | undefined, lineStart = false, lineEnd = false) =>
+      flush((c) => js.tree.ord(c) < ordOf(token), lineStart, lineEnd);
+    const endOfLine = (next: number | undefined) =>
+      flush((c) => js.tree.lf(c) === 0 && lfAfter(js.tree, c) > 0 && js.tree.ord(c) < ordOf(next));
+    const headless =
+      !(init !== undefined && initKind !== "empty_statement") && test === undefined && update === undefined;
+    const initSemiTok = () => {
+      if (!initIsDeclaration) {
+        before(initSemi);
+        semiTok(initSemi);
+      }
+      endOfLine(testSemiNode);
+    };
+    const testSemiTok = () => {
+      before(testSemiNode, !headless && test === undefined);
+      semiTok(testSemiNode);
+      endOfLine(rparen);
+    };
+    const outside = s.danglingComments(node).filter((c) => !inHead(c));
+    if (outside.length > 0) {
+      outside.forEach((c, i) => {
+        if (i > 0) sHardline();
+        s.comment(c);
+      });
       sLine(SOFT);
     }
     open(GROUP);
     sTok(js, anon(js, node, "for"));
     sText(" ");
     sTok(js, anon(js, node, "("));
-    if (
-      !(init !== undefined && initKind !== "empty_statement") &&
-      test === undefined &&
-      update === undefined
-    ) {
+    if (headless && pending.length === 0) {
       initSemiTok();
       semiTok(testSemiNode);
     } else {
@@ -612,18 +661,19 @@ const customs = {
       if (init !== undefined && initKind !== "empty_statement")
         s.print(init, { forInit: true });
       initSemiTok();
-      sLine(0);
+      if (!headless) sLine(0);
       pr(s, test);
-      semiTok(testSemiNode);
+      testSemiTok();
       if (update !== undefined) {
         sLine(0);
         s.print(update);
       }
+      before(rparen, false, true);
       close();
       sLine(SOFT);
       close();
     }
-    sTok(js, lastChildWhere(js, node, (c) => !named(js, c) && kind(js, c) === ")"));
+    sTok(js, rparen);
     clause(s, field(js, node, "body"));
     close();
   },
@@ -673,6 +723,8 @@ const customs = {
     sTok(js, field(js, node, "operator"));
     sText(" ");
     pr(s, field(js, node, "right"));
+    // oxfmt's for-in/of head is no group: an end-of-line comment after the right side flushes before the `)`.
+    if (js.options.compat === "oxfmt") sLineSuffixBoundary();
     sTok(js, lastChildWhere(js, node, (c) => !named(js, c) && kind(js, c) === ")"));
     clause(s, field(js, node, "body"));
     close();
@@ -819,8 +871,16 @@ const customs = {
     if (alternative === undefined) return;
     const isBlock = kind(js, consequent) === "statement_block";
     let needSpace = isBlock;
+    let dangling = s.danglingComments(node);
+    // oxfmt's write_comments_between_blocks: the comments on the consequent's line trail it outside the `if` group.
+    if (js.options.compat === "oxfmt" && !isBlock) {
+      const sameLine = dangling.findIndex((c) => js.tree.lf(c) > 0);
+      const run = sameLine < 0 ? dangling : dangling.slice(0, sameLine);
+      let previous: Trailed | undefined;
+      for (const c of run) previous = printTrailingComment(s, commentFacts(s, c), previous);
+      dangling = dangling.slice(run.length);
+    }
     if (!isBlock) sHardline();
-    const dangling = s.danglingComments(node);
     const firstComment = dangling[0];
     const lastComment = dangling.at(-1);
     if (firstComment !== undefined && lastComment !== undefined) {
@@ -830,7 +890,10 @@ const customs = {
       } else if (js.tree.lf(firstComment) > 0) {
         if (isBlock) sHardline();
       } else sText(" ");
-      danglingLines(s, node);
+      dangling.forEach((c, i) => {
+        if (i > 0) sHardline();
+        s.comment(c);
+      });
       if (s.isLineComment(lastComment) || lfAfter(js.tree, lastComment) > 0) sHardline();
       else sText(" ");
       needSpace = false;

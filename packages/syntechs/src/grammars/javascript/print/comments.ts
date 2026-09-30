@@ -3,6 +3,7 @@ import type {
   CommentHandler,
   CommentTarget,
 } from "../../../fmt/comments.js";
+import { NO_NODE } from "../../../core/arena.js";
 import { newlineBetween } from "../../../fmt/text.js";
 import { firstLeaf, nextLeaf, prevLeaf } from "../../../fmt/tree.js";
 import { heritage } from "./classes.js";
@@ -78,6 +79,61 @@ const beforeSemicolon = (c: CommentContext<JsOptions>): CommentTarget | undefine
   return next !== undefined
     ? { node: next, as: "leading" }
     : { node, as: "trailing" };
+};
+
+const JUMPS = new Set(["break_statement", "continue_statement", "debugger_statement"]);
+
+/** The outermost statement that ends where `n` does, `n` itself at a statement list. */
+const outermostEnding = (c: CommentContext<JsOptions>, n: number): number => {
+  let node = n;
+  for (
+    let up = parent(c, node);
+    up !== undefined && parent(c, up) !== undefined && lastCode(c, up) === node;
+    up = parent(c, node)
+  )
+    node = up;
+  return node;
+};
+
+/**
+ * `for (;;) continue // c\n;`: oxfmt ends a `break`, `continue` or `debugger` at its `;`, so a comment before the
+ * `;` on the statement's line trails it, breaking a loop's head from its body, and one on a line of its own trails
+ * the outermost statement ending there, below it. tree-sitter ends the jump before a same-line `//` comment and
+ * reads the `;` as an empty statement of its own.
+ */
+const oxfmtJumpSemicolon = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { comment, enclosing, preceding, following, tree } = c;
+  if (c.options.compat !== "oxfmt") return;
+  if (JUMPS.has(kind(c, enclosing))) {
+    const rest = codeAfter(c, enclosing, comment);
+    const semi = rest[0];
+    if (rest.length !== 1 || semi === undefined || kind(c, semi) !== ";") return;
+    if (tree.lf(comment) === 0) return { node: enclosing, as: "trailing" };
+    // `continue⏎// c⏎;[]`: a `;` guarding the code after it leaves the comment to lead that code.
+    const after = nextLeaf(tree, semi);
+    return after === NO_NODE || tree.lf(after) > 0 ? { node: outermostEnding(c, enclosing), as: "trailing" } : undefined;
+  }
+  if (preceding === undefined || kind(c, following) !== "empty_statement" || tree.lf(comment) > 0) return;
+  let jump: number | undefined = preceding;
+  while (jump !== undefined && !JUMPS.has(kind(c, jump))) jump = lastCode(c, jump);
+  return jump !== undefined && kind(c, lastCode(c, jump)) !== ";" ? { node: jump, as: "trailing" } : undefined;
+};
+
+/**
+ * `for (x⏎// a⏎in y //b⏎)`: oxfmt's for-in/of head keeps no comment on a line of its own after the left side, but
+ * hoists it above the `for`, and prints an end-of-line `//` comment after the right side, before the `)`.
+ */
+const oxfmtForInHead = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { comment, enclosing, text, tree } = c;
+  if (c.options.compat !== "oxfmt" || kind(c, enclosing) !== "for_in_statement") return;
+  const left = field(c, enclosing, "left");
+  const right = field(c, enclosing, "right");
+  if (left === undefined || right === undefined) return;
+  const at = tree.ord(comment);
+  const close = children(c, enclosing).findLast((k) => kind(c, k) === ")" && !named(c, k));
+  if (at < tree.ord(left) || close === undefined || at > tree.ord(close)) return;
+  if (tree.lf(comment) > 0 && at < tree.ord(right)) return { node: enclosing, as: "leading" };
+  return text.startsWith("//") ? { node: right, as: "trailing" } : undefined;
 };
 
 const TYPE_BODIES = new Set(["object_type", "interface_body"]);
@@ -565,7 +621,8 @@ const statementBody = (c: CommentContext<JsOptions>): CommentTarget | undefined 
     following === field(c, enclosing, "alternative")
   ) {
     const oneLine = text.startsWith("//") || !text.includes("\n");
-    return kind(c, preceding) !== "statement_block" && oneLine && tree.lf(comment) === 0
+    // oxfmt prints every one of them between the `if` group and `else`, a same-line run trailing the group.
+    return kind(c, preceding) !== "statement_block" && oneLine && tree.lf(comment) === 0 && c.options.compat !== "oxfmt"
       ? { node: preceding, as: "trailing" }
       : { node: enclosing, as: "dangling" };
   }
@@ -633,6 +690,8 @@ const forEmptyPart = (c: CommentContext<JsOptions>): CommentTarget | undefined =
   const close = kids.findLastIndex((k) => kind(c, k) === ")" && !named(c, k));
   // After the `)`, statementBody leads the body.
   if (at > close) return;
+  // oxfmt keeps each comment in its slot of the head, which prints it (write_for_head_slot).
+  if (c.options.compat === "oxfmt" && at > kids.findIndex((k) => kind(c, k) === "(")) return { node: enclosing, as: "dangling" };
   const real = (n: number) => named(c, n) && isCode(c, n) && !isEmptyPart(n);
   let before = kids.slice(0, at).findLast(real);
   // A declaring initializer holds its `;`, which babel's does not: the comment trails its last declarator.
@@ -1080,7 +1139,7 @@ const handlers = [
 
 export const handleComment: CommentHandler<JsOptions> = (original) => {
   const c = outOfTypeParens(original);
-  for (const h of [afterOpenParen, beforeStatementCloseParen, besideEmptyStatement, ...handlers]) {
+  for (const h of [oxfmtForInHead, afterOpenParen, beforeStatementCloseParen, oxfmtJumpSemicolon, besideEmptyStatement, ...handlers]) {
     const target = h(c);
     if (target) return target;
   }
