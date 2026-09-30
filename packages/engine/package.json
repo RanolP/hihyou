@@ -8,15 +8,10 @@
       "@hihyou/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    },
-    "./node": {
-      "@hihyou/source": "./src/node.ts",
-      "types": "./dist/node.d.ts",
-      "default": "./dist/node.js"
     }
   },
   "dependencies": {
-    "syntechs": "workspace:*",
-    "zod": "4.6.5"
+    "diff": "9.0.0",
+    "syntechs": "workspace:*"
   }
 }

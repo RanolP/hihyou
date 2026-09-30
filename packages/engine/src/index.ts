@@ -1,36 +1,42 @@
-export { defaultMatchOptions, type MatchOptions } from "syntechs/diff";
-export { type BuildOptions, buildReviewDoc } from "./doc/build.js";
-export {
-  DiffMode,
-  Edit,
-  FallbackReason,
+export type { Anchor, AstSteps, LineRange } from "./anchor.js";
+export { defaultCacheBytes } from "./cache.js";
+export type { Diffset } from "./diffset.js";
+export type { CollapseReason } from "./fold.js";
+export type {
+  CodeFragment,
   FileDiff,
-  FoldReason,
-  Group,
-  Position,
-  Range,
-  ReviewDoc,
-  Risk,
-  RiskReason,
-  RiskSignal,
-  schemaVersion,
-} from "./doc/schema.js";
-export { LanguageId, languageForPath } from "./parse/languages.js";
-export { createSyntaxParser } from "./parse/parser.js";
-export type { SyntaxParser } from "./parse/tree.js";
+  LinePair,
+  Side,
+  Span,
+} from "./fragments.js";
 export {
-  type ChangedFile,
-  Diffset,
-  type FileSource,
-  FileStatus,
-  type Side,
-} from "./source/file-source.js";
-export { memorySource } from "./source/memory.js";
+  type LanguageId,
+  languageForPath,
+  type SyntechsGrammarOptions,
+  syntechsGrammars,
+} from "./grammars.js";
 export {
-  diffsetFromCommit,
-  diffsetFromPr,
-  diffsetFromRange,
-  emptyRevision,
-  type Vcs,
-  vcsFileSource,
-} from "./source/vcs.js";
+  type BlobId,
+  type ChangedFileRef,
+  createEngine,
+  type Engine,
+  type FormatModule,
+  type Grammar,
+  type GrammarLoader,
+  type HighlightModule,
+  type Host,
+  type HostAuthor,
+  type HostPreferences,
+  type NodeId,
+  type SerializedDiffsetId,
+} from "./host.js";
+export type { InterDiffset, PortResult } from "./interdiff.js";
+export type {
+  AnchorData,
+  Author,
+  RequestAxis,
+  ReviewComment,
+  ReviewThread,
+  ReviewThreads,
+  Verdict,
+} from "./review.js";

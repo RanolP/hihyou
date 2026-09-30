@@ -20,14 +20,28 @@ The current engine's `Vcs`, `FileSource`, `ReviewDoc` and `buildReviewDoc`, and 
 /** The execution environment. CLI, VS Code, browser extension each implement one. */
 interface Host {
   grammars: GrammarLoader;
-  /** Same data -> same result, always. */
+  /** Same data -> same result, always. A host narrows `data` to its own type: its SerializedDiffsetId. */
   resolveDiffset(
-    data: SerializedDiffsetId<this>,
+    data: never,
   ):
     | { id: string; changes: ChangedFileRef[] }
     | Promise<{ id: string; changes: ChangedFileRef[] }>;
   readBlob(id: BlobId): Uint8Array | Promise<Uint8Array>;
   preferences?: HostPreferences;
+  /** Type-only: the host's part of `Author`. Never read at runtime. */
+  readonly authorType?: object;
+}
+type SerializedDiffsetId<H extends Host> = Parameters<H["resolveDiffset"]>[0];
+type HostAuthor<H extends Host> = H extends { readonly authorType?: infer A }
+  ? A extends object
+    ? A
+    : object
+  : object;
+type NodeId = number; // a syntechs Tree node handle
+
+/** A formatter with the host's options already bound in. */
+interface FormatModule {
+  format(tree: Tree): Formatted; // syntechs/fmt
 }
 interface HostPreferences {
   cacheBytes?: number;
@@ -123,6 +137,7 @@ interface Span {
   scope?: string; // syntax colour, TextMate scope
   changed?: boolean; // diff emphasis, kept separate from syntax colour
 }
+/** 1-based line where the fragment's run starts, on each side. */
 interface LinePair {
   before: number;
   after: number;
@@ -136,6 +151,11 @@ interface AnchorData {
   path: string;
   nodes: AstSteps[]; // non-empty; normalized: document order, descendants of an included ancestor dropped
 }
+/** 1-based lines of the blob's own (unformatted) text, both ends inclusive. */
+interface LineRange {
+  start: number;
+  end: number;
+}
 /** Engine object from diffset.anchor(data). */
 interface Anchor extends AnchorData {
   intoLineRanges(): Promise<LineRange[]>; // disjoint nodes give several ranges
@@ -143,7 +163,7 @@ interface Anchor extends AnchorData {
 
 interface ReviewThreads<H extends Host> {
   diffsetId: string; // joins Diffset.id, 1:1
-  grammars: Record<string, string>; // grammar id -> version used while reviewing
+  grammars: Record<string, string>; // language name -> Grammar.id used while reviewing
   ran: Author<H>[]; // who ran/tested this whole Diffset (Gerrit's "Verified")
   threads: ReviewThread<H>[];
 }
@@ -169,15 +189,14 @@ interface Verdict {
 type Author<H extends Host> = { id: string } & HostAuthor<H>;
 ```
 
-### Names the contract uses but does not define
+### How the engine pinned the names the first draft left open
 
-Five names above have no definition yet. What each is meant to be, as far as it was agreed:
-
-- `SerializedDiffsetId<H>`: the host's own serialized way of naming a change set (a commit, a range, a PR), which only that host reads back, in `resolveDiffset`. It is one of the two things that are ever serialized. Its shape per host, and how `H` determines it, are undecided.
-- `HostAuthor<H>`: the host-specific part of `Author`, with room for a display name or an avatar. Its shape per host, and how `H` determines it, are undecided.
-- `LineRange`: the line span one group of anchored nodes covers, returned by `Anchor.intoLineRanges`. Its fields (inclusive or exclusive end, 0- or 1-based) are undecided.
-- `NodeId`: one node of a syntechs `Tree`. syntechs exports no type by that name; its `Tree` (`packages/syntechs/src/core/arena.ts`) identifies a node by a plain number, which is presumably what `NodeId` names. Not confirmed.
-- `FormatModule`: the per-language formatter that syntechs provides. syntechs exports nothing under that name, and its exact type is not yet pinned.
+- `SerializedDiffsetId<H>` is the parameter type of the host's own `resolveDiffset`. The contract declares `resolveDiffset(data: never)`, so any narrower parameter satisfies it, and the host's choice (a commit range, a PR number) becomes its `SerializedDiffsetId`.
+- `HostAuthor<H>` is read off an optional, type-only `Host.authorType` field; a host that declares none gets `object`.
+- `LineRange` is 1-based and inclusive at both ends, on the blob's own text rather than the formatted display text, so an editor can jump to it.
+- `NodeId` is `number`, a syntechs `Tree` node handle.
+- `FormatModule` is `{ format(tree): Formatted }`, the syntechs formatter with the host's options bound in. Matching and `AstSteps` always run on the original tree; `Formatted.anchors` only carries node ranges onto the display text.
+- `ReviewThreads.grammars` maps a language name to the `Grammar.id` a thread's `AstSteps` were taken under. `Grammar.id` is `<language>@<hash>`, where the hash covers the decoded parse tables, since a grammar carries no version of its own and the tables decide the tree shape.
 
 `Language`, `Tree` and `Formatted` are existing syntechs types (`packages/syntechs/src/core/index.ts`, `packages/syntechs/src/fmt/format.ts`).
 
