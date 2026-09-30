@@ -1,4 +1,4 @@
-css compatibility: 131/151 (86.75%), 0 refused (ok:false), 6 excluded
+css compatibility: 133/151 (88.08%), 0 refused (ok:false), 6 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -15,14 +15,12 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | css/atrule/import.css | 0/1 | 45.09% |
 | css/atrule/supports.css | 0/1 | 14.39% |
 | css/atword/atword.css | 0/1 | 66.67% |
-| css/character-escaping/character_escaping.css | 0/1 | 16.56% |
 | css/color/color-adjuster.css | 0/1 | 96.77% |
 | css/comments/17479.css | 0/1 | 46.51% |
 | css/comments/at-rules.css | 0/1 | 47.71% |
 | css/comments/declaration.css | 0/1 | 67.43% |
 | css/comments/selectors.css | 0/1 | 59.56% |
 | css/composes/composes.css | 0/1 | 57.14% |
-| css/escaped-attribute/test.css | 0/1 | 87.50% |
 | css/font/font.css | 0/1 | 79.41% |
 | css/inline-url/inline_url.css | 0/1 | 97.92% |
 | css/modules/modules.css | 0/1 | 99.20% |

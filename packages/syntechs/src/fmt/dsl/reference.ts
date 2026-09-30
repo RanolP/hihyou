@@ -26,6 +26,7 @@ import {
   sHardline,
   sLine,
   sLineSuffixBoundary,
+  sLiteral,
   sText,
   sToken,
 } from "../stream.js";
@@ -427,7 +428,7 @@ export function flatten<O>(
           const text = evalCond(x.when, ctx, n, custom, kindHasFields)
             ? (normalizers[x.fn] as (s: string, o: unknown) => string)(raw, ctx.options)
             : raw;
-          out.push({ e: "tok", node: n, text, synthetic: false });
+          out.push({ e: "tok", node: n, text, synthetic: false, literal: true });
           return;
         }
         case "custom":
@@ -531,7 +532,9 @@ export function wrap<O>(
     }
   };
   const tok = (x: Entry) => {
-    if (x.e === "tok") sToken(x.node, x.text, x.synthetic);
+    if (x.e !== "tok") return;
+    if (x.literal) sLiteral(x.node, x.text);
+    else sToken(x.node, x.text, x.synthetic);
   };
 
   /** Prints `node` from its range, flattening it first when a custom rule reaches it. */

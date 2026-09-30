@@ -42,6 +42,8 @@ export type Entry =
       readonly node: number;
       readonly text: string;
       readonly synthetic: boolean;
+      /** A `text`'s spelling, printed as the emitter prints it: through `sLiteral`, whose line breaks are literal. */
+      readonly literal?: true;
     }
   | { readonly e: "space" }
   | { readonly e: "hardline" }
