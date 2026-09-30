@@ -840,8 +840,8 @@ const memberCustom: CustomRule<JsOptions> = (n, s) => {
         (memberChains.get(ctx)?.has(asserted) ?? false)));
   if (inner !== undefined && memberChains.get(ctx)?.has(inner))
     markMemberChain(ctx, n);
-  sLineSuffixBoundary();
-  if (shouldInline) sMemberLookup(sctx, n);  else {
+  if (shouldInline) sMemberLookup(sctx, n);
+  else {
     open(GROUP);
     open(INDENT);
     sLine(SOFT);
@@ -1069,7 +1069,6 @@ function sMemberChain(sctx: JsStreamCtx, n: number): void {
   const shouldMerge =
     groups.length >= 2 &&
     (groups[1] as Printed[]).length > 0 &&
-    !hasComment(ctx, (groups[1] as Printed[])[0]?.node) &&
     !memberComment((groups[1] as Printed[])[0]?.node as number) &&
     !(groups[1]?.length === 1 && groups[2]?.[0] !== undefined && argsAfterEndOfLineComment(groups[2][0].node)) &&
     shouldNotWrap(groups);

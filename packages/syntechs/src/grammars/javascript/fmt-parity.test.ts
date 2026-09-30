@@ -69,6 +69,14 @@ const edgeCases: [string, Target, string][] = [
     "js",
     "a[0] // c\n(1).b()\na[0] /* c */\n(1).b()\na // c\n.b().c()\na /* c */ .b().c().d()\na[0](1) // c\n.b()\na.x // c\n(1).b()",
   ],
+  // A comment in a computed-member callee's call broke after `=`, flushed into the arguments before a `.` member, and
+  // split `a.b` from `[0]`; oxfmt keeps the call poorly breakable only without a comment in it, sets no line-suffix
+  // boundary after a member's object, and merges a computed member with a trailing comment into the chain's head.
+  [
+    "callee-comment-chain",
+    "js",
+    "x = a[0] // c\n(1)\nconst y = a[0] // c\n(1)\nx = a[0] // c\n(1).b\nx = a.b[0] // c\n(1).c()\nx = a.b[i] // c\n(1)\na.b[0][1] // c\n(1).c()",
+  ],
   // oxfmt counts the blank lines just before the next statement, so one before a statement's own `;` on a later line
   // drops, unless that `;` is glued to the next statement as its ASI guard.
   [
