@@ -1,6 +1,8 @@
 export { check, decimalValue, type Lexeme, type Normalize } from "./check.js";
 export { type Anchor, type Formatted, format } from "./format.js";
 export {
+  type CompatOptions,
+  compatDefaults,
   type EndOfLine,
   type PrettierOptions,
   prettierDefaults,

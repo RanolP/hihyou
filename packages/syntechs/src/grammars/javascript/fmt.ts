@@ -1,5 +1,9 @@
 import type { Language as Parser } from "../../core/index.js";
-import { prettierDefaults, prettierSettings } from "../../fmt/options.js";
+import {
+  compatDefaults,
+  prettierDefaults,
+  prettierSettings,
+} from "../../fmt/options.js";
 import {
   defineLanguage,
   type Grammar,
@@ -76,6 +80,7 @@ import {
 
 const defaults: JsOptions = {
   ...prettierDefaults,
+  ...compatDefaults,
   semi: true,
   singleQuote: false,
   jsxSingleQuote: false,

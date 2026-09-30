@@ -346,7 +346,7 @@ async function main() {
         ],
         [
           "fixtures",
-          target.suite().cases.map((c) => ({
+          (await target.suite()).cases.map((c) => ({
             name: c.fixture,
             text: c.text,
             grammar: target.grammar(c.fixture),

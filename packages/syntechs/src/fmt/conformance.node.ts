@@ -4,7 +4,8 @@
 //
 //   node packages/syntechs/dist/fmt/conformance.node.js [target...] [--diff <fixture substring>] [--only <substring>]... [--json <path>]
 //
-// A language joins the matrix with one entry in TARGETS: its fmt module export and its fixture directories.
+// A language joins the matrix with one entry in TARGETS: its fmt module export and its fixture directories. Each
+// prettier-family target also runs as `<id>@oxfmt`: the same fixtures, oxfmt's output as the expected one.
 // `--only` (repeatable) runs just the fixtures whose path matches one of the given substrings, prints
 // passed/total and the failing fixture names, and writes no snapshot or README — for a worker checking a slice
 // of the matrix without producing a diff the others would have to reconcile. `--json` also writes the matrix rows,
@@ -20,12 +21,13 @@ import type { Language as Grammar } from "../core/language.js";
 import { check } from "./check.js";
 import {
   type Case,
+  type CaseRun,
   type PrettierTarget,
   prettierSuite,
   type Suite,
 } from "./conformance/prettier.node.js";
 import { ktfmt, ktfmtSuite } from "./conformance/ktfmt.node.js";
-import { oxfmt } from "./conformance/references.node.js";
+import { oxfmt, type Reference } from "./conformance/references.node.js";
 import {
   type FixtureResult,
   fixtureOutcome,
@@ -42,6 +44,7 @@ import {
 } from "./conformance/report.node.js";
 import { ruffSuite } from "./conformance/ruff.node.js";
 import { format } from "./format.js";
+import type { CompatOptions } from "./options.js";
 import type { Language } from "./rules.js";
 
 const PRETTIER = "prettier 3.9.9";
@@ -137,7 +140,9 @@ interface Target {
   export: string;
   grammar: (fixture: string) => GrammarName;
   source: string;
-  suite: () => Suite;
+  suite: () => Suite | Promise<Suite>;
+  /** The `compat` option a prettier-family target formats with. */
+  compat?: CompatOptions["compat"];
 }
 
 const prettier = (
@@ -154,9 +159,23 @@ const prettier = (
   grammar,
   source: `Fixtures: ${PRETTIER} tests/format/{${t.dirs.join(",")}} (recursive), every spec call listing parser ${t.parsers.map((p) => `\`${p}\``).join(" or ")}, expected output from its __snapshots__.`,
   suite: () => prettierSuite(prettierRoot, t),
+  compat: "prettier",
 });
 
-export const TARGETS: Target[] = [
+/**
+ * `target`'s fixtures and option sets scored against oxfmt, run with prettier's defaults (references.node.ts), as
+ * `<id>@oxfmt`: syntechs formats them with `compat: "oxfmt"`.
+ */
+const againstOxfmt = (target: Target): Target => ({
+  ...target,
+  id: `${target.id}@oxfmt`,
+  reference: oxfmt.name,
+  source: `Fixtures: those of the ${target.id} target, every option set, expected output from ${oxfmt.name} run on each with that option set over prettier's defaults. A fixture oxfmt rejects under any of its option sets is excluded.`,
+  suite: async () => referenceSuite(await target.suite(), oxfmt),
+  compat: "oxfmt",
+});
+
+const PRETTIER_TARGETS: Target[] = [
   prettier("json", "json", "json", () => "javascript", {
     dirs: ["json/json", "json/with-comment"],
     parsers: ["json"],
@@ -193,6 +212,10 @@ export const TARGETS: Target[] = [
       ignore: JS_IGNORE,
     },
   ),
+];
+
+export const TARGETS: Target[] = [
+  ...PRETTIER_TARGETS,
   {
     id: "python",
     reference: RUFF,
@@ -211,11 +234,12 @@ export const TARGETS: Target[] = [
     source: `Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ${ktfmt.name} run on each.`,
     suite: ktfmtSuite,
   },
+  ...PRETTIER_TARGETS.map(againstOxfmt),
 ];
 
-/** The ts target formats .tsx fixtures and prettier's jsx/ dir with the tsx grammar's `tsx` export. */
+/** The ts targets format .tsx fixtures and prettier's jsx/ dir with the tsx grammar's `tsx` export. */
 const exportFor = (t: Target, grammar: GrammarName) =>
-  t.id === "ts" && grammar === "tsx" ? "tsx" : t.export;
+  t.fmt === "typescript" && grammar === "tsx" ? "tsx" : t.export;
 
 const formatters = new Map<string, Language<unknown> | undefined>();
 async function loadFormatter(dir: string, name: string) {
@@ -247,13 +271,18 @@ function runCase(
   c: Case,
   grammar: Grammar,
   lang: Language<unknown>,
+  compat: Target["compat"],
   diff: string | undefined,
 ): FixtureResult {
   const runs: Run[] = c.runs.map((r) => {
     let out: string;
     let why: string | undefined;
     try {
-      const res = format(parseTree(grammar, c.text), lang, r.options);
+      const res = format(
+        parseTree(grammar, c.text),
+        lang,
+        compat === undefined ? r.options : { ...r.options, compat },
+      );
       out = res.ok ? res.text : c.text;
       if (!res.ok) why = `${res.reason}: ${res.detail}`;
       else {
@@ -285,6 +314,52 @@ function runCase(
   return { fixture: c.fixture, runs };
 }
 
+// A reference's output per fixture and option set, shared by the prettier target's reference column and the
+// `@oxfmt` target that takes it as the expected output.
+const referenceOutputs = new Map<string, Promise<string>>();
+
+/** `ref`'s output for one run of `c`, under prettier's parser for it; rejects when `ref` rejects the input. */
+function referenceOutput(ref: Reference, c: Case, r: CaseRun): Promise<string> {
+  const key = JSON.stringify([ref.name, c.fixture, r.parser, r.label]);
+  let out = referenceOutputs.get(key);
+  if (!out) {
+    out = ref.format(
+      c.fixture,
+      c.text,
+      r.parser === undefined ? r.options : { parser: r.parser, ...r.options },
+    );
+    referenceOutputs.set(key, out);
+  }
+  return out;
+}
+
+/** `base` with each run's expected output from `ref`; a fixture `ref` rejects in any run is excluded. */
+async function referenceSuite(base: Suite, ref: Reference): Promise<Suite> {
+  const cases: Case[] = [];
+  const excluded = [...base.excluded];
+  for (const c of base.cases) {
+    try {
+      const runs: CaseRun[] = [];
+      for (const r of c.runs)
+        runs.push({
+          ...r,
+          expected: r.asRecorded(await referenceOutput(ref, c, r)),
+        });
+      cases.push({ ...c, runs });
+    } catch (e) {
+      excluded.push({
+        fixture: c.fixture,
+        reason: `${ref.name} rejects it: ${rejection(e)}`,
+      });
+    }
+  }
+  return { cases, excluded };
+}
+
+/** A rejection's first line or clause, which names the error without the position that follows, so the excluded list groups by it. */
+const rejection = (e: unknown) =>
+  (e instanceof Error ? e.message : String(e)).split(/[\n;]/, 1)[0] ?? "";
+
 /** How many fixtures each reference tool prints as the expected output in every run, each run under prettier's parser for it. */
 async function scoreReferences(cases: Case[]): Promise<ReferenceScore[]> {
   const scores: ReferenceScore[] = [];
@@ -293,15 +368,7 @@ async function scoreReferences(cases: Case[]): Promise<ReferenceScore[]> {
     for (const c of cases) {
       let all = true;
       for (const r of c.runs) {
-        const out = await ref
-          .format(
-            c.fixture,
-            c.text,
-            r.parser === undefined
-              ? r.options
-              : { parser: r.parser, ...r.options },
-          )
-          .catch(() => undefined);
+        const out = await referenceOutput(ref, c, r).catch(() => undefined);
         if (out === undefined || r.asRecorded(out) !== r.expected) {
           all = false;
           break;
@@ -346,7 +413,7 @@ async function main() {
   mkdirSync(outDir, { recursive: true });
   for (const t of TARGETS) {
     if (wanted.length > 0 && !wanted.includes(t.id)) continue;
-    const { cases: allCases, excluded } = t.suite();
+    const { cases: allCases, excluded } = await t.suite();
     const cases =
       only.length === 0
         ? allCases
@@ -359,7 +426,7 @@ async function main() {
         results = "not implemented";
         break;
       }
-      results.push(runCase(c, await loadGrammar(g), lang, diff));
+      results.push(runCase(c, await loadGrammar(g), lang, t.compat, diff));
     }
     if (only.length > 0) {
       const failing =

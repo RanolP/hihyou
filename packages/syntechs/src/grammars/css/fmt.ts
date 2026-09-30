@@ -1,6 +1,8 @@
 import { NO_NODE, type Tree } from "../../core/arena.js";
 import { decimalValue, type Normalize } from "../../fmt/check.js";
 import {
+  type CompatOptions,
+  compatDefaults,
   type PrettierOptions,
   prettierDefaults,
   prettierSettings,
@@ -45,7 +47,7 @@ import { frontMatterLines, parseFrontMatter } from "./front-matter.js";
 import { language } from "./index.js";
 
 /** The prettier options its postcss printer reads (3.9.9); `bracketSpacing` and `objectWrap` go unread. */
-export interface CssOptions extends PrettierOptions {
+export interface CssOptions extends PrettierOptions, CompatOptions {
   singleQuote: boolean;
   /** `off` prints front matter as written; `auto` lays YAML's out (see `frontMatterLines`). */
   embeddedLanguageFormatting: "auto" | "off";
@@ -53,6 +55,7 @@ export interface CssOptions extends PrettierOptions {
 
 const defaults: CssOptions = {
   ...prettierDefaults,
+  ...compatDefaults,
   singleQuote: false,
   embeddedLanguageFormatting: "auto",
 };

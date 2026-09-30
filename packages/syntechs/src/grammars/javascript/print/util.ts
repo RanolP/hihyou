@@ -1,12 +1,12 @@
 import { NO_NODE } from "../../../core/arena.js";
 import type { Comments } from "../../../fmt/comments.js";
-import type { PrettierOptions } from "../../../fmt/options.js";
+import type { CompatOptions, PrettierOptions } from "../../../fmt/options.js";
 import type { PrintArgs } from "../../../fmt/rules.js";
 import { lfAfter } from "../../../fmt/text.js";
 import { type FormatTree, nextLeaf, prevLeaf } from "../../../fmt/tree.js";
 
 /** The prettier options its JavaScript and TypeScript printers read, by prettier's names. */
-export interface JsOptions extends PrettierOptions {
+export interface JsOptions extends PrettierOptions, CompatOptions {
   semi: boolean;
   singleQuote: boolean;
   jsxSingleQuote: boolean;
