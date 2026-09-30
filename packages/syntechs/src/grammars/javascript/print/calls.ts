@@ -1214,7 +1214,16 @@ const callCustom: CustomRule<JsOptions> = (n, s) => {
     // it started one.
     const comment = template === undefined ? undefined : sctx.leadingComments(template)[0];
     const tag = field(ctx, n, "type_arguments") ?? c;
-    if (comment !== undefined && tag !== undefined) {
+    // oxfmt keeps the line break after a block comment trailing the tag: `foo /* c */⏎`x``.
+    const tagComment = tag === undefined ? undefined : sctx.trailingComments(tag).at(-1);
+    if (
+      ctx.options.compat === "oxfmt" &&
+      tagComment !== undefined &&
+      !ctx.isLineComment(tagComment) &&
+      ctx.tree.lf(nextLeaf(ctx.tree, tagComment)) > 0
+    )
+      sHardline();
+    else if (comment !== undefined && tag !== undefined) {
       if (newlineBetween(ctx.tree, prevLeaf(ctx.tree, nextLeaf(ctx.tree, tag)), comment)) sHardline();
       else sText(" ");
     }
