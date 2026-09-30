@@ -25,6 +25,7 @@ export const kotlinCorpusDir = join(pkgRoot, "src/grammars/kotlin/corpus");
 export const GRAMMAR_NAMES = [
   "json",
   "css",
+  "html",
   "javascript",
   "typescript",
   "tsx",
@@ -37,6 +38,7 @@ export type GrammarName = (typeof GRAMMAR_NAMES)[number];
 const GRAMMAR_DIRS: Record<GrammarName, [string, string]> = {
   json: ["tree-sitter-json", "tree-sitter-json"],
   css: ["tree-sitter-css", "tree-sitter-css"],
+  html: ["tree-sitter-html", "tree-sitter-html"],
   javascript: ["tree-sitter-javascript", "tree-sitter-javascript"],
   typescript: ["tree-sitter-typescript/typescript", "tree-sitter-typescript"],
   tsx: ["tree-sitter-typescript/tsx", "tree-sitter-typescript"],
@@ -47,6 +49,7 @@ const GRAMMAR_DIRS: Record<GrammarName, [string, string]> = {
 const EXTENSIONS: Record<GrammarName, string[]> = {
   json: [".json"],
   css: [".css"],
+  html: [".html"],
   javascript: [".js", ".mjs", ".cjs", ".jsx"],
   typescript: [".ts", ".mts", ".cts"],
   tsx: [".tsx"],
@@ -64,6 +67,8 @@ export const FETCHED: Record<GrammarName, string[]> = {
   css: ["bootstrap.css", "normalize.css", "animate.css"].map((f) =>
     join(corpusDir, f),
   ),
+  // No large file is fetched: the repo's own .html files and the committed parity cases are its inputs.
+  html: [],
   javascript: ["lodash.js", "jquery.js"].map((f) => join(corpusDir, f)),
   typescript: [
     join(benchInputs, "scanner.ts"),

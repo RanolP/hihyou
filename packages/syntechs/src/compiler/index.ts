@@ -11,6 +11,7 @@ import {
   ACTION_RECOVER,
   ACTION_REDUCE,
   ACTION_SHIFT,
+  FLAG_LITERAL,
   FLAG_NAMED,
   FLAG_SUPERTYPE,
   FLAG_VISIBLE,
@@ -120,7 +121,8 @@ export function compile(source: GrammarSource): string {
     flags[id(m[1] as string)] =
       (/\.visible = true/.test(body) ? FLAG_VISIBLE : 0) |
       (/\.named = true/.test(body) ? FLAG_NAMED : 0) |
-      (/\.supertype = true/.test(body) ? FLAG_SUPERTYPE : 0);
+      (/\.supertype = true/.test(body) ? FLAG_SUPERTYPE : 0) |
+      (m[1]?.startsWith("anon_sym_") ? FLAG_LITERAL : 0);
   }
 
   const fieldNames: string[] = Array.from({ length: fieldCount + 1 }, () => "");

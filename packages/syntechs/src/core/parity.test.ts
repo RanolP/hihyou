@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import { language as css } from "../grammars/css/index.js";
+import { language as html } from "../grammars/html/index.js";
 import { language as javascript } from "../grammars/javascript/index.js";
 import { language as json } from "../grammars/json/index.js";
 import { language as kotlin } from "../grammars/kotlin/index.js";
@@ -58,6 +59,20 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
       // postcss-nested-props, whose colon the pseudo-class scanner must leave alone.
       ":root { --b : { c: d; }; --e: {f:g;} /* } */ --h: 'i}'; j: { k: l } m: 1px/2 n { o: p } }\n--a: {x:y;}",
       "--q: { r: s;",
+    ],
+  ],
+  html: [
+    html,
+    [
+      "<!DOCTYPE html>\n<html><head><title>t</title><style>a { b: c } </STYLE></head>\n<body class=\"x\" id=y hidden>\n<p>a &amp; b<br>c<img src=\x27d\x27/>\n<script>if (a </ b) {}</script>\n<!-- c -- d -->\n</body></html>\n",
+      // Implicit end tags: a list item, a paragraph before a block, a table row and cell, a definition list.
+      "<ul><li>a<li>b</ul><p>c<div>d</div><table><tr><td>e<td>f<tr><th>g</table><dl><dt>h<dd>i<dt>j</dl>",
+      // Custom elements, case-insensitive names, a stray end tag, one that closes an ancestor, and unclosed ones.
+      "<my-el a:b=\"1\"><X-Y>z</x-y></My-El></span><div><section><p>q</div>\n<em>r",
+      // A void element before an end tag, an unclosed comment, and raw text running to the end.
+      "<br></br><colgroup><col><col></colgroup><option><optgroup>s<optgroup>t\n<!-- u",
+      "<script>never closed",
+      "",
     ],
   ],
   javascript: [

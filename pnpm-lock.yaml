@@ -289,6 +289,9 @@ importers:
       tree-sitter-css:
         specifier: workspace:*
         version: link:grammars/tree-sitter-css
+      tree-sitter-html:
+        specifier: workspace:*
+        version: link:grammars/tree-sitter-html
       tree-sitter-javascript:
         specifier: workspace:*
         version: link:grammars/tree-sitter-javascript
@@ -309,6 +312,8 @@ importers:
         version: 0.23.0(typescript@7.0.2)
 
   packages/syntechs/grammars/tree-sitter-css: {}
+
+  packages/syntechs/grammars/tree-sitter-html: {}
 
   packages/syntechs/grammars/tree-sitter-javascript: {}
 

@@ -13,6 +13,7 @@ const pkg = resolve(import.meta.dirname, "../..");
 export const GRAMMARS: Record<string, { src: string; comments: string[] }> = {
   json: { src: "tree-sitter-json/src", comments: ["comment"] },
   css: { src: "tree-sitter-css/src", comments: ["comment", "js_comment"] },
+  html: { src: "tree-sitter-html/src", comments: ["comment"] },
   javascript: { src: "tree-sitter-javascript/src", comments: ["comment"] },
   typescript: {
     src: "tree-sitter-typescript/typescript/src",

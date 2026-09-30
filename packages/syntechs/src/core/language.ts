@@ -17,6 +17,11 @@ export const ACTION_HEADER = 4;
 export const FLAG_VISIBLE = 1;
 export const FLAG_NAMED = 2;
 export const FLAG_SUPERTYPE = 4;
+/**
+ * A token the grammar spells as a string (parser.c's `anon_sym_*`), so its text is its name. An anonymous token
+ * lexed from a pattern and aliased to a string, such as html's `alias(/[Dd][Oo].../, "doctype")`, lacks it.
+ */
+export const FLAG_LITERAL = 8;
 
 export type LexFn = (lexer: Lexer, state: number) => boolean;
 
