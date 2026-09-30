@@ -316,7 +316,29 @@ const tokenWidth = (s: string) => {
   return w + tabs * tabWidth;
 };
 
+/**
+ * A tree printed inside another, as a JS template's embedded CSS: its tokens anchor to `anchor`, a node of the outer
+ * tree, as synthetic; `token`, when set, writes a token itself (a placeholder an expression replaces) and returns true.
+ */
+export interface Embedding {
+  readonly anchor: number;
+  token: ((s: string) => boolean) | undefined;
+}
+let embedding: Embedding | undefined;
+
+/** Prints `fn` under `e`, restoring the embedding around it (embeds nest). */
+export function withEmbedding(e: Embedding, fn: () => void): void {
+  const outer = embedding;
+  embedding = e;
+  try {
+    fn();
+  } finally {
+    embedding = outer;
+  }
+}
+
 export function resetStream(ruff = false, tabs = 0): void {
+  embedding = undefined;
   ruffSpaces = ruff;
   tabWidth = tabs;
   expandsSeen = false;
@@ -397,6 +419,20 @@ export function sKeptText(s: string): void {
  * An `imaginary` one counts no width toward its line, as ktfmt's trailing comma, which it adds after the layout.
  */
 export function sToken(node: number, s: string, synthetic = false, imaginary = false): void {
+  if (embedding !== undefined) {
+    const hook = embedding.token;
+    if (hook !== undefined) {
+      // The hook writes through sText and jumps, never back into sToken.
+      embedding.token = undefined;
+      try {
+        if (hook(s)) return;
+      } finally {
+        embedding.token = hook;
+      }
+    }
+    node = embedding.anchor;
+    synthetic = true;
+  }
   const w = imaginary ? 0 : tokenWidth(s);
   measured(s, w);
   strs.push(s);

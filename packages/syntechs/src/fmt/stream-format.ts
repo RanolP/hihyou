@@ -198,11 +198,63 @@ export function formatStream<O>(
   options: Partial<O> = {},
 ): Formatted {
   try {
-    const language = base.stream;
     const resolved: O = { ...base.defaults, ...options };
     const settings = base.settings(resolved);
     const ruff = settings.ruff === true;
     resetStream(ruff, ruff ? settings.indentWidth : 0);
+    const ctx = streamCtx(tree, base, resolved);
+    const language = base.stream;
+    ctx.print(tree.root);
+    if (language.finalLine?.(ctx) !== false) sHardline();
+    const printed = printStream(settings);
+    if (language.rewritesComments)
+      rewriteComments(printed, tree, ctx.isComment, ctx.isLineComment, settings.lineWidth);
+    const { text } = printed;
+    const eol = endOfLine(settings.endOfLine, tree);
+    const rewrite = eol !== "\n" || text.includes("\r");
+    let anchors: Anchor[] | undefined;
+    return {
+      ok: true,
+      text: rewrite ? text.replace(/\r\n?|\n/g, eol) : text,
+      get anchors() {
+        if (anchors) return anchors;
+        const moved = rewrite ? shiftForEndOfLine(text, eol) : undefined;
+        anchors = [];
+        for (let t = 0; t < printed.at.length; t++) {
+          const nd = printed.nodes[t] as number;
+          const start = printed.at[t] as number;
+          const end = start + (printed.lengths[t] as number);
+          const anchor: Anchor = {
+            from: [tree.start(nd), tree.end(nd)],
+            to: moved ? [moved(start), moved(end)] : [start, end],
+          };
+          if (printed.synthetic[t]) anchor.synthetic = true;
+          anchors.push(anchor);
+        }
+        return anchors;
+      },
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      reason: "formatter-error",
+      detail: e instanceof Error ? e.message : String(e),
+    };
+  }
+}
+
+/**
+ * Lays `tree` out by the `stream` rules of `base` onto the stream where it stands, with no final line: a language
+ * embedded in another's output (see stream.ts's `withEmbedding`). Throws what a rule throws.
+ */
+export function printInto<O>(tree: Tree, base: Language<O>, options: Partial<O> = {}): void {
+  const ctx = streamCtx(tree, base, { ...base.defaults, ...options });
+  ctx.print(tree.root);
+}
+
+function streamCtx<O>(tree: Tree, base: Language<O>, resolved: O): StreamCtx<O> {
+  {
+    const language = base.stream;
     const rules: (StreamRule<O> | null)[] = [];
     const ruleOf = (n: number) => {
       const k = tree.kind(n);
@@ -305,42 +357,7 @@ export function formatStream<O>(
       ownsComments: (node) =>
         printsOwnComments !== undefined && !isBroken(node) && printsOwnComments(node, ctx),
     };
-
-    ctx.print(tree.root);
-    if (language.finalLine?.(ctx) !== false) sHardline();
-    const printed = printStream(settings);
-    if (language.rewritesComments) rewriteComments(printed, tree, isComment, isLine, settings.lineWidth);
-    const { text } = printed;
-    const eol = endOfLine(settings.endOfLine, tree);
-    const rewrite = eol !== "\n" || text.includes("\r");
-    let anchors: Anchor[] | undefined;
-    return {
-      ok: true,
-      text: rewrite ? text.replace(/\r\n?|\n/g, eol) : text,
-      get anchors() {
-        if (anchors) return anchors;
-        const moved = rewrite ? shiftForEndOfLine(text, eol) : undefined;
-        anchors = [];
-        for (let t = 0; t < printed.at.length; t++) {
-          const nd = printed.nodes[t] as number;
-          const start = printed.at[t] as number;
-          const end = start + (printed.lengths[t] as number);
-          const anchor: Anchor = {
-            from: [tree.start(nd), tree.end(nd)],
-            to: moved ? [moved(start), moved(end)] : [start, end],
-          };
-          if (printed.synthetic[t]) anchor.synthetic = true;
-          anchors.push(anchor);
-        }
-        return anchors;
-      },
-    };
-  } catch (e) {
-    return {
-      ok: false,
-      reason: "formatter-error",
-      detail: e instanceof Error ? e.message : String(e),
-    };
+    return ctx;
   }
 }
 
