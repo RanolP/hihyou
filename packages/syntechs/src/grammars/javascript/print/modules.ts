@@ -1,7 +1,10 @@
 // Prettier's import and export printers (print/module.js). Their layouts are format.ts's; what it names `custom`
 // is `moduleCustoms`, written against sink.ts.
 
+import { NO_NODE } from "../../../core/arena.js";
 import type { CustomRule } from "../../../fmt/dsl/runtime.js";
+import { nextLineEmpty } from "../../../fmt/text.js";
+import { nextLeaf } from "../../../fmt/tree.js";
 import type { StreamCtx } from "../../../fmt/stream-format.js";
 import {
   capture,
@@ -99,15 +102,23 @@ function printSpecifiers(s: JsStreamCtx, clauses: readonly number[]): void {
   const lastStandalone = standaloneNodes.at(-1);
   if (lastStandalone !== undefined) comma(lastStandalone);
   const itemCommas = separators(js, named, grouped);
-  const printed = (between: () => void) =>
+  const printed = (between: (previous: number) => void) =>
     grouped.forEach((x, i) => {
-      if (i > 0) between();
+      if (i > 0) between(grouped[i - 1] as number);
       s.print(x);
       if (i === grouped.length - 1) return;
       const sep = itemCommas.get(x);
       if (sep !== undefined) sTok(js, sep);
       else sToken(x, ",", true);
     });
+  // Prettier keeps a blank line between specifiers only where a comment follows it (`a,⏎⏎// c⏎b`); a bare
+  // blank line, or one before a specifier whose comment sits inside it (`b as // c`), goes.
+  const blankBeforeComment = (previous: number) => {
+    const sep = itemCommas.get(previous);
+    if (sep === undefined || !nextLineEmpty(js.tree, previous)) return false;
+    const next = nextLeaf(js.tree, sep);
+    return next !== NO_NODE && isComment(js, next);
+  };
   const canBreak =
     grouped.length > 1 ||
     standaloneNodes.length > 0 ||
@@ -118,7 +129,10 @@ function printSpecifiers(s: JsStreamCtx, clauses: readonly number[]): void {
     sTok(js, open_);
     open(INDENT);
     sLine(spacing);
-    printed(() => sLine(0));
+    printed((previous) => {
+      sLine(0);
+      if (blankBeforeComment(previous)) sLine(SOFT);
+    });
     close();
     if (trailingCommaAllowed(js)) {
       open(IF_BROKEN);

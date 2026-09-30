@@ -599,14 +599,42 @@ export function isSignedNumber(ctx: JsCtx, n: number): boolean {
   );
 }
 
-/** Prettier's isConciselyPrintedArray: a non-empty array of numbers, printed as a fill. */
+/** The elements of an array, `undefined` for each hole, with the `,` after each. */
+export function arrayElements(
+  x: HasTree,
+  n: number,
+): { element: number | undefined; comma: number | undefined }[] {
+  const out: {
+    element: number | undefined;
+    comma: number | undefined;
+  }[] = [];
+  let expecting = true;
+  for (const c of children(x, n)) {
+    if (isComment(x, c)) continue;
+    if (named(x, c)) {
+      out.push({ element: c, comma: undefined });
+      expecting = false;
+    } else if (kind(x, c) === ",") {
+      if (expecting) out.push({ element: undefined, comma: c });
+      else {
+        const last = out.at(-1);
+        if (last) last.comma = c;
+      }
+      expecting = true;
+    }
+  }
+  return out;
+}
+
+/** Prettier's isConciselyPrintedArray: a non-empty array of numbers, printed as a fill; a hole is no number. */
 export function isConciselyPrintedArray(ctx: JsCtx, n: number): boolean {
   if (kind(ctx, n) !== "array") return false;
-  const elements = items(ctx, n);
+  const elements = arrayElements(ctx, n);
   return (
     elements.length > 0 &&
     elements.every(
-      (e) =>
+      ({ element: e }) =>
+        e !== undefined &&
         isSignedNumber(ctx, e) &&
         !hasComment(ctx, e, CF.Trailing | CF.Line, (c) => ctx.tree.lf(c) === 0),
     )

@@ -31,6 +31,7 @@ import {
 import { printNumber, printString } from "../../../fmt/dsl/normalizers.js";
 import { role } from "./parens.js";
 import {
+  arrayElements,
   CF,
   childWhere,
   children as childrenOf,
@@ -398,33 +399,6 @@ export function sPrintDecorators(
 }
 
 // --- arrays -----------------------------------------------------------------------------------------------------
-
-/** The elements of an array, `undefined` for each hole, with the `,` after each. */
-function arrayElements(
-  x: HasTree,
-  n: number,
-): { element: number | undefined; comma: number | undefined }[] {
-  const out: {
-    element: number | undefined;
-    comma: number | undefined;
-  }[] = [];
-  let expecting = true;
-  for (const c of childrenOf(x, n)) {
-    if (isComment(x, c)) continue;
-    if (named(x, c)) {
-      out.push({ element: c, comma: undefined });
-      expecting = false;
-    } else if (kind(x, c) === ",") {
-      if (expecting) out.push({ element: undefined, comma: c });
-      else {
-        const last = out.at(-1);
-        if (last) last.comma = c;
-      }
-      expecting = true;
-    }
-  }
-  return out;
-}
 
 const isArrayOrObject = (x: HasTree, n: number | undefined) =>
   kind(x, n) === "array" || kind(x, n) === "object";

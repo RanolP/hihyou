@@ -1,4 +1,4 @@
-js compatibility: 789/804 (98.13%), 1 refused (ok:false), 304 excluded
+js compatibility: 794/804 (98.76%), 1 refused (ok:false), 304 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -12,16 +12,11 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
-| js/arrays/numbers-with-holes.js | 0/1 | 57.78% |
 | js/arrays/preserve_empty_lines.js | 0/1 | 90.00% |
-| js/arrows/arrow_function_expression.js | 0/2 | 94.29% |
-| js/arrows/issue-17421.js | 0/2 | 90.60% |
-| js/arrows/parenthesized-body/issue-18776.js | 0/1 | 85.71% |
 | js/embeded/indention/19518.js | 0/1 | 64.94% |
 | js/embeded/indention/indention-2.js | 0/1 | 23.53% |
 | js/embeded/indention/indention.js | 0/1 | 63.27% |
 | js/empty-paren-comment/empty_paren_comment.js | 0/1 | 91.43% |
-| js/export/blank-line-between-specifiers.js | 0/2 | 95.00% |
 | js/if/condition-break/boolean-expression.js | 0/1 | 97.01% |
 | js/reserved-word/yield.js | 0/1 | 93.33% |
 | js/sequence-expression/parenthesized.js | 0/1 | 85.71% |

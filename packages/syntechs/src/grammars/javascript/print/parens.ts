@@ -364,10 +364,12 @@ export function needsParens(n: number, ctx: JsCtx): boolean {
       (a) => kind(ctx, a) === "arrow_function",
     );
     const body = arrow === undefined ? undefined : field(ctx, arrow, "body");
+    // A sequence or assignment body is printed inside its own parens, which already shield the object.
+    const bodyKind = body === undefined ? undefined : kind(ctx, unparen(ctx, body));
     if (
       body !== undefined &&
-      kind(ctx, body) !== "sequence_expression" &&
-      kind(ctx, body) !== "assignment_expression" &&
+      bodyKind !== "sequence_expression" &&
+      bodyKind !== "assignment_expression" &&
       leftmostIs(ctx, body, n)
     )
       return true;
