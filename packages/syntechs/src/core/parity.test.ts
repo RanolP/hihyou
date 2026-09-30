@@ -52,6 +52,8 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
       "@media screen { a { b: c }\n}} d { e: f }",
       // The descendant-operator scanner before a pseudo-class that is really a declaration.
       "a b:hover { c: d } e f:g; h",
+      // The descendant-operator scanner before a quoted string, a selector part.
+      "one \"two\" three {} one 'two' three {}",
       // Custom property sets, one `{...}` group (a block) or more (a raw value with a string and a comment), and
       // postcss-nested-props, whose colon the pseudo-class scanner must leave alone.
       ":root { --b : { c: d; }; --e: {f:g;} /* } */ --h: 'i}'; j: { k: l } m: 1px/2 n { o: p } }\n--a: {x:y;}",
@@ -75,6 +77,10 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
       "a\n(b)\nc\n[d]\ne\n++f\ng\n-h\ni\n.j\nk\n? l : m\nn\n!= o\nfunction p() { return\nq }\n",
       // Recovery inside nested statements: an unclosed condition and a stray `else`.
       "if (a { b } else }\nwhile (c) { d(\n",
+      // Annex B's `in` that ends a for-in initializer, against an `in` inside it and names starting with `in`.
+      "for (var a = 1 || (b in c) in {});\nfor (var d = e instanceof F in g);\nfor (var h = i\nin j);\nfor (var k = inx; ;);\n",
+      // `static` before a line break and a name is the name's modifier.
+      "class C {\n  static\n  static\n  static\n  a() {}\n  static\n  { b }\n}\n",
     ],
   ],
   typescript: [
@@ -89,6 +95,12 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
       "let s = `x${y}` + `unterminated ${z",
       // Function-signature ASI inside a class body, and a broken generic parameter list.
       "class C { m(): void\n  n() {} }\nfunction f<T(a: T): {\n",
+      // A type's `<` on the next line starts a new member, while an expression's `<` continues the comparison.
+      "interface I { a: typeof b\n  <T>(): void; c: C\n  <U>(): U }\nx = a\n< b\n",
+      // `readonly` then a mapped type clause on the next line is one modifier; an index signature's `[` is a new member.
+      "type M = { readonly\n  [K in T]: V }\ninterface J { a: A\n  [k: string]: B }\nx = a\n[0]\n",
+      // `let` then a name on the next line declares it; any other name before a newline takes a semicolon.
+      "let\nabstract\nexport class Y {}\nlet x\nfoo\n(let) satisfies unknown\n",
     ],
   ],
   tsx: [
@@ -116,6 +128,16 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
       "class C:\n    def f(self):\n        return (\n    x = 1\n",
       // Tabs and spaces mixed, and an unterminated f-string replacement field.
       'if a:\n\tb\n        c\nd = f"{e"\n',
+      // A bracket's next operand dedented below its block, where no closing bracket is valid yet (the patched
+      // scanner reads it as inside the bracket), then a block opened during error recovery, which still dedents.
+      "def f():\n  (a +\nb)\n  c\n",
+      'g = 1, *"ten"\ndef f():\n    x\ny\nfor a in b:\n    pass\n',
+      // A nested string's end inside an f-string's field, whose next line must not dedent (patched scanner).
+      'if a:\n    foo = f"""x {\n    f"a" +\n  1\n} y\n"""\n',
+      // PEP 696 type parameter defaults, which only the patched grammar reads.
+      "def f[T = int, *Ts = *tuple[int], **P = [int]](): pass\nclass C[T: str = str]: ...\ntype A[T = int] = list[T]\n",
+      // Patched grammar: lazy imports beside `lazy` as a name, unpacking in comprehensions, `&` inside `^`.
+      "lazy import a\nlazy from b import (c)\nlazy = lazy.x\n[*x for x in y]\n{**d for d in e}\nf(*x for x in y)\na ^ b & c ^ d\n",
     ],
   ],
   kotlin: [
@@ -129,6 +151,8 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
       'val a = "open\nval b = """never closed ${c\nfun g( { else }\n',
       // An import list broken by a statement, an unclosed nested comment, and `in` vs an identifier after a newline.
       "import a\nval x = 1\nimport b\nwhile (x\nin y) {}\n/* /* */",
+      // A `+`, `-` or `[` on the next line starts a statement, but a `->` continues a `when` entry.
+      "fun f() {\n  a\n  + +b\n  c\n  - d\n  e\n  [0, 1,]\n  when (x) {\n    1,\n    -> 2\n    3\n    -> 4\n  }\n}\n",
     ],
   ],
 };

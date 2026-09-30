@@ -1,4 +1,5 @@
 import type { FormatTree } from "../../../fmt/tree.js";
+import { type Pat, type PatArgs, type PatKeyword, readCasePattern } from "./pattern.js";
 import { byteOffsetOf, endOf, startOf } from "./trivia.js";
 
 /**
@@ -180,8 +181,10 @@ export interface Comp extends ExprBase {
 export interface DictComp extends ExprBase {
   readonly kind: "DictComp";
   readonly open: number;
-  readonly key: Expr;
-  readonly colon: number;
+  /** Absent for an unpacked element, `{**d for d in ds}`, which has the `**` token `op` instead. */
+  readonly key: Expr | undefined;
+  readonly colon: number | undefined;
+  readonly op: number | undefined;
   readonly value: Expr;
   readonly generators: Comprehension[];
   readonly close: number;
@@ -206,7 +209,9 @@ export type Other =
   | Clause
   | ExceptHandler
   | MatchCase
-  | Pattern
+  | Pat
+  | PatArgs
+  | PatKeyword
   | TypeParams
   | TypeParam;
 
@@ -296,15 +301,13 @@ export interface ExceptHandler extends Base {
 export interface MatchCase extends Base {
   readonly kind: "MatchCase";
   readonly kw: number;
-  readonly pattern: Pattern;
+  readonly pattern: Pat;
+  /** Where the patterns after `case` start and end, their own parentheses included. */
+  readonly patternSpan: { start: number; end: number };
   readonly guardKw: number | undefined;
   readonly guard: Expr | undefined;
   readonly colon: number;
   readonly body: Stmt[];
-}
-/** A match pattern, printed from its tokens with Python's usual spacing. */
-export interface Pattern extends Base {
-  readonly kind: "Pattern";
 }
 export interface TypeParams extends Base {
   readonly kind: "TypeParams";
@@ -312,7 +315,7 @@ export interface TypeParams extends Base {
   readonly params: TypeParam[];
   readonly close: number;
 }
-/** `T`, `T: bound`, `*Ts` or `**P`. */
+/** `T`, `T: bound`, `*Ts` or `**P`, each with an optional PEP 696 default: `T = int`. */
 export interface TypeParam extends Base {
   readonly kind: "TypeParam";
   /** `*` or `**`. */
@@ -320,6 +323,8 @@ export interface TypeParam extends Base {
   readonly name: number;
   readonly colon: number | undefined;
   readonly bound: Expr | undefined;
+  readonly eq?: number;
+  readonly default?: Expr;
 }
 
 export type Stmt =
@@ -1209,7 +1214,8 @@ class Reader {
       if (kind === "except_clause") {
         const block = this.named(c).find((x) => this.kind(x) === "block");
         const hbody = block !== undefined ? this.body(block) : [];
-        const value = this.field(c, "value");
+        const values = this.fields(c, "value");
+        const value = values[0];
         let type: Expr | undefined;
         let asTok: number | undefined;
         let name: number | undefined;
@@ -1221,8 +1227,18 @@ class Reader {
             target !== undefined
               ? (this.named(target)[0] ?? target)
               : undefined;
-        } else if (value !== undefined) type = this.expr(value);
-        // `except A, B:` is Python 2 unless it is `except (A, B)`; tree-sitter reads the second as the alias.
+        } else if (values.length > 1)
+          // PEP 758's `except A, B:`, the tuple without its parentheses.
+          type = this.tupleOf(
+            c,
+            values,
+            undefined,
+            undefined,
+            this.start(values[0] as number),
+            this.end(values.at(-1) as number),
+          );
+        else if (value !== undefined) type = this.expr(value);
+        // The grammar's `alias` field: an `as` target outside an `as_pattern`, which the rules never print.
         const alias = this.field(c, "alias");
         if (alias !== undefined) this.fail(c, "Python 2 except");
         handlers.push(
@@ -1356,6 +1372,17 @@ class Reader {
       parent: undefined,
     };
     switch (this.kind(p)) {
+      case "type_default": {
+        const param = this.typeParam(this.needField(p, "name"));
+        const value = this.expr(this.needField(p, "value"));
+        return this.link({
+          ...param,
+          ...base,
+          kids: [...param.kids, value],
+          eq: this.need(p, "="),
+          default: value,
+        });
+      }
       case "identifier":
         return {
           ...base,
@@ -1432,19 +1459,20 @@ class Reader {
         guardClause !== undefined ? this.named(guardClause)[0] : undefined;
       const guard = guardExpr !== undefined ? this.expr(guardExpr) : undefined;
       const body = this.body(this.needField(c, "consequence"));
-      // Every pattern after `case`, up to the guard or the colon, as one node.
       const last =
         this.named(c)
           .filter((x) => this.kind(x) === "case_pattern")
           .at(-1) ?? patternNode;
-      const pattern: Pattern = {
-        kind: "Pattern",
-        ts: c,
-        start: this.start(patternNode),
-        end: this.end(last),
-        kids: [],
-        parent: undefined,
-      };
+      const patternSpan = { start: this.start(patternNode), end: this.end(last) };
+      const colon = this.need(c, ":");
+      const guardKw = guardClause !== undefined ? this.need(guardClause, "if") : undefined;
+      const pattern = readCasePattern(
+        this.tree,
+        c,
+        patternSpan.start,
+        patternSpan.end,
+        this.start(guardKw !== undefined ? guardKw : colon),
+      );
       return this.link({
         kind: "MatchCase",
         ts: c,
@@ -1454,10 +1482,10 @@ class Reader {
         parent: undefined,
         kw: this.need(c, "case"),
         pattern,
-        guardKw:
-          guardClause !== undefined ? this.need(guardClause, "if") : undefined,
+        patternSpan,
+        guardKw,
         guard,
-        colon: this.need(c, ":"),
+        colon,
         body,
       });
     });
@@ -1910,17 +1938,22 @@ class Reader {
         };
       }
       case "dictionary_comprehension": {
-        const pair = this.needField(n, "body");
-        const key = this.expr(this.needField(pair, "key"));
-        const value = this.expr(this.needField(pair, "value"));
+        const body = this.needField(n, "body");
+        const pair = this.kind(body) === "pair";
+        const key = pair ? this.expr(this.needField(body, "key")) : undefined;
+        // Ruff has no starred node around an unpacked element: a comment after its `**` stays there.
+        const value = this.expr(
+          pair ? this.needField(body, "value") : (this.named(body)[0] ?? this.fail(body, "empty splat")),
+        );
         const generators = this.comprehensions(n);
         return {
           ...base,
           kind: "DictComp",
-          kids: [key, value, ...generators],
+          kids: [...(key ? [key] : []), value, ...generators],
           open: this.need(n, "{"),
           key,
-          colon: this.need(pair, ":"),
+          colon: pair ? this.need(body, ":") : undefined,
+          op: pair ? undefined : this.need(body, "**"),
           value,
           generators,
           close: this.need(n, "}"),

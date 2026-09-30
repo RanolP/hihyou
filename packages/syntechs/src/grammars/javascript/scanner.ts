@@ -1,7 +1,7 @@
 // Port of tree-sitter-javascript 0.25.0 src/scanner.c. Stateless.
 
 import type { ExternalScanner, Lexer } from "../../core/lexer.js";
-import { iswalpha, iswdigit, iswspace } from "../../core/wctype.js";
+import { iswalnum, iswalpha, iswdigit, iswspace } from "../../core/wctype.js";
 
 const AUTOMATIC_SEMICOLON = 0;
 const TEMPLATE_CHARS = 1;
@@ -11,6 +11,9 @@ const LOGICAL_OR = 4;
 const ESCAPE_SEQUENCE = 5;
 const REGEX_PATTERN = 6;
 const JSX_TEXT = 7;
+const STATEMENT_CONTINUES = 8;
+const FOR_IN_AFTER_INITIALIZER = 9;
+const ARROW_BODY_END = 10;
 
 const LS = 0x2028;
 const PS = 0x2029;
@@ -93,6 +96,8 @@ function scanWhitespaceAndComments(
 function scanAutomaticSemicolon(
   lexer: Lexer,
   commentCondition: boolean,
+  statementContinues: boolean,
+  arrowBodyEnd: boolean,
   scanned: { comment: boolean },
 ): boolean {
   lexer.resultSymbol = AUTOMATIC_SEMICOLON;
@@ -116,6 +121,17 @@ function scanAutomaticSemicolon(
   }
   lexer.advance(true);
   if (scanWhitespaceAndComments(lexer, scanned, true) === REJECT) return false;
+
+  // `let` or `export` before a line break and a name or `{` starts a declaration, not a statement of its own.
+  const next = la(lexer);
+  if (
+    statementContinues &&
+    (next === 123 || next === 95 || next === 36 || next === 92 || iswalpha(next))
+  )
+    return false;
+
+  // An arrow function's block body cannot be called, indexed or tagged: the next line starts a statement.
+  if (arrowBodyEnd && (next === 40 || next === 91 || next === 96)) return true;
 
   switch (la(lexer)) {
     case 96: // `
@@ -232,9 +248,29 @@ export function scan(lexer: Lexer, valid: Uint8Array): boolean {
     return scanTemplateChars(lexer);
   }
   if (valid[JSX_TEXT] && scanJsxText(lexer)) return true;
+  if (valid[FOR_IN_AFTER_INITIALIZER]) {
+    while (iswspace(la(lexer))) lexer.advance(true);
+    if (la(lexer) === 105) {
+      lexer.advance(false);
+      if (la(lexer) !== 110) return false;
+      lexer.advance(false);
+      const c = la(lexer);
+      if (iswalnum(c) || c === 95 || c === 36 || c === 92 || c > 127)
+        return false;
+      lexer.markEnd();
+      lexer.resultSymbol = FOR_IN_AFTER_INITIALIZER;
+      return true;
+    }
+  }
   if (valid[AUTOMATIC_SEMICOLON]) {
     const scanned = { comment: false };
-    const ret = scanAutomaticSemicolon(lexer, !valid[LOGICAL_OR], scanned);
+    const ret = scanAutomaticSemicolon(
+      lexer,
+      !valid[LOGICAL_OR],
+      !!valid[STATEMENT_CONTINUES],
+      !!valid[ARROW_BODY_END],
+      scanned,
+    );
     if (!ret && !scanned.comment && valid[TERNARY_QMARK] && la(lexer) === 63)
       return scanTernaryQmark(lexer);
     return ret;

@@ -12,6 +12,8 @@ const CUSTOM_SELECTOR_END = 4;
 const CUSTOM_PROPERTY_SET_NAME = 5;
 const CUSTOM_PROPERTY_RAW_NAME = 6;
 const CUSTOM_PROPERTY_RAW_VALUE = 7;
+const URL_RAW = 8;
+const CUSTOM_PROPERTY_BRACE_NAME = 9;
 
 const HASH = 35;
 const DOT = 46;
@@ -84,6 +86,30 @@ function advancePiece(lexer: Lexer, depth: { n: number }): boolean {
 }
 
 /**
+ * Past whitespace and `/* *\/` comments, which postcss reads between a declaration's name, its colon and its value
+ * (`--name/* c *\/ : {`); false at a lone `/` or an unclosed comment.
+ */
+function advanceGap(lexer: Lexer): boolean {
+  for (;;) {
+    if (iswspace(lexer.lookahead)) lexer.advance(false);
+    else if (lexer.lookahead === SLASH) {
+      lexer.advance(false);
+      if (peek(lexer) !== STAR) return false;
+      lexer.advance(false);
+      for (;;) {
+        if (lexer.eof()) return false;
+        const c = peek(lexer);
+        lexer.advance(false);
+        if (c === STAR && peek(lexer) === SLASH) {
+          lexer.advance(false);
+          break;
+        }
+      }
+    } else return true;
+  }
+}
+
+/**
  * `--name: {`: postcss 8 reads a declaration whose value runs to the `;` outside brackets, and prettier lays it
  * out as a rule's block only when that value is one `{...}` group. The name's token says which; the colon and the
  * value are left to the grammar.
@@ -98,12 +124,20 @@ function scanCustomPropertyName(lexer: Lexer, valid: Uint8Array): boolean {
     lexer.advance(false);
   }
   lexer.markEnd();
-  while (iswspace(lexer.lookahead)) lexer.advance(false);
-  if (peek(lexer) !== COLON) return false;
+  if (!advanceGap(lexer) || peek(lexer) !== COLON) return false;
   lexer.advance(false);
-  while (iswspace(lexer.lookahead)) lexer.advance(false);
-  if (peek(lexer) !== LBRACE) return false;
+  if (!advanceGap(lexer)) return false;
   const depth = { n: 0 };
+  if (peek(lexer) !== LBRACE) {
+    // A `{...}` group later in the value, which only a custom property's value reads.
+    let brace = false;
+    while (!lexer.eof() && !(depth.n <= 0 && (peek(lexer) === SEMI || peek(lexer) === RBRACE))) {
+      brace ||= peek(lexer) === LBRACE;
+      advancePiece(lexer, depth);
+    }
+    lexer.resultSymbol = CUSTOM_PROPERTY_BRACE_NAME;
+    return brace && peek(lexer) === SEMI && valid[CUSTOM_PROPERTY_BRACE_NAME] !== 0;
+  }
   do advancePiece(lexer, depth);
   while (depth.n > 0 && !lexer.eof());
   if (depth.n > 0) return false;
@@ -132,8 +166,33 @@ function scanCustomPropertyRawValue(lexer: Lexer): boolean {
   return any;
 }
 
+/**
+ * An unquoted `url()`'s content, which postcss-value-parser reads as one word: up to the `)`, a `\` escaping the
+ * character after it, less the whitespace around it. A `(` or a quote makes it no such word, so the arguments parse
+ * as any function's (`url(var(--a))`).
+ */
+function scanUrlRaw(lexer: Lexer): boolean {
+  while (iswspace(lexer.lookahead)) lexer.advance(true);
+  let any = false;
+  while (lexer.lookahead !== RPAREN) {
+    const c = lexer.lookahead;
+    if (lexer.eof() || c === LPAREN || c === DQUOTE || c === SQUOTE) return false;
+    lexer.advance(false);
+    if (c === BACKSLASH) {
+      if (lexer.eof() || lexer.lookahead === NEWLINE) return false;
+      lexer.advance(false);
+    } else if (iswspace(c)) continue;
+    lexer.markEnd();
+    any = true;
+  }
+  lexer.resultSymbol = URL_RAW;
+  return any;
+}
+
 function scan(lexer: Lexer, valid: Uint8Array, state: State): boolean {
   if (valid[ERROR_RECOVERY]) return false;
+
+  if (valid[URL_RAW]) return scanUrlRaw(lexer);
 
   if (iswspace(lexer.lookahead) && valid[DESCENDANT_OP]) {
     lexer.resultSymbol = DESCENDANT_OP;
@@ -152,6 +211,9 @@ function scan(lexer: Lexer, valid: Uint8Array, state: State): boolean {
       c === LBRACKET ||
       c === MINUS ||
       c === AMP ||
+      // postcss reads a quoted string as a selector part (`one "two" three`).
+      c === DQUOTE ||
+      c === SQUOTE ||
       iswalnum(c)
     )
       return true;
@@ -196,7 +258,11 @@ function scan(lexer: Lexer, valid: Uint8Array, state: State): boolean {
 
   if (valid[CUSTOM_PROPERTY_RAW_VALUE]) return scanCustomPropertyRawValue(lexer);
 
-  if (valid[CUSTOM_PROPERTY_SET_NAME] || valid[CUSTOM_PROPERTY_RAW_NAME]) {
+  if (
+    valid[CUSTOM_PROPERTY_SET_NAME] ||
+    valid[CUSTOM_PROPERTY_RAW_NAME] ||
+    valid[CUSTOM_PROPERTY_BRACE_NAME]
+  ) {
     while (iswspace(lexer.lookahead)) lexer.advance(true);
     if (lexer.lookahead === MINUS) return scanCustomPropertyName(lexer, valid);
   }

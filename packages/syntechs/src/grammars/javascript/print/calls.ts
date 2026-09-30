@@ -3,8 +3,8 @@
 // is-function-composition-arguments.js, is-template-on-its-own-line.js).
 
 import { NO_NODE } from "../../../core/arena.js";
-import { nextLineEmpty } from "../../../fmt/text.js";
-import { nextLeaf } from "../../../fmt/tree.js";
+import { newlineBetween, nextLineEmpty } from "../../../fmt/text.js";
+import { nextLeaf, prevLeaf } from "../../../fmt/tree.js";
 import { textWidth } from "../../../fmt/width.js";
 import { awaitsHere, needsParens, role } from "./parens.js";
 import {
@@ -876,8 +876,6 @@ function sMemberChain(sctx: JsStreamCtx, n: number): void {
       const kept =
         inner === node ||
         hasComment(ctx, node) ||
-        childWhere(ctx, node, (c) => kind(ctx, c) === "comment") !==
-          undefined ||
         needsParens(inner, ctx);
       if (!kept) return rec(inner);
       printedNodes.unshift({ node, printed: capture(() => sctx.print(node)) });
@@ -1196,8 +1194,16 @@ const callCustom: CustomRule<JsOptions> = (n, s) => {
     const c = callee(ctx, n);
     if (c !== undefined) sctx.print(c);
     sTypeArguments(sctx, n);
-    sLineSuffixBoundary();
     const template = field(ctx, n, "arguments");
+    // printTaggedTemplateLiteral: the template's leading comment stands apart from the tag, on its own line when
+    // it started one.
+    const comment = template === undefined ? undefined : sctx.leadingComments(template)[0];
+    const tag = field(ctx, n, "type_arguments") ?? c;
+    if (comment !== undefined && tag !== undefined) {
+      if (newlineBetween(ctx.tree, prevLeaf(ctx.tree, nextLeaf(ctx.tree, tag)), comment)) sHardline();
+      else sText(" ");
+    }
+    sLineSuffixBoundary();
     if (template !== undefined) sctx.print(template);
     return;
   }

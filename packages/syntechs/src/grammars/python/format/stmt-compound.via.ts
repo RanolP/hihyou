@@ -111,7 +111,7 @@ function clauseOf(n: number, ctx: StreamCtx<unknown>): Clause {
 export const stmtCompoundVia = {
   "compound.forTarget": (c: number) => {
     const { f, e } = ruffOf(c);
-    if (e.kind === "Tuple") writeExpr(f, e, "preserve", { tuple: "neverPreserve" });
+    if (e.kind === "Tuple") writeExpr(f, e, "never", { tuple: "neverPreserve" });
     else writeMaybeParenthesize(f, e, e.parent as Py, "ifBreaks");
   },
   // Given the type (or its `as` pattern), prints the handler's type, `as` and name.

@@ -328,7 +328,8 @@ function isPoorlyBreakableMemberOrCallChain(
   const ctx = s.js;
   n = unparen(ctx, n);
   const k = kind(ctx, n);
-  if (k === "call_expression" || k === "new_expression") {
+  // Prettier's isCallExpression leaves out `new`, so `a = new Foo()` is never a poorly breakable chain.
+  if (k === "call_expression") {
     if (kind(ctx, field(ctx, n, "arguments")) === "template_string")
       return false;
     if (printsAsMemberChain(s, n)) return false;

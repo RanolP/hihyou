@@ -659,6 +659,15 @@ const tokOf = (ctx: JsCtx, c: number | undefined) => {
   if (c !== undefined) sToken(c, src(ctx, c));
 };
 
+/** A closing tag's `</`: one token in tree-sitter-typescript, `<` and `/` in the patched javascript grammar, so a
+ * comment between them parses; the comments print after the `/` either way. */
+function closingSlash(ctx: JsCtx, n: number): void {
+  const both = anon(ctx, n, "</");
+  if (both !== undefined) return tokOf(ctx, both);
+  tokOf(ctx, anon(ctx, n, "<"));
+  tokOf(ctx, anon(ctx, n, "/"));
+}
+
 /** What `fn` writes inside an interval of `kind`. */
 function within(kind: number, fn: () => void, ref = -1, flags = 0): void {
   open(kind, ref, flags);
@@ -680,7 +689,7 @@ const closing: CustomRule<JsOptions> = (n, sctx) => {
     sFragmentTag(s, n, false);
     return;
   }
-  tokOf(ctx, anon(ctx, n, "</"));
+  closingSlash(ctx, n);
   if (hasComment(ctx, name, CF.Leading | CF.Line)) {
     within(INDENT, () => {
       sHardline();
@@ -707,7 +716,8 @@ function sFragmentTag(s: JsStreamCtx, n: number, opening: boolean): void {
   const ctx = s.js;
   const dangling = s.danglingComments(n);
   const hasOwnLine = dangling.some((c) => s.isLineComment(c));
-  tokOf(ctx, anon(ctx, n, opening ? "<" : "</"));
+  if (opening) tokOf(ctx, anon(ctx, n, "<"));
+  else closingSlash(ctx, n);
   within(INDENT, () => {
     if (hasOwnLine) sHardline();
     else if (dangling.length > 0 && !opening) sText(" ");

@@ -1,6 +1,7 @@
 import { NO_NODE, type Tree } from "../../core/arena.js";
 import { decimalValue, type Lexeme, type Normalize } from "../../fmt/check.js";
 import { cook } from "../../fmt/dsl/normalizers.js";
+import { isJestEachTemplate } from "./print/util.js";
 
 /**
  * What a JS/TS token means: its value (a string's cooked text, a number's value, a key's name) and where it
@@ -22,10 +23,21 @@ export const jsNormalize: Normalize = (lexemes, text, tree) => {
     // A modifier stands in its member, not at its own position among the others: prettier reorders them.
     const member = modifierOf(tree, l);
     if (member !== undefined) return `mod:${l.text}@${places.at(member)}`;
+    // Prettier realigns a jest `each` table, whose cells jest splits on `|` and whitespace.
+    if (isJestEachFragment(tree, l.node)) {
+      const cells = l.text.replace(/[\s|]+/g, "");
+      return cells === "" ? undefined : `each:${cells}@${places.of(l.node)}`;
+    }
     const value = valueForm(tree, l, l.node, lexemes, i);
     return value === undefined ? undefined : `${value}@${places.of(l.node)}`;
   });
   return inModifierOrder(lexemes, forms);
+};
+
+const isJestEachFragment = (tree: Tree, n: number) => {
+  if (tree.kindName(n) !== "string_fragment") return false;
+  const p = tree.parent(n);
+  return p !== NO_NODE && tree.kindName(p) === "template_string" && isJestEachTemplate(tree, p);
 };
 
 /** A member's or parameter's modifier keyword: its rank in prettier's order (print/util.ts's MODIFIER_ORDER). */
@@ -166,6 +178,15 @@ function valueForm(
       return `flags:${[...t].sort().join("")}`;
     case "identifier":
       return cook(t);
+    // The interpreter line's trailing blanks, which prettier trims, reach no program.
+    case "hash_bang_line":
+      return t.trimEnd();
+    // A template's value reads every line break in its source as `\n`, so prettier's `endOfLine` may rewrite them.
+    case "string_fragment":
+    case "escape_sequence":
+      return parentKind(tree, node) === "template_string"
+        ? t.replace(/\r\n?/g, "\n")
+        : t;
     default:
       return t;
   }
@@ -476,7 +497,7 @@ function parensMatter(tree: Tree, pe: number): boolean {
   if (inner === NO_NODE) return true;
   const pk = parentKind(tree, pe);
   if (tree.kindName(inner) === "string" && pk === "expression_statement")
-    return true;
+    return inPrologue(tree, tree.parent(pe));
   const field = tree.fieldName(pe);
   const reads =
     (pk === "member_expression" || pk === "subscript_expression") &&
@@ -488,6 +509,30 @@ function parensMatter(tree: Tree, pe: number): boolean {
     (reads || calls || pk === "non_null_expression") &&
     hasOptionalChain(tree, inner)
   );
+}
+
+/**
+ * Whether the statement `s` stands where a bare string would be a directive: every statement before it is a
+ * bare string. Past that prologue, `("a");` and `"a";` mean the same, and prettier adds the parens there anyway.
+ */
+function inPrologue(tree: Tree, s: number): boolean {
+  const p = tree.parent(s);
+  if (p === NO_NODE) return false;
+  for (let i = 0, count = tree.count(p); i < count; i++) {
+    const c = tree.child(p, i);
+    if (c === s) return true;
+    if (!tree.named(c)) continue;
+    const kind = tree.kindName(c);
+    if (kind === "comment" || kind === "hash_bang_line") continue;
+    if (kind !== "expression_statement") return false;
+    const e = findChild(
+      tree,
+      c,
+      (x) => tree.named(x) && tree.kindName(x) !== "comment",
+    );
+    if (e === NO_NODE || tree.kindName(e) !== "string") return false;
+  }
+  return false;
 }
 
 /** Whether the member or call `n` is itself a `?.` link. */

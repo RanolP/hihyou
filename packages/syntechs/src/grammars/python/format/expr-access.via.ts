@@ -16,15 +16,31 @@ import {
   writeNode,
   writeTuple,
 } from "../fmt/expr.js";
-import { COLLAPSE, HARD, ruffOf, ruffStmtOf, SOFT, sLine, sText } from "../fmt/sink.js";
+import { COLLAPSE, HARD, ruffOf, ruffStmtOf, SOFT, sLine, sLineSuffixBoundary, sText } from "../fmt/sink.js";
 import { startOf, tokens } from "../fmt/trivia.js";
 
 /** The call chain layout the attribute, call or subscript printing now continues (`fields` passes it). */
 const layoutOf = (ctx: StreamCtx<unknown>): Chain => (ctx.args?.chain as Chain | undefined) ?? "nonFluent";
 
+/**
+ * Ruff's preview `fluent_layout_split_first_call`: whether the attribute a call or subscript applies to, with value
+ * `v`, is the chain's first call-like one. Its value is then a run of attributes down to an unparenthesized root
+ * other than a call or subscript (a parenthesized root counts as a call of its own, so none is first).
+ */
+function isFirstCallLike(f: Fmt, v: Expr, called: boolean): boolean {
+  if (f.options.preview !== true || !called) return false;
+  let x = v;
+  while (x.kind === "Attribute") {
+    if (x.value.parens.length > 0) return false;
+    x = x.value;
+  }
+  return x.kind !== "Call" && x.kind !== "Subscript";
+}
+
 function isBaseTenNumber(f: Fmt, e: Expr): boolean {
   if (e.kind !== "Number") return false;
-  return !/^0[bBoOxX]/.test(f.text(e.ts));
+  const t = f.text(e.ts);
+  return !/^0[bBoOxX]/.test(t) && !/[jJ]$/.test(t);
 }
 
 /** A subscript's slice between its brackets, a tuple keeping its own parentheses or none. */
@@ -90,6 +106,8 @@ export const exprAccessVia = {
   "access.sliceLower": (c: number, ctx: StreamCtx<unknown>) => {
     const { f, e } = sliceOf(ctx.tree.parent(c));
     writeExpr(f, e.lower as Expr);
+    // A bound's end-of-line comment puts the colon after it on the next line.
+    sLineSuffixBoundary();
   },
   "access.sliceColon": (token: number | undefined, n: number) => {
     if (token === undefined) return;
@@ -102,6 +120,7 @@ export const exprAccessVia = {
   "access.sliceUpper": (c: number, ctx: StreamCtx<unknown>) => {
     const { f, e } = sliceOf(ctx.tree.parent(c));
     writeSliceBound(f, e.upper as Expr, sliceLayout(f, e).spaced);
+    sLineSuffixBoundary();
   },
   // The second colon, after the comments before it; with no step, the comments after it too.
   "access.sliceStepColon": (token: number | undefined, n: number) => {
@@ -111,7 +130,8 @@ export const exprAccessVia = {
       f.writeDangling(secondColon);
       return;
     }
-    if (spaced && e.upper) sText(" ");
+    // Also spaced with neither upper nor step: `x[a() : :]`.
+    if (spaced && (e.upper || !e.step)) sText(" ");
     f.writeDangling(secondColon);
     f.writeTok(token);
     if (!e.step) f.writeDangling(afterSecond);
@@ -124,8 +144,12 @@ export const exprAccessVia = {
   },
   "access.parenthesized": (c: number, ctx: StreamCtx<unknown>) => {
     const { f } = ruffOf(ctx.tree.parent(c));
-    const { content, dangling } = ctx.args as { content: () => void; dangling: readonly Comment[] };
-    f.writeParenthesizedContent(content, dangling);
+    const { content, dangling, hug } = ctx.args as {
+      content: () => void;
+      dangling: readonly Comment[];
+      hug?: boolean;
+    };
+    f.writeParenthesizedContent(content, dangling, hug);
   },
   // The value, then the line break before the dot: an end-of-line comment after the value's closing parenthesis
   // forces one, and a fluent chain breaks before each dot that follows a call, subscript or parenthesized value.
@@ -144,7 +168,13 @@ export const exprAccessVia = {
       lastClose !== undefined &&
       f.comments.trailing(v).some((c) => c.line === "eol" && c.start > (lastClose as number));
     if (eol) sLine(HARD | COLLAPSE);
-    else if (layout === "fluent" && (parenthesizeValue || v.kind === "Call" || v.kind === "Subscript"))
+    else if (
+      layout === "fluent" &&
+      (parenthesizeValue ||
+        v.kind === "Call" ||
+        v.kind === "Subscript" ||
+        isFirstCallLike(f, v, ctx.args?.called === true))
+    )
       sLine(SOFT | COLLAPSE);
   },
   // The dot, between the attribute's dangling comments before and after it.

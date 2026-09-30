@@ -160,6 +160,8 @@ export type Tree =
       readonly sep: string;
       readonly list: Ref;
       readonly trailing: Cond;
+      /** The trailing separator counts no width toward its line (see `sepBy`). */
+      readonly imaginary?: true;
       /** What a hole prints as (see `sepBy`'s `holes`); undefined: the list has none. */
       readonly holes?: string;
       /** A blank line is kept when it follows an item's separator, not the item (see `sepBy`). */
@@ -167,8 +169,8 @@ export type Tree =
     }
   /**
    * `attach`: the field whose children print with the next item, before it; `blank`: a blank line before each item
-   * but the first where it holds of the item; `follow`: an item where it holds goes on the next line, indented
-   * (see `lines`).
+   * but the first where it holds of the item; `follow`: an item where it holds goes on the next line, indented;
+   * `sameLine`: an item where it holds goes after the one before it, past a space (see `lines`).
    */
   | {
       readonly t: "lines";
@@ -176,6 +178,7 @@ export type Tree =
       readonly attach?: string;
       readonly blank?: Cond;
       readonly follow?: Cond;
+      readonly sameLine?: Cond;
       readonly tokens?: true;
       /** Each run of consecutive `kind` items prints as one import block by the `ImportRule` `via` (see `lines`). */
       readonly imports?: { readonly kind: string; readonly via: string };
@@ -268,10 +271,16 @@ export interface SplitOn {
   readonly except: readonly string[];
   readonly trail: readonly string[];
   readonly item: SplitItem;
+  /** Kinds a `space` item prints no space after, as the item ends in its own space or line. */
+  readonly tightAfter?: readonly string[];
   /** Each named item where this holds of it prints in a group and an indent of its own. */
   readonly wrapItem: Cond;
   /** The last entry's separator: the source's is dropped, and one prints only while the enclosing group breaks. */
   readonly trailing: boolean;
+  /** That trailing separator counts no width toward its line (see `sepBy`). */
+  readonly imaginary?: true;
+  /** The node's dangling comments past its first item (`"all"`: all of them) are items too (see `SplitOnOf`). */
+  readonly comments?: true | "all";
   readonly layout: SplitLayout;
 }
 
@@ -649,6 +658,7 @@ function labelOf(x: Tree): string {
 export const grpParen = brackets("(", ")");
 export const grpBrace = brackets("{", "}");
 export const grpBracket = brackets("[", "]");
+export const grpAngle = brackets("<", ">");
 
 /**
  * The items of `list`, each followed by its source separator `sep`; with `trailing`, a synthetic one after the
@@ -659,6 +669,11 @@ export const sepBy = <const S extends string, T = false>(
   list: List,
   o: {
     readonly trailing?: T;
+    /**
+     * The trailing separator counts no width toward the line it ends, as ktfmt's, which it adds after laying the
+     * list out: an item that fits only without it still stays on its line.
+     */
+    readonly imaginary?: boolean;
     /**
      * The list has holes, a `sep` right after the opening bracket or another `sep` (`[1, , 2]`), each printed as
      * this text and never packed or grouped. An empty one keeps its own `sep` even when last, which it needs to
@@ -677,6 +692,7 @@ export const sepBy = <const S extends string, T = false>(
     sep,
     list: refOf(list),
     trailing: plain(o.trailing),
+    ...(o.imaginary === true ? { imaginary: true } : {}),
     ...(o.holes === undefined ? {} : { holes: o.holes }),
     ...(o.blankAfterSep === true ? { blankAfterSep: true } : {}),
   });
@@ -698,6 +714,11 @@ export const lines = (
      * (Kotlin's getter, which the grammar makes a sibling of its property).
      */
     readonly follow?: unknown;
+    /**
+     * An item where this holds continues the item before it on the same line, after a space (Kotlin's annotation,
+     * which the grammar makes a statement of its own before the assignment it annotates).
+     */
+    readonly sameLine?: unknown;
     /** The node's tokens are lines too, as written: tree-sitter-kotlin's `null` statement is an anonymous child. */
     readonly tokens?: boolean;
     /**
@@ -714,6 +735,7 @@ export const lines = (
     ...(o.attach === undefined ? {} : { attach: refOf(o.attach).name }),
     ...(o.blank === undefined ? {} : { blank: plain(o.blank) }),
     ...(o.follow === undefined ? {} : { follow: plain(o.follow) }),
+    ...(o.sameLine === undefined ? {} : { sameLine: plain(o.sameLine) }),
     ...(o.tokens ? { tokens: true } : {}),
     ...(o.imports === undefined ? {} : { imports: o.imports }),
   });
@@ -881,8 +903,19 @@ export interface SplitOnOf<K, C> {
   readonly except?: readonly K[];
   readonly trail?: readonly K[];
   readonly item?: "adjacent" | "space" | { readonly t: "words"; readonly keepLines?: C };
+  /** As `SplitOn`'s. */
+  readonly tightAfter?: readonly K[];
   readonly wrapItem?: C;
   readonly trailing?: boolean;
+  /** As `sepBy`'s. */
+  readonly imaginary?: boolean;
+  /**
+   * The node's dangling comments that follow its first item print as items of the entry they fall in, never joined
+   * to a neighbour; as `words`, a line after comments that start an entry breaks to the enclosing indentation, as
+   * prettier's value comments do (its postcss-value-parser reads them as words). `"all"` takes those before the
+   * first item too, where no other part of the node prints them.
+   */
+  readonly comments?: boolean | "all";
   readonly layout?: SplitLayoutOf<C>;
 }
 
@@ -907,8 +940,11 @@ export const splitOn = <const S extends string, const K extends string = never, 
     except: o.except ?? [],
     trail: o.trail ?? [],
     item: typeof item === "string" ? { t: item } : { t: "words", keepLines: plain(item.keepLines) },
+    ...(o.tightAfter?.length ? { tightAfter: o.tightAfter } : {}),
     wrapItem: plain(o.wrapItem),
     trailing: o.trailing ?? false,
+    ...(o.imaginary === true ? { imaginary: true } : {}),
+    ...(o.comments === true || o.comments === "all" ? { comments: o.comments } : {}),
     layout: layout(o.layout ?? {}),
   });
 };

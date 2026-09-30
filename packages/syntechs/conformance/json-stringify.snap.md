@@ -2,7 +2,7 @@ json-stringify compatibility: 14/14 (100.00%), 0 refused (ok:false), 0 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
-- oxfmt 0.70.0: 6/14 (42.86%)
+- oxfmt 0.70.0: 14/14 (100.00%)
 
 Fixtures: prettier 3.9.9 tests/format/{json/json} (recursive), every spec call listing parser `json-stringify`, expected output from its __snapshots__.
 

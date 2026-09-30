@@ -1,7 +1,7 @@
 // The customs stmt-def.ts's `.via`s name: a definition's part as ruff lays it out, looked up by the definition.
 import type { StreamCtx } from "../../../fmt/stream-format.js";
 import type { Frame } from "../../../fmt/dsl/runtime.js";
-import type { ClassDef, Decorator, FunctionDef, Lambda, Parameter, TypeAlias } from "../fmt/ast.js";
+import { type ClassDef, type Decorator, type FunctionDef, type Lambda, outer, type Parameter, type TypeAlias } from "../fmt/ast.js";
 import { writeAliasTypeParams } from "../fmt/stmt/assign.js";
 import { writeArgs, writeExpr, writeMaybeParenthesize, writeParameters } from "../fmt/expr.js";
 import {
@@ -21,7 +21,6 @@ import {
   splitDangling,
   writeBody,
   writeDecorators,
-  writeSimpleType,
   writeTypeParams,
 } from "../fmt/stmt/defs.js";
 import { endOf, tokens } from "../fmt/trivia.js";
@@ -54,14 +53,9 @@ export const stmtDefVia = {
       if (tp) writeTypeParams(f, tp, frame);
     }
   },
-  // A definition's bound prints from its tokens (`ctx.args.boundTokens`), a type alias's as an expression.
-  "def.bound": (c: number, ctx: StreamCtx<unknown>) => {
+  "def.bound": (c: number) => {
     const { f, e } = ruffOf(c);
-    if (ctx.args?.boundTokens === true) {
-      f.writeLeading(f.comments.leading(e));
-      writeSimpleType(f, c);
-      f.writeTrailing(f.comments.trailing(e));
-    } else writeExpr(f, e);
+    writeExpr(f, e);
   },
   // Ruff's `format_function_header` from the parameters on: they and the return type break as one group.
   "def.signature": (c: number) => {
@@ -128,11 +122,16 @@ export const stmtDefVia = {
     else sText(" ");
     writeExpr(f, e);
   },
-  // A default whose leading comment follows the `=` starts on the next line.
+  // A default whose leading comment follows the `=` starts on the next line, as does one after a comment that
+  // trails the annotation (ruff's trailing comment of the `Parameter` inside its `ParameterWithDefault`).
   "def.default": (c: number) => {
     const { f, e } = ruffOf(c);
     const p = e.parent as Parameter;
     const cs = f.comments;
+    const annotation = p.annotation;
+    const breakTrailing =
+      annotation !== undefined &&
+      cs.trailing(annotation).some((t) => t.start >= outer(annotation).end);
     const lead = cs.leading(e)[0];
     let breakLeading = false;
     if (lead) {
@@ -149,7 +148,7 @@ export const stmtDefVia = {
         break;
       }
     }
-    if (breakLeading) sLine(HARD | COLLAPSE);
+    if (breakTrailing || breakLeading) sLine(HARD | COLLAPSE);
     else if (p.annotation) sText(" ");
     writeExpr(f, e);
   },

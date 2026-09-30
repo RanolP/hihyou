@@ -3,7 +3,7 @@ import type { Comments } from "../../../fmt/comments.js";
 import type { PrettierOptions } from "../../../fmt/options.js";
 import type { PrintArgs } from "../../../fmt/rules.js";
 import { lfAfter } from "../../../fmt/text.js";
-import { type FormatTree, prevLeaf } from "../../../fmt/tree.js";
+import { type FormatTree, nextLeaf, prevLeaf } from "../../../fmt/tree.js";
 
 /** The prettier options its JavaScript and TypeScript printers read, by prettier's names. */
 export interface JsOptions extends PrettierOptions {
@@ -327,6 +327,52 @@ function isSimpleMemberChain(x: HasTree, n: number): boolean {
   return false;
 }
 
+const JEST_EACH_TRIGGER = /^[fx]?(?:describe|it|test)$/;
+
+function fieldChild(tree: FormatTree, n: number, name: string): number {
+  for (let i = 0; i < tree.count(n); i++) {
+    const c = tree.child(n, i);
+    if (tree.fieldName(c) === name) return c;
+  }
+  return NO_NODE;
+}
+
+/** The object of member expression `n` (not an optional chain, as prettier's MemberExpression) whose property matches `names`. */
+function eachOf(tree: FormatTree, n: number, names: RegExp): number {
+  if (n === NO_NODE || tree.kindName(n) !== "member_expression") return NO_NODE;
+  for (let i = 0; i < tree.count(n); i++)
+    if (tree.kindName(tree.child(n, i)) === "optional_chain") return NO_NODE;
+  const property = fieldChild(tree, n, "property");
+  if (property === NO_NODE || tree.kindName(property) !== "property_identifier")
+    return NO_NODE;
+  return names.test(tree.text(property)) ? fieldChild(tree, n, "object") : NO_NODE;
+}
+
+const isTrigger = (tree: FormatTree, n: number) =>
+  n !== NO_NODE &&
+  tree.kindName(n) === "identifier" &&
+  JEST_EACH_TRIGGER.test(tree.text(n));
+
+/**
+ * Prettier's isJestEachTemplateLiteral: `template` is the table of `describe.each`, `it.only.each`, `xtest.skip.each`
+ * and the like, which prettier reprints as an aligned table. check's normalize (normalize.ts) reads its text so.
+ */
+export function isJestEachTemplate(tree: FormatTree, template: number): boolean {
+  const call = tree.parent(template);
+  if (
+    call === NO_NODE ||
+    tree.kindName(call) !== "call_expression" ||
+    tree.fieldName(template) !== "arguments"
+  )
+    return false;
+  const object = eachOf(tree, fieldChild(tree, call, "function"), /^each$/);
+  if (isTrigger(tree, object)) return true;
+  return isTrigger(tree, eachOf(tree, object, /^(?:only|skip)$/));
+}
+
+/** Prettier's `options.__inJestEach`: set while a jest `each` table prints its cells. */
+export const jestEach = { printing: false };
+
 export const hasNewlineIn = (x: HasTree, n: number) => src(x, n).includes("\n");
 
 const TYPE_ANNOTATIONS = new Set([
@@ -424,12 +470,28 @@ export const hasLeadingOwnLineComment = (ctx: JsCtx, n: number) =>
 
 /** Prettier's isIndentableBlockComment: a multi-line block comment whose lines all start with `*`. */
 export function isIndentableBlockComment(ctx: JsCtx, c: number): boolean {
-  if (ctx.isLineComment(c)) return false;
-  const raw = src(ctx, c);
-  if (!raw.startsWith("/*") || !raw.includes("\n")) return false;
-  return `*${raw.slice(2, -2)}*`
-    .split("\n")
-    .every((l) => l.trimStart().startsWith("*"));
+  return !ctx.isLineComment(c) && indentable(src(ctx, c));
+}
+
+const indentable = (raw: string) =>
+  raw.startsWith("/*") &&
+  raw.includes("\n") &&
+  `*${raw.slice(2, -2)}*`.split("\n").every((l) => l.trimStart().startsWith("*"));
+
+/**
+ * The comment prettier's parsers (babel's and typescript's postprocess) merge onto comment `c`, so the two print
+ * as one: an indentable block comment that starts right where `c`, itself one, ends (`*//**`).
+ */
+export function nestledComment(tree: FormatTree, c: number): number | undefined {
+  const next = nextLeaf(tree, c);
+  if (next === NO_NODE || tree.kindName(next) !== "comment" || !tree.adjoins(c, next)) return undefined;
+  return indentable(tree.text(c)) && indentable(tree.text(next)) ? next : undefined;
+}
+
+/** Whether comment `c` is merged onto the one before it (`nestledComment`), which prints it. */
+export function isNestledComment(tree: FormatTree, c: number): boolean {
+  const prev = prevLeaf(tree, c);
+  return prev !== NO_NODE && tree.kindName(prev) === "comment" && nestledComment(tree, prev) === c;
 }
 
 export const LOGICAL_OPERATORS = new Set(["&&", "||", "??"]);
@@ -537,15 +599,43 @@ export function isSignedNumber(ctx: JsCtx, n: number): boolean {
   );
 }
 
-/** Prettier's isConciselyPrintedArray: a non-empty array of numbers, printed as a fill. */
+/** The elements of an array, `undefined` for each hole, with the `,` after each. */
+export function arrayElements(
+  x: HasTree,
+  n: number,
+): { element: number | undefined; comma: number | undefined }[] {
+  const out: {
+    element: number | undefined;
+    comma: number | undefined;
+  }[] = [];
+  let expecting = true;
+  for (const c of children(x, n)) {
+    if (isComment(x, c)) continue;
+    if (named(x, c)) {
+      out.push({ element: c, comma: undefined });
+      expecting = false;
+    } else if (kind(x, c) === ",") {
+      if (expecting) out.push({ element: undefined, comma: c });
+      else {
+        const last = out.at(-1);
+        if (last) last.comma = c;
+      }
+      expecting = true;
+    }
+  }
+  return out;
+}
+
+/** Prettier's isConciselyPrintedArray: a non-empty array of numbers, printed as a fill; a hole is no number. */
 export function isConciselyPrintedArray(ctx: JsCtx, n: number): boolean {
   if (kind(ctx, n) !== "array") return false;
-  const elements = items(ctx, n);
+  const elements = arrayElements(ctx, n);
   return (
     elements.length > 0 &&
     elements.every(
-      (e) =>
-        isSignedNumber(ctx, e) &&
+      ({ element: e }) =>
+        e !== undefined &&
+        isSignedNumber(ctx, unparen(ctx, e)) &&
         !hasComment(ctx, e, CF.Trailing | CF.Line, (c) => ctx.tree.lf(c) === 0),
     )
   );

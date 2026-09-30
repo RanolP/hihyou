@@ -42,6 +42,8 @@ export type Entry =
       readonly node: number;
       readonly text: string;
       readonly synthetic: boolean;
+      /** A `text`'s spelling, printed as the emitter prints it: through `sLiteral`, whose line breaks are literal. */
+      readonly literal?: true;
     }
   | { readonly e: "space" }
   | { readonly e: "hardline" }
@@ -99,6 +101,8 @@ export type Entry =
       readonly e: "ifBroken";
       readonly after: number;
       readonly text: string;
+      /** It counts no width toward its line (see `sepBy`'s `imaginary`). */
+      readonly imaginary?: true;
     }
   /**
    * Opens a `splitOn` run of `entry` frames, which an `end` closes, with the flags of the layout its conditions
@@ -122,8 +126,18 @@ export type Entry =
       readonly count: number;
       readonly grid: boolean;
     }
-  /** Between two items of an entry: whether the source has a gap (`apart`) or a line break (`breaks`) there. */
-  | { readonly e: "joint"; readonly apart: boolean; readonly breaks: boolean }
+  /**
+   * Between two items of an entry: whether they print apart (a gap in the source, or a comment on either side),
+   * the source has a line break there (`breaks`), or a break there drops to the enclosing indentation (`dedent`).
+   */
+  | {
+      readonly e: "joint";
+      readonly apart: boolean;
+      readonly breaks: boolean;
+      readonly dedent: boolean;
+      /** A `space` item prints no space here: the item before is of a `tightAfter` kind. */
+      readonly tight: boolean;
+    }
   /** Opens a `splitOn` item in a group and an indent of its own, which an `end` closes. */
   | { readonly e: "wrap" }
   /** Opens a `group`, `indent` or `indentIfBreak` frame, which an `end` closes. */
@@ -207,6 +221,8 @@ export interface ImportRule<O = unknown> {
   commentNames?(text: string): Iterable<string>;
   /** Whether `name` counts as used though no identifier spells it, like an operator convention's. */
   implicit?(name: string): boolean;
+  /** Whether `imp` is dropped however it is used, like Kotlin's import of a name from the file's own package. */
+  redundant?(tree: FormatTree, imp: number): boolean;
 }
 
 /** A run of import lists printed as one: its imports in print order, between the run's outer comments. */
@@ -252,7 +268,8 @@ function leafTexts(tree: FormatTree, node: number, out: string[] = []): string[]
  * `items` with each run of consecutive `kind` items (import lists) folded into its first, which `blocks` maps to
  * the run's imports: sorted by `rule.key`, and, unless the `keepImports` option is set, without exact duplicates
  * or unused imports; a run left with none is dropped. A run with comments between its lists, or a broken list,
- * stays as written; an import with a comment of its own is never dropped.
+ * stays as written. An import with a comment before it is never dropped; one with only a comment after it goes
+ * with that comment, as ktfmt drops an unused `import a.B // note`.
  */
 export function importBlocks<O>(
   ctx: StreamCtx<O>,
@@ -299,10 +316,11 @@ export function importBlocks<O>(
       used ??= usedNames(ctx, rule);
       const seen = new Set<string>();
       imports = imports.filter((imp) => {
-        if (commented(imp)) return true;
+        if (ctx.leadingComments(imp).length > 0) return true;
         const text = leafTexts(tree, imp).join(" ");
         if (seen.has(text)) return false;
         seen.add(text);
+        if (rule.redundant?.(tree, imp) === true) return false;
         const name = rule.binds(tree, imp);
         return name === undefined || (used as Set<string>).has(name) || rule.implicit?.(name) === true;
       });
@@ -547,8 +565,9 @@ export interface SplitRun {
 }
 
 /**
- * The children of `node` but comments and `except` and `trail` kinds, cut at each `sep` token, which ends the
- * entry before it; a last entry left empty (by a trailing separator, or no children at all) is dropped.
+ * The items and tokens of `node` but comments and `except` and `trail` kinds, cut at each `sep` token, which ends the
+ * entry before it; a last entry left empty (by a trailing separator, or no children at all) is dropped. With
+ * `comments`, the node's dangling comments past its first item and before its trail are items too.
  */
 export function splitRun<O>(
   ctx: StreamCtx<O>,
@@ -556,22 +575,34 @@ export function splitRun<O>(
   sep: string,
   except: readonly string[],
   trail: readonly string[],
+  comments: boolean | "all" = false,
 ): SplitRun {
   const tree = ctx.tree;
   let entry: SplitEntry = { items: [], sep: -1 };
   const entries = [entry];
   const trailing: number[] = [];
+  const dangling = comments ? ctx.danglingComments(node) : [];
+  let started = comments === "all";
+  const items = new Set(ctx.items(node));
   for (let i = 0, count = tree.count(node); i < count; i++) {
     const c = tree.child(node, i);
     const named = tree.named(c);
-    if (named && ctx.isComment(c)) continue;
+    if (named && ctx.isComment(c)) {
+      if (started && trailing.length === 0 && dangling.includes(c)) entry.items.push(c);
+      continue;
+    }
+    // A child the language leaves out of the node's items (a dropped kind, a recovered separator) prints nowhere.
+    if (named && !items.has(c)) continue;
     const kind = tree.kindName(c);
     if (except.includes(kind)) continue;
     if (trail.includes(kind)) trailing.push(c);
     else if (!named && kind === sep) {
       entry.sep = c;
       entries.push((entry = { items: [], sep: -1 }));
-    } else entry.items.push(c);
+    } else {
+      entry.items.push(c);
+      started = true;
+    }
   }
   if (entry.items.length === 0) entries.pop();
   return { entries, trail: trailing };
@@ -648,9 +679,13 @@ export function firstTextIs<O>(
 
 /**
  * Child `c` of an `inOrder`'s `hug`: after a space where its text up to its first forced line break fits (prettier's
- * conditionalGroup), else hanging on a line of its own, indented, as `hangAfter` prints any other child.
+ * conditionalGroup), else hanging on a line of its own, indented, as `hangAfter` prints any other child. A block
+ * comment leading it on a line of its own keeps it hugged but, once it breaks, on the next line unindented, as
+ * ktfmt puts it.
  */
 export function printHugged<O>(ctx: StreamCtx<O>, c: number): void {
+  const first = ctx.leadingComments(c)[0];
+  const commented = first !== undefined && ctx.tree.lf(first) > 0 && !ctx.isLineComment(first);
   const d = openDead();
   let span: number;
   try {
@@ -662,8 +697,15 @@ export function printHugged<O>(ctx: StreamCtx<O>, c: number): void {
   }
   openChoice(false);
   openState();
-  sText(" ");
-  sJump(span);
+  if (commented) {
+    open(GROUP);
+    sLine(0);
+    sJump(span);
+    close();
+  } else {
+    sText(" ");
+    sJump(span);
+  }
   closeState();
   openState();
   open(GROUP);

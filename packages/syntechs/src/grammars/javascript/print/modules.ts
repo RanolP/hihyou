@@ -1,7 +1,10 @@
 // Prettier's import and export printers (print/module.js). Their layouts are format.ts's; what it names `custom`
 // is `moduleCustoms`, written against sink.ts.
 
+import { NO_NODE } from "../../../core/arena.js";
 import type { CustomRule } from "../../../fmt/dsl/runtime.js";
+import { nextLineEmpty } from "../../../fmt/text.js";
+import { nextLeaf } from "../../../fmt/tree.js";
 import type { StreamCtx } from "../../../fmt/stream-format.js";
 import {
   capture,
@@ -99,15 +102,23 @@ function printSpecifiers(s: JsStreamCtx, clauses: readonly number[]): void {
   const lastStandalone = standaloneNodes.at(-1);
   if (lastStandalone !== undefined) comma(lastStandalone);
   const itemCommas = separators(js, named, grouped);
-  const printed = (between: () => void) =>
+  const printed = (between: (previous: number) => void) =>
     grouped.forEach((x, i) => {
-      if (i > 0) between();
+      if (i > 0) between(grouped[i - 1] as number);
       s.print(x);
       if (i === grouped.length - 1) return;
       const sep = itemCommas.get(x);
       if (sep !== undefined) sTok(js, sep);
       else sToken(x, ",", true);
     });
+  // Prettier keeps a blank line between specifiers only where a comment follows it (`a,⏎⏎// c⏎b`); a bare
+  // blank line, or one before a specifier whose comment sits inside it (`b as // c`), goes.
+  const blankBeforeComment = (previous: number) => {
+    const sep = itemCommas.get(previous);
+    if (sep === undefined || !nextLineEmpty(js.tree, previous)) return false;
+    const next = nextLeaf(js.tree, sep);
+    return next !== NO_NODE && isComment(js, next);
+  };
   const canBreak =
     grouped.length > 1 ||
     standaloneNodes.length > 0 ||
@@ -118,7 +129,10 @@ function printSpecifiers(s: JsStreamCtx, clauses: readonly number[]): void {
     sTok(js, open_);
     open(INDENT);
     sLine(spacing);
-    printed(() => sLine(0));
+    printed((previous) => {
+      sLine(0);
+      if (blankBeforeComment(previous)) sLine(SOFT);
+    });
     close();
     if (trailingCommaAllowed(js)) {
       open(IF_BROKEN);
@@ -150,7 +164,7 @@ function printModuleStatement(s: JsStreamCtx, n: number, ctx: StreamCtx<JsOption
   const specifiers = children.filter((c) => NAMED.has(kind(js, c)) || kind(js, c) === "namespace_export");
   // A comment attached to a child that `s.print` prints comes out with that child; any other prints where it sits.
   const printedWithChild = new Set(
-    children
+    all
       .filter((c) => isNamed(js, c) && !isComment(js, c) && !specifiers.includes(c))
       .flatMap((c) => getComments(js, c, CF.Leading | CF.Trailing)),
   );
@@ -159,11 +173,15 @@ function printModuleStatement(s: JsStreamCtx, n: number, ctx: StreamCtx<JsOption
     sHardline();
   }
   let first = true;
+  let afterLineComment = false;
   for (const c of children) {
     if (specifiers.includes(c) && c !== specifiers[0]) continue;
     if (printedWithChild.has(c)) continue;
+    // Prettier's dangling `export //c` ends the line and keeps the space: `export //c\n {};`.
+    if (afterLineComment) sHardline();
     if (!first) sText(" ");
     first = false;
+    afterLineComment = isComment(js, c) && src(js, c).startsWith("//");
     if (c === specifiers[0]) printSpecifiers(s, specifiers);
     else if (isNamed(js, c)) s.print(c);
     else sTok(js, c);
@@ -228,7 +246,7 @@ export const moduleCustoms = {
       key !== undefined &&
       /^(type|"type"|'type')$/.test(src(js, key)) &&
       kind(js, field(js, only, "value")) === "string" &&
-      getComments(js, only).length === 0
+      [only, key, field(js, only, "value") as number].every((c) => getComments(js, c).length === 0)
     )
       place(removeLines(capture(() => s.print(object))));
     else s.print(object);

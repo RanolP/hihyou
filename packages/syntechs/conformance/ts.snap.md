@@ -1,8 +1,8 @@
-ts compatibility: 614/653 (94.03%), 13 refused (ok:false), 76 excluded
+ts compatibility: 653/653 (100.00%), 0 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
-- oxfmt 0.70.0: 490/653 (75.04%)
+- oxfmt 0.70.0: 592/653 (90.66%)
 
 Fixtures: prettier 3.9.9 tests/format/{typescript,jsx} (recursive), every spec call listing parser `typescript` or `babel-ts` or `oxc-ts`, expected output from its __snapshots__.
 
@@ -12,32 +12,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
-| typescript/argument-expansion/arrow-with-return-type.ts | 0/1 | 77.78% |
-| typescript/arrow/comments/issue-11100.ts | 0/1 | 40.91% |
-| typescript/as/comments/18160.ts | 0/1 | 81.25% |
-| typescript/call/callee-comments.ts | 0/1 | 69.44% |
-| typescript/comments/11662.ts | 0/1 | 80.00% |
-| typescript/comments/16065.ts | 0/1 | 81.82% |
-| typescript/comments/16889.ts | 0/1 | 97.39% |
-| typescript/comments/method_types.ts | 0/1 | 82.05% |
-| typescript/compiler/indexSignatureWithInitializer.ts | 0/1 | 87.50% |
-| typescript/conditional-types/parentheses.ts | 0/2 | 86.00% |
-| typescript/conformance/classes/classDeclarations/classAbstractKeyword/classAbstractWithInterface.ts | 0/1 | 0.00% |
-| typescript/conformance/types/moduleDeclaration/kind-detection.ts | 0/1 | 0.00% |
-| typescript/custom/abstract/abstractNewlineHandling.ts | 0/1 | 86.96% |
-| typescript/definite/without-annotation.ts | 0/1 | 91.67% |
-| typescript/import-require/type-imports.ts | 0/1 | 56.00% |
-| typescript/instantiation-expression/inferface-asi.ts | 0/1 | 36.36% |
-| typescript/interface/ignore.ts | 0/2 | 86.79% |
-| typescript/last-argument-expansion/decorated-function.tsx | 0/1 | 90.91% |
-| typescript/non-null/braces.ts | 0/1 | 94.12% |
-| typescript/property-signature/consistent-with-flow/comments.ts | 0/1 | 80.00% |
-| typescript/template-literals/member-expression.ts | 0/1 | 57.14% |
-| typescript/trailing-comma/trailing.ts | 2/3 | 97.78% |
-| typescript/type-parameters-arguments/long-function-arg.ts | 0/1 | 18.18% |
-| typescript/type-parameters-arguments/print-width-120/issue-7542.tsx | 0/1 | 88.89% |
-| typescript/union/consistent-with-flow/prettier-ignore.ts | 0/1 | 60.00% |
-| jsx/jsx/html_escape.js | 2/4 | 66.67% |
 
 # Refused
 
@@ -45,19 +19,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| typescript/chain-expression/tagged-template-literals.ts | 1/1 | 72.31% | check: input "a" at 37 is output as "a" at 33, which means "a@object\|0/12", not "a@object\|0/13" |
-| typescript/comments/mapped-types.ts | 1/1 | 80.00% | check: input comment "// commentA" is missing from the output |
-| typescript/conditional-types/comments.ts | 2/2 | 77.53% | check: input "any instanceof B\n  /**\n  * Comment\n  */\n    ? B \| C\n    : D" at 1337 is output as "any" at 1332, whic |
-| typescript/conditional-types/conditional-types.ts | 2/2 | 100.00% | check: input "new" at 1298 is output as "new" at 1327, which means "new@\|-1/175", not "new@\|-1/174" |
-| typescript/end-of-line/multiline.ts | 2/3 | 71.43% | check: input "\\\n" at 511 is output as "\\\r" at 486, which means "\\\r@\|3/35", not "\\\n@\|3/35" |
-| typescript/import-export/empty-import.ts | 1/1 | 64.86% | check: output comment "// comment } from \"a\";" matches no input comment |
-| typescript/interface/long-type-parameters/long-type-parameters.ts | 2/2 | 75.65% | check: input comment "// always extends RectConfig" is missing from the output |
-| typescript/interface/no-semi/14040.ts | 1/1 | 100.00% | check: the output has a syntax error at 712, which the input has not |
-| typescript/interface/no-semi/18858.ts | 1/1 | 100.00% | check: the output has a syntax error at 406, which the input has not |
-| typescript/mapped-type/issue-11098.ts | 1/1 | 82.61% | check: input comment "// comment" is missing from the output |
-| typescript/mapped-type/break-mode/break-mode.ts | 1/1 | 96.30% | check: input "[" at 90 is output as "[" at 97, which means "[@\|-1/16", not "[@\|-1/15" |
-| typescript/type-parameters-arguments/19505.ts | 1/1 | 98.18% | check: input comment "// dangling comment" is missing from the output |
-| typescript/union/consistent-with-flow/18647.ts | 1/1 | 75.00% | check: input "any instanceof B\n  /**\n  * Comment\n  */\n    ? B \| C\n    : D" at 139 is output as "any" at 147, which  |
 
 # Excluded
 

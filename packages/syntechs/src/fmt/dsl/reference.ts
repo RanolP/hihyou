@@ -20,12 +20,14 @@ import {
   IF_BROKEN,
   INDENT,
   open,
+  openAlign,
   openIndentIfBreak,
   SOFT,
   sBreakParent,
   sHardline,
   sLine,
   sLineSuffixBoundary,
+  sLiteral,
   sText,
   sToken,
 } from "../stream.js";
@@ -160,28 +162,31 @@ export interface Flattened {
 const ruled = <O>(ir: FormatIR, ctx: StreamCtx<O>, node: number) =>
   !ctx.isBroken(node) && ctx.tree.kindName(node) in ir.structure;
 
-/** The first list idiom of `tree`, which prints the node's dangling comments. */
-export function danglingOwner(tree: Tree): Tree | undefined {
+/**
+ * The list idioms of `tree` that print the node's dangling comments: the first one it prints, found in each branch
+ * of an `either`, since only one branch prints.
+ */
+export function danglingOwners(tree: Tree): ReadonlySet<Tree> {
   switch (tree.t) {
     case "sepBy":
     case "lines":
-      return tree;
+      return new Set([tree]);
     case "seq":
       for (const p of tree.parts) {
-        const o = danglingOwner(p);
-        if (o) return o;
+        const o = danglingOwners(p);
+        if (o.size > 0) return o;
       }
-      return undefined;
+      return new Set();
     case "brackets":
     case "layout":
-      return danglingOwner(tree.body);
+      return danglingOwners(tree.body);
     case "opt":
     case "tokIf":
-      return danglingOwner(tree.then);
+      return danglingOwners(tree.then);
     case "either":
-      return danglingOwner(tree.then) ?? danglingOwner(tree.else);
+      return new Set([...danglingOwners(tree.then), ...danglingOwners(tree.else)]);
     default:
-      return undefined;
+      return new Set();
   }
 }
 
@@ -232,7 +237,7 @@ export function flatten<O>(
       bound.set(text, nth + 1);
       return tokenChild(t, n, text, nth);
     };
-    const owner = danglingOwner(tree);
+    const owners = danglingOwners(tree);
     const refChild = ({ name, at, split }: Ref) =>
       split !== undefined
         ? splitChild(ctx, n, name, split, at ?? 0, kindHasFields)
@@ -337,9 +342,9 @@ export function flatten<O>(
                 out.push({ e: "sep", tok: seps[i] as number });
                 if (item !== HOLE && blankAfter(item, seps[i] as number)) out.push({ e: "blank" });
               } else if (item !== HOLE && evalCond(x.trailing, ctx, n, custom, kindHasFields))
-                out.push({ e: "ifBroken", after: item, text: x.sep });
+                out.push({ e: "ifBroken", after: item, text: x.sep, ...(x.imaginary ? { imaginary: true } : {}) });
             });
-            if (owner === x)
+            if (owners.has(x))
               for (const c of dangling()) out.push(commentEntry(ctx, c, "dangling"));
             out.push({ e: "end" });
             return;
@@ -352,29 +357,30 @@ export function flatten<O>(
               out.push({ e: "sep", tok: seps[i] as number });
               if (blankAfter(item, seps[i] as number)) out.push({ e: "blank" });
             } else if (evalCond(x.trailing, ctx, n, custom, kindHasFields))
-              out.push({ e: "ifBroken", after: item, text: x.sep });
+              out.push({ e: "ifBroken", after: item, text: x.sep, ...(x.imaginary ? { imaginary: true } : {}) });
           });
-          if (owner === x)
+          if (owners.has(x))
             for (const c of dangling()) out.push(commentEntry(ctx, c, "dangling"));
           out.push({ e: "end" });
           return;
         }
         case "lines": {
-          if (x.attach !== undefined || x.blank !== undefined || x.follow !== undefined || x.tokens || x.imports)
+          if (x.attach !== undefined || x.blank !== undefined || x.follow !== undefined || x.sameLine !== undefined || x.tokens || x.imports)
             throw new Error("flatten: `lines` with `attach`, `blank` or `follow` is generated only, not referenced yet");
           const items = listItems(ctx, n, x.list.name, kindHasFields).slice(x.list.from ?? 0);
           // Nothing to lay out leaves no frame, so a bracket body of only this is empty.
-          if (items.length === 0 && (owner !== x || dangling().length === 0)) return;
+          if (items.length === 0 && (!owners.has(x) || dangling().length === 0)) return;
           out.push({ e: "lines", label: x.list.name });
           items.forEach((item, i) => {
             if (i > 0) out.push({ e: "hardline" });
             child(item);
             if (i < items.length - 1 && nextLineEmpty(t, item)) out.push({ e: "blank" });
           });
-          if (owner === x)
-            dangling().forEach((c, i) => {
+          if (owners.has(x))
+            dangling().forEach((c, i, cs) => {
               if (i > 0) out.push({ e: "hardline" });
               out.push(commentEntry(ctx, c, "dangling"));
+              if (i < cs.length - 1 && nextLineEmpty(t, c)) out.push({ e: "blank" });
             });
           out.push({ e: "end" });
           return;
@@ -423,7 +429,7 @@ export function flatten<O>(
           const text = evalCond(x.when, ctx, n, custom, kindHasFields)
             ? (normalizers[x.fn] as (s: string, o: unknown) => string)(raw, ctx.options)
             : raw;
-          out.push({ e: "tok", node: n, text, synthetic: false });
+          out.push({ e: "tok", node: n, text, synthetic: false, literal: true });
           return;
         }
         case "custom":
@@ -447,7 +453,7 @@ export function flatten<O>(
           return;
         }
         case "splitOn": {
-          const run = splitRun(ctx, n, x.sep, x.except, x.trail);
+          const run = splitRun(ctx, n, x.sep, x.except, x.trail, x.comments ?? false);
           const holds = (c: Cond) => evalCond(c, ctx, n, custom, kindHasFields, run);
           if (run.entries.length > 0) {
             let layout = x.layout;
@@ -464,9 +470,22 @@ export function flatten<O>(
             for (const [k, { items, sep }] of run.entries.entries()) {
               const breaks = items.map((c, i) => i > 0 && breaksBetween(t, items[i - 1] as number, c));
               out.push({ e: "entry", item: x.item.t, count: items.length, grid: keepLines && breaks.includes(true) });
+              const comment = (c: number) => t.named(c) && ctx.isComment(c);
               items.forEach((c, i) => {
-                if (i > 0)
-                  out.push({ e: "joint", apart: !t.adjoins(items[i - 1] as number, c), breaks: breaks[i] === true });
+                if (i > 0) {
+                  const prev = items[i - 1] as number;
+                  out.push({
+                    e: "joint",
+                    apart: !t.adjoins(prev, c) || comment(prev) || comment(c),
+                    breaks: breaks[i] === true,
+                    dedent: items.slice(0, i).every(comment),
+                    tight: x.tightAfter?.includes(t.kindName(prev)) === true,
+                  });
+                }
+                if (comment(c)) {
+                  out.push(commentEntry(ctx, c, "dangling"));
+                  return;
+                }
                 if (!t.named(c)) {
                   out.push({ e: "tok", node: c, text: t.text(c), synthetic: false });
                   return;
@@ -477,7 +496,12 @@ export function flatten<O>(
                 if (wrapped) out.push({ e: "end" });
               });
               if (x.trailing && k === run.entries.length - 1)
-                out.push({ e: "ifBroken", after: items[items.length - 1] as number, text: x.sep });
+                out.push({
+                  e: "ifBroken",
+                  after: items[items.length - 1] as number,
+                  text: x.sep,
+                  ...(x.imaginary ? { imaginary: true } : {}),
+                });
               else out.push({ e: "sep", tok: sep });
               out.push({ e: "end" });
             }
@@ -522,7 +546,9 @@ export function wrap<O>(
     }
   };
   const tok = (x: Entry) => {
-    if (x.e === "tok") sToken(x.node, x.text, x.synthetic);
+    if (x.e !== "tok") return;
+    if (x.literal) sLiteral(x.node, x.text);
+    else sToken(x.node, x.text, x.synthetic);
   };
 
   /** Prints `node` from its range, flattening it first when a custom rule reaches it. */
@@ -702,7 +728,7 @@ export function wrap<O>(
         if (x.tok !== -1) sToken(x.tok, tree.text(x.tok));
       } else if (x?.e === "ifBroken") {
         open(IF_BROKEN, concise ? listGroup : -1);
-        sToken(x.after, x.text, true);
+        sToken(x.after, x.text, true, x.imaginary);
         close();
       }
     };
@@ -795,7 +821,7 @@ export function wrap<O>(
     };
     if (x.item !== "words" || x.count === 1)
       for (let k = 0; k < x.count; k++) {
-        if (k > 0 && x.item === "space") sText(" ");
+        if (k > 0 && x.item === "space" && !(joints[k - 1] as Extract<Entry, { e: "joint" }>).tight) sText(" ");
         item(k);
       }
     else if (x.count > 1) {
@@ -818,7 +844,11 @@ export function wrap<O>(
         } else {
           close();
           if (x.grid) sHardline();
-          else sLine(0);
+          else if (j.dedent) {
+            openAlign(-1);
+            sLine(0);
+            close();
+          } else sLine(0);
           open(FILL_ITEM);
           item(k);
         }
@@ -831,7 +861,7 @@ export function wrap<O>(
     if (sep?.e === "sep" && sep.tok !== -1) sToken(sep.tok, tree.text(sep.tok));
     else if (sep?.e === "ifBroken") {
       open(IF_BROKEN, -1);
-      sToken(sep.after, sep.text, true);
+      sToken(sep.after, sep.text, true, sep.imaginary);
       close();
     }
   };

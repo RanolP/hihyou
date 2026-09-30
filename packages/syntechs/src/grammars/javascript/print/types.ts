@@ -358,7 +358,16 @@ function printUnionType(ctx: JsStreamCtx, n: number, owns: boolean) {
         fn();
         close();
       };
-      const bare = () => ctx.printBare(x);
+      // `A & B | C` prints `(A & B) | C`: prettier's needsParens parenthesizes an intersection in a union,
+      // around an ignored member's source text too. The grammar needs no source parens there, so they are added.
+      const bare =
+        kind(js, x) === "intersection_type" && !isTransparentType(js, x)
+          ? () => {
+              sToken(x, "(", true);
+              ctx.printBare(x);
+              sToken(x, ")", true);
+            }
+          : () => ctx.printBare(x);
       if (js.comments(x).leading.length > 0)
         aligned(() => withComments(ctx, x, bare));
       else withComments(ctx, x, () => aligned(bare));
@@ -404,15 +413,28 @@ const intersectionType: CustomRule<JsOptions> = (n, sctx) => {
   const js = ctx.js;
   if (isTransparentType(js, n)) return pr(ctx, items(js, n)[0], ctx.args);
   const { types, ops } = flattenTypes(js, n);
+  // tree-sitter nests `A & B & C` as `(A & B) & C`; a comment after `B` trails the inner node, which the flat
+  // list never prints, so it prints after `B`, where prettier's flat intersection has it.
+  const member = (x: number) => {
+    ctx.print(x);
+    for (
+      let up = parent(js, x), last = x;
+      up !== undefined && up !== n && kind(js, up) === "intersection_type";
+      last = up, up = parent(js, up)
+    ) {
+      if (lastChildWhere(js, up, (c) => named(js, c) && !isComment(js, c)) !== last) break;
+      printTrailingComments(ctx, up);
+    }
+  };
   const indented = (x: number) => {
     open(INDENT);
-    ctx.print(x);
+    member(x);
     close();
   };
   let wasIndented = false;
   open(GROUP);
   types.forEach((x, i) => {
-    if (i === 0) return ctx.print(x);
+    if (i === 0) return member(x);
     const previous = types[i - 1] as number;
     const op = ops.get(previous);
     const amp = () =>
@@ -423,7 +445,7 @@ const intersectionType: CustomRule<JsOptions> = (n, sctx) => {
       sText(" ");
       amp();
       sText(" ");
-      return wasIndented ? indented(x) : ctx.print(x);
+      return wasIndented ? indented(x) : member(x);
     }
     if (
       (!previousIsObject && !isObject) ||
@@ -439,14 +461,14 @@ const intersectionType: CustomRule<JsOptions> = (n, sctx) => {
         amp();
         sLine(0);
       }
-      ctx.print(x);
+      member(x);
       return close();
     }
     if (i > 1) wasIndented = true;
     sText(" ");
     amp();
     sText(" ");
-    return i > 1 ? indented(x) : ctx.print(x);
+    return i > 1 ? indented(x) : member(x);
   });
   close();
 };
@@ -519,7 +541,7 @@ const typeParameters: CustomRule<JsOptions> = (n, sctx) => {
   close();
   if (kind(ctx, n) === "type_arguments") tok(ctx, lastComma, "");
   else if (forced) tok(ctx, lastComma);
-  else if (!trailingCommaAllowed(ctx, "all")) tok(ctx, lastComma, "");
+  else if (!trailingCommaAllowed(ctx, "es5")) tok(ctx, lastComma, "");
   else if (lastComma !== undefined) {
     open(IF_BROKEN);
     tok(ctx, lastComma);
@@ -691,6 +713,14 @@ function memberSeparator(x: HasTree, n: number): number | undefined {
   return undefined;
 }
 
+/**
+ * The source separator an ignored type member keeps: the TS AST's member spans its `;` or `,`, so prettier-ignore
+ * prints it with the member's text, and prints none where the source has none.
+ */
+export const ignoredMemberSeparator = (x: HasTree, n: number) =>
+  TYPE_MEMBER_BODIES.has(kind(x, parent(x, n)) ?? "") ? memberSeparator(x, n) : undefined;
+const TYPE_MEMBER_BODIES = new Set(["interface_body", "object_type"]);
+
 const isKeywordProperty = (ctx: JsCtx, n: number) => {
   if (
     kind(ctx, n) !== "property_signature" ||
@@ -798,9 +828,21 @@ function mappedType(
   tok(js, openBrace);
   open(INDENT);
   sLine(spacing);
-  if (ctx.danglingComments(n).length > 0) {
-    danglingLines(ctx, n);
+  // One per line; the last breaks the line after it only when it is a line comment, ends its line or runs long.
+  const dangling = ctx.danglingComments(n);
+  dangling.forEach((c, i) => {
+    if (i === dangling.length - 1) return;
+    ctx.comment(c);
     sHardline();
+  });
+  const last = dangling.at(-1);
+  if (last !== undefined) {
+    open(GROUP);
+    ctx.comment(last);
+    if (src(js, last).startsWith("//") || lfAfter(js.tree, last) > 0)
+      sHardline();
+    else sLine(0);
+    close();
   }
   if (readonlyKw !== undefined) {
     tok(js, field(js, signature, "sign"));
@@ -1061,6 +1103,25 @@ const functionType: CustomRule<JsOptions> = (n, sctx) => {
   if (parenthesized) sToken(n, ")", true);
 };
 
+/** A `:` annotation with a leading comment, which prettier's printTypeAnnotationProperty spaces off (`x /* c *\/ : T`). */
+export const annotationOwnsComments = (x: JsCtx, n: number) =>
+  kind(x, n) === "type_annotation" && hasComment(x, n, CF.Leading);
+
+const typeAnnotation: CustomRule<JsOptions> = (n, sctx) => {
+  const ctx = jsCtx(sctx);
+  const js = ctx.js;
+  const owns = annotationOwnsComments(js, n);
+  if (owns) {
+    sText(" ");
+    printLeadingComments(ctx, n);
+  }
+  tok(js, anonKid(js, n, ":"));
+  sText(" ");
+  const type = first(js, n);
+  if (type !== undefined) ctx.print(type);
+  if (owns) printTrailingComments(ctx, n);
+};
+
 /** A call or construct signature up to its separator, reached through its parameters (`.via("signature")`). */
 const signature: CustomRule<JsOptions> = (parameters, sctx) => {
   const n = parent(jsCtx(sctx).js, parameters);
@@ -1079,6 +1140,7 @@ const nodeCustoms = {
   methodSignature,
   indexSignature,
   functionType,
+  typeAnnotation,
   signature,
   unionType,
   moduleBody,

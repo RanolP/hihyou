@@ -491,12 +491,20 @@ export function rightToLeft(
   bestFitting([singleLine, flatTargetParenthesizeValue, splitTargetFlatValue]);
 }
 
-/** Ruff's `FormatTypeVar` / `FormatTypeVarTuple` / `FormatParamSpec`. */
-function writeTypeParam(f: Fmt, p: TypeParam): void {
-  if (p.colon !== undefined && p.bound) sink.sDsl(p.ts);
-  else {
-    if (p.star !== undefined) sink.sToken(p.star, f.text(p.star));
-    sink.sToken(p.name, f.text(p.name));
+/** Ruff's `FormatTypeVar` / `FormatTypeVarTuple` / `FormatParamSpec`: the bound and the default as expressions. */
+export function writeTypeParam(f: Fmt, p: TypeParam): void {
+  if (p.star !== undefined) sToken(p.star, f.text(p.star));
+  sToken(p.name, f.text(p.name));
+  if (p.colon !== undefined && p.bound) {
+    sToken(p.colon, f.text(p.colon));
+    sText(" ");
+    writeExpr(f, p.bound);
+  }
+  if (p.eq !== undefined && p.default) {
+    sText(" ");
+    sToken(p.eq, f.text(p.eq));
+    sText(" ");
+    writeExpr(f, p.default);
   }
 }
 

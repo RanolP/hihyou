@@ -303,9 +303,20 @@ let refs = new Int32Array(64);
 let refCount = 0;
 /** Ruff's measure (`Layout.ruff`), fixed when the stream is reset: every flat space counts where it stands. */
 let ruffSpaces = false;
+/** Columns a tab in a token takes: ruff counts each as `indent-width` wide, prettier as none. */
+let tabWidth = 0;
 
-export function resetStream(ruff = false): void {
+const tokenWidth = (s: string) => {
+  const w = textWidth(s);
+  if (tabWidth === 0) return w;
+  let tabs = 0;
+  for (let i = s.indexOf("\t"); i !== -1; i = s.indexOf("\t", i + 1)) tabs++;
+  return w + tabs * tabWidth;
+};
+
+export function resetStream(ruff = false, tabs = 0): void {
   ruffSpaces = ruff;
+  tabWidth = tabs;
   expandsSeen = false;
   fittingSeen = false;
   choiceSeen = false;
@@ -357,7 +368,7 @@ function measured(s: string, w: number) {
 
 /** Synthesized text; it joins the text run before it when nothing opened or closed in between. */
 export function sText(s: string): void {
-  const w = textWidth(s);
+  const w = tokenWidth(s);
   measured(s, w);
   if (mergeable) {
     const at = eStr[n - 1] as number;
@@ -370,9 +381,12 @@ export function sText(s: string): void {
   mergeable = true;
 }
 
-/** A source token (or, `synthetic`, one a rule inserted, anchored to `node`): an entry of its own, for its anchor. */
-export function sToken(node: number, s: string, synthetic = false): void {
-  const w = textWidth(s);
+/**
+ * A source token (or, `synthetic`, one a rule inserted, anchored to `node`): an entry of its own, for its anchor.
+ * An `imaginary` one counts no width toward its line, as ktfmt's trailing comma, which it adds after the layout.
+ */
+export function sToken(node: number, s: string, synthetic = false, imaginary = false): void {
+  const w = imaginary ? 0 : tokenWidth(s);
   measured(s, w);
   strs.push(s);
   entry(TOKEN, synthetic ? 1 : 0, strs.length - 1, node, w);
@@ -1173,6 +1187,12 @@ export function flatText(k: number): string | undefined {
   return failed ? undefined : out;
 }
 
+/**
+ * The width closed interval `k` measured flat as it was built, a conditional group's first state: what a group's
+ * fits reads. The JS printer pads a jest `each` table's cells by it.
+ */
+export const flatWidth = (k: number): number => (iP1[k] as number) - (iP0[k] as number);
+
 /** What closed interval `k` is: its kind (`GROUP`, `CHOICE`, `FILL`, `SPAN`, ...) and its parts in order. */
 export interface Shape {
   readonly kind: number;
@@ -1516,7 +1536,7 @@ export function printStream(layout: Layout): StreamPrinted {
           if (ruff && mustBeFlat) return false;
           const s = strs[eStr[i] as number] as string;
           if (i < allEnd) {
-            width = lineWidth - textWidth(s.slice(s.lastIndexOf("\n") + 1));
+            width = lineWidth - tokenWidth(s.slice(s.lastIndexOf("\n") + 1));
             if (width < 0 && i >= ovEnd) return false;
             i = e;
             cur = iNext[k] as number;
@@ -1524,7 +1544,7 @@ export function printStream(layout: Layout): StreamPrinted {
             break;
           }
           if (pending) width -= 1;
-          return width - textWidth(s.slice(0, s.indexOf("\n"))) >= 0;
+          return width - tokenWidth(s.slice(0, s.indexOf("\n"))) >= 0;
         } else if (kind === GROUP_IF_BROKEN) {
           cur++;
           // Only a broken one under a broken condition changes the mode; it broke every group around it too.
@@ -2063,7 +2083,7 @@ export function printStream(layout: Layout): StreamPrinted {
             out.push(current + s.slice(0, lastBreak + 1));
             current = s.slice(lastBreak + 1);
             length += s.length;
-            column = textWidth(current);
+            column = tokenWidth(current);
             if (ruff) remeasure = true;
             i = e;
             cur = iNext[k] as number;

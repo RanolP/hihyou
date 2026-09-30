@@ -270,9 +270,12 @@ function lineBreaks(source: string, from: number, to: number): number {
   let lf = 0;
   for (let i = from; i < to && lf < LF_MAX; i++) {
     const c = source.charCodeAt(i);
-    // A CRLF counts once; a CR whose LF opens the token still ends a line in the gap.
+    // A CRLF counts once; a CR whose LF opens the token still ends a line in the gap. JS also ends a line at
+    // U+2028 and U+2029, which only its grammar admits between tokens.
     if (
       c === 10 ||
+      c === 0x2028 ||
+      c === 0x2029 ||
       (c === 13 && (i + 1 === to || source.charCodeAt(i + 1) !== 10))
     )
       lf++;

@@ -13,6 +13,8 @@ const ESCAPE_SEQUENCE = 5;
 const REGEX_PATTERN = 6;
 const JSX_TEXT = 7;
 const FUNCTION_SIGNATURE_AUTOMATIC_SEMICOLON = 8;
+// 9 is `__error_recovery`, which the scanner never reads.
+const LET_NAME_FOLLOWS = 10;
 
 const LS = 0x2028;
 const PS = 0x2029;
@@ -41,7 +43,10 @@ function scanTemplateChars(lexer: Lexer): boolean {
   }
 }
 
-/** Only a line comment counts as `scanned`, as in the C scanner. */
+/**
+ * Any comment counts as `scanned`, as in the JavaScript scanner. The C scanner counts only a line comment, so
+ * `a⏎/* c *\/⏎? b : d` scanned the ternary `?` over the block comment and the tree lost it.
+ */
 function scanWhitespaceAndComments(
   lexer: Lexer,
   scanned: { comment: boolean },
@@ -61,12 +66,31 @@ function scanWhitespaceAndComments(
           lexer.advance(true);
           if (la(lexer) === 47) {
             lexer.advance(true);
+            scanned.comment = true;
             break;
           }
         } else lexer.advance(true);
       }
     } else return false;
   }
+}
+
+const isIdentifierChar = (c: number): boolean =>
+  iswalpha(c) || iswdigit(c) || c === 95 || c === 36;
+
+/** At `[`: whether `[ name in` follows, which only a mapped type clause starts. */
+function startsMappedTypeClause(lexer: Lexer): boolean {
+  lexer.advance(true);
+  while (iswspace(la(lexer))) lexer.advance(true);
+  if (!isIdentifierChar(la(lexer))) return false;
+  while (isIdentifierChar(la(lexer))) lexer.advance(true);
+  if (!iswspace(la(lexer))) return false;
+  while (iswspace(la(lexer))) lexer.advance(true);
+  if (la(lexer) !== 105) return false;
+  lexer.advance(true);
+  if (la(lexer) !== 110) return false;
+  lexer.advance(true);
+  return !isIdentifierChar(la(lexer));
 }
 
 function scanAutomaticSemicolon(
@@ -93,6 +117,11 @@ function scanAutomaticSemicolon(
   lexer.advance(true);
   if (!scanWhitespaceAndComments(lexer, scanned)) return false;
 
+  // `let` then a name on the next line declares that name, as TypeScript reads `let⏎abstract`.
+  const c = la(lexer);
+  if (valid[LET_NAME_FOLLOWS] && (iswalpha(c) || c === 95 || c === 36))
+    return false;
+
   switch (la(lexer)) {
     case 96: // `
     case 44: // ,
@@ -101,7 +130,6 @@ function scanAutomaticSemicolon(
     case 42: // *
     case 37: // %
     case 62: // >
-    case 60: // <
     case 61: // =
     case 63: // ?
     case 94: // ^
@@ -113,11 +141,17 @@ function scanAutomaticSemicolon(
     case 123: // {
       if (valid[FUNCTION_SIGNATURE_AUTOMATIC_SEMICOLON]) return false;
       break;
-    // Before `(` or `[` only while parsing a type, which is when a binary operator is not valid.
+    // Before `(`, `[` or `<` only while parsing a type, which is when a binary operator is not valid. TypeScript
+    // takes a type reference's or a `typeof` query's type arguments only on the same line, so `typeof a` then
+    // `<T>(): void` on the next line of an interface are two members.
     case 40:
-    case 91:
+    case 60:
       if (valid[LOGICAL_OR]) return false;
       break;
+    case 91:
+      if (valid[LOGICAL_OR]) return false;
+      // `readonly` then a mapped type clause on the next line is one modifier, as TypeScript reads it.
+      return !startsMappedTypeClause(lexer);
     case 43:
       lexer.advance(true);
       return la(lexer) === 43;

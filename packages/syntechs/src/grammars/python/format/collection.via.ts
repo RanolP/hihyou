@@ -19,7 +19,7 @@ import {
   writeExpr,
   writeSequenceContent,
 } from "../fmt/expr.js";
-import { COLLAPSE, close as sClose, GROUP, open as sOpen, ruffOf, sDsl, sLine, sText } from "../fmt/sink.js";
+import { COLLAPSE, close as sClose, GROUP, HARD, open as sOpen, ruffOf, sDsl, sLine, sText } from "../fmt/sink.js";
 
 /** The expression a dict's item `c` starts with: a pair's key, else the `**` splat. */
 const itemExpr = (c: number, ctx: StreamCtx<unknown>) =>
@@ -56,7 +56,7 @@ export const collectionVia = {
       const first = e.kind === "Dict" ? e.items[0] : e;
       if (first === undefined)
         return f.at(PAREN, () => f.writeEmptyParenthesized(open, dangling, close));
-      const firstStart = e.kind === "Dict" ? itemStart(first as Dict["items"][number]) : outer(e.key).start;
+      const firstStart = e.kind === "Dict" ? itemStart(first as Dict["items"][number]) : outer(e.key ?? e.value).start;
       return f.writeParenthesized(open, body, close, dangling.filter((c) => c.end < firstStart));
     }
     if (e.kind !== "ListComp" && e.kind !== "SetComp" && e.kind !== "Generator" && (e as Sequence).elts.length === 0)
@@ -100,7 +100,7 @@ export const collectionVia = {
     const dangling = f.comments.dangling(p);
     let mine: typeof dangling;
     if (p.kind === "DictComp") {
-      const firstStart = outer(p.key).start;
+      const firstStart = outer(p.key ?? p.value).start;
       mine = dangling.filter((c) => c.end >= firstStart);
     } else {
       // Each item takes the dict's comments that end past the first item and start inside it.
@@ -113,12 +113,25 @@ export const collectionVia = {
     else f.writeDangling(mine);
     writeExpr(f, e);
   },
-  // Given the key and value's pair, prints the comprehension's body: the pair and its clauses in one group.
+  // Given the key and value's pair, or an unpacked `**d`, prints the comprehension's body: it and its clauses in one
+  // group.
   "collection.dictComp": (c: number, ctx: StreamCtx<unknown>) => {
-    const { f, e: key } = ruffOf(fieldChild(ctx.tree, c, "key"));
-    const e = key.parent as DictComp;
+    const pair = ctx.tree.kindName(c) === "pair";
+    // A `**d` splat's value is its last child: comments may sit between it and the `**`.
+    const { f, e: first } = ruffOf(
+      pair ? fieldChild(ctx.tree, c, "key") : ctx.tree.child(c, ctx.tree.count(c) - 1),
+    );
+    const e = first.parent as DictComp;
     sOpen(GROUP);
-    writeComprehensionBody(f, e, () => sDsl(c));
+    writeComprehensionBody(f, e, () => {
+      if (e.op === undefined) return sDsl(c);
+      // Ruff keeps a comment after the `**` there, the value on the next line.
+      f.writeTok(e.op);
+      const after = f.comments.leading(e.value);
+      f.writeTrailing(after);
+      if (after.length > 0) sLine(HARD);
+      writeExpr(f, e.value);
+    });
     sClose();
   },
   // Given the element, prints a list, set or generator comprehension's body: the element and its clauses in one group.

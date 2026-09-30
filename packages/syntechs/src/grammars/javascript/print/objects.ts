@@ -31,6 +31,7 @@ import {
 import { printNumber, printString } from "../../../fmt/dsl/normalizers.js";
 import { role } from "./parens.js";
 import {
+  arrayElements,
   CF,
   childWhere,
   children as childrenOf,
@@ -41,6 +42,7 @@ import {
   isComment,
   isConciselyPrintedArray,
   items,
+  jestEach,
   type JsCtx,
   type JsOptions,
   kind,
@@ -94,7 +96,8 @@ function isKeySafeToUnquote(ctx: JsCtx, n: number): boolean {
     return true;
   return (
     !isTypeScript(ctx) &&
-    k !== "import_attribute" &&
+    // An attribute is `pair` > `object` > `import_attribute` here, an ImportAttribute to prettier.
+    kind(ctx, parentOf(ctx, parentOf(ctx, n))) !== "import_attribute" &&
     isSimpleNumber(value) &&
     String(Number(value)) === value
   );
@@ -271,7 +274,7 @@ const objectCustom: CustomRule<JsOptions> = (n, sctx) => {
       !shouldBreak &&
       isPattern &&
       ((kind(ctx, realParent) === "assignment_expression" && key === "left") ||
-        (kind(ctx, realParent) === "variable_declarator" && key === "name"))
+        (kind(ctx, realParent) === "variable_declarator" && key === "id"))
     );
   const openBrace = anonKid(ctx, n, "{");
   const closeBrace = lastChildWhere(
@@ -397,33 +400,6 @@ export function sPrintDecorators(
 
 // --- arrays -----------------------------------------------------------------------------------------------------
 
-/** The elements of an array, `undefined` for each hole, with the `,` after each. */
-function arrayElements(
-  x: HasTree,
-  n: number,
-): { element: number | undefined; comma: number | undefined }[] {
-  const out: {
-    element: number | undefined;
-    comma: number | undefined;
-  }[] = [];
-  let expecting = true;
-  for (const c of childrenOf(x, n)) {
-    if (isComment(x, c)) continue;
-    if (named(x, c)) {
-      out.push({ element: c, comma: undefined });
-      expecting = false;
-    } else if (kind(x, c) === ",") {
-      if (expecting) out.push({ element: undefined, comma: c });
-      else {
-        const last = out.at(-1);
-        if (last) last.comma = c;
-      }
-      expecting = true;
-    }
-  }
-  return out;
-}
-
 const isArrayOrObject = (x: HasTree, n: number | undefined) =>
   kind(x, n) === "array" || kind(x, n) === "object";
 
@@ -449,7 +425,8 @@ const arrayCustom: StreamRule<JsOptions> = (n, sctx) => {
   const canHaveTrailingComma = kind(ctx, lastElem.element) !== "rest_pattern";
   const needsForcedTrailingComma = lastElem.element === undefined;
   const shouldBreak =
-    (elements.length > 1 &&
+    (!jestEach.printing &&
+      elements.length > 1 &&
       elements.every(({ element }, i) => {
         if (!isArrayOrObject(ctx, element)) return false;
         const next = elements[i + 1]?.element;

@@ -4,6 +4,7 @@
 import {
   all,
   ancestor,
+  any,
   anyEntry,
   type CondIn,
   custom,
@@ -12,10 +13,7 @@ import {
   entryCount,
   firstText,
   grpBrace,
-  group,
   grpParen,
-  has,
-  indent,
   inOrder,
   isEmpty,
   lines,
@@ -31,6 +29,7 @@ import {
   words,
 } from "../../fmt/dsl/dsl.js";
 import type { grammar } from "./bundle.js";
+import { directives } from "./directive.js";
 import type { CssOptions } from "./fmt.js";
 
 const format = defineFormat<typeof grammar, CssOptions>();
@@ -38,14 +37,12 @@ const format = defineFormat<typeof grammar, CssOptions>();
 const spaced = () => inOrder(space);
 const adjacent = () => inOrder();
 /** Selectors on either side of a combinator: a line between, and after the combinator's token a space. */
-const combinator = () => inOrder({ join: "line", spaceWhen: { after: [">", "~", "+"] } });
+const combinator = () => inOrder({ join: "line", spaceWhen: { after: [">", ">>>", "~", "+"] } });
 /** Selectors one per line, one of more than two parts indenting as it breaks; then each `trail` child after a space. */
 const selectorList = (trail: "block"[] = []) =>
   splitOn(",", { trail, wrapItem: when("longSelector"), layout: { group: true, between: "hardline" } });
 /** The statement's own `;`, or one prettier adds. */
 const semicolon = tok(";").synth(true);
-/** Comma-separated values packed several to a line, indented once they break. */
-const packed = { group: true, indent: true, between: "line", fill: true } as const;
 /** `layout` for two entries or more; a lone entry prints bare. */
 const loneBare = <L>(layout: L) => ({ when: entryCount(1), then: {}, else: layout });
 type Cond = CondIn<typeof grammar, CssOptions>;
@@ -60,25 +57,19 @@ const valueLayout: SplitLayoutOf<Cond> = loneBare({
   then: { indent: true, first: "hard", between: "hardline" },
   else: { group: true, indent: true, first: "soft", between: "line", fill: true },
 });
+/** An at-rule whose prelude prettier parses as a value. */
+const directive = firstText({ is: directives });
 /**
- * The at-rules whose prelude prettier parses as a value (Sass's control flow, mixins and functions, and
- * postcss-mixins'), by their case-sensitive name.
+ * Inside a media query's top-level `( … )`: prettier's media-feature-expression, whose text before any `:` it prints
+ * as written with each run of spaces as one, so `(not (  a  ))` keeps its inner gaps as `(not ( a ))`.
  */
-const directive = firstText({
-  is: ["if", "else", "for", "each", "while", "debug", "mixin", "include", "function", "return"]
-    .concat(["define-mixin", "add-mixin"])
-    .map((n) => `@${n}`),
-});
+const inMediaFeature = all(
+  ancestor("parenthesized_query"),
+  ancestor(["media_statement", "custom_media_statement"], { stop: ["block"] }),
+);
+const asWritten = () => inOrder({ join: "gap" });
 /** Inside a `directive`'s prelude. */
 const inDirective = ancestor(["at_rule", "postcss_statement"], { stop: ["block"], holds: directive });
-/**
- * A `directive`'s prelude as a value: its comma list packed and indented once it breaks, each entry's words filled
- * in a group of its own.
- */
-const directivePrelude = (trail: "block"[]) =>
-  splitOn(",", { except: ["at_keyword", ";"], trail, item: words(), layout: loneBare(packed) });
-const directiveMath = () =>
-  either(when("tightDivision"), inOrder(), inOrder({ join: "line", spaceWhen: { before: ["+", "-", "*", "/"] } }));
 /** Statements one per line, keeping one blank line where the source has any. */
 const statements = { blankLines: "force" } as const;
 
@@ -88,46 +79,79 @@ export const css = format({
     stylesheet: ($) => lines($.children),
     block: ($) => grpBrace(lines($.children)),
     keyframe_block_list: ($) => grpBrace(lines($.children)),
-    rule_set: spaced,
-    selectors: () => selectorList(),
+    // Its children spaced, but a selector holding a comment as written (fmt.ts's `ruleSet`).
+    rule_set: () => custom("ruleSet"),
+    // After `@nest` and `@extend`, prettier's selectors share a line, indented once they break.
+    selectors: () =>
+      either(
+        any(parentIs("nest_statement"), parentIs("extend_statement")),
+        splitOn(",", { wrapItem: when("longSelector"), layout: { group: true, indent: true, between: "line" } }),
+        selectorList(),
+      ),
     keyframe_block: () => selectorList(["block"]),
     from: () => text("lower"),
     to: () => text("lower"),
 
-    // An IE filter's (`progid:...`) value as written, one space wherever the source has any gap (prettier's raw
-    // value); else the comma list, a grid template's keeping its lines.
+    // A value postcss-value-parser fails on (fmt.ts's `unparsedValue`) as written; an IE filter's (`progid:...`)
+    // value, one space wherever the source has any gap (prettier's raw value); else the comma list, a grid template's
+    // keeping its lines, and an empty value's gap as written (fmt.ts's `declarationEnd`). The comments around the `:`
+    // print as postcss's `between` (fmt.ts's `declarationColon`).
     declaration: ($) => [
       either(
-        firstText({ after: ":", prefix: ["progid:"] }),
-        inOrder({
-          join: "gap",
-          tight: { before: [":"] },
-          spaceWhen: { after: [":"], before: ["important"] },
-          verbatim: { except: ["property_name", "important"] },
-          skip: [";"],
-        }),
-        [
-          $.children.at(0).andThen((p) => p),
-          ":",
-          space,
-          splitOn(",", {
-            except: ["property_name", ":", ";"],
-            trail: ["important"],
-            item: words({
-              keepLines: all(entryCount(1), firstText({ is: ["grid"], prefix: ["grid-template"], anyCase: true })),
-            }),
-            layout: valueLayout,
+        when("unparsedValue"),
+        [$.children.at(0).andThen((p) => p), tok(":").via("colonThenSource")],
+        either(
+          firstText({ after: ":", prefix: ["progid:"] }),
+          inOrder({
+            join: "gap",
+            tight: { before: [":"] },
+            spaceWhen: { after: [":"], before: ["important"] },
+            verbatim: { except: ["property_name", "important"] },
+            skip: [";"],
           }),
-        ],
+          [
+            $.children.at(0).andThen((p) => p),
+            tok(":").via("declarationColon"),
+            either(when("emptyValue"), [], space),
+            // A CSS Modules `composes` value prints with its lines removed (prettier's css-decl), its words on one line.
+            either(
+              firstText({ is: ["composes"], anyCase: true }),
+              splitOn(",", {
+                except: ["property_name", ":", ";"],
+                trail: ["important"],
+                comments: true,
+                item: "space",
+                layout: { group: true, between: "line" },
+              }),
+              splitOn(",", {
+                except: ["property_name", ":", ";"],
+                trail: ["important"],
+                comments: true,
+                item: words({
+                  keepLines: all(entryCount(1), firstText({ is: ["grid"], prefix: ["grid-template"], anyCase: true })),
+                }),
+                layout: valueLayout,
+              }),
+            ),
+          ],
+        ),
       ),
+      tok(";").via("declarationEnd"),
+    ],
+    // `--name: {...}`: the block laid out as a rule's, then the `;` a declaration ends with; the comments around the
+    // `:` as a declaration's (fmt.ts's `declarationColon`).
+    custom_property_set: ($) => [
+      $.children.at(0).andThen((p) => p),
+      tok(":").via("declarationColon"),
+      space,
+      $.children.at(1).andThen((b) => b),
       semicolon,
     ],
-    // `--name: {...}`: the block laid out as a rule's, then the `;` a declaration ends with.
-    custom_property_set: () => [inOrder({ spaceWhen: { after: [":"] }, skip: [";"] }), semicolon],
     // postcss-nested-props: a rule whose selector is `name:` and any values, as written.
     nested_property: () =>
       inOrder({ join: "gap", tight: { before: [":"] }, spaceWhen: { after: [":"], before: ["block"] } }),
     property_name: () => text("maybeLower"),
+    important: () => custom("important"),
     integer_value: () => text("unitCase"),
     float_value: () => text("unitCase"),
     color_value: () => text("lower"),
@@ -149,16 +173,22 @@ export const css = format({
           text("cssWide"),
         ),
       ),
-    call_expression: adjacent,
-    // A function's as written inside `url()`, else broken inside the parentheses: a function's as words, a
-    // pseudo-class's as selectors.
+    // In a `directive`'s prelude, a Sass argument list as fmt.ts's `sassList` lays it out, but `url()`'s.
+    call_expression: ($) =>
+      either(
+        all(inDirective, not(calledAs("url"))),
+        [$.children.at(0).andThen((n) => n), $.children.at(1).andThen((n) => n.via("sassList"))],
+        adjacent(),
+      ),
+    // A function's as written inside `url()`, a space wherever the source has a gap (postcss-value-parser's one
+    // word, trimmed), else broken inside the parentheses: a function's as words, a pseudo-class's as selectors.
     arguments: () =>
       either(
         all(parentIs("call_expression"), ancestor("call_expression", { holds: calledAs("url") })),
-        adjacent(),
+        inOrder({ join: "gap", tight: { after: ["("], before: [")"] } }),
         either(
           parentIs("call_expression"),
-          grpParen(splitOn(",", { except: ["(", ")"], item: words(), layout: { between: "line" } })),
+          grpParen(splitOn(",", { except: ["(", ")"], comments: "all", item: words(), layout: { between: "line" } })),
           grpParen(
             splitOn(",", {
               except: ["(", ")"],
@@ -169,23 +199,27 @@ export const css = format({
           ),
         ),
       ),
-    // Spaced around the operator as written, and always inside `calc()`.
-    // In a `directive`'s prelude, prettier's math in a value: the operator ends its line as the chain's one group
-    // breaks, but a `/` written without spaces, which may be no division, stays so.
-    binary_expression: () =>
-      either(
-        inDirective,
-        either(parentIs("binary_expression"), directiveMath(), group(indent(directiveMath()))),
-        inOrder({
-          join: "gap",
-          spaceWhen: { when: ancestor("call_expression", { stop: ["declaration", "block"], holds: calledAs("calc") }) },
-        }),
-      ),
-    // Broken inside the parentheses in a `directive`'s prelude, as prettier's paren group.
-    parenthesized_value: () => either(inDirective, grpParen(splitOn(",", { except: ["(", ")"] })), adjacent()),
+    // Prettier's math in a value, which fmt.ts's `valueMath` lays out as its operands and operators in a row.
+    binary_expression: () => custom("valueMath"),
+    // `-(-1)`, `hue(* 20)`: fmt.ts's `unaryExpression`.
+    unary_expression: () => custom("unaryExpression"),
+    // A `{...}` group in a custom property's value or a Sass argument, as prettier prints a JSON-like one:
+    // `{"a": 1, "b": 2}`.
+    brace_value: () => inOrder({ tight: { after: ["{"], before: ["}", ","] }, spaceWhen: { after: [","] } }),
+    // `[a b]`, `[1, "2"]`: tight inside the brackets, a space after each comma and wherever the source has a gap.
+    grid_value: () =>
+      inOrder({ join: "gap", tight: { after: ["["], before: ["]", ","] }, spaceWhen: { after: [","] } }),
+    // `#ABCDEFG`, `#Abc-x`: a `#` word that is no color, as written.
+    hash_value: () => text("trimEnd"),
+    // A Sass list or map (fmt.ts's `sassList`) in a `directive`'s prelude or a `$variable`'s value, else joined.
+    parenthesized_value: () => custom("parenthesizedValue"),
+    // Sass's `name: value` (fmt.ts's `keywordArgument`); `$args...` joined.
+    keyword_argument: () => custom("keywordArgument"),
+    rest_argument: adjacent,
 
     class_selector: adjacent,
     id_selector: adjacent,
+    placeholder_selector: adjacent,
     pseudo_element_selector: adjacent,
     pseudo_class_selector: adjacent,
     namespace_selector: adjacent,
@@ -201,18 +235,17 @@ export const css = format({
     tag_name: () => text("lower", parentIs("pseudo_element_selector")),
 
     at_keyword: () => text("atName"),
+    // A prelude holding a comment as postcss-media-query-parser splits its source (fmt.ts's `mediaQueries`).
     media_statement: () => [
-      spell("@media", "atName"),
-      space,
-      splitOn(",", { except: ["@media"], trail: ["block"], layout: { group: true, indent: true, between: "line" } }),
+      either(when("mediaComments"), tok("@media").via("mediaQueries"), [
+        spell("@media", "atName"),
+        space,
+        splitOn(",", { except: ["@media"], trail: ["block"], layout: { group: true, indent: true, between: "line" } }),
+      ]),
     ],
-    supports_statement: spaced,
-    import_statement: () => [
-      spell("@import", "atName"),
-      space,
-      splitOn(",", { except: ["@import", ";"], item: words(), layout: loneBare(packed) }),
-      semicolon,
-    ],
+    // A prelude holding a comment as prettier's value (fmt.ts's `supportsValue`).
+    supports_statement: () => [either(when("supportsComments"), tok("@supports").via("supportsValue"), inOrder(space))],
+    import_statement: () => custom("importStatement"),
     namespace_statement: () => inOrder({ join: "space", tight: { before: [";"] } }),
     // Prettier's raw at-rule parameters: as written, one space wherever the source has any gap.
     charset_statement: () =>
@@ -242,31 +275,17 @@ export const css = format({
         spaceWhen: { after: ["@custom-media", ","] },
       }),
     keyframes_statement: spaced,
-    at_rule: ($) =>
-      either(
-        directive,
-        either(
-          has("children", "block"),
-          [$.children.at(0).andThen((n) => n), space, directivePrelude(["block"])],
-          [$.children.at(0).andThen((n) => n), space, directivePrelude([]), semicolon],
-        ),
-        inOrder({
-          join: "gap",
-          tight: { before: [";"] },
-          // `@page:first` stays joined: postcss reads a name up to the first gap.
-          spaceWhen: { before: ["block"] },
-          verbatim: { except: ["at_keyword", "block"] },
-        }),
-      ),
-    postcss_statement: ($) =>
-      either(
-        directive,
-        [$.children.at(0).andThen((n) => n), space, directivePrelude([]), semicolon],
-        inOrder({ join: "gap", tight: { before: [";"] }, spaceWhen: { after: ["at_keyword"] }, verbatim: true }),
-      ),
-    binary_query: spaced,
-    unary_query: spaced,
-    parenthesized_query: adjacent,
+    // `@at-root`'s selectors are a rule's, or its `(with: ...)` query; `@nest`'s and `@extend`'s see `selectors`.
+    at_root_statement: spaced,
+    nest_statement: spaced,
+    extend_statement: () => [inOrder({ join: "space", skip: [";"] }), semicolon],
+    // A `directive`'s prelude as a value (fmt.ts's `sassDirective`), else prettier's raw params: as written, one
+    // space wherever the source has any gap.
+    at_rule: () => custom("atRule"),
+    postcss_statement: () => custom("postcssStatement"),
+    binary_query: () => either(inMediaFeature, asWritten(), inOrder(space)),
+    unary_query: () => either(inMediaFeature, asWritten(), inOrder(space)),
+    parenthesized_query: () => either(inMediaFeature, asWritten(), inOrder()),
     feature_query: () =>
       inOrder({ join: "gap", tight: { after: ["("], before: [")", ":"] }, spaceWhen: { after: [":"] } }),
     // prettier's media feature: as written, one space wherever the source has any gap.

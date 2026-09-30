@@ -1,4 +1,4 @@
-kotlin compatibility: 641/753 (85.13%), 13 refused (ok:false), 11 excluded
+kotlin compatibility: 743/753 (98.67%), 0 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -8,105 +8,16 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
-| comments.txt: Comments | 0/1 | 76.19% |
+| comments.txt: Comments | 0/1 | 85.71% |
 | source-files.txt: Multiple Imports On A Single Line | 0/1 | 50.00% |
-| packages/syntechs/src/grammars/kotlin/corpus/Collections.kt | 0/1 | 96.55% |
-| packages/syntechs/src/grammars/kotlin/corpus/Result.kt | 0/1 | 99.56% |
-| packages/syntechs/src/grammars/kotlin/corpus/Delay.kt | 0/1 | 97.97% |
-| packages/syntechs/src/grammars/kotlin/corpus/Transform.kt | 0/1 | 92.98% |
-| packages/syntechs/src/grammars/kotlin/corpus/Okio.kt | 0/1 | 97.44% |
-| packages/syntechs/src/grammars/kotlin/corpus/build.gradle.kts | 0/1 | 98.92% |
-| ktfmt/format/annotation/exception.kt | 0/1 | 61.54% |
-| ktfmt/format/annotation/expressions2.kt | 0/1 | 78.05% |
-| ktfmt/format/annotation/functionTypes.kt | 0/1 | 60.00% |
-| ktfmt/format/annotation/multipleAnnotations.kt | 0/1 | 85.71% |
-| ktfmt/format/annotation/noNewLineAfterAnnotations.kt | 0/1 | 79.49% |
-| ktfmt/format/binary/associativity.kt | 0/1 | 72.73% |
-| ktfmt/format/binary/binaryExpressionWithRanges.kt | 0/1 | 52.63% |
-| ktfmt/format/call/arrayAccessInTheCallChain.kt | 0/1 | 58.33% |
 | ktfmt/format/call/callArgsStickToFunctionName.kt | 0/1 | 60.00% |
 | ktfmt/format/call/chainWithDereferences.kt | 0/1 | 50.00% |
 | ktfmt/format/call/functionReference.kt | 0/1 | 88.00% |
-| ktfmt/format/call/namedArgsWithValueExpr.kt | 0/1 | 57.14% |
-| ktfmt/format/call/nestedCalls.kts | 0/1 | 63.16% |
-| ktfmt/format/call/trailingCommaInLambda.kt | 0/1 | 45.45% |
-| ktfmt/format/call/trailingCommasInCalls.kt | 0/1 | 75.00% |
-| ktfmt/format/class/emptyCompanionObject.kt | 0/1 | 92.31% |
-| ktfmt/format/class/emptyEnumWithSemicolon2.kt | 0/1 | 0.00% |
-| ktfmt/format/class/emptyEnumWithSemicolon3.kt | 0/1 | 25.00% |
-| ktfmt/format/class/emptyEnumWithSemicolon6.kt | 0/1 | 50.00% |
-| ktfmt/format/class/expectEnum.kt | 0/1 | 0.00% |
-| ktfmt/format/class/functionalInterface.kt | 0/1 | 57.14% |
-| ktfmt/format/class/functionalInterfaceWithTypeParams.kt | 0/1 | 66.67% |
-| ktfmt/format/class/lineBreakOnTypeSpecifier.kt | 0/1 | 57.14% |
-| ktfmt/format/class/secondaryConstructorDelegate2.kt | 0/1 | 52.63% |
-| ktfmt/format/comment/shebang.kts | 0/1 | 88.89% |
-| ktfmt/format/function/trailingCommasInDefinitions.kt | 0/1 | 90.57% |
-| ktfmt/format/if/comment.kt | 0/1 | 61.54% |
-| ktfmt/format/import/importList.kt | 0/1 | 37.50% |
-| ktfmt/format/import/importsInKDoc.kt | 0/1 | 94.55% |
-| ktfmt/format/import/importsWithTrailingExprs.kt | 0/1 | 66.67% |
-| ktfmt/format/import/importsWithTrailingExprs2.kt | 0/1 | 66.67% |
-| ktfmt/format/import/importsWithTrailingExprs3.kt | 0/1 | 66.67% |
-| ktfmt/format/import/keepUnusedImports.kt | 0/1 | 85.71% |
-| ktfmt/format/import/usedImportsFromSamePackage.kt | 0/1 | 94.12% |
-| ktfmt/format/lambda/lambdaArg.kt | 0/1 | 72.22% |
-| ktfmt/format/lambda/lambdaWithFullType.kt | 0/1 | 44.44% |
-| ktfmt/format/misc/addingTrailingCommaOnMaxWidth.kt | 0/1 | 75.00% |
-| ktfmt/format/misc/addingTrailingCommaWhenBreakingParameterList2.kt | 0/1 | 88.00% |
-| ktfmt/format/misc/commentStability.kt | 0/1 | 70.59% |
-| ktfmt/format/misc/commentStability2.kt | 0/1 | 0.00% |
-| ktfmt/format/misc/commentStability3-2.kts | 0/1 | 93.02% |
-| ktfmt/format/misc/commentStability3.kt | 0/1 | 92.68% |
-| ktfmt/format/misc/commentStability4.kt | 0/1 | 76.92% |
-| ktfmt/format/misc/commentsRepectMaxWidth.kt | 0/1 | 66.67% |
-| ktfmt/format/misc/contextParameters.kt | 0/1 | 61.54% |
-| ktfmt/format/misc/contextReceivers.kt | 0/1 | 64.00% |
-| ktfmt/format/misc/labels.kt | 0/1 | 78.79% |
-| ktfmt/format/misc/redundantSemicolons.kt | 0/1 | 95.65% |
-| ktfmt/format/misc/semicolonsBetweenCalls.kt | 0/1 | 73.42% |
-| ktfmt/format/misc/semicolonsInEmptyBodies.kt | 0/1 | 61.54% |
-| ktfmt/format/misc/trailingCommas.kt | 0/1 | 22.81% |
-| ktfmt/format/misc/unaryPostfix.kt | 0/1 | 90.00% |
-| ktfmt/format/misc/unaryPrefix.kt | 0/1 | 57.89% |
-| ktfmt/format/property/backingFieldWithChainedScopingFunction3.kt | 0/1 | 76.92% |
-| ktfmt/format/property/trailingCommasInProperties.kt | 0/1 | 72.73% |
-| ktfmt/format/string/multiDollarString.kt | 0/1 | 33.33% |
-| ktfmt/format/string/multilineStringsWithTemplateExpressions.kt | 0/1 | 96.30% |
-| ktfmt/format/string/multilineStringsWithTemplateExpressions2.kt | 0/1 | 40.00% |
-| ktfmt/format/string/nestedMultilineString2.kt | 0/1 | 96.97% |
-| ktfmt/format/type/castsWithBreaks.kt | 0/1 | 67.86% |
-| ktfmt/format/type/classExpression.kt | 0/1 | 66.67% |
-| ktfmt/format/type/compondBoundOnClassDelegate.kt | 0/1 | 40.00% |
-| ktfmt/format/type/generics2.kt | 0/1 | 33.33% |
-| ktfmt/format/type/generics3.kt | 0/1 | 30.00% |
-| ktfmt/format/type/intersections.kt | 0/1 | 75.00% |
-| ktfmt/format/type/nestedQualifiedTypes.kt | 0/1 | 40.00% |
-| ktfmt/format/type/trailingCommasInFunctionTypes.kt | 0/1 | 60.00% |
-| ktfmt/format/when/guards.kt | 0/1 | 58.33% |
-| ktfmt/google/casts.kt | 0/1 | 42.86% |
-| ktfmt/google/classTypeParams.kt | 0/1 | 63.29% |
-| ktfmt/google/comments.kt | 0/1 | 60.55% |
-| ktfmt/google/forcedBreaksInFunCalls.kt | 0/1 | 80.56% |
-| ktfmt/google/forwardPropagationOfBreaks3.kt | 0/1 | 66.67% |
-| ktfmt/google/fqNestedTypes.kt | 0/1 | 38.10% |
-| ktfmt/google/ifWithMaxWidthCondition.kt | 0/1 | 47.06% |
-| ktfmt/google/longFunctionTypeWrapping.kt | 0/1 | 23.53% |
-| ktfmt/google/namedArgumentsWithValueExpression.kt | 0/1 | 47.06% |
-| ktfmt/google/secondaryConstructorNoArgs.kt | 0/1 | 47.06% |
-| ktfmt/google/singleLambdaArgument.kt | 0/1 | 68.75% |
-| ktfmt/google/trailingCommasAlwaysRemoved.kt | 0/1 | 56.00% |
-| ktfmt/google/trailingCommasSingleElementLists.kt | 0/1 | 63.41% |
-| ktfmt/google/whenWithMaxWidthCondition.kt | 0/1 | 42.11% |
-| ktfmt/google/whileMaxWidthCondition.kt | 0/1 | 47.06% |
-| ktfmt/kotlinlang/nestedCalls.kts | 0/1 | 63.16% |
-| ktfmt/new_codestyle/annotation/AnnotationOnExpression.kt | 0/1 | 90.63% |
-| ktfmt/new_codestyle/annotation/AnnotationOnExpressionFullWidth.kt | 0/1 | 87.50% |
-| ktfmt/new_codestyle/annotation/AnnotationsEverywhere.kt | 0/1 | 96.97% |
-| ktfmt/new_codestyle/annotation/AnnotationsOnParameters.kt | 0/1 | 82.61% |
+| ktfmt/format/misc/labels.kt | 0/1 | 87.50% |
+| ktfmt/format/misc/semicolonsBetweenCalls.kt | 0/1 | 96.20% |
+| ktfmt/format/misc/semicolonsInEmptyBodies.kt | 0/1 | 60.00% |
+| ktfmt/format/string/multiDollarString.kt | 0/1 | 44.44% |
 | ktfmt/new_codestyle/annotation/AnnotationsOnTypes.kt | 0/1 | 93.20% |
-| ktfmt/new_codestyle/annotation/DeclarationAnnotations.kt | 0/1 | 93.62% |
-| ktfmt/new_codestyle/annotation/UseSiteTargets.kt | 0/1 | 90.48% |
 
 # Refused
 
@@ -114,19 +25,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| ktfmt/format/annotation/collectionLiterals.kt | 1/1 | 82.50% | formatter-error: no rule: collection_literal at 58 |
-| ktfmt/format/class/trailingCommentAfterMethod.kt | 1/1 | 93.48% | check: output comment "// Hanging after fn // Trailing after fn" matches no input comment |
-| ktfmt/format/function/varargs.kt | 1/1 | 50.00% | formatter-error: no rule: spread_expression at 38 |
-| ktfmt/format/if/blocks.kt | 1/1 | 18.18% | formatter-error: no rule: do_while_statement at 34 |
-| ktfmt/format/misc/doWhile.kt | 1/1 | 42.86% | formatter-error: no rule: do_while_statement at 18 |
-| ktfmt/format/property/propertiesWithAccessors.kt | 1/1 | 27.78% | formatter-error: no rule: parameter_with_optional_type at 95 |
-| ktfmt/format/property/propertiesWithAccessors2.kt | 1/1 | 44.44% | formatter-error: no rule: parameter_with_optional_type at 119 |
-| ktfmt/google/arrayLiteralInAnnotation.kt | 1/1 | 36.11% | formatter-error: no rule: collection_literal at 38 |
-| ktfmt/google/comments2.kt | 1/1 | 30.00% | formatter-error: no rule: collection_literal at 38 |
-| ktfmt/google/missingTrailingCommas.kt | 1/1 | 19.18% | formatter-error: no rule: collection_literal at 334 |
-| ktfmt/google/redundantTrailingCommas.kt | 1/1 | 50.00% | formatter-error: no rule: collection_literal at 120 |
-| ktfmt/google/trailingCommasNotAdded.kt | 1/1 | 21.74% | formatter-error: no rule: collection_literal at 112 |
-| ktfmt/new_codestyle/annotation/AnnotationArguments.kt | 1/1 | 100.00% | formatter-error: no rule: collection_literal at 26 |
 
 # Excluded
 

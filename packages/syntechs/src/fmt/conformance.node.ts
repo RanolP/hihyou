@@ -121,6 +121,9 @@ const JS_IGNORE = [
   "js/ternaries/parenthesis/await-expression.js",
   "js/await/like-call.js",
   "js/quotes/objects.js",
+
+  // experimental proposal syntax (below TC39 Stage 4), ignored until it ships
+  "js/discard-binding/",
 ];
 
 /** The same list's CSS entries: postcss-conditionals and YAML front matter, which no CSS grammar has. */
@@ -282,7 +285,7 @@ function runCase(
   return { fixture: c.fixture, runs };
 }
 
-/** How many fixtures each reference tool prints as the expected output in every run; the fixture name picks its parser. */
+/** How many fixtures each reference tool prints as the expected output in every run, each run under prettier's parser for it. */
 async function scoreReferences(cases: Case[]): Promise<ReferenceScore[]> {
   const scores: ReferenceScore[] = [];
   for (const ref of [oxfmt]) {
@@ -291,7 +294,13 @@ async function scoreReferences(cases: Case[]): Promise<ReferenceScore[]> {
       let all = true;
       for (const r of c.runs) {
         const out = await ref
-          .format(c.fixture, c.text, r.options)
+          .format(
+            c.fixture,
+            c.text,
+            r.parser === undefined
+              ? r.options
+              : { parser: r.parser, ...r.options },
+          )
           .catch(() => undefined);
         if (out === undefined || r.asRecorded(out) !== r.expected) {
           all = false;

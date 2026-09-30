@@ -2,6 +2,7 @@ import type { FormatTree } from "../../../fmt/tree.js";
 import type { Str } from "./ast.js";
 import type { Fmt } from "./builders.js";
 import type { Comment } from "./comments.js";
+import { docstring } from "./docstring.js";
 import {
   endOf,
   FILE_END,
@@ -127,6 +128,29 @@ function formatSpec(tree: FormatTree, interp: number): number | undefined {
   return undefined;
 }
 
+/** A format spec's literal characters, its nested fields cut out. */
+function specLiteral(tree: FormatTree, spec: number): string {
+  let text = tree.text(spec);
+  for (let i = 0; i < tree.count(spec); i++) {
+    const c = tree.child(spec, i);
+    if (tree.kindName(c) === "format_expression") text = text.replace(tree.text(c), "");
+  }
+  return text;
+}
+
+/** Whether a spec literal under a debug field (`field` itself, or `debug`, an enclosing one) holds an opposite quote. */
+function debugSpecQuote(tree: FormatTree, field: number, debug: boolean, fl: Flags): boolean {
+  const spec = formatSpec(tree, field);
+  if (spec === undefined) return false;
+  const d = debug || isDebug(tree, field);
+  if (d && containsOppositeQuote(specLiteral(tree, spec), fl)) return true;
+  for (let i = 0; i < tree.count(spec); i++) {
+    const c = tree.child(spec, i);
+    if (tree.kindName(c) === "format_expression" && debugSpecQuote(tree, c, d, fl)) return true;
+  }
+  return false;
+}
+
 /** Ruff's `contains_opposite_quote`. */
 function containsOppositeQuote(content: string, fl: Flags): boolean {
   if (fl.triple) return content.includes(opposite(fl.quote).repeat(3));
@@ -154,30 +178,52 @@ function descendants(
   return out;
 }
 
-/** Ruff's `preferred_quote_style`, for a target before Python 3.12 (no PEP 701). */
+/** Whether the target reads PEP 701 f-strings (3.12+), where a nested string may reuse its enclosing quotes. */
+export function supportsPep701(f: Fmt): boolean {
+  const m = /^py3(\d+)$/.exec(f.options["target-version"] ?? "");
+  return m !== null && Number(m[1]) >= 12;
+}
+
+/** Ruff's `preferred_quote_style`. */
 export function preferredQuoteStyle(
   f: Fmt,
   part: Part,
   preferred: QuoteStyle,
 ): QuoteStyle {
   const state = f.fstr;
-  if (state.k === "nested") return "preserve";
-  if (state.k === "inside" && (!state.flags.triple || part.flags.triple))
-    return opposite(state.flags.quote) === '"' ? "double" : "single";
+  const pep701 = supportsPep701(f);
+  if (state.k !== "outside") {
+    if (!pep701 && state.k === "nested") return "preserve";
+    // `nested-string-quote-style = "preferred"` lets a nested string take the preferred quotes once PEP 701 allows it.
+    const alternating =
+      !pep701 || f.options["nested-string-quote-style"] !== "preferred";
+    if (
+      alternating &&
+      (!state.flags.triple || part.flags.triple) &&
+      (!pep701 || preferred !== "preserve")
+    )
+      return opposite(state.flags.quote) === '"' ? "double" : "single";
+  }
   if (preferred === "preserve") return "preserve";
-  if (isInterpolated(part.flags)) {
+  // A field's format spec is the string's own text, so a quote its literal holds pins the quotes (ruff#13935).
+  // A nested field's spec is not the field's literal: it prints escaped for whatever quotes the string takes.
+  // A debug field's spec, at any depth, prints verbatim, so any quote in it pins them too.
+  if (isInterpolated(part.flags))
+    for (const e of part.elements) {
+      if (f.tree.kindName(e) !== "interpolation") continue;
+      const spec = formatSpec(f.tree, e);
+      if (spec === undefined) continue;
+      if (containsOppositeQuote(specLiteral(f.tree, spec), part.flags)) return "preserve";
+      if (debugSpecQuote(f.tree, e, false, part.flags)) return "preserve";
+    }
+  // Before PEP 701 an f-string keeps its quotes when changing them would clash with a quote its fields hold
+  // verbatim. A t-string needs Python 3.14, so it never has that constraint.
+  if (!pep701 && part.flags.prefix.includes("f")) {
     const interps = part.elements.filter(
       (e) => f.tree.kindName(e) === "interpolation",
     );
     for (const i of interps) {
       if (isDebug(f.tree, i) && containsOppositeQuote(f.text(i), part.flags))
-        return "preserve";
-      const spec = formatSpec(f.tree, i);
-      if (
-        spec !== undefined &&
-        isDebug(f.tree, i) &&
-        containsOppositeQuote(f.text(spec), part.flags)
-      )
         return "preserve";
     }
     for (const i of interps)
@@ -193,7 +239,12 @@ export function preferredQuoteStyle(
         if (literal.includes(p.flags.quote)) return "preserve";
       }
   }
-  if (part.flags.triple) return "double";
+  if (part.flags.triple) {
+    // A code example in a docstring takes the quotes the docstring does not.
+    const doc = f.options.docstringQuote;
+    if (doc === undefined) return "double";
+    return doc === '"' ? "single" : "double";
+  }
   return preferred;
 }
 
@@ -442,17 +493,6 @@ export function normalizeString(
   return last === 0 ? input : out + input.slice(last);
 }
 
-/** Ruff's `needs_chaperone_space`: a space before the closing quotes so they do not join the content. */
-function needsChaperone(fl: Flags, trimEnd: string): boolean {
-  const slashes = (s: string) => s.length - s.replace(/\\+$/, "").length;
-  if (slashes(trimEnd) % 2 === 1) return true;
-  return (
-    fl.triple &&
-    trimEnd.endsWith(fl.quote) &&
-    slashes(trimEnd.slice(0, -1)) % 2 === 0
-  );
-}
-
 /** A string spanning lines (a triple-quoted one) breaks every group around it, as ruff's multiline text does. */
 export function sMultiline(n: number, text: string): void {
   if (!text.includes("\n")) return sToken(n, text);
@@ -484,6 +524,9 @@ export interface PartArgs {
   readonly closes: boolean;
   /** A literal part merged into one string: its contents print as one plain token, braces escaped for an f-string. */
   readonly joined: boolean;
+  /** A joined part of a docstring that trims its leading or trailing whitespace (ruff's `FormatLiteralContent`). */
+  readonly trimStart?: boolean;
+  readonly trimEnd?: boolean;
 }
 
 /** A part printed on its own, with the quotes `chooseQuotes` picks for it. */
@@ -496,95 +539,20 @@ export const partArgs = (f: Fmt, part: Part): PartArgs => ({
 });
 
 /** Ruff's `FormatStringLiteral` for a docstring: its quotes preferring double, its lines re-indented by `indent`. */
-function docstringPart(f: Fmt, part: Part, indent: string): void {
+export function docstringText(f: Fmt, part: Part, indent: string): string {
   const style = f.options["quote-style"];
   const fl = chooseQuotes(f, part, style !== "preserve" ? "double" : style);
   const raw = contentOf(f.tree, part);
   const first = raw.search(/[\\"'\r]/);
   const content = first < 0 ? raw : normalizeString(raw, first, fl, false);
-  const doc = docstring(content, fl, indent, f.options["indent-width"]);
-  if (doc !== undefined) return sMultiline(part.node, doc);
+  const code =
+    f.docCode && f.options["docstring-code-format"]
+      ? { format: f.docCode, depth: f.depth, options: f.options }
+      : undefined;
+  const doc = docstring(content, fl, indent, f.options["indent-style"], code);
+  if (doc !== undefined) return doc;
   const q = quotesOf(fl);
-  sMultiline(part.node, fl.prefix + q + content + q);
-}
-
-/** A docstring's leading whitespace as ruff measures it: columns with tabs to the next multiple of 8, and its length. */
-function indentation(line: string): { columns: number; length: number } {
-  let columns = 0;
-  let length = 0;
-  for (const c of line) {
-    if (c === " ") columns++;
-    else if (c === "\t") columns += 8 - (columns % 8);
-    else break;
-    length++;
-  }
-  return { columns, length };
-}
-
-/** Ruff's `docstring::format`, as the text of one token whose later lines carry `indent`; undefined to print as a plain string. */
-function docstring(
-  content: string,
-  fl: Flags,
-  indent: string,
-  _indentWidth: number,
-): string | undefined {
-  if (/\\[ \t\f]*\n/.test(content)) return undefined;
-  const q = quotesOf(fl);
-  const lines = content.split("\n");
-  const first = lines[0] ?? "";
-  let out = fl.prefix + q;
-  let lineEmpty = false;
-  const write = (s: string) => {
-    if (lineEmpty) out += indent;
-    out += s;
-    lineEmpty = false;
-  };
-  const hardBreak = () => {
-    if (!lineEmpty) out += "\n";
-    lineEmpty = true;
-  };
-  const trimEnd = first.trimEnd();
-  const trimBoth = trimEnd.trimStart();
-  if (trimBoth.startsWith(fl.quote)) out += " ";
-  if (trimEnd !== "") out += trimBoth;
-  if (content.slice(first.length).trim() === "") {
-    if (needsChaperone(fl, trimEnd) || (trimEnd === "" && content !== ""))
-      out += " ";
-    return out + q;
-  }
-  hardBreak();
-  const rest = lines.slice(1);
-  let stripped: { columns: number; length: number } | undefined;
-  for (const l of rest) {
-    if (l.trim() === "") continue;
-    const ind = indentation(l);
-    if (!stripped || ind.columns < stripped.columns) stripped = ind;
-  }
-  const strip = stripped ?? { columns: 0, length: 0 };
-  for (const [i, line] of rest.entries()) {
-    const last = i === rest.length - 1;
-    const te = line.trimEnd();
-    if (te === "") {
-      if (!last) {
-        if (!lineEmpty) out += "\n";
-        out += "\n";
-        lineEmpty = true;
-      }
-      continue;
-    }
-    const lead = /^\s*/.exec(te)?.[0] ?? "";
-    if (/[^ ]/.test(lead))
-      write(
-        " ".repeat(Math.max(0, indentation(te).columns - strip.columns)) +
-          te.trimStart(),
-      );
-    else write(te.slice(strip.length));
-    if (!last) hardBreak();
-  }
-  const tail = content.replace(/[^\S\n]+$/, "");
-  if (needsChaperone(fl, tail)) write(" ");
-  write(q);
-  return out;
+  return fl.prefix + q + content + q;
 }
 
 /** Ruff's `StringLike::is_multiline`. */
@@ -624,11 +592,7 @@ function mergedFlags(
         { ...p, flags: { ...p.flags, triple: false } },
         "double",
       );
-      if (
-        style === "preserve" &&
-        f.fstr.k === "outside" &&
-        f.options["quote-style"] !== "preserve"
-      ) {
+      if (style === "preserve" && f.fstr.k === "outside") {
         if (preserve !== undefined && preserve !== p.flags.quote)
           return undefined;
         preserve = p.flags.quote;
@@ -666,8 +630,20 @@ function mergedFlags(
   return { prefix, quote, triple: false };
 }
 
-/** Ruff's `FormatImplicitConcatenatedStringFlat`: every part's content between one pair of quotes. */
-function writeFlat(f: Fmt, parts: readonly Part[], fl: Flags): void {
+/**
+ * Ruff's `FormatImplicitConcatenatedStringFlat`: every part's content between one pair of quotes. A docstring
+ * trims the merged string's ends: every part up to the first that holds more than whitespace trims its start,
+ * and every part from the last such one on trims its end.
+ */
+function writeFlat(
+  f: Fmt,
+  parts: readonly Part[],
+  fl: Flags,
+  docstring = false,
+): void {
+  const blank = parts.map((p) => contentOf(f.tree, p).trim() === "");
+  const first = docstring ? blank.indexOf(false) : -1;
+  const last = docstring ? blank.lastIndexOf(false) : parts.length;
   for (const [i, p] of parts.entries())
     sDsl(p.node, {
       flags: fl,
@@ -675,6 +651,8 @@ function writeFlat(f: Fmt, parts: readonly Part[], fl: Flags): void {
       opens: i === 0,
       closes: i === parts.length - 1,
       joined: !isInterpolated(p.flags),
+      trimStart: docstring && (first === -1 || i <= first),
+      trimEnd: docstring && i >= last,
     } satisfies PartArgs);
 }
 
@@ -743,12 +721,18 @@ export function writeStr(f: Fmt, s: Str, docstringIndent?: string): void {
   if (parts.length === 1 && only)
     return docstringIndent === undefined
       ? sDsl(only.node)
-      : docstringPart(f, only, docstringIndent);
+      : sMultiline(only.node, docstringText(f, only, docstringIndent));
   const parenthesized =
     f.level.k === "paren" || (f.level.k === "expr" && f.level.g !== undefined);
   const merged = mergedFlags(f, s, parts);
   if (!parenthesized) {
-    if (merged) return writeFlat(f, parts, merged);
+    if (merged)
+      return writeFlat(
+        f,
+        parts,
+        merged,
+        docstringIndent !== undefined && s.flavor === "str",
+      );
     if (docstringIndent !== undefined)
       return f.writeParenthesizeIfExpands(s.ts, () =>
         writeExpanded(f, s, parts, true),

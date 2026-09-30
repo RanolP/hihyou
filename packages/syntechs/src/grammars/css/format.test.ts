@@ -9,9 +9,11 @@ import type { Language } from "../../fmt/rules.js";
 import {
   css,
   type CssOptions,
-  customs,
+  finalLine,
   frontMatterFirst,
+  handWritten,
   prettierIgnored,
+  statementComment,
 } from "./fmt.js";
 import * as spec from "./format.js";
 import { grammar, language } from "./index.js";
@@ -98,11 +100,13 @@ const run = (
 
 const reference = {
   ...css,
-  // The front matter's printing is fmt.ts's, around the root, in both.
+  // The front matter's printing is fmt.ts's, around the root, in both, as is where a statement's comment ends.
   stream: {
-    ...referenceRules<CssOptions>(spec.css, grammar as DslGrammar, customs),
+    ...referenceRules<CssOptions>(spec.css, grammar as DslGrammar, handWritten),
     wrap: frontMatterFirst,
+    commentEndsLine: statementComment,
     keepsSource: prettierIgnored,
+    finalLine,
   },
 };
 

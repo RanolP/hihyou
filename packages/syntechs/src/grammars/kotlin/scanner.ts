@@ -11,10 +11,13 @@ const MULTILINE_COMMENT = 3;
 const STRING_START = 4;
 const STRING_END = 5;
 const STRING_CONTENT = 6;
+const CONSTRUCTOR_AHEAD = 7;
 
 const DELIMITER_LENGTH = 3;
 const BUFFER_SIZE = 1024;
 const QUOTE = 34;
+/** The most `$`s a multi-dollar string's prefix may have, so its stack entry still fits a byte. */
+const MAX_DOLLARS = 100;
 
 /** Read through a call so TypeScript does not keep a narrowing across `advance`. */
 const la = (lexer: Lexer): number => lexer.lookahead;
@@ -72,42 +75,6 @@ function scanMultilineComment(lexer: Lexer): boolean {
 
 const isWordChar = (c: number) => iswalpha(c) || iswdigit(c) || c === 95; // _
 
-/**
- * Whether the text before the marked end is a class's name and its type parameters (`class Foo<T>`), past the
- * whitespace and block comments after them. A look back the C scanner cannot take: this port holds the whole input.
- */
-function afterClassName(lexer: Lexer): boolean {
-  const s = lexer.input;
-  let i = lexer.tokenEnd;
-  const skipBack = () => {
-    for (;;) {
-      while (i > 0 && iswspace(s.charCodeAt(i - 1))) i--;
-      if (!s.startsWith("*/", i - 2)) return;
-      const open = s.lastIndexOf("/*", i - 3);
-      if (open < 0) return;
-      i = open;
-    }
-  };
-  skipBack();
-  if (s.charCodeAt(i - 1) === 62) {
-    // >
-    let depth = 0;
-    for (; i > 0; i--) {
-      const c = s.charCodeAt(i - 1);
-      if (c === 62 && s.charCodeAt(i - 2) !== 45) depth++;
-      else if (c === 60 && --depth === 0) break;
-    }
-    if (i === 0) return false;
-    i--;
-    skipBack();
-  }
-  const nameEnd = i;
-  while (i > 0 && isWordChar(s.charCodeAt(i - 1))) i--;
-  if (i === nameEnd) return false;
-  skipBack();
-  return i >= 5 && s.startsWith("class", i - 5) && (i === 5 || !isWordChar(s.charCodeAt(i - 6)));
-}
-
 /** Whether annotations and modifier keywords, then `constructor`, come next; advances past them. */
 function constructorAhead(lexer: Lexer): boolean {
   for (;;) {
@@ -137,7 +104,7 @@ function constructorAhead(lexer: Lexer): boolean {
   }
 }
 
-function scanAutomaticSemicolon(lexer: Lexer): boolean {
+function scanAutomaticSemicolon(lexer: Lexer, valid: Uint8Array): boolean {
   lexer.resultSymbol = AUTOMATIC_SEMICOLON;
   lexer.markEnd();
   let sameline = true;
@@ -165,16 +132,24 @@ function scanAutomaticSemicolon(lexer: Lexer): boolean {
 
   if (!scanWhitespaceAndComments(lexer)) return false;
 
-  // Not before a primary constructor written on the line after its class's name (`class Foo\n@Inject constructor(`),
-  // which the C scanner would cut off from its class.
-  if (!sameline && afterClassName(lexer) && (la(lexer) === 64 || iswalpha(la(lexer))))
+  // Not before a `where` that continues a class or function header on its own line (`class Foo<T>()\n  where T :
+  // Bar`). Any other word starting with `w` on a new line gets one, as the checks below would give it.
+  if (!sameline && la(lexer) === 119) return !(scanForWord(lexer, "here") && iswspace(la(lexer)));
+
+  // Not before a primary constructor on a line after its class's name (`class Foo\n@Inject constructor(`), where the
+  // grammar's never-lexed CONSTRUCTOR_AHEAD is valid; error recovery, which makes every token valid, excluded.
+  if (
+    !sameline &&
+    valid[CONSTRUCTOR_AHEAD] &&
+    !valid[STRING_CONTENT] &&
+    (la(lexer) === 64 || iswalpha(la(lexer)))
+  )
     return !constructorAhead(lexer);
 
   if (sameline) {
     switch (la(lexer)) {
-      // Not before an `else`.
-      case 101: // e
-        return !scanForWord(lexer, "lse");
+      // Upstream scanner.c returns `!scan_for_word("lse")` here, ending a statement before any other word starting
+      // with `e` on the same line (`return emit(x)` as a bare `return`, then `emit(x)`); the pnpm patch drops it too.
       case 105: // i
         return scanForWord(lexer, "mport");
       case 59: // ;
@@ -196,22 +171,20 @@ function scanAutomaticSemicolon(lexer: Lexer): boolean {
     case 60: // <
     case 61: // =
     case 123: // {
-    case 91: // [
     case 40: // (
     case 63: // ?
     case 124: // |
     case 38: // &
     case 47: // /
       return false;
-    // Before `++`, `--` or a signed number, but not a binary `+` or `-`.
+    // Kotlin continues no expression with a binary `+` or `-`, or an index `[`, on the next line: they start a
+    // statement (`+a`, `[0, 1]`). A `->` there continues a `when` entry's conditions.
     case 43: // +
-      lexer.advance(true);
-      if (la(lexer) === 43) return true;
-      return iswdigit(la(lexer));
+    case 91: // [
+      return true;
     case 45: // -
       lexer.advance(true);
-      if (la(lexer) === 45) return true;
-      return iswdigit(la(lexer));
+      return la(lexer) !== 62;
     // Before a unary `!`, but not `!=`.
     case 33:
       lexer.advance(true);
@@ -291,13 +264,16 @@ function scanImportListDelimiter(lexer: Lexer): boolean {
 }
 
 class KotlinScanner implements ExternalScanner {
-  /** Each open string's delimiter: `"`, or `"` + 1 for a triple-quoted one. */
+  /**
+   * Each open string's delimiter: `"`, + 1 for a triple-quoted one, + 2 for each `$` past the first that its
+   * interpolations take (a multi-dollar string, `$$"""`), so a plain string's entry stays the C scanner's byte.
+   */
   stack: number[] = [];
 
-  private push(triple: boolean): void {
+  private push(triple: boolean, dollars: number): void {
     if (this.stack.length >= BUFFER_SIZE)
       throw new Error("kotlin scanner: string delimiter stack overflow");
-    this.stack.push(triple ? QUOTE + 1 : QUOTE);
+    this.stack.push(QUOTE + (triple ? 1 : 0) + 2 * (dollars - 1));
   }
 
   private pop(): void {
@@ -306,26 +282,33 @@ class KotlinScanner implements ExternalScanner {
   }
 
   private scanStringStart(lexer: Lexer): boolean {
+    // A multi-dollar string's `$`s: each interpolation in it takes as many.
+    let dollars = 1;
+    if (la(lexer) === 36) {
+      for (dollars = 0; la(lexer) === 36 && dollars < MAX_DOLLARS; dollars++) lexer.advance(false);
+      if (dollars < 2) return false;
+    }
     if (la(lexer) !== QUOTE) return false;
     lexer.advance(false);
     lexer.markEnd();
     for (let count = 1; count < DELIMITER_LENGTH; count++) {
       if (la(lexer) !== QUOTE) {
-        this.push(false);
+        this.push(false, dollars);
         return true;
       }
       lexer.advance(false);
     }
     lexer.markEnd();
-    this.push(true);
+    this.push(true, dollars);
     return true;
   }
 
   private scanStringContent(lexer: Lexer): boolean {
     if (this.stack.length === 0) return false;
-    let endChar = this.stack.at(-1) as number;
-    const isTriple = (endChar & 1) !== 0;
-    if (isTriple) endChar -= 1;
+    const entry = (this.stack.at(-1) as number) - QUOTE;
+    const isTriple = (entry & 1) !== 0;
+    const dollars = (entry >> 1) + 1;
+    const endChar = QUOTE;
     let hasContent = false;
     while (la(lexer) !== 0) {
       if (la(lexer) === 36) {
@@ -335,8 +318,19 @@ class KotlinScanner implements ExternalScanner {
           lexer.resultSymbol = STRING_CONTENT;
           return true;
         }
-        lexer.advance(false);
-        if (iswalpha(la(lexer)) || la(lexer) === 123) return false;
+        // The grammar lexes an interpolation's last `$` with the `{` or name after it, so a run of `$`s long
+        // enough to start one is content up to that last `$`, which a later call leaves to the grammar (counting
+        // the run's `$`s before it, which are content by then); a shorter run, or one no `{` or name follows, is
+        // all content.
+        const s = lexer.input;
+        let ahead = lexer.pos;
+        while (s.charCodeAt(ahead) === 36) ahead++;
+        let behind = lexer.pos;
+        while (behind > 0 && s.charCodeAt(behind - 1) === 36) behind--;
+        const next = s.charCodeAt(ahead);
+        const interpolates = ahead - behind >= dollars && (iswalpha(next) || next === 123);
+        if (interpolates && ahead - lexer.pos === 1) return false;
+        while (lexer.pos < ahead - (interpolates ? 1 : 0)) lexer.advance(false);
         lexer.resultSymbol = STRING_CONTENT;
         lexer.markEnd();
         return true;
@@ -399,7 +393,7 @@ class KotlinScanner implements ExternalScanner {
 
   scan(lexer: Lexer, valid: Uint8Array): boolean {
     if (valid[AUTOMATIC_SEMICOLON]) {
-      const ret = scanAutomaticSemicolon(lexer);
+      const ret = scanAutomaticSemicolon(lexer, valid);
       if (!ret && valid[SAFE_NAV] && la(lexer) === 63)
         return scanSafeNav(lexer);
       // No semicolon: a string or a comment may still follow.

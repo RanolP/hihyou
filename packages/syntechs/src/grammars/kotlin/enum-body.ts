@@ -4,12 +4,26 @@ import { close, INDENT, open, sHardline, sToken } from "../../fmt/stream.js";
 import type { StreamCtx } from "../../fmt/stream-format.js";
 import { tokenChild } from "../../fmt/dsl/runtime.js";
 import { nextLineEmpty } from "../../fmt/text.js";
+import { nextLeaf } from "../../fmt/tree.js";
+import { NO_NODE } from "../../core/arena.js";
 
 const isProperty = (ctx: StreamCtx<unknown>, n: number) => ctx.tree.kindName(n) === "property_declaration";
 
+// Whether a line holding only `;`s follows dangling comment `c`. ktfmt deletes a redundant `;` but not its line,
+// which then prints as a blank one: `// a\n;\n// b` prints `// a`, a blank line, `// b`.
+function semicolonLineAfter(ctx: StreamCtx<unknown>, c: number): boolean {
+  const t = ctx.tree;
+  let l = nextLeaf(t, c);
+  if (l === NO_NODE || t.lf(l) === 0 || t.text(l) !== ";") return false;
+  for (let next = nextLeaf(t, l); next !== NO_NODE && t.lf(next) === 0 && t.text(next) === ";"; next = nextLeaf(t, l))
+    l = next;
+  const next = nextLeaf(t, l);
+  return next === NO_NODE || t.lf(next) > 0;
+}
+
 /**
- * One entry per line, the source's blank lines between them dropped. Two or more entries end in a trailing comma,
- * and a lone entry in none; where members follow, the last entry ends in `;` instead (a `;` alone opens a body
+ * One entry per line, the source's blank lines between them dropped (but one after the `{`). Two or more entries
+ * end in a trailing comma, and a lone entry in none; where members follow, the last entry ends in `;` instead (a `;` alone opens a body
  * with no entries). Then the members as a class body prints them, after a blank line. A body holding neither
  * entries, members nor comments prints `{}`, whatever `;`s it has.
  */
@@ -34,13 +48,16 @@ export function enumBody(node: number, ctx: StreamCtx<unknown>): void {
   };
   const semicolon = tokenChild(t, node, ";", 0);
 
-  token("{", tokenChild(t, node, "{", 0));
+  const brace = tokenChild(t, node, "{", 0);
+  token("{", brace);
   if (items.length === 0 && dangling.length === 0) {
     token("}", tokenChild(t, node, "}", 0));
     return;
   }
   open(INDENT);
   sHardline();
+  // ktfmt keeps a blank line after the `{`, as it does in a class body.
+  if (items.length > 0 && brace !== -1 && nextLineEmpty(t, brace)) sHardline();
   for (const [i, entry] of entries.entries()) {
     if (i > 0) sHardline();
     ctx.print(entry);
@@ -68,6 +85,7 @@ export function enumBody(node: number, ctx: StreamCtx<unknown>): void {
   for (const c of dangling) {
     if (items.length > 0 || c !== dangling[0]) sHardline();
     ctx.comment(c);
+    if (semicolonLineAfter(ctx, c)) sHardline();
   }
   close();
   sHardline();

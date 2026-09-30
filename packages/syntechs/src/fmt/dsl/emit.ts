@@ -13,7 +13,7 @@ import {
   type Wrap,
 } from "./dsl.js";
 import { type NormalizerName, normalizerOptions } from "./normalizers.js";
-import { danglingOwner, holdsList } from "./reference.js";
+import { danglingOwners, holdsList } from "./reference.js";
 
 const str = (s: string) => JSON.stringify(s);
 /** The rule of `kind` as a local: `$` keeps a kind named like a keyword (`if`, `class`) a valid name. */
@@ -48,6 +48,7 @@ function eachCond(ir: FormatIR, visit: (c: Cond) => void): void {
     else if (x.t === "lines") {
       cond(x.blank);
       cond(x.follow);
+      cond(x.sameLine);
     } else if (x.t === "inOrder") {
       cond(x.tight?.when);
       cond(x.spaceWhen?.when);
@@ -248,7 +249,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
   /** The variable holding each named group's handle. */
   const groups = new Map<string, string>();
   /** The list idiom that prints the node's dangling comments. */
-  const owner = danglingOwner(tree);
+  const owners = danglingOwners(tree);
 
   // The k-th literal spelled t binds to the k-th anonymous child spelled t: fixed ordinals unless an `opt` may
   // skip some, and then counters that only the literals actually printed advance.
@@ -314,7 +315,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
     switch (x.t) {
       case "sepBy":
       case "lines":
-        return `(listItems(ctx, node, ${str(x.list.name)}, ${hasFields})${x.list.from ? `.slice(${x.list.from})` : ""}.length === 0${x === owner ? " && ctx.danglingComments(node).length === 0" : ""})`;
+        return `(listItems(ctx, node, ${str(x.list.name)}, ${hasFields})${x.list.from ? `.slice(${x.list.from})` : ""}.length === 0${owners.has(x) ? " && ctx.danglingComments(node).length === 0" : ""})`;
       case "ref":
         return `${refChild(x)} === -1`;
       case "opt": {
@@ -360,7 +361,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
       run = name("run");
       runs.set(x, run);
       line(
-        `const ${run} = splitRun(ctx, node, ${str(x.sep)}, ${JSON.stringify(x.except)}, ${JSON.stringify(x.trail)});`,
+        `const ${run} = splitRun(ctx, node, ${str(x.sep)}, ${JSON.stringify(x.except)}, ${JSON.stringify(x.trail)}${x.comments ? `, ${JSON.stringify(x.comments)}` : ""});`,
       );
     }
     return run;
@@ -371,6 +372,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
     const printItem = name("item");
     block(`const ${printItem} = (c: number) =>`, () => {
       line("if (!t.named(c)) sToken(c, t.text(c));");
+      if (x.comments) line("else if (ctx.isComment(c)) ctx.comment(c);");
       if (x.wrapItem === false) line("else ctx.print(c);");
       else
         block(`else if (${cond(x.wrapItem, false, "c")})`, () => {
@@ -390,7 +392,8 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
       if (x.item.t === "adjacent") line(`for (const c of items) ${printItem}(c);`);
       else if (x.item.t === "space")
         block("for (let i = 0; i < items.length; i++)", () => {
-          line('if (i > 0) sText(" ");');
+          const tight = x.tightAfter?.length ? oneOf("t.kindName(items[i - 1] as number)", x.tightAfter) : undefined;
+          line(`if (i > 0${tight === undefined ? "" : ` && !(${tight})`}) sText(" ");`);
           line(`${printItem}(items[i] as number);`);
         });
       else {
@@ -411,10 +414,16 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
             });
           line("open(FILL_ITEM);");
           line(`${printItem}(items[0] as number);`);
+          // Whether every item so far is a comment, which a break after drops to the entry's indentation.
+          if (x.comments) line("let lead = ctx.isComment(items[0] as number);");
           block("for (let i = 1; i < items.length; i++)", () => {
             line("const prev = items[i - 1] as number;");
             line("const c = items[i] as number;");
-            line(`if (t.adjoins(prev, c)) ${printItem}(c);`);
+            if (x.comments) {
+              line("const dedent = lead;");
+              line("lead &&= ctx.isComment(c);");
+              line(`if (t.adjoins(prev, c) && !ctx.isComment(prev) && !ctx.isComment(c)) ${printItem}(c);`);
+            } else line(`if (t.adjoins(prev, c)) ${printItem}(c);`);
             if (keep !== undefined)
               block("else if (grid && !breaksBetween(t, prev, c))", () => {
                 line('sText(" ");');
@@ -422,8 +431,15 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
               });
             block("else", () => {
               line("close();");
-              line(keep !== undefined ? "if (grid) sHardline();" : "sLine(0);");
-              if (keep !== undefined) line("else sLine(0);");
+              if (keep !== undefined) line("if (grid) sHardline();");
+              const otherwise = keep !== undefined ? "else " : "";
+              if (x.comments)
+                block(`${otherwise}if (dedent)`, () => {
+                  line("openAlign(-1);");
+                  line("sLine(0);");
+                  line("close();");
+                }, "} else sLine(0);");
+              else line(`${otherwise}sLine(0);`);
               line("open(FILL_ITEM);");
               line(`${printItem}(c);`);
             });
@@ -436,7 +452,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
           "if (last)",
           () => {
             line("open(IF_BROKEN, -1);");
-            line(`sToken(e.items[e.items.length - 1] as number, ${str(x.sep)}, true);`);
+            line(`sToken(e.items[e.items.length - 1] as number, ${str(x.sep)}, true${x.imaginary ? ", true" : ""});`);
             line("close();");
           },
           "} else if (e.sep !== -1) sToken(e.sep, t.text(e.sep));",
@@ -494,7 +510,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
     // An item, not a hole: every test that reads the item's node is guarded by it.
     const real = (item: string) => (holes === undefined ? "" : `${item} !== HOLE && `);
     block(`if (${its}.length === 0)`, () => {
-      line(`const dangling = ${x === owner ? "ctx.danglingComments(node)" : "[] as number[]"};`);
+      line(`const dangling = ${owners.has(x) ? "ctx.danglingComments(node)" : "[] as number[]"};`);
       line("open(GROUP);");
       printBracket(openTok, b.open);
       block("if (dangling.length > 0)", () => {
@@ -545,7 +561,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
       if (trailing !== undefined) {
         depth++;
         line(`open(IF_BROKEN, ${fills ? "concise ? listGroup : -1" : "-1"});`);
-        line(`sToken(${its}[last] as number, ${str(x.sep)}, true);`);
+        line(`sToken(${its}[last] as number, ${str(x.sep)}, true${x.imaginary ? ", true" : ""});`);
         line("close();");
         depth--;
         line("}");
@@ -609,7 +625,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
       line("}");
     } else plain();
     // Dangling comments after the items, each on a line of its own once the list breaks; a line comment breaks it.
-    if (x === owner)
+    if (owners.has(x))
       block("for (const c of ctx.danglingComments(node))", () => {
         line("sLine(0);");
         line("ctx.comment(c);");
@@ -731,7 +747,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
             line("sLine(0);");
           });
         });
-        if (x === owner) line("for (const c of ctx.danglingComments(node)) ctx.comment(c);");
+        if (owners.has(x)) line("for (const c of ctx.danglingComments(node)) ctx.comment(c);");
         return;
       }
       case "lines": {
@@ -784,7 +800,9 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
                 line(`if (i < ${its}.length - 1 && nextLineEmpty(t, item)) sHardline();`);
               line("continue;");
             });
-          line("if (i > 0) sHardline();");
+          if (x.sameLine !== undefined && x.sameLine !== false)
+            line(`if (i > 0) { if (${cond(x.sameLine, false, "item")}) sText(" "); else sHardline(); }`);
+          else line("if (i > 0) sHardline();");
           if (x.blank !== undefined && x.blank !== false)
             // Past a blank line the source kept already, where `blankLines` keeps them.
             line(
@@ -796,11 +814,17 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
           if (frameWrap(rule, x.list.name).blankLines !== undefined)
             line(`if (i < ${its}.length - 1 && nextLineEmpty(t, item)) sHardline();`);
         });
-        if (x === owner)
-          block("for (const [i, c] of ctx.danglingComments(node).entries())", () => {
+        if (owners.has(x)) {
+          // Comments alone in the list keep the source's blank lines too, where `blankLines` keeps them.
+          const keep = frameWrap(rule, x.list.name).blankLines !== undefined;
+          const cs = keep ? name("dangling") : "ctx.danglingComments(node)";
+          if (keep) line(`const ${cs} = ctx.danglingComments(node);`);
+          block(`for (const [i, c] of ${cs}.entries())`, () => {
             line("if (i > 0) sHardline();");
             line("ctx.comment(c);");
+            if (keep) line(`if (i < ${cs}.length - 1 && nextLineEmpty(t, c)) sHardline();`);
           });
+        }
         return;
       }
       case "inOrder": {
@@ -874,7 +898,8 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
           line(`if (named && !${its}.has(c)) continue;`);
           if (skip) line(skip);
           if (x.braces)
-            // A `{` whose `}` is the next child prints `{}`, the node's dangling comments indented between.
+            // A `{` whose `}` is the next child prints `{}`, the node's dangling comments indented between, a
+            // line comment on the `{`'s line staying on it.
             block('if (!named && t.kindName(c) === "{" && !inBraces)', () => {
               if (spacing) block("if (prev !== -1)", () => {
                 const outside = steps.filter(([test]) => test !== "inBraces");
@@ -890,7 +915,8 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
                 block("if (dangling.length > 0)", () => {
                   line("open(INDENT);");
                   block("for (const d of dangling)", () => {
-                    line("sHardline();");
+                    line('if (d === dangling[0] && t.lf(d) === 0 && ctx.isLineComment(d)) sText(" ");');
+                    line("else sHardline();");
                     line("ctx.comment(d);");
                   });
                   line("close();");
@@ -1128,6 +1154,8 @@ export function emit(
     );
   if (parts.some((p) => p.includes("sLiteral(")))
     parts.splice(parts.indexOf(`} from ${str(sink)};`) + 1, 0, `import { sLiteral } from ${str(sink)};`);
+  if (parts.some((p) => p.includes("openAlign(")))
+    parts.splice(parts.indexOf(`} from ${str(sink)};`) + 1, 0, `import { openAlign } from ${str(sink)};`);
   if (parts.some((p) => p.includes("parentIs(")))
     parts.splice(
       parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,

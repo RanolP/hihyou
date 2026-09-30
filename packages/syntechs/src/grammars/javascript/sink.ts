@@ -88,6 +88,8 @@ export function flatText(part: Part): string | undefined {
   if (part.flat) throw new Error("js sink: flatText of a flat part is not on the stream");
   return stream.flatText(part.span);
 }
+/** `part`'s width laid out on one line. */
+export const flatWidth = (part: Part): number => stream.flatWidth(part.span);
 /** `part` with its non-hard lines flat, its ifBreaks flat, and its groups no longer forced to break. */
 export function removeLines(part: Part): Part {
   return {

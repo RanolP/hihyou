@@ -42,6 +42,7 @@ import {
   GROUP,
   open as sOpen,
   sLine,
+  sLineSuffixBoundary,
   sText,
 } from "./sink.js";
 import {
@@ -53,7 +54,11 @@ import {
 import {
   endOf,
   hasLineBreak,
+  isTrivia,
+  leafBefore,
   leafFrom,
+  nextLeafOf,
+  prevLeafOf,
   startOf,
   startsLine,
   tokens,
@@ -92,6 +97,8 @@ export interface Opts {
   ifNested?: boolean;
   /** A lambda on an assignment's right side, measured as if its body could break. */
   lambdaAssign?: boolean;
+  /** An attribute a call or subscript applies to, as the chain passes it on (ruff's `decrement_call_like_count`). */
+  called?: boolean;
 }
 
 const isParenthesizedLevel = (l: Level) =>
@@ -118,7 +125,7 @@ export function writeExpr(
     const cs = f.comments;
     const [open, close] = parenTokens(e);
     if (!cs.hasLeading(e) && !cs.hasTrailing(e))
-      writeInParens(f, e, open, () => writeFields(f, e, o), close, []);
+      writeInParens(f, e, open, () => writeFields(f, e, o), close, [], isHuggable(f, e));
     else withParenthesesComments(f, e, open, close, o);
     return;
   }
@@ -142,11 +149,42 @@ function writeInParens(
   content: () => void,
   close: () => void,
   dangling: readonly Comment[],
+  hug = false,
 ): void {
   const p = e.parens[0];
   if (p && f.tree.kindName(p.wrapper) === "parenthesized_expression")
-    sink.sDsl(p.wrapper, { content, dangling });
-  else f.writeParenthesized(open, content, close, dangling);
+    sink.sDsl(p.wrapper, { content, dangling, hug });
+  else f.writeParenthesized(open, content, close, dangling, hug);
+}
+
+/**
+ * Ruff's `parenthesized_range` as `FormatExpr` calls it, without the parent: every `(` before `e` paired with a
+ * `)` after it, a call's own parentheses around its only argument included. So a comment before an argument's `(`
+ * moves inside it, as ruff's TODO there admits.
+ */
+function outermostParens(
+  f: Fmt,
+  e: Expr,
+): { start: number; end: number } | undefined {
+  const tree = f.tree;
+  const skip = (l: number, step: (l: number) => number) => {
+    while (l !== NO_NODE && isTrivia(tree, l)) l = step(l);
+    return l;
+  };
+  let l = skip(leafBefore(tree, e.start), (x) => prevLeafOf(tree, x));
+  let r = skip(leafFrom(tree, e.end), (x) => nextLeafOf(tree, x));
+  let range: { start: number; end: number } | undefined;
+  while (
+    l !== NO_NODE &&
+    r !== NO_NODE &&
+    tree.text(l) === "(" &&
+    tree.text(r) === ")"
+  ) {
+    range = { start: startOf(tree, l), end: endOf(tree, r) };
+    l = skip(prevLeafOf(tree, l), (x) => prevLeafOf(tree, x));
+    r = skip(nextLeafOf(tree, r), (x) => nextLeafOf(tree, x));
+  }
+  return range;
 }
 
 function withParenthesesComments(
@@ -159,7 +197,7 @@ function withParenthesesComments(
   const cs = f.comments;
   const leading = cs.leading(e);
   const trailing = cs.trailing(e);
-  const p = e.parens[0];
+  const p = outermostParens(f, e);
   const ls = p ? leading.findIndex((c) => c.start >= p.start) : 0;
   const ts = p ? trailing.findIndex((c) => c.start >= p.end) : -1;
   const leadingSplit = ls < 0 ? leading.length : ls;
@@ -720,7 +758,7 @@ function applyInNode(f: Fmt, e: Expr, chain: Chain): Chain {
 /** The value of an attribute, call or subscript, continuing the chain `layout`. */
 export function writeChainValue(f: Fmt, v: Expr, layout: Chain): void {
   if (v.parens.length > 0) writeExpr(f, v, "always");
-  else if (isCallLike(v)) writeNode(f, v, { chain: layout });
+  else if (isCallLike(v)) writeNode(f, v, { chain: layout, called: v.kind === "Attribute" });
   else writeExpr(f, v, "never");
 }
 
@@ -762,7 +800,7 @@ function writeFields(f: Fmt, e: Expr, o: Opts): void {
       const layout = applyInNode(f, e, chain);
       const grouped = chain === "default" && layout === "fluent";
       if (grouped) sink.open(sink.GROUP);
-      sink.sDsl(e.ts, { chain: layout });
+      sink.sDsl(e.ts, { chain: layout, called: o.called === true });
       if (grouped) sink.close();
       return;
     }
@@ -860,14 +898,36 @@ function argumentsHuggable(f: Fmt, a: Arguments): boolean {
   if (isExpr(only)) arg = only;
   else if (only.name === undefined && !f.comments.has(only)) arg = only.value;
   else return false;
+  if (!isHuggable(f, arg) && !isHuggableStringArgument(f, arg)) return false;
+  if (f.comments.hasLeading(arg) || f.comments.hasTrailing(arg)) return false;
+  return !f.magicTrailingComma(arg.end, a.end);
+}
+
+/** Ruff's `is_huggable_string_argument`: a multiline triple-quoted string that starts on the `(`'s line. */
+function isHuggableStringArgument(f: Fmt, arg: Expr): boolean {
   if (arg.kind !== "Str" || arg.parts.length > 1 || !isMultilineStr(f, arg))
     return false;
   if (!partOf(f.tree, arg.parts[0] as number).flags.triple) return false;
   // Past the `(`, only horizontal whitespace separates the argument from a line break: it starts its own line.
-  const first = leafFrom(f.tree, outer(arg).start);
-  if (startsLine(f.tree, first)) return false;
-  if (f.comments.hasLeading(arg) || f.comments.hasTrailing(arg)) return false;
-  return !f.magicTrailingComma(arg.end, a.end);
+  return !startsLine(f.tree, leafFrom(f.tree, outer(arg).start));
+}
+
+/** Ruff's `is_expression_huggable`: a bracketed collection hugs its enclosing parentheses in preview. */
+export function isHuggable(f: Fmt, e: Expr): boolean {
+  switch (e.kind) {
+    case "Tuple":
+    case "List":
+    case "Set":
+    case "Dict":
+    case "ListComp":
+    case "SetComp":
+    case "DictComp":
+      return f.options.preview === true;
+    case "Starred":
+      return isHuggable(f, e.value);
+    default:
+      return false;
+  }
 }
 
 function writeKeyword(f: Fmt, k: Keyword): void {
@@ -900,6 +960,7 @@ export function writeLambdaParams(f: Fmt, e: Lambda, p: Parameters): void {
   if (before.length > 0) f.writeDangling(before);
   else if (cs.hasLeading(p)) sink.sLine(sink.HARD | sink.COLLAPSE);
   else sink.sText(" ");
+  f.writeLeading(cs.leading(p));
   sink.place(cs.hasAnyIn(p.start, p.end) || cs.has(p) ? params : sink.removeSoftLines(params));
 }
 
@@ -1003,6 +1064,12 @@ export function writeParameters(
     }
   }
   const writeTok = (n: number) => sink.sToken(n, f.text(n));
+  // Ruff hands the `/` the leading run of the dangling comments that sit around it, and the `*` all the rest.
+  const slash = p.items.findIndex(
+    (x) => x.kind === "Separator" && f.text(x.tok) === "/",
+  );
+  const slashEnd =
+    slash < 0 ? 0 : partitionPoint(rest, (c) => separatorOwns(p, slash, c));
   const inner = () => {
     const parenthesizedLevel = isParenthesizedLevel(f.level);
     let lastEnd: number | undefined;
@@ -1013,10 +1080,13 @@ export function writeParameters(
         else sink.sText(" ");
       }
       if (item.kind === "Separator") {
-        const mine = rest.filter((c) => separatorOwns(p, i, c));
-        f.writeLeading(mine.filter((c) => c.line === "own"));
+        // Ruff's `CommentsAroundText`.
+        const mine =
+          i === slash ? rest.slice(0, slashEnd) : rest.slice(slashEnd);
+        const split = partitionPoint(mine, (c) => c.line === "own");
+        f.writeLeading(mine.slice(0, split));
         sink.sDsl(item.ts);
-        f.writeTrailing(mine.filter((c) => c.line !== "own"));
+        f.writeTrailing(mine.slice(split));
       } else writeParameter(f, item);
       lastEnd = item.end;
     }
@@ -1064,6 +1134,22 @@ export function writeParameters(
     sink.sLine(sink.SOFT | sink.COLLAPSE);
     mode.close();
   });
+}
+
+/**
+ * Rust's `partition_point` by its binary search, step for step: ruff calls it on comment runs whose predicate
+ * does not hold for a prefix only, and the probes it happens to make decide the split.
+ */
+function partitionPoint<T>(xs: readonly T[], p: (x: T) => boolean): number {
+  if (xs.length === 0) return 0;
+  let size = xs.length;
+  let base = 0;
+  while (size > 1) {
+    const half = size >> 1;
+    if (p(xs[base + half] as T)) base += half;
+    size -= half;
+  }
+  return base + (p(xs[base] as T) ? 1 : 0);
 }
 
 /** Whether dangling comment `c` of `p` sits around the separator at `items[i]`. */
@@ -1391,8 +1477,7 @@ function hasUnparenthesizedLeadingComments(f: Fmt, o: Operand): boolean {
   const leading = f.comments.leading(o.e);
   if (o.e.parens.length > 0)
     return leading.some(
-      (c) =>
-        !c.formatted && firstTokenAfter(f, c.end) === "(" && c.end <= o.e.start,
+      (c) => !c.formatted && tokenAfter(f, c.end, o.e.start) === "(",
     );
   return leading.length > 0;
 }
@@ -1558,13 +1643,21 @@ export function writeBinaryLike(f: Fmt, e: BinOp | Compare | BoolOp): void {
     }
     f.writeLeading(cs.leading(s));
     writeImplicitConcatenated(f, s);
-    f.writeTrailing(cs.trailing(s));
+    const trailing = cs.trailing(s);
+    f.writeTrailing(trailing);
     if (i > 0 && operand.trailingBinary) f.writeTrailing(operand.trailingBinary);
     const rightOp = parts[i + 1] as Operator | undefined;
     if (!rightOp) {
       lastOp = undefined;
       break;
     }
+    // ruff flushes the string's end-of-line comment before the operator, which then starts the next line after
+    // the flat soft line's space. An own-line comment instead breaks that soft line.
+    if (
+      !trailing.some((c) => c.line === "own") &&
+      !(i > 0 && operand.trailingBinary?.some((c) => c.line === "own"))
+    )
+      sLineSuffixBoundary();
     start();
     const rightOperand = parts[i + 2] as Operand;
     const hasLeading = hasUnparenthesizedLeadingComments(f, rightOperand);

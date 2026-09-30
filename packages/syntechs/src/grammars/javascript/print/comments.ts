@@ -3,10 +3,14 @@ import type {
   CommentHandler,
   CommentTarget,
 } from "../../../fmt/comments.js";
+import { newlineBetween } from "../../../fmt/text.js";
 import { firstLeaf, nextLeaf } from "../../../fmt/tree.js";
 import { heritage } from "./classes.js";
-import { flattenTypes, unparenType } from "./types.js";
+import { STATEMENT_LIST_PARENTS } from "./statements.js";
+import { flattenTypes, mappedClauseOf, unparenType } from "./types.js";
 import {
+  callArguments,
+  callee,
   children,
   field,
   fieldName,
@@ -36,6 +40,12 @@ const codeAfter = (x: HasTree, n: number, child: number) => {
 
 const lastCode = (x: HasTree, n: number) =>
   lastChildWhere(x, n, (c) => isCode(x, c));
+
+/** Whether a line break stands between node `n` and the comment after it (prettier's hasNewlineInRange). */
+const newlineAfter = (c: CommentContext<JsOptions>, n: number) => {
+  const after = nextLeaf(c.tree, n);
+  return c.tree.lf(after) > 0 || newlineBetween(c.tree, after, c.comment);
+};
 
 /**
  * A comment before a statement's closing `;` sits between that statement and the next: prettier's statement ends
@@ -240,9 +250,62 @@ const typeParameterBound = (c: CommentContext<JsOptions>): CommentTarget | undef
   return { node, as: "trailing" };
 };
 
-const METHODS = new Set(["method_definition", "method_signature"]);
+const SIGNATURES = new Set([
+  "method_signature",
+  "function_signature",
+  "call_signature",
+  "construct_signature",
+  "constructor_type",
+  "function_type",
+]);
+const ARROW_TYPES = new Set(["constructor_type", "function_type"]);
 
-/** `m /* c *\/ () {}`: the comment trails the method's name (handleMethodNameComments). */
+/**
+ * `a /* c *\/ (x): T`, `new /* c *\/ (): T`: prettier's signature holds its parameters directly, so a comment before
+ * the `(` has the first parameter, or else the return type, as its following node. With no node before it, it
+ * leads that node (`new (/* c *\/ x)`, `new () /* c *\/ : T`); on one line after the name, it ties, and leads that
+ * node only when nothing but spaces and `(` stand between them (`a(/* c *\/ x)`, `a /* c *\/?(x)`). A class's
+ * bodiless method is prettier's TSDeclareMethod, which methodName places.
+ */
+const beforeSignatureParameters = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { comment, enclosing, preceding, following, placement } = c;
+  if (
+    !SIGNATURES.has(kind(c, enclosing)) ||
+    following === undefined ||
+    fieldName(c, following) !== "parameters" ||
+    (kind(c, enclosing) === "method_signature" && kind(c, parent(c, enclosing)) === "class_body")
+  )
+    return;
+  const parameter = children(c, following).find((n) => named(c, n) && isCode(c, n));
+  const next = parameter ?? codeAfter(c, enclosing, following).find((n) => named(c, n));
+  // Prettier's return type of a function or constructor type starts at its `=>`, which a comment leading it
+  // precedes: the comment trails the parameters.
+  const lead = (): CommentTarget | undefined =>
+    next === undefined
+      ? undefined
+      : parameter === undefined && ARROW_TYPES.has(kind(c, enclosing))
+        ? { node: following, as: "trailing" }
+        : { node: next, as: "leading" };
+  if (preceding === undefined) return lead();
+  if (placement !== "remaining") return;
+  if (next === undefined) return { node: preceding, as: "trailing" };
+  const end = firstLeaf(c.tree, next);
+  for (let l = nextLeaf(c.tree, comment); l !== end; l = nextLeaf(c.tree, l))
+    if (kind(c, l) !== "comment" && kind(c, l) !== "(") return { node: preceding, as: "trailing" };
+  return lead();
+};
+
+const METHODS = new Set([
+  "method_definition",
+  "method_signature",
+  "abstract_method_signature",
+  "function_declaration",
+  "function_expression",
+  "generator_function_declaration",
+  "generator_function",
+]);
+
+/** `m /* c *\/ () {}`, `function f /* c *\/ () {}`: the comment trails the name (handleMethodNameComments). */
 const methodName = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   const { enclosing, preceding, following } = c;
   if (
@@ -260,22 +323,55 @@ const methodName = (c: CommentContext<JsOptions>): CommentTarget | undefined => 
 };
 
 const FIELDS = new Set(["field_definition", "public_field_definition"]);
+const PARAMETERS = new Set(["required_parameter", "optional_parameter"]);
+const PARAMETER_MODIFIERS = new Set(["accessibility_modifier", "readonly", "override"]);
+
+/** A parameter property (`private a`, `readonly a`): prettier's TSParameterProperty holds the decorators. */
+const isParameterProperty = (c: CommentContext<JsOptions>) =>
+  PARAMETERS.has(kind(c, c.enclosing)) &&
+  children(c, c.enclosing).some((n) => PARAMETER_MODIFIERS.has(kind(c, n)));
 
 /**
  * `@dec()\n// c\naccessor b;`: a comment after a field's decorators trails the last one, above the modifiers, as
- * classHeader does for a class's.
+ * classHeader does for a class's. tree-sitter hangs `@dec export class` decorators on the export, where prettier's
+ * are the class's, so a comment after them trails the last one there too, above `export`.
  */
 const fieldDecorator = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   const { enclosing, preceding, following, placement } = c;
   if (
     placement === "remaining" ||
-    !FIELDS.has(kind(c, enclosing)) ||
+    !(
+      FIELDS.has(kind(c, enclosing)) ||
+      isParameterProperty(c) ||
+      kind(c, enclosing) === "export_statement"
+    ) ||
     preceding === undefined ||
     kind(c, preceding) !== "decorator" ||
     (following !== undefined && kind(c, following) === "decorator")
   )
     return;
   return { node: preceding, as: "trailing" };
+};
+
+/**
+ * `@dec /* c *\/ async m() {}`: prettier's method starts at its key, so a comment with a modifier between it and the
+ * key trails the decorator, inside the decorators' group, where a comment spanning lines breaks the line after it.
+ */
+const methodDecorator = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, preceding, following, placement } = c;
+  if (
+    placement !== "remaining" ||
+    kind(c, enclosing) !== "class_body" ||
+    preceding === undefined ||
+    kind(c, preceding) !== "decorator" ||
+    following === undefined ||
+    kind(c, following) !== "method_definition"
+  )
+    return;
+  const name = field(c, following, "name");
+  return name !== undefined && firstLeaf(c.tree, following) !== firstLeaf(c.tree, name)
+    ? { node: preceding, as: "trailing" }
+    : undefined;
 };
 
 /** A block's first statement leads with the comment, or an empty block holds it (addBlockStatementFirstComment). */
@@ -311,6 +407,124 @@ const functionBody = (c: CommentContext<JsOptions>): CommentTarget | undefined =
   )
     return;
   return blockFirst(c, following);
+};
+
+/**
+ * `(a): T => // c` then the body: a comment after `=>` leads the body, where the core would trail the parameters
+ * or the return type, as prettier's own arrow body handler does.
+ */
+const arrowBody = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { comment, enclosing, preceding, following } = c;
+  if (
+    kind(c, enclosing) !== "arrow_function" ||
+    preceding === undefined ||
+    following === undefined ||
+    following !== field(c, enclosing, "body")
+  )
+    return;
+  const kids = children(c, enclosing);
+  const arrow = kids.findIndex((k) => kind(c, k) === "=>");
+  if (arrow === -1 || kids.indexOf(comment) < arrow) return;
+  // `=> // c` then `{` on the next line: the comment moves into the block, keeping the `{` on the arrow's line.
+  return c.placement === "endOfLine" && kind(c, following) === "statement_block"
+    ? blockFirst(c, following)
+    : { node: following, as: "leading" };
+};
+
+const CALLS = new Set(["call_expression", "new_expression"]);
+
+/**
+ * `f⏎// c⏎()` or `f?./* c *\/()`: prettier's arguments are a bare list, so a comment before the `(` trails the
+ * callee, but on a line of its own leads the first argument there is.
+ */
+const beforeArguments = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, preceding, following, placement } = c;
+  if (
+    !CALLS.has(kind(c, enclosing)) ||
+    preceding === undefined ||
+    following === undefined ||
+    !(
+      (following === field(c, enclosing, "arguments") && kind(c, following) === "arguments") ||
+      kind(c, following) === "optional_chain"
+    )
+  )
+    return;
+  const first = callArguments(c, enclosing)[0];
+  // After `f<T>` the type arguments precede the comment in prettier's AST too, so its own defaults apply.
+  if (kind(c, preceding) === "type_arguments")
+    return placement !== "endOfLine" && first !== undefined
+      ? { node: first, as: "leading" }
+      : { node: preceding, as: "trailing" };
+  if (placement === "ownLine" && first !== undefined) return { node: first, as: "leading" };
+  const fn = callee(c, enclosing);
+  return fn === undefined ? undefined : { node: fn, as: "trailing" };
+};
+
+const AS_EXPRESSIONS = new Set(["as_expression", "satisfies_expression"]);
+
+/**
+ * `1 as /*⏎c⏎*\/ Foo`: a block comment spanning lines after the expression leads the type, or trails the whole
+ * expression after `as const`, whose `const` takes no comment, as prettier's handler for `as` and `satisfies` does.
+ */
+const asType = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, preceding, following, text } = c;
+  if (
+    !AS_EXPRESSIONS.has(kind(c, enclosing)) ||
+    !text.startsWith("/*") ||
+    !text.includes("\n") ||
+    preceding === undefined ||
+    preceding !== children(c, enclosing).find((n) => named(c, n) && isCode(c, n))
+  )
+    return;
+  return following !== undefined
+    ? { node: following, as: "leading" }
+    : { node: enclosing, as: "trailing" };
+};
+
+/**
+ * `a: // c⏎B` in a type member: the TS AST's type annotation of a property signature starts at its type, not at the
+ * `:`, so a comment ending the line after the `:` trails the key and prints after the member (`a: B; // c`).
+ */
+const propertySignatureColon = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, preceding, placement } = c;
+  if (placement !== "endOfLine" || preceding !== undefined || kind(c, enclosing) !== "type_annotation") return;
+  const signature = parent(c, enclosing);
+  if (signature === undefined || kind(c, signature) !== "property_signature") return;
+  const type = c.following;
+  if (type !== undefined && (kind(c, type) === "union_type" || kind(c, type) === "intersection_type"))
+    return { node: type, as: "leading" };
+  const name = field(c, signature, "name");
+  if (name === undefined) return;
+  // `[k]: // c`: prettier's key is the expression inside the brackets.
+  const key =
+    kind(c, name) === "computed_property_name"
+      ? children(c, name).find((n) => named(c, n) && isCode(c, n))
+      : name;
+  return key !== undefined ? { node: key, as: "trailing" } : undefined;
+};
+
+/** `a: // c` then the body: a comment in a labeled statement leads the statement (handleLabeledStatementComments). */
+const labeled = (c: CommentContext<JsOptions>): CommentTarget | undefined =>
+  c.placement !== "remaining" && kind(c, c.enclosing) === "labeled_statement"
+    ? { node: c.enclosing, as: "leading" }
+    : undefined;
+
+/**
+ * `default: // c` before the case's first statement: the comment dangles on the case, which prints it after the
+ * `:`, but a line comment before a block moves into it (handleSwitchDefaultCaseComments).
+ */
+const switchDefault = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, following, placement, text } = c;
+  if (
+    placement === "ownLine" ||
+    kind(c, enclosing) !== "switch_default" ||
+    following === undefined ||
+    following !== children(c, enclosing).find((n) => named(c, n) && isCode(c, n))
+  )
+    return;
+  return kind(c, following) === "statement_block" && text.startsWith("//")
+    ? blockFirst(c, following)
+    : { node: enclosing, as: "dangling" };
 };
 
 const HEAD_BODY = new Map([
@@ -350,22 +564,71 @@ const statementBody = (c: CommentContext<JsOptions>): CommentTarget | undefined 
 };
 
 /**
- * `for // c\n(;;);`: an empty initializer or test is an empty_statement to tree-sitter and nothing to babel,
- * whose comment then leads the next node there is, the body at the latest.
+ * `switch (a) // c\n{}`: babel's switch has no node between the discriminant and the cases, so a comment after `)`
+ * trails the discriminant, inside the parentheses, unless it sits on its own line above a first case, which it leads.
  */
-const forEmptyPart = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
-  const { comment, enclosing, following } = c;
+const switchHead = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, preceding, following, placement } = c;
   if (
-    kind(c, enclosing) !== "for_statement" ||
+    kind(c, enclosing) !== "switch_statement" ||
+    preceding === undefined ||
+    preceding !== field(c, enclosing, "value") ||
     following === undefined ||
-    kind(c, following) !== "empty_statement" ||
-    fieldName(c, following) === "body"
+    following !== field(c, enclosing, "body")
   )
     return;
-  const next = codeAfter(c, enclosing, comment).find(
-    (n) => named(c, n) && (kind(c, n) !== "empty_statement" || fieldName(c, n) === "body"),
-  );
-  return next === undefined ? undefined : { node: next, as: "leading" };
+  const firstCase = children(c, following).find((n) => named(c, n) && isCode(c, n));
+  return placement === "ownLine" && firstCase !== undefined
+    ? { node: firstCase, as: "leading" }
+    : { node: unparen(c, preceding), as: "trailing" };
+};
+
+/**
+ * `a; // b\n;// c`: prettier attaches no comment to an empty statement, so a comment beside a stray `;` in a
+ * statement list takes the statements around it as neighbours, on a line of its own leading the next, else trailing
+ * the one before.
+ */
+const besideEmptyStatement = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { comment, enclosing, preceding, following, placement } = c;
+  const isStray = (n: number | undefined) => n !== undefined && kind(c, n) === "empty_statement";
+  if (!STATEMENT_LIST_PARENTS.has(kind(c, enclosing)) || !(isStray(preceding) || isStray(following))) return;
+  const kids = children(c, enclosing);
+  const at = kids.indexOf(comment);
+  const real = (n: number) => named(c, n) && isCode(c, n) && !isStray(n);
+  const before = kids.slice(0, at).findLast(real);
+  const after = kids.slice(at + 1).find(real);
+  // Mid-line, the comment leads a statement right after it, with nothing but space between them.
+  const touching = after !== undefined && nextLeaf(c.tree, comment) === firstLeaf(c.tree, after);
+  if (before !== undefined && (placement === "endOfLine" || (placement === "remaining" && !touching) || after === undefined))
+    return { node: before, as: "trailing" };
+  return after === undefined ? { node: enclosing, as: "dangling" } : { node: after, as: "leading" };
+};
+
+/**
+ * `for // c\n(;;);` or `for (a; /* c *\/;)`: an empty initializer or test is an empty_statement to tree-sitter and
+ * nothing to babel, so a comment beside one takes babel's neighbours, the code around it with the empty parts
+ * skipped, and prettier's attach places it there: before the body at the latest, else after the code before it,
+ * since a `;` or `)` stands between the comment and whatever follows.
+ */
+const forEmptyPart = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { comment, enclosing, preceding, following, placement } = c;
+  const isEmptyPart = (n: number | undefined) =>
+    n !== undefined && kind(c, n) === "empty_statement" && fieldName(c, n) !== "body";
+  if (kind(c, enclosing) !== "for_statement" || !(isEmptyPart(following) || isEmptyPart(preceding))) return;
+  const kids = children(c, enclosing);
+  const at = kids.indexOf(comment);
+  const close = kids.findLastIndex((k) => kind(c, k) === ")" && !named(c, k));
+  // After the `)`, statementBody leads the body.
+  if (at > close) return;
+  const real = (n: number) => named(c, n) && isCode(c, n) && !isEmptyPart(n);
+  let before = kids.slice(0, at).findLast(real);
+  // A declaring initializer holds its `;`, which babel's does not: the comment trails its last declarator.
+  if (before !== undefined && fieldName(c, before) === "initializer" && kind(c, lastCode(c, before)) === ";")
+    before = lastChildWhere(c, before, (n) => named(c, n) && isCode(c, n));
+  const after = kids.slice(at + 1).find(real);
+  if (before !== undefined && (placement !== "ownLine" || after === undefined))
+    return { node: before, as: "trailing" };
+  return after === undefined ? undefined : { node: after, as: "leading" };
 };
 
 /**
@@ -378,6 +641,32 @@ const specifier = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
     ? { node: c.enclosing, as: "leading" }
     : undefined;
 };
+
+/**
+ * `import /* c *\/ { /* d *\/ } from "a"`: prettier prints an import of an empty `{}` as `import {} from`, with every
+ * comment ahead of the source after `from`, so each leads the source.
+ */
+const emptyImport = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { tree } = c;
+  let imp: number | undefined = c.enclosing;
+  while (imp !== undefined && IMPORT_PARTS.has(kind(c, imp))) imp = parent(c, imp);
+  if (imp === undefined || kind(c, imp) !== "import_statement") return;
+  const source = field(c, imp, "source");
+  const clause = children(c, imp).find((n) => kind(c, n) === "import_clause");
+  if (
+    source === undefined ||
+    clause === undefined ||
+    tree.ord(c.comment) > tree.ord(firstLeaf(tree, source))
+  )
+    return;
+  const code = (n: number) => children(c, n).filter((k) => named(c, k) && isCode(c, k));
+  const [only, ...rest] = code(clause);
+  return only !== undefined && rest.length === 0 && kind(c, only) === "named_imports" && code(only).length === 0
+    ? { node: source, as: "leading" }
+    : undefined;
+};
+
+const IMPORT_PARTS = new Set(["import_clause", "named_imports"]);
 
 const TRY_PARTS = new Set(["try_statement", "catch_clause", "finally_clause"]);
 
@@ -477,9 +766,9 @@ const CONDITIONALS = new Set(["ternary_expression", "conditional_type"]);
 /**
  * A comment before a conditional's branch, off the line of the code before it, leads the branch; under
  * experimentalTernaries one before the alternate dangles on the conditional, which prints it after `:`, unless
- * it is a one-line block comment (handleConditionalExpressionComments). Off the line: `placement` stands in for
- * prettier's newline test between the preceding node and the comment, which it matches but for a comment that
- * ends a line after a token such as `?` that opened it.
+ * it is a one-line block comment (handleConditionalExpressionComments). Only an expression's: prettier checks
+ * `alternate`, a field TSConditionalType lacks (its is `falseType`), so a conditional type's comment leads the branch. Off the line: a line break between the
+ * preceding node and the comment, so `a⏎? // c⏎b` leads `b` though the comment ends the line of its `?`.
  */
 const conditional = (
   c: CommentContext<JsOptions>,
@@ -489,11 +778,12 @@ const conditional = (
     return;
   if (
     following === undefined ||
-    (preceding !== undefined && placement !== "ownLine")
+    (preceding !== undefined && !newlineAfter(c, preceding))
   )
     return;
   const oneLineBlock = text.startsWith("/*") && !text.includes("\n");
   return options.experimentalTernaries &&
+    kind(c, enclosing) === "ternary_expression" &&
     fieldName(c, following) === "alternative" &&
     !oneLineBlock
     ? { node: enclosing, as: "dangling" }
@@ -626,11 +916,99 @@ const afterOpenParen = (c: CommentContext<JsOptions>): CommentTarget | undefined
     : { node: preceding, as: "trailing" };
 };
 
+/**
+ * `(a, b /* c *\/);`: a comment before the `)` of a statement's parenthesized expression trails the statement,
+ * after its `;`, as one between the `)` and the `;` does.
+ */
+const beforeStatementCloseParen = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, preceding, following } = c;
+  if (
+    preceding === undefined ||
+    following !== undefined ||
+    kind(c, enclosing) !== "parenthesized_expression" ||
+    isCastParen(c, enclosing)
+  )
+    return;
+  const top = outer(c, enclosing);
+  const holder = parent(c, top);
+  if (holder === undefined) return;
+  if (kind(c, holder) === "expression_statement") return { node: holder, as: "trailing" };
+  // `= (a, b /* c */)`: as prettier's handleOnlyComments does, an arrow's body, a declarator's value, a return's
+  // argument or an assignment's right side keeps the comment on its sequence's last expression (or assignment's
+  // right side), inside the parentheses that print around the sequence (or assignment).
+  const role = kind(c, holder);
+  const at = fieldName(c, top);
+  if (
+    !(
+      (role === "arrow_function" && at === "body") ||
+      (role === "variable_declarator" && at === "value") ||
+      (role === "assignment_expression" && at === "right") ||
+      role === "return_statement"
+    )
+  )
+    return;
+  const expr = unparen(c, preceding);
+  const last =
+    kind(c, expr) === "sequence_expression"
+      ? children(c, expr).findLast((n) => named(c, n) && isCode(c, n))
+      : kind(c, expr) === "assignment_expression"
+        ? field(c, expr, "right")
+        : undefined;
+  return last !== undefined ? { node: last, as: "trailing" } : undefined;
+};
+
+/**
+ * A mapped type is one node in prettier's AST, where tree-sitter nests an index signature and its clause in an
+ * object type. A comment before its `[` (a `readonly` included) dangles on the mapped type (handleTSMappedTypeComments);
+ * one after `[` and before the clause leads the key, and one after the clause, before the value's `:`, trails the
+ * constraint (or the `as` type), the node before it in prettier's AST.
+ */
+const mappedTypeParts = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { comment, enclosing } = c;
+  const object =
+    kind(c, enclosing) === "index_signature" ? parent(c, enclosing) : enclosing;
+  if (object === undefined || kind(c, object) !== "object_type") return;
+  const mapped = mappedClauseOf(c, object);
+  if (mapped === undefined) return;
+  const { signature, clause } = mapped;
+  if (enclosing === object)
+    return c.following === signature ? { node: object, as: "dangling" } : undefined;
+  const kids = children(c, signature);
+  const at = kids.indexOf(comment);
+  const bracket = kids.findIndex((k) => !named(c, k) && kind(c, k) === "[");
+  const clauseAt = kids.indexOf(clause);
+  if (at < bracket) return { node: object, as: "dangling" };
+  if (at < clauseAt) {
+    const key = field(c, clause, "name");
+    return key !== undefined ? { node: key, as: "leading" } : undefined;
+  }
+  if (c.following !== undefined && kind(c, c.following) !== "type_annotation") return;
+  const last = field(c, clause, "alias") ?? field(c, clause, "type");
+  return last !== undefined ? { node: last, as: "trailing" } : undefined;
+};
+
+/**
+ * `declare /* c *\/ namespace A {}`: prettier's `declare` is a flag of the declaration, so a comment after it is
+ * inside the declaration, before its name, and prints there (`declare namespace /* c *\/ A {}`).
+ */
+const afterDeclare = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, preceding, following } = c;
+  if (kind(c, enclosing) !== "ambient_declaration" || preceding !== undefined || following === undefined)
+    return;
+  const name =
+    field(c, following, "name") ??
+    children(c, following).find((k) => kind(c, k) === "variable_declarator");
+  return name !== undefined ? { node: name, as: "leading" } : undefined;
+};
+
 // In prettier's order within each placement: typeCast and conditional run early, nestedConditional last.
 const handlers = [
+  afterDeclare,
   typeCast,
+  mappedTypeParts,
   importAttribute,
   memberProperty,
+  beforeArguments,
   conditional,
   typeBeforeSemicolon,
   beforeSemicolon,
@@ -640,22 +1018,31 @@ const handlers = [
   typeParameterBound,
   requireSource,
   assignmentPattern,
+  beforeSignatureParameters,
   methodName,
   fieldDecorator,
+  methodDecorator,
   functionBody,
+  arrowBody,
   forEmptyPart,
+  emptyImport,
   specifier,
   statementBody,
+  switchHead,
   tryBlock,
+  labeled,
+  switchDefault,
   classHeader,
   declaratorValue,
+  propertySignatureColon,
+  asType,
   nestedConditional,
   firstUnionMember,
 ];
 
 export const handleComment: CommentHandler<JsOptions> = (original) => {
   const c = outOfTypeParens(original);
-  for (const h of [afterOpenParen, ...handlers]) {
+  for (const h of [afterOpenParen, beforeStatementCloseParen, besideEmptyStatement, ...handlers]) {
     const target = h(c);
     if (target) return target;
   }

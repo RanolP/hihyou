@@ -10,8 +10,7 @@ import { language } from "./index.js";
 
 // Byte parity with prettier 3.9.9, under its defaults and under a set a person would write in a `.prettierrc`.
 // Not covered, as `divergences` below pins: a node tree-sitter-css wraps in an ERROR (it keeps its source
-// text), a block comment inside a value (the core attaches it to the value before it, so it never moves to
-// the next line the way prettier's fill does), and an empty file.
+// text), and an empty file.
 
 const optionSets: [string, Partial<CssOptions>][] = [
   ["defaults", {}],
@@ -25,6 +24,10 @@ const edgeCases: [string, string][] = [
   ["empty-rule", ".a{}"],
   ["page-pseudo", "@page :first{margin:1in}"],
   ["attribute-flag", '[type="a"   I]{b:c}'],
+  ["double-semicolon", "a{color:red;;}"],
+  ["uppercase-important", "a{margin:0 !IMPORTANT;padding:0 !  important}"],
+  ["empty-value", ":root{--a:;--b:  ;c:d}"],
+  ["ie-hacks", ".a{*zoom:1;_width:2px;+color:red;*+color:red\\9}"],
   [
     "comments",
     "/* head */\na { color : red ; /* trail */\n  /* lead */\n  b: c }\n\n/* end */\n",
@@ -62,6 +65,8 @@ const edgeCases: [string, string][] = [
     "grid",
     'a{grid-template-areas:"a b"\n  "c d";grid-template-columns:[full-start] 1fr\n  [full-end]}',
   ],
+  // The `/` makes the tail a binary expression, which must keep the grid's source lines too.
+  ["grid-slash", 'a{grid-template:\n  "a a" 20px\n  "b b" 20px\n  / 1fr 2fr;grid:1fr / auto 1fr}'],
   ["strings", `a{content:"it's";b:'say "hi"';c:'both \\' and "';d:'x'}`],
   [
     "selectors",
@@ -112,6 +117,29 @@ const edgeCases: [string, string][] = [
     "progid",
     "a{filter:progid:DXImageTransform.Microsoft.gradient(startColorstr='#80000000')}",
   ],
+  // `name='#hex'` pairs, once an ERROR before tree-sitter-css read Sass's `name: value` arguments.
+  [
+    "progid-arguments",
+    "a{filter:progid:X.y(startColorstr='#80000000', endColorstr='#80000000')}",
+  ],
+  // Sass's argument lists and maps, which printed as written while tree-sitter-css read them as ERRORs.
+  [
+    "sass-arguments",
+    "@mixin m ( $a, $b: 10, $args... ) {}\n@include m(1, $b: (k: v, l: w));\n$map: (a: 1,\n\n b: 2);",
+  ],
+  // A block comment among a value's words stayed attached to the word before it; prettier's value parser reads it
+  // as a word, moved to a line of its own once the value breaks, and an entry holding one breaks the comma list.
+  ["value-comment", `a{background-image:url("${"x".repeat(60)}") /*rtl:url("${"y".repeat(20)}")*/;}`],
+  ["value-comment-entry", "a{box-shadow:1px 1px red,/* c */ 2px 2px blue;background:a,\n/* c */\nb}"],
+  // Comments among a function's arguments or an `@import`'s words took a line each, not a place in the fill.
+  [
+    "argument-comment",
+    'a{transform:translate(/* a */ /* b */ 10px /* c */)}@import /* a */ url("x.css") /* b */ print /* c */, /* d */ tv;',
+  ],
+  // A value of comments alone is postcss's value, not its `between`, so its source gaps were kept.
+  ["comment-only-value", "a{--x:   /* a */    /* b */;--f:/* a */ ;}"],
+  // Prettier keeps a selector holding a comment as written; it was laid out as selectors.
+  ["selector-comment", ".a /* x */, /* y */ .b /* z */ {}\n.c\n/* w */ {}\na[/* v */x]{b{c/* u */{d:e}}}"],
   ["crlf", "a{\r\n  b:c;\r\n  /* x\r\n  y */\r\n\r\n\r\n  d:e\r\n}\r\n"],
   // Front matter once parsed as selectors, lowercased and joined onto the first rule's line.
   ["front-matter", "---\ntitle: Title\n\n---\na{b:c}"],
@@ -120,6 +148,11 @@ const edgeCases: [string, string][] = [
   ["nesting-suffix", ".a{&__b,&-c{d:e}.f &{g:h}}"],
   // A Sass `$variable`, declared or read, was a parse error, printed as raw source.
   ["sass-variable", "$a:RGB(0,0,0);.b{border:1px solid $a;$c:d}"],
+  // A value opening with an operator, and a custom property holding a `{...}` group, were ERROR nodes kept as written.
+  [
+    "signed-operands",
+    'a{p:1 -(-1) + 20px;q:-1*-(-1);c:color(red alpha(- .75) hue(*20));--j:[1,{"a":1}];--f:fn(x) { go(x) };}',
+  ],
   // A rule or declaration after a prettier-ignore comment was laid out like any other.
   [
     "prettier-ignore",
@@ -159,7 +192,7 @@ const chunks = (s: string) => s.split(/\n(?=[^\s}])/);
 const ratchet: [string, Partial<CssOptions>, string, number, number][] = [
   ["defaults", {}, "normalize.css", 96, 96],
   ["defaults", {}, "animate.css", 328, 328],
-  ["defaults", {}, "bootstrap.css", 1638, 1641],
+  ["defaults", {}, "bootstrap.css", 1641, 1641],
   [
     "singleQuote, tabWidth 4, printWidth 100",
     optionSets[1]?.[1] ?? {},
@@ -171,14 +204,14 @@ const ratchet: [string, Partial<CssOptions>, string, number, number][] = [
     "singleQuote, tabWidth 4, printWidth 100",
     optionSets[1]?.[1] ?? {},
     "animate.css",
-    324,
+    328,
     328,
   ],
   [
     "singleQuote, tabWidth 4, printWidth 100",
     optionSets[1]?.[1] ?? {},
     "bootstrap.css",
-    1639,
+    1641,
     1641,
   ],
 ];
@@ -201,37 +234,7 @@ describe.skipIf(!present)(
 
 // Input, options, then today's output, which differs from prettier's.
 const divergences: [string, string, Partial<CssOptions>, string][] = [
-  // An empty declaration is an ERROR, so the whole block keeps its source text.
-  ["double-semicolon", "a{color:red;;}", {}, "a {color:red;;}\n"],
-  // tree-sitter-css reads the `%` of a decimal keyframe selector as an ERROR, so the block keeps its source
-  // indentation where prettier re-indents it.
-  [
-    "decimal-keyframe",
-    "@keyframes x {\n  6.5% {\n    a: b;\n  }\n}\n",
-    { tabWidth: 4 },
-    "@keyframes x {\n    6.5% {\n    a: b;\n  }\n}\n",
-  ],
-  // Prettier moves a block comment after a value to its own line once the value breaks; here it stays attached.
-  [
-    "value-comment",
-    `a{background-image:url("${"x".repeat(60)}") /*rtl:url("${"y".repeat(20)}")*/;}`,
-    {},
-    `a {\n  background-image: url("${"x".repeat(60)}") /*rtl:url("${"y".repeat(20)}")*/;\n}\n`,
-  ],
-  // tree-sitter-css reads some `name='#hex'` argument lists of `progid:...()` as an ERROR.
-  [
-    "progid-arguments",
-    "a{filter:progid:X.y(startColorstr='#80000000', endColorstr='#80000000')}",
-    {},
-    "a {filter:progid:X.y(startColorstr='#80000000', endColorstr='#80000000')}\n",
-  ],
-  // tree-sitter-css knows only lowercase `!important` and `from`; the uppercase ones are ERRORs.
-  [
-    "uppercase-important",
-    "a{margin:0 !IMPORTANT}",
-    {},
-    "a {margin:0 !IMPORTANT}\n",
-  ],
+  // tree-sitter-css knows only lowercase `from`; an uppercase one is an ERROR.
   [
     "uppercase-from",
     "@keyframes x{FROM{a:b}}",

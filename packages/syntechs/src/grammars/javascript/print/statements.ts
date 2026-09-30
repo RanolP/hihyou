@@ -78,6 +78,12 @@ const SEMI_ENDED = new Set([
   "using_declaration",
 ]);
 
+const KEYWORD_ENDED = new Set([
+  "break_statement",
+  "continue_statement",
+  "debugger_statement",
+]);
+
 const BODY_ENDED = new Set([
   "for_statement",
   "for_in_statement",
@@ -99,10 +105,12 @@ export function contentEnd(
   const body = lastBody(x, n);
   if (body !== undefined) return contentEnd(x, body, keepComments);
   if (!SEMI_ENDED.has(kind(x, n))) return n;
+  // Prettier ends a break, continue or debugger at its keyword or label, so the comments after it stay out.
+  const keep = keepComments && !KEYWORD_ENDED.has(kind(x, n));
   const content = lastChildWhere(
     x,
     n,
-    (c) => kind(x, c) !== ";" && (keepComments || !isComment(x, c)),
+    (c) => kind(x, c) !== ";" && (keep || !isComment(x, c)),
   );
   return content ?? n;
 }
@@ -399,10 +407,20 @@ function condition(s: JsStreamCtx, pe: number | undefined, grouped: boolean): vo
         inner,
         () => {
           const expr = unparen(js, inner);
-          const parens = needsParens(expr, js);
-          if (parens) sToken(expr, "(", true);
-          s.print(inner);
-          if (parens) sToken(expr, ")", true);
+          if (!needsParens(expr, js)) {
+            s.print(inner);
+            return;
+          }
+          // Prettier's AST has no source parentheses, so the comments inside them print around the pair
+          // needsParens adds: `if ((a, b) /* c */)`.
+          const around = (n: number): void =>
+            withComments(s, n, () => {
+              if (n !== expr) return around(first(js, n)!);
+              sToken(expr, "(", true);
+              s.printNode(expr);
+              sToken(expr, ")", true);
+            });
+          around(inner);
         },
         grouped,
       );
@@ -509,7 +527,17 @@ const customs = {
     // Prettier keeps a byte order mark.
     if (ctx.tree.bom) sText("﻿");
     statementsOrEmpties(s, items(s.js, node));
-    danglingLines(s, node);
+    // Babel's Program ends before a comment-only file's comments, so prettier prints them as its trailing
+    // comments: one on the same line follows a space, and a blank line before one is kept.
+    s.danglingComments(node).forEach((c, i) => {
+      const lf = s.js.tree.lf(c);
+      if (i > 0 && lf === 0) sText(" ");
+      else if (i > 0) {
+        sHardline();
+        if (lf > 1) sHardline();
+      }
+      s.comment(c);
+    });
   },
 
   "stmt.block": (node, ctx) => printBlock(jsCtx(ctx), node),
@@ -613,11 +641,25 @@ const customs = {
     }
     sText(" ");
     sTok(js, anon(js, node, "("));
-    for (const k of fields(js, node, "kind")) {
+    const kinds = fields(js, node, "kind");
+    const left = field(js, node, "left");
+    // Babel's left is a declaration that starts at its kind, so a comment before the kind leads it from there.
+    const kindAt = kinds[0] === undefined ? undefined : js.tree.ord(kinds[0]);
+    const beforeKind =
+      left === undefined || kindAt === undefined
+        ? []
+        : s.leadingComments(left).filter((c) => js.tree.ord(c) < kindAt);
+    for (const c of beforeKind) printLeadingComment(s, commentFacts(s, c));
+    for (const k of kinds) {
       sTok(js, k);
       sText(" ");
     }
-    pr(s, field(js, node, "left"));
+    if (left !== undefined && beforeKind.length > 0) {
+      for (const c of s.leadingComments(left))
+        if (!beforeKind.includes(c)) printLeadingComment(s, commentFacts(s, c));
+      s.printNode(left);
+      printTrailingComments(s, left);
+    } else pr(s, left);
     if (value !== undefined) {
       sText(" ");
       sTok(js, anon(js, node, "="));
@@ -674,7 +716,7 @@ const customs = {
 
   /**
    * A return or throw argument (return-statement.js): parenthesized on lines of its own below a leading comment,
-   * and a binaryish or sequence expression parenthesized while it breaks.
+   * and a binaryish expression parenthesized while it breaks. A sequence breaks inside its own parentheses.
    */
   "stmt.returnArg": (arg, ctx) => {
     const s = jsCtx(ctx);
@@ -690,7 +732,6 @@ const customs = {
       sToken(arg, ")", true);
     } else if (
       isBinaryish(js, inner) ||
-      kind(js, inner) === "sequence_expression" ||
       (ctx.options.experimentalTernaries && isChainedTernary(js, inner))
     ) {
       open(GROUP);
@@ -887,13 +928,21 @@ const customs = {
     const js = s.js;
     const value = field(js, node, "value");
     const eq = anon(js, node, "=");
+    const name = field(js, node, "name");
+    // `c!`: prettier's identifier prints its definite `!`, so the name's comments go after it (`c! /* */`).
+    const bang = anon(js, node, "!");
     const left = () => {
       for (const c of children(js, node))
-        if (c === value || c === eq || isComment(js, c)) continue;
+        if (c === value || c === eq || c === bang || isComment(js, c)) continue;
+        else if (c === name && bang !== undefined)
+          withComments(s, c, () => {
+            s.printBare(c);
+            sTok(js, bang);
+          });
         else if (named(js, c)) s.print(c);
         else sTok(js, c);
     };
-    if (field(js, node, "name") === undefined) {
+    if (name === undefined) {
       left();
       return;
     }

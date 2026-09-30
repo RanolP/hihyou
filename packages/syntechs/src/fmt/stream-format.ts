@@ -14,6 +14,7 @@ import {
   open,
   printStream,
   resetStream,
+  type StreamPrinted,
   sBreakParent,
   sHardline,
   sLine,
@@ -50,6 +51,8 @@ export interface StreamCtx<O = unknown> {
   isLineComment(c: number): boolean;
   /** Whether block comment `c` ends its line as a line comment does (`StreamRules.commentEndsLine`). */
   endsItsLine?(c: number): boolean;
+  /** The last comment that comment `c` prints as one with (`StreamRules.commentEnd`); `c` itself by default. */
+  commentEnd?(c: number): number;
   /** Appends comment `c`. */
   comment(c: number): void;
   isList(node: number): boolean;
@@ -79,7 +82,7 @@ export const commentFacts = (ctx: StreamCtx<unknown>, c: number): CommentFacts =
   c,
   line: ctx.isLineComment(c) || ctx.endsItsLine?.(c) === true,
   lf: ctx.tree.lf(c),
-  lfAfter: lfAfter(ctx.tree, c),
+  lfAfter: lfAfter(ctx.tree, ctx.commentEnd?.(c) ?? c),
 });
 
 // Prettier's printLeadingComment and printTrailingComment (main/comments/print.js), one comment at a time.
@@ -106,7 +109,7 @@ export function printTrailingComment(
   f: CommentFacts,
   previous: Trailed | undefined,
 ): Trailed {
-  if ((previous?.suffix && !previous.line) || f.lf > 0) {
+  if ((previous?.suffix && previous.line) || f.lf > 0) {
     open(LINE_SUFFIX);
     sHardline();
     if (f.lf >= 2) sHardline();
@@ -155,8 +158,18 @@ export interface StreamRules<O = unknown> {
   readonly printComment?: (c: number, ctx: StreamCtx<O>) => void;
   /** Whether block comment `c` ends its line all the same: ktfmt breaks after a KDoc wherever it stood. */
   readonly commentEndsLine?: (c: number, ctx: StreamCtx<O>) => boolean;
+  /**
+   * The last comment that `printComment` prints along with comment `c`, whose line break after is the one after
+   * `c` as printed (prettier's parsers merge JSDoc blocks nestled as `*//**` into one comment).
+   */
+  readonly commentEnd?: (c: number, ctx: StreamCtx<O>) => number;
   /** Whether `node` prints as its source text though it parsed, as a broken node does (prettier-ignore). */
   readonly keepsSource?: (node: number, ctx: StreamCtx<O>) => boolean;
+  /**
+   * Whether `ERROR` node `error` is a recovery the rules print around, like a stray trailing comma they drop, so
+   * its parent formats rather than printing as written.
+   */
+  readonly recovered?: (error: number, tree: FormatTree) => boolean;
   /**
    * Whether `node`'s rule prints the node's comments itself, with `printLeadingComments` and
    * `printTrailingComments`, so they can go inside what the rule wraps around them (prettier's
@@ -174,6 +187,8 @@ export interface StreamRules<O = unknown> {
   readonly wrap?: (node: number, ctx: StreamCtx<O>, print: () => void, args: PrintArgs | undefined) => void;
   /** Whether the output ends with a line break, as it does unless this says not: ruff prints a blank file as "". */
   readonly finalLine?: (ctx: StreamCtx<O>) => boolean;
+  /** Whether printed comments rewrite as google-java-format's do (`rewriteComments`): ktfmt's. */
+  readonly rewritesComments?: boolean;
 }
 
 /** `format`: lays `tree` out on the stream by the `stream` rules of `base`, and prints it. */
@@ -186,7 +201,8 @@ export function formatStream<O>(
     const language = base.stream;
     const resolved: O = { ...base.defaults, ...options };
     const settings = base.settings(resolved);
-    resetStream(settings.ruff === true);
+    const ruff = settings.ruff === true;
+    resetStream(ruff, ruff ? settings.indentWidth : 0);
     const rules: (StreamRule<O> | null)[] = [];
     const ruleOf = (n: number) => {
       const k = tree.kind(n);
@@ -210,7 +226,8 @@ export function formatStream<O>(
           const t = tree.text(c);
           sToken(c, isLine(c) ? t.trimEnd() : t);
         };
-    const broken = brokenNodes(tree);
+    const { recovered } = language;
+    const broken = brokenNodes(tree, recovered && ((n) => recovered(n, tree)));
     const { keepsSource } = language;
     const isBroken = (node: number) =>
       (broken !== undefined && broken.has(node)) ||
@@ -224,7 +241,7 @@ export function formatStream<O>(
       return false;
     };
     const none: readonly number[] = [];
-    const { wrap, printsOwnComments, commentEndsLine } = language;
+    const { wrap, printsOwnComments, commentEndsLine, commentEnd } = language;
     let current: PrintArgs | undefined;
     const printNode = (node: number, args?: PrintArgs) => {
       if (isBroken(node)) {
@@ -278,6 +295,7 @@ export function formatStream<O>(
       isComment,
       isLineComment: isLine,
       ...(commentEndsLine === undefined ? {} : { endsItsLine: (c: number) => commentEndsLine(c, ctx) }),
+      ...(commentEnd === undefined ? {} : { commentEnd: (c: number) => commentEnd(c, ctx) }),
       comment,
       isList(node) {
         const rule = ruleOf(node);
@@ -291,6 +309,7 @@ export function formatStream<O>(
     ctx.print(tree.root);
     if (language.finalLine?.(ctx) !== false) sHardline();
     const printed = printStream(settings);
+    if (language.rewritesComments) rewriteComments(printed, tree, isComment, isLine, settings.lineWidth);
     const { text } = printed;
     const eol = endOfLine(settings.endOfLine, tree);
     const rewrite = eol !== "\n" || text.includes("\r");
@@ -323,4 +342,79 @@ export function formatStream<O>(
       detail: e instanceof Error ? e.message : String(e),
     };
   }
+}
+
+/**
+ * google-java-format's comment rewriting, which ktfmt's KDocCommentsHelper keeps, on the printed comment tokens:
+ * a line comment reaching past `width` wraps (`wrapLineComment`), and a block comment printed as its source text
+ * re-indents its lines to the column it now starts at (`indentBlockComment`). This rewrites `printed` in place,
+ * shifting the tokens after each rewritten one.
+ */
+function rewriteComments(
+  printed: StreamPrinted,
+  tree: FormatTree,
+  isComment: (n: number) => boolean,
+  isLine: (n: number) => boolean,
+  width: number,
+): void {
+  const { text, nodes, lengths, at } = printed;
+  let out = "";
+  let from = 0;
+  let shift = 0;
+  for (let t = 0; t < at.length; t++) {
+    const start = at[t] as number;
+    at[t] = start + shift;
+    const length = lengths[t] as number;
+    const node = nodes[t] as number;
+    if (!isComment(node)) continue;
+    const token = text.slice(start, start + length);
+    const before = text.slice(from, start);
+    const nl = before.lastIndexOf("\n");
+    const column = nl !== -1 ? before.length - nl - 1 : out.length - (out.lastIndexOf("\n") + 1) + before.length;
+    const rewritten = isLine(node)
+      ? wrapLineComment(token, column, width)
+      : token.includes("\n") && token === tree.text(node)
+        ? indentBlockComment(token, column)
+        : token;
+    if (rewritten === token) continue;
+    out += before + rewritten;
+    from = start + length;
+    shift += rewritten.length - length;
+    lengths[t] = rewritten.length;
+  }
+  if (from > 0) printed.text = out + text.slice(from);
+}
+
+/**
+ * google-java-format's wrapLineComments: a line comment reaching past `width` breaks before its last blank that
+ * keeps the line within the width, and goes on as `//` at the column the comment starts.
+ */
+function wrapLineComment(comment: string, column: number, width: number): string {
+  let line = comment;
+  if (line.length + column <= width) return comment;
+  const lines: string[] = [];
+  while (line.length + column > width) {
+    let idx = width - column;
+    while (idx >= 2 && !/\s/.test(line[idx] as string)) idx--;
+    if (idx <= 2) break;
+    lines.push(line.slice(0, idx).trim());
+    line = `//${line.slice(idx)}`;
+  }
+  lines.push(line.trim());
+  return lines.join(`\n${" ".repeat(column)}`);
+}
+
+/**
+ * google-java-format's indentJavadoc and preserveIndentation, for a block comment starting at `column`, its line
+ * ends trimmed: where every later line starts with `*`, those go one column in from the `/*`; else they keep
+ * their indentation relative to the least indented of them.
+ */
+function indentBlockComment(comment: string, column: number): string {
+  const [first, ...rest] = comment.split("\n").map((l) => l.trimEnd());
+  if (rest.every((l) => l.trimStart().startsWith("*")))
+    return [first, ...rest.map((l) => " ".repeat(column + 1) + l.trim())].join("\n");
+  let min = Number.MAX_SAFE_INTEGER;
+  for (const l of rest) if (l.trim() !== "") min = Math.min(min, l.length - l.trimStart().length);
+  const indent = (l: string) => (l === "" ? "" : " ".repeat(column) + l.slice(Math.min(min, l.length)));
+  return [first, ...rest.map(indent)].join("\n");
 }

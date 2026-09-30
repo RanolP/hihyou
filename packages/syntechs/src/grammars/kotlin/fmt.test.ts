@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import { parseTree } from "../../core/index.js";
+import { check } from "../../fmt/check.js";
 import { format } from "../../fmt/format.js";
 import { kotlin } from "./fmt.js";
 import { language } from "./index.js";
@@ -65,6 +66,18 @@ test("pruning keeps imports used only by KDoc, backticked names or operator conv
   expect(run(used, false)).toBe(used);
 });
 
+// A regression here detaches an import's trailing comment from it (it hoists above the whole list, or stays when
+// the import is dropped), or keeps an import of the file's own package, as 6 ktfmt import fixtures caught.
+test("an import's trailing comment moves and goes with it, and an own-package import is dropped", () => {
+  const input =
+    "package p\n\nimport b.Used /* why */\nimport a.Unused // note\nimport p.Here\nimport a.Other\nfun f(x: Used, y: Other) = Here\n";
+  expect(run(input, false)).toBe(
+    "package p\n\nimport a.Other\nimport b.Used /* why */\n\nfun f(x: Used, y: Other) = Here\n",
+  );
+  const out = format(parseTree(kotlin.parser, input), kotlin, {});
+  expect(out.ok && check(kotlin, input, out.text)).toBeUndefined();
+});
+
 // A regression here puts back the blank line ktfmt drops between prose ending in `:` and the code block it
 // introduces, and before a `<pre>`, which failed 16 ktfmt fixtures.
 test("KDoc code blocks hug the prose that introduces them, as ktfmt prints them", () => {
@@ -91,5 +104,43 @@ test("annotations stay apart from what they annotate, on lines of their own once
     '@A @B(1) fun f() = 1\n\n@A @B(1) fun g() {\n    val x: (@A List<Int>) -> Unit = h\n    @[C D] var y = 2\n    @S("X")\n    return z\n}\n';
   expect(run(input, false)).toBe(
     '@A @B(1) fun f() = 1\n\n@A\n@B(1)\nfun g() {\n    val x: (@A List<Int>) -> Unit = h\n    @[C D]\n    var y = 2\n    @S("X")\n    return z\n}\n',
+  );
+});
+
+// A regression here prints a lambda or a type list with a trailing comma as written (the grammar recovers the comma
+// as an ERROR), keeps that comma where ktfmt drops it, or stops breaking a type list the source breaks.
+test("trailing commas drop from lambda parameters and one-line type lists, and a broken type list keeps one", () => {
+  const input =
+    "fun <A, B,> f() {\n    g<Int,>()\n    a {\n        x,\n        y, ->\n        z\n    }\n    h<\n        A,\n        B\n    >()\n}\n";
+  expect(run(input, false)).toBe(
+    "fun <A, B> f() {\n    g<Int>()\n    a { x, y ->\n        z\n    }\n    h<\n        A,\n        B,\n    >()\n}\n",
+  );
+});
+
+// A regression here gives a lone broken parameter a trailing comma, moves the comment after a recovered trailing
+// comma onto a line of its own, or carries a comment out of an accessor's parentheses or past its annotation's line.
+test("a lone item drops its comma and keeps its comment, as do an accessor's parentheses and an annotation", () => {
+  const input =
+    "class K {\n    fun f(\n        a: Int, //\n    ) {\n        g<\n            Int, //\n        >()\n    }\n\n" +
+    "    @A //\n    fun h() {}\n\n    val x: Int\n        get(\n            // c\n        ) = 0\n}\n";
+  expect(run(input, false)).toBe(
+    "class K {\n    fun f(\n        a: Int //\n    ) {\n        g<\n            Int //\n        >()\n    }\n\n" +
+      "    @A //\n    fun h() {}\n\n    val x: Int\n        get(\n            // c\n        ) = 0\n}\n",
+  );
+});
+
+// A regression here keeps a `when` entry's trailing comma, which puts `->` on a line of its own.
+test("a trailing comma drops from a when entry's conditions", () => {
+  const input = "fun f() {\n    when (a) {\n        is A, //\n        is B, -> 1\n        2, -> 3\n    }\n}\n";
+  expect(run(input, false)).toBe(
+    "fun f() {\n    when (a) {\n        is A, //\n        is B -> 1\n        2 -> 3\n    }\n}\n",
+  );
+});
+
+// A regression here drops the `;` before a statement that starts with a lambda, which makes the lambda the trailing
+// lambda of the call before it and changes what the code does; `check` ignores `;`, so only this test sees it.
+test("a `;` before a statement that starts with a lambda stays", () => {
+  expect(run("fun f() {\n  foo(0); { dead -> lambda }\n  if (c) ; else 6\n}\n", false)).toBe(
+    "fun f() {\n    foo(0);\n    { dead -> lambda }\n    if (c)  else 6\n}\n",
   );
 });

@@ -5,6 +5,7 @@ import {
   BROKEN,
   capture,
   close,
+  commentsOf,
   GROUP,
   IF_BROKEN,
   IF_FLAT,
@@ -31,7 +32,6 @@ import {
   anon,
   ArgExpansionBailout,
   type Args,
-  CF,
   callArguments,
   callee,
   childWhere,
@@ -39,6 +39,7 @@ import {
   field,
   first,
   hasComment,
+  hasLeadingOwnLineComment,
   type HasTree,
   isBinaryish,
   isCall,
@@ -271,7 +272,11 @@ function isDecoratedFunction(ctx: JsCtx, fn: number): boolean {
           ).length === 1))
     );
   }
-  if (holderKind === "export_statement" && up.key === "declaration")
+  // `export default` and TypeScript's `export =` (TSExportAssignment).
+  if (
+    holderKind === "export_statement" &&
+    (up.key === "declaration" || anon(ctx, holder, "=") !== undefined)
+  )
     return true;
   if (holderKind === "assignment_expression" && up.key === "right") {
     const left = field(ctx, holder, "left");
@@ -294,8 +299,14 @@ export function sPrintFunctionParameters(
   const typeParameters = capture(() =>
     pr(s, withTypeParameters ? field(ctx, fn, "type_parameters") : undefined),
   );
-  place(typeParameters);
   const list = field(ctx, fn, "parameters");
+  // printParameterList's hugged branch, where prettier prints the type parameters flat too.
+  const flat =
+    expand &&
+    list !== undefined &&
+    items(ctx, list).length > 0 &&
+    !isDecoratedFunction(ctx, fn);
+  place(flat ? removeLines(typeParameters) : typeParameters);
   if (list === undefined) {
     // A lone parameter without parentheses, printed with them.
     sToken(fn, "(", true);
@@ -624,15 +635,18 @@ const arrow: CustomRule<JsOptions> = (node, s) => {
   let functionBody = bodyOf(node);
   let bodyNode = functionBody;
 
+  // The trailing comments of the chained arrows after the head, innermost first, which print after the body.
+  const bodyComments: Part[] = [];
   for (let x = node; ;) {
-    // A chained arrow is printed through its head, so its own comments go around its signature.
-    const head = signatures.length === 0;
+    // A chained arrow is printed through its head: its leading comments go before its signature.
+    const own = signatures.length === 0 ? undefined : commentsOf(js, x);
     signatures.push(
       capture(() => {
-        if (head) printArrowSignature(s, x, args);
-        else withComments(js, x, () => printArrowSignature(s, x, args));
+        own?.[0]();
+        printArrowSignature(s, x, args);
       }),
     );
+    if (own !== undefined) bodyComments.unshift(capture(own[1]));
     arrows.push(x);
     if (shouldPrintAsChain) {
       const params = parameters(ctx, x);
@@ -652,7 +666,7 @@ const arrow: CustomRule<JsOptions> = (node, s) => {
   }
 
   const hasLeadingOwnLine = [bodyNode, functionBody].some((b) =>
-    hasComment(ctx, b, CF.Leading, (c) => lfAfter(ctx.tree, c) > 0),
+    hasLeadingOwnLineComment(ctx, b),
   );
   const shouldPutBodyOnSameLine =
     !hasLeadingOwnLine &&
@@ -745,13 +759,16 @@ const arrow: CustomRule<JsOptions> = (node, s) => {
       close();
       printTrailing();
       close();
+      bodyComments.forEach(place);
     } else if (shouldPutBodyOnSameLine) {
       sText(" ");
       place(body);
+      bodyComments.forEach(place);
     } else {
       open(INDENT);
       sLine(0);
       place(body);
+      bodyComments.forEach(place);
       close();
       printTrailing();
     }

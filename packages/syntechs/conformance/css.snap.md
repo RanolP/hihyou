@@ -1,8 +1,8 @@
-css compatibility: 107/151 (70.86%), 0 refused (ok:false), 6 excluded
+css compatibility: 148/151 (98.01%), 0 refused (ok:false), 6 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
-- oxfmt 0.70.0: 115/151 (76.16%)
+- oxfmt 0.70.0: 129/151 (85.43%)
 
 Fixtures: prettier 3.9.9 tests/format/{css} (recursive), every spec call listing parser `css`, expected output from its __snapshots__.
 
@@ -12,50 +12,9 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
-| css/atrule/at-root.css | 0/1 | 92.35% |
-| css/atrule/each.css | 0/1 | 19.84% |
-| css/atrule/extend.css | 0/1 | 41.30% |
-| css/atrule/function.css | 0/1 | 17.32% |
-| css/atrule/import.css | 0/1 | 45.09% |
-| css/atrule/include.css | 0/1 | 35.64% |
-| css/atrule/mixin.css | 0/1 | 35.36% |
-| css/atrule/supports.css | 0/1 | 14.39% |
-| css/atrule/while.css | 0/1 | 65.82% |
-| css/atword/atword.css | 0/1 | 0.00% |
-| css/bom/bom.css | 0/1 | 80.00% |
-| css/character-escaping/character_escaping.css | 0/1 | 16.56% |
-| css/color/color-adjuster.css | 0/1 | 96.77% |
-| css/comments/15948.css | 0/1 | 16.67% |
-| css/comments/17479.css | 0/1 | 46.51% |
-| css/comments/at-rules.css | 0/1 | 47.71% |
-| css/comments/custom-properties.css | 0/1 | 92.31% |
-| css/comments/declaration.css | 0/1 | 60.12% |
-| css/comments/selectors.css | 0/1 | 58.22% |
-| css/comments/types.css | 0/1 | 92.86% |
-| css/composes/composes.css | 0/1 | 57.14% |
-| css/empty/empty.css | 0/1 | 85.71% |
-| css/escaped-attribute/test.css | 0/1 | 87.50% |
-| css/fill-value/fill.css | 0/1 | 95.50% |
-| css/font/font.css | 0/1 | 79.41% |
-| css/grid/grid.css | 0/1 | 94.64% |
-| css/indent/indent.css | 0/1 | 78.26% |
-| css/inline-url/inline_url.css | 0/1 | 97.92% |
-| css/modules/modules.css | 0/1 | 99.20% |
-| css/numbers/numbers.css | 0/1 | 38.67% |
-| css/parens/empty-lines.css | 0/1 | 31.58% |
-| css/parens/parens.css | 0/1 | 54.25% |
-| css/postcss-8-improment/empty-props.css | 0/1 | 50.00% |
-| css/postcss-8-improment/test.css | 0/1 | 80.00% |
-| css/postcss-plugins/postcss-mixins.css | 0/1 | 81.25% |
-| css/postcss-plugins/postcss-nesting.css | 0/1 | 97.63% |
-| css/postcss-plugins/postcss-simple-vars.css | 0/1 | 73.68% |
-| css/quotes/quotes.css | 0/2 | 74.59% |
-| css/selector-list/selectors.css | 0/1 | 76.15% |
-| css/stylefmt-repo/at-media/at-media.css | 0/1 | 95.24% |
-| css/stylefmt-repo/ie-hacks/ie-hacks.css | 0/1 | 43.48% |
-| css/stylefmt-repo/important/important.css | 0/1 | 66.67% |
-| css/trailing-comma/var-func.css | 0/1 | 57.14% |
-| css/url/url.css | 0/1 | 90.00% |
+| css/atrule/supports.css | 0/1 | 14.41% |
+| css/parens/parens.css | 0/1 | 95.00% |
+| css/postcss-plugins/postcss-simple-vars.css | 0/1 | 77.78% |
 
 # Refused
 

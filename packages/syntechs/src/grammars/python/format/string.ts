@@ -11,10 +11,11 @@ export const string = {
   string_end: () => custom("string.end"),
   interpolation: () => custom("string.interpolation"),
   type_conversion: () => verbatim,
-  format_specifier: () => verbatim,
-  // Unreached: string_content prints its own text and format_specifier prints verbatim, neither descending here.
+  format_specifier: () => custom("string.spec"),
+  // A format spec's field formats as an interpolation of the same string.
+  format_expression: () => custom("string.interpolation"),
+  // Unreached: string_content prints its own text, not descending here.
   escape_sequence: () => verbatim,
   escape_interpolation: () => verbatim,
-  format_expression: () => verbatim,
   concatenated_string: () => custom("string.concatenated"),
 } satisfies Structure;

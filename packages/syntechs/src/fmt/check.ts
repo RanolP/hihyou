@@ -135,6 +135,7 @@ function read<O>(language: Language<O>, text: string): Read {
     const start = tree.start(n);
     const end = tree.end(n);
     if (language.comments.has(kind)) {
+      if (language.ignoresComment?.(tree, n) === true) continue;
       const raw = text.slice(start, end);
       const spelled = language.comment ? language.comment(raw) : raw;
       for (const c of typeof spelled === "string" ? [spelled] : spelled)

@@ -22,7 +22,7 @@ const bound = <T>(type: T) =>
 
 export const types = {
   literal_type: ($) => $.children,
-  type_annotation: ($) => [":", space, $.children],
+  type_annotation: () => custom("typeAnnotation"),
   opting_type_annotation: ($) => ["?:", space, $.children],
   omitting_type_annotation: ($) => ["-?:", space, $.children],
   adding_type_annotation: ($) => ["+?:", space, $.children],
@@ -38,7 +38,7 @@ export const types = {
   type_query: ($) => ["typeof", space, $.children],
   index_type_query: () => inOrder(space),
   readonly_type: () => inOrder(space),
-  template_literal_type: () => inOrder(),
+  template_literal_type: () => custom("templateString"),
   template_type: ($) => ["${", $.children, "}"],
   type_alias_declaration: ($) => [
     $.name.via("typeAlias"),
