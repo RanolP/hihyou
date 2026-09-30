@@ -4,5 +4,7 @@ packages:
   # local grammar.patch: packages/syntechs/grammars/build.mjs.
   - packages/syntechs/grammars/*
 allowBuilds:
+  # @vscode/test-web's browser; its postinstall only downloads Chromium, which `playwright install chromium` does on demand.
+  "@playwright/browser-chromium": false
   # The platform binary arrives as an optional dependency; the postinstall only re-verifies it.
   esbuild: false
