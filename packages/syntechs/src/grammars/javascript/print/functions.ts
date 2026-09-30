@@ -18,6 +18,7 @@ import {
   place,
   removeLines,
   SOFT,
+  sBeforeBody,
   sBreakParent,
   sHardline,
   sLine,
@@ -467,7 +468,7 @@ const printFunction: CustomRule<JsOptions> = (n, s) => {
   close();
   const body = field(ctx, n, "body");
   if (body !== undefined) {
-    sText(" ");
+    sBeforeBody(s, body);
     s.print(body);
   } else semiCustoms.semi(lastAnon(ctx, n, ";"), n, s);
 };
@@ -491,7 +492,7 @@ export function sPrintMethodValue(ctx: JsStreamCtx, n: number): void {
   close();
   const body = field(js, n, "body");
   if (body !== undefined) {
-    sText(" ");
+    sBeforeBody(ctx, body);
     return ctx.print(body);
   }
   const c = lastChildWhere(js, n, (c) => !named(js, c) && kind(js, c) === ";");
@@ -668,6 +669,13 @@ const arrow: CustomRule<JsOptions> = (node, s) => {
   const hasLeadingOwnLine = [bodyNode, functionBody].some((b) =>
     hasLeadingOwnLineComment(ctx, b),
   );
+  // oxfmt keeps a comment that ends the `=>` line there, above the block.
+  const firstLeading = s.leadingComments(bodyNode)[0];
+  const commentBesideArrow =
+    ctx.options.compat === "oxfmt" &&
+    kind(ctx, bodyNode) === "statement_block" &&
+    firstLeading !== undefined &&
+    ctx.tree.lf(firstLeading) === 0;
   const shouldPutBodyOnSameLine =
     !hasLeadingOwnLine &&
     (kind(ctx, functionBody) === "sequence_expression" ||
@@ -766,7 +774,8 @@ const arrow: CustomRule<JsOptions> = (node, s) => {
       bodyComments.forEach(place);
     } else {
       open(INDENT);
-      sLine(0);
+      if (commentBesideArrow) sText(" ");
+      else sLine(0);
       place(body);
       bodyComments.forEach(place);
       close();

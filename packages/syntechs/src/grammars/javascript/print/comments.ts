@@ -384,6 +384,13 @@ const blockFirst = (x: HasTree, block: number): CommentTarget => {
     : { node: block, as: "dangling" };
 };
 
+/**
+ * A comment between a head and its block: prettier moves it into the block, oxfmt keeps it before the `{`, with
+ * the line breaks around it.
+ */
+const intoBlock = (c: CommentContext<JsOptions>, block: number): CommentTarget =>
+  c.options.compat === "oxfmt" ? { node: block, as: "leading" } : blockFirst(c, block);
+
 const FUNCTIONS = new Set([
   "function_declaration",
   "function_expression",
@@ -400,13 +407,13 @@ const functionBody = (c: CommentContext<JsOptions>): CommentTarget | undefined =
   const { enclosing, following, placement, text } = c;
   if (
     placement === "remaining" ||
-    text.startsWith("/*") ||
+    (text.startsWith("/*") && c.options.compat !== "oxfmt") ||
     !FUNCTIONS.has(kind(c, enclosing)) ||
     following === undefined ||
     following !== field(c, enclosing, "body")
   )
     return;
-  return blockFirst(c, following);
+  return intoBlock(c, following);
 };
 
 /**
@@ -427,7 +434,7 @@ const arrowBody = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   if (arrow === -1 || kids.indexOf(comment) < arrow) return;
   // `=> // c` then `{` on the next line: the comment moves into the block, keeping the `{` on the arrow's line.
   return c.placement === "endOfLine" && kind(c, following) === "statement_block"
-    ? blockFirst(c, following)
+    ? intoBlock(c, following)
     : { node: following, as: "leading" };
 };
 
@@ -504,10 +511,14 @@ const propertySignatureColon = (c: CommentContext<JsOptions>): CommentTarget | u
 };
 
 /** `a: // c` then the body: a comment in a labeled statement leads the statement (handleLabeledStatementComments). */
-const labeled = (c: CommentContext<JsOptions>): CommentTarget | undefined =>
-  c.placement !== "remaining" && kind(c, c.enclosing) === "labeled_statement"
-    ? { node: c.enclosing, as: "leading" }
-    : undefined;
+const labeled = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  if (c.placement === "remaining" || kind(c, c.enclosing) !== "labeled_statement") return;
+  // oxfmt keeps one after the `:` there, before the body.
+  const body = field(c, c.enclosing, "body");
+  return c.options.compat === "oxfmt" && body !== undefined && c.following === body
+    ? { node: body, as: "leading" }
+    : { node: c.enclosing, as: "leading" };
+};
 
 /**
  * `default: // c` before the case's first statement: the comment dangles on the case, which prints it after the
@@ -522,8 +533,8 @@ const switchDefault = (c: CommentContext<JsOptions>): CommentTarget | undefined 
     following !== children(c, enclosing).find((n) => named(c, n) && isCode(c, n))
   )
     return;
-  return kind(c, following) === "statement_block" && text.startsWith("//")
-    ? blockFirst(c, following)
+  return kind(c, following) === "statement_block" && (text.startsWith("//") || c.options.compat === "oxfmt")
+    ? intoBlock(c, following)
     : { node: enclosing, as: "dangling" };
 };
 
@@ -681,7 +692,9 @@ const tryBlock = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
     return;
   if (kind(c, enclosing) === "catch_clause" && preceding !== undefined)
     return { node: preceding, as: "trailing" };
-  if (kind(c, following) === "statement_block") return blockFirst(c, following);
+  if (kind(c, following) === "statement_block") return intoBlock(c, following);
+  // oxfmt keeps one before `catch` or `finally` there.
+  if (c.options.compat === "oxfmt" && kind(c, following).endsWith("_clause")) return { node: following, as: "leading" };
   const body = kind(c, following).endsWith("_clause")
     ? lastChildWhere(c, following, (n) => kind(c, n) === "statement_block")
     : undefined;
@@ -731,7 +744,7 @@ const classHeader = (c: CommentContext<JsOptions>): CommentTarget | undefined =>
   )
     return { node: decorators.at(-1) as number, as: "trailing" };
   const body = field(c, cls, "body");
-  if (body !== undefined && following === body) return blockFirst(c, body);
+  if (body !== undefined && following === body) return intoBlock(c, body);
   const before = (n: number) =>
     tree.ord(comment) < tree.ord(firstLeaf(tree, n));
   const after = (n: number | undefined) =>

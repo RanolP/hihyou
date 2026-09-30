@@ -22,6 +22,8 @@ import {
   jsCtx,
   open,
   SOFT,
+  sBeforeBody,
+  sBreakParent,
   sHardline,
   sLine,
   sText,
@@ -321,15 +323,16 @@ function clause(s: JsStreamCtx, body: number | undefined, elseIf = false): void 
   if (body === undefined) return;
   const js = s.js;
   if (isEmpty(js, body)) {
-    if (hasComment(js, body, CF.Leading)) sText(" ");
+    if (hasComment(js, body, CF.Leading)) sBeforeBody(s, body);
     s.print(body);
     return;
   }
   const isBlock = kind(js, body) === "statement_block";
   const leading = getComments(js, body, CF.Leading)[0];
+  // oxfmt keeps a comment that starts on the head's line there, however many lines it spans.
   if (
     leading !== undefined &&
-    (src(js, leading).includes("\n") || js.tree.lf(leading) > 0)
+    ((src(js, leading).includes("\n") && js.options.compat !== "oxfmt") || js.tree.lf(leading) > 0)
   ) {
     if (isBlock) {
       sHardline();
@@ -675,6 +678,19 @@ const customs = {
     close();
   },
 
+  /** `try` and `finally`: the keyword, then each part the head keeps (`try {} catch {} finally {}`). */
+  "stmt.try": (node, ctx) => {
+    const s = jsCtx(ctx);
+    const js = s.js;
+    for (const c of children(js, node)) {
+      if (isComment(js, c)) continue;
+      if (named(js, c)) {
+        sBeforeBody(ctx, c);
+        s.print(c);
+      } else sTok(js, c);
+    }
+  },
+
   "stmt.catch": (node, ctx) => {
     const s = jsCtx(ctx);
     const js = s.js;
@@ -709,7 +725,7 @@ const customs = {
         sLine(SOFT);
       }
       sTok(js, anon(js, node, ")"));
-      sText(" ");
+      if (body !== undefined) sBeforeBody(ctx, body);
     }
     pr(s, body);
   },
@@ -756,6 +772,9 @@ const customs = {
     const body = field(js, node, "body");
     open(GROUP);
     sTok(js, anon(js, node, "do"));
+    // oxfmt keeps a line break after a comment before a `{`, which prettier's `line` gives only in a broken group.
+    const leading = kind(js, body) === "statement_block" ? getComments(js, body as number, CF.Leading)[0] : undefined;
+    if (js.options.compat === "oxfmt" && leading !== undefined && lfAfter(js.tree, leading) > 0) sBreakParent();
     clause(s, body);
     close();
     if (kind(js, body) === "statement_block") sText(" ");
@@ -966,15 +985,9 @@ const customs = {
     const body = field(js, node, "body");
     pr(s, field(js, node, "label"));
     sTok(js, anon(js, node, ":"));
-    if (
-      !(
-        body !== undefined &&
-        isEmpty(js, body) &&
-        !hasComment(js, body, CF.Leading)
-      )
-    )
-      sText(" ");
-    pr(s, body);
+    if (body === undefined) return;
+    if (!(isEmpty(js, body) && !hasComment(js, body, CF.Leading))) sBeforeBody(ctx, body);
+    s.print(body);
   },
 
   /** An expression statement's expression, after the `;` needsAsiGuard asks for. */
