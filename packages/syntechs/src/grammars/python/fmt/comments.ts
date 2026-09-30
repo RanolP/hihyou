@@ -969,8 +969,9 @@ export function normalizeComment(raw: string): string {
   if (/^[ !:#'|]/.test(content)) return text;
   if (content.startsWith(" ")) {
     const trimmed = content.replace(/^ +/, "");
-    if (trimmed.startsWith(" ")) return `# ${trimmed.trimStart()}`;
-    if (trimmed.startsWith("type:")) return `# ${trimmed}`;
+    // Black keeps a type pragma's non-breaking spaces behind a space, and drops those before a space.
+    if (trimmed.trimStart().startsWith("type:")) return `# ${content}`;
+    if (trimmed.startsWith(" ")) return `# ${trimmed}`;
     return `# ${content.slice(1)}`;
   }
   return `# ${content}`;

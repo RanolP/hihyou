@@ -900,6 +900,7 @@ export function writeLambdaParams(f: Fmt, e: Lambda, p: Parameters): void {
   if (before.length > 0) f.writeDangling(before);
   else if (cs.hasLeading(p)) sink.sLine(sink.HARD | sink.COLLAPSE);
   else sink.sText(" ");
+  f.writeLeading(cs.leading(p));
   sink.place(cs.hasAnyIn(p.start, p.end) || cs.has(p) ? params : sink.removeSoftLines(params));
 }
 

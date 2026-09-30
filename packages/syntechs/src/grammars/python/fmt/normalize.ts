@@ -355,11 +355,13 @@ function optional(tree: Tree, l: Lexeme, next: Lexeme | undefined): boolean {
         return optionalCaseParens(tree, parent);
       if (parentKind === "tuple" && withItemsTuple(tree, parent, false)) return true;
       if (parentKind === "tuple" || parentKind === "tuple_pattern") {
-        // Around a tuple already in parentheses, the tuple's own are the ones ruff may keep or drop.
+        // Around a tuple already in parentheses, the tuple's own are the ones ruff may keep or drop. A target
+        // reads `((k, v))`'s outer pair as a comma-less `tuple_pattern`, which only groups too.
         let outer = tree.parent(parent);
         while (
           outer !== NO_NODE &&
-          tree.kindName(outer) === "parenthesized_expression"
+          (tree.kindName(outer) === "parenthesized_expression" ||
+            (tree.kindName(outer) === "tuple_pattern" && grouping(tree, outer)))
         )
           outer = tree.parent(outer);
         return outer !== NO_NODE && bareTupleParents.has(tree.kindName(outer));

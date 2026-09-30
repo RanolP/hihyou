@@ -5,7 +5,7 @@ import { type Fmt, writeCommaIn } from "../builders.js";
 import { writeExpr, writeMaybeParenthesize } from "../expr.js";
 import { close, GROUP, open, sDsl, sText, sToken } from "../sink.js";
 import type { Comment } from "../comments.js";
-import { byteOffsetOf, endOf, firstToken, startOf } from "../trivia.js";
+import { byteOffsetOf, endOf, firstToken, startOf, tokens } from "../trivia.js";
 import { kids } from "./defs.js";
 
 /** Ruff's match patterns (pattern/*.rs), which a `match` statement's cases hold. */
@@ -105,7 +105,7 @@ export function readPattern(f: Fmt, n: number): Pat {
   const t = f.tree;
   const kind = (x: number) => t.kindName(x);
   const base = { node: n, start: startOf(t, n), end: endOf(t, n) };
-  const cs = kids(t, n).filter((x) => kind(x) !== "line_continuation");
+  const cs = kids(t, n).filter((x) => kind(x) !== "line_continuation" && kind(x) !== "comment");
   for (const x of cs)
     if (kind(x) === "ERROR" || t.missing(x)) unsupportedPattern(f, x);
   switch (kind(n)) {
@@ -347,6 +347,55 @@ function openComments(f: Fmt, open: number): Comment[] {
   );
 }
 
+/** The end-of-line comments after an item of a bracketed pattern ending at `end`, behind at most its comma. */
+function itemComments(f: Fmt, end: number): Comment[] {
+  return f.comments.all.filter((c) => {
+    if (c.line !== "eol" || c.start < end) return false;
+    let n = 0;
+    for (const t of tokens(f.tree, end, c.start)) if (t.kind !== "," || ++n > 1) return false;
+    return true;
+  });
+}
+
+/** Ruff's trailing comments of the item `write` prints, ending at `end`: they follow its comma, if any. */
+const withItemComments = (f: Fmt, end: number, write: () => void) => () => {
+  write();
+  f.writeTrailing(itemComments(f, end));
+};
+
+/** Where every item in the pattern's brackets ends, each one's end-of-line comments printed after it. */
+function itemEnds(f: Fmt, p: Pat): number[] {
+  switch (p.k) {
+    case "complex":
+      return [...itemEnds(f, p.left), ...itemEnds(f, p.right)];
+    case "seq":
+      return p.items.flatMap((x) => [
+        ...(p.type !== "bare" ? [outerEnd(f, x)] : []),
+        ...itemEnds(f, x),
+      ]);
+    case "map":
+      return [
+        ...p.pairs.flatMap((x) => [
+          outerEnd(f, x.value),
+          ...itemEnds(f, x.key),
+          ...itemEnds(f, x.value),
+        ]),
+        ...(p.rest ? [endOf(f.tree, p.rest.name)] : []),
+      ];
+    case "class":
+      return [
+        ...p.items.flatMap((x) => [outerEnd(f, x), ...itemEnds(f, x)]),
+        ...p.keywords.flatMap((k) => [k.end, ...itemEnds(f, k.value)]),
+      ];
+    case "as":
+      return itemEnds(f, p.pattern);
+    case "or":
+      return p.items.flatMap((x) => itemEnds(f, x));
+    default:
+      return [];
+  }
+}
+
 /** Every opening bracket the pattern prints, each one's end-of-line comment printed after it. */
 function openBrackets(p: Pat): number[] {
   const out = p.paren !== undefined ? [p.paren.open] : [];
@@ -381,13 +430,19 @@ function openBrackets(p: Pat): number[] {
   }
 }
 
-/** Whether every one of `comments`, a case pattern's, follows one of its opening brackets, the only place it prints one. */
+/**
+ * Whether every one of `comments`, a case pattern's, follows one of its opening brackets or ends an item's line,
+ * the only places it prints one.
+ */
 export function patternCommentsPrintable(
   f: Fmt,
   p: Pat,
   comments: readonly Comment[],
 ): boolean {
-  const printed = new Set(openBrackets(p).flatMap((b) => openComments(f, b)));
+  const printed = new Set([
+    ...openBrackets(p).flatMap((b) => openComments(f, b)),
+    ...itemEnds(f, p).flatMap((end) => itemComments(f, end)),
+  ]);
   return comments.every((c) => printed.has(c));
 }
 
@@ -464,13 +519,18 @@ export function sequence(f: Fmt, p: Pat & { k: "seq" }, frame: Frame): void {
       () => {
         pattern(f, only);
         comma(outerEnd(f, only));
+        f.writeTrailing(itemComments(f, outerEnd(f, only)));
       },
       frame.close,
       dangling,
     );
   const items = () =>
     f.writeJoinCommaSeparated(
-      p.items.map((x) => ({ end: outerEnd(f, x), write: () => pattern(f, x) })),
+      p.items.map((x) => {
+        const end = outerEnd(f, x);
+        const write = () => pattern(f, x);
+        return { end, write: p.type === "bare" ? write : withItemComments(f, end, write) };
+      }),
       p.end_,
       comma,
     );
@@ -485,20 +545,20 @@ export function mapping(f: Fmt, p: Pat & { k: "map" }, frame: Frame): void {
     return f.writeEmptyParenthesized(frame.open, dangling, frame.close);
   const entries = p.pairs.map(({ key, colon, value }) => ({
     end: outerEnd(f, value),
-    write: () => {
+    write: withItemComments(f, outerEnd(f, value), () => {
       open(GROUP);
       pattern(f, key);
       sToken(colon, f.text(colon));
       sText(" ");
       pattern(f, value);
       close();
-    },
+    }),
   }));
   const rest = p.rest;
   if (rest)
     entries.push({
       end: endOf(f.tree, rest.name),
-      write: () => sDsl(f.tree.parent(rest.star)),
+      write: withItemComments(f, endOf(f.tree, rest.name), () => sDsl(f.tree.parent(rest.star))),
     });
   f.writeParenthesized(
     frame.open,
@@ -525,21 +585,26 @@ export function classArguments(
           {
             end: outerEnd(f, only),
             // A lone argument keeps its parentheses only when it has its own.
-            write: () => pattern(f, only, only.paren ? "always" : "never"),
+            write: withItemComments(f, outerEnd(f, only), () =>
+              pattern(f, only, only.paren ? "always" : "never"),
+            ),
           },
         ]
       : [
-          ...p.items.map((x) => ({ end: outerEnd(f, x), write: () => pattern(f, x) })),
+          ...p.items.map((x) => ({
+            end: outerEnd(f, x),
+            write: withItemComments(f, outerEnd(f, x), () => pattern(f, x)),
+          })),
           ...p.keywords.map((k) => ({
             end: k.end,
-            write: () => {
+            write: withItemComments(f, k.end, () => {
               sDsl(f.tree.parent(k.name));
               if (k.alias === undefined) return;
               sText(" ");
               sToken(k.alias.as, f.text(k.alias.as));
               sText(" ");
               sToken(k.alias.name, f.text(k.alias.name));
-            },
+            }),
           })),
         ];
   f.writeParenthesized(
