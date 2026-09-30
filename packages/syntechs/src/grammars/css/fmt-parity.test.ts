@@ -130,6 +130,12 @@ const edgeCases: [string, string][] = [
     "raw-value-arguments",
     "a{b: bar(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) foo((1));c: x bar(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, cccccccccccc) foo((1));d: foo(1PX,#FFF,\"x\",(1)) (2);e: foo( a  b,(1),bar( x ,y ));f: calc(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb + (aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa))}",
   ],
+  // A comment inside a math function's calc sum or group printed in place; oxc's calc printer flushes none, so it
+  // prints after the whole argument.
+  [
+    "math-operand-comment",
+    "a{b:calc( (/* c */ 1px) );c:max((/* c */ 1px), 2px);d:calc((1px) /* d */ + (/* c */ 2px));--x:calc(1px /* c */ + 2px)}",
+  ],
   // An at-rule's params print as raw text, which once dropped the comments attached to them.
   ["at-rule-param-comment", "@counter-style /* c */ thumbs {}"],
   [

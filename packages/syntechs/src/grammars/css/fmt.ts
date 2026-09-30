@@ -703,6 +703,8 @@ const handleComment: CommentHandler<CssOptions> = ({ tree, enclosing, preceding,
     (valueArguments(tree, enclosing) && !rawArguments(enclosing, tree));
   if ((ownComments && text.startsWith("/*")) || layerList(enclosing, tree))
     return { node: enclosing, as: "dangling" };
+  const operand = mathOperand(tree, enclosing);
+  if (operand !== undefined && text.startsWith("/*")) return { node: operand, as: "trailing" };
   if (tree.kindName(enclosing) === "rule_set" && following !== undefined && tree.kindName(following) === "block")
     return { node: enclosing, as: "dangling" };
   if (preceding === undefined) return undefined;
@@ -729,6 +731,23 @@ function valueArguments(tree: FormatTree, node: number): boolean {
     if (kind === "block" || kind === "at_rule" || kind === "postcss_statement") return false;
   }
   return false;
+}
+
+/**
+ * The argument of a math function (`calc((1px) /* c *\/ + 2px)`) holding `node`, a calc sum or group inside it.
+ * oxc's calc printer flushes no comment of its own, so a comment inside one prints after the whole argument.
+ */
+function mathOperand(tree: FormatTree, node: number): number | undefined {
+  let operand = node;
+  while (["binary_expression", "parenthesized_value"].includes(tree.kindName(operand))) {
+    const up = tree.parent(operand);
+    if (tree.kindName(up) === "arguments") {
+      const math = mathFunctions.has(tree.text(tree.child(tree.parent(up), 0)).toLowerCase());
+      return math && valueArguments(tree, up) && !rawArguments(up, tree) ? operand : undefined;
+    }
+    operand = up;
+  }
+  return undefined;
 }
 
 /**
