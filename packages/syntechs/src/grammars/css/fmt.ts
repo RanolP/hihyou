@@ -1051,6 +1051,16 @@ const mathFunctions = new Set(
 );
 
 /**
+ * A word CSS Syntax lexes with a delim token its typed grammar has no place for (`a*c`, `a%c`, `a.c`, `a@c`), where
+ * a `/` is a division, a `#name` a hash and a `$name` a Sass variable.
+ */
+const delimWord = (text: string) =>
+  !/^u\+[\da-f?]/i.test(text) &&
+  [...text.matchAll(rawTokenPattern)].some(
+    (m) => m.groups?.char !== undefined && m[0] !== "/" && !(m[0] === "$" && new RegExp(`^${nameStart}`).test(text.slice((m.index ?? 0) + 1))),
+  );
+
+/**
  * A declaration's value oxc-css-parser's typed grammar cannot read to its end, so it falls back to raw tokens. That
  * grammar takes a `( … )` group only as a calc operand (`calc((1px + 2px) * 2)`) holding one calc sum (`(1px +2px)`
  * is two values), so any other group (`$map: (a: 1)`, `fn( (1) )`) makes the value raw; so does a `{ … }` outside
@@ -1065,6 +1075,7 @@ function oxcRaw(decl: number, t: FormatTree): boolean {
       const k = t.kindName(c);
       if (k === "parenthesized_value" && !(inMath && calcSum(c))) return true;
       if (k === "brace_value" && !inCall) return true;
+      if (k === "plain_value" && !inCall && delimWord(t.text(c))) return true;
       const math =
         k === "call_expression"
           ? mathFunctions.has(t.text(t.child(c, 0)).toLowerCase())
