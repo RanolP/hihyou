@@ -122,6 +122,12 @@ const edgeCases: [string, string][] = [
     "custom-property-calc-parens",
     ".card-header-long-selector-name{--bs-card-inner-border-radius:calc(var(--bs-border-radius) - (var(--bs-border-width)));--a:calc( (1px + 2px) * 2 );--b:max( (1px), 2px );$c:fn(calc( (1px) ));--d:fn( (1) );--e:calc( (1px+2px) );--f:calc( (1px, 2px) );--g:-o-calc( (1px) );--h:(1) calc((2))}",
   ],
+  // A function's arguments in a value holding a paren group oxc-css-parser rejects broke one per line; oxfmt lays the
+  // raw value's tokens out as one fill, where no line breaks after a comma, and keeps the comments among them.
+  [
+    "raw-value-arguments",
+    "a{b: bar(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) foo((1));c: x bar(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, cccccccccccc) foo((1));d: foo(1PX,#FFF,\"x\",(1)) (2);e: foo( a  b,(1),bar( x ,y ));f: calc(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb + (aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa))}",
+  ],
   // An at-rule's params print as raw text, which once dropped the comments attached to them.
   ["at-rule-param-comment", "@counter-style /* c */ thumbs {}"],
   [

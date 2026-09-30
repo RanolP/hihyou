@@ -186,12 +186,21 @@ export const css = format({
         adjacent(),
       ),
     // A function's as written inside `url()`, a space wherever the source has a gap (postcss-value-parser's one
-    // word, trimmed), else broken inside the parentheses: a function's as words, a pseudo-class's as selectors.
+    // word, trimmed); in a value oxfmt reads as raw tokens (fmt.ts's `rawArguments`), a space after each comma and
+    // never broken; else broken inside the parentheses: a function's as words, a pseudo-class's as selectors.
     arguments: () =>
       either(
         all(parentIs("call_expression"), ancestor("call_expression", { holds: calledAs("url") })),
         inOrder({ join: "gap", tight: { after: ["("], before: [")"] } }),
         either(
+          when("rawArguments"),
+          inOrder({
+            join: "gap",
+            tight: { after: ["("], before: [")", ","] },
+            spaceWhen: { after: [","] },
+            verbatim: { except: ["call_expression", "parenthesized_value"] },
+          }),
+          either(
           parentIs("call_expression"),
           grpParen(
             splitOn(",", {
@@ -208,6 +217,7 @@ export const css = format({
               wrapItem: when("longSelector"),
               layout: { between: "line" },
             }),
+          ),
           ),
         ),
       ),

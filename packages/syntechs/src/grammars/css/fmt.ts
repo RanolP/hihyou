@@ -195,6 +195,7 @@ export const customs = {
   /** A declaration with nothing between its `:` and its `;` (`--empty:;`). */
   emptyValue: (node, ctx) => code(node, ctx).every((c) => !ctx.tree.named(c) || kind(c, ctx) === "property_name"),
   unparsedValue: (node, ctx) => unparsedUrl(node, ctx) || rawValue(node, ctx),
+  rawArguments: (node, ctx) => rawArguments(node, ctx.tree),
   /** A media query list holding a comment, which `mediaQueries` prints as postcss-media-query-parser splits it. */
   mediaComments: (node, ctx) => mediaAtoms(node, ctx).some((c) => isComment(c, ctx)),
   ownWord: (node, ctx) => ownWord(node, ctx),
@@ -685,7 +686,10 @@ export function important(node: number): void {
  * comment is a statement of its own: one that starts the line the statement before it ends trails that statement.
  */
 const handleComment: CommentHandler<CssOptions> = ({ tree, enclosing, preceding, following, placement, text }) => {
-  if ((tree.kindName(enclosing) === "import_statement" || valueArguments(tree, enclosing)) && text.startsWith("/*"))
+  const ownComments =
+    tree.kindName(enclosing) === "import_statement" ||
+    (valueArguments(tree, enclosing) && !rawArguments(enclosing, tree));
+  if (ownComments && text.startsWith("/*"))
     return { node: enclosing, as: "dangling" };
   if (tree.kindName(enclosing) === "rule_set" && following !== undefined && tree.kindName(following) === "block")
     return { node: enclosing, as: "dangling" };
@@ -854,19 +858,17 @@ const mathFunctions = new Set(
 );
 
 /**
- * A Sass variable's or custom property's value kept as written: one oxc-css-parser's typed grammar cannot read to
- * its end, so it falls back to raw tokens that oxfmt prints verbatim. That grammar takes a `( … )` group only as a
- * calc operand (`calc((1px + 2px) * 2)`) holding one calc sum (`(1px +2px)` is two values), so any other group
- * (`$map: (a: 1)`, `fn( (1) )`) makes the value raw; so does a `{ … }` outside any function (`[1, {"a":1}]`,
- * `function(x) { … }`).
+ * A declaration's value oxc-css-parser's typed grammar cannot read to its end, so it falls back to raw tokens. That
+ * grammar takes a `( … )` group only as a calc operand (`calc((1px + 2px) * 2)`) holding one calc sum (`(1px +2px)`
+ * is two values), so any other group (`$map: (a: 1)`, `fn( (1) )`) makes the value raw; so does a `{ … }` outside
+ * any function (`[1, {"a":1}]`, `function(x) { … }`).
  */
-function rawValue(decl: number, ctx: SCtx): boolean {
-  const t = ctx.tree;
-  if (!/^(\$|--)/.test(t.text(t.child(decl, 0)))) return false;
-  const calcSum = (paren: number) => code(paren, ctx).filter((c) => t.named(c)).length === 1;
+function oxcRaw(decl: number, t: FormatTree): boolean {
+  const calcSum = (paren: number) =>
+    children(paren, t).filter((c) => t.named(c) && !/^(js_)?comment$/.test(t.kindName(c))).length === 1;
   const raw = (n: number, inCall: boolean, inMath: boolean): boolean =>
     children(n, t).some((c) => {
-      const k = kind(c, ctx);
+      const k = t.kindName(c);
       if (k === "parenthesized_value" && !(inMath && calcSum(c))) return true;
       if (k === "brace_value" && !inCall) return true;
       const math =
@@ -876,6 +878,25 @@ function rawValue(decl: number, ctx: SCtx): boolean {
       return raw(c, inCall || k === "call_expression", math);
     });
   return raw(decl, false, false);
+}
+
+/** A Sass variable or custom property, whose raw value (`oxcRaw`) oxfmt prints verbatim. */
+const customName = (decl: number, t: FormatTree) => /^(\$|--)/.test(t.text(t.child(decl, 0)));
+
+const rawValue = (decl: number, ctx: SCtx): boolean => customName(decl, ctx.tree) && oxcRaw(decl, ctx.tree);
+
+/**
+ * A function's arguments in another property's raw value (`oxcRaw`): oxfmt lays the value's tokens out as one fill,
+ * a comma followed by a space no line may break, so the arguments never break as a group of their own.
+ */
+function rawArguments(node: number, t: FormatTree): boolean {
+  if (t.kindName(node) !== "arguments" || t.kindName(t.parent(node)) !== "call_expression") return false;
+  for (let up = t.parent(node); up !== NO_NODE; up = t.parent(up)) {
+    const k = t.kindName(up);
+    if (k === "declaration") return !customName(up, t) && oxcRaw(up, t);
+    if (k === "block" || k === "at_rule" || k === "postcss_statement") return false;
+  }
+  return false;
 }
 
 /** The source between `prev` and `c`, less any whitespace ending a line. */
