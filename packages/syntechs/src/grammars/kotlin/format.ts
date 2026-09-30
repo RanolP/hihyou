@@ -125,6 +125,7 @@ export const kotlin = format({
     // `@Suppress("X") b = f()` keeps its annotation, which the grammar makes a statement of its own, on the line.
     statements: ($) => [
       either(when("lambdaWrittenBroken"), breakParent, []),
+      either(when("blankAfterBrace"), hardline, []),
       lines($.children, { tokens: true, sameLine: when("annotatedOnItsLine") }),
     ],
 
@@ -191,8 +192,18 @@ export const kotlin = format({
     object_declaration: () => decl(spaced()),
     object_literal: () => spaced(),
     companion_object: () => decl(spaced()),
+    // ktfmt keeps a blank line the source has after the `{`, as it does in a block (`statements`).
     class_body: ($) =>
-      either(isEmpty, ["{", "}"], ["{", indent([hardline, lines($.children, { blank, follow })]), hardline, "}"]),
+      either(
+        isEmpty,
+        ["{", "}"],
+        [
+          "{",
+          indent([hardline, either(when("blankAfterBrace"), hardline, []), lines($.children, { blank, follow })]),
+          hardline,
+          "}",
+        ],
+      ),
     enum_class_body: () => custom("enumBody"),
     enum_entry: () => decl(spaced()),
     // `class Foo @Inject constructor(...)`: once the header overflows, `constructor` and its modifiers go on a line

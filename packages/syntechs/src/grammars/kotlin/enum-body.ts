@@ -22,8 +22,8 @@ function semicolonLineAfter(ctx: StreamCtx<unknown>, c: number): boolean {
 }
 
 /**
- * One entry per line, the source's blank lines between them dropped. Two or more entries end in a trailing comma,
- * and a lone entry in none; where members follow, the last entry ends in `;` instead (a `;` alone opens a body
+ * One entry per line, the source's blank lines between them dropped (but one after the `{`). Two or more entries
+ * end in a trailing comma, and a lone entry in none; where members follow, the last entry ends in `;` instead (a `;` alone opens a body
  * with no entries). Then the members as a class body prints them, after a blank line. A body holding neither
  * entries, members nor comments prints `{}`, whatever `;`s it has.
  */
@@ -48,13 +48,16 @@ export function enumBody(node: number, ctx: StreamCtx<unknown>): void {
   };
   const semicolon = tokenChild(t, node, ";", 0);
 
-  token("{", tokenChild(t, node, "{", 0));
+  const brace = tokenChild(t, node, "{", 0);
+  token("{", brace);
   if (items.length === 0 && dangling.length === 0) {
     token("}", tokenChild(t, node, "}", 0));
     return;
   }
   open(INDENT);
   sHardline();
+  // ktfmt keeps a blank line after the `{`, as it does in a class body.
+  if (items.length > 0 && brace !== -1 && nextLineEmpty(t, brace)) sHardline();
   for (const [i, entry] of entries.entries()) {
     if (i > 0) sHardline();
     ctx.print(entry);

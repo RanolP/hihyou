@@ -10,7 +10,7 @@ import { defineLanguage, type Language, type PrintArgs } from "../../fmt/rules.j
 import { close, INDENT, open, sHardline, sText, sToken } from "../../fmt/stream.js";
 import { docCommentWords, kdoc } from "../../fmt/dsl/doc-comment.js";
 import type { ImportRule, PredicateRule } from "../../fmt/dsl/runtime.js";
-import { newlineBetween } from "../../fmt/text.js";
+import { newlineBetween, nextLineEmpty } from "../../fmt/text.js";
 import { type FormatTree, firstLeaf, prevLeaf } from "../../fmt/tree.js";
 import { printLeadingComments } from "../../fmt/stream-format.js";
 import type { StreamCtx, StreamRule, StreamRules } from "../../fmt/stream-format.js";
@@ -430,6 +430,18 @@ export const customs = {
     return (
       t.kindName(arg) === "value_argument" && t.count(arg) === 1 && t.kindName(t.child(arg, 0)) === "lambda_literal"
     );
+  },
+  /**
+   * Of a class body, or a block's statements: the source leaves a blank line after the `{`, which ktfmt keeps but
+   * in a lambda. Not before statements with a comment ahead of them, which prints before this rule runs.
+   */
+  blankAfterBrace: (node, ctx) => {
+    const t = ctx.tree;
+    const block = t.kindName(node) === "statements";
+    const owner = block ? t.parent(node) : node;
+    if (t.kindName(owner) === "lambda_literal" || (block && ctx.leadingComments(node).length > 0)) return false;
+    const brace = childOf(t, owner, "{");
+    return brace !== -1 && nextLineEmpty(t, brace);
   },
   /** ktfmt gives a broken argument list a trailing comma only when it holds two or more arguments. */
   manyArguments: (node, ctx) => ctx.items(node).length > 1,
