@@ -289,7 +289,7 @@ function printBinaryishExpressions(
 const isBooleanTypeCoercion = (ctx: JsCtx, n: number | undefined) =>
   n !== undefined &&
   kind(ctx, n) === "call_expression" &&
-  !isOptional(ctx, n) &&
+  (!isOptional(ctx, n) || ctx.options.compat === "oxfmt") &&
   callArguments(ctx, n).length === 1 &&
   kind(ctx, callee(ctx, n)) === "identifier" &&
   src(ctx, callee(ctx, n) as number) === "Boolean";
