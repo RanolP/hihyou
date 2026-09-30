@@ -443,7 +443,7 @@ export const kotlin = format({
     class_body: { blankLines: "force" },
     statements: { blankLines: "force" },
     when_expression: { blankLines: "force" },
-    value_arguments: { breakWhen: when("writtenBroken") },
+    value_arguments: { breakWhen: any(when("writtenBroken"), when("typeArgumentsBroken")) },
     function_value_parameters: { breakWhen: when("writtenBroken") },
     function_type_parameters: { breakWhen: when("writtenBroken") },
     collection_literal: { breakWhen: when("writtenBroken") },

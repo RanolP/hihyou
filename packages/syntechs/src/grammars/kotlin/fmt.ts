@@ -8,7 +8,7 @@ import {
   prettierSettings,
 } from "../../fmt/options.js";
 import { defineLanguage, type Language, type PrintArgs } from "../../fmt/rules.js";
-import { close, GROUP, INDENT, open, sHardline, sLine, sText, sToken } from "../../fmt/stream.js";
+import { close, GROUP, HARD, IF_BROKEN, IF_FLAT, INDENT, open, sHardline, sLine, SOFT, sText, sToken } from "../../fmt/stream.js";
 import { docCommentWords, kdoc } from "../../fmt/dsl/doc-comment.js";
 import type { ImportRule, PredicateRule } from "../../fmt/dsl/runtime.js";
 import { newlineBetween, nextLineEmpty } from "../../fmt/text.js";
@@ -273,6 +273,23 @@ function backingField(t: FormatTree, node: number): boolean {
 const listed = new Set(["value_argument", "parameter", "class_parameter"]);
 
 /**
+ * ktfmt (its trailing-comma pass) breaks a parenthesized list of two or more items that the source writes across
+ * lines, and gives it a trailing comma; a single item never forces the break, nor does a trailing comma.
+ */
+const writtenBroken: PredicateRule<KotlinOptions> = (node, ctx) => {
+  const t = ctx.tree;
+  if (!t.text(node).includes("\n")) return false;
+  if (/^(collection_literal|type_arguments|type_parameters)$/.test(t.kindName(node)))
+    return ctx.items(node).filter((c) => !recoveredComma(t, c)).length > 1;
+  // A function type's parameters: its types, each with its modifiers, or its named parameters.
+  if (t.kindName(node) === "function_type_parameters")
+    return ctx.items(node).filter((c) => !recoveredComma(t, c) && t.kindName(c) !== "type_modifiers").length > 1;
+  let items = 0;
+  for (let i = 0; i < t.count(node); i++) if (listed.has(t.kindName(t.child(node, i)))) items++;
+  return items > 1;
+};
+
+/**
  * A trailing comma as tree-sitter-kotlin 0.3.8 recovers it where it takes none: in a collection literal, a type
  * argument or parameter list, a function type's parameters or before a lambda's `->`. It reads the comma as an
  * ERROR, or keeps it as a separator and reads an empty item after it. ktfmt drops the comma where the list fits
@@ -514,21 +531,19 @@ export const customs = {
     if (prev !== -1 && t.kindName(prev) === "label") return true;
     return prev !== -1 && t.kindName(prev) === "annotation" && !newlineBetween(t, firstLeaf(t, prev), firstLeaf(t, node));
   },
+  writtenBroken,
   /**
-   * ktfmt (its trailing-comma pass) breaks a parenthesized list of two or more items that the source writes across
-   * lines, and gives it a trailing comma; a single item never forces the break, nor does a trailing comma.
+   * Of a call's arguments: the call's type arguments are writtenBroken. ktfmt's call is one level, so the forced
+   * break of `<…>` breaks the `(…)` after it too (`>(` / `3` / `)`).
    */
-  writtenBroken: (node, ctx) => {
+  typeArgumentsBroken: (node, ctx) => {
     const t = ctx.tree;
-    if (!t.text(node).includes("\n")) return false;
-    if (/^(collection_literal|type_arguments|type_parameters)$/.test(t.kindName(node)))
-      return ctx.items(node).length > 1;
-    // A function type's parameters: its types, each with its modifiers, or its named parameters.
-    if (t.kindName(node) === "function_type_parameters")
-      return ctx.items(node).filter((c) => !recoveredComma(t, c) && t.kindName(c) !== "type_modifiers").length > 1;
-    let items = 0;
-    for (let i = 0; i < t.count(node); i++) if (listed.has(t.kindName(t.child(node, i)))) items++;
-    return items > 1;
+    const p = t.parent(node);
+    for (let i = 0; i < t.count(p) && t.child(p, i) !== node; i++) {
+      const c = t.child(p, i);
+      if (t.kindName(c) === "type_arguments" && writtenBroken(c, ctx)) return true;
+    }
+    return false;
   },
   backingField:(node, ctx) => backingField(ctx.tree, node),
   /** Of a bracketed list: the source ends it with a comma before its closing bracket. */
@@ -768,15 +783,61 @@ const hangs = (t: FormatTree, body: number) => {
 };
 
 /**
- * An `if` as ktfmt's visitIf lays it out: a body that is no block hangs off `)` or `else` (hangs), and the `else`
- * after such a then branch breaks onto the `if`'s own line when the whole `if` does not fit (UNIFIED). An empty then
- * branch (`if (c) ; else x`, or none at all) loses its `;` and keeps its spaces, two between `)` and `else`.
+ * The inside of a keyword's `(condition)` (ktfmt's emitKeywordWithCondition): a group that breaks after `(` and
+ * before `)`, the condition indented between. Returns the group, which `closeCondition` closes.
+ */
+const openCondition = () => {
+  const group = open(GROUP);
+  open(INDENT);
+  sLine(SOFT);
+  return group;
+};
+const closeCondition = () => {
+  close();
+  sLine(SOFT);
+  close();
+};
+
+/** `while (c)`, `do … while (c)` and `when (s)`: their children spaced, the condition in its parentheses as openCondition lays it out. */
+const keywordCondition = <O>(node: number, ctx: StreamCtx<O>) => {
+  const t = ctx.tree;
+  const items = new Set(ctx.items(node));
+  let prev = -1;
+  let inside = false;
+  for (let i = 0; i < t.count(node); i++) {
+    const c = t.child(node, i);
+    const named = t.named(c);
+    if (named && !items.has(c)) continue;
+    if (prev !== -1 && t.text(prev) !== "(" && t.text(c) !== ")") sText(" ");
+    prev = c;
+    if (named) {
+      ctx.print(c);
+      continue;
+    }
+    if (t.text(c) === ")" && inside) {
+      closeCondition();
+      inside = false;
+    }
+    sToken(c, t.text(c));
+    if (t.text(c) === "(" && !inside) {
+      openCondition();
+      inside = true;
+    }
+  }
+};
+
+/**
+ * An `if` as ktfmt's visitIf lays it out: the condition as openCondition lays it out, a body that is no block
+ * hangs off `)` or `else` (hangs), onto a line of its own after a broken condition, and the `else` after such a then
+ * branch breaks onto the `if`'s own line when the whole `if` does not fit (UNIFIED). An empty then branch
+ * (`if (c) ; else x`, or none at all) loses its `;` and keeps its spaces, two between `)` and `else`.
  */
 const ifExpression = <O>(node: number, ctx: StreamCtx<O>) => {
   const t = ctx.tree;
   const items = new Set(ctx.items(node));
   let prev = -1;
   let hungThen = false;
+  let condition = -1;
   open(GROUP);
   for (let i = 0; i < t.count(node); i++) {
     const c = t.child(node, i);
@@ -784,10 +845,17 @@ const ifExpression = <O>(node: number, ctx: StreamCtx<O>) => {
     if (named && !items.has(c)) continue;
     const next = i + 1 < t.count(node) ? t.child(node, i + 1) : -1;
     if (named && prev !== -1 && (t.text(prev) === ")" || t.text(prev) === "else") && hangs(t, c)) {
-      if (t.text(prev) === ")") hungThen = true;
       open(GROUP);
       open(INDENT);
-      sLine(0);
+      if (t.text(prev) === ")") {
+        hungThen = true;
+        open(IF_BROKEN, condition);
+        sLine(HARD);
+        close();
+        open(IF_FLAT, condition);
+        sLine(0);
+        close();
+      } else sLine(0);
       ctx.print(c);
       close();
       close();
@@ -798,17 +866,53 @@ const ifExpression = <O>(node: number, ctx: StreamCtx<O>) => {
       if (t.text(c) === "else" && hungThen) sLine(0);
       else sText(" ");
     }
+    if (!named && t.text(c) === ")" && condition !== -1) closeCondition();
     if (named) ctx.print(c);
     else if (t.text(c) === ";" && next !== -1 && t.text(next) === "else") {
       // The spaces around the empty branch are the joins on either side of it.
     } else {
       if (t.text(c) === "else" && t.text(prev) === ")") sText(" ");
       sToken(c, t.text(c));
+      if (t.text(c) === "(") condition = openCondition();
     }
     prev = c;
   }
   close();
 };
+
+/**
+ * An index (`[a, b]`) as ktfmt's visitArrayAccessExpression lays it out: a break after `[` in a group of its own,
+ * then the indices in an inner group, each on a line of its own once they do not fit, and `]` right after the last.
+ * One the source ends with a comma breaks as a list with its `]` on a line of its own (the generated rule).
+ */
+const indexSuffix =
+  <O>(generated: StreamRule<O> | undefined): StreamRule<O> =>
+  (node, ctx) => {
+    const t = ctx.tree;
+    const kids = Array.from({ length: t.count(node) }, (_, i) => t.child(node, i));
+    if (customs.commaWritten(node, ctx as unknown as StreamCtx<KotlinOptions>) || kids.some((c) => ctx.isComment(c)))
+      return generated?.(node, ctx);
+    const items = new Set(ctx.items(node));
+    open(GROUP);
+    for (let i = 0; i < t.count(node); i++) {
+      const c = t.child(node, i);
+      if (t.named(c)) {
+        if (items.has(c)) ctx.print(c);
+        continue;
+      }
+      if (t.text(c) === "]") {
+        close();
+        close();
+      }
+      sToken(c, t.text(c));
+      if (t.text(c) === "[") {
+        open(INDENT);
+        sLine(SOFT);
+        open(GROUP);
+      } else if (t.text(c) === ",") sLine(0);
+    }
+    close();
+  };
 
 /**
  * The generated rules, but a member chain prints from its root as ktfmt lays one out (chain.ts), a trimmed
@@ -880,6 +984,8 @@ function withChains<O>(stream: StreamRules<O>): StreamRules<O> {
   for (const kind of ["class_declaration", "object_declaration"]) rules.set(kind, supertypes(stream.rules.get(kind)));
   rules.set("range_expression", rangeExpression(stream.rules.get("range_expression")));
   rules.set("class_body", classBody(stream.rules.get("class_body")));
+  for (const kind of ["while_statement", "do_while_statement", "when_subject"]) rules.set(kind, keywordCondition);
+  rules.set("indexing_suffix", indexSuffix(stream.rules.get("indexing_suffix")));
   rules.set("string_literal", trimmedStrings(stream.rules.get("string_literal")));
   rules.set("lambda_literal", lambdas(stream.rules.get("lambda_literal")));
   rules.set("lambda_parameters", lambdaParameters);
