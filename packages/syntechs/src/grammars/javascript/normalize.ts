@@ -30,7 +30,7 @@ export const jsNormalize: Normalize = (lexemes, text, tree) => {
     }
     // Prettier reflows a template in another language (print/embed.ts), whose whitespace means nothing to it.
     if (isEmbedFragment(tree, l.node)) {
-      const words = l.text.replace(/\s+/g, "");
+      const words = cssEndSemicolons(tree, l.node, l.text).replace(/\s+/g, "");
       return words === "" ? undefined : `embed:${words}@${places.of(l.node)}`;
     }
     const value = valueForm(tree, l, l.node, lexemes, i);
@@ -44,6 +44,19 @@ const isJestEachFragment = (tree: Tree, n: number) => {
   const p = tree.parent(n);
   return p !== NO_NODE && tree.kindName(p) === "template_string" && isJestEachTemplate(tree, p);
 };
+
+/**
+ * Embedded CSS less each `;` that ends a block or the template, where prettier's SCSS printer adds one (`b: a` is
+ * `b: a;`, `b: a // c` is `b: a; // c`) and where it means nothing. Only the template's last fragment ends it: a `;`
+ * before a `${…}` separates what follows.
+ */
+function cssEndSemicolons(tree: Tree, fragment: number, text: string): string {
+  const template = tree.parent(fragment);
+  if (embedLanguage(tree, template) !== "css") return text;
+  const last = tree.child(template, tree.count(template) - 2) === fragment;
+  const comments = String.raw`(?:\s|/\*[^]*?\*/|//[^\n]*)*`;
+  return text.replace(new RegExp(`;(?=${comments}(?:\\}${last ? "|$" : ""}))`, "g"), "");
+}
 
 const isEmbedFragment = (tree: Tree, n: number) => {
   if (tree.kindName(n) !== "string_fragment") return false;

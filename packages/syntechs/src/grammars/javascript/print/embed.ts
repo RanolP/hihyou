@@ -132,7 +132,7 @@ function html(node: number, raws: string[], subs: () => Part[], tick: Tick, tabW
 // embed/css.js's printEmbedCss. Prettier's placeholder, `@prettier-placeholder-N-id`, is an at-word scss reads
 // where tree-sitter-css reads none; an identifier stands wherever a value, a selector or a property does.
 function cssEmbed(ctx: JsStreamCtx, node: number, raws: string[], subs: () => Part[], tick: Tick): Part | undefined {
-  const text = raws.map((q, i) => (i === 0 ? q : `prettier-placeholder-${i - 1}${q}`)).join("");
+  const text = withLastSemicolon(raws.map((q, i) => (i === 0 ? q : `prettier-placeholder-${i - 1}${q}`)).join(""));
   const tree = parseTree(cssLanguage, text);
   if (tree.errorChars > 0 || brokenNodes(tree) !== undefined || scssOnly(tree)) return undefined;
   const parts = subs();
@@ -167,6 +167,20 @@ function cssEmbed(ctx: JsStreamCtx, node: number, raws: string[], subs: () => Pa
   });
   // Prettier fails the embed when a placeholder did not print as a token of its own.
   return failed || seen.size !== parts.length ? undefined : printed;
+}
+
+// SCSS ends the template's last declaration as a block's (`b: a /* c */` is `b: a; /* c */`), where tree-sitter-css
+// misses its `;`.
+function withLastSemicolon(text: string): string {
+  const tree = parseTree(cssLanguage, text);
+  const last = tree.child(tree.root, tree.count(tree.root) - 1);
+  if (last === NO_NODE || tree.kindName(last) !== "declaration") return text;
+  const semi = tree.child(last, tree.count(last) - 1);
+  if (!tree.missing(semi)) return text;
+  let i = tree.count(last) - 2;
+  while (tree.kindName(tree.child(last, i)) === "comment") i--;
+  const at = tree.end(tree.child(last, i));
+  return `${text.slice(0, at)};${text.slice(at)}`;
 }
 
 // Prettier parses the embed as SCSS, where `//` opens a line comment and a value's `:` (`a:b`, `fn(a:b)`) stays

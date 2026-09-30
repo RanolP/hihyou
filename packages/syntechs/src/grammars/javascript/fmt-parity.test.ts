@@ -228,6 +228,9 @@ const edgeCases: [string, Target, string][] = [
   ["css-embed-value-colon", "js", "css`\n  b: a :b;\n  c: x(a:b);\n`;\n"],
   // A `//` inside a word (`x(http://a)`) is a line comment to SCSS too, which leaves the value broken: source kept.
   ["css-embed-url-in-word", "js", "css`b: x(http://a);`;\ncss`b: url(http://a);`;\n"],
+  // SCSS ends the template's last declaration and a block's with the `;` it adds, before a trailing comment; the
+  // missing `;` failed the embed, which printed the template as written, and the added one failed the check.
+  ["css-embed-inserted-semicolon", "js", "css`b: a`;\ncss`b: a /*e;*/`;\ncss`a{b: a}`;\ncss`b: ${x}; c: ${y}`;\n"],
   [
     "comments-prettier-moves",
     "ts",
