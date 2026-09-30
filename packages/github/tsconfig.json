@@ -3,11 +3,10 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
-    "module": "Preserve",
-    "moduleResolution": "Bundler",
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": []
   },
   "include": ["src"],
-  "references": [{ "path": "../engine" }, { "path": "../ui" }]
+  "exclude": ["src/**/*.test.ts"],
+  "references": [{ "path": "../engine" }]
 }
