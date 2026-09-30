@@ -39,7 +39,8 @@ function isFirstCallLike(f: Fmt, v: Expr, called: boolean): boolean {
 
 function isBaseTenNumber(f: Fmt, e: Expr): boolean {
   if (e.kind !== "Number") return false;
-  return !/^0[bBoOxX]/.test(f.text(e.ts));
+  const t = f.text(e.ts);
+  return !/^0[bBoOxX]/.test(t) && !/[jJ]$/.test(t);
 }
 
 /** A subscript's slice between its brackets, a tuple keeping its own parentheses or none. */

@@ -2,6 +2,7 @@
   "black/cases/allow_empty_first_line.py#{}",
   "black/cases/annotations.py#{}",
   "black/cases/async_stmts.py#{}",
+  "black/cases/attribute_access_on_number_literals.py#{}",
   "black/cases/backslash_before_indent.py#{\"target_version\":\"3.10\"}",
   "black/cases/beginning_backslash.py#{}",
   "black/cases/bracketmatch.py#{}",
