@@ -14,6 +14,7 @@ import {
   openIndentIfBreak,
   type Part,
   place,
+  sBreakParent,
   sLine,
   sLineSuffixBoundary,
   sText,
@@ -27,6 +28,7 @@ import {
   callArguments,
   callee,
   childWhere,
+  children,
   field,
   first,
   type HasTree,
@@ -82,7 +84,10 @@ export function sPrintAssignment(
   right: number | undefined,
 ): void {
   const leftPart = capture(left);
-  const layout = chooseLayout(ctx, node, leftPart, right);
+  const chosen = chooseLayout(ctx, node, leftPart, right);
+  const breakAfter = right !== undefined && oxfmtLineCommentBeforeRight(ctx.js, node, right);
+  const layout =
+    breakAfter && (chosen === "fluid" || chosen === "never-break-after-operator") ? "break-after-operator" : chosen;
   const printRight = () => {
     if (right !== undefined) ctx.print(right, { assignmentLayout: layout });
   };
@@ -94,6 +99,7 @@ export function sPrintAssignment(
         operator();
         within(GROUP, () =>
           within(INDENT, () => {
+            if (breakAfter) sBreakParent();
             sLine(0);
             printRight();
           }),
@@ -132,6 +138,7 @@ export function sPrintAssignment(
       groupedLeft();
       operator();
       return void within(INDENT, () => {
+        if (breakAfter) sBreakParent();
         sLine(0);
         printRight();
       });
@@ -142,6 +149,19 @@ export function sPrintAssignment(
     case "only-left":
       return place(leftPart);
   }
+}
+
+/**
+ * `a = // c⏎1`: oxfmt keeps a line comment that ends the line of the `=` (or of the left side, before it) there
+ * and breaks the right side onto the next line, where prettier's layout may pull the right side up before it.
+ */
+function oxfmtLineCommentBeforeRight(x: JsCtx, node: number, right: number): boolean {
+  if (x.options.compat !== "oxfmt") return false;
+  for (const c of children(x, node)) {
+    if (c === right) return false;
+    if (kind(x, c) === "comment" && src(x, c).startsWith("//") && x.tree.lf(c) === 0) return true;
+  }
+  return false;
 }
 
 const isDeclarator = (x: HasTree, n: number | undefined) =>
