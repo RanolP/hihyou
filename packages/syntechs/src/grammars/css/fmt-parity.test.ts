@@ -145,6 +145,9 @@ const edgeCases: [string, string][] = [
   // oxc-css-parser splits `a*b` and `a/b` in a raw value into three tokens and prints a space around `*` and a
   // `/` next to a word; syntechs kept the word whole.
   ["raw-value-operator", "a{b:a*b (1);c:a/b (1);d:a*b*c/d 1px/2px (1)}"],
+  // oxfmt prints a raw token's comment glued before it and a custom property's value verbatim with its comments;
+  // syntechs moved the comma's comment after a space and dropped a custom property's comments.
+  ["raw-value-comment", "a{b:foo(a/* c */ ,b) (1);c:foo(a/* c */ ) (1);--x:a/* c */ ,b (1);--y:a (1) /* c */;--z:a (1) /* c */ !important}"],
   // An at-rule's params print as raw text, which once dropped the comments attached to them.
   ["at-rule-param-comment", "@counter-style /* c */ thumbs {}"],
   [

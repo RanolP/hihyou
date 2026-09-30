@@ -944,15 +944,22 @@ function gapBefore(prev: number, c: number, t: FormatTree): string {
 /** The `:` of a declaration whose value prettier keeps as written (`unparsedValue`), one space, then the value. */
 export function colonThenSource(colon: number | undefined, node: number, ctx: SCtx): void {
   const t = ctx.tree;
-  const parts = code(node, ctx);
+  const parts = children(node, t);
   declarationColon(colon, node, ctx);
   const from = colon === undefined ? 1 : parts.indexOf(colon) + 1;
   // `!important` and Sass flags (`sassFlags`) one space after the value.
   const flag = (c: number) => kind(c, ctx) === "important" || kind(c, ctx) === "ERROR";
   const value = parts.slice(from).filter((c) => kind(c, ctx) !== ";" && !flag(c));
+  // The comments before the value are postcss's `between`, which `declarationColon` printed; the value's own print
+  // as written among its words.
+  while (value.length > 0 && isComment(value[0] as number, ctx)) value.shift();
   let prev = -1;
   for (const c of value) {
-    sLiteral(c, (prev === -1 ? " " : gapBefore(prev, c, t)) + t.text(c));
+    const gap = prev === -1 ? " " : gapBefore(prev, c, t);
+    if (isComment(c, ctx)) {
+      sText(gap);
+      ctx.comment(c);
+    } else sLiteral(c, gap + t.text(c));
     prev = c;
   }
   for (const c of parts.filter(flag)) {
