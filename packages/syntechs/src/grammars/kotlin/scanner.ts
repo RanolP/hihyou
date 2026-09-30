@@ -189,6 +189,12 @@ function scanAutomaticSemicolon(lexer: Lexer, valid: Uint8Array): boolean {
     case 33:
       lexer.advance(true);
       return la(lexer) !== 61;
+    // Kotlin continues an expression with `as` or `as?` on the next line, but not with a word such as `asList`.
+    case 97: // a
+      lexer.advance(true);
+      if (la(lexer) !== 115) return true;
+      lexer.advance(true);
+      return iswalpha(la(lexer)) || iswdigit(la(lexer)) || la(lexer) === 95;
     case 101: // e
       return !scanForWord(lexer, "lse");
     // tree-sitter-kotlin 0.3.8 took JavaScript's exception here and inserted none before `in` or `instanceof`,
