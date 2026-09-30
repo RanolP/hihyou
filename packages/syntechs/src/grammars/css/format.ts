@@ -59,6 +59,15 @@ const valueLayout: SplitLayoutOf<Cond> = loneBare({
 });
 /** An at-rule whose prelude prettier parses as a value. */
 const directive = firstText({ is: directives });
+/**
+ * Inside a media query's top-level `( … )`: prettier's media-feature-expression, whose text before any `:` it prints
+ * as written with each run of spaces as one, so `(not (  a  ))` keeps its inner gaps as `(not ( a ))`.
+ */
+const inMediaFeature = all(
+  ancestor("parenthesized_query"),
+  ancestor(["media_statement", "custom_media_statement"], { stop: ["block"] }),
+);
+const asWritten = () => inOrder({ join: "gap" });
 /** Inside a `directive`'s prelude. */
 const inDirective = ancestor(["at_rule", "postcss_statement"], { stop: ["block"], holds: directive });
 /** Statements one per line, keeping one blank line where the source has any. */
@@ -253,9 +262,9 @@ export const css = format({
     // space wherever the source has any gap.
     at_rule: () => custom("atRule"),
     postcss_statement: () => custom("postcssStatement"),
-    binary_query: spaced,
-    unary_query: spaced,
-    parenthesized_query: adjacent,
+    binary_query: () => either(inMediaFeature, asWritten(), inOrder(space)),
+    unary_query: () => either(inMediaFeature, asWritten(), inOrder(space)),
+    parenthesized_query: () => either(inMediaFeature, asWritten(), inOrder()),
     feature_query: () =>
       inOrder({ join: "gap", tight: { after: ["("], before: [")", ":"] }, spaceWhen: { after: [":"] } }),
     // prettier's media feature: as written, one space wherever the source has any gap.

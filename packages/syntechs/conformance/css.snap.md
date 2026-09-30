@@ -1,4 +1,4 @@
-css compatibility: 143/151 (94.70%), 0 refused (ok:false), 6 excluded
+css compatibility: 144/151 (95.36%), 0 refused (ok:false), 6 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -19,7 +19,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | css/parens/parens.css | 0/1 | 83.13% |
 | css/postcss-8-improment/test.css | 0/1 | 82.35% |
 | css/postcss-plugins/postcss-simple-vars.css | 0/1 | 77.78% |
-| css/stylefmt-repo/at-media/at-media.css | 0/1 | 95.24% |
 
 # Refused
 
