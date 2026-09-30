@@ -1234,6 +1234,21 @@ const oxfmtBeforeCallArguments = (c: CommentContext<JsOptions>): CommentTarget |
   return first !== undefined ? { node: first, as: "leading" } : undefined;
 };
 
+/** `((/* c *\/ a), b)`: oxfmt has no node for the parentheses around a sequence's first element, so a comment in them leads the sequence. */
+const oxfmtSequenceHeadParen = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, preceding, following } = c;
+  if (
+    c.options.compat !== "oxfmt" ||
+    kind(c, enclosing) !== "parenthesized_expression" ||
+    preceding !== undefined ||
+    following === undefined
+  )
+    return;
+  const seq = parent(c, enclosing);
+  if (seq === undefined || kind(c, seq) !== "sequence_expression" || children(c, seq).find((n) => isCode(c, n)) !== enclosing) return;
+  return { node: seq, as: "leading" };
+};
+
 // Where parentheses around a right-most value print nothing, so a comment inside them is past the value's end.
 const BARE_RIGHT = new Set([
   "assignment_expression",
@@ -1298,6 +1313,7 @@ const handlers = [
   oxfmtNewOpenParen,
   oxfmtAfterOptionalCall,
   oxfmtBeforeCallArguments,
+  oxfmtSequenceHeadParen,
   afterDeclare,
   typeCast,
   mappedTypeParts,
