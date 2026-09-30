@@ -1,0 +1,20 @@
+{
+  "name": "tree-sitter-json",
+  "version": "0.24.8",
+  "private": true,
+  "scripts": {
+    "postinstall": "node ../build.mjs"
+  },
+  "grammar": {
+    "sources": [
+      {
+        "repo": "tree-sitter/tree-sitter-json",
+        "commit": "ee35a6ebefcef0c5c416c0d1ccec7370cfca5a24",
+        "files": {
+          "grammar.js": "ecf4f5324171c5c1a94ba428c16711dc0316d3b2405ebf103be6e3eeb17de5dc",
+          "tree-sitter.json": "30d71de6bbd5c46237ff53746661b97ac31b426b263cf9baeb65e6d01f9f361d"
+        }
+      }
+    ]
+  }
+}

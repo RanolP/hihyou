@@ -12,6 +12,7 @@ import {
 import { jsxText, LABEL_JSX_TEXT, labelModes } from "./label.js";
 import {
   aliasAt,
+  FLAG_LITERAL,
   FLAG_NAMED,
   type Language,
   publicSymbol,
@@ -85,13 +86,14 @@ function symbols(lang: Language): Symbols {
   const external = new Set(lang.externalSymbolMap);
   for (let symbol = 0; symbol < count; symbol++) {
     const kind = symbolName(lang, publicSymbol(lang, symbol));
-    const named = (symbolFlags(lang, symbol) & FLAG_NAMED) !== 0;
+    const flags = symbolFlags(lang, symbol);
+    const named = (flags & FLAG_NAMED) !== 0;
     s.kind.push(kind);
     s.named.push(named);
     if (
       symbol > 0 &&
       symbol < lang.tokenCount &&
-      !named &&
+      (flags & FLAG_LITERAL) !== 0 &&
       !external.has(symbol)
     )
       s.fixedLength[symbol] = kind.length;

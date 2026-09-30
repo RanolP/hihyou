@@ -1,0 +1,21 @@
+{
+  "name": "tree-sitter-python",
+  "version": "0.25.0",
+  "private": true,
+  "scripts": {
+    "postinstall": "node ../build.mjs"
+  },
+  "grammar": {
+    "sources": [
+      {
+        "repo": "tree-sitter/tree-sitter-python",
+        "commit": "293fdc02038ee2bf0e2e206711b69c90ac0d413f",
+        "files": {
+          "grammar.js": "48bb681fdcc51784077b7d2cbc138a1994309400d32e4ac74fcd304d9fe8ad81",
+          "src/scanner.c": "6db82134ac2d4c90a1a1475487a625cface02662ebda9b7478cad9c7147e9afe",
+          "tree-sitter.json": "0682bc3796601f623928259e244fa45c113f286cac7606719db792911cf051f9"
+        }
+      }
+    ]
+  }
+}

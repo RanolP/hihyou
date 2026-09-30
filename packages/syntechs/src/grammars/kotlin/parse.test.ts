@@ -38,6 +38,18 @@ test("an `in` condition on its own line starts a new `when` entry", () => {
   expect(kinds).not.toContain("check_expression");
 });
 
+// A regression here calls the whole `a ?: C.g` with `<T>(r)`, since the call and the elvis tied, instead of `C.g`.
+test("type arguments call the postfix operand, not a binary expression", () => {
+  const tree = parseTree(language, "val x = a ?: C.g<T>(r)\n");
+  const stack = [tree.root];
+  let elvis = -1;
+  for (let n = stack.pop(); n !== undefined; n = stack.pop()) {
+    if (tree.kindName(n) === "elvis_expression") elvis = n;
+    for (let i = 0; i < tree.count(n); i++) stack.push(tree.child(n, i));
+  }
+  expect(tree.kindName(tree.child(elvis, tree.count(elvis) - 1))).toBe("call_expression");
+});
+
 // A regression here cuts `return emit(x)` into a bare `return` and a separate `emit(x)`, which changes what it means.
 test("a returned expression starting with `e` stays the return's value", () => {
   const tree = parseTree(language, "fun f() {\n  if (c) return emit(x)\n  return@f else1\n}\n");

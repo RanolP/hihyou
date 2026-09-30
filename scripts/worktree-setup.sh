@@ -37,10 +37,19 @@ link_shared_dir() {
 link_shared_dir packages/syntechs/corpus
 link_shared_dir research/parser-bench/inputs
 
+# Reuse the main checkout's fetched and generated grammars: packages/syntechs/grammars/build.mjs keys each by its
+# pinned sources and patch, so a grammar this worktree changes is regenerated rather than taken from the copy.
+grammar_cache=packages/syntechs/grammars/.cache
+if [ -d "$main_root/$grammar_cache" ] && [ ! -e "$worktree_root/$grammar_cache" ]; then
+  mkdir -p "$(dirname "$worktree_root/$grammar_cache")"
+  cp -Rp "$main_root/$grammar_cache" "$worktree_root/$grammar_cache"
+  echo "worktree-setup: copied $grammar_cache from the main checkout"
+fi
+
 # Reuse the main checkout's grammar bundles and TypeScript build output so `pnpm install`'s postinstall and
 # `pnpm run build` don't redo work every worktree already has, as long as the two checkouts agree on
-# pnpm-lock.yaml (a different lockfile can mean different grammar sources, so bundles built from it are
-# regenerated instead of copied).
+# pnpm-lock.yaml and the grammar packages' manifests and patches (any difference can mean different grammar
+# sources, so bundles built from them are regenerated instead of copied).
 copied_bundles=0
 shopt -s nullglob
 for bundle in "$main_root"/packages/syntechs/src/grammars/*/bundle.js; do
@@ -62,17 +71,26 @@ for pkg_dir in "$main_root"/packages/*/; do
 done
 shopt -u nullglob
 
+# What the bundles are built from: the lockfile, then each grammar package's manifest and patch.
+grammar_inputs() {
+  (
+    cd "$1"
+    shopt -s nullglob
+    cat pnpm-lock.yaml packages/syntechs/grammars/*/package.json packages/syntechs/grammars/*/grammar.patch
+  ) | sha256sum
+}
+
 skip_generate=0
 if [ "$copied_bundles" = 1 ] && [ -f "$main_root/pnpm-lock.yaml" ] &&
-  [ "$(sha256sum <"$main_root/pnpm-lock.yaml")" = "$(sha256sum <"$worktree_root/pnpm-lock.yaml")" ]; then
+  [ "$(grammar_inputs "$main_root")" = "$(grammar_inputs "$worktree_root")" ]; then
   skip_generate=1
 fi
 
 if [ "$skip_generate" = 1 ]; then
-  echo "worktree-setup: pnpm-lock.yaml matches the main checkout, reusing its copied grammar bundles"
+  echo "worktree-setup: pnpm-lock.yaml and the grammar patches match the main checkout, reusing its copied grammar bundles"
   HIHYOU_SKIP_GRAMMAR_GENERATE=1 pnpm install --frozen-lockfile
 else
-  echo "worktree-setup: pnpm-lock.yaml differs from the main checkout (or no bundles to reuse), regenerating"
+  echo "worktree-setup: pnpm-lock.yaml or a grammar patch differs from the main checkout (or no bundles to reuse), regenerating"
   pnpm install --frozen-lockfile
 fi
 

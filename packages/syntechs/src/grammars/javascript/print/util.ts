@@ -370,6 +370,54 @@ export function isJestEachTemplate(tree: FormatTree, template: number): boolean 
   return isTrigger(tree, eachOf(tree, object, /^(?:only|skip)$/));
 }
 
+/** A template string's language, which print/embed.ts formats in place of its text. */
+export type EmbedLanguage = "css" | "graphql" | "html";
+
+/** The sibling before `n` in its parent, else NO_NODE. */
+function prevSibling(tree: FormatTree, n: number): number {
+  const p = tree.parent(n);
+  if (p === NO_NODE) return NO_NODE;
+  let prev = NO_NODE;
+  for (let i = 0; i < tree.count(p); i++) {
+    const c = tree.child(p, i);
+    if (c === n) return prev;
+    prev = c;
+  }
+  return NO_NODE;
+}
+
+/** Prettier's hasLanguageComment: a `/* HTML *\/` block comment just before `n` or its expression statement. */
+function hasLanguageComment(tree: FormatTree, n: number, name: string): boolean {
+  const named = (m: number) => {
+    const c = prevSibling(tree, m);
+    return c !== NO_NODE && tree.kindName(c) === "comment" && tree.text(c) === `/* ${name} */`;
+  };
+  if (named(n)) return true;
+  const p = tree.parent(n);
+  return p !== NO_NODE && tree.kindName(p) === "expression_statement" && named(p);
+}
+
+/**
+ * The language prettier's embed (language-js/embed/) formats `template` as: `html`, `css` (styled-jsx's `css`,
+ * `css.global` and `css.resolve`; styled-components' other tags print as plain templates here) or `gql`/`graphql`
+ * tagged, or marked by a language comment. check's normalize (normalize.ts) reads its text so.
+ */
+export function embedLanguage(tree: FormatTree, template: number): EmbedLanguage | undefined {
+  if (tree.kindName(template) !== "template_string") return undefined;
+  const call = tree.parent(template);
+  let tag = "";
+  if (call !== NO_NODE && tree.kindName(call) === "call_expression" && tree.fieldName(template) === "arguments") {
+    const fn = fieldChild(tree, call, "function");
+    const k = fn === NO_NODE ? "" : tree.kindName(fn);
+    if (k === "identifier" || k === "member_expression") tag = tree.text(fn);
+  }
+  if (tag === "css" || tag === "css.global" || tag === "css.resolve") return "css";
+  if (tag === "gql" || tag === "graphql" || tag === "graphql.experimental" || hasLanguageComment(tree, template, "GraphQL"))
+    return "graphql";
+  if (tag === "html" || hasLanguageComment(tree, template, "HTML")) return "html";
+  return undefined;
+}
+
 /** Prettier's `options.__inJestEach`: set while a jest `each` table prints its cells. */
 export const jestEach = { printing: false };
 

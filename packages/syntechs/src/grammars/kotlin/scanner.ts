@@ -149,7 +149,7 @@ function scanAutomaticSemicolon(lexer: Lexer, valid: Uint8Array): boolean {
   if (sameline) {
     switch (la(lexer)) {
       // Upstream scanner.c returns `!scan_for_word("lse")` here, ending a statement before any other word starting
-      // with `e` on the same line (`return emit(x)` as a bare `return`, then `emit(x)`); the pnpm patch drops it too.
+      // with `e` on the same line (`return emit(x)` as a bare `return`, then `emit(x)`); grammar.patch drops it too.
       case 105: // i
         return scanForWord(lexer, "mport");
       case 59: // ;
@@ -189,6 +189,12 @@ function scanAutomaticSemicolon(lexer: Lexer, valid: Uint8Array): boolean {
     case 33:
       lexer.advance(true);
       return la(lexer) !== 61;
+    // Kotlin continues an expression with `as` or `as?` on the next line, but not with a word such as `asList`.
+    case 97: // a
+      lexer.advance(true);
+      if (la(lexer) !== 115) return true;
+      lexer.advance(true);
+      return iswalpha(la(lexer)) || iswdigit(la(lexer)) || la(lexer) === 95;
     case 101: // e
       return !scanForWord(lexer, "lse");
     // tree-sitter-kotlin 0.3.8 took JavaScript's exception here and inserted none before `in` or `instanceof`,

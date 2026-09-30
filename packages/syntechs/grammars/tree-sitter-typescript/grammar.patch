@@ -1,0 +1,553 @@
+Syntax the upstream grammar lacks or misreads (`a + b!` as `(a + b)!`, `let` then a name on the
+next line, ...), each commented where it changes: common/define-grammar.js, which typescript/ and tsx/ share,
+and common/scanner.h, which packages/syntechs/src/grammars/typescript/scanner.ts ports. Both grammars build
+on upstream tree-sitter-javascript 0.23.1's grammar.js, not on the patched tree-sitter-javascript here.
+
+--- a/common/define-grammar.js
++++ b/common/define-grammar.js
+@@ -6,8 +6,9 @@
+ 
+     externals: ($, previous) => previous.concat([
+       $._function_signature_automatic_semicolon,
+       $.__error_recovery,
++      $._let_name_follows,
+     ]),
+ 
+     supertypes: ($, previous) => previous.concat([
+       $.type,
+@@ -31,8 +32,10 @@
+         $.intersection_type,
+         $.union_type,
+         $.conditional_type,
+         $.function_type,
++        // As function_type's: `new () => A | B` and `new () => X extends T ? U : V` return the whole type.
++        $.constructor_type,
+         'binary',
+         $.type_predicate,
+         $.readonly_type,
+       ],
+@@ -81,8 +84,21 @@
+ 
+       [$.nested_identifier, $.nested_type_identifier, $.primary_expression],
+       [$.nested_identifier, $.nested_type_identifier],
+ 
++      // Class member modifiers come in any order (`static abstract`, `abstract public`), so a member's run of
++      // them is a repeat that the parser can only attribute to a field or a method once it sees what follows.
++      [$.method_definition, $.public_field_definition, $.method_signature],
++      [$.method_definition, $.public_field_definition, $.method_signature, $.abstract_method_signature],
++      [$.public_field_definition, $.abstract_method_signature],
++      [$.method_definition, $.public_field_definition],
++      [$._parameter_name, $.readonly_type],
++      [$.method_definition, $.public_field_definition, $.method_signature, $.index_signature],
++      // `[(a as any) = 1` is an array's assignment or an array pattern's default until what follows the `]`.
++      [$.assignment_expression, $.assignment_pattern],
++      // `(f)<` opens an instantiation or a comparison; see instantiation_expression.
++      [$.primary_expression, $.instantiation_expression],
++
+       [$._call_signature, $.function_type],
+       [$._call_signature, $.constructor_type],
+ 
+       [$.primary_expression, $._parameter_name],
+@@ -132,18 +148,17 @@
+ 
+     rules: {
+       public_field_definition: $ => seq(
+         repeat(field('decorator', $.decorator)),
+-        optional(choice(
+-          seq('declare', optional($.accessibility_modifier)),
+-          seq($.accessibility_modifier, optional('declare')),
++        repeat(choice(
++          'declare',
++          $.accessibility_modifier,
++          'static',
++          $.override_modifier,
++          'readonly',
++          'abstract',
++          'accessor',
+         )),
+-        choice(
+-          seq(optional('static'), optional($.override_modifier), optional('readonly')),
+-          seq(optional('abstract'), optional('readonly')),
+-          seq(optional('readonly'), optional('abstract')),
+-          optional('accessor'),
+-        ),
+         field('name', $._property_name),
+         optional(choice('?', '!')),
+         field('type', optional($.type_annotation)),
+         optional($._initializer),
+@@ -179,8 +194,15 @@
+         prec('template_call', seq(
+           field('function', choice($.primary_expression, $.new_expression)),
+           field('arguments', $.template_string),
+         )),
++        // A tagged template with type arguments (`tag<T>\`\``) shares its prefix with the call above, since
++        // `tag<T>` could equally go on to `(`; as a 'template_call' it would claim every `x<` before a call could.
++        prec('call', seq(
++          field('function', $.expression),
++          field('type_arguments', $.type_arguments),
++          field('arguments', $.template_string),
++        )),
+         prec('member', seq(
+           field('function', $.primary_expression),
+           '?.',
+           field('type_arguments', optional($.type_arguments)),
+@@ -195,14 +217,21 @@
+         field('arguments', optional($.arguments)),
+       )),
+ 
+       assignment_expression: $ => prec.right('assign', seq(
+-        optional('using'),
+         field('left', choice($.parenthesized_expression, $._lhs_expression)),
+         '=',
+         field('right', $.expression),
+       )),
+ 
++      // A destructuring default's target may be parenthesized as the assignment's is, to hold a cast:
++      // `({ a: (b as any) = 2000 } = x)`.
++      assignment_pattern: $ => seq(
++        field('left', choice($.pattern, $.parenthesized_expression)),
++        '=',
++        field('right', $.expression),
++      ),
++
+       _augmented_assignment_lhs: ($, previous) => choice(previous, $.non_null_expression),
+ 
+       _lhs_expression: ($, previous) => choice(previous, $.non_null_expression),
+ 
+@@ -268,8 +297,40 @@
+         $._jsx_start_opening_element,
+         '/>',
+       )),
+ 
++      _jsx_string: $ => choice(
++        seq(
++          '"',
++          repeat(choice(
++            alias($.unescaped_double_jsx_string_fragment, $.string_fragment),
++            $.html_character_reference,
++            alias($._jsx_ampersand, $.string_fragment),
++          )),
++          '"',
++        ),
++        seq(
++          '\'',
++          repeat(choice(
++            alias($.unescaped_single_jsx_string_fragment, $.string_fragment),
++            $.html_character_reference,
++            alias($._jsx_ampersand, $.string_fragment),
++          )),
++          '\'',
++        ),
++      ),
++
++      // An `&` that starts no character reference, as in `?a=1&b=2`: the longer reference wins where one matches.
++      _jsx_ampersand: _ => token.immediate('&'),
++
++      // The scanner never produces `_let_name_follows`: its validity marks the state after a `let` keyword, where a
++      // name on the next line continues the declaration (`let⏎abstract`) instead of taking an automatic semicolon.
++      lexical_declaration: $ => seq(
++        field('kind', choice(seq('let', optional($._let_name_follows)), 'const')),
++        commaSep1($.variable_declarator),
++        $._semicolon,
++      ),
++
+       export_specifier: (_, previous) => seq(
+         optional(choice('type', 'typeof')),
+         previous,
+       ),
+@@ -321,18 +382,24 @@
+         previous,
+         seq(
+           'export',
+           'type',
+-          $.export_clause,
+-          optional($._from_clause),
++          choice(
++            seq($.export_clause, optional($._from_clause)),
++            seq(choice('*', $.namespace_export), $._from_clause),
++          ),
+           $._semicolon,
+         ),
+         seq('export', '=', $.expression, $._semicolon),
++        // `export import type A = require("a")`: an exported import_statement's require form.
++        seq('export', 'import', optional('type'), $.import_require_clause, $._semicolon),
+         seq('export', 'as', 'namespace', $.identifier, $._semicolon),
+       ),
+ 
+-      non_null_expression: $ => prec.left('unary', seq(
+-        $.expression, '!',
++      // A primary operand as well, as member_expression's object takes: `new X!()` must shift the `!` onto `X`
++      // before the 'new' reduction, which an `X` already reduced to an expression would lose to.
++      non_null_expression: $ => prec.left('member', seq(
++        choice($.expression, $.primary_expression), '!',
+       )),
+ 
+       variable_declarator: $ => choice(
+         seq(
+@@ -342,9 +409,10 @@
+         ),
+         prec('declaration', seq(
+           field('name', $.identifier),
+           '!',
+-          field('type', $.type_annotation),
++          field('type', optional($.type_annotation)),
++          optional($._initializer),
+         )),
+       ),
+ 
+       method_signature: $ => seq(
+@@ -359,11 +427,11 @@
+         $._call_signature,
+       ),
+ 
+       abstract_method_signature: $ => seq(
+-        optional($.accessibility_modifier),
++        repeat(choice($.accessibility_modifier, 'static', $.override_modifier)),
+         'abstract',
+-        optional($.override_modifier),
++        repeat(choice($.accessibility_modifier, 'static', $.override_modifier)),
+         optional(choice('get', 'set', '*')),
+         field('name', $._property_name),
+         optional('?'),
+         $._call_signature,
+@@ -396,9 +464,10 @@
+         choice(
+           $.identifier,
+           alias($.decorator_member_expression, $.member_expression),
+           alias($.decorator_call_expression, $.call_expression),
+-          alias($.decorator_parenthesized_expression, $.parenthesized_expression),
++          // Parenthesized, any expression: `@(bind as ClassDecorator)`, `@(<ClassDecorator>bind)`.
++          $.parenthesized_expression,
+         ),
+       ),
+ 
+       decorator_call_expression: $ => prec('call', seq(
+@@ -409,18 +478,8 @@
+         optional(field('type_arguments', $.type_arguments)),
+         field('arguments', $.arguments),
+       )),
+ 
+-      decorator_parenthesized_expression: $ => seq(
+-        '(',
+-        choice(
+-          $.identifier,
+-          alias($.decorator_member_expression, $.member_expression),
+-          alias($.decorator_call_expression, $.call_expression),
+-        ),
+-        ')',
+-      ),
+-
+       class_body: $ => seq(
+         '{',
+         repeat(choice(
+           seq(
+@@ -475,10 +534,28 @@
+         $.enum_declaration,
+         $.interface_declaration,
+         $.import_alias,
+         $.ambient_declaration,
++        $.using_declaration,
++        $.global_module,
+       ),
+ 
++      // `global { }`, a global augmentation, with or without `declare`; `global` stays an identifier elsewhere.
++      global_module: $ => seq(
++        'global',
++        field('body', $.statement_block),
++      ),
++
++      // tree-sitter-javascript 0.25's, which 0.23 lacks; its declarators take TypeScript's annotations.
++      using_declaration: $ => seq(
++        field('kind', choice(
++          'using',
++          seq('await', 'using'),
++        )),
++        commaSep1($.variable_declarator),
++        $._semicolon,
++      ),
++
+       type_assertion: $ => prec.left('unary', seq(
+         $.type_arguments,
+         $.expression,
+       )),
+@@ -494,20 +571,29 @@
+         'satisfies',
+         $.type,
+       )),
+ 
+-      instantiation_expression: $ => prec('instantiation', seq(
+-        $.expression,
+-        field('type_arguments', $.type_arguments),
+-      )),
++      // Over the comparisons it shares a prefix with: `(f)<T>` then a line break ends the statement, as
++      // TypeScript reads it, rather than going on as `(f) < T > nextLine`. Only on a parenthesized operand:
++      // on any other, the lift would also win `f<A<B>["k"]>(x)` for `f < A<B>["k"] > (x)` over the call.
++      instantiation_expression: $ => choice(
++        prec.dynamic(1, prec('instantiation', seq(
++          $.parenthesized_expression,
++          field('type_arguments', $.type_arguments),
++        ))),
++        prec('instantiation', seq(
++          $.expression,
++          field('type_arguments', $.type_arguments),
++        )),
++      ),
+ 
+       class_heritage: $ => choice(
+         seq($.extends_clause, optional($.implements_clause)),
+         $.implements_clause,
+       ),
+ 
+       import_require_clause: $ => seq(
+-        $.identifier,
++        choice($.identifier, alias('type', $.identifier)),
+         '=',
+         'require',
+         '(',
+         field('source', $.string),
+@@ -532,9 +618,8 @@
+       ambient_declaration: $ => seq(
+         'declare',
+         choice(
+           $.declaration,
+-          seq('global', $.statement_block),
+           seq('module', '.', alias($.identifier, $.property_identifier), ':', $.type, $._semicolon),
+         ),
+       ),
+ 
+@@ -571,11 +656,14 @@
+         'module',
+         $._module,
+       ),
+ 
++      // A namespace always has a body, so a `{` on the line after its name continues it rather than taking an
++      // automatic semicolon; only `declare module "m";` omits one.
+       internal_module: $ => seq(
+         'namespace',
+-        $._module,
++        field('name', choice($.string, $.identifier, $.nested_identifier)),
++        field('body', $.statement_block),
+       ),
+ 
+       _module: $ => prec.right(seq(
+         field('name', choice($.string, $.identifier, $.nested_identifier)),
+@@ -670,11 +758,9 @@
+       ),
+ 
+       _parameter_name: $ => seq(
+         repeat(field('decorator', $.decorator)),
+-        optional($.accessibility_modifier),
+-        optional($.override_modifier),
+-        optional('readonly'),
++        repeat(choice($.accessibility_modifier, $.override_modifier, 'readonly')),
+         field('pattern', choice($.pattern, $.this)),
+       ),
+ 
+       omitting_type_annotation: $ => seq('-?:', $.type),
+@@ -751,15 +837,16 @@
+         $.rest_type,
+         $.type,
+       ),
+ 
++      // Its return type is function_type's, a type predicate as well: `new (x: A) => x is B`.
+       constructor_type: $ => prec.left(seq(
+         optional('abstract'),
+         'new',
+         field('type_parameters', optional($.type_parameters)),
+         field('parameters', $.formal_parameters),
+         '=>',
+-        field('type', $.type),
++        field('type', choice($.type, $.asserts, $.type_predicate)),
+       )),
+ 
+       primary_type: $ => choice(
+         $.parenthesized_type,
+@@ -817,8 +904,9 @@
+       generic_type: $ => prec('call', seq(
+         field('name', choice(
+           $._type_identifier,
+           $.nested_type_identifier,
++          alias($._type_query_member_expression_in_type_annotation, $.member_expression),
+         )),
+         field('type_arguments', $.type_arguments),
+       )),
+ 
+@@ -1001,10 +1089,12 @@
+       type_parameters: $ => seq(
+         '<', commaSep1($.type_parameter), optional(','), '>',
+       ),
+ 
++      // `const` and the variance modifier `in`, in either order (`in const T`). `out` stays out: as a keyword it
++      // would take a type parameter named `out`.
+       type_parameter: $ => seq(
+-        optional('const'),
++        repeat(choice('const', 'in')),
+         field('name', $._type_identifier),
+         field('constraint', optional($.constraint)),
+         field('value', optional($.default_type)),
+       ),
+@@ -1027,8 +1117,9 @@
+         field('type', optional($.type_annotation)),
+       ),
+ 
+       index_signature: $ => seq(
++        optional('static'),
+         optional(
+           seq(
+             field('sign', optional(choice('-', '+'))),
+             'readonly',
+@@ -1046,14 +1137,15 @@
+           ),
+           $.mapped_type_clause,
+         ),
+         ']',
+-        field('type', choice(
++        // A mapped type may leave its value type out (`{ readonly [K in T] }`), which then reads as `any`.
++        field('type', optional(choice(
+           $.type_annotation,
+           $.omitting_type_annotation,
+           $.adding_type_annotation,
+           $.opting_type_annotation,
+-        )),
++        ))),
+       ),
+ 
+       array_type: $ => seq($.primary_type, '[', ']'),
+       tuple_type: $ => seq(
+@@ -1072,8 +1164,9 @@
+       )),
+ 
+       _type_identifier: $ => alias($.identifier, $.type_identifier),
+ 
++      // `export` is reserved, never a name: as one, `export⏎import …` would read as an `export;` statement.
+       _reserved_identifier: (_, previous) => choice(
+         'declare',
+         'namespace',
+         'type',
+@@ -1082,18 +1175,20 @@
+         'protected',
+         'override',
+         'readonly',
+         'module',
++        'global',
+         'any',
+         'number',
+         'boolean',
+         'string',
+         'symbol',
+-        'export',
+         'object',
+         'new',
+         'readonly',
+-        previous,
++        'abstract',
++        'accessor',
++        ...previous.members.filter((member) => member.value !== 'export'),
+       ),
+     },
+   });
+ };
+--- a/common/scanner.h
++++ b/common/scanner.h
+@@ -12,8 +12,9 @@
+     REGEX_PATTERN,
+     JSX_TEXT,
+     FUNCTION_SIGNATURE_AUTOMATIC_SEMICOLON,
+     ERROR_RECOVERY,
++    LET_NAME_FOLLOWS,
+ };
+ 
+ static void advance(TSLexer *lexer) { lexer->advance(lexer, false); }
+ 
+@@ -78,8 +79,39 @@
+         }
+     }
+ }
+ 
++static bool is_identifier_char(int32_t c) { return iswalpha(c) || iswdigit(c) || c == '_' || c == '$'; }
++
++// At `[`: whether `[ name in` follows, which only a mapped type clause starts.
++static bool starts_mapped_type_clause(TSLexer *lexer) {
++    skip(lexer);
++    while (iswspace(lexer->lookahead)) {
++        skip(lexer);
++    }
++    if (!is_identifier_char(lexer->lookahead)) {
++        return false;
++    }
++    while (is_identifier_char(lexer->lookahead)) {
++        skip(lexer);
++    }
++    if (!iswspace(lexer->lookahead)) {
++        return false;
++    }
++    while (iswspace(lexer->lookahead)) {
++        skip(lexer);
++    }
++    if (lexer->lookahead != 'i') {
++        return false;
++    }
++    skip(lexer);
++    if (lexer->lookahead != 'n') {
++        return false;
++    }
++    skip(lexer);
++    return !is_identifier_char(lexer->lookahead);
++}
++
+ static bool scan_automatic_semicolon(TSLexer *lexer, const bool *valid_symbols, bool *scanned_comment) {
+     lexer->result_symbol = AUTOMATIC_SEMICOLON;
+     lexer->mark_end(lexer);
+ 
+@@ -114,17 +146,22 @@
+     if (!scan_whitespace_and_comments(lexer, scanned_comment)) {
+         return false;
+     }
+ 
++    // `let` then a name on the next line declares that name, as TypeScript reads `let⏎abstract`.
++    if (valid_symbols[LET_NAME_FOLLOWS] &&
++        (iswalpha(lexer->lookahead) || lexer->lookahead == '_' || lexer->lookahead == '$')) {
++        return false;
++    }
++
+     switch (lexer->lookahead) {
+         case '`':
+         case ',':
+         case '.':
+         case ';':
+         case '*':
+         case '%':
+         case '>':
+-        case '<':
+         case '=':
+         case '?':
+         case '^':
+         case '|':
+@@ -138,17 +175,24 @@
+                 return false;
+             }
+             break;
+ 
+-            // Don't insert a semicolon before a '[' or '(', unless we're parsing
++            // Don't insert a semicolon before a '[', '(' or '<', unless we're parsing
+             // a type. Detect whether we're parsing a type or an expression using
+-            // the validity of a binary operator token.
++            // the validity of a binary operator token. TypeScript takes a type
++            // reference's or a `typeof` query's type arguments only on the same line.
+         case '(':
+-        case '[':
++        case '<':
+             if (valid_symbols[LOGICAL_OR]) {
+                 return false;
+             }
+             break;
++        case '[':
++            if (valid_symbols[LOGICAL_OR]) {
++                return false;
++            }
++            // `readonly` then a mapped type clause on the next line is one modifier, as TypeScript reads it.
++            return !starts_mapped_type_clause(lexer);
+ 
+             // Insert a semicolon before `--` and `++`, but not before binary `+` or `-`.
+         case '+':
+             skip(lexer);

@@ -1,0 +1,970 @@
+Syntax the upstream grammar lacks, in grammar.js and scanner.c.
+packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
+
+--- a/grammar.js
++++ b/grammar.js
+@@ -7,8 +7,10 @@
+ 
+ /// <reference types="tree-sitter-cli/dsl" />
+ // @ts-check
+ 
++const CSS_ESCAPE = /\\([0-9a-fA-F]{1,6}\s?|[^0-9a-fA-F\n\r])/;
++
+ export default grammar({
+   name: 'css',
+ 
+   extras: $ => [
+@@ -20,10 +22,21 @@
+   externals: $ => [
+     $._descendant_operator,
+     $._pseudo_class_selector_colon,
+     $.__error_recovery,
++    $._custom_selector_start,
++    $._custom_selector_end,
++    $._custom_property_set_name,
++    $._custom_property_raw_name,
++    $._custom_property_raw_value,
++    $._url_raw,
++    $._custom_property_brace_name,
+   ],
+ 
++  conflicts: $ => [
++    [$.postcss_statement, $._at_rule_prelude],
++  ],
++
+   inline: $ => [
+     $._top_level_item,
+     $._block_item,
+   ],
+@@ -40,22 +53,33 @@
+       $.namespace_statement,
+       $.keyframes_statement,
+       $.supports_statement,
+       $.scope_statement,
++      $.custom_selector_statement,
++      $.custom_media_statement,
++      $.at_root_statement,
++      $.nest_statement,
++      $.extend_statement,
++      $.custom_property_set,
++      $.nested_property,
++      alias($.sass_control_statement, $.at_rule),
+       $.at_rule,
+     ),
+ 
+     // Statements
+ 
++    // Postcss reads any prelude: media queries without a `,` between (`screen projection`), more strings, and Less's
++    // `@import "x" {}` with a block.
+     import_statement: $ => seq(
+       '@import',
+       $._value,
+-      sep(',', $._query),
+-      ';',
++      repeat(choice(',', $._query, $.string_value)),
++      choice(';', $.block),
+     ),
+ 
++    // `@media` in any case, as prettier reads it.
+     media_statement: $ => seq(
+-      '@media',
++      alias(/@[mM][eE][dD][iI][aA]/, '@media'),
+       sep1(',', $._query),
+       $.block,
+     ),
+ 
+@@ -96,12 +120,15 @@
+     to: _ => 'to',
+ 
+     supports_statement: $ => seq(
+       '@supports',
+-      $._query,
++      choice($._query, alias($._brace_query, $.parenthesized_query)),
+       $.block,
+     ),
+ 
++    // `@supports ({"a": 1})`: a JSON-like group as the condition, which prettier keeps as a value.
++    _brace_query: $ => seq('(', $.brace_value, ')'),
++
+     scope_statement: $ => seq(
+       '@scope',
+       optional(
+         seq(
+@@ -111,37 +138,105 @@
+       ),
+       $.block,
+     ),
+ 
++    // postcss-custom-selectors: the name, then a selector list ended by `;`, which the external scanner tells from
++    // a declaration's by remembering it is inside the statement.
++    custom_selector_statement: $ => seq(
++      alias($._custom_selector_start, '@custom-selector'),
++      alias(/:--[a-zA-Z0-9-_\xA0-\xFF]+/, $.custom_selector_name),
++      sep1(',', $._selector),
++      alias($._custom_selector_end, ';'),
++    ),
++
++    // postcss-custom-media: the name, then a media query list ended by `;`.
++    custom_media_statement: $ => seq(
++      '@custom-media',
++      alias($.identifier, $.custom_media_name),
++      sep1(',', $._query),
++      ';',
++    ),
++
++    // Sass's `@at-root` and postcss-nesting's `@nest` nest a rule under a selector list, which prettier parses as
++    // selectors; `@at-root (with: media)`'s query as a value.
++    at_root_statement: $ => seq(
++      '@at-root',
++      optional(choice($.selectors, $.feature_query)),
++      $.block,
++    ),
++
++    nest_statement: $ => seq(
++      '@nest',
++      $.selectors,
++      $.block,
++    ),
++
++    // Sass's `@extend .a, %b !optional;`, whose selectors prettier also parses as such.
++    extend_statement: $ => seq(
++      '@extend',
++      $.selectors,
++      optional($.important_value),
++      ';',
++    ),
++
+     postcss_statement: $ => prec(-1, seq(
+       $.at_keyword,
+       repeat(choice($._value, $.important_value)),
+       ';',
+     )),
+ 
+     at_rule: $ => seq(
+       $.at_keyword,
+-      sep(',', $._query),
++      choice(sep(',', $._query), $._at_rule_prelude),
+       choice(';', $.block),
+     ),
+ 
++    // Sass's `@each` and `@while`, whose prelude prettier parses as a value, never a query list: read as one, `$a, $b`
++    // or `($i > 0)` sank into an error recovery that printed the prelude as written.
++    sass_control_statement: $ => seq(
++      alias(choice('@each', '@while'), $.at_keyword),
++      $._at_rule_prelude,
++      $.block,
++    ),
++
++    // An unknown at-rule's prelude that is no query list (`@page :first`, `@font-feature-values Font One`,
++    // `@foo "one"`): prettier keeps its words as written, so any run of values and punctuation reads.
++    _at_rule_prelude: $ => prec.dynamic(-1, repeat1(choice(
++      $._value,
++      $.nesting_selector,
++      ',', ':', '.', '>', '<', '=', '%', '~', '|',
++    ))),
++
+     // Rule sets
+ 
+     rule_set: $ => seq(
+       $.selectors,
+       $.block,
+     ),
+ 
+-    selectors: $ => sep1(',', $._selector),
++    selectors: $ => sep1(',', choice($._selector, $._dangling_combinator)),
+ 
++    // A selector ending in its combinator (`.parent > { .child {} }`), postcss-nested's: only before a `,` or the
++    // block, so a space after the combinator stays no descendant combinator.
++    _dangling_combinator: $ => choice(
++      alias($._dangling_child, $.child_selector),
++      alias($._dangling_sibling, $.sibling_selector),
++      alias($._dangling_adjacent_sibling, $.adjacent_sibling_selector),
++    ),
++    _dangling_child: $ => seq($._selector, choice('>', '>>>')),
++    _dangling_sibling: $ => seq($._selector, '~'),
++    _dangling_adjacent_sibling: $ => seq($._selector, '+'),
++
+     block: $ => seq(
+       '{',
+       repeat($._block_item),
+       optional(alias($.last_declaration, $.declaration)),
+       '}',
+     ),
+ 
+     _block_item: $ => choice(
++      // An empty statement (`a: b;;`), which postcss drops.
++      ';',
+       $.declaration,
+       $.rule_set,
+       $.import_statement,
+       $.media_statement,
+@@ -150,11 +245,41 @@
+       $.keyframes_statement,
+       $.supports_statement,
+       $.scope_statement,
+       $.postcss_statement,
++      $.at_root_statement,
++      $.nest_statement,
++      $.extend_statement,
++      $.custom_property_set,
++      $.nested_property,
++      alias($.sass_control_statement, $.at_rule),
+       $.at_rule,
+     ),
+ 
++    // postcss 8 reads `--name: {...}` as a declaration, and prettier lays its value out as a rule's block when it
++    // is one `{...}` group; the external scanner tells that apart from a longer value, which stays as written.
++    custom_property_set: $ => prec.right(seq(
++      alias($._custom_property_set_name, $.property_name),
++      ':',
++      $.block,
++      optional(';'),
++    )),
++
++    // postcss-nested-props (`font: { family: x; }`, `font: 20px/24px fantasy { ... }`): postcss reads a rule whose
++    // selector ends in the colon.
++    nested_property: $ => seq(
++      alias($.identifier, $.property_name),
++      ':',
++      optional(seq(
++        $._value,
++        repeat(seq(
++          optional(','),
++          $._value,
++        )),
++      )),
++      $.block,
++    ),
++
+     // Selectors
+ 
+     _selector: $ => choice(
+       $.universal_selector,
+@@ -163,8 +288,9 @@
+       $.nesting_selector,
+       $.pseudo_class_selector,
+       $.pseudo_element_selector,
+       $.id_selector,
++      $.placeholder_selector,
+       $.attribute_selector,
+       $.string_value,
+       $.child_selector,
+       $.descendant_selector,
+@@ -172,9 +298,10 @@
+       $.adjacent_sibling_selector,
+       $.namespace_selector,
+     ),
+ 
+-    nesting_selector: _ => '&',
++    // A Sass or postcss-nested suffix (`&__element`, `&-modifier`) belongs to the `&` token.
++    nesting_selector: _ => /&[a-zA-Z0-9-_]*/,
+ 
+     universal_selector: _ => '*',
+ 
+     class_selector: $ => prec(1, seq(
+@@ -234,20 +361,30 @@
+       '#',
+       alias($.identifier, $.id_name),
+     ),
+ 
++    // Sass's placeholder selector, `%name`, which only `@extend` reaches.
++    placeholder_selector: $ => seq(
++      optional($._selector),
++      '%',
++      alias($.identifier, $.placeholder_name),
++    ),
++
+     attribute_selector: $ => seq(
+       optional($._selector),
+       token(prec(1, '[')),
+       alias(choice($.identifier, $.namespace_selector), $.attribute_name),
+       optional(seq(
+         choice('=', '~=', '^=', '|=', '*=', '$='),
+         $._value,
++        // Selectors 4's case-sensitivity flag, `[type="a" i]`; prettier keeps any identifier here.
++        optional(alias($.identifier, $.attribute_flag)),
+       )),
+       ']',
+     ),
+ 
+-    child_selector: $ => prec.left(seq(optional($._selector), '>', $._selector)),
++    // `>>>`: Vue's and Angular's deep combinator.
++    child_selector: $ => prec.left(seq(optional($._selector), choice('>', '>>>'), $._selector)),
+ 
+     descendant_selector: $ => prec.left(seq($._selector, $._descendant_operator, $._selector)),
+ 
+     sibling_selector: $ => prec.left(seq(optional($._selector), '~', $._selector)),
+@@ -295,42 +432,73 @@
+     ),
+ 
+     // Declarations
+ 
+-    declaration: $ => seq(
+-      alias($.identifier, $.property_name),
+-      ':',
+-      $._value,
+-      repeat(seq(
+-        optional(','),
+-        $._value,
++    declaration: $ => choice(
++      seq(
++        alias(choice($.identifier, $._hack_property_name), $.property_name),
++        ':',
++        // postcss reads an empty value (`--empty:;`), which prettier keeps as written.
++        optional(seq(
++          choice($._value, $.unary_expression),
++          repeat(seq(
++            optional(','),
++            $._value,
++          )),
++        )),
++        optional($.important),
++        ';',
++      ),
++      // A custom property whose value opens with `{` but is more than that one group: postcss's raw value.
++      prec.right(seq(
++        alias($._custom_property_raw_name, $.property_name),
++        ':',
++        alias($._custom_property_raw_value, $.raw_value),
++        optional(';'),
+       )),
+-      optional($.important),
+-      ';',
++      // A custom property holding a `{...}` group past its first value (`--js: function(rule) { log(rule) }`),
++      // which postcss reads to the `;` and postcss-value-parser as words.
++      seq(
++        alias($._custom_property_brace_name, $.property_name),
++        ':',
++        choice($._value, $.brace_value),
++        repeat(seq(
++          optional(','),
++          choice($._value, $.brace_value),
++        )),
++        ';',
++      ),
+     ),
+ 
+     last_declaration: $ => prec(1, seq(
+-      alias($.identifier, $.property_name),
++      alias(choice($.identifier, $._hack_property_name), $.property_name),
+       ':',
+-      $._value,
++      choice($._value, $.unary_expression),
+       repeat(seq(
+         optional(','),
+         $._value,
+       )),
+       optional($.important),
+     )),
+ 
+-    important: _ => '!important',
++    // postcss reads `!` and `important` apart, any gap and case between them; prettier prints `!important`.
++    important: _ => token(seq('!', /[ \t\n\r\f]*/, /[iI][mM][pP][oO][rR][tT][aA][nN][tT]/)),
+ 
++    // An IE hack's property (`*zoom`, `+color`, `*+color`), which postcss reads as the property's name.
++    _hack_property_name: _ => token(prec(1, seq(/[*+]+/, /-?[a-zA-Z_][a-zA-Z0-9-_]*/))),
++
+     // Media queries
+ 
+     _query: $ => choice(
+       alias($.identifier, $.keyword_query),
+       $.feature_query,
++      $.range_query,
+       $.binary_query,
+       $.unary_query,
+       $.selector_query,
+       $.parenthesized_query,
++      // A function as a supports condition (`@supports (--element(".a"))`).
++      $.call_expression,
+     ),
+ 
+     feature_query: $ => seq(
+       '(',
+@@ -339,8 +507,22 @@
+       repeat1($._value),
+       ')',
+     ),
+ 
++    // Media queries level 4 ranges: `(width >= 600px)`, `(400px < width <= 700px)`.
++    range_query: $ => seq(
++      '(',
++      $._range_term,
++      repeat1(seq(choice('<', '<=', '>', '>=', '='), $._range_term)),
++      ')',
++    ),
++
++    _range_term: $ => choice(
++      alias($.identifier, $.feature_name),
++      $.integer_value,
++      $.float_value,
++    ),
++
+     parenthesized_query: $ => seq(
+       '(',
+       $._query,
+       ')',
+@@ -356,20 +538,50 @@
+       choice('not', 'only'),
+       $._query,
+     )),
+ 
++    // `selector(...)`: a selector list, or empty. Prettier prints the text as written where postcss-selector-parser
++    // fails on it, so its failures parse too: a nested `selector(...)`, a function (`--f(...)`), a pseudo-element
++    // named by a pseudo-class (`:::f(...)`), and `<` as a combinator.
+     selector_query: $ => seq(
+       'selector',
+       '(',
+-      $._selector,
++      sep(',', $._query_selector),
+       ')',
+     ),
+ 
++    _query_selector: $ => choice(
++      $._selector,
++      $.selector_query,
++      alias($._query_selector_function, $.pseudo_class_selector),
++      alias($._query_pseudo_element, $.pseudo_element_selector),
++      alias($._query_lt_selector, $.child_selector),
++    ),
++
++    _query_selector_function: $ => seq(
++      alias($.identifier, $.class_name),
++      alias($.pseudo_class_with_selector_arguments, $.arguments),
++    ),
++
++    _query_pseudo_element: $ => seq('::', alias($._query_pseudo_class, $.pseudo_class_selector)),
++
++    _query_pseudo_class: $ => seq(
++      alias($._pseudo_class_selector_colon, ':'),
++      $.class_name,
++      optional(alias($.pseudo_class_with_selector_arguments, $.arguments)),
++    ),
++
++    _query_lt_selector: $ => prec.left(seq($._query_selector, '<', $._query_selector)),
++
+     // Property Values
+ 
+     _value: $ => prec(-1, choice(
+       alias($.identifier, $.plain_value),
+       $.plain_value,
++      // Less's `@var` as a value.
++      alias($.at_keyword, $.plain_value),
++      // Less's variable variable (`@@name`).
++      alias(/@@[a-zA-Z-_]+/, $.plain_value),
+       $.color_value,
+       $.integer_value,
+       $.float_value,
+       $.string_value,
+@@ -379,16 +591,58 @@
+       $.call_expression,
+       $.important,
+     )),
+ 
++    // Sass's lists and maps (`(a, b)`, `(key: value)`) and a Sass directive's spaced argument list (`@mixin f ( $a )`).
+     parenthesized_value: $ => seq(
+       '(',
+-      $._value,
++      sep(',', $._sass_argument),
+       ')',
+     ),
+ 
++    // One entry of a Sass argument list, list or map: values, a `name: value` pair, or a rest argument (`$args...`).
++    // A comparison reads too, as in a Sass condition (`@while ($i > 0)`).
++    _sass_argument: $ => choice(
++      seq($.unary_expression, repeat($._sass_argument_item)),
++      repeat1($._sass_argument_item),
++    ),
++
++    _sass_argument_item: $ => choice($._sass_value, $.keyword_argument, '>', '<', '>=', '<=', '==', '!='),
++
++    // A `{...}` group and an id-like `#name` (`element(#css-source)`) read only inside brackets, where no block can
++    // follow a value.
++    _sass_value: $ => choice($._value, $.rest_argument, $.brace_value, $.hash_value),
++
++    // An operator opening a value or an argument (`++1`, `alpha(- .75)`, `hue(*20)`), which postcss-value-parser
++    // reads as a word of its own.
++    unary_expression: $ => prec.left(seq(
++      choice('+', '-', '*', '/'),
++      choice($._value, $.unary_expression),
++    )),
++
++    // A `{...}` group inside a value's brackets (`--JSON: [1, {"a": 1}]`, `--element(".a", {"b": 1})`), which
++    // postcss-value-parser reads as words.
++    brace_value: $ => seq(
++      '{',
++      sep(',', $._sass_argument),
++      optional(','),
++      '}',
++    ),
++
++    rest_argument: $ => seq($._value, '...'),
++
++    keyword_argument: $ => prec.right(seq(
++      $._value,
++      ':',
++      repeat1($._sass_value),
++    )),
++
+     color_value: _ => seq('#', token.immediate(/[0-9a-fA-F]{3,8}/)),
+ 
++    // Past a hex color's length or holding other name characters; a hex color of the same length is color_value's,
++    // whose token comes first.
++    hash_value: _ => seq('#', token.immediate(/[a-zA-Z0-9_-]+/)),
++
+     string_value: $ => choice(
+       seq(
+         '\'',
+         repeat(choice(
+@@ -411,8 +665,10 @@
+       '\\',
+       choice(
+         /[0-9a-fA-F]{1,6}\s?/,
+         /[^0-9a-fA-F\n\r]/,
++        // Inside a string, a backslash before a newline continues the string on the next line.
++        /\r?\n/,
+       ),
+     )),
+ 
+     integer_value: $ => seq(
+@@ -425,52 +681,85 @@
+ 
+     float_value: $ => seq(
+       token(seq(
+         optional(choice('+', '-')),
+-        /\d*/,
++        // postcss also reads a trailing `.` (`1.`, `1.e1`) and a `+` exponent sign (`1e+1`).
+         choice(
+-          seq('.', /\d+/),
+-          seq(/[eE]/, optional('-'), /\d+/),
+-          seq('.', /\d+/, /[eE]/, optional('-'), /\d+/),
++          seq(/\d+/, '.', /\d*/, optional(seq(/[eE]/, optional(choice('+', '-')), /\d+/))),
++          seq('.', /\d+/, optional(seq(/[eE]/, optional(choice('+', '-')), /\d+/))),
++          seq(/\d+/, /[eE]/, optional(choice('+', '-')), /\d+/),
+         ),
+       )),
+       optional($.unit),
+     ),
+ 
+-    unit: _ => token.immediate(/[a-zA-Z%]+/),
++    // Above plain_value, which would otherwise take the longer `rem/1` of `1rem/1` and leave the number unitless.
++    unit: _ => token.immediate(prec(1, /[a-zA-Z%]+/)),
+ 
+     grid_value: $ => seq(
+       '[',
+-      sep1(',', $._value),
++      sep1(',', choice($._value, $.brace_value)),
+       ']',
+     ),
+ 
+-    call_expression: $ => seq(
+-      alias($.identifier, $.function_name),
+-      $.arguments,
++    call_expression: $ => choice(
++      seq(
++        alias($.identifier, $.function_name),
++        $.arguments,
++      ),
++      seq(
++        alias('url', $.function_name),
++        alias($._url_arguments, $.arguments),
++      ),
++      // postcss-simple-vars' `$(name)`, `$$(name)` and Less's `@@(name)`, which postcss-value-parser reads as a
++      // function whose name is the sigil.
++      seq(
++        alias(choice('$', '$$', '@@'), $.function_name),
++        $.arguments,
++      ),
+     ),
+ 
++    // An unquoted `url()`'s content as one word (the external scanner's `_url_raw`), else any function's arguments.
++    _url_arguments: $ => seq(
++      token.immediate('('),
++      choice(
++        alias($._url_raw, $.plain_value),
++        seq(sep(choice(',', ';'), $._sass_argument), optional(',')),
++      ),
++      ')',
++    ),
++
++    // The right operand may open with an operator of its own (`-1 * -(-1)`).
+     binary_expression: $ => prec.left(seq(
+       $._value,
+       choice('+', '-', '*', '/'),
+-      $._value,
++      choice($._value, $.unary_expression),
+     )),
+ 
+     arguments: $ => seq(
+       token.immediate('('),
+-      sep(choice(',', ';'), repeat1($._value)),
++      sep(choice(',', ';'), $._sass_argument),
++      // `var(--a,)`: an empty fallback.
++      optional(','),
+       ')',
+     ),
+ 
+     class_name: $ => seq(
+       choice($.identifier, $.escape_sequence),
+       repeat(choice(
+         alias(/[a-zA-Z0-9-_\xA0-\xFF]+/, $.identifier),
+         $.escape_sequence,
++        // postcss-mixins' and postcss-simple-vars' `$(name)` inside a class name (`.icon.is-$(network)`).
++        alias(token.immediate(/\$\([a-zA-Z0-9-_]+\)/), $.interpolation),
+       )),
+     ),
+ 
+-    identifier: _ => /(--|-?[a-zA-Z_\xA0-\xFF])[a-zA-Z0-9-_\xA0-\xFF]*/,
++    // A Sass variable (`$name`) is an identifier, so it declares (`$name: 1px;`) and reads as a value.
++    // CSS Syntax 3's ident token: any non-ASCII code point and any escape (`#\31 23`, `#f\.o`) is a name character.
++    identifier: _ => token(seq(
++      choice('--', seq(optional('$'), optional('-'), choice(/[a-zA-Z_]|[^\x00-\x7F]/, CSS_ESCAPE))),
++      repeat(choice(/[a-zA-Z0-9-_]|[^\x00-\x7F]/, CSS_ESCAPE)),
++    )),
+ 
+     at_keyword: _ => /@[a-zA-Z-_]+/,
+ 
+     js_comment: _ => token(prec(-1, seq('//', /.*/))),
+@@ -480,16 +769,18 @@
+       /[^*]*\*+([^/*][^*]*\*+)*/,
+       '/',
+     )),
+ 
++    // A word opens with a `/` only as a protocol-relative URL's `//`: a lone one is a division (`2/round(1)`,
++    // `100%/2px`), as postcss-value-parser reads it.
+     plain_value: _ => token(seq(
+-      repeat(choice(
+-        /[-_]/,
+-        /\/[^\*\s,;!{}()\[\]]/, // Slash not followed by a '*' (which would be a comment)
+-      )),
++      repeat(choice(/[-_]/, '//')),
+       /[a-zA-Z]/,
+       repeat(choice(
+-        /[^/\s,;!{}()\[\]]/, // Not a slash, not a delimiter character
++        /[^/:\s,;!{}()\[\]]/, // Not a slash, not a colon, not a delimiter character
++        // A colon, but not one ending the word or before a digit: a Sass map's `key: 1px` and `key:1px` split
++        // there, where `url(http://a)` and `progid:Name` stay one word.
++        /:[^\d\s,;!{}()\[\]]/,
+         /\/[^\*\s,;!{}()\[\]]/, // Slash not followed by a '*' (which would be a comment)
+       )),
+     )),
+ 
+--- a/src/scanner.c
++++ b/src/scanner.c
+@@ -1,31 +1,218 @@
+ #include "tree_sitter/parser.h"
+ 
++#include <stdlib.h>
+ #include <wctype.h>
+ 
+ enum TokenType {
+     DESCENDANT_OP,
+     PSEUDO_CLASS_SELECTOR_COLON,
+     ERROR_RECOVERY,
++    CUSTOM_SELECTOR_START,
++    CUSTOM_SELECTOR_END,
++    CUSTOM_PROPERTY_SET_NAME,
++    CUSTOM_PROPERTY_RAW_NAME,
++    CUSTOM_PROPERTY_RAW_VALUE,
++    URL_RAW,
++    CUSTOM_PROPERTY_BRACE_NAME,
+ };
+ 
+ static inline void advance(TSLexer *lexer) { lexer->advance(lexer, false); }
+ 
+ static inline void skip(TSLexer *lexer) { lexer->advance(lexer, true); }
+ 
+-void *tree_sitter_css_external_scanner_create() { return NULL; }
++// Whether the scanner is inside `@custom-selector ... ;`, whose selectors end in `;` rather than `{`.
++void *tree_sitter_css_external_scanner_create() { return calloc(1, sizeof(bool)); }
+ 
+-void tree_sitter_css_external_scanner_destroy(void *payload) {}
++void tree_sitter_css_external_scanner_destroy(void *payload) { free(payload); }
+ 
+-unsigned tree_sitter_css_external_scanner_serialize(void *payload, char *buffer) { return 0; }
++unsigned tree_sitter_css_external_scanner_serialize(void *payload, char *buffer) {
++    buffer[0] = *(bool *)payload;
++    return 1;
++}
+ 
+-void tree_sitter_css_external_scanner_deserialize(void *payload, const char *buffer, unsigned length) {}
++void tree_sitter_css_external_scanner_deserialize(void *payload, const char *buffer, unsigned length) {
++    *(bool *)payload = length > 0 && buffer[0];
++}
+ 
++static bool scan_custom_selector_end(TSLexer *lexer, bool *in_custom_selector) {
++    if (lexer->lookahead != ';') {
++        return false;
++    }
++    advance(lexer);
++    lexer->mark_end(lexer);
++    lexer->result_symbol = CUSTOM_SELECTOR_END;
++    *in_custom_selector = false;
++    return true;
++}
++
++// Past one piece of a raw value: a string, a `/* */` comment, or a character, counting open brackets in `depth`.
++// Whether the piece is more than whitespace.
++static bool advance_piece(TSLexer *lexer, int *depth) {
++    int32_t c = lexer->lookahead;
++    advance(lexer);
++    if (c == '"' || c == '\'') {
++        while (!lexer->eof(lexer) && lexer->lookahead != c && lexer->lookahead != '\n') {
++            if (lexer->lookahead == '\\') {
++                advance(lexer);
++            }
++            advance(lexer);
++        }
++        if (lexer->lookahead == c) {
++            advance(lexer);
++        }
++    } else if (c == '/' && lexer->lookahead == '*') {
++        advance(lexer);
++        while (!lexer->eof(lexer)) {
++            if (lexer->lookahead != '*') {
++                advance(lexer);
++                continue;
++            }
++            advance(lexer);
++            if (lexer->lookahead == '/') {
++                advance(lexer);
++                break;
++            }
++        }
++    } else if (c == '{' || c == '(' || c == '[') {
++        (*depth)++;
++    } else if (c == '}' || c == ')' || c == ']') {
++        (*depth)--;
++    }
++    return !iswspace(c);
++}
++
++// Past whitespace and `/* */` comments, which postcss reads between a declaration's name, its colon and its value
++// (`--name/* c */ : {`); false at a lone `/` or an unclosed comment.
++static bool advance_gap(TSLexer *lexer) {
++    for (;;) {
++        if (iswspace(lexer->lookahead)) {
++            advance(lexer);
++        } else if (lexer->lookahead == '/') {
++            advance(lexer);
++            if (lexer->lookahead != '*') {
++                return false;
++            }
++            advance(lexer);
++            for (;;) {
++                if (lexer->eof(lexer)) {
++                    return false;
++                }
++                int32_t c = lexer->lookahead;
++                advance(lexer);
++                if (c == '*' && lexer->lookahead == '/') {
++                    advance(lexer);
++                    break;
++                }
++            }
++        } else {
++            return true;
++        }
++    }
++}
++
++// `--name: {`: postcss 8 reads a declaration whose value runs to the `;` outside brackets, and prettier lays it out
++// as a rule's block only when that value is one `{...}` group. The name's token says which; the colon and the value
++// are left to the grammar.
++static bool scan_custom_property_name(TSLexer *lexer, const bool *valid_symbols) {
++    advance(lexer);
++    if (lexer->lookahead != '-') {
++        return false;
++    }
++    advance(lexer);
++    while (iswalnum(lexer->lookahead) || lexer->lookahead == '-' || lexer->lookahead == '_' ||
++           lexer->lookahead >= 0xA0) {
++        advance(lexer);
++    }
++    lexer->mark_end(lexer);
++    if (!advance_gap(lexer) || lexer->lookahead != ':') {
++        return false;
++    }
++    advance(lexer);
++    if (!advance_gap(lexer)) {
++        return false;
++    }
++    int depth = 0;
++    if (lexer->lookahead != '{') {
++        // A `{...}` group later in the value, which only a custom property's value reads.
++        bool brace = false;
++        while (!lexer->eof(lexer) && !(depth <= 0 && (lexer->lookahead == ';' || lexer->lookahead == '}'))) {
++            brace = brace || lexer->lookahead == '{';
++            advance_piece(lexer, &depth);
++        }
++        lexer->result_symbol = CUSTOM_PROPERTY_BRACE_NAME;
++        return brace && lexer->lookahead == ';' && valid_symbols[CUSTOM_PROPERTY_BRACE_NAME];
++    }
++    do {
++        advance_piece(lexer, &depth);
++    } while (depth > 0 && !lexer->eof(lexer));
++    if (depth > 0) {
++        return false;
++    }
++    while (iswspace(lexer->lookahead)) {
++        advance(lexer);
++    }
++    bool one_group = lexer->lookahead == ';' || lexer->lookahead == '}' || lexer->eof(lexer);
++    lexer->result_symbol = one_group ? CUSTOM_PROPERTY_SET_NAME : CUSTOM_PROPERTY_RAW_NAME;
++    return valid_symbols[lexer->result_symbol];
++}
++
++// The raw value itself, as written up to the `;` or the block's `}` outside brackets, less trailing whitespace.
++static bool scan_custom_property_raw_value(TSLexer *lexer) {
++    while (iswspace(lexer->lookahead)) {
++        skip(lexer);
++    }
++    int depth = 0;
++    bool any = false;
++    while (!lexer->eof(lexer) && !(depth <= 0 && (lexer->lookahead == ';' || lexer->lookahead == '}'))) {
++        if (advance_piece(lexer, &depth)) {
++            lexer->mark_end(lexer);
++            any = true;
++        }
++    }
++    lexer->result_symbol = CUSTOM_PROPERTY_RAW_VALUE;
++    return any;
++}
++
++// An unquoted `url()`'s content, which postcss-value-parser reads as one word: up to the `)`, a `\` escaping the
++// character after it, less the whitespace around it. A `(` or a quote makes it no such word, so the arguments parse
++// as any function's (`url(var(--a))`).
++static bool scan_url_raw(TSLexer *lexer) {
++    while (iswspace(lexer->lookahead)) {
++        skip(lexer);
++    }
++    bool any = false;
++    while (lexer->lookahead != ')') {
++        int32_t c = lexer->lookahead;
++        if (lexer->eof(lexer) || c == '(' || c == '"' || c == '\'') {
++            return false;
++        }
++        advance(lexer);
++        if (c == '\\') {
++            if (lexer->eof(lexer) || lexer->lookahead == '\n') {
++                return false;
++            }
++            advance(lexer);
++        } else if (iswspace(c)) {
++            continue;
++        }
++        lexer->mark_end(lexer);
++        any = true;
++    }
++    lexer->result_symbol = URL_RAW;
++    return any;
++}
++
+ bool tree_sitter_css_external_scanner_scan(void *payload, TSLexer *lexer, const bool *valid_symbols) {
++    bool *in_custom_selector = (bool *)payload;
+     if (valid_symbols[ERROR_RECOVERY]) {
+         return false;
+     }
+ 
++    if (valid_symbols[URL_RAW]) {
++        return scan_url_raw(lexer);
++    }
++
+     if (iswspace(lexer->lookahead) && valid_symbols[DESCENDANT_OP]) {
+         lexer->result_symbol = DESCENDANT_OP;
+ 
+         skip(lexer);
+@@ -33,14 +220,28 @@
+             skip(lexer);
+         }
+         lexer->mark_end(lexer);
+ 
++        // `[name *= value]`: a `*` before `=` is the attribute operator, not a universal selector.
++        if (lexer->lookahead == '*') {
++            advance(lexer);
++            return lexer->lookahead != '=';
++        }
++
++        // postcss reads a quoted string as a selector part (`one "two" three`).
+         if (lexer->lookahead == '#' || lexer->lookahead == '.' || lexer->lookahead == '[' || lexer->lookahead == '-' ||
+-            lexer->lookahead == '*' || iswalnum(lexer->lookahead)) {
++            lexer->lookahead == '&' || lexer->lookahead == '"' || lexer->lookahead == '\'' || iswalnum(lexer->lookahead)) {
+             return true;
+         }
+ 
++        if (valid_symbols[CUSTOM_SELECTOR_END] && *in_custom_selector) {
++            return scan_custom_selector_end(lexer, in_custom_selector);
++        }
++
+         if (lexer->lookahead == ':') {
++            if (*in_custom_selector) {
++                return true;
++            }
+             advance(lexer);
+             if (iswspace(lexer->lookahead)) {
+                 return false;
+             }
+@@ -55,8 +256,48 @@
+             }
+         }
+     }
+ 
++    if (valid_symbols[CUSTOM_SELECTOR_START] || (valid_symbols[CUSTOM_SELECTOR_END] && *in_custom_selector)) {
++        while (iswspace(lexer->lookahead)) {
++            skip(lexer);
++        }
++        if (valid_symbols[CUSTOM_SELECTOR_END] && *in_custom_selector && lexer->lookahead == ';') {
++            return scan_custom_selector_end(lexer, in_custom_selector);
++        }
++        if (valid_symbols[CUSTOM_SELECTOR_START] && lexer->lookahead == '@') {
++            const char *name = "custom-selector";
++            advance(lexer);
++            for (const char *c = name; *c; c++) {
++                if (lexer->lookahead != *c) {
++                    return false;
++                }
++                advance(lexer);
++            }
++            if (iswalnum(lexer->lookahead) || lexer->lookahead == '-' || lexer->lookahead == '_') {
++                return false;
++            }
++            lexer->mark_end(lexer);
++            lexer->result_symbol = CUSTOM_SELECTOR_START;
++            *in_custom_selector = true;
++            return true;
++        }
++    }
++
++    if (valid_symbols[CUSTOM_PROPERTY_RAW_VALUE]) {
++        return scan_custom_property_raw_value(lexer);
++    }
++
++    if (valid_symbols[CUSTOM_PROPERTY_SET_NAME] || valid_symbols[CUSTOM_PROPERTY_RAW_NAME] ||
++        valid_symbols[CUSTOM_PROPERTY_BRACE_NAME]) {
++        while (iswspace(lexer->lookahead)) {
++            skip(lexer);
++        }
++        if (lexer->lookahead == '-') {
++            return scan_custom_property_name(lexer, valid_symbols);
++        }
++    }
++
+     if (valid_symbols[PSEUDO_CLASS_SELECTOR_COLON]) {
+         while (iswspace(lexer->lookahead)) {
+             skip(lexer);
+         }
+@@ -66,8 +307,15 @@
+                 return false;
+             }
+             lexer->mark_end(lexer);
+             lexer->result_symbol = PSEUDO_CLASS_SELECTOR_COLON;
++            if (*in_custom_selector) {
++                return true;
++            }
++            // `font: {` and `font: 20px fantasy {` are postcss-nested-props, rules whose selector ends in the colon.
++            if (iswspace(lexer->lookahead) || lexer->lookahead == '{') {
++                return false;
++            }
+ 
+             // We need a `{` to be a pseudo class selector, a `;` indicates a property.
+             // This does not apply if we're in a comment, however.
+             bool in_comment = false;

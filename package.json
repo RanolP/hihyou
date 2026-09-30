@@ -3,7 +3,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "postinstall": "node packages/syntechs/generate.mjs",
     "build": "tsc -b",
     "typecheck": "tsc -b",
     "test": "vitest run",

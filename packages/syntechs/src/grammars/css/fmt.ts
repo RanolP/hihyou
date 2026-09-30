@@ -7,7 +7,7 @@ import {
 } from "../../fmt/options.js";
 import type { CommentHandler } from "../../fmt/comments.js";
 import { defineLanguage, type Language } from "../../fmt/rules.js";
-import { atName, maybeLower, numberParts } from "../../fmt/dsl/normalizers.js";
+import { atName, maybeLower, numberParts, unitCase } from "../../fmt/dsl/normalizers.js";
 import {
   ancestorWhere,
   breaksBetween,
@@ -129,7 +129,7 @@ function meaning(tree: Tree, node: number, t: string): string {
 
 // A `;` that ends the last statement of a block or of the file means nothing, so prettier may add one there; nor
 // does an empty statement's (`a: b;;`), which postcss drops. A sign before a number means the signed number, which
-// prettier may join to it (`+ 20px` is `+20px`).
+// prettier may join to it (`+ 20px` is `+20px`) or part from it.
 const normalize: Normalize = (lexemes, _text, tree) => {
   const isNumber = (i: number) => {
     const l = lexemes[i];
@@ -139,7 +139,14 @@ const normalize: Normalize = (lexemes, _text, tree) => {
     const l = lexemes[i];
     if (l === undefined || (l.text !== "+" && l.text !== "-") || !isNumber(i + 1)) return false;
     const parent = tree.parent(l.node);
-    return parent !== NO_NODE && tree.kindName(parent) === "unary_expression";
+    if (parent === NO_NODE) return false;
+    if (tree.kindName(parent) === "unary_expression") return true;
+    // `round(1) +2`, which prettier prints `round(1) + 2` (`number`).
+    return (
+      l.text === "+" &&
+      tree.kindName(parent) === "binary_expression" &&
+      tree.kindName(tree.child(parent, 0)) === "call_expression"
+    );
   };
   return lexemes.map((l, i) => {
     const next = lexemes[i + 1]?.text;
@@ -189,8 +196,43 @@ export const customs = {
   unparsedValue: (node, ctx) => unparsedUrl(node, ctx),
   /** A media query list holding a comment, which `mediaQueries` prints as postcss-media-query-parser splits it. */
   mediaComments: (node, ctx) => mediaAtoms(node, ctx).some((c) => isComment(c, ctx)),
-  supportsComments: (node, ctx) => supportsComments(node, ctx),
+  ownWord: (node, ctx) => ownWord(node, ctx),
 } satisfies Record<string, PredicateRule<CssOptions>>;
+
+/**
+ * A value item written joined to a function on either side, which postcss-value-parser still reads as a node of its
+ * own and prettier prints after a line (`"("attr(title)")"` is `"(" attr(title) ")"`), but a word after a `$$(...)`
+ * (postcss-simple-vars' `$$(style)Color`), which prettier keeps joined.
+ */
+function ownWord(node: number, ctx: SCtx): boolean {
+  const t = ctx.tree;
+  const siblings = children(t.parent(node), t);
+  const prev = siblings[siblings.indexOf(node) - 1];
+  if (prev === undefined || !t.adjoins(prev, node)) return false;
+  if (kind(node, ctx) === "call_expression") return true;
+  if (kind(prev, ctx) !== "call_expression") return false;
+  return kind(node, ctx) !== "plain_value" || t.text(t.child(prev, 0)) !== "$$";
+}
+
+/**
+ * A number, its unit's case normalized; but a `+`-signed one right after a function (`round(1.5)+2`,
+ * `round(1.5) +2`), whose `+` postcss-values-parser reads as an operator, which prettier prints between spaces. A
+ * `-` there stays the number's (`url(a) -1000px`).
+ */
+export function number(node: number, ctx: SCtx): void {
+  const text = ctx.tree.text(node);
+  if (plusAfterFunction(node, ctx)) sLiteral(node, `+ ${unitCase(text.slice(1))}`);
+  else sLiteral(node, unitCase(text));
+}
+
+function plusAfterFunction(node: number, ctx: SCtx): boolean {
+  const t = ctx.tree;
+  const k = kind(node, ctx);
+  if ((k !== "integer_value" && k !== "float_value") || !t.text(node).startsWith("+")) return false;
+  const siblings = children(t.parent(node), t);
+  const prev = siblings[siblings.indexOf(node) - 1];
+  return prev !== undefined && kind(prev, ctx) === "call_expression";
+}
 
 /** A binary expression's `/` written with no gap on either side, which prettier keeps so. */
 function tightDivision(node: number, ctx: SCtx): boolean {
@@ -230,12 +272,15 @@ const fontOperand = (n: number | undefined, ctx: SCtx) =>
  * Outside `calc()`, a `/` or `+` written without a gap before its right side stays joined unless a function or a word
  * sits beside it, and a `-` so written always; a `*` is always spaced. In `font` and custom properties, a `/` written
  * without a gap after a number or a math function stays joined, and so does what follows it, even inside `calc()`.
+ * Inside `calc()`, a `+` or `-` written without a gap on a side stays joined on that side.
  */
 function joinedMath(chain: number[], i: number, calc: boolean, font: boolean, ctx: SCtx): boolean {
   const t = ctx.tree;
   const [y, g, v, w] = [chain[i - 2], chain[i - 1] as number, chain[i] as number, chain[i + 1]];
   const op = (n: number | undefined, o: string) => n !== undefined && kind(n, ctx) === o;
   const tight = t.adjoins(g, v);
+  // Inside `calc()`, a `+` or `-` stays joined to what the source writes it against (`calc(100%- 2px)`).
+  if (calc && tight && (op(g, "+") || op(g, "-") || op(v, "+") || op(v, "-"))) return true;
   if (isOperator(v, ctx)) {
     if (font && op(v, "/") && tight && fontOperand(g, ctx)) return true;
     const spaced = funcOrWord(w, ctx) || funcOrWord(g, ctx);
@@ -554,14 +599,20 @@ export function keywordArgument(node: number, ctx: SCtx): void {
   }
 }
 
-/** A Sass list or map (in a directive, or a `$variable`'s value) by `sassList`, else as written without gaps. */
+/**
+ * A Sass list or map (in a directive, or a `$variable`'s value) by `sassList`, else as written without gaps, but
+ * the operator `number` makes of a `+` after a function, a space on either side.
+ */
 export function parenthesizedValue(node: number, ctx: SCtx): void {
   if (inDirective(node, ctx) || inVariable(node, ctx)) return sassList(node, ctx);
   const t = ctx.tree;
   const items = new Set(ctx.items(node));
   for (const c of children(node, t))
     if (!t.named(c)) sToken(c, t.text(c));
-    else if (items.has(c)) ctx.print(c);
+    else if (items.has(c)) {
+      if (plusAfterFunction(c, ctx)) sText(" ");
+      ctx.print(c);
+    }
 }
 
 /**
@@ -800,17 +851,49 @@ const queryWords = (n: number, ctx: SCtx): number[] =>
     ? children(n, ctx.tree).flatMap((c) => queryWords(c, ctx))
     : [n];
 
+const isParenQuery = (c: number, ctx: SCtx) =>
+  kind(c, ctx) === "feature_query" || kind(c, ctx) === "parenthesized_query";
+
+/**
+ * `@supports`'s words as prettier's value words: `not`, `and` or `or` written against the paren group after it, or
+ * the prelude's first word before one (prettier's parser drops that gap), is a function, the two one word apart by
+ * a space that never breaks.
+ */
+function supportsItems(words: number[], ctx: SCtx, top: boolean): number[][] {
+  const t = ctx.tree;
+  const items: number[][] = [];
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i] as number;
+    const next = words[i + 1];
+    const keyword = !t.named(w) && ["not", "and", "or"].includes(t.text(w).toLowerCase());
+    if (keyword && next !== undefined && isParenQuery(next, ctx) && ((top && i === 0) || t.adjoins(w, next))) {
+      items.push([w, next]);
+      i++;
+    } else items.push([w]);
+  }
+  return items;
+}
+
+/** A value word of `supportsItems`, a function's name and paren group a space apart. */
+function supportsItem(item: number[], ctx: SCtx): void {
+  item.forEach((c, i) => {
+    if (i > 0) sText(" ");
+    queryWord(c, ctx, true);
+  });
+}
+
 /**
  * A word of a query read as a value: a paren group as prettier's value-paren_group, its words a fill indented
- * inside it, a `:` joined to the word before it.
+ * inside it, a `:` joined to the word before it; in `@supports`, its words as `supportsItems`.
  */
-function queryWord(c: number, ctx: SCtx): void {
+function queryWord(c: number, ctx: SCtx, supports = false): void {
   const t = ctx.tree;
   if (ctx.isComment(c)) return ctx.comment(c);
   if (!t.named(c)) return sToken(c, t.text(c));
-  if (kind(c, ctx) !== "feature_query" && kind(c, ctx) !== "parenthesized_query") return ctx.printNode(c);
+  if (!isParenQuery(c, ctx)) return ctx.printNode(c);
   const kids = children(c, t);
   const inner = kids.slice(1, -1).flatMap((k) => queryWords(k, ctx));
+  const items = supports ? supportsItems(inner, ctx, false) : inner.map((k) => [k]);
   open(GROUP);
   queryWord(kids[0] as number, ctx);
   open(INDENT);
@@ -819,13 +902,14 @@ function queryWord(c: number, ctx: SCtx): void {
   open(INDENT);
   open(FILL);
   open(FILL_ITEM);
-  inner.forEach((k, i) => {
-    if (i > 0 && kind(k, ctx) !== ":") {
+  items.forEach((item, i) => {
+    if (i > 0 && kind(item[0] as number, ctx) !== ":") {
       close();
       sLine(0);
       open(FILL_ITEM);
     }
-    queryWord(k, ctx);
+    if (supports) supportsItem(item, ctx);
+    else queryWord(item[0] as number, ctx);
   });
   for (let k = 0; k < 5; k++) close();
   sLine(SOFT);
@@ -833,15 +917,9 @@ function queryWord(c: number, ctx: SCtx): void {
   close();
 }
 
-/** Whether `@supports`'s prelude holds a comment, which `supportsValue` prints as prettier's value. */
-const supportsComments = (node: number, ctx: SCtx): boolean => {
-  const holds = (n: number): boolean => children(n, ctx.tree).some((c) => ctx.isComment(c) || holds(c));
-  return children(node, ctx.tree).some((c) => kind(c, ctx) !== "block" && (ctx.isComment(c) || holds(c)));
-};
-
 /**
- * `@supports`'s prelude holding a comment, which prettier parses as a value: its words a fill, indented, each paren
- * group breaking inside once past the width.
+ * `@supports`'s prelude, which prettier parses as a value: its words a fill, indented, each paren group breaking
+ * inside once past the width; one word alone, unindented.
  */
 export function supportsValue(at: number | undefined, node: number, ctx: SCtx): void {
   const t = ctx.tree;
@@ -849,16 +927,20 @@ export function supportsValue(at: number | undefined, node: number, ctx: SCtx): 
   sText(" ");
   const kids = children(node, t);
   const words = kids.filter((c) => c !== at && kind(c, ctx) !== "block").flatMap((c) => queryWords(c, ctx));
-  open(GROUP);
-  open(INDENT);
-  open(FILL);
-  words.forEach((c, i) => {
-    if (i > 0) sLine(0);
-    open(FILL_ITEM);
-    queryWord(c, ctx);
-    close();
-  });
-  for (let k = 0; k < 3; k++) close();
+  const items = supportsItems(words, ctx, true);
+  if (items.length === 1) supportsItem(items[0] as number[], ctx);
+  else {
+    open(GROUP);
+    open(INDENT);
+    open(FILL);
+    items.forEach((item, i) => {
+      if (i > 0) sLine(0);
+      open(FILL_ITEM);
+      supportsItem(item, ctx);
+      close();
+    });
+    for (let k = 0; k < 3; k++) close();
+  }
   const block = kids.find((c) => kind(c, ctx) === "block");
   if (block !== undefined) {
     sText(" ");
@@ -878,7 +960,6 @@ export function importStatement(node: number, ctx: SCtx): void {
   sText(" ");
   const item = (c: number) =>
     !t.named(c) ? sToken(c, t.text(c)) : ctx.isComment(c) ? ctx.comment(c) : ctx.printNode(c);
-  const paren = (c: number) => kind(c, ctx) === "feature_query" || kind(c, ctx) === "parenthesized_query";
   // The prelude's comments are its words too, as `splitOn`'s `comments: "all"`, and so are a media query's.
   const run = splitRun(ctx, node, ",", ["@import", ";"], ["block"], "all");
   // Several entries are prettier's paren group, indented, each entry a comma group indented once more but
@@ -897,7 +978,7 @@ export function importStatement(node: number, ctx: SCtx): void {
     words.forEach((c, j) => {
       if (j > 0) sLine(0);
       open(FILL_ITEM);
-      if (paren(c)) queryWord(c, ctx);
+      if (isParenQuery(c, ctx)) queryWord(c, ctx);
       else item(c);
       close();
     });
@@ -1012,6 +1093,7 @@ export const handWritten = {
   supportsValue,
   valueMath,
   unaryExpression,
+  number,
   atRule,
   postcssStatement,
   parenthesizedValue,

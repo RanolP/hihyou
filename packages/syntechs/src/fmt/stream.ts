@@ -18,6 +18,8 @@ const TOKEN = 1;
 const LINE = 2;
 /** Prints the span interval its `eStr` holds, there, in the mode and indentation around (see `sJump`). */
 const JUMP = 3;
+/** A text entry's flag: the line end trims no whitespace up to its end (`sKeptText`). */
+const KEPT = 1;
 // Line flags.
 export const SOFT = 1;
 export const HARD = 2;
@@ -314,7 +316,29 @@ const tokenWidth = (s: string) => {
   return w + tabs * tabWidth;
 };
 
+/**
+ * A tree printed inside another, as a JS template's embedded CSS: its tokens anchor to `anchor`, a node of the outer
+ * tree, as synthetic; `token`, when set, writes a token itself (a placeholder an expression replaces) and returns true.
+ */
+export interface Embedding {
+  readonly anchor: number;
+  token: ((s: string) => boolean) | undefined;
+}
+let embedding: Embedding | undefined;
+
+/** Prints `fn` under `e`, restoring the embedding around it (embeds nest). */
+export function withEmbedding(e: Embedding, fn: () => void): void {
+  const outer = embedding;
+  embedding = e;
+  try {
+    fn();
+  } finally {
+    embedding = outer;
+  }
+}
+
 export function resetStream(ruff = false, tabs = 0): void {
+  embedding = undefined;
   ruffSpaces = ruff;
   tabWidth = tabs;
   expandsSeen = false;
@@ -381,11 +405,34 @@ export function sText(s: string): void {
   mergeable = true;
 }
 
+/** Synthesized text whose trailing whitespace a line end keeps, as a string literal's content line. */
+export function sKeptText(s: string): void {
+  const w = tokenWidth(s);
+  measured(s, w);
+  strs.push(s);
+  entry(TEXT, KEPT, strs.length - 1, 0, w);
+  mergeable = false;
+}
+
 /**
  * A source token (or, `synthetic`, one a rule inserted, anchored to `node`): an entry of its own, for its anchor.
  * An `imaginary` one counts no width toward its line, as ktfmt's trailing comma, which it adds after the layout.
  */
 export function sToken(node: number, s: string, synthetic = false, imaginary = false): void {
+  if (embedding !== undefined) {
+    const hook = embedding.token;
+    if (hook !== undefined) {
+      // The hook writes through sText and jumps, never back into sToken.
+      embedding.token = undefined;
+      try {
+        if (hook(s)) return;
+      } finally {
+        embedding.token = hook;
+      }
+    }
+    node = embedding.anchor;
+    synthetic = true;
+  }
   const w = imaginary ? 0 : tokenWidth(s);
   measured(s, w);
   strs.push(s);
@@ -1934,17 +1981,20 @@ export function printStream(layout: Layout): StreamPrinted {
   let column = 0;
   /** Where the text of the current line starts, after its indentation: a `COLLAPSE` line reads it. */
   let lineStart = 0;
+  /** How much of `current` a line end must keep: up to the end of a `KEPT` text. */
+  let kept = 0;
   let tokens = 0;
   let placedEntry = new Int32Array(1024);
   let placedAt = new Int32Array(1024);
   const endLine = () => {
     out.push(current, "\n");
     current = "";
+    kept = 0;
     length += 1;
   };
   const trimLineEnd = () => {
     let end = current.length;
-    for (let c = current.charCodeAt(end - 1); c === 32 || c === 9;)
+    for (let c = current.charCodeAt(end - 1); end > kept && (c === 32 || c === 9);)
       c = current.charCodeAt(--end - 1);
     if (end === current.length) return;
     length -= current.length - end;
@@ -2082,6 +2132,7 @@ export function printStream(layout: Layout): StreamPrinted {
             const lastBreak = s.lastIndexOf("\n");
             out.push(current + s.slice(0, lastBreak + 1));
             current = s.slice(lastBreak + 1);
+            kept = 0;
             length += s.length;
             column = tokenWidth(current);
             if (ruff) remeasure = true;
@@ -2304,6 +2355,7 @@ export function printStream(layout: Layout): StreamPrinted {
           tokens++;
         }
         current += s;
+        if (eKind[i] === TEXT && eFlag[i] === KEPT) kept = current.length;
         length += s.length;
         column += eW[i] as number;
       }

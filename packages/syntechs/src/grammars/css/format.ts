@@ -37,7 +37,7 @@ const format = defineFormat<typeof grammar, CssOptions>();
 const spaced = () => inOrder(space);
 const adjacent = () => inOrder();
 /** Selectors on either side of a combinator: a line between, and after the combinator's token a space. */
-const combinator = () => inOrder({ join: "line", spaceWhen: { after: [">", ">>>", "~", "+"] } });
+const combinator = () => inOrder({ join: "line", spaceWhen: { after: [">", ">>>", "~", "+", "<"] } });
 /** Selectors one per line, one of more than two parts indenting as it breaks; then each `trail` child after a space. */
 const selectorList = (trail: "block"[] = []) =>
   splitOn(",", { trail, wrapItem: when("longSelector"), layout: { group: true, between: "hardline" } });
@@ -129,6 +129,7 @@ export const css = format({
                 comments: true,
                 item: words({
                   keepLines: all(entryCount(1), firstText({ is: ["grid"], prefix: ["grid-template"], anyCase: true })),
+                  apart: when("ownWord"),
                 }),
                 layout: valueLayout,
               }),
@@ -152,8 +153,9 @@ export const css = format({
       inOrder({ join: "gap", tight: { before: [":"] }, spaceWhen: { after: [":"], before: ["block"] } }),
     property_name: () => text("maybeLower"),
     important: () => custom("important"),
-    integer_value: () => text("unitCase"),
-    float_value: () => text("unitCase"),
+    // Its unit's case normalized; after a function, a `+` sign spaced as an operator (fmt.ts's `number`).
+    integer_value: () => custom("number"),
+    float_value: () => custom("number"),
     color_value: () => text("lower"),
     string_value: () => text("requote"),
     // Quoted inside `[attr=value]`, an `an+b` spaced around its `+`, else a CSS-wide keyword lowercased.
@@ -188,7 +190,14 @@ export const css = format({
         inOrder({ join: "gap", tight: { after: ["("], before: [")"] } }),
         either(
           parentIs("call_expression"),
-          grpParen(splitOn(",", { except: ["(", ")"], comments: "all", item: words(), layout: { between: "line" } })),
+          grpParen(
+            splitOn(",", {
+              except: ["(", ")"],
+              comments: "all",
+              item: words({ apart: when("ownWord") }),
+              layout: { between: "line" },
+            }),
+          ),
           grpParen(
             splitOn(",", {
               except: ["(", ")"],
@@ -243,8 +252,8 @@ export const css = format({
         splitOn(",", { except: ["@media"], trail: ["block"], layout: { group: true, indent: true, between: "line" } }),
       ]),
     ],
-    // A prelude holding a comment as prettier's value (fmt.ts's `supportsValue`).
-    supports_statement: () => [either(when("supportsComments"), tok("@supports").via("supportsValue"), inOrder(space))],
+    // The prelude as prettier's value (fmt.ts's `supportsValue`).
+    supports_statement: () => [tok("@supports").via("supportsValue")],
     import_statement: () => custom("importStatement"),
     namespace_statement: () => inOrder({ join: "space", tight: { before: [";"] } }),
     // Prettier's raw at-rule parameters: as written, one space wherever the source has any gap.
@@ -291,6 +300,17 @@ export const css = format({
     // prettier's media feature: as written, one space wherever the source has any gap.
     range_query: () => inOrder({ join: "gap", tight: { after: ["("], before: [")"] } }),
     feature_name: () => text("maybeLower"),
+    // `selector(...)`: a selector list as a rule's, one per line inside the broken parentheses once it has two.
+    selector_query: () => [
+      "selector",
+      grpParen(
+        splitOn(",", {
+          except: ["selector", "(", ")"],
+          wrapItem: when("longSelector"),
+          layout: { between: "hardline" },
+        }),
+      ),
+    ],
   },
   wrapping: {
     stylesheet: statements,

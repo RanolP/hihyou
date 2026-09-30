@@ -56,7 +56,10 @@ function eachCond(ir: FormatIR, visit: (c: Cond) => void): void {
       cond(x.hug);
     } else if (x.t === "splitOn") {
       cond(x.wrapItem);
-      if (x.item.t === "words") cond(x.item.keepLines);
+      if (x.item.t === "words") {
+        cond(x.item.keepLines);
+        cond(x.item.apart);
+      }
       const layout = (l: SplitLayout): void => {
         if ("when" in l) {
           cond(l.when);
@@ -419,11 +422,13 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
           block("for (let i = 1; i < items.length; i++)", () => {
             line("const prev = items[i - 1] as number;");
             line("const c = items[i] as number;");
+            const apart =
+              x.item.t === "words" && x.item.apart !== false ? ` && !(${cond(x.item.apart, false, "c")})` : "";
             if (x.comments) {
               line("const dedent = lead;");
               line("lead &&= ctx.isComment(c);");
-              line(`if (t.adjoins(prev, c) && !ctx.isComment(prev) && !ctx.isComment(c)) ${printItem}(c);`);
-            } else line(`if (t.adjoins(prev, c)) ${printItem}(c);`);
+              line(`if (t.adjoins(prev, c) && !ctx.isComment(prev) && !ctx.isComment(c)${apart}) ${printItem}(c);`);
+            } else line(`if (t.adjoins(prev, c)${apart}) ${printItem}(c);`);
             if (keep !== undefined)
               block("else if (grid && !breaksBetween(t, prev, c))", () => {
                 line('sText(" ");');

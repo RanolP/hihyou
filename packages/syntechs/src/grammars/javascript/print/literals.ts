@@ -4,6 +4,7 @@
 import {
   anon,
   children,
+  embedLanguage,
   first,
   hasComment,
   type HasTree,
@@ -16,6 +17,7 @@ import {
   unparen,
 } from "./util.js";
 import type { CustomRule } from "../../../fmt/dsl/runtime.js";
+import { printEmbed } from "./embed.js";
 import { textWidth } from "../../../fmt/width.js";
 import {
   capture,
@@ -127,6 +129,7 @@ function printSubstitution(
   sub: number,
   indentSizeOf: number,
   previousQuasi: string,
+  embedded = false,
 ): void {
   const js = ctx.js;
   const openToken = anon(js, sub, "${");
@@ -160,7 +163,9 @@ function printSubstitution(
   };
   open(GROUP);
   if (openToken !== undefined) sToken(openToken, "${");
-  if (indentSizeOf === 0 && previousQuasi.endsWith("\n")) {
+  // An embed lays its quasis out anew, so no alignment to their source holds.
+  if (embedded) body();
+  else if (indentSizeOf === 0 && previousQuasi.endsWith("\n")) {
     openAlign(Number.NEGATIVE_INFINITY);
     body();
     close();
@@ -260,6 +265,12 @@ const templateString: CustomRule<JsOptions> = (node, sctx) => {
   const js = ctx.js;
   const raws = quasis(js, node);
   if (isJestEachTemplate(js.tree, node) && printJestEach(ctx, node, raws)) return;
+  const lang = embedLanguage(js.tree, node);
+  if (
+    lang !== undefined &&
+    printEmbed(ctx, node, lang, raws, (sub) => capture(() => printSubstitution(ctx, sub, 0, "", true)))
+  )
+    return;
   let previous = 0;
   const sizes = raws.map((q) => {
     const size = q.includes("\n") ? indentSize(q, js.options.tabWidth) : previous;

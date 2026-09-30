@@ -1,45 +1,8 @@
 packages:
   - packages/*
+  # The tree-sitter grammars, each a package its own postinstall assembles from upstream grammar sources and a
+  # local grammar.patch: packages/syntechs/grammars/build.mjs.
+  - packages/syntechs/grammars/*
 allowBuilds:
   # The platform binary arrives as an optional dependency; the postinstall only re-verifies it.
   esbuild: false
-  # Only the grammars' generated src/ is read (by the compiler, and by zig for the parity reference); their node
-  # bindings go unused, so their install scripts need not run.
-  tree-sitter-css: false
-  tree-sitter-javascript: false
-  tree-sitter-json: false
-  tree-sitter-kotlin: false
-  tree-sitter-python: false
-  tree-sitter-typescript: false
-packageExtensions:
-  # Its package.json marks `tree_sitter` optional, a typo for the `tree-sitter` peer, which pnpm would then
-  # install as the native node binding for every grammar.
-  tree-sitter-kotlin@0.3.8:
-    peerDependenciesMeta:
-      tree-sitter:
-        optional: true
-patchedDependencies:
-  # Syntax the upstream grammar lacks. The patch carries grammar.js, scanner.c and the src/ that mise.toml's
-  # `tree-sitter generate` writes from them; packages/syntechs/src/grammars/css/scanner.ts ports scanner.c. To
-  # change it: `pnpm patch tree-sitter-css@0.25.0`, edit, `tree-sitter generate` in that directory, then
-  # `pnpm patch-commit <dir>` (drop the src/tree_sitter/ header hunks the newer CLI rewrites).
-  tree-sitter-css@0.25.0: patches/tree-sitter-css@0.25.0.patch
-  # Import attributes after `export ... from` and under the older `assert` keyword; grammar.js and its generated
-  # src/ only, changed the same way.
-  tree-sitter-javascript@0.25.0: patches/tree-sitter-javascript@0.25.0.patch
-  # scanner.c: no automatic semicolon before a same-line word starting with `e`, which cut `return emit(x)`
-  # into `return` and `emit(x)`. packages/syntechs/src/grammars/kotlin/scanner.ts ports the same change.
-  # grammar.js: `fun interface`, an enum body's repeated `;`, and an `=` in an if/when/while condition (which
-  # ktfmt formats although the compiler rejects it), and an annotated declaration winning over an annotated
-  # expression when both parse. Changed as css is, except the src/tree_sitter/ header hunks
-  # stay, as in typescript, because the newer CLI writes an ABI 15 parser.c.
-  tree-sitter-kotlin@0.3.8: patches/tree-sitter-kotlin@0.3.8.patch
-  # PEP 696 type parameter defaults, `def f[T = int]()`, as a `type_default` in `type_parameter`; PEP 810 `lazy`
-  # imports; PEP 798 unpacking in a comprehension's element; a starred element in a bare tuple, `a = 1, *b`; and
-  # `&` binding tighter than `^`, which upstream inverts. grammar.js and its generated src/, changed the same way
-  # as css's; scanner.c's changes are ported in packages/syntechs/src/grammars/python/scanner.ts.
-  tree-sitter-python@0.25.0: patches/tree-sitter-python@0.25.0.patch
-  # `a + b!` parsed as `(a + b)!`: `!` binds at 'member' precedence, as in TypeScript, not the unordered 'unary'.
-  # Same workflow in typescript/ and tsx/, except the src/tree_sitter/ header hunks stay: upstream's headers
-  # predate the ABI 15 parser.c the newer CLI writes, and the native parity build needs them.
-  tree-sitter-typescript@0.23.2: patches/tree-sitter-typescript@0.23.2.patch

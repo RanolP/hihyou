@@ -5,6 +5,11 @@ coverage/
 .claude/
 research/parser-bench/inputs/
 packages/syntechs/corpus/
+# A grammar package tracks only its manifest and patch; its postinstall assembles the rest, from .cache/.
+packages/syntechs/grammars/*/*
+!packages/syntechs/grammars/*/package.json
+!packages/syntechs/grammars/*/grammar.patch
+packages/syntechs/grammars/.cache/
 # Language bundles are derived from the grammar packages; `pnpm install` regenerates them.
 packages/syntechs/src/grammars/*/bundle.js
 packages/syntechs/src/grammars/*/fmt.gen.ts

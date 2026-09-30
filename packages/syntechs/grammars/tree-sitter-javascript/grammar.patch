@@ -1,0 +1,541 @@
+Import attributes after `export ... from` and under the older `assert` keyword, in grammar.js,
+and scanner.c's automatic-semicolon tokens (a statement that continues, `for ... in` after an initializer,
+an arrow body's end), which packages/syntechs/src/grammars/javascript/scanner.ts ports.
+tree-sitter-typescript does not build on this: it keeps upstream tree-sitter-javascript 0.23.1.
+
+--- a/grammar.js
++++ b/grammar.js
+@@ -21,8 +21,15 @@
+     // it should NOT parse html comments.
+     $.escape_sequence,
+     $.regex_pattern,
+     $.jsx_text,
++    // Never scanned: valid only right after the `let` of a lexical declaration or an `export`, where a line break
++    // before a name or `{` continues the statement instead of ending the identifier `let` or `export`.
++    $._statement_continues,
++    $._for_in_after_initializer,
++    // Never scanned: valid only right after the `}` of an arrow function's block body, which cannot be called,
++    // indexed or tagged, so a line break before `(`, `[` or a template ends the statement there.
++    $._arrow_body_end,
+   ],
+ 
+   extras: $ => [
+     $.comment,
+@@ -123,8 +130,9 @@
+     ['assign', $.primary_expression],
+     ['member', 'template_call', 'new', 'call', $.expression],
+     ['declaration', 'literal'],
+     [$.primary_expression, $.statement_block, 'object'],
++    [$.primary_expression, $._arrow_body, 'object'],
+     [$.meta_property, $.import],
+     [$.import_statement, $.import],
+     [$.export_statement, $.primary_expression],
+     [$.lexical_declaration, $.primary_expression],
+@@ -140,16 +148,19 @@
+     [$.primary_expression, $.rest_pattern],
+     [$.primary_expression, $.pattern],
+     [$.primary_expression, $._for_header],
+     [$.variable_declarator, $._for_header],
++    [$._using_declarator, $._for_header],
++    [$.primary_expression, $.module_expression],
+     [$.array, $.array_pattern],
+     [$.object, $.object_pattern],
+     [$.assignment_expression, $.pattern],
+     [$.assignment_expression, $.object_assignment_pattern],
+     [$.labeled_statement, $._property_name],
+     [$.computed_property_name, $.array],
+-    [$.binary_expression, $._initializer],
+     [$.class_static_block, $._property_name],
++    [$.parenthesized_expression, $._new_yield_arguments],
++    [$.sequence_expression, $._new_yield_arguments],
+   ],
+ 
+   word: $ => $.identifier,
+ 
+@@ -167,19 +178,21 @@
+ 
+     export_statement: $ => choice(
+       seq(
+         'export',
++        optional($._statement_continues),
+         choice(
+-          seq('*', $._from_clause),
+-          seq($.namespace_export, $._from_clause),
+-          seq($.export_clause, $._from_clause),
++          seq('*',$._from_clause, optional($.import_attribute)),
++          seq($.namespace_export, $._from_clause, optional($.import_attribute)),
++          seq($.export_clause, $._from_clause, optional($.import_attribute)),
+           $.export_clause,
+         ),
+         $._semicolon,
+       ),
+       seq(
+         repeat(field('decorator', $.decorator)),
+         'export',
++        optional($._statement_continues),
+         choice(
+           field('declaration', $.declaration),
+           seq(
+             'default',
+@@ -213,13 +226,14 @@
+         field('alias', $._module_export_name),
+       )),
+     ),
+ 
+-    _module_export_name: $ => choice(
++    // An export name is an IdentifierName, reserved words included: `export * as function from 'a'`.
++    _module_export_name: $ => reserved('properties', choice(
+       $.identifier,
+       $.string,
+       'default',
+-    ),
++    )),
+ 
+     declaration: $ => choice(
+       $.function_declaration,
+       $.generator_function_declaration,
+@@ -283,9 +297,9 @@
+         field('alias', $.identifier),
+       ),
+     ),
+ 
+-    import_attribute: $ => seq('with', $.object),
++    import_attribute: $ => seq(choice('with', 'assert'), $.object),
+ 
+     //
+     // Statements
+     //
+@@ -327,8 +341,9 @@
+     ),
+ 
+     lexical_declaration: $ => seq(
+       field('kind', choice('let', 'const')),
++      optional($._statement_continues),
+       commaSep1($.variable_declarator),
+       $._semicolon,
+     ),
+ 
+@@ -336,17 +351,29 @@
+       field('kind', choice(
+         'using',
+         seq('await', 'using'),
+       )),
+-      commaSep1($.variable_declarator),
++      commaSep1(alias($._using_declarator, $.variable_declarator)),
+       $._semicolon,
+     ),
+ 
++    // A using declaration binds no pattern, so `using [x]` stays a member expression, as the spec's
++    // lookahead restriction on `using [` has it.
++    _using_declarator: $ => seq(
++      field('name', choice(
++        $.identifier,
++        alias('of', $.identifier),
++        $.void_pattern,
++      )),
++      optional($._initializer),
++    ),
++
+     variable_declarator: $ => seq(
+       field('name', choice(
+         $.identifier,
+         alias('of', $.identifier),
+         $._destructuring_pattern,
++        $.void_pattern,
+       )),
+       optional($._initializer),
+     ),
+ 
+@@ -375,9 +402,9 @@
+     for_statement: $ => seq(
+       'for',
+       '(',
+       choice(
+-        field('initializer', choice($.lexical_declaration, $.variable_declaration)),
++        field('initializer', choice($.lexical_declaration, $.variable_declaration, $.using_declaration)),
+         seq(field('initializer', $._expressions), ';'),
+         field('initializer', $.empty_statement),
+       ),
+       field('condition', choice(
+@@ -398,44 +425,59 @@
+ 
+     _for_header: $ => seq(
+       '(',
+       choice(
+-        field('left', choice(
+-          $._lhs_expression,
+-          $.parenthesized_expression,
+-        )),
+         seq(
+-          field('kind', 'var'),
+-          field('left', choice(
+-            $.identifier,
+-            alias('of', $.identifier),
+-            $._destructuring_pattern,
+-          )),
+-          optional($._initializer),
++          choice(
++            field('left', choice(
++              $._lhs_expression,
++              $.parenthesized_expression,
++            )),
++            seq(
++              field('kind', 'var'),
++              field('left', choice(
++                $.identifier,
++                alias('of', $.identifier),
++                $._destructuring_pattern,
++              )),
++            ),
++            seq(
++              field('kind', choice('let', 'const')),
++              field('left', choice(
++                $.identifier,
++                alias('of', $.identifier),
++                $._destructuring_pattern,
++              )),
++              optional($._automatic_semicolon),
++            ),
++            seq(
++              field('kind', choice(
++                'using',
++                seq('await', 'using'),
++              )),
++              field('left', choice(
++                $.identifier,
++                alias('of', $.identifier),
++                $.void_pattern,
++              )),
++              optional($._automatic_semicolon),
++            ),
++          ),
++          field('operator', choice('in', 'of')),
+         ),
++        // Annex B's `for (var a = b in c)`: the initializer takes no `in` operator outside brackets, so the
++        // scanner ends it at the first `in`, which the parser would otherwise read as a relation in it.
+         seq(
+-          field('kind', choice('let', 'const')),
++          field('kind', 'var'),
+           field('left', choice(
+             $.identifier,
+             alias('of', $.identifier),
+             $._destructuring_pattern,
+           )),
+-          optional($._automatic_semicolon),
++          $._initializer,
++          field('operator', alias($._for_in_after_initializer, 'in')),
+         ),
+-        seq(
+-          field('kind', choice(
+-            'using',
+-            seq('await', 'using'),
+-          )),
+-          field('left', choice(
+-            $.identifier,
+-            alias('of', $.identifier),
+-            $._destructuring_pattern,
+-          )),
+-          optional($._automatic_semicolon),
+-        ),
+       ),
+-      field('operator', choice('in', 'of')),
+       field('right', $._expressions),
+       ')',
+     ),
+ 
+@@ -587,10 +629,21 @@
+       $.generator_function,
+       $.class,
+       $.meta_property,
+       $.call_expression,
++      $.module_expression,
++      $.v8_intrinsic,
+     ),
+ 
++    // Babel's v8intrinsic plugin: `%DebugPrint(foo)`.
++    v8_intrinsic: $ => seq('%', field('name', $.identifier)),
++
++    // The module expressions proposal's `module { ... }`.
++    module_expression: $ => seq(
++      'module',
++      field('body', $.statement_block),
++    ),
++
+     yield_expression: $ => prec.right(seq(
+       'yield',
+       choice(
+         seq('*', $.expression),
+@@ -718,9 +771,10 @@
+       $.jsx_namespace_name,
+     ),
+ 
+     jsx_closing_element: $ => seq(
+-      '</',
++      '<',
++      '/',
+       optional(field('name', $._jsx_element_name)),
+       '>',
+     ),
+ 
+@@ -748,16 +802,18 @@
+         '"',
+         repeat(choice(
+           alias($.unescaped_double_jsx_string_fragment, $.string_fragment),
+           $.html_character_reference,
++          alias($._jsx_ampersand, $.string_fragment),
+         )),
+         '"',
+       ),
+       seq(
+         '\'',
+         repeat(choice(
+           alias($.unescaped_single_jsx_string_fragment, $.string_fragment),
+           $.html_character_reference,
++          alias($._jsx_ampersand, $.string_fragment),
+         )),
+         '\'',
+       ),
+     ),
+@@ -770,8 +826,11 @@
+ 
+     // same here
+     unescaped_single_jsx_string_fragment: _ => token.immediate(prec(1, /([^'&]|&[^#A-Za-z])+/)),
+ 
++    // An `&` that starts no character reference, as in `?a=1&b=2`: the longer reference wins where one matches.
++    _jsx_ampersand: _ => token.immediate('&'),
++
+     _jsx_attribute_value: $ => choice(
+       alias($._jsx_string, $.string),
+       $.jsx_expression,
+       $._jsx_element,
+@@ -843,12 +902,19 @@
+       ),
+       '=>',
+       field('body', choice(
+         $.expression,
+-        $.statement_block,
++        alias($._arrow_body, $.statement_block),
+       )),
+     ),
+ 
++    _arrow_body: $ => prec.right(seq(
++      '{',
++      repeat($.statement),
++      '}',
++      optional($._arrow_body_end),
++    )),
++
+     // Override
+     _call_signature: $ => field('parameters', $.formal_parameters),
+     _formal_parameter: $ => choice($.pattern, $.assignment_pattern),
+ 
+@@ -869,18 +935,27 @@
+         field('arguments', $.arguments),
+       )),
+     ),
+ 
+-    new_expression: $ => prec.right('new', seq(
+-      'new',
+-      field('constructor', choice($.primary_expression, $.new_expression)),
+-      field('arguments', optional(prec.dynamic(1, $.arguments))),
++    new_expression: $ => prec.right('new', choice(
++      seq(
++        'new',
++        field('constructor', choice($.primary_expression, $.new_expression)),
++        field('arguments', optional(prec.dynamic(1, $.arguments))),
++      ),
++      // `new yield()`: outside a generator `yield` is an identifier, which babel's script mode reads.
++      seq(
++        'new',
++        field('constructor', alias('yield', $.identifier)),
++        field('arguments', alias($._new_yield_arguments, $.arguments)),
++      ),
+     )),
+ 
+-    await_expression: $ => prec('unary_void', seq(
++    // `await (x).y` reads as an await of `(x).y`, as it does in an async function, not as a call of `await`.
++    await_expression: $ => prec.dynamic(1, prec('unary_void', seq(
+       'await',
+       $.expression,
+-    )),
++    ))),
+ 
+     member_expression: $ => prec('member', seq(
+       field('object', choice($.expression, $.primary_expression, $.import)),
+       choice('.', field('optional_chain', $.optional_chain)),
+@@ -1172,14 +1247,22 @@
+       commaSep(optional(choice($.expression, $.spread_element))),
+       ')',
+     ),
+ 
++    // `new yield (x)`: the arguments of a call of `yield`, over a yield of a parenthesized expression.
++    _new_yield_arguments: $ => prec.dynamic(1, seq(
++      '(',
++      commaSep(optional(choice($.expression, $.spread_element))),
++      ')',
++    )),
++
+     decorator: $ => seq(
+       '@',
+       choice(
+         $.identifier,
+         alias($.decorator_member_expression, $.member_expression),
+         alias($.decorator_call_expression, $.call_expression),
++        $.parenthesized_expression,
+       ),
+     ),
+ 
+     decorator_member_expression: $ => prec('member', seq(
+@@ -1211,9 +1294,11 @@
+     ),
+ 
+     field_definition: $ => seq(
+       repeat(field('decorator', $.decorator)),
+-      optional('static'),
++      // `static` before a line break and a name is the name's modifier: `static\nstatic` is a static field.
++      optional(seq('static', optional($._statement_continues))),
++      optional('accessor'),
+       field('property', $._property_name),
+       optional($._initializer),
+     ),
+ 
+@@ -1237,19 +1322,23 @@
+     // not patterns.
+     pattern: $ => prec.dynamic(-1, choice(
+       $._lhs_expression,
+       $.rest_pattern,
++      $.void_pattern,
+     )),
+ 
++    // The discard binding proposal's `void` in a binding or assignment pattern.
++    void_pattern: _ => 'void',
++
+     rest_pattern: $ => prec.right(seq(
+       '...',
+       $._lhs_expression,
+     )),
+ 
+     method_definition: $ => seq(
+       repeat(field('decorator', $.decorator)),
+       optional(choice(
+-        'static',
++        seq('static', optional($._statement_continues)),
+         alias(token(seq('static', /\s+/, 'get', /\s*\n/)), 'static get'),
+       )),
+       optional('async'),
+       optional(choice('get', 'set', '*')),
+@@ -1292,10 +1381,12 @@
+       'set',
+       'async',
+       'await',
+       'static',
+-      'export',
+       'let',
++      'accessor',
++      'using',
++      'module',
+     ),
+ 
+     _semicolon: $ => choice($._automatic_semicolon, ';'),
+   },
+--- a/src/scanner.c
++++ b/src/scanner.c
+@@ -11,8 +11,11 @@
+     LOGICAL_OR,
+     ESCAPE_SEQUENCE,
+     REGEX_PATTERN,
+     JSX_TEXT,
++    STATEMENT_CONTINUES,
++    FOR_IN_AFTER_INITIALIZER,
++    ARROW_BODY_END,
+ };
+ 
+ void *tree_sitter_javascript_external_scanner_create() { return NULL; }
+ 
+@@ -106,9 +109,10 @@
+         }
+     }
+ }
+ 
+-static bool scan_automatic_semicolon(TSLexer *lexer, bool comment_condition, bool *scanned_comment) {
++static bool scan_automatic_semicolon(TSLexer *lexer, bool comment_condition, bool statement_continues,
++                                     bool arrow_body_end, bool *scanned_comment) {
+     lexer->result_symbol = AUTOMATIC_SEMICOLON;
+     lexer->mark_end(lexer);
+ 
+     for (;;) {
+@@ -121,10 +125,16 @@
+             if (result == REJECT) {
+                 return false;
+             }
+ 
+-            if (result == ACCEPT && comment_condition && lexer->lookahead != ',' && lexer->lookahead != '=') {
+-                return true;
++            if (result == ACCEPT && comment_condition) {
++                // A block comment spanning lines may still be followed by `=` on a later line.
++                while (iswspace(lexer->lookahead)) {
++                    skip(lexer);
++                }
++                if (lexer->lookahead != ',' && lexer->lookahead != '=') {
++                    return true;
++                }
+             }
+         }
+ 
+         if (lexer->lookahead == '}') {
+@@ -151,8 +161,19 @@
+     if (scan_whitespace_and_comments(lexer, scanned_comment, true) == REJECT) {
+         return false;
+     }
+ 
++    // `let` or `export` before a line break and a name or `{` starts a declaration, not a statement of its own.
++    if (statement_continues && (lexer->lookahead == '{' || lexer->lookahead == '_' || lexer->lookahead == '$' ||
++                                lexer->lookahead == '\\' || iswalpha(lexer->lookahead))) {
++        return false;
++    }
++
++    // An arrow function's block body cannot be called, indexed or tagged: the next line starts a statement.
++    if (arrow_body_end && (lexer->lookahead == '(' || lexer->lookahead == '[' || lexer->lookahead == '`')) {
++        return true;
++    }
++
+     switch (lexer->lookahead) {
+         case '`':
+         case ',':
+         case ':':
+@@ -341,11 +362,34 @@
+     if (valid_symbols[JSX_TEXT] && scan_jsx_text(lexer)) {
+         return true;
+     }
+ 
++    // Annex B's `for (var a = b in c)` ends the initializer at `in`. An `in` that starts a longer name is left to
++    // the lexer, as is anything else once a letter is consumed: no other token here starts with `i`.
++    if (valid_symbols[FOR_IN_AFTER_INITIALIZER]) {
++        while (iswspace(lexer->lookahead)) {
++            skip(lexer);
++        }
++        if (lexer->lookahead == 'i') {
++            advance(lexer);
++            if (lexer->lookahead != 'n') {
++                return false;
++            }
++            advance(lexer);
++            if (iswalnum(lexer->lookahead) || lexer->lookahead == '_' || lexer->lookahead == '$' ||
++                lexer->lookahead == '\\' || lexer->lookahead > 127) {
++                return false;
++            }
++            lexer->mark_end(lexer);
++            lexer->result_symbol = FOR_IN_AFTER_INITIALIZER;
++            return true;
++        }
++    }
++
+     if (valid_symbols[AUTOMATIC_SEMICOLON]) {
+         bool scanned_comment = false;
+-        bool ret = scan_automatic_semicolon(lexer, !valid_symbols[LOGICAL_OR], &scanned_comment);
++        bool ret = scan_automatic_semicolon(lexer, !valid_symbols[LOGICAL_OR], valid_symbols[STATEMENT_CONTINUES],
++                                            valid_symbols[ARROW_BODY_END], &scanned_comment);
+         if (!ret && !scanned_comment && valid_symbols[TERNARY_QMARK] && lexer->lookahead == '?') {
+             return scan_ternary_qmark(lexer);
+         }
+         return ret;

@@ -10,10 +10,16 @@ import {
 import { defineLanguage, type Language, type PrintArgs } from "../../fmt/rules.js";
 import { close, GROUP, HARD, IF_BROKEN, IF_FLAT, INDENT, open, sHardline, sLine, SOFT, sText, sToken } from "../../fmt/stream.js";
 import { docCommentWords, kdoc } from "../../fmt/dsl/doc-comment.js";
-import type { ImportRule, PredicateRule } from "../../fmt/dsl/runtime.js";
+import { type ImportRule, importBlocks, type PredicateRule } from "../../fmt/dsl/runtime.js";
 import { newlineBetween, nextLineEmpty } from "../../fmt/text.js";
 import { type FormatTree, firstLeaf, nextLeaf, prevLeaf } from "../../fmt/tree.js";
-import { printLeadingComments } from "../../fmt/stream-format.js";
+import {
+  commentFacts,
+  printLeadingComment,
+  printLeadingComments,
+  printTrailingComment,
+  type Trailed,
+} from "../../fmt/stream-format.js";
 import type { StreamCtx, StreamRule, StreamRules } from "../../fmt/stream-format.js";
 import { grammar } from "./bundle.js";
 import { binary, binaryKinds } from "./binary.js";
@@ -192,6 +198,88 @@ const imports: ImportRule<KotlinOptions> = {
     return true;
   },
 };
+
+/**
+ * The file rule, but a file left blank once ktfmt drops its unused imports prints as ktfmt 0.64 does: its Formatter
+ * returns blank code unformatted, so the line breaks around the imports stay, and the imports' span, which it
+ * rewrote as the distinct imports one per line before it dropped them, leaves the breaks between those.
+ */
+const blankFile =
+  <O>(rule: StreamRule<O> | undefined): StreamRule<O> =>
+  (node, outer) => {
+    const ctx = outer as unknown as StreamCtx<KotlinOptions>;
+    const t = ctx.tree;
+    const lists = ctx.items(node);
+    const commented = (n: number): boolean => {
+      if (ctx.isComment(n)) return true;
+      for (let i = 0; i < t.count(n); i++) if (commented(t.child(n, i))) return true;
+      return false;
+    };
+    if (
+      lists.some((l) => t.kindName(l) !== "import_list") ||
+      commented(node) ||
+      importBlocks(ctx, lists, "import_list", imports).items.length > 0
+    ) {
+      rule?.(node, outer);
+      return;
+    }
+    const all = lists.flatMap((l) => ctx.items(l));
+    const distinct = new Set(all.map((imp) => imports.key(t, imp, ctx))).size;
+    // The final line break prints after the file's rule; an empty file prints only that one.
+    const breaks = t.lf(node) + Math.max(distinct - 1, 0) + t.trailingLf;
+    for (let i = 1; i < breaks; i++) sLine(HARD);
+  };
+
+/** The kinds a Kotlin file declares at its top level; any other item is a statement, which only a script holds. */
+const topLevel = new Set([
+  "shebang_line",
+  "file_annotation",
+  "package_header",
+  "import_list",
+  "class_declaration",
+  "object_declaration",
+  "function_declaration",
+  "property_declaration",
+  "getter",
+  "setter",
+  "type_alias",
+]);
+
+/**
+ * The file rule, but a statement that ends the file with a comment on the line after it prints that comment
+ * right after it, on its line, as ktfmt 0.64 does (`1 + 2// c`): its parser reads such a statement as an error
+ * element, which drops the line break before the comment.
+ */
+const gluedComment =
+  <O>(rule: StreamRule<O> | undefined): StreamRule<O> =>
+  (node, ctx) => {
+    const last = ctx.items(node).at(-1);
+    const first = last === undefined ? undefined : ctx.trailingComments(last)[0];
+    if (
+      last === undefined ||
+      first === undefined ||
+      topLevel.has(ctx.tree.kindName(last)) ||
+      ctx.isBroken(last) ||
+      ctx.ownsComments(last) ||
+      ctx.tree.lf(first) !== 1
+    ) {
+      rule?.(node, ctx);
+      return;
+    }
+    const print: StreamCtx<O>["print"] = (n, args) => {
+      if (n !== last) {
+        ctx.print(n, args);
+        return;
+      }
+      printLeadingComments(ctx, n);
+      ctx.printNode(n, args);
+      ctx.comment(first);
+      let previous: Trailed = { line: ctx.isLineComment(first), suffix: false };
+      for (const c of ctx.trailingComments(n).slice(1))
+        previous = printTrailingComment(ctx, commentFacts(ctx, c), previous);
+    };
+    rule?.(node, Object.assign(Object.create(ctx) as typeof ctx, { print }));
+  };
 
 /**
  * Whether `comment` ends an import's line (`import a.B // note`): it trails the import, so it moves with the
@@ -656,6 +744,57 @@ const startsWithLambda = (tree: FormatTree, node: number) => {
   return tree.text(leaf) === "{" && tree.kindName(tree.parent(leaf)) === "lambda_literal";
 };
 
+/** `ctx.print(n)`, but the comments in `skip` left out, for the caller to print where they belong. */
+const printSkipping = <O>(ctx: StreamCtx<O>, n: number, skip: ReadonlySet<number>, args?: PrintArgs) => {
+  if (skip.size === 0 || ctx.ownsComments(n)) return ctx.print(n, args);
+  for (const c of ctx.leadingComments(n)) if (!skip.has(c)) printLeadingComment(ctx, commentFacts(ctx, c));
+  ctx.printNode(n, args);
+  let previous: Trailed | undefined;
+  for (const c of ctx.trailingComments(n))
+    if (!skip.has(c)) previous = printTrailingComment(ctx, commentFacts(ctx, c), previous);
+};
+
+/**
+ * The comments written before a `;` (`foo(0) /* a *\/ ;`, `while (c) /** a *\/ ;`) as ktfmt prints them: each on
+ * the line it was written on, but a KDoc on a line of its own, and a line comment or KDoc ends its line. Returns
+ * whether the last one ended its line, which puts the `;` at the start of the next.
+ */
+const commentsBeforeSemicolon = <O>(ctx: StreamCtx<O>, comments: readonly number[]) => {
+  let ended = false;
+  for (const c of comments) {
+    const doc = ctx.endsItsLine?.(c) === true;
+    if (!ended) {
+      if (doc || ctx.tree.lf(c) > 0) sHardline();
+      else sText(" ");
+    }
+    ctx.comment(c);
+    ended = doc || ctx.isLineComment(c);
+    if (ended) sHardline();
+  }
+  return ended;
+};
+
+/** The children of `parent` between its children `a` and `b` that the source writes before the `;` it hides there. */
+const beforeHiddenSemicolon = (t: FormatTree, parent: number, a: number, b: number) => {
+  const text = t.text(parent);
+  const before = new Set<number>();
+  let at = 0;
+  let after = -1;
+  for (let i = 0; i < t.count(parent); i++) {
+    const c = t.child(parent, i);
+    const s = t.text(c);
+    const start = text.indexOf(s, at);
+    if (after !== -1) {
+      if (text.slice(after, start).includes(";")) return before;
+      if (c === b) break;
+      before.add(c);
+    }
+    at = start + s.length;
+    if (after !== -1 || c === a) after = at;
+  }
+  return new Set<number>();
+};
+
 /**
  * Statements, but a `;` stays before one that starts with a lambda, which would otherwise become the trailing
  * lambda of a call before it (ktfmt's RedundantSemicolonDetector keeps it). The grammar hides the `;`.
@@ -665,13 +804,21 @@ const statements =
   (node, ctx) => {
     const t = ctx.tree;
     const items = ctx.items(node);
+    // The comments written before a kept `;`, which print before it rather than as the lambda's.
+    const moved = new Set<number>();
     rule?.(
       node,
       Object.assign(Object.create(ctx) as typeof ctx, {
         print: (n: number, args?: PrintArgs) => {
-          ctx.print(n, args);
           const i = items.indexOf(n);
-          if (i !== -1 && i < items.length - 1 && startsWithLambda(t, items[i + 1] as number)) sToken(n, ";", true);
+          const next = items[i + 1];
+          if (i === -1 || next === undefined || !startsWithLambda(t, next)) return printSkipping(ctx, n, moved, args);
+          const semicolon = beforeHiddenSemicolon(t, node, n, next);
+          const before = [...ctx.trailingComments(n), ...ctx.leadingComments(next)].filter((c) => semicolon.has(c));
+          for (const c of before) moved.add(c);
+          printSkipping(ctx, n, moved, args);
+          commentsBeforeSemicolon(ctx, before);
+          sToken(n, ";", true);
         },
       }),
     );
@@ -798,20 +945,37 @@ const closeCondition = () => {
   close();
 };
 
+/**
+ * The comments between the `)` after `node`'s condition and the `;` of an empty body (`while (c) /** a *\/ ;`),
+ * which placement hangs on the condition but ktfmt prints before the `;` (commentsBeforeSemicolon).
+ */
+const beforeEmptyBody = <O>(ctx: StreamCtx<O>, node: number) => {
+  const t = ctx.tree;
+  let i = 0;
+  while (i < t.count(node) && t.text(t.child(node, i)) !== ")") i++;
+  const comments: number[] = [];
+  for (i++; i < t.count(node) && ctx.isComment(t.child(node, i)); i++) comments.push(t.child(node, i));
+  return i < t.count(node) && t.text(t.child(node, i)) === ";" ? comments : [];
+};
+
 /** `while (c)`, `do … while (c)` and `when (s)`: their children spaced, the condition in its parentheses as openCondition lays it out. */
 const keywordCondition = <O>(node: number, ctx: StreamCtx<O>) => {
   const t = ctx.tree;
   const items = new Set(ctx.items(node));
+  const moved = beforeEmptyBody(ctx, node);
+  const skip = new Set(moved);
   let prev = -1;
   let inside = false;
   for (let i = 0; i < t.count(node); i++) {
     const c = t.child(node, i);
     const named = t.named(c);
     if (named && !items.has(c)) continue;
-    if (prev !== -1 && t.text(prev) !== "(" && t.text(c) !== ")") sText(" ");
+    if (!named && t.text(c) === ";" && moved.length > 0) {
+      if (!commentsBeforeSemicolon(ctx, moved)) sText(" ");
+    } else if (prev !== -1 && t.text(prev) !== "(" && t.text(c) !== ")") sText(" ");
     prev = c;
     if (named) {
-      ctx.print(c);
+      printSkipping(ctx, c, skip);
       continue;
     }
     if (t.text(c) === ")" && inside) {
@@ -838,6 +1002,8 @@ const ifExpression = <O>(node: number, ctx: StreamCtx<O>) => {
   let prev = -1;
   let hungThen = false;
   let condition = -1;
+  const moved = beforeEmptyBody(ctx, node);
+  const skip = new Set(moved);
   open(GROUP);
   for (let i = 0; i < t.count(node); i++) {
     const c = t.child(node, i);
@@ -862,12 +1028,16 @@ const ifExpression = <O>(node: number, ctx: StreamCtx<O>) => {
       prev = c;
       continue;
     }
-    if (prev !== -1 && t.text(prev) !== "(" && t.text(c) !== ")") {
+    if (!named && t.text(c) === ";" && moved.length > 0) {
+      // ktfmt keeps the space before the `;` even at the start of a line.
+      commentsBeforeSemicolon(ctx, moved);
+      sText(" ");
+    } else if (prev !== -1 && t.text(prev) !== "(" && t.text(c) !== ")") {
       if (t.text(c) === "else" && hungThen) sLine(0);
       else sText(" ");
     }
     if (!named && t.text(c) === ")" && condition !== -1) closeCondition();
-    if (named) ctx.print(c);
+    if (named) printSkipping(ctx, c, skip);
     else if (t.text(c) === ";" && next !== -1 && t.text(next) === "else") {
       // The spaces around the empty branch are the joins on either side of it.
     } else {
@@ -979,6 +1149,7 @@ function withChains<O>(stream: StreamRules<O>): StreamRules<O> {
   for (const kind of ["navigation_expression", "call_expression", "indexing_expression", "postfix_expression"])
     rules.set(kind, chained(stream.rules.get(kind), hugsDeclaration));
   rules.set("statements", statements(stream.rules.get("statements")));
+  rules.set("source_file", gluedComment(blankFile(stream.rules.get("source_file"))));
   rules.set("if_expression", ifExpression);
   rules.set("companion_object", companionObject(supertypes(stream.rules.get("companion_object"))));
   for (const kind of ["class_declaration", "object_declaration"]) rules.set(kind, supertypes(stream.rules.get(kind)));

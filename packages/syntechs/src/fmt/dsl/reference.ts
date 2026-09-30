@@ -476,7 +476,11 @@ export function flatten<O>(
                   const prev = items[i - 1] as number;
                   out.push({
                     e: "joint",
-                    apart: !t.adjoins(prev, c) || comment(prev) || comment(c),
+                    apart:
+                      !t.adjoins(prev, c) ||
+                      comment(prev) ||
+                      comment(c) ||
+                      (x.item.t === "words" && evalCond(x.item.apart, ctx, c, custom, t.kindName(c) in grammar.fieldTypes, run)),
                     breaks: breaks[i] === true,
                     dedent: items.slice(0, i).every(comment),
                     tight: x.tightAfter?.includes(t.kindName(prev)) === true,
