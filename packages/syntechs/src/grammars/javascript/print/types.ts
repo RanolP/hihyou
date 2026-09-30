@@ -708,7 +708,9 @@ const castExpression: CustomRule<JsOptions> = (n, sctx) => {
   const grouped =
     (key === "callee" &&
       (kind(js, up) === "call_expression" ||
-        kind(js, up) === "new_expression")) ||
+        // oxc's is_callee_or_object leaves `new` callees out.
+        (kind(js, up) === "new_expression" &&
+          js.options.compat !== "oxfmt"))) ||
     (key === "object" && isMember(js, up));
   if (grouped) {
     open(GROUP);
