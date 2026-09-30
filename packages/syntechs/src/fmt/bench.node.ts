@@ -47,7 +47,7 @@ import { check } from "./check.js";
 import { ktfmt, ktfmtJar } from "./conformance/ktfmt.node.js";
 import { oxfmt, versionOf } from "./conformance/references.node.js";
 import { jsonPathArg, runInfo, writeJson } from "./conformance/report.node.js";
-import { TARGETS } from "./conformance.node.js";
+import { PRETTIER_FIXTURES, TARGETS } from "./conformance.node.js";
 import { format } from "./format.js";
 import type { Language } from "./rules.js";
 
@@ -64,7 +64,7 @@ interface Input {
 
 interface Group {
   id: string;
-  /** The conformance target whose fmt module and fixtures this language uses. */
+  /** The conformance target or prettier fixture set whose fmt module and fixtures this language uses. */
   target: string;
   corpus: GrammarName[];
   /** prettier's parser and oxfmt's file extension by grammar; absent for Python and Kotlin. */
@@ -284,7 +284,7 @@ function ktfmtWarmMs(jar: string, inputs: Input[]): number {
 /** One language's totals over corpus + fixtures, as its verdict line reports them; ms are folder-level medians. */
 interface GroupResult {
   id: string;
-  /** The conformance reference: prettier for the prettier family, else ruff or ktfmt. */
+  /** The baseline: prettier for the prettier family, else ruff or ktfmt. */
   reference: "prettier" | "ruff" | "ktfmt";
   implemented: boolean;
   inputs: number;
@@ -335,7 +335,7 @@ async function main() {
   try {
     for (const g of GROUPS) {
       if (wanted.length > 0 && !wanted.includes(g.id)) continue;
-      const target = TARGETS.find((t) => t.id === g.target);
+      const target = [...PRETTIER_FIXTURES, ...TARGETS].find((t) => t.id === g.target);
       if (!target) throw new Error(`no conformance target ${g.target}`);
       const sets: [string, Input[]][] = [
         [

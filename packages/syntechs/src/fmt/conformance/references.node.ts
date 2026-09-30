@@ -1,6 +1,5 @@
-// The other formatter the matrix and the benchmark measure beside syntechs, as context: oxfmt (native, through
-// its JS API). It takes prettier's option names here; the conformance matrix scores it against prettier's expected
-// output exactly as it scores syntechs.
+// oxfmt (native, through its JS API): the expected output of the matrix's prettier-family rows, and a baseline the
+// benchmark times. It takes prettier's option names here.
 
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";

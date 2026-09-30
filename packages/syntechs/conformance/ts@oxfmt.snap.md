@@ -1,6 +1,6 @@
 ts@oxfmt compatibility: 632/632 (100.00%), 0 refused (ok:false), 97 excluded
 
-Fixtures: those of the ts target, every option set, expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults. A fixture oxfmt rejects under any of its option sets is excluded.
+Fixtures: prettier 3.9.9 tests/format/{typescript,jsx} (recursive), every spec call listing parser `typescript` or `babel-ts` or `oxc-ts`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults. A fixture oxfmt rejects under any of its option sets is excluded.
 
 # Failed
 

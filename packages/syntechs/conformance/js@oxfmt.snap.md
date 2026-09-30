@@ -1,6 +1,6 @@
 js@oxfmt compatibility: 767/767 (100.00%), 0 refused (ok:false), 341 excluded
 
-Fixtures: those of the js target, every option set, expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults. A fixture oxfmt rejects under any of its option sets is excluded.
+Fixtures: prettier 3.9.9 tests/format/{js,jsx} (recursive), every spec call listing parser `babel` or `acorn` or `espree` or `meriyah` or `oxc`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults. A fixture oxfmt rejects under any of its option sets is excluded.
 
 # Failed
 

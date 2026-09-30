@@ -1,11 +1,13 @@
-// The formatter conformance matrix: each language's formatter against its reference tool's own test suite
-// (prettier 3.9.9's tests/format, ruff 0.16.8's formatter fixtures), fetched by fetch-corpus.sh. Writes
+// The formatter conformance matrix: each language's formatter against its reference tool's output on a fixture
+// suite (prettier 3.9.9's tests/format run through oxfmt, ruff 0.16.8's formatter fixtures, ktfmt's), fetched by
+// fetch-corpus.sh. Writes
 // conformance/<target>.snap.md per target and conformance/README.md, the matrix, and commits both.
 //
 //   node packages/syntechs/dist/fmt/conformance.node.js [target...] [--diff <fixture substring>] [--only <substring>]... [--json <path>]
 //
-// A language joins the matrix with one entry in TARGETS: its fmt module export and its fixture directories. Each
-// prettier-family target also runs as `<id>@oxfmt`: the same fixtures, oxfmt's output as the expected one.
+// A language joins the matrix with one entry in TARGETS: its fmt module export and its fixture directories. A
+// prettier-family language runs as `<id>@oxfmt`: prettier's fixtures and option sets, oxfmt's output as the
+// expected one.
 // `--only` (repeatable) runs just the fixtures whose path matches one of the given substrings, prints
 // passed/total and the failing fixture names, and writes no snapshot or README — for a worker checking a slice
 // of the matrix without producing a diff the others would have to reconcile. `--json` also writes the matrix rows,
@@ -142,7 +144,11 @@ interface Target {
   suite: () => Suite | Promise<Suite>;
 }
 
-const prettier = (
+/**
+ * A prettier-family language's fixtures: prettier's, with the option sets its spec calls declare. The expected
+ * output they carry is prettier's, which only `againstOxfmt` and the benchmark's fixture set read past.
+ */
+const prettierFixtures = (
   id: string,
   fmt: string,
   exportName: string,
@@ -154,49 +160,50 @@ const prettier = (
   fmt,
   export: exportName,
   grammar,
-  source: `Fixtures: ${PRETTIER} tests/format/{${t.dirs.join(",")}} (recursive), every spec call listing parser ${t.parsers.map((p) => `\`${p}\``).join(" or ")}, expected output from its __snapshots__.`,
+  source: `Fixtures: ${PRETTIER} tests/format/{${t.dirs.join(",")}} (recursive), every spec call listing parser ${t.parsers.map((p) => `\`${p}\``).join(" or ")}, with the option sets it declares`,
   suite: () => prettierSuite(prettierRoot, t),
 });
 
 /**
- * `target`'s fixtures and option sets scored against oxfmt, run with prettier's defaults (references.node.ts), as
- * `<id>@oxfmt`, the output syntechs is held to; the plain prettier target measures how far that is from prettier.
+ * `fixtures` scored against oxfmt, run with prettier's defaults (references.node.ts), as `<id>@oxfmt`: the output
+ * syntechs is held to.
  */
-const againstOxfmt = (target: Target): Target => ({
-  ...target,
-  id: `${target.id}@oxfmt`,
+const againstOxfmt = (fixtures: Target): Target => ({
+  ...fixtures,
+  id: `${fixtures.id}@oxfmt`,
   reference: oxfmt.name,
-  source: `Fixtures: those of the ${target.id} target, every option set, expected output from ${oxfmt.name} run on each with that option set over prettier's defaults. A fixture oxfmt rejects under any of its option sets is excluded.`,
-  suite: async () => referenceSuite(await target.suite(), oxfmt),
+  source: `${fixtures.source}; expected output from ${oxfmt.name} run on each with that option set over prettier's defaults. A fixture oxfmt rejects under any of its option sets is excluded.`,
+  suite: async () => referenceSuite(await fixtures.suite(), oxfmt),
 });
 
-const PRETTIER_TARGETS: Target[] = [
-  prettier("json", "json", "json", () => "javascript", {
+/** The prettier-family fixture sets, by the ids the benchmark's groups name. */
+export const PRETTIER_FIXTURES: Target[] = [
+  prettierFixtures("json", "json", "json", () => "javascript", {
     dirs: ["json/json", "json/with-comment"],
     parsers: ["json"],
     ignore: [],
   }),
-  prettier("jsonc", "json", "jsonc", () => "javascript", {
+  prettierFixtures("jsonc", "json", "jsonc", () => "javascript", {
     dirs: ["json/jsonc", "json/with-comment"],
     parsers: ["jsonc"],
     ignore: [],
   }),
-  prettier("json-stringify", "json", "jsonStringify", () => "javascript", {
+  prettierFixtures("json-stringify", "json", "jsonStringify", () => "javascript", {
     dirs: ["json/json"],
     parsers: ["json-stringify"],
     ignore: [],
   }),
-  prettier("css", "css", "css", () => "css", {
+  prettierFixtures("css", "css", "css", () => "css", {
     dirs: ["css"],
     parsers: ["css"],
     ignore: CSS_IGNORE,
   }),
-  prettier("js", "javascript", "javascript", () => "javascript", {
+  prettierFixtures("js", "javascript", "javascript", () => "javascript", {
     dirs: ["js", "jsx"],
     parsers: ["babel", "acorn", "espree", "meriyah", "oxc"],
     ignore: JS_IGNORE,
   }),
-  prettier(
+  prettierFixtures(
     "ts",
     "typescript",
     "typescript",
@@ -210,7 +217,6 @@ const PRETTIER_TARGETS: Target[] = [
 ];
 
 export const TARGETS: Target[] = [
-  ...PRETTIER_TARGETS,
   {
     id: "python",
     reference: RUFF,
@@ -229,7 +235,7 @@ export const TARGETS: Target[] = [
     source: `Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ${ktfmt.name} run on each.`,
     suite: ktfmtSuite,
   },
-  ...PRETTIER_TARGETS.map(againstOxfmt),
+  ...PRETTIER_FIXTURES.map(againstOxfmt),
 ];
 
 /** The ts targets format .tsx fixtures and prettier's jsx/ dir with the tsx grammar's `tsx` export. */
@@ -308,24 +314,13 @@ function runCase(
   return { fixture: c.fixture, runs };
 }
 
-// A reference's output per fixture and option set, shared by the prettier target's reference column and the
-// `@oxfmt` target that takes it as the expected output.
-const referenceOutputs = new Map<string, Promise<string>>();
-
 /** `ref`'s output for one run of `c`, under prettier's parser for it; rejects when `ref` rejects the input. */
-function referenceOutput(ref: Reference, c: Case, r: CaseRun): Promise<string> {
-  const key = JSON.stringify([ref.name, c.fixture, r.parser, r.label]);
-  let out = referenceOutputs.get(key);
-  if (!out) {
-    out = ref.format(
-      c.fixture,
-      c.text,
-      r.parser === undefined ? r.options : { parser: r.parser, ...r.options },
-    );
-    referenceOutputs.set(key, out);
-  }
-  return out;
-}
+const referenceOutput = (ref: Reference, c: Case, r: CaseRun): Promise<string> =>
+  ref.format(
+    c.fixture,
+    c.text,
+    r.parser === undefined ? r.options : { parser: r.parser, ...r.options },
+  );
 
 /** `base` with each run's expected output from `ref`; a fixture `ref` rejects in any run is excluded. */
 async function referenceSuite(base: Suite, ref: Reference): Promise<Suite> {
@@ -353,27 +348,6 @@ async function referenceSuite(base: Suite, ref: Reference): Promise<Suite> {
 /** A rejection's first line or clause, which names the error without the position that follows, so the excluded list groups by it. */
 const rejection = (e: unknown) =>
   (e instanceof Error ? e.message : String(e)).split(/[\n;]/, 1)[0] ?? "";
-
-/** How many fixtures each reference tool prints as the expected output in every run, each run under prettier's parser for it. */
-async function scoreReferences(cases: Case[]): Promise<ReferenceScore[]> {
-  const scores: ReferenceScore[] = [];
-  for (const ref of [oxfmt]) {
-    let passed = 0;
-    for (const c of cases) {
-      let all = true;
-      for (const r of c.runs) {
-        const out = await referenceOutput(ref, c, r).catch(() => undefined);
-        if (out === undefined || r.asRecorded(out) !== r.expected) {
-          all = false;
-          break;
-        }
-      }
-      if (all) passed++;
-    }
-    scores.push({ name: ref.name, passed, total: cases.length });
-  }
-  return scores;
-}
 
 const unformattedScore = (cases: Case[]): ReferenceScore => ({
   name: "unformatted input (no formatter yet)",
@@ -440,13 +414,9 @@ async function main() {
       source: t.source,
       results,
       excluded,
-      references: [
-        // oxfmt formats the prettier-family languages only.
-        ...(t.reference === PRETTIER ? await scoreReferences(cases) : []),
-        // With no formatter, what a viewer shows is the input as written: this is how much of it already reads
-        // as the reference prints it.
-        ...(results === "not implemented" ? [unformattedScore(cases)] : []),
-      ],
+      // With no formatter, what a viewer shows is the input as written: this is how much of it already reads as
+      // the reference prints it.
+      references: results === "not implemented" ? [unformattedScore(cases)] : [],
     });
     writeFileSync(join(outDir, `${t.id}.snap.md`), snapshot);
     console.log(snapshot.split("\n", 1)[0]);
