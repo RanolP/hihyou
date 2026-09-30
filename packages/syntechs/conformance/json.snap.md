@@ -2,7 +2,7 @@ json compatibility: 20/20 (100.00%), 0 refused (ok:false), 0 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
-- oxfmt 0.70.0: 19/20 (95.00%)
+- oxfmt 0.70.0: 20/20 (100.00%)
 
 Fixtures: prettier 3.9.9 tests/format/{json/json,json/with-comment} (recursive), every spec call listing parser `json`, expected output from its __snapshots__.
 

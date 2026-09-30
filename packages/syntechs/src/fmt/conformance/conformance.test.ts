@@ -6,6 +6,7 @@ import {
   visualizeEndOfLine,
 } from "./prettier.node.js";
 import { lineRatio, readHeader, renderSnapshot } from "./report.node.js";
+import { oxfmt } from "./references.node.js";
 import { pythonFrameAfter } from "./ruff.node.js";
 
 describe("conformance harness", () => {
@@ -93,5 +94,20 @@ ${sep()}
         }),
       ),
     ).toEqual({ references: [] });
+  });
+
+  it("runs oxfmt at prettier's printWidth and under prettier's parser, or its column scores oxfmt's defaults instead of its formatting", async () => {
+    // 90 columns: prettier's 80 breaks it, oxfmt's own default of 100 would not.
+    const wide = `[${"1234567890, ".repeat(7)}1]\n`;
+    expect(await oxfmt.format("a.json", wide, {})).not.toBe(wide);
+    expect(
+      await oxfmt.format("a.json", '{\n"k": 1}\n', {
+        parser: "jsonc",
+        trailingComma: "all",
+      }),
+    ).toBe('{\n  "k": 1,\n}\n');
+    expect(
+      await oxfmt.format("a.json", "[[1]]\n", { parser: "json-stringify" }),
+    ).toBe("[\n  [\n    1\n  ]\n]\n");
   });
 });

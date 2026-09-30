@@ -2,7 +2,7 @@ js compatibility: 797/804 (99.13%), 0 refused (ok:false), 304 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
-- oxfmt 0.70.0: 563/804 (70.02%)
+- oxfmt 0.70.0: 725/804 (90.17%)
 
 Fixtures: prettier 3.9.9 tests/format/{js,jsx} (recursive), every spec call listing parser `babel` or `acorn` or `espree` or `meriyah` or `oxc`, expected output from its __snapshots__.
 

@@ -11,6 +11,8 @@ export interface CaseRun {
   /** The options as the spec wrote them, `{}` for prettier's defaults. */
   label: string;
   options: Record<string, unknown>;
+  /** Prettier's parser for this run (prettier suites only), so a reference tool can pick the same syntax. */
+  parser?: string;
   expected: string;
   /**
    * An output as the reference's snapshot records it: prettier's writes each line break as `<LF>`/`<CRLF>`/`<CR>`
@@ -229,6 +231,7 @@ export function prettierSuite(
         runs.push({
           label: title || "{}",
           options,
+          parser,
           expected,
           asRecorded:
             "endOfLine" in call.options ? visualizeEndOfLine : (s) => s,

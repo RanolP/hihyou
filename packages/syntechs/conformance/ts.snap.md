@@ -2,7 +2,7 @@ ts compatibility: 653/653 (100.00%), 0 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
-- oxfmt 0.70.0: 490/653 (75.04%)
+- oxfmt 0.70.0: 592/653 (90.66%)
 
 Fixtures: prettier 3.9.9 tests/format/{typescript,jsx} (recursive), every spec call listing parser `typescript` or `babel-ts` or `oxc-ts`, expected output from its __snapshots__.
 

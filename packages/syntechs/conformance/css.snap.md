@@ -2,7 +2,7 @@ css compatibility: 144/151 (95.36%), 0 refused (ok:false), 6 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
-- oxfmt 0.70.0: 115/151 (76.16%)
+- oxfmt 0.70.0: 129/151 (85.43%)
 
 Fixtures: prettier 3.9.9 tests/format/{css} (recursive), every spec call listing parser `css`, expected output from its __snapshots__.
 

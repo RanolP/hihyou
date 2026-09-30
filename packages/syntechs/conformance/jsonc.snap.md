@@ -2,7 +2,7 @@ jsonc compatibility: 9/9 (100.00%), 0 refused (ok:false), 0 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
-- oxfmt 0.70.0: 5/9 (55.56%)
+- oxfmt 0.70.0: 9/9 (100.00%)
 
 Fixtures: prettier 3.9.9 tests/format/{json/jsonc,json/with-comment} (recursive), every spec call listing parser `jsonc`, expected output from its __snapshots__.
 
