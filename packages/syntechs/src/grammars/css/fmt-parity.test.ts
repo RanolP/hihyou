@@ -221,6 +221,9 @@ const edgeCases: [string, string][] = [
   // A word CSS Syntax lexes with a delim oxc-css-parser's typed grammar rejects (`a*c`, `a%c`) was typed, so `*`
   // stayed glued and a `/` elsewhere in the value kept its source gaps; oxc reads the whole value as raw tokens.
   ["delim-word-raw", "a{b:a*c;c:a%c,d/e;d:a.c,d/e;e:f(a%c),d/e;f:a*c, d}"],
+  // A `#name` or `$name` glued to a word (`a#b`) and a `*` in a function's word stayed glued; oxc lexes them as
+  // tokens of their own and spaces them, but in `url(…)`, a math function, and Tailwind's `w-*`.
+  ["word-hash-star", "a{b:a#b, d;c:x a#b#c;d:f(a*c);e:a$c;f:url($a*3);g:calc(a*c);h:f(w-*);i:a #b}"],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");

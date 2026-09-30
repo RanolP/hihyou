@@ -435,7 +435,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
        '(',
        $._query,
        ')',
-@@ -356,20 +558,50 @@
+@@ -356,21 +558,53 @@
        choice('not', 'only'),
        $._query,
      )),
@@ -484,10 +484,13 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
 +      // Less's variable variable (`@@name`).
 +      alias(/@@[a-zA-Z-_]+/, $.plain_value),
        $.color_value,
++      // An id-like `#name` after a word (`a #b`), which oxc-css-parser prints apart from a `#name` glued to it.
++      $.hash_value,
        $.integer_value,
        $.float_value,
        $.string_value,
-@@ -379,16 +611,58 @@
+       $.grid_value,
+@@ -379,16 +613,58 @@
        $.call_expression,
        $.important,
      )),
@@ -547,7 +550,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
        seq(
          '\'',
          repeat(choice(
-@@ -411,8 +685,10 @@
+@@ -411,8 +687,10 @@
        '\\',
        choice(
          /[0-9a-fA-F]{1,6}\s?/,
@@ -558,7 +561,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
      )),
  
      integer_value: $ => seq(
-@@ -425,73 +701,109 @@
+@@ -425,73 +703,109 @@
  
      float_value: $ => seq(
        token(seq(

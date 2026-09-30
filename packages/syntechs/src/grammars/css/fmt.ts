@@ -164,6 +164,15 @@ const normalize: Normalize = (lexemes, _text, tree) => {
       if (tree.kindName(up) === "declaration") return true;
     return false;
   };
+  // Likewise a `#name` or `$name` glued to the word before it (`a#b`), which oxc prints apart (`plainWord`).
+  for (let i = 1, p = 0; i < lexemes.length; i++) {
+    const l = lexemes[i] as (typeof lexemes)[number];
+    const prev = forms[p];
+    if (/^[#$]/.test(l.text) && prev !== undefined && /[\w%)]$/.test(prev) && inValue(l.node)) {
+      forms[p] = `${prev}${forms[i]}`;
+      forms[i] = undefined;
+    } else if (forms[i] !== undefined) p = i;
+  }
   for (let i = 1; i + 1 < lexemes.length; i++) {
     const l = lexemes[i] as (typeof lexemes)[number];
     if ((l.text !== "*" && l.text !== "/") || forms[i] === undefined || !inValue(l.node)) continue;
@@ -264,6 +273,32 @@ function ownWord(node: number, ctx: SCtx): boolean {
   if (kind(node, ctx) === "call_expression") return true;
   if (kind(prev, ctx) !== "call_expression") return false;
   return kind(node, ctx) !== "plain_value" || t.text(t.child(prev, 0)) !== "$$";
+}
+
+const verbatimCall = (name: string) => name.toLowerCase() === "url" || mathFunctions.has(name.toLowerCase());
+
+/**
+ * A word outside a math function (whose calc grammar reads `a*c` whole) or `url(…)`, and holding no
+ * `=` or `:` (`progid:`), spaced where CSS Syntax lexes it as several tokens oxc separates: a `*` apart from
+ * both sides but after an ident ending in `-` (Tailwind's `w-*`) or ending the word, and a `#name` or `$name` apart
+ * from the word before it.
+ */
+function plainWord(node: number, ctx: SCtx): boolean {
+  const t = ctx.tree;
+  const text = t.text(node);
+  if (!/[*#$]/.test(text) || /[=:]/.test(text) || cssWideKeywords.has(text.toLowerCase())) return false;
+  let up = t.parent(node);
+  for (; up !== NO_NODE && kind(up, ctx) !== "declaration"; up = t.parent(up))
+    if (kind(up, ctx) === "call_expression" && verbatimCall(t.text(t.child(up, 0)))) return false;
+  if (up === NO_NODE) return false;
+  sLiteral(
+    node,
+    text
+      .replace(/\*(?=.)/g, (m, i: number) => (text[i - 1] === "-" ? m : ` ${m} `))
+      .replace(new RegExp(String.raw`(?<=[\w%)])(?=[#$]${nameChar})`, "g"), " ")
+      .replace(/ {2,}/g, " "),
+  );
+  return true;
 }
 
 /** A number, its unit's case normalized. */
@@ -1636,7 +1671,11 @@ export const css: Language<CssOptions> = {
   }),
   stream: {
     ...cssStream,
-    rules: new Map([...cssStream.rules, ["ERROR", sassFlagList]]),
+    rules: new Map([
+      ...cssStream.rules,
+      ["ERROR", sassFlagList],
+      ["plain_value", (node, ctx) => plainWord(node, ctx) || cssStream.rules.get("plain_value")?.(node, ctx)],
+    ]),
     wrap: frontMatterFirst,
     commentEndsLine: statementComment,
     keepsSource: prettierIgnored,
