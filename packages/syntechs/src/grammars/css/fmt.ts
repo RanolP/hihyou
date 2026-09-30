@@ -67,8 +67,7 @@ const children = (n: number, tree: FormatTree) => {
     out.push(tree.child(n, i));
   return out;
 };
-const isComment = (n: number, ctx: SCtx) =>
-  kind(n, ctx) === "comment" || kind(n, ctx) === "js_comment";
+const isComment = (n: number, ctx: SCtx) => kind(n, ctx) === "comment";
 /** Every child but comments, which reach the output attached to their neighbours. */
 const code = (n: number, ctx: SCtx) =>
   children(n, ctx.tree).filter((c) => !isComment(c, ctx));
@@ -217,6 +216,18 @@ export const customs = {
   /** A media query list holding a comment, which `mediaQueries` prints as postcss-media-query-parser splits it. */
   mediaComments: (node, ctx) => mediaAtoms(node, ctx).some((c) => isComment(c, ctx)),
   ownWord: (node, ctx) => ownWord(node, ctx),
+  /**
+   * A declaration's comma entry that is one math expression (`a / c`, `// c`), which oxc-css-parser reads as several
+   * values, so a list holding one breaks as one of several words does.
+   */
+  mathEntry: (node, ctx) =>
+    code(node, ctx).some(
+      (c, i, all) =>
+        ["binary_expression", "unary_expression"].includes(kind(c, ctx)) &&
+        ![all[i - 1], all[i + 1]].some(
+          (n) => n !== undefined && ctx.tree.named(n) && !["property_name", "important"].includes(kind(n, ctx)),
+        ),
+    ),
 } satisfies Record<string, PredicateRule<CssOptions>>;
 
 /**
@@ -314,6 +325,93 @@ function joinedMath(chain: number[], i: number, calc: boolean, font: boolean, ct
   return !calc && tight && (op(g, "-") || ((op(g, "/") || op(g, "+")) && !spaced));
 }
 
+/** A `/` before an operand (`// c`), which tree-sitter-css nests where oxc-css-parser reads two `/` delimiters. */
+const slashUnary = (n: number, ctx: SCtx) =>
+  kind(n, ctx) === "unary_expression" && kind(ctx.tree.child(n, 0), ctx) === "/";
+
+/** The flat run of operands and operators oxc-css-parser reads for `n`, a `/` unary's operand opening its own. */
+function flatValues(n: number, ctx: SCtx): number[] {
+  const k = kind(n, ctx);
+  if (k !== "binary_expression" && !slashUnary(n, ctx)) return [n];
+  return children(n, ctx.tree)
+    .filter((c) => !isComment(c, ctx))
+    .flatMap((c) => flatValues(c, ctx));
+}
+
+/**
+ * The comma group of values `node` sits in, flattened as oxc-css-parser reads it, when a `/` unary makes it hold a
+ * `/` after a `/` or opening it (`a // c`, `// c d`); else undefined, the group laid out as prettier does. `calc`: in
+ * a math function, whose `//` oxc-css-parser fails on and prints as written.
+ */
+function slashRun(node: number, ctx: SCtx): { flat: number[]; calc: boolean } | undefined {
+  const t = ctx.tree;
+  let top = node;
+  while (parentIs(t, top, "binary_expression") || parentIs(t, top, "unary_expression")) top = t.parent(top);
+  const container = t.parent(top);
+  if (container === NO_NODE) return undefined;
+  let group: number[] = [];
+  let found: number[] | undefined;
+  for (const c of children(container, t)) {
+    if (isComment(c, ctx)) continue;
+    if (!t.named(c) || kind(c, ctx) === "property_name" || kind(c, ctx) === "important") {
+      if (found) break;
+      group = [];
+      continue;
+    }
+    group.push(c);
+    if (c === top) found = group;
+  }
+  const hasSlashUnary = (n: number): boolean =>
+    slashUnary(n, ctx) || (kind(n, ctx) === "binary_expression" && children(n, t).some(hasSlashUnary));
+  if (found === undefined || !found.some(hasSlashUnary)) return undefined;
+  const calc = ancestorWhere(t, node, ["call_expression"], ["declaration", "block"], (a) =>
+    mathFunctions.has(t.text(t.child(a, 0)).toLowerCase()),
+  );
+  return { flat: found.flatMap((c) => flatValues(c, ctx)), calc };
+}
+
+/**
+ * Whether oxc keeps `flat[i - 1]` and `flat[i]` joined where either is a `/` (`base_separator`'s solidus rules), in
+ * a run `slashRun` found. A run holding a `+`, `-` or `*` is no typed value, so oxc lays its raw tokens out, joining
+ * a `/` written without a gap unless a word or a function sits beside it; a typed one also joins a `/` written
+ * without a gap on both sides, the value after a leading `/` or after a `/` after a `/`, unless a word or a function
+ * sits beside. Undefined where neither is a `/`.
+ */
+function slashJoined(flat: number[], i: number, ctx: SCtx): boolean | undefined {
+  const t = ctx.tree;
+  const [y, prev, curr, next] = [flat[i - 2], flat[i - 1] as number, flat[i] as number, flat[i + 1]];
+  const sol = (n: number | undefined) => n !== undefined && kind(n, ctx) === "/";
+  if (!sol(curr) && !sol(prev)) return undefined;
+  const gap = t.adjoins(prev, curr);
+  if (sol(flat[0]) && gap) return true;
+  const wordLike = (n: number | undefined) =>
+    n !== undefined && ["plain_value", "call_expression"].includes(kind(n, ctx));
+  if (flat.some((n) => ["+", "-", "*"].includes(kind(n, ctx)))) {
+    const wordish = (n: number | undefined, left: boolean) =>
+      wordLike(n) || (left && n !== undefined && kind(n, ctx) === "parenthesized_value");
+    if (sol(curr)) return gap && !wordish(next, false) && !wordish(prev, true);
+    return gap && !wordish(curr, false) && !wordish(y, true);
+  }
+  if (sol(curr) && gap && (next === undefined || t.adjoins(curr, next))) return true;
+  if (sol(prev) && gap && y !== undefined && t.adjoins(y, prev)) return true;
+  if (i === 1 && sol(prev)) return true;
+  const spaceBefore = wordLike(next) || wordLike(prev);
+  const spaceAfter = wordLike(curr) || wordLike(y);
+  const tightRule = (sol(curr) && !spaceBefore) || (sol(prev) && !spaceAfter);
+  return tightRule && (gap || (sol(prev) && (i < 2 || sol(y))));
+}
+
+/** `slashJoined` before `c`, a node of the run `slashRun` found, or undefined outside one. */
+function slashJoinedBefore(c: number, ctx: SCtx): boolean | undefined {
+  const run = slashRun(c, ctx);
+  if (run === undefined) return undefined;
+  const first = flatValues(c, ctx)[0] as number;
+  const i = run.flat.indexOf(first);
+  if (i < 1) return undefined;
+  if (run.calc) return ctx.tree.adjoins(run.flat[i - 1] as number, first);
+  return slashJoined(run.flat, i, ctx);
+}
+
 /**
  * Whether `node` sits in a `grid`/`grid-template*` declaration whose value the source breaks across lines, which
  * prettier then prints a line per source line (format.ts's `keepLines`), words within a line a space apart.
@@ -378,6 +476,8 @@ export function valueMath(node: number, ctx: SCtx): void {
   const spaced = (prev: number, c: number) => {
     if (directive) return true;
     if (url) return !t.adjoins(prev, c);
+    const slash = slashJoinedBefore(c, ctx);
+    if (slash !== undefined) return !slash;
     const first = kind(c, ctx) === "binary_expression" ? chain(c, ctx)[0] : c;
     return !joinedMath(flat, flat.indexOf(first as number), calc, font, ctx);
   };
@@ -385,9 +485,7 @@ export function valueMath(node: number, ctx: SCtx): void {
   const breaksBefore = !directive;
   const items = new Set(ctx.items(node));
   let prev = -1;
-  for (const c of children(node, t)) {
-    const named = t.named(c);
-    if (named && !items.has(c)) continue;
+  const separate = (c: number) => {
     if (prev !== -1 && !tight && spaced(prev, c)) {
       if (grid) {
         if (breaksBetween(t, prev, c)) sHardline();
@@ -402,7 +500,21 @@ export function valueMath(node: number, ctx: SCtx): void {
       }
     }
     prev = c;
-    if (named) ctx.print(c);
+  };
+  // A `/` unary in a `slashRun` joins the chain: its `/` and operand are items of the fill of their own.
+  const emit = (c: number) => {
+    const [op, operand] = children(c, t);
+    if (directive || !slashUnary(c, ctx) || op === undefined || operand === undefined || slashRun(c, ctx) === undefined)
+      return ctx.print(c);
+    sToken(op, t.text(op));
+    separate(operand);
+    emit(operand);
+  };
+  for (const c of children(node, t)) {
+    const named = t.named(c);
+    if (named && !items.has(c)) continue;
+    separate(c);
+    if (named) emit(c);
     else sToken(c, t.text(c));
   }
   if (outermost) {
@@ -425,6 +537,11 @@ export function unaryExpression(node: number, ctx: SCtx): void {
   if (op === undefined || operand === undefined) return;
   sToken(op, t.text(op));
   const o = kind(op, ctx);
+  const slash = o === "/" ? slashJoinedBefore(operand, ctx) : undefined;
+  if (slash !== undefined) {
+    if (!slash) sText(" ");
+    return ctx.print(operand);
+  }
   // The gap after a `+` or `-` stays everywhere (`func(+ 20px)`).
   if (o === "*" || ((o === "+" || o === "-") && !t.adjoins(op, operand))) sText(" ");
   ctx.print(operand);
@@ -1463,7 +1580,7 @@ export const css: Language<CssOptions> = {
     parser: language,
     // What `meaning` reads whole: a string's quotes and escapes, and a name's identifier, are separate leaves.
     atoms: ["string_value", "class_name", "plain_value", "color_value"],
-    lineComments: { js_comment: "//" },
+    lineComments: {},
     defaults,
     settings: prettierSettings,
     normalize,

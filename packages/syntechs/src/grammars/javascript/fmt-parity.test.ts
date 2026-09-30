@@ -222,6 +222,8 @@ const edgeCases: [string, Target, string][] = [
     "tsx",
     `const a = <><Foo {...props} bar="it's" baz={() => 1} disabled /></>;`,
   ],
+  // Embedded CSS is SCSS to prettier, so a `//` there opens a comment rather than dividing: the template stays as written.
+  ["css-embed-line-comment", "js", "css`a{b: a // e;}`;\n"],
   [
     "comments-prettier-moves",
     "ts",

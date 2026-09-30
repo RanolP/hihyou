@@ -195,6 +195,11 @@ const edgeCases: [string, string][] = [
     "prettier-ignore",
     "/* prettier-ignore */\n.a  >  .b{}\n.c{\n  /* prettier-ignore */\n  d:     e;\n  f:g}",
   ],
+  // A `//` in a value was a line comment that swallowed the rest of the line, its `;` included.
+  [
+    "double-slash-value",
+    "a{b:a // c;d:1px //2px;e:a//c;f:calc(1px // c\n+ 2px);g:fn(a // b);h:a, // c\n d;i:a //c //d}",
+  ],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");

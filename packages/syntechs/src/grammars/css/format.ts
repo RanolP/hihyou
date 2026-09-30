@@ -4,6 +4,7 @@
 import {
   all,
   ancestor,
+  any,
   anyEntry,
   type CondIn,
   custom,
@@ -49,10 +50,14 @@ type Cond = CondIn<typeof grammar, CssOptions>;
 const calledAs = (name: string) => firstText({ is: [name], anyCase: true });
 /**
  * A declaration's comma list: a lone entry bare; one entry per line once an entry has several words (prettier's
- * `shouldBreakList`), but in a custom property; else packed after an optional break past the colon.
+ * `shouldBreakList`, and a lone math expression, which oxc-css-parser reads as several values), but in a custom
+ * property; else packed after an optional break past the colon.
  */
 const valueLayout: SplitLayoutOf<Cond> = loneBare({
-  when: all(not(firstText({ prefix: ["--"] })), anyEntry({ many: true, startsWith: ["+", "-"] })),
+  when: all(
+    not(firstText({ prefix: ["--"] })),
+    any(anyEntry({ many: true, startsWith: ["+", "-"] }), when("mathEntry")),
+  ),
   then: { indent: true, first: "hard", between: "hardline" },
   else: { group: true, indent: true, first: "soft", between: "line", fill: true },
 });

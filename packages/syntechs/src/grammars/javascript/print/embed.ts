@@ -3,7 +3,7 @@
 // where this one covers less than prettier's (a CSS or HTML parse error, a GraphQL query, an escape in a quasi),
 // `printEmbed` returns false and the template prints as its source.
 
-import { parseTree } from "../../../core/index.js";
+import { parseTree, type Tree } from "../../../core/index.js";
 import { brokenNodes } from "../../../fmt/format.js";
 import { printInto } from "../../../fmt/stream-format.js";
 import { withEmbedding } from "../../../fmt/stream.js";
@@ -134,7 +134,7 @@ function html(node: number, raws: string[], subs: () => Part[], tick: Tick, tabW
 function cssEmbed(ctx: JsStreamCtx, node: number, raws: string[], subs: () => Part[], tick: Tick): Part | undefined {
   const text = raws.map((q, i) => (i === 0 ? q : `prettier-placeholder-${i - 1}${q}`)).join("");
   const tree = parseTree(cssLanguage, text);
-  if (tree.errorChars > 0 || brokenNodes(tree) !== undefined) return undefined;
+  if (tree.errorChars > 0 || brokenNodes(tree) !== undefined || lineComment(tree)) return undefined;
   const parts = subs();
   const seen = new Set<number>();
   const regex = /prettier-placeholder-(\d+)/;
@@ -167,6 +167,20 @@ function cssEmbed(ctx: JsStreamCtx, node: number, raws: string[], subs: () => Pa
   });
   // Prettier fails the embed when a placeholder did not print as a token of its own.
   return failed || seen.size !== parts.length ? undefined : printed;
+}
+
+// Prettier parses the embed as SCSS, where `//` opens a line comment; tree-sitter-css reads it as two `/`s, so the
+// embed prints as its source rather than as a division.
+function lineComment(tree: Tree): boolean {
+  const ends = new Set<number>();
+  const starts: number[] = [];
+  for (let o = 0; o < tree.nodeCount; o++) {
+    const n = tree.at(o);
+    if (tree.named(n) || tree.text(n) !== "/") continue;
+    ends.add(tree.end(n));
+    starts.push(tree.start(n));
+  }
+  return starts.some((s) => ends.has(s));
 }
 
 // embed/graphql.js's printEmbedGraphQL, for the quasis that hold only comments and whitespace: there is no

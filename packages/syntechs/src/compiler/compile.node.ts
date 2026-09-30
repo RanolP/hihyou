@@ -12,7 +12,7 @@ const pkg = resolve(import.meta.dirname, "../..");
 /** Per bundle: the grammar's generated src/ directory, and which of its extras are comments. */
 export const GRAMMARS: Record<string, { src: string; comments: string[] }> = {
   json: { src: "tree-sitter-json/src", comments: ["comment"] },
-  css: { src: "tree-sitter-css/src", comments: ["comment", "js_comment"] },
+  css: { src: "tree-sitter-css/src", comments: ["comment"] },
   html: { src: "tree-sitter-html/src", comments: ["comment"] },
   javascript: { src: "tree-sitter-javascript/src", comments: ["comment"] },
   typescript: {
