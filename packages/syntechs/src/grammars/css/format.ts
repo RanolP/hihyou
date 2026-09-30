@@ -138,8 +138,15 @@ export const css = format({
       ),
       tok(";").via("declarationEnd"),
     ],
-    // `--name: {...}`: the block laid out as a rule's, then the `;` a declaration ends with.
-    custom_property_set: () => [inOrder({ spaceWhen: { after: [":"] }, skip: [";"] }), semicolon],
+    // `--name: {...}`: the block laid out as a rule's, then the `;` a declaration ends with; the comments around the
+    // `:` as a declaration's (fmt.ts's `declarationColon`).
+    custom_property_set: ($) => [
+      $.children.at(0).andThen((p) => p),
+      tok(":").via("declarationColon"),
+      space,
+      $.children.at(1).andThen((b) => b),
+      semicolon,
+    ],
     // postcss-nested-props: a rule whose selector is `name:` and any values, as written.
     nested_property: () =>
       inOrder({ join: "gap", tight: { before: [":"] }, spaceWhen: { after: [":"], before: ["block"] } }),
@@ -194,6 +201,16 @@ export const css = format({
       ),
     // Prettier's math in a value, which fmt.ts's `valueMath` lays out as its operands and operators in a row.
     binary_expression: () => custom("valueMath"),
+    // `-(-1)`, `hue(* 20)`: fmt.ts's `unaryExpression`.
+    unary_expression: () => custom("unaryExpression"),
+    // A `{...}` group in a custom property's value or a Sass argument, as prettier prints a JSON-like one:
+    // `{"a": 1, "b": 2}`.
+    brace_value: () => inOrder({ tight: { after: ["{"], before: ["}", ","] }, spaceWhen: { after: [","] } }),
+    // `[a b]`, `[1, "2"]`: tight inside the brackets, a space after each comma and wherever the source has a gap.
+    grid_value: () =>
+      inOrder({ join: "gap", tight: { after: ["["], before: ["]", ","] }, spaceWhen: { after: [","] } }),
+    // `#ABCDEFG`, `#Abc-x`: a `#` word that is no color, as written.
+    hash_value: () => text("trimEnd"),
     // A Sass list or map (fmt.ts's `sassList`) in a `directive`'s prelude or a `$variable`'s value, else joined.
     parenthesized_value: () => custom("parenthesizedValue"),
     // Sass's `name: value` (fmt.ts's `keywordArgument`); `$args...` joined.

@@ -129,15 +129,29 @@ function meaning(tree: Tree, node: number, t: string): string {
 }
 
 // A `;` that ends the last statement of a block or of the file means nothing, so prettier may add one there; nor
-// does an empty statement's (`a: b;;`), which postcss drops.
-const normalize: Normalize = (lexemes, _text, tree) =>
-  lexemes.map((l, i) => {
+// does an empty statement's (`a: b;;`), which postcss drops. A sign before a number means the signed number, which
+// prettier may join to it (`+ 20px` is `+20px`).
+const normalize: Normalize = (lexemes, _text, tree) => {
+  const isNumber = (i: number) => {
+    const l = lexemes[i];
+    return l !== undefined && ["integer_value", "float_value"].includes(tree.kindName(l.node));
+  };
+  const sign = (i: number) => {
+    const l = lexemes[i];
+    if (l === undefined || (l.text !== "+" && l.text !== "-") || !isNumber(i + 1)) return false;
+    const parent = tree.parent(l.node);
+    return parent !== NO_NODE && tree.kindName(parent) === "unary_expression";
+  };
+  return lexemes.map((l, i) => {
     const next = lexemes[i + 1]?.text;
     const prev = lexemes[i - 1]?.text;
     if (l.text === ";" && (next === undefined || next === "}" || next === ";" || prev === "{"))
       return undefined;
+    if (sign(i)) return undefined;
+    if (sign(i - 1)) return meaning(tree, l.node, `${prev}${l.text}`);
     return meaning(tree, l.node, l.text);
   });
+};
 
 const statementLists = new Set(["stylesheet", "block"]);
 
@@ -226,6 +240,8 @@ function joinedMath(chain: number[], i: number, calc: boolean, font: boolean, ct
     return !calc && tight && (op(v, "-") || ((op(v, "/") || op(v, "+")) && !spaced));
   }
   if (font && op(g, "/") && y !== undefined && t.adjoins(y, g) && fontOperand(y, ctx)) return true;
+  // A paren group is a word of its own, after a space even where its `+` or `-` adjoins it (`1 -(1)` is `1 - (1)`).
+  if (kind(v, ctx) === "parenthesized_value") return false;
   const spaced = funcOrWord(v, ctx) || funcOrWord(y, ctx);
   return !calc && tight && (op(g, "-") || ((op(g, "/") || op(g, "+")) && !spaced));
 }
@@ -326,6 +342,34 @@ export function valueMath(node: number, ctx: SCtx): void {
     if (!grid) close();
     close();
   }
+}
+
+/** Prettier's color adjuster functions, inside which a `+` or `-` keeps the gap the source has after it. */
+const colorAdjusters = new Set([
+  "red", "green", "blue", "alpha", "a", "rgb", "hue", "h", "saturation", "s", "lightness", "l", "whiteness",
+  "w", "blackness", "b", "tint", "shade", "blend", "blenda", "contrast", "hsl", "hsla", "hwb", "hwba",
+]);
+
+/**
+ * An operator before a value (`-(-1)`, `hue(* 20)`), which postcss-value-parser reads as a word or a math operator of
+ * its own: a `*` then a space; a `+` or `-` joined, but after the gap the source has inside a color adjuster
+ * (`alpha(- .75)`); a `/` joined.
+ */
+export function unaryExpression(node: number, ctx: SCtx): void {
+  const t = ctx.tree;
+  const [op, operand] = children(node, t);
+  if (op === undefined || operand === undefined) return;
+  sToken(op, t.text(op));
+  const stops = ["call_expression", "declaration", "block"];
+  let call = t.parent(node);
+  while (call !== NO_NODE && !stops.includes(kind(call, ctx))) call = t.parent(call);
+  const adjuster =
+    call !== NO_NODE &&
+    kind(call, ctx) === "call_expression" &&
+    colorAdjusters.has(t.text(t.child(call, 0)).toLowerCase());
+  const o = kind(op, ctx);
+  if (o === "*" || ((o === "+" || o === "-") && adjuster && !t.adjoins(op, operand))) sText(" ");
+  ctx.print(operand);
 }
 
 /**
@@ -584,7 +628,8 @@ const handleComment: CommentHandler<CssOptions> = ({ tree, enclosing, preceding,
   if (preceding === undefined) return undefined;
   if (statementSequences.has(tree.kindName(enclosing)) && placement !== "ownLine")
     return { node: preceding, as: "trailing" };
-  if (tree.kindName(enclosing) !== "declaration" || /:\s*progid:/i.test(tree.text(enclosing))) return undefined;
+  const declaration = ["declaration", "custom_property_set"].includes(tree.kindName(enclosing));
+  if (!declaration || /:\s*progid:/i.test(tree.text(enclosing))) return undefined;
   return tree.kindName(preceding) === "property_name" || text.startsWith("/*")
     ? { node: enclosing, as: "dangling" }
     : undefined;
@@ -823,6 +868,7 @@ export const handWritten = {
   colonThenSource,
   importStatement,
   valueMath,
+  unaryExpression,
   atRule,
   postcssStatement,
   parenthesizedValue,

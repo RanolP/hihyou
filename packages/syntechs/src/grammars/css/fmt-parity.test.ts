@@ -148,6 +148,11 @@ const edgeCases: [string, string][] = [
   ["nesting-suffix", ".a{&__b,&-c{d:e}.f &{g:h}}"],
   // A Sass `$variable`, declared or read, was a parse error, printed as raw source.
   ["sass-variable", "$a:RGB(0,0,0);.b{border:1px solid $a;$c:d}"],
+  // A value opening with an operator, and a custom property holding a `{...}` group, were ERROR nodes kept as written.
+  [
+    "signed-operands",
+    'a{p:1 -(-1) + 20px;q:-1*-(-1);c:color(red alpha(- .75) hue(*20));--j:[1,{"a":1}];--f:fn(x) { go(x) };}',
+  ],
   // A rule or declaration after a prettier-ignore comment was laid out like any other.
   [
     "prettier-ignore",
