@@ -17,6 +17,6 @@ The oxfmt column scores that tool (`oxfmt 0.70.0`) on the same fixtures and opti
 | [json@oxfmt](json@oxfmt.snap.md) | oxfmt 0.70.0 | 20/20 | 100.00% | 0 | 0 | - |
 | [jsonc@oxfmt](jsonc@oxfmt.snap.md) | oxfmt 0.70.0 | 9/9 | 100.00% | 0 | 0 | - |
 | [json-stringify@oxfmt](json-stringify@oxfmt.snap.md) | oxfmt 0.70.0 | 14/14 | 100.00% | 0 | 0 | - |
-| [css@oxfmt](css@oxfmt.snap.md) | oxfmt 0.70.0 | 129/138 | 93.48% | 0 | 19 | - |
+| [css@oxfmt](css@oxfmt.snap.md) | oxfmt 0.70.0 | 136/138 | 98.55% | 0 | 19 | - |
 | [js@oxfmt](js@oxfmt.snap.md) | oxfmt 0.70.0 | 725/767 | 94.52% | 0 | 341 | - |
 | [ts@oxfmt](ts@oxfmt.snap.md) | oxfmt 0.70.0 | 592/632 | 93.67% | 0 | 97 | - |

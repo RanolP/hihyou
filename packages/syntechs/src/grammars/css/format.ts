@@ -18,6 +18,7 @@ import {
   isEmpty,
   lines,
   not,
+  option,
   parentIs,
   space,
   spell,
@@ -68,6 +69,8 @@ const inMediaFeature = all(
   ancestor(["media_statement", "custom_media_statement"], { stop: ["block"] }),
 );
 const asWritten = () => inOrder({ join: "gap" });
+/** Formatting as oxfmt 0.70.0 does rather than as prettier. */
+const oxfmt = option("compat").is("oxfmt");
 /** Inside a `directive`'s prelude. */
 const inDirective = ancestor(["at_rule", "postcss_statement"], { stop: ["block"], holds: directive });
 /** Statements one per line, keeping one blank line where the source has any. */
@@ -81,12 +84,17 @@ export const css = format({
     keyframe_block_list: ($) => grpBrace(lines($.children)),
     // Its children spaced, but a selector holding a comment as written (fmt.ts's `ruleSet`).
     rule_set: () => custom("ruleSet"),
-    // After `@nest` and `@extend`, prettier's selectors share a line, indented once they break.
+    // After `@nest` and `@extend`, prettier's selectors share a line, indented once they break; oxfmt's after
+    // `@nest` are not indented.
     selectors: () =>
       either(
-        any(parentIs("nest_statement"), parentIs("extend_statement")),
-        splitOn(",", { wrapItem: when("longSelector"), layout: { group: true, indent: true, between: "line" } }),
-        selectorList(),
+        all(oxfmt, parentIs("nest_statement")),
+        splitOn(",", { wrapItem: when("longSelector"), layout: { group: true, between: "line" } }),
+        either(
+          any(parentIs("nest_statement"), parentIs("extend_statement")),
+          splitOn(",", { wrapItem: when("longSelector"), layout: { group: true, indent: true, between: "line" } }),
+          selectorList(),
+        ),
       ),
     keyframe_block: () => selectorList(["block"]),
     from: () => text("lower"),
@@ -277,12 +285,21 @@ export const css = format({
       semicolon,
     ],
     // The name, then the queries as `@media`'s; the name and a query written without a gap between stay joined.
+    // oxfmt spaces the name from the queries even where the source has no gap.
     custom_media_statement: () =>
-      inOrder({
-        join: "gap",
-        tight: { before: [",", ";"] },
-        spaceWhen: { after: ["@custom-media", ","] },
-      }),
+      either(
+        oxfmt,
+        inOrder({
+          join: "gap",
+          tight: { before: [",", ";"] },
+          spaceWhen: { after: ["@custom-media", ",", "custom_media_name"] },
+        }),
+        inOrder({
+          join: "gap",
+          tight: { before: [",", ";"] },
+          spaceWhen: { after: ["@custom-media", ","] },
+        }),
+      ),
     keyframes_statement: spaced,
     // `@at-root`'s selectors are a rule's, or its `(with: ...)` query; `@nest`'s and `@extend`'s see `selectors`.
     at_root_statement: spaced,
@@ -294,11 +311,22 @@ export const css = format({
     postcss_statement: () => custom("postcssStatement"),
     binary_query: () => either(inMediaFeature, asWritten(), inOrder(space)),
     unary_query: () => either(inMediaFeature, asWritten(), inOrder(space)),
-    parenthesized_query: () => either(inMediaFeature, asWritten(), inOrder()),
+    // oxfmt trims the gaps inside a media feature's inner parentheses: `(not ( a ))` prints `(not (a))`.
+    parenthesized_query: () =>
+      either(
+        inMediaFeature,
+        either(oxfmt, inOrder({ join: "gap", tight: { after: ["("], before: [")"] } }), asWritten()),
+        inOrder(),
+      ),
     feature_query: () =>
       inOrder({ join: "gap", tight: { after: ["("], before: [")", ":"] }, spaceWhen: { after: [":"] } }),
-    // prettier's media feature: as written, one space wherever the source has any gap.
-    range_query: () => inOrder({ join: "gap", tight: { after: ["("], before: [")"] } }),
+    // prettier's media feature: as written, one space wherever the source has any gap; oxfmt's, spaced.
+    range_query: () =>
+      either(
+        oxfmt,
+        inOrder({ join: "space", tight: { after: ["("], before: [")"] } }),
+        inOrder({ join: "gap", tight: { after: ["("], before: [")"] } }),
+      ),
     feature_name: () => text("maybeLower"),
     // `selector(...)`: a selector list as a rule's, one per line inside the broken parentheses once it has two.
     selector_query: () => [
