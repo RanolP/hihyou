@@ -42,8 +42,8 @@ export type StmtRule<K extends Stmt["kind"]> = (
 export type StmtRules = { readonly [K in Stmt["kind"]]?: StmtRule<K> };
 
 /**
- * Ruff's `SuiteKind`; `other` is any other clause's body. Ruff's `last_suite_in_statement` only matters in
- * preview and stub files, so it is left out.
+ * Ruff's `SuiteKind`; `other` is any other clause's body. Ruff's `last_suite_in_statement` is left out: stub files
+ * are not formatted, and its preview empty line is `writeLeadingAlternateBranchComments`'s.
  */
 export type SuiteKind = "top" | "function" | "class" | "other";
 
@@ -341,6 +341,8 @@ export function writeLeadingAlternateBranchComments(
   comments: readonly Comment[],
   last: Py | undefined,
 ): void {
+  // Preview, as black: a block that ends with a definition keeps an empty line before the clause after it.
+  if (f.options.preview === true && trailingDefinition(f, last)) emptyLine();
   const first = comments[0];
   if (first) {
     f.writeEmptyLines(linesBefore(f.tree, first.start));
