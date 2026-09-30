@@ -163,10 +163,14 @@ const v8Intrinsic: StreamRule<JsOptions> = (n, s) => {
 
 const IIFE_CALLEES = new Set(["function_expression", "arrow_function"]);
 
-/** `(// c⏎function () {})()`: a commented function called or tagged right where it is written. */
+/**
+ * `(// c⏎function () {})()`: a commented function called or tagged right where it is written. oxfmt prints its
+ * comments outside the parentheses, as any other parenthesized node's: `// c⏎(function () {})()`.
+ */
 const isCommentedIife = (ctx: JsCtx, n: number) => {
   const fn = unparen(ctx, n);
   return (
+    ctx.options.compat !== "oxfmt" &&
     IIFE_CALLEES.has(kind(ctx, fn)) &&
     kind(ctx, parent(ctx, n)) === "call_expression" &&
     ctx.tree.fieldName(n) === "function" &&

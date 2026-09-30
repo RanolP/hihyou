@@ -484,6 +484,18 @@ function shouldExpandLastArg(ctx: JsCtx, args: readonly number[]): boolean {
   );
 }
 
+/** `f((⏎// c⏎) => {})`: oxfmt hugs no last function whose empty parameter list holds a line comment. */
+function oxfmtBreaksEmptyParams(sctx: JsStreamCtx, raw: number): boolean {
+  const ctx = sctx.js;
+  if (ctx.options.compat !== "oxfmt") return false;
+  const list = field(ctx, unparen(ctx, raw), "parameters");
+  return (
+    list !== undefined &&
+    items(ctx, list).length === 0 &&
+    sctx.danglingComments(list).some((c) => sctx.isLineComment(c))
+  );
+}
+
 function isReactHookCallWithDepsArray(
   ctx: JsCtx,
   raw: readonly number[],
@@ -674,7 +686,8 @@ function sArguments(sctx: JsStreamCtx, n: number, list: number): void {
 
   if (shouldExpandLastArg(ctx, args)) {
     const head = printedArguments.slice(0, -1);
-    if (head.some(willBreak)) return allArgsBrokenOut();
+    if (head.some(willBreak) || oxfmtBreaksEmptyParams(sctx, args.at(-1) as number))
+      return allArgsBrokenOut();
     let lastDoc: Part;
     try {
       lastDoc = capture(() => sctx.print(last, { expandLastArg: true }));
@@ -1183,7 +1196,8 @@ const sCallee = (sctx: JsStreamCtx, n: number) => {
     awaitsHere(ctx, n)
   )
     sText(" ");
-  sLineSuffixBoundary();
+  // oxfmt carries a callee's trailing comment past the arguments to the line's end: `f();⏎// c`.
+  if (ctx.options.compat !== "oxfmt") sLineSuffixBoundary();
 };
 
 /** Prettier's printCallExpression, for calls and `new`. */
