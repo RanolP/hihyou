@@ -169,7 +169,7 @@ patchedDependencies:
   tree-sitter-javascript@0.25.0: ff45617cc7f65d7e44c132326c2dbe30aa848a8bb99759bdac609adeba11e987
   tree-sitter-kotlin@0.3.8: 624d46de5c7062581fe184dc66a0f0790627a778122dee344b3a2a40d35908b4
   tree-sitter-python@0.25.0: b5837d9947b3de4b0b954af57379a3e8a68f4a0643e6713b38da6ca07e18363d
-  tree-sitter-typescript@0.23.2: 26750ceecbbc1f3708ecc20f77b281669236e347258ef18af9e25480b5cc7b99
+  tree-sitter-typescript@0.23.2: c20f787d8cce21a9d9fd056a6adeac12f7379b5fe58e16e75cc0cbfb563ee236
 
 importers:
 
@@ -312,7 +312,7 @@ importers:
         version: 0.25.0(patch_hash=b5837d9947b3de4b0b954af57379a3e8a68f4a0643e6713b38da6ca07e18363d)
       tree-sitter-typescript:
         specifier: 0.23.2
-        version: 0.23.2(patch_hash=26750ceecbbc1f3708ecc20f77b281669236e347258ef18af9e25480b5cc7b99)
+        version: 0.23.2(patch_hash=c20f787d8cce21a9d9fd056a6adeac12f7379b5fe58e16e75cc0cbfb563ee236)
       tsdown:
         specifier: ^0.23.0
         version: 0.23.0(typescript@7.0.2)
@@ -4141,7 +4141,7 @@ snapshots:
       node-addon-api: 8.9.2
       node-gyp-build: 4.8.4
 
-  tree-sitter-typescript@0.23.2(patch_hash=26750ceecbbc1f3708ecc20f77b281669236e347258ef18af9e25480b5cc7b99):
+  tree-sitter-typescript@0.23.2(patch_hash=c20f787d8cce21a9d9fd056a6adeac12f7379b5fe58e16e75cc0cbfb563ee236):
     dependencies:
       node-addon-api: 8.9.2
       node-gyp-build: 4.8.4

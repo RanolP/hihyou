@@ -1,4 +1,4 @@
-ts compatibility: 643/653 (98.47%), 1 refused (ok:false), 76 excluded
+ts compatibility: 646/653 (98.93%), 1 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -15,12 +15,9 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/comments/method_types.ts | 0/1 | 82.05% |
 | typescript/compiler/indexSignatureWithInitializer.ts | 0/1 | 87.50% |
 | typescript/conformance/types/moduleDeclaration/kind-detection.ts | 0/1 | 0.00% |
-| typescript/custom/abstract/abstractNewlineHandling.ts | 0/1 | 86.96% |
 | typescript/definite/without-annotation.ts | 0/1 | 91.67% |
-| typescript/import-require/type-imports.ts | 0/1 | 56.00% |
 | typescript/non-null/braces.ts | 0/1 | 94.12% |
 | typescript/trailing-comma/trailing.ts | 2/3 | 97.78% |
-| jsx/jsx/html_escape.js | 2/4 | 66.67% |
 
 # Refused
 

@@ -13,6 +13,8 @@ const ESCAPE_SEQUENCE = 5;
 const REGEX_PATTERN = 6;
 const JSX_TEXT = 7;
 const FUNCTION_SIGNATURE_AUTOMATIC_SEMICOLON = 8;
+// 9 is `__error_recovery`, which the scanner never reads.
+const LET_NAME_FOLLOWS = 10;
 
 const LS = 0x2028;
 const PS = 0x2029;
@@ -114,6 +116,11 @@ function scanAutomaticSemicolon(
   }
   lexer.advance(true);
   if (!scanWhitespaceAndComments(lexer, scanned)) return false;
+
+  // `let` then a name on the next line declares that name, as TypeScript reads `let⏎abstract`.
+  const c = la(lexer);
+  if (valid[LET_NAME_FOLLOWS] && (iswalpha(c) || c === 95 || c === 36))
+    return false;
 
   switch (la(lexer)) {
     case 96: // `

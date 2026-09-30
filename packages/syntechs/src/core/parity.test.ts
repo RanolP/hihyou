@@ -99,6 +99,8 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
       "interface I { a: typeof b\n  <T>(): void; c: C\n  <U>(): U }\nx = a\n< b\n",
       // `readonly` then a mapped type clause on the next line is one modifier; an index signature's `[` is a new member.
       "type M = { readonly\n  [K in T]: V }\ninterface J { a: A\n  [k: string]: B }\nx = a\n[0]\n",
+      // `let` then a name on the next line declares it; any other name before a newline takes a semicolon.
+      "let\nabstract\nexport class Y {}\nlet x\nfoo\n(let) satisfies unknown\n",
     ],
   ],
   tsx: [
