@@ -89,10 +89,8 @@ async function port<H extends Host>(
 
   for (const thread of threads.threads) {
     const { side, path } = thread.anchor;
-    const find = (d: Diffset<H>) =>
-      d.changes.find((c) => sidePath(c, side) === path)?.[side];
-    const oldBlob = find(from);
-    const newBlob = find(to);
+    const oldBlob = blobIn(from.changes, to.changes, side, path);
+    const newBlob = blobIn(to.changes, from.changes, side, path);
     if (!oldBlob || !newBlob) {
       lost.push(thread);
       continue;
@@ -124,6 +122,30 @@ async function port<H extends Host>(
     ported: { diffsetId: to.id, grammars, ran: [], threads: ported },
     lost,
   };
+}
+
+/**
+ * The blob at `path` on `side` of one iteration. A file the iteration does not list is unchanged there,
+ * so both its sides read as the base, which only `other`'s before side can name. That borrow is sound
+ * only while both iterations share a base: the engine has no base id, so a file both list with different
+ * before blobs is the one proof the base moved, and then an unlisted file's blob is unknown.
+ */
+function blobIn(
+  changes: readonly ChangedFileRef[],
+  other: readonly ChangedFileRef[],
+  side: "before" | "after",
+  path: string,
+): BlobId | null | undefined {
+  const listed = changes.find((c) => sidePath(c, side) === path);
+  if (listed) return listed[side];
+  if (changes.some((c) => c.path === path || c.oldPath === path))
+    return undefined;
+  const otherBefore = new Map(other.map((r) => [sidePath(r, "before"), r]));
+  const baseMoved = changes.some((c) => {
+    const o = otherBefore.get(sidePath(c, "before"));
+    return o !== undefined && o.before !== c.before;
+  });
+  return baseMoved ? undefined : otherBefore.get(path)?.before;
 }
 
 async function matchBlobs(

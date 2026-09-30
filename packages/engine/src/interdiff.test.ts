@@ -82,3 +82,50 @@ test("port keeps a thread on an unchanged function and sends one on a deleted fu
   ]);
   expect(lost.map((t) => t.id)).toEqual(["on-drop"]);
 });
+
+// An unlisted file is unchanged, not gone: a thread there must survive an iteration that reverts the file to base.
+test("port keeps a thread on an unchanged function in a file the new iteration reverts to base", async () => {
+  const host: TestHost = {
+    grammars: syntechsGrammars(),
+    resolveDiffset: (data) => ({
+      id: data,
+      changes: [
+        { path: "a.ts", before: "base", after: "iter2" },
+        ...(data === "v1"
+          ? [{ path: "b.ts", before: "base", after: "iter1" }]
+          : []),
+      ],
+    }),
+    readBlob: (id) => new TextEncoder().encode(blobs[id] ?? ""),
+  };
+  const engine = createEngine(host);
+  const v1 = await engine.diffset("v1");
+  const v2 = await engine.diffset("v2");
+
+  const thread = (
+    id: string,
+    side: "before" | "after",
+    text: string,
+  ): ReviewThread<TestHost> => ({
+    id,
+    anchor: { side, path: "b.ts", nodes: [stepsOfFunction(text, "keep")] },
+    comments: [],
+  });
+  const threads: ReviewThreads<TestHost> = {
+    diffsetId: v1.id,
+    grammars: {},
+    ran: [],
+    threads: [
+      thread("after", "after", iter1),
+      thread("before", "before", base),
+    ],
+  };
+
+  const { ported, lost } = await v1.interdiff(v2).port(threads);
+
+  expect(lost).toEqual([]);
+  expect(ported.threads.map((t) => [t.id, t.anchor.nodes])).toEqual([
+    ["after", [stepsOfFunction(base, "keep")]],
+    ["before", [stepsOfFunction(base, "keep")]],
+  ]);
+});
