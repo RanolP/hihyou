@@ -1177,6 +1177,26 @@ const oxfmtMemberObject = (c: CommentContext<JsOptions>): CommentTarget | undefi
   return { node, as: "trailing" };
 };
 
+/**
+ * `new A( // c⏎b)`: oxfmt prints a comment that ends the line of a `new` expression's `(` after the constructor,
+ * `new A(b); // c` and `new A /* c *\/(b)`, where a call's leads its first argument.
+ */
+const oxfmtNewOpenParen = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing } = c;
+  if (
+    c.options.compat !== "oxfmt" ||
+    c.placement !== "endOfLine" ||
+    c.preceding !== undefined ||
+    c.following === undefined ||
+    kind(c, enclosing) !== "arguments"
+  )
+    return;
+  const holder = parent(c, enclosing);
+  if (kind(c, holder) !== "new_expression" || field(c, holder as number, "arguments") !== enclosing) return;
+  const ctor = field(c, holder as number, "constructor");
+  return ctor !== undefined ? { node: ctor, as: "trailing" } : undefined;
+};
+
 // Where parentheses around a right-most value print nothing, so a comment inside them is past the value's end.
 const BARE_RIGHT = new Set([
   "assignment_expression",
@@ -1238,6 +1258,7 @@ const handlers = [
   oxfmtReturnSequence,
   oxfmtChainHead,
   oxfmtMemberObject,
+  oxfmtNewOpenParen,
   afterDeclare,
   typeCast,
   mappedTypeParts,
