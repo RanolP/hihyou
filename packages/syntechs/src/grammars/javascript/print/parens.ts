@@ -274,7 +274,12 @@ const STATEMENT_EXPRESSION_KINDS = new Set([
 export function needsParens(n: number, ctx: JsCtx): boolean {
   const { parent, key, top } = role(ctx, n);
   if (parent === undefined) return false;
-  const nk = kind(ctx, n);
+  // tree-sitter reads a bare `yield` as a yield expression wherever it stands; outside a generator babel reads the
+  // identifier `yield`: `yield.foo`, `void yield`.
+  const nk =
+    kind(ctx, n) === "yield_expression" && first(ctx, n) === undefined && !yieldsHere(ctx, n)
+      ? "identifier"
+      : kind(ctx, n);
   const pk = kind(ctx, parent);
   // A type cast's parentheses (the only ones `role` stops at) are all an expression needs.
   if (pk === "parenthesized_expression") return false;
@@ -782,6 +787,17 @@ export function awaitsHere(x: HasTree, n: number): boolean {
     if (NON_ASYNC_SCOPES.has(k)) return false;
   }
   return true;
+}
+
+/** Whether `yield` at `n` is an operator, as babel reads it: in a generator; elsewhere it is an identifier. */
+function yieldsHere(x: HasTree, n: number): boolean {
+  for (let a = parentOf(x, n); a !== undefined; a = parentOf(x, a)) {
+    const k = kind(x, a);
+    if (k === "generator_function" || k === "generator_function_declaration") return true;
+    if (k === "method_definition") return childWhere(x, a, (c) => kind(x, c) === "*") !== undefined;
+    if (FUNCTION_SCOPES.has(k)) return false;
+  }
+  return false;
 }
 
 /**

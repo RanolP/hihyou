@@ -918,7 +918,7 @@ const afterOpenParen = (c: CommentContext<JsOptions>): CommentTarget | undefined
 
 /**
  * `(a, b /* c *\/);`: a comment before the `)` of a statement's parenthesized expression trails the statement,
- * after its `;`, as one between the `)` and the `;` does. An arrow body's sequence keeps it on its last expression.
+ * after its `;`, as one between the `)` and the `;` does.
  */
 const beforeStatementCloseParen = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   const { enclosing, preceding, following } = c;
@@ -929,18 +929,31 @@ const beforeStatementCloseParen = (c: CommentContext<JsOptions>): CommentTarget 
     isCastParen(c, enclosing)
   )
     return;
-  const holder = parent(c, outer(c, enclosing));
-  if (holder !== undefined && kind(c, holder) === "expression_statement")
-    return { node: holder, as: "trailing" };
-  // `=> (a, b /* c */)`: prettier's parentheses wrap the sequence with its trailing comment, so the comment stays
-  // before the closing line break, which this sequence's own layout prints; trailing its last expression does.
+  const top = outer(c, enclosing);
+  const holder = parent(c, top);
+  if (holder === undefined) return;
+  if (kind(c, holder) === "expression_statement") return { node: holder, as: "trailing" };
+  // `= (a, b /* c */)`: as prettier's handleOnlyComments does, an arrow's body, a declarator's value, a return's
+  // argument or an assignment's right side keeps the comment on its sequence's last expression (or assignment's
+  // right side), inside the parentheses that print around the sequence (or assignment).
+  const role = kind(c, holder);
+  const at = fieldName(c, top);
   if (
-    kind(c, preceding) !== "sequence_expression" ||
-    holder === undefined ||
-    kind(c, holder) !== "arrow_function"
+    !(
+      (role === "arrow_function" && at === "body") ||
+      (role === "variable_declarator" && at === "value") ||
+      (role === "assignment_expression" && at === "right") ||
+      role === "return_statement"
+    )
   )
     return;
-  const last = children(c, preceding).findLast((n) => named(c, n) && isCode(c, n));
+  const expr = unparen(c, preceding);
+  const last =
+    kind(c, expr) === "sequence_expression"
+      ? children(c, expr).findLast((n) => named(c, n) && isCode(c, n))
+      : kind(c, expr) === "assignment_expression"
+        ? field(c, expr, "right")
+        : undefined;
   return last !== undefined ? { node: last, as: "trailing" } : undefined;
 };
 

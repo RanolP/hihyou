@@ -54,6 +54,7 @@ import { jsCtx, sToken, withComments } from "./sink.js";
 import {
   anon,
   children,
+  first,
   hasComment,
   isArrayLike,
   isComment,
@@ -118,6 +119,22 @@ const parenthesized: StreamRule<JsOptions> = (n, s) => {
       sctx.printNode(inner, args);
       sTok(ctx, close);
     });
+    return;
+  }
+  // Prettier's printComments wraps the node as printed with its parentheses, so its comments print outside them:
+  // `(a = b /* c */)` as `(a = b) /* c */`. Prettier has no nested pairs, so their comments are the node's too.
+  const expr = unparen(ctx, n);
+  if (!isCommentedIife(ctx, n) && !sctx.ownsComments(expr)) {
+    const layers: number[] = [];
+    for (let m: number | undefined = inner; m !== undefined && m !== expr; m = first(ctx, m))
+      layers.push(m);
+    layers.push(expr);
+    const body = () => {
+      sTok(ctx, open);
+      printInParens(ctx, expr, () => sctx.printNode(expr, args));
+      sTok(ctx, close);
+    };
+    layers.reduceRight<() => void>((print, m) => () => withComments(sctx, m, print), body)();
     return;
   }
   sTok(ctx, open);

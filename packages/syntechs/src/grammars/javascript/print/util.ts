@@ -635,7 +635,7 @@ export function isConciselyPrintedArray(ctx: JsCtx, n: number): boolean {
     elements.every(
       ({ element: e }) =>
         e !== undefined &&
-        isSignedNumber(ctx, e) &&
+        isSignedNumber(ctx, unparen(ctx, e)) &&
         !hasComment(ctx, e, CF.Trailing | CF.Line, (c) => ctx.tree.lf(c) === 0),
     )
   );
