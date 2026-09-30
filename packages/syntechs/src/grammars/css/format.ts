@@ -70,7 +70,8 @@ export const css = format({
     stylesheet: ($) => lines($.children),
     block: ($) => grpBrace(lines($.children)),
     keyframe_block_list: ($) => grpBrace(lines($.children)),
-    rule_set: spaced,
+    // Its children spaced, but a selector holding a comment as written (fmt.ts's `ruleSet`).
+    rule_set: () => custom("ruleSet"),
     // After `@nest` and `@extend`, prettier's selectors share a line, indented once they break.
     selectors: () =>
       either(
@@ -109,12 +110,14 @@ export const css = format({
               splitOn(",", {
                 except: ["property_name", ":", ";"],
                 trail: ["important"],
+                comments: true,
                 item: "space",
                 layout: { group: true, between: "line" },
               }),
               splitOn(",", {
                 except: ["property_name", ":", ";"],
                 trail: ["important"],
+                comments: true,
                 item: words({
                   keepLines: all(entryCount(1), firstText({ is: ["grid"], prefix: ["grid-template"], anyCase: true })),
                 }),
@@ -169,7 +172,7 @@ export const css = format({
         inOrder({ join: "gap", tight: { after: ["("], before: [")"] } }),
         either(
           parentIs("call_expression"),
-          grpParen(splitOn(",", { except: ["(", ")"], item: words(), layout: { between: "line" } })),
+          grpParen(splitOn(",", { except: ["(", ")"], comments: "all", item: words(), layout: { between: "line" } })),
           grpParen(
             splitOn(",", {
               except: ["(", ")"],

@@ -10,8 +10,7 @@ import { language } from "./index.js";
 
 // Byte parity with prettier 3.9.9, under its defaults and under a set a person would write in a `.prettierrc`.
 // Not covered, as `divergences` below pins: a node tree-sitter-css wraps in an ERROR (it keeps its source
-// text), a block comment inside a value (the core attaches it to the value before it, so it never moves to
-// the next line the way prettier's fill does), and an empty file.
+// text), and an empty file.
 
 const optionSets: [string, Partial<CssOptions>][] = [
   ["defaults", {}],
@@ -128,6 +127,19 @@ const edgeCases: [string, string][] = [
     "sass-arguments",
     "@mixin m ( $a, $b: 10, $args... ) {}\n@include m(1, $b: (k: v, l: w));\n$map: (a: 1,\n\n b: 2);",
   ],
+  // A block comment among a value's words stayed attached to the word before it; prettier's value parser reads it
+  // as a word, moved to a line of its own once the value breaks, and an entry holding one breaks the comma list.
+  ["value-comment", `a{background-image:url("${"x".repeat(60)}") /*rtl:url("${"y".repeat(20)}")*/;}`],
+  ["value-comment-entry", "a{box-shadow:1px 1px red,/* c */ 2px 2px blue;background:a,\n/* c */\nb}"],
+  // Comments among a function's arguments or an `@import`'s words took a line each, not a place in the fill.
+  [
+    "argument-comment",
+    'a{transform:translate(/* a */ /* b */ 10px /* c */)}@import /* a */ url("x.css") /* b */ print /* c */, /* d */ tv;',
+  ],
+  // A value of comments alone is postcss's value, not its `between`, so its source gaps were kept.
+  ["comment-only-value", "a{--x:   /* a */    /* b */;--f:/* a */ ;}"],
+  // Prettier keeps a selector holding a comment as written; it was laid out as selectors.
+  ["selector-comment", ".a /* x */, /* y */ .b /* z */ {}\n.c\n/* w */ {}\na[/* v */x]{b{c/* u */{d:e}}}"],
   ["crlf", "a{\r\n  b:c;\r\n  /* x\r\n  y */\r\n\r\n\r\n  d:e\r\n}\r\n"],
   // Front matter once parsed as selectors, lowercased and joined onto the first rule's line.
   ["front-matter", "---\ntitle: Title\n\n---\na{b:c}"],
@@ -175,7 +187,7 @@ const chunks = (s: string) => s.split(/\n(?=[^\s}])/);
 const ratchet: [string, Partial<CssOptions>, string, number, number][] = [
   ["defaults", {}, "normalize.css", 96, 96],
   ["defaults", {}, "animate.css", 328, 328],
-  ["defaults", {}, "bootstrap.css", 1638, 1641],
+  ["defaults", {}, "bootstrap.css", 1641, 1641],
   [
     "singleQuote, tabWidth 4, printWidth 100",
     optionSets[1]?.[1] ?? {},
@@ -194,7 +206,7 @@ const ratchet: [string, Partial<CssOptions>, string, number, number][] = [
     "singleQuote, tabWidth 4, printWidth 100",
     optionSets[1]?.[1] ?? {},
     "bootstrap.css",
-    1639,
+    1641,
     1641,
   ],
 ];
@@ -217,13 +229,6 @@ describe.skipIf(!present)(
 
 // Input, options, then today's output, which differs from prettier's.
 const divergences: [string, string, Partial<CssOptions>, string][] = [
-  // Prettier moves a block comment after a value to its own line once the value breaks; here it stays attached.
-  [
-    "value-comment",
-    `a{background-image:url("${"x".repeat(60)}") /*rtl:url("${"y".repeat(20)}")*/;}`,
-    {},
-    `a {\n  background-image: url("${"x".repeat(60)}") /*rtl:url("${"y".repeat(20)}")*/;\n}\n`,
-  ],
   // tree-sitter-css knows only lowercase `from`; an uppercase one is an ERROR.
   [
     "uppercase-from",

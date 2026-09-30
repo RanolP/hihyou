@@ -24,6 +24,7 @@ import {
   GROUP,
   INDENT,
   open,
+  openAlign,
   SOFT,
   sHardline,
   sLine,
@@ -570,19 +571,59 @@ export function important(node: number): void {
 
 /**
  * Postcss's `between` of a declaration: the comments after its name and before its value, around the `:`. They
- * attach to the declaration (`handleComment`) for `declarationColon` to print. Among statements, postcss's comment
- * is a statement of its own: one that starts the line the statement before it ends trails that statement.
+ * attach to the declaration (`handleComment`) for `declarationColon` to print. So do the block comments of the
+ * value, which postcss-value-parser reads as words of their own (the declaration's `splitOn` prints them as its
+ * items), and those after `!important`, postcss's `raws.important` (`declarationEnd`). Among statements, postcss's
+ * comment is a statement of its own: one that starts the line the statement before it ends trails that statement.
  */
-const handleComment: CommentHandler<CssOptions> = ({ tree, enclosing, preceding, placement }) => {
+const handleComment: CommentHandler<CssOptions> = ({ tree, enclosing, preceding, following, placement, text }) => {
+  if ((tree.kindName(enclosing) === "import_statement" || valueArguments(tree, enclosing)) && text.startsWith("/*"))
+    return { node: enclosing, as: "dangling" };
+  if (tree.kindName(enclosing) === "rule_set" && following !== undefined && tree.kindName(following) === "block")
+    return { node: enclosing, as: "dangling" };
   if (preceding === undefined) return undefined;
   if (statementSequences.has(tree.kindName(enclosing)) && placement !== "ownLine")
     return { node: preceding, as: "trailing" };
-  return tree.kindName(enclosing) === "declaration" &&
-    tree.kindName(preceding) === "property_name" &&
-    !/:\s*progid:/i.test(tree.text(enclosing))
+  if (tree.kindName(enclosing) !== "declaration" || /:\s*progid:/i.test(tree.text(enclosing))) return undefined;
+  return tree.kindName(preceding) === "property_name" || text.startsWith("/*")
     ? { node: enclosing, as: "dangling" }
     : undefined;
 };
+
+/**
+ * A function's arguments in a declaration's value but `url()`'s, which postcss-value-parser reads as words, a block
+ * comment among them one of its own (the `arguments` rule's `splitOn` prints them as its items).
+ */
+function valueArguments(tree: FormatTree, node: number): boolean {
+  if (tree.kindName(node) !== "arguments") return false;
+  const call = tree.parent(node);
+  if (tree.kindName(call) !== "call_expression" || /^url$/i.test(tree.text(tree.child(call, 0)))) return false;
+  for (let up = tree.parent(call); up !== NO_NODE; up = tree.parent(up)) {
+    const kind = tree.kindName(up);
+    if (kind === "declaration") return !/:\s*progid:/i.test(tree.text(up));
+    if (kind === "block" || kind === "at_rule" || kind === "postcss_statement") return false;
+  }
+  return false;
+}
+
+/**
+ * The source's gap between `prev` and the later `c`, rebuilt from their columns and the line breaks between: what
+ * prettier prints of a raw it keeps as written (a declaration's `between` and `raws.important`).
+ */
+function sourceGap(t: FormatTree, prev: number, c: number): string {
+  if (t.lf(c) > 0) return "\n".repeat(t.lf(c)) + " ".repeat(t.col(c));
+  const text = t.text(prev);
+  const lastBreak = text.lastIndexOf("\n");
+  const end = lastBreak === -1 ? t.col(prev) + text.length : text.length - lastBreak - 1;
+  return " ".repeat(Math.max(t.col(c) - end, 0));
+}
+
+/** Postcss's `between` of `declaration`, the dangling comments before its value (`handleComment`). */
+function between(node: number, ctx: SCtx): number[] {
+  const t = ctx.tree;
+  const value = children(node, t).find((c) => t.named(c) && !isComment(c, ctx) && kind(c, ctx) !== "property_name");
+  return ctx.danglingComments(node).filter((c) => value === undefined || t.ord(c) < t.ord(value));
+}
 
 /** The nodes whose children prettier prints as a sequence of statements (printNodeSequence). */
 const statementSequences = new Set([...statementLists, "keyframe_block_list"]);
@@ -608,42 +649,59 @@ export function statementComment(c: number, ctx: SCtx): boolean {
 
 /**
  * A declaration's `:` with the comments of its `between` (`handleComment`), which prettier prints as written but
- * trimmed: the first joined to the name, each later one joined to what precedes it where the source joins them, else
- * after a space, or on a line of its own where the source breaks.
+ * trimmed: the first joined to the name, each later one after the gap the source has before it; those past the `:`
+ * of an empty value are postcss's value, each after a space. Prettier measures
+ * that raw text as one string, line breaks and all, so the value after it breaks as though the line ran on.
  */
 export function declarationColon(colon: number | undefined, node: number, ctx: SCtx): void {
   const t = ctx.tree;
-  const between = ctx.danglingComments(node);
+  const comments = between(node, ctx);
   if (colon === undefined) return sToken(node, ":", true);
   // Postcss's `between` starts right after the name, trimmed.
   let prev = -1;
   const put = (c: number, print: () => void) => {
-    if (prev !== -1 && t.lf(c) > 0) sHardline();
-    else if (prev !== -1 && !t.adjoins(prev, c)) sText(" ");
+    if (prev !== -1) sText(sourceGap(t, prev, c));
     print();
     prev = c;
   };
-  open(INDENT);
-  for (const c of between) if (t.ord(c) < t.ord(colon)) put(c, () => ctx.comment(c));
+  for (const c of comments) if (t.ord(c) < t.ord(colon)) put(c, () => ctx.comment(c));
   put(colon, () => sToken(colon, ":"));
-  for (const c of between) if (t.ord(c) > t.ord(colon)) put(c, () => ctx.comment(c));
-  close();
+  // Past the `:`, comments with no value after them are postcss's value instead, printed as its words.
+  const value = !customs.emptyValue(node, ctx);
+  for (const c of comments)
+    if (t.ord(c) > t.ord(colon))
+      if (value) put(c, () => ctx.comment(c));
+      else {
+        sText(" ");
+        ctx.comment(c);
+      }
 }
 
 /**
- * A declaration's `;`, the source's or one of its own. After an empty value (`--empty:  ;`) prettier keeps the gap
- * before it as written, postcss's raw value: one space where the gap holds a line break or a comment; after a comment
- * of the `between` (`declarationColon`), the gap past that comment.
+ * A declaration's `;`, the source's or one of its own. After `!important`, postcss's `raws.important`: the comments
+ * and gaps up to the `;` as written. After an empty value (`--empty:  ;`) prettier keeps the gap before it as written,
+ * postcss's raw value: one space where the gap holds a line break; none where comments are that value
+ * (`declarationColon`).
  */
 export function declarationEnd(semi: number | undefined, node: number, ctx: SCtx): void {
   const t = ctx.tree;
-  if (semi === undefined || t.text(semi) === "") return sToken(node, ";", true);
-  const colon = code(node, ctx).find((c) => kind(c, ctx) === ":");
-  const last = colon === undefined ? undefined : ctx.danglingComments(node).filter((c) => t.ord(c) > t.ord(colon)).at(-1);
-  if (colon !== undefined && customs.emptyValue(node, ctx) && !t.adjoins(last ?? colon, semi)) {
-    const plain = t.lf(semi) === 0 && code(node, ctx).length === t.count(node);
-    sText(plain ? " ".repeat(t.col(semi) - t.col(colon) - 1) : " ");
+  const real = semi !== undefined && t.text(semi) !== "";
+  const important = children(node, t).find((c) => kind(c, ctx) === "important");
+  if (important !== undefined) {
+    let prev = important;
+    for (const c of ctx.danglingComments(node))
+      if (t.ord(c) > t.ord(important)) {
+        sText(sourceGap(t, prev, c));
+        ctx.comment(c);
+        prev = c;
+      }
+    if (real) sText(sourceGap(t, prev, semi));
   }
+  if (!real) return sToken(node, ";", true);
+  const colon = code(node, ctx).find((c) => kind(c, ctx) === ":");
+  const last = colon === undefined ? undefined : between(node, ctx).filter((c) => t.ord(c) > t.ord(colon)).at(-1);
+  if (colon !== undefined && last === undefined && customs.emptyValue(node, ctx) && !t.adjoins(colon, semi))
+    sText(t.lf(semi) === 0 ? sourceGap(t, colon, semi) : " ");
   sToken(semi, ";");
 }
 
@@ -699,15 +757,24 @@ export function importStatement(node: number, ctx: SCtx): void {
   const at = parts.find((c) => kind(c, ctx) === "@import");
   if (at !== undefined) sToken(at, atName(t.text(at)));
   sText(" ");
-  const item = (c: number) => (t.named(c) ? ctx.print(c) : sToken(c, t.text(c)));
-  const run = splitRun(ctx, node, ",", ["@import", ";"], ["block"]);
+  const item = (c: number) =>
+    !t.named(c) ? sToken(c, t.text(c)) : ctx.isComment(c) ? ctx.comment(c) : ctx.print(c);
+  // The prelude's comments are its words too, as `splitOn`'s `comments: "all"`: a line after those starting an
+  // entry drops to the enclosing indentation.
+  const run = splitRun(ctx, node, ",", ["@import", ";"], ["block"], "all");
   open(GROUP);
   open(INDENT);
   run.entries.forEach((e, i) => {
     if (i > 0) sLine(0);
     open(FILL);
+    let lead = true;
     e.items.forEach((c, j) => {
-      if (j > 0) sLine(0);
+      if (j > 0 && lead) {
+        openAlign(-1);
+        sLine(0);
+        close();
+      } else if (j > 0) sLine(0);
+      lead &&= ctx.isComment(c);
       open(FILL_ITEM);
       item(c);
       close();
@@ -727,6 +794,26 @@ export function importStatement(node: number, ctx: SCtx): void {
   else sToken(node, ";", true);
 }
 
+/**
+ * A rule's selector and block, a space between. Prettier's selector-unknown: postcss-selector-parser is not given a
+ * selector holding a comment, whose source up to the rule's `{` (postcss's selector and `between`) prints as written
+ * but trimmed. The comments before the block attach to the rule (`handleComment`).
+ */
+export function ruleSet(node: number, ctx: SCtx): void {
+  const t = ctx.tree;
+  const holds = (n: number): boolean => children(n, t).some((c) => ctx.isComment(c) || holds(c));
+  const kids = children(node, t);
+  const asWritten = kids.some((c) => kind(c, ctx) !== "block" && (ctx.isComment(c) || holds(c)));
+  let prev = -1;
+  for (const c of kids) {
+    if (prev !== -1) sText(asWritten && kind(c, ctx) !== "block" ? sourceGap(t, prev, c) : " ");
+    if (ctx.isComment(c)) ctx.comment(c);
+    else if (asWritten && kind(c, ctx) !== "block") sToken(c, t.text(c));
+    else ctx.print(c);
+    prev = c;
+  }
+}
+
 /** The hand-written rules format.ts names. */
 export const handWritten = {
   ...customs,
@@ -741,6 +828,7 @@ export const handWritten = {
   parenthesizedValue,
   keywordArgument,
   sassList,
+  ruleSet,
 };
 
 /** CSS as prettier 3.9.9's postcss printer lays it out; the layouts are format.ts, generated into fmt.gen.ts. */

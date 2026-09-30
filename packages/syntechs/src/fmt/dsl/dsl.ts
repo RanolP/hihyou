@@ -277,6 +277,8 @@ export interface SplitOn {
   readonly trailing: boolean;
   /** That trailing separator counts no width toward its line (see `sepBy`). */
   readonly imaginary?: true;
+  /** The node's dangling comments past its first item (`"all"`: all of them) are items too (see `SplitOnOf`). */
+  readonly comments?: true | "all";
   readonly layout: SplitLayout;
 }
 
@@ -903,6 +905,13 @@ export interface SplitOnOf<K, C> {
   readonly trailing?: boolean;
   /** As `sepBy`'s. */
   readonly imaginary?: boolean;
+  /**
+   * The node's dangling comments that follow its first item print as items of the entry they fall in, never joined
+   * to a neighbour; as `words`, a line after comments that start an entry breaks to the enclosing indentation, as
+   * prettier's value comments do (its postcss-value-parser reads them as words). `"all"` takes those before the
+   * first item too, where no other part of the node prints them.
+   */
+  readonly comments?: boolean | "all";
   readonly layout?: SplitLayoutOf<C>;
 }
 
@@ -930,6 +939,7 @@ export const splitOn = <const S extends string, const K extends string = never, 
     wrapItem: plain(o.wrapItem),
     trailing: o.trailing ?? false,
     ...(o.imaginary === true ? { imaginary: true } : {}),
+    ...(o.comments === true || o.comments === "all" ? { comments: o.comments } : {}),
     layout: layout(o.layout ?? {}),
   });
 };

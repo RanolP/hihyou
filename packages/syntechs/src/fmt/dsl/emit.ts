@@ -361,7 +361,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
       run = name("run");
       runs.set(x, run);
       line(
-        `const ${run} = splitRun(ctx, node, ${str(x.sep)}, ${JSON.stringify(x.except)}, ${JSON.stringify(x.trail)});`,
+        `const ${run} = splitRun(ctx, node, ${str(x.sep)}, ${JSON.stringify(x.except)}, ${JSON.stringify(x.trail)}${x.comments ? `, ${JSON.stringify(x.comments)}` : ""});`,
       );
     }
     return run;
@@ -372,6 +372,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
     const printItem = name("item");
     block(`const ${printItem} = (c: number) =>`, () => {
       line("if (!t.named(c)) sToken(c, t.text(c));");
+      if (x.comments) line("else if (ctx.isComment(c)) ctx.comment(c);");
       if (x.wrapItem === false) line("else ctx.print(c);");
       else
         block(`else if (${cond(x.wrapItem, false, "c")})`, () => {
@@ -412,10 +413,16 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
             });
           line("open(FILL_ITEM);");
           line(`${printItem}(items[0] as number);`);
+          // Whether every item so far is a comment, which a break after drops to the entry's indentation.
+          if (x.comments) line("let lead = ctx.isComment(items[0] as number);");
           block("for (let i = 1; i < items.length; i++)", () => {
             line("const prev = items[i - 1] as number;");
             line("const c = items[i] as number;");
-            line(`if (t.adjoins(prev, c)) ${printItem}(c);`);
+            if (x.comments) {
+              line("const dedent = lead;");
+              line("lead &&= ctx.isComment(c);");
+              line(`if (t.adjoins(prev, c) && !ctx.isComment(prev) && !ctx.isComment(c)) ${printItem}(c);`);
+            } else line(`if (t.adjoins(prev, c)) ${printItem}(c);`);
             if (keep !== undefined)
               block("else if (grid && !breaksBetween(t, prev, c))", () => {
                 line('sText(" ");');
@@ -423,8 +430,15 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
               });
             block("else", () => {
               line("close();");
-              line(keep !== undefined ? "if (grid) sHardline();" : "sLine(0);");
-              if (keep !== undefined) line("else sLine(0);");
+              if (keep !== undefined) line("if (grid) sHardline();");
+              const otherwise = keep !== undefined ? "else " : "";
+              if (x.comments)
+                block(`${otherwise}if (dedent)`, () => {
+                  line("openAlign(-1);");
+                  line("sLine(0);");
+                  line("close();");
+                }, "} else sLine(0);");
+              else line(`${otherwise}sLine(0);`);
               line("open(FILL_ITEM);");
               line(`${printItem}(c);`);
             });
@@ -1137,6 +1151,8 @@ export function emit(
     );
   if (parts.some((p) => p.includes("sLiteral(")))
     parts.splice(parts.indexOf(`} from ${str(sink)};`) + 1, 0, `import { sLiteral } from ${str(sink)};`);
+  if (parts.some((p) => p.includes("openAlign(")))
+    parts.splice(parts.indexOf(`} from ${str(sink)};`) + 1, 0, `import { openAlign } from ${str(sink)};`);
   if (parts.some((p) => p.includes("parentIs(")))
     parts.splice(
       parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,

@@ -20,6 +20,7 @@ import {
   IF_BROKEN,
   INDENT,
   open,
+  openAlign,
   openIndentIfBreak,
   SOFT,
   sBreakParent,
@@ -452,7 +453,7 @@ export function flatten<O>(
           return;
         }
         case "splitOn": {
-          const run = splitRun(ctx, n, x.sep, x.except, x.trail);
+          const run = splitRun(ctx, n, x.sep, x.except, x.trail, x.comments ?? false);
           const holds = (c: Cond) => evalCond(c, ctx, n, custom, kindHasFields, run);
           if (run.entries.length > 0) {
             let layout = x.layout;
@@ -469,9 +470,21 @@ export function flatten<O>(
             for (const [k, { items, sep }] of run.entries.entries()) {
               const breaks = items.map((c, i) => i > 0 && breaksBetween(t, items[i - 1] as number, c));
               out.push({ e: "entry", item: x.item.t, count: items.length, grid: keepLines && breaks.includes(true) });
+              const comment = (c: number) => t.named(c) && ctx.isComment(c);
               items.forEach((c, i) => {
-                if (i > 0)
-                  out.push({ e: "joint", apart: !t.adjoins(items[i - 1] as number, c), breaks: breaks[i] === true });
+                if (i > 0) {
+                  const prev = items[i - 1] as number;
+                  out.push({
+                    e: "joint",
+                    apart: !t.adjoins(prev, c) || comment(prev) || comment(c),
+                    breaks: breaks[i] === true,
+                    dedent: items.slice(0, i).every(comment),
+                  });
+                }
+                if (comment(c)) {
+                  out.push(commentEntry(ctx, c, "dangling"));
+                  return;
+                }
                 if (!t.named(c)) {
                   out.push({ e: "tok", node: c, text: t.text(c), synthetic: false });
                   return;
@@ -830,7 +843,11 @@ export function wrap<O>(
         } else {
           close();
           if (x.grid) sHardline();
-          else sLine(0);
+          else if (j.dedent) {
+            openAlign(-1);
+            sLine(0);
+            close();
+          } else sLine(0);
           open(FILL_ITEM);
           item(k);
         }
