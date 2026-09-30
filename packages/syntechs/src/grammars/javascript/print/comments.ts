@@ -1217,6 +1217,23 @@ const oxfmtAfterOptionalCall = (c: CommentContext<JsOptions>): CommentTarget | u
   return first !== undefined ? { node: first, as: "leading" } : { node: following, as: "dangling" };
 };
 
+/** `foo /* c *\/ (1)`: oxfmt moves a comment between a call's callee and its `(` in front of the first argument. */
+const oxfmtBeforeCallArguments = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, preceding, following } = c;
+  if (
+    c.options.compat !== "oxfmt" ||
+    kind(c, enclosing) !== "call_expression" ||
+    preceding === undefined ||
+    preceding !== field(c, enclosing, "function") ||
+    following === undefined ||
+    following !== field(c, enclosing, "arguments") ||
+    kind(c, following) !== "arguments"
+  )
+    return;
+  const first = callArguments(c, enclosing)[0];
+  return first !== undefined ? { node: first, as: "leading" } : undefined;
+};
+
 // Where parentheses around a right-most value print nothing, so a comment inside them is past the value's end.
 const BARE_RIGHT = new Set([
   "assignment_expression",
@@ -1280,6 +1297,7 @@ const handlers = [
   oxfmtMemberObject,
   oxfmtNewOpenParen,
   oxfmtAfterOptionalCall,
+  oxfmtBeforeCallArguments,
   afterDeclare,
   typeCast,
   mappedTypeParts,
