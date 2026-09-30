@@ -1,450 +1,12 @@
 import type { Frame } from "../../../../fmt/dsl/runtime.js";
-import type { Expr, MatchCase } from "../ast.js";
-import { exprAst, Unformattable } from "../ast.js";
+import type { MatchCase } from "../ast.js";
 import { type Fmt, writeCommaIn } from "../builders.js";
 import { writeExpr, writeMaybeParenthesize } from "../expr.js";
-import { close, GROUP, open, sDsl, sText, sToken } from "../sink.js";
-import type { Comment } from "../comments.js";
-import { byteOffsetOf, endOf, firstToken, startOf, tokens } from "../trivia.js";
-import { kids } from "./defs.js";
+import { type Pat, outerEnd } from "../pattern.js";
+import { close, COLLAPSE, GROUP, HARD, open, sDsl, sLine, sText, sToken } from "../sink.js";
+import { endOf, startOf } from "../trivia.js";
 
-/** Ruff's match patterns (pattern/*.rs), which a `match` statement's cases hold. */
-
-/**
- * A match pattern read from the tree-sitter nodes, shaped as ruff's `Pattern`. Tree-sitter has no node for a
- * parenthesized pattern (it reads `(p)` as a one-element tuple without a comma) nor for `-1` (two sibling
- * tokens), so this model folds both in: `paren` holds a pattern's outermost redundant parentheses.
- */
-export type Pat = {
-  readonly node: number;
-  readonly start: number;
-  readonly end: number;
-  paren?: { open: number; close: number };
-  /** The `case_pattern` holding the pattern, whose rule prints it; none past the parentheses of `(p)`. */
-  cp?: number;
-} & (
-  | { k: "expr"; e: Expr; capture: boolean }
-  | { k: "neg"; minus: number; e: Expr }
-  | { k: "complex"; left: Pat; op: number; right: Pat }
-  | { k: "attr"; parts: readonly number[] }
-  | { k: "wild" }
-  | { k: "star"; star: number; name: number }
-  | {
-      k: "seq";
-      type: "list" | "tuple" | "bare";
-      open?: number;
-      close?: number;
-      items: Pat[];
-      commas: number;
-      end_: number;
-    }
-  | {
-      k: "map";
-      open: number;
-      close: number;
-      pairs: { key: Pat; colon: number; value: Pat }[];
-      rest: { star: number; name: number } | undefined;
-    }
-  | {
-      k: "class";
-      cls: readonly number[];
-      open: number;
-      close: number;
-      items: Pat[];
-      keywords: {
-        name: number;
-        eq: number;
-        value: Pat;
-        end: number;
-        /** The `as` and name of `k=p as n`, which tree-sitter reads as `(k=p) as n`. */
-        alias: { as: number; name: number } | undefined;
-      }[];
-    }
-  | { k: "as"; pattern: Pat; as: number; name: number }
-  | { k: "or"; items: Pat[]; bars: number[] }
-);
-
-const outerEnd = (f: Fmt, p: Pat) =>
-  p.paren !== undefined ? endOf(f.tree, p.paren.close) : p.end;
-
-const unsupportedPattern = (f: Fmt, n: number): never => {
-  throw new Unformattable(
-    `unsupported pattern ${f.tree.kindName(n)} at ${byteOffsetOf(f.tree, n)}`,
-  );
-};
-
-/** The pattern after `case`: several top-level patterns (or one and a comma) are a tuple without parentheses. */
-export function readCasePattern(f: Fmt, c: MatchCase): Pat {
-  const t = f.tree;
-  const clause = c.pattern.ts;
-  const stop = startOf(t, c.guardKw !== undefined ? c.guardKw : c.colon);
-  const parts = kids(t, clause).filter(
-    (x) =>
-      startOf(t, x) >= c.pattern.start &&
-      endOf(t, x) <= stop &&
-      (t.kindName(x) === "case_pattern" || t.kindName(x) === ","),
-  );
-  const items = parts.filter((x) => t.kindName(x) === "case_pattern");
-  const first = items[0];
-  if (first === undefined) return unsupportedPattern(f, clause);
-  if (items.length === 1 && parts.length === 1) return readPattern(f, first);
-  const pats = items.map((x) => readPattern(f, x));
-  return {
-    k: "seq",
-    type: "bare",
-    node: clause,
-    start: c.pattern.start,
-    end: c.pattern.end,
-    items: pats,
-    commas: clause,
-    end_: stop,
-  };
-}
-
-export function readPattern(f: Fmt, n: number): Pat {
-  const t = f.tree;
-  const kind = (x: number) => t.kindName(x);
-  const base = { node: n, start: startOf(t, n), end: endOf(t, n) };
-  const cs = kids(t, n).filter((x) => kind(x) !== "line_continuation" && kind(x) !== "comment");
-  for (const x of cs)
-    if (kind(x) === "ERROR" || t.missing(x)) unsupportedPattern(f, x);
-  switch (kind(n)) {
-    case "case_pattern": {
-      const p = readGroup(f, n, cs);
-      if (p.paren === undefined) p.cp = n;
-      return p;
-    }
-    case "union_pattern": {
-      const bars = cs.filter((x) => kind(x) === "|");
-      const items: Pat[] = [];
-      let run: number[] = [];
-      for (const x of [...cs, undefined]) {
-        if (x === undefined || kind(x) === "|") {
-          items.push(readGroup(f, n, run));
-          run = [];
-        } else run.push(x);
-      }
-      return { ...base, k: "or", items, bars };
-    }
-    case "dotted_name": {
-      const [only] = cs;
-      if (cs.length === 1 && only !== undefined && kind(only) === "identifier")
-        return { ...base, k: "expr", e: exprAst(t, only), capture: true };
-      return { ...base, k: "attr", parts: cs };
-    }
-    case "identifier":
-      return { ...base, k: "expr", e: exprAst(t, n), capture: true };
-    case "string":
-    case "concatenated_string":
-    case "integer":
-    case "float":
-    case "none":
-    case "true":
-    case "false":
-      return { ...base, k: "expr", e: exprAst(t, n), capture: false };
-    case "_":
-      return { ...base, k: "wild" };
-    case "complex_pattern": {
-      const op = cs.findLast((x) => kind(x) === "+" || kind(x) === "-");
-      if (op === undefined) return unsupportedPattern(f, n);
-      const at = cs.indexOf(op);
-      return {
-        ...base,
-        k: "complex",
-        left: readGroup(f, n, cs.slice(0, at)),
-        op,
-        right: readGroup(f, n, cs.slice(at + 1)),
-      };
-    }
-    case "splat_pattern": {
-      const [star, name] = cs;
-      if (
-        star === undefined ||
-        name === undefined ||
-        kind(star) !== "*" ||
-        cs.length !== 2
-      )
-        return unsupportedPattern(f, n);
-      return { ...base, k: "star", star, name };
-    }
-    case "as_pattern": {
-      const [inner, as, name] = cs;
-      if (
-        inner === undefined ||
-        as === undefined ||
-        name === undefined ||
-        kind(as) !== "as" ||
-        cs.length !== 3
-      )
-        return unsupportedPattern(f, n);
-      return { ...base, k: "as", pattern: readPattern(f, inner), as, name };
-    }
-    case "list_pattern":
-    case "tuple_pattern": {
-      const open = cs[0];
-      const close = cs.at(-1);
-      if (open === undefined || close === undefined || cs.length < 2)
-        return unsupportedPattern(f, n);
-      const items = cs.filter((x) => kind(x) === "case_pattern");
-      const commas = cs.filter((x) => kind(x) === ",").length;
-      const [only] = items;
-      if (
-        kind(n) === "tuple_pattern" &&
-        only !== undefined &&
-        items.length === 1 &&
-        !commas
-      ) {
-        // `(p)`: the parentheses are the pattern's own, the outermost pair kept.
-        const inner = readPattern(f, only);
-        inner.paren = { open, close };
-        return inner;
-      }
-      return {
-        ...base,
-        k: "seq",
-        type: kind(n) === "list_pattern" ? "list" : "tuple",
-        open,
-        close,
-        items: items.map((x) => readPattern(f, x)),
-        commas: n,
-        end_: base.end,
-      };
-    }
-    case "dict_pattern": {
-      const open = cs[0];
-      const close = cs.at(-1);
-      if (
-        open === undefined ||
-        close === undefined ||
-        kind(open) !== "{" ||
-        kind(close) !== "}"
-      )
-        return unsupportedPattern(f, n);
-      const pairs: { key: Pat; colon: number; value: Pat }[] = [];
-      let rest: { star: number; name: number } | undefined;
-      let run: number[] = [];
-      let colon: number | undefined;
-      for (const x of cs.slice(1, -1)) {
-        if (kind(x) === ",") continue;
-        if (kind(x) === "splat_pattern") {
-          const [star, name] = kids(t, x);
-          if (
-            star === undefined ||
-            name === undefined ||
-            kind(star) !== "**" ||
-            t.count(x) !== 2
-          )
-            return unsupportedPattern(f, x);
-          rest = { star, name };
-        } else if (kind(x) === ":" && colon === undefined) colon = x;
-        else if (colon !== undefined && kind(x) === "case_pattern") {
-          pairs.push({
-            key: readGroup(f, n, run),
-            colon,
-            value: readPattern(f, x),
-          });
-          run = [];
-          colon = undefined;
-        } else if (colon === undefined) run.push(x);
-        else return unsupportedPattern(f, x);
-      }
-      if (run.length > 0 || colon !== undefined)
-        return unsupportedPattern(f, n);
-      return { ...base, k: "map", open, close, pairs, rest };
-    }
-    case "class_pattern": {
-      const at = cs.findIndex((x) => kind(x) === "(");
-      const open = cs[at];
-      const close = cs.at(-1);
-      const cls = cs[0];
-      if (
-        open === undefined ||
-        close === undefined ||
-        kind(close) !== ")" ||
-        at !== 1 ||
-        cls === undefined
-      )
-        return unsupportedPattern(f, n);
-      if (kind(cls) !== "dotted_name") return unsupportedPattern(f, cls);
-      const items: Pat[] = [];
-      const keywords: (Pat & { k: "class" })["keywords"] = [];
-      for (const x of cs.slice(at + 1, -1)) {
-        if (kind(x) === ",") continue;
-        let kw = t.count(x) === 1 ? t.child(x, 0) : undefined;
-        let alias: { as: number; name: number } | undefined;
-        if (kw !== undefined && kind(kw) === "as_pattern") {
-          const [inner, as, name] = kids(t, kw);
-          const k = inner !== undefined && t.count(inner) === 1 ? t.child(inner, 0) : undefined;
-          if (k !== undefined && kind(k) === "keyword_pattern" && as !== undefined && name !== undefined) {
-            alias = { as, name };
-            kw = k;
-          }
-        }
-        if (kw !== undefined && kind(kw) === "keyword_pattern") {
-          const [name, eq, ...value] = kids(t, kw);
-          if (name === undefined || eq === undefined || kind(eq) !== "=")
-            return unsupportedPattern(f, kw);
-          keywords.push({
-            name,
-            eq,
-            value: readGroup(f, kw, value),
-            end: endOf(t, alias ? alias.name : kw),
-            alias,
-          });
-        } else if (keywords.length > 0) return unsupportedPattern(f, x);
-        else items.push(readPattern(f, x));
-      }
-      return {
-        ...base,
-        k: "class",
-        cls: kids(t, cls),
-        open,
-        close,
-        items,
-        keywords,
-      };
-    }
-    default:
-      return unsupportedPattern(f, n);
-  }
-}
-
-/** One pattern from sibling nodes: a lone node, or `-` and a number, which tree-sitter leaves unwrapped. */
-export function readGroup(f: Fmt, parent: number, nodes: number[]): Pat {
-  const t = f.tree;
-  const [a, b] = nodes;
-  if (a !== undefined && nodes.length === 1) return readPattern(f, a);
-  if (
-    a !== undefined &&
-    b !== undefined &&
-    nodes.length === 2 &&
-    t.kindName(a) === "-" &&
-    (t.kindName(b) === "integer" || t.kindName(b) === "float")
-  )
-    return {
-      node: a,
-      start: startOf(t, a),
-      end: endOf(t, b),
-      k: "neg",
-      minus: a,
-      e: exprAst(t, b),
-    };
-  return unsupportedPattern(f, a !== undefined ? a : parent);
-}
-
-/**
- * The end-of-line comments right after the opening bracket `open`, which ruff prints right after the bracket:
- * a parenthesized pattern's leading comment (`FormatPattern`'s open parenthesis comment), or a sequence's,
- * mapping's or class pattern's dangling one.
- */
-function openComments(f: Fmt, open: number): Comment[] {
-  const from = endOf(f.tree, open);
-  return f.comments.all.filter(
-    (c) =>
-      c.line === "eol" &&
-      c.start >= from &&
-      firstToken(f.tree, from, c.start) === undefined,
-  );
-}
-
-/** The end-of-line comments after an item of a bracketed pattern ending at `end`, behind at most its comma. */
-function itemComments(f: Fmt, end: number): Comment[] {
-  return f.comments.all.filter((c) => {
-    if (c.line !== "eol" || c.start < end) return false;
-    let n = 0;
-    for (const t of tokens(f.tree, end, c.start)) if (t.kind !== "," || ++n > 1) return false;
-    return true;
-  });
-}
-
-/** Ruff's trailing comments of the item `write` prints, ending at `end`: they follow its comma, if any. */
-const withItemComments = (f: Fmt, end: number, write: () => void) => () => {
-  write();
-  f.writeTrailing(itemComments(f, end));
-};
-
-/** Where every item in the pattern's brackets ends, each one's end-of-line comments printed after it. */
-function itemEnds(f: Fmt, p: Pat): number[] {
-  switch (p.k) {
-    case "complex":
-      return [...itemEnds(f, p.left), ...itemEnds(f, p.right)];
-    case "seq":
-      return p.items.flatMap((x) => [
-        ...(p.type !== "bare" ? [outerEnd(f, x)] : []),
-        ...itemEnds(f, x),
-      ]);
-    case "map":
-      return [
-        ...p.pairs.flatMap((x) => [
-          outerEnd(f, x.value),
-          ...itemEnds(f, x.key),
-          ...itemEnds(f, x.value),
-        ]),
-        ...(p.rest ? [endOf(f.tree, p.rest.name)] : []),
-      ];
-    case "class":
-      return [
-        ...p.items.flatMap((x) => [outerEnd(f, x), ...itemEnds(f, x)]),
-        ...p.keywords.flatMap((k) => [k.end, ...itemEnds(f, k.value)]),
-      ];
-    case "as":
-      return itemEnds(f, p.pattern);
-    case "or":
-      return p.items.flatMap((x) => itemEnds(f, x));
-    default:
-      return [];
-  }
-}
-
-/** Every opening bracket the pattern prints, each one's end-of-line comment printed after it. */
-function openBrackets(p: Pat): number[] {
-  const out = p.paren !== undefined ? [p.paren.open] : [];
-  switch (p.k) {
-    case "complex":
-      return [...out, ...openBrackets(p.left), ...openBrackets(p.right)];
-    case "seq":
-      return [
-        ...out,
-        ...(p.open !== undefined ? [p.open] : []),
-        ...p.items.flatMap(openBrackets),
-      ];
-    case "map":
-      return [
-        ...out,
-        p.open,
-        ...p.pairs.flatMap((x) => [...openBrackets(x.key), ...openBrackets(x.value)]),
-      ];
-    case "class":
-      return [
-        ...out,
-        p.open,
-        ...p.items.flatMap(openBrackets),
-        ...p.keywords.flatMap((k) => openBrackets(k.value)),
-      ];
-    case "as":
-      return [...out, ...openBrackets(p.pattern)];
-    case "or":
-      return [...out, ...p.items.flatMap(openBrackets)];
-    default:
-      return out;
-  }
-}
-
-/**
- * Whether every one of `comments`, a case pattern's, follows one of its opening brackets or ends an item's line,
- * the only places it prints one.
- */
-export function patternCommentsPrintable(
-  f: Fmt,
-  p: Pat,
-  comments: readonly Comment[],
-): boolean {
-  const printed = new Set([
-    ...openBrackets(p).flatMap((b) => openComments(f, b)),
-    ...itemEnds(f, p).flatMap((end) => itemComments(f, end)),
-  ]);
-  return comments.every((c) => printed.has(c));
-}
+/** Ruff's match pattern printers (pattern/*.rs), which a `match` statement's cases hold. */
 
 /** Parentheses the pattern has none of in the source, anchored to `anchor`. */
 const syntheticParens = (anchor: number): Frame => ({
@@ -453,30 +15,43 @@ const syntheticParens = (anchor: number): Frame => ({
   close: () => sToken(anchor, ")", true),
 });
 
-/** Ruff's `FormatPattern` with its `Parentheses` option. */
+/**
+ * Ruff's `FormatPattern` with its `Parentheses` option: the pattern's comments around its fields, an end-of-line
+ * leading comment right after the opening parenthesis.
+ */
 export function pattern(
   f: Fmt,
   p: Pat,
   parens: "preserve" | "always" | "never" = "preserve",
 ): void {
+  const cs = f.comments;
   const parenthesize =
     parens === "preserve" ? p.paren !== undefined : parens === "always";
-  const fields = () => (p.cp !== undefined ? sDsl(p.cp) : patternFields(f, p));
-  if (!parenthesize) return fields();
+  const node = () => {
+    f.writeLeading(cs.leading(p));
+    if (p.cp !== undefined) sDsl(p.cp);
+    else patternFields(f, p);
+    f.writeTrailing(cs.trailing(p));
+  };
+  if (!parenthesize) return node();
+  const [first] = cs.leading(p);
+  const openComment = first?.line === "eol" ? [first] : [];
   const own = p.paren;
   if (!own) {
     const { open, close } = syntheticParens(p.node);
-    return f.writeParenthesized(open, fields, close);
+    return f.writeParenthesized(open, node, close, openComment);
   }
   f.writeParenthesized(
     () => sToken(own.open, f.text(own.open)),
-    fields,
+    node,
     () => sToken(own.close, f.text(own.close)),
-    openComments(f, own.open),
+    openComment,
   );
 }
 
-function patternFields(f: Fmt, p: Pat): void {
+/** What ruff's rule of the pattern's kind prints between its comments. */
+export function patternFields(f: Fmt, p: Pat): void {
+  const cs = f.comments;
   switch (p.k) {
     case "expr":
       return writeExpr(f, p.e, "never");
@@ -495,10 +70,43 @@ function patternFields(f: Fmt, p: Pat): void {
       if (p.type === "bare") return sequence(f, p, syntheticParens(p.node));
       return sDsl(p.node);
     case "star":
-    case "as":
+      // Ruff's `FormatPatternMatchStar`: every comment inside is dangling, printed after the `*`.
+      sToken(p.star, f.text(p.star));
+      f.writeDangling(cs.dangling(p));
+      return sToken(p.name, f.text(p.name));
+    case "as": {
+      // Ruff's `FormatPatternMatchAs`: a line after the pattern's trailing comments, the `as`'s after it.
+      pattern(f, p.pattern);
+      if (cs.hasTrailing(p.pattern)) sLine(HARD | COLLAPSE);
+      else sText(" ");
+      sToken(p.as, f.text(p.as));
+      const dangling = cs.dangling(p);
+      if (dangling.length === 0) sText(" ");
+      else if (dangling.every((c) => c.line === "own")) sLine(HARD | COLLAPSE);
+      f.writeDangling(dangling);
+      return sToken(p.name, f.text(p.name));
+    }
     case "map":
     case "class":
       return sDsl(p.node);
+  }
+}
+
+/** Ruff's `FormatPatternMatchOr`: a line before each `|`, forced by the next alternative's leading comments. */
+export function orPattern(f: Fmt, p: Pat & { k: "or" }): void {
+  for (const [i, item] of p.items.entries()) {
+    const bar = p.bars[i - 1];
+    if (bar !== undefined) {
+      const leading = f.comments.leading(item);
+      if (leading.length === 0) f.writeSoftLineOrSpace();
+      else {
+        sLine(HARD | COLLAPSE);
+        f.writeLeading(leading);
+      }
+      sToken(bar, f.text(bar));
+      sText(" ");
+    }
+    pattern(f, item);
   }
 }
 
@@ -510,7 +118,7 @@ export function sequence(f: Fmt, p: Pat & { k: "seq" }, frame: Frame): void {
     p.commas,
     p.open !== undefined ? p.open : p.node,
   );
-  const dangling = p.open !== undefined ? openComments(f, p.open) : [];
+  const dangling = f.comments.dangling(p);
   if (!only) return f.writeEmptyParenthesized(frame.open, dangling, frame.close);
   if (p.items.length === 1 && p.type !== "list")
     // A one-element tuple keeps its parentheses, and its comma never makes it expand.
@@ -518,19 +126,14 @@ export function sequence(f: Fmt, p: Pat & { k: "seq" }, frame: Frame): void {
       frame.open,
       () => {
         pattern(f, only);
-        comma(outerEnd(f, only));
-        f.writeTrailing(itemComments(f, outerEnd(f, only)));
+        comma(outerEnd(f.tree, only));
       },
       frame.close,
       dangling,
     );
   const items = () =>
     f.writeJoinCommaSeparated(
-      p.items.map((x) => {
-        const end = outerEnd(f, x);
-        const write = () => pattern(f, x);
-        return { end, write: p.type === "bare" ? write : withItemComments(f, end, write) };
-      }),
+      p.items.map((x) => ({ end: outerEnd(f.tree, x), write: () => pattern(f, x) })),
       p.end_,
       comma,
     );
@@ -538,80 +141,103 @@ export function sequence(f: Fmt, p: Pat & { k: "seq" }, frame: Frame): void {
   f.writeParenthesized(frame.open, items, frame.close, dangling);
 }
 
-/** Ruff's `FormatPatternMatchMapping` in its braces' `frame`. */
+/**
+ * Ruff's `FormatPatternMatchMapping` in its braces' `frame`. Its dangling comments are three kinds: end-of-line
+ * ones before the `**` follow the `{`, the others before the rest's name lead the `**`, and those past it trail
+ * the entries.
+ */
 export function mapping(f: Fmt, p: Pat & { k: "map" }, frame: Frame): void {
-  const dangling = openComments(f, p.open);
-  if (p.pairs.length === 0 && !p.rest)
+  const dangling = f.comments.dangling(p);
+  const rest = p.rest;
+  const star = rest ? startOf(f.tree, rest.star) : Number.POSITIVE_INFINITY;
+  const name = rest ? startOf(f.tree, rest.name) : Number.POSITIVE_INFINITY;
+  const openComments = dangling.filter((c) => c.line === "eol" && c.start < star);
+  const starComments = dangling.filter((c) => !openComments.includes(c) && c.start < name);
+  const afterRest = dangling.filter((c) => c.start >= name);
+  if (p.pairs.length === 0 && !rest)
     return f.writeEmptyParenthesized(frame.open, dangling, frame.close);
   const entries = p.pairs.map(({ key, colon, value }) => ({
-    end: outerEnd(f, value),
-    write: withItemComments(f, outerEnd(f, value), () => {
+    end: outerEnd(f.tree, value),
+    write: () => {
       open(GROUP);
       pattern(f, key);
       sToken(colon, f.text(colon));
       sText(" ");
       pattern(f, value);
       close();
-    }),
+    },
   }));
-  const rest = p.rest;
   if (rest)
     entries.push({
       end: endOf(f.tree, rest.name),
-      write: withItemComments(f, endOf(f.tree, rest.name), () => sDsl(f.tree.parent(rest.star))),
+      write: () => {
+        f.writeLeading(starComments);
+        sToken(rest.star, f.text(rest.star));
+        sToken(rest.name, f.text(rest.name));
+      },
     });
   f.writeParenthesized(
     frame.open,
-    () => f.writeJoinCommaSeparated(entries, p.end, writeCommaIn(f.tree, p.node, p.open)),
+    () => {
+      f.writeJoinCommaSeparated(entries, p.end, writeCommaIn(f.tree, p.node, p.open));
+      f.writeTrailing(afterRest);
+    },
     frame.close,
-    dangling,
+    openComments,
   );
 }
 
-/** Ruff's `FormatPatternArguments`: a class pattern's parentheses' `frame` and what they hold. */
+/**
+ * Ruff's `FormatPatternArguments`: a class pattern's parentheses' `frame` and what they hold, after the class
+ * pattern's dangling comments, which sit between the class and its `(`.
+ */
 export function classArguments(
   f: Fmt,
   p: Pat & { k: "class" },
   frame: Frame,
 ): void {
-  const [only] = p.items;
-  const dangling = openComments(f, p.open);
-  if (!only && p.keywords.length === 0)
+  const cs = f.comments;
+  const args = p.args;
+  f.writeDangling(cs.dangling(p));
+  const [only] = args.items;
+  const dangling = cs.dangling(args);
+  if (!only && args.keywords.length === 0)
     return f.writeEmptyParenthesized(frame.open, dangling, frame.close);
-  const comma = writeCommaIn(f.tree, p.node, p.open);
+  const comma = writeCommaIn(f.tree, p.node, args.open);
   const entries =
-    only && p.items.length === 1 && p.keywords.length === 0
+    only && args.items.length === 1 && args.keywords.length === 0
       ? [
           {
-            end: outerEnd(f, only),
+            end: outerEnd(f.tree, only),
             // A lone argument keeps its parentheses only when it has its own.
-            write: withItemComments(f, outerEnd(f, only), () =>
-              pattern(f, only, only.paren ? "always" : "never"),
-            ),
+            write: () => pattern(f, only, only.paren ? "always" : "never"),
           },
         ]
       : [
-          ...p.items.map((x) => ({
-            end: outerEnd(f, x),
-            write: withItemComments(f, outerEnd(f, x), () => pattern(f, x)),
+          ...args.items.map((x) => ({
+            end: outerEnd(f.tree, x),
+            write: () => pattern(f, x),
           })),
-          ...p.keywords.map((k) => ({
+          ...args.keywords.map((k) => ({
             end: k.end,
-            write: withItemComments(f, k.end, () => {
-              sDsl(f.tree.parent(k.name));
-              if (k.alias === undefined) return;
-              sText(" ");
-              sToken(k.alias.as, f.text(k.alias.as));
-              sText(" ");
-              sToken(k.alias.name, f.text(k.alias.name));
-            }),
+            write: () => {
+              f.writeLeading(cs.leading(k));
+              sDsl(k.ts);
+              if (k.alias !== undefined) {
+                sText(" ");
+                sToken(k.alias.as, f.text(k.alias.as));
+                sText(" ");
+                sToken(k.alias.name, f.text(k.alias.name));
+              }
+              f.writeTrailing(cs.trailing(k));
+            },
           })),
         ];
   f.writeParenthesized(
     frame.open,
     () => {
       open(GROUP);
-      f.writeJoinCommaSeparated(entries, p.end, comma);
+      f.writeJoinCommaSeparated(entries, args.end, comma);
       close();
     },
     frame.close,
@@ -619,25 +245,32 @@ export function classArguments(
   );
 }
 
-/** Ruff's `maybe_parenthesize_pattern`, for a pattern whose only comments follow its opening brackets. */
+/** Ruff's `maybe_parenthesize_pattern`: a case's pattern, parenthesized by its kind and comments. */
 export function maybeParenthesizePattern(f: Fmt, p: Pat, c: MatchCase): void {
-  // A comment after the pattern's own `(` is its leading comment, which keeps the parentheses.
-  if (p.paren !== undefined && openComments(f, p.paren.open).length > 0)
-    return pattern(f, p, "always");
+  const cs = f.comments;
+  // Comments before the pattern or on their own lines after it keep it parenthesized.
+  if (cs.hasLeading(p) || cs.hasTrailingOwnLine(p)) return pattern(f, p, "always");
+  const multiline = () => {
+    const content = () => pattern(f, p, "never");
+    return canPatternOmitOptionalParentheses(p)
+      ? f.writeOptionalParentheses(p.node, content)
+      : f.writeParenthesizeIfExpands(p.node, content);
+  };
   switch (p.k) {
     case "expr":
       // A capture is ruff's `Multiline`, parenthesized once it breaks even if it still overflows; a value is `BestFit`.
       if (p.capture)
         return f.writeParenthesizeIfExpands(p.node, () => pattern(f, p, "never"));
+      if (cs.hasTrailing(p)) return pattern(f, p, "always");
       return writeMaybeParenthesize(f, p.e, c, "ifBreaks");
+    case "wild":
+      return pattern(f, p, cs.hasTrailing(p) ? "always" : "never");
     case "or":
     case "as":
-    case "complex": {
-      const content = () => pattern(f, p, "never");
-      return canPatternOmitOptionalParentheses(p)
-        ? f.writeOptionalParentheses(p.node, content)
-        : f.writeParenthesizeIfExpands(p.node, content);
-    }
+    case "complex":
+      return multiline();
+    case "class":
+      return cs.hasDangling(p) ? multiline() : pattern(f, p, "never");
     default:
       return pattern(f, p, "never");
   }
@@ -696,7 +329,7 @@ function canPatternOmitOptionalParentheses(root: Pat): boolean {
           : p.k === "map"
             ? p.pairs.length > 0 || p.rest !== undefined
             : p.k === "class"
-              ? p.items.length > 0 || p.keywords.length > 0
+              ? p.args.items.length > 0 || p.args.keywords.length > 0
               : false;
     return own || p.paren !== undefined;
   };

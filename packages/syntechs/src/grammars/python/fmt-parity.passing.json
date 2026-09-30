@@ -335,6 +335,7 @@
   "ruff/statement/import_from.py#{}",
   "ruff/statement/lazy_import.py#{\"target_version\":\"3.15\"}",
   "ruff/statement/long_type_annotations.py#{}",
+  "ruff/statement/match.py#{}",
   "ruff/statement/module_comment.py#{}",
   "ruff/statement/nonlocal.py#{}",
   "ruff/statement/raise.py#{}",

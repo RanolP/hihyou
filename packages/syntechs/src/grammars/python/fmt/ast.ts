@@ -1,4 +1,5 @@
 import type { FormatTree } from "../../../fmt/tree.js";
+import { type Pat, type PatArgs, type PatKeyword, readCasePattern } from "./pattern.js";
 import { byteOffsetOf, endOf, startOf } from "./trivia.js";
 
 /**
@@ -208,7 +209,9 @@ export type Other =
   | Clause
   | ExceptHandler
   | MatchCase
-  | Pattern
+  | Pat
+  | PatArgs
+  | PatKeyword
   | TypeParams
   | TypeParam;
 
@@ -298,15 +301,13 @@ export interface ExceptHandler extends Base {
 export interface MatchCase extends Base {
   readonly kind: "MatchCase";
   readonly kw: number;
-  readonly pattern: Pattern;
+  readonly pattern: Pat;
+  /** Where the patterns after `case` start and end, their own parentheses included. */
+  readonly patternSpan: { start: number; end: number };
   readonly guardKw: number | undefined;
   readonly guard: Expr | undefined;
   readonly colon: number;
   readonly body: Stmt[];
-}
-/** A match pattern, printed from its tokens with Python's usual spacing. */
-export interface Pattern extends Base {
-  readonly kind: "Pattern";
 }
 export interface TypeParams extends Base {
   readonly kind: "TypeParams";
@@ -1458,19 +1459,20 @@ class Reader {
         guardClause !== undefined ? this.named(guardClause)[0] : undefined;
       const guard = guardExpr !== undefined ? this.expr(guardExpr) : undefined;
       const body = this.body(this.needField(c, "consequence"));
-      // Every pattern after `case`, up to the guard or the colon, as one node.
       const last =
         this.named(c)
           .filter((x) => this.kind(x) === "case_pattern")
           .at(-1) ?? patternNode;
-      const pattern: Pattern = {
-        kind: "Pattern",
-        ts: c,
-        start: this.start(patternNode),
-        end: this.end(last),
-        kids: [],
-        parent: undefined,
-      };
+      const patternSpan = { start: this.start(patternNode), end: this.end(last) };
+      const colon = this.need(c, ":");
+      const guardKw = guardClause !== undefined ? this.need(guardClause, "if") : undefined;
+      const pattern = readCasePattern(
+        this.tree,
+        c,
+        patternSpan.start,
+        patternSpan.end,
+        this.start(guardKw !== undefined ? guardKw : colon),
+      );
       return this.link({
         kind: "MatchCase",
         ts: c,
@@ -1480,10 +1482,10 @@ class Reader {
         parent: undefined,
         kw: this.need(c, "case"),
         pattern,
-        guardKw:
-          guardClause !== undefined ? this.need(guardClause, "if") : undefined,
+        patternSpan,
+        guardKw,
         guard,
-        colon: this.need(c, ":"),
+        colon,
         body,
       });
     });

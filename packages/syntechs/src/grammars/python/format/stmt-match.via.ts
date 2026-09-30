@@ -6,16 +6,15 @@ import { Unformattable } from "../fmt/ast.js";
 import { COMPOUND, type Fmt } from "../fmt/builders.js";
 import { writeMaybeParenthesize } from "../fmt/expr.js";
 import { close, COLLAPSE, HARD, INDENT, open, ruffStmtOf, sDsl, sLine, sText, sToken } from "../fmt/sink.js";
-import { kids, writeBody } from "../fmt/stmt/defs.js";
+import { writeBody } from "../fmt/stmt/defs.js";
+import { type Pat, patternAt, readPattern } from "../fmt/pattern.js";
 import {
   classArguments,
   mapping,
   maybeParenthesizePattern,
+  orPattern,
   pattern,
-  patternCommentsPrintable,
-  readCasePattern,
-  readGroup,
-  readPattern,
+  patternFields,
   sequence,
 } from "../fmt/stmt/match.js";
 import { writeLeadingAlternateBranchComments } from "../fmt/stmt/suite.js";
@@ -38,38 +37,38 @@ function fmtOf(n: number, ctx: StreamCtx<unknown>): Fmt {
   return caseOf(child, ctx).f;
 }
 
+/** The pattern read from `n` when its case's AST was, or else read now (a `case_pattern`'s lone number). */
+function patternOf(f: Fmt, n: number): Pat {
+  const p = patternAt(f.tree, n);
+  if (p?.kind === "Pattern") return p;
+  if (p) throw new Error("python match: a pattern custom on a keyword");
+  return readPattern(f.tree, n);
+}
+
 export const stmtMatchVia = {
-  // A sub-pattern whose parentheses are its own.
+  // A `case_pattern`'s child, the fields of the pattern whose `pattern` call printed its comments and parentheses.
   "match.pattern": (n: number, ctx: StreamCtx<unknown>) => {
     const f = fmtOf(n, ctx);
-    pattern(f, readPattern(f, n));
+    patternFields(f, patternOf(f, n));
   },
   // Given the first node of a keyword's value, prints it: `-` and a number are two nodes.
   "match.keywordValue": (n: number, ctx: StreamCtx<unknown>) => {
     const f = fmtOf(n, ctx);
-    const kw = ctx.tree.parent(n);
-    const [, , ...value] = kids(f.tree, kw);
-    pattern(f, readGroup(f, kw, value));
+    const kw = patternAt(f.tree, ctx.tree.parent(n));
+    if (kw?.kind !== "PatternKeyword") throw new Error("python match: match.keywordValue outside a keyword");
+    pattern(f, kw.value);
   },
   // The alternatives, a line before each `|` once the group they share breaks.
   "match.or": (n: number, ctx: StreamCtx<unknown>) => {
     const f = fmtOf(n, ctx);
-    const p = readPattern(f, n);
+    const p = patternOf(f, n);
     if (p.k !== "or") throw new Error("python match: match.or on no union pattern");
-    for (const [i, item] of p.items.entries()) {
-      const bar = p.bars[i - 1];
-      if (bar !== undefined) {
-        f.writeSoftLineOrSpace();
-        sToken(bar, f.text(bar));
-        sText(" ");
-      }
-      pattern(f, item);
-    }
+    orPattern(f, p);
   },
   // Given the real part, prints it with its sign, then the operator, a line before it once the group breaks.
   "match.complexReal": (n: number, ctx: StreamCtx<unknown>) => {
     const f = fmtOf(n, ctx);
-    const p = readPattern(f, ctx.tree.parent(n));
+    const p = patternOf(f, ctx.tree.parent(n));
     if (p.k !== "complex") throw new Error("python match: match.complexReal outside a complex pattern");
     pattern(f, p.left);
     f.writeSoftLineOrSpace();
@@ -78,19 +77,19 @@ export const stmtMatchVia = {
   },
   "match.sequence": (n: number, ctx: StreamCtx<unknown>, frame: Frame) => {
     const f = fmtOf(n, ctx);
-    const p = readPattern(f, n);
+    const p = patternOf(f, n);
     if (p.k !== "seq") throw new Error("python match: match.sequence on no sequence pattern");
     sequence(f, p, frame);
   },
   "match.mapping": (n: number, ctx: StreamCtx<unknown>, frame: Frame) => {
     const f = fmtOf(n, ctx);
-    const p = readPattern(f, n);
+    const p = patternOf(f, n);
     if (p.k !== "map") throw new Error("python match: match.mapping on no mapping pattern");
     mapping(f, p, frame);
   },
   "match.classArguments": (n: number, ctx: StreamCtx<unknown>, frame: Frame) => {
     const f = fmtOf(n, ctx);
-    const p = readPattern(f, n);
+    const p = patternOf(f, n);
     if (p.k !== "class") throw new Error("python match: match.classArguments on no class pattern");
     classArguments(f, p, frame);
   },
@@ -124,12 +123,10 @@ export const stmtMatchVia = {
   "match.casePattern": (n: number, ctx: StreamCtx<unknown>) => {
     const { f, c } = caseOf(n, ctx);
     const cs = f.comments;
-    const p = readCasePattern(f, c);
-    const inside = cs.all.filter((x) => x.start >= c.pattern.start && x.end <= c.pattern.end);
-    const attached = [...cs.leading(c.pattern), ...cs.dangling(c.pattern), ...cs.trailing(c.pattern)];
-    if (!patternCommentsPrintable(f, p, [...inside, ...attached]))
-      throw new Unformattable(`comment in a pattern at ${byteOffsetOf(f.tree, c.pattern.ts)}`);
-    maybeParenthesizePattern(f, p, c);
+    maybeParenthesizePattern(f, c.pattern, c);
+    const { start, end } = c.patternSpan;
+    const lost = cs.all.find((x) => x.start >= start && x.end <= end && !x.formatted);
+    if (lost) throw new Unformattable(`comment in a pattern at ${byteOffsetOf(f.tree, lost.ts)}`);
   },
   "match.guard": (n: number, ctx: StreamCtx<unknown>) => {
     const { f, c } = caseOf(n, ctx);

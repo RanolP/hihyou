@@ -1,4 +1,4 @@
-python compatibility: 320/327 (97.86%), 1 refused (ok:false), 49 excluded
+python compatibility: 321/327 (98.17%), 0 refused (ok:false), 49 excluded
 
 Fixtures: ruff 0.16.8 crates/ruff_python_formatter/resources/test/fixtures/{black,ruff} (recursive), every option set of each `.options.json`, expected output from tests/snapshots (black cases without a snapshot: their `.expect` file). Options are passed by their ruff.toml names.
 
@@ -21,7 +21,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| ruff/statement/match.py | 1/1 | 71.21% | formatter-error: comment in a pattern at 2288 |
 
 # Excluded
 

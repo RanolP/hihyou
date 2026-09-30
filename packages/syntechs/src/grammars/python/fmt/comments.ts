@@ -20,6 +20,7 @@ import type {
   With,
 } from "./ast.js";
 import { outer } from "./ast.js";
+import type { Pat, PatKeyword } from "./pattern.js";
 import {
   endOf,
   FILE_END,
@@ -352,7 +353,7 @@ function placeIn(
  * `comments` keyed by tree-sitter node, as the shared placement pass returns them: each ruff node maps to the
  * node it was read from (`ts`). Where ruff's node spans no tree-sitter node of its own that is the nearest one,
  * so its comments are kept rather than dropped: a comprehension with `if`s maps to its `for_in_clause`, a case's
- * pattern to its `case_clause`, a subscript's unparenthesized tuple to the `subscript`. Ruff nodes read from one
+ * bare tuple pattern to its `case_clause`, a subscript's unparenthesized tuple to the `subscript`. Ruff nodes read from one
  * tree-sitter node (a case and its pattern) share it, their comments merged in source order.
  */
 export function byTreeNode(comments: Comments): Placed {
@@ -637,11 +638,53 @@ class Placer {
           ? this.implicitConcatenated(d)
           : undefined;
       case "Alias":
-      case "Pattern":
         return dangling(e);
+      case "Pattern":
+        return this.pattern(d, e);
+      case "PatternArguments":
+        return this.bracketedEndOfLine(d);
+      case "PatternKeyword":
+        return this.patternKeyword(d, e);
       default:
         return undefined;
     }
+  }
+
+  /** Ruff's handlers of the comments a pattern encloses, past its sub-patterns. */
+  private pattern(d: Decorated, p: Pat): Placement {
+    switch (p.k) {
+      case "seq":
+        return p.type !== "bare" ? this.bracketedEndOfLine(d) : undefined;
+      case "map":
+        return this.bracketedEndOfLine(d) ?? this.mappingRest(d, p);
+      case "class":
+        // Between the class and its `(`: printed there.
+        return d.c.start < p.args.start ? dangling(p) : undefined;
+      case "as":
+        // Before the `as` (past the inner pattern's `)`), the inner pattern's; after it, the `as` pattern's.
+        if (d.c.start < p.pattern.start) return undefined;
+        return d.c.start < startOf(this.tree, p.as) ? trailing(p.pattern) : dangling(p);
+      case "star":
+        return dangling(p);
+      default:
+        return undefined;
+    }
+  }
+
+  /** Ruff's `handle_pattern_match_mapping_comment`: around `**rest`, which is no node, a mapping's own. */
+  private mappingRest(d: Decorated, p: Pat & { k: "map" }): Placement {
+    if (d.following || !p.rest) return undefined;
+    if (d.c.start > endOf(this.tree, p.rest.name)) return dangling(p);
+    const from = d.preceding ? d.preceding.end : p.start;
+    for (const t of tokens(this.tree, from, d.c.start)) if (t.kind === "**") return dangling(p);
+    return undefined;
+  }
+
+  /** Ruff's `handle_pattern_keyword_comment`: between the name and the value, the keyword's leading one. */
+  private patternKeyword(d: Decorated, k: PatKeyword): Placement {
+    if (d.c.start > k.value.start) return undefined;
+    if (hasToken(this.tree, endOf(this.tree, k.name), d.c.start, "(")) return undefined;
+    return leading(k);
   }
 
   private bracketedEndOfLine(d: Decorated): Placement {
