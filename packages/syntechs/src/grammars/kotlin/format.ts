@@ -91,6 +91,7 @@ const parameterList = (many: boolean) =>
     splitOn(",", {
       except: many ? ["(", ")"] : ["(", ")", ","],
       item: "space",
+      tightAfter: ["parameter_modifiers"],
       trailing: many,
       imaginary: true,
       layout: { between: "line" },
@@ -276,10 +277,16 @@ export const kotlin = format({
         either(when("manyItems"), parameterList(true), parameterList(false)),
         grpParen(sepBy(",", $.children)),
       ),
-    parameter: () => spaced({ tightBefore: [":"] }),
+    // The type hangs off the `:` where it does not fit on the name's line (property.ts).
+    parameter: () => custom("typedName"),
     // A setter's `set(value)` parameter, whose type may be left out.
     parameter_with_optional_type: () => spaced({ tightBefore: [":"] }),
-    parameter_modifiers: () => inOrder(space),
+    // A parameter's annotations each go on a line of their own where the parameter overflows, as a declaration's.
+    parameter_modifiers: () =>
+      group([
+        inOrder({ join: "line", spaceWhen: { after: keywordModifiers } }),
+        either(lastItem(kindIs("annotation")), line, space),
+      ]),
     parameter_modifier: () => inOrder(),
     function_body: () => spaced({ braces: true, hang: true, hug: "huggedChain" }),
     anonymous_function: () => spaced({ tightBefore: [":"] }),
@@ -308,8 +315,14 @@ export const kotlin = format({
     type_constraint: () => spaced(),
     type_projection: () => inOrder(space),
     function_type: () => spaced(),
-    function_type_parameters: () => inOrder({ spaceWhen: { after: [",", "type_modifiers"] } }),
-    parenthesized_type: () => inOrder({ spaceWhen: { after: ["type_modifiers"] } }),
+    function_type_parameters: () => either(when("manyItems"), parameterList(true), parameterList(false)),
+    // `@field:[Inject Named("x")]` ends the line, the type it annotates starting the next.
+    parenthesized_type: () =>
+      either(
+        when("typeAnnotationsBreak"),
+        inOrder({ hardWhen: { after: ["type_modifiers"] } }),
+        inOrder({ spaceWhen: { after: ["type_modifiers"] } }),
+      ),
     type_modifiers: () => inOrder(space),
 
     // ktfmt keeps a lambda or scoping function on the `=`'s line, but hangs a chain on one.
@@ -432,6 +445,7 @@ export const kotlin = format({
     when_expression: { blankLines: "force" },
     value_arguments: { breakWhen: when("writtenBroken") },
     function_value_parameters: { breakWhen: when("writtenBroken") },
+    function_type_parameters: { breakWhen: when("writtenBroken") },
     collection_literal: { breakWhen: when("writtenBroken") },
     type_arguments: { breakWhen: when("writtenBroken") },
     type_parameters: { breakWhen: when("writtenBroken") },

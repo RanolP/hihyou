@@ -19,7 +19,7 @@ import { grammar } from "./bundle.js";
 import { binary, binaryKinds } from "./binary.js";
 import { chained } from "./chain.js";
 import { enumBody } from "./enum-body.js";
-import { property, typedName } from "./property.js";
+import { bracketed, property, typedName } from "./property.js";
 import { lambdaParameters, lambdas } from "./lambda.js";
 import * as gen from "./fmt.gen.js";
 import { language } from "./index.js";
@@ -457,16 +457,18 @@ export const customs = {
    */
   annotationsBreak: (node, ctx) => {
     const t = ctx.tree;
-    for (let i = 0; i < t.count(node); i++) {
-      const c = t.child(node, i);
-      if (t.kindName(c) === "annotation" && childOf(t, c, "[") !== -1) return true;
-    }
+    if (bracketed(t, node)) return true;
     const decl = t.parent(node);
     if (t.kindName(decl) !== "property_declaration" || annotationCount(node, t) === 0) return false;
     const owner = t.parent(decl);
     for (let i = 0; i < t.count(owner) - 1; i++)
       if (t.child(owner, i) === decl) return /^[gs]etter$/.test(t.kindName(t.child(owner, i + 1)));
     return false;
+  },
+  /** Of a node with a type: ktfmt breaks the line after its type's bracketed annotation, as after a declaration's. */
+  typeAnnotationsBreak: (node, ctx) => {
+    const modifiers = childOf(ctx.tree, node, "type_modifiers");
+    return modifiers !== -1 && bracketed(ctx.tree, modifiers);
   },
   /**
    * Of an annotated expression, which nests one `prefix_expression` per annotation: ktfmt keeps the annotations on
@@ -521,6 +523,9 @@ export const customs = {
     if (!t.text(node).includes("\n")) return false;
     if (/^(collection_literal|type_arguments|type_parameters)$/.test(t.kindName(node)))
       return ctx.items(node).length > 1;
+    // A function type's parameters: its types, each with its modifiers, or its named parameters.
+    if (t.kindName(node) === "function_type_parameters")
+      return ctx.items(node).filter((c) => !recoveredComma(t, c) && t.kindName(c) !== "type_modifiers").length > 1;
     let items = 0;
     for (let i = 0; i < t.count(node); i++) if (listed.has(t.kindName(t.child(node, i)))) items++;
     return items > 1;

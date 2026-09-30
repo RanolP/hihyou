@@ -32,6 +32,7 @@ import {
   sToken,
 } from "../../fmt/stream.js";
 import type { StreamCtx } from "../../fmt/stream-format.js";
+import type { FormatTree } from "../../fmt/tree.js";
 
 /** The group after each property name's `:`, by its variable_declaration, for the property's `=` to follow. */
 const typeGroups = new Map<number, number>();
@@ -54,14 +55,25 @@ const tightBefore = new Set([
 ]);
 const tightAfter = new Set(["(", "[", ".", "?.", "::", "modifiers"]);
 
+/** Whether a node's modifiers hold a bracketed annotation (`@field:[A B]`), which ktfmt ends the line after. */
+export const bracketed = (t: FormatTree, modifiers: number) => {
+  for (let i = 0; i < t.count(modifiers); i++) {
+    const c = t.child(modifiers, i);
+    if (t.kindName(c) !== "annotation") continue;
+    for (let j = 0; j < t.count(c); j++) if (t.kindName(t.child(c, j)) === "[") return true;
+  }
+  return false;
+};
+
 /**
- * A variable's `name: Type`. A property's type hangs after the `:` in a group of its own (see `typeGroups`);
- * elsewhere (a `for` loop's, a lambda's) it follows a space.
+ * A variable's or a function parameter's `name: Type`. A property's or a parameter's type hangs after the `:` in a
+ * group of its own (see `typeGroups`); elsewhere (a `for` loop's, a lambda's) it follows a space.
  */
 export function typedName<O>(node: number, ctx: StreamCtx<O>): void {
   const t = ctx.tree;
   const items = new Set(ctx.items(node));
   const property = t.kindName(t.parent(node)) === "property_declaration";
+  const hangs = property || t.kindName(node) === "parameter";
   // After the `:`: the type and its modifiers (`suspend`, annotations), which the grammar makes its siblings.
   let typed = false;
   let prev = -1;
@@ -70,13 +82,15 @@ export function typedName<O>(node: number, ctx: StreamCtx<O>): void {
     const named = t.named(c);
     if (named && !items.has(c)) continue;
     if (prev !== -1 && t.kindName(prev) === ":") {
-      typed = property;
+      typed = hangs;
       if (typed) {
-        typeGroups.set(node, open(GROUP));
+        const g = open(GROUP);
+        if (property) typeGroups.set(node, g);
         open(INDENT);
         sLine(0);
       } else sText(" ");
-    } else if (prev !== -1 && !tightBefore.has(t.kindName(c))) sText(" ");
+    } else if (prev !== -1 && t.kindName(prev) === "type_modifiers" && bracketed(t, prev)) sHardline();
+    else if (prev !== -1 && !tightBefore.has(t.kindName(c))) sText(" ");
     prev = c;
     if (named) ctx.print(c);
     else sToken(c, t.text(c));

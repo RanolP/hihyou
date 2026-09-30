@@ -392,7 +392,8 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
       if (x.item.t === "adjacent") line(`for (const c of items) ${printItem}(c);`);
       else if (x.item.t === "space")
         block("for (let i = 0; i < items.length; i++)", () => {
-          line('if (i > 0) sText(" ");');
+          const tight = x.tightAfter?.length ? oneOf("t.kindName(items[i - 1] as number)", x.tightAfter) : undefined;
+          line(`if (i > 0${tight === undefined ? "" : ` && !(${tight})`}) sText(" ");`);
           line(`${printItem}(items[i] as number);`);
         });
       else {

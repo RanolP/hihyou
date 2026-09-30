@@ -479,6 +479,7 @@ export function flatten<O>(
                     apart: !t.adjoins(prev, c) || comment(prev) || comment(c),
                     breaks: breaks[i] === true,
                     dedent: items.slice(0, i).every(comment),
+                    tight: x.tightAfter?.includes(t.kindName(prev)) === true,
                   });
                 }
                 if (comment(c)) {
@@ -820,7 +821,7 @@ export function wrap<O>(
     };
     if (x.item !== "words" || x.count === 1)
       for (let k = 0; k < x.count; k++) {
-        if (k > 0 && x.item === "space") sText(" ");
+        if (k > 0 && x.item === "space" && !(joints[k - 1] as Extract<Entry, { e: "joint" }>).tight) sText(" ");
         item(k);
       }
     else if (x.count > 1) {

@@ -271,6 +271,8 @@ export interface SplitOn {
   readonly except: readonly string[];
   readonly trail: readonly string[];
   readonly item: SplitItem;
+  /** Kinds a `space` item prints no space after, as the item ends in its own space or line. */
+  readonly tightAfter?: readonly string[];
   /** Each named item where this holds of it prints in a group and an indent of its own. */
   readonly wrapItem: Cond;
   /** The last entry's separator: the source's is dropped, and one prints only while the enclosing group breaks. */
@@ -901,6 +903,8 @@ export interface SplitOnOf<K, C> {
   readonly except?: readonly K[];
   readonly trail?: readonly K[];
   readonly item?: "adjacent" | "space" | { readonly t: "words"; readonly keepLines?: C };
+  /** As `SplitOn`'s. */
+  readonly tightAfter?: readonly K[];
   readonly wrapItem?: C;
   readonly trailing?: boolean;
   /** As `sepBy`'s. */
@@ -936,6 +940,7 @@ export const splitOn = <const S extends string, const K extends string = never, 
     except: o.except ?? [],
     trail: o.trail ?? [],
     item: typeof item === "string" ? { t: item } : { t: "words", keepLines: plain(item.keepLines) },
+    ...(o.tightAfter?.length ? { tightAfter: o.tightAfter } : {}),
     wrapItem: plain(o.wrapItem),
     trailing: o.trailing ?? false,
     ...(o.imaginary === true ? { imaginary: true } : {}),

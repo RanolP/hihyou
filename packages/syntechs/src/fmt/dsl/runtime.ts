@@ -130,7 +130,14 @@ export type Entry =
    * Between two items of an entry: whether they print apart (a gap in the source, or a comment on either side),
    * the source has a line break there (`breaks`), or a break there drops to the enclosing indentation (`dedent`).
    */
-  | { readonly e: "joint"; readonly apart: boolean; readonly breaks: boolean; readonly dedent: boolean }
+  | {
+      readonly e: "joint";
+      readonly apart: boolean;
+      readonly breaks: boolean;
+      readonly dedent: boolean;
+      /** A `space` item prints no space here: the item before is of a `tightAfter` kind. */
+      readonly tight: boolean;
+    }
   /** Opens a `splitOn` item in a group and an indent of its own, which an `end` closes. */
   | { readonly e: "wrap" }
   /** Opens a `group`, `indent` or `indentIfBreak` frame, which an `end` closes. */
@@ -558,7 +565,7 @@ export interface SplitRun {
 }
 
 /**
- * The children of `node` but comments and `except` and `trail` kinds, cut at each `sep` token, which ends the
+ * The items and tokens of `node` but comments and `except` and `trail` kinds, cut at each `sep` token, which ends the
  * entry before it; a last entry left empty (by a trailing separator, or no children at all) is dropped. With
  * `comments`, the node's dangling comments past its first item and before its trail are items too.
  */
@@ -576,6 +583,7 @@ export function splitRun<O>(
   const trailing: number[] = [];
   const dangling = comments ? ctx.danglingComments(node) : [];
   let started = comments === "all";
+  const items = new Set(ctx.items(node));
   for (let i = 0, count = tree.count(node); i < count; i++) {
     const c = tree.child(node, i);
     const named = tree.named(c);
@@ -583,6 +591,8 @@ export function splitRun<O>(
       if (started && trailing.length === 0 && dangling.includes(c)) entry.items.push(c);
       continue;
     }
+    // A child the language leaves out of the node's items (a dropped kind, a recovered separator) prints nowhere.
+    if (named && !items.has(c)) continue;
     const kind = tree.kindName(c);
     if (except.includes(kind)) continue;
     if (trail.includes(kind)) trailing.push(c);
