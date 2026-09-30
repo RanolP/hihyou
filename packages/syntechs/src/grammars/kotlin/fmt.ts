@@ -7,7 +7,7 @@ import {
   prettierSettings,
 } from "../../fmt/options.js";
 import { defineLanguage, type Language, type PrintArgs } from "../../fmt/rules.js";
-import { close, INDENT, open, sHardline, sText, sToken } from "../../fmt/stream.js";
+import { close, GROUP, INDENT, open, sHardline, sLine, sText, sToken } from "../../fmt/stream.js";
 import { docCommentWords, kdoc } from "../../fmt/dsl/doc-comment.js";
 import type { ImportRule, PredicateRule } from "../../fmt/dsl/runtime.js";
 import { newlineBetween, nextLineEmpty } from "../../fmt/text.js";
@@ -576,19 +576,50 @@ const statements =
   };
 
 /**
- * An `if` whose then branch is empty (`if (c) ; else x`, or none at all) as ktfmt prints it: the `;` goes and the
- * empty branch keeps its spaces, two between `)` and `else`.
+ * A body that is no block and no `else if` (ktfmt's visitIf): it hangs off its keyword in a group of its own,
+ * breaking onto an indented line when it does not fit or holds a line break (INDEPENDENT).
+ */
+const hangs = (t: FormatTree, body: number) => {
+  if (t.kindName(body) !== "control_structure_body") return false;
+  for (let i = 0; i < t.count(body); i++) {
+    const c = t.child(body, i);
+    if (t.text(c) === "{" || t.kindName(c) === "if_expression") return false;
+    if (t.named(c) && !t.kindName(c).endsWith("comment")) return true;
+  }
+  return false;
+};
+
+/**
+ * An `if` as ktfmt's visitIf lays it out: a body that is no block hangs off `)` or `else` (hangs), and the `else`
+ * after such a then branch breaks onto the `if`'s own line when the whole `if` does not fit (UNIFIED). An empty then
+ * branch (`if (c) ; else x`, or none at all) loses its `;` and keeps its spaces, two between `)` and `else`.
  */
 const ifExpression = <O>(node: number, ctx: StreamCtx<O>) => {
   const t = ctx.tree;
   const items = new Set(ctx.items(node));
   let prev = -1;
+  let hungThen = false;
+  open(GROUP);
   for (let i = 0; i < t.count(node); i++) {
     const c = t.child(node, i);
     const named = t.named(c);
     if (named && !items.has(c)) continue;
     const next = i + 1 < t.count(node) ? t.child(node, i + 1) : -1;
-    if (prev !== -1 && t.text(prev) !== "(" && t.text(c) !== ")") sText(" ");
+    if (named && prev !== -1 && (t.text(prev) === ")" || t.text(prev) === "else") && hangs(t, c)) {
+      if (t.text(prev) === ")") hungThen = true;
+      open(GROUP);
+      open(INDENT);
+      sLine(0);
+      ctx.print(c);
+      close();
+      close();
+      prev = c;
+      continue;
+    }
+    if (prev !== -1 && t.text(prev) !== "(" && t.text(c) !== ")") {
+      if (t.text(c) === "else" && hungThen) sLine(0);
+      else sText(" ");
+    }
     if (named) ctx.print(c);
     else if (t.text(c) === ";" && next !== -1 && t.text(next) === "else") {
       // The spaces around the empty branch are the joins on either side of it.
@@ -598,6 +629,7 @@ const ifExpression = <O>(node: number, ctx: StreamCtx<O>) => {
     }
     prev = c;
   }
+  close();
 };
 
 /**

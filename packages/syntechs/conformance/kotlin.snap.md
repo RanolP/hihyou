@@ -1,4 +1,4 @@
-kotlin compatibility: 720/753 (95.62%), 0 refused (ok:false), 11 excluded
+kotlin compatibility: 722/753 (95.88%), 0 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -10,7 +10,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | :------ | :---------: | :---------: |
 | comments.txt: Comments | 0/1 | 76.19% |
 | source-files.txt: Multiple Imports On A Single Line | 0/1 | 50.00% |
-| packages/syntechs/src/grammars/kotlin/corpus/Collections.kt | 0/1 | 98.46% |
+| packages/syntechs/src/grammars/kotlin/corpus/Collections.kt | 0/1 | 99.31% |
 | ktfmt/format/annotation/exception.kt | 0/1 | 61.54% |
 | ktfmt/format/annotation/functionTypes.kt | 0/1 | 60.00% |
 | ktfmt/format/binary/binaryExpressionWithRanges.kt | 0/1 | 85.71% |
@@ -22,8 +22,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/class/emptyCompanionObject.kt | 0/1 | 92.31% |
 | ktfmt/format/class/secondaryConstructorDelegate2.kt | 0/1 | 52.63% |
 | ktfmt/format/comment/shebang.kts | 0/1 | 88.89% |
-| ktfmt/format/if/blocks.kt | 0/1 | 21.05% |
-| ktfmt/format/if/comment.kt | 0/1 | 61.54% |
 | ktfmt/format/import/importList.kt | 0/1 | 62.50% |
 | ktfmt/format/misc/commentStability.kt | 0/1 | 70.59% |
 | ktfmt/format/misc/contextParameters.kt | 0/1 | 61.54% |
