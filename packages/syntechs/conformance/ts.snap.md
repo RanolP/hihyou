@@ -1,4 +1,4 @@
-ts compatibility: 652/653 (99.85%), 0 refused (ok:false), 76 excluded
+ts compatibility: 653/653 (100.00%), 0 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -12,7 +12,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
-| typescript/comments/method_types.ts | 0/1 | 82.05% |
 
 # Refused
 

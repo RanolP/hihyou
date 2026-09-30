@@ -43,6 +43,7 @@ import {
   statementRules,
 } from "./print/statements.js";
 import {
+  annotationOwnsComments,
   ignoredMemberSeparator,
   typeCustoms,
   typeRules,
@@ -339,7 +340,8 @@ export function jsLanguage(
           isJsxSpreadArgument(ctx, n) ||
           isHeadVia(ctx, n) ||
           (kind(ctx, n) === "expression_statement" && castLedAsi(ctx, n)) ||
-          (unionOwnsComments(ctx, n) && !isIgnored(ctx, n))
+          (unionOwnsComments(ctx, n) && !isIgnored(ctx, n)) ||
+          (annotationOwnsComments(ctx, n) && !isIgnored(ctx, n))
         );
       },
       // A node with no rule prints as its token. A node with one prints as its source text under a

@@ -22,7 +22,7 @@ const bound = <T>(type: T) =>
 
 export const types = {
   literal_type: ($) => $.children,
-  type_annotation: ($) => [":", space, $.children],
+  type_annotation: () => custom("typeAnnotation"),
   opting_type_annotation: ($) => ["?:", space, $.children],
   omitting_type_annotation: ($) => ["-?:", space, $.children],
   adding_type_annotation: ($) => ["+?:", space, $.children],

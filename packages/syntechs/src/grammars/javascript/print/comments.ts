@@ -250,9 +250,55 @@ const typeParameterBound = (c: CommentContext<JsOptions>): CommentTarget | undef
   return { node, as: "trailing" };
 };
 
+const SIGNATURES = new Set([
+  "method_signature",
+  "function_signature",
+  "call_signature",
+  "construct_signature",
+  "constructor_type",
+  "function_type",
+]);
+const ARROW_TYPES = new Set(["constructor_type", "function_type"]);
+
+/**
+ * `a /* c *\/ (x): T`, `new /* c *\/ (): T`: prettier's signature holds its parameters directly, so a comment before
+ * the `(` has the first parameter, or else the return type, as its following node. With no node before it, it
+ * leads that node (`new (/* c *\/ x)`, `new () /* c *\/ : T`); on one line after the name, it ties, and leads that
+ * node only when nothing but spaces and `(` stand between them (`a(/* c *\/ x)`, `a /* c *\/?(x)`). A class's
+ * bodiless method is prettier's TSDeclareMethod, which methodName places.
+ */
+const beforeSignatureParameters = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { comment, enclosing, preceding, following, placement } = c;
+  if (
+    !SIGNATURES.has(kind(c, enclosing)) ||
+    following === undefined ||
+    fieldName(c, following) !== "parameters" ||
+    (kind(c, enclosing) === "method_signature" && kind(c, parent(c, enclosing)) === "class_body")
+  )
+    return;
+  const parameter = children(c, following).find((n) => named(c, n) && isCode(c, n));
+  const next = parameter ?? codeAfter(c, enclosing, following).find((n) => named(c, n));
+  // Prettier's return type of a function or constructor type starts at its `=>`, which a comment leading it
+  // precedes: the comment trails the parameters.
+  const lead = (): CommentTarget | undefined =>
+    next === undefined
+      ? undefined
+      : parameter === undefined && ARROW_TYPES.has(kind(c, enclosing))
+        ? { node: following, as: "trailing" }
+        : { node: next, as: "leading" };
+  if (preceding === undefined) return lead();
+  if (placement !== "remaining") return;
+  if (next === undefined) return { node: preceding, as: "trailing" };
+  const end = firstLeaf(c.tree, next);
+  for (let l = nextLeaf(c.tree, comment); l !== end; l = nextLeaf(c.tree, l))
+    if (kind(c, l) !== "comment" && kind(c, l) !== "(") return { node: preceding, as: "trailing" };
+  return lead();
+};
+
 const METHODS = new Set([
   "method_definition",
   "method_signature",
+  "abstract_method_signature",
   "function_declaration",
   "function_expression",
   "generator_function_declaration",
@@ -959,6 +1005,7 @@ const handlers = [
   typeParameterBound,
   requireSource,
   assignmentPattern,
+  beforeSignatureParameters,
   methodName,
   fieldDecorator,
   methodDecorator,

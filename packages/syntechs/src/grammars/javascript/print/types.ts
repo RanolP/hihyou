@@ -1103,6 +1103,25 @@ const functionType: CustomRule<JsOptions> = (n, sctx) => {
   if (parenthesized) sToken(n, ")", true);
 };
 
+/** A `:` annotation with a leading comment, which prettier's printTypeAnnotationProperty spaces off (`x /* c *\/ : T`). */
+export const annotationOwnsComments = (x: JsCtx, n: number) =>
+  kind(x, n) === "type_annotation" && hasComment(x, n, CF.Leading);
+
+const typeAnnotation: CustomRule<JsOptions> = (n, sctx) => {
+  const ctx = jsCtx(sctx);
+  const js = ctx.js;
+  const owns = annotationOwnsComments(js, n);
+  if (owns) {
+    sText(" ");
+    printLeadingComments(ctx, n);
+  }
+  tok(js, anonKid(js, n, ":"));
+  sText(" ");
+  const type = first(js, n);
+  if (type !== undefined) ctx.print(type);
+  if (owns) printTrailingComments(ctx, n);
+};
+
 /** A call or construct signature up to its separator, reached through its parameters (`.via("signature")`). */
 const signature: CustomRule<JsOptions> = (parameters, sctx) => {
   const n = parent(jsCtx(sctx).js, parameters);
@@ -1121,6 +1140,7 @@ const nodeCustoms = {
   methodSignature,
   indexSignature,
   functionType,
+  typeAnnotation,
   signature,
   unionType,
   moduleBody,
