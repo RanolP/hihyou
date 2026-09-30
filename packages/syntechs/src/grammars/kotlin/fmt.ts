@@ -1,5 +1,6 @@
 import { NO_NODE } from "../../core/arena.js";
 import type { Normalize } from "../../fmt/check.js";
+import type { CommentContext, CommentTarget } from "../../fmt/comments.js";
 import {
   type ImportOptions,
   type PrettierOptions,
@@ -11,7 +12,7 @@ import { close, GROUP, INDENT, open, sHardline, sLine, sText, sToken } from "../
 import { docCommentWords, kdoc } from "../../fmt/dsl/doc-comment.js";
 import type { ImportRule, PredicateRule } from "../../fmt/dsl/runtime.js";
 import { newlineBetween, nextLineEmpty } from "../../fmt/text.js";
-import { type FormatTree, firstLeaf, prevLeaf } from "../../fmt/tree.js";
+import { type FormatTree, firstLeaf, nextLeaf, prevLeaf } from "../../fmt/tree.js";
 import { printLeadingComments } from "../../fmt/stream-format.js";
 import type { StreamCtx, StreamRule, StreamRules } from "../../fmt/stream-format.js";
 import { grammar } from "./bundle.js";
@@ -299,6 +300,62 @@ const itemBeforeComma = (t: FormatTree, comment: number) => {
     else if (after && t.named(c) && !recoveredComma(t, c) && !t.kindName(c).endsWith("comment")) return undefined;
   }
   return last;
+};
+
+/**
+ * Where a comment lies between a `{` and `}` of its enclosing node that other items sit outside of (`try { // c }
+ * catch ...`, `catch (e: E) { // c }`), the target the core would give it among the items inside the braces
+ * only, so it stays in the block rather than leading the `catch` after it or trailing the `(e: E)` before it.
+ */
+const inBraces = ({ tree: t, comment, enclosing, preceding, following, placement }: CommentContext): CommentTarget | undefined => {
+  // Leaves' postorder ordinals run in source order.
+  const at = t.ord(comment);
+  let open = -1;
+  let close = -1;
+  for (let i = 0; i < t.count(enclosing) && close === -1; i++) {
+    const c = t.child(enclosing, i);
+    if (t.named(c)) continue;
+    if (t.kindName(c) === "{" && t.ord(c) < at) open = i;
+    else if (t.kindName(c) === "}") {
+      if (t.ord(c) < at) open = -1;
+      else if (open !== -1) close = i;
+    }
+  }
+  if (close === -1) return undefined;
+  const index = (n: number) => {
+    for (let i = 0; ; i++) if (t.child(enclosing, i) === n) return i;
+  };
+  const inside = (n: number | undefined) => (n !== undefined && open < index(n) && index(n) < close ? n : undefined);
+  const before = inside(preceding);
+  const after = inside(following);
+  if (before === preceding && after === following) return undefined;
+  if (before === undefined && after === undefined) return { node: enclosing, as: "dangling" };
+  if (before === undefined) return { node: after!, as: "leading" };
+  if (after === undefined) return { node: before, as: "trailing" };
+  return placement === "ownLine" ? { node: after, as: "leading" } : { node: before, as: "trailing" };
+};
+
+/**
+ * Of a line comment right after a `{` on its line (`class A { // c`), which ktfmt keeps there: the last node that
+ * ends before the `{` on that line. The comment trails it as a line suffix, which prints once the `{` ends the line.
+ * Braces holding only comments print them as their dangling ones, the first on the `{`'s line.
+ */
+const beforeBrace = (t: FormatTree, comment: number) => {
+  const brace = prevLeaf(t, comment);
+  if (t.kindName(comment) !== "line_comment" || t.lf(comment) > 0 || brace === NO_NODE || t.text(brace) !== "{")
+    return undefined;
+  let next = nextLeaf(t, comment);
+  while (next !== NO_NODE && t.kindName(next).endsWith("comment")) next = nextLeaf(t, next);
+  if (next === NO_NODE || t.text(next) === "}") return undefined;
+  for (let l = brace; t.lf(l) === 0; ) {
+    l = prevLeaf(t, l);
+    if (l === NO_NODE || t.kindName(l).endsWith("comment")) return undefined;
+    // The outermost node ending at `l`: postorder puts a parent right after its last child.
+    let n = l;
+    while (n !== t.root && t.ord(t.parent(n)) === t.ord(n) + 1) n = t.parent(n);
+    if (t.named(n)) return n;
+  }
+  return undefined;
 };
 
 /** The `(` and `)` of an accessor (`get()`, `set(value)`) that a comment lies between, else undefined. */
@@ -787,6 +844,27 @@ const whenEntry =
     generated?.(node, Object.assign(Object.create(ctx) as typeof ctx, { tree }));
   };
 
+/** A class body of comments only, the first a line comment on the `{`'s line, which ktfmt keeps there. */
+const classBody =
+  <O>(generated: StreamRule<O> | undefined): StreamRule<O> =>
+  (node, ctx) => {
+    const t = ctx.tree;
+    const dangling = ctx.danglingComments(node);
+    const first = dangling[0];
+    if (ctx.items(node).length > 0 || first === undefined || t.lf(first) > 0 || !ctx.isLineComment(first))
+      return generated?.(node, ctx);
+    sToken(childOf(t, node, "{"), "{");
+    open(INDENT);
+    for (const c of dangling) {
+      if (c === first) sText(" ");
+      else sHardline();
+      ctx.comment(c);
+    }
+    close();
+    sHardline();
+    sToken(childOf(t, node, "}"), "}");
+  };
+
 function withChains<O>(stream: StreamRules<O>): StreamRules<O> {
   const rules = new Map(stream.rules);
   for (const kind of ["navigation_expression", "call_expression", "indexing_expression", "postfix_expression"])
@@ -796,6 +874,7 @@ function withChains<O>(stream: StreamRules<O>): StreamRules<O> {
   rules.set("companion_object", companionObject(supertypes(stream.rules.get("companion_object"))));
   for (const kind of ["class_declaration", "object_declaration"]) rules.set(kind, supertypes(stream.rules.get(kind)));
   rules.set("range_expression", rangeExpression(stream.rules.get("range_expression")));
+  rules.set("class_body", classBody(stream.rules.get("class_body")));
   rules.set("string_literal", trimmedStrings(stream.rules.get("string_literal")));
   rules.set("lambda_literal", lambdas(stream.rules.get("lambda_literal")));
   rules.set("lambda_parameters", lambdaParameters);
@@ -855,13 +934,18 @@ export const kotlin: Language<KotlinOptions> = {
     lineComments: { line_comment: "//" },
     // The parser puts an import's comment inside its import_header, where at the list's first import the core
     // would hoist it to lead the whole list.
-    handleComment: ({ tree, comment, preceding, following, placement }) => {
+    handleComment: (context) => {
+      const { tree, comment, preceding, following, placement } = context;
       // A line comment ends its line even where the grammar's recovered empty item starts right after it.
       const endsLine = placement === "endOfLine" || tree.kindName(comment) === "line_comment";
       const item = endsLine ? itemBeforeComma(tree, comment) : undefined;
       if (item !== undefined) return { node: item, as: "trailing" };
       const accessor = commentedAccessorParens(tree, comment);
       if (accessor !== undefined) return { node: accessor, as: "dangling" };
+      const owner = beforeBrace(tree, comment);
+      if (owner !== undefined) return { node: owner, as: "trailing" };
+      const braced = inBraces(context);
+      if (braced !== undefined) return braced;
       // A comment ending the line of a declaration's modifiers trails the last, which prints before the line the
       // modifiers end in, rather than the modifiers, which would carry it past that line.
       if (placement === "endOfLine" && preceding !== undefined && tree.kindName(preceding) === "modifiers")
@@ -893,7 +977,7 @@ export const kotlin: Language<KotlinOptions> = {
       imports,
       enumBody,
       typedName,
-      property: property(customs.huggedChain, customs.backingField),
+      property: property(customs.huggedChain, customs.backingField, customs.commaWritten),
     }),
   ),
 };

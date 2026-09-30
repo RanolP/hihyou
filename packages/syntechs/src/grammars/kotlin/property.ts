@@ -138,7 +138,7 @@ type Cond<O> = (node: number, ctx: StreamCtx<O>) => boolean;
  * (`backingField`) prints without the `val` it lacks.
  */
 export const property =
-  <O>(hug: Cond<O>, backingField: Cond<O>) =>
+  <O>(hug: Cond<O>, backingField: Cond<O>, commaWritten: Cond<O>) =>
   (node: number, ctx: StreamCtx<O>): void => {
     const t = ctx.tree;
     const items = new Set(ctx.items(node));
@@ -146,6 +146,8 @@ export const property =
     open(GROUP);
     let prev = -1;
     let g = -1;
+    // ktfmt follows a destructuring its trailing comma breaks with `= ` and the initializer, which never hangs.
+    let destructuringBroken = false;
     for (let i = 0, count = t.count(node); i < count; i++) {
       const c = t.child(node, i);
       const named = t.named(c);
@@ -163,7 +165,10 @@ export const property =
         }
         if (t.kindName(prev) === "=" && named) {
           prev = c;
-          if (g !== -1) initializer(ctx, c, g, hug(c, ctx));
+          if (destructuringBroken) {
+            sText(" ");
+            ctx.print(c);
+          } else if (g !== -1) initializer(ctx, c, g, hug(c, ctx));
           else if (hug(c, ctx)) printHugged(ctx, c);
           else {
             open(GROUP);
@@ -181,6 +186,7 @@ export const property =
       if (named) ctx.print(c);
       else sToken(c, t.text(c));
       if (t.kindName(c) === "variable_declaration") g = typeGroups.get(c) ?? -1;
+      if (t.kindName(c) === "multi_variable_declaration") destructuringBroken = commaWritten(c, ctx);
     }
     close();
   };

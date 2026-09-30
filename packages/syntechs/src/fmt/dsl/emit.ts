@@ -897,7 +897,8 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
           line(`if (named && !${its}.has(c)) continue;`);
           if (skip) line(skip);
           if (x.braces)
-            // A `{` whose `}` is the next child prints `{}`, the node's dangling comments indented between.
+            // A `{` whose `}` is the next child prints `{}`, the node's dangling comments indented between, a
+            // line comment on the `{`'s line staying on it.
             block('if (!named && t.kindName(c) === "{" && !inBraces)', () => {
               if (spacing) block("if (prev !== -1)", () => {
                 const outside = steps.filter(([test]) => test !== "inBraces");
@@ -913,7 +914,8 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
                 block("if (dangling.length > 0)", () => {
                   line("open(INDENT);");
                   block("for (const d of dangling)", () => {
-                    line("sHardline();");
+                    line('if (d === dangling[0] && t.lf(d) === 0 && ctx.isLineComment(d)) sText(" ");');
+                    line("else sHardline();");
                     line("ctx.comment(d);");
                   });
                   line("close();");

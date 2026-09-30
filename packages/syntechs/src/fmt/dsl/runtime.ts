@@ -669,9 +669,13 @@ export function firstTextIs<O>(
 
 /**
  * Child `c` of an `inOrder`'s `hug`: after a space where its text up to its first forced line break fits (prettier's
- * conditionalGroup), else hanging on a line of its own, indented, as `hangAfter` prints any other child.
+ * conditionalGroup), else hanging on a line of its own, indented, as `hangAfter` prints any other child. A block
+ * comment leading it on a line of its own keeps it hugged but, once it breaks, on the next line unindented, as
+ * ktfmt puts it.
  */
 export function printHugged<O>(ctx: StreamCtx<O>, c: number): void {
+  const first = ctx.leadingComments(c)[0];
+  const commented = first !== undefined && ctx.tree.lf(first) > 0 && !ctx.isLineComment(first);
   const d = openDead();
   let span: number;
   try {
@@ -683,8 +687,15 @@ export function printHugged<O>(ctx: StreamCtx<O>, c: number): void {
   }
   openChoice(false);
   openState();
-  sText(" ");
-  sJump(span);
+  if (commented) {
+    open(GROUP);
+    sLine(0);
+    sJump(span);
+    close();
+  } else {
+    sText(" ");
+    sJump(span);
+  }
   closeState();
   openState();
   open(GROUP);
