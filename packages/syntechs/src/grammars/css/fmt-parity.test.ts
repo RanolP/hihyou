@@ -216,6 +216,8 @@ const edgeCases: [string, string][] = [
   ["ident-then-more-list", "a{b:a/c, d;c:d, a-b/c;e:a%c, d;f:a/c,d/e;g:U+0-7F, a}"],
   // An entry opening with a `+` or `-` broke the list; oxfmt breaks at a lone `-ident` past the first entry only.
   ["signed-entry-list", "a{b:a, -1;c:a,, -1;d:-b, a;e:a, -1px, -f(), --g;h:a, -b}"],
+  // A value opening or ending with a `,` was an ERROR kept as written.
+  ["edge-commas", "a{b:a,;c:a b,;d:,;e:a,!important;f:a:b,;--g:a,;h:,a;i:,a b;j:,,a}"],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");

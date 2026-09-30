@@ -153,7 +153,7 @@ const normalize: Normalize = (lexemes, _text, tree) => {
     const prev = lexemes[i - 1]?.text;
     if (l.text === ";" && (next === undefined || next === "}" || next === ";" || prev === "{"))
       return undefined;
-    if (sign(i)) return undefined;
+    if (sign(i) || tree.kindName(l.node) === "trailing_comma") return undefined;
     if (sign(i - 1)) return meaning(tree, l.node, `${prev}${l.text}`);
     return meaning(tree, l.node, l.text);
   });
@@ -1619,6 +1619,8 @@ export const css: Language<CssOptions> = {
     settings: prettierSettings,
     normalize,
     handleComment,
+    // oxc-css-parser drops a value's empty last comma group, and with it the `,` before it.
+    dropped: ["trailing_comma"],
     layoutBlind: true,
   }),
   stream: {
