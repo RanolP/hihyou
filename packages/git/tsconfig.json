@@ -3,9 +3,11 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
-    // Node-only: it reads a repository off the local disk, so it never runs in the browser.
-    "types": ["node"]
+    // No node or DOM types: the core runs in Node and in a browser worker alike, so an import of a
+    // node: module or a Node-only global fails to compile here. Node-only code is in tsconfig.node.json.
+    "types": []
   },
   "include": ["src"],
+  "exclude": ["src/node.ts", "src/**/*.test.ts"],
   "references": [{ "path": "../engine" }]
 }

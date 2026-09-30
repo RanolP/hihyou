@@ -5,6 +5,16 @@ export {
   type LocalHostOptions,
   localHost,
 } from "./host.js";
+export type {
+  DirEntry,
+  EntryType,
+  FileStat,
+  FileSystem,
+  GitIO,
+  Inflate,
+  RandomAccessFile,
+  Sha1,
+} from "./io.js";
 export {
   type Commit,
   type GitObject,

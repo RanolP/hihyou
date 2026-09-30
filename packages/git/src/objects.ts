@@ -1,8 +1,7 @@
-import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { inflateSync } from "node:zlib";
+import { concat, fromHex, latin1, toHex, utf8 } from "./bytes.js";
+import type { GitIO, Sha1 } from "./io.js";
 import { type GitObject, type ObjectType, Pack } from "./pack.js";
+import { join } from "./path.js";
 
 export type { GitObject, ObjectType } from "./pack.js";
 
@@ -32,12 +31,11 @@ export const GITLINK = 0o160000;
 export const SYMLINK = 0o120000;
 export const emptyBlob: Sha = "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391";
 
+const encoder = new TextEncoder();
+
 /** Git's object id for `bytes` stored as a blob, the same id `git hash-object` prints. */
-export function hashBlob(bytes: Uint8Array): Sha {
-  return createHash("sha1")
-    .update(`blob ${bytes.length}\0`)
-    .update(bytes)
-    .digest("hex");
+export function hashBlob(sha1: Sha1, bytes: Uint8Array): Promise<Sha> {
+  return sha1(concat([encoder.encode(`blob ${bytes.length}\0`), bytes]));
 }
 
 /** Loose objects and packfiles under one `objects/` directory. */
@@ -46,72 +44,78 @@ export class ObjectStore {
   private packNames = new Set<string>();
   private readonly commits = new Map<Sha, Commit>();
 
-  constructor(private readonly dir: string) {
-    this.scanPacks();
+  private constructor(
+    private readonly io: GitIO,
+    private readonly dir: string,
+  ) {}
+
+  static async open(io: GitIO, dir: string): Promise<ObjectStore> {
+    const store = new ObjectStore(io, dir);
+    await store.scanPacks();
+    return store;
   }
 
   close(): void {
     for (const pack of this.packs) pack.close();
   }
 
-  read(sha: Sha): GitObject {
-    const obj = this.tryRead(sha);
+  async read(sha: Sha): Promise<GitObject> {
+    const obj = await this.tryRead(sha);
     if (!obj) throw new Error(`object ${sha} not found in ${this.dir}`);
     return obj;
   }
 
-  tryRead(sha: Sha): GitObject | undefined {
+  async tryRead(sha: Sha): Promise<GitObject | undefined> {
     return (
-      this.fromPacks(sha) ??
-      this.loose(sha) ??
-      (this.scanPacks() ? this.fromPacks(sha) : undefined)
+      (await this.fromPacks(sha)) ??
+      (await this.loose(sha)) ??
+      ((await this.scanPacks()) ? this.fromPacks(sha) : undefined)
     );
   }
 
-  has(sha: Sha): boolean {
-    const raw = Buffer.from(sha, "hex");
+  async has(sha: Sha): Promise<boolean> {
+    const raw = fromHex(sha);
     return (
       this.packs.some((p) => p.find(raw) >= 0) ||
-      existsSync(this.loosePath(sha))
+      (await this.io.fs.stat(this.loosePath(sha))) !== undefined
     );
   }
 
   /** Full ids starting with `prefix`, at most two: enough to tell unique from ambiguous. */
-  expand(prefix: string): Sha[] {
+  async expand(prefix: string): Promise<Sha[]> {
     const found = new Set<Sha>();
     for (const pack of this.packs)
       for (const sha of pack.findPrefix(prefix, 2)) found.add(sha);
-    const fan = join(this.dir, prefix.slice(0, 2));
-    if (existsSync(fan))
-      for (const name of readdirSync(fan))
-        if ((prefix.slice(0, 2) + name).startsWith(prefix))
-          found.add(prefix.slice(0, 2) + name);
+    const fan = prefix.slice(0, 2);
+    for (const { name } of (await this.io.fs.readDir(join(this.dir, fan))) ??
+      [])
+      if ((fan + name).startsWith(prefix)) found.add(fan + name);
     return [...found].slice(0, 2);
   }
 
   /** Commits are immutable and small, and a history walk re-reads each one, so they are kept. */
-  readCommit(sha: Sha): Commit {
+  async readCommit(sha: Sha): Promise<Commit> {
     let commit = this.commits.get(sha);
     if (!commit) {
       if (this.commits.size >= 100_000) this.commits.clear();
-      commit = parseCommit(sha, this.readTyped(sha, "commit"));
+      commit = parseCommit(sha, await this.readTyped(sha, "commit"));
       this.commits.set(sha, commit);
     }
     return commit;
   }
 
-  readTree(sha: Sha): TreeEntry[] {
-    return parseTree(this.readTyped(sha, "tree"));
+  async readTree(sha: Sha): Promise<TreeEntry[]> {
+    return parseTree(await this.readTyped(sha, "tree"));
   }
 
-  readBlob(sha: Sha): Uint8Array {
+  readBlob(sha: Sha): Promise<Uint8Array> {
     return this.readTyped(sha, "blob");
   }
 
   /** Follows annotated tags down to the object they name. */
-  peel(sha: Sha): { sha: Sha; type: ObjectType } {
+  async peel(sha: Sha): Promise<{ sha: Sha; type: ObjectType }> {
     for (let depth = 0; depth < 32; depth++) {
-      const obj = this.read(sha);
+      const obj = await this.read(sha);
       if (obj.type !== "tag") return { sha, type: obj.type };
       const target = /^object ([0-9a-f]{40})$/m.exec(decode(obj.data));
       if (!target) throw new Error(`tag ${sha} names no object`);
@@ -120,15 +124,15 @@ export class ObjectStore {
     throw new Error(`tag chain from ${sha} is too deep`);
   }
 
-  private readTyped(sha: Sha, type: ObjectType): Uint8Array {
-    const obj = this.read(sha);
+  private async readTyped(sha: Sha, type: ObjectType): Promise<Uint8Array> {
+    const obj = await this.read(sha);
     if (obj.type !== type)
       throw new Error(`object ${sha} is a ${obj.type}, not a ${type}`);
     return obj.data;
   }
 
-  private fromPacks(sha: Sha): GitObject | undefined {
-    const raw = Buffer.from(sha, "hex");
+  private fromPacks(sha: Sha): Promise<GitObject> | undefined {
+    const raw = fromHex(sha);
     for (const pack of this.packs) {
       const i = pack.find(raw);
       if (i >= 0) return pack.read(pack.offsetAt(i), (base) => this.read(base));
@@ -140,16 +144,13 @@ export class ObjectStore {
     return join(this.dir, sha.slice(0, 2), sha.slice(2));
   }
 
-  private loose(sha: Sha): GitObject | undefined {
-    let raw: Buffer;
-    try {
-      raw = inflateSync(readFileSync(this.loosePath(sha)));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-      throw error;
-    }
+  private async loose(sha: Sha): Promise<GitObject | undefined> {
+    const file = await this.io.fs.readFile(this.loosePath(sha));
+    if (!file) return undefined;
+    // A loose object file is exactly one zlib stream.
+    const raw = await this.io.inflate(file);
     const nul = raw.indexOf(0);
-    const type = raw.toString("latin1", 0, raw.indexOf(0x20));
+    const type = latin1(raw, 0, raw.indexOf(0x20));
     if (
       nul < 0 ||
       !(
@@ -164,19 +165,34 @@ export class ObjectStore {
   }
 
   /** Picks up packs written since the last scan; true when any were new. */
-  private scanPacks(): boolean {
+  private async scanPacks(): Promise<boolean> {
     const packDir = join(this.dir, "pack");
-    if (!existsSync(packDir)) return false;
-    let added = false;
-    for (const name of readdirSync(packDir)) {
-      if (!name.endsWith(".idx") || this.packNames.has(name)) continue;
-      const packPath = join(packDir, `${name.slice(0, -4)}.pack`);
-      if (!existsSync(packPath)) continue;
-      this.packs.push(Pack.open(join(packDir, name), packPath));
-      this.packNames.add(name);
-      added = true;
+    const entries = await this.io.fs.readDir(packDir);
+    if (!entries) return false;
+    const names = new Set(entries.map((e) => e.name));
+    const fresh = entries
+      .map((e) => e.name)
+      .filter(
+        (name) =>
+          name.endsWith(".idx") &&
+          !this.packNames.has(name) &&
+          names.has(`${name.slice(0, -4)}.pack`),
+      );
+    const opened = await Promise.all(
+      fresh.map((name) =>
+        Pack.open(
+          this.io,
+          join(packDir, name),
+          join(packDir, `${name.slice(0, -4)}.pack`),
+        ),
+      ),
+    );
+    for (const [i, pack] of opened.entries()) {
+      if (this.packNames.has(fresh[i] as string)) continue;
+      this.packNames.add(fresh[i] as string);
+      this.packs.push(pack);
     }
-    return added;
+    return fresh.length > 0;
   }
 }
 
@@ -213,16 +229,17 @@ export function parseCommit(sha: Sha, data: Uint8Array): Commit {
 }
 
 export function parseTree(data: Uint8Array): TreeEntry[] {
-  const buf = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
   const entries: TreeEntry[] = [];
   let p = 0;
-  while (p < buf.length) {
-    const space = buf.indexOf(0x20, p);
-    const nul = buf.indexOf(0, space);
+  while (p < data.length) {
+    const space = data.indexOf(0x20, p);
+    const nul = data.indexOf(0, space);
+    let mode = 0;
+    for (let i = p; i < space; i++) mode = mode * 8 + (data[i] as number) - 48;
     entries.push({
-      mode: Number.parseInt(buf.toString("latin1", p, space), 8),
-      name: buf.toString("utf8", space + 1, nul),
-      sha: buf.toString("hex", nul + 1, nul + 21),
+      mode,
+      name: utf8(data, space + 1, nul),
+      sha: toHex(data, nul + 1, nul + 21),
     });
     p = nul + 21;
   }

@@ -4,6 +4,7 @@
     { "path": "packages/engine" },
     { "path": "packages/engine/tsconfig.node.json" },
     { "path": "packages/git" },
+    { "path": "packages/git/tsconfig.node.json" },
     { "path": "packages/syntechs" },
     { "path": "packages/syntechs/tsconfig.node.json" },
     { "path": "packages/ui" },

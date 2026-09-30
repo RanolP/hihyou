@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import {
   type BlobId,
   type ChangedFileRef,
@@ -32,14 +31,13 @@ export interface LocalHostOptions {
 }
 
 export interface LocalHost extends Host {
-  resolveDiffset(data: LocalDiffsetId): {
-    id: string;
-    changes: ChangedFileRef[];
-  };
-  readBlob(id: BlobId): Uint8Array;
+  resolveDiffset(
+    data: LocalDiffsetId,
+  ): Promise<{ id: string; changes: ChangedFileRef[] }>;
+  readBlob(id: BlobId): Promise<Uint8Array>;
 }
 
-/** The engine's `Host` over a repository on the local disk. */
+/** The engine's `Host` over a local repository, opened through any `GitIO`. */
 export function localHost(
   repo: Repo,
   options: LocalHostOptions = {},
@@ -47,26 +45,28 @@ export function localHost(
   return {
     grammars: options.grammars ?? syntechsGrammars(),
     ...(options.preferences && { preferences: options.preferences }),
-    resolveDiffset(data) {
+    async resolveDiffset(data) {
       switch (data.kind) {
         case "worktree":
-          return contentAddressed("worktree", repo.diffWorktree());
+          return contentAddressed(repo, "worktree", await repo.diffWorktree());
         case "staged":
-          return contentAddressed("staged", repo.diffStaged());
+          return contentAddressed(repo, "staged", await repo.diffStaged());
         case "commit": {
-          const sha = repo.resolveRev(data.sha);
-          const parent = repo.readCommit(sha).parents[0];
+          const sha = await repo.resolveRev(data.sha);
+          const parent = (await repo.readCommit(sha)).parents[0];
           return {
             id: `commit:${sha}`,
-            changes: repo.diffTrees(parent, sha).map(toRef),
+            changes: (await repo.diffTrees(parent, sha)).map(toRef),
           };
         }
         case "range": {
-          const base = repo.resolveRev(data.base);
-          const head = repo.resolveRev(data.head);
+          const [base, head] = await Promise.all([
+            repo.resolveRev(data.base),
+            repo.resolveRev(data.head),
+          ]);
           return {
             id: `range:${base}..${head}`,
-            changes: repo.diffTrees(base, head).map(toRef),
+            changes: (await repo.diffTrees(base, head)).map(toRef),
           };
         }
       }
@@ -76,13 +76,17 @@ export function localHost(
 }
 
 /** Same changes -> same id, so two reads of an unchanged working tree share the engine's cached diff. */
-function contentAddressed(kind: string, files: ChangedFile[]) {
+async function contentAddressed(
+  repo: Repo,
+  kind: string,
+  files: ChangedFile[],
+) {
   const changes = files.map(toRef);
-  const digest = createHash("sha1")
-    .update(JSON.stringify(changes))
-    .digest("hex");
+  const digest = await repo.io.sha1(encoder.encode(JSON.stringify(changes)));
   return { id: `${kind}:${digest}`, changes };
 }
+
+const encoder = new TextEncoder();
 
 function toRef(f: ChangedFile): ChangedFileRef {
   return {

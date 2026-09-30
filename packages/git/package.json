@@ -8,6 +8,11 @@
       "@hihyou/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./node": {
+      "@hihyou/source": "./src/node.ts",
+      "types": "./dist/node.d.ts",
+      "default": "./dist/node.js"
     }
   },
   "scripts": {

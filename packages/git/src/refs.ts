@@ -1,6 +1,6 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { type FileSystem, readText } from "./io.js";
 import type { Sha } from "./objects.js";
+import { join } from "./path.js";
 
 export interface Ref {
   /** Full name, e.g. `refs/heads/main`. */
@@ -30,24 +30,25 @@ export class RefStore {
   private packedStamp = -1;
 
   constructor(
+    private readonly fs: FileSystem,
     private readonly gitDir: string,
     private readonly commonDir: string,
   ) {}
 
-  head(): Head {
-    const raw = this.readLoose("HEAD");
+  async head(): Promise<Head> {
+    const raw = await this.readLoose("HEAD");
     if (raw?.startsWith("ref: ")) {
       const branch = raw.slice(5);
-      return { sha: this.resolve(branch), branch };
+      return { sha: await this.resolve(branch), branch };
     }
     return { sha: raw && hex40.test(raw) ? raw : undefined, branch: undefined };
   }
 
   /** The id a ref name stores, following symbolic refs; undefined when no such ref exists. */
-  resolve(name: string): Sha | undefined {
+  async resolve(name: string): Promise<Sha | undefined> {
     for (let depth = 0; depth < 8; depth++) {
-      const raw = this.readLoose(name);
-      if (raw === undefined) return this.packedRefs().get(name);
+      const raw = await this.readLoose(name);
+      if (raw === undefined) return (await this.packedRefs()).get(name);
       if (!raw.startsWith("ref: ")) {
         const sha = raw.slice(0, 40);
         return hex40.test(sha) ? sha : undefined;
@@ -57,27 +58,23 @@ export class RefStore {
     return undefined;
   }
 
-  list(): Ref[] {
-    const all = new Map(this.packedRefs());
-    const walk = (dir: string, prefix: string) => {
-      let names: string[];
-      try {
-        names = readdirSync(dir);
-      } catch {
-        return;
-      }
-      for (const name of names) {
-        const full = `${prefix}/${name}`;
-        const path = join(dir, name);
-        if (statSync(path).isDirectory()) walk(path, full);
-        else {
-          const raw = this.readLoose(full);
-          // A symbolic ref such as refs/remotes/origin/HEAD repeats a branch already listed.
-          if (raw && hex40.test(raw)) all.set(full, raw);
-        }
-      }
+  async list(): Promise<Ref[]> {
+    const all = new Map(await this.packedRefs());
+    const loose: [string, string | undefined][] = [];
+    const walk = async (dir: string, prefix: string): Promise<void> => {
+      const entries = (await this.fs.readDir(dir)) ?? [];
+      await Promise.all(
+        entries.map(async ({ name, type }) => {
+          const full = `${prefix}/${name}`;
+          if (type === "directory") await walk(join(dir, name), full);
+          else loose.push([full, await this.readLoose(full)]);
+        }),
+      );
     };
-    walk(join(this.commonDir, "refs"), "refs");
+    await walk(join(this.commonDir, "refs"), "refs");
+    // A symbolic ref such as refs/remotes/origin/HEAD repeats a branch already listed.
+    for (const [name, raw] of loose)
+      if (raw && hex40.test(raw)) all.set(name, raw);
     return [...all]
       .map(([name, sha]) => ({ name, sha, ...describe(name) }))
       .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
@@ -90,35 +87,23 @@ export class RefStore {
     return perWorktree ? this.gitDir : this.commonDir;
   }
 
-  private readLoose(name: string): string | undefined {
-    try {
-      return readFileSync(join(this.dirOf(name), name), "utf8").trim();
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === "ENOENT" || code === "EISDIR" || code === "ENOTDIR")
-        return undefined;
-      throw error;
-    }
+  private async readLoose(name: string): Promise<string | undefined> {
+    return (await readText(this.fs, join(this.dirOf(name), name)))?.trim();
   }
 
   /** `packed-refs`, re-read only when the file's mtime changes. */
-  private packedRefs(): Map<string, Sha> {
+  private async packedRefs(): Promise<Map<string, Sha>> {
     const path = join(this.commonDir, "packed-refs");
-    let stamp: number;
-    try {
-      stamp = statSync(path).mtimeMs;
-    } catch {
-      stamp = 0;
-    }
+    const stamp = (await this.fs.stat(path))?.mtimeMs ?? 0;
     if (this.packed && stamp === this.packedStamp) return this.packed;
     const refs = new Map<string, Sha>();
-    if (stamp !== 0)
-      for (const line of readFileSync(path, "utf8").split("\n")) {
-        if (line[0] === "#" || line[0] === "^") continue;
-        const space = line.indexOf(" ");
-        const sha = line.slice(0, space);
-        if (hex40.test(sha)) refs.set(line.slice(space + 1).trim(), sha);
-      }
+    const text = stamp === 0 ? undefined : await readText(this.fs, path);
+    for (const line of text?.split("\n") ?? []) {
+      if (line[0] === "#" || line[0] === "^") continue;
+      const space = line.indexOf(" ");
+      const sha = line.slice(0, space);
+      if (hex40.test(sha)) refs.set(line.slice(space + 1).trim(), sha);
+    }
     this.packed = refs;
     this.packedStamp = stamp;
     return refs;

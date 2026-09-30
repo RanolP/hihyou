@@ -1,11 +1,5 @@
-import {
-  closeSync,
-  fstatSync,
-  openSync,
-  readFileSync,
-  readSync,
-} from "node:fs";
-import { inflateSync } from "node:zlib";
+import { compare20, fromHex, toHex, u32 } from "./bytes.js";
+import type { GitIO } from "./io.js";
 
 export type ObjectType = "commit" | "tree" | "blob" | "tag";
 
@@ -26,11 +20,17 @@ const REF_DELTA = 7;
 /** Resolved delta bases kept per pack, so a chain shared by many objects is walked once. */
 const baseCacheBytes = 32 * 1024 * 1024;
 
+/** Where entry bytes come from: ranged reads, or the whole pack held in memory. */
+interface PackData {
+  size: number;
+  read(offset: number, length: number): Uint8Array | Promise<Uint8Array>;
+  close(): void;
+}
+
 /** One `.pack` with its v2 `.idx`: https://git-scm.com/docs/gitformat-pack */
 export class Pack {
   readonly count: number;
-  private fd: number | undefined;
-  private packSize = 0;
+  private data: Promise<PackData> | undefined;
   private sortedOffsets: Float64Array | undefined;
   private readonly bases = new Map<number, GitObject>();
   private baseBytes = 0;
@@ -39,23 +39,34 @@ export class Pack {
   private readonly largeStart: number;
 
   constructor(
+    private readonly io: GitIO,
     readonly packPath: string,
-    private readonly idx: Buffer,
+    private readonly idx: Uint8Array,
   ) {
-    if (idx.readUInt32BE(0) !== 0xff744f63 || idx.readUInt32BE(4) !== 2)
+    if (u32(idx, 0) !== 0xff744f63 || u32(idx, 4) !== 2)
       throw new Error(`${packPath}: only pack index version 2 is supported`);
-    this.count = idx.readUInt32BE(8 + 255 * 4);
+    this.count = u32(idx, 8 + 255 * 4);
     this.offsetStart = this.shaStart + this.count * 24;
     this.largeStart = this.offsetStart + this.count * 4;
   }
 
-  static open(idxPath: string, packPath: string): Pack {
-    return new Pack(packPath, readFileSync(idxPath));
+  static async open(
+    io: GitIO,
+    idxPath: string,
+    packPath: string,
+  ): Promise<Pack> {
+    const idx = await io.fs.readFile(idxPath);
+    if (!idx) throw new Error(`${idxPath}: not found`);
+    return new Pack(io, packPath, idx);
   }
 
   close(): void {
-    if (this.fd !== undefined) closeSync(this.fd);
-    this.fd = undefined;
+    const data = this.data;
+    this.data = undefined;
+    data?.then(
+      (d) => d.close(),
+      () => {},
+    );
   }
 
   /** Position of `sha` (20 raw bytes) in the index, or -1. */
@@ -65,10 +76,9 @@ export class Pack {
     let hi = this.fanout(first);
     while (lo < hi) {
       const mid = (lo + hi) >>> 1;
-      const at = this.shaStart + mid * 20;
-      const c = this.idx.compare(sha, 0, 20, at, at + 20);
+      const c = compare20(sha, this.idx, this.shaStart + mid * 20);
       if (c === 0) return mid;
-      if (c > 0) hi = mid;
+      if (c < 0) hi = mid;
       else lo = mid + 1;
     }
     return -1;
@@ -76,13 +86,12 @@ export class Pack {
 
   /** Every object whose hex SHA starts with `prefix`, stopping after `limit`. */
   findPrefix(prefix: string, limit: number): string[] {
-    const low = Buffer.from(prefix.padEnd(40, "0"), "hex");
+    const low = fromHex(prefix.padEnd(40, "0"));
     let lo = 0;
     let hi = this.count;
     while (lo < hi) {
       const mid = (lo + hi) >>> 1;
-      const at = this.shaStart + mid * 20;
-      if (this.idx.compare(low, 0, 20, at, at + 20) < 0) lo = mid + 1;
+      if (compare20(low, this.idx, this.shaStart + mid * 20) > 0) lo = mid + 1;
       else hi = mid;
     }
     const out: string[] = [];
@@ -96,22 +105,24 @@ export class Pack {
 
   shaAt(i: number): string {
     const at = this.shaStart + i * 20;
-    return this.idx.toString("hex", at, at + 20);
+    return toHex(this.idx, at, at + 20);
   }
 
   offsetAt(i: number): number {
-    const v = this.idx.readUInt32BE(this.offsetStart + i * 4);
+    const v = u32(this.idx, this.offsetStart + i * 4);
     if (!(v & 0x80000000)) return v;
-    return Number(
-      this.idx.readBigUInt64BE(this.largeStart + (v & 0x7fffffff) * 8),
-    );
+    const at = this.largeStart + (v & 0x7fffffff) * 8;
+    return u32(this.idx, at) * 0x100000000 + u32(this.idx, at + 4);
   }
 
   /**
    * The object at `offset`, with deltas applied. A REF_DELTA base outside this pack is read through
    * `external`, since a thin pack's bases may live in another pack or as loose objects.
    */
-  read(offset: number, external: (sha: string) => GitObject): GitObject {
+  async read(
+    offset: number,
+    external: (sha: string) => Promise<GitObject>,
+  ): Promise<GitObject> {
     const chain: Uint8Array[] = [];
     const chainAt: number[] = [];
     let at = offset;
@@ -122,7 +133,7 @@ export class Pack {
         base = cached;
         break;
       }
-      const entry = this.entry(at);
+      const entry = await this.entry(at);
       if (entry.type === OFS_DELTA || entry.type === REF_DELTA) {
         chain.push(entry.data);
         chainAt.push(at);
@@ -131,12 +142,12 @@ export class Pack {
           continue;
         }
         const sha = entry.base as string;
-        const i = this.find(Buffer.from(sha, "hex"));
+        const i = this.find(fromHex(sha));
         if (i >= 0) {
           at = this.offsetAt(i);
           continue;
         }
-        base = external(sha);
+        base = await external(sha);
         break;
       }
       const type = typeByCode[entry.type];
@@ -171,17 +182,17 @@ export class Pack {
   }
 
   private fanout(byte: number): number {
-    return this.idx.readUInt32BE(8 + byte * 4);
+    return u32(this.idx, 8 + byte * 4);
   }
 
-  private entry(offset: number): {
+  private async entry(offset: number): Promise<{
     type: number;
     base?: number | string;
     data: Uint8Array;
-  } {
-    const end = this.entryEnd(offset);
-    const buf = Buffer.allocUnsafe(end - offset);
-    readSync(this.fd as number, buf, 0, buf.length, offset);
+  }> {
+    const pack = await (this.data ??= this.load());
+    const end = this.entryEnd(offset, pack.size);
+    const buf = await pack.read(offset, end - offset);
     let p = 0;
     let c = buf[p++] as number;
     const type = (c >> 4) & 7;
@@ -202,21 +213,37 @@ export class Pack {
       }
       base = offset - back;
     } else if (type === REF_DELTA) {
-      base = buf.toString("hex", p, p + 20);
+      base = toHex(buf, p, p + 20);
       p += 20;
     }
-    // One output chunk of the known size, instead of 16 KiB chunks concatenated afterwards.
-    const data = inflateSync(buf.subarray(p), {
-      chunkSize: Math.max(64, size + 1),
-    });
+    // Bounded by the next entry, the bytes hold exactly one zlib stream, which a browser's
+    // DecompressionStream requires: it rejects any bytes after the stream's end.
+    const data = await this.io.inflate(buf.subarray(p), size);
     return base === undefined ? { type, data } : { type, base, data };
   }
 
-  /** An entry's compressed bytes end where the next entry starts, so it is read in one call. */
-  private entryEnd(offset: number): number {
+  private async load(): Promise<PackData> {
+    const { fs } = this.io;
+    if (fs.openFile) {
+      const file = await fs.openFile(this.packPath);
+      return {
+        size: file.size,
+        read: (offset, length) => file.read(offset, length),
+        close: () => file.close(),
+      };
+    }
+    const whole = await fs.readFile(this.packPath);
+    if (!whole) throw new Error(`${this.packPath}: not found`);
+    return {
+      size: whole.length,
+      read: (offset, length) => whole.subarray(offset, offset + length),
+      close: () => {},
+    };
+  }
+
+  /** An entry's compressed bytes end where the next entry starts, or at the pack's 20-byte trailer. */
+  private entryEnd(offset: number, packSize: number): number {
     if (!this.sortedOffsets) {
-      this.fd = openSync(this.packPath, "r");
-      this.packSize = fstatSync(this.fd).size;
       const offsets = new Float64Array(this.count);
       for (let i = 0; i < this.count; i++) offsets[i] = this.offsetAt(i);
       this.sortedOffsets = offsets.sort();
@@ -229,7 +256,7 @@ export class Pack {
       if ((sorted[mid] as number) <= offset) lo = mid + 1;
       else hi = mid;
     }
-    return sorted[lo] ?? this.packSize - 20;
+    return sorted[lo] ?? packSize - 20;
   }
 }
 

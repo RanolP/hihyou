@@ -1,5 +1,3 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
 import {
   type ConfigEntry,
   configBool,
@@ -8,6 +6,7 @@ import {
   type Remote,
   remotesOf,
 } from "./config.js";
+import { type GitIO, readText } from "./io.js";
 import {
   type Commit,
   type GitObject,
@@ -15,6 +14,7 @@ import {
   type Sha,
   type TreeEntry,
 } from "./objects.js";
+import { dirname, isAbsolute, join, normalize, resolve } from "./path.js";
 import { type Head, type Ref, RefStore } from "./refs.js";
 import { mergeBase, resolveRev } from "./rev.js";
 import {
@@ -34,35 +34,37 @@ export interface Repo {
   /** Undefined for a bare repository. */
   readonly workTree: string | undefined;
   readonly config: readonly ConfigEntry[];
+  /** What the repository was opened with. */
+  readonly io: GitIO;
 
-  head(): Head;
-  resolveRev(spec: string): Sha;
-  listRefs(): Ref[];
-  mergeBase(a: string, b: string): Sha | undefined;
+  head(): Promise<Head>;
+  resolveRev(spec: string): Promise<Sha>;
+  listRefs(): Promise<Ref[]>;
+  mergeBase(a: string, b: string): Promise<Sha | undefined>;
   readRemotes(): Remote[];
 
-  readObject(sha: Sha): GitObject;
-  readCommit(sha: Sha): Commit;
-  readTree(sha: Sha): TreeEntry[];
+  readObject(sha: Sha): Promise<GitObject>;
+  readCommit(sha: Sha): Promise<Commit>;
+  readTree(sha: Sha): Promise<TreeEntry[]>;
   /** A blob from the object store, or working-tree bytes a worktree diff hashed under that id. */
-  readBlob(sha: Sha): Uint8Array;
+  readBlob(sha: Sha): Promise<Uint8Array>;
 
   /** Changes from `a` to `b`, each a commit or tree id; undefined is the empty tree. */
   diffTrees(
     a: Sha | undefined,
     b: Sha | undefined,
     options?: DiffOptions,
-  ): ChangedFile[];
+  ): Promise<ChangedFile[]>;
   /** Commit to commit, by rev spec. */
-  diffRevs(a: string, b: string, options?: DiffOptions): ChangedFile[];
+  diffRevs(a: string, b: string, options?: DiffOptions): Promise<ChangedFile[]>;
   /** HEAD to the index: what `git diff --cached` shows. */
-  diffStaged(options?: DiffOptions): ChangedFile[];
+  diffStaged(options?: DiffOptions): Promise<ChangedFile[]>;
   /** The index to the working tree: what `git diff` shows. */
-  diffUnstaged(options?: DiffOptions): ChangedFile[];
+  diffUnstaged(options?: DiffOptions): Promise<ChangedFile[]>;
   /** HEAD to the working tree: what `git diff HEAD` shows. Untracked files are not included. */
-  diffWorktree(options?: DiffOptions): ChangedFile[];
+  diffWorktree(options?: DiffOptions): Promise<ChangedFile[]>;
   /** The index and the working tree as file maps, read once for callers that need several diffs. */
-  snapshot(): WorktreeSnapshot;
+  snapshot(): Promise<WorktreeSnapshot>;
 
   /** Releases open pack file handles. */
   close(): void;
@@ -73,17 +75,20 @@ const hashedCacheBytes = 256 * 1024 * 1024;
 
 /**
  * The repository containing `path`, found the way git finds it: the nearest `.git` directory or
- * `gitdir:` file walking up, or `path` itself when it is a bare repository.
+ * `gitdir:` file walking up, or `path` itself when it is a bare repository. `path` is absolute and
+ * `/`-separated, as every path `io` receives.
  */
-export function openRepo(path: string): Repo {
-  const found = discover(resolve(path));
+export async function openRepo(path: string, io: GitIO): Promise<Repo> {
+  if (!isAbsolute(path))
+    throw new Error(`openRepo needs an absolute path, got ${path}`);
+  const { fs } = io;
+  const found = await discover(io, normalize(path));
   if (!found) throw new Error(`not a git repository: ${path}`);
   const { gitDir } = found;
-  const commonFile = join(gitDir, "commondir");
-  const commonDir = existsSync(commonFile)
-    ? resolve(gitDir, readFileSync(commonFile, "utf8").trim())
-    : gitDir;
-  const config = readConfig(join(commonDir, "config"));
+  const common = await readText(fs, join(gitDir, "commondir"));
+  const commonDir =
+    common === undefined ? gitDir : resolve(gitDir, common.trim());
+  const config = await readConfig(fs, join(commonDir, "config"));
   const format = configValue(config, "extensions.objectformat");
   if (format && format.toLowerCase() !== "sha1")
     throw new Error(`${commonDir}: object format ${format} is not supported`);
@@ -95,8 +100,8 @@ export function openRepo(path: string): Repo {
         ? resolve(gitDir, coreWorktree)
         : found.workTree;
 
-  const objects = new ObjectStore(join(commonDir, "objects"));
-  const refs = new RefStore(gitDir, commonDir);
+  const objects = await ObjectStore.open(io, join(commonDir, "objects"));
+  const refs = new RefStore(fs, gitDir, commonDir);
   const hashed = new Map<Sha, Uint8Array>();
   let hashedBytes = 0;
   const remember = (sha: Sha, bytes: Uint8Array) => {
@@ -109,34 +114,38 @@ export function openRepo(path: string): Repo {
       hashedBytes -= value.length;
     }
   };
-  const submodules = new Map<string, Repo>();
+  const submodules = new Map<string, Promise<Repo>>();
 
-  const headTree = () => {
-    const sha = refs.head().sha;
-    return sha ? objects.readCommit(sha).tree : undefined;
+  const headTree = async () => {
+    const sha = (await refs.head()).sha;
+    return sha ? (await objects.readCommit(sha)).tree : undefined;
   };
-  const snapshot = (): WorktreeSnapshot => {
+  const snapshot = async (): Promise<WorktreeSnapshot> => {
     if (workTree === undefined)
       throw new Error(`${gitDir} is a bare repository: it has no working tree`);
     return snapshotWorktree({
+      fs,
+      sha1: io.sha1,
       workTree,
       indexPath: join(gitDir, "index"),
       fileMode: configBool(config, "core.filemode", true),
       onHashed: remember,
-      submoduleHead: (dir) => {
+      submoduleHead: async (dir) => {
         let sub = submodules.get(dir);
         if (!sub) {
-          sub = openRepo(dir);
+          sub = openRepo(dir, io);
           submodules.set(dir, sub);
         }
-        return sub.head().sha;
+        return (await (await sub).head()).sha;
       },
     });
   };
-  const treeOf = (sha: Sha | undefined) => {
+  const treeOf = async (sha: Sha | undefined) => {
     if (sha === undefined) return undefined;
-    const obj = objects.peel(sha);
-    return obj.type === "commit" ? objects.readCommit(obj.sha).tree : obj.sha;
+    const obj = await objects.peel(sha);
+    return obj.type === "commit"
+      ? (await objects.readCommit(obj.sha)).tree
+      : obj.sha;
   };
 
   const repo: Repo = {
@@ -144,59 +153,77 @@ export function openRepo(path: string): Repo {
     commonDir,
     workTree,
     config,
+    io,
     head: () => refs.head(),
     resolveRev: (spec) => resolveRev(refs, objects, spec),
     listRefs: () => refs.list(),
-    mergeBase: (a, b) =>
-      mergeBase(objects, repo.resolveRev(a), repo.resolveRev(b)),
+    mergeBase: async (a, b) =>
+      mergeBase(objects, await repo.resolveRev(a), await repo.resolveRev(b)),
     readRemotes: () => remotesOf(config),
     readObject: (sha) => objects.read(sha),
     readCommit: (sha) => objects.readCommit(sha),
     readTree: (sha) => objects.readTree(sha),
-    readBlob: (sha) => hashed.get(sha) ?? objects.readBlob(sha),
-    diffTrees: (a, b, options) =>
-      diffTrees(objects, treeOf(a), treeOf(b), options),
-    diffRevs: (a, b, options) =>
-      repo.diffTrees(repo.resolveRev(a), repo.resolveRev(b), options),
-    diffStaged: (options) =>
-      diffFileMaps(flattenTree(objects, headTree()), snapshot().index, options),
-    diffUnstaged: (options) => {
-      const s = snapshot();
+    readBlob: async (sha) => hashed.get(sha) ?? objects.readBlob(sha),
+    diffTrees: async (a, b, options) => {
+      const [ta, tb] = await Promise.all([treeOf(a), treeOf(b)]);
+      return diffTrees(objects, ta, tb, options);
+    },
+    diffRevs: async (a, b, options) => {
+      const [ra, rb] = await Promise.all([
+        repo.resolveRev(a),
+        repo.resolveRev(b),
+      ]);
+      return repo.diffTrees(ra, rb, options);
+    },
+    diffStaged: async (options) => {
+      const [head, s] = await Promise.all([
+        headTree().then((t) => flattenTree(objects, t)),
+        snapshot(),
+      ]);
+      return diffFileMaps(head, s.index, options);
+    },
+    diffUnstaged: async (options) => {
+      const s = await snapshot();
       return diffFileMaps(s.index, s.worktree, options);
     },
-    diffWorktree: (options) =>
-      diffFileMaps(
-        flattenTree(objects, headTree()),
-        snapshot().worktree,
-        options,
-      ),
+    diffWorktree: async (options) => {
+      const [head, s] = await Promise.all([
+        headTree().then((t) => flattenTree(objects, t)),
+        snapshot(),
+      ]);
+      return diffFileMaps(head, s.worktree, options);
+    },
     snapshot,
     close: () => {
       objects.close();
-      for (const sub of submodules.values()) sub.close();
+      for (const sub of submodules.values())
+        sub.then(
+          (r) => r.close(),
+          () => {},
+        );
     },
   };
   return repo;
 }
 
-function discover(
+async function discover(
+  io: GitIO,
   start: string,
-): { gitDir: string; workTree: string | undefined } | undefined {
+): Promise<{ gitDir: string; workTree: string | undefined } | undefined> {
+  const { fs } = io;
   for (let dir = start; ; dir = dirname(dir)) {
     const dotGit = join(dir, ".git");
-    const st = statSync(dotGit, { throwIfNoEntry: false });
-    if (st?.isDirectory()) return { gitDir: dotGit, workTree: dir };
-    if (st?.isFile()) {
-      const m = /^gitdir: (.+)$/m.exec(readFileSync(dotGit, "utf8"));
+    const st = await fs.stat(dotGit);
+    if (st?.type === "directory") return { gitDir: dotGit, workTree: dir };
+    if (st?.type === "file") {
+      const m = /^gitdir: (.+)$/m.exec((await readText(fs, dotGit)) ?? "");
       if (m)
         return { gitDir: resolve(dir, (m[1] as string).trim()), workTree: dir };
     }
-    if (
-      existsSync(join(dir, "HEAD")) &&
-      existsSync(join(dir, "objects")) &&
-      existsSync(join(dir, "refs"))
-    )
-      return { gitDir: dir, workTree: undefined };
+    const [head, objects, refs] = await Promise.all(
+      ["HEAD", "objects", "refs"].map((name) => fs.stat(join(dir, name))),
+    );
+    if (head && objects && refs) return { gitDir: dir, workTree: undefined };
     if (dirname(dir) === dir) return undefined;
   }
 }

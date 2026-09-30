@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { type FileSystem, readText } from "./io.js";
 
 export interface ConfigEntry {
   /** Lowercased, as git compares it. */
@@ -87,13 +87,12 @@ function parseValue(raw: string): string {
   return out;
 }
 
-export function readConfig(path: string): ConfigEntry[] {
-  try {
-    return parseConfig(readFileSync(path, "utf8"));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw error;
-  }
+export async function readConfig(
+  fs: FileSystem,
+  path: string,
+): Promise<ConfigEntry[]> {
+  const text = await readText(fs, path);
+  return text === undefined ? [] : parseConfig(text);
 }
 
 /** The last value of `section[.subsection].key`, which is the one git uses. */
