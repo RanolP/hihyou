@@ -1197,6 +1197,26 @@ const oxfmtNewOpenParen = (c: CommentContext<JsOptions>): CommentTarget | undefi
   return ctor !== undefined ? { node: ctor, as: "trailing" } : undefined;
 };
 
+/**
+ * `f?./* c *\/()`: oxfmt keeps a comment after a call's `?.` inside its arguments, leading the first or, with none,
+ * dangling there: `f?.(/* c *\/)`.
+ */
+const oxfmtAfterOptionalCall = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, preceding, following } = c;
+  if (
+    c.options.compat !== "oxfmt" ||
+    !CALLS.has(kind(c, enclosing)) ||
+    preceding === undefined ||
+    kind(c, preceding) !== "optional_chain" ||
+    following === undefined ||
+    following !== field(c, enclosing, "arguments") ||
+    kind(c, following) !== "arguments"
+  )
+    return;
+  const first = callArguments(c, enclosing)[0];
+  return first !== undefined ? { node: first, as: "leading" } : { node: following, as: "dangling" };
+};
+
 // Where parentheses around a right-most value print nothing, so a comment inside them is past the value's end.
 const BARE_RIGHT = new Set([
   "assignment_expression",
@@ -1259,6 +1279,7 @@ const handlers = [
   oxfmtChainHead,
   oxfmtMemberObject,
   oxfmtNewOpenParen,
+  oxfmtAfterOptionalCall,
   afterDeclare,
   typeCast,
   mappedTypeParts,
