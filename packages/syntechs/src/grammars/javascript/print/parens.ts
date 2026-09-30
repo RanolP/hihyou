@@ -286,9 +286,11 @@ export function needsParens(n: number, ctx: JsCtx): boolean {
   if (top !== n && isAwaitCallArguments(ctx, top)) return true;
   // Annex B's `for (var a = (b) in c)`: prettier wraps every initializer there.
   if (pk === "for_in_statement" && key === "init") return true;
-  // `return (\n// comment\na, b\n)`: the statement's own parentheses already hold the argument.
+  // `return (\n// comment\na, b\n)`: the statement's own parentheses already hold the argument; oxfmt keeps the
+  // argument's own inside them.
   if (
     (pk === "return_statement" || pk === "throw_statement") &&
+    ctx.options.compat !== "oxfmt" &&
     returnArgumentHasLeadingComment(ctx, top)
   )
     return false;

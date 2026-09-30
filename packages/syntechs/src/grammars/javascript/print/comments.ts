@@ -1097,9 +1097,64 @@ const oxfmtTypeAliasHead = (c: CommentContext<JsOptions>): CommentTarget | undef
   return before !== undefined ? { node: before, as: "trailing" } : undefined;
 };
 
+/**
+ * `return /* c *\/ (a, b)`: oxfmt prints a sequence argument's parentheses before its leading comments, so a block
+ * comment after `return` or `throw` moves inside them, before the first expression: `return (/* c *\/ a, b)`.
+ */
+const oxfmtReturnSequence = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, following, preceding } = c;
+  if (
+    c.options.compat !== "oxfmt" ||
+    !c.text.startsWith("/*") ||
+    preceding !== undefined ||
+    following === undefined ||
+    (kind(c, enclosing) !== "return_statement" && kind(c, enclosing) !== "throw_statement")
+  )
+    return;
+  const seq = unparen(c, following);
+  if (kind(c, seq) !== "sequence_expression") return;
+  const head = children(c, seq).find((k) => named(c, k) && isCode(c, k));
+  return head !== undefined ? { node: head, as: "leading" } : undefined;
+};
+
+/**
+ * `(⏎// c⏎a.b()⏎).c.d()`: prettier's member chain prints the parenthesized call's leading comment before its
+ * arguments; oxfmt prints it before the whole chain, so it leads the chain's head `a`.
+ */
+const oxfmtChainHead = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, following } = c;
+  if (
+    c.options.compat !== "oxfmt" ||
+    c.placement !== "ownLine" ||
+    c.preceding !== undefined ||
+    following === undefined ||
+    kind(c, enclosing) !== "parenthesized_expression" ||
+    isCastParen(c, enclosing)
+  )
+    return;
+  const top = outer(c, enclosing);
+  const holder = parent(c, top);
+  if (
+    holder === undefined ||
+    !((MEMBERS.has(kind(c, holder)) && field(c, holder, "object") === top) ||
+      (CALLS.has(kind(c, holder)) && field(c, holder, "function") === top))
+  )
+    return;
+  let head = following;
+  for (;;) {
+    const k = kind(c, head);
+    const next = MEMBERS.has(k) ? field(c, head, "object") : CALLS.has(k) ? field(c, head, "function") : undefined;
+    if (next === undefined) break;
+    head = next;
+  }
+  return head !== following ? { node: head, as: "leading" } : undefined;
+};
+
 // In prettier's order within each placement: typeCast and conditional run early, nestedConditional last.
 const handlers = [
   oxfmtTypeAliasHead,
+  oxfmtReturnSequence,
+  oxfmtChainHead,
   afterDeclare,
   typeCast,
   mappedTypeParts,
