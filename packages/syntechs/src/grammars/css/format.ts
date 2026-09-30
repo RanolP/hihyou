@@ -37,7 +37,7 @@ const format = defineFormat<typeof grammar, CssOptions>();
 const spaced = () => inOrder(space);
 const adjacent = () => inOrder();
 /** Selectors on either side of a combinator: a line between, and after the combinator's token a space. */
-const combinator = () => inOrder({ join: "line", spaceWhen: { after: [">", ">>>", "~", "+"] } });
+const combinator = () => inOrder({ join: "line", spaceWhen: { after: [">", ">>>", "~", "+", "<"] } });
 /** Selectors one per line, one of more than two parts indenting as it breaks; then each `trail` child after a space. */
 const selectorList = (trail: "block"[] = []) =>
   splitOn(",", { trail, wrapItem: when("longSelector"), layout: { group: true, between: "hardline" } });
@@ -252,8 +252,8 @@ export const css = format({
         splitOn(",", { except: ["@media"], trail: ["block"], layout: { group: true, indent: true, between: "line" } }),
       ]),
     ],
-    // A prelude holding a comment as prettier's value (fmt.ts's `supportsValue`).
-    supports_statement: () => [either(when("supportsComments"), tok("@supports").via("supportsValue"), inOrder(space))],
+    // The prelude as prettier's value (fmt.ts's `supportsValue`).
+    supports_statement: () => [tok("@supports").via("supportsValue")],
     import_statement: () => custom("importStatement"),
     namespace_statement: () => inOrder({ join: "space", tight: { before: [";"] } }),
     // Prettier's raw at-rule parameters: as written, one space wherever the source has any gap.
@@ -300,6 +300,17 @@ export const css = format({
     // prettier's media feature: as written, one space wherever the source has any gap.
     range_query: () => inOrder({ join: "gap", tight: { after: ["("], before: [")"] } }),
     feature_name: () => text("maybeLower"),
+    // `selector(...)`: a selector list as a rule's, one per line inside the broken parentheses once it has two.
+    selector_query: () => [
+      "selector",
+      grpParen(
+        splitOn(",", {
+          except: ["selector", "(", ")"],
+          wrapItem: when("longSelector"),
+          layout: { between: "hardline" },
+        }),
+      ),
+    ],
   },
   wrapping: {
     stylesheet: statements,

@@ -1,4 +1,4 @@
-css compatibility: 150/151 (99.34%), 0 refused (ok:false), 6 excluded
+css compatibility: 151/151 (100.00%), 0 refused (ok:false), 6 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -12,7 +12,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
-| css/atrule/supports.css | 0/1 | 14.41% |
 
 # Refused
 

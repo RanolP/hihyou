@@ -196,7 +196,6 @@ export const customs = {
   unparsedValue: (node, ctx) => unparsedUrl(node, ctx),
   /** A media query list holding a comment, which `mediaQueries` prints as postcss-media-query-parser splits it. */
   mediaComments: (node, ctx) => mediaAtoms(node, ctx).some((c) => isComment(c, ctx)),
-  supportsComments: (node, ctx) => supportsComments(node, ctx),
   ownWord: (node, ctx) => ownWord(node, ctx),
 } satisfies Record<string, PredicateRule<CssOptions>>;
 
@@ -852,17 +851,49 @@ const queryWords = (n: number, ctx: SCtx): number[] =>
     ? children(n, ctx.tree).flatMap((c) => queryWords(c, ctx))
     : [n];
 
+const isParenQuery = (c: number, ctx: SCtx) =>
+  kind(c, ctx) === "feature_query" || kind(c, ctx) === "parenthesized_query";
+
+/**
+ * `@supports`'s words as prettier's value words: `not`, `and` or `or` written against the paren group after it, or
+ * the prelude's first word before one (prettier's parser drops that gap), is a function, the two one word apart by
+ * a space that never breaks.
+ */
+function supportsItems(words: number[], ctx: SCtx, top: boolean): number[][] {
+  const t = ctx.tree;
+  const items: number[][] = [];
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i] as number;
+    const next = words[i + 1];
+    const keyword = !t.named(w) && ["not", "and", "or"].includes(t.text(w).toLowerCase());
+    if (keyword && next !== undefined && isParenQuery(next, ctx) && ((top && i === 0) || t.adjoins(w, next))) {
+      items.push([w, next]);
+      i++;
+    } else items.push([w]);
+  }
+  return items;
+}
+
+/** A value word of `supportsItems`, a function's name and paren group a space apart. */
+function supportsItem(item: number[], ctx: SCtx): void {
+  item.forEach((c, i) => {
+    if (i > 0) sText(" ");
+    queryWord(c, ctx, true);
+  });
+}
+
 /**
  * A word of a query read as a value: a paren group as prettier's value-paren_group, its words a fill indented
- * inside it, a `:` joined to the word before it.
+ * inside it, a `:` joined to the word before it; in `@supports`, its words as `supportsItems`.
  */
-function queryWord(c: number, ctx: SCtx): void {
+function queryWord(c: number, ctx: SCtx, supports = false): void {
   const t = ctx.tree;
   if (ctx.isComment(c)) return ctx.comment(c);
   if (!t.named(c)) return sToken(c, t.text(c));
-  if (kind(c, ctx) !== "feature_query" && kind(c, ctx) !== "parenthesized_query") return ctx.printNode(c);
+  if (!isParenQuery(c, ctx)) return ctx.printNode(c);
   const kids = children(c, t);
   const inner = kids.slice(1, -1).flatMap((k) => queryWords(k, ctx));
+  const items = supports ? supportsItems(inner, ctx, false) : inner.map((k) => [k]);
   open(GROUP);
   queryWord(kids[0] as number, ctx);
   open(INDENT);
@@ -871,13 +902,14 @@ function queryWord(c: number, ctx: SCtx): void {
   open(INDENT);
   open(FILL);
   open(FILL_ITEM);
-  inner.forEach((k, i) => {
-    if (i > 0 && kind(k, ctx) !== ":") {
+  items.forEach((item, i) => {
+    if (i > 0 && kind(item[0] as number, ctx) !== ":") {
       close();
       sLine(0);
       open(FILL_ITEM);
     }
-    queryWord(k, ctx);
+    if (supports) supportsItem(item, ctx);
+    else queryWord(item[0] as number, ctx);
   });
   for (let k = 0; k < 5; k++) close();
   sLine(SOFT);
@@ -885,15 +917,9 @@ function queryWord(c: number, ctx: SCtx): void {
   close();
 }
 
-/** Whether `@supports`'s prelude holds a comment, which `supportsValue` prints as prettier's value. */
-const supportsComments = (node: number, ctx: SCtx): boolean => {
-  const holds = (n: number): boolean => children(n, ctx.tree).some((c) => ctx.isComment(c) || holds(c));
-  return children(node, ctx.tree).some((c) => kind(c, ctx) !== "block" && (ctx.isComment(c) || holds(c)));
-};
-
 /**
- * `@supports`'s prelude holding a comment, which prettier parses as a value: its words a fill, indented, each paren
- * group breaking inside once past the width.
+ * `@supports`'s prelude, which prettier parses as a value: its words a fill, indented, each paren group breaking
+ * inside once past the width; one word alone, unindented.
  */
 export function supportsValue(at: number | undefined, node: number, ctx: SCtx): void {
   const t = ctx.tree;
@@ -901,16 +927,20 @@ export function supportsValue(at: number | undefined, node: number, ctx: SCtx): 
   sText(" ");
   const kids = children(node, t);
   const words = kids.filter((c) => c !== at && kind(c, ctx) !== "block").flatMap((c) => queryWords(c, ctx));
-  open(GROUP);
-  open(INDENT);
-  open(FILL);
-  words.forEach((c, i) => {
-    if (i > 0) sLine(0);
-    open(FILL_ITEM);
-    queryWord(c, ctx);
-    close();
-  });
-  for (let k = 0; k < 3; k++) close();
+  const items = supportsItems(words, ctx, true);
+  if (items.length === 1) supportsItem(items[0] as number[], ctx);
+  else {
+    open(GROUP);
+    open(INDENT);
+    open(FILL);
+    items.forEach((item, i) => {
+      if (i > 0) sLine(0);
+      open(FILL_ITEM);
+      supportsItem(item, ctx);
+      close();
+    });
+    for (let k = 0; k < 3; k++) close();
+  }
   const block = kids.find((c) => kind(c, ctx) === "block");
   if (block !== undefined) {
     sText(" ");
@@ -930,7 +960,6 @@ export function importStatement(node: number, ctx: SCtx): void {
   sText(" ");
   const item = (c: number) =>
     !t.named(c) ? sToken(c, t.text(c)) : ctx.isComment(c) ? ctx.comment(c) : ctx.printNode(c);
-  const paren = (c: number) => kind(c, ctx) === "feature_query" || kind(c, ctx) === "parenthesized_query";
   // The prelude's comments are its words too, as `splitOn`'s `comments: "all"`, and so are a media query's.
   const run = splitRun(ctx, node, ",", ["@import", ";"], ["block"], "all");
   // Several entries are prettier's paren group, indented, each entry a comma group indented once more but
@@ -949,7 +978,7 @@ export function importStatement(node: number, ctx: SCtx): void {
     words.forEach((c, j) => {
       if (j > 0) sLine(0);
       open(FILL_ITEM);
-      if (paren(c)) queryWord(c, ctx);
+      if (isParenQuery(c, ctx)) queryWord(c, ctx);
       else item(c);
       close();
     });
