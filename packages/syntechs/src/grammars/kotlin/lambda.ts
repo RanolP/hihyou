@@ -78,7 +78,7 @@ const lineLike = (ctx: StreamCtx<unknown>, c: number) => ctx.isLineComment(c) ||
 
 /**
  * A lambda's parameters, which ktfmt keeps on the `{`'s line whatever their width, but a line comment after a
- * parameter ends the line, and the next parameter starts one of its own.
+ * parameter ends the line, and the next parameter starts one of its own. ktfmt drops a trailing comma.
  */
 export const lambdaParameters: StreamRule<unknown> = (node, ctx) => {
   const t = ctx.tree;
@@ -87,6 +87,13 @@ export const lambdaParameters: StreamRule<unknown> = (node, ctx) => {
   for (let i = 0; i < t.count(node); i++) {
     const c = t.child(node, i);
     if (t.named(c) && !items.has(c)) continue;
+    if (t.kindName(c) === "," && item === ctx.items(node).at(-1)) continue;
+    // A destructuring's type, `(a, b): Pair<A, B>`.
+    if (t.kindName(c) === ":") {
+      sToken(c, ":");
+      sText(" ");
+      continue;
+    }
     if (t.kindName(c) === ",") {
       sToken(c, ",");
       if (ctx.trailingComments(item).some((k) => ctx.isLineComment(k))) sHardline();

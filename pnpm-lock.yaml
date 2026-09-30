@@ -167,7 +167,7 @@ packageExtensionsChecksum: sha256-dbr7Cp3Rge8Ng3dbeh61dUs2/7uX0vAUiMnS8UBhK7Q=
 patchedDependencies:
   tree-sitter-css@0.25.0: 87c654c1ef6375c06a588f41194a762cb76a5ce4b01931fd2467d96cf7d23a35
   tree-sitter-javascript@0.25.0: ff45617cc7f65d7e44c132326c2dbe30aa848a8bb99759bdac609adeba11e987
-  tree-sitter-kotlin@0.3.8: 624d46de5c7062581fe184dc66a0f0790627a778122dee344b3a2a40d35908b4
+  tree-sitter-kotlin@0.3.8: 31bdd3b44b303bc4ac97d4b906dc664fb257c020340fd7bc78c32ec040d4cac7
   tree-sitter-python@0.25.0: b5837d9947b3de4b0b954af57379a3e8a68f4a0643e6713b38da6ca07e18363d
   tree-sitter-typescript@0.23.2: c20f787d8cce21a9d9fd056a6adeac12f7379b5fe58e16e75cc0cbfb563ee236
 
@@ -306,7 +306,7 @@ importers:
         version: 0.24.8
       tree-sitter-kotlin:
         specifier: 0.3.8
-        version: 0.3.8(patch_hash=624d46de5c7062581fe184dc66a0f0790627a778122dee344b3a2a40d35908b4)
+        version: 0.3.8(patch_hash=31bdd3b44b303bc4ac97d4b906dc664fb257c020340fd7bc78c32ec040d4cac7)
       tree-sitter-python:
         specifier: 0.25.0
         version: 0.25.0(patch_hash=b5837d9947b3de4b0b954af57379a3e8a68f4a0643e6713b38da6ca07e18363d)
@@ -4131,7 +4131,7 @@ snapshots:
       node-addon-api: 8.9.2
       node-gyp-build: 4.8.4
 
-  tree-sitter-kotlin@0.3.8(patch_hash=624d46de5c7062581fe184dc66a0f0790627a778122dee344b3a2a40d35908b4):
+  tree-sitter-kotlin@0.3.8(patch_hash=31bdd3b44b303bc4ac97d4b906dc664fb257c020340fd7bc78c32ec040d4cac7):
     dependencies:
       node-addon-api: 7.1.1
       node-gyp-build: 4.8.4

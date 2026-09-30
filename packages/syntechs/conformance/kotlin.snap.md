@@ -1,4 +1,4 @@
-kotlin compatibility: 705/753 (93.63%), 0 refused (ok:false), 11 excluded
+kotlin compatibility: 709/753 (94.16%), 0 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -18,7 +18,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/annotation/exception.kt | 0/1 | 61.54% |
 | ktfmt/format/annotation/functionTypes.kt | 0/1 | 60.00% |
 | ktfmt/format/annotation/noNewLineAfterAnnotations.kt | 0/1 | 80.52% |
-| ktfmt/format/binary/binaryExpressionWithRanges.kt | 0/1 | 52.63% |
+| ktfmt/format/binary/binaryExpressionWithRanges.kt | 0/1 | 85.71% |
 | ktfmt/format/call/arrayAccessInTheCallChain.kt | 0/1 | 58.33% |
 | ktfmt/format/call/callArgsStickToFunctionName.kt | 0/1 | 60.00% |
 | ktfmt/format/call/chainWithDereferences.kt | 0/1 | 50.00% |
@@ -30,20 +30,16 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/if/blocks.kt | 0/1 | 21.05% |
 | ktfmt/format/if/comment.kt | 0/1 | 61.54% |
 | ktfmt/format/import/importList.kt | 0/1 | 62.50% |
-| ktfmt/format/lambda/lambdaWithFullType.kt | 0/1 | 44.44% |
 | ktfmt/format/misc/commentStability.kt | 0/1 | 70.59% |
 | ktfmt/format/misc/contextParameters.kt | 0/1 | 61.54% |
 | ktfmt/format/misc/contextReceivers.kt | 0/1 | 64.00% |
 | ktfmt/format/misc/labels.kt | 0/1 | 78.79% |
 | ktfmt/format/misc/semicolonsBetweenCalls.kt | 0/1 | 96.20% |
 | ktfmt/format/misc/semicolonsInEmptyBodies.kt | 0/1 | 69.23% |
-| ktfmt/format/misc/trailingCommas.kt | 0/1 | 66.10% |
+| ktfmt/format/misc/trailingCommas.kt | 0/1 | 77.97% |
 | ktfmt/format/misc/unaryPostfix.kt | 0/1 | 90.00% |
-| ktfmt/format/misc/unaryPrefix.kt | 0/1 | 57.89% |
 | ktfmt/format/property/backingFieldWithChainedScopingFunction3.kt | 0/1 | 76.92% |
 | ktfmt/format/string/multiDollarString.kt | 0/1 | 44.44% |
-| ktfmt/format/type/classExpression.kt | 0/1 | 66.67% |
-| ktfmt/format/type/intersections.kt | 0/1 | 75.00% |
 | ktfmt/google/comments.kt | 0/1 | 85.45% |
 | ktfmt/google/comments2.kt | 0/1 | 91.53% |
 | ktfmt/google/forcedBreaksInFunCalls.kt | 0/1 | 88.00% |
@@ -51,7 +47,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/google/redundantTrailingCommas.kt | 0/1 | 83.33% |
 | ktfmt/google/secondaryConstructorNoArgs.kt | 0/1 | 47.06% |
 | ktfmt/google/trailingCommasNotAdded.kt | 0/1 | 88.89% |
-| ktfmt/google/trailingCommasSingleElementLists.kt | 0/1 | 82.61% |
+| ktfmt/google/trailingCommasSingleElementLists.kt | 0/1 | 84.44% |
 | ktfmt/new_codestyle/annotation/AnnotationsEverywhere.kt | 0/1 | 96.97% |
 | ktfmt/new_codestyle/annotation/AnnotationsOnParameters.kt | 0/1 | 82.61% |
 | ktfmt/new_codestyle/annotation/AnnotationsOnTypes.kt | 0/1 | 93.20% |

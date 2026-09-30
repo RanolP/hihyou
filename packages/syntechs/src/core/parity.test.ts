@@ -149,6 +149,8 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
       'val a = "open\nval b = """never closed ${c\nfun g( { else }\n',
       // An import list broken by a statement, an unclosed nested comment, and `in` vs an identifier after a newline.
       "import a\nval x = 1\nimport b\nwhile (x\nin y) {}\n/* /* */",
+      // A `+`, `-` or `[` on the next line starts a statement, but a `->` continues a `when` entry.
+      "fun f() {\n  a\n  + +b\n  c\n  - d\n  e\n  [0, 1,]\n  when (x) {\n    1,\n    -> 2\n    3\n    -> 4\n  }\n}\n",
     ],
   ],
 };

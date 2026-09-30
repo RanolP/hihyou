@@ -310,6 +310,12 @@ const flatTypeList = <O>(node: number, ctx: StreamCtx<O>) => {
 
 /** The rules `when` names in format.ts. */
 export const customs = {
+  /** A prefix operator that would fuse with its operand's own into another token (`+ +a`, `- --a`, `! !a`). */
+  operatorFuses: (node, ctx) => {
+    const t = ctx.tree;
+    const op = t.text(t.child(node, 0));
+    return /^[-+!]+$/.test(op) && t.text(t.child(node, t.count(node) - 1)).startsWith(op.at(-1)!);
+  },
   /**
    * Of a declaration's modifiers: ktfmt breaks the line after a bracketed annotation (`@field:[A B]`), and after the
    * annotations of a property whose accessors follow it on lines of their own.
@@ -520,10 +526,16 @@ const whenEntry =
       t.kindName(n) === "when_condition" &&
       t.text(n) === "" &&
       ctx.leadingComments(n).length + ctx.trailingComments(n).length === 0;
+    // ktfmt drops the trailing comma before the `->`.
+    const beforeArrow = (i: number) => {
+      while (i < kids.length && ctx.isComment(kids[i]!)) i++;
+      return i < kids.length && t.kindName(kids[i]!) === "->";
+    };
     const kept = kids.filter((c, i) =>
       t.kindName(c) === "ERROR"
         ? !recoveredComma(t, c)
-        : !(empty(c) && t.kindName(kids[i - 1]!) === ",") && !(t.kindName(c) === "," && empty(kids[i + 1])),
+        : !(empty(c) && t.kindName(kids[i - 1]!) === ",") &&
+          !(t.kindName(c) === "," && (empty(kids[i + 1]) || beforeArrow(i + 1))),
     );
     if (kept.length === kids.length) return generated?.(node, ctx);
     const tree: FormatTree = Object.assign(Object.create(t) as FormatTree, {

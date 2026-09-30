@@ -261,6 +261,8 @@ export const kotlin = format({
     user_type: () => inOrder(),
     // The grammar hides the `?`, so no rule could print it: the type prints as written.
     nullable_type: () => verbatim,
+    // `T & Any`, and an intersection ktfmt parses, `A & B & C`.
+    not_nullable_type: () => inOrder(space),
     // One the source keeps on one line prints in fmt.ts.
     type_arguments: ($) => typeList($.children),
     type_parameters: ($) => typeList($.children),
@@ -325,11 +327,15 @@ export const kotlin = format({
       either(
         when("annotationHangs"),
         group(inOrder({ join: "line" })),
-        inOrder({
-          join: "gap",
-          hardWhen: { when: when("annotationLineBroken") },
-          tight: { after: ["!", "-", "+", "++", "--"] },
-        }),
+        either(
+          when("operatorFuses"),
+          inOrder(space),
+          inOrder({
+            join: "gap",
+            hardWhen: { when: when("annotationLineBroken") },
+            tight: { after: ["!", "-", "+", "++", "--"] },
+          }),
+        ),
       ),
     postfix_expression: () => inOrder(),
     this_expression: () => inOrder(),

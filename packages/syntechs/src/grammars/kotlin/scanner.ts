@@ -171,22 +171,20 @@ function scanAutomaticSemicolon(lexer: Lexer, valid: Uint8Array): boolean {
     case 60: // <
     case 61: // =
     case 123: // {
-    case 91: // [
     case 40: // (
     case 63: // ?
     case 124: // |
     case 38: // &
     case 47: // /
       return false;
-    // Before `++`, `--` or a signed number, but not a binary `+` or `-`.
+    // Kotlin continues no expression with a binary `+` or `-`, or an index `[`, on the next line: they start a
+    // statement (`+a`, `[0, 1]`). A `->` there continues a `when` entry's conditions.
     case 43: // +
-      lexer.advance(true);
-      if (la(lexer) === 43) return true;
-      return iswdigit(la(lexer));
+    case 91: // [
+      return true;
     case 45: // -
       lexer.advance(true);
-      if (la(lexer) === 45) return true;
-      return iswdigit(la(lexer));
+      return la(lexer) !== 62;
     // Before a unary `!`, but not `!=`.
     case 33:
       lexer.advance(true);
