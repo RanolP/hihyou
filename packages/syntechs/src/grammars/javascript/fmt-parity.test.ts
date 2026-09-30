@@ -69,6 +69,13 @@ const edgeCases: [string, Target, string][] = [
     "js",
     "a[0] // c\n(1).b()\na[0] /* c */\n(1).b()\na // c\n.b().c()\na /* c */ .b().c().d()\na[0](1) // c\n.b()\na.x // c\n(1).b()",
   ],
+  // oxfmt counts the blank lines just before the next statement, so one before a statement's own `;` on a later line
+  // drops, unless that `;` is glued to the next statement as its ASI guard.
+  [
+    "stray-semi-blank-line",
+    "js",
+    "a // c\n\n;\nb\na\n\n;\nc\nd\n\n;[]\ne\n\n; f\ng // c\n// d\n\n;\nh",
+  ],
   ["quotes", "js", `const a = "it's", b = 'say "hi"', c = 'plain';`],
   ["numbers", "js", "x = [0XAB, 1E5, .5, 5., 0.50, 1_000n, 0B11, 0O7];"],
   [

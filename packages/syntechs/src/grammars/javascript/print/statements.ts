@@ -227,11 +227,33 @@ function statementSequence(s: JsStreamCtx, statements: readonly number[]): void 
     if (
       j > i + 1 && !ownLineCommentBefore(js.tree, statements[j - 1] as number, x)
         ? nextLineEmpty(js.tree, statements[j - 1] as number)
-        : isNextLineEmptyAfter(js, x) ||
-          (lastTrailing !== undefined && nextLineEmpty(js.tree, lastTrailing))
+        : semiOnLaterLine(js, x)
+          ? nextLineEmpty(js.tree, x)
+          : isNextLineEmptyAfter(js, x) ||
+            (lastTrailing !== undefined && nextLineEmpty(js.tree, lastTrailing))
     )
       sHardline();
   });
+}
+
+/**
+ * `a // c⏎⏎;⏎b`: a statement's own `;` on a line after its content, no own-line comment between. oxfmt counts the
+ * line breaks just before the next statement, so the blank line before that `;` drops; but a `;` glued to the next
+ * statement (`;[]`) is skipped as its ASI guard, and an own-line comment counts from its own start.
+ */
+function semiOnLaterLine(ctx: JsCtx, n: number): boolean {
+  const t = ctx.tree;
+  const end = contentEnd(ctx, n);
+  const semi = lastLeaf(t, n);
+  const next = nextLeaf(t, semi);
+  return (
+    end !== n &&
+    kind(ctx, semi) === ";" &&
+    src(ctx, semi) !== "" &&
+    t.lf(semi) > 0 &&
+    (next === NO_NODE || !t.adjoins(semi, next)) &&
+    !ownLineCommentBefore(t, semi, end)
+  );
 }
 
 /** Whether an own-line comment lies between `from`'s end and the stray `;` at `semi`, among the `;`s before it. */
