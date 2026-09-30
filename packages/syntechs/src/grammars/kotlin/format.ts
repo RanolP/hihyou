@@ -167,7 +167,8 @@ export const kotlin = format({
     annotation: () => inOrder({ join: "space", tight: { after: ["@", "[", "use_site_target"], before: ["]"] } }),
     use_site_target: () => inOrder(),
 
-    // A line comment after the primary constructor puts the body's `{` on a line of its own.
+    // A line comment after the primary constructor puts the body's `{` on a line of its own. The supertypes hang
+    // off the `:` before the parameters break (see `supertypes` in fmt.ts).
     class_declaration: () =>
       either(
         when("commentedConstructor"),
@@ -176,6 +177,7 @@ export const kotlin = format({
           decl(
             inOrder({
               join: "space",
+              hangAfter: [":"] as never[],
               hardWhen: { before: ["primary_constructor", "class_body"] },
               tight: { before: [...before, "type_parameters"] as never[], after: [...after, "modifiers"] as never[] },
             }),
@@ -183,6 +185,7 @@ export const kotlin = format({
           decl(
             inOrder({
               join: "space",
+              hangAfter: [":"] as never[],
               hardWhen: { before: ["primary_constructor"] },
               tight: { before: [...before, "type_parameters"] as never[], after: [...after, "modifiers"] as never[] },
             }),
@@ -193,6 +196,7 @@ export const kotlin = format({
           decl(
             inOrder({
               join: "space",
+              hangAfter: [":"] as never[],
               hardWhen: { before: ["class_body"] },
               tight: {
                 before: [...before, "type_parameters", "primary_constructor"] as never[],
@@ -205,6 +209,7 @@ export const kotlin = format({
             decl(
               inOrder({
                 join: "space",
+                hangAfter: [":"] as never[],
                 tight: {
                   before: [...before, "type_parameters", "primary_constructor"] as never[],
                   after: [...after, "modifiers"] as never[],
@@ -212,13 +217,13 @@ export const kotlin = format({
                 lineBefore: ["type_constraints"],
               }),
             ),
-            decl(spaced({ tightBefore: ["type_parameters", "primary_constructor"] })),
+            decl(spaced({ tightBefore: ["type_parameters", "primary_constructor"], hangAfter: [":"] })),
           ),
         ),
       ),
-    object_declaration: () => decl(spaced()),
+    object_declaration: () => decl(spaced({ hangAfter: [":"] })),
     object_literal: () => spaced(),
-    companion_object: () => decl(spaced()),
+    companion_object: () => decl(spaced({ hangAfter: [":"] })),
     // ktfmt keeps a blank line the source has after the `{`, as it does in a block (`statements`).
     class_body: ($) =>
       either(
@@ -369,7 +374,7 @@ export const kotlin = format({
           }),
         ),
       ),
-    postfix_expression: () => inOrder(),
+    postfix_expression: () => either(when("operatorFuses"), inOrder(space), inOrder()),
     this_expression: () => inOrder(),
     super_expression: () => inOrder(),
     callable_reference: () => inOrder(),

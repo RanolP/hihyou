@@ -383,11 +383,16 @@ const flatTypeList = <O>(node: number, ctx: StreamCtx<O>) => {
 
 /** The rules `when` names in format.ts. */
 export const customs = {
-  /** A prefix operator that would fuse with its operand's own into another token (`+ +a`, `- --a`, `! !a`). */
+  /**
+   * A prefix or postfix operator that would fuse with its operand's own into another token (`+ +a`, `- --a`,
+   * `! !a`, `a!! !!`).
+   */
   operatorFuses: (node, ctx) => {
     const t = ctx.tree;
-    const op = t.text(t.child(node, 0));
-    return /^[-+!]+$/.test(op) && t.text(t.child(node, t.count(node) - 1)).startsWith(op.at(-1)!);
+    const first = t.text(t.child(node, 0));
+    const last = t.text(t.child(node, t.count(node) - 1));
+    if (t.kindName(node) === "postfix_expression") return /^[-+!]+$/.test(last) && first.endsWith(last[0]!);
+    return /^[-+!]+$/.test(first) && last.startsWith(first.at(-1)!);
   },
   /**
    * Of a declaration's modifiers: ktfmt breaks the line after a bracketed annotation (`@field:[A B]`), and after the
@@ -437,13 +442,17 @@ export const customs = {
     if (binaryOperand(kind) || kind === "jump_expression" || kind === "lambda_literal") return false;
     return !t.adjoins(t.child(node, 0), operand);
   },
-  /** An item of `statements` right after an annotation the grammar made a statement, on the annotation's line. */
+  /**
+   * An item of `statements` right after an annotation the grammar made a statement, on the annotation's line, or
+   * after a label, the statement it labels (`loop@ for`), which ktfmt always joins to it.
+   */
   annotatedOnItsLine: (node, ctx) => {
     const t = ctx.tree;
     const p = t.parent(node);
     let prev = -1;
     for (let i = 0; i < t.count(p) && t.child(p, i) !== node; i++)
       if (!ctx.isComment(t.child(p, i))) prev = t.child(p, i);
+    if (prev !== -1 && t.kindName(prev) === "label") return true;
     return prev !== -1 && t.kindName(prev) === "annotation" && !newlineBetween(t, firstLeaf(t, prev), firstLeaf(t, node));
   },
   /**
@@ -592,6 +601,97 @@ const statements =
   };
 
 /**
+ * A class's or object's supertypes as ktfmt's visitClassOrObject lays them out: they hang off the `:` (the rule's
+ * `hangAfter`), and once they do not fit on the line they hang on, each goes on a line of its own. The generated
+ * rule sees only the first, which prints them all.
+ */
+const supertypes =
+  <O>(rule: StreamRule<O> | undefined): StreamRule<O> =>
+  (node, ctx) => {
+    const t = ctx.tree;
+    const kids = Array.from({ length: t.count(node) }, (_, i) => t.child(node, i));
+    const from = kids.findIndex((c) => t.kindName(c) === "delegation_specifier");
+    const to = kids.findLastIndex((c) => t.kindName(c) === "delegation_specifier");
+    if (from === to) return rule?.(node, ctx);
+    const run = kids.slice(from, to + 1).filter((c) => !ctx.isComment(c));
+    const kept = kids.filter((_, i) => i <= from || i > to);
+    const first = kids[from]!;
+    const tree: FormatTree = Object.assign(Object.create(t) as FormatTree, {
+      count: (n: number) => (n === node ? kept.length : t.count(n)),
+      child: (n: number, i: number) => (n === node ? kept[i]! : t.child(n, i)),
+    });
+    rule?.(
+      node,
+      Object.assign(Object.create(ctx) as typeof ctx, {
+        tree,
+        print: (n: number, args?: PrintArgs) => {
+          if (n !== first) return ctx.print(n, args);
+          open(GROUP);
+          for (const c of run) {
+            if (t.kindName(c) === "delegation_specifier") ctx.print(c);
+            else {
+              sToken(c, t.text(c));
+              sLine(0);
+            }
+          }
+          close();
+        },
+      }),
+    );
+  };
+
+/** A range never breaks at its `..`, and the operand after it breaks one indent deeper than the one before it. */
+const rangeExpression =
+  <O>(rule: StreamRule<O> | undefined): StreamRule<O> =>
+  (node, ctx) => {
+    const right = ctx.tree.child(node, ctx.tree.count(node) - 1);
+    rule?.(
+      node,
+      Object.assign(Object.create(ctx) as typeof ctx, {
+        print: (n: number, args?: PrintArgs) => {
+          if (n !== right) return ctx.print(n, args);
+          open(INDENT);
+          ctx.print(n, args);
+          close();
+        },
+      }),
+    );
+  };
+
+/** Whether the text of `parent` that no child covers holds a `;` between its children `a` and `b`. */
+const semicolonBetween = (t: FormatTree, parent: number, a: number, b: number) => {
+  const text = t.text(parent);
+  let at = 0;
+  let after = -1;
+  for (let i = 0; i < t.count(parent); i++) {
+    const c = t.child(parent, i);
+    const s = t.text(c);
+    const start = text.indexOf(s, at);
+    if (after !== -1 && text.slice(after, start).includes(";")) return true;
+    if (c === b) return false;
+    at = start + s.length;
+    if (after !== -1 || c === a) after = at;
+  }
+  return false;
+};
+
+/**
+ * A companion object with no name keeps a `;` the source writes after it where another member follows (ktfmt's
+ * RedundantSemicolonDetector). The grammar hides the `;` in the class body.
+ */
+const companionObject =
+  <O>(rule: StreamRule<O> | undefined): StreamRule<O> =>
+  (node, ctx) => {
+    rule?.(node, ctx);
+    const t = ctx.tree;
+    for (let i = 0; i < t.count(node); i++) if (t.kindName(t.child(node, i)) === "type_identifier") return;
+    const body = t.parent(node);
+    const items = ctx.items(body);
+    const next = items[items.indexOf(node) + 1];
+    if (next !== undefined && semicolonBetween(t, body, node, next)) sToken(node, ";", true);
+  };
+
+/**
  * A body that is no block and no `else if` (ktfmt's visitIf): it hangs off its keyword in a group of its own,
  * breaking onto an indented line when it does not fit or holds a line break (INDEPENDENT).
  */
@@ -693,6 +793,9 @@ function withChains<O>(stream: StreamRules<O>): StreamRules<O> {
     rules.set(kind, chained(stream.rules.get(kind), hugsDeclaration));
   rules.set("statements", statements(stream.rules.get("statements")));
   rules.set("if_expression", ifExpression);
+  rules.set("companion_object", companionObject(supertypes(stream.rules.get("companion_object"))));
+  for (const kind of ["class_declaration", "object_declaration"]) rules.set(kind, supertypes(stream.rules.get(kind)));
+  rules.set("range_expression", rangeExpression(stream.rules.get("range_expression")));
   rules.set("string_literal", trimmedStrings(stream.rules.get("string_literal")));
   rules.set("lambda_literal", lambdas(stream.rules.get("lambda_literal")));
   rules.set("lambda_parameters", lambdaParameters);
@@ -726,9 +829,17 @@ function withChains<O>(stream: StreamRules<O>): StreamRules<O> {
       );
     });
   }
+  const printComment = stream.printComment;
   return {
     ...stream,
     rules,
+    // ktfmt's wrapLineComments puts a space after the slashes of a line comment (`//foo` -> `// foo`), but before
+    // `noinspection`, which IntelliJ reads only unspaced.
+    printComment: (c, ctx) => {
+      const text = ctx.tree.text(c);
+      if (!ctx.isLineComment(c) || !/^\/\/+(?!noinspection)[^\s/]/.test(text)) return printComment?.(c, ctx);
+      sToken(c, text.trimEnd().replace(/^\/\/+/, "$& "));
+    },
     rewritesComments: true,
     printsOwnComments: commentedBeforeBody,
     recovered: (error, t) =>
