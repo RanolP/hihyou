@@ -1150,6 +1150,61 @@ const oxfmtChainHead = (c: CommentContext<JsOptions>): CommentTarget | undefined
   return head !== following ? { node: head, as: "leading" } : undefined;
 };
 
+// Where parentheses around a right-most value print nothing, so a comment inside them is past the value's end.
+const BARE_RIGHT = new Set([
+  "assignment_expression",
+  "augmented_assignment_expression",
+  "variable_declarator",
+  "arrow_function",
+]);
+const ENDS_WITH_VALUE = new Set(["expression_statement", "lexical_declaration", "variable_declaration"]);
+
+/**
+ * `a = (b /* c *\/);`: oxfmt's AST has no parentheses, so a block comment before a dropped `)` that closes the
+ * statement's last value comes after that value, and oxfmt prints it past the statement's `;`: `a = b; /* c *\/`.
+ */
+const oxfmtAfterDroppedParen = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  if (
+    c.options.compat !== "oxfmt" ||
+    !c.text.startsWith("/*") ||
+    c.preceding === undefined ||
+    c.following !== undefined
+  )
+    return;
+  let close: number | undefined = nextLeaf(c.tree, c.comment);
+  while (close !== undefined && kind(c, close) === "comment") close = nextLeaf(c.tree, close);
+  const pe = close === undefined ? undefined : parent(c, close);
+  if (
+    kind(c, close) !== ")" ||
+    pe === undefined ||
+    kind(c, pe) !== "parenthesized_expression" ||
+    isCastParen(c, pe)
+  )
+    return;
+  let node = outer(c, pe);
+  const holder = parent(c, node);
+  if (
+    holder === undefined ||
+    !BARE_RIGHT.has(kind(c, holder)) ||
+    lastCode(c, holder) !== node ||
+    // Parentheses that print again keep it: `x = (a, b /* c */)`, `() => (a = b /* c */)`.
+    kind(c, unparen(c, node)) === "sequence_expression" ||
+    (kind(c, unparen(c, node)) === "assignment_expression" &&
+      (kind(c, holder) === "arrow_function" || kind(c, holder) === "variable_declarator"))
+  )
+    return;
+  for (let up = parent(c, node); up !== undefined; node = up, up = parent(c, node)) {
+    if (ENDS_WITH_VALUE.has(kind(c, up))) {
+      const rest = codeAfter(c, up, node);
+      return rest.length === 0 || (rest.length === 1 && kind(c, rest[0]) === ";")
+        ? { node: up, as: "trailing" }
+        : undefined;
+    }
+    if (lastCode(c, up) !== node) return;
+  }
+  return;
+};
+
 // In prettier's order within each placement: typeCast and conditional run early, nestedConditional last.
 const handlers = [
   oxfmtTypeAliasHead,
@@ -1194,7 +1249,15 @@ const handlers = [
 
 export const handleComment: CommentHandler<JsOptions> = (original) => {
   const c = outOfTypeParens(original);
-  for (const h of [oxfmtForInHead, afterOpenParen, beforeStatementCloseParen, oxfmtJumpSemicolon, besideEmptyStatement, ...handlers]) {
+  for (const h of [
+    oxfmtForInHead,
+    oxfmtAfterDroppedParen,
+    afterOpenParen,
+    beforeStatementCloseParen,
+    oxfmtJumpSemicolon,
+    besideEmptyStatement,
+    ...handlers,
+  ]) {
     const target = h(c);
     if (target) return target;
   }
