@@ -96,7 +96,8 @@ export const css = format({
     to: () => text("lower"),
 
     // A value postcss-value-parser fails on, or oxfmt keeps raw (fmt.ts's `unparsedValue`), as written; an IE
-    // filter's (`progid:...`) value, one space wherever the source has any gap (prettier's raw value); else the comma
+    // filter's (`progid:...`) value, one space wherever the source has any gap (prettier's raw value); a normal
+    // property's value oxc-css-parser reads as raw tokens, as fmt.ts's `colonThenRawTokens` lays them out; else the comma
     // list, a grid template's keeping its lines, and an empty value's gap as written (fmt.ts's `declarationEnd`). The
     // comments around the `:` print as postcss's `between` (fmt.ts's `declarationColon`).
     declaration: ($) => [
@@ -112,6 +113,9 @@ export const css = format({
             verbatim: { except: ["property_name", "important"] },
             skip: [";"],
           }),
+          either(
+            when("rawTokens"),
+            [$.children.at(0).andThen((p) => p), tok(":").via("colonThenRawTokens")],
           [
             $.children.at(0).andThen((p) => p),
             tok(":").via("declarationColon"),
@@ -138,6 +142,7 @@ export const css = format({
               }),
             ),
           ],
+          ),
         ),
       ),
       tok(";").via("declarationEnd"),
@@ -186,21 +191,12 @@ export const css = format({
         adjacent(),
       ),
     // A function's as written inside `url()`, a space wherever the source has a gap (postcss-value-parser's one
-    // word, trimmed); in a value oxfmt reads as raw tokens (fmt.ts's `rawArguments`), a space after each comma and
-    // never broken; else broken inside the parentheses: a function's as words, a pseudo-class's as selectors.
+    // word, trimmed); else broken inside the parentheses: a function's as words, a pseudo-class's as selectors.
     arguments: () =>
       either(
         all(parentIs("call_expression"), ancestor("call_expression", { holds: calledAs("url") })),
         inOrder({ join: "gap", tight: { after: ["("], before: [")"] } }),
         either(
-          when("rawArguments"),
-          inOrder({
-            join: "gap",
-            tight: { after: ["("], before: [")", ","] },
-            spaceWhen: { after: [","] },
-            verbatim: { except: ["call_expression", "parenthesized_value"] },
-          }),
-          either(
           parentIs("call_expression"),
           grpParen(
             splitOn(",", {
@@ -217,7 +213,6 @@ export const css = format({
               wrapItem: when("longSelector"),
               layout: { between: "line" },
             }),
-          ),
           ),
         ),
       ),

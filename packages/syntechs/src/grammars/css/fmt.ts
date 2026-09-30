@@ -195,7 +195,8 @@ export const customs = {
   /** A declaration with nothing between its `:` and its `;` (`--empty:;`). */
   emptyValue: (node, ctx) => code(node, ctx).every((c) => !ctx.tree.named(c) || kind(c, ctx) === "property_name"),
   unparsedValue: (node, ctx) => unparsedUrl(node, ctx) || rawValue(node, ctx),
-  rawArguments: (node, ctx) => rawArguments(node, ctx.tree),
+  /** A normal property's value oxc-css-parser reads as raw tokens (`oxcRaw`), which `colonThenRawTokens` prints. */
+  rawTokens: (node, ctx) => !customName(node, ctx.tree) && oxcRaw(node, ctx.tree),
   /** A media query list holding a comment, which `mediaQueries` prints as postcss-media-query-parser splits it. */
   mediaComments: (node, ctx) => mediaAtoms(node, ctx).some((c) => isComment(c, ctx)),
   ownWord: (node, ctx) => ownWord(node, ctx),
@@ -698,9 +699,7 @@ export function important(node: number): void {
  * comment is a statement of its own: one that starts the line the statement before it ends trails that statement.
  */
 const handleComment: CommentHandler<CssOptions> = ({ tree, enclosing, preceding, following, placement, text }) => {
-  const ownComments =
-    tree.kindName(enclosing) === "import_statement" ||
-    (valueArguments(tree, enclosing) && !rawArguments(enclosing, tree));
+  const ownComments = tree.kindName(enclosing) === "import_statement" || valueArguments(tree, enclosing);
   if ((ownComments && text.startsWith("/*")) || layerList(enclosing, tree))
     return { node: enclosing, as: "dangling" };
   const operand = mathOperand(tree, enclosing);
@@ -743,7 +742,7 @@ function mathOperand(tree: FormatTree, node: number): number | undefined {
     const up = tree.parent(operand);
     if (tree.kindName(up) === "arguments") {
       const math = mathFunctions.has(tree.text(tree.child(tree.parent(up), 0)).toLowerCase());
-      return math && valueArguments(tree, up) && !rawArguments(up, tree) ? operand : undefined;
+      return math && valueArguments(tree, up) ? operand : undefined;
     }
     operand = up;
   }
@@ -916,20 +915,6 @@ const customName = (decl: number, t: FormatTree) => /^(\$|--)/.test(t.text(t.chi
 
 const rawValue = (decl: number, ctx: SCtx): boolean => customName(decl, ctx.tree) && oxcRaw(decl, ctx.tree);
 
-/**
- * A function's arguments in another property's raw value (`oxcRaw`): oxfmt lays the value's tokens out as one fill,
- * a comma followed by a space no line may break, so the arguments never break as a group of their own.
- */
-function rawArguments(node: number, t: FormatTree): boolean {
-  if (t.kindName(node) !== "arguments" || t.kindName(t.parent(node)) !== "call_expression") return false;
-  for (let up = t.parent(node); up !== NO_NODE; up = t.parent(up)) {
-    const k = t.kindName(up);
-    if (k === "declaration") return !customName(up, t) && oxcRaw(up, t);
-    if (k === "block" || k === "at_rule" || k === "postcss_statement") return false;
-  }
-  return false;
-}
-
 /** The source between `prev` and `c`, less any whitespace ending a line. */
 function gapBefore(prev: number, c: number, t: FormatTree): string {
   if (t.lf(c) > 0) return "\n".repeat(t.lf(c)) + " ".repeat(t.col(c));
@@ -957,6 +942,234 @@ export function colonThenSource(colon: number | undefined, node: number, ctx: SC
     sText(" ");
     ctx.print(c);
   }
+}
+
+/**
+ * One token of the raw run oxc-css-parser falls back to for a normal property's value (`rawTokens`): its CSS token
+ * kind (`ident`, `number`, `dimension`, `percentage`, `hash`, `string`, `url`, or the punctuation itself), its
+ * text, whether it adjoins the token before, whether a line break precedes it, and the comments before it.
+ */
+interface RawToken {
+  readonly kind: string;
+  readonly text: string;
+  readonly node: number;
+  readonly glued: boolean;
+  readonly lf: boolean;
+  readonly comments: number[];
+}
+
+type RawSeparator = "tight" | "space" | "line" | "hard";
+
+const nameChar = String.raw`(?:[\w\u0080-￿-]|\\.)`;
+const nameStart = String.raw`(?:[a-zA-Z_\u0080-￿]|\\.)`;
+/** CSS Syntax's tokens as a leaf's text holds them: a number and its unit, an ident, a hash, else one character. */
+const rawTokenPattern = new RegExp(
+  String.raw`(?<number>[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?)(?:(?<percentage>%)|(?<unit>-?(?:-|${nameStart})${nameChar}*))?` +
+    String.raw`|(?<ident>-?(?:-|${nameStart})${nameChar}*)|(?<hash>#${nameChar}+)|(?<space>\s+)|(?<char>[^])`,
+  "gy",
+);
+
+/** The raw tokens of a normal property's value nodes, and the comments after the last. */
+function rawTokens(nodes: number[], ctx: SCtx): { tokens: RawToken[]; tail: number[] } {
+  const t = ctx.tree;
+  const tokens: RawToken[] = [];
+  let comments: number[] = [];
+  let prev = -1;
+  let lf = false;
+  const push = (kind: string, text: string, node: number, glued: boolean) => {
+    tokens.push({ kind, text, node, glued, lf, comments });
+    comments = [];
+    lf = false;
+  };
+  const visit = (n: number): void => {
+    const k = kind(n, ctx);
+    const glued = prev !== -1 && !isComment(prev, ctx) && t.adjoins(prev, n);
+    if (t.lf(n) > 0) lf = true;
+    if (isComment(n, ctx)) comments.push(n);
+    else if (k === "call_expression" && /^url$/i.test(t.text(t.child(n, 0)))) push("url", "", n, glued);
+    else if (k === "string_value") push("string", t.text(n), n, glued);
+    else if (k === "plain_value") push("ident", t.text(n), n, glued);
+    else if (t.count(n) > 0 && !["integer_value", "float_value", "color_value"].includes(k))
+      return children(n, t).forEach(visit);
+    else {
+      let joined = glued;
+      for (const m of t.text(n).matchAll(rawTokenPattern)) {
+        const g = m.groups as Record<string, string | undefined>;
+        if (g.space !== undefined) {
+          joined = false;
+          continue;
+        }
+        const kind =
+          g.number !== undefined
+            ? g.percentage !== undefined
+              ? "percentage"
+              : g.unit !== undefined
+                ? "dimension"
+                : "number"
+            : g.ident !== undefined
+              ? "ident"
+              : g.hash !== undefined
+                ? "hash"
+                : m[0];
+        push(kind, m[0], n, joined);
+        joined = true;
+      }
+    }
+    prev = n;
+  };
+  nodes.forEach(visit);
+  return { tokens, tail: comments };
+}
+
+/** Oxc's `base_separator` between raw tokens `g[i - 1]` and `g[i]` of a comma group `g`, and its grid override. */
+function rawSeparator(g: RawToken[], i: number, font: boolean, grid: boolean): RawSeparator {
+  const sep = baseRawSeparator(g, i, font);
+  if (grid && (sep === "line" || sep === "space")) return (g[i] as RawToken).lf ? "hard" : "space";
+  return sep;
+}
+
+function baseRawSeparator(g: RawToken[], i: number, font: boolean): RawSeparator {
+  const prev = g[i - 1] as RawToken;
+  const curr = g[i] as RawToken;
+  const is = (x: RawToken | undefined, kinds: string[]) => x !== undefined && kinds.includes(x.kind);
+  if (is(curr, [":", "}", ",", ")", "]", ";"]) || is(prev, ["{", "(", "["])) return "tight";
+  if (is(prev, [":", ","])) return "space";
+  if (curr.kind === "*" || prev.kind === "*") return "line";
+  if ((g[0] as RawToken).kind === "/" && curr.glued) return "tight";
+  if (font) {
+    const fontSize = (x: RawToken | undefined) => is(x, ["number", "dimension", "percentage", ")"]);
+    if (curr.kind === "/" && curr.glued && fontSize(prev)) return "tight";
+    if (prev.kind === "/" && prev.glued && fontSize(g[i - 2])) return "tight";
+  }
+  const wordish = (x: RawToken | undefined) => is(x, ["ident", ")"]);
+  if (curr.kind === "/") return curr.glued && !wordish(g[i + 1]) && !wordish(prev) ? "tight" : "line";
+  if (prev.kind === "/") return curr.glued && !wordish(curr) && !wordish(g[i - 2]) ? "tight" : "line";
+  if (curr.glued) return "tight";
+  return is(curr, ["+", "-", "*", "%", "/"]) ? "space" : "line";
+}
+
+function printRawToken(token: RawToken, ctx: SCtx): void {
+  for (const c of token.comments) {
+    ctx.comment(c);
+    sText(" ");
+  }
+  if (token.kind === "url") ctx.print(token.node);
+  else sToken(token.node, token.text);
+}
+
+/**
+ * Oxc's `write_comma_group` over raw tokens: runs of tokens no line may split, packed in a fill, a comment between
+ * two runs an entry of its own, and the comments after the value (`tail`) last.
+ */
+function rawGroup(g: RawToken[], tail: number[], font: boolean, grid: boolean, ctx: SCtx): void {
+  const first = g[0];
+  if (first === undefined) return tail.forEach((c) => ctx.comment(c));
+  if (g.length === 1 && tail.length === 0) return printRawToken(first, ctx);
+  for (const c of first.comments) {
+    ctx.comment(c);
+    sText(" ");
+  }
+  const seps = g.map((_, i) => (i === 0 ? "line" : rawSeparator(g, i, font, grid)));
+  let entries = 0;
+  const entry = (sep: RawSeparator, print: () => void) => {
+    if (entries++ > 0) {
+      if (sep === "hard") sHardline();
+      else sLine(0);
+    }
+    open(FILL_ITEM);
+    print();
+    close();
+  };
+  open(GROUP);
+  open(INDENT);
+  if (seps.some((s, i) => s === "hard" && (g[i] as RawToken).comments.length === 0)) sHardline();
+  open(FILL);
+  for (let i = 0; i < g.length; ) {
+    let end = i + 1;
+    while (end < g.length && (seps[end] === "tight" || seps[end] === "space")) end++;
+    const start = i;
+    const head = g[start] as RawToken;
+    if (start > 0) for (const c of head.comments) entry("line", () => ctx.comment(c));
+    entry(seps[start] as RawSeparator, () => {
+      for (let j = start; j < end; j++) {
+        if (j > start && seps[j] === "space") sText(" ");
+        const token = g[j] as RawToken;
+        if (j === start) printRawToken({ ...token, comments: [] }, ctx);
+        else printRawToken(token, ctx);
+      }
+    });
+    i = end;
+  }
+  for (const c of tail) entry("line", () => ctx.comment(c));
+  close();
+  close();
+  close();
+}
+
+/**
+ * The `:` of a normal property's value oxc-css-parser reads as raw tokens (`rawTokens`), then that value as oxc's
+ * `write_declaration_value` lays it out: its top-level comma groups, each a fill of its tokens, one per line under
+ * the name when there are several.
+ */
+export function colonThenRawTokens(colon: number | undefined, node: number, ctx: SCtx): void {
+  const t = ctx.tree;
+  declarationColon(colon, node, ctx);
+  const parts = children(node, t);
+  const end = (c: number) => [";", "important", "ERROR"].includes(kind(c, ctx));
+  const from = colon === undefined ? 1 : parts.indexOf(colon) + 1;
+  const value = parts.slice(from, parts.findIndex((c, i) => i >= from && end(c)) >>> 0);
+  // The comments before the value are postcss's `between`, which `declarationColon` printed.
+  while (value.length > 0 && isComment(value[0] as number, ctx)) value.shift();
+  const { tokens, tail } = rawTokens(value, ctx);
+  const groups: { tokens: RawToken[]; comma?: RawToken }[] = [{ tokens: [] }];
+  let depth = 0;
+  for (const token of tokens) {
+    const group = groups.at(-1) as { tokens: RawToken[]; comma?: RawToken };
+    if (depth === 0 && token.kind === ",") {
+      group.comma = token;
+      groups.push({ tokens: [] });
+      continue;
+    }
+    if ("([{".includes(token.kind)) depth++;
+    else if (")]}".includes(token.kind)) depth--;
+    group.tokens.push(token);
+  }
+  if (groups.length > 1 && (groups.at(-1) as { tokens: RawToken[] }).tokens.length === 0) groups.pop();
+  const prop = t.text(parts[0] as number).toLowerCase();
+  const font = prop === "font";
+  const grid = prop === "grid" || prop.startsWith("grid-template");
+  if (groups.length === 1) {
+    sText(" ");
+    rawGroup((groups[0] as { tokens: RawToken[] }).tokens, tail, font, grid, ctx);
+  } else rawGroups(groups, tail, font, grid, ctx);
+  // `!important` and Sass flags (`sassFlags`) one space after the value.
+  for (const c of parts.slice(from).filter((c) => kind(c, ctx) === "important" || kind(c, ctx) === "ERROR")) {
+    sText(" ");
+    ctx.print(c);
+  }
+}
+
+function rawGroups(
+  groups: { tokens: RawToken[]; comma?: RawToken }[],
+  tail: number[],
+  font: boolean,
+  grid: boolean,
+  ctx: SCtx,
+): void {
+  open(INDENT);
+  groups.forEach((g, i) => {
+    sHardline();
+    const last = i === groups.length - 1;
+    rawGroup(g.tokens, last ? tail : [], font, grid, ctx);
+    if (!last && g.comma !== undefined) {
+      for (const c of g.comma.comments) {
+        sText(" ");
+        ctx.comment(c);
+      }
+      sToken(g.comma.node, ",");
+    }
+  });
+  close();
 }
 
 /** A query's words where prettier reads it as a value (`@import`'s media, `@supports`), `and`/`not` chains flattened. */
@@ -1202,6 +1415,7 @@ export const handWritten = {
   declarationColon,
   declarationEnd,
   colonThenSource,
+  colonThenRawTokens,
   importStatement,
   mediaQueries,
   supportsValue,

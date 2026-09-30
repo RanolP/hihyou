@@ -136,6 +136,12 @@ const edgeCases: [string, string][] = [
     "math-operand-comment",
     "a{b:calc( (/* c */ 1px) );c:max((/* c */ 1px), 2px);d:calc((1px) /* d */ + (/* c */ 2px));--x:calc(1px /* c */ + 2px)}",
   ],
+  // A raw value (one oxc-css-parser rejects) broke before each function and kept function arguments on one line;
+  // oxfmt fills its tokens across the arguments too, breaks after each top-level comma, and prints tokens verbatim.
+  [
+    "raw-value-fill",
+    "a{b: x bar(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb cccccccccccccccccccccc c) foo((1));c: foo(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, (1) cccccccccccccccccccccc);d: foo((1)), bar;e: .50em 1E3 RED 'x' (1)}",
+  ],
   // An at-rule's params print as raw text, which once dropped the comments attached to them.
   ["at-rule-param-comment", "@counter-style /* c */ thumbs {}"],
   [
