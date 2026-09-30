@@ -18,6 +18,7 @@ import { grammar } from "./bundle.js";
 import { binary, binaryKinds } from "./binary.js";
 import { chained } from "./chain.js";
 import { enumBody } from "./enum-body.js";
+import { property, typedName } from "./property.js";
 import { lambdaParameters, lambdas } from "./lambda.js";
 import * as gen from "./fmt.gen.js";
 import { language } from "./index.js";
@@ -609,5 +610,13 @@ export const kotlin: Language<KotlinOptions> = {
     atoms: ["string_literal", "character_literal"],
   }),
   ignoresComment: endsImport,
-  stream: withChains(gen.kotlin({ ...customs, imports, enumBody })),
+  stream: withChains(
+    gen.kotlin({
+      ...customs,
+      imports,
+      enumBody,
+      typedName,
+      property: property(customs.huggedChain, customs.backingField),
+    }),
+  ),
 };

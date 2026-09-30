@@ -110,18 +110,6 @@ const decl = <T>(body: T) => group(body);
 // The grammar makes a property's accessors and explicit backing field its siblings; they continue it.
 const follow = any(kindIs("getter", "setter"), when("backingField"));
 
-const property = (skip: readonly string[]) =>
-  decl(
-    inOrder({
-      join: "space",
-      tight: { before: [...before, ":"] as never[], after: [...after, "modifiers"] as never[] },
-      skip: skip as never[],
-      hangAfter: ["="],
-      hug: when("huggedChain"),
-      lineBefore: ["getter", "setter"],
-    }),
-  );
-
 const ctorLine = either(when("commentedConstructor"), [], line);
 
 export const kotlin = format({
@@ -258,11 +246,11 @@ export const kotlin = format({
     parameter_modifier: () => inOrder(),
     function_body: () => spaced({ braces: true, hang: true, hug: "huggedChain" }),
     anonymous_function: () => spaced({ tightBefore: [":"] }),
-    // An explicit backing field the grammar recovers as a property prints without the `val` it lacks.
-    property_declaration: () => either(when("backingField"), property(["binding_pattern_kind"]), property([])),
+    // A property breaks after its type's `:` as ktfmt does (property.ts).
+    property_declaration: () => custom("property"),
     // `by lazy { }`: the delegate hangs off `by` as an initializer hangs off `=`.
     property_delegate: () => inOrder({ join: "space", hangAfter: ["by"], hug: when("huggedChain") }),
-    variable_declaration: () => spaced({ tightBefore: [":"] }),
+    variable_declaration: () => custom("typedName"),
     // ktfmt keeps a written trailing comma in a destructuring or an index, and breaks the list around it.
     multi_variable_declaration: ($) =>
       either(when("commaWritten"), grpParen(sepBy(",", $.children, { trailing: true })), adjacent),
