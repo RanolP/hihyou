@@ -50,6 +50,13 @@ const edgeCases: [string, Target, string][] = [
   ["empty-statement-list", "js", "let a = 1;;\n\n\n\nlet b = 2"],
   // An array keeps the blank line after an item's comma.
   ["blank-after-comma", "js", "y = [1\n,\n\n2];"],
+  // A blank line after an item's comma breaks an array and stays; one between an item and its comma goes, in an
+  // object too, but one before an own-line comment there stays.
+  [
+    "blank-after-comma-breaks",
+    "js",
+    `x = [${long("a")}\n,\n\nb, c\n\n,d];\nz = { ${long("a")}\n,\n\nb, c\n\n,d };\nf([a,\n\nb]);\nw = {a\n\n// c\n,b};`,
+  ],
   ["quotes", "js", `const a = "it's", b = 'say "hi"', c = 'plain';`],
   ["numbers", "js", "x = [0XAB, 1E5, .5, 5., 0.50, 1_000n, 0B11, 0O7];"],
   [
@@ -249,14 +256,6 @@ describe("the fetched JS/TSX corpus keeps its count of chunks byte-identical to 
 
 // Target, input, then today's output under the defaults, which differs from oxfmt's.
 const divergences: [string, Target, string, string][] = [
-  // oxfmt keeps the blank line after an item's comma in an array, and breaks the array for it; in an object it
-  // keeps the one after the item, where syntechs keeps the one before the next.
-  [
-    "blank-after-comma",
-    "js",
-    `x = [${long("a")}\n,\n\nb, c\n\n,d];\nz = { ${long("a")}\n,\n\nb, c\n\n,d };`,
-    `x = [${long("a")}, b, c, d];\nz = {\n  ${long("a")},\n  b,\n  c,\n\n  d,\n};\n`,
-  ],
   // Tree-sitter leaves the `;` after a comment's line break a statement of its own; oxfmt keeps the blank line
   // after a stray `;` too.
   [

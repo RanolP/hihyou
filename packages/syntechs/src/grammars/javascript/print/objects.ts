@@ -1,10 +1,11 @@
 // Prettier's object, array, property and key printers (print/object.js, array.js, property.js, key.js) and
 // printMethod (print/function.js).
 
+import { NO_NODE } from "../../../core/arena.js";
 import type { CustomRule } from "../../../fmt/dsl/runtime.js";
 import type { StreamCtx, StreamRule } from "../../../fmt/stream-format.js";
 import { lfAfter, newlineBetween, nextLineEmpty } from "../../../fmt/text.js";
-import { type FormatTree, firstLeaf } from "../../../fmt/tree.js";
+import { type FormatTree, firstLeaf, nextLeaf } from "../../../fmt/tree.js";
 import {
   BROKEN,
   close,
@@ -242,6 +243,17 @@ function sDanglingCommentsInList(sctx: StreamCtx<JsOptions>, n: number): void {
   else sLine(SOFT);
 }
 
+/**
+ * oxfmt's blank line between two items of a list: one after the comma, or one before an own-line comment that sits
+ * between the item and its comma. A blank line between the item and a bare comma is dropped.
+ */
+function blankBetween(tree: FormatTree, item: number, comma: number | undefined): boolean {
+  const next = nextLeaf(tree, item);
+  const t = next === comma || next === NO_NODE ? "" : tree.text(next);
+  if ((t.startsWith("//") || t.startsWith("/*")) && tree.lf(next) >= 2) return true;
+  return nextLineEmpty(tree, comma ?? item);
+}
+
 /** Prettier's printObject, for object literals and patterns. */
 const objectCustom: CustomRule<JsOptions> = (n, sctx) => {
   const { js: ctx } = jsCtx(sctx);
@@ -297,9 +309,10 @@ const objectCustom: CustomRule<JsOptions> = (n, sctx) => {
     children.forEach((c, i) => {
       if (i > 0) {
         const previous = children[i - 1] as number;
-        tok(ctx, commaAfter(ctx, n, previous));
+        const comma = commaAfter(ctx, n, previous);
+        tok(ctx, comma);
         sLine(0);
-        if (nextLineEmpty(ctx.tree, previous)) sHardline();
+        if (blankBetween(ctx.tree, previous, comma)) sHardline();
       }
       sctx.print(c);
     });
@@ -448,9 +461,9 @@ const arrayCustom: StreamRule<JsOptions> = (n, sctx) => {
       close();
     }
   };
-  // Unlike objects and argument lists, prettier's array measures the blank line after an element's comma.
-  const blankAfter = (comma: number | undefined) =>
-    comma !== undefined && nextLineEmpty(ctx.tree, comma);
+  // A blank line between elements breaks the array, as it does an object.
+  const blankAfter = (element: number, comma: number | undefined) =>
+    comma !== undefined && blankBetween(ctx.tree, element, comma);
   tok(ctx, openBracket);
   open(INDENT);
   sLine(SOFT);
@@ -465,7 +478,7 @@ const arrayCustom: StreamRule<JsOptions> = (n, sctx) => {
       close();
       if (!isLast) {
         const next = elements[i + 1]?.element;
-        if (element !== undefined && blankAfter(comma)) {
+        if (element !== undefined && blankAfter(element, comma)) {
           sHardline();
           sHardline();
         } else if (
@@ -486,8 +499,10 @@ const arrayCustom: StreamRule<JsOptions> = (n, sctx) => {
       }
       if (i < elements.length - 1) {
         tok(ctx, comma);
-        sLine(0);
-        if (element !== undefined && blankAfter(comma)) sLine(SOFT);
+        if (element !== undefined && blankAfter(element, comma)) {
+          sHardline();
+          sHardline();
+        } else sLine(0);
       }
     });
     trailingComma();
