@@ -595,7 +595,11 @@ const propertySignatureColon = (c: CommentContext<JsOptions>): CommentTarget | u
   const signature = parent(c, enclosing);
   if (signature === undefined || kind(c, signature) !== "property_signature") return;
   const type = c.following;
-  if (type !== undefined && (kind(c, type) === "union_type" || kind(c, type) === "intersection_type"))
+  // oxfmt keeps it after the `:`, above any type.
+  if (
+    type !== undefined &&
+    (c.options.compat === "oxfmt" || kind(c, type) === "union_type" || kind(c, type) === "intersection_type")
+  )
     return { node: type, as: "leading" };
   const name = field(c, signature, "name");
   if (name === undefined) return;

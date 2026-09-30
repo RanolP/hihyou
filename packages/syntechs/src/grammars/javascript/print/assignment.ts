@@ -1,6 +1,8 @@
 // Prettier's assignment layouts (print/assignment.js): how `left = right`, a declarator, an object property
 // and a class property break.
 
+import { NO_NODE } from "../../../core/arena.js";
+import { nextLeaf } from "../../../fmt/tree.js";
 import { textWidth } from "../../../fmt/width.js";
 import {
   capture,
@@ -24,6 +26,7 @@ import { printString } from "../../../fmt/dsl/normalizers.js";
 import { role } from "./parens.js";
 import { shouldHugUnionType, unparenType } from "./types.js";
 import {
+  anon,
   CF,
   callArguments,
   callee,
@@ -37,6 +40,7 @@ import {
   isAssignment,
   isBinaryish,
   isBoolean,
+  isComment,
   isIndentableBlockComment,
   isLogical,
   isMember,
@@ -97,6 +101,12 @@ export function sPrintAssignment(
       return void within(GROUP, () => {
         groupedLeft();
         operator();
+        // oxfmt leaves the break to the group a line comment ending the `=` line breaks, and groups the right.
+        if (operatorLineComment(ctx.js, node))
+          return void within(INDENT, () => {
+            sLine(0);
+            within(GROUP, printRight);
+          });
         within(GROUP, () =>
           within(INDENT, () => {
             if (breakAfter) sBreakParent();
@@ -162,6 +172,15 @@ function oxfmtLineCommentBeforeRight(x: JsCtx, node: number, right: number): boo
     if (kind(x, c) === "comment" && src(x, c).startsWith("//") && x.tree.lf(c) === 0) return true;
   }
   return false;
+}
+
+/** oxfmt's has_line_comment_on_operator_line, over a type alias: `type A = // c`. */
+function operatorLineComment(x: JsCtx, node: number): boolean {
+  if (x.options.compat !== "oxfmt" || kind(x, node) !== "type_alias_declaration") return false;
+  const op = anon(x, node, "=");
+  if (op === undefined) return false;
+  const next = nextLeaf(x.tree, op);
+  return next !== NO_NODE && isComment(x, next) && src(x, next).startsWith("//");
 }
 
 const isDeclarator = (x: HasTree, n: number | undefined) =>
