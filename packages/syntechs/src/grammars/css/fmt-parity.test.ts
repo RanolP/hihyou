@@ -214,6 +214,8 @@ const edgeCases: [string, string][] = [
   ],
   // A word CSS Syntax lexes as an ident then more tokens (`a/c`) counted as one value, so its list stayed packed.
   ["ident-then-more-list", "a{b:a/c, d;c:d, a-b/c;e:a%c, d;f:a/c,d/e;g:U+0-7F, a}"],
+  // An entry opening with a `+` or `-` broke the list; oxfmt breaks at a lone `-ident` past the first entry only.
+  ["signed-entry-list", "a{b:a, -1;c:a,, -1;d:-b, a;e:a, -1px, -f(), --g;h:a, -b}"],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");

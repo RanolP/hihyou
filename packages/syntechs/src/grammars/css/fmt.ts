@@ -213,6 +213,10 @@ const identThenMore = (n: number, ctx: SCtx) =>
   !/^u\+[\da-f?]/i.test(ctx.tree.text(n)) &&
   new RegExp(String.raw`^-?(?:-|${nameStart})${nameChar}*(?!${nameChar})[^]`).test(ctx.tree.text(n));
 
+/** A word CSS Syntax lexes as one ident opening with a single `-` (`-b`, `-webkit-box`), which oxc breaks the list at. */
+const dashIdent = (n: number, ctx: SCtx) =>
+  kind(n, ctx) === "plain_value" && new RegExp(String.raw`^-${nameStart}${nameChar}*$`).test(ctx.tree.text(n));
+
 /** The rules `when` names in format.ts. */
 export const customs = {
   /** Prettier indents a selector of more than two nodes as it breaks. */
@@ -233,7 +237,8 @@ export const customs = {
     code(node, ctx).some(
       (c, i, all) =>
         (["binary_expression", "unary_expression"].includes(kind(c, ctx)) ||
-          identThenMore(c, ctx)) &&
+          identThenMore(c, ctx) ||
+          (dashIdent(c, ctx) && all.slice(0, i).some((p) => kind(p, ctx) === ","))) &&
         ![all[i - 1], all[i + 1]].some(
           (n) => n !== undefined && ctx.tree.named(n) && !["property_name", "important"].includes(kind(n, ctx)),
         ),
