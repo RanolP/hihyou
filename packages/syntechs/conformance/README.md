@@ -9,8 +9,8 @@ The oxfmt column scores that tool (`oxfmt 0.70.0`) on the same fixtures and opti
 | [json](json.snap.md) | prettier 3.9.9 | 20/20 | 100.00% | 0 | 0 | 95.00% |
 | [jsonc](jsonc.snap.md) | prettier 3.9.9 | 9/9 | 100.00% | 0 | 0 | 55.56% |
 | [json-stringify](json-stringify.snap.md) | prettier 3.9.9 | 14/14 | 100.00% | 0 | 0 | 42.86% |
-| [css](css.snap.md) | prettier 3.9.9 | 125/151 | 82.78% | 0 | 6 | 76.16% |
-| [js](js.snap.md) | prettier 3.9.9 | 770/804 | 95.77% | 9 | 304 | 70.02% |
-| [ts](ts.snap.md) | prettier 3.9.9 | 638/653 | 97.70% | 3 | 76 | 75.04% |
-| [python](python.snap.md) | ruff 0.16.8 | 299/327 | 91.44% | 7 | 49 | - |
-| [kotlin](kotlin.snap.md) | ktfmt 0.64 --kotlinlang-style | 699/753 | 92.83% | 2 | 11 | - |
+| [css](css.snap.md) | prettier 3.9.9 | 131/151 | 86.75% | 0 | 6 | 76.16% |
+| [js](js.snap.md) | prettier 3.9.9 | 778/804 | 96.77% | 5 | 304 | 70.02% |
+| [ts](ts.snap.md) | prettier 3.9.9 | 642/653 | 98.32% | 2 | 76 | 75.04% |
+| [python](python.snap.md) | ruff 0.16.8 | 304/327 | 92.97% | 5 | 49 | - |
+| [kotlin](kotlin.snap.md) | ktfmt 0.64 --kotlinlang-style | 705/753 | 93.63% | 0 | 11 | - |
