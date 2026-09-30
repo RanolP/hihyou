@@ -129,3 +129,45 @@ test("port keeps a thread on an unchanged function in a file the new iteration r
     ["before", [stepsOfFunction(base, "keep")]],
   ]);
 });
+
+// A rebase shifts every hunk; were hunks compared by position or after-text, upstream edits would read as the author's.
+test("a hunk that a rebase only shifted by lines does not appear in the interdiff", async () => {
+  const base1 = `export function one() {\n  return 1;\n}\n\nexport function two() {\n  return 2;\n}\n`;
+  const base2 = `export const upstream = 0;\n\n${base1}`;
+  const author = (base: string, two: string) =>
+    base
+      .replace("return 1;", "return 10;")
+      .replace("return 2;", `return ${two};`);
+  const texts: Record<string, string> = {
+    base1,
+    base2,
+    after1: author(base1, "20"),
+    after2: author(base2, "22"),
+  };
+  const host: TestHost = {
+    grammars: syntechsGrammars(),
+    resolveDiffset: (data) => ({
+      id: data,
+      changes: [
+        data === "v1"
+          ? { path: "m.ts", before: "base1", after: "after1" }
+          : { path: "m.ts", before: "base2", after: "after2" },
+      ],
+    }),
+    readBlob: (id) => new TextEncoder().encode(texts[id] ?? ""),
+  };
+  const engine = createEngine(host);
+  const v1 = await engine.diffset("v1");
+  const v2 = await engine.diffset("v2");
+
+  const files = await v1.interdiff(v2).diff();
+
+  const text = (s: { spans: { text: string }[] }) =>
+    s.spans.map((p) => p.text).join("");
+  const diffs = files.flatMap((f) =>
+    f.fragments.flatMap((g) =>
+      g.kind === "diff" ? [[text(g.before), text(g.after)]] : [],
+    ),
+  );
+  expect(diffs).toEqual([["  return 20;\n", "  return 22;\n"]]);
+});

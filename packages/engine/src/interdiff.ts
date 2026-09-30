@@ -2,7 +2,11 @@ import { type Mapping, MatchBudgetExceeded, match, Side } from "syntechs/diff";
 import { type AstSteps, nodeAt, sidePath, stepsOf } from "./anchor.js";
 import { cacheKey } from "./cache.js";
 import { decodeText, parseBlob, readBlob } from "./file.js";
-import type { FileDiff } from "./fragments.js";
+import type {
+  CodeFragment,
+  FileDiff,
+  Side as FragmentSide,
+} from "./fragments.js";
 import type {
   BlobId,
   ChangedFileRef,
@@ -18,7 +22,7 @@ import type { ReviewThread, ReviewThreads } from "./review.js";
 export interface InterDiffset<H extends Host> {
   from: Diffset<H>;
   to: Diffset<H>;
-  diff(): Promise<FileDiff[]>; // after vs after
+  diff(): Promise<FileDiff[]>; // patch vs patch: only the hunks the author changed between iterations
   port(threads: ReviewThreads<H>): Promise<PortResult<H>>; // via syntechs diff matcher
 }
 
@@ -38,7 +42,7 @@ export function createInterDiffset<H extends Host>(
     diff: () =>
       ctx.cache.through(
         cacheKey.interdiff(from.id, to.id),
-        () => diffFiles(ctx, afterVsAfter(from.changes, to.changes)),
+        () => patchVsPatch(ctx, from, to),
         fileDiffBytes,
       ),
     port: (threads) => port(ctx, from, to, threads),
@@ -46,20 +50,142 @@ export function createInterDiffset<H extends Host>(
 }
 
 /**
- * The after side of every file either iteration touched. A file only one iteration touched is taken to
- * read, in the other, as that iteration's before side of it: the base both iterations share.
+ * A1 against A2 per file, keeping only the diff fragments that touch a hunk the two iterations do not
+ * share. Each iteration's own diff supplies its hunks; a hunk both carry with the same removed and added
+ * text is the same authored change, only moved by the base under it, so it and any upstream edit beside
+ * it drop out. A file whose patch did not change is left out.
+ */
+async function patchVsPatch<H extends Host>(
+  ctx: EngineContext,
+  from: Diffset<H>,
+  to: Diffset<H>,
+): Promise<FileDiff[]> {
+  const refs = afterVsAfter(from.changes, to.changes);
+  const [files, own1, own2] = await Promise.all([
+    diffFiles(
+      ctx,
+      refs.map((r) => r.ref),
+    ),
+    from.diff(),
+    to.diff(),
+  ]);
+  const byPath = (fs: FileDiff[]) => new Map(fs.map((f) => [f.path, f]));
+  const [ownFrom, ownTo] = [byPath(own1), byPath(own2)];
+  const out: FileDiff[] = [];
+  files.forEach((file, i) => {
+    const r = refs[i];
+    const f1 = r?.inBoth && ownFrom.get(r.inBoth[0]);
+    const f2 = r?.inBoth && ownTo.get(r.inBoth[1]);
+    if (!f1 || !f2 || file.fragments.length === 0) {
+      out.push(file);
+      return;
+    }
+    const fragments = keepAuthored(file.fragments, f1.fragments, f2.fragments);
+    if (fragments.some((f) => f.kind === "diff"))
+      out.push({ ...file, fragments });
+  });
+  return out;
+}
+
+type Hunk = CodeFragment & { kind: "diff" };
+interface LineRange {
+  start: number;
+  end: number;
+}
+
+const sideText = (s: FragmentSide) => s.spans.map((p) => p.text).join("");
+const sideLines = (s: FragmentSide): LineRange => {
+  const text = sideText(s);
+  // A side's text ends in the newline of its last line, except at the end of an unterminated file.
+  const count =
+    text === "" ? 0 : text.split("\n").length - (text.endsWith("\n") ? 1 : 0);
+  return { start: s.startLine, end: s.startLine + count };
+};
+/** An empty range is the point a side's missing lines take the place of, so it touches its neighbours. */
+const touches = (p: LineRange, q: LineRange) =>
+  p.start === p.end || q.start === q.end
+    ? p.start <= q.end && q.start <= p.end
+    : p.start < q.end && q.start < p.end;
+
+/**
+ * `fragments` (A1 vs A2) with every diff that touches no unshared hunk turned into `elided`, context that
+ * no longer sits beside a kept diff elided too, and adjacent elisions merged. begin/end are left as they
+ * are, so they stay balanced.
+ */
+function keepAuthored(
+  fragments: CodeFragment[],
+  hunks1: CodeFragment[],
+  hunks2: CodeFragment[],
+): CodeFragment[] {
+  const key = (h: Hunk) => `${sideText(h.before)}\0${sideText(h.after)}`;
+  const unshared2 = new Map<string, Hunk[]>();
+  for (const h of hunks2)
+    if (h.kind === "diff")
+      unshared2.set(key(h), [...(unshared2.get(key(h)) ?? []), h]);
+  const regions1: LineRange[] = [];
+  for (const h of hunks1) {
+    if (h.kind !== "diff") continue;
+    const twins = unshared2.get(key(h));
+    if (twins && twins.length > 0) twins.shift();
+    else regions1.push(sideLines(h.after));
+  }
+  const regions2 = [...unshared2.values()]
+    .flat()
+    .map((h) => sideLines(h.after));
+
+  const kept = fragments.map(
+    (f) =>
+      f.kind === "diff" &&
+      (regions1.some((r) => touches(r, sideLines(f.before))) ||
+        regions2.some((r) => touches(r, sideLines(f.after)))),
+  );
+  const elide = (f: CodeFragment): CodeFragment =>
+    f.kind === "diff"
+      ? {
+          kind: "elided",
+          lines: { before: f.before.startLine, after: f.after.startLine },
+        }
+      : f.kind === "unchanged"
+        ? { kind: "elided", lines: f.lines }
+        : f;
+  /** Whether the diff nearest `i` in direction `step`, past begin/end and context, is kept. */
+  const besideKept = (i: number, step: 1 | -1): boolean => {
+    for (let k = i + step; k >= 0 && k < fragments.length; k += step) {
+      const kind = fragments[k]?.kind;
+      if (kind === "diff") return kept[k] === true;
+      if (kind === "elided") return false;
+    }
+    return false;
+  };
+  const out: CodeFragment[] = [];
+  fragments.forEach((f, i) => {
+    const keep =
+      f.kind === "diff"
+        ? kept[i]
+        : f.kind !== "unchanged" || besideKept(i, -1) || besideKept(i, 1);
+    const g = keep ? f : elide(f);
+    if (g.kind === "elided" && out.at(-1)?.kind === "elided") return;
+    out.push(g);
+  });
+  return out;
+}
+
+/**
+ * Per file either iteration touched, A1 against A2. A file only one iteration touched reads, in the
+ * other, as that iteration's own before side: dropping a change shows A1 -> B1, a new one B2 -> A2.
+ * `inBoth` names the file in each iteration's own diff when both list it.
  */
 function afterVsAfter(
   from: readonly ChangedFileRef[],
   to: readonly ChangedFileRef[],
-): ChangedFileRef[] {
+): { ref: ChangedFileRef; inBoth?: [string, string] }[] {
   const byPath = (refs: readonly ChangedFileRef[], side: "before" | "after") =>
     new Map(refs.map((r) => [sidePath(r, side), r]));
   const fromAfter = byPath(from, "after");
   const toAfter = byPath(to, "after");
   const fromBefore = byPath(from, "before");
   const toBefore = byPath(to, "before");
-  const out: ChangedFileRef[] = [];
+  const out: { ref: ChangedFileRef; inBoth?: [string, string] }[] = [];
   for (const path of new Set([...fromAfter.keys(), ...toAfter.keys()])) {
     const f = fromAfter.get(path);
     const t = toAfter.get(path);
@@ -67,7 +193,10 @@ function afterVsAfter(
     const after = t ? t.after : (fromBefore.get(path)?.before ?? null);
     if (before === after) continue;
     const kind = f?.kind ?? t?.kind;
-    out.push({ path, before, after, ...(kind && { kind }) });
+    out.push({
+      ref: { path, before, after, ...(kind && { kind }) },
+      ...(f && t && { inBoth: [f.path, t.path] as [string, string] }),
+    });
   }
   return out;
 }

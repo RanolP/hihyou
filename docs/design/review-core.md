@@ -93,7 +93,7 @@ interface Diffset<H extends Host> {
 interface InterDiffset<H extends Host> {
   from: Diffset<H>;
   to: Diffset<H>;
-  diff(): Promise<FileDiff[]>; // after vs after
+  diff(): Promise<FileDiff[]>; // patch vs patch: only hunks the author changed between iterations
   port(threads: ReviewThreads<H>): Promise<PortResult<H>>; // via syntechs diff matcher
 }
 interface PortResult<H extends Host> {
@@ -216,7 +216,9 @@ type Author<H extends Host> = { id: string } & HostAuthor<H>;
 
 **`Diffset`** is an engine object that captures the engine; it is never serialized. A review attaches to it one to one: a `ReviewThreads` joins a `Diffset` on `Diffset.id`. The id is host-issued, opaque, and unique within one host only.
 
-**`InterDiffset`** is two iterations of one change. It matches before against before and after against after, so "base moved" and "patch changed" stay apart (pillar 3 of `docs/design/product.md`). `diff()` shows after against after; `port()` moves threads onto the new iteration through the syntechs diff matcher. A thread with no match goes to `lost`, which the front end shows; it is never dropped silently.
+**`InterDiffset`** is two iterations of one change. It matches before against before and after against after, so "base moved" and "patch changed" stay apart (pillar 3 of `docs/design/product.md`). `diff()` compares the two iterations' patches, as `git range-diff` does, so a rebase onto a moved base does not show upstream changes as the author's edits; `port()` moves threads onto the new iteration through the syntechs diff matcher. A thread with no match goes to `lost`, which the front end shows; it is never dropped silently.
+
+**`InterDiffset.diff()`** needs no file at a base. For a file both iterations list, it pairs the diff fragments of each iteration's own diff (before to after) by their removed and added text, ignoring line numbers and context. A pair is one authored change the rebase only moved, and drops out. What remains is the diff of A1 (iteration 1's after) against A2, in which a `diff` fragment stays only when it touches an unpaired fragment: its A1 lines touch one from iteration 1, or its A2 lines one from iteration 2. Every other `diff` fragment, and any `unchanged` context no longer beside a kept one, becomes `elided`; `begin`/`end` stay as they are, so they still balance. A file with no kept `diff` fragment is left out. Where upstream edited the lines the author changed, the fragments differ and are shown, which is the conflict resolution a reviewer should see. A file only iteration 1 lists shows A1 against B1 (the author dropped that change), and one only iteration 2 lists shows B2 against A2.
 
 **`FileDiff.fragments`** is the single source of truth for a file's diff; there is no separate edit list. `begin`/`end` pairs are always balanced and carry a label (such as "class AA"), so every front end gets AST-node grouping and headers from the same data. `elided` is the engine's call on what to collapse, so every front end collapses the same things.
 
