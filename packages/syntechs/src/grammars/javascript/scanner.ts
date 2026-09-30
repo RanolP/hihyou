@@ -13,6 +13,7 @@ const REGEX_PATTERN = 6;
 const JSX_TEXT = 7;
 const STATEMENT_CONTINUES = 8;
 const FOR_IN_AFTER_INITIALIZER = 9;
+const ARROW_BODY_END = 10;
 
 const LS = 0x2028;
 const PS = 0x2029;
@@ -96,6 +97,7 @@ function scanAutomaticSemicolon(
   lexer: Lexer,
   commentCondition: boolean,
   statementContinues: boolean,
+  arrowBodyEnd: boolean,
   scanned: { comment: boolean },
 ): boolean {
   lexer.resultSymbol = AUTOMATIC_SEMICOLON;
@@ -127,6 +129,9 @@ function scanAutomaticSemicolon(
     (next === 123 || next === 95 || next === 36 || next === 92 || iswalpha(next))
   )
     return false;
+
+  // An arrow function's block body cannot be called, indexed or tagged: the next line starts a statement.
+  if (arrowBodyEnd && (next === 40 || next === 91 || next === 96)) return true;
 
   switch (la(lexer)) {
     case 96: // `
@@ -263,6 +268,7 @@ export function scan(lexer: Lexer, valid: Uint8Array): boolean {
       lexer,
       !valid[LOGICAL_OR],
       !!valid[STATEMENT_CONTINUES],
+      !!valid[ARROW_BODY_END],
       scanned,
     );
     if (!ret && !scanned.comment && valid[TERNARY_QMARK] && la(lexer) === 63)

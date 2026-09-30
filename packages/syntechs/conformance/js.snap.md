@@ -1,4 +1,4 @@
-js compatibility: 794/804 (98.76%), 1 refused (ok:false), 304 excluded
+js compatibility: 796/804 (99.00%), 0 refused (ok:false), 304 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -16,7 +16,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/embeded/indention/19518.js | 0/1 | 64.94% |
 | js/embeded/indention/indention-2.js | 0/1 | 23.53% |
 | js/embeded/indention/indention.js | 0/1 | 63.27% |
-| js/empty-paren-comment/empty_paren_comment.js | 0/1 | 91.43% |
 | js/if/condition-break/boolean-expression.js | 0/1 | 97.01% |
 | js/reserved-word/yield.js | 0/1 | 93.33% |
 | js/sequence-expression/parenthesized.js | 0/1 | 85.71% |
@@ -28,7 +27,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| jsx/comments/in-end-tag.js | 1/1 | 32.08% | check: input ">" at 503 is output as ">" at 503, which means ">@\|-1/71", not ">@\|-1/62" |
 
 # Excluded
 
