@@ -20,14 +20,28 @@ The current engine's `Vcs`, `FileSource`, `ReviewDoc` and `buildReviewDoc`, and 
 /** The execution environment. CLI, VS Code, browser extension each implement one. */
 interface Host {
   grammars: GrammarLoader;
-  /** Same data -> same result, always. */
+  /** Same data -> same result, always. A host narrows `data` to its own type: its SerializedDiffsetId. */
   resolveDiffset(
-    data: SerializedDiffsetId<this>,
+    data: never,
   ):
     | { id: string; changes: ChangedFileRef[] }
     | Promise<{ id: string; changes: ChangedFileRef[] }>;
   readBlob(id: BlobId): Uint8Array | Promise<Uint8Array>;
   preferences?: HostPreferences;
+  /** Type-only: the host's part of `Author`. Never read at runtime. */
+  readonly authorType?: object;
+}
+type SerializedDiffsetId<H extends Host> = Parameters<H["resolveDiffset"]>[0];
+type HostAuthor<H extends Host> = H extends { readonly authorType?: infer A }
+  ? A extends object
+    ? A
+    : object
+  : object;
+type NodeId = number; // a syntechs Tree node handle
+
+/** A formatter with the host's options already bound in. */
+interface FormatModule {
+  format(tree: Tree): Formatted; // syntechs/fmt
 }
 interface HostPreferences {
   cacheBytes?: number;
@@ -79,7 +93,7 @@ interface Diffset<H extends Host> {
 interface InterDiffset<H extends Host> {
   from: Diffset<H>;
   to: Diffset<H>;
-  diff(): Promise<FileDiff[]>; // after vs after
+  diff(): Promise<FileDiff[]>; // patch vs patch: only hunks the author changed between iterations
   port(threads: ReviewThreads<H>): Promise<PortResult<H>>; // via syntechs diff matcher
 }
 interface PortResult<H extends Host> {
@@ -123,6 +137,7 @@ interface Span {
   scope?: string; // syntax colour, TextMate scope
   changed?: boolean; // diff emphasis, kept separate from syntax colour
 }
+/** 1-based line where the fragment's run starts, on each side. */
 interface LinePair {
   before: number;
   after: number;
@@ -136,6 +151,11 @@ interface AnchorData {
   path: string;
   nodes: AstSteps[]; // non-empty; normalized: document order, descendants of an included ancestor dropped
 }
+/** 1-based lines of the blob's own (unformatted) text, both ends inclusive. */
+interface LineRange {
+  start: number;
+  end: number;
+}
 /** Engine object from diffset.anchor(data). */
 interface Anchor extends AnchorData {
   intoLineRanges(): Promise<LineRange[]>; // disjoint nodes give several ranges
@@ -143,7 +163,7 @@ interface Anchor extends AnchorData {
 
 interface ReviewThreads<H extends Host> {
   diffsetId: string; // joins Diffset.id, 1:1
-  grammars: Record<string, string>; // grammar id -> version used while reviewing
+  grammars: Record<string, string>; // language name -> Grammar.id used while reviewing
   ran: Author<H>[]; // who ran/tested this whole Diffset (Gerrit's "Verified")
   threads: ReviewThread<H>[];
 }
@@ -169,15 +189,14 @@ interface Verdict {
 type Author<H extends Host> = { id: string } & HostAuthor<H>;
 ```
 
-### Names the contract uses but does not define
+### How the engine pinned the names the first draft left open
 
-Five names above have no definition yet. What each is meant to be, as far as it was agreed:
-
-- `SerializedDiffsetId<H>`: the host's own serialized way of naming a change set (a commit, a range, a PR), which only that host reads back, in `resolveDiffset`. It is one of the two things that are ever serialized. Its shape per host, and how `H` determines it, are undecided.
-- `HostAuthor<H>`: the host-specific part of `Author`, with room for a display name or an avatar. Its shape per host, and how `H` determines it, are undecided.
-- `LineRange`: the line span one group of anchored nodes covers, returned by `Anchor.intoLineRanges`. Its fields (inclusive or exclusive end, 0- or 1-based) are undecided.
-- `NodeId`: one node of a syntechs `Tree`. syntechs exports no type by that name; its `Tree` (`packages/syntechs/src/core/arena.ts`) identifies a node by a plain number, which is presumably what `NodeId` names. Not confirmed.
-- `FormatModule`: the per-language formatter that syntechs provides. syntechs exports nothing under that name, and its exact type is not yet pinned.
+- `SerializedDiffsetId<H>` is the parameter type of the host's own `resolveDiffset`. The contract declares `resolveDiffset(data: never)`, so any narrower parameter satisfies it, and the host's choice (a commit range, a PR number) becomes its `SerializedDiffsetId`.
+- `HostAuthor<H>` is read off an optional, type-only `Host.authorType` field; a host that declares none gets `object`.
+- `LineRange` is 1-based and inclusive at both ends, on the blob's own text rather than the formatted display text, so an editor can jump to it.
+- `NodeId` is `number`, a syntechs `Tree` node handle.
+- `FormatModule` is `{ format(tree): Formatted }`, the syntechs formatter with the host's options bound in. Matching and `AstSteps` always run on the original tree; `Formatted.anchors` only carries node ranges onto the display text.
+- `ReviewThreads.grammars` maps a language name to the `Grammar.id` a thread's `AstSteps` were taken under. `Grammar.id` is `<language>@<hash>`, where the hash covers the decoded parse tables, since a grammar carries no version of its own and the tables decide the tree shape.
 
 `Language`, `Tree` and `Formatted` are existing syntechs types (`packages/syntechs/src/core/index.ts`, `packages/syntechs/src/fmt/format.ts`).
 
@@ -197,7 +216,9 @@ Five names above have no definition yet. What each is meant to be, as far as it 
 
 **`Diffset`** is an engine object that captures the engine; it is never serialized. A review attaches to it one to one: a `ReviewThreads` joins a `Diffset` on `Diffset.id`. The id is host-issued, opaque, and unique within one host only.
 
-**`InterDiffset`** is two iterations of one change. It matches before against before and after against after, so "base moved" and "patch changed" stay apart (pillar 3 of `docs/design/product.md`). `diff()` shows after against after; `port()` moves threads onto the new iteration through the syntechs diff matcher. A thread with no match goes to `lost`, which the front end shows; it is never dropped silently.
+**`InterDiffset`** is two iterations of one change. It matches before against before and after against after, so "base moved" and "patch changed" stay apart (pillar 3 of `docs/design/product.md`). `diff()` compares the two iterations' patches, as `git range-diff` does, so a rebase onto a moved base does not show upstream changes as the author's edits; `port()` moves threads onto the new iteration through the syntechs diff matcher. A thread with no match goes to `lost`, which the front end shows; it is never dropped silently.
+
+**`InterDiffset.diff()`** needs no file at a base. For a file both iterations list, it pairs the diff fragments of each iteration's own diff (before to after) by their removed and added text, ignoring line numbers and context. A pair is one authored change the rebase only moved, and drops out. What remains is the diff of A1 (iteration 1's after) against A2, in which a `diff` fragment stays only when it touches an unpaired fragment: its A1 lines touch one from iteration 1, or its A2 lines one from iteration 2. Every other `diff` fragment, and any `unchanged` context no longer beside a kept one, becomes `elided`; `begin`/`end` stay as they are, so they still balance. A file with no kept `diff` fragment is left out. Where upstream edited the lines the author changed, the fragments differ and are shown, which is the conflict resolution a reviewer should see. A file only iteration 1 lists shows A1 against B1 (the author dropped that change), and one only iteration 2 lists shows B2 against A2.
 
 **`FileDiff.fragments`** is the single source of truth for a file's diff; there is no separate edit list. `begin`/`end` pairs are always balanced and carry a label (such as "class AA"), so every front end gets AST-node grouping and headers from the same data. `elided` is the engine's call on what to collapse, so every front end collapses the same things.
 
