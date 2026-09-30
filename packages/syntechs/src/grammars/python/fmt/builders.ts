@@ -20,6 +20,8 @@ export interface PyOptions {
   /** `py3NN`; unset reads as ruff's default, py310. */
   "target-version"?: string;
   "nested-string-quote-style"?: "alternating" | "preferred";
+  /** Ruff's preview style. */
+  preview?: boolean;
   /** Set only while a docstring's code example is formatted: that docstring's quote (ruff's `DocstringContext`). */
   docstringQuote?: Quote;
 }

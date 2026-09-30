@@ -42,6 +42,7 @@ import {
   GROUP,
   open as sOpen,
   sLine,
+  sLineSuffixBoundary,
   sText,
 } from "./sink.js";
 import {
@@ -92,6 +93,8 @@ export interface Opts {
   ifNested?: boolean;
   /** A lambda on an assignment's right side, measured as if its body could break. */
   lambdaAssign?: boolean;
+  /** An attribute a call or subscript applies to, as the chain passes it on (ruff's `decrement_call_like_count`). */
+  called?: boolean;
 }
 
 const isParenthesizedLevel = (l: Level) =>
@@ -118,7 +121,7 @@ export function writeExpr(
     const cs = f.comments;
     const [open, close] = parenTokens(e);
     if (!cs.hasLeading(e) && !cs.hasTrailing(e))
-      writeInParens(f, e, open, () => writeFields(f, e, o), close, []);
+      writeInParens(f, e, open, () => writeFields(f, e, o), close, [], isHuggable(f, e));
     else withParenthesesComments(f, e, open, close, o);
     return;
   }
@@ -142,11 +145,12 @@ function writeInParens(
   content: () => void,
   close: () => void,
   dangling: readonly Comment[],
+  hug = false,
 ): void {
   const p = e.parens[0];
   if (p && f.tree.kindName(p.wrapper) === "parenthesized_expression")
-    sink.sDsl(p.wrapper, { content, dangling });
-  else f.writeParenthesized(open, content, close, dangling);
+    sink.sDsl(p.wrapper, { content, dangling, hug });
+  else f.writeParenthesized(open, content, close, dangling, hug);
 }
 
 function withParenthesesComments(
@@ -720,7 +724,7 @@ function applyInNode(f: Fmt, e: Expr, chain: Chain): Chain {
 /** The value of an attribute, call or subscript, continuing the chain `layout`. */
 export function writeChainValue(f: Fmt, v: Expr, layout: Chain): void {
   if (v.parens.length > 0) writeExpr(f, v, "always");
-  else if (isCallLike(v)) writeNode(f, v, { chain: layout });
+  else if (isCallLike(v)) writeNode(f, v, { chain: layout, called: v.kind === "Attribute" });
   else writeExpr(f, v, "never");
 }
 
@@ -762,7 +766,7 @@ function writeFields(f: Fmt, e: Expr, o: Opts): void {
       const layout = applyInNode(f, e, chain);
       const grouped = chain === "default" && layout === "fluent";
       if (grouped) sink.open(sink.GROUP);
-      sink.sDsl(e.ts, { chain: layout });
+      sink.sDsl(e.ts, { chain: layout, called: o.called === true });
       if (grouped) sink.close();
       return;
     }
@@ -860,14 +864,36 @@ function argumentsHuggable(f: Fmt, a: Arguments): boolean {
   if (isExpr(only)) arg = only;
   else if (only.name === undefined && !f.comments.has(only)) arg = only.value;
   else return false;
+  if (!isHuggable(f, arg) && !isHuggableStringArgument(f, arg)) return false;
+  if (f.comments.hasLeading(arg) || f.comments.hasTrailing(arg)) return false;
+  return !f.magicTrailingComma(arg.end, a.end);
+}
+
+/** Ruff's `is_huggable_string_argument`: a multiline triple-quoted string that starts on the `(`'s line. */
+function isHuggableStringArgument(f: Fmt, arg: Expr): boolean {
   if (arg.kind !== "Str" || arg.parts.length > 1 || !isMultilineStr(f, arg))
     return false;
   if (!partOf(f.tree, arg.parts[0] as number).flags.triple) return false;
   // Past the `(`, only horizontal whitespace separates the argument from a line break: it starts its own line.
-  const first = leafFrom(f.tree, outer(arg).start);
-  if (startsLine(f.tree, first)) return false;
-  if (f.comments.hasLeading(arg) || f.comments.hasTrailing(arg)) return false;
-  return !f.magicTrailingComma(arg.end, a.end);
+  return !startsLine(f.tree, leafFrom(f.tree, outer(arg).start));
+}
+
+/** Ruff's `is_expression_huggable`: a bracketed collection hugs its enclosing parentheses in preview. */
+export function isHuggable(f: Fmt, e: Expr): boolean {
+  switch (e.kind) {
+    case "Tuple":
+    case "List":
+    case "Set":
+    case "Dict":
+    case "ListComp":
+    case "SetComp":
+    case "DictComp":
+      return f.options.preview === true;
+    case "Starred":
+      return isHuggable(f, e.value);
+    default:
+      return false;
+  }
 }
 
 function writeKeyword(f: Fmt, k: Keyword): void {
@@ -1559,13 +1585,21 @@ export function writeBinaryLike(f: Fmt, e: BinOp | Compare | BoolOp): void {
     }
     f.writeLeading(cs.leading(s));
     writeImplicitConcatenated(f, s);
-    f.writeTrailing(cs.trailing(s));
+    const trailing = cs.trailing(s);
+    f.writeTrailing(trailing);
     if (i > 0 && operand.trailingBinary) f.writeTrailing(operand.trailingBinary);
     const rightOp = parts[i + 1] as Operator | undefined;
     if (!rightOp) {
       lastOp = undefined;
       break;
     }
+    // ruff flushes the string's end-of-line comment before the operator, which then starts the next line after
+    // the flat soft line's space. An own-line comment instead breaks that soft line.
+    if (
+      !trailing.some((c) => c.line === "own") &&
+      !(i > 0 && operand.trailingBinary?.some((c) => c.line === "own"))
+    )
+      sLineSuffixBoundary();
     start();
     const rightOperand = parts[i + 2] as Operand;
     const hasLeading = hasUnparenthesizedLeadingComments(f, rightOperand);

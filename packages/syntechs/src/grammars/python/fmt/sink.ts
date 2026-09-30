@@ -43,6 +43,7 @@ export {
   openVariant,
   sBreakParent,
   sHardline,
+  sLineSuffixBoundary,
   sLiteral,
   sText,
   sToken,
