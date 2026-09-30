@@ -200,6 +200,8 @@ const edgeCases: [string, string][] = [
     "double-slash-value",
     "a{b:a // c;d:1px //2px;e:a//c;f:calc(1px // c\n+ 2px);g:fn(a // b);h:a, // c\n d;i:a //c //d}",
   ],
+  // An empty comma group (`a,,b`) was an ERROR kept as written.
+  ["empty-comma-group", "a{b:a,,(1);c:a, ,b;d:x,,,y;--e:a,,b}"],
   // A `:` in a value was one word with its neighbours (`a:b`) or, spaced, an ERROR kept as written.
   [
     "value-colon",
