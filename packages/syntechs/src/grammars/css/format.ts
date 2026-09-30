@@ -223,7 +223,7 @@ export const css = format({
       inOrder({ join: "gap", tight: { after: ["["], before: ["]", ","] }, spaceWhen: { after: [","] } }),
     // `#ABCDEFG`, `#Abc-x`: a `#` word that is no color, as written.
     hash_value: () => text("trimEnd"),
-    // A Sass list or map (fmt.ts's `sassList`) in a `directive`'s prelude or a `$variable`'s value, else joined.
+    // A Sass list or map (fmt.ts's `sassList`) in a `directive`'s prelude or a `$variable`'s value, else on one line.
     parenthesized_value: () => custom("parenthesizedValue"),
     // Sass's `name: value` (fmt.ts's `keywordArgument`); `$args...` joined.
     keyword_argument: () => custom("keywordArgument"),

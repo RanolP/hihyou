@@ -114,6 +114,8 @@ const edgeCases: [string, string][] = [
   ["other-at-rules", "@container (min-width:400px){a{b:c}}"],
   // A `@layer` list was kept as written; oxfmt spaces it after its commas.
   ["layer-list", "@layer a,b;@layer c , d;@LAYER e\n,f;"],
+  // A paren group in a value lost its gaps, `(1 2)` printing `(12)`.
+  ["value-parens", "a{b:foo( (1 ,2) );c:(a  b,c) x (1 2);d:foo((1,2),(3 +4))}"],
   // An at-rule's params print as raw text, which once dropped the comments attached to them.
   ["at-rule-param-comment", "@counter-style /* c */ thumbs {}"],
   [

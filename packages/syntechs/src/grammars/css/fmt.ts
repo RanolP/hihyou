@@ -226,15 +226,6 @@ export function number(node: number, ctx: SCtx): void {
   sLiteral(node, unitCase(ctx.tree.text(node)));
 }
 
-function plusAfterFunction(node: number, ctx: SCtx): boolean {
-  const t = ctx.tree;
-  const k = kind(node, ctx);
-  if ((k !== "integer_value" && k !== "float_value") || !t.text(node).startsWith("+")) return false;
-  const siblings = children(t.parent(node), t);
-  const prev = siblings[siblings.indexOf(node) - 1];
-  return prev !== undefined && kind(prev, ctx) === "call_expression";
-}
-
 /** A binary expression's `/` written with no gap on either side, which prettier keeps so. */
 function tightDivision(node: number, ctx: SCtx): boolean {
   const [left, op, right] = children(node, ctx.tree);
@@ -567,9 +558,6 @@ function raw(
 
 /** A Sass directive, else as written; `@page:first` stays joined, as postcss reads a name up to the first gap. */
 export function atRule(node: number, ctx: SCtx): void {
-const layerList = (node: number, ctx: SCtx) =>
-  /^@layer$/i.test(ctx.tree.text(ctx.tree.child(node, 0))) && !children(node, ctx.tree).some((c) => isComment(c, ctx));
-
   if (isDirective(node, ctx)) return sassDirective(node, ctx);
   const own = (c: number) => kind(c, ctx) === "at_keyword" || kind(c, ctx) === "block";
   const block = (c: number) => kind(c, ctx) === "block";
@@ -578,6 +566,9 @@ const layerList = (node: number, ctx: SCtx) =>
   if (layerList(node, ctx)) return raw(node, ctx, own, (prev, c) => block(c) || comma(prev), comma);
   raw(node, ctx, own, (_, c) => block(c));
 }
+
+const layerList = (node: number, ctx: SCtx) =>
+  /^@layer$/i.test(ctx.tree.text(ctx.tree.child(node, 0))) && !children(node, ctx.tree).some((c) => isComment(c, ctx));
 
 /** A Sass directive or postcss-mixins' `@define-mixin`, else as written. */
 export function postcssStatement(node: number, ctx: SCtx): void {
@@ -614,8 +605,9 @@ export function keywordArgument(node: number, ctx: SCtx): void {
 }
 
 /**
- * A Sass list or map (in a directive, or a `$variable`'s value) by `sassList`, else as written without gaps, but a
- * `+`-signed number after a function keeps the source's gap before it.
+ * A Sass list or map (in a directive, or a `$variable`'s value) by `sassList`, else on one line: a space after each
+ * comma, none before it, and one between two words wherever the source has a gap (`foo( (1 ,2) )` prints
+ * `foo((1, 2))`, `(1 +2)` stays).
  */
 export function parenthesizedValue(node: number, ctx: SCtx): void {
   if (inDirective(node, ctx) || inVariable(node, ctx)) return sassList(node, ctx);
@@ -623,12 +615,13 @@ export function parenthesizedValue(node: number, ctx: SCtx): void {
   const items = new Set(ctx.items(node));
   let prev = -1;
   for (const c of children(node, t)) {
-    if (!t.named(c)) sToken(c, t.text(c));
-    else if (items.has(c)) {
-      // Such a `+2` stays as written: after a space only where the source has a gap.
-      if (plusAfterFunction(c, ctx) && !t.adjoins(prev, c)) sText(" ");
-      ctx.print(c);
-    }
+    const named = t.named(c);
+    if (named && !items.has(c)) continue;
+    const text = named ? "" : t.text(c);
+    if (prev !== -1 && text !== "," && text !== ")" && kind(prev, ctx) !== "(" && (kind(prev, ctx) === "," || !t.adjoins(prev, c)))
+      sText(" ");
+    if (named) ctx.print(c);
+    else sToken(c, text);
     prev = c;
   }
 }
