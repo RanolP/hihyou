@@ -1,5 +1,6 @@
 // Bundles the extension: dist/extension.js (desktop, Node), dist/web/extension.js (vscode.dev, github.dev) and
 // dist/webview.js (the panel's page). Workspace packages resolve to their TypeScript sources, as tsc and vitest do.
+import { readFile } from "node:fs/promises";
 import { builtinModules } from "node:module";
 import { join } from "node:path";
 import { build } from "esbuild";
@@ -62,4 +63,13 @@ await Promise.all([
     plugins: [noNode],
   }),
 ]);
+// The plugin sees only what esbuild resolves; this reads the emitted text, so a require the bundler passed
+// through (an `external`, a shim's own require) is caught too.
+const nodeRef = new RegExp(
+  String.raw`\b(?:require|import)\s*\(\s*["'](?:node:[^"']*|${[...builtins].map((m) => m.replaceAll("/", "\\/")).join("|")})["']\s*\)|\bfrom\s*["']node:`,
+);
+for (const out of ["dist/web/extension.js", "dist/webview.js"]) {
+  const hit = nodeRef.exec(await readFile(join(here, out), "utf8"));
+  if (hit) throw new Error(`${out} references Node: ${hit[0]}`);
+}
 console.log(`vscode: bundled into ${join(here, "dist")}`);
