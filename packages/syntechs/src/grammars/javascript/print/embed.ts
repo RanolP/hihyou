@@ -3,7 +3,7 @@
 // where this one covers less than prettier's (a CSS or HTML parse error, a GraphQL query, an escape in a quasi),
 // `printEmbed` returns false and the template prints as its source.
 
-import { parseTree, type Tree } from "../../../core/index.js";
+import { NO_NODE, parseTree, type Tree } from "../../../core/index.js";
 import { brokenNodes } from "../../../fmt/format.js";
 import { printInto } from "../../../fmt/stream-format.js";
 import { withEmbedding } from "../../../fmt/stream.js";
@@ -134,7 +134,7 @@ function html(node: number, raws: string[], subs: () => Part[], tick: Tick, tabW
 function cssEmbed(ctx: JsStreamCtx, node: number, raws: string[], subs: () => Part[], tick: Tick): Part | undefined {
   const text = raws.map((q, i) => (i === 0 ? q : `prettier-placeholder-${i - 1}${q}`)).join("");
   const tree = parseTree(cssLanguage, text);
-  if (tree.errorChars > 0 || brokenNodes(tree) !== undefined || lineComment(tree)) return undefined;
+  if (tree.errorChars > 0 || brokenNodes(tree) !== undefined || scssOnly(tree)) return undefined;
   const parts = subs();
   const seen = new Set<number>();
   const regex = /prettier-placeholder-(\d+)/;
@@ -169,14 +169,21 @@ function cssEmbed(ctx: JsStreamCtx, node: number, raws: string[], subs: () => Pa
   return failed || seen.size !== parts.length ? undefined : printed;
 }
 
-// Prettier parses the embed as SCSS, where `//` opens a line comment; tree-sitter-css reads it as two `/`s, so the
-// embed prints as its source rather than as a division.
-function lineComment(tree: Tree): boolean {
+// Prettier parses the embed as SCSS, where `//` opens a line comment and a value's `:` (`a:b`, `fn(a:b)`) stays
+// as written; the CSS printer reads two `/`s and spaces the `:` as oxc does, so the embed prints as its source.
+function scssOnly(tree: Tree): boolean {
   const ends = new Set<number>();
   const starts: number[] = [];
   for (let o = 0; o < tree.nodeCount; o++) {
     const n = tree.at(o);
-    if (tree.named(n) || tree.text(n) !== "/") continue;
+    if (tree.named(n)) continue;
+    const up = tree.parent(n);
+    if (tree.text(n) === ":" && up !== NO_NODE) {
+      const k = tree.kindName(up);
+      if (k === "declaration" && tree.child(up, 1) !== n) return true;
+      if (k === "keyword_argument" && tree.kindName(tree.parent(up)) === "arguments") return true;
+    }
+    if (tree.text(n) !== "/") continue;
     ends.add(tree.end(n));
     starts.push(tree.start(n));
   }

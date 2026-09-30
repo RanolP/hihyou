@@ -224,6 +224,8 @@ const edgeCases: [string, Target, string][] = [
   ],
   // Embedded CSS is SCSS to prettier, so a `//` there opens a comment rather than dividing: the template stays as written.
   ["css-embed-line-comment", "js", "css`a{b: a // e;}`;\n"],
+  // Nor does prettier space a `:` in an embedded value (`a :b`, `x(a:b)`), which oxfmt does in a CSS file.
+  ["css-embed-value-colon", "js", "css`\n  b: a :b;\n  c: x(a:b);\n`;\n"],
   [
     "comments-prettier-moves",
     "ts",

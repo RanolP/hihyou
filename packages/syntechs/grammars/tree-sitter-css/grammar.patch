@@ -302,7 +302,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
      descendant_selector: $ => prec.left(seq($._selector, $._descendant_operator, $._selector)),
  
      sibling_selector: $ => prec.left(seq(optional($._selector), '~', $._selector)),
-@@ -295,42 +435,73 @@
+@@ -295,42 +435,76 @@
      ),
  
      // Declarations
@@ -324,6 +324,8 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
 +          repeat(choice(
 +            seq(optional(','), $._value),
 +            seq(',', $.unary_expression),
++            // oxc-css-parser reads a `:` in a value as a token of its own (`a:b`, `a: b`).
++            ':',
 +          )),
 +        )),
 +        optional($.important),
@@ -364,6 +366,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
 +      repeat(choice(
 +        seq(optional(','), $._value),
 +        seq(',', $.unary_expression),
++        ':',
        )),
        optional($.important),
      )),
@@ -391,7 +394,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
  
      feature_query: $ => seq(
        '(',
-@@ -339,8 +510,22 @@
+@@ -339,8 +513,22 @@
        repeat1($._value),
        ')',
      ),
@@ -414,7 +417,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
        '(',
        $._query,
        ')',
-@@ -356,20 +541,50 @@
+@@ -356,20 +544,50 @@
        choice('not', 'only'),
        $._query,
      )),
@@ -466,7 +469,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
        $.integer_value,
        $.float_value,
        $.string_value,
-@@ -379,16 +594,58 @@
+@@ -379,16 +597,58 @@
        $.call_expression,
        $.important,
      )),
@@ -526,7 +529,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
        seq(
          '\'',
          repeat(choice(
-@@ -411,8 +668,10 @@
+@@ -411,8 +671,10 @@
        '\\',
        choice(
          /[0-9a-fA-F]{1,6}\s?/,
@@ -537,7 +540,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
      )),
  
      integer_value: $ => seq(
-@@ -425,71 +684,104 @@
+@@ -425,73 +687,109 @@
  
      float_value: $ => seq(
        token(seq(
@@ -645,22 +648,28 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
 +    // A word opens with a `/` only as a protocol-relative URL's `//`: a lone one is a division (`2/round(1)`,
 +    // `100%/2px`), as postcss-value-parser reads it.
      plain_value: _ => token(seq(
--      repeat(choice(
--        /[-_]/,
--        /\/[^\*\s,;!{}()\[\]]/, // Slash not followed by a '*' (which would be a comment)
--      )),
-+      repeat(choice(/[-_]/, '//')),
-       /[a-zA-Z]/,
++      choice(
++        seq(repeat(choice(/[-_]/, '//')), /[a-zA-Z]/),
++        // An IE filter's `progid:Name`, which oxc-css-parser reads as one function.
++        /[pP][rR][oO][gG][iI][dD]:/,
++      ),
        repeat(choice(
--        /[^/\s,;!{}()\[\]]/, // Not a slash, not a delimiter character
+-        /[-_]/,
 +        /[^/:\s,;!{}()\[\]]/, // Not a slash, not a colon, not a delimiter character
-+        // A colon, but not one ending the word or before a digit: a Sass map's `key: 1px` and `key:1px` split
-+        // there, where `url(http://a)` and `progid:Name` stay one word.
-+        /:[^\d\s,;!{}()\[\]]/,
++        // A colon before a slash (`http://a`), as oxc-css-parser reads one word there; anywhere else it is a token
++        // of its own (`a:b`).
++        /:\//,
          /\/[^\*\s,;!{}()\[\]]/, // Slash not followed by a '*' (which would be a comment)
        )),
+-      /[a-zA-Z]/,
+-      repeat(choice(
+-        /[^/\s,;!{}()\[\]]/, // Not a slash, not a delimiter character
+-        /\/[^\*\s,;!{}()\[\]]/, // Slash not followed by a '*' (which would be a comment)
+-      )),
      )),
  
+     important_value: _ => token(seq(
+       '!',
 --- a/src/scanner.c
 +++ b/src/scanner.c
 @@ -1,31 +1,218 @@

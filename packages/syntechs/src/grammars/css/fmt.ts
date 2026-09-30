@@ -1025,11 +1025,12 @@ const mathFunctions = new Set(
  * A declaration's value oxc-css-parser's typed grammar cannot read to its end, so it falls back to raw tokens. That
  * grammar takes a `( … )` group only as a calc operand (`calc((1px + 2px) * 2)`) holding one calc sum (`(1px +2px)`
  * is two values), so any other group (`$map: (a: 1)`, `fn( (1) )`) makes the value raw; so does a `{ … }` outside
- * any function (`[1, {"a":1}]`, `function(x) { … }`).
+ * any function (`[1, {"a":1}]`, `function(x) { … }`), and so does a `:` past the property's (`a:b`).
  */
 function oxcRaw(decl: number, t: FormatTree): boolean {
+  if (children(decl, t).filter((c) => t.kindName(c) === ":").length > 1) return true;
   const calcSum = (paren: number) =>
-    children(paren, t).filter((c) => t.named(c) && !/^(js_)?comment$/.test(t.kindName(c))).length === 1;
+    children(paren, t).filter((c) => t.named(c) && t.kindName(c) !== "comment").length === 1;
   const raw = (n: number, inCall: boolean, inMath: boolean): boolean =>
     children(n, t).some((c) => {
       const k = t.kindName(c);
@@ -1129,7 +1130,7 @@ function rawTokens(nodes: number[], ctx: SCtx): { tokens: RawToken[]; tail: numb
     if (isComment(n, ctx)) comments.push(n);
     else if (k === "call_expression" && /^url$/i.test(t.text(t.child(n, 0)))) push("url", "", n, glued);
     else if (k === "string_value") push("string", t.text(n), n, glued);
-    // `a:b` stays one word: tree-sitter-css reads no `a: b` in a value back.
+    // `http://a` and `progid:A` stay one word, as oxc-css-parser reads them.
     else if (k === "plain_value" && t.text(n).includes(":")) push("ident", t.text(n), n, glued);
     else if (t.count(n) > 0 && !["integer_value", "float_value", "color_value", "plain_value"].includes(k))
       return children(n, t).forEach(visit);
@@ -1174,8 +1175,12 @@ function baseRawSeparator(g: RawToken[], i: number, font: boolean): RawSeparator
   const prev = g[i - 1] as RawToken;
   const curr = g[i] as RawToken;
   const is = (x: RawToken | undefined, kinds: string[]) => x !== undefined && kinds.includes(x.kind);
+  // A glued `::` is one token to oxc, lexed left to right, which neither `:` rule touches (`a::b`, `a::: b`).
+  const second = (j: number): boolean => g[j]?.kind === ":" && g[j - 1]?.kind === ":" && g[j]?.glued === true && !second(j - 1);
+  const pair = (j: number) => second(j) || (g[j + 1]?.kind === ":" && second(j + 1));
+  if (curr.kind === ":" && pair(i)) return curr.glued ? "tight" : "line";
   if (is(curr, [":", "}", ",", ")", "]", ";"]) || is(prev, ["{", "(", "["])) return "tight";
-  if (is(prev, [":", ","])) return "space";
+  if (is(prev, [",", ...(pair(i - 1) ? [] : [":"])])) return "space";
   if (curr.kind === "*" || prev.kind === "*") return "line";
   if ((g[0] as RawToken).kind === "/" && curr.glued) return "tight";
   if (font) {

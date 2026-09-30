@@ -200,6 +200,11 @@ const edgeCases: [string, string][] = [
     "double-slash-value",
     "a{b:a // c;d:1px //2px;e:a//c;f:calc(1px // c\n+ 2px);g:fn(a // b);h:a, // c\n d;i:a //c //d}",
   ],
+  // A `:` in a value was one word with its neighbours (`a:b`) or, spaced, an ERROR kept as written.
+  [
+    "value-colon",
+    'a{b:a:b (1);c:a :b;d:1px:2px;e:a::b;f:x(a:b);g:"a":b, c;h:x(http://a);filter:progid:DX.a(b=1);--i:a :b}',
+  ],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");
