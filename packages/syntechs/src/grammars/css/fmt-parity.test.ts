@@ -223,6 +223,9 @@ const edgeCases: [string, string][] = [
   ["delim-word-raw", "a{b:a*c;c:a%c,d/e;d:a.c,d/e;e:f(a%c),d/e;f:a*c, d}"],
   // A `#name` or `$name` glued to a word (`a#b`) and a `*` in a function's word stayed glued; oxc lexes them as
   // tokens of their own and spaces them, but in `url(…)`, a math function, and Tailwind's `w-*`.
+  // `a/f(c)` is the word `a/f` then a group to tree-sitter-css, which made the value raw and spaced its `/`; oxc
+  // reads a function there and keeps the glued `/`.
+  ["slash-function", "a{b:a/f(c), d;c:x a/f(c d) y;d:a/f (c);e:a/f((c))}"],
   ["word-hash-star", "a{b:a#b, d;c:x a#b#c;d:f(a*c);e:a$c;f:url($a*3);g:calc(a*c);h:f(w-*);i:a #b}"],
 ];
 

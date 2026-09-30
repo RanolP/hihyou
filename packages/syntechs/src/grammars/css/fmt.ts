@@ -1105,10 +1105,16 @@ function oxcRaw(decl: number, t: FormatTree): boolean {
   if (children(decl, t).filter((c) => t.kindName(c) === ":").length > 1) return true;
   const calcSum = (paren: number) =>
     children(paren, t).filter((c) => t.named(c) && t.kindName(c) !== "comment").length === 1;
+  // `a/f(c)`, which tree-sitter-css reads as the word `a/f` then a group, is `a`, `/` and the function `f(c)`.
+  const callParens = (paren: number) => {
+    const siblings = children(t.parent(paren), t);
+    const prev = siblings[siblings.indexOf(paren) - 1];
+    return prev !== undefined && t.kindName(prev) === "plain_value" && t.adjoins(prev, paren) && /\/[a-zA-Z_-][\w-]*$/.test(t.text(prev));
+  };
   const raw = (n: number, inCall: boolean, inMath: boolean): boolean =>
     children(n, t).some((c) => {
       const k = t.kindName(c);
-      if (k === "parenthesized_value" && !(inMath && calcSum(c))) return true;
+      if (k === "parenthesized_value" && !(inMath && calcSum(c)) && !callParens(c)) return true;
       if (k === "brace_value" && !inCall) return true;
       if (k === "plain_value" && !inCall && delimWord(t.text(c))) return true;
       const math =
