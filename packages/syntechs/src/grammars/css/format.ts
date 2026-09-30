@@ -101,14 +101,24 @@ export const css = format({
           $.children.at(0).andThen((p) => p),
           tok(":").via("declarationColon"),
           either(when("emptyValue"), [], space),
-          splitOn(",", {
-            except: ["property_name", ":", ";"],
-            trail: ["important"],
-            item: words({
-              keepLines: all(entryCount(1), firstText({ is: ["grid"], prefix: ["grid-template"], anyCase: true })),
+          // A CSS Modules `composes` value prints with its lines removed (prettier's css-decl), its words on one line.
+          either(
+            firstText({ is: ["composes"], anyCase: true }),
+            splitOn(",", {
+              except: ["property_name", ":", ";"],
+              trail: ["important"],
+              item: "space",
+              layout: { group: true, between: "line" },
             }),
-            layout: valueLayout,
-          }),
+            splitOn(",", {
+              except: ["property_name", ":", ";"],
+              trail: ["important"],
+              item: words({
+                keepLines: all(entryCount(1), firstText({ is: ["grid"], prefix: ["grid-template"], anyCase: true })),
+              }),
+              layout: valueLayout,
+            }),
+          ),
         ],
       ),
       tok(";").via("declarationEnd"),
@@ -148,12 +158,12 @@ export const css = format({
         [$.children.at(0).andThen((n) => n), $.children.at(1).andThen((n) => n.via("sassList"))],
         adjacent(),
       ),
-    // A function's as written inside `url()`, else broken inside the parentheses: a function's as words, a
-    // pseudo-class's as selectors.
+    // A function's as written inside `url()`, a space wherever the source has a gap (postcss-value-parser's one
+    // word, trimmed), else broken inside the parentheses: a function's as words, a pseudo-class's as selectors.
     arguments: () =>
       either(
         all(parentIs("call_expression"), ancestor("call_expression", { holds: calledAs("url") })),
-        adjacent(),
+        inOrder({ join: "gap", tight: { after: ["("], before: [")"] } }),
         either(
           parentIs("call_expression"),
           grpParen(splitOn(",", { except: ["(", ")"], item: words(), layout: { between: "line" } })),

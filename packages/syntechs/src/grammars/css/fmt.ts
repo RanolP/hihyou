@@ -185,6 +185,47 @@ function tightDivision(node: number, ctx: SCtx): boolean {
 }
 
 const operators = new Set(["+", "-", "*", "/"]);
+const isOperator = (n: number | undefined, ctx: SCtx) => n !== undefined && operators.has(kind(n, ctx));
+
+/** The operands and operators of the math chain whose outermost expression is `node`, in source order. */
+function chain(node: number, ctx: SCtx): number[] {
+  const items = new Set(ctx.items(node));
+  return children(node, ctx.tree).flatMap((c) =>
+    ctx.tree.named(c) && !items.has(c) ? [] : kind(c, ctx) === "binary_expression" ? chain(c, ctx) : [c],
+  );
+}
+
+/** A postcss-value-parser function or word, which spaces an operator next to it. */
+const funcOrWord = (n: number | undefined, ctx: SCtx) =>
+  n !== undefined && ["call_expression", "plain_value", "color_value"].includes(kind(n, ctx));
+/** What a `font` value's `/` stays joined to: a number, or a math or custom function. */
+const fontOperand = (n: number | undefined, ctx: SCtx) =>
+  n !== undefined &&
+  (kind(n, ctx) === "integer_value" ||
+    kind(n, ctx) === "float_value" ||
+    (kind(n, ctx) === "call_expression" &&
+      firstTextIs(ctx, n, undefined, ["var", "calc", "min", "max", "clamp"], ["--"], true)));
+
+/**
+ * Whether prettier's printCommaSeparatedValueGroup joins the neighbours `chain[i - 1]` and `chain[i]` of a math chain.
+ * Outside `calc()`, a `/` or `+` written without a gap before its right side stays joined unless a function or a word
+ * sits beside it, and a `-` so written always; a `*` is always spaced. In `font` and custom properties, a `/` written
+ * without a gap after a number or a math function stays joined, and so does what follows it, even inside `calc()`.
+ */
+function joinedMath(chain: number[], i: number, calc: boolean, font: boolean, ctx: SCtx): boolean {
+  const t = ctx.tree;
+  const [y, g, v, w] = [chain[i - 2], chain[i - 1] as number, chain[i] as number, chain[i + 1]];
+  const op = (n: number | undefined, o: string) => n !== undefined && kind(n, ctx) === o;
+  const tight = t.adjoins(g, v);
+  if (isOperator(v, ctx)) {
+    if (font && op(v, "/") && tight && fontOperand(g, ctx)) return true;
+    const spaced = funcOrWord(w, ctx) || funcOrWord(g, ctx);
+    return !calc && tight && (op(v, "-") || ((op(v, "/") || op(v, "+")) && !spaced));
+  }
+  if (font && op(g, "/") && y !== undefined && t.adjoins(y, g) && fontOperand(y, ctx)) return true;
+  const spaced = funcOrWord(v, ctx) || funcOrWord(y, ctx);
+  return !calc && tight && (op(g, "-") || ((op(g, "/") || op(g, "+")) && !spaced));
+}
 
 /**
  * Whether `node` sits in a `grid`/`grid-template*` declaration whose value the source breaks across lines, which
@@ -211,8 +252,8 @@ function gridLines(node: number, ctx: SCtx): boolean {
  * Prettier's math in a value, which postcss-value-parser reads as a flat run of words and operators where the
  * grammar nests it leftwards: so the outermost expression lays the chain out, the inner ones adding only their
  * operands and operators. In a value, an operator follows its left operand after a space and the right operand
- * follows it after a line, all packed in one fill (printCommaSeparatedValueGroup's `indent(fill(...))`); an
- * operator written without a gap stays joined, but inside `calc()` every one is spaced. In a Sass directive's
+ * follows it after a line, all packed in one fill (printCommaSeparatedValueGroup's `indent(fill(...))`), but where
+ * `joinedMath` keeps two joined; inside an unquoted `url()`, one word, as written. In a Sass directive's
  * prelude the chain is one group instead, a `/` written without gaps staying so.
  */
 export function valueMath(node: number, ctx: SCtx): void {
@@ -237,12 +278,28 @@ export function valueMath(node: number, ctx: SCtx): void {
       open(FILL_ITEM);
     }
   }
+  let top = node;
+  while (parentIs(t, top, "binary_expression")) top = t.parent(top);
+  const flat = directive ? [] : chain(top, ctx);
+  const font =
+    !directive &&
+    ancestorWhere(t, node, ["declaration"], ["block"], (a) => firstTextIs(ctx, a, undefined, ["font"], ["--"], true));
+  // postcss-value-parser reads an unquoted `url()` as one word, printed as written.
+  const url = ancestorWhere(t, node, ["call_expression"], ["declaration", "block"], (a) =>
+    firstTextIs(ctx, a, undefined, ["url"], [], true),
+  );
+  const spaced = (prev: number, c: number) => {
+    if (directive) return true;
+    if (url) return !t.adjoins(prev, c);
+    const first = kind(c, ctx) === "binary_expression" ? chain(c, ctx)[0] : c;
+    return !joinedMath(flat, flat.indexOf(first as number), calc, font, ctx);
+  };
   const items = new Set(ctx.items(node));
   let prev = -1;
   for (const c of children(node, t)) {
     const named = t.named(c);
     if (named && !items.has(c)) continue;
-    if (prev !== -1 && !tight && (directive || calc || !t.adjoins(prev, c))) {
+    if (prev !== -1 && !tight && spaced(prev, c)) {
       if (grid) {
         if (breaksBetween(t, prev, c)) sHardline();
         else sText(" ");

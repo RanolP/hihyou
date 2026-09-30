@@ -1,4 +1,4 @@
-css compatibility: 133/151 (88.08%), 0 refused (ok:false), 6 excluded
+css compatibility: 135/151 (89.40%), 1 refused (ok:false), 6 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -20,9 +20,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | css/comments/at-rules.css | 0/1 | 47.71% |
 | css/comments/declaration.css | 0/1 | 67.43% |
 | css/comments/selectors.css | 0/1 | 59.56% |
-| css/composes/composes.css | 0/1 | 57.14% |
-| css/font/font.css | 0/1 | 79.41% |
-| css/inline-url/inline_url.css | 0/1 | 97.92% |
 | css/modules/modules.css | 0/1 | 99.20% |
 | css/parens/parens.css | 0/1 | 83.13% |
 | css/postcss-8-improment/test.css | 0/1 | 80.00% |
@@ -37,6 +34,7 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
+| css/font/font.css | 1/1 | 100.00% | check: input "1rem" at 707 is output as "1" at 661, which means "1e0", not "1e0rem" |
 
 # Excluded
 
