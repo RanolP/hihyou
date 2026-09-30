@@ -199,12 +199,31 @@ const unionMember = (c: CommentContext<JsOptions>): CommentTarget | undefined =>
  * member, so it prints after that member's `|` (prettier's shouldMoveCommentToFirstUnionMember).
  */
 const unionHead = (c: CommentContext<JsOptions>, node: number): number => {
+  if (c.options.compat === "oxfmt") return oxfmtUnionHead(c, node);
   if (kind(c, node) !== "union_type" || !c.text.startsWith("/*") || c.text.includes("\n")) return node;
   if (isIgnoreComment(c, c.comment)) return node;
   const head = firstLeaf(c.tree, node);
   if (c.tree.lf(head) > 0 || nextLeaf(c.tree, c.comment) !== head) return node;
   const { types } = flattenTypes(c, node);
   return types.length > 1 ? (types[0] as number) : node;
+};
+
+/**
+ * oxfmt's form of unionHead: any block comment that does not end its line moves behind the first `|`, multi-line
+ * ones too, and one before the `(`s and `|`s of parenthesized one-type unions reaches the union inside them.
+ */
+const oxfmtUnionHead = (c: CommentContext<JsOptions>, node: number): number => {
+  const union = unparenType(c, node) ?? node;
+  if (kind(c, union) !== "union_type" || !c.text.startsWith("/*") || isIgnoreComment(c, c.comment)) return node;
+  const { types } = flattenTypes(c, union);
+  const first = types[0];
+  if (types.length < 2 || first === undefined) return node;
+  let leaf = nextLeaf(c.tree, c.comment);
+  if (c.tree.lf(leaf) > 0) return node;
+  const head = firstLeaf(c.tree, first);
+  for (; leaf !== head; leaf = nextLeaf(c.tree, leaf))
+    if (kind(c, leaf) !== "(" && kind(c, leaf) !== "|") return node;
+  return first;
 };
 
 /** `type A =⏎/* c *\/ A | B`: the comment before a union leads its first member (the last own-line handler). */

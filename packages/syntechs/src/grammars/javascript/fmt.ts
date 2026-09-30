@@ -217,8 +217,9 @@ function castParens(sctx: ReturnType<typeof jsCtx>, n: number, inner: number): v
 
 /** A node under a `// prettier-ignore` comment keeps its source text. */
 const isIgnored = (ctx: JsCtx, n: number) =>
-  (!isUnion(ctx, n) && ledByIgnore(ctx, n)) ||
-  firstOfIgnoredUnion(ctx, n) ||
+  (ctx.options.compat === "oxfmt"
+    ? oxfmtIgnored(ctx, n)
+    : (!isUnion(ctx, n) && ledByIgnore(ctx, n)) || firstOfIgnoredUnion(ctx, n)) ||
   afterIgnoreInUnion(ctx, n) ||
   (isJsx(ctx, n) && jsxIgnored(ctx, n, (c) => isIgnoreComment(ctx, c)));
 
@@ -226,6 +227,18 @@ const ledByIgnore = (ctx: JsCtx, n: number) =>
   ctx.comments(n).leading.some((c) => isIgnoreComment(ctx, c));
 
 const isUnion = (ctx: JsCtx, n: number) => kind(ctx, unparenType(ctx, n)) === "union_type";
+
+/**
+ * oxfmt keeps a whole union's source text under a `// prettier-ignore` above it or its parentheses, where prettier
+ * keeps only its first member's: the union itself, without the parentheses, prints as written.
+ */
+const oxfmtIgnored = (ctx: JsCtx, n: number) => {
+  if (!isUnion(ctx, n)) return ledByIgnore(ctx, n);
+  if (unparenType(ctx, n) !== n) return false;
+  for (let w: number | undefined = n; w !== undefined && unparenType(ctx, w) === n; w = parent(ctx, w))
+    if (ledByIgnore(ctx, w)) return true;
+  return false;
+};
 
 /**
  * `// prettier-ignore` above a union, or above its parentheses, keeps only the union's first member's source text

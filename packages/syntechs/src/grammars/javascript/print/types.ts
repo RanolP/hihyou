@@ -318,11 +318,14 @@ function printUnionType(ctx: JsStreamCtx, n: number, owns: boolean) {
   const parenthesized =
     kind(js, parent(js, n)) === "parenthesized_type" && typeNeedsParens(js, n);
   const inTuple = upKind === "tuple_type" && items(js, up as number).length > 1;
+  // oxfmt indents a conditional's branch under its `?` or `:` too, unless comments lead it there.
+  const branchIndents = js.options.compat === "oxfmt" && ctx.leadingComments(n).length === 0;
   const noIndent =
     upKind === "type_assertion" ||
     upKind === "tuple_type" ||
     (upKind === "conditional_type" &&
-      (key === "consequence" || key === "alternative")) ||
+      (key === "consequence" || key === "alternative") &&
+      !branchIndents) ||
     upKind === "type_arguments";
   const indented =
     !hug &&
@@ -385,7 +388,14 @@ function printUnionType(ctx: JsStreamCtx, n: number, owns: boolean) {
               sToken(x, ")", true);
             }
           : () => ctx.printBare(x);
-      if (js.comments(x).leading.length > 0)
+      // oxfmt aligns only the leading ones: an own-line comment before the next `|` stays at the `|`.
+      if (js.comments(x).leading.length > 0 && oxfmt) {
+        aligned(() => {
+          printLeadingComments(ctx, x);
+          bare();
+        });
+        printTrailingComments(ctx, x);
+      } else if (js.comments(x).leading.length > 0)
         aligned(() => withComments(ctx, x, bare));
       else withComments(ctx, x, () => aligned(bare));
     });
