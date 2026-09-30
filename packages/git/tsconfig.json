@@ -8,6 +8,6 @@
     "types": []
   },
   "include": ["src"],
-  "exclude": ["src/node.ts", "src/**/*.test.ts"],
+  "exclude": ["src/node.ts", "src/vscode-like-fs.ts", "src/**/*.test.ts"],
   "references": [{ "path": "../engine" }]
 }

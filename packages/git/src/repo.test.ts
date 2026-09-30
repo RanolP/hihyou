@@ -20,11 +20,20 @@ import { localHost } from "./host.js";
 import { openRepo } from "./node.js";
 import type { Repo } from "./repo.js";
 import type { ChangedFile } from "./tree-diff.js";
+import { vscodeLikeFileSystem } from "./vscode-like-fs.js";
+import { webRepo } from "./web.js";
 
 // Oracle tests: every answer is checked against the real git CLI, on this repository and on a
 // fixture repository built for the cases this one does not hold (dirty files, index v3/v4, ref deltas).
+// Both adapters run the whole suite. The web one gets DecompressionStream, SubtleCrypto and a file
+// system with only millisecond mtimes and no mode bits, so its git oracle runs with core.filemode off.
 const adapters = [
   { name: "node", open: (path: string) => openRepo(path), gitConfig: [] },
+  {
+    name: "web",
+    open: (path: string) => webRepo({ fs: vscodeLikeFileSystem, path }),
+    gitConfig: ["-c", "core.filemode=false"],
+  },
 ];
 
 const zero = "0".repeat(40);

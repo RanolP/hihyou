@@ -5,6 +5,6 @@
     "outDir": "dist",
     "types": ["node"]
   },
-  "include": ["src/node.ts", "src/**/*.test.ts"],
+  "include": ["src/node.ts", "src/vscode-like-fs.ts", "src/**/*.test.ts"],
   "references": [{ "path": "." }]
 }
