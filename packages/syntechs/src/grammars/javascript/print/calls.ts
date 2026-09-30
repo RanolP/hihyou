@@ -533,7 +533,8 @@ const sTypeArguments = (sctx: JsStreamCtx, n: number) => {
   const ta = field(sctx.js, n, "type_arguments");
   if (ta === undefined) return;
   sctx.print(ta);
-  sLineSuffixBoundary();
+  // oxfmt carries a comment in or after them to the end of the line.
+  if (sctx.js.options.compat !== "oxfmt") sLineSuffixBoundary();
 };
 
 /** Prettier's printDanglingCommentsInList over the sink. */
@@ -1196,7 +1197,7 @@ const sCallee = (sctx: JsStreamCtx, n: number) => {
     awaitsHere(ctx, n)
   )
     sText(" ");
-  // oxfmt carries a callee's trailing comment past the arguments to the line's end: `f();⏎// c`.
+  // oxfmt carries a callee's trailing comment past its type arguments and arguments to the line's end: `f<T>();⏎// c`.
   if (ctx.options.compat !== "oxfmt") sLineSuffixBoundary();
 };
 

@@ -396,7 +396,8 @@ function printUnionType(ctx: JsStreamCtx, n: number, owns: boolean) {
     open(GROUP);
     open(INDENT);
     sLine(SOFT);
-    printed();
+    // oxfmt breaks a union moved inside its parentheses at every `|`.
+    printed(!oxfmt);
     close();
     sLine(SOFT);
     return close();
@@ -529,14 +530,16 @@ const typeParameters: CustomRule<JsOptions> = (n, sctx) => {
     !isArrowFunctionVariable &&
     (isTestCall(ctx, grand, parent(ctx, grand)) ||
       (params.length === 1 && shouldHugType(ctx, params[0] as number))) &&
-    !params.some((x) => {
-      const comments = getComments(ctx, x, CF.Leading | CF.Trailing);
-      return (
-        comments.length > 0 &&
-        (comments.some((c) => ctx.isLineComment(c)) ||
-          lfAfter(ctx.tree, comments.at(-1) as number) > 0)
-      );
-    });
+    // oxfmt hugs a type argument whatever comments it carries.
+    ((ctx.options.compat === "oxfmt" && kind(ctx, n) === "type_arguments") ||
+      !params.some((x) => {
+        const comments = getComments(ctx, x, CF.Leading | CF.Trailing);
+        return (
+          comments.length > 0 &&
+          (comments.some((c) => ctx.isLineComment(c)) ||
+            lfAfter(ctx.tree, comments.at(-1) as number) > 0)
+        );
+      }));
   const printed = (sep: () => void) =>
     params.forEach((x, i) => {
       if (i > 0) sep();

@@ -1,4 +1,4 @@
-ts@oxfmt compatibility: 609/632 (96.36%), 0 refused (ok:false), 97 excluded
+ts@oxfmt compatibility: 617/632 (97.63%), 0 refused (ok:false), 97 excluded
 
 Fixtures: those of the ts target, every option set, expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults. A fixture oxfmt rejects under any of its option sets is excluded.
 
@@ -11,21 +11,13 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/as/as-const/as-const.ts | 0/1 | 66.67% |
 | typescript/as/comments/17407.ts | 0/1 | 47.06% |
 | typescript/as/comments/18160.ts | 0/1 | 54.21% |
-| typescript/call/callee-comments.ts | 0/1 | 75.00% |
 | typescript/cast/18406.ts | 0/1 | 84.21% |
 | typescript/comments/method_types.ts | 0/1 | 82.05% |
-| typescript/comments/type-parameters.ts | 0/1 | 81.82% |
 | typescript/comments/first-argument/first-argument.ts | 0/1 | 81.16% |
-| typescript/intersection/intersection-parens.ts | 1/3 | 99.29% |
-| typescript/intersection/consistent-with-flow/intersection-parens.ts | 0/1 | 97.67% |
 | typescript/intersection/consistent-with-flow/single-member.ts | 0/1 | 96.91% |
 | typescript/property-signature/consistent-with-flow/comments.ts | 0/1 | 80.00% |
 | typescript/satisfies-operators/comments-unstable.ts | 0/2 | 61.54% |
 | typescript/template-literals/member-expression.ts | 0/1 | 65.12% |
-| typescript/type-parameters-arguments/18604.ts | 0/1 | 60.00% |
-| typescript/type-parameters-arguments/19505.ts | 0/1 | 61.54% |
-| typescript/type-parameters-arguments/issue-6858.ts | 0/1 | 60.61% |
-| typescript/union/union-parens.ts | 0/1 | 97.67% |
 | typescript/union/comments/18379.ts | 0/1 | 92.31% |
 | typescript/union/consistent-with-flow/conditional.ts | 0/1 | 54.55% |
 | typescript/union/consistent-with-flow/leading-comments.ts | 0/1 | 94.29% |

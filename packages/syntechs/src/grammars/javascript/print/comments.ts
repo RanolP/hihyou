@@ -106,6 +106,8 @@ const typeBeforeSemicolon = (c: CommentContext<JsOptions>): CommentTarget | unde
       : undefined;
   }
   if (!SEMI_INSIDE.has(kind(c, enclosing)) || kind(c, preceding) === "formal_parameters") return;
+  // oxfmt's type alias ends before its `;`, as a statement does.
+  if (c.options.compat === "oxfmt" && kind(c, enclosing) === "type_alias_declaration") return;
   let up = parent(c, enclosing);
   if (up !== undefined && kind(c, up) === "ambient_declaration") up = parent(c, up);
   return up !== undefined && kind(c, up) === "export_statement"
