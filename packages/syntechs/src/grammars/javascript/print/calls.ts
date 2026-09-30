@@ -876,8 +876,6 @@ function sMemberChain(sctx: JsStreamCtx, n: number): void {
       const kept =
         inner === node ||
         hasComment(ctx, node) ||
-        childWhere(ctx, node, (c) => kind(ctx, c) === "comment") !==
-          undefined ||
         needsParens(inner, ctx);
       if (!kept) return rec(inner);
       printedNodes.unshift({ node, printed: capture(() => sctx.print(node)) });

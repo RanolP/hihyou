@@ -32,7 +32,6 @@ import {
   anon,
   ArgExpansionBailout,
   type Args,
-  CF,
   callArguments,
   callee,
   childWhere,
@@ -40,6 +39,7 @@ import {
   field,
   first,
   hasComment,
+  hasLeadingOwnLineComment,
   type HasTree,
   isBinaryish,
   isCall,
@@ -666,7 +666,7 @@ const arrow: CustomRule<JsOptions> = (node, s) => {
   }
 
   const hasLeadingOwnLine = [bodyNode, functionBody].some((b) =>
-    hasComment(ctx, b, CF.Leading, (c) => lfAfter(ctx.tree, c) > 0),
+    hasLeadingOwnLineComment(ctx, b),
   );
   const shouldPutBodyOnSameLine =
     !hasLeadingOwnLine &&

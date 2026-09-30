@@ -1,4 +1,4 @@
-js compatibility: 781/804 (97.14%), 4 refused (ok:false), 304 excluded
+js compatibility: 789/804 (98.13%), 1 refused (ok:false), 304 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -17,17 +17,12 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/arrows/arrow_function_expression.js | 0/2 | 94.29% |
 | js/arrows/issue-17421.js | 0/2 | 90.60% |
 | js/arrows/parenthesized-body/issue-18776.js | 0/1 | 85.71% |
-| js/comments/function-declaration.js | 0/2 | 80.95% |
-| js/comments/return-statement.js | 0/2 | 98.34% |
-| js/comments/in-list/dangling-comment-in-list.js | 0/1 | 95.95% |
-| js/comments/while-like/switch.js | 0/1 | 86.67% |
 | js/embeded/indention/19518.js | 0/1 | 64.94% |
 | js/embeded/indention/indention-2.js | 0/1 | 23.53% |
 | js/embeded/indention/indention.js | 0/1 | 63.27% |
 | js/empty-paren-comment/empty_paren_comment.js | 0/1 | 91.43% |
 | js/export/blank-line-between-specifiers.js | 0/2 | 95.00% |
 | js/if/condition-break/boolean-expression.js | 0/1 | 97.01% |
-| js/import-attributes/long-sources.js | 0/1 | 86.54% |
 | js/reserved-word/yield.js | 0/1 | 93.33% |
 | js/sequence-expression/parenthesized.js | 0/1 | 85.71% |
 | js/template-literals/expression-break.js | 0/1 | 80.00% |
@@ -38,9 +33,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| js/comments/break-continue-statements-3.js | 2/2 | 95.83% | check: output comment "// breaking comment;" matches no input comment |
-| js/decorators/comments.js | 1/1 | 92.54% | check: output comment "// B" matches no input comment |
-| js/import/empty-import/empty-import.js | 1/1 | 64.86% | check: output comment "// comment } from \"a\";" matches no input comment |
 | jsx/comments/in-end-tag.js | 1/1 | 32.08% | check: input ">" at 503 is output as ">" at 503, which means ">@\|-1/71", not ">@\|-1/62" |
 
 # Excluded

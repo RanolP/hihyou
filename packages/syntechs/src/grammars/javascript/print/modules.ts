@@ -150,7 +150,7 @@ function printModuleStatement(s: JsStreamCtx, n: number, ctx: StreamCtx<JsOption
   const specifiers = children.filter((c) => NAMED.has(kind(js, c)) || kind(js, c) === "namespace_export");
   // A comment attached to a child that `s.print` prints comes out with that child; any other prints where it sits.
   const printedWithChild = new Set(
-    children
+    all
       .filter((c) => isNamed(js, c) && !isComment(js, c) && !specifiers.includes(c))
       .flatMap((c) => getComments(js, c, CF.Leading | CF.Trailing)),
   );
@@ -232,7 +232,7 @@ export const moduleCustoms = {
       key !== undefined &&
       /^(type|"type"|'type')$/.test(src(js, key)) &&
       kind(js, field(js, only, "value")) === "string" &&
-      getComments(js, only).length === 0
+      [only, key, field(js, only, "value") as number].every((c) => getComments(js, c).length === 0)
     )
       place(removeLines(capture(() => s.print(object))));
     else s.print(object);

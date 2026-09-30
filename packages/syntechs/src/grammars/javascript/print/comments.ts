@@ -250,9 +250,16 @@ const typeParameterBound = (c: CommentContext<JsOptions>): CommentTarget | undef
   return { node, as: "trailing" };
 };
 
-const METHODS = new Set(["method_definition", "method_signature"]);
+const METHODS = new Set([
+  "method_definition",
+  "method_signature",
+  "function_declaration",
+  "function_expression",
+  "generator_function_declaration",
+  "generator_function",
+]);
 
-/** `m /* c *\/ () {}`: the comment trails the method's name (handleMethodNameComments). */
+/** `m /* c *\/ () {}`, `function f /* c *\/ () {}`: the comment trails the name (handleMethodNameComments). */
 const methodName = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   const { enclosing, preceding, following } = c;
   if (
@@ -280,13 +287,18 @@ const isParameterProperty = (c: CommentContext<JsOptions>) =>
 
 /**
  * `@dec()\n// c\naccessor b;`: a comment after a field's decorators trails the last one, above the modifiers, as
- * classHeader does for a class's.
+ * classHeader does for a class's. tree-sitter hangs `@dec export class` decorators on the export, where prettier's
+ * are the class's, so a comment after them trails the last one there too, above `export`.
  */
 const fieldDecorator = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   const { enclosing, preceding, following, placement } = c;
   if (
     placement === "remaining" ||
-    !(FIELDS.has(kind(c, enclosing)) || isParameterProperty(c)) ||
+    !(
+      FIELDS.has(kind(c, enclosing)) ||
+      isParameterProperty(c) ||
+      kind(c, enclosing) === "export_statement"
+    ) ||
     preceding === undefined ||
     kind(c, preceding) !== "decorator" ||
     (following !== undefined && kind(c, following) === "decorator")
@@ -502,6 +514,26 @@ const statementBody = (c: CommentContext<JsOptions>): CommentTarget | undefined 
 };
 
 /**
+ * `switch (a) // c\n{}`: babel's switch has no node between the discriminant and the cases, so a comment after `)`
+ * trails the discriminant, inside the parentheses, unless it sits on its own line above a first case, which it leads.
+ */
+const switchHead = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { enclosing, preceding, following, placement } = c;
+  if (
+    kind(c, enclosing) !== "switch_statement" ||
+    preceding === undefined ||
+    preceding !== field(c, enclosing, "value") ||
+    following === undefined ||
+    following !== field(c, enclosing, "body")
+  )
+    return;
+  const firstCase = children(c, following).find((n) => named(c, n) && isCode(c, n));
+  return placement === "ownLine" && firstCase !== undefined
+    ? { node: firstCase, as: "leading" }
+    : { node: unparen(c, preceding), as: "trailing" };
+};
+
+/**
  * `a; // b\n;// c`: prettier attaches no comment to an empty statement, so a comment beside a stray `;` in a
  * statement list takes the statements around it as neighbours, on a line of its own leading the next, else trailing
  * the one before.
@@ -559,6 +591,32 @@ const specifier = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
     ? { node: c.enclosing, as: "leading" }
     : undefined;
 };
+
+/**
+ * `import /* c *\/ { /* d *\/ } from "a"`: prettier prints an import of an empty `{}` as `import {} from`, with every
+ * comment ahead of the source after `from`, so each leads the source.
+ */
+const emptyImport = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { tree } = c;
+  let imp: number | undefined = c.enclosing;
+  while (imp !== undefined && IMPORT_PARTS.has(kind(c, imp))) imp = parent(c, imp);
+  if (imp === undefined || kind(c, imp) !== "import_statement") return;
+  const source = field(c, imp, "source");
+  const clause = children(c, imp).find((n) => kind(c, n) === "import_clause");
+  if (
+    source === undefined ||
+    clause === undefined ||
+    tree.ord(c.comment) > tree.ord(firstLeaf(tree, source))
+  )
+    return;
+  const code = (n: number) => children(c, n).filter((k) => named(c, k) && isCode(c, k));
+  const [only, ...rest] = code(clause);
+  return only !== undefined && rest.length === 0 && kind(c, only) === "named_imports" && code(only).length === 0
+    ? { node: source, as: "leading" }
+    : undefined;
+};
+
+const IMPORT_PARTS = new Set(["import_clause", "named_imports"]);
 
 const TRY_PARTS = new Set(["try_statement", "catch_clause", "finally_clause"]);
 
@@ -879,8 +937,10 @@ const handlers = [
   functionBody,
   arrowBody,
   forEmptyPart,
+  emptyImport,
   specifier,
   statementBody,
+  switchHead,
   tryBlock,
   labeled,
   switchDefault,

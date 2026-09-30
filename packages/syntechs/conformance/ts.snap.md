@@ -1,4 +1,4 @@
-ts compatibility: 642/653 (98.32%), 2 refused (ok:false), 76 excluded
+ts compatibility: 643/653 (98.47%), 1 refused (ok:false), 76 excluded
 
 Other formatters on the same fixtures, fixtures passed:
 
@@ -28,7 +28,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| typescript/import-export/empty-import.ts | 1/1 | 64.86% | check: output comment "// comment } from \"a\";" matches no input comment |
 | typescript/interface/long-type-parameters/long-type-parameters.ts | 2/2 | 75.65% | check: input comment "// always extends RectConfig" is missing from the output |
 
 # Excluded

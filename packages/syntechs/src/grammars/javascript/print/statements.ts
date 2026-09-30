@@ -78,6 +78,12 @@ const SEMI_ENDED = new Set([
   "using_declaration",
 ]);
 
+const KEYWORD_ENDED = new Set([
+  "break_statement",
+  "continue_statement",
+  "debugger_statement",
+]);
+
 const BODY_ENDED = new Set([
   "for_statement",
   "for_in_statement",
@@ -99,10 +105,12 @@ export function contentEnd(
   const body = lastBody(x, n);
   if (body !== undefined) return contentEnd(x, body, keepComments);
   if (!SEMI_ENDED.has(kind(x, n))) return n;
+  // Prettier ends a break, continue or debugger at its keyword or label, so the comments after it stay out.
+  const keep = keepComments && !KEYWORD_ENDED.has(kind(x, n));
   const content = lastChildWhere(
     x,
     n,
-    (c) => kind(x, c) !== ";" && (keepComments || !isComment(x, c)),
+    (c) => kind(x, c) !== ";" && (keep || !isComment(x, c)),
   );
   return content ?? n;
 }
