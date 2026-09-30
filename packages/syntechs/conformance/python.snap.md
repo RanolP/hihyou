@@ -1,4 +1,4 @@
-python compatibility: 324/327 (99.08%), 0 refused (ok:false), 49 excluded
+python compatibility: 327/327 (100.00%), 0 refused (ok:false), 49 excluded
 
 Fixtures: ruff 0.16.8 crates/ruff_python_formatter/resources/test/fixtures/{black,ruff} (recursive), every option set of each `.options.json`, expected output from tests/snapshots (black cases without a snapshot: their `.expect` file). Options are passed by their ruff.toml names.
 
@@ -8,9 +8,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
-| black/cases/comments_in_blocks.py | 0/1 | 98.68% |
-| ruff/expression/call.py | 0/1 | 99.08% |
-| ruff/statement/function.py | 0/1 | 99.60% |
 
 # Refused
 

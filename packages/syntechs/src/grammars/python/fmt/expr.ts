@@ -54,7 +54,11 @@ import {
 import {
   endOf,
   hasLineBreak,
+  isTrivia,
+  leafBefore,
   leafFrom,
+  nextLeafOf,
+  prevLeafOf,
   startOf,
   startsLine,
   tokens,
@@ -153,6 +157,36 @@ function writeInParens(
   else f.writeParenthesized(open, content, close, dangling, hug);
 }
 
+/**
+ * Ruff's `parenthesized_range` as `FormatExpr` calls it, without the parent: every `(` before `e` paired with a
+ * `)` after it, a call's own parentheses around its only argument included. So a comment before an argument's `(`
+ * moves inside it, as ruff's TODO there admits.
+ */
+function outermostParens(
+  f: Fmt,
+  e: Expr,
+): { start: number; end: number } | undefined {
+  const tree = f.tree;
+  const skip = (l: number, step: (l: number) => number) => {
+    while (l !== NO_NODE && isTrivia(tree, l)) l = step(l);
+    return l;
+  };
+  let l = skip(leafBefore(tree, e.start), (x) => prevLeafOf(tree, x));
+  let r = skip(leafFrom(tree, e.end), (x) => nextLeafOf(tree, x));
+  let range: { start: number; end: number } | undefined;
+  while (
+    l !== NO_NODE &&
+    r !== NO_NODE &&
+    tree.text(l) === "(" &&
+    tree.text(r) === ")"
+  ) {
+    range = { start: startOf(tree, l), end: endOf(tree, r) };
+    l = skip(prevLeafOf(tree, l), (x) => prevLeafOf(tree, x));
+    r = skip(nextLeafOf(tree, r), (x) => nextLeafOf(tree, x));
+  }
+  return range;
+}
+
 function withParenthesesComments(
   f: Fmt,
   e: Expr,
@@ -163,7 +197,7 @@ function withParenthesesComments(
   const cs = f.comments;
   const leading = cs.leading(e);
   const trailing = cs.trailing(e);
-  const p = e.parens[0];
+  const p = outermostParens(f, e);
   const ls = p ? leading.findIndex((c) => c.start >= p.start) : 0;
   const ts = p ? trailing.findIndex((c) => c.start >= p.end) : -1;
   const leadingSplit = ls < 0 ? leading.length : ls;
@@ -1030,6 +1064,12 @@ export function writeParameters(
     }
   }
   const writeTok = (n: number) => sink.sToken(n, f.text(n));
+  // Ruff hands the `/` the leading run of the dangling comments that sit around it, and the `*` all the rest.
+  const slash = p.items.findIndex(
+    (x) => x.kind === "Separator" && f.text(x.tok) === "/",
+  );
+  const slashEnd =
+    slash < 0 ? 0 : partitionPoint(rest, (c) => separatorOwns(p, slash, c));
   const inner = () => {
     const parenthesizedLevel = isParenthesizedLevel(f.level);
     let lastEnd: number | undefined;
@@ -1040,10 +1080,13 @@ export function writeParameters(
         else sink.sText(" ");
       }
       if (item.kind === "Separator") {
-        const mine = rest.filter((c) => separatorOwns(p, i, c));
-        f.writeLeading(mine.filter((c) => c.line === "own"));
+        // Ruff's `CommentsAroundText`.
+        const mine =
+          i === slash ? rest.slice(0, slashEnd) : rest.slice(slashEnd);
+        const split = partitionPoint(mine, (c) => c.line === "own");
+        f.writeLeading(mine.slice(0, split));
         sink.sDsl(item.ts);
-        f.writeTrailing(mine.filter((c) => c.line !== "own"));
+        f.writeTrailing(mine.slice(split));
       } else writeParameter(f, item);
       lastEnd = item.end;
     }
@@ -1091,6 +1134,22 @@ export function writeParameters(
     sink.sLine(sink.SOFT | sink.COLLAPSE);
     mode.close();
   });
+}
+
+/**
+ * Rust's `partition_point` by its binary search, step for step: ruff calls it on comment runs whose predicate
+ * does not hold for a prefix only, and the probes it happens to make decide the split.
+ */
+function partitionPoint<T>(xs: readonly T[], p: (x: T) => boolean): number {
+  if (xs.length === 0) return 0;
+  let size = xs.length;
+  let base = 0;
+  while (size > 1) {
+    const half = size >> 1;
+    if (p(xs[base + half] as T)) base += half;
+    size -= half;
+  }
+  return base + (p(xs[base] as T) ? 1 : 0);
 }
 
 /** Whether dangling comment `c` of `p` sits around the separator at `items[i]`. */
@@ -1418,8 +1477,7 @@ function hasUnparenthesizedLeadingComments(f: Fmt, o: Operand): boolean {
   const leading = f.comments.leading(o.e);
   if (o.e.parens.length > 0)
     return leading.some(
-      (c) =>
-        !c.formatted && firstTokenAfter(f, c.end) === "(" && c.end <= o.e.start,
+      (c) => !c.formatted && tokenAfter(f, c.end, o.e.start) === "(",
     );
   return leading.length > 0;
 }
