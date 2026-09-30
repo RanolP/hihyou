@@ -472,6 +472,15 @@ export const customs = {
     const ctor = childOf(ctx.tree, node, "primary_constructor");
     return ctor !== -1 && commentedBeforeBody(ctor, ctx);
   },
+  /**
+   * Of a secondary constructor: its parameter list is an empty `()`, the one case ktfmt lets the line break after the
+   * `:` before the delegation call (`constructor() :` then `this(...)` indented), rather than inside the parentheses.
+   */
+  emptyParameters: (node, ctx) => {
+    const t = ctx.tree;
+    const params = childOf(t, node, "function_value_parameters");
+    return params !== -1 && t.count(params) === 2;
+  },
   commentedConstructor: (node, ctx) => {
     const t = ctx.tree;
     const ctor = t.kindName(node) === "primary_constructor" ? node : childOf(t, node, "primary_constructor");

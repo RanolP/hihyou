@@ -61,6 +61,8 @@ const spaced = (
     readonly tightBefore?: readonly string[];
     readonly braces?: boolean;
     readonly hang?: boolean;
+    /** Tokens the next child hangs off, besides the assignment operators `hang` names. */
+    readonly hangAfter?: readonly string[];
     /** The rule naming the right sides that stay on the `=`'s line (see `hug`). */
     readonly hug?: "hugged" | "huggedChain";
     readonly skip?: readonly string[];
@@ -70,7 +72,9 @@ const spaced = (
     join: "space",
     tight: { before: [...before, ...(o.tightBefore ?? [])] as never[], after: [...after, "modifiers"] as never[] },
     ...(o.braces ? { braces: true } : {}),
-    ...(o.hang ? { hangAfter: ["=", "+=", "-=", "*=", "/=", "%="] as never[] } : {}),
+    ...(o.hang || o.hangAfter
+      ? { hangAfter: [...(o.hang ? ["=", "+=", "-=", "*=", "/=", "%="] : []), ...(o.hangAfter ?? [])] as never[] }
+      : {}),
     ...(o.hug ? { hug: when(o.hug) } : {}),
     ...(o.skip ? { skip: o.skip as never[] } : {}),
   });
@@ -241,7 +245,9 @@ export const kotlin = format({
     delegation_specifier: () => spaced(),
     explicit_delegation: () => spaced(),
     constructor_invocation: () => inOrder(),
-    secondary_constructor: () => decl(spaced({ braces: true })),
+    // `constructor() :` breaks before the delegation call when it overflows; a parameter list breaks inside instead.
+    secondary_constructor: () =>
+      either(when("emptyParameters"), decl(spaced({ braces: true, hangAfter: [":"] })), decl(spaced({ braces: true }))),
     anonymous_initializer: () => decl(spaced({ braces: true })),
     constructor_delegation_call: () => inOrder(),
     type_alias: () => decl(spaced({ tightBefore: ["type_parameters"] })),
