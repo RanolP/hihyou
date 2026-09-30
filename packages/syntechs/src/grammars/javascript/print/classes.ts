@@ -232,10 +232,11 @@ function printDeclarationDecorators(
   const decorators = decoratorsOf(ctx, n);
   if (decorators.length === 0) return;
   const up = parent(ctx, n);
+  // The class of `export default` is its `value`; its decorators break from `export default` as well.
   const exported =
     up !== undefined &&
     kind(ctx, up) === "export_statement" &&
-    field(ctx, up, "declaration") === n;
+    (field(ctx, up, "declaration") === n || field(ctx, up, "value") === n);
   if (exported) sHardline();
   else sBreakParent();
   decorators.forEach((d, i) => {

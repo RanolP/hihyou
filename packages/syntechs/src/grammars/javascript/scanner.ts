@@ -1,7 +1,7 @@
 // Port of tree-sitter-javascript 0.25.0 src/scanner.c. Stateless.
 
 import type { ExternalScanner, Lexer } from "../../core/lexer.js";
-import { iswalpha, iswdigit, iswspace } from "../../core/wctype.js";
+import { iswalnum, iswalpha, iswdigit, iswspace } from "../../core/wctype.js";
 
 const AUTOMATIC_SEMICOLON = 0;
 const TEMPLATE_CHARS = 1;
@@ -12,6 +12,7 @@ const ESCAPE_SEQUENCE = 5;
 const REGEX_PATTERN = 6;
 const JSX_TEXT = 7;
 const STATEMENT_CONTINUES = 8;
+const FOR_IN_AFTER_INITIALIZER = 9;
 
 const LS = 0x2028;
 const PS = 0x2029;
@@ -242,6 +243,20 @@ export function scan(lexer: Lexer, valid: Uint8Array): boolean {
     return scanTemplateChars(lexer);
   }
   if (valid[JSX_TEXT] && scanJsxText(lexer)) return true;
+  if (valid[FOR_IN_AFTER_INITIALIZER]) {
+    while (iswspace(la(lexer))) lexer.advance(true);
+    if (la(lexer) === 105) {
+      lexer.advance(false);
+      if (la(lexer) !== 110) return false;
+      lexer.advance(false);
+      const c = la(lexer);
+      if (iswalnum(c) || c === 95 || c === 36 || c === 92 || c > 127)
+        return false;
+      lexer.markEnd();
+      lexer.resultSymbol = FOR_IN_AFTER_INITIALIZER;
+      return true;
+    }
+  }
   if (valid[AUTOMATIC_SEMICOLON]) {
     const scanned = { comment: false };
     const ret = scanAutomaticSemicolon(

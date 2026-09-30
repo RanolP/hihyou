@@ -62,7 +62,7 @@ const FIELD_KEYS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   unary_expression: { argument: "argument" },
   update_expression: { argument: "argument" },
   export_statement: { value: "declaration", declaration: "declaration" },
-  for_in_statement: { right: "right", left: "left" },
+  for_in_statement: { right: "right", left: "left", value: "init" },
   for_statement: { increment: "update", condition: "test" },
   public_field_definition: { value: "value" },
   field_definition: { value: "value" },
@@ -278,6 +278,8 @@ export function needsParens(n: number, ctx: JsCtx): boolean {
   // A type cast's parentheses (the only ones `role` stops at) are all an expression needs.
   if (pk === "parenthesized_expression") return false;
   if (top !== n && isAwaitCallArguments(ctx, top)) return true;
+  // Annex B's `for (var a = (b) in c)`: prettier wraps every initializer there.
+  if (pk === "for_in_statement" && key === "init") return true;
   // `return (\n// comment\na, b\n)`: the statement's own parentheses already hold the argument.
   if (
     (pk === "return_statement" || pk === "throw_statement") &&

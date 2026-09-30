@@ -77,6 +77,10 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
       "a\n(b)\nc\n[d]\ne\n++f\ng\n-h\ni\n.j\nk\n? l : m\nn\n!= o\nfunction p() { return\nq }\n",
       // Recovery inside nested statements: an unclosed condition and a stray `else`.
       "if (a { b } else }\nwhile (c) { d(\n",
+      // Annex B's `in` that ends a for-in initializer, against an `in` inside it and names starting with `in`.
+      "for (var a = 1 || (b in c) in {});\nfor (var d = e instanceof F in g);\nfor (var h = i\nin j);\nfor (var k = inx; ;);\n",
+      // `static` before a line break and a name is the name's modifier.
+      "class C {\n  static\n  static\n  static\n  a() {}\n  static\n  { b }\n}\n",
     ],
   ],
   typescript: [
