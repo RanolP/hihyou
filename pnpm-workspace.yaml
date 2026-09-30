@@ -30,7 +30,8 @@ patchedDependencies:
   # scanner.c: no automatic semicolon before a same-line word starting with `e`, which cut `return emit(x)`
   # into `return` and `emit(x)`. packages/syntechs/src/grammars/kotlin/scanner.ts ports the same change.
   # grammar.js: `fun interface`, an enum body's repeated `;`, and an `=` in an if/when/while condition (which
-  # ktfmt formats although the compiler rejects it). Changed as css is, except the src/tree_sitter/ header hunks
+  # ktfmt formats although the compiler rejects it), and an annotated declaration winning over an annotated
+  # expression when both parse. Changed as css is, except the src/tree_sitter/ header hunks
   # stay, as in typescript, because the newer CLI writes an ABI 15 parser.c.
   tree-sitter-kotlin@0.3.8: patches/tree-sitter-kotlin@0.3.8.patch
   # PEP 696 type parameter defaults, `def f[T = int]()`, as a `type_default` in `type_parameter`; grammar.js and
