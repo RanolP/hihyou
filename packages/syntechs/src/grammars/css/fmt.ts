@@ -24,7 +24,6 @@ import {
   GROUP,
   INDENT,
   open,
-  openAlign,
   SOFT,
   sHardline,
   sLine,
@@ -188,6 +187,9 @@ export const customs = {
   /** A declaration with nothing between its `:` and its `;` (`--empty:;`). */
   emptyValue: (node, ctx) => code(node, ctx).every((c) => !ctx.tree.named(c) || kind(c, ctx) === "property_name"),
   unparsedValue: (node, ctx) => unparsedUrl(node, ctx),
+  /** A media query list holding a comment, which `mediaQueries` prints as postcss-media-query-parser splits it. */
+  mediaComments: (node, ctx) => mediaAtoms(node, ctx).some((c) => isComment(c, ctx)),
+  supportsComments: (node, ctx) => supportsComments(node, ctx),
 } satisfies Record<string, PredicateRule<CssOptions>>;
 
 /** A binary expression's `/` written with no gap on either side, which prettier keeps so. */
@@ -792,6 +794,78 @@ export function colonThenSource(colon: number | undefined, node: number, ctx: SC
   }
 }
 
+/** A query's words where prettier reads it as a value (`@import`'s media, `@supports`), `and`/`not` chains flattened. */
+const queryWords = (n: number, ctx: SCtx): number[] =>
+  kind(n, ctx) === "binary_query" || kind(n, ctx) === "unary_query"
+    ? children(n, ctx.tree).flatMap((c) => queryWords(c, ctx))
+    : [n];
+
+/**
+ * A word of a query read as a value: a paren group as prettier's value-paren_group, its words a fill indented
+ * inside it, a `:` joined to the word before it.
+ */
+function queryWord(c: number, ctx: SCtx): void {
+  const t = ctx.tree;
+  if (ctx.isComment(c)) return ctx.comment(c);
+  if (!t.named(c)) return sToken(c, t.text(c));
+  if (kind(c, ctx) !== "feature_query" && kind(c, ctx) !== "parenthesized_query") return ctx.printNode(c);
+  const kids = children(c, t);
+  const inner = kids.slice(1, -1).flatMap((k) => queryWords(k, ctx));
+  open(GROUP);
+  queryWord(kids[0] as number, ctx);
+  open(INDENT);
+  sLine(SOFT);
+  open(GROUP);
+  open(INDENT);
+  open(FILL);
+  open(FILL_ITEM);
+  inner.forEach((k, i) => {
+    if (i > 0 && kind(k, ctx) !== ":") {
+      close();
+      sLine(0);
+      open(FILL_ITEM);
+    }
+    queryWord(k, ctx);
+  });
+  for (let k = 0; k < 5; k++) close();
+  sLine(SOFT);
+  queryWord(kids[kids.length - 1] as number, ctx);
+  close();
+}
+
+/** Whether `@supports`'s prelude holds a comment, which `supportsValue` prints as prettier's value. */
+const supportsComments = (node: number, ctx: SCtx): boolean => {
+  const holds = (n: number): boolean => children(n, ctx.tree).some((c) => ctx.isComment(c) || holds(c));
+  return children(node, ctx.tree).some((c) => kind(c, ctx) !== "block" && (ctx.isComment(c) || holds(c)));
+};
+
+/**
+ * `@supports`'s prelude holding a comment, which prettier parses as a value: its words a fill, indented, each paren
+ * group breaking inside once past the width.
+ */
+export function supportsValue(at: number | undefined, node: number, ctx: SCtx): void {
+  const t = ctx.tree;
+  if (at !== undefined) sToken(at, atName(t.text(at)));
+  sText(" ");
+  const kids = children(node, t);
+  const words = kids.filter((c) => c !== at && kind(c, ctx) !== "block").flatMap((c) => queryWords(c, ctx));
+  open(GROUP);
+  open(INDENT);
+  open(FILL);
+  words.forEach((c, i) => {
+    if (i > 0) sLine(0);
+    open(FILL_ITEM);
+    queryWord(c, ctx);
+    close();
+  });
+  for (let k = 0; k < 3; k++) close();
+  const block = kids.find((c) => kind(c, ctx) === "block");
+  if (block !== undefined) {
+    sText(" ");
+    ctx.printNode(block);
+  }
+}
+
 /**
  * `@import`'s prelude, which prettier parses as a value: its comma list one entry per line once past the width, each
  * entry's words packed after a line of their own, all at one indent (`url(...)` then `  projection tv`).
@@ -803,31 +877,35 @@ export function importStatement(node: number, ctx: SCtx): void {
   if (at !== undefined) sToken(at, atName(t.text(at)));
   sText(" ");
   const item = (c: number) =>
-    !t.named(c) ? sToken(c, t.text(c)) : ctx.isComment(c) ? ctx.comment(c) : ctx.print(c);
-  // The prelude's comments are its words too, as `splitOn`'s `comments: "all"`: a line after those starting an
-  // entry drops to the enclosing indentation.
+    !t.named(c) ? sToken(c, t.text(c)) : ctx.isComment(c) ? ctx.comment(c) : ctx.printNode(c);
+  const paren = (c: number) => kind(c, ctx) === "feature_query" || kind(c, ctx) === "parenthesized_query";
+  // The prelude's comments are its words too, as `splitOn`'s `comments: "all"`, and so are a media query's.
   const run = splitRun(ctx, node, ",", ["@import", ";"], ["block"], "all");
+  // Several entries are prettier's paren group, indented, each entry a comma group indented once more but
+  // `url(...)` and one word (insideURLFunctionInImportAtRuleNode), which prettier leaves unindented even alone.
+  const nested = run.entries.length > 1;
+  const isUrl = (c: number) =>
+    kind(c, ctx) === "call_expression" && t.text(t.child(c, 0)) === "url";
   open(GROUP);
-  open(INDENT);
+  if (nested) open(INDENT);
   run.entries.forEach((e, i) => {
     if (i > 0) sLine(0);
+    const words = e.items.flatMap((c) => queryWords(c, ctx));
+    const indent = !(words.length === 2 && isUrl(words[0] as number));
+    if (indent) open(INDENT);
     open(FILL);
-    let lead = true;
-    e.items.forEach((c, j) => {
-      if (j > 0 && lead) {
-        openAlign(-1);
-        sLine(0);
-        close();
-      } else if (j > 0) sLine(0);
-      lead &&= ctx.isComment(c);
+    words.forEach((c, j) => {
+      if (j > 0) sLine(0);
       open(FILL_ITEM);
-      item(c);
+      if (paren(c)) queryWord(c, ctx);
+      else item(c);
       close();
     });
     close();
+    if (indent) close();
     if (e.sep !== -1) sToken(e.sep, t.text(e.sep));
   });
-  close();
+  if (nested) close();
   close();
   for (const c of run.trail) {
     sText(" ");
@@ -837,6 +915,69 @@ export function importStatement(node: number, ctx: SCtx): void {
   const semi = parts.find((c) => kind(c, ctx) === ";");
   if (semi !== undefined && t.text(semi) !== "") sToken(semi, ";");
   else sToken(node, ";", true);
+}
+
+/** A media prelude's leaves in source order, comments among them, a query's parts and parens split apart. */
+function mediaAtoms(node: number, ctx: SCtx): number[] {
+  const t = ctx.tree;
+  const atoms = (n: number): number[] =>
+    kind(n, ctx).endsWith("_query") && t.count(n) > 0 ? children(n, t).flatMap(atoms) : [n];
+  return children(node, t)
+    .filter((c) => kind(c, ctx) !== "@media" && kind(c, ctx) !== "block")
+    .flatMap(atoms);
+}
+
+/**
+ * `@media`'s prelude holding a comment, as postcss-media-query-parser reads the source: queries split at the commas
+ * outside parens, each query's elements at its whitespace outside parens, one ending at a `)` that closes its
+ * parens. Prettier joins the elements a space apart and prints each as written, but for an element opening with
+ * `(`, a feature expression: its feature trimmed and its spaces collapsed, a space after its `:`, its value trimmed.
+ */
+export function mediaQueries(at: number | undefined, node: number, ctx: SCtx): void {
+  const t = ctx.tree;
+  if (at !== undefined) sToken(at, atName(t.text(at)));
+  sText(" ");
+  const atoms = mediaAtoms(node, ctx);
+  const is = (c: number, text: string) => !t.named(c) && t.text(c) === text;
+  let level = 0;
+  // Whether the parens open a feature expression, and its `:`.
+  let expression = false;
+  let colon = -1;
+  let prev = -1;
+  open(GROUP);
+  open(INDENT);
+  for (const c of atoms) {
+    if (prev !== -1) {
+      if (level === 0) {
+        if (is(prev, ",")) sLine(0);
+        else if (!is(c, ",") && (!t.adjoins(prev, c) || is(prev, ")"))) sText(" ");
+      } else if (!expression) sText(sourceGap(t, prev, c));
+      else if (level === 1 && (is(prev, "(") || is(c, ")"))) {
+        // The feature and the value are trimmed.
+      } else if (level === 1 && colon === -1 && is(c, ":")) colon = c;
+      else if (prev === colon) sText(" ");
+      else if (colon === -1) sText(sourceGap(t, prev, c).replace(/ +/g, " "));
+      else sText(sourceGap(t, prev, c));
+    }
+    if (level === 0 && is(c, "(")) {
+      expression = prev === -1 || !t.adjoins(prev, c) || is(prev, ")") || is(prev, ",");
+      colon = -1;
+    }
+    if (ctx.isComment(c)) ctx.comment(c);
+    else if (t.named(c)) ctx.printNode(c);
+    else sToken(c, t.text(c));
+    if (is(c, "(")) level++;
+    else if (is(c, ")")) level = Math.max(level - 1, 0);
+    prev = c;
+  }
+  close();
+  close();
+  const block = children(node, t).find((c) => kind(c, ctx) === "block");
+  if (block !== undefined) {
+    sText(" ");
+    // The prelude's last comments attach to the block, but print above as the query's.
+    ctx.printNode(block);
+  }
 }
 
 /**
@@ -867,6 +1008,8 @@ export const handWritten = {
   declarationEnd,
   colonThenSource,
   importStatement,
+  mediaQueries,
+  supportsValue,
   valueMath,
   unaryExpression,
   atRule,

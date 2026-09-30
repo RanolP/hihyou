@@ -235,12 +235,16 @@ export const css = format({
     tag_name: () => text("lower", parentIs("pseudo_element_selector")),
 
     at_keyword: () => text("atName"),
+    // A prelude holding a comment as postcss-media-query-parser splits its source (fmt.ts's `mediaQueries`).
     media_statement: () => [
-      spell("@media", "atName"),
-      space,
-      splitOn(",", { except: ["@media"], trail: ["block"], layout: { group: true, indent: true, between: "line" } }),
+      either(when("mediaComments"), tok("@media").via("mediaQueries"), [
+        spell("@media", "atName"),
+        space,
+        splitOn(",", { except: ["@media"], trail: ["block"], layout: { group: true, indent: true, between: "line" } }),
+      ]),
     ],
-    supports_statement: spaced,
+    // A prelude holding a comment as prettier's value (fmt.ts's `supportsValue`).
+    supports_statement: () => [either(when("supportsComments"), tok("@supports").via("supportsValue"), inOrder(space))],
     import_statement: () => custom("importStatement"),
     namespace_statement: () => inOrder({ join: "space", tight: { before: [";"] } }),
     // Prettier's raw at-rule parameters: as written, one space wherever the source has any gap.
