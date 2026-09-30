@@ -57,6 +57,9 @@ const edgeCases: [string, Target, string][] = [
     "js",
     `x = [${long("a")}\n,\n\nb, c\n\n,d];\nz = { ${long("a")}\n,\n\nb, c\n\n,d };\nf([a,\n\nb]);\nw = {a\n\n// c\n,b};`,
   ],
+  // Tree-sitter leaves the `;` after a comment's line break a statement of its own; the gap after the last stray
+  // `;` counts, not one before it.
+  ["semi-after-comment", "js", "for (;;) continue // c\n;\n\nx;\na;\n;\n\nb;\nc;\n\n;\nd;\n\n// e\n;(f)"],
   ["quotes", "js", `const a = "it's", b = 'say "hi"', c = 'plain';`],
   ["numbers", "js", "x = [0XAB, 1E5, .5, 5., 0.50, 1_000n, 0B11, 0O7];"],
   [
@@ -256,14 +259,6 @@ describe("the fetched JS/TSX corpus keeps its count of chunks byte-identical to 
 
 // Target, input, then today's output under the defaults, which differs from oxfmt's.
 const divergences: [string, Target, string, string][] = [
-  // Tree-sitter leaves the `;` after a comment's line break a statement of its own; oxfmt keeps the blank line
-  // after a stray `;` too.
-  [
-    "semi-after-comment",
-    "js",
-    "for (;;) continue // c\n;\n\nx;\na;\n;\n\nb;",
-    "for (;;)\n  continue; // c\n\nx;\na;\nb;\n",
-  ],
   // Modifiers written out of TypeScript's order, which oxfmt rejects; syntechs prints them in order.
   [
     "member-modifiers-any-order",

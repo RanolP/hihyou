@@ -14,7 +14,7 @@ import {
   type Trailed,
 } from "../../../fmt/stream-format.js";
 import { lfAfter, nextLineEmpty } from "../../../fmt/text.js";
-import { firstLeaf, type FormatTree, prevLeaf } from "../../../fmt/tree.js";
+import { firstLeaf, type FormatTree, nextLeaf, prevLeaf } from "../../../fmt/tree.js";
 import {
   close,
   GROUP,
@@ -218,33 +218,30 @@ function statementSequence(s: JsStreamCtx, statements: readonly number[]): void 
     s.print(x);
     if (isEmpty(js, x) || x === last) return;
     sHardline();
-    const next = statements[i + 1];
-    // The gap is measured after the statement's last comment, which a stray `;` can put on a later line.
+    // oxfmt measures the gap after the last of the stray `;`s that follow a statement, which drops a blank line
+    // before them, unless an own-line comment among them keeps its own. Otherwise it is measured after the
+    // statement's last comment, which a stray `;` can put on a later line.
+    let j = i + 1;
+    while (j < statements.length && isEmpty(js, statements[j] as number)) j++;
     const lastTrailing = s.trailingComments(x).at(-1);
     if (
-      isNextLineEmptyAfter(js, x) ||
-      (lastTrailing !== undefined && nextLineEmpty(js.tree, lastTrailing)) ||
-      (next !== undefined &&
-        semiLeftOut(js, x, next) &&
-        nextLineEmpty(js.tree, next))
+      j > i + 1 && !ownLineCommentBefore(js.tree, statements[j - 1] as number, x)
+        ? nextLineEmpty(js.tree, statements[j - 1] as number)
+        : isNextLineEmptyAfter(js, x) ||
+          (lastTrailing !== undefined && nextLineEmpty(js.tree, lastTrailing))
     )
       sHardline();
   });
 }
 
-/**
- * Whether `next`, an empty statement, is the `;` babel reads as `n`'s own: tree-sitter ends a statement at the
- * line break after a comment (`continue // c\n;`) and leaves the `;` on the next line a statement of its own.
- */
-function semiLeftOut(x: HasTree, n: number, next: number): boolean {
-  if (!isEmpty(x, next)) return false;
-  const body = lastBody(x, n);
-  if (body !== undefined) return semiLeftOut(x, body, next);
-  const own = children(x, n).at(-1);
-  return (
-    SEMI_ENDED.has(kind(x, n)) &&
-    !(own !== undefined && kind(x, own) === ";" && src(x, own) !== "")
-  );
+/** Whether an own-line comment lies between `from`'s end and the stray `;` at `semi`, among the `;`s before it. */
+function ownLineCommentBefore(tree: FormatTree, semi: number, from: number): boolean {
+  const stop = firstLeaf(tree, semi);
+  for (let l = nextLeaf(tree, from); l !== NO_NODE && l !== stop; l = nextLeaf(tree, l)) {
+    const t = tree.text(l);
+    if ((t.startsWith("//") || t.startsWith("/*")) && tree.lf(l) >= 1) return true;
+  }
+  return false;
 }
 
 /** The statements of a list, as a sequence when one is no empty statement, else each printed for its `;`. */
