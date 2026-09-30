@@ -1302,6 +1302,10 @@ const oxfmtBeforeCallArguments = (c: CommentContext<JsOptions>): CommentTarget |
     kind(c, following) !== "arguments"
   )
     return;
+  // After a computed member it keeps a comment that ends the line on the callee: `a[0] // c⏎(1)` prints
+  // `a[0](1); // c`.
+  if (c.placement === "endOfLine" && kind(c, unparen(c, preceding)) === "subscript_expression")
+    return { node: preceding, as: "trailing" };
   const first = callArguments(c, enclosing)[0];
   if (first !== undefined) return { node: first, as: "leading" };
   return kind(c, unparen(c, preceding)) === "member_expression" ? { node: following, as: "dangling" } : undefined;

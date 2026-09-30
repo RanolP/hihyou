@@ -60,6 +60,8 @@ const edgeCases: [string, Target, string][] = [
   // Tree-sitter leaves the `;` after a comment's line break a statement of its own; the gap after the last stray
   // `;` counts, not one before it.
   ["semi-after-comment", "js", "for (;;) continue // c\n;\n\nx;\na;\n;\n\nb;\nc;\n\n;\nd;\n\n// e\n;(f)"],
+  // A comment ending the line after a computed-member callee stays on the callee, past the call.
+  ["subscript-callee-comment", "js", "a[0] // c\n(1)\nf // c\n(1)\nb[0] // c\n(x, // d\n2)"],
   ["quotes", "js", `const a = "it's", b = 'say "hi"', c = 'plain';`],
   ["numbers", "js", "x = [0XAB, 1E5, .5, 5., 0.50, 1_000n, 0B11, 0O7];"],
   [
