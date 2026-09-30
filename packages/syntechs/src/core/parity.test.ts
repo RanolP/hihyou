@@ -136,6 +136,8 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
       'if a:\n    foo = f"""x {\n    f"a" +\n  1\n} y\n"""\n',
       // PEP 696 type parameter defaults, which only the patched grammar reads.
       "def f[T = int, *Ts = *tuple[int], **P = [int]](): pass\nclass C[T: str = str]: ...\ntype A[T = int] = list[T]\n",
+      // Patched grammar: lazy imports beside `lazy` as a name, unpacking in comprehensions, `&` inside `^`.
+      "lazy import a\nlazy from b import (c)\nlazy = lazy.x\n[*x for x in y]\n{**d for d in e}\nf(*x for x in y)\na ^ b & c ^ d\n",
     ],
   ],
   kotlin: [

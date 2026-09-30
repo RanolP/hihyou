@@ -1,5 +1,5 @@
 // One-line statements.
-import { bail, custom, inOrder, space } from "../../../fmt/dsl/dsl.js";
+import { bail, custom, inOrder, space, tok } from "../../../fmt/dsl/dsl.js";
 import type { Structure } from "../format.js";
 
 export const stmtSimple = {
@@ -20,8 +20,14 @@ export const stmtSimple = {
   ],
   global_statement: ($) => ["global", space, $.children.at(0).andThen((n) => n.via("simple.globalNames"))],
   nonlocal_statement: ($) => ["nonlocal", space, $.children.at(0).andThen((n) => n.via("simple.globalNames"))],
-  import_statement: ($) => ["import", space, $.name.at(0).andThen((n) => n.via("simple.importNames"))],
+  import_statement: ($) => [
+    tok("lazy").andThen((l) => [l, space]),
+    "import",
+    space,
+    $.name.at(0).andThen((n) => n.via("simple.importNames")),
+  ],
   import_from_statement: ($) => [
+    tok("lazy").andThen((l) => [l, space]),
     "from",
     space,
     $.module_name,

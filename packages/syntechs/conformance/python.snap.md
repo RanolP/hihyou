@@ -1,4 +1,4 @@
-python compatibility: 317/327 (96.94%), 2 refused (ok:false), 49 excluded
+python compatibility: 320/327 (97.86%), 1 refused (ok:false), 49 excluded
 
 Fixtures: ruff 0.16.8 crates/ruff_python_formatter/resources/test/fixtures/{black,ruff} (recursive), every option set of each `.options.json`, expected output from tests/snapshots (black cases without a snapshot: their `.expect` file). Options are passed by their ruff.toml names.
 
@@ -10,12 +10,10 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | :------ | :---------: | :---------: |
 | black/cases/attribute_access_on_number_literals.py | 0/1 | 90.91% |
 | black/cases/comments_in_blocks.py | 0/1 | 98.68% |
-| black/cases/expression.py | 0/1 | 54.95% |
 | black/cases/import_comments.py | 0/1 | 84.44% |
 | black/cases/preview_import_line_collapse.py | 0/1 | 99.43% |
 | ruff/expression/call.py | 0/1 | 99.08% |
 | ruff/statement/function.py | 0/1 | 99.60% |
-| ruff/statement/lazy_import.py | 0/1 | 68.97% |
 
 # Refused
 
@@ -23,7 +21,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| ruff/expression/list_comp_py315.py | 1/1 | 73.53% | formatter-error: parse error: ERROR at 250 |
 | ruff/statement/match.py | 1/1 | 71.21% | formatter-error: comment in a pattern at 2288 |
 
 # Excluded

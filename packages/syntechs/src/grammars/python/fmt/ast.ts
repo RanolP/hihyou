@@ -180,8 +180,10 @@ export interface Comp extends ExprBase {
 export interface DictComp extends ExprBase {
   readonly kind: "DictComp";
   readonly open: number;
-  readonly key: Expr;
-  readonly colon: number;
+  /** Absent for an unpacked element, `{**d for d in ds}`, which has the `**` token `op` instead. */
+  readonly key: Expr | undefined;
+  readonly colon: number | undefined;
+  readonly op: number | undefined;
   readonly value: Expr;
   readonly generators: Comprehension[];
   readonly close: number;
@@ -1934,17 +1936,22 @@ class Reader {
         };
       }
       case "dictionary_comprehension": {
-        const pair = this.needField(n, "body");
-        const key = this.expr(this.needField(pair, "key"));
-        const value = this.expr(this.needField(pair, "value"));
+        const body = this.needField(n, "body");
+        const pair = this.kind(body) === "pair";
+        const key = pair ? this.expr(this.needField(body, "key")) : undefined;
+        // Ruff has no starred node around an unpacked element: a comment after its `**` stays there.
+        const value = this.expr(
+          pair ? this.needField(body, "value") : (this.named(body)[0] ?? this.fail(body, "empty splat")),
+        );
         const generators = this.comprehensions(n);
         return {
           ...base,
           kind: "DictComp",
-          kids: [key, value, ...generators],
+          kids: [...(key ? [key] : []), value, ...generators],
           open: this.need(n, "{"),
           key,
-          colon: this.need(pair, ":"),
+          colon: pair ? this.need(body, ":") : undefined,
+          op: pair ? undefined : this.need(body, "**"),
           value,
           generators,
           close: this.need(n, "}"),

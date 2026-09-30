@@ -34,8 +34,10 @@ patchedDependencies:
   # expression when both parse. Changed as css is, except the src/tree_sitter/ header hunks
   # stay, as in typescript, because the newer CLI writes an ABI 15 parser.c.
   tree-sitter-kotlin@0.3.8: patches/tree-sitter-kotlin@0.3.8.patch
-  # PEP 696 type parameter defaults, `def f[T = int]()`, as a `type_default` in `type_parameter`; grammar.js and
-  # its generated src/ only, changed the same way as css's.
+  # PEP 696 type parameter defaults, `def f[T = int]()`, as a `type_default` in `type_parameter`; PEP 810 `lazy`
+  # imports; PEP 798 unpacking in a comprehension's element; a starred element in a bare tuple, `a = 1, *b`; and
+  # `&` binding tighter than `^`, which upstream inverts. grammar.js and its generated src/, changed the same way
+  # as css's; scanner.c's changes are ported in packages/syntechs/src/grammars/python/scanner.ts.
   tree-sitter-python@0.25.0: patches/tree-sitter-python@0.25.0.patch
   # `a + b!` parsed as `(a + b)!`: `!` binds at 'member' precedence, as in TypeScript, not the unordered 'unary'.
   # Same workflow in typescript/ and tsx/, except the src/tree_sitter/ header hunks stay: upstream's headers
