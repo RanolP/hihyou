@@ -28,7 +28,7 @@ export function parseIndex(buf: Buffer): IndexEntry[] {
   if (version < 2 || version > 4)
     throw new Error(`index: unsupported version ${version}`);
   const count = buf.readUInt32BE(8);
-  const entries: IndexEntry[] = new Array(count);
+  const entries: IndexEntry[] = [];
   let p = 12;
   let previous: Buffer = Buffer.alloc(0);
   for (let n = 0; n < count; n++) {
