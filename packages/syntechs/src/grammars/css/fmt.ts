@@ -36,6 +36,7 @@ import {
   printLeadingComments,
   printTrailingComments,
   type StreamCtx,
+  type StreamRule,
 } from "../../fmt/stream-format.js";
 import { firstLeaf, type FormatTree, nextLeaf } from "../../fmt/tree.js";
 import { grammar } from "./bundle.js";
@@ -730,6 +731,25 @@ function between(node: number, ctx: SCtx): number[] {
 /** The nodes whose children prettier prints as a sequence of statements (printNodeSequence). */
 const statementSequences = new Set([...statementLists, "keyframe_block_list"]);
 
+/**
+ * `$x: a !default !global`: the grammar has no place for a Sass variable's flags and wraps them in an `ERROR`, which
+ * formats as the value's last words rather than leaving the declaration as written.
+ */
+function sassFlags(error: number, t: FormatTree): boolean {
+  if (t.kindName(t.parent(error)) !== "declaration" || t.count(error) === 0) return false;
+  for (let i = 0; i < t.count(error); i++) if (t.kindName(t.child(error, i)) !== "important_value") return false;
+  return true;
+}
+
+/** The flags `sassFlags` recovers, one space apart. */
+const sassFlagList: StreamRule<CssOptions> = (error, ctx) => {
+  for (let i = 0; i < ctx.tree.count(error); i++) {
+    if (i > 0) sText(" ");
+    const flag = ctx.tree.child(error, i);
+    sToken(flag, ctx.tree.text(flag));
+  }
+};
+
 /** A stylesheet that failed to parse prints as written, its own final line break included. */
 export function finalLine({ tree, isBroken }: SCtx): boolean {
   return !(isBroken(tree.root) && tree.trailingLf > 0);
@@ -788,7 +808,8 @@ export function declarationColon(colon: number | undefined, node: number, ctx: S
 export function declarationEnd(semi: number | undefined, node: number, ctx: SCtx): void {
   const t = ctx.tree;
   const real = semi !== undefined && t.text(semi) !== "";
-  const important = children(node, t).find((c) => kind(c, ctx) === "important");
+  // Sass flags (`sassFlags`) end the value as `!important` does.
+  const important = children(node, t).findLast((c) => kind(c, ctx) === "important" || kind(c, ctx) === "ERROR");
   if (important !== undefined) {
     // One space before each comment after `!important`, none before `;`.
     for (const c of ctx.danglingComments(node))
@@ -850,16 +871,17 @@ export function colonThenSource(colon: number | undefined, node: number, ctx: SC
   const parts = code(node, ctx);
   declarationColon(colon, node, ctx);
   const from = colon === undefined ? 1 : parts.indexOf(colon) + 1;
-  const value = parts.slice(from).filter((c) => kind(c, ctx) !== ";" && kind(c, ctx) !== "important");
+  // `!important` and Sass flags (`sassFlags`) one space after the value.
+  const flag = (c: number) => kind(c, ctx) === "important" || kind(c, ctx) === "ERROR";
+  const value = parts.slice(from).filter((c) => kind(c, ctx) !== ";" && !flag(c));
   let prev = -1;
   for (const c of value) {
     sLiteral(c, (prev === -1 ? " " : gapBefore(prev, c, t)) + t.text(c));
     prev = c;
   }
-  const important = parts.find((c) => kind(c, ctx) === "important");
-  if (important !== undefined) {
+  for (const c of parts.filter(flag)) {
     sText(" ");
-    ctx.print(important);
+    ctx.print(c);
   }
 }
 
@@ -1120,6 +1142,8 @@ export const handWritten = {
   ruleSet,
 };
 
+const cssStream = gen.css(handWritten);
+
 /** CSS as prettier 3.9.9's postcss printer lays it out; the layouts are format.ts, generated into fmt.gen.ts. */
 export const css: Language<CssOptions> = {
   ...defineLanguage(grammar, {
@@ -1134,10 +1158,12 @@ export const css: Language<CssOptions> = {
     layoutBlind: true,
   }),
   stream: {
-    ...gen.css(handWritten),
+    ...cssStream,
+    rules: new Map([...cssStream.rules, ["ERROR", sassFlagList]]),
     wrap: frontMatterFirst,
     commentEndsLine: statementComment,
     keepsSource: prettierIgnored,
+    recovered: sassFlags,
     finalLine,
   },
 };

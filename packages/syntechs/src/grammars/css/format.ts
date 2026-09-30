@@ -121,14 +121,14 @@ export const css = format({
               firstText({ is: ["composes"], anyCase: true }),
               splitOn(",", {
                 except: ["property_name", ":", ";"],
-                trail: ["important"],
+                trail: ["important", "ERROR"],
                 comments: true,
                 item: "space",
                 layout: { group: true, between: "line" },
               }),
               splitOn(",", {
                 except: ["property_name", ":", ";"],
-                trail: ["important"],
+                trail: ["important", "ERROR"],
                 comments: true,
                 item: words({
                   keepLines: all(entryCount(1), firstText({ is: ["grid"], prefix: ["grid-template"], anyCase: true })),

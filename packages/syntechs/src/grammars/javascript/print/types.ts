@@ -355,8 +355,12 @@ function printUnionType(ctx: JsStreamCtx, n: number, owns: boolean) {
       ctx.print(x);
     });
   // A line comment after `a:` stays on that line, and the union's trailing comments out of its indent.
-  const first = ctx.leadingComments(n)[0];
+  const leading = ctx.leadingComments(n);
+  const first = leading[0];
+  // oxfmt keeps it there only when no other comment follows it.
   const head =
+    first !== undefined &&
+    kind(js, nextLeaf(js.tree, first)) !== "comment" &&
     owns &&
     indented &&
     first !== undefined &&
@@ -442,7 +446,8 @@ function printUnionType(ctx: JsStreamCtx, n: number, owns: boolean) {
   open(INDENT);
   if (head !== undefined) sHardline();
   else sLine(SOFT);
-  printed(false);
+  // oxfmt groups the members apart from the comments above them, so a comment's line break leaves `X | Y` flat.
+  printed(owns && leading.length > 0);
   close();
   close();
   if (trailOutside) printTrailingComments(ctx, n);

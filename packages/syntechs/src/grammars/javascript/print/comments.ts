@@ -754,10 +754,16 @@ const forEmptyPart = (c: CommentContext<JsOptions>): CommentTarget | undefined =
   const { comment, enclosing, preceding, following, placement } = c;
   const isEmptyPart = (n: number | undefined) =>
     n !== undefined && kind(c, n) === "empty_statement" && fieldName(c, n) !== "body";
-  if (kind(c, enclosing) !== "for_statement" || !(isEmptyPart(following) || isEmptyPart(preceding))) return;
+  if (kind(c, enclosing) !== "for_statement") return;
   const kids = children(c, enclosing);
   const at = kids.indexOf(comment);
   const close = kids.findLastIndex((k) => kind(c, k) === ")" && !named(c, k));
+  // `for (a; b; /* c *\/)`: the update is empty too, but tree-sitter has no node for it.
+  const inEmptyUpdate =
+    field(c, enclosing, "increment") === undefined &&
+    at < close &&
+    at > kids.slice(0, close).findLastIndex((k) => isCode(c, k));
+  if (!(isEmptyPart(following) || isEmptyPart(preceding) || inEmptyUpdate)) return;
   // After the `)`, statementBody leads the body.
   if (at > close) return;
   // oxfmt keeps each comment in its slot of the head, which prints it (write_for_head_slot).
@@ -1281,7 +1287,10 @@ const oxfmtAfterOptionalCall = (c: CommentContext<JsOptions>): CommentTarget | u
   return first !== undefined ? { node: first, as: "leading" } : { node: following, as: "dangling" };
 };
 
-/** `foo /* c *\/ (1)`: oxfmt moves a comment between a call's callee and its `(` in front of the first argument. */
+/**
+ * `foo /* c *\/ (1)`: oxfmt moves a comment between a call's callee and its `(` in front of the first argument, and
+ * with none, after a member callee only, into the empty `()`: `a.b(/* c *\/)`.
+ */
 const oxfmtBeforeCallArguments = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   const { enclosing, preceding, following } = c;
   if (
@@ -1294,7 +1303,8 @@ const oxfmtBeforeCallArguments = (c: CommentContext<JsOptions>): CommentTarget |
   )
     return;
   const first = callArguments(c, enclosing)[0];
-  return first !== undefined ? { node: first, as: "leading" } : undefined;
+  if (first !== undefined) return { node: first, as: "leading" };
+  return kind(c, unparen(c, preceding)) === "member_expression" ? { node: following, as: "dangling" } : undefined;
 };
 
 /** `((/* c *\/ a), b)`: oxfmt has no node for the parentheses around a sequence's first element, so a comment in them leads the sequence. */

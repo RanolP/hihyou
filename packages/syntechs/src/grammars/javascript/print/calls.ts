@@ -4,7 +4,7 @@
 
 import { NO_NODE } from "../../../core/arena.js";
 import { newlineBetween, nextLineEmpty } from "../../../fmt/text.js";
-import { nextLeaf, prevLeaf } from "../../../fmt/tree.js";
+import { firstLeaf, nextLeaf, prevLeaf } from "../../../fmt/tree.js";
 import { textWidth } from "../../../fmt/width.js";
 import { awaitsHere, needsParens, role } from "./parens.js";
 import {
@@ -958,6 +958,20 @@ function sMemberChain(sctx: JsStreamCtx, n: number): void {
     kind(ctx, unparen(ctx, field(ctx, x, "index") as number)) === "number";
   const isCallNode = (x: number) => isCallExpression(ctx, x);
   const nodeOf = (i: number) => (printedNodes[i] as Printed).node;
+  /**
+   * `a.b // c⏎(1)`: oxfmt reads a comment ending the member's line, before the `(` on the next one, as the member's
+   * trailing comment when it groups the chain, so the arguments start a group of their own, though the comment
+   * prints inside them.
+   */
+  const argsAfterEndOfLineComment = (x: number) => {
+    const list = argumentsNode(ctx, x);
+    if (list === undefined || kind(ctx, unparen(ctx, callee(ctx, x) as number)) !== "member_expression") return false;
+    const paren = firstLeaf(ctx.tree, list);
+    let comment: number | undefined;
+    for (let l = prevLeaf(ctx.tree, paren); l !== NO_NODE && kind(ctx, l) === "comment"; l = prevLeaf(ctx.tree, l))
+      comment = l;
+    return comment !== undefined && ctx.tree.lf(comment) === 0 && newlineBetween(ctx.tree, comment, paren);
+  };
 
   const groups: Printed[][] = [];
   let currentGroup: Printed[] = [printedNodes[0] as Printed];
@@ -992,6 +1006,10 @@ function sMemberChain(sctx: JsStreamCtx, n: number): void {
       groups.push(currentGroup);
       currentGroup = [];
       hasSeenCallExpression = false;
+    }
+    if (isCallNode(x) && argsAfterEndOfLineComment(x) && currentGroup.length > 0) {
+      groups.push(currentGroup);
+      currentGroup = [];
     }
     if (isCallNode(x) || isDynamicImport(ctx, x)) hasSeenCallExpression = true;
     currentGroup.push(printedNodes[i] as Printed);
@@ -1034,6 +1052,7 @@ function sMemberChain(sctx: JsStreamCtx, n: number): void {
     groups.length >= 2 &&
     (groups[1] as Printed[]).length > 0 &&
     !hasComment(ctx, (groups[1] as Printed[])[0]?.node) &&
+    !(groups[1]?.length === 1 && groups[2]?.[0] !== undefined && argsAfterEndOfLineComment(groups[2][0].node)) &&
     shouldNotWrap(groups);
 
   const printGroup = (g: Printed[]) => {
@@ -1045,6 +1064,7 @@ function sMemberChain(sctx: JsStreamCtx, n: number): void {
   const cutoff = shouldMerge ? 3 : 2;
   const flat = groups.flat();
   const nodeHasComment =
+    flat.some((x) => isCallNode(x.node) && argsAfterEndOfLineComment(x.node)) ||
     flat.slice(1, -1).some((x) => hasComment(ctx, x.node, CF.Leading)) ||
     flat.slice(0, -1).some((x) => hasComment(ctx, x.node, CF.Trailing)) ||
     (groups[cutoff] !== undefined &&

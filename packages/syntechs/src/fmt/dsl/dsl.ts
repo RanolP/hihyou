@@ -908,7 +908,8 @@ export type SplitLayoutOf<C> =
 
 export interface SplitOnOf<K, C> {
   readonly except?: readonly K[];
-  readonly trail?: readonly K[];
+  /** `ERROR` for a recovery the language prints (`Language.recovered`), after the list. */
+  readonly trail?: readonly (K | "ERROR")[];
   readonly item?: "adjacent" | "space" | { readonly t: "words"; readonly keepLines?: C; readonly apart?: C };
   /** As `SplitOn`'s. */
   readonly tightAfter?: readonly K[];
