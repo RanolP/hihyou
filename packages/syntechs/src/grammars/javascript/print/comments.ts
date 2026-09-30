@@ -373,6 +373,44 @@ const beforeSignatureParameters = (c: CommentContext<JsOptions>): CommentTarget 
   return lead();
 };
 
+/**
+ * oxfmt: `a? /* c *\/ ()`, `new /* c *\/ ()`: a comment after a signature's `?` or `new` trails that token, where
+ * prettier moves it past the name or into the parameters.
+ */
+const oxfmtSignatureToken = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  if (c.options.compat !== "oxfmt" || !SIGNATURES.has(kind(c, c.enclosing))) return;
+  let before = prevLeaf(c.tree, c.comment);
+  while (before !== NO_NODE && kind(c, before) === "comment") before = prevLeaf(c.tree, before);
+  if (before === NO_NODE || parent(c, before) !== c.enclosing) return;
+  const k = kind(c, before);
+  return k === "?" || k === "new" ? { node: before, as: "trailing" } : undefined;
+};
+
+/**
+ * oxfmt: `a: T /* c *\/`, `m() /* c *\/;`: a block comment ending an interface or type literal member prints
+ * before the member's separator, where prettier's follows it.
+ */
+const oxfmtTypeMemberEnd = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
+  const { comment, enclosing, preceding, placement, text } = c;
+  if (
+    c.options.compat !== "oxfmt" ||
+    !text.startsWith("/*") ||
+    preceding === undefined ||
+    placement === "ownLine" ||
+    !TYPE_BODIES.has(kind(c, enclosing))
+  )
+    return;
+  const next = codeAfter(c, enclosing, comment)[0];
+  if (
+    placement !== "endOfLine" &&
+    next !== undefined &&
+    ![";", ",", "}"].includes(kind(c, next))
+  )
+    return;
+  const last = lastCode(c, preceding);
+  return last !== undefined && named(c, last) ? { node: last, as: "trailing" } : undefined;
+};
+
 const METHODS = new Set([
   "method_definition",
   "method_signature",
@@ -1351,6 +1389,8 @@ const oxfmtAfterDroppedParen = (c: CommentContext<JsOptions>): CommentTarget | u
 const handlers = [
   oxfmtTypeAliasHead,
   oxfmtCast,
+  oxfmtSignatureToken,
+  oxfmtTypeMemberEnd,
   oxfmtReturnSequence,
   oxfmtChainHead,
   oxfmtMemberObject,

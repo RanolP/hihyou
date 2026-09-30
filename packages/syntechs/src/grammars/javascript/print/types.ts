@@ -1090,12 +1090,13 @@ function memberHead(ctx: JsStreamCtx, n: number): void {
   }
   sPrintKey(ctx, n);
   if (key === undefined) return;
-  tok(
-    js,
-    kids
-      .slice(kids.indexOf(key) + 1)
-      .find((c) => !named(js, c) && kind(js, c) === "?"),
-  );
+  const question = kids
+    .slice(kids.indexOf(key) + 1)
+    .find((c) => !named(js, c) && kind(js, c) === "?");
+  if (question === undefined) return;
+  tok(js, question);
+  // Only oxfmt's placement leaves a comment there: `a? /* c */()`.
+  printTrailingComments(ctx, question);
 }
 
 const memberKey: CustomRule<JsOptions> = (key, sctx) => {
@@ -1193,7 +1194,9 @@ const functionType: CustomRule<JsOptions> = (n, sctx) => {
     const c = anonKid(js, n, keyword);
     if (c === undefined) continue;
     tok(js, c);
-    sText(" ");
+    // oxfmt glues a comment after `new` to the `(`: `new /* c */(`.
+    if (ctx.trailingComments(c).length > 0) printTrailingComments(ctx, c);
+    else sText(" ");
   }
   const groupParameters = sShouldGroupFunctionParameters(js, n, returnType);
   if (groupParameters) open(GROUP);
