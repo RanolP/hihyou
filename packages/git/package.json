@@ -21,7 +21,7 @@
     }
   },
   "scripts": {
-    "bench": "tsc -b && node bench/run.mjs ../.."
+    "bench": "tsc -b tsconfig.node.json && node bench/run.mjs ../.."
   },
   "dependencies": {
     "@hihyou/engine": "workspace:*"

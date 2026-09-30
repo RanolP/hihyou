@@ -1,12 +1,15 @@
-// Times @hihyou/git against the git CLI and, when built, libgit2 (bench/rust). Usage:
+// Times @hihyou/git, through its node and its web adapter, against the git CLI and, when built,
+// libgit2 (bench/rust). Usage:
 //   node bench/run.mjs [repo-path] [iterations]
-// Reads the compiled dist, so run `tsc -b` first (the `bench` script does).
+// Reads the compiled dist, so run `tsc -b tsconfig.node.json` first (the `bench` script does).
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
-import { openRepo } from "../dist/index.js";
+import { openRepo } from "../dist/node.js";
+import { vscodeLikeFileSystem } from "../dist/vscode-like-fs.js";
+import { webRepo } from "../dist/web.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const path = resolve(process.argv[2] ?? ".");
@@ -36,10 +39,18 @@ const step = Math.max(1, Math.floor(deltified.length / 200));
 const blobs = deltified.filter((_, i) => i % step === 0).slice(0, 200);
 const blobInput = blobs.join("\n") + "\n";
 
-const ours = {
+// The web adapter runs on DecompressionStream, SubtleCrypto and a file system shaped like
+// `vscode.workspace.fs`: millisecond mtimes, no inode or mode bits, no ranged reads.
+const adapters = {
+  node: () => openRepo(path),
+  web: () => webRepo({ fs: vscodeLikeFileSystem, path }),
+};
+const ops = {
   worktree: (r) => r.diffWorktree({ renames: false }),
   treediff: (r) => r.diffRevs(a, b, { renames: false }),
-  blobs: (r) => blobs.forEach((s) => r.readBlob(s)),
+  blobs: async (r) => {
+    for (const s of blobs) await r.readBlob(s);
+  },
   revparse: (r) => r.resolveRev("HEAD~20"),
 };
 const cli = {
@@ -51,29 +62,31 @@ const cli = {
   revparse: () => git(["rev-parse", "HEAD~20"]),
 };
 
-function time(fn) {
-  fn();
+async function time(fn) {
+  await fn();
   const out = [];
   for (let i = 0; i < n; i++) {
     const t = performance.now();
-    fn();
+    await fn();
     out.push(performance.now() - t);
   }
   return out;
 }
 
 const results = {};
-for (const [op, fn] of Object.entries(ours)) {
-  const warm = openRepo(path);
-  results[`ours ${op}/warm`] = time(() => fn(warm));
-  warm.close();
-  results[`ours ${op}/cold`] = time(() => {
-    const r = openRepo(path);
-    fn(r);
-    r.close();
-  });
-}
-for (const [op, fn] of Object.entries(cli)) results[`git ${op}`] = time(fn);
+for (const [name, open] of Object.entries(adapters))
+  for (const [op, fn] of Object.entries(ops)) {
+    const warm = await open();
+    results[`${name} ${op}/warm`] = await time(() => fn(warm));
+    warm.close();
+    results[`${name} ${op}/cold`] = await time(async () => {
+      const r = await open();
+      await fn(r);
+      r.close();
+    });
+  }
+for (const [op, fn] of Object.entries(cli))
+  results[`git ${op}`] = await time(fn);
 
 const bin = join(here, "rust/target/release/git2-bench");
 if (existsSync(bin)) {
