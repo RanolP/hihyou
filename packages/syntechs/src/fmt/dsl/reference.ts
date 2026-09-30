@@ -160,28 +160,31 @@ export interface Flattened {
 const ruled = <O>(ir: FormatIR, ctx: StreamCtx<O>, node: number) =>
   !ctx.isBroken(node) && ctx.tree.kindName(node) in ir.structure;
 
-/** The first list idiom of `tree`, which prints the node's dangling comments. */
-export function danglingOwner(tree: Tree): Tree | undefined {
+/**
+ * The list idioms of `tree` that print the node's dangling comments: the first one it prints, found in each branch
+ * of an `either`, since only one branch prints.
+ */
+export function danglingOwners(tree: Tree): ReadonlySet<Tree> {
   switch (tree.t) {
     case "sepBy":
     case "lines":
-      return tree;
+      return new Set([tree]);
     case "seq":
       for (const p of tree.parts) {
-        const o = danglingOwner(p);
-        if (o) return o;
+        const o = danglingOwners(p);
+        if (o.size > 0) return o;
       }
-      return undefined;
+      return new Set();
     case "brackets":
     case "layout":
-      return danglingOwner(tree.body);
+      return danglingOwners(tree.body);
     case "opt":
     case "tokIf":
-      return danglingOwner(tree.then);
+      return danglingOwners(tree.then);
     case "either":
-      return danglingOwner(tree.then) ?? danglingOwner(tree.else);
+      return new Set([...danglingOwners(tree.then), ...danglingOwners(tree.else)]);
     default:
-      return undefined;
+      return new Set();
   }
 }
 
@@ -232,7 +235,7 @@ export function flatten<O>(
       bound.set(text, nth + 1);
       return tokenChild(t, n, text, nth);
     };
-    const owner = danglingOwner(tree);
+    const owners = danglingOwners(tree);
     const refChild = ({ name, at, split }: Ref) =>
       split !== undefined
         ? splitChild(ctx, n, name, split, at ?? 0, kindHasFields)
@@ -339,7 +342,7 @@ export function flatten<O>(
               } else if (item !== HOLE && evalCond(x.trailing, ctx, n, custom, kindHasFields))
                 out.push({ e: "ifBroken", after: item, text: x.sep, ...(x.imaginary ? { imaginary: true } : {}) });
             });
-            if (owner === x)
+            if (owners.has(x))
               for (const c of dangling()) out.push(commentEntry(ctx, c, "dangling"));
             out.push({ e: "end" });
             return;
@@ -354,7 +357,7 @@ export function flatten<O>(
             } else if (evalCond(x.trailing, ctx, n, custom, kindHasFields))
               out.push({ e: "ifBroken", after: item, text: x.sep, ...(x.imaginary ? { imaginary: true } : {}) });
           });
-          if (owner === x)
+          if (owners.has(x))
             for (const c of dangling()) out.push(commentEntry(ctx, c, "dangling"));
           out.push({ e: "end" });
           return;
@@ -364,14 +367,14 @@ export function flatten<O>(
             throw new Error("flatten: `lines` with `attach`, `blank` or `follow` is generated only, not referenced yet");
           const items = listItems(ctx, n, x.list.name, kindHasFields).slice(x.list.from ?? 0);
           // Nothing to lay out leaves no frame, so a bracket body of only this is empty.
-          if (items.length === 0 && (owner !== x || dangling().length === 0)) return;
+          if (items.length === 0 && (!owners.has(x) || dangling().length === 0)) return;
           out.push({ e: "lines", label: x.list.name });
           items.forEach((item, i) => {
             if (i > 0) out.push({ e: "hardline" });
             child(item);
             if (i < items.length - 1 && nextLineEmpty(t, item)) out.push({ e: "blank" });
           });
-          if (owner === x)
+          if (owners.has(x))
             dangling().forEach((c, i, cs) => {
               if (i > 0) out.push({ e: "hardline" });
               out.push(commentEntry(ctx, c, "dangling"));

@@ -1,4 +1,4 @@
-kotlin compatibility: 699/753 (92.83%), 2 refused (ok:false), 11 excluded
+kotlin compatibility: 701/753 (93.09%), 0 refused (ok:false), 11 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -46,14 +46,14 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | ktfmt/format/type/classExpression.kt | 0/1 | 66.67% |
 | ktfmt/format/type/intersections.kt | 0/1 | 75.00% |
 | ktfmt/format/type/nestedQualifiedTypes.kt | 0/1 | 50.00% |
-| ktfmt/format/when/guards.kt | 0/1 | 58.33% |
 | ktfmt/google/comments.kt | 0/1 | 85.71% |
+| ktfmt/google/comments2.kt | 0/1 | 91.53% |
 | ktfmt/google/forcedBreaksInFunCalls.kt | 0/1 | 88.00% |
 | ktfmt/google/fqNestedTypes.kt | 0/1 | 40.00% |
 | ktfmt/google/longFunctionTypeWrapping.kt | 0/1 | 33.33% |
 | ktfmt/google/redundantTrailingCommas.kt | 0/1 | 83.33% |
 | ktfmt/google/secondaryConstructorNoArgs.kt | 0/1 | 47.06% |
-| ktfmt/google/trailingCommasNotAdded.kt | 0/1 | 79.07% |
+| ktfmt/google/trailingCommasNotAdded.kt | 0/1 | 88.89% |
 | ktfmt/google/trailingCommasSingleElementLists.kt | 0/1 | 82.61% |
 | ktfmt/new_codestyle/annotation/AnnotationsEverywhere.kt | 0/1 | 96.97% |
 | ktfmt/new_codestyle/annotation/AnnotationsOnParameters.kt | 0/1 | 82.61% |
@@ -67,8 +67,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| ktfmt/format/class/trailingCommentAfterMethod.kt | 1/1 | 93.48% | check: output comment "//" matches no input comment |
-| ktfmt/google/comments2.kt | 1/1 | 67.92% | check: input comment "Comment" is missing from the output |
 
 # Excluded
 

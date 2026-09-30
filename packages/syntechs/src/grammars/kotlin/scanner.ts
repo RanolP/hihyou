@@ -11,6 +11,7 @@ const MULTILINE_COMMENT = 3;
 const STRING_START = 4;
 const STRING_END = 5;
 const STRING_CONTENT = 6;
+const CONSTRUCTOR_AHEAD = 7;
 
 const DELIMITER_LENGTH = 3;
 const BUFFER_SIZE = 1024;
@@ -74,42 +75,6 @@ function scanMultilineComment(lexer: Lexer): boolean {
 
 const isWordChar = (c: number) => iswalpha(c) || iswdigit(c) || c === 95; // _
 
-/**
- * Whether the text before the marked end is a class's name and its type parameters (`class Foo<T>`), past the
- * whitespace and block comments after them. A look back the C scanner cannot take: this port holds the whole input.
- */
-function afterClassName(lexer: Lexer): boolean {
-  const s = lexer.input;
-  let i = lexer.tokenEnd;
-  const skipBack = () => {
-    for (;;) {
-      while (i > 0 && iswspace(s.charCodeAt(i - 1))) i--;
-      if (!s.startsWith("*/", i - 2)) return;
-      const open = s.lastIndexOf("/*", i - 3);
-      if (open < 0) return;
-      i = open;
-    }
-  };
-  skipBack();
-  if (s.charCodeAt(i - 1) === 62) {
-    // >
-    let depth = 0;
-    for (; i > 0; i--) {
-      const c = s.charCodeAt(i - 1);
-      if (c === 62 && s.charCodeAt(i - 2) !== 45) depth++;
-      else if (c === 60 && --depth === 0) break;
-    }
-    if (i === 0) return false;
-    i--;
-    skipBack();
-  }
-  const nameEnd = i;
-  while (i > 0 && isWordChar(s.charCodeAt(i - 1))) i--;
-  if (i === nameEnd) return false;
-  skipBack();
-  return i >= 5 && s.startsWith("class", i - 5) && (i === 5 || !isWordChar(s.charCodeAt(i - 6)));
-}
-
 /** Whether annotations and modifier keywords, then `constructor`, come next; advances past them. */
 function constructorAhead(lexer: Lexer): boolean {
   for (;;) {
@@ -139,7 +104,7 @@ function constructorAhead(lexer: Lexer): boolean {
   }
 }
 
-function scanAutomaticSemicolon(lexer: Lexer): boolean {
+function scanAutomaticSemicolon(lexer: Lexer, valid: Uint8Array): boolean {
   lexer.resultSymbol = AUTOMATIC_SEMICOLON;
   lexer.markEnd();
   let sameline = true;
@@ -171,9 +136,14 @@ function scanAutomaticSemicolon(lexer: Lexer): boolean {
   // Bar`). Any other word starting with `w` on a new line gets one, as the checks below would give it.
   if (!sameline && la(lexer) === 119) return !(scanForWord(lexer, "here") && iswspace(la(lexer)));
 
-  // Not before a primary constructor written on the line after its class's name (`class Foo\n@Inject constructor(`),
-  // which the C scanner would cut off from its class.
-  if (!sameline && afterClassName(lexer) && (la(lexer) === 64 || iswalpha(la(lexer))))
+  // Not before a primary constructor on a line after its class's name (`class Foo\n@Inject constructor(`), where the
+  // grammar's never-lexed CONSTRUCTOR_AHEAD is valid; error recovery, which makes every token valid, excluded.
+  if (
+    !sameline &&
+    valid[CONSTRUCTOR_AHEAD] &&
+    !valid[STRING_CONTENT] &&
+    (la(lexer) === 64 || iswalpha(la(lexer)))
+  )
     return !constructorAhead(lexer);
 
   if (sameline) {
@@ -425,7 +395,7 @@ class KotlinScanner implements ExternalScanner {
 
   scan(lexer: Lexer, valid: Uint8Array): boolean {
     if (valid[AUTOMATIC_SEMICOLON]) {
-      const ret = scanAutomaticSemicolon(lexer);
+      const ret = scanAutomaticSemicolon(lexer, valid);
       if (!ret && valid[SAFE_NAV] && la(lexer) === 63)
         return scanSafeNav(lexer);
       // No semicolon: a string or a comment may still follow.

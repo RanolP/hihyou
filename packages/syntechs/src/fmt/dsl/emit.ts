@@ -13,7 +13,7 @@ import {
   type Wrap,
 } from "./dsl.js";
 import { type NormalizerName, normalizerOptions } from "./normalizers.js";
-import { danglingOwner, holdsList } from "./reference.js";
+import { danglingOwners, holdsList } from "./reference.js";
 
 const str = (s: string) => JSON.stringify(s);
 /** The rule of `kind` as a local: `$` keeps a kind named like a keyword (`if`, `class`) a valid name. */
@@ -249,7 +249,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
   /** The variable holding each named group's handle. */
   const groups = new Map<string, string>();
   /** The list idiom that prints the node's dangling comments. */
-  const owner = danglingOwner(tree);
+  const owners = danglingOwners(tree);
 
   // The k-th literal spelled t binds to the k-th anonymous child spelled t: fixed ordinals unless an `opt` may
   // skip some, and then counters that only the literals actually printed advance.
@@ -315,7 +315,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
     switch (x.t) {
       case "sepBy":
       case "lines":
-        return `(listItems(ctx, node, ${str(x.list.name)}, ${hasFields})${x.list.from ? `.slice(${x.list.from})` : ""}.length === 0${x === owner ? " && ctx.danglingComments(node).length === 0" : ""})`;
+        return `(listItems(ctx, node, ${str(x.list.name)}, ${hasFields})${x.list.from ? `.slice(${x.list.from})` : ""}.length === 0${owners.has(x) ? " && ctx.danglingComments(node).length === 0" : ""})`;
       case "ref":
         return `${refChild(x)} === -1`;
       case "opt": {
@@ -495,7 +495,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
     // An item, not a hole: every test that reads the item's node is guarded by it.
     const real = (item: string) => (holes === undefined ? "" : `${item} !== HOLE && `);
     block(`if (${its}.length === 0)`, () => {
-      line(`const dangling = ${x === owner ? "ctx.danglingComments(node)" : "[] as number[]"};`);
+      line(`const dangling = ${owners.has(x) ? "ctx.danglingComments(node)" : "[] as number[]"};`);
       line("open(GROUP);");
       printBracket(openTok, b.open);
       block("if (dangling.length > 0)", () => {
@@ -610,7 +610,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
       line("}");
     } else plain();
     // Dangling comments after the items, each on a line of its own once the list breaks; a line comment breaks it.
-    if (x === owner)
+    if (owners.has(x))
       block("for (const c of ctx.danglingComments(node))", () => {
         line("sLine(0);");
         line("ctx.comment(c);");
@@ -732,7 +732,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
             line("sLine(0);");
           });
         });
-        if (x === owner) line("for (const c of ctx.danglingComments(node)) ctx.comment(c);");
+        if (owners.has(x)) line("for (const c of ctx.danglingComments(node)) ctx.comment(c);");
         return;
       }
       case "lines": {
@@ -799,7 +799,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
           if (frameWrap(rule, x.list.name).blankLines !== undefined)
             line(`if (i < ${its}.length - 1 && nextLineEmpty(t, item)) sHardline();`);
         });
-        if (x === owner) {
+        if (owners.has(x)) {
           // Comments alone in the list keep the source's blank lines too, where `blankLines` keeps them.
           const keep = frameWrap(rule, x.list.name).blankLines !== undefined;
           const cs = keep ? name("dangling") : "ctx.danglingComments(node)";

@@ -7,11 +7,12 @@ import {
   prettierSettings,
 } from "../../fmt/options.js";
 import { defineLanguage, type Language, type PrintArgs } from "../../fmt/rules.js";
-import { sText, sToken } from "../../fmt/stream.js";
+import { close, INDENT, open, sHardline, sText, sToken } from "../../fmt/stream.js";
 import { docCommentWords, kdoc } from "../../fmt/dsl/doc-comment.js";
 import type { ImportRule, PredicateRule } from "../../fmt/dsl/runtime.js";
 import { newlineBetween } from "../../fmt/text.js";
 import { type FormatTree, firstLeaf, prevLeaf } from "../../fmt/tree.js";
+import { printLeadingComments } from "../../fmt/stream-format.js";
 import type { StreamCtx, StreamRule, StreamRules } from "../../fmt/stream-format.js";
 import { grammar } from "./bundle.js";
 import { binary, binaryKinds } from "./binary.js";
@@ -82,6 +83,34 @@ const spelled = (tree: FormatTree, node: number): string => {
 const childOf = (tree: FormatTree, node: number, kind: string) => {
   for (let i = 0; i < tree.count(node); i++) if (tree.kindName(tree.child(node, i)) === kind) return tree.child(node, i);
   return -1;
+};
+
+/**
+ * Of a primary constructor: a line comment trails it before its class's body (handleComment gives it the ones on
+ * lines of their own there too), so the body's `{` goes on the next line, as ktfmt puts it.
+ */
+const commentedBeforeBody = <O>(ctor: number, ctx: StreamCtx<O>) =>
+  ctx.tree.kindName(ctor) === "primary_constructor" &&
+  childOf(ctx.tree, ctx.tree.parent(ctor), "class_body") !== -1 &&
+  ctx.trailingComments(ctor).some((c) => ctx.isLineComment(c));
+
+/**
+ * Once `commentedBeforeBody` holds, the constructor prints its own comments: its leading ones as usual, and the ones
+ * before its class's body one on its line after it, the rest indented on their own.
+ */
+const ctorComments = <O>(generated: StreamRule<O> | undefined): StreamRule<O> => (node, ctx) => {
+  const own = commentedBeforeBody(node, ctx);
+  if (own) printLeadingComments(ctx as StreamCtx<unknown>, node);
+  generated?.(node, ctx);
+  if (!own) return;
+  const t = ctx.tree;
+  open(INDENT);
+  for (const c of ctx.trailingComments(node)) {
+    if (t.lf(c) > 0) sHardline();
+    else sText(" ");
+    ctx.comment(c);
+  }
+  close();
 };
 
 // ktfmt 0.64's RedundantImportDetector keeps an import named by an operator convention, since a call through the
@@ -352,6 +381,11 @@ export const customs = {
   },
   backingField:(node, ctx) => backingField(ctx.tree, node),
   /** Of a class or its primary constructor: a comment comes before the constructor, which ktfmt puts on a line of its own. */
+  /** Of a class: a line comment trails its primary constructor before its body (see `commentedBeforeBody`). */
+  commentedBody: (node, ctx) => {
+    const ctor = childOf(ctx.tree, node, "primary_constructor");
+    return ctor !== -1 && commentedBeforeBody(ctor, ctx);
+  },
   commentedConstructor: (node, ctx) => {
     const t = ctx.tree;
     const ctor = t.kindName(node) === "primary_constructor" ? node : childOf(t, node, "primary_constructor");
@@ -502,6 +536,7 @@ function withChains<O>(stream: StreamRules<O>): StreamRules<O> {
   rules.set("lambda_literal", lambdas(stream.rules.get("lambda_literal")));
   rules.set("lambda_parameters", lambdaParameters);
   rules.set("when_entry", whenEntry(stream.rules.get("when_entry")));
+  rules.set("primary_constructor", ctorComments(stream.rules.get("primary_constructor")));
   for (const kind of binaryKinds) rules.set(kind, binary(stream.rules.get(kind)));
   for (const kind of recovering) {
     const generated = rules.get(kind);
@@ -533,6 +568,7 @@ function withChains<O>(stream: StreamRules<O>): StreamRules<O> {
     ...stream,
     rules,
     wrapsLineComments: true,
+    printsOwnComments: commentedBeforeBody,
     recovered: (error, t) =>
       recoveredComma(t, error) &&
       (recovering as readonly string[]).concat("when_entry").includes(t.kindName(t.parent(error))),
@@ -546,8 +582,15 @@ export const kotlin: Language<KotlinOptions> = {
     lineComments: { line_comment: "//" },
     // The parser puts an import's comment inside its import_header, where at the list's first import the core
     // would hoist it to lead the whole list.
-    handleComment: ({ tree, comment }) =>
-      endsImport(tree, comment) ? { node: tree.parent(comment), as: "trailing" } : undefined,
+    handleComment: ({ tree, comment, preceding, following }) =>
+      endsImport(tree, comment)
+        ? { node: tree.parent(comment), as: "trailing" }
+        : preceding !== undefined &&
+            following !== undefined &&
+            tree.kindName(preceding) === "primary_constructor" &&
+            tree.kindName(following) === "class_body"
+          ? { node: preceding, as: "trailing" }
+          : undefined,
     defaults,
     settings: prettierSettings,
     normalize,

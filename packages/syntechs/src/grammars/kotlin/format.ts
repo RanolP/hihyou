@@ -149,29 +149,53 @@ export const kotlin = format({
     annotation: () => inOrder({ join: "space", tight: { after: ["@", "[", "use_site_target"], before: ["]"] } }),
     use_site_target: () => inOrder(),
 
+    // A line comment after the primary constructor puts the body's `{` on a line of its own.
     class_declaration: () =>
       either(
         when("commentedConstructor"),
-        decl(
-          inOrder({
-            join: "space",
-            hardWhen: { before: ["primary_constructor"] },
-            tight: { before: [...before, "type_parameters"] as never[], after: [...after, "modifiers"] as never[] },
-          }),
-        ),
         either(
-          when("whereAfterDelegation"),
+          when("commentedBody"),
           decl(
             inOrder({
               join: "space",
+              hardWhen: { before: ["primary_constructor", "class_body"] },
+              tight: { before: [...before, "type_parameters"] as never[], after: [...after, "modifiers"] as never[] },
+            }),
+          ),
+          decl(
+            inOrder({
+              join: "space",
+              hardWhen: { before: ["primary_constructor"] },
+              tight: { before: [...before, "type_parameters"] as never[], after: [...after, "modifiers"] as never[] },
+            }),
+          ),
+        ),
+        either(
+          when("commentedBody"),
+          decl(
+            inOrder({
+              join: "space",
+              hardWhen: { before: ["class_body"] },
               tight: {
                 before: [...before, "type_parameters", "primary_constructor"] as never[],
                 after: [...after, "modifiers"] as never[],
               },
-              lineBefore: ["type_constraints"],
             }),
           ),
-          decl(spaced({ tightBefore: ["type_parameters", "primary_constructor"] })),
+          either(
+            when("whereAfterDelegation"),
+            decl(
+              inOrder({
+                join: "space",
+                tight: {
+                  before: [...before, "type_parameters", "primary_constructor"] as never[],
+                  after: [...after, "modifiers"] as never[],
+                },
+                lineBefore: ["type_constraints"],
+              }),
+            ),
+            decl(spaced({ tightBefore: ["type_parameters", "primary_constructor"] })),
+          ),
         ),
       ),
     object_declaration: () => decl(spaced()),
@@ -209,16 +233,21 @@ export const kotlin = format({
     type_alias: () => decl(spaced({ tightBefore: ["type_parameters"] })),
 
     function_declaration: () => decl(spaced({ tightBefore: [":"] })),
-    // A parameter's modifiers and default are its siblings, so an entry is the run between two commas.
-    function_value_parameters: () =>
-      grpParen(
-        splitOn(",", {
-          except: ["(", ")"],
-          item: "space",
-          trailing: true,
-          imaginary: true,
-          layout: { between: "line" },
-        }),
+    // A parameter's modifiers and default are its siblings, so an entry is the run between two commas. With no
+    // parameter, a list prints the comments between the parentheses.
+    function_value_parameters: ($) =>
+      either(
+        has("children", "parameter"),
+        grpParen(
+          splitOn(",", {
+            except: ["(", ")"],
+            item: "space",
+            trailing: true,
+            imaginary: true,
+            layout: { between: "line" },
+          }),
+        ),
+        grpParen(sepBy(",", $.children)),
       ),
     parameter: () => spaced({ tightBefore: [":"] }),
     // A setter's `set(value)` parameter, whose type may be left out.
@@ -343,6 +372,7 @@ export const kotlin = format({
         hug: firstText({ prefix: ["{"] }),
       }),
     when_condition: () => inOrder(space),
+    when_guard: () => inOrder(space),
     for_statement: () => spaced(),
     while_statement: () => spaced(),
     do_while_statement: () => spaced(),
