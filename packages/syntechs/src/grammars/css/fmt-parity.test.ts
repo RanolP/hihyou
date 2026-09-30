@@ -112,6 +112,8 @@ const edgeCases: [string, string][] = [
     '@font-face{font-family:x;src:url(a.woff2) format("woff2"),url(a.woff) format("woff")}',
   ],
   ["other-at-rules", "@container (min-width:400px){a{b:c}}"],
+  // A `@layer` list was kept as written; oxfmt spaces it after its commas.
+  ["layer-list", "@layer a,b;@layer c , d;@LAYER e\n,f;"],
   // An at-rule's params print as raw text, which once dropped the comments attached to them.
   ["at-rule-param-comment", "@counter-style /* c */ thumbs {}"],
   [
@@ -241,8 +243,6 @@ const divergences: [string, string, Partial<CssOptions>, string][] = [
     {},
     "@keyframes x{FROM{a:b}}\n",
   ],
-  // oxfmt spaces a `@layer` list after its commas.
-  ["layer-list", "@layer a,b;", {}, "@layer a,b;\n"],
   // The core ends every file with a newline; prettier prints an empty file as nothing.
   ["empty-file", "", {}, "\n"],
 ];

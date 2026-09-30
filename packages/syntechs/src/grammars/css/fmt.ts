@@ -540,14 +540,20 @@ const inVariable = (n: number, ctx: SCtx) =>
  * Prettier's raw at-rule params: the children as written, one space wherever the source has a gap and wherever
  * `spaced` says, none before the `;`; a child `own` names prints by its own rule.
  */
-function raw(node: number, ctx: SCtx, own: (c: number) => boolean, spaced: (prev: number, c: number) => boolean) {
+function raw(
+  node: number,
+  ctx: SCtx,
+  own: (c: number) => boolean,
+  spaced: (prev: number, c: number) => boolean,
+  tight: (c: number) => boolean = () => false,
+) {
   const t = ctx.tree;
   const items = new Set(ctx.items(node));
   let prev = -1;
   for (const c of children(node, t)) {
     const named = t.named(c);
     if (named && !items.has(c)) continue;
-    if (prev !== -1 && kind(c, ctx) !== ";" && (spaced(prev, c) || !t.adjoins(prev, c))) sText(" ");
+    if (prev !== -1 && kind(c, ctx) !== ";" && !tight(c) && (spaced(prev, c) || !t.adjoins(prev, c))) sText(" ");
     prev = c;
     if (named && own(c)) ctx.print(c);
     else if (named) {
@@ -561,9 +567,16 @@ function raw(node: number, ctx: SCtx, own: (c: number) => boolean, spaced: (prev
 
 /** A Sass directive, else as written; `@page:first` stays joined, as postcss reads a name up to the first gap. */
 export function atRule(node: number, ctx: SCtx): void {
+const layerList = (node: number, ctx: SCtx) =>
+  /^@layer$/i.test(ctx.tree.text(ctx.tree.child(node, 0))) && !children(node, ctx.tree).some((c) => isComment(c, ctx));
+
   if (isDirective(node, ctx)) return sassDirective(node, ctx);
   const own = (c: number) => kind(c, ctx) === "at_keyword" || kind(c, ctx) === "block";
-  raw(node, ctx, own, (_, c) => kind(c, ctx) === "block");
+  const block = (c: number) => kind(c, ctx) === "block";
+  const comma = (c: number) => kind(c, ctx) === ",";
+  // oxfmt prints a `@layer` list one space after each comma and none before one, unless a comment is among it.
+  if (layerList(node, ctx)) return raw(node, ctx, own, (prev, c) => block(c) || comma(prev), comma);
+  raw(node, ctx, own, (_, c) => block(c));
 }
 
 /** A Sass directive or postcss-mixins' `@define-mixin`, else as written. */
