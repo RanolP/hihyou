@@ -280,6 +280,10 @@ importers:
       '@hihyou/engine':
         specifier: workspace:*
         version: link:../engine
+    devDependencies:
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
 
   packages/website:
     devDependencies:
