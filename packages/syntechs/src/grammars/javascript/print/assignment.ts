@@ -354,6 +354,15 @@ function isPoorlyBreakableMemberOrCallChain(
       return false;
     if (printsAsMemberChain(s, n)) return false;
     const args = callArguments(ctx, n);
+    // oxfmt hugs `x = f(/* c */)` rather than breaking after `=`.
+    const argList = field(ctx, n, "arguments");
+    if (
+      args.length === 0 &&
+      ctx.options.compat === "oxfmt" &&
+      argList !== undefined &&
+      ctx.comments(argList).dangling.length > 0
+    )
+      return false;
     const poor =
       args.length === 0 ||
       (args.length === 1 &&
