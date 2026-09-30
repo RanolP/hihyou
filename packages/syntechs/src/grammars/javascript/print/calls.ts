@@ -487,7 +487,6 @@ function shouldExpandLastArg(ctx: JsCtx, args: readonly number[]): boolean {
 /** `f((⏎// c⏎) => {})`: oxfmt hugs no last function whose empty parameter list holds a line comment. */
 function oxfmtBreaksEmptyParams(sctx: JsStreamCtx, raw: number): boolean {
   const ctx = sctx.js;
-  if (ctx.options.compat !== "oxfmt") return false;
   const list = field(ctx, unparen(ctx, raw), "parameters");
   return (
     list !== undefined &&
@@ -534,7 +533,6 @@ const sTypeArguments = (sctx: JsStreamCtx, n: number) => {
   if (ta === undefined) return;
   sctx.print(ta);
   // oxfmt carries a comment in or after them to the end of the line.
-  if (sctx.js.options.compat !== "oxfmt") sLineSuffixBoundary();
 };
 
 /** Prettier's printDanglingCommentsInList over the sink. */
@@ -1198,7 +1196,6 @@ const sCallee = (sctx: JsStreamCtx, n: number) => {
   )
     sText(" ");
   // oxfmt carries a callee's trailing comment past its type arguments and arguments to the line's end: `f<T>();⏎// c`.
-  if (ctx.options.compat !== "oxfmt") sLineSuffixBoundary();
 };
 
 /** Prettier's printCallExpression, for calls and `new`. */
@@ -1217,7 +1214,6 @@ const callCustom: CustomRule<JsOptions> = (n, s) => {
     // oxfmt keeps the line break after a block comment trailing the tag: `foo /* c */⏎`x``.
     const tagComment = tag === undefined ? undefined : sctx.trailingComments(tag).at(-1);
     if (
-      ctx.options.compat === "oxfmt" &&
       tagComment !== undefined &&
       !ctx.isLineComment(tagComment) &&
       ctx.tree.lf(nextLeaf(ctx.tree, tagComment)) > 0

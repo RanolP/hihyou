@@ -218,8 +218,8 @@ function printJestEach(ctx: JsStreamCtx, node: number, raws: string[]): boolean 
     row.cells.push({
       print: () => {
         if (openToken !== undefined) sToken(openToken, "${");
-        // oxfmt keeps a broken cell's lines at the column its own layout gives them, outside the table's indent.
-        const root = flat === undefined && js.options.compat === "oxfmt";
+        // A broken cell's lines stay at the column its own layout gives them, outside the table's indent.
+        const root = flat === undefined;
         if (root) openAlign(-Infinity);
         place(flat ?? printed);
         if (root) close();

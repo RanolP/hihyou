@@ -53,7 +53,6 @@ import {
   isBlockComment,
   isJsx,
   isLogical,
-  isOptional,
   type JsOptions,
   items,
   type JsCtx,
@@ -266,13 +265,7 @@ function printBinaryishExpressions(
       estreeKind(js, leftInner) !== estree &&
       estreeKind(js, unparen(js, right)) !== estree);
   const parts = [...chain.parts];
-  // Prettier's space before a comment-led right operand at the line's start doubles the one before a line
-  // comment trailing the left; oxfmt prints one.
-  if (
-    !atStart ||
-    shouldInline ||
-    (commentBeforeOperator && js.options.compat !== "oxfmt")
-  )
+  if (!atStart || shouldInline)
     parts.push(() => sText(" "));
   const printRight = rightDoc;
   parts.push(
@@ -289,7 +282,6 @@ function printBinaryishExpressions(
 const isBooleanTypeCoercion = (ctx: JsCtx, n: number | undefined) =>
   n !== undefined &&
   kind(ctx, n) === "call_expression" &&
-  (!isOptional(ctx, n) || ctx.options.compat === "oxfmt") &&
   callArguments(ctx, n).length === 1 &&
   kind(ctx, callee(ctx, n)) === "identifier" &&
   src(ctx, callee(ctx, n) as number) === "Boolean";

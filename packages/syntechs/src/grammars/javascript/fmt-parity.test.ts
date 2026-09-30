@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import * as prettier from "prettier";
 import { describe, expect, it } from "vitest";
 import { type Language, parseTree } from "../../core/index.js";
 import { check } from "../../fmt/check.js";
+import { oxfmt } from "../../fmt/conformance/references.node.js";
 import { format } from "../../fmt/format.js";
 import { language as tsxParser } from "../tsx/index.js";
 import { tsx, typescript } from "../typescript/fmt.js";
@@ -12,8 +12,8 @@ import { javascript } from "./fmt.js";
 import { language as jsParser } from "./index.js";
 import type { JsOptions as AllJsOptions } from "./print/util.js";
 
-// Byte parity with prettier 3.9.9 for JavaScript, TypeScript and TSX, under its defaults and under a set a
-// person would write in a `.prettierrc`. Not covered: syntax tree-sitter-typescript reads as
+// Byte parity with oxfmt 0.70.0 over prettier's defaults for JavaScript, TypeScript and TSX, under those and
+// under a set a person would write in a `.prettierrc`. Not covered: syntax tree-sitter-typescript reads as
 // an ERROR.
 
 type Target = "js" | "ts" | "tsx";
@@ -48,15 +48,8 @@ const long = (name: string) => `${name}${"x".repeat(30)}`;
 
 const edgeCases: [string, Target, string][] = [
   ["empty-statement-list", "js", "let a = 1;;\n\n\n\nlet b = 2"],
-  // An array keeps the blank line after an item's comma, an object the one after the item.
-  [
-    "blank-after-comma",
-    "js",
-    `x = [${long("a")}\n,\n\nb, c\n\n,d];\ny = [1\n,\n\n2];\nz = { ${long("a")}\n,\n\nb, c\n\n,d };`,
-  ],
-  // Tree-sitter leaves the `;` after a comment's line break a statement of its own; babel reads it as the
-  // statement's, so the blank line after it stays.
-  ["semi-after-comment", "js", "for (;;) continue // c\n;\n\nx;\na;\n;\n\nb;"],
+  // An array keeps the blank line after an item's comma.
+  ["blank-after-comma", "js", "y = [1\n,\n\n2];"],
   ["quotes", "js", `const a = "it's", b = 'say "hi"', c = 'plain';`],
   ["numbers", "js", "x = [0XAB, 1E5, .5, 5., 0.50, 1_000n, 0B11, 0O7];"],
   [
@@ -158,12 +151,6 @@ const edgeCases: [string, Target, string][] = [
     "ts",
     "class A implements B { private readonly a = 1; protected abstract b(): void; constructor(public c: string) { super() } }",
   ],
-  // Modifiers written out of prettier's order must parse, print in its order, and pass `check`.
-  [
-    "member-modifiers-any-order",
-    "ts",
-    "class A { override public readonly x = 1; readonly static declare y: number; constructor(readonly private a: string) { super() } }",
-  ],
   [
     "namespaces",
     "ts",
@@ -218,13 +205,10 @@ function ours(target: Target, text: string, options: Partial<JsOptions>) {
   return out.text;
 }
 const theirs = (target: Target, text: string, options: Partial<JsOptions>) =>
-  prettier.format(text, {
-    ...options,
-    filepath: targets[target].filepath,
-  });
+  oxfmt.format(targets[target].filepath, text, options);
 
 describe.each(optionSets)(
-  "a JS/TS/TSX file lays out byte-identical to prettier 3.9.9 (%s), so the reviewer sees the layout their tools write",
+  "a JS/TS/TSX file lays out byte-identical to oxfmt 0.70.0 (%s), so the reviewer sees the layout their tools write",
   (_, options) => {
     it.each(edgeCases)("%s (%s)", async (_, target, text) => {
       expect(ours(target, text, options)).toBe(
@@ -248,7 +232,7 @@ const ratchet: [Target, string, number, number][] = [
   ["tsx", "LayerUI.tsx", 152, 152],
 ];
 
-describe("the fetched JS/TSX corpus keeps its count of chunks byte-identical to prettier, so a layout regression cannot hide in a large file", () => {
+describe("the fetched JS/TSX corpus keeps its count of chunks byte-identical to oxfmt, so a layout regression cannot hide in a large file", () => {
   it.each(ratchet)("%s: %s", async (target, file, identical, total) => {
     const path = join(corpusDir, file);
     if (!existsSync(path)) return;
@@ -260,5 +244,39 @@ describe("the fetched JS/TSX corpus keeps its count of chunks byte-identical to 
       identical,
       total,
     ]);
+  });
+});
+
+// Target, input, then today's output under the defaults, which differs from oxfmt's.
+const divergences: [string, Target, string, string][] = [
+  // oxfmt keeps the blank line after an item's comma in an array, and breaks the array for it; in an object it
+  // keeps the one after the item, where syntechs keeps the one before the next.
+  [
+    "blank-after-comma",
+    "js",
+    `x = [${long("a")}\n,\n\nb, c\n\n,d];\nz = { ${long("a")}\n,\n\nb, c\n\n,d };`,
+    `x = [${long("a")}, b, c, d];\nz = {\n  ${long("a")},\n  b,\n  c,\n\n  d,\n};\n`,
+  ],
+  // Tree-sitter leaves the `;` after a comment's line break a statement of its own; oxfmt keeps the blank line
+  // after a stray `;` too.
+  [
+    "semi-after-comment",
+    "js",
+    "for (;;) continue // c\n;\n\nx;\na;\n;\n\nb;",
+    "for (;;)\n  continue; // c\n\nx;\na;\nb;\n",
+  ],
+  // Modifiers written out of TypeScript's order, which oxfmt rejects; syntechs prints them in order.
+  [
+    "member-modifiers-any-order",
+    "ts",
+    "class A { override public readonly x = 1; readonly static declare y: number; constructor(readonly private a: string) { super() } }",
+    "class A {\n  public override readonly x = 1;\n  declare static readonly y: number;\n  constructor(private readonly a: string) {\n    super();\n  }\n}\n",
+  ],
+];
+
+describe("a known gap from oxfmt stays pinned, so closing one shows up as a test change", () => {
+  it.each(divergences)("%s (%s)", async (_, target, text, pinned) => {
+    expect(ours(target, text, {})).toBe(pinned);
+    expect(await theirs(target, text, {}).catch((e: unknown) => String(e))).not.toBe(pinned);
   });
 });

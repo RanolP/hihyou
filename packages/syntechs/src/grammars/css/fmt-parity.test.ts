@@ -1,14 +1,15 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import * as prettier from "prettier";
 import { describe, expect, it } from "vitest";
 import { parseTree } from "../../core/index.js";
 import { check } from "../../fmt/check.js";
+import { oxfmt } from "../../fmt/conformance/references.node.js";
 import { format } from "../../fmt/format.js";
 import { type CssOptions, css } from "./fmt.js";
 import { language } from "./index.js";
 
-// Byte parity with prettier 3.9.9, under its defaults and under a set a person would write in a `.prettierrc`.
+// Byte parity with oxfmt 0.70.0 over prettier's defaults, under those and under a set a person would write in a
+// `.prettierrc`.
 // Not covered, as `divergences` below pins: a node tree-sitter-css wraps in an ERROR (it keeps its source
 // text), and an empty file.
 
@@ -110,7 +111,7 @@ const edgeCases: [string, string][] = [
     "font-face",
     '@font-face{font-family:x;src:url(a.woff2) format("woff2"),url(a.woff) format("woff")}',
   ],
-  ["other-at-rules", "@layer a,b;@container (min-width:400px){a{b:c}}"],
+  ["other-at-rules", "@container (min-width:400px){a{b:c}}"],
   // An at-rule's params print as raw text, which once dropped the comments attached to them.
   ["at-rule-param-comment", "@counter-style /* c */ thumbs {}"],
   [
@@ -172,11 +173,10 @@ function ours(text: string, options: Partial<CssOptions>) {
   if (problem) throw new Error(`check: ${problem}`);
   return out.text;
 }
-const theirs = (text: string, options: Partial<CssOptions>) =>
-  prettier.format(text, { filepath: "x.css", ...options });
+const theirs = (text: string, options: Partial<CssOptions>) => oxfmt.format("x.css", text, options);
 
 describe.each(optionSets)(
-  "a CSS file lays out byte-identical to prettier 3.9.9 (%s), so the reviewer sees the layout their tools write",
+  "a CSS file lays out byte-identical to oxfmt 0.70.0 (%s), so the reviewer sees the layout their tools write",
   (_, options) => {
     it.each(edgeCases)("%s", async (_, text) => {
       expect(ours(text, options)).toBe(await theirs(text, options));
@@ -192,7 +192,7 @@ const chunks = (s: string) => s.split(/\n(?=[^\s}])/);
 const ratchet: [string, Partial<CssOptions>, string, number, number][] = [
   ["defaults", {}, "normalize.css", 96, 96],
   ["defaults", {}, "animate.css", 328, 328],
-  ["defaults", {}, "bootstrap.css", 1641, 1641],
+  ["defaults", {}, "bootstrap.css", 1638, 1641],
   [
     "singleQuote, tabWidth 4, printWidth 100",
     optionSets[1]?.[1] ?? {},
@@ -217,7 +217,7 @@ const ratchet: [string, Partial<CssOptions>, string, number, number][] = [
 ];
 
 describe.skipIf(!present)(
-  "the fetched CSS corpus keeps its count of chunks byte-identical to prettier, so a layout regression cannot hide in a large file",
+  "the fetched CSS corpus keeps its count of chunks byte-identical to oxfmt, so a layout regression cannot hide in a large file",
   () => {
     it.each(ratchet)("%s: %s", async (_, options, file, identical, total) => {
       const text = readFileSync(join(corpusDir, file), "utf8");
@@ -232,7 +232,7 @@ describe.skipIf(!present)(
   },
 );
 
-// Input, options, then today's output, which differs from prettier's.
+// Input, options, then today's output, which differs from oxfmt's.
 const divergences: [string, string, Partial<CssOptions>, string][] = [
   // tree-sitter-css knows only lowercase `from`; an uppercase one is an ERROR.
   [
@@ -241,11 +241,13 @@ const divergences: [string, string, Partial<CssOptions>, string][] = [
     {},
     "@keyframes x{FROM{a:b}}\n",
   ],
+  // oxfmt spaces a `@layer` list after its commas.
+  ["layer-list", "@layer a,b;", {}, "@layer a,b;\n"],
   // The core ends every file with a newline; prettier prints an empty file as nothing.
   ["empty-file", "", {}, "\n"],
 ];
 
-describe("a known gap from prettier stays pinned, so closing one shows up as a test change", () => {
+describe("a known gap from oxfmt stays pinned, so closing one shows up as a test change", () => {
   it.each(divergences)("%s", async (_, text, options, pinned) => {
     expect(ours(text, options)).toBe(pinned);
     expect(await theirs(text, options)).not.toBe(pinned);

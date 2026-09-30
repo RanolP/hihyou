@@ -44,7 +44,6 @@ import {
 } from "./conformance/report.node.js";
 import { ruffSuite } from "./conformance/ruff.node.js";
 import { format } from "./format.js";
-import type { CompatOptions } from "./options.js";
 import type { Language } from "./rules.js";
 
 const PRETTIER = "prettier 3.9.9";
@@ -141,8 +140,6 @@ interface Target {
   grammar: (fixture: string) => GrammarName;
   source: string;
   suite: () => Suite | Promise<Suite>;
-  /** The `compat` option a prettier-family target formats with. */
-  compat?: CompatOptions["compat"];
 }
 
 const prettier = (
@@ -159,12 +156,11 @@ const prettier = (
   grammar,
   source: `Fixtures: ${PRETTIER} tests/format/{${t.dirs.join(",")}} (recursive), every spec call listing parser ${t.parsers.map((p) => `\`${p}\``).join(" or ")}, expected output from its __snapshots__.`,
   suite: () => prettierSuite(prettierRoot, t),
-  compat: "prettier",
 });
 
 /**
  * `target`'s fixtures and option sets scored against oxfmt, run with prettier's defaults (references.node.ts), as
- * `<id>@oxfmt`: syntechs formats them with `compat: "oxfmt"`.
+ * `<id>@oxfmt`, the output syntechs is held to; the plain prettier target measures how far that is from prettier.
  */
 const againstOxfmt = (target: Target): Target => ({
   ...target,
@@ -172,7 +168,6 @@ const againstOxfmt = (target: Target): Target => ({
   reference: oxfmt.name,
   source: `Fixtures: those of the ${target.id} target, every option set, expected output from ${oxfmt.name} run on each with that option set over prettier's defaults. A fixture oxfmt rejects under any of its option sets is excluded.`,
   suite: async () => referenceSuite(await target.suite(), oxfmt),
-  compat: "oxfmt",
 });
 
 const PRETTIER_TARGETS: Target[] = [
@@ -271,7 +266,6 @@ function runCase(
   c: Case,
   grammar: Grammar,
   lang: Language<unknown>,
-  compat: Target["compat"],
   diff: string | undefined,
 ): FixtureResult {
   const runs: Run[] = c.runs.map((r) => {
@@ -281,7 +275,7 @@ function runCase(
       const res = format(
         parseTree(grammar, c.text),
         lang,
-        compat === undefined ? r.options : { ...r.options, compat },
+        r.options,
       );
       out = res.ok ? res.text : c.text;
       if (!res.ok) why = `${res.reason}: ${res.detail}`;
@@ -426,7 +420,7 @@ async function main() {
         results = "not implemented";
         break;
       }
-      results.push(runCase(c, await loadGrammar(g), lang, t.compat, diff));
+      results.push(runCase(c, await loadGrammar(g), lang, diff));
     }
     if (only.length > 0) {
       const failing =

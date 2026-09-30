@@ -130,8 +130,8 @@ export function withComments(ctx: JsStreamCtx, node: number, fn: () => void): vo
 }
 
 /**
- * What separates a head from its body: a space, but under oxfmt a line break when the body's first leading
- * comment stands on a line of its own (`function f()⏎// c⏎{`), which oxfmt keeps before the `{`.
+ * What separates a head from its body: a space, but a line break when the body's first leading comment stands on a
+ * line of its own (`function f()⏎// c⏎{`), which stays before the `{`.
  */
 export function sBeforeBody(ctx: StreamCtx<JsOptions>, body: number): void {
   if (bodyBelowHead(ctx, body)) stream.sHardline();
@@ -140,7 +140,7 @@ export function sBeforeBody(ctx: StreamCtx<JsOptions>, body: number): void {
 
 export function bodyBelowHead(ctx: StreamCtx<JsOptions>, body: number): boolean {
   const first = ctx.leadingComments(body)[0];
-  return ctx.options.compat === "oxfmt" && first !== undefined && ctx.tree.lf(first) > 0;
+  return first !== undefined && ctx.tree.lf(first) > 0;
 }
 
 /**

@@ -104,7 +104,6 @@ const outermostEnding = (c: CommentContext<JsOptions>, n: number): number => {
  */
 const oxfmtJumpSemicolon = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   const { comment, enclosing, preceding, following, tree } = c;
-  if (c.options.compat !== "oxfmt") return;
   if (JUMPS.has(kind(c, enclosing))) {
     const rest = codeAfter(c, enclosing, comment);
     const semi = rest[0];
@@ -126,7 +125,7 @@ const oxfmtJumpSemicolon = (c: CommentContext<JsOptions>): CommentTarget | undef
  */
 const oxfmtForInHead = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   const { comment, enclosing, text, tree } = c;
-  if (c.options.compat !== "oxfmt" || kind(c, enclosing) !== "for_in_statement") return;
+  if (kind(c, enclosing) !== "for_in_statement") return;
   const left = field(c, enclosing, "left");
   const right = field(c, enclosing, "right");
   if (left === undefined || right === undefined) return;
@@ -164,7 +163,7 @@ const typeBeforeSemicolon = (c: CommentContext<JsOptions>): CommentTarget | unde
   }
   if (!SEMI_INSIDE.has(kind(c, enclosing)) || kind(c, preceding) === "formal_parameters") return;
   // oxfmt's type alias ends before its `;`, as a statement does.
-  if (c.options.compat === "oxfmt" && kind(c, enclosing) === "type_alias_declaration") return;
+  if (kind(c, enclosing) === "type_alias_declaration") return;
   let up = parent(c, enclosing);
   if (up !== undefined && kind(c, up) === "ambient_declaration") up = parent(c, up);
   return up !== undefined && kind(c, up) === "export_statement"
@@ -196,24 +195,11 @@ const unionMember = (c: CommentContext<JsOptions>): CommentTarget | undefined =>
 };
 
 /**
- * `/* c *\/ A | B`: a one-line block comment with only spaces between it and a union leads the union's first
- * member, so it prints after that member's `|` (prettier's shouldMoveCommentToFirstUnionMember).
+ * `/* c *\/ A | B`: any block comment that does not end its line leads the union's first member, so it prints after
+ * that member's `|`, multi-line ones too, and one before the `(`s and `|`s of parenthesized one-type unions reaches
+ * the union inside them.
  */
 const unionHead = (c: CommentContext<JsOptions>, node: number): number => {
-  if (c.options.compat === "oxfmt") return oxfmtUnionHead(c, node);
-  if (kind(c, node) !== "union_type" || !c.text.startsWith("/*") || c.text.includes("\n")) return node;
-  if (isIgnoreComment(c, c.comment)) return node;
-  const head = firstLeaf(c.tree, node);
-  if (c.tree.lf(head) > 0 || nextLeaf(c.tree, c.comment) !== head) return node;
-  const { types } = flattenTypes(c, node);
-  return types.length > 1 ? (types[0] as number) : node;
-};
-
-/**
- * oxfmt's form of unionHead: any block comment that does not end its line moves behind the first `|`, multi-line
- * ones too, and one before the `(`s and `|`s of parenthesized one-type unions reaches the union inside them.
- */
-const oxfmtUnionHead = (c: CommentContext<JsOptions>, node: number): number => {
   const union = unparenType(c, node) ?? node;
   if (kind(c, union) !== "union_type" || !c.text.startsWith("/*") || isIgnoreComment(c, c.comment)) return node;
   const { types } = flattenTypes(c, union);
@@ -246,7 +232,7 @@ const LAST_UNION_HOLDERS =new Set(["intersection_type", "union_type"]);
  * (has_trailing_suppression_comment) and trails it.
  */
 const oxfmtUnionIgnore = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
-  if (c.options.compat !== "oxfmt" || c.tree.lf(c.comment) > 0 || !isIgnoreComment(c, c.comment)) return;
+  if (c.tree.lf(c.comment) > 0 || !isIgnoreComment(c, c.comment)) return;
   const before = prevLeaf(c.tree, c.comment);
   if (before === NO_NODE) return;
   let union: number | undefined;
@@ -394,7 +380,7 @@ const beforeSignatureParameters = (c: CommentContext<JsOptions>): CommentTarget 
  * prettier moves it past the name or into the parameters.
  */
 const oxfmtSignatureToken = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
-  if (c.options.compat !== "oxfmt" || !SIGNATURES.has(kind(c, c.enclosing))) return;
+  if (!SIGNATURES.has(kind(c, c.enclosing))) return;
   let before = prevLeaf(c.tree, c.comment);
   while (before !== NO_NODE && kind(c, before) === "comment") before = prevLeaf(c.tree, before);
   if (before === NO_NODE || parent(c, before) !== c.enclosing) return;
@@ -409,7 +395,6 @@ const oxfmtSignatureToken = (c: CommentContext<JsOptions>): CommentTarget | unde
 const oxfmtTypeMemberEnd = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   const { comment, enclosing, preceding, placement, text } = c;
   if (
-    c.options.compat !== "oxfmt" ||
     !text.startsWith("/*") ||
     preceding === undefined ||
     placement === "ownLine" ||
@@ -516,12 +501,8 @@ const blockFirst = (x: HasTree, block: number): CommentTarget => {
     : { node: block, as: "dangling" };
 };
 
-/**
- * A comment between a head and its block: prettier moves it into the block, oxfmt keeps it before the `{`, with
- * the line breaks around it.
- */
-const intoBlock = (c: CommentContext<JsOptions>, block: number): CommentTarget =>
-  c.options.compat === "oxfmt" ? { node: block, as: "leading" } : blockFirst(c, block);
+/** A comment between a head and its block stays before the `{`, with the line breaks around it. */
+const intoBlock = (block: number): CommentTarget => ({ node: block, as: "leading" });
 
 const FUNCTIONS = new Set([
   "function_declaration",
@@ -536,16 +517,15 @@ const FUNCTIONS = new Set([
  * into the body (handleLastFunctionArgComments). An arrow keeps it before its body.
  */
 const functionBody = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
-  const { enclosing, following, placement, text } = c;
+  const { enclosing, following, placement } = c;
   if (
     placement === "remaining" ||
-    (text.startsWith("/*") && c.options.compat !== "oxfmt") ||
     !FUNCTIONS.has(kind(c, enclosing)) ||
     following === undefined ||
     following !== field(c, enclosing, "body")
   )
     return;
-  return intoBlock(c, following);
+  return intoBlock(following);
 };
 
 /**
@@ -566,7 +546,7 @@ const arrowBody = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   if (arrow === -1 || kids.indexOf(comment) < arrow) return;
   // `=> // c` then `{` on the next line: the comment moves into the block, keeping the `{` on the arrow's line.
   return c.placement === "endOfLine" && kind(c, following) === "statement_block"
-    ? intoBlock(c, following)
+    ? intoBlock(following)
     : { node: following, as: "leading" };
 };
 
@@ -606,7 +586,6 @@ const AS_EXPRESSIONS = new Set(["as_expression", "satisfies_expression"]);
  * expression, the cast holds the run after the operator, and the rest leads the type (or the cast, for `as const`).
  */
 const oxfmtCast = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
-  if (c.options.compat !== "oxfmt") return;
   let n: number | undefined = c.enclosing;
   while (n !== undefined && kind(c, n) === "parenthesized_expression") n = parent(c, n);
   if (n === undefined || !AS_EXPRESSIONS.has(kind(c, n))) return;
@@ -649,11 +628,8 @@ const propertySignatureColon = (c: CommentContext<JsOptions>): CommentTarget | u
   const signature = parent(c, enclosing);
   if (signature === undefined || kind(c, signature) !== "property_signature") return;
   const type = c.following;
-  // oxfmt keeps it after the `:`, above any type.
-  if (
-    type !== undefined &&
-    (c.options.compat === "oxfmt" || kind(c, type) === "union_type" || kind(c, type) === "intersection_type")
-  )
+  // It stays after the `:`, above any type.
+  if (type !== undefined)
     return { node: type, as: "leading" };
   const name = field(c, signature, "name");
   if (name === undefined) return;
@@ -670,7 +646,7 @@ const labeled = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   if (c.placement === "remaining" || kind(c, c.enclosing) !== "labeled_statement") return;
   // oxfmt keeps one after the `:` there, before the body.
   const body = field(c, c.enclosing, "body");
-  return c.options.compat === "oxfmt" && body !== undefined && c.following === body
+  return body !== undefined && c.following === body
     ? { node: body, as: "leading" }
     : { node: c.enclosing, as: "leading" };
 };
@@ -680,7 +656,7 @@ const labeled = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
  * `:`, but a line comment before a block moves into it (handleSwitchDefaultCaseComments).
  */
 const switchDefault = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
-  const { enclosing, following, placement, text } = c;
+  const { enclosing, following, placement } = c;
   if (
     placement === "ownLine" ||
     kind(c, enclosing) !== "switch_default" ||
@@ -688,8 +664,8 @@ const switchDefault = (c: CommentContext<JsOptions>): CommentTarget | undefined 
     following !== children(c, enclosing).find((n) => named(c, n) && isCode(c, n))
   )
     return;
-  return kind(c, following) === "statement_block" && (text.startsWith("//") || c.options.compat === "oxfmt")
-    ? intoBlock(c, following)
+  return kind(c, following) === "statement_block"
+    ? intoBlock(following)
     : { node: enclosing, as: "dangling" };
 };
 
@@ -707,7 +683,7 @@ const HEAD_BODY = new Map([
  * parentheses are a node of their own in tree-sitter, except in a `for`, whose comments before `)` stay put.
  */
 const statementBody = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
-  const { comment, enclosing, preceding, following, text, tree } = c;
+  const { comment, enclosing, preceding, following } = c;
   const body = HEAD_BODY.get(kind(c, enclosing));
   // Before `else`: a comment on the line of a non-block consequent trails it, any other dangles on the `if`,
   // which prints it between the consequent and `else`. tree-sitter puts one after `else` in the else_clause.
@@ -717,11 +693,8 @@ const statementBody = (c: CommentContext<JsOptions>): CommentTarget | undefined 
     preceding === field(c, enclosing, "consequence") &&
     following === field(c, enclosing, "alternative")
   ) {
-    const oneLine = text.startsWith("//") || !text.includes("\n");
-    // oxfmt prints every one of them between the `if` group and `else`, a same-line run trailing the group.
-    return kind(c, preceding) !== "statement_block" && oneLine && tree.lf(comment) === 0 && c.options.compat !== "oxfmt"
-      ? { node: preceding, as: "trailing" }
-      : { node: enclosing, as: "dangling" };
+    // Every one of them prints between the `if` group and `else`, a same-line run trailing the group.
+    return { node: enclosing, as: "dangling" };
   }
   if (body === undefined || following === undefined || following !== field(c, enclosing, body))
     return;
@@ -788,7 +761,7 @@ const forEmptyPart = (c: CommentContext<JsOptions>): CommentTarget | undefined =
   // After the `)`, statementBody leads the body.
   if (at > close) return;
   // oxfmt keeps each comment in its slot of the head, which prints it (write_for_head_slot).
-  if (c.options.compat === "oxfmt" && at > kids.findIndex((k) => kind(c, k) === "(")) return { node: enclosing, as: "dangling" };
+  if (at > kids.findIndex((k) => kind(c, k) === "(")) return { node: enclosing, as: "dangling" };
   const real = (n: number) => named(c, n) && isCode(c, n) && !isEmptyPart(n);
   let before = kids.slice(0, at).findLast(real);
   // A declaring initializer holds its `;`, which babel's does not: the comment trails its last declarator.
@@ -850,9 +823,9 @@ const tryBlock = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
     return;
   if (kind(c, enclosing) === "catch_clause" && preceding !== undefined)
     return { node: preceding, as: "trailing" };
-  if (kind(c, following) === "statement_block") return intoBlock(c, following);
+  if (kind(c, following) === "statement_block") return intoBlock(following);
   // oxfmt keeps one before `catch` or `finally` there.
-  if (c.options.compat === "oxfmt" && kind(c, following).endsWith("_clause")) return { node: following, as: "leading" };
+  if (kind(c, following).endsWith("_clause")) return { node: following, as: "leading" };
   const body = kind(c, following).endsWith("_clause")
     ? lastChildWhere(c, following, (n) => kind(c, n) === "statement_block")
     : undefined;
@@ -902,7 +875,7 @@ const classHeader = (c: CommentContext<JsOptions>): CommentTarget | undefined =>
   )
     return { node: decorators.at(-1) as number, as: "trailing" };
   const body = field(c, cls, "body");
-  if (body !== undefined && following === body) return intoBlock(c, body);
+  if (body !== undefined && following === body) return intoBlock(body);
   const before = (n: number) =>
     tree.ord(comment) < tree.ord(firstLeaf(tree, n));
   const after = (n: number | undefined) =>
@@ -1179,7 +1152,6 @@ const afterDeclare = (c: CommentContext<JsOptions>): CommentTarget | undefined =
 const oxfmtTypeAliasHead = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   const { enclosing, following } = c;
   if (
-    c.options.compat !== "oxfmt" ||
     c.placement !== "endOfLine" ||
     !c.text.startsWith("//") ||
     kind(c, enclosing) !== "type_alias_declaration" ||
@@ -1201,7 +1173,6 @@ const oxfmtTypeAliasHead = (c: CommentContext<JsOptions>): CommentTarget | undef
 const oxfmtReturnSequence = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   const { enclosing, following, preceding } = c;
   if (
-    c.options.compat !== "oxfmt" ||
     !c.text.startsWith("/*") ||
     preceding !== undefined ||
     following === undefined ||
@@ -1221,7 +1192,6 @@ const oxfmtReturnSequence = (c: CommentContext<JsOptions>): CommentTarget | unde
 const oxfmtChainHead = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   const { enclosing, following } = c;
   if (
-    c.options.compat !== "oxfmt" ||
     c.placement !== "ownLine" ||
     c.preceding !== undefined ||
     following === undefined ||
@@ -1254,7 +1224,6 @@ const oxfmtChainHead = (c: CommentContext<JsOptions>): CommentTarget | undefined
 const oxfmtMemberObject = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   const { enclosing, preceding } = c;
   if (
-    c.options.compat !== "oxfmt" ||
     !c.text.startsWith("//") ||
     c.following === undefined ||
     !MEMBERS.has(kind(c, enclosing)) ||
@@ -1281,7 +1250,6 @@ const oxfmtMemberObject = (c: CommentContext<JsOptions>): CommentTarget | undefi
 const oxfmtNewOpenParen = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   const { enclosing } = c;
   if (
-    c.options.compat !== "oxfmt" ||
     c.placement !== "endOfLine" ||
     c.preceding !== undefined ||
     c.following === undefined ||
@@ -1301,7 +1269,6 @@ const oxfmtNewOpenParen = (c: CommentContext<JsOptions>): CommentTarget | undefi
 const oxfmtAfterOptionalCall = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   const { enclosing, preceding, following } = c;
   if (
-    c.options.compat !== "oxfmt" ||
     !CALLS.has(kind(c, enclosing)) ||
     preceding === undefined ||
     kind(c, preceding) !== "optional_chain" ||
@@ -1318,7 +1285,6 @@ const oxfmtAfterOptionalCall = (c: CommentContext<JsOptions>): CommentTarget | u
 const oxfmtBeforeCallArguments = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   const { enclosing, preceding, following } = c;
   if (
-    c.options.compat !== "oxfmt" ||
     kind(c, enclosing) !== "call_expression" ||
     preceding === undefined ||
     preceding !== field(c, enclosing, "function") ||
@@ -1335,7 +1301,6 @@ const oxfmtBeforeCallArguments = (c: CommentContext<JsOptions>): CommentTarget |
 const oxfmtSequenceHeadParen = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   const { enclosing, preceding, following } = c;
   if (
-    c.options.compat !== "oxfmt" ||
     kind(c, enclosing) !== "parenthesized_expression" ||
     preceding !== undefined ||
     following === undefined
@@ -1361,7 +1326,6 @@ const ENDS_WITH_VALUE = new Set(["expression_statement", "lexical_declaration", 
  */
 const oxfmtAfterDroppedParen = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   if (
-    c.options.compat !== "oxfmt" ||
     !c.text.startsWith("/*") ||
     c.preceding === undefined ||
     c.following !== undefined

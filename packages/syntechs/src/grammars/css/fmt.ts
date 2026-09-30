@@ -1,8 +1,6 @@
 import { NO_NODE, type Tree } from "../../core/arena.js";
 import { decimalValue, type Normalize } from "../../fmt/check.js";
 import {
-  type CompatOptions,
-  compatDefaults,
   type PrettierOptions,
   prettierDefaults,
   prettierSettings,
@@ -47,7 +45,7 @@ import { frontMatterLines, parseFrontMatter } from "./front-matter.js";
 import { language } from "./index.js";
 
 /** The prettier options its postcss printer reads (3.9.9); `bracketSpacing` and `objectWrap` go unread. */
-export interface CssOptions extends PrettierOptions, CompatOptions {
+export interface CssOptions extends PrettierOptions {
   singleQuote: boolean;
   /** `off` prints front matter as written; `auto` lays YAML's out (see `frontMatterLines`). */
   embeddedLanguageFormatting: "auto" | "off";
@@ -55,7 +53,6 @@ export interface CssOptions extends PrettierOptions, CompatOptions {
 
 const defaults: CssOptions = {
   ...prettierDefaults,
-  ...compatDefaults,
   singleQuote: false,
   embeddedLanguageFormatting: "auto",
 };
@@ -196,7 +193,7 @@ export const customs = {
   longSelector: (node, ctx) => parts(node, ctx) > 2,
   /** A declaration with nothing between its `:` and its `;` (`--empty:;`). */
   emptyValue: (node, ctx) => code(node, ctx).every((c) => !ctx.tree.named(c) || kind(c, ctx) === "property_name"),
-  unparsedValue: (node, ctx) => unparsedUrl(node, ctx) || oxfmtRawValue(node, ctx),
+  unparsedValue: (node, ctx) => unparsedUrl(node, ctx) || rawValue(node, ctx),
   /** A media query list holding a comment, which `mediaQueries` prints as postcss-media-query-parser splits it. */
   mediaComments: (node, ctx) => mediaAtoms(node, ctx).some((c) => isComment(c, ctx)),
   ownWord: (node, ctx) => ownWord(node, ctx),
@@ -212,9 +209,8 @@ function ownWord(node: number, ctx: SCtx): boolean {
   const siblings = children(t.parent(node), t);
   const prev = siblings[siblings.indexOf(node) - 1];
   if (prev === undefined || !t.adjoins(prev, node)) return false;
-  // oxfmt keeps a number, a word or a function joined to a function before it (`f(1)-2`, `f(1)f(2)`).
+  // A number, a word or a function joined to a function before it stays joined (`f(1)-2`, `f(1)f(2)`).
   if (
-    ctx.options.compat === "oxfmt" &&
     kind(prev, ctx) === "call_expression" &&
     ["call_expression", "plain_value", "integer_value", "float_value"].includes(kind(node, ctx))
   )
@@ -224,15 +220,9 @@ function ownWord(node: number, ctx: SCtx): boolean {
   return kind(node, ctx) !== "plain_value" || t.text(t.child(prev, 0)) !== "$$";
 }
 
-/**
- * A number, its unit's case normalized; but a `+`-signed one right after a function (`round(1.5)+2`,
- * `round(1.5) +2`), whose `+` postcss-values-parser reads as an operator, which prettier prints between spaces. A
- * `-` there stays the number's (`url(a) -1000px`).
- */
+/** A number, its unit's case normalized. */
 export function number(node: number, ctx: SCtx): void {
-  const text = ctx.tree.text(node);
-  if (ctx.options.compat !== "oxfmt" && plusAfterFunction(node, ctx)) sLiteral(node, `+ ${unitCase(text.slice(1))}`);
-  else sLiteral(node, unitCase(text));
+  sLiteral(node, unitCase(ctx.tree.text(node)));
 }
 
 function plusAfterFunction(node: number, ctx: SCtx): boolean {
@@ -289,31 +279,26 @@ const inParens = (n: number, t: FormatTree): boolean => {
  * Outside `calc()`, a `/` or `+` written without a gap before its right side stays joined unless a function or a word
  * sits beside it, and a `-` so written always; a `*` is always spaced. In `font` and custom properties, a `/` written
  * without a gap after a number or a math function stays joined, and so does what follows it, even inside `calc()`.
- * Inside `calc()`, a `+` or `-` written without a gap on a side stays joined on that side.
- *
- * oxfmt differs: inside `calc()` every operator stays joined on a side written without a gap, and so does a `+`
- * beside a function or a word; a `/` there, outside a paren group, stays joined only when written without a gap on
- * both sides; and a paren group joined to its `+` or `-` stays so.
+ * Inside `calc()` every operator stays joined on a side written without a gap. A `+` beside a function or a word
+ * stays joined too; a `/` there, outside a paren group, stays joined only when written without a gap on both sides;
+ * and a paren group joined to its `+` or `-` stays so.
  */
 function joinedMath(chain: number[], i: number, calc: boolean, font: boolean, ctx: SCtx): boolean {
   const t = ctx.tree;
-  const ox = ctx.options.compat === "oxfmt";
   const [y, g, v, w] = [chain[i - 2], chain[i - 1] as number, chain[i] as number, chain[i + 1]];
   const op = (n: number | undefined, o: string) => n !== undefined && kind(n, ctx) === o;
   const tight = t.adjoins(g, v);
-  // Inside `calc()`, a `+` or `-` stays joined to what the source writes it against (`calc(100%- 2px)`).
-  if (calc && tight && (ox || op(g, "+") || op(g, "-") || op(v, "+") || op(v, "-"))) return true;
+  // Inside `calc()`, an operator stays joined to what the source writes it against (`calc(100%- 2px)`).
+  if (calc && tight) return true;
   // Whether a function or a word `beside` the operator `o` spaces it; `otherTight`: `o`'s other side has no gap.
   const spacedBy = (o: number, otherTight: boolean, beside: boolean) =>
-    beside && (!ox || (op(o, "/") && (inParens(o, t) || !otherTight)));
+    beside && op(o, "/") && (inParens(o, t) || !otherTight);
   if (isOperator(v, ctx)) {
     if (font && op(v, "/") && tight && fontOperand(g, ctx)) return true;
     const spaced = spacedBy(v, w !== undefined && t.adjoins(v, w), funcOrWord(w, ctx) || funcOrWord(g, ctx));
     return !calc && tight && (op(v, "-") || ((op(v, "/") || op(v, "+")) && !spaced));
   }
   if (font && op(g, "/") && y !== undefined && t.adjoins(y, g) && fontOperand(y, ctx)) return true;
-  // A paren group is a word of its own, after a space even where its `+` or `-` adjoins it (`1 -(1)` is `1 - (1)`).
-  if (!ox && kind(v, ctx) === "parenthesized_value") return false;
   const spaced = spacedBy(g, y !== undefined && t.adjoins(y, g), funcOrWord(v, ctx) || funcOrWord(y, ctx));
   return !calc && tight && (op(g, "-") || ((op(g, "/") || op(g, "+")) && !spaced));
 }
@@ -385,8 +370,8 @@ export function valueMath(node: number, ctx: SCtx): void {
     const first = kind(c, ctx) === "binary_expression" ? chain(c, ctx)[0] : c;
     return !joinedMath(flat, flat.indexOf(first as number), calc, font, ctx);
   };
-  // oxfmt's fill may break before a `*` or `/` too, where prettier's keeps it after its left operand.
-  const breaksBefore = ctx.options.compat === "oxfmt" && !directive;
+  // The fill may break before a `*` or `/` too.
+  const breaksBefore = !directive;
   const items = new Set(ctx.items(node));
   let prev = -1;
   for (const c of children(node, t)) {
@@ -419,33 +404,18 @@ export function valueMath(node: number, ctx: SCtx): void {
   }
 }
 
-/** Prettier's color adjuster functions, inside which a `+` or `-` keeps the gap the source has after it. */
-const colorAdjusters = new Set([
-  "red", "green", "blue", "alpha", "a", "rgb", "hue", "h", "saturation", "s", "lightness", "l", "whiteness",
-  "w", "blackness", "b", "tint", "shade", "blend", "blenda", "contrast", "hsl", "hsla", "hwb", "hwba",
-]);
-
 /**
  * An operator before a value (`-(-1)`, `hue(* 20)`), which postcss-value-parser reads as a word or a math operator of
- * its own: a `*` then a space; a `+` or `-` joined, but after the gap the source has inside a color adjuster
- * (`alpha(- .75)`); a `/` joined.
+ * its own: a `*` then a space; a `+` or `-` after the gap the source has (`alpha(- .75)`); a `/` joined.
  */
 export function unaryExpression(node: number, ctx: SCtx): void {
   const t = ctx.tree;
   const [op, operand] = children(node, t);
   if (op === undefined || operand === undefined) return;
   sToken(op, t.text(op));
-  const stops = ["call_expression", "declaration", "block"];
-  let call = t.parent(node);
-  while (call !== NO_NODE && !stops.includes(kind(call, ctx))) call = t.parent(call);
-  const adjuster =
-    call !== NO_NODE &&
-    kind(call, ctx) === "call_expression" &&
-    colorAdjusters.has(t.text(t.child(call, 0)).toLowerCase());
   const o = kind(op, ctx);
-  // oxfmt keeps the gap after a `+` or `-` everywhere (`func(+ 20px)`).
-  const keepsGap = adjuster || ctx.options.compat === "oxfmt";
-  if (o === "*" || ((o === "+" || o === "-") && keepsGap && !t.adjoins(op, operand))) sText(" ");
+  // The gap after a `+` or `-` stays everywhere (`func(+ 20px)`).
+  if (o === "*" || ((o === "+" || o === "-") && !t.adjoins(op, operand))) sText(" ");
   ctx.print(operand);
 }
 
@@ -630,8 +600,8 @@ export function keywordArgument(node: number, ctx: SCtx): void {
 }
 
 /**
- * A Sass list or map (in a directive, or a `$variable`'s value) by `sassList`, else as written without gaps, but
- * the operator `number` makes of a `+` after a function, a space on either side.
+ * A Sass list or map (in a directive, or a `$variable`'s value) by `sassList`, else as written without gaps, but a
+ * `+`-signed number after a function keeps the source's gap before it.
  */
 export function parenthesizedValue(node: number, ctx: SCtx): void {
   if (inDirective(node, ctx) || inVariable(node, ctx)) return sassList(node, ctx);
@@ -641,8 +611,8 @@ export function parenthesizedValue(node: number, ctx: SCtx): void {
   for (const c of children(node, t)) {
     if (!t.named(c)) sToken(c, t.text(c));
     else if (items.has(c)) {
-      // oxfmt keeps such a `+2` as written: after a space only where the source has a gap.
-      if (plusAfterFunction(c, ctx) && (ctx.options.compat !== "oxfmt" || !t.adjoins(prev, c))) sText(" ");
+      // Such a `+2` stays as written: after a space only where the source has a gap.
+      if (plusAfterFunction(c, ctx) && !t.adjoins(prev, c)) sText(" ");
       ctx.print(c);
     }
     prev = c;
@@ -820,16 +790,12 @@ export function declarationEnd(semi: number | undefined, node: number, ctx: SCtx
   const real = semi !== undefined && t.text(semi) !== "";
   const important = children(node, t).find((c) => kind(c, ctx) === "important");
   if (important !== undefined) {
-    // Prettier keeps the source's gaps after `!important`; oxfmt puts one space before each comment, none before `;`.
-    const oxfmt = ctx.options.compat === "oxfmt";
-    let prev = important;
+    // One space before each comment after `!important`, none before `;`.
     for (const c of ctx.danglingComments(node))
       if (t.ord(c) > t.ord(important)) {
-        sText(oxfmt ? " " : sourceGap(t, prev, c));
+        sText(" ");
         ctx.comment(c);
-        prev = c;
       }
-    if (real && !oxfmt) sText(sourceGap(t, prev, semi));
   }
   if (!real) return sToken(node, ";", true);
   const colon = code(node, ctx).find((c) => kind(c, ctx) === ":");
@@ -854,11 +820,10 @@ function unparsedUrl(n: number, ctx: SCtx): boolean {
 }
 
 /**
- * A Sass variable's or custom property's value that oxfmt keeps as written: one holding a `( … )` group anywhere
+ * A Sass variable's or custom property's value kept as written: one holding a `( … )` group anywhere
  * (`$map: (a: 1)`, `foo( (1, 2) )`), or a `{ … }` outside any function (`[1, {"a":1}]`, `function(x) { … }`).
  */
-function oxfmtRawValue(decl: number, ctx: SCtx): boolean {
-  if (ctx.options.compat !== "oxfmt") return false;
+function rawValue(decl: number, ctx: SCtx): boolean {
   const t = ctx.tree;
   if (!/^(\$|--)/.test(t.text(t.child(decl, 0)))) return false;
   const raw = (n: number, inCall: boolean): boolean =>

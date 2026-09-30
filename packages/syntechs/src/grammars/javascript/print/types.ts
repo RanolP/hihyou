@@ -228,7 +228,6 @@ const parenthesizedType: CustomRule<JsOptions> = (n, sctx) => {
   // oxfmt: `(A | B // prettier-ignore⏎)`, the `)` below the line comment that keeps the union as written.
   const lastTrailing = ctx.trailingComments(inner).at(-1);
   if (
-    js.options.compat === "oxfmt" &&
     lastTrailing !== undefined &&
     isIgnoreComment(js, lastTrailing) &&
     src(js, lastTrailing).startsWith("//")
@@ -332,7 +331,7 @@ function printUnionType(ctx: JsStreamCtx, n: number, owns: boolean) {
     kind(js, parent(js, n)) === "parenthesized_type" && typeNeedsParens(js, n);
   const inTuple = upKind === "tuple_type" && items(js, up as number).length > 1;
   // oxfmt indents a conditional's branch under its `?` or `:` too, unless comments lead it there.
-  const branchIndents = js.options.compat === "oxfmt" && ctx.leadingComments(n).length === 0;
+  const branchIndents = ctx.leadingComments(n).length === 0;
   const noIndent =
     upKind === "type_assertion" ||
     upKind === "tuple_type" ||
@@ -355,11 +354,9 @@ function printUnionType(ctx: JsStreamCtx, n: number, owns: boolean) {
       }
       ctx.print(x);
     });
-  const oxfmt = js.options.compat === "oxfmt";
-  // oxfmt keeps a line comment after `a:` on that line, and the union's trailing comments out of its indent.
+  // A line comment after `a:` stays on that line, and the union's trailing comments out of its indent.
   const first = ctx.leadingComments(n)[0];
   const head =
-    oxfmt &&
     owns &&
     indented &&
     first !== undefined &&
@@ -367,7 +364,7 @@ function printUnionType(ctx: JsStreamCtx, n: number, owns: boolean) {
     js.tree.lf(first) === 0
       ? first
       : undefined;
-  const trailOutside = oxfmt && owns && indented;
+  const trailOutside = owns && indented;
   const printed = (grouped = true) => {
     if (owns)
       for (const c of ctx.leadingComments(n))
@@ -401,16 +398,14 @@ function printUnionType(ctx: JsStreamCtx, n: number, owns: boolean) {
               sToken(x, ")", true);
             }
           : () => ctx.printBare(x);
-      // oxfmt aligns only the leading ones: an own-line comment before the next `|` stays at the `|`.
-      if (js.comments(x).leading.length > 0 && oxfmt) {
+      // Only the leading ones align: an own-line comment before the next `|` stays at the `|`.
+      if (js.comments(x).leading.length > 0) {
         aligned(() => {
           printLeadingComments(ctx, x);
           bare();
         });
         printTrailingComments(ctx, x);
-      } else if (js.comments(x).leading.length > 0)
-        aligned(() => withComments(ctx, x, bare));
-      else withComments(ctx, x, () => aligned(bare));
+      } else withComments(ctx, x, () => aligned(bare));
     });
     if (grouped) close();
     if (owns && !trailOutside) printTrailingComments(ctx, n);
@@ -419,8 +414,8 @@ function printUnionType(ctx: JsStreamCtx, n: number, owns: boolean) {
     open(GROUP);
     open(INDENT);
     sLine(SOFT);
-    // oxfmt breaks a union moved inside its parentheses at every `|`.
-    printed(!oxfmt);
+    // A union moved inside its parentheses breaks at every `|`.
+    printed(false);
     close();
     sLine(SOFT);
     return close();
@@ -440,16 +435,14 @@ function printUnionType(ctx: JsStreamCtx, n: number, owns: boolean) {
     close();
     return close();
   }
-  // prettier 3.9 keeps a union that fits once moved to its own line on that line; oxfmt breaks it at every `|`,
-  // so its `|`s break with the group that moves it there.
-  if (!indented)
-    return printed(!oxfmt || args?.assignmentLayout !== "break-after-operator");
+  // A union moved to its own line breaks at every `|`, so its `|`s break with the group that moves it there.
+  if (!indented) return printed(args?.assignmentLayout !== "break-after-operator");
   if (head !== undefined) ctx.comment(head);
   open(GROUP);
   open(INDENT);
   if (head !== undefined) sHardline();
   else sLine(SOFT);
-  printed(!oxfmt);
+  printed(false);
   close();
   close();
   if (trailOutside) printTrailingComments(ctx, n);
@@ -554,7 +547,7 @@ const typeParameters: CustomRule<JsOptions> = (n, sctx) => {
     (isTestCall(ctx, grand, parent(ctx, grand)) ||
       (params.length === 1 && shouldHugType(ctx, params[0] as number))) &&
     // oxfmt hugs a type argument whatever comments it carries.
-    ((ctx.options.compat === "oxfmt" && kind(ctx, n) === "type_arguments") ||
+    (kind(ctx, n) === "type_arguments" ||
       !params.some((x) => {
         const comments = getComments(ctx, x, CF.Leading | CF.Trailing);
         return (
@@ -715,18 +708,15 @@ const castExpression: CustomRule<JsOptions> = (n, sctx) => {
   );
   const { parent: up, key } = role(js, n);
   const grouped =
-    (key === "callee" &&
-      (kind(js, up) === "call_expression" ||
-        // oxc's is_callee_or_object leaves `new` callees out.
-        (kind(js, up) === "new_expression" &&
-          js.options.compat !== "oxfmt"))) ||
+    // oxc's is_callee_or_object leaves `new` callees out.
+    (key === "callee" && kind(js, up) === "call_expression") ||
     (key === "object" && isMember(js, up));
   if (grouped) {
     open(GROUP);
     open(INDENT);
     sLine(SOFT);
   }
-  const gap = js.options.compat === "oxfmt" ? castGap(js, n) : undefined;
+  const gap = castGap(js, n);
   pr(ctx, expression);
   sText(" ");
   tok(js, keyword);

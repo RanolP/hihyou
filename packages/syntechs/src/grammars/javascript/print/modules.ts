@@ -217,7 +217,7 @@ export const moduleCustoms = {
       if (c === source && hasComment(js, c)) {
         open(GROUP);
         // oxfmt always breaks a commented source onto its own line.
-        if (js.options.compat === "oxfmt") sBreakParent();
+        sBreakParent();
         open(INDENT);
         sLine(SOFT);
         s.print(c);

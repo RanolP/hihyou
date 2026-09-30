@@ -2,8 +2,6 @@ import { NO_NODE } from "../../core/arena.js";
 import { decimalValue, type Normalize } from "../../fmt/check.js";
 import { cook } from "../../fmt/dsl/normalizers.js";
 import {
-  type CompatOptions,
-  compatDefaults,
   type PrettierOptions,
   prettierDefaults,
   prettierSettings,
@@ -17,13 +15,12 @@ import * as gen from "./fmt.gen.js";
  * The prettier options its JSON printers read (prettier 3.9.9 ignores `singleQuote` and `quoteProps` there);
  * `trailingComma` only for `jsonc`, `bracketSpacing` and `objectWrap` not for `json-stringify`.
  */
-export interface JsonOptions extends PrettierOptions, CompatOptions {
+export interface JsonOptions extends PrettierOptions {
   trailingComma: "all" | "es5" | "none";
 }
 
 const defaults: JsonOptions = {
   ...prettierDefaults,
-  ...compatDefaults,
   trailingComma: "all",
 };
 

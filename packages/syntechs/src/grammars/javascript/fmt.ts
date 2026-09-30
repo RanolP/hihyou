@@ -1,6 +1,5 @@
 import type { Language as Parser } from "../../core/index.js";
 import {
-  compatDefaults,
   prettierDefaults,
   prettierSettings,
 } from "../../fmt/options.js";
@@ -82,7 +81,6 @@ import {
 
 const defaults: JsOptions = {
   ...prettierDefaults,
-  ...compatDefaults,
   semi: true,
   singleQuote: false,
   jsxSingleQuote: false,
@@ -131,7 +129,7 @@ const parenthesized: StreamRule<JsOptions> = (n, s) => {
   // Prettier's printComments wraps the node as printed with its parentheses, so its comments print outside them:
   // `(a = b /* c */)` as `(a = b) /* c */`. Prettier has no nested pairs, so their comments are the node's too.
   const expr = unparen(ctx, n);
-  if (!isCommentedIife(ctx, n) && !sctx.ownsComments(expr)) {
+  if (!sctx.ownsComments(expr)) {
     const layers: number[] = [];
     for (let m: number | undefined = inner; m !== undefined && m !== expr; m = first(ctx, m))
       layers.push(m);
@@ -145,14 +143,7 @@ const parenthesized: StreamRule<JsOptions> = (n, s) => {
     return;
   }
   sTok(ctx, open);
-  if (isCommentedIife(ctx, n)) {
-    // Prettier prints the callee's comments itself (willPrintOwnComments), inside its parentheses, indented.
-    openStream(INDENT);
-    sLine(SOFT);
-    sctx.print(inner, args);
-    closeStream();
-    sLine(SOFT);
-  } else printInParens(ctx, unparen(ctx, n), () => sctx.print(inner, args));
+  printInParens(ctx, unparen(ctx, n), () => sctx.print(inner, args));
   sTok(ctx, close);
 };
 
@@ -161,23 +152,6 @@ const v8Intrinsic: StreamRule<JsOptions> = (n, s) => {
   const sctx = jsCtx(s);
   sTok(sctx.js, anon(sctx.js, n, "%"));
   for (const name of items(sctx.js, n)) sctx.print(name);
-};
-
-const IIFE_CALLEES = new Set(["function_expression", "arrow_function"]);
-
-/**
- * `(// c⏎function () {})()`: a commented function called or tagged right where it is written. oxfmt prints its
- * comments outside the parentheses, as any other parenthesized node's: `// c⏎(function () {})()`.
- */
-const isCommentedIife = (ctx: JsCtx, n: number) => {
-  const fn = unparen(ctx, n);
-  return (
-    ctx.options.compat !== "oxfmt" &&
-    IIFE_CALLEES.has(kind(ctx, fn)) &&
-    kind(ctx, parent(ctx, n)) === "call_expression" &&
-    ctx.tree.fieldName(n) === "function" &&
-    hasComment(ctx, fn)
-  );
 };
 
 /** Prettier's printClass for a decorated class expression in parentheses: `(`, the class indented on its own lines, `)`. */
@@ -219,9 +193,7 @@ function castParens(sctx: ReturnType<typeof jsCtx>, n: number, inner: number): v
 
 /** A node under a `// prettier-ignore` comment keeps its source text. */
 const isIgnored = (ctx: JsCtx, n: number) =>
-  (ctx.options.compat === "oxfmt"
-    ? oxfmtIgnored(ctx, n)
-    : (!isUnion(ctx, n) && ledByIgnore(ctx, n)) || firstOfIgnoredUnion(ctx, n)) ||
+  unionIgnored(ctx, n) ||
   afterIgnoreInUnion(ctx, n) ||
   (isJsx(ctx, n) && jsxIgnored(ctx, n, (c) => isIgnoreComment(ctx, c)));
 
@@ -231,10 +203,10 @@ const ledByIgnore = (ctx: JsCtx, n: number) =>
 const isUnion = (ctx: JsCtx, n: number) => kind(ctx, unparenType(ctx, n)) === "union_type";
 
 /**
- * oxfmt keeps a whole union's source text under a `// prettier-ignore` above it or its parentheses, where prettier
- * keeps only its first member's: the union itself, without the parentheses, prints as written.
+ * A whole union's source text stays under a `// prettier-ignore` above it or its parentheses: the union itself,
+ * without the parentheses, prints as written.
  */
-const oxfmtIgnored = (ctx: JsCtx, n: number) => {
+const unionIgnored = (ctx: JsCtx, n: number) => {
   if (!isUnion(ctx, n)) return ledByIgnore(ctx, n);
   if (unparenType(ctx, n) !== n) return false;
   for (let w: number | undefined = n; w !== undefined && unparenType(ctx, w) === n; w = parent(ctx, w))
@@ -248,22 +220,6 @@ const trailedByIgnore = (ctx: JsCtx, n: number) => {
   for (let c: number | undefined = n; c !== undefined; c = lastChildWhere(ctx, c, (k) => !isComment(ctx, k))) last = c;
   const after = nextLeaf(ctx.tree, last);
   return after !== NO_NODE && isComment(ctx, after) && ctx.tree.lf(after) === 0 && isIgnoreComment(ctx, after);
-};
-
-/**
- * `// prettier-ignore` above a union, or above its parentheses, keeps only the union's first member's source text
- * (handleUnionTypeComments): prettier moves the ignore onto `types[0]`.
- */
-const firstOfIgnoredUnion = (ctx: JsCtx, n: number) => {
-  for (let at = n, up = parent(ctx, n); up !== undefined; at = up, up = parent(ctx, up)) {
-    if (kind(ctx, up) !== "union_type" || children(ctx, up).find((c) => named(ctx, c) && !isComment(ctx, c)) !== at)
-      return false;
-    for (let w: number | undefined = up; w !== undefined; w = parent(ctx, w)) {
-      if (ledByIgnore(ctx, w)) return true;
-      if (kind(ctx, parent(ctx, w)) !== "parenthesized_type") break;
-    }
-  }
-  return false;
 };
 
 /**

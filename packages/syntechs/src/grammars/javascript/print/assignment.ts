@@ -166,7 +166,6 @@ export function sPrintAssignment(
  * and breaks the right side onto the next line, where prettier's layout may pull the right side up before it.
  */
 function oxfmtLineCommentBeforeRight(x: JsCtx, node: number, right: number): boolean {
-  if (x.options.compat !== "oxfmt") return false;
   for (const c of children(x, node)) {
     if (c === right) return false;
     if (kind(x, c) === "comment" && src(x, c).startsWith("//") && x.tree.lf(c) === 0) return true;
@@ -176,7 +175,7 @@ function oxfmtLineCommentBeforeRight(x: JsCtx, node: number, right: number): boo
 
 /** oxfmt's has_line_comment_on_operator_line, over a type alias: `type A = // c`. */
 function operatorLineComment(x: JsCtx, node: number): boolean {
-  if (x.options.compat !== "oxfmt" || kind(x, node) !== "type_alias_declaration") return false;
+  if (kind(x, node) !== "type_alias_declaration") return false;
   const op = anon(x, node, "=");
   if (op === undefined) return false;
   const next = nextLeaf(x.tree, op);
@@ -377,7 +376,6 @@ function isPoorlyBreakableMemberOrCallChain(
     const argList = field(ctx, n, "arguments");
     if (
       args.length === 0 &&
-      ctx.options.compat === "oxfmt" &&
       argList !== undefined &&
       ctx.comments(argList).dangling.length > 0
     )

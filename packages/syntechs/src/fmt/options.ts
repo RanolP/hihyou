@@ -31,16 +31,6 @@ export const prettierDefaults: PrettierOptions = {
   objectWrap: "preserve",
 };
 
-/**
- * Which tool's output a prettier-family language (css, json, js, ts) matches where prettier and oxfmt print the
- * same options differently. Kotlin borrows `PrettierOptions` for its layout alone and does not read it.
- */
-export interface CompatOptions {
-  compat: "prettier" | "oxfmt";
-}
-
-export const compatDefaults: CompatOptions = { compat: "prettier" };
-
 export const prettierSettings = (o: PrettierOptions): Settings => ({
   lineWidth: o.printWidth,
   indentWidth: o.tabWidth,

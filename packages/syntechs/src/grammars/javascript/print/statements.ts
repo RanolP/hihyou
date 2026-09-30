@@ -219,8 +219,8 @@ function statementSequence(s: JsStreamCtx, statements: readonly number[]): void 
     if (isEmpty(js, x) || x === last) return;
     sHardline();
     const next = statements[i + 1];
-    // oxfmt measures the gap after the statement's last comment, which a stray `;` can put on a later line.
-    const lastTrailing = js.options.compat === "oxfmt" ? s.trailingComments(x).at(-1) : undefined;
+    // The gap is measured after the statement's last comment, which a stray `;` can put on a later line.
+    const lastTrailing = s.trailingComments(x).at(-1);
     if (
       isNextLineEmptyAfter(js, x) ||
       (lastTrailing !== undefined && nextLineEmpty(js.tree, lastTrailing)) ||
@@ -335,11 +335,8 @@ function clause(s: JsStreamCtx, body: number | undefined, elseIf = false): void 
   }
   const isBlock = kind(js, body) === "statement_block";
   const leading = getComments(js, body, CF.Leading)[0];
-  // oxfmt keeps a comment that starts on the head's line there, however many lines it spans.
-  if (
-    leading !== undefined &&
-    ((src(js, leading).includes("\n") && js.options.compat !== "oxfmt") || js.tree.lf(leading) > 0)
-  ) {
+  // A comment that starts on the head's line stays there, however many lines it spans.
+  if (leading !== undefined && js.tree.lf(leading) > 0) {
     if (isBlock) {
       sHardline();
       s.print(body);
@@ -362,30 +359,11 @@ function clause(s: JsStreamCtx, body: number | undefined, elseIf = false): void 
   close();
 }
 
-const isLogicalNot = (x: HasTree, n: number | undefined) =>
-  kind(x, n) === "unary_expression" &&
-  kind(x, field(x, n as number, "operator")) === "!";
-
-// Prettier's shouldInlineCondition (miscellaneous.js); oxfmt inlines none.
-function shouldInlineCondition(ctx: JsCtx, n: number): boolean {
-  if (ctx.options.compat === "oxfmt" || hasComment(ctx, n) || !isLogicalNot(ctx, n)) return false;
-  let a = unparen(ctx, field(ctx, n, "argument") ?? n);
-  if (isLogicalNot(ctx, a)) a = unparen(ctx, field(ctx, a, "argument") ?? a);
-  return (
-    kind(ctx, a) === "binary_expression" &&
-    ["&&", "||", "??"].includes(kind(ctx, field(ctx, a, "operator")) ?? "")
-  );
-}
-
 /**
  * A statement's test, laid out by `body`: indented on its own line when it breaks, in a group of its own when
- * `grouped`, where prettier's shouldInlineCondition keeps a `!(a && b)` hugged.
+ * `grouped`.
  */
-function conditionBody(s: JsStreamCtx, node: number, body: () => void, grouped: boolean): void {
-  if (grouped && shouldInlineCondition(s.js, unparen(s.js, node))) {
-    body();
-    return;
-  }
+function conditionBody(body: () => void, grouped: boolean): void {
   if (grouped) open(GROUP);
   open(INDENT);
   sLine(SOFT);
@@ -404,7 +382,7 @@ function condition(s: JsStreamCtx, pe: number | undefined, grouped: boolean): vo
   if (pe === undefined) return;
   const js = s.js;
   if (kind(js, pe) !== "parenthesized_expression") {
-    conditionBody(s, pe, () => s.print(pe), grouped);
+    conditionBody(() => s.print(pe), grouped);
     return;
   }
   const inner = first(js, pe);
@@ -412,8 +390,6 @@ function condition(s: JsStreamCtx, pe: number | undefined, grouped: boolean): vo
     sTok(js, anon(js, pe, "("));
     if (inner !== undefined)
       conditionBody(
-        s,
-        inner,
         () => {
           const expr = unparen(js, inner);
           if (!needsParens(expr, js)) {
@@ -597,7 +573,7 @@ const customs = {
     // oxfmt's write_for_head_slot: a comment in the head prints before the `;` or `)` after it, one ending its line
     // after a `;` right after that `;`.
     const inHead = (c: number) =>
-      js.options.compat === "oxfmt" && rparen !== undefined && js.tree.ord(c) < js.tree.ord(rparen);
+      rparen !== undefined && js.tree.ord(c) < js.tree.ord(rparen);
     let pending = s.danglingComments(node).filter(inHead);
     const ordOf = (n: number | undefined) => (n === undefined ? Infinity : js.tree.ord(n));
     /**
@@ -724,7 +700,7 @@ const customs = {
     sText(" ");
     pr(s, field(js, node, "right"));
     // oxfmt's for-in/of head is no group: an end-of-line comment after the right side flushes before the `)`.
-    if (js.options.compat === "oxfmt") sLineSuffixBoundary();
+    sLineSuffixBoundary();
     sTok(js, lastChildWhere(js, node, (c) => !named(js, c) && kind(js, c) === ")"));
     clause(s, field(js, node, "body"));
     close();
@@ -826,7 +802,7 @@ const customs = {
     sTok(js, anon(js, node, "do"));
     // oxfmt keeps a line break after a comment before a `{`, which prettier's `line` gives only in a broken group.
     const leading = kind(js, body) === "statement_block" ? getComments(js, body as number, CF.Leading)[0] : undefined;
-    if (js.options.compat === "oxfmt" && leading !== undefined && lfAfter(js.tree, leading) > 0) sBreakParent();
+    if (leading !== undefined && lfAfter(js.tree, leading) > 0) sBreakParent();
     clause(s, body);
     close();
     if (kind(js, body) === "statement_block") sText(" ");
@@ -873,7 +849,7 @@ const customs = {
     let needSpace = isBlock;
     let dangling = s.danglingComments(node);
     // oxfmt's write_comments_between_blocks: the comments on the consequent's line trail it outside the `if` group.
-    if (js.options.compat === "oxfmt" && !isBlock) {
+    if (!isBlock) {
       const sameLine = dangling.findIndex((c) => js.tree.lf(c) > 0);
       const run = sameLine < 0 ? dangling : dangling.slice(0, sameLine);
       let previous: Trailed | undefined;

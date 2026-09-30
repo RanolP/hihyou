@@ -669,10 +669,9 @@ const arrow: CustomRule<JsOptions> = (node, s) => {
   const hasLeadingOwnLine = [bodyNode, functionBody].some((b) =>
     hasLeadingOwnLineComment(ctx, b),
   );
-  // oxfmt keeps a comment that ends the `=>` line there, above the block.
+  // A comment that ends the `=>` line stays there, above the block.
   const firstLeading = s.leadingComments(bodyNode)[0];
   const commentBesideArrow =
-    ctx.options.compat === "oxfmt" &&
     kind(ctx, bodyNode) === "statement_block" &&
     firstLeading !== undefined &&
     ctx.tree.lf(firstLeading) === 0;
