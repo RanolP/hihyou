@@ -129,6 +129,7 @@ export const css = format({
                 comments: true,
                 item: words({
                   keepLines: all(entryCount(1), firstText({ is: ["grid"], prefix: ["grid-template"], anyCase: true })),
+                  apart: when("ownWord"),
                 }),
                 layout: valueLayout,
               }),
@@ -152,8 +153,9 @@ export const css = format({
       inOrder({ join: "gap", tight: { before: [":"] }, spaceWhen: { after: [":"], before: ["block"] } }),
     property_name: () => text("maybeLower"),
     important: () => custom("important"),
-    integer_value: () => text("unitCase"),
-    float_value: () => text("unitCase"),
+    // Its unit's case normalized; after a function, a `+` sign spaced as an operator (fmt.ts's `number`).
+    integer_value: () => custom("number"),
+    float_value: () => custom("number"),
     color_value: () => text("lower"),
     string_value: () => text("requote"),
     // Quoted inside `[attr=value]`, an `an+b` spaced around its `+`, else a CSS-wide keyword lowercased.
@@ -188,7 +190,14 @@ export const css = format({
         inOrder({ join: "gap", tight: { after: ["("], before: [")"] } }),
         either(
           parentIs("call_expression"),
-          grpParen(splitOn(",", { except: ["(", ")"], comments: "all", item: words(), layout: { between: "line" } })),
+          grpParen(
+            splitOn(",", {
+              except: ["(", ")"],
+              comments: "all",
+              item: words({ apart: when("ownWord") }),
+              layout: { between: "line" },
+            }),
+          ),
           grpParen(
             splitOn(",", {
               except: ["(", ")"],

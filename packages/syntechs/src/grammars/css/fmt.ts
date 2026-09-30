@@ -7,7 +7,7 @@ import {
 } from "../../fmt/options.js";
 import type { CommentHandler } from "../../fmt/comments.js";
 import { defineLanguage, type Language } from "../../fmt/rules.js";
-import { atName, maybeLower, numberParts } from "../../fmt/dsl/normalizers.js";
+import { atName, maybeLower, numberParts, unitCase } from "../../fmt/dsl/normalizers.js";
 import {
   ancestorWhere,
   breaksBetween,
@@ -129,7 +129,7 @@ function meaning(tree: Tree, node: number, t: string): string {
 
 // A `;` that ends the last statement of a block or of the file means nothing, so prettier may add one there; nor
 // does an empty statement's (`a: b;;`), which postcss drops. A sign before a number means the signed number, which
-// prettier may join to it (`+ 20px` is `+20px`).
+// prettier may join to it (`+ 20px` is `+20px`) or part from it.
 const normalize: Normalize = (lexemes, _text, tree) => {
   const isNumber = (i: number) => {
     const l = lexemes[i];
@@ -139,7 +139,14 @@ const normalize: Normalize = (lexemes, _text, tree) => {
     const l = lexemes[i];
     if (l === undefined || (l.text !== "+" && l.text !== "-") || !isNumber(i + 1)) return false;
     const parent = tree.parent(l.node);
-    return parent !== NO_NODE && tree.kindName(parent) === "unary_expression";
+    if (parent === NO_NODE) return false;
+    if (tree.kindName(parent) === "unary_expression") return true;
+    // `round(1) +2`, which prettier prints `round(1) + 2` (`number`).
+    return (
+      l.text === "+" &&
+      tree.kindName(parent) === "binary_expression" &&
+      tree.kindName(tree.child(parent, 0)) === "call_expression"
+    );
   };
   return lexemes.map((l, i) => {
     const next = lexemes[i + 1]?.text;
@@ -190,7 +197,43 @@ export const customs = {
   /** A media query list holding a comment, which `mediaQueries` prints as postcss-media-query-parser splits it. */
   mediaComments: (node, ctx) => mediaAtoms(node, ctx).some((c) => isComment(c, ctx)),
   supportsComments: (node, ctx) => supportsComments(node, ctx),
+  ownWord: (node, ctx) => ownWord(node, ctx),
 } satisfies Record<string, PredicateRule<CssOptions>>;
+
+/**
+ * A value item written joined to a function on either side, which postcss-value-parser still reads as a node of its
+ * own and prettier prints after a line (`"("attr(title)")"` is `"(" attr(title) ")"`), but a word after a `$$(...)`
+ * (postcss-simple-vars' `$$(style)Color`), which prettier keeps joined.
+ */
+function ownWord(node: number, ctx: SCtx): boolean {
+  const t = ctx.tree;
+  const siblings = children(t.parent(node), t);
+  const prev = siblings[siblings.indexOf(node) - 1];
+  if (prev === undefined || !t.adjoins(prev, node)) return false;
+  if (kind(node, ctx) === "call_expression") return true;
+  if (kind(prev, ctx) !== "call_expression") return false;
+  return kind(node, ctx) !== "plain_value" || t.text(t.child(prev, 0)) !== "$$";
+}
+
+/**
+ * A number, its unit's case normalized; but a `+`-signed one right after a function (`round(1.5)+2`,
+ * `round(1.5) +2`), whose `+` postcss-values-parser reads as an operator, which prettier prints between spaces. A
+ * `-` there stays the number's (`url(a) -1000px`).
+ */
+export function number(node: number, ctx: SCtx): void {
+  const text = ctx.tree.text(node);
+  if (plusAfterFunction(node, ctx)) sLiteral(node, `+ ${unitCase(text.slice(1))}`);
+  else sLiteral(node, unitCase(text));
+}
+
+function plusAfterFunction(node: number, ctx: SCtx): boolean {
+  const t = ctx.tree;
+  const k = kind(node, ctx);
+  if ((k !== "integer_value" && k !== "float_value") || !t.text(node).startsWith("+")) return false;
+  const siblings = children(t.parent(node), t);
+  const prev = siblings[siblings.indexOf(node) - 1];
+  return prev !== undefined && kind(prev, ctx) === "call_expression";
+}
 
 /** A binary expression's `/` written with no gap on either side, which prettier keeps so. */
 function tightDivision(node: number, ctx: SCtx): boolean {
@@ -230,12 +273,15 @@ const fontOperand = (n: number | undefined, ctx: SCtx) =>
  * Outside `calc()`, a `/` or `+` written without a gap before its right side stays joined unless a function or a word
  * sits beside it, and a `-` so written always; a `*` is always spaced. In `font` and custom properties, a `/` written
  * without a gap after a number or a math function stays joined, and so does what follows it, even inside `calc()`.
+ * Inside `calc()`, a `+` or `-` written without a gap on a side stays joined on that side.
  */
 function joinedMath(chain: number[], i: number, calc: boolean, font: boolean, ctx: SCtx): boolean {
   const t = ctx.tree;
   const [y, g, v, w] = [chain[i - 2], chain[i - 1] as number, chain[i] as number, chain[i + 1]];
   const op = (n: number | undefined, o: string) => n !== undefined && kind(n, ctx) === o;
   const tight = t.adjoins(g, v);
+  // Inside `calc()`, a `+` or `-` stays joined to what the source writes it against (`calc(100%- 2px)`).
+  if (calc && tight && (op(g, "+") || op(g, "-") || op(v, "+") || op(v, "-"))) return true;
   if (isOperator(v, ctx)) {
     if (font && op(v, "/") && tight && fontOperand(g, ctx)) return true;
     const spaced = funcOrWord(w, ctx) || funcOrWord(g, ctx);
@@ -554,14 +600,20 @@ export function keywordArgument(node: number, ctx: SCtx): void {
   }
 }
 
-/** A Sass list or map (in a directive, or a `$variable`'s value) by `sassList`, else as written without gaps. */
+/**
+ * A Sass list or map (in a directive, or a `$variable`'s value) by `sassList`, else as written without gaps, but
+ * the operator `number` makes of a `+` after a function, a space on either side.
+ */
 export function parenthesizedValue(node: number, ctx: SCtx): void {
   if (inDirective(node, ctx) || inVariable(node, ctx)) return sassList(node, ctx);
   const t = ctx.tree;
   const items = new Set(ctx.items(node));
   for (const c of children(node, t))
     if (!t.named(c)) sToken(c, t.text(c));
-    else if (items.has(c)) ctx.print(c);
+    else if (items.has(c)) {
+      if (plusAfterFunction(c, ctx)) sText(" ");
+      ctx.print(c);
+    }
 }
 
 /**
@@ -1012,6 +1064,7 @@ export const handWritten = {
   supportsValue,
   valueMath,
   unaryExpression,
+  number,
   atRule,
   postcssStatement,
   parenthesizedValue,

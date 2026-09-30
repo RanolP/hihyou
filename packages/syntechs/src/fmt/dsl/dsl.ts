@@ -237,10 +237,10 @@ export type SplitItem =
   | { readonly t: "adjacent" }
   | { readonly t: "space" }
   /**
-   * Packed several to a line in a group of their own, items the source wrote without a gap staying joined; with
-   * `keepLines`, one line per source line once the source breaks between any two.
+   * Packed several to a line in a group of their own, items the source wrote without a gap staying joined but one
+   * where `apart` holds of it; with `keepLines`, one line per source line once the source breaks between any two.
    */
-  | { readonly t: "words"; readonly keepLines: Cond };
+  | { readonly t: "words"; readonly keepLines: Cond; readonly apart: Cond };
 
 /** Where a `splitOn` run breaks: flags on its entries, or a choice between two layouts. */
 export type SplitLayout =
@@ -850,9 +850,16 @@ export const option = <const K extends string>(key: K) => ({
     ({ t: "option", key, op: "isNot", value }) as OptionCond<K, V>,
 });
 
-/** A `splitOn` item mode: the entry's items as words (see `SplitItem`); `keepLines` decided once per node. */
-export const words = <const C = false>(o: { readonly keepLines?: C } = {}) =>
-  ({ t: "words", keepLines: o.keepLines }) as { readonly t: "words"; readonly keepLines?: C };
+/**
+ * A `splitOn` item mode: the entry's items as words (see `SplitItem`); `keepLines` decided once per node, `apart`
+ * per item.
+ */
+export const words = <const C = false, const A = false>(o: { readonly keepLines?: C; readonly apart?: A } = {}) =>
+  ({ t: "words", keepLines: o.keepLines, apart: o.apart }) as {
+    readonly t: "words";
+    readonly keepLines?: C;
+    readonly apart?: A;
+  };
 
 /** Inside a `splitOn`: the run has `n` entries. */
 export const entryCount = (n: number): SplitCond => ({ t: "entryCount", n });
@@ -902,7 +909,7 @@ export type SplitLayoutOf<C> =
 export interface SplitOnOf<K, C> {
   readonly except?: readonly K[];
   readonly trail?: readonly K[];
-  readonly item?: "adjacent" | "space" | { readonly t: "words"; readonly keepLines?: C };
+  readonly item?: "adjacent" | "space" | { readonly t: "words"; readonly keepLines?: C; readonly apart?: C };
   /** As `SplitOn`'s. */
   readonly tightAfter?: readonly K[];
   readonly wrapItem?: C;
@@ -939,7 +946,7 @@ export const splitOn = <const S extends string, const K extends string = never, 
     sep,
     except: o.except ?? [],
     trail: o.trail ?? [],
-    item: typeof item === "string" ? { t: item } : { t: "words", keepLines: plain(item.keepLines) },
+    item: typeof item === "string" ? { t: item } : { t: "words", keepLines: plain(item.keepLines), apart: plain(item.apart) },
     ...(o.tightAfter?.length ? { tightAfter: o.tightAfter } : {}),
     wrapItem: plain(o.wrapItem),
     trailing: o.trailing ?? false,
