@@ -1,4 +1,4 @@
-html@oxfmt compatibility: 100/146 (68.49%), 26 refused (ok:false), 23 excluded
+html@oxfmt compatibility: 105/146 (71.92%), 26 refused (ok:false), 23 excluded
 
 Fixtures: prettier 3.9.9 tests/format/{html} (recursive), every spec call listing parser `html`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left.
 
@@ -11,10 +11,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | html/basics/broken-html.html | 0/1 | 72.73% |
 | html/basics/empty.html | 0/1 | 0.00% |
 | html/basics/html5-boilerplate.html | 0/1 | 95.08% |
-| html/bracket-same-line/block.html | 1/2 | 83.33% |
-| html/bracket-same-line/embed.html | 1/2 | 92.11% |
-| html/bracket-same-line/inline.html | 1/2 | 85.00% |
-| html/bracket-same-line/void-elements.html | 1/2 | 75.00% |
 | html/comments/comment-after-element.html | 2/4 | 66.54% |
 | html/comments/conditional.html | 0/4 | 78.17% |
 | html/comments/surrounding-empty-line.html | 0/4 | 82.72% |
@@ -22,7 +18,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | html/prettier_ignore/issue-15738.html | 0/1 | 85.71% |
 | html/script/babel.html | 0/1 | 92.86% |
 | html/script/legacy.html | 0/1 | 84.21% |
-| html/single-attribute-per-line/single-attribute-per-line.html | 1/2 | 91.79% |
 | html/tags/closing-at-start.html | 3/4 | 93.18% |
 | html/tags/marquee.html | 3/4 | 98.08% |
 | html/tags/openging-at-end.html | 2/4 | 74.11% |

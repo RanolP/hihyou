@@ -694,6 +694,9 @@ export interface HtmlPrinter {
   /** Writes `s`, which may hold the caller's placeholders. */
   text(s: string): void;
   readonly tabWidth: number;
+  /** Prettier's options of the same names; off when left out. */
+  readonly bracketSameLine?: boolean;
+  readonly singleAttributePerLine?: boolean;
   /** Prints a script's or style's content `text` as `language`'s formatter does, throwing where it cannot. */
   readonly embed?: (language: EmbeddedLanguage, text: string) => void;
   /**
@@ -1020,9 +1023,11 @@ class Printer {
       if (n.isSelfClosing) this.text(" ");
       return;
     }
+    const perLine = this.out.singleAttributePerLine === true && n.attrs.length > 1;
     open(INDENT);
-    n.attrs.forEach((a) => {
-      sLine(0);
+    n.attrs.forEach((a, i) => {
+      if (i > 0 && perLine) sHardline();
+      else sLine(0);
       this.attribute(a);
     });
     close();
@@ -1031,6 +1036,8 @@ class Printer {
       (first && needsToBorrowParentOpeningTagEndMarker(first)) ||
       (n.isSelfClosing && needsToBorrowLastChildClosingTagEndMarker(n.parent as Node))
     ) {
+      if (n.isSelfClosing) this.text(" ");
+    } else if (this.out.bracketSameLine) {
       if (n.isSelfClosing) this.text(" ");
     } else sLine(n.isSelfClosing ? 0 : SOFT);
   }

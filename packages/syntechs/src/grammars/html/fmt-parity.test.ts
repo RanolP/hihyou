@@ -3,13 +3,12 @@ import { parseTree } from "../../core/index.js";
 import { check } from "../../fmt/check.js";
 import { oxfmt } from "../../fmt/conformance/references.node.js";
 import { format } from "../../fmt/format.js";
-import type { PrettierOptions } from "../../fmt/options.js";
-import { html } from "./fmt.js";
+import { type HtmlOptions, html } from "./fmt.js";
 import { language } from "./index.js";
 
-// Byte parity with oxfmt 0.70.0 over prettier's defaults, for an `.html` file.
+// Byte parity with oxfmt 0.70.0 over prettier's defaults, or the options a case names, for an `.html` file.
 
-const edgeCases: [string, string][] = [
+const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
   // A doctype refused the whole file, and an uppercase `<!DOCTYPE html>` must print as `<!doctype html>`.
   ["doctype-html5", "<!DOCTYPE html>\n<html><body><p>a</p></body></html>\n"],
   // A doctype with a public id keeps its marker as written and joins its value onto one line.
@@ -56,19 +55,27 @@ const edgeCases: [string, string][] = [
   ["front-matter-yaml", '---\nhello:     world\ntitle: "A"\n---\nTest <a\nhref=x>abc</a>.\n'],
   // A front matter in another language lost a whitespace-only line's spaces; it prints as written.
   ["front-matter-custom", "---mycustomparser\n  \ntitle: Hello\n\n---\n\n\n<h1>a</h1>\n"],
+  // bracketSameLine was ignored: a broken opening tag's `>` or ` />` must stay on its last attribute's line.
+  [
+    "bracket-same-line",
+    `<div long_attribute="${"v".repeat(70)}">text</div>\n<img long_attribute="${"v".repeat(70)}" src="a" />\n`,
+    { bracketSameLine: true },
+  ],
+  // singleAttributePerLine was ignored: two or more attributes must break one per line.
+  ["single-attribute-per-line", '<img src="a" alt="b" />\n<div data-a="1">x</div>\n', { singleAttributePerLine: true }],
 ];
 
-function ours(text: string, options: Partial<PrettierOptions>) {
+function ours(text: string, options: Partial<HtmlOptions>) {
   const out = format(parseTree(language, text), html, options);
   if (!out.ok) throw new Error(`${out.reason}: ${out.detail}`);
   const problem = check(html, text, out.text);
   if (problem) throw new Error(`check: ${problem}`);
   return out.text;
 }
-const theirs = (text: string, options: Partial<PrettierOptions>) => oxfmt.format("x.html", text, options);
+const theirs = (text: string, options: Partial<HtmlOptions>) => oxfmt.format("x.html", text, options);
 
 describe("an HTML file lays out byte-identical to oxfmt 0.70.0, so the reviewer sees the layout their tools write", () => {
-  it.each(edgeCases)("%s", async (_, text) => {
-    expect(ours(text, {})).toBe(await theirs(text, {}));
+  it.each(edgeCases)("%s", async (_, text, options = {}) => {
+    expect(ours(text, options)).toBe(await theirs(text, options));
   });
 });

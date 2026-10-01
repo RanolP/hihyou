@@ -27,7 +27,12 @@ const EMBEDDED: Record<EmbeddedLanguage, [Grammar, unknown]> = {
   css: [cssGrammar, css],
 };
 
-const defaults: PrettierOptions = { ...prettierDefaults };
+export interface HtmlOptions extends PrettierOptions {
+  bracketSameLine: boolean;
+  singleAttributePerLine: boolean;
+}
+
+const defaults: HtmlOptions = { ...prettierDefaults, bracketSameLine: false, singleAttributePerLine: false };
 
 /**
  * The declarations of `a{...}`'s block, as a `style` attribute holds them: undefined when the block holds anything
@@ -94,7 +99,7 @@ const base = defineLanguage(grammar, {
  * HTML as prettier 3.9.9's printer lays it out (print.ts), whole from the document: the printer builds prettier's
  * own AST and prints comments with the nodes around them, so the core attaches none.
  */
-export const html: Language<PrettierOptions> = {
+export const html: Language<HtmlOptions> = {
   ...base,
   comments: new Set(),
   lineComments: new Map(),
@@ -104,7 +109,7 @@ export const html: Language<PrettierOptions> = {
         "document",
         (node, ctx) => {
           const text = ctx.tree.text(node);
-          const { printWidth, tabWidth, useTabs } = ctx.options;
+          const { printWidth, tabWidth, useTabs, bracketSameLine, singleAttributePerLine } = ctx.options;
           const embed = (lang: EmbeddedLanguage, content: string) => {
             const [contentGrammar, formatter] = EMBEDDED[lang];
             const tree = parseTree(contentGrammar, content);
@@ -145,7 +150,15 @@ export const html: Language<PrettierOptions> = {
               printInto(tree, css as unknown as Language<PrettierOptions>, { printWidth, tabWidth, useTabs }, d),
             );
           };
-          printHtml(parseHtml(text, true, ctx.tree.lf(node) === 0 && ctx.tree.col(node) === 0), text, { text: sText, tabWidth, embed, declarations, declaration });
+          printHtml(parseHtml(text, true, ctx.tree.lf(node) === 0 && ctx.tree.col(node) === 0), text, {
+            text: sText,
+            tabWidth,
+            bracketSameLine,
+            singleAttributePerLine,
+            embed,
+            declarations,
+            declaration,
+          });
         },
       ],
     ]),
