@@ -1,4 +1,4 @@
-ts@oxfmt compatibility: 664/674 (98.52%), 0 refused (ok:false), 62 excluded
+ts@oxfmt compatibility: 665/674 (98.66%), 0 refused (ok:false), 62 excluded
 
 Fixtures: prettier 3.9.9 tests/format/{typescript,jsx} (recursive), every spec call listing parser `typescript` or `babel-ts` or `oxc-ts`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left.
 
@@ -8,14 +8,13 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
-| typescript/_errors_/babel-ts2/parenthesized-decorators-tagged-template.ts | 0/1 | 44.44% |
+| typescript/_errors_/babel-ts2/parenthesized-decorators-tagged-template.ts | 0/1 | 50.00% |
 | typescript/angular-component-examples/15934-computed.component.ts | 0/2 | 76.92% |
 | typescript/angular-component-examples/15934.component.ts | 0/2 | 53.85% |
 | typescript/angular-component-examples/test.component.ts | 0/2 | 41.18% |
 | typescript/as/as-const-embedded.ts | 0/1 | 45.45% |
 | typescript/decorators-ts/angular.ts | 0/1 | 87.50% |
 | typescript/prettier-ignore/prettier-ignore-nested-unions.ts | 0/1 | 83.33% |
-| typescript/type-arguments-bit-shift-left-like/3.ts | 0/1 | 66.67% |
 | jsx/comments/in-end-tag.js | 0/1 | 42.72% |
 | jsx/template/styled-components.js | 0/1 | 93.94% |
 

@@ -299,7 +299,9 @@ function streamCtx<O>(tree: Tree, base: Language<O>, resolved: O): StreamCtx<O> 
     let current: PrintArgs | undefined;
     const printNode = (node: number, args?: PrintArgs) => {
       if (isBroken(node)) {
-        sToken(node, tree.text(node));
+        // A broken root spans the file's last line break too, which a language's final line stands for.
+        const final = node === tree.root && language.finalLine !== undefined && language.finalLine(ctx);
+        sToken(node, final ? tree.text(node).replace(/\r?\n$/, "") : tree.text(node));
         return;
       }
       const rule = ruleOf(node);
