@@ -93,6 +93,11 @@ const edgeCases: [string, string][] = [
   ["media-range", "@media (min-width:768px) and (max-width:991.98px){a{b:c}}"],
   // `@MEDIA` parsed as a generic at-rule, whose parameters kept their source text.
   ["uppercase-media", "@MEDIA screen  and (min-width :1px){a{b:c}}"],
+  // A commented @import's comma list broke before every entry; oxc fills the entries, each with its comma.
+  [
+    "commented-import-entries",
+    "@import url(a) screen and (orientation:landscape) /*q*/, print and (min-width:100px), tv and (max-width:2000px);@import url(a) a /*q*/, b, cccccccccccccccccccccccccccccccccccccccc, dddddddddddddddddddddddddddddddddddddddd;",
+  ],
   // A paren group holding a comment in a commented @import/@supports prelude stayed on one line; oxc's
   // write_structured_paren always breaks it, its words indented, with a line break on both sides of it.
   [

@@ -1885,10 +1885,22 @@ export function importStatement(node: number, ctx: SCtx): void {
     kind(c, ctx) === "call_expression" && t.text(t.child(c, 0)) === "url";
   const commented =
     run.trail.length > 0 || run.entries.some((e) => e.items.some((c) => isComment(c, ctx) || holdsComment(c, ctx)));
+  // oxc lays a commented prelude's entries out as prettier's fill over them, each with its comma: one starts a line
+  // when it and the one before it, flat, do not fit from where that one starts.
+  // One holding a `hardToken` always starts and ends a line.
+  const chunks = commented && nested;
+  const hardEntry = (i: number) =>
+    commentedTokens(
+      (run.entries[i]?.items ?? []).flatMap((c) => queryWords(c, ctx)),
+      ctx,
+    ).some((token) => hardToken(token, ctx));
   open(GROUP);
   if (nested) open(INDENT);
+  if (chunks) open(FILL);
   run.entries.forEach((e, i) => {
-    if (i > 0) sLine(0);
+    if (i > 0 && chunks && (hardEntry(i - 1) || hardEntry(i))) sHardline();
+    else if (i > 0) sLine(0);
+    if (chunks) open(FILL_ITEM);
     const words = e.items.flatMap((c) => queryWords(c, ctx));
     const tokens = commented ? commentedTokens(words, ctx) : words.map((c) => [c]);
     // oxc indents a commented prelude whole, which shows once a paren group breaks.
@@ -1909,7 +1921,9 @@ export function importStatement(node: number, ctx: SCtx): void {
     close();
     if (indent) close();
     if (e.sep !== -1) sToken(e.sep, t.text(e.sep));
+    if (chunks) close();
   });
+  if (chunks) close();
   if (nested) close();
   close();
   for (const c of run.trail) {
