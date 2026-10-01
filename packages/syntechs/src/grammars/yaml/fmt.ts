@@ -16,8 +16,25 @@ const normalize: Normalize = (lexemes, _text, tree) =>
     const kind = tree.kindName(l.node);
     if (kind === "single_quote_scalar") return `str:${l.text.slice(1, -1).replaceAll("''", "'")}`;
     if (kind === "double_quote_scalar") return `str:${l.text.slice(1, -1).replaceAll('\\"', '"')}`;
+    if (kind === "block_scalar") return blockScalar(l.text);
     return l.text;
   });
+
+/**
+ * A block scalar as print.ts may respell it: its header's indicators in canonical order, its content moved as a
+ * whole to another indent, its trailing blank lines settled by chomping, and a folded scalar's line breaks refolded
+ * (so only its words count).
+ */
+function blockScalar(text: string): string {
+  const nl = text.indexOf("\n");
+  const head = nl < 0 ? text : text.slice(0, nl);
+  const m = /^([|>])([+-]?)(\d?)([+-]?)/.exec(head);
+  const header = m ? `${m[1]}${m[3]}${m[2]}${m[4]} ${head.slice(m[0].length).trim()}` : head;
+  const lines = nl < 0 ? [] : text.slice(nl + 1).replace(/\s+$/, "").split("\n");
+  if (header.startsWith(">")) return `block:${header}:${lines.join(" ").trim().split(/\s+/).join(" ")}`;
+  const cut = Math.min(...lines.filter((l) => l.trim() !== "").map((l) => l.length - l.trimStart().length));
+  return `block:${header}:${lines.map((l) => l.slice(cut)).join("\n")}`;
+}
 
 const base = defineLanguage(grammar, {
   parser: language,

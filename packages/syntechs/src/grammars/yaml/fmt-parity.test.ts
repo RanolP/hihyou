@@ -48,7 +48,35 @@ const edgeCases: [string, string][] = [
   ["comment-after-properties", "key1: &default\n\n  # note\n  sub: 1\n"],
   // A blank file printed a line break instead of nothing.
   ["blank", "\n\n"],
+  // A block scalar's content kept its source indent instead of moving to its collection's indent plus tabWidth.
+  ["block-scalar-reindent", "a: |\n      x\n       y\n\n      z\nb:\n- >-\n      w\n"],
+  // Chomping lost its trailing blank lines: clip and strip keep one before a sibling, keep keeps them all.
+  ["block-scalar-chomping", "a: |\n  x\n\n\nb: |+\n  y\n\n\nc: >-\n  z\n\n"],
+  // An indentation indicator's content moved with the collection instead of staying at the indicator's column.
+  ["block-scalar-explicit-indent", "a: |2\n      x\nb: |+1\n   y\n"],
+  // Trailing spaces inside a block scalar's content, or its whitespace-only line, were trimmed.
+  ["block-scalar-whitespace", "a: >\n  aa \n    \n  bb\nb: |\n  x\n   \nc: 1\n"],
+  // The blank line after a block scalar was doubled, or dropped before a comment, since the next token's lf counts its content.
+  ["block-scalar-blank-after", "- |\n  x\n- 1\n- |\n  y\n\n# c\n"],
+  // An empty sequence item lost the space its absent value takes before a trailing comment.
+  ["empty-item-comment", "- # c\n- x\n"],
 ];
+
+// A folded scalar's refill under proseWrap always: lines join into paragraphs and refill at printWidth, except
+// more-indented lines and blank-separated paragraphs; a literal scalar stays as written.
+const proseCases: [string, string][] = [
+  [
+    "folded-refill",
+    `a: >\n  aa bb\n  cc\n   dd\n\n  ${"word ".repeat(20)}\nb: |\n  ${"word ".repeat(20).trim()}\n`,
+  ],
+];
+
+describe("a folded block scalar refolds as oxfmt 0.70.0 does under proseWrap always", () => {
+  it.each(proseCases)("%s", async (_, text) => {
+    const options = { proseWrap: "always" } as Options;
+    expect(ours(text, options)).toBe(await theirs(text, options));
+  });
+});
 
 function ours(text: string, options: Options) {
   const tree = parseTree(language, text);
@@ -72,8 +100,8 @@ describe.each(optionSets)(
 const refused: [string, string][] = [
   // A flow mapping printed as written, where oxfmt adds bracket spacing and breaks it past printWidth.
   ["flow-mapping", "a: {b: 1}\n"],
-  // A block scalar printed as written, where oxfmt re-indents its content.
-  ["block-scalar", "a: |\n    x\n"],
+  // A comment after a kept block scalar ending the stream printed a final line break, which oxfmt leaves off.
+  ["kept-block-scalar-then-comment", "a: |+\n  x\n# c\n"],
   // `{? 1,? 2}` parses to an ERROR root spanning `{? 1` only, so printing its text dropped the rest.
   ["error-root", "{? 1,? 2,? 3}\n"],
   // A prettier-ignore comment's node was laid out instead of kept as written.

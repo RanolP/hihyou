@@ -1,4 +1,4 @@
-yaml@oxfmt compatibility: 127/360 (35.28%), 233 refused (ok:false), 1 excluded
+yaml@oxfmt compatibility: 171/360 (47.50%), 189 refused (ok:false), 1 excluded
 
 Fixtures: prettier 3.9.9 tests/format/{yaml} (recursive), every spec call listing parser `yaml`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left.
 
@@ -17,34 +17,10 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | :------ | :----------: | :---------: | :----------- |
 | yaml/block-folded/block-folded-keep.yml | 2/2 | 0.00% | formatter-error: content on a marker line |
 | yaml/block-folded/block-folded-strip.yml | 2/2 | 18.18% | formatter-error: content on a marker line |
-| yaml/block-folded/clip.yml | 2/2 | 22.50% | formatter-error: a block_scalar |
-| yaml/block-folded/empty-line-after-block-scalar.yml | 2/2 | 86.36% | formatter-error: a block_scalar |
-| yaml/block-folded/indent.yml | 2/2 | 80.00% | formatter-error: a block_scalar |
-| yaml/block-folded/keep.yml | 2/2 | 55.00% | formatter-error: a block_scalar |
-| yaml/block-folded/map.yml | 2/2 | 83.33% | formatter-error: a block_scalar |
-| yaml/block-folded/middle-comment.yml | 2/2 | 100.00% | formatter-error: a block_scalar |
-| yaml/block-folded/middle-comments.yml | 2/2 | 66.67% | formatter-error: a block_scalar |
-| yaml/block-folded/newline-unaligned.yml | 2/2 | 77.78% | formatter-error: a block_scalar |
-| yaml/block-folded/newline.yml | 2/2 | 75.00% | formatter-error: a block_scalar |
-| yaml/block-folded/props-in-map.yml | 2/2 | 100.00% | formatter-error: a block_scalar |
-| yaml/block-folded/props.yml | 2/2 | 100.00% | formatter-error: a block_scalar |
-| yaml/block-folded/prose.yml | 2/2 | 52.63% | formatter-error: a block_scalar |
-| yaml/block-folded/seq.yml | 2/2 | 87.50% | formatter-error: a block_scalar |
-| yaml/block-folded/strip.yml | 2/2 | 22.50% | formatter-error: a block_scalar |
-| yaml/block-folded/trailing-comment.yml | 2/2 | 100.00% | formatter-error: a block_scalar |
-| yaml/block-literal/clip.yml | 2/2 | 20.00% | formatter-error: a block_scalar |
-| yaml/block-literal/indent.yml | 2/2 | 80.00% | formatter-error: a block_scalar |
-| yaml/block-literal/keep.yml | 2/2 | 50.00% | formatter-error: a block_scalar |
-| yaml/block-literal/map.yml | 2/2 | 100.00% | formatter-error: a block_scalar |
-| yaml/block-literal/middle-comment.yml | 2/2 | 100.00% | formatter-error: a block_scalar |
-| yaml/block-literal/middle-comments.yml | 2/2 | 66.67% | formatter-error: a block_scalar |
-| yaml/block-literal/newline-unaligned.yml | 2/2 | 100.00% | formatter-error: a block_scalar |
-| yaml/block-literal/newline.yml | 2/2 | 100.00% | formatter-error: a block_scalar |
-| yaml/block-literal/props-in-map.yml | 2/2 | 100.00% | formatter-error: a block_scalar |
-| yaml/block-literal/props.yml | 2/2 | 100.00% | formatter-error: a block_scalar |
-| yaml/block-literal/seq.yml | 2/2 | 100.00% | formatter-error: a block_scalar |
-| yaml/block-literal/strip.yml | 2/2 | 20.00% | formatter-error: a block_scalar |
-| yaml/block-literal/trailing-comment.yml | 2/2 | 100.00% | formatter-error: a block_scalar |
+| yaml/block-folded/middle-comment.yml | 2/2 | 100.00% | formatter-error: a comment after properties |
+| yaml/block-folded/middle-comments.yml | 2/2 | 66.67% | formatter-error: a comment after properties |
+| yaml/block-literal/middle-comment.yml | 2/2 | 100.00% | formatter-error: a comment after properties |
+| yaml/block-literal/middle-comments.yml | 2/2 | 66.67% | formatter-error: a comment after properties |
 | yaml/comment/collection.yml | 1/1 | 100.00% | formatter-error: a comment before a scalar value |
 | yaml/comment/end-comment.yml | 1/1 | 69.23% | formatter-error: a comment between a nested block and its parent |
 | yaml/comment/flow-sequence-mapping.yml | 1/1 | 39.39% | formatter-error: a prettier-ignore comment |
@@ -132,12 +108,9 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | yaml/sequence/props.yml | 2/2 | 57.14% | formatter-error: content on a marker line |
 | yaml/spec/aliases-in-explicit-block-mapping.yml | 2/2 | 40.00% | formatter-error: a pair without a key |
 | yaml/spec/allowed-characters-in-plain-scalars.yml | 2/2 | 70.00% | formatter-error: a multi-line plain scalar |
-| yaml/spec/blank-lines.yml | 2/2 | 83.33% | formatter-error: a block_scalar |
 | yaml/spec/block-mapping-with-missing-values.yml | 2/2 | 33.33% | formatter-error: a pair without a key |
 | yaml/spec/block-mapping-with-multiline-scalars.yml | 2/2 | 50.00% | formatter-error: a pair without a key |
-| yaml/spec/block-scalar-indicator-order.yml | 2/2 | 75.00% | formatter-error: a block_scalar |
 | yaml/spec/block-scalar-keep.yml | 2/2 | 0.00% | formatter-error: content on a marker line |
-| yaml/spec/block-scalar-strip.yml | 2/2 | 50.00% | formatter-error: a block_scalar |
 | yaml/spec/comment-in-flow-sequence-before-comma.yml | 2/2 | 20.00% | formatter-error: a flow_sequence |
 | yaml/spec/construct-binary.yml | 2/2 | 17.39% | formatter-error: a multi-line quoted scalar |
 | yaml/spec/empty-lines-at-end-of-document.yml | 2/2 | 40.00% | formatter-error: a pair without a key |
@@ -147,10 +120,8 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | yaml/spec/flow-sequence-in-flow-mapping.yml | 2/2 | 0.00% | formatter-error: a flow_mapping |
 | yaml/spec/flow-sequence-in-flow-sequence.yml | 2/2 | 100.00% | formatter-error: a flow_sequence |
 | yaml/spec/flow-sequence.yml | 2/2 | 100.00% | formatter-error: a flow_sequence |
-| yaml/spec/folded-block-scalar.yml | 2/2 | 38.75% | formatter-error: a block_scalar |
 | yaml/spec/implicit-flow-mapping-key-on-one-line.yml | 2/2 | 100.00% | formatter-error: a flow_sequence |
 | yaml/spec/key-with-anchor-after-missing-explicit-mapping-value.yml | 2/2 | 75.00% | formatter-error: a pair without a key |
-| yaml/spec/literal-block-scalar.yml | 2/2 | 42.86% | formatter-error: a block_scalar |
 | yaml/spec/mapping-key-and-flow-sequence-item-anchors.yml | 2/2 | 66.67% | formatter-error: a flow_sequence |
 | yaml/spec/mixed-block-mapping-explicit-to-implicit.yml | 2/2 | 40.00% | formatter-error: a pair without a key |
 | yaml/spec/mixed-block-mapping-implicit-to-explicit.yml | 2/2 | 40.00% | formatter-error: a pair without a key |
@@ -160,7 +131,7 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | yaml/spec/multiline-scalar-that-looks-like-a-yaml-directive.yml | 2/2 | 70.00% | formatter-error: a multi-line plain scalar |
 | yaml/spec/nested-flow-collections-on-one-line.yml | 2/2 | 50.00% | formatter-error: a flow_mapping |
 | yaml/spec/nested-flow-collections.yml | 2/2 | 20.00% | formatter-error: a flow_mapping |
-| yaml/spec/non-specific-tags-on-scalars.yml | 2/2 | 83.33% | formatter-error: a block_scalar |
+| yaml/spec/non-specific-tags-on-scalars.yml | 2/2 | 83.33% | formatter-error: a token not found in the stream text |
 | yaml/spec/plain-scalar-looking-like-key-comment-anchor-and-tag.yml | 2/2 | 25.00% | formatter-error: a multi-line plain scalar |
 | yaml/spec/plain-url-in-flow-mapping.yml | 2/2 | 100.00% | formatter-error: a flow_mapping |
 | yaml/spec/scalars-on-line.yml | 2/2 | 12.50% | formatter-error: content on a marker line |
@@ -168,10 +139,7 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | yaml/spec/spec-example-2-11-mapping-between-sequences.yml | 2/2 | 42.86% | formatter-error: a pair without a key |
 | yaml/spec/spec-example-2-13-in-literals-newlines-are-preserved.yml | 2/2 | 66.67% | formatter-error: content on a marker line |
 | yaml/spec/spec-example-2-14-in-the-folded-scalars-newlines-become-spaces.yml | 2/2 | 33.33% | formatter-error: content on a marker line |
-| yaml/spec/spec-example-2-15-folded-newlines-are-preserved-for-more-indented-and-blank-lines.yml | 2/2 | 38.75% | formatter-error: a block_scalar |
-| yaml/spec/spec-example-2-16-indentation-determines-scope.yml | 2/2 | 88.46% | formatter-error: a block_scalar |
 | yaml/spec/spec-example-2-18-multi-line-flow-scalars.yml | 2/2 | 47.47% | formatter-error: a multi-line plain scalar |
-| yaml/spec/spec-example-2-23-various-explicit-tags.yml | 2/2 | 46.15% | formatter-error: a block_scalar |
 | yaml/spec/spec-example-2-24-global-tags.yml | 2/2 | 68.97% | formatter-error: content on a marker line |
 | yaml/spec/spec-example-2-25-unordered-sets.yml | 2/2 | 80.00% | formatter-error: content on a marker line |
 | yaml/spec/spec-example-2-26-ordered-mappings.yml | 2/2 | 80.00% | formatter-error: content on a marker line |
@@ -179,10 +147,9 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | yaml/spec/spec-example-2-28-log-file.yml | 2/2 | 79.11% | formatter-error: a multi-line plain scalar |
 | yaml/spec/spec-example-2-5-sequence-of-sequences.yml | 2/2 | 33.33% | formatter-error: a flow_sequence |
 | yaml/spec/spec-example-2-6-mapping-of-mappings.yml | 2/2 | 0.00% | formatter-error: a flow_mapping |
-| yaml/spec/spec-example-5-12-tabs-and-spaces.yml | 2/2 | 83.33% | formatter-error: a block_scalar |
+| yaml/spec/spec-example-5-12-tabs-and-spaces.yml | 2/2 | 83.33% | formatter-error: a token not found in the stream text |
 | yaml/spec/spec-example-5-3-block-structure-indicators.yml | 2/2 | 30.77% | formatter-error: a pair without a key |
 | yaml/spec/spec-example-5-4-flow-collection-indicators.yml | 2/2 | 50.00% | formatter-error: a flow_sequence |
-| yaml/spec/spec-example-5-7-block-scalar-indicators.yml | 2/2 | 86.36% | formatter-error: a block_scalar |
 | yaml/spec/spec-example-5-9-directive-indicator.yml | 2/2 | 40.00% | formatter-error: content on a marker line |
 | yaml/spec/spec-example-6-1-indentation-spaces.yml | 2/2 | 24.00% | formatter-error: an indented comment outside a collection |
 | yaml/spec/spec-example-6-10-comment-lines.yml | 2/2 | 0.00% | formatter-error: an indented comment outside a collection |
@@ -193,8 +160,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | yaml/spec/spec-example-6-2-indentation-indicators.yml | 2/2 | 0.00% | formatter-error: a pair without a key |
 | yaml/spec/spec-example-6-4-line-prefixes.yml | 2/2 | 67.86% | formatter-error: a multi-line plain scalar |
 | yaml/spec/spec-example-6-5-empty-lines.yml | 2/2 | 46.15% | formatter-error: a multi-line quoted scalar |
-| yaml/spec/spec-example-6-6-line-folding.yml | 2/2 | 58.79% | formatter-error: a block_scalar |
-| yaml/spec/spec-example-6-7-block-folding.yml | 2/2 | 83.33% | formatter-error: a block_scalar |
 | yaml/spec/spec-example-6-8-flow-folding.yml | 2/2 | 42.86% | formatter-error: a multi-line quoted scalar |
 | yaml/spec/spec-example-6-9-separated-comment.yml | 2/2 | 50.00% | formatter-error: a comment before a scalar value |
 | yaml/spec/spec-example-7-10-plain-characters.yml | 2/2 | 70.00% | formatter-error: a flow_sequence |
@@ -218,21 +183,12 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | yaml/spec/spec-example-7-6-double-quoted-lines.yml | 2/2 | 53.57% | formatter-error: a multi-line quoted scalar |
 | yaml/spec/spec-example-7-8-single-quoted-implicit-keys.yml | 2/2 | 0.00% | formatter-error: a flow_sequence |
 | yaml/spec/spec-example-7-9-single-quoted-lines.yml | 2/2 | 26.79% | formatter-error: a multi-line quoted scalar |
-| yaml/spec/spec-example-8-1-block-scalar-header.yml | 2/2 | 77.78% | formatter-error: a block_scalar |
-| yaml/spec/spec-example-8-10-folded-lines-8-13-final-empty-lines.yml | 2/2 | 46.01% | formatter-error: a block_scalar |
-| yaml/spec/spec-example-8-15-block-sequence-entry-types.yml | 2/2 | 66.67% | formatter-error: a block_scalar |
 | yaml/spec/spec-example-8-17-explicit-block-mapping-entries.yml | 2/2 | 100.00% | formatter-error: a pair without a key |
 | yaml/spec/spec-example-8-18-implicit-block-mapping-entries.yml | 2/2 | 75.00% | formatter-error: a pair without a key |
 | yaml/spec/spec-example-8-19-compact-block-mappings.yml | 2/2 | 100.00% | formatter-error: a pair without a key |
-| yaml/spec/spec-example-8-2-block-indentation-indicator.yml | 2/2 | 54.55% | formatter-error: a block_scalar |
-| yaml/spec/spec-example-8-20-block-node-types.yml | 2/2 | 36.36% | formatter-error: a block_scalar |
-| yaml/spec/spec-example-8-21-block-scalar-nodes.yml | 2/2 | 60.00% | formatter-error: a block_scalar |
-| yaml/spec/spec-example-8-4-chomping-final-line-break.yml | 2/2 | 100.00% | formatter-error: a block_scalar |
+| yaml/spec/spec-example-8-20-block-node-types.yml | 2/2 | 36.36% | formatter-error: a token not found in the stream text |
 | yaml/spec/spec-example-8-5-chomping-trailing-lines.yml | 2/2 | 47.37% | formatter-error: an indented comment outside a collection |
-| yaml/spec/spec-example-8-6-empty-scalar-chomping.yml | 2/2 | 100.00% | formatter-error: a block_scalar |
-| yaml/spec/spec-example-8-7-literal-scalar.yml | 2/2 | 25.00% | formatter-error: a block_scalar |
-| yaml/spec/spec-example-8-8-literal-content.yml | 2/2 | 55.56% | formatter-error: a block_scalar |
-| yaml/spec/spec-example-8-9-folded-scalar.yml | 2/2 | 26.79% | formatter-error: a block_scalar |
+| yaml/spec/spec-example-8-8-literal-content.yml | 2/2 | 55.56% | formatter-error: an indented comment outside a collection |
 | yaml/spec/spec-example-9-3-bare-documents.yml | 2/2 | 73.63% | formatter-error: a multi-line plain scalar |
 | yaml/spec/spec-example-9-4-explicit-documents.yml | 2/2 | 67.87% | formatter-error: a flow_mapping |
 | yaml/spec/spec-example-9-5-directives-documents.yml | 2/2 | 70.59% | formatter-error: content on a marker line |
