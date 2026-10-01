@@ -30,8 +30,8 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | :------ | :----------: | :---------: | :----------- |
 | js/_errors_/html-like-comments.js | 1/1 | 28.57% | check: input "<!-- comment" at 49 is output as "\"hello world\"" at 48, which means "str:hello world@\|0/4", not "<!-- co |
 | js/comments/html-like/comment.js | 1/1 | 50.00% | check: input "<!--" at 0 is output as "alert" at 0, which means "alert@function\|0/3", not "<!--@\|0/1" |
-| js/multiparser-html/html-template-literals.js | 2/2 | 66.50% | check: input "\"\nsingle-quoted='" at 642 is output as "\"\n  single-quoted=\"" at 643, which means "embed:\"single-quot |
-| js/multiparser-html/lit-html.js | 2/2 | 54.63% | check: input "<my-element obj=" at 762 is output as "<my-element obj=\"" at 714, which means "embed:<my-elementobj=\"#0@ |
+| js/multiparser-html/html-template-literals.js | 2/2 | 55.27% | formatter-error: style |
+| js/multiparser-html/lit-html.js | 2/2 | 42.23% | formatter-error: style |
 
 # Excluded
 
