@@ -198,7 +198,18 @@ const isIgnored = (ctx: JsCtx, n: number) =>
   unionIgnored(ctx, n) ||
   trailingIgnore(ctx, n) ||
   afterIgnoreInUnion(ctx, n) ||
+  afterIgnoreInPair(ctx, n) ||
   (isJsx(ctx, n) && jsxIgnored(ctx, n, (c) => isIgnoreComment(ctx, c)));
+
+/** `key: // prettier-ignore⏎value`: the ignore comment between a property's `:` and its value keeps the value. */
+const afterIgnoreInPair = (ctx: JsCtx, n: number) => {
+  const up = parent(ctx, n);
+  if (kind(ctx, up) !== "pair" || ctx.tree.fieldName(n) !== "value") return false;
+  const kids = children(ctx, up as number);
+  for (let i = kids.indexOf(n) - 1; i >= 0 && isComment(ctx, kids[i] as number); i--)
+    if (isIgnoreComment(ctx, kids[i] as number)) return true;
+  return false;
+};
 
 /**
  * oxc's has_trailing_suppression_comment: `a(  a  ); // prettier-ignore` keeps the statement, a member, an
