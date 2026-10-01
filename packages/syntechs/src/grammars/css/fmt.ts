@@ -275,13 +275,13 @@ export const customs = {
   mediaComments: (node, ctx) => mediaAtoms(node, ctx).some((c) => isComment(c, ctx)),
   ownWord: (node, ctx) => ownWord(node, ctx),
   /**
-   * A declaration's comma entry that is one math expression (`a / c`, `// c`), which oxc-css-parser reads as several
-   * values, so a list holding one breaks as one of several words does.
+   * A declaration's comma entry that is one math expression (`a / c`, `// c`) or a lone `!word`, which oxc-css-parser
+   * reads as several values, so a list holding one breaks as one of several words does.
    */
   mathEntry: (node, ctx) =>
     code(node, ctx).some(
       (c, i, all) =>
-        (["binary_expression", "unary_expression"].includes(kind(c, ctx)) ||
+        (["binary_expression", "unary_expression", "important_value"].includes(kind(c, ctx)) ||
           identThenMore(c, ctx) ||
           (dashIdent(c, ctx) && all.slice(0, i).some((p) => kind(p, ctx) === ","))) &&
         ![all[i - 1], all[i + 1]].some(
@@ -300,10 +300,10 @@ function ownWord(node: number, ctx: SCtx): boolean {
   const siblings = children(t.parent(node), t);
   const prev = siblings[siblings.indexOf(node) - 1];
   if (prev === undefined || !t.adjoins(prev, node)) return false;
-  // A number, a word or a function joined to a function before it stays joined (`f(1)-2`, `f(1)f(2)`).
+  // A number, a word, a `!word` or a function joined to a function before it stays joined (`f(1)-2`, `f(1)f(2)`, `f(1)!c`).
   if (
     kind(prev, ctx) === "call_expression" &&
-    ["call_expression", "plain_value", "integer_value", "float_value"].includes(kind(node, ctx))
+    ["call_expression", "plain_value", "integer_value", "float_value", "important_value"].includes(kind(node, ctx))
   )
     return false;
   if (kind(node, ctx) === "call_expression") return true;

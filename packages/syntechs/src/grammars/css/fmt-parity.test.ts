@@ -237,6 +237,9 @@ const edgeCases: [string, string][] = [
   // A word ending in `*` stayed glued, and `a/f(c)/g` was raw tokens with each `/` spaced; oxc spaces the `*` and
   // keeps a chain of glued `/` tight.
   ["star-end-slash-chain", "a{b:f(a*);c:a*;d:a* b;e:a/f(c)/g;f:x/f(c)/g(d)/h;g:a/f(c)*g}"],
+  // A `!` before a word other than `important` was an ERROR, kept as written; oxfmt keeps it glued or one space apart
+  // as written, and a lone `!word` entry breaks the list.
+  ["bang-word", "a{b:a!c;c:a  !c d;d:a!c!important;e:!c,a;f:f(x)!c;g:a!importantx;h:a!c ! IMPORTANT}"],
   ["word-hash-star", "a{b:a#b, d;c:x a#b#c;d:f(a*c);e:a$c;f:url($a*3);g:calc(a*c);h:f(w-*);i:a #b}"],
 ];
 
