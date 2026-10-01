@@ -94,6 +94,9 @@ const normalize: Normalize = (lexemes, _text, tree) =>
           .replaceAll(/(^|[^\d.])\.(\d)/g, "$10.$2")
           .toLowerCase() || undefined
       );
+    // A conditional comment's content prints as HTML: compare it with its gaps and quotes gone, a void tag's `/>` as `>`.
+    if (kind === "comment" && /^<!--\[if[^\]]*\]>/.test(l.text))
+      return l.text.replaceAll(/[\s"']/g, "").replaceAll("/>", ">");
     const words = l.text.replace(/\s+/g, " ").trim();
     return kind === "doctype" || kind === "tag_name" || kind === "attribute_name" ? words.toLowerCase() : words;
   });

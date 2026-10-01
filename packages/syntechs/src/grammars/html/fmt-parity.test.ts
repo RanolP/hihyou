@@ -92,6 +92,11 @@ const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
     "srcset",
     '<img srcset="a.png 1x,b.png 2x">\n<img srcset="  a.png   100w ,  bbbbbbbbbbbbbbbbbbbbbb.png 2000w, ccccccccccccccccccccccccccccccc.png 300w, d.png 4w">\n<source srcset="a.png 1.5x, bb.png 2x, c">\n<img srcset="a 400w 100h, b 500w">\n<img srcset=",,,">\n',
   ],
+  // A conditional comment kept its content as written; it prints as HTML, `<!--[if x]><!--><tag><!--<![endif]-->` as one tag, an unclosed one as written.
+  [
+    "conditional-comments",
+    "<html><head><!--[if lt IE 9]>\n<script src='a.js'></script>\n<![endif]--></head></html>\n<div>\n<!--[if IE 5]>This is IE 5<br><![endif]-->\n</div>\n<!--[if lt IE 9]><p class=x><![endif]-->\n<!--[if gte IE 9]><!--><p><!--<![endif]-->a</p>\n<!--[if IE]>\n   <p>x</p>\n  <![endif]-->\n",
+  ],
 ];
 
 function ours(text: string, options: Partial<HtmlOptions>) {

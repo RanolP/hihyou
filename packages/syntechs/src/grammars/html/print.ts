@@ -30,7 +30,17 @@ import { language } from "./index.js";
 export class Unsupported extends Error {}
 
 interface Node {
-  kind: "root" | "element" | "text" | "comment" | "docType";
+  kind:
+    | "root"
+    | "element"
+    | "text"
+    | "comment"
+    | "docType"
+    | "ieConditionalComment"
+    | "ieConditionalStartComment"
+    | "ieConditionalEndComment";
+  /** A conditional comment's `[if ...]` condition, or an element's merged from the ones around its start tag. */
+  condition?: string;
   parent: Node | undefined;
   prev: Node | undefined;
   next: Node | undefined;
@@ -401,7 +411,7 @@ function fill(tree: TsTree, text: string, into: Node, ts: number, from: number, 
       // A `prettier-ignore` comment keeps its next sibling as written (the printer's `ignored`); a
       // `prettier-ignore-attribute` keeps the next element's attributes, which this printer does not do.
       if (inner.startsWith("prettier-ignore") && inner !== "prettier-ignore") throw new Unsupported(inner);
-      add(n);
+      add(conditionalComment(text, n));
     } else if (k === "doctype") add(docType(tree.text(c), tree.start(c), tree.end(c)));
     else throw new Unsupported(k);
   }
@@ -409,7 +419,40 @@ function fill(tree: TsTree, text: string, into: Node, ts: number, from: number, 
 }
 
 /**
- * printer-html.js's docType: `<!doctype` lowercase only before a bare `html` (the file is `.html`), else the
+ * parser-html.js's parseIeConditionalComment over a comment `c`: `<!--[if x]>...<![endif]-->` holds its content as
+ * HTML children, `<!--[if x]><!-->` and `<!--<![endif]-->` open and close a downlevel-revealed one. A content that
+ * does not parse, or whose last element is left open, prints as written, which `c` as a comment does too.
+ */
+function conditionalComment(text: string, c: Node): Node {
+  const inner = c.value.slice(4, -3);
+  const condition = (s: string) => s.trim().replaceAll(/\s+/g, " ");
+  const whole = /^(\[if([^\]]*)\]>)(.*?)<!\s*\[endif\]$/s.exec(inner);
+  if (whole !== null) {
+    const from = c.start + 4 + (whole[1] as string).length;
+    const to = from + (whole[3] as string).length;
+    // Padded so the content's offsets are the file's.
+    const tree = parseTree(language, " ".repeat(from) + text.slice(from, to));
+    if (tree.errorChars > 0 || brokenNodes(tree) !== undefined) return c;
+    const n = node("ieConditionalComment", c.start, c.end);
+    n.condition = condition(whole[2] as string);
+    n.startTagEnd = from;
+    n.endTagStart = to;
+    fill(tree, text, n, tree.root, from, to);
+    const last = n.children[n.children.length - 1];
+    if (last?.kind === "element" && !last.isSelfClosing && last.endTagStart === -1) return c;
+    return n;
+  }
+  const start = /^\[if([^\]]*)\]><!$/.exec(inner);
+  const end = /^<!\s*\[endif\]$/.test(inner);
+  if (start === null && !end) return c;
+  const n = node(end ? "ieConditionalEndComment" : "ieConditionalStartComment", c.start, c.end);
+  n.isSelfClosing = true;
+  if (start !== null) n.condition = condition(start[1] as string);
+  return n;
+}
+
+/**
+ * printer-html.js's docType:`<!doctype` lowercase only before a bare `html` (the file is `.html`), else the
  * marker as written; the value's gaps one space each and a leading `html` lowercased. `rawName` holds the marker
  * past its `<`, which a text before it borrows as an opening tag's.
  */
@@ -596,7 +639,8 @@ function link(n: Node): void {
 
 const HTML_SPACE = /[\t\n\f\r ]/;
 const isHtmlSpaceOnly = (s: string) => /^[\t\n\f\r ]*$/.test(s);
-const hasChildren = (n: Node) => n.kind === "root" || (n.kind === "element" && !n.isSelfClosing);
+const hasChildren = (n: Node) =>
+  n.kind === "root" || n.kind === "ieConditionalComment" || (n.kind === "element" && !n.isSelfClosing);
 
 function preprocess(root: Node, sensitivity: WhitespaceSensitivity): void {
   walk(root, (n) => {
@@ -607,6 +651,7 @@ function preprocess(root: Node, sensitivity: WhitespaceSensitivity): void {
         else first.value = first.value.slice(1);
       }
     }
+    mergeIeConditionalStartEndCommentIntoElementOpeningTag(n);
     link(n);
   });
   walk(root, extractWhitespaces);
@@ -615,6 +660,34 @@ function preprocess(root: Node, sensitivity: WhitespaceSensitivity): void {
   });
   walk(root, addIsSpaceSensitive);
   walk(root, mergeSimpleElementIntoText);
+}
+
+/**
+ * `<!--[if c]><!--><tag><!--<![endif]-->`, the two comments touching the start tag, reads as one element whose
+ * opening tag carries the condition.
+ */
+function mergeIeConditionalStartEndCommentIntoElementOpeningTag(parent: Node): void {
+  const children = parent.children;
+  for (let i = 1; i < children.length; i++) {
+    const n = children[i] as Node;
+    const start = children[i - 1] as Node;
+    const end = n.children[0];
+    if (
+      n.kind !== "element" ||
+      start.kind !== "ieConditionalStartComment" ||
+      start.condition === undefined ||
+      start.end !== n.start ||
+      end?.kind !== "ieConditionalEndComment" ||
+      end.start !== n.startTagEnd
+    )
+      continue;
+    n.condition = start.condition;
+    n.start = start.start;
+    n.startTagEnd = end.end;
+    n.children.shift();
+    children.splice(i - 1, 1);
+    i--;
+  }
 }
 
 function extractWhitespaces(n: Node): void {
@@ -816,9 +889,23 @@ function needsToBorrowParentOpeningTagEndMarker(n: Node): boolean {
   return !n.prev && n.isLeadingSpaceSensitive && !n.hasLeadingSpaces;
 }
 
-const closingTagStartMarker = (n: Node) => `</${n.rawName}`;
-const closingTagEndMarker = (n: Node) => (n.kind === "element" && n.isSelfClosing ? "/>" : ">");
-const openingTagStartMarker = (n: Node) => `<${n.rawName}`;
+const closingTagStartMarker = (n: Node) => (n.kind === "ieConditionalComment" ? "<!" : `</${n.rawName}`);
+function closingTagEndMarker(n: Node): string {
+  if (n.kind === "ieConditionalComment" || n.kind === "ieConditionalEndComment") return "[endif]-->";
+  if (n.kind === "ieConditionalStartComment") return "]><!-->";
+  return n.kind === "element" && n.isSelfClosing ? "/>" : ">";
+}
+function openingTagStartMarker(n: Node): string {
+  if (n.kind === "ieConditionalComment" || n.kind === "ieConditionalStartComment") return `<!--[if ${n.condition}`;
+  if (n.kind === "ieConditionalEndComment") return "<!--<!";
+  if (n.condition !== undefined) return `<!--[if ${n.condition}]><!--><${n.rawName}`;
+  return `<${n.rawName}`;
+}
+function openingTagEndMarker(n: Node): string {
+  if (n.kind === "ieConditionalComment") return "]>";
+  if (n.condition !== undefined) return "><!--<![endif]-->";
+  return ">";
+}
 
 function closingTagSuffix(n: Node): string {
   if (needsToBorrowParentClosingTagStartMarker(n)) return closingTagStartMarker(n.parent as Node);
@@ -826,7 +913,7 @@ function closingTagSuffix(n: Node): string {
   return "";
 }
 function openingTagPrefix(n: Node): string {
-  if (needsToBorrowParentOpeningTagEndMarker(n)) return ">";
+  if (needsToBorrowParentOpeningTagEndMarker(n)) return openingTagEndMarker(n.parent as Node);
   if (needsToBorrowPrevClosingTagEndMarker(n)) return closingTagEndMarker(n.prev as Node);
   return "";
 }
@@ -981,7 +1068,8 @@ class Printer {
     );
   }
   private hasSurroundingLineBreak = (n: Node) => this.hasLeadingLineBreak(n) && this.hasTrailingLineBreak(n);
-  private preferHardlineAsSurrounding = (n: Node) => n.kind === "comment" || (n.kind === "element" && n.name === "select");
+  private preferHardlineAsSurrounding = (n: Node) =>
+    n.kind === "comment" || n.kind === "ieConditionalComment" || (n.kind === "element" && n.name === "select");
   private preferHardlineAsTrailing = (n: Node) =>
     this.preferHardlineAsSurrounding(n) || (n.kind === "element" && n.name === "br") || this.hasSurroundingLineBreak(n);
   private preferHardlineAsLeading = (n: Node) =>
@@ -1120,8 +1208,21 @@ class Printer {
 
   private node(n: Node): void {
     if (hasPrettierIgnore(n)) this.ignored(n);
-    else if (n.kind === "element") this.element(n);
+    else if (n.kind === "element" || n.kind === "ieConditionalComment") this.element(n);
     else if (n.kind === "text") this.textNode(n);
+    else if (n.kind === "ieConditionalStartComment" || n.kind === "ieConditionalEndComment") {
+      if (!(n.prev && needsToBorrowNextOpeningTagStartMarker(n.prev))) {
+        this.text(openingTagPrefix(n));
+        this.text(openingTagStartMarker(n));
+      }
+      const borrowed = n.next
+        ? needsToBorrowPrevClosingTagEndMarker(n.next)
+        : needsToBorrowLastChildClosingTagEndMarker(n.parent as Node);
+      if (!borrowed) {
+        this.text(closingTagEndMarker(n));
+        this.text(closingTagSuffix(n));
+      }
+    }
     else if (n.kind === "docType") {
       this.text(openingTagPrefix(n));
       if (!(n.prev && needsToBorrowNextOpeningTagStartMarker(n.prev))) this.text(openingTagStartMarker(n));
@@ -1177,7 +1278,7 @@ class Printer {
     }
     this.attributes(n);
     const first = firstChild(n);
-    if (!n.isSelfClosing && !(first && needsToBorrowParentOpeningTagEndMarker(first))) this.text(">");
+    if (!n.isSelfClosing && !(first && needsToBorrowParentOpeningTagEndMarker(first))) this.text(openingTagEndMarker(n));
   }
 
   private attributes(n: Node): void {
