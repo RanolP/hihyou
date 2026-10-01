@@ -110,6 +110,12 @@ const edgeCases: [string, string][] = [
     "uppercase-query-keywords",
     "@import url(a) SCREEN AND (a:b);@media SCREEN AND (a:b), PRINT{x{y:z}}@media ONLY screen And (a:b){x{y:z}}@media NOT (a:b){x{y:z}}@media (a:b) OR (c:d){x{y:z}}@supports (a:b) AND (c:d){x{y:z}}@supports NOT (a:b){x{y:z}}@media SCREEN /*q*/ AND (a:b){x{y:z}}",
   ],
+  // A keyword glued to its paren group (`and(a:b)`) got a space and a formatted group; oxc reads it as a function,
+  // kept as written in a media query and glued but formatted in an @import, while @supports spaces it.
+  [
+    "glued-query-keyword",
+    "@media screen AND(a:b), not( a : b ){x{y:z}}@media (a:b)and(c:d) and((e:f)){x{y:z}}@media ((a:b) and(c:d)){x{y:z}}@custom-media --x screen and(a>1px);@import url(a) screen AND( a : b );@import url(a) not(A:B);@supports (a:b) AND(c:d){x{y:z}}@supports NOT(a:b){x{y:z}}",
+  ],
   // `@custom-media` and a range feature were parse errors, printed as raw source.
   [
     "custom-media",

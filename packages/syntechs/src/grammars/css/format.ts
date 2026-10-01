@@ -72,6 +72,9 @@ const inMediaFeature = all(
   ancestor(["media_statement", "custom_media_statement"], { stop: ["block"] }),
 );
 const asWritten = () => inOrder({ join: "gap" });
+const gluedQuery = inOrder({ join: "gap", spaceWhen: { before: ["and", "or", "not"] } });
+/** A media query's paren group glued after `and`/`or`/`not`, which oxc reads as a function's arguments: as written. */
+const afterGluedKeyword = inOrder({ join: "gap", verbatim: true });
 /** Inside a `directive`'s prelude. */
 const inDirective = ancestor(["at_rule", "postcss_statement"], { stop: ["block"], holds: directive });
 /** Statements one per line, keeping one blank line where the source has any. */
@@ -312,21 +315,36 @@ export const css = format({
     // space wherever the source has any gap.
     at_rule: () => custom("atRule"),
     postcss_statement: () => custom("postcssStatement"),
-    binary_query: () => either(inMediaFeature, asWritten(), inOrder(space)),
-    unary_query: () => either(inMediaFeature, asWritten(), inOrder(space)),
+    // A keyword glued to its paren group (`and(a:b)`) stays glued, one space before it.
+    binary_query: () => either(inMediaFeature, asWritten(), either(when("gluedQuery"), gluedQuery, inOrder(space))),
+    unary_query: () => either(inMediaFeature, asWritten(), either(when("gluedQuery"), gluedQuery, inOrder(space))),
     // The gaps inside a media feature's inner parentheses are trimmed: `(not ( a ))` prints `(not (a))`.
     parenthesized_query: () =>
-      either(inMediaFeature, inOrder({ join: "gap", tight: { after: ["("], before: [")"] } }), inOrder()),
+      either(
+        when("afterGluedMediaKeyword"),
+        afterGluedKeyword,
+        either(inMediaFeature, inOrder({ join: "gap", tight: { after: ["("], before: [")"] } }), inOrder()),
+      ),
     feature_query: () =>
-      inOrder({ join: "gap", tight: { after: ["("], before: [")", ":"] }, spaceWhen: { after: [":"] } }),
+      either(
+        when("afterGluedMediaKeyword"),
+        afterGluedKeyword,
+        inOrder({ join: "gap", tight: { after: ["("], before: [")", ":"] }, spaceWhen: { after: [":"] } }),
+      ),
     // A media feature, spaced.
-    range_query: () => inOrder({ join: "space", tight: { after: ["("], before: [")"] } }),
+    range_query: () =>
+      either(
+        when("afterGluedMediaKeyword"),
+        afterGluedKeyword,
+        inOrder({ join: "space", tight: { after: ["("], before: [")"] } }),
+      ),
     feature_name: () => text("maybeLower"),
-    // A media type and a query keyword, which oxc prints lowercased (`SCREEN AND` as `screen and`).
+    // A media type and a query keyword, which oxc prints lowercased (`SCREEN AND` as `screen and`); one glued to
+    // its paren group keeps its case.
     keyword_query: () => text("maybeLower"),
-    and: () => text("maybeLower"),
-    or: () => text("maybeLower"),
-    not: () => text("maybeLower"),
+    and: () => text("maybeLower", not(when("gluedMediaKeyword"))),
+    or: () => text("maybeLower", not(when("gluedMediaKeyword"))),
+    not: () => text("maybeLower", not(when("gluedMediaKeyword"))),
     only: () => text("maybeLower"),
     // `selector(...)`: a selector list as a rule's, one per line inside the broken parentheses once it has two.
     selector_query: () => [

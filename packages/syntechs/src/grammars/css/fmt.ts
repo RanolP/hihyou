@@ -267,6 +267,25 @@ const identThenMore = (n: number, ctx: SCtx) =>
 const dashIdent = (n: number, ctx: SCtx) =>
   kind(n, ctx) === "plain_value" && new RegExp(String.raw`^-${nameStart}${nameChar}*$`).test(ctx.tree.text(n));
 
+/** An `and`/`or`/`not` with its paren group right after it, no gap between. */
+function gluedKeyword(node: number, ctx: SCtx): boolean {
+  const t = ctx.tree;
+  if (!["and", "or", "not"].includes(kind(node, ctx))) return false;
+  const p = t.parent(node);
+  for (let i = 0; i + 1 < t.count(p); i++)
+    if (t.child(p, i) === node) {
+      const next = t.child(p, i + 1);
+      return t.adjoins(node, next) && t.text(firstLeaf(t, next)) === "(";
+    }
+  return false;
+}
+
+function inMedia(node: number, ctx: SCtx): boolean {
+  for (let n = ctx.tree.parent(node); n !== NO_NODE; n = ctx.tree.parent(n))
+    if (["media_statement", "custom_media_statement"].includes(kind(n, ctx))) return true;
+  return false;
+}
+
 /** The rules `when` names in format.ts. */
 export const customs = {
   /** Prettier indents a selector of more than two nodes as it breaks. */
@@ -282,6 +301,24 @@ export const customs = {
   rawTokens: (node, ctx) => !customName(node, ctx.tree) && oxcRaw(node, ctx.tree),
   /** A media query list holding a comment, which `mediaQueries` prints as postcss-media-query-parser splits it. */
   mediaComments: (node, ctx) => mediaAtoms(node, ctx).some((c) => isComment(c, ctx)),
+  /** A query holding a keyword glued to its paren group (`screen and(a:b)`), which stays glued. */
+  gluedQuery: (node, ctx) => {
+    const t = ctx.tree;
+    for (let i = 0; i < t.count(node); i++) if (gluedKeyword(t.child(node, i), ctx)) return true;
+    return false;
+  },
+  /**
+   * A keyword glued to its paren group outside an `@import` (`and(a:b)`): oxc lexes `and(` as a function, which a
+   * media query keeps as written, the keyword's case and the group's source with it.
+   */
+  gluedMediaKeyword: (node, ctx) => gluedKeyword(node, ctx) && inMedia(node, ctx),
+  afterGluedMediaKeyword: (node, ctx) => {
+    const t = ctx.tree;
+    const p = t.parent(node);
+    for (let i = 1; i < t.count(p); i++)
+      if (t.child(p, i) === node) return gluedKeyword(t.child(p, i - 1), ctx) && inMedia(node, ctx);
+    return false;
+  },
   ownWord: (node, ctx) => ownWord(node, ctx),
   placeholderCalled: (node, ctx) => placeholderCallItems(node, ctx) !== undefined,
   /**
@@ -1919,7 +1956,8 @@ export function importStatement(node: number, ctx: SCtx): void {
     tokens.forEach((token, j) => {
       const c = token[0] as number;
       if (j > 0 && commented) commentedSeparator(tokens, j, ctx);
-      else if (j > 0) sLine(0);
+      // oxc reads a keyword glued to its paren group (`not(a:b)`) as a function, which stays glued.
+      else if (j > 0 && !gluedKeyword(tokens[j - 1]?.[0] as number, ctx)) sLine(0);
       open(FILL_ITEM);
       if (commented) commentedToken(token, ctx);
       else if (isParenQuery(c, ctx)) queryWord(c, ctx);
