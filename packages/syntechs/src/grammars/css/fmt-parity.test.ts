@@ -275,6 +275,11 @@ const edgeCases: [string, string][] = [
     "media-comment-value-as-written",
     "@media (a :b :c) /*q*/ {x{y:z}}\n@media (A : 1.50PX   :c) and (a: b: c) /*q*/ {x{y:z}}\n@media (a :b\n    c) /*q*/ {x{y:z}}",
   ],
+  // A commented prelude tree-sitter cannot read (an uppercase `AND`, a stray `)`) kept its whole at-rule as written.
+  [
+    "commented-prelude-parse-error",
+    "@media SCREEN AND (a:b) /*q*/ {x{y:z}}\n@media NOT SCREEN AND (a :b) /*q*/ {x{y:z}}\n@media (a :b ,c) /*q*/ {x{y:z}}\n@supports (a:b) AND (c:d) /*q*/ {x{y:z}}",
+  ],
   // A commented @import/@supports prelude re-spaced its paren groups (`(a:b)` as `(a: b)`) and split `not(a:b)`.
   [
     "value-prelude-comment-raw",

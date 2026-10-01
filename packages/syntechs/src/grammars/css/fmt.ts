@@ -1188,6 +1188,22 @@ function selectorTail(error: number, t: FormatTree): boolean {
   return selectors !== undefined && t.kindName(selectors) === "selectors" && t.text(selectors).includes(":");
 }
 
+/**
+ * An `ERROR` in an `@media`/`@supports`/`@import` prelude holding a comment (an uppercase `AND`, a stray `)`), which
+ * `mediaQueries`, `supportsValue` and `importStatement` print from the source as oxc's commented-prelude path does.
+ */
+function commentedPreludeError(error: number, t: FormatTree): boolean {
+  let up = t.parent(error);
+  while (up !== NO_NODE && t.kindName(up).endsWith("_query")) up = t.parent(up);
+  if (up === NO_NODE || !["media_statement", "supports_statement", "import_statement"].includes(t.kindName(up)))
+    return false;
+  const holds = (n: number): boolean =>
+    Array.from({ length: t.count(n) }, (_, i) => t.child(n, i)).some(
+      (c) => t.kindName(c) === "comment" || (t.kindName(c) !== "block" && holds(c)),
+    );
+  return holds(up);
+}
+
 /** The flags `sassFlags` recovers, one space apart. */
 const sassFlagList: StreamRule<CssOptions> = (error, ctx) => {
   for (let i = 0; i < ctx.tree.count(error); i++) {
@@ -1888,7 +1904,7 @@ export function mediaQueries(at: number | undefined, node: number, ctx: SCtx): v
     }
     if (ctx.isComment(c)) ctx.comment(c);
     // write_media_token prints a paren group's words as written, re-spaced at most.
-    else if (t.named(c) && level === 0) ctx.printNode(c);
+    else if (t.named(c) && level === 0 && kind(c, ctx) !== "ERROR") ctx.printNode(c);
     else sToken(c, t.text(c));
     if (is(c, "(")) level++;
     else if (is(c, ")")) level = Math.max(level - 1, 0);
@@ -2023,7 +2039,7 @@ export const css: Language<CssOptions> = {
     wrap: frontMatterFirst,
     commentEndsLine: statementComment,
     keepsSource: prettierIgnored,
-    recovered: (error, t) => sassFlags(error, t) || selectorTail(error, t),
+    recovered: (error, t) => sassFlags(error, t) || selectorTail(error, t) || commentedPreludeError(error, t),
     finalLine,
   },
 };
