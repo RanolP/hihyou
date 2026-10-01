@@ -193,12 +193,28 @@ const normalize: Normalize = (lexemes, _text, tree) => {
       forms[i] = undefined;
     } else if (forms[i] !== undefined) p = i;
   }
+  // A word ending in `*` before another (`a* b`), which oxc prints `a * b`.
+  for (let i = 0; i + 1 < lexemes.length; i++) {
+    const l = lexemes[i] as (typeof lexemes)[number];
+    const next = forms[i + 1];
+    if (l.text.length > 1 && l.text.endsWith("*") && next !== undefined && /^[\w#$.-]/.test(next) && inValue(l.node)) {
+      forms[i + 1] = `${forms[i]}${next}`;
+      forms[i] = undefined;
+    }
+  }
   for (let i = 1; i + 1 < lexemes.length; i++) {
     const l = lexemes[i] as (typeof lexemes)[number];
     if ((l.text !== "*" && l.text !== "/") || forms[i] === undefined || !inValue(l.node)) continue;
     let p = i - 1;
     while (p > 0 && forms[p] === undefined) p--;
-    if (forms[p] === undefined || forms[i + 1] === undefined) continue;
+    if (forms[p] === undefined) continue;
+    // `a*` ending a word: oxc prints `a *`.
+    if (l.text === "*" && !/^[\w#$.-]/.test(lexemes[i + 1]?.text ?? "")) {
+      forms[p] = `${forms[p]}*`;
+      forms[i] = undefined;
+      continue;
+    }
+    if (forms[i + 1] === undefined) continue;
     forms[p] = `${forms[p]}${l.text}${forms[i + 1]}`;
     forms[i] = forms[i + 1] = undefined;
   }
@@ -291,6 +307,12 @@ function ownWord(node: number, ctx: SCtx): boolean {
   )
     return false;
   if (kind(node, ctx) === "call_expression") return true;
+  // `1#b`, `1$b`: oxc lexes the `#b` or `$b` after a number as a token of its own.
+  if (
+    ["hash_value", "color_value"].includes(kind(node, ctx)) ||
+    (kind(node, ctx) === "plain_value" && t.text(node).startsWith("$"))
+  )
+    return ["integer_value", "float_value"].includes(kind(prev, ctx));
   if (kind(prev, ctx) !== "call_expression") return false;
   return kind(node, ctx) !== "plain_value" || t.text(t.child(prev, 0)) !== "$$";
 }
@@ -314,9 +336,10 @@ function plainWord(node: number, ctx: SCtx): boolean {
   sLiteral(
     node,
     text
-      .replace(/\*(?=.)/g, (m, i: number) => (text[i - 1] === "-" ? m : ` ${m} `))
+      .replace(/\*/g, (m, i: number) => (text[i - 1] === "-" ? m : ` ${m} `))
       .replace(new RegExp(String.raw`(?<=[\w%)])(?=[#$]${nameChar})`, "g"), " ")
-      .replace(/ {2,}/g, " "),
+      .replace(/ {2,}/g, " ")
+      .trim(),
   );
   return true;
 }
@@ -1126,8 +1149,15 @@ function oxcRaw(decl: number, t: FormatTree): boolean {
   const calcSum = (paren: number) =>
     children(paren, t).filter((c) => t.named(c) && t.kindName(c) !== "comment").length === 1;
   // `a/f(c)`, which tree-sitter-css reads as the word `a/f` then a group, is `a`, `/` and the function `f(c)`.
+  // `a/f(c)/g` reads as `a/f` then the math `(c)/g`, the group its first operand.
   const callParens = (paren: number) => {
-    const siblings = children(t.parent(paren), t);
+    let first = paren;
+    for (let up = t.parent(first); t.kindName(up) === "binary_expression" && t.child(up, 0) === first; up = t.parent(up)) {
+      if (t.kindName(t.child(up, 1)) !== "/") return false;
+      first = up;
+    }
+    const siblings = children(t.parent(first), t);
+    paren = first;
     const prev = siblings[siblings.indexOf(paren) - 1];
     return prev !== undefined && t.kindName(prev) === "plain_value" && t.adjoins(prev, paren) && /\/[a-zA-Z_-][\w-]*$/.test(t.text(prev));
   };

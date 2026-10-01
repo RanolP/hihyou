@@ -232,7 +232,12 @@ const edgeCases: [string, string][] = [
     "argument-edge-commas",
     "a{b:f(a,);c:rgba(1,2,3,);d:f(a,/*c*/);e:var(--a,);f:VAR(--a,b,);g:var(--a,f(b,));h:f(,a);i:f(,);j:url(a,)}",
   ],
-  ["word-hash-star","a{b:a#b, d;c:x a#b#c;d:f(a*c);e:a$c;f:url($a*3);g:calc(a*c);h:f(w-*);i:a #b}"],
+  // A `#name`, `#hex` or `$name` glued to a number stayed glued; oxc lexes it as a token of its own.
+  ["number-hash", "a{b:1#b;c:1px#b, d;d:f(1#b);e:1#fff;f:1$b}"],
+  // A word ending in `*` stayed glued, and `a/f(c)/g` was raw tokens with each `/` spaced; oxc spaces the `*` and
+  // keeps a chain of glued `/` tight.
+  ["star-end-slash-chain", "a{b:f(a*);c:a*;d:a* b;e:a/f(c)/g;f:x/f(c)/g(d)/h;g:a/f(c)*g}"],
+  ["word-hash-star", "a{b:a#b, d;c:x a#b#c;d:f(a*c);e:a$c;f:url($a*3);g:calc(a*c);h:f(w-*);i:a #b}"],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");
