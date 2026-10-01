@@ -250,6 +250,12 @@ const edgeCases: [string, Target, string][] = [
     "ts",
     "type A =\n  | (foo1&foo2) // prettier-ignore\n  | (bar1&bar2)\n  | baz;\ntype B =\n  | foo1&foo2 // prettier-ignore\n  | {a:1}\n  | baz;\ntype C =\n  | foo\n  | bar1&bar2 // prettier-ignore\n  | baz;\n",
   ],
+  // An Angular `@Component`'s `styles` template printed as written; oxfmt formats it as CSS.
+  [
+    "angular-component-styles",
+    "ts",
+    "@Component({template: `<a></a>`, styles: [`a{b:c}`, x]})\nclass A {}\n@Component({a: 1}, {styles: (`a{b:${x}}`)})\nclass B {}\n@Directive({styles: `a{b:c}`})\nclass C {}\n",
+  ],
   // A script's `await (x, y)(z)` printed as oxfmt's `await(x, y)(z)`, but the check flattened only a one-argument
   // call of `await`, so it refused the output.
   [

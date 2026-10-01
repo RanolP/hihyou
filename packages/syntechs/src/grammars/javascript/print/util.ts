@@ -418,7 +418,7 @@ export function embedLanguage(tree: FormatTree, template: number): EmbedLanguage
     const root = tagRoot(tree, fn);
     if (root === "styled" || root === "css") return "css";
   }
-  if (isStyledJsx(tree, template)) return "css";
+  if (isStyledJsx(tree, template) || isAngularStyles(tree, template)) return "css";
   if (tag === "gql" || tag === "graphql" || tag === "graphql.experimental" || hasLanguageComment(tree, template, "GraphQL"))
     return "graphql";
   if (tag === "html" || hasLanguageComment(tree, template, "HTML")) return "html";
@@ -436,6 +436,37 @@ function tagRoot(tree: FormatTree, n: number): string {
     else return "";
   }
   return "";
+}
+
+/**
+ * prettier's isAngularComponentStyles: `@Component({ styles: `…` })`, or an element of a `styles` array there, the
+ * key unquoted and the call any argument of a decorator's plain `Component`.
+ */
+function isAngularStyles(tree: FormatTree, template: number): boolean {
+  const unparen = (n: number) => {
+    let up = tree.parent(n);
+    while (up !== NO_NODE && tree.kindName(up) === "parenthesized_expression") up = tree.parent(up);
+    return up;
+  };
+  let up = unparen(template);
+  if (up !== NO_NODE && tree.kindName(up) === "array") up = unparen(up);
+  if (up === NO_NODE || tree.kindName(up) !== "pair") return false;
+  const key = fieldChild(tree, up, "key");
+  if (key === NO_NODE || tree.kindName(key) !== "property_identifier" || tree.text(key) !== "styles") return false;
+  const object = tree.parent(up);
+  const args = object === NO_NODE ? NO_NODE : tree.parent(object);
+  const call = args === NO_NODE ? NO_NODE : tree.parent(args);
+  if (call === NO_NODE || tree.kindName(object) !== "object" || tree.kindName(args) !== "arguments") return false;
+  const fn = fieldChild(tree, call, "function");
+  const decorator = tree.parent(call);
+  return (
+    tree.kindName(call) === "call_expression" &&
+    fn !== NO_NODE &&
+    tree.kindName(fn) === "identifier" &&
+    tree.text(fn) === "Component" &&
+    decorator !== NO_NODE &&
+    tree.kindName(decorator) === "decorator"
+  );
 }
 
 /** A template that is a `<style jsx>` element's child, or a JSX `css` attribute's value (parenthesized or not). */
