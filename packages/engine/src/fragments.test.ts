@@ -124,3 +124,32 @@ test("an edit beside an unchanged block comment is -2 +3 and no move", async () 
     undefined,
   ]);
 });
+
+// Syntax colour replacing the diff emphasis would hide the change, and emphasis dropping the colour would
+// leave changed code uncoloured; an added keyword must carry both, and unchanged code its own scopes.
+test("an added keyword keeps both its syntax scope and its diff emphasis", async () => {
+  const blobs: Record<string, string> = { b: before, a: after };
+  const engine = createEngine({
+    grammars: syntechsGrammars(),
+    resolveDiffset: (data: "pr") => ({
+      id: data,
+      changes: [{ path: "shop.ts", before: "b", after: "a" }],
+    }),
+    readBlob: (id) => new TextEncoder().encode(blobs[id] ?? ""),
+  });
+  const [file] = await (await engine.diffset("pr")).diff();
+  const spans = (file?.fragments ?? []).flatMap((f) =>
+    f.kind === "unchanged"
+      ? f.spans
+      : f.kind === "diff"
+        ? [...f.before.spans, ...f.after.spans]
+        : [],
+  );
+  const innermost = (s?: { scope?: string }) => s?.scope?.split(" ").at(-1);
+  expect(innermost(spans.find((s) => s.text === "if" && s.changed))).toBe(
+    "keyword.control.js",
+  );
+  expect(innermost(spans.find((s) => s.text === "Shop"))).toBe(
+    "entity.name.type.js",
+  );
+});

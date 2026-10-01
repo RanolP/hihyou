@@ -57,11 +57,12 @@ interface Grammar {
   highlight?: HighlightModule;
 }
 interface HighlightModule {
-  /** TextMate scope for one node (e.g. "keyword.control.ts"), undefined for none. Renamer lives inside. */
-  scopeOf(tree: Tree, node: NodeId): string | undefined;
+  // syntechs/highlight. Calls `paint` for each node with a TextMate scope (e.g. "keyword.control.js"),
+  // an enclosing node before the nodes inside it; `from`/`to` narrow it to part of a node's text.
+  highlight(tree: Tree, paint: (node: NodeId, scope: string, from?: number, to?: number) => void): void;
 }
-// No text argument: a syntechs Tree holds its source. The engine carries scopes onto formatted output
-// through syntechs `Formatted.anchors` (FormatModule-aware).
+// No text argument: a syntechs Tree holds its source. The engine places each painted node through the
+// Version's node offsets, so scopes land on formatted output too.
 
 /** Host-issued opaque string; same content -> same id (e.g. git blob SHA). */
 type BlobId = string;
@@ -134,7 +135,7 @@ interface Side {
 }
 interface Span {
   text: string;
-  scope?: string; // syntax colour, TextMate scope
+  scope?: string; // syntax colour: a TextMate scope stack, outermost first, space-separated
   changed?: boolean; // diff emphasis, kept separate from syntax colour
 }
 /** 1-based line where the fragment's run starts, on each side. */
@@ -210,7 +211,7 @@ type Author<H extends Host> = { id: string } & HostAuthor<H>;
 
 **`Grammar`** bundles what one language offers: the syntechs parser `Language`, and optionally a formatter and a highlighter. A missing grammar sends the file to the line-diff fallback (`FileDiff.grammar` absent).
 
-**`HighlightModule.scopeOf`** answers in TextMate scopes, so shiki and VS Code themes apply directly. The renaming from tree-sitter capture names to TextMate scopes lives inside the module, not in the engine or the host. It takes no text because a syntechs `Tree` holds its source. The engine carries scopes onto formatted output through syntechs `Formatted.anchors`.
+**`HighlightModule.highlight`** answers in TextMate scopes, so shiki and VS Code themes apply directly. It walks the whole tree in one call and paints, rather than answering one node at a time, because the right scope depends on context a single node does not carry (a `:` is an operator in a ternary and punctuation in an object; an identifier is a function name when its value is an arrow function), and because one pass is what keeps highlighting several times cheaper than a TextMate tokenizer. Paints nest: an inner scope stacks onto the scopes enclosing it, as TextMate's scope stack does, so a theme rule for `string` still colours the punctuation inside a template substitution. `from`/`to` let a module scope part of a leaf the tree does not split, such as a JSDoc tag inside a comment or a quantifier inside a regex. The naming lives inside the module, not in the engine or the host; syntechs checks it against shiki's colours (`packages/syntechs/src/highlight/parity.node.ts`). It takes no text because a syntechs `Tree` holds its source. The engine places each painted node through the `Version`'s node offsets, so scopes land on formatted output too; `syntechs/highlight`'s `compileTheme` resolves a scope stack to a colour as vscode-textmate does.
 
 **`Engine.diffset`** computes the whole Diffset at once. There is no lazy per-file query (the maintainer: "지연조회하지 말자", let's not query lazily), so cross-file moves come out of one deterministic computation rather than depending on which files a viewer opened first.
 
@@ -267,7 +268,7 @@ All undecided; recorded here, not decided.
 4. **Where verdicts live.** Options: local per user, a file committed to the repo, or synced through the forge. Recommendation: local per user first, since it is the only option that asks nothing of the team, per "Require no workflow change" (`docs/research/gerrit-experience.md`, item 9 of its implications; `docs/research/phabricator-experience.md` makes the same point as item 8). A committed file needs the team to agree on a new file; forge sync needs item 3.
 5. **Standalone shell: Tauri or Electron.** Undecided. The engine needs only a `Host`, so the choice changes no engine code.
 6. **Whether to recreate `docs/roadmap.md`.** `docs/research/gerrit.md` cites it as the source of the rerere-like idea, but the file exists on no branch. Pillar 3 of `docs/design/product.md` already states the idea.
-7. **Syntax highlighting does not exist yet.** `HighlightModule` has nothing to wrap today: there is no `highlights.scm` under any `packages/syntechs/src/grammars/*` directory; no consumer's `Highlight` type carries a syntax scope yet, only a diff kind; and whether syntechs can run tree-sitter queries at all is unverified.
+7. **Resolved: syntax highlighting.** syntechs ships a hand-written `HighlightModule` per grammar (TypeScript, TSX and JavaScript so far) rather than tree-sitter queries, and `HighlightModule` became the whole-tree `highlight(tree, paint)` described above.
 8. **If a large PR visibly stalls the UI.** Add `Host.yield`; invariant 4 leaves room for it.
 9. **`Verdict.rubric`'s axis set.** `RequestAxis` and `design` are only `hihyou-taste@1`; what a later version adds or changes is undecided.
 10. **`claims.owner`.** Kept in the shape but not yet discussed: what it means for a reviewer to claim ownership, and how it affects anything downstream.

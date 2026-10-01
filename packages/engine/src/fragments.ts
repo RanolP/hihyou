@@ -1,6 +1,7 @@
 import { diffArrays } from "diff";
 import type { Tree } from "syntechs/core";
 import type { Mapping } from "syntechs/diff";
+import { type HighlightModule, type ScopeRuns, scopeRuns } from "syntechs/highlight";
 import type { AstSteps } from "./anchor.js";
 import { lineEnd, lineOf, type Version } from "./file.js";
 import type { CollapseReason } from "./fold.js";
@@ -31,7 +32,7 @@ export interface Side {
 
 export interface Span {
   text: string;
-  scope?: string; // syntax colour, TextMate scope
+  scope?: string; // syntax colour: a TextMate scope stack, outermost first, space-separated
   changed?: boolean; // diff emphasis, kept separate from syntax colour
 }
 
@@ -68,6 +69,8 @@ export interface FragmentInput {
   /** Syntax diff only: pairs an unchanged line with the line its first token was matched to. */
   mapping?: Mapping;
   indentMatters: boolean;
+  /** The grammar's highlighter; spans carry no `scope` without one. */
+  highlight?: HighlightModule;
 }
 
 /** Unchanged lines kept visible on each side of a change. */
@@ -102,7 +105,11 @@ interface Box {
  * pairs far from any change are elided, and begin/end come from a stack, so they always balance.
  */
 export function buildFragments(input: FragmentInput): CodeFragment[] {
-  const { a, b, mapping } = input;
+  const { a, b, mapping, highlight } = input;
+  const scopes = (v: Version) =>
+    highlight && v.tree ? scopeRuns(v.tree, highlight, v.text.length, v.start, v.end) : undefined;
+  const scopesA = scopes(a.v);
+  const scopesB = scopes(b.v);
   const pairs = mapping ? pairLines(a.v, b.v, mapping) : undefined;
   const linesA = lines(a, 0, input.indentMatters, pairs);
   const linesB = lines(b, 1, input.indentMatters, undefined);
@@ -135,7 +142,7 @@ export function buildFragments(input: FragmentInput): CodeFragment[] {
   for (let i = 0; i < rows.length;) {
     const r = rows[i] as Row;
     if (!r.same) {
-      items.push({ path: pathOf(r), fragment: diffFragment(input, r) });
+      items.push({ path: pathOf(r), fragment: diffFragment(input, r, scopesA, scopesB) });
       i++;
       continue;
     }
@@ -164,6 +171,7 @@ export function buildFragments(input: FragmentInput): CodeFragment[] {
           path,
           fragment: unchangedFragment(
             b.v,
+            scopesB,
             run[k] as Row & { same: true },
             m - k,
           ),
@@ -365,6 +373,7 @@ const nodeRange = (v: Version, n: number): Range => ({
 
 function unchangedFragment(
   v: Version,
+  scopes: ScopeRuns | undefined,
   first: Row & { same: true },
   count: number,
 ): CodeFragment {
@@ -372,7 +381,7 @@ function unchangedFragment(
   const end = lineEnd(v, first.b + count - 1);
   return {
     kind: "unchanged",
-    spans: [{ text: v.text.slice(start, end) }],
+    spans: split(v.text, start, end, [], scopes),
     at: v.tree ? nodesIn(v, v.tree, start, end) : [],
     lines: { before: first.a + 1, after: first.b + 1 },
   };
@@ -381,15 +390,22 @@ function unchangedFragment(
 function diffFragment(
   input: FragmentInput,
   r: Row & { same: false },
+  scopesA: ScopeRuns | undefined,
+  scopesB: ScopeRuns | undefined,
 ): CodeFragment {
   return {
     kind: "diff",
-    before: sideFragment(input.a, r.a0, r.a1),
-    after: sideFragment(input.b, r.b0, r.b1),
+    before: sideFragment(input.a, r.a0, r.a1, scopesA),
+    after: sideFragment(input.b, r.b0, r.b1, scopesB),
   };
 }
 
-function sideFragment(s: SideInput, l0: number, l1: number): Side {
+function sideFragment(
+  s: SideInput,
+  l0: number,
+  l1: number,
+  scopes: ScopeRuns | undefined,
+): Side {
   const { v } = s;
   const start = v.lineStarts[l0] ?? v.text.length;
   const end = l1 > l0 ? lineEnd(v, l1 - 1) : start;
@@ -398,31 +414,62 @@ function sideFragment(s: SideInput, l0: number, l1: number): Side {
       ? s.moves.find((m) => v.start(m.node) < end && v.end(m.node) > start)
       : undefined;
   return {
-    spans: split(v.text, start, end, s.emphasis),
+    spans: split(v.text, start, end, s.emphasis, scopes),
     at: v.tree && end > start ? nodesIn(v, v.tree, start, end) : [],
     startLine: l0 + 1,
     ...(move && { move: { counterpart: move.counterpart } }),
   };
 }
 
-/** `text[start, end)` cut into spans at the edges of `emphasis`, emphasized ones marked `changed`. */
+/**
+ * `text[start, end)` cut into spans at the edges of `emphasis` (sorted, disjoint), emphasized ones marked
+ * `changed`, and at the edges of the syntax scope runs, each carrying its innermost-last scope stack.
+ */
 function split(
   text: string,
   start: number,
   end: number,
   emphasis: Range[],
+  scopes: ScopeRuns | undefined,
 ): Span[] {
   const spans: Span[] = [];
-  let at = start;
-  for (const r of emphasis) {
-    const s = Math.max(r.start, at);
-    const e = Math.min(r.end, end);
-    if (e <= s) continue;
-    if (s > at) spans.push({ text: text.slice(at, s) });
-    spans.push({ text: text.slice(s, e), changed: true });
-    at = e;
+  const runs = scopes?.runs;
+  // First run that ends after `start`; runs are sorted and disjoint.
+  let r = 0;
+  if (runs) {
+    let lo = 0;
+    let hi = runs.length / 3;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if ((runs[mid * 3 + 1] as number) <= start) lo = mid + 1;
+      else hi = mid;
+    }
+    r = lo * 3;
   }
-  if (end > at) spans.push({ text: text.slice(at, end) });
+  let e = 0;
+  for (let at = start; at < end; ) {
+    while (e < emphasis.length && (emphasis[e] as Range).end <= at) e++;
+    const em = emphasis[e];
+    const inEmphasis = em !== undefined && em.start <= at;
+    let to = inEmphasis ? Math.min(end, em.end) : Math.min(end, em?.start ?? end);
+    let scope: string | undefined;
+    if (runs) {
+      while (r < runs.length && (runs[r + 1] as number) <= at) r += 3;
+      if (r < runs.length) {
+        const rs = runs[r] as number;
+        if (rs <= at) {
+          scope = scopes.stacks[runs[r + 2] as number];
+          to = Math.min(to, runs[r + 1] as number);
+        } else to = Math.min(to, rs);
+      }
+    }
+    spans.push({
+      text: text.slice(at, to),
+      ...(scope !== undefined && { scope }),
+      ...(inEmphasis && { changed: true }),
+    });
+    at = to;
+  }
   return spans;
 }
 

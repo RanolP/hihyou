@@ -1,6 +1,6 @@
 import type { Language } from "syntechs/core";
 import { format, type Language as FormatLanguage } from "syntechs/fmt";
-import type { FormatModule, Grammar, GrammarLoader } from "./host.js";
+import type { FormatModule, Grammar, GrammarLoader, HighlightModule } from "./host.js";
 
 export type LanguageId =
   | "typescript"
@@ -36,6 +36,12 @@ const parsers: Record<LanguageId, () => Promise<{ language: Language }>> = {
   json: () => import("syntechs/grammars/json"),
   python: () => import("syntechs/grammars/python"),
   css: () => import("syntechs/grammars/css"),
+};
+
+const highlighters: Partial<Record<LanguageId, () => Promise<{ highlight: HighlightModule }>>> = {
+  typescript: () => import("syntechs/grammars/typescript/highlight"),
+  tsx: () => import("syntechs/grammars/tsx/highlight"),
+  javascript: () => import("syntechs/grammars/javascript/highlight"),
 };
 
 /** A formatter bound to options the host passed as a plain object, checked by syntechs at format time. */
@@ -74,7 +80,7 @@ export function syntechsGrammars(
 ): GrammarLoader {
   const loaded = new Map<LanguageId, Promise<Grammar>>();
   const load = async (id: LanguageId): Promise<Grammar> => {
-    const { language } = await parsers[id]();
+    const [{ language }, highlighter] = await Promise.all([parsers[id](), highlighters[id]?.()]);
     const formatOptions = options.format?.[id];
     let formatter: FormatModule | undefined;
     if (formatOptions !== undefined)
@@ -83,6 +89,7 @@ export function syntechsGrammars(
       id: `${id}@${tablesHash(language)}`,
       language,
       ...(formatter && { format: formatter }),
+      ...(highlighter && { highlight: highlighter.highlight }),
     };
   };
   return {

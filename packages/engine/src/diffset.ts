@@ -180,6 +180,7 @@ export async function diffFiles(
         b: s.b,
         mapping: p.mapping,
         indentMatters: indentIsSyntax(path),
+        ...(p.grammar.highlight && { highlight: p.grammar.highlight }),
       }),
       ...(reason && { collapsed: { reason } }),
     };
