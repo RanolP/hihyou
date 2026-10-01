@@ -416,6 +416,12 @@ const edgeCases: [string, string][] = [
     "custom-property-block-important",
     "a{--a: {a} !important}\na{--a:{a:b}!important;c:d}\na{--a:{a:b} ! IMPORTANT;}\na{--a:{} !important}\na{--a:{a:b} !important /*c*/;}\na{--a:{a:b} !important /*c*/}\na{--a:{a:b;}/*c*/}\na{--a:{a:b}/*c*/ /*d*/;}\na{--a:{a:b} / c;}\na{--a:{a:b} /*c*/ x;}",
   ],
+  // A custom property block's JSON-like item (an ERROR) lost its `;`, or doubled the one it had.
+  [
+    "custom-property-block-error-item",
+    // Last: a rule after `"a": 1, "b": [1, 2]` turns tree-sitter's recovery into one ERROR kept as written.
+    'a{--a:{"a": 1}}\na{--a:{"a": 1;}}\na{--a:{a [1]}}\na{--a:{"a": [1, {2}]}}\na{--a:{a: b; "c": [1]}}\na{--a:{a b;;}}\na{--my-json: {"a": 1, "b": [1, 2]}}',
+  ],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");

@@ -224,6 +224,8 @@ const normalize: Normalize = (lexemes, _text, tree) => {
       return undefined;
     if (sign(i) || tree.kindName(l.node) === "trailing_comma" || droppedComma(tree, l.node)) return undefined;
     if (sign(i - 1)) return meaning(tree, l.node, `${prev}${l.text}`);
+    // A custom property block's item tree-sitter reads as an ERROR spans the `;` ending it, which means nothing.
+    if (tree.kindName(l.node) === "ERROR" && customSetItem(l.node, tree)) return l.text.replace(/[\s;]+$/, "");
     return meaning(tree, l.node, l.text);
   });
   progidForms(lexemes, tree, forms);
@@ -1510,7 +1512,9 @@ function sassFlags(error: number, t: FormatTree): boolean {
  * prints as written, ending it with a `;` as it does a declaration.
  */
 function customSetItem(error: number, t: FormatTree): boolean {
-  const block = t.parent(error);
+  let block = t.parent(error);
+  // An ERROR nested in the item's (`{"b": [1, 2]}`) prints with it.
+  while (t.kindName(block) === "ERROR") block = t.parent(block);
   return t.kindName(block) === "block" && t.kindName(t.parent(block)) === "custom_property_set";
 }
 
@@ -1550,7 +1554,8 @@ function commentedPreludeError(error: number, t: FormatTree): boolean {
 /** The flags `sassFlags` recovers, one space apart. */
 const sassFlagList: StreamRule<CssOptions> = (error, ctx) => {
   if (customSetItem(error, ctx.tree)) {
-    sToken(error, ctx.tree.text(error).trim());
+    // Its own `;` (`{"a": 1;}`), which the item holds, ends it once.
+    sToken(error, ctx.tree.text(error).replace(/[\s;]+$/, "").trim());
     sText(";");
     return;
   }
