@@ -14,6 +14,7 @@ const CUSTOM_PROPERTY_RAW_NAME = 6;
 const CUSTOM_PROPERTY_RAW_VALUE = 7;
 const URL_RAW = 8;
 const CUSTOM_PROPERTY_BRACE_NAME = 9;
+const CUSTOM_PROPERTY_BLOCK = 10;
 
 const HASH = 35;
 const DOT = 46;
@@ -173,6 +174,22 @@ function scanCustomPropertyName(lexer: Lexer, valid: Uint8Array): boolean {
 }
 
 /**
+ * A custom property's `{...}` group, one token: postcss and oxfmt read it as text, items JSON-like or not
+ * (`--a: {"a": 1, "b": [1, 2]}`), which the rules of a rule's block would read into errors.
+ */
+function scanCustomPropertyBlock(lexer: Lexer): boolean {
+  while (iswspace(lexer.lookahead)) lexer.advance(true);
+  if (lexer.lookahead !== LBRACE) return false;
+  const depth = { n: 0 };
+  do advancePiece(lexer, depth);
+  while (depth.n > 0 && !lexer.eof());
+  if (depth.n > 0) return false;
+  lexer.markEnd();
+  lexer.resultSymbol = CUSTOM_PROPERTY_BLOCK;
+  return true;
+}
+
+/**
  * The raw value itself, as written up to the `;` or the block's `}` outside brackets, less trailing whitespace and
  * comments, which postcss and oxfmt print after the value (`--a: x {a:b} /*c*\/}` is `--a: x {a:b}; /*c*\/`).
  */
@@ -284,6 +301,8 @@ function scan(lexer: Lexer, valid: Uint8Array, state: State): boolean {
   }
 
   if (valid[CUSTOM_PROPERTY_RAW_VALUE]) return scanCustomPropertyRawValue(lexer);
+
+  if (valid[CUSTOM_PROPERTY_BLOCK]) return scanCustomPropertyBlock(lexer);
 
   if (
     valid[CUSTOM_PROPERTY_SET_NAME] ||

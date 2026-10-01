@@ -419,9 +419,10 @@ const edgeCases: [string, string][] = [
   // A custom property block's JSON-like item (an ERROR) lost its `;`, or doubled the one it had.
   [
     "custom-property-block-error-item",
-    // Last: a rule after `"a": 1, "b": [1, 2]` turns tree-sitter's recovery into one ERROR kept as written.
     'a{--a:{"a": 1}}\na{--a:{"a": 1;}}\na{--a:{a [1]}}\na{--a:{"a": [1, {2}]}}\na{--a:{a: b; "c": [1]}}\na{--a:{a b;;}}\na{--my-json: {"a": 1, "b": [1, 2]}}',
   ],
+  // A rule after a JSON-like custom block (`"a": 1, "b": [1, 2]`) turned tree-sitter's recovery into one ERROR kept as written.
+  ["custom-property-block-then-rule", 'a{--my-json: {"a": 1, "b": [1, 2]}}\nb{c:d}\na{--a: {a, b: [1]}}\nb{c:d}'],
   // A custom property's value with a `{...}` group past its start, ending the block, was laid out as a nested property.
   [
     "custom-property-brace-value-ends-block",

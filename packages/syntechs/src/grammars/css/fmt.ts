@@ -1956,9 +1956,13 @@ function colonOutsideComments(line: string): number | undefined {
 const respaceValue = (v: string): string =>
   v.match(/\/\*(?:[^*]|\*(?!\/))*(?:\*\/|$)|(?:[^\s/]|\/(?!\*))+/g)?.join(" ") ?? "";
 
-/** `customBlockLines`' layout: the block's lines one indent in, between its braces. */
+/** `customBlockLines`' layout: the block's lines one indent in, between its braces; any other block as written. */
 export function customBlock(block: number, ctx: SCtx): void {
-  const lines = customBlockLines(block, ctx.tree) ?? [];
+  const lines = customBlockLines(block, ctx.tree);
+  if (lines === undefined) {
+    sLiteral(block, ctx.tree.text(block));
+    return;
+  }
   sToken(block, "{");
   open(INDENT);
   for (const line of lines) {
@@ -2750,8 +2754,7 @@ function placeholderSelectors(node: number, ctx: SCtx): boolean {
 /** The hand-written rules format.ts names. */
 export const handWritten = {
   ...customs,
-  textBlock: (node: number, ctx: SCtx) =>
-    children(node, ctx.tree).some((c) => kind(c, ctx) === "block" && customBlockLines(c, ctx.tree) !== undefined),
+  textBlock: (node: number, ctx: SCtx) => children(node, ctx.tree).some((c) => kind(c, ctx) === "block"),
   customBlock,
   important,
   declarationColon,
