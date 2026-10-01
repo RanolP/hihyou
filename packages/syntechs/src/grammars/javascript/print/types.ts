@@ -758,8 +758,10 @@ const typeAssertion: StreamRule<JsOptions> = (n, sctx) => {
     tok(js, anonKid(js, args, "<"));
     open(INDENT);
     sLine(SOFT);
-    const inner = items(js, args)[0];
-    if (inner !== undefined) ctx.print(inner);
+    // `<const>x`: tree-sitter reads the asserted `const` as a keyword token, not a type.
+    const inner = items(js, args)[0] ?? anonKid(js, args, "const");
+    if (inner !== undefined && !js.tree.named(inner)) tok(js, inner);
+    else if (inner !== undefined) ctx.print(inner);
     close();
     sLine(SOFT);
     tok(js, lastAnonKid(js, args, ">"));

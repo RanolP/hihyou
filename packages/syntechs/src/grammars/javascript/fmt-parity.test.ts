@@ -335,6 +335,8 @@ const edgeCases: [string, Target, string][] = [
     "ts",
     "const f = <T,>(x: T) => x;\nconst g = async <const T = 1,>(x: T) => x;\nconst h = <T, /* c */>(x: T) => x;\n",
   ],
+  // A `<const>` assertion printed `<>`: tree-sitter's `const` there is a keyword token the cast printer skipped.
+  ["const-type-assertion", "ts", "const x = <const>[1, 2];\nf(< const >{ a: 'b' });\n"],
   // The `.tsx` side of the same: there the comma stays.
   [
     "arrow-type-parameter-comma-tsx",
