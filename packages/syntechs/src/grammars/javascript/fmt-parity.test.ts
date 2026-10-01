@@ -244,6 +244,13 @@ const edgeCases: [string, Target, string][] = [
     "js",
     '<style jsx>{`\n  .class {\n    flex-direction: column${lllllll && long_cond && long_cond\n        ? "-reverse"\n        : ""};\n  }\n`}</style>;\n<style jsx>{`\n  .class {\n    flex-direction: column${lllllll && long_cond && long_cond\n        ? "-reverse"\n        : ""} !important;\n  }\n`}</style>;\n',
   ],
+  // A comma list holding a word glued to a substitution stayed on one line; prettier reads that word as two, which
+  // breaks the list one entry per line.
+  [
+    "css-embed-glued-substitution-comma-list",
+    "js",
+    'styled.div`\n  a: column${l && long_cond && long_cond && long_cond\n ? "-reverse"\n : ""}, b;\n  c: d, e${x}f;\n  g: ${x}px, h;\n  i: f(j${x}), k;\n`;\n',
+  ],
   [
     "comments-prettier-moves",
     "ts",

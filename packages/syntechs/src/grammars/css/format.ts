@@ -56,7 +56,7 @@ const calledAs = (name: string) => firstText({ is: [name], anyCase: true });
 const valueLayout: SplitLayoutOf<Cond> = loneBare({
   when: all(
     not(firstText({ prefix: ["--"] })),
-    any(anyEntry({ many: true }), when("mathEntry")),
+    any(anyEntry({ many: true }), when("mathEntry"), when("gluedPlaceholder")),
   ),
   then: { indent: true, first: "hard", between: "hardline" },
   else: { group: true, indent: true, first: "soft", between: "line", fill: true },

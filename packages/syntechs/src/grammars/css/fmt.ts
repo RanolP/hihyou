@@ -284,6 +284,14 @@ export const customs = {
   mediaComments: (node, ctx) => mediaAtoms(node, ctx).some((c) => isComment(c, ctx)),
   ownWord: (node, ctx) => ownWord(node, ctx),
   placeholderCalled: (node, ctx) => placeholderCallItems(node, ctx) !== undefined,
+  /**
+   * An embedded value word glued after a word character to a placeholder (`column${x}`), which prettier's value
+   * parser reads as two words, so its comma list breaks as one holding a run of several words does.
+   */
+  gluedPlaceholder: (node, ctx) =>
+    code(node, ctx).some(
+      (c) => !ctx.tree.text(c).includes("(") && /\wprettier-placeholder-\d/.test(ctx.tree.text(c)),
+    ),
   /** A statement on the source line of the embedded placeholders' statement before it, which oxfmt keeps there. */
   afterPlaceholders: (node, ctx) => {
     const t = ctx.tree;
