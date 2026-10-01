@@ -1,5 +1,5 @@
 import { NO_NODE, type Tree } from "../../core/arena.js";
-import { decimalValue, type Normalize } from "../../fmt/check.js";
+import { decimalValue, type Lexeme, type Normalize } from "../../fmt/check.js";
 import {
   type PrettierOptions,
   prettierDefaults,
@@ -153,6 +153,41 @@ function droppedComma(tree: Tree, node: number): boolean {
   return false;
 }
 
+/**
+ * oxfmt prints a value's `progid:A(B)` past its start as the function `progid(: A B)` (`rawTokens`), which
+ * tree-sitter-css reads with an ERROR at each paren, and `progid:A` as `progid: A`: both sides fold to `progid:A(`,
+ * B's forms, and no `)` (the output's sits in the ERROR), or to `progid:A`. Any other ERROR still fails the check.
+ */
+function progidForms(lexemes: readonly Lexeme[], tree: Tree, forms: (string | undefined)[]): void {
+  const at = (i: number) => lexemes[i] as Lexeme;
+  const kindAt = (i: number) => (i < lexemes.length ? tree.kindName(at(i).node) : "");
+  const upAt = (i: number) => (i < lexemes.length ? tree.kindName(tree.parent(at(i).node)) : "");
+  for (let i = 0; i < lexemes.length; i++) {
+    const text = at(i).text;
+    if (kindAt(i) !== "plain_value") continue;
+    // Input: `progid:A` then its group's `(` … `)`.
+    if (/^progid:./i.test(text) && at(i + 1)?.text === "(" && upAt(i + 1) === "parenthesized_value") {
+      const group = tree.parent(at(i + 1).node);
+      forms[i] = `${forms[i]}(`;
+      forms[i + 1] = undefined;
+      const close = lexemes.findIndex((l, j) => j > i && l.node === tree.child(group, tree.count(group) - 1));
+      if (close !== -1) forms[close] = undefined;
+    }
+    // Output: `progid` then an ERROR `(`, `:`, `A`, …, an ERROR `)`.
+    else if (/^progid$/i.test(text) && at(i + 1)?.text === "(" && upAt(i + 1) === "ERROR" && at(i + 2)?.text === ":") {
+      forms[i] = `${text}:${forms[i + 3] ?? ""}(`;
+      forms[i + 1] = forms[i + 2] = forms[i + 3] = undefined;
+      const close = lexemes.findIndex((l, j) => j > i + 3 && l.text === ")" && upAt(j) === "ERROR");
+      if (close !== -1) forms[close] = undefined;
+    }
+    // `progid: A` against `progid:A`.
+    else if (/^progid:$/i.test(text) && forms[i + 1] !== undefined && kindAt(i + 1) === "plain_value") {
+      forms[i] = `${forms[i]}${forms[i + 1]}`;
+      forms[i + 1] = undefined;
+    }
+  }
+}
+
 // A `;` that ends the last statement of a block or of the file means nothing, so prettier may add one there; nor
 // does an empty statement's (`a: b;;`), which postcss drops. A sign before a number means the signed number, which
 // prettier may join to it (`+ 20px` is `+20px`) or part from it.
@@ -183,6 +218,7 @@ const normalize: Normalize = (lexemes, _text, tree) => {
     if (sign(i - 1)) return meaning(tree, l.node, `${prev}${l.text}`);
     return meaning(tree, l.node, l.text);
   });
+  progidForms(lexemes, tree, forms);
   // `a*b`, one word to tree-sitter, is three tokens to oxc-css-parser, which prints `a * b` (`colonThenRawTokens`):
   // a value's `*` and `/` join the words around them into one form.
   const inValue = (node: number) => {
@@ -1618,6 +1654,25 @@ const rawTokenPattern = new RegExp(
   "gy",
 );
 
+/**
+ * The group after a value's `progid:A` that `rawTokens` prints as the function `progid(: A …)`, `undefined` for a
+ * word with no group (lexed as `progid: A`), or `null` for one this layout does not cover, which stays as written:
+ * a value holding a top-level `,` (oxfmt keeps its list on one line) or several such groups, whose output
+ * tree-sitter-css recovers into a shape `check` cannot pair.
+ */
+function progidCall(n: number, t: FormatTree): number | null | undefined {
+  if (!/^progid:./i.test(t.text(n))) return undefined;
+  const siblings = children(t.parent(n), t);
+  const group = siblings[siblings.indexOf(n) + 1];
+  if (group === undefined || t.kindName(group) !== "parenthesized_value") return undefined;
+  const calls = siblings.filter(
+    (c, i) => /^progid:./i.test(t.text(c)) && t.kindName(siblings[i + 1] ?? c) === "parenthesized_value",
+  );
+  return t.kindName(t.parent(n)) !== "declaration" || calls.length > 1 || siblings.some((c) => t.kindName(c) === ",")
+    ? null
+    : group;
+}
+
 /** The raw tokens of a normal property's value nodes, and the comments after the last. */
 function rawTokens(nodes: number[], ctx: SCtx): { tokens: RawToken[]; tail: number[] } {
   const t = ctx.tree;
@@ -1630,16 +1685,31 @@ function rawTokens(nodes: number[], ctx: SCtx): { tokens: RawToken[]; tail: numb
     comments = [];
     lf = false;
   };
+  const consumed = new Set<number>();
   const visit = (n: number): void => {
+    if (consumed.has(n)) return;
     const k = kind(n, ctx);
     const glued = prev !== -1 && !isComment(prev, ctx) && t.adjoins(prev, n);
     if (t.lf(n) > 0) lf = true;
+    const call = k === "plain_value" ? progidCall(n, t) : undefined;
     if (isComment(n, ctx)) comments.push(n);
     else if (k === "call_expression" && /^url$/i.test(t.text(t.child(n, 0)))) push("url", "", n, glued);
     else if (k === "string_value") push("string", t.text(n), n, glued);
-    // `progid:A` stays one word; `http://a` is `http`, `:`, `/`, `/` and `a`, each spaced as oxc's raw tokens are.
-    else if (k === "plain_value" && /^progid:/i.test(t.text(n))) push("ident", t.text(n), n, glued);
-    else if (t.count(n) > 0 && !["integer_value", "float_value", "color_value", "plain_value"].includes(k))
+    // `progid:A(B)` is oxc's function `progid` of `:`, `A` and the group's insides, the group's own `(` dropped
+    // (`progid(: A B)`); `http://a` is `http`, `:`, `/`, `/` and `a`, each spaced as oxc's raw tokens are.
+    else if (call === null) push("ident", t.text(n), n, glued);
+    else if (call !== undefined) {
+      const group = call;
+      const text = t.text(n);
+      push("ident", text.slice(0, 6), n, glued);
+      push("(", "(", n, true);
+      push(":", ":", n, true);
+      push("ident", text.slice(7), n, false);
+      prev = n;
+      consumed.add(group);
+      children(group, t).slice(1).forEach(visit);
+      return;
+    } else if (t.count(n) > 0 && !["integer_value", "float_value", "color_value", "plain_value"].includes(k))
       return children(n, t).forEach(visit);
     else {
       let joined = glued;

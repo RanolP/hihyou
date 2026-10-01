@@ -304,6 +304,12 @@ const edgeCases: [string, string][] = [
   // A value's `:` tree-sitter wraps in an ERROR (`a :/b`, `1px:/b`) kept the declaration as written.
   ["value-colon-error", "a{c:a :/b;d:1px:/b;e:a  :/b/c;f:#fff:/b;g:a :/b !important;h:a /* q */ :/b}"],
   // A second `:` after a comma (`c:x, a :/b`), where tree-sitter-css inserts a MISSING `,`, kept the declaration as written.
+  // A `progid:A(B)` past the value's start printed as written; oxfmt prints the function `progid(: A B)`, which
+  // check.ts rejected as a syntax error, and a bare `progid:A` as `progid: A`.
+  [
+    "progid-past-start",
+    "a{filter:x progid:DX.a(b=1);g:x progid:DX.a(b=1, c=2) !important;h:alpha(o=5) PROGID:DX.a (b='#80000000');i:x progid:a;j:x progid:DX.a()}",
+  ],
   ["value-colon-missing-comma", "a{c:x, a :/b;d:x, a :b;e:x, a :/b !important;f:x, y, a :/b, d;g:x,\n  a :/b;h:x, a :}"],
   ["word-hash-star","a{b:a#b, d;c:x a#b#c;d:f(a*c);e:a$c;f:url($a*3);g:calc(a*c);h:f(w-*);i:a #b}"],
   // The space before a `%` selector after a compound (`a:b %c`, `.a %c`) was glued as `a:b%c`.
