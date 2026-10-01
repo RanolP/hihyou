@@ -277,6 +277,13 @@ const edgeCases: [string, Target, string][] = [
     "js",
     `function f() { await (${"x".repeat(40)} ? ${"y".repeat(40)} : z)(c); }\nawait (${"x".repeat(40)} || ${"y".repeat(40)})(c).d;\n`,
   ],
+  // A prettier-ignore ending an exported or declared alias with no `;` broke after `=`, and a block one moved
+  // after the `;`; oxfmt keeps the `//` form's alias whole and the block form before the `;`.
+  [
+    "type-alias-trailing-ignore-wrapped",
+    "ts",
+    "export type A = foo | (b&c) // prettier-ignore\ndeclare type B = foo | (b&c) // prettier-ignore\nnamespace N { export type C = foo | (b&c) // prettier-ignore\n}\ntype D = foo | (b&c) /* prettier-ignore */\nexport type E = foo | (b&c) /* prettier-ignore */\n",
+  ],
   // A script's `await (a = b)` dropped the assignment's own parentheses, which oxfmt adds as to any call argument.
   [
     "await-call-assignment",

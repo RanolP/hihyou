@@ -223,6 +223,9 @@ const firstUnionMember = (c: CommentContext<JsOptions>): CommentTarget | undefin
 
 const LAST_UNION_HOLDERS =new Set(["intersection_type", "union_type"]);
 
+/** The statements a declaration ends: `export type A = B`, `declare type A = B`. */
+const STATEMENT_WRAPPERS = new Set(["export_statement", "ambient_declaration"]);
+
 /**
  * `(A | B // c⏎)[]`, `& X` or `| X`: a comment ending the line after a union trails its last member, inside the
  * union's parentheses (handleLastUnionElementInExpression).
@@ -235,14 +238,25 @@ const oxfmtUnionIgnore = (c: CommentContext<JsOptions>): CommentTarget | undefin
   if (c.tree.lf(c.comment) > 0 || !isIgnoreComment(c, c.comment)) return;
   // `type A = B | C // prettier-ignore` with no `;`: tree-sitter's alias takes in the comment, but oxc's statement
   // ends before it, so the comment trails, and keeps, the whole statement as after a `;`.
+  // So does `export type` and `declare type`, whose statement the alias ends.
   const alias = parent(c, c.comment);
+  let statement = alias;
+  for (
+    let up = parent(c, statement ?? NO_NODE);
+    statement !== undefined && up !== undefined && STATEMENT_WRAPPERS.has(kind(c, up) ?? "") && lastCode(c, up) === statement;
+    up = parent(c, up)
+  )
+    statement = up;
   if (
     alias !== undefined &&
+    statement !== undefined &&
+    // A block comment keeps only the type, before the `;` (`type A = B /* prettier-ignore */;`).
+    c.text.startsWith("//") &&
     kind(c, alias) === "type_alias_declaration" &&
-    STATEMENT_LIST_PARENTS.has(kind(c, parent(c, alias)) ?? "") &&
+    STATEMENT_LIST_PARENTS.has(kind(c, parent(c, statement)) ?? "") &&
     codeAfter(c, alias, c.comment).length === 0
   )
-    return { node: alias, as: "trailing" };
+    return { node: statement, as: "trailing" };
   const before = prevLeaf(c.tree, c.comment);
   if (before === NO_NODE) return;
   let union: number | undefined;
