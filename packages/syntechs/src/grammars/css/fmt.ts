@@ -1171,6 +1171,23 @@ function sassFlags(error: number, t: FormatTree): boolean {
   return true;
 }
 
+/**
+ * `a:b !c{d:e}`, `a:b c%{d:e}`: oxc-css-parser reads a nested rule whose selector tree-sitter cannot, an `ERROR`
+ * between the rule's selectors and its block; the selector prints as written (`ruleSet`).
+ */
+function selectorTail(error: number, t: FormatTree): boolean {
+  const up = t.parent(error);
+  if (t.kindName(up) !== "rule_set") return false;
+  const kids = Array.from({ length: t.count(up) }, (_, i) => t.child(up, i));
+  let at = kids.indexOf(error);
+  if (t.kindName(kids.findLast((k) => !t.kindName(k).endsWith("comment")) as number) !== "block") return false;
+  if (kids.slice(at + 1, -1).some((k) => !t.kindName(k).endsWith("comment"))) return false;
+  while (at > 0 && t.kindName(kids[at - 1] as number).endsWith("comment")) at--;
+  const selectors = kids[at - 1];
+  // oxc-css-parser fails `a b%{…}` as well; one past a `:` it reads.
+  return selectors !== undefined && t.kindName(selectors) === "selectors" && t.text(selectors).includes(":");
+}
+
 /** The flags `sassFlags` recovers, one space apart. */
 const sassFlagList: StreamRule<CssOptions> = (error, ctx) => {
   for (let i = 0; i < ctx.tree.count(error); i++) {
@@ -1819,13 +1836,16 @@ export function mediaQueries(at: number | undefined, node: number, ctx: SCtx): v
 /**
  * A rule's selector and block, a space between. Prettier's selector-unknown: postcss-selector-parser is not given a
  * selector holding a comment, whose source up to the rule's `{` (postcss's selector and `between`) prints as written
- * but trimmed. The comments before the block attach to the rule (`handleComment`).
+ * but trimmed. The comments before the block attach to the rule (`handleComment`). A selector tree-sitter cannot
+ * read (`selectorTail`) prints as written too.
  */
 export function ruleSet(node: number, ctx: SCtx): void {
   const t = ctx.tree;
   const holds = (n: number): boolean => children(n, t).some((c) => ctx.isComment(c) || holds(c));
   const kids = children(node, t);
-  const asWritten = kids.some((c) => kind(c, ctx) !== "block" && (ctx.isComment(c) || holds(c)));
+  const asWritten = kids.some(
+    (c) => kind(c, ctx) === "ERROR" || (kind(c, ctx) !== "block" && (ctx.isComment(c) || holds(c))),
+  );
   if (!asWritten && placeholderSelectors(node, ctx)) return;
   let prev = -1;
   for (const c of kids) {
@@ -1932,7 +1952,7 @@ export const css: Language<CssOptions> = {
     wrap: frontMatterFirst,
     commentEndsLine: statementComment,
     keepsSource: prettierIgnored,
-    recovered: sassFlags,
+    recovered: (error, t) => sassFlags(error, t) || selectorTail(error, t),
     finalLine,
   },
 };
