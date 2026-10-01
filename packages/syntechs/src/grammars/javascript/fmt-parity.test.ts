@@ -341,6 +341,8 @@ const edgeCases: [string, Target, string][] = [
     "js",
     "x = html`<my-el .obj=${x} a='b' c=d${e} class='  a   b ' style='color:red;  top:0' onclick='f( 1 )'></my-el>`;\ny = /* HTML */ `${a}\n<input disabled>`;\n",
   ],
+  // An escape other than `\\`, `` \` `` or `\$` in a template's HTML kept the whole template as written; oxfmt cooks it.
+  ["html-embed-cooked-escapes", "js", "x = html`\\n<div>a\\tb \\u00e9</div>\\n`;\ny = html`<pre>a\\nb</pre>`;\n"],
 ];
 
 function ours(target: Target, text: string, options: Partial<JsOptions>) {

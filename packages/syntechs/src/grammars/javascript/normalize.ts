@@ -88,8 +88,8 @@ function htmlOpening(tree: Tree, n: number): number | undefined {
 
 /**
  * An embedded-HTML template compares as one: its quasis' text, less whitespace, less each script's and style's
- * content (its own language's to format, as the HTML formatter's check reads it) and less backslashes (the embed
- * prints a quasi's cooked value re-escaped, so `<\/script>` is `</script>`). In a start tag, as the HTML formatter's
+ * content (its own language's to format, as the HTML formatter's check reads it), cooked and less backslashes (the
+ * embed prints a quasi's cooked value re-escaped, so `<\/script>` is `</script>` and `\n` a line break). In a start tag, as the HTML formatter's
  * check reads one, an attribute value's quotes do not compare (the HTML printer requotes it) and `/>` is `>`.
  */
 function htmlWords(tree: Tree, template: number): string {
@@ -98,13 +98,13 @@ function htmlWords(tree: Tree, template: number): string {
     const c = tree.child(template, i);
     text += HTML_PIECES.has(tree.kindName(c)) ? tree.text(c) : tree.kindName(c) === "template_substitution" ? "\u{E000}" : "";
   }
-  return text
+  const html = text
     // A raw `<\\/script>` cooks to `<\/script>`, which does not end the script.
     .replace(/(<(script|style)\b[^>]*>)[^]*?(?=<\\?\/\2)/gi, "$1")
     .replace(/<[a-z\u{E000}][^<>]*>/giu, (tag) =>
       tag.replace(/(=\s*)(\\*["'])([^]*?)\2/g, "$1$3").replace(/\s*\/>$/, ">"),
-    )
-    .replace(/[\s\\\u{E000}]/gu, "");
+    );
+  return cook(html).replace(/[\s\\\u{E000}]/gu, "");
 }
 
 function substitutionsBefore(tree: Tree, fragment: number): number {

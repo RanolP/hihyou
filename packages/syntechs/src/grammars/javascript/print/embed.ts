@@ -4,6 +4,7 @@
 // `printEmbed` returns false and the template prints as its source.
 
 import { NO_NODE, parseTree, type Tree } from "../../../core/index.js";
+import { cook as cookString } from "../../../fmt/dsl/normalizers.js";
 import { brokenNodes } from "../../../fmt/format.js";
 import { printInto } from "../../../fmt/stream-format.js";
 import { withEmbedding, withRewrite } from "../../../fmt/stream.js";
@@ -89,15 +90,9 @@ function withParts(s: string, placeholder: RegExp, parts: Part[], seen?: Set<num
   });
 }
 
-/** A quasi's cooked value, for the escapes that cook to the character escaped; undefined for any other escape. */
+/** A quasi's cooked value; undefined for a legacy octal escape, which leaves a tagged template's uncooked. */
 function cook(raw: string): string | undefined {
-  let other = false;
-  const cooked = raw.replace(/\\([^])/g, (_, c: string) => {
-    if ("\\`$/'\"".includes(c)) return c;
-    other = true;
-    return "";
-  });
-  return other ? undefined : cooked;
+  return /(^|[^\\])(\\\\)*\\(0\d|[1-9])/.test(raw) ? undefined : cookString(raw);
 }
 
 /** Each HTML embed's placeholders are its own, so an embed inside one leaves the outer one's placeholders alone. */
