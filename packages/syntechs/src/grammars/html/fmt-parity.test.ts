@@ -106,6 +106,13 @@ const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
     "implicit-close",
     "<p>a\n<div>x</div>\n<p>\na\n<div>y</div>\n<ul><li>a\nb\n<li>c</ul>\n<!-- prettier-ignore -->\n<p>\n# Hi\n<div>",
   ],
+  // An `on*` value refused the file; it prints as a single-quoted JS program, a lone expression without its `;`, a
+  // directive double-quoted, one not parsing as written.
+  [
+    "event-handler",
+    `<b onclick="alert(    '1')" onmouseover='f("a")'>x</b>\n<b onclick="a();   b()">y</b>\n<b onclick="\n  return false\n">z</b>\n<b onclick="'use strict'; f()" onblur="a b c" ONCLICK="f( 1 )">w</b>\n`,
+  ],
+  ["event-handler-no-semi", `<b onclick="[a].forEach(f); g()">x</b>\n`, { semi: false }],
   ["requoted-apos", `<div title="123 &apos;&quot; 456">x</div>\n<p title='a "b" &apos;c'>y</p>\n`],
 ];
 

@@ -1,6 +1,7 @@
 import { parseTree } from "../../core/index.js";
 import type { Language as Grammar } from "../../core/language.js";
 import type { Normalize } from "../../fmt/check.js";
+import { directive } from "../../fmt/dsl/normalizers.js";
 import { brokenNodes } from "../../fmt/format.js";
 import { type PrettierOptions, prettierDefaults, prettierSettings } from "../../fmt/options.js";
 import { defineLanguage, type Language } from "../../fmt/rules.js";
@@ -16,7 +17,7 @@ import { tsx, typescript } from "../typescript/fmt.js";
 import { language as tsGrammar } from "../typescript/index.js";
 import { grammar } from "./bundle.js";
 import { language } from "./index.js";
-import { type EmbeddedLanguage, parseHtml, printHtml, Unsupported, type WhitespaceSensitivity } from "./print.js";
+import { EVENT_HANDLERS, type EmbeddedLanguage, parseHtml, printHtml, Unsupported, type WhitespaceSensitivity } from "./print.js";
 
 /** Each language a script or style holds: the grammar its content parses with and the formatter printing it. */
 const EMBEDDED: Record<EmbeddedLanguage, [Grammar, unknown]> = {
@@ -31,6 +32,8 @@ export interface HtmlOptions extends PrettierOptions {
   bracketSameLine: boolean;
   singleAttributePerLine: boolean;
   htmlWhitespaceSensitivity: WhitespaceSensitivity;
+  /** The JS formatter's `semi`, for an `on*` value. */
+  semi: boolean;
 }
 
 const defaults: HtmlOptions = {
@@ -38,6 +41,7 @@ const defaults: HtmlOptions = {
   bracketSameLine: false,
   singleAttributePerLine: false,
   htmlWhitespaceSensitivity: "css",
+  semi: true,
 };
 
 /**
@@ -68,6 +72,13 @@ function isValueOf(tree: ReturnType<typeof parseTree>, value: number, attributeN
   );
 }
 
+function isEventHandlerValue(tree: ReturnType<typeof parseTree>, value: number): boolean {
+  let attribute = tree.parent(value);
+  if (tree.kindName(attribute) === "quoted_attribute_value") attribute = tree.parent(attribute);
+  const name = tree.count(attribute) > 0 ? tree.child(attribute, 0) : undefined;
+  return name !== undefined && tree.kindName(name) === "attribute_name" && EVENT_HANDLERS.has(tree.text(name));
+}
+
 // The HTML spec's elements whose end tag may be omitted (13.1.2.4 Optional tags).
 const OPTIONAL_END_TAGS = new Set([
   "html", "head", "body", "li", "dt", "dd", "p", "rt", "rp", "optgroup", "option",
@@ -93,6 +104,8 @@ const normalize: Normalize = (lexemes, text, tree) =>
     // A script's or style's content is its own language's to format; the check compares the HTML around it.
     if (tree.kindName(l.node) === "raw_text") return undefined;
     const kind = tree.kindName(l.node);
+    // An `on*` value is JS, its own language's to format, as a script's content is.
+    if (kind === "attribute_value" && isEventHandlerValue(tree, l.node)) return undefined;
     // A `style` value prints as css declarations, which lowercase a hex color and write `.5` as `0.5`: compare it
     // with its gaps and `;`s gone, lowercased, each number's leading zero written.
     // An `allow` value prints as its directives, each ending in a `;` only broken: compare it with its gaps and `;`s gone.
@@ -181,7 +194,48 @@ export const html: Language<HtmlOptions> = {
               printInto(tree, css as unknown as Language<PrettierOptions>, { printWidth, tabWidth, useTabs }, d),
             );
           };
-          const atFileStart = ctx.tree.lf(node) === 0 && ctx.tree.col(node) === 0;
+          // An inline event handler is a babel program in single quotes; its `;` is left off when the program is
+          // one expression statement, `onclick="f()"`.
+          const eventHandler = (code: string) => {
+            const tree = parseTree(jsGrammar, code);
+            if (tree.errorChars > 0 || brokenNodes(tree) !== undefined) return undefined;
+            const statements: number[] = [];
+            for (let i = 0; i < tree.count(tree.root); i++) {
+              const c = tree.child(tree.root, i);
+              if (tree.kindName(c) !== "comment") statements.push(c);
+            }
+            const only = statements.length === 1 ? statements[0] : undefined;
+            const bare = only !== undefined && tree.kindName(only) === "expression_statement" ? only : undefined;
+            // A directive keeps prettier's own quote preference, double, where a string literal takes single.
+            const directives = new Set<number>();
+            for (const s of statements) {
+              const str = tree.kindName(s) === "expression_statement" && tree.count(s) > 0 ? tree.child(s, 0) : undefined;
+              if (str === undefined || tree.kindName(str) !== "string") break;
+              directives.add(str);
+            }
+            const token = (s: string, at: number) => {
+              if (s === ";" && bare !== undefined && (at === bare || tree.parent(at) === bare)) return true;
+              if (directives.has(at)) {
+                sText(directive(tree.text(at), { singleQuote: false }).replaceAll('"', "&quot;"));
+                return true;
+              }
+              // The value sits in double quotes.
+              if (!s.includes('"')) return false;
+              sText(s.replaceAll('"', "&quot;"));
+              return true;
+            };
+            return () =>
+              withEmbedding({ anchor: node, token }, () =>
+                printInto(tree, javascript as unknown as Language<PrettierOptions & { singleQuote: boolean; semi: boolean }>, {
+                  printWidth,
+                  tabWidth,
+                  useTabs,
+                  semi: ctx.options.semi,
+                  singleQuote: true,
+                }),
+              );
+          };
+          const atFileStart =ctx.tree.lf(node) === 0 && ctx.tree.col(node) === 0;
           printHtml(parseHtml(text, true, atFileStart, htmlWhitespaceSensitivity), text, {
             text: sText,
             tabWidth,
@@ -190,6 +244,7 @@ export const html: Language<HtmlOptions> = {
             embed,
             declarations,
             declaration,
+            eventHandler,
           });
         },
       ],

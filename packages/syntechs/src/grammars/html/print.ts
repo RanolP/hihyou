@@ -83,6 +83,8 @@ interface Attr {
   allow?: boolean;
   /** An img's or source's `srcset` candidates, each its url and descriptor ("" for none). */
   srcset?: { url: string; descriptor: string }[];
+  /** An `on*` event handler's value, which prints as JS where the caller's `eventHandler` parses it. */
+  eventHandler?: boolean;
 }
 
 // Prettier's html-styles tables (constants.evaluate.js), for the tags a template holds.
@@ -143,10 +145,10 @@ const WHITE_SPACE: Readonly<Record<string, string>> = {
 const VOID = new Set("area base br col embed hr img input link meta param source track wbr".split(" "));
 const IGNORE_FIRST_LF = new Set(["pre", "textarea", "listing"]);
 /**
- * print/attribute/event-handler.js's names, whose value prettier formats as JS, which this printer does not; matched
- * as written, so `onClick` is a plain attribute.
+ * print/attribute/event-handler.js's names, whose value prettier formats as JS; matched as written, so `onClick` is a
+ * plain attribute.
  */
-const EVENT_HANDLERS = new Set(
+export const EVENT_HANDLERS = new Set(
   (
     "onabort onafterprint onauxclick onbeforeinput onbeforematch onbeforeprint onbeforetoggle onbeforeunload " +
     "onblur oncancel oncanplay oncanplaythrough onchange onclick onclose oncommand oncontextlost oncontextmenu " +
@@ -509,7 +511,7 @@ function attribute(tree: TsTree, ts: number, element: string): Attr {
     const srcset = srcsetCandidates(unescapeQuotes(value));
     return srcset === undefined ? { rawName, value } : { rawName, value, srcset };
   }
-  if (EVENT_HANDLERS.has(rawName)) throw new Unsupported(rawName);
+  if (EVENT_HANDLERS.has(rawName)) return { rawName, value, eventHandler: true };
   return { rawName, value };
 }
 
@@ -939,6 +941,8 @@ export interface HtmlPrinter {
   readonly declarations?: (value: string) => { text: string; blank: boolean }[] | undefined;
   /** Prints one css declaration from `declarations` as the css formatter does, its `;` only broken if `last`. */
   readonly declaration?: (text: string, last: boolean) => void;
+  /** Prints an `on*` value `code` as the JS formatter does an inline event handler; undefined when it does not parse. */
+  readonly eventHandler?: (code: string) => (() => void) | undefined;
 }
 
 export type EmbeddedLanguage = "babel" | "typescript" | "tsx" | "json" | "css";
@@ -1339,6 +1343,23 @@ class Printer {
           }
           declaration(d.text, i === decls.length - 1);
         });
+        close();
+        sLine(SOFT);
+        close();
+        this.text('"');
+        return;
+      }
+    }
+    if (a.eventHandler && a.value.trim() !== "") {
+      // print/attribute/event-handler.js: printExpand of the value as a babel program, as written where it does not parse.
+      if (this.out.eventHandler === undefined) throw new Unsupported(a.rawName);
+      const print = this.out.eventHandler(unescapeQuotes(a.value));
+      if (print !== undefined) {
+        this.text(`${a.rawName}="`);
+        open(GROUP);
+        open(INDENT);
+        sLine(SOFT);
+        print();
         close();
         sLine(SOFT);
         close();
