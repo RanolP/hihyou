@@ -1,4 +1,4 @@
-js@oxfmt compatibility: 921/964 (95.54%), 4 refused (ok:false), 190 excluded
+js@oxfmt compatibility: 934/964 (96.89%), 4 refused (ok:false), 190 excluded
 
 Fixtures: prettier 3.9.9 tests/format/{js,jsx} (recursive), every spec call listing parser `babel` or `acorn` or `espree` or `meriyah` or `oxc`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left.
 
@@ -16,16 +16,8 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/ignore/issue-9877.js | 0/1 | 58.82% |
 | js/ignore/semi/class-expression-decorator.js | 0/1 | 25.00% |
 | js/ignore/semi/directive.js | 1/2 | 88.89% |
-| js/multiparser-css/colons-after-substitutions.js | 0/1 | 78.79% |
-| js/multiparser-css/colons-after-substitutions2.js | 0/1 | 95.65% |
 | js/multiparser-css/issue-11797.js | 0/1 | 81.48% |
-| js/multiparser-css/issue-16692.js | 0/1 | 73.68% |
 | js/multiparser-css/issue-2883.js | 0/1 | 83.33% |
-| js/multiparser-css/issue-5961.js | 0/1 | 95.77% |
-| js/multiparser-css/styled-components-multiple-expressions.js | 0/1 | 58.33% |
-| js/multiparser-css/styled-components.js | 0/1 | 91.29% |
-| js/multiparser-css/url.js | 0/1 | 0.00% |
-| js/multiparser-css/var.js | 0/1 | 96.15% |
 | js/multiparser-graphql/comment-tag.js | 0/1 | 76.92% |
 | js/multiparser-graphql/escape.js | 0/1 | 82.93% |
 | js/multiparser-graphql/expressions.js | 0/1 | 40.91% |
@@ -40,13 +32,8 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/multiparser-markdown/markdown.js | 0/1 | 12.50% |
 | js/multiparser-markdown/single-line.js | 0/1 | 0.00% |
 | js/multiparser-text/text.js | 0/1 | 66.67% |
-| js/range/issue-7082.js | 0/1 | 66.67% |
-| js/template-literals/css-prop.js | 0/1 | 54.24% |
-| js/template-literals/styled-components-with-expressions.js | 0/1 | 69.57% |
-| js/template-literals/styled-jsx-with-expressions.js | 0/1 | 60.24% |
-| js/template-literals/styled-jsx.js | 0/1 | 86.63% |
 | js/ternaries/parenthesis/await-expression.js | 0/1 | 66.67% |
-| jsx/template/styled-components.js | 0/1 | 83.08% |
+| jsx/template/styled-components.js | 0/1 | 93.94% |
 
 # Refused
 

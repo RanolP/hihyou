@@ -132,41 +132,68 @@ function html(node: number, raws: string[], subs: () => Part[], tick: Tick, tabW
 // embed/css.js's printEmbedCss. Prettier's placeholder, `@prettier-placeholder-N-id`, is an at-word scss reads
 // where tree-sitter-css reads none; an identifier stands wherever a value, a selector or a property does.
 function cssEmbed(ctx: JsStreamCtx, node: number, raws: string[], subs: () => Part[], tick: Tick): Part | undefined {
-  const text = withLastSemicolon(placeholderStatements(raws));
+  const statements = placeholderStatements(raws);
+  const text = withLastSemicolon(statements);
   const tree = parseTree(cssLanguage, text);
   if (tree.errorChars > 0 || brokenNodes(tree) !== undefined || scssOnly(tree)) return undefined;
-  const parts = subs();
-  const seen = new Set<number>();
   const regex = /prettier-placeholder-(\d+)/;
   const { printWidth, tabWidth, useTabs, singleQuote } = ctx.js.options;
   let failed = false;
-  const printed = capture(() => {
-    tick(0);
-    open(INDENT);
-    sHardline();
-    withEmbedding(
-      {
-        anchor: node,
-        token: (s) => {
-          if (!regex.test(s)) return false;
-          withParts(s, regex, parts, seen);
-          return true;
-        },
-      },
-      () => {
+  const run = (token: (s: string) => boolean) =>
+    capture(() => {
+      tick(0);
+      open(INDENT);
+      sHardline();
+      withEmbedding({ anchor: node, token }, () => {
         try {
           printInto(tree, css, { printWidth, tabWidth, useTabs, singleQuote });
         } catch {
           failed = true;
         }
-      },
-    );
-    close();
-    sLine(SOFT);
-    tick(1);
+      });
+      close();
+      sLine(SOFT);
+      tick(1);
+    });
+  // oxfmt ends the template's last statement without a `;` where it opens with a substitution (`${a}: b`), which
+  // tree-sitter-css needs to read it: the printer's last `;` is left out.
+  let drop = -1;
+  if (opensWithSubstitution(raws)) {
+    let semis = 0;
+    run((s) => {
+      if (s === ";") semis++;
+      return regex.test(s);
+    });
+    drop = semis - 1;
+  }
+  const parts = subs();
+  const seen = new Set<number>();
+  let semi = 0;
+  const printed = run((s) => {
+    if (s === ";" && semi++ === drop) return true;
+    if (!regex.test(s)) return false;
+    // An ignored statement prints as its source, the markers `placeholderStatements` wrote in it included.
+    s = s.replace(/@prettier-placeholder-statement /g, "").replace(/@prettier-placeholder-bare ([^;]*);/g, "$1");
+    withParts(s, regex, parts, seen);
+    return true;
   });
   // Prettier fails the embed when a placeholder did not print as a token of its own.
   return failed || seen.size !== parts.length ? undefined : printed;
+}
+
+/**
+ * The template's last statement, with no `;` ending it, opens with a substitution and holds more than substitutions
+ * (a statement of substitutions alone is `placeholderStatements`' bare one).
+ */
+function opensWithSubstitution(raws: string[]): boolean {
+  const plain = raws.map((r) => r.replace(/\/\*[^]*?\*\//g, ""));
+  const last = plain[plain.length - 1] as string;
+  if (plain.length < 2 || /[;{}]/.test(last)) return false;
+  let i = plain.length - 2;
+  while (i > 0 && !/[;{}]/.test(plain[i] as string)) i--;
+  const r = plain[i] as string;
+  const head = r.slice(Math.max(r.lastIndexOf(";"), r.lastIndexOf("{"), r.lastIndexOf("}")) + 1);
+  return head.trim() === "" && plain.slice(i + 1).some((p) => p.trim() !== "");
 }
 
 /**
@@ -200,6 +227,12 @@ function placeholderStatements(raws: string[]): string {
 function withLastSemicolon(text: string): string {
   const tree = parseTree(cssLanguage, text);
   const last = tree.child(tree.root, tree.count(tree.root) - 1);
+  if (tree.errorChars > 0) {
+    // A lone last declaration (`b:a`) reads as a selector to tree-sitter-css until its `;` is there.
+    const end = text.replace(/(?:\s|\/\*[^]*?\*\/)*$/, "").length;
+    const ended = `${text.slice(0, end)};${text.slice(end)}`;
+    return parseTree(cssLanguage, ended).errorChars === 0 ? ended : text;
+  }
   if (last === NO_NODE || tree.kindName(last) !== "declaration") return text;
   const semi = tree.child(last, tree.count(last) - 1);
   if (!tree.missing(semi)) return text;

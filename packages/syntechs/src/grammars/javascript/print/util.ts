@@ -403,8 +403,8 @@ function hasLanguageComment(tree: FormatTree, n: number, name: string): boolean 
 }
 
 /**
- * The language prettier's embed (language-js/embed/) formats `template` as: `html`, `css` (styled-jsx's `css`,
- * `css.global` and `css.resolve`; styled-components' other tags print as plain templates here) or `gql`/`graphql`
+ * The language oxfmt's embed formats `template` as: `html`, `css` (a tag rooted at `styled` or `css` through member,
+ * subscript and call links, a styled-jsx `<style jsx>` child, or a JSX `css` attribute's value) or `gql`/`graphql`
  * tagged, or marked by a language comment. check's normalize (normalize.ts) reads its text so.
  */
 export function embedLanguage(tree: FormatTree, template: number): EmbedLanguage | undefined {
@@ -415,12 +415,45 @@ export function embedLanguage(tree: FormatTree, template: number): EmbedLanguage
     const fn = fieldChild(tree, call, "function");
     const k = fn === NO_NODE ? "" : tree.kindName(fn);
     if (k === "identifier" || k === "member_expression") tag = tree.text(fn);
+    const root = tagRoot(tree, fn);
+    if (root === "styled" || root === "css") return "css";
   }
-  if (tag === "css" || tag === "css.global" || tag === "css.resolve") return "css";
+  if (isStyledJsx(tree, template)) return "css";
   if (tag === "gql" || tag === "graphql" || tag === "graphql.experimental" || hasLanguageComment(tree, template, "GraphQL"))
     return "graphql";
   if (tag === "html" || hasLanguageComment(tree, template, "HTML")) return "html";
   return undefined;
+}
+
+/** The identifier a tag starts from, through parentheses, member and subscript objects and call callees. */
+function tagRoot(tree: FormatTree, n: number): string {
+  while (n !== NO_NODE) {
+    const k = tree.kindName(n);
+    if (k === "identifier") return tree.text(n);
+    if (k === "parenthesized_expression") n = tree.child(n, 1);
+    else if (k === "member_expression" || k === "subscript_expression") n = fieldChild(tree, n, "object");
+    else if (k === "call_expression") n = fieldChild(tree, n, "function");
+    else return "";
+  }
+  return "";
+}
+
+/** A template that is a `<style jsx>` element's child, or a JSX `css` attribute's value (parenthesized or not). */
+function isStyledJsx(tree: FormatTree, template: number): boolean {
+  let up = tree.parent(template);
+  if (up !== NO_NODE && tree.kindName(up) === "parenthesized_expression") up = tree.parent(up);
+  if (up === NO_NODE || tree.kindName(up) !== "jsx_expression") return false;
+  const owner = tree.parent(up);
+  if (owner === NO_NODE) return false;
+  const attrName = (a: number) => (tree.kindName(a) === "jsx_attribute" ? tree.text(tree.child(a, 0)) : "");
+  if (tree.kindName(owner) === "jsx_attribute") return attrName(owner) === "css";
+  if (tree.kindName(owner) !== "jsx_element" || tree.child(up, 1) !== template) return false;
+  const opening = tree.child(owner, 0);
+  if (tree.kindName(opening) !== "jsx_opening_element") return false;
+  const name = tree.child(opening, 1);
+  if (tree.kindName(name) !== "identifier" || tree.text(name) !== "style") return false;
+  for (let i = 2; i < tree.count(opening); i++) if (attrName(tree.child(opening, i)) === "jsx") return true;
+  return false;
 }
 
 /** Prettier's `options.__inJestEach`: set while a jest `each` table prints its cells. */

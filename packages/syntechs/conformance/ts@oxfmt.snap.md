@@ -17,7 +17,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/prettier-ignore/prettier-ignore-nested-unions.ts | 0/1 | 83.33% |
 | typescript/type-arguments-bit-shift-left-like/3.ts | 0/1 | 66.67% |
 | jsx/comments/in-end-tag.js | 0/1 | 42.72% |
-| jsx/template/styled-components.js | 0/1 | 83.08% |
+| jsx/template/styled-components.js | 0/1 | 93.94% |
 
 # Refused
 
