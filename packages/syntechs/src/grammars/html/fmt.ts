@@ -8,8 +8,15 @@ import { parseHtml, printHtml } from "./print.js";
 
 const defaults: PrettierOptions = { ...prettierDefaults };
 
-// Prettier reflows text and collapses the gaps in it, so a text or comment compares by its words.
-const normalize: Normalize = (lexemes) => lexemes.map((l) => l.text.replace(/\s+/g, " ").trim());
+/**
+ * Prettier reflows text and collapses the gaps in it, so a text or comment compares by its words; it lowercases a
+ * doctype's `DOCTYPE` and `html`.
+ */
+const normalize: Normalize = (lexemes, _text, tree) =>
+  lexemes.map((l) => {
+    const words = l.text.replace(/\s+/g, " ").trim();
+    return tree.kindName(l.node) === "doctype" ? words.toLowerCase() : words;
+  });
 
 const base = defineLanguage(grammar, {
   parser: language,

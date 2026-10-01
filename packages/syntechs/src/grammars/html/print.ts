@@ -27,7 +27,7 @@ import { language } from "./index.js";
 export class Unsupported extends Error {}
 
 interface Node {
-  kind: "root" | "element" | "text" | "comment";
+  kind: "root" | "element" | "text" | "comment" | "docType";
   parent: Node | undefined;
   prev: Node | undefined;
   next: Node | undefined;
@@ -202,9 +202,24 @@ function fill(tree: TsTree, text: string, into: Node, ts: number, from: number, 
       // A prettier-ignore or a `display:` comment changes how its next sibling prints.
       if (inner.startsWith("prettier-ignore") || inner.startsWith("display:")) throw new Unsupported(inner);
       add(n);
-    } else throw new Unsupported(k);
+    } else if (k === "doctype") add(docType(tree.text(c), tree.start(c), tree.end(c)));
+    else throw new Unsupported(k);
   }
   if (to > at) addText(at, to);
+}
+
+/**
+ * printer-html.js's docType: `<!doctype` lowercase only before a bare `html` (the file is `.html`), else the
+ * marker as written; the value's gaps one space each and a leading `html` lowercased. `rawName` holds the marker
+ * past its `<`, which a text before it borrows as an opening tag's.
+ */
+function docType(source: string, start: number, end: number): Node {
+  const n = node("docType", start, end);
+  n.isSelfClosing = true;
+  const value = source.slice("<!doctype".length, -1).trim();
+  n.rawName = value === "html" ? "!doctype" : source.slice(1, "<!doctype".length);
+  n.value = value.replace(/^html\b/i, "html").replaceAll(/\s+/g, " ");
+  return n;
 }
 
 function element(tree: TsTree, text: string, ts: number): Node {
@@ -694,7 +709,13 @@ class Printer {
   private node(n: Node): void {
     if (n.kind === "element") this.element(n);
     else if (n.kind === "text") this.textNode(n);
-    else {
+    else if (n.kind === "docType") {
+      this.text(openingTagPrefix(n));
+      if (!(n.prev && needsToBorrowNextOpeningTagStartMarker(n.prev))) this.text(openingTagStartMarker(n));
+      this.text(` ${n.value}`);
+      if (!(n.next && needsToBorrowPrevClosingTagEndMarker(n.next))) this.text(">");
+      this.text(closingTagSuffix(n));
+    } else {
       this.text(openingTagPrefix(n));
       this.literal(n.value);
       this.text(closingTagSuffix(n));
