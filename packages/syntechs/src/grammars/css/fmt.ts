@@ -127,8 +127,11 @@ function meaning(tree: Tree, node: number, t: string): string {
         return /^["']/.test(t) ? cook(t) : t;
       if (cssWideKeywords.has(t.toLowerCase())) return t.toLowerCase();
       // `a:/1.50`, one word to tree-sitter, is raw tokens to oxc, which prints its number as `1.5` (`rawArgChain`).
+      // An unquoted `url()`'s body in a raw value, which oxc spaces as raw tokens (`url(http: / / a.b)`), one word.
       if (t.includes(":"))
-        return t.replace(/(?<=[:/])(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?/g, (n) => decimalValue(n) ?? n);
+        return t
+          .replace(/\s+/g, "")
+          .replace(/(?<=[:/])(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?/g, (n) => decimalValue(n) ?? n);
       return t.replace(/\s+/g, "");
     default:
       return !tree.named(node) && t.startsWith("@") ? t.toLowerCase() : t;
@@ -1831,7 +1834,14 @@ function rawTokens(nodes: number[], ctx: SCtx): { tokens: RawToken[]; tail: numb
     if (t.lf(n) > 0) lf = true;
     const call = k === "plain_value" ? progidCall(n, t) : undefined;
     if (isComment(n, ctx)) comments.push(n);
-    else if (k === "call_expression" && /^url$/i.test(t.text(t.child(n, 0)))) push("url", "", n, glued);
+    // A quoted `url()` is oxc's url token; an unquoted one's body it lexes as raw tokens like the rest of the value
+    // (`url(http://a.b)` is `url(http: / / a.b)`), its name and parentheses a function's.
+    else if (
+      k === "call_expression" &&
+      /^url$/i.test(t.text(t.child(n, 0))) &&
+      children(t.child(n, 1), t).some((c) => t.kindName(c) === "string_value")
+    )
+      push("url", "", n, glued);
     else if (k === "string_value") push("string", t.text(n), n, glued);
     // `progid:A(B)` is oxc's function `progid` of `:`, `A` and the group's insides, the group's own `(` dropped
     // (`progid(: A B)`); `http://a` is `http`, `:`, `/`, `/` and `a`, each spaced as oxc's raw tokens are.
@@ -1915,7 +1925,10 @@ function printRawToken(token: RawToken, ctx: SCtx): void {
     ctx.comment(c);
     sText(" ");
   }
-  if (token.kind === "url") ctx.print(token.node);
+  // A quoted `url()`'s string keeps its quotes, as a raw value's other strings do.
+  if (token.kind === "url")
+    for (const c of [ctx.tree.child(token.node, 0), ...children(ctx.tree.child(token.node, 1), ctx.tree)])
+      sToken(c, ctx.tree.text(c));
   else sToken(token.node, token.text);
 }
 

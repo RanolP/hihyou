@@ -364,6 +364,11 @@ const edgeCases: [string, string][] = [
     "stray-argument-colon-raw",
     "a{c:f(/ a :b);d:f(/ a : b);e:f(/a:b);f:f(/ a: b);g:f(x, / a :b c);h:f(/ 1 :b);i:f(/ a :1px)}\na{c:f(* a :b);d:f(- a :b);e:x f(/ a :g(b)) y;f:f( / a : b )}",
   ],
+  // An unquoted `url()` in a raw value printed its body verbatim instead of spaced as raw tokens (`url(http: / / a.b)`).
+  [
+    "raw-value-unquoted-url",
+    "a{c:x url(http://a.b) http://c.d;d:url(../a.png) a:b;e:x url(data:image/png;base64,iVB=) a:b}\na{c:x url(a*b) URL(a,b) a:b;d:x url(a.png?x=1&y=2) url(\"http://a.b\") url() a:b;e:x url(http://a.b)}",
+  ],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");
