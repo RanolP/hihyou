@@ -9,7 +9,9 @@ import {
   resolveGitHubDiffset,
 } from "./diffset.js";
 import {
+  type GitHubCommit,
   type GitHubPullRequest,
+  listPullRequestCommits,
   listPullRequests,
   resolvePullRequest,
 } from "./pulls.js";
@@ -28,6 +30,11 @@ export interface GitHubHost extends Host {
     number: number,
   ): Promise<GitHubPullRequest>;
   listPullRequests(owner: string, repo: string): Promise<GitHubPullRequest[]>;
+  listPullRequestCommits(
+    owner: string,
+    repo: string,
+    number: number,
+  ): Promise<GitHubCommit[]>;
 }
 
 /** A browser-safe GitHub `Host` for `@hihyou/engine`: fetch only, no Node APIs. */
@@ -41,6 +48,8 @@ export function githubHost(options: GitHubHostOptions): GitHubHost {
     resolvePullRequest: (owner, repo, number) =>
       resolvePullRequest(client, owner, repo, number),
     listPullRequests: (owner, repo) => listPullRequests(client, owner, repo),
+    listPullRequestCommits: (owner, repo, number) =>
+      listPullRequestCommits(client, owner, repo, number),
     ...(options.preferences && { preferences: options.preferences }),
   };
 }

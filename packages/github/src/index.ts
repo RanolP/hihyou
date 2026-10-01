@@ -19,7 +19,9 @@ export {
 } from "./diffset.js";
 export { githubHost, type GitHubHost, type GitHubHostOptions } from "./host.js";
 export {
+  type GitHubCommit,
   type GitHubPullRequest,
+  listPullRequestCommits,
   listPullRequests,
   resolvePullRequest,
 } from "./pulls.js";
