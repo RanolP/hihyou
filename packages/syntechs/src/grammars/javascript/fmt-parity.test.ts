@@ -329,6 +329,18 @@ const edgeCases: [string, Target, string][] = [
     "ts",
     "export interface A {a:1}; // prettier-ignore\nclass C {a=1}; /* prettier-ignore */\nexport enum E {a=1}; // prettier-ignore\nf( a,b );; // prettier-ignore\nlet a = {b:1}; // prettier-ignore\n",
   ],
+  // A `.ts` arrow's `<T,>` kept the comma that only a `.tsx` file needs to tell the list from a JSX tag.
+  [
+    "arrow-type-parameter-comma-ts",
+    "ts",
+    "const f = <T,>(x: T) => x;\nconst g = async <const T = 1,>(x: T) => x;\nconst h = <T, /* c */>(x: T) => x;\n",
+  ],
+  // The `.tsx` side of the same: there the comma stays.
+  [
+    "arrow-type-parameter-comma-tsx",
+    "tsx",
+    "const f = <T,>(x: T) => x;\nconst g = async <const T = 1,>(x: T) => x;\nconst h = <T, /* c */>(x: T) => x;\n",
+  ],
 ];
 
 function ours(target: Target, text: string, options: Partial<JsOptions>) {

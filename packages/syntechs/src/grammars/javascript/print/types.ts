@@ -575,6 +575,7 @@ const typeParameters: CustomRule<JsOptions> = (n, sctx) => {
   }
   // `<T,>` in a TSX arrow keeps its comma: without it the list would read as a JSX tag.
   const forced =
+    ctx.options.jsx &&
     kind(ctx, n) === "type_parameters" &&
     params.length === 1 &&
     field(ctx, params[0] as number, "constraint") === undefined &&

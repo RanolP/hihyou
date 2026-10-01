@@ -24,6 +24,8 @@ export interface JsOptions extends PrettierOptions {
    * else as a module only when nothing but a module parses. It decides whether top-level `await(1)` calls `await`.
    */
   sourceType: "module" | "script" | "unambiguous";
+  /** Whether the file can hold JSX, as `.js`, `.jsx` and `.tsx` can and `.ts` cannot: `<T,>` keeps its comma only then. */
+  jsx: boolean;
 }
 
 /** The tree queries the JS helpers read: the format's tree, its options, and where its comments attach. */
