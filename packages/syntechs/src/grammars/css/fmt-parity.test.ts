@@ -349,6 +349,11 @@ const edgeCases: [string, string][] = [
     "named-combinator",
     "a /deep/ b{e:f}\na/deep/b , c{e:f}\n.a  /x/  .b{e:f}\na{&/deep/b{c:d}}\na{grid-area:1/a/2;font:12px/a/b x}",
   ],
+  // A stray `:` then `/` and a number (`a :/1.50`) left an ERROR `/` that kept the declaration as written.
+  [
+    "value-colon-slash-number-raw",
+    "a{c:x a :/1.50;d:x a: /1px b !important;e:a :/50%, b}",
+  ],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");

@@ -1645,6 +1645,21 @@ function valueColonError(n: number, t: FormatTree): boolean {
 }
 
 /**
+ * The `/` tree-sitter-css cannot read after a declaration's second `:` when a number follows (`a :/1.50`), which
+ * oxc-css-parser reads as a raw token like the rest of the value (`rawTokens`).
+ */
+function valueSlashError(n: number, t: FormatTree): boolean {
+  const decl = t.parent(n);
+  if (t.kindName(n) !== "ERROR" || t.text(n) !== "/" || t.kindName(decl) !== "declaration") return false;
+  const kids = children(decl, t);
+  const i = kids.indexOf(n);
+  return (
+    kids.slice(0, i).filter((c) => t.kindName(c) === ":").length > 1 &&
+    kids.slice(i + 1).some((c) => t.named(c) && t.kindName(c) !== "important" && t.kindName(c) !== "ERROR")
+  );
+}
+
+/**
  * The zero-width `,` tree-sitter-css inserts after a declaration's second `:` (`c:x, a :/b`), which oxc-css-parser
  * reads as a raw token like any other (`rawTokens`).
  */
@@ -1907,7 +1922,7 @@ export function colonThenRawTokens(colon: number | undefined, node: number, ctx:
   const t = ctx.tree;
   declarationColon(colon, node, ctx);
   const parts = children(node, t);
-  const end = (c: number) => [";", "important", "ERROR"].includes(kind(c, ctx));
+  const end = (c: number) => [";", "important", "ERROR"].includes(kind(c, ctx)) && !valueSlashError(c, t);
   const from = colon === undefined ? 1 : parts.indexOf(colon) + 1;
   const value = parts.slice(from, parts.findIndex((c, i) => i >= from && end(c)) >>> 0);
   // The comments before the value are postcss's `between`, which `declarationColon` printed.
@@ -1935,7 +1950,7 @@ export function colonThenRawTokens(colon: number | undefined, node: number, ctx:
     rawGroup((groups[0] as { tokens: RawToken[] }).tokens, tail, font, grid, ctx);
   } else rawGroups(groups, tail, font, grid, ctx);
   // `!important` and Sass flags (`sassFlags`) one space after the value.
-  for (const c of parts.slice(from).filter((c) => kind(c, ctx) === "important" || kind(c, ctx) === "ERROR")) {
+  for (const c of parts.slice(from).filter((c) => kind(c, ctx) === "important" || (kind(c, ctx) === "ERROR" && !valueSlashError(c, t)))) {
     sText(" ");
     ctx.print(c);
   }
@@ -2479,7 +2494,7 @@ export const css: Language<CssOptions> = {
     recovered: (error, t) =>
       t.missing(error)
         ? colonMissingComma(error, t)
-        : sassFlags(error, t) || selectorTail(error, t) || commentedPreludeError(error, t) || verbatimPreludeError(error, t) || valueColonError(error, t) || argColonError(error, t),
+        : sassFlags(error, t) || selectorTail(error, t) || commentedPreludeError(error, t) || verbatimPreludeError(error, t) || valueColonError(error, t) || valueSlashError(error, t) || argColonError(error, t),
     finalLine,
   },
 };
