@@ -303,6 +303,13 @@ const edgeCases: [string, Target, string][] = [
     "ts",
     "export type A = (b&c) // prettier-ignore\nexport let a = {b:1} // prettier-ignore\nexport interface I {a:1} // prettier-ignore\nexport enum E {a=1} // prettier-ignore\nexport class C {a=1} // prettier-ignore\nexport namespace N {a} // prettier-ignore\ndeclare   let d: {b:1} // prettier-ignore\nexport declare function f( a:1 ): void // prettier-ignore\n",
   ],
+  // A block prettier-ignore ending a statement with no `;` printed the `;` before the comment; oxc's statement ends
+  // before the comment, so the `;` follows it.
+  [
+    "statement-trailing-block-ignore-no-semicolon",
+    "ts",
+    "type   A   =   (b&c) /* prettier-ignore */\nlet   a  = {b:1} /* prettier-ignore */ /* x */\nexport   var   v = {b:1} /* prettier-ignore */\nf( a,b ) /* prettier-ignore */ // x\nfunction g(){ let   a = {b:1} /* prettier-ignore */\n}\n",
+  ],
 ];
 
 function ours(target: Target, text: string, options: Partial<JsOptions>) {

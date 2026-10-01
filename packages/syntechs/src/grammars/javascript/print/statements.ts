@@ -142,7 +142,7 @@ function lastBody(x: HasTree, n: number): number | undefined {
  * What a `// prettier-ignore`d statement gets a `;` after: oxfmt adds one to each statement a `;` ends, written
  * or not (prettier's statementEndsWithSemicolon asks for a written one).
  */
-function endsWithSemi(x: HasTree, n: number): boolean {
+export function endsWithSemi(x: HasTree, n: number): boolean {
   const body = lastBody(x, n);
   if (body !== undefined) return endsWithSemi(x, body);
   if (kind(x, n) !== "export_statement" && kind(x, n) !== "ambient_declaration") return SEMI_ENDED.has(kind(x, n));
@@ -153,6 +153,13 @@ function endsWithSemi(x: HasTree, n: number): boolean {
   return !/class|function_declaration|^function_expression$|^generator_function$|interface|enum|module/.test(
     kind(x, last) ?? "",
   );
+}
+
+/** Whether statement `n` ends with a `;` in the source. */
+export function writesSemi(ctx: JsCtx, n: number): boolean {
+  let l = lastLeaf(ctx.tree, n);
+  while (l !== NO_NODE && isComment(ctx, l)) l = prevLeaf(ctx.tree, l);
+  return l !== NO_NODE && kind(ctx, l) === ";" && src(ctx, l) !== "";
 }
 
 function lastLeaf(tree: FormatTree, n: number): number {
@@ -183,7 +190,7 @@ function textThrough(tree: FormatTree, n: number, end: number): string {
  * Prettier's printIgnored for a statement: its source up to its content end, then the `;` the `semi` option
  * asks for, wherever the source put it. Comments ahead of that `;` stay in the text.
  */
-export function ignoredStatement(ctx: JsCtx, n: number, keepComments = true): void {
+export function ignoredStatement(ctx: JsCtx, n: number, keepComments = true, semi = true): void {
   // oxfmt prints an ignored directive as written, its `;` or none whatever the `semi` option asks.
   if (kind(ctx, n) === "expression_statement" && isDirective(ctx, n)) {
     const semi = children(ctx, n).at(-1);
@@ -197,7 +204,7 @@ export function ignoredStatement(ctx: JsCtx, n: number, keepComments = true): vo
     while (isComment(ctx, end) && prevLeaf(ctx.tree, end) !== NO_NODE) end = prevLeaf(ctx.tree, end);
   }
   let text = textThrough(ctx.tree, n, end);
-  if (ctx.options.semi && endsWithSemi(ctx, n)) text += ";";
+  if (semi && ctx.options.semi && endsWithSemi(ctx, n)) text += ";";
   else if (needsAsiGuard(ctx, n)) text = `;${text}`;
   sToken(n, text);
 }

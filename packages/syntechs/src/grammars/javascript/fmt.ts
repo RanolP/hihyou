@@ -8,7 +8,12 @@ import {
   type Grammar,
   type Language,
 } from "../../fmt/rules.js";
-import type { StreamCtx, StreamRule } from "../../fmt/stream-format.js";
+import {
+  printLeadingComments,
+  printTrailingComments,
+  type StreamCtx,
+  type StreamRule,
+} from "../../fmt/stream-format.js";
 import {
   close as closeStream,
   closeSpan,
@@ -41,7 +46,9 @@ import { isAwaitCallArguments, isDecoratedClass, needsParens, role } from "./pri
 import { semiCustoms } from "./print/semi.js";
 import {
   castLedAsi,
+  endsWithSemi,
   ignoredStatement,
+  writesSemi,
   STATEMENT_LIST_PARENTS,
   sTok,
   statementCustoms,
@@ -239,6 +246,15 @@ const inside = (ctx: JsCtx, c: number, n: number) => {
   return false;
 };
 
+/** An ignored statement with no written `;`, trailed by a block comment on its line, whose `;` follows its comments. */
+const ignoreBeforeSemi = (ctx: JsCtx, n: number) =>
+  ctx.options.semi &&
+  STATEMENT_LIST_PARENTS.has(kind(ctx, parent(ctx, n)) ?? "") &&
+  endsWithSemi(ctx, n) &&
+  !writesSemi(ctx, n) &&
+  ctx.comments(n).trailing.some((c) => !ctx.isLineComment(c) && ctx.tree.lf(c) === 0) &&
+  isIgnored(ctx, n);
+
 /** Whether comment `c` lies within `n`'s subtree. */
 const within = (ctx: JsCtx, c: number, n: number) => {
   for (let p = parent(ctx, c); p !== undefined; p = parent(ctx, p)) if (p === n) return true;
@@ -404,7 +420,8 @@ export function jsLanguage(
           isHeadVia(ctx, n) ||
           (kind(ctx, n) === "expression_statement" && castLedAsi(ctx, n)) ||
           (unionOwnsComments(ctx, n) && !isIgnored(ctx, n)) ||
-          (annotationOwnsComments(ctx, n) && !isIgnored(ctx, n))
+          (annotationOwnsComments(ctx, n) && !isIgnored(ctx, n)) ||
+          ignoreBeforeSemi(ctx, n)
         );
       },
       // A node with no rule prints as its token. A node with one prints as its source text under a
@@ -454,6 +471,13 @@ function wrapped(n: number, s: StreamCtx<JsOptions>, print: () => void): void {
     else print();
     // Prettier prints a string through replaceEndOfLine: its literal line break breaks the groups around it.
     if (kind(ctx, n) === "string" && ctx.tree.text(n).includes("\n")) sBreakParent();
+  } else if (ignoreBeforeSemi(ctx, n)) {
+    // `let a = 1 /* prettier-ignore */` with no `;`: oxc's statement ends before the comment, which prints
+    // after its source text, and the `;` after both.
+    printLeadingComments(s, n);
+    ignoredStatement(ctx, n, false, false);
+    printTrailingComments(s, n);
+    sToken(n, ";", true);
   } else if (STATEMENT_LIST_PARENTS.has(kind(ctx, parent(ctx, n)) ?? ""))
     // A comment among the statement's children that it trails prints after its `;`, so its text stops before one.
     ignoredStatement(ctx, n, !ctx.comments(n).trailing.some((c) => within(ctx, c, n)));
