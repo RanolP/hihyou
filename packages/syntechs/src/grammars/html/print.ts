@@ -1076,7 +1076,15 @@ class Printer {
     this.preferHardlineAsSurrounding(n) ||
     (n.prev !== undefined && this.preferHardlineAsTrailing(n.prev)) ||
     this.hasSurroundingLineBreak(n);
-  private forceNextEmptyLine = (n: Node) => n.next !== undefined && this.endLine(n) + 1 < this.startLine(n.next);
+  // An implicitly closed element's source span is its start tag alone in angular-html-parser, so the blank line
+  // after it counts from there: `<p>a\n<div>` has none, `<p>\na\n<div>` has one.
+  private forceNextEmptyLine = (n: Node) =>
+    n.next !== undefined &&
+    (n.kind === "element" && !n.isSelfClosing && n.endTagStart === -1
+      ? this.lines.at(n.startTagEnd)
+      : this.endLine(n)) +
+      1 <
+      this.startLine(n.next);
 
   private forceBreakChildren = (n: Node) =>
     n.kind === "element" &&

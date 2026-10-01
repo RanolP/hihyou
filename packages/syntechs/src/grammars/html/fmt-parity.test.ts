@@ -100,6 +100,12 @@ const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
   // The check refused a requoted value whose `&apos;` printed as a bare `'`, which means the same character.
   // A closing tag broke off a last comment ending on its own line, `-->\n</ul>`, where oxfmt hugs it.
   ["comment-last-hugs-close", "<ul><!-- 1\n--><li>a</li><!--\n\n2\n--></ul>\n<span><!--\n--><span>a</span><!--\n--></span>\n"],
+  // The check refused an implicitly closed `<p>`/`<li>` or an element the file's end closes, and the blank line after
+  // one counted from its content's end rather than its start tag's.
+  [
+    "implicit-close",
+    "<p>a\n<div>x</div>\n<p>\na\n<div>y</div>\n<ul><li>a\nb\n<li>c</ul>\n<!-- prettier-ignore -->\n<p>\n# Hi\n<div>",
+  ],
   ["requoted-apos", `<div title="123 &apos;&quot; 456">x</div>\n<p title='a "b" &apos;c'>y</p>\n`],
 ];
 

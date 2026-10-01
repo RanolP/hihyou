@@ -68,14 +68,27 @@ function isValueOf(tree: ReturnType<typeof parseTree>, value: number, attributeN
   );
 }
 
+// The HTML spec's elements whose end tag may be omitted (13.1.2.4 Optional tags).
+const OPTIONAL_END_TAGS = new Set([
+  "html", "head", "body", "li", "dt", "dd", "p", "rt", "rp", "optgroup", "option",
+  "caption", "colgroup", "thead", "tbody", "tfoot", "tr", "td", "th",
+]);
+
 /**
  * Prettier reflows text and collapses the gaps in it, so a text or comment compares by its words; it requotes an
  * attribute value and closes a void element with `/>`, and it lowercases a doctype's `DOCTYPE` and `html`, a known
  * tag's name, and a known attribute's.
  */
-const normalize: Normalize = (lexemes, _text, tree) =>
+const normalize: Normalize = (lexemes, text, tree) =>
   lexemes.map((l) => {
     if (l.text === '"' || l.text === "'") return undefined;
+    // Prettier writes the end tag an element was closed without: one HTML lets a page omit, or one the end of
+    // the file closes. Neither changes what the page means, so neither compares.
+    const endTag = tree.kindName(l.node) === "end_tag" ? l.node : tree.parent(l.node);
+    if (tree.kindName(endTag) === "end_tag") {
+      const name = /^<\/([^\s>]*)/.exec(tree.text(endTag))?.[1]?.toLowerCase() ?? "";
+      if (OPTIONAL_END_TAGS.has(name) || /^(\s*<\/[^>]*>)*\s*$/.test(text.slice(tree.end(endTag)))) return undefined;
+    }
     if (l.text === "/>") return ">";
     // A script's or style's content is its own language's to format; the check compares the HTML around it.
     if (tree.kindName(l.node) === "raw_text") return undefined;

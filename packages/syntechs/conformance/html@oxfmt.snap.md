@@ -1,4 +1,4 @@
-html@oxfmt compatibility: 125/146 (85.62%), 16 refused (ok:false), 23 excluded
+html@oxfmt compatibility: 126/146 (86.30%), 15 refused (ok:false), 23 excluded
 
 Fixtures: prettier 3.9.9 tests/format/{html} (recursive), every spec call listing parser `html`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left.
 
@@ -29,7 +29,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | html/handlebars-venerable/template.html | 2/2 | 43.48% | formatter-error: script type text/x-handlebars-template |
 | html/interpolation/example.html | 1/1 | 0.00% | formatter-error: parse error |
 | html/multiparser/markdown/html-with-markdown-script.html | 1/1 | 33.33% | formatter-error: script type text/markdown |
-| html/prettier_ignore/unclosed2.html | 1/1 | 88.89% | check: output "</" at 49 matches no input token |
 | html/script/script.html | 1/1 | 65.06% | formatter-error: script type text/html |
 | html/svg/svg.html | 1/1 | 61.33% | formatter-error: svg |
 | html/svg/embeded/svg.html | 2/2 | 27.35% | formatter-error: svg |
