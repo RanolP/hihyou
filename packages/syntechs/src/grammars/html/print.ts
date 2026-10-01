@@ -71,6 +71,8 @@ interface Attr {
   style?: boolean;
   /** An iframe's `allow` value, which prints as its `;`-separated directives. */
   allow?: boolean;
+  /** An img's or source's `srcset` candidates, each its url and descriptor ("" for none). */
+  srcset?: { url: string; descriptor: string }[];
 }
 
 // Prettier's html-styles tables (constants.evaluate.js), for the tags a template holds.
@@ -460,9 +462,113 @@ function attribute(tree: TsTree, ts: number, element: string): Attr {
   // print/attribute/*.js formats these only on their elements, and none holding a `{{`.
   if (value === null || value.includes("{{")) return { rawName, value };
   if (rawName === "allow" && element === "iframe") return { rawName, value, allow: true };
-  if ((rawName === "srcset" && (element === "img" || element === "source")) || EVENT_HANDLERS.has(rawName))
-    throw new Unsupported(rawName);
+  if (rawName === "srcset" && (element === "img" || element === "source")) {
+    const srcset = srcsetCandidates(unescapeQuotes(value));
+    return srcset === undefined ? { rawName, value } : { rawName, value, srcset };
+  }
+  if (EVENT_HANDLERS.has(rawName)) throw new Unsupported(rawName);
   return { rawName, value };
+}
+
+const SRCSET_UNITS = { width: "w", height: "h", density: "x" } as const;
+
+/**
+ * print/attribute/srcset.js's candidates, each its url and its descriptor's number and unit: undefined where
+ * prettier's parser (parse-srcset) throws, or the candidates mix descriptor kinds, and the value prints as written.
+ */
+function srcsetCandidates(value: string): { url: string; descriptor: string }[] | undefined {
+  const isSpace = (c: string) => c === "\t" || c === "\n" || c === "\f" || c === "\r" || c === " ";
+  let at = 0;
+  const take = (re: RegExp) => {
+    const m = re.exec(value.slice(at));
+    if (m) at += m[0].length;
+    return m?.[0];
+  };
+  const candidates: { url: string; width: number | undefined; height: number | undefined; density: number | undefined }[] =
+    [];
+  let url = "";
+  let descriptors: string[] = [];
+  const commit = (): boolean => {
+    let width: number | undefined;
+    let height: number | undefined;
+    let density: number | undefined;
+    for (const d of descriptors) {
+      const unit = d[d.length - 1];
+      const num = d.slice(0, -1);
+      if (/^\d+$/.test(num) && unit === "w") {
+        if (width !== undefined || density !== undefined || Number.parseInt(num, 10) === 0) return false;
+        width = Number.parseInt(num, 10);
+      } else if (/^-?(?:[0-9]+|[0-9]*\.[0-9]+)(?:[eE][+-]?[0-9]+)?$/.test(num) && unit === "x") {
+        if (width !== undefined || density !== undefined || height !== undefined || Number.parseFloat(num) < 0)
+          return false;
+        density = Number.parseFloat(num);
+      } else if (/^\d+$/.test(num) && unit === "h") {
+        if (height !== undefined || density !== undefined || Number.parseInt(num, 10) === 0) return false;
+        height = Number.parseInt(num, 10);
+      } else return false;
+    }
+    // parse-srcset keeps a descriptor only when it is truthy: a `0x` reads as none.
+    candidates.push({ url, width, height, density: density || undefined });
+    return true;
+  };
+  for (;;) {
+    take(/^[, \t\n\r\f]+/);
+    if (at >= value.length) break;
+    url = take(/^[^ \t\n\r\f]+/) ?? "";
+    descriptors = [];
+    if (url.endsWith(",")) {
+      url = url.replace(/,+$/, "");
+      if (!commit()) return undefined;
+      continue;
+    }
+    take(/^[ \t\n\r\f]+/);
+    let current = "";
+    let state: "in descriptor" | "in parens" | "after descriptor" = "in descriptor";
+    for (;;) {
+      const c = value.charAt(at);
+      if (state === "in descriptor") {
+        if (isSpace(c)) {
+          if (current) {
+            descriptors.push(current);
+            current = "";
+            state = "after descriptor";
+          }
+        } else if (c === ",") {
+          at++;
+          if (current) descriptors.push(current);
+          break;
+        } else if (c === "(") {
+          current += c;
+          state = "in parens";
+        } else if (c === "") {
+          if (current) descriptors.push(current);
+          break;
+        } else current += c;
+      } else if (state === "in parens") {
+        if (c === ")") {
+          current += c;
+          state = "in descriptor";
+        } else if (c === "") {
+          descriptors.push(current);
+          break;
+        } else current += c;
+      } else if (!isSpace(c)) {
+        if (c === "") break;
+        state = "in descriptor";
+        at--;
+      }
+      at++;
+    }
+    if (!commit()) return undefined;
+  }
+  if (candidates.length === 0) return undefined;
+  const kinds = (["width", "height", "density"] as const).filter((k) => candidates.some((c) => c[k] !== undefined));
+  if (kinds.length > 1) return undefined;
+  const kind = kinds[0];
+  return candidates.map((c) => {
+    const n = kind === undefined ? undefined : c[kind];
+    return { url: c.url, descriptor: n === undefined || kind === undefined ? "" : `${n}${SRCSET_UNITS[kind]}` };
+  });
 }
 
 /** print/class-names.js: the names one space apart, split on any JS whitespace (a no-break space too). */
@@ -1130,6 +1236,39 @@ class Printer {
         this.text('"');
         return;
       }
+    }
+    if (a.srcset) {
+      // print/attribute/srcset.js: printExpand of the candidates `,`-and-line apart; broken, each descriptor
+      // right-aligned on its integer part past the longest url.
+      const candidates = a.srcset;
+      const urlWidth = Math.max(...candidates.map((c) => c.url.length));
+      const intWidth = (d: string) => (d.includes(".") ? d.indexOf(".") : d.length - 1);
+      const maxInt = Math.max(...candidates.map((c) => intWidth(c.descriptor)));
+      this.text(`${a.rawName}="`);
+      open(GROUP);
+      open(INDENT);
+      sLine(SOFT);
+      candidates.forEach((c, i) => {
+        if (i > 0) {
+          this.text(",");
+          sLine(0);
+        }
+        this.text(c.url.replaceAll('"', "&quot;"));
+        if (c.descriptor !== "") {
+          open(IF_BROKEN);
+          this.text(" ".repeat(urlWidth - c.url.length + 1 + maxInt - intWidth(c.descriptor)));
+          close();
+          open(IF_FLAT);
+          this.text(" ");
+          close();
+          this.text(c.descriptor);
+        }
+      });
+      close();
+      sLine(SOFT);
+      close();
+      this.text('"');
+      return;
     }
     if (a.allow) {
       // print/attribute/allow.js: each directive's words one space apart, printExpand'ed a line apart after a `;`.

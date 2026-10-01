@@ -84,6 +84,8 @@ const normalize: Normalize = (lexemes, _text, tree) =>
     // with its gaps and `;`s gone, lowercased, each number's leading zero written.
     // An `allow` value prints as its directives, each ending in a `;` only broken: compare it with its gaps and `;`s gone.
     if (kind === "attribute_value" && isValueOf(tree, l.node, "allow")) return l.text.replaceAll(/[\s;]/g, "") || undefined;
+    // A `srcset` value prints as its candidates, aligned when broken: compare it with its gaps gone.
+    if (kind === "attribute_value" && isValueOf(tree, l.node, "srcset")) return l.text.replaceAll(/\s/g, "") || undefined;
     if (kind === "attribute_value" && isValueOf(tree, l.node, "style"))
       return (
         l.text

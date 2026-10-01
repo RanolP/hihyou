@@ -87,6 +87,11 @@ const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
     "prettier-ignore",
     "<div>\n<!-- prettier-ignore -->\n<p   a = 'b' >x   y</p>   \n<p>z</p></div>\n<span>a</span><!-- prettier-ignore --><b  >c</b><i>d</i>\n<p>text <!-- prettier-ignore --> <b> x  </b> tail</p>\n",
   ],
+  // An img's srcset refused the file; its candidates print `, `-apart, broken with each descriptor aligned, an invalid one as written.
+  [
+    "srcset",
+    '<img srcset="a.png 1x,b.png 2x">\n<img srcset="  a.png   100w ,  bbbbbbbbbbbbbbbbbbbbbb.png 2000w, ccccccccccccccccccccccccccccccc.png 300w, d.png 4w">\n<source srcset="a.png 1.5x, bb.png 2x, c">\n<img srcset="a 400w 100h, b 500w">\n<img srcset=",,,">\n',
+  ],
 ];
 
 function ours(text: string, options: Partial<HtmlOptions>) {
