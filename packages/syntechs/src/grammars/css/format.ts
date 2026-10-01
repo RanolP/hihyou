@@ -314,6 +314,7 @@ export const css = format({
     // A `directive`'s prelude as a value (fmt.ts's `sassDirective`), else prettier's raw params: as written, one
     // space wherever the source has any gap.
     at_rule: () => custom("atRule"),
+    scope_statement: () => custom("scopeStatement"),
     postcss_statement: () => custom("postcssStatement"),
     // A keyword glued to its paren group (`and(a:b)`) stays glued, one space before it.
     binary_query: () => either(inMediaFeature, asWritten(), either(when("gluedQuery"), gluedQuery, inOrder(space))),

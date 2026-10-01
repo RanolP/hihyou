@@ -293,6 +293,8 @@ const edgeCases: [string, string][] = [
     "colon-slash-word",
     "a{c:x http://a.b;d:a:/b;e:a:/b/c, a://b//c;f:x(http://a) a:b;g:x http://a.b:8080/c?q=1 !important;h:url(http://a.b);i:x(http://a)}",
   ],
+  // An `@scope` rule had no layout and printed as written, its block on one line.
+  ["scope", "@scope (.a) to (.b){img{c:d}}@scope (.a>b , .c){:scope{c:d}}@scope   (.a)   to   (.b)  {x{y:z}}.x{@scope (.a) /* c */ to (.b){y{z:w}}}"],
   ["word-hash-star","a{b:a#b, d;c:x a#b#c;d:f(a*c);e:a$c;f:url($a*3);g:calc(a*c);h:f(w-*);i:a #b}"],
   // The space before a `%` selector after a compound (`a:b %c`, `.a %c`) was glued as `a:b%c`.
   ["placeholder-gap", ".x{a:b %c{d:e}}\n.x{a %c{d:e}}\n.x{a:b%c{d:e}}\n.a %c{d:e}\n.x{a:b  %c{d:e}}"],

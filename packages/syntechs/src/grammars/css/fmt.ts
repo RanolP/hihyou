@@ -1008,6 +1008,26 @@ function placeholdersMarker(node: number, t: FormatTree): "statement" | "bare" |
   return m === null ? undefined : (m[1] as "statement" | "bare");
 }
 
+/** `@scope`, lowercased, then its prelude as written but the gaps at its ends, which oxfmt keeps verbatim. */
+export function scopeStatement(node: number, ctx: SCtx): void {
+  const t = ctx.tree;
+  const [keyword, ...rest] = children(node, t);
+  if (keyword === undefined) return;
+  sToken(keyword, t.text(keyword).toLowerCase());
+  let prev = -1;
+  for (const c of rest) {
+    if (kind(c, ctx) === "block") {
+      sText(" ");
+      ctx.print(c);
+      continue;
+    }
+    sText(prev === -1 ? " " : gapBefore(prev, c, t));
+    if (isComment(c, ctx)) ctx.comment(c);
+    else sToken(c, t.text(c));
+    prev = c;
+  }
+}
+
 /** `placeholdersMarker`'s statement: its placeholders a space apart, then the `;` where the template has one. */
 function placeholderStatement(node: number, ctx: SCtx): boolean {
   const t = ctx.tree;
@@ -2185,6 +2205,7 @@ export const handWritten = {
   unaryExpression,
   number,
   atRule,
+  scopeStatement,
   postcssStatement,
   parenthesizedValue,
   keywordArgument,
