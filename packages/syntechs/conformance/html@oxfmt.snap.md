@@ -1,4 +1,4 @@
-html@oxfmt compatibility: 89/146 (60.96%), 30 refused (ok:false), 23 excluded
+html@oxfmt compatibility: 93/146 (63.70%), 25 refused (ok:false), 23 excluded
 
 Fixtures: prettier 3.9.9 tests/format/{html} (recursive), every spec call listing parser `html`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left.
 
@@ -30,6 +30,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | html/script/legacy.html | 0/1 | 84.21% |
 | html/single-attribute-per-line/single-attribute-per-line.html | 1/2 | 91.79% |
 | html/tags/closing-at-start.html | 3/4 | 93.18% |
+| html/tags/marquee.html | 3/4 | 98.08% |
 | html/tags/openging-at-end.html | 2/4 | 74.11% |
 | html/tags/option.html | 3/4 | 77.27% |
 | html/tags/tags2.html | 2/4 | 73.87% |
@@ -45,7 +46,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | html/attributes/event-attributes.html | 1/1 | 27.66% | formatter-error: onclick |
 | html/attributes/smart-quotes.html | 1/1 | 100.00% | check: input "123 &apos;&quot; 456" at 82 is output as "123 '&quot; 456" at 75, which means "123 '&quot; 456", not "123  |
 | html/attributes/srcset.html | 1/1 | 6.90% | formatter-error: srcset |
-| html/attributes/style.html | 1/1 | 17.05% | formatter-error: style |
 | html/attributes/iframe-allow-attribute/allow-attribute.html | 1/1 | 34.15% | formatter-error: allow |
 | html/attributes/iframe-allow-attribute/small-print-width/allow-attribute.html | 1/1 | 0.00% | formatter-error: allow |
 | html/attributes/no-semi/event-attributes.html | 1/1 | 30.77% | formatter-error: onclick |
@@ -53,7 +53,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | html/cdata/example.html | 1/1 | 54.55% | formatter-error: parse error |
 | html/css/less.html | 1/1 | 94.12% | formatter-error: style lang less |
 | html/css/scss.html | 1/1 | 84.38% | formatter-error: style lang scss |
-| html/doctype_declarations/xhtml1.1.html | 1/1 | 69.23% | formatter-error: style |
 | html/handlebars-venerable/template.html | 2/2 | 43.48% | formatter-error: script type text/x-handlebars-template |
 | html/interpolation/example.html | 1/1 | 0.00% | formatter-error: parse error |
 | html/magic_comments/display.html | 1/1 | 36.36% | formatter-error: display: inline |
@@ -66,12 +65,9 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | html/srcset/invalid.html | 1/1 | 42.11% | formatter-error: srcset |
 | html/svg/svg.html | 1/1 | 61.33% | formatter-error: svg |
 | html/svg/embeded/svg.html | 2/2 | 27.35% | formatter-error: svg |
-| html/tags/marquee.html | 4/4 | 69.41% | formatter-error: style |
 | html/tags/menu.html | 4/4 | 77.94% | formatter-error: onclick |
 | html/tags/pre.html | 4/4 | 82.87% | formatter-error: parse error |
 | html/tags/tags.html | 4/4 | 30.50% | formatter-error: on-click |
-| html/whitespace/fill.html | 1/1 | 43.48% | formatter-error: style |
-| html/whitespace/nested-inline-without-whitespace.html | 1/1 | 6.25% | formatter-error: style |
 
 # Excluded
 

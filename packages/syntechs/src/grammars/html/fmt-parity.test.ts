@@ -47,6 +47,11 @@ const edgeCases: [string, string][] = [
     "unknown-script-style-verbatim",
     '<div><script type="text/template">a\n    <b>\n\n\n  </b>   </script></div>\n<style lang="stylus">\n\n\n  a\n     \n    b c\n</style>\n<script src="a.js">  let x=1  </script>\n',
   ],
+  // A style attribute refused the file; it prints as css declarations, broken one per line with a last `;`.
+  [
+    "style-attribute",
+    `<div style="color:red;background:blue">x</div>\n<div style='content:"x"'>y</div>\n<div style="  ">z</div>\n<div style="a b c">w</div>\n<div style="{{ a }}">v</div>\n<div style="color:#FFF;margin:0 auto;\n\npadding:.5px;font-family:Arial, Helvetica, sans-serif">u</div>\n`,
+  ],
 ];
 
 function ours(text: string, options: Partial<PrettierOptions>) {

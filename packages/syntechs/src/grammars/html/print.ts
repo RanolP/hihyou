@@ -62,6 +62,8 @@ interface Attr {
   value: string | null;
   /** A value prettier formats as code or a list: always double-quoted, a `"` in it escaped. */
   formatted?: boolean;
+  /** A `style` value, which prints as css declarations where the caller's `declarations` reads it as them. */
+  style?: boolean;
 }
 
 // Prettier's html-styles tables (constants.evaluate.js), for the tags a template holds.
@@ -397,6 +399,7 @@ function attribute(tree: TsTree, ts: number, element: string): Attr {
   if (rawName === "class" && value !== null && value.trim() !== "" && !value.includes("{{"))
     return { rawName, value: classNames(value), formatted: true };
   if (rawName === "class") return { rawName, value };
+  if (rawName === "style") return value !== null && !value.includes("{{") ? { rawName, value, style: true } : { rawName, value };
   if (FORMATTED_ATTRIBUTE.test(rawName)) throw new Unsupported(rawName);
   return { rawName, value };
 }
@@ -661,6 +664,13 @@ export interface HtmlPrinter {
   readonly tabWidth: number;
   /** Prints a script's or style's content `text` as `language`'s formatter does, throwing where it cannot. */
   readonly embed?: (language: EmbeddedLanguage, text: string) => void;
+  /**
+   * A `style` value's css declarations, each its source with no `;` and whether a blank line precedes it: undefined
+   * when it does not parse as them.
+   */
+  readonly declarations?: (value: string) => { text: string; blank: boolean }[] | undefined;
+  /** Prints one css declaration from `declarations` as the css formatter does, its `;` only broken if `last`. */
+  readonly declaration?: (text: string, last: boolean) => void;
 }
 
 export type EmbeddedLanguage = "babel" | "typescript" | "tsx" | "json" | "css";
@@ -987,6 +997,34 @@ class Printer {
     if (a.value === null) {
       this.text(a.rawName);
       return;
+    }
+    if (a.style) {
+      const { declarations, declaration } = this.out;
+      if (declarations === undefined || declaration === undefined) throw new Unsupported("style");
+      if (a.value.trim() === "") {
+        this.text(`${a.rawName}=""`);
+        return;
+      }
+      const decls = declarations(unescapeQuotes(a.value));
+      if (decls !== undefined) {
+        // print/style.js: printExpand of the declarations, a line apart, each ending in the `;` `declaration` prints.
+        this.text(`${a.rawName}="`);
+        open(GROUP);
+        open(INDENT);
+        sLine(SOFT);
+        decls.forEach((d, i) => {
+          if (i > 0) {
+            sLine(0);
+            if (d.blank) sHardline();
+          }
+          declaration(d.text, i === decls.length - 1);
+        });
+        close();
+        sLine(SOFT);
+        close();
+        this.text('"');
+        return;
+      }
     }
     const value = a.formatted ? a.value : unescapeQuotes(a.value);
     const doubles = value.split('"').length;
