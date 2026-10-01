@@ -125,7 +125,8 @@ export const css = format({
           [
             $.children.at(0).andThen((p) => p),
             tok(":").via("declarationColon"),
-            either(when("emptyValue"), [], space),
+            // A value of `!important` alone takes the one space the trailing `!important` brings.
+            either(any(when("emptyValue"), when("importantValue")), [], space),
             // A CSS Modules `composes` value prints with its lines removed (prettier's css-decl), its words on one line.
             either(
               firstText({ is: ["composes"], anyCase: true }),

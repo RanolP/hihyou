@@ -268,6 +268,10 @@ export const customs = {
   longSelector: (node, ctx) => parts(node, ctx) > 2,
   /** A declaration with nothing between its `:` and its `;` (`--empty:;`). */
   emptyValue: (node, ctx) => code(node, ctx).every((c) => !ctx.tree.named(c) || kind(c, ctx) === "property_name"),
+  /** A declaration whose value is `!important` alone (`b: !important`), which spaces its own way after the `:`. */
+  importantValue: (node, ctx) =>
+    code(node, ctx).some((c) => kind(c, ctx) === "important") &&
+    code(node, ctx).every((c) => !ctx.tree.named(c) || ["property_name", "important"].includes(kind(c, ctx))),
   unparsedValue: (node, ctx) => unparsedUrl(node, ctx) || rawValue(node, ctx),
   /** A normal property's value oxc-css-parser reads as raw tokens (`oxcRaw`), which `colonThenRawTokens` prints. */
   rawTokens: (node, ctx) => !customName(node, ctx.tree) && oxcRaw(node, ctx.tree),
@@ -1191,7 +1195,8 @@ export function declarationColon(colon: number | undefined, node: number, ctx: S
   for (const c of comments) if (t.ord(c) < t.ord(colon)) put(c, () => ctx.comment(c));
   put(colon, () => sToken(colon, ":"));
   // Past the `:`, comments with no value after them are postcss's value instead, printed as its words.
-  const value = !customs.emptyValue(node, ctx);
+  // So are those before a value of `!important` alone, which postcss splits off as `important`.
+  const value = !customs.emptyValue(node, ctx) && !customs.importantValue(node, ctx);
   for (const c of comments)
     if (t.ord(c) > t.ord(colon))
       if (value) put(c, () => ctx.comment(c));

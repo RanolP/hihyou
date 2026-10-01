@@ -248,7 +248,9 @@ const edgeCases: [string, string][] = [
     "comment-before-slash",
     `a{b:${"x".repeat(73)} /* q */ / c;c:${"x".repeat(73)} /* q */ * c;d:x /* q */ / c}`,
   ],
-  ["word-hash-star", "a{b:a#b, d;c:x a#b#c;d:f(a*c);e:a$c;f:url($a*3);g:calc(a*c);h:f(w-*);i:a #b}"],
+  // A value of `!important` alone took the space after the `:` and the one before `!important`: `b:  !important`.
+  ["important-alone", "a{b:!important;c: ! IMPORTANT;d:/*c*/!important;e: /*c*/ !important}"],
+  ["word-hash-star","a{b:a#b, d;c:x a#b#c;d:f(a*c);e:a$c;f:url($a*3);g:calc(a*c);h:f(w-*);i:a #b}"],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");
