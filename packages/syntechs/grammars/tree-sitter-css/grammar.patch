@@ -795,7 +795,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
        '!',
 --- a/src/scanner.c
 +++ b/src/scanner.c
-@@ -1,31 +1,241 @@
+@@ -1,31 +1,244 @@
  #include "tree_sitter/parser.h"
  
 +#include <stdlib.h>
@@ -848,8 +848,9 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
 +}
 +
 +// Past one piece of a raw value: a string, a `/* */` comment, or a character, counting open brackets in `depth`.
-+// Whether the piece is more than whitespace.
-+static bool advance_piece(TSLexer *lexer, int *depth) {
++// Which it was: whitespace (0, false), a comment, or anything else.
++enum { PIECE_SPACE, PIECE_TEXT, PIECE_COMMENT };
++static int advance_piece(TSLexer *lexer, int *depth) {
 +    int32_t c = lexer->lookahead;
 +    advance(lexer);
 +    if (c == '"' || c == '\'') {
@@ -875,12 +876,13 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
 +                break;
 +            }
 +        }
++        return PIECE_COMMENT;
 +    } else if (c == '{' || c == '(' || c == '[') {
 +        (*depth)++;
 +    } else if (c == '}' || c == ')' || c == ']') {
 +        (*depth)--;
 +    }
-+    return !iswspace(c);
++    return iswspace(c) ? PIECE_SPACE : PIECE_TEXT;
 +}
 +
 +// Past whitespace and `/* */` comments, which postcss reads between a declaration's name, its colon and its value
@@ -981,7 +983,8 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
 +    return valid_symbols[lexer->result_symbol];
 +}
 +
-+// The raw value itself, as written up to the `;` or the block's `}` outside brackets, less trailing whitespace.
++// The raw value itself, as written up to the `;` or the block's `}` outside brackets, less trailing whitespace and
++// comments, which postcss and oxfmt print after the value (`--a: x {a:b} /*c*/}` is `--a: x {a:b}; /*c*/`).
 +static bool scan_custom_property_raw_value(TSLexer *lexer) {
 +    while (iswspace(lexer->lookahead)) {
 +        skip(lexer);
@@ -989,7 +992,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
 +    int depth = 0;
 +    bool any = false;
 +    while (!lexer->eof(lexer) && !(depth <= 0 && (lexer->lookahead == ';' || lexer->lookahead == '}'))) {
-+        if (advance_piece(lexer, &depth)) {
++        if (advance_piece(lexer, &depth) == PIECE_TEXT) {
 +            lexer->mark_end(lexer);
 +            any = true;
 +        }
@@ -1041,7 +1044,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
          lexer->result_symbol = DESCENDANT_OP;
  
          skip(lexer);
-@@ -33,14 +243,28 @@
+@@ -33,14 +246,28 @@
              skip(lexer);
          }
          lexer->mark_end(lexer);
@@ -1071,7 +1074,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
              if (iswspace(lexer->lookahead)) {
                  return false;
              }
-@@ -55,8 +279,48 @@
+@@ -55,8 +282,48 @@
              }
          }
      }
@@ -1120,7 +1123,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
          while (iswspace(lexer->lookahead)) {
              skip(lexer);
          }
-@@ -66,8 +330,15 @@
+@@ -66,8 +333,15 @@
                  return false;
              }
              lexer->mark_end(lexer);

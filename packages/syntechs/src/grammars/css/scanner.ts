@@ -57,9 +57,12 @@ const peek = (lexer: Lexer): number => lexer.lookahead;
 
 /**
  * Past one piece of a raw value: a string, a `/* *\/` comment, or a character, counting open brackets in
- * `depth.n`. Whether the piece is more than whitespace.
+ * `depth.n`. Which it was: whitespace (0, falsy), a comment, or anything else.
  */
-function advancePiece(lexer: Lexer, depth: { n: number }): boolean {
+const PIECE_SPACE = 0;
+const PIECE_TEXT = 1;
+const PIECE_COMMENT = 2;
+function advancePiece(lexer: Lexer, depth: { n: number }): number {
   const c = lexer.lookahead;
   lexer.advance(false);
   if (c === DQUOTE || c === SQUOTE) {
@@ -81,9 +84,10 @@ function advancePiece(lexer: Lexer, depth: { n: number }): boolean {
         break;
       }
     }
+    return PIECE_COMMENT;
   } else if (c === LBRACE || c === LPAREN || c === LBRACKET) depth.n++;
   else if (c === RBRACE || c === RPAREN || c === RBRACKET) depth.n--;
-  return !iswspace(c);
+  return iswspace(c) ? PIECE_SPACE : PIECE_TEXT;
 }
 
 /**
@@ -168,7 +172,10 @@ function scanCustomPropertyName(lexer: Lexer, valid: Uint8Array): boolean {
   return valid[lexer.resultSymbol] !== 0;
 }
 
-/** The raw value itself, as written up to the `;` or the block's `}` outside brackets, less trailing whitespace. */
+/**
+ * The raw value itself, as written up to the `;` or the block's `}` outside brackets, less trailing whitespace and
+ * comments, which postcss and oxfmt print after the value (`--a: x {a:b} /*c*\/}` is `--a: x {a:b}; /*c*\/`).
+ */
 function scanCustomPropertyRawValue(lexer: Lexer): boolean {
   while (iswspace(lexer.lookahead)) lexer.advance(true);
   const depth = { n: 0 };
@@ -177,7 +184,7 @@ function scanCustomPropertyRawValue(lexer: Lexer): boolean {
     !lexer.eof() &&
     !(depth.n <= 0 && (lexer.lookahead === SEMI || lexer.lookahead === RBRACE))
   ) {
-    if (advancePiece(lexer, depth)) {
+    if (advancePiece(lexer, depth) === PIECE_TEXT) {
       lexer.markEnd();
       any = true;
     }

@@ -438,6 +438,11 @@ const edgeCases: [string, string][] = [
     "custom-property-block-as-text",
     'a{--a:{a/*c*/}}\na{--a:{a\n/*c*/}}\na{--a:{a:b // c\n}}\na{--a:{a:b // c\nd:e}}\na{--a:{a:b,c}}\na{--a:{a:b/ c}}\na{--a:{a:1.50PX}}\na{--a:{a:"x   y"}}\na{--a:{a:\n/*c*/b}}\na{--a:{a:/*c*/\nb}}\na{--a:{a:b\n/*c*/}}\na{--a: {"a": 1; "b": 2}}\na{--a:{\'x;y\':1}}\nb{c:d}',
   ],
+  // A comment after a raw custom property value ending the block was read into the value, before the `;` oxfmt adds.
+  [
+    "custom-property-raw-value-trailing-comment",
+    "a{--a: x {a:b} /*c*/}\na{--a: x {a:b}/*c*//*d*/}\na{--a: x {a:b} y /*c*/}\na{--a: x {a:b} /*c*/\n}\na{--a: x {a:b}\n/*c*/\n}\na{--a: x {a:b} /*c*/;}",
+  ],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");
