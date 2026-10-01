@@ -225,9 +225,22 @@ const trailingIgnore = (ctx: JsCtx, n: number) =>
     (c) => isIgnoreComment(ctx, c) && ctx.tree.lf(c) === 0 && !inside(ctx, c, n),
   );
 
-/** Whether comment `c` sits within `n`'s content: a descendant, other than a comment ending a statement's children. */
+/**
+ * Whether comment `c` sits within `n`'s content: a descendant with code after it, at its own level or one above,
+ * up to `n`. tree-sitter ends `export let a = 1 // c` with the comment inside the declaration, past oxc's end.
+ */
 const inside = (ctx: JsCtx, c: number, n: number) => {
-  if (parent(ctx, c) === n) return children(ctx, n).slice(children(ctx, n).indexOf(c)).some((k) => !isComment(ctx, k));
+  let codeAfter = false;
+  for (let k = c, p = parent(ctx, c); p !== undefined; k = p, p = parent(ctx, p)) {
+    const kids = children(ctx, p);
+    codeAfter ||= kids.slice(kids.indexOf(k) + 1).some((x) => !isComment(ctx, x));
+    if (p === n) return codeAfter;
+  }
+  return false;
+};
+
+/** Whether comment `c` lies within `n`'s subtree. */
+const within = (ctx: JsCtx, c: number, n: number) => {
   for (let p = parent(ctx, c); p !== undefined; p = parent(ctx, p)) if (p === n) return true;
   return false;
 };
@@ -443,7 +456,7 @@ function wrapped(n: number, s: StreamCtx<JsOptions>, print: () => void): void {
     if (kind(ctx, n) === "string" && ctx.tree.text(n).includes("\n")) sBreakParent();
   } else if (STATEMENT_LIST_PARENTS.has(kind(ctx, parent(ctx, n)) ?? ""))
     // A comment among the statement's children that it trails prints after its `;`, so its text stops before one.
-    ignoredStatement(ctx, n, !ctx.comments(n).trailing.some((c) => parent(ctx, c) === n));
+    ignoredStatement(ctx, n, !ctx.comments(n).trailing.some((c) => within(ctx, c, n)));
   else if (kind(ctx, n) === PE && !isCastParen(ctx, n)) {
     // Prettier's AST has no parentheses: an ignored expression keeps the source text inside its own, and gets
     // the parentheses needsParens adds: `+((a), (b))` keeps one pair around `(a), (b)`, a statement's `((a))` none.

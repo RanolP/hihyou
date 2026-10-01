@@ -296,6 +296,13 @@ const edgeCases: [string, Target, string][] = [
     "js",
     `await (a = b);\nawait ((a += b))(c);\nawait (a = ${"x".repeat(40)} || ${"y".repeat(40)})(c);\n`,
   ],
+  // A `//` prettier-ignore ending an exported or declared statement with no `;` formatted it, printed the comment
+  // twice, or added a `;` after a body; tree-sitter puts the comment inside the declaration, oxc after it.
+  [
+    "export-trailing-ignore-no-semicolon",
+    "ts",
+    "export type A = (b&c) // prettier-ignore\nexport let a = {b:1} // prettier-ignore\nexport interface I {a:1} // prettier-ignore\nexport enum E {a=1} // prettier-ignore\nexport class C {a=1} // prettier-ignore\nexport namespace N {a} // prettier-ignore\ndeclare   let d: {b:1} // prettier-ignore\nexport declare function f( a:1 ): void // prettier-ignore\n",
+  ],
 ];
 
 function ours(target: Target, text: string, options: Partial<JsOptions>) {

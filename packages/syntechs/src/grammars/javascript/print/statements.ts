@@ -145,10 +145,14 @@ function lastBody(x: HasTree, n: number): number | undefined {
 function endsWithSemi(x: HasTree, n: number): boolean {
   const body = lastBody(x, n);
   if (body !== undefined) return endsWithSemi(x, body);
-  if (kind(x, n) !== "export_statement") return SEMI_ENDED.has(kind(x, n));
-  // `export default class {}` and `export function f() {}` end at their body; any other export at a `;`.
+  if (kind(x, n) !== "export_statement" && kind(x, n) !== "ambient_declaration") return SEMI_ENDED.has(kind(x, n));
+  // `export default class {}`, `export function f() {}`, `export interface A {}`, `export enum E {}` and
+  // `export namespace N {}` end at their body; any other export, `declare function f(): void` too, at a `;`.
   const last = lastChildWhere(x, n, (c) => named(x, c) && !isComment(x, c));
-  return !/class|function/.test(kind(x, last) ?? "");
+  if (last !== undefined && kind(x, last) === "ambient_declaration") return endsWithSemi(x, last);
+  return !/class|function_declaration|^function_expression$|^generator_function$|interface|enum|module/.test(
+    kind(x, last) ?? "",
+  );
 }
 
 function lastLeaf(tree: FormatTree, n: number): number {
@@ -186,7 +190,13 @@ export function ignoredStatement(ctx: JsCtx, n: number, keepComments = true): vo
     const written = semi !== undefined && kind(ctx, semi) === ";" && src(ctx, semi) !== "";
     return sToken(n, textThrough(ctx.tree, n, written ? semi : contentEnd(ctx, n, keepComments)));
   }
-  let text = textThrough(ctx.tree, n, contentEnd(ctx, n, keepComments));
+  let end = contentEnd(ctx, n, keepComments);
+  // `export class A {} // c`: tree-sitter ends the declaration with the comment that trails the statement.
+  if (!keepComments) {
+    end = lastLeaf(ctx.tree, end);
+    while (isComment(ctx, end) && prevLeaf(ctx.tree, end) !== NO_NODE) end = prevLeaf(ctx.tree, end);
+  }
+  let text = textThrough(ctx.tree, n, end);
   if (ctx.options.semi && endsWithSemi(ctx, n)) text += ";";
   else if (needsAsiGuard(ctx, n)) text = `;${text}`;
   sToken(n, text);
