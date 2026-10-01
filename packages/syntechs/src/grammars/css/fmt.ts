@@ -1759,6 +1759,7 @@ export function ruleSet(node: number, ctx: SCtx): void {
   const holds = (n: number): boolean => children(n, t).some((c) => ctx.isComment(c) || holds(c));
   const kids = children(node, t);
   const asWritten = kids.some((c) => kind(c, ctx) !== "block" && (ctx.isComment(c) || holds(c)));
+  if (!asWritten && placeholderSelectors(node, ctx)) return;
   let prev = -1;
   for (const c of kids) {
     if (prev !== -1) sText(asWritten && kind(c, ctx) !== "block" ? sourceGap(t, prev, c) : " ");
@@ -1767,6 +1768,49 @@ export function ruleSet(node: number, ctx: SCtx): void {
     else ctx.print(c);
     prev = c;
   }
+}
+
+/**
+ * Embedded CSS's rule whose selector list holds a placeholder (javascript/print/embed.ts). postcss-selector-parser
+ * reads `@prettier-placeholder-N` as an at-word that runs to the next whitespace past any `,` or `>`, so the
+ * selectors before the first one holding a placeholder print one per line, and the rest prints as written, each
+ * gap one space or the line break it holds: `a,b.${x},c` as `a,⏎b.${x},c`.
+ */
+function placeholderSelectors(node: number, ctx: SCtx): boolean {
+  const t = ctx.tree;
+  const [list, block] = children(node, t);
+  if (list === undefined || block === undefined || kind(list, ctx) !== "selectors" || kind(block, ctx) !== "block")
+    return false;
+  const items = children(list, t);
+  const k = items.findIndex((c) => t.named(c) && /prettier-placeholder-\d/.test(t.text(c)));
+  if (k === -1) return false;
+  for (const c of items.slice(0, k)) {
+    if (t.named(c)) {
+      // `selectorList`'s wrapItem: a selector of more than two parts indents as it breaks.
+      const long = parts(c, ctx) > 2;
+      open(GROUP);
+      if (long) open(INDENT);
+      ctx.print(c);
+      if (long) close();
+      close();
+    } else {
+      sToken(c, t.text(c));
+      sHardline();
+    }
+  }
+  const stop = firstLeaf(t, block);
+  let prev = -1;
+  for (let l = firstLeaf(t, items[k] as number); l !== NO_NODE && l !== stop; l = nextLeaf(t, l)) {
+    if (prev !== -1) {
+      if (t.lf(l) > 0) sHardline();
+      else if (!t.adjoins(prev, l)) sText(" ");
+    }
+    sToken(l, t.text(l));
+    prev = l;
+  }
+  sText(" ");
+  ctx.print(block);
+  return true;
 }
 
 /** The hand-written rules format.ts names. */
