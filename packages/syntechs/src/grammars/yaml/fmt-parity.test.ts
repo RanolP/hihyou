@@ -72,8 +72,12 @@ const edgeCases: [string, string][] = [
   ["flow-moved-flat", `${"k".repeat(70)}: [a, b, c, d]\nz: {b: [${Array.from({ length: 13 }, (_, i) => `item${i}`).join(", ")}]}\n`],
   // A blank line between broken flow items was dropped, doubled, or kept in a flat one.
   ["flow-blank-lines", `a: [1,\n\n  2]\nb: [${Array.from({ length: 4 }, (_, i) => `item${i}`).join(",\n\n\n  ")}, ${Array.from({ length: 10 }, (_, i) => `o${i}`).join(", ")}]\n`],
+  // Content on the `---` line stayed there or refused, where oxfmt moves it to a line of its own.
+  ["marker-line-content", "--- a\n--- 'b'\n--- !t\nc: 1\n--- &x\n- 1\n"],
+  // A block scalar or flow collection on the `---` line kept its place, or lost its properties' line.
+  ["marker-line-collections", "--- |\n  x\n--- [a, b]\n--- !t d\n"],
   // A root flow collection with properties broke onto a new line after them, or broke at all when it fits.
-  ["flow-root", `&x [${Array.from({ length: 13 }, (_, i) => `item${i}`).join(", ")}]\n---\n{a: 1}\n`],
+  ["flow-root",`&x [${Array.from({ length: 13 }, (_, i) => `item${i}`).join(", ")}]\n---\n{a: 1}\n`],
 ];
 
 // A folded scalar's refill under proseWrap always: lines join into paragraphs and refill at printWidth, except
@@ -114,6 +118,8 @@ describe.each(optionSets)(
 const refused: [string, string][] = [
   // A comment inside a flow collection, which oxfmt lays out in ways print.ts has no rule for, printed anyway.
   ["flow-comment", "a: [1, # one\n  2]\n"],
+  // A block scalar ending the stream dropped its trailing whitespace line deeper than its content, which oxfmt keeps.
+  ["block-scalar-deep-whitespace-end", "a: |-\n  ab\n   \n"],
   // A flow key past printWidth printed flat, where oxfmt makes it explicit (`? [`).
   ["flow-key-long", `[${"x".repeat(90)}]: c\n`],
   // A comment after a kept block scalar ending the stream printed a final line break, which oxfmt leaves off.

@@ -438,6 +438,9 @@ class Printer {
     } else {
       let u = 0;
       for (let f = paras.length - 1; f >= 0 && paras[f]!.every((w) => w.replace(/[ \t]+$/, "") === ""); f--) u++;
+      // Ending the stream, prettier keeps a trailing line more indented than the content, spaces and all.
+      if (this.lastDescendant(n) && paras.slice(paras.length - u).some((p) => p.length > 0))
+        unsupported("a whitespace line past the content indent ending the stream");
       if (u > 0) paras = u >= 2 && !this.lastDescendant(n) ? paras.slice(0, -(u - 1)) : paras.slice(0, -u);
     }
     const pad = " ".repeat(indent);
@@ -598,7 +601,7 @@ class Printer {
           break;
         case "block_node": {
           if (this.tree.lf(firstLeaf(this.tree, c)) >= 2 && this.lines.length > 0 && !this.afterMarker()) this.blank();
-          if (this.lines.length > 0 && this.tree.lf(firstLeaf(this.tree, c)) === 0) unsupported("content on a marker line");
+          this.onMarkerLine(c);
           if (this.isBlockScalar(c)) {
             this.blockScalar(c, this.tab, undefined);
             break;
@@ -614,7 +617,7 @@ class Printer {
           break;
         }
         case "flow_node": {
-          if (this.lines.length > 0 && this.tree.lf(firstLeaf(this.tree, c)) === 0) unsupported("content on a marker line");
+          this.onMarkerLine(c);
           if (this.tree.lf(firstLeaf(this.tree, c)) >= 2 && this.lines.length > 0 && !this.afterMarker()) this.blank();
           if (this.flowCollection(c) !== undefined) {
             this.line("");
@@ -630,6 +633,15 @@ class Printer {
   }
 
   afterMarker = () => this.lines[this.lines.length - 1] === "---";
+
+  /**
+   * Root content on the line of what precedes it: after `---` (`--- a`, `--- |`, `--- !t`) it moves to a line of
+   * its own, which printing it as a new line does; after anything else it refuses.
+   */
+  onMarkerLine(c: number): void {
+    if (this.lines.length > 0 && this.tree.lf(firstLeaf(this.tree, c)) === 0 && !this.afterMarker())
+      unsupported("content on the line of a non-marker");
+  }
 
   /** Comments outside every collection, as written at column 0 or trailing their line. */
   loose(before: number): void {
