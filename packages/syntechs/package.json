@@ -24,6 +24,16 @@
       "types": "./dist/fmt/index.d.ts",
       "default": "./dist/fmt/index.js"
     },
+    "./highlight": {
+      "@hihyou/source": "./src/highlight/index.ts",
+      "types": "./dist/highlight/index.d.ts",
+      "default": "./dist/highlight/index.js"
+    },
+    "./grammars/*/highlight": {
+      "@hihyou/source": "./src/grammars/*/highlight.ts",
+      "types": "./dist/grammars/*/highlight.d.ts",
+      "default": "./dist/grammars/*/highlight.js"
+    },
     "./grammars/*": {
       "@hihyou/source": "./src/grammars/*/index.ts",
       "types": "./dist/grammars/*/index.d.ts",
@@ -46,9 +56,11 @@
     "narrow-emojis": "0.0.3"
   },
   "devDependencies": {
+    "@shikijs/engine-javascript": "2.5.0",
     "esbuild": "0.28.2",
     "oxfmt": "0.70.0",
     "prettier": "3.9.9",
+    "shiki": "2.5.0",
     "tree-sitter-css": "workspace:*",
     "tree-sitter-html": "workspace:*",
     "tree-sitter-javascript": "workspace:*",

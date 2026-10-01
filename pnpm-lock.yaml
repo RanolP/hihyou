@@ -227,6 +227,9 @@ importers:
         specifier: 0.0.3
         version: 0.0.3
     devDependencies:
+      '@shikijs/engine-javascript':
+        specifier: 2.5.0
+        version: 2.5.0
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
@@ -236,6 +239,9 @@ importers:
       prettier:
         specifier: 3.9.9
         version: 3.9.9
+      shiki:
+        specifier: 2.5.0
+        version: 2.5.0
       tree-sitter-css:
         specifier: workspace:*
         version: link:grammars/tree-sitter-css
