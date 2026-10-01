@@ -52,6 +52,7 @@ import {
   ignoredMemberSeparator,
   typeCustoms,
   typeRules,
+  typeNeedsParens,
   unionOwnsComments,
   unparenType,
 } from "./print/types.js";
@@ -390,6 +391,15 @@ function wrapped(n: number, s: StreamCtx<JsOptions>, print: () => void): void {
     // the parentheses needsParens adds: `+((a), (b))` keeps one pair around `(a), (b)`, a statement's `((a))` none.
     const inner = unparen(ctx, n);
     const own = kind(ctx, parent(ctx, n)) !== PE && needsParens(inner, ctx);
+    if (own) sToken(n, "(", true);
+    sToken(inner, ctx.tree.text(inner));
+    if (own) sToken(n, ")", true);
+  } else if (kind(ctx, n) === "parenthesized_type") {
+    // oxc's AST keeps no parentheses around a type: an ignored one prints the type inside them as written, in
+    // the parentheses its place needs.
+    let inner = n;
+    while (kind(ctx, inner) === "parenthesized_type") inner = first(ctx, inner) ?? inner;
+    const own = typeNeedsParens(ctx, inner);
     if (own) sToken(n, "(", true);
     sToken(inner, ctx.tree.text(inner));
     if (own) sToken(n, ")", true);
