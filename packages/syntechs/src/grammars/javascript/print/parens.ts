@@ -771,15 +771,43 @@ const NON_ASYNC_SCOPES = new Set([
   "class_static_block",
 ]);
 
-/** Whether `await` at `n` is an operator, as babel reads it: in an async function or at a module's top level. */
+/** Whether `await` at `n` is an operator, as oxc reads it: in an async function or at a module's top level. */
 export function awaitsHere(x: HasTree, n: number): boolean {
-  for (let a = parentOf(x, n); a !== undefined; a = parentOf(x, a)) {
+  let a = parentOf(x, n);
+  for (; a !== undefined; a = parentOf(x, a)) {
     const k = kind(x, a);
     if (FUNCTION_SCOPES.has(k))
       return childWhere(x, a, (c) => kind(x, c) === "async") !== undefined;
     if (NON_ASYNC_SCOPES.has(k)) return false;
+    if (parentOf(x, a) === undefined) break;
   }
-  return true;
+  if (a === undefined || x.options.sourceType === "module") return true;
+  return x.options.sourceType === "unambiguous" && isModule(x, a);
+}
+
+const modules = new WeakMap<object, boolean>();
+
+/**
+ * Whether oxc reads the program at `root` as a module. It takes a `.js`/`.ts` file as a script unless only a module
+ * parses: an import or export statement, `import.meta`, or a top-level `await x` that no call of `await` reads.
+ * In a script, top-level `await(1)` is a call of `await`, and oxfmt keeps its parentheses.
+ */
+function isModule(x: HasTree, root: number): boolean {
+  let known = modules.get(x.tree);
+  if (known !== undefined) return known;
+  const scan = (n: number, top: boolean): boolean => {
+    const k = kind(x, n);
+    if (k === "import_statement" || k === "export_statement") return true;
+    if (k === "meta_property" && x.tree.text(n).startsWith("import")) return true;
+    if (top && k === "await_expression" && awaitCallParen(x, n) === undefined) return true;
+    const inner = top && !FUNCTION_SCOPES.has(k) && !NON_ASYNC_SCOPES.has(k);
+    for (let i = 0, c = x.tree.count(n); i < c; i++)
+      if (scan(x.tree.child(n, i), inner)) return true;
+    return false;
+  };
+  known = scan(root, true);
+  modules.set(x.tree, known);
+  return known;
 }
 
 /** Whether `yield` at `n` is an operator, as babel reads it: in a generator; elsewhere it is an identifier. */

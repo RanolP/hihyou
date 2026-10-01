@@ -1,4 +1,4 @@
-js@oxfmt compatibility: 916/964 (95.02%), 5 refused (ok:false), 190 excluded
+js@oxfmt compatibility: 921/964 (95.54%), 4 refused (ok:false), 190 excluded
 
 Fixtures: prettier 3.9.9 tests/format/{js,jsx} (recursive), every spec call listing parser `babel` or `acorn` or `espree` or `meriyah` or `oxc`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left.
 
@@ -8,7 +8,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
-| js/await/like-call.js | 0/1 | 0.00% |
 | js/babel-plugins/v8intrinsic.js | 0/1 | 95.83% |
 | js/comments-closure-typecast/styled-components.js | 0/1 | 40.00% |
 | js/ignore/ignore.js | 0/1 | 98.28% |
@@ -17,7 +16,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/ignore/issue-9877.js | 0/1 | 58.82% |
 | js/ignore/semi/class-expression-decorator.js | 0/1 | 25.00% |
 | js/ignore/semi/directive.js | 1/2 | 88.89% |
-| js/multiparser-comments/comment-inside.js | 0/1 | 86.36% |
 | js/multiparser-css/colons-after-substitutions.js | 0/1 | 78.79% |
 | js/multiparser-css/colons-after-substitutions2.js | 0/1 | 95.65% |
 | js/multiparser-css/issue-11797.js | 0/1 | 81.48% |
@@ -31,6 +29,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/multiparser-graphql/comment-tag.js | 0/1 | 76.92% |
 | js/multiparser-graphql/escape.js | 0/1 | 82.93% |
 | js/multiparser-graphql/expressions.js | 0/1 | 40.91% |
+| js/multiparser-graphql/graphql-tag.js | 0/1 | 72.44% |
 | js/multiparser-graphql/graphql.js | 0/1 | 38.10% |
 | js/multiparser-graphql/invalid.js | 0/1 | 97.78% |
 | js/multiparser-graphql/react-relay.js | 0/1 | 36.84% |
@@ -46,11 +45,8 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/template-literals/styled-components-with-expressions.js | 0/1 | 69.57% |
 | js/template-literals/styled-jsx-with-expressions.js | 0/1 | 60.24% |
 | js/template-literals/styled-jsx.js | 0/1 | 86.63% |
-| js/ternaries/parenthesis/await-expression.js | 0/1 | 33.33% |
-| js/top-level-await/test.cjs | 0/1 | 0.00% |
-| js/top-level-await/test.js | 0/1 | 0.00% |
+| js/ternaries/parenthesis/await-expression.js | 0/1 | 66.67% |
 | jsx/template/styled-components.js | 0/1 | 83.08% |
-| jsx/top-level-await/test.jsx | 0/1 | 0.00% |
 
 # Refused
 
@@ -60,9 +56,8 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | :------ | :----------: | :---------: | :----------- |
 | js/_errors_/html-like-comments.js | 1/1 | 28.57% | check: input "<!-- comment" at 49 is output as "\"hello world\"" at 48, which means "str:hello world@\|0/4", not "<!-- co |
 | js/comments/html-like/comment.js | 1/1 | 50.00% | check: input "<!--" at 0 is output as "alert" at 0, which means "alert@function\|0/3", not "<!--@\|0/1" |
-| js/multiparser-graphql/graphql-tag.js | 1/1 | 72.44% | check: input "\n# comment\n" at 753 is output as "\n  # comment\n  " at 764, which means "embed:#comment@\|10/26", not "e |
 | js/multiparser-html/html-template-literals.js | 2/2 | 66.50% | check: input "\"\nsingle-quoted='" at 642 is output as "\"\n  single-quoted=\"" at 643, which means "embed:\"single-quot |
-| js/multiparser-html/lit-html.js | 2/2 | 54.63% | check: input "<my-element obj=" at 762 is output as "<my-element obj=\"" at 714, which means "embed:<my-elementobj=\"@\|0 |
+| js/multiparser-html/lit-html.js | 2/2 | 54.63% | check: input "<my-element obj=" at 762 is output as "<my-element obj=\"" at 714, which means "embed:<my-elementobj=\"#0@ |
 
 # Excluded
 

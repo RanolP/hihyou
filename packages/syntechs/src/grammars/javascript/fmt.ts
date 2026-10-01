@@ -91,6 +91,7 @@ const defaults: JsOptions = {
   experimentalOperatorPosition: "end",
   experimentalTernaries: false,
   parser: "babel",
+  sourceType: "unambiguous",
 };
 
 const PE = "parenthesized_expression";

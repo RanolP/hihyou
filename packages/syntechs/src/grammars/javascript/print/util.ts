@@ -19,6 +19,11 @@ export interface JsOptions extends PrettierOptions {
   experimentalTernaries: boolean;
   /** Which of prettier's parsers this formatter stands in for: a few decisions differ for TypeScript. */
   parser: "babel" | "typescript";
+  /**
+   * How oxc reads the file, from its extension: `.mjs`/`.mts` as a module, `.cjs`/`.cts` as a script, anything
+   * else as a module only when nothing but a module parses. It decides whether top-level `await(1)` calls `await`.
+   */
+  sourceType: "module" | "script" | "unambiguous";
 }
 
 /** The tree queries the JS helpers read: the format's tree, its options, and where its comments attach. */
@@ -44,7 +49,7 @@ export type Args = PrintArgs | undefined;
  */
 export interface HasTree {
   readonly tree: FormatTree;
-  readonly options: Pick<JsOptions, "parser">;
+  readonly options: Pick<JsOptions, "parser" | "sourceType">;
 }
 
 export function kind(x: HasTree, n: number): string;

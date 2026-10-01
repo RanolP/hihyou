@@ -271,6 +271,14 @@ async function loadGrammar(name: GrammarName) {
   return g;
 }
 
+/** The JS formatter's sourceType for a fixture whose extension fixes it, as oxc reads the extension. */
+const sourceTypeOf = (fixture: string): { sourceType?: string } =>
+  /\.m[jt]sx?$/.test(fixture)
+    ? { sourceType: "module" }
+    : /\.c[jt]sx?$/.test(fixture)
+      ? { sourceType: "script" }
+      : {};
+
 function runCase(
   c: Case,
   grammar: Grammar,
@@ -281,11 +289,10 @@ function runCase(
     let out: string;
     let why: string | undefined;
     try {
-      const res = format(
-        parseTree(grammar, c.text),
-        lang,
-        r.options,
-      );
+      const res = format(parseTree(grammar, c.text), lang, {
+        ...r.options,
+        ...sourceTypeOf(c.fixture),
+      });
       out = res.ok ? res.text : c.text;
       if (!res.ok) why = `${res.reason}: ${res.detail}`;
       else {
