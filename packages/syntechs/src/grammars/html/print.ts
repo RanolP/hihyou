@@ -18,10 +18,12 @@ import {
   SOFT,
   sBreakParent,
   sHardline,
+  sKeptText,
   sLine,
   sLiteral,
   sText,
 } from "../../fmt/stream.js";
+import { parseFrontMatter } from "../css/front-matter.js";
 import { language } from "./index.js";
 
 export class Unsupported extends Error {}
@@ -54,6 +56,8 @@ interface Node {
   isDanglingSpaceSensitive: boolean;
   isWhitespaceSensitive: boolean;
   isIndentationSensitive: boolean;
+  /** The root's front matter, as its printed lines. */
+  frontMatter?: string[];
 }
 
 interface Attr {
@@ -284,18 +288,46 @@ type TsTree = ReturnType<typeof parseTree>;
 
 /**
  * `text` as prettier's parser reads it, preprocessed; throws `Unsupported`, and for a non-blank script or style
- * unless the printer will get an `embed`.
+ * unless the printer will get an `embed`. `atFileStart`: `text` starts the file, where a front matter may open it.
  */
-export function parseHtml(text: string, embeds = false): Node {
+export function parseHtml(text: string, embeds = false, atFileStart = false): Node {
   const tree = parseTree(language, text);
   if (tree.errorChars > 0 || brokenNodes(tree) !== undefined) throw new Unsupported("parse error");
   const root = node("root", 0, text.length);
-  fill(tree, text, root, tree.root, 0, text.length);
+  const front = atFileStart ? frontMatter(text) : undefined;
+  if (front !== undefined) {
+    // The front matter is no HTML: a tag tree-sitter read inside it would be printed a second time.
+    if (kids(tree, tree.root).some((c) => tree.start(c) < front.end && !["text", "entity"].includes(tree.kindName(c))))
+      throw new Unsupported("front matter");
+    root.frontMatter = front.lines;
+  }
+  fill(tree, text, root, tree.root, front?.end ?? 0, text.length);
   walk(root, (n) => {
     if (embeddedLanguage(n) !== undefined && !embeds) throw new Unsupported(n.name);
   });
   preprocess(root);
   return root;
+}
+
+/**
+ * utils/front-matter/parse.js's front matter at the file's start, as oxfmt prints it: a non-yaml one as written, a
+ * yaml one through a yaml formatter. With none here, a yaml body prints only when it is `key: value` lines whose
+ * formatting is just the gap after the `:`; any other throws `Unsupported`.
+ */
+function frontMatter(text: string): { end: number; lines: string[] } | undefined {
+  const fm = parseFrontMatter(text);
+  if (fm === undefined) return undefined;
+  const end = fm.raw.length;
+  if (fm.language !== "yaml") return { end, lines: fm.raw.split("\n") };
+  const body: string[] = [];
+  for (const line of fm.value.trim() === "" ? [] : fm.value.split("\n")) {
+    const kv = /^([A-Za-z_][\w-]*):[ \t]+(.*?)[ \t]*$/.exec(line);
+    const v = kv?.[2] ?? "";
+    const plain = /^[^\s#'"[\]{}&*!|>%@`,?:-][^#]*$/.test(v) && !/\s\s|: |:$/.test(v);
+    if (kv === null || !(plain || /^"(?:[^"\\]|\\.)*"$/.test(v))) throw new Unsupported("yaml front matter");
+    body.push(`${kv[1]}: ${v}`);
+  }
+  return { end, lines: [fm.startDelimiter + (fm.explicitLanguage ?? ""), ...body, fm.endDelimiter] };
 }
 
 function kids(tree: TsTree, n: number): number[] {
@@ -738,6 +770,16 @@ class Printer {
   private endLine = (n: Node) => this.lines.at(n.end);
 
   root(root: Node): void {
+    // printer-html.js's root: the front matter, then a blank line before the content.
+    root.frontMatter?.forEach((l, i) => {
+      if (i > 0) sHardline();
+      // A non-yaml one keeps a line's trailing whitespace as written.
+      if (l !== "") sKeptText(l);
+    });
+    if (root.frontMatter !== undefined && root.children.length > 0) {
+      sHardline();
+      sHardline();
+    }
     open(GROUP);
     this.children(root);
     close();

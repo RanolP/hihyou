@@ -145,7 +145,7 @@ export const html: Language<PrettierOptions> = {
               printInto(tree, css as unknown as Language<PrettierOptions>, { printWidth, tabWidth, useTabs }, d),
             );
           };
-          printHtml(parseHtml(text, true), text, { text: sText, tabWidth, embed, declarations, declaration });
+          printHtml(parseHtml(text, true, ctx.tree.lf(node) === 0 && ctx.tree.col(node) === 0), text, { text: sText, tabWidth, embed, declarations, declaration });
         },
       ],
     ]),

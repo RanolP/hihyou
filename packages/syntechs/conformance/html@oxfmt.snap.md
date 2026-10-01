@@ -1,4 +1,4 @@
-html@oxfmt compatibility: 93/146 (63.70%), 25 refused (ok:false), 23 excluded
+html@oxfmt compatibility: 100/146 (68.49%), 26 refused (ok:false), 23 excluded
 
 Fixtures: prettier 3.9.9 tests/format/{html} (recursive), every spec call listing parser `html`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left.
 
@@ -18,12 +18,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | html/comments/comment-after-element.html | 2/4 | 66.54% |
 | html/comments/conditional.html | 0/4 | 78.17% |
 | html/comments/surrounding-empty-line.html | 0/4 | 82.72% |
-| html/front-matter/custom-parser.html | 0/1 | 36.36% |
-| html/front-matter/empty.html | 0/1 | 57.14% |
-| html/front-matter/empty2.html | 0/1 | 57.14% |
-| html/front-matter/issue-9042-no-empty-line.html | 0/1 | 0.00% |
-| html/front-matter/issue-9042.html | 0/1 | 0.00% |
-| html/front-matter/unicode.html | 0/1 | 50.00% |
 | html/multiparser/js/script-tag-escaping.html | 0/1 | 80.00% |
 | html/prettier_ignore/issue-15738.html | 0/1 | 85.71% |
 | html/script/babel.html | 0/1 | 92.86% |
@@ -34,8 +28,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | html/tags/openging-at-end.html | 2/4 | 74.11% |
 | html/tags/option.html | 3/4 | 77.27% |
 | html/tags/tags2.html | 2/4 | 73.87% |
-| html/yaml/invalid.html | 0/1 | 58.82% |
-| html/yaml/yaml.html | 0/1 | 71.43% |
 
 # Refused
 
@@ -68,6 +60,7 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | html/tags/menu.html | 4/4 | 77.94% | formatter-error: onclick |
 | html/tags/pre.html | 4/4 | 82.87% | formatter-error: parse error |
 | html/tags/tags.html | 4/4 | 30.50% | formatter-error: on-click |
+| html/yaml/invalid.html | 1/1 | 73.68% | formatter-error: yaml front matter |
 
 # Excluded
 

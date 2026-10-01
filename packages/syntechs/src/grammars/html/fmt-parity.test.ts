@@ -52,6 +52,10 @@ const edgeCases: [string, string][] = [
     "style-attribute",
     `<div style="color:red;background:blue">x</div>\n<div style='content:"x"'>y</div>\n<div style="  ">z</div>\n<div style="a b c">w</div>\n<div style="{{ a }}">v</div>\n<div style="color:#FFF;margin:0 auto;\n\npadding:.5px;font-family:Arial, Helvetica, sans-serif">u</div>\n`,
   ],
+  // A leading `---` front matter joined into the text after it; yaml prints `key: value` with one space, a blank line after.
+  ["front-matter-yaml", '---\nhello:     world\ntitle: "A"\n---\nTest <a\nhref=x>abc</a>.\n'],
+  // A front matter in another language lost a whitespace-only line's spaces; it prints as written.
+  ["front-matter-custom", "---mycustomparser\n  \ntitle: Hello\n\n---\n\n\n<h1>a</h1>\n"],
 ];
 
 function ours(text: string, options: Partial<PrettierOptions>) {
