@@ -252,6 +252,11 @@ const edgeCases: [string, string][] = [
   ["important-alone", "a{b:!important;c: ! IMPORTANT;d:/*c*/!important;e: /*c*/ !important}"],
   // A lone `!`, a `%` or a `.` delim in a value was an ERROR that kept the whole rule as written.
   ["delim-value", "a{b:.a!optional;c:a ! c;d:a! c;e:x % c;f:x /* q */ % c;g:a! c, d;h:% c}"],
+  // A comment inside an `@include`/`@mixin` prelude was dropped instead of moved after the prelude.
+  [
+    "include-prelude-comment",
+    "@include f(x /*q*/ / c, y /*r*/);\n@include x /*q*/ y;\n@include f(g(x /*q*/));\n@include f(x /*q*/ / c) {a:b}\n@mixin f(x /*q*/ / c) {}\n",
+  ],
   ["word-hash-star","a{b:a#b, d;c:x a#b#c;d:f(a*c);e:a$c;f:url($a*3);g:calc(a*c);h:f(w-*);i:a #b}"],
 ];
 

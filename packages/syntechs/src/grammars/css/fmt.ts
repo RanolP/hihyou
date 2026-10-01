@@ -798,8 +798,16 @@ export function sassDirective(node: number, ctx: SCtx): void {
     const sep = (entries[0] as SplitEntry).sep;
     sToken(sep, t.text(sep));
   }
+  // The prelude's comments (`hoistedComment`) after it: on a line of their own before a block, else before the `;`.
+  const hoisted = ctx.danglingComments(node);
+  if (hoisted.length > 0 && run.trail.length > 0) sHardline();
+  hoisted.forEach((c, i) => {
+    if (i > 0 || run.trail.length === 0) sText(" ");
+    ctx.comment(c);
+  });
   for (const c of run.trail) {
-    sText(" ");
+    if (hoisted.length > 0) sHardline();
+    else sText(" ");
     ctx.print(c);
   }
   if (run.trail.length > 0) return;
@@ -1048,6 +1056,8 @@ export function important(node: number): void {
  * comment is a statement of its own: one that starts the line the statement before it ends trails that statement.
  */
 const handleComment: CommentHandler<CssOptions> = ({ tree, comment, enclosing, preceding, following, placement, text }) => {
+  const hoist = hoistedComment(tree, enclosing);
+  if (hoist !== undefined && text.startsWith("/*")) return { node: hoist, as: "dangling" };
   const ownComments = tree.kindName(enclosing) === "import_statement" || valueArguments(tree, enclosing);
   if ((ownComments && text.startsWith("/*")) || layerList(enclosing, tree))
     return { node: enclosing, as: "dangling" };
@@ -1065,6 +1075,20 @@ const handleComment: CommentHandler<CssOptions> = ({ tree, comment, enclosing, p
     ? { node: enclosing, as: "dangling" }
     : undefined;
 };
+
+/**
+ * The `@include` or `@mixin` whose prelude holds a comment: oxfmt prints the prelude without it, then the comment
+ * (`@include f(x /*q*\/ / c);` is `@include f(x / c) /*q*\/;`).
+ */
+function hoistedComment(tree: FormatTree, enclosing: number): number | undefined {
+  for (let a = enclosing; a !== NO_NODE; a = tree.parent(a)) {
+    const k = tree.kindName(a);
+    if (k === "block") return undefined;
+    if ((k === "at_rule" || k === "postcss_statement") && ["@include", "@mixin"].includes(tree.text(tree.child(a, 0))))
+      return a;
+  }
+  return undefined;
+}
 
 /**
  * A comment just before a value's `*` or `/` operator (`a /* q *\/ / c`), which oxc-css-parser reads as a value of
