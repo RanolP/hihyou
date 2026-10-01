@@ -20,12 +20,14 @@ import { language } from "./index.js";
 import { EVENT_HANDLERS, type EmbeddedLanguage, parseHtml, printHtml, Unsupported, type WhitespaceSensitivity } from "./print.js";
 
 /** Each language a script or style holds: the grammar its content parses with and the formatter printing it. */
-const EMBEDDED: Record<EmbeddedLanguage, [Grammar, unknown]> = {
-  babel: [jsGrammar, javascript],
-  typescript: [tsGrammar, typescript],
-  tsx: [tsxGrammar, tsx],
-  json: [jsGrammar, json],
-  css: [cssGrammar, css],
+const EMBEDDED: Record<EmbeddedLanguage, () => [Grammar, unknown]> = {
+  babel: () => [jsGrammar, javascript],
+  typescript: () => [tsGrammar, typescript],
+  tsx: () => [tsxGrammar, tsx],
+  json: () => [jsGrammar, json],
+  css: () => [cssGrammar, css],
+  // A `text/html` script prints through this formatter itself, declared below.
+  html: () => [language, html],
 };
 
 const LEGACY_MARK = "//\u{E000}";
@@ -169,7 +171,7 @@ export const html: Language<HtmlOptions> = {
           const { printWidth, tabWidth, useTabs, bracketSameLine, singleAttributePerLine, htmlWhitespaceSensitivity } =
             ctx.options;
           const embed = (lang: EmbeddedLanguage, content: string) => {
-            const [contentGrammar, formatter] = EMBEDDED[lang];
+            const [contentGrammar, formatter] = EMBEDDED[lang]();
             let tree = parseTree(contentGrammar, content);
             if (tree.errorChars > 0 || brokenNodes(tree) !== undefined) throw new Unsupported(`${lang} parse error`);
             // A legacy `<!--` or `-->` line is a comment to babel, printed as written; the JS formatter leaves an
@@ -191,7 +193,11 @@ export const html: Language<HtmlOptions> = {
                     return true;
                   };
             withEmbedding({ anchor: node, token }, () =>
-              printInto(tree, formatter as unknown as Language<PrettierOptions>, { printWidth, tabWidth, useTabs }),
+              printInto(
+                tree,
+                formatter as unknown as Language<PrettierOptions>,
+                lang === "html" ? ctx.options : { printWidth, tabWidth, useTabs },
+              ),
             );
           };
           const declarations = (value: string) => {

@@ -957,14 +957,14 @@ export interface HtmlPrinter {
   readonly eventHandler?: (code: string) => (() => void) | undefined;
 }
 
-export type EmbeddedLanguage = "babel" | "typescript" | "tsx" | "json" | "css";
+export type EmbeddedLanguage = "babel" | "typescript" | "tsx" | "json" | "css" | "html";
 
 const attr = (n: Node, name: string) => n.attrs.find((a) => a.rawName.toLowerCase() === name);
 
 /**
  * utilities/index.js's inferScriptParser and inferStyleParser, for a non-blank script or style: undefined for any
  * other element, "raw" for a content oxfmt keeps as written (a `src` script's, an unknown type's or lang's). A
- * content oxfmt formats in a language no formatter here reads (scss, less, a handlebars template) throws
+ * content oxfmt formats in a language no formatter here reads (scss, less, a handlebars template, markdown) throws
  * `Unsupported`.
  */
 function embeddedLanguage(n: Node): EmbeddedLanguage | "raw" | undefined {
@@ -976,7 +976,8 @@ function embeddedLanguage(n: Node): EmbeddedLanguage | "raw" | undefined {
     return "raw";
   }
   if (attr(n, "src") !== undefined) return "raw";
-  const type = attr(n, "type")?.value?.toLowerCase();
+  // utilities/index.js's inferScriptParser matches the type as written: `Text/JavaScript` prints as written.
+  const type = attr(n, "type")?.value ?? undefined;
   if (lang === "ts" || type === "application/x-typescript") return "typescript";
   if (lang === "tsx") return "tsx";
   if (lang !== undefined && lang !== "js" && lang !== "jsx") return "raw";
@@ -987,8 +988,9 @@ function embeddedLanguage(n: Node): EmbeddedLanguage | "raw" | undefined {
     ["module", "text/javascript", "text/babel", "text/jsx", "application/javascript", "jsx"].includes(type)
   )
     return "babel";
-  if (["application/json", "application/ld+json", "importmap", "speculationrules"].includes(type)) return "json";
-  if (["text/x-handlebars-template", "text/markdown", "text/html"].includes(type))
+  if (type.endsWith("json") || type.endsWith("importmap") || type === "speculationrules") return "json";
+  if (type === "text/html") return "html";
+  if (["text/x-handlebars-template", "text/markdown"].includes(type))
     throw new Unsupported(`script type ${type}`);
   return "raw";
 }

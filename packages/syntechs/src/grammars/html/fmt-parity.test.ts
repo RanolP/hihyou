@@ -133,6 +133,11 @@ const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
   ["gt-in-text", "<div>a > b {{ x => y }} c>d</div>\n<p>></p>\n<span> => </span>\n"],
   // A CDATA section was a parse error that refused the file; it prints as text, its gaps one space.
   ["cdata", "<span><![CDATA[<s>John Smith</s>]]></span>\n<span><![CDATA[1]]> <br> <![CDATA[2]]></span>\n<![CDATA[ x  y ]]>\n"],
+  // A text/html script refused the file, and a `systemjs-importmap` or `Text/JavaScript` type was matched by the wrong rule.
+  [
+    "script-html-and-json-types",
+    '<script type="text/html"><div><p>foo</p></div></script>\n<script type="systemjs-importmap">{"a":1}</script>\n<script type="Text/JavaScript">let a=1</script>\n<script type="x/JSON">{"a":1}</script>\n',
+  ],
   ["requoted-apos", `<div title="123 &apos;&quot; 456">x</div>\n<p title='a "b" &apos;c'>y</p>\n`],
 ];
 
