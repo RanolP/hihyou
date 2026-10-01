@@ -1,0 +1,48 @@
+--- a/grammar.js
++++ b/grammar.js
+@@ -39,12 +39,20 @@
+     ),
+ 
+     _doctype: _ => /[Dd][Oo][Cc][Tt][Yy][Pp][Ee]/,
+ 
++    _cdata: _ => /<!\[CDATA\[([^\]]|\][^\]])*\]\]>/,
++
++    _lt: _ => /<[^A-Za-z\/!?<]/,
++
+     _node: $ => choice(
+       $.doctype,
+       $.entity,
+       $.text,
++      // A CDATA section prints as text, as prettier's parser reads it.
++      alias($._cdata, $.text),
++      // A `<` that cannot open a tag (`< b`, `<1`) is text, as the HTML spec and prettier's parser read it.
++      alias($._lt, $.text),
+       $.element,
+       $.script_element,
+       $.style_element,
+       $.erroneous_end_tag,
+@@ -135,7 +143,8 @@
+       seq('\'', optional(alias(/[^']+/, $.attribute_value)), '\''),
+       seq('"', optional(alias(/[^"]+/, $.attribute_value)), '"'),
+     ),
+ 
+-    text: _ => /[^<>&\s]([^<>&]*[^<>&\s])?/,
++    // A `>` in text is text, as the HTML spec and prettier's parser read it.
++    text: _ => /[^<&\s]([^<&]*[^<&\s])?/,
+   },
+ });
+--- a/src/scanner.c
++++ b/src/scanner.c
+@@ -216,9 +216,11 @@
+     } else if (
+         parent &&
+         (
+             !tag_can_contain(parent, &next_tag) ||
+-            ((parent->type == HTML || parent->type == HEAD || parent->type == BODY) && lexer->eof(lexer))
++            // The end of file closes every open element, as the HTML spec and prettier's parser do; with only the
++            // document's own closed here, a second element left open at the end parsed as an ERROR.
++            lexer->eof(lexer)
+         )
+     ) {
+         pop_tag(scanner);
+         lexer->result_symbol = IMPLICIT_END_TAG;

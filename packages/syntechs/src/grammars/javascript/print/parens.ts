@@ -291,6 +291,8 @@ export function needsParens(n: number, ctx: JsCtx): boolean {
   if (nk === "identifier") {
     // `for ((async) of x)`, `for ((let).a of x)` and `(let)[0] = 1` keep theirs.
     const text = src(ctx, n);
+    // An HTML embed's placeholder (print/embed.ts) keeps its parentheses: the substitution may be any expression.
+    if (top !== n && /^PRETTIER_HTML_PLACEHOLDER_\d+_\d+_IN_JS$/.test(text)) return true;
     if (
       key === "left" &&
       pk === "for_in_statement" &&
