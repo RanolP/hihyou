@@ -135,7 +135,11 @@ function cssEmbed(ctx: JsStreamCtx, node: number, raws: string[], subs: () => Pa
   const statements = placeholderStatements(raws);
   const text = withLastSemicolon(statements);
   const tree = parseTree(cssLanguage, text);
-  if (tree.errorChars > 0 || brokenNodes(tree) !== undefined || scssOnly(tree)) return undefined;
+  // A combinator alone (`> { … }`), a selector to SCSS, misses its right side to tree-sitter-css, whose printer keeps
+  // that selector as written.
+  const broken = brokenNodes(tree);
+  const unreadable = broken !== undefined && [...broken].some((n) => !tree.kindName(n).endsWith("_selector"));
+  if (tree.errorChars > 0 || unreadable || scssOnly(tree)) return undefined;
   const regex = /prettier-placeholder-(\d+)/;
   const { printWidth, tabWidth, useTabs, singleQuote } = ctx.js.options;
   let failed = false;
