@@ -396,6 +396,11 @@ const edgeCases: [string, string][] = [
     "custom-property-block-items",
     "a{--a: {a}}\na{--a:{a;b:c}}\na{--a:{ a b ; }}\na{--a:{1}}\na{--a: { a: 1, b: 2 }}\na{--a:{a :b :c}}\na{--a:{a:{b:c}}}\na{--a: {{a}}}",
   ],
+  // An uppercase `OF` or `NTH-CHILD` was an ERROR (or a number `2n`) that kept the An+B unspaced, or failed the check.
+  [
+    "nth-any-case",
+    "a:nth-child(2n+1 OF .a),a:nth-last-child(-n+3 Of .a, .b),a:nth-child(2n+1   OF   .a){b:c}\nA:NTH-CHILD(2n),A:NTH-CHILD(2N+1),a:Nth-Last-Of-Type(2n),a:NTH-COL(2n+1),a:nth-childx(2n){b:c}",
+  ],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");
