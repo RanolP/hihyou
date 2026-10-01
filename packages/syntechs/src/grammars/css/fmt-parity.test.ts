@@ -258,6 +258,8 @@ const edgeCases: [string, string][] = [
     "@include f(x /*q*/ / c, y /*r*/);\n@include x /*q*/ y;\n@include f(g(x /*q*/));\n@include f(x /*q*/ / c) {a:b}\n@mixin f(x /*q*/ / c) {}\n",
   ],
   ["word-hash-star","a{b:a#b, d;c:x a#b#c;d:f(a*c);e:a$c;f:url($a*3);g:calc(a*c);h:f(w-*);i:a #b}"],
+  // The space before a `%` selector after a compound (`a:b %c`, `.a %c`) was glued as `a:b%c`.
+  ["placeholder-gap", ".x{a:b %c{d:e}}\n.x{a %c{d:e}}\n.x{a:b%c{d:e}}\n.a %c{d:e}\n.x{a:b  %c{d:e}}"],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");

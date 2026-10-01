@@ -247,7 +247,8 @@ export const css = format({
 
     class_selector: adjacent,
     id_selector: adjacent,
-    placeholder_selector: adjacent,
+    // `a:b %c{…}`, a nested rule tree-sitter reads as `a:b` then `%c`: the gap before the `%` stays, as postcss keeps it.
+    placeholder_selector: asWritten,
     pseudo_element_selector: adjacent,
     pseudo_class_selector: adjacent,
     namespace_selector: adjacent,
