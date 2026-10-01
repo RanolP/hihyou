@@ -1225,12 +1225,15 @@ const oxfmtChainHead = (c: CommentContext<JsOptions>): CommentTarget | undefined
 
 /**
  * `a // c⏎.b.c`: outside a member chain (a member access with no call), oxfmt prints a line comment after the
- * object past the whole access, `a.b.c; // c`, where prettier keeps it after the object.
+ * object past the whole access, `a.b.c; // c`, where prettier keeps it after the object. One on a line of its own,
+ * line or block, stays before the lookup it precedes (`a⏎// c⏎.b`), a dangling comment of that member
+ * (calls.ts's memberCustom).
  */
 const oxfmtMemberObject = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   const { enclosing, preceding } = c;
+  const ownLine = c.placement === "ownLine";
   if (
-    !c.text.startsWith("//") ||
+    (!ownLine && !c.text.startsWith("//")) ||
     c.following === undefined ||
     !MEMBERS.has(kind(c, enclosing)) ||
     preceding === undefined ||
@@ -1246,6 +1249,7 @@ const oxfmtMemberObject = (c: CommentContext<JsOptions>): CommentTarget | undefi
     node = up;
   const holder = parent(c, node);
   if (holder !== undefined && CALLS.has(kind(c, holder)) && field(c, holder, "function") === node) return;
+  if (ownLine) return kind(c, enclosing) === "member_expression" ? { node: enclosing, as: "dangling" } : undefined;
   return { node, as: "trailing" };
 };
 

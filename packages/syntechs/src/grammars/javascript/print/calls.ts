@@ -809,6 +809,19 @@ const memberCustom: CustomRule<JsOptions> = (n, s) => {
   const ctx = sctx.js;
   const object = objectOf(ctx, n);
   if (object !== undefined) sctx.print(object);
+  // oxfmt keeps a comment on a line of its own before the lookup there (comments.ts's oxfmtMemberObject).
+  const dangling = s.danglingComments(n);
+  if (dangling.length > 0) {
+    open(INDENT);
+    for (const c of dangling) {
+      sHardline();
+      s.comment(c);
+    }
+    sHardline();
+    sMemberLookup(sctx, n);
+    close();
+    return;
+  }
   let firstNonMember = role(ctx, n);
   while (
     firstNonMember.parent !== undefined &&
