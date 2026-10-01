@@ -395,14 +395,22 @@ function prevSibling(tree: FormatTree, n: number): number {
   return NO_NODE;
 }
 
-/** Prettier's hasLanguageComment: a `/* HTML *\/` block comment just before `n` or its expression statement. */
+/**
+ * Prettier's hasLanguageComment: a `/* HTML *\/` block comment just before `n` or its expression statement. Under
+ * `as const` or `satisfies T`, the comment stands before that expression, which `n` starts.
+ */
 function hasLanguageComment(tree: FormatTree, n: number, name: string): boolean {
   const named = (m: number) => {
     const c = prevSibling(tree, m);
     return c !== NO_NODE && tree.kindName(c) === "comment" && tree.text(c) === `/* ${name} */`;
   };
   if (named(n)) return true;
-  const p = tree.parent(n);
+  let p = tree.parent(n);
+  while (p !== NO_NODE && (tree.kindName(p) === "as_expression" || tree.kindName(p) === "satisfies_expression") && tree.child(p, 0) === n) {
+    if (named(p)) return true;
+    n = p;
+    p = tree.parent(n);
+  }
   return p !== NO_NODE && tree.kindName(p) === "expression_statement" && named(p);
 }
 
