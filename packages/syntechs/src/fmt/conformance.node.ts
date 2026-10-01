@@ -201,6 +201,11 @@ export const PRETTIER_FIXTURES: Target[] = [
     parsers: ["css"],
     ignore: CSS_IGNORE,
   }),
+  prettierFixtures("html", "html", "html", () => "html", {
+    dirs: ["html"],
+    parsers: ["html"],
+    ignore: [],
+  }),
   prettierFixtures("js", "javascript", "javascript", () => "javascript", {
     dirs: ["js", "jsx"],
     parsers: ["babel", "acorn", "espree", "meriyah", "oxc"],
