@@ -69,7 +69,6 @@ const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
     "<div>a <span> b </span><p> c </p> <!-- x --> <b>d</b></div>\n<p>\n  text <a href='x'>link</a>\n</p>\n",
     { htmlWhitespaceSensitivity: s },
   ]),
-  // A `<!-- display: x -->` comment refused the file; it sets the display of the node after it.
   // An iframe's allow refused the file; its directives print `; `-separated, broken one per line with a last `;`.
   [
     "iframe-allow",
@@ -79,7 +78,9 @@ const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
   ['unformatted-lookalike-attributes', '<div on-click="a( 1 )" onClick="b( 2 )" allow=" x ;y" srcset=" a  1x ">x</div>\n'],
   // A blank file printed one line break.
   ["blank-file", "  \n\n "],
+  // A file that is one text with no trailing newline must still end in one.
   ["text-only-file", "a"],
+  // A `<!-- display: x -->` comment refused the file; it sets the display of the node after it.
   ["display-comment", "<div>\n  <!-- display: inline -->\n  <p>Long Long Long Long Long Long Long Long Long Long Long Long Long Long</p>\n</div>\n"],
 ];
 
