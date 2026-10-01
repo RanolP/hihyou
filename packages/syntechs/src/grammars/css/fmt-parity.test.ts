@@ -301,6 +301,8 @@ const edgeCases: [string, string][] = [
     "unknown-at-rule-verbatim",
     "@scope to (.b){img{c:d}}@SCOPE (.a) TO (.b){img{c:d}}@FOO (.a){img{c:d}}@foo   (.a)   x  {img{c:d}}@foo  a   b {c:d}@FOO (.a)  ;@foo (.a\n  ){x{y:z}}@foo (.a){}a{@foo (.a){b{c:d}}}@foo (.a) /* c */{x{y:z}}@foo(.a){x{y:z}}",
   ],
+  // A value's `:` tree-sitter wraps in an ERROR (`a :/b`, `1px:/b`) kept the declaration as written.
+  ["value-colon-error", "a{c:a :/b;d:1px:/b;e:a  :/b/c;f:#fff:/b;g:a :/b !important;h:a /* q */ :/b}"],
   ["word-hash-star","a{b:a#b, d;c:x a#b#c;d:f(a*c);e:a$c;f:url($a*3);g:calc(a*c);h:f(w-*);i:a #b}"],
   // The space before a `%` selector after a compound (`a:b %c`, `.a %c`) was glued as `a:b%c`.
   ["placeholder-gap", ".x{a:b %c{d:e}}\n.x{a %c{d:e}}\n.x{a:b%c{d:e}}\n.a %c{d:e}\n.x{a:b  %c{d:e}}"],

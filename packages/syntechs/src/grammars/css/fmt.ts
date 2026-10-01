@@ -1516,6 +1516,7 @@ function oxcRaw(decl: number, t: FormatTree): boolean {
       const k = t.kindName(c);
       if (k === "parenthesized_value" && !(inMath && calcSum(c)) && !callParens(c)) return true;
       if (k === "brace_value" && !inCall) return true;
+      if (valueColonError(c, t)) return true;
       if (k === "plain_value" && !inCall && delimWord(t.text(c))) return true;
       const math =
         k === "call_expression"
@@ -1524,6 +1525,18 @@ function oxcRaw(decl: number, t: FormatTree): boolean {
       return raw(c, inCall || k === "call_expression", math);
     });
   return raw(decl, false, false);
+}
+
+/**
+ * A `:` tree-sitter-css cannot place in a value (`a :/b`, `1px:/b`), which oxc-css-parser reads as a raw token
+ * (`rawTokens`) like a word's own `:` (`a:/b`).
+ */
+function valueColonError(n: number, t: FormatTree): boolean {
+  if (t.kindName(n) !== "ERROR" || t.text(n) !== ":" || t.kindName(t.parent(n)) === "declaration") return false;
+  // Inside a call oxfmt keeps the arguments as written (`f(a:/b)`), which the ERROR's parent printing does already.
+  for (let up = t.parent(n); up !== NO_NODE && t.kindName(up) !== "arguments"; up = t.parent(up))
+    if (t.kindName(up) === "declaration") return true;
+  return false;
 }
 
 /** A Sass variable or custom property, whose raw value (`oxcRaw`) oxfmt prints verbatim. */
@@ -2312,7 +2325,7 @@ export const css: Language<CssOptions> = {
     wrap: frontMatterFirst,
     commentEndsLine: statementComment,
     keepsSource: prettierIgnored,
-    recovered: (error, t) => sassFlags(error, t) || selectorTail(error, t) || commentedPreludeError(error, t) || verbatimPreludeError(error, t),
+    recovered: (error, t) => sassFlags(error, t) || selectorTail(error, t) || commentedPreludeError(error, t) || verbatimPreludeError(error, t) || valueColonError(error, t),
     finalLine,
   },
 };
