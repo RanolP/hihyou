@@ -53,6 +53,7 @@ export function ruffConfigOptions(o: RuffTestOptions): Record<string, unknown> {
         out["nested-string-quote-style"] = value;
         break;
       case "source_type":
+        out["source-type"] = String(value).toLowerCase();
         break;
       default:
         throw new Error(`unknown ruff test option ${key}`);
@@ -126,7 +127,7 @@ export function ruffSuite(formatterRoot: string): Suite {
       fixture,
       file,
       text,
-      runs: [run(options, expected)],
+      runs: [run(options, expected, file)],
     });
   }
 
@@ -152,7 +153,7 @@ export function ruffSuite(formatterRoot: string): Suite {
     const runs: CaseRun[] = [];
     if (sets === undefined) {
       const expected = pythonFrameAfter(snapshot, "## Output\n");
-      if (expected !== undefined) runs.push(run({}, expected));
+      if (expected !== undefined) runs.push(run({}, expected, file));
     } else {
       let from = 0;
       for (const [i, options] of sets.entries()) {
@@ -161,7 +162,7 @@ export function ruffSuite(formatterRoot: string): Suite {
         const expected =
           from === -1 ? undefined : pythonFrameAfter(snapshot, heading, from);
         if (expected === undefined) break;
-        runs.push(run(options, expected));
+        runs.push(run(options, expected, file));
       }
     }
     if (runs.length !== (sets?.length ?? 1)) {
@@ -173,9 +174,10 @@ export function ruffSuite(formatterRoot: string): Suite {
   return { cases, excluded };
 }
 
-const run = (options: RuffTestOptions, expected: string): CaseRun => ({
+const run = (options: RuffTestOptions, expected: string, file: string): CaseRun => ({
   label: Object.keys(options).length === 0 ? "{}" : JSON.stringify(options),
-  options: ruffConfigOptions(options),
+  // Ruff reads a `.pyi` file as a stub unless the option set names another source type.
+  options: ruffConfigOptions(file.endsWith(".pyi") ? { source_type: "Stub", ...options } : options),
   expected,
   asRecorded: (s) => s.replaceAll("\r\n", "\n"),
 });

@@ -22,6 +22,8 @@ export interface PyOptions {
   "nested-string-quote-style"?: "alternating" | "preferred";
   /** Ruff's preview style. */
   preview?: boolean;
+  /** Ruff's `PySourceType`, which it reads off the file's extension: `.pyi` is a stub, `.ipynb` a notebook. */
+  "source-type"?: "python" | "stub" | "ipynb";
   /** Set only while a docstring's code example is formatted: that docstring's quote (ruff's `DocstringContext`). */
   docstringQuote?: Quote;
 }
@@ -90,7 +92,7 @@ export class Fmt {
         if (n <= 1) sink.sLine(one);
         else {
           sink.sLine(blank);
-          if (n > 2) sink.sLine(blank);
+          if (n > 2 && this.options["source-type"] !== "stub") sink.sLine(blank);
         }
         return;
       case "compound":

@@ -42,8 +42,8 @@ export type StmtRule<K extends Stmt["kind"]> = (
 export type StmtRules = { readonly [K in Stmt["kind"]]?: StmtRule<K> };
 
 /**
- * Ruff's `SuiteKind`; `other` is any other clause's body. Ruff's `last_suite_in_statement` is left out: stub files
- * are not formatted, and its preview empty line is `writeLeadingAlternateBranchComments`'s.
+ * Ruff's `SuiteKind`; `other` is any other clause's body. Ruff's `last_suite_in_statement` is left out: its stub
+ * and preview empty lines are `writeLeadingAlternateBranchComments`'s.
  */
 export type SuiteKind = "top" | "function" | "class" | "other";
 
@@ -190,7 +190,7 @@ export function writeSuite(
   try {
     f.at(top ? TOP : COMPOUND, () => {
       const firstDoc = asDocstring(f, first, kind);
-      if (kind === "other" && isDefinition(first) && !cs.hasLeading(first))
+      if (kind === "other" && isDefinition(first) && !cs.hasLeading(first) && !isStub(f))
         emptyLine();
       if (kind === "function" && !firstDoc) {
         const start = cs.leading(first)[0]?.start ?? first.start;
@@ -239,6 +239,31 @@ function writeFrom(f: Fmt, s: Stmt, cursor: SuiteCursor): Stmt {
   return s;
 }
 
+const isStub = (f: Fmt) => f.options["source-type"] === "stub";
+
+const isStubClass = (f: Fmt, s: Stmt) =>
+  s.kind === "ClassDef" && s.decorators.length === 0 && onlyEllipsis(f, s.body) !== undefined;
+
+/**
+ * In a stub file, the definitions that follow each other with no empty line: a function after one whose body is
+ * `...`, and an undecorated `class A: ...` after another.
+ */
+function stubCanOmitEmptyLine(f: Fmt, preceding: Stmt, following: Stmt): boolean {
+  if (preceding.kind === "FunctionDef")
+    return following.kind === "FunctionDef" && onlyEllipsis(f, preceding.body) !== undefined;
+  return isStubClass(f, preceding) && isStubClass(f, following);
+}
+
+/**
+ * In a stub file, an empty line always follows a class with a body or decorators, and an undecorated
+ * `class A: ...` before a definition other than another such class.
+ */
+function stubClassWantsEmptyLine(f: Fmt, preceding: Stmt, following: Stmt): boolean {
+  if (preceding.kind !== "ClassDef") return false;
+  if (!isStubClass(f, preceding)) return true;
+  return isDefinition(following) && !isStubClass(f, following);
+}
+
 /** The line breaks between two statements of a suite. */
 function between(
   f: Fmt,
@@ -249,11 +274,25 @@ function between(
 ): void {
   const cs = f.comments;
   const top = kind === "top";
-  // One blank line, or two at the top level.
+  const stub = isStub(f);
+  // One blank line, or two at the top level; a stub file keeps one at most.
   const blank = (two: boolean) => {
     emptyLine();
-    if (two) emptyLine();
+    if (two && !stub) emptyLine();
   };
+  if (stub && (isDefinition(following) || trailingDefinition(f, preceding))) {
+    // Ruff's `stub_file_empty_lines`.
+    const wanted =
+      cs.hasTrailing(preceding) || cs.hasLeading(following) || !stubCanOmitEmptyLine(f, preceding, following);
+    const afterClass = stubClassWantsEmptyLine(f, preceding, following);
+    if (
+      afterClass ||
+      (wanted && (top || linesAfterIgnoringEndOfLineTrivia(f.tree, preceding.end) > 1))
+    )
+      emptyLine();
+    else hard();
+    return;
+  }
   if (isDefinition(following) || trailingDefinition(f, preceding)) {
     const stubBefore =
       following.kind === "FunctionDef" &&
@@ -319,7 +358,7 @@ export function writeClauseBody(
   kind: SuiteKind,
   colonComments: readonly Comment[],
 ): void {
-  if (kind === "function" || kind === "class") {
+  if (kind === "function" || kind === "class" || isStub(f)) {
     const ellipsis = onlyEllipsis(f, body);
     if (ellipsis && colonComments.length === 0) {
       sText(" ");
@@ -342,7 +381,9 @@ export function writeLeadingAlternateBranchComments(
   last: Py | undefined,
 ): void {
   // Preview, as black: a block that ends with a definition keeps an empty line before the clause after it.
-  if (f.options.preview === true && trailingDefinition(f, last)) emptyLine();
+  // A stub file keeps an empty line between a class and the clause after it.
+  const definition = trailingDefinition(f, last);
+  if (f.options.preview === true ? definition : isStub(f) && definition?.kind === "ClassDef") emptyLine();
   const first = comments[0];
   if (first) {
     f.writeEmptyLines(linesBefore(f.tree, first.start));

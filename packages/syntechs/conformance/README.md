@@ -6,7 +6,7 @@ The `@oxfmt` rows score syntechs on prettier's fixtures and option sets against 
 
 | Language | Reference | Passed | Compatibility | ok:false | Excluded |
 | :------- | :-------- | -----: | ------------: | -------: | -------: |
-| [python](python.snap.md) | ruff 0.16.8 | 327/342 | 95.61% | 0 | 34 |
+| [python](python.snap.md) | ruff 0.16.8 | 341/342 | 99.71% | 0 | 34 |
 | [kotlin](kotlin.snap.md) | ktfmt 0.64 --kotlinlang-style | 746/746 | 100.00% | 0 | 18 |
 | [json@oxfmt](json@oxfmt.snap.md) | oxfmt 0.70.0 | 20/20 | 100.00% | 0 | 0 |
 | [jsonc@oxfmt](jsonc@oxfmt.snap.md) | oxfmt 0.70.0 | 9/9 | 100.00% | 0 | 0 |

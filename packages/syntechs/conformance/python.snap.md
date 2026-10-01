@@ -1,4 +1,4 @@
-python compatibility: 327/342 (95.61%), 0 refused (ok:false), 34 excluded
+python compatibility: 341/342 (99.71%), 0 refused (ok:false), 34 excluded
 
 Fixtures: ruff 0.16.8 crates/ruff_python_formatter/resources/test/fixtures/{black,ruff} (recursive), every option set of each `.options.json`, expected output from tests/snapshots (black cases without a snapshot: their `.expect` file). Options are passed by their ruff.toml names.
 
@@ -8,21 +8,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
-| black/cases/ignore_pyi.pyi | 0/1 | 85.00% |
-| black/cases/nested_stub.pyi | 0/1 | 83.12% |
-| black/cases/stub.pyi | 0/1 | 82.35% |
-| black/miscellaneous/force_pyi.pyi | 0/1 | 83.12% |
-| ruff/newlines.pyi | 0/1 | 88.75% |
 | ruff/notebook_docstring.py | 1/2 | 77.27% |
-| ruff/statement/ellipsis.pyi | 0/1 | 61.70% |
-| ruff/statement/top_level.pyi | 0/1 | 80.27% |
-| ruff/stub_files/blank_line_after_nested_stub_class.pyi | 0/1 | 90.99% |
-| ruff/stub_files/blank_line_after_nested_stub_class_eof.pyi | 0/1 | 93.33% |
-| ruff/stub_files/comments.pyi | 0/1 | 87.50% |
-| ruff/stub_files/decorated_class_after_function.pyi | 0/1 | 86.96% |
-| ruff/stub_files/nesting.pyi | 0/1 | 88.24% |
-| ruff/stub_files/suite.pyi | 0/1 | 91.24% |
-| ruff/stub_files/top_level.pyi | 0/1 | 82.93% |
 
 # Refused
 
