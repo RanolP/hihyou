@@ -396,8 +396,9 @@ function fill(tree: TsTree, text: string, into: Node, ts: number, from: number, 
       n.isSelfClosing = true;
       n.value = tree.text(c);
       const inner = n.value.slice(4, -3).trim();
-      // A prettier-ignore comment keeps its next sibling as written.
-      if (inner.startsWith("prettier-ignore")) throw new Unsupported(inner);
+      // A `prettier-ignore` comment keeps its next sibling as written (the printer's `ignored`); a
+      // `prettier-ignore-attribute` keeps the next element's attributes, which this printer does not do.
+      if (inner.startsWith("prettier-ignore") && inner !== "prettier-ignore") throw new Unsupported(inner);
       add(n);
     } else if (k === "doctype") add(docType(tree.text(c), tree.start(c), tree.end(c)));
     else throw new Unsupported(k);
@@ -799,11 +800,15 @@ function rawLines(value: string): string[] {
 
 /** Prints `root` (from `parseHtml`) as prettier's `group(printChildren(root))`, without its final hardline. */
 export function printHtml(root: Node, text: string, out: HtmlPrinter): void {
-  new Printer(new Lines(text), out).root(root);
+  new Printer(text, new Lines(text), out).root(root);
 }
+
+/** utilities/index.js's hasPrettierIgnore: the node right after a `<!-- prettier-ignore -->`. */
+const hasPrettierIgnore = (n: Node) => n.prev?.kind === "comment" && n.prev.value.slice(4, -3).trim() === "prettier-ignore";
 
 class Printer {
   constructor(
+    private readonly source: string,
     private readonly lines: Lines,
     private readonly out: HtmlPrinter,
   ) {}
@@ -911,7 +916,8 @@ class Printer {
     }
     if (
       (needsToBorrowNextOpeningTagStartMarker(prev) &&
-        (firstChild(next) !== undefined ||
+        (hasPrettierIgnore(next) ||
+          firstChild(next) !== undefined ||
           next.isSelfClosing ||
           (next.kind === "element" && next.attrs.length > 0))) ||
       (prev.kind === "element" && prev.isSelfClosing && needsToBorrowPrevClosingTagEndMarker(next))
@@ -1007,7 +1013,8 @@ class Printer {
   }
 
   private node(n: Node): void {
-    if (n.kind === "element") this.element(n);
+    if (hasPrettierIgnore(n)) this.ignored(n);
+    else if (n.kind === "element") this.element(n);
     else if (n.kind === "text") this.textNode(n);
     else if (n.kind === "docType") {
       this.text(openingTagPrefix(n));
@@ -1020,6 +1027,16 @@ class Printer {
       this.literal(n.value);
       this.text(closingTagSuffix(n));
     }
+  }
+
+  // print/children.js's printChild for an ignored node: its source, trimmed at the end, less the markers its
+  // neighbours borrow, between the markers it borrows.
+  private ignored(n: Node): void {
+    const start = n.start + (n.prev && needsToBorrowNextOpeningTagStartMarker(n.prev) ? openingTagStartMarker(n).length : 0);
+    const end = n.end - (n.next && needsToBorrowPrevClosingTagEndMarker(n.next) ? closingTagEndMarker(n).length : 0);
+    this.text(openingTagPrefix(n));
+    this.literal(this.source.slice(start, end).trimEnd());
+    this.text(closingTagSuffix(n));
   }
 
   // printer-html.js's text: fill(getTextValueParts), the tag prefix and suffix joined to its ends

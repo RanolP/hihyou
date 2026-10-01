@@ -82,6 +82,11 @@ const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
   ["text-only-file", "a"],
   // A `<!-- display: x -->` comment refused the file; it sets the display of the node after it.
   ["display-comment", "<div>\n  <!-- display: inline -->\n  <p>Long Long Long Long Long Long Long Long Long Long Long Long Long Long</p>\n</div>\n"],
+  // A `<!-- prettier-ignore -->` refused the file; the node after it prints as written, less the markers its neighbours borrow.
+  [
+    "prettier-ignore",
+    "<div>\n<!-- prettier-ignore -->\n<p   a = 'b' >x   y</p>   \n<p>z</p></div>\n<span>a</span><!-- prettier-ignore --><b  >c</b><i>d</i>\n<p>text <!-- prettier-ignore --> <b> x  </b> tail</p>\n",
+  ],
 ];
 
 function ours(text: string, options: Partial<HtmlOptions>) {
