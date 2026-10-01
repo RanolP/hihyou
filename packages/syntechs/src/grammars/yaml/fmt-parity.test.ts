@@ -8,7 +8,7 @@ import { yaml } from "./fmt.js";
 import { language } from "./index.js";
 
 // Byte parity with oxfmt 0.70.0 over prettier's defaults, and under the tabWidth and singleQuote prettier's yaml
-// fixtures set. What print.ts has no rule for (flow collections, block scalars, multi-line scalars) refuses,
+// fixtures set. What print.ts has no rule for (flow collections, multi-line flow scalars, explicit keys) refuses,
 // as `refused` below pins.
 
 type Options = Partial<PrettierOptions> & { singleQuote?: boolean };
