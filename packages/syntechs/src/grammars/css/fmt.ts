@@ -24,6 +24,7 @@ import {
   GROUP,
   INDENT,
   open,
+  openAlign,
   SOFT,
   sHardline,
   sLine,
@@ -36,8 +37,9 @@ import {
   printLeadingComments,
   printTrailingComments,
   type StreamCtx,
+  type StreamRule,
 } from "../../fmt/stream-format.js";
-import { firstLeaf, type FormatTree, nextLeaf } from "../../fmt/tree.js";
+import { firstLeaf, type FormatTree, nextLeaf, prevLeaf } from "../../fmt/tree.js";
 import { grammar } from "./bundle.js";
 import * as gen from "./fmt.gen.js";
 import { directives } from "./directive.js";
@@ -66,8 +68,7 @@ const children = (n: number, tree: FormatTree) => {
     out.push(tree.child(n, i));
   return out;
 };
-const isComment = (n: number, ctx: SCtx) =>
-  kind(n, ctx) === "comment" || kind(n, ctx) === "js_comment";
+const isComment = (n: number, ctx: SCtx) => kind(n, ctx) === "comment";
 /** Every child but comments, which reach the output attached to their neighbours. */
 const code = (n: number, ctx: SCtx) =>
   children(n, ctx.tree).filter((c) => !isComment(c, ctx));
@@ -109,6 +110,11 @@ function meaning(tree: Tree, node: number, t: string): string {
     case "to":
       return t.toLowerCase();
     case "property_name":
+    case "keyword_query":
+    case "and":
+    case "or":
+    case "not":
+    case "only":
       return maybeLower(t);
     case "important":
       return "!important";
@@ -125,6 +131,26 @@ function meaning(tree: Tree, node: number, t: string): string {
     default:
       return !tree.named(node) && t.startsWith("@") ? t.toLowerCase() : t;
   }
+}
+
+/**
+ * A function's last `,` (`f(a,)`, also before a comment), which oxc-css-parser drops with the empty argument after it, but in
+ * `var()`, whose fallback it keeps as written, and in `url()`, one word.
+ */
+function droppedComma(tree: Tree, node: number): boolean {
+  if (tree.named(node) || tree.kindName(node) !== ",") return false;
+  const args = tree.parent(node);
+  if (args === NO_NODE || tree.kindName(args) !== "arguments") return false;
+  const call = tree.parent(args);
+  if (call === NO_NODE || tree.kindName(call) !== "call_expression") return false;
+  if (["var", "url"].includes(tree.text(tree.child(call, 0)).toLowerCase())) return false;
+  let i = 0;
+  while (tree.child(args, i) !== node) i++;
+  for (let j = i + 1, count = tree.count(args); j < count; j++) {
+    const c = tree.child(args, j);
+    if (tree.kindName(c) !== "comment") return tree.kindName(c) === ")";
+  }
+  return false;
 }
 
 // A `;` that ends the last statement of a block or of the file means nothing, so prettier may add one there; nor
@@ -148,15 +174,57 @@ const normalize: Normalize = (lexemes, _text, tree) => {
       tree.kindName(tree.child(parent, 0)) === "call_expression"
     );
   };
-  return lexemes.map((l, i) => {
+  const forms = lexemes.map((l, i) => {
     const next = lexemes[i + 1]?.text;
     const prev = lexemes[i - 1]?.text;
     if (l.text === ";" && (next === undefined || next === "}" || next === ";" || prev === "{"))
       return undefined;
-    if (sign(i)) return undefined;
+    if (sign(i) || tree.kindName(l.node) === "trailing_comma" || droppedComma(tree, l.node)) return undefined;
     if (sign(i - 1)) return meaning(tree, l.node, `${prev}${l.text}`);
     return meaning(tree, l.node, l.text);
   });
+  // `a*b`, one word to tree-sitter, is three tokens to oxc-css-parser, which prints `a * b` (`colonThenRawTokens`):
+  // a value's `*` and `/` join the words around them into one form.
+  const inValue = (node: number) => {
+    for (let up = tree.parent(node); up !== NO_NODE; up = tree.parent(up))
+      if (tree.kindName(up) === "declaration") return true;
+    return false;
+  };
+  // Likewise a `#name` or `$name` glued to the word before it (`a#b`), which oxc prints apart (`plainWord`).
+  for (let i = 1, p = 0; i < lexemes.length; i++) {
+    const l = lexemes[i] as (typeof lexemes)[number];
+    const prev = forms[p];
+    if (/^[#$]/.test(l.text) && prev !== undefined && /[\w%)]$/.test(prev) && inValue(l.node)) {
+      forms[p] = `${prev}${forms[i]}`;
+      forms[i] = undefined;
+    } else if (forms[i] !== undefined) p = i;
+  }
+  // A word ending in `*` before another (`a* b`), which oxc prints `a * b`.
+  for (let i = 0; i + 1 < lexemes.length; i++) {
+    const l = lexemes[i] as (typeof lexemes)[number];
+    const next = forms[i + 1];
+    if (l.text.length > 1 && l.text.endsWith("*") && next !== undefined && /^[\w#$.-]/.test(next) && inValue(l.node)) {
+      forms[i + 1] = `${forms[i]}${next}`;
+      forms[i] = undefined;
+    }
+  }
+  for (let i = 1; i + 1 < lexemes.length; i++) {
+    const l = lexemes[i] as (typeof lexemes)[number];
+    if ((l.text !== "*" && l.text !== "/") || forms[i] === undefined || !inValue(l.node)) continue;
+    let p = i - 1;
+    while (p > 0 && forms[p] === undefined) p--;
+    if (forms[p] === undefined) continue;
+    // `a*` ending a word: oxc prints `a *`.
+    if (l.text === "*" && !/^[\w#$.-]/.test(lexemes[i + 1]?.text ?? "")) {
+      forms[p] = `${forms[p]}*`;
+      forms[i] = undefined;
+      continue;
+    }
+    if (forms[i + 1] === undefined) continue;
+    forms[p] = `${forms[p]}${l.text}${forms[i + 1]}`;
+    forms[i] = forms[i + 1] = undefined;
+  }
+  return forms;
 };
 
 const statementLists = new Set(["stylesheet", "block"]);
@@ -187,17 +255,123 @@ function parts(n: number, ctx: SCtx): number {
     : 1;
 }
 
+/**
+ * A word the grammar reads whole but CSS Syntax lexes as an ident then more tokens (`a/c`, `a*1`, `a%c`), but a
+ * unicode range (`U+0025-00FF`), one token to oxc-css-parser.
+ */
+const identThenMore = (n: number, ctx: SCtx) =>
+  kind(n, ctx) === "plain_value" &&
+  !/^u\+[\da-f?]/i.test(ctx.tree.text(n)) &&
+  new RegExp(String.raw`^-?(?:-|${nameStart})${nameChar}*(?!${nameChar})[^]`).test(ctx.tree.text(n));
+
+/** A word CSS Syntax lexes as one ident opening with a single `-` (`-b`, `-webkit-box`), which oxc breaks the list at. */
+const dashIdent = (n: number, ctx: SCtx) =>
+  kind(n, ctx) === "plain_value" && new RegExp(String.raw`^-${nameStart}${nameChar}*$`).test(ctx.tree.text(n));
+
+/** An `and`/`or`/`not` with its paren group right after it, no gap between. */
+function gluedKeyword(node: number, ctx: SCtx): boolean {
+  const t = ctx.tree;
+  if (!["and", "or", "not"].includes(kind(node, ctx))) return false;
+  const p = t.parent(node);
+  for (let i = 0; i + 1 < t.count(p); i++)
+    if (t.child(p, i) === node) {
+      const next = t.child(p, i + 1);
+      return t.adjoins(node, next) && t.text(firstLeaf(t, next)) === "(";
+    }
+  return false;
+}
+
+function inMedia(node: number, ctx: SCtx): boolean {
+  for (let n = ctx.tree.parent(node); n !== NO_NODE; n = ctx.tree.parent(n))
+    if (["media_statement", "custom_media_statement"].includes(kind(n, ctx))) return true;
+  return false;
+}
+
 /** The rules `when` names in format.ts. */
 export const customs = {
   /** Prettier indents a selector of more than two nodes as it breaks. */
   longSelector: (node, ctx) => parts(node, ctx) > 2,
   /** A declaration with nothing between its `:` and its `;` (`--empty:;`). */
   emptyValue: (node, ctx) => code(node, ctx).every((c) => !ctx.tree.named(c) || kind(c, ctx) === "property_name"),
-  unparsedValue: (node, ctx) => unparsedUrl(node, ctx),
+  /** A declaration whose value is `!important` alone (`b: !important`), which spaces its own way after the `:`. */
+  importantValue: (node, ctx) =>
+    code(node, ctx).some((c) => kind(c, ctx) === "important") &&
+    code(node, ctx).every((c) => !ctx.tree.named(c) || ["property_name", "important"].includes(kind(c, ctx))),
+  unparsedValue: (node, ctx) => unparsedUrl(node, ctx) || rawValue(node, ctx),
+  /** A normal property's value oxc-css-parser reads as raw tokens (`oxcRaw`), which `colonThenRawTokens` prints. */
+  rawTokens: (node, ctx) => !customName(node, ctx.tree) && oxcRaw(node, ctx.tree),
   /** A media query list holding a comment, which `mediaQueries` prints as postcss-media-query-parser splits it. */
   mediaComments: (node, ctx) => mediaAtoms(node, ctx).some((c) => isComment(c, ctx)),
+  /** A query holding a keyword glued to its paren group (`screen and(a:b)`), which stays glued. */
+  gluedQuery: (node, ctx) => {
+    const t = ctx.tree;
+    for (let i = 0; i < t.count(node); i++) if (gluedKeyword(t.child(node, i), ctx)) return true;
+    return false;
+  },
+  /**
+   * A keyword glued to its paren group outside an `@import` (`and(a:b)`): oxc lexes `and(` as a function, which a
+   * media query keeps as written, the keyword's case and the group's source with it.
+   */
+  gluedMediaKeyword: (node, ctx) => gluedKeyword(node, ctx) && inMedia(node, ctx),
+  afterGluedMediaKeyword: (node, ctx) => {
+    const t = ctx.tree;
+    const p = t.parent(node);
+    for (let i = 1; i < t.count(p); i++)
+      if (t.child(p, i) === node) return gluedKeyword(t.child(p, i - 1), ctx) && inMedia(node, ctx);
+    return false;
+  },
   ownWord: (node, ctx) => ownWord(node, ctx),
+  placeholderCalled: (node, ctx) => placeholderCallItems(node, ctx) !== undefined,
+  /**
+   * An embedded value word glued after a word character to a placeholder (`column${x}`), which prettier's value
+   * parser reads as two words, so its comma list breaks as one holding a run of several words does.
+   */
+  gluedPlaceholder: (node, ctx) =>
+    code(node, ctx).some(
+      (c) => !ctx.tree.text(c).includes("(") && /\wprettier-placeholder-\d/.test(ctx.tree.text(c)),
+    ),
+  /** A statement on the source line of the embedded placeholders' statement before it, which oxfmt keeps there. */
+  afterPlaceholders: (node, ctx) => {
+    const t = ctx.tree;
+    const p = t.parent(node);
+    let prev = -1;
+    for (let i = 0; i < t.count(p) && t.child(p, i) !== node; i++)
+      if (t.named(t.child(p, i)) && !isComment(t.child(p, i), ctx)) prev = t.child(p, i);
+    if (prev === -1 || placeholdersMarker(prev, t) === undefined) return false;
+    for (let l = nextLeaf(t, prev); l !== NO_NODE; l = nextLeaf(t, l)) {
+      if (t.lf(l) > 0) return false;
+      if (l === firstLeaf(t, node)) return true;
+    }
+    return false;
+  },
+  /**
+   * A declaration's comma entry that is one math expression (`a / c`, `// c`) or a lone `!word`, which oxc-css-parser
+   * reads as several values, so a list holding one breaks as one of several words does; so does an entry of comments
+   * alone (`a,/*c*\/,b`).
+   */
+  mathEntry: (node, ctx) =>
+    commentEntry(node, ctx) ||
+    code(node, ctx).some(
+      (c, i, all) =>
+        (["binary_expression", "unary_expression", "important_value"].includes(kind(c, ctx)) ||
+          identThenMore(c, ctx) ||
+          (dashIdent(c, ctx) && all.slice(0, i).some((p) => kind(p, ctx) === ","))) &&
+        ![all[i - 1], all[i + 1]].some(
+          (n) => n !== undefined && ctx.tree.named(n) && !["property_name", "important"].includes(kind(n, ctx)),
+        ),
+    ),
 } satisfies Record<string, PredicateRule<CssOptions>>;
+
+/** Whether a declaration's comma list holds an entry of comments alone between two commas. */
+function commentEntry(node: number, ctx: SCtx): boolean {
+  const t = ctx.tree;
+  const commas = children(node, t).filter((c) => t.text(c) === ",");
+  return ctx.danglingComments(node).some((d) => {
+    const prev = prevLeaf(t, d);
+    const next = nextLeaf(t, d);
+    return commas.includes(prev) && commas.includes(next);
+  });
+}
 
 /**
  * A value item written joined to a function on either side, which postcss-value-parser still reads as a node of its
@@ -209,29 +383,90 @@ function ownWord(node: number, ctx: SCtx): boolean {
   const siblings = children(t.parent(node), t);
   const prev = siblings[siblings.indexOf(node) - 1];
   if (prev === undefined || !t.adjoins(prev, node)) return false;
+  // A number, a word, a `!word` or a function joined to a function before it stays joined (`f(1)-2`, `f(1)f(2)`, `f(1)!c`).
+  if (
+    kind(prev, ctx) === "call_expression" &&
+    ["call_expression", "plain_value", "integer_value", "float_value", "important_value"].includes(kind(node, ctx))
+  )
+    return false;
   if (kind(node, ctx) === "call_expression") return true;
+  // `1#b`, `1$b`: oxc lexes the `#b` or `$b` after a number as a token of its own.
+  if (
+    ["hash_value", "color_value"].includes(kind(node, ctx)) ||
+    (kind(node, ctx) === "plain_value" && t.text(node).startsWith("$"))
+  )
+    return ["integer_value", "float_value"].includes(kind(prev, ctx));
   if (kind(prev, ctx) !== "call_expression") return false;
   return kind(node, ctx) !== "plain_value" || t.text(t.child(prev, 0)) !== "$$";
 }
 
 /**
- * A number, its unit's case normalized; but a `+`-signed one right after a function (`round(1.5)+2`,
- * `round(1.5) +2`), whose `+` postcss-values-parser reads as an operator, which prettier prints between spaces. A
- * `-` there stays the number's (`url(a) -1000px`).
+ * An embedded template's substitution called in a declaration's value (`${a}(b)`), and the value's words: prettier
+ * reads the placeholder and its `( … )` as two words of the value's fill, a softline between them.
  */
-export function number(node: number, ctx: SCtx): void {
-  const text = ctx.tree.text(node);
-  if (plusAfterFunction(node, ctx)) sLiteral(node, `+ ${unitCase(text.slice(1))}`);
-  else sLiteral(node, unitCase(text));
+function placeholderCallItems(node: number, ctx: SCtx): number[] | undefined {
+  const t = ctx.tree;
+  if (!/prettier-placeholder-\d+$/.test(t.text(t.child(node, 0)))) return undefined;
+  const up = t.parent(node);
+  if (kind(up, ctx) !== "declaration" || children(up, t).some((c) => kind(c, ctx) === ",")) return undefined;
+  return children(up, t).filter((c) => t.named(c) && !["property_name", "important", "ERROR"].includes(kind(c, ctx)));
 }
 
-function plusAfterFunction(node: number, ctx: SCtx): boolean {
+/**
+ * `placeholderCallItems`' call, as its callee then its arguments: a fill of its own where it is the value's one word,
+ * else items of the value's fill.
+ */
+const placeholderAlone = (callee: number, ctx: SCtx) =>
+  (placeholderCallItems(ctx.tree.parent(callee), ctx) ?? []).length === 1;
+
+function placeholderCallee(node: number, ctx: SCtx): void {
+  if (placeholderAlone(node, ctx)) {
+    open(GROUP);
+    open(INDENT);
+    open(FILL);
+    open(FILL_ITEM);
+  }
+  ctx.print(node);
+}
+
+function placeholderArgs(node: number, ctx: SCtx): void {
+  close();
+  sLine(SOFT);
+  open(FILL_ITEM);
+  ctx.print(node);
+  if (placeholderAlone(node, ctx)) for (let k = 0; k < 4; k++) close();
+}
+
+const verbatimCall = (name: string) => name.toLowerCase() === "url" || mathFunctions.has(name.toLowerCase());
+
+/**
+ * A word outside a math function (whose calc grammar reads `a*c` whole) or `url(…)`, and holding no
+ * `=` or `:` (`progid:`), spaced where CSS Syntax lexes it as several tokens oxc separates: a `*` apart from
+ * both sides but after an ident ending in `-` (Tailwind's `w-*`) or ending the word, and a `#name` or `$name` apart
+ * from the word before it.
+ */
+function plainWord(node: number, ctx: SCtx): boolean {
   const t = ctx.tree;
-  const k = kind(node, ctx);
-  if ((k !== "integer_value" && k !== "float_value") || !t.text(node).startsWith("+")) return false;
-  const siblings = children(t.parent(node), t);
-  const prev = siblings[siblings.indexOf(node) - 1];
-  return prev !== undefined && kind(prev, ctx) === "call_expression";
+  const text = t.text(node);
+  if (!/[*#$]/.test(text) || /[=:]/.test(text) || cssWideKeywords.has(text.toLowerCase())) return false;
+  let up = t.parent(node);
+  for (; up !== NO_NODE && kind(up, ctx) !== "declaration"; up = t.parent(up))
+    if (kind(up, ctx) === "call_expression" && verbatimCall(t.text(t.child(up, 0)))) return false;
+  if (up === NO_NODE) return false;
+  sLiteral(
+    node,
+    text
+      .replace(/\*/g, (m, i: number) => (text[i - 1] === "-" ? m : ` ${m} `))
+      .replace(new RegExp(String.raw`(?<=[\w%)])(?=[#$]${nameChar})`, "g"), " ")
+      .replace(/ {2,}/g, " ")
+      .trim(),
+  );
+  return true;
+}
+
+/** A number, its unit's case normalized. */
+export function number(node: number, ctx: SCtx): void {
+  sLiteral(node, unitCase(ctx.tree.text(node)));
 }
 
 /** A binary expression's `/` written with no gap on either side, which prettier keeps so. */
@@ -267,30 +502,127 @@ const fontOperand = (n: number | undefined, ctx: SCtx) =>
     (kind(n, ctx) === "call_expression" &&
       firstTextIs(ctx, n, undefined, ["var", "calc", "min", "max", "clamp"], ["--"], true)));
 
+/** Whether the math chain holding `n` is a paren group's. */
+const inParens = (n: number, t: FormatTree): boolean => {
+  let top = t.parent(n);
+  while (parentIs(t, top, "binary_expression")) top = t.parent(top);
+  return parentIs(t, top, "parenthesized_value");
+};
+
 /**
  * Whether prettier's printCommaSeparatedValueGroup joins the neighbours `chain[i - 1]` and `chain[i]` of a math chain.
  * Outside `calc()`, a `/` or `+` written without a gap before its right side stays joined unless a function or a word
  * sits beside it, and a `-` so written always; a `*` is always spaced. In `font` and custom properties, a `/` written
  * without a gap after a number or a math function stays joined, and so does what follows it, even inside `calc()`.
- * Inside `calc()`, a `+` or `-` written without a gap on a side stays joined on that side.
+ * Inside `calc()` every operator stays joined on a side written without a gap. A `+` beside a function or a word
+ * stays joined too; a `/` there, outside a paren group, stays joined only when written without a gap on both sides;
+ * and a paren group joined to its `+` or `-` stays so.
  */
 function joinedMath(chain: number[], i: number, calc: boolean, font: boolean, ctx: SCtx): boolean {
   const t = ctx.tree;
   const [y, g, v, w] = [chain[i - 2], chain[i - 1] as number, chain[i] as number, chain[i + 1]];
   const op = (n: number | undefined, o: string) => n !== undefined && kind(n, ctx) === o;
   const tight = t.adjoins(g, v);
-  // Inside `calc()`, a `+` or `-` stays joined to what the source writes it against (`calc(100%- 2px)`).
-  if (calc && tight && (op(g, "+") || op(g, "-") || op(v, "+") || op(v, "-"))) return true;
+  // Inside `calc()`, an operator stays joined to what the source writes it against (`calc(100%- 2px)`).
+  if (calc && tight) return true;
+  // Whether a function or a word `beside` the operator `o` spaces it; `otherTight`: `o`'s other side has no gap.
+  const spacedBy = (o: number, otherTight: boolean, beside: boolean) =>
+    beside && op(o, "/") && (inParens(o, t) || !otherTight);
   if (isOperator(v, ctx)) {
     if (font && op(v, "/") && tight && fontOperand(g, ctx)) return true;
-    const spaced = funcOrWord(w, ctx) || funcOrWord(g, ctx);
+    const spaced = spacedBy(v, w !== undefined && t.adjoins(v, w), funcOrWord(w, ctx) || funcOrWord(g, ctx));
     return !calc && tight && (op(v, "-") || ((op(v, "/") || op(v, "+")) && !spaced));
   }
   if (font && op(g, "/") && y !== undefined && t.adjoins(y, g) && fontOperand(y, ctx)) return true;
-  // A paren group is a word of its own, after a space even where its `+` or `-` adjoins it (`1 -(1)` is `1 - (1)`).
-  if (kind(v, ctx) === "parenthesized_value") return false;
-  const spaced = funcOrWord(v, ctx) || funcOrWord(y, ctx);
+  const spaced = spacedBy(g, y !== undefined && t.adjoins(y, g), funcOrWord(v, ctx) || funcOrWord(y, ctx));
   return !calc && tight && (op(g, "-") || ((op(g, "/") || op(g, "+")) && !spaced));
+}
+
+/** A `/` before an operand (`// c`), which tree-sitter-css nests where oxc-css-parser reads two `/` delimiters. */
+const slashUnary = (n: number, ctx: SCtx) =>
+  kind(n, ctx) === "unary_expression" && kind(ctx.tree.child(n, 0), ctx) === "/";
+
+/** The flat run of operands and operators oxc-css-parser reads for `n`, a `/` unary's operand opening its own. */
+function flatValues(n: number, ctx: SCtx): number[] {
+  const k = kind(n, ctx);
+  if (k !== "binary_expression" && !slashUnary(n, ctx)) return [n];
+  return children(n, ctx.tree)
+    .filter((c) => !isComment(c, ctx))
+    .flatMap((c) => flatValues(c, ctx));
+}
+
+/**
+ * The comma group of values `node` sits in, flattened as oxc-css-parser reads it, when a `/` unary makes it hold a
+ * `/` after a `/` or opening it (`a // c`, `// c d`); else undefined, the group laid out as prettier does. `calc`: in
+ * a math function, whose `//` oxc-css-parser fails on and prints as written.
+ */
+function slashRun(node: number, ctx: SCtx): { flat: number[]; calc: boolean } | undefined {
+  const t = ctx.tree;
+  let top = node;
+  while (parentIs(t, top, "binary_expression") || parentIs(t, top, "unary_expression")) top = t.parent(top);
+  const container = t.parent(top);
+  if (container === NO_NODE) return undefined;
+  let group: number[] = [];
+  let found: number[] | undefined;
+  for (const c of children(container, t)) {
+    if (isComment(c, ctx)) continue;
+    if (!t.named(c) || kind(c, ctx) === "property_name" || kind(c, ctx) === "important") {
+      if (found) break;
+      group = [];
+      continue;
+    }
+    group.push(c);
+    if (c === top) found = group;
+  }
+  const hasSlashUnary = (n: number): boolean =>
+    slashUnary(n, ctx) || (kind(n, ctx) === "binary_expression" && children(n, t).some(hasSlashUnary));
+  if (found === undefined || !found.some(hasSlashUnary)) return undefined;
+  const calc = ancestorWhere(t, node, ["call_expression"], ["declaration", "block"], (a) =>
+    mathFunctions.has(t.text(t.child(a, 0)).toLowerCase()),
+  );
+  return { flat: found.flatMap((c) => flatValues(c, ctx)), calc };
+}
+
+/**
+ * Whether oxc keeps `flat[i - 1]` and `flat[i]` joined where either is a `/` (`base_separator`'s solidus rules), in
+ * a run `slashRun` found. A run holding a `+`, `-` or `*` is no typed value, so oxc lays its raw tokens out, joining
+ * a `/` written without a gap unless a word or a function sits beside it; a typed one also joins a `/` written
+ * without a gap on both sides, the value after a leading `/` or after a `/` after a `/`, unless a word or a function
+ * sits beside. Undefined where neither is a `/`.
+ */
+function slashJoined(flat: number[], i: number, ctx: SCtx): boolean | undefined {
+  const t = ctx.tree;
+  const [y, prev, curr, next] = [flat[i - 2], flat[i - 1] as number, flat[i] as number, flat[i + 1]];
+  const sol = (n: number | undefined) => n !== undefined && kind(n, ctx) === "/";
+  if (!sol(curr) && !sol(prev)) return undefined;
+  const gap = t.adjoins(prev, curr);
+  if (sol(flat[0]) && gap) return true;
+  const wordLike = (n: number | undefined) =>
+    n !== undefined && ["plain_value", "call_expression"].includes(kind(n, ctx));
+  if (flat.some((n) => ["+", "-", "*"].includes(kind(n, ctx)))) {
+    const wordish = (n: number | undefined, left: boolean) =>
+      wordLike(n) || (left && n !== undefined && kind(n, ctx) === "parenthesized_value");
+    if (sol(curr)) return gap && !wordish(next, false) && !wordish(prev, true);
+    return gap && !wordish(curr, false) && !wordish(y, true);
+  }
+  if (sol(curr) && gap && (next === undefined || t.adjoins(curr, next))) return true;
+  if (sol(prev) && gap && y !== undefined && t.adjoins(y, prev)) return true;
+  if (i === 1 && sol(prev)) return true;
+  const spaceBefore = wordLike(next) || wordLike(prev);
+  const spaceAfter = wordLike(curr) || wordLike(y);
+  const tightRule = (sol(curr) && !spaceBefore) || (sol(prev) && !spaceAfter);
+  return tightRule && (gap || (sol(prev) && (i < 2 || sol(y))));
+}
+
+/** `slashJoined` before `c`, a node of the run `slashRun` found, or undefined outside one. */
+function slashJoinedBefore(c: number, ctx: SCtx): boolean | undefined {
+  const run = slashRun(c, ctx);
+  if (run === undefined) return undefined;
+  const first = flatValues(c, ctx)[0] as number;
+  const i = run.flat.indexOf(first);
+  if (i < 1) return undefined;
+  if (run.calc) return ctx.tree.adjoins(run.flat[i - 1] as number, first);
+  return slashJoined(run.flat, i, ctx);
 }
 
 /**
@@ -312,6 +644,17 @@ function gridLines(node: number, ctx: SCtx): boolean {
   for (let l = nextLeaf(t, firstLeaf(t, first)); l !== NO_NODE && t.ord(l) < end; l = nextLeaf(t, l))
     if (t.lf(l) > 0 && kind(l, ctx) !== ";") return true;
   return false;
+}
+
+/** A node of a declaration's comma entry that holds other items too, which the entry packs in a fill. */
+function amongWords(node: number, ctx: SCtx): boolean {
+  const t = ctx.tree;
+  if (!parentIs(t, node, "declaration")) return false;
+  const siblings = children(t.parent(node), t);
+  const i = siblings.indexOf(node);
+  return [siblings[i - 1], siblings[i + 1]].some(
+    (n) => n !== undefined && t.named(n) && !["property_name", "important", "ERROR"].includes(kind(n, ctx)),
+  );
 }
 
 /**
@@ -336,7 +679,10 @@ export function valueMath(node: number, ctx: SCtx): void {
   const tight = directive && tightDivision(node, ctx);
   // A grid's lines are the enclosing entry's, already indented: no indent or fill of the chain's own.
   const grid = !directive && gridLines(node, ctx);
-  if (outermost) {
+  // A chain among other words of a declaration's entry shares that entry's fill, each operand and operator an item
+  // of it, as oxc-css-parser reads them as values of the one list.
+  const own = outermost && !(!directive && !grid && amongWords(node, ctx));
+  if (own) {
     open(GROUP);
     if (!grid) open(INDENT);
     if (!directive && !grid) {
@@ -357,19 +703,25 @@ export function valueMath(node: number, ctx: SCtx): void {
   const spaced = (prev: number, c: number) => {
     if (directive) return true;
     if (url) return !t.adjoins(prev, c);
+    const slash = slashJoinedBefore(c, ctx);
+    if (slash !== undefined) return !slash;
     const first = kind(c, ctx) === "binary_expression" ? chain(c, ctx)[0] : c;
     return !joinedMath(flat, flat.indexOf(first as number), calc, font, ctx);
   };
+  // The fill may break before a `*` or `/` too.
+  const breaksBefore = !directive;
   const items = new Set(ctx.items(node));
   let prev = -1;
-  for (const c of children(node, t)) {
-    const named = t.named(c);
-    if (named && !items.has(c)) continue;
+  const separate = (c: number) => {
     if (prev !== -1 && !tight && spaced(prev, c)) {
       if (grid) {
         if (breaksBetween(t, prev, c)) sHardline();
         else sText(" ");
-      } else if (operators.has(kind(c, ctx))) sText(" ");
+      } else if (
+        (operators.has(kind(c, ctx)) && !(breaksBefore && ["*", "/"].includes(kind(c, ctx)))) ||
+        dangling.includes(prev)
+      )
+        sText(" ");
       else if (directive) sLine(0);
       else {
         close();
@@ -378,10 +730,31 @@ export function valueMath(node: number, ctx: SCtx): void {
       }
     }
     prev = c;
-    if (named) ctx.print(c);
+  };
+  // A `/` unary in a `slashRun` joins the chain: its `/` and operand are items of the fill of their own.
+  const emit = (c: number) => {
+    const [op, operand] = children(c, t);
+    if (directive || !slashUnary(c, ctx) || op === undefined || operand === undefined || slashRun(c, ctx) === undefined)
+      return ctx.print(c);
+    sToken(op, t.text(op));
+    separate(operand);
+    emit(operand);
+  };
+  // `beforeBreakingOperator`'s comments, each an item of the chain one space before what follows it.
+  const dangling = ctx.danglingComments(node);
+  for (const c of children(node, t)) {
+    const named = t.named(c);
+    if (dangling.includes(c)) {
+      separate(c);
+      ctx.comment(c);
+      continue;
+    }
+    if (named && !items.has(c)) continue;
+    separate(c);
+    if (named) emit(c);
     else sToken(c, t.text(c));
   }
-  if (outermost) {
+  if (own) {
     if (!directive && !grid) {
       close();
       close();
@@ -391,31 +764,23 @@ export function valueMath(node: number, ctx: SCtx): void {
   }
 }
 
-/** Prettier's color adjuster functions, inside which a `+` or `-` keeps the gap the source has after it. */
-const colorAdjusters = new Set([
-  "red", "green", "blue", "alpha", "a", "rgb", "hue", "h", "saturation", "s", "lightness", "l", "whiteness",
-  "w", "blackness", "b", "tint", "shade", "blend", "blenda", "contrast", "hsl", "hsla", "hwb", "hwba",
-]);
-
 /**
  * An operator before a value (`-(-1)`, `hue(* 20)`), which postcss-value-parser reads as a word or a math operator of
- * its own: a `*` then a space; a `+` or `-` joined, but after the gap the source has inside a color adjuster
- * (`alpha(- .75)`); a `/` joined.
+ * its own: a `*` then a space; a `+` or `-` after the gap the source has (`alpha(- .75)`); a `/` joined.
  */
 export function unaryExpression(node: number, ctx: SCtx): void {
   const t = ctx.tree;
   const [op, operand] = children(node, t);
   if (op === undefined || operand === undefined) return;
   sToken(op, t.text(op));
-  const stops = ["call_expression", "declaration", "block"];
-  let call = t.parent(node);
-  while (call !== NO_NODE && !stops.includes(kind(call, ctx))) call = t.parent(call);
-  const adjuster =
-    call !== NO_NODE &&
-    kind(call, ctx) === "call_expression" &&
-    colorAdjusters.has(t.text(t.child(call, 0)).toLowerCase());
   const o = kind(op, ctx);
-  if (o === "*" || ((o === "+" || o === "-") && adjuster && !t.adjoins(op, operand))) sText(" ");
+  const slash = o === "/" ? slashJoinedBefore(operand, ctx) : undefined;
+  if (slash !== undefined) {
+    if (!slash) sText(" ");
+    return ctx.print(operand);
+  }
+  // The gap after a `+` or `-` stays everywhere (`func(+ 20px)`).
+  if (o === "*" || ((o === "+" || o === "-") && !t.adjoins(op, operand))) sText(" ");
   ctx.print(operand);
 }
 
@@ -484,8 +849,16 @@ export function sassDirective(node: number, ctx: SCtx): void {
     const sep = (entries[0] as SplitEntry).sep;
     sToken(sep, t.text(sep));
   }
+  // The prelude's comments (`hoistedComment`) after it: on a line of their own before a block, else before the `;`.
+  const hoisted = ctx.danglingComments(node);
+  if (hoisted.length > 0 && run.trail.length > 0) sHardline();
+  hoisted.forEach((c, i) => {
+    if (i > 0 || run.trail.length === 0) sText(" ");
+    ctx.comment(c);
+  });
   for (const c of run.trail) {
-    sText(" ");
+    if (hoisted.length > 0) sHardline();
+    else sText(" ");
     ctx.print(c);
   }
   if (run.trail.length > 0) return;
@@ -537,16 +910,30 @@ const inVariable = (n: number, ctx: SCtx) =>
 
 /**
  * Prettier's raw at-rule params: the children as written, one space wherever the source has a gap and wherever
- * `spaced` says, none before the `;`; a child `own` names prints by its own rule.
+ * `spaced` says, none before the `;`; a child `own` names prints by its own rule. With `comments`, the node's
+ * comments (dangling on it, `handleComment`) print in place among them.
  */
-function raw(node: number, ctx: SCtx, own: (c: number) => boolean, spaced: (prev: number, c: number) => boolean) {
+function raw(
+  node: number,
+  ctx: SCtx,
+  own: (c: number) => boolean,
+  spaced: (prev: number, c: number) => boolean,
+  tight: (c: number) => boolean = () => false,
+  comments = false,
+) {
   const t = ctx.tree;
   const items = new Set(ctx.items(node));
   let prev = -1;
   for (const c of children(node, t)) {
     const named = t.named(c);
+    if (comments && isComment(c, ctx)) {
+      if (prev !== -1 && !t.adjoins(prev, c)) sText(" ");
+      prev = c;
+      ctx.comment(c);
+      continue;
+    }
     if (named && !items.has(c)) continue;
-    if (prev !== -1 && kind(c, ctx) !== ";" && (spaced(prev, c) || !t.adjoins(prev, c))) sText(" ");
+    if (prev !== -1 && kind(c, ctx) !== ";" && !tight(c) && (spaced(prev, c) || !t.adjoins(prev, c))) sText(" ");
     prev = c;
     if (named && own(c)) ctx.print(c);
     else if (named) {
@@ -561,14 +948,54 @@ function raw(node: number, ctx: SCtx, own: (c: number) => boolean, spaced: (prev
 /** A Sass directive, else as written; `@page:first` stays joined, as postcss reads a name up to the first gap. */
 export function atRule(node: number, ctx: SCtx): void {
   if (isDirective(node, ctx)) return sassDirective(node, ctx);
+  if (placeholderStatement(node, ctx)) return;
   const own = (c: number) => kind(c, ctx) === "at_keyword" || kind(c, ctx) === "block";
-  raw(node, ctx, own, (_, c) => kind(c, ctx) === "block");
+  const block = (c: number) => kind(c, ctx) === "block";
+  const comma = (c: number) => kind(c, ctx) === ",";
+  // oxfmt prints a `@layer` list one space after each comma and none before one, unless a comment is among it:
+  // then the list as written, each gap one space, its comments in place.
+  if (layerList(node, ctx.tree)) {
+    if (children(node, ctx.tree).some((c) => isComment(c, ctx))) return raw(node, ctx, own, (_, c) => block(c), undefined, true);
+    return raw(node, ctx, own, (prev, c) => block(c) || comma(prev), comma);
+  }
+  raw(node, ctx, own, (_, c) => block(c));
 }
+
+const layerList = (node: number, t: FormatTree) =>
+  t.kindName(node) === "at_rule" && /^@layer$/i.test(t.text(t.child(node, 0)));
 
 /** A Sass directive or postcss-mixins' `@define-mixin`, else as written. */
 export function postcssStatement(node: number, ctx: SCtx): void {
   if (isDirective(node, ctx)) return sassDirective(node, ctx);
+  if (placeholderStatement(node, ctx)) return;
   raw(node, ctx, () => false, (prev) => kind(prev, ctx) === "at_keyword");
+}
+
+/**
+ * Embedded CSS's statement of placeholders alone (javascript/print/embed.ts's `placeholderStatements`), which opens
+ * with `@prettier-placeholder-statement`, or `@prettier-placeholder-bare` where the template has no `;` after them.
+ */
+function placeholdersMarker(node: number, t: FormatTree): "statement" | "bare" | undefined {
+  if (!["postcss_statement", "at_rule"].includes(t.kindName(node))) return undefined;
+  const m = /^@prettier-placeholder-(statement|bare)$/.exec(t.text(t.child(node, 0)));
+  return m === null ? undefined : (m[1] as "statement" | "bare");
+}
+
+/** `placeholdersMarker`'s statement: its placeholders a space apart, then the `;` where the template has one. */
+function placeholderStatement(node: number, ctx: SCtx): boolean {
+  const t = ctx.tree;
+  const marker = placeholdersMarker(node, t);
+  if (marker === undefined) return false;
+  const [, ...rest] = children(node, t).filter((c) => !isComment(c, ctx));
+  rest.forEach((c, i) => {
+    if (!t.named(c)) {
+      if (marker === "statement") sToken(c, ";");
+    } else {
+      if (i > 0) sText(" ");
+      ctx.print(c);
+    }
+  });
+  return true;
 }
 
 /**
@@ -600,19 +1027,25 @@ export function keywordArgument(node: number, ctx: SCtx): void {
 }
 
 /**
- * A Sass list or map (in a directive, or a `$variable`'s value) by `sassList`, else as written without gaps, but
- * the operator `number` makes of a `+` after a function, a space on either side.
+ * A Sass list or map (in a directive, or a `$variable`'s value) by `sassList`, else on one line: a space after each
+ * comma, none before it, and one between two words wherever the source has a gap (`foo( (1 ,2) )` prints
+ * `foo((1, 2))`, `(1 +2)` stays).
  */
 export function parenthesizedValue(node: number, ctx: SCtx): void {
   if (inDirective(node, ctx) || inVariable(node, ctx)) return sassList(node, ctx);
   const t = ctx.tree;
   const items = new Set(ctx.items(node));
-  for (const c of children(node, t))
-    if (!t.named(c)) sToken(c, t.text(c));
-    else if (items.has(c)) {
-      if (plusAfterFunction(c, ctx)) sText(" ");
-      ctx.print(c);
-    }
+  let prev = -1;
+  for (const c of children(node, t)) {
+    const named = t.named(c);
+    if (named && !items.has(c)) continue;
+    const text = named ? "" : t.text(c);
+    if (prev !== -1 && text !== "," && text !== ")" && kind(prev, ctx) !== "(" && (kind(prev, ctx) === "," || !t.adjoins(prev, c)))
+      sText(" ");
+    if (named) ctx.print(c);
+    else sToken(c, text);
+    prev = c;
+  }
 }
 
 /**
@@ -673,9 +1106,15 @@ export function important(node: number): void {
  * items), and those after `!important`, postcss's `raws.important` (`declarationEnd`). Among statements, postcss's
  * comment is a statement of its own: one that starts the line the statement before it ends trails that statement.
  */
-const handleComment: CommentHandler<CssOptions> = ({ tree, enclosing, preceding, following, placement, text }) => {
-  if ((tree.kindName(enclosing) === "import_statement" || valueArguments(tree, enclosing)) && text.startsWith("/*"))
+const handleComment: CommentHandler<CssOptions> = ({ tree, comment, enclosing, preceding, following, placement, text }) => {
+  const hoist = hoistedComment(tree, enclosing);
+  if (hoist !== undefined && text.startsWith("/*")) return { node: hoist, as: "dangling" };
+  const ownComments = tree.kindName(enclosing) === "import_statement" || valueArguments(tree, enclosing);
+  if ((ownComments && text.startsWith("/*")) || layerList(enclosing, tree))
     return { node: enclosing, as: "dangling" };
+  const operand = mathOperand(tree, enclosing);
+  if (operand !== undefined && text.startsWith("/*")) return { node: operand, as: "trailing" };
+  if (beforeBreakingOperator(tree, comment, enclosing) && text.startsWith("/*")) return { node: enclosing, as: "dangling" };
   if (tree.kindName(enclosing) === "rule_set" && following !== undefined && tree.kindName(following) === "block")
     return { node: enclosing, as: "dangling" };
   if (preceding === undefined) return undefined;
@@ -687,6 +1126,31 @@ const handleComment: CommentHandler<CssOptions> = ({ tree, enclosing, preceding,
     ? { node: enclosing, as: "dangling" }
     : undefined;
 };
+
+/**
+ * The `@include` or `@mixin` whose prelude holds a comment: oxfmt prints the prelude without it, then the comment
+ * (`@include f(x /*q*\/ / c);` is `@include f(x / c) /*q*\/;`).
+ */
+function hoistedComment(tree: FormatTree, enclosing: number): number | undefined {
+  for (let a = enclosing; a !== NO_NODE; a = tree.parent(a)) {
+    const k = tree.kindName(a);
+    if (k === "block") return undefined;
+    if ((k === "at_rule" || k === "postcss_statement") && ["@include", "@mixin"].includes(tree.text(tree.child(a, 0))))
+      return a;
+  }
+  return undefined;
+}
+
+/**
+ * A comment just before a value's `*` or `/` operator (`a /* q *\/ / c`), which oxc-css-parser reads as a value of
+ * its own that the fill breaks before, as it may before the operator (`valueMath`).
+ */
+function beforeBreakingOperator(tree: FormatTree, comment: number, enclosing: number): boolean {
+  if (tree.kindName(enclosing) !== "binary_expression") return false;
+  let next = nextLeaf(tree, comment);
+  while (next !== NO_NODE && tree.kindName(next) === "comment") next = nextLeaf(tree, next);
+  return next !== NO_NODE && tree.parent(next) === enclosing && ["*", "/"].includes(tree.kindName(next));
+}
 
 /**
  * A function's arguments in a declaration's value but `url()`'s, which postcss-value-parser reads as words, a block
@@ -705,6 +1169,23 @@ function valueArguments(tree: FormatTree, node: number): boolean {
 }
 
 /**
+ * The argument of a math function (`calc((1px) /* c *\/ + 2px)`) holding `node`, a calc sum or group inside it.
+ * oxc's calc printer flushes no comment of its own, so a comment inside one prints after the whole argument.
+ */
+function mathOperand(tree: FormatTree, node: number): number | undefined {
+  let operand = node;
+  while (["binary_expression", "parenthesized_value"].includes(tree.kindName(operand))) {
+    const up = tree.parent(operand);
+    if (tree.kindName(up) === "arguments") {
+      const math = mathFunctions.has(tree.text(tree.child(tree.parent(up), 0)).toLowerCase());
+      return math && valueArguments(tree, up) ? operand : undefined;
+    }
+    operand = up;
+  }
+  return undefined;
+}
+
+/**
  * The source's gap between `prev` and the later `c`, rebuilt from their columns and the line breaks between: what
  * prettier prints of a raw it keeps as written (a declaration's `between` and `raws.important`).
  */
@@ -716,15 +1197,72 @@ function sourceGap(t: FormatTree, prev: number, c: number): string {
   return " ".repeat(Math.max(t.col(c) - end, 0));
 }
 
-/** Postcss's `between` of `declaration`, the dangling comments before its value (`handleComment`). */
+/**
+ * Postcss's `between` of `declaration`, the dangling comments before its value (`handleComment`), which starts at a
+ * leading comma: oxc-css-parser reads a comment past it (`b:,/*c*\/a`) as the next entry's.
+ */
 function between(node: number, ctx: SCtx): number[] {
   const t = ctx.tree;
-  const value = children(node, t).find((c) => t.named(c) && !isComment(c, ctx) && kind(c, ctx) !== "property_name");
+  const value = children(node, t).find(
+    (c) => (t.named(c) && !isComment(c, ctx) && kind(c, ctx) !== "property_name") || t.text(c) === ",",
+  );
   return ctx.danglingComments(node).filter((c) => value === undefined || t.ord(c) < t.ord(value));
 }
 
 /** The nodes whose children prettier prints as a sequence of statements (printNodeSequence). */
 const statementSequences = new Set([...statementLists, "keyframe_block_list"]);
+
+/**
+ * `$x: a !default !global`: the grammar has no place for a Sass variable's flags and wraps them in an `ERROR`, which
+ * formats as the value's last words rather than leaving the declaration as written.
+ */
+function sassFlags(error: number, t: FormatTree): boolean {
+  if (t.kindName(t.parent(error)) !== "declaration" || t.count(error) === 0) return false;
+  for (let i = 0; i < t.count(error); i++) if (t.kindName(t.child(error, i)) !== "important_value") return false;
+  return true;
+}
+
+/**
+ * `a:b !c{d:e}`, `a:b c%{d:e}`: oxc-css-parser reads a nested rule whose selector tree-sitter cannot, an `ERROR`
+ * between the rule's selectors and its block; the selector prints as written (`ruleSet`).
+ */
+function selectorTail(error: number, t: FormatTree): boolean {
+  const up = t.parent(error);
+  if (t.kindName(up) !== "rule_set") return false;
+  const kids = Array.from({ length: t.count(up) }, (_, i) => t.child(up, i));
+  let at = kids.indexOf(error);
+  if (t.kindName(kids.findLast((k) => !t.kindName(k).endsWith("comment")) as number) !== "block") return false;
+  if (kids.slice(at + 1, -1).some((k) => !t.kindName(k).endsWith("comment"))) return false;
+  while (at > 0 && t.kindName(kids[at - 1] as number).endsWith("comment")) at--;
+  const selectors = kids[at - 1];
+  // oxc-css-parser fails `a b%{…}` as well; one past a `:` it reads.
+  return selectors !== undefined && t.kindName(selectors) === "selectors" && t.text(selectors).includes(":");
+}
+
+/**
+ * An `ERROR` in an `@media`/`@supports`/`@import` prelude holding a comment (a stray `)`), which
+ * `mediaQueries`, `supportsValue` and `importStatement` print from the source as oxc's commented-prelude path does.
+ */
+function commentedPreludeError(error: number, t: FormatTree): boolean {
+  let up = t.parent(error);
+  while (up !== NO_NODE && t.kindName(up).endsWith("_query")) up = t.parent(up);
+  if (up === NO_NODE || !["media_statement", "supports_statement", "import_statement"].includes(t.kindName(up)))
+    return false;
+  const holds = (n: number): boolean =>
+    Array.from({ length: t.count(n) }, (_, i) => t.child(n, i)).some(
+      (c) => t.kindName(c) === "comment" || (t.kindName(c) !== "block" && holds(c)),
+    );
+  return holds(up);
+}
+
+/** The flags `sassFlags` recovers, one space apart. */
+const sassFlagList: StreamRule<CssOptions> = (error, ctx) => {
+  for (let i = 0; i < ctx.tree.count(error); i++) {
+    if (i > 0) sText(" ");
+    const flag = ctx.tree.child(error, i);
+    sToken(flag, ctx.tree.text(flag));
+  }
+};
 
 /** A stylesheet that failed to parse prints as written, its own final line break included. */
 export function finalLine({ tree, isBroken }: SCtx): boolean {
@@ -765,7 +1303,8 @@ export function declarationColon(colon: number | undefined, node: number, ctx: S
   for (const c of comments) if (t.ord(c) < t.ord(colon)) put(c, () => ctx.comment(c));
   put(colon, () => sToken(colon, ":"));
   // Past the `:`, comments with no value after them are postcss's value instead, printed as its words.
-  const value = !customs.emptyValue(node, ctx);
+  // So are those before a value of `!important` alone, which postcss splits off as `important`.
+  const value = !customs.emptyValue(node, ctx) && !customs.importantValue(node, ctx);
   for (const c of comments)
     if (t.ord(c) > t.ord(colon))
       if (value) put(c, () => ctx.comment(c));
@@ -784,16 +1323,15 @@ export function declarationColon(colon: number | undefined, node: number, ctx: S
 export function declarationEnd(semi: number | undefined, node: number, ctx: SCtx): void {
   const t = ctx.tree;
   const real = semi !== undefined && t.text(semi) !== "";
-  const important = children(node, t).find((c) => kind(c, ctx) === "important");
+  // Sass flags (`sassFlags`) end the value as `!important` does.
+  const important = children(node, t).findLast((c) => kind(c, ctx) === "important" || kind(c, ctx) === "ERROR");
   if (important !== undefined) {
-    let prev = important;
+    // One space before each comment after `!important`, none before `;`.
     for (const c of ctx.danglingComments(node))
       if (t.ord(c) > t.ord(important)) {
-        sText(sourceGap(t, prev, c));
+        sText(" ");
         ctx.comment(c);
-        prev = c;
       }
-    if (real) sText(sourceGap(t, prev, semi));
   }
   if (!real) return sToken(node, ";", true);
   const colon = code(node, ctx).find((c) => kind(c, ctx) === ":");
@@ -817,6 +1355,66 @@ function unparsedUrl(n: number, ctx: SCtx): boolean {
   return children(n, t).some((c) => unparsedUrl(c, ctx));
 }
 
+/** The functions oxc-css-parser reads with the calc grammar, the one place its CSS grammar takes a `( … )` group. */
+const mathFunctions = new Set(
+  "calc -webkit-calc -moz-calc min max clamp sin cos tan asin acos atan sqrt exp abs sign hypot round mod rem atan2 pow log".split(
+    " ",
+  ),
+);
+
+/**
+ * A word CSS Syntax lexes with a delim token its typed grammar has no place for (`a*c`, `a%c`, `a.c`, `a@c`), where
+ * a `/` is a division, a `#name` a hash and a `$name` a Sass variable.
+ */
+const delimWord = (text: string) =>
+  !/^u\+[\da-f?]/i.test(text) &&
+  [...text.matchAll(rawTokenPattern)].some(
+    (m) => m.groups?.char !== undefined && m[0] !== "/" && !(m[0] === "$" && new RegExp(`^${nameStart}`).test(text.slice((m.index ?? 0) + 1))),
+  );
+
+/**
+ * A declaration's value oxc-css-parser's typed grammar cannot read to its end, so it falls back to raw tokens. That
+ * grammar takes a `( … )` group only as a calc operand (`calc((1px + 2px) * 2)`) holding one calc sum (`(1px +2px)`
+ * is two values), so any other group (`$map: (a: 1)`, `fn( (1) )`) makes the value raw; so does a `{ … }` outside
+ * any function (`[1, {"a":1}]`, `function(x) { … }`), and so does a `:` past the property's (`a:b`).
+ */
+function oxcRaw(decl: number, t: FormatTree): boolean {
+  if (children(decl, t).filter((c) => t.kindName(c) === ":").length > 1) return true;
+  const calcSum = (paren: number) =>
+    children(paren, t).filter((c) => t.named(c) && t.kindName(c) !== "comment").length === 1;
+  // `a/f(c)`, which tree-sitter-css reads as the word `a/f` then a group, is `a`, `/` and the function `f(c)`.
+  // `a/f(c)/g` reads as `a/f` then the math `(c)/g`, the group its first operand.
+  const callParens = (paren: number) => {
+    let first = paren;
+    for (let up = t.parent(first); t.kindName(up) === "binary_expression" && t.child(up, 0) === first; up = t.parent(up)) {
+      if (t.kindName(t.child(up, 1)) !== "/") return false;
+      first = up;
+    }
+    const siblings = children(t.parent(first), t);
+    paren = first;
+    const prev = siblings[siblings.indexOf(paren) - 1];
+    return prev !== undefined && t.kindName(prev) === "plain_value" && t.adjoins(prev, paren) && /\/[a-zA-Z_-][\w-]*$/.test(t.text(prev));
+  };
+  const raw = (n: number, inCall: boolean, inMath: boolean): boolean =>
+    children(n, t).some((c) => {
+      const k = t.kindName(c);
+      if (k === "parenthesized_value" && !(inMath && calcSum(c)) && !callParens(c)) return true;
+      if (k === "brace_value" && !inCall) return true;
+      if (k === "plain_value" && !inCall && delimWord(t.text(c))) return true;
+      const math =
+        k === "call_expression"
+          ? mathFunctions.has(t.text(t.child(c, 0)).toLowerCase())
+          : inMath && (k === "arguments" || k === "binary_expression" || k === "parenthesized_value");
+      return raw(c, inCall || k === "call_expression", math);
+    });
+  return raw(decl, false, false);
+}
+
+/** A Sass variable or custom property, whose raw value (`oxcRaw`) oxfmt prints verbatim. */
+const customName = (decl: number, t: FormatTree) => /^(\$|--)/.test(t.text(t.child(decl, 0)));
+
+const rawValue = (decl: number, ctx: SCtx): boolean => customName(decl, ctx.tree) && oxcRaw(decl, ctx.tree);
+
 /** The source between `prev` and `c`, less any whitespace ending a line. */
 function gapBefore(prev: number, c: number, t: FormatTree): string {
   if (t.lf(c) > 0) return "\n".repeat(t.lf(c)) + " ".repeat(t.col(c));
@@ -829,27 +1427,390 @@ function gapBefore(prev: number, c: number, t: FormatTree): string {
 /** The `:` of a declaration whose value prettier keeps as written (`unparsedValue`), one space, then the value. */
 export function colonThenSource(colon: number | undefined, node: number, ctx: SCtx): void {
   const t = ctx.tree;
-  const parts = code(node, ctx);
+  const parts = children(node, t);
   declarationColon(colon, node, ctx);
   const from = colon === undefined ? 1 : parts.indexOf(colon) + 1;
-  const value = parts.slice(from).filter((c) => kind(c, ctx) !== ";" && kind(c, ctx) !== "important");
+  // `!important` and Sass flags (`sassFlags`) one space after the value.
+  const flag = (c: number) => kind(c, ctx) === "important" || kind(c, ctx) === "ERROR";
+  const value = parts.slice(from).filter((c) => kind(c, ctx) !== ";" && !flag(c));
+  // The comments before the value are postcss's `between`, which `declarationColon` printed; the value's own print
+  // as written among its words.
+  while (value.length > 0 && isComment(value[0] as number, ctx)) value.shift();
   let prev = -1;
   for (const c of value) {
-    sLiteral(c, (prev === -1 ? " " : gapBefore(prev, c, t)) + t.text(c));
+    const gap = prev === -1 ? " " : gapBefore(prev, c, t);
+    if (isComment(c, ctx)) {
+      sText(gap);
+      ctx.comment(c);
+    } else sLiteral(c, gap + t.text(c));
     prev = c;
   }
-  const important = parts.find((c) => kind(c, ctx) === "important");
-  if (important !== undefined) {
+  for (const c of parts.filter(flag)) {
     sText(" ");
-    ctx.print(important);
+    ctx.print(c);
   }
+}
+
+/**
+ * One token of the raw run oxc-css-parser falls back to for a normal property's value (`rawTokens`): its CSS token
+ * kind (`ident`, `number`, `dimension`, `percentage`, `hash`, `string`, `url`, or the punctuation itself), its
+ * text, whether it adjoins the token before, whether a line break precedes it, and the comments before it.
+ */
+interface RawToken {
+  readonly kind: string;
+  readonly text: string;
+  readonly node: number;
+  readonly glued: boolean;
+  readonly lf: boolean;
+  readonly comments: number[];
+}
+
+type RawSeparator = "tight" | "space" | "line" | "hard";
+
+const nameChar = String.raw`(?:[\w\u0080-￿-]|\\.)`;
+const nameStart = String.raw`(?:[a-zA-Z_\u0080-￿]|\\.)`;
+/** CSS Syntax's tokens as a leaf's text holds them: a number and its unit, an ident, a hash, else one character. */
+const rawTokenPattern = new RegExp(
+  String.raw`(?<number>[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?)(?:(?<percentage>%)|(?<unit>-?(?:-|${nameStart})${nameChar}*))?` +
+    String.raw`|(?<ident>-?(?:-|${nameStart})${nameChar}*)|(?<hash>#${nameChar}+)|(?<space>\s+)|(?<char>[^])`,
+  "gy",
+);
+
+/** The raw tokens of a normal property's value nodes, and the comments after the last. */
+function rawTokens(nodes: number[], ctx: SCtx): { tokens: RawToken[]; tail: number[] } {
+  const t = ctx.tree;
+  const tokens: RawToken[] = [];
+  let comments: number[] = [];
+  let prev = -1;
+  let lf = false;
+  const push = (kind: string, text: string, node: number, glued: boolean) => {
+    tokens.push({ kind, text, node, glued, lf, comments });
+    comments = [];
+    lf = false;
+  };
+  const visit = (n: number): void => {
+    const k = kind(n, ctx);
+    const glued = prev !== -1 && !isComment(prev, ctx) && t.adjoins(prev, n);
+    if (t.lf(n) > 0) lf = true;
+    if (isComment(n, ctx)) comments.push(n);
+    else if (k === "call_expression" && /^url$/i.test(t.text(t.child(n, 0)))) push("url", "", n, glued);
+    else if (k === "string_value") push("string", t.text(n), n, glued);
+    // `http://a` and `progid:A` stay one word, as oxc-css-parser reads them.
+    else if (k === "plain_value" && t.text(n).includes(":")) push("ident", t.text(n), n, glued);
+    else if (t.count(n) > 0 && !["integer_value", "float_value", "color_value", "plain_value"].includes(k))
+      return children(n, t).forEach(visit);
+    else {
+      let joined = glued;
+      for (const m of t.text(n).matchAll(rawTokenPattern)) {
+        const g = m.groups as Record<string, string | undefined>;
+        if (g.space !== undefined) {
+          joined = false;
+          continue;
+        }
+        const kind =
+          g.number !== undefined
+            ? g.percentage !== undefined
+              ? "percentage"
+              : g.unit !== undefined
+                ? "dimension"
+                : "number"
+            : g.ident !== undefined
+              ? "ident"
+              : g.hash !== undefined
+                ? "hash"
+                : m[0];
+        push(kind, m[0], n, joined);
+        joined = true;
+      }
+    }
+    prev = n;
+  };
+  nodes.forEach(visit);
+  return { tokens, tail: comments };
+}
+
+/** Oxc's `base_separator` between raw tokens `g[i - 1]` and `g[i]` of a comma group `g`, and its grid override. */
+function rawSeparator(g: RawToken[], i: number, font: boolean, grid: boolean): RawSeparator {
+  const sep = baseRawSeparator(g, i, font);
+  if (grid && (sep === "line" || sep === "space")) return (g[i] as RawToken).lf ? "hard" : "space";
+  return sep;
+}
+
+function baseRawSeparator(g: RawToken[], i: number, font: boolean): RawSeparator {
+  const prev = g[i - 1] as RawToken;
+  const curr = g[i] as RawToken;
+  const is = (x: RawToken | undefined, kinds: string[]) => x !== undefined && kinds.includes(x.kind);
+  // A glued `::` is one token to oxc, lexed left to right, which neither `:` rule touches (`a::b`, `a::: b`).
+  const second = (j: number): boolean => g[j]?.kind === ":" && g[j - 1]?.kind === ":" && g[j]?.glued === true && !second(j - 1);
+  const pair = (j: number) => second(j) || (g[j + 1]?.kind === ":" && second(j + 1));
+  if (curr.kind === ":" && pair(i)) return curr.glued ? "tight" : "line";
+  if (is(curr, [":", "}", ",", ")", "]", ";"]) || is(prev, ["{", "(", "["])) return "tight";
+  if (is(prev, [",", ...(pair(i - 1) ? [] : [":"])])) return "space";
+  if (curr.kind === "*" || prev.kind === "*") return "line";
+  if ((g[0] as RawToken).kind === "/" && curr.glued) return "tight";
+  if (font) {
+    const fontSize = (x: RawToken | undefined) => is(x, ["number", "dimension", "percentage", ")"]);
+    if (curr.kind === "/" && curr.glued && fontSize(prev)) return "tight";
+    if (prev.kind === "/" && prev.glued && fontSize(g[i - 2])) return "tight";
+  }
+  const wordish = (x: RawToken | undefined) => is(x, ["ident", ")"]);
+  if (curr.kind === "/") return curr.glued && !wordish(g[i + 1]) && !wordish(prev) ? "tight" : "line";
+  if (prev.kind === "/") return curr.glued && !wordish(curr) && !wordish(g[i - 2]) ? "tight" : "line";
+  if (curr.glued) return "tight";
+  return is(curr, ["+", "-", "*", "%", "/"]) ? "space" : "line";
+}
+
+function printRawToken(token: RawToken, ctx: SCtx): void {
+  for (const c of token.comments) {
+    ctx.comment(c);
+    sText(" ");
+  }
+  if (token.kind === "url") ctx.print(token.node);
+  else sToken(token.node, token.text);
+}
+
+/**
+ * Oxc's `write_comma_group` over raw tokens: runs of tokens no line may split, packed in a fill, a comment between
+ * two runs an entry of its own, and the comments after the value (`tail`) last.
+ */
+function rawGroup(g: RawToken[], tail: number[], font: boolean, grid: boolean, ctx: SCtx): void {
+  const first = g[0];
+  if (first === undefined) return tail.forEach((c) => ctx.comment(c));
+  if (g.length === 1 && tail.length === 0) return printRawToken(first, ctx);
+  for (const c of first.comments) {
+    ctx.comment(c);
+    sText(" ");
+  }
+  const seps = g.map((_, i) => (i === 0 ? "line" : rawSeparator(g, i, font, grid)));
+  let entries = 0;
+  const entry = (sep: RawSeparator, print: () => void) => {
+    if (entries++ > 0) {
+      if (sep === "hard") sHardline();
+      else sLine(0);
+    }
+    open(FILL_ITEM);
+    print();
+    close();
+  };
+  open(GROUP);
+  open(INDENT);
+  if (seps.some((s, i) => s === "hard" && (g[i] as RawToken).comments.length === 0)) sHardline();
+  open(FILL);
+  for (let i = 0; i < g.length; ) {
+    let end = i + 1;
+    while (end < g.length && (seps[end] === "tight" || seps[end] === "space")) end++;
+    const start = i;
+    const head = g[start] as RawToken;
+    if (start > 0) for (const c of head.comments) entry("line", () => ctx.comment(c));
+    entry(seps[start] as RawSeparator, () => {
+      for (let j = start; j < end; j++) {
+        if (j > start && seps[j] === "space") sText(" ");
+        const token = g[j] as RawToken;
+        if (j === start) printRawToken({ ...token, comments: [] }, ctx);
+        else printRawToken(token, ctx);
+      }
+    });
+    i = end;
+  }
+  for (const c of tail) entry("line", () => ctx.comment(c));
+  close();
+  close();
+  close();
+}
+
+/**
+ * The `:` of a normal property's value oxc-css-parser reads as raw tokens (`rawTokens`), then that value as oxc's
+ * `write_declaration_value` lays it out: its top-level comma groups, each a fill of its tokens, one per line under
+ * the name when there are several.
+ */
+export function colonThenRawTokens(colon: number | undefined, node: number, ctx: SCtx): void {
+  const t = ctx.tree;
+  declarationColon(colon, node, ctx);
+  const parts = children(node, t);
+  const end = (c: number) => [";", "important", "ERROR"].includes(kind(c, ctx));
+  const from = colon === undefined ? 1 : parts.indexOf(colon) + 1;
+  const value = parts.slice(from, parts.findIndex((c, i) => i >= from && end(c)) >>> 0);
+  // The comments before the value are postcss's `between`, which `declarationColon` printed.
+  while (value.length > 0 && isComment(value[0] as number, ctx)) value.shift();
+  const { tokens, tail } = rawTokens(value, ctx);
+  const groups: { tokens: RawToken[]; comma?: RawToken }[] = [{ tokens: [] }];
+  let depth = 0;
+  for (const token of tokens) {
+    const group = groups.at(-1) as { tokens: RawToken[]; comma?: RawToken };
+    if (depth === 0 && token.kind === ",") {
+      group.comma = token;
+      groups.push({ tokens: [] });
+      continue;
+    }
+    if ("([{".includes(token.kind)) depth++;
+    else if (")]}".includes(token.kind)) depth--;
+    group.tokens.push(token);
+  }
+  if (groups.length > 1 && (groups.at(-1) as { tokens: RawToken[] }).tokens.length === 0) groups.pop();
+  const prop = t.text(parts[0] as number).toLowerCase();
+  const font = prop === "font";
+  const grid = prop === "grid" || prop.startsWith("grid-template");
+  if (groups.length === 1) {
+    sText(" ");
+    rawGroup((groups[0] as { tokens: RawToken[] }).tokens, tail, font, grid, ctx);
+  } else rawGroups(groups, tail, font, grid, ctx);
+  // `!important` and Sass flags (`sassFlags`) one space after the value.
+  for (const c of parts.slice(from).filter((c) => kind(c, ctx) === "important" || kind(c, ctx) === "ERROR")) {
+    sText(" ");
+    ctx.print(c);
+  }
+}
+
+function rawGroups(
+  groups: { tokens: RawToken[]; comma?: RawToken }[],
+  tail: number[],
+  font: boolean,
+  grid: boolean,
+  ctx: SCtx,
+): void {
+  open(INDENT);
+  groups.forEach((g, i) => {
+    sHardline();
+    const last = i === groups.length - 1;
+    rawGroup(g.tokens, last ? tail : [], font, grid, ctx);
+    if (!last && g.comma !== undefined) {
+      for (const c of g.comma.comments) {
+        sText(" ");
+        ctx.comment(c);
+      }
+      sToken(g.comma.node, ",");
+    }
+  });
+  close();
 }
 
 /** A query's words where prettier reads it as a value (`@import`'s media, `@supports`), `and`/`not` chains flattened. */
 const queryWords = (n: number, ctx: SCtx): number[] =>
-  kind(n, ctx) === "binary_query" || kind(n, ctx) === "unary_query"
+  ["binary_query", "unary_query", "ERROR"].includes(kind(n, ctx)) && ctx.tree.count(n) > 0
     ? children(n, ctx.tree).flatMap((c) => queryWords(c, ctx))
     : [n];
+
+const holdsComment = (n: number, ctx: SCtx): boolean =>
+  children(n, ctx.tree).some((c) => isComment(c, ctx) || holdsComment(c, ctx));
+
+/**
+ * The words of an `@import`/`@supports` prelude holding a comment as oxc's write_commented_value_params tokenizes
+ * its source: split at whitespace, a comment its own token, a word ending at the `)` closing its parens.
+ */
+function commentedTokens(words: number[], ctx: SCtx): number[][] {
+  const t = ctx.tree;
+  const tokens: number[][] = [];
+  let prev = -1;
+  for (const w of words) {
+    const glued =
+      prev !== -1 && t.adjoins(prev, w) && !isComment(prev, ctx) && !isComment(w, ctx) && !t.text(prev).endsWith(")");
+    if (glued) (tokens.at(-1) as number[]).push(w);
+    else tokens.push([w]);
+    prev = w;
+  }
+  return tokens;
+}
+
+/** A token of `commentedTokens`, printed as written but its quotes; one with a comment in its parens, structured. */
+function commentedToken(token: number[], ctx: SCtx, dedent = false): void {
+  if (hardToken(token, ctx)) return structuredParen(token, ctx, dedent);
+  for (const c of token) {
+    if (isComment(c, ctx)) ctx.comment(c);
+    else asWritten(c, ctx);
+  }
+}
+
+/** oxc's `hard` token: a comment inside its parens, which breaks the line on both sides of it. */
+const hardToken = (token: number[], ctx: SCtx): boolean =>
+  token.some((c) => !isComment(c, ctx) && holdsComment(c, ctx) && ctx.tree.text(c).includes("("));
+
+/** The separator before `token[i]` of a commented prelude's fill: a hard line beside a `hardToken`. */
+function commentedSeparator(tokens: number[][], i: number, ctx: SCtx): void {
+  if (hardToken(tokens[i - 1] as number[], ctx) || hardToken(tokens[i] as number[], ctx)) sHardline();
+  else sLine(0);
+}
+
+/**
+ * oxc's write_structured_paren: a hard token's text to its first `(` as written, then its inner words on their own
+ * line indented, filled with each break indented once more, a `:` glued to the word before it, then `)` and the rest.
+ * With `dedent`, the indent counts from one level out: a commented @import entry of several continues two spaces in
+ * from the list, but its paren group's words indent from the list's level and its `)` sits at it.
+ */
+function structuredParen(token: number[], ctx: SCtx, dedent = false): void {
+  const t = ctx.tree;
+  const leaves = (n: number): number[] =>
+    isComment(n, ctx) || t.count(n) === 0 || kind(n, ctx) === "string_value" || (!t.text(n).includes("(") && !holdsComment(n, ctx))
+      ? [n]
+      : children(n, t).flatMap(leaves);
+  const atoms = token.flatMap(leaves);
+  const isText = (c: number, s: string) => !t.named(c) && t.text(c) === s;
+  const lp = atoms.findIndex((c) => isText(c, "("));
+  const rp = atoms.findLastIndex((c) => isText(c, ")"));
+  const run = (from: number, to: number) => {
+    for (let i = from; i < to; i++) {
+      const c = atoms[i] as number;
+      if (i > from) sText(sourceGap(t, atoms[i - 1] as number, c));
+      if (isComment(c, ctx)) ctx.comment(c);
+      else asWritten(c, ctx);
+    }
+  };
+  // The inner words as oxc's tokenize splits them: at whitespace outside nested parens, a comment there its own word.
+  const words: number[][] = [];
+  let depth = 0;
+  let current: number[] | undefined;
+  for (let i = lp + 1; i < rp; i++) {
+    const c = atoms[i] as number;
+    if (depth === 0 && isComment(c, ctx)) {
+      words.push([c]);
+      current = undefined;
+    } else if (current !== undefined && (depth > 0 || t.adjoins(current.at(-1) as number, c))) current.push(c);
+    else words.push((current = [c]));
+    if (isText(c, "(")) depth++;
+    else if (isText(c, ")") && --depth === 0) current = undefined;
+  }
+  // A word starting with `:` gives the `:` to the word before it.
+  const glued: number[][] = [];
+  for (const w of words) {
+    if (glued.length > 0 && isText(w[0] as number, ":")) {
+      (glued.at(-1) as number[]).push(w[0] as number);
+      if (w.length > 1) glued.push(w.slice(1));
+    } else glued.push(w);
+  }
+  run(0, lp + 1);
+  if (dedent) openAlign(-1);
+  open(INDENT);
+  sHardline();
+  open(INDENT);
+  open(FILL);
+  glued.forEach((w, i) => {
+    if (i > 0) sLine(0);
+    open(FILL_ITEM);
+    w.forEach((c, j) => {
+      // A `:` glued from the next word prints against this one.
+      if (j > 0 && !isText(c, ":")) sText(sourceGap(t, w[j - 1] as number, c));
+      if (isComment(c, ctx)) ctx.comment(c);
+      else asWritten(c, ctx);
+    });
+    close();
+  });
+  for (let k = 0; k < 3; k++) close();
+  sHardline();
+  if (dedent) close();
+  run(rp, atoms.length);
+}
+
+/** `n` as written but its strings, which print requoted. */
+function asWritten(n: number, ctx: SCtx): void {
+  const t = ctx.tree;
+  if (kind(n, ctx) === "string_value") return ctx.printNode(n);
+  // A node's text can hold more than its children's (`integer_value`'s digits beside its `unit`).
+  if (!/['"]/.test(t.text(n))) return sToken(n, t.text(n));
+  const kids = children(n, t);
+  kids.forEach((c, i) => {
+    if (i > 0) sText(sourceGap(t, kids[i - 1] as number, c));
+    asWritten(c, ctx);
+  });
+}
 
 const isParenQuery = (c: number, ctx: SCtx) =>
   kind(c, ctx) === "feature_query" || kind(c, ctx) === "parenthesized_query";
@@ -865,7 +1826,7 @@ function supportsItems(words: number[], ctx: SCtx, top: boolean): number[][] {
   for (let i = 0; i < words.length; i++) {
     const w = words[i] as number;
     const next = words[i + 1];
-    const keyword = !t.named(w) && ["not", "and", "or"].includes(t.text(w).toLowerCase());
+    const keyword = ["not", "and", "or"].includes(kind(w, ctx));
     if (keyword && next !== undefined && isParenQuery(next, ctx) && ((top && i === 0) || t.adjoins(w, next))) {
       items.push([w, next]);
       i++;
@@ -926,17 +1887,22 @@ export function supportsValue(at: number | undefined, node: number, ctx: SCtx): 
   if (at !== undefined) sToken(at, atName(t.text(at)));
   sText(" ");
   const kids = children(node, t);
-  const words = kids.filter((c) => c !== at && kind(c, ctx) !== "block").flatMap((c) => queryWords(c, ctx));
-  const items = supportsItems(words, ctx, true);
-  if (items.length === 1) supportsItem(items[0] as number[], ctx);
+  const prelude = kids.filter((c) => c !== at && kind(c, ctx) !== "block");
+  const words = prelude.flatMap((c) => queryWords(c, ctx));
+  const commented = prelude.some((c) => isComment(c, ctx) || holdsComment(c, ctx));
+  const items = commented ? commentedTokens(words, ctx) : supportsItems(words, ctx, true);
+  const print = (item: number[]) => (commented ? commentedToken(item, ctx) : supportsItem(item, ctx));
+  // oxc indents a commented prelude even when alone, which shows once a paren group breaks.
+  if (items.length === 1 && !(commented && hardToken(items[0] as number[], ctx))) print(items[0] as number[]);
   else {
     open(GROUP);
     open(INDENT);
     open(FILL);
     items.forEach((item, i) => {
-      if (i > 0) sLine(0);
+      if (i > 0 && commented) commentedSeparator(items, i, ctx);
+      else if (i > 0) sLine(0);
       open(FILL_ITEM);
-      supportsItem(item, ctx);
+      print(item);
       close();
     });
     for (let k = 0; k < 3; k++) close();
@@ -967,25 +1933,50 @@ export function importStatement(node: number, ctx: SCtx): void {
   const nested = run.entries.length > 1;
   const isUrl = (c: number) =>
     kind(c, ctx) === "call_expression" && t.text(t.child(c, 0)) === "url";
+  const commented =
+    run.trail.length > 0 || run.entries.some((e) => e.items.some((c) => isComment(c, ctx) || holdsComment(c, ctx)));
+  // oxc lays a commented prelude's entries out as prettier's fill over them, each with its comma: one starts a line
+  // when it and the one before it, flat, do not fit from where that one starts.
+  // One holding a `hardToken` always starts and ends a line.
+  const chunks = commented && nested;
+  const hardEntry = (i: number) =>
+    commentedTokens(
+      (run.entries[i]?.items ?? []).flatMap((c) => queryWords(c, ctx)),
+      ctx,
+    ).some((token) => hardToken(token, ctx));
   open(GROUP);
   if (nested) open(INDENT);
+  if (chunks) open(FILL);
   run.entries.forEach((e, i) => {
-    if (i > 0) sLine(0);
+    if (i > 0 && chunks && (hardEntry(i - 1) || hardEntry(i))) sHardline();
+    else if (i > 0) sLine(0);
+    if (chunks) open(FILL_ITEM);
     const words = e.items.flatMap((c) => queryWords(c, ctx));
-    const indent = !(words.length === 2 && isUrl(words[0] as number));
-    if (indent) open(INDENT);
+    const tokens = commented ? commentedTokens(words, ctx) : words.map((c) => [c]);
+    // oxc indents a commented prelude whole, which shows once a paren group breaks.
+    const hard = commented && tokens.some((token) => hardToken(token, ctx));
+    const indent = hard || !(words.length === 2 && isUrl(words[0] as number));
+    // A commented entry of several continues two spaces in from the list, whatever the tab width.
+    if (indent && chunks) openAlign(2);
+    else if (indent) open(INDENT);
     open(FILL);
-    words.forEach((c, j) => {
-      if (j > 0) sLine(0);
+    tokens.forEach((token, j) => {
+      const c = token[0] as number;
+      if (j > 0 && commented) commentedSeparator(tokens, j, ctx);
+      // oxc reads a keyword glued to its paren group (`not(a:b)`) as a function, which stays glued.
+      else if (j > 0 && !gluedKeyword(tokens[j - 1]?.[0] as number, ctx)) sLine(0);
       open(FILL_ITEM);
-      if (isParenQuery(c, ctx)) queryWord(c, ctx);
+      if (commented) commentedToken(token, ctx, chunks && indent);
+      else if (isParenQuery(c, ctx)) queryWord(c, ctx);
       else item(c);
       close();
     });
     close();
     if (indent) close();
     if (e.sep !== -1) sToken(e.sep, t.text(e.sep));
+    if (chunks) close();
   });
+  if (chunks) close();
   if (nested) close();
   close();
   for (const c of run.trail) {
@@ -998,14 +1989,34 @@ export function importStatement(node: number, ctx: SCtx): void {
   else sToken(node, ";", true);
 }
 
+/** A media type and the keywords between queries, which format.ts prints lowercased. */
+const queryKeywords = ["keyword_query", "and", "or", "not", "only"];
+
 /** A media prelude's leaves in source order, comments among them, a query's parts and parens split apart. */
 function mediaAtoms(node: number, ctx: SCtx): number[] {
   const t = ctx.tree;
   const atoms = (n: number): number[] =>
-    kind(n, ctx).endsWith("_query") && t.count(n) > 0 ? children(n, t).flatMap(atoms) : [n];
+    (kind(n, ctx).endsWith("_query") || kind(n, ctx) === "ERROR") && t.count(n) > 0 ? children(n, t).flatMap(atoms) : [n];
   return children(node, t)
     .filter((c) => kind(c, ctx) !== "@media" && kind(c, ctx) !== "block")
     .flatMap(atoms);
+}
+
+/** Whether the parens opening at `atoms[open]` hold a first `:` outside comments with whitespace before or after it. */
+function spacedColon(atoms: number[], open: number, ctx: SCtx): boolean {
+  const t = ctx.tree;
+  let inner = "";
+  let depth = 0;
+  for (let i = open; i < atoms.length; i++) {
+    const c = atoms[i] as number;
+    if (i > open) inner += sourceGap(t, atoms[i - 1] as number, c);
+    const text = t.text(c);
+    if (!t.named(c) && text === "(") depth++;
+    else if (!t.named(c) && text === ")" && --depth === 0) break;
+    inner += ctx.isComment(c) ? "x".repeat(text.length) : text;
+  }
+  const at = inner.replace(/\/\*[\s\S]*?\*\//g, (m) => "x".repeat(m.length)).indexOf(":");
+  return at !== -1 && /\s/.test((inner[at - 1] ?? "") + (inner[at + 1] ?? ""));
 }
 
 /**
@@ -1023,29 +2034,33 @@ export function mediaQueries(at: number | undefined, node: number, ctx: SCtx): v
   let level = 0;
   // Whether the parens open a feature expression, and its `:`.
   let expression = false;
+  // Whether the parens print as written: oxc's write_media_token re-spaces one only around a `:` with a space beside.
+  let raw = false;
   let colon = -1;
   let prev = -1;
   open(GROUP);
   open(INDENT);
-  for (const c of atoms) {
+  for (const [i, c] of atoms.entries()) {
+    if (level === 0 && is(c, "(")) raw = !spacedColon(atoms, i, ctx);
     if (prev !== -1) {
       if (level === 0) {
         if (is(prev, ",")) sLine(0);
         else if (!is(c, ",") && (!t.adjoins(prev, c) || is(prev, ")"))) sText(" ");
-      } else if (!expression) sText(sourceGap(t, prev, c));
+      } else if (!expression || raw) sText(sourceGap(t, prev, c));
       else if (level === 1 && (is(prev, "(") || is(c, ")"))) {
         // The feature and the value are trimmed.
       } else if (level === 1 && colon === -1 && is(c, ":")) colon = c;
       else if (prev === colon) sText(" ");
       else if (colon === -1) sText(sourceGap(t, prev, c).replace(/ +/g, " "));
-      else sText(sourceGap(t, prev, c));
+      else sText(sourceGap(t, prev, c).replace(/\s+/g, " "));
     }
     if (level === 0 && is(c, "(")) {
       expression = prev === -1 || !t.adjoins(prev, c) || is(prev, ")") || is(prev, ",");
       colon = -1;
     }
     if (ctx.isComment(c)) ctx.comment(c);
-    else if (t.named(c)) ctx.printNode(c);
+    // write_media_token prints a paren group's words as written, re-spaced at most; a keyword keeps its case too.
+    else if (t.named(c) && level === 0 && !["ERROR", ...queryKeywords].includes(kind(c, ctx))) ctx.printNode(c);
     else sToken(c, t.text(c));
     if (is(c, "(")) level++;
     else if (is(c, ")")) level = Math.max(level - 1, 0);
@@ -1064,13 +2079,17 @@ export function mediaQueries(at: number | undefined, node: number, ctx: SCtx): v
 /**
  * A rule's selector and block, a space between. Prettier's selector-unknown: postcss-selector-parser is not given a
  * selector holding a comment, whose source up to the rule's `{` (postcss's selector and `between`) prints as written
- * but trimmed. The comments before the block attach to the rule (`handleComment`).
+ * but trimmed. The comments before the block attach to the rule (`handleComment`). A selector tree-sitter cannot
+ * read (`selectorTail`) prints as written too.
  */
 export function ruleSet(node: number, ctx: SCtx): void {
   const t = ctx.tree;
   const holds = (n: number): boolean => children(n, t).some((c) => ctx.isComment(c) || holds(c));
   const kids = children(node, t);
-  const asWritten = kids.some((c) => kind(c, ctx) !== "block" && (ctx.isComment(c) || holds(c)));
+  const asWritten = kids.some(
+    (c) => kind(c, ctx) === "ERROR" || (kind(c, ctx) !== "block" && (ctx.isComment(c) || holds(c))),
+  );
+  if (!asWritten && placeholderSelectors(node, ctx)) return;
   let prev = -1;
   for (const c of kids) {
     if (prev !== -1) sText(asWritten && kind(c, ctx) !== "block" ? sourceGap(t, prev, c) : " ");
@@ -1081,6 +2100,49 @@ export function ruleSet(node: number, ctx: SCtx): void {
   }
 }
 
+/**
+ * Embedded CSS's rule whose selector list holds a placeholder (javascript/print/embed.ts). postcss-selector-parser
+ * reads `@prettier-placeholder-N` as an at-word that runs to the next whitespace past any `,` or `>`, so the
+ * selectors before the first one holding a placeholder print one per line, and the rest prints as written, each
+ * gap one space or the line break it holds: `a,b.${x},c` as `a,⏎b.${x},c`.
+ */
+function placeholderSelectors(node: number, ctx: SCtx): boolean {
+  const t = ctx.tree;
+  const [list, block] = children(node, t);
+  if (list === undefined || block === undefined || kind(list, ctx) !== "selectors" || kind(block, ctx) !== "block")
+    return false;
+  const items = children(list, t);
+  const k = items.findIndex((c) => t.named(c) && /prettier-placeholder-\d/.test(t.text(c)));
+  if (k === -1) return false;
+  for (const c of items.slice(0, k)) {
+    if (t.named(c)) {
+      // `selectorList`'s wrapItem: a selector of more than two parts indents as it breaks.
+      const long = parts(c, ctx) > 2;
+      open(GROUP);
+      if (long) open(INDENT);
+      ctx.print(c);
+      if (long) close();
+      close();
+    } else {
+      sToken(c, t.text(c));
+      sHardline();
+    }
+  }
+  const stop = firstLeaf(t, block);
+  let prev = -1;
+  for (let l = firstLeaf(t, items[k] as number); l !== NO_NODE && l !== stop; l = nextLeaf(t, l)) {
+    if (prev !== -1) {
+      if (t.lf(l) > 0) sHardline();
+      else if (!t.adjoins(prev, l)) sText(" ");
+    }
+    sToken(l, t.text(l));
+    prev = l;
+  }
+  sText(" ");
+  ctx.print(block);
+  return true;
+}
+
 /** The hand-written rules format.ts names. */
 export const handWritten = {
   ...customs,
@@ -1088,6 +2150,7 @@ export const handWritten = {
   declarationColon,
   declarationEnd,
   colonThenSource,
+  colonThenRawTokens,
   importStatement,
   mediaQueries,
   supportsValue,
@@ -1100,7 +2163,11 @@ export const handWritten = {
   keywordArgument,
   sassList,
   ruleSet,
+  placeholderCallee,
+  placeholderArgs,
 };
+
+const cssStream = gen.css(handWritten);
 
 /** CSS as prettier 3.9.9's postcss printer lays it out; the layouts are format.ts, generated into fmt.gen.ts. */
 export const css: Language<CssOptions> = {
@@ -1108,18 +2175,27 @@ export const css: Language<CssOptions> = {
     parser: language,
     // What `meaning` reads whole: a string's quotes and escapes, and a name's identifier, are separate leaves.
     atoms: ["string_value", "class_name", "plain_value", "color_value"],
-    lineComments: { js_comment: "//" },
+    lineComments: {},
     defaults,
     settings: prettierSettings,
     normalize,
     handleComment,
+    // oxc-css-parser drops a value's empty last comma group, and with it the `,` before it.
+    dropped: ["trailing_comma"],
+    drops: droppedComma,
     layoutBlind: true,
   }),
   stream: {
-    ...gen.css(handWritten),
+    ...cssStream,
+    rules: new Map([
+      ...cssStream.rules,
+      ["ERROR", sassFlagList],
+      ["plain_value", (node, ctx) => plainWord(node, ctx) || cssStream.rules.get("plain_value")?.(node, ctx)],
+    ]),
     wrap: frontMatterFirst,
     commentEndsLine: statementComment,
     keepsSource: prettierIgnored,
+    recovered: (error, t) => sassFlags(error, t) || selectorTail(error, t) || commentedPreludeError(error, t),
     finalLine,
   },
 };

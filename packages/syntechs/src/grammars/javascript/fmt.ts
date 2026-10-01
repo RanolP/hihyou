@@ -1,11 +1,19 @@
 import type { Language as Parser } from "../../core/index.js";
-import { prettierDefaults, prettierSettings } from "../../fmt/options.js";
+import {
+  prettierDefaults,
+  prettierSettings,
+} from "../../fmt/options.js";
 import {
   defineLanguage,
   type Grammar,
   type Language,
 } from "../../fmt/rules.js";
-import type { StreamCtx, StreamRule } from "../../fmt/stream-format.js";
+import {
+  printLeadingComments,
+  printTrailingComments,
+  type StreamCtx,
+  type StreamRule,
+} from "../../fmt/stream-format.js";
 import {
   close as closeStream,
   closeSpan,
@@ -18,11 +26,13 @@ import {
   sJump,
   sLine,
 } from "../../fmt/stream.js";
+import { NO_NODE } from "../../core/arena.js";
+import { nextLeaf, prevLeaf } from "../../fmt/tree.js";
 import * as gen from "./fmt.gen.js";
 import { grammar, language as parser } from "./index.js";
 import { jsAtoms, jsNormalize } from "./normalize.js";
 import { assignmentCustoms } from "./print/assignment.js";
-import { callCustoms } from "./print/calls.js";
+import { callCustoms, sAwaitCallArguments } from "./print/calls.js";
 import { classCustoms } from "./print/classes.js";
 import { handleComment } from "./print/comments.js";
 import { functionCustoms } from "./print/functions.js";
@@ -32,11 +42,13 @@ import { moduleCustoms } from "./print/modules.js";
 import { objectCustoms } from "./print/objects.js";
 import { operatorCustoms } from "./print/operators.js";
 import { jsPreds } from "./print/preds.js";
-import { isDecoratedClass, needsParens } from "./print/parens.js";
+import { isAwaitCallArguments, isDecoratedClass, needsParens, role } from "./print/parens.js";
 import { semiCustoms } from "./print/semi.js";
 import {
   castLedAsi,
+  endsWithSemi,
   ignoredStatement,
+  writesSemi,
   STATEMENT_LIST_PARENTS,
   sTok,
   statementCustoms,
@@ -47,6 +59,7 @@ import {
   ignoredMemberSeparator,
   typeCustoms,
   typeRules,
+  typeNeedsParens,
   unionOwnsComments,
   unparenType,
 } from "./print/types.js";
@@ -86,6 +99,7 @@ const defaults: JsOptions = {
   experimentalOperatorPosition: "end",
   experimentalTernaries: false,
   parser: "babel",
+  sourceType: "unambiguous",
 };
 
 const PE = "parenthesized_expression";
@@ -101,6 +115,8 @@ const parenthesized: StreamRule<JsOptions> = (n, s) => {
   const inner = items(ctx, n)[0];
   if (inner === undefined) return sTok(ctx, n);
   if (isCastParen(ctx, n)) return castParens(sctx, n, inner);
+  if (kind(ctx, parent(ctx, n)) !== PE && isAwaitCallArguments(ctx, n))
+    return sAwaitCallArguments(sctx, n);
   if (kind(ctx, parent(ctx, n)) === PE || !needsParens(unparen(ctx, n), ctx)) {
     sctx.print(inner, args);
     return;
@@ -124,7 +140,7 @@ const parenthesized: StreamRule<JsOptions> = (n, s) => {
   // Prettier's printComments wraps the node as printed with its parentheses, so its comments print outside them:
   // `(a = b /* c */)` as `(a = b) /* c */`. Prettier has no nested pairs, so their comments are the node's too.
   const expr = unparen(ctx, n);
-  if (!isCommentedIife(ctx, n) && !sctx.ownsComments(expr)) {
+  if (!sctx.ownsComments(expr)) {
     const layers: number[] = [];
     for (let m: number | undefined = inner; m !== undefined && m !== expr; m = first(ctx, m))
       layers.push(m);
@@ -138,14 +154,7 @@ const parenthesized: StreamRule<JsOptions> = (n, s) => {
     return;
   }
   sTok(ctx, open);
-  if (isCommentedIife(ctx, n)) {
-    // Prettier prints the callee's comments itself (willPrintOwnComments), inside its parentheses, indented.
-    openStream(INDENT);
-    sLine(SOFT);
-    sctx.print(inner, args);
-    closeStream();
-    sLine(SOFT);
-  } else printInParens(ctx, unparen(ctx, n), () => sctx.print(inner, args));
+  printInParens(ctx, unparen(ctx, n), () => sctx.print(inner, args));
   sTok(ctx, close);
 };
 
@@ -156,22 +165,10 @@ const v8Intrinsic: StreamRule<JsOptions> = (n, s) => {
   for (const name of items(sctx.js, n)) sctx.print(name);
 };
 
-const IIFE_CALLEES = new Set(["function_expression", "arrow_function"]);
-
-/** `(// c⏎function () {})()`: a commented function called or tagged right where it is written. */
-const isCommentedIife = (ctx: JsCtx, n: number) => {
-  const fn = unparen(ctx, n);
-  return (
-    IIFE_CALLEES.has(kind(ctx, fn)) &&
-    kind(ctx, parent(ctx, n)) === "call_expression" &&
-    ctx.tree.fieldName(n) === "function" &&
-    hasComment(ctx, fn)
-  );
-};
-
 /** Prettier's printClass for a decorated class expression in parentheses: `(`, the class indented on its own lines, `)`. */
 function printInParens(ctx: JsCtx, n: number, print: () => void): void {
-  if (!isDecoratedClass(ctx, n)) return print();
+  // An ignored class keeps its source right inside the parentheses: `(@decorator⏎  class {})`.
+  if (!isDecoratedClass(ctx, n) || isIgnored(ctx, n)) return print();
   openStream(INDENT);
   sLine(0);
   print();
@@ -208,10 +205,68 @@ function castParens(sctx: ReturnType<typeof jsCtx>, n: number, inner: number): v
 
 /** A node under a `// prettier-ignore` comment keeps its source text. */
 const isIgnored = (ctx: JsCtx, n: number) =>
-  (!isUnion(ctx, n) && ledByIgnore(ctx, n)) ||
-  firstOfIgnoredUnion(ctx, n) ||
+  unionIgnored(ctx, n) ||
+  trailingIgnore(ctx, n) ||
   afterIgnoreInUnion(ctx, n) ||
+  afterIgnoreInPair(ctx, n) ||
   (isJsx(ctx, n) && jsxIgnored(ctx, n, (c) => isIgnoreComment(ctx, c)));
+
+/** `key: // prettier-ignore⏎value`: the ignore comment between a property's `:` and its value keeps the value. */
+const afterIgnoreInPair = (ctx: JsCtx, n: number) => {
+  const up = parent(ctx, n);
+  if (kind(ctx, up) !== "pair" || ctx.tree.fieldName(n) !== "value") return false;
+  const kids = children(ctx, up as number);
+  for (let i = kids.indexOf(n) - 1; i >= 0 && isComment(ctx, kids[i] as number); i--)
+    if (isIgnoreComment(ctx, kids[i] as number)) return true;
+  return false;
+};
+
+/**
+ * oxc's has_trailing_suppression_comment: `a(  a  ); // prettier-ignore` keeps the statement, a member, an
+ * element, when the ignore comment ends its line. One on a line of its own keeps what follows it instead.
+ */
+const trailingIgnore = (ctx: JsCtx, n: number) =>
+  // `| (A & B) // prettier-ignore`: oxc's member ends before the `)`, so the comment is not right after it.
+  !(kind(ctx, n) === "parenthesized_type" && kind(ctx, parent(ctx, n)) === "union_type") &&
+  ctx.comments(n).trailing.some(
+    (c) => isIgnoreComment(ctx, c) && ctx.tree.lf(c) === 0 && !inside(ctx, c, n) && !afterEmptyStatement(ctx, c),
+  );
+
+/** `interface A {}; // prettier-ignore`: oxc gives the comment to the empty statement, so it keeps nothing. */
+const afterEmptyStatement = (ctx: JsCtx, c: number) => {
+  let k = prevLeaf(ctx.tree, c);
+  while (k !== NO_NODE && isComment(ctx, k)) k = prevLeaf(ctx.tree, k);
+  return k !== NO_NODE && kind(ctx, parent(ctx, k)) === "empty_statement";
+};
+
+/**
+ * Whether comment `c` sits within `n`'s content: a descendant with code after it, at its own level or one above,
+ * up to `n`. tree-sitter ends `export let a = 1 // c` with the comment inside the declaration, past oxc's end.
+ */
+const inside = (ctx: JsCtx, c: number, n: number) => {
+  let codeAfter = false;
+  for (let k = c, p = parent(ctx, c); p !== undefined; k = p, p = parent(ctx, p)) {
+    const kids = children(ctx, p);
+    codeAfter ||= kids.slice(kids.indexOf(k) + 1).some((x) => !isComment(ctx, x));
+    if (p === n) return codeAfter;
+  }
+  return false;
+};
+
+/** An ignored statement with no written `;`, trailed by a block comment on its line, whose `;` follows its comments. */
+const ignoreBeforeSemi = (ctx: JsCtx, n: number) =>
+  ctx.options.semi &&
+  STATEMENT_LIST_PARENTS.has(kind(ctx, parent(ctx, n)) ?? "") &&
+  endsWithSemi(ctx, n) &&
+  !writesSemi(ctx, n) &&
+  ctx.comments(n).trailing.some((c) => !ctx.isLineComment(c) && ctx.tree.lf(c) === 0) &&
+  isIgnored(ctx, n);
+
+/** Whether comment `c` lies within `n`'s subtree. */
+const within = (ctx: JsCtx, c: number, n: number) => {
+  for (let p = parent(ctx, c); p !== undefined; p = parent(ctx, p)) if (p === n) return true;
+  return false;
+};
 
 const ledByIgnore = (ctx: JsCtx, n: number) =>
   ctx.comments(n).leading.some((c) => isIgnoreComment(ctx, c));
@@ -219,19 +274,23 @@ const ledByIgnore = (ctx: JsCtx, n: number) =>
 const isUnion = (ctx: JsCtx, n: number) => kind(ctx, unparenType(ctx, n)) === "union_type";
 
 /**
- * `// prettier-ignore` above a union, or above its parentheses, keeps only the union's first member's source text
- * (handleUnionTypeComments): prettier moves the ignore onto `types[0]`.
+ * A whole union's source text stays under a `// prettier-ignore` above it or its parentheses: the union itself,
+ * without the parentheses, prints as written.
  */
-const firstOfIgnoredUnion = (ctx: JsCtx, n: number) => {
-  for (let at = n, up = parent(ctx, n); up !== undefined; at = up, up = parent(ctx, up)) {
-    if (kind(ctx, up) !== "union_type" || children(ctx, up).find((c) => named(ctx, c) && !isComment(ctx, c)) !== at)
-      return false;
-    for (let w: number | undefined = up; w !== undefined; w = parent(ctx, w)) {
-      if (ledByIgnore(ctx, w)) return true;
-      if (kind(ctx, parent(ctx, w)) !== "parenthesized_type") break;
-    }
-  }
-  return false;
+const unionIgnored = (ctx: JsCtx, n: number) => {
+  if (!isUnion(ctx, n)) return ledByIgnore(ctx, n);
+  if (unparenType(ctx, n) !== n) return false;
+  for (let w: number | undefined = n; w !== undefined && unparenType(ctx, w) === n; w = parent(ctx, w))
+    if (ledByIgnore(ctx, w)) return true;
+  return trailedByIgnore(ctx, n);
+};
+
+/** oxc's has_trailing_suppression_comment: `A | B // prettier-ignore`, the ignore right after the node's end. */
+const trailedByIgnore = (ctx: JsCtx, n: number) => {
+  let last = n;
+  for (let c: number | undefined = n; c !== undefined; c = lastChildWhere(ctx, c, (k) => !isComment(ctx, k))) last = c;
+  const after = nextLeaf(ctx.tree, last);
+  return after !== NO_NODE && isComment(ctx, after) && ctx.tree.lf(after) === 0 && isIgnoreComment(ctx, after);
 };
 
 /**
@@ -242,15 +301,25 @@ const firstOfIgnoredUnion = (ctx: JsCtx, n: number) => {
 const afterIgnoreInUnion = (ctx: JsCtx, n: number) => {
   const up = parent(ctx, n);
   if (up === undefined || kind(ctx, up) !== "union_type") return false;
+  // `| (⏎// prettier-ignore⏎A | B)`: an own-line comment right inside a member's `(` moves above the member, so it
+  // keeps it too.
+  if (kind(ctx, n) === "parenthesized_type") {
+    const own = children(ctx, n);
+    for (let i = 1; i < own.length && isComment(ctx, own[i] as number); i++) {
+      const c = own[i] as number;
+      if (isIgnoreComment(ctx, c) && ctx.tree.lf(c) > 0) return true;
+    }
+  }
   const kids = children(ctx, up);
   for (let i = kids.indexOf(n) - 1; i >= 0; i--) {
     const k = kids[i] as number;
+    // Only an own-line ignore: one ending the member's line trails that member, and leaves this one formatted.
     if (isComment(ctx, k)) {
-      if (isIgnoreComment(ctx, k)) return true;
+      if (isIgnoreComment(ctx, k) && ctx.tree.lf(k) > 0) return true;
     } else if (kind(ctx, k) === "union_type") {
       const inner = children(ctx, k);
       for (let j = inner.length - 1; j >= 0 && isComment(ctx, inner[j] as number); j--)
-        if (isIgnoreComment(ctx, inner[j] as number)) return true;
+        if (isIgnoreComment(ctx, inner[j] as number) && ctx.tree.lf(inner[j] as number) > 0) return true;
       return false;
     } else if (named(ctx, k)) return false;
   }
@@ -358,7 +427,8 @@ export function jsLanguage(
           isHeadVia(ctx, n) ||
           (kind(ctx, n) === "expression_statement" && castLedAsi(ctx, n)) ||
           (unionOwnsComments(ctx, n) && !isIgnored(ctx, n)) ||
-          (annotationOwnsComments(ctx, n) && !isIgnored(ctx, n))
+          (annotationOwnsComments(ctx, n) && !isIgnored(ctx, n)) ||
+          ignoreBeforeSemi(ctx, n)
         );
       },
       // A node with no rule prints as its token. A node with one prints as its source text under a
@@ -386,16 +456,38 @@ const CACHE = Symbol("printed");
 /** By node ordinal, the span its first print built, plus one (0: not printed yet). */
 type Cached = { [CACHE]?: Int32Array };
 
+/**
+ * An assignment that is the argument of a script's call of `await` (`await (a = b)`, `await ((a = b))(c)`): the
+ * source's parentheses are the call's, and oxfmt wraps it in its own as any call argument (`await((a = b))`).
+ */
+function awaitCallAssignment(ctx: JsCtx, n: number): boolean {
+  const k = kind(ctx, n);
+  if (k !== "assignment_expression" && k !== "augmented_assignment_expression") return false;
+  const { key, parent: p, top } = role(ctx, n);
+  return top !== n && key === "arguments" && p === top;
+}
+
 function wrapped(n: number, s: StreamCtx<JsOptions>, print: () => void): void {
   const ctx = jsCtx(s).js;
-  const parens = kind(ctx, n) !== PE && kind(ctx, parent(ctx, n)) !== PE && needsParens(n, ctx);
+  const parens =
+    (kind(ctx, n) !== PE && kind(ctx, parent(ctx, n)) !== PE && needsParens(n, ctx)) ||
+    awaitCallAssignment(ctx, n);
   if (parens) sToken(n, "(", true);
   if (!isIgnored(ctx, n)) {
     if (parens) printInParens(ctx, n, print);
     else print();
     // Prettier prints a string through replaceEndOfLine: its literal line break breaks the groups around it.
     if (kind(ctx, n) === "string" && ctx.tree.text(n).includes("\n")) sBreakParent();
-  } else if (STATEMENT_LIST_PARENTS.has(kind(ctx, parent(ctx, n)) ?? "")) ignoredStatement(ctx, n);
+  } else if (ignoreBeforeSemi(ctx, n)) {
+    // `let a = 1 /* prettier-ignore */` with no `;`: oxc's statement ends before the comment, which prints
+    // after its source text, and the `;` after both.
+    printLeadingComments(s, n);
+    ignoredStatement(ctx, n, false, false);
+    printTrailingComments(s, n);
+    sToken(n, ";", true);
+  } else if (STATEMENT_LIST_PARENTS.has(kind(ctx, parent(ctx, n)) ?? ""))
+    // A comment among the statement's children that it trails prints after its `;`, so its text stops before one.
+    ignoredStatement(ctx, n, !ctx.comments(n).trailing.some((c) => within(ctx, c, n)));
   else if (kind(ctx, n) === PE && !isCastParen(ctx, n)) {
     // Prettier's AST has no parentheses: an ignored expression keeps the source text inside its own, and gets
     // the parentheses needsParens adds: `+((a), (b))` keeps one pair around `(a), (b)`, a statement's `((a))` none.
@@ -404,13 +496,26 @@ function wrapped(n: number, s: StreamCtx<JsOptions>, print: () => void): void {
     if (own) sToken(n, "(", true);
     sToken(inner, ctx.tree.text(inner));
     if (own) sToken(n, ")", true);
+  } else if (kind(ctx, n) === "parenthesized_type") {
+    // oxc's AST keeps no parentheses around a type: an ignored one prints the type inside them as written, in
+    // the parentheses its place needs.
+    let inner = n;
+    while (kind(ctx, inner) === "parenthesized_type") inner = first(ctx, inner) ?? inner;
+    const own = typeNeedsParens(ctx, inner);
+    if (own) sToken(n, "(", true);
+    sToken(inner, ctx.tree.text(inner));
+    if (own) sToken(n, ")", true);
   } else {
     sToken(n, ctx.tree.text(n));
+    // oxfmt ends an ignored class field with the `;` the `semi` option asks for, written or not.
+    if (ctx.options.semi && FIELDS.has(kind(ctx, n) ?? "")) sToken(n, ";", true);
     const sep = ignoredMemberSeparator(ctx, n);
     if (sep !== undefined) sToken(sep, ctx.tree.text(sep));
   }
   if (parens) sToken(n, ")", true);
 }
+
+const FIELDS = new Set(["field_definition", "public_field_definition"]);
 
 /** JavaScript (and JSX) as prettier's `babel` parser prints it. */
 export const javascript = jsLanguage(grammar, parser);

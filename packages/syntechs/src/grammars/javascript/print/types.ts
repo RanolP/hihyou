@@ -5,12 +5,17 @@
 
 import type { CustomRule, TokenRule } from "../../../fmt/dsl/runtime.js";
 import {
+  commentFacts,
+  printLeadingComment,
   printLeadingComments,
+  printTrailingComment,
   printTrailingComments,
+  type Trailed,
   type StreamRule,
 } from "../../../fmt/stream-format.js";
 import { lfAfter, newlineBetween, nextLineEmpty } from "../../../fmt/text.js";
-import { firstLeaf } from "../../../fmt/tree.js";
+import { NO_NODE } from "../../../core/arena.js";
+import { firstLeaf, nextLeaf, prevLeaf } from "../../../fmt/tree.js";
 import {
   BROKEN,
   capture,
@@ -57,6 +62,7 @@ import {
   type HasTree,
   hasComment,
   isComment,
+  isIgnoreComment,
   isMember,
   isSimpleType,
   items,
@@ -219,6 +225,14 @@ const parenthesizedType: CustomRule<JsOptions> = (n, sctx) => {
     return ctx.print(inner, ctx.args);
   tok(js, anonKid(js, n, "("));
   ctx.print(inner);
+  // oxfmt: `(A | B // prettier-ignore⏎)`, the `)` below the line comment that keeps the union as written.
+  const lastTrailing = ctx.trailingComments(inner).at(-1);
+  if (
+    lastTrailing !== undefined &&
+    isIgnoreComment(js, lastTrailing) &&
+    src(js, lastTrailing).startsWith("//")
+  )
+    sHardline();
   tok(js, lastAnonKid(js, n, ")"));
 };
 
@@ -316,11 +330,14 @@ function printUnionType(ctx: JsStreamCtx, n: number, owns: boolean) {
   const parenthesized =
     kind(js, parent(js, n)) === "parenthesized_type" && typeNeedsParens(js, n);
   const inTuple = upKind === "tuple_type" && items(js, up as number).length > 1;
+  // oxfmt indents a conditional's branch under its `?` or `:` too, unless comments lead it there.
+  const branchIndents = ctx.leadingComments(n).length === 0;
   const noIndent =
     upKind === "type_assertion" ||
     upKind === "tuple_type" ||
     (upKind === "conditional_type" &&
-      (key === "consequence" || key === "alternative")) ||
+      (key === "consequence" || key === "alternative") &&
+      !branchIndents) ||
     upKind === "type_arguments";
   const indented =
     !hug &&
@@ -337,9 +354,26 @@ function printUnionType(ctx: JsStreamCtx, n: number, owns: boolean) {
       }
       ctx.print(x);
     });
-  const printed = () => {
-    if (owns) printLeadingComments(ctx, n);
-    open(GROUP);
+  // A line comment after `a:` stays on that line, and the union's trailing comments out of its indent.
+  const leading = ctx.leadingComments(n);
+  const first = leading[0];
+  // oxfmt keeps it there only when no other comment follows it.
+  const head =
+    first !== undefined &&
+    kind(js, nextLeaf(js.tree, first)) !== "comment" &&
+    owns &&
+    indented &&
+    first !== undefined &&
+    ctx.isLineComment(first) &&
+    js.tree.lf(first) === 0
+      ? first
+      : undefined;
+  const trailOutside = owns && indented;
+  const printed = (grouped = true) => {
+    if (owns)
+      for (const c of ctx.leadingComments(n))
+        if (c !== head) printLeadingComment(ctx, commentFacts(ctx, c));
+    if (grouped) open(GROUP);
     types.forEach((x, i) => {
       if (i === 0) {
         open(IF_BROKEN);
@@ -368,18 +402,24 @@ function printUnionType(ctx: JsStreamCtx, n: number, owns: boolean) {
               sToken(x, ")", true);
             }
           : () => ctx.printBare(x);
-      if (js.comments(x).leading.length > 0)
-        aligned(() => withComments(ctx, x, bare));
-      else withComments(ctx, x, () => aligned(bare));
+      // Only the leading ones align: an own-line comment before the next `|` stays at the `|`.
+      if (js.comments(x).leading.length > 0) {
+        aligned(() => {
+          printLeadingComments(ctx, x);
+          bare();
+        });
+        printTrailingComments(ctx, x);
+      } else withComments(ctx, x, () => aligned(bare));
     });
-    close();
-    if (owns) printTrailingComments(ctx, n);
+    if (grouped) close();
+    if (owns && !trailOutside) printTrailingComments(ctx, n);
   };
   if (parenthesized) {
     open(GROUP);
     open(INDENT);
     sLine(SOFT);
-    printed();
+    // A union moved inside its parentheses breaks at every `|`.
+    printed(false);
     close();
     sLine(SOFT);
     return close();
@@ -399,13 +439,18 @@ function printUnionType(ctx: JsStreamCtx, n: number, owns: boolean) {
     close();
     return close();
   }
-  if (!indented) return printed();
+  // A union moved to its own line breaks at every `|`, so its `|`s break with the group that moves it there.
+  if (!indented) return printed(args?.assignmentLayout !== "break-after-operator");
+  if (head !== undefined) ctx.comment(head);
   open(GROUP);
   open(INDENT);
-  sLine(SOFT);
-  printed();
+  if (head !== undefined) sHardline();
+  else sLine(SOFT);
+  // oxfmt groups the members apart from the comments above them, so a comment's line break leaves `X | Y` flat.
+  printed(owns && leading.length > 0);
   close();
   close();
+  if (trailOutside) printTrailingComments(ctx, n);
 }
 
 const intersectionType: CustomRule<JsOptions> = (n, sctx) => {
@@ -506,14 +551,16 @@ const typeParameters: CustomRule<JsOptions> = (n, sctx) => {
     !isArrowFunctionVariable &&
     (isTestCall(ctx, grand, parent(ctx, grand)) ||
       (params.length === 1 && shouldHugType(ctx, params[0] as number))) &&
-    !params.some((x) => {
-      const comments = getComments(ctx, x, CF.Leading | CF.Trailing);
-      return (
-        comments.length > 0 &&
-        (comments.some((c) => ctx.isLineComment(c)) ||
-          lfAfter(ctx.tree, comments.at(-1) as number) > 0)
-      );
-    });
+    // oxfmt hugs a type argument whatever comments it carries.
+    (kind(ctx, n) === "type_arguments" ||
+      !params.some((x) => {
+        const comments = getComments(ctx, x, CF.Leading | CF.Trailing);
+        return (
+          comments.length > 0 &&
+          (comments.some((c) => ctx.isLineComment(c)) ||
+            lfAfter(ctx.tree, comments.at(-1) as number) > 0)
+        );
+      }));
   const printed = (sep: () => void) =>
     params.forEach((x, i) => {
       if (i > 0) sep();
@@ -608,6 +655,54 @@ const ambientDeclaration: CustomRule<JsOptions> = (n, sctx) => {
 
 // --- casts ----------------------------------------------------------------------------------------------------
 
+/**
+ * oxfmt's slots for the comments between a cast's expression and its type (as_or_satisfies_expression.rs): the
+ * run before the operator that stays on the expression's line and spans no lines trails the expression (`glued`);
+ * the run after it still on the operator's line prints there (`after`), unless a union takes it or comments moved
+ * from before the operator are pending; the `rest` leads the type, which breaks onto its own line when a glued line
+ * comment rides the operator or a rest comment ends its line on a line of its own or spanning lines. Undefined
+ * when there are none, or an ignore comment is among them, which the type's own leading pass keeps.
+ */
+export interface CastGap {
+  glued: number[];
+  after: number[];
+  rest: number[];
+  ownLine: boolean;
+}
+
+export function castGap(x: HasTree, n: number): CastGap | undefined {
+  const t = x.tree;
+  const keyword = anonKids(x, n).find((c) => kind(x, c) === "as" || kind(x, c) === "satisfies");
+  if (keyword === undefined) return;
+  const before: number[] = [];
+  for (let l = prevLeaf(t, keyword); l !== NO_NODE; l = prevLeaf(t, l)) {
+    if (isComment(x, l)) before.unshift(l);
+    else if (kind(x, l) !== ")" || kind(x, parent(x, l)) !== "parenthesized_expression") break;
+  }
+  const after: number[] = [];
+  for (let l = nextLeaf(t, keyword); l !== NO_NODE && isComment(x, l); l = nextLeaf(t, l)) after.push(l);
+  const all = [...before, ...after];
+  if (all.length === 0 || all.some((c) => isIgnoreComment(x, c))) return;
+  const spans = (c: number) => t.text(c).startsWith("/*") && t.text(c).includes("\n");
+  const ownLineBefore = (c: number) => t.lf(c) > 0;
+  const endsLine = (c: number) => lfAfter(t, c) > 0;
+  const isLine = (c: number) => t.text(c).startsWith("//");
+  let g = 0;
+  while (g < before.length && !ownLineBefore(before[g] as number) && !spans(before[g] as number)) g++;
+  const type = items(x, n)[1];
+  const union = type !== undefined && kind(x, type) === "union_type" && items(x, type).length > 1;
+  let a = 0;
+  if (!union && g === before.length)
+    while (a < after.length && !ownLineBefore(after[a] as number) && !(spans(after[a] as number) && endsLine(after[a] as number)))
+      a++;
+  const glued = before.slice(0, g);
+  const rest = [...before.slice(g), ...after.slice(a)];
+  const promoted = (c: number) => endsLine(c) && (ownLineBefore(c) || spans(c));
+  const ownLine =
+    glued.some(isLine) || after.slice(0, a).some(isLine) || (!union && rest.some(promoted));
+  return { glued, after: after.slice(0, a), rest, ownLine };
+}
+
 /** Prettier's printBinaryCastExpression: `x as T`, `x satisfies T`. */
 const castExpression: CustomRule<JsOptions> = (n, sctx) => {
   const ctx = jsCtx(sctx);
@@ -618,21 +713,31 @@ const castExpression: CustomRule<JsOptions> = (n, sctx) => {
   );
   const { parent: up, key } = role(js, n);
   const grouped =
-    (key === "callee" &&
-      (kind(js, up) === "call_expression" ||
-        kind(js, up) === "new_expression")) ||
+    // oxc's is_callee_or_object leaves `new` callees out.
+    (key === "callee" && kind(js, up) === "call_expression") ||
     (key === "object" && isMember(js, up));
   if (grouped) {
     open(GROUP);
     open(INDENT);
     sLine(SOFT);
   }
+  const gap = castGap(js, n);
   pr(ctx, expression);
   sText(" ");
   tok(js, keyword);
-  sText(" ");
+  let trailed: Trailed | undefined;
+  for (const c of gap?.after ?? []) trailed = printTrailingComment(ctx, commentFacts(ctx, c), trailed);
+  if (gap?.ownLine) {
+    open(INDENT);
+    sHardline();
+  } else sText(" ");
   if (type !== undefined) ctx.print(type);
-  else tok(js, anonKid(js, n, "const"));
+  else {
+    // `as const` has no type node to lead, so the cast holds the rest.
+    for (const c of gap?.rest ?? []) printLeadingComment(ctx, commentFacts(ctx, c));
+    tok(js, anonKid(js, n, "const"));
+  }
+  if (gap?.ownLine) close();
   if (grouped) {
     close();
     sLine(SOFT);
@@ -989,12 +1094,13 @@ function memberHead(ctx: JsStreamCtx, n: number): void {
   }
   sPrintKey(ctx, n);
   if (key === undefined) return;
-  tok(
-    js,
-    kids
-      .slice(kids.indexOf(key) + 1)
-      .find((c) => !named(js, c) && kind(js, c) === "?"),
-  );
+  const question = kids
+    .slice(kids.indexOf(key) + 1)
+    .find((c) => !named(js, c) && kind(js, c) === "?");
+  if (question === undefined) return;
+  tok(js, question);
+  // Only oxfmt's placement leaves a comment there: `a? /* c */()`.
+  printTrailingComments(ctx, question);
 }
 
 const memberKey: CustomRule<JsOptions> = (key, sctx) => {
@@ -1092,7 +1198,9 @@ const functionType: CustomRule<JsOptions> = (n, sctx) => {
     const c = anonKid(js, n, keyword);
     if (c === undefined) continue;
     tok(js, c);
-    sText(" ");
+    // oxfmt glues a comment after `new` to the `(`: `new /* c */(`.
+    if (ctx.trailingComments(c).length > 0) printTrailingComments(ctx, c);
+    else sText(" ");
   }
   const groupParameters = sShouldGroupFunctionParameters(js, n, returnType);
   if (groupParameters) open(GROUP);

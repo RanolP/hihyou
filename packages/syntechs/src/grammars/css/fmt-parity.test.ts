@@ -1,14 +1,15 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import * as prettier from "prettier";
 import { describe, expect, it } from "vitest";
 import { parseTree } from "../../core/index.js";
 import { check } from "../../fmt/check.js";
+import { oxfmt } from "../../fmt/conformance/references.node.js";
 import { format } from "../../fmt/format.js";
 import { type CssOptions, css } from "./fmt.js";
 import { language } from "./index.js";
 
-// Byte parity with prettier 3.9.9, under its defaults and under a set a person would write in a `.prettierrc`.
+// Byte parity with oxfmt 0.70.0 over prettier's defaults, under those and under a set a person would write in a
+// `.prettierrc`.
 // Not covered, as `divergences` below pins: a node tree-sitter-css wraps in an ERROR (it keeps its source
 // text), and an empty file.
 
@@ -92,6 +93,37 @@ const edgeCases: [string, string][] = [
   ["media-range", "@media (min-width:768px) and (max-width:991.98px){a{b:c}}"],
   // `@MEDIA` parsed as a generic at-rule, whose parameters kept their source text.
   ["uppercase-media", "@MEDIA screen  and (min-width :1px){a{b:c}}"],
+  // A commented @import's comma list broke before every entry; oxc fills the entries, each with its comma.
+  [
+    "commented-import-entries",
+    "@import url(a) screen and (orientation:landscape) /*q*/, print and (min-width:100px), tv and (max-width:2000px);@import url(a) a /*q*/, b, cccccccccccccccccccccccccccccccccccccccc, dddddddddddddddddddddddddddddddddddddddd;",
+  ],
+  // A paren group holding a comment in a commented @import/@supports prelude stayed on one line; oxc's
+  // write_structured_paren always breaks it, its words indented, with a line break on both sides of it.
+  [
+    "commented-paren-group",
+    "@import url(a) (a/*q*/:b);@import url(a) supports(a/*q*/:b) screen;@supports (a/*q*/:b){x{y:z}}@supports not (/*q*/a:b){x{y:z}}@supports (a:b) and (c/*q*/:d){x{y:z}}@supports ((a/*q*/:b)) or (c:b/*r*/){x{y:z}}",
+  ],
+  // In a commented @import list of several entries, an entry continued a full indent in (oxc: two spaces) and its
+  // paren group's lines indented one level past oxc's.
+  [
+    "commented-paren-group-in-list",
+    "@import url(a) (a/*q*/:b), print;@import url(a) print, (a/*q*/:b);@import url(a) supports(a/*q*/:b) screen, print;@import url(a) (a/*q*/:b) and (c:d), (c/*r*/:d);@import url(a) screen /*q*/ and (a:b) and (cccccccccccccccccccccccccccccccc:dddddddddddddddddddddddd) and (eeeeeeeeeeeeeeeeeeeeeeee:f), print;",
+  ],
+  // tree-sitter-css read `a:/*q*/b` as one word, so the comment kept its group unbroken or printed as `/*q* /`.
+  ["colon-then-comment", "@import url(a) supports(a:/*q*/b) screen;@import url(a) supports(a:/*q*/ b);a{b:c:/*q*/d}"],
+  // An uppercase query keyword was an ERROR that kept the whole at-rule as written; oxfmt lowercases it and the
+  // media type, but keeps both as written in a prelude holding a comment.
+  [
+    "uppercase-query-keywords",
+    "@import url(a) SCREEN AND (a:b);@media SCREEN AND (a:b), PRINT{x{y:z}}@media ONLY screen And (a:b){x{y:z}}@media NOT (a:b){x{y:z}}@media (a:b) OR (c:d){x{y:z}}@supports (a:b) AND (c:d){x{y:z}}@supports NOT (a:b){x{y:z}}@media SCREEN /*q*/ AND (a:b){x{y:z}}",
+  ],
+  // A keyword glued to its paren group (`and(a:b)`) got a space and a formatted group; oxc reads it as a function,
+  // kept as written in a media query and glued but formatted in an @import, while @supports spaces it.
+  [
+    "glued-query-keyword",
+    "@media screen AND(a:b), not( a : b ){x{y:z}}@media (a:b)and(c:d) and((e:f)){x{y:z}}@media ((a:b) and(c:d)){x{y:z}}@custom-media --x screen and(a>1px);@import url(a) screen AND( a : b );@import url(a) not(A:B);@supports (a:b) AND(c:d){x{y:z}}@supports NOT(a:b){x{y:z}}",
+  ],
   // `@custom-media` and a range feature were parse errors, printed as raw source.
   [
     "custom-media",
@@ -110,7 +142,43 @@ const edgeCases: [string, string][] = [
     "font-face",
     '@font-face{font-family:x;src:url(a.woff2) format("woff2"),url(a.woff) format("woff")}',
   ],
-  ["other-at-rules", "@layer a,b;@container (min-width:400px){a{b:c}}"],
+  ["other-at-rules", "@container (min-width:400px){a{b:c}}"],
+  // A `@layer` list was kept as written; oxfmt spaces it after its commas.
+  ["layer-list", "@layer a,b;@layer c , d;@LAYER e\n,f;"],
+  // A comment among it printed next to its neighbour, spaced; oxfmt keeps the list as written, each gap one space.
+  ["layer-list-comment", "@layer a,/* c */b;@layer a/* c */,b;@LAYER  a,/* c */\n  b , c;@layer /* c */ a,b;"],
+  // A paren group in a value lost its gaps, `(1 2)` printing `(12)`.
+  ["value-parens", "a{b:foo( (1 ,2) );c:(a  b,c) x (1 2);d:foo((1,2),(3 +4))}"],
+  // A custom property's or Sass variable's value holding a paren group was kept as written; oxfmt keeps it only
+  // where oxc-css-parser's typed grammar rejects the group, which it takes solely as a calc operand of one sum.
+  [
+    "custom-property-calc-parens",
+    ".card-header-long-selector-name{--bs-card-inner-border-radius:calc(var(--bs-border-radius) - (var(--bs-border-width)));--a:calc( (1px + 2px) * 2 );--b:max( (1px), 2px );$c:fn(calc( (1px) ));--d:fn( (1) );--e:calc( (1px+2px) );--f:calc( (1px, 2px) );--g:-o-calc( (1px) );--h:(1) calc((2))}",
+  ],
+  // A function's arguments in a value holding a paren group oxc-css-parser rejects broke one per line; oxfmt lays the
+  // raw value's tokens out as one fill, where no line breaks after a comma, and keeps the comments among them.
+  [
+    "raw-value-arguments",
+    "a{b: bar(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) foo((1));c: x bar(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, cccccccccccc) foo((1));d: foo(1PX,#FFF,\"x\",(1)) (2);e: foo( a  b,(1),bar( x ,y ));f: calc(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb + (aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa))}",
+  ],
+  // A comment inside a math function's calc sum or group printed in place; oxc's calc printer flushes none, so it
+  // prints after the whole argument.
+  [
+    "math-operand-comment",
+    "a{b:calc( (/* c */ 1px) );c:max((/* c */ 1px), 2px);d:calc((1px) /* d */ + (/* c */ 2px));--x:calc(1px /* c */ + 2px)}",
+  ],
+  // A raw value (one oxc-css-parser rejects) broke before each function and kept function arguments on one line;
+  // oxfmt fills its tokens across the arguments too, breaks after each top-level comma, and prints tokens verbatim.
+  [
+    "raw-value-fill",
+    "a{b: x bar(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb cccccccccccccccccccccc c) foo((1));c: foo(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, (1) cccccccccccccccccccccc);d: foo((1)), bar;e: .50em 1E3 RED 'x' (1)}",
+  ],
+  // oxc-css-parser splits `a*b` and `a/b` in a raw value into three tokens and prints a space around `*` and a
+  // `/` next to a word; syntechs kept the word whole.
+  ["raw-value-operator", "a{b:a*b (1);c:a/b (1);d:a*b*c/d 1px/2px (1)}"],
+  // oxfmt prints a raw token's comment glued before it and a custom property's value verbatim with its comments;
+  // syntechs moved the comma's comment after a space and dropped a custom property's comments.
+  ["raw-value-comment", "a{b:foo(a/* c */ ,b) (1);c:foo(a/* c */ ) (1);--x:a/* c */ ,b (1);--y:a (1) /* c */;--z:a (1) /* c */ !important}"],
   // An at-rule's params print as raw text, which once dropped the comments attached to them.
   ["at-rule-param-comment", "@counter-style /* c */ thumbs {}"],
   [
@@ -158,6 +226,96 @@ const edgeCases: [string, string][] = [
     "prettier-ignore",
     "/* prettier-ignore */\n.a  >  .b{}\n.c{\n  /* prettier-ignore */\n  d:     e;\n  f:g}",
   ],
+  // A `//` in a value was a line comment that swallowed the rest of the line, its `;` included.
+  [
+    "double-slash-value",
+    "a{b:a // c;d:1px //2px;e:a//c;f:calc(1px // c\n+ 2px);g:fn(a // b);h:a, // c\n d;i:a //c //d}",
+  ],
+  // An empty comma group (`a,,b`) was an ERROR kept as written.
+  ["empty-comma-group", "a{b:a,,(1);c:a, ,b;d:x,,,y;--e:a,,b}"],
+  // A `:` in a value was one word with its neighbours (`a:b`) or, spaced, an ERROR kept as written.
+  [
+    "value-colon",
+    'a{b:a:b (1);c:a :b;d:1px:2px;e:a::b;f:x(a:b);g:"a":b, c;h:x(http://a);filter:progid:DX.a(b=1);--i:a :b}',
+  ],
+  // A math chain after other words was one item of the entry's fill, so the fill broke before its first operand.
+  [
+    "math-chain-in-fill",
+    `a{b:${"x ".repeat(36)}// c;d:${"x ".repeat(37)}/ c;e:${"x ".repeat(37)}* c;f:${"x ".repeat(30)}// c // d // e // f}`,
+  ],
+  // A word CSS Syntax lexes as an ident then more tokens (`a/c`) counted as one value, so its list stayed packed.
+  ["ident-then-more-list", "a{b:a/c, d;c:d, a-b/c;e:a%c, d;f:a/c,d/e;g:U+0-7F, a}"],
+  // An entry opening with a `+` or `-` broke the list; oxfmt breaks at a lone `-ident` past the first entry only.
+  ["signed-entry-list", "a{b:a, -1;c:a,, -1;d:-b, a;e:a, -1px, -f(), --g;h:a, -b}"],
+  // A value opening or ending with a `,` was an ERROR kept as written.
+  ["edge-commas", "a{b:a,;c:a b,;d:,;e:a,!important;f:a:b,;--g:a,;h:,a;i:,a b;j:,,a}"],
+  // A word CSS Syntax lexes with a delim oxc-css-parser's typed grammar rejects (`a*c`, `a%c`) was typed, so `*`
+  // stayed glued and a `/` elsewhere in the value kept its source gaps; oxc reads the whole value as raw tokens.
+  ["delim-word-raw", "a{b:a*c;c:a%c,d/e;d:a.c,d/e;e:f(a%c),d/e;f:a*c, d}"],
+  // A `#name` or `$name` glued to a word (`a#b`) and a `*` in a function's word stayed glued; oxc lexes them as
+  // tokens of their own and spaces them, but in `url(…)`, a math function, and Tailwind's `w-*`.
+  // `a/f(c)` is the word `a/f` then a group to tree-sitter-css, which made the value raw and spaced its `/`; oxc
+  // reads a function there and keeps the glued `/`.
+  ["slash-function", "a{b:a/f(c), d;c:x a/f(c d) y;d:a/f (c);e:a/f((c))}"],
+  // A function's last `,` was kept and an empty first argument (`f(,a)`) was an ERROR; oxc drops the last `,` but in
+  // `var()`, and spaces the first.
+  [
+    "argument-edge-commas",
+    "a{b:f(a,);c:rgba(1,2,3,);d:f(a,/*c*/);e:var(--a,);f:VAR(--a,b,);g:var(--a,f(b,));h:f(,a);i:f(,);j:url(a,)}",
+  ],
+  // A `#name`, `#hex` or `$name` glued to a number stayed glued; oxc lexes it as a token of its own.
+  ["number-hash", "a{b:1#b;c:1px#b, d;d:f(1#b);e:1#fff;f:1$b}"],
+  // A word ending in `*` stayed glued, and `a/f(c)/g` was raw tokens with each `/` spaced; oxc spaces the `*` and
+  // keeps a chain of glued `/` tight.
+  ["star-end-slash-chain", "a{b:f(a*);c:a*;d:a* b;e:a/f(c)/g;f:x/f(c)/g(d)/h;g:a/f(c)*g}"],
+  // A `!` before a word other than `important` was an ERROR, kept as written; oxfmt keeps it glued or one space apart
+  // as written, and a lone `!word` entry breaks the list.
+  ["bang-word", "a{b:a!c;c:a  !c d;d:a!c!important;e:!c,a;f:f(x)!c;g:a!importantx;h:a!c ! IMPORTANT}"],
+  // A comment past a value's leading comma printed before it, as postcss's `between`; oxfmt reads it as the next
+  // entry's, and an entry of comments alone breaks the list.
+  ["comment-after-leading-comma", "a{b:,/*c*/a;c:, /*c*/ a,d;e:x,/*c*/,a;f:/*c*/,/*d*/a}"],
+  // A comment before a `*` or `/` trailed the word before it; oxfmt breaks the line before the comment.
+  [
+    "comment-before-slash",
+    `a{b:${"x".repeat(73)} /* q */ / c;c:${"x".repeat(73)} /* q */ * c;d:x /* q */ / c}`,
+  ],
+  // A value of `!important` alone took the space after the `:` and the one before `!important`: `b:  !important`.
+  ["important-alone", "a{b:!important;c: ! IMPORTANT;d:/*c*/!important;e: /*c*/ !important}"],
+  // A lone `!`, a `%` or a `.` delim in a value was an ERROR that kept the whole rule as written.
+  ["delim-value", "a{b:.a!optional;c:a ! c;d:a! c;e:x % c;f:x /* q */ % c;g:a! c, d;h:% c}"],
+  // A comment inside an `@include`/`@mixin` prelude was dropped instead of moved after the prelude.
+  [
+    "include-prelude-comment",
+    "@include f(x /*q*/ / c, y /*r*/);\n@include x /*q*/ y;\n@include f(g(x /*q*/));\n@include f(x /*q*/ / c) {a:b}\n@mixin f(x /*q*/ / c) {}\n",
+  ],
+  ["word-hash-star","a{b:a#b, d;c:x a#b#c;d:f(a*c);e:a$c;f:url($a*3);g:calc(a*c);h:f(w-*);i:a #b}"],
+  // The space before a `%` selector after a compound (`a:b %c`, `.a %c`) was glued as `a:b%c`.
+  ["placeholder-gap", ".x{a:b %c{d:e}}\n.x{a %c{d:e}}\n.x{a:b%c{d:e}}\n.a %c{d:e}\n.x{a:b  %c{d:e}}"],
+  // A nested rule whose selector tree-sitter wraps in an ERROR (`a:b !c`, `a:b c%`) kept the rule as written.
+  [
+    "selector-error-tail",
+    ".x{a:b !c{d:e}}\n.x{a:b c%{d:e}f:g}\n.x{a:b>c   !d   {d:e}}\n.x{a:b /*q*/ 1.5% /*r*/ {}}\na:b c!{d:e}",
+  ],
+  // A commented @media prelude re-spaced and lowercased a feature `(A:B)` whose `:` has no space beside it.
+  [
+    "media-comment-raw-feature",
+    "@media (A:B) /*q*/ {x{y:z}}\n@media (a :b)   and  (min-width:1.50px)/*q*/ {x{y:z}}\n@media ( a:b ) /*q*/,(c/*r*/:d) {x{y:z}}",
+  ],
+  // A commented @media feature re-spaced a second `:` (`(a: b : c)`) and lowercased or renumbered its words.
+  [
+    "media-comment-value-as-written",
+    "@media (a :b :c) /*q*/ {x{y:z}}\n@media (A : 1.50PX   :c) and (a: b: c) /*q*/ {x{y:z}}\n@media (a :b\n    c) /*q*/ {x{y:z}}",
+  ],
+  // A commented prelude tree-sitter cannot read (an uppercase `AND`, a stray `)`) kept its whole at-rule as written.
+  [
+    "commented-prelude-parse-error",
+    "@media SCREEN AND (a:b) /*q*/ {x{y:z}}\n@media NOT SCREEN AND (a :b) /*q*/ {x{y:z}}\n@media (a :b ,c) /*q*/ {x{y:z}}\n@supports (a:b) AND (c:d) /*q*/ {x{y:z}}",
+  ],
+  // A commented @import/@supports prelude re-spaced its paren groups (`(a:b)` as `(a: b)`) and split `not(a:b)`.
+  [
+    "value-prelude-comment-raw",
+    "@import url(a) (a:b) /*q*/;\n@import url('a') layer(x) supports(display:grid) ( a :b ) /*q*/;\n@supports (a :b) /*q*/ and not(c:'d') {x{y:z}}\n@supports selector(a>b)/*q*/{x{y:z}}",
+  ],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");
@@ -172,11 +330,10 @@ function ours(text: string, options: Partial<CssOptions>) {
   if (problem) throw new Error(`check: ${problem}`);
   return out.text;
 }
-const theirs = (text: string, options: Partial<CssOptions>) =>
-  prettier.format(text, { filepath: "x.css", ...options });
+const theirs = (text: string, options: Partial<CssOptions>) => oxfmt.format("x.css", text, options);
 
 describe.each(optionSets)(
-  "a CSS file lays out byte-identical to prettier 3.9.9 (%s), so the reviewer sees the layout their tools write",
+  "a CSS file lays out byte-identical to oxfmt 0.70.0 (%s), so the reviewer sees the layout their tools write",
   (_, options) => {
     it.each(edgeCases)("%s", async (_, text) => {
       expect(ours(text, options)).toBe(await theirs(text, options));
@@ -217,7 +374,7 @@ const ratchet: [string, Partial<CssOptions>, string, number, number][] = [
 ];
 
 describe.skipIf(!present)(
-  "the fetched CSS corpus keeps its count of chunks byte-identical to prettier, so a layout regression cannot hide in a large file",
+  "the fetched CSS corpus keeps its count of chunks byte-identical to oxfmt, so a layout regression cannot hide in a large file",
   () => {
     it.each(ratchet)("%s: %s", async (_, options, file, identical, total) => {
       const text = readFileSync(join(corpusDir, file), "utf8");
@@ -232,7 +389,7 @@ describe.skipIf(!present)(
   },
 );
 
-// Input, options, then today's output, which differs from prettier's.
+// Input, options, then today's output, which differs from oxfmt's.
 const divergences: [string, string, Partial<CssOptions>, string][] = [
   // tree-sitter-css knows only lowercase `from`; an uppercase one is an ERROR.
   [
@@ -245,7 +402,7 @@ const divergences: [string, string, Partial<CssOptions>, string][] = [
   ["empty-file", "", {}, "\n"],
 ];
 
-describe("a known gap from prettier stays pinned, so closing one shows up as a test change", () => {
+describe("a known gap from oxfmt stays pinned, so closing one shows up as a test change", () => {
   it.each(divergences)("%s", async (_, text, options, pinned) => {
     expect(ours(text, options)).toBe(pinned);
     expect(await theirs(text, options)).not.toBe(pinned);

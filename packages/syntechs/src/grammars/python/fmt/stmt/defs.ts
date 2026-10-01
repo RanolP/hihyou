@@ -27,8 +27,18 @@ import {
 export const kids = (tree: FormatTree, n: number): number[] =>
   Array.from({ length: tree.count(n) }, (_, i) => tree.child(n, i));
 
-/** The blank lines a definition needs between itself and its leading comments: two at the top, else one. */
-const definitionGap = (f: Fmt) => (f.level.k === "top" ? 2 : 1);
+/**
+ * The blank lines a definition needs between itself and its own-line comments: two at the top, else one; in a stub
+ * file one at the top, else none, or one after a class (`afterClass`).
+ */
+const definitionGap = (f: Fmt, afterClass = false) =>
+  f.options["source-type"] === "stub"
+    ? f.level.k === "top" || afterClass
+      ? 1
+      : 0
+    : f.level.k === "top"
+      ? 2
+      : 1;
 
 const writeHard = () => sink.sLine(sink.HARD | sink.COLLAPSE);
 const writeEmptyLines = (n: number) => {
@@ -46,11 +56,11 @@ function writeEmptyLinesAfterLeadingComments(f: Fmt, comments: readonly Comment[
 }
 
 /** Ruff's `empty_lines_before_trailing_comments`, written before the trailing comments are. */
-function writeEmptyLinesBeforeTrailingComments(f: Fmt, comments: readonly Comment[]): void {
+function writeEmptyLinesBeforeTrailingComments(f: Fmt, s: FunctionDef | ClassDef, comments: readonly Comment[]): void {
   const first = comments.find((c) => c.line === "own");
   if (!first) return;
   const actual = Math.max(0, linesBefore(f.tree, first.start) - 1);
-  writeEmptyLines(Math.max(0, definitionGap(f) - actual));
+  writeEmptyLines(Math.max(0, definitionGap(f, s.kind === "ClassDef") - actual));
 }
 
 /**
@@ -60,7 +70,7 @@ function writeEmptyLinesBeforeTrailingComments(f: Fmt, comments: readonly Commen
 function defFromSpec(f: Fmt, s: FunctionDef | ClassDef): void {
   writeEmptyLinesAfterLeadingComments(f, f.comments.leading(s));
   sink.sDsl(s.decorators.length > 0 ? f.tree.parent(s.ts) : s.ts);
-  writeEmptyLinesBeforeTrailingComments(f, f.comments.trailing(s));
+  writeEmptyLinesBeforeTrailingComments(f, s, f.comments.trailing(s));
 }
 
 /** Ruff's `FormatDecorator`, with the decorator's own comments. */

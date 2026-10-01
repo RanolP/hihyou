@@ -53,6 +53,7 @@ export function ruffConfigOptions(o: RuffTestOptions): Record<string, unknown> {
         out["nested-string-quote-style"] = value;
         break;
       case "source_type":
+        out["source-type"] = String(value).toLowerCase();
         break;
       default:
         throw new Error(`unknown ruff test option ${key}`);
@@ -85,9 +86,6 @@ export function pythonFrameAfter(
   return snapshot.slice(body, m.index + (m[0].startsWith("\n") ? 1 : 0));
 }
 
-const EXCLUDE_STUB =
-  "stub file (.pyi, or `source_type: Stub`): format() takes no path to tell the source type";
-
 /** Both ruff suites under `formatterRoot` (crates/ruff_python_formatter), each fixture named by its path there. */
 export function ruffSuite(formatterRoot: string): Suite {
   const fixtures = join(formatterRoot, "resources", "test", "fixtures");
@@ -107,17 +105,13 @@ export function ruffSuite(formatterRoot: string): Suite {
       firstLine.startsWith("# flags:") &&
       firstLine.includes("--line-ranges=")
     ) {
-      excluded.push({ fixture, reason: "range formatting" });
+      excluded.push({ fixture, reason: "range formatting (the expected output formats only the range)" });
       continue;
     }
     const optionsFile = file.replace(/\.pyi?$/, ".options.json");
     const options: RuffTestOptions = existsSync(optionsFile)
       ? JSON.parse(readFileSync(optionsFile, "utf8"))
       : {};
-    if (file.endsWith(".pyi") || options.source_type === "Stub") {
-      excluded.push({ fixture, reason: EXCLUDE_STUB });
-      continue;
-    }
     const snapshot = readSnapshot(
       join(snapshots, `black_compatibility@${test.replaceAll("/", "__")}.snap`),
     );
@@ -133,7 +127,7 @@ export function ruffSuite(formatterRoot: string): Suite {
       fixture,
       file,
       text,
-      runs: [run(options, expected)],
+      runs: [run(options, expected, file)],
     });
   }
 
@@ -142,21 +136,13 @@ export function ruffSuite(formatterRoot: string): Suite {
     const test = relative(join(fixtures, "ruff"), file).replaceAll("\\", "/");
     const text = readFileSync(file, "utf8");
     if (text.includes("<RANGE_START>")) {
-      excluded.push({ fixture, reason: "range formatting" });
+      excluded.push({ fixture, reason: "range formatting (the expected output formats only the range)" });
       continue;
     }
     const optionsFile = file.replace(/\.pyi?$/, ".options.json");
     const sets: RuffTestOptions[] | undefined = existsSync(optionsFile)
       ? JSON.parse(readFileSync(optionsFile, "utf8"))
       : undefined;
-    if (sets?.some((o) => o.source_type === "Ipynb")) {
-      excluded.push({ fixture, reason: "notebook (`source_type: Ipynb`)" });
-      continue;
-    }
-    if (file.endsWith(".pyi") || sets?.some((o) => o.source_type === "Stub")) {
-      excluded.push({ fixture, reason: EXCLUDE_STUB });
-      continue;
-    }
     const snapshot = readSnapshot(
       join(snapshots, `format@${test.replaceAll("/", "__")}.snap`),
     );
@@ -167,7 +153,7 @@ export function ruffSuite(formatterRoot: string): Suite {
     const runs: CaseRun[] = [];
     if (sets === undefined) {
       const expected = pythonFrameAfter(snapshot, "## Output\n");
-      if (expected !== undefined) runs.push(run({}, expected));
+      if (expected !== undefined) runs.push(run({}, expected, file));
     } else {
       let from = 0;
       for (const [i, options] of sets.entries()) {
@@ -176,7 +162,7 @@ export function ruffSuite(formatterRoot: string): Suite {
         const expected =
           from === -1 ? undefined : pythonFrameAfter(snapshot, heading, from);
         if (expected === undefined) break;
-        runs.push(run(options, expected));
+        runs.push(run(options, expected, file));
       }
     }
     if (runs.length !== (sets?.length ?? 1)) {
@@ -188,9 +174,10 @@ export function ruffSuite(formatterRoot: string): Suite {
   return { cases, excluded };
 }
 
-const run = (options: RuffTestOptions, expected: string): CaseRun => ({
+const run = (options: RuffTestOptions, expected: string, file: string): CaseRun => ({
   label: Object.keys(options).length === 0 ? "{}" : JSON.stringify(options),
-  options: ruffConfigOptions(options),
+  // Ruff reads a `.pyi` file as a stub unless the option set names another source type.
+  options: ruffConfigOptions(file.endsWith(".pyi") ? { source_type: "Stub", ...options } : options),
   expected,
   asRecorded: (s) => s.replaceAll("\r\n", "\n"),
 });

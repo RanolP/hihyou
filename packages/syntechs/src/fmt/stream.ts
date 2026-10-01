@@ -318,11 +318,12 @@ const tokenWidth = (s: string) => {
 
 /**
  * A tree printed inside another, as a JS template's embedded CSS: its tokens anchor to `anchor`, a node of the outer
- * tree, as synthetic; `token`, when set, writes a token itself (a placeholder an expression replaces) and returns true.
+ * tree, as synthetic; `token`, when set, writes a token itself (a placeholder an expression replaces) and returns true,
+ * given the inner tree's node the token prints for.
  */
 export interface Embedding {
   readonly anchor: number;
-  token: ((s: string) => boolean) | undefined;
+  token: ((s: string, node: number) => boolean) | undefined;
 }
 let embedding: Embedding | undefined;
 
@@ -425,7 +426,7 @@ export function sToken(node: number, s: string, synthetic = false, imaginary = f
       // The hook writes through sText and jumps, never back into sToken.
       embedding.token = undefined;
       try {
-        if (hook(s)) return;
+        if (hook(s, node)) return;
       } finally {
         embedding.token = hook;
       }

@@ -1,6 +1,5 @@
-// The other formatter the matrix and the benchmark measure beside syntechs, as context: oxfmt (native, through
-// its JS API). It takes prettier's option names here; the conformance matrix scores it against prettier's expected
-// output exactly as it scores syntechs.
+// oxfmt (native, through its JS API): the expected output of the matrix's prettier-family rows, and a baseline the
+// benchmark times. It takes prettier's option names here.
 
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -52,15 +51,48 @@ function oxfmtFile(file: string, parser: unknown): string {
   }
 }
 
+/**
+ * Prettier 3's default for every option oxfmt shares with it, and off for each of oxfmt's own extensions, so oxfmt
+ * runs as prettier does and an option a fixture leaves out means prettier's default rather than oxfmt's. Of these,
+ * oxfmt 0.70.0's own defaults differ only in printWidth (100) and sortPackageJson (on); the rest pin today's
+ * agreement against a later oxfmt changing its default.
+ */
+const prettierDefaults = {
+  printWidth: 80,
+  tabWidth: 2,
+  useTabs: false,
+  endOfLine: "lf",
+  semi: true,
+  singleQuote: false,
+  jsxSingleQuote: false,
+  quoteProps: "as-needed",
+  trailingComma: "all",
+  bracketSpacing: true,
+  bracketSameLine: false,
+  objectWrap: "preserve",
+  arrowParens: "always",
+  singleAttributePerLine: false,
+  experimentalOperatorPosition: "end",
+  embeddedLanguageFormatting: "auto",
+  proseWrap: "preserve",
+  htmlWhitespaceSensitivity: "css",
+  vueIndentScriptAndStyle: false,
+  // Prettier always ends a file with one newline.
+  insertFinalNewline: true,
+  // oxfmt's extensions, none of which prettier has without a plugin.
+  sortPackageJson: false,
+  sortImports: false,
+  sortTailwindcss: false,
+  jsdoc: false,
+} as const;
+
 export const oxfmt: Reference = {
   name: `oxfmt ${versionOf("oxfmt")}`,
   async format(file, text, { parser, jsxBracketSameLine, ...options }) {
-    // oxfmt reads prettier's option names and rejects the ones it lacks. It defaults printWidth to 100 where
-    // prettier says 80, and sorts package.json by default, which prettier never does. It silently ignores
-    // prettier's deprecated jsxBracketSameLine, which prettier still honours beside bracketSameLine.
+    // oxfmt reads prettier's option names. It rejects experimentalTernaries, and silently ignores the other ones it
+    // lacks: prettier's deprecated jsxBracketSameLine, which prettier still honours beside bracketSameLine, is one.
     const r = await oxfmtFormat(oxfmtFile(file, parser), text, {
-      printWidth: 80,
-      sortPackageJson: false,
+      ...prettierDefaults,
       ...options,
       ...(jsxBracketSameLine === true ? { bracketSameLine: true } : {}),
     });

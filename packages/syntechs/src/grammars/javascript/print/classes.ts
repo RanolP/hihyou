@@ -8,6 +8,7 @@ import {
 } from "../../../fmt/stream-format.js";
 import { nextLineEmpty } from "../../../fmt/text.js";
 import {
+  bodyBelowHead,
   capture,
   close,
   GROUP,
@@ -18,6 +19,7 @@ import {
   open,
   place,
   SOFT,
+  sBeforeBody,
   sBreakParent,
   sHardline,
   sLine,
@@ -284,7 +286,8 @@ const printClass: CustomRule<JsOptions> = (n, sctx) => {
     printHeritage(sctx, n, true);
     close();
     close();
-    if (!isInterface && body !== undefined && items(ctx, body).length > 0) {
+    if (body !== undefined && bodyBelowHead(sctx, body)) sHardline();
+    else if (!isInterface && body !== undefined && items(ctx, body).length > 0) {
       open(IF_BROKEN, g);
       sHardline();
       close();
@@ -295,7 +298,8 @@ const printClass: CustomRule<JsOptions> = (n, sctx) => {
   } else {
     head();
     printHeritage(sctx, n, false);
-    sText(" ");
+    if (body !== undefined) sBeforeBody(sctx, body);
+    else sText(" ");
   }
   print(sctx, body);
 };

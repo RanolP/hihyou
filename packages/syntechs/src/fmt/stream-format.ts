@@ -43,6 +43,8 @@ export interface StreamCtx<O = unknown> {
    */
   readonly args: PrintArgs | undefined;
   items(node: number): number[];
+  /** Whether the language drops anonymous token `node` where it stands (`Language.drops`). */
+  drops(node: number): boolean;
   /** The comments attached before (`leading`) or after (`trailing`) `node`, in source order. */
   leadingComments(node: number): readonly number[];
   trailingComments(node: number): readonly number[];
@@ -297,7 +299,9 @@ function streamCtx<O>(tree: Tree, base: Language<O>, resolved: O): StreamCtx<O> 
     let current: PrintArgs | undefined;
     const printNode = (node: number, args?: PrintArgs) => {
       if (isBroken(node)) {
-        sToken(node, tree.text(node));
+        // A broken root spans the file's last line break too, which a language's final line stands for.
+        const final = node === tree.root && language.finalLine !== undefined && language.finalLine(ctx);
+        sToken(node, final ? tree.text(node).replace(/\r?\n$/, "") : tree.text(node));
         return;
       }
       const rule = ruleOf(node);
@@ -333,6 +337,7 @@ function streamCtx<O>(tree: Tree, base: Language<O>, resolved: O): StreamCtx<O> 
       get args() {
         return current;
       },
+      drops: (node) => base.drops?.(tree, node) === true,
       items(node) {
         const items: number[] = [];
         for (let i = 0, count = tree.count(node); i < count; i++) {

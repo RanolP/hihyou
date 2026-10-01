@@ -39,7 +39,6 @@ export interface ScorecardRow {
   language: string;
   reference: string;
   compatibility: string;
-  oxfmt: string;
   vsReference: string;
   vsOxfmt: string;
   refused: string;
@@ -91,15 +90,14 @@ export default defineLoader({
         `scorecard: conformance.json measured ${conformance.commit} but bench.json measured ${bench.commit}`,
       );
     const rows = conformance.rows.map((r): ScorecardRow => {
-      const oxfmt = r.references.find((x) => x.name.startsWith("oxfmt "));
-      const timed = bench.groups.find((g) => g.id === r.id);
+      // A prettier-family row (`js@oxfmt`) is timed by its language's bench group (`js`).
+      const timed = bench.groups.find((g) => g.id === r.id.replace(/@oxfmt$/, ""));
       return {
         language: r.id,
         reference: r.reference,
         compatibility: r.score
           ? percent(r.score.passed, r.score.total)
           : "not implemented",
-        oxfmt: oxfmt ? percent(oxfmt.passed, oxfmt.total) : "-",
         vsReference: speed(timed?.ratio.reference),
         vsOxfmt: speed(timed?.ratio.oxfmt),
         refused: r.score ? String(r.score.refused) : "-",

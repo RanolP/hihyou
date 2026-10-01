@@ -18,6 +18,7 @@ import {
   place,
   removeLines,
   SOFT,
+  sBreakParent,
   sHardline,
   sLine,
   sText,
@@ -215,6 +216,8 @@ export const moduleCustoms = {
       if (k === "=") sText(" ");
       if (c === source && hasComment(js, c)) {
         open(GROUP);
+        // oxfmt always breaks a commented source onto its own line.
+        sBreakParent();
         open(INDENT);
         sLine(SOFT);
         s.print(c);

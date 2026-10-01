@@ -4,7 +4,7 @@
 
 import { NO_NODE } from "../../../core/arena.js";
 import { newlineBetween, nextLineEmpty } from "../../../fmt/text.js";
-import { nextLeaf, prevLeaf } from "../../../fmt/tree.js";
+import { firstLeaf, nextLeaf, prevLeaf } from "../../../fmt/tree.js";
 import { textWidth } from "../../../fmt/width.js";
 import { awaitsHere, needsParens, role } from "./parens.js";
 import {
@@ -31,6 +31,7 @@ import {
   items,
   type JsCtx,
   kind,
+  parent,
   lastChildWhere,
   objectOf,
   operator,
@@ -484,6 +485,17 @@ function shouldExpandLastArg(ctx: JsCtx, args: readonly number[]): boolean {
   );
 }
 
+/** `f((⏎// c⏎) => {})`: oxfmt hugs no last function whose empty parameter list holds a line comment. */
+function oxfmtBreaksEmptyParams(sctx: JsStreamCtx, raw: number): boolean {
+  const ctx = sctx.js;
+  const list = field(ctx, unparen(ctx, raw), "parameters");
+  return (
+    list !== undefined &&
+    items(ctx, list).length === 0 &&
+    sctx.danglingComments(list).some((c) => sctx.isLineComment(c))
+  );
+}
+
 function isReactHookCallWithDepsArray(
   ctx: JsCtx,
   raw: readonly number[],
@@ -521,7 +533,7 @@ const sTypeArguments = (sctx: JsStreamCtx, n: number) => {
   const ta = field(sctx.js, n, "type_arguments");
   if (ta === undefined) return;
   sctx.print(ta);
-  sLineSuffixBoundary();
+  // oxfmt carries a comment in or after them to the end of the line.
 };
 
 /** Prettier's printDanglingCommentsInList over the sink. */
@@ -553,6 +565,10 @@ function sCallArguments(sctx: JsStreamCtx, n: number): void {
   }
   withComments(sctx, list, () => sArguments(sctx, n, list));
 }
+
+/** `(x)` in a script's `await (x)`, which oxc reads as the argument list of a call of `await`. */
+export const sAwaitCallArguments = (sctx: JsStreamCtx, paren: number): void =>
+  sArguments(sctx, paren, paren);
 
 /** Writes each of `states` as one state of a conditional group. */
 function sConditionalGroup(states: readonly (() => void)[]): void {
@@ -674,7 +690,8 @@ function sArguments(sctx: JsStreamCtx, n: number, list: number): void {
 
   if (shouldExpandLastArg(ctx, args)) {
     const head = printedArguments.slice(0, -1);
-    if (head.some(willBreak)) return allArgsBrokenOut();
+    if (head.some(willBreak) || oxfmtBreaksEmptyParams(sctx, args.at(-1) as number))
+      return allArgsBrokenOut();
     let lastDoc: Part;
     try {
       lastDoc = capture(() => sctx.print(last, { expandLastArg: true }));
@@ -792,6 +809,19 @@ const memberCustom: CustomRule<JsOptions> = (n, s) => {
   const ctx = sctx.js;
   const object = objectOf(ctx, n);
   if (object !== undefined) sctx.print(object);
+  // oxfmt keeps a comment on a line of its own before the lookup there (comments.ts's oxfmtMemberObject).
+  const dangling = s.danglingComments(n);
+  if (dangling.length > 0) {
+    open(INDENT);
+    for (const c of dangling) {
+      sHardline();
+      s.comment(c);
+    }
+    sHardline();
+    sMemberLookup(sctx, n);
+    close();
+    return;
+  }
   let firstNonMember = role(ctx, n);
   while (
     firstNonMember.parent !== undefined &&
@@ -828,8 +858,8 @@ const memberCustom: CustomRule<JsOptions> = (n, s) => {
         (memberChains.get(ctx)?.has(asserted) ?? false)));
   if (inner !== undefined && memberChains.get(ctx)?.has(inner))
     markMemberChain(ctx, n);
-  sLineSuffixBoundary();
-  if (shouldInline) sMemberLookup(sctx, n);  else {
+  if (shouldInline) sMemberLookup(sctx, n);
+  else {
     open(GROUP);
     open(INDENT);
     sLine(SOFT);
@@ -946,6 +976,38 @@ function sMemberChain(sctx: JsStreamCtx, n: number): void {
     kind(ctx, unparen(ctx, field(ctx, x, "index") as number)) === "number";
   const isCallNode = (x: number) => isCallExpression(ctx, x);
   const nodeOf = (i: number) => (printedNodes[i] as Printed).node;
+  /**
+   * `a.b // c⏎(1)`: oxfmt reads a comment ending the member's line, before the `(` on the next one, as the member's
+   * trailing comment when it groups the chain, so the arguments start a group of their own, though the comment
+   * prints inside them.
+   */
+  const argsAfterEndOfLineComment = (x: number) => {
+    const list = argumentsNode(ctx, x);
+    if (list === undefined || kind(ctx, unparen(ctx, callee(ctx, x) as number)) !== "member_expression") return false;
+    const paren = firstLeaf(ctx.tree, list);
+    let comment: number | undefined;
+    for (let l = prevLeaf(ctx.tree, paren); l !== NO_NODE && kind(ctx, l) === "comment"; l = prevLeaf(ctx.tree, l))
+      comment = l;
+    return comment !== undefined && ctx.tree.lf(comment) === 0 && newlineBetween(ctx.tree, comment, paren);
+  };
+
+  /**
+   * oxfmt's `has_comment_in_member`: a comment between a `.` member's object and property, or ending the member's
+   * line, which alone of a chain's comments breaks it (`a[0] // c⏎(1).b()` stays one line, the comment after it).
+   */
+  const memberComment = (x: number) => {
+    if (kind(ctx, x) !== "member_expression") return false;
+    const t = ctx.tree;
+    const property = field(ctx, x, "property");
+    if (property === undefined) return false;
+    for (let l = prevLeaf(t, property); l !== NO_NODE && (kind(ctx, l) === "comment" || /^\??\.$/.test(t.text(l))); l = prevLeaf(t, l))
+      if (kind(ctx, l) === "comment") return true;
+    for (let l = nextLeaf(t, x); l !== NO_NODE && kind(ctx, l) === "comment" && t.lf(l) === 0; l = nextLeaf(t, l)) {
+      const after = nextLeaf(t, l);
+      if (t.text(l).startsWith("//") || after === NO_NODE || t.lf(after) > 0) return true;
+    }
+    return false;
+  };
 
   const groups: Printed[][] = [];
   let currentGroup: Printed[] = [printedNodes[0] as Printed];
@@ -980,6 +1042,10 @@ function sMemberChain(sctx: JsStreamCtx, n: number): void {
       groups.push(currentGroup);
       currentGroup = [];
       hasSeenCallExpression = false;
+    }
+    if (isCallNode(x) && argsAfterEndOfLineComment(x) && currentGroup.length > 0) {
+      groups.push(currentGroup);
+      currentGroup = [];
     }
     if (isCallNode(x) || isDynamicImport(ctx, x)) hasSeenCallExpression = true;
     currentGroup.push(printedNodes[i] as Printed);
@@ -1021,7 +1087,8 @@ function sMemberChain(sctx: JsStreamCtx, n: number): void {
   const shouldMerge =
     groups.length >= 2 &&
     (groups[1] as Printed[]).length > 0 &&
-    !hasComment(ctx, (groups[1] as Printed[])[0]?.node) &&
+    !memberComment((groups[1] as Printed[])[0]?.node as number) &&
+    !(groups[1]?.length === 1 && groups[2]?.[0] !== undefined && argsAfterEndOfLineComment(groups[2][0].node)) &&
     shouldNotWrap(groups);
 
   const printGroup = (g: Printed[]) => {
@@ -1033,8 +1100,9 @@ function sMemberChain(sctx: JsStreamCtx, n: number): void {
   const cutoff = shouldMerge ? 3 : 2;
   const flat = groups.flat();
   const nodeHasComment =
+    flat.some((x) => isCallNode(x.node) && argsAfterEndOfLineComment(x.node)) ||
     flat.slice(1, -1).some((x) => hasComment(ctx, x.node, CF.Leading)) ||
-    flat.slice(0, -1).some((x) => hasComment(ctx, x.node, CF.Trailing)) ||
+    flat.some((x) => memberComment(x.node)) ||
     (groups[cutoff] !== undefined &&
       hasComment(ctx, groups[cutoff][0]?.node, CF.Leading));
 
@@ -1183,7 +1251,7 @@ const sCallee = (sctx: JsStreamCtx, n: number) => {
     awaitsHere(ctx, n)
   )
     sText(" ");
-  sLineSuffixBoundary();
+  // oxfmt carries a callee's trailing comment past its type arguments and arguments to the line's end: `f<T>();⏎// c`.
 };
 
 /** Prettier's printCallExpression, for calls and `new`. */
@@ -1199,7 +1267,15 @@ const callCustom: CustomRule<JsOptions> = (n, s) => {
     // it started one.
     const comment = template === undefined ? undefined : sctx.leadingComments(template)[0];
     const tag = field(ctx, n, "type_arguments") ?? c;
-    if (comment !== undefined && tag !== undefined) {
+    // oxfmt keeps the line break after a block comment trailing the tag: `foo /* c */⏎`x``.
+    const tagComment = tag === undefined ? undefined : sctx.trailingComments(tag).at(-1);
+    if (
+      tagComment !== undefined &&
+      !ctx.isLineComment(tagComment) &&
+      ctx.tree.lf(nextLeaf(ctx.tree, tagComment)) > 0
+    )
+      sHardline();
+    else if (comment !== undefined && tag !== undefined) {
       if (newlineBetween(ctx.tree, prevLeaf(ctx.tree, nextLeaf(ctx.tree, tag)), comment)) sHardline();
       else sText(" ");
     }
@@ -1262,6 +1338,16 @@ const callCustom: CustomRule<JsOptions> = (n, s) => {
 
 /** The customs format/calls.ts names, by the names its spec gives them. */
 export const callCustoms = {
-  call: callCustom,
+  call: (n, s) => {
+    callCustom(n, s);
+    // babel calls a V8 intrinsic where it stands, `%F(x)`, so `new %F(x)` constructs that call with no arguments.
+    const ctx = jsCtx(s).js;
+    if (
+      kind(ctx, n) === "new_expression" &&
+      kind(ctx, callee(ctx, n)) === "v8_intrinsic" &&
+      !(isCall(ctx, parent(ctx, n)) && callee(ctx, parent(ctx, n) as number) === n)
+    )
+      sText("()");
+  },
   member: memberCustom,
 } satisfies Record<string, CustomRule<JsOptions>>;

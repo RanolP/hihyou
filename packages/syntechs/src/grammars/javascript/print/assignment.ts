@@ -1,6 +1,8 @@
 // Prettier's assignment layouts (print/assignment.js): how `left = right`, a declarator, an object property
 // and a class property break.
 
+import { NO_NODE } from "../../../core/arena.js";
+import { nextLeaf } from "../../../fmt/tree.js";
 import { textWidth } from "../../../fmt/width.js";
 import {
   capture,
@@ -14,6 +16,7 @@ import {
   openIndentIfBreak,
   type Part,
   place,
+  sBreakParent,
   sLine,
   sLineSuffixBoundary,
   sText,
@@ -23,10 +26,12 @@ import { printString } from "../../../fmt/dsl/normalizers.js";
 import { role } from "./parens.js";
 import { shouldHugUnionType, unparenType } from "./types.js";
 import {
+  anon,
   CF,
   callArguments,
   callee,
   childWhere,
+  children,
   field,
   first,
   type HasTree,
@@ -35,6 +40,7 @@ import {
   isAssignment,
   isBinaryish,
   isBoolean,
+  isComment,
   isIndentableBlockComment,
   isLogical,
   isMember,
@@ -82,7 +88,10 @@ export function sPrintAssignment(
   right: number | undefined,
 ): void {
   const leftPart = capture(left);
-  const layout = chooseLayout(ctx, node, leftPart, right);
+  const chosen = chooseLayout(ctx, node, leftPart, right);
+  const breakAfter = right !== undefined && oxfmtLineCommentBeforeRight(ctx.js, node, right);
+  const layout =
+    breakAfter && (chosen === "fluid" || chosen === "never-break-after-operator") ? "break-after-operator" : chosen;
   const printRight = () => {
     if (right !== undefined) ctx.print(right, { assignmentLayout: layout });
   };
@@ -92,8 +101,15 @@ export function sPrintAssignment(
       return void within(GROUP, () => {
         groupedLeft();
         operator();
+        // oxfmt leaves the break to the group a line comment ending the `=` line breaks, and groups the right.
+        if (operatorLineComment(ctx.js, node))
+          return void within(INDENT, () => {
+            sLine(0);
+            within(GROUP, printRight);
+          });
         within(GROUP, () =>
           within(INDENT, () => {
+            if (breakAfter) sBreakParent();
             sLine(0);
             printRight();
           }),
@@ -132,6 +148,7 @@ export function sPrintAssignment(
       groupedLeft();
       operator();
       return void within(INDENT, () => {
+        if (breakAfter) sBreakParent();
         sLine(0);
         printRight();
       });
@@ -142,6 +159,27 @@ export function sPrintAssignment(
     case "only-left":
       return place(leftPart);
   }
+}
+
+/**
+ * `a = // c⏎1`: oxfmt keeps a line comment that ends the line of the `=` (or of the left side, before it) there
+ * and breaks the right side onto the next line, where prettier's layout may pull the right side up before it.
+ */
+function oxfmtLineCommentBeforeRight(x: JsCtx, node: number, right: number): boolean {
+  for (const c of children(x, node)) {
+    if (c === right) return false;
+    if (kind(x, c) === "comment" && src(x, c).startsWith("//") && x.tree.lf(c) === 0) return true;
+  }
+  return false;
+}
+
+/** oxfmt's has_line_comment_on_operator_line, over a type alias: `type A = // c`. */
+function operatorLineComment(x: JsCtx, node: number): boolean {
+  if (kind(x, node) !== "type_alias_declaration") return false;
+  const op = anon(x, node, "=");
+  if (op === undefined) return false;
+  const next = nextLeaf(x.tree, op);
+  return next !== NO_NODE && isComment(x, next) && src(x, next).startsWith("//");
 }
 
 const isDeclarator = (x: HasTree, n: number | undefined) =>
@@ -324,16 +362,28 @@ function isPoorlyBreakableMemberOrCallChain(
   s: JsStreamCtx,
   n: number,
   deep = false,
+  seenCall = false,
 ): boolean {
   const ctx = s.js;
   n = unparen(ctx, n);
   const k = kind(ctx, n);
   // Prettier's isCallExpression leaves out `new`, so `a = new Foo()` is never a poorly breakable chain.
   if (k === "call_expression") {
+    // oxfmt's is_poorly_breakable_member_or_call_chain: a comment anywhere in the outermost call makes the chain
+    // breakable, so `x = a[0] // c⏎(1)` stays on the `=` line.
+    if (!seenCall && containsComment(ctx, n)) return false;
     if (kind(ctx, field(ctx, n, "arguments")) === "template_string")
       return false;
     if (printsAsMemberChain(s, n)) return false;
     const args = callArguments(ctx, n);
+    // oxfmt hugs `x = f(/* c */)` rather than breaking after `=`.
+    const argList = field(ctx, n, "arguments");
+    if (
+      args.length === 0 &&
+      argList !== undefined &&
+      ctx.comments(argList).dangling.length > 0
+    )
+      return false;
     const poor =
       args.length === 0 ||
       (args.length === 1 &&
@@ -342,18 +392,21 @@ function isPoorlyBreakableMemberOrCallChain(
     if (!poor) return false;
     if (isCallWithComplexTypeArguments(ctx, n)) return false;
     const c = callee(ctx, n);
-    return c !== undefined && isPoorlyBreakableMemberOrCallChain(s, c, true);
+    return c !== undefined && isPoorlyBreakableMemberOrCallChain(s, c, true, true);
   }
   if (isMember(ctx, n)) {
     const o = objectOf(ctx, n);
-    return o !== undefined && isPoorlyBreakableMemberOrCallChain(s, o, true);
+    return o !== undefined && isPoorlyBreakableMemberOrCallChain(s, o, true, seenCall);
   }
   if (k === "non_null_expression") {
     const o = first(ctx, n);
-    return o !== undefined && isPoorlyBreakableMemberOrCallChain(s, o, deep);
+    return o !== undefined && isPoorlyBreakableMemberOrCallChain(s, o, deep, seenCall);
   }
   return deep && (k === "identifier" || k === "this");
 }
+
+const containsComment = (ctx: JsCtx, n: number): boolean =>
+  children(ctx, n).some((c) => isComment(ctx, c) || containsComment(ctx, c));
 
 function isCallWithComplexTypeArguments(x: HasTree, n: number): boolean {
   const args = field(x, n, "type_arguments");

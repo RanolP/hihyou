@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import * as prettier from "prettier";
 import { describe, expect, it } from "vitest";
 import { type Language, parseTree } from "../../core/index.js";
 import { check } from "../../fmt/check.js";
+import { oxfmt } from "../../fmt/conformance/references.node.js";
 import { format } from "../../fmt/format.js";
 import { language as tsxParser } from "../tsx/index.js";
 import { tsx, typescript } from "../typescript/fmt.js";
@@ -12,8 +12,8 @@ import { javascript } from "./fmt.js";
 import { language as jsParser } from "./index.js";
 import type { JsOptions as AllJsOptions } from "./print/util.js";
 
-// Byte parity with prettier 3.9.9 for JavaScript, TypeScript and TSX, under its defaults and under a set a
-// person would write in a `.prettierrc`. Not covered: syntax tree-sitter-typescript reads as
+// Byte parity with oxfmt 0.70.0 over prettier's defaults for JavaScript, TypeScript and TSX, under those and
+// under a set a person would write in a `.prettierrc`. Not covered: syntax tree-sitter-typescript reads as
 // an ERROR.
 
 type Target = "js" | "ts" | "tsx";
@@ -48,15 +48,42 @@ const long = (name: string) => `${name}${"x".repeat(30)}`;
 
 const edgeCases: [string, Target, string][] = [
   ["empty-statement-list", "js", "let a = 1;;\n\n\n\nlet b = 2"],
-  // An array keeps the blank line after an item's comma, an object the one after the item.
+  // An array keeps the blank line after an item's comma.
+  ["blank-after-comma", "js", "y = [1\n,\n\n2];"],
+  // A blank line after an item's comma breaks an array and stays; one between an item and its comma goes, in an
+  // object too, but one before an own-line comment there stays.
   [
-    "blank-after-comma",
+    "blank-after-comma-breaks",
     "js",
-    `x = [${long("a")}\n,\n\nb, c\n\n,d];\ny = [1\n,\n\n2];\nz = { ${long("a")}\n,\n\nb, c\n\n,d };`,
+    `x = [${long("a")}\n,\n\nb, c\n\n,d];\nz = { ${long("a")}\n,\n\nb, c\n\n,d };\nf([a,\n\nb]);\nw = {a\n\n// c\n,b};`,
   ],
-  // Tree-sitter leaves the `;` after a comment's line break a statement of its own; babel reads it as the
-  // statement's, so the blank line after it stays.
-  ["semi-after-comment", "js", "for (;;) continue // c\n;\n\nx;\na;\n;\n\nb;"],
+  // Tree-sitter leaves the `;` after a comment's line break a statement of its own; the gap after the last stray
+  // `;` counts, not one before it.
+  ["semi-after-comment", "js", "for (;;) continue // c\n;\n\nx;\na;\n;\n\nb;\nc;\n\n;\nd;\n\n// e\n;(f)"],
+  // A comment ending the line after a computed-member callee stays on the callee, past the call.
+  ["subscript-callee-comment", "js", "a[0] // c\n(1)\nf // c\n(1)\nb[0] // c\n(x, // d\n2)"],
+  // Any comment trailing a chain's member broke the chain; oxfmt breaks it only for one between a `.` member's object
+  // and property or ending its line, so a computed member's stays past the one-line chain.
+  [
+    "chain-member-comment",
+    "js",
+    "a[0] // c\n(1).b()\na[0] /* c */\n(1).b()\na // c\n.b().c()\na /* c */ .b().c().d()\na[0](1) // c\n.b()\na.x // c\n(1).b()",
+  ],
+  // A comment in a computed-member callee's call broke after `=`, flushed into the arguments before a `.` member, and
+  // split `a.b` from `[0]`; oxfmt keeps the call poorly breakable only without a comment in it, sets no line-suffix
+  // boundary after a member's object, and merges a computed member with a trailing comment into the chain's head.
+  [
+    "callee-comment-chain",
+    "js",
+    "x = a[0] // c\n(1)\nconst y = a[0] // c\n(1)\nx = a[0] // c\n(1).b\nx = a.b[0] // c\n(1).c()\nx = a.b[i] // c\n(1)\na.b[0][1] // c\n(1).c()",
+  ],
+  // oxfmt counts the blank lines just before the next statement, so one before a statement's own `;` on a later line
+  // drops, unless that `;` is glued to the next statement as its ASI guard.
+  [
+    "stray-semi-blank-line",
+    "js",
+    "a // c\n\n;\nb\na\n\n;\nc\nd\n\n;[]\ne\n\n; f\ng // c\n// d\n\n;\nh",
+  ],
   ["quotes", "js", `const a = "it's", b = 'say "hi"', c = 'plain';`],
   ["numbers", "js", "x = [0XAB, 1E5, .5, 5., 0.50, 1_000n, 0B11, 0O7];"],
   [
@@ -158,12 +185,6 @@ const edgeCases: [string, Target, string][] = [
     "ts",
     "class A implements B { private readonly a = 1; protected abstract b(): void; constructor(public c: string) { super() } }",
   ],
-  // Modifiers written out of prettier's order must parse, print in its order, and pass `check`.
-  [
-    "member-modifiers-any-order",
-    "ts",
-    "class A { override public readonly x = 1; readonly static declare y: number; constructor(readonly private a: string) { super() } }",
-  ],
   [
     "namespaces",
     "ts",
@@ -201,10 +222,112 @@ const edgeCases: [string, Target, string][] = [
     "tsx",
     `const a = <><Foo {...props} bar="it's" baz={() => 1} disabled /></>;`,
   ],
+  // Embedded CSS is SCSS to prettier, so a `//` there opens a comment rather than dividing: the template stays as written.
+  ["css-embed-line-comment", "js", "css`a{b: a // e;}`;\n"],
+  // Nor does prettier space a `:` in an embedded value (`a :b`, `x(a:b)`), which oxfmt does in a CSS file.
+  ["css-embed-value-colon", "js", "css`\n  b: a :b;\n  c: x(a:b);\n`;\n"],
+  // A `//` inside a word (`x(http://a)`) is a line comment to SCSS too, which leaves the value broken: source kept.
+  ["css-embed-url-in-word", "js", "css`b: x(http://a);`;\ncss`b: url(http://a);`;\n"],
+  // SCSS ends the template's last declaration and a block's with the `;` it adds, before a trailing comment; the
+  // missing `;` failed the embed, which printed the template as written, and the added one failed the check.
+  ["css-embed-inserted-semicolon", "js", "css`b: a`;\ncss`b: a /*e;*/`;\ncss`a{b: a}`;\ncss`b: ${x}; c: ${y}`;\n"],
+  // A substitution alone as a statement did not parse as CSS, so the template kept its source; oxfmt reads it as a
+  // statement, `;` only where written, and keeps a statement after it on its line.
+  [
+    "css-embed-placeholder-statement",
+    "js",
+    "css`${x}; b: a`;\ncss`${x}`;\ncss`${x}\n  b: a;`;\ncss`b: a; ${x};`;\ncss`a{${x}; b: a}`;\ncss`${x}${y}\n${z}; /* c */ d: e`;\ncss`${x}: a;`;\n",
+  ],
+  // A word glued to a multi-line substitution broke it open when only the `;` or `!important` after it passed the width.
+  [
+    "css-embed-glued-substitution-fits-alone",
+    "js",
+    '<style jsx>{`\n  .class {\n    flex-direction: column${lllllll && long_cond && long_cond\n        ? "-reverse"\n        : ""};\n  }\n`}</style>;\n<style jsx>{`\n  .class {\n    flex-direction: column${lllllll && long_cond && long_cond\n        ? "-reverse"\n        : ""} !important;\n  }\n`}</style>;\n',
+  ],
+  // A comma list holding a word glued to a substitution stayed on one line; prettier reads that word as two, which
+  // breaks the list one entry per line.
+  [
+    "css-embed-glued-substitution-comma-list",
+    "js",
+    'styled.div`\n  a: column${l && long_cond && long_cond && long_cond\n ? "-reverse"\n : ""}, b;\n  c: d, e${x}f;\n  g: ${x}px, h;\n  i: f(j${x}), k;\n`;\n',
+  ],
   [
     "comments-prettier-moves",
     "ts",
     "const a = 1 as const /* c */;\nfunction f() {} // after\ntype U =\n  | A // a\n  // b\n  | B;\nclass K { m /* m */ () {} }",
+  ],
+  // A prettier-ignore ending a union member's line kept the next member as written, dropped the comment, and kept a
+  // parenthesized member before it as written; oxfmt keeps only an unparenthesized member it trails.
+  [
+    "union-member-trailing-ignore",
+    "ts",
+    "type A =\n  | (foo1&foo2) // prettier-ignore\n  | (bar1&bar2)\n  | baz;\ntype B =\n  | foo1&foo2 // prettier-ignore\n  | {a:1}\n  | baz;\ntype C =\n  | foo\n  | bar1&bar2 // prettier-ignore\n  | baz;\n",
+  ],
+  // An Angular `@Component`'s `styles` template printed as written; oxfmt formats it as CSS.
+  [
+    "angular-component-styles",
+    "ts",
+    "@Component({template: `<a></a>`, styles: [`a{b:c}`, x]})\nclass A {}\n@Component({a: 1}, {styles: (`a{b:${x}}`)})\nclass B {}\n@Directive({styles: `a{b:c}`})\nclass C {}\n",
+  ],
+  // A script's `await (x, y)(z)` printed as oxfmt's `await(x, y)(z)`, but the check flattened only a one-argument
+  // call of `await`, so it refused the output.
+  [
+    "await-call-many-arguments",
+    "js",
+    `await (${"x".repeat(40)}, ${"y".repeat(40)})(c);\nconst v = await (a, b, c)(d).e;\n`,
+  ],
+  // A prettier-ignore ending a type alias with no `;` printed twice, which the check refused, or kept only the union
+  // and broke after `=`; oxfmt keeps the whole alias, then `;` and the comment.
+  [
+    "type-alias-trailing-ignore-no-semicolon",
+    "ts",
+    "type A = (foo1&foo2) // prettier-ignore\ntype B = foo | (b&c) // prettier-ignore\ntype C = (foo1&foo2) // prettier-ignore\n  | (bar1&bar2) // prettier-ignore\nlet x = 1\n",
+  ],
+  // A script's `await (x ? y : z)(c)` laid the argument out as a callee in parentheses, a blank line after `await(`
+  // and the `,` alone on a line; oxc reads it as the argument of a call of `await`.
+  [
+    "await-call-broken-argument",
+    "js",
+    `function f() { await (${"x".repeat(40)} ? ${"y".repeat(40)} : z)(c); }\nawait (${"x".repeat(40)} || ${"y".repeat(40)})(c).d;\n`,
+  ],
+  // A prettier-ignore ending an exported or declared alias with no `;` broke after `=`, and a block one moved
+  // after the `;`; oxfmt keeps the `//` form's alias whole and the block form before the `;`.
+  [
+    "type-alias-trailing-ignore-wrapped",
+    "ts",
+    "export type A = foo | (b&c) // prettier-ignore\ndeclare type B = foo | (b&c) // prettier-ignore\nnamespace N { export type C = foo | (b&c) // prettier-ignore\n}\ntype D = foo | (b&c) /* prettier-ignore */\nexport type E = foo | (b&c) /* prettier-ignore */\n",
+  ],
+  // A prettier-ignored `export const a = 1;` printed `;;`: the `;` is the declaration's, which the export kept.
+  [
+    "ignored-export-declaration-semicolon",
+    "ts",
+    "// prettier-ignore\nexport const a = {b:1};\nexport type A = foo | (b&c); // prettier-ignore\nexport declare const c: {b:1}; // prettier-ignore\n",
+  ],
+  // A script's `await (a = b)` dropped the assignment's own parentheses, which oxfmt adds as to any call argument.
+  [
+    "await-call-assignment",
+    "js",
+    `await (a = b);\nawait ((a += b))(c);\nawait (a = ${"x".repeat(40)} || ${"y".repeat(40)})(c);\n`,
+  ],
+  // A `//` prettier-ignore ending an exported or declared statement with no `;` formatted it, printed the comment
+  // twice, or added a `;` after a body; tree-sitter puts the comment inside the declaration, oxc after it.
+  [
+    "export-trailing-ignore-no-semicolon",
+    "ts",
+    "export type A = (b&c) // prettier-ignore\nexport let a = {b:1} // prettier-ignore\nexport interface I {a:1} // prettier-ignore\nexport enum E {a=1} // prettier-ignore\nexport class C {a=1} // prettier-ignore\nexport namespace N {a} // prettier-ignore\ndeclare   let d: {b:1} // prettier-ignore\nexport declare function f( a:1 ): void // prettier-ignore\n",
+  ],
+  // A block prettier-ignore ending a statement with no `;` printed the `;` before the comment; oxc's statement ends
+  // before the comment, so the `;` follows it.
+  [
+    "statement-trailing-block-ignore-no-semicolon",
+    "ts",
+    "type   A   =   (b&c) /* prettier-ignore */\nlet   a  = {b:1} /* prettier-ignore */ /* x */\nexport   var   v = {b:1} /* prettier-ignore */\nf( a,b ) /* prettier-ignore */ // x\nfunction g(){ let   a = {b:1} /* prettier-ignore */\n}\n",
+  ],
+  // A prettier-ignore after a body's stray `;` kept the declaration verbatim; oxc gives it to the empty statement.
+  [
+    "ignore-after-empty-statement",
+    "ts",
+    "export interface A {a:1}; // prettier-ignore\nclass C {a=1}; /* prettier-ignore */\nexport enum E {a=1}; // prettier-ignore\nf( a,b );; // prettier-ignore\nlet a = {b:1}; // prettier-ignore\n",
   ],
 ];
 
@@ -218,13 +341,10 @@ function ours(target: Target, text: string, options: Partial<JsOptions>) {
   return out.text;
 }
 const theirs = (target: Target, text: string, options: Partial<JsOptions>) =>
-  prettier.format(text, {
-    ...options,
-    filepath: targets[target].filepath,
-  });
+  oxfmt.format(targets[target].filepath, text, options);
 
 describe.each(optionSets)(
-  "a JS/TS/TSX file lays out byte-identical to prettier 3.9.9 (%s), so the reviewer sees the layout their tools write",
+  "a JS/TS/TSX file lays out byte-identical to oxfmt 0.70.0 (%s), so the reviewer sees the layout their tools write",
   (_, options) => {
     it.each(edgeCases)("%s (%s)", async (_, target, text) => {
       expect(ours(target, text, options)).toBe(
@@ -248,7 +368,7 @@ const ratchet: [Target, string, number, number][] = [
   ["tsx", "LayerUI.tsx", 152, 152],
 ];
 
-describe("the fetched JS/TSX corpus keeps its count of chunks byte-identical to prettier, so a layout regression cannot hide in a large file", () => {
+describe("the fetched JS/TSX corpus keeps its count of chunks byte-identical to oxfmt, so a layout regression cannot hide in a large file", () => {
   it.each(ratchet)("%s: %s", async (target, file, identical, total) => {
     const path = join(corpusDir, file);
     if (!existsSync(path)) return;
@@ -260,5 +380,23 @@ describe("the fetched JS/TSX corpus keeps its count of chunks byte-identical to 
       identical,
       total,
     ]);
+  });
+});
+
+// Target, input, then today's output under the defaults, which differs from oxfmt's.
+const divergences: [string, Target, string, string][] = [
+  // Modifiers written out of TypeScript's order, which oxfmt rejects; syntechs prints them in order.
+  [
+    "member-modifiers-any-order",
+    "ts",
+    "class A { override public readonly x = 1; readonly static declare y: number; constructor(readonly private a: string) { super() } }",
+    "class A {\n  public override readonly x = 1;\n  declare static readonly y: number;\n  constructor(private readonly a: string) {\n    super();\n  }\n}\n",
+  ],
+];
+
+describe("a known gap from oxfmt stays pinned, so closing one shows up as a test change", () => {
+  it.each(divergences)("%s (%s)", async (_, target, text, pinned) => {
+    expect(ours(target, text, {})).toBe(pinned);
+    expect(await theirs(target, text, {}).catch((e: unknown) => String(e))).not.toBe(pinned);
   });
 });

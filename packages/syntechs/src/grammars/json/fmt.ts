@@ -19,7 +19,10 @@ export interface JsonOptions extends PrettierOptions {
   trailingComma: "all" | "es5" | "none";
 }
 
-const defaults: JsonOptions = { ...prettierDefaults, trailingComma: "all" };
+const defaults: JsonOptions = {
+  ...prettierDefaults,
+  trailingComma: "all",
+};
 
 // A string means its value whatever its quotes or backticks, a key its name whether quoted or not, a number
 // its value whatever its spelling; a comma means nothing but an array's hole, which means `null`

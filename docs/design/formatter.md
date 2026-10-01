@@ -60,7 +60,7 @@ syntechs replaces external formatters and highlighters at runtime (`docs/design/
 
 "we shall have parity matrix as oxfmt has before. also our goal is 5x slower than oxfmt, faster than prettier."
 
-- **Parity** is tracked like oxc's `tasks/prettier_conformance`: a committed per-language snapshot scoring the formatter on the reference tools' own fixtures, with compatibility N/M and each failing fixture's match percentage. References are prettier's `tests/format` for JSON, CSS, JavaScript, TypeScript and TSX, ruff's formatter fixtures for Python, and ktfmt for Kotlin. The matrix lives in `packages/syntechs/conformance/README.md`.
+- **Parity** is tracked like oxc's `tasks/prettier_conformance`: a committed per-language snapshot scoring the formatter on the reference tools' own fixtures, with compatibility N/M and each failing fixture's match percentage. For JSON, CSS, JavaScript, TypeScript and TSX the fixtures are prettier's `tests/format` and the reference is oxfmt 0.70.0's output on them over prettier's defaults (the `@oxfmt` rows): "그럼 oxfmt를 정답으로 따르자. 이제 prettier 호환은 기준으로 삼지 않고." Prettier's own snapshots are no longer scored ("matrix에서 완전히 prettier 제거"). Python's reference is ruff's formatter fixtures, and Kotlin's is ktfmt. The matrix lives in `packages/syntechs/conformance/README.md`.
 - **Speed** is parse plus format, measured by the folder-level bench (`packages/syntechs/src/fmt/bench.node.ts`). The target is at most 5x the time of the native reference (oxfmt for JS, TS, JSON and CSS; ruff for Python) and faster than prettier. `docs/research/perf-phases.md` splits where that time goes.
 
 ### HTML highlighting backend

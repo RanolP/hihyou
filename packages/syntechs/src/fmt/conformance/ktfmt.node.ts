@@ -143,11 +143,18 @@ export const ktfmt: Reference = {
  * The Kotlin cases: the inputs parity runs on (the grammar's test corpus and the vendored real-world files), then
  * the inputs of ktfmt's own tests, each expected to print as the pinned jar prints it with `--kotlinlang-style`.
  * Upstream's expected files are not used: they record other styles, other options (a case's directive header,
- * which the CLI ignores) and a newer ktfmt. An input ktfmt rejects is excluded. Throws when ktfmt cannot run.
+ * which the CLI ignores) and a newer ktfmt. An input has no answer, and is excluded, when ktfmt rejects it or
+ * prints its own output differently a second time. Throws when ktfmt cannot run.
  */
 export function ktfmtSuite(): Suite {
   const inputs = [...kotlinInputs(), ...ktfmtInputs()];
   const outs = formatAll(inputs);
+  const ok = inputs.flatMap((input, i) => {
+    const out = outs[i];
+    return out instanceof Error ? [] : [{ i, name: input.name, text: out as string }];
+  });
+  const twice = formatAll(ok);
+  const again = new Map(ok.map((o, k) => [o.i, twice[k]]));
   const suite: Suite = { cases: [], excluded: [] };
   for (const [i, input] of inputs.entries()) {
     const out = outs[i];
@@ -155,6 +162,11 @@ export function ktfmtSuite(): Suite {
       suite.excluded.push({
         fixture: input.name,
         reason: "ktfmt rejects the input",
+      });
+    else if (again.get(i) !== out)
+      suite.excluded.push({
+        fixture: input.name,
+        reason: "ktfmt is not idempotent on it",
       });
     else
       suite.cases.push({

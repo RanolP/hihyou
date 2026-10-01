@@ -53,7 +53,6 @@ import {
   isBlockComment,
   isJsx,
   isLogical,
-  isOptional,
   type JsOptions,
   items,
   type JsCtx,
@@ -266,7 +265,7 @@ function printBinaryishExpressions(
       estreeKind(js, leftInner) !== estree &&
       estreeKind(js, unparen(js, right)) !== estree);
   const parts = [...chain.parts];
-  if (!atStart || shouldInline || commentBeforeOperator)
+  if (!atStart || shouldInline)
     parts.push(() => sText(" "));
   const printRight = rightDoc;
   parts.push(
@@ -283,7 +282,6 @@ function printBinaryishExpressions(
 const isBooleanTypeCoercion = (ctx: JsCtx, n: number | undefined) =>
   n !== undefined &&
   kind(ctx, n) === "call_expression" &&
-  !isOptional(ctx, n) &&
   callArguments(ctx, n).length === 1 &&
   kind(ctx, callee(ctx, n)) === "identifier" &&
   src(ctx, callee(ctx, n) as number) === "Boolean";

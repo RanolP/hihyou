@@ -30,9 +30,13 @@ export const jsNormalize: Normalize = (lexemes, text, tree) => {
     }
     // Prettier reflows a template in another language (print/embed.ts), whose whitespace means nothing to it.
     if (isEmbedFragment(tree, l.node)) {
-      const words = l.text.replace(/\s+/g, "");
-      return words === "" ? undefined : `embed:${words}@${places.of(l.node)}`;
+      const words = cssEndSemicolons(tree, l.node, l.text).replace(/\s+/g, "");
+      // Its place is the substitutions before it: prettier adds a fragment before a leading `${…}` when it breaks.
+      return words === "" ? undefined : `embed:${words}#${substitutionsBefore(tree, l.node)}@${places.at(tree.parent(l.node))}`;
     }
+    const call = tree.parent(l.node);
+    if (tree.fieldName(l.node) === "function" && isAwaitCall(tree, call))
+      return `await@${places.of(chainTop(tree, call))}`;
     const value = valueForm(tree, l, l.node, lexemes, i);
     return value === undefined ? undefined : `${value}@${places.of(l.node)}`;
   });
@@ -44,6 +48,27 @@ const isJestEachFragment = (tree: Tree, n: number) => {
   const p = tree.parent(n);
   return p !== NO_NODE && tree.kindName(p) === "template_string" && isJestEachTemplate(tree, p);
 };
+
+/**
+ * Embedded CSS less each `;` that ends a block or the template, where prettier's SCSS printer adds one (`b: a` is
+ * `b: a;`, `b: a // c` is `b: a; // c`) and where it means nothing. Only the template's last fragment ends it: a `;`
+ * before a `${…}` separates what follows.
+ */
+function cssEndSemicolons(tree: Tree, fragment: number, text: string): string {
+  const template = tree.parent(fragment);
+  if (embedLanguage(tree, template) !== "css") return text;
+  const last = tree.child(template, tree.count(template) - 2) === fragment;
+  const comments = String.raw`(?:\s|/\*[^]*?\*/|//[^\n]*)*`;
+  return text.replace(new RegExp(`;(?=${comments}(?:\\}${last ? "|$" : ""}))`, "g"), "");
+}
+
+function substitutionsBefore(tree: Tree, fragment: number): number {
+  const template = tree.parent(fragment);
+  let count = 0;
+  for (let i = 0; i < tree.count(template) && tree.child(template, i) !== fragment; i++)
+    if (tree.kindName(tree.child(template, i)) === "template_substitution") count++;
+  return count;
+}
 
 const isEmbedFragment = (tree: Tree, n: number) => {
   if (tree.kindName(n) !== "string_fragment") return false;
@@ -415,8 +440,70 @@ class Places {
 /** The `()` prettier adds to `new A`, which calls the constructor with no arguments either way. */
 const isEmptyNewArguments = (tree: Tree, n: number) =>
   tree.kindName(n) === "arguments" &&
-  parentKind(tree, n) === "new_expression" &&
+  (parentKind(tree, n) === "new_expression" || isV8NewCall(tree, tree.parent(n))) &&
   codeChildren(tree, n) === 0;
+
+/**
+ * `new %F(x)()`, which tree-sitter reads as a call of `new %F(x)` and babel as `new %F(x)`, the V8 intrinsic called
+ * where it stands: the `()` oxfmt adds there means what `new %F(x)` does.
+ */
+function isV8NewCall(tree: Tree, n: number): boolean {
+  if (n === NO_NODE || tree.kindName(n) !== "call_expression") return false;
+  const fn = findChild(tree, n, (c) => tree.fieldName(c) === "function");
+  if (fn === NO_NODE || tree.kindName(fn) !== "new_expression") return false;
+  const args = findChild(tree, n, (c) => tree.fieldName(c) === "arguments");
+  return (
+    args !== NO_NODE &&
+    codeChildren(tree, args) === 0 &&
+    findChild(tree, fn, (c) => tree.kindName(c) === "v8_intrinsic") !== NO_NODE
+  );
+}
+
+/**
+ * A script's `await (x)(y)`, which oxfmt prints as the call of `await` oxc reads there: `await(x,)(y)`. tree-sitter
+ * reads the input as an await of `(x)(y)` and the output as a call of a call of `await`, so both stand flat: every
+ * await expression, and the call of `await` with its argument list, are see-through, and `await` stands where the
+ * chain it starts does. The `await` token keeps a place of its own, so `(await x).y` and `await x.y` still differ.
+ */
+function isAwaitCall(tree: Tree, n: number): boolean {
+  if (n === NO_NODE || tree.kindName(n) !== "call_expression") return false;
+  const fn = findChild(tree, n, (c) => tree.fieldName(c) === "function");
+  const args = findChild(tree, n, (c) => tree.fieldName(c) === "arguments");
+  return (
+    fn !== NO_NODE &&
+    tree.kindName(fn) === "identifier" &&
+    tree.text(fn) === "await" &&
+    args !== NO_NODE &&
+    tree.kindName(args) === "arguments"
+  );
+}
+
+/**
+ * The `x, y` of a script's `await (x, y)(z)`, which oxfmt prints as the arguments `await(x, y)(z)`: see-through like
+ * that argument list, so its entries and commas stand where the arguments' do.
+ */
+function isAwaitedSequence(tree: Tree, n: number): boolean {
+  const paren = tree.parent(n);
+  if (paren === NO_NODE || tree.kindName(paren) !== "parenthesized_expression") return false;
+  const call = tree.parent(paren);
+  if (call === NO_NODE || tree.kindName(call) !== "call_expression" || tree.fieldName(paren) !== "function")
+    return false;
+  return parentKind(tree, chainTop(tree, call)) === "await_expression";
+}
+
+/** The top of the member chain whose head is `n`: `a(b).c` over `a(b)`. */
+function chainTop(tree: Tree, n: number): number {
+  for (let p = tree.parent(n); p !== NO_NODE; p = tree.parent(n)) {
+    const f = tree.fieldName(n);
+    const k = tree.kindName(p);
+    const link =
+      (k === "call_expression" && f === "function") ||
+      ((k === "member_expression" || k === "subscript_expression") && f === "object");
+    if (!link) break;
+    n = p;
+  }
+  return n;
+}
 
 const LOGICAL = new Set(["&&", "||", "??"]);
 
@@ -441,6 +528,14 @@ const isLeadingOperator = (tree: Tree, n: number) => {
 
 function transparent(tree: Tree, n: number): boolean {
   switch (tree.kindName(n)) {
+    case "call_expression":
+      return isV8NewCall(tree, n) || isAwaitCall(tree, n);
+    case "arguments":
+      return tree.fieldName(n) === "arguments" && isAwaitCall(tree, tree.parent(n));
+    case "await_expression":
+      return true;
+    case "sequence_expression":
+      return isAwaitedSequence(tree, n);
     case "parenthesized_expression":
       return !parensMatter(tree, n);
     case "parenthesized_type":

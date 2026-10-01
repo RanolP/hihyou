@@ -1,4 +1,4 @@
-kotlin compatibility: 753/753 (100.00%), 0 refused (ok:false), 11 excluded
+kotlin compatibility: 746/746 (100.00%), 0 refused (ok:false), 18 excluded
 
 Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ktfmt 0.64 --kotlinlang-style run on each.
 
@@ -17,6 +17,16 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | :------ | :----------: | :---------: | :----------- |
 
 # Excluded
+
+## ktfmt is not idempotent on it (7)
+
+- comments.txt: Comments
+- ktfmt/format/misc/commentStability.kt
+- ktfmt/format/misc/commentStability3-2.kts
+- ktfmt/format/misc/commentStability3.kt
+- ktfmt/format/misc/commentStability4.kt
+- ktfmt/format/misc/semicolonsInEmptyBodies.kt
+- ktfmt/kotlinlang/addingTrailingCommaOnMaxWidth.kts
 
 ## ktfmt rejects the input (11)
 

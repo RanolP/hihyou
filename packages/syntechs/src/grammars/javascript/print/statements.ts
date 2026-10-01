@@ -8,11 +8,13 @@ import type { CustomRule, PredicateRule } from "../../../fmt/dsl/runtime.js";
 import {
   commentFacts,
   printLeadingComment,
+  printTrailingComment,
   printTrailingComments,
   type StreamRule,
+  type Trailed,
 } from "../../../fmt/stream-format.js";
 import { lfAfter, nextLineEmpty } from "../../../fmt/text.js";
-import { firstLeaf, type FormatTree, prevLeaf } from "../../../fmt/tree.js";
+import { firstLeaf, type FormatTree, nextLeaf, prevLeaf } from "../../../fmt/tree.js";
 import {
   close,
   GROUP,
@@ -22,15 +24,18 @@ import {
   jsCtx,
   open,
   SOFT,
+  sBeforeBody,
+  sBreakParent,
   sHardline,
   sLine,
+  sLineSuffixBoundary,
   sText,
   sToken,
   withComments,
 } from "../sink.js";
 import { expressionNeedsAsiProtection } from "./asi.js";
 import { sPrintAssignment } from "./assignment.js";
-import { needsParens } from "./parens.js";
+import { isDirective, needsParens } from "./parens.js";
 import { semiCustoms } from "./semi.js";
 import {
   anon,
@@ -76,6 +81,7 @@ const SEMI_ENDED = new Set([
   "variable_declaration",
   "lexical_declaration",
   "using_declaration",
+  "type_alias_declaration",
 ]);
 
 const KEYWORD_ENDED = new Set([
@@ -112,6 +118,14 @@ export function contentEnd(
     n,
     (c) => kind(x, c) !== ";" && (keep || !isComment(x, c)),
   );
+  // `export const a = 1;`, `export declare const a: T;`: the `;` is the declaration's, so the export ends where the
+  // declaration's content does.
+  const declaration =
+    content !== undefined && kind(x, content) === "ambient_declaration"
+      ? lastChildWhere(x, content, (c) => named(x, c) && !isComment(x, c))
+      : content;
+  if (declaration !== undefined && kind(x, n) === "export_statement" && SEMI_ENDED.has(kind(x, declaration)))
+    return contentEnd(x, declaration, keepComments);
   return content ?? n;
 }
 
@@ -123,28 +137,29 @@ function lastBody(x: HasTree, n: number): number | undefined {
   return BODY_ENDED.has(kind(x, n)) ? field(x, n, "body") : undefined;
 }
 
-const ALWAYS_SEMI_ENDED = new Set([
-  "break_statement",
-  "continue_statement",
-  "debugger_statement",
-  "variable_declaration",
-  "lexical_declaration",
-  "using_declaration",
-]);
 
-/** Prettier's statementEndsWithSemicolon: what a `// prettier-ignore`d statement gets a `;` after. */
-function endsWithSemi(x: HasTree, n: number): boolean {
+/**
+ * What a `// prettier-ignore`d statement gets a `;` after: oxfmt adds one to each statement a `;` ends, written
+ * or not (prettier's statementEndsWithSemicolon asks for a written one).
+ */
+export function endsWithSemi(x: HasTree, n: number): boolean {
   const body = lastBody(x, n);
   if (body !== undefined) return endsWithSemi(x, body);
-  if (ALWAYS_SEMI_ENDED.has(kind(x, n))) return true;
-  const own = children(x, n).at(-1);
-  // A zero-width `;` (TypeScript's inserted one) does not count.
-  return (
-    SEMI_ENDED.has(kind(x, n)) &&
-    own !== undefined &&
-    kind(x, own) === ";" &&
-    src(x, own) !== ""
+  if (kind(x, n) !== "export_statement" && kind(x, n) !== "ambient_declaration") return SEMI_ENDED.has(kind(x, n));
+  // `export default class {}`, `export function f() {}`, `export interface A {}`, `export enum E {}` and
+  // `export namespace N {}` end at their body; any other export, `declare function f(): void` too, at a `;`.
+  const last = lastChildWhere(x, n, (c) => named(x, c) && !isComment(x, c));
+  if (last !== undefined && kind(x, last) === "ambient_declaration") return endsWithSemi(x, last);
+  return !/class|function_declaration|^function_expression$|^generator_function$|interface|enum|module/.test(
+    kind(x, last) ?? "",
   );
+}
+
+/** Whether statement `n` ends with a `;` in the source. */
+export function writesSemi(ctx: JsCtx, n: number): boolean {
+  let l = lastLeaf(ctx.tree, n);
+  while (l !== NO_NODE && isComment(ctx, l)) l = prevLeaf(ctx.tree, l);
+  return l !== NO_NODE && kind(ctx, l) === ";" && src(ctx, l) !== "";
 }
 
 function lastLeaf(tree: FormatTree, n: number): number {
@@ -175,9 +190,21 @@ function textThrough(tree: FormatTree, n: number, end: number): string {
  * Prettier's printIgnored for a statement: its source up to its content end, then the `;` the `semi` option
  * asks for, wherever the source put it. Comments ahead of that `;` stay in the text.
  */
-export function ignoredStatement(ctx: JsCtx, n: number): void {
-  let text = textThrough(ctx.tree, n, contentEnd(ctx, n, true));
-  if (ctx.options.semi && endsWithSemi(ctx, n)) text += ";";
+export function ignoredStatement(ctx: JsCtx, n: number, keepComments = true, semi = true): void {
+  // oxfmt prints an ignored directive as written, its `;` or none whatever the `semi` option asks.
+  if (kind(ctx, n) === "expression_statement" && isDirective(ctx, n)) {
+    const semi = children(ctx, n).at(-1);
+    const written = semi !== undefined && kind(ctx, semi) === ";" && src(ctx, semi) !== "";
+    return sToken(n, textThrough(ctx.tree, n, written ? semi : contentEnd(ctx, n, keepComments)));
+  }
+  let end = contentEnd(ctx, n, keepComments);
+  // `export class A {} // c`: tree-sitter ends the declaration with the comment that trails the statement.
+  if (!keepComments) {
+    end = lastLeaf(ctx.tree, end);
+    while (isComment(ctx, end) && prevLeaf(ctx.tree, end) !== NO_NODE) end = prevLeaf(ctx.tree, end);
+  }
+  let text = textThrough(ctx.tree, n, end);
+  if (semi && ctx.options.semi && endsWithSemi(ctx, n)) text += ";";
   else if (needsAsiGuard(ctx, n)) text = `;${text}`;
   sToken(n, text);
 }
@@ -213,30 +240,52 @@ function statementSequence(s: JsStreamCtx, statements: readonly number[]): void 
     s.print(x);
     if (isEmpty(js, x) || x === last) return;
     sHardline();
-    const next = statements[i + 1];
+    // oxfmt measures the gap after the last of the stray `;`s that follow a statement, which drops a blank line
+    // before them, unless an own-line comment among them keeps its own. Otherwise it is measured after the
+    // statement's last comment, which a stray `;` can put on a later line.
+    let j = i + 1;
+    while (j < statements.length && isEmpty(js, statements[j] as number)) j++;
+    const lastTrailing = s.trailingComments(x).at(-1);
     if (
-      isNextLineEmptyAfter(js, x) ||
-      (next !== undefined &&
-        semiLeftOut(js, x, next) &&
-        nextLineEmpty(js.tree, next))
+      j > i + 1 && !ownLineCommentBefore(js.tree, statements[j - 1] as number, x)
+        ? nextLineEmpty(js.tree, statements[j - 1] as number)
+        : semiOnLaterLine(js, x)
+          ? nextLineEmpty(js.tree, x)
+          : isNextLineEmptyAfter(js, x) ||
+            (lastTrailing !== undefined && nextLineEmpty(js.tree, lastTrailing))
     )
       sHardline();
   });
 }
 
 /**
- * Whether `next`, an empty statement, is the `;` babel reads as `n`'s own: tree-sitter ends a statement at the
- * line break after a comment (`continue // c\n;`) and leaves the `;` on the next line a statement of its own.
+ * `a // c⏎⏎;⏎b`: a statement's own `;` on a line after its content, no own-line comment between. oxfmt counts the
+ * line breaks just before the next statement, so the blank line before that `;` drops; but a `;` glued to the next
+ * statement (`;[]`) is skipped as its ASI guard, and an own-line comment counts from its own start.
  */
-function semiLeftOut(x: HasTree, n: number, next: number): boolean {
-  if (!isEmpty(x, next)) return false;
-  const body = lastBody(x, n);
-  if (body !== undefined) return semiLeftOut(x, body, next);
-  const own = children(x, n).at(-1);
+function semiOnLaterLine(ctx: JsCtx, n: number): boolean {
+  const t = ctx.tree;
+  const end = contentEnd(ctx, n);
+  const semi = lastLeaf(t, n);
+  const next = nextLeaf(t, semi);
   return (
-    SEMI_ENDED.has(kind(x, n)) &&
-    !(own !== undefined && kind(x, own) === ";" && src(x, own) !== "")
+    end !== n &&
+    kind(ctx, semi) === ";" &&
+    src(ctx, semi) !== "" &&
+    t.lf(semi) > 0 &&
+    (next === NO_NODE || !t.adjoins(semi, next)) &&
+    !ownLineCommentBefore(t, semi, end)
   );
+}
+
+/** Whether an own-line comment lies between `from`'s end and the stray `;` at `semi`, among the `;`s before it. */
+function ownLineCommentBefore(tree: FormatTree, semi: number, from: number): boolean {
+  const stop = firstLeaf(tree, semi);
+  for (let l = nextLeaf(tree, from); l !== NO_NODE && l !== stop; l = nextLeaf(tree, l)) {
+    const t = tree.text(l);
+    if ((t.startsWith("//") || t.startsWith("/*")) && tree.lf(l) >= 1) return true;
+  }
+  return false;
 }
 
 /** The statements of a list, as a sequence when one is no empty statement, else each printed for its `;`. */
@@ -321,16 +370,14 @@ function clause(s: JsStreamCtx, body: number | undefined, elseIf = false): void 
   if (body === undefined) return;
   const js = s.js;
   if (isEmpty(js, body)) {
-    if (hasComment(js, body, CF.Leading)) sText(" ");
+    if (hasComment(js, body, CF.Leading)) sBeforeBody(s, body);
     s.print(body);
     return;
   }
   const isBlock = kind(js, body) === "statement_block";
   const leading = getComments(js, body, CF.Leading)[0];
-  if (
-    leading !== undefined &&
-    (src(js, leading).includes("\n") || js.tree.lf(leading) > 0)
-  ) {
+  // A comment that starts on the head's line stays there, however many lines it spans.
+  if (leading !== undefined && js.tree.lf(leading) > 0) {
     if (isBlock) {
       sHardline();
       s.print(body);
@@ -353,30 +400,11 @@ function clause(s: JsStreamCtx, body: number | undefined, elseIf = false): void 
   close();
 }
 
-const isLogicalNot = (x: HasTree, n: number | undefined) =>
-  kind(x, n) === "unary_expression" &&
-  kind(x, field(x, n as number, "operator")) === "!";
-
-// Prettier's shouldInlineCondition (miscellaneous.js).
-function shouldInlineCondition(ctx: JsCtx, n: number): boolean {
-  if (hasComment(ctx, n) || !isLogicalNot(ctx, n)) return false;
-  let a = unparen(ctx, field(ctx, n, "argument") ?? n);
-  if (isLogicalNot(ctx, a)) a = unparen(ctx, field(ctx, a, "argument") ?? a);
-  return (
-    kind(ctx, a) === "binary_expression" &&
-    ["&&", "||", "??"].includes(kind(ctx, field(ctx, a, "operator")) ?? "")
-  );
-}
-
 /**
  * A statement's test, laid out by `body`: indented on its own line when it breaks, in a group of its own when
- * `grouped`, where prettier's shouldInlineCondition keeps a `!(a && b)` hugged.
+ * `grouped`.
  */
-function conditionBody(s: JsStreamCtx, node: number, body: () => void, grouped: boolean): void {
-  if (grouped && shouldInlineCondition(s.js, unparen(s.js, node))) {
-    body();
-    return;
-  }
+function conditionBody(body: () => void, grouped: boolean): void {
   if (grouped) open(GROUP);
   open(INDENT);
   sLine(SOFT);
@@ -395,7 +423,7 @@ function condition(s: JsStreamCtx, pe: number | undefined, grouped: boolean): vo
   if (pe === undefined) return;
   const js = s.js;
   if (kind(js, pe) !== "parenthesized_expression") {
-    conditionBody(s, pe, () => s.print(pe), grouped);
+    conditionBody(() => s.print(pe), grouped);
     return;
   }
   const inner = first(js, pe);
@@ -403,8 +431,6 @@ function condition(s: JsStreamCtx, pe: number | undefined, grouped: boolean): vo
     sTok(js, anon(js, pe, "("));
     if (inner !== undefined)
       conditionBody(
-        s,
-        inner,
         () => {
           const expr = unparen(js, inner);
           if (!needsParens(expr, js)) {
@@ -584,22 +610,65 @@ const customs = {
       if (c !== undefined) sToken(c, ";");
       else sToken(node, ";", true);
     };
-    const initSemiTok = () => {
-      if (!initIsDeclaration) semiTok(initSemi);
+    const rparen = lastChildWhere(js, node, (c) => !named(js, c) && kind(js, c) === ")");
+    // oxfmt's write_for_head_slot: a comment in the head prints before the `;` or `)` after it, one ending its line
+    // after a `;` right after that `;`.
+    const inHead = (c: number) =>
+      rparen !== undefined && js.tree.ord(c) < js.tree.ord(rparen);
+    let pending = s.danglingComments(node).filter(inHead);
+    const ordOf = (n: number | undefined) => (n === undefined ? Infinity : js.tree.ord(n));
+    /**
+     * Prints the pending comments `take` picks; `lineStart` when a line separator was just printed, `lineEnd` when
+     * one follows.
+     */
+    const flush = (take: (c: number) => boolean, lineStart = false, lineEnd = false) => {
+      let previous: Trailed | undefined;
+      const picked = pending.filter(take);
+      picked.forEach((c, i) => {
+        if (js.tree.lf(c) > 0) {
+          if (!lineStart || i > 0) sHardline();
+          else sBreakParent();
+          if (js.tree.lf(c) > 1) sHardline();
+          s.comment(c);
+          if (s.isLineComment(c) && !(lineEnd && i === picked.length - 1)) sHardline();
+        } else if (lineStart && previous === undefined && !s.isLineComment(c)) {
+          s.comment(c);
+          previous = { line: false, suffix: false };
+        } else previous = printTrailingComment(s, commentFacts(s, c), previous);
+      });
+      pending = pending.filter((c) => !take(c));
     };
-    if (s.danglingComments(node).length > 0) {
-      danglingLines(s, node);
+    const before = (token: number | undefined, lineStart = false, lineEnd = false) =>
+      flush((c) => js.tree.ord(c) < ordOf(token), lineStart, lineEnd);
+    const endOfLine = (next: number | undefined) =>
+      flush((c) => js.tree.lf(c) === 0 && lfAfter(js.tree, c) > 0 && js.tree.ord(c) < ordOf(next));
+    const headless =
+      !(init !== undefined && initKind !== "empty_statement") && test === undefined && update === undefined;
+    const initSemiTok = () => {
+      if (!initIsDeclaration) {
+        before(initSemi);
+        semiTok(initSemi);
+      }
+      endOfLine(testSemiNode);
+    };
+    const testSemiTok = () => {
+      before(testSemiNode, !headless && test === undefined);
+      semiTok(testSemiNode);
+      endOfLine(rparen);
+    };
+    const outside = s.danglingComments(node).filter((c) => !inHead(c));
+    if (outside.length > 0) {
+      outside.forEach((c, i) => {
+        if (i > 0) sHardline();
+        s.comment(c);
+      });
       sLine(SOFT);
     }
     open(GROUP);
     sTok(js, anon(js, node, "for"));
     sText(" ");
     sTok(js, anon(js, node, "("));
-    if (
-      !(init !== undefined && initKind !== "empty_statement") &&
-      test === undefined &&
-      update === undefined
-    ) {
+    if (headless && pending.length === 0) {
       initSemiTok();
       semiTok(testSemiNode);
     } else {
@@ -609,18 +678,19 @@ const customs = {
       if (init !== undefined && initKind !== "empty_statement")
         s.print(init, { forInit: true });
       initSemiTok();
-      sLine(0);
+      if (!headless) sLine(0);
       pr(s, test);
-      semiTok(testSemiNode);
+      testSemiTok();
       if (update !== undefined) {
         sLine(0);
         s.print(update);
       }
+      before(rparen, false, true);
       close();
       sLine(SOFT);
       close();
     }
-    sTok(js, lastChildWhere(js, node, (c) => !named(js, c) && kind(js, c) === ")"));
+    sTok(js, rparen);
     clause(s, field(js, node, "body"));
     close();
   },
@@ -670,9 +740,24 @@ const customs = {
     sTok(js, field(js, node, "operator"));
     sText(" ");
     pr(s, field(js, node, "right"));
+    // oxfmt's for-in/of head is no group: an end-of-line comment after the right side flushes before the `)`.
+    sLineSuffixBoundary();
     sTok(js, lastChildWhere(js, node, (c) => !named(js, c) && kind(js, c) === ")"));
     clause(s, field(js, node, "body"));
     close();
+  },
+
+  /** `try` and `finally`: the keyword, then each part the head keeps (`try {} catch {} finally {}`). */
+  "stmt.try": (node, ctx) => {
+    const s = jsCtx(ctx);
+    const js = s.js;
+    for (const c of children(js, node)) {
+      if (isComment(js, c)) continue;
+      if (named(js, c)) {
+        sBeforeBody(ctx, c);
+        s.print(c);
+      } else sTok(js, c);
+    }
   },
 
   "stmt.catch": (node, ctx) => {
@@ -709,7 +794,7 @@ const customs = {
         sLine(SOFT);
       }
       sTok(js, anon(js, node, ")"));
-      sText(" ");
+      if (body !== undefined) sBeforeBody(ctx, body);
     }
     pr(s, body);
   },
@@ -756,6 +841,9 @@ const customs = {
     const body = field(js, node, "body");
     open(GROUP);
     sTok(js, anon(js, node, "do"));
+    // oxfmt keeps a line break after a comment before a `{`, which prettier's `line` gives only in a broken group.
+    const leading = kind(js, body) === "statement_block" ? getComments(js, body as number, CF.Leading)[0] : undefined;
+    if (leading !== undefined && lfAfter(js.tree, leading) > 0) sBreakParent();
     clause(s, body);
     close();
     if (kind(js, body) === "statement_block") sText(" ");
@@ -800,8 +888,16 @@ const customs = {
     if (alternative === undefined) return;
     const isBlock = kind(js, consequent) === "statement_block";
     let needSpace = isBlock;
+    let dangling = s.danglingComments(node);
+    // oxfmt's write_comments_between_blocks: the comments on the consequent's line trail it outside the `if` group.
+    if (!isBlock) {
+      const sameLine = dangling.findIndex((c) => js.tree.lf(c) > 0);
+      const run = sameLine < 0 ? dangling : dangling.slice(0, sameLine);
+      let previous: Trailed | undefined;
+      for (const c of run) previous = printTrailingComment(s, commentFacts(s, c), previous);
+      dangling = dangling.slice(run.length);
+    }
     if (!isBlock) sHardline();
-    const dangling = s.danglingComments(node);
     const firstComment = dangling[0];
     const lastComment = dangling.at(-1);
     if (firstComment !== undefined && lastComment !== undefined) {
@@ -811,7 +907,10 @@ const customs = {
       } else if (js.tree.lf(firstComment) > 0) {
         if (isBlock) sHardline();
       } else sText(" ");
-      danglingLines(s, node);
+      dangling.forEach((c, i) => {
+        if (i > 0) sHardline();
+        s.comment(c);
+      });
       if (s.isLineComment(lastComment) || lfAfter(js.tree, lastComment) > 0) sHardline();
       else sText(" ");
       needSpace = false;
@@ -966,15 +1065,9 @@ const customs = {
     const body = field(js, node, "body");
     pr(s, field(js, node, "label"));
     sTok(js, anon(js, node, ":"));
-    if (
-      !(
-        body !== undefined &&
-        isEmpty(js, body) &&
-        !hasComment(js, body, CF.Leading)
-      )
-    )
-      sText(" ");
-    pr(s, body);
+    if (body === undefined) return;
+    if (!(isEmpty(js, body) && !hasComment(js, body, CF.Leading))) sBeforeBody(ctx, body);
+    s.print(body);
   },
 
   /** An expression statement's expression, after the `;` needsAsiGuard asks for. */

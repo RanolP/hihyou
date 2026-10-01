@@ -61,10 +61,14 @@ export function readSpec(specPath: string): SpecCall[] {
   };
   const outdent = (s: TemplateStringsArray, ...v: unknown[]) =>
     String.raw(s, ...v);
-  new Function("runFormatTest", "__importMeta", "outdent", source)(
+  // A spec that also holds jest tests of prettier's API (js/cursor) still declares its fixtures with
+  // runFormatTest; the jest globals around it register tests this reader never runs.
+  const jest = ["beforeAll", "afterAll", "beforeEach", "afterEach", "describe", "test", "it"];
+  new Function("runFormatTest", "__importMeta", "outdent", ...jest, source)(
     record,
     { url: pathToFileURL(specPath).href },
     outdent,
+    ...jest.map(() => () => {}),
   );
   return calls;
 }
@@ -140,8 +144,16 @@ export interface PrettierTarget {
 }
 
 /**
- * Every fixture file × every spec call of `target`'s parsers, with its expected output. Excluded, each with its
- * reason: fixtures in `target.ignore`; fixtures carrying a cursor or range placeholder (prettier formats only
+ * Where a suite's expected output comes from. `snapshot`: prettier's own snapshot entries, so a fixture prettier
+ * prints no full output for is excluded. `reference`: a reference tool fills `expected` in later
+ * (conformance.node.ts `referenceSuite`), so every fixture × spec call is a case, with its cursor and range
+ * placeholders stripped as prettier's harness strips them, and only the reference decides what has no answer.
+ */
+export type Answers = "snapshot" | "reference";
+
+/**
+ * Every fixture file × every spec call of `target`'s parsers, with its expected output. Under `snapshot` answers,
+ * excluded, each with its reason: fixtures in `target.ignore`; fixtures carrying a cursor or range placeholder (prettier formats only
  * part of those); fixtures the spec expects our parser to reject (`errors`); fixtures with no snapshot entry;
  * specs that cannot be evaluated. Specs that list none of the target's parsers (flow-only, scss, less) and
  * inline snippets are not the target's and are not counted at all.
@@ -149,7 +161,9 @@ export interface PrettierTarget {
 export function prettierSuite(
   formatRoot: string,
   target: PrettierTarget,
+  answers: Answers = "snapshot",
 ): Suite {
+  const fromReference = answers === "reference";
   const cases: Case[] = [];
   const excluded: Excluded[] = [];
   const specDirs = target.dirs.flatMap((d) =>
@@ -192,15 +206,17 @@ export function prettierSuite(
       : {};
     for (const f of files) {
       const fixture = name(f);
-      if (target.ignore.some((s) => fixture.includes(s))) {
+      if (!fromReference && target.ignore.some((s) => fixture.includes(s))) {
         excluded.push({
           fixture,
           reason: "ignored syntax (not in the grammar or not the parser's)",
         });
         continue;
       }
-      const text = readFileSync(join(dir, f), "utf8");
-      if (PLACEHOLDERS.some((p) => text.includes(p))) {
+      let text = readFileSync(join(dir, f), "utf8");
+      if (fromReference)
+        for (const p of PLACEHOLDERS) text = text.replaceAll(p, "");
+      else if (PLACEHOLDERS.some((p) => text.includes(p))) {
         excluded.push({ fixture, reason: "cursor or range formatting" });
         continue;
       }
@@ -216,6 +232,13 @@ export function prettierSuite(
         const parser = call.parsers.find((p) =>
           target.parsers.includes(p),
         ) as string;
+        const { errors: _, ...options } = call.options;
+        const asRecorded =
+          "endOfLine" in call.options ? visualizeEndOfLine : (s: string) => s;
+        if (fromReference) {
+          runs.push({ label: title || "{}", options, parser, expected: "", asRecorded });
+          continue;
+        }
         if (errorDir || expectsError(call.options, parser, f)) {
           skip = "the spec expects the parser to reject it";
           continue;
@@ -227,15 +250,7 @@ export function prettierSuite(
           skip = "no snapshot entry";
           continue;
         }
-        const { errors: _, ...options } = call.options;
-        runs.push({
-          label: title || "{}",
-          options,
-          parser,
-          expected,
-          asRecorded:
-            "endOfLine" in call.options ? visualizeEndOfLine : (s) => s,
-        });
+        runs.push({ label: title || "{}", options, parser, expected, asRecorded });
       }
       if (runs.length === 0)
         excluded.push({ fixture, reason: skip ?? "no snapshot entry" });
