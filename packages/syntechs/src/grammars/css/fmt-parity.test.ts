@@ -93,6 +93,12 @@ const edgeCases: [string, string][] = [
   ["media-range", "@media (min-width:768px) and (max-width:991.98px){a{b:c}}"],
   // `@MEDIA` parsed as a generic at-rule, whose parameters kept their source text.
   ["uppercase-media", "@MEDIA screen  and (min-width :1px){a{b:c}}"],
+  // A paren group holding a comment in a commented @import/@supports prelude stayed on one line; oxc's
+  // write_structured_paren always breaks it, its words indented, with a line break on both sides of it.
+  [
+    "commented-paren-group",
+    "@import url(a) (a/*q*/:b);@import url(a) supports(a/*q*/:b) screen;@supports (a/*q*/:b){x{y:z}}@supports not (/*q*/a:b){x{y:z}}@supports (a:b) and (c/*q*/:d){x{y:z}}@supports ((a/*q*/:b)) or (c:b/*r*/){x{y:z}}",
+  ],
   // An uppercase query keyword was an ERROR that kept the whole at-rule as written; oxfmt lowercases it and the
   // media type, but keeps both as written in a prelude holding a comment.
   [

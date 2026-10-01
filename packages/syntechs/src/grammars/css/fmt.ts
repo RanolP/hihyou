@@ -1665,13 +1665,88 @@ function commentedTokens(words: number[], ctx: SCtx): number[][] {
   return tokens;
 }
 
-/** A token of `commentedTokens`, printed as written but its quotes; a word holding a comment prints as before. */
+/** A token of `commentedTokens`, printed as written but its quotes; one with a comment in its parens, structured. */
 function commentedToken(token: number[], ctx: SCtx): void {
+  if (hardToken(token, ctx)) return structuredParen(token, ctx);
   for (const c of token) {
     if (isComment(c, ctx)) ctx.comment(c);
-    else if (holdsComment(c, ctx)) queryWord(c, ctx);
     else asWritten(c, ctx);
   }
+}
+
+/** oxc's `hard` token: a comment inside its parens, which breaks the line on both sides of it. */
+const hardToken = (token: number[], ctx: SCtx): boolean =>
+  token.some((c) => !isComment(c, ctx) && holdsComment(c, ctx) && ctx.tree.text(c).includes("("));
+
+/** The separator before `token[i]` of a commented prelude's fill: a hard line beside a `hardToken`. */
+function commentedSeparator(tokens: number[][], i: number, ctx: SCtx): void {
+  if (hardToken(tokens[i - 1] as number[], ctx) || hardToken(tokens[i] as number[], ctx)) sHardline();
+  else sLine(0);
+}
+
+/**
+ * oxc's write_structured_paren: a hard token's text to its first `(` as written, then its inner words on their own
+ * line indented, filled with each break indented once more, a `:` glued to the word before it, then `)` and the rest.
+ */
+function structuredParen(token: number[], ctx: SCtx): void {
+  const t = ctx.tree;
+  const leaves = (n: number): number[] =>
+    isComment(n, ctx) || t.count(n) === 0 || kind(n, ctx) === "string_value" || (!t.text(n).includes("(") && !holdsComment(n, ctx))
+      ? [n]
+      : children(n, t).flatMap(leaves);
+  const atoms = token.flatMap(leaves);
+  const isText = (c: number, s: string) => !t.named(c) && t.text(c) === s;
+  const lp = atoms.findIndex((c) => isText(c, "("));
+  const rp = atoms.findLastIndex((c) => isText(c, ")"));
+  const run = (from: number, to: number) => {
+    for (let i = from; i < to; i++) {
+      const c = atoms[i] as number;
+      if (i > from) sText(sourceGap(t, atoms[i - 1] as number, c));
+      if (isComment(c, ctx)) ctx.comment(c);
+      else asWritten(c, ctx);
+    }
+  };
+  // The inner words as oxc's tokenize splits them: at whitespace outside nested parens, a comment there its own word.
+  const words: number[][] = [];
+  let depth = 0;
+  let current: number[] | undefined;
+  for (let i = lp + 1; i < rp; i++) {
+    const c = atoms[i] as number;
+    if (depth === 0 && isComment(c, ctx)) {
+      words.push([c]);
+      current = undefined;
+    } else if (current !== undefined && (depth > 0 || t.adjoins(current.at(-1) as number, c))) current.push(c);
+    else words.push((current = [c]));
+    if (isText(c, "(")) depth++;
+    else if (isText(c, ")") && --depth === 0) current = undefined;
+  }
+  // A word starting with `:` gives the `:` to the word before it.
+  const glued: number[][] = [];
+  for (const w of words) {
+    if (glued.length > 0 && isText(w[0] as number, ":")) {
+      (glued.at(-1) as number[]).push(w[0] as number);
+      if (w.length > 1) glued.push(w.slice(1));
+    } else glued.push(w);
+  }
+  run(0, lp + 1);
+  open(INDENT);
+  sHardline();
+  open(INDENT);
+  open(FILL);
+  glued.forEach((w, i) => {
+    if (i > 0) sLine(0);
+    open(FILL_ITEM);
+    w.forEach((c, j) => {
+      // A `:` glued from the next word prints against this one.
+      if (j > 0 && !isText(c, ":")) sText(sourceGap(t, w[j - 1] as number, c));
+      if (isComment(c, ctx)) ctx.comment(c);
+      else asWritten(c, ctx);
+    });
+    close();
+  });
+  for (let k = 0; k < 3; k++) close();
+  sHardline();
+  run(rp, atoms.length);
 }
 
 /** `n` as written but its strings, which print requoted. */
@@ -1767,13 +1842,15 @@ export function supportsValue(at: number | undefined, node: number, ctx: SCtx): 
   const commented = prelude.some((c) => isComment(c, ctx) || holdsComment(c, ctx));
   const items = commented ? commentedTokens(words, ctx) : supportsItems(words, ctx, true);
   const print = (item: number[]) => (commented ? commentedToken(item, ctx) : supportsItem(item, ctx));
-  if (items.length === 1) print(items[0] as number[]);
+  // oxc indents a commented prelude even when alone, which shows once a paren group breaks.
+  if (items.length === 1 && !(commented && hardToken(items[0] as number[], ctx))) print(items[0] as number[]);
   else {
     open(GROUP);
     open(INDENT);
     open(FILL);
     items.forEach((item, i) => {
-      if (i > 0) sLine(0);
+      if (i > 0 && commented) commentedSeparator(items, i, ctx);
+      else if (i > 0) sLine(0);
       open(FILL_ITEM);
       print(item);
       close();
@@ -1813,12 +1890,16 @@ export function importStatement(node: number, ctx: SCtx): void {
   run.entries.forEach((e, i) => {
     if (i > 0) sLine(0);
     const words = e.items.flatMap((c) => queryWords(c, ctx));
-    const indent = !(words.length === 2 && isUrl(words[0] as number));
+    const tokens = commented ? commentedTokens(words, ctx) : words.map((c) => [c]);
+    // oxc indents a commented prelude whole, which shows once a paren group breaks.
+    const hard = commented && tokens.some((token) => hardToken(token, ctx));
+    const indent = hard || !(words.length === 2 && isUrl(words[0] as number));
     if (indent) open(INDENT);
     open(FILL);
-    (commented ? commentedTokens(words, ctx) : words.map((c) => [c])).forEach((token, j) => {
+    tokens.forEach((token, j) => {
       const c = token[0] as number;
-      if (j > 0) sLine(0);
+      if (j > 0 && commented) commentedSeparator(tokens, j, ctx);
+      else if (j > 0) sLine(0);
       open(FILL_ITEM);
       if (commented) commentedToken(token, ctx);
       else if (isParenQuery(c, ctx)) queryWord(c, ctx);
