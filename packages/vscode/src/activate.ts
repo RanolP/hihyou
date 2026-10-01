@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { type DiffsetTree, registerDiffsetsView } from "./diffsets/view.js";
 import { outputChannel, reportError } from "./errors.js";
 import { githubCommands } from "./github/command.js";
 import { githubRemotes } from "./github/remotes.js";
@@ -9,6 +10,8 @@ import { localRepos, type OpenRepo } from "./local/repos.js";
 export interface HihyouExports {
   /** Whether the GitHub commands are offered, once the latest remote scan has finished. */
   hasGitHubRemote(): Promise<boolean>;
+  /** The `hihyou.diffsets` view's provider. */
+  diffsets: DiffsetTree;
 }
 
 /** Everything both entries share; `open` is the runtime's way to reach a repository. */
@@ -19,9 +22,10 @@ export function activateWith(
   const repos = localRepos(open);
   context.subscriptions.push(repos, outputChannel());
 
+  const diffsets = registerDiffsetsView(context, repos);
   const commands = {
     ...localCommands(context.extensionUri, repos),
-    ...githubCommands(context.extensionUri, repos),
+    ...githubCommands(context.extensionUri, repos, diffsets.showPullRequest),
   };
   for (const [id, run] of Object.entries(commands))
     context.subscriptions.push(
@@ -60,5 +64,5 @@ export function activateWith(
     }),
   );
 
-  return { hasGitHubRemote: () => detected };
+  return { hasGitHubRemote: () => detected, diffsets: diffsets.tree };
 }

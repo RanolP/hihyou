@@ -39,4 +39,40 @@ exports.run = async () => {
       `hihyou e2e: reviewWorkingTree posted ${files.length} files, including ${touched}`,
     );
   }
+
+  // Catches the diffsets view listing the wrong commits for the branch (missing one, walking past where it left
+  // main, or the wrong order), or a commit row whose file tree shows paths that commit did not change.
+  const branch = process.env.HIHYOU_BRANCH_COMMITS;
+  if (branch) {
+    const expected = JSON.parse(branch);
+    const tree = api.diffsets;
+    const roots = await tree.children();
+    assert.deepEqual(
+      roots.map((n) => tree.item(n).label),
+      ["Working tree", "Staged", ...expected.map((c) => c.subject)],
+    );
+    const leaves = async (node) => {
+      const paths = [];
+      for (const child of await tree.children(node)) {
+        const item = tree.item(child);
+        if (item.collapsibleState === vscode.TreeItemCollapsibleState.None)
+          paths.push(
+            item.resourceUri
+              ? item.resourceUri.path.slice(1)
+              : `<${item.label}>`,
+          );
+        else paths.push(...(await leaves(child)));
+      }
+      return paths;
+    };
+    for (const [i, commit] of expected.entries())
+      assert.deepEqual(
+        (await leaves(roots[i + 2])).sort(),
+        [...commit.paths].sort(),
+        `files of ${commit.subject}`,
+      );
+    console.log(
+      `hihyou e2e: diffsets view listed ${expected.length} branch commits with their files`,
+    );
+  }
 };

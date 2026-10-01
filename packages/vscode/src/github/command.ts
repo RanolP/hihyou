@@ -1,5 +1,10 @@
-import { createEngine } from "@hihyou/engine";
-import { type GitHubHost, githubHost } from "@hihyou/github";
+import { createEngine, type Engine } from "@hihyou/engine";
+import {
+  type GitHubDiffsetId,
+  type GitHubHost,
+  type GitHubPullRequest,
+  githubHost,
+} from "@hihyou/github";
 import type { DiffFile } from "@hihyou/ui";
 import * as vscode from "vscode";
 import { outputChannel } from "../errors.js";
@@ -8,10 +13,18 @@ import { openReviewPanel } from "../panel/panel.js";
 import { diffFiles, type ReviewSource } from "../review.js";
 import { type FoundRemote, githubRemotes } from "./remotes.js";
 
+/** A pull request the user opened, which the diffsets view lists with its commits. */
+export interface OpenedPullRequest {
+  host: GitHubHost;
+  remote: { owner: string; repo: string };
+  pr: GitHubPullRequest;
+}
+
 /** Nothing here talks to GitHub until the command runs and the user has signed in. */
 export function githubCommands(
   extensionUri: vscode.Uri,
   repos: LocalRepos,
+  onPullRequest: (opened: OpenedPullRequest) => void,
 ): Record<string, () => Promise<DiffFile[] | undefined>> {
   return {
     "hihyou.reviewPullRequest": async () => {
@@ -25,29 +38,41 @@ export function githubCommands(
       const host = githubHost({ token: session.accessToken });
       const number = await pickPullRequest(host, remote);
       if (number === undefined) return undefined;
-      const source = await pullRequestSource(host, remote, number);
-      return openReviewPanel(extensionUri, source);
+      const pr = await host.resolvePullRequest(
+        remote.owner,
+        remote.repo,
+        number,
+      );
+      onPullRequest({ host, remote, pr });
+      return openReviewPanel(
+        extensionUri,
+        githubSource(
+          host,
+          { ...remote, base: pr.base, head: pr.head },
+          `#${pr.number} ${pr.title}`,
+        ),
+      );
     },
   };
 }
 
-export async function pullRequestSource(
+/** One engine per host, so the diffsets view's file listing and the panel share a resolved compare. */
+const engines = new WeakMap<GitHubHost, Engine<GitHubHost>>();
+export function githubEngine(host: GitHubHost): Engine<GitHubHost> {
+  let engine = engines.get(host);
+  if (!engine) engines.set(host, (engine = createEngine(host)));
+  return engine;
+}
+
+export function githubSource(
   host: GitHubHost,
-  remote: { owner: string; repo: string },
-  number: number,
-): Promise<ReviewSource> {
-  const pr = await host.resolvePullRequest(remote.owner, remote.repo, number);
-  const engine = createEngine(host);
+  id: GitHubDiffsetId,
+  title: string,
+): ReviewSource {
   return {
-    title: `#${pr.number} ${pr.title}`,
-    load: () =>
-      diffFiles(engine, {
-        owner: remote.owner,
-        repo: remote.repo,
-        base: pr.base,
-        head: pr.head,
-      }),
-    readBlob: async (id) => host.readBlob(id),
+    title,
+    load: () => diffFiles(githubEngine(host), id),
+    readBlob: async (blob) => host.readBlob(blob),
     refreshable: false,
   };
 }

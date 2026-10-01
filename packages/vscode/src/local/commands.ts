@@ -58,7 +58,7 @@ export function localCommands(
 }
 
 /** The working tree or the index: read again on every load, under a new snapshot token. */
-function movingSource(
+export function movingSource(
   local: LocalRepo,
   kind: "worktree" | "staged",
   title: string,
@@ -73,7 +73,7 @@ function movingSource(
   };
 }
 
-function fixedSource(
+export function fixedSource(
   local: LocalRepo,
   id: LocalDiffsetId,
   title: string,
@@ -86,7 +86,8 @@ function fixedSource(
   };
 }
 
-const subject = (c: Commit) => c.message.split("\n", 1)[0] ?? "";
+export const subject = (c: { message: string }) =>
+  c.message.split("\n", 1)[0] ?? "";
 
 /** HEAD and its first-parent ancestors, newest first. */
 async function pickCommit(local: LocalRepo): Promise<Commit | undefined> {

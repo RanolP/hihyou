@@ -37,4 +37,21 @@ exports.run = async () => {
   console.log(
     `hihyou web e2e: reviewWorkingTree posted ${files.length} files, including ${touched}`,
   );
+
+  // Catches the diffsets view failing without Node: its rows, and the working tree row's file listing.
+  const tree = api.diffsets;
+  const roots = await tree.children();
+  const labels = roots.map((n) => tree.item(n).label);
+  check(
+    JSON.stringify(labels) ===
+      JSON.stringify(["Working tree", "Staged", "init"]),
+    `diffsets rows are ${JSON.stringify(labels)}`,
+  );
+  const worktree = (await tree.children(roots[0])).map(
+    (n) => tree.item(n).resourceUri?.path,
+  );
+  check(
+    JSON.stringify(worktree) === JSON.stringify([`/${touched}`]),
+    `working tree row lists ${JSON.stringify(worktree)}`,
+  );
 };
