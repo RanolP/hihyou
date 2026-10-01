@@ -284,6 +284,12 @@ const edgeCases: [string, Target, string][] = [
     "ts",
     "export type A = foo | (b&c) // prettier-ignore\ndeclare type B = foo | (b&c) // prettier-ignore\nnamespace N { export type C = foo | (b&c) // prettier-ignore\n}\ntype D = foo | (b&c) /* prettier-ignore */\nexport type E = foo | (b&c) /* prettier-ignore */\n",
   ],
+  // A prettier-ignored `export const a = 1;` printed `;;`: the `;` is the declaration's, which the export kept.
+  [
+    "ignored-export-declaration-semicolon",
+    "ts",
+    "// prettier-ignore\nexport const a = {b:1};\nexport type A = foo | (b&c); // prettier-ignore\nexport declare const c: {b:1}; // prettier-ignore\n",
+  ],
   // A script's `await (a = b)` dropped the assignment's own parentheses, which oxfmt adds as to any call argument.
   [
     "await-call-assignment",

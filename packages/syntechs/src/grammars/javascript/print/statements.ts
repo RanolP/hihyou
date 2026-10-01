@@ -118,6 +118,14 @@ export function contentEnd(
     n,
     (c) => kind(x, c) !== ";" && (keep || !isComment(x, c)),
   );
+  // `export const a = 1;`, `export declare const a: T;`: the `;` is the declaration's, so the export ends where the
+  // declaration's content does.
+  const declaration =
+    content !== undefined && kind(x, content) === "ambient_declaration"
+      ? lastChildWhere(x, content, (c) => named(x, c) && !isComment(x, c))
+      : content;
+  if (declaration !== undefined && kind(x, n) === "export_statement" && SEMI_ENDED.has(kind(x, declaration)))
+    return contentEnd(x, declaration, keepComments);
   return content ?? n;
 }
 
