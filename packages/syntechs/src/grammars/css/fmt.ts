@@ -125,9 +125,11 @@ function meaning(tree: Tree, node: number, t: string): string {
     case "plain_value":
       if (parentKind === "attribute_selector")
         return /^["']/.test(t) ? cook(t) : t;
-      return cssWideKeywords.has(t.toLowerCase())
-        ? t.toLowerCase()
-        : t.replace(/\s+/g, "");
+      if (cssWideKeywords.has(t.toLowerCase())) return t.toLowerCase();
+      // `a:/1.50`, one word to tree-sitter, is raw tokens to oxc, which prints its number as `1.5` (`rawArgChain`).
+      if (t.includes(":"))
+        return t.replace(/(?<=[:/])(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?/g, (n) => decimalValue(n) ?? n);
+      return t.replace(/\s+/g, "");
     default:
       return !tree.named(node) && t.startsWith("@") ? t.toLowerCase() : t;
   }
@@ -732,6 +734,7 @@ function amongWords(node: number, ctx: SCtx): boolean {
 export function valueMath(node: number, ctx: SCtx): void {
   const t = ctx.tree;
   const outermost = !parentIs(t, node, "binary_expression");
+  if (outermost && argColonChain(node, t)) return rawArgChain(node, ctx);
   const directive = ancestorWhere(t, node, ["at_rule", "postcss_statement"], ["block"], (a) =>
     firstTextIs(ctx, a, undefined, directives, [], false),
   );
@@ -826,6 +829,71 @@ export function valueMath(node: number, ctx: SCtx): void {
     if (!grid) close();
     close();
   }
+}
+
+/**
+ * A function argument's math chain holding a `:` tree-sitter-css cannot place (`f(a :/b)`), which oxc-css-parser
+ * reads as raw tokens. A chain holding a paren, brace or bracket group stays on the typed path.
+ */
+function argColonChain(node: number, t: FormatTree): boolean {
+  if (!parentIs(t, node, "arguments")) return false;
+  let colon = false;
+  const scan = (n: number): boolean =>
+    children(n, t).every((c) => {
+      const k = t.kindName(c);
+      if (k === "ERROR") colon ||= t.text(c) === ":";
+      if (["parenthesized_value", "brace_value", "grid_value"].includes(k)) return false;
+      return k === "binary_expression" || k === "ERROR" ? scan(c) : true;
+    });
+  return scan(node) && colon;
+}
+
+/** An `ERROR` `:` of an `argColonChain` chain, which `rawArgChain` prints. */
+function argColonError(n: number, t: FormatTree): boolean {
+  if (t.kindName(n) !== "ERROR" || t.text(n) !== ":") return false;
+  let top = t.parent(n);
+  if (t.kindName(top) !== "binary_expression") return false;
+  while (parentIs(t, top, "binary_expression")) top = t.parent(top);
+  return argColonChain(top, t);
+}
+
+/**
+ * `argColonChain`'s chain as oxc lays out its raw tokens: tight before a `:`, a `/` by the typed solidus rules
+ * (`slashJoined`) indexed within the chain, a space after a `:` and around a `*`, else tight only where written so.
+ */
+function rawArgChain(node: number, ctx: SCtx): void {
+  const g = rawTokens([node], ctx).tokens;
+  const sol = (x: RawToken | undefined) => x?.kind === "/";
+  const word = (x: RawToken | undefined) => x !== undefined && ["ident", ")"].includes(x.kind);
+  const tight = (i: number): boolean => {
+    const [y, prev, curr, next] = [g[i - 2], g[i - 1] as RawToken, g[i] as RawToken, g[i + 1]];
+    if (prev.kind === "(") return true;
+    if ([":", ")", ","].includes(curr.kind)) return true;
+    if (prev.kind === ",") return false;
+    if (sol(curr) || sol(prev)) {
+      const gap = curr.glued;
+      if (sol(g[0]) && gap) return true;
+      if (sol(curr) && gap && (next === undefined || next.glued)) return true;
+      if (sol(prev) && gap && y !== undefined && prev.glued) return true;
+      if (i === 1 && sol(prev)) return true;
+      const rule = (sol(curr) && !word(next) && !word(prev)) || (sol(prev) && !word(curr) && !word(y));
+      return rule && (gap || (sol(prev) && (i < 2 || sol(y))));
+    }
+    if (prev.kind === ":" || curr.kind === "*" || prev.kind === "*") return false;
+    return curr.glued;
+  };
+  // A number node whole is printed normalized, as oxc prints a number token (`1.50` is `1.5`).
+  const numberNode = (x: RawToken) =>
+    ["number", "dimension", "percentage"].includes(x.kind) && ctx.tree.text(x.node) === x.text;
+  g.forEach((token, i) => {
+    if (i > 0 && !tight(i)) sText(" ");
+    if (!numberNode(token)) return printRawToken(token, ctx);
+    for (const c of token.comments) {
+      ctx.comment(c);
+      sText(" ");
+    }
+    ctx.print(token.node);
+  });
 }
 
 /**
@@ -2411,7 +2479,7 @@ export const css: Language<CssOptions> = {
     recovered: (error, t) =>
       t.missing(error)
         ? colonMissingComma(error, t)
-        : sassFlags(error, t) || selectorTail(error, t) || commentedPreludeError(error, t) || verbatimPreludeError(error, t) || valueColonError(error, t),
+        : sassFlags(error, t) || selectorTail(error, t) || commentedPreludeError(error, t) || verbatimPreludeError(error, t) || valueColonError(error, t) || argColonError(error, t),
     finalLine,
   },
 };

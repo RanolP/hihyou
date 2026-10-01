@@ -339,6 +339,11 @@ const edgeCases: [string, string][] = [
     "value-prelude-comment-raw",
     "@import url(a) (a:b) /*q*/;\n@import url('a') layer(x) supports(display:grid) ( a :b ) /*q*/;\n@supports (a :b) /*q*/ and not(c:'d') {x{y:z}}\n@supports selector(a>b)/*q*/{x{y:z}}",
   ],
+  // A function argument's stray `:` (`f(a :/b)`) kept its gaps as written instead of oxc's raw-token spacing.
+  [
+    "call-argument-colon-raw",
+    "a{c:f(a :/b);d:f(a : /b);e:f(a :*b);f:f(a :/ /b);g:f(a /*q*/ :/b);h:f(x, a :/ b, c :/d)}\na{c:f(a :/b :/c);d:f(a :/b*c);e:f(a :/g( b ));f:f(g(b) :/a);g:f(a :/1.50px);h:f(a: /*q*/ /b);i:f(a :+b)}",
+  ],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");
