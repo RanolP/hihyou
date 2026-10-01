@@ -97,6 +97,8 @@ const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
     "conditional-comments",
     "<html><head><!--[if lt IE 9]>\n<script src='a.js'></script>\n<![endif]--></head></html>\n<div>\n<!--[if IE 5]>This is IE 5<br><![endif]-->\n</div>\n<!--[if lt IE 9]><p class=x><![endif]-->\n<!--[if gte IE 9]><!--><p><!--<![endif]-->a</p>\n<!--[if IE]>\n   <p>x</p>\n  <![endif]-->\n",
   ],
+  // The check refused a requoted value whose `&apos;` printed as a bare `'`, which means the same character.
+  ["requoted-apos", `<div title="123 &apos;&quot; 456">x</div>\n<p title='a "b" &apos;c'>y</p>\n`],
 ];
 
 function ours(text: string, options: Partial<HtmlOptions>) {

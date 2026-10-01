@@ -98,6 +98,8 @@ const normalize: Normalize = (lexemes, _text, tree) =>
     if (kind === "comment" && /^<!--\[if[^\]]*\]>/.test(l.text))
       return l.text.replaceAll(/[\s"']/g, "").replaceAll("/>", ">");
     const words = l.text.replace(/\s+/g, " ").trim();
+    // A requoted value writes its quotes as `&quot;` or `&apos;` or bare, whichever the new quote needs.
+    if (kind === "attribute_value") return words.replaceAll("&apos;", "'").replaceAll("&quot;", '"');
     return kind === "doctype" || kind === "tag_name" || kind === "attribute_name" ? words.toLowerCase() : words;
   });
 

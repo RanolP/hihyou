@@ -1,4 +1,4 @@
-html@oxfmt compatibility: 123/146 (84.25%), 17 refused (ok:false), 23 excluded
+html@oxfmt compatibility: 124/146 (84.93%), 16 refused (ok:false), 23 excluded
 
 Fixtures: prettier 3.9.9 tests/format/{html} (recursive), every spec call listing parser `html`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left.
 
@@ -22,7 +22,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
 | html/attributes/event-attributes.html | 1/1 | 27.66% | formatter-error: onclick |
-| html/attributes/smart-quotes.html | 1/1 | 100.00% | check: input "123 &apos;&quot; 456" at 82 is output as "123 '&quot; 456" at 75, which means "123 '&quot; 456", not "123  |
 | html/attributes/no-semi/event-attributes.html | 1/1 | 30.77% | formatter-error: onclick |
 | html/basics/with-colon.html | 1/1 | 20.27% | formatter-error: svg |
 | html/cdata/example.html | 1/1 | 54.55% | formatter-error: parse error |
