@@ -1392,6 +1392,15 @@ const handleComment: CommentHandler<CssOptions> = ({ tree, comment, enclosing, p
   if (tree.kindName(enclosing) === "rule_set" && following !== undefined && tree.kindName(following) === "block")
     return { node: enclosing, as: "dangling" };
   if (preceding === undefined) return undefined;
+  // A comment after a custom property block's `;` leads the next item on its line (`a: b; /*c*/ c: d`).
+  if (
+    following !== undefined &&
+    inCustomSet(following, tree) &&
+    text.startsWith("/*") &&
+    tree.text(prevLeaf(tree, comment)) === ";" &&
+    tree.lf(firstLeaf(tree, following)) === 0
+  )
+    return { node: following, as: "leading" };
   if (statementSequences.has(tree.kindName(enclosing)) && placement !== "ownLine")
     return { node: preceding, as: "trailing" };
   const declaration = ["declaration", "custom_property_set"].includes(tree.kindName(enclosing));
@@ -1568,6 +1577,8 @@ export function statementComment(c: number, ctx: SCtx): boolean {
   let statement = next;
   for (let p = t.parent(statement); p !== NO_NODE && !statementSequences.has(kind(p, ctx)); p = t.parent(p))
     statement = p;
+  // In a custom property's block, oxfmt keeps a comment on the line of the item it leads (`{/*c*/a: b}`).
+  if (inCustomSet(statement, t) && t.lf(next) === 0) return false;
   return ctx.leadingComments(statement).includes(c);
 }
 
@@ -1755,6 +1766,28 @@ const customName = (decl: number, t: FormatTree) => /^(\$|--)/.test(t.text(t.chi
 /** A declaration in a custom property's block (`--a: {b: 1, c: 2}`), whose raw value oxfmt keeps as a custom one's. */
 const inCustomSet = (decl: number, t: FormatTree) =>
   t.kindName(t.parent(decl)) === "block" && t.kindName(t.parent(t.parent(decl))) === "custom_property_set";
+
+/** A custom property block's item led by a comment on its line, which `customSetComments` prints. */
+export const customSetOwnComments = (node: number, ctx: SCtx): boolean =>
+  inCustomSet(node, ctx.tree) && ctx.leadingComments(node).some((c) => !statementComment(c, ctx));
+
+/**
+ * oxfmt keeps a comment on the line of the custom property block item it leads, glued as written (`/*c*\/a: b`)
+ * or one space apart; one on a line of its own ends that line, as a statement's does.
+ */
+export function customSetComments(node: number, ctx: SCtx, print: () => void): void {
+  if (!ctx.ownsComments(node)) return print();
+  const t = ctx.tree;
+  const comments = ctx.leadingComments(node);
+  comments.forEach((c, i) => {
+    ctx.comment(c);
+    const next = comments[i + 1] ?? firstLeaf(t, node);
+    if (t.lf(next) > 0) sHardline();
+    else if (!t.adjoins(c, next)) sText(" ");
+  });
+  print();
+  printTrailingComments(ctx, node);
+}
 
 const rawValue = (decl: number, ctx: SCtx): boolean =>
   (customName(decl, ctx.tree) || inCustomSet(decl, ctx.tree)) && oxcRaw(decl, ctx.tree);
@@ -2582,7 +2615,8 @@ export const css: Language<CssOptions> = {
       ["ERROR", sassFlagList],
       ["plain_value", (node, ctx) => plainWord(node, ctx) || cssStream.rules.get("plain_value")?.(node, ctx)],
     ]),
-    wrap: frontMatterFirst,
+    wrap: (node, ctx, print) => frontMatterFirst(node, ctx, () => customSetComments(node, ctx, print)),
+    printsOwnComments: customSetOwnComments,
     commentEndsLine: statementComment,
     keepsSource: prettierIgnored,
     recovered: (error, t) =>

@@ -401,6 +401,11 @@ const edgeCases: [string, string][] = [
     "nth-any-case",
     "a:nth-child(2n+1 OF .a),a:nth-last-child(-n+3 Of .a, .b),a:nth-child(2n+1   OF   .a){b:c}\nA:NTH-CHILD(2n),A:NTH-CHILD(2N+1),a:Nth-Last-Of-Type(2n),a:NTH-COL(2n+1),a:nth-childx(2n){b:c}",
   ],
+  // A comment leading a custom property block's item on its line was put on a line of its own, apart from the item.
+  [
+    "custom-property-block-comments",
+    "a{--a:{/*c*/a:b}}\na{--a:{ /*c*/ a:b }}\na{--a:{/*c*//*d*/a}}\na{--a:{a:b;/*c*/c:d}}\na{--a:{a:b; /*c*/ c:d}}\na{--a:{a;/*c*/b}}\na{--a:{a:b; /*c*/\nc:d}}\na{--a:{\n/*c*/\na:b}}",
+  ],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");
