@@ -361,7 +361,8 @@ export const customs = {
   /** Prettier indents a selector of more than two nodes as it breaks. */
   longSelector: (node, ctx) => parts(node, ctx) > 2,
   /** A declaration with nothing between its `:` and its `;` (`--empty:;`). */
-  emptyValue: (node, ctx) => code(node, ctx).every((c) => !ctx.tree.named(c) || kind(c, ctx) === "property_name"),
+  emptyValue: (node, ctx) =>
+    code(node, ctx).every((c) => !ctx.tree.named(c) || ["property_name", "trailing_comma"].includes(kind(c, ctx))),
   /** A declaration whose value is `!important` alone (`b: !important`), which spaces its own way after the `:`. */
   importantValue: (node, ctx) =>
     code(node, ctx).some((c) => kind(c, ctx) === "important") &&
@@ -1729,6 +1730,17 @@ function colonMissingComma(n: number, t: FormatTree): boolean {
   return prev !== undefined && t.kindName(prev) === ":" && kids.filter((c) => t.kindName(c) === ":").length > 1;
 }
 
+/**
+ * The zero-width `trailing_comma` tree-sitter-css inserts for a block's last declaration with nothing after its `:`
+ * (`a{b:}`), which oxc reads as an empty value and prints `b:;`.
+ */
+function emptyLastValue(n: number, t: FormatTree): boolean {
+  const decl = t.parent(n);
+  if (t.kindName(n) !== "trailing_comma" || t.kindName(decl) !== "declaration") return false;
+  const kids = children(decl, t).filter((c) => t.kindName(c) !== "comment");
+  return kids.length === 3 && t.kindName(kids[1] as number) === ":" && kids[2] === n;
+}
+
 /** A Sass variable or custom property, whose raw value (`oxcRaw`) oxfmt prints verbatim. */
 const customName = (decl: number, t: FormatTree) => /^(\$|--)/.test(t.text(t.child(decl, 0)));
 
@@ -2562,7 +2574,7 @@ export const css: Language<CssOptions> = {
     keepsSource: prettierIgnored,
     recovered: (error, t) =>
       t.missing(error)
-        ? colonMissingComma(error, t)
+        ? colonMissingComma(error, t) || emptyLastValue(error, t)
         : sassFlags(error, t) || selectorTail(error, t) || commentedPreludeError(error, t) || verbatimPreludeError(error, t) || valueColonError(error, t) || valueSlashError(error, t) || argColonError(error, t) || strayArgColonError(error, t),
     finalLine,
   },

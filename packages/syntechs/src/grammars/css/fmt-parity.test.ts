@@ -374,6 +374,11 @@ const edgeCases: [string, string][] = [
     "keyframe-selector-forms",
     "@keyframes k{0.0%{a:b}50.50%{a:c}.5%,100.0%{a:d}}\n@-webkit-keyframes k{FROM{a:b}To{a:c}from,10%{a:d}}",
   ],
+  // A block's last declaration with an empty value and no `;` (`a{b:}`) printed as written, its `;` missing.
+  [
+    "empty-last-value",
+    "a{b:}\na{c:d;b: }\na{--x:\n}\na{--x: ;b:c}",
+  ],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");
