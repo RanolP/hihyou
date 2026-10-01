@@ -1,6 +1,6 @@
 import { diffStyles, type DiffFile, type ElidedRef } from "@hihyou/ui";
 import * as vscode from "vscode";
-import { reportError } from "../errors.js";
+import { outputChannel, reportError } from "../errors.js";
 import type { ReviewSource } from "../review.js";
 import { expandElided } from "./expand.js";
 import type { FromWebview, ToWebview } from "./protocol.js";
@@ -46,7 +46,11 @@ export async function openReviewPanel(
     const mine = ++generation;
     show({ type: "loading", title: source.title });
     try {
+      const started = performance.now();
       const files = await source.load();
+      outputChannel().appendLine(
+        `[${new Date().toISOString()}] loaded ${source.title}: ${files.length} files in ${Math.round(performance.now() - started)} ms`,
+      );
       if (mine === generation)
         show({
           type: "files",
