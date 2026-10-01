@@ -223,7 +223,8 @@ const normalize: Normalize = (lexemes, _text, tree) => {
     forms[p] = `${forms[p]}:`;
     forms[i] = undefined;
     const next = lexemes[i + 1]?.text ?? "";
-    if (forms[i + 1] !== undefined && !/^[:/*]$/.test(next)) {
+    // The block's `}` after a value's last `:` (`a :}`) ends the declaration, whose `;` oxc adds.
+    if (forms[i + 1] !== undefined && !/^[:/*}]$/.test(next)) {
       forms[p] = `${forms[p]}${forms[i + 1]}`;
       forms[i + 1] = undefined;
       i++;
@@ -1539,6 +1540,18 @@ function valueColonError(n: number, t: FormatTree): boolean {
   return false;
 }
 
+/**
+ * The zero-width `,` tree-sitter-css inserts after a declaration's second `:` (`c:x, a :/b`), which oxc-css-parser
+ * reads as a raw token like any other (`rawTokens`).
+ */
+function colonMissingComma(n: number, t: FormatTree): boolean {
+  const decl = t.parent(n);
+  if (t.kindName(n) !== "," || t.kindName(decl) !== "declaration") return false;
+  const kids = children(decl, t);
+  const prev = kids[kids.indexOf(n) - 1];
+  return prev !== undefined && t.kindName(prev) === ":" && kids.filter((c) => t.kindName(c) === ":").length > 1;
+}
+
 /** A Sass variable or custom property, whose raw value (`oxcRaw`) oxfmt prints verbatim. */
 const customName = (decl: number, t: FormatTree) => /^(\$|--)/.test(t.text(t.child(decl, 0)));
 
@@ -2325,7 +2338,10 @@ export const css: Language<CssOptions> = {
     wrap: frontMatterFirst,
     commentEndsLine: statementComment,
     keepsSource: prettierIgnored,
-    recovered: (error, t) => sassFlags(error, t) || selectorTail(error, t) || commentedPreludeError(error, t) || verbatimPreludeError(error, t) || valueColonError(error, t),
+    recovered: (error, t) =>
+      t.missing(error)
+        ? colonMissingComma(error, t)
+        : sassFlags(error, t) || selectorTail(error, t) || commentedPreludeError(error, t) || verbatimPreludeError(error, t) || valueColonError(error, t),
     finalLine,
   },
 };
