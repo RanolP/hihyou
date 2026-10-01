@@ -31,6 +31,7 @@ export const GRAMMAR_NAMES = [
   "tsx",
   "python",
   "kotlin",
+  "yaml",
 ] as const;
 export type GrammarName = (typeof GRAMMAR_NAMES)[number];
 
@@ -44,6 +45,7 @@ const GRAMMAR_DIRS: Record<GrammarName, [string, string]> = {
   tsx: ["tree-sitter-typescript/tsx", "tree-sitter-typescript"],
   python: ["tree-sitter-python", "tree-sitter-python"],
   kotlin: ["tree-sitter-kotlin", "tree-sitter-kotlin"],
+  yaml: ["tree-sitter-yaml", "tree-sitter-yaml"],
 };
 
 const EXTENSIONS: Record<GrammarName, string[]> = {
@@ -55,6 +57,7 @@ const EXTENSIONS: Record<GrammarName, string[]> = {
   tsx: [".tsx"],
   python: [".py"],
   kotlin: [".kt", ".kts"],
+  yaml: [".yaml", ".yml"],
 };
 
 /** Large real-world files: the parser-bench inputs, then what fetch-corpus.sh downloads, or what is vendored. */
@@ -89,6 +92,8 @@ export const FETCHED: Record<GrammarName, string[]> = {
     "Okio.kt",
     "build.gradle.kts",
   ].map((f) => join(kotlinCorpusDir, f)),
+  // No large file is fetched: the repo's own .yaml files (pnpm-lock.yaml among them) are its inputs.
+  yaml: [],
 };
 
 export interface Input {

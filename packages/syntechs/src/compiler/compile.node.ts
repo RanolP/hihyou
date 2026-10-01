@@ -25,6 +25,7 @@ export const GRAMMARS: Record<string, { src: string; comments: string[] }> = {
     src: "tree-sitter-kotlin/src",
     comments: ["line_comment", "multiline_comment"],
   },
+  yaml: { src: "tree-sitter-yaml/src", comments: ["comment"] },
 };
 
 const only = process.argv.slice(2);
