@@ -423,6 +423,11 @@ const edgeCases: [string, string][] = [
   ],
   // A rule after a JSON-like custom block (`"a": 1, "b": [1, 2]`) turned tree-sitter's recovery into one ERROR kept as written.
   ["custom-property-block-then-rule", 'a{--my-json: {"a": 1, "b": [1, 2]}}\nb{c:d}\na{--a: {a, b: [1]}}\nb{c:d}'],
+  // Comments alone past a last declaration's `:` with no `;` printed before the added `;`, where oxfmt prints `c:; /*c*/`.
+  [
+    "empty-last-value-comments",
+    "a{c:/*c*//*d*/}\na{c:\n/*c*/\n}\na{c/*q*/:/*c*/}\na{--x: /*c*/ /*d*/}\na{c:/*c*/;}\na{c:/*c*/ !important}",
+  ],
   // A custom property's value with a `{...}` group past its start, ending the block, was laid out as a nested property.
   [
     "custom-property-brace-value-ends-block",

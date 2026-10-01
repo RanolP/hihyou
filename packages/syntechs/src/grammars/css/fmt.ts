@@ -1477,6 +1477,11 @@ const handleComment: CommentHandler<CssOptions> = ({ tree, comment, enclosing, p
     return { node: preceding, as: "dangling" };
   if (statementSequences.has(tree.kindName(enclosing)) && placement !== "ownLine")
     return { node: preceding, as: "trailing" };
+  // Comments alone past the `:` of a last declaration with no `;` (`a{c:/*c*/}`) follow the `c:;` oxfmt prints.
+  if (tree.kindName(enclosing) === "declaration" && emptyLastValue(children(enclosing, tree).at(-1) ?? NO_NODE, tree)) {
+    const colon = children(enclosing, tree).find((c) => tree.kindName(c) === ":");
+    if (colon !== undefined && tree.ord(comment) > tree.ord(colon)) return { node: enclosing, as: "trailing" };
+  }
   const declaration = ["declaration", "custom_property_set"].includes(tree.kindName(enclosing));
   if (!declaration || /:\s*progid:/i.test(tree.text(enclosing))) return undefined;
   return tree.kindName(preceding) === "property_name" || text.startsWith("/*")
