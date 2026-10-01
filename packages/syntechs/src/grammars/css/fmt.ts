@@ -700,24 +700,15 @@ function slashJoinedBefore(c: number, ctx: SCtx): boolean | undefined {
 }
 
 /**
- * Whether `node` sits in a `grid`/`grid-template*` declaration whose value the source breaks across lines, which
- * prettier then prints a line per source line (format.ts's `keepLines`), words within a line a space apart.
+ * Whether `node` sits in a `grid`/`grid-template*` declaration, which oxfmt prints a line per source line
+ * (format.ts's `keepLines`), words within a line a space apart, a one-line value's too: only its functions break.
  */
 function gridLines(node: number, ctx: SCtx): boolean {
   const t = ctx.tree;
   let decl = t.parent(node);
   while (decl !== NO_NODE && kind(decl, ctx) === "binary_expression") decl = t.parent(decl);
   if (decl === NO_NODE || kind(decl, ctx) !== "declaration") return false;
-  if (!firstTextIs(ctx, decl, undefined, ["grid"], ["grid-template"], true)) return false;
-  const kids = children(decl, t);
-  const colon = kids.findIndex((c) => kind(c, ctx) === ":");
-  const first = kids[colon + 1];
-  if (colon === -1 || first === undefined) return false;
-  // Postorder numbers a node after its leaves, so the declaration's leaves are those before it.
-  const end = t.ord(decl);
-  for (let l = nextLeaf(t, firstLeaf(t, first)); l !== NO_NODE && t.ord(l) < end; l = nextLeaf(t, l))
-    if (t.lf(l) > 0 && kind(l, ctx) !== ";") return true;
-  return false;
+  return firstTextIs(ctx, decl, undefined, ["grid"], ["grid-template"], true);
 }
 
 /** A node of a declaration's comma entry that holds other items too, which the entry packs in a fill. */

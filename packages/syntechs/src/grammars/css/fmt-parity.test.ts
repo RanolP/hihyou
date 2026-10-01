@@ -384,6 +384,12 @@ const edgeCases: [string, string][] = [
     "nth-an-plus-b",
     "a:nth-of-type(2n+1),a:nth-of-type(3n-1),a:nth-last-of-type(-n+3),a:nth-col(+3n-2){b:c}\na:nth-child(2N+1),a:nth-child(-2N+1),a:nth-child(+n),a:nth-child(N),a:nth-child(EVEN),a:nth-child(Odd){b:c}\na:nth-child(2n+ 1),a:nth-child(2n  +  1),a:nth-child(2n -1),a:nth-child(2N-1 of .a){b:c}",
   ],
+  // A one-line grid value too long for the line broke between its words; oxfmt keeps them a space apart and breaks
+  // the arguments of the first function whose `(` the line cannot reach.
+  [
+    "grid-one-line-breaks-functions",
+    ".g{grid-template-columns:[full-start] minmax(1rem,1fr) [content-start] minmax(0,60rem) [content-end] minmax(1rem,1fr) [full-end]}\n.g{grid-template-rows:aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd eeeeeeeeee ffffffffff gggggggggggggg}\n.g{grid:auto-flow dense / 40px 40px 1fr minmax(1px, 1fr) minmax(1px, 1fr) minmax(1px, 1fr) x}\n.g{grid-template-columns:repeat(2,1fr) aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd eeeeeeeeee ffffffffff}",
+  ],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");
