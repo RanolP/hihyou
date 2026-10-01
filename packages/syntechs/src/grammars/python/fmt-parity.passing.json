@@ -311,6 +311,7 @@
   "ruff/module_dangling_comment2.py#{}",
   "ruff/multiline_string_deviations.py#{}",
   "ruff/newlines.py#{}",
+  "ruff/notebook_docstring.py#{\"source_type\":\"Python\"}",
   "ruff/parentheses/call_chains.py#{}",
   "ruff/parentheses/expression_parentheses_comments.py#{}",
   "ruff/parentheses/nested.py#{}",

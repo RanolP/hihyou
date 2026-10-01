@@ -85,9 +85,6 @@ export function pythonFrameAfter(
   return snapshot.slice(body, m.index + (m[0].startsWith("\n") ? 1 : 0));
 }
 
-const EXCLUDE_STUB =
-  "stub file (.pyi, or `source_type: Stub`): format() takes no path to tell the source type";
-
 /** Both ruff suites under `formatterRoot` (crates/ruff_python_formatter), each fixture named by its path there. */
 export function ruffSuite(formatterRoot: string): Suite {
   const fixtures = join(formatterRoot, "resources", "test", "fixtures");
@@ -107,17 +104,13 @@ export function ruffSuite(formatterRoot: string): Suite {
       firstLine.startsWith("# flags:") &&
       firstLine.includes("--line-ranges=")
     ) {
-      excluded.push({ fixture, reason: "range formatting" });
+      excluded.push({ fixture, reason: "range formatting (the expected output formats only the range)" });
       continue;
     }
     const optionsFile = file.replace(/\.pyi?$/, ".options.json");
     const options: RuffTestOptions = existsSync(optionsFile)
       ? JSON.parse(readFileSync(optionsFile, "utf8"))
       : {};
-    if (file.endsWith(".pyi") || options.source_type === "Stub") {
-      excluded.push({ fixture, reason: EXCLUDE_STUB });
-      continue;
-    }
     const snapshot = readSnapshot(
       join(snapshots, `black_compatibility@${test.replaceAll("/", "__")}.snap`),
     );
@@ -142,21 +135,13 @@ export function ruffSuite(formatterRoot: string): Suite {
     const test = relative(join(fixtures, "ruff"), file).replaceAll("\\", "/");
     const text = readFileSync(file, "utf8");
     if (text.includes("<RANGE_START>")) {
-      excluded.push({ fixture, reason: "range formatting" });
+      excluded.push({ fixture, reason: "range formatting (the expected output formats only the range)" });
       continue;
     }
     const optionsFile = file.replace(/\.pyi?$/, ".options.json");
     const sets: RuffTestOptions[] | undefined = existsSync(optionsFile)
       ? JSON.parse(readFileSync(optionsFile, "utf8"))
       : undefined;
-    if (sets?.some((o) => o.source_type === "Ipynb")) {
-      excluded.push({ fixture, reason: "notebook (`source_type: Ipynb`)" });
-      continue;
-    }
-    if (file.endsWith(".pyi") || sets?.some((o) => o.source_type === "Stub")) {
-      excluded.push({ fixture, reason: EXCLUDE_STUB });
-      continue;
-    }
     const snapshot = readSnapshot(
       join(snapshots, `format@${test.replaceAll("/", "__")}.snap`),
     );

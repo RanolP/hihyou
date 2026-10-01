@@ -1,6 +1,6 @@
-css@oxfmt compatibility: 138/138 (100.00%), 0 refused (ok:false), 19 excluded
+css@oxfmt compatibility: 140/142 (98.59%), 0 refused (ok:false), 15 excluded
 
-Fixtures: prettier 3.9.9 tests/format/{css} (recursive), every spec call listing parser `css`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults. A fixture oxfmt rejects under any of its option sets is excluded.
+Fixtures: prettier 3.9.9 tests/format/{css} (recursive), every spec call listing parser `css`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left.
 
 # Failed
 
@@ -8,6 +8,8 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
+| css/atrule/if-else.css | 0/1 | 50.00% |
+| css/yaml/dirty.css | 0/1 | 66.67% |
 
 # Refused
 
@@ -18,15 +20,9 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 # Excluded
 
-## cursor or range formatting (2)
+## oxfmt 0.70.0 rejects it: Syntax error: a top-level `{}` block is disallowed in a declaration value (1)
 
-- css/cursor/test.css
-- css/range/issue2267.css
-
-## ignored syntax (not in the grammar or not the parser's) (2)
-
-- css/atrule/if-else.css
-- css/yaml/dirty.css
+- css/_errors_/scss-syntax.css
 
 ## oxfmt 0.70.0 rejects it: Syntax error: declaration at top level is disallowed (2)
 
@@ -40,6 +36,10 @@ The formatter threw (ok:false), or `check` found that its output says something 
 ## oxfmt 0.70.0 rejects it: Syntax error: expect token `]`, but found `(` (1)
 
 - css/attribute/quotes.css
+
+## oxfmt 0.70.0 rejects it: Syntax error: expect token `{`, but found `(` (1)
+
+- css/_errors_/less-syntax.css
 
 ## oxfmt 0.70.0 rejects it: Syntax error: expect token `{`, but found `/` (1)
 
@@ -70,8 +70,3 @@ The formatter threw (ok:false), or `check` found that its output says something 
 ## oxfmt 0.70.0 rejects it: Syntax error: URL is expected (1)
 
 - css/no-semicolon/url.css
-
-## the spec expects the parser to reject it (2)
-
-- css/_errors_/less-syntax.css
-- css/_errors_/scss-syntax.css

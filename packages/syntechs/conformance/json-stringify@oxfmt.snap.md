@@ -1,6 +1,6 @@
 json-stringify@oxfmt compatibility: 14/14 (100.00%), 0 refused (ok:false), 0 excluded
 
-Fixtures: prettier 3.9.9 tests/format/{json/json} (recursive), every spec call listing parser `json-stringify`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults. A fixture oxfmt rejects under any of its option sets is excluded.
+Fixtures: prettier 3.9.9 tests/format/{json/json} (recursive), every spec call listing parser `json-stringify`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left.
 
 # Failed
 

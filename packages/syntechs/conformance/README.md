@@ -6,11 +6,11 @@ The `@oxfmt` rows score syntechs on prettier's fixtures and option sets against 
 
 | Language | Reference | Passed | Compatibility | ok:false | Excluded |
 | :------- | :-------- | -----: | ------------: | -------: | -------: |
-| [python](python.snap.md) | ruff 0.16.8 | 327/327 | 100.00% | 0 | 49 |
-| [kotlin](kotlin.snap.md) | ktfmt 0.64 --kotlinlang-style | 753/753 | 100.00% | 0 | 11 |
+| [python](python.snap.md) | ruff 0.16.8 | 327/342 | 95.61% | 0 | 34 |
+| [kotlin](kotlin.snap.md) | ktfmt 0.64 --kotlinlang-style | 746/746 | 100.00% | 0 | 18 |
 | [json@oxfmt](json@oxfmt.snap.md) | oxfmt 0.70.0 | 20/20 | 100.00% | 0 | 0 |
 | [jsonc@oxfmt](jsonc@oxfmt.snap.md) | oxfmt 0.70.0 | 9/9 | 100.00% | 0 | 0 |
 | [json-stringify@oxfmt](json-stringify@oxfmt.snap.md) | oxfmt 0.70.0 | 14/14 | 100.00% | 0 | 0 |
-| [css@oxfmt](css@oxfmt.snap.md) | oxfmt 0.70.0 | 138/138 | 100.00% | 0 | 19 |
-| [js@oxfmt](js@oxfmt.snap.md) | oxfmt 0.70.0 | 767/767 | 100.00% | 0 | 341 |
-| [ts@oxfmt](ts@oxfmt.snap.md) | oxfmt 0.70.0 | 632/632 | 100.00% | 0 | 97 |
+| [css@oxfmt](css@oxfmt.snap.md) | oxfmt 0.70.0 | 140/142 | 98.59% | 0 | 15 |
+| [js@oxfmt](js@oxfmt.snap.md) | oxfmt 0.70.0 | 916/964 | 95.02% | 5 | 190 |
+| [ts@oxfmt](ts@oxfmt.snap.md) | oxfmt 0.70.0 | 657/674 | 97.48% | 0 | 62 |

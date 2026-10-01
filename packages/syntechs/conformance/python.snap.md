@@ -1,4 +1,4 @@
-python compatibility: 327/327 (100.00%), 0 refused (ok:false), 49 excluded
+python compatibility: 327/342 (95.61%), 0 refused (ok:false), 34 excluded
 
 Fixtures: ruff 0.16.8 crates/ruff_python_formatter/resources/test/fixtures/{black,ruff} (recursive), every option set of each `.options.json`, expected output from tests/snapshots (black cases without a snapshot: their `.expect` file). Options are passed by their ruff.toml names.
 
@@ -8,6 +8,21 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
+| black/cases/ignore_pyi.pyi | 0/1 | 85.00% |
+| black/cases/nested_stub.pyi | 0/1 | 83.12% |
+| black/cases/stub.pyi | 0/1 | 82.35% |
+| black/miscellaneous/force_pyi.pyi | 0/1 | 83.12% |
+| ruff/newlines.pyi | 0/1 | 88.75% |
+| ruff/notebook_docstring.py | 1/2 | 77.27% |
+| ruff/statement/ellipsis.pyi | 0/1 | 61.70% |
+| ruff/statement/top_level.pyi | 0/1 | 80.27% |
+| ruff/stub_files/blank_line_after_nested_stub_class.pyi | 0/1 | 90.99% |
+| ruff/stub_files/blank_line_after_nested_stub_class_eof.pyi | 0/1 | 93.33% |
+| ruff/stub_files/comments.pyi | 0/1 | 87.50% |
+| ruff/stub_files/decorated_class_after_function.pyi | 0/1 | 86.96% |
+| ruff/stub_files/nesting.pyi | 0/1 | 88.24% |
+| ruff/stub_files/suite.pyi | 0/1 | 91.24% |
+| ruff/stub_files/top_level.pyi | 0/1 | 82.93% |
 
 # Refused
 
@@ -23,11 +38,7 @@ The formatter threw (ok:false), or `check` found that its output says something 
 - ruff/docstring_code_examples_crlf.py
 - ruff/f-string-carriage-return-newline.py
 
-## notebook (`source_type: Ipynb`) (1)
-
-- ruff/notebook_docstring.py
-
-## range formatting (32)
+## range formatting (the expected output formats only the range) (32)
 
 - black/cases/line_ranges_basic.py
 - black/cases/line_ranges_decorator_edge_case.py
@@ -61,20 +72,3 @@ The formatter threw (ok:false), or `check` found that its output says something 
 - ruff/range_formatting/stub.pyi
 - ruff/range_formatting/trailing_comments.py
 - ruff/range_formatting/whitespace_only_range.py
-
-## stub file (.pyi, or `source_type: Stub`): format() takes no path to tell the source type (14)
-
-- black/cases/ignore_pyi.pyi
-- black/cases/nested_stub.pyi
-- black/cases/stub.pyi
-- black/miscellaneous/force_pyi.pyi
-- ruff/newlines.pyi
-- ruff/statement/ellipsis.pyi
-- ruff/statement/top_level.pyi
-- ruff/stub_files/blank_line_after_nested_stub_class.pyi
-- ruff/stub_files/blank_line_after_nested_stub_class_eof.pyi
-- ruff/stub_files/comments.pyi
-- ruff/stub_files/decorated_class_after_function.pyi
-- ruff/stub_files/nesting.pyi
-- ruff/stub_files/suite.pyi
-- ruff/stub_files/top_level.pyi

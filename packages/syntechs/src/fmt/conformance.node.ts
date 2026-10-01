@@ -22,6 +22,7 @@ import { parseTree } from "../core/index.js";
 import type { Language as Grammar } from "../core/language.js";
 import { check } from "./check.js";
 import {
+  type Answers,
   type Case,
   type CaseRun,
   type PrettierTarget,
@@ -31,6 +32,7 @@ import {
 import { ktfmt, ktfmtSuite } from "./conformance/ktfmt.node.js";
 import { oxfmt, type Reference } from "./conformance/references.node.js";
 import {
+  type Excluded,
   type FixtureResult,
   fixtureOutcome,
   lineRatio,
@@ -141,7 +143,8 @@ interface Target {
   export: string;
   grammar: (fixture: string) => GrammarName;
   source: string;
-  suite: () => Suite | Promise<Suite>;
+  /** Its fixtures; `reference` asks a prettier-family set for every input, its expected output left to a reference. */
+  suite: (answers?: Answers) => Suite | Promise<Suite>;
 }
 
 /**
@@ -161,7 +164,7 @@ const prettierFixtures = (
   export: exportName,
   grammar,
   source: `Fixtures: ${PRETTIER} tests/format/{${t.dirs.join(",")}} (recursive), every spec call listing parser ${t.parsers.map((p) => `\`${p}\``).join(" or ")}, with the option sets it declares`,
-  suite: () => prettierSuite(prettierRoot, t),
+  suite: (answers) => prettierSuite(prettierRoot, t, answers),
 });
 
 /**
@@ -172,8 +175,8 @@ const againstOxfmt = (fixtures: Target): Target => ({
   ...fixtures,
   id: `${fixtures.id}@oxfmt`,
   reference: oxfmt.name,
-  source: `${fixtures.source}; expected output from ${oxfmt.name} run on each with that option set over prettier's defaults. A fixture oxfmt rejects under any of its option sets is excluded.`,
-  suite: async () => referenceSuite(await fixtures.suite(), oxfmt),
+  source: `${fixtures.source}; expected output from ${oxfmt.name} run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left.`,
+  suite: async () => referenceSuite(await fixtures.suite("reference"), oxfmt),
 });
 
 /** The prettier-family fixture sets, by the ids the benchmark's groups name. */
@@ -315,35 +318,58 @@ function runCase(
 }
 
 /** `ref`'s output for one run of `c`, under prettier's parser for it; rejects when `ref` rejects the input. */
-const referenceOutput = (ref: Reference, c: Case, r: CaseRun): Promise<string> =>
+const referenceOutput = (
+  ref: Reference,
+  c: Case,
+  r: CaseRun,
+  text: string,
+): Promise<string> =>
   ref.format(
     c.fixture,
-    c.text,
+    text,
     r.parser === undefined ? r.options : { parser: r.parser, ...r.options },
   );
 
-/** `base` with each run's expected output from `ref`; a fixture `ref` rejects in any run is excluded. */
+/**
+ * `base` with each run's expected output from `ref`. A run has no answer, and is excluded, when `ref` rejects its
+ * input or option set, or prints its own output differently a second time; a fixture is excluded only when none
+ * of its runs has one, and otherwise keeps the runs that do (each dropped run listed as `<fixture> <label>`).
+ */
 async function referenceSuite(base: Suite, ref: Reference): Promise<Suite> {
   const cases: Case[] = [];
   const excluded = [...base.excluded];
   for (const c of base.cases) {
-    try {
-      const runs: CaseRun[] = [];
-      for (const r of c.runs)
-        runs.push({
-          ...r,
-          expected: r.asRecorded(await referenceOutput(ref, c, r)),
+    const runs: CaseRun[] = [];
+    const dropped: Excluded[] = [];
+    for (const r of c.runs) {
+      try {
+        const out = await referenceOutput(ref, c, r, c.text);
+        if ((await referenceOutput(ref, c, r, out)) !== out)
+          throw new Unstable();
+        runs.push({ ...r, expected: r.asRecorded(out) });
+      } catch (e) {
+        dropped.push({
+          fixture: `${c.fixture} ${r.label}`,
+          reason:
+            e instanceof Unstable
+              ? `${ref.name} is not idempotent on it`
+              : `${ref.name} rejects it: ${rejection(e)}`,
         });
+      }
+    }
+    if (runs.length > 0) {
       cases.push({ ...c, runs });
-    } catch (e) {
+      excluded.push(...dropped);
+    } else
       excluded.push({
         fixture: c.fixture,
-        reason: `${ref.name} rejects it: ${rejection(e)}`,
+        reason: (dropped[0] as Excluded).reason,
       });
-    }
   }
   return { cases, excluded };
 }
+
+class Unstable extends Error {}
 
 /** A rejection's first line or clause, which names the error without the position that follows, so the excluded list groups by it. */
 const rejection = (e: unknown) =>
