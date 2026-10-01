@@ -29,9 +29,10 @@ export const jsNormalize: Normalize = (lexemes, text, tree) => {
       return cells === "" ? undefined : `each:${cells}@${places.of(l.node)}`;
     }
     // Prettier reflows a template in another language (print/embed.ts), whose whitespace means nothing to it.
-    const html = htmlTemplate(tree, l.node);
+    // Its opening tick stands in for it: a template opening with a `${…}` may print a line break before it.
+    if (htmlTemplate(tree, l.node) !== undefined) return undefined;
+    const html = htmlOpening(tree, l.node);
     if (html !== undefined) {
-      if (firstPiece(tree, html) !== l.node) return undefined;
       const words = htmlWords(tree, html);
       return words === "" ? undefined : `embed:${words}@${places.at(html)}`;
     }
@@ -77,16 +78,19 @@ function htmlTemplate(tree: Tree, n: number): number | undefined {
   return p !== NO_NODE && tree.kindName(p) === "template_string" && embedLanguage(tree, p) === "html" ? p : undefined;
 }
 
-function firstPiece(tree: Tree, template: number): number {
-  for (let i = 0; i < tree.count(template); i++)
-    if (HTML_PIECES.has(tree.kindName(tree.child(template, i)))) return tree.child(template, i);
-  return NO_NODE;
+/** The embedded-HTML template `n` opens; undefined for any other node. */
+function htmlOpening(tree: Tree, n: number): number | undefined {
+  const p = tree.parent(n);
+  return p !== NO_NODE && tree.kindName(p) === "template_string" && tree.child(p, 0) === n && embedLanguage(tree, p) === "html"
+    ? p
+    : undefined;
 }
 
 /**
  * An embedded-HTML template compares as one: its quasis' text, less whitespace, less each script's and style's
  * content (its own language's to format, as the HTML formatter's check reads it) and less backslashes (the embed
- * prints a quasi's cooked value re-escaped, so `<\/script>` is `</script>`).
+ * prints a quasi's cooked value re-escaped, so `<\/script>` is `</script>`). In a start tag, as the HTML formatter's
+ * check reads one, an attribute value's quotes do not compare (the HTML printer requotes it) and `/>` is `>`.
  */
 function htmlWords(tree: Tree, template: number): string {
   let text = "";
@@ -95,7 +99,11 @@ function htmlWords(tree: Tree, template: number): string {
     text += HTML_PIECES.has(tree.kindName(c)) ? tree.text(c) : tree.kindName(c) === "template_substitution" ? "\u{E000}" : "";
   }
   return text
-    .replace(/(<(script|style)\b[^>]*>)[^]*?(?=<\\*\/\2)/gi, "$1")
+    // A raw `<\\/script>` cooks to `<\/script>`, which does not end the script.
+    .replace(/(<(script|style)\b[^>]*>)[^]*?(?=<\\?\/\2)/gi, "$1")
+    .replace(/<[a-z\u{E000}][^<>]*>/giu, (tag) =>
+      tag.replace(/(=\s*)(\\*["'])([^]*?)\2/g, "$1$3").replace(/\s*\/>$/, ">"),
+    )
     .replace(/[\s\\\u{E000}]/gu, "");
 }
 

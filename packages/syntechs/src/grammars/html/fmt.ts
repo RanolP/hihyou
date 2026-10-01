@@ -57,6 +57,8 @@ export interface HtmlOptions extends PrettierOptions {
   /** The JS formatter's `semi`, for an `on*` value. */
   semi: boolean;
   embeddedLanguageFormatting: "auto" | "off";
+  /** The HTML is a JS template's (prettier's options.parentParser), whose attributes print as embed/attributes.js does. */
+  embeddedInJs: boolean;
 }
 
 const defaults: HtmlOptions = {
@@ -66,6 +68,7 @@ const defaults: HtmlOptions = {
   htmlWhitespaceSensitivity: "css",
   semi: true,
   embeddedLanguageFormatting: "auto",
+  embeddedInJs: false,
 };
 
 /**
@@ -291,7 +294,8 @@ export const html: Language<HtmlOptions> = {
           };
           const atFileStart =ctx.tree.lf(node) === 0 && ctx.tree.col(node) === 0;
           const embeddedOff = ctx.options.embeddedLanguageFormatting === "off";
-          printHtml(parseHtml(text, true, atFileStart, htmlWhitespaceSensitivity, embeddedOff), text, {
+          const inJs = ctx.options.embeddedInJs;
+          printHtml(parseHtml(text, true, atFileStart, htmlWhitespaceSensitivity, embeddedOff, inJs), text, {
             embeddedOff,
             text: sText,
             tabWidth,

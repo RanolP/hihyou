@@ -118,7 +118,7 @@ function html(ctx: JsStreamCtx, node: number, raws: string[], subs: () => Part[]
   const { htmlWhitespaceSensitivity } = options;
   let root;
   try {
-    root = parseHtml(text, true, true, htmlWhitespaceSensitivity);
+    root = parseHtml(text, true, true, htmlWhitespaceSensitivity, false, true);
   } catch (e) {
     if (e instanceof Unsupported) return undefined;
     throw e;
@@ -142,7 +142,7 @@ function html(ctx: JsStreamCtx, node: number, raws: string[], subs: () => Part[]
   const content = () =>
     withRewrite(write, () =>
       withEmbedding({ anchor: node, token: undefined }, () =>
-        printInto(parseTree(htmlLanguage, text), htmlFormatter, htmlOptions),
+        printInto(parseTree(htmlLanguage, text), htmlFormatter, { ...htmlOptions, embeddedInJs: true }),
       ),
     );
   const leading = /^\s/.test(text);

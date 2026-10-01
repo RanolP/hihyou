@@ -87,6 +87,10 @@ interface Attr {
   srcset?: { url: string; descriptor: string }[];
   /** An `on*` event handler's value, which prints as JS where the caller's `eventHandler` parses it. */
   eventHandler?: boolean;
+  /** Written with no quotes. */
+  unquoted?: boolean;
+  /** A JS template's lit-html `${…}` value written unquoted, which prints unquoted. */
+  bare?: boolean;
 }
 
 // Prettier's html-styles tables (constants.evaluate.js), for the tags a template holds.
@@ -331,6 +335,7 @@ export function parseHtml(
   atFileStart = false,
   sensitivity: WhitespaceSensitivity = "css",
   embeddedOff = false,
+  inJs = false,
 ): Node {
   const tree = parseTree(language, text);
   if (tree.errorChars > 0 || brokenNodes(tree) !== undefined) throw new Unsupported("parse error");
@@ -347,6 +352,16 @@ export function parseHtml(
     // embeddedLanguageFormatting "off" prints every attribute value as written, as no print/attribute/*.js runs.
     if (embeddedOff) n.attrs = n.attrs.map((a) => ({ rawName: a.rawName, value: a.written ?? a.value }));
     else if (embeddedLanguage(n) !== undefined && !embeds) throw new Unsupported(n.name);
+    // A JS template's HTML (prettier's options.parentParser): embed/attributes.js prints a lit-html `${…}` written
+    // unquoted as written, and print/attribute/{class-names,style,event-handler}.js leave the value as written.
+    if (inJs && !embeddedOff)
+      n.attrs = n.attrs.map((a) =>
+        a.unquoted && a.value !== null && /^PRETTIER_HTML_PLACEHOLDER_\d+_\d+_IN_JS$/.test(a.value)
+          ? { rawName: a.rawName, value: a.value, bare: true }
+          : a.formatted || a.style || a.eventHandler
+            ? { rawName: a.rawName, value: a.written ?? a.value }
+            : a,
+      );
   });
   preprocess(root, sensitivity);
   return root;
@@ -496,6 +511,12 @@ function element(tree: TsTree, text: string, ts: number): Node {
 }
 
 function attribute(tree: TsTree, ts: number, element: string): Attr {
+  const a = attributeOf(tree, ts, element);
+  if (kids(tree, ts).some((c) => tree.kindName(c) === "attribute_value")) a.unquoted = true;
+  return a;
+}
+
+function attributeOf(tree: TsTree, ts: number, element: string): Attr {
   let rawName = "";
   let value: string | null = null;
   for (const c of kids(tree, ts)) {
@@ -1337,6 +1358,10 @@ class Printer {
   private attribute(a: Attr): void {
     if (a.value === null) {
       this.text(a.rawName);
+      return;
+    }
+    if (a.bare) {
+      this.text(`${a.rawName}=${a.value}`);
       return;
     }
     if (a.style) {

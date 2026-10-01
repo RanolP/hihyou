@@ -1,4 +1,4 @@
-js@oxfmt compatibility: 948/964 (98.34%), 4 refused (ok:false), 190 excluded
+js@oxfmt compatibility: 948/964 (98.34%), 2 refused (ok:false), 190 excluded
 
 Fixtures: prettier 3.9.9 tests/format/{js,jsx} (recursive), every spec call listing parser `babel` or `acorn` or `espree` or `meriyah` or `oxc`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left.
 
@@ -14,6 +14,8 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/multiparser-graphql/graphql-tag.js | 0/1 | 72.44% |
 | js/multiparser-graphql/graphql.js | 0/1 | 38.10% |
 | js/multiparser-graphql/react-relay.js | 0/1 | 36.84% |
+| js/multiparser-html/html-template-literals.js | 0/2 | 96.86% |
+| js/multiparser-html/lit-html.js | 0/2 | 97.79% |
 | js/multiparser-markdown/0-indent.js | 0/1 | 87.80% |
 | js/multiparser-markdown/escape.js | 0/1 | 84.62% |
 | js/multiparser-markdown/issue-5021.js | 0/1 | 92.96% |
@@ -29,8 +31,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | :------ | :----------: | :---------: | :----------- |
 | js/_errors_/html-like-comments.js | 1/1 | 28.57% | check: input "<!-- comment" at 49 is output as "\"hello world\"" at 48, which means "str:hello world@\|0/4", not "<!-- co |
 | js/comments/html-like/comment.js | 1/1 | 50.00% | check: input "<!--" at 0 is output as "alert" at 0, which means "alert@function\|0/3", not "<!--@\|0/1" |
-| js/multiparser-html/html-template-literals.js | 2/2 | 92.48% | check: input "<div\n    double-quoted=\"" at 612 is output as "<div\n  double-quoted=\"" at 615, which means "embed:<div |
-| js/multiparser-html/lit-html.js | 2/2 | 89.95% | check: input "<my-element obj=" at 762 is output as "<my-element obj=\"" at 601, which means "embed:<my-elementobj=\"\"> |
 
 # Excluded
 

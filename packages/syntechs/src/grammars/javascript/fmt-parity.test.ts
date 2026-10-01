@@ -335,6 +335,12 @@ const edgeCases: [string, Target, string][] = [
     "js",
     'x = /* HTML */ `\n  <script>f("${a}")</script>`;\ny = html`<style>a{b:c}</style><p>\\`</p>`;\nz = html`<script>a<\\/script>`;\n',
   ],
+  // A template's HTML quoted a lit-html `.obj=${x}` and reformatted its class, style and on* values, which oxfmt keeps.
+  [
+    "html-embed-attributes",
+    "js",
+    "x = html`<my-el .obj=${x} a='b' c=d${e} class='  a   b ' style='color:red;  top:0' onclick='f( 1 )'></my-el>`;\ny = /* HTML */ `${a}\n<input disabled>`;\n",
+  ],
 ];
 
 function ours(target: Target, text: string, options: Partial<JsOptions>) {

@@ -13,5 +13,5 @@ The `@oxfmt` rows score syntechs on prettier's fixtures and option sets against 
 | [json-stringify@oxfmt](json-stringify@oxfmt.snap.md) | oxfmt 0.70.0 | 14/14 | 100.00% | 0 | 0 |
 | [css@oxfmt](css@oxfmt.snap.md) | oxfmt 0.70.0 | 140/142 | 98.59% | 0 | 15 |
 | [html@oxfmt](html@oxfmt.snap.md) | oxfmt 0.70.0 | 141/146 | 96.58% | 5 | 23 |
-| [js@oxfmt](js@oxfmt.snap.md) | oxfmt 0.70.0 | 948/964 | 98.34% | 4 | 190 |
+| [js@oxfmt](js@oxfmt.snap.md) | oxfmt 0.70.0 | 948/964 | 98.34% | 2 | 190 |
 | [ts@oxfmt](ts@oxfmt.snap.md) | oxfmt 0.70.0 | 668/674 | 99.11% | 0 | 62 |
