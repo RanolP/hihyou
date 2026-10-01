@@ -11,9 +11,18 @@ const defaults: PrettierOptions = { ...prettierDefaults };
 
 // A quoted scalar means its value whichever quote it is in: print.ts swaps quotes only when the content has no
 // escape but `\"`, so undoing `''` and `\"` is all the decoding a respelling needs.
+// A flow collection's trailing comma comes and goes with its layout, and a flow mapping pair with no value drops
+// its colon (`{b: }` prints `{ b }`): neither changes what the collection holds.
 const normalize: Normalize = (lexemes, _text, tree) =>
-  lexemes.map((l) => {
+  lexemes.map((l, i) => {
     const kind = tree.kindName(l.node);
+    if (kind === "," && /^[\]}]$/.test(lexemes[i + 1]?.text ?? "")) return undefined;
+    if (kind === ":" && tree.kindName(tree.parent(l.node)) === "flow_pair") {
+      const pair = tree.parent(l.node);
+      let valued = false;
+      for (let c = 0; c < tree.count(pair); c++) if (tree.fieldName(tree.child(pair, c)) === "value") valued = true;
+      if (!valued) return undefined;
+    }
     if (kind === "single_quote_scalar") return `str:${l.text.slice(1, -1).replaceAll("''", "'")}`;
     if (kind === "double_quote_scalar") return `str:${l.text.slice(1, -1).replaceAll('\\"', '"')}`;
     if (kind === "block_scalar") return blockScalar(l.text);

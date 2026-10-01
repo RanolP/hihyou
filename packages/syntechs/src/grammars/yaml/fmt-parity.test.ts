@@ -8,7 +8,7 @@ import { yaml } from "./fmt.js";
 import { language } from "./index.js";
 
 // Byte parity with oxfmt 0.70.0 over prettier's defaults, and under the tabWidth and singleQuote prettier's yaml
-// fixtures set. What print.ts has no rule for (flow collections, multi-line flow scalars, explicit keys) refuses,
+// fixtures set. What print.ts has no rule for (comments in flow collections, multi-line flow scalars, explicit keys) refuses,
 // as `refused` below pins.
 
 type Options = Partial<PrettierOptions> & { singleQuote?: boolean };
@@ -16,6 +16,8 @@ type Options = Partial<PrettierOptions> & { singleQuote?: boolean };
 const optionSets: [string, Options][] = [
   ["defaults", {}],
   ["tabWidth 4, singleQuote", { tabWidth: 4, singleQuote: true }],
+  // Flow mappings drop their inner spaces: `{a: 1}`.
+  ["bracketSpacing false", { bracketSpacing: false }],
 ];
 
 const edgeCases: [string, string][] = [
@@ -60,6 +62,18 @@ const edgeCases: [string, string][] = [
   ["block-scalar-blank-after", "- |\n  x\n- 1\n- |\n  y\n\n# c\n"],
   // An empty sequence item lost the space its absent value takes before a trailing comment.
   ["empty-item-comment", "- # c\n- x\n"],
+  // A flow collection kept its source spacing and trailing comma instead of `{ a: 1 }` / `[a, b]`.
+  ["flow-flat", "a: {b: 1,c: [x,y,],  d: {}}\nb: [ ]\nc: {e, f: }\nd:\n  - [&x 1, *x, g: h]\n"],
+  // A flow collection past printWidth stayed on one line instead of moving under its key and breaking per item.
+  ["flow-broken-under-key", `a: [${Array.from({ length: 13 }, (_, i) => `item${i}`).join(", ")}]\n`],
+  // A broken flow under a sequence item moved to the next line, or lost the dash's two-column alignment.
+  ["flow-broken-in-sequence", `- {${Array.from({ length: 8 }, (_, i) => `k${i}: value${i}`).join(", ")}}\n`],
+  // A flow value that fits once moved below its key still broke, or a pair value inside a broken flow stayed put.
+  ["flow-moved-flat", `${"k".repeat(70)}: [a, b, c, d]\nz: {b: [${Array.from({ length: 13 }, (_, i) => `item${i}`).join(", ")}]}\n`],
+  // A blank line between broken flow items was dropped, doubled, or kept in a flat one.
+  ["flow-blank-lines", `a: [1,\n\n  2]\nb: [${Array.from({ length: 4 }, (_, i) => `item${i}`).join(",\n\n\n  ")}, ${Array.from({ length: 10 }, (_, i) => `o${i}`).join(", ")}]\n`],
+  // A root flow collection with properties broke onto a new line after them, or broke at all when it fits.
+  ["flow-root", `&x [${Array.from({ length: 13 }, (_, i) => `item${i}`).join(", ")}]\n---\n{a: 1}\n`],
 ];
 
 // A folded scalar's refill under proseWrap always: lines join into paragraphs and refill at printWidth, except
@@ -98,8 +112,10 @@ describe.each(optionSets)(
 );
 
 const refused: [string, string][] = [
-  // A flow mapping printed as written, where oxfmt adds bracket spacing and breaks it past printWidth.
-  ["flow-mapping", "a: {b: 1}\n"],
+  // A comment inside a flow collection, which oxfmt lays out in ways print.ts has no rule for, printed anyway.
+  ["flow-comment", "a: [1, # one\n  2]\n"],
+  // A flow key past printWidth printed flat, where oxfmt makes it explicit (`? [`).
+  ["flow-key-long", `[${"x".repeat(90)}]: c\n`],
   // A comment after a kept block scalar ending the stream printed a final line break, which oxfmt leaves off.
   ["kept-block-scalar-then-comment", "a: |+\n  x\n# c\n"],
   // `{? 1,? 2}` parses to an ERROR root spanning `{? 1` only, so printing its text dropped the rest.
