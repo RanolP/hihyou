@@ -132,7 +132,7 @@ function html(node: number, raws: string[], subs: () => Part[], tick: Tick, tabW
 // embed/css.js's printEmbedCss. Prettier's placeholder, `@prettier-placeholder-N-id`, is an at-word scss reads
 // where tree-sitter-css reads none; an identifier stands wherever a value, a selector or a property does.
 function cssEmbed(ctx: JsStreamCtx, node: number, raws: string[], subs: () => Part[], tick: Tick): Part | undefined {
-  const text = withLastSemicolon(raws.map((q, i) => (i === 0 ? q : `prettier-placeholder-${i - 1}${q}`)).join(""));
+  const text = withLastSemicolon(placeholderStatements(raws));
   const tree = parseTree(cssLanguage, text);
   if (tree.errorChars > 0 || brokenNodes(tree) !== undefined || scssOnly(tree)) return undefined;
   const parts = subs();
@@ -167,6 +167,32 @@ function cssEmbed(ctx: JsStreamCtx, node: number, raws: string[], subs: () => Pa
   });
   // Prettier fails the embed when a placeholder did not print as a token of its own.
   return failed || seen.size !== parts.length ? undefined : printed;
+}
+
+/**
+ * The CSS of `raws`, a placeholder for each substitution. One or more substitutions alone on a line, opening a
+ * statement and ending it with a `;`, a line break, a `}` or the template's end (`${x}; b: a`), are a statement of
+ * their own to oxfmt, which tree-sitter-css reads as a postcss statement opening with
+ * `@prettier-placeholder-statement`, or `@prettier-placeholder-bare` where no `;` follows them, the CSS printer
+ * printing that `;` only for the first (css/fmt.ts's `placeholdersMarker`).
+ */
+function placeholderStatements(raws: string[]): string {
+  let out = raws[0] ?? "";
+  for (let i = 0; i + 1 < raws.length; i++) {
+    const opens = /(?:^|[;{}])(?:\s|\/\*[^]*?\*\/)*$/.test(out);
+    let j = i;
+    while (j + 2 < raws.length && /^[ \t]*$/.test(raws[j + 1] as string)) j++;
+    const after = raws[j + 1] as string;
+    const semi = /^\s*;/.test(after);
+    if (!opens || !(semi || /^[ \t]*(?:\/\*[^]*?\*\/[ \t]*)*(?:\r?\n|\}|$)/.test(after))) {
+      out += `prettier-placeholder-${i}${raws[i + 1]}`;
+      continue;
+    }
+    const placeholders = Array.from({ length: j - i + 1 }, (_, k) => `prettier-placeholder-${i + k}`).join(" ");
+    out += `@prettier-placeholder-${semi ? "statement" : "bare"} ${placeholders}${semi ? "" : ";"}${after}`;
+    i = j;
+  }
+  return out;
 }
 
 // SCSS ends the template's last declaration as a block's (`b: a /* c */` is `b: a; /* c */`), where tree-sitter-css

@@ -31,7 +31,8 @@ export const jsNormalize: Normalize = (lexemes, text, tree) => {
     // Prettier reflows a template in another language (print/embed.ts), whose whitespace means nothing to it.
     if (isEmbedFragment(tree, l.node)) {
       const words = cssEndSemicolons(tree, l.node, l.text).replace(/\s+/g, "");
-      return words === "" ? undefined : `embed:${words}@${places.of(l.node)}`;
+      // Its place is the substitutions before it: prettier adds a fragment before a leading `${…}` when it breaks.
+      return words === "" ? undefined : `embed:${words}#${substitutionsBefore(tree, l.node)}@${places.at(tree.parent(l.node))}`;
     }
     const value = valueForm(tree, l, l.node, lexemes, i);
     return value === undefined ? undefined : `${value}@${places.of(l.node)}`;
@@ -56,6 +57,14 @@ function cssEndSemicolons(tree: Tree, fragment: number, text: string): string {
   const last = tree.child(template, tree.count(template) - 2) === fragment;
   const comments = String.raw`(?:\s|/\*[^]*?\*/|//[^\n]*)*`;
   return text.replace(new RegExp(`;(?=${comments}(?:\\}${last ? "|$" : ""}))`, "g"), "");
+}
+
+function substitutionsBefore(tree: Tree, fragment: number): number {
+  const template = tree.parent(fragment);
+  let count = 0;
+  for (let i = 0; i < tree.count(template) && tree.child(template, i) !== fragment; i++)
+    if (tree.kindName(tree.child(template, i)) === "template_substitution") count++;
+  return count;
 }
 
 const isEmbedFragment = (tree: Tree, n: number) => {

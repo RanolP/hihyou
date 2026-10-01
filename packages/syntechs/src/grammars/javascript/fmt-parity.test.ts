@@ -231,6 +231,13 @@ const edgeCases: [string, Target, string][] = [
   // SCSS ends the template's last declaration and a block's with the `;` it adds, before a trailing comment; the
   // missing `;` failed the embed, which printed the template as written, and the added one failed the check.
   ["css-embed-inserted-semicolon", "js", "css`b: a`;\ncss`b: a /*e;*/`;\ncss`a{b: a}`;\ncss`b: ${x}; c: ${y}`;\n"],
+  // A substitution alone as a statement did not parse as CSS, so the template kept its source; oxfmt reads it as a
+  // statement, `;` only where written, and keeps a statement after it on its line.
+  [
+    "css-embed-placeholder-statement",
+    "js",
+    "css`${x}; b: a`;\ncss`${x}`;\ncss`${x}\n  b: a;`;\ncss`b: a; ${x};`;\ncss`a{${x}; b: a}`;\ncss`${x}${y}\n${z}; /* c */ d: e`;\ncss`${x}: a;`;\n",
+  ],
   [
     "comments-prettier-moves",
     "ts",

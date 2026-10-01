@@ -274,6 +274,20 @@ export const customs = {
   /** A media query list holding a comment, which `mediaQueries` prints as postcss-media-query-parser splits it. */
   mediaComments: (node, ctx) => mediaAtoms(node, ctx).some((c) => isComment(c, ctx)),
   ownWord: (node, ctx) => ownWord(node, ctx),
+  /** A statement on the source line of the embedded placeholders' statement before it, which oxfmt keeps there. */
+  afterPlaceholders: (node, ctx) => {
+    const t = ctx.tree;
+    const p = t.parent(node);
+    let prev = -1;
+    for (let i = 0; i < t.count(p) && t.child(p, i) !== node; i++)
+      if (t.named(t.child(p, i)) && !isComment(t.child(p, i), ctx)) prev = t.child(p, i);
+    if (prev === -1 || placeholdersMarker(prev, t) === undefined) return false;
+    for (let l = nextLeaf(t, prev); l !== NO_NODE; l = nextLeaf(t, l)) {
+      if (t.lf(l) > 0) return false;
+      if (l === firstLeaf(t, node)) return true;
+    }
+    return false;
+  },
   /**
    * A declaration's comma entry that is one math expression (`a / c`, `// c`) or a lone `!word`, which oxc-css-parser
    * reads as several values, so a list holding one breaks as one of several words does; so does an entry of comments
@@ -833,6 +847,7 @@ function raw(
 /** A Sass directive, else as written; `@page:first` stays joined, as postcss reads a name up to the first gap. */
 export function atRule(node: number, ctx: SCtx): void {
   if (isDirective(node, ctx)) return sassDirective(node, ctx);
+  if (placeholderStatement(node, ctx)) return;
   const own = (c: number) => kind(c, ctx) === "at_keyword" || kind(c, ctx) === "block";
   const block = (c: number) => kind(c, ctx) === "block";
   const comma = (c: number) => kind(c, ctx) === ",";
@@ -851,7 +866,35 @@ const layerList = (node: number, t: FormatTree) =>
 /** A Sass directive or postcss-mixins' `@define-mixin`, else as written. */
 export function postcssStatement(node: number, ctx: SCtx): void {
   if (isDirective(node, ctx)) return sassDirective(node, ctx);
+  if (placeholderStatement(node, ctx)) return;
   raw(node, ctx, () => false, (prev) => kind(prev, ctx) === "at_keyword");
+}
+
+/**
+ * Embedded CSS's statement of placeholders alone (javascript/print/embed.ts's `placeholderStatements`), which opens
+ * with `@prettier-placeholder-statement`, or `@prettier-placeholder-bare` where the template has no `;` after them.
+ */
+function placeholdersMarker(node: number, t: FormatTree): "statement" | "bare" | undefined {
+  if (!["postcss_statement", "at_rule"].includes(t.kindName(node))) return undefined;
+  const m = /^@prettier-placeholder-(statement|bare)$/.exec(t.text(t.child(node, 0)));
+  return m === null ? undefined : (m[1] as "statement" | "bare");
+}
+
+/** `placeholdersMarker`'s statement: its placeholders a space apart, then the `;` where the template has one. */
+function placeholderStatement(node: number, ctx: SCtx): boolean {
+  const t = ctx.tree;
+  const marker = placeholdersMarker(node, t);
+  if (marker === undefined) return false;
+  const [, ...rest] = children(node, t).filter((c) => !isComment(c, ctx));
+  rest.forEach((c, i) => {
+    if (!t.named(c)) {
+      if (marker === "statement") sToken(c, ";");
+    } else {
+      if (i > 0) sText(" ");
+      ctx.print(c);
+    }
+  });
+  return true;
 }
 
 /**

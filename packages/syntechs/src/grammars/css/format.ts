@@ -80,8 +80,9 @@ const statements = { blankLines: "force" } as const;
 /** CSS as prettier 3.9.9's postcss printer lays it out. */
 export const css = format({
   structure: {
-    stylesheet: ($) => lines($.children),
-    block: ($) => grpBrace(lines($.children)),
+    // A statement after an embedded template's statement of placeholders on its source line stays on that line.
+    stylesheet: ($) => lines($.children, { sameLine: when("afterPlaceholders") }),
+    block: ($) => grpBrace(lines($.children, { sameLine: when("afterPlaceholders") })),
     keyframe_block_list: ($) => grpBrace(lines($.children)),
     // Its children spaced, but a selector holding a comment as written (fmt.ts's `ruleSet`).
     rule_set: () => custom("ruleSet"),

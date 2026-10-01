@@ -365,14 +365,19 @@ export function flatten<O>(
           return;
         }
         case "lines": {
-          if (x.attach !== undefined || x.blank !== undefined || x.follow !== undefined || x.sameLine !== undefined || x.tokens || x.imports)
+          if (x.attach !== undefined || x.blank !== undefined || x.follow !== undefined || x.tokens || x.imports)
             throw new Error("flatten: `lines` with `attach`, `blank` or `follow` is generated only, not referenced yet");
           const items = listItems(ctx, n, x.list.name, kindHasFields).slice(x.list.from ?? 0);
           // Nothing to lay out leaves no frame, so a bracket body of only this is empty.
           if (items.length === 0 && (!owners.has(x) || dangling().length === 0)) return;
           out.push({ e: "lines", label: x.list.name });
           items.forEach((item, i) => {
-            if (i > 0) out.push({ e: "hardline" });
+            if (i > 0)
+              out.push(
+                x.sameLine !== undefined && x.sameLine !== false && evalCond(x.sameLine, ctx, item, custom, t.kindName(item) in grammar.fieldTypes)
+                  ? { e: "space" }
+                  : { e: "hardline" },
+              );
             child(item);
             if (i < items.length - 1 && nextLineEmpty(t, item)) out.push({ e: "blank" });
           });
