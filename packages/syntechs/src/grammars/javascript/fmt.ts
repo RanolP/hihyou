@@ -27,7 +27,7 @@ import * as gen from "./fmt.gen.js";
 import { grammar, language as parser } from "./index.js";
 import { jsAtoms, jsNormalize } from "./normalize.js";
 import { assignmentCustoms } from "./print/assignment.js";
-import { callCustoms } from "./print/calls.js";
+import { callCustoms, sAwaitCallArguments } from "./print/calls.js";
 import { classCustoms } from "./print/classes.js";
 import { handleComment } from "./print/comments.js";
 import { functionCustoms } from "./print/functions.js";
@@ -37,7 +37,7 @@ import { moduleCustoms } from "./print/modules.js";
 import { objectCustoms } from "./print/objects.js";
 import { operatorCustoms } from "./print/operators.js";
 import { jsPreds } from "./print/preds.js";
-import { isDecoratedClass, needsParens } from "./print/parens.js";
+import { isAwaitCallArguments, isDecoratedClass, needsParens } from "./print/parens.js";
 import { semiCustoms } from "./print/semi.js";
 import {
   castLedAsi,
@@ -108,6 +108,8 @@ const parenthesized: StreamRule<JsOptions> = (n, s) => {
   const inner = items(ctx, n)[0];
   if (inner === undefined) return sTok(ctx, n);
   if (isCastParen(ctx, n)) return castParens(sctx, n, inner);
+  if (kind(ctx, parent(ctx, n)) !== PE && isAwaitCallArguments(ctx, n))
+    return sAwaitCallArguments(sctx, n);
   if (kind(ctx, parent(ctx, n)) === PE || !needsParens(unparen(ctx, n), ctx)) {
     sctx.print(inner, args);
     return;

@@ -1,4 +1,4 @@
-js@oxfmt compatibility: 941/964 (97.61%), 4 refused (ok:false), 190 excluded
+js@oxfmt compatibility: 942/964 (97.72%), 4 refused (ok:false), 190 excluded
 
 Fixtures: prettier 3.9.9 tests/format/{js,jsx} (recursive), every spec call listing parser `babel` or `acorn` or `espree` or `meriyah` or `oxc`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left.
 
@@ -25,7 +25,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/multiparser-markdown/markdown.js | 0/1 | 12.50% |
 | js/multiparser-markdown/single-line.js | 0/1 | 0.00% |
 | js/multiparser-text/text.js | 0/1 | 66.67% |
-| js/ternaries/parenthesis/await-expression.js | 0/1 | 66.67% |
 | jsx/template/styled-components.js | 0/1 | 93.94% |
 
 # Refused

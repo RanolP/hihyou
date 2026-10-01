@@ -566,6 +566,10 @@ function sCallArguments(sctx: JsStreamCtx, n: number): void {
   withComments(sctx, list, () => sArguments(sctx, n, list));
 }
 
+/** `(x)` in a script's `await (x)`, which oxc reads as the argument list of a call of `await`. */
+export const sAwaitCallArguments = (sctx: JsStreamCtx, paren: number): void =>
+  sArguments(sctx, paren, paren);
+
 /** Writes each of `states` as one state of a conditional group. */
 function sConditionalGroup(states: readonly (() => void)[]): void {
   openChoice(false);

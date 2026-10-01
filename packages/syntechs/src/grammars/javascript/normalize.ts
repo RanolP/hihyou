@@ -34,6 +34,9 @@ export const jsNormalize: Normalize = (lexemes, text, tree) => {
       // Its place is the substitutions before it: prettier adds a fragment before a leading `${…}` when it breaks.
       return words === "" ? undefined : `embed:${words}#${substitutionsBefore(tree, l.node)}@${places.at(tree.parent(l.node))}`;
     }
+    const call = tree.parent(l.node);
+    if (tree.fieldName(l.node) === "function" && isAwaitCall(tree, call))
+      return `await@${places.of(chainTop(tree, call))}`;
     const value = valueForm(tree, l, l.node, lexemes, i);
     return value === undefined ? undefined : `${value}@${places.of(l.node)}`;
   });
@@ -456,6 +459,40 @@ function isV8NewCall(tree: Tree, n: number): boolean {
   );
 }
 
+/**
+ * A script's `await (x)(y)`, which oxfmt prints as the call of `await` oxc reads there: `await(x,)(y)`. tree-sitter
+ * reads the input as an await of `(x)(y)` and the output as a call of a call of `await`, so both stand flat: every
+ * await expression, and the call of `await` with its argument list, are see-through, and `await` stands where the
+ * chain it starts does. The `await` token keeps a place of its own, so `(await x).y` and `await x.y` still differ.
+ */
+function isAwaitCall(tree: Tree, n: number): boolean {
+  if (n === NO_NODE || tree.kindName(n) !== "call_expression") return false;
+  const fn = findChild(tree, n, (c) => tree.fieldName(c) === "function");
+  const args = findChild(tree, n, (c) => tree.fieldName(c) === "arguments");
+  return (
+    fn !== NO_NODE &&
+    tree.kindName(fn) === "identifier" &&
+    tree.text(fn) === "await" &&
+    args !== NO_NODE &&
+    tree.kindName(args) === "arguments" &&
+    codeChildren(tree, args) === 1
+  );
+}
+
+/** The top of the member chain whose head is `n`: `a(b).c` over `a(b)`. */
+function chainTop(tree: Tree, n: number): number {
+  for (let p = tree.parent(n); p !== NO_NODE; p = tree.parent(n)) {
+    const f = tree.fieldName(n);
+    const k = tree.kindName(p);
+    const link =
+      (k === "call_expression" && f === "function") ||
+      ((k === "member_expression" || k === "subscript_expression") && f === "object");
+    if (!link) break;
+    n = p;
+  }
+  return n;
+}
+
 const LOGICAL = new Set(["&&", "||", "??"]);
 
 function logicalOperator(tree: Tree, n: number): string | undefined {
@@ -480,7 +517,11 @@ const isLeadingOperator = (tree: Tree, n: number) => {
 function transparent(tree: Tree, n: number): boolean {
   switch (tree.kindName(n)) {
     case "call_expression":
-      return isV8NewCall(tree, n);
+      return isV8NewCall(tree, n) || isAwaitCall(tree, n);
+    case "arguments":
+      return tree.fieldName(n) === "arguments" && isAwaitCall(tree, tree.parent(n));
+    case "await_expression":
+      return true;
     case "parenthesized_expression":
       return !parensMatter(tree, n);
     case "parenthesized_type":

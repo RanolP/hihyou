@@ -839,7 +839,7 @@ function awaitCallParen(x: HasTree, n: number): number | undefined {
 }
 
 /** Whether `top`, a parenthesized_expression, is the argument list of a call of `await` that babel reads. */
-function isAwaitCallArguments(x: HasTree, top: number): boolean {
+export function isAwaitCallArguments(x: HasTree, top: number): boolean {
   let a = parentOf(x, top);
   while (a !== undefined && (isMember(x, a) || kind(x, a) === "call_expression")) a = parentOf(x, a);
   return a !== undefined && isAwaitCall(x, a) && awaitCallParen(x, a) === top;
