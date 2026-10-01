@@ -1780,6 +1780,23 @@ function mediaAtoms(node: number, ctx: SCtx): number[] {
     .flatMap(atoms);
 }
 
+/** Whether the parens opening at `atoms[open]` hold a first `:` outside comments with whitespace before or after it. */
+function spacedColon(atoms: number[], open: number, ctx: SCtx): boolean {
+  const t = ctx.tree;
+  let inner = "";
+  let depth = 0;
+  for (let i = open; i < atoms.length; i++) {
+    const c = atoms[i] as number;
+    if (i > open) inner += sourceGap(t, atoms[i - 1] as number, c);
+    const text = t.text(c);
+    if (!t.named(c) && text === "(") depth++;
+    else if (!t.named(c) && text === ")" && --depth === 0) break;
+    inner += ctx.isComment(c) ? "x".repeat(text.length) : text;
+  }
+  const at = inner.replace(/\/\*[\s\S]*?\*\//g, (m) => "x".repeat(m.length)).indexOf(":");
+  return at !== -1 && /\s/.test((inner[at - 1] ?? "") + (inner[at + 1] ?? ""));
+}
+
 /**
  * `@media`'s prelude holding a comment, as postcss-media-query-parser reads the source: queries split at the commas
  * outside parens, each query's elements at its whitespace outside parens, one ending at a `)` that closes its
@@ -1795,16 +1812,19 @@ export function mediaQueries(at: number | undefined, node: number, ctx: SCtx): v
   let level = 0;
   // Whether the parens open a feature expression, and its `:`.
   let expression = false;
+  // Whether the parens print as written: oxc's write_media_token re-spaces one only around a `:` with a space beside.
+  let raw = false;
   let colon = -1;
   let prev = -1;
   open(GROUP);
   open(INDENT);
-  for (const c of atoms) {
+  for (const [i, c] of atoms.entries()) {
+    if (level === 0 && is(c, "(")) raw = !spacedColon(atoms, i, ctx);
     if (prev !== -1) {
       if (level === 0) {
         if (is(prev, ",")) sLine(0);
         else if (!is(c, ",") && (!t.adjoins(prev, c) || is(prev, ")"))) sText(" ");
-      } else if (!expression) sText(sourceGap(t, prev, c));
+      } else if (!expression || raw) sText(sourceGap(t, prev, c));
       else if (level === 1 && (is(prev, "(") || is(c, ")"))) {
         // The feature and the value are trimmed.
       } else if (level === 1 && colon === -1 && is(c, ":")) colon = c;
@@ -1817,7 +1837,7 @@ export function mediaQueries(at: number | undefined, node: number, ctx: SCtx): v
       colon = -1;
     }
     if (ctx.isComment(c)) ctx.comment(c);
-    else if (t.named(c)) ctx.printNode(c);
+    else if (t.named(c) && !(raw && level > 0)) ctx.printNode(c);
     else sToken(c, t.text(c));
     if (is(c, "(")) level++;
     else if (is(c, ")")) level = Math.max(level - 1, 0);

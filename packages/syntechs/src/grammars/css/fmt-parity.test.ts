@@ -265,6 +265,11 @@ const edgeCases: [string, string][] = [
     "selector-error-tail",
     ".x{a:b !c{d:e}}\n.x{a:b c%{d:e}f:g}\n.x{a:b>c   !d   {d:e}}\n.x{a:b /*q*/ 1.5% /*r*/ {}}\na:b c!{d:e}",
   ],
+  // A commented @media prelude re-spaced and lowercased a feature `(A:B)` whose `:` has no space beside it.
+  [
+    "media-comment-raw-feature",
+    "@media (A:B) /*q*/ {x{y:z}}\n@media (a :b)   and  (min-width:1.50px)/*q*/ {x{y:z}}\n@media ( a:b ) /*q*/,(c/*r*/:d) {x{y:z}}",
+  ],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");
