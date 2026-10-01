@@ -1,4 +1,11 @@
-import type { CollapseReason, LinePair, Span } from "@hihyou/engine";
+import {
+  type CollapseReason,
+  type CompiledTheme,
+  compileTheme,
+  type LinePair,
+  type Span,
+  type Theme,
+} from "@hihyou/engine";
 import { findCounterpart, type SideRef } from "./moves.js";
 import {
   buildSections,
@@ -26,11 +33,15 @@ export interface RenderOptions {
    * Without this callback an elided run shows as a plain note.
    */
   onExpand?(fileId: string, elided: ElidedRef): void;
+  /** Colours `Span.scope`: a VS Code theme, `include`s already followed. Without one, code is drawn uncoloured. */
+  theme?: Theme;
 }
 
 export interface DiffsetView {
   /** Redraws with new files, keeping which collapsed files are open and each file's scroll position. */
   update(files: readonly DiffFile[]): void;
+  /** Redraws with another theme, as `update` keeps state. */
+  setTheme(theme: Theme | undefined): void;
   dispose(): void;
 }
 
@@ -61,6 +72,7 @@ export function renderDiffset(
   const opened = new Set<string>();
   const actions = new WeakMap<Element, () => void>();
   let fragmentRows = new Map<string, HTMLTableRowElement[]>();
+  let theme: CompiledTheme | undefined = opts.theme && compileTheme(opts.theme);
 
   const el = <K extends keyof HTMLElementTagNameMap>(
     tag: K,
@@ -85,12 +97,24 @@ export function renderDiffset(
     return td;
   };
 
-  /** Where token classes will go once a `HighlightModule` fills `Span.scope`. */
+  /** Syntax colour inside, diff emphasis (a background) around it, so both show. */
   const spanNode = (span: Span, side: SideName): Node => {
-    const text = doc.createTextNode(span.text);
-    if (!span.changed) return text;
+    let node: Node = doc.createTextNode(span.text);
+    const style = span.scope !== undefined ? theme?.style(span.scope) : undefined;
+    if (style?.foreground || style?.fontStyle) {
+      const token = el("span");
+      if (style.foreground) token.style.color = style.foreground;
+      const font = style.fontStyle ?? "";
+      if (font.includes("italic")) token.style.fontStyle = "italic";
+      if (font.includes("bold")) token.style.fontWeight = "bold";
+      const lines = ["underline", "strikethrough"].filter((l) => font.includes(l));
+      if (lines.length > 0) token.style.textDecoration = lines.join(" ").replace("strikethrough", "line-through");
+      token.append(node);
+      node = token;
+    }
+    if (!span.changed) return node;
     const mark = el(side === "before" ? "del" : "ins", "hh-changed");
-    mark.append(text);
+    mark.append(node);
     return mark;
   };
 
@@ -332,6 +356,10 @@ export function renderDiffset(
   return {
     update(files) {
       current = files;
+      draw();
+    },
+    setTheme(next) {
+      theme = next && compileTheme(next);
       draw();
     },
     dispose() {

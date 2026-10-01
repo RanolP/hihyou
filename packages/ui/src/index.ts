@@ -6,3 +6,4 @@ export {
 } from "./render.js";
 export type { DiffFile } from "./rows.js";
 export { diffStyles } from "./styles.js";
+export { githubDark, githubLight } from "./themes.js";
