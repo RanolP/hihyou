@@ -240,6 +240,9 @@ const edgeCases: [string, string][] = [
   // A `!` before a word other than `important` was an ERROR, kept as written; oxfmt keeps it glued or one space apart
   // as written, and a lone `!word` entry breaks the list.
   ["bang-word", "a{b:a!c;c:a  !c d;d:a!c!important;e:!c,a;f:f(x)!c;g:a!importantx;h:a!c ! IMPORTANT}"],
+  // A comment past a value's leading comma printed before it, as postcss's `between`; oxfmt reads it as the next
+  // entry's, and an entry of comments alone breaks the list.
+  ["comment-after-leading-comma", "a{b:,/*c*/a;c:, /*c*/ a,d;e:x,/*c*/,a;f:/*c*/,/*d*/a}"],
   ["word-hash-star", "a{b:a#b, d;c:x a#b#c;d:f(a*c);e:a$c;f:url($a*3);g:calc(a*c);h:f(w-*);i:a #b}"],
 ];
 

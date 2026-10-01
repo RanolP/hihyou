@@ -38,7 +38,7 @@ import {
   type StreamCtx,
   type StreamRule,
 } from "../../fmt/stream-format.js";
-import { firstLeaf, type FormatTree, nextLeaf } from "../../fmt/tree.js";
+import { firstLeaf, type FormatTree, nextLeaf, prevLeaf } from "../../fmt/tree.js";
 import { grammar } from "./bundle.js";
 import * as gen from "./fmt.gen.js";
 import { directives } from "./directive.js";
@@ -276,9 +276,11 @@ export const customs = {
   ownWord: (node, ctx) => ownWord(node, ctx),
   /**
    * A declaration's comma entry that is one math expression (`a / c`, `// c`) or a lone `!word`, which oxc-css-parser
-   * reads as several values, so a list holding one breaks as one of several words does.
+   * reads as several values, so a list holding one breaks as one of several words does; so does an entry of comments
+   * alone (`a,/*c*\/,b`).
    */
   mathEntry: (node, ctx) =>
+    commentEntry(node, ctx) ||
     code(node, ctx).some(
       (c, i, all) =>
         (["binary_expression", "unary_expression", "important_value"].includes(kind(c, ctx)) ||
@@ -289,6 +291,17 @@ export const customs = {
         ),
     ),
 } satisfies Record<string, PredicateRule<CssOptions>>;
+
+/** Whether a declaration's comma list holds an entry of comments alone between two commas. */
+function commentEntry(node: number, ctx: SCtx): boolean {
+  const t = ctx.tree;
+  const commas = children(node, t).filter((c) => t.text(c) === ",");
+  return ctx.danglingComments(node).some((d) => {
+    const prev = prevLeaf(t, d);
+    const next = nextLeaf(t, d);
+    return commas.includes(prev) && commas.includes(next);
+  });
+}
 
 /**
  * A value item written joined to a function on either side, which postcss-value-parser still reads as a node of its
@@ -1002,10 +1015,15 @@ function sourceGap(t: FormatTree, prev: number, c: number): string {
   return " ".repeat(Math.max(t.col(c) - end, 0));
 }
 
-/** Postcss's `between` of `declaration`, the dangling comments before its value (`handleComment`). */
+/**
+ * Postcss's `between` of `declaration`, the dangling comments before its value (`handleComment`), which starts at a
+ * leading comma: oxc-css-parser reads a comment past it (`b:,/*c*\/a`) as the next entry's.
+ */
 function between(node: number, ctx: SCtx): number[] {
   const t = ctx.tree;
-  const value = children(node, t).find((c) => t.named(c) && !isComment(c, ctx) && kind(c, ctx) !== "property_name");
+  const value = children(node, t).find(
+    (c) => (t.named(c) && !isComment(c, ctx) && kind(c, ctx) !== "property_name") || t.text(c) === ",",
+  );
   return ctx.danglingComments(node).filter((c) => value === undefined || t.ord(c) < t.ord(value));
 }
 

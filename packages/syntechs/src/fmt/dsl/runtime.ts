@@ -567,7 +567,7 @@ export interface SplitRun {
 /**
  * The items and tokens of `node` but comments and `except` and `trail` kinds, cut at each `sep` token, which ends the
  * entry before it; a last entry left empty (by a trailing separator, or no children at all) is dropped. With
- * `comments`, the node's dangling comments past its first item and before its trail are items too.
+ * `comments`, the node's dangling comments past its first item or separator and before its trail are items too.
  */
 export function splitRun<O>(
   ctx: StreamCtx<O>,
@@ -599,6 +599,7 @@ export function splitRun<O>(
     else if (!named && kind === sep) {
       entry.sep = c;
       entries.push((entry = { items: [], sep: -1 }));
+      started = true;
     } else {
       entry.items.push(c);
       started = true;
