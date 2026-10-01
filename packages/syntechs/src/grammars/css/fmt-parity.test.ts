@@ -411,6 +411,11 @@ const edgeCases: [string, string][] = [
     "pseudo-class-name-without-arguments",
     "a:nth-child{b:c}\na:NTH-CHILD{b:c}\na:nth-last-of-type:hover{b:c}\na:nth-col, b:nth-child{b:c}\na:not{b:c}\na:is{b:c}\na:nth-child (2){b:c}",
   ],
+  // A custom property block followed by `!important` or a comment stayed as written instead of laid out as a block.
+  [
+    "custom-property-block-important",
+    "a{--a: {a} !important}\na{--a:{a:b}!important;c:d}\na{--a:{a:b} ! IMPORTANT;}\na{--a:{} !important}\na{--a:{a:b} !important /*c*/;}\na{--a:{a:b} !important /*c*/}\na{--a:{a:b;}/*c*/}\na{--a:{a:b}/*c*/ /*d*/;}\na{--a:{a:b} / c;}\na{--a:{a:b} /*c*/ x;}",
+  ],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");

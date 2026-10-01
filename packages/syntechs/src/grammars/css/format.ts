@@ -164,7 +164,8 @@ export const css = format({
       tok(":").via("declarationColon"),
       space,
       $.children.at(1).andThen((b) => b),
-      semicolon,
+      $.important.andThen((i) => [space, i]),
+      tok(";").via("declarationEnd"),
     ],
     // postcss-nested-props: a rule whose selector is `name:` and any values, as written.
     nested_property: () =>

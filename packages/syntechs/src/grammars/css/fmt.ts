@@ -1623,7 +1623,12 @@ export function declarationEnd(semi: number | undefined, node: number, ctx: SCtx
   const t = ctx.tree;
   const real = semi !== undefined && t.text(semi) !== "";
   // Sass flags (`sassFlags`) end the value as `!important` does.
-  const important = children(node, t).findLast((c) => kind(c, ctx) === "important" || kind(c, ctx) === "ERROR");
+  // So does a custom property's block (`--a: {a: b} /*c*/;`), which oxfmt prints the comments after.
+  const important = children(node, t).findLast(
+    (c) =>
+      ["important", "ERROR"].includes(kind(c, ctx)) ||
+      (kind(node, ctx) === "custom_property_set" && kind(c, ctx) === "block"),
+  );
   if (important !== undefined) {
     // One space before each comment after `!important`, none before `;`.
     for (const c of ctx.danglingComments(node))

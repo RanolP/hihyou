@@ -35,6 +35,7 @@ const RBRACKET = 93;
 const DQUOTE = 34;
 const SQUOTE = 39;
 const BACKSLASH = 92;
+const BANG = 33;
 const NEWLINE = 10;
 const CUSTOM_SELECTOR = "custom-selector";
 
@@ -145,7 +146,21 @@ function scanCustomPropertyName(lexer: Lexer, valid: Uint8Array): boolean {
     advancePiece(lexer, depth);
   } while (depth.n > 0 && !lexer.eof());
   if (depth.n > 0) return false;
-  while (iswspace(lexer.lookahead)) lexer.advance(false);
+  // Comments after the block (`{a: b} /*c*/;`), which oxfmt prints after it; a lone `/` makes the value raw.
+  if (!advanceGap(lexer)) {
+    lexer.resultSymbol = CUSTOM_PROPERTY_RAW_NAME;
+    return valid[CUSTOM_PROPERTY_RAW_NAME] !== 0;
+  }
+  // A trailing `!important` (`{a: b} !important;`), which oxfmt prints after the block, and comments after it.
+  if (peek(lexer) === BANG) {
+    lexer.advance(false);
+    while (iswspace(lexer.lookahead)) lexer.advance(false);
+    for (const ch of "important") {
+      if ((lexer.lookahead | 0x20) !== ch.charCodeAt(0)) return false;
+      lexer.advance(false);
+    }
+    if (!advanceGap(lexer)) return false;
+  }
   const c: number = lexer.lookahead;
   const oneGroup = !nested && (c === SEMI || c === RBRACE || lexer.eof());
   lexer.resultSymbol = oneGroup ? CUSTOM_PROPERTY_SET_NAME : CUSTOM_PROPERTY_RAW_NAME;

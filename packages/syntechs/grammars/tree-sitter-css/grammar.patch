@@ -231,7 +231,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
        $.rule_set,
        $.import_statement,
        $.media_statement,
-@@ -150,11 +258,41 @@
+@@ -150,11 +258,42 @@
        $.keyframes_statement,
        $.supports_statement,
        $.scope_statement,
@@ -251,6 +251,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
 +      alias($._custom_property_set_name, $.property_name),
 +      ':',
 +      $.block,
++      optional(field('important', $.important)),
 +      optional(';'),
 +    )),
 +
@@ -273,7 +274,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
  
      _selector: $ => choice(
        $.universal_selector,
-@@ -163,8 +301,9 @@
+@@ -163,8 +302,9 @@
        $.nesting_selector,
        $.pseudo_class_selector,
        $.pseudo_element_selector,
@@ -283,7 +284,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
        $.string_value,
        $.child_selector,
        $.descendant_selector,
-@@ -172,9 +311,10 @@
+@@ -172,9 +312,10 @@
        $.adjacent_sibling_selector,
        $.namespace_selector,
      ),
@@ -295,7 +296,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
      universal_selector: _ => '*',
  
      class_selector: $ => prec(1, seq(
-@@ -206,18 +346,23 @@
+@@ -206,18 +347,23 @@
            $.class_name,
            optional(alias($.pseudo_class_arguments, $.arguments)),
          ),
@@ -324,7 +325,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
        ),
        alias($.pseudo_class_nth_child_arguments, $.arguments),
      ),
-@@ -234,20 +379,35 @@
+@@ -234,20 +380,35 @@
        '#',
        alias($.identifier, $.id_name),
      ),
@@ -361,7 +362,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
      descendant_selector: $ => prec.left(seq($._selector, $._descendant_operator, $._selector)),
  
      sibling_selector: $ => prec.left(seq(optional($._selector), '~', $._selector)),
-@@ -270,24 +430,28 @@
+@@ -270,24 +431,28 @@
  
      pseudo_class_nth_child_arguments: $ => prec(-1, seq(
        token.immediate('('),
@@ -394,7 +395,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
      pseudo_element_arguments: $ => seq(
        token.immediate('('),
        sep(',', choice($._selector, repeat1($._value))),
-@@ -295,42 +459,90 @@
+@@ -295,42 +460,90 @@
      ),
  
      // Declarations
@@ -501,7 +502,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
  
      feature_query: $ => seq(
        '(',
-@@ -339,38 +551,84 @@
+@@ -339,38 +552,84 @@
        repeat1($._value),
        ')',
      ),
@@ -589,7 +590,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
        $.float_value,
        $.string_value,
        $.grid_value,
-@@ -379,16 +637,58 @@
+@@ -379,16 +638,58 @@
        $.call_expression,
        $.important,
      )),
@@ -649,7 +650,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
        seq(
          '\'',
          repeat(choice(
-@@ -411,8 +711,10 @@
+@@ -411,8 +712,10 @@
        '\\',
        choice(
          /[0-9a-fA-F]{1,6}\s?/,
@@ -660,7 +661,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
      )),
  
      integer_value: $ => seq(
-@@ -425,73 +727,111 @@
+@@ -425,73 +728,111 @@
  
      float_value: $ => seq(
        token(seq(
@@ -794,7 +795,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
        '!',
 --- a/src/scanner.c
 +++ b/src/scanner.c
-@@ -1,31 +1,221 @@
+@@ -1,31 +1,240 @@
  #include "tree_sitter/parser.h"
  
 +#include <stdlib.h>
@@ -952,8 +953,27 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
 +    if (depth > 0) {
 +        return false;
 +    }
-+    while (iswspace(lexer->lookahead)) {
++    // Comments after the block (`{a: b} /*c*/;`), which oxfmt prints after it; a lone `/` makes the value raw.
++    if (!advance_gap(lexer)) {
++        lexer->result_symbol = CUSTOM_PROPERTY_RAW_NAME;
++        return valid_symbols[CUSTOM_PROPERTY_RAW_NAME];
++    }
++    // A trailing `!important` (`{a: b} !important;`), which oxfmt prints after the block, and comments after it.
++    if (lexer->lookahead == '!') {
 +        advance(lexer);
++        while (iswspace(lexer->lookahead)) {
++            advance(lexer);
++        }
++        const char *word = "important";
++        for (; *word; word++) {
++            if ((lexer->lookahead | 0x20) != *word) {
++                return false;
++            }
++            advance(lexer);
++        }
++        if (!advance_gap(lexer)) {
++            return false;
++        }
 +    }
 +    bool one_group = !nested && (lexer->lookahead == ';' || lexer->lookahead == '}' || lexer->eof(lexer));
 +    lexer->result_symbol = one_group ? CUSTOM_PROPERTY_SET_NAME : CUSTOM_PROPERTY_RAW_NAME;
@@ -1020,7 +1040,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
          lexer->result_symbol = DESCENDANT_OP;
  
          skip(lexer);
-@@ -33,14 +223,28 @@
+@@ -33,14 +242,28 @@
              skip(lexer);
          }
          lexer->mark_end(lexer);
@@ -1050,7 +1070,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
              if (iswspace(lexer->lookahead)) {
                  return false;
              }
-@@ -55,8 +259,48 @@
+@@ -55,8 +278,48 @@
              }
          }
      }
@@ -1099,7 +1119,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
          while (iswspace(lexer->lookahead)) {
              skip(lexer);
          }
-@@ -66,8 +310,15 @@
+@@ -66,8 +329,15 @@
                  return false;
              }
              lexer->mark_end(lexer);
