@@ -9,6 +9,21 @@ import { activeTheme } from "./theme.js";
 /** Saves closer together than this refresh a working-tree panel once. */
 const saveDebounceMs = 300;
 
+export interface PanelTarget {
+  /** Names the change set: opening the same key again reveals that panel instead of opening a second one. */
+  key?: string;
+  /** A changed file's path to scroll to once the files are shown. */
+  focus?: string;
+}
+
+interface OpenPanel {
+  panel: vscode.WebviewPanel;
+  focus(path: string): void;
+  files(): DiffFile[] | undefined;
+}
+
+const keyed = new Map<string, OpenPanel>();
+
 /**
  * Opens a split-diff panel on `source` and resolves with the files it first posted (undefined when the first
  * load failed, already reported), which is what a command returns to its caller.
@@ -16,7 +31,14 @@ const saveDebounceMs = 300;
 export async function openReviewPanel(
   extensionUri: vscode.Uri,
   source: ReviewSource,
+  target: PanelTarget = {},
 ): Promise<DiffFile[] | undefined> {
+  const existing = target.key === undefined ? undefined : keyed.get(target.key);
+  if (existing) {
+    existing.panel.reveal();
+    if (target.focus !== undefined) existing.focus(target.focus);
+    return existing.files();
+  }
   const bundle = vscode.Uri.joinPath(extensionUri, "dist");
   const panel = vscode.window.createWebviewPanel(
     "hihyou.review",
@@ -35,11 +57,23 @@ export async function openReviewPanel(
     state = next;
     void panel.webview.postMessage(state);
   };
+  // Replayed on every `ready`; the webview applies each `seq` once, so a rebuilt webview does not jump back.
+  let focus: Extract<ToWebview, { type: "focus" }> | undefined;
+  const focusOn = (path: string) => {
+    focus = { type: "focus", path, seq: (focus?.seq ?? 0) + 1 };
+    void panel.webview.postMessage(focus);
+  };
+  if (target.focus !== undefined) focusOn(target.focus);
 
   // Read once per panel and again on a theme change; posted before the state so the first draw is coloured.
   let theme = activeTheme();
   const showTheme = () =>
-    theme.then((t) => panel.webview.postMessage({ type: "theme", theme: t } satisfies ToWebview));
+    theme.then((t) =>
+      panel.webview.postMessage({
+        type: "theme",
+        theme: t,
+      } satisfies ToWebview),
+    );
 
   let generation = 0;
   const load = async (): Promise<DiffFile[] | undefined> => {
@@ -98,7 +132,10 @@ export async function openReviewPanel(
     panel.webview.onDidReceiveMessage((message: FromWebview) => {
       switch (message.type) {
         case "ready":
-          void showTheme().then(() => panel.webview.postMessage(state));
+          void showTheme().then(() => {
+            void panel.webview.postMessage(state);
+            if (focus) void panel.webview.postMessage(focus);
+          });
           return;
         case "refresh":
           if (source.refreshable) void load();
@@ -122,6 +159,15 @@ export async function openReviewPanel(
       }),
       { dispose: () => clearTimeout(timer) },
     );
+  }
+  const key = target.key;
+  if (key !== undefined) {
+    keyed.set(key, {
+      panel,
+      focus: focusOn,
+      files: () => (state.type === "files" ? state.files : undefined),
+    });
+    disposables.push({ dispose: () => keyed.delete(key) });
   }
   panel.onDidDispose(() => {
     for (const d of disposables) d.dispose();
