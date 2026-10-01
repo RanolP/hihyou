@@ -344,6 +344,11 @@ const edgeCases: [string, string][] = [
     "call-argument-colon-raw",
     "a{c:f(a :/b);d:f(a : /b);e:f(a :*b);f:f(a :/ /b);g:f(a /*q*/ :/b);h:f(x, a :/ b, c :/d)}\na{c:f(a :/b :/c);d:f(a :/b*c);e:f(a :/g( b ));f:f(g(b) :/a);g:f(a :/1.50px);h:f(a: /*q*/ /b);i:f(a :+b)}",
   ],
+  // A `/deep/` combinator was a parse error that kept its whole rule as written instead of spacing it as `>`.
+  [
+    "named-combinator",
+    "a /deep/ b{e:f}\na/deep/b , c{e:f}\n.a  /x/  .b{e:f}\na{&/deep/b{c:d}}\na{grid-area:1/a/2;font:12px/a/b x}",
+  ],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");

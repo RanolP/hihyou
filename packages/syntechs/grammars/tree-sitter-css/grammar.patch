@@ -282,7 +282,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
      universal_selector: _ => '*',
  
      class_selector: $ => prec(1, seq(
-@@ -234,20 +373,30 @@
+@@ -234,20 +373,35 @@
        '#',
        alias($.identifier, $.id_name),
      ),
@@ -308,13 +308,18 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
      ),
  
 -    child_selector: $ => prec.left(seq(optional($._selector), '>', $._selector)),
-+    // `>>>`: Vue's and Angular's deep combinator.
-+    child_selector: $ => prec.left(seq(optional($._selector), choice('>', '>>>'), $._selector)),
++    // `>>>`: Vue's and Angular's deep combinator. `/deep/`, its older spelling, stands for any `/name/` combinator,
++    // which oxfmt spaces as it does `>`.
++    child_selector: $ => prec.left(seq(
++      optional($._selector),
++      choice('>', '>>>', alias(token(prec(1, /\/[a-zA-Z_-][a-zA-Z0-9_-]*\//)), '/deep/')),
++      $._selector,
++    )),
  
      descendant_selector: $ => prec.left(seq($._selector, $._descendant_operator, $._selector)),
  
      sibling_selector: $ => prec.left(seq(optional($._selector), '~', $._selector)),
-@@ -295,42 +444,90 @@
+@@ -295,42 +449,90 @@
      ),
  
      // Declarations
@@ -421,7 +426,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
  
      feature_query: $ => seq(
        '(',
-@@ -339,38 +536,84 @@
+@@ -339,38 +541,84 @@
        repeat1($._value),
        ')',
      ),
@@ -509,7 +514,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
        $.float_value,
        $.string_value,
        $.grid_value,
-@@ -379,16 +622,58 @@
+@@ -379,16 +627,58 @@
        $.call_expression,
        $.important,
      )),
@@ -569,7 +574,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
        seq(
          '\'',
          repeat(choice(
-@@ -411,8 +696,10 @@
+@@ -411,8 +701,10 @@
        '\\',
        choice(
          /[0-9a-fA-F]{1,6}\s?/,
@@ -580,7 +585,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
      )),
  
      integer_value: $ => seq(
-@@ -425,73 +712,111 @@
+@@ -425,73 +717,111 @@
  
      float_value: $ => seq(
        token(seq(

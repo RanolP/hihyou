@@ -37,7 +37,7 @@ const format = defineFormat<typeof grammar, CssOptions>();
 const spaced = () => inOrder(space);
 const adjacent = () => inOrder();
 /** Selectors on either side of a combinator: a line between, and after the combinator's token a space. */
-const combinator = () => inOrder({ join: "line", spaceWhen: { after: [">", ">>>", "~", "+", "<"] } });
+const combinator = () => inOrder({ join: "line", spaceWhen: { after: [">", ">>>", "/deep/", "~", "+", "<"] } });
 /** Selectors one per line, one of more than two parts indenting as it breaks; then each `trail` child after a space. */
 const selectorList = (trail: "block"[] = []) =>
   splitOn(",", { trail, wrapItem: when("longSelector"), layout: { group: true, between: "hardline" } });
