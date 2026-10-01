@@ -1497,6 +1497,15 @@ function sassFlags(error: number, t: FormatTree): boolean {
 }
 
 /**
+ * `--a: {a b; c: d}`: an item of a custom property's block with no `:` (tree-sitter-css's `ERROR`), which oxfmt
+ * prints as written, ending it with a `;` as it does a declaration.
+ */
+function customSetItem(error: number, t: FormatTree): boolean {
+  const block = t.parent(error);
+  return t.kindName(block) === "block" && t.kindName(t.parent(block)) === "custom_property_set";
+}
+
+/**
  * `a:b !c{d:e}`, `a:b c%{d:e}`: oxc-css-parser reads a nested rule whose selector tree-sitter cannot, an `ERROR`
  * between the rule's selectors and its block; the selector prints as written (`ruleSet`).
  */
@@ -1531,6 +1540,11 @@ function commentedPreludeError(error: number, t: FormatTree): boolean {
 
 /** The flags `sassFlags` recovers, one space apart. */
 const sassFlagList: StreamRule<CssOptions> = (error, ctx) => {
+  if (customSetItem(error, ctx.tree)) {
+    sToken(error, ctx.tree.text(error).trim());
+    sText(";");
+    return;
+  }
   for (let i = 0; i < ctx.tree.count(error); i++) {
     if (i > 0) sText(" ");
     const flag = ctx.tree.child(error, i);
@@ -1738,7 +1752,12 @@ function emptyLastValue(n: number, t: FormatTree): boolean {
 /** A Sass variable or custom property, whose raw value (`oxcRaw`) oxfmt prints verbatim. */
 const customName = (decl: number, t: FormatTree) => /^(\$|--)/.test(t.text(t.child(decl, 0)));
 
-const rawValue = (decl: number, ctx: SCtx): boolean => customName(decl, ctx.tree) && oxcRaw(decl, ctx.tree);
+/** A declaration in a custom property's block (`--a: {b: 1, c: 2}`), whose raw value oxfmt keeps as a custom one's. */
+const inCustomSet = (decl: number, t: FormatTree) =>
+  t.kindName(t.parent(decl)) === "block" && t.kindName(t.parent(t.parent(decl))) === "custom_property_set";
+
+const rawValue = (decl: number, ctx: SCtx): boolean =>
+  (customName(decl, ctx.tree) || inCustomSet(decl, ctx.tree)) && oxcRaw(decl, ctx.tree);
 
 /** The source between `prev` and `c`, less any whitespace ending a line. */
 function gapBefore(prev: number, c: number, t: FormatTree): string {
@@ -2569,7 +2588,7 @@ export const css: Language<CssOptions> = {
     recovered: (error, t) =>
       t.missing(error)
         ? colonMissingComma(error, t) || emptyLastValue(error, t)
-        : sassFlags(error, t) || selectorTail(error, t) || commentedPreludeError(error, t) || verbatimPreludeError(error, t) || valueColonError(error, t) || valueSlashError(error, t) || argColonError(error, t) || strayArgColonError(error, t),
+        : sassFlags(error, t) || customSetItem(error, t) || selectorTail(error, t) || commentedPreludeError(error, t) || verbatimPreludeError(error, t) || valueColonError(error, t) || valueSlashError(error, t) || argColonError(error, t) || strayArgColonError(error, t),
     finalLine,
   },
 };

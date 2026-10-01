@@ -390,6 +390,12 @@ const edgeCases: [string, string][] = [
     "grid-one-line-breaks-functions",
     ".g{grid-template-columns:[full-start] minmax(1rem,1fr) [content-start] minmax(0,60rem) [content-end] minmax(1rem,1fr) [full-end]}\n.g{grid-template-rows:aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd eeeeeeeeee ffffffffff gggggggggggggg}\n.g{grid:auto-flow dense / 40px 40px 1fr minmax(1px, 1fr) minmax(1px, 1fr) minmax(1px, 1fr) x}\n.g{grid-template-columns:repeat(2,1fr) aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd eeeeeeeeee ffffffffff}",
   ],
+  // A custom property's block left an item with no `:` (`{a}`) and a nested group as written, and broke a raw value
+  // with a second `:` at its commas; oxfmt ends the item with `;`, keeps the nested value raw and that value as written.
+  [
+    "custom-property-block-items",
+    "a{--a: {a}}\na{--a:{a;b:c}}\na{--a:{ a b ; }}\na{--a:{1}}\na{--a: { a: 1, b: 2 }}\na{--a:{a :b :c}}\na{--a:{a:{b:c}}}\na{--a: {{a}}}",
+  ],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");

@@ -138,12 +138,16 @@ function scanCustomPropertyName(lexer: Lexer, valid: Uint8Array): boolean {
     lexer.resultSymbol = CUSTOM_PROPERTY_BRACE_NAME;
     return brace && peek(lexer) === SEMI && valid[CUSTOM_PROPERTY_BRACE_NAME] !== 0;
   }
-  do advancePiece(lexer, depth);
-  while (depth.n > 0 && !lexer.eof());
+  // A group nested in the block (`{a: {b}}`) makes the value raw, as oxfmt keeps it.
+  let nested = false;
+  do {
+    nested ||= depth.n > 0 && peek(lexer) === LBRACE;
+    advancePiece(lexer, depth);
+  } while (depth.n > 0 && !lexer.eof());
   if (depth.n > 0) return false;
   while (iswspace(lexer.lookahead)) lexer.advance(false);
   const c: number = lexer.lookahead;
-  const oneGroup = c === SEMI || c === RBRACE || lexer.eof();
+  const oneGroup = !nested && (c === SEMI || c === RBRACE || lexer.eof());
   lexer.resultSymbol = oneGroup ? CUSTOM_PROPERTY_SET_NAME : CUSTOM_PROPERTY_RAW_NAME;
   return valid[lexer.resultSymbol] !== 0;
 }
