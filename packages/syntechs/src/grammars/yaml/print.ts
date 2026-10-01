@@ -122,13 +122,36 @@ class Printer {
     return v;
   }
 
-  /** A scalar or alias-free flow node on one line. */
+  /**
+   * A node's anchor and tag, in source order, one space apart, and what follows them. Properties may sit on the
+   * line before a scalar (`a: !t⏎  1`); they print on the scalar's line.
+   */
+  properties(n: number): { props: string; content: number | undefined } {
+    const props: string[] = [];
+    let content: number | undefined;
+    for (const k of this.named(n)) {
+      const kind = this.kind(k);
+      if (content === undefined && (kind === "anchor" || kind === "tag")) props.push(this.tree.text(k));
+      else if (content === undefined) content = k;
+      else unsupported("a node with two contents");
+    }
+    return { props: props.join(" "), content };
+  }
+
+  /** A scalar or alias flow node on one line, after its properties. */
   scalar(n: number): string {
     if (this.kind(n) !== "flow_node") return unsupported(`a ${this.kind(n)} value`);
-    const kids = this.named(n);
-    if (kids.length !== 1) return unsupported("a node with properties");
-    const s = kids[0] as number;
+    const { props, content: s } = this.properties(n);
+    if (s === undefined) return unsupported("properties without content");
+    if (this.pending(this.start(s)) !== undefined) unsupported("a comment after properties");
+    const text = this.content(s);
+    return props === "" ? text : `${props} ${text}`;
+  }
+
+  content(s: number): string {
     switch (this.kind(s)) {
+      case "alias":
+        return this.tree.text(s);
       case "plain_scalar": {
         const text = this.tree.text(s);
         if (text.includes("\n")) return unsupported("a multi-line plain scalar");
@@ -143,14 +166,27 @@ class Printer {
     }
   }
 
-  /** The one block collection a block node holds. */
-  collection(n: number): number {
-    const kids = this.named(n);
-    const c = kids[0];
-    if (kids.length !== 1 || c === undefined) return unsupported("a block node with properties");
-    const k = this.kind(c);
+  /** The block collection a block node holds, and its properties ("" for none). */
+  collection(n: number): { props: string; coll: number } {
+    const { props, content } = this.properties(n);
+    if (content === undefined) return unsupported("properties without content");
+    const k = this.kind(content);
     if (k !== "block_mapping" && k !== "block_sequence") return unsupported(`a ${k}`);
-    return c;
+    return { props, coll: content };
+  }
+
+  /**
+   * A value collection's properties on the current line. The one comment between them and the first item trails
+   * them even when it sat on a line of its own (`key: &a⏎⏎  # c` prints `key: &a # c`); more refuse.
+   */
+  valueProps(props: string, coll: number): void {
+    if (props === "") return;
+    this.append(` ${props}`);
+    const c = this.pending(this.start(coll));
+    if (c === undefined) return;
+    this.next++;
+    if (this.pending(this.start(coll)) !== undefined) unsupported("comments after properties");
+    this.append(` ${this.tree.text(c)}`);
   }
 
   /**
@@ -191,7 +227,10 @@ class Printer {
       const v = this.named(item)[0];
       if (v === undefined) return;
       if (this.kind(v) === "block_node") {
-        this.block(this.collection(v), indent + 2, true, until);
+        // `- &a⏎  b: 1`: a collection with properties starts on the line after them.
+        const { props, coll } = this.collection(v);
+        this.valueProps(props, coll);
+        this.block(coll, indent + 2, props === "", until);
       } else this.append(` ${this.scalar(v)}`);
       return;
     }
@@ -199,11 +238,15 @@ class Printer {
     const key = this.tree.child(item, 0);
     if (this.tree.fieldName(key) !== "key") unsupported("a pair without a key");
     if (this.tree.kindName(key) === "?") unsupported("an explicit key");
-    this.append(`${this.scalar(key)}:`);
+    // An alias key keeps a space before the colon, which would otherwise read as part of its name.
+    const keyText = this.scalar(key);
+    this.append(this.named(key).some((k) => this.kind(k) === "alias") ? `${keyText} :` : `${keyText}:`);
     const value = this.tree.child(item, this.tree.count(item) - 1);
     if (this.tree.fieldName(value) !== "value") return;
     if (this.kind(value) === "block_node") {
-      this.block(this.collection(value), indent + this.tab, false, until);
+      const { props, coll } = this.collection(value);
+      this.valueProps(props, coll);
+      this.block(coll, indent + this.tab, false, until);
       return;
     }
     if (this.pending(this.start(value)) !== undefined) unsupported("a comment before a scalar value");
@@ -229,7 +272,14 @@ class Printer {
         case "block_node": {
           if (this.tree.lf(firstLeaf(this.tree, c)) >= 2 && this.lines.length > 0 && !this.afterMarker()) this.blank();
           if (this.lines.length > 0 && this.tree.lf(firstLeaf(this.tree, c)) === 0) unsupported("content on a marker line");
-          this.block(this.collection(c), 0, false, limit, this.lines.length === 0 || this.afterMarker());
+          const { props, coll } = this.collection(c);
+          const first = this.lines.length === 0 || this.afterMarker();
+          if (props !== "") {
+            // A root's `!!map # c` prints its comment on the next line: a layout this printer has no rule for.
+            if (this.pending(this.start(coll)) !== undefined) unsupported("a comment after root properties");
+            this.line(props);
+          }
+          this.block(coll, 0, false, limit, first);
           break;
         }
         case "flow_node": {
