@@ -310,6 +310,12 @@ const edgeCases: [string, Target, string][] = [
     "ts",
     "type   A   =   (b&c) /* prettier-ignore */\nlet   a  = {b:1} /* prettier-ignore */ /* x */\nexport   var   v = {b:1} /* prettier-ignore */\nf( a,b ) /* prettier-ignore */ // x\nfunction g(){ let   a = {b:1} /* prettier-ignore */\n}\n",
   ],
+  // A prettier-ignore after a body's stray `;` kept the declaration verbatim; oxc gives it to the empty statement.
+  [
+    "ignore-after-empty-statement",
+    "ts",
+    "export interface A {a:1}; // prettier-ignore\nclass C {a=1}; /* prettier-ignore */\nexport enum E {a=1}; // prettier-ignore\nf( a,b );; // prettier-ignore\nlet a = {b:1}; // prettier-ignore\n",
+  ],
 ];
 
 function ours(target: Target, text: string, options: Partial<JsOptions>) {

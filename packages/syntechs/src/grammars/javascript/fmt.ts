@@ -27,7 +27,7 @@ import {
   sLine,
 } from "../../fmt/stream.js";
 import { NO_NODE } from "../../core/arena.js";
-import { nextLeaf } from "../../fmt/tree.js";
+import { nextLeaf, prevLeaf } from "../../fmt/tree.js";
 import * as gen from "./fmt.gen.js";
 import { grammar, language as parser } from "./index.js";
 import { jsAtoms, jsNormalize } from "./normalize.js";
@@ -229,8 +229,15 @@ const trailingIgnore = (ctx: JsCtx, n: number) =>
   // `| (A & B) // prettier-ignore`: oxc's member ends before the `)`, so the comment is not right after it.
   !(kind(ctx, n) === "parenthesized_type" && kind(ctx, parent(ctx, n)) === "union_type") &&
   ctx.comments(n).trailing.some(
-    (c) => isIgnoreComment(ctx, c) && ctx.tree.lf(c) === 0 && !inside(ctx, c, n),
+    (c) => isIgnoreComment(ctx, c) && ctx.tree.lf(c) === 0 && !inside(ctx, c, n) && !afterEmptyStatement(ctx, c),
   );
+
+/** `interface A {}; // prettier-ignore`: oxc gives the comment to the empty statement, so it keeps nothing. */
+const afterEmptyStatement = (ctx: JsCtx, c: number) => {
+  let k = prevLeaf(ctx.tree, c);
+  while (k !== NO_NODE && isComment(ctx, k)) k = prevLeaf(ctx.tree, k);
+  return k !== NO_NODE && kind(ctx, parent(ctx, k)) === "empty_statement";
+};
 
 /**
  * Whether comment `c` sits within `n`'s content: a descendant with code after it, at its own level or one above,
