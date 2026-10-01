@@ -1,0 +1,12 @@
+--- a/grammar.js
++++ b/grammar.js
+@@ -135,7 +135,8 @@
+       seq('\'', optional(alias(/[^']+/, $.attribute_value)), '\''),
+       seq('"', optional(alias(/[^"]+/, $.attribute_value)), '"'),
+     ),
+ 
+-    text: _ => /[^<>&\s]([^<>&]*[^<>&\s])?/,
++    // A `>` in text is text, as the HTML spec and prettier's parser read it.
++    text: _ => /[^<&\s]([^<&]*[^<&\s])?/,
+   },
+ });

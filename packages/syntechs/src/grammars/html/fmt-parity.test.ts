@@ -129,6 +129,8 @@ const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
     '<script>\n  let a =  1\n</script>\n<style lang="scss">\n a{b:c}\n</style>\n<img class=" a  b " style="a:b" onclick="f( 1 )" srcset="a.png  1x,b.png 2x">\n',
     { embeddedLanguageFormatting: "off" },
   ],
+  // A `>` in text was a parse error that refused the file.
+  ["gt-in-text", "<div>a > b {{ x => y }} c>d</div>\n<p>></p>\n<span> => </span>\n"],
   ["requoted-apos", `<div title="123 &apos;&quot; 456">x</div>\n<p title='a "b" &apos;c'>y</p>\n`],
 ];
 
