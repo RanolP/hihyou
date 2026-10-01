@@ -243,6 +243,11 @@ const edgeCases: [string, string][] = [
   // A comment past a value's leading comma printed before it, as postcss's `between`; oxfmt reads it as the next
   // entry's, and an entry of comments alone breaks the list.
   ["comment-after-leading-comma", "a{b:,/*c*/a;c:, /*c*/ a,d;e:x,/*c*/,a;f:/*c*/,/*d*/a}"],
+  // A comment before a `*` or `/` trailed the word before it; oxfmt breaks the line before the comment.
+  [
+    "comment-before-slash",
+    `a{b:${"x".repeat(73)} /* q */ / c;c:${"x".repeat(73)} /* q */ * c;d:x /* q */ / c}`,
+  ],
   ["word-hash-star", "a{b:a#b, d;c:x a#b#c;d:f(a*c);e:a$c;f:url($a*3);g:calc(a*c);h:f(w-*);i:a #b}"],
 ];
 

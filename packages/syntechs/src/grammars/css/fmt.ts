@@ -610,7 +610,10 @@ export function valueMath(node: number, ctx: SCtx): void {
       if (grid) {
         if (breaksBetween(t, prev, c)) sHardline();
         else sText(" ");
-      } else if (operators.has(kind(c, ctx)) && !(breaksBefore && ["*", "/"].includes(kind(c, ctx))))
+      } else if (
+        (operators.has(kind(c, ctx)) && !(breaksBefore && ["*", "/"].includes(kind(c, ctx)))) ||
+        dangling.includes(prev)
+      )
         sText(" ");
       else if (directive) sLine(0);
       else {
@@ -630,8 +633,15 @@ export function valueMath(node: number, ctx: SCtx): void {
     separate(operand);
     emit(operand);
   };
+  // `beforeBreakingOperator`'s comments, each an item of the chain one space before what follows it.
+  const dangling = ctx.danglingComments(node);
   for (const c of children(node, t)) {
     const named = t.named(c);
+    if (dangling.includes(c)) {
+      separate(c);
+      ctx.comment(c);
+      continue;
+    }
     if (named && !items.has(c)) continue;
     separate(c);
     if (named) emit(c);
@@ -952,12 +962,13 @@ export function important(node: number): void {
  * items), and those after `!important`, postcss's `raws.important` (`declarationEnd`). Among statements, postcss's
  * comment is a statement of its own: one that starts the line the statement before it ends trails that statement.
  */
-const handleComment: CommentHandler<CssOptions> = ({ tree, enclosing, preceding, following, placement, text }) => {
+const handleComment: CommentHandler<CssOptions> = ({ tree, comment, enclosing, preceding, following, placement, text }) => {
   const ownComments = tree.kindName(enclosing) === "import_statement" || valueArguments(tree, enclosing);
   if ((ownComments && text.startsWith("/*")) || layerList(enclosing, tree))
     return { node: enclosing, as: "dangling" };
   const operand = mathOperand(tree, enclosing);
   if (operand !== undefined && text.startsWith("/*")) return { node: operand, as: "trailing" };
+  if (beforeBreakingOperator(tree, comment, enclosing) && text.startsWith("/*")) return { node: enclosing, as: "dangling" };
   if (tree.kindName(enclosing) === "rule_set" && following !== undefined && tree.kindName(following) === "block")
     return { node: enclosing, as: "dangling" };
   if (preceding === undefined) return undefined;
@@ -969,6 +980,17 @@ const handleComment: CommentHandler<CssOptions> = ({ tree, enclosing, preceding,
     ? { node: enclosing, as: "dangling" }
     : undefined;
 };
+
+/**
+ * A comment just before a value's `*` or `/` operator (`a /* q *\/ / c`), which oxc-css-parser reads as a value of
+ * its own that the fill breaks before, as it may before the operator (`valueMath`).
+ */
+function beforeBreakingOperator(tree: FormatTree, comment: number, enclosing: number): boolean {
+  if (tree.kindName(enclosing) !== "binary_expression") return false;
+  let next = nextLeaf(tree, comment);
+  while (next !== NO_NODE && tree.kindName(next) === "comment") next = nextLeaf(tree, next);
+  return next !== NO_NODE && tree.parent(next) === enclosing && ["*", "/"].includes(tree.kindName(next));
+}
 
 /**
  * A function's arguments in a declaration's value but `url()`'s, which postcss-value-parser reads as words, a block
