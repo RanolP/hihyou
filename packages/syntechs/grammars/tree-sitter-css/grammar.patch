@@ -699,8 +699,8 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
 -        /[-_]/,
 +        /[^/:\s,;!{}()\[\]]/, // Not a slash, not a colon, not a delimiter character
 +        // A colon before a slash (`http://a`), as oxc-css-parser reads one word there; anywhere else it is a token
-+        // of its own (`a:b`).
-+        /:\//,
++        // of its own (`a:b`), a comment's `/*` after it too (`a:/*c*/b`).
++        /:\/[^*\s,;!{}()\[\]]/,
          /\/[^\*\s,;!{}()\[\]]/, // Slash not followed by a '*' (which would be a comment)
        )),
 -      /[a-zA-Z]/,
