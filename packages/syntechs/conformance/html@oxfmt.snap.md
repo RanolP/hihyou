@@ -1,4 +1,4 @@
-html@oxfmt compatibility: 135/146 (92.47%), 8 refused (ok:false), 23 excluded
+html@oxfmt compatibility: 136/146 (93.15%), 7 refused (ok:false), 23 excluded
 
 Fixtures: prettier 3.9.9 tests/format/{html} (recursive), every spec call listing parser `html`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left.
 
@@ -18,7 +18,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| html/cdata/example.html | 1/1 | 54.55% | formatter-error: parse error |
 | html/css/less.html | 1/1 | 94.12% | formatter-error: style lang less |
 | html/css/scss.html | 1/1 | 84.38% | formatter-error: style lang scss |
 | html/handlebars-venerable/template.html | 2/2 | 43.48% | formatter-error: script type text/x-handlebars-template |

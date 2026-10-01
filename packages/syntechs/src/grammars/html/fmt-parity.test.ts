@@ -131,6 +131,8 @@ const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
   ],
   // A `>` in text was a parse error that refused the file.
   ["gt-in-text", "<div>a > b {{ x => y }} c>d</div>\n<p>></p>\n<span> => </span>\n"],
+  // A CDATA section was a parse error that refused the file; it prints as text, its gaps one space.
+  ["cdata", "<span><![CDATA[<s>John Smith</s>]]></span>\n<span><![CDATA[1]]> <br> <![CDATA[2]]></span>\n<![CDATA[ x  y ]]>\n"],
   ["requoted-apos", `<div title="123 &apos;&quot; 456">x</div>\n<p title='a "b" &apos;c'>y</p>\n`],
 ];
 

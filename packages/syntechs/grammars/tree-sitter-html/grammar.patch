@@ -1,6 +1,23 @@
 --- a/grammar.js
 +++ b/grammar.js
-@@ -135,7 +135,8 @@
+@@ -39,12 +39,16 @@
+     ),
+ 
+     _doctype: _ => /[Dd][Oo][Cc][Tt][Yy][Pp][Ee]/,
+ 
++    _cdata: _ => /<!\[CDATA\[([^\]]|\][^\]])*\]\]>/,
++
+     _node: $ => choice(
+       $.doctype,
+       $.entity,
+       $.text,
++      // A CDATA section prints as text, as prettier's parser reads it.
++      alias($._cdata, $.text),
+       $.element,
+       $.script_element,
+       $.style_element,
+       $.erroneous_end_tag,
+@@ -135,7 +139,8 @@
        seq('\'', optional(alias(/[^']+/, $.attribute_value)), '\''),
        seq('"', optional(alias(/[^"]+/, $.attribute_value)), '"'),
      ),
