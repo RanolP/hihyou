@@ -37,7 +37,7 @@ import { moduleCustoms } from "./print/modules.js";
 import { objectCustoms } from "./print/objects.js";
 import { operatorCustoms } from "./print/operators.js";
 import { jsPreds } from "./print/preds.js";
-import { isAwaitCallArguments, isDecoratedClass, needsParens } from "./print/parens.js";
+import { isAwaitCallArguments, isDecoratedClass, needsParens, role } from "./print/parens.js";
 import { semiCustoms } from "./print/semi.js";
 import {
   castLedAsi,
@@ -419,9 +419,22 @@ const CACHE = Symbol("printed");
 /** By node ordinal, the span its first print built, plus one (0: not printed yet). */
 type Cached = { [CACHE]?: Int32Array };
 
+/**
+ * An assignment that is the argument of a script's call of `await` (`await (a = b)`, `await ((a = b))(c)`): the
+ * source's parentheses are the call's, and oxfmt wraps it in its own as any call argument (`await((a = b))`).
+ */
+function awaitCallAssignment(ctx: JsCtx, n: number): boolean {
+  const k = kind(ctx, n);
+  if (k !== "assignment_expression" && k !== "augmented_assignment_expression") return false;
+  const { key, parent: p, top } = role(ctx, n);
+  return top !== n && key === "arguments" && p === top;
+}
+
 function wrapped(n: number, s: StreamCtx<JsOptions>, print: () => void): void {
   const ctx = jsCtx(s).js;
-  const parens = kind(ctx, n) !== PE && kind(ctx, parent(ctx, n)) !== PE && needsParens(n, ctx);
+  const parens =
+    (kind(ctx, n) !== PE && kind(ctx, parent(ctx, n)) !== PE && needsParens(n, ctx)) ||
+    awaitCallAssignment(ctx, n);
   if (parens) sToken(n, "(", true);
   if (!isIgnored(ctx, n)) {
     if (parens) printInParens(ctx, n, print);

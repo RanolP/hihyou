@@ -277,6 +277,12 @@ const edgeCases: [string, Target, string][] = [
     "js",
     `function f() { await (${"x".repeat(40)} ? ${"y".repeat(40)} : z)(c); }\nawait (${"x".repeat(40)} || ${"y".repeat(40)})(c).d;\n`,
   ],
+  // A script's `await (a = b)` dropped the assignment's own parentheses, which oxfmt adds as to any call argument.
+  [
+    "await-call-assignment",
+    "js",
+    `await (a = b);\nawait ((a += b))(c);\nawait (a = ${"x".repeat(40)} || ${"y".repeat(40)})(c);\n`,
+  ],
 ];
 
 function ours(target: Target, text: string, options: Partial<JsOptions>) {
