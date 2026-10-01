@@ -427,6 +427,11 @@ const edgeCases: [string, string][] = [
     "custom-property-brace-value-ends-block",
     "a{--a: x {a:b}}\na{--a: x {a:b}\n}\na{--a: x {a:b} c:d}\na{--a: x y {a:b}}\na{--a: x {a:b} y}\na{--a: x {}}\na{--a:  x   {a:b}  }\na{--a: x\n {a:b}\n}\na{--a: x {a:b};}\na{--js: function(rule) {  log(rule) };}",
   ],
+  // A comment after a custom property block's last item was glued to its `;`, and one after an item's `:` lost its space.
+  [
+    "custom-property-block-comment-positions",
+    "a{--a:{a:b;/*c*/}}\na{--a:{a:b;/*c*//*d*/}}\na{--a:{a:b;/*c*/ /*d*/}}\na{--a:{a: b /*c*/;}}\na{--a:{a: /*c*/ b;}}\na{--a:{a:/*c*//*d*/b}}",
+  ],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");

@@ -1441,6 +1441,16 @@ const handleComment: CommentHandler<CssOptions> = ({ tree, comment, enclosing, p
     tree.lf(firstLeaf(tree, following)) === 0
   )
     return { node: following, as: "leading" };
+  // After a custom property block's last item's value (`{a: b /*c*/}`), oxfmt prints it in the value, before the
+  // `;` it adds (`declarationEnd`).
+  if (
+    following === undefined &&
+    inCustomSet(preceding, tree) &&
+    text.startsWith("/*") &&
+    tree.kindName(preceding) === "declaration" &&
+    tree.text(codeLeaf(tree, comment, prevLeaf)) !== ";"
+  )
+    return { node: preceding, as: "dangling" };
   if (statementSequences.has(tree.kindName(enclosing)) && placement !== "ownLine")
     return { node: preceding, as: "trailing" };
   const declaration = ["declaration", "custom_property_set"].includes(tree.kindName(enclosing));
@@ -1649,7 +1659,12 @@ export function declarationColon(colon: number | undefined, node: number, ctx: S
   const value = !customs.emptyValue(node, ctx) && !customs.importantValue(node, ctx);
   for (const c of comments)
     if (t.ord(c) > t.ord(colon))
-      if (value) put(c, () => ctx.comment(c));
+      // In a custom property's block, oxfmt puts one space after the `:` and each comment (`a: /*c*/ /*d*/ b`).
+      if (value && inCustomSet(node, t)) {
+        sText(" ");
+        ctx.comment(c);
+        prev = c;
+      } else if (value) put(c, () => ctx.comment(c));
       else {
         sText(" ");
         ctx.comment(c);
@@ -1667,15 +1682,20 @@ export function declarationEnd(semi: number | undefined, node: number, ctx: SCtx
   const real = semi !== undefined && t.text(semi) !== "";
   // Sass flags (`sassFlags`) end the value as `!important` does.
   // So does a custom property's block (`--a: {a: b} /*c*/;`), which oxfmt prints the comments after.
+  // And a custom property block's last item's value (`{a: b /*c*/}`), the comments after which `handleComment` gives it.
   const important = children(node, t).findLast(
     (c) =>
       ["important", "ERROR"].includes(kind(c, ctx)) ||
-      (kind(node, ctx) === "custom_property_set" && kind(c, ctx) === "block"),
+      (kind(node, ctx) === "custom_property_set" && kind(c, ctx) === "block") ||
+      (inCustomSet(node, t) && t.named(c) && !isComment(c, ctx) && kind(c, ctx) !== "property_name"),
   );
   if (important !== undefined) {
+    // The value prints its own comments; those past it are only the block's that `handleComment` gave it.
+    const own = (c: number) =>
+      !["important", "ERROR"].includes(kind(important, ctx)) && inCustomSet(node, t) && t.parent(c) === node;
     // One space before each comment after `!important`, none before `;`.
     for (const c of ctx.danglingComments(node))
-      if (t.ord(c) > t.ord(important)) {
+      if (t.ord(c) > t.ord(important) && !own(c)) {
         sText(" ");
         ctx.comment(c);
       }
@@ -1817,7 +1837,20 @@ const inCustomSet = (decl: number, t: FormatTree) =>
 
 /** A custom property block's item led by a comment on its line, which `customSetComments` prints. */
 export const customSetOwnComments = (node: number, ctx: SCtx): boolean =>
-  inCustomSet(node, ctx.tree) && ctx.leadingComments(node).some((c) => !statementComment(c, ctx));
+  inCustomSet(node, ctx.tree) &&
+  (ctx.leadingComments(node).some((c) => !statementComment(c, ctx)) ||
+    ctx.trailingComments(node).some((c) => afterLastItem(c, ctx.tree)));
+
+/** A block comment after a custom property block's last `;` (`{a: b; /*c*\/}`), which oxfmt puts on a line of its own. */
+const afterLastItem = (c: number, t: FormatTree): boolean =>
+  t.text(c).startsWith("/*") && t.text(codeLeaf(t, c, prevLeaf)) === ";" && t.text(codeLeaf(t, c, nextLeaf)) === "}";
+
+/** The first leaf past `n` in one direction that is no comment. */
+function codeLeaf(t: FormatTree, n: number, step: (t: FormatTree, n: number) => number): number {
+  let at = step(t, n);
+  while (at !== NO_NODE && t.kindName(at) === "comment") at = step(t, at);
+  return at;
+}
 
 /**
  * oxfmt keeps a comment on the line of the custom property block item it leads, glued as written (`/*c*\/a: b`)
@@ -1834,7 +1867,14 @@ export function customSetComments(node: number, ctx: SCtx, print: () => void): v
     else if (!t.adjoins(c, next)) sText(" ");
   });
   print();
-  printTrailingComments(ctx, node);
+  const last = ctx.trailingComments(node).filter((c) => afterLastItem(c, t));
+  if (last.length === 0) return printTrailingComments(ctx, node);
+  // On one line of their own, glued as written or one space apart.
+  last.forEach((c, i) => {
+    if (i === 0) sHardline();
+    else if (!t.adjoins(last[i - 1] as number, c)) sText(" ");
+    ctx.comment(c);
+  });
 }
 
 const rawValue = (decl: number, ctx: SCtx): boolean =>
