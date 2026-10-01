@@ -1488,7 +1488,10 @@ class Printer {
     for (let p = n.parent; p !== undefined; p = p.parent) depth++;
     if (
       (last.kind === "comment" || (last.kind === "text" && n.isWhitespaceSensitive && n.isIndentationSensitive)) &&
-      new RegExp(`\\n[\\t ]{${this.out.tabWidth * depth}}$`).test(last.value)
+      // Prettier's comment value is its text inside `<!--` and `-->`.
+      new RegExp(`\\n[\\t ]{${this.out.tabWidth * depth}}$`).test(
+        last.kind === "comment" ? last.value.slice(4, -3) : last.value,
+      )
     )
       return "";
     return "softline";
