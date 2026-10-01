@@ -22,7 +22,10 @@ import {
 import { foldReason } from "./fold.js";
 import {
   buildFragments,
+  type CodeFragment,
+  elidedLines,
   type FileDiff,
+  type LinePair,
   mergeRanges,
   type SideInput,
 } from "./fragments.js";
@@ -30,6 +33,7 @@ import type {
   ChangedFileRef,
   EngineContext,
   Grammar,
+  HighlightModule,
   Host,
   SerializedDiffsetId,
 } from "./host.js";
@@ -45,6 +49,16 @@ export interface Diffset<H extends Host> {
   diff(): Promise<FileDiff[]>;
   interdiff(to: Diffset<H>): InterDiffset<H>;
   anchor(data: AnchorData): Anchor;
+  /**
+   * The unchanged lines an `elided` fragment of `path` hid, at its `lines`, `count` of them (absent: to the
+   * end of the file), with the same display text and syntax scopes as the fragments `diff()` shows.
+   * Undefined when `path` is not in this diffset, its content is unread, or the lines fall outside it.
+   */
+  expand(
+    path: string,
+    lines: LinePair,
+    count?: number,
+  ): Promise<(CodeFragment & { kind: "unchanged" }) | undefined>;
 }
 
 export async function openDiffset<H extends Host>(
@@ -67,8 +81,66 @@ export async function openDiffset<H extends Host>(
       ),
     interdiff: (to) => createInterDiffset(ctx, self, to),
     anchor: (data) => createAnchor(ctx, changes, data),
+    expand: async (path, lines, count) => {
+      const i = changes.findIndex((c) => c.path === path);
+      const ref = changes[i];
+      const file = (await self.diff())[i];
+      if (!ref || !file || ref.kind) return undefined;
+      const after = await afterVersion(ctx, ref, file.grammar !== undefined);
+      return after && elidedLines(after.v, after.highlight, lines, count);
+    },
   };
   return self;
+}
+
+/**
+ * The after side's `Version` as `diffFiles` built it: `structured` says the file got a syntax diff
+ * (`FileDiff.grammar` set), so it was parsed and maybe formatted; otherwise it is the plain blob text.
+ */
+async function afterVersion(
+  ctx: EngineContext,
+  ref: ChangedFileRef,
+  structured: boolean,
+): Promise<{ v: Version; highlight?: HighlightModule } | undefined> {
+  const textB = decodeText(await readBlob(ctx, ref.after));
+  if (textB === undefined) return undefined;
+  const grammar = structured
+    ? await ctx.host.grammars.forPath(ref.path)
+    : undefined;
+  if (!grammar) return { v: plainVersion(textB) };
+  const textA = decodeText(await readBlob(ctx, ref.before));
+  if (textA === undefined) return undefined;
+  const [treeA, treeB] = await Promise.all([
+    parseBlob(ctx, ref.before, grammar, textA),
+    parseBlob(ctx, ref.after, grammar, textB),
+  ]);
+  const [, b] = await displayVersions(
+    ctx,
+    ref,
+    grammar,
+    [treeA, textA],
+    [treeB, textB],
+  );
+  return { v: b, ...(grammar.highlight && { highlight: grammar.highlight }) };
+}
+
+/** Both sides formatted, or neither: a diff of formatted against unformatted text is all noise. */
+async function displayVersions(
+  ctx: EngineContext,
+  ref: ChangedFileRef,
+  grammar: Grammar,
+  [treeA, textA]: [Tree, string],
+  [treeB, textB]: [Tree, string],
+): Promise<[Version & { tree: Tree }, Version & { tree: Tree }]> {
+  const [fa, fb] = await Promise.all([
+    formatBlob(ctx, ref.before, grammar, treeA),
+    formatBlob(ctx, ref.after, grammar, treeB),
+  ]);
+  const version = (tree: Tree, text: string, f: typeof fa) =>
+    (fa && fb && f
+      ? formattedVersion(tree, f.text, f.anchors)
+      : plainVersion(text, tree)) as Version & { tree: Tree };
+  return [version(treeA, textA, fa), version(treeB, textB, fb)];
 }
 
 export const fileDiffBytes = (files: FileDiff[]) =>
@@ -230,23 +302,14 @@ async function prepare(
     if (error instanceof MatchBudgetExceeded) return line("too-large");
     throw error;
   }
-  // Both sides formatted, or neither: a diff of formatted against unformatted text is all noise.
-  const [fa, fb] = await Promise.all([
-    formatBlob(ctx, ref.before, grammar, treeA),
-    formatBlob(ctx, ref.after, grammar, treeB),
-  ]);
-  const version = (tree: Tree, text: string, f: typeof fa) =>
-    (fa && fb && f
-      ? formattedVersion(tree, f.text, f.anchors)
-      : plainVersion(text, tree)) as Version & { tree: Tree };
-  return {
+  const [a, b] = await displayVersions(
+    ctx,
     ref,
-    texts,
-    a: version(treeA, textA, fa),
-    b: version(treeB, textB, fb),
     grammar,
-    mapping,
-  };
+    [treeA, textA],
+    [treeB, textB],
+  );
+  return { ref, texts, a, b, grammar, mapping };
 }
 
 const sideInput = (v: Version): SideInput => ({

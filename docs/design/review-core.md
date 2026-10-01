@@ -88,6 +88,8 @@ interface Diffset<H extends Host> {
   diff(): Promise<FileDiff[]>;
   interdiff(to: Diffset<H>): InterDiffset<H>;
   anchor(data: AnchorData): Anchor;
+  /** The lines an `elided` fragment hid, `count` of them (absent: to the end of the file). */
+  expand(path: string, lines: LinePair, count?: number): Promise<(CodeFragment & { kind: "unchanged" }) | undefined>;
 }
 
 /** Two iterations of one change. Matches before-vs-before AND after-vs-after; equal BlobIds skip matching. */
@@ -220,6 +222,8 @@ type Author<H extends Host> = { id: string } & HostAuthor<H>;
 **`InterDiffset`** is two iterations of one change. It matches before against before and after against after, so "base moved" and "patch changed" stay apart (pillar 3 of `docs/design/product.md`). `diff()` compares the two iterations' patches, as `git range-diff` does, so a rebase onto a moved base does not show upstream changes as the author's edits; `port()` moves threads onto the new iteration through the syntechs diff matcher. A thread with no match goes to `lost`, which the front end shows; it is never dropped silently.
 
 **`InterDiffset.diff()`** needs no file at a base. For a file both iterations list, it pairs the diff fragments of each iteration's own diff (before to after) by their removed and added text, ignoring line numbers and context. A pair is one authored change the rebase only moved, and drops out. What remains is the diff of A1 (iteration 1's after) against A2, in which a `diff` fragment stays only when it touches an unpaired fragment: its A1 lines touch one from iteration 1, or its A2 lines one from iteration 2. Every other `diff` fragment, and any `unchanged` context no longer beside a kept one, becomes `elided`; `begin`/`end` stay as they are, so they still balance. A file with no kept `diff` fragment is left out. Where upstream edited the lines the author changed, the fragments differ and are shown, which is the conflict resolution a reviewer should see. A file only iteration 1 lists shows A1 against B1 (the author dropped that change), and one only iteration 2 lists shows B2 against A2.
+
+**`Diffset.expand`** returns the lines an `elided` fragment hid as the `unchanged` fragment `diff()` would have shown in its place: the same display text (formatted when the file was), the same `Span.scope`s, and `at` filled. A host therefore never reads a blob to fill an elided run, and revealed lines are coloured like every other line. It reads the after side's blob, tree and formatted text from the cache `diff()` filled, so it reparses only what the cache has since dropped.
 
 **`FileDiff.fragments`** is the single source of truth for a file's diff; there is no separate edit list. `begin`/`end` pairs are always balanced and carry a label (such as "class AA"), so every front end gets AST-node grouping and headers from the same data. `elided` is the engine's call on what to collapse, so every front end collapses the same things.
 

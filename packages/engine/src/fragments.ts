@@ -164,7 +164,8 @@ export function buildFragments(input: FragmentInput): CodeFragment[] {
       // One unchanged fragment per stretch that sits in the same containers.
       let k = 0;
       while (k < run.length) {
-        const path = pathOf(run[k] as Row);
+        const first = run[k] as Row & { same: true };
+        const path = pathOf(first);
         let m = k + 1;
         while (m < run.length && samePath(pathOf(run[m] as Row), path)) m++;
         items.push({
@@ -172,7 +173,7 @@ export function buildFragments(input: FragmentInput): CodeFragment[] {
           fragment: unchangedFragment(
             b.v,
             scopesB,
-            run[k] as Row & { same: true },
+            { before: first.a + 1, after: first.b + 1 },
             m - k,
           ),
         });
@@ -374,17 +375,36 @@ const nodeRange = (v: Version, n: number): Range => ({
 function unchangedFragment(
   v: Version,
   scopes: ScopeRuns | undefined,
-  first: Row & { same: true },
+  lines: LinePair,
   count: number,
-): CodeFragment {
-  const start = v.lineStarts[first.b] as number;
-  const end = lineEnd(v, first.b + count - 1);
+): CodeFragment & { kind: "unchanged" } {
+  const start = v.lineStarts[lines.after - 1] as number;
+  const end = lineEnd(v, lines.after + count - 2);
   return {
     kind: "unchanged",
     spans: split(v.text, start, end, [], scopes),
     at: v.tree ? nodesIn(v, v.tree, start, end) : [],
-    lines: { before: first.a + 1, after: first.b + 1 },
+    lines,
   };
+}
+
+/**
+ * The unchanged lines an `elided` fragment at `lines` hid, read off the after side's display text `v` and
+ * coloured as `buildFragments` colours the lines it shows. `count` absent runs to the end of the file.
+ * Undefined when the lines fall outside the text.
+ */
+export function elidedLines(
+  v: Version,
+  highlight: HighlightModule | undefined,
+  lines: LinePair,
+  count?: number,
+): (CodeFragment & { kind: "unchanged" }) | undefined {
+  const total = v.lineStarts.length;
+  const n = count ?? total - (lines.after - 1);
+  if (lines.after < 1 || n < 1 || lines.after - 1 + n > total) return undefined;
+  const scopes =
+    highlight && v.tree ? scopeRuns(v.tree, highlight, v.text.length, v.start, v.end) : undefined;
+  return unchangedFragment(v, scopes, lines, n);
 }
 
 function diffFragment(

@@ -28,8 +28,9 @@ export interface ElidedRef {
 
 export interface RenderOptions {
   /**
-   * The reviewer asked to see an elided run. `fileId` is `FileDiff.path`. The engine returns no text for an
-   * elided run, so the host fetches it and answers with `update`, that fragment replaced by `unchanged` ones.
+   * The reviewer asked to see an elided run. `fileId` is `FileDiff.path`. `diff()` returns no text for an
+   * elided run, so the host asks `Diffset.expand` for it and answers with `update`, that fragment replaced by
+   * the `unchanged` one it returned.
    * Without this callback an elided run shows as a plain note.
    */
   onExpand?(fileId: string, elided: ElidedRef): void;
