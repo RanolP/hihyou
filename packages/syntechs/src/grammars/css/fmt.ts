@@ -208,6 +208,27 @@ const normalize: Normalize = (lexemes, _text, tree) => {
       forms[i] = undefined;
     }
   }
+  // A `:` past the declaration's own (`a:/b`, one word to tree-sitter), which oxc prints `a: / b`.
+  const ownColon = (node: number) => {
+    const decl = tree.parent(node);
+    if (tree.kindName(decl) !== "declaration") return false;
+    for (let j = 0; ; j++) if (tree.kindName(tree.child(decl, j)) === ":") return tree.child(decl, j) === node;
+  };
+  for (let i = 1, p = 0; i + 1 < lexemes.length; i++) {
+    const l = lexemes[i] as (typeof lexemes)[number];
+    if (l.text !== ":" || forms[i] === undefined || forms[p] === undefined || !inValue(l.node) || ownColon(l.node)) {
+      if (forms[i] !== undefined) p = i;
+      continue;
+    }
+    forms[p] = `${forms[p]}:`;
+    forms[i] = undefined;
+    const next = lexemes[i + 1]?.text ?? "";
+    if (forms[i + 1] !== undefined && !/^[:/*]$/.test(next)) {
+      forms[p] = `${forms[p]}${forms[i + 1]}`;
+      forms[i + 1] = undefined;
+      i++;
+    }
+  }
   for (let i = 1; i + 1 < lexemes.length; i++) {
     const l = lexemes[i] as (typeof lexemes)[number];
     if ((l.text !== "*" && l.text !== "/") || forms[i] === undefined || !inValue(l.node)) continue;
@@ -221,6 +242,12 @@ const normalize: Normalize = (lexemes, _text, tree) => {
       continue;
     }
     if (forms[i + 1] === undefined) continue;
+    // A run of them (`a//b`) joins one at a time.
+    if (/^[*/]$/.test(lexemes[i + 1]?.text ?? "")) {
+      forms[p] = `${forms[p]}${l.text}`;
+      forms[i] = undefined;
+      continue;
+    }
     forms[p] = `${forms[p]}${l.text}${forms[i + 1]}`;
     forms[i] = forms[i + 1] = undefined;
   }
@@ -1495,8 +1522,8 @@ function rawTokens(nodes: number[], ctx: SCtx): { tokens: RawToken[]; tail: numb
     if (isComment(n, ctx)) comments.push(n);
     else if (k === "call_expression" && /^url$/i.test(t.text(t.child(n, 0)))) push("url", "", n, glued);
     else if (k === "string_value") push("string", t.text(n), n, glued);
-    // `http://a` and `progid:A` stay one word, as oxc-css-parser reads them.
-    else if (k === "plain_value" && t.text(n).includes(":")) push("ident", t.text(n), n, glued);
+    // `progid:A` stays one word; `http://a` is `http`, `:`, `/`, `/` and `a`, each spaced as oxc's raw tokens are.
+    else if (k === "plain_value" && /^progid:/i.test(t.text(n))) push("ident", t.text(n), n, glued);
     else if (t.count(n) > 0 && !["integer_value", "float_value", "color_value", "plain_value"].includes(k))
       return children(n, t).forEach(visit);
     else {

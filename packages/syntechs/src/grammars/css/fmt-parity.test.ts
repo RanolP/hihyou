@@ -288,6 +288,11 @@ const edgeCases: [string, string][] = [
     "include-prelude-comment",
     "@include f(x /*q*/ / c, y /*r*/);\n@include x /*q*/ y;\n@include f(g(x /*q*/));\n@include f(x /*q*/ / c) {a:b}\n@mixin f(x /*q*/ / c) {}\n",
   ],
+  // A word holding a `:` (`http://a.b`, `a:/b`) stayed whole in a raw value; oxc lexes it as tokens, `http: / / a.b`.
+  [
+    "colon-slash-word",
+    "a{c:x http://a.b;d:a:/b;e:a:/b/c, a://b//c;f:x(http://a) a:b;g:x http://a.b:8080/c?q=1 !important;h:url(http://a.b);i:x(http://a)}",
+  ],
   ["word-hash-star","a{b:a#b, d;c:x a#b#c;d:f(a*c);e:a$c;f:url($a*3);g:calc(a*c);h:f(w-*);i:a #b}"],
   // The space before a `%` selector after a compound (`a:b %c`, `.a %c`) was glued as `a:b%c`.
   ["placeholder-gap", ".x{a:b %c{d:e}}\n.x{a %c{d:e}}\n.x{a:b%c{d:e}}\n.a %c{d:e}\n.x{a:b  %c{d:e}}"],
