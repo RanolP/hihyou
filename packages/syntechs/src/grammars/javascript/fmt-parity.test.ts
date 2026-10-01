@@ -263,6 +263,13 @@ const edgeCases: [string, Target, string][] = [
     "js",
     `await (${"x".repeat(40)}, ${"y".repeat(40)})(c);\nconst v = await (a, b, c)(d).e;\n`,
   ],
+  // A prettier-ignore ending a type alias with no `;` printed twice, which the check refused, or kept only the union
+  // and broke after `=`; oxfmt keeps the whole alias, then `;` and the comment.
+  [
+    "type-alias-trailing-ignore-no-semicolon",
+    "ts",
+    "type A = (foo1&foo2) // prettier-ignore\ntype B = foo | (b&c) // prettier-ignore\ntype C = (foo1&foo2) // prettier-ignore\n  | (bar1&bar2) // prettier-ignore\nlet x = 1\n",
+  ],
   // A script's `await (x ? y : z)(c)` laid the argument out as a callee in parentheses, a blank line after `await(`
   // and the `,` alone on a line; oxc reads it as the argument of a call of `await`.
   [

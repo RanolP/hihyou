@@ -81,6 +81,7 @@ const SEMI_ENDED = new Set([
   "variable_declaration",
   "lexical_declaration",
   "using_declaration",
+  "type_alias_declaration",
 ]);
 
 const KEYWORD_ENDED = new Set([

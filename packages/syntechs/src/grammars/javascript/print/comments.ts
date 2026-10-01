@@ -233,6 +233,16 @@ const LAST_UNION_HOLDERS =new Set(["intersection_type", "union_type"]);
  */
 const oxfmtUnionIgnore = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
   if (c.tree.lf(c.comment) > 0 || !isIgnoreComment(c, c.comment)) return;
+  // `type A = B | C // prettier-ignore` with no `;`: tree-sitter's alias takes in the comment, but oxc's statement
+  // ends before it, so the comment trails, and keeps, the whole statement as after a `;`.
+  const alias = parent(c, c.comment);
+  if (
+    alias !== undefined &&
+    kind(c, alias) === "type_alias_declaration" &&
+    STATEMENT_LIST_PARENTS.has(kind(c, parent(c, alias)) ?? "") &&
+    codeAfter(c, alias, c.comment).length === 0
+  )
+    return { node: alias, as: "trailing" };
   const before = prevLeaf(c.tree, c.comment);
   if (before === NO_NODE) return;
   let union: number | undefined;
