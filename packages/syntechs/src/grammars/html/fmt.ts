@@ -28,6 +28,18 @@ const EMBEDDED: Record<EmbeddedLanguage, [Grammar, unknown]> = {
   css: [cssGrammar, css],
 };
 
+const LEGACY_MARK = "//\u{E000}";
+
+/** Each `<!--` or `-->` comment's offsets in a parsed script. */
+function htmlComments(tree: ReturnType<typeof parseTree>): [number, number][] {
+  const found: [number, number][] = [];
+  for (let o = 0; o < tree.nodeCount; o++) {
+    const n = tree.at(o);
+    if (tree.kindName(n) === "html_comment") found.push([tree.start(n), tree.end(n)]);
+  }
+  return found.sort((a, b) => a[0] - b[0]);
+}
+
 export interface HtmlOptions extends PrettierOptions {
   bracketSameLine: boolean;
   singleAttributePerLine: boolean;
@@ -156,9 +168,27 @@ export const html: Language<HtmlOptions> = {
             ctx.options;
           const embed = (lang: EmbeddedLanguage, content: string) => {
             const [contentGrammar, formatter] = EMBEDDED[lang];
-            const tree = parseTree(contentGrammar, content);
+            let tree = parseTree(contentGrammar, content);
             if (tree.errorChars > 0 || brokenNodes(tree) !== undefined) throw new Unsupported(`${lang} parse error`);
-            withEmbedding({ anchor: node, token: undefined }, () =>
+            // A legacy `<!--` or `-->` line is a comment to babel, printed as written; the JS formatter leaves an
+            // html_comment out, so it goes through as a `//` comment marked to print without its `//`.
+            const legacy = htmlComments(tree);
+            if (legacy.length > 0) {
+              let rewritten = content;
+              for (const [start, end] of legacy.reverse())
+                rewritten = `${rewritten.slice(0, start)}${LEGACY_MARK}${rewritten.slice(start, end).trimEnd()}${rewritten.slice(end)}`;
+              tree = parseTree(contentGrammar, rewritten);
+              if (tree.errorChars > 0 || brokenNodes(tree) !== undefined) throw new Unsupported(`${lang} parse error`);
+            }
+            const token =
+              legacy.length === 0
+                ? undefined
+                : (s: string) => {
+                    if (!s.startsWith(LEGACY_MARK)) return false;
+                    sText(s.slice(LEGACY_MARK.length));
+                    return true;
+                  };
+            withEmbedding({ anchor: node, token }, () =>
               printInto(tree, formatter as unknown as Language<PrettierOptions>, { printWidth, tabWidth, useTabs }),
             );
           };

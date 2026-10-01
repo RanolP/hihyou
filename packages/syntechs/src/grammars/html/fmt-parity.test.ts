@@ -113,7 +113,12 @@ const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
     `<b onclick="alert(    '1')" onmouseover='f("a")'>x</b>\n<b onclick="a();   b()">y</b>\n<b onclick="\n  return false\n">z</b>\n<b onclick="'use strict'; f()" onblur="a b c" ONCLICK="f( 1 )">w</b>\n`,
   ],
   ["event-handler-no-semi", `<b onclick="[a].forEach(f); g()">x</b>\n`, { semi: false }],
-  ["requoted-apos", `<div title="123 &apos;&quot; 456">x</div>\n<p title='a "b" &apos;c'>y</p>\n`],
+  // A script's legacy `<!--`/`-->` line was dropped; it prints as written, and keeps a module (where it is no comment) as written.
+  [
+    "script-legacy-comments",
+    '<script>\n<!--   \nalert(1)\n//-->\n</script>\n<div><script type="text/babel"><!-- a(  1 ) --></script></div>\n<script type="module">\n<!--\nalert(1)\n-->\n</script>\n',
+  ],
+  ["requoted-apos",`<div title="123 &apos;&quot; 456">x</div>\n<p title='a "b" &apos;c'>y</p>\n`],
 ];
 
 function ours(text: string, options: Partial<HtmlOptions>) {

@@ -968,6 +968,8 @@ function embeddedLanguage(n: Node): EmbeddedLanguage | "raw" | undefined {
   if (lang === "ts" || type === "application/x-typescript") return "typescript";
   if (lang === "tsx") return "tsx";
   if (lang !== undefined && lang !== "js" && lang !== "jsx") return "raw";
+  // A module allows no legacy `<!--`/`-->` comment, so its parse fails and oxfmt keeps it as written.
+  if (type === "module" && /(^|\n)[\t\f\r ]*(<!--|-->)/.test(n.value)) return "raw";
   if (
     type === undefined ||
     ["module", "text/javascript", "text/babel", "text/jsx", "application/javascript", "jsx"].includes(type)
