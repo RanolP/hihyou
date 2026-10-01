@@ -270,6 +270,11 @@ const edgeCases: [string, string][] = [
     "media-comment-raw-feature",
     "@media (A:B) /*q*/ {x{y:z}}\n@media (a :b)   and  (min-width:1.50px)/*q*/ {x{y:z}}\n@media ( a:b ) /*q*/,(c/*r*/:d) {x{y:z}}",
   ],
+  // A commented @media feature re-spaced a second `:` (`(a: b : c)`) and lowercased or renumbered its words.
+  [
+    "media-comment-value-as-written",
+    "@media (a :b :c) /*q*/ {x{y:z}}\n@media (A : 1.50PX   :c) and (a: b: c) /*q*/ {x{y:z}}\n@media (a :b\n    c) /*q*/ {x{y:z}}",
+  ],
   // A commented @import/@supports prelude re-spaced its paren groups (`(a:b)` as `(a: b)`) and split `not(a:b)`.
   [
     "value-prelude-comment-raw",

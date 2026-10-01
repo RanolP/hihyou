@@ -1824,7 +1824,7 @@ export function importStatement(node: number, ctx: SCtx): void {
 function mediaAtoms(node: number, ctx: SCtx): number[] {
   const t = ctx.tree;
   const atoms = (n: number): number[] =>
-    kind(n, ctx).endsWith("_query") && t.count(n) > 0 ? children(n, t).flatMap(atoms) : [n];
+    (kind(n, ctx).endsWith("_query") || kind(n, ctx) === "ERROR") && t.count(n) > 0 ? children(n, t).flatMap(atoms) : [n];
   return children(node, t)
     .filter((c) => kind(c, ctx) !== "@media" && kind(c, ctx) !== "block")
     .flatMap(atoms);
@@ -1880,14 +1880,15 @@ export function mediaQueries(at: number | undefined, node: number, ctx: SCtx): v
       } else if (level === 1 && colon === -1 && is(c, ":")) colon = c;
       else if (prev === colon) sText(" ");
       else if (colon === -1) sText(sourceGap(t, prev, c).replace(/ +/g, " "));
-      else sText(sourceGap(t, prev, c));
+      else sText(sourceGap(t, prev, c).replace(/\s+/g, " "));
     }
     if (level === 0 && is(c, "(")) {
       expression = prev === -1 || !t.adjoins(prev, c) || is(prev, ")") || is(prev, ",");
       colon = -1;
     }
     if (ctx.isComment(c)) ctx.comment(c);
-    else if (t.named(c) && !(raw && level > 0)) ctx.printNode(c);
+    // write_media_token prints a paren group's words as written, re-spaced at most.
+    else if (t.named(c) && level === 0) ctx.printNode(c);
     else sToken(c, t.text(c));
     if (is(c, "(")) level++;
     else if (is(c, ")")) level = Math.max(level - 1, 0);
