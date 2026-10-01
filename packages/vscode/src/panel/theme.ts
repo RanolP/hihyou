@@ -43,7 +43,8 @@ export async function activeTheme(): Promise<Theme> {
 
 /** Rules of `uri` after those of the theme it `include`s, as VS Code layers them. */
 async function readRules(uri: vscode.Uri, depth: number): Promise<Rules> {
-  if (depth > 8) throw new Error(`theme include chain too deep at ${uri.toString()}`);
+  if (depth > 8)
+    throw new Error(`theme include chain too deep at ${uri.toString()}`);
   if (!uri.path.endsWith(".json"))
     throw new Error(`not a JSON theme: ${uri.toString()}`);
   const json = parseJsonc(

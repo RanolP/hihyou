@@ -11,7 +11,7 @@ function stringEnd(text: string, i: number): number {
 
 function dropComments(text: string): string {
   let out = "";
-  for (let i = 0; i < text.length; ) {
+  for (let i = 0; i < text.length;) {
     if (text[i] === '"') {
       const end = stringEnd(text, i);
       out += text.slice(i, end);
@@ -29,7 +29,7 @@ function dropComments(text: string): string {
 
 function dropTrailingCommas(text: string): string {
   let out = "";
-  for (let i = 0; i < text.length; ) {
+  for (let i = 0; i < text.length;) {
     if (text[i] === '"') {
       const end = stringEnd(text, i);
       out += text.slice(i, end);
