@@ -77,6 +77,9 @@ const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
   ],
   // An `on-click`, `onClick`, or an allow/srcset off its elements refused the file; prettier keeps them as written.
   ['unformatted-lookalike-attributes', '<div on-click="a( 1 )" onClick="b( 2 )" allow=" x ;y" srcset=" a  1x ">x</div>\n'],
+  // A blank file printed one line break.
+  ["blank-file", "  \n\n "],
+  ["text-only-file", "a"],
   ["display-comment", "<div>\n  <!-- display: inline -->\n  <p>Long Long Long Long Long Long Long Long Long Long Long Long Long Long</p>\n</div>\n"],
 ];
 

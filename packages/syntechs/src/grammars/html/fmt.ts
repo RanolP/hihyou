@@ -175,6 +175,7 @@ export const html: Language<HtmlOptions> = {
       ],
     ]),
     lists: new Set(),
-    finalLine: () => true,
+    // A blank file prints as "".
+    finalLine: ({ tree }) => tree.count(tree.root) > 0,
   },
 };
