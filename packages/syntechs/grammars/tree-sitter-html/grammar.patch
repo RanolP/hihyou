@@ -31,3 +31,18 @@
 +    text: _ => /[^<&\s]([^<&]*[^<&\s])?/,
    },
  });
+--- a/src/scanner.c
++++ b/src/scanner.c
+@@ -216,9 +216,11 @@
+     } else if (
+         parent &&
+         (
+             !tag_can_contain(parent, &next_tag) ||
+-            ((parent->type == HTML || parent->type == HEAD || parent->type == BODY) && lexer->eof(lexer))
++            // The end of file closes every open element, as the HTML spec and prettier's parser do; with only the
++            // document's own closed here, a second element left open at the end parsed as an ERROR.
++            lexer->eof(lexer)
+         )
+     ) {
+         pop_tag(scanner);
+         lexer->result_symbol = IMPLICIT_END_TAG;

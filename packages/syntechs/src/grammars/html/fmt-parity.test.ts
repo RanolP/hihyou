@@ -145,7 +145,9 @@ const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
     "pre-element-content-as-written",
     "<pre><br></pre>\n<PRE><DIV></DIV></PRE>\n<details>\n  <pre><!--c-->\n  </pre></details>\n<pre>\n<b>x</b></pre>\n<listing><b>x</b>\n</listing>\n",
   ],
-  ["requoted-apos",`<div title="123 &apos;&quot; 456">x</div>\n<p title='a "b" &apos;c'>y</p>\n`],
+  // Two elements left open at the file's end parsed as an ERROR that printed the whole file as written.
+  ["nested-open-at-eof", "<p>a</p>\n<div><plaintext class=\"a  b\">  x <i>y</i>\n\n\nz   \n"],
+  ["requoted-apos", `<div title="123 &apos;&quot; 456">x</div>\n<p title='a "b" &apos;c'>y</p>\n`],
 ];
 
 function ours(text: string, options: Partial<HtmlOptions>) {

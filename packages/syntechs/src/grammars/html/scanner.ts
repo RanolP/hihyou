@@ -41,10 +41,9 @@ const TYPE_BY_NAME = new Map<string, number>([
 const type = (name: string) => TYPE_BY_NAME.get(name) as number;
 const CUSTOM = type("CUSTOM");
 const END_ = CUSTOM + 1;
-const [HTML, HEAD, BODY, SCRIPT, STYLE, LI, DT, DD, P, COLGROUP, COL, RB, RT, RP, OPTGROUP, TR, TD, TH] = [
-  "HTML", "HEAD", "BODY", "SCRIPT", "STYLE", "LI", "DT", "DD", "P", "COLGROUP", "COL", "RB", "RT", "RP", "OPTGROUP",
-  "TR", "TD", "TH",
-].map(type) as number[] as [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number];
+const [SCRIPT, STYLE, LI, DT, DD, P, COLGROUP, COL, RB, RT, RP, OPTGROUP, TR, TD, TH] = [
+  "SCRIPT", "STYLE", "LI", "DT", "DD", "P", "COLGROUP", "COL", "RB", "RT", "RP", "OPTGROUP", "TR", "TD", "TH",
+].map(type) as number[] as [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number];
 const NOT_ALLOWED_IN_PARAGRAPHS = new Set(
   [
     "ADDRESS", "ARTICLE", "ASIDE", "BLOCKQUOTE", "DETAILS", "DIV", "DL", "FIELDSET", "FIGCAPTION", "FIGURE", "FOOTER",
@@ -184,8 +183,8 @@ class HtmlScanner implements ExternalScanner {
       }
     } else if (
       parent &&
-      (!tagCanContain(parent, next) ||
-        ((parent.type === HTML || parent.type === HEAD || parent.type === BODY) && lexer.eof()))
+      // The end of file closes every open element (scanner.c's patch).
+      (!tagCanContain(parent, next) || lexer.eof())
     ) {
       this.tags.pop();
       lexer.resultSymbol = IMPLICIT_END_TAG;
