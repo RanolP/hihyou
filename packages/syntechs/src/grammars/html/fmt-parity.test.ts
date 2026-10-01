@@ -138,6 +138,8 @@ const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
     "script-html-and-json-types",
     '<script type="text/html"><div><p>foo</p></div></script>\n<script type="systemjs-importmap">{"a":1}</script>\n<script type="Text/JavaScript">let a=1</script>\n<script type="x/JSON">{"a":1}</script>\n',
   ],
+  // A `<` that cannot open a tag was a parse error that refused the file.
+  ["lt-in-text", "<pre>\n< I'm x >\n</pre>\n<div>a < b <1 c<=d</div>\n1 < 2\n"],
   ["requoted-apos", `<div title="123 &apos;&quot; 456">x</div>\n<p title='a "b" &apos;c'>y</p>\n`],
 ];
 

@@ -1,4 +1,4 @@
-html@oxfmt compatibility: 137/146 (93.84%), 6 refused (ok:false), 23 excluded
+html@oxfmt compatibility: 137/146 (93.84%), 5 refused (ok:false), 23 excluded
 
 Fixtures: prettier 3.9.9 tests/format/{html} (recursive), every spec call listing parser `html`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left.
 
@@ -11,6 +11,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | html/basics/broken-html.html | 0/1 | 72.73% |
 | html/multiparser/js/script-tag-escaping.html | 0/1 | 80.00% |
 | html/prettier_ignore/issue-15738.html | 0/1 | 85.71% |
+| html/tags/pre.html | 0/4 | 88.83% |
 
 # Refused
 
@@ -22,7 +23,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | html/css/scss.html | 1/1 | 84.38% | formatter-error: style lang scss |
 | html/handlebars-venerable/template.html | 2/2 | 43.48% | formatter-error: script type text/x-handlebars-template |
 | html/multiparser/markdown/html-with-markdown-script.html | 1/1 | 33.33% | formatter-error: script type text/markdown |
-| html/tags/pre.html | 4/4 | 82.87% | formatter-error: parse error |
 | html/yaml/invalid.html | 1/1 | 73.68% | formatter-error: yaml front matter |
 
 # Excluded
