@@ -669,27 +669,48 @@ const attr = (n: Node, name: string) => n.attrs.find((a) => a.rawName.toLowerCas
 
 /**
  * utilities/index.js's inferScriptParser and inferStyleParser, for a non-blank script or style: undefined for any
- * other element. A content no formatter here reads (a `src` script's, a template type's) throws `Unsupported`.
+ * other element, "raw" for a content oxfmt keeps as written (a `src` script's, an unknown type's or lang's). A
+ * content oxfmt formats in a language no formatter here reads (scss, less, a handlebars template) throws
+ * `Unsupported`.
  */
-function embeddedLanguage(n: Node): EmbeddedLanguage | undefined {
+function embeddedLanguage(n: Node): EmbeddedLanguage | "raw" | undefined {
   if ((n.name !== "script" && n.name !== "style") || n.value.trim() === "") return undefined;
   const lang = attr(n, "lang")?.value?.toLowerCase();
   if (n.name === "style") {
     if (lang === undefined || lang === "css" || lang === "postcss") return "css";
-    throw new Unsupported(`style lang ${lang}`);
+    if (lang === "scss" || lang === "less") throw new Unsupported(`style lang ${lang}`);
+    return "raw";
   }
-  if (attr(n, "src") !== undefined) throw new Unsupported("script src");
+  if (attr(n, "src") !== undefined) return "raw";
   const type = attr(n, "type")?.value?.toLowerCase();
   if (lang === "ts" || type === "application/x-typescript") return "typescript";
   if (lang === "tsx") return "tsx";
-  if (lang !== undefined && lang !== "js" && lang !== "jsx") throw new Unsupported(`script lang ${lang}`);
+  if (lang !== undefined && lang !== "js" && lang !== "jsx") return "raw";
   if (
     type === undefined ||
     ["module", "text/javascript", "text/babel", "text/jsx", "application/javascript", "jsx"].includes(type)
   )
     return "babel";
   if (["application/json", "application/ld+json", "importmap", "speculationrules"].includes(type)) return "json";
-  throw new Unsupported(`script type ${type}`);
+  if (["text/x-handlebars-template", "text/markdown", "text/html"].includes(type))
+    throw new Unsupported(`script type ${type}`);
+  return "raw";
+}
+
+/**
+ * printer-html.js's text in a whitespace-sensitive script or style: htmlTrimPreserveIndentation (one leading blank
+ * line and the trailing whitespace dropped), then dedentString's common indentation off each line.
+ */
+function rawLines(value: string): string[] {
+  const lines = value.replace(/^[\t\f\r ]*\n/, "").replace(/[\t\n\f\r ]+$/, "").split("\n");
+  let indent = Number.POSITIVE_INFINITY;
+  for (const line of lines) {
+    if (line === "") continue;
+    const lead = /^[\t\n\f\r ]*/.exec(line)?.[0].length ?? 0;
+    if (lead === 0) return lines;
+    if (lead < line.length) indent = Math.min(indent, lead);
+  }
+  return indent === Number.POSITIVE_INFINITY ? lines : lines.map((l) => l.slice(indent));
 }
 
 /** Prints `root` (from `parseHtml`) as prettier's `group(printChildren(root))`, without its final hardline. */
@@ -998,7 +1019,7 @@ class Printer {
     const embedded = embeddedLanguage(n);
     if (embedded !== undefined) {
       const embed = this.out.embed;
-      if (embed === undefined) throw new Unsupported(n.name);
+      if (embed === undefined && embedded !== "raw") throw new Unsupported(n.name);
       open(GROUP);
       open(GROUP);
       this.openingTag(n);
@@ -1006,7 +1027,12 @@ class Printer {
       sBreakParent();
       open(INDENT);
       sHardline();
-      embed(embedded, n.value);
+      if (embedded === "raw")
+        rawLines(n.value).forEach((l, i) => {
+          if (i > 0) sHardline();
+          this.text(l);
+        });
+      else embed?.(embedded, n.value);
       close();
       sHardline();
       this.closingTag(n);

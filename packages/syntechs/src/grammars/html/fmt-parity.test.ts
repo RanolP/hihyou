@@ -42,6 +42,11 @@ const edgeCases: [string, string][] = [
     "known-names-lowercased",
     '<DIV ID="a" DATA-X="b" CLASS="a  b">x</DIV>\n<span ID="a">x</span>\n<foo CLASS="  a ">x</foo>\n<A HREF="x">y</A>\n',
   ],
+  // An unknown script type or style lang refused the file; its content prints as written, dedented, one level in.
+  [
+    "unknown-script-style-verbatim",
+    '<div><script type="text/template">a\n    <b>\n\n\n  </b>   </script></div>\n<style lang="stylus">\n\n\n  a\n     \n    b c\n</style>\n<script src="a.js">  let x=1  </script>\n',
+  ],
 ];
 
 function ours(text: string, options: Partial<PrettierOptions>) {
