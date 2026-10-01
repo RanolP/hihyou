@@ -59,11 +59,13 @@ function cssBlockDeclarations(tree: ReturnType<typeof parseTree>): number[] | un
   return decls.length > 0 ? decls : undefined;
 }
 
-function isStyleValue(tree: ReturnType<typeof parseTree>, value: number): boolean {
+function isValueOf(tree: ReturnType<typeof parseTree>, value: number, attributeName: string): boolean {
   let attribute = tree.parent(value);
   if (tree.kindName(attribute) === "quoted_attribute_value") attribute = tree.parent(attribute);
   const name = tree.count(attribute) > 0 ? tree.child(attribute, 0) : undefined;
-  return name !== undefined && tree.kindName(name) === "attribute_name" && tree.text(name).toLowerCase() === "style";
+  return (
+    name !== undefined && tree.kindName(name) === "attribute_name" && tree.text(name).toLowerCase() === attributeName
+  );
 }
 
 /**
@@ -80,7 +82,9 @@ const normalize: Normalize = (lexemes, _text, tree) =>
     const kind = tree.kindName(l.node);
     // A `style` value prints as css declarations, which lowercase a hex color and write `.5` as `0.5`: compare it
     // with its gaps and `;`s gone, lowercased, each number's leading zero written.
-    if (kind === "attribute_value" && isStyleValue(tree, l.node))
+    // An `allow` value prints as its directives, each ending in a `;` only broken: compare it with its gaps and `;`s gone.
+    if (kind === "attribute_value" && isValueOf(tree, l.node, "allow")) return l.text.replaceAll(/[\s;]/g, "") || undefined;
+    if (kind === "attribute_value" && isValueOf(tree, l.node, "style"))
       return (
         l.text
           .replaceAll("&quot;", '"')

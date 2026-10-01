@@ -11,6 +11,7 @@ import {
   FILL,
   FILL_ITEM,
   GROUP,
+  IF_BROKEN,
   IF_FLAT,
   INDENT,
   open,
@@ -68,6 +69,8 @@ interface Attr {
   formatted?: boolean;
   /** A `style` value, which prints as css declarations where the caller's `declarations` reads it as them. */
   style?: boolean;
+  /** An iframe's `allow` value, which prints as its `;`-separated directives. */
+  allow?: boolean;
 }
 
 // Prettier's html-styles tables (constants.evaluate.js), for the tags a template holds.
@@ -127,8 +130,24 @@ const WHITE_SPACE: Readonly<Record<string, string>> = {
 };
 const VOID = new Set("area base br col embed hr img input link meta param source track wbr".split(" "));
 const IGNORE_FIRST_LF = new Set(["pre", "textarea", "listing"]);
-/** Attributes prettier formats as code or as a list, which this printer does not; matched as written, so `STYLE` is not. */
-const FORMATTED_ATTRIBUTE = /^(?:style|srcset|sizes|allow|on.*)$/;
+/**
+ * print/attribute/event-handler.js's names, whose value prettier formats as JS, which this printer does not; matched
+ * as written, so `onClick` is a plain attribute.
+ */
+const EVENT_HANDLERS = new Set(
+  (
+    "onabort onafterprint onauxclick onbeforeinput onbeforematch onbeforeprint onbeforetoggle onbeforeunload " +
+    "onblur oncancel oncanplay oncanplaythrough onchange onclick onclose oncommand oncontextlost oncontextmenu " +
+    "oncontextrestored oncopy oncuechange oncut ondblclick ondrag ondragend ondragenter ondragleave ondragover " +
+    "ondragstart ondrop ondurationchange onemptied onended onerror onfocus onformdata onhashchange oninput " +
+    "oninvalid onkeydown onkeypress onkeyup onlanguagechange onload onloadeddata onloadedmetadata onloadstart " +
+    "onmessage onmessageerror onmousedown onmouseenter onmouseleave onmousemove onmouseout onmouseover onmouseup " +
+    "onoffline ononline onpagehide onpagereveal onpageshow onpageswap onpaste onpause onplay onplaying " +
+    "onpopstate onprogress onratechange onrejectionhandled onreset onresize onscroll onscrollend " +
+    "onsecuritypolicyviolation onseeked onseeking onselect onslotchange onstalled onstorage onsubmit onsuspend " +
+    "ontimeupdate ontoggle onunhandledrejection onunload onvolumechange onwaiting onwheel"
+  ).split(" "),
+);
 
 // Prettier's html-tag-names and html-element-attributes tables: its parser lowercases a tag name in the first, and
 // an attribute name an element's own list or `*` holds, but only on an element the second table lists.
@@ -437,7 +456,11 @@ function attribute(tree: TsTree, ts: number, element: string): Attr {
     return { rawName, value: classNames(value), formatted: true };
   if (rawName === "class") return { rawName, value };
   if (rawName === "style") return value !== null && !value.includes("{{") ? { rawName, value, style: true } : { rawName, value };
-  if (FORMATTED_ATTRIBUTE.test(rawName)) throw new Unsupported(rawName);
+  // print/attribute/*.js formats these only on their elements, and none holding a `{{`.
+  if (value === null || value.includes("{{")) return { rawName, value };
+  if (rawName === "allow" && element === "iframe") return { rawName, value, allow: true };
+  if ((rawName === "srcset" && (element === "img" || element === "source")) || EVENT_HANDLERS.has(rawName))
+    throw new Unsupported(rawName);
   return { rawName, value };
 }
 
@@ -1090,6 +1113,36 @@ class Printer {
         this.text('"');
         return;
       }
+    }
+    if (a.allow) {
+      // print/attribute/allow.js: each directive's words one space apart, printExpand'ed a line apart after a `;`.
+      const directives = unescapeQuotes(a.value)
+        .split(";")
+        .map((d) => d.trim())
+        .filter((d) => d !== "")
+        .map((d) => d.split(/[\t\n\f\r ]+/).join(" ").replaceAll('"', "&quot;"));
+      this.text(`${a.rawName}="`);
+      if (directives.length > 0) {
+        open(GROUP);
+        open(INDENT);
+        sLine(SOFT);
+        directives.forEach((d, i) => {
+          this.text(d);
+          if (i < directives.length - 1) {
+            this.text(";");
+            sLine(0);
+          } else {
+            open(IF_BROKEN);
+            this.text(";");
+            close();
+          }
+        });
+        close();
+        sLine(SOFT);
+        close();
+      }
+      this.text('"');
+      return;
     }
     const value = a.formatted ? a.value : unescapeQuotes(a.value);
     const doubles = value.split('"').length;

@@ -70,6 +70,13 @@ const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
     { htmlWhitespaceSensitivity: s },
   ]),
   // A `<!-- display: x -->` comment refused the file; it sets the display of the node after it.
+  // An iframe's allow refused the file; its directives print `; `-separated, broken one per line with a last `;`.
+  [
+    "iframe-allow",
+    `<iframe allow=" ;  ; "></iframe>\n<iframe allow="   camera\n'self';; usb"></iframe>\n<iframe allow="camera ${"https://a.example.com ".repeat(4)}; usb"></iframe>\n`,
+  ],
+  // An `on-click`, `onClick`, or an allow/srcset off its elements refused the file; prettier keeps them as written.
+  ['unformatted-lookalike-attributes', '<div on-click="a( 1 )" onClick="b( 2 )" allow=" x ;y" srcset=" a  1x ">x</div>\n'],
   ["display-comment", "<div>\n  <!-- display: inline -->\n  <p>Long Long Long Long Long Long Long Long Long Long Long Long Long Long</p>\n</div>\n"],
 ];
 
