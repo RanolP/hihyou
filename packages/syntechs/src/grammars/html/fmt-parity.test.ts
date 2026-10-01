@@ -37,6 +37,11 @@ const edgeCases: [string, string][] = [
   ],
   // A style refused the file; its CSS prints through the css formatter one level in.
   ["style-content", '<html><head><style media="screen">a{b:c}\n\n\nd{e:f}</style></head></html>\n'],
+  // An uppercase `CLASS` refused the file, and `<DIV ID>` kept its case where prettier lowercases a known name.
+  [
+    "known-names-lowercased",
+    '<DIV ID="a" DATA-X="b" CLASS="a  b">x</DIV>\n<span ID="a">x</span>\n<foo CLASS="  a ">x</foo>\n<A HREF="x">y</A>\n',
+  ],
 ];
 
 function ours(text: string, options: Partial<PrettierOptions>) {

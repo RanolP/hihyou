@@ -1,4 +1,4 @@
-html@oxfmt compatibility: 84/146 (57.53%), 34 refused (ok:false), 23 excluded
+html@oxfmt compatibility: 87/146 (59.59%), 32 refused (ok:false), 23 excluded
 
 Fixtures: prettier 3.9.9 tests/format/{html} (recursive), every spec call listing parser `html`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left.
 
@@ -32,7 +32,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | html/tags/closing-at-start.html | 3/4 | 93.18% |
 | html/tags/openging-at-end.html | 2/4 | 74.11% |
 | html/tags/option.html | 3/4 | 77.27% |
-| html/tags/seach.html | 0/4 | 96.44% |
 | html/tags/tags2.html | 2/4 | 73.87% |
 | html/yaml/invalid.html | 0/1 | 58.82% |
 | html/yaml/yaml.html | 0/1 | 71.43% |
@@ -51,7 +50,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | html/attributes/iframe-allow-attribute/small-print-width/allow-attribute.html | 1/1 | 0.00% | formatter-error: allow |
 | html/attributes/no-semi/event-attributes.html | 1/1 | 30.77% | formatter-error: onclick |
 | html/basics/with-colon.html | 1/1 | 20.27% | formatter-error: svg |
-| html/case/case.html | 1/1 | 9.09% | formatter-error: CLASS |
 | html/cdata/example.html | 1/1 | 54.55% | formatter-error: parse error |
 | html/css/less.html | 1/1 | 94.12% | formatter-error: style lang less |
 | html/css/scss.html | 1/1 | 84.38% | formatter-error: style lang scss |
@@ -74,7 +72,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | html/tags/menu.html | 4/4 | 77.94% | formatter-error: onclick |
 | html/tags/pre.html | 4/4 | 82.87% | formatter-error: parse error |
 | html/tags/tags.html | 4/4 | 30.50% | formatter-error: on-click |
-| html/whitespace/display-none.html | 1/1 | 0.00% | formatter-error: CLASS |
 | html/whitespace/fill.html | 1/1 | 43.48% | formatter-error: style |
 | html/whitespace/nested-inline-without-whitespace.html | 1/1 | 6.25% | formatter-error: style |
 

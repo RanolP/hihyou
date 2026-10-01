@@ -31,7 +31,8 @@ const defaults: PrettierOptions = { ...prettierDefaults };
 
 /**
  * Prettier reflows text and collapses the gaps in it, so a text or comment compares by its words; it requotes an
- * attribute value and closes a void element with `/>`, and it lowercases a doctype's `DOCTYPE` and `html`.
+ * attribute value and closes a void element with `/>`, and it lowercases a doctype's `DOCTYPE` and `html`, a known
+ * tag's name, and a known attribute's.
  */
 const normalize: Normalize = (lexemes, _text, tree) =>
   lexemes.map((l) => {
@@ -40,7 +41,8 @@ const normalize: Normalize = (lexemes, _text, tree) =>
     // A script's or style's content is its own language's to format; the check compares the HTML around it.
     if (tree.kindName(l.node) === "raw_text") return undefined;
     const words = l.text.replace(/\s+/g, " ").trim();
-    return tree.kindName(l.node) === "doctype" ? words.toLowerCase() : words;
+    const kind = tree.kindName(l.node);
+    return kind === "doctype" || kind === "tag_name" || kind === "attribute_name" ? words.toLowerCase() : words;
   });
 
 const base = defineLanguage(grammar, {
