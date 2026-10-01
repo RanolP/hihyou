@@ -168,8 +168,8 @@ export interface StreamRules<O = unknown> {
   /** Whether `node` prints as its source text though it parsed, as a broken node does (prettier-ignore). */
   readonly keepsSource?: (node: number, ctx: StreamCtx<O>) => boolean;
   /**
-   * Whether `ERROR` node `error` is a recovery the rules print around, like a stray trailing comma they drop, so
-   * its parent formats rather than printing as written.
+   * Whether `ERROR` or missing node `error` is a recovery the rules print around, like a stray trailing comma they
+   * drop, so its parent formats rather than printing as written.
    */
   readonly recovered?: (error: number, tree: FormatTree) => boolean;
   /**

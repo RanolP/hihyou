@@ -28,6 +28,8 @@ export interface JsOptions extends PrettierOptions {
   htmlWhitespaceSensitivity: "css" | "strict" | "ignore";
   /** Prettier's __embeddedInHtml: a script's content, where a template's HTML writes `</script` as `<\/script`. */
   embeddedInHtml: boolean;
+  /** Whether the file can hold JSX, as `.js`, `.jsx` and `.tsx` can and `.ts` cannot: `<T,>` keeps its comma only then. */
+  jsx: boolean;
 }
 
 /** The tree queries the JS helpers read: the format's tree, its options, and where its comments attach. */

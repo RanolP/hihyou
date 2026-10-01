@@ -349,6 +349,20 @@ const edgeCases: [string, Target, string][] = [
   // A script in a template's HTML dropped the parentheses around a `${…}`, which oxfmt keeps.
   ["html-embed-parenthesized-placeholder", "js", "x = html`<script>f((${e}) / 2); ((${a})).b;</script>`;\n"],
   ["html-embed-cooked-escapes", "js", "x = html`\\n<div>a\\tb \\u00e9</div>\\n`;\ny = html`<pre>a\\nb</pre>`;\n"],
+  // A `.ts` arrow's `<T,>` kept the comma that only a `.tsx` file needs to tell the list from a JSX tag.
+  [
+    "arrow-type-parameter-comma-ts",
+    "ts",
+    "const f = <T,>(x: T) => x;\nconst g = async <const T = 1,>(x: T) => x;\nconst h = <T, /* c */>(x: T) => x;\n",
+  ],
+  // A `<const>` assertion printed `<>`: tree-sitter's `const` there is a keyword token the cast printer skipped.
+  ["const-type-assertion", "ts", "const x = <const>[1, 2];\nf(< const >{ a: 'b' });\n"],
+  // The `.tsx` side of the same: there the comma stays.
+  [
+    "arrow-type-parameter-comma-tsx",
+    "tsx",
+    "const f = <T,>(x: T) => x;\nconst g = async <const T = 1,>(x: T) => x;\nconst h = <T, /* c */>(x: T) => x;\n",
+  ],
 ];
 
 function ours(target: Target, text: string, options: Partial<JsOptions>) {

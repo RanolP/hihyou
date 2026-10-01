@@ -288,6 +288,29 @@ const edgeCases: [string, string][] = [
     "include-prelude-comment",
     "@include f(x /*q*/ / c, y /*r*/);\n@include x /*q*/ y;\n@include f(g(x /*q*/));\n@include f(x /*q*/ / c) {a:b}\n@mixin f(x /*q*/ / c) {}\n",
   ],
+  // A word holding a `:` (`http://a.b`, `a:/b`) stayed whole in a raw value; oxc lexes it as tokens, `http: / / a.b`.
+  [
+    "colon-slash-word",
+    "a{c:x http://a.b;d:a:/b;e:a:/b/c, a://b//c;f:x(http://a) a:b;g:x http://a.b:8080/c?q=1 !important;h:url(http://a.b);i:x(http://a)}",
+  ],
+  // An `@scope` rule had no layout and printed as written, its block on one line.
+  ["scope", "@scope (.a) to (.b){img{c:d}}@scope (.a>b , .c){:scope{c:d}}@scope   (.a)   to   (.b)  {x{y:z}}.x{@scope (.a) /* c */ to (.b){y{z:w}}}"],
+  // An unknown at-rule whose prelude tree-sitter wraps in an ERROR (`@foo (.a)`, `@SCOPE … TO …`) kept its rule as
+  // written, and one it reads re-spaced its prelude (`@foo  a   b`) that oxfmt prints as written.
+  [
+    "unknown-at-rule-verbatim",
+    "@scope to (.b){img{c:d}}@SCOPE (.a) TO (.b){img{c:d}}@FOO (.a){img{c:d}}@foo   (.a)   x  {img{c:d}}@foo  a   b {c:d}@FOO (.a)  ;@foo (.a\n  ){x{y:z}}@foo (.a){}a{@foo (.a){b{c:d}}}@foo (.a) /* c */{x{y:z}}@foo(.a){x{y:z}}",
+  ],
+  // A value's `:` tree-sitter wraps in an ERROR (`a :/b`, `1px:/b`) kept the declaration as written.
+  ["value-colon-error", "a{c:a :/b;d:1px:/b;e:a  :/b/c;f:#fff:/b;g:a :/b !important;h:a /* q */ :/b}"],
+  // A second `:` after a comma (`c:x, a :/b`), where tree-sitter-css inserts a MISSING `,`, kept the declaration as written.
+  // A `progid:A(B)` past the value's start printed as written; oxfmt prints the function `progid(: A B)`, which
+  // check.ts rejected as a syntax error, and a bare `progid:A` as `progid: A`.
+  [
+    "progid-past-start",
+    "a{filter:x progid:DX.a(b=1);g:x progid:DX.a(b=1, c=2) !important;h:alpha(o=5) PROGID:DX.a (b='#80000000');i:x progid:a;j:x progid:DX.a()}",
+  ],
+  ["value-colon-missing-comma", "a{c:x, a :/b;d:x, a :b;e:x, a :/b !important;f:x, y, a :/b, d;g:x,\n  a :/b;h:x, a :}"],
   ["word-hash-star","a{b:a#b, d;c:x a#b#c;d:f(a*c);e:a$c;f:url($a*3);g:calc(a*c);h:f(w-*);i:a #b}"],
   // The space before a `%` selector after a compound (`a:b %c`, `.a %c`) was glued as `a:b%c`.
   ["placeholder-gap", ".x{a:b %c{d:e}}\n.x{a %c{d:e}}\n.x{a:b%c{d:e}}\n.a %c{d:e}\n.x{a:b  %c{d:e}}"],
@@ -315,6 +338,116 @@ const edgeCases: [string, string][] = [
   [
     "value-prelude-comment-raw",
     "@import url(a) (a:b) /*q*/;\n@import url('a') layer(x) supports(display:grid) ( a :b ) /*q*/;\n@supports (a :b) /*q*/ and not(c:'d') {x{y:z}}\n@supports selector(a>b)/*q*/{x{y:z}}",
+  ],
+  // A function argument's stray `:` (`f(a :/b)`) kept its gaps as written instead of oxc's raw-token spacing.
+  [
+    "call-argument-colon-raw",
+    "a{c:f(a :/b);d:f(a : /b);e:f(a :*b);f:f(a :/ /b);g:f(a /*q*/ :/b);h:f(x, a :/ b, c :/d)}\na{c:f(a :/b :/c);d:f(a :/b*c);e:f(a :/g( b ));f:f(g(b) :/a);g:f(a :/1.50px);h:f(a: /*q*/ /b);i:f(a :+b)}",
+  ],
+  // A `/deep/` combinator was a parse error that kept its whole rule as written instead of spacing it as `>`.
+  [
+    "named-combinator",
+    "a /deep/ b{e:f}\na/deep/b , c{e:f}\n.a  /x/  .b{e:f}\na{&/deep/b{c:d}}\na{grid-area:1/a/2;font:12px/a/b x}",
+  ],
+  // A stray `:` then `/` and a number (`a :/1.50`) left an ERROR `/` that kept the declaration as written.
+  [
+    "value-colon-slash-number-raw",
+    "a{c:x a :/1.50;d:x a: /1px b !important;e:a :/50%, b}",
+  ],
+  // A `||` column combinator read as two namespace bars and printed glued (`a||b`) instead of spaced as `>`.
+  [
+    "column-combinator",
+    "a||b{e:f}\na ||b , c||d>e{e:f}\na:is(b||c){e:f}\na|b, *|a, |a, [a|b], [a|=b]{e:f}",
+  ],
+  // A nameless argument `:` (`f(/ a :b)`) kept its source gaps (`/a :b`, or the ERROR form `/ a : b` whole).
+  [
+    "stray-argument-colon-raw",
+    "a{c:f(/ a :b);d:f(/ a : b);e:f(/a:b);f:f(/ a: b);g:f(x, / a :b c);h:f(/ 1 :b);i:f(/ a :1px)}\na{c:f(* a :b);d:f(- a :b);e:x f(/ a :g(b)) y;f:f( / a : b )}",
+  ],
+  // An unquoted `url()` in a raw value printed its body verbatim instead of spaced as raw tokens (`url(http: / / a.b)`).
+  [
+    "raw-value-unquoted-url",
+    "a{c:x url(http://a.b) http://c.d;d:url(../a.png) a:b;e:x url(data:image/png;base64,iVB=) a:b}\na{c:x url(a*b) URL(a,b) a:b;d:x url(a.png?x=1&y=2) url(\"http://a.b\") url() a:b;e:x url(http://a.b)}",
+  ],
+  // A keyframe selector written as a decimal (`0.0%`, `.5%`) or in capitals (`FROM`) failed to parse or kept its spelling.
+  [
+    "keyframe-selector-forms",
+    "@keyframes k{0.0%{a:b}50.50%{a:c}.5%,100.0%{a:d}}\n@-webkit-keyframes k{FROM{a:b}To{a:c}from,10%{a:d}}",
+  ],
+  // A block's last declaration with an empty value and no `;` (`a{b:}`) printed as written, its `;` missing.
+  [
+    "empty-last-value",
+    "a{b:}\na{c:d;b: }\na{--x:\n}\na{--x: ;b:c}",
+  ],
+  // `nth-of-type(2n+1)` printed `2n +1`, `3n-1` as `3n -1`, and an `N`, a leading `+` or `EVEN` failed the rule.
+  [
+    "nth-an-plus-b",
+    "a:nth-of-type(2n+1),a:nth-of-type(3n-1),a:nth-last-of-type(-n+3),a:nth-col(+3n-2){b:c}\na:nth-child(2N+1),a:nth-child(-2N+1),a:nth-child(+n),a:nth-child(N),a:nth-child(EVEN),a:nth-child(Odd){b:c}\na:nth-child(2n+ 1),a:nth-child(2n  +  1),a:nth-child(2n -1),a:nth-child(2N-1 of .a){b:c}",
+  ],
+  // A one-line grid value too long for the line broke between its words; oxfmt keeps them a space apart and breaks
+  // the arguments of the first function whose `(` the line cannot reach.
+  [
+    "grid-one-line-breaks-functions",
+    ".g{grid-template-columns:[full-start] minmax(1rem,1fr) [content-start] minmax(0,60rem) [content-end] minmax(1rem,1fr) [full-end]}\n.g{grid-template-rows:aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd eeeeeeeeee ffffffffff gggggggggggggg}\n.g{grid:auto-flow dense / 40px 40px 1fr minmax(1px, 1fr) minmax(1px, 1fr) minmax(1px, 1fr) x}\n.g{grid-template-columns:repeat(2,1fr) aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd eeeeeeeeee ffffffffff}",
+  ],
+  // A custom property's block left an item with no `:` (`{a}`) and a nested group as written, and broke a raw value
+  // with a second `:` at its commas; oxfmt ends the item with `;`, keeps the nested value raw and that value as written.
+  [
+    "custom-property-block-items",
+    "a{--a: {a}}\na{--a:{a;b:c}}\na{--a:{ a b ; }}\na{--a:{1}}\na{--a: { a: 1, b: 2 }}\na{--a:{a :b :c}}\na{--a:{a:{b:c}}}\na{--a: {{a}}}",
+  ],
+  // An uppercase `OF` or `NTH-CHILD` was an ERROR (or a number `2n`) that kept the An+B unspaced, or failed the check.
+  [
+    "nth-any-case",
+    "a:nth-child(2n+1 OF .a),a:nth-last-child(-n+3 Of .a, .b),a:nth-child(2n+1   OF   .a){b:c}\nA:NTH-CHILD(2n),A:NTH-CHILD(2N+1),a:Nth-Last-Of-Type(2n),a:NTH-COL(2n+1),a:nth-childx(2n){b:c}",
+  ],
+  // A comment leading a custom property block's item on its line was put on a line of its own, apart from the item.
+  [
+    "custom-property-block-comments",
+    "a{--a:{/*c*/a:b}}\na{--a:{ /*c*/ a:b }}\na{--a:{/*c*//*d*/a}}\na{--a:{a:b;/*c*/c:d}}\na{--a:{a:b; /*c*/ c:d}}\na{--a:{a;/*c*/b}}\na{--a:{a:b; /*c*/\nc:d}}\na{--a:{\n/*c*/\na:b}}",
+  ],
+  // An nth- or selector-taking pseudo-class without arguments (`a:nth-child`) made the rule an ERROR kept as written.
+  [
+    "pseudo-class-name-without-arguments",
+    "a:nth-child{b:c}\na:NTH-CHILD{b:c}\na:nth-last-of-type:hover{b:c}\na:nth-col, b:nth-child{b:c}\na:not{b:c}\na:is{b:c}\na:nth-child (2){b:c}",
+  ],
+  // A custom property block followed by `!important` or a comment stayed as written instead of laid out as a block.
+  [
+    "custom-property-block-important",
+    "a{--a: {a} !important}\na{--a:{a:b}!important;c:d}\na{--a:{a:b} ! IMPORTANT;}\na{--a:{} !important}\na{--a:{a:b} !important /*c*/;}\na{--a:{a:b} !important /*c*/}\na{--a:{a:b;}/*c*/}\na{--a:{a:b}/*c*/ /*d*/;}\na{--a:{a:b} / c;}\na{--a:{a:b} /*c*/ x;}",
+  ],
+  // A custom property block's JSON-like item (an ERROR) lost its `;`, or doubled the one it had.
+  [
+    "custom-property-block-error-item",
+    'a{--a:{"a": 1}}\na{--a:{"a": 1;}}\na{--a:{a [1]}}\na{--a:{"a": [1, {2}]}}\na{--a:{a: b; "c": [1]}}\na{--a:{a b;;}}\na{--my-json: {"a": 1, "b": [1, 2]}}',
+  ],
+  // A rule after a JSON-like custom block (`"a": 1, "b": [1, 2]`) turned tree-sitter's recovery into one ERROR kept as written.
+  ["custom-property-block-then-rule", 'a{--my-json: {"a": 1, "b": [1, 2]}}\nb{c:d}\na{--a: {a, b: [1]}}\nb{c:d}'],
+  // Comments alone past a last declaration's `:` with no `;` printed before the added `;`, where oxfmt prints `c:; /*c*/`.
+  [
+    "empty-last-value-comments",
+    "a{c:/*c*//*d*/}\na{c:\n/*c*/\n}\na{c/*q*/:/*c*/}\na{--x: /*c*/ /*d*/}\na{c:/*c*/;}\na{c:/*c*/ !important}",
+  ],
+  // A custom property's value with a `{...}` group past its start, ending the block, was laid out as a nested property.
+  [
+    "custom-property-brace-value-ends-block",
+    "a{--a: x {a:b}}\na{--a: x {a:b}\n}\na{--a: x {a:b} c:d}\na{--a: x y {a:b}}\na{--a: x {a:b} y}\na{--a: x {}}\na{--a:  x   {a:b}  }\na{--a: x\n {a:b}\n}\na{--a: x {a:b};}\na{--js: function(rule) {  log(rule) };}",
+  ],
+  // A comment after a custom property block's last item was glued to its `;`, and one after an item's `:` lost its space.
+  [
+    "custom-property-block-comment-positions",
+    "a{--a:{a:b;/*c*/}}\na{--a:{a:b;/*c*//*d*/}}\na{--a:{a:b;/*c*/ /*d*/}}\na{--a:{a: b /*c*/;}}\na{--a:{a: /*c*/ b;}}\na{--a:{a:/*c*//*d*/b}}",
+  ],
+  // A custom property block's item went through tree-sitter's reading, where oxfmt re-flows its text: `a/*c*/` became
+  // `a; /*c*/`, `b // c` became `b / / c`, a value on the next line joined the `:`, and two JSON-like items were one.
+  [
+    "custom-property-block-as-text",
+    'a{--a:{a/*c*/}}\na{--a:{a\n/*c*/}}\na{--a:{a:b // c\n}}\na{--a:{a:b // c\nd:e}}\na{--a:{a:b,c}}\na{--a:{a:b/ c}}\na{--a:{a:1.50PX}}\na{--a:{a:"x   y"}}\na{--a:{a:\n/*c*/b}}\na{--a:{a:/*c*/\nb}}\na{--a:{a:b\n/*c*/}}\na{--a: {"a": 1; "b": 2}}\na{--a:{\'x;y\':1}}\nb{c:d}',
+  ],
+  // A comment after a raw custom property value ending the block was read into the value, before the `;` oxfmt adds.
+  [
+    "custom-property-raw-value-trailing-comment",
+    "a{--a: x {a:b} /*c*/}\na{--a: x {a:b}/*c*//*d*/}\na{--a: x {a:b} y /*c*/}\na{--a: x {a:b} /*c*/\n}\na{--a: x {a:b}\n/*c*/\n}\na{--a: x {a:b} /*c*/;}",
   ],
 ];
 
@@ -391,13 +524,6 @@ describe.skipIf(!present)(
 
 // Input, options, then today's output, which differs from oxfmt's.
 const divergences: [string, string, Partial<CssOptions>, string][] = [
-  // tree-sitter-css knows only lowercase `from`; an uppercase one is an ERROR.
-  [
-    "uppercase-from",
-    "@keyframes x{FROM{a:b}}",
-    {},
-    "@keyframes x{FROM{a:b}}\n",
-  ],
   // The core ends every file with a newline; prettier prints an empty file as nothing.
   ["empty-file", "", {}, "\n"],
 ];

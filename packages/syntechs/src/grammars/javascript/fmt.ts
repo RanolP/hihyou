@@ -102,6 +102,7 @@ const defaults: JsOptions = {
   sourceType: "unambiguous",
   htmlWhitespaceSensitivity: "css",
   embeddedInHtml: false,
+  jsx: true,
 };
 
 const PE = "parenthesized_expression";
