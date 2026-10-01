@@ -158,7 +158,8 @@ const v8Intrinsic: StreamRule<JsOptions> = (n, s) => {
 
 /** Prettier's printClass for a decorated class expression in parentheses: `(`, the class indented on its own lines, `)`. */
 function printInParens(ctx: JsCtx, n: number, print: () => void): void {
-  if (!isDecoratedClass(ctx, n)) return print();
+  // An ignored class keeps its source right inside the parentheses: `(@decorator⏎  class {})`.
+  if (!isDecoratedClass(ctx, n) || isIgnored(ctx, n)) return print();
   openStream(INDENT);
   sLine(0);
   print();
