@@ -295,6 +295,12 @@ const edgeCases: [string, string][] = [
   ],
   // An `@scope` rule had no layout and printed as written, its block on one line.
   ["scope", "@scope (.a) to (.b){img{c:d}}@scope (.a>b , .c){:scope{c:d}}@scope   (.a)   to   (.b)  {x{y:z}}.x{@scope (.a) /* c */ to (.b){y{z:w}}}"],
+  // An unknown at-rule whose prelude tree-sitter wraps in an ERROR (`@foo (.a)`, `@SCOPE … TO …`) kept its rule as
+  // written, and one it reads re-spaced its prelude (`@foo  a   b`) that oxfmt prints as written.
+  [
+    "unknown-at-rule-verbatim",
+    "@scope to (.b){img{c:d}}@SCOPE (.a) TO (.b){img{c:d}}@FOO (.a){img{c:d}}@foo   (.a)   x  {img{c:d}}@foo  a   b {c:d}@FOO (.a)  ;@foo (.a\n  ){x{y:z}}@foo (.a){}a{@foo (.a){b{c:d}}}@foo (.a) /* c */{x{y:z}}@foo(.a){x{y:z}}",
+  ],
   ["word-hash-star","a{b:a#b, d;c:x a#b#c;d:f(a*c);e:a$c;f:url($a*3);g:calc(a*c);h:f(w-*);i:a #b}"],
   // The space before a `%` selector after a compound (`a:b %c`, `.a %c`) was glued as `a:b%c`.
   ["placeholder-gap", ".x{a:b %c{d:e}}\n.x{a %c{d:e}}\n.x{a:b%c{d:e}}\n.a %c{d:e}\n.x{a:b  %c{d:e}}"],

@@ -976,6 +976,7 @@ function raw(
 export function atRule(node: number, ctx: SCtx): void {
   if (isDirective(node, ctx)) return sassDirective(node, ctx);
   if (placeholderStatement(node, ctx)) return;
+  if (unknownAtRule(node, ctx.tree)) return verbatimAtRule(node, ctx);
   const own = (c: number) => kind(c, ctx) === "at_keyword" || kind(c, ctx) === "block";
   const block = (c: number) => kind(c, ctx) === "block";
   const comma = (c: number) => kind(c, ctx) === ",";
@@ -986,6 +987,74 @@ export function atRule(node: number, ctx: SCtx): void {
     return raw(node, ctx, own, (prev, c) => block(c) || comma(prev), comma);
   }
   raw(node, ctx, own, (_, c) => block(c));
+}
+
+// The at-rules oxc-css-parser reads a prelude of, any case; every other name's prelude is `Unknown`, which oxfmt
+// prints as written (`write_verbatim_at_rule_tail`) unless `valueParsed` names it. `@scope` is left out: oxfmt
+// prints its prelude as written too, and tree-sitter-css reads an uppercase `@SCOPE` as an at_rule.
+const structuredAtRules = new Set(
+  (
+    "page font-face layer container property counter-style starting-style position-try custom-media " +
+    "custom-selector viewport font-palette-values color-profile media supports nest namespace import charset " +
+    "keyframes -webkit-keyframes -moz-keyframes -o-keyframes font-feature-values swash styleset stylistic " +
+    "character-variant ornaments annotation historical-forms view-transition document -moz-document " +
+    "top-left-corner top-left top-center top-right top-right-corner bottom-left-corner bottom-left " +
+    "bottom-center bottom-right bottom-right-corner left-top left-middle left-bottom right-top right-middle " +
+    "right-bottom"
+  ).split(" "),
+);
+// oxc's `is_value_parsed_at_rule`: the Sass family by its exact name, the module and media rules any case.
+const valueParsed = new Set(
+  "extend nest at-root namespace supports if else for each while debug mixin include function return define-mixin add-mixin custom-selector".split(
+    " ",
+  ),
+);
+
+/** An at-rule whose prelude oxfmt prints as written (`@foo (.a)`, `@apply a  b`). */
+function unknownAtRule(node: number, t: FormatTree): boolean {
+  if (t.kindName(node) !== "at_rule") return false;
+  const name = t.text(t.child(node, 0)).slice(1);
+  const lower = name.toLowerCase();
+  if (structuredAtRules.has(lower) || valueParsed.has(name)) return false;
+  return !["import", "use", "forward", "media", "custom-media"].includes(lower);
+}
+
+/**
+ * oxc's `write_verbatim_at_rule_tail`: the name lowercased, the prelude as written but the gaps at its ends, a space
+ * before it unless it is glued to the name and opens with no `(`, then ` {…}` or `;`.
+ */
+function verbatimAtRule(node: number, ctx: SCtx): void {
+  const t = ctx.tree;
+  const [keyword, ...rest] = children(node, t);
+  if (keyword === undefined) return;
+  sToken(keyword, t.text(keyword).toLowerCase());
+  let prev = keyword;
+  for (const c of rest) {
+    const k = kind(c, ctx);
+    if (k === "block") {
+      // The prelude's last comment attaches to the block as leading; it printed with the prelude.
+      sText(" ");
+      ctx.printNode(c);
+      printTrailingComments(ctx, c);
+      continue;
+    }
+    if (k === ";") {
+      sToken(c, ";");
+      continue;
+    }
+    if (prev === keyword) sText(t.adjoins(keyword, c) && !t.text(c).startsWith("(") ? "" : " ");
+    else sText(gapBefore(prev, c, t));
+    if (isComment(c, ctx)) ctx.comment(c);
+    else sToken(c, t.text(c));
+    prev = c;
+  }
+}
+
+/** An `ERROR` in an at-rule prelude oxfmt prints as written: an unknown at-rule's or `@scope`'s. */
+function verbatimPreludeError(error: number, t: FormatTree): boolean {
+  let up = t.parent(error);
+  while (up !== NO_NODE && t.kindName(up) === "ERROR") up = t.parent(up);
+  return up !== NO_NODE && (t.kindName(up) === "scope_statement" || unknownAtRule(up, t));
 }
 
 const layerList = (node: number, t: FormatTree) =>
@@ -2243,7 +2312,7 @@ export const css: Language<CssOptions> = {
     wrap: frontMatterFirst,
     commentEndsLine: statementComment,
     keepsSource: prettierIgnored,
-    recovered: (error, t) => sassFlags(error, t) || selectorTail(error, t) || commentedPreludeError(error, t),
+    recovered: (error, t) => sassFlags(error, t) || selectorTail(error, t) || commentedPreludeError(error, t) || verbatimPreludeError(error, t),
     finalLine,
   },
 };
