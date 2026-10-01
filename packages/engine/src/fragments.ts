@@ -236,7 +236,11 @@ function indentDepth(line: string): number {
   return depth;
 }
 
-/** Per line of `a`, the line of `b` holding the partner of its first token; -1 when unmatched. */
+/**
+ * Per line of `a`, the line of `b` holding the partner of its first token; -1 when unmatched. A line no token
+ * starts on lies inside a token spanning lines (a block comment, a template string): it pairs with the line
+ * at the same offset inside that token's partner.
+ */
 function pairLines(a: Version, b: Version, m: Mapping): Int32Array {
   const pairs = new Int32Array(a.lineStarts.length).fill(-1);
   const seen = new Uint8Array(a.lineStarts.length);
@@ -244,11 +248,18 @@ function pairLines(a: Version, b: Version, m: Mapping): Int32Array {
   for (let ord = 0; ord < tree.nodeCount; ord++) {
     const n = tree.at(ord);
     if (tree.count(n) !== 0 || a.end(n) <= a.start(n)) continue;
-    const line = lineOf(a, a.start(n));
-    if (seen[line] === 1) continue;
-    seen[line] = 1;
+    const first = lineOf(a, a.start(n));
+    const last = lineOf(a, a.end(n) - 1);
     const partner = m.src[m.a.index(n)] ?? -1;
-    if (partner >= 0) pairs[line] = lineOf(b, b.start(m.b.node(partner)));
+    const p = partner >= 0 ? m.b.node(partner) : undefined;
+    const pFirst = p === undefined ? -1 : lineOf(b, b.start(p));
+    const pLast = p === undefined ? -1 : lineOf(b, b.end(p) - 1);
+    for (let line = first; line <= last; line++) {
+      if (seen[line] === 1) continue;
+      seen[line] = 1;
+      const to = pFirst + (line - first);
+      if (p !== undefined && to <= pLast) pairs[line] = to;
+    }
   }
   return pairs;
 }
