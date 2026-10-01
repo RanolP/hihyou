@@ -14,7 +14,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | js/multiparser-graphql/graphql-tag.js | 0/1 | 72.44% |
 | js/multiparser-graphql/graphql.js | 0/1 | 38.10% |
 | js/multiparser-graphql/react-relay.js | 0/1 | 36.84% |
-| js/multiparser-html/lit-html.js | 0/2 | 97.79% |
+| js/multiparser-html/lit-html.js | 0/2 | 98.70% |
 | js/multiparser-markdown/0-indent.js | 0/1 | 87.80% |
 | js/multiparser-markdown/escape.js | 0/1 | 84.62% |
 | js/multiparser-markdown/issue-5021.js | 0/1 | 92.96% |
