@@ -369,6 +369,11 @@ const edgeCases: [string, string][] = [
     "raw-value-unquoted-url",
     "a{c:x url(http://a.b) http://c.d;d:url(../a.png) a:b;e:x url(data:image/png;base64,iVB=) a:b}\na{c:x url(a*b) URL(a,b) a:b;d:x url(a.png?x=1&y=2) url(\"http://a.b\") url() a:b;e:x url(http://a.b)}",
   ],
+  // A keyframe selector written as a decimal (`0.0%`, `.5%`) or in capitals (`FROM`) failed to parse or kept its spelling.
+  [
+    "keyframe-selector-forms",
+    "@keyframes k{0.0%{a:b}50.50%{a:c}.5%,100.0%{a:d}}\n@-webkit-keyframes k{FROM{a:b}To{a:c}from,10%{a:d}}",
+  ],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");
@@ -444,13 +449,6 @@ describe.skipIf(!present)(
 
 // Input, options, then today's output, which differs from oxfmt's.
 const divergences: [string, string, Partial<CssOptions>, string][] = [
-  // tree-sitter-css knows only lowercase `from`; an uppercase one is an ERROR.
-  [
-    "uppercase-from",
-    "@keyframes x{FROM{a:b}}",
-    {},
-    "@keyframes x{FROM{a:b}}\n",
-  ],
   // The core ends every file with a newline; prettier prints an empty file as nothing.
   ["empty-file", "", {}, "\n"],
 ];
