@@ -10,8 +10,8 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | :------ | :---------: | :---------: |
 | typescript/_errors_/babel-ts2/parenthesized-decorators-tagged-template.ts | 0/1 | 50.00% |
 | typescript/angular-component-examples/15934-computed.component.ts | 0/2 | 76.92% |
-| typescript/angular-component-examples/15934.component.ts | 0/2 | 53.85% |
-| typescript/angular-component-examples/test.component.ts | 0/2 | 41.18% |
+| typescript/angular-component-examples/15934.component.ts | 0/2 | 80.00% |
+| typescript/angular-component-examples/test.component.ts | 0/2 | 82.35% |
 | typescript/as/as-const-embedded.ts | 0/1 | 45.45% |
 | typescript/decorators-ts/angular.ts | 0/1 | 87.50% |
 
