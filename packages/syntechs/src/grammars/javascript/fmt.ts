@@ -263,6 +263,15 @@ const trailedByIgnore = (ctx: JsCtx, n: number) => {
 const afterIgnoreInUnion = (ctx: JsCtx, n: number) => {
   const up = parent(ctx, n);
   if (up === undefined || kind(ctx, up) !== "union_type") return false;
+  // `| (⏎// prettier-ignore⏎A | B)`: an own-line comment right inside a member's `(` moves above the member, so it
+  // keeps it too.
+  if (kind(ctx, n) === "parenthesized_type") {
+    const own = children(ctx, n);
+    for (let i = 1; i < own.length && isComment(ctx, own[i] as number); i++) {
+      const c = own[i] as number;
+      if (isIgnoreComment(ctx, c) && ctx.tree.lf(c) > 0) return true;
+    }
+  }
   const kids = children(ctx, up);
   for (let i = kids.indexOf(n) - 1; i >= 0; i--) {
     const k = kids[i] as number;
