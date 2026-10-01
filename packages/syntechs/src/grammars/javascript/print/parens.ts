@@ -90,6 +90,8 @@ export function role(x: HasTree, n: number): Role {
   const top = outer(x, n);
   const parent = parentOf(x, top);
   if (parent === undefined) return { parent, key: "", top };
+  // A script's `await (x)(c)`: oxc reads `x` as an argument of a call of `await`, not as a callee in parentheses.
+  if (top !== n && isAwaitCallArguments(x, top)) return { parent: top, key: "arguments", top };
   const pk = kind(x, parent);
   const f = fieldName(x, top);
   const byField = f && FIELD_KEYS[pk]?.[f];
@@ -280,9 +282,9 @@ export function needsParens(n: number, ctx: JsCtx): boolean {
       ? "identifier"
       : kind(ctx, n);
   const pk = kind(ctx, parent);
+  if (top !== n && isAwaitCallArguments(ctx, top)) return true;
   // A type cast's parentheses (the only ones `role` stops at) are all an expression needs.
   if (pk === "parenthesized_expression") return false;
-  if (top !== n && isAwaitCallArguments(ctx, top)) return true;
   // Annex B's `for (var a = (b) in c)`: prettier wraps every initializer there.
   if (pk === "for_in_statement" && key === "init") return true;
 

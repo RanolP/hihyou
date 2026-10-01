@@ -263,6 +263,13 @@ const edgeCases: [string, Target, string][] = [
     "js",
     `await (${"x".repeat(40)}, ${"y".repeat(40)})(c);\nconst v = await (a, b, c)(d).e;\n`,
   ],
+  // A script's `await (x ? y : z)(c)` laid the argument out as a callee in parentheses, a blank line after `await(`
+  // and the `,` alone on a line; oxc reads it as the argument of a call of `await`.
+  [
+    "await-call-broken-argument",
+    "js",
+    `function f() { await (${"x".repeat(40)} ? ${"y".repeat(40)} : z)(c); }\nawait (${"x".repeat(40)} || ${"y".repeat(40)})(c).d;\n`,
+  ],
 ];
 
 function ours(target: Target, text: string, options: Partial<JsOptions>) {
