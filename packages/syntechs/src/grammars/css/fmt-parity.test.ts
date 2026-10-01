@@ -104,6 +104,12 @@ const edgeCases: [string, string][] = [
     "commented-paren-group",
     "@import url(a) (a/*q*/:b);@import url(a) supports(a/*q*/:b) screen;@supports (a/*q*/:b){x{y:z}}@supports not (/*q*/a:b){x{y:z}}@supports (a:b) and (c/*q*/:d){x{y:z}}@supports ((a/*q*/:b)) or (c:b/*r*/){x{y:z}}",
   ],
+  // In a commented @import list of several entries, an entry continued a full indent in (oxc: two spaces) and its
+  // paren group's lines indented one level past oxc's.
+  [
+    "commented-paren-group-in-list",
+    "@import url(a) (a/*q*/:b), print;@import url(a) print, (a/*q*/:b);@import url(a) supports(a/*q*/:b) screen, print;@import url(a) (a/*q*/:b) and (c:d), (c/*r*/:d);@import url(a) screen /*q*/ and (a:b) and (cccccccccccccccccccccccccccccccc:dddddddddddddddddddddddd) and (eeeeeeeeeeeeeeeeeeeeeeee:f), print;",
+  ],
   // An uppercase query keyword was an ERROR that kept the whole at-rule as written; oxfmt lowercases it and the
   // media type, but keeps both as written in a prelude holding a comment.
   [

@@ -24,6 +24,7 @@ import {
   GROUP,
   INDENT,
   open,
+  openAlign,
   SOFT,
   sHardline,
   sLine,
@@ -1711,8 +1712,8 @@ function commentedTokens(words: number[], ctx: SCtx): number[][] {
 }
 
 /** A token of `commentedTokens`, printed as written but its quotes; one with a comment in its parens, structured. */
-function commentedToken(token: number[], ctx: SCtx): void {
-  if (hardToken(token, ctx)) return structuredParen(token, ctx);
+function commentedToken(token: number[], ctx: SCtx, dedent = false): void {
+  if (hardToken(token, ctx)) return structuredParen(token, ctx, dedent);
   for (const c of token) {
     if (isComment(c, ctx)) ctx.comment(c);
     else asWritten(c, ctx);
@@ -1732,8 +1733,10 @@ function commentedSeparator(tokens: number[][], i: number, ctx: SCtx): void {
 /**
  * oxc's write_structured_paren: a hard token's text to its first `(` as written, then its inner words on their own
  * line indented, filled with each break indented once more, a `:` glued to the word before it, then `)` and the rest.
+ * With `dedent`, the indent counts from one level out: a commented @import entry of several continues two spaces in
+ * from the list, but its paren group's words indent from the list's level and its `)` sits at it.
  */
-function structuredParen(token: number[], ctx: SCtx): void {
+function structuredParen(token: number[], ctx: SCtx, dedent = false): void {
   const t = ctx.tree;
   const leaves = (n: number): number[] =>
     isComment(n, ctx) || t.count(n) === 0 || kind(n, ctx) === "string_value" || (!t.text(n).includes("(") && !holdsComment(n, ctx))
@@ -1774,6 +1777,7 @@ function structuredParen(token: number[], ctx: SCtx): void {
     } else glued.push(w);
   }
   run(0, lp + 1);
+  if (dedent) openAlign(-1);
   open(INDENT);
   sHardline();
   open(INDENT);
@@ -1791,6 +1795,7 @@ function structuredParen(token: number[], ctx: SCtx): void {
   });
   for (let k = 0; k < 3; k++) close();
   sHardline();
+  if (dedent) close();
   run(rp, atoms.length);
 }
 
@@ -1951,7 +1956,9 @@ export function importStatement(node: number, ctx: SCtx): void {
     // oxc indents a commented prelude whole, which shows once a paren group breaks.
     const hard = commented && tokens.some((token) => hardToken(token, ctx));
     const indent = hard || !(words.length === 2 && isUrl(words[0] as number));
-    if (indent) open(INDENT);
+    // A commented entry of several continues two spaces in from the list, whatever the tab width.
+    if (indent && chunks) openAlign(2);
+    else if (indent) open(INDENT);
     open(FILL);
     tokens.forEach((token, j) => {
       const c = token[0] as number;
@@ -1959,7 +1966,7 @@ export function importStatement(node: number, ctx: SCtx): void {
       // oxc reads a keyword glued to its paren group (`not(a:b)`) as a function, which stays glued.
       else if (j > 0 && !gluedKeyword(tokens[j - 1]?.[0] as number, ctx)) sLine(0);
       open(FILL_ITEM);
-      if (commented) commentedToken(token, ctx);
+      if (commented) commentedToken(token, ctx, chunks && indent);
       else if (isParenQuery(c, ctx)) queryWord(c, ctx);
       else item(c);
       close();
