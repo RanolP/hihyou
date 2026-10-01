@@ -1,4 +1,4 @@
-html@oxfmt compatibility: 43/146 (29.45%), 76 refused (ok:false), 23 excluded
+html@oxfmt compatibility: 49/146 (33.56%), 76 refused (ok:false), 23 excluded
 
 Fixtures: prettier 3.9.9 tests/format/{html} (recursive), every spec call listing parser `html`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left.
 
@@ -8,14 +8,8 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
-| html/attributes/boolean.html | 0/1 | 92.75% |
-| html/attributes/dobule-quotes.html | 0/1 | 0.00% |
-| html/attributes/single-quotes.html | 0/1 | 0.00% |
 | html/basics/broken-html.html | 0/1 | 72.73% |
 | html/basics/empty.html | 0/1 | 0.00% |
-| html/basics/hello-world.html | 0/1 | 76.92% |
-| html/basics/void-elements-2.html | 0/1 | 91.67% |
-| html/basics/void-elements.html | 0/1 | 71.43% |
 | html/bracket-same-line/void-elements.html | 1/2 | 75.00% |
 | html/comments/comment-after-element.html | 2/4 | 66.54% |
 | html/comments/conditional.html | 0/4 | 78.17% |
@@ -30,8 +24,8 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | html/single-attribute-per-line/single-attribute-per-line.html | 1/2 | 91.79% |
 | html/tags/closing-at-start.html | 3/4 | 93.18% |
 | html/tags/openging-at-end.html | 2/4 | 74.11% |
-| html/tags/option.html | 0/4 | 67.13% |
-| html/tags/seach.html | 0/4 | 79.27% |
+| html/tags/option.html | 3/4 | 77.27% |
+| html/tags/seach.html | 0/4 | 96.44% |
 | html/tags/tags2.html | 2/4 | 73.87% |
 | html/yaml/invalid.html | 0/1 | 58.82% |
 | html/yaml/yaml.html | 0/1 | 71.43% |

@@ -193,7 +193,15 @@ function fill(tree: TsTree, text: string, into: Node, ts: number, from: number, 
     const k = tree.kindName(c);
     if (tree.start(c) < from || tree.end(c) > to) continue;
     if (k === "text" || k === "entity") continue;
-    if (k === "element") add(element(tree, text, c));
+    if (k === "element") {
+      const e = element(tree, text, c);
+      add(e);
+      // tree-sitter-html runs a void element written without `/>` to its parent's end; what follows it is a sibling.
+      if (e.end < tree.end(c)) {
+        fill(tree, text, into, c, e.end, tree.end(c));
+        at = tree.end(c);
+      }
+    }
     else if (k === "comment") {
       const n = node("comment", tree.start(c), tree.end(c));
       n.isSelfClosing = true;
@@ -241,7 +249,8 @@ function element(tree: TsTree, text: string, ts: number): Node {
   const last = parts[parts.length - 1];
   const endTag = last !== undefined && tree.kindName(last) === "end_tag" ? last : undefined;
   if (endTag !== undefined) n.endTagStart = tree.start(endTag);
-  if (!selfClosing) fill(tree, text, n, ts, n.startTagEnd, endTag === undefined ? n.end : n.endTagStart);
+  if (n.isVoid) n.end = n.startTagEnd;
+  else if (!selfClosing) fill(tree, text, n, ts, n.startTagEnd, endTag === undefined ? n.end : n.endTagStart);
   return n;
 }
 

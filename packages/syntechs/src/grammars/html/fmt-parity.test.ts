@@ -21,6 +21,8 @@ const edgeCases: [string, string][] = [
   ["doctype-glued-text", "<!DocType html>text\n"],
   // An unquoted or single-quoted attribute value and a void element closed `/>` failed `check`.
   ["requoted-attributes", "<p title=Title lang='en'>a<br></p>\n"],
+  // A void element written without `/>` took the text after it as its child: `a<br>b` printed `a<br b/>`.
+  ["void-then-text", "<div>a<img src=x>b <br> c<input>d</div>\n"],
 ];
 
 function ours(text: string, options: Partial<PrettierOptions>) {
