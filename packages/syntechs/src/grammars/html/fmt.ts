@@ -46,6 +46,7 @@ export interface HtmlOptions extends PrettierOptions {
   htmlWhitespaceSensitivity: WhitespaceSensitivity;
   /** The JS formatter's `semi`, for an `on*` value. */
   semi: boolean;
+  embeddedLanguageFormatting: "auto" | "off";
 }
 
 const defaults: HtmlOptions = {
@@ -54,6 +55,7 @@ const defaults: HtmlOptions = {
   singleAttributePerLine: false,
   htmlWhitespaceSensitivity: "css",
   semi: true,
+  embeddedLanguageFormatting: "auto",
 };
 
 /**
@@ -266,7 +268,9 @@ export const html: Language<HtmlOptions> = {
               );
           };
           const atFileStart =ctx.tree.lf(node) === 0 && ctx.tree.col(node) === 0;
-          printHtml(parseHtml(text, true, atFileStart, htmlWhitespaceSensitivity), text, {
+          const embeddedOff = ctx.options.embeddedLanguageFormatting === "off";
+          printHtml(parseHtml(text, true, atFileStart, htmlWhitespaceSensitivity, embeddedOff), text, {
+            embeddedOff,
             text: sText,
             tabWidth,
             bracketSameLine,

@@ -77,6 +77,8 @@ interface Attr {
   value: string | null;
   /** A value prettier formats as code or a list: always double-quoted, a `"` in it escaped. */
   formatted?: boolean;
+  /** A `formatted` value as written. */
+  written?: string;
   /** A `style` value, which prints as css declarations where the caller's `declarations` reads it as them. */
   style?: boolean;
   /** An iframe's `allow` value, which prints as its `;`-separated directives. */
@@ -328,6 +330,7 @@ export function parseHtml(
   embeds = false,
   atFileStart = false,
   sensitivity: WhitespaceSensitivity = "css",
+  embeddedOff = false,
 ): Node {
   const tree = parseTree(language, text);
   if (tree.errorChars > 0 || brokenNodes(tree) !== undefined) throw new Unsupported("parse error");
@@ -341,7 +344,9 @@ export function parseHtml(
   }
   fill(tree, text, root, tree.root, front?.end ?? 0, text.length);
   walk(root, (n) => {
-    if (embeddedLanguage(n) !== undefined && !embeds) throw new Unsupported(n.name);
+    // embeddedLanguageFormatting "off" prints every attribute value as written, as no print/attribute/*.js runs.
+    if (embeddedOff) n.attrs = n.attrs.map((a) => ({ rawName: a.rawName, value: a.written ?? a.value }));
+    else if (embeddedLanguage(n) !== undefined && !embeds) throw new Unsupported(n.name);
   });
   preprocess(root, sensitivity);
   return root;
@@ -477,7 +482,6 @@ function element(tree: TsTree, text: string, ts: number): Node {
   n.name = n.rawName.toLowerCase();
   if (KNOWN_TAGS.has(n.name)) n.rawName = n.name;
   for (const c of kids(tree, startTag)) if (tree.kindName(c) === "attribute") n.attrs.push(attribute(tree, c, n.name));
-  if (n.name === "svg" || n.name === "math") throw new Unsupported(n.name);
   n.startTagEnd = tree.end(startTag);
   n.isVoid = VOID.has(n.name);
   n.isSelfClosing = selfClosing || n.isVoid;
@@ -501,7 +505,7 @@ function attribute(tree: TsTree, ts: number, element: string): Attr {
     else if (k === "quoted_attribute_value") value = tree.text(c).slice(1, -1);
   }
   if (rawName === "class" && value !== null && value.trim() !== "" && !value.includes("{{"))
-    return { rawName, value: classNames(value), formatted: true };
+    return { rawName, value: classNames(value), formatted: true, written: value };
   if (rawName === "class") return { rawName, value };
   if (rawName === "style") return value !== null && !value.includes("{{") ? { rawName, value, style: true } : { rawName, value };
   // print/attribute/*.js formats these only on their elements, and none holding a `{{`.
@@ -749,6 +753,12 @@ export type WhitespaceSensitivity = "css" | "strict" | "ignore";
 function cssDisplay(n: Node, sensitivity: WhitespaceSensitivity): string {
   const magic = n.prev?.kind === "comment" ? /^\s*display:\s*([a-z]+)\s*$/.exec(n.prev.value.slice(4, -3)) : null;
   if (magic) return magic[1] as string;
+  // An svg element lays out as a block (the svg itself inline-block) whatever the sensitivity, short of one in a
+  // foreignObject, which lays out as HTML.
+  for (let a: Node | undefined = n; a?.kind === "element"; a = a.parent) {
+    if (a.name === "foreignobject") break;
+    if (a.name === "svg") return n.name === "svg" ? "inline-block" : "block";
+  }
   if (sensitivity === "strict") return "inline";
   if (sensitivity === "ignore") return "block";
   if (n.kind !== "element") return "inline";
@@ -934,6 +944,8 @@ export interface HtmlPrinter {
   readonly singleAttributePerLine?: boolean;
   /** Prints a script's or style's content `text` as `language`'s formatter does, throwing where it cannot. */
   readonly embed?: (language: EmbeddedLanguage, text: string) => void;
+  /** embeddedLanguageFormatting "off": a script's or style's content prints as written. */
+  readonly embeddedOff?: boolean;
   /**
    * A `style` value's css declarations, each its source with no `;` and whether a blank line precedes it: undefined
    * when it does not parse as them.
@@ -1104,7 +1116,8 @@ class Printer {
       this.forceBreakChildren(n) ||
       (n.kind === "element" &&
         n.children.length > 0 &&
-        (["body", "script", "style"].includes(n.name) || n.children.some(hasNonTextChild))) ||
+        // Prettier's name drops a namespace: an `html:style` is a `style` here.
+        (["body", "script", "style"].includes(n.name.replace(/^[^:]*:/, "")) || n.children.some(hasNonTextChild))) ||
       (first !== undefined &&
         first === lastChild(n) &&
         first.kind !== "text" &&
@@ -1460,7 +1473,10 @@ class Printer {
 
   // print/element.js
   private element(n: Node): void {
-    const embedded = embeddedLanguage(n);
+    const embedded =
+      this.out.embeddedOff && (n.name === "script" || n.name === "style") && n.value.trim() !== ""
+        ? "raw"
+        : embeddedLanguage(n);
     if (embedded !== undefined) {
       const embed = this.out.embed;
       if (embed === undefined && embedded !== "raw") throw new Unsupported(n.name);

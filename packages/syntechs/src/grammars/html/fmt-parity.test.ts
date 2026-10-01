@@ -118,7 +118,18 @@ const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
     "script-legacy-comments",
     '<script>\n<!--   \nalert(1)\n//-->\n</script>\n<div><script type="text/babel"><!-- a(  1 ) --></script></div>\n<script type="module">\n<!--\nalert(1)\n-->\n</script>\n',
   ],
-  ["requoted-apos",`<div title="123 &apos;&quot; 456">x</div>\n<p title='a "b" &apos;c'>y</p>\n`],
+  // An svg refused the file; its children lay out as blocks (short of a foreignObject's), and an `html:style` breaks as a style.
+  [
+    "svg-blocks",
+    '<p>a <svg viewBox="0 0 1 1"><g><polygon points="5,5" />\n<text>    Text</text></g><foreignObject><div>a <span>b</span></div></foreignObject></svg> b</p>\n<html:style>.a{color:#f00}</html:style>\n',
+  ],
+  // embeddedLanguageFormatting "off" still formatted a script, a style and the class, style and on* values.
+  [
+    "embedded-off",
+    '<script>\n  let a =  1\n</script>\n<style lang="scss">\n a{b:c}\n</style>\n<img class=" a  b " style="a:b" onclick="f( 1 )" srcset="a.png  1x,b.png 2x">\n',
+    { embeddedLanguageFormatting: "off" },
+  ],
+  ["requoted-apos", `<div title="123 &apos;&quot; 456">x</div>\n<p title='a "b" &apos;c'>y</p>\n`],
 ];
 
 function ours(text: string, options: Partial<HtmlOptions>) {
