@@ -23,6 +23,8 @@ const edgeCases: [string, string][] = [
   ["requoted-attributes", "<p title=Title lang='en'>a<br></p>\n"],
   // A void element written without `/>` took the text after it as its child: `a<br>b` printed `a<br b/>`.
   ["void-then-text", "<div>a<img src=x>b <br> c<input>d</div>\n"],
+  // A tag named after an Object.prototype member read it as its display or white-space and crashed.
+  ["object-prototype-tags", "<constructor>a</constructor>\n<toString></toString>\n"],
 ];
 
 function ours(text: string, options: Partial<PrettierOptions>) {

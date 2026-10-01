@@ -354,9 +354,11 @@ function extractWhitespaces(n: Node): void {
 function cssDisplay(n: Node): string {
   if (n.kind !== "element") return "inline";
   if (BLOCK.has(n.name)) return "block";
-  return DISPLAY[n.name] ?? "inline";
+  return (Object.hasOwn(DISPLAY, n.name) && DISPLAY[n.name]) || "inline";
 }
-const whiteSpace = (n: Node) => (n.kind === "element" ? (WHITE_SPACE[n.name] ?? "normal") : "normal");
+// `Object.hasOwn`: a tag named `constructor` or `toString` would otherwise read Object.prototype's.
+const whiteSpace = (n: Node) =>
+  (n.kind === "element" && Object.hasOwn(WHITE_SPACE, n.name) && WHITE_SPACE[n.name]) || "normal";
 const isPreLike = (n: Node) => whiteSpace(n).startsWith("pre");
 const isIndentationSensitive = isPreLike;
 const isBlockLike = (d: string) => d === "block" || d === "list-item" || d.startsWith("table");
