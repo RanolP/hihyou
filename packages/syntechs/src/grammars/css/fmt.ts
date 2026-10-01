@@ -1619,9 +1619,52 @@ function rawGroups(
 
 /** A query's words where prettier reads it as a value (`@import`'s media, `@supports`), `and`/`not` chains flattened. */
 const queryWords = (n: number, ctx: SCtx): number[] =>
-  kind(n, ctx) === "binary_query" || kind(n, ctx) === "unary_query"
+  ["binary_query", "unary_query", "ERROR"].includes(kind(n, ctx)) && ctx.tree.count(n) > 0
     ? children(n, ctx.tree).flatMap((c) => queryWords(c, ctx))
     : [n];
+
+const holdsComment = (n: number, ctx: SCtx): boolean =>
+  children(n, ctx.tree).some((c) => isComment(c, ctx) || holdsComment(c, ctx));
+
+/**
+ * The words of an `@import`/`@supports` prelude holding a comment as oxc's write_commented_value_params tokenizes
+ * its source: split at whitespace, a comment its own token, a word ending at the `)` closing its parens.
+ */
+function commentedTokens(words: number[], ctx: SCtx): number[][] {
+  const t = ctx.tree;
+  const tokens: number[][] = [];
+  let prev = -1;
+  for (const w of words) {
+    const glued =
+      prev !== -1 && t.adjoins(prev, w) && !isComment(prev, ctx) && !isComment(w, ctx) && !t.text(prev).endsWith(")");
+    if (glued) (tokens.at(-1) as number[]).push(w);
+    else tokens.push([w]);
+    prev = w;
+  }
+  return tokens;
+}
+
+/** A token of `commentedTokens`, printed as written but its quotes; a word holding a comment prints as before. */
+function commentedToken(token: number[], ctx: SCtx): void {
+  for (const c of token) {
+    if (isComment(c, ctx)) ctx.comment(c);
+    else if (holdsComment(c, ctx)) queryWord(c, ctx);
+    else asWritten(c, ctx);
+  }
+}
+
+/** `n` as written but its strings, which print requoted. */
+function asWritten(n: number, ctx: SCtx): void {
+  const t = ctx.tree;
+  if (kind(n, ctx) === "string_value") return ctx.printNode(n);
+  // A node's text can hold more than its children's (`integer_value`'s digits beside its `unit`).
+  if (!/['"]/.test(t.text(n))) return sToken(n, t.text(n));
+  const kids = children(n, t);
+  kids.forEach((c, i) => {
+    if (i > 0) sText(sourceGap(t, kids[i - 1] as number, c));
+    asWritten(c, ctx);
+  });
+}
 
 const isParenQuery = (c: number, ctx: SCtx) =>
   kind(c, ctx) === "feature_query" || kind(c, ctx) === "parenthesized_query";
@@ -1698,9 +1741,12 @@ export function supportsValue(at: number | undefined, node: number, ctx: SCtx): 
   if (at !== undefined) sToken(at, atName(t.text(at)));
   sText(" ");
   const kids = children(node, t);
-  const words = kids.filter((c) => c !== at && kind(c, ctx) !== "block").flatMap((c) => queryWords(c, ctx));
-  const items = supportsItems(words, ctx, true);
-  if (items.length === 1) supportsItem(items[0] as number[], ctx);
+  const prelude = kids.filter((c) => c !== at && kind(c, ctx) !== "block");
+  const words = prelude.flatMap((c) => queryWords(c, ctx));
+  const commented = prelude.some((c) => isComment(c, ctx) || holdsComment(c, ctx));
+  const items = commented ? commentedTokens(words, ctx) : supportsItems(words, ctx, true);
+  const print = (item: number[]) => (commented ? commentedToken(item, ctx) : supportsItem(item, ctx));
+  if (items.length === 1) print(items[0] as number[]);
   else {
     open(GROUP);
     open(INDENT);
@@ -1708,7 +1754,7 @@ export function supportsValue(at: number | undefined, node: number, ctx: SCtx): 
     items.forEach((item, i) => {
       if (i > 0) sLine(0);
       open(FILL_ITEM);
-      supportsItem(item, ctx);
+      print(item);
       close();
     });
     for (let k = 0; k < 3; k++) close();
@@ -1739,6 +1785,8 @@ export function importStatement(node: number, ctx: SCtx): void {
   const nested = run.entries.length > 1;
   const isUrl = (c: number) =>
     kind(c, ctx) === "call_expression" && t.text(t.child(c, 0)) === "url";
+  const commented =
+    run.trail.length > 0 || run.entries.some((e) => e.items.some((c) => isComment(c, ctx) || holdsComment(c, ctx)));
   open(GROUP);
   if (nested) open(INDENT);
   run.entries.forEach((e, i) => {
@@ -1747,10 +1795,12 @@ export function importStatement(node: number, ctx: SCtx): void {
     const indent = !(words.length === 2 && isUrl(words[0] as number));
     if (indent) open(INDENT);
     open(FILL);
-    words.forEach((c, j) => {
+    (commented ? commentedTokens(words, ctx) : words.map((c) => [c])).forEach((token, j) => {
+      const c = token[0] as number;
       if (j > 0) sLine(0);
       open(FILL_ITEM);
-      if (isParenQuery(c, ctx)) queryWord(c, ctx);
+      if (commented) commentedToken(token, ctx);
+      else if (isParenQuery(c, ctx)) queryWord(c, ctx);
       else item(c);
       close();
     });

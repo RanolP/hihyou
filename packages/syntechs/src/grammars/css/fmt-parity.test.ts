@@ -270,6 +270,11 @@ const edgeCases: [string, string][] = [
     "media-comment-raw-feature",
     "@media (A:B) /*q*/ {x{y:z}}\n@media (a :b)   and  (min-width:1.50px)/*q*/ {x{y:z}}\n@media ( a:b ) /*q*/,(c/*r*/:d) {x{y:z}}",
   ],
+  // A commented @import/@supports prelude re-spaced its paren groups (`(a:b)` as `(a: b)`) and split `not(a:b)`.
+  [
+    "value-prelude-comment-raw",
+    "@import url(a) (a:b) /*q*/;\n@import url('a') layer(x) supports(display:grid) ( a :b ) /*q*/;\n@supports (a :b) /*q*/ and not(c:'d') {x{y:z}}\n@supports selector(a>b)/*q*/{x{y:z}}",
+  ],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");
