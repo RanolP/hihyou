@@ -157,13 +157,18 @@ export const css = format({
       ),
       tok(";").via("declarationEnd"),
     ],
-    // `--name: {...}`: the block laid out as a rule's, then the `;` a declaration ends with; the comments around the
-    // `:` as a declaration's (fmt.ts's `declarationColon`).
+    // `--name: {...}`: the block laid out as a rule's, or re-flowed as text where oxfmt does (fmt.ts's `customBlock`),
+    // then the `;` a declaration ends with; the comments around the `:` as a declaration's (fmt.ts's
+    // `declarationColon`).
     custom_property_set: ($) => [
       $.children.at(0).andThen((p) => p),
       tok(":").via("declarationColon"),
       space,
-      $.children.at(1).andThen((b) => b),
+      either(
+        when("textBlock"),
+        $.children.at(1).andThen((b) => b.via("customBlock")),
+        $.children.at(1).andThen((b) => b),
+      ),
       $.important.andThen((i) => [space, i]),
       tok(";").via("declarationEnd"),
     ],

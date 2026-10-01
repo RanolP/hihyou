@@ -27,6 +27,7 @@ import {
   openAlign,
   SOFT,
   sHardline,
+  sKeptText,
   sLine,
   sLiteral,
   sText,
@@ -199,6 +200,28 @@ function customBraceForms(
 }
 
 /**
+ * A custom property's block oxfmt re-flows as text (`customBlockLines`), whitespace inside strings included: both
+ * sides fold it to its text without whitespace or empty items.
+ */
+function customBlockForms(lexemes: readonly Lexeme[], tree: Tree, forms: (string | undefined)[]): void {
+  const blockOf = (node: number): number | undefined => {
+    for (let up = node; up !== NO_NODE; up = tree.parent(up))
+      if (customBlockLines(up, tree) !== undefined) return up;
+    return undefined;
+  };
+  for (let i = 0; i < lexemes.length; i++) {
+    const block = blockOf((lexemes[i] as Lexeme).node);
+    if (block === undefined) continue;
+    forms[i] = tree
+      .text(block)
+      .replace(/\s+/g, "")
+      .replace(/;+/g, ";")
+      .replace(/^\{;|;\}$/g, (m) => m.replace(";", ""));
+    while (i + 1 < lexemes.length && blockOf((lexemes[i + 1] as Lexeme).node) === block) forms[++i] = undefined;
+  }
+}
+
+/**
  * oxfmt prints a value's `progid:A(B)` past its start as the function `progid(: A B)` (`rawTokens`), which
  * tree-sitter-css reads with an ERROR at each paren, and `progid:A` as `progid: A`: both sides fold to `progid:A(`,
  * B's forms, and no `)` (the output's sits in the ERROR), or to `progid:A`. Any other ERROR still fails the check.
@@ -267,6 +290,7 @@ const normalize: Normalize = (lexemes, text, tree) => {
   });
   progidForms(lexemes, tree, forms);
   customBraceForms(lexemes, text, tree, forms);
+  customBlockForms(lexemes, tree, forms);
   // `a*b`, one word to tree-sitter, is three tokens to oxc-css-parser, which prints `a * b` (`colonThenRawTokens`):
   // a value's `*` and `/` join the words around them into one form.
   const inValue = (node: number) => {
@@ -1877,6 +1901,77 @@ export function customSetComments(node: number, ctx: SCtx, print: () => void): v
   });
 }
 
+/**
+ * A custom property's block holding no other `{` (`--a: {a: b; c}`), the items of which oxfmt re-flows as text
+ * (oxc's `write_custom_property_block`), blind to what tree-sitter-css reads in it: split at each `;`, a comment
+ * opening a later segment's first line trailing the item before; each item's lines trimmed, the first `:` outside a
+ * comment spaced as `a: b` with single spaces between the value's words and comments, strings included; a `;`
+ * after each item but a last one that is a comment alone. Undefined for any other block.
+ */
+function customBlockLines(block: number, t: Pick<Tree, "kindName" | "parent" | "text">): string[] | undefined {
+  if (t.kindName(t.parent(block)) !== "custom_property_set") return undefined;
+  const source = t.text(block);
+  if (!source.startsWith("{") || !source.endsWith("}") || source.split("{").length !== 2) return undefined;
+  const items: [string, string | undefined][] = [];
+  for (const seg of source.slice(1, -1).split(";")) {
+    const lf = seg.indexOf("\n");
+    const [first, rest] = lf === -1 ? [seg, ""] : [seg.slice(0, lf), seg.slice(lf)];
+    const prefix = first.trim();
+    const last = items.at(-1);
+    if (last !== undefined && prefix.startsWith("/*") && prefix.endsWith("*/") && rest.trim() !== "") {
+      last[1] = prefix;
+      items.push([rest.trim(), undefined]);
+    } else if (seg.trim() !== "") items.push([seg.trim(), undefined]);
+  }
+  return items.flatMap(([item, trailing], i) => {
+    const lines = item
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l !== "")
+      .map((line) => {
+        const colon = colonOutsideComments(line);
+        return colon === undefined
+          ? line
+          : `${line.slice(0, colon).trimEnd()}: ${respaceValue(line.slice(colon + 1).trim())}`;
+      });
+    const commentOnly = i === items.length - 1 && item.startsWith("/*") && item.endsWith("*/");
+    if (!commentOnly) lines[lines.length - 1] += ";";
+    if (trailing !== undefined) lines[lines.length - 1] += ` ${trailing}`;
+    return lines;
+  });
+}
+
+function colonOutsideComments(line: string): number | undefined {
+  for (let i = 0; i < line.length; i++) {
+    if (line.startsWith("/*", i)) {
+      const close = line.indexOf("*/", i + 2);
+      if (close === -1) return undefined;
+      i = close + 1;
+    } else if (line[i] === ":") return i;
+  }
+  return undefined;
+}
+
+/** Words and comments one space apart (`/*c*\/#fff` is `/*c*\/ #fff`). */
+const respaceValue = (v: string): string =>
+  v.match(/\/\*(?:[^*]|\*(?!\/))*(?:\*\/|$)|(?:[^\s/]|\/(?!\*))+/g)?.join(" ") ?? "";
+
+/** `customBlockLines`' layout: the block's lines one indent in, between its braces. */
+export function customBlock(block: number, ctx: SCtx): void {
+  const lines = customBlockLines(block, ctx.tree) ?? [];
+  sToken(block, "{");
+  open(INDENT);
+  for (const line of lines) {
+    sHardline();
+    sToken(block, line.trimEnd());
+    // An item whose value starts the next line ends with the space after its `:`, which oxfmt keeps (`a: `).
+    if (line.endsWith(" ")) sKeptText(" ");
+  }
+  close();
+  sHardline();
+  sToken(block, "}");
+}
+
 const rawValue = (decl: number, ctx: SCtx): boolean =>
   (customName(decl, ctx.tree) || inCustomSet(decl, ctx.tree)) && oxcRaw(decl, ctx.tree);
 
@@ -2655,6 +2750,9 @@ function placeholderSelectors(node: number, ctx: SCtx): boolean {
 /** The hand-written rules format.ts names. */
 export const handWritten = {
   ...customs,
+  textBlock: (node: number, ctx: SCtx) =>
+    children(node, ctx.tree).some((c) => kind(c, ctx) === "block" && customBlockLines(c, ctx.tree) !== undefined),
+  customBlock,
   important,
   declarationColon,
   declarationEnd,

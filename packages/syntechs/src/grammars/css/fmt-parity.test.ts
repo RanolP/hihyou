@@ -432,6 +432,12 @@ const edgeCases: [string, string][] = [
     "custom-property-block-comment-positions",
     "a{--a:{a:b;/*c*/}}\na{--a:{a:b;/*c*//*d*/}}\na{--a:{a:b;/*c*/ /*d*/}}\na{--a:{a: b /*c*/;}}\na{--a:{a: /*c*/ b;}}\na{--a:{a:/*c*//*d*/b}}",
   ],
+  // A custom property block's item went through tree-sitter's reading, where oxfmt re-flows its text: `a/*c*/` became
+  // `a; /*c*/`, `b // c` became `b / / c`, a value on the next line joined the `:`, and two JSON-like items were one.
+  [
+    "custom-property-block-as-text",
+    'a{--a:{a/*c*/}}\na{--a:{a\n/*c*/}}\na{--a:{a:b // c\n}}\na{--a:{a:b // c\nd:e}}\na{--a:{a:b,c}}\na{--a:{a:b/ c}}\na{--a:{a:1.50PX}}\na{--a:{a:"x   y"}}\na{--a:{a:\n/*c*/b}}\na{--a:{a:/*c*/\nb}}\na{--a:{a:b\n/*c*/}}\na{--a: {"a": 1; "b": 2}}\na{--a:{\'x;y\':1}}\nb{c:d}',
+  ],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");
