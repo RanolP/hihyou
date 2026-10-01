@@ -366,6 +366,7 @@ export const customs = {
   unparsedValue: (node, ctx) => unparsedUrl(node, ctx) || rawValue(node, ctx),
   /** A normal property's value oxc-css-parser reads as raw tokens (`oxcRaw`), which `colonThenRawTokens` prints. */
   rawTokens: (node, ctx) => !customName(node, ctx.tree) && oxcRaw(node, ctx.tree),
+  strayArgColon: (node, ctx) => strayArgColon(node, ctx),
   /** A media query list holding a comment, which `mediaQueries` prints as postcss-media-query-parser splits it. */
   mediaComments: (node, ctx) => mediaAtoms(node, ctx).some((c) => isComment(c, ctx)),
   /** A query holding a keyword glued to its paren group (`screen and(a:b)`), which stays glued. */
@@ -734,7 +735,7 @@ function amongWords(node: number, ctx: SCtx): boolean {
 export function valueMath(node: number, ctx: SCtx): void {
   const t = ctx.tree;
   const outermost = !parentIs(t, node, "binary_expression");
-  if (outermost && argColonChain(node, t)) return rawArgChain(node, ctx);
+  if (outermost && argColonChain(node, t)) return rawArgChain([node], ctx);
   const directive = ancestorWhere(t, node, ["at_rule", "postcss_statement"], ["block"], (a) =>
     firstTextIs(ctx, a, undefined, directives, [], false),
   );
@@ -858,11 +859,65 @@ function argColonError(n: number, t: FormatTree): boolean {
 }
 
 /**
+ * A function's arguments holding a `:` with nothing before it in its own argument (`f(/ a :b)`, `f(/ a : b)`), which
+ * tree-sitter-css reads as a nameless keyword argument or an ERROR and oxc-css-parser as raw tokens. A Sass
+ * directive's, `url()`'s and a pseudo-class's arguments, and ones holding a comment, stay on the typed path.
+ */
+function strayArgColon(call: number, ctx: SCtx): boolean {
+  const t = ctx.tree;
+  const node = t.child(call, 1);
+  if (node === NO_NODE || t.kindName(node) !== "arguments" || /^url$/i.test(t.text(t.child(call, 0)))) return false;
+  if (inDirective(call, ctx) || ancestorWhere(t, call, ["pseudo_class_selector"], ["declaration"], () => true))
+    return false;
+  const kids = children(node, t);
+  if (kids.some((c) => isComment(c, ctx))) return false;
+  return kids.some(
+    (c) =>
+      (t.kindName(c) === "keyword_argument" && t.missing(t.child(c, 0))) ||
+      (t.kindName(c) === "ERROR" && t.count(c) > 0 && t.text(t.child(c, 0)) === ":"),
+  );
+}
+
+/** An `ERROR` `:` group of `strayArgColon`'s arguments (`f(/ a : b)`), or a leaf inside one, which `rawArguments` prints. */
+function strayArgColonError(n: number, t: FormatTree): boolean {
+  let top = n;
+  while (t.kindName(t.parent(top)) === "ERROR") top = t.parent(top);
+  const args = t.parent(top);
+  return (
+    t.kindName(args) === "arguments" &&
+    t.kindName(t.parent(args)) === "call_expression" &&
+    t.count(top) > 0 &&
+    t.text(t.child(top, 0)) === ":"
+  );
+}
+
+/** `strayArgColon`'s arguments, each comma group as `rawArgChain` lays out its raw tokens. */
+function rawArguments(node: number, ctx: SCtx): void {
+  const t = ctx.tree;
+  const kids = children(node, t);
+  const inner = kids.slice(1, -1);
+  sToken(kids[0] as number, "(");
+  let group: number[] = [];
+  for (const c of inner) {
+    if (t.kindName(c) !== ",") {
+      group.push(c);
+      continue;
+    }
+    rawArgChain(group, ctx);
+    sToken(c, ",");
+    sText(" ");
+    group = [];
+  }
+  rawArgChain(group, ctx);
+  sToken(kids[kids.length - 1] as number, ")");
+}
+
+/**
  * `argColonChain`'s chain as oxc lays out its raw tokens: tight before a `:`, a `/` by the typed solidus rules
  * (`slashJoined`) indexed within the chain, a space after a `:` and around a `*`, else tight only where written so.
  */
-function rawArgChain(node: number, ctx: SCtx): void {
-  const g = rawTokens([node], ctx).tokens;
+function rawArgChain(nodes: number[], ctx: SCtx): void {
+  const g = rawTokens(nodes, ctx).tokens;
   const sol = (x: RawToken | undefined) => x?.kind === "/";
   const word = (x: RawToken | undefined) => x !== undefined && ["ident", ")"].includes(x.kind);
   const tight = (i: number): boolean => {
@@ -2457,6 +2512,7 @@ export const handWritten = {
   postcssStatement,
   parenthesizedValue,
   keywordArgument,
+  rawArguments,
   sassList,
   ruleSet,
   placeholderCallee,
@@ -2494,7 +2550,7 @@ export const css: Language<CssOptions> = {
     recovered: (error, t) =>
       t.missing(error)
         ? colonMissingComma(error, t)
-        : sassFlags(error, t) || selectorTail(error, t) || commentedPreludeError(error, t) || verbatimPreludeError(error, t) || valueColonError(error, t) || valueSlashError(error, t) || argColonError(error, t),
+        : sassFlags(error, t) || selectorTail(error, t) || commentedPreludeError(error, t) || verbatimPreludeError(error, t) || valueColonError(error, t) || valueSlashError(error, t) || argColonError(error, t) || strayArgColonError(error, t),
     finalLine,
   },
 };

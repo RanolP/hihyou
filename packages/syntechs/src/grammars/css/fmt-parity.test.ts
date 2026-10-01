@@ -359,6 +359,11 @@ const edgeCases: [string, string][] = [
     "column-combinator",
     "a||b{e:f}\na ||b , c||d>e{e:f}\na:is(b||c){e:f}\na|b, *|a, |a, [a|b], [a|=b]{e:f}",
   ],
+  // A nameless argument `:` (`f(/ a :b)`) kept its source gaps (`/a :b`, or the ERROR form `/ a : b` whole).
+  [
+    "stray-argument-colon-raw",
+    "a{c:f(/ a :b);d:f(/ a : b);e:f(/a:b);f:f(/ a: b);g:f(x, / a :b c);h:f(/ 1 :b);i:f(/ a :1px)}\na{c:f(* a :b);d:f(- a :b);e:x f(/ a :g(b)) y;f:f( / a : b )}",
+  ],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");

@@ -198,10 +198,15 @@ export const css = format({
       either(
         when("placeholderCalled"),
         [$.children.at(0).andThen((n) => n.via("placeholderCallee")), $.children.at(1).andThen((n) => n.via("placeholderArgs"))],
+        // Arguments holding a nameless `:` (`f(/ a :b)`): fmt.ts's `rawArguments`.
         either(
-          all(inDirective, not(calledAs("url"))),
-          [$.children.at(0).andThen((n) => n), $.children.at(1).andThen((n) => n.via("sassList"))],
-          adjacent(),
+          when("strayArgColon"),
+          [$.children.at(0).andThen((n) => n), $.children.at(1).andThen((n) => n.via("rawArguments"))],
+          either(
+            all(inDirective, not(calledAs("url"))),
+            [$.children.at(0).andThen((n) => n), $.children.at(1).andThen((n) => n.via("sassList"))],
+            adjacent(),
+          ),
         ),
       ),
     // A function's as written inside `url()`, a space wherever the source has a gap (postcss-value-parser's one
