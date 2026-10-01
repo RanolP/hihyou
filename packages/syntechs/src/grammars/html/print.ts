@@ -67,6 +67,8 @@ interface Node {
   isDanglingSpaceSensitive: boolean;
   isWhitespaceSensitive: boolean;
   isIndentationSensitive: boolean;
+  /** Closed by an htm `<//>` (a JS template's, which print/embed.ts writes as an end tag ending in `\f>`). */
+  htmClose?: boolean;
   /** The root's front matter, as its printed lines. */
   frontMatter?: string[];
 }
@@ -503,6 +505,7 @@ function element(tree: TsTree, text: string, ts: number): Node {
   const last = parts[parts.length - 1];
   const endTag = last !== undefined && tree.kindName(last) === "end_tag" ? last : undefined;
   if (endTag !== undefined) n.endTagStart = tree.start(endTag);
+  if (endTag !== undefined && tree.text(endTag).endsWith("\f>")) n.htmClose = true;
   const raw = parts.find((p) => tree.kindName(p) === "raw_text");
   if (raw !== undefined) n.value = tree.text(raw);
   else if (n.isVoid) n.end = n.startTagEnd;
@@ -922,7 +925,8 @@ function needsToBorrowParentOpeningTagEndMarker(n: Node): boolean {
   return !n.prev && n.isLeadingSpaceSensitive && !n.hasLeadingSpaces;
 }
 
-const closingTagStartMarker = (n: Node) => (n.kind === "ieConditionalComment" ? "<!" : `</${n.rawName}`);
+const closingTagStartMarker = (n: Node) =>
+  n.kind === "ieConditionalComment" ? "<!" : n.htmClose ? "<//" : `</${n.rawName}`;
 function closingTagEndMarker(n: Node): string {
   if (n.kind === "ieConditionalComment" || n.kind === "ieConditionalEndComment") return "[endif]-->";
   if (n.kind === "ieConditionalStartComment") return "]><!-->";

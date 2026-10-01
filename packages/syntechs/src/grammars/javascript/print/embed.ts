@@ -95,6 +95,33 @@ function cook(raw: string): string | undefined {
   return /(^|[^\\])(\\\\)*\\(0\d|[1-9])/.test(raw) ? undefined : cookString(raw);
 }
 
+const VOID_TAGS = new Set("area base br col embed hr img input link meta param source track wbr".split(" "));
+
+/**
+ * Prettier parses a JS template's HTML with angular-html-parser's allowHtmComponentClosingTags, where an htm `<//>`
+ * closes the open element and prints as `<//>`: each becomes that element's end tag ending in `\f>`, which the HTML
+ * printer reads as one (html/print.ts's htmClose). One with no element open is left to fail the parse.
+ */
+function htmClosers(text: string): string {
+  if (!text.includes("<//")) return text;
+  const open: string[] = [];
+  return text.replace(
+    /<(script|style)\b[^]*?<\/\1\s*>|<!--[^]*?-->|<\/\/\s*>|<(\/?)([A-Za-z][^\s/>]*)[^>]*?(\/?)>/gi,
+    (tag, _raw, close: string | undefined, name: string | undefined, selfClosing: string | undefined) => {
+      if (name === undefined) {
+        if (!tag.startsWith("<//")) return tag;
+        const top = open.pop();
+        return top === undefined ? tag : `</${top}\f>`;
+      }
+      if (close) {
+        const at = open.lastIndexOf(name);
+        if (at >= 0) open.length = at;
+      } else if (!selfClosing && !VOID_TAGS.has(name.toLowerCase())) open.push(name);
+      return tag;
+    },
+  );
+}
+
 /** Each HTML embed's placeholders are its own, so an embed inside one leaves the outer one's placeholders alone. */
 let htmlEmbeds = 0;
 
@@ -105,7 +132,7 @@ function html(ctx: JsStreamCtx, node: number, raws: string[], subs: () => Part[]
   if (cooked.some((q) => q === undefined)) return undefined;
   const id = htmlEmbeds++;
   const placeholder = (i: number) => `PRETTIER_HTML_PLACEHOLDER_${i}_${id}_IN_JS`;
-  const text = cooked.map((q, i) => (i === cooked.length - 1 ? q : q + placeholder(i))).join("");
+  const text = htmClosers(cooked.map((q, i) => (i === cooked.length - 1 ? q : q + placeholder(i))).join(""));
   const options = ctx.js.options;
   // Every option goes on to the HTML (a script in it reads `semi`, `singleQuote`), but what names this file's own
   // parse and place.

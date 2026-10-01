@@ -342,6 +342,8 @@ const edgeCases: [string, Target, string][] = [
     "x = html`<my-el .obj=${x} a='b' c=d${e} class='  a   b ' style='color:red;  top:0' onclick='f( 1 )'></my-el>`;\ny = /* HTML */ `${a}\n<input disabled>`;\n",
   ],
   // An escape other than `\\`, `` \` `` or `\$` in a template's HTML kept the whole template as written; oxfmt cooks it.
+  // A lit-html `<${Footer}>…<//>` component kept its template as written, and `<${Footer} />` split the placeholder.
+  ["html-embed-htm-component", "js", "x = html`<${Footer}  a=b>a   b<//   >`;\ny = html`<${Footer}/>`;\n"],
   // A script in a template's HTML dropped the parentheses around a `${…}`, which oxfmt keeps.
   ["html-embed-parenthesized-placeholder", "js", "x = html`<script>f((${e}) / 2); ((${a})).b;</script>`;\n"],
   ["html-embed-cooked-escapes", "js", "x = html`\\n<div>a\\tb \\u00e9</div>\\n`;\ny = html`<pre>a\\nb</pre>`;\n"],

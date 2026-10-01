@@ -95,10 +95,14 @@ function towupper(c: number): number {
   return u.length === (cp > 0xffff ? 2 : 1) ? cp : c;
 }
 
-/** scan_tag_name: the upper-cased name, each character truncated to the `char` scanner.c pushes it as. */
+/**
+ * scan_tag_name: the upper-cased name, each character truncated to the `char` scanner.c pushes it as. Unlike
+ * scanner.c's, a name takes a `_` as angular-html-parser's does, so a JS template's `<${Foo}>` (a placeholder
+ * `PRETTIER_HTML_PLACEHOLDER_0_0_IN_JS`) is one name.
+ */
 function scanTagName(lexer: Lexer): number[] {
   const name: number[] = [];
-  while (iswalnum(lexer.lookahead) || lexer.lookahead === 45 || lexer.lookahead === 58) {
+  while (iswalnum(lexer.lookahead) || lexer.lookahead === 45 || lexer.lookahead === 58 || lexer.lookahead === 95) {
     name.push(towupper(lexer.lookahead) & 0xff);
     lexer.advance(false);
   }
