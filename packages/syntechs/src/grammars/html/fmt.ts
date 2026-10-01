@@ -16,7 +16,7 @@ import { tsx, typescript } from "../typescript/fmt.js";
 import { language as tsGrammar } from "../typescript/index.js";
 import { grammar } from "./bundle.js";
 import { language } from "./index.js";
-import { type EmbeddedLanguage, parseHtml, printHtml, Unsupported } from "./print.js";
+import { type EmbeddedLanguage, parseHtml, printHtml, Unsupported, type WhitespaceSensitivity } from "./print.js";
 
 /** Each language a script or style holds: the grammar its content parses with and the formatter printing it. */
 const EMBEDDED: Record<EmbeddedLanguage, [Grammar, unknown]> = {
@@ -30,9 +30,15 @@ const EMBEDDED: Record<EmbeddedLanguage, [Grammar, unknown]> = {
 export interface HtmlOptions extends PrettierOptions {
   bracketSameLine: boolean;
   singleAttributePerLine: boolean;
+  htmlWhitespaceSensitivity: WhitespaceSensitivity;
 }
 
-const defaults: HtmlOptions = { ...prettierDefaults, bracketSameLine: false, singleAttributePerLine: false };
+const defaults: HtmlOptions = {
+  ...prettierDefaults,
+  bracketSameLine: false,
+  singleAttributePerLine: false,
+  htmlWhitespaceSensitivity: "css",
+};
 
 /**
  * The declarations of `a{...}`'s block, as a `style` attribute holds them: undefined when the block holds anything
@@ -109,7 +115,8 @@ export const html: Language<HtmlOptions> = {
         "document",
         (node, ctx) => {
           const text = ctx.tree.text(node);
-          const { printWidth, tabWidth, useTabs, bracketSameLine, singleAttributePerLine } = ctx.options;
+          const { printWidth, tabWidth, useTabs, bracketSameLine, singleAttributePerLine, htmlWhitespaceSensitivity } =
+            ctx.options;
           const embed = (lang: EmbeddedLanguage, content: string) => {
             const [contentGrammar, formatter] = EMBEDDED[lang];
             const tree = parseTree(contentGrammar, content);
@@ -150,7 +157,8 @@ export const html: Language<HtmlOptions> = {
               printInto(tree, css as unknown as Language<PrettierOptions>, { printWidth, tabWidth, useTabs }, d),
             );
           };
-          printHtml(parseHtml(text, true, ctx.tree.lf(node) === 0 && ctx.tree.col(node) === 0), text, {
+          const atFileStart = ctx.tree.lf(node) === 0 && ctx.tree.col(node) === 0;
+          printHtml(parseHtml(text, true, atFileStart, htmlWhitespaceSensitivity), text, {
             text: sText,
             tabWidth,
             bracketSameLine,

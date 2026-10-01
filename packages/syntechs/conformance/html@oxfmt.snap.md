@@ -1,4 +1,4 @@
-html@oxfmt compatibility: 105/146 (71.92%), 26 refused (ok:false), 23 excluded
+html@oxfmt compatibility: 112/146 (76.71%), 25 refused (ok:false), 23 excluded
 
 Fixtures: prettier 3.9.9 tests/format/{html} (recursive), every spec call listing parser `html`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left.
 
@@ -11,18 +11,12 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | html/basics/broken-html.html | 0/1 | 72.73% |
 | html/basics/empty.html | 0/1 | 0.00% |
 | html/basics/html5-boilerplate.html | 0/1 | 95.08% |
-| html/comments/comment-after-element.html | 2/4 | 66.54% |
-| html/comments/conditional.html | 0/4 | 78.17% |
-| html/comments/surrounding-empty-line.html | 0/4 | 82.72% |
+| html/comments/conditional.html | 0/4 | 79.76% |
+| html/comments/surrounding-empty-line.html | 0/4 | 93.86% |
 | html/multiparser/js/script-tag-escaping.html | 0/1 | 80.00% |
 | html/prettier_ignore/issue-15738.html | 0/1 | 85.71% |
 | html/script/babel.html | 0/1 | 92.86% |
 | html/script/legacy.html | 0/1 | 84.21% |
-| html/tags/closing-at-start.html | 3/4 | 93.18% |
-| html/tags/marquee.html | 3/4 | 98.08% |
-| html/tags/openging-at-end.html | 2/4 | 74.11% |
-| html/tags/option.html | 3/4 | 77.27% |
-| html/tags/tags2.html | 2/4 | 73.87% |
 
 # Refused
 
@@ -42,7 +36,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | html/css/scss.html | 1/1 | 84.38% | formatter-error: style lang scss |
 | html/handlebars-venerable/template.html | 2/2 | 43.48% | formatter-error: script type text/x-handlebars-template |
 | html/interpolation/example.html | 1/1 | 0.00% | formatter-error: parse error |
-| html/magic_comments/display.html | 1/1 | 36.36% | formatter-error: display: inline |
 | html/multiparser/markdown/html-with-markdown-script.html | 1/1 | 33.33% | formatter-error: script type text/markdown |
 | html/prettier_ignore/cases.html | 1/1 | 100.00% | formatter-error: prettier-ignore |
 | html/prettier_ignore/document.html | 1/1 | 95.35% | formatter-error: prettier-ignore |

@@ -63,6 +63,14 @@ const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
   ],
   // singleAttributePerLine was ignored: two or more attributes must break one per line.
   ["single-attribute-per-line", '<img src="a" alt="b" />\n<div data-a="1">x</div>\n', { singleAttributePerLine: true }],
+  // htmlWhitespaceSensitivity was ignored: strict reads every node as inline, ignore as block.
+  ...(["strict", "ignore"] as const).map((s): [string, string, Partial<HtmlOptions>] => [
+    `whitespace-sensitivity-${s}`,
+    "<div>a <span> b </span><p> c </p> <!-- x --> <b>d</b></div>\n<p>\n  text <a href='x'>link</a>\n</p>\n",
+    { htmlWhitespaceSensitivity: s },
+  ]),
+  // A `<!-- display: x -->` comment refused the file; it sets the display of the node after it.
+  ["display-comment", "<div>\n  <!-- display: inline -->\n  <p>Long Long Long Long Long Long Long Long Long Long Long Long Long Long</p>\n</div>\n"],
 ];
 
 function ours(text: string, options: Partial<HtmlOptions>) {

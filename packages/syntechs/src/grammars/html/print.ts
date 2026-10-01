@@ -290,7 +290,12 @@ type TsTree = ReturnType<typeof parseTree>;
  * `text` as prettier's parser reads it, preprocessed; throws `Unsupported`, and for a non-blank script or style
  * unless the printer will get an `embed`. `atFileStart`: `text` starts the file, where a front matter may open it.
  */
-export function parseHtml(text: string, embeds = false, atFileStart = false): Node {
+export function parseHtml(
+  text: string,
+  embeds = false,
+  atFileStart = false,
+  sensitivity: WhitespaceSensitivity = "css",
+): Node {
   const tree = parseTree(language, text);
   if (tree.errorChars > 0 || brokenNodes(tree) !== undefined) throw new Unsupported("parse error");
   const root = node("root", 0, text.length);
@@ -305,7 +310,7 @@ export function parseHtml(text: string, embeds = false, atFileStart = false): No
   walk(root, (n) => {
     if (embeddedLanguage(n) !== undefined && !embeds) throw new Unsupported(n.name);
   });
-  preprocess(root);
+  preprocess(root, sensitivity);
   return root;
 }
 
@@ -372,8 +377,8 @@ function fill(tree: TsTree, text: string, into: Node, ts: number, from: number, 
       n.isSelfClosing = true;
       n.value = tree.text(c);
       const inner = n.value.slice(4, -3).trim();
-      // A prettier-ignore or a `display:` comment changes how its next sibling prints.
-      if (inner.startsWith("prettier-ignore") || inner.startsWith("display:")) throw new Unsupported(inner);
+      // A prettier-ignore comment keeps its next sibling as written.
+      if (inner.startsWith("prettier-ignore")) throw new Unsupported(inner);
       add(n);
     } else if (k === "doctype") add(docType(tree.text(c), tree.start(c), tree.end(c)));
     else throw new Unsupported(k);
@@ -463,7 +468,7 @@ const HTML_SPACE = /[\t\n\f\r ]/;
 const isHtmlSpaceOnly = (s: string) => /^[\t\n\f\r ]*$/.test(s);
 const hasChildren = (n: Node) => n.kind === "root" || (n.kind === "element" && !n.isSelfClosing);
 
-function preprocess(root: Node): void {
+function preprocess(root: Node, sensitivity: WhitespaceSensitivity): void {
   walk(root, (n) => {
     if (n.kind === "element" && IGNORE_FIRST_LF.has(n.name)) {
       const first = n.children[0];
@@ -476,7 +481,7 @@ function preprocess(root: Node): void {
   });
   walk(root, extractWhitespaces);
   walk(root, (n) => {
-    n.cssDisplay = cssDisplay(n);
+    n.cssDisplay = cssDisplay(n, sensitivity);
   });
   walk(root, addIsSpaceSensitive);
   walk(root, mergeSimpleElementIntoText);
@@ -529,7 +534,18 @@ function extractWhitespaces(n: Node): void {
   n.isIndentationSensitive = whitespaceSensitive;
 }
 
-function cssDisplay(n: Node): string {
+/** Prettier's `htmlWhitespaceSensitivity`. */
+export type WhitespaceSensitivity = "css" | "strict" | "ignore";
+
+/**
+ * utilities/index.js's getNodeCssStyleDisplay: a `<!-- display: x -->` comment right before sets `x`; else strict
+ * reads every node as inline, ignore as block, and css by the tag's default display.
+ */
+function cssDisplay(n: Node, sensitivity: WhitespaceSensitivity): string {
+  const magic = n.prev?.kind === "comment" ? /^\s*display:\s*([a-z]+)\s*$/.exec(n.prev.value.slice(4, -3)) : null;
+  if (magic) return magic[1] as string;
+  if (sensitivity === "strict") return "inline";
+  if (sensitivity === "ignore") return "block";
   if (n.kind !== "element") return "inline";
   if (BLOCK.has(n.name)) return "block";
   return (Object.hasOwn(DISPLAY, n.name) && DISPLAY[n.name]) || "inline";
