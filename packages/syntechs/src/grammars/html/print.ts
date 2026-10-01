@@ -1,8 +1,8 @@
 // Prettier 3.9.9's HTML printer (language-html: printer-html.js, print-preprocess.js, print/children.js,
 // print/element.js, print/tag.js, utilities/index.js) with `htmlWhitespaceSensitivity: "css"`, over
-// tree-sitter-html, writing onto the stream. It covers plain elements, text and comments; what it does not cover
-// (script and style content, the attributes prettier formats as code, a doctype, a parse error) throws
-// `Unsupported`, so a caller prints the source as it would without an HTML printer.
+// tree-sitter-html, writing onto the stream. It covers plain elements, text, comments, and a script's or style's
+// content through the caller's `embed`; what it does not cover (a template script, the attributes prettier formats
+// as code, a parse error) throws `Unsupported`, so a caller prints the source as it would without an HTML printer.
 
 import { parseTree } from "../../core/index.js";
 import { brokenNodes } from "../../fmt/format.js";
@@ -157,12 +157,18 @@ function node(kind: Node["kind"], start: number, end: number): Node {
 
 type TsTree = ReturnType<typeof parseTree>;
 
-/** `text` as prettier's parser reads it, preprocessed; throws `Unsupported`. */
-export function parseHtml(text: string): Node {
+/**
+ * `text` as prettier's parser reads it, preprocessed; throws `Unsupported`, and for a non-blank script or style
+ * unless the printer will get an `embed`.
+ */
+export function parseHtml(text: string, embeds = false): Node {
   const tree = parseTree(language, text);
   if (tree.errorChars > 0 || brokenNodes(tree) !== undefined) throw new Unsupported("parse error");
   const root = node("root", 0, text.length);
   fill(tree, text, root, tree.root, 0, text.length);
+  walk(root, (n) => {
+    if (embeddedLanguage(n) !== undefined && !embeds) throw new Unsupported(n.name);
+  });
   preprocess(root);
   return root;
 }
@@ -195,7 +201,7 @@ function fill(tree: TsTree, text: string, into: Node, ts: number, from: number, 
     const k = tree.kindName(c);
     if (tree.start(c) < from || tree.end(c) > to) continue;
     if (k === "text" || k === "entity") continue;
-    if (k === "element") {
+    if (k === "element" || k === "script_element" || k === "style_element") {
       const e = element(tree, text, c);
       add(e);
       // tree-sitter-html runs a void element written without `/>` to its parent's end; what follows it is a sibling.
@@ -251,7 +257,9 @@ function element(tree: TsTree, text: string, ts: number): Node {
   const last = parts[parts.length - 1];
   const endTag = last !== undefined && tree.kindName(last) === "end_tag" ? last : undefined;
   if (endTag !== undefined) n.endTagStart = tree.start(endTag);
-  if (n.isVoid) n.end = n.startTagEnd;
+  const raw = parts.find((p) => tree.kindName(p) === "raw_text");
+  if (raw !== undefined) n.value = tree.text(raw);
+  else if (n.isVoid) n.end = n.startTagEnd;
   else if (!selfClosing) fill(tree, text, n, ts, n.startTagEnd, endTag === undefined ? n.end : n.endTagStart);
   return n;
 }
@@ -531,6 +539,37 @@ export interface HtmlPrinter {
   /** Writes `s`, which may hold the caller's placeholders. */
   text(s: string): void;
   readonly tabWidth: number;
+  /** Prints a script's or style's content `text` as `language`'s formatter does, throwing where it cannot. */
+  readonly embed?: (language: EmbeddedLanguage, text: string) => void;
+}
+
+export type EmbeddedLanguage = "babel" | "typescript" | "tsx" | "json" | "css";
+
+const attr = (n: Node, name: string) => n.attrs.find((a) => a.rawName.toLowerCase() === name);
+
+/**
+ * utilities/index.js's inferScriptParser and inferStyleParser, for a non-blank script or style: undefined for any
+ * other element. A content no formatter here reads (a `src` script's, a template type's) throws `Unsupported`.
+ */
+function embeddedLanguage(n: Node): EmbeddedLanguage | undefined {
+  if ((n.name !== "script" && n.name !== "style") || n.value.trim() === "") return undefined;
+  const lang = attr(n, "lang")?.value?.toLowerCase();
+  if (n.name === "style") {
+    if (lang === undefined || lang === "css" || lang === "postcss") return "css";
+    throw new Unsupported(`style lang ${lang}`);
+  }
+  if (attr(n, "src") !== undefined) throw new Unsupported("script src");
+  const type = attr(n, "type")?.value?.toLowerCase();
+  if (lang === "ts" || type === "application/x-typescript") return "typescript";
+  if (lang === "tsx") return "tsx";
+  if (lang !== undefined && lang !== "js" && lang !== "jsx") throw new Unsupported(`script lang ${lang}`);
+  if (
+    type === undefined ||
+    ["module", "text/javascript", "text/babel", "text/jsx", "application/javascript", "jsx"].includes(type)
+  )
+    return "babel";
+  if (["application/json", "application/ld+json", "importmap", "speculationrules"].includes(type)) return "json";
+  throw new Unsupported(`script type ${type}`);
 }
 
 /** Prints `root` (from `parseHtml`) as prettier's `group(printChildren(root))`, without its final hardline. */
@@ -836,6 +875,24 @@ class Printer {
 
   // print/element.js
   private element(n: Node): void {
+    const embedded = embeddedLanguage(n);
+    if (embedded !== undefined) {
+      const embed = this.out.embed;
+      if (embed === undefined) throw new Unsupported(n.name);
+      open(GROUP);
+      open(GROUP);
+      this.openingTag(n);
+      close();
+      sBreakParent();
+      open(INDENT);
+      sHardline();
+      embed(embedded, n.value);
+      close();
+      sHardline();
+      this.closingTag(n);
+      close();
+      return;
+    }
     open(GROUP);
     open(GROUP);
     this.openingTag(n);

@@ -30,6 +30,13 @@ const edgeCases: [string, string][] = [
     "class-names",
     `<div class="  a b\n c ">x</div>\n<p class=" a&quot;b  c" title='t'>y</p>\n<i class="  {{ a }}  b">z</i>\n<b class="   ">w</b>\n<div id="x" class="${"cls-name ".repeat(12)}">x</div>\n`,
   ],
+  // A script refused the file; its JS, TS or JSON prints through that formatter one level in, a blank one empty.
+  [
+    "script-content",
+    '<div><script>let x=1;let y=2</script></div>\n<script type="module">import a from "a"\n\n\na()</script>\n<script type="importmap">{"imports":{"a":"b"}}</script>\n<script lang="ts">let a:number=1</script>\n<script>\n\n  </script>\n',
+  ],
+  // A style refused the file; its CSS prints through the css formatter one level in.
+  ["style-content", '<html><head><style media="screen">a{b:c}\n\n\nd{e:f}</style></head></html>\n'],
 ];
 
 function ours(text: string, options: Partial<PrettierOptions>) {
