@@ -274,6 +274,7 @@ export const customs = {
   /** A media query list holding a comment, which `mediaQueries` prints as postcss-media-query-parser splits it. */
   mediaComments: (node, ctx) => mediaAtoms(node, ctx).some((c) => isComment(c, ctx)),
   ownWord: (node, ctx) => ownWord(node, ctx),
+  placeholderCalled: (node, ctx) => placeholderCallItems(node, ctx) !== undefined,
   /** A statement on the source line of the embedded placeholders' statement before it, which oxfmt keeps there. */
   afterPlaceholders: (node, ctx) => {
     const t = ctx.tree;
@@ -342,6 +343,43 @@ function ownWord(node: number, ctx: SCtx): boolean {
     return ["integer_value", "float_value"].includes(kind(prev, ctx));
   if (kind(prev, ctx) !== "call_expression") return false;
   return kind(node, ctx) !== "plain_value" || t.text(t.child(prev, 0)) !== "$$";
+}
+
+/**
+ * An embedded template's substitution called in a declaration's value (`${a}(b)`), and the value's words: prettier
+ * reads the placeholder and its `( … )` as two words of the value's fill, a softline between them.
+ */
+function placeholderCallItems(node: number, ctx: SCtx): number[] | undefined {
+  const t = ctx.tree;
+  if (!/prettier-placeholder-\d+$/.test(t.text(t.child(node, 0)))) return undefined;
+  const up = t.parent(node);
+  if (kind(up, ctx) !== "declaration" || children(up, t).some((c) => kind(c, ctx) === ",")) return undefined;
+  return children(up, t).filter((c) => t.named(c) && !["property_name", "important", "ERROR"].includes(kind(c, ctx)));
+}
+
+/**
+ * `placeholderCallItems`' call, as its callee then its arguments: a fill of its own where it is the value's one word,
+ * else items of the value's fill.
+ */
+const placeholderAlone = (callee: number, ctx: SCtx) =>
+  (placeholderCallItems(ctx.tree.parent(callee), ctx) ?? []).length === 1;
+
+function placeholderCallee(node: number, ctx: SCtx): void {
+  if (placeholderAlone(node, ctx)) {
+    open(GROUP);
+    open(INDENT);
+    open(FILL);
+    open(FILL_ITEM);
+  }
+  ctx.print(node);
+}
+
+function placeholderArgs(node: number, ctx: SCtx): void {
+  close();
+  sLine(SOFT);
+  open(FILL_ITEM);
+  ctx.print(node);
+  if (placeholderAlone(node, ctx)) for (let k = 0; k < 4; k++) close();
 }
 
 const verbatimCall = (name: string) => name.toLowerCase() === "url" || mathFunctions.has(name.toLowerCase());
@@ -1833,6 +1871,8 @@ export const handWritten = {
   keywordArgument,
   sassList,
   ruleSet,
+  placeholderCallee,
+  placeholderArgs,
 };
 
 const cssStream = gen.css(handWritten);

@@ -192,9 +192,13 @@ export const css = format({
     // In a `directive`'s prelude, a Sass argument list as fmt.ts's `sassList` lays it out, but `url()`'s.
     call_expression: ($) =>
       either(
-        all(inDirective, not(calledAs("url"))),
-        [$.children.at(0).andThen((n) => n), $.children.at(1).andThen((n) => n.via("sassList"))],
-        adjacent(),
+        when("placeholderCalled"),
+        [$.children.at(0).andThen((n) => n.via("placeholderCallee")), $.children.at(1).andThen((n) => n.via("placeholderArgs"))],
+        either(
+          all(inDirective, not(calledAs("url"))),
+          [$.children.at(0).andThen((n) => n), $.children.at(1).andThen((n) => n.via("sassList"))],
+          adjacent(),
+        ),
       ),
     // A function's as written inside `url()`, a space wherever the source has a gap (postcss-value-parser's one
     // word, trimmed); else broken inside the parentheses: a function's as words, a pseudo-class's as selectors.
