@@ -31,6 +31,7 @@ import {
   items,
   type JsCtx,
   kind,
+  parent,
   lastChildWhere,
   objectOf,
   operator,
@@ -1320,6 +1321,16 @@ const callCustom: CustomRule<JsOptions> = (n, s) => {
 
 /** The customs format/calls.ts names, by the names its spec gives them. */
 export const callCustoms = {
-  call: callCustom,
+  call: (n, s) => {
+    callCustom(n, s);
+    // babel calls a V8 intrinsic where it stands, `%F(x)`, so `new %F(x)` constructs that call with no arguments.
+    const ctx = jsCtx(s).js;
+    if (
+      kind(ctx, n) === "new_expression" &&
+      kind(ctx, callee(ctx, n)) === "v8_intrinsic" &&
+      !(isCall(ctx, parent(ctx, n)) && callee(ctx, parent(ctx, n) as number) === n)
+    )
+      sText("()");
+  },
   member: memberCustom,
 } satisfies Record<string, CustomRule<JsOptions>>;

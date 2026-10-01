@@ -437,8 +437,24 @@ class Places {
 /** The `()` prettier adds to `new A`, which calls the constructor with no arguments either way. */
 const isEmptyNewArguments = (tree: Tree, n: number) =>
   tree.kindName(n) === "arguments" &&
-  parentKind(tree, n) === "new_expression" &&
+  (parentKind(tree, n) === "new_expression" || isV8NewCall(tree, tree.parent(n))) &&
   codeChildren(tree, n) === 0;
+
+/**
+ * `new %F(x)()`, which tree-sitter reads as a call of `new %F(x)` and babel as `new %F(x)`, the V8 intrinsic called
+ * where it stands: the `()` oxfmt adds there means what `new %F(x)` does.
+ */
+function isV8NewCall(tree: Tree, n: number): boolean {
+  if (n === NO_NODE || tree.kindName(n) !== "call_expression") return false;
+  const fn = findChild(tree, n, (c) => tree.fieldName(c) === "function");
+  if (fn === NO_NODE || tree.kindName(fn) !== "new_expression") return false;
+  const args = findChild(tree, n, (c) => tree.fieldName(c) === "arguments");
+  return (
+    args !== NO_NODE &&
+    codeChildren(tree, args) === 0 &&
+    findChild(tree, fn, (c) => tree.kindName(c) === "v8_intrinsic") !== NO_NODE
+  );
+}
 
 const LOGICAL = new Set(["&&", "||", "??"]);
 
@@ -463,6 +479,8 @@ const isLeadingOperator = (tree: Tree, n: number) => {
 
 function transparent(tree: Tree, n: number): boolean {
   switch (tree.kindName(n)) {
+    case "call_expression":
+      return isV8NewCall(tree, n);
     case "parenthesized_expression":
       return !parensMatter(tree, n);
     case "parenthesized_type":
