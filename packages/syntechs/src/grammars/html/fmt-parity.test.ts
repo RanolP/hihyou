@@ -140,7 +140,12 @@ const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
   ],
   // A `<` that cannot open a tag was a parse error that refused the file.
   ["lt-in-text", "<pre>\n< I'm x >\n</pre>\n<div>a < b <1 c<=d</div>\n1 < 2\n"],
-  ["requoted-apos", `<div title="123 &apos;&quot; 456">x</div>\n<p title='a "b" &apos;c'>y</p>\n`],
+  // A pre or listing holding an element or comment was laid out, where oxfmt keeps its content as written.
+  [
+    "pre-element-content-as-written",
+    "<pre><br></pre>\n<PRE><DIV></DIV></PRE>\n<details>\n  <pre><!--c-->\n  </pre></details>\n<pre>\n<b>x</b></pre>\n<listing><b>x</b>\n</listing>\n",
+  ],
+  ["requoted-apos",`<div title="123 &apos;&quot; 456">x</div>\n<p title='a "b" &apos;c'>y</p>\n`],
 ];
 
 function ours(text: string, options: Partial<HtmlOptions>) {

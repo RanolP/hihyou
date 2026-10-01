@@ -1501,12 +1501,28 @@ class Printer {
       close();
       return;
     }
+    const first = firstChild(n);
+    const last = lastChild(n);
+    // utilities/index.js's shouldPreserveContent: a pre-like element holding anything but text keeps its content as
+    // written (getNodeContent), its own tags still printed.
+    if (isPreLike(n) && n.children.some((c) => c.kind !== "text")) {
+      open(GROUP);
+      this.openingTag(n);
+      close();
+      if (n.endTagStart !== -1 && first !== undefined && last !== undefined) {
+        let start = n.startTagEnd;
+        if (needsToBorrowParentOpeningTagEndMarker(first)) start -= openingTagEndMarker(n).length;
+        let end = n.endTagStart;
+        if (needsToBorrowParentClosingTagStartMarker(last)) end += closingTagStartMarker(n).length;
+        this.literal(this.source.slice(start, end));
+      }
+      this.closingTag(n);
+      return;
+    }
     open(GROUP);
     open(GROUP);
     this.openingTag(n);
     close();
-    const first = firstChild(n);
-    const last = lastChild(n);
     if (first === undefined || last === undefined) {
       if (n.hasDanglingSpaces && n.isDanglingSpaceSensitive) sLine(0);
     } else {
