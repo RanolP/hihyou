@@ -10,7 +10,7 @@ import * as vscode from "vscode";
 import { outputChannel } from "../errors.js";
 import type { LocalRepos } from "../local/repos.js";
 import { openReviewPanel } from "../panel/panel.js";
-import { diffFiles, type ReviewSource } from "../review.js";
+import { engineReview, type ReviewSource } from "../review.js";
 import { type FoundRemote, githubRemotes } from "./remotes.js";
 
 /** A pull request the user opened, which the diffsets view lists with its commits. */
@@ -71,8 +71,7 @@ export function githubSource(
 ): ReviewSource {
   return {
     title,
-    load: () => diffFiles(githubEngine(host), id),
-    readBlob: async (blob) => host.readBlob(blob),
+    ...engineReview(githubEngine(host), () => id),
     refreshable: false,
   };
 }

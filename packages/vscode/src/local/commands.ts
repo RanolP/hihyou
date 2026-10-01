@@ -2,7 +2,7 @@ import type { Commit, LocalDiffsetId } from "@hihyou/git";
 import type { DiffFile } from "@hihyou/ui";
 import * as vscode from "vscode";
 import { openReviewPanel } from "../panel/panel.js";
-import { diffFiles, type ReviewSource } from "../review.js";
+import { engineReview, type ReviewSource } from "../review.js";
 import type { LocalRepo, LocalRepos } from "./repos.js";
 
 const recentCommitCount = 50;
@@ -66,8 +66,10 @@ export function movingSource(
   let snapshot = 0;
   return {
     title,
-    load: () => diffFiles(local.engine, { kind, snapshot: String(++snapshot) }),
-    readBlob: async (id) => local.host.readBlob(id),
+    ...engineReview(local.engine, () => ({
+      kind,
+      snapshot: String(++snapshot),
+    })),
     refreshable: true,
     refreshOnSave: kind === "worktree",
   };
@@ -80,8 +82,7 @@ export function fixedSource(
 ): ReviewSource {
   return {
     title,
-    load: () => diffFiles(local.engine, id),
-    readBlob: async (blob) => local.host.readBlob(blob),
+    ...engineReview(local.engine, () => id),
     refreshable: false,
   };
 }

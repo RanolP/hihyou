@@ -1,7 +1,7 @@
 import { createEngine, syntechsGrammars } from "@hihyou/engine";
 import type { DiffFile } from "@hihyou/ui";
 import { expect, test } from "vitest";
-import { diffFiles } from "../review.js";
+import { engineReview } from "../review.js";
 import { expandElided } from "./expand.js";
 
 const lines = (n: number, edit: (i: number) => string | undefined) =>
@@ -25,20 +25,22 @@ const afterSide = (file: DiffFile) =>
     )
     .join("");
 
-// Catches an off-by-one in the elided line range: expanded context that repeats, drops or shifts a line
-// (including the run that reaches the end of the file, whose count the renderer leaves unset).
-test("expanding every elided run rebuilds the after text exactly", async () => {
+async function expandAll(path: string) {
   const texts: Record<string, string> = { a: before, b: after };
-  const engine = createEngine({
-    grammars: syntechsGrammars(),
-    resolveDiffset: () => ({
-      id: "t",
-      changes: [{ path: "a.ts", before: "a", after: "b" }],
+  const review = engineReview(
+    createEngine({
+      grammars: syntechsGrammars(),
+      resolveDiffset: () => ({
+        id: "t",
+        changes: [{ path, before: "a", after: "b" }],
+      }),
+      readBlob: (id) => new TextEncoder().encode(texts[id]),
     }),
-    readBlob: (id) => new TextEncoder().encode(texts[id]),
-  });
-  let [file] = await diffFiles(engine, "t" as never);
-  if (!file) throw new Error("no file diffed");
+    () => "t" as never,
+  );
+  const [loaded] = await review.load();
+  if (!loaded) throw new Error("no file diffed");
+  let file: DiffFile = loaded;
   const elided = file.fragments.flatMap((f, i) =>
     f.kind === "elided" ? [i] : [],
   );
@@ -56,19 +58,43 @@ test("expanding every elided run rebuilds the after text exactly", async () => {
         : next?.kind === "diff"
           ? next.after.startLine
           : undefined;
-    const expanded = expandElided(
-      file,
-      {
-        fragment: i,
-        lines: f.lines,
-        ...(nextAfter !== undefined && { count: nextAfter - f.lines.after }),
-      },
-      after,
-    );
+    const ref = {
+      fragment: i,
+      lines: f.lines,
+      ...(nextAfter !== undefined && { count: nextAfter - f.lines.after }),
+    };
+    const unchanged = await review.expand(path, ref);
+    const expanded = unchanged && expandElided(file, ref, unchanged);
     if (!expanded) throw new Error(`fragment ${i} did not expand`);
     file = expanded;
   }
+  return file;
+}
+
+// Catches an off-by-one in the elided line range: expanded context that repeats, drops or shifts a line
+// (including the run that reaches the end of the file, whose count the renderer leaves unset).
+test("expanding every elided run rebuilds the after text exactly", async () => {
+  expect(afterSide(await expandAll("a.ts"))).toBe(after);
+});
+
+// Catches revealed lines coming back as raw text: the first line was elided, and its `const` must carry
+// the same keyword scope the engine gives the lines it shows.
+test("an expanded line keeps its syntax scope, like every shown line", async () => {
+  const file = await expandAll("a.ts");
+  const first = file.fragments.find((f) => f.kind === "unchanged");
+  if (first?.kind !== "unchanged") throw new Error("no unchanged fragment");
+  expect(first.lines.after).toBe(1);
+  const keyword = first.spans.find((s) => s.text === "const");
+  expect(keyword?.scope?.split(" ").at(-1)).toMatch(/^keyword\./);
+});
+
+// Catches a file with no grammar failing to expand once expansion goes through the highlighter.
+test("a file with no grammar still expands, as plain text", async () => {
+  const file = await expandAll("a.txt");
   expect(afterSide(file)).toBe(after);
+  for (const f of file.fragments)
+    if (f.kind === "unchanged")
+      for (const s of f.spans) expect(s.scope).toBeUndefined();
 });
 
 // Catches expanding a fragment index that a refresh has since given to other content.
@@ -78,6 +104,10 @@ test("a stale expand request leaves the file alone", () => {
     fragments: [{ kind: "elided", lines: { before: 1, after: 1 } }],
   };
   expect(
-    expandElided(file, { fragment: 0, lines: { before: 1, after: 2 } }, after),
+    expandElided(
+      file,
+      { fragment: 0, lines: { before: 1, after: 2 } },
+      { kind: "unchanged", spans: [], at: [], lines: { before: 1, after: 2 } },
+    ),
   ).toBeUndefined();
 });

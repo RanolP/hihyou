@@ -110,12 +110,11 @@ export async function openReviewPanel(
     const current = state;
     const index = current.files.findIndex((f) => f.path === path);
     const file = current.files[index];
-    const after = file?.change?.after;
     let expanded: DiffFile | undefined;
-    if (file && after) {
+    if (file) {
       try {
-        const text = new TextDecoder().decode(await source.readBlob(after));
-        expanded = expandElided(file, elided, text);
+        const unchanged = await source.expand(path, elided);
+        expanded = unchanged && expandElided(file, elided, unchanged);
       } catch (error) {
         reportError(`could not expand ${path}`, error);
       }
