@@ -219,6 +219,8 @@ const afterIgnoreInPair = (ctx: JsCtx, n: number) => {
  * element, when the ignore comment ends its line. One on a line of its own keeps what follows it instead.
  */
 const trailingIgnore = (ctx: JsCtx, n: number) =>
+  // `| (A & B) // prettier-ignore`: oxc's member ends before the `)`, so the comment is not right after it.
+  !(kind(ctx, n) === "parenthesized_type" && kind(ctx, parent(ctx, n)) === "union_type") &&
   ctx.comments(n).trailing.some(
     (c) => isIgnoreComment(ctx, c) && ctx.tree.lf(c) === 0 && !inside(ctx, c, n),
   );
@@ -275,12 +277,13 @@ const afterIgnoreInUnion = (ctx: JsCtx, n: number) => {
   const kids = children(ctx, up);
   for (let i = kids.indexOf(n) - 1; i >= 0; i--) {
     const k = kids[i] as number;
+    // Only an own-line ignore: one ending the member's line trails that member, and leaves this one formatted.
     if (isComment(ctx, k)) {
-      if (isIgnoreComment(ctx, k)) return true;
+      if (isIgnoreComment(ctx, k) && ctx.tree.lf(k) > 0) return true;
     } else if (kind(ctx, k) === "union_type") {
       const inner = children(ctx, k);
       for (let j = inner.length - 1; j >= 0 && isComment(ctx, inner[j] as number); j--)
-        if (isIgnoreComment(ctx, inner[j] as number)) return true;
+        if (isIgnoreComment(ctx, inner[j] as number) && ctx.tree.lf(inner[j] as number) > 0) return true;
       return false;
     } else if (named(ctx, k)) return false;
   }

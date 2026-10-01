@@ -243,6 +243,13 @@ const edgeCases: [string, Target, string][] = [
     "ts",
     "const a = 1 as const /* c */;\nfunction f() {} // after\ntype U =\n  | A // a\n  // b\n  | B;\nclass K { m /* m */ () {} }",
   ],
+  // A prettier-ignore ending a union member's line kept the next member as written, dropped the comment, and kept a
+  // parenthesized member before it as written; oxfmt keeps only an unparenthesized member it trails.
+  [
+    "union-member-trailing-ignore",
+    "ts",
+    "type A =\n  | (foo1&foo2) // prettier-ignore\n  | (bar1&bar2)\n  | baz;\ntype B =\n  | foo1&foo2 // prettier-ignore\n  | {a:1}\n  | baz;\ntype C =\n  | foo\n  | bar1&bar2 // prettier-ignore\n  | baz;\n",
+  ],
   // A script's `await (x, y)(z)` printed as oxfmt's `await(x, y)(z)`, but the check flattened only a one-argument
   // call of `await`, so it refused the output.
   [

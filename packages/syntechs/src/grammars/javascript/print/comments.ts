@@ -240,7 +240,10 @@ const oxfmtUnionIgnore = (c: CommentContext<JsOptions>): CommentTarget | undefin
     if (kind(c, up) === "union_type") union = up;
     else if (union !== undefined) break;
   }
-  return union === undefined ? undefined : { node: union, as: "trailing" };
+  // `| A // prettier-ignore⏎| B`: tree-sitter's left-nested union ends at `A`, but it is only a member of the union
+  // below, so the comment trails `A` alone.
+  if (union === undefined || kind(c, parent(c, union)) === "union_type") return;
+  return { node: union, as: "trailing" };
 };
 
 const lastUnionMember = (c: CommentContext<JsOptions>): CommentTarget | undefined => {
