@@ -109,6 +109,8 @@ function asDocstring(
 ): (ExprStmt & { value: Str }) | undefined {
   if (
     kind === "other" ||
+    // A notebook is never imported as a module, so its first string is no docstring.
+    (kind === "top" && f.options["source-type"] === "ipynb") ||
     s.kind !== "Expr" ||
     s.value.kind !== "Str" ||
     s.value.flavor !== "str"

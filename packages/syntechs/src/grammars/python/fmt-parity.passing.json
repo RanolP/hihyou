@@ -316,6 +316,7 @@
   "ruff/multiline_string_deviations.py#{}",
   "ruff/newlines.py#{}",
   "ruff/newlines.pyi#{}",
+  "ruff/notebook_docstring.py#{\"source_type\":\"Ipynb\"}",
   "ruff/notebook_docstring.py#{\"source_type\":\"Python\"}",
   "ruff/parentheses/call_chains.py#{}",
   "ruff/parentheses/expression_parentheses_comments.py#{}",

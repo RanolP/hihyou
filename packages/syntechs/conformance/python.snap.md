@@ -1,4 +1,4 @@
-python compatibility: 341/342 (99.71%), 0 refused (ok:false), 34 excluded
+python compatibility: 342/342 (100.00%), 0 refused (ok:false), 34 excluded
 
 Fixtures: ruff 0.16.8 crates/ruff_python_formatter/resources/test/fixtures/{black,ruff} (recursive), every option set of each `.options.json`, expected output from tests/snapshots (black cases without a snapshot: their `.expect` file). Options are passed by their ruff.toml names.
 
@@ -8,7 +8,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
-| ruff/notebook_docstring.py | 1/2 | 77.27% |
 
 # Refused
 
