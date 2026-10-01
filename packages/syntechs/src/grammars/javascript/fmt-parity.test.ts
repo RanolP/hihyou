@@ -238,6 +238,12 @@ const edgeCases: [string, Target, string][] = [
     "js",
     "css`${x}; b: a`;\ncss`${x}`;\ncss`${x}\n  b: a;`;\ncss`b: a; ${x};`;\ncss`a{${x}; b: a}`;\ncss`${x}${y}\n${z}; /* c */ d: e`;\ncss`${x}: a;`;\n",
   ],
+  // A word glued to a multi-line substitution broke it open when only the `;` or `!important` after it passed the width.
+  [
+    "css-embed-glued-substitution-fits-alone",
+    "js",
+    '<style jsx>{`\n  .class {\n    flex-direction: column${lllllll && long_cond && long_cond\n        ? "-reverse"\n        : ""};\n  }\n`}</style>;\n<style jsx>{`\n  .class {\n    flex-direction: column${lllllll && long_cond && long_cond\n        ? "-reverse"\n        : ""} !important;\n  }\n`}</style>;\n',
+  ],
   [
     "comments-prettier-moves",
     "ts",

@@ -13,6 +13,8 @@ import { parseHtml, printHtml, Unsupported } from "../../html/print.js";
 import {
   capture,
   close,
+  FILL,
+  FILL_ITEM,
   GROUP,
   INDENT,
   type JsStreamCtx,
@@ -179,9 +181,10 @@ function cssEmbed(ctx: JsStreamCtx, node: number, raws: string[], subs: () => Pa
     // An ignored statement prints as its source, the markers `placeholderStatements` wrote in it included.
     s = s.replace(/@prettier-placeholder-statement /g, "").replace(/@prettier-placeholder-bare ([^;]*);/g, "$1");
     const indented = /\wprettier-placeholder-\d/.test(s) && soleValueWord(tree, at);
-    if (indented) open(INDENT);
+    // A fill item fits by its own width, so the declaration's `;` after it is not measured.
+    if (indented) for (const kind of [INDENT, FILL, FILL_ITEM]) open(kind);
     withParts(s, regex, parts, seen);
-    if (indented) close();
+    if (indented) for (let k = 0; k < 3; k++) close();
     return true;
   });
   // Prettier fails the embed when a placeholder did not print as a token of its own.
@@ -202,7 +205,9 @@ function soleValueWord(tree: Tree, node: number): boolean {
   if (!inDeclaration || parent === NO_NODE || tree.kindName(node) === "property_name") return false;
   const siblings = Array.from({ length: tree.count(parent) }, (_, i) => tree.child(parent, i));
   const at = siblings.indexOf(node);
-  const isWord = (n: number) => tree.named(n) && !["property_name", "comment"].includes(tree.kindName(n));
+  // postcss takes `!important` off the value, so it is no word of it.
+  const isWord = (n: number) =>
+    tree.named(n) && !["property_name", "comment", "important"].includes(tree.kindName(n));
   for (const dir of [-1, 1])
     for (let i = at + dir; i >= 0 && i < siblings.length; i += dir) {
       const n = siblings[i] as number;
