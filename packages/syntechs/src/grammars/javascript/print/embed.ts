@@ -143,7 +143,7 @@ function cssEmbed(ctx: JsStreamCtx, node: number, raws: string[], subs: () => Pa
   const regex = /prettier-placeholder-(\d+)/;
   const { printWidth, tabWidth, useTabs, singleQuote } = ctx.js.options;
   let failed = false;
-  const run = (token: (s: string) => boolean) =>
+  const run = (token: (s: string, node: number) => boolean) =>
     capture(() => {
       tick(0);
       open(INDENT);
@@ -173,16 +173,43 @@ function cssEmbed(ctx: JsStreamCtx, node: number, raws: string[], subs: () => Pa
   const parts = subs();
   const seen = new Set<number>();
   let semi = 0;
-  const printed = run((s) => {
+  const printed = run((s, at) => {
     if (s === ";" && semi++ === drop) return true;
     if (!regex.test(s)) return false;
     // An ignored statement prints as its source, the markers `placeholderStatements` wrote in it included.
     s = s.replace(/@prettier-placeholder-statement /g, "").replace(/@prettier-placeholder-bare ([^;]*);/g, "$1");
+    const indented = /\wprettier-placeholder-\d/.test(s) && soleValueWord(tree, at);
+    if (indented) open(INDENT);
     withParts(s, regex, parts, seen);
+    if (indented) close();
     return true;
   });
   // Prettier fails the embed when a placeholder did not print as a token of its own.
   return failed || seen.size !== parts.length ? undefined : printed;
+}
+
+/**
+ * `node` is a declaration value's word with no other word beside it between commas. A word glued to a placeholder
+ * (`a${b}`) is two words to prettier's value parser, which indents a run of several (printCommaSeparatedValueGroup's
+ * `indent(fill(…))`); the CSS printer indents a run of several words already.
+ */
+function soleValueWord(tree: Tree, node: number): boolean {
+  if (node < 0 || node === NO_NODE) return false;
+  let inDeclaration = false;
+  for (let up = tree.parent(node); up !== NO_NODE; up = tree.parent(up))
+    if (tree.kindName(up) === "declaration") inDeclaration = true;
+  const parent = tree.parent(node);
+  if (!inDeclaration || parent === NO_NODE || tree.kindName(node) === "property_name") return false;
+  const siblings = Array.from({ length: tree.count(parent) }, (_, i) => tree.child(parent, i));
+  const at = siblings.indexOf(node);
+  const isWord = (n: number) => tree.named(n) && !["property_name", "comment"].includes(tree.kindName(n));
+  for (const dir of [-1, 1])
+    for (let i = at + dir; i >= 0 && i < siblings.length; i += dir) {
+      const n = siblings[i] as number;
+      if (tree.text(n) === "," || tree.text(n) === ":") break;
+      if (isWord(n)) return false;
+    }
+  return true;
 }
 
 /**
