@@ -100,6 +100,8 @@ const defaults: JsOptions = {
   experimentalTernaries: false,
   parser: "babel",
   sourceType: "unambiguous",
+  htmlWhitespaceSensitivity: "css",
+  embeddedInHtml: false,
 };
 
 const PE = "parenthesized_expression";

@@ -1,4 +1,4 @@
-html@oxfmt compatibility: 140/146 (95.89%), 5 refused (ok:false), 23 excluded
+html@oxfmt compatibility: 141/146 (96.58%), 5 refused (ok:false), 23 excluded
 
 Fixtures: prettier 3.9.9 tests/format/{html} (recursive), every spec call listing parser `html`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left.
 
@@ -8,7 +8,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
-| html/multiparser/js/script-tag-escaping.html | 0/1 | 80.00% |
 
 # Refused
 

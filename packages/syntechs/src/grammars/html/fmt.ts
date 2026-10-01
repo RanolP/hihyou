@@ -9,21 +9,29 @@ import { close, IF_BROKEN, open, sText, withEmbedding } from "../../fmt/stream.j
 import { printInto } from "../../fmt/stream-format.js";
 import { css } from "../css/fmt.js";
 import { language as cssGrammar } from "../css/index.js";
-import { javascript } from "../javascript/fmt.js";
+import { javascript, jsLanguage } from "../javascript/fmt.js";
 import { language as jsGrammar } from "../javascript/index.js";
 import { json } from "../json/fmt.js";
-import { language as tsxGrammar } from "../tsx/index.js";
-import { tsx, typescript } from "../typescript/fmt.js";
-import { language as tsGrammar } from "../typescript/index.js";
+import { language as tsxGrammar, grammar as tsxSpec } from "../tsx/index.js";
+import { language as tsGrammar, grammar as tsSpec } from "../typescript/index.js";
 import { grammar } from "./bundle.js";
 import { language } from "./index.js";
 import { EVENT_HANDLERS, type EmbeddedLanguage, parseHtml, printHtml, Unsupported, type WhitespaceSensitivity } from "./print.js";
 
+// typescript/fmt.ts's formatters, built at first use: the JS formatter embeds this one (a template's HTML), so
+// importing typescript/fmt.ts here would build them before the JS formatter they build from is defined.
+let tsFormatters: { typescript: unknown; tsx: unknown } | undefined;
+const ts = () =>
+  (tsFormatters ??= {
+    typescript: jsLanguage(tsSpec, tsGrammar, { parser: "typescript" }),
+    tsx: jsLanguage(tsxSpec, tsxGrammar, { parser: "typescript" }),
+  });
+
 /** Each language a script or style holds: the grammar its content parses with and the formatter printing it. */
 const EMBEDDED: Record<EmbeddedLanguage, () => [Grammar, unknown]> = {
   babel: () => [jsGrammar, javascript],
-  typescript: () => [tsGrammar, typescript],
-  tsx: () => [tsxGrammar, tsx],
+  typescript: () => [tsGrammar, ts().typescript],
+  tsx: () => [tsxGrammar, ts().tsx],
   json: () => [jsGrammar, json],
   css: () => [cssGrammar, css],
   // A `text/html` script prints through this formatter itself, declared below.
@@ -195,8 +203,16 @@ export const html: Language<HtmlOptions> = {
             withEmbedding({ anchor: node, token }, () =>
               printInto(
                 tree,
-                formatter as unknown as Language<PrettierOptions>,
-                lang === "html" ? ctx.options : { printWidth, tabWidth, useTabs },
+                formatter as unknown as Language<
+                  PrettierOptions & { embeddedInHtml: boolean; htmlWhitespaceSensitivity: WhitespaceSensitivity }
+                >,
+                lang === "html"
+                  ? ctx.options
+                  : lang === "css" || lang === "json"
+                    ? { printWidth, tabWidth, useTabs }
+                    : // Every option goes on to the script, as prettier's does (`semi`, `singleQuote`), and a JS
+                      // template's HTML inside reads `embeddedInHtml` as prettier's __embeddedInHtml.
+                      { ...ctx.options, embeddedInHtml: true },
               ),
             );
           };

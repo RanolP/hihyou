@@ -24,6 +24,10 @@ export interface JsOptions extends PrettierOptions {
    * else as a module only when nothing but a module parses. It decides whether top-level `await(1)` calls `await`.
    */
   sourceType: "module" | "script" | "unambiguous";
+  /** For a template's HTML (print/embed.ts), as the HTML formatter reads it. */
+  htmlWhitespaceSensitivity: "css" | "strict" | "ignore";
+  /** Prettier's __embeddedInHtml: a script's content, where a template's HTML writes `</script` as `<\/script`. */
+  embeddedInHtml: boolean;
 }
 
 /** The tree queries the JS helpers read: the format's tree, its options, and where its comments attach. */

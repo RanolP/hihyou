@@ -148,6 +148,11 @@ const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
   // Two elements left open at the file's end parsed as an ERROR that printed the whole file as written.
   ["nested-open-at-eof", "<p>a</p>\n<div><plaintext class=\"a  b\">  x <i>y</i>\n\n\nz   \n"],
   ["requoted-apos", `<div title="123 &apos;&quot; 456">x</div>\n<p title='a "b" &apos;c'>y</p>\n`],
+  // A script's template HTML holding a script printed as written, and its `</script` must print as `<\/script`.
+  [
+    "script-template-html-script",
+    "<script>\n  document.write(/* HTML */ `\n    <script>\n      document.write(/* HTML */ \\`<!-- a --> b\\`);\n    <\\/script>\n  `);\n</script>\n",
+  ],
 ];
 
 function ours(text: string, options: Partial<HtmlOptions>) {
