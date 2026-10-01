@@ -422,6 +422,11 @@ const edgeCases: [string, string][] = [
     // Last: a rule after `"a": 1, "b": [1, 2]` turns tree-sitter's recovery into one ERROR kept as written.
     'a{--a:{"a": 1}}\na{--a:{"a": 1;}}\na{--a:{a [1]}}\na{--a:{"a": [1, {2}]}}\na{--a:{a: b; "c": [1]}}\na{--a:{a b;;}}\na{--my-json: {"a": 1, "b": [1, 2]}}',
   ],
+  // A custom property's value with a `{...}` group past its start, ending the block, was laid out as a nested property.
+  [
+    "custom-property-brace-value-ends-block",
+    "a{--a: x {a:b}}\na{--a: x {a:b}\n}\na{--a: x {a:b} c:d}\na{--a: x y {a:b}}\na{--a: x {a:b} y}\na{--a: x {}}\na{--a:  x   {a:b}  }\na{--a: x\n {a:b}\n}\na{--a: x {a:b};}\na{--js: function(rule) {  log(rule) };}",
+  ],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");

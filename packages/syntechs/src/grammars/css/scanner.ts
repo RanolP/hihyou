@@ -136,8 +136,9 @@ function scanCustomPropertyName(lexer: Lexer, valid: Uint8Array): boolean {
       brace ||= peek(lexer) === LBRACE;
       advancePiece(lexer, depth);
     }
-    lexer.resultSymbol = CUSTOM_PROPERTY_BRACE_NAME;
-    return brace && peek(lexer) === SEMI && valid[CUSTOM_PROPERTY_BRACE_NAME] !== 0;
+    // Ending the block (`a{--a: x {a:b}}`), the value is raw, which oxfmt keeps as written.
+    lexer.resultSymbol = peek(lexer) === SEMI ? CUSTOM_PROPERTY_BRACE_NAME : CUSTOM_PROPERTY_RAW_NAME;
+    return brace && valid[lexer.resultSymbol] !== 0;
   }
   // A group nested in the block (`{a: {b}}`) makes the value raw, as oxfmt keeps it.
   let nested = false;

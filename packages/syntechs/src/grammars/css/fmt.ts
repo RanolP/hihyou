@@ -162,6 +162,43 @@ function droppedComma(tree: Tree, node: number): boolean {
 }
 
 /**
+ * A custom property's value holding a `{...}` group past its start, which oxfmt keeps as written: tree-sitter-css
+ * reads it raw when it ends the block (`a{--a: x {a:b}}`) and as words before a `;`, which oxfmt adds, so both
+ * sides fold the value to its source text, each gap one space.
+ */
+function customBraceForms(
+  lexemes: readonly Lexeme[],
+  text: string,
+  tree: Tree,
+  forms: (string | undefined)[],
+): void {
+  const valueOf = (node: number): number | undefined => {
+    for (let up = node; up !== NO_NODE; up = tree.parent(up)) {
+      const decl = tree.parent(up);
+      if (tree.kindName(decl) !== "declaration") continue;
+      if (!["raw_value", "plain_value", "brace_value"].includes(tree.kindName(up)) && tree.named(up)) return undefined;
+      if (!tree.text(tree.child(decl, 0)).startsWith("--")) return undefined;
+      const kids = Array.from({ length: tree.count(decl) }, (_, i) => tree.kindName(tree.child(decl, i)));
+      return kids.includes("raw_value") || kids.includes("brace_value") ? decl : undefined;
+    }
+    return undefined;
+  };
+  for (let i = 0; i < lexemes.length; i++) {
+    const first = lexemes[i] as Lexeme;
+    const decl = valueOf(first.node);
+    // The declaration's own `:` and `;`.
+    if (decl === undefined || [":", ";"].includes(first.text)) continue;
+    let last = i;
+    while (last + 1 < lexemes.length && valueOf((lexemes[last + 1] as Lexeme).node) === decl && (lexemes[last + 1] as Lexeme).text !== ";")
+      last++;
+    const end = lexemes[last] as Lexeme;
+    forms[i] = text.slice(first.at, end.at + end.text.length).replace(/\s+/g, " ");
+    for (let j = i + 1; j <= last; j++) forms[j] = undefined;
+    i = last;
+  }
+}
+
+/**
  * oxfmt prints a value's `progid:A(B)` past its start as the function `progid(: A B)` (`rawTokens`), which
  * tree-sitter-css reads with an ERROR at each paren, and `progid:A` as `progid: A`: both sides fold to `progid:A(`,
  * B's forms, and no `)` (the output's sits in the ERROR), or to `progid:A`. Any other ERROR still fails the check.
@@ -199,7 +236,7 @@ function progidForms(lexemes: readonly Lexeme[], tree: Tree, forms: (string | un
 // A `;` that ends the last statement of a block or of the file means nothing, so prettier may add one there; nor
 // does an empty statement's (`a: b;;`), which postcss drops. A sign before a number means the signed number, which
 // prettier may join to it (`+ 20px` is `+20px`) or part from it.
-const normalize: Normalize = (lexemes, _text, tree) => {
+const normalize: Normalize = (lexemes, text, tree) => {
   const isNumber = (i: number) => {
     const l = lexemes[i];
     return l !== undefined && ["integer_value", "float_value"].includes(tree.kindName(l.node));
@@ -229,6 +266,7 @@ const normalize: Normalize = (lexemes, _text, tree) => {
     return meaning(tree, l.node, l.text);
   });
   progidForms(lexemes, tree, forms);
+  customBraceForms(lexemes, text, tree, forms);
   // `a*b`, one word to tree-sitter, is three tokens to oxc-css-parser, which prints `a * b` (`colonThenRawTokens`):
   // a value's `*` and `/` join the words around them into one form.
   const inValue = (node: number) => {

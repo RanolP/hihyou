@@ -795,7 +795,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
        '!',
 --- a/src/scanner.c
 +++ b/src/scanner.c
-@@ -1,31 +1,240 @@
+@@ -1,31 +1,241 @@
  #include "tree_sitter/parser.h"
  
 +#include <stdlib.h>
@@ -941,8 +941,9 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
 +            brace = brace || lexer->lookahead == '{';
 +            advance_piece(lexer, &depth);
 +        }
-+        lexer->result_symbol = CUSTOM_PROPERTY_BRACE_NAME;
-+        return brace && lexer->lookahead == ';' && valid_symbols[CUSTOM_PROPERTY_BRACE_NAME];
++        // Ending the block (`a{--a: x {a:b}}`), the value is raw, which oxfmt keeps as written.
++        lexer->result_symbol = lexer->lookahead == ';' ? CUSTOM_PROPERTY_BRACE_NAME : CUSTOM_PROPERTY_RAW_NAME;
++        return brace && valid_symbols[lexer->result_symbol];
 +    }
 +    // A group nested in the block (`{a: {b}}`) makes the value raw, as oxfmt keeps it.
 +    bool nested = false;
@@ -1040,7 +1041,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
          lexer->result_symbol = DESCENDANT_OP;
  
          skip(lexer);
-@@ -33,14 +242,28 @@
+@@ -33,14 +243,28 @@
              skip(lexer);
          }
          lexer->mark_end(lexer);
@@ -1070,7 +1071,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
              if (iswspace(lexer->lookahead)) {
                  return false;
              }
-@@ -55,8 +278,48 @@
+@@ -55,8 +279,48 @@
              }
          }
      }
@@ -1119,7 +1120,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
          while (iswspace(lexer->lookahead)) {
              skip(lexer);
          }
-@@ -66,8 +329,15 @@
+@@ -66,8 +330,15 @@
                  return false;
              }
              lexer->mark_end(lexer);
