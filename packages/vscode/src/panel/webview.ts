@@ -1,3 +1,4 @@
+import type { Theme } from "@hihyou/engine";
 import { type DiffsetView, renderDiffset } from "@hihyou/ui";
 import type { FromWebview, ToWebview } from "./protocol.js";
 
@@ -13,11 +14,17 @@ const status = document.getElementById("status") as HTMLElement;
 const refresh = document.getElementById("refresh") as HTMLButtonElement;
 const root = document.getElementById("root") as HTMLElement;
 let view: DiffsetView | undefined;
+let theme: Theme | undefined;
 
 refresh.addEventListener("click", () => post({ type: "refresh" }));
 
 window.addEventListener("message", (event: MessageEvent<ToWebview>) => {
   const message = event.data;
+  if (message.type === "theme") {
+    theme = message.theme;
+    view?.setTheme(theme);
+    return;
+  }
   title.textContent = message.title;
   switch (message.type) {
     case "loading":
@@ -42,6 +49,7 @@ window.addEventListener("message", (event: MessageEvent<ToWebview>) => {
       else
         view = renderDiffset(root, message.files, {
           onExpand: (path, elided) => post({ type: "expand", path, elided }),
+          ...(theme && { theme }),
         });
   }
 });

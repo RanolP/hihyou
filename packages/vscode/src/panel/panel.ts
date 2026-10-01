@@ -4,6 +4,7 @@ import { reportError } from "../errors.js";
 import type { ReviewSource } from "../review.js";
 import { expandElided } from "./expand.js";
 import type { FromWebview, ToWebview } from "./protocol.js";
+import { activeTheme } from "./theme.js";
 
 /** Saves closer together than this refresh a working-tree panel once. */
 const saveDebounceMs = 300;
@@ -34,6 +35,11 @@ export async function openReviewPanel(
     state = next;
     void panel.webview.postMessage(state);
   };
+
+  // Read once per panel and again on a theme change; posted before the state so the first draw is coloured.
+  let theme = activeTheme();
+  const showTheme = () =>
+    theme.then((t) => panel.webview.postMessage({ type: "theme", theme: t } satisfies ToWebview));
 
   let generation = 0;
   const load = async (): Promise<DiffFile[] | undefined> => {
@@ -88,7 +94,7 @@ export async function openReviewPanel(
     panel.webview.onDidReceiveMessage((message: FromWebview) => {
       switch (message.type) {
         case "ready":
-          void panel.webview.postMessage(state);
+          void showTheme().then(() => panel.webview.postMessage(state));
           return;
         case "refresh":
           if (source.refreshable) void load();
@@ -96,6 +102,10 @@ export async function openReviewPanel(
         case "expand":
           void expand(message.path, message.elided);
       }
+    }),
+    vscode.window.onDidChangeActiveColorTheme(() => {
+      theme = activeTheme();
+      void showTheme();
     }),
   ];
   if (source.refreshOnSave) {
