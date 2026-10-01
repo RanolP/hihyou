@@ -189,7 +189,7 @@ export const css = format({
               holds: firstText({ after: ":", prefix: ["nth-"], anyCase: true }),
             }),
           ),
-          text("spacePlus"),
+          text("anPlusB"),
           text("cssWide"),
         ),
       ),

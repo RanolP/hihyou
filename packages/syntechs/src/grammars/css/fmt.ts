@@ -126,6 +126,9 @@ function meaning(tree: Tree, node: number, t: string): string {
       if (parentKind === "attribute_selector")
         return /^["']/.test(t) ? cook(t) : t;
       if (cssWideKeywords.has(t.toLowerCase())) return t.toLowerCase();
+      // An `nth-` pseudo-class's An+B, whose `N` means `n` (`anPlusB` lowercases some).
+      if (parentKind === "arguments" && tree.kindName(tree.parent(parent)) === "pseudo_class_selector")
+        return t.replace(/\s+/g, "").toLowerCase();
       // `a:/1.50`, one word to tree-sitter, is raw tokens to oxc, which prints its number as `1.5` (`rawArgChain`).
       // An unquoted `url()`'s body in a raw value, which oxc spaces as raw tokens (`url(http: / / a.b)`), one word.
       if (t.includes(":"))

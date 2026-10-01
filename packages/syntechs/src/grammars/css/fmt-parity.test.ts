@@ -379,6 +379,11 @@ const edgeCases: [string, string][] = [
     "empty-last-value",
     "a{b:}\na{c:d;b: }\na{--x:\n}\na{--x: ;b:c}",
   ],
+  // `nth-of-type(2n+1)` printed `2n +1`, `3n-1` as `3n -1`, and an `N`, a leading `+` or `EVEN` failed the rule.
+  [
+    "nth-an-plus-b",
+    "a:nth-of-type(2n+1),a:nth-of-type(3n-1),a:nth-last-of-type(-n+3),a:nth-col(+3n-2){b:c}\na:nth-child(2N+1),a:nth-child(-2N+1),a:nth-child(+n),a:nth-child(N),a:nth-child(EVEN),a:nth-child(Odd){b:c}\na:nth-child(2n+ 1),a:nth-child(2n  +  1),a:nth-child(2n -1),a:nth-child(2N-1 of .a){b:c}",
+  ],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");
