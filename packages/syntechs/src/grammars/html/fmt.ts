@@ -9,11 +9,13 @@ import { parseHtml, printHtml } from "./print.js";
 const defaults: PrettierOptions = { ...prettierDefaults };
 
 /**
- * Prettier reflows text and collapses the gaps in it, so a text or comment compares by its words; it lowercases a
- * doctype's `DOCTYPE` and `html`.
+ * Prettier reflows text and collapses the gaps in it, so a text or comment compares by its words; it requotes an
+ * attribute value and closes a void element with `/>`, and it lowercases a doctype's `DOCTYPE` and `html`.
  */
 const normalize: Normalize = (lexemes, _text, tree) =>
   lexemes.map((l) => {
+    if (l.text === '"' || l.text === "'") return undefined;
+    if (l.text === "/>") return ">";
     const words = l.text.replace(/\s+/g, " ").trim();
     return tree.kindName(l.node) === "doctype" ? words.toLowerCase() : words;
   });

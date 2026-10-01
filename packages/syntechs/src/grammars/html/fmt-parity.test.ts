@@ -19,6 +19,8 @@ const edgeCases: [string, string][] = [
   ],
   // A text glued to the doctype borrows its `>`.
   ["doctype-glued-text", "<!DocType html>text\n"],
+  // An unquoted or single-quoted attribute value and a void element closed `/>` failed `check`.
+  ["requoted-attributes", "<p title=Title lang='en'>a<br></p>\n"],
 ];
 
 function ours(text: string, options: Partial<PrettierOptions>) {

@@ -1,4 +1,4 @@
-html@oxfmt compatibility: 41/146 (28.08%), 86 refused (ok:false), 23 excluded
+html@oxfmt compatibility: 43/146 (29.45%), 76 refused (ok:false), 23 excluded
 
 Fixtures: prettier 3.9.9 tests/format/{html} (recursive), every spec call listing parser `html`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left.
 
@@ -8,8 +8,14 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
+| html/attributes/boolean.html | 0/1 | 92.75% |
+| html/attributes/dobule-quotes.html | 0/1 | 0.00% |
+| html/attributes/single-quotes.html | 0/1 | 0.00% |
 | html/basics/broken-html.html | 0/1 | 72.73% |
 | html/basics/empty.html | 0/1 | 0.00% |
+| html/basics/hello-world.html | 0/1 | 76.92% |
+| html/basics/void-elements-2.html | 0/1 | 91.67% |
+| html/basics/void-elements.html | 0/1 | 71.43% |
 | html/bracket-same-line/void-elements.html | 1/2 | 75.00% |
 | html/comments/comment-after-element.html | 2/4 | 66.54% |
 | html/comments/conditional.html | 0/4 | 78.17% |
@@ -24,6 +30,8 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | html/single-attribute-per-line/single-attribute-per-line.html | 1/2 | 91.79% |
 | html/tags/closing-at-start.html | 3/4 | 93.18% |
 | html/tags/openging-at-end.html | 2/4 | 74.11% |
+| html/tags/option.html | 0/4 | 67.13% |
+| html/tags/seach.html | 0/4 | 79.27% |
 | html/tags/tags2.html | 2/4 | 73.87% |
 | html/yaml/invalid.html | 0/1 | 58.82% |
 | html/yaml/yaml.html | 0/1 | 71.43% |
@@ -35,7 +43,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
 | html/attributes/attributes.html | 1/1 | 45.83% | formatter-error: class |
-| html/attributes/boolean.html | 1/1 | 92.75% | check: input "true" at 256 is output as "\"" at 256, which means "\"", not "true" |
 | html/attributes/class-bem1.html | 1/1 | 8.00% | formatter-error: class |
 | html/attributes/class-bem2.html | 1/1 | 100.00% | formatter-error: class |
 | html/attributes/class-colon.html | 1/1 | 0.00% | formatter-error: class |
@@ -43,23 +50,17 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | html/attributes/class-many-short-names.html | 1/1 | 54.55% | formatter-error: class |
 | html/attributes/class-names.html | 1/1 | 17.20% | formatter-error: class |
 | html/attributes/class-print-width-edge.html | 1/1 | 0.00% | formatter-error: class |
-| html/attributes/dobule-quotes.html | 1/1 | 0.00% | check: input ">" at 47 is output as "/>" at 49, which means "/>", not ">" |
 | html/attributes/event-attributes.html | 1/1 | 27.66% | formatter-error: onclick |
-| html/attributes/single-quotes.html | 1/1 | 0.00% | check: input ">" at 47 is output as "/>" at 49, which means "/>", not ">" |
-| html/attributes/smart-quotes.html | 1/1 | 100.00% | check: input "'" at 81 is output as "\"" at 74, which means "\"", not "'" |
+| html/attributes/smart-quotes.html | 1/1 | 100.00% | check: input "123 &apos;&quot; 456" at 82 is output as "123 '&quot; 456" at 75, which means "123 '&quot; 456", not "123  |
 | html/attributes/srcset.html | 1/1 | 6.90% | formatter-error: srcset |
 | html/attributes/style.html | 1/1 | 17.05% | formatter-error: style |
-| html/attributes/without-quotes.html | 1/1 | 100.00% | check: input "Title" at 9 is output as "\"" at 9, which means "\"", not "Title" |
 | html/attributes/iframe-allow-attribute/allow-attribute.html | 1/1 | 34.15% | formatter-error: allow |
 | html/attributes/iframe-allow-attribute/small-print-width/allow-attribute.html | 1/1 | 0.00% | formatter-error: allow |
 | html/attributes/no-semi/event-attributes.html | 1/1 | 30.77% | formatter-error: onclick |
 | html/basics/form.html | 1/1 | 65.17% | formatter-error: class |
-| html/basics/hello-world.html | 1/1 | 76.92% | check: input ">" at 65 is output as "/>" at 69, which means "/>", not ">" |
 | html/basics/html-comments.html | 1/1 | 85.71% | formatter-error: class |
 | html/basics/html5-boilerplate.html | 1/1 | 46.60% | formatter-error: class |
 | html/basics/more-html.html | 1/1 | 42.86% | formatter-error: class |
-| html/basics/void-elements-2.html | 1/1 | 91.67% | check: input ">" at 104 is output as "/>" at 92, which means "/>", not ">" |
-| html/basics/void-elements.html | 1/1 | 71.43% | check: input ">" at 37 is output as "/>" at 43, which means "/>", not ">" |
 | html/basics/with-colon.html | 1/1 | 20.27% | formatter-error: script_element |
 | html/bracket-same-line/block.html | 2/2 | 23.61% | formatter-error: class |
 | html/bracket-same-line/embed.html | 2/2 | 14.84% | formatter-error: script_element |
@@ -111,12 +112,9 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | html/svg/embeded/svg.html | 2/2 | 27.35% | formatter-error: svg |
 | html/tags/marquee.html | 4/4 | 69.41% | formatter-error: style |
 | html/tags/menu.html | 4/4 | 77.94% | formatter-error: onclick |
-| html/tags/option.html | 4/4 | 67.13% | check: input "colors" at 162 is output as "\"" at 185, which means "\"", not "colors" |
 | html/tags/pre.html | 4/4 | 82.87% | formatter-error: parse error |
-| html/tags/seach.html | 4/4 | 79.27% | check: input ">" at 63 is output as "/>" at 69, which means "/>", not ">" |
 | html/tags/tags.html | 4/4 | 30.50% | formatter-error: class |
 | html/tags/object-prototype-properties/object-prototype-properties.html | 1/1 | 100.00% | formatter-error: whiteSpace(...).startsWith is not a function |
-| html/whitespace/display-inline-block.html | 1/1 | 100.00% | check: input "subtitles" at 597 is output as "\"" at 644, which means "\"", not "subtitles" |
 | html/whitespace/display-none.html | 1/1 | 0.00% | formatter-error: CLASS |
 | html/whitespace/fill.html | 1/1 | 43.48% | formatter-error: style |
 | html/whitespace/nested-inline-without-whitespace.html | 1/1 | 6.25% | formatter-error: style |
