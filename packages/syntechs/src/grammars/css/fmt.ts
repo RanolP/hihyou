@@ -127,6 +127,26 @@ function meaning(tree: Tree, node: number, t: string): string {
   }
 }
 
+/**
+ * A function's last `,` (`f(a,)`, also before a comment), which oxc-css-parser drops with the empty argument after it, but in
+ * `var()`, whose fallback it keeps as written, and in `url()`, one word.
+ */
+function droppedComma(tree: Tree, node: number): boolean {
+  if (tree.named(node) || tree.kindName(node) !== ",") return false;
+  const args = tree.parent(node);
+  if (args === NO_NODE || tree.kindName(args) !== "arguments") return false;
+  const call = tree.parent(args);
+  if (call === NO_NODE || tree.kindName(call) !== "call_expression") return false;
+  if (["var", "url"].includes(tree.text(tree.child(call, 0)).toLowerCase())) return false;
+  let i = 0;
+  while (tree.child(args, i) !== node) i++;
+  for (let j = i + 1, count = tree.count(args); j < count; j++) {
+    const c = tree.child(args, j);
+    if (tree.kindName(c) !== "comment") return tree.kindName(c) === ")";
+  }
+  return false;
+}
+
 // A `;` that ends the last statement of a block or of the file means nothing, so prettier may add one there; nor
 // does an empty statement's (`a: b;;`), which postcss drops. A sign before a number means the signed number, which
 // prettier may join to it (`+ 20px` is `+20px`) or part from it.
@@ -153,7 +173,7 @@ const normalize: Normalize = (lexemes, _text, tree) => {
     const prev = lexemes[i - 1]?.text;
     if (l.text === ";" && (next === undefined || next === "}" || next === ";" || prev === "{"))
       return undefined;
-    if (sign(i) || tree.kindName(l.node) === "trailing_comma") return undefined;
+    if (sign(i) || tree.kindName(l.node) === "trailing_comma" || droppedComma(tree, l.node)) return undefined;
     if (sign(i - 1)) return meaning(tree, l.node, `${prev}${l.text}`);
     return meaning(tree, l.node, l.text);
   });
@@ -1673,6 +1693,7 @@ export const css: Language<CssOptions> = {
     handleComment,
     // oxc-css-parser drops a value's empty last comma group, and with it the `,` before it.
     dropped: ["trailing_comma"],
+    drops: droppedComma,
     layoutBlind: true,
   }),
   stream: {

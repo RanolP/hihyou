@@ -592,7 +592,7 @@ export function splitRun<O>(
       continue;
     }
     // A child the language leaves out of the node's items (a dropped kind, a recovered separator) prints nowhere.
-    if (named && !items.has(c)) continue;
+    if (named ? !items.has(c) : ctx.drops(c)) continue;
     const kind = tree.kindName(c);
     if (except.includes(kind)) continue;
     if (trail.includes(kind)) trailing.push(c);

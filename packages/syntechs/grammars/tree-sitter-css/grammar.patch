@@ -561,7 +561,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
      )),
  
      integer_value: $ => seq(
-@@ -425,73 +703,109 @@
+@@ -425,73 +703,111 @@
  
      float_value: $ => seq(
        token(seq(
@@ -632,9 +632,11 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
      arguments: $ => seq(
        token.immediate('('),
 -      sep(choice(',', ';'), repeat1($._value)),
-+      sep(choice(',', ';'), $._sass_argument),
-+      // `var(--a,)`: an empty fallback.
-+      optional(','),
++      // `var(--a,)`: an empty fallback; `f(,a)`: an empty first argument, as oxc-css-parser reads them.
++      optional(choice(
++        seq(optional(','), sep1(choice(',', ';'), $._sass_argument), optional(',')),
++        ',',
++      )),
        ')',
      ),
  

@@ -226,7 +226,13 @@ const edgeCases: [string, string][] = [
   // `a/f(c)` is the word `a/f` then a group to tree-sitter-css, which made the value raw and spaced its `/`; oxc
   // reads a function there and keeps the glued `/`.
   ["slash-function", "a{b:a/f(c), d;c:x a/f(c d) y;d:a/f (c);e:a/f((c))}"],
-  ["word-hash-star", "a{b:a#b, d;c:x a#b#c;d:f(a*c);e:a$c;f:url($a*3);g:calc(a*c);h:f(w-*);i:a #b}"],
+  // A function's last `,` was kept and an empty first argument (`f(,a)`) was an ERROR; oxc drops the last `,` but in
+  // `var()`, and spaces the first.
+  [
+    "argument-edge-commas",
+    "a{b:f(a,);c:rgba(1,2,3,);d:f(a,/*c*/);e:var(--a,);f:VAR(--a,b,);g:var(--a,f(b,));h:f(,a);i:f(,);j:url(a,)}",
+  ],
+  ["word-hash-star","a{b:a#b, d;c:x a#b#c;d:f(a*c);e:a$c;f:url($a*3);g:calc(a*c);h:f(w-*);i:a #b}"],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");

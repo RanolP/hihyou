@@ -43,6 +43,8 @@ export interface StreamCtx<O = unknown> {
    */
   readonly args: PrintArgs | undefined;
   items(node: number): number[];
+  /** Whether the language drops anonymous token `node` where it stands (`Language.drops`). */
+  drops(node: number): boolean;
   /** The comments attached before (`leading`) or after (`trailing`) `node`, in source order. */
   leadingComments(node: number): readonly number[];
   trailingComments(node: number): readonly number[];
@@ -333,6 +335,7 @@ function streamCtx<O>(tree: Tree, base: Language<O>, resolved: O): StreamCtx<O> 
       get args() {
         return current;
       },
+      drops: (node) => base.drops?.(tree, node) === true,
       items(node) {
         const items: number[] = [];
         for (let i = 0, count = tree.count(node); i < count; i++) {

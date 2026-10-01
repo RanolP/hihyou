@@ -36,6 +36,8 @@ export interface Language<O = unknown> {
   readonly parser: Parser;
   readonly atoms: ReadonlySet<string>;
   readonly dropped: ReadonlySet<string>;
+  /** Tokens the layout drops by where they stand rather than by kind; see `LanguageSpec`. */
+  readonly drops: ((tree: Tree, node: number) => boolean) | undefined;
   readonly normalize: Normalize;
   readonly layoutBlind: boolean;
   readonly hiddenTokens: boolean;
@@ -73,6 +75,11 @@ export interface LanguageSpec<G extends Grammar, O> {
    * them, so a rule never prints one.
    */
   readonly dropped?: readonly KindOf<G>[];
+  /**
+   * Anonymous tokens the layout drops where this holds of them (CSS's `f(a,)` comma), which no `splitOn` run
+   * prints; `normalize` must drop them too.
+   */
+  readonly drops?: (tree: Tree, node: number) => boolean;
   /**
    * What `check` compares instead of raw token text, so that rules may respell, insert and drop tokens without
    * changing meaning. The default compares text as is, which rejects any respelling.
@@ -129,6 +136,7 @@ export function defineLanguage<const G extends Grammar, O>(
     parser: spec.parser,
     atoms: new Set(spec.atoms),
     dropped: new Set(spec.dropped),
+    drops: spec.drops,
     normalize: spec.normalize ?? identity,
     layoutBlind: spec.layoutBlind ?? spec.normalize === undefined,
     hiddenTokens: spec.hiddenTokens ?? false,
