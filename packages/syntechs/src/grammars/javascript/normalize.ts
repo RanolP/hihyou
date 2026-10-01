@@ -474,9 +474,21 @@ function isAwaitCall(tree: Tree, n: number): boolean {
     tree.kindName(fn) === "identifier" &&
     tree.text(fn) === "await" &&
     args !== NO_NODE &&
-    tree.kindName(args) === "arguments" &&
-    codeChildren(tree, args) === 1
+    tree.kindName(args) === "arguments"
   );
+}
+
+/**
+ * The `x, y` of a script's `await (x, y)(z)`, which oxfmt prints as the arguments `await(x, y)(z)`: see-through like
+ * that argument list, so its entries and commas stand where the arguments' do.
+ */
+function isAwaitedSequence(tree: Tree, n: number): boolean {
+  const paren = tree.parent(n);
+  if (paren === NO_NODE || tree.kindName(paren) !== "parenthesized_expression") return false;
+  const call = tree.parent(paren);
+  if (call === NO_NODE || tree.kindName(call) !== "call_expression" || tree.fieldName(paren) !== "function")
+    return false;
+  return parentKind(tree, chainTop(tree, call)) === "await_expression";
 }
 
 /** The top of the member chain whose head is `n`: `a(b).c` over `a(b)`. */
@@ -522,6 +534,8 @@ function transparent(tree: Tree, n: number): boolean {
       return tree.fieldName(n) === "arguments" && isAwaitCall(tree, tree.parent(n));
     case "await_expression":
       return true;
+    case "sequence_expression":
+      return isAwaitedSequence(tree, n);
     case "parenthesized_expression":
       return !parensMatter(tree, n);
     case "parenthesized_type":

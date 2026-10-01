@@ -243,6 +243,13 @@ const edgeCases: [string, Target, string][] = [
     "ts",
     "const a = 1 as const /* c */;\nfunction f() {} // after\ntype U =\n  | A // a\n  // b\n  | B;\nclass K { m /* m */ () {} }",
   ],
+  // A script's `await (x, y)(z)` printed as oxfmt's `await(x, y)(z)`, but the check flattened only a one-argument
+  // call of `await`, so it refused the output.
+  [
+    "await-call-many-arguments",
+    "js",
+    `await (${"x".repeat(40)}, ${"y".repeat(40)})(c);\nconst v = await (a, b, c)(d).e;\n`,
+  ],
 ];
 
 function ours(target: Target, text: string, options: Partial<JsOptions>) {
