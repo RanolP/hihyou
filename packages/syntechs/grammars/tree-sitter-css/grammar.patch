@@ -3,12 +3,17 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
 
 --- a/grammar.js
 +++ b/grammar.js
-@@ -7,26 +7,46 @@
+@@ -7,26 +7,51 @@
  
  /// <reference types="tree-sitter-cli/dsl" />
  // @ts-check
  
 +const CSS_ESCAPE = /\\([0-9a-fA-F]{1,6}\s?|[^0-9a-fA-F\n\r])/;
++
++// A query keyword in any case (`AND`, `Not`), as oxc-css-parser reads it: a named node of its lowercase form, which
++// the formatter prints lowercased. Declared before `identifier`, which it beats on a word of the same length.
++const anyCase = (/** @type {any} */ $, /** @type {string} */ w) =>
++  alias(new RegExp([...w].map((c) => `[${c}${c.toUpperCase()}]`).join('')), $[w]);
 +
  export default grammar({
    name: 'css',
@@ -51,7 +56,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
  
    rules: {
      stylesheet: $ => repeat($._top_level_item),
-@@ -40,22 +60,33 @@
+@@ -40,22 +65,33 @@
        $.namespace_statement,
        $.keyframes_statement,
        $.supports_statement,
@@ -88,7 +93,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
        $.block,
      ),
  
-@@ -96,12 +127,15 @@
+@@ -96,12 +132,15 @@
      to: _ => 'to',
  
      supports_statement: $ => seq(
@@ -105,7 +110,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
        '@scope',
        optional(
          seq(
-@@ -111,37 +145,105 @@
+@@ -111,37 +150,105 @@
        ),
        $.block,
      ),
@@ -213,7 +218,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
        $.rule_set,
        $.import_statement,
        $.media_statement,
-@@ -150,11 +252,41 @@
+@@ -150,11 +257,41 @@
        $.keyframes_statement,
        $.supports_statement,
        $.scope_statement,
@@ -255,7 +260,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
  
      _selector: $ => choice(
        $.universal_selector,
-@@ -163,8 +295,9 @@
+@@ -163,8 +300,9 @@
        $.nesting_selector,
        $.pseudo_class_selector,
        $.pseudo_element_selector,
@@ -265,7 +270,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
        $.string_value,
        $.child_selector,
        $.descendant_selector,
-@@ -172,9 +305,10 @@
+@@ -172,9 +310,10 @@
        $.adjacent_sibling_selector,
        $.namespace_selector,
      ),
@@ -277,7 +282,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
      universal_selector: _ => '*',
  
      class_selector: $ => prec(1, seq(
-@@ -234,20 +368,30 @@
+@@ -234,20 +373,30 @@
        '#',
        alias($.identifier, $.id_name),
      ),
@@ -309,7 +314,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
      descendant_selector: $ => prec.left(seq($._selector, $._descendant_operator, $._selector)),
  
      sibling_selector: $ => prec.left(seq(optional($._selector), '~', $._selector)),
-@@ -295,42 +439,90 @@
+@@ -295,42 +444,90 @@
      ),
  
      // Declarations
@@ -416,7 +421,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
  
      feature_query: $ => seq(
        '(',
-@@ -339,8 +531,22 @@
+@@ -339,38 +536,84 @@
        repeat1($._value),
        ')',
      ),
@@ -439,8 +444,18 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
        '(',
        $._query,
        ')',
-@@ -356,21 +562,53 @@
-       choice('not', 'only'),
+     ),
+ 
+     binary_query: $ => prec.left(seq(
+       $._query,
+-      choice('and', 'or'),
++      choice(anyCase($, 'and'), anyCase($, 'or')),
+       $._query,
+     )),
+ 
+     unary_query: $ => prec(1, seq(
+-      choice('not', 'only'),
++      choice(anyCase($, 'not'), anyCase($, 'only')),
        $._query,
      )),
  
@@ -494,7 +509,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
        $.float_value,
        $.string_value,
        $.grid_value,
-@@ -379,16 +617,58 @@
+@@ -379,16 +622,58 @@
        $.call_expression,
        $.important,
      )),
@@ -554,7 +569,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
        seq(
          '\'',
          repeat(choice(
-@@ -411,8 +691,10 @@
+@@ -411,8 +696,10 @@
        '\\',
        choice(
          /[0-9a-fA-F]{1,6}\s?/,
@@ -565,7 +580,7 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
      )),
  
      integer_value: $ => seq(
-@@ -425,73 +707,111 @@
+@@ -425,73 +712,111 @@
  
      float_value: $ => seq(
        token(seq(

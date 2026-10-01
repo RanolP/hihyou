@@ -109,6 +109,11 @@ function meaning(tree: Tree, node: number, t: string): string {
     case "to":
       return t.toLowerCase();
     case "property_name":
+    case "keyword_query":
+    case "and":
+    case "or":
+    case "not":
+    case "only":
       return maybeLower(t);
     case "important":
       return "!important";
@@ -1189,7 +1194,7 @@ function selectorTail(error: number, t: FormatTree): boolean {
 }
 
 /**
- * An `ERROR` in an `@media`/`@supports`/`@import` prelude holding a comment (an uppercase `AND`, a stray `)`), which
+ * An `ERROR` in an `@media`/`@supports`/`@import` prelude holding a comment (a stray `)`), which
  * `mediaQueries`, `supportsValue` and `importStatement` print from the source as oxc's commented-prelude path does.
  */
 function commentedPreludeError(error: number, t: FormatTree): boolean {
@@ -1696,7 +1701,7 @@ function supportsItems(words: number[], ctx: SCtx, top: boolean): number[][] {
   for (let i = 0; i < words.length; i++) {
     const w = words[i] as number;
     const next = words[i + 1];
-    const keyword = !t.named(w) && ["not", "and", "or"].includes(t.text(w).toLowerCase());
+    const keyword = ["not", "and", "or"].includes(kind(w, ctx));
     if (keyword && next !== undefined && isParenQuery(next, ctx) && ((top && i === 0) || t.adjoins(w, next))) {
       items.push([w, next]);
       i++;
@@ -1836,6 +1841,9 @@ export function importStatement(node: number, ctx: SCtx): void {
   else sToken(node, ";", true);
 }
 
+/** A media type and the keywords between queries, which format.ts prints lowercased. */
+const queryKeywords = ["keyword_query", "and", "or", "not", "only"];
+
 /** A media prelude's leaves in source order, comments among them, a query's parts and parens split apart. */
 function mediaAtoms(node: number, ctx: SCtx): number[] {
   const t = ctx.tree;
@@ -1903,8 +1911,8 @@ export function mediaQueries(at: number | undefined, node: number, ctx: SCtx): v
       colon = -1;
     }
     if (ctx.isComment(c)) ctx.comment(c);
-    // write_media_token prints a paren group's words as written, re-spaced at most.
-    else if (t.named(c) && level === 0 && kind(c, ctx) !== "ERROR") ctx.printNode(c);
+    // write_media_token prints a paren group's words as written, re-spaced at most; a keyword keeps its case too.
+    else if (t.named(c) && level === 0 && !["ERROR", ...queryKeywords].includes(kind(c, ctx))) ctx.printNode(c);
     else sToken(c, t.text(c));
     if (is(c, "(")) level++;
     else if (is(c, ")")) level = Math.max(level - 1, 0);

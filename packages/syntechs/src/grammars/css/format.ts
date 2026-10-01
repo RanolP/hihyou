@@ -322,6 +322,12 @@ export const css = format({
     // A media feature, spaced.
     range_query: () => inOrder({ join: "space", tight: { after: ["("], before: [")"] } }),
     feature_name: () => text("maybeLower"),
+    // A media type and a query keyword, which oxc prints lowercased (`SCREEN AND` as `screen and`).
+    keyword_query: () => text("maybeLower"),
+    and: () => text("maybeLower"),
+    or: () => text("maybeLower"),
+    not: () => text("maybeLower"),
+    only: () => text("maybeLower"),
     // `selector(...)`: a selector list as a rule's, one per line inside the broken parentheses once it has two.
     selector_query: () => [
       "selector",

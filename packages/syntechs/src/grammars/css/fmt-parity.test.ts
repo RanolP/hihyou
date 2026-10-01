@@ -93,6 +93,12 @@ const edgeCases: [string, string][] = [
   ["media-range", "@media (min-width:768px) and (max-width:991.98px){a{b:c}}"],
   // `@MEDIA` parsed as a generic at-rule, whose parameters kept their source text.
   ["uppercase-media", "@MEDIA screen  and (min-width :1px){a{b:c}}"],
+  // An uppercase query keyword was an ERROR that kept the whole at-rule as written; oxfmt lowercases it and the
+  // media type, but keeps both as written in a prelude holding a comment.
+  [
+    "uppercase-query-keywords",
+    "@import url(a) SCREEN AND (a:b);@media SCREEN AND (a:b), PRINT{x{y:z}}@media ONLY screen And (a:b){x{y:z}}@media NOT (a:b){x{y:z}}@media (a:b) OR (c:d){x{y:z}}@supports (a:b) AND (c:d){x{y:z}}@supports NOT (a:b){x{y:z}}@media SCREEN /*q*/ AND (a:b){x{y:z}}",
+  ],
   // `@custom-media` and a range feature were parse errors, printed as raw source.
   [
     "custom-media",
