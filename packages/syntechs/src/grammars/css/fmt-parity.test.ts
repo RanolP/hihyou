@@ -406,6 +406,11 @@ const edgeCases: [string, string][] = [
     "custom-property-block-comments",
     "a{--a:{/*c*/a:b}}\na{--a:{ /*c*/ a:b }}\na{--a:{/*c*//*d*/a}}\na{--a:{a:b;/*c*/c:d}}\na{--a:{a:b; /*c*/ c:d}}\na{--a:{a;/*c*/b}}\na{--a:{a:b; /*c*/\nc:d}}\na{--a:{\n/*c*/\na:b}}",
   ],
+  // An nth- or selector-taking pseudo-class without arguments (`a:nth-child`) made the rule an ERROR kept as written.
+  [
+    "pseudo-class-name-without-arguments",
+    "a:nth-child{b:c}\na:NTH-CHILD{b:c}\na:nth-last-of-type:hover{b:c}\na:nth-col, b:nth-child{b:c}\na:not{b:c}\na:is{b:c}\na:nth-child (2){b:c}",
+  ],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");
