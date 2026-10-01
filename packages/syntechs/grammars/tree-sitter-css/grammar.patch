@@ -309,10 +309,10 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
  
 -    child_selector: $ => prec.left(seq(optional($._selector), '>', $._selector)),
 +    // `>>>`: Vue's and Angular's deep combinator. `/deep/`, its older spelling, stands for any `/name/` combinator,
-+    // which oxfmt spaces as it does `>`.
++    // which oxfmt spaces as it does `>`, as it does `||`, the column combinator.
 +    child_selector: $ => prec.left(seq(
 +      optional($._selector),
-+      choice('>', '>>>', alias(token(prec(1, /\/[a-zA-Z_-][a-zA-Z0-9_-]*\//)), '/deep/')),
++      choice('>', '>>>', '||', alias(token(prec(1, /\/[a-zA-Z_-][a-zA-Z0-9_-]*\//)), '/deep/')),
 +      $._selector,
 +    )),
  

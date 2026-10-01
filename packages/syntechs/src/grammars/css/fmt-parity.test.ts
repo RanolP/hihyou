@@ -354,6 +354,11 @@ const edgeCases: [string, string][] = [
     "value-colon-slash-number-raw",
     "a{c:x a :/1.50;d:x a: /1px b !important;e:a :/50%, b}",
   ],
+  // A `||` column combinator read as two namespace bars and printed glued (`a||b`) instead of spaced as `>`.
+  [
+    "column-combinator",
+    "a||b{e:f}\na ||b , c||d>e{e:f}\na:is(b||c){e:f}\na|b, *|a, |a, [a|b], [a|=b]{e:f}",
+  ],
 ];
 
 const corpusDir = join(import.meta.dirname, "../../../corpus");
