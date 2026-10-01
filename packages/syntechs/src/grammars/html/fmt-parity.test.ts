@@ -25,6 +25,11 @@ const edgeCases: [string, string][] = [
   ["void-then-text", "<div>a<img src=x>b <br> c<input>d</div>\n"],
   // A tag named after an Object.prototype member read it as its display or white-space and crashed.
   ["object-prototype-tags", "<constructor>a</constructor>\n<toString></toString>\n"],
+  // A class value refused the file; its names print one space apart, on one line however long, always double-quoted.
+  [
+    "class-names",
+    `<div class="  a b\n c ">x</div>\n<p class=" a&quot;b  c" title='t'>y</p>\n<i class="  {{ a }}  b">z</i>\n<b class="   ">w</b>\n<div id="x" class="${"cls-name ".repeat(12)}">x</div>\n`,
+  ],
 ];
 
 function ours(text: string, options: Partial<PrettierOptions>) {

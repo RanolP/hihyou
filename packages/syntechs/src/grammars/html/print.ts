@@ -60,6 +60,8 @@ interface Attr {
   rawName: string;
   /** The value between its quotes, null when it has none. */
   value: string | null;
+  /** A value prettier formats as code or a list: always double-quoted, a `"` in it escaped. */
+  formatted?: boolean;
 }
 
 // Prettier's html-styles tables (constants.evaluate.js), for the tags a template holds.
@@ -263,8 +265,21 @@ function attribute(tree: TsTree, ts: number): Attr {
     else if (k === "attribute_value") value = tree.text(c);
     else if (k === "quoted_attribute_value") value = tree.text(c).slice(1, -1);
   }
+  if (rawName === "class" && value !== null && value.trim() !== "" && !value.includes("{{"))
+    return { rawName, value: classNames(value), formatted: true };
+  if (rawName === "class") return { rawName, value };
+  // An uppercase `CLASS` prints lowercased and formatted only on an element prettier knows the attributes of.
   if (FORMATTED_ATTRIBUTE.test(rawName)) throw new Unsupported(rawName);
   return { rawName, value };
+}
+
+/** print/class-names.js: the names one space apart, split on any JS whitespace (a no-break space too). */
+function classNames(value: string): string {
+  return unescapeQuotes(value).trim().split(/\s+/).join(" ");
+}
+
+function unescapeQuotes(value: string): string {
+  return value.replaceAll("&apos;", "'").replaceAll("&quot;", '"');
 }
 
 // --- print-preprocess.js ---
@@ -793,10 +808,10 @@ class Printer {
       this.text(a.rawName);
       return;
     }
-    const value = a.value.replaceAll("&apos;", "'").replaceAll("&quot;", '"');
+    const value = a.formatted ? a.value : unescapeQuotes(a.value);
     const doubles = value.split('"').length;
     const singles = value.split("'").length;
-    const quote = doubles > singles ? "'" : '"';
+    const quote = !a.formatted && doubles > singles ? "'" : '"';
     this.text(`${a.rawName}=${quote}`);
     this.literal(quote === '"' ? value.replaceAll('"', "&quot;") : value.replaceAll("'", "&apos;"));
     this.text(quote);
