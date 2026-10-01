@@ -196,8 +196,25 @@ function castParens(sctx: ReturnType<typeof jsCtx>, n: number, inner: number): v
 /** A node under a `// prettier-ignore` comment keeps its source text. */
 const isIgnored = (ctx: JsCtx, n: number) =>
   unionIgnored(ctx, n) ||
+  trailingIgnore(ctx, n) ||
   afterIgnoreInUnion(ctx, n) ||
   (isJsx(ctx, n) && jsxIgnored(ctx, n, (c) => isIgnoreComment(ctx, c)));
+
+/**
+ * oxc's has_trailing_suppression_comment: `a(  a  ); // prettier-ignore` keeps the statement, a member, an
+ * element, when the ignore comment ends its line. One on a line of its own keeps what follows it instead.
+ */
+const trailingIgnore = (ctx: JsCtx, n: number) =>
+  ctx.comments(n).trailing.some(
+    (c) => isIgnoreComment(ctx, c) && ctx.tree.lf(c) === 0 && !inside(ctx, c, n),
+  );
+
+/** Whether comment `c` sits within `n`'s content: a descendant, other than a comment ending a statement's children. */
+const inside = (ctx: JsCtx, c: number, n: number) => {
+  if (parent(ctx, c) === n) return children(ctx, n).slice(children(ctx, n).indexOf(c)).some((k) => !isComment(ctx, k));
+  for (let p = parent(ctx, c); p !== undefined; p = parent(ctx, p)) if (p === n) return true;
+  return false;
+};
 
 const ledByIgnore = (ctx: JsCtx, n: number) =>
   ctx.comments(n).leading.some((c) => isIgnoreComment(ctx, c));
@@ -385,7 +402,9 @@ function wrapped(n: number, s: StreamCtx<JsOptions>, print: () => void): void {
     else print();
     // Prettier prints a string through replaceEndOfLine: its literal line break breaks the groups around it.
     if (kind(ctx, n) === "string" && ctx.tree.text(n).includes("\n")) sBreakParent();
-  } else if (STATEMENT_LIST_PARENTS.has(kind(ctx, parent(ctx, n)) ?? "")) ignoredStatement(ctx, n);
+  } else if (STATEMENT_LIST_PARENTS.has(kind(ctx, parent(ctx, n)) ?? ""))
+    // A comment among the statement's children that it trails prints after its `;`, so its text stops before one.
+    ignoredStatement(ctx, n, !ctx.comments(n).trailing.some((c) => parent(ctx, c) === n));
   else if (kind(ctx, n) === PE && !isCastParen(ctx, n)) {
     // Prettier's AST has no parentheses: an ignored expression keeps the source text inside its own, and gets
     // the parentheses needsParens adds: `+((a), (b))` keeps one pair around `(a), (b)`, a statement's `((a))` none.
@@ -405,11 +424,15 @@ function wrapped(n: number, s: StreamCtx<JsOptions>, print: () => void): void {
     if (own) sToken(n, ")", true);
   } else {
     sToken(n, ctx.tree.text(n));
+    // oxfmt ends an ignored class field with the `;` the `semi` option asks for, written or not.
+    if (ctx.options.semi && FIELDS.has(kind(ctx, n) ?? "")) sToken(n, ";", true);
     const sep = ignoredMemberSeparator(ctx, n);
     if (sep !== undefined) sToken(sep, ctx.tree.text(sep));
   }
   if (parens) sToken(n, ")", true);
 }
+
+const FIELDS = new Set(["field_definition", "public_field_definition"]);
 
 /** JavaScript (and JSX) as prettier's `babel` parser prints it. */
 export const javascript = jsLanguage(grammar, parser);

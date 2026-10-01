@@ -35,7 +35,7 @@ import {
 } from "../sink.js";
 import { expressionNeedsAsiProtection } from "./asi.js";
 import { sPrintAssignment } from "./assignment.js";
-import { needsParens } from "./parens.js";
+import { isDirective, needsParens } from "./parens.js";
 import { semiCustoms } from "./semi.js";
 import {
   anon,
@@ -128,28 +128,18 @@ function lastBody(x: HasTree, n: number): number | undefined {
   return BODY_ENDED.has(kind(x, n)) ? field(x, n, "body") : undefined;
 }
 
-const ALWAYS_SEMI_ENDED = new Set([
-  "break_statement",
-  "continue_statement",
-  "debugger_statement",
-  "variable_declaration",
-  "lexical_declaration",
-  "using_declaration",
-]);
 
-/** Prettier's statementEndsWithSemicolon: what a `// prettier-ignore`d statement gets a `;` after. */
+/**
+ * What a `// prettier-ignore`d statement gets a `;` after: oxfmt adds one to each statement a `;` ends, written
+ * or not (prettier's statementEndsWithSemicolon asks for a written one).
+ */
 function endsWithSemi(x: HasTree, n: number): boolean {
   const body = lastBody(x, n);
   if (body !== undefined) return endsWithSemi(x, body);
-  if (ALWAYS_SEMI_ENDED.has(kind(x, n))) return true;
-  const own = children(x, n).at(-1);
-  // A zero-width `;` (TypeScript's inserted one) does not count.
-  return (
-    SEMI_ENDED.has(kind(x, n)) &&
-    own !== undefined &&
-    kind(x, own) === ";" &&
-    src(x, own) !== ""
-  );
+  if (kind(x, n) !== "export_statement") return SEMI_ENDED.has(kind(x, n));
+  // `export default class {}` and `export function f() {}` end at their body; any other export at a `;`.
+  const last = lastChildWhere(x, n, (c) => named(x, c) && !isComment(x, c));
+  return !/class|function/.test(kind(x, last) ?? "");
 }
 
 function lastLeaf(tree: FormatTree, n: number): number {
@@ -180,8 +170,14 @@ function textThrough(tree: FormatTree, n: number, end: number): string {
  * Prettier's printIgnored for a statement: its source up to its content end, then the `;` the `semi` option
  * asks for, wherever the source put it. Comments ahead of that `;` stay in the text.
  */
-export function ignoredStatement(ctx: JsCtx, n: number): void {
-  let text = textThrough(ctx.tree, n, contentEnd(ctx, n, true));
+export function ignoredStatement(ctx: JsCtx, n: number, keepComments = true): void {
+  // oxfmt prints an ignored directive as written, its `;` or none whatever the `semi` option asks.
+  if (kind(ctx, n) === "expression_statement" && isDirective(ctx, n)) {
+    const semi = children(ctx, n).at(-1);
+    const written = semi !== undefined && kind(ctx, semi) === ";" && src(ctx, semi) !== "";
+    return sToken(n, textThrough(ctx.tree, n, written ? semi : contentEnd(ctx, n, keepComments)));
+  }
+  let text = textThrough(ctx.tree, n, contentEnd(ctx, n, keepComments));
   if (ctx.options.semi && endsWithSemi(ctx, n)) text += ";";
   else if (needsAsiGuard(ctx, n)) text = `;${text}`;
   sToken(n, text);
