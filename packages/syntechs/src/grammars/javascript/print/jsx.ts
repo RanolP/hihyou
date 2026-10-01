@@ -659,8 +659,8 @@ const tokOf = (ctx: JsCtx, c: number | undefined) => {
   if (c !== undefined) sToken(c, src(ctx, c));
 };
 
-/** A closing tag's `</`: one token in tree-sitter-typescript, `<` and `/` in the patched javascript grammar, so a
- * comment between them parses; the comments print after the `/` either way. */
+/** A closing tag's `</`: one token in the typescript dialect, `<` and `/` in the patched javascript and tsx
+ * grammars, so a comment between them parses; the comments print after the `/` either way. */
 function closingSlash(ctx: JsCtx, n: number): void {
   const both = anon(ctx, n, "</");
   if (both !== undefined) return tokOf(ctx, both);
