@@ -21,11 +21,15 @@ import {
 } from "./file.js";
 import { foldReason } from "./fold.js";
 import {
+  ancestorLabels,
+  atomKey,
+  atomLeaves,
   buildFragments,
   type CodeFragment,
   elidedLines,
   type FileDiff,
   type LinePair,
+  nodeHash,
   type SideInput,
 } from "./fragments.js";
 import type {
@@ -314,6 +318,7 @@ const sideInput = (v: Version): SideInput => ({
   changed: [],
   emphasis: [],
   moves: [],
+  nodes: [],
 });
 
 /**
@@ -338,16 +343,30 @@ function record(
     s.changed.push(r);
     s.emphasis.push(r);
   };
+  const path = atomPath(refA, refB);
+  // One atom per leaf of an inserted or deleted subtree, keyed by its own side alone.
+  const leaves = (s: SideInput | undefined, n: number | undefined, side: "before" | "after") => {
+    const tree = s?.v.tree;
+    if (!s || !tree || n === undefined) return;
+    for (const leaf of atomLeaves(tree, n))
+      s.nodes.push({
+        node: leaf,
+        atom: atomKey({ path, ancestors: ancestorLabels(tree, leaf), [side]: nodeHash(tree, leaf) }),
+      });
+  };
   switch (e.kind) {
     case "insert":
       mark(b, e.b);
+      leaves(b, e.b, "after");
       return;
     case "delete":
       mark(a, e.a);
+      leaves(a, e.a, "before");
       return;
     case "update":
       mark(a, e.a);
       mark(b, e.b);
+      pairAtom(e, a, b, path);
       return;
     case "move":
       movePair(e, a, b, refA, refB);
@@ -375,6 +394,32 @@ function movePair(
     counterpart: { path: refA.oldPath ?? refA.path, at: [stepsOf(ta, e.a)] },
     ...(inFile && { twin: e.a }),
   });
+  pairAtom(e, a, b, atomPath(refA, refB));
+}
+
+/** A file's own path, or for an edit between two files both of theirs, so either half names the pair alike. */
+const atomPath = (refA: ChangedFileRef, refB: ChangedFileRef) =>
+  refA === refB ? refA.path : `${refA.oldPath ?? refA.path}→${refB.path}`;
+
+/** One atom for both halves of an update or a move, under the before side's ancestors. */
+function pairAtom(
+  e: RawEdit,
+  a: SideInput | undefined,
+  b: SideInput | undefined,
+  path: string,
+): void {
+  const ta = a?.v.tree;
+  const tb = b?.v.tree;
+  if (!a || !b || !ta || !tb || !("a" in e) || !("b" in e)) return;
+  if (e.a === undefined || e.b === undefined) return;
+  const atom = atomKey({
+    path,
+    ancestors: ancestorLabels(ta, e.a),
+    before: nodeHash(ta, e.a),
+    after: nodeHash(tb, e.b),
+  });
+  a.nodes.push({ node: e.a, atom });
+  b.nodes.push({ node: e.b, atom });
 }
 
 /** Formats whose indentation is syntax, so re-indenting a line changes it: Python, YAML and Makefiles. */

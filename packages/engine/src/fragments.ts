@@ -1,8 +1,8 @@
 import { diffArrays } from "diff";
-import type { Tree } from "syntechs/core";
+import { NO_NODE, type Tree } from "syntechs/core";
 import type { Mapping } from "syntechs/diff";
 import { type HighlightModule, type ScopeRuns, scopeRuns } from "syntechs/highlight";
-import type { AstSteps } from "./anchor.js";
+import { type AstSteps, stepsOf } from "./anchor.js";
 import { lineEnd, lineOf, type Version } from "./file.js";
 import type { CollapseReason } from "./fold.js";
 
@@ -31,6 +31,30 @@ export interface Side {
    * A move whose lines cover every line of the side is the side itself moving; any other marks only its own lines.
    */
   moves?: SideMove[];
+  /** The edit atoms on this side and their ancestors up to the side's top nodes; see `NodeOutline`. */
+  nodes?: NodeOutline[];
+}
+
+/**
+ * One node of a side's outline, finer than a hunk: a viewer marks each `changed` node viewed on its own.
+ * The outline lists, in document order with parents before children, every edit atom on the side and its
+ * ancestors up to the outermost nodes wholly inside the side.
+ */
+export interface NodeOutline {
+  steps: AstSteps;
+  /** Index of the nearest enclosing outline node in the same `Side.nodes`; -1 for a top node. */
+  parent: number;
+  kind: string;
+  /** `line` is 0-based from `Side.startLine`; `column` a UTF-16 offset into that display line. */
+  start: { line: number; column: number };
+  /** Exclusive. */
+  end: { line: number; column: number };
+  /** The node is itself an edit atom; false for an ancestor kept for structure. */
+  changed: boolean;
+  /** Hash of the node's tokens, so reformatting leaves it alone. */
+  hash: string;
+  /** Present iff `changed`: the edit's `atomKey`, the same string on both halves of an update or a move. */
+  atom?: string;
 }
 
 /** One half of a move: the lines its moved node spans on this side, clipped to the side. */
@@ -74,6 +98,8 @@ export interface SideInput {
   /** Text to emphasize inside those lines; a subset of `changed`. */
   emphasis: Range[];
   moves: MoveMark[];
+  /** Nodes that are edit atoms, each with its `atomKey`. */
+  nodes: { node: number; atom: string }[];
 }
 
 export interface FragmentInput {
@@ -482,12 +508,151 @@ function sideFragment(
   const start = v.lineStarts[l0] ?? v.text.length;
   const end = l1 > l0 ? lineEnd(v, l1 - 1) : start;
   const moves = end > start ? sideMoves(s, l0, l1, start, end) : [];
+  const nodes = v.tree && end > start ? outline(s, v.tree, l0, start, end) : [];
   return {
     spans: split(v.text, start, end, s.emphasis, scopes),
     at: v.tree && end > start ? nodesIn(v, v.tree, start, end) : [],
     startLine: l0 + 1,
     ...(moves.length > 0 && { moves }),
+    ...(nodes.length > 0 && { nodes }),
   };
+}
+
+/** The atoms of `s` lying wholly inside `[start, end)` and their ancestors up to the outermost inside it. */
+function outline(
+  s: SideInput,
+  tree: Tree,
+  l0: number,
+  start: number,
+  end: number,
+): NodeOutline[] {
+  const { v } = s;
+  const inside = (n: number) =>
+    n !== tree.root && v.end(n) > v.start(n) && v.start(n) >= start && v.end(n) <= end;
+  const atoms = new Map<number, string>();
+  for (const { node, atom } of s.nodes) if (inside(node)) atoms.set(node, atom);
+  const kept = new Set<number>(atoms.keys());
+  for (const n of atoms.keys())
+    for (let p = tree.parent(n); p !== NO_NODE && inside(p); p = tree.parent(p)) kept.add(p);
+  // By start, the wider first; a parent sharing its child's whole range comes first by its later postorder ordinal.
+  const order = [...kept].sort(
+    (p, q) => v.start(p) - v.start(q) || v.end(q) - v.end(p) || tree.ord(q) - tree.ord(p),
+  );
+  const index = new Map(order.map((n, i) => [n, i]));
+  const at = (offset: number) => {
+    const line = lineOf(v, offset);
+    return { line: line - l0, column: offset - (v.lineStarts[line] as number) };
+  };
+  return order.map((n) => {
+    let parent = -1;
+    for (let p = tree.parent(n); p !== NO_NODE && parent === -1; p = tree.parent(p))
+      parent = index.get(p) ?? -1;
+    const atom = atoms.get(n);
+    return {
+      steps: stepsOf(tree, n),
+      parent,
+      kind: tree.kindName(n),
+      start: at(v.start(n)),
+      end: at(v.end(n)),
+      changed: atom !== undefined,
+      hash: nodeHash(tree, n),
+      ...(atom !== undefined && { atom }),
+    };
+  });
+}
+
+/**
+ * The key a viewer files an edit's "viewed" mark under. It holds no line and no `AstSteps`, so the same edit
+ * keeps its key when code above it shifts; two identical edits under the same ancestors share one.
+ */
+export function atomKey(parts: {
+  path: string;
+  ancestors: string[];
+  before?: string;
+  after?: string;
+}): string {
+  return cyrb53(
+    JSON.stringify([parts.path, parts.ancestors, parts.before ?? null, parts.after ?? null]),
+  );
+}
+
+/**
+ * The atoms an inserted or deleted subtree reads as: its named nodes with no named node below them, or the
+ * node itself when it has none.
+ */
+export function atomLeaves(tree: Tree, n: number): number[] {
+  const out: number[] = [];
+  const walk = (m: number): boolean => {
+    let named = false;
+    for (let i = 0, count = tree.count(m); i < count; i++) {
+      const c = tree.child(m, i);
+      if (!tree.named(c)) continue;
+      named = true;
+      if (!walk(c)) out.push(c);
+    }
+    return named;
+  };
+  return walk(n) ? out : [n];
+}
+
+/** Kind, and declared name where there is one, of each ancestor of `n` below the root, innermost first. */
+export function ancestorLabels(tree: Tree, n: number): string[] {
+  const out: string[] = [];
+  for (let p = tree.parent(n); p !== NO_NODE && p !== tree.root; p = tree.parent(p)) {
+    const label = declarationLabel(tree, p);
+    out.push(label === undefined ? tree.kindName(p) : `${tree.kindName(p)} ${label}`);
+  }
+  return out;
+}
+
+const hashes = new WeakMap<Tree, Map<number, string>>();
+
+/** A hash of the tokens `n` spans, the whitespace between them left out, so a reformatted node keeps it. */
+export function nodeHash(tree: Tree, n: number): string {
+  let known = hashes.get(tree);
+  if (!known) hashes.set(tree, (known = new Map()));
+  const hit = known.get(n);
+  if (hit !== undefined) return hit;
+  const tokens: string[] = [];
+  const gap = (text: string) => {
+    for (const t of text.split(/\s+/)) if (t !== "") tokens.push(t);
+  };
+  const walk = (m: number) => {
+    const count = tree.count(m);
+    if (count === 0) {
+      tokens.push(tree.text(m));
+      return;
+    }
+    // An inner node may hold text no child covers (a CSS number before its `unit`).
+    const text = tree.text(m);
+    const base = tree.start(m);
+    let at = base;
+    for (let i = 0; i < count; i++) {
+      const c = tree.child(m, i);
+      gap(text.slice(at - base, tree.start(c) - base));
+      walk(c);
+      at = tree.end(c);
+    }
+    gap(text.slice(at - base));
+  };
+  walk(n);
+  const h = cyrb53(tokens.join("\u0001"));
+  known.set(n, h);
+  return h;
+}
+
+/** cyrb53: a 53-bit string hash, in hex. */
+function cyrb53(text: string): string {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 2654435761);
+    h2 = Math.imul(h2 ^ c, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
 }
 
 /** A line of nothing but brackets and separators reads as part of whatever code is around it. */

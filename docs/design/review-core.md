@@ -134,12 +134,25 @@ interface Side {
   startLine: number;
   /** The lines of this side that are one half of a move, each pointing at the other half, possibly in another file. */
   moves?: SideMove[];
+  /** The edit atoms on this side and their ancestors, for marking single node edits viewed. */
+  nodes?: NodeOutline[];
 }
 interface SideMove {
   first: number; // 1-based, inclusive
   last: number;
   counterpart: { path: string; at: AstSteps[] };
 }
+interface NodeOutline {
+  steps: AstSteps;
+  parent: number; // index into the same Side.nodes; -1 = a top node of this side
+  kind: string;
+  start: { line: number; column: number }; // line 0 = Side.startLine; column in UTF-16 units
+  end: { line: number; column: number }; // exclusive
+  changed: boolean; // the node is itself an edit atom, not an ancestor kept for structure
+  hash: string; // of the node's tokens, whitespace between them ignored
+  atom?: string; // iff changed: the atomKey, identical on both halves of an update or a move
+}
+function atomKey(parts: { path: string; ancestors: string[]; before?: string; after?: string }): string;
 interface Span {
   text: string;
   scope?: string; // syntax colour: a TextMate scope stack, outermost first, space-separated
@@ -235,6 +248,10 @@ type Author<H extends Host> = { id: string } & HostAuthor<H>;
 **`FileDiff.collapsed`** is the engine's judgment that the whole file should be shown folded, with the reason; the renderer shows one line in place of the body and may still expand it. `fragments` stays complete for every reason except `binary` and `submodule`, whose `fragments` is empty: the engine never parses them. A host that knows a file is binary or a submodule says so in `ChangedFileRef.kind`, and the engine then does not call `readBlob` for it (a submodule's id names a commit of another repository, not a blob). A host that does not know leaves `kind` absent; the engine then reads the blob and treats it as `binary` when it holds a NUL byte in its first 8000 bytes or is not valid UTF-8.
 
 **`Side.moves`** names the lines that are one half of a move, possibly in another file, per moved node: an expression inlined into a call marks only the expression's lines, and the call around it stays an ordinary edit. When the moved nodes cover every line of the side except blank and bracket-only lines, the side carries one move over all its lines, so a relocated block reads as one moved box. A move whose two halves land in the same `diff` fragment (a ternary's branches swapped, an argument re-wrapped in place) is dropped, because the reader already sees both halves side by side.
+
+**`Side.nodes`** outlines a side finer than a hunk, so a viewer can mark one node edit viewed while the rest of the hunk stays unread. The changed nodes are the edit atoms: a changed leaf of an update, a moved node, and each named leaf of an inserted or deleted subtree (the edit script reports an insertion at its outermost node, which would otherwise be one all-or-nothing atom). The outline adds every ancestor of an atom up to the outermost nodes wholly inside the side, as `changed: false` structure, in document order with parents before children.
+
+**`NodeOutline.atom`** is the key a "viewed" mark is filed under. `atomKey` hashes the file path, the labels of the atom's ancestors (each kind, with the declared name where the node declares one), the before node's hash and the after node's hash; an insertion has no before hash and a deletion no after hash. It holds no line number and no `AstSteps`, so an edit keeps its key when code above it grows or shrinks, and a reformat leaves it alone because node hashes skip whitespace. The engine computes one key per edit where it pairs the halves, so both halves of an update or a move carry the identical string: the ancestors are taken from the before side, and a move between files uses `<before path>→<after path>` as its path on both. Two identical edits under the same ancestors share a key, which is accepted: marking one viewed marks the other.
 
 **`Span`** keeps syntax colour (`scope`) and diff emphasis (`changed`) as separate fields, so a renderer can draw both. A one-line node whose words are all changed, keeping only joiners such as `.`, `,`, brackets or `?.`, is emphasized whole when it holds two or more changed words, so `basicColor.DARKGRAY400` becoming `themedColor.foreground3` reads as one removed run and one added run rather than interleaving around the kept `.`. A node keeping any word or literal (`theme.colors.a` becoming `theme.colors.b`) keeps its token-level emphasis.
 
