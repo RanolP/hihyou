@@ -405,16 +405,21 @@ class Printer {
    * that item's comma, any other sits on its own line at the items' indent (`bare`: properties already printed).
    */
   layout(n: number, col: number, indent: number, trail: number, bare = false): string[] {
-    const flat = this.flat(n, bare);
     const c = this.flowCollection(n);
-    if (c === undefined || (!this.flowComment(n) && col + textWidth(flat) + trail <= this.width)) return [flat];
+    if (c === undefined && this.multiScalar(n)) return this.scalarLines(n, indent);
+    // A multi-line scalar inside holds a hard line break, which breaks the collection and every one around it.
+    const hard = c !== undefined && this.hasMultiScalar(c);
+    const flat = hard ? "" : this.flat(n, bare);
+    if (c === undefined || (!hard && !this.flowComment(n) && col + textWidth(flat) + trail <= this.width)) return [flat];
     const items = this.flowItems(c);
     if (items.length === 0) return unsupported("an empty flow collection past printWidth");
     // proseWrap other than "preserve" would fill a broken collection's multi-word scalars.
-    if (this.prose !== "preserve" && /\s/.test(flat.replace(/[,:] /g, ""))) unsupported("a broken flow collection under proseWrap");
+    if (this.prose !== "preserve" && (hard || /\s/.test(flat.replace(/[,:] /g, "")))) unsupported("a broken flow collection under proseWrap");
     const { props } = this.properties(n);
     const seq = this.kind(c) === "flow_sequence";
-    if (/(?:^|, ): $/.test(flat.slice(1, -1))) unsupported("a broken flow collection ending in an empty pair");
+    const last = items[items.length - 1]!.item;
+    const emptyLast = this.kind(last) === "flow_pair" && this.named(last).length === 0;
+    if (hard ? emptyLast : /(?:^|, ): $/.test(flat.slice(1, -1))) unsupported("a broken flow collection ending in an empty pair");
     const lines = [(props === "" || bare ? "" : `${props} `) + (seq ? "[" : "{")];
     const inner = indent + this.tab;
     items.forEach(({ item }, i) => {
@@ -495,6 +500,8 @@ class Printer {
    * after it; else a collection value moves to the next line, one tabWidth in, and lays out from there.
    */
   pairLayout(pair: number, seq: boolean, col: number, trail: number): string[] {
+    const multiKey = this.multiKey(pair, seq, col, trail);
+    if (multiKey !== undefined) return multiKey;
     const { key, keyNode, value } = this.pairParts(pair, seq);
     const flat = this.flatItem(pair, seq);
     if (this.flowComment(pair)) return this.commentedPair(pair, key, keyNode, value, col, trail);
@@ -517,6 +524,60 @@ class Printer {
     }
     if (key === undefined) return unsupported("a flow value past printWidth after an empty key");
     return [`${key}:`, ...this.moved(value, col + this.tab, trail)];
+  }
+
+  /**
+   * A flow pair whose key is a multi-line scalar, at column `col`: `? ` before the key's lines, its later lines two
+   * columns in, and `: value` on the line after them; with no value, a mapping's key prints as an item would, a
+   * sequence's after `? `. Undefined for a pair whose key is one line.
+   */
+  multiKey(pair: number, seq: boolean, col: number, trail: number): string[] | undefined {
+    let key: number | undefined;
+    let value: number | undefined;
+    for (let i = 0; i < this.tree.count(pair); i++) {
+      const k = this.tree.child(pair, i);
+      if (this.tree.fieldName(k) === "key") key = k;
+      else if (this.tree.fieldName(k) === "value") value = k;
+    }
+    if (key === undefined || !this.multiScalar(key)) return undefined;
+    if (this.flowComment(pair)) unsupported("a comment in a flow pair with a multi-line key");
+    if (value === undefined && !seq) return this.scalarLines(key, col);
+    const k = this.scalarLines(key, col + 2);
+    if (value === undefined) return [`? ${k[0]}`, ...k.slice(1)];
+    // oxfmt keeps a collection with a multi-line value flat, a layout with no rule here.
+    const v = this.layout(value, col + 2, col + 2, trail);
+    if (v.length > 1 || this.flowCollection(value) !== undefined) unsupported("a collection value after a multi-line flow key");
+    return [`? ${k[0]}`, ...k.slice(1), `${" ".repeat(col)}: ${v[0]}`];
+  }
+
+  /** Whether flow node `n` is a plain or quoted scalar over more than one source line. */
+  multiScalar(n: number): boolean {
+    if (this.kind(n) !== "flow_node") return false;
+    const s = this.properties(n).content;
+    return s !== undefined && /^(?:plain|single_quote|double_quote)_scalar$/.test(this.kind(s)) && this.tree.text(s).includes("\n");
+  }
+
+  /** Whether flow collection `c` holds a multi-line scalar, at any depth. */
+  hasMultiScalar(c: number): boolean {
+    for (let i = 0; i < this.tree.count(c); i++) {
+      const k = this.tree.child(c, i);
+      if (this.multiScalar(k)) return true;
+      if (this.tree.count(k) > 0 && this.hasMultiScalar(k)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * A multi-line scalar flow node's lines under proseWrap preserve, one per source line, the later ones at `indent`
+   * (a blank one empty). The first carries no indent: it continues the current line.
+   */
+  scalarLines(n: number, indent: number): string[] {
+    if (this.prose !== "preserve") unsupported("a multi-line flow scalar under proseWrap");
+    const { head, paras, tail } = this.scalarParts(n);
+    const lines = paras.map((p) => p.join(" "));
+    lines[0] = head + lines[0];
+    lines[lines.length - 1] += tail;
+    return lines.map((l, i) => (i === 0 || l === "" ? l : " ".repeat(indent) + l));
   }
 
   /**
@@ -969,8 +1030,10 @@ class Printer {
     if (value === undefined) return;
     if (this.flowCollection(value) !== undefined) {
       if (this.pending(this.start(value)) !== undefined) unsupported("a comment before a flow value");
-      // A comment breaks the collection, which then opens on the key's line with its items two tabWidths in.
-      if (this.flowComment(value)) {
+      // A comment or multi-line scalar breaks the collection, which then opens on the key's line with its items two
+      // tabWidths in.
+      const c = this.flowCollection(value) as number;
+      if (this.flowComment(value) || this.hasMultiScalar(c)) {
         this.append(" ");
         this.putFlow(value, indent + this.tab);
         return;

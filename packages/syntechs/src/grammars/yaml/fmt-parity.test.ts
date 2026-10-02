@@ -120,6 +120,8 @@ const edgeCases: [string, string][] = [
   ["prettier-ignore", "# prettier-ignore\nk:\n    x:   1\n    y:  [1,2]\nz:   1\n"],
   // A prettier-ignore inside an ignored item, or before a nested item or a sequence item, was not honored.
   ["prettier-ignore-nested", "a:\n  # prettier-ignore\n  b:   [1,   2]\n  c:   3\nd:\n  # prettier-ignore\n  - [1,  2]\n  - [3,  4]\n"],
+  // A multi-line scalar in a flow collection, or as a flow pair's key, refused instead of breaking the collection.
+  ["multiline-flow-items", "- [\"a\n  b\", c\n\n  d, [e\n  f], ? g\n  h : i]\n- {j\n  k: l, m\n  n}\n---\n{ matches\n% : 20 }\n"],
   // A prettier-ignore before `---` or a flow item refused, where oxfmt keeps that document's content or item as written.
   ["prettier-ignore-document-and-flow", "a:   1\n# prettier-ignore\n---\nb:    [1,2]\n...\n---\n[\n  # prettier-ignore\n  [ b,\n      c ],\n  {  d:  1 }\n]\n"],
   // A comment shallower than a nested block's items but deeper than its parent's refused, or went past a block scalar.
@@ -183,6 +185,8 @@ const refused: [string, string][] = [
   ["sequence-item-comments", "- # c\n  # d\n  v\n"],
   // A comment past a sequence item's block scalar, which oxfmt prints into the scalar's content, printed anyway.
   ["comment-past-sequence-block-scalar", "- |\n  t\n # c\n- y\n"],
+  // A multi-line value in a flow pair, which oxfmt keeps in an unbroken collection, printed anyway.
+  ["multiline-flow-pair-value", "{a: b\n c}\n"],
   // A blank line between a directive and a comment, which oxfmt drops, was kept.
   ["directive-blank-comment", "%YAML 1.2\n\n# c\n---\nb\n"],
 ];
