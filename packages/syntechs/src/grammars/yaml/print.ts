@@ -192,7 +192,8 @@ class Printer {
       let at = indent;
       if (prev !== undefined && this.tree.col(c) > col) {
         if (this.nestedValue(prev) !== undefined) unsupported("a comment between a nested block and its parent");
-        at = indent + this.tab;
+        // Past a sequence item's scalar, at its content's column two past the dash.
+        at = indent + (this.kind(prev) === "block_sequence_item" ? 2 : this.tab);
       }
       this.ownLine(c, at, !first);
       first = false;
@@ -803,6 +804,17 @@ class Printer {
     } else if (this.flowCollection(v) !== undefined) {
       this.append(" ");
       this.putFlow(v, indent + 2);
+    } else if (this.pending(this.start(v)) !== undefined) {
+      // One comment before a sequence item's scalar moves onto the dash's line, the scalar below it. oxfmt prints
+      // several after a `- ` with a trailing space, and those after `?` or `:` no rule here covers.
+      const c = this.pending(this.start(v)) as number;
+      this.next++;
+      if (!this.lines[this.lines.length - 1]!.endsWith("-") || this.pending(this.start(v)) !== undefined)
+        unsupported("comments before a marked scalar");
+      if (this.tree.lf(c) >= 2 || this.tree.lf(firstLeaf(this.tree, v)) >= 2) unsupported("a blank line around a comment before a sequence item's scalar");
+      this.append(` ${this.tree.text(c)}`);
+      this.line(" ".repeat(indent + 2));
+      this.fill(v, indent + 2);
     } else {
       this.append(" ");
       this.fill(v, indent + 2);
@@ -892,7 +904,13 @@ class Printer {
       this.trailing(lead);
       this.line(" ".repeat(indent + 2) + this.scalar(key));
     } else this.marked(key, indent, colonAt);
-    while (this.pending(colonAt) !== undefined) this.ownLine(this.comments[this.next]!, indent, false);
+    // Comments indented past the `?` stay with the key, two columns in, up to the first one that is not.
+    let keyed = true;
+    while (this.pending(colonAt) !== undefined) {
+      const c = this.comments[this.next]!;
+      keyed &&= this.tree.col(c) > this.tree.col(pair);
+      this.ownLine(c, keyed ? indent + 2 : indent, false);
+    }
     this.line(`${" ".repeat(indent)}:`);
     if (this.pending(this.start(value)) !== undefined) unsupported("a comment before an explicit pair's value");
     this.marked(value, indent, until);
@@ -928,7 +946,25 @@ class Printer {
       this.block(coll, indent + this.tab, false, until);
       return;
     }
-    if (this.pending(this.start(value)) !== undefined) unsupported("a comment before a scalar value");
+    // Comments before a scalar value: one on the key's line trails it, the rest go on lines of their own one tabWidth
+    // in, and the value below them, after a blank line only where the source has one after an own-line comment.
+    if (this.pending(this.start(value)) !== undefined) {
+      let c: number | undefined;
+      let own = false;
+      while ((c = this.pending(this.start(value))) !== undefined) {
+        if (own && this.tree.lf(c) >= 2) unsupported("a blank line between comments before a scalar value");
+        own = this.tree.lf(c) > 0;
+        if (own) this.line(" ".repeat(indent + this.tab) + this.tree.text(c));
+        else this.append(` ${this.tree.text(c)}`);
+        this.next++;
+      }
+      const { content } = this.properties(value);
+      if (content !== undefined && this.pending(this.start(content)) !== undefined) unsupported("comments before and after a scalar value's properties");
+      if (own && this.tree.lf(firstLeaf(this.tree, value)) >= 2) this.blank();
+      this.line(" ".repeat(indent + this.tab));
+      this.fill(value, indent + this.tab);
+      return;
+    }
     // Comments after a scalar value's properties end the key's line, the scalar one tabWidth in below them.
     const { props, content } = this.properties(value);
     if (props !== "" && content !== undefined && this.pending(this.start(content)) !== undefined) {

@@ -92,6 +92,12 @@ const edgeCases: [string, string][] = [
   ["indented-loose-comments", "  # a\n\n   # b\nk: 1\n---\n  # c\nx\n"],
   // A directive kept its run of spaces, or a blank line after it, or a comment after `...` moved before it.
   ["directives-and-end-marker", "%TAG  !e!   tag:e.com,2000:\n\n%FOO  bar   baz # c\n              # d\n\n---\na: 1\n...\n  # e\n---\nb\n"],
+  // A comment before a scalar value refused, or lost its place on the key's line or the blank line before the value.
+  ["scalar-value-comments", "a:    # c\n  # d\n  v\nb:\n\n  # e\n\n  'w'\nc: # f\n  x\n  y\nd:\n  - # g\n    z\n"],
+  // A comment past a sequence item's scalar printed one tabWidth past the dash instead of at the scalar's column.
+  ["sequence-item-past-comment", "a:\n  - 1\n    # c\n  - 2\n"],
+  // A comment indented past an explicit key's `?` printed at the `?` column instead of two columns in.
+  ["explicit-key-indented-comment", "? b\n    # c\n# d\n: v\nx:\n  ? e\n    # f\n  : w\n"],
   // A multi-line plain or quoted scalar refused, or lost its blank-line paragraphs or the indent of its later lines.
   ["multiline-flow-scalars", `a: aaa\n  bbb\n\n  ccc\nb: "x\n  y"\nc: '${"w ".repeat(20)}\n  z'\n? m\n  n\n: v\nd:\n  - p\n    q\n`],
   // A multi-line value moved below its key whenever its first paragraph did not fit, where only its first word must.
@@ -165,6 +171,8 @@ const refused: [string, string][] = [
   // A prettier-ignore trailing a line, or before a document, was applied to the next block item.
   ["prettier-ignore-trailing", "a: 1 # prettier-ignore\nb:    2\n"],
   ["prettier-ignore-document", "# prettier-ignore\n---\na:    1\n"],
+  // Several comments before a sequence item's scalar, which oxfmt prints after `- ` with a trailing space, printed anyway.
+  ["sequence-item-comments", "- # c\n  # d\n  v\n"],
   // A blank line between a directive and a comment, which oxfmt drops, was kept.
   ["directive-blank-comment", "%YAML 1.2\n\n# c\n---\nb\n"],
 ];
