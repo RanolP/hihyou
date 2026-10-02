@@ -162,6 +162,10 @@ const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
   ["pi-after-tag", "<svg><?pi data?><g></g></svg>\n<?a?> hello\n"],
   // Inside a text run a `<?` is more of the text, so its words reflow with the rest.
   ["pi-in-text", `<p>a <?pi data?> b</p>\n<p>aaa <?pi ${"word ".repeat(20)}?> bbb</p>\n`],
+  // A prefixed tag in an svg (Inkscape's `<sodipodi:namedview>`) laid out as an svg block and lost its inner spaces.
+  ["svg-prefixed-tag", "<svg><test:test> test </test:test><a:b> <g/> </a:b></svg>\n<html:div> x </html:div>\n"],
+  // A tag inheriting a namespace other than svg's keeps its default display; an `svg:` prefix makes an svg block.
+  ["inherited-namespace", "<svg><a:b><g> x </g></a:b></svg>\n<math><div> x </div></math>\n<svg:svg><g> x </g></svg:svg>\n"],
 ];
 
 function ours(text: string, options: Partial<HtmlOptions>) {

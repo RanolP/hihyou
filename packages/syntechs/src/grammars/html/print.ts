@@ -785,17 +785,38 @@ export type WhitespaceSensitivity = "css" | "strict" | "ignore";
 function cssDisplay(n: Node, sensitivity: WhitespaceSensitivity): string {
   const magic = n.prev?.kind === "comment" ? /^\s*display:\s*([a-z]+)\s*$/.exec(n.prev.value.slice(4, -3)) : null;
   if (magic) return magic[1] as string;
+  const ns = namespaceOf(n);
+  const name = localName(n.name);
   // An svg element lays out as a block (the svg itself inline-block) whatever the sensitivity, short of one in a
   // foreignObject, which lays out as HTML.
-  for (let a: Node | undefined = n; a?.kind === "element"; a = a.parent) {
-    if (a.name === "foreignobject") break;
-    if (a.name === "svg") return n.name === "svg" ? "inline-block" : "block";
-  }
+  let inForeignObject = false;
+  for (let a: Node | undefined = n; ns === "svg" && a?.kind === "element"; a = a.parent)
+    if (localName(a.name) === "foreignobject") inForeignObject = true;
+  if (ns === "svg" && !inForeignObject) return name === "svg" ? "inline-block" : "block";
   if (sensitivity === "strict") return "inline";
   if (sensitivity === "ignore") return "block";
   if (n.kind !== "element") return "inline";
-  if (BLOCK.has(n.name)) return "block";
-  return (Object.hasOwn(DISPLAY, n.name) && DISPLAY[n.name]) || "inline";
+  // A tag in a namespace other than svg's is inline, unless that namespace came from an ancestor and is not
+  // html's (`<math><div>`, a `<g>` in an `<a:b>`): that one keeps its tag's default display.
+  if (ns !== undefined && !inForeignObject && (/^[^:]+:/.test(n.name) || ns === "html")) return "inline";
+  if (BLOCK.has(name)) return "block";
+  return (Object.hasOwn(DISPLAY, name) && DISPLAY[name]) || "inline";
+}
+
+const localName = (name: string) => name.replace(/^[^:]*:/, "");
+
+/**
+ * angular-html-parser's namespace of an element: its tag's prefix (`a:b`), else svg's or math's own, else its
+ * parent's, which a foreignObject does not pass on.
+ */
+function namespaceOf(n: Node): string | undefined {
+  for (let a: Node | undefined = n; a?.kind === "element"; a = a.parent) {
+    const prefix = /^([^:]+):/.exec(a.name)?.[1];
+    if (prefix !== undefined) return prefix;
+    if (a.name === "svg" || a.name === "math") return a.name;
+    if (a.parent?.kind === "element" && localName(a.parent.name) === "foreignobject") return undefined;
+  }
+  return undefined;
 }
 // `Object.hasOwn`: a tag named `constructor` or `toString` would otherwise read Object.prototype's.
 const whiteSpace = (n: Node) =>

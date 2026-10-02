@@ -1,4 +1,4 @@
-svg@oxfmt compatibility: 615/636 (96.70%), 10 refused (ok:false), 3 excluded
+svg@oxfmt compatibility: 621/636 (97.64%), 10 refused (ok:false), 3 excluded
 
 Fixtures: svgo 3.3.2 test/**/*.svg (each plugin test's input, before its `@@@`) and logo/, feather 4.29.2 icons/, and src/grammars/html/svg-corpus; expected output from oxfmt 0.70.0 run on each named `.html` (oxfmt takes no `.svg`), excluded when oxfmt rejects it or does not keep its own output.
 
@@ -11,12 +11,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | svgo-3.3.2/test/plugins/cleanupIds.03.svg | 0/1 | 88.89% |
 | svgo-3.3.2/test/plugins/cleanupIds.07.svg | 0/1 | 88.89% |
 | svgo-3.3.2/test/plugins/inlineStyles.13.svg | 0/1 | 97.64% |
-| svgo-3.3.2/test/plugins/removeEditorsNSData.01.svg | 0/1 | 87.50% |
-| svgo-3.3.2/test/plugins/removeEditorsNSData.02.svg | 0/1 | 87.50% |
-| svgo-3.3.2/test/plugins/removeUnknownsAndDefaults.02.svg | 0/1 | 80.00% |
-| svgo-3.3.2/test/plugins/removeUnknownsAndDefaults.07.svg | 0/1 | 88.89% |
-| svgo-3.3.2/test/plugins/removeUnusedNS.05.svg | 0/1 | 88.89% |
-| svgo-3.3.2/test/plugins/removeUnusedNS.06.svg | 0/1 | 88.89% |
 | svgo-3.3.2/test/svgo/pre-element-pretty.svg | 0/1 | 43.75% |
 | svgo-3.3.2/test/svgo/pre-element.svg | 0/1 | 43.75% |
 
