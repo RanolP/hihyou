@@ -17,7 +17,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createTwoFilesPatch } from "diff";
-import { type GrammarName, pkgRoot } from "../core/corpus.node.js";
+import { type GrammarName, pkgRoot, swiftInputs } from "../core/corpus.node.js";
 import { parseTree } from "../core/index.js";
 import type { Language as Grammar } from "../core/language.js";
 import { check } from "./check.js";
@@ -47,11 +47,14 @@ import {
   writeJson,
 } from "./conformance/report.node.js";
 import { ruffSuite } from "./conformance/ruff.node.js";
+import { svgSuite } from "./conformance/svg.node.js";
 import { format } from "./format.js";
 import type { Language } from "./rules.js";
 
 const PRETTIER = "prettier 3.9.9";
 const RUFF = "ruff 0.16.8";
+// Apple's swift-format, `xcrun swift-format` from Xcode, with its default configuration; it never runs here.
+const SWIFT_FORMAT = "swift-format 6.3.0";
 const prettierRoot = join(
   pkgRoot,
   "corpus",
@@ -248,7 +251,33 @@ export const TARGETS: Target[] = [
     source: `Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ${ktfmt.name} run on each.`,
     suite: ktfmtSuite,
   },
+  {
+    id: "swift@swift-format",
+    reference: SWIFT_FORMAT,
+    fmt: "swift",
+    export: "swift",
+    grammar: () => "swift",
+    source: `Fixtures: the swift grammar's vendored inputs (src/grammars/swift/corpus/swift-format: swift-format 603.0.0's own Sources/SwiftFormat), expected output from ${SWIFT_FORMAT} run on each, recorded beside it by fetch-corpus.sh swift.`,
+    suite: (): Suite => ({
+      cases: swiftInputs().map(({ name, text, expected }) => ({
+        fixture: name,
+        file: name,
+        text,
+        runs: [{ label: "default", options: {}, expected, asRecorded: (s: string) => s }],
+      })),
+      excluded: [],
+    }),
+  },
   ...PRETTIER_FIXTURES.map(againstOxfmt),
+  {
+    id: "svg@oxfmt",
+    reference: oxfmt.name,
+    fmt: "html",
+    export: "html",
+    grammar: () => "html",
+    source: `Fixtures: svgo 3.3.2 test/**/*.svg (each plugin test's input, before its \`@@@\`) and logo/, feather 4.29.2 icons/, and src/grammars/html/svg-corpus; expected output from ${oxfmt.name} run on each named \`.html\` (oxfmt takes no \`.svg\`), excluded when oxfmt rejects it or does not keep its own output.`,
+    suite: async () => referenceSuite(svgSuite(), oxfmt),
+  },
 ];
 
 /** The ts targets format .tsx fixtures and prettier's jsx/ dir with the tsx grammar's `tsx` export. */
