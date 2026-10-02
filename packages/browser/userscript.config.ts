@@ -61,7 +61,7 @@ function lazyApp(): Plugin {
         build: {
           write: false,
           target: "es2023",
-          minify: false,
+          minify: true,
           lib: {
             entry: fileURLToPath(new URL("src/app.ts", import.meta.url)),
             formats: ["iife"],
@@ -93,8 +93,7 @@ export default defineConfig({
     outDir: ".output/userscript",
     emptyOutDir: true,
     target: "es2023",
-    // A reviewer may read what they install; the managers show the source.
-    minify: false,
+    minify: true,
     lib: {
       entry: "src/userscript.ts",
       formats: ["iife"],
