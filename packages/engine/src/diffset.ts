@@ -31,6 +31,7 @@ import {
   type LinePair,
   nodeHash,
   type SideInput,
+  wholeDeclaration,
 } from "./fragments.js";
 import type {
   ChangedFileRef,
@@ -192,7 +193,11 @@ export async function diffFiles(
   );
   const sides = prepared.map((p) =>
     "a" in p
-      ? { a: sideInput(p.a), b: sideInput(p.b), touched: false }
+      ? {
+          a: sideInput(p.a, "grammar" in p ? p.grammar.declarations : undefined),
+          b: sideInput(p.b, "grammar" in p ? p.grammar.declarations : undefined),
+          touched: false,
+        }
       : undefined,
   );
   for (const c of cross.edits) {
@@ -205,17 +210,27 @@ export async function diffFiles(
   return prepared.map((p, i): FileDiff => {
     const path = p.ref.path;
     const s = sides[i];
+    const status = statusOf(p.ref);
     if ("unread" in p || !s)
       return {
         path,
         fragments: [],
         collapsed: { reason: "unread" in p ? p.unread : "binary" },
+        ...(status && { status }),
       };
     const text = p.ref.after === null ? p.texts[0] : p.texts[1];
+    const head = { path, ...(status && { status }) };
     if (!("mapping" in p)) {
+      // Without a tree the changed line is the unit the viewer paints; a whole file is the change, unpainted.
       for (const e of lineDiff(p.texts[0], p.texts[1], indentIsSyntax(path))) {
-        if ("old" in e) s.a.changed.push(e.old);
-        if ("new" in e) s.b.changed.push(e.new);
+        if ("old" in e) {
+          s.a.changed.push(e.old);
+          if (!status) s.a.emphasis.push(e.old);
+        }
+        if ("new" in e) {
+          s.b.changed.push(e.new);
+          if (!status) s.b.emphasis.push(e.new);
+        }
       }
       const reason = foldReason({
         path,
@@ -223,7 +238,7 @@ export async function diffFiles(
         ...(p.fallback && { fallback: p.fallback }),
       });
       return {
-        path,
+        ...head,
         fragments: buildFragments({
           a: s.a,
           b: s.b,
@@ -234,7 +249,7 @@ export async function diffFiles(
     }
     const script = editScript(p.mapping, cross.claimed[i]);
     for (const e of script.edits)
-      record({ edit: e, from: i, to: i }, s.a, s.b, p.ref, p.ref);
+      record({ edit: e, from: i, to: i }, s.a, s.b, p.ref, p.ref, status !== undefined);
     const reason = foldReason({
       path,
       text,
@@ -246,7 +261,7 @@ export async function diffFiles(
         !s.touched && script.edits.length === 0 && p.texts[0] !== p.texts[1],
     });
     return {
-      path,
+      ...head,
       grammar: p.grammar.id,
       fragments: buildFragments({
         a: s.a,
@@ -313,16 +328,19 @@ async function prepare(
   return { ref, texts, a, b, grammar, mapping };
 }
 
-const sideInput = (v: Version): SideInput => ({
+const sideInput = (v: Version, declarations?: ReadonlySet<string>): SideInput => ({
+  ...(declarations && { declarations }),
   v,
   changed: [],
   emphasis: [],
   moves: [],
   nodes: [],
+  wholes: [],
 });
 
 /**
- * Marks one edit on the side(s) it touches: an insert, delete or update changes and emphasizes its node;
+ * Marks one edit on the side(s) it touches: an insert, delete or update changes and emphasizes its node, except
+ * an inserted or deleted whole unit (a declaration, or any top node when `wholeFile`), which is outlined as one;
  * a move changes the lines at both ends and points each end at the other. A move emphasizes nothing itself:
  * what changed inside it arrives as its own inserts, deletes and updates, so only those stand out in the box.
  */
@@ -332,11 +350,30 @@ function record(
   b: SideInput | undefined,
   refA: ChangedFileRef,
   refB: ChangedFileRef,
+  wholeFile = false,
 ): void {
   const range = (s: SideInput, n: number) => ({
     start: s.v.start(n),
     end: s.v.end(n),
   });
+  // A whole file or a whole declaration is one atom and the change itself, so nothing in it is emphasized.
+  // A whole file or a whole declaration is the change itself: outlined as one unit, nothing in it emphasized.
+  const unit = (s: SideInput | undefined, n: number | undefined, side: "before" | "after"): boolean => {
+    const tree = s?.v.tree;
+    if (!s || !tree || n === undefined) return false;
+    const whole = side === "after" ? "added" : "deleted";
+    const one = (top: number): boolean => {
+      const declaration = wholeDeclaration(s.v, tree, top, s.declarations);
+      if (!wholeFile && !declaration) return false;
+      s.changed.push(range(s, top));
+      s.wholes.push({ node: top, whole, ...declaration });
+      return true;
+    };
+    if (n !== tree.root) return one(n);
+    // An inserted root is every top node inserted; each is a unit or not on its own.
+    for (const top of namedChildren(tree, n)) if (!one(top)) mark(s, top);
+    return true;
+  };
   const mark = (s: SideInput | undefined, n: number | undefined) => {
     if (!s || n === undefined) return;
     const r = range(s, n);
@@ -356,11 +393,11 @@ function record(
   };
   switch (e.kind) {
     case "insert":
-      mark(b, e.b);
+      if (!unit(b, e.b, "after")) mark(b, e.b);
       leaves(b, e.b, "after");
       return;
     case "delete":
-      mark(a, e.a);
+      if (!unit(a, e.a, "before")) mark(a, e.a);
       leaves(a, e.a, "before");
       return;
     case "update":
@@ -395,6 +432,16 @@ function movePair(
     ...(inFile && { twin: e.a }),
   });
   pairAtom(e, a, b, atomPath(refA, refB));
+}
+
+const statusOf = (ref: ChangedFileRef): FileDiff["status"] =>
+  ref.before === null ? "added" : ref.after === null ? "deleted" : undefined;
+
+function namedChildren(tree: Tree, n: number): number[] {
+  const out: number[] = [];
+  for (let i = 0, count = tree.count(n); i < count; i++)
+    if (tree.named(tree.child(n, i))) out.push(tree.child(n, i));
+  return out;
 }
 
 /** A file's own path, or for an edit between two files both of theirs, so either half names the pair alike. */

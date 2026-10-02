@@ -50,6 +50,45 @@ const highlighters: Partial<Record<LanguageId, () => Promise<{ highlight: Highli
   kotlin: () => import("syntechs/grammars/kotlin/highlight"),
 };
 
+const typescriptDeclarations = [
+  "function_declaration",
+  "generator_function_declaration",
+  "class_declaration",
+  "abstract_class_declaration",
+  "method_definition",
+  "interface_declaration",
+  "type_alias_declaration",
+  "enum_declaration",
+  "internal_module",
+  "module",
+  "lexical_declaration",
+  "variable_declaration",
+];
+
+// The node kinds an inserted or deleted node reads as one added or deleted declaration as, each checked
+// against its grammar's node-types.json.
+const declarations: Partial<Record<LanguageId, readonly string[]>> = {
+  typescript: typescriptDeclarations,
+  tsx: typescriptDeclarations,
+  javascript: [
+    "function_declaration",
+    "generator_function_declaration",
+    "class_declaration",
+    "method_definition",
+    "lexical_declaration",
+    "variable_declaration",
+  ],
+  kotlin: [
+    "function_declaration",
+    "class_declaration",
+    "object_declaration",
+    "property_declaration",
+    "type_alias",
+    "secondary_constructor",
+    "companion_object",
+  ],
+};
+
 /** A formatter bound to options the host passed as a plain object, checked by syntechs at format time. */
 const bind =
   <O>(rules: FormatLanguage<O>) =>
@@ -104,6 +143,7 @@ export function syntechsGrammars(
       language,
       ...(formatter && { format: formatter }),
       ...(highlighter && { highlight: highlighter.highlight }),
+      ...(declarations[id] && { declarations: new Set(declarations[id]) }),
     };
   };
   return {

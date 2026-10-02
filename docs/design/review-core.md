@@ -121,6 +121,8 @@ interface FileDiff {
       | "format-only"
       | "moved";
   };
+  /** The file was added or deleted: the file is the change; see "Whole units". */
+  status?: "added" | "deleted";
 }
 type CodeFragment =
   | { kind: "begin"; label: string; at: AstSteps } // label e.g. "class AA"
@@ -151,6 +153,8 @@ interface NodeOutline {
   changed: boolean; // the node is itself an edit atom, not an ancestor kept for structure
   hash: string; // of the node's tokens, whitespace between them ignored
   atom?: string; // iff changed: the atomKey, identical on both halves of an update or a move
+  whole?: "added" | "deleted"; // added or deleted as one unit (a declaration, or a top node of an added/deleted file)
+  label?: string; // with whole, on a declaration: what it declares, as a begin label reads ("function f")
 }
 function atomKey(parts: { path: string; ancestors: string[]; before?: string; after?: string }): string;
 interface Span {
@@ -250,6 +254,8 @@ type Author<H extends Host> = { id: string } & HostAuthor<H>;
 **`Side.moves`** names the lines that are one half of a move, possibly in another file, per moved node: an expression inlined into a call marks only the expression's lines, and the call around it stays an ordinary edit. When the moved nodes cover every line of the side except blank and bracket-only lines, the side carries one move over all its lines, so a relocated block reads as one moved box. A move whose two halves land in the same `diff` fragment (a ternary's branches swapped, an argument re-wrapped in place) is dropped, because the reader already sees both halves side by side.
 
 **`Side.nodes`** outlines a side finer than a hunk, so a viewer can mark one node edit viewed while the rest of the hunk stays unread. The changed nodes are the edit atoms: a changed leaf of an update, a moved node, and each named leaf of an inserted or deleted subtree (the edit script reports an insertion at its outermost node, which would otherwise be one all-or-nothing atom). The outline adds every ancestor of an atom up to the outermost nodes wholly inside the side, as `changed: false` structure, in document order with parents before children.
+
+**Whole units** (`FileDiff.status`, `NodeOutline.whole`): when a file is added or deleted, or an inserted or deleted node is a whole declaration, the unit itself is the change, so the engine says so instead of emphasizing it piece by piece (the maintainer: "파일 단위로 추가된 경우 개별 하이라이트를 하지 않고 파일이 추가되었다고 하기", when a whole file is added, say the file was added rather than highlighting each piece; and the same "declaration 단위로도", at the declaration level). A whole declaration is a node of one of its grammar's declaration kinds, a predefined set of tree-sitter node kinds registered per language beside the grammar (`Grammar.declarations`; for TypeScript, for example, functions, classes, methods, interfaces, type aliases, enums, namespaces and `const`/`let`/`var` declarations), reached through wrappers holding nothing else (`export`) and filling its lines but for a trailing `;` or `,` (the maintainer: "선언을 predefined node name set으로", declarations as a predefined set of node names). A `name` field alone does not make one, so an added JSX element or import name, an added argument, a statement inside a kept function, or a declaration sharing its line with other code keeps today's emphasis; a language with no set has whole files only. The label is still what `begin` would read, or the name of a declaration's single binding. A whole unit's lines are changed but carry no `Span.changed`; syntax scopes stay. Its top node is in the outline with `whole` (and `label` for a declaration); for an added or deleted file that is every top node of the side. Viewed and review granularity do not change (the maintainer: "marks as read, review 같은 건 부분적으로 진행할 수 있어야 함", marking read and reviewing must still work part by part): the atoms inside a whole unit stay its named leaves, so a reviewer can mark part of a new file viewed and anchor a comment on any node in it. A whole unit's viewed state is derived like any `changed: false` outline node, viewed once every atom below it is, and toggling it writes all of them; it has no atom of its own. Code that moved into an added file, or out of a deleted one, is not part of the unit: it keeps its `Side.moves` and the atom it shares with the other half, and edits found inside a moved node keep their emphasis.
 
 **`NodeOutline.atom`** is the key a "viewed" mark is filed under. `atomKey` hashes the file path, the labels of the atom's ancestors (each kind, with the declared name where the node declares one), the before node's hash and the after node's hash; an insertion has no before hash and a deletion no after hash. It holds no line number and no `AstSteps`, so an edit keeps its key when code above it grows or shrinks, and a reformat leaves it alone because node hashes skip whitespace. The engine computes one key per edit where it pairs the halves, so both halves of an update or a move carry the identical string: the ancestors are taken from the before side, and a move between files uses `<before path>→<after path>` as its path on both. Two identical edits under the same ancestors share a key, which is accepted: marking one viewed marks the other.
 

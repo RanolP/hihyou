@@ -33,6 +33,8 @@ export interface Grammar {
   language: Language;
   format?: FormatModule;
   highlight?: HighlightModule;
+  /** Node kinds an added or deleted node is a whole declaration as; see `NodeOutline.whole`. None when absent. */
+  declarations?: ReadonlySet<string>;
 }
 
 /** A formatter with the host's options already bound in. */

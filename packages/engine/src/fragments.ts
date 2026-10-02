@@ -12,6 +12,11 @@ export interface FileDiff {
   fragments: CodeFragment[]; // SSoT; no separate Edit[]; begin/end always balanced
   /** The engine judges the whole file should be shown folded, and says why. */
   collapsed?: { reason: CollapseReason };
+  /**
+   * The file was added or deleted: the file is the change, so code it gained or lost outside moves carries
+   * no `Span.changed`, and its top nodes are outlined `whole`.
+   */
+  status?: "added" | "deleted";
 }
 
 export type CodeFragment =
@@ -55,6 +60,14 @@ export interface NodeOutline {
   hash: string;
   /** Present iff `changed`: the edit's `atomKey`, the same string on both halves of an update or a move. */
   atom?: string;
+  /**
+   * The node was added or deleted as one unit, a declaration or a top node of an added or deleted file: nothing
+   * in it carries `Span.changed`, so a viewer says what was added rather than emphasizing every token. Its
+   * atoms stay those below it, so it is viewed when they all are.
+   */
+  whole?: "added" | "deleted";
+  /** With `whole`, on a declaration: what it declares, as a `begin` label reads ("function f", "class Shop"). */
+  label?: string;
 }
 
 /** One half of a move: the lines its moved node spans on this side, clipped to the side. */
@@ -91,6 +104,13 @@ export interface MoveMark {
   twin?: number;
 }
 
+/** A node added or deleted as one unit; see `NodeOutline.whole`. */
+export interface WholeMark {
+  node: number;
+  whole: "added" | "deleted";
+  label?: string;
+}
+
 export interface SideInput {
   v: Version;
   /** Text whose lines cannot pair with the other side. */
@@ -100,6 +120,10 @@ export interface SideInput {
   moves: MoveMark[];
   /** Nodes that are edit atoms, each with its `atomKey`. */
   nodes: { node: number; atom: string }[];
+  /** Nodes added or deleted as one unit, outlined even when no atom lies below them. */
+  wholes: WholeMark[];
+  /** The grammar's `Grammar.declarations`: the node kinds a whole unit may be. */
+  declarations?: ReadonlySet<string>;
 }
 
 export interface FragmentInput {
@@ -435,6 +459,47 @@ function declarationLabel(tree: Tree, n: number): string | undefined {
     : tree.text(name);
 }
 
+/**
+ * Whether an inserted or deleted `n` reads as one unit: a node of one of the grammar's declaration `kinds`,
+ * reached through wrappers holding nothing else (`export`), filling its lines but for a trailing `;` or `,`.
+ * `label` is what it declares, as `begin` reads it, when it names one. Undefined for anything else, such as
+ * an added argument, a JSX element, or a declaration sharing its line with other code.
+ */
+export function wholeDeclaration(
+  v: Version,
+  tree: Tree,
+  n: number,
+  kinds: ReadonlySet<string> | undefined,
+): { label?: string } | undefined {
+  if (!kinds) return undefined;
+  const before = v.text.slice(v.lineStarts[lineOf(v, v.start(n))], v.start(n));
+  const last = lineOf(v, Math.max(v.start(n), v.end(n) - 1));
+  const after = v.text.slice(v.end(n), lineEnd(v, last));
+  if (!/^\s*$/.test(before) || !/^[\s;,]*$/.test(after)) return undefined;
+  for (let m = n; ; ) {
+    const only = onlyNamedChild(tree, m);
+    if (kinds.has(tree.kindName(m))) {
+      // `const x = 1` names its binding, not itself.
+      const label =
+        declarationLabel(tree, m) ?? (only === undefined ? undefined : declarationLabel(tree, only));
+      return label === undefined ? {} : { label };
+    }
+    if (only === undefined) return undefined;
+    m = only;
+  }
+}
+
+function onlyNamedChild(tree: Tree, n: number): number | undefined {
+  let only: number | undefined;
+  for (let i = 0, count = tree.count(n); i < count; i++) {
+    const c = tree.child(n, i);
+    if (!tree.named(c)) continue;
+    if (only !== undefined) return undefined;
+    only = c;
+  }
+  return only;
+}
+
 function common(p: Box[], q: Box[]): Box[] {
   let k = 0;
   while (k < p.length && k < q.length && p[k]?.id === q[k]?.id) k++;
@@ -531,7 +596,9 @@ function outline(
     n !== tree.root && v.end(n) > v.start(n) && v.start(n) >= start && v.end(n) <= end;
   const atoms = new Map<number, string>();
   for (const { node, atom } of s.nodes) if (inside(node)) atoms.set(node, atom);
-  const kept = new Set<number>(atoms.keys());
+  const wholes = new Map<number, WholeMark>();
+  for (const w of s.wholes) if (inside(w.node)) wholes.set(w.node, w);
+  const kept = new Set<number>([...atoms.keys(), ...wholes.keys()]);
   for (const n of atoms.keys())
     for (let p = tree.parent(n); p !== NO_NODE && inside(p); p = tree.parent(p)) kept.add(p);
   // By start, the wider first; a parent sharing its child's whole range comes first by its later postorder ordinal.
@@ -548,6 +615,7 @@ function outline(
     for (let p = tree.parent(n); p !== NO_NODE && parent === -1; p = tree.parent(p))
       parent = index.get(p) ?? -1;
     const atom = atoms.get(n);
+    const mark = wholes.get(n);
     return {
       steps: stepsOf(tree, n),
       parent,
@@ -557,6 +625,8 @@ function outline(
       changed: atom !== undefined,
       hash: nodeHash(tree, n),
       ...(atom !== undefined && { atom }),
+      ...(mark?.whole && { whole: mark.whole }),
+      ...(mark?.label !== undefined && { label: mark.label }),
     };
   });
 }
