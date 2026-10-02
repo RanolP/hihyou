@@ -97,6 +97,16 @@ export function check<O>(
   }
 }
 
+/**
+ * What `text` says in `language`, as `check` compares it: its comments, then its code tokens' forms, one per line.
+ * An embedding language compares text in `language` by it (YAML front matter).
+ */
+export function meaning<O>(language: Language<O>, text: string): string {
+  const r = read(language, text);
+  const kept = forms(r.lexemes, text, r.tree, language).filter((f) => f !== undefined);
+  return [...r.comments, ...kept].join("\n");
+}
+
 interface Read {
   tree: Tree;
   lexemes: Lexeme[];
@@ -123,11 +133,12 @@ function read<O>(language: Language<O>, text: string): Read {
   const { frontMatter } = tree;
   if (frontMatter)
     out.comments.push(
-      frontMatter
-        .split(/\r?\n|\r/)
-        .map((l) => l.trim())
-        .filter((l) => l !== "")
-        .join("\n"),
+      language.frontMatter?.(frontMatter) ??
+        frontMatter
+          .split(/\r?\n|\r/)
+          .map((l) => l.trim())
+          .filter((l) => l !== "")
+          .join("\n"),
     );
   const stack: number[] = [tree.root];
   for (let n = stack.pop(); n !== undefined; n = stack.pop()) {
