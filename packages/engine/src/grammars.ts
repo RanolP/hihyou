@@ -9,6 +9,7 @@ export type LanguageId =
   | "json"
   | "python"
   | "css"
+  | "kotlin"
   // Read and formatted as HTML: oxfmt takes no `.svg`, and prints one given the name `.html` as its HTML.
   | "svg";
 
@@ -19,6 +20,7 @@ const extensions: Record<LanguageId, readonly string[]> = {
   json: [".json"],
   python: [".py", ".pyi"],
   css: [".css"],
+  kotlin: [".kt", ".kts"],
   svg: [".svg"],
 };
 
@@ -39,13 +41,17 @@ const parsers: Record<LanguageId, () => Promise<{ language: Language }>> = {
   json: () => import("syntechs/grammars/json"),
   python: () => import("syntechs/grammars/python"),
   css: () => import("syntechs/grammars/css"),
+  kotlin: () => import("syntechs/grammars/kotlin"),
   svg: () => import("syntechs/grammars/html"),
 };
 
+// `load` brings in the languages a highlighter injects (JSDoc, regular expressions), each its own lazy chunk,
+// so that the synchronous `highlight` can paint them.
 const highlighters: Partial<Record<LanguageId, () => Promise<{ highlight: HighlightModule }>>> = {
   typescript: () => import("syntechs/grammars/typescript/highlight"),
   tsx: () => import("syntechs/grammars/tsx/highlight"),
   javascript: () => import("syntechs/grammars/javascript/highlight"),
+  kotlin: () => import("syntechs/grammars/kotlin/highlight"),
 };
 
 /** A formatter bound to options the host passed as a plain object, checked by syntechs at format time. */
@@ -68,13 +74,15 @@ const formatters: Record<
   python: async () =>
     bind((await import("syntechs/grammars/python/fmt")).python),
   css: async () => bind((await import("syntechs/grammars/css/fmt")).css),
+  kotlin: async () =>
+    bind((await import("syntechs/grammars/kotlin/fmt")).kotlin),
   svg: async () => bind((await import("syntechs/grammars/html/fmt")).html),
 };
 
 export interface SyntechsGrammarOptions {
   /**
    * Languages to format before diffing, each with the options of the tool it follows (prettier's for
-   * JS/TS/JSON/CSS, ruff's for Python). A language left out is shown as written.
+   * JS/TS/JSON/CSS/Kotlin, ruff's for Python). A language left out is shown as written.
    */
   format?: Partial<Record<LanguageId, object>>;
 }
@@ -85,7 +93,13 @@ export function syntechsGrammars(
 ): GrammarLoader {
   const loaded = new Map<LanguageId, Promise<Grammar>>();
   const load = async (id: LanguageId): Promise<Grammar> => {
-    const [{ language }, highlighter] = await Promise.all([parsers[id](), highlighters[id]?.()]);
+    const [{ language }, highlighter] = await Promise.all([
+      parsers[id](),
+      highlighters[id]?.().then(async (m) => {
+        await m.highlight.load?.();
+        return m;
+      }),
+    ]);
     const formatOptions = options.format?.[id];
     let formatter: FormatModule | undefined;
     if (formatOptions !== undefined)

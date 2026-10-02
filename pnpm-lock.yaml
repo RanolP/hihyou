@@ -251,6 +251,9 @@ importers:
       tree-sitter-javascript:
         specifier: workspace:*
         version: link:grammars/tree-sitter-javascript
+      tree-sitter-jsdoc:
+        specifier: workspace:*
+        version: link:grammars/tree-sitter-jsdoc
       tree-sitter-json:
         specifier: workspace:*
         version: link:grammars/tree-sitter-json
@@ -260,6 +263,9 @@ importers:
       tree-sitter-python:
         specifier: workspace:*
         version: link:grammars/tree-sitter-python
+      tree-sitter-regex:
+        specifier: workspace:*
+        version: link:grammars/tree-sitter-regex
       tree-sitter-swift:
         specifier: workspace:*
         version: link:grammars/tree-sitter-swift
@@ -279,11 +285,15 @@ importers:
 
   packages/syntechs/grammars/tree-sitter-javascript: {}
 
+  packages/syntechs/grammars/tree-sitter-jsdoc: {}
+
   packages/syntechs/grammars/tree-sitter-json: {}
 
   packages/syntechs/grammars/tree-sitter-kotlin: {}
 
   packages/syntechs/grammars/tree-sitter-python: {}
+
+  packages/syntechs/grammars/tree-sitter-regex: {}
 
   packages/syntechs/grammars/tree-sitter-swift: {}
 

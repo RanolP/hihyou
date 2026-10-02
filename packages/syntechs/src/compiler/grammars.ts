@@ -22,4 +22,7 @@ export const GRAMMARS: Record<string, { src: string; comments: string[] }> = {
     comments: ["comment", "multiline_comment"],
   },
   yaml: { src: "tree-sitter-yaml/src", comments: ["comment"] },
+  // Injected into JavaScript and TypeScript comments and regex literals by their injections.scm.
+  jsdoc: { src: "tree-sitter-jsdoc/src", comments: [] },
+  regex: { src: "tree-sitter-regex/src", comments: [] },
 };

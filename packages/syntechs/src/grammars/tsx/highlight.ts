@@ -1,1 +1,1 @@
-export { highlight } from "../javascript/highlight.js";
+export { highlight } from "./highlight.gen.js";

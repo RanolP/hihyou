@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { parseTree } from "../../core/index.js";
-import { highlight } from "./highlight.gen.js";
+import { highlight } from "./highlight.js";
 import { language } from "./index.js";
 
 const SNIPPET = `/// Doc
@@ -19,9 +19,13 @@ struct Point<T> {
 /** Each leaf, and each node a rule scopes, as `text scope` in source order. */
 function scopes(text: string): Map<string, string | undefined> {
   const tree = parseTree(language, text);
+  const painted = new Map<number, string>();
+  highlight.highlight(tree, (n, scope, from) => {
+    if (from === undefined) painted.set(n, scope);
+  });
   const out = new Map<string, string | undefined>();
   const walk = (n: number) => {
-    const scope = highlight.scopeOf(tree, n);
+    const scope = painted.get(n);
     const key = `${tree.kindName(n)} ${tree.text(n)}`;
     if (scope !== undefined && !out.has(key)) out.set(key, scope);
     for (let i = 0; i < tree.count(n); i++) walk(tree.child(n, i));

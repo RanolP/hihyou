@@ -8,7 +8,8 @@
 //
 // The formatters, src/grammars/<name>/fmt.gen.ts, are generated from the bundles and each language's format.ts
 // every time, the copied bundles included: they are cheap, and a spec edit must reach them. So are the
-// highlighters, src/grammars/<name>/highlight.gen.ts, from each grammar's queries/highlights.scm.
+// highlighters, src/grammars/<name>/highlight.gen.ts, compiled from each grammar's tree-sitter highlight queries
+// and the sitter-to-tm ruleset in src/highlight/rules.node.ts.
 
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";

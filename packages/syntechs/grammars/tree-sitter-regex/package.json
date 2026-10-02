@@ -1,0 +1,21 @@
+{
+  "name": "tree-sitter-regex",
+  "version": "0.25.0",
+  "private": true,
+  "scripts": {
+    "postinstall": "node ../build.mjs"
+  },
+  "grammar": {
+    "sources": [
+      {
+        "repo": "tree-sitter/tree-sitter-regex",
+        "commit": "b2ac15e27fce703d2f37a79ccd94a5c0cbe9720b",
+        "files": {
+          "grammar.js": "bf34d8926030ba197851690942de418f6c21d6f0bea714df3f8374e336f1fbde",
+          "tree-sitter.json": "4f1e10d9a64cdf28cc689263484388e2de83b0be006bf793884a8e364eaa7d6c",
+          "queries/highlights.scm": "ade28f54c53cfe89a856d22a3d8438d3c2e46cafaaaa08b2c9eabeea9f0b73de"
+        }
+      }
+    ]
+  }
+}

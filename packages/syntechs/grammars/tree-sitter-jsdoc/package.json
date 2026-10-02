@@ -1,0 +1,22 @@
+{
+  "name": "tree-sitter-jsdoc",
+  "version": "0.25.0",
+  "private": true,
+  "scripts": {
+    "postinstall": "node ../build.mjs"
+  },
+  "grammar": {
+    "sources": [
+      {
+        "repo": "tree-sitter/tree-sitter-jsdoc",
+        "commit": "658d18dcdddb75c760363faa4963427a7c6b52db",
+        "files": {
+          "grammar.js": "2ea9429679af2a1cbe8a7aef274035ccb7d33e3fd78652ade385fb8601f8e99e",
+          "src/scanner.c": "4e8e9fdbfbdc306998afee3848227499a4c668534d5e5d5e7a858bff9e99071e",
+          "tree-sitter.json": "c3579d510ac52b97c819a8ab5e65ee98b4cfefbbc66b75b555626816755e66f1",
+          "queries/highlights.scm": "d455d6b541bc03d624b9e57b2957dfe2134e9a75ee0773e62c594c1c9ba29db6"
+        }
+      }
+    ]
+  }
+}
