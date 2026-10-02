@@ -182,6 +182,8 @@ const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
     "script-unparsed",
     "<svg>\n    <script>\n        …\n    </script>\n    <script>\n        <![CDATA[\n            var a=1\n        ]]>\n    </script>\n</svg>\n<script>a … b</script>\n",
   ],
+  // A style value's `'...'` string requotes as `&quot;...&quot;`, which the check refused as a changed meaning.
+  ["style-attribute-requote", `<g style="font-family:'Helvetica Neue'"/>\n<div style="a:'x'; b:'y&quot;'"></div>\n`],
 ];
 
 function ours(text: string, options: Partial<HtmlOptions>) {
