@@ -78,6 +78,14 @@ const edgeCases: [string, string][] = [
   ["marker-line-collections", "--- |\n  x\n--- [a, b]\n--- !t d\n"],
   // A root flow collection with properties broke onto a new line after them, or broke at all when it fits.
   ["flow-root",`&x [${Array.from({ length: 13 }, (_, i) => `item${i}`).join(", ")}]\n---\n{a: 1}\n`],
+  // An explicit key kept its `?`, or a key with no value printed `key:` where oxfmt keeps `? key` (a flow key, a comment).
+  ["explicit-keys", "? a\n: b\n? c\n? [d]\n? e # c\n? |\n  f\n: - g\n? - h\n: {i: j}\n"],
+  // A comment between an explicit key and its `:` lost its line, or an empty key or empty pair dropped its colon.
+  ["explicit-comments-empty", "? a\n# c\n\n: b\nd: 1\n: c\ne:\n  - ? x\n    :\n"],
+  // A flow key past printWidth printed flat instead of `? [`, or its scalar value stayed beside it past printWidth.
+  ["flow-key-long", `[${"x".repeat(90)}]: c\n[${"y".repeat(40)}]: ${"z".repeat(40)}\n`],
+  // A flow pair's `?` or empty `: ` pair kept source spacing, or a wide flow key in a flow broke without `? `.
+  ["flow-explicit-empty", `- {? a : x, b: c, : }\n- [? d : e, : ]\n- {[${"w".repeat(80)}]: [b]}\n`],
 ];
 
 // A folded scalar's refill under proseWrap always: lines join into paragraphs and refill at printWidth, except
@@ -120,8 +128,6 @@ const refused: [string, string][] = [
   ["flow-comment", "a: [1, # one\n  2]\n"],
   // A block scalar ending the stream dropped its trailing whitespace line deeper than its content, which oxfmt keeps.
   ["block-scalar-deep-whitespace-end", "a: |-\n  ab\n   \n"],
-  // A flow key past printWidth printed flat, where oxfmt makes it explicit (`? [`).
-  ["flow-key-long", `[${"x".repeat(90)}]: c\n`],
   // A comment after a kept block scalar ending the stream printed a final line break, which oxfmt leaves off.
   ["kept-block-scalar-then-comment", "a: |+\n  x\n# c\n"],
   // `{? 1,? 2}` parses to an ERROR root spanning `{? 1` only, so printing its text dropped the rest.

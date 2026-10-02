@@ -3,8 +3,8 @@
 // for yet throws `Unsupported`, so the file is refused rather than printed wrong.
 //
 // The printer covers block mappings and sequences of single-line scalars, comments, document markers and
-// blank lines, anchors, tags, aliases, block scalars and flow collections. Comments inside flow collections,
-// multi-line flow scalars and explicit keys refuse.
+// blank lines, anchors, tags, aliases, block scalars, flow collections and explicit keys. Comments inside flow
+// collections and multi-line flow scalars refuse.
 
 import { NO_NODE } from "../../core/arena.js";
 import { SYM_ERROR } from "../../core/language.js";
@@ -244,37 +244,41 @@ class Printer {
     const seq = this.kind(c) === "flow_sequence";
     const items = this.flowItems(c).map(({ item }) => this.flatItem(item, seq));
     const pad = !seq && items.length > 0 && this.bracketSpacing ? " " : "";
-    const text = seq ? `[${items.join(", ")}]` : `{${pad}${items.join(", ")}${pad}}`;
+    // A last pair with neither key nor value (`: `) takes the closing pad's place.
+    const end = items[items.length - 1] === ": " ? "" : pad;
+    const text = seq ? `[${items.join(", ")}]` : `{${pad}${items.join(", ")}${end}}`;
     return props === "" ? text : `${props} ${text}`;
   }
 
   /**
-   * A flow pair's key text (alias keys keep a space before the colon) and value, either absent. A pair with no
-   * value prints its key alone in a mapping (`{b, c: }` → `{ b, c }`); in a sequence prettier makes it `? b`,
-   * which this grammar cannot read back, so it refuses.
+   * A flow pair's key text (alias keys keep a space before the colon) and node, and its value, any absent. A `?`
+   * drops: prettier prints the pair as an implicit key would. A pair with no value prints its key alone in a
+   * mapping (`{b, c: }` → `{ b, c }`); in a sequence prettier makes it `? b`, which this grammar cannot read back,
+   * so it refuses.
    */
-  pairParts(pair: number, seq: boolean): { key: string | undefined; value: number | undefined } {
+  pairParts(pair: number, seq: boolean): { key: string | undefined; keyNode: number | undefined; value: number | undefined } {
     let key: number | undefined;
     let value: number | undefined;
     for (let i = 0; i < this.tree.count(pair); i++) {
       const k = this.tree.child(pair, i);
       if (this.tree.fieldName(k) === "key") key = k;
       else if (this.tree.fieldName(k) === "value") value = k;
-      else if (this.kind(k) !== ":") unsupported(`a flow pair ${this.kind(k)}`);
+      else if (this.kind(k) !== ":" && this.kind(k) !== "?") unsupported(`a flow pair ${this.kind(k)}`);
     }
-    if (key === undefined && value === undefined) return unsupported("a flow pair with neither key nor value");
+    if (key === undefined && value === undefined) return { key: undefined, keyNode: undefined, value: undefined };
     if (value === undefined && seq) return unsupported("a flow sequence pair without a value");
     if (key === undefined) {
       if (this.flowCollection(value as number) !== undefined) unsupported("a flow collection after an empty key");
-      return { key: undefined, value };
+      return { key: undefined, keyNode: undefined, value };
     }
     const alias = this.named(key).some((k) => this.kind(k) === "alias");
-    return { key: this.flat(key) + (alias ? " " : ""), value };
+    return { key: this.flat(key) + (alias ? " " : ""), keyNode: key, value };
   }
 
   flatItem(item: number, seq: boolean): string {
     if (this.kind(item) === "flow_node") return this.flat(item);
     const { key, value } = this.pairParts(item, seq);
+    if (key === undefined && value === undefined) return ": ";
     if (value === undefined) return key as string;
     return `${key ?? ""}: ${this.flat(value)}`;
   }
@@ -296,6 +300,7 @@ class Printer {
     if (this.prose !== "preserve" && /\s/.test(flat.replace(/[,:] /g, ""))) unsupported("a broken flow collection under proseWrap");
     const { props } = this.properties(n);
     const seq = this.kind(c) === "flow_sequence";
+    if (/(?:^|, ): $/.test(flat.slice(1, -1))) unsupported("a broken flow collection ending in an empty pair");
     const lines = [(props === "" ? "" : `${props} `) + (seq ? "[" : "{")];
     const inner = indent + this.tab;
     items.forEach(({ item }, i) => {
@@ -318,16 +323,25 @@ class Printer {
   }
 
   /**
-   * A flow pair at column `col` (its own indent): `key: value` on one line when the value is a scalar or the
-   * whole fits; else a collection value moves to the next line, one tabWidth in, and lays out from there.
+   * A flow pair at column `col` (its own indent): `key: value` on one line when the whole fits or key and value
+   * are scalars; else a flow key too wide for `key:` breaks after `? `, two columns in, with `: value` on the line
+   * after it; else a collection value moves to the next line, one tabWidth in, and lays out from there.
    */
   pairLayout(pair: number, seq: boolean, col: number, trail: number): string[] {
-    const { key, value } = this.pairParts(pair, seq);
+    const { key, keyNode, value } = this.pairParts(pair, seq);
     const flat = this.flatItem(pair, seq);
-    if (value === undefined || this.flowCollection(value) === undefined) return [flat];
     if (col + textWidth(flat) + trail <= this.width) return [flat];
-    const keyNode = this.tree.child(pair, 0);
-    if (key === undefined || this.flowCollection(keyNode) !== undefined) return unsupported("a flow key past printWidth");
+    const flowKey = keyNode !== undefined && this.flowCollection(keyNode) !== undefined;
+    if (flowKey && value !== undefined && col + textWidth(key as string) + 1 > this.width) {
+      const k = this.layout(keyNode, col + 2, col + 2, 0);
+      const v = this.layout(value, col + 2, col + 2, trail);
+      return [`? ${k[0]}`, ...k.slice(1), `${" ".repeat(col)}: ${v[0]}`, ...v.slice(1)];
+    }
+    if (value === undefined || this.flowCollection(value) === undefined) {
+      if (flowKey) unsupported("a flow key past printWidth");
+      return [flat];
+    }
+    if (key === undefined) return unsupported("a flow value past printWidth after an empty key");
     return [`${key}:`, ...this.moved(value, col + this.tab, trail)];
   }
 
@@ -534,39 +548,127 @@ class Printer {
         if (c !== undefined && this.tree.lf(c) === 0) this.append(" ");
         return;
       }
-      if (this.isBlockScalar(v)) this.blockScalar(v, indent + this.tab, " ");
-      else if (this.kind(v) === "block_node") {
-        // `- &a⏎  b: 1`: a collection with properties starts on the line after them.
-        const { props, coll } = this.collection(v);
-        this.valueProps(props, coll);
-        this.block(coll, indent + 2, props === "", until);
-      } else if (this.flowCollection(v) !== undefined) {
-        this.append(" ");
-        this.putFlow(v, indent + 2);
-      } else this.append(` ${this.scalar(v)}`);
+      this.marked(v, indent, until);
       return;
     }
     if (this.kind(item) !== "block_mapping_pair") unsupported(`a ${this.kind(item)}`);
-    const key = this.tree.child(item, 0);
-    if (this.tree.fieldName(key) !== "key") unsupported("a pair without a key");
-    if (this.tree.kindName(key) === "?") unsupported("an explicit key");
+    let key: number | undefined;
+    let colon: number | undefined;
+    let value: number | undefined;
+    for (let i = 0; i < this.tree.count(item); i++) {
+      const c = this.tree.child(item, i);
+      if (this.tree.fieldName(c) === "key") key = c;
+      else if (this.tree.fieldName(c) === "value") value = c;
+      else if (this.kind(c) === ":") colon = c;
+    }
+    this.pair(item, key, colon, value, indent, until);
+  }
+
+  /** A node after a one-column marker (`-`, `?`, `:`) on the current line, its content two columns past it. */
+  marked(v: number, indent: number, until: number): void {
+    if (this.isBlockScalar(v)) this.blockScalar(v, indent + this.tab, " ");
+    else if (this.kind(v) === "block_node") {
+      // `- &a⏎  b: 1`: a collection with properties starts on the line after them.
+      const { props, coll } = this.collection(v);
+      this.valueProps(props, coll);
+      this.block(coll, indent + 2, props === "", until);
+    } else if (this.flowCollection(v) !== undefined) {
+      this.append(" ");
+      this.putFlow(v, indent + 2);
+    } else this.append(` ${this.scalar(v)}`);
+  }
+
+  /**
+   * Whether prettier counts key `n` as printed on one line for sure: an alias, or a plain or quoted scalar on one
+   * source line (under proseWrap `always`, also with no space to fill at).
+   */
+  singleLine(n: number): boolean {
+    if (this.kind(n) !== "flow_node") return false;
+    const s = this.properties(n).content;
+    if (s === undefined) return false;
+    const k = this.kind(s);
+    if (k === "alias") return true;
+    if (k !== "plain_scalar" && k !== "double_quote_scalar" && k !== "single_quote_scalar") return false;
+    const text = this.tree.text(s);
+    return !text.includes("\n") && (this.prose !== "always" || !text.includes(" "));
+  }
+
+  /**
+   * A block mapping pair as prettier prints it, written with `?` or not: `key:` for a key alone that is surely one
+   * line, `? key` for any other key alone, `: value` with no key; `? key⏎: value` when the key is a block node, a
+   * comment stands before it or between it and `:` (those print at the pair's indent, blank lines dropped), or it
+   * is a flow collection too wide for `key:`; otherwise `key: value` as an implicit key prints.
+   */
+  pair(pair: number, key: number | undefined, colon: number | undefined, value: number | undefined, indent: number, until: number): void {
+    const colonAt = colon === undefined ? until : this.tree.ord(colon);
+    if (key === undefined) {
+      if (this.pending(colonAt) !== undefined) unsupported("a comment in a pair with no key");
+      this.append(":");
+      if (value === undefined) return;
+      if (this.pending(this.start(value)) !== undefined) unsupported("a comment before a value with no key");
+      this.marked(value, indent, until);
+      return;
+    }
+    const lead = this.pending(this.start(key));
+    if (lead !== undefined) {
+      const second = this.comments[this.next + 1];
+      if (this.tree.lf(lead) !== 0 || (second !== undefined && this.tree.ord(second) < this.start(key)))
+        unsupported("comments before an explicit key");
+      if (this.kind(key) !== "flow_node" || this.flowCollection(key) !== undefined || value === undefined)
+        unsupported("a comment before an explicit key that is no scalar");
+    }
+    // The comments after the key and before `:` (before the next item for a pair with no `:`).
+    const after: number[] = [];
+    for (let i = this.next; i < this.comments.length; i++) {
+      const c = this.comments[i]!;
+      if (this.tree.ord(c) >= colonAt) break;
+      if (this.tree.ord(c) > this.tree.ord(key)) after.push(c);
+    }
+    const trail = after[0] !== undefined && this.tree.lf(after[0]) === 0 ? after[0] : undefined;
+    if (value === undefined) {
+      if (colon !== undefined && after.length > 0) unsupported("a comment before the `:` of an empty value");
+      // A `!!set` keeps its keys explicit.
+      const holder = this.tree.parent(this.tree.parent(pair));
+      const set = this.named(holder).some((k) => this.kind(k) === "tag" && this.tree.text(k) === "!!set");
+      if (lead === undefined && trail === undefined && !set && this.singleLine(key)) return this.implicitPair(key, undefined, indent, until);
+      this.append("?");
+      this.marked(key, indent, colonAt);
+      return;
+    }
+    if (trail !== undefined) unsupported("a trailing comment on an explicit key with a value");
+    const flowKey = this.flowCollection(key) !== undefined;
+    if (flowKey) this.noFlowComment(key);
+    // prettier's `? ` group breaks when the flat key and its colon pass printWidth.
+    const alias = this.named(key).some((k) => this.kind(k) === "alias") ? 1 : 0;
+    const wide = flowKey && textWidth(this.lines[this.lines.length - 1]!) + textWidth(this.flat(key)) + alias + 1 > this.width;
+    if (this.kind(key) === "flow_node" && lead === undefined && after.length === 0 && !wide)
+      return this.implicitPair(key, value, indent, until);
+    this.append("?");
+    if (lead !== undefined) {
+      this.trailing(lead);
+      this.line(" ".repeat(indent + 2) + this.scalar(key));
+    } else this.marked(key, indent, colonAt);
+    while (this.pending(colonAt) !== undefined) this.ownLine(this.comments[this.next]!, indent, false);
+    this.line(`${" ".repeat(indent)}:`);
+    if (this.pending(this.start(value)) !== undefined) unsupported("a comment before an explicit pair's value");
+    this.marked(value, indent, until);
+  }
+
+  /** A pair whose key prints implicit (`key: value`), its first line already started at `indent`. */
+  implicitPair(key: number, value: number | undefined, indent: number, until: number): void {
     // An alias key keeps a space before the colon, which would otherwise read as part of its name.
-    // A flow collection key prints flat; prettier makes one that does not fit explicit (`? [`), which refuses.
     const flowKey = this.flowCollection(key) !== undefined;
     if (flowKey) this.noFlowComment(key);
     const keyText = flowKey ? this.flat(key) : this.scalar(key);
     this.append(this.named(key).some((k) => this.kind(k) === "alias") ? `${keyText} :` : `${keyText}:`);
     const keyLine = this.lines.length - 1;
-    if (flowKey && textWidth(this.lines[keyLine]!) > this.width) unsupported("a flow key past printWidth");
-    const value = this.tree.child(item, this.tree.count(item) - 1);
-    if (this.tree.fieldName(value) !== "value") return;
+    if (value === undefined) return;
     if (this.flowCollection(value) !== undefined) {
       if (this.pending(this.start(value)) !== undefined) unsupported("a comment before a flow value");
       this.noFlowComment(value);
       // prettier's conditionalGroup: the pair on one line when it fits, else the value one tabWidth in below.
       const flat = ` ${this.flat(value)}`;
       if (textWidth(this.lines[keyLine]!) + textWidth(flat) <= this.width) this.append(flat);
-      else if (flowKey) unsupported("a flow key past printWidth");
       else for (const l of this.moved(value, indent + this.tab, 0)) this.line(l);
       return;
     }
@@ -578,8 +680,14 @@ class Printer {
       return;
     }
     if (this.pending(this.start(value)) !== undefined) unsupported("a comment before a scalar value");
-    this.append(` ${this.scalar(value)}`);
-    if (flowKey && textWidth(this.lines[keyLine]!) > this.width) unsupported("a flow key past printWidth");
+    const text = this.scalar(value);
+    // prettier's conditionalGroup for a flow key: a scalar that does not fit beside it moves one tabWidth in below.
+    if (flowKey && textWidth(this.lines[keyLine]!) + 1 + textWidth(text) > this.width) {
+      if (text.includes("\n")) unsupported("a multi-line scalar under a flow key past printWidth");
+      this.line(" ".repeat(indent + this.tab) + text);
+      return;
+    }
+    this.append(` ${text}`);
   }
 
   document(doc: number, last: boolean, limit: number): void {
