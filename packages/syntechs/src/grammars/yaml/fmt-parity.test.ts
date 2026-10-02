@@ -134,6 +134,8 @@ const edgeCases: [string, string][] = [
   ["comment-no-deeper-than-above", "x:\n  a: 1\n  # x\n    # y\n  b: 2\n"],
   // A `...` or comment after a kept block scalar ending the stream refused or printed a final line break oxfmt leaves off.
   ["kept-block-scalar-then-end", "a: |+\n  x\n# c\n---\n|+\n ab\n\n...\n"],
+  // A whitespace line past a block scalar's content indent ending the stream refused, or lost its spaces at the line end.
+  ["block-scalar-deep-whitespace-end", "a:\n  b: >-\n    ab\n\n      \n     \n"],
 ];
 
 // A folded or plain scalar's refill under proseWrap always: lines join into paragraphs and refill at printWidth,
@@ -178,8 +180,6 @@ const refused: [string, string][] = [
   ["flow-pair-value-comment", "a: {b: [1, # one\n  2], c: 3}\n"],
   // A blank line after a trailing comment in a flow collection, which oxfmt moves to column 0, printed anyway.
   ["flow-comment-blank-after", "a: [1, # one\n\n  2]\n"],
-  // A block scalar ending the stream dropped its trailing whitespace line deeper than its content, which oxfmt keeps.
-  ["block-scalar-deep-whitespace-end", "a: |-\n  ab\n   \n"],
   // A stream that parses to an ERROR root (an unclosed flow collection) printed the text it spans, dropping the rest.
   ["error-root", "a: [b, c\nd: 1\n"],
   // A prettier-ignore trailing a line, or before a document, was applied to the next block item.

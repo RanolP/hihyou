@@ -1,6 +1,6 @@
 import { type PrettierOptions, prettierDefaults, prettierSettings } from "../../fmt/options.js";
 import { defineLanguage, type Language } from "../../fmt/rules.js";
-import { sLiteral } from "../../fmt/stream.js";
+import { sKeptText, sLiteral } from "../../fmt/stream.js";
 import type { StreamRule } from "../../fmt/stream-format.js";
 import type { Normalize } from "../../fmt/check.js";
 import { grammar } from "./bundle.js";
@@ -82,7 +82,10 @@ export const yaml: Language<PrettierOptions> = {
         (node, ctx) => {
           const out = printYaml(ctx.tree, node, ctx.options);
           if (!out.final) noFinal.add(ctx.tree);
-          if (out.text !== "") sLiteral(node, out.text);
+          // A block scalar's whitespace line can end the output, and a line end trims all but kept text.
+          const tail = /[ \t]+$/.exec(out.text)?.[0] ?? "";
+          if (out.text.length > tail.length) sLiteral(node, out.text.slice(0, out.text.length - tail.length));
+          if (tail !== "") sKeptText(tail);
         },
       ],
       // An ERROR root can span less than the file, so its text is no copy of it.

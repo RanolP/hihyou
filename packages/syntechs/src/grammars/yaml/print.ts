@@ -731,9 +731,9 @@ class Printer {
       let u = 0;
       for (let f = paras.length - 1; f >= 0 && paras[f]!.every((w) => w.replace(/[ \t]+$/, "") === ""); f--) u++;
       // Ending the stream, prettier keeps a trailing line more indented than the content, spaces and all.
-      if (this.lastDescendant(n) && paras.slice(paras.length - u).some((p) => p.length > 0))
-        unsupported("a whitespace line past the content indent ending the stream");
-      if (u > 0) paras = u >= 2 && !this.lastDescendant(n) ? paras.slice(0, -(u - 1)) : paras.slice(0, -u);
+      const deep = paras.findLastIndex((p, f) => f >= paras.length - u && p.length > 0);
+      if (this.lastDescendant(n) && deep >= 0) paras = paras.slice(0, deep + 1);
+      else if (u > 0) paras = u >= 2 && !this.lastDescendant(n) ? paras.slice(0, -(u - 1)) : paras.slice(0, -u);
     }
     const pad = " ".repeat(indent);
     const put = (l: string) => {
