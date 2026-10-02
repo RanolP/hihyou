@@ -1008,7 +1008,7 @@ class Printer {
       }
       // oxfmt drops the blank lines after a directive.
       const blank = this.tree.lf(c) >= 2 && this.lines.length > 0 && !(directive && comment === undefined);
-      if (k !== "comment") directive = /_directive$/.test(k);
+      if (k !== "comment") directive = k.endsWith("_directive");
       switch (k) {
         case "comment":
           break;

@@ -30,7 +30,7 @@ const normalize: Normalize = (lexemes, _text, tree) =>
       if (!valued) return undefined;
     }
     // A directive prints its name and parameters one space apart.
-    if (/_directive$/.test(kind) || /_directive$/.test(tree.kindName(tree.parent(l.node)))) return l.text.trim().split(/[ \t]+/).join(" ");
+    if (kind.endsWith("_directive") || tree.kindName(tree.parent(l.node)).endsWith("_directive")) return l.text.trim().split(/[ \t]+/).join(" ");
     if (kind === "plain_scalar") return fold(l.text);
     if (kind === "single_quote_scalar") return `str:${fold(l.text.slice(1, -1).replaceAll("''", "'"))}`;
     if (kind === "double_quote_scalar") return `str:${fold(l.text.slice(1, -1).replaceAll('\\"', '"'))}`;
