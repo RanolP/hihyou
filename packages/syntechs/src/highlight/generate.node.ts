@@ -19,6 +19,7 @@ import { language as regex } from "../grammars/regex/index.js";
 import { language as swift } from "../grammars/swift/index.js";
 import { language as tsx } from "../grammars/tsx/index.js";
 import { language as typescript } from "../grammars/typescript/index.js";
+import { language as yaml } from "../grammars/yaml/index.js";
 import type { CaptureScope } from "./match.js";
 import { LANGUAGES, type LanguageRules, type Rule } from "./rules.node.js";
 
@@ -26,7 +27,7 @@ import { LANGUAGES, type LanguageRules, type Rule } from "./rules.node.js";
 const pkg = resolve(import.meta.dirname, "../..");
 const grammarsDir = join(pkg, "grammars");
 
-const PARSERS: Record<string, Language> = { javascript, typescript, tsx, kotlin, swift, jsdoc, regex, html };
+const PARSERS: Record<string, Language> = { javascript, typescript, tsx, kotlin, swift, jsdoc, regex, html, yaml };
 
 // ---- The query language: the subset of tree-sitter's S-expressions that highlight queries use.
 

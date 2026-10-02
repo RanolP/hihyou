@@ -304,6 +304,53 @@ const HTML: Record<string, Rule> = {
   "punctuation.bracket": { scope: TAG_BEGIN, byText: { ">": TAG_END, "/>": TAG_END } },
 };
 
+// tree-sitter-yaml's highlights.scm captures, as the scopes VS Code's YAML grammar gives the same tokens.
+const YAML: Record<string, Rule> = {
+  boolean: "constant.language.boolean.yaml",
+  "constant.builtin": "constant.language.null.yaml",
+  string: {
+    scope: "string.unquoted.plain.out.yaml",
+    byKind: {
+      double_quote_scalar: "string.quoted.double.yaml",
+      single_quote_scalar: "string.quoted.single.yaml",
+      block_scalar: "string.unquoted.block.yaml",
+    },
+  },
+  number: { scope: "constant.numeric.integer.yaml", byKind: { float_scalar: "constant.numeric.float.yaml" } },
+  comment: "comment.line.number-sign.yaml",
+  label: { scope: "entity.name.type.anchor.yaml", byKind: { alias_name: "variable.other.alias.yaml" } },
+  type: "storage.type.tag-handle.yaml",
+  attribute: "keyword.other.directive.yaml",
+  property: "entity.name.tag.yaml",
+  "punctuation.delimiter": {
+    scope: "punctuation.separator.yaml",
+    byText: {
+      ":": "punctuation.separator.key-value.mapping.yaml",
+      "-": "punctuation.definition.block.sequence.item.yaml",
+      ",": "punctuation.separator.sequence.yaml",
+      "?": "punctuation.definition.key-value.begin.yaml",
+      "|": "keyword.control.flow.block-scalar.literal.yaml",
+      ">": "keyword.control.flow.block-scalar.folded.yaml",
+    },
+  },
+  "punctuation.bracket": {
+    scope: "punctuation.definition.sequence.begin.yaml",
+    byText: {
+      "]": "punctuation.definition.sequence.end.yaml",
+      "{": "punctuation.definition.mapping.begin.yaml",
+      "}": "punctuation.definition.mapping.end.yaml",
+    },
+  },
+  "punctuation.special": {
+    scope: "punctuation.definition.alias.yaml",
+    byText: {
+      "&": "punctuation.definition.anchor.yaml",
+      "---": "entity.other.document.begin.yaml",
+      "...": "entity.other.document.end.yaml",
+    },
+  },
+};
+
 export const LANGUAGES: Record<string, LanguageRules> = {
   jsdoc: {
     grammar: "tree-sitter-jsdoc",
@@ -362,5 +409,10 @@ export const LANGUAGES: Record<string, LanguageRules> = {
     // tree-sitter.json's only highlights file; naming it skips the injections.scm it lists, which embeds CSS and JS.
     queries: ["queries/highlights.scm"],
     captures: HTML,
+  },
+  yaml: {
+    grammar: "tree-sitter-yaml",
+    queries: ["queries/highlights.scm"],
+    captures: YAML,
   },
 };
