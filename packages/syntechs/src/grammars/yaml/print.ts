@@ -1079,6 +1079,27 @@ class Printer {
     else this.fill(value, indent + this.tab);
   }
 
+  /**
+   * The comments before a scalar or flow value: one on the key's line trails it, the rest go on lines of their own at
+   * `indent`, and the value's line starts below them, after a blank line only where the source has one after an
+   * own-line comment.
+   */
+  valueComments(value: number, indent: number): void {
+    let c: number | undefined;
+    let own = false;
+    while ((c = this.pending(this.start(value))) !== undefined) {
+      if (own && this.tree.lf(c) >= 2) unsupported("a blank line between comments before a value");
+      own = this.tree.lf(c) > 0;
+      if (own) this.line(" ".repeat(indent) + this.tree.text(c));
+      else this.append(` ${this.tree.text(c)}`);
+      this.next++;
+    }
+    const { content } = this.properties(value);
+    if (content !== undefined && this.pending(this.start(content)) !== undefined) unsupported("comments before and after a value's properties");
+    if (own && this.tree.lf(firstLeaf(this.tree, value)) >= 2) this.blank();
+    this.line(" ".repeat(indent));
+  }
+
   /** A pair whose key prints implicit (`key: value`), its first line already started at `indent`. */
   implicitPair(key: number, value: number | undefined, indent: number, until: number): void {
     // An alias key keeps a space before the colon, which would otherwise read as part of its name.
@@ -1090,7 +1111,14 @@ class Printer {
     const keyLine = this.lines.length - 1;
     if (value === undefined) return;
     if (this.flowCollection(value) !== undefined) {
-      if (this.pending(this.start(value)) !== undefined) unsupported("a comment before a flow value");
+      if (this.pending(this.start(value)) !== undefined) {
+        this.valueComments(value, indent + this.tab);
+        // An own-line `# prettier-ignore` keeps the collection as written; one trailing the key's line ignores nothing.
+        const ignore = this.ignoring(value);
+        if (ignore !== undefined) this.asWritten(value, ignore);
+        else this.putFlow(value, indent + this.tab);
+        return;
+      }
       // A comment or multi-line scalar breaks the collection, which then opens on the key's line with its items two
       // tabWidths in.
       const c = this.flowCollection(value) as number;
@@ -1112,22 +1140,8 @@ class Printer {
       this.block(coll, indent + this.tab, false, until);
       return;
     }
-    // Comments before a scalar value: one on the key's line trails it, the rest go on lines of their own one tabWidth
-    // in, and the value below them, after a blank line only where the source has one after an own-line comment.
     if (this.pending(this.start(value)) !== undefined) {
-      let c: number | undefined;
-      let own = false;
-      while ((c = this.pending(this.start(value))) !== undefined) {
-        if (own && this.tree.lf(c) >= 2) unsupported("a blank line between comments before a scalar value");
-        own = this.tree.lf(c) > 0;
-        if (own) this.line(" ".repeat(indent + this.tab) + this.tree.text(c));
-        else this.append(` ${this.tree.text(c)}`);
-        this.next++;
-      }
-      const { content } = this.properties(value);
-      if (content !== undefined && this.pending(this.start(content)) !== undefined) unsupported("comments before and after a scalar value's properties");
-      if (own && this.tree.lf(firstLeaf(this.tree, value)) >= 2) this.blank();
-      this.line(" ".repeat(indent + this.tab));
+      this.valueComments(value, indent + this.tab);
       this.fill(value, indent + this.tab);
       return;
     }

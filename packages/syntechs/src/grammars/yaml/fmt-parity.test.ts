@@ -136,6 +136,11 @@ const edgeCases: [string, string][] = [
   ["kept-block-scalar-then-end", "a: |+\n  x\n# c\n---\n|+\n ab\n\n...\n"],
   // A whitespace line past a block scalar's content indent ending the stream refused, or lost its spaces at the line end.
   ["block-scalar-deep-whitespace-end", "a:\n  b: >-\n    ab\n\n      \n     \n"],
+  // A comment before a flow value refused, or an own-line prettier-ignore there reformatted the collection oxfmt keeps.
+  [
+    "comment-before-flow-value",
+    "k: # c\n  [aaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbb, cccccccccccccccccccccc, dddddddddddddddd]\nl:\n  # c\n\n  {a: 1}\nm:\n  # prettier-ignore\n  [\n      a,   b,  # x\n   c  ]\n",
+  ],
 ];
 
 // A folded or plain scalar's refill under proseWrap always: lines join into paragraphs and refill at printWidth,
