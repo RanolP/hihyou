@@ -112,5 +112,5 @@ export const yaml: Language<PrettierOptions> = {
 export function formatYaml(value: string, options: Partial<PrettierOptions> = {}): string | undefined {
   const tree = parseTree(language, value);
   if (tree.errorChars > 0 || tree.kind(tree.root) === SYM_ERROR || brokenNodes(tree) !== undefined) return undefined;
-  return printYaml(tree, tree.root, { ...defaults, ...options });
+  return printYaml(tree, tree.root, { ...defaults, ...options }).text;
 }
