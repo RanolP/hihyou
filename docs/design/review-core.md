@@ -290,6 +290,16 @@ type Author<H extends Host> = { id: string } & HostAuthor<H>;
 7. **Line ranges are derived, never stored.** The anchor's `AstSteps` is the single source of truth for a thread's location.
 8. **A lost thread is shown, never dropped.**
 
+## In the shared renderer: cross-file moves and "viewed"
+
+`@hihyou/ui` draws `Side.moves` for both front ends, and adds two things the engine contract does not carry.
+
+**A cross-file move expands in place.** The source file reads the block as code moved away and the target file as code moved in, each under a "Moved to/from `<path>:<line>`" label. The label is a button with `aria-expanded`: Enter, Space or a click on it or on the block expands the pair under the block, and the same control or Escape folds it. Split puts the source half on the left and the target half on the right, line by line; unified shows the inner diff, the two halves merged as `mergeLines` merges a reflow, or one half's lines after the other's when they share no unchanged text. The other half's text comes from the other file's already-loaded `FileDiff` (`movePair` in `moves.ts`); when its half is not found, the expansion shows the half it has and a button opening the other file. A move within one file keeps its jump-and-flash label.
+
+**"Viewed" marks move pairs and files** (stage 1 of the plan recorded on 2026-10-01). Both halves of a move share one subject, so expanding the pair in either file marks it viewed in both, and a "Viewed" toggle on each label and each file header sets or clears the mark from the keyboard. Viewed code is dimmed. Ordinary hunks get no mark of their own: the file toggle covers them, and a per-hunk key would have no identity that survives a new iteration. A file's subject includes its blob ids, so a new revision of the file reads as unviewed again, as on GitHub; a move's subject includes its halves' lines and text.
+
+Every key goes through one `KeyOf` function (`plainKeyOf` today; stage 2 swaps in an HMAC so a gist never holds a path). The state is a last-writer-wins element set: each key holds `{ viewed, ts, device }`, a merge keeps the larger `ts` per key with `device` as the tiebreak, and un-viewing writes `viewed: false`. `ts` comes from a hybrid logical clock that moves past every timestamp it merges in, so a device whose wall clock runs behind still writes after an entry it has seen. The `ViewedStore` interface (`get`, `set`, `subscribe`, `merge`, `state`) has one in-session implementation, which keeps the state for as long as the open review's view lives. A `KeyOf` is synchronous, so the stage 2 HMAC needs a synchronous SHA-256 (WebCrypto's `sign` is async) or keys computed ahead of the draw.
+
 ## Open questions
 
 All undecided; recorded here, not decided.

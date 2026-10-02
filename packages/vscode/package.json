@@ -22,7 +22,8 @@
     "@types/vscode": "1.100.0",
     "@vscode/test-electron": "3.1.0",
     "@vscode/test-web": "0.0.81",
-    "esbuild": "0.28.2"
+    "esbuild": "0.28.2",
+    "esbuild-plugin-solid": "0.6.0"
   },
   "contributes": {
     "commands": [
@@ -61,6 +62,30 @@
         "command": "hihyou.openDiffset",
         "title": "Open Diff",
         "category": "Hihyou"
+      },
+      {
+        "command": "hihyou.nextFile",
+        "title": "Next Changed File",
+        "category": "Hihyou",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "hihyou.previousFile",
+        "title": "Previous Changed File",
+        "category": "Hihyou",
+        "icon": "$(arrow-up)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "hihyou.nextFile",
+        "key": "alt+down",
+        "when": "activeWebviewPanelId == 'hihyou.review'"
+      },
+      {
+        "command": "hihyou.previousFile",
+        "key": "alt+up",
+        "when": "activeWebviewPanelId == 'hihyou.review'"
       }
     ],
     "viewsContainers": {
@@ -83,7 +108,18 @@
     "viewsWelcome": [
       {
         "view": "hihyou.diffsets",
-        "contents": "Open a folder inside a git repository to list its changes."
+        "contents": "Open a folder inside a git repository to list its changes.",
+        "when": "workspaceFolderCount == 0"
+      },
+      {
+        "view": "hihyou.diffsets",
+        "contents": "No diffsets are open. Review a repository to list its changes here.\n[Review Working Tree](command:hihyou.reviewWorkingTree)",
+        "when": "workspaceFolderCount > 0"
+      },
+      {
+        "view": "hihyou.diffsets",
+        "contents": "[Review Pull Request](command:hihyou.reviewPullRequest)",
+        "when": "workspaceFolderCount > 0 && hihyou.hasGitHubRemote"
       }
     ],
     "menus": {
@@ -95,6 +131,26 @@
         {
           "command": "hihyou.openDiffset",
           "when": "false"
+        },
+        {
+          "command": "hihyou.nextFile",
+          "when": "activeWebviewPanelId == 'hihyou.review'"
+        },
+        {
+          "command": "hihyou.previousFile",
+          "when": "activeWebviewPanelId == 'hihyou.review'"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "hihyou.previousFile",
+          "when": "activeWebviewPanelId == 'hihyou.review'",
+          "group": "navigation@1"
+        },
+        {
+          "command": "hihyou.nextFile",
+          "when": "activeWebviewPanelId == 'hihyou.review'",
+          "group": "navigation@2"
         }
       ],
       "view/title": [

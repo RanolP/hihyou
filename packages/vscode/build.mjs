@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { builtinModules } from "node:module";
 import { join } from "node:path";
 import { build } from "esbuild";
+import { solidPlugin } from "esbuild-plugin-solid";
 
 const here = import.meta.dirname;
 const shared = {
@@ -12,6 +13,8 @@ const shared = {
   sourcemap: true,
   logLevel: "warning",
 };
+// @hihyou/ui draws with Solid: its .tsx goes through Solid's JSX compiler, not esbuild's React transform.
+const solid = solidPlugin();
 
 // A web extension has no Node, so a Node import that sneaks into the shared code must fail the build, not the
 // extension at run time.
@@ -42,6 +45,7 @@ await Promise.all([
     format: "cjs",
     target: "node20",
     external: ["vscode"],
+    plugins: [solid],
   }),
   build({
     ...shared,
@@ -51,7 +55,7 @@ await Promise.all([
     format: "cjs",
     target: "es2023",
     external: ["vscode"],
-    plugins: [noNode],
+    plugins: [noNode, solid],
   }),
   build({
     ...shared,
@@ -60,7 +64,7 @@ await Promise.all([
     platform: "browser",
     format: "iife",
     target: "es2023",
-    plugins: [noNode],
+    plugins: [noNode, solid],
   }),
 ]);
 // The plugin sees only what esbuild resolves; this reads the emitted text, so a require the bundler passed

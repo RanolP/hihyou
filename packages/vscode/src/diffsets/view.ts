@@ -1,10 +1,15 @@
 import type { ChangedFileRef } from "@hihyou/engine";
+import { type FileTreeNode, fileTree } from "@hihyou/ui";
 import * as vscode from "vscode";
 import { outputChannel, reportError } from "../errors.js";
-import type { OpenedPullRequest } from "../github/command.js";
 import type { LocalRepos } from "../local/repos.js";
-import { openReviewPanel } from "../panel/panel.js";
-import { type FileTreeNode, fileTree } from "./file-tree.js";
+import { onDidShowFile, openReviewPanel, stepFile } from "../panel/panel.js";
+import {
+  type CurrentDiffsets,
+  currentDiffsets,
+  onDidChangeCurrentDiffsets,
+  setCurrentDiffsets,
+} from "./current.js";
 import { type Diffset, localDiffsets, pullRequestDiffsets } from "./sources.js";
 
 /** Saves closer together than this refresh the working tree and staged rows once. */
@@ -23,23 +28,24 @@ interface DiffsetNode {
 }
 
 export type DiffsetTreeNode =
-  | {
-      kind: "group";
-      id: string;
-      label: string;
-      description?: string;
-      children: () => Promise<Diffset[]>;
-    }
   | DiffsetNode
+  | FolderNode
   | {
-      kind: "folder";
+      kind: "file";
       owner: DiffsetNode;
-      name: string;
-      path: string;
-      children: FileTreeNode<ChangedFileRef>[];
+      parent?: FolderNode | undefined;
+      change: ChangedFileRef;
     }
-  | { kind: "file"; owner: DiffsetNode; change: ChangedFileRef }
   | { kind: "message"; id: string; label: string };
+
+interface FolderNode {
+  kind: "folder";
+  owner: DiffsetNode;
+  parent?: FolderNode | undefined;
+  name: string;
+  path: string;
+  children: FileTreeNode<ChangedFileRef>[];
+}
 
 export interface DiffsetTree {
   children(node?: DiffsetTreeNode): Promise<DiffsetTreeNode[]>;
@@ -47,16 +53,16 @@ export interface DiffsetTree {
 }
 
 /**
- * The `hihyou.diffsets` view: each local repository's working tree, index and branch commits, plus the pull
- * request last opened, each expanding into the files it changes. Returns the provider, which the integration
- * test reads.
+ * The `hihyou.diffsets` view: the diffsets of the current set only (a pull request: all changes and each commit;
+ * a local repository: its working tree, index and branch commits), each expanding into the files it changes.
+ * With no current set, a workspace of exactly one repository shows that repository. Returns the provider,
+ * which the integration test reads.
  */
 export function registerDiffsetsView(
   context: vscode.ExtensionContext,
   repos: LocalRepos,
-): { tree: DiffsetTree; showPullRequest(opened: OpenedPullRequest): void } {
+): DiffsetTree {
   const changed = new vscode.EventEmitter<DiffsetTreeNode | undefined>();
-  let pullRequest: OpenedPullRequest | undefined;
   let roots: Promise<DiffsetTreeNode[]> | undefined;
   /** Every diffset node of the current roots, cached so a refresh can name the same objects the view holds. */
   const nodesByKey = new Map<string, DiffsetNode>();
@@ -64,7 +70,7 @@ export function registerDiffsetsView(
   const diffsetNodes = async (
     load: () => Promise<Diffset[]>,
     where: string,
-  ) => {
+  ): Promise<DiffsetTreeNode[]> => {
     try {
       return (await load()).map((diffset): DiffsetTreeNode => {
         const node: DiffsetNode = { kind: "diffset", diffset };
@@ -77,30 +83,30 @@ export function registerDiffsetsView(
     }
   };
 
+  const shown = async (): Promise<CurrentDiffsets | undefined> => {
+    const current = currentDiffsets();
+    if (current) return current;
+    const locals = await repos.all();
+    const [only] = locals;
+    return locals.length === 1 && only
+      ? { kind: "local", local: only }
+      : undefined;
+  };
+
   const loadRoots = async (): Promise<DiffsetTreeNode[]> => {
     nodesByKey.clear();
-    const locals = await repos.all();
-    const groups: DiffsetTreeNode[] = locals.map((local) => ({
-      kind: "group",
-      id: `local:${local.folder.uri.toString()}`,
-      label: local.folder.name,
-      children: () => localDiffsets(local),
-    }));
-    if (pullRequest) {
-      const opened = pullRequest;
-      groups.push({
-        kind: "group",
-        id: `github:${opened.remote.owner}/${opened.remote.repo}#${opened.pr.number}`,
-        label: `#${opened.pr.number} ${opened.pr.title}`,
-        description: `${opened.remote.owner}/${opened.remote.repo}`,
-        children: () => pullRequestDiffsets(opened),
-      });
+    const set = await shown();
+    if (!set) {
+      view.description = "";
+      return [];
     }
-    // One repository and no pull request: its diffsets are the top level, with no group row above them.
-    const [only] = groups;
-    if (groups.length === 1 && only?.kind === "group")
-      return diffsetNodes(only.children, only.label);
-    return groups;
+    if (set.kind === "github") {
+      const { opened } = set;
+      view.description = `#${opened.pr.number} ${opened.pr.title}`;
+      return diffsetNodes(() => pullRequestDiffsets(opened), view.description);
+    }
+    view.description = set.local.folder.name;
+    return diffsetNodes(() => localDiffsets(set.local), view.description);
   };
 
   const files = (node: DiffsetNode) => {
@@ -117,8 +123,6 @@ export function registerDiffsetsView(
     async children(node) {
       if (!node) return (roots ??= loadRoots());
       switch (node.kind) {
-        case "group":
-          return diffsetNodes(node.children, node.label);
         case "diffset":
           try {
             const nodes = await files(node);
@@ -138,12 +142,42 @@ export function registerDiffsetsView(
             return [errorNode(`${node.diffset.key}:error`, error)];
           }
         case "folder":
-          return node.children.map((n) => fileNode(node.owner, n));
+          return node.children.map((n) => fileNode(node.owner, n, node));
         default:
           return [];
       }
     },
     item: treeItem,
+  };
+
+  /** Selects the row of the file a panel shows, if its diffset is listed. */
+  const revealFile = async (key: string, path: string) => {
+    const owner = nodesByKey.get(key);
+    if (!owner || !view.visible) return;
+    try {
+      let list = await files(owner);
+      let parent: FolderNode | undefined;
+      for (;;) {
+        const hit = list.find((n) =>
+          n.kind === "file"
+            ? n.file.path === path
+            : path.startsWith(`${n.path}/`),
+        );
+        if (!hit) return;
+        const node = fileNode(owner, hit, parent);
+        if (node.kind === "file") {
+          await view.reveal(node, { select: true, focus: false });
+          return;
+        }
+        if (node.kind !== "folder") return;
+        parent = node;
+        list = node.children;
+      }
+    } catch (error) {
+      outputChannel().appendLine(
+        `could not select ${path} in the diffsets view: ${String(error)}`,
+      );
+    }
   };
 
   const refreshAll = () => {
@@ -164,6 +198,11 @@ export function registerDiffsetsView(
       onDidChangeTreeData: changed.event,
       getChildren: (node) => tree.children(node),
       getTreeItem: treeItem,
+      // `reveal` walks up from a file row to select it when a panel shows that file.
+      getParent: (node) =>
+        node.kind === "file" || node.kind === "folder"
+          ? (node.parent ?? node.owner)
+          : undefined,
     },
     showCollapseAll: true,
   });
@@ -179,47 +218,62 @@ export function registerDiffsetsView(
     vscode.commands.registerCommand("hihyou.refreshDiffsets", refreshAll),
     vscode.commands.registerCommand(
       "hihyou.openDiffset",
-      async (diffset: Diffset, focus?: string) => {
+      async (diffset: Diffset, file?: string) => {
         try {
           await openReviewPanel(context.extensionUri, diffset.source, {
             key: diffset.key,
-            ...(focus !== undefined && { focus }),
+            ...(file !== undefined && { file }),
           });
         } catch (error) {
           reportError(`could not open ${diffset.label}`, error);
         }
       },
     ),
+    vscode.commands.registerCommand("hihyou.nextFile", () => stepFile(1)),
+    vscode.commands.registerCommand("hihyou.previousFile", () => stepFile(-1)),
+    onDidShowFile(({ key, path }) => void revealFile(key, path)),
     vscode.workspace.onDidSaveTextDocument(() => {
       clearTimeout(timer);
       timer = setTimeout(refreshMoving, saveDebounceMs);
     }),
-    vscode.workspace.onDidChangeWorkspaceFolders(refreshAll),
+    vscode.workspace.onDidChangeWorkspaceFolders(({ removed }) => {
+      const current = currentDiffsets();
+      if (
+        current?.kind === "local" &&
+        removed.some(
+          (f) => f.uri.toString() === current.local.folder.uri.toString(),
+        )
+      )
+        setCurrentDiffsets(undefined);
+      else refreshAll();
+    }),
+    onDidChangeCurrentDiffsets((current) => {
+      refreshAll();
+      // Opening a pull request brings the view forward, as the GitHub PR extension does.
+      if (current?.kind === "github")
+        void vscode.commands.executeCommand("hihyou.diffsets.focus");
+    }),
     { dispose: () => clearTimeout(timer) },
   );
 
-  return {
-    tree,
-    showPullRequest(opened) {
-      pullRequest = opened;
-      refreshAll();
-    },
-  };
+  return tree;
 }
 
 function fileNode(
   owner: DiffsetNode,
   node: FileTreeNode<ChangedFileRef>,
+  parent?: FolderNode,
 ): DiffsetTreeNode {
   return node.kind === "folder"
     ? {
         kind: "folder",
         owner,
+        parent,
         name: node.name,
         path: node.path,
         children: node.children,
       }
-    : { kind: "file", owner, change: node.file };
+    : { kind: "file", owner, parent, change: node.file };
 }
 
 function errorNode(id: string, error: unknown): DiffsetTreeNode {
@@ -259,12 +313,6 @@ const decorations: Record<Status, vscode.FileDecoration> = {
 function treeItem(node: DiffsetTreeNode): vscode.TreeItem {
   const { Collapsed, Expanded, None } = vscode.TreeItemCollapsibleState;
   switch (node.kind) {
-    case "group": {
-      const item = new vscode.TreeItem(node.label, Expanded);
-      item.id = node.id;
-      if (node.description) item.description = node.description;
-      return item;
-    }
     case "diffset": {
       const { diffset } = node;
       const item = new vscode.TreeItem(diffset.label, Collapsed);
