@@ -290,6 +290,20 @@ const SWIFT: Record<string, Rule | null> = Object.fromEntries(
   }).map(([capture, scope]) => [capture, scope === null ? null : `${scope}.swift`]),
 );
 
+// tree-sitter-html's highlights.scm captures, as the scopes VS Code's HTML grammar gives the same tokens.
+const TAG_BEGIN = "punctuation.definition.tag.begin.html";
+const TAG_END = "punctuation.definition.tag.end.html";
+
+const HTML: Record<string, Rule> = {
+  tag: "entity.name.tag.html",
+  "tag.error": "invalid.illegal.unrecognized-tag.html",
+  constant: "meta.tag.metadata.doctype.html",
+  attribute: "entity.other.attribute-name.html",
+  string: "string.quoted.html",
+  comment: "comment.block.html",
+  "punctuation.bracket": { scope: TAG_BEGIN, byText: { ">": TAG_END, "/>": TAG_END } },
+};
+
 export const LANGUAGES: Record<string, LanguageRules> = {
   jsdoc: {
     grammar: "tree-sitter-jsdoc",
@@ -342,5 +356,11 @@ export const LANGUAGES: Record<string, LanguageRules> = {
     grammar: "tree-sitter-swift",
     queries: ["queries/highlights.scm"],
     captures: SWIFT,
+  },
+  html: {
+    grammar: "tree-sitter-html",
+    // tree-sitter.json's only highlights file; naming it skips the injections.scm it lists, which embeds CSS and JS.
+    queries: ["queries/highlights.scm"],
+    captures: HTML,
   },
 };
