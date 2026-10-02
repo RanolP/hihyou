@@ -57,6 +57,7 @@ export const GRAMMAR_NAMES = [
   "python",
   "kotlin",
   "swift",
+  "yaml",
 ] as const;
 export type GrammarName = (typeof GRAMMAR_NAMES)[number];
 
@@ -71,6 +72,7 @@ const GRAMMAR_DIRS: Record<GrammarName, [string, string]> = {
   python: ["tree-sitter-python", "tree-sitter-python"],
   kotlin: ["tree-sitter-kotlin", "tree-sitter-kotlin"],
   swift: ["tree-sitter-swift", "tree-sitter-swift"],
+  yaml: ["tree-sitter-yaml", "tree-sitter-yaml"],
 };
 
 const EXTENSIONS: Record<GrammarName, string[]> = {
@@ -83,6 +85,7 @@ const EXTENSIONS: Record<GrammarName, string[]> = {
   python: [".py"],
   kotlin: [".kt", ".kts"],
   swift: [".swift"],
+  yaml: [".yaml", ".yml"],
 };
 
 /** Large real-world files: the parser-bench inputs, then what fetch-corpus.sh downloads, or what is vendored. */
@@ -119,6 +122,8 @@ export const FETCHED: Record<GrammarName, string[]> = {
   ].map((f) => join(kotlinCorpusDir, f)),
   // The swift-format sources fetch-corpus.sh downloads are the conformance set, read by swiftInputs.
   swift: [],
+  // No large file is fetched: the repo's own .yaml files (pnpm-lock.yaml among them) are its inputs.
+  yaml: [],
 };
 
 export interface Input {
