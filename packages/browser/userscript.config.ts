@@ -2,7 +2,8 @@
 // metadata block alone, which a manager polls for updates instead of the whole script. The website serves both.
 //   vite build -c userscript.config.ts
 import { readFileSync } from "node:fs";
-import { defineConfig } from "vite";
+import { fileURLToPath } from "node:url";
+import { build, defineConfig, type Plugin } from "vite";
 import solid from "vite-plugin-solid";
 import { browserSafe, conditions } from "./browser-safe.ts";
 
@@ -36,6 +37,55 @@ const metadata = [
   "",
 ].join("\n");
 
+// The app is the bulk of the script, and the script runs on every github.com page. Bundled as an ordinary dynamic
+// import, each of its modules sits in a parenthesized arrow, which V8 compiles to bytecode at once on every page
+// load and keeps in the tab's heap. Built separately and placed in one function declaration that only the dynamic
+// import calls, it is just pre-parsed until a reviewer turns hihyou on.
+const appId = "\0hihyou:app";
+function lazyApp(): Plugin {
+  return {
+    name: "hihyou:lazy-app",
+    enforce: "pre",
+    resolveId(source, importer) {
+      if (source === "./app.js" && importer?.endsWith("userscript.ts"))
+        return appId;
+      return null;
+    },
+    async load(id) {
+      if (id !== appId) return null;
+      const result = await build({
+        configFile: false,
+        logLevel: "warn",
+        resolve: { conditions },
+        publicDir: false,
+        build: {
+          write: false,
+          target: "es2023",
+          minify: false,
+          lib: {
+            entry: fileURLToPath(new URL("src/app.ts", import.meta.url)),
+            formats: ["iife"],
+            name: "hihyouApp",
+          },
+        },
+        plugins: [browserSafe(), solid()],
+      });
+      const output = (Array.isArray(result) ? result : [result]).flatMap((r) =>
+        "output" in r ? r.output : [],
+      );
+      // A CSS file or a second chunk would be dropped here, and the app would break only once turned on.
+      const [chunk] = output;
+      if (output.length !== 1 || chunk?.type !== "chunk")
+        throw new Error(
+          `the app built to ${output.map((o) => o.fileName).join(", ")}; the userscript inlines exactly one chunk`,
+        );
+      // A function declaration, never parenthesized: V8 compiles a parenthesized function eagerly, guessing it is
+      // called at once, and the bundler wraps each lazy module that way.
+      return `function evaluateApp() {\n${chunk.code}\nreturn hihyouApp.app;\n}\nexport const app = evaluateApp();\n`;
+    },
+  };
+}
+
 export default defineConfig({
   resolve: { conditions },
   publicDir: false,
@@ -53,6 +103,7 @@ export default defineConfig({
     },
   },
   plugins: [
+    lazyApp(),
     browserSafe(),
     solid(),
     {
