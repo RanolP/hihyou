@@ -26,7 +26,7 @@ import {
 import { type ElidedRef, type ExpandDirection, expandStep } from "./expand.js";
 import { moveAt, type SideRef } from "./moves.js";
 import { type DiffFile, gapOf } from "./rows.js";
-import { type DiffLayout, Draw, type DrawContext } from "./view/context.js";
+import { Draw, type DrawContext } from "./view/context.js";
 import { FileSection } from "./view/file.jsx";
 import { flash } from "./view/flash.js";
 import { createPainter } from "./view/highlights.js";
@@ -42,7 +42,7 @@ import {
   type ViewedStore,
 } from "./viewed.js";
 
-export { type DiffLayout, type ElidedRef, type ExpandDirection, expandStep };
+export { type ElidedRef, type ExpandDirection, expandStep };
 
 export interface RenderOptions {
   /**
@@ -65,8 +65,6 @@ export interface RenderOptions {
   onShow?(fileId: string): void;
   /** Colours `Span.scope`: a VS Code theme, `include`s already followed. Without one, code is drawn uncoloured. */
   theme?: Theme;
-  /** Unified when absent. */
-  layout?: DiffLayout;
   /** Which move pairs and files are viewed; an in-session store when absent. */
   viewed?: ViewedStore;
   /** The store's key for each viewed subject; `plainKeyOf` when absent. */
@@ -78,8 +76,6 @@ export interface DiffsetView {
   update(files: readonly DiffFile[]): void;
   /** Redraws with another theme, as `update` keeps state. */
   setTheme(theme: Theme | undefined): void;
-  /** Redraws in another layout, as `update` keeps state. */
-  setLayout(layout: DiffLayout): void;
   /** With `onShow`: draws the file at `path` instead, scrolled to its top. */
   show(path: string): void;
   /** With `onShow`: the path of the file drawn. */
@@ -88,7 +84,7 @@ export interface DiffsetView {
 }
 
 /**
- * Draws `files` into `root` as one table per file, unified or split. All text goes in as text nodes, and the
+ * Draws `files` into `root` as one unified table per file. All text goes in as text nodes, and the
  * styles are not injected: put `diffStyles` into the page.
  */
 export function renderDiffset(
@@ -112,7 +108,6 @@ function mount(
   const isViewed = atomViewed(viewed, keyOf);
 
   const [files, setFiles] = createSignal(initial);
-  const [layout, setLayout] = createSignal<DiffLayout>(opts.layout ?? "unified");
   const [theme, setTheme] = createSignal(opts.theme && compileTheme(opts.theme));
   /** Bumped by every change of what is drawn that no other signal carries: a file opened or shown. */
   const [version, bump] = createSignal(0);
@@ -160,7 +155,7 @@ function mount(
     reveal(to.file);
     const current = files();
     const all = fragmentRows.get(`${to.file}:${to.fragment}`);
-    // A unified table holds both sides of the fragment; only the target side's lines are the target.
+    // A table holds both sides of the fragment; only the target side's lines are the target.
     const own = all?.filter((r) => r.dataset["side"] === to.side);
     const sided = own?.length ? own : all;
     // A move that holds only some of its side's lines is the target alone.
@@ -175,7 +170,7 @@ function mount(
     first.scrollIntoView({ block: "center" });
     first.tabIndex = -1;
     first.focus({ preventScroll: true });
-    flash(rows, to.side, move !== undefined, layout());
+    flash(rows, move !== undefined);
   };
 
   /** Shows the file at `path`, for a cross-file move whose other half was not found in it. */
@@ -195,7 +190,6 @@ function mount(
   const ctx: DrawContext = {
     doc,
     files,
-    layout,
     theme,
     placer,
     pairs,
@@ -346,7 +340,6 @@ function mount(
     // list at once; viewed state and the selection change in place.
     const list = createMemo(() => {
       const current = files();
-      layout();
       theme();
       pairs.expanded();
       version();
@@ -463,7 +456,6 @@ function mount(
   return {
     update: (next) => setFiles(next),
     setTheme: (next) => setTheme(next && compileTheme(next)),
-    setLayout: (next) => setLayout(next),
     show(path) {
       if (!single || path === shownPath) return;
       shownPath = path;

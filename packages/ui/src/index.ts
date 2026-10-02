@@ -1,5 +1,4 @@
 export {
-  type DiffLayout,
   type DiffsetView,
   type ElidedRef,
   type ExpandDirection,

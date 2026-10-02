@@ -1,34 +1,19 @@
-import type { SideName } from "../rows.js";
-import type { DiffLayout } from "./context.js";
-
 /**
- * Blinks one outline around a jump's target: the moved box of `side` (its "Moved" label row included) when that
- * side is a move, else the target rows. One overlay, so the box blinks as a unit, not line by line.
+ * Blinks one outline around a jump's target rows, a move's "Moved" label row included when they are a move.
+ * One overlay, so the box blinks as a unit, not line by line.
  */
 export function flash(
   rows: readonly HTMLTableRowElement[],
-  side: SideName,
   moved: boolean,
-  layout: DiffLayout,
 ): void {
   const scroll = rows[0]?.closest<HTMLElement>(".hh-scroll");
   if (!scroll) return;
-  const columns = side === "before" ? [0, 1] : [2, 3];
   const boxes: Element[] = [];
-  if (moved && layout === "unified") {
+  if (moved) {
     const label = rows[0]?.previousElementSibling;
     if (label?.classList.contains("hh-move")) boxes.push(label);
-    boxes.push(...rows);
-  } else if (moved) {
-    const label = rows[0]?.previousElementSibling;
-    if (label?.classList.contains("hh-move"))
-      boxes.push(label.children[side === "before" ? 0 : 1] ?? label);
-    for (const r of rows)
-      for (const c of columns) {
-        const cell = r.children[c];
-        if (cell && !cell.classList.contains("hh-empty")) boxes.push(cell);
-      }
-  } else boxes.push(...rows);
+  }
+  boxes.push(...rows);
   const rects = boxes.map((b) => b.getBoundingClientRect());
   if (rects.length === 0) return;
   const origin = scroll.getBoundingClientRect();

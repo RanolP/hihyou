@@ -45,7 +45,6 @@ export function ElidedRow(props: { path: string; gap: Gap }): JSX.Element {
   const ctx = useDraw();
   const { path, gap } = props;
   const { count } = gap;
-  const unified = ctx.layout() === "unified";
   // Once asked, the buttons wait for the host's `update`, which redraws the row.
   const [busy, setBusy] = createSignal(false);
   const ref: ElidedRef = { fragment: gap.fragment, lines: gap.origin };
@@ -90,15 +89,13 @@ export function ElidedRow(props: { path: string; gap: Gap }): JSX.Element {
         />,
       );
   }
-  // The gutter covers both line numbers in the unified layout, the before side's alone in the split one.
+  // The gutter covers both line numbers.
   return (
     <tr class="hh-elided">
-      <td class="hh-num hh-expander-cell" colSpan={unified ? 2 : undefined}>
+      <td class="hh-num hh-expander-cell" colSpan={2}>
         {buttons}
       </td>
-      <td class="hh-elided-cell" colSpan={unified ? undefined : 3}>
-        {hidden(count)}
-      </td>
+      <td class="hh-elided-cell">{hidden(count)}</td>
     </tr>
   );
 }
