@@ -26,3 +26,12 @@ export {
   resolvePullRequest,
 } from "./pulls.js";
 export { type GitHubRemote, parseGitHubRemote } from "./remote.js";
+export {
+  type GitHubWebCommit,
+  type GitHubWebDiffsetId,
+  type GitHubWebHost,
+  type GitHubWebHostOptions,
+  type GitHubWebPull,
+  githubWebHost,
+  webDiffsetIdOf,
+} from "./web/host.js";
