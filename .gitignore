@@ -20,3 +20,6 @@ packages/website/docs/.vitepress/cache/
 # The VS Code builds @vscode/test-electron and @vscode/test-web download to run the extension's integration tests.
 packages/vscode/.vscode-test/
 packages/vscode/.vscode-test-web/
+# WXT's build output (the directory to load unpacked) and the types it generates on every build.
+packages/browser/.output/
+packages/browser/.wxt/

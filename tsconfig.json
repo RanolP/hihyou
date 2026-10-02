@@ -11,6 +11,8 @@
     { "path": "packages/gui" },
     { "path": "packages/github" },
     { "path": "packages/vscode" },
+    { "path": "packages/browser" },
+    { "path": "packages/browser/tsconfig.node.json" },
     { "path": "packages/vscode/tsconfig.node.json" },
     { "path": "packages/website" }
   ]

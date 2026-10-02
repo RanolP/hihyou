@@ -1,0 +1,105 @@
+diff --git a/packages/vite/rolldown.config.ts b/packages/vite/rolldown.config.ts
+index 7e4f0be4a7104c..1598d813a5f831 100644
+--- a/packages/vite/rolldown.config.ts
++++ b/packages/vite/rolldown.config.ts
+@@ -155,7 +155,7 @@ const moduleRunnerConfig = defineConfig({
+     '@vitejs/devtools/cli-commands',
+     ...Object.keys(pkg.dependencies),
+   ],
+-  plugins: [bundleSizeLimit(55), enableSourceMapsInWatchModePlugin()],
++  plugins: [bundleSizeLimit(66), enableSourceMapsInWatchModePlugin()],
+   output: {
+     ...sharedNodeOptions.output,
+     minify: {
+diff --git a/packages/vite/src/client/bundledDevHmrClient.ts b/packages/vite/src/shared/bundledDevHmr.ts
+similarity index 90%
+rename from packages/vite/src/client/bundledDevHmrClient.ts
+rename to packages/vite/src/shared/bundledDevHmr.ts
+index e75e603b7a5d6f..a4ae00a9d68d54 100644
+--- a/packages/vite/src/client/bundledDevHmrClient.ts
++++ b/packages/vite/src/shared/bundledDevHmr.ts
+@@ -3,8 +3,9 @@ import type {
+   Update,
+   UpdatePayload,
+ } from '#types/hmrPayload'
+-import { HMRClient, HMRContext, type HMRLogger } from '../shared/hmr'
+-import type { NormalizedModuleRunnerTransport } from '../shared/moduleRunnerTransport'
++import type { ModuleNamespace } from '#types/hot'
++import { HMRClient, HMRContext, type HMRLogger } from './hmr'
++import type { NormalizedModuleRunnerTransport } from './moduleRunnerTransport'
+ 
+ /** the subset of `__rolldown_runtime__` the HMR client uses */
+ export interface RolldownRuntimeLike {
+@@ -27,9 +28,19 @@ type HmrUpdate =
+     }
+ 
+ export interface BundledDevHMRClientOptions {
+-  base: string
++  /**
++   * Loads and executes the HMR patch chunk served at `url`. The browser imports
++   * it, the module runner fetches it through its own transport.
++   */
++  loadPatch: (url: string) => Promise<void>
+   /** returning `'reload'` aborts the apply — the hook reloads the page itself */
+   beforeApply: () => 'reload' | 'continue'
++  /**
++   * Only used for the plain `update` payloads this client inherits from
++   * `HMRClient`. Full-bundle updates never go through it, but the module runner
++   * uses the same client for both modes, so it needs a working implementation.
++   */
++  importUpdatedModule?: (update: Update) => Promise<ModuleNamespace>
+ }
+ 
+ export class BundledDevHMRClient extends HMRClient {
+@@ -43,11 +54,16 @@ export class BundledDevHMRClient extends HMRClient {
+     private runtime: RolldownRuntimeLike,
+     private options: BundledDevHMRClientOptions,
+   ) {
+-    super(logger, transport, async () => {
+-      throw new Error(
+-        'unreachable: full-bundle mode applies patches through its own queue',
+-      )
+-    })
++    super(
++      logger,
++      transport,
++      options.importUpdatedModule ??
++        (async () => {
++          throw new Error(
++            'unreachable: full-bundle mode applies patches through its own queue',
++          )
++        }),
++    )
+   }
+ 
+   isSelfAccepted(id: string): boolean {
+@@ -194,7 +210,7 @@ export class BundledDevHMRClient extends HMRClient {
+     if (this.options.beforeApply() === 'reload') return
+ 
+     try {
+-      await import(/* @vite-ignore */ this.options.base + url)
++      await this.options.loadPatch(url)
+     } catch {
+       this.requestFullReload(`failed to import hmr patch ${url}`)
+       return
+diff --git a/playground/ssr-bundled-dev/package.json b/playground/ssr-bundled-dev/package.json
+new file mode 100644
+index 00000000000000..232de8fe81bf28
+--- /dev/null
++++ b/playground/ssr-bundled-dev/package.json
+@@ -0,0 +1,15 @@
++{
++  "name": "@vitejs/test-ssr",
++  "private": true,
++  "version": "0.0.0",
++  "type": "module",
++  "scripts": {
++    "dev": "node server",
++    "serve": "NODE_ENV=production node server",
++    "debug": "node --inspect-brk server"
++  },
++  "dependencies": {},
++  "devDependencies": {
++    "express": "^5.2.1"
++  }
++}
