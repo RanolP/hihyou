@@ -33,6 +33,11 @@
       "@hihyou/source": "./src/grammars/*/fmt.ts",
       "types": "./dist/grammars/*/fmt.d.ts",
       "default": "./dist/grammars/*/fmt.js"
+    },
+    "./grammars/*/highlight": {
+      "@hihyou/source": "./src/grammars/*/highlight.ts",
+      "types": "./dist/grammars/*/highlight.d.ts",
+      "default": "./dist/grammars/*/highlight.js"
     }
   },
   "scripts": {
