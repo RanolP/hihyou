@@ -64,6 +64,9 @@ const base = defineLanguage(grammar, {
   layoutBlind: true,
 });
 
+// The streams printYaml printed without a final line break; the stream rule runs before `finalLine` asks.
+const noFinal = new WeakSet<object>();
+
 /**
  * YAML as prettier 3.9.9's printer lays it out (print.ts), whole from the stream: the printer walks the tree and
  * places comments itself, so the core attaches none. A construct print.ts cannot lay out yet refuses the file.
@@ -78,7 +81,8 @@ export const yaml: Language<PrettierOptions> = {
         "stream",
         (node, ctx) => {
           const out = printYaml(ctx.tree, node, ctx.options);
-          if (out !== "") sLiteral(node, out);
+          if (!out.final) noFinal.add(ctx.tree);
+          if (out.text !== "") sLiteral(node, out.text);
         },
       ],
       // An ERROR root can span less than the file, so its text is no copy of it.
@@ -90,6 +94,6 @@ export const yaml: Language<PrettierOptions> = {
       ],
     ]),
     lists: new Set(),
-    finalLine: (ctx) => !isBlank(ctx.tree),
+    finalLine: (ctx) => !isBlank(ctx.tree) && !noFinal.has(ctx.tree),
   },
 };

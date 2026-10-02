@@ -1088,8 +1088,8 @@ class Printer {
   }
 }
 
-/** The stream `root` as printed, without its final line break. */
-export function printYaml(tree: FormatTree, root: number, options: PrettierOptions): string {
+/** The stream `root` as printed, without its final line break, and whether oxfmt prints one after it. */
+export function printYaml(tree: FormatTree, root: number, options: PrettierOptions): { text: string; final: boolean } {
   // Prettier options the shared PrettierOptions does not carry, which the conformance fixtures pass through.
   const { singleQuote = false, proseWrap = "preserve", trailingComma = "all" } = options as {
     singleQuote?: boolean;
@@ -1124,10 +1124,9 @@ export function printYaml(tree: FormatTree, root: number, options: PrettierOptio
   });
   p.loose(Number.POSITIVE_INFINITY);
   if (p.ignored.size < p.ignores.size) unsupported("a prettier-ignore comment before no block item");
-  if (p.keptLast !== undefined && p.lines.length > p.keptLast) unsupported("a comment after a kept block scalar ending the stream");
   const lines = p.lines.map((l, i) => (p.verbatim.has(i) ? l : l.trimEnd()));
   // proseWrap other than "preserve" refolds plain scalars and turns a long key explicit (`? key`).
   if (proseWrap !== "preserve" && lines.some((l, i) => !p.verbatim.has(i) && !p.filled.has(i) && l.length > options.printWidth))
     unsupported("a line past printWidth under proseWrap");
-  return lines.join("\n");
+  return { text: lines.join("\n"), final: p.keptLast === undefined || p.lines.length === p.keptLast };
 }

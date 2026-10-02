@@ -120,6 +120,8 @@ const edgeCases: [string, string][] = [
   ["prettier-ignore", "# prettier-ignore\nk:\n    x:   1\n    y:  [1,2]\nz:   1\n"],
   // A prettier-ignore inside an ignored item, or before a nested item or a sequence item, was not honored.
   ["prettier-ignore-nested", "a:\n  # prettier-ignore\n  b:   [1,   2]\n  c:   3\nd:\n  # prettier-ignore\n  - [1,  2]\n  - [3,  4]\n"],
+  // A `...` or comment after a kept block scalar ending the stream refused or printed a final line break oxfmt leaves off.
+  ["kept-block-scalar-then-end", "a: |+\n  x\n# c\n---\n|+\n ab\n\n...\n"],
 ];
 
 // A folded or plain scalar's refill under proseWrap always: lines join into paragraphs and refill at printWidth,
@@ -166,8 +168,6 @@ const refused: [string, string][] = [
   ["flow-comment-blank-after", "a: [1, # one\n\n  2]\n"],
   // A block scalar ending the stream dropped its trailing whitespace line deeper than its content, which oxfmt keeps.
   ["block-scalar-deep-whitespace-end", "a: |-\n  ab\n   \n"],
-  // A comment after a kept block scalar ending the stream printed a final line break, which oxfmt leaves off.
-  ["kept-block-scalar-then-comment", "a: |+\n  x\n# c\n"],
   // A stream that parses to an ERROR root (an unclosed flow collection) printed the text it spans, dropping the rest.
   ["error-root", "a: [b, c\nd: 1\n"],
   // A prettier-ignore trailing a line, or before a document, was applied to the next block item.
