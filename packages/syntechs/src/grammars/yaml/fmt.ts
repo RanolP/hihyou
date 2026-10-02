@@ -1,3 +1,6 @@
+import { parseTree } from "../../core/index.js";
+import { SYM_ERROR } from "../../core/language.js";
+import { brokenNodes } from "../../fmt/format.js";
 import { type PrettierOptions, prettierDefaults, prettierSettings } from "../../fmt/options.js";
 import { defineLanguage, type Language } from "../../fmt/rules.js";
 import { sLiteral } from "../../fmt/stream.js";
@@ -87,3 +90,14 @@ export const yaml: Language<PrettierOptions> = {
     finalLine: (ctx) => !isBlank(ctx.tree),
   },
 };
+
+/**
+ * YAML text as oxfmt prints it embedded in another file's front matter, without a final line break; undefined
+ * when it does not parse, where prettier keeps the whole front matter as written. A construct print.ts cannot lay
+ * out throws `Unsupported`, so the embedding file is refused rather than printed wrong.
+ */
+export function formatYaml(value: string, options: Partial<PrettierOptions> = {}): string | undefined {
+  const tree = parseTree(language, value);
+  if (tree.errorChars > 0 || tree.kind(tree.root) === SYM_ERROR || brokenNodes(tree) !== undefined) return undefined;
+  return printYaml(tree, tree.root, { ...defaults, ...options });
+}
