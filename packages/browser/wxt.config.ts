@@ -22,7 +22,9 @@ export default defineConfig({
     // WXT imports each entrypoint in Node to read its definition, with every dependency external. A workspace
     // package would then load its tsc output, which has no .js for a .tsx module (jsx is preserved), so the
     // workspace packages are bundled from source there too.
-    environments: { inline: { resolve: { noExternal: [/^@hihyou\//], conditions } } },
+    environments: {
+      inline: { resolve: { noExternal: [/^@hihyou\//], conditions } },
+    },
     plugins: [browserSafe(), solid()],
   }),
 });
