@@ -311,7 +311,6 @@ function indentConditionals(tree: FormatTree, text: string, width: number): stri
     else throw new Error(`#if body at line ${i + 2} neither flush with its directive nor one level in (conditional compilation)`);
   }
   if (!flush) return text;
-  throw new Error("#if body flush with its directive (conditional compilation)");
   if (nested) throw new Error("#if bodies both flush with their directives and indented (conditional compilation)");
   for (let o = 0; o < tree.nodeCount; o++) {
     const n = tree.at(o);

@@ -1,4 +1,4 @@
-swift@swift-format compatibility: 64/93 (68.82%), 29 refused (ok:false), 0 excluded
+swift@swift-format compatibility: 66/93 (70.97%), 27 refused (ok:false), 0 excluded
 
 Fixtures: the swift grammar's vendored inputs (src/grammars/swift/corpus/swift-format: swift-format 603.0.0's own Sources/SwiftFormat), expected output from swift-format 6.3.0 run on each, recorded beside it by fetch-corpus.sh swift.
 
@@ -28,7 +28,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | Rules/AllPublicDeclarationsHaveDocumentation.swift | 1/1 | 98.56% | formatter-error: code past column 100 (line breaking): `modifiers` ends at column 105 |
 | Rules/AlwaysUseLowerCamelCase.swift | 1/1 | 99.36% | formatter-error: code past column 100 (line breaking): `Testing` ends at column 103 |
 | Rules/AvoidRetroactiveConformances.swift | 1/1 | 96.10% | formatter-error: code past column 100 (line breaking): `do not declare retroactive conformances` ends at column 104 |
-| Rules/BeginDocumentationCommentWithOneLineSummary.swift | 1/1 | 84.96% | formatter-error: #if body flush with its directive (conditional compilation) |
 | Rules/DontRepeatTypeInStaticProperties.swift | 1/1 | 98.86% | formatter-error: code past column 100 (line breaking): `FunctionCallExprSyntax` ends at column 108 |
 | Rules/NeverUseImplicitlyUnwrappedOptionals.swift | 1/1 | 97.26% | formatter-error: code past column 100 (line breaking): `text` ends at column 101 |
 | Rules/NoAccessLevelOnExtensionDeclaration.swift | 1/1 | 94.32% | formatter-error: code past column 100 (line breaking): `actorKeyword` ends at column 106 |
@@ -43,4 +42,3 @@ The formatter threw (ok:false), or `check` found that its output says something 
 | Rules/UseShorthandTypeNames.swift | 1/1 | 99.35% | formatter-error: code past column 100 (line breaking): `.` ends at column 101 |
 | Rules/UseSynthesizedInitializer.swift | 1/1 | 97.71% | formatter-error: code past column 100 (line breaking): `}` ends at column 102 |
 | Utilities/FileIterator.swift | 1/1 | 94.26% | formatter-error: code past column 100 (line breaking): `{` ends at column 101 |
-| Utilities/URL+isRoot.swift | 1/1 | 52.73% | formatter-error: #if body flush with its directive (conditional compilation) |
