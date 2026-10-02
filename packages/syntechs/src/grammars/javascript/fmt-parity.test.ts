@@ -329,6 +329,40 @@ const edgeCases: [string, Target, string][] = [
     "ts",
     "export interface A {a:1}; // prettier-ignore\nclass C {a=1}; /* prettier-ignore */\nexport enum E {a=1}; // prettier-ignore\nf( a,b );; // prettier-ignore\nlet a = {b:1}; // prettier-ignore\n",
   ],
+  // A script or style in a template's HTML, or an escape in its quasis, kept the whole template as written.
+  [
+    "html-embed-script-style-escape",
+    "js",
+    'x = /* HTML */ `\n  <script>f("${a}")</script>`;\ny = html`<style>a{b:c}</style><p>\\`</p>`;\nz = html`<script>a<\\/script>`;\n',
+  ],
+  // A template's HTML quoted a lit-html `.obj=${x}` and reformatted its class, style and on* values, which oxfmt keeps.
+  [
+    "html-embed-attributes",
+    "js",
+    "x = html`<my-el .obj=${x} a='b' c=d${e} class='  a   b ' style='color:red;  top:0' onclick='f( 1 )'></my-el>`;\ny = /* HTML */ `${a}\n<input disabled>`;\n",
+  ],
+  // An escape other than `\\`, `` \` `` or `\$` in a template's HTML kept the whole template as written; oxfmt cooks it.
+  // A `/* HTML */` template under `as const` or `satisfies` printed as written; oxfmt formats its HTML.
+  ["html-embed-as-const", "ts", "x = /* HTML */ `<div>a  b</div>` as const;\ny = /* HTML */ `<p>a  b</p>` satisfies string;\n"],
+  // A lit-html `<${Footer}>…<//>` component kept its template as written, and `<${Footer} />` split the placeholder.
+  ["html-embed-htm-component", "js", "x = html`<${Footer}  a=b>a   b<//   >`;\ny = html`<${Footer}/>`;\n"],
+  // A script in a template's HTML dropped the parentheses around a `${…}`, which oxfmt keeps.
+  ["html-embed-parenthesized-placeholder", "js", "x = html`<script>f((${e}) / 2); ((${a})).b;</script>`;\n"],
+  ["html-embed-cooked-escapes", "js", "x = html`\\n<div>a\\tb \\u00e9</div>\\n`;\ny = html`<pre>a\\nb</pre>`;\n"],
+  // A `.ts` arrow's `<T,>` kept the comma that only a `.tsx` file needs to tell the list from a JSX tag.
+  [
+    "arrow-type-parameter-comma-ts",
+    "ts",
+    "const f = <T,>(x: T) => x;\nconst g = async <const T = 1,>(x: T) => x;\nconst h = <T, /* c */>(x: T) => x;\n",
+  ],
+  // A `<const>` assertion printed `<>`: tree-sitter's `const` there is a keyword token the cast printer skipped.
+  ["const-type-assertion", "ts", "const x = <const>[1, 2];\nf(< const >{ a: 'b' });\n"],
+  // The `.tsx` side of the same: there the comma stays.
+  [
+    "arrow-type-parameter-comma-tsx",
+    "tsx",
+    "const f = <T,>(x: T) => x;\nconst g = async <const T = 1,>(x: T) => x;\nconst h = <T, /* c */>(x: T) => x;\n",
+  ],
 ];
 
 function ours(target: Target, text: string, options: Partial<JsOptions>) {

@@ -118,8 +118,14 @@ export const quote = (t: string, o: { readonly singleQuote?: unknown }): string 
   return q + t + q;
 };
 
-/** A `+` between two operands spaced (`2n+1` as `2n + 1`), a sign left as written: postcss-selector-parser's `an+b`. */
-export const spacePlus = (t: string): string => t.replace(/(?<=[^\s+-])\+(?=\S)/g, " + ");
+/**
+ * oxfmt's `an+b`: a `+` between two operands spaced once (`2n+ 1` as `2n + 1`), a `-` and a sign left as written,
+ * and an `N` lowercased only when a digit starts the whole (`2N` as `2n`, `-2N` kept).
+ */
+export const anPlusB = (t: string): string => {
+  const spaced = t.replace(/(?<=[^\s+-])\s*\+\s*(?=\S)/g, " + ");
+  return /^\d/.test(spaced) ? spaced.replace("N", "n") : spaced;
+};
 
 const cssWideKeywords = new Set(["initial", "inherit", "unset", "revert"]);
 /** A CSS-wide keyword lowercased, anything else as written. */
@@ -227,7 +233,7 @@ export const normalizers = {
   unitCase,
   requote,
   quote,
-  spacePlus,
+  anPlusB,
   cssWide,
   directive,
   jsxString,
