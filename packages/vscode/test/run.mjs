@@ -26,7 +26,7 @@ const launch = (workspace) => [
   `--user-data-dir=${userData}`,
 ];
 
-const touched = "packages/vscode/src/review.ts";
+const touched = "packages/ui/src/review.ts";
 const touchedPath = join(repoRoot, touched);
 const original = readFileSync(touchedPath, "utf8");
 const bare = mkdtempSync(join(tmpdir(), "hihyou-e2e-"));
