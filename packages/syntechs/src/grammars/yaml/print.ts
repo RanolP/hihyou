@@ -960,11 +960,13 @@ class Printer {
     }
     if (this.flowCollection(key) !== undefined) this.noFlowComment(key);
     const lead = this.pending(this.start(key));
+    // A block collection key moves one comment before it onto the `?` line, wherever the source has it.
+    const blockKey = this.kind(key) === "block_node" && !this.isBlockScalar(key);
     if (lead !== undefined) {
       const second = this.comments[this.next + 1];
-      if (this.tree.lf(lead) !== 0 || (second !== undefined && this.tree.ord(second) < this.start(key)))
+      if ((this.tree.lf(lead) !== 0 && !blockKey) || (second !== undefined && this.tree.ord(second) < this.start(key)))
         unsupported("comments before an explicit key");
-      if (this.kind(key) !== "flow_node" || this.flowCollection(key) !== undefined || value === undefined)
+      if (!blockKey && (this.kind(key) !== "flow_node" || this.flowCollection(key) !== undefined || value === undefined))
         unsupported("a comment before an explicit key that is no scalar");
     }
     // The comments after the key and before `:` (before the next item for a pair with no `:`).
@@ -992,7 +994,8 @@ class Printer {
       const set = this.named(holder).some((k) => this.kind(k) === "tag" && this.tree.text(k) === "!!set");
       if (lead === undefined && trail === undefined && !set && this.singleLine(key)) return this.implicitPair(key, undefined, indent, until);
       this.append("?");
-      this.marked(key, indent, colonAt);
+      if (lead !== undefined) this.commentedKey(key, lead, indent, colonAt);
+      else this.marked(key, indent, colonAt);
       return;
     }
     if (trail !== undefined) unsupported("a trailing comment on an explicit key with a value");
@@ -1007,12 +1010,11 @@ class Printer {
       if (colonComment) return this.colonComments(key, value, indent, until);
       return this.implicitPair(key, value, indent, until);
     }
-    if (colonComment) unsupported("a comment after the colon of a pair kept explicit");
+    const valueBlock = this.kind(value) === "block_node" && !this.isBlockScalar(value);
+    if (colonComment && !valueBlock) unsupported("a comment after the colon of a pair kept explicit");
     this.append("?");
-    if (lead !== undefined) {
-      this.trailing(lead);
-      this.line(" ".repeat(indent + 2) + this.scalar(key));
-    } else this.marked(key, indent, colonAt);
+    if (lead !== undefined) this.commentedKey(key, lead, indent, colonAt);
+    else this.marked(key, indent, colonAt);
     // Comments indented past the `?` stay with the key, two columns in, up to the first one that is not.
     let keyed = true;
     while (this.pending(colonAt) !== undefined) {
@@ -1021,8 +1023,31 @@ class Printer {
       this.ownLine(c, keyed ? indent + 2 : indent, false);
     }
     this.line(`${" ".repeat(indent)}:`);
+    if (colonComment) {
+      // `: # c` with the collection on the lines after it, two columns in.
+      const c = this.pending(this.start(value)) as number;
+      this.trailing(c);
+      if (this.pending(this.start(value)) !== undefined) unsupported("comments after an explicit pair's colon");
+      this.belowMarker(value, indent, until);
+      return;
+    }
     if (this.pending(this.start(value)) !== undefined) unsupported("a comment before an explicit pair's value");
     this.marked(value, indent, until);
+  }
+
+  /** `?` and comment `lead` on the current line, then `key` below them two columns in. */
+  commentedKey(key: number, lead: number, indent: number, colonAt: number): void {
+    this.trailing(lead);
+    if (this.kind(key) === "block_node") this.belowMarker(key, indent, colonAt);
+    else this.line(" ".repeat(indent + 2) + this.scalar(key));
+  }
+
+  /** Block collection node `n` on the lines after a `?` or `:` line, two columns past the marker at `indent`. */
+  belowMarker(n: number, indent: number, until: number): void {
+    const { props, coll } = this.collection(n);
+    if (props !== "") unsupported("properties on a collection below a commented marker");
+    this.line(" ".repeat(indent + 2));
+    this.block(coll, indent + 2, true, until);
   }
 
   /**

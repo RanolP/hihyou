@@ -122,6 +122,8 @@ const edgeCases: [string, string][] = [
   ["prettier-ignore-nested", "a:\n  # prettier-ignore\n  b:   [1,   2]\n  c:   3\nd:\n  # prettier-ignore\n  - [1,  2]\n  - [3,  4]\n"],
   // A comment trailing an explicit pair's `:` refused, where oxfmt prints the key implicit and the comment below it.
   ["explicit-colon-comment", "? k\n: # c\n  # d\n  foo: bar\nx:\n  ? m\n  : # e\n    [a]\n? n\n: # f\n  v\n"],
+  // A comment before an explicit block key or after its pair's `:` refused, where oxfmt trails the marker with it.
+  ["explicit-block-key-comments", "? # c\n - a\n: # d\n - #e\n  b\n?\n  # f\n  g: 1\n"],
   // A multi-line scalar in a flow collection, or as a flow pair's key, refused instead of breaking the collection.
   ["multiline-flow-items", "- [\"a\n  b\", c\n\n  d, [e\n  f], ? g\n  h : i]\n- {j\n  k: l, m\n  n}\n---\n{ matches\n% : 20 }\n"],
   // A prettier-ignore before `---` or a flow item refused, where oxfmt keeps that document's content or item as written.
