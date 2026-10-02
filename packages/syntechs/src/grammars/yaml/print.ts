@@ -976,10 +976,14 @@ class Printer {
     }
     const trail = after[0] !== undefined && this.tree.lf(after[0]) === 0 ? after[0] : undefined;
     // `? k⏎: # c⏎  v` prints `k:⏎  # c⏎  v`, where `k: # c⏎  v` keeps the comment on the key's line.
+    let colonComment = false;
     if (value !== undefined && colon !== undefined && this.kind(this.tree.child(pair, 0)) === "?") {
       const c = this.comments.slice(this.next).find((k) => this.tree.ord(k) > colonAt);
-      if (c !== undefined && this.tree.ord(c) < this.start(value))
-        unsupported("a comment after an explicit pair's colon");
+      if (c !== undefined && this.tree.ord(c) < this.start(value)) {
+        // oxfmt moves an own-line one onto the `:` line of a pair it keeps explicit, a layout with no rule here.
+        if (this.tree.lf(c) !== 0) unsupported("an own-line comment after an explicit pair's colon");
+        colonComment = true;
+      }
     }
     if (value === undefined) {
       if (colon !== undefined && after.length > 0) unsupported("a comment before the `:` of an empty value");
@@ -999,8 +1003,11 @@ class Printer {
     const surely = this.kind(key) !== "flow_node" || (!flowKey && this.singleLine(key));
     const keyFlat = surely ? "" : flowKey ? this.flat(key) : this.flatScalar(key);
     const wide = !surely && (keyFlat === undefined || textWidth(this.lines[this.lines.length - 1]!) + textWidth(keyFlat) + alias + 1 > this.width);
-    if (this.kind(key) === "flow_node" && lead === undefined && after.length === 0 && !wide)
+    if (this.kind(key) === "flow_node" && lead === undefined && after.length === 0 && !wide) {
+      if (colonComment) return this.colonComments(key, value, indent, until);
       return this.implicitPair(key, value, indent, until);
+    }
+    if (colonComment) unsupported("a comment after the colon of a pair kept explicit");
     this.append("?");
     if (lead !== undefined) {
       this.trailing(lead);
@@ -1016,6 +1023,32 @@ class Printer {
     this.line(`${" ".repeat(indent)}:`);
     if (this.pending(this.start(value)) !== undefined) unsupported("a comment before an explicit pair's value");
     this.marked(value, indent, until);
+  }
+
+  /**
+   * An explicit pair printed implicit whose `:` a comment trails: `key:`, then the comments and the value each on
+   * a line of their own one tabWidth in.
+   */
+  colonComments(key: number, value: number, indent: number, until: number): void {
+    this.implicitPair(key, undefined, indent, until);
+    const pad = " ".repeat(indent + this.tab);
+    let c: number | undefined;
+    let first = true;
+    while ((c = this.pending(this.start(value))) !== undefined) {
+      if (!first && this.tree.lf(c) >= 2) unsupported("a blank line between comments after an explicit pair's colon");
+      this.line(pad + this.tree.text(c));
+      this.next++;
+      first = false;
+    }
+    if (this.tree.lf(firstLeaf(this.tree, value)) >= 2) unsupported("a blank line before a value after a colon comment");
+    this.line(pad);
+    if (this.isBlockScalar(value)) unsupported("a block scalar after an explicit pair's colon comment");
+    else if (this.kind(value) === "block_node") {
+      const { props, coll } = this.collection(value);
+      if (props !== "") unsupported("properties after an explicit pair's colon comment");
+      this.block(coll, indent + this.tab, true, until);
+    } else if (this.flowCollection(value) !== undefined) this.putFlow(value, indent + this.tab);
+    else this.fill(value, indent + this.tab);
   }
 
   /** A pair whose key prints implicit (`key: value`), its first line already started at `indent`. */
