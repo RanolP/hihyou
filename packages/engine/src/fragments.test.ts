@@ -150,6 +150,6 @@ test("an added keyword keeps both its syntax scope and its diff emphasis", async
     "keyword.control.js",
   );
   expect(innermost(spans.find((s) => s.text === "Shop"))).toBe(
-    "entity.name.type.js",
+    "entity.name.type.class.js",
   );
 });

@@ -1,11 +1,12 @@
 // Parity of the syntechs highlighters with shiki (VS Code's TextMate grammars), compared as the colour each
 // non-whitespace character resolves to under one theme, since the two name scopes at different depths.
 // Usage: node packages/syntechs/dist/highlight/parity.node.js [lang...] [--corpus vite|repo] [--show N]
-// [--theme github-dark]. The vite corpus is the clone at .eval/vite.
+// [--theme github-dark]. The vite corpus is the clone at .eval/vite; any other --corpus is a directory, every
+// file in it with the language's extensions compared.
 
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { bundledThemes, createHighlighter } from "shiki";
 import { parseTree, type Tree } from "../core/index.js";
 import type { Language } from "../core/language.js";
@@ -25,6 +26,10 @@ const LANGS: Record<string, { exts: string[]; load: () => Promise<{ language: La
     exts: [".js", ".mjs", ".cjs", ".jsx"],
     load: async () => ({ ...(await import("../grammars/javascript/index.js")), ...(await import("../grammars/javascript/highlight.js")) }),
   },
+  kotlin: {
+    exts: [".kt", ".kts"],
+    load: async () => ({ ...(await import("../grammars/kotlin/index.js")), ...(await import("../grammars/kotlin/highlight.js")) }),
+  },
 };
 
 function arg(name: string, fallback: string): string {
@@ -33,11 +38,18 @@ function arg(name: string, fallback: string): string {
 }
 
 export function corpusFiles(corpus: string, exts: string[]): { name: string; text: string }[] {
-  const root = corpus === "vite" ? join(repoRoot, ".eval/vite") : repoRoot;
-  const patterns = corpus === "vite" ? exts.map((e) => `*${e}`) : exts.map((e) => `packages/**/*${e}`);
-  const names = execFileSync("git", ["-C", root, "ls-files", "-z", "--", ...patterns], { encoding: "utf8", maxBuffer: 1 << 26 })
-    .split("\0")
-    .filter((n) => n !== "" && !n.includes("/dist/") && !n.endsWith("bundle.js") && !n.includes("/corpus/"));
+  let root: string;
+  let names: string[];
+  if (corpus === "vite" || corpus === "repo") {
+    root = corpus === "vite" ? join(repoRoot, ".eval/vite") : repoRoot;
+    const patterns = corpus === "vite" ? exts.map((e) => `*${e}`) : exts.map((e) => `packages/**/*${e}`);
+    names = execFileSync("git", ["-C", root, "ls-files", "-z", "--", ...patterns], { encoding: "utf8", maxBuffer: 1 << 26 })
+      .split("\0")
+      .filter((n) => n !== "" && !n.includes("/dist/") && !n.endsWith("bundle.js") && !n.includes("/corpus/"));
+  } else {
+    root = resolve(corpus);
+    names = (readdirSync(root, { recursive: true }) as string[]).filter((n) => exts.some((e) => n.endsWith(e))).sort();
+  }
   const out: { name: string; text: string }[] = [];
   for (const name of names) {
     let text: string;

@@ -2,6 +2,8 @@ Import attributes after `export ... from` and under the older `assert` keyword, 
 and scanner.c's automatic-semicolon tokens (a statement that continues, `for ... in` after an initializer,
 an arrow body's end), which packages/syntechs/src/grammars/javascript/scanner.ts ports.
 tree-sitter-typescript does not build on this: it keeps upstream tree-sitter-javascript 0.23.1.
+queries/highlights-jsx.scm names the closing tag's `<` `/` tokens the patched grammar splits `</` into, so
+src/highlight/generate.node.ts accepts it against this grammar.
 
 --- a/grammar.js
 +++ b/grammar.js
@@ -539,3 +541,13 @@ tree-sitter-typescript does not build on this: it keeps upstream tree-sitter-jav
              return scan_ternary_qmark(lexer);
          }
          return ret;
+--- a/queries/highlights-jsx.scm
++++ b/queries/highlights-jsx.scm
+@@ -3,6 +3,6 @@
+ (jsx_self_closing_element (identifier) @tag (#match? @tag "^[a-z][^.]*$"))
+ 
+ (jsx_attribute (property_identifier) @attribute)
+ (jsx_opening_element (["<" ">"]) @punctuation.bracket)
+-(jsx_closing_element (["</" ">"]) @punctuation.bracket)
++(jsx_closing_element (["<" "/" ">"]) @punctuation.bracket)
+ (jsx_self_closing_element (["<" "/>"]) @punctuation.bracket)

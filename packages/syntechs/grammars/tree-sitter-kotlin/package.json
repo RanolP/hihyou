@@ -12,7 +12,8 @@
         "commit": "e1a2d5ad1f61f5740677183cd4125bb071cd2f30",
         "files": {
           "grammar.js": "90c704380d10681ffbcd6b2a13b774945ded8c8c08e30de53aa3a1bfc45dcdc7",
-          "src/scanner.c": "27f73337ec357fc341fa57538f34c14277b0346980c3405dc30beab6202ec6d0"
+          "src/scanner.c": "27f73337ec357fc341fa57538f34c14277b0346980c3405dc30beab6202ec6d0",
+          "queries/highlights.scm": "2d74bb308bc589c2dadd9a599613f750f51470a8974190e09e24ec4786bab987"
         }
       }
     ]

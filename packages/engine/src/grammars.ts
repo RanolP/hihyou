@@ -8,7 +8,8 @@ export type LanguageId =
   | "javascript"
   | "json"
   | "python"
-  | "css";
+  | "css"
+  | "kotlin";
 
 const extensions: Record<LanguageId, readonly string[]> = {
   typescript: [".ts", ".mts", ".cts"],
@@ -17,6 +18,7 @@ const extensions: Record<LanguageId, readonly string[]> = {
   json: [".json"],
   python: [".py", ".pyi"],
   css: [".css"],
+  kotlin: [".kt", ".kts"],
 };
 
 export function languageForPath(path: string): LanguageId | undefined {
@@ -36,12 +38,14 @@ const parsers: Record<LanguageId, () => Promise<{ language: Language }>> = {
   json: () => import("syntechs/grammars/json"),
   python: () => import("syntechs/grammars/python"),
   css: () => import("syntechs/grammars/css"),
+  kotlin: () => import("syntechs/grammars/kotlin"),
 };
 
 const highlighters: Partial<Record<LanguageId, () => Promise<{ highlight: HighlightModule }>>> = {
   typescript: () => import("syntechs/grammars/typescript/highlight"),
   tsx: () => import("syntechs/grammars/tsx/highlight"),
   javascript: () => import("syntechs/grammars/javascript/highlight"),
+  kotlin: () => import("syntechs/grammars/kotlin/highlight"),
 };
 
 /** A formatter bound to options the host passed as a plain object, checked by syntechs at format time. */
@@ -64,12 +68,14 @@ const formatters: Record<
   python: async () =>
     bind((await import("syntechs/grammars/python/fmt")).python),
   css: async () => bind((await import("syntechs/grammars/css/fmt")).css),
+  kotlin: async () =>
+    bind((await import("syntechs/grammars/kotlin/fmt")).kotlin),
 };
 
 export interface SyntechsGrammarOptions {
   /**
    * Languages to format before diffing, each with the options of the tool it follows (prettier's for
-   * JS/TS/JSON/CSS, ruff's for Python). A language left out is shown as written.
+   * JS/TS/JSON/CSS/Kotlin, ruff's for Python). A language left out is shown as written.
    */
   format?: Partial<Record<LanguageId, object>>;
 }

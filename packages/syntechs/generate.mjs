@@ -7,7 +7,9 @@
 // from a checkout on the same pnpm-lock.yaml and grammar packages, so a fresh worktree's install doesn't redo this work.
 //
 // The formatters, src/grammars/<name>/fmt.gen.ts, are generated from the bundles and each language's format.ts
-// every time, the copied bundles included: they are cheap, and a spec edit must reach them.
+// every time, the copied bundles included: they are cheap, and a spec edit must reach them. So are the
+// highlighters, src/grammars/<name>/highlight.gen.ts, compiled from each grammar's tree-sitter highlight queries
+// and the sitter-to-tm ruleset in src/highlight/rules.node.ts.
 
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
@@ -33,3 +35,4 @@ if (process.env.HIHYOU_SKIP_GRAMMAR_GENERATE)
   );
 else await run("compiler/compile.node.ts", "generate.mjs");
 await run("fmt/dsl/generate.node.ts", "fmt-generate.mjs");
+await run("highlight/generate.node.ts", "highlight-generate.mjs");
