@@ -26,7 +26,6 @@ import {
   elidedLines,
   type FileDiff,
   type LinePair,
-  mergeRanges,
   type SideInput,
 } from "./fragments.js";
 import type {
@@ -195,8 +194,7 @@ export async function diffFiles(
   for (const c of cross.edits) {
     const from = prepared[c.from];
     const to = prepared[c.to];
-    if (!from || !to || !("mapping" in from) || !("mapping" in to)) continue;
-    record(c, sides[c.from]?.a, sides[c.to]?.b, from.ref, to.ref);
+    if (!from || !to || !("mapping" in from) || !("mapping" in to)) continue;    record(c, sides[c.from]?.a, sides[c.to]?.b, from.ref, to.ref);
     for (const s of [sides[c.from], sides[c.to]]) if (s) s.touched = true;
   }
 
@@ -243,7 +241,6 @@ export async function diffFiles(
       noEdits:
         !s.touched && script.edits.length === 0 && p.texts[0] !== p.texts[1],
     });
-    for (const side of [s.a, s.b]) side.emphasis = mergeRanges(side.emphasis);
     return {
       path,
       grammar: p.grammar.id,
@@ -321,7 +318,8 @@ const sideInput = (v: Version): SideInput => ({
 
 /**
  * Marks one edit on the side(s) it touches: an insert, delete or update changes and emphasizes its node;
- * a move changes the lines at both ends and points each end at the other.
+ * a move changes the lines at both ends and points each end at the other. A move emphasizes nothing itself:
+ * what changed inside it arrives as its own inserts, deletes and updates, so only those stand out in the box.
  */
 function record(
   { edit: e }: Pick<CrossEdit, "edit" | "from" | "to">,
@@ -366,13 +364,16 @@ function movePair(
   const ta = a?.v.tree;
   const tb = b?.v.tree;
   if (!a || !b || !ta || !tb || e.a === undefined || e.b === undefined) return;
+  const inFile = refA === refB;
   a.moves.push({
     node: e.a,
     counterpart: { path: refB.path, at: [stepsOf(tb, e.b)] },
+    ...(inFile && { twin: e.b }),
   });
   b.moves.push({
     node: e.b,
     counterpart: { path: refA.oldPath ?? refA.path, at: [stepsOf(ta, e.a)] },
+    ...(inFile && { twin: e.a }),
   });
 }
 

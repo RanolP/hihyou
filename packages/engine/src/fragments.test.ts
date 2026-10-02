@@ -119,7 +119,7 @@ test("an edit beside an unchanged block comment is -2 +3 and no move", async () 
   expect(diffs.map((d) => [lineCount(d.before), lineCount(d.after)])).toEqual([
     [2, 3],
   ]);
-  expect(diffs.flatMap((d) => [d.before.move, d.after.move])).toEqual([
+  expect(diffs.flatMap((d) => [d.before.moves, d.after.moves])).toEqual([
     undefined,
     undefined,
   ]);
@@ -152,4 +152,66 @@ test("an added keyword keeps both its syntax scope and its diff emphasis", async
   expect(innermost(spans.find((s) => s.text === "Shop"))).toBe(
     "entity.name.type.class.js",
   );
+});
+
+// Painting each inserted token on its own leaves `,` and `b + 1` as islands with an unpainted gap, and painting
+// across a line break paints the next line's indentation: an added argument must read as one range.
+test("an added call argument is one changed range, and an added block skips each line's indentation", async () => {
+  const blobs: Record<string, string> = {
+    b: "function g() {\n  f(a);\n}\n",
+    a: "function g() {\n  f(a, b + 1);\n  if (a) {\n    f(b);\n  }\n}\n",
+  };
+  const engine = createEngine({
+    grammars: syntechsGrammars(),
+    resolveDiffset: (data: "pr") => ({
+      id: data,
+      changes: [{ path: "g.ts", before: "b", after: "a" }],
+    }),
+    readBlob: (id) => new TextEncoder().encode(blobs[id] ?? ""),
+  });
+  const [file] = await (await engine.diffset("pr")).diff();
+  const ranges: string[] = [];
+  for (const f of file?.fragments ?? []) {
+    if (f.kind !== "diff") continue;
+    let run = "";
+    for (const s of f.after.spans) {
+      if (s.changed) run += s.text;
+      else if (run) {
+        ranges.push(run);
+        run = "";
+      }
+    }
+    if (run) ranges.push(run);
+  }
+  expect(ranges).toEqual([", b + 1", "if (a) {", "f(b);", "}"]);
+});
+
+// Emphasizing each replaced token on its own around a kept `.` interleaves the two names in the unified view, so
+// `basicColor.DARKGRAY400` → `themedColor.foreground3` read as `basicColorthemedColor.DARKGRAY400foreground3`.
+test("a fully-replaced member expression renders as one del and one ins, not interleaved", async () => {
+  const blobs: Record<string, string> = {
+    b: "const style = {\n  color: basicColor.DARKGRAY400,\n  border: theme.colors.a,\n};\n",
+    a: "const style = {\n  color: themedColor.foreground3,\n  border: theme.colors.b,\n};\n",
+  };
+  const engine = createEngine({
+    grammars: syntechsGrammars(),
+    resolveDiffset: (data: "pr") => ({
+      id: data,
+      changes: [{ path: "s.ts", before: "b", after: "a" }],
+    }),
+    readBlob: (id) => new TextEncoder().encode(blobs[id] ?? ""),
+  });
+  const [file] = await (await engine.diffset("pr")).diff();
+  const runs = (side: "before" | "after") =>
+    (file?.fragments ?? []).flatMap((f) =>
+      f.kind === "diff"
+        ? f[side].spans
+            .map((s) => (s.changed ? s.text : "\0"))
+            .join("")
+            .split("\0")
+            .filter((r) => r !== "")
+        : [],
+    );
+  expect(runs("before")).toEqual(["basicColor.DARKGRAY400", "a"]);
+  expect(runs("after")).toEqual(["themedColor.foreground3", "b"]);
 });

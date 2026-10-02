@@ -26,8 +26,19 @@ export interface Side {
   at: AstSteps[];
   /** 1-based; for an empty side, the line the other side's lines take the place of. */
   startLine: number;
-  /** This change is one half of a move; points at the other half, possibly in another file. */
-  move?: { counterpart: { path: string; at: AstSteps[] } };
+  /**
+   * The halves of moves on this side, in line order, each pointing at its other half, possibly in another file.
+   * A move whose lines cover every line of the side is the side itself moving; any other marks only its own lines.
+   */
+  moves?: SideMove[];
+}
+
+/** One half of a move: the lines its moved node spans on this side, clipped to the side. */
+export interface SideMove {
+  /** 1-based, inclusive. */
+  first: number;
+  last: number;
+  counterpart: { path: string; at: AstSteps[] };
 }
 
 export interface Span {
@@ -52,6 +63,8 @@ export interface Range {
 export interface MoveMark {
   node: number;
   counterpart: { path: string; at: AstSteps[] };
+  /** In a move inside one file, the other half's node on the other side. */
+  twin?: number;
 }
 
 export interface SideInput {
@@ -105,7 +118,15 @@ interface Box {
  * pairs far from any change are elided, and begin/end come from a stack, so they always balance.
  */
 export function buildFragments(input: FragmentInput): CodeFragment[] {
-  const { a, b, mapping, highlight } = input;
+  const { mapping, highlight } = input;
+  const a = {
+    ...input.a,
+    emphasis: paintRanges(input.a.v.text, wholeNodes(input.a.v, input.a.emphasis)),
+  };
+  const b = {
+    ...input.b,
+    emphasis: paintRanges(input.b.v.text, wholeNodes(input.b.v, input.b.emphasis)),
+  };
   const scopes = (v: Version) =>
     highlight && v.tree ? scopeRuns(v.tree, highlight, v.text.length, v.start, v.end) : undefined;
   const scopesA = scopes(a.v);
@@ -114,6 +135,27 @@ export function buildFragments(input: FragmentInput): CodeFragment[] {
   const linesA = lines(a, 0, input.indentMatters, pairs);
   const linesB = lines(b, 1, input.indentMatters, undefined);
   const rows = alignRows(linesA, linesB);
+  // A move whose halves land in one `diff` fragment reads as its edits alone: both halves sit side by side,
+  // so a box would only claim the fragment's other changes moved too.
+  const rowsA = lineRows(rows, a.v, 0);
+  const rowsB = lineRows(rows, b.v, 1);
+  const rowOf = (v: Version, at: Int32Array, n: number) => {
+    const first = at[lineOf(v, v.start(n))] ?? -1;
+    const last = at[lineOf(v, Math.max(v.start(n), v.end(n) - 1))] ?? -1;
+    return first === last ? first : -1;
+  };
+  const inPlaceA = new Set<number>();
+  const inPlaceB = new Set<number>();
+  for (const m of a.moves) {
+    if (m.twin === undefined) continue;
+    const r = rowOf(a.v, rowsA, m.node);
+    if (r >= 0 && r === rowOf(b.v, rowsB, m.twin)) {
+      inPlaceA.add(m.node);
+      inPlaceB.add(m.twin);
+    }
+  }
+  a.moves = a.moves.filter((m) => !inPlaceA.has(m.node));
+  b.moves = b.moves.filter((m) => !inPlaceB.has(m.node));
 
   const pathsB = b.v.tree ? linePaths(b.v, b.v.tree, (n) => `b${n}`) : [];
   const pathsA = a.v.tree
@@ -142,7 +184,7 @@ export function buildFragments(input: FragmentInput): CodeFragment[] {
   for (let i = 0; i < rows.length;) {
     const r = rows[i] as Row;
     if (!r.same) {
-      items.push({ path: pathOf(r), fragment: diffFragment(input, r, scopesA, scopesB) });
+      items.push({ path: pathOf(r), fragment: diffFragment(a, b, r, scopesA, scopesB) });
       i++;
       continue;
     }
@@ -271,6 +313,15 @@ function pairLines(a: Version, b: Version, m: Mapping): Int32Array {
     }
   }
   return pairs;
+}
+
+/** Per line of a side, the index of the `diff` row holding it; -1 on an unchanged line. */
+function lineRows(rows: Row[], v: Version, side: 0 | 1): Int32Array {
+  const out = new Int32Array(v.lineStarts.length).fill(-1);
+  rows.forEach((r, i) => {
+    if (!r.same) out.fill(i, side === 0 ? r.a0 : r.b0, side === 0 ? r.a1 : r.b1);
+  });
+  return out;
 }
 
 function alignRows(linesA: Line[], linesB: Line[]): Row[] {
@@ -408,15 +459,16 @@ export function elidedLines(
 }
 
 function diffFragment(
-  input: FragmentInput,
+  a: SideInput,
+  b: SideInput,
   r: Row & { same: false },
   scopesA: ScopeRuns | undefined,
   scopesB: ScopeRuns | undefined,
 ): CodeFragment {
   return {
     kind: "diff",
-    before: sideFragment(input.a, r.a0, r.a1, scopesA),
-    after: sideFragment(input.b, r.b0, r.b1, scopesB),
+    before: sideFragment(a, r.a0, r.a1, scopesA),
+    after: sideFragment(b, r.b0, r.b1, scopesB),
   };
 }
 
@@ -429,16 +481,61 @@ function sideFragment(
   const { v } = s;
   const start = v.lineStarts[l0] ?? v.text.length;
   const end = l1 > l0 ? lineEnd(v, l1 - 1) : start;
-  const move =
-    end > start
-      ? s.moves.find((m) => v.start(m.node) < end && v.end(m.node) > start)
-      : undefined;
+  const moves = end > start ? sideMoves(s, l0, l1, start, end) : [];
   return {
     spans: split(v.text, start, end, s.emphasis, scopes),
     at: v.tree && end > start ? nodesIn(v, v.tree, start, end) : [],
     startLine: l0 + 1,
-    ...(move && { move: { counterpart: move.counterpart } }),
+    ...(moves.length > 0 && { moves }),
   };
+}
+
+/** A line of nothing but brackets and separators reads as part of whatever code is around it. */
+const scaffold = /^[\s()[\]{}<>;,]*$/;
+
+/**
+ * The moves overlapping lines `[l0, l1)`, each by the lines its node spans there, overlapping ones joined.
+ * When they leave out only blank and bracket lines, the side moves as one: a single move over all its lines.
+ */
+function sideMoves(
+  s: SideInput,
+  l0: number,
+  l1: number,
+  start: number,
+  end: number,
+): SideMove[] {
+  const { v } = s;
+  const out: SideMove[] = [];
+  const found = s.moves
+    .filter((m) => v.start(m.node) < end && v.end(m.node) > start)
+    .map((m) => ({
+      first: Math.max(l0, lineOf(v, v.start(m.node))) + 1,
+      last:
+        Math.min(l1 - 1, lineOf(v, Math.max(v.start(m.node), v.end(m.node) - 1))) + 1,
+      counterpart: { path: m.counterpart.path, at: [...m.counterpart.at] },
+    }))
+    .sort((p, q) => p.first - q.first);
+  for (const m of found) {
+    const prev = out.at(-1);
+    if (!prev || m.first > prev.last) {
+      out.push(m);
+      continue;
+    }
+    prev.last = Math.max(prev.last, m.last);
+    if (prev.counterpart.path === m.counterpart.path)
+      prev.counterpart.at.push(...m.counterpart.at);
+  }
+  const first = out[0];
+  if (!first) return out;
+  const covered = new Uint8Array(l1 - l0);
+  for (const m of out) covered.fill(1, m.first - 1 - l0, m.last - l0);
+  for (let l = l0; l < l1; l++) {
+    const text = v.text.slice(v.lineStarts[l], lineEnd(v, l));
+    if (covered[l - l0] === 0 && !scaffold.test(text)) return out;
+  }
+  const { path } = first.counterpart;
+  const at = out.flatMap((m) => (m.counterpart.path === path ? m.counterpart.at : []));
+  return [{ first: l0 + 1, last: l1, counterpart: { path, at } }];
 }
 
 /**
@@ -522,6 +619,65 @@ function nodesIn(
   return out;
 }
 
+/** Tokens that only join or close the code around them; a node keeping nothing else kept nothing of note. */
+const joiner = /^(?:[.,;()[\]{}]|\?\.)+$/;
+
+/**
+ * `emphasis` grown to cover each node whose every other token is emphasized and which keeps only joiners
+ * unchanged: `basicColor.DARKGRAY400` replaced whole reads as one removed run, not two islands around a kept
+ * `.`. A node keeping any word or literal (`theme.colors.a` becoming `theme.colors.b`) keeps its fine emphasis,
+ * and so does one spanning lines, whose kept brackets sit on lines that otherwise read unchanged.
+ */
+function wholeNodes(v: Version, emphasis: Range[]): Range[] {
+  const tree = v.tree;
+  const merged = mergeRanges(emphasis);
+  if (!tree || merged.length === 0) return merged;
+  const emphasized = (start: number, end: number) => {
+    let lo = 0;
+    let hi = merged.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if ((merged[mid] as Range).end <= start) lo = mid + 1;
+      else hi = mid;
+    }
+    const r = merged[lo];
+    return r !== undefined && r.start <= start && end <= r.end;
+  };
+  // Per node: -1 keeps a word or literal unchanged, else how many changed words it holds between its joiners.
+  const out = [...merged];
+  const state = new Map<number, number>();
+  const stack: { n: number; open: boolean }[] = [{ n: tree.root, open: false }];
+  while (stack.length > 0) {
+    const top = stack.pop() as (typeof stack)[number];
+    const { n } = top;
+    const start = v.start(n);
+    const end = v.end(n);
+    const count = tree.count(n);
+    if (count === 0) {
+      const t = v.text.slice(start, end).trim();
+      state.set(n, t === "" || joiner.test(t) ? 0 : emphasized(start, end) ? 1 : -1);
+      continue;
+    }
+    if (!top.open) {
+      stack.push({ n, open: true });
+      for (let i = 0; i < count; i++)
+        stack.push({ n: tree.child(n, i), open: false });
+      continue;
+    }
+    let s = 0;
+    for (let i = 0; i < count; i++) {
+      const c = state.get(tree.child(n, i)) ?? -1;
+      state.delete(tree.child(n, i));
+      s = c === -1 || s === -1 ? -1 : s + c;
+    }
+    state.set(n, s);
+    // One changed word already reads as one del and one ins; only two or more interleave around a kept joiner.
+    if (s >= 2 && n !== tree.root && !v.text.slice(start, end).includes("\n") && !emphasized(start, end))
+      out.push({ start, end });
+  }
+  return mergeRanges(out);
+}
+
 /** Sorted, overlapping ranges merged: the shape `split` reads. */
 export function mergeRanges(ranges: Range[]): Range[] {
   const out: Range[] = [];
@@ -530,6 +686,33 @@ export function mergeRanges(ranges: Range[]): Range[] {
     const last = out.at(-1);
     if (last && r.start <= last.end) last.end = Math.max(last.end, r.end);
     else out.push({ ...r });
+  }
+  return out;
+}
+
+/**
+ * The emphasis a viewer paints: changed nodes merged, two of them joined across the spaces between them on
+ * one line, so an inserted `, b` reads as one range rather than two islands, and cut at line breaks with
+ * each line's indentation left out.
+ */
+export function paintRanges(text: string, ranges: Range[]): Range[] {
+  const out: Range[] = [];
+  const push = (start: number, end: number) => {
+    if (end <= start) return;
+    const last = out.at(-1);
+    if (last && /^[ \t]*$/.test(text.slice(last.end, start))) last.end = end;
+    else out.push({ start, end });
+  };
+  for (const r of mergeRanges(ranges)) {
+    let at = r.start;
+    for (;;) {
+      const nl = text.indexOf("\n", at);
+      const stop = nl === -1 || nl >= r.end ? r.end : nl;
+      push(at, stop);
+      if (stop >= r.end) break;
+      at = stop + 1;
+      while (at < r.end && (text[at] === " " || text[at] === "\t")) at++;
+    }
   }
   return out;
 }

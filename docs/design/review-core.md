@@ -132,8 +132,13 @@ interface Side {
   spans: Span[];
   at: AstSteps[];
   startLine: number;
-  /** This change is one half of a move; points at the other half, possibly in another file. */
-  move?: { counterpart: { path: string; at: AstSteps[] } };
+  /** The lines of this side that are one half of a move, each pointing at the other half, possibly in another file. */
+  moves?: SideMove[];
+}
+interface SideMove {
+  first: number; // 1-based, inclusive
+  last: number;
+  counterpart: { path: string; at: AstSteps[] };
 }
 interface Span {
   text: string;
@@ -229,9 +234,9 @@ type Author<H extends Host> = { id: string } & HostAuthor<H>;
 
 **`FileDiff.collapsed`** is the engine's judgment that the whole file should be shown folded, with the reason; the renderer shows one line in place of the body and may still expand it. `fragments` stays complete for every reason except `binary` and `submodule`, whose `fragments` is empty: the engine never parses them. A host that knows a file is binary or a submodule says so in `ChangedFileRef.kind`, and the engine then does not call `readBlob` for it (a submodule's id names a commit of another repository, not a blob). A host that does not know leaves `kind` absent; the engine then reads the blob and treats it as `binary` when it holds a NUL byte in its first 8000 bytes or is not valid UTF-8.
 
-**`Side`** carries a `move` counterpart when a change is one half of a move, possibly in another file.
+**`Side.moves`** names the lines that are one half of a move, possibly in another file, per moved node: an expression inlined into a call marks only the expression's lines, and the call around it stays an ordinary edit. When the moved nodes cover every line of the side except blank and bracket-only lines, the side carries one move over all its lines, so a relocated block reads as one moved box. A move whose two halves land in the same `diff` fragment (a ternary's branches swapped, an argument re-wrapped in place) is dropped, because the reader already sees both halves side by side.
 
-**`Span`** keeps syntax colour (`scope`) and diff emphasis (`changed`) as separate fields, so a renderer can draw both.
+**`Span`** keeps syntax colour (`scope`) and diff emphasis (`changed`) as separate fields, so a renderer can draw both. A one-line node whose words are all changed, keeping only joiners such as `.`, `,`, brackets or `?.`, is emphasized whole when it holds two or more changed words, so `basicColor.DARKGRAY400` becoming `themedColor.foreground3` reads as one removed run and one added run rather than interleaving around the kept `.`. A node keeping any word or literal (`theme.colors.a` becoming `theme.colors.b`) keeps its token-level emphasis.
 
 **`AstSteps`** (named by the maintainer) is a path from the file root, indexing named children only. It is the single source of truth for where a thread sits. Line ranges are derived from it deterministically (`Anchor.intoLineRanges`) and never stored.
 

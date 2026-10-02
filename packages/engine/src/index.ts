@@ -7,6 +7,7 @@ export type {
   FileDiff,
   LinePair,
   Side,
+  SideMove,
   Span,
 } from "./fragments.js";
 export {

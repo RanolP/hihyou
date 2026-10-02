@@ -1,3 +1,4 @@
+import type { Tree } from "../core/arena.js";
 import type { Mapping } from "./matcher.js";
 
 /**
@@ -49,6 +50,12 @@ export function classifyMove(
   const xs = a.size[x] as number;
   const ys = b.size[y] as number;
   if (Math.min(xs, ys) < opts.minNodes) return "replaced";
+  // `const start = max(v, 0)` and a new `const first = floor(max(v, 0) / n)` share most tokens, but a different
+  // name is a different declaration: pairing them shows the old one moved when its value was only inlined.
+  const nameX = nameOf(a.tree, a.node(x));
+  const nameY = nameOf(b.tree, b.node(y));
+  if (nameX !== undefined && nameY !== undefined && nameX !== nameY)
+    return "replaced";
   const isLeaf = (side: Mapping["a"], i: number) => {
     if (side.size[i] !== 1) return false;
     const n = side.node(i);
@@ -67,4 +74,25 @@ export function classifyMove(
   const total = leavesX + leavesY;
   const s = total === 0 ? 1 : (2 * unchanged) / total;
   return s === 1 ? "pure" : s >= opts.minSimilarity ? "edited" : "replaced";
+}
+
+/**
+ * The name a declaration introduces: its `name` field, through an `export` (default or not), a Python
+ * decorator, or a single `const x = ...`.
+ */
+export function nameOf(tree: Tree, n: number): string | undefined {
+  const named: number[] = [];
+  for (let i = 0, count = tree.count(n); i < count; i++) {
+    const c = tree.child(n, i);
+    if (tree.named(c)) named.push(c);
+  }
+  const name = named.find((c) => tree.fieldName(c) === "name");
+  if (name !== undefined)
+    return tree.count(name) === 0 ? tree.label(name) : undefined;
+  const inner =
+    named.find((c) => {
+      const field = tree.fieldName(c);
+      return field === "declaration" || field === "definition";
+    }) ?? (named.length === 1 ? named[0] : undefined);
+  return inner !== undefined ? nameOf(tree, inner) : undefined;
 }
