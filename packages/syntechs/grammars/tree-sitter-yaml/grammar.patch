@@ -1,0 +1,19 @@
+--- a/grammar.js
++++ b/grammar.js
+@@ -424,12 +424,13 @@
+     _r_sgl_flw_col_itm: $ => choice($._r_sgl_flw_val_flw, $._r_sgl_flw_exp_par, $._r_sgl_flw_imp_par, $._r_sgl_flw_njl_ann_par),
+ 
+     // explicit flow pair
+ 
+-    _r_flw_exp_par: $ => seq($._r_flw_key_bgn, optional(choice($._r_flw_imp_r_par, $._r_flw_imp_br_par, $._br_flw_imp_r_par, $._br_flw_imp_br_par))),
+-    _br_flw_exp_par: $ => seq($._br_flw_key_bgn, optional(choice($._r_flw_imp_r_par, $._r_flw_imp_br_par, $._br_flw_imp_r_par, $._br_flw_imp_br_par))),
++    // An explicit key with no `:` after it (`{? a, ? b}`) is a pair with an empty value (YAML 1.2 example 7.3).
++    _r_flw_exp_par: $ => seq($._r_flw_key_bgn, optional(choice($._r_flw_imp_r_par, $._r_flw_imp_br_par, $._br_flw_imp_r_par, $._br_flw_imp_br_par, field('key', $._r_flw_val_flw), field('key', $._br_flw_val_flw)))),
++    _br_flw_exp_par: $ => seq($._br_flw_key_bgn, optional(choice($._r_flw_imp_r_par, $._r_flw_imp_br_par, $._br_flw_imp_r_par, $._br_flw_imp_br_par, field('key', $._r_flw_val_flw), field('key', $._br_flw_val_flw)))),
+ 
+-    _r_sgl_flw_exp_par: $ => seq($._r_flw_key_bgn, optional($._r_sgl_flw_imp_par)),
++    _r_sgl_flw_exp_par: $ => seq($._r_flw_key_bgn, optional(choice($._r_sgl_flw_imp_par, field('key', $._r_sgl_flw_val_flw)))),
+ 
+     // implicit flow pair
+ 
+     _r_flw_imp_r_par: $ => choice(seq(field('key', $._r_flw_jsl_val), $._r_flw_jsl_ann_par), seq(field('key', $._r_flw_njl_val_flw), $._r_flw_njl_ann_par)),

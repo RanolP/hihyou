@@ -3,7 +3,7 @@ import { SYM_ERROR } from "../../core/language.js";
 import { brokenNodes } from "../../fmt/format.js";
 import { type PrettierOptions, prettierDefaults, prettierSettings } from "../../fmt/options.js";
 import { defineLanguage, type Language } from "../../fmt/rules.js";
-import { sLiteral } from "../../fmt/stream.js";
+import { sKeptText, sLiteral } from "../../fmt/stream.js";
 import type { StreamRule } from "../../fmt/stream-format.js";
 import type { Normalize } from "../../fmt/check.js";
 import { grammar } from "./bundle.js";
@@ -17,10 +17,14 @@ const defaults: PrettierOptions = { ...prettierDefaults };
 // A flow collection's trailing comma comes and goes with its layout, and a flow mapping pair with no value drops
 // its colon (`{b: }` prints `{ b }`): neither changes what the collection holds. A pair's `?` comes and goes with
 // its key's layout, and so does the colon of a pair with no value (`? a` prints `a:`).
+// A comment in a flow collection trails the comma or colon its line ends in, whichever side of it the source had
+// it on (`[a # c⏎, b]` prints `a, # c`), so a flow comma or a flow pair's colon beside a comment does not count.
 const normalize: Normalize = (lexemes, _text, tree) =>
   lexemes.map((l, i) => {
     const kind = tree.kindName(l.node);
     if (kind === "," && /^[\]}]$/.test(lexemes[i + 1]?.text ?? "")) return undefined;
+    const besideComment = [lexemes[i - 1], lexemes[i + 1]].some((k) => k !== undefined && tree.kindName(k.node) === "comment");
+    if (besideComment && (kind === "," || (kind === ":" && tree.kindName(tree.parent(l.node)) === "flow_pair"))) return undefined;
     if (kind === "?" && /^(?:flow|block_mapping)_pair$/.test(tree.kindName(tree.parent(l.node)))) return undefined;
     if (kind === ":" && /^(?:flow|block_mapping)_pair$/.test(tree.kindName(tree.parent(l.node)))) {
       const pair = tree.parent(l.node);
@@ -28,6 +32,8 @@ const normalize: Normalize = (lexemes, _text, tree) =>
       for (let c = 0; c < tree.count(pair); c++) if (tree.fieldName(tree.child(pair, c)) === "value") valued = true;
       if (!valued) return undefined;
     }
+    // A directive prints its name and parameters one space apart.
+    if (kind.endsWith("_directive") || tree.kindName(tree.parent(l.node)).endsWith("_directive")) return l.text.trim().split(/[ \t]+/).join(" ");
     if (kind === "plain_scalar") return fold(l.text);
     if (kind === "single_quote_scalar") return `str:${fold(l.text.slice(1, -1).replaceAll("''", "'"))}`;
     if (kind === "double_quote_scalar") return `str:${fold(l.text.slice(1, -1).replaceAll('\\"', '"'))}`;
@@ -61,6 +67,9 @@ const base = defineLanguage(grammar, {
   layoutBlind: true,
 });
 
+// The streams printYaml printed without a final line break; the stream rule runs before `finalLine` asks.
+const noFinal = new WeakSet<object>();
+
 /**
  * YAML as prettier 3.9.9's printer lays it out (print.ts), whole from the stream: the printer walks the tree and
  * places comments itself, so the core attaches none. A construct print.ts cannot lay out yet refuses the file.
@@ -75,10 +84,14 @@ export const yaml: Language<PrettierOptions> = {
         "stream",
         (node, ctx) => {
           const out = printYaml(ctx.tree, node, ctx.options);
-          if (out !== "") sLiteral(node, out);
+          if (!out.final) noFinal.add(ctx.tree);
+          // A block scalar's whitespace line can end the output, and a line end trims all but kept text.
+          const tail = /[ \t]+$/.exec(out.text)?.[0] ?? "";
+          if (out.text.length > tail.length) sLiteral(node, out.text.slice(0, out.text.length - tail.length));
+          if (tail !== "") sKeptText(tail);
         },
       ],
-      // An ERROR root can span less than the file (`{? 1,? 2}` keeps only `{? 1`), so its text is no copy of it.
+      // An ERROR root can span less than the file, so its text is no copy of it.
       [
         "ERROR",
         () => {
@@ -87,7 +100,7 @@ export const yaml: Language<PrettierOptions> = {
       ],
     ]),
     lists: new Set(),
-    finalLine: (ctx) => !isBlank(ctx.tree),
+    finalLine: (ctx) => !isBlank(ctx.tree) && !noFinal.has(ctx.tree),
   },
 };
 
@@ -99,5 +112,5 @@ export const yaml: Language<PrettierOptions> = {
 export function formatYaml(value: string, options: Partial<PrettierOptions> = {}): string | undefined {
   const tree = parseTree(language, value);
   if (tree.errorChars > 0 || tree.kind(tree.root) === SYM_ERROR || brokenNodes(tree) !== undefined) return undefined;
-  return printYaml(tree, tree.root, { ...defaults, ...options });
+  return printYaml(tree, tree.root, { ...defaults, ...options }).text;
 }
