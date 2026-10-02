@@ -435,6 +435,73 @@ const CSS: Record<string, Rule> = {
   },
 };
 
+/** A string's prefix letters (`r`, `b`, `f`, `u` and their pairs), before its opening quote. */
+const PY_STRING_PREFIXES = ["", ...["r", "b", "u", "f", "rb", "br", "fr", "rf"].flatMap((p) => [p, p.toUpperCase()])];
+const PY_ASSIGNMENT = ["=", ":=", "+=", "-=", "*=", "/=", "//=", "%=", "**=", "@=", "&=", "|=", "^=", "<<=", ">>="];
+
+// tree-sitter-python's own highlights.scm, as the scopes VS Code's Python grammar (MagicPython) gives the same
+// tokens. It captures a function's name the same way at a definition, a call and a decorator.
+const PYTHON: Record<string, Rule> = {
+  variable: "",
+  // `^[A-Z]` identifiers: MagicPython colours a capitalised name like any other; an all-caps one is a constant.
+  constructor: "",
+  constant: "constant.other.caps.python",
+  "constant.builtin": "constant.language.python",
+  function: { scope: "entity.name.function.python", byKind: { decorator: "entity.name.function.decorator.python" } },
+  "function.method": "entity.name.function.python",
+  "function.builtin": "support.function.builtin.python",
+  property: "meta.attribute.python",
+  type: "entity.name.type.python",
+  number: {
+    scope: "constant.numeric.dec.python",
+    byKind: { float: "constant.numeric.float.python" },
+    byPrefix: [
+      ...["0x", "0X"].map((p): [string, string] => [p, "constant.numeric.hex.python"]),
+      ...["0o", "0O"].map((p): [string, string] => [p, "constant.numeric.oct.python"]),
+      ...["0b", "0B"].map((p): [string, string] => [p, "constant.numeric.bin.python"]),
+    ],
+  },
+  comment: "comment.line.number-sign.python",
+  string: {
+    scope: "string.quoted.single.python",
+    byPrefix: PY_STRING_PREFIXES.flatMap((p): [string, string][] => [
+      [`${p}"""`, "string.quoted.multi.python"],
+      [`${p}'''`, "string.quoted.multi.python"],
+      [`${p}"`, "string.quoted.double.python"],
+    ]),
+  },
+  escape: "constant.character.escape.python",
+  "punctuation.special": "constant.character.format.placeholder.other.python",
+  embedded: "meta.fstring.python",
+  operator: {
+    scope: "keyword.operator.arithmetic.python",
+    byText: {
+      ...Object.fromEntries(PY_ASSIGNMENT.map((o) => [o, "keyword.operator.assignment.python"])),
+      ...Object.fromEntries(
+        ["==", "!=", "<>", "<", ">", "<=", ">="].map((o) => [o, "keyword.operator.comparison.python"]),
+      ),
+      ...Object.fromEntries(["&", "|", "^", "~", "<<", ">>"].map((o) => [o, "keyword.operator.bitwise.python"])),
+      ...Object.fromEntries(
+        ["and", "or", "not", "in", "is", "is not", "not in"].map((o) => [o, "keyword.operator.logical.python"]),
+      ),
+      "->": "punctuation.separator.annotation.result.python",
+    },
+  },
+  keyword: {
+    scope: "keyword.control.flow.python",
+    byText: {
+      def: "storage.type.function.python",
+      class: "storage.type.class.python",
+      lambda: "storage.type.function.lambda.python",
+      async: "storage.type.function.async.python",
+      import: "keyword.control.import.python",
+      from: "keyword.control.import.python",
+      global: "storage.modifier.declaration.python",
+      nonlocal: "storage.modifier.declaration.python",
+    },
+  },
+};
+
 export const LANGUAGES: Record<string, LanguageRules> = {
   jsdoc: {
     grammar: "tree-sitter-jsdoc",
@@ -509,5 +576,10 @@ export const LANGUAGES: Record<string, LanguageRules> = {
     grammar: "tree-sitter-css",
     scope: "source.css",
     captures: CSS,
+  },
+  python: {
+    grammar: "tree-sitter-python",
+    scope: "source.python",
+    captures: PYTHON,
   },
 };
