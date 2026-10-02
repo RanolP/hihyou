@@ -273,7 +273,9 @@ class Printer {
 
   content(s: number): string {
     const { head, paras, tail } = this.parts(s);
-    if (paras.length > 1 || this.tree.text(s).includes("\n")) return unsupported(`a multi-line ${this.kind(s).replace("_", " ")}`);
+    // proseWrap other than "preserve" joins a one-paragraph scalar's lines.
+    if (paras.length > 1 || (this.prose === "preserve" && this.tree.text(s).includes("\n")))
+      return unsupported(`a multi-line ${this.kind(s).replace("_", " ")}`);
     return head + (paras[0] ?? []).join(" ") + tail;
   }
 
@@ -550,11 +552,12 @@ class Printer {
     return [`? ${k[0]}`, ...k.slice(1), `${" ".repeat(col)}: ${v[0]}`];
   }
 
-  /** Whether flow node `n` is a plain or quoted scalar over more than one source line. */
+  /** Whether flow node `n` is a plain or quoted scalar printing over more than one line: proseWrap other than "preserve" joins a one-paragraph one. */
   multiScalar(n: number): boolean {
     if (this.kind(n) !== "flow_node") return false;
     const s = this.properties(n).content;
-    return s !== undefined && /^(?:plain|single_quote|double_quote)_scalar$/.test(this.kind(s)) && this.tree.text(s).includes("\n");
+    if (s === undefined || !/^(?:plain|single_quote|double_quote)_scalar$/.test(this.kind(s)) || !this.tree.text(s).includes("\n")) return false;
+    return this.prose === "preserve" || this.parts(s).paras.length > 1;
   }
 
   /** Whether flow collection `c` holds a multi-line scalar, at any depth. */
