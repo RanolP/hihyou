@@ -17,7 +17,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createTwoFilesPatch } from "diff";
-import { type GrammarName, pkgRoot } from "../core/corpus.node.js";
+import { type GrammarName, pkgRoot, swiftInputs } from "../core/corpus.node.js";
 import { parseTree } from "../core/index.js";
 import type { Language as Grammar } from "../core/language.js";
 import { check } from "./check.js";
@@ -53,6 +53,8 @@ import type { Language } from "./rules.js";
 
 const PRETTIER = "prettier 3.9.9";
 const RUFF = "ruff 0.16.8";
+// Apple's swift-format, `xcrun swift-format` from Xcode, with its default configuration; it never runs here.
+const SWIFT_FORMAT = "swift-format 6.3.0";
 const prettierRoot = join(
   pkgRoot,
   "corpus",
@@ -248,6 +250,23 @@ export const TARGETS: Target[] = [
     grammar: () => "kotlin",
     source: `Fixtures: the kotlin grammar's vendored inputs (src/grammars/kotlin/corpus: the tree-sitter-kotlin test corpus examples, Logger.kt and the real-world files, then the inputs of ktfmt's own tests: its cases/**/*.input files and KDocFormatterTest.kt's comments), expected output from ${ktfmt.name} run on each.`,
     suite: ktfmtSuite,
+  },
+  {
+    id: "swift@swift-format",
+    reference: SWIFT_FORMAT,
+    fmt: "swift",
+    export: "swift",
+    grammar: () => "swift",
+    source: `Fixtures: the swift grammar's vendored inputs (src/grammars/swift/corpus/swift-format: swift-format 603.0.0's own Sources/SwiftFormat), expected output from ${SWIFT_FORMAT} run on each, recorded beside it by fetch-corpus.sh swift.`,
+    suite: (): Suite => ({
+      cases: swiftInputs().map(({ name, text, expected }) => ({
+        fixture: name,
+        file: name,
+        text,
+        runs: [{ label: "default", options: {}, expected, asRecorded: (s: string) => s }],
+      })),
+      excluded: [],
+    }),
   },
   ...PRETTIER_FIXTURES.map(againstOxfmt),
   {

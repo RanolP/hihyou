@@ -75,6 +75,11 @@ const EXT: Record<string, Spec> = {
   },
   ".kt": kotlin,
   ".kts": kotlin,
+  ".swift": {
+    grammar: () => import("../grammars/swift/index.js"),
+    fmt: () => import("../grammars/swift/fmt.js"),
+    export: "swift",
+  },
   ".yaml": yaml,
   ".yml": yaml,
 };
