@@ -55,6 +55,7 @@
     "tree-sitter-json": "workspace:*",
     "tree-sitter-kotlin": "workspace:*",
     "tree-sitter-python": "workspace:*",
+    "tree-sitter-swift": "workspace:*",
     "tree-sitter-typescript": "workspace:*",
     "tsdown": "^0.23.0"
   }

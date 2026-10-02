@@ -65,6 +65,7 @@ const TINY: Record<GrammarName, string> = {
   tsx: "const a = <div>{b}</div>;",
   python: "x = 1\n",
   kotlin: "val a = 1\n",
+  swift: "let a = 1\n",
 };
 
 /** One fresh process: import, load the grammar, parse a tiny input. Prints ms. */

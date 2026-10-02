@@ -25,6 +25,10 @@ export const GRAMMARS: Record<string, { src: string; comments: string[] }> = {
     src: "tree-sitter-kotlin/src",
     comments: ["line_comment", "multiline_comment"],
   },
+  swift: {
+    src: "tree-sitter-swift/src",
+    comments: ["comment", "multiline_comment"],
+  },
 };
 
 const only = process.argv.slice(2);

@@ -251,6 +251,9 @@ importers:
       tree-sitter-python:
         specifier: workspace:*
         version: link:grammars/tree-sitter-python
+      tree-sitter-swift:
+        specifier: workspace:*
+        version: link:grammars/tree-sitter-swift
       tree-sitter-typescript:
         specifier: workspace:*
         version: link:grammars/tree-sitter-typescript
@@ -269,6 +272,8 @@ importers:
   packages/syntechs/grammars/tree-sitter-kotlin: {}
 
   packages/syntechs/grammars/tree-sitter-python: {}
+
+  packages/syntechs/grammars/tree-sitter-swift: {}
 
   packages/syntechs/grammars/tree-sitter-typescript: {}
 

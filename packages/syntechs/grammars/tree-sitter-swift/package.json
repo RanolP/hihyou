@@ -1,0 +1,21 @@
+{
+  "name": "tree-sitter-swift",
+  "version": "0.7.3",
+  "private": true,
+  "scripts": {
+    "postinstall": "node ../build.mjs"
+  },
+  "grammar": {
+    "sources": [
+      {
+        "repo": "alex-pinkus/tree-sitter-swift",
+        "commit": "b8b22bffbb3441780e6471665bacfb263741c86a",
+        "files": {
+          "grammar.js": "fc2543eb1f1b93d9990fd162ec2e204427a655418973ef44a77ecd740a9e5970",
+          "src/scanner.c": "f3d6271d64f58c39eed544104a70ca2cf9ecbf80c5d900620f1afd38836542cb",
+          "tree-sitter.json": "8fe119a382e307be0b94d0c80fda46339a693b84cae8cf2e19b6264437dd49db"
+        }
+      }
+    ]
+  }
+}
