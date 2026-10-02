@@ -1,0 +1,9 @@
+// A line comment
+{
+  "name": "hihyou",
+  "escaped \"key\"": "tab\there é \\ end",
+  /* a block comment */
+  "count": -12.5e3,
+  "flags": [true, false, null],
+  "nested": { "empty": {}, "list": [1, "two", [3]] }
+}

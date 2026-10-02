@@ -351,6 +351,16 @@ const YAML: Record<string, Rule> = {
   },
 };
 
+// tree-sitter-json's captures, as the scopes VS Code's JSON grammar gives the same tokens.
+const JSON_CAPTURES: Record<string, Rule> = {
+  "string.special.key": "support.type.property-name.json",
+  string: "string.quoted.double.json",
+  number: "constant.numeric.json",
+  "constant.builtin": "constant.language.json",
+  escape: "constant.character.escape.json",
+  comment: { scope: "comment.block.json", byPrefix: [["//", "comment.line.double-slash.json"]] },
+};
+
 export const LANGUAGES: Record<string, LanguageRules> = {
   jsdoc: {
     grammar: "tree-sitter-jsdoc",
@@ -414,5 +424,11 @@ export const LANGUAGES: Record<string, LanguageRules> = {
     grammar: "tree-sitter-yaml",
     queries: ["queries/highlights.scm"],
     captures: YAML,
+  },
+  json: {
+    grammar: "tree-sitter-json",
+    scope: "source.json",
+    extend: ["json/highlights.tm.scm"],
+    captures: JSON_CAPTURES,
   },
 };
