@@ -31,6 +31,11 @@ const kotlin: Spec = {
   fmt: () => import("../grammars/kotlin/fmt.js"),
   export: "kotlin",
 };
+const yaml: Spec = {
+  grammar: () => import("../grammars/yaml/index.js"),
+  fmt: () => import("../grammars/yaml/fmt.js"),
+  export: "yaml",
+};
 const html: Spec = {
   grammar: () => import("../grammars/html/index.js"),
   fmt: () => import("../grammars/html/fmt.js"),
@@ -50,6 +55,7 @@ const EXT: Record<string, Spec> = {
   },
   ".html": html,
   ".htm": html,
+  ".svg": html,
   ".js": javascript,
   ".jsx": javascript,
   ".ts": {
@@ -69,6 +75,13 @@ const EXT: Record<string, Spec> = {
   },
   ".kt": kotlin,
   ".kts": kotlin,
+  ".swift": {
+    grammar: () => import("../grammars/swift/index.js"),
+    fmt: () => import("../grammars/swift/fmt.js"),
+    export: "swift",
+  },
+  ".yaml": yaml,
+  ".yml": yaml,
 };
 
 const dir = process.argv[2];

@@ -31,7 +31,8 @@ export interface LanguageRules {
    * into every comment; VS Code's grammar reads it only in a `/**` comment, so a `// @ts-ignore` stays a comment.
    */
   injectionMatch?: Record<string, string>;
-  captures: Record<string, Rule>;
+  /** `null` drops a capture that is not a highlight, as a `_`-prefixed one is. */
+  captures: Record<string, Rule | null>;
 }
 
 /** The captures every language's queries share, as the generic TextMate scope suffixed with the language. */
@@ -241,6 +242,68 @@ const REGEX: Record<string, Rule> = {
   string: "",
 };
 
+// nvim-treesitter's capture names, which tree-sitter-swift's highlights.scm uses, as generic TextMate scopes.
+// `null` marks a capture that is not a highlight (`@spell`).
+const SWIFT: Record<string, Rule | null> = Object.fromEntries(
+  Object.entries({
+    attribute: "storage.modifier.attribute",
+    boolean: "constant.language.boolean",
+    "character.special": "variable.language.wildcard",
+    comment: "comment",
+    "comment.documentation": "comment.block.documentation",
+    "constant.builtin": "constant.language",
+    "constant.macro": "constant.language",
+    constructor: "entity.name.function.constructor",
+    "function.call": "entity.name.function",
+    "function.macro": "entity.name.function.preprocessor",
+    "function.method": "entity.name.function",
+    keyword: "keyword.other",
+    "keyword.conditional": "keyword.control.conditional",
+    "keyword.conditional.ternary": "keyword.operator.ternary",
+    "keyword.coroutine": "keyword.control.async",
+    "keyword.directive": "keyword.control.directive",
+    "keyword.exception": "keyword.control.exception",
+    "keyword.function": "storage.type.function",
+    "keyword.import": "keyword.control.import",
+    "keyword.modifier": "storage.modifier",
+    "keyword.operator": "keyword.operator",
+    "keyword.repeat": "keyword.control.loop",
+    "keyword.return": "keyword.control.return",
+    "keyword.type": "storage.type",
+    label: "entity.name.label",
+    nospell: null,
+    number: "constant.numeric.integer",
+    "number.float": "constant.numeric.float",
+    operator: "keyword.operator",
+    "punctuation.bracket": "punctuation.section.brackets",
+    "punctuation.delimiter": "punctuation.separator",
+    "punctuation.special": "punctuation.section.embedded",
+    spell: null,
+    string: "string.quoted",
+    "string.escape": "constant.character.escape",
+    "string.regexp": "string.regexp",
+    type: "entity.name.type",
+    variable: "variable.other",
+    "variable.builtin": "variable.language",
+    "variable.member": "variable.other.member",
+    "variable.parameter": "variable.parameter",
+  }).map(([capture, scope]) => [capture, scope === null ? null : `${scope}.swift`]),
+);
+
+// tree-sitter-html's highlights.scm captures, as the scopes VS Code's HTML grammar gives the same tokens.
+const TAG_BEGIN = "punctuation.definition.tag.begin.html";
+const TAG_END = "punctuation.definition.tag.end.html";
+
+const HTML: Record<string, Rule> = {
+  tag: "entity.name.tag.html",
+  "tag.error": "invalid.illegal.unrecognized-tag.html",
+  constant: "meta.tag.metadata.doctype.html",
+  attribute: "entity.other.attribute-name.html",
+  string: "string.quoted.html",
+  comment: "comment.block.html",
+  "punctuation.bracket": { scope: TAG_BEGIN, byText: { ">": TAG_END, "/>": TAG_END } },
+};
+
 export const LANGUAGES: Record<string, LanguageRules> = {
   jsdoc: {
     grammar: "tree-sitter-jsdoc",
@@ -288,5 +351,16 @@ export const LANGUAGES: Record<string, LanguageRules> = {
     queries: ["queries/highlights.scm"],
     extend: ["kotlin/highlights.tm.scm"],
     captures: KOTLIN,
+  },
+  swift: {
+    grammar: "tree-sitter-swift",
+    queries: ["queries/highlights.scm"],
+    captures: SWIFT,
+  },
+  html: {
+    grammar: "tree-sitter-html",
+    // tree-sitter.json's only highlights file; naming it skips the injections.scm it lists, which embeds CSS and JS.
+    queries: ["queries/highlights.scm"],
+    captures: HTML,
   },
 };

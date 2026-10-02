@@ -291,9 +291,15 @@ importers:
       tree-sitter-regex:
         specifier: workspace:*
         version: link:grammars/tree-sitter-regex
+      tree-sitter-swift:
+        specifier: workspace:*
+        version: link:grammars/tree-sitter-swift
       tree-sitter-typescript:
         specifier: workspace:*
         version: link:grammars/tree-sitter-typescript
+      tree-sitter-yaml:
+        specifier: workspace:*
+        version: link:grammars/tree-sitter-yaml
       tsdown:
         specifier: ^0.23.0
         version: 0.23.0(typescript@7.0.2)
@@ -314,7 +320,11 @@ importers:
 
   packages/syntechs/grammars/tree-sitter-regex: {}
 
+  packages/syntechs/grammars/tree-sitter-swift: {}
+
   packages/syntechs/grammars/tree-sitter-typescript: {}
+
+  packages/syntechs/grammars/tree-sitter-yaml: {}
 
   packages/ui:
     dependencies:
