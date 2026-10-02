@@ -1077,7 +1077,7 @@ function embeddedLanguage(n: Node): EmbeddedLanguage | "raw" | undefined {
  */
 const isSurelyUnparsedScript = (js: string) =>
   js.startsWith("<![CDATA[") ||
-  (!/['"`/]|<!--|-->|^#!/.test(js) && /[^\x00-\x7f\p{ID_Continue}\s‌‍]/u.test(js));
+  (!/['"`/]|<!--|-->|^#!/.test(js) && /[^\p{ASCII}\p{ID_Continue}\s‌‍]/u.test(js));
 
 /**
  * printer-html.js's text in a whitespace-sensitive script or style: htmlTrimPreserveIndentation (one leading blank
