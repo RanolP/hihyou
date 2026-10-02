@@ -361,6 +361,80 @@ const JSON_CAPTURES: Record<string, Rule> = {
   comment: { scope: "comment.block.json", byPrefix: [["//", "comment.line.double-slash.json"]] },
 };
 
+// tree-sitter-css's captures, as the scopes VS Code's CSS grammar gives the same tokens.
+const CSS: Record<string, Rule> = {
+  comment: "comment.block.css",
+  tag: {
+    scope: "entity.name.tag.css",
+    byKind: { nesting_selector: "entity.name.tag.nesting.css", universal_selector: "entity.name.tag.wildcard.css" },
+  },
+  operator: {
+    scope: "keyword.operator.css",
+    byText: {
+      ">": "keyword.operator.combinator.css",
+      "~": "keyword.operator.combinator.css",
+      and: "keyword.operator.logical.and.media.css",
+      or: "keyword.operator.logical.or.media.css",
+      not: "keyword.operator.logical.not.media.css",
+      only: "keyword.operator.logical.only.media.css",
+    },
+  },
+  string: {
+    scope: "string.quoted.double.css",
+    byKind: { plain_value: "string.unquoted.attribute-value.css" },
+    byPrefix: [["'", "string.quoted.single.css"]],
+  },
+  variable: "variable.css",
+  property: {
+    scope: "support.type.property-name.css",
+    byKind: {
+      class_name: "entity.other.attribute-name.class.css",
+      id_name: "entity.other.attribute-name.id.css",
+      namespace_name: "entity.other.namespace-prefix.css",
+      feature_name: "support.type.property-name.media.css",
+    },
+  },
+  attribute: {
+    scope: "entity.other.attribute-name.css",
+    byKind: {
+      tag_name: "entity.other.attribute-name.pseudo-element.css",
+      class_name: "entity.other.attribute-name.pseudo-class.css",
+    },
+  },
+  function: "support.function.misc.css",
+  keyword: {
+    scope: "keyword.control.at-rule.css",
+    byKind: {
+      to: "entity.other.keyframe-offset.css",
+      from: "entity.other.keyframe-offset.css",
+      important: "keyword.other.important.css",
+    },
+  },
+  "string.special": "constant.other.color.rgb-value.hex.css",
+  number: "constant.numeric.css",
+  type: "keyword.other.unit.css",
+  "punctuation.delimiter": {
+    scope: "punctuation.separator.css",
+    byText: {
+      "#": "punctuation.definition.entity.css",
+      ".": "punctuation.definition.entity.css",
+      "::": "punctuation.definition.entity.css",
+      ",": "punctuation.separator.list.comma.css",
+      ":": "punctuation.separator.key-value.css",
+      ";": "punctuation.terminator.rule.css",
+    },
+  },
+  "punctuation.bracket": {
+    scope: "punctuation.section.css",
+    byText: {
+      "{": "punctuation.section.property-list.begin.bracket.curly.css",
+      "}": "punctuation.section.property-list.end.bracket.curly.css",
+      "(": "punctuation.section.function.begin.bracket.round.css",
+      ")": "punctuation.section.function.end.bracket.round.css",
+    },
+  },
+};
+
 export const LANGUAGES: Record<string, LanguageRules> = {
   jsdoc: {
     grammar: "tree-sitter-jsdoc",
@@ -430,5 +504,10 @@ export const LANGUAGES: Record<string, LanguageRules> = {
     scope: "source.json",
     extend: ["json/highlights.tm.scm"],
     captures: JSON_CAPTURES,
+  },
+  css: {
+    grammar: "tree-sitter-css",
+    scope: "source.css",
+    captures: CSS,
   },
 };
