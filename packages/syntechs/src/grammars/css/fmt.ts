@@ -1,5 +1,5 @@
 import { NO_NODE, type Tree } from "../../core/arena.js";
-import { decimalValue, type Normalize } from "../../fmt/check.js";
+import { decimalValue, type Lexeme, type Normalize } from "../../fmt/check.js";
 import {
   type PrettierOptions,
   prettierDefaults,
@@ -27,6 +27,7 @@ import {
   openAlign,
   SOFT,
   sHardline,
+  sKeptText,
   sLine,
   sLiteral,
   sText,
@@ -125,9 +126,17 @@ function meaning(tree: Tree, node: number, t: string): string {
     case "plain_value":
       if (parentKind === "attribute_selector")
         return /^["']/.test(t) ? cook(t) : t;
-      return cssWideKeywords.has(t.toLowerCase())
-        ? t.toLowerCase()
-        : t.replace(/\s+/g, "");
+      if (cssWideKeywords.has(t.toLowerCase())) return t.toLowerCase();
+      // An `nth-` pseudo-class's An+B, whose `N` means `n` (`anPlusB` lowercases some).
+      if (parentKind === "arguments" && tree.kindName(tree.parent(parent)) === "pseudo_class_selector")
+        return t.replace(/\s+/g, "").toLowerCase();
+      // `a:/1.50`, one word to tree-sitter, is raw tokens to oxc, which prints its number as `1.5` (`rawArgChain`).
+      // An unquoted `url()`'s body in a raw value, which oxc spaces as raw tokens (`url(http: / / a.b)`), one word.
+      if (t.includes(":"))
+        return t
+          .replace(/\s+/g, "")
+          .replace(/(?<=[:/])(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?/g, (n) => decimalValue(n) ?? n);
+      return t.replace(/\s+/g, "");
     default:
       return !tree.named(node) && t.startsWith("@") ? t.toLowerCase() : t;
   }
@@ -153,10 +162,104 @@ function droppedComma(tree: Tree, node: number): boolean {
   return false;
 }
 
+/**
+ * A custom property's value holding a `{...}` group past its start, which oxfmt keeps as written: tree-sitter-css
+ * reads it raw when it ends the block (`a{--a: x {a:b}}`) and as words before a `;`, which oxfmt adds, so both
+ * sides fold the value to its source text, each gap one space.
+ */
+function customBraceForms(
+  lexemes: readonly Lexeme[],
+  text: string,
+  tree: Tree,
+  forms: (string | undefined)[],
+): void {
+  const valueOf = (node: number): number | undefined => {
+    for (let up = node; up !== NO_NODE; up = tree.parent(up)) {
+      const decl = tree.parent(up);
+      if (tree.kindName(decl) !== "declaration") continue;
+      if (!["raw_value", "plain_value", "brace_value"].includes(tree.kindName(up)) && tree.named(up)) return undefined;
+      if (!tree.text(tree.child(decl, 0)).startsWith("--")) return undefined;
+      const kids = Array.from({ length: tree.count(decl) }, (_, i) => tree.kindName(tree.child(decl, i)));
+      return kids.includes("raw_value") || kids.includes("brace_value") ? decl : undefined;
+    }
+    return undefined;
+  };
+  for (let i = 0; i < lexemes.length; i++) {
+    const first = lexemes[i] as Lexeme;
+    const decl = valueOf(first.node);
+    // The declaration's own `:` and `;`.
+    if (decl === undefined || [":", ";"].includes(first.text)) continue;
+    let last = i;
+    while (last + 1 < lexemes.length && valueOf((lexemes[last + 1] as Lexeme).node) === decl && (lexemes[last + 1] as Lexeme).text !== ";")
+      last++;
+    const end = lexemes[last] as Lexeme;
+    forms[i] = text.slice(first.at, end.at + end.text.length).replace(/\s+/g, " ");
+    for (let j = i + 1; j <= last; j++) forms[j] = undefined;
+    i = last;
+  }
+}
+
+/**
+ * A custom property's block oxfmt re-flows as text (`customBlockLines`), whitespace inside strings included: both
+ * sides fold it to its text without whitespace or empty items.
+ */
+function customBlockForms(lexemes: readonly Lexeme[], tree: Tree, forms: (string | undefined)[]): void {
+  const blockOf = (node: number): number | undefined => {
+    for (let up = node; up !== NO_NODE; up = tree.parent(up))
+      if (customBlockLines(up, tree) !== undefined) return up;
+    return undefined;
+  };
+  for (let i = 0; i < lexemes.length; i++) {
+    const block = blockOf((lexemes[i] as Lexeme).node);
+    if (block === undefined) continue;
+    forms[i] = tree
+      .text(block)
+      .replace(/\s+/g, "")
+      .replace(/;+/g, ";")
+      .replace(/^\{;|;\}$/g, (m) => m.replace(";", ""));
+    while (i + 1 < lexemes.length && blockOf((lexemes[i + 1] as Lexeme).node) === block) forms[++i] = undefined;
+  }
+}
+
+/**
+ * oxfmt prints a value's `progid:A(B)` past its start as the function `progid(: A B)` (`rawTokens`), which
+ * tree-sitter-css reads with an ERROR at each paren, and `progid:A` as `progid: A`: both sides fold to `progid:A(`,
+ * B's forms, and no `)` (the output's sits in the ERROR), or to `progid:A`. Any other ERROR still fails the check.
+ */
+function progidForms(lexemes: readonly Lexeme[], tree: Tree, forms: (string | undefined)[]): void {
+  const at = (i: number) => lexemes[i] as Lexeme;
+  const kindAt = (i: number) => (i < lexemes.length ? tree.kindName(at(i).node) : "");
+  const upAt = (i: number) => (i < lexemes.length ? tree.kindName(tree.parent(at(i).node)) : "");
+  for (let i = 0; i < lexemes.length; i++) {
+    const text = at(i).text;
+    if (kindAt(i) !== "plain_value") continue;
+    // Input: `progid:A` then its group's `(` … `)`.
+    if (/^progid:./i.test(text) && at(i + 1)?.text === "(" && upAt(i + 1) === "parenthesized_value") {
+      const group = tree.parent(at(i + 1).node);
+      forms[i] = `${forms[i]}(`;
+      forms[i + 1] = undefined;
+      const close = lexemes.findIndex((l, j) => j > i && l.node === tree.child(group, tree.count(group) - 1));
+      if (close !== -1) forms[close] = undefined;
+    }
+    // Output: `progid` then an ERROR `(`, `:`, `A`, …, an ERROR `)`.
+    else if (/^progid$/i.test(text) && at(i + 1)?.text === "(" && upAt(i + 1) === "ERROR" && at(i + 2)?.text === ":") {
+      forms[i] = `${text}:${forms[i + 3] ?? ""}(`;
+      forms[i + 1] = forms[i + 2] = forms[i + 3] = undefined;
+      const close = lexemes.findIndex((l, j) => j > i + 3 && l.text === ")" && upAt(j) === "ERROR");
+      if (close !== -1) forms[close] = undefined;
+    }
+    // `progid: A` against `progid:A`.
+    else if (/^progid:$/i.test(text) && forms[i + 1] !== undefined && kindAt(i + 1) === "plain_value") {
+      forms[i] = `${forms[i]}${forms[i + 1]}`;
+      forms[i + 1] = undefined;
+    }
+  }
+}
+
 // A `;` that ends the last statement of a block or of the file means nothing, so prettier may add one there; nor
 // does an empty statement's (`a: b;;`), which postcss drops. A sign before a number means the signed number, which
 // prettier may join to it (`+ 20px` is `+20px`) or part from it.
-const normalize: Normalize = (lexemes, _text, tree) => {
+const normalize: Normalize = (lexemes, text, tree) => {
   const isNumber = (i: number) => {
     const l = lexemes[i];
     return l !== undefined && ["integer_value", "float_value"].includes(tree.kindName(l.node));
@@ -181,8 +284,13 @@ const normalize: Normalize = (lexemes, _text, tree) => {
       return undefined;
     if (sign(i) || tree.kindName(l.node) === "trailing_comma" || droppedComma(tree, l.node)) return undefined;
     if (sign(i - 1)) return meaning(tree, l.node, `${prev}${l.text}`);
+    // A custom property block's item tree-sitter reads as an ERROR spans the `;` ending it, which means nothing.
+    if (tree.kindName(l.node) === "ERROR" && customSetItem(l.node, tree)) return l.text.replace(/[\s;]+$/, "");
     return meaning(tree, l.node, l.text);
   });
+  progidForms(lexemes, tree, forms);
+  customBraceForms(lexemes, text, tree, forms);
+  customBlockForms(lexemes, tree, forms);
   // `a*b`, one word to tree-sitter, is three tokens to oxc-css-parser, which prints `a * b` (`colonThenRawTokens`):
   // a value's `*` and `/` join the words around them into one form.
   const inValue = (node: number) => {
@@ -208,6 +316,28 @@ const normalize: Normalize = (lexemes, _text, tree) => {
       forms[i] = undefined;
     }
   }
+  // A `:` past the declaration's own (`a:/b`, one word to tree-sitter), which oxc prints `a: / b`.
+  const ownColon = (node: number) => {
+    const decl = tree.parent(node);
+    if (tree.kindName(decl) !== "declaration") return false;
+    for (let j = 0; ; j++) if (tree.kindName(tree.child(decl, j)) === ":") return tree.child(decl, j) === node;
+  };
+  for (let i = 1, p = 0; i + 1 < lexemes.length; i++) {
+    const l = lexemes[i] as (typeof lexemes)[number];
+    if (l.text !== ":" || forms[i] === undefined || forms[p] === undefined || !inValue(l.node) || ownColon(l.node)) {
+      if (forms[i] !== undefined) p = i;
+      continue;
+    }
+    forms[p] = `${forms[p]}:`;
+    forms[i] = undefined;
+    const next = lexemes[i + 1]?.text ?? "";
+    // The block's `}` after a value's last `:` (`a :}`) ends the declaration, whose `;` oxc adds.
+    if (forms[i + 1] !== undefined && !/^[:/*}]$/.test(next)) {
+      forms[p] = `${forms[p]}${forms[i + 1]}`;
+      forms[i + 1] = undefined;
+      i++;
+    }
+  }
   for (let i = 1; i + 1 < lexemes.length; i++) {
     const l = lexemes[i] as (typeof lexemes)[number];
     if ((l.text !== "*" && l.text !== "/") || forms[i] === undefined || !inValue(l.node)) continue;
@@ -221,6 +351,12 @@ const normalize: Normalize = (lexemes, _text, tree) => {
       continue;
     }
     if (forms[i + 1] === undefined) continue;
+    // A run of them (`a//b`) joins one at a time.
+    if (/^[*/]$/.test(lexemes[i + 1]?.text ?? "")) {
+      forms[p] = `${forms[p]}${l.text}`;
+      forms[i] = undefined;
+      continue;
+    }
     forms[p] = `${forms[p]}${l.text}${forms[i + 1]}`;
     forms[i] = forms[i + 1] = undefined;
   }
@@ -292,7 +428,8 @@ export const customs = {
   /** Prettier indents a selector of more than two nodes as it breaks. */
   longSelector: (node, ctx) => parts(node, ctx) > 2,
   /** A declaration with nothing between its `:` and its `;` (`--empty:;`). */
-  emptyValue: (node, ctx) => code(node, ctx).every((c) => !ctx.tree.named(c) || kind(c, ctx) === "property_name"),
+  emptyValue: (node, ctx) =>
+    code(node, ctx).every((c) => !ctx.tree.named(c) || ["property_name", "trailing_comma"].includes(kind(c, ctx))),
   /** A declaration whose value is `!important` alone (`b: !important`), which spaces its own way after the `:`. */
   importantValue: (node, ctx) =>
     code(node, ctx).some((c) => kind(c, ctx) === "important") &&
@@ -300,6 +437,7 @@ export const customs = {
   unparsedValue: (node, ctx) => unparsedUrl(node, ctx) || rawValue(node, ctx),
   /** A normal property's value oxc-css-parser reads as raw tokens (`oxcRaw`), which `colonThenRawTokens` prints. */
   rawTokens: (node, ctx) => !customName(node, ctx.tree) && oxcRaw(node, ctx.tree),
+  strayArgColon: (node, ctx) => strayArgColon(node, ctx),
   /** A media query list holding a comment, which `mediaQueries` prints as postcss-media-query-parser splits it. */
   mediaComments: (node, ctx) => mediaAtoms(node, ctx).some((c) => isComment(c, ctx)),
   /** A query holding a keyword glued to its paren group (`screen and(a:b)`), which stays glued. */
@@ -626,24 +764,15 @@ function slashJoinedBefore(c: number, ctx: SCtx): boolean | undefined {
 }
 
 /**
- * Whether `node` sits in a `grid`/`grid-template*` declaration whose value the source breaks across lines, which
- * prettier then prints a line per source line (format.ts's `keepLines`), words within a line a space apart.
+ * Whether `node` sits in a `grid`/`grid-template*` declaration, which oxfmt prints a line per source line
+ * (format.ts's `keepLines`), words within a line a space apart, a one-line value's too: only its functions break.
  */
 function gridLines(node: number, ctx: SCtx): boolean {
   const t = ctx.tree;
   let decl = t.parent(node);
   while (decl !== NO_NODE && kind(decl, ctx) === "binary_expression") decl = t.parent(decl);
   if (decl === NO_NODE || kind(decl, ctx) !== "declaration") return false;
-  if (!firstTextIs(ctx, decl, undefined, ["grid"], ["grid-template"], true)) return false;
-  const kids = children(decl, t);
-  const colon = kids.findIndex((c) => kind(c, ctx) === ":");
-  const first = kids[colon + 1];
-  if (colon === -1 || first === undefined) return false;
-  // Postorder numbers a node after its leaves, so the declaration's leaves are those before it.
-  const end = t.ord(decl);
-  for (let l = nextLeaf(t, firstLeaf(t, first)); l !== NO_NODE && t.ord(l) < end; l = nextLeaf(t, l))
-    if (t.lf(l) > 0 && kind(l, ctx) !== ";") return true;
-  return false;
+  return firstTextIs(ctx, decl, undefined, ["grid"], ["grid-template"], true);
 }
 
 /** A node of a declaration's comma entry that holds other items too, which the entry packs in a fill. */
@@ -668,6 +797,7 @@ function amongWords(node: number, ctx: SCtx): boolean {
 export function valueMath(node: number, ctx: SCtx): void {
   const t = ctx.tree;
   const outermost = !parentIs(t, node, "binary_expression");
+  if (outermost && argColonChain(node, t)) return rawArgChain([node], ctx);
   const directive = ancestorWhere(t, node, ["at_rule", "postcss_statement"], ["block"], (a) =>
     firstTextIs(ctx, a, undefined, directives, [], false),
   );
@@ -762,6 +892,125 @@ export function valueMath(node: number, ctx: SCtx): void {
     if (!grid) close();
     close();
   }
+}
+
+/**
+ * A function argument's math chain holding a `:` tree-sitter-css cannot place (`f(a :/b)`), which oxc-css-parser
+ * reads as raw tokens. A chain holding a paren, brace or bracket group stays on the typed path.
+ */
+function argColonChain(node: number, t: FormatTree): boolean {
+  if (!parentIs(t, node, "arguments")) return false;
+  let colon = false;
+  const scan = (n: number): boolean =>
+    children(n, t).every((c) => {
+      const k = t.kindName(c);
+      if (k === "ERROR") colon ||= t.text(c) === ":";
+      if (["parenthesized_value", "brace_value", "grid_value"].includes(k)) return false;
+      return k === "binary_expression" || k === "ERROR" ? scan(c) : true;
+    });
+  return scan(node) && colon;
+}
+
+/** An `ERROR` `:` of an `argColonChain` chain, which `rawArgChain` prints. */
+function argColonError(n: number, t: FormatTree): boolean {
+  if (t.kindName(n) !== "ERROR" || t.text(n) !== ":") return false;
+  let top = t.parent(n);
+  if (t.kindName(top) !== "binary_expression") return false;
+  while (parentIs(t, top, "binary_expression")) top = t.parent(top);
+  return argColonChain(top, t);
+}
+
+/**
+ * A function's arguments holding a `:` with nothing before it in its own argument (`f(/ a :b)`, `f(/ a : b)`), which
+ * tree-sitter-css reads as a nameless keyword argument or an ERROR and oxc-css-parser as raw tokens. A Sass
+ * directive's, `url()`'s and a pseudo-class's arguments, and ones holding a comment, stay on the typed path.
+ */
+function strayArgColon(call: number, ctx: SCtx): boolean {
+  const t = ctx.tree;
+  const node = t.child(call, 1);
+  if (node === NO_NODE || t.kindName(node) !== "arguments" || /^url$/i.test(t.text(t.child(call, 0)))) return false;
+  if (inDirective(call, ctx) || ancestorWhere(t, call, ["pseudo_class_selector"], ["declaration"], () => true))
+    return false;
+  const kids = children(node, t);
+  if (kids.some((c) => isComment(c, ctx))) return false;
+  return kids.some(
+    (c) =>
+      (t.kindName(c) === "keyword_argument" && t.missing(t.child(c, 0))) ||
+      (t.kindName(c) === "ERROR" && t.count(c) > 0 && t.text(t.child(c, 0)) === ":"),
+  );
+}
+
+/** An `ERROR` `:` group of `strayArgColon`'s arguments (`f(/ a : b)`), or a leaf inside one, which `rawArguments` prints. */
+function strayArgColonError(n: number, t: FormatTree): boolean {
+  let top = n;
+  while (t.kindName(t.parent(top)) === "ERROR") top = t.parent(top);
+  const args = t.parent(top);
+  return (
+    t.kindName(args) === "arguments" &&
+    t.kindName(t.parent(args)) === "call_expression" &&
+    t.count(top) > 0 &&
+    t.text(t.child(top, 0)) === ":"
+  );
+}
+
+/** `strayArgColon`'s arguments, each comma group as `rawArgChain` lays out its raw tokens. */
+function rawArguments(node: number, ctx: SCtx): void {
+  const t = ctx.tree;
+  const kids = children(node, t);
+  const inner = kids.slice(1, -1);
+  sToken(kids[0] as number, "(");
+  let group: number[] = [];
+  for (const c of inner) {
+    if (t.kindName(c) !== ",") {
+      group.push(c);
+      continue;
+    }
+    rawArgChain(group, ctx);
+    sToken(c, ",");
+    sText(" ");
+    group = [];
+  }
+  rawArgChain(group, ctx);
+  sToken(kids[kids.length - 1] as number, ")");
+}
+
+/**
+ * `argColonChain`'s chain as oxc lays out its raw tokens: tight before a `:`, a `/` by the typed solidus rules
+ * (`slashJoined`) indexed within the chain, a space after a `:` and around a `*`, else tight only where written so.
+ */
+function rawArgChain(nodes: number[], ctx: SCtx): void {
+  const g = rawTokens(nodes, ctx).tokens;
+  const sol = (x: RawToken | undefined) => x?.kind === "/";
+  const word = (x: RawToken | undefined) => x !== undefined && ["ident", ")"].includes(x.kind);
+  const tight = (i: number): boolean => {
+    const [y, prev, curr, next] = [g[i - 2], g[i - 1] as RawToken, g[i] as RawToken, g[i + 1]];
+    if (prev.kind === "(") return true;
+    if ([":", ")", ","].includes(curr.kind)) return true;
+    if (prev.kind === ",") return false;
+    if (sol(curr) || sol(prev)) {
+      const gap = curr.glued;
+      if (sol(g[0]) && gap) return true;
+      if (sol(curr) && gap && (next === undefined || next.glued)) return true;
+      if (sol(prev) && gap && y !== undefined && prev.glued) return true;
+      if (i === 1 && sol(prev)) return true;
+      const rule = (sol(curr) && !word(next) && !word(prev)) || (sol(prev) && !word(curr) && !word(y));
+      return rule && (gap || (sol(prev) && (i < 2 || sol(y))));
+    }
+    if (prev.kind === ":" || curr.kind === "*" || prev.kind === "*") return false;
+    return curr.glued;
+  };
+  // A number node whole is printed normalized, as oxc prints a number token (`1.50` is `1.5`).
+  const numberNode = (x: RawToken) =>
+    ["number", "dimension", "percentage"].includes(x.kind) && ctx.tree.text(x.node) === x.text;
+  g.forEach((token, i) => {
+    if (i > 0 && !tight(i)) sText(" ");
+    if (!numberNode(token)) return printRawToken(token, ctx);
+    for (const c of token.comments) {
+      ctx.comment(c);
+      sText(" ");
+    }
+    ctx.print(token.node);
+  });
 }
 
 /**
@@ -949,6 +1198,7 @@ function raw(
 export function atRule(node: number, ctx: SCtx): void {
   if (isDirective(node, ctx)) return sassDirective(node, ctx);
   if (placeholderStatement(node, ctx)) return;
+  if (unknownAtRule(node, ctx.tree)) return verbatimAtRule(node, ctx);
   const own = (c: number) => kind(c, ctx) === "at_keyword" || kind(c, ctx) === "block";
   const block = (c: number) => kind(c, ctx) === "block";
   const comma = (c: number) => kind(c, ctx) === ",";
@@ -959,6 +1209,74 @@ export function atRule(node: number, ctx: SCtx): void {
     return raw(node, ctx, own, (prev, c) => block(c) || comma(prev), comma);
   }
   raw(node, ctx, own, (_, c) => block(c));
+}
+
+// The at-rules oxc-css-parser reads a prelude of, any case; every other name's prelude is `Unknown`, which oxfmt
+// prints as written (`write_verbatim_at_rule_tail`) unless `valueParsed` names it. `@scope` is left out: oxfmt
+// prints its prelude as written too, and tree-sitter-css reads an uppercase `@SCOPE` as an at_rule.
+const structuredAtRules = new Set(
+  (
+    "page font-face layer container property counter-style starting-style position-try custom-media " +
+    "custom-selector viewport font-palette-values color-profile media supports nest namespace import charset " +
+    "keyframes -webkit-keyframes -moz-keyframes -o-keyframes font-feature-values swash styleset stylistic " +
+    "character-variant ornaments annotation historical-forms view-transition document -moz-document " +
+    "top-left-corner top-left top-center top-right top-right-corner bottom-left-corner bottom-left " +
+    "bottom-center bottom-right bottom-right-corner left-top left-middle left-bottom right-top right-middle " +
+    "right-bottom"
+  ).split(" "),
+);
+// oxc's `is_value_parsed_at_rule`: the Sass family by its exact name, the module and media rules any case.
+const valueParsed = new Set(
+  "extend nest at-root namespace supports if else for each while debug mixin include function return define-mixin add-mixin custom-selector".split(
+    " ",
+  ),
+);
+
+/** An at-rule whose prelude oxfmt prints as written (`@foo (.a)`, `@apply a  b`). */
+function unknownAtRule(node: number, t: FormatTree): boolean {
+  if (t.kindName(node) !== "at_rule") return false;
+  const name = t.text(t.child(node, 0)).slice(1);
+  const lower = name.toLowerCase();
+  if (structuredAtRules.has(lower) || valueParsed.has(name)) return false;
+  return !["import", "use", "forward", "media", "custom-media"].includes(lower);
+}
+
+/**
+ * oxc's `write_verbatim_at_rule_tail`: the name lowercased, the prelude as written but the gaps at its ends, a space
+ * before it unless it is glued to the name and opens with no `(`, then ` {…}` or `;`.
+ */
+function verbatimAtRule(node: number, ctx: SCtx): void {
+  const t = ctx.tree;
+  const [keyword, ...rest] = children(node, t);
+  if (keyword === undefined) return;
+  sToken(keyword, t.text(keyword).toLowerCase());
+  let prev = keyword;
+  for (const c of rest) {
+    const k = kind(c, ctx);
+    if (k === "block") {
+      // The prelude's last comment attaches to the block as leading; it printed with the prelude.
+      sText(" ");
+      ctx.printNode(c);
+      printTrailingComments(ctx, c);
+      continue;
+    }
+    if (k === ";") {
+      sToken(c, ";");
+      continue;
+    }
+    if (prev === keyword) sText(t.adjoins(keyword, c) && !t.text(c).startsWith("(") ? "" : " ");
+    else sText(gapBefore(prev, c, t));
+    if (isComment(c, ctx)) ctx.comment(c);
+    else sToken(c, t.text(c));
+    prev = c;
+  }
+}
+
+/** An `ERROR` in an at-rule prelude oxfmt prints as written: an unknown at-rule's or `@scope`'s. */
+function verbatimPreludeError(error: number, t: FormatTree): boolean {
+  let up = t.parent(error);
+  while (up !== NO_NODE && t.kindName(up) === "ERROR") up = t.parent(up);
+  return up !== NO_NODE && (t.kindName(up) === "scope_statement" || unknownAtRule(up, t));
 }
 
 const layerList = (node: number, t: FormatTree) =>
@@ -979,6 +1297,26 @@ function placeholdersMarker(node: number, t: FormatTree): "statement" | "bare" |
   if (!["postcss_statement", "at_rule"].includes(t.kindName(node))) return undefined;
   const m = /^@prettier-placeholder-(statement|bare)$/.exec(t.text(t.child(node, 0)));
   return m === null ? undefined : (m[1] as "statement" | "bare");
+}
+
+/** `@scope`, lowercased, then its prelude as written but the gaps at its ends, which oxfmt keeps verbatim. */
+export function scopeStatement(node: number, ctx: SCtx): void {
+  const t = ctx.tree;
+  const [keyword, ...rest] = children(node, t);
+  if (keyword === undefined) return;
+  sToken(keyword, t.text(keyword).toLowerCase());
+  let prev = -1;
+  for (const c of rest) {
+    if (kind(c, ctx) === "block") {
+      sText(" ");
+      ctx.print(c);
+      continue;
+    }
+    sText(prev === -1 ? " " : gapBefore(prev, c, t));
+    if (isComment(c, ctx)) ctx.comment(c);
+    else sToken(c, t.text(c));
+    prev = c;
+  }
 }
 
 /** `placeholdersMarker`'s statement: its placeholders a space apart, then the `;` where the template has one. */
@@ -1118,8 +1456,32 @@ const handleComment: CommentHandler<CssOptions> = ({ tree, comment, enclosing, p
   if (tree.kindName(enclosing) === "rule_set" && following !== undefined && tree.kindName(following) === "block")
     return { node: enclosing, as: "dangling" };
   if (preceding === undefined) return undefined;
+  // A comment after a custom property block's `;` leads the next item on its line (`a: b; /*c*/ c: d`).
+  if (
+    following !== undefined &&
+    inCustomSet(following, tree) &&
+    text.startsWith("/*") &&
+    tree.text(prevLeaf(tree, comment)) === ";" &&
+    tree.lf(firstLeaf(tree, following)) === 0
+  )
+    return { node: following, as: "leading" };
+  // After a custom property block's last item's value (`{a: b /*c*/}`), oxfmt prints it in the value, before the
+  // `;` it adds (`declarationEnd`).
+  if (
+    following === undefined &&
+    inCustomSet(preceding, tree) &&
+    text.startsWith("/*") &&
+    tree.kindName(preceding) === "declaration" &&
+    tree.text(codeLeaf(tree, comment, prevLeaf)) !== ";"
+  )
+    return { node: preceding, as: "dangling" };
   if (statementSequences.has(tree.kindName(enclosing)) && placement !== "ownLine")
     return { node: preceding, as: "trailing" };
+  // Comments alone past the `:` of a last declaration with no `;` (`a{c:/*c*/}`) follow the `c:;` oxfmt prints.
+  if (tree.kindName(enclosing) === "declaration" && emptyLastValue(children(enclosing, tree).at(-1) ?? NO_NODE, tree)) {
+    const colon = children(enclosing, tree).find((c) => tree.kindName(c) === ":");
+    if (colon !== undefined && tree.ord(comment) > tree.ord(colon)) return { node: enclosing, as: "trailing" };
+  }
   const declaration = ["declaration", "custom_property_set"].includes(tree.kindName(enclosing));
   if (!declaration || /:\s*progid:/i.test(tree.text(enclosing))) return undefined;
   return tree.kindName(preceding) === "property_name" || text.startsWith("/*")
@@ -1223,6 +1585,17 @@ function sassFlags(error: number, t: FormatTree): boolean {
 }
 
 /**
+ * `--a: {a b; c: d}`: an item of a custom property's block with no `:` (tree-sitter-css's `ERROR`), which oxfmt
+ * prints as written, ending it with a `;` as it does a declaration.
+ */
+function customSetItem(error: number, t: FormatTree): boolean {
+  let block = t.parent(error);
+  // An ERROR nested in the item's (`{"b": [1, 2]}`) prints with it.
+  while (t.kindName(block) === "ERROR") block = t.parent(block);
+  return t.kindName(block) === "block" && t.kindName(t.parent(block)) === "custom_property_set";
+}
+
+/**
  * `a:b !c{d:e}`, `a:b c%{d:e}`: oxc-css-parser reads a nested rule whose selector tree-sitter cannot, an `ERROR`
  * between the rule's selectors and its block; the selector prints as written (`ruleSet`).
  */
@@ -1257,6 +1630,12 @@ function commentedPreludeError(error: number, t: FormatTree): boolean {
 
 /** The flags `sassFlags` recovers, one space apart. */
 const sassFlagList: StreamRule<CssOptions> = (error, ctx) => {
+  if (customSetItem(error, ctx.tree)) {
+    // Its own `;` (`{"a": 1;}`), which the item holds, ends it once.
+    sToken(error, ctx.tree.text(error).replace(/[\s;]+$/, "").trim());
+    sText(";");
+    return;
+  }
   for (let i = 0; i < ctx.tree.count(error); i++) {
     if (i > 0) sText(" ");
     const flag = ctx.tree.child(error, i);
@@ -1280,6 +1659,8 @@ export function statementComment(c: number, ctx: SCtx): boolean {
   let statement = next;
   for (let p = t.parent(statement); p !== NO_NODE && !statementSequences.has(kind(p, ctx)); p = t.parent(p))
     statement = p;
+  // In a custom property's block, oxfmt keeps a comment on the line of the item it leads (`{/*c*/a: b}`).
+  if (inCustomSet(statement, t) && t.lf(next) === 0) return false;
   return ctx.leadingComments(statement).includes(c);
 }
 
@@ -1307,7 +1688,12 @@ export function declarationColon(colon: number | undefined, node: number, ctx: S
   const value = !customs.emptyValue(node, ctx) && !customs.importantValue(node, ctx);
   for (const c of comments)
     if (t.ord(c) > t.ord(colon))
-      if (value) put(c, () => ctx.comment(c));
+      // In a custom property's block, oxfmt puts one space after the `:` and each comment (`a: /*c*/ /*d*/ b`).
+      if (value && inCustomSet(node, t)) {
+        sText(" ");
+        ctx.comment(c);
+        prev = c;
+      } else if (value) put(c, () => ctx.comment(c));
       else {
         sText(" ");
         ctx.comment(c);
@@ -1324,11 +1710,21 @@ export function declarationEnd(semi: number | undefined, node: number, ctx: SCtx
   const t = ctx.tree;
   const real = semi !== undefined && t.text(semi) !== "";
   // Sass flags (`sassFlags`) end the value as `!important` does.
-  const important = children(node, t).findLast((c) => kind(c, ctx) === "important" || kind(c, ctx) === "ERROR");
+  // So does a custom property's block (`--a: {a: b} /*c*/;`), which oxfmt prints the comments after.
+  // And a custom property block's last item's value (`{a: b /*c*/}`), the comments after which `handleComment` gives it.
+  const important = children(node, t).findLast(
+    (c) =>
+      ["important", "ERROR"].includes(kind(c, ctx)) ||
+      (kind(node, ctx) === "custom_property_set" && kind(c, ctx) === "block") ||
+      (inCustomSet(node, t) && t.named(c) && !isComment(c, ctx) && kind(c, ctx) !== "property_name"),
+  );
   if (important !== undefined) {
+    // The value prints its own comments; those past it are only the block's that `handleComment` gave it.
+    const own = (c: number) =>
+      !["important", "ERROR"].includes(kind(important, ctx)) && inCustomSet(node, t) && t.parent(c) === node;
     // One space before each comment after `!important`, none before `;`.
     for (const c of ctx.danglingComments(node))
-      if (t.ord(c) > t.ord(important)) {
+      if (t.ord(c) > t.ord(important) && !own(c)) {
         sText(" ");
         ctx.comment(c);
       }
@@ -1400,6 +1796,7 @@ function oxcRaw(decl: number, t: FormatTree): boolean {
       const k = t.kindName(c);
       if (k === "parenthesized_value" && !(inMath && calcSum(c)) && !callParens(c)) return true;
       if (k === "brace_value" && !inCall) return true;
+      if (valueColonError(c, t)) return true;
       if (k === "plain_value" && !inCall && delimWord(t.text(c))) return true;
       const math =
         k === "call_expression"
@@ -1410,10 +1807,182 @@ function oxcRaw(decl: number, t: FormatTree): boolean {
   return raw(decl, false, false);
 }
 
+/**
+ * A `:` tree-sitter-css cannot place in a value (`a :/b`, `1px:/b`), which oxc-css-parser reads as a raw token
+ * (`rawTokens`) like a word's own `:` (`a:/b`).
+ */
+function valueColonError(n: number, t: FormatTree): boolean {
+  if (t.kindName(n) !== "ERROR" || t.text(n) !== ":" || t.kindName(t.parent(n)) === "declaration") return false;
+  // Inside a call oxfmt keeps the arguments as written (`f(a:/b)`), which the ERROR's parent printing does already.
+  for (let up = t.parent(n); up !== NO_NODE && t.kindName(up) !== "arguments"; up = t.parent(up))
+    if (t.kindName(up) === "declaration") return true;
+  return false;
+}
+
+/**
+ * The `/` tree-sitter-css cannot read after a declaration's second `:` when a number follows (`a :/1.50`), which
+ * oxc-css-parser reads as a raw token like the rest of the value (`rawTokens`).
+ */
+function valueSlashError(n: number, t: FormatTree): boolean {
+  const decl = t.parent(n);
+  if (t.kindName(n) !== "ERROR" || t.text(n) !== "/" || t.kindName(decl) !== "declaration") return false;
+  const kids = children(decl, t);
+  const i = kids.indexOf(n);
+  return (
+    kids.slice(0, i).filter((c) => t.kindName(c) === ":").length > 1 &&
+    kids.slice(i + 1).some((c) => t.named(c) && t.kindName(c) !== "important" && t.kindName(c) !== "ERROR")
+  );
+}
+
+/**
+ * The zero-width `,` tree-sitter-css inserts after a declaration's second `:` (`c:x, a :/b`), which oxc-css-parser
+ * reads as a raw token like any other (`rawTokens`).
+ */
+function colonMissingComma(n: number, t: FormatTree): boolean {
+  const decl = t.parent(n);
+  if (t.kindName(n) !== "," || t.kindName(decl) !== "declaration") return false;
+  const kids = children(decl, t);
+  const prev = kids[kids.indexOf(n) - 1];
+  return prev !== undefined && t.kindName(prev) === ":" && kids.filter((c) => t.kindName(c) === ":").length > 1;
+}
+
+/**
+ * The zero-width `trailing_comma` tree-sitter-css inserts for a block's last declaration with nothing after its `:`
+ * (`a{b:}`), which oxc reads as an empty value and prints `b:;`.
+ */
+function emptyLastValue(n: number, t: FormatTree): boolean {
+  const decl = t.parent(n);
+  if (t.kindName(n) !== "trailing_comma" || t.kindName(decl) !== "declaration") return false;
+  const kids = children(decl, t).filter((c) => t.kindName(c) !== "comment");
+  return kids.length === 3 && t.kindName(kids[1] as number) === ":" && kids[2] === n;
+}
+
 /** A Sass variable or custom property, whose raw value (`oxcRaw`) oxfmt prints verbatim. */
 const customName = (decl: number, t: FormatTree) => /^(\$|--)/.test(t.text(t.child(decl, 0)));
 
-const rawValue = (decl: number, ctx: SCtx): boolean => customName(decl, ctx.tree) && oxcRaw(decl, ctx.tree);
+/** A declaration in a custom property's block (`--a: {b: 1, c: 2}`), whose raw value oxfmt keeps as a custom one's. */
+const inCustomSet = (decl: number, t: FormatTree) =>
+  t.kindName(t.parent(decl)) === "block" && t.kindName(t.parent(t.parent(decl))) === "custom_property_set";
+
+/** A custom property block's item led by a comment on its line, which `customSetComments` prints. */
+export const customSetOwnComments = (node: number, ctx: SCtx): boolean =>
+  inCustomSet(node, ctx.tree) &&
+  (ctx.leadingComments(node).some((c) => !statementComment(c, ctx)) ||
+    ctx.trailingComments(node).some((c) => afterLastItem(c, ctx.tree)));
+
+/** A block comment after a custom property block's last `;` (`{a: b; /*c*\/}`), which oxfmt puts on a line of its own. */
+const afterLastItem = (c: number, t: FormatTree): boolean =>
+  t.text(c).startsWith("/*") && t.text(codeLeaf(t, c, prevLeaf)) === ";" && t.text(codeLeaf(t, c, nextLeaf)) === "}";
+
+/** The first leaf past `n` in one direction that is no comment. */
+function codeLeaf(t: FormatTree, n: number, step: (t: FormatTree, n: number) => number): number {
+  let at = step(t, n);
+  while (at !== NO_NODE && t.kindName(at) === "comment") at = step(t, at);
+  return at;
+}
+
+/**
+ * oxfmt keeps a comment on the line of the custom property block item it leads, glued as written (`/*c*\/a: b`)
+ * or one space apart; one on a line of its own ends that line, as a statement's does.
+ */
+export function customSetComments(node: number, ctx: SCtx, print: () => void): void {
+  if (!ctx.ownsComments(node)) return print();
+  const t = ctx.tree;
+  const comments = ctx.leadingComments(node);
+  comments.forEach((c, i) => {
+    ctx.comment(c);
+    const next = comments[i + 1] ?? firstLeaf(t, node);
+    if (t.lf(next) > 0) sHardline();
+    else if (!t.adjoins(c, next)) sText(" ");
+  });
+  print();
+  const last = ctx.trailingComments(node).filter((c) => afterLastItem(c, t));
+  if (last.length === 0) return printTrailingComments(ctx, node);
+  // On one line of their own, glued as written or one space apart.
+  last.forEach((c, i) => {
+    if (i === 0) sHardline();
+    else if (!t.adjoins(last[i - 1] as number, c)) sText(" ");
+    ctx.comment(c);
+  });
+}
+
+/**
+ * A custom property's block holding no other `{` (`--a: {a: b; c}`), the items of which oxfmt re-flows as text
+ * (oxc's `write_custom_property_block`), blind to what tree-sitter-css reads in it: split at each `;`, a comment
+ * opening a later segment's first line trailing the item before; each item's lines trimmed, the first `:` outside a
+ * comment spaced as `a: b` with single spaces between the value's words and comments, strings included; a `;`
+ * after each item but a last one that is a comment alone. Undefined for any other block.
+ */
+function customBlockLines(block: number, t: Pick<Tree, "kindName" | "parent" | "text">): string[] | undefined {
+  if (t.kindName(t.parent(block)) !== "custom_property_set") return undefined;
+  const source = t.text(block);
+  if (!source.startsWith("{") || !source.endsWith("}") || source.split("{").length !== 2) return undefined;
+  const items: [string, string | undefined][] = [];
+  for (const seg of source.slice(1, -1).split(";")) {
+    const lf = seg.indexOf("\n");
+    const [first, rest] = lf === -1 ? [seg, ""] : [seg.slice(0, lf), seg.slice(lf)];
+    const prefix = first.trim();
+    const last = items.at(-1);
+    if (last !== undefined && prefix.startsWith("/*") && prefix.endsWith("*/") && rest.trim() !== "") {
+      last[1] = prefix;
+      items.push([rest.trim(), undefined]);
+    } else if (seg.trim() !== "") items.push([seg.trim(), undefined]);
+  }
+  return items.flatMap(([item, trailing], i) => {
+    const lines = item
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l !== "")
+      .map((line) => {
+        const colon = colonOutsideComments(line);
+        return colon === undefined
+          ? line
+          : `${line.slice(0, colon).trimEnd()}: ${respaceValue(line.slice(colon + 1).trim())}`;
+      });
+    const commentOnly = i === items.length - 1 && item.startsWith("/*") && item.endsWith("*/");
+    if (!commentOnly) lines[lines.length - 1] += ";";
+    if (trailing !== undefined) lines[lines.length - 1] += ` ${trailing}`;
+    return lines;
+  });
+}
+
+function colonOutsideComments(line: string): number | undefined {
+  for (let i = 0; i < line.length; i++) {
+    if (line.startsWith("/*", i)) {
+      const close = line.indexOf("*/", i + 2);
+      if (close === -1) return undefined;
+      i = close + 1;
+    } else if (line[i] === ":") return i;
+  }
+  return undefined;
+}
+
+/** Words and comments one space apart (`/*c*\/#fff` is `/*c*\/ #fff`). */
+const respaceValue = (v: string): string =>
+  v.match(/\/\*(?:[^*]|\*(?!\/))*(?:\*\/|$)|(?:[^\s/]|\/(?!\*))+/g)?.join(" ") ?? "";
+
+/** `customBlockLines`' layout: the block's lines one indent in, between its braces; any other block as written. */
+export function customBlock(block: number, ctx: SCtx): void {
+  const lines = customBlockLines(block, ctx.tree);
+  if (lines === undefined) {
+    sLiteral(block, ctx.tree.text(block));
+    return;
+  }
+  sToken(block, "{");
+  open(INDENT);
+  for (const line of lines) {
+    sHardline();
+    sToken(block, line.trimEnd());
+    // An item whose value starts the next line ends with the space after its `:`, which oxfmt keeps (`a: `).
+    if (line.endsWith(" ")) sKeptText(" ");
+  }
+  close();
+  sHardline();
+  sToken(block, "}");
+}
+
+const rawValue = (decl: number, ctx: SCtx): boolean =>
+  (customName(decl, ctx.tree) || inCustomSet(decl, ctx.tree)) && oxcRaw(decl, ctx.tree);
 
 /** The source between `prev` and `c`, less any whitespace ending a line. */
 function gapBefore(prev: number, c: number, t: FormatTree): string {
@@ -1476,6 +2045,25 @@ const rawTokenPattern = new RegExp(
   "gy",
 );
 
+/**
+ * The group after a value's `progid:A` that `rawTokens` prints as the function `progid(: A …)`, `undefined` for a
+ * word with no group (lexed as `progid: A`), or `null` for one this layout does not cover, which stays as written:
+ * a value holding a top-level `,` (oxfmt keeps its list on one line) or several such groups, whose output
+ * tree-sitter-css recovers into a shape `check` cannot pair.
+ */
+function progidCall(n: number, t: FormatTree): number | null | undefined {
+  if (!/^progid:./i.test(t.text(n))) return undefined;
+  const siblings = children(t.parent(n), t);
+  const group = siblings[siblings.indexOf(n) + 1];
+  if (group === undefined || t.kindName(group) !== "parenthesized_value") return undefined;
+  const calls = siblings.filter(
+    (c, i) => /^progid:./i.test(t.text(c)) && t.kindName(siblings[i + 1] ?? c) === "parenthesized_value",
+  );
+  return t.kindName(t.parent(n)) !== "declaration" || calls.length > 1 || siblings.some((c) => t.kindName(c) === ",")
+    ? null
+    : group;
+}
+
 /** The raw tokens of a normal property's value nodes, and the comments after the last. */
 function rawTokens(nodes: number[], ctx: SCtx): { tokens: RawToken[]; tail: number[] } {
   const t = ctx.tree;
@@ -1488,16 +2076,38 @@ function rawTokens(nodes: number[], ctx: SCtx): { tokens: RawToken[]; tail: numb
     comments = [];
     lf = false;
   };
+  const consumed = new Set<number>();
   const visit = (n: number): void => {
+    if (consumed.has(n)) return;
     const k = kind(n, ctx);
     const glued = prev !== -1 && !isComment(prev, ctx) && t.adjoins(prev, n);
     if (t.lf(n) > 0) lf = true;
+    const call = k === "plain_value" ? progidCall(n, t) : undefined;
     if (isComment(n, ctx)) comments.push(n);
-    else if (k === "call_expression" && /^url$/i.test(t.text(t.child(n, 0)))) push("url", "", n, glued);
+    // A quoted `url()` is oxc's url token; an unquoted one's body it lexes as raw tokens like the rest of the value
+    // (`url(http://a.b)` is `url(http: / / a.b)`), its name and parentheses a function's.
+    else if (
+      k === "call_expression" &&
+      /^url$/i.test(t.text(t.child(n, 0))) &&
+      children(t.child(n, 1), t).some((c) => t.kindName(c) === "string_value")
+    )
+      push("url", "", n, glued);
     else if (k === "string_value") push("string", t.text(n), n, glued);
-    // `http://a` and `progid:A` stay one word, as oxc-css-parser reads them.
-    else if (k === "plain_value" && t.text(n).includes(":")) push("ident", t.text(n), n, glued);
-    else if (t.count(n) > 0 && !["integer_value", "float_value", "color_value", "plain_value"].includes(k))
+    // `progid:A(B)` is oxc's function `progid` of `:`, `A` and the group's insides, the group's own `(` dropped
+    // (`progid(: A B)`); `http://a` is `http`, `:`, `/`, `/` and `a`, each spaced as oxc's raw tokens are.
+    else if (call === null) push("ident", t.text(n), n, glued);
+    else if (call !== undefined) {
+      const group = call;
+      const text = t.text(n);
+      push("ident", text.slice(0, 6), n, glued);
+      push("(", "(", n, true);
+      push(":", ":", n, true);
+      push("ident", text.slice(7), n, false);
+      prev = n;
+      consumed.add(group);
+      children(group, t).slice(1).forEach(visit);
+      return;
+    } else if (t.count(n) > 0 && !["integer_value", "float_value", "color_value", "plain_value"].includes(k))
       return children(n, t).forEach(visit);
     else {
       let joined = glued;
@@ -1565,7 +2175,10 @@ function printRawToken(token: RawToken, ctx: SCtx): void {
     ctx.comment(c);
     sText(" ");
   }
-  if (token.kind === "url") ctx.print(token.node);
+  // A quoted `url()`'s string keeps its quotes, as a raw value's other strings do.
+  if (token.kind === "url")
+    for (const c of [ctx.tree.child(token.node, 0), ...children(ctx.tree.child(token.node, 1), ctx.tree)])
+      sToken(c, ctx.tree.text(c));
   else sToken(token.node, token.text);
 }
 
@@ -1627,7 +2240,7 @@ export function colonThenRawTokens(colon: number | undefined, node: number, ctx:
   const t = ctx.tree;
   declarationColon(colon, node, ctx);
   const parts = children(node, t);
-  const end = (c: number) => [";", "important", "ERROR"].includes(kind(c, ctx));
+  const end = (c: number) => [";", "important", "ERROR"].includes(kind(c, ctx)) && !valueSlashError(c, t);
   const from = colon === undefined ? 1 : parts.indexOf(colon) + 1;
   const value = parts.slice(from, parts.findIndex((c, i) => i >= from && end(c)) >>> 0);
   // The comments before the value are postcss's `between`, which `declarationColon` printed.
@@ -1655,7 +2268,7 @@ export function colonThenRawTokens(colon: number | undefined, node: number, ctx:
     rawGroup((groups[0] as { tokens: RawToken[] }).tokens, tail, font, grid, ctx);
   } else rawGroups(groups, tail, font, grid, ctx);
   // `!important` and Sass flags (`sassFlags`) one space after the value.
-  for (const c of parts.slice(from).filter((c) => kind(c, ctx) === "important" || kind(c, ctx) === "ERROR")) {
+  for (const c of parts.slice(from).filter((c) => kind(c, ctx) === "important" || (kind(c, ctx) === "ERROR" && !valueSlashError(c, t)))) {
     sText(" ");
     ctx.print(c);
   }
@@ -2146,6 +2759,8 @@ function placeholderSelectors(node: number, ctx: SCtx): boolean {
 /** The hand-written rules format.ts names. */
 export const handWritten = {
   ...customs,
+  textBlock: (node: number, ctx: SCtx) => children(node, ctx.tree).some((c) => kind(c, ctx) === "block"),
+  customBlock,
   important,
   declarationColon,
   declarationEnd,
@@ -2158,9 +2773,11 @@ export const handWritten = {
   unaryExpression,
   number,
   atRule,
+  scopeStatement,
   postcssStatement,
   parenthesizedValue,
   keywordArgument,
+  rawArguments,
   sassList,
   ruleSet,
   placeholderCallee,
@@ -2192,10 +2809,14 @@ export const css: Language<CssOptions> = {
       ["ERROR", sassFlagList],
       ["plain_value", (node, ctx) => plainWord(node, ctx) || cssStream.rules.get("plain_value")?.(node, ctx)],
     ]),
-    wrap: frontMatterFirst,
+    wrap: (node, ctx, print) => frontMatterFirst(node, ctx, () => customSetComments(node, ctx, print)),
+    printsOwnComments: customSetOwnComments,
     commentEndsLine: statementComment,
     keepsSource: prettierIgnored,
-    recovered: (error, t) => sassFlags(error, t) || selectorTail(error, t) || commentedPreludeError(error, t),
+    recovered: (error, t) =>
+      t.missing(error)
+        ? colonMissingComma(error, t) || emptyLastValue(error, t)
+        : sassFlags(error, t) || customSetItem(error, t) || selectorTail(error, t) || commentedPreludeError(error, t) || verbatimPreludeError(error, t) || valueColonError(error, t) || valueSlashError(error, t) || argColonError(error, t) || strayArgColonError(error, t),
     finalLine,
   },
 };

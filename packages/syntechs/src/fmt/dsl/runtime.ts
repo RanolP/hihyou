@@ -118,13 +118,14 @@ export type Entry =
     }
   /**
    * Opens an entry of a `splitOn` run: its `count` items with a `joint` between each two, then a `sep`; `grid`: its
-   * words keep the source's lines.
+   * words keep the source's lines; `keep`: its `keepLines` holds, so words on one line stay a space apart.
    */
   | {
       readonly e: "entry";
       readonly item: "adjacent" | "space" | "words";
       readonly count: number;
       readonly grid: boolean;
+      readonly keep: boolean;
     }
   /**
    * Between two items of an entry: whether they print apart (a gap in the source, or a comment on either side),

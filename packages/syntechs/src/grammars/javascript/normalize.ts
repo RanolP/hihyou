@@ -29,6 +29,13 @@ export const jsNormalize: Normalize = (lexemes, text, tree) => {
       return cells === "" ? undefined : `each:${cells}@${places.of(l.node)}`;
     }
     // Prettier reflows a template in another language (print/embed.ts), whose whitespace means nothing to it.
+    // Its opening tick stands in for it: a template opening with a `${…}` may print a line break before it.
+    if (htmlTemplate(tree, l.node) !== undefined) return undefined;
+    const html = htmlOpening(tree, l.node);
+    if (html !== undefined) {
+      const words = htmlWords(tree, html);
+      return words === "" ? undefined : `embed:${words}@${places.at(html)}`;
+    }
     if (isEmbedFragment(tree, l.node)) {
       const words = cssEndSemicolons(tree, l.node, l.text).replace(/\s+/g, "");
       // Its place is the substitutions before it: prettier adds a fragment before a leading `${…}` when it breaks.
@@ -60,6 +67,44 @@ function cssEndSemicolons(tree: Tree, fragment: number, text: string): string {
   const last = tree.child(template, tree.count(template) - 2) === fragment;
   const comments = String.raw`(?:\s|/\*[^]*?\*/|//[^\n]*)*`;
   return text.replace(new RegExp(`;(?=${comments}(?:\\}${last ? "|$" : ""}))`, "g"), "");
+}
+
+const HTML_PIECES = new Set(["string_fragment", "escape_sequence"]);
+
+/** The embedded-HTML template `n`, one of its fragments or escapes, stands in; undefined for any other node. */
+function htmlTemplate(tree: Tree, n: number): number | undefined {
+  if (!HTML_PIECES.has(tree.kindName(n))) return undefined;
+  const p = tree.parent(n);
+  return p !== NO_NODE && tree.kindName(p) === "template_string" && embedLanguage(tree, p) === "html" ? p : undefined;
+}
+
+/** The embedded-HTML template `n` opens; undefined for any other node. */
+function htmlOpening(tree: Tree, n: number): number | undefined {
+  const p = tree.parent(n);
+  return p !== NO_NODE && tree.kindName(p) === "template_string" && tree.child(p, 0) === n && embedLanguage(tree, p) === "html"
+    ? p
+    : undefined;
+}
+
+/**
+ * An embedded-HTML template compares as one: its quasis' text, less whitespace, less each script's and style's
+ * content (its own language's to format, as the HTML formatter's check reads it), cooked and less backslashes (the
+ * embed prints a quasi's cooked value re-escaped, so `<\/script>` is `</script>` and `\n` a line break). In a start tag, as the HTML formatter's
+ * check reads one, an attribute value's quotes do not compare (the HTML printer requotes it) and `/>` is `>`.
+ */
+function htmlWords(tree: Tree, template: number): string {
+  let text = "";
+  for (let i = 0; i < tree.count(template); i++) {
+    const c = tree.child(template, i);
+    text += HTML_PIECES.has(tree.kindName(c)) ? tree.text(c) : tree.kindName(c) === "template_substitution" ? "\u{E000}" : "";
+  }
+  const html = text
+    // A raw `<\\/script>` cooks to `<\/script>`, which does not end the script.
+    .replace(/(<(script|style)\b[^>]*>)[^]*?(?=<\\?\/\2)/gi, "$1")
+    .replace(/<[a-z\u{E000}][^<>]*>/giu, (tag) =>
+      tag.replace(/(=\s*)(\\*["'])([^]*?)\2/g, "$1$3").replace(/\s*\/>$/, ">"),
+    );
+  return cook(html).replace(/[\s\\\u{E000}]/gu, "");
 }
 
 function substitutionsBefore(tree: Tree, fragment: number): number {
