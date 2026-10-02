@@ -35,9 +35,9 @@
       "default": "./dist/grammars/*/fmt.js"
     },
     "./grammars/*/highlight": {
-      "@hihyou/source": "./src/grammars/*/highlight.ts",
-      "types": "./dist/grammars/*/highlight.d.ts",
-      "default": "./dist/grammars/*/highlight.js"
+      "@hihyou/source": "./src/grammars/*/highlight.gen.ts",
+      "types": "./dist/grammars/*/highlight.gen.d.ts",
+      "default": "./dist/grammars/*/highlight.gen.js"
     }
   },
   "scripts": {

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { parseTree } from "../../core/index.js";
-import { highlight } from "./highlight.js";
+import { highlight } from "./highlight.gen.js";
 import { language } from "./index.js";
 
 const SNIPPET = `/// Doc
