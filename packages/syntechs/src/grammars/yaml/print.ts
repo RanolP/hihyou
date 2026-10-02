@@ -115,6 +115,9 @@ class Printer {
   scalarBlank = false;
   /** The line count when a kept block scalar ended the stream: oxfmt prints no final line break after it. */
   keptLast?: number;
+  /** The `# prettier-ignore` comments, and those a block item was kept as written after. */
+  readonly ignores = new Set<number>();
+  readonly ignored = new Set<number>();
   /** Each leaf's source offset, read off the stream text on the first block scalar. */
   offsets?: Map<number, number>;
 
@@ -705,7 +708,9 @@ class Printer {
       }
       first = false;
       const after = items[i + 1];
-      this.item(item, indent, after === undefined ? limit : this.start(after));
+      const ignore = this.ignoring(item);
+      if (ignore !== undefined) this.asWritten(item, ignore);
+      else this.item(item, indent, after === undefined ? limit : this.start(after));
       prev = item;
     }
     // The comments after the last item that are no shallower than the items stay in this collection.
@@ -714,6 +719,45 @@ class Printer {
       if (this.tree.lf(c) !== 0 && this.tree.col(c) < col) break;
       this.between(this.tree.ord(c) + 1, prev, col, indent, false);
     }
+  }
+
+  /**
+   * The own-line `# prettier-ignore` printed last, when nothing but comments stands between it and `item`. One
+   * before a `---` or a key belongs to that, and refuses at the end as unused.
+   */
+  ignoring(item: number): number | undefined {
+    const c = this.comments[this.next - 1];
+    if (c === undefined || !this.ignores.has(c) || this.ignored.has(c)) return undefined;
+    // A trailing one belongs to its line; only the stream's first line has no line break before it.
+    if (this.tree.lf(c) === 0 && c !== this.comments[0]) return undefined;
+    if (this.tree.lf(c) === 0)
+      for (let o = 0; o < this.tree.ord(c); o++)
+        if (this.tree.count(this.tree.at(o)) === 0) return undefined;
+    for (let o = this.tree.ord(c) + 1; o < this.start(item); o++) {
+      const n = this.tree.at(o);
+      if (this.tree.count(n) === 0 && this.kind(n) !== "comment") return undefined;
+    }
+    return c;
+  }
+
+  /**
+   * A block item after an own-line `# prettier-ignore`, as the source writes it from its first token to its last:
+   * its later lines keep their source indent, and the comments inside it are part of it.
+   */
+  asWritten(item: number, ignore: number): void {
+    for (let o = this.start(item); o < this.tree.ord(item); o++)
+      if (this.kind(this.tree.at(o)) === "block_scalar") unsupported("a block scalar in an ignored item");
+    const [head, ...rest] = this.tree.text(item).split("\n");
+    this.verbatim.add(this.lines.length - 1);
+    this.append(head!);
+    for (const l of rest) {
+      this.verbatim.add(this.lines.length);
+      this.lines.push(l);
+    }
+    const end = this.tree.ord(this.lastLeaf(item));
+    for (; this.next < this.comments.length && this.tree.ord(this.comments[this.next]!) < end; this.next++)
+      if (this.ignores.has(this.comments[this.next]!)) this.ignored.add(this.comments[this.next]!);
+    this.ignored.add(ignore);
   }
 
   /** One mapping pair or sequence item, its first line already started at `indent`. */
@@ -880,6 +924,15 @@ class Printer {
       return;
     }
     if (this.pending(this.start(value)) !== undefined) unsupported("a comment before a scalar value");
+    // Comments after a scalar value's properties end the key's line, the scalar one tabWidth in below them.
+    const { props, content } = this.properties(value);
+    if (props !== "" && content !== undefined && this.pending(this.start(content)) !== undefined) {
+      this.append(" ");
+      this.propsComments(props, content, indent + this.tab);
+      this.line(" ".repeat(indent + this.tab));
+      this.fill(value, indent + this.tab, true);
+      return;
+    }
     // prettier prints `key: value` as is when both are surely one line and the key is one source line; else its
     // conditionalGroup keeps the pair on one line when it fits flat, or fills the value one tabWidth in below.
     if (this.singleLine(key) && this.singleLine(value) && !this.tree.text(key).includes("\n")) {
@@ -1000,7 +1053,7 @@ export function printYaml(tree: FormatTree, root: number, options: PrettierOptio
     const n = tree.at(o);
     if (tree.kind(n) === SYM_ERROR || tree.missing(n)) unsupported("a YAML parse error");
     if (tree.kindName(n) !== "comment") continue;
-    if (/^#\s*prettier-ignore\b/.test(tree.text(n))) unsupported("a prettier-ignore comment");
+    if (/^#\s*prettier-ignore\b/.test(tree.text(n))) p.ignores.add(n);
     p.comments.push(n);
   }
   const docs: number[] = [];
@@ -1014,6 +1067,7 @@ export function printYaml(tree: FormatTree, root: number, options: PrettierOptio
     p.document(d, next === undefined, next === undefined ? Number.POSITIVE_INFINITY : p.start(next));
   });
   p.loose(Number.POSITIVE_INFINITY);
+  if (p.ignored.size < p.ignores.size) unsupported("a prettier-ignore comment before no block item");
   if (p.keptLast !== undefined && p.lines.length > p.keptLast) unsupported("a comment after a kept block scalar ending the stream");
   const lines = p.lines.map((l, i) => (p.verbatim.has(i) ? l : l.trimEnd()));
   // proseWrap other than "preserve" refolds plain scalars and turns a long key explicit (`? key`).

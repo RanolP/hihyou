@@ -100,6 +100,12 @@ const edgeCases: [string, string][] = [
   ["props-comments", "!!map\n# c1\na: !!map # c2\n  # c3\n  b: 1\nc: !!seq # c4\n  [1]\n---\n!!set # c5\n# c6\n[]\n"],
   // Comments after a root scalar's properties refused, where oxfmt prints them as after a collection's.
   ["root-scalar-props-comments", "!!str #c\n>\n  123\n---\n!!str # c1\n\n# c2\nhello\n--- !!str\n# c3\n|\n  x\n"],
+  // A value scalar's comments after its properties were refused instead of ending the key's line.
+  ["value-scalar-props-comments", "k: !!str # c1\n  # c2\n  x y\nz: &a\n  # c\n  'q'\n"],
+  // A block item after `# prettier-ignore` was laid out, or the ignore at the stream's first line was missed.
+  ["prettier-ignore", "# prettier-ignore\nk:\n    x:   1\n    y:  [1,2]\nz:   1\n"],
+  // A prettier-ignore inside an ignored item, or before a nested item or a sequence item, was not honored.
+  ["prettier-ignore-nested", "a:\n  # prettier-ignore\n  b:   [1,   2]\n  c:   3\nd:\n  # prettier-ignore\n  - [1,  2]\n  - [3,  4]\n"],
 ];
 
 // A folded or plain scalar's refill under proseWrap always: lines join into paragraphs and refill at printWidth,
@@ -150,8 +156,9 @@ const refused: [string, string][] = [
   ["kept-block-scalar-then-comment", "a: |+\n  x\n# c\n"],
   // `{? 1,? 2}` parses to an ERROR root spanning `{? 1` only, so printing its text dropped the rest.
   ["error-root", "{? 1,? 2,? 3}\n"],
-  // A prettier-ignore comment's node was laid out instead of kept as written.
-  ["prettier-ignore", "# prettier-ignore\na:    1\n"],
+  // A prettier-ignore trailing a line, or before a document, was applied to the next block item.
+  ["prettier-ignore-trailing", "a: 1 # prettier-ignore\nb:    2\n"],
+  ["prettier-ignore-document", "# prettier-ignore\n---\na:    1\n"],
 ];
 
 describe("a YAML construct print.ts has no rule for refuses rather than printing what oxfmt would not", () => {
