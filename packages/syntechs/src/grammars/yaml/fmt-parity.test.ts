@@ -120,6 +120,8 @@ const edgeCases: [string, string][] = [
   ["prettier-ignore", "# prettier-ignore\nk:\n    x:   1\n    y:  [1,2]\nz:   1\n"],
   // A prettier-ignore inside an ignored item, or before a nested item or a sequence item, was not honored.
   ["prettier-ignore-nested", "a:\n  # prettier-ignore\n  b:   [1,   2]\n  c:   3\nd:\n  # prettier-ignore\n  - [1,  2]\n  - [3,  4]\n"],
+  // A prettier-ignore before `---` or a flow item refused, where oxfmt keeps that document's content or item as written.
+  ["prettier-ignore-document-and-flow", "a:   1\n# prettier-ignore\n---\nb:    [1,2]\n...\n---\n[\n  # prettier-ignore\n  [ b,\n      c ],\n  {  d:  1 }\n]\n"],
   // A comment shallower than a nested block's items but deeper than its parent's refused, or went past a block scalar.
   ["comment-after-nested-block", "a:\n  b:\n    c: 1\n   # x\n # y\nd:\n  - e\n # f\ng: |-\n  t\n # h\ni: 1\n"],
   // A comment right below another printed deeper than it, as its source column says, where oxfmt keeps it no deeper.
@@ -176,7 +178,7 @@ const refused: [string, string][] = [
   ["error-root", "a: [b, c\nd: 1\n"],
   // A prettier-ignore trailing a line, or before a document, was applied to the next block item.
   ["prettier-ignore-trailing", "a: 1 # prettier-ignore\nb:    2\n"],
-  ["prettier-ignore-document", "# prettier-ignore\n---\na:    1\n"],
+  ["prettier-ignore-document", "--- # prettier-ignore\na:    1\n"],
   // Several comments before a sequence item's scalar, which oxfmt prints after `- ` with a trailing space, printed anyway.
   ["sequence-item-comments", "- # c\n  # d\n  v\n"],
   // A comment past a sequence item's block scalar, which oxfmt prints into the scalar's content, printed anyway.

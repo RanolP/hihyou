@@ -429,10 +429,14 @@ class Printer {
         lines.push("");
       }
       const comma = i < items.length - 1 || this.trailingComma ? "," : "";
+      // An item after a `# prettier-ignore` printed on its own line keeps its source text, later lines and all.
+      const ignore = trailed === false ? this.comments[this.next - 1] : undefined;
       const sub =
-        this.kind(item) === "flow_node"
-          ? this.layout(item, inner, inner, comma.length)
-          : this.pairLayout(item, seq, inner, comma.length);
+        ignore !== undefined && this.ignores.has(ignore) && !this.ignored.has(ignore)
+          ? this.flowAsWritten(item, ignore)
+          : this.kind(item) === "flow_node"
+            ? this.layout(item, inner, inner, comma.length)
+            : this.pairLayout(item, seq, inner, comma.length);
       sub[0] = " ".repeat(inner) + sub[0];
       sub[sub.length - 1] += comma;
       lines.push(...sub);
@@ -441,6 +445,16 @@ class Printer {
     this.flowComments(lines, this.tree.ord(close), inner, true, false);
     lines.push(" ".repeat(indent) + (seq ? "]" : "}"));
     return lines;
+  }
+
+  /** Flow item `item` after own-line comment `ignore`, as the source writes it. */
+  flowAsWritten(item: number, ignore: number): string[] {
+    if (this.flowComment(item)) unsupported("a comment inside an ignored flow item");
+    const text = this.tree.text(item);
+    // print.ts trims every line it does not mark verbatim, and a flow item's lines carry no such mark.
+    if (/[ \t]$/m.test(text)) unsupported("trailing whitespace in an ignored flow item");
+    this.ignored.add(ignore);
+    return text.split("\n");
   }
 
   /**
@@ -779,7 +793,8 @@ class Printer {
   asWritten(item: number, ignore: number): void {
     for (let o = this.start(item); o < this.tree.ord(item); o++)
       if (this.kind(this.tree.at(o)) === "block_scalar") unsupported("a block scalar in an ignored item");
-    const [head, ...rest] = this.tree.text(item).split("\n");
+    // A stream's last node spans the line breaks after it.
+    const [head, ...rest] = this.tree.text(item).replace(/(?:\r?\n[ \t]*)+$/, "").split("\n");
     this.verbatim.add(this.lines.length - 1);
     this.append(head!);
     for (const l of rest) {
@@ -1023,6 +1038,8 @@ class Printer {
     for (let i = 0; i < this.tree.count(doc); i++)
       if (this.kind(this.tree.child(doc, i)) === "...") end = this.start(this.tree.child(doc, i));
     let directive = false;
+    // An own-line `# prettier-ignore` right before `---` keeps the document's content as written.
+    let ignore: number | undefined;
     for (let i = 0; i < this.tree.count(doc); i++) {
       const c = this.tree.child(doc, i);
       const k = this.kind(c);
@@ -1049,10 +1066,15 @@ class Printer {
           // After a block scalar its chomping alone decides the blank line before a marker.
           if (blank && !this.scalarEnd) this.blank();
           this.line(this.tree.text(c));
+          if (k === "---") ignore = this.ignoring(c);
           break;
         case "block_node": {
           if (this.tree.lf(firstLeaf(this.tree, c)) >= 2 && this.lines.length > 0 && !this.afterMarker()) this.blank();
           this.onMarkerLine(c);
+          if (ignore !== undefined) {
+            this.ignoredContent(c, ignore);
+            break;
+          }
           if (this.isBlockScalar(c)) {
             this.blockScalar(c, this.tab, undefined);
             break;
@@ -1069,6 +1091,10 @@ class Printer {
         case "flow_node": {
           this.onMarkerLine(c);
           if (this.tree.lf(firstLeaf(this.tree, c)) >= 2 && this.lines.length > 0 && !this.afterMarker()) this.blank();
+          if (ignore !== undefined) {
+            this.ignoredContent(c, ignore);
+            break;
+          }
           if (this.flowCollection(c) !== undefined) {
             this.line("");
             this.putFlow(c, 0);
@@ -1090,6 +1116,12 @@ class Printer {
       }
     }
     if (last) this.loose(limit);
+  }
+
+  /** A document's content `c` after an ignored `---`, as written on the lines after the marker. */
+  ignoredContent(c: number, ignore: number): void {
+    this.line("");
+    this.asWritten(c, ignore);
   }
 
   afterMarker = () => this.lines[this.lines.length - 1] === "---";
