@@ -11,6 +11,8 @@ import { type FormatTree, firstLeaf, nextLeaf, prevLeaf } from "../../fmt/tree.j
 import type { StreamRules } from "../../fmt/stream-format.js";
 import { grammar } from "./bundle.js";
 import { language } from "./index.js";
+import { statementTokens } from "./layout.js";
+import { prettyPrint } from "./pretty.js";
 
 export type SwiftOptions = PrettierOptions;
 
@@ -65,8 +67,17 @@ const CONTROL = new Set(["if", "while", "guard", "switch", "return", "for", "in"
 const CHAIN = new Set(["navigation_suffix", "navigation_expression", "call_expression"]);
 const OPENERS: Record<string, string> = { "{": "}", "(": ")", "[": "]" };
 
-/** Throws, naming the swift-format behaviour, when the file as written is not what swift-format prints. */
-function refuseUnsupported(tree: FormatTree, width: number): void {
+interface Edit {
+  from: number;
+  to: number;
+  text: string;
+}
+
+/**
+ * Throws, naming the swift-format behaviour, when the file as written is not what swift-format prints; returns
+ * the statements past the width it lays out as swift-format does, each as the text replacing it.
+ */
+function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
   const text = tree.text(tree.root);
   const endCol = (leaf: number) => {
     const t = tree.text(leaf);
@@ -82,12 +93,14 @@ function refuseUnsupported(tree: FormatTree, width: number): void {
   // The scanner reads a `;` as a statement end that the tree does not keep, so it shows only in the text between
   // two leaves; swift-format drops it, or splits the line it joins.
   let cursor = 0;
+  const starts = new Map<number, number>();
   for (const l of [...leaves, NO_NODE]) {
     const t = l === NO_NODE ? "" : tree.text(l);
     if (t === "" && l !== NO_NODE) continue;
     const start = l === NO_NODE ? text.length : text.indexOf(t, cursor);
     if (start < 0) throw new Error(`leaf \`${t}\` not found in the text after offset ${cursor}`);
     if (text.slice(cursor, start).includes(";")) throw new Error(`a semicolon (one statement per line): before \`${t}\``);
+    starts.set(l, start);
     cursor = start + t.length;
   }
   const index = new Map(leaves.map((l, i) => [l, i]));
@@ -234,6 +247,15 @@ function refuseUnsupported(tree: FormatTree, width: number): void {
     }
   }
 
+  // A statement past the width is laid out by swift-format's printer when it stands on one line of its own.
+  const long = new Set<number>();
+  const statementOf = (leaf: number) => {
+    for (let n = leaf; ; n = tree.parent(n)) {
+      const p = tree.parent(n);
+      if (p === NO_NODE) return NO_NODE;
+      if (BODIES.has(tree.kindName(p)) || p === tree.root) return n;
+    }
+  };
   const walk = (n: number) => {
     const kind = tree.kindName(n);
     if (kind === "class_declaration") {
@@ -251,13 +273,35 @@ function refuseUnsupported(tree: FormatTree, width: number): void {
         throw new Error(`access level on an extension (NoAccessLevelOnExtensionDeclaration): ${tree.text(n).split("\n")[0]}`);
     }
     if (tree.count(n) === 0) {
-      if (endCol(n) > width && !unbreakable(tree, n))
-        throw new Error(`code past column ${width} (line breaking): \`${tree.text(n)}\` ends at column ${endCol(n)}`);
+      if (endCol(n) > width && !unbreakable(tree, n)) {
+        const stmt = statementOf(n);
+        if (stmt === NO_NODE || tree.text(stmt).includes("\n"))
+          throw new Error(`code past column ${width} (line breaking): \`${tree.text(n)}\` ends at column ${endCol(n)}`);
+        long.add(stmt);
+      }
       return;
     }
     for (let i = 0; i < tree.count(n); i++) walk(tree.child(n, i));
   };
   walk(tree.root);
+  const edits: Edit[] = [];
+  for (const stmt of long) {
+    const first = index.get(firstLeaf(tree, stmt)) as number;
+    let last = first;
+    while (last + 1 < leaves.length && index.get(lastLeafOf(stmt)) !== last) last++;
+    if (!startsLine(first) || (last + 1 < leaves.length && !startsLine(last + 1)))
+      throw new Error(`a statement past column ${width} sharing its line (line breaking): ${at(first)}`);
+    const tokens = statementTokens(tree, stmt, (leaf) => gap(index.get(firstLeaf(tree, leaf)) as number) ?? 0);
+    const text = prettyPrint(tokens, tree.col(leaves[first] as number), width, 2);
+    if (text.split("\n").some((line) => line.length > width))
+      throw new Error(`a line past column ${width} once laid out (line breaking): ${at(first)}`);
+    const end = leaves[last] as number;
+    edits.push({ from: starts.get(leaves[first] as number) as number, to: (starts.get(end) as number) + tree.text(end).length, text });
+  }
+  function lastLeafOf(n: number): number {
+    while (tree.count(n) > 0) n = tree.child(n, tree.count(n) - 1);
+    return n;
+  }
   // OrderedImports sorts the imports, and groups attributed and declaration imports apart; this keeps only one
   // run of plain imports already in order.
   const imports: { name: string; plain: boolean; at: number }[] = [];
@@ -290,6 +334,7 @@ function refuseUnsupported(tree: FormatTree, width: number): void {
       if (prev !== undefined && (prev.at !== imp.at - 1 || prev.name >= imp.name))
         throw new Error(`imports out of order or apart (OrderedImports): ${prev.name}, ${imp.name}`);
     }
+  return edits;
 }
 
 /**
@@ -346,7 +391,11 @@ const stream: StreamRules<SwiftOptions> = {
           }
         }
         if (tree.text(node).includes("\r")) throw new Error("a carriage return (line endings)");
-        refuseUnsupported(tree, ctx.options.printWidth);
+        const edits = refuseUnsupported(tree, ctx.options.printWidth);
+        let source = tree.text(node);
+        for (const e of edits.sort((a, b) => b.from - a.from)) source = source.slice(0, e.from) + e.text + source.slice(e.to);
+        if (edits.length > 0 && /^[ \t]*#if\b/m.test(source))
+          throw new Error("a statement laid out in a file with conditional compilation (line breaking)");
         // swift-format drops trailing whitespace and keeps at most one blank line (`maximumBlankLines`), which
         // this does to the text as written; a string or comment whose own text would change by it is refused.
         for (let o = 0; o < tree.nodeCount; o++) {
@@ -354,7 +403,7 @@ const stream: StreamRules<SwiftOptions> = {
           if (tree.count(n) === 0 && /[ \t]\n|\n[ \t]*\n[ \t]*\n/.test(tree.text(n)))
             throw new Error("trailing whitespace or blank lines inside a literal or comment (whitespace)");
         }
-        const text = indentConditionals(tree, tree.text(node), ctx.options.printWidth)
+        const text = indentConditionals(tree, source, ctx.options.printWidth)
           .replace(/[ \t]+$/gm, "")
           .replace(/\n{3,}/g, "\n\n")
           .replace(/\s+$/, "");

@@ -41,3 +41,40 @@ test("trailing whitespace and extra blank lines are removed", () => {
   const out = run("\n\nlet a = 1   \n\n\n\nlet b = 2\n\n\n");
   expect(out.ok && out.text).toBe("let a = 1\n\nlet b = 2\n");
 });
+
+// A regression here is the PrettyPrinter port or the call/binding token streams drifting from swift-format: a
+// break placed after `=` where it belongs inside the parentheses, a lost continuation indent, or a stray newline.
+test("a statement past 100 columns is broken as swift-format breaks it", () => {
+  const cases: [string, string][] = [
+    [
+      "func f() {\n  diagnoseMissingDocComment(DeclSyntax(node), name: \"\\(mainBinding.pattern)\", modifiers: node.modifiers)\n}\n",
+      "func f() {\n  diagnoseMissingDocComment(\n    DeclSyntax(node), name: \"\\(mainBinding.pattern)\", modifiers: node.modifiers)\n}\n",
+    ],
+    [
+      "func f() {\n  let allowUnderscores = testCaseFuncs.contains(node) || node.hasAttribute(\"Test\", inModule: \"Testing\")\n}\n",
+      "func f() {\n  let allowUnderscores =\n    testCaseFuncs.contains(node) || node.hasAttribute(\"Test\", inModule: \"Testing\")\n}\n",
+    ],
+    [
+      "struct S {\n  fileprivate static let doNotUseRetroactive: Finding.Message = \"do not declare retroactive conformances\"\n  let b = 1\n}\n",
+      "struct S {\n  fileprivate static let doNotUseRetroactive: Finding.Message =\n    \"do not declare retroactive conformances\"\n  let b = 1\n}\n",
+    ],
+    [
+      "struct S {\n  private static let ignoreFileRegex: IgnoreDirective.RegexExpression = IgnoreDirective.file.makeRegex()\n}\n",
+      "struct S {\n  private static let ignoreFileRegex: IgnoreDirective.RegexExpression = IgnoreDirective.file\n    .makeRegex()\n}\n",
+    ],
+  ];
+  for (const [input, want] of cases) {
+    const out = run(input);
+    expect(out.ok && out.text, input).toBe(want);
+  }
+});
+
+// A regression here is a construct tree-sitter nests differently from Swift (`a || b || c` to the right) laid out
+// anyway, which prints the operators on the wrong lines.
+test("a long line whose layout is not ported is refused", () => {
+  for (const input of [
+    "let a = bbbbbbbbbbbbbbbbbbbbbbbb || ccccccccccccccccccccccccccccccc || dddddddddddddddddddddddddddddddddd\n",
+    "let a = bbbbbbbbbbbbbbbbbbbbbbbb.map { $0.cccccccccccccccccccccccccccccc(dddddddddddddddddddddddddddddddd) }\n",
+  ])
+    expect(run(input).ok, input).toBe(false);
+});
