@@ -3,6 +3,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { solidPlugin } from "esbuild-plugin-solid";
 
@@ -94,7 +95,9 @@ await build({
   outfile: engineOut,
   logLevel: "warning",
 });
-const { createEngine, syntechsGrammars } = await import(engineOut);
+const { createEngine, syntechsGrammars } = await import(
+  pathToFileURL(engineOut).href
+);
 const engine = createEngine({
   grammars: syntechsGrammars(),
   resolveDiffset: () => ({ id: "fixture", changes }),
