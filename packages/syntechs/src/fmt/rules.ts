@@ -49,6 +49,11 @@ export interface Language<O = unknown> {
    * belongs to: ktfmt drops an unused import with its trailing comment.
    */
   readonly ignoresComment?: (tree: Tree, node: number) => boolean;
+  /**
+   * How `check` spells the front matter the tree skips (`Tree.frontMatter`) before comparing, when the formatter
+   * rewrites it; by default it compares as a comment does, but for its blank lines.
+   */
+  readonly frontMatter?: (text: string) => string;
   /** The rules that lay the tree out on the linear stream (`stream.ts`), which `format` prints by. */
   readonly stream: StreamRules<O>;
 }
