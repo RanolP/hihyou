@@ -98,6 +98,8 @@ const edgeCases: [string, string][] = [
   ["flow-pair-comments", "- {b # k\n  : 1, c:\n  # own\n  2}\n- [? d\n  # e\n  : 3]\n"],
   // Comments after properties refused, or more than one stayed beside them instead of each on its own line.
   ["props-comments", "!!map\n# c1\na: !!map # c2\n  # c3\n  b: 1\nc: !!seq # c4\n  [1]\n---\n!!set # c5\n# c6\n[]\n"],
+  // Comments after a root scalar's properties refused, where oxfmt prints them as after a collection's.
+  ["root-scalar-props-comments", "!!str #c\n>\n  123\n---\n!!str # c1\n\n# c2\nhello\n--- !!str\n# c3\n|\n  x\n"],
 ];
 
 // A folded or plain scalar's refill under proseWrap always: lines join into paragraphs and refill at printWidth,

@@ -260,13 +260,13 @@ class Printer {
   }
 
   /** A plain, quoted or alias flow node with its properties, as its words and the text around them. */
-  scalarParts(n: number): { head: string; paras: string[][]; tail: string } {
+  scalarParts(n: number, bare = false): { head: string; paras: string[][]; tail: string } {
     if (this.kind(n) !== "flow_node") return unsupported(`a ${this.kind(n)} value`);
     const { props, content: s } = this.properties(n);
     if (s === undefined) return unsupported("properties without content");
     this.noPropsComment(n, s);
     const p = this.parts(s);
-    return props === "" ? p : { ...p, head: `${props} ${p.head}` };
+    return props === "" || bare ? p : { ...p, head: `${props} ${p.head}` };
   }
 
   /** A scalar flow node on one line when it is one paragraph (prettier's flat fill), else undefined. */
@@ -280,8 +280,8 @@ class Printer {
    * line when it fits beside the one before it, else on a new line at `indent`; each paragraph after the first
    * starts a new line. The closing quote does not count toward the fit.
    */
-  fill(n: number, indent: number): void {
-    const { head, paras, tail } = this.scalarParts(n);
+  fill(n: number, indent: number, bare = false): void {
+    const { head, paras, tail } = this.scalarParts(n, bare);
     paras.forEach((p, k) => {
       if (k > 0) this.line(" ".repeat(indent));
       this.filled.add(this.lines.length - 1);
@@ -578,13 +578,18 @@ class Printer {
   blockScalar(n: number, indent: number, lead: string | undefined): void {
     const { props, content: s } = this.properties(n);
     if (s === undefined || this.kind(s) !== "block_scalar") return unsupported("a block node with no block scalar");
-    if (this.pending(this.start(s)) !== undefined) unsupported("a comment after properties");
+    // At the root, comments after the properties print as after a collection's, the header on the line after them.
+    const commented = props !== "" && this.pending(this.start(s)) !== undefined;
+    if (commented && lead !== undefined) unsupported("a comment after a block scalar value's properties");
     const m = /^([|>])([+-]?)([1-9]?)([+-]?)$/.exec(this.tree.text(this.tree.child(s, 0)));
     if (m === null || (m[2] !== "" && m[4] !== "")) return unsupported("a block scalar header");
     const [, style, , explicit, ] = m;
     const chomp = m[2] || m[4];
     let header = `${style}${explicit}${chomp}`;
-    if (props !== "") header = `${props} ${header}`;
+    if (commented) {
+      this.line("");
+      this.propsComments(props, s, 0);
+    } else if (props !== "") header = `${props} ${header}`;
     if (lead === undefined) this.line(header);
     else this.append(lead + header);
     for (let i = 1; i < this.tree.count(s); i++) {
@@ -932,7 +937,14 @@ class Printer {
             this.putFlow(c, 0);
           } else {
             this.line("");
-            this.fill(c, 0);
+            // Comments after a root scalar's properties print as after a collection's, the scalar after them.
+            const { props, content } = this.properties(c);
+            const bare = props !== "" && content !== undefined && this.pending(this.start(content)) !== undefined;
+            if (bare) {
+              this.propsComments(props, content, 0);
+              this.line("");
+            }
+            this.fill(c, 0, bare);
           }
           break;
         }
