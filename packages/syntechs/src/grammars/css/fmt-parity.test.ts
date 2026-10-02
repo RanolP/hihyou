@@ -212,6 +212,11 @@ const edgeCases: [string, string][] = [
   // Front matter once parsed as selectors, lowercased and joined onto the first rule's line.
   ["front-matter", "---\ntitle: Title\n\n---\na{b:c}"],
   ["front-matter-toml", "+++\ntitle = 'T'\n\n+++\n\n\n/* c */"],
+  // YAML front matter printed as written; it prints through the YAML formatter, its delimiters' trailing blanks gone.
+  ["front-matter-yaml-formatted", "---  \nhello:     world\na:       \n    - 123\nb: {c: 'd'}\n---\n\n.a{}"],
+  // Front matter that is no YAML lost its lines' trailing blanks; it prints as written, blank toml as its delimiters.
+  ["front-matter-yaml-invalid", "--- yaml  \n\n[\nbad: \n---   \n.a{}"],
+  ["front-matter-blank-toml", "+++\n\n\n+++\n.a{}"],
   // A suffixed `&` and a descendant ending in `&` were parse errors, printed as raw source.
   ["nesting-suffix", ".a{&__b,&-c{d:e}.f &{g:h}}"],
   // A Sass `$variable`, declared or read, was a parse error, printed as raw source.
