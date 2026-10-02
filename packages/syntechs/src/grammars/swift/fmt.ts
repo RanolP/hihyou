@@ -6,10 +6,12 @@
 import { prettierDefaults, type PrettierOptions, prettierSettings } from "../../fmt/options.js";
 import { defineLanguage, type Language } from "../../fmt/rules.js";
 import { sToken } from "../../fmt/stream.js";
+import { type CustomRule, type PredicateRule, printWritten, type WrittenNest } from "../../fmt/dsl/runtime.js";
 import { NO_NODE } from "../../core/arena.js";
 import { type FormatTree, firstLeaf, nextLeaf, prevLeaf } from "../../fmt/tree.js";
-import type { StreamRules } from "../../fmt/stream-format.js";
+import type { StreamCtx, StreamRule, StreamRules } from "../../fmt/stream-format.js";
 import { grammar } from "./bundle.js";
+import * as gen from "./fmt.gen.js";
 import { language } from "./index.js";
 import { statementTokens } from "./layout.js";
 import { prettyPrint } from "./pretty.js";
@@ -67,7 +69,10 @@ const CONTROL = new Set(["if", "while", "guard", "switch", "return", "for", "in"
 const CHAIN = new Set(["navigation_suffix", "navigation_expression", "call_expression"]);
 const OPENERS: Record<string, string> = { "{": "}", "(": ")", "[": "]" };
 
+/** A statement laid out: the source's `from` to `to`, its leaves through `last`, as `text`. */
 interface Edit {
+  node: number;
+  last: number;
   from: number;
   to: number;
   text: string;
@@ -318,7 +323,7 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
       throw new Error(`a line past column ${width} once laid out (line breaking): ${at(first)}`);
     const from = starts.get(leaves[first] as number) as number;
     const to = (starts.get(lastLeaf) as number) + tree.text(lastLeaf).length;
-    return printed === text.slice(from, to) ? undefined : { from, to, text: printed };
+    return printed === text.slice(from, to) ? undefined : { node: stmt, last: lastLeaf, from, to, text: printed };
   };
   for (const [stmt, past] of long) {
     const edit = layOut(stmt, past);
@@ -381,11 +386,12 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
 }
 
 /**
- * `text` with each conditional compilation block's body one level past its `#if`, as swift-format indents it,
- * nested blocks a level further. A block already indented so stays; one written flush with its directive (as
- * Xcode writes it) moves in; a file with both, or a string or comment spanning lines it would move, is refused.
+ * Whether each conditional compilation block's body in `text` moves one level past its `#if`, as swift-format
+ * indents it, nested blocks a level further (format.ts's `written` nest). A block already indented so stays; one
+ * written flush with its directive (as Xcode writes it) moves in; a file with both, or a string or comment
+ * spanning lines it would move, or a line it would move past the width, is refused.
  */
-function indentConditionals(tree: FormatTree, text: string, width: number): string {
+function conditionalsMove(tree: FormatTree, text: string, width: number): boolean {
   const lines = text.split("\n");
   const indent = (s: string) => s.length - s.trimStart().length;
   let flush = false;
@@ -398,7 +404,7 @@ function indentConditionals(tree: FormatTree, text: string, width: number): stri
     else if (indent(body) === indent(line)) flush = true;
     else throw new Error(`#if body at line ${i + 2} neither flush with its directive nor one level in (conditional compilation)`);
   }
-  if (!flush) return text;
+  if (!flush) return false;
   if (nested) throw new Error("#if bodies both flush with their directives and indented (conditional compilation)");
   for (let o = 0; o < tree.nodeCount; o++) {
     const n = tree.at(o);
@@ -406,66 +412,114 @@ function indentConditionals(tree: FormatTree, text: string, width: number): stri
       throw new Error("a string or comment spanning lines in a file whose #if bodies move (conditional compilation)");
   }
   let depth = 0;
-  return lines
-    .map((line) => {
-      const t = line.trimStart();
-      const directive = /^#(if|elseif|else|endif)\b/.exec(t)?.[1];
-      if (directive === "endif" || directive === "else" || directive === "elseif") depth--;
-      const moved = t === "" ? line : " ".repeat(2 * depth) + line;
-      if (directive === "if" || directive === "else" || directive === "elseif") depth++;
-      if (depth < 0) throw new Error("an #endif without its #if (conditional compilation)");
-      if (moved.length > width && !t.startsWith("//")) throw new Error(`a line past column ${width} once its #if body moves in (line breaking)`);
-      return moved;
-    })
-    .join("\n");
+  for (const line of lines) {
+    const t = line.trimStart();
+    const directive = /^#(if|elseif|else|endif)\b/.exec(t)?.[1];
+    if (directive === "endif" || directive === "else" || directive === "elseif") depth--;
+    const moved = t === "" ? line : " ".repeat(2 * depth) + line;
+    if (directive === "if" || directive === "else" || directive === "elseif") depth++;
+    if (depth < 0) throw new Error("an #endif without its #if (conditional compilation)");
+    if (moved.length > width && !t.startsWith("//")) throw new Error(`a line past column ${width} once its #if body moves in (line breaking)`);
+  }
+  return true;
 }
 
+/** What the check of a file found: the statements laid out, and whether the `#if` bodies move in. */
+interface Checked {
+  readonly edits: ReadonlyMap<number, Edit>;
+  readonly moves: boolean;
+}
+
+const checks = new WeakMap<StreamCtx<SwiftOptions>, Checked>();
+
+/**
+ * Refuses the file (`ctx.tree`) where its layout is not what swift-format prints and is not ported, before any of
+ * it prints; else what the rules need to keep it as written but for what swift-format lays out.
+ */
+function check(ctx: StreamCtx<SwiftOptions>): Checked {
+  const known = checks.get(ctx);
+  if (known !== undefined) return known;
+  const { tree } = ctx;
+  const root = tree.root;
+  for (let o = 0; o < tree.nodeCount; o++) {
+    const n = tree.at(o);
+    if (tree.kindName(n) === "ERROR" || tree.missing(n)) {
+      const next = nextLeaf(tree, n);
+      throw new Error(`a parse error before \`${next === NO_NODE ? "" : tree.text(next).split("\n")[0]}\` (grammar)`);
+    }
+  }
+  if (tree.text(root).includes("\r")) throw new Error("a carriage return (line endings)");
+  const edits = refuseUnsupported(tree, ctx.options.printWidth);
+  let source = tree.text(root);
+  for (const e of [...edits].sort((a, b) => b.from - a.from)) source = source.slice(0, e.from) + e.text + source.slice(e.to);
+  // A statement in a conditional compilation block may move in once laid out at its column as written.
+  const original = tree.text(root);
+  for (const e of edits) {
+    const depth = original
+      .slice(0, e.from)
+      .split("\n")
+      .reduce((d, line) => d + (/^[ \t]*#if\b/.test(line) ? 1 : /^[ \t]*#endif\b/.test(line) ? -1 : 0), 0);
+    if (depth > 0) throw new Error("a statement laid out inside conditional compilation (line breaking)");
+  }
+  // swift-format drops trailing whitespace and keeps at most one blank line (`maximumBlankLines`), as the
+  // `written` join does between tokens; a string or comment whose own text would change by it is refused.
+  for (let o = 0; o < tree.nodeCount; o++) {
+    const n = tree.at(o);
+    if (tree.count(n) === 0 && /[ \t]\n|\n[ \t]*\n[ \t]*\n/.test(tree.text(n)))
+      throw new Error("trailing whitespace or blank lines inside a literal or comment (whitespace)");
+  }
+  const checked = {
+    edits: new Map(edits.map((e) => [e.node, e])),
+    moves: conditionalsMove(tree, source, ctx.options.printWidth),
+  };
+  checks.set(ctx, checked);
+  return checked;
+}
+
+/** format.ts's `written` nest, for what follows a laid-out statement's leaves. */
+const CONDITIONALS: WrittenNest = {
+  kind: "directive",
+  opens: ["#if", "#elseif", "#else"],
+  closes: ["#elseif", "#else", "#endif"],
+};
+
+const flushConditionals: PredicateRule<SwiftOptions> = (_, ctx) => check(ctx).moves;
+const laidOut: PredicateRule<SwiftOptions> = (node, ctx) => check(ctx).edits.has(node);
+
+/** A statement as swift-format's printer lays it out (pretty.ts), and what follows its laid-out leaves as written. */
+const layOut: CustomRule<SwiftOptions> = (node, ctx) => {
+  const { tree } = ctx;
+  const { edits, moves } = check(ctx);
+  const edit = edits.get(node) as Edit;
+  sToken(node, edit.text);
+  for (let n = edit.last; n !== node; n = tree.parent(n)) {
+    const parent = tree.parent(n);
+    let i = 0;
+    while (tree.child(parent, i) !== n) i++;
+    printWritten(ctx, parent, i + 1, moves ? CONDITIONALS : undefined);
+  }
+};
+
+const generated = gen.swift({ flushConditionals, laidOut, layOut });
+const sourceFile = generated.rules.get("source_file") as StreamRule<SwiftOptions>;
+
 const stream: StreamRules<SwiftOptions> = {
+  ...generated,
+  // The file is checked before any of it prints.
   rules: new Map([
+    ...generated.rules,
     [
       "source_file",
       (node, ctx) => {
-        const { tree } = ctx;
-        for (let o = 0; o < tree.nodeCount; o++) {
-          const n = tree.at(o);
-          if (tree.kindName(n) === "ERROR" || tree.missing(n)) {
-            const next = nextLeaf(tree, n);
-            throw new Error(`a parse error before \`${next === NO_NODE ? "" : tree.text(next).split("\n")[0]}\` (grammar)`);
-          }
-        }
-        if (tree.text(node).includes("\r")) throw new Error("a carriage return (line endings)");
-        const edits = refuseUnsupported(tree, ctx.options.printWidth);
-        let source = tree.text(node);
-        for (const e of edits.sort((a, b) => b.from - a.from)) source = source.slice(0, e.from) + e.text + source.slice(e.to);
-        // A statement in a conditional compilation block may move in once laid out at its column as written.
-        const original = tree.text(node);
-        for (const e of edits) {
-          const depth = original
-            .slice(0, e.from)
-            .split("\n")
-            .reduce((d, line) => d + (/^[ \t]*#if\b/.test(line) ? 1 : /^[ \t]*#endif\b/.test(line) ? -1 : 0), 0);
-          if (depth > 0) throw new Error("a statement laid out inside conditional compilation (line breaking)");
-        }
-        // swift-format drops trailing whitespace and keeps at most one blank line (`maximumBlankLines`), which
-        // this does to the text as written; a string or comment whose own text would change by it is refused.
-        for (let o = 0; o < tree.nodeCount; o++) {
-          const n = tree.at(o);
-          if (tree.count(n) === 0 && /[ \t]\n|\n[ \t]*\n[ \t]*\n/.test(tree.text(n)))
-            throw new Error("trailing whitespace or blank lines inside a literal or comment (whitespace)");
-        }
-        const text = indentConditionals(tree, source, ctx.options.printWidth)
-          .replace(/[ \t]+$/gm, "")
-          .replace(/\n{3,}/g, "\n\n")
-          .replace(/\s+$/, "");
-        sToken(node, text);
+        check(ctx);
+        sourceFile(node, ctx);
       },
     ],
   ]),
-  lists: new Set(),
-  // Every parse error reaches the root's rule, which refuses the file rather than keep it as written.
+  // Every parse error reaches the check, which refuses the file rather than keep it as written.
   recovered: () => true,
-  // The root prints whole, its comments with it.
-  printsOwnComments: (node, ctx) => node === ctx.tree.root,
+  // Each comment prints where it is written, a child of the node around it (format.ts's `written`).
+  printsOwnComments: () => true,
 };
 
 /** Swift as swift-format 6.3.0 prints it with its default configuration. */
