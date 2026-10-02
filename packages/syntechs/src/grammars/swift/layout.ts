@@ -492,7 +492,210 @@ export function statementTokens(
     addBefore(brace, tk.close);
     lastToken = brace;
     header = true;
+  } else if (k === "function_declaration" || k === "init_declaration") {
+    lastToken = functionHeader(stmt);
+    header = true;
   } else unsupported(stmt);
+
+  /** The member type breaks of a dotted name (`visit(MemberTypeSyntax)`); `.Protocol` and `.Type` are metatypes. */
+  function dotted(parts: number[], name: string): void {
+    for (const [i, c] of parts.entries()) {
+      if (kind(c) === name) continue;
+      const next = parts[i + 1];
+      if (tree.text(c) !== "." || next === undefined || kind(next) !== name) return unsupported(c);
+      if (tree.text(next) !== "Protocol" && tree.text(next) !== "Type") addBefore(c, tk.brk({ k: "continue" }, 0));
+    }
+  }
+
+  /** The tokens of a type: a plain or dotted name, an array, a dictionary or an optional of those. */
+  function typeTokens(n: number): void {
+    const parts = children(n);
+    switch (kind(n)) {
+      case "user_type":
+        return dotted(parts, "type_identifier");
+      case "array_type":
+        if (parts.length !== 3) unsupported(n);
+        return typeTokens(parts[1] as number);
+      case "dictionary_type":
+        // `visit(DictionaryTypeSyntax)`.
+        if (parts.length !== 5 || tree.text(parts[2] as number) !== ":") unsupported(n);
+        addAfter(parts[2] as number, tk.brk({ k: "continue" }));
+        typeTokens(parts[1] as number);
+        return typeTokens(parts[3] as number);
+      case "optional_type":
+        if (parts.length !== 2 || tree.text(parts[1] as number) !== "?") unsupported(n);
+        return typeTokens(parts[0] as number);
+    }
+    unsupported(n);
+  }
+  function isMemberType(n: number): boolean {
+    const parts = children(n);
+    return (
+      kind(n) === "user_type" &&
+      parts.some((c, i) => tree.text(c) === "." && !["Protocol", "Type"].includes(tree.text(parts[i + 1] as number)))
+    );
+  }
+
+  /**
+   * `visit(FunctionDeclSyntax)` / `visit(InitializerDeclSyntax)` with `arrangeFunctionLikeDecl`,
+   * `arrangeParameterClause`, `visit(FunctionParameterSyntax)`, `visit(FunctionSignatureSyntax)`,
+   * `visit(ReturnClauseSyntax)`, `arrangeEffectSpecifiers` and `visit(GenericWhereClauseSyntax)`, up to the body's
+   * `{`. Returns that `{`.
+   */
+  function functionHeader(n: number): number {
+    const parts = children(n);
+    let i = 0;
+    // The decl's group (`arrangeFunctionLikeDecl`) and the one keeping `<modifiers> func <name>(` together.
+    addBefore(firstLeaf(tree, n), tk.open(), tk.open());
+    if (kind(parts[0] as number) === "modifiers") {
+      for (const m of children(parts[0] as number)) {
+        // `arrangeAttributeList` is not ported.
+        if (kind(m) === "attribute") unsupported(m);
+        addAfter(lastLeaf(tree, m), tk.brk({ k: "continue" }));
+      }
+      i++;
+    }
+    const keyword = parts[i++] as number;
+    const isInit = kind(n) === "init_declaration";
+    if (tree.text(keyword) !== (isInit ? "init" : "func")) unsupported(keyword);
+    if (!isInit) {
+      addAfter(keyword, tk.brk({ k: "continue" }));
+      if (kind(parts[i++] as number) !== "simple_identifier") unsupported(n);
+    }
+    let generic = false;
+    if (kind(parts[i] as number) === "type_parameters") {
+      // `visit(GenericParameterClauseSyntax)` and `visit(GenericParameterSyntax)`.
+      generic = true;
+      const list = children(parts[i++] as number);
+      addAfter(list[0] as number, tk.brk({ k: "open", block: true }, 0), tk.open());
+      addBefore(list[list.length - 1] as number, tk.brk({ k: "close", mustBreak: false }, 0), tk.close);
+      for (const [j, c] of list.slice(1, -1).entries()) {
+        if (tree.text(c) === ",") continue;
+        const p = children(c);
+        if (kind(c) !== "type_parameter" || kind(p[0] as number) !== "type_identifier") unsupported(c);
+        addBefore(firstLeaf(tree, c), tk.open());
+        if (p.length === 3 && tree.text(p[1] as number) === ":") {
+          addAfter(p[1] as number, tk.brk({ k: "continue" }));
+          typeTokens(p[2] as number);
+        } else if (p.length !== 1) unsupported(c);
+        const comma = list[j + 2] as number;
+        if (tree.text(comma) === ",") addAfter(comma, tk.close, tk.brk({ k: "same" }));
+        else addAfter(lastLeaf(tree, c), tk.close);
+      }
+    }
+    const lparen = parts[i++] as number;
+    if (tree.text(lparen) !== "(") unsupported(n);
+    const rp = parts.findIndex((c, j) => j >= i && kind(c) === ")");
+    if (rp < 0) unsupported(n);
+    const params = parts.slice(i, rp);
+    const rparen = parts[rp] as number;
+    i = rp + 1;
+    if (params.length > 0) {
+      addAfter(lparen, tk.brk({ k: "open", block: true }, 0), tk.open());
+      addBefore(rparen, tk.brk({ k: "close", mustBreak: true }, 0), tk.close);
+    }
+    addAfter(params.length > 0 || generic ? lparen : rparen, tk.close);
+    for (let start = 0; start < params.length; ) {
+      let end = start;
+      while (end < params.length && tree.text(params[end] as number) !== ",") end++;
+      const [param, eq, value, ...extra] = params.slice(start, end) as [number, number?, number?];
+      const comma = params[end];
+      start = end + 1;
+      if (kind(param) !== "parameter" || extra.length > 0 || (eq !== undefined && (tree.text(eq) !== "=" || value === undefined)))
+        unsupported(param);
+      addBefore(firstLeaf(tree, param), tk.open());
+      const p = children(param);
+      let j = 0;
+      if (kind(p[j] as number) !== "simple_identifier") unsupported(param);
+      j++;
+      if (kind(p[j] as number) === "simple_identifier") addBefore(p[j++] as number, tk.brk({ k: "continue" }));
+      const colon = p[j++] as number;
+      if (tree.text(colon) !== ":") unsupported(param);
+      addAfter(colon, tk.brk({ k: "continue" }));
+      let attributed: number | undefined;
+      if (kind(p[j] as number) === "parameter_modifiers") {
+        // `visit(AttributedTypeSyntax)` over `inout`.
+        attributed = p[j++] as number;
+        if (tree.text(attributed) !== "inout") unsupported(attributed);
+      }
+      const type = p[j++] as number;
+      if (type === undefined) unsupported(param);
+      if (attributed !== undefined) {
+        addBefore(firstLeaf(tree, attributed), tk.open());
+        addAfter(lastLeaf(tree, attributed), tk.brk({ k: "continue" }));
+        addAfter(lastLeaf(tree, type), tk.close);
+      }
+      typeTokens(type);
+      if (j < p.length && !(j === p.length - 1 && tree.text(p[j] as number) === "...")) unsupported(param);
+      if (comma !== undefined) addAfter(comma, tk.close, tk.brk({ k: "same" }));
+      else addAfter(lastLeaf(tree, value ?? param), tk.close);
+      if (eq !== undefined && value !== undefined) {
+        // `visit(InitializerClauseSyntax)`.
+        addBefore(eq, tk.space);
+        addAfter(eq, tk.brk({ k: "continue" }));
+        expression(convert(value));
+      }
+    }
+    // `arrangeEffectSpecifiers`.
+    const effects: number[] = [];
+    while (kind(parts[i] as number) === "async" || kind(parts[i] as number) === "throws") effects.push(parts[i++] as number);
+    for (const e of effects) {
+      if (tree.count(e) !== 0) unsupported(e);
+      addBefore(e, tk.brk({ k: "continue" }));
+    }
+    if (effects.length === 2) {
+      addBefore(effects[0] as number, tk.open());
+      addAfter(effects[1] as number, tk.close);
+    } else if (effects.length > 2) unsupported(n);
+    if (tree.text(parts[i] as number) === "->") {
+      const arrow = parts[i++] as number;
+      const type = parts[i++] as number;
+      addBefore(arrow, tk.brk({ k: "continue" }));
+      addAfter(arrow, tk.space);
+      if (isMemberType(type)) {
+        addBefore(firstLeaf(tree, type), tk.open());
+        addAfter(lastLeaf(tree, type), tk.close);
+      }
+      typeTokens(type);
+    }
+    let whereClose = false;
+    if (kind(parts[i] as number) === "type_constraints") {
+      const clause = children(parts[i++] as number);
+      const where = clause[0] as number;
+      if (tree.text(where) !== "where" || clause.length < 2) unsupported(where);
+      addBefore(where, tk.brk({ k: "same" }), tk.open());
+      whereClose = true;
+      const requirements = clause.slice(1);
+      const lastReq = lastLeaf(tree, requirements[requirements.length - 1] as number);
+      addAfter(where, tk.brk({ k: "open", block: true }));
+      addAfter(lastReq, tk.brk({ k: "close", mustBreak: false }, 0));
+      addBefore(firstLeaf(tree, requirements[0] as number), tk.open());
+      addAfter(lastReq, tk.close);
+      for (const [j, c] of requirements.entries()) {
+        if (tree.text(c) === ",") continue;
+        // `visit(GenericRequirementSyntax)` and `visit(ConformanceRequirementSyntax)`.
+        const req = children(c)[0] as number;
+        if (kind(c) !== "type_constraint" || kind(req) !== "inheritance_constraint" || tree.count(req) !== 3) unsupported(c);
+        const [name, colon, type] = children(req) as [number, number, number];
+        if (kind(name) !== "identifier") unsupported(c);
+        addBefore(firstLeaf(tree, c), tk.open());
+        dotted(children(name), "simple_identifier");
+        addAfter(colon, tk.brk({ k: "continue" }));
+        typeTokens(type);
+        const comma = requirements[j + 1];
+        if (comma !== undefined && tree.text(comma) === ",") addAfter(comma, tk.close, tk.brk({ k: "same" }));
+        else addAfter(lastLeaf(tree, c), tk.close);
+      }
+    }
+    const body = parts[i++] as number;
+    if (body === undefined || kind(body) !== "function_body" || i !== parts.length) unsupported(n);
+    const brace = tree.child(body, 0);
+    if (tree.text(brace) !== "{") unsupported(body);
+    addBefore(brace, tk.brk({ k: "reset" }));
+    // The where clause's group and the decl's close after the body; the stream ends at `{`, so they close there.
+    addAfter(brace, ...(whereClose ? [tk.close] : []), tk.close);
+    return brace;
+  }
 
   /** `visit(VariableDeclSyntax)` with one binding, `visit(PatternBindingSyntax)` and `visit(InitializerClauseSyntax)`. */
   function binding(n: number): void {
@@ -560,8 +763,11 @@ export function statementTokens(
         throw new Error(`a gap of ${want} where the layout prints ${width} (line breaking): before \`${tree.text(l)}\``);
     }
     tokens.push(...own, tk.syntax(tree.text(l)));
-    // A header's `{` ends the tokens: the body after it is kept as written.
-    if (l === lastToken && header) break;
+    // A header's `{` ends the tokens: the body after it is kept as written, the groups open there closed.
+    if (l === lastToken && header) {
+      for (const group of after.get(l) ?? []) for (const t of group) if (t.t === "close") tokens.push(t);
+      break;
+    }
     width = 0;
     for (const group of [...(after.get(l) ?? [])].reverse())
       for (const t of group) {

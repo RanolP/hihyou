@@ -120,3 +120,26 @@ test("a long try, return or tuple binding is broken inside the call", () => {
     expect(out.ok && out.text, input).toBe(want);
   }
 });
+
+// A regression here is the FunctionDecl/InitializerDecl signature streams drifting: `->` kept on the parameters'
+// line past the width, `{` left on a continuation line, or the parameters not moved inside the parentheses.
+test("a long function or init signature is broken as swift-format breaks it", () => {
+  const cases: [string, string][] = [
+    [
+      "struct S {\n  public override func visit(_ node: MatchingPatternConditionSyntax) -> MatchingPatternConditionSyntax {\n    return x\n  }\n}\n",
+      "struct S {\n  public override func visit(_ node: MatchingPatternConditionSyntax)\n    -> MatchingPatternConditionSyntax\n  {\n    return x\n  }\n}\n",
+    ],
+    [
+      "struct S {\n  public init(context: Context, source: String, node: Syntax, printTokenStream: Bool, whitespaceOnly: Bool) {\n    x()\n  }\n}\n",
+      "struct S {\n  public init(\n    context: Context, source: String, node: Syntax, printTokenStream: Bool, whitespaceOnly: Bool\n  ) {\n    x()\n  }\n}\n",
+    ],
+    [
+      "func aaaaaaaaaaaaaaaa<T>(bbbbbbbbbbbbb: T, ccccccccccccccccc: String) -> Int where T: Equatable, T: Hashable {\n  x()\n}\n",
+      "func aaaaaaaaaaaaaaaa<T>(bbbbbbbbbbbbb: T, ccccccccccccccccc: String) -> Int\nwhere T: Equatable, T: Hashable {\n  x()\n}\n",
+    ],
+  ];
+  for (const [input, want] of cases) {
+    const out = run(input);
+    expect(out.ok && out.text, input).toBe(want);
+  }
+});
