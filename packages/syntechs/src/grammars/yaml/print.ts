@@ -955,20 +955,36 @@ class Printer {
   }
 
   document(doc: number, last: boolean, limit: number): void {
+    // Comments after a `...` belong past it, not to the collection before it.
+    let end = limit;
+    for (let i = 0; i < this.tree.count(doc); i++)
+      if (this.kind(this.tree.child(doc, i)) === "...") end = this.start(this.tree.child(doc, i));
+    let directive = false;
     for (let i = 0; i < this.tree.count(doc); i++) {
       const c = this.tree.child(doc, i);
       const k = this.kind(c);
-      if (this.pending(this.start(c)) !== undefined) this.loose(this.start(c));
+      const comment = this.pending(this.start(c));
+      if (comment !== undefined) {
+        if (directive && this.tree.lf(comment) >= 2) unsupported("a blank line between a directive and a comment");
+        this.loose(this.start(c));
+      }
+      // oxfmt drops the blank lines after a directive.
+      const blank = this.tree.lf(c) >= 2 && this.lines.length > 0 && !(directive && comment === undefined);
+      if (k !== "comment") directive = /_directive$/.test(k);
       switch (k) {
         case "comment":
           break;
         case "yaml_directive":
         case "tag_directive":
         case "reserved_directive":
+          if (blank && !this.scalarEnd) this.blank();
+          // oxfmt separates a directive's name and parameters by one space.
+          this.line(this.tree.text(c).trim().split(/[ \t]+/).join(" "));
+          break;
         case "---":
         case "...":
           // After a block scalar its chomping alone decides the blank line before a marker.
-          if (this.tree.lf(c) >= 2 && this.lines.length > 0 && !this.scalarEnd) this.blank();
+          if (blank && !this.scalarEnd) this.blank();
           this.line(this.tree.text(c));
           break;
         case "block_node": {
@@ -984,7 +1000,7 @@ class Printer {
             this.line("");
             this.propsComments(props, coll, 0);
           }
-          this.block(coll, 0, false, limit, first);
+          this.block(coll, 0, false, end, first);
           break;
         }
         case "flow_node": {
@@ -1024,15 +1040,12 @@ class Printer {
       unsupported("content on the line of a non-marker");
   }
 
-  /** Comments outside every collection, as written at column 0 or trailing their line. */
+  /** Comments outside every collection, at column 0 however indented, or trailing their line. */
   loose(before: number): void {
     let c: number | undefined;
     while ((c = this.pending(before)) !== undefined) {
       if (this.tree.lf(c) === 0 && this.lines.length > 0) this.trailing(c);
-      else {
-        if (this.tree.col(c) !== 0) unsupported("an indented comment outside a collection");
-        this.ownLine(c, 0, this.lines.length > 0 && !this.afterMarker());
-      }
+      else this.ownLine(c, 0, this.lines.length > 0 && !this.afterMarker());
     }
   }
 }

@@ -29,6 +29,8 @@ const normalize: Normalize = (lexemes, _text, tree) =>
       for (let c = 0; c < tree.count(pair); c++) if (tree.fieldName(tree.child(pair, c)) === "value") valued = true;
       if (!valued) return undefined;
     }
+    // A directive prints its name and parameters one space apart.
+    if (/_directive$/.test(kind) || /_directive$/.test(tree.kindName(tree.parent(l.node)))) return l.text.trim().split(/[ \t]+/).join(" ");
     if (kind === "plain_scalar") return fold(l.text);
     if (kind === "single_quote_scalar") return `str:${fold(l.text.slice(1, -1).replaceAll("''", "'"))}`;
     if (kind === "double_quote_scalar") return `str:${fold(l.text.slice(1, -1).replaceAll('\\"', '"'))}`;
@@ -79,7 +81,7 @@ export const yaml: Language<PrettierOptions> = {
           if (out !== "") sLiteral(node, out);
         },
       ],
-      // An ERROR root can span less than the file (`{? 1,? 2}` keeps only `{? 1`), so its text is no copy of it.
+      // An ERROR root can span less than the file, so its text is no copy of it.
       [
         "ERROR",
         () => {

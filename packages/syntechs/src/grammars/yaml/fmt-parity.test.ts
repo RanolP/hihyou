@@ -88,6 +88,10 @@ const edgeCases: [string, string][] = [
   ["flow-explicit-empty", `- {? a : x, b: c, : }\n- [? d : e, : ]\n- {[${"w".repeat(80)}]: [b]}\n`],
   // A flow `? key` with no `:` did not parse, or kept its `?` in a mapping, or lost it in a sequence, or a wide flow key alone broke without its `? ` in a sequence.
   ["flow-explicit-no-value", `- {? a,? [b]}\n- [? 1,? *c, d: e]\n- [? [${"l".repeat(40)}, ${"l".repeat(40)}]]\n- {? [${"m".repeat(40)}, ${"m".repeat(40)}]}\n`],
+  // An indented comment outside every collection refused, where oxfmt prints it at column 0.
+  ["indented-loose-comments", "  # a\n\n   # b\nk: 1\n---\n  # c\nx\n"],
+  // A directive kept its run of spaces, or a blank line after it, or a comment after `...` moved before it.
+  ["directives-and-end-marker", "%TAG  !e!   tag:e.com,2000:\n\n%FOO  bar   baz # c\n              # d\n\n---\na: 1\n...\n  # e\n---\nb\n"],
   // A multi-line plain or quoted scalar refused, or lost its blank-line paragraphs or the indent of its later lines.
   ["multiline-flow-scalars", `a: aaa\n  bbb\n\n  ccc\nb: "x\n  y"\nc: '${"w ".repeat(20)}\n  z'\n? m\n  n\n: v\nd:\n  - p\n    q\n`],
   // A multi-line value moved below its key whenever its first paragraph did not fit, where only its first word must.
@@ -161,6 +165,8 @@ const refused: [string, string][] = [
   // A prettier-ignore trailing a line, or before a document, was applied to the next block item.
   ["prettier-ignore-trailing", "a: 1 # prettier-ignore\nb:    2\n"],
   ["prettier-ignore-document", "# prettier-ignore\n---\na:    1\n"],
+  // A blank line between a directive and a comment, which oxfmt drops, was kept.
+  ["directive-blank-comment", "%YAML 1.2\n\n# c\n---\nb\n"],
 ];
 
 describe("a YAML construct print.ts has no rule for refuses rather than printing what oxfmt would not", () => {
