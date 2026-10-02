@@ -1,7 +1,6 @@
 import type { Theme } from "@hihyou/engine";
 import type {
   DiffFile,
-  DiffLayout,
   ElidedRef,
   ExpandDirection,
 } from "@hihyou/ui";
@@ -13,8 +12,6 @@ export type ToWebview =
   | { type: "error"; title: string; message: string }
   /** Sent after `ready` and on every colour theme change, apart from the state above. */
   | { type: "theme"; theme: Theme }
-  /** The reviewer's saved layout, sent with the theme. */
-  | { type: "layout"; layout: DiffLayout }
   /** Draw the file at `path`, the only one shown; replayed after the state on every `ready`. */
   | { type: "show"; path: string }
   /** Show the next (1) or previous (-1) file. */
@@ -32,6 +29,4 @@ export type FromWebview =
     }
   | { type: "collapse"; path: string; elided: ElidedRef }
   /** The webview switched file on its own (next/previous, a move into another file). */
-  | { type: "shown"; path: string }
-  /** The reviewer toggled the layout; the host saves it for every panel opened after. */
-  | { type: "layout"; layout: DiffLayout };
+  | { type: "shown"; path: string };

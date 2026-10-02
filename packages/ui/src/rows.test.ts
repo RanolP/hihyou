@@ -8,7 +8,7 @@ import {
   unifiedRows,
 } from "./rows.js";
 
-// Pairing a split row by row index instead of per-side line numbers shows a 2-line removal against a 1-line
+// Pairing a row by row index instead of per-side line numbers shows a 2-line removal against a 1-line
 // addition with the wrong numbers, and dropping `changed` at a newline un-highlights half of a multi-line edit.
 test("a diff fragment numbers each side on its own and keeps emphasis across a newline", () => {
   const file: FileDiff = {

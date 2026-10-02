@@ -3,7 +3,7 @@
   "displayName": "Hihyou",
   "version": "0.0.0",
   "private": true,
-  "description": "Structural split diff review for the local repository and its GitHub pull requests.",
+  "description": "Structural diff review for the local repository and its GitHub pull requests.",
   "publisher": "ranolp",
   "main": "./dist/extension.js",
   "browser": "./dist/web/extension.js",

@@ -19,7 +19,6 @@ export const diffStyles = `
   --hh-removed-line: var(--vscode-diffEditor-removedLineBackground, light-dark(rgb(255 0 0 / 0.2), rgb(255 0 0 / 0.2)));
   /* Not diffEditor.move.border: VS Code defaults that to grey, and a moved block should read as yellow. */
   --hh-moved: var(--vscode-editorWarning-foreground, light-dark(#bf8803, #cca700));
-  --hh-empty: var(--vscode-diffEditor-diagonalFill, light-dark(rgb(34 34 34 / 0.12), rgb(204 204 204 / 0.12)));
   --hh-accent: var(--vscode-focusBorder, light-dark(#0969da, #2f81f7));
   --hh-button-fg: var(--vscode-textLink-foreground, light-dark(#0969da, #4daafc));
   --hh-flash: var(--vscode-editor-findMatchHighlightBackground, light-dark(rgb(234 92 0 / 0.33), rgb(234 92 0 / 0.33)));
@@ -80,15 +79,7 @@ export const diffStyles = `
   font-size: var(--hh-mono-size);
   line-height: 1.5;
 }
-.hh-col-code { width: 50%; }
-.hh-head th {
-  text-align: left;
-  font-family: var(--vscode-font-family, system-ui, sans-serif);
-  font-weight: 400;
-  color: var(--hh-muted);
-  padding: 2px 8px;
-  border-bottom: 1px solid var(--hh-border);
-}
+.hh-col-code { width: 100%; }
 .hh-num {
   min-width: 3ch;
   padding: 0 8px;
@@ -104,13 +95,9 @@ export const diffStyles = `
   vertical-align: top;
   tab-size: 4;
 }
-.hh-line > .hh-code:nth-child(2) { border-right: 1px solid var(--hh-border); }
 /* Only the changed nodes get a background; the gutter marks the line. */
 .hh-num.hh-removed { box-shadow: inset 3px 0 var(--hh-removed-fg); }
 .hh-num.hh-added { box-shadow: inset 3px 0 var(--hh-added-fg); }
-.hh-empty {
-  background: repeating-linear-gradient(-45deg, transparent 0 4px, var(--hh-empty) 4px 5px);
-}
 .hh-changed { text-decoration: none; border-radius: 2px; }
 del.hh-changed { background: linear-gradient(var(--hh-removed-text), var(--hh-removed-text)), var(--hh-removed-line); }
 ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-added-text)), var(--hh-added-line); }
@@ -120,9 +107,9 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 .hh-code.hh-moved { box-shadow: inset -2px 0 var(--hh-moved); }
 .hh-num.hh-moved-last { box-shadow: inset 2px -2px var(--hh-moved); }
 .hh-code.hh-moved-last { box-shadow: inset -2px -2px var(--hh-moved); }
-/* Unified: one code column, both gutters before it; the inner gutter carries only the box's bottom edge. */
-.hh-unified .hh-col-code { width: 100%; }
-.hh-unified .hh-head th { padding: 0; border: 0; line-height: 0; }
+/* One code column, both gutters before it; the column headings are for screen readers alone. */
+.hh-head th { padding: 0; border: 0; line-height: 0; }
+/* The inner gutter carries only a moved box's bottom edge. */
 .hh-num.hh-moved-inner { box-shadow: none; }
 .hh-num.hh-moved-inner.hh-moved-last { box-shadow: inset 0 -2px var(--hh-moved); }
 .hh-sign { display: inline-block; width: 2ch; color: var(--hh-muted); user-select: none; }

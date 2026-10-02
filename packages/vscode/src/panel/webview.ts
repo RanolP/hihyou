@@ -1,7 +1,6 @@
 import type { Theme } from "@hihyou/engine";
 import {
   type DiffFile,
-  type DiffLayout,
   type DiffsetView,
   renderDiffset,
 } from "@hihyou/ui";
@@ -20,11 +19,9 @@ const refresh = document.getElementById("refresh") as HTMLButtonElement;
 const previous = document.getElementById("previous") as HTMLButtonElement;
 const next = document.getElementById("next") as HTMLButtonElement;
 const position = document.getElementById("position") as HTMLElement;
-const layoutButton = document.getElementById("layout") as HTMLButtonElement;
 const root = document.getElementById("root") as HTMLElement;
 let view: DiffsetView | undefined;
 let theme: Theme | undefined;
-let layout: DiffLayout = "unified";
 let files: DiffFile[] = [];
 /** The host's `show` that arrived before the files did. */
 let wanted: string | undefined;
@@ -44,15 +41,6 @@ const step = (delta: 1 | -1) => {
   updateNav();
 };
 
-const setLayout = (next: DiffLayout) => {
-  layout = next;
-  layoutButton.setAttribute("aria-pressed", String(next === "unified"));
-  view?.setLayout(next);
-};
-layoutButton.addEventListener("click", () => {
-  setLayout(layout === "unified" ? "split" : "unified");
-  post({ type: "layout", layout });
-});
 refresh.addEventListener("click", () => post({ type: "refresh" }));
 previous.addEventListener("click", () => step(-1));
 next.addEventListener("click", () => step(1));
@@ -63,9 +51,6 @@ window.addEventListener("message", (event: MessageEvent<ToWebview>) => {
     case "theme":
       theme = message.theme;
       view?.setTheme(theme);
-      return;
-    case "layout":
-      setLayout(message.layout);
       return;
     case "show":
       if (view) view.show(message.path);
@@ -109,7 +94,6 @@ window.addEventListener("message", (event: MessageEvent<ToWebview>) => {
             updateNav();
           },
           ...(theme && { theme }),
-          layout,
         });
       if (wanted !== undefined) view.show(wanted);
       wanted = undefined;
