@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="120">
+  <text x="10" y="20">  Leading and trailing  </text>
+  <text x="10" y="40" xml:space="preserve">  Preserved   spaces  </text>
+  <text x="10" y="60">Mixed <tspan font-weight="bold">bold</tspan> and <tspan fill="red">red</tspan> words</text>
+  <text x="10" y="80">
+    A longer line of text that runs well past the print width so the formatter has to wrap it somewhere
+  </text>
+  <title>Text sample</title>
+  <desc>Whitespace handling inside SVG text elements</desc>
+</svg>
