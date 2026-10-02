@@ -21,4 +21,5 @@ export const GRAMMARS: Record<string, { src: string; comments: string[] }> = {
     src: "tree-sitter-swift/src",
     comments: ["comment", "multiline_comment"],
   },
+  yaml: { src: "tree-sitter-yaml/src", comments: ["comment"] },
 };

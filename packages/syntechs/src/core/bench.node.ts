@@ -66,6 +66,7 @@ const TINY: Record<GrammarName, string> = {
   python: "x = 1\n",
   kotlin: "val a = 1\n",
   swift: "let a = 1\n",
+  yaml: "a: [1, 2]\n",
 };
 
 /** One fresh process: import, load the grammar, parse a tiny input. Prints ms. */
