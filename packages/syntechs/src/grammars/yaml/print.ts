@@ -9,9 +9,13 @@
 
 import { NO_NODE } from "../../core/arena.js";
 import { SYM_ERROR } from "../../core/language.js";
+import type { CustomRule } from "../../fmt/dsl/runtime.js";
 import { textWidth } from "../../fmt/width.js";
 import type { PrettierOptions } from "../../fmt/options.js";
+import type { PrintArgs } from "../../fmt/rules.js";
+import type { StreamCtx } from "../../fmt/stream-format.js";
 import { type FormatTree, firstLeaf } from "../../fmt/tree.js";
+import { captured, sText } from "./sink.js";
 
 export class Unsupported extends Error {}
 
@@ -21,20 +25,6 @@ const unsupported = (what: string): never => {
 
 /** Whether the stream holds anything to print: a blank file prints as "", without a final line break. */
 export const isBlank = (tree: FormatTree): boolean => tree.text(tree.root).trim() === "";
-
-/**
- * A quoted scalar in the quote prettier picks: its own when the content has an escape the other quote would
- * change, single when the content holds a double quote, double when it holds a single one, else `preferred`.
- */
-function quoted(text: string, double: boolean, preferred: string): { quote: string; raw: string } {
-  const raw = text.slice(1, -1);
-  const own = { quote: text[0]!, raw };
-  if ((!double && raw.includes("\\")) || (double && /\\[^"]/.test(raw))) return own;
-  if (raw.includes('"'))
-    return double ? { quote: "'", raw: raw.replaceAll('\\"', '"').replaceAll("'", "''") } : own;
-  if (raw.includes("'")) return double ? own : { quote: '"', raw: raw.replaceAll("''", "'") };
-  return { quote: preferred, raw };
-}
 
 /**
  * A plain or quoted scalar's paragraphs of words as prettier fills them (its `getFlowScalarLineContents`): source
@@ -126,17 +116,40 @@ class Printer {
   /** Each leaf's source offset, read off the stream text on the first block scalar. */
   offsets?: Map<number, number>;
 
+  readonly tree: FormatTree;
+
   constructor(
-    readonly tree: FormatTree,
+    readonly ctx: StreamCtx<unknown>,
     readonly tab: number,
-    readonly quote: string,
     readonly prose: string,
     readonly width: number,
     readonly bracketSpacing: boolean,
     readonly trailingComma: boolean,
-  ) {}
+  ) {
+    this.tree = ctx.tree;
+  }
 
   kind = (n: number) => this.tree.kindName(n);
+
+  // Every kind prints through its rule of format.ts (fmt.gen.ts), reached by `ctx.printNode` with the layout the
+  // node is placed in as its args: a leaf's rule spells it into the sink, which `text` reads back; a structural
+  // kind's rule is a custom rule below (`customs`), which lays the node out onto `lines`, or (a flow node or pair,
+  // whose holder measures it first) writes its lines into the sink for `laid` to read back.
+
+  /** Leaf `n` as its rule spells it. */
+  text(n: number): string {
+    return captured(() => this.ctx.printNode(n));
+  }
+
+  /** Lays `n` out onto `lines` by its rule. */
+  print(n: number, args: PrintArgs): void {
+    this.ctx.printNode(n, args);
+  }
+
+  /** The lines flow node or pair `n` lays out in by its rule, the first continuing the current line. */
+  laid(n: number, args: PrintArgs): string[] {
+    return captured(() => this.ctx.printNode(n, args)).split("\n");
+  }
 
   named(n: number): number[] {
     const out: number[] = [];
@@ -172,14 +185,14 @@ class Printer {
   /** A comment on the line of what precedes it, one space after it. */
   trailing(c: number): void {
     if (this.lines.length === 0) unsupported("a trailing comment with no line");
-    this.append(` ${this.tree.text(c)}`);
+    this.append(` ${this.text(c)}`);
     this.next++;
   }
 
   /** A comment on its own line at `indent`, after one blank line when the source has one and `blankOk`. */
   ownLine(c: number, indent: number, blankOk: boolean): void {
     if (blankOk && this.tree.lf(c) >= 2) this.blank();
-    this.line(" ".repeat(indent) + this.tree.text(c));
+    this.line(" ".repeat(indent) + this.text(c));
     this.ownComment = { line: this.lines.length - 1, at: indent };
     this.next++;
   }
@@ -245,7 +258,7 @@ class Printer {
     let content: number | undefined;
     for (const k of this.named(n)) {
       const kind = this.kind(k);
-      if (content === undefined && (kind === "anchor" || kind === "tag")) props.push(this.tree.text(k));
+      if (content === undefined && (kind === "anchor" || kind === "tag")) props.push(this.text(k));
       else if (content === undefined) content = k;
       else unsupported("a node with two contents");
     }
@@ -282,12 +295,13 @@ class Printer {
   /** A scalar's paragraphs (an alias is one word), with the quote before and after them. */
   parts(s: number): { head: string; paras: string[][]; tail: string } {
     const kind = this.kind(s);
-    if (kind === "alias") return { head: "", paras: [[this.tree.text(s)]], tail: "" };
-    if (kind === "plain_scalar") return { head: "", paras: flowParagraphs(this.tree.text(s), false, this.prose), tail: "" };
+    if (kind === "alias") return { head: "", paras: [[this.text(s)]], tail: "" };
+    if (kind === "plain_scalar") return { head: "", paras: flowParagraphs(this.text(s), false, this.prose), tail: "" };
     if (kind !== "double_quote_scalar" && kind !== "single_quote_scalar") return unsupported(`a ${kind}`);
-    const double = kind === "double_quote_scalar";
-    const { quote, raw } = quoted(this.tree.text(s), double, this.quote);
-    return { head: quote, paras: flowParagraphs(raw, double, this.prose), tail: quote };
+    // The scalar in the quote its rule picks (format.ts), its paragraphs read off what is between the quotes.
+    const text = this.text(s);
+    const quote = text[0]!;
+    return { head: quote, paras: flowParagraphs(text.slice(1, -1), kind === "double_quote_scalar", this.prose), tail: quote };
   }
 
   /** A plain, quoted or alias flow node with its properties, as its words and the text around them. */
@@ -404,6 +418,11 @@ class Printer {
    * that item's comma, any other sits on its own line at the items' indent (`bare`: properties already printed).
    */
   layout(n: number, col: number, indent: number, trail: number, bare = false): string[] {
+    return this.laid(n, { col, indent, trail, bare });
+  }
+
+  /** `layout`'s rule, flow node `n`'s. */
+  flowNode(n: number, col: number, indent: number, trail: number, bare: boolean): string[] {
     const c = this.flowCollection(n);
     if (c === undefined && this.multiScalar(n)) return this.scalarLines(n, indent);
     // A multi-line scalar inside holds a hard line break, which breaks the collection and every one around it.
@@ -416,11 +435,20 @@ class Printer {
     // (printYaml refuses a line past printWidth there); a scalar of several paragraphs has no rule here.
     if (this.prose !== "preserve" && hard) unsupported("a broken flow collection under proseWrap");
     const { props } = this.properties(n);
-    const seq = this.kind(c) === "flow_sequence";
     const last = items[items.length - 1]!.item;
     const emptyLast = this.kind(last) === "flow_pair" && this.named(last).length === 0;
     if (hard ? emptyLast : /(?:^|, ): $/.test(flat.slice(1, -1))) unsupported("a broken flow collection ending in an empty pair");
-    const lines = [(props === "" || bare ? "" : `${props} `) + (seq ? "[" : "{")];
+    return this.laid(c, { indent, lead: props === "" || bare ? "" : `${props} ` });
+  }
+
+  /**
+   * Flow mapping or sequence `c` broken, its rule: `lead` (its node's properties) and the opening bracket continue
+   * the current line, then one item per line at `indent` plus tabWidth, and the closing bracket at `indent`.
+   */
+  brokenFlow(c: number, indent: number, lead: string): string[] {
+    const items = this.flowItems(c);
+    const seq = this.kind(c) === "flow_sequence";
+    const lines = [lead + (seq ? "[" : "{")];
     const inner = indent + this.tab;
     items.forEach(({ item }, i) => {
       const before = items[i - 1]?.comma;
@@ -472,10 +500,10 @@ class Printer {
     let trailed: boolean | undefined;
     while ((c = this.pending(before)) !== undefined) {
       trailed = trail && this.tree.lf(c) === 0;
-      if (trailed) lines[lines.length - 1] += ` ${this.tree.text(c)}`;
+      if (trailed) lines[lines.length - 1] += ` ${this.text(c)}`;
       else {
         if (blankOk && trail && this.tree.lf(c) >= 2) lines.push("");
-        lines.push(" ".repeat(indent) + this.tree.text(c));
+        lines.push(" ".repeat(indent) + this.text(c));
       }
       this.next++;
     }
@@ -500,6 +528,11 @@ class Printer {
    * after it; else a collection value moves to the next line, one tabWidth in, and lays out from there.
    */
   pairLayout(pair: number, seq: boolean, col: number, trail: number): string[] {
+    return this.laid(pair, { seq, col, trail });
+  }
+
+  /** `pairLayout`'s rule, flow pair `pair`'s. */
+  flowPair(pair: number, seq: boolean, col: number, trail: number): string[] {
     const multiKey = this.multiKey(pair, seq, col, trail);
     if (multiKey !== undefined) return multiKey;
     const { key, keyNode, value } = this.pairParts(pair, seq);
@@ -695,8 +728,15 @@ class Printer {
    * the count of block collections around it, from the root, whatever the printed nesting.
    */
   blockScalar(n: number, indent: number, lead: string | undefined): void {
-    const { props, content: s } = this.properties(n);
+    const s = this.properties(n).content;
     if (s === undefined || this.kind(s) !== "block_scalar") return unsupported("a block node with no block scalar");
+    this.print(s, { indent, lead });
+  }
+
+  /** `blockScalar`'s rule, block scalar `s`'s, its block node the one around it. */
+  blockScalarRule(s: number, indent: number, lead: string | undefined): void {
+    const n = this.tree.parent(s);
+    const { props } = this.properties(n);
     // At the root, comments after the properties print as after a collection's, the header on the line after them.
     const commented = props !== "" && this.pending(this.start(s)) !== undefined;
     if (commented && lead !== undefined) unsupported("a comment after a block scalar value's properties");
@@ -792,9 +832,9 @@ class Printer {
       this.next++;
     }
     this.append(props);
-    if (cs.length === 1) this.append(` ${this.tree.text(cs[0]!)}`);
+    if (cs.length === 1) this.append(` ${this.text(cs[0]!)}`);
     else
-      for (const k of cs) this.line(" ".repeat(indent) + this.tree.text(k));
+      for (const k of cs) this.line(" ".repeat(indent) + this.text(k));
   }
 
   /** A value collection's properties on the current line, and the comments after them (`propsComments`). */
@@ -809,6 +849,11 @@ class Printer {
    * sequence item's "- "); `limit` is the ordinal past which comments belong to an outer collection.
    */
   block(coll: number, indent: number, inline: boolean, limit: number, first = true): void {
+    this.print(coll, { indent, inline, limit, first });
+  }
+
+  /** `block`'s rule, block mapping or sequence `coll`'s. */
+  blockCollection(coll: number, indent: number, inline: boolean, limit: number, first: boolean): void {
     const items = this.named(coll);
     const col = this.tree.col(items[0] as number);
     let prev: number | undefined;
@@ -826,7 +871,10 @@ class Printer {
       const after = items[i + 1];
       const ignore = this.ignoring(item);
       if (ignore !== undefined) this.asWritten(item, ignore);
-      else this.item(item, indent, after === undefined ? limit : this.start(after));
+      else {
+        if (this.kind(item) !== "block_sequence_item" && this.kind(item) !== "block_mapping_pair") unsupported(`a ${this.kind(item)}`);
+        this.print(item, { indent, until: after === undefined ? limit : this.start(after) });
+      }
       prev = item;
     }
     // The comments after the last item that are no shallower than the items stay in this collection.
@@ -877,21 +925,21 @@ class Printer {
     this.ignored.add(ignore);
   }
 
-  /** One mapping pair or sequence item, its first line already started at `indent`. */
-  item(item: number, indent: number, until: number): void {
-    if (this.kind(item) === "block_sequence_item") {
-      this.append("-");
-      const v = this.named(item)[0];
-      if (v === undefined) {
-        // An empty item keeps the space its absent value would take before a trailing comment: `-  # c`.
-        const c = this.pending(until);
-        if (c !== undefined && this.tree.lf(c) === 0) this.append(" ");
-        return;
-      }
-      this.marked(v, indent, until);
+  /** A sequence item's rule, its first line already started at `indent`. */
+  sequenceItem(item: number, indent: number, until: number): void {
+    this.append("-");
+    const v = this.named(item)[0];
+    if (v === undefined) {
+      // An empty item keeps the space its absent value would take before a trailing comment: `-  # c`.
+      const c = this.pending(until);
+      if (c !== undefined && this.tree.lf(c) === 0) this.append(" ");
       return;
     }
-    if (this.kind(item) !== "block_mapping_pair") unsupported(`a ${this.kind(item)}`);
+    this.marked(v, indent, until);
+  }
+
+  /** A block mapping pair's rule, its first line already started at `indent`. */
+  mappingPair(item: number, indent: number, until: number): void {
     let key: number | undefined;
     let colon: number | undefined;
     let value: number | undefined;
@@ -923,7 +971,7 @@ class Printer {
       if (!this.lines[this.lines.length - 1]!.endsWith("-") || this.pending(this.start(v)) !== undefined)
         unsupported("comments before a marked scalar");
       if (this.tree.lf(c) >= 2 || this.tree.lf(firstLeaf(this.tree, v)) >= 2) unsupported("a blank line around a comment before a sequence item's scalar");
-      this.append(` ${this.tree.text(c)}`);
+      this.append(` ${this.text(c)}`);
       this.line(" ".repeat(indent + 2));
       this.fill(v, indent + 2);
     } else {
@@ -1070,7 +1118,7 @@ class Printer {
     let first = true;
     while ((c = this.pending(this.start(value))) !== undefined) {
       if (!first && this.tree.lf(c) >= 2) unsupported("a blank line between comments after an explicit pair's colon");
-      this.line(pad + this.tree.text(c));
+      this.line(pad + this.text(c));
       this.next++;
       first = false;
     }
@@ -1096,8 +1144,8 @@ class Printer {
     while ((c = this.pending(this.start(value))) !== undefined) {
       if (own && this.tree.lf(c) >= 2) unsupported("a blank line between comments before a value");
       own = this.tree.lf(c) > 0;
-      if (own) this.line(" ".repeat(indent) + this.tree.text(c));
-      else this.append(` ${this.tree.text(c)}`);
+      if (own) this.line(" ".repeat(indent) + this.text(c));
+      else this.append(` ${this.text(c)}`);
       this.next++;
     }
     const { content } = this.properties(value);
@@ -1203,7 +1251,7 @@ class Printer {
         case "reserved_directive":
           if (blank && !this.scalarEnd) this.blank();
           // oxfmt separates a directive's name and parameters by one space.
-          this.line(this.tree.text(c).trim().split(/[ \t]+/).join(" "));
+          this.line(this.text(c));
           break;
         case "---":
         case "...":
@@ -1289,23 +1337,61 @@ class Printer {
   }
 }
 
-/** The stream `root` as printed, without its final line break, and whether oxfmt prints one after it. */
-export function printYaml(tree: FormatTree, root: number, options: PrettierOptions): { text: string; final: boolean } {
+// The printer of the stream being printed, which the custom rules lay out with.
+let printer: Printer | undefined;
+
+const on = (): Printer => printer ?? unsupported("a YAML rule outside printYaml");
+
+/** A custom rule's args, as the Printer method that dispatched it passed them. */
+const arg = <T>(ctx: { readonly args: PrintArgs | undefined }, name: string): T => ctx.args?.[name] as T;
+
+/**
+ * The custom rules format.ts names, one per structural kind: each is the Printer method that lays its kind out,
+ * reading the layout it is placed in (indent, the ordinal its comments end at, ...) from its args.
+ */
+export const customs = {
+  document: ((node, ctx) => on().document(node, arg(ctx, "last"), arg(ctx, "limit"))) as CustomRule<unknown>,
+  blockCollection: ((node, ctx) =>
+    on().blockCollection(node, arg(ctx, "indent"), arg(ctx, "inline"), arg(ctx, "limit"), arg(ctx, "first"))) as CustomRule<unknown>,
+  mappingPair: ((node, ctx) => on().mappingPair(node, arg(ctx, "indent"), arg(ctx, "until"))) as CustomRule<unknown>,
+  sequenceItem: ((node, ctx) => on().sequenceItem(node, arg(ctx, "indent"), arg(ctx, "until"))) as CustomRule<unknown>,
+  blockScalar: ((node, ctx) => on().blockScalarRule(node, arg(ctx, "indent"), arg(ctx, "lead"))) as CustomRule<unknown>,
+  flowNode: ((node, ctx) =>
+    sText(on().flowNode(node, arg(ctx, "col"), arg(ctx, "indent"), arg(ctx, "trail"), arg(ctx, "bare")).join("\n"))) as CustomRule<unknown>,
+  brokenFlow: ((node, ctx) => sText(on().brokenFlow(node, arg(ctx, "indent"), arg(ctx, "lead")).join("\n"))) as CustomRule<unknown>,
+  flowPair: ((node, ctx) =>
+    sText(on().flowPair(node, arg(ctx, "seq"), arg(ctx, "col"), arg(ctx, "trail")).join("\n"))) as CustomRule<unknown>,
+};
+
+/**
+ * The stream `root` as printed, without its final line break, and whether oxfmt prints one after it: the stream's
+ * rule, which prints each document by its rule.
+ */
+export function printYaml(ctx: StreamCtx<PrettierOptions>, root: number): { text: string; final: boolean } {
+  const outer = printer;
+  try {
+    return stream(ctx, root);
+  } finally {
+    printer = outer;
+  }
+}
+
+function stream(ctx: StreamCtx<PrettierOptions>, root: number): { text: string; final: boolean } {
+  const { tree, options } = ctx;
   // Prettier options the shared PrettierOptions does not carry, which the conformance fixtures pass through.
-  const { singleQuote = false, proseWrap = "preserve", trailingComma = "all" } = options as {
-    singleQuote?: boolean;
+  const { proseWrap = "preserve", trailingComma = "all" } = options as {
     proseWrap?: string;
     trailingComma?: string;
   };
   const p = new Printer(
-    tree,
+    ctx as StreamCtx<unknown>,
     options.tabWidth,
-    singleQuote ? "'" : '"',
     proseWrap,
     options.printWidth,
     options.bracketSpacing,
     trailingComma !== "none",
   );
+  printer = p;
   for (let o = 0; o < tree.nodeCount; o++) {
     const n = tree.at(o);
     if (tree.kind(n) === SYM_ERROR || tree.missing(n)) unsupported("a YAML parse error");
@@ -1321,7 +1407,7 @@ export function printYaml(tree: FormatTree, root: number, options: PrettierOptio
   }
   docs.forEach((d, i) => {
     const next = docs[i + 1];
-    p.document(d, next === undefined, next === undefined ? Number.POSITIVE_INFINITY : p.start(next));
+    p.print(d, { last: next === undefined, limit: next === undefined ? Number.POSITIVE_INFINITY : p.start(next) });
   });
   p.loose(Number.POSITIVE_INFINITY);
   if (p.ignored.size < p.ignores.size) unsupported("a prettier-ignore comment before no block item");
