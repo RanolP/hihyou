@@ -113,8 +113,13 @@ class Printer {
    */
   scalarEnd = false;
   scalarBlank = false;
-  /** The line count when a kept block scalar ended the stream: oxfmt prints no final line break after it. */
+  /**
+   * The line count when a kept block scalar ended the stream's content: its kept line breaks end the file, so oxfmt
+   * prints no final line break after a `...` or comment that follows it.
+   */
   keptLast?: number;
+  /** The line and indent of the last own-line comment printed. */
+  ownComment?: { line: number; at: number };
   /** The `# prettier-ignore` comments, and those a block item was kept as written after. */
   readonly ignores = new Set<number>();
   readonly ignored = new Set<number>();
@@ -175,6 +180,7 @@ class Printer {
   ownLine(c: number, indent: number, blankOk: boolean): void {
     if (blankOk && this.tree.lf(c) >= 2) this.blank();
     this.line(" ".repeat(indent) + this.tree.text(c));
+    this.ownComment = { line: this.lines.length - 1, at: indent };
     this.next++;
   }
 
@@ -189,16 +195,35 @@ class Printer {
         this.trailing(c);
         continue;
       }
-      let at = indent;
-      if (prev !== undefined && this.tree.col(c) > col) {
-        if (this.nestedValue(prev) !== undefined) unsupported("a comment between a nested block and its parent");
-        // Past a sequence item's scalar, at its content's column two past the dash.
-        at = indent + (this.kind(prev) === "block_sequence_item" ? 2 : this.tab);
-      }
+      let at = prev !== undefined && this.tree.col(c) > col ? this.pastItem(prev, indent, c) : indent;
+      // A comment right below another prints no deeper than it.
+      if (this.ownComment?.line === this.lines.length - 1) at = Math.min(at, this.ownComment.at);
       this.ownLine(c, at, !first);
       first = false;
     }
     return first;
+  }
+
+  /**
+   * The indent of comment `c`, deeper in the source than `item` of a collection at `indent`: past a scalar value one
+   * level in (a sequence item's content two past the dash), past a mapping's block scalar at `indent`, and past a nested
+   * collection in it, at its indent or deeper as the comment is deeper than its items.
+   */
+  pastItem(item: number, indent: number, c: number): number {
+    const seq = this.kind(item) === "block_sequence_item";
+    const v = this.nestedValue(item);
+    if (v === undefined) return indent + (seq ? 2 : this.tab);
+    // Past a sequence item's block scalar oxfmt prints the comment at the content's column, into the content.
+    if (this.isBlockScalar(v)) return seq ? unsupported("a comment past a sequence item's block scalar") : indent;
+    let inner = indent + 2;
+    if (!seq) {
+      // oxfmt's indent past an explicit pair's nested block differs from its print's under tabWidth other than 2.
+      if (this.kind(this.tree.child(item, 0)) === "?" && this.tab !== 2) unsupported("a comment past an explicit pair's nested block");
+      if (this.tree.fieldName(v) === "value") inner = indent + this.tab;
+    }
+    const items = this.named(this.collection(v).coll);
+    const last = items[items.length - 1] as number;
+    return this.tree.col(c) > this.tree.col(items[0] as number) ? this.pastItem(last, inner, c) : inner;
   }
 
   /** The block collection an item's value is, if any. */

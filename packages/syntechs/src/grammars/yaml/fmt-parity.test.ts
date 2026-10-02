@@ -120,6 +120,10 @@ const edgeCases: [string, string][] = [
   ["prettier-ignore", "# prettier-ignore\nk:\n    x:   1\n    y:  [1,2]\nz:   1\n"],
   // A prettier-ignore inside an ignored item, or before a nested item or a sequence item, was not honored.
   ["prettier-ignore-nested", "a:\n  # prettier-ignore\n  b:   [1,   2]\n  c:   3\nd:\n  # prettier-ignore\n  - [1,  2]\n  - [3,  4]\n"],
+  // A comment shallower than a nested block's items but deeper than its parent's refused, or went past a block scalar.
+  ["comment-after-nested-block", "a:\n  b:\n    c: 1\n   # x\n # y\nd:\n  - e\n # f\ng: |-\n  t\n # h\ni: 1\n"],
+  // A comment right below another printed deeper than it, as its source column says, where oxfmt keeps it no deeper.
+  ["comment-no-deeper-than-above", "x:\n  a: 1\n  # x\n    # y\n  b: 2\n"],
   // A `...` or comment after a kept block scalar ending the stream refused or printed a final line break oxfmt leaves off.
   ["kept-block-scalar-then-end", "a: |+\n  x\n# c\n---\n|+\n ab\n\n...\n"],
 ];
@@ -175,6 +179,8 @@ const refused: [string, string][] = [
   ["prettier-ignore-document", "# prettier-ignore\n---\na:    1\n"],
   // Several comments before a sequence item's scalar, which oxfmt prints after `- ` with a trailing space, printed anyway.
   ["sequence-item-comments", "- # c\n  # d\n  v\n"],
+  // A comment past a sequence item's block scalar, which oxfmt prints into the scalar's content, printed anyway.
+  ["comment-past-sequence-block-scalar", "- |\n  t\n # c\n- y\n"],
   // A blank line between a directive and a comment, which oxfmt drops, was kept.
   ["directive-blank-comment", "%YAML 1.2\n\n# c\n---\nb\n"],
 ];
