@@ -7,7 +7,7 @@ import {
 } from "../github/command.js";
 import { fixedSource, movingSource, subject } from "../local/commands.js";
 import type { LocalRepo } from "../local/repos.js";
-import type { ReviewSource } from "../review.js";
+import type { ReviewSource } from "@hihyou/ui";
 
 /** One row of the diffsets view: a change set the panel can show, and the files it changes. */
 export interface Diffset {

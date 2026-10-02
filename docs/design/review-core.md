@@ -121,6 +121,8 @@ interface FileDiff {
       | "format-only"
       | "moved";
   };
+  /** The file was added or deleted: the file is the change; see "Whole units". */
+  status?: "added" | "deleted";
 }
 type CodeFragment =
   | { kind: "begin"; label: string; at: AstSteps } // label e.g. "class AA"
@@ -132,9 +134,29 @@ interface Side {
   spans: Span[];
   at: AstSteps[];
   startLine: number;
-  /** This change is one half of a move; points at the other half, possibly in another file. */
-  move?: { counterpart: { path: string; at: AstSteps[] } };
+  /** The lines of this side that are one half of a move, each pointing at the other half, possibly in another file. */
+  moves?: SideMove[];
+  /** The edit atoms on this side and their ancestors, for marking single node edits viewed. */
+  nodes?: NodeOutline[];
 }
+interface SideMove {
+  first: number; // 1-based, inclusive
+  last: number;
+  counterpart: { path: string; at: AstSteps[] };
+}
+interface NodeOutline {
+  steps: AstSteps;
+  parent: number; // index into the same Side.nodes; -1 = a top node of this side
+  kind: string;
+  start: { line: number; column: number }; // line 0 = Side.startLine; column in UTF-16 units
+  end: { line: number; column: number }; // exclusive
+  changed: boolean; // the node is itself an edit atom, not an ancestor kept for structure
+  hash: string; // of the node's tokens, whitespace between them ignored
+  atom?: string; // iff changed: the atomKey, identical on both halves of an update or a move
+  whole?: "added" | "deleted"; // added or deleted as one unit (a declaration, or a top node of an added/deleted file)
+  label?: string; // with whole, on a declaration: what it declares, as a begin label reads ("function f")
+}
+function atomKey(parts: { path: string; ancestors: string[]; before?: string; after?: string }): string;
 interface Span {
   text: string;
   scope?: string; // syntax colour: a TextMate scope stack, outermost first, space-separated
@@ -229,9 +251,15 @@ type Author<H extends Host> = { id: string } & HostAuthor<H>;
 
 **`FileDiff.collapsed`** is the engine's judgment that the whole file should be shown folded, with the reason; the renderer shows one line in place of the body and may still expand it. `fragments` stays complete for every reason except `binary` and `submodule`, whose `fragments` is empty: the engine never parses them. A host that knows a file is binary or a submodule says so in `ChangedFileRef.kind`, and the engine then does not call `readBlob` for it (a submodule's id names a commit of another repository, not a blob). A host that does not know leaves `kind` absent; the engine then reads the blob and treats it as `binary` when it holds a NUL byte in its first 8000 bytes or is not valid UTF-8.
 
-**`Side`** carries a `move` counterpart when a change is one half of a move, possibly in another file.
+**`Side.moves`** names the lines that are one half of a move, possibly in another file, per moved node: an expression inlined into a call marks only the expression's lines, and the call around it stays an ordinary edit. When the moved nodes cover every line of the side except blank and bracket-only lines, the side carries one move over all its lines, so a relocated block reads as one moved box. A move whose two halves land in the same `diff` fragment (a ternary's branches swapped, an argument re-wrapped in place) is dropped, because the reader already sees both halves side by side.
 
-**`Span`** keeps syntax colour (`scope`) and diff emphasis (`changed`) as separate fields, so a renderer can draw both.
+**`Side.nodes`** outlines a side finer than a hunk, so a viewer can mark one node edit viewed while the rest of the hunk stays unread. The changed nodes are the edit atoms: a changed leaf of an update, a moved node, and each named leaf of an inserted or deleted subtree (the edit script reports an insertion at its outermost node, which would otherwise be one all-or-nothing atom). The outline adds every ancestor of an atom up to the outermost nodes wholly inside the side, as `changed: false` structure, in document order with parents before children.
+
+**Whole units** (`FileDiff.status`, `NodeOutline.whole`): when a file is added or deleted, or an inserted or deleted node is a whole declaration, the unit itself is the change, so the engine says so instead of emphasizing it piece by piece (the maintainer: "파일 단위로 추가된 경우 개별 하이라이트를 하지 않고 파일이 추가되었다고 하기", when a whole file is added, say the file was added rather than highlighting each piece; and the same "declaration 단위로도", at the declaration level). A whole declaration is a node of one of its grammar's declaration kinds, a predefined set of tree-sitter node kinds registered per language beside the grammar (`Grammar.declarations`; for TypeScript, for example, functions, classes, methods, interfaces, type aliases, enums, namespaces and `const`/`let`/`var` declarations), reached through wrappers holding nothing else (`export`) and filling its lines but for a trailing `;` or `,` (the maintainer: "선언을 predefined node name set으로", declarations as a predefined set of node names). A `name` field alone does not make one, so an added JSX element or import name, an added argument, a statement inside a kept function, or a declaration sharing its line with other code keeps today's emphasis; a language with no set has whole files only. The label is still what `begin` would read, or the name of a declaration's single binding. A whole unit's lines are changed but carry no `Span.changed`; syntax scopes stay. Its top node is in the outline with `whole` (and `label` for a declaration); for an added or deleted file that is every top node of the side. Viewed and review granularity do not change (the maintainer: "marks as read, review 같은 건 부분적으로 진행할 수 있어야 함", marking read and reviewing must still work part by part): the atoms inside a whole unit stay its named leaves, so a reviewer can mark part of a new file viewed and anchor a comment on any node in it. A whole unit's viewed state is derived like any `changed: false` outline node, viewed once every atom below it is, and toggling it writes all of them; it has no atom of its own. Code that moved into an added file, or out of a deleted one, is not part of the unit: it keeps its `Side.moves` and the atom it shares with the other half, and edits found inside a moved node keep their emphasis.
+
+**`NodeOutline.atom`** is the key a "viewed" mark is filed under. `atomKey` hashes the file path, the labels of the atom's ancestors (each kind, with the declared name where the node declares one), the before node's hash and the after node's hash; an insertion has no before hash and a deletion no after hash. It holds no line number and no `AstSteps`, so an edit keeps its key when code above it grows or shrinks, and a reformat leaves it alone because node hashes skip whitespace. The engine computes one key per edit where it pairs the halves, so both halves of an update or a move carry the identical string: the ancestors are taken from the before side, and a move between files uses `<before path>→<after path>` as its path on both. Two identical edits under the same ancestors share a key, which is accepted: marking one viewed marks the other.
+
+**`Span`** keeps syntax colour (`scope`) and diff emphasis (`changed`) as separate fields, so a renderer can draw both. A one-line node whose words are all changed, keeping only joiners such as `.`, `,`, brackets or `?.`, is emphasized whole when it holds two or more changed words, so `basicColor.DARKGRAY400` becoming `themedColor.foreground3` reads as one removed run and one added run rather than interleaving around the kept `.`. A node keeping any word or literal (`theme.colors.a` becoming `theme.colors.b`) keeps its token-level emphasis.
 
 **`AstSteps`** (named by the maintainer) is a path from the file root, indexing named children only. It is the single source of truth for where a thread sits. Line ranges are derived from it deterministically (`Anchor.intoLineRanges`) and never stored.
 
@@ -261,6 +289,16 @@ type Author<H extends Host> = { id: string } & HostAuthor<H>;
 6. **Module hygiene.** No runtime `eval`, no import side effects, no top-level `await`. Module-level state exists only as a cache whose loss costs time.
 7. **Line ranges are derived, never stored.** The anchor's `AstSteps` is the single source of truth for a thread's location.
 8. **A lost thread is shown, never dropped.**
+
+## In the shared renderer: cross-file moves and "viewed"
+
+`@hihyou/ui` draws `Side.moves` for both front ends, and adds two things the engine contract does not carry.
+
+**A cross-file move expands in place.** The source file reads the block as code moved away and the target file as code moved in, each under a "Moved to/from `<path>:<line>`" label. The label is a button with `aria-expanded`: Enter, Space or a click on it or on the block expands the pair under the block, and the same control or Escape folds it. Split puts the source half on the left and the target half on the right, line by line; unified shows the inner diff, the two halves merged as `mergeLines` merges a reflow, or one half's lines after the other's when they share no unchanged text. The other half's text comes from the other file's already-loaded `FileDiff` (`movePair` in `moves.ts`); when its half is not found, the expansion shows the half it has and a button opening the other file. A move within one file keeps its jump-and-flash label.
+
+**"Viewed" marks move pairs and files** (stage 1 of the plan recorded on 2026-10-01). Both halves of a move share one subject, so expanding the pair in either file marks it viewed in both, and a "Viewed" toggle on each label and each file header sets or clears the mark from the keyboard. Viewed code is dimmed. Ordinary hunks get no mark of their own: the file toggle covers them, and a per-hunk key would have no identity that survives a new iteration. A file's subject includes its blob ids, so a new revision of the file reads as unviewed again, as on GitHub; a move's subject includes its halves' lines and text.
+
+Every key goes through one `KeyOf` function (`plainKeyOf` today; stage 2 swaps in an HMAC so a gist never holds a path). The state is a last-writer-wins element set: each key holds `{ viewed, ts, device }`, a merge keeps the larger `ts` per key with `device` as the tiebreak, and un-viewing writes `viewed: false`. `ts` comes from a hybrid logical clock that moves past every timestamp it merges in, so a device whose wall clock runs behind still writes after an entry it has seen. The `ViewedStore` interface (`get`, `set`, `subscribe`, `merge`, `state`) has one in-session implementation, which keeps the state for as long as the open review's view lives. A `KeyOf` is synchronous, so the stage 2 HMAC needs a synchronous SHA-256 (WebCrypto's `sign` is async) or keys computed ahead of the draw.
 
 ## Open questions
 

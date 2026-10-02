@@ -64,21 +64,27 @@ export function match(
     }
   };
   let diceWork = 0;
+  /** Descendants of `x` matched to descendants of `y`. */
+  const common = (x: number, y: number): number => {
+    const xs = sizeA[x] as number;
+    const ys = sizeB[y] as number;
+    diceWork += xs;
+    if (diceWork > maxDiceWork) throw new MatchBudgetExceeded();
+    let n = 0;
+    // An indexed loop: iterating a subarray view here is several times slower, and this is the hot path.
+    for (let i = x + 1; i < x + xs; i++) {
+      const p = src[i] as number;
+      if (p > y && p < y + ys) n++;
+    }
+    return n;
+  };
   /** Scores 0 when either is -1, a missing parent. */
   const dice = (x: number, y: number): number => {
     if (x < 0 || y < 0) return 0;
     const xs = sizeA[x] as number;
     const ys = sizeB[y] as number;
     if (xs + ys <= 2) return 0;
-    diceWork += xs;
-    if (diceWork > maxDiceWork) throw new MatchBudgetExceeded();
-    let common = 0;
-    // An indexed loop: iterating a subarray view here is several times slower, and this is the hot path.
-    for (let i = x + 1; i < x + xs; i++) {
-      const p = src[i] as number;
-      if (p > y && p < y + ys) common++;
-    }
-    return (2 * common) / (xs + ys - 2);
+    return (2 * common(x, y)) / (xs + ys - 2);
   };
 
   // Top-down.
@@ -185,6 +191,8 @@ export function match(
     .forEach(({ x, y }) => {
       if (src[x] === -1 && dst[y] === -1) linkSubtree(x, y);
     });
+  // Pairs made by shape alone, before any ancestor was matched; checked against their ancestors at the end.
+  const topDown = src.slice();
 
   // Recovery inside a newly matched container pair: pair up its still-unmatched children, then theirs.
   // A worklist instead of recursion, so deep nesting cannot overflow the JS stack; the order is free
@@ -207,10 +215,17 @@ export function match(
         ).filter(([p]) => src[p] === -1);
       for (const [p, q] of unmatchedPairs((p, q) => isoA[p] === isoB[q]))
         linkSubtree(p, q);
+      // A child whose matched descendants went mostly into another unmatched child across belongs with that
+      // one, not with the first look-alike in order: when a new `useEffect(...)` lands above an edited one, the
+      // old effect pairs with the edited one, which holds its body, rather than with the new one.
+      const fitsA = homes(src, sizeA, kidsY, dst, sizeB);
+      const fitsB = homes(dst, sizeB, kidsX, src, sizeA);
+      const fits = (p: number, q: number) => fitsA(p, q) && fitsB(q, p);
       for (const [p, q] of unmatchedPairs(
         (p, q) =>
           kindA(p) === kindB(q) &&
-          ta.label(a.nodes[p] as number) === tb.label(b.nodes[q] as number),
+          ta.label(a.nodes[p] as number) === tb.label(b.nodes[q] as number) &&
+          fits(p, q),
       ))
         linkAndRecover(p, q);
       // Kinds that occur once on each side pair up even when labels differ; this is how a changed literal becomes an update.
@@ -231,7 +246,8 @@ export function match(
         kindA,
       )) {
         const q = onceB.get(kind);
-        if (p !== -1 && q !== undefined && q !== -1) linkAndRecover(p, q);
+        if (p !== -1 && q !== undefined && q !== -1 && fits(p, q))
+          linkAndRecover(p, q);
       }
       // A literal token's kind is its text, so `<` and `<=` never share one; filling the same role in the
       // same place (the `operator` of one binary expression) makes them one token that changed.
@@ -244,7 +260,69 @@ export function match(
         return field !== undefined && field === tb.fieldName(hq);
       }))
         link(p, q);
+      // A child wrapped in place (`16` becoming `s(16)`) or unwrapped: the old child reappears inside the new one
+      // that fills its role. Pair it with that copy so only the wrapper reads as added; with two copies inside,
+      // which one it became is a guess, so both stay unmatched.
+      const inside = (
+        side: Side,
+        iso: Int32Array,
+        partner: Int32Array,
+        root: number,
+        id: number,
+      ): number => {
+        let found = -1;
+        for (let r = root + 1; r < root + (side.size[root] as number); r++) {
+          if (partner[r] !== -1 || iso[r] !== id) continue;
+          if (found !== -1) return -1;
+          found = r;
+        }
+        return found;
+      };
+      for (const [p, q] of unmatchedPairs(
+        (p, q) =>
+          ta.fieldName(a.nodes[p] as number) ===
+          tb.fieldName(b.nodes[q] as number),
+      )) {
+        const wrapped = inside(b, isoB, dst, q, isoA[p] as number);
+        const unwrapped = inside(a, isoA, src, p, isoB[q] as number);
+        if (wrapped !== -1 && unwrapped === -1) linkSubtree(p, wrapped);
+        else if (unwrapped !== -1 && wrapped === -1) linkSubtree(unwrapped, q);
+      }
     }
+  };
+
+  // Candidates: unmatched same-kind ancestors of where x's descendants went, except `skip`. The one holding
+  // most of x's children wins, and dice only breaks ties: a block whose loop was extracted into a new function
+  // shares more nodes with that function's body, yet pairing it there moves the block and every statement left behind.
+  const bestFor = (x: number, skip: number): number => {
+    const seen = new Set<number>([skip]);
+    const kind = kindA(x);
+    const kids = a.childrenOf(x);
+    const held = (y: number) =>
+      kids.filter((c) => {
+        const p = src[c] as number;
+        return p > y && p < y + (sizeB[y] as number);
+      }).length;
+    let best = -1;
+    let bestHeld = -1;
+    let bestDice = opts.minDice;
+    for (let d = x + 1; d < x + (sizeA[x] as number); d++) {
+      const p = src[d] as number;
+      if (p === -1) continue;
+      for (let y = b.parentOf(p); y !== -1 && !seen.has(y); y = b.parentOf(y)) {
+        seen.add(y);
+        if (dst[y] !== -1 || kindB(y) !== kind) continue;
+        const s = dice(x, y);
+        if (s <= opts.minDice) continue;
+        const h = held(y);
+        if (h > bestHeld || (h === bestHeld && s > bestDice)) {
+          best = y;
+          bestHeld = h;
+          bestDice = s;
+        }
+      }
+    }
+    return best;
   };
 
   // Bottom-up, visiting descendants before ancestors (reverse preorder).
@@ -257,31 +335,155 @@ export function match(
       }
       continue;
     }
-    // Candidates: unmatched same-kind ancestors of where x's descendants went.
-    const seen = new Set<number>();
-    const kind = kindA(x);
-    let best = -1;
-    let bestDice = opts.minDice;
-    for (let d = x + 1; d < x + (sizeA[x] as number); d++) {
-      const p = src[d] as number;
-      if (p === -1) continue;
-      for (let y = b.parentOf(p); y !== -1 && !seen.has(y); y = b.parentOf(y)) {
-        seen.add(y);
-        if (dst[y] !== -1 || kindB(y) !== kind) continue;
-        const s = dice(x, y);
-        if (s > bestDice) {
-          best = y;
-          bestDice = s;
-        }
-      }
-    }
+    // A deleted wrapper is visited before the node it wrapped (`<P>{() => <>kids</>}</P>` becoming
+    // `<T>kids</T>`): the inner `<>` holds as many of `<T>`'s children as `<P>` does, but `<P>` also holds
+    // `<T>`'s attributes. Leave the candidate to the nearest same-kind ancestor when that ancestor would pick it
+    // too and holds strictly more of it, or `<P>` is left unmatched and `<T>` reads as moved.
+    let up = a.parentOf(x);
+    while (up !== -1 && kindA(up) !== kindA(x)) up = a.parentOf(up);
+    let best = bestFor(x, -1);
+    if (
+      best !== -1 &&
+      up !== -1 &&
+      src[up] === -1 &&
+      common(up, best) > common(x, best) &&
+      bestFor(up, -1) === best
+    )
+      best = bestFor(x, best);
     if (best !== -1) {
       link(x, best);
       recover(x, best);
     }
   }
 
+  // A subtree the top-down phase paired by shape alone can land in unrelated new code: an edited
+  // `if (c)` whose old `(c)` also appears in a new `else if (c)` elsewhere. Once its parent is matched and the
+  // parent's partner fills the same one-node role (`condition`) with an unmatched node, that pairing crosses
+  // unrelated parents. Undo it, keep only the parts that reappear inside that role, and let recovery pair the
+  // rest in place. A list member (a statement) has no such role: one that moved out of a matched block is a move.
+  const role = (side: Side, n: number, field: string) => {
+    const tree = side.tree;
+    const holders = side
+      .childrenOf(n)
+      .filter((c) => tree.fieldName(side.nodes[c] as number) === field);
+    return holders.length === 1 ? (holders[0] as number) : -1;
+  };
+  for (let x = 1; x < sizeA.length; x++) {
+    const y = src[x] as number;
+    const px = a.parentOf(x);
+    const py = src[px] as number;
+    if (y === -1 || py === -1 || topDown[x] !== y || topDown[px] !== -1)
+      continue;
+    // Under the parent's partner already, if only wrapped deeper (`(c)` becoming `(c && d)`), it stays.
+    if (y > py && y < py + (sizeB[py] as number)) continue;
+    if (dst[b.parentOf(y)] !== -1) continue;
+    const field = ta.fieldName(a.nodes[x] as number);
+    if (field === undefined || role(a, px, field) !== x) continue;
+    const slot = role(b, py, field);
+    if (slot === -1 || dst[slot] !== -1 || kindB(slot) !== kindA(x)) continue;
+    const end = x + (sizeA[x] as number);
+    for (let k = x; k < end; k++) {
+      dst[src[k] as number] = -1;
+      src[k] = -1;
+    }
+    const inSlot = new Map<number, number[]>();
+    for (let q = slot; q < slot + (sizeB[slot] as number); q++)
+      if (dst[q] === -1 && (sizeB[q] as number) > 1)
+        entry(inSlot, isoB[q] as number, () => []).push(q);
+    for (let k = x; k < end; k++) {
+      const only = inSlot.get(isoA[k] as number);
+      if (only?.length !== 1 || dst[only[0] as number] !== -1) continue;
+      linkSubtree(k, only[0] as number);
+      k += (sizeA[k] as number) - 1;
+    }
+    recover(px, py);
+    x = end - 1;
+  }
+
+  // A comment whose own parent went unmatched (a block body becoming an expression body) has no container pair
+  // for recovery to find it in, so it read as removed and re-added. Under the nearest matched ancestor pair, a
+  // comment whose text occurs exactly once on each side is the same comment; any repeat leaves both unmatched.
+  const comments = (side: Side, partner: Int32Array) => {
+    const byText = new Map<string, number[]>();
+    for (let n = 0; n < side.size.length; n++) {
+      const h = side.nodes[n] as number;
+      if (side.size[n] === 1 && /comment/.test(side.tree.kindName(h)))
+        entry(byText, side.tree.text(h), () => []).push(n);
+    }
+    const within = (text: string, root: number) =>
+      (byText.get(text) ?? []).filter(
+        (n) => n > root && n < root + (side.size[root] as number),
+      );
+    const anchor = (n: number) => {
+      let p = side.parentOf(n);
+      while (p !== -1 && partner[p] === -1) p = side.parentOf(p);
+      return p;
+    };
+    return { byText, within, anchor };
+  };
+  const ca = comments(a, src);
+  const cb = comments(b, dst);
+  for (const [text, xs] of ca.byText)
+    for (const x of xs) {
+      if (src[x] !== -1) continue;
+      const up = ca.anchor(x);
+      const upB = up === -1 ? -1 : (src[up] as number);
+      if (upB === -1 || ca.within(text, up).length !== 1) continue;
+      const ys = cb.within(text, upB);
+      const y = ys[0];
+      if (ys.length !== 1 || y === undefined || dst[y] !== -1) continue;
+      if (cb.anchor(y) === upB) link(x, y);
+    }
+
   return { a, b, src, dst };
+}
+
+/**
+ * `fits(p, q)`: no other still-unmatched node of `others` holds more of `p`'s matched descendants than `q` does.
+ * `others` is a sibling list in preorder, so a descendant's partner finds the sibling holding it by bisection.
+ */
+function homes(
+  partner: Int32Array,
+  size: Uint32Array,
+  others: number[],
+  back: Int32Array,
+  otherSize: Uint32Array,
+): (p: number, q: number) => boolean {
+  const tally = new Map<number, { held: Map<number, number>; most: number }>();
+  const tallyOf = (p: number) => {
+    let t = tally.get(p);
+    if (t) return t;
+    const held = new Map<number, number>();
+    let most = 0;
+    for (let i = p + 1; i < p + (size[p] as number); i++) {
+      const target = partner[i] as number;
+      if (target === -1 || others.length === 0) continue;
+      let lo = 0;
+      let hi = others.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if ((others[mid] as number) <= target) lo = mid;
+        else hi = mid - 1;
+      }
+      const o = others[lo] as number;
+      if (
+        o > target ||
+        target >= o + (otherSize[o] as number) ||
+        back[o] !== -1
+      )
+        continue;
+      const n = (held.get(o) ?? 0) + 1;
+      held.set(o, n);
+      most = Math.max(most, n);
+    }
+    t = { held, most };
+    tally.set(p, t);
+    return t;
+  };
+  return (p, q) => {
+    const { held, most } = tallyOf(p);
+    return (held.get(q) ?? 0) >= most;
+  };
 }
 
 /**

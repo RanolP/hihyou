@@ -5,6 +5,7 @@ import { githubCommands } from "./github/command.js";
 import { githubRemotes } from "./github/remotes.js";
 import { localCommands } from "./local/commands.js";
 import { localRepos, type OpenRepo } from "./local/repos.js";
+import { storeLayoutIn } from "./panel/panel.js";
 
 /** What `activate` returns: the extension's exports, read by the integration test. */
 export interface HihyouExports {
@@ -21,11 +22,12 @@ export function activateWith(
 ): HihyouExports {
   const repos = localRepos(open);
   context.subscriptions.push(repos, outputChannel());
+  storeLayoutIn(context.globalState);
 
   const diffsets = registerDiffsetsView(context, repos);
   const commands = {
     ...localCommands(context.extensionUri, repos),
-    ...githubCommands(context.extensionUri, repos, diffsets.showPullRequest),
+    ...githubCommands(context, repos),
   };
   for (const [id, run] of Object.entries(commands))
     context.subscriptions.push(
@@ -64,5 +66,5 @@ export function activateWith(
     }),
   );
 
-  return { hasGitHubRemote: () => detected, diffsets: diffsets.tree };
+  return { hasGitHubRemote: () => detected, diffsets };
 }

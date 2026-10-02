@@ -3,19 +3,21 @@ import type {
   Diffset,
   Engine,
   Host,
+  LinePair,
   SerializedDiffsetId,
 } from "@hihyou/engine";
-import type { DiffFile, ElidedRef } from "@hihyou/ui";
+import type { DiffFile } from "./rows.js";
 
 /** One change set a panel shows, from whichever backend; the panel knows nothing else about where it came from. */
 export interface ReviewSource {
   title: string;
   /** Resolves and diffs afresh; a working-tree or index source reads the disk again on every call. */
   load(): Promise<DiffFile[]>;
-  /** The lines an elided run of the last `load`'s file `path` hid, as the engine colours them. */
+  /** `count` lines (absent: to the end) of the last `load`'s file `path` from `lines`, as the engine colours them. */
   expand(
     path: string,
-    ref: ElidedRef,
+    lines: LinePair,
+    count?: number,
   ): Promise<(CodeFragment & { kind: "unchanged" }) | undefined>;
   /** Content can move under the same source (the working tree, the index), so the panel offers Refresh. */
   refreshable: boolean;
@@ -35,8 +37,8 @@ export function engineReview<H extends Host>(
       latest = diffset;
       return diffFiles(await diffset);
     },
-    expand: async (path, ref) =>
-      (await latest)?.expand(path, ref.lines, ref.count),
+    expand: async (path, lines, count) =>
+      (await latest)?.expand(path, lines, count),
   };
 }
 

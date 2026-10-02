@@ -11,6 +11,7 @@ import {
   type MatchOptions,
   match,
   type MoveOptions,
+  nameOf,
 } from "syntechs/diff";
 import { NO_NODE, type Tree } from "syntechs/core";
 import type { RawEdit } from "syntechs/diff";
@@ -219,25 +220,4 @@ function inImport(tree: Tree, n: number): boolean {
   for (let p = n; p !== NO_NODE; p = tree.parent(p))
     if (importKinds.test(tree.kindName(p))) return true;
   return false;
-}
-
-/**
- * The name a declaration introduces: its `name` field, through an `export` (default or not), a Python
- * decorator, or a single `const x = ...`.
- */
-export function nameOf(tree: Tree, n: number): string | undefined {
-  const named: number[] = [];
-  for (let i = 0, count = tree.count(n); i < count; i++) {
-    const c = tree.child(n, i);
-    if (tree.named(c)) named.push(c);
-  }
-  const name = named.find((c) => tree.fieldName(c) === "name");
-  if (name !== undefined)
-    return tree.count(name) === 0 ? tree.label(name) : undefined;
-  const inner =
-    named.find((c) => {
-      const field = tree.fieldName(c);
-      return field === "declaration" || field === "definition";
-    }) ?? (named.length === 1 ? named[0] : undefined);
-  return inner !== undefined ? nameOf(tree, inner) : undefined;
 }

@@ -6,9 +6,12 @@ export type {
   CodeFragment,
   FileDiff,
   LinePair,
+  NodeOutline,
   Side,
+  SideMove,
   Span,
 } from "./fragments.js";
+export { atomKey } from "./fragments.js";
 export {
   type LanguageId,
   languageForPath,

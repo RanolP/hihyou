@@ -1,5 +1,5 @@
 import type { Tree } from "../core/arena.js";
-import type { Mapping } from "./matcher.js";
+import { isoIds, type Mapping } from "./matcher.js";
 import {
   classifyMove,
   defaultMoveOptions,
@@ -57,8 +57,9 @@ export interface Claimed {
  * Anonymous tokens (punctuation, keywords) are never reported as moved: they only follow the named
  * nodes around them, so swapping `f(a, b)` to `f(b, a)` moves an argument, not the comma.
  * A move `classifyMove` calls `replaced` is reported as a delete plus an insert instead.
- * Claimed subtrees produce nothing here; an unmatched node holding one is reported piece by piece
- * around it, so deleting a file whose function moved elsewhere does not delete that function too.
+ * Claimed subtrees produce nothing here. An unmatched node holding a claimed or matched one is reported
+ * piece by piece around it: deleting a file whose function moved elsewhere does not delete that function
+ * too, and children wrapped in a new callback stay unchanged inside the inserted wrapper.
  */
 export function editScript(
   mapping: Mapping,
@@ -73,8 +74,8 @@ export function editScript(
     start: t.start(n),
     end: t.end(n),
   });
-  const holdsA = holdingClaimed(a, claimed?.a);
-  const holdsB = holdingClaimed(b, claimed?.b);
+  const holdsA = holding(a, src, claimed?.a);
+  const holdsB = holding(b, dst, claimed?.b);
   // Outermost: its parent is matched, or is itself reported piece by piece.
   const outermost = (
     side: Side,
@@ -257,6 +258,42 @@ function settleMoves(
       own[k] = -1;
     }
   };
+  // Shape ids of every subtree on both sides, built on the first move only.
+  let shapes:
+    | { a: Int32Array; b: Int32Array; copies: Map<number, number> }
+    | undefined;
+  const shapesOf = () => {
+    if (shapes) return shapes;
+    const intern = new Map<string, number>();
+    const ia = isoIds(a, intern);
+    const ib = isoIds(b, intern);
+    const copies = new Map<number, number>();
+    for (const id of [...ia, ...ib]) copies.set(id, (copies.get(id) ?? 0) + 1);
+    shapes = { a: ia, b: ib, copies };
+    return shapes;
+  };
+  /**
+   * A move between `p` and `q` is a guess when either side's code also stands somewhere else, verbatim: the
+   * matcher picked one of several look-alikes (`(_, offset)` of two callbacks), and a wrong pick reads as code
+   * moved that never did. Returns the partner to keep instead: the identical, unmatched child of `p`'s parent's
+   * partner when there is one, so the pair stays in place, else -1 for a delete plus an insert. `q` when unique.
+   */
+  const settle = (p: number, q: number): number => {
+    const { a: ia, b: ib, copies } = shapesOf();
+    const sa = ia[p] as number;
+    const sb = ib[q] as number;
+    const others = (id: number) =>
+      (copies.get(id) ?? 0) - (sa === id ? 1 : 0) - (sb === id ? 1 : 0);
+    if (others(sa) === 0 && others(sb) === 0) return q;
+    const px = a.parentOf(p);
+    const home = px === -1 ? -1 : (src[px] as number);
+    if (home === -1) return -1;
+    const size = a.size[p] as number;
+    for (const c of b.childrenOf(home))
+      if (ib[c] === sa && dst.subarray(c, c + size).every((d) => d === -1))
+        return c;
+    return -1;
+  };
   const kinds = new Map<number, MoveClass>();
   for (let dropped = true; dropped;) {
     dropped = false;
@@ -265,6 +302,19 @@ function settleMoves(
       for (const [p, q] of movesAt(a, b, src, dst, x)) {
         // An earlier move in this pass may have unmatched it already.
         if (src[p] !== q) continue;
+        const keep = settle(p, q);
+        if (keep !== q) {
+          unmatch(src, dst, p, a.size[p] as number);
+          unmatch(dst, src, q, b.size[q] as number);
+          // Isomorphic subtrees lay out alike in preorder, so offsets pair node for node.
+          if (keep !== -1)
+            for (let k = 0; k < (a.size[p] as number); k++) {
+              src[p + k] = keep + k;
+              dst[keep + k] = p + k;
+            }
+          dropped = true;
+          continue;
+        }
         const kind = classifyMove(settled, p, q, opts);
         if (kind !== "replaced") {
           kinds.set(p, kind);
@@ -278,17 +328,18 @@ function settleMoves(
   return { ...settled, kinds };
 }
 
-/** 1 for every proper ancestor of a claimed node. */
-function holdingClaimed(
+/** 1 for every proper ancestor of a claimed or matched node. */
+function holding(
   side: Side,
+  table: Int32Array,
   claimed: Uint8Array | undefined,
 ): Uint8Array {
   const holds = new Uint8Array(side.nodes.length);
-  if (!claimed) return holds;
+  const kept = (i: number) => table[i] !== -1 || claimed?.[i] === 1;
   for (let i = 0; i < holds.length; i++) {
-    if (!claimed[i]) continue;
+    if (!kept(i)) continue;
     const up = side.parentOf(i);
-    if (up !== -1 && claimed[up]) continue;
+    if (up !== -1 && kept(up)) continue;
     for (let p = up; p !== -1 && !holds[p]; p = side.parentOf(p)) holds[p] = 1;
   }
   return holds;

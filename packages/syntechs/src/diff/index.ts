@@ -19,6 +19,7 @@ export {
   defaultMoveOptions,
   type MoveClass,
   type MoveOptions,
+  nameOf,
   type SameLeaf,
 } from "./move.js";
 export { Side } from "./side.js";

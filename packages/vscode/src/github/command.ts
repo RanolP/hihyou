@@ -5,12 +5,13 @@ import {
   type GitHubPullRequest,
   githubHost,
 } from "@hihyou/github";
-import type { DiffFile } from "@hihyou/ui";
+import { type DiffFile, engineReview, type ReviewSource } from "@hihyou/ui";
 import * as vscode from "vscode";
+import { setCurrentDiffsets } from "../diffsets/current.js";
 import { outputChannel } from "../errors.js";
 import type { LocalRepos } from "../local/repos.js";
 import { openReviewPanel } from "../panel/panel.js";
-import { engineReview, type ReviewSource } from "../review.js";
+import { parsePullRef, pullRefHint, remotesFor } from "./pull-ref.js";
 import { type FoundRemote, githubRemotes } from "./remotes.js";
 
 /** A pull request the user opened, which the diffsets view lists with its commits. */
@@ -20,40 +21,90 @@ export interface OpenedPullRequest {
   pr: GitHubPullRequest;
 }
 
+/** A pull request of one of the workspace's GitHub remotes. */
+interface PullTarget {
+  owner: string;
+  repo: string;
+  number: number;
+}
+
+/** A recently opened pull request, kept in `globalState` so a case reopens in one keystroke; never the token. */
+interface Recent extends PullTarget {
+  title: string;
+}
+
+const recentKey = "hihyou.recentPullRequests";
+const recentLimit = 20;
+
 /** Nothing here talks to GitHub until the command runs and the user has signed in. */
 export function githubCommands(
-  extensionUri: vscode.Uri,
+  context: vscode.ExtensionContext,
   repos: LocalRepos,
-  onPullRequest: (opened: OpenedPullRequest) => void,
 ): Record<string, () => Promise<DiffFile[] | undefined>> {
+  const recents = () => context.globalState.get<Recent[]>(recentKey) ?? [];
   return {
     "hihyou.reviewPullRequest": async () => {
-      const remote = await pickRemote(await githubRemotes(await repos.all()));
-      if (!remote) return undefined;
-      const session = await vscode.authentication.getSession(
-        "github",
-        ["repo"],
-        { createIfNone: true },
-      );
-      const host = githubHost({ token: session.accessToken });
-      const number = await pickPullRequest(host, remote);
-      if (number === undefined) return undefined;
-      const pr = await host.resolvePullRequest(
-        remote.owner,
-        remote.repo,
+      const remotes = await githubRemotes(await repos.all());
+      if (remotes.length === 0)
+        throw new Error("no git remote in this workspace points at github.com");
+      const host = await signedInHost();
+      const target = await pickPullRequest(host, remotes, recents());
+      if (!target) return undefined;
+      const { owner, repo, number } = target;
+      const { pr, files } = await openPullRequest(
+        context.extensionUri,
+        host,
+        { owner, repo },
         number,
       );
-      onPullRequest({ host, remote, pr });
-      return openReviewPanel(
-        extensionUri,
-        githubSource(
-          host,
-          { ...remote, base: pr.base, head: pr.head },
-          `#${pr.number} ${pr.title}`,
-        ),
+      const opened: Recent = {
+        owner,
+        repo,
+        number: pr.number,
+        title: pr.title,
+      };
+      await context.globalState.update(
+        recentKey,
+        [
+          opened,
+          ...recents().filter((r) => refKey(r) !== refKey(opened)),
+        ].slice(0, recentLimit),
       );
+      return files;
     },
   };
+}
+
+const refLabel = ({ owner, repo, number }: PullTarget) =>
+  `${owner}/${repo}#${number}`;
+const refKey = (target: PullTarget) => refLabel(target).toLowerCase();
+
+/** The token lives only in this host object, never in storage or logs. */
+export async function signedInHost(): Promise<GitHubHost> {
+  const session = await vscode.authentication.getSession("github", ["repo"], {
+    createIfNone: true,
+  });
+  return githubHost({ token: session.accessToken });
+}
+
+/** Resolves a pull request, makes it the diffsets view's current set, and opens its review panel. */
+export async function openPullRequest(
+  extensionUri: vscode.Uri,
+  host: GitHubHost,
+  remote: { owner: string; repo: string },
+  number: number,
+): Promise<{ pr: GitHubPullRequest; files: DiffFile[] | undefined }> {
+  const pr = await host.resolvePullRequest(remote.owner, remote.repo, number);
+  setCurrentDiffsets({ kind: "github", opened: { host, remote, pr } });
+  const files = await openReviewPanel(
+    extensionUri,
+    githubSource(
+      host,
+      { ...remote, base: pr.base, head: pr.head },
+      `#${pr.number} ${pr.title}`,
+    ),
+  );
+  return { pr, files };
 }
 
 /** One engine per host, so the diffsets view's file listing and the panel share a resolved compare. */
@@ -76,58 +127,96 @@ export function githubSource(
   };
 }
 
-async function pickRemote(
-  remotes: FoundRemote[],
-): Promise<FoundRemote | undefined> {
-  if (remotes.length === 0)
-    throw new Error("no git remote in this workspace points at github.com");
-  if (remotes.length === 1) return remotes[0];
-  const picked = await vscode.window.showQuickPick(
-    remotes.map((remote) => ({
-      label: `${remote.owner}/${remote.repo}`,
-      description: remote.name,
-      remote,
-    })),
-    { placeHolder: "GitHub repository" },
-  );
-  return picked?.remote;
-}
+type PullItem = vscode.QuickPickItem & { target?: PullTarget };
 
-type PullItem = vscode.QuickPickItem & { number: number };
+const sameTarget = (a: PullTarget, b: PullTarget) => refKey(a) === refKey(b);
 
-/** Open pull requests to pick from; typing a number (`42` or `#42`) picks any pull request, open or not. */
+/**
+ * The remotes' open pull requests, after the recently opened ones of the same remotes. Typed text filters them;
+ * a number, URL or `owner/repo#n` narrows to that pull request, offering it by number when it is not listed
+ * (closed or merged). Resolves on an item that names a pull request.
+ */
 function pickPullRequest(
   host: GitHubHost,
-  remote: FoundRemote,
-): Promise<number | undefined> {
+  remotes: readonly FoundRemote[],
+  recent: readonly Recent[],
+): Promise<PullTarget | undefined> {
   const pick = vscode.window.createQuickPick<PullItem>();
-  pick.title = `Pull request in ${remote.owner}/${remote.repo}`;
-  pick.placeholder = "Pick an open pull request, or type its number";
+  pick.title = "Review GitHub pull request";
+  pick.placeholder = pullRefHint;
+  pick.matchOnDescription = true;
   pick.busy = true;
-  let listed: PullItem[] = [];
-  const typed = (): PullItem[] => {
-    const m = /^#?(\d+)$/.exec(pick.value.trim());
-    if (!m) return [];
-    const number = Number(m[1]);
-    if (listed.some((item) => item.number === number)) return [];
-    return [
-      {
-        label: `#${number}`,
-        description: "Open by number",
-        alwaysShow: true,
-        number,
-      },
-    ];
+  const separator = (label: string): PullItem => ({
+    label,
+    kind: vscode.QuickPickItemKind.Separator,
+  });
+  const inWorkspace = recent.filter((r) => remotesFor(r, remotes).length > 0);
+  const recentItems: PullItem[] = inWorkspace.map((r) => ({
+    label: `#${r.number} ${r.title}`,
+    description: `${r.owner}/${r.repo}`,
+    target: r,
+  }));
+  let listed: PullItem[][] = [];
+  const all = (): PullItem[] => [
+    ...(recentItems.length > 0 ? [separator("Recent"), ...recentItems] : []),
+    ...listed.flat(),
+  ];
+  /** The items a typed reference picks out, or `undefined` when the text is a plain search. */
+  const narrowed = (value: string): PullItem[] | undefined => {
+    const ref = parsePullRef(value);
+    if (!ref) return undefined;
+    const matched = remotesFor(ref, remotes);
+    if (matched.length === 0)
+      return [
+        {
+          label: `$(error) ${ref.owner}/${ref.repo} is not a GitHub remote of this workspace`,
+          alwaysShow: true,
+        },
+      ];
+    const items = all().filter((item) => item.target);
+    return matched.map((remote) => {
+      const target = {
+        owner: remote.owner,
+        repo: remote.repo,
+        number: ref.number,
+      };
+      const known = items.find(
+        (item) => item.target && sameTarget(item.target, target),
+      );
+      return known
+        ? { ...known, alwaysShow: true }
+        : {
+            label: `Open #${ref.number}`,
+            description: `${remote.owner}/${remote.repo}`,
+            alwaysShow: true,
+            target,
+          };
+    });
   };
   const refresh = () => {
-    pick.items = [...typed(), ...listed];
+    pick.items = narrowed(pick.value.trim()) ?? all();
   };
-  host.listPullRequests(remote.owner, remote.repo).then(
-    (prs) => {
-      listed = prs.map((pr) => ({
-        label: `#${pr.number} ${pr.title}`,
-        number: pr.number,
-      }));
+  Promise.all(
+    remotes.map(async (remote) => {
+      const prs = await host.listPullRequests(remote.owner, remote.repo);
+      return prs.length === 0
+        ? []
+        : [
+            separator(`Open in ${remote.owner}/${remote.repo}`),
+            ...prs.map((pr) => ({
+              label: `#${pr.number} ${pr.title}`,
+              description: `${remote.owner}/${remote.repo}`,
+              target: {
+                owner: remote.owner,
+                repo: remote.repo,
+                number: pr.number,
+              },
+            })),
+          ];
+    }),
+  ).then(
+    (groups) => {
+      listed = groups;
       pick.busy = false;
       refresh();
     },
@@ -138,10 +227,14 @@ function pickPullRequest(
       pick.placeholder = `Could not list pull requests (${message}); type a number`;
     },
   );
+  refresh();
   return new Promise((resolve) => {
     pick.onDidChangeValue(refresh);
     pick.onDidAccept(() => {
-      resolve(pick.selectedItems[0]?.number);
+      const target = pick.selectedItems[0]?.target;
+      // Accepting an error row keeps the pick open so the text can be fixed.
+      if (!target) return;
+      resolve(target);
       pick.hide();
     });
     pick.onDidHide(() => {

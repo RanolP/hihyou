@@ -1,8 +1,8 @@
 import type { Commit, LocalDiffsetId } from "@hihyou/git";
-import type { DiffFile } from "@hihyou/ui";
+import { type DiffFile, engineReview, type ReviewSource } from "@hihyou/ui";
 import * as vscode from "vscode";
+import { setCurrentDiffsets } from "../diffsets/current.js";
 import { openReviewPanel } from "../panel/panel.js";
-import { engineReview, type ReviewSource } from "../review.js";
 import type { LocalRepo, LocalRepos } from "./repos.js";
 
 const recentCommitCount = 50;
@@ -18,7 +18,9 @@ export function localCommands(
   ) => {
     const local = await repos.pick();
     const source = local && (await make(local));
-    return source && openReviewPanel(extensionUri, source);
+    if (!local || !source) return undefined;
+    setCurrentDiffsets({ kind: "local", local });
+    return openReviewPanel(extensionUri, source);
   };
 
   return {

@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { build } from "esbuild";
+import { solidPlugin } from "esbuild-plugin-solid";
 
 const here = import.meta.dirname;
 const out = join(here, "dist");
@@ -48,7 +49,37 @@ const changes = [
     before: "e6d26b0^:pnpm-lock.yaml",
     after: "e6d26b0:pnpm-lock.yaml",
   },
+  // Whole units: an added file, and a function added whole to a changed file.
+  { path: "src/whole/added.ts", before: null, after: "synthetic:added" },
+  {
+    path: "src/whole/shop.ts",
+    before: "synthetic:shop-before",
+    after: "synthetic:shop-after",
+  },
 ];
+
+const keep = `export function keep(a: number): number {
+  return a * 2;
+}
+`;
+/** Synthetic blobs, read by their `synthetic:` id instead of from git. */
+const synthetic = {
+  added: `export function extra(a: number): number {
+  return a + 1;
+}
+
+export class Shop {
+  open = true;
+}
+`,
+  "shop-before": keep,
+  "shop-after": `${keep}
+export function extra(b: number): number {
+  const c = b + 1;
+  return c;
+}
+`,
+};
 
 const engineOut = join(out, "engine.mjs");
 await build({
@@ -68,9 +99,11 @@ const engine = createEngine({
   grammars: syntechsGrammars(),
   resolveDiffset: () => ({ id: "fixture", changes }),
   readBlob: (id) =>
-    new Uint8Array(
-      execFileSync("git", ["show", id], { cwd: here, maxBuffer: 1 << 28 }),
-    ),
+    id.startsWith("synthetic:")
+      ? new TextEncoder().encode(synthetic[id.slice("synthetic:".length)])
+      : new Uint8Array(
+          execFileSync("git", ["show", id], { cwd: here, maxBuffer: 1 << 28 }),
+        ),
 });
 const diffs = await (await engine.diffset("fixture")).diff();
 const files = diffs.map((diff, i) => ({ ...diff, change: changes[i] }));
@@ -83,6 +116,7 @@ await build({
   format: "iife",
   conditions: ["@hihyou/source"],
   outfile: join(out, "main.js"),
+  plugins: [solidPlugin()],
   logLevel: "warning",
 });
 console.log(`fixture: ${files.length} files -> ${join(out, "main.js")}`);

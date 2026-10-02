@@ -1,5 +1,10 @@
 import type { Theme } from "@hihyou/engine";
-import type { DiffFile, ElidedRef } from "@hihyou/ui";
+import type {
+  DiffFile,
+  DiffLayout,
+  ElidedRef,
+  ExpandDirection,
+} from "@hihyou/ui";
 
 /** Extension host -> webview. */
 export type ToWebview =
@@ -8,11 +13,25 @@ export type ToWebview =
   | { type: "error"; title: string; message: string }
   /** Sent after `ready` and on every colour theme change, apart from the state above. */
   | { type: "theme"; theme: Theme }
-  /** Scroll to the file at `path`, once per `seq`: the host replays the latest on every `ready`. */
-  | { type: "focus"; path: string; seq: number };
+  /** The reviewer's saved layout, sent with the theme. */
+  | { type: "layout"; layout: DiffLayout }
+  /** Draw the file at `path`, the only one shown; replayed after the state on every `ready`. */
+  | { type: "show"; path: string }
+  /** Show the next (1) or previous (-1) file. */
+  | { type: "step"; delta: 1 | -1 };
 
 /** Webview -> extension host. */
 export type FromWebview =
   | { type: "ready" }
   | { type: "refresh" }
-  | { type: "expand"; path: string; elided: ElidedRef };
+  | {
+      type: "expand";
+      path: string;
+      elided: ElidedRef;
+      direction: ExpandDirection;
+    }
+  | { type: "collapse"; path: string; elided: ElidedRef }
+  /** The webview switched file on its own (next/previous, a move into another file). */
+  | { type: "shown"; path: string }
+  /** The reviewer toggled the layout; the host saves it for every panel opened after. */
+  | { type: "layout"; layout: DiffLayout };
