@@ -5,12 +5,14 @@ import { language as javascript } from "../grammars/javascript/index.js";
 import { language as json } from "../grammars/json/index.js";
 import { language as kotlin } from "../grammars/kotlin/index.js";
 import { language as python } from "../grammars/python/index.js";
+import { language as swift } from "../grammars/swift/index.js";
 import { language as tsx } from "../grammars/tsx/index.js";
 import { language as typescript } from "../grammars/typescript/index.js";
 import {
   type GrammarName,
   kotlinInputs,
   referenceMissing,
+  swiftInputs,
 } from "./corpus.node.js";
 import { parseTree } from "./index.js";
 import type { Language } from "./language.js";
@@ -168,6 +170,20 @@ const CASES: Partial<Record<GrammarName, [Language, string[]]>> = {
       "import a\nval x = 1\nimport b\nwhile (x\nin y) {}\n/* /* */",
       // A `+`, `-` or `[` on the next line starts a statement, but a `->` continues a `when` entry.
       "fun f() {\n  a\n  + +b\n  c\n  - d\n  e\n  [0, 1,]\n  when (x) {\n    1,\n    -> 2\n    3\n    -> 4\n  }\n}\n",
+    ],
+  ],
+  swift: [
+    swift,
+    [
+      // The vendored conformance inputs are committed, so the whole of them runs here.
+      ...swiftInputs().map((i) => i.text),
+      // Raw strings with and without interpolation, nested block comments, and directives.
+      'let a = #"x \\#(y) "z" "#\nlet b = ##"q"# "##\n/* a /* b */ c */\n#if os(macOS)\nlet c = 1\n#elseif DEBUG\nlet d = 2\n#else\nlet e = 3\n#endif\nlet f = #file\n',
+      // Operators and keywords that keep a statement going across a newline, and a custom operator.
+      "let x = a\n  ?? b\n  .c\n  && d\nfunc f() async\n  throws -> Int where T: P { try! g(); return x <~> y }\nlet y = z as? Int\n",
+      // Unterminated: a raw string, a block comment and a brace.
+      'func g() {\n  let s = #"open\n  /* never closed',
+      "",
     ],
   ],
 };

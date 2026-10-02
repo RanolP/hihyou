@@ -46,6 +46,9 @@ function oxfmtFile(file: string, parser: unknown): string {
       return /\.[cm]?tsx?$/.test(file)
         ? file
         : file.replace(/\.[^./]*$/, ".tsx");
+    case "html":
+      // oxfmt rejects `.svg`; syntechs formats one as HTML.
+      return file.replace(/\.svg$/, ".html");
     default:
       return file;
   }

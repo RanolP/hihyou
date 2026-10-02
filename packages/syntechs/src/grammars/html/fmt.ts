@@ -133,16 +133,18 @@ const normalize: Normalize = (lexemes, text, tree) =>
     const kind = tree.kindName(l.node);
     // An `on*` value is JS, its own language's to format, as a script's content is.
     if (kind === "attribute_value" && isEventHandlerValue(tree, l.node)) return undefined;
-    // A `style` value prints as css declarations, which lowercase a hex color and write `.5` as `0.5`: compare it
-    // with its gaps and `;`s gone, lowercased, each number's leading zero written.
     // An `allow` value prints as its directives, each ending in a `;` only broken: compare it with its gaps and `;`s gone.
     if (kind === "attribute_value" && isValueOf(tree, l.node, "allow")) return l.text.replaceAll(/[\s;]/g, "") || undefined;
     // A `srcset` value prints as its candidates, aligned when broken: compare it with its gaps gone.
     if (kind === "attribute_value" && isValueOf(tree, l.node, "srcset")) return l.text.replaceAll(/\s/g, "") || undefined;
+    // A `style` value prints as css declarations, which lowercase a hex color, write `.5` as `0.5` and requote a
+    // string holding no `"` with `"`s: compare it with its gaps and `;`s gone, lowercased, each number's leading
+    // zero written, each such string double-quoted.
     if (kind === "attribute_value" && isValueOf(tree, l.node, "style"))
       return (
         l.text
           .replaceAll("&quot;", '"')
+          .replaceAll(/'([^'"\\]*)'/g, '"$1"')
           .replaceAll(/[\s;]/g, "")
           .replaceAll(/(^|[^\d.])\.(\d)/g, "$10.$2")
           .toLowerCase() || undefined
