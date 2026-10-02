@@ -31,4 +31,7 @@ tree https://codeload.github.com/prettier/prettier/tar.gz/refs/tags/3.9.9 pretti
 tree https://codeload.github.com/astral-sh/ruff/tar.gz/refs/tags/0.16.8 ruff-0.16.8 \
   ruff-0.16.8/crates/ruff_python_formatter/resources/test/fixtures \
   ruff-0.16.8/crates/ruff_python_formatter/tests/snapshots
+# Real SVG files for the svg@oxfmt target: svgo's plugin tests and logo, feather's icons.
+tree https://codeload.github.com/svg/svgo/tar.gz/refs/tags/v3.3.2 svgo-3.3.2 svgo-3.3.2/test svgo-3.3.2/logo
+tree https://codeload.github.com/feathericons/feather/tar.gz/refs/tags/v4.29.2 feather-4.29.2 feather-4.29.2/icons
 ls -l "$dir"
