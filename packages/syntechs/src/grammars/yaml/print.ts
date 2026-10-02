@@ -412,8 +412,9 @@ class Printer {
     if (c === undefined || (!hard && !this.flowComment(n) && col + textWidth(flat) + trail <= this.width)) return [flat];
     const items = this.flowItems(c);
     if (items.length === 0) return unsupported("an empty flow collection past printWidth");
-    // proseWrap other than "preserve" would fill a broken collection's multi-word scalars.
-    if (this.prose !== "preserve" && (hard || /\s/.test(flat.replace(/[,:] /g, "")))) unsupported("a broken flow collection under proseWrap");
+    // proseWrap other than "preserve" fills a broken collection's multi-word scalars, which breaks none whose line fits
+    // (printYaml refuses a line past printWidth there); a scalar of several paragraphs has no rule here.
+    if (this.prose !== "preserve" && hard) unsupported("a broken flow collection under proseWrap");
     const { props } = this.properties(n);
     const seq = this.kind(c) === "flow_sequence";
     const last = items[items.length - 1]!.item;

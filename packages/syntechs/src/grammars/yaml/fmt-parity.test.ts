@@ -156,6 +156,8 @@ const proseCases: [string, string][] = [
   ],
   // A one-paragraph scalar over several lines inside a flow collection was refused instead of joined onto one line.
   ["flow-multiline-joined", "[a\n b, {c: \"x\n y\"}, [d\n e: f]]\n"],
+  // A broken flow collection holding multi-word scalars that fit was refused instead of printed one item per line.
+  ["flow-broken-words", "k: [a b, # c\n  d e f]\nl: {a b: c d e, # z\n  w v: u t}\n"],
 ];
 
 describe("a folded or plain scalar refills as oxfmt 0.70.0 does under proseWrap always", () => {
