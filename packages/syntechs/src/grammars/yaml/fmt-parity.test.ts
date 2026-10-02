@@ -8,7 +8,7 @@ import { yaml } from "./fmt.js";
 import { language } from "./index.js";
 
 // Byte parity with oxfmt 0.70.0 over prettier's defaults, and under the tabWidth and singleQuote prettier's yaml
-// fixtures set. What print.ts has no rule for (comments in flow collections, multi-line flow scalars, explicit keys) refuses,
+// fixtures set. What print.ts has no rule for (comments in flow collections, multi-line scalars inside them) refuses,
 // as `refused` below pins.
 
 type Options = Partial<PrettierOptions> & { singleQuote?: boolean };
@@ -86,18 +86,24 @@ const edgeCases: [string, string][] = [
   ["flow-key-long", `[${"x".repeat(90)}]: c\n[${"y".repeat(40)}]: ${"z".repeat(40)}\n`],
   // A flow pair's `?` or empty `: ` pair kept source spacing, or a wide flow key in a flow broke without `? `.
   ["flow-explicit-empty", `- {? a : x, b: c, : }\n- [? d : e, : ]\n- {[${"w".repeat(80)}]: [b]}\n`],
+  // A multi-line plain or quoted scalar refused, or lost its blank-line paragraphs or the indent of its later lines.
+  ["multiline-flow-scalars", `a: aaa\n  bbb\n\n  ccc\nb: "x\n  y"\nc: '${"w ".repeat(20)}\n  z'\n? m\n  n\n: v\nd:\n  - p\n    q\n`],
+  // A multi-line value moved below its key whenever its first paragraph did not fit, where only its first word must.
+  ["multiline-moved", `${"k".repeat(70)}: ${"v".repeat(20)} t\n  u\n${"k".repeat(70)}: ${"v".repeat(20)}\n  u\n\n  w\n`],
 ];
 
-// A folded scalar's refill under proseWrap always: lines join into paragraphs and refill at printWidth, except
-// more-indented lines and blank-separated paragraphs; a literal scalar stays as written.
+// A folded or plain scalar's refill under proseWrap always: lines join into paragraphs and refill at printWidth,
+// except a folded scalar's more-indented lines and blank-separated paragraphs; a literal scalar stays as written.
 const proseCases: [string, string][] = [
+  // A plain scalar's words did not refill at printWidth, or a word too long to break was refused as past printWidth.
+  ["plain-fill", `a: ${"word ".repeat(30)}\n  end\n\n  next\nb: ${"z".repeat(90)}\n`],
   [
     "folded-refill",
     `a: >\n  aa bb\n  cc\n   dd\n\n  ${"word ".repeat(20)}\nb: |\n  ${"word ".repeat(20).trim()}\n`,
   ],
 ];
 
-describe("a folded block scalar refolds as oxfmt 0.70.0 does under proseWrap always", () => {
+describe("a folded or plain scalar refills as oxfmt 0.70.0 does under proseWrap always", () => {
   it.each(proseCases)("%s", async (_, text) => {
     const options = { proseWrap: "always" } as Options;
     expect(ours(text, options)).toBe(await theirs(text, options));

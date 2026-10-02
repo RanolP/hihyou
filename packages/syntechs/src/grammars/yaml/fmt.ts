@@ -5,7 +5,7 @@ import type { StreamRule } from "../../fmt/stream-format.js";
 import type { Normalize } from "../../fmt/check.js";
 import { grammar } from "./bundle.js";
 import { language } from "./index.js";
-import { isBlank, printYaml, Unsupported } from "./print.js";
+import { fold, isBlank, printYaml, Unsupported } from "./print.js";
 
 const defaults: PrettierOptions = { ...prettierDefaults };
 
@@ -25,8 +25,9 @@ const normalize: Normalize = (lexemes, _text, tree) =>
       for (let c = 0; c < tree.count(pair); c++) if (tree.fieldName(tree.child(pair, c)) === "value") valued = true;
       if (!valued) return undefined;
     }
-    if (kind === "single_quote_scalar") return `str:${l.text.slice(1, -1).replaceAll("''", "'")}`;
-    if (kind === "double_quote_scalar") return `str:${l.text.slice(1, -1).replaceAll('\\"', '"')}`;
+    if (kind === "plain_scalar") return fold(l.text);
+    if (kind === "single_quote_scalar") return `str:${fold(l.text.slice(1, -1).replaceAll("''", "'"))}`;
+    if (kind === "double_quote_scalar") return `str:${fold(l.text.slice(1, -1).replaceAll('\\"', '"'))}`;
     if (kind === "block_scalar") return blockScalar(l.text);
     return l.text;
   });
@@ -49,7 +50,7 @@ function blockScalar(text: string): string {
 
 const base = defineLanguage(grammar, {
   parser: language,
-  atoms: ["single_quote_scalar", "double_quote_scalar"],
+  atoms: ["plain_scalar", "single_quote_scalar", "double_quote_scalar"],
   lineComments: {},
   defaults,
   settings: prettierSettings,

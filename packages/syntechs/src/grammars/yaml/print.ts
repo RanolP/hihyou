@@ -3,8 +3,9 @@
 // for yet throws `Unsupported`, so the file is refused rather than printed wrong.
 //
 // The printer covers block mappings and sequences of single-line scalars, comments, document markers and
-// blank lines, anchors, tags, aliases, block scalars, flow collections and explicit keys. Comments inside flow
-// collections and multi-line flow scalars refuse.
+// blank lines, anchors, tags, aliases, block scalars, flow collections, explicit keys and multi-line plain and
+// quoted scalars outside flow collections. Comments inside flow collections and multi-line scalars inside them
+// refuse.
 
 import { NO_NODE } from "../../core/arena.js";
 import { SYM_ERROR } from "../../core/language.js";
@@ -25,14 +26,49 @@ export const isBlank = (tree: FormatTree): boolean => tree.text(tree.root).trim(
  * A quoted scalar in the quote prettier picks: its own when the content has an escape the other quote would
  * change, single when the content holds a double quote, double when it holds a single one, else `preferred`.
  */
-function quoted(text: string, double: boolean, preferred: string): string {
+function quoted(text: string, double: boolean, preferred: string): { quote: string; raw: string } {
   const raw = text.slice(1, -1);
-  if (raw.includes("\n")) return unsupported("a multi-line quoted scalar");
-  if ((!double && raw.includes("\\")) || (double && /\\[^"]/.test(raw))) return text;
+  const own = { quote: text[0]!, raw };
+  if ((!double && raw.includes("\\")) || (double && /\\[^"]/.test(raw))) return own;
   if (raw.includes('"'))
-    return double ? `'${raw.replaceAll('\\"', '"').replaceAll("'", "''")}'` : text;
-  if (raw.includes("'")) return double ? text : `"${raw.replaceAll("''", "'")}"`;
-  return preferred + raw + preferred;
+    return double ? { quote: "'", raw: raw.replaceAll('\\"', '"').replaceAll("'", "''") } : own;
+  if (raw.includes("'")) return double ? own : { quote: '"', raw: raw.replaceAll("''", "'") };
+  return { quote: preferred, raw };
+}
+
+/**
+ * A plain or quoted scalar's paragraphs of words as prettier fills them (its `getFlowScalarLineContents`): source
+ * lines trimmed at their breaks; under proseWrap `preserve` each line its own paragraph, else a line joins the one
+ * before it unless either is blank or (in a double-quoted scalar) the paragraph ends in an escaped break, and
+ * under `never` a paragraph is one word.
+ */
+function flowParagraphs(raw: string, double: boolean, prose: string): string[][] {
+  const lines = raw
+    .split("\n")
+    .map((l, i, a) => (a.length === 1 ? l : i === 0 ? l.trimEnd() : i === a.length - 1 ? l.trimStart() : l.trim()));
+  if (prose === "preserve") return lines.map((l) => (l ? [l] : []));
+  const paras: string[][] = [];
+  for (const [i, line] of lines.entries()) {
+    const ws = words(line);
+    const last = paras[paras.length - 1];
+    if (i > 0 && lines[i - 1]!.length > 0 && ws.length > 0 && !(double && last![last!.length - 1]!.endsWith("\\")))
+      paras[paras.length - 1] = [...last!, ...ws];
+    else paras.push(ws);
+  }
+  return prose === "never" ? paras.map((p) => [p.join(" ")]) : paras;
+}
+
+/**
+ * A flow scalar's text with its line breaks folded as YAML reads them: a break between two lines is a space, each
+ * blank line one line feed, and the whitespace at a break goes. The printer refills a scalar's words across
+ * lines, and prettier reads this value to judge a scalar surely one line.
+ */
+export function fold(text: string): string {
+  if (!text.includes("\n")) return text;
+  const lines = text.split("\n").map((l, i, a) => (i === 0 ? l.trimEnd() : i === a.length - 1 ? l.trimStart() : l.trim()));
+  let out = lines[0]!;
+  for (let i = 1; i < lines.length; i++) out += lines[i] === "" ? "\n" : lines[i - 1] === "" && i > 1 ? lines[i] : ` ${lines[i]}`;
+  return out;
 }
 
 /** Prettier's word split of a folded line: at a single space with neither a space nor the line's edge beside it. */
@@ -66,6 +102,8 @@ class Printer {
   readonly lines: string[] = [];
   /** Lines of block scalar content, printed with their trailing whitespace. */
   readonly verbatim = new Set<number>();
+  /** Lines a flow scalar was filled on, which may pass printWidth by a word too long to break. */
+  readonly filled = new Set<number>();
   /** Every comment, in source order, and the next one not yet printed. */
   readonly comments: number[] = [];
   next = 0;
@@ -196,21 +234,58 @@ class Printer {
   }
 
   content(s: number): string {
-    switch (this.kind(s)) {
-      case "alias":
-        return this.tree.text(s);
-      case "plain_scalar": {
-        const text = this.tree.text(s);
-        if (text.includes("\n")) return unsupported("a multi-line plain scalar");
-        return text;
-      }
-      case "double_quote_scalar":
-        return quoted(this.tree.text(s), true, this.quote);
-      case "single_quote_scalar":
-        return quoted(this.tree.text(s), false, this.quote);
-      default:
-        return unsupported(`a ${this.kind(s)}`);
-    }
+    const { head, paras, tail } = this.parts(s);
+    if (paras.length > 1 || this.tree.text(s).includes("\n")) return unsupported(`a multi-line ${this.kind(s).replace("_", " ")}`);
+    return head + (paras[0] ?? []).join(" ") + tail;
+  }
+
+  /** A scalar's paragraphs (an alias is one word), with the quote before and after them. */
+  parts(s: number): { head: string; paras: string[][]; tail: string } {
+    const kind = this.kind(s);
+    if (kind === "alias") return { head: "", paras: [[this.tree.text(s)]], tail: "" };
+    if (kind === "plain_scalar") return { head: "", paras: flowParagraphs(this.tree.text(s), false, this.prose), tail: "" };
+    if (kind !== "double_quote_scalar" && kind !== "single_quote_scalar") return unsupported(`a ${kind}`);
+    const double = kind === "double_quote_scalar";
+    const { quote, raw } = quoted(this.tree.text(s), double, this.quote);
+    return { head: quote, paras: flowParagraphs(raw, double, this.prose), tail: quote };
+  }
+
+  /** A plain, quoted or alias flow node with its properties, as its words and the text around them. */
+  scalarParts(n: number): { head: string; paras: string[][]; tail: string } {
+    if (this.kind(n) !== "flow_node") return unsupported(`a ${this.kind(n)} value`);
+    const { props, content: s } = this.properties(n);
+    if (s === undefined) return unsupported("properties without content");
+    if (this.pending(this.start(s)) !== undefined) unsupported("a comment after properties");
+    const p = this.parts(s);
+    return props === "" ? p : { ...p, head: `${props} ${p.head}` };
+  }
+
+  /** A scalar flow node on one line when it is one paragraph (prettier's flat fill), else undefined. */
+  flatScalar(n: number): string | undefined {
+    const { head, paras, tail } = this.scalarParts(n);
+    return paras.length > 1 ? undefined : head + (paras[0] ?? []).join(" ") + tail;
+  }
+
+  /**
+   * A scalar flow node filled as prettier's `fill` does, from the end of the current line: a word goes on the
+   * line when it fits beside the one before it, else on a new line at `indent`; each paragraph after the first
+   * starts a new line. The closing quote does not count toward the fit.
+   */
+  fill(n: number, indent: number): void {
+    const { head, paras, tail } = this.scalarParts(n);
+    paras.forEach((p, k) => {
+      if (k > 0) this.line(" ".repeat(indent));
+      this.filled.add(this.lines.length - 1);
+      p.forEach((w0, j) => {
+        const w = k === 0 && j === 0 ? head + w0 : w0;
+        if (j > 0 && textWidth(this.lines[this.lines.length - 1]!) + 1 + textWidth(w) > this.width) {
+          this.line(" ".repeat(indent) + w);
+          this.filled.add(this.lines.length - 1);
+        } else this.append(j > 0 ? ` ${w}` : w);
+      });
+      if (k === 0 && p.length === 0) this.append(head);
+    });
+    this.append(tail);
   }
 
   /** The flow mapping or sequence a flow node holds after its properties, if any. */
@@ -575,12 +650,16 @@ class Printer {
     } else if (this.flowCollection(v) !== undefined) {
       this.append(" ");
       this.putFlow(v, indent + 2);
-    } else this.append(` ${this.scalar(v)}`);
+    } else {
+      this.append(" ");
+      this.fill(v, indent + 2);
+    }
   }
 
   /**
-   * Whether prettier counts key `n` as printed on one line for sure: an alias, or a plain or quoted scalar on one
-   * source line (under proseWrap `always`, also with no space to fill at).
+   * Whether prettier counts node `n` as printed on one line for sure: an alias, or a plain or quoted scalar on one
+   * source line under proseWrap `preserve`, else whose value has no line break (under `always`, no space either)
+   * and no line ending in a backslash.
    */
   singleLine(n: number): boolean {
     if (this.kind(n) !== "flow_node") return false;
@@ -590,7 +669,10 @@ class Printer {
     if (k === "alias") return true;
     if (k !== "plain_scalar" && k !== "double_quote_scalar" && k !== "single_quote_scalar") return false;
     const text = this.tree.text(s);
-    return !text.includes("\n") && (this.prose !== "always" || !text.includes(" "));
+    if (this.prose === "preserve") return !text.includes("\n");
+    if (/\\$/m.test(text)) return false;
+    const value = fold(k === "plain_scalar" ? text : text.slice(1, -1));
+    return this.prose === "never" ? !value.includes("\n") : !/[\n ]/.test(value);
   }
 
   /**
@@ -625,6 +707,12 @@ class Printer {
       if (this.tree.ord(c) > this.tree.ord(key)) after.push(c);
     }
     const trail = after[0] !== undefined && this.tree.lf(after[0]) === 0 ? after[0] : undefined;
+    // `? k⏎: # c⏎  v` prints `k:⏎  # c⏎  v`, where `k: # c⏎  v` keeps the comment on the key's line.
+    if (value !== undefined && colon !== undefined && this.kind(this.tree.child(pair, 0)) === "?") {
+      const c = this.comments.slice(this.next).find((k) => this.tree.ord(k) > colonAt);
+      if (c !== undefined && this.tree.ord(c) < this.start(value))
+        unsupported("a comment after an explicit pair's colon");
+    }
     if (value === undefined) {
       if (colon !== undefined && after.length > 0) unsupported("a comment before the `:` of an empty value");
       // A `!!set` keeps its keys explicit.
@@ -640,7 +728,10 @@ class Printer {
     if (flowKey) this.noFlowComment(key);
     // prettier's `? ` group breaks when the flat key and its colon pass printWidth.
     const alias = this.named(key).some((k) => this.kind(k) === "alias") ? 1 : 0;
-    const wide = flowKey && textWidth(this.lines[this.lines.length - 1]!) + textWidth(this.flat(key)) + alias + 1 > this.width;
+    // A key prettier cannot be sure prints on one line goes explicit when its flat text and colon do not fit.
+    const surely = this.kind(key) !== "flow_node" || (!flowKey && this.singleLine(key));
+    const keyFlat = surely ? "" : flowKey ? this.flat(key) : this.flatScalar(key);
+    const wide = !surely && (keyFlat === undefined || textWidth(this.lines[this.lines.length - 1]!) + textWidth(keyFlat) + alias + 1 > this.width);
     if (this.kind(key) === "flow_node" && lead === undefined && after.length === 0 && !wide)
       return this.implicitPair(key, value, indent, until);
     this.append("?");
@@ -659,7 +750,7 @@ class Printer {
     // An alias key keeps a space before the colon, which would otherwise read as part of its name.
     const flowKey = this.flowCollection(key) !== undefined;
     if (flowKey) this.noFlowComment(key);
-    const keyText = flowKey ? this.flat(key) : this.scalar(key);
+    const keyText = flowKey ? this.flat(key) : (this.flatScalar(key) ?? unsupported("a multi-line implicit key"));
     this.append(this.named(key).some((k) => this.kind(k) === "alias") ? `${keyText} :` : `${keyText}:`);
     const keyLine = this.lines.length - 1;
     if (value === undefined) return;
@@ -680,14 +771,20 @@ class Printer {
       return;
     }
     if (this.pending(this.start(value)) !== undefined) unsupported("a comment before a scalar value");
-    const text = this.scalar(value);
-    // prettier's conditionalGroup for a flow key: a scalar that does not fit beside it moves one tabWidth in below.
-    if (flowKey && textWidth(this.lines[keyLine]!) + 1 + textWidth(text) > this.width) {
-      if (text.includes("\n")) unsupported("a multi-line scalar under a flow key past printWidth");
-      this.line(" ".repeat(indent + this.tab) + text);
+    // prettier prints `key: value` as is when both are surely one line and the key is one source line; else its
+    // conditionalGroup keeps the pair on one line when it fits flat, or fills the value one tabWidth in below.
+    if (this.singleLine(key) && this.singleLine(value) && !this.tree.text(key).includes("\n")) {
+      this.append(" ");
+      this.fill(value, indent + this.tab);
       return;
     }
-    this.append(` ${text}`);
+    // A value of several paragraphs holds a hard line break, which breaks the group around it: prettier's fits
+    // check then stops at its first word's line, so only that word has to fit beside the key.
+    const { head, paras, tail } = this.scalarParts(value);
+    const first = paras.length === 1 ? head + paras[0]!.join(" ") + tail : head + (paras[0]![0] ?? "");
+    if (textWidth(this.lines[keyLine]!) + 1 + textWidth(first) <= this.width) this.append(" ");
+    else this.line(" ".repeat(indent + this.tab));
+    this.fill(value, indent + this.tab);
   }
 
   document(doc: number, last: boolean, limit: number): void {
@@ -730,7 +827,10 @@ class Printer {
           if (this.flowCollection(c) !== undefined) {
             this.line("");
             this.putFlow(c, 0);
-          } else this.line(this.scalar(c));
+          } else {
+            this.line("");
+            this.fill(c, 0);
+          }
           break;
         }
         default:
@@ -802,7 +902,7 @@ export function printYaml(tree: FormatTree, root: number, options: PrettierOptio
   if (p.keptLast !== undefined && p.lines.length > p.keptLast) unsupported("a comment after a kept block scalar ending the stream");
   const lines = p.lines.map((l, i) => (p.verbatim.has(i) ? l : l.trimEnd()));
   // proseWrap other than "preserve" refolds plain scalars and turns a long key explicit (`? key`).
-  if (proseWrap !== "preserve" && lines.some((l, i) => !p.verbatim.has(i) && l.length > options.printWidth))
+  if (proseWrap !== "preserve" && lines.some((l, i) => !p.verbatim.has(i) && !p.filled.has(i) && l.length > options.printWidth))
     unsupported("a line past printWidth under proseWrap");
   return lines.join("\n");
 }
