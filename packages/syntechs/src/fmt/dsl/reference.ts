@@ -391,8 +391,8 @@ export function flatten<O>(
           return;
         }
         case "inOrder": {
-          if (x.hardWhen || x.hangAfter || x.lineBefore || x.braces)
-            throw new Error("flatten: `inOrder` with hardWhen, hangAfter, lineBefore or braces is generated only");
+          if (x.hardWhen || x.hangAfter || x.lineBefore || x.braces || x.join === "written")
+            throw new Error("flatten: `inOrder` with hardWhen, hangAfter, lineBefore, braces or a written join is generated only");
           const items = new Set(ctx.items(n));
           const matcher = (p: Pairs | undefined) => {
             if (p === undefined) return () => false;

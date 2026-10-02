@@ -54,6 +54,7 @@ function eachCond(ir: FormatIR, visit: (c: Cond) => void): void {
       cond(x.spaceWhen?.when);
       cond(x.hardWhen?.when);
       cond(x.hug);
+      cond(x.nest?.when);
     } else if (x.t === "splitOn") {
       cond(x.wrapItem);
       if (x.item.t === "words") {
@@ -834,6 +835,12 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
         return;
       }
       case "inOrder": {
+        if (x.join === "written") {
+          const n = x.nest;
+          const nest = n === undefined ? "" : `, 0, ${when(n.when)} ? ${JSON.stringify({ kind: n.kind, opens: n.opens, closes: n.closes })} : undefined`;
+          line(`printWritten(ctx, node${nest});`);
+          return;
+        }
         const its = name("items");
         line(`const ${its} = new Set(ctx.items(node));`);
         const skip = x.skip?.length ? `if (${oneOf("t.kindName(c)", x.skip)}) continue;` : undefined;
@@ -1152,7 +1159,7 @@ export function emit(
       0,
       'import { hasChild } from "../../fmt/dsl/runtime.js";',
     );
-  for (const f of ["allBefore", "prevItem", "lastItem", "packable", "printHugged"].filter((f) => parts.some((p) => p.includes(`${f}(`))))
+  for (const f of ["allBefore", "prevItem", "lastItem", "packable", "printHugged", "printWritten"].filter((f) => parts.some((p) => p.includes(`${f}(`))))
     parts.splice(
       parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
       0,

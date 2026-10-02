@@ -12,6 +12,8 @@ import * as kotlinFormat from "../../grammars/kotlin/format.js";
 import { grammar as kotlinGrammar } from "../../grammars/kotlin/index.js";
 import * as pythonFormat from "../../grammars/python/format.js";
 import { grammar as pythonGrammar } from "../../grammars/python/index.js";
+import * as swiftFormat from "../../grammars/swift/format.js";
+import { grammar as swiftGrammar } from "../../grammars/swift/index.js";
 import { grammar as tsxGrammar } from "../../grammars/tsx/index.js";
 import type { DslGrammar, FormatIR } from "./dsl.js";
 import { emit } from "./emit.js";
@@ -31,6 +33,7 @@ const FORMATS: Record<
   javascript: { specs: javascriptFormat, grammar: tsxGrammar as DslGrammar, sink: "./sink.js" },
   // Python's rules are parts of ruff's, which read their output as values (fmt/sink.ts).
   python: { specs: pythonFormat, grammar: pythonGrammar as DslGrammar, sink: "./fmt/sink.js" },
+  swift: { specs: swiftFormat, grammar: swiftGrammar as DslGrammar },
 };
 
 for (const [name, { specs, grammar, sink }] of Object.entries(FORMATS)) {

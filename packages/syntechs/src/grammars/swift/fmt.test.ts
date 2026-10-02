@@ -42,6 +42,20 @@ test("trailing whitespace and extra blank lines are removed", () => {
   expect(out.ok && out.text).toBe("let a = 1\n\nlet b = 2\n");
 });
 
+// A regression here is a tab between two tokens on one line kept, or measured as more than one space, where
+// swift-format prints a single space.
+test("a tab between tokens on one line becomes one space", () => {
+  const out = run("let a =\t1\n");
+  expect(out.ok && out.text).toBe("let a = 1\n");
+});
+
+// A regression here is the colon or operator spacing refusal loosened, so a file swift-format respaces (to
+// `let a: Int = 123` and `let b = 456`) would print as written.
+test("swift-format's spacing fixtures are refused", () => {
+  // swift-format 603.0.0, Tests/SwiftFormatTests/PrettyPrint/WhitespaceLintTests.swift, testTabSpacing and testSpacing.
+  for (const input of ["let a\t: Int = 123\n", "let a : Int = 123\nlet b =456\n"]) expect(run(input).ok, input).toBe(false);
+});
+
 // A regression here is the PrettyPrinter port or the call/binding token streams drifting from swift-format: a
 // break placed after `=` where it belongs inside the parentheses, a lost continuation indent, or a stray newline.
 test("a statement past 100 columns is broken as swift-format breaks it", () => {
