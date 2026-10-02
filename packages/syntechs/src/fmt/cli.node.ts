@@ -50,6 +50,7 @@ const EXT: Record<string, Spec> = {
   },
   ".html": html,
   ".htm": html,
+  ".svg": html,
   ".js": javascript,
   ".jsx": javascript,
   ".ts": {
