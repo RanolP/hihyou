@@ -8,7 +8,9 @@ export type LanguageId =
   | "javascript"
   | "json"
   | "python"
-  | "css";
+  | "css"
+  // Read and formatted as HTML: oxfmt takes no `.svg`, and prints one given the name `.html` as its HTML.
+  | "svg";
 
 const extensions: Record<LanguageId, readonly string[]> = {
   typescript: [".ts", ".mts", ".cts"],
@@ -17,6 +19,7 @@ const extensions: Record<LanguageId, readonly string[]> = {
   json: [".json"],
   python: [".py", ".pyi"],
   css: [".css"],
+  svg: [".svg"],
 };
 
 export function languageForPath(path: string): LanguageId | undefined {
@@ -36,6 +39,7 @@ const parsers: Record<LanguageId, () => Promise<{ language: Language }>> = {
   json: () => import("syntechs/grammars/json"),
   python: () => import("syntechs/grammars/python"),
   css: () => import("syntechs/grammars/css"),
+  svg: () => import("syntechs/grammars/html"),
 };
 
 const highlighters: Partial<Record<LanguageId, () => Promise<{ highlight: HighlightModule }>>> = {
@@ -64,6 +68,7 @@ const formatters: Record<
   python: async () =>
     bind((await import("syntechs/grammars/python/fmt")).python),
   css: async () => bind((await import("syntechs/grammars/css/fmt")).css),
+  svg: async () => bind((await import("syntechs/grammars/html/fmt")).html),
 };
 
 export interface SyntechsGrammarOptions {

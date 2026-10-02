@@ -21,6 +21,31 @@ const benchInputs = join(repoRoot, "research/parser-bench/inputs");
 const corpusDir = join(pkgRoot, "corpus");
 /** Vendored and committed, unlike corpusDir: see its NOTICE. */
 export const kotlinCorpusDir = join(pkgRoot, "src/grammars/kotlin/corpus");
+/** Vendored and committed by `fetch-corpus.sh swift`: swift-format 603.0.0's sources and its 6.3.0 output. */
+export const swiftCorpusDir = join(
+  pkgRoot,
+  "src/grammars/swift/corpus/swift-format",
+);
+
+/**
+ * The swift@swift-format conformance inputs, named by their path under swiftCorpusDir, each with swift-format's
+ * output: its `.expected` file, or the input itself when there is none (swift-format left it unchanged).
+ */
+export function swiftInputs(): (Input & { expected: string })[] {
+  return readdirSync(swiftCorpusDir, { recursive: true, encoding: "utf8" })
+    .map((f) => f.replaceAll("\\", "/"))
+    .filter((f) => f.endsWith(".swift"))
+    .sort()
+    .map((f) => {
+      const text = readFileSync(join(swiftCorpusDir, f), "utf8");
+      const expected = join(swiftCorpusDir, `${f}.expected`);
+      return {
+        name: f,
+        text,
+        expected: existsSync(expected) ? readFileSync(expected, "utf8") : text,
+      };
+    });
+}
 
 export const GRAMMAR_NAMES = [
   "json",
@@ -31,6 +56,8 @@ export const GRAMMAR_NAMES = [
   "tsx",
   "python",
   "kotlin",
+  "swift",
+  "yaml",
 ] as const;
 export type GrammarName = (typeof GRAMMAR_NAMES)[number];
 
@@ -44,6 +71,8 @@ const GRAMMAR_DIRS: Record<GrammarName, [string, string]> = {
   tsx: ["tree-sitter-typescript/tsx", "tree-sitter-typescript"],
   python: ["tree-sitter-python", "tree-sitter-python"],
   kotlin: ["tree-sitter-kotlin", "tree-sitter-kotlin"],
+  swift: ["tree-sitter-swift", "tree-sitter-swift"],
+  yaml: ["tree-sitter-yaml", "tree-sitter-yaml"],
 };
 
 const EXTENSIONS: Record<GrammarName, string[]> = {
@@ -55,6 +84,8 @@ const EXTENSIONS: Record<GrammarName, string[]> = {
   tsx: [".tsx"],
   python: [".py"],
   kotlin: [".kt", ".kts"],
+  swift: [".swift"],
+  yaml: [".yaml", ".yml"],
 };
 
 /** Large real-world files: the parser-bench inputs, then what fetch-corpus.sh downloads, or what is vendored. */
@@ -89,6 +120,10 @@ export const FETCHED: Record<GrammarName, string[]> = {
     "Okio.kt",
     "build.gradle.kts",
   ].map((f) => join(kotlinCorpusDir, f)),
+  // The swift-format sources fetch-corpus.sh downloads are the conformance set, read by swiftInputs.
+  swift: [],
+  // No large file is fetched: the repo's own .yaml files (pnpm-lock.yaml among them) are its inputs.
+  yaml: [],
 };
 
 export interface Input {

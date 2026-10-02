@@ -44,7 +44,7 @@ import { firstLeaf, type FormatTree, nextLeaf, prevLeaf } from "../../fmt/tree.j
 import { grammar } from "./bundle.js";
 import * as gen from "./fmt.gen.js";
 import { directives } from "./directive.js";
-import { frontMatterLines, parseFrontMatter } from "./front-matter.js";
+import { frontMatterLines, frontMatterMeaning, parseFrontMatter } from "./front-matter.js";
 import { language } from "./index.js";
 
 /** The prettier options its postcss printer reads (3.9.9); `bracketSpacing` and `objectWrap` go unread. */
@@ -1421,10 +1421,13 @@ export function frontMatterFirst(
   if (fm) {
     frontMatterLines(
       fm,
-      ctx.options.embeddedLanguageFormatting !== "off",
+      // oxfmt's CSS prints a blank front matter as its delimiters alone even with embedded formatting off.
+      ctx.options.embeddedLanguageFormatting !== "off" || fm.value.trim() === "",
+      ctx.options,
     ).forEach((line, i) => {
       if (i > 0) sHardline();
-      sText(line);
+      // Front matter printed as written keeps a line's trailing whitespace.
+      if (line !== "") sKeptText(line);
     });
     sHardline();
     if (ctx.tree.count(node) > 0) sHardline();
@@ -2802,6 +2805,7 @@ export const css: Language<CssOptions> = {
     drops: droppedComma,
     layoutBlind: true,
   }),
+  frontMatter: frontMatterMeaning,
   stream: {
     ...cssStream,
     rules: new Map([

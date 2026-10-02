@@ -1,6 +1,6 @@
 --- a/grammar.js
 +++ b/grammar.js
-@@ -39,12 +39,20 @@
+@@ -39,12 +39,25 @@
      ),
  
      _doctype: _ => /[Dd][Oo][Cc][Tt][Yy][Pp][Ee]/,
@@ -9,8 +9,13 @@
 +
 +    _lt: _ => /<[^A-Za-z\/!?<]/,
 +
++    // An XML declaration or processing instruction (`<?xml version="1.0"?>`, an SVG's prolog), a bogus comment
++    // to the HTML spec and prettier's parser: it runs to the first `>`.
++    processing_instruction: _ => /<\?[^>]*>/,
++
      _node: $ => choice(
        $.doctype,
++      $.processing_instruction,
        $.entity,
        $.text,
 +      // A CDATA section prints as text, as prettier's parser reads it.
@@ -21,7 +26,7 @@
        $.script_element,
        $.style_element,
        $.erroneous_end_tag,
-@@ -135,7 +143,8 @@
+@@ -135,7 +148,8 @@
        seq('\'', optional(alias(/[^']+/, $.attribute_value)), '\''),
        seq('"', optional(alias(/[^"]+/, $.attribute_value)), '"'),
      ),
