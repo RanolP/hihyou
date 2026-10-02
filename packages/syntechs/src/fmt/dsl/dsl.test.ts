@@ -14,19 +14,34 @@ import {
   any,
   bail,
   type DslGrammar,
+  dedentToRoot,
   defineFormat,
+  each,
   either,
   fieldIs,
+  fill,
+  flow,
   grpBrace,
   grpBracket,
   grpParen,
+  group,
   has,
+  hardline,
+  hook,
+  ifBreak,
+  ifFlat,
+  indent,
   inOrder,
+  kindIs,
+  line,
   lines,
+  lit,
+  literalline,
   not,
   option,
   parentIs,
   sepBy,
+  softline,
   space,
   splitOn,
   text,
@@ -36,7 +51,7 @@ import {
 } from "./dsl.js";
 import { emit } from "./emit.js";
 import { referenceRules } from "./reference.js";
-import type { FrameRule, PredicateRule } from "./runtime.js";
+import type { FrameRule, GapRule, PredicateRule, TextRule, WordsRule } from "./runtime.js";
 
 // Written out rather than imported: this project reads the bundles without allowJs, so their types are `any`
 // here. The shapes are node-types.json's, as the bundle's `fieldTypes` and `childTypes` carry them.
@@ -507,4 +522,105 @@ it("emit refuses a literal whose ordinal depends on which branch of `either` ran
     structure: { array: () => [either(parentIs("array"), "[", []), "["] },
   });
   expect(() => emit({ either: ir }, jsonGrammar as DslGrammar, "dsl.test.ts")).toThrow(/after an either/);
+});
+
+/** `ir` generated into a module beside this test, its stream rules built from `custom`, formatting JSON `text`. */
+async function generated(
+  ir: ReturnType<ReturnType<typeof defineFormat<typeof jsonGrammar, JsonOptions>>>,
+  custom: object,
+  cases: readonly [string, Partial<JsonOptions>][],
+): Promise<string[]> {
+  const file = join(import.meta.dirname, `primitives-${Math.random().toString(36).slice(2)}.gen.ts`);
+  writeFileSync(file, emit({ spec: ir }, jsonGrammar as DslGrammar, "dsl.test.ts"));
+  try {
+    const gen = (await import(pathToFileURL(file).href)) as {
+      spec: (custom: object) => StreamRules<JsonOptions>;
+    };
+    const lang = { ...json, stream: gen.spec(custom) };
+    return cases.map(([text, o]) => {
+      const r = formatTree(parseTree(jsonLanguage, text), lang, o);
+      return r.ok ? r.text : `FAIL ${r.detail}`;
+    });
+  } finally {
+    rmSync(file);
+  }
+}
+
+// HTML's tags print `>` and `</` that no source token of the node holds, its attributes one per line only while
+// the tag breaks, and srcset's descriptors padded only broken: a `hook`, `lit` or `each` printing at the wrong
+// item, or an `ifBreak`/`ifFlat` showing in the other state, would misplace them.
+it("`hook`, `lit`, `each`, `ifBreak` and `ifFlat` print synthetic text per item and per group state", async () => {
+  const ir = defineFormat<typeof jsonGrammar, JsonOptions>()({
+    structure: {
+      document: ($) => lines($.children),
+      array: ($) =>
+        group([
+          lit("<"),
+          indent([softline, each($.children, { first: ifFlat(lit("^")), between: [lit(";"), line] }), ifBreak(lit(";"))]),
+          softline,
+          lit(">"),
+        ]),
+      number: () => hook("num", "x"),
+    },
+  });
+  const num: TextRule = (node, ctx, suffix) => `${ctx.tree.text(node)}${suffix}`;
+  expect(await generated(ir, { num }, [["[1, 22]", {}], ["[1, 22]", { printWidth: 5 }], ["[]", {}]])).toEqual([
+    "<^1x; 22x>\n",
+    "<\n  1x;\n  22x;\n>\n",
+    "<>\n",
+  ]);
+});
+
+// HTML's text packs its words several to a line, the tags it borrows joined to its first and last word, and a
+// `<pre>`'s text keeps its line breaks at column 0: a `fill` that dropped `first`/`last` or indented a `literalline`
+// would move a tag or reindent preformatted text.
+it("`fill` packs words with `first` and `last` joined, and `literalline` and `dedentToRoot` break to column 0", async () => {
+  const ir = defineFormat<typeof jsonGrammar, JsonOptions>()({
+    structure: {
+      document: ($) => lines($.children),
+      array: ($) => [lit("["), indent([hardline, each($.children, { between: hardline })]), hardline, lit("]")],
+      string: () => fill("words", { sep: line, first: lit("«"), last: lit("»") }),
+      number: () => [lit("a"), literalline, lit("b"), dedentToRoot(hardline), hook("lines")],
+    },
+  });
+  const words: WordsRule = (node, ctx) => ctx.tree.text(node).slice(1, -1).split(" ");
+  const multiline: TextRule = () => "c\nd";
+  expect(
+    await generated(ir, { words, lines: multiline }, [
+      ['["aa bb cc"]', {}],
+      ['["aa bb cc"]', { printWidth: 9 }],
+      ["[1]", {}],
+    ]),
+  ).toEqual(["[\n  «aa bb cc»\n]\n", "[\n  «aa bb\n  cc»\n]\n", "[\n  a\nb\nc\nd\n]\n"]);
+});
+
+// HTML's children flow: text bare, an element in a group of its own whose leading line stays flat with the element
+// before it, a blank line kept after an item, every gap broken under `breakAll`. Losing any of those would rewrap
+// inline content prettier keeps together.
+it("`flow` prints text-like items bare, others grouped, keeps blank lines, and breaks every gap under `breakAll`", async () => {
+  const ir = defineFormat<typeof jsonGrammar, JsonOptions>()({
+    structure: {
+      document: ($) => lines($.children),
+      array: ($) =>
+        group([
+          lit("["),
+          flow($.children, { gap: "gap", textLike: kindIs("number"), blank: has("children"), breakAll: parentIs("pair") }),
+          lit("]"),
+        ]),
+      object: ($) => each($.children),
+      pair: ($) => $.value,
+      number: () => verbatim,
+    },
+  });
+  const gap: GapRule = () => "line";
+  expect(
+    await generated(ir, { gap }, [
+      ["[1, 2, 4]", {}],
+      // The blank line after `[3]` breaks the flow; `[3]`'s leading line, in its own group, stays a space.
+      ["[1, 2, [3], 4]", {}],
+      // Too narrow: the gap before the non-text `[]` breaks, the one after it stays a space.
+      ["[1, [], 4]", { printWidth: 5 }],
+      ['{"a": [1, 2]}', {}],
+    ]),
+  ).toEqual(["[1 2 4]\n", "[1\n2 [3]\n\n4]\n", "[1\n[] 4]\n", "[1\n2]\n"]);
 });

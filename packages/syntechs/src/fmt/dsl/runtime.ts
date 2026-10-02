@@ -8,15 +8,19 @@ import {
   closeSpan,
   closeState,
   GROUP,
+  IF_FLAT,
   INDENT,
   open,
   openChoice,
   openDead,
   openSpan,
   openState,
+  SOFT,
+  sBreakParent,
   sHardline,
   sJump,
   sLine,
+  sLiteral,
   sText,
   sToken,
 } from "../stream.js";
@@ -200,6 +204,127 @@ export type ParensRule<O = unknown> = (node: number, mode: string, ctx: StreamCt
 
 /** A `when(name)` or `pred(name, ...args)` condition: whether it holds for `node`, given `args`. */
 export type PredicateRule<O = unknown> = (node: number, ctx: StreamCtx<O>, ...args: string[]) => boolean;
+
+/** A `hook(name, ...args)`: the text it prints for `node`, given `args` ("" for none). */
+export type TextRule<O = unknown> = (node: number, ctx: StreamCtx<O>, ...args: string[]) => string;
+
+/** A `fill(words, ...)`'s words of `node`. */
+export type WordsRule<O = unknown> = (node: number, ctx: StreamCtx<O>) => readonly string[];
+
+/** What goes between two items of a `flow`: a line, a soft line, a hard line, or nothing. */
+export type Gap = "line" | "softline" | "hardline" | "";
+/** A `flow`'s `gap`: what goes between items `prev` and `next`. */
+export type GapRule<O = unknown> = (prev: number, next: number, ctx: StreamCtx<O>) => Gap;
+
+/** A `hook`'s or a `fill` word's text: "" prints nothing, and each line break in it is literal (prettier's replaceEndOfLine). */
+export function printText(s: string): void {
+  const parts = s.split("\n");
+  for (let i = 0; i < parts.length; i++) {
+    if (i > 0) {
+      sLiteral(0, "\n");
+      sBreakParent();
+    }
+    const p = parts[i] as string;
+    if (p !== "") sText(p);
+  }
+}
+
+function printGap(g: Gap): void {
+  if (g === "line") sLine(0);
+  else if (g === "softline") sLine(SOFT);
+  else if (g === "hardline") sHardline();
+}
+
+/**
+ * A `flow` (prettier's HTML print/children.js): `items` with `gap` between each two, a text-like item bare and any
+ * other in a group of its own whose leading gap stays flat with the item before and whose trailing gap breaks with
+ * it; a blank line after an item where `blank` holds; every gap broken where `breakAll`. It writes to the stream
+ * itself rather than through a spec's sink, so only a spec writing to the stream uses it.
+ */
+export function printFlow<O>(
+  ctx: StreamCtx<O>,
+  items: readonly number[],
+  gap: GapRule<O>,
+  textLike: (c: number) => boolean,
+  blank: (c: number) => boolean,
+  breakAll: boolean,
+): void {
+  if (breakAll) {
+    sBreakParent();
+    for (let i = 0; i < items.length; i++) {
+      const c = items[i] as number;
+      if (i > 0) {
+        const prev = items[i - 1] as number;
+        const between = gap(prev, c, ctx);
+        if (between !== "") {
+          printGap(between);
+          if (blank(prev)) sHardline();
+        }
+      }
+      ctx.print(c);
+    }
+    return;
+  }
+  const groups: number[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const c = items[i] as number;
+    const prev = i > 0 ? (items[i - 1] as number) : -1;
+    const next = i + 1 < items.length ? (items[i + 1] as number) : -1;
+    if (textLike(c)) {
+      if (prev !== -1 && textLike(prev)) {
+        const between = gap(prev, c, ctx);
+        if (between !== "") {
+          if (blank(prev)) {
+            sHardline();
+            sHardline();
+          } else printGap(between);
+        }
+      }
+      groups.push(-1);
+      ctx.print(c);
+      continue;
+    }
+    const prevBetween: Gap = prev === -1 ? "" : gap(prev, c, ctx);
+    const nextBetween: Gap = next === -1 ? "" : gap(c, next, ctx);
+    let leading: (() => void) | undefined;
+    if (prevBetween !== "") {
+      if (blank(prev)) {
+        sHardline();
+        sHardline();
+      } else if (prevBetween === "hardline") sHardline();
+      else if (textLike(prev)) leading = () => printGap(prevBetween);
+      else {
+        const ref = groups[groups.length - 1] as number;
+        leading = () => {
+          open(IF_FLAT, ref);
+          sLine(SOFT);
+          close();
+        };
+      }
+    }
+    let trailing: Gap = "";
+    let after: (() => void) | undefined;
+    if (nextBetween !== "") {
+      if (blank(c)) {
+        if (textLike(next))
+          after = () => {
+            sHardline();
+            sHardline();
+          };
+      } else if (nextBetween === "hardline") {
+        if (textLike(next)) after = () => sHardline();
+      } else trailing = nextBetween;
+    }
+    open(GROUP);
+    leading?.();
+    groups.push(open(GROUP));
+    ctx.print(c);
+    printGap(trailing);
+    close();
+    close();
+    after?.();
+  }
+}
 
 /**
  * A language's imports, which `lines`'s `imports` option names: the key they sort by, the name each binds, and
