@@ -1,7 +1,6 @@
 import {
   collapseElided,
   type DiffFile,
-  type DiffLayout,
   diffStyles,
   type ReviewSource,
   revealElided,
@@ -36,24 +35,13 @@ const fileShown = new vscode.EventEmitter<{ key: string; path: string }>();
 /** A keyed panel now shows the file at `path`, or was focused showing it; the diffsets view selects its row. */
 export const onDidShowFile = fileShown.event;
 
-const layoutKey = "hihyou.layout";
-let layouts: vscode.Memento | undefined;
-
-/** Where the reviewer's split/unified choice is kept: the extension's `globalState`, set once on activation. */
-export function storeLayoutIn(memento: vscode.Memento): void {
-  layouts = memento;
-}
-
-const savedLayout = (): DiffLayout =>
-  layouts?.get<DiffLayout>(layoutKey) === "split" ? "split" : "unified";
-
 /** Next (1) or previous (-1) file in the review panel last focused. */
 export function stepFile(delta: 1 | -1): void {
   active?.step(delta);
 }
 
 /**
- * Opens a split-diff panel on `source` and resolves with the files it first posted (undefined when the first
+ * Opens a diff panel on `source` and resolves with the files it first posted (undefined when the first
  * load failed, already reported), which is what a command returns to its caller.
  */
 export async function openReviewPanel(
@@ -177,10 +165,6 @@ export async function openReviewPanel(
     panel.webview.onDidReceiveMessage((message: FromWebview) => {
       switch (message.type) {
         case "ready":
-          void panel.webview.postMessage({
-            type: "layout",
-            layout: savedLayout(),
-          } satisfies ToWebview);
           void showTheme().then(() => {
             void panel.webview.postMessage(state);
             postShown();
@@ -207,9 +191,6 @@ export async function openReviewPanel(
         case "shown":
           shown = message.path;
           shownChanged();
-          return;
-        case "layout":
-          void layouts?.update(layoutKey, message.layout);
       }
     }),
     panel.onDidChangeViewState(({ webviewPanel }) => {
@@ -281,7 +262,6 @@ function page(webview: vscode.Webview, script: vscode.Uri): string {
 <span id="position" class="status"></span>
 <button id="next" type="button" class="nav" aria-label="Next file" title="Next file (Alt+Down)" disabled>↓</button>
 <span id="status" class="status" role="status"></span>
-<button id="layout" type="button" class="nav" aria-pressed="true" title="Show both sides in one column (off: side by side)">Unified</button>
 <button id="refresh" type="button" hidden>Refresh</button>
 </header>
 <main id="root"></main>
@@ -296,9 +276,6 @@ body { margin: 0; padding: 0 16px 16px; background: var(--vscode-editor-backgrou
 .bar h1 { margin: 0; font-size: 1.1em; font-weight: 600; }
 .status { color: var(--vscode-descriptionForeground); }
 .status.error { color: var(--vscode-errorForeground); white-space: pre-wrap; }
-#layout { margin-left: auto; }
-#layout[aria-pressed="true"] { color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
-#layout + #refresh { margin-left: 0; }
 #refresh { margin-left: auto;padding: 4px 12px; border: none; border-radius: 2px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); cursor: pointer; }
 #refresh:hover { background: var(--vscode-button-hoverBackground); }
 #refresh:disabled { opacity: 0.5; cursor: default; }
