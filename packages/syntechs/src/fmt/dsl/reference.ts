@@ -474,7 +474,13 @@ export function flatten<O>(
             const keepLines = x.item.t === "words" && holds(x.item.keepLines);
             for (const [k, { items, sep }] of run.entries.entries()) {
               const breaks = items.map((c, i) => i > 0 && breaksBetween(t, items[i - 1] as number, c));
-              out.push({ e: "entry", item: x.item.t, count: items.length, grid: keepLines && breaks.includes(true) });
+              out.push({
+                e: "entry",
+                item: x.item.t,
+                count: items.length,
+                grid: keepLines && breaks.includes(true),
+                keep: keepLines,
+              });
               const comment = (c: number) => t.named(c) && ctx.isComment(c);
               items.forEach((c, i) => {
                 if (i > 0) {
@@ -847,7 +853,7 @@ export function wrap<O>(
       for (let k = 1; k < x.count; k++) {
         const j = joints[k - 1] as Extract<Entry, { e: "joint" }>;
         if (!j.apart) item(k);
-        else if (x.grid && !j.breaks) {
+        else if (x.keep && !j.breaks) {
           sText(" ");
           item(k);
         } else {

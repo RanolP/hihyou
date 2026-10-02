@@ -41,10 +41,9 @@ const TYPE_BY_NAME = new Map<string, number>([
 const type = (name: string) => TYPE_BY_NAME.get(name) as number;
 const CUSTOM = type("CUSTOM");
 const END_ = CUSTOM + 1;
-const [HTML, HEAD, BODY, SCRIPT, STYLE, LI, DT, DD, P, COLGROUP, COL, RB, RT, RP, OPTGROUP, TR, TD, TH] = [
-  "HTML", "HEAD", "BODY", "SCRIPT", "STYLE", "LI", "DT", "DD", "P", "COLGROUP", "COL", "RB", "RT", "RP", "OPTGROUP",
-  "TR", "TD", "TH",
-].map(type) as number[] as [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number];
+const [SCRIPT, STYLE, LI, DT, DD, P, COLGROUP, COL, RB, RT, RP, OPTGROUP, TR, TD, TH] = [
+  "SCRIPT", "STYLE", "LI", "DT", "DD", "P", "COLGROUP", "COL", "RB", "RT", "RP", "OPTGROUP", "TR", "TD", "TH",
+].map(type) as number[] as [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number];
 const NOT_ALLOWED_IN_PARAGRAPHS = new Set(
   [
     "ADDRESS", "ARTICLE", "ASIDE", "BLOCKQUOTE", "DETAILS", "DIV", "DL", "FIELDSET", "FIGCAPTION", "FIGURE", "FOOTER",
@@ -96,10 +95,14 @@ function towupper(c: number): number {
   return u.length === (cp > 0xffff ? 2 : 1) ? cp : c;
 }
 
-/** scan_tag_name: the upper-cased name, each character truncated to the `char` scanner.c pushes it as. */
+/**
+ * scan_tag_name: the upper-cased name, each character truncated to the `char` scanner.c pushes it as. Unlike
+ * scanner.c's, a name takes a `_` as angular-html-parser's does, so a JS template's `<${Foo}>` (a placeholder
+ * `PRETTIER_HTML_PLACEHOLDER_0_0_IN_JS`) is one name.
+ */
 function scanTagName(lexer: Lexer): number[] {
   const name: number[] = [];
-  while (iswalnum(lexer.lookahead) || lexer.lookahead === 45 || lexer.lookahead === 58) {
+  while (iswalnum(lexer.lookahead) || lexer.lookahead === 45 || lexer.lookahead === 58 || lexer.lookahead === 95) {
     name.push(towupper(lexer.lookahead) & 0xff);
     lexer.advance(false);
   }
@@ -184,8 +187,8 @@ class HtmlScanner implements ExternalScanner {
       }
     } else if (
       parent &&
-      (!tagCanContain(parent, next) ||
-        ((parent.type === HTML || parent.type === HEAD || parent.type === BODY) && lexer.eof()))
+      // The end of file closes every open element (scanner.c's patch).
+      (!tagCanContain(parent, next) || lexer.eof())
     ) {
       this.tags.pop();
       lexer.resultSymbol = IMPLICIT_END_TAG;

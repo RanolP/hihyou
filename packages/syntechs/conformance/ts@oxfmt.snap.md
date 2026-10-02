@@ -12,7 +12,7 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 | typescript/angular-component-examples/15934-computed.component.ts | 0/2 | 76.92% |
 | typescript/angular-component-examples/15934.component.ts | 0/2 | 80.00% |
 | typescript/angular-component-examples/test.component.ts | 0/2 | 82.35% |
-| typescript/as/as-const-embedded.ts | 0/1 | 45.45% |
+| typescript/as/as-const-embedded.ts | 0/1 | 81.82% |
 | typescript/decorators-ts/angular.ts | 0/1 | 87.50% |
 
 # Refused

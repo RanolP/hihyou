@@ -36,6 +36,11 @@ const yaml: Spec = {
   fmt: () => import("../grammars/yaml/fmt.js"),
   export: "yaml",
 };
+const html: Spec = {
+  grammar: () => import("../grammars/html/index.js"),
+  fmt: () => import("../grammars/html/fmt.js"),
+  export: "html",
+};
 const typescript = () => import("../grammars/typescript/fmt.js");
 const EXT: Record<string, Spec> = {
   ".json": {
@@ -48,6 +53,8 @@ const EXT: Record<string, Spec> = {
     fmt: () => import("../grammars/css/fmt.js"),
     export: "css",
   },
+  ".html": html,
+  ".htm": html,
   ".js": javascript,
   ".jsx": javascript,
   ".ts": {

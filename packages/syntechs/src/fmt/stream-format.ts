@@ -168,8 +168,8 @@ export interface StreamRules<O = unknown> {
   /** Whether `node` prints as its source text though it parsed, as a broken node does (prettier-ignore). */
   readonly keepsSource?: (node: number, ctx: StreamCtx<O>) => boolean;
   /**
-   * Whether `ERROR` node `error` is a recovery the rules print around, like a stray trailing comma they drop, so
-   * its parent formats rather than printing as written.
+   * Whether `ERROR` or missing node `error` is a recovery the rules print around, like a stray trailing comma they
+   * drop, so its parent formats rather than printing as written.
    */
   readonly recovered?: (error: number, tree: FormatTree) => boolean;
   /**
@@ -246,12 +246,12 @@ export function formatStream<O>(
 }
 
 /**
- * Lays `tree` out by the `stream` rules of `base` onto the stream where it stands, with no final line: a language
- * embedded in another's output (see stream.ts's `withEmbedding`). Throws what a rule throws.
+ * Lays `tree` (or its `node`) out by the `stream` rules of `base` onto the stream where it stands, with no final
+ * line: a language embedded in another's output (see stream.ts's `withEmbedding`). Throws what a rule throws.
  */
-export function printInto<O>(tree: Tree, base: Language<O>, options: Partial<O> = {}): void {
+export function printInto<O>(tree: Tree, base: Language<O>, options: Partial<O> = {}, node = tree.root): void {
   const ctx = streamCtx(tree, base, { ...base.defaults, ...options });
-  ctx.print(tree.root);
+  ctx.print(node);
 }
 
 function streamCtx<O>(tree: Tree, base: Language<O>, resolved: O): StreamCtx<O> {

@@ -430,7 +430,8 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
               line(`if (t.adjoins(prev, c) && !ctx.isComment(prev) && !ctx.isComment(c)${apart}) ${printItem}(c);`);
             } else line(`if (t.adjoins(prev, c)${apart}) ${printItem}(c);`);
             if (keep !== undefined)
-              block("else if (grid && !breaksBetween(t, prev, c))", () => {
+              // Words a source line keeps together stay a space apart, a one-line value's too: only its functions break.
+              block(`else if (${keep} && !breaksBetween(t, prev, c))`, () => {
                 line('sText(" ");');
                 line(`${printItem}(c);`);
               });
