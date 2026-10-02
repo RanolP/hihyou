@@ -437,7 +437,15 @@ function fill(tree: TsTree, text: string, into: Node, ts: number, from: number, 
       if (inner.startsWith("prettier-ignore") && inner !== "prettier-ignore") throw new Unsupported(inner);
       add(conditionalComment(text, n));
     } else if (k === "doctype") add(docType(tree.text(c), tree.start(c), tree.end(c)));
-    else throw new Unsupported(k);
+    else if (k === "processing_instruction") {
+      // angular-html-parser reads `<?` as a bogus comment only where a tag could start; inside a text run
+      // (`a <?x?>`, or after the whitespace that opens one) it is more of the text.
+      if (tree.start(c) > at) continue;
+      const n = node("comment", tree.start(c), tree.end(c));
+      n.isSelfClosing = true;
+      n.value = tree.text(c);
+      add(n);
+    } else throw new Unsupported(k);
   }
   if (to > at) addText(at, to);
 }
@@ -674,7 +682,7 @@ const hasChildren = (n: Node) =>
 
 function preprocess(root: Node, sensitivity: WhitespaceSensitivity): void {
   walk(root, (n) => {
-    if (n.kind === "element" && IGNORE_FIRST_LF.has(n.name)) {
+    if (n.kind === "element" && IGNORE_FIRST_LF.has(n.name) && hasTagDefaults(n)) {
       const first = n.children[0];
       if (first?.kind === "text" && first.value.startsWith("\n")) {
         if (first.value.length === 1) n.children.shift();
@@ -777,21 +785,57 @@ export type WhitespaceSensitivity = "css" | "strict" | "ignore";
 function cssDisplay(n: Node, sensitivity: WhitespaceSensitivity): string {
   const magic = n.prev?.kind === "comment" ? /^\s*display:\s*([a-z]+)\s*$/.exec(n.prev.value.slice(4, -3)) : null;
   if (magic) return magic[1] as string;
+  const ns = namespaceOf(n);
+  const name = localName(n.name);
   // An svg element lays out as a block (the svg itself inline-block) whatever the sensitivity, short of one in a
   // foreignObject, which lays out as HTML.
-  for (let a: Node | undefined = n; a?.kind === "element"; a = a.parent) {
-    if (a.name === "foreignobject") break;
-    if (a.name === "svg") return n.name === "svg" ? "inline-block" : "block";
-  }
+  let inForeignObject = false;
+  for (let a: Node | undefined = n; ns === "svg" && a?.kind === "element"; a = a.parent)
+    if (localName(a.name) === "foreignobject") inForeignObject = true;
+  if (ns === "svg" && !inForeignObject) return name === "svg" ? "inline-block" : "block";
   if (sensitivity === "strict") return "inline";
   if (sensitivity === "ignore") return "block";
   if (n.kind !== "element") return "inline";
-  if (BLOCK.has(n.name)) return "block";
-  return (Object.hasOwn(DISPLAY, n.name) && DISPLAY[n.name]) || "inline";
+  // A tag in a namespace other than svg's is inline, unless that namespace came from an ancestor and is not
+  // html's (`<math><div>`, a `<g>` in an `<a:b>`): that one keeps its tag's default display.
+  if (ns !== undefined && !inForeignObject && (/^[^:]+:/.test(n.name) || ns === "html")) return "inline";
+  if (BLOCK.has(name)) return "block";
+  return (Object.hasOwn(DISPLAY, name) && DISPLAY[name]) || "inline";
+}
+
+const localName = (name: string) => name.replace(/^[^:]*:/, "");
+
+/**
+ * angular-html-parser's namespace of an element: its tag's prefix (`a:b`), else svg's or math's own, else its
+ * parent's, which a foreignObject does not pass on.
+ */
+function namespaceOf(n: Node): string | undefined {
+  for (let a: Node | undefined = n; a?.kind === "element"; a = a.parent) {
+    const prefix = /^([^:]+):/.exec(a.name)?.[1];
+    if (prefix !== undefined) return prefix;
+    if (a.name === "svg" || a.name === "math") return a.name;
+    if (a.parent?.kind === "element" && localName(a.parent.name) === "foreignobject") return undefined;
+  }
+  return undefined;
 }
 // `Object.hasOwn`: a tag named `constructor` or `toString` would otherwise read Object.prototype's.
 const whiteSpace = (n: Node) =>
-  (n.kind === "element" && Object.hasOwn(WHITE_SPACE, n.name) && WHITE_SPACE[n.name]) || "normal";
+  (n.kind === "element" && Object.hasOwn(WHITE_SPACE, n.name) && hasTagDefaults(n) && WHITE_SPACE[n.name]) ||
+  "normal";
+
+/**
+ * Whether a tag keeps its default white-space and ignoreFirstLf: only with no namespace or one inherited from
+ * outside svg and html (`<math><pre>`). An svg's descendants lose them, a foreignObject's included, unlike
+ * {@link namespaceOf}'s display.
+ */
+function hasTagDefaults(n: Node): boolean {
+  for (let a: Node | undefined = n; a?.kind === "element"; a = a.parent) {
+    const prefix = /^([^:]+):/.exec(a.name)?.[1];
+    if (prefix !== undefined) return prefix !== "svg" && prefix !== "html";
+    if (a.name === "svg" || a.name === "math") return a.name === "math";
+  }
+  return true;
+}
 const isPreLike = (n: Node) => whiteSpace(n).startsWith("pre");
 const isIndentationSensitive = isPreLike;
 const isBlockLike = (d: string) => d === "block" || d === "list-item" || d.startsWith("table");
@@ -807,7 +851,8 @@ function isLeadingSpaceSensitive(n: Node): boolean {
     if (n.prev && isBlockLike(n.prev.cssDisplay)) return false;
     return true;
   })();
-  if (result && !n.prev && n.parent !== undefined && IGNORE_FIRST_LF.has(n.parent.name)) return false;
+  if (result && !n.prev && n.parent !== undefined && IGNORE_FIRST_LF.has(n.parent.name) && hasTagDefaults(n.parent))
+    return false;
   return result;
 }
 
@@ -996,7 +1041,11 @@ function embeddedLanguage(n: Node): EmbeddedLanguage | "raw" | undefined {
   if ((n.name !== "script" && n.name !== "style") || n.value.trim() === "") return undefined;
   const lang = attr(n, "lang")?.value?.toLowerCase();
   if (n.name === "style") {
-    if (lang === undefined || lang === "css" || lang === "postcss") return "css";
+    if (lang === undefined || lang === "css" || lang === "postcss")
+      // Content oxfmt's CSS parser rejects prints as written: bare words (svgo's `…` placeholder), or one CDATA
+      // section (an SVG's `<style><![CDATA[...]]></style>`), which the parser reads as an unclosed selector.
+      // Other content it rejects is refused here, since what it accepts is not known.
+      return /^[^{}:;@/\\"'(),[\]<>]+$|^<!\[CDATA\[[^]*?\]\]>$/.test(n.value.trim()) ? "raw" : "css";
     if (lang === "scss" || lang === "less") throw new Unsupported(`style lang ${lang}`);
     return "raw";
   }
@@ -1012,13 +1061,23 @@ function embeddedLanguage(n: Node): EmbeddedLanguage | "raw" | undefined {
     type === undefined ||
     ["module", "text/javascript", "text/babel", "text/jsx", "application/javascript", "jsx"].includes(type)
   )
-    return "babel";
+    return isSurelyUnparsedScript(n.value.trim()) ? "raw" : "babel";
   if (type.endsWith("json") || type.endsWith("importmap") || type === "speculationrules") return "json";
   if (type === "text/html") return "html";
   if (["text/x-handlebars-template", "text/markdown"].includes(type))
     throw new Unsupported(`script type ${type}`);
   return "raw";
 }
+
+/**
+ * Whether oxfmt's JS parser rejects a script for certain, so it prints as written: a CDATA section (an SVG's
+ * `<script><![CDATA[...]]>`, no JSX tag), or a non-ASCII character no token holds outside a literal or a comment
+ * (svgo's `…` placeholder) with no quote, slash, backtick, `<!--`, `-->` or `#!` to open one. Our JS grammar
+ * accepts `…` as an expression, and other content it parses may be what oxfmt formats.
+ */
+const isSurelyUnparsedScript = (js: string) =>
+  js.startsWith("<![CDATA[") ||
+  (!/['"`/]|<!--|-->|^#!/.test(js) && /[^\p{ASCII}\p{ID_Continue}\s‌‍]/u.test(js));
 
 /**
  * printer-html.js's text in a whitespace-sensitive script or style: htmlTrimPreserveIndentation (one leading blank
