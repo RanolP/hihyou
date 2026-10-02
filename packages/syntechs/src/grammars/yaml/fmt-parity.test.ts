@@ -98,6 +98,8 @@ const edgeCases: [string, string][] = [
   ["sequence-item-past-comment", "a:\n  - 1\n    # c\n  - 2\n"],
   // A comment indented past an explicit key's `?` printed at the `?` column instead of two columns in.
   ["explicit-key-indented-comment", "? b\n    # c\n# d\n: v\nx:\n  ? e\n    # f\n  : w\n"],
+  // Properties with no content refused, or lost the space oxfmt keeps after them in a flow or before a key's colon.
+  ["properties-without-content", "- !!str\n- &a : x\n  b: !!null\n- {foo: !!str, !!str : bar, c: &x}\n- [!!str, a, !!int]\n"],
   // A multi-line plain or quoted scalar refused, or lost its blank-line paragraphs or the indent of its later lines.
   ["multiline-flow-scalars", `a: aaa\n  bbb\n\n  ccc\nb: "x\n  y"\nc: '${"w ".repeat(20)}\n  z'\n? m\n  n\n: v\nd:\n  - p\n    q\n`],
   // A multi-line value moved below its key whenever its first paragraph did not fit, where only its first word must.

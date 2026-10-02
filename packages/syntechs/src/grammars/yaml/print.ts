@@ -231,7 +231,7 @@ class Printer {
   scalar(n: number): string {
     if (this.kind(n) !== "flow_node") return unsupported(`a ${this.kind(n)} value`);
     const { props, content: s } = this.properties(n);
-    if (s === undefined) return unsupported("properties without content");
+    if (s === undefined) return props === "" ? unsupported("an empty flow node") : props;
     this.noPropsComment(n, s);
     const text = this.content(s);
     return props === "" ? text : `${props} ${text}`;
@@ -267,7 +267,7 @@ class Printer {
   scalarParts(n: number, bare = false): { head: string; paras: string[][]; tail: string } {
     if (this.kind(n) !== "flow_node") return unsupported(`a ${this.kind(n)} value`);
     const { props, content: s } = this.properties(n);
-    if (s === undefined) return unsupported("properties without content");
+    if (s === undefined) return props === "" || bare ? unsupported("an empty flow node") : { head: props, paras: [[]], tail: "" };
     this.noPropsComment(n, s);
     const p = this.parts(s);
     return props === "" || bare ? p : { ...p, head: `${props} ${p.head}` };
@@ -327,13 +327,14 @@ class Printer {
   /** A flow node on one line: a scalar, or a collection with its items `, `-separated (`bare`: without properties). */
   flat(n: number, bare = false): string {
     const c = this.flowCollection(n);
-    if (c === undefined) return this.scalar(n);
+    // Properties alone keep a space after them in a flow collection: `[!!str , a]`.
+    if (c === undefined) return this.properties(n).content === undefined ? `${this.scalar(n)} ` : this.scalar(n);
     const { props } = this.properties(n);
     const seq = this.kind(c) === "flow_sequence";
     const items = this.flowItems(c).map(({ item }) => this.flatItem(item, seq));
     const pad = !seq && items.length > 0 && this.bracketSpacing ? " " : "";
-    // A last pair with neither key nor value (`: `) takes the closing pad's place.
-    const end = items[items.length - 1] === ": " ? "" : pad;
+    // A last item ending in a space (`: `, `!!str `) takes the closing pad's place.
+    const end = items[items.length - 1]?.endsWith(" ") ? "" : pad;
     const text = seq ? `[${items.join(", ")}]` : `{${pad}${items.join(", ")}${end}}`;
     return props === "" || bare ? text : `${props} ${text}`;
   }
@@ -922,7 +923,8 @@ class Printer {
     const flowKey = this.flowCollection(key) !== undefined;
     if (flowKey) this.noFlowComment(key);
     const keyText = flowKey ? this.flat(key) : (this.flatScalar(key) ?? unsupported("a multi-line implicit key"));
-    this.append(this.named(key).some((k) => this.kind(k) === "alias") ? `${keyText} :` : `${keyText}:`);
+    const spaced = this.named(key).some((k) => this.kind(k) === "alias") || (!flowKey && this.properties(key).content === undefined);
+    this.append(spaced ? `${keyText} :` : `${keyText}:`);
     const keyLine = this.lines.length - 1;
     if (value === undefined) return;
     if (this.flowCollection(value) !== undefined) {
