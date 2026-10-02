@@ -1,4 +1,5 @@
-# Measures syntechs (conformance against the reference formatters, speed against them and oxfmt), builds the
+# Measures syntechs (conformance against the reference formatters, speed against them and oxfmt, highlighting
+# speed against shiki), builds the
 # website's scorecard from those results only, and publishes it to GitHub Pages.
 name: site
 
@@ -63,10 +64,13 @@ jobs:
       - name: Bench
         run: node packages/syntechs/dist/fmt/bench.node.js --json "$SCORECARD_DIR/bench.json"
 
+      - name: Highlight bench
+        run: node packages/syntechs/dist/highlight/bench.node.js --json "$SCORECARD_DIR/highlight.json"
+
       - name: Results
         run: |
           ls -l "$SCORECARD_DIR"
-          cat "$SCORECARD_DIR/conformance.json" "$SCORECARD_DIR/bench.json"
+          cat "$SCORECARD_DIR/conformance.json" "$SCORECARD_DIR/bench.json" "$SCORECARD_DIR/highlight.json"
 
       - uses: actions/upload-artifact@v7
         with:
