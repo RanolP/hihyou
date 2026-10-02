@@ -682,7 +682,7 @@ const hasChildren = (n: Node) =>
 
 function preprocess(root: Node, sensitivity: WhitespaceSensitivity): void {
   walk(root, (n) => {
-    if (n.kind === "element" && IGNORE_FIRST_LF.has(n.name)) {
+    if (n.kind === "element" && IGNORE_FIRST_LF.has(n.name) && hasTagDefaults(n)) {
       const first = n.children[0];
       if (first?.kind === "text" && first.value.startsWith("\n")) {
         if (first.value.length === 1) n.children.shift();
@@ -820,7 +820,22 @@ function namespaceOf(n: Node): string | undefined {
 }
 // `Object.hasOwn`: a tag named `constructor` or `toString` would otherwise read Object.prototype's.
 const whiteSpace = (n: Node) =>
-  (n.kind === "element" && Object.hasOwn(WHITE_SPACE, n.name) && WHITE_SPACE[n.name]) || "normal";
+  (n.kind === "element" && Object.hasOwn(WHITE_SPACE, n.name) && hasTagDefaults(n) && WHITE_SPACE[n.name]) ||
+  "normal";
+
+/**
+ * Whether a tag keeps its default white-space and ignoreFirstLf: only with no namespace or one inherited from
+ * outside svg and html (`<math><pre>`). An svg's descendants lose them, a foreignObject's included, unlike
+ * {@link namespaceOf}'s display.
+ */
+function hasTagDefaults(n: Node): boolean {
+  for (let a: Node | undefined = n; a?.kind === "element"; a = a.parent) {
+    const prefix = /^([^:]+):/.exec(a.name)?.[1];
+    if (prefix !== undefined) return prefix !== "svg" && prefix !== "html";
+    if (a.name === "svg" || a.name === "math") return a.name === "math";
+  }
+  return true;
+}
 const isPreLike = (n: Node) => whiteSpace(n).startsWith("pre");
 const isIndentationSensitive = isPreLike;
 const isBlockLike = (d: string) => d === "block" || d === "list-item" || d.startsWith("table");
@@ -836,7 +851,8 @@ function isLeadingSpaceSensitive(n: Node): boolean {
     if (n.prev && isBlockLike(n.prev.cssDisplay)) return false;
     return true;
   })();
-  if (result && !n.prev && n.parent !== undefined && IGNORE_FIRST_LF.has(n.parent.name)) return false;
+  if (result && !n.prev && n.parent !== undefined && IGNORE_FIRST_LF.has(n.parent.name) && hasTagDefaults(n.parent))
+    return false;
   return result;
 }
 
