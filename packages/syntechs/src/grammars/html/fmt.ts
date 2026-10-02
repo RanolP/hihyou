@@ -8,6 +8,7 @@ import { defineLanguage, type Language } from "../../fmt/rules.js";
 import { close, IF_BROKEN, open, sText, withEmbedding } from "../../fmt/stream.js";
 import { printInto } from "../../fmt/stream-format.js";
 import { css } from "../css/fmt.js";
+import { frontMatterMeaning, parseFrontMatter } from "../css/front-matter.js";
 import { language as cssGrammar } from "../css/index.js";
 import { javascript, jsLanguage } from "../javascript/fmt.js";
 import { language as jsGrammar } from "../javascript/index.js";
@@ -128,6 +129,10 @@ const normalize: Normalize = (lexemes, text, tree) =>
       if (OPTIONAL_END_TAGS.has(name) || /^(\s*<\/[^>]*>)*\s*$/.test(text.slice(tree.end(endTag)))) return undefined;
     }
     if (l.text === "/>") return ">";
+    // The front matter opening the file prints through the YAML formatter: compare it by what its YAML says.
+    const fm = l.at <= 1 && tree.kindName(l.node) === "text" ? parseFrontMatter(text.slice(l.at)) : undefined;
+    if (fm !== undefined && l.text.startsWith(fm.raw))
+      return `${frontMatterMeaning(fm.raw)}\n${l.text.slice(fm.raw.length).replace(/\s+/g, " ").trim()}`;
     // A script's or style's content is its own language's to format; the check compares the HTML around it.
     if (tree.kindName(l.node) === "raw_text") return undefined;
     const kind = tree.kindName(l.node);
@@ -295,7 +300,7 @@ export const html: Language<HtmlOptions> = {
           const atFileStart =ctx.tree.lf(node) === 0 && ctx.tree.col(node) === 0;
           const embeddedOff = ctx.options.embeddedLanguageFormatting === "off";
           const inJs = ctx.options.embeddedInJs;
-          printHtml(parseHtml(text, true, atFileStart, htmlWhitespaceSensitivity, embeddedOff, inJs), text, {
+          printHtml(parseHtml(text, true, atFileStart, htmlWhitespaceSensitivity, embeddedOff, inJs, ctx.options), text, {
             embeddedOff,
             text: sText,
             tabWidth,

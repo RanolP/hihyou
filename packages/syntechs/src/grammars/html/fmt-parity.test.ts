@@ -55,6 +55,12 @@ const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
   ["front-matter-yaml", '---\nhello:     world\ntitle: "A"\n---\nTest <a\nhref=x>abc</a>.\n'],
   // A front matter in another language lost a whitespace-only line's spaces; it prints as written.
   ["front-matter-custom", "---mycustomparser\n  \ntitle: Hello\n\n---\n\n\n<h1>a</h1>\n"],
+  // YAML front matter beyond `key: value` lines refused the file; it prints through the YAML formatter.
+  ["front-matter-yaml-formatted", "---\n# c\na:   'x'\nb:\n    - 1\nc: [1,2]\n---\n<p>x</p>\n"],
+  // Front matter that is no YAML refused the file; it prints as written, and the HTML after it formats.
+  ["front-matter-yaml-invalid", "---\n[\n    ! bad !\nbecause: \n---\n<p>x</p>\n"],
+  // Front matter that does not parse once `trim`med (an indented first line) prints as written.
+  ["front-matter-yaml-indented", "---\n  a: 1\n  b: 2\n---\n<p>x</p>\n"],
   // bracketSameLine was ignored: a broken opening tag's `>` or ` />` must stay on its last attribute's line.
   [
     "bracket-same-line",

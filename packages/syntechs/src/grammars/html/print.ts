@@ -6,6 +6,7 @@
 
 import { parseTree } from "../../core/index.js";
 import { brokenNodes } from "../../fmt/format.js";
+import type { PrettierOptions } from "../../fmt/options.js";
 import {
   close,
   FILL,
@@ -24,7 +25,7 @@ import {
   sLiteral,
   sText,
 } from "../../fmt/stream.js";
-import { parseFrontMatter } from "../css/front-matter.js";
+import { frontMatterLines, parseFrontMatter } from "../css/front-matter.js";
 import { language } from "./index.js";
 
 export class Unsupported extends Error {}
@@ -329,7 +330,8 @@ type TsTree = ReturnType<typeof parseTree>;
 
 /**
  * `text` as prettier's parser reads it, preprocessed; throws `Unsupported`, and for a non-blank script or style
- * unless the printer will get an `embed`. `atFileStart`: `text` starts the file, where a front matter may open it.
+ * unless the printer will get an `embed`. `atFileStart`: `text` starts the file, where a front matter may open it,
+ * which prints through the YAML formatter with `options`.
  */
 export function parseHtml(
   text: string,
@@ -338,11 +340,12 @@ export function parseHtml(
   sensitivity: WhitespaceSensitivity = "css",
   embeddedOff = false,
   inJs = false,
+  options: Partial<PrettierOptions> = {},
 ): Node {
   const tree = parseTree(language, text);
   if (tree.errorChars > 0 || brokenNodes(tree) !== undefined) throw new Unsupported("parse error");
   const root = node("root", 0, text.length);
-  const front = atFileStart ? frontMatter(text) : undefined;
+  const front = atFileStart ? frontMatter(text, !embeddedOff, options) : undefined;
   if (front !== undefined) {
     // The front matter is no HTML: a tag tree-sitter read inside it would be printed a second time.
     if (kids(tree, tree.root).some((c) => tree.start(c) < front.end && !["text", "entity"].includes(tree.kindName(c))))
@@ -369,25 +372,14 @@ export function parseHtml(
   return root;
 }
 
-/**
- * utils/front-matter/parse.js's front matter at the file's start, as oxfmt prints it: a non-yaml one as written, a
- * yaml one through a yaml formatter. With none here, a yaml body prints only when it is `key: value` lines whose
- * formatting is just the gap after the `:`; any other throws `Unsupported`.
- */
-function frontMatter(text: string): { end: number; lines: string[] } | undefined {
+/** utils/front-matter/parse.js's front matter at the file's start, and its lines as oxfmt prints them. */
+function frontMatter(
+  text: string,
+  embed: boolean,
+  options: Partial<PrettierOptions>,
+): { end: number; lines: string[] } | undefined {
   const fm = parseFrontMatter(text);
-  if (fm === undefined) return undefined;
-  const end = fm.raw.length;
-  if (fm.language !== "yaml") return { end, lines: fm.raw.split("\n") };
-  const body: string[] = [];
-  for (const line of fm.value.trim() === "" ? [] : fm.value.split("\n")) {
-    const kv = /^([A-Za-z_][\w-]*):[ \t]+(.*?)[ \t]*$/.exec(line);
-    const v = kv?.[2] ?? "";
-    const plain = /^[^\s#'"[\]{}&*!|>%@`,?:-][^#]*$/.test(v) && !/\s\s|: |:$/.test(v);
-    if (kv === null || !(plain || /^"(?:[^"\\]|\\.)*"$/.test(v))) throw new Unsupported("yaml front matter");
-    body.push(`${kv[1]}: ${v}`);
-  }
-  return { end, lines: [fm.startDelimiter + (fm.explicitLanguage ?? ""), ...body, fm.endDelimiter] };
+  return fm && { end: fm.raw.length, lines: frontMatterLines(fm, embed, options) };
 }
 
 function kids(tree: TsTree, n: number): number[] {
