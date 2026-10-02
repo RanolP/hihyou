@@ -8,8 +8,8 @@ import { yaml } from "./fmt.js";
 import { language } from "./index.js";
 
 // Byte parity with oxfmt 0.70.0 over prettier's defaults, and under the tabWidth and singleQuote prettier's yaml
-// fixtures set. What print.ts has no rule for (comments in flow collections, multi-line scalars inside them) refuses,
-// as `refused` below pins.
+// fixtures set. What print.ts has no rule for (some comments in flow pairs, multi-line scalars in flow collections)
+// refuses, as `refused` below pins.
 
 type Options = Partial<PrettierOptions> & { singleQuote?: boolean };
 
@@ -92,6 +92,12 @@ const edgeCases: [string, string][] = [
   ["multiline-moved", `${"k".repeat(70)}: ${"v".repeat(20)} t\n  u\n${"k".repeat(70)}: ${"v".repeat(20)}\n  u\n\n  w\n`],
   // A block scalar after a quoted scalar or a directive refused: their text is more than their leaves.
   ["block-scalar-after-quoted", "%YAML 1.2\n---\na: 'x'\nb: \"y\\tz\"\nc: |\n    t\n\n\nd: 1\n"],
+  // A comment inside a flow collection refused, or left it flat, or kept its place before a comma or after `[`.
+  ["flow-comments", "a: [1, # one\n  2 # two\n  , 3\n\n  # own\n  ]\nb:\n  - {c: 1, # k\n    d: 2}\n---\n[ # open\n  x, [y, # z\n  w]]\n"],
+  // A comment between a flow pair's key and value stayed before the colon, or an explicit pair lost its `?`.
+  ["flow-pair-comments", "- {b # k\n  : 1, c:\n  # own\n  2}\n- [? d\n  # e\n  : 3]\n"],
+  // Comments after properties refused, or more than one stayed beside them instead of each on its own line.
+  ["props-comments", "!!map\n# c1\na: !!map # c2\n  # c3\n  b: 1\nc: !!seq # c4\n  [1]\n---\n!!set # c5\n# c6\n[]\n"],
 ];
 
 // A folded or plain scalar's refill under proseWrap always: lines join into paragraphs and refill at printWidth,
@@ -132,8 +138,10 @@ describe.each(optionSets)(
 );
 
 const refused: [string, string][] = [
-  // A comment inside a flow collection, which oxfmt lays out in ways print.ts has no rule for, printed anyway.
-  ["flow-comment", "a: [1, # one\n  2]\n"],
+  // A comment inside a flow pair's collection value, which oxfmt keeps on the key's line or drops the key of, printed anyway.
+  ["flow-pair-value-comment", "a: {b: [1, # one\n  2], c: 3}\n"],
+  // A blank line after a trailing comment in a flow collection, which oxfmt moves to column 0, printed anyway.
+  ["flow-comment-blank-after", "a: [1, # one\n\n  2]\n"],
   // A block scalar ending the stream dropped its trailing whitespace line deeper than its content, which oxfmt keeps.
   ["block-scalar-deep-whitespace-end", "a: |-\n  ab\n   \n"],
   // A comment after a kept block scalar ending the stream printed a final line break, which oxfmt leaves off.

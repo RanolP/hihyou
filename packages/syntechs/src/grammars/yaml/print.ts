@@ -3,8 +3,8 @@
 // for yet throws `Unsupported`, so the file is refused rather than printed wrong.
 //
 // The printer covers block mappings and sequences of single-line scalars, comments, document markers and
-// blank lines, anchors, tags, aliases, block scalars, flow collections, explicit keys and multi-line plain and
-// quoted scalars outside flow collections. Comments inside flow collections and multi-line scalars inside them
+// blank lines, anchors, tags, aliases, block scalars, flow collections and the comments inside them, explicit keys
+// and multi-line plain and quoted scalars outside flow collections. Multi-line scalars inside flow collections
 // refuse.
 
 import { NO_NODE } from "../../core/arena.js";
@@ -228,9 +228,18 @@ class Printer {
     if (this.kind(n) !== "flow_node") return unsupported(`a ${this.kind(n)} value`);
     const { props, content: s } = this.properties(n);
     if (s === undefined) return unsupported("properties without content");
-    if (this.pending(this.start(s)) !== undefined) unsupported("a comment after properties");
+    this.noPropsComment(n, s);
     const text = this.content(s);
     return props === "" ? text : `${props} ${text}`;
+  }
+
+  /**
+   * Refuses a comment between node `n`'s properties and its content `s`. A comment before `n` is no concern here:
+   * a flow collection measures its flat text before it places the comments between its items.
+   */
+  noPropsComment(n: number, s: number): void {
+    const c = this.pending(this.start(s));
+    if (c !== undefined && this.tree.ord(c) > this.start(n)) unsupported("a comment after properties");
   }
 
   content(s: number): string {
@@ -255,7 +264,7 @@ class Printer {
     if (this.kind(n) !== "flow_node") return unsupported(`a ${this.kind(n)} value`);
     const { props, content: s } = this.properties(n);
     if (s === undefined) return unsupported("properties without content");
-    if (this.pending(this.start(s)) !== undefined) unsupported("a comment after properties");
+    this.noPropsComment(n, s);
     const p = this.parts(s);
     return props === "" ? p : { ...p, head: `${props} ${p.head}` };
   }
@@ -306,13 +315,13 @@ class Printer {
         if (last === undefined || last.comma !== NO_NODE) unsupported("an empty flow entry");
         else last.comma = k;
       } else if (kind === "flow_node" || kind === "flow_pair") out.push({ item: k, comma: NO_NODE });
-      else if (kind !== "[" && kind !== "]" && kind !== "{" && kind !== "}") unsupported(`a flow ${kind}`);
+      else if (kind !== "[" && kind !== "]" && kind !== "{" && kind !== "}" && kind !== "comment") unsupported(`a flow ${kind}`);
     }
     return out;
   }
 
-  /** A flow node on one line: a scalar, or a collection with its items `, `-separated. */
-  flat(n: number): string {
+  /** A flow node on one line: a scalar, or a collection with its items `, `-separated (`bare`: without properties). */
+  flat(n: number, bare = false): string {
     const c = this.flowCollection(n);
     if (c === undefined) return this.scalar(n);
     const { props } = this.properties(n);
@@ -322,7 +331,7 @@ class Printer {
     // A last pair with neither key nor value (`: `) takes the closing pad's place.
     const end = items[items.length - 1] === ": " ? "" : pad;
     const text = seq ? `[${items.join(", ")}]` : `{${pad}${items.join(", ")}${end}}`;
-    return props === "" ? text : `${props} ${text}`;
+    return props === "" || bare ? text : `${props} ${text}`;
   }
 
   /**
@@ -338,7 +347,7 @@ class Printer {
       const k = this.tree.child(pair, i);
       if (this.tree.fieldName(k) === "key") key = k;
       else if (this.tree.fieldName(k) === "value") value = k;
-      else if (this.kind(k) !== ":" && this.kind(k) !== "?") unsupported(`a flow pair ${this.kind(k)}`);
+      else if (this.kind(k) !== ":" && this.kind(k) !== "?" && this.kind(k) !== "comment") unsupported(`a flow pair ${this.kind(k)}`);
     }
     if (key === undefined && value === undefined) return { key: undefined, keyNode: undefined, value: undefined };
     if (value === undefined && seq) return unsupported("a flow sequence pair without a value");
@@ -363,12 +372,13 @@ class Printer {
    * columns after it (the `,` of an enclosing broken collection), else one item per line at `indent` plus
    * tabWidth with a trailing comma, the closing bracket at `indent`, and a blank line kept between items where
    * the source has one after the earlier item. The first line continues the current one; later lines carry their
-   * indent.
+   * indent. A comment inside breaks the collection and every one around it: a comment on an item's line trails
+   * that item's comma, any other sits on its own line at the items' indent (`bare`: properties already printed).
    */
-  layout(n: number, col: number, indent: number, trail: number): string[] {
-    const flat = this.flat(n);
+  layout(n: number, col: number, indent: number, trail: number, bare = false): string[] {
+    const flat = this.flat(n, bare);
     const c = this.flowCollection(n);
-    if (c === undefined || col + textWidth(flat) + trail <= this.width) return [flat];
+    if (c === undefined || (!this.flowComment(n) && col + textWidth(flat) + trail <= this.width)) return [flat];
     const items = this.flowItems(c);
     if (items.length === 0) return unsupported("an empty flow collection past printWidth");
     // proseWrap other than "preserve" would fill a broken collection's multi-word scalars.
@@ -376,13 +386,18 @@ class Printer {
     const { props } = this.properties(n);
     const seq = this.kind(c) === "flow_sequence";
     if (/(?:^|, ): $/.test(flat.slice(1, -1))) unsupported("a broken flow collection ending in an empty pair");
-    const lines = [(props === "" ? "" : `${props} `) + (seq ? "[" : "{")];
+    const lines = [(props === "" || bare ? "" : `${props} `) + (seq ? "[" : "{")];
     const inner = indent + this.tab;
     items.forEach(({ item }, i) => {
       const before = items[i - 1]?.comma;
-      if (before !== undefined && before !== NO_NODE) {
+      const trailed = this.flowComments(lines, this.start(item), inner, i > 0);
+      if (trailed === undefined && before !== undefined && before !== NO_NODE) {
         const lf = this.tree.lf(before);
         if (lf >= 2 || (lf === 0 && this.tree.lf(firstLeaf(this.tree, item)) >= 2)) lines.push("");
+      } else if (trailed !== undefined && this.tree.lf(firstLeaf(this.tree, item)) >= 2) {
+        // oxfmt moves a trailing comment that a blank line follows to column 0, a layout with no rule here.
+        if (trailed) unsupported("a blank line after a trailing comment in a flow collection");
+        lines.push("");
       }
       const comma = i < items.length - 1 || this.trailingComma ? "," : "";
       const sub =
@@ -393,8 +408,42 @@ class Printer {
       sub[sub.length - 1] += comma;
       lines.push(...sub);
     });
+    const close = this.tree.child(c, this.tree.count(c) - 1);
+    this.flowComments(lines, this.tree.ord(close), inner, true, false);
     lines.push(" ".repeat(indent) + (seq ? "]" : "}"));
     return lines;
+  }
+
+  /**
+   * The comments before ordinal `before` in a broken flow collection, pushed onto `lines`: one on the line of an
+   * item (`trail`) after that item's comma, else on a line of its own at `indent`, after a blank line where the
+   * source has one and `blankOk`. Whether the last of them trailed, undefined for none.
+   */
+  flowComments(lines: string[], before: number, indent: number, trail: boolean, blankOk = true): boolean | undefined {
+    let c: number | undefined;
+    let trailed: boolean | undefined;
+    while ((c = this.pending(before)) !== undefined) {
+      trailed = trail && this.tree.lf(c) === 0;
+      if (trailed) lines[lines.length - 1] += ` ${this.tree.text(c)}`;
+      else {
+        if (blankOk && trail && this.tree.lf(c) >= 2) lines.push("");
+        lines.push(" ".repeat(indent) + this.tree.text(c));
+      }
+      this.next++;
+    }
+    return trailed;
+  }
+
+  /** The last leaf of `n`. */
+  lastLeaf(n: number): number {
+    while (this.tree.count(n) > 0) n = this.tree.child(n, this.tree.count(n) - 1);
+    return n;
+  }
+
+  /** Whether a comment not yet printed sits inside `n`. */
+  flowComment(n: number): boolean {
+    const c = this.comments[this.next];
+    return c !== undefined && this.tree.ord(c) < this.tree.ord(this.lastLeaf(n));
   }
 
   /**
@@ -405,6 +454,7 @@ class Printer {
   pairLayout(pair: number, seq: boolean, col: number, trail: number): string[] {
     const { key, keyNode, value } = this.pairParts(pair, seq);
     const flat = this.flatItem(pair, seq);
+    if (this.flowComment(pair)) return this.commentedPair(pair, key, keyNode, value, col, trail);
     if (col + textWidth(flat) + trail <= this.width) return [flat];
     const flowKey = keyNode !== undefined && this.flowCollection(keyNode) !== undefined;
     if (flowKey && value !== undefined && col + textWidth(key as string) + 1 > this.width) {
@@ -420,9 +470,38 @@ class Printer {
     return [`${key}:`, ...this.moved(value, col + this.tab, trail)];
   }
 
+  /**
+   * A flow pair with comments between its key and value, at column `col`. `? key` written explicit with comments on
+   * their own lines before `:` keeps its `?`, the comments and `: value` at `col`; any other prints `key:`, the first
+   * comment trailing it when it trails in the source, and the rest and the value on lines one tabWidth in.
+   */
+  commentedPair(pair: number, key: string | undefined, keyNode: number | undefined, value: number | undefined, col: number, trail: number): string[] {
+    if (key === undefined || keyNode === undefined || value === undefined) return unsupported("a comment in a flow pair with no key or value");
+    if (this.flowComment(keyNode)) unsupported("a comment inside a flow key");
+    const lines = [`${key}:`];
+    const first = this.pending(this.start(value));
+    // oxfmt keeps the pair on the key's line and lays out the value's items off its column, or drops the key.
+    if (first === undefined) return unsupported("a comment inside a flow pair's collection value");
+    let colon = NO_NODE;
+    for (let i = 0; i < this.tree.count(pair); i++) if (this.kind(this.tree.child(pair, i)) === ":") colon = this.tree.child(pair, i);
+    const explicit = this.kind(this.tree.child(pair, 0)) === "?";
+    if (explicit && this.tree.lf(first) !== 0 && colon !== NO_NODE && this.tree.ord(first) < this.tree.ord(colon)) {
+      if (this.flowCollection(keyNode) !== undefined || this.flowCollection(value) !== undefined) unsupported("a commented explicit flow pair of collections");
+      const out = [`? ${key.trimEnd()}`];
+      this.flowComments(out, this.tree.ord(colon), col, false);
+      if (this.pending(this.start(value)) !== undefined) unsupported("a comment after an explicit flow pair's colon");
+      out.push(`${" ".repeat(col)}: ${this.flat(value)}`);
+      return out;
+    }
+    this.flowComments(lines, this.start(value), col + this.tab, true, false);
+    if (this.flowComment(value)) unsupported("comments around and inside a flow value");
+    return [...lines, ...this.moved(value, col + this.tab, trail)];
+  }
+
   /** A collection value on the lines after its key, at `indent`. */
   moved(value: number, indent: number, trail: number): string[] {
-    if (this.flowItems(this.flowCollection(value) as number).length === 0) unsupported("an empty flow collection past printWidth");
+    const c = this.flowCollection(value);
+    if (c !== undefined && this.flowItems(c).length === 0) unsupported("an empty flow collection past printWidth");
     const ls = this.layout(value, indent, indent, trail);
     ls[0] = " ".repeat(indent) + ls[0];
     return ls;
@@ -436,10 +515,18 @@ class Printer {
     if (c !== undefined && this.tree.ord(c) < this.tree.ord(last)) unsupported("a comment inside a flow collection");
   }
 
-  /** Appends flow node `n`'s lines, the first continuing the current line at its column, the rest at `indent`. */
+  /**
+   * Appends flow node `n`'s lines, the first continuing the current line at its column, the rest at `indent`.
+   * Comments between its properties and the collection move the collection to a line of its own at `indent`.
+   */
   putFlow(n: number, indent: number): void {
-    this.noFlowComment(n);
-    const [first, ...rest] = this.layout(n, textWidth(this.lines[this.lines.length - 1]!), indent, 0);
+    const { props, content } = this.properties(n);
+    const bare = props !== "" && content !== undefined && this.pending(this.start(content)) !== undefined;
+    if (bare) {
+      this.propsComments(props, content, indent);
+      this.line(" ".repeat(indent));
+    }
+    const [first, ...rest] = this.layout(n, textWidth(this.lines[this.lines.length - 1]!), indent, 0, bare);
     this.append(first as string);
     for (const l of rest) this.line(l);
   }
@@ -569,17 +656,28 @@ class Printer {
   }
 
   /**
-   * A value collection's properties on the current line. The one comment between them and the first item trails
-   * them even when it sat on a line of its own (`key: &a⏎⏎  # c` prints `key: &a # c`); more refuse.
+   * Properties `props` on the current line and the comments between them and `content`: one trails them wherever
+   * the source has it (`!!map⏎# c` prints `!!map # c`); more each take a line of their own at `indent`. Blank lines
+   * among them drop.
    */
-  valueProps(props: string, coll: number): void {
+  propsComments(props: string, content: number, indent: number): void {
+    const cs: number[] = [];
+    let c: number | undefined;
+    while ((c = this.pending(this.start(content))) !== undefined) {
+      cs.push(c);
+      this.next++;
+    }
+    this.append(props);
+    if (cs.length === 1) this.append(` ${this.tree.text(cs[0]!)}`);
+    else
+      for (const k of cs) this.line(" ".repeat(indent) + this.tree.text(k));
+  }
+
+  /** A value collection's properties on the current line, and the comments after them (`propsComments`). */
+  valueProps(props: string, coll: number, indent: number): void {
     if (props === "") return;
-    this.append(` ${props}`);
-    const c = this.pending(this.start(coll));
-    if (c === undefined) return;
-    this.next++;
-    if (this.pending(this.start(coll)) !== undefined) unsupported("comments after properties");
-    this.append(` ${this.tree.text(c)}`);
+    this.append(" ");
+    this.propsComments(props, coll, indent);
   }
 
   /**
@@ -646,7 +744,7 @@ class Printer {
     else if (this.kind(v) === "block_node") {
       // `- &a⏎  b: 1`: a collection with properties starts on the line after them.
       const { props, coll } = this.collection(v);
-      this.valueProps(props, coll);
+      this.valueProps(props, coll, indent + 2);
       this.block(coll, indent + 2, props === "", until);
     } else if (this.flowCollection(v) !== undefined) {
       this.append(" ");
@@ -692,6 +790,7 @@ class Printer {
       this.marked(value, indent, until);
       return;
     }
+    if (this.flowCollection(key) !== undefined) this.noFlowComment(key);
     const lead = this.pending(this.start(key));
     if (lead !== undefined) {
       const second = this.comments[this.next + 1];
@@ -726,7 +825,6 @@ class Printer {
     }
     if (trail !== undefined) unsupported("a trailing comment on an explicit key with a value");
     const flowKey = this.flowCollection(key) !== undefined;
-    if (flowKey) this.noFlowComment(key);
     // prettier's `? ` group breaks when the flat key and its colon pass printWidth.
     const alias = this.named(key).some((k) => this.kind(k) === "alias") ? 1 : 0;
     // A key prettier cannot be sure prints on one line goes explicit when its flat text and colon do not fit.
@@ -757,7 +855,12 @@ class Printer {
     if (value === undefined) return;
     if (this.flowCollection(value) !== undefined) {
       if (this.pending(this.start(value)) !== undefined) unsupported("a comment before a flow value");
-      this.noFlowComment(value);
+      // A comment breaks the collection, which then opens on the key's line with its items two tabWidths in.
+      if (this.flowComment(value)) {
+        this.append(" ");
+        this.putFlow(value, indent + this.tab);
+        return;
+      }
       // prettier's conditionalGroup: the pair on one line when it fits, else the value one tabWidth in below.
       const flat = ` ${this.flat(value)}`;
       if (textWidth(this.lines[keyLine]!) + textWidth(flat) <= this.width) this.append(flat);
@@ -767,7 +870,7 @@ class Printer {
     if (this.isBlockScalar(value)) return this.blockScalar(value, indent + this.tab, " ");
     if (this.kind(value) === "block_node") {
       const { props, coll } = this.collection(value);
-      this.valueProps(props, coll);
+      this.valueProps(props, coll, indent + this.tab);
       this.block(coll, indent + this.tab, false, until);
       return;
     }
@@ -815,9 +918,8 @@ class Printer {
           const { props, coll } = this.collection(c);
           const first = this.lines.length === 0 || this.afterMarker();
           if (props !== "") {
-            // A root's `!!map # c` prints its comment on the next line: a layout this printer has no rule for.
-            if (this.pending(this.start(coll)) !== undefined) unsupported("a comment after root properties");
-            this.line(props);
+            this.line("");
+            this.propsComments(props, coll, 0);
           }
           this.block(coll, 0, false, limit, first);
           break;

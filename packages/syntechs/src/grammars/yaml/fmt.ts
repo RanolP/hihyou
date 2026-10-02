@@ -14,10 +14,14 @@ const defaults: PrettierOptions = { ...prettierDefaults };
 // A flow collection's trailing comma comes and goes with its layout, and a flow mapping pair with no value drops
 // its colon (`{b: }` prints `{ b }`): neither changes what the collection holds. A pair's `?` comes and goes with
 // its key's layout, and so does the colon of a pair with no value (`? a` prints `a:`).
+// A comment in a flow collection trails the comma or colon its line ends in, whichever side of it the source had
+// it on (`[a # c⏎, b]` prints `a, # c`), so a flow comma or a flow pair's colon beside a comment does not count.
 const normalize: Normalize = (lexemes, _text, tree) =>
   lexemes.map((l, i) => {
     const kind = tree.kindName(l.node);
     if (kind === "," && /^[\]}]$/.test(lexemes[i + 1]?.text ?? "")) return undefined;
+    const besideComment = [lexemes[i - 1], lexemes[i + 1]].some((k) => k !== undefined && tree.kindName(k.node) === "comment");
+    if (besideComment && (kind === "," || (kind === ":" && tree.kindName(tree.parent(l.node)) === "flow_pair"))) return undefined;
     if (kind === "?" && /^(?:flow|block_mapping)_pair$/.test(tree.kindName(tree.parent(l.node)))) return undefined;
     if (kind === ":" && /^(?:flow|block_mapping)_pair$/.test(tree.kindName(tree.parent(l.node)))) {
       const pair = tree.parent(l.node);
