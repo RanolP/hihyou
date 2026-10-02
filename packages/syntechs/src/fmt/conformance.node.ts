@@ -222,6 +222,11 @@ export const PRETTIER_FIXTURES: Target[] = [
       ignore: JS_IGNORE,
     },
   ),
+  prettierFixtures("yaml", "yaml", "yaml", () => "yaml", {
+    dirs: ["yaml"],
+    parsers: ["yaml"],
+    ignore: [],
+  }),
 ];
 
 export const TARGETS: Target[] = [
