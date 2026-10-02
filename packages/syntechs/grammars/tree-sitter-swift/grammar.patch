@@ -1,0 +1,17 @@
+scanner.c's `try!` suppressor mask shifts `1UL` by FAKE_TRY_BANG (32), which overflows where `unsigned long` is 32 bits
+(Windows): the scanner then emits the `!` as a BANG, so `try!` parses as `try` plus a prefix `!` there alone. `1ULL`
+keeps the mask on every platform; packages/syntechs/src/grammars/swift/scanner.ts already reads it that way.
+
+--- a/src/scanner.c
++++ b/src/scanner.c
+@@ -127,9 +127,9 @@
+     0, // EQUAL_SIGN,
+     0, // EQ_EQ,
+     0, // PLUS_THEN_WS,
+     0, // MINUS_THEN_WS,
+-    1UL << FAKE_TRY_BANG, // BANG,
++    1ULL << FAKE_TRY_BANG, // BANG,
+         0, // THROWS_KEYWORD,
+         0, // RETHROWS_KEYWORD,
+         0, // DEFAULT_KEYWORD,
+         0, // WHERE_KEYWORD,
