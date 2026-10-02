@@ -381,10 +381,7 @@ class Printer {
       else if (this.kind(k) !== ":" && this.kind(k) !== "?" && this.kind(k) !== "comment") unsupported(`a flow pair ${this.kind(k)}`);
     }
     if (key === undefined && value === undefined) return { key: undefined, keyNode: undefined, value: undefined };
-    if (key === undefined) {
-      if (this.flowCollection(value as number) !== undefined) unsupported("a flow collection after an empty key");
-      return { key: undefined, keyNode: undefined, value };
-    }
+    if (key === undefined) return { key: undefined, keyNode: undefined, value };
     if (value === undefined) return { key: (seq ? "? " : "") + this.flat(key), keyNode: key, value };
     const alias = this.named(key).some((k) => this.kind(k) === "alias");
     return { key: this.flat(key) + (alias ? " " : ""), keyNode: key, value };
@@ -506,6 +503,14 @@ class Printer {
     if (multiKey !== undefined) return multiKey;
     const { key, keyNode, value } = this.pairParts(pair, seq);
     const flat = this.flatItem(pair, seq);
+    if (key === undefined && value !== undefined && this.flowCollection(value) !== undefined && this.pending(this.start(value)) === undefined) {
+      if (!this.flowComment(value) && !this.hasMultiScalar(this.flowCollection(value) as number) && col + textWidth(flat) + trail <= this.width) return [flat];
+      // oxfmt reads a broken flow mapping after an empty key as another pair, a layout with no rule here.
+      if (this.kind(this.flowCollection(value) as number) === "flow_mapping") unsupported("a broken flow mapping after an empty key");
+      // A broken sequence opens after `: `, its items two columns past the colon plus tabWidth.
+      const v = this.layout(value, col + 2, col + 2, trail);
+      return [`: ${v[0]}`, ...v.slice(1)];
+    }
     if (this.flowComment(pair)) return this.commentedPair(pair, key, keyNode, value, col, trail);
     if (col + textWidth(flat) + trail <= this.width) return [flat];
     const flowKey = keyNode !== undefined && this.flowCollection(keyNode) !== undefined;

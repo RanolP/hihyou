@@ -141,6 +141,8 @@ const edgeCases: [string, string][] = [
     "comment-before-flow-value",
     "k: # c\n  [aaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbb, cccccccccccccccccccccc, dddddddddddddddd]\nl:\n  # c\n\n  {a: 1}\nm:\n  # prettier-ignore\n  [\n      a,   b,  # x\n   c  ]\n",
   ],
+  // A flow sequence after an empty key refused, where oxfmt opens it after `: ` with its items past the colon.
+  ["empty-key-flow-value", "- [: [a, b], {: [x]}]\n- [x, : [longlonglonglonglonglonglonglonglonglonglong, longlonglonglonglonglonglonglonglonglonglong], : [a, # c\n  b]]\n"],
 ];
 
 // A folded or plain scalar's refill under proseWrap always: lines join into paragraphs and refill at printWidth,
@@ -200,6 +202,8 @@ const refused: [string, string][] = [
   ["multiline-flow-pair-value", "{a: b\n c}\n"],
   // A blank line between a directive and a comment, which oxfmt drops, was kept.
   ["directive-blank-comment", "%YAML 1.2\n\n# c\n---\nb\n"],
+  // A broken flow mapping after an empty key, which oxfmt reads as another pair, printed anyway.
+  ["empty-key-broken-flow-mapping", "[: {a: longlonglonglonglonglonglonglonglonglonglong, b: longlonglonglonglonglonglonglonglonglonglong}]\n"],
 ];
 
 describe("a YAML construct print.ts has no rule for refuses rather than printing what oxfmt would not", () => {
