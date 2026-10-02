@@ -327,10 +327,13 @@ export interface Embedding {
 }
 let embedding: Embedding | undefined;
 
-/** Prints `fn` under `e`, restoring the embedding around it (embeds nest). */
+/**
+ * Prints `fn` under `e`, restoring the embedding around it (embeds nest: an embed inside one anchors to the
+ * outermost tree's node, the only tree the output maps back to).
+ */
 export function withEmbedding(e: Embedding, fn: () => void): void {
   const outer = embedding;
-  embedding = e;
+  embedding = outer === undefined ? e : { anchor: outer.anchor, token: e.token };
   try {
     fn();
   } finally {
@@ -338,8 +341,37 @@ export function withEmbedding(e: Embedding, fn: () => void): void {
   }
 }
 
+/**
+ * Prettier's mapDoc over an embed's doc, as a JS template's HTML escapes every string for the template: each text
+ * or token written under it goes to `fn` with the writer to write its pieces through, which writes them through
+ * the rewrite outside this one (rewrites nest, the innermost first).
+ */
+type Rewrite = (s: string, write: (s: string) => void) => void;
+let rewrite: { fn: Rewrite; outer: typeof rewrite } | undefined;
+
+export function withRewrite(fn: Rewrite, body: () => void): void {
+  const outer = rewrite;
+  rewrite = { fn, outer };
+  try {
+    body();
+  } finally {
+    rewrite = outer;
+  }
+}
+
+function rewritten(s: string, write: (s: string) => void): void {
+  const r = rewrite as NonNullable<typeof rewrite>;
+  rewrite = r.outer;
+  try {
+    r.fn(s, write);
+  } finally {
+    rewrite = r;
+  }
+}
+
 export function resetStream(ruff = false, tabs = 0): void {
   embedding = undefined;
+  rewrite = undefined;
   ruffSpaces = ruff;
   tabWidth = tabs;
   expandsSeen = false;
@@ -393,6 +425,7 @@ function measured(s: string, w: number) {
 
 /** Synthesized text; it joins the text run before it when nothing opened or closed in between. */
 export function sText(s: string): void {
+  if (rewrite !== undefined) return rewritten(s, sText);
   const w = tokenWidth(s);
   measured(s, w);
   if (mergeable) {
@@ -408,6 +441,7 @@ export function sText(s: string): void {
 
 /** Synthesized text whose trailing whitespace a line end keeps, as a string literal's content line. */
 export function sKeptText(s: string): void {
+  if (rewrite !== undefined) return rewritten(s, sKeptText);
   const w = tokenWidth(s);
   measured(s, w);
   strs.push(s);
@@ -434,6 +468,11 @@ export function sToken(node: number, s: string, synthetic = false, imaginary = f
     node = embedding.anchor;
     synthetic = true;
   }
+  tokenOut(node, s, synthetic, imaginary);
+}
+
+function tokenOut(node: number, s: string, synthetic: boolean, imaginary: boolean): void {
+  if (rewrite !== undefined) return rewritten(s, (t) => tokenOut(node, t, synthetic, imaginary));
   const w = imaginary ? 0 : tokenWidth(s);
   measured(s, w);
   strs.push(s);

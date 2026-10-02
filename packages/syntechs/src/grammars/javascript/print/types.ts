@@ -575,6 +575,7 @@ const typeParameters: CustomRule<JsOptions> = (n, sctx) => {
   }
   // `<T,>` in a TSX arrow keeps its comma: without it the list would read as a JSX tag.
   const forced =
+    ctx.options.jsx &&
     kind(ctx, n) === "type_parameters" &&
     params.length === 1 &&
     field(ctx, params[0] as number, "constraint") === undefined &&
@@ -757,8 +758,10 @@ const typeAssertion: StreamRule<JsOptions> = (n, sctx) => {
     tok(js, anonKid(js, args, "<"));
     open(INDENT);
     sLine(SOFT);
-    const inner = items(js, args)[0];
-    if (inner !== undefined) ctx.print(inner);
+    // `<const>x`: tree-sitter reads the asserted `const` as a keyword token, not a type.
+    const inner = items(js, args)[0] ?? anonKid(js, args, "const");
+    if (inner !== undefined && !js.tree.named(inner)) tok(js, inner);
+    else if (inner !== undefined) ctx.print(inner);
     close();
     sLine(SOFT);
     tok(js, lastAnonKid(js, args, ">"));

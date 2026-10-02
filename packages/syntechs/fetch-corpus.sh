@@ -27,7 +27,7 @@ tree() { # <archive url> <dest dir> <path inside the archive>...
 }
 tree https://codeload.github.com/prettier/prettier/tar.gz/refs/tags/3.9.9 prettier-3.9.9 \
   prettier-3.9.9/tests/format/json prettier-3.9.9/tests/format/css prettier-3.9.9/tests/format/js \
-  prettier-3.9.9/tests/format/jsx prettier-3.9.9/tests/format/typescript \
+  prettier-3.9.9/tests/format/jsx prettier-3.9.9/tests/format/typescript prettier-3.9.9/tests/format/html \
   prettier-3.9.9/tests/format/yaml
 tree https://codeload.github.com/astral-sh/ruff/tar.gz/refs/tags/0.16.8 ruff-0.16.8 \
   ruff-0.16.8/crates/ruff_python_formatter/resources/test/fixtures \

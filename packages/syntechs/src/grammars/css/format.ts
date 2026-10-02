@@ -37,7 +37,7 @@ const format = defineFormat<typeof grammar, CssOptions>();
 const spaced = () => inOrder(space);
 const adjacent = () => inOrder();
 /** Selectors on either side of a combinator: a line between, and after the combinator's token a space. */
-const combinator = () => inOrder({ join: "line", spaceWhen: { after: [">", ">>>", "~", "+", "<"] } });
+const combinator = () => inOrder({ join: "line", spaceWhen: { after: [">", ">>>", "/deep/", "||", "~", "+", "<"] } });
 /** Selectors one per line, one of more than two parts indenting as it breaks; then each `trail` child after a space. */
 const selectorList = (trail: "block"[] = []) =>
   splitOn(",", { trail, wrapItem: when("longSelector"), layout: { group: true, between: "hardline" } });
@@ -157,14 +157,20 @@ export const css = format({
       ),
       tok(";").via("declarationEnd"),
     ],
-    // `--name: {...}`: the block laid out as a rule's, then the `;` a declaration ends with; the comments around the
-    // `:` as a declaration's (fmt.ts's `declarationColon`).
+    // `--name: {...}`: the block laid out as a rule's, or re-flowed as text where oxfmt does (fmt.ts's `customBlock`),
+    // then the `;` a declaration ends with; the comments around the `:` as a declaration's (fmt.ts's
+    // `declarationColon`).
     custom_property_set: ($) => [
       $.children.at(0).andThen((p) => p),
       tok(":").via("declarationColon"),
       space,
-      $.children.at(1).andThen((b) => b),
-      semicolon,
+      either(
+        when("textBlock"),
+        $.children.at(1).andThen((b) => b.via("customBlock")),
+        $.children.at(1).andThen((b) => b),
+      ),
+      $.important.andThen((i) => [space, i]),
+      tok(";").via("declarationEnd"),
     ],
     // postcss-nested-props: a rule whose selector is `name:` and any values, as written.
     nested_property: () =>
@@ -189,7 +195,7 @@ export const css = format({
               holds: firstText({ after: ":", prefix: ["nth-"], anyCase: true }),
             }),
           ),
-          text("spacePlus"),
+          text("anPlusB"),
           text("cssWide"),
         ),
       ),
@@ -198,10 +204,15 @@ export const css = format({
       either(
         when("placeholderCalled"),
         [$.children.at(0).andThen((n) => n.via("placeholderCallee")), $.children.at(1).andThen((n) => n.via("placeholderArgs"))],
+        // Arguments holding a nameless `:` (`f(/ a :b)`): fmt.ts's `rawArguments`.
         either(
-          all(inDirective, not(calledAs("url"))),
-          [$.children.at(0).andThen((n) => n), $.children.at(1).andThen((n) => n.via("sassList"))],
-          adjacent(),
+          when("strayArgColon"),
+          [$.children.at(0).andThen((n) => n), $.children.at(1).andThen((n) => n.via("rawArguments"))],
+          either(
+            all(inDirective, not(calledAs("url"))),
+            [$.children.at(0).andThen((n) => n), $.children.at(1).andThen((n) => n.via("sassList"))],
+            adjacent(),
+          ),
         ),
       ),
     // A function's as written inside `url()`, a space wherever the source has a gap (postcss-value-parser's one
@@ -314,6 +325,7 @@ export const css = format({
     // A `directive`'s prelude as a value (fmt.ts's `sassDirective`), else prettier's raw params: as written, one
     // space wherever the source has any gap.
     at_rule: () => custom("atRule"),
+    scope_statement: () => custom("scopeStatement"),
     postcss_statement: () => custom("postcssStatement"),
     // A keyword glued to its paren group (`and(a:b)`) stays glued, one space before it.
     binary_query: () => either(inMediaFeature, asWritten(), either(when("gluedQuery"), gluedQuery, inOrder(space))),

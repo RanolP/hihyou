@@ -4,12 +4,15 @@
 // `printEmbed` returns false and the template prints as its source.
 
 import { NO_NODE, parseTree, type Tree } from "../../../core/index.js";
+import { cook as cookString } from "../../../fmt/dsl/normalizers.js";
 import { brokenNodes } from "../../../fmt/format.js";
 import { printInto } from "../../../fmt/stream-format.js";
-import { withEmbedding } from "../../../fmt/stream.js";
+import { withEmbedding, withRewrite } from "../../../fmt/stream.js";
 import { css } from "../../css/fmt.js";
 import { language as cssLanguage } from "../../css/index.js";
-import { parseHtml, printHtml, Unsupported } from "../../html/print.js";
+import { html as htmlFormatter } from "../../html/fmt.js";
+import { language as htmlLanguage } from "../../html/index.js";
+import { parseHtml, Unsupported } from "../../html/print.js";
 import {
   capture,
   close,
@@ -40,8 +43,9 @@ export function printEmbed(
   raws: string[],
   substitution: (sub: number) => Part,
 ): boolean {
-  // A quasi's cooked value, which prettier's embed reads, is its source when it holds no escape.
-  if (raws.some((q) => q.includes("\\"))) return false;
+  // A quasi's cooked value, which prettier's embed reads, is its source when it holds no escape; the HTML embed
+  // cooks its own.
+  if (lang !== "html" && raws.some((q) => q.includes("\\"))) return false;
   const js = ctx.js;
   const ticks = children(js, node).filter((c) => kind(js, c) === "`");
   const tick = (i: number) => {
@@ -60,7 +64,7 @@ export function printEmbed(
       .map(substitution);
   const printed =
     lang === "html"
-      ? html(node, raws, subs, tick, js.options.tabWidth)
+      ? html(ctx, node, raws, subs, tick)
       : lang === "css"
         ? cssEmbed(ctx, node, raws, subs, tick)
         : graphql(raws, subs, tick);
@@ -86,49 +90,117 @@ function withParts(s: string, placeholder: RegExp, parts: Part[], seen?: Set<num
   });
 }
 
-// embed/html.js's printEmbedHtmlLike
-function html(node: number, raws: string[], subs: () => Part[], tick: Tick, tabWidth: number): Part | undefined {
-  const placeholder = (i: number) => `PRETTIER_HTML_PLACEHOLDER_${i}_IN_JS`;
-  const text = raws.map((q, i) => (i === raws.length - 1 ? q : q + placeholder(i))).join("");
+/** A quasi's cooked value; undefined for a legacy octal escape, which leaves a tagged template's uncooked. */
+function cook(raw: string): string | undefined {
+  return /(^|[^\\])(\\\\)*\\(0\d|[1-9])/.test(raw) ? undefined : cookString(raw);
+}
+
+const VOID_TAGS = new Set("area base br col embed hr img input link meta param source track wbr".split(" "));
+
+/**
+ * Prettier parses a JS template's HTML with angular-html-parser's allowHtmComponentClosingTags, where an htm `<//>`
+ * closes the open element and prints as `<//>`: each becomes that element's end tag ending in `\f>`, which the HTML
+ * printer reads as one (html/print.ts's htmClose). One with no element open is left to fail the parse.
+ */
+function htmClosers(text: string): string {
+  if (!text.includes("<//")) return text;
+  const open: string[] = [];
+  return text.replace(
+    /<(script|style)\b[^]*?<\/\1\s*>|<!--[^]*?-->|<\/\/\s*>|<(\/?)([A-Za-z][^\s/>]*)[^>]*?(\/?)>/gi,
+    (tag, _raw, close: string | undefined, name: string | undefined, selfClosing: string | undefined) => {
+      if (name === undefined) {
+        if (!tag.startsWith("<//")) return tag;
+        const top = open.pop();
+        return top === undefined ? tag : `</${top}\f>`;
+      }
+      if (close) {
+        const at = open.lastIndexOf(name);
+        if (at >= 0) open.length = at;
+      } else if (!selfClosing && !VOID_TAGS.has(name.toLowerCase())) open.push(name);
+      return tag;
+    },
+  );
+}
+
+/** Each HTML embed's placeholders are its own, so an embed inside one leaves the outer one's placeholders alone. */
+let htmlEmbeds = 0;
+
+// embed/html.js's printEmbedHtmlLike: the HTML formatter prints the template's cooked text, and every string written
+// under it is uncooked for the template (uncookTemplateElementValue), each placeholder its substitution.
+function html(ctx: JsStreamCtx, node: number, raws: string[], subs: () => Part[], tick: Tick): Part | undefined {
+  const cooked = raws.map(cook);
+  if (cooked.some((q) => q === undefined)) return undefined;
+  const id = htmlEmbeds++;
+  const placeholder = (i: number) => `PRETTIER_HTML_PLACEHOLDER_${i}_${id}_IN_JS`;
+  const text = htmClosers(cooked.map((q, i) => (i === cooked.length - 1 ? q : q + placeholder(i))).join(""));
+  const options = ctx.js.options;
+  // Every option goes on to the HTML (a script in it reads `semi`, `singleQuote`), but what names this file's own
+  // parse and place.
+  const { parser: _parser, sourceType: _sourceType, embeddedInHtml: _embeddedInHtml, ...htmlOptions } = options;
+  const { htmlWhitespaceSensitivity } = options;
   let root;
   try {
-    root = parseHtml(text);
+    root = parseHtml(text, true, true, htmlWhitespaceSensitivity, false, true);
   } catch (e) {
     if (e instanceof Unsupported) return undefined;
     throw e;
   }
   const parts = subs();
-  const regex = /PRETTIER_HTML_PLACEHOLDER_(\d+)_IN_JS/;
+  const regex = new RegExp(`PRETTIER_HTML_PLACEHOLDER_(\\d+)_${id}_IN_JS`);
+  const uncook = (s: string) => {
+    const escaped = s.replace(/([\\`]|\$\{)/g, "\\$1");
+    return options.embeddedInHtml ? escaped.replace(/<\/(?=script\b)/gi, "<\\/") : escaped;
+  };
+  const write = (s: string, out: (s: string) => void) =>
+    s.split(regex).forEach((piece, i) => {
+      if (i % 2 === 0) {
+        if (piece !== "") out(uncook(piece));
+        return;
+      }
+      const part = parts[Number(piece)];
+      if (part === undefined) throw new Unsupported(`placeholder ${piece}`);
+      place(part);
+    });
   const content = () =>
-    withEmbedding({ anchor: node, token: undefined }, () =>
-      printHtml(root, text, { text: (s) => withParts(s, regex, parts), tabWidth }),
+    withRewrite(write, () =>
+      withEmbedding({ anchor: node, token: undefined }, () =>
+        printInto(parseTree(htmlLanguage, text), htmlFormatter, { ...htmlOptions, embeddedInJs: true }),
+      ),
     );
   const leading = /^\s/.test(text);
   const trailing = /\s$/.test(text);
-  return capture(() => {
-    open(GROUP);
-    tick(0);
-    if (leading && trailing) {
-      open(INDENT);
-      sLine(0);
+  const ignore = htmlWhitespaceSensitivity === "ignore";
+  try {
+    return capture(() => {
       open(GROUP);
-      content();
+      tick(0);
+      if (ignore || (leading && trailing)) {
+        const linebreak = ignore ? sHardline : () => sLine(0);
+        open(INDENT);
+        linebreak();
+        open(GROUP);
+        content();
+        close();
+        close();
+        linebreak();
+      } else {
+        if (leading) sText(" ");
+        const indented = root.children.length > 1;
+        if (indented) open(INDENT);
+        open(GROUP);
+        content();
+        close();
+        if (indented) close();
+        if (trailing) sText(" ");
+      }
+      tick(1);
       close();
-      close();
-      sLine(0);
-    } else {
-      if (leading) sText(" ");
-      const indented = root.children.length > 1;
-      if (indented) open(INDENT);
-      open(GROUP);
-      content();
-      close();
-      if (indented) close();
-      if (trailing) sText(" ");
-    }
-    tick(1);
-    close();
-  });
+    });
+  } catch (e) {
+    // The HTML formatter refuses what its parse let through (an attribute value it cannot print).
+    if (e instanceof Unsupported) return undefined;
+    throw e;
+  }
 }
 
 // embed/css.js's printEmbedCss. Prettier's placeholder, `@prettier-placeholder-N-id`, is an at-word scss reads
