@@ -4,31 +4,11 @@
 //   node packages/syntechs/generate.mjs [grammar...]
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { GRAMMARS } from "./grammars.js";
 import { compile } from "./index.js";
 
 // Both this file's tsc output and the generate script's bundle sit in dist/compiler/.
 const pkg = resolve(import.meta.dirname, "../..");
-
-/** Per bundle: the grammar's generated src/ directory, and which of its extras are comments. */
-export const GRAMMARS: Record<string, { src: string; comments: string[] }> = {
-  json: { src: "tree-sitter-json/src", comments: ["comment"] },
-  css: { src: "tree-sitter-css/src", comments: ["comment"] },
-  html: { src: "tree-sitter-html/src", comments: ["comment"] },
-  javascript: { src: "tree-sitter-javascript/src", comments: ["comment"] },
-  typescript: {
-    src: "tree-sitter-typescript/typescript/src",
-    comments: ["comment"],
-  },
-  tsx: { src: "tree-sitter-typescript/tsx/src", comments: ["comment"] },
-  python: { src: "tree-sitter-python/src", comments: ["comment"] },
-  kotlin: {
-    src: "tree-sitter-kotlin/src",
-    comments: ["line_comment", "multiline_comment"],
-  },
-  // Injected into JavaScript and TypeScript comments and regex literals by their injections.scm.
-  jsdoc: { src: "tree-sitter-jsdoc/src", comments: [] },
-  regex: { src: "tree-sitter-regex/src", comments: [] },
-};
 
 const only = process.argv.slice(2);
 for (const [name, g] of Object.entries(GRAMMARS)) {

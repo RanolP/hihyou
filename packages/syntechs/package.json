@@ -69,7 +69,9 @@
     "tree-sitter-kotlin": "workspace:*",
     "tree-sitter-python": "workspace:*",
     "tree-sitter-regex": "workspace:*",
+    "tree-sitter-swift": "workspace:*",
     "tree-sitter-typescript": "workspace:*",
+    "tree-sitter-yaml": "workspace:*",
     "tsdown": "^0.23.0"
   }
 }
