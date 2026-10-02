@@ -247,8 +247,9 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
     }
   }
 
-  // A statement past the width is laid out by swift-format's printer when it stands on one line of its own.
-  const long = new Set<number>();
+  // A statement past the width is laid out by swift-format's printer when it stands on one line of its own, or
+  // when its header (an `if` or `guard` through the body's `{`) does and holds every leaf past the width.
+  const long = new Map<number, number[]>();
   const statementOf = (leaf: number) => {
     for (let n = leaf; ; n = tree.parent(n)) {
       const p = tree.parent(n);
@@ -275,9 +276,9 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
     if (tree.count(n) === 0) {
       if (endCol(n) > width && !unbreakable(tree, n)) {
         const stmt = statementOf(n);
-        if (stmt === NO_NODE || tree.text(stmt).includes("\n"))
+        if (stmt === NO_NODE)
           throw new Error(`code past column ${width} (line breaking): \`${tree.text(n)}\` ends at column ${endCol(n)}`);
-        long.add(stmt);
+        long.set(stmt, [...(long.get(stmt) ?? []), n]);
       }
       return;
     }
@@ -285,18 +286,23 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
   };
   walk(tree.root);
   const edits: Edit[] = [];
-  for (const stmt of long) {
+  for (const [stmt, past] of long) {
     const first = index.get(firstLeaf(tree, stmt)) as number;
-    let last = first;
-    while (last + 1 < leaves.length && index.get(lastLeafOf(stmt)) !== last) last++;
+    const { tokens, last: end } = statementTokens(tree, stmt, (leaf) => gap(index.get(firstLeaf(tree, leaf)) as number) ?? 0);
+    const lastLeaf = tree.count(end) === 0 ? end : lastLeafOf(end);
+    const last = index.get(lastLeaf) as number;
     if (!startsLine(first) || (last + 1 < leaves.length && !startsLine(last + 1)))
       throw new Error(`a statement past column ${width} sharing its line (line breaking): ${at(first)}`);
-    const tokens = statementTokens(tree, stmt, (leaf) => gap(index.get(firstLeaf(tree, leaf)) as number) ?? 0);
-    const text = prettyPrint(tokens, tree.col(leaves[first] as number), width, 2);
-    if (text.split("\n").some((line) => line.length > width))
+    for (let i = first + 1; i <= last; i++)
+      if (startsLine(i)) throw new Error(`a statement past column ${width} spanning lines (line breaking): ${at(first)}`);
+    for (const leaf of past)
+      if ((index.get(leaf) as number) > last)
+        throw new Error(`code past column ${width} after a statement's header (line breaking): ${at(index.get(leaf) as number)}`);
+    const base = tree.col(leaves[first] as number);
+    const text = prettyPrint(tokens, base, width, 2);
+    if (text.split("\n").some((line, i) => line.length + (i === 0 ? base : 0) > width))
       throw new Error(`a line past column ${width} once laid out (line breaking): ${at(first)}`);
-    const end = leaves[last] as number;
-    edits.push({ from: starts.get(leaves[first] as number) as number, to: (starts.get(end) as number) + tree.text(end).length, text });
+    edits.push({ from: starts.get(leaves[first] as number) as number, to: (starts.get(lastLeaf) as number) + tree.text(lastLeaf).length, text });
   }
   function lastLeafOf(n: number): number {
     while (tree.count(n) > 0) n = tree.child(n, tree.count(n) - 1);

@@ -69,12 +69,54 @@ test("a statement past 100 columns is broken as swift-format breaks it", () => {
   }
 });
 
-// A regression here is a construct tree-sitter nests differently from Swift (`a || b || c` to the right) laid out
-// anyway, which prints the operators on the wrong lines.
+// A regression here is an unported construct laid out anyway: a member after a call's arguments (`f(x).y`, where
+// swift-format puts `)` on its own line) or a closure argument.
 test("a long line whose layout is not ported is refused", () => {
   for (const input of [
-    "let a = bbbbbbbbbbbbbbbbbbbbbbbb || ccccccccccccccccccccccccccccccc || dddddddddddddddddddddddddddddddddd\n",
+    "func f() {\n  try aaaaaaaaaaaaaaaaaaa.encode(bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, forKey: .ccccccccccccccccccccccccc).dddd()\n}\n",
     "let a = bbbbbbbbbbbbbbbbbbbbbbbb.map { $0.cccccccccccccccccccccccccccccc(dddddddddddddddddddddddddddddddd) }\n",
   ])
     expect(run(input).ok, input).toBe(false);
+});
+
+// A regression here is the IfExpr/GuardStmt condition breaks or the `||` refold lost: the `||` left on the wrong
+// line, `else` or `{` kept on the condition's line, or the conditions indented without their continuation.
+test("a long if or guard header is broken as swift-format breaks it", () => {
+  const cases: [string, string][] = [
+    [
+      "func f() {\n  guard aaaaaaaaaaaaaaaaaaaaaaaaaaa || bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb || cccccccccccccccccccccccccccccccccccccc else {\n    x()\n  }\n}\n",
+      "func f() {\n  guard\n    aaaaaaaaaaaaaaaaaaaaaaaaaaa || bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n      || cccccccccccccccccccccccccccccccccccccc\n  else {\n    x()\n  }\n}\n",
+    ],
+    [
+      "func f() {\n  if !node.arguments.isEmpty || node.trailingClosure == nil || !node.additionalTrailingClosures.isEmpty {\n    x()\n  }\n}\n",
+      "func f() {\n  if !node.arguments.isEmpty || node.trailingClosure == nil\n    || !node.additionalTrailingClosures.isEmpty\n  {\n    x()\n  }\n}\n",
+    ],
+  ];
+  for (const [input, want] of cases) {
+    const out = run(input);
+    expect(out.ok && out.text, input).toBe(want);
+  }
+});
+
+// A regression here is the TryExpr, ReturnStmt or TuplePattern token streams drifting: a break placed after `try`,
+// `return` or `=` where swift-format breaks inside the call's parentheses.
+test("a long try, return or tuple binding is broken inside the call", () => {
+  const cases: [string, string][] = [
+    [
+      "func f() {\n  try container.encode(lineBreakBeforeControlFlowKeywords, forKey: .lineBreakBeforeControlFlowKeywords)\n}\n",
+      "func f() {\n  try container.encode(\n    lineBreakBeforeControlFlowKeywords, forKey: .lineBreakBeforeControlFlowKeywords)\n}\n",
+    ],
+    [
+      "func f() {\n  return aaaaaaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.cccccccccccccccccccccccccccccc(dddddddd)\n}\n",
+      "func f() {\n  return aaaaaaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.cccccccccccccccccccccccccccccc(\n    dddddddd)\n}\n",
+    ],
+    [
+      "func f() {\n  let (trimmedLeadingTrivia, count) = first.leadingTrivia.trimmingSuperfluousNewlines(fromClosingBrace: false)\n}\n",
+      "func f() {\n  let (trimmedLeadingTrivia, count) = first.leadingTrivia.trimmingSuperfluousNewlines(\n    fromClosingBrace: false)\n}\n",
+    ],
+  ];
+  for (const [input, want] of cases) {
+    const out = run(input);
+    expect(out.ok && out.text, input).toBe(want);
+  }
 });
