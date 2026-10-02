@@ -1,0 +1,29 @@
+{
+  "name": "@hihyou/git",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "@hihyou/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./node": {
+      "@hihyou/source": "./src/node.ts",
+      "types": "./dist/node.d.ts",
+      "default": "./dist/node.js"
+    },
+    "./web": {
+      "@hihyou/source": "./src/web.ts",
+      "types": "./dist/web.d.ts",
+      "default": "./dist/web.js"
+    }
+  },
+  "scripts": {
+    "bench": "tsc -b tsconfig.node.json && node bench/run.mjs ../.."
+  },
+  "dependencies": {
+    "@hihyou/engine": "workspace:*"
+  }
+}

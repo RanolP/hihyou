@@ -1,0 +1,15 @@
+[package]
+name = "git2-bench"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# Its own workspace root, so cargo never looks for one up the tree.
+[workspace]
+
+[dependencies]
+# The libgit2 binding git-branchless and git-absorb both use.
+git2 = { version = "0.20", default-features = false }
+
+[profile.release]
+debug = false

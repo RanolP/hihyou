@@ -1,6 +1,7 @@
 import { diffArrays } from "diff";
 import type { Tree } from "syntechs/core";
 import type { Mapping } from "syntechs/diff";
+import { type HighlightModule, type ScopeRuns, scopeRuns } from "syntechs/highlight";
 import type { AstSteps } from "./anchor.js";
 import { lineEnd, lineOf, type Version } from "./file.js";
 import type { CollapseReason } from "./fold.js";
@@ -31,7 +32,7 @@ export interface Side {
 
 export interface Span {
   text: string;
-  scope?: string; // syntax colour, TextMate scope
+  scope?: string; // syntax colour: a TextMate scope stack, outermost first, space-separated
   changed?: boolean; // diff emphasis, kept separate from syntax colour
 }
 
@@ -68,6 +69,8 @@ export interface FragmentInput {
   /** Syntax diff only: pairs an unchanged line with the line its first token was matched to. */
   mapping?: Mapping;
   indentMatters: boolean;
+  /** The grammar's highlighter; spans carry no `scope` without one. */
+  highlight?: HighlightModule;
 }
 
 /** Unchanged lines kept visible on each side of a change. */
@@ -102,7 +105,11 @@ interface Box {
  * pairs far from any change are elided, and begin/end come from a stack, so they always balance.
  */
 export function buildFragments(input: FragmentInput): CodeFragment[] {
-  const { a, b, mapping } = input;
+  const { a, b, mapping, highlight } = input;
+  const scopes = (v: Version) =>
+    highlight && v.tree ? scopeRuns(v.tree, highlight, v.text.length, v.start, v.end) : undefined;
+  const scopesA = scopes(a.v);
+  const scopesB = scopes(b.v);
   const pairs = mapping ? pairLines(a.v, b.v, mapping) : undefined;
   const linesA = lines(a, 0, input.indentMatters, pairs);
   const linesB = lines(b, 1, input.indentMatters, undefined);
@@ -135,7 +142,7 @@ export function buildFragments(input: FragmentInput): CodeFragment[] {
   for (let i = 0; i < rows.length;) {
     const r = rows[i] as Row;
     if (!r.same) {
-      items.push({ path: pathOf(r), fragment: diffFragment(input, r) });
+      items.push({ path: pathOf(r), fragment: diffFragment(input, r, scopesA, scopesB) });
       i++;
       continue;
     }
@@ -157,14 +164,16 @@ export function buildFragments(input: FragmentInput): CodeFragment[] {
       // One unchanged fragment per stretch that sits in the same containers.
       let k = 0;
       while (k < run.length) {
-        const path = pathOf(run[k] as Row);
+        const first = run[k] as Row & { same: true };
+        const path = pathOf(first);
         let m = k + 1;
         while (m < run.length && samePath(pathOf(run[m] as Row), path)) m++;
         items.push({
           path,
           fragment: unchangedFragment(
             b.v,
-            run[k] as Row & { same: true },
+            scopesB,
+            { before: first.a + 1, after: first.b + 1 },
             m - k,
           ),
         });
@@ -236,7 +245,11 @@ function indentDepth(line: string): number {
   return depth;
 }
 
-/** Per line of `a`, the line of `b` holding the partner of its first token; -1 when unmatched. */
+/**
+ * Per line of `a`, the line of `b` holding the partner of its first token; -1 when unmatched. A line no token
+ * starts on lies inside a token spanning lines (a block comment, a template string): it pairs with the line
+ * at the same offset inside that token's partner.
+ */
 function pairLines(a: Version, b: Version, m: Mapping): Int32Array {
   const pairs = new Int32Array(a.lineStarts.length).fill(-1);
   const seen = new Uint8Array(a.lineStarts.length);
@@ -244,11 +257,18 @@ function pairLines(a: Version, b: Version, m: Mapping): Int32Array {
   for (let ord = 0; ord < tree.nodeCount; ord++) {
     const n = tree.at(ord);
     if (tree.count(n) !== 0 || a.end(n) <= a.start(n)) continue;
-    const line = lineOf(a, a.start(n));
-    if (seen[line] === 1) continue;
-    seen[line] = 1;
+    const first = lineOf(a, a.start(n));
+    const last = lineOf(a, a.end(n) - 1);
     const partner = m.src[m.a.index(n)] ?? -1;
-    if (partner >= 0) pairs[line] = lineOf(b, b.start(m.b.node(partner)));
+    const p = partner >= 0 ? m.b.node(partner) : undefined;
+    const pFirst = p === undefined ? -1 : lineOf(b, b.start(p));
+    const pLast = p === undefined ? -1 : lineOf(b, b.end(p) - 1);
+    for (let line = first; line <= last; line++) {
+      if (seen[line] === 1) continue;
+      seen[line] = 1;
+      const to = pFirst + (line - first);
+      if (p !== undefined && to <= pLast) pairs[line] = to;
+    }
   }
   return pairs;
 }
@@ -354,31 +374,58 @@ const nodeRange = (v: Version, n: number): Range => ({
 
 function unchangedFragment(
   v: Version,
-  first: Row & { same: true },
+  scopes: ScopeRuns | undefined,
+  lines: LinePair,
   count: number,
-): CodeFragment {
-  const start = v.lineStarts[first.b] as number;
-  const end = lineEnd(v, first.b + count - 1);
+): CodeFragment & { kind: "unchanged" } {
+  const start = v.lineStarts[lines.after - 1] as number;
+  const end = lineEnd(v, lines.after + count - 2);
   return {
     kind: "unchanged",
-    spans: [{ text: v.text.slice(start, end) }],
+    spans: split(v.text, start, end, [], scopes),
     at: v.tree ? nodesIn(v, v.tree, start, end) : [],
-    lines: { before: first.a + 1, after: first.b + 1 },
+    lines,
   };
+}
+
+/**
+ * The unchanged lines an `elided` fragment at `lines` hid, read off the after side's display text `v` and
+ * coloured as `buildFragments` colours the lines it shows. `count` absent runs to the end of the file.
+ * Undefined when the lines fall outside the text.
+ */
+export function elidedLines(
+  v: Version,
+  highlight: HighlightModule | undefined,
+  lines: LinePair,
+  count?: number,
+): (CodeFragment & { kind: "unchanged" }) | undefined {
+  const total = v.lineStarts.length;
+  const n = count ?? total - (lines.after - 1);
+  if (lines.after < 1 || n < 1 || lines.after - 1 + n > total) return undefined;
+  const scopes =
+    highlight && v.tree ? scopeRuns(v.tree, highlight, v.text.length, v.start, v.end) : undefined;
+  return unchangedFragment(v, scopes, lines, n);
 }
 
 function diffFragment(
   input: FragmentInput,
   r: Row & { same: false },
+  scopesA: ScopeRuns | undefined,
+  scopesB: ScopeRuns | undefined,
 ): CodeFragment {
   return {
     kind: "diff",
-    before: sideFragment(input.a, r.a0, r.a1),
-    after: sideFragment(input.b, r.b0, r.b1),
+    before: sideFragment(input.a, r.a0, r.a1, scopesA),
+    after: sideFragment(input.b, r.b0, r.b1, scopesB),
   };
 }
 
-function sideFragment(s: SideInput, l0: number, l1: number): Side {
+function sideFragment(
+  s: SideInput,
+  l0: number,
+  l1: number,
+  scopes: ScopeRuns | undefined,
+): Side {
   const { v } = s;
   const start = v.lineStarts[l0] ?? v.text.length;
   const end = l1 > l0 ? lineEnd(v, l1 - 1) : start;
@@ -387,31 +434,62 @@ function sideFragment(s: SideInput, l0: number, l1: number): Side {
       ? s.moves.find((m) => v.start(m.node) < end && v.end(m.node) > start)
       : undefined;
   return {
-    spans: split(v.text, start, end, s.emphasis),
+    spans: split(v.text, start, end, s.emphasis, scopes),
     at: v.tree && end > start ? nodesIn(v, v.tree, start, end) : [],
     startLine: l0 + 1,
     ...(move && { move: { counterpart: move.counterpart } }),
   };
 }
 
-/** `text[start, end)` cut into spans at the edges of `emphasis`, emphasized ones marked `changed`. */
+/**
+ * `text[start, end)` cut into spans at the edges of `emphasis` (sorted, disjoint), emphasized ones marked
+ * `changed`, and at the edges of the syntax scope runs, each carrying its innermost-last scope stack.
+ */
 function split(
   text: string,
   start: number,
   end: number,
   emphasis: Range[],
+  scopes: ScopeRuns | undefined,
 ): Span[] {
   const spans: Span[] = [];
-  let at = start;
-  for (const r of emphasis) {
-    const s = Math.max(r.start, at);
-    const e = Math.min(r.end, end);
-    if (e <= s) continue;
-    if (s > at) spans.push({ text: text.slice(at, s) });
-    spans.push({ text: text.slice(s, e), changed: true });
-    at = e;
+  const runs = scopes?.runs;
+  // First run that ends after `start`; runs are sorted and disjoint.
+  let r = 0;
+  if (runs) {
+    let lo = 0;
+    let hi = runs.length / 3;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if ((runs[mid * 3 + 1] as number) <= start) lo = mid + 1;
+      else hi = mid;
+    }
+    r = lo * 3;
   }
-  if (end > at) spans.push({ text: text.slice(at, end) });
+  let e = 0;
+  for (let at = start; at < end; ) {
+    while (e < emphasis.length && (emphasis[e] as Range).end <= at) e++;
+    const em = emphasis[e];
+    const inEmphasis = em !== undefined && em.start <= at;
+    let to = inEmphasis ? Math.min(end, em.end) : Math.min(end, em?.start ?? end);
+    let scope: string | undefined;
+    if (runs) {
+      while (r < runs.length && (runs[r + 1] as number) <= at) r += 3;
+      if (r < runs.length) {
+        const rs = runs[r] as number;
+        if (rs <= at) {
+          scope = scopes.stacks[runs[r + 2] as number];
+          to = Math.min(to, runs[r + 1] as number);
+        } else to = Math.min(to, rs);
+      }
+    }
+    spans.push({
+      text: text.slice(at, to),
+      ...(scope !== undefined && { scope }),
+      ...(inEmphasis && { changed: true }),
+    });
+    at = to;
+  }
   return spans;
 }
 

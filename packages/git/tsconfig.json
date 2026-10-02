@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    // No node or DOM types: the core runs in Node and in a browser worker alike, so an import of a
+    // node: module or a Node-only global fails to compile here. Node-only code is in tsconfig.node.json.
+    "types": []
+  },
+  "include": ["src"],
+  "exclude": ["src/node.ts", "src/vscode-like-fs.ts", "src/**/*.test.ts"],
+  "references": [{ "path": "../engine" }]
+}

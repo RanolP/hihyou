@@ -1,5 +1,6 @@
 import type { Language, Tree } from "syntechs/core";
 import type { Formatted } from "syntechs/fmt";
+import type { HighlightModule } from "syntechs/highlight";
 import { type Cache, createCache } from "./cache.js";
 import { type Diffset, openDiffset } from "./diffset.js";
 
@@ -39,10 +40,8 @@ export interface FormatModule {
   format(tree: Tree): Formatted;
 }
 
-export interface HighlightModule {
-  /** TextMate scope for one node (e.g. "keyword.control.ts"), undefined for none. Renamer lives inside. */
-  scopeOf(tree: Tree, node: NodeId): string | undefined;
-}
+/** Paints TextMate scopes over a tree, enclosing nodes first; syntechs ships one per grammar. */
+export type { HighlightModule };
 
 type Resolved = { id: string; changes: ChangedFileRef[] };
 

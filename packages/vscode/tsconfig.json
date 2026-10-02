@@ -1,0 +1,21 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    // esbuild writes the bundles into dist/; tsc only checks, and keeps its output out of their way.
+    "outDir": "dist/tsc",
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    // No node types: everything here also runs as a web extension. Node-only code lives in tsconfig.node.json.
+    "types": ["vscode"]
+  },
+  "include": ["src"],
+  "exclude": ["src/**/*.node.ts", "src/**/*.test.ts"],
+  "references": [
+    { "path": "../engine" },
+    { "path": "../git" },
+    { "path": "../github" },
+    { "path": "../ui" }
+  ]
+}

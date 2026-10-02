@@ -114,7 +114,7 @@ export function editScript(
         a: hx,
         b: hy,
       });
-    for (const [p, q] of movesAt(a, b, src, x)) {
+    for (const [p, q] of movesAt(a, b, src, dst, x)) {
       const hp = a.node(p);
       const hq = b.node(q);
       edits.push({
@@ -149,12 +149,14 @@ export function editScript(
 
 /**
  * Moves owned by base index `x`, as (base, head) index pairs: `x` itself when its parent's partner is not
- * its new parent, then those of its children that stayed under its partner but fell out of order.
+ * its new parent (unless it was only wrapped or unwrapped in place), then those of its children that stayed
+ * under its partner but fell out of order.
  */
 function movesAt(
   a: Side,
   b: Side,
   src: Int32Array,
+  dst: Int32Array,
   x: number,
 ): [number, number][] {
   const y = src[x] as number;
@@ -162,7 +164,12 @@ function movesAt(
   const out: [number, number][] = [];
   const px = a.parentOf(x);
   const py = b.parentOf(y);
-  if (a.tree.named(a.node(x)) && px !== -1 && (py === -1 || src[px] !== py))
+  if (
+    a.tree.named(a.node(x)) &&
+    px !== -1 &&
+    (py === -1 || src[px] !== py) &&
+    !rewrappedInPlace(a, b, src, dst, x, y)
+  )
     out.push([x, y]);
 
   // Reordering among children that stayed under the same parent: whatever falls outside the longest in-order run moved.
@@ -177,6 +184,52 @@ function movesAt(
   for (const [i, { c, p }] of stayed.entries())
     if (!kept.has(i)) out.push([c, p]);
   return out;
+}
+
+/**
+ * Whether `x` (partner `y`) changed parent only because a node around it was inserted or deleted where it
+ * stands -- `n - 1` becoming `Math.max(0, n - 1)`, a statement wrapped in an `if` or unwrapped from one. Then
+ * the closest matched ancestors on the two sides are partners, and the branch holding `x` keeps its place
+ * among that ancestor's matched children; the wrapper reads as an insert or delete, not as a move.
+ */
+function rewrappedInPlace(
+  a: Side,
+  b: Side,
+  src: Int32Array,
+  dst: Int32Array,
+  x: number,
+  y: number,
+): boolean {
+  const ax = matchedAncestor(a, src, x);
+  const by = matchedAncestor(b, dst, y);
+  if (ax === -1 || by === -1 || src[ax] !== by) return false;
+  const cx = childToward(a, ax, x);
+  const position = new Map(b.childrenOf(by).map((c, i) => [c, i]));
+  const at = position.get(childToward(b, by, y)) as number;
+  let before = true;
+  for (const c of a.childrenOf(ax)) {
+    if (c === cx) {
+      before = false;
+      continue;
+    }
+    const q = position.get(src[c] as number);
+    if (q !== undefined && (before ? q > at : q < at)) return false;
+  }
+  return true;
+}
+
+/** The nearest proper ancestor of index `i` that `table` maps; -1 when none is. */
+function matchedAncestor(side: Side, table: Int32Array, i: number): number {
+  let p = side.parentOf(i);
+  while (p !== -1 && table[p] === -1) p = side.parentOf(p);
+  return p;
+}
+
+/** The child of `ancestor` on the path down to its descendant `i`. */
+function childToward(side: Side, ancestor: number, i: number): number {
+  let c = i;
+  while (side.parentOf(c) !== ancestor) c = side.parentOf(c);
+  return c;
 }
 
 /**
@@ -209,7 +262,7 @@ function settleMoves(
     dropped = false;
     kinds.clear();
     for (let x = 0; x < a.nodes.length; x++)
-      for (const [p, q] of movesAt(a, b, src, x)) {
+      for (const [p, q] of movesAt(a, b, src, dst, x)) {
         // An earlier move in this pass may have unmatched it already.
         if (src[p] !== q) continue;
         const kind = classifyMove(settled, p, q, opts);
