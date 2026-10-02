@@ -340,8 +340,7 @@ class Printer {
   /**
    * A flow pair's key text (alias keys keep a space before the colon) and node, and its value, any absent. A `?`
    * drops: prettier prints the pair as an implicit key would. A pair with no value prints its key alone in a
-   * mapping (`{b, c: }` → `{ b, c }`); in a sequence prettier makes it `? b`, which this grammar cannot read back,
-   * so it refuses.
+   * mapping (`{b, c: }` → `{ b, c }`), and as `? b` in a sequence.
    */
   pairParts(pair: number, seq: boolean): { key: string | undefined; keyNode: number | undefined; value: number | undefined } {
     let key: number | undefined;
@@ -353,11 +352,11 @@ class Printer {
       else if (this.kind(k) !== ":" && this.kind(k) !== "?" && this.kind(k) !== "comment") unsupported(`a flow pair ${this.kind(k)}`);
     }
     if (key === undefined && value === undefined) return { key: undefined, keyNode: undefined, value: undefined };
-    if (value === undefined && seq) return unsupported("a flow sequence pair without a value");
     if (key === undefined) {
       if (this.flowCollection(value as number) !== undefined) unsupported("a flow collection after an empty key");
       return { key: undefined, keyNode: undefined, value };
     }
+    if (value === undefined) return { key: (seq ? "? " : "") + this.flat(key), keyNode: key, value };
     const alias = this.named(key).some((k) => this.kind(k) === "alias");
     return { key: this.flat(key) + (alias ? " " : ""), keyNode: key, value };
   }
@@ -464,6 +463,12 @@ class Printer {
       const k = this.layout(keyNode, col + 2, col + 2, 0);
       const v = this.layout(value, col + 2, col + 2, trail);
       return [`? ${k[0]}`, ...k.slice(1), `${" ".repeat(col)}: ${v[0]}`, ...v.slice(1)];
+    }
+    if (value === undefined && flowKey) {
+      // A key alone lays out as an item would; in a sequence after `? `, its items two columns further in.
+      if (!seq) return this.layout(keyNode, col, col, trail);
+      const k = this.layout(keyNode, col + 2, col + 2, trail);
+      return [`? ${k[0]}`, ...k.slice(1)];
     }
     if (value === undefined || this.flowCollection(value) === undefined) {
       if (flowKey) unsupported("a flow key past printWidth");

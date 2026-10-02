@@ -86,6 +86,8 @@ const edgeCases: [string, string][] = [
   ["flow-key-long", `[${"x".repeat(90)}]: c\n[${"y".repeat(40)}]: ${"z".repeat(40)}\n`],
   // A flow pair's `?` or empty `: ` pair kept source spacing, or a wide flow key in a flow broke without `? `.
   ["flow-explicit-empty", `- {? a : x, b: c, : }\n- [? d : e, : ]\n- {[${"w".repeat(80)}]: [b]}\n`],
+  // A flow `? key` with no `:` did not parse, or kept its `?` in a mapping, or lost it in a sequence, or a wide flow key alone broke without its `? ` in a sequence.
+  ["flow-explicit-no-value", `- {? a,? [b]}\n- [? 1,? *c, d: e]\n- [? [${"l".repeat(40)}, ${"l".repeat(40)}]]\n- {? [${"m".repeat(40)}, ${"m".repeat(40)}]}\n`],
   // A multi-line plain or quoted scalar refused, or lost its blank-line paragraphs or the indent of its later lines.
   ["multiline-flow-scalars", `a: aaa\n  bbb\n\n  ccc\nb: "x\n  y"\nc: '${"w ".repeat(20)}\n  z'\n? m\n  n\n: v\nd:\n  - p\n    q\n`],
   // A multi-line value moved below its key whenever its first paragraph did not fit, where only its first word must.
@@ -154,8 +156,8 @@ const refused: [string, string][] = [
   ["block-scalar-deep-whitespace-end", "a: |-\n  ab\n   \n"],
   // A comment after a kept block scalar ending the stream printed a final line break, which oxfmt leaves off.
   ["kept-block-scalar-then-comment", "a: |+\n  x\n# c\n"],
-  // `{? 1,? 2}` parses to an ERROR root spanning `{? 1` only, so printing its text dropped the rest.
-  ["error-root", "{? 1,? 2,? 3}\n"],
+  // A stream that parses to an ERROR root (an unclosed flow collection) printed the text it spans, dropping the rest.
+  ["error-root", "a: [b, c\nd: 1\n"],
   // A prettier-ignore trailing a line, or before a document, was applied to the next block item.
   ["prettier-ignore-trailing", "a: 1 # prettier-ignore\nb:    2\n"],
   ["prettier-ignore-document", "# prettier-ignore\n---\na:    1\n"],
