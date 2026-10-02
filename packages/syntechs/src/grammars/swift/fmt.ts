@@ -286,23 +286,52 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
   };
   walk(tree.root);
   const edits: Edit[] = [];
-  for (const [stmt, past] of long) {
+  /** The statement laid out as swift-format lays it out, or undefined when that is what is written. */
+  const layOut = (stmt: number, past: number[]): Edit | undefined => {
     const first = index.get(firstLeaf(tree, stmt)) as number;
-    const { tokens, last: end } = statementTokens(tree, stmt, (leaf) => gap(index.get(firstLeaf(tree, leaf)) as number) ?? 0);
+    const { tokens, last: end } = statementTokens(tree, stmt, (leaf) => gap(index.get(firstLeaf(tree, leaf)) as number));
     const lastLeaf = tree.count(end) === 0 ? end : lastLeafOf(end);
     const last = index.get(lastLeaf) as number;
     if (!startsLine(first) || (last + 1 < leaves.length && !startsLine(last + 1)))
       throw new Error(`a statement past column ${width} sharing its line (line breaking): ${at(first)}`);
-    for (let i = first + 1; i <= last; i++)
-      if (startsLine(i)) throw new Error(`a statement past column ${width} spanning lines (line breaking): ${at(first)}`);
+    // A line break inside the statement is kept as swift-format keeps it; a blank line or a comment is not ported.
+    for (let i = first + 1; i <= last; i++) {
+      if (isComment(leaves[i] as number))
+        throw new Error(`a comment inside a statement past column ${width} (line breaking): ${at(i)}`);
+      if (tree.lf(leaves[i] as number) > 1)
+        throw new Error(`a blank line inside a statement past column ${width} (line breaking): ${at(i)}`);
+    }
     for (const leaf of past)
       if ((index.get(leaf) as number) > last)
         throw new Error(`code past column ${width} after a statement's header (line breaking): ${at(index.get(leaf) as number)}`);
     const base = tree.col(leaves[first] as number);
-    const text = prettyPrint(tokens, base, width, 2);
-    if (text.split("\n").some((line, i) => line.length + (i === 0 ? base : 0) > width))
+    const printed = prettyPrint(tokens, base, width, 2);
+    if (printed.split("\n").some((line, i) => line.length + (i === 0 ? base : 0) > width))
       throw new Error(`a line past column ${width} once laid out (line breaking): ${at(first)}`);
-    edits.push({ from: starts.get(leaves[first] as number) as number, to: (starts.get(lastLeaf) as number) + tree.text(lastLeaf).length, text });
+    const from = starts.get(leaves[first] as number) as number;
+    const to = (starts.get(lastLeaf) as number) + tree.text(lastLeaf).length;
+    return printed === text.slice(from, to) ? undefined : { from, to, text: printed };
+  };
+  for (const [stmt, past] of long) {
+    const edit = layOut(stmt, past);
+    if (edit !== undefined) edits.push(edit);
+  }
+  // swift-format lays out a statement spanning lines within the width too, keeping the line breaks it allows. One
+  // whose layout is ported is laid out; another is kept as written.
+  const spanning = new Set<number>();
+  for (let i = 1; i < leaves.length; i++) {
+    if (!startsLine(i)) continue;
+    const stmt = statementOf(leaves[i] as number);
+    if (stmt !== NO_NODE && !long.has(stmt) && firstLeaf(tree, stmt) !== leaves[i]) spanning.add(stmt);
+  }
+  for (const stmt of spanning) {
+    let edit: Edit | undefined;
+    try {
+      edit = layOut(stmt, []);
+    } catch {
+      continue;
+    }
+    if (edit !== undefined) edits.push(edit);
   }
   function lastLeafOf(n: number): number {
     while (tree.count(n) > 0) n = tree.child(n, tree.count(n) - 1);

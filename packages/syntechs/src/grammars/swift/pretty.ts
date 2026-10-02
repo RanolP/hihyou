@@ -15,7 +15,8 @@ export type Tok =
   | { t: "syntax"; text: string }
   | { t: "open"; consistent: boolean }
   | { t: "close" }
-  | { t: "break"; kind: BreakKind; size: number }
+  /** `newline`: a line break kept from the source; `ignoresDiscretionary`: `.elective(ignoresDiscretionary: true)`. */
+  | { t: "break"; kind: BreakKind; size: number; newline?: boolean; ignoresDiscretionary?: boolean }
   | { t: "space"; size: number }
   | { t: "ctxStart" }
   | { t: "ctxEnd" };
@@ -26,6 +27,8 @@ export const tk = {
   close: { t: "close" } as Tok,
   space: { t: "space", size: 1 } as Tok,
   brk: (kind: BreakKind, size = 1): Tok => ({ t: "break", kind, size }),
+  /** A break that a line break in the source before the token after it does not make fire. */
+  elective: (kind: BreakKind, size = 1): Tok => ({ t: "break", kind, size, ignoresDiscretionary: true }),
   ctxStart: { t: "ctxStart" } as Tok,
   ctxEnd: { t: "ctxEnd" } as Tok,
 };
@@ -76,7 +79,8 @@ export function prettyPrint(tokens: readonly Tok[], base: number, lineLength: nu
         }
         lengths.push(-total);
         stack.push(i);
-        total += tok.size;
+        // A newline kept from the source always fires; its length makes every group around it too long to fit.
+        total += tok.newline ? lineLength : tok.size;
         break;
       }
       case "space":
@@ -230,6 +234,7 @@ export function prettyPrint(tokens: readonly Tok[], base: number, lineLength: nu
             break;
           }
         }
+        if (tok.newline) mustBreak = true;
         if (!canFit(length) || mustBreak) {
           continuation = continuationIfFires;
           newline();

@@ -9,7 +9,7 @@
 // postfix chain. The visitors then run over that shape.
 
 import type { FormatTree } from "../../fmt/tree.js";
-import { type Tok, tk } from "./pretty.js";
+import { type BreakKind, type Tok, tk } from "./pretty.js";
 
 /** Literals swift-format prints whole: a string's interpolations are its raw text (`ExpressionSegmentSyntax`). */
 const WHOLE = new Set(["line_string_literal"]);
@@ -23,6 +23,8 @@ const BINARY = new Set([
   "conjunction_expression",
   "disjunction_expression",
   "nil_coalescing_expression",
+  // `a != b` after a long name, among others.
+  "infix_expression",
 ]);
 /** Swift's standard precedence groups by operator: [precedence, associativity]. */
 const PRECEDENCE: Record<string, [number, "left" | "right" | "none"]> = {
@@ -46,7 +48,7 @@ const PRECEDENCE: Record<string, [number, "left" | "right" | "none"]> = {
 
 /** An expression as SwiftSyntax shapes it, spanning the leaves `first` to `last`. */
 interface Expr {
-  k: "ref" | "literal" | "keyPath" | "member" | "call" | "prefix" | "infix" | "try" | "array";
+  k: "ref" | "literal" | "keyPath" | "member" | "call" | "prefix" | "infix" | "try" | "array" | "ternary" | "optional";
   first: number;
   last: number;
   /** `member`: the base, if any; `call`: the callee; `prefix`/`try`: the operand; `infix`: lhs, rhs; `array`: elements. */
@@ -80,7 +82,8 @@ function lastLeaf(tree: FormatTree, n: number): number {
 export function statementTokens(
   tree: FormatTree,
   stmt: number,
-  gap: (leaf: number) => number,
+  /** The spaces between `leaf` and the leaf before it, or undefined across a line break. */
+  gap: (leaf: number) => number | undefined,
 ): { tokens: Tok[]; last: number } {
   const before = new Map<number, Tok[]>();
   const after = new Map<number, Tok[][]>();
@@ -119,6 +122,7 @@ export function statementTokens(
     const inner = postfix(base.kids[0] as Expr, build);
     return make({ k: base.k, first: base.first, last: inner.last, kids: [inner], op: base.op as number });
   };
+  const innermostTry = (e: Expr): Expr => (e.k === "try" ? innermostTry(e.kids[0] as Expr) : e);
   const innermost = (e: Expr): Expr => (e.k === "prefix" || e.k === "try" ? innermost(e.kids[0] as Expr) : e);
 
   function convert(n: number): Expr {
@@ -184,6 +188,12 @@ export function statementTokens(
       const keyword = firstLeaf(tree, op);
       return make({ k: "try", first: keyword, last: operand.last, kids: [operand], op: keyword });
     }
+    if (k === "ternary_expression") {
+      const [cond, question, then, colon, otherwise] = children(n) as [number, number, number, number, number];
+      if (tree.count(n) !== 5 || tree.text(question) !== "?" || tree.text(colon) !== ":") unsupported(n);
+      const parts = [convert(cond), convert(then), convert(otherwise)];
+      return make({ k: "ternary", first: parts[0]!.first, last: parts[2]!.last, kids: parts, op: question, name: colon });
+    }
     if (k === "array_literal") {
       const elements = children(n).filter((c) => tree.named(c));
       // ArrayElementListSyntax's commas are not ported.
@@ -199,6 +209,8 @@ export function statementTokens(
     const ops: number[] = [];
     const flatten = (m: number): void => {
       if (!BINARY.has(kind(m))) {
+        // An operand that is a ternary is one tree-sitter misnested: the ternary binds loosest.
+        if (kind(m) === "ternary_expression") unsupported(m);
         operands.push(convert(m));
         return;
       }
@@ -210,6 +222,15 @@ export function statementTokens(
       flatten(rhs);
     };
     flatten(n);
+    // `foldAll` hoists a `try` on the leftmost operand over the whole sequence.
+    const first = operands[0] as Expr;
+    if (first.k === "try") {
+      operands[0] = first.kids[0] as Expr;
+      const folded = fold();
+      return make({ k: "try", first: first.first, last: folded.last, kids: [folded], op: first.op as number });
+    }
+    return fold();
+    function fold(): Expr {
     let next = 0;
     const climb = (min: number): Expr => {
       let lhs = operands[next] as Expr;
@@ -227,6 +248,7 @@ export function statementTokens(
       return lhs;
     };
     return climb(0);
+    }
   }
 
   // ---- The visitors.
@@ -289,6 +311,8 @@ export function statementTokens(
         return infix(e);
       case "try":
         return tryExpr(e);
+      case "ternary":
+        return ternary(e);
       case "array":
         // `visit(ArrayExprSyntax)`.
         addAfter(e.first, tk.brk({ k: "open", block: true }, 0), tk.open());
@@ -368,10 +392,28 @@ export function statementTokens(
     expression(rhs);
   }
 
+  /** `visit(TernaryExprSyntax)`: the `? a : b` part is grouped ahead of `c ? a`. */
+  function ternary(e: Expr): void {
+    const [cond, then, otherwise] = e.kids as [Expr, Expr, Expr];
+    const question = e.op as number;
+    const colon = e.name as number;
+    addBefore(question, tk.brk({ k: "open", block: false }), tk.open());
+    addAfter(question, tk.space);
+    addBefore(colon, tk.brk({ k: "close", mustBreak: false }, 0), tk.brk({ k: "open", block: false }), tk.open());
+    addAfter(colon, tk.space);
+    // `outermostEnclosingNode`: an argument's or a condition's comma joins the scope.
+    const next = leafAfter(otherwise.last);
+    const scope = next !== undefined && delimiters.has(next) ? next : otherwise.last;
+    addAfter(scope, tk.brk({ k: "close", mustBreak: false }, 0), tk.close, tk.close);
+    expression(cond);
+    expression(then);
+    expression(otherwise);
+  }
+
   /** `visit(TryExprSyntax)` with `connectingTokenForKeywordModifiedExpr`. */
   function tryExpr(e: Expr): void {
     const operand = e.kids[0] as Expr;
-    addBefore(operand.first, tk.brk({ k: "continue" }));
+    addBefore(operand.first, tk.elective({ k: "continue" }));
     const anchor = (x: Expr): number | undefined => {
       if (x.k === "try" || x.k === "call") return anchor(x.kids[0] as Expr);
       if (x.k === "member") {
@@ -389,7 +431,7 @@ export function statementTokens(
     expression(operand);
   }
 
-  const isCompound = (e: Expr): boolean => e.k === "infix" || (e.k === "try" && isCompound(e.kids[0] as Expr));
+  const isCompound = (e: Expr): boolean => e.k === "infix" || e.k === "ternary" || (e.k === "try" && isCompound(e.kids[0] as Expr));
 
   /**
    * `visit(ConditionElementSyntax)` (with `visit(OptionalBindingConditionSyntax)`) over each condition in `parts`,
@@ -474,7 +516,41 @@ export function statementTokens(
     });
     prependBefore(firstOfAll, tk.open());
     prependAfter(last, tk.close);
-    addBefore(brace, tk.brk({ k: "reset" }));
+    addBefore(brace, tk.elective({ k: "reset" }));
+    lastToken = brace;
+    header = true;
+  } else if (k === "assignment") {
+    // `visit(InfixOperatorExprSyntax)` over an assigning operator.
+    const [target, op, result] = children(stmt) as [number, number, number];
+    if (tree.count(stmt) !== 3 || kind(target) !== "directly_assignable_expression" || tree.count(target) !== 1)
+      unsupported(stmt);
+    if (!["=", "+=", "-="].includes(tree.text(op))) unsupported(op);
+    const lhs = convert(tree.child(target, 0));
+    const rhs = convert(result);
+    // `stackedIndentationBehavior(after:rhs:)` stacks around a ternary's condition; not ported.
+    if (rhs.k === "ternary") unsupported(result);
+    // `maybeGroupAroundSubexpression`: not around a function call assigned to an lvalue.
+    if (rhs.k === "member" || (rhs.k === "call" && tree.text(children(rhs.args as number)[0] as number) === "[")) {
+      addBefore(rhs.first, tk.open());
+      addAfter(rhs.last, tk.close);
+    }
+    if (isCompound(rhs)) {
+      addAfter(rhs.last, tk.close);
+      addAfter(op, tk.brk({ k: "continue" }), tk.open());
+    } else addAfter(op, tk.brk({ k: "continue" }));
+    addBefore(op, tk.space);
+    expression(lhs);
+    expression(rhs);
+  } else if (k === "while_statement") {
+    // `visit(WhileStmtSyntax)`: as an `if`, without a group around the conditions or breaks around the first.
+    const { parts, stop: brace } = split(stmt, "{");
+    addAfter(firstLeaf(tree, stmt), tk.space);
+    conditions(parts, (first, lastOfCond, index) => {
+      if (index === 0) return;
+      prependBefore(first, tk.brk({ k: "open", block: false }, 0));
+      prependAfter(lastOfCond, tk.brk({ k: "close", mustBreak: false }, 0));
+    });
+    addBefore(brace, tk.elective({ k: "reset" }));
     lastToken = brace;
     header = true;
   } else if (k === "guard_statement") {
@@ -608,7 +684,7 @@ export function statementTokens(
       let j = 0;
       if (kind(p[j] as number) !== "simple_identifier") unsupported(param);
       j++;
-      if (kind(p[j] as number) === "simple_identifier") addBefore(p[j++] as number, tk.brk({ k: "continue" }));
+      if (kind(p[j] as number) === "simple_identifier") addBefore(p[j++] as number, tk.elective({ k: "continue" }));
       const colon = p[j++] as number;
       if (tree.text(colon) !== ":") unsupported(param);
       addAfter(colon, tk.brk({ k: "continue" }));
@@ -622,7 +698,7 @@ export function statementTokens(
       if (type === undefined) unsupported(param);
       if (attributed !== undefined) {
         addBefore(firstLeaf(tree, attributed), tk.open());
-        addAfter(lastLeaf(tree, attributed), tk.brk({ k: "continue" }));
+        addAfter(lastLeaf(tree, attributed), tk.elective({ k: "continue" }));
         addAfter(lastLeaf(tree, type), tk.close);
       }
       typeTokens(type);
@@ -691,7 +767,7 @@ export function statementTokens(
     if (body === undefined || kind(body) !== "function_body" || i !== parts.length) unsupported(n);
     const brace = tree.child(body, 0);
     if (tree.text(brace) !== "{") unsupported(body);
-    addBefore(brace, tk.brk({ k: "reset" }));
+    addBefore(brace, tk.elective({ k: "reset" }));
     // The where clause's group and the decl's close after the body; the stream ends at `{`, so they close there.
     addAfter(brace, ...(whereClose ? [tk.close] : []), tk.close);
     return brace;
@@ -729,11 +805,13 @@ export function statementTokens(
     const valueNode = parts[i++] as number;
     if (eq === undefined || tree.text(eq) !== "=" || valueNode === undefined || i !== parts.length) unsupported(n);
     const value = convert(valueNode);
+    // `stackedIndentationBehavior(rhs:)` stacks around a ternary's condition; not ported.
+    if (innermostTry(value).k === "ternary") unsupported(valueNode);
     if (annotation !== undefined) {
       const [colon, type] = children(annotation) as [number, number];
       if (kind(type) !== "user_type") unsupported(type);
       for (const c of children(type)) if (kind(c) !== "type_identifier" && tree.text(c) !== ".") unsupported(type);
-      addAfter(colon, tk.brk({ k: "open", block: false }));
+      addAfter(colon, tk.elective({ k: "open", block: false }));
       addBefore(firstLeaf(tree, type), tk.open());
       addAfter(lastLeaf(tree, type), tk.close);
     }
@@ -748,30 +826,74 @@ export function statementTokens(
     expression(value);
   }
 
-  // `visit(_ token:)`: the before tokens, the text, then the after groups innermost (last added) first. The
-  // statement is on one line as written, so each gap between its tokens is what the tokens there print when no
-  // break fires; a plain space stands where swift-format prints one without a break.
+  // `visit(_ token:)`: the before tokens, the text, then the after groups innermost (last added) first. Each gap
+  // between two tokens on one line as written is what the tokens there print when no break fires; a plain space
+  // stands where swift-format prints one without a break. A line break as written is a discretionary newline
+  // (`extractLeadingTrivia`), which `appendNewlines` puts on the most recent break.
   const tokens: Tok[] = [];
+  let lastBreak = -1;
+  let canMerge = false;
+  const append = (t: Tok) => {
+    tokens.push(t);
+    if (t.t === "break") {
+      lastBreak = tokens.length - 1;
+      canMerge = true;
+    } else if (t.t !== "open" && t.t !== "ctxStart") canMerge = false;
+  };
+  /** `isBreakMoreRecentThanNonbreakingContent`. */
+  const breakIsRecent = (ts: readonly Tok[]): boolean | undefined => {
+    for (let j = ts.length - 1; j >= 0; j--) {
+      const t = ts[j] as Tok;
+      if (t.t === "break") return !t.ignoresDiscretionary;
+      if (t.t === "space" || t.t === "syntax") return false;
+    }
+    return undefined;
+  };
+  const opensScope = (t: Tok) =>
+    t.t === "open" || (t.t === "break" && (t.kind.k === "open" || t.kind.k === "continue" || t.kind.k === "same" || t.kind.k === "contextual"));
   let width = 0;
   for (const [i, l] of leaves.entries()) {
     const own = before.get(l) ?? [];
-    for (const t of own) if (t.t === "break" || t.t === "space") width += t.size;
-    if (i > 0) {
-      const want = gap(l);
-      if (width === 0 && want === 1) tokens.push(tk.space);
-      else if (width !== want)
-        throw new Error(`a gap of ${want} where the layout prints ${width} (line breaking): before \`${tree.text(l)}\``);
+    let want = i > 0 ? gap(l) : 0;
+    if (want === undefined) {
+      // A newline swift-format drops: the line is joined as the tokens there print.
+      if (!(breakIsRecent(own) ?? breakIsRecent(tokens) ?? true)) want = NaN;
     }
-    tokens.push(...own, tk.syntax(tree.text(l)));
+    if (want === undefined) {
+      // `splitScopingBeforeTokens`: the tokens opening a scope go before the newline, the rest after it.
+      const split = own.findIndex((t) => !opensScope(t));
+      const opening = split < 0 ? own : own.slice(0, split);
+      opening.forEach(append);
+      const merged = tokens[lastBreak];
+      if (canMerge && merged?.t === "break") tokens[lastBreak] = { ...merged, newline: true };
+      else {
+        const k = merged?.t === "break" ? merged.kind.k : "same";
+        const compatible: BreakKind = k === "continue" ? { k: "continue" } : k === "contextual" ? { k: "contextual" } : { k: "same" };
+        append({ t: "break", kind: compatible, size: 0, newline: true });
+      }
+      (split < 0 ? [] : own.slice(split)).forEach(append);
+    } else {
+      for (const t of own) if (t.t === "break" || t.t === "space") width += t.size;
+      if (Number.isNaN(want)) {
+        // Where the layout prints nothing, swift-format may print a space this does not port.
+        if (width === 0) throw new Error(`a line break swift-format joins without a break (line breaking): before \`${tree.text(l)}\``);
+      } else if (i > 0) {
+        if (width === 0 && want === 1) append(tk.space);
+        else if (width !== want)
+          throw new Error(`a gap of ${want} where the layout prints ${width} (line breaking): before \`${tree.text(l)}\``);
+      }
+      own.forEach(append);
+    }
+    append(tk.syntax(tree.text(l)));
     // A header's `{` ends the tokens: the body after it is kept as written, the groups open there closed.
     if (l === lastToken && header) {
-      for (const group of after.get(l) ?? []) for (const t of group) if (t.t === "close") tokens.push(t);
+      for (const group of after.get(l) ?? []) for (const t of group) if (t.t === "close") append(t);
       break;
     }
     width = 0;
     for (const group of [...(after.get(l) ?? [])].reverse())
       for (const t of group) {
-        tokens.push(t);
+        append(t);
         if (t.t === "break" || t.t === "space") width += t.size;
       }
   }

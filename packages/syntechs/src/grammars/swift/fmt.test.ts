@@ -143,3 +143,50 @@ test("a long function or init signature is broken as swift-format breaks it", ()
     expect(out.ok && out.text, input).toBe(want);
   }
 });
+
+// A regression here is the TernaryExpr stream drifting: the `? a : b` part split apart, or `c ? a` kept together
+// where swift-format breaks before the `?`.
+test("a long ternary is broken before its `?` as swift-format breaks it", () => {
+  const cases: [string, string][] = [
+    [
+      "func f() -> Int {\n  return a != b ? someVeryLongValueNameForTheThenBranchThatIsLong : someOtherVeryLongValueNameForElse\n}\n",
+      "func f() -> Int {\n  return a != b\n    ? someVeryLongValueNameForTheThenBranchThatIsLong : someOtherVeryLongValueNameForElse\n}\n",
+    ],
+    [
+      "func f() {\n  someFunctionCall(firstArgument: 1, second: conditionValueThatIsLong ? firstLongerValueName : secondLongerValueName)\n}\n",
+      "func f() {\n  someFunctionCall(\n    firstArgument: 1,\n    second: conditionValueThatIsLong ? firstLongerValueName : secondLongerValueName)\n}\n",
+    ],
+  ];
+  for (const [input, want] of cases) {
+    const out = run(input);
+    expect(out.ok && out.text, input).toBe(want);
+  }
+});
+
+// A regression here is a line break in a long statement handled unlike swift-format's discretionary newlines: one
+// kept at a break (an argument, a `while` condition, after `=`) printed joined, or the one before a body's `{`,
+// which swift-format ignores, kept.
+test("a long statement spanning lines keeps the line breaks swift-format keeps", () => {
+  const cases: [string, string][] = [
+    [
+      "func f() {\n  while let parent = node.parent,\n    parent.is(TryExprSyntax.self) || parent.is(AwaitExprSyntax.self) || parent.is(UnsafeExprSyntax.self)\n  {\n    node = parent\n  }\n}\n",
+      "func f() {\n  while let parent = node.parent,\n    parent.is(TryExprSyntax.self) || parent.is(AwaitExprSyntax.self)\n      || parent.is(UnsafeExprSyntax.self)\n  {\n    node = parent\n  }\n}\n",
+    ],
+    [
+      "func f() {\n  self.multilineTrailingCommaBehavior =\n    try container.decodeIfPresent(MultilineTrailingCommaBehavior.self, forKey: .multilineTrailingCommaBehavior)\n    ?? defaults.multilineTrailingCommaBehavior\n}\n",
+      "func f() {\n  self.multilineTrailingCommaBehavior =\n    try container.decodeIfPresent(\n      MultilineTrailingCommaBehavior.self, forKey: .multilineTrailingCommaBehavior)\n    ?? defaults.multilineTrailingCommaBehavior\n}\n",
+    ],
+    [
+      "func aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(bbbbbbbbb: Int)\n{\n  x()\n}\n",
+      "func aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(\n  bbbbbbbbb: Int\n) {\n  x()\n}\n",
+    ],
+    [
+      "func f() {\n  context.findingEmitter.emit(message,\n    location: Finding.Location(file: context.fileURL.relativePath, line: outputBuffer.lineNumber, column: column))\n}\n",
+      "func f() {\n  context.findingEmitter.emit(\n    message,\n    location: Finding.Location(\n      file: context.fileURL.relativePath, line: outputBuffer.lineNumber, column: column))\n}\n",
+    ],
+  ];
+  for (const [input, want] of cases) {
+    const out = run(input);
+    expect(out.ok && out.text, input).toBe(want);
+  }
+});
