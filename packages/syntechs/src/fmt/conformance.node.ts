@@ -47,6 +47,7 @@ import {
   writeJson,
 } from "./conformance/report.node.js";
 import { ruffSuite } from "./conformance/ruff.node.js";
+import { svgSuite } from "./conformance/svg.node.js";
 import { format } from "./format.js";
 import type { Language } from "./rules.js";
 
@@ -268,6 +269,15 @@ export const TARGETS: Target[] = [
     }),
   },
   ...PRETTIER_FIXTURES.map(againstOxfmt),
+  {
+    id: "svg@oxfmt",
+    reference: oxfmt.name,
+    fmt: "html",
+    export: "html",
+    grammar: () => "html",
+    source: `Fixtures: svgo 3.3.2 test/**/*.svg (each plugin test's input, before its \`@@@\`) and logo/, feather 4.29.2 icons/, and src/grammars/html/svg-corpus; expected output from ${oxfmt.name} run on each named \`.html\` (oxfmt takes no \`.svg\`), excluded when oxfmt rejects it or does not keep its own output.`,
+    suite: async () => referenceSuite(svgSuite(), oxfmt),
+  },
 ];
 
 /** The ts targets format .tsx fixtures and prettier's jsx/ dir with the tsx grammar's `tsx` export. */
