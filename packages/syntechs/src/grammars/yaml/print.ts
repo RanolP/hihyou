@@ -455,9 +455,10 @@ class Printer {
       for (let o = 0; o < this.tree.nodeCount; o++) {
         const leaf = this.tree.at(o);
         if (this.tree.count(leaf) > 0) continue;
-        // A block scalar's content is no leaf: its header leaf stands for the whole scalar, header comment included.
+        // A scalar's or directive's text is more than its leaves (a block scalar's content, a quoted scalar's
+        // between its quotes, a directive's `%YAML`): its first leaf stands for the whole of it.
         const parent = this.tree.parent(leaf);
-        const scalar = this.kind(parent) === "block_scalar";
+        const scalar = /(?:_scalar|_directive)$/.test(this.kind(parent));
         if (scalar && this.tree.child(parent, 0) !== leaf) continue;
         const t = this.tree.text(scalar ? parent : leaf);
         const at = src.indexOf(t, pos);

@@ -90,6 +90,8 @@ const edgeCases: [string, string][] = [
   ["multiline-flow-scalars", `a: aaa\n  bbb\n\n  ccc\nb: "x\n  y"\nc: '${"w ".repeat(20)}\n  z'\n? m\n  n\n: v\nd:\n  - p\n    q\n`],
   // A multi-line value moved below its key whenever its first paragraph did not fit, where only its first word must.
   ["multiline-moved", `${"k".repeat(70)}: ${"v".repeat(20)} t\n  u\n${"k".repeat(70)}: ${"v".repeat(20)}\n  u\n\n  w\n`],
+  // A block scalar after a quoted scalar or a directive refused: their text is more than their leaves.
+  ["block-scalar-after-quoted", "%YAML 1.2\n---\na: 'x'\nb: \"y\\tz\"\nc: |\n    t\n\n\nd: 1\n"],
 ];
 
 // A folded or plain scalar's refill under proseWrap always: lines join into paragraphs and refill at printWidth,
