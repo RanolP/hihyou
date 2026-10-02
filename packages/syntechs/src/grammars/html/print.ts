@@ -437,7 +437,15 @@ function fill(tree: TsTree, text: string, into: Node, ts: number, from: number, 
       if (inner.startsWith("prettier-ignore") && inner !== "prettier-ignore") throw new Unsupported(inner);
       add(conditionalComment(text, n));
     } else if (k === "doctype") add(docType(tree.text(c), tree.start(c), tree.end(c)));
-    else throw new Unsupported(k);
+    else if (k === "processing_instruction") {
+      // angular-html-parser reads `<?` as a bogus comment only where a tag could start; inside a text run
+      // (`a <?x?>`, or after the whitespace that opens one) it is more of the text.
+      if (tree.start(c) > at) continue;
+      const n = node("comment", tree.start(c), tree.end(c));
+      n.isSelfClosing = true;
+      n.value = tree.text(c);
+      add(n);
+    } else throw new Unsupported(k);
   }
   if (to > at) addText(at, to);
 }

@@ -153,6 +153,15 @@ const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
     "script-template-html-script",
     "<script>\n  document.write(/* HTML */ `\n    <script>\n      document.write(/* HTML */ \\`<!-- a --> b\\`);\n    <\\/script>\n  `);\n</script>\n",
   ],
+  // An SVG's `<?xml ?>` prolog parsed as an ERROR that printed the whole file as written.
+  [
+    "svg-xml-prolog",
+    '<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg"><g><path d="M0 0L10 10"/></g></svg>\n',
+  ],
+  // A processing instruction where a tag could start is a bogus comment: printed as written and laid out as a comment is.
+  ["pi-after-tag", "<svg><?pi data?><g></g></svg>\n<?a?> hello\n"],
+  // Inside a text run a `<?` is more of the text, so its words reflow with the rest.
+  ["pi-in-text", `<p>a <?pi data?> b</p>\n<p>aaa <?pi ${"word ".repeat(20)}?> bbb</p>\n`],
 ];
 
 function ours(text: string, options: Partial<HtmlOptions>) {

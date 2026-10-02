@@ -1,4 +1,4 @@
-html@oxfmt compatibility: 141/146 (96.58%), 5 refused (ok:false), 23 excluded
+html@oxfmt compatibility: 142/147 (96.60%), 5 refused (ok:false), 22 excluded
 
 Fixtures: prettier 3.9.9 tests/format/{html} (recursive), every spec call listing parser `html`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left.
 
@@ -50,7 +50,3 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 - html/_errors_/start-tag-comments/block-comment.html
 - html/_errors_/start-tag-comments/line-comment.html
-
-## oxfmt 0.70.0 rejects it: Unsupported file type: html/svg/embeded/svg.svg (1)
-
-- html/svg/embeded/svg.svg
