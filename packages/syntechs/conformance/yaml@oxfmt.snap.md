@@ -1,4 +1,4 @@
-yaml@oxfmt compatibility: 357/360 (99.17%), 3 refused (ok:false), 1 excluded
+yaml@oxfmt compatibility: 360/360 (100.00%), 0 refused (ok:false), 1 excluded
 
 Fixtures: prettier 3.9.9 tests/format/{yaml} (recursive), every spec call listing parser `yaml`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left.
 
@@ -15,9 +15,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| yaml/comment/flow-sequence-mapping.yml | 1/1 | 39.39% | formatter-error: a comment before a flow value |
-| yaml/flow-sequence/array-value.yml | 3/3 | 0.00% | formatter-error: a flow collection after an empty key |
-| yaml/spec/spec-example-6-1-indentation-spaces.yml | 1/2 | 62.00% | formatter-error: a broken flow collection under proseWrap |
 
 # Excluded
 
