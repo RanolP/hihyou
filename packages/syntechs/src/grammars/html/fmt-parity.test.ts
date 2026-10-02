@@ -177,6 +177,11 @@ const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
     "svg-pre",
     "<svg><foreignObject><div><pre> a   b\n  c </pre><textarea>\nx</textarea></div></foreignObject></svg>\n<html:div><pre>\nx</pre></html:div>\n<math><pre>\n  x\n</pre></math>\n",
   ],
+  // A script oxfmt's JS parser rejects (svgo's `…`, an svg's CDATA section) printed as `…;`; it prints as written.
+  [
+    "script-unparsed",
+    "<svg>\n    <script>\n        …\n    </script>\n    <script>\n        <![CDATA[\n            var a=1\n        ]]>\n    </script>\n</svg>\n<script>a … b</script>\n",
+  ],
 ];
 
 function ours(text: string, options: Partial<HtmlOptions>) {

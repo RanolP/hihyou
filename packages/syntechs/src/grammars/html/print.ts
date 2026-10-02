@@ -1061,13 +1061,23 @@ function embeddedLanguage(n: Node): EmbeddedLanguage | "raw" | undefined {
     type === undefined ||
     ["module", "text/javascript", "text/babel", "text/jsx", "application/javascript", "jsx"].includes(type)
   )
-    return "babel";
+    return isSurelyUnparsedScript(n.value.trim()) ? "raw" : "babel";
   if (type.endsWith("json") || type.endsWith("importmap") || type === "speculationrules") return "json";
   if (type === "text/html") return "html";
   if (["text/x-handlebars-template", "text/markdown"].includes(type))
     throw new Unsupported(`script type ${type}`);
   return "raw";
 }
+
+/**
+ * Whether oxfmt's JS parser rejects a script for certain, so it prints as written: a CDATA section (an SVG's
+ * `<script><![CDATA[...]]>`, no JSX tag), or a non-ASCII character no token holds outside a literal or a comment
+ * (svgo's `…` placeholder) with no quote, slash, backtick, `<!--`, `-->` or `#!` to open one. Our JS grammar
+ * accepts `…` as an expression, and other content it parses may be what oxfmt formats.
+ */
+const isSurelyUnparsedScript = (js: string) =>
+  js.startsWith("<![CDATA[") ||
+  (!/['"`/]|<!--|-->|^#!/.test(js) && /[^\x00-\x7f\p{ID_Continue}\s‌‍]/u.test(js));
 
 /**
  * printer-html.js's text in a whitespace-sensitive script or style: htmlTrimPreserveIndentation (one leading blank
