@@ -49,10 +49,8 @@ interface Highlight {
 export interface ScorecardRow {
   language: string;
   reference: string;
-  compatibility: string;
-  vsReference: string;
-  vsOxfmt: string;
-  refused: string;
+  /** The fixtures printed byte-identical to the reference; null where the language has no formatter yet. */
+  score: { passed: number; total: number; refused: number } | null;
   /**
    * The measured ratios, for charts. `reference` and `oxfmt` are syntechs' formatting time over that tool's
    * (below 1 is faster); `shiki` is the other way round, shiki's highlighting time over syntechs' (above 1 is
@@ -64,24 +62,13 @@ export interface ScorecardRow {
 export interface Scorecard {
   commit: string;
   date: string;
-  /** The tool versions the speed columns were timed against. */
+  /** The tool versions the speed graphs were timed against. */
   benchTools: string;
   rows: ScorecardRow[];
 }
 
 declare const data: Scorecard;
 export { data };
-
-const percent = (passed: number, total: number) =>
-  total === 0 ? "-" : `${((passed / total) * 100).toFixed(2)}%`;
-
-/** syntechs' time over the other tool's, as "2.1x faster" or "1.4x slower". */
-const speed = (ratio: number | null | undefined) =>
-  ratio == null
-    ? "-"
-    : ratio <= 1
-      ? `${(1 / ratio).toFixed(1)}x faster`
-      : `${ratio.toFixed(1)}x slower`;
 
 function readResult<T>(dir: string, file: string): T {
   const path = join(dir, file);
@@ -128,18 +115,15 @@ export default defineLoader({
         },
         language: r.id,
         reference: r.reference,
-        compatibility: r.score
-          ? percent(r.score.passed, r.score.total)
-          : "not implemented",
-        vsReference: speed(timed?.ratio.reference),
-        vsOxfmt: speed(timed?.ratio.oxfmt),
-        refused: r.score ? String(r.score.refused) : "-",
+        score: r.score
+          ? { passed: r.score.passed, total: r.score.total, refused: r.score.refused }
+          : null,
       };
     });
     return {
       commit: conformance.commit,
       date: conformance.date,
-      benchTools: Object.values(bench.tools).join(", "),
+      benchTools: [...Object.values(bench.tools), ...Object.values(highlight.tools)].join(", "),
       rows,
     };
   },
