@@ -1025,7 +1025,11 @@ function embeddedLanguage(n: Node): EmbeddedLanguage | "raw" | undefined {
   if ((n.name !== "script" && n.name !== "style") || n.value.trim() === "") return undefined;
   const lang = attr(n, "lang")?.value?.toLowerCase();
   if (n.name === "style") {
-    if (lang === undefined || lang === "css" || lang === "postcss") return "css";
+    if (lang === undefined || lang === "css" || lang === "postcss")
+      // Content oxfmt's CSS parser rejects prints as written: bare words (svgo's `…` placeholder), or one CDATA
+      // section (an SVG's `<style><![CDATA[...]]></style>`), which the parser reads as an unclosed selector.
+      // Other content it rejects is refused here, since what it accepts is not known.
+      return /^[^{}:;@/\\"'(),[\]<>]+$|^<!\[CDATA\[[^]*?\]\]>$/.test(n.value.trim()) ? "raw" : "css";
     if (lang === "scss" || lang === "less") throw new Unsupported(`style lang ${lang}`);
     return "raw";
   }

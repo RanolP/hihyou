@@ -165,6 +165,11 @@ const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
   // A prefixed tag in an svg (Inkscape's `<sodipodi:namedview>`) laid out as an svg block and lost its inner spaces.
   ["svg-prefixed-tag", "<svg><test:test> test </test:test><a:b> <g/> </a:b></svg>\n<html:div> x </html:div>\n"],
   // A tag inheriting a namespace other than svg's keeps its default display; an `svg:` prefix makes an svg block.
+  // A style oxfmt's CSS parser rejects (svgo's `…`, an svg's CDATA section) was refused; it prints as written.
+  [
+    "style-unparsed",
+    "<svg>\n    <style>\n        …\n    </style>\n    <style>\n        <![CDATA[\n            .st0{fill:blue;}\n        ]]>\n    </style>\n</svg>\n<style><![CDATA[a]{b:c}]]></style>\n",
+  ],
   ["inherited-namespace", "<svg><a:b><g> x </g></a:b></svg>\n<math><div> x </div></math>\n<svg:svg><g> x </g></svg:svg>\n"],
 ];
 
