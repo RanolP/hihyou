@@ -190,3 +190,15 @@ test("a long statement spanning lines keeps the line breaks swift-format keeps",
     expect(out.ok && out.text, input).toBe(want);
   }
 });
+
+// A regression here is the conditional compilation guard drifting: a statement outside every `#if` refused for the
+// file's directives, or a directive written at column 0 inside a type kept where swift-format indents it.
+test("a long statement outside #if is laid out, and a directive off its scope's indent is refused", () => {
+  const out = run(
+    "struct S {\n  func f() {\n    self.multilineTrailingCommaBehavior = try container.decodeIfPresent(MultilineTrailingCommaBehavior.self, forKey: .x)\n  }\n  #if os(macOS)\n    func g() {}\n  #endif\n}\n",
+  );
+  expect(out.ok && out.text).toBe(
+    "struct S {\n  func f() {\n    self.multilineTrailingCommaBehavior = try container.decodeIfPresent(\n      MultilineTrailingCommaBehavior.self, forKey: .x)\n  }\n  #if os(macOS)\n    func g() {}\n  #endif\n}\n",
+  );
+  expect(run("struct S {\n  func f() {\n    x()\n  }\n#if os(macOS)\n  func g() {}\n#endif\n}\n").ok).toBe(false);
+});

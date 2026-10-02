@@ -133,6 +133,14 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
     const t = tree.text(l);
     const kind = tree.kindName(l);
     if (parentKind(l) === "directive") {
+      // swift-format indents a directive with the statements around it, or a level in per enclosing `#if`.
+      if (startsLine(i) && /^#(if|elseif|else|endif)$/.test(t)) {
+        const top = opened[opened.length - 1];
+        const want = top === undefined ? 0 : lineIndent(top.i) + 2;
+        const nest = directives - (t === "#if" ? 0 : 1);
+        if (tree.col(l) !== want && tree.col(l) !== want + 2 * nest)
+          throw new Error(`a directive not at the indent of the statements around it (indentation): ${at(i)}`);
+      }
       if (t === "#if") directives++;
       else if (t === "#endif") directives--;
       continue;
@@ -429,8 +437,15 @@ const stream: StreamRules<SwiftOptions> = {
         const edits = refuseUnsupported(tree, ctx.options.printWidth);
         let source = tree.text(node);
         for (const e of edits.sort((a, b) => b.from - a.from)) source = source.slice(0, e.from) + e.text + source.slice(e.to);
-        if (edits.length > 0 && /^[ \t]*#if\b/m.test(source))
-          throw new Error("a statement laid out in a file with conditional compilation (line breaking)");
+        // A statement in a conditional compilation block may move in once laid out at its column as written.
+        const original = tree.text(node);
+        for (const e of edits) {
+          const depth = original
+            .slice(0, e.from)
+            .split("\n")
+            .reduce((d, line) => d + (/^[ \t]*#if\b/.test(line) ? 1 : /^[ \t]*#endif\b/.test(line) ? -1 : 0), 0);
+          if (depth > 0) throw new Error("a statement laid out inside conditional compilation (line breaking)");
+        }
         // swift-format drops trailing whitespace and keeps at most one blank line (`maximumBlankLines`), which
         // this does to the text as written; a string or comment whose own text would change by it is refused.
         for (let o = 0; o < tree.nodeCount; o++) {
