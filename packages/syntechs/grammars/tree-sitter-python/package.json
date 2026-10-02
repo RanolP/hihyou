@@ -13,7 +13,8 @@
         "files": {
           "grammar.js": "48bb681fdcc51784077b7d2cbc138a1994309400d32e4ac74fcd304d9fe8ad81",
           "src/scanner.c": "6db82134ac2d4c90a1a1475487a625cface02662ebda9b7478cad9c7147e9afe",
-          "tree-sitter.json": "0682bc3796601f623928259e244fa45c113f286cac7606719db792911cf051f9"
+          "tree-sitter.json": "0682bc3796601f623928259e244fa45c113f286cac7606719db792911cf051f9",
+          "queries/highlights.scm": "a6708f209381618e2b398972c8f1ccd892f0c064eab35a2a3f911c3e22e79a7e"
         }
       }
     ]

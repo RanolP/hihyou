@@ -11,14 +11,18 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import type { Language } from "../core/language.js";
+import { language as css } from "../grammars/css/index.js";
 import { language as html } from "../grammars/html/index.js";
 import { language as javascript } from "../grammars/javascript/index.js";
 import { language as jsdoc } from "../grammars/jsdoc/index.js";
+import { language as json } from "../grammars/json/index.js";
 import { language as kotlin } from "../grammars/kotlin/index.js";
+import { language as python } from "../grammars/python/index.js";
 import { language as regex } from "../grammars/regex/index.js";
 import { language as swift } from "../grammars/swift/index.js";
 import { language as tsx } from "../grammars/tsx/index.js";
 import { language as typescript } from "../grammars/typescript/index.js";
+import { language as yaml } from "../grammars/yaml/index.js";
 import type { CaptureScope } from "./match.js";
 import { LANGUAGES, type LanguageRules, type Rule } from "./rules.node.js";
 
@@ -26,7 +30,7 @@ import { LANGUAGES, type LanguageRules, type Rule } from "./rules.node.js";
 const pkg = resolve(import.meta.dirname, "../..");
 const grammarsDir = join(pkg, "grammars");
 
-const PARSERS: Record<string, Language> = { javascript, typescript, tsx, kotlin, swift, jsdoc, regex, html };
+const PARSERS: Record<string, Language> = { javascript, typescript, tsx, kotlin, swift, jsdoc, regex, html, yaml, json, css, python };
 
 // ---- The query language: the subset of tree-sitter's S-expressions that highlight queries use.
 

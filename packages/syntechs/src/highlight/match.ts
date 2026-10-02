@@ -339,7 +339,7 @@ function forEachMatch(
   }
 }
 
-function scopeOf(rule: CaptureScope, tree: Tree, n: number): string {
+export function scopeOf(rule: CaptureScope, tree: Tree, n: number): string {
   // Own keys only: a node whose text is `constructor` must not find Object.prototype's.
   const kind = tree.kindName(n);
   if (rule.byKind && Object.hasOwn(rule.byKind, kind)) return rule.byKind[kind] as string;
