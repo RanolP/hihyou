@@ -4,7 +4,8 @@
 // language's sitter-to-tm ruleset names. packages/syntechs/generate.mjs bundles this file with esbuild and runs
 // it after the grammar bundles exist, since it checks every node kind a query names against the grammar.
 //
-// A query is rejected rather than half-compiled: an unknown node kind, a capture the ruleset does not map, or a
+// A query is rejected rather than half-compiled: an unknown node kind (or one the grammar has only as named where
+// the pattern wants anonymous, or the reverse), a capture the ruleset does not map, or a
 // predicate this compiler has no meaning for each fail the generation, naming the file and line. So does an
 // injection query (injections.scm) directive it does not implement; see compileInjections.
 
@@ -19,6 +20,7 @@ import { language as regex } from "../grammars/regex/index.js";
 import { language as swift } from "../grammars/swift/index.js";
 import { language as tsx } from "../grammars/tsx/index.js";
 import { language as typescript } from "../grammars/typescript/index.js";
+import { kindError, kindIndex } from "./kinds.node.js";
 import type { CaptureScope } from "./match.js";
 import { LANGUAGES, type LanguageRules, type Rule } from "./rules.node.js";
 
@@ -397,7 +399,7 @@ function resolveRule(rule: Rule): CaptureScope {
 function compile(name: string, rules: LanguageRules, language: Language): string {
   const files = queryFiles(name, rules);
   const patterns = files.flatMap((f) => parseQuery(readFileSync(f, "utf8"), relative(pkg, f)));
-  const symbols = new Set(language.symbolNames);
+  const kinds = kindIndex(language);
   const errors: string[] = [];
   const notes: string[] = [];
   const captureIndex = new Map<string, number>();
@@ -423,8 +425,8 @@ function compile(name: string, rules: LanguageRules, language: Language): string
 
   type CaptureFn = (c: string, at: Source) => number;
   const emitNode = (n: Node, at: Source, capture: CaptureFn = hostCapture): string => {
-    if (n.kind !== undefined && !symbols.has(n.kind))
-      errors.push(`${at.file}:${at.line}: ${n.anon ? JSON.stringify(n.kind) : `(${n.kind})`} is not a node kind of ${name}`);
+    const kindProblem = n.kind === undefined ? undefined : kindError(kinds, n.kind, n.anon === true, name);
+    if (kindProblem) errors.push(`${at.file}:${at.line}: ${kindProblem}`);
     const parts: string[] = [];
     if (n.kind !== undefined) parts.push(`kind: ${JSON.stringify(n.kind)}`);
     if (n.anon) parts.push("anon: true");
