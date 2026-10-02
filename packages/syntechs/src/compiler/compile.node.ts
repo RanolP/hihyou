@@ -25,6 +25,9 @@ export const GRAMMARS: Record<string, { src: string; comments: string[] }> = {
     src: "tree-sitter-kotlin/src",
     comments: ["line_comment", "multiline_comment"],
   },
+  // Injected into JavaScript and TypeScript comments and regex literals by their injections.scm.
+  jsdoc: { src: "tree-sitter-jsdoc/src", comments: [] },
+  regex: { src: "tree-sitter-regex/src", comments: [] },
 };
 
 const only = process.argv.slice(2);

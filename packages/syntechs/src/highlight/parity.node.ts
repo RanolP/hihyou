@@ -95,6 +95,7 @@ async function main(): Promise<void> {
     const spec = LANGS[lang];
     if (!spec) throw new Error(`unknown language ${lang}`);
     const { language, highlight } = await spec.load();
+    await highlight.load?.();
     const shiki = await createHighlighter({ themes: [themeName], langs: [lang] });
     const files = corpusFiles(corpus, spec.exts);
     let compared = 0;

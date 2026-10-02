@@ -5,9 +5,14 @@
 // Matching follows tree-sitter's: a child pattern matches any later child (gaps allowed), `.` anchors it to the
 // next named child, a quantified child may repeat or be absent, and every way a pattern matches is a match. When
 // patterns capture the same node, the one later in the query wins, as `tree-sitter highlight` resolves them.
+//
+// An injection query's matches name ranges of the tree to parse with another language (JSDoc in a comment, a
+// regular expression in a regex literal). That language's highlighter paints them after the host's, so its
+// scopes stack inside the host's as a TextMate grammar's embedded scopes do. `highlight` stays synchronous:
+// the module's `load` imports the injected languages first, and until it has, nothing is injected.
 
-import type { Tree } from "../core/index.js";
-import type { HighlightModule } from "./index.js";
+import { type Language, parseTree, type Tree } from "../core/index.js";
+import type { HighlightModule, Paint } from "./index.js";
 
 export interface QueryNode {
   /** A named node's kind, or an anonymous node's text when `anon`; absent for a wildcard. */
@@ -53,12 +58,46 @@ export interface CompiledQuery {
   /** By capture index; null for a capture that paints nothing and does not win over others (`@_name`). */
   captures: (CaptureScope | null)[];
   patterns: QueryPattern[];
+  injections?: CompiledInjections;
+}
+
+/** One pattern of an injection query; its captures index the injection query's own capture list. */
+export interface InjectionPattern extends QueryPattern {
+  /** The injected language's name (`#set! injection.language`), or the capture whose text names it. */
+  language: string | { capture: number };
+  /** The `@injection.content` capture. */
+  content: number;
+  /** `injection.combined`: every match's content is parsed as one document. */
+  combined?: boolean;
+  /** `injection.include-children`: the content keeps the text of its child nodes. */
+  includeChildren?: boolean;
+  /** A regular expression the content's text must match (the ruleset's `injectionMatch`). */
+  contentMatch?: RegExp;
+}
+
+export interface InjectedLanguage {
+  language: Language;
+  highlight: HighlightModule;
+}
+
+export interface CompiledInjections {
+  patterns: InjectionPattern[];
+  /**
+   * The languages the patterns may inject, each with its tree-sitter.json `injection-regex` (which a name
+   * read from a capture is matched against) and its loader, which `HighlightModule.load` runs.
+   */
+  languages: Record<string, { regex: RegExp; load: () => Promise<InjectedLanguage> }>;
 }
 
 const key = (named: boolean, kind: string) => (named ? kind : `"${kind}"`);
 
 export function queryHighlighter(query: CompiledQuery): HighlightModule {
   const candidates = indexPatterns(query.patterns);
+  const injections = query.injections;
+  const injectionCandidates = injections && indexPatterns(injections.patterns);
+  /** The injected languages `load` has imported, by name. */
+  const loaded = new Map<string, InjectedLanguage>();
+  let loading: Promise<void> | undefined;
 
   const module: HighlightModule = {
     highlight(tree, paint) {
@@ -93,9 +132,115 @@ export function queryHighlighter(query: CompiledQuery): HighlightModule {
         for (let i = 0, count = tree.count(n); i < count; i++) visit(tree.child(n, i));
       };
       visit(tree.root);
+
+      if (injections && injectionCandidates && loaded.size > 0)
+        inject(tree, paint, injections, injectionCandidates, loaded);
     },
   };
+  if (injections)
+    module.load = () =>
+      (loading ??= Promise.all(
+        Object.entries(injections.languages).map(async ([name, entry]) => {
+          const injected = await entry.load();
+          await injected.highlight.load?.();
+          loaded.set(name, injected);
+        }),
+      ).then(
+        () => {},
+        (e: unknown) => {
+          // A failed import (a chunk that did not load) may succeed on the next call.
+          loading = undefined;
+          throw e;
+        },
+      ));
   return module;
+}
+
+/** `[from, to)` of node `node`'s text, one stretch of what an injection parses. */
+interface Piece {
+  node: number;
+  from: number;
+  to: number;
+}
+
+function inject(
+  tree: Tree,
+  paint: Paint,
+  injections: CompiledInjections,
+  candidates: (key: string) => number[],
+  loaded: Map<string, InjectedLanguage>,
+): void {
+  // tree-sitter finds the language for a name by each language's injection-regex.
+  const resolve = (name: string): InjectedLanguage | undefined => {
+    for (const [id, entry] of Object.entries(injections.languages))
+      if (entry.regex.test(name)) return loaded.get(id);
+    return undefined;
+  };
+  const separate: { lang: InjectedLanguage; pieces: Piece[] }[] = [];
+  const combined = new Map<string, { lang: InjectedLanguage; pieces: Piece[] }>();
+  forEachMatch(tree, injections.patterns, candidates, (i, caps) => {
+    const pattern = injections.patterns[i] as InjectionPattern;
+    let name: string | undefined;
+    if (typeof pattern.language === "string") name = pattern.language;
+    else
+      for (let j = 0; j < caps.length; j += 2)
+        if (caps[j] === pattern.language.capture) name = tree.text(caps[j + 1] as number);
+    const lang = name === undefined ? undefined : resolve(name);
+    if (!lang) return;
+    for (let j = 0; j < caps.length; j += 2) {
+      if (caps[j] !== pattern.content) continue;
+      const n = caps[j + 1] as number;
+      if (pattern.contentMatch && !pattern.contentMatch.test(tree.text(n))) continue;
+      const pieces = contentPieces(tree, n, !!pattern.includeChildren);
+      if (!pattern.combined) {
+        separate.push({ lang, pieces });
+        continue;
+      }
+      const groupKey = `${i} ${name}`;
+      const group = combined.get(groupKey);
+      if (group) group.pieces.push(...pieces);
+      else combined.set(groupKey, { lang, pieces });
+    }
+  });
+  for (const { lang, pieces } of [...separate, ...combined.values()]) paintInjection(tree, paint, lang, pieces);
+}
+
+/** The node's text, less its children's unless `includeChildren`, as tree-sitter's injection ranges. */
+function contentPieces(tree: Tree, n: number, includeChildren: boolean): Piece[] {
+  const start = tree.start(n);
+  const length = tree.end(n) - start;
+  if (includeChildren) return [{ node: n, from: 0, to: length }];
+  const pieces: Piece[] = [];
+  let at = 0;
+  for (let i = 0, count = tree.count(n); i < count; i++) {
+    const c = tree.child(n, i);
+    const from = tree.start(c) - start;
+    if (from > at) pieces.push({ node: n, from: at, to: from });
+    at = Math.max(at, tree.end(c) - start);
+  }
+  if (length > at) pieces.push({ node: n, from: at, to: length });
+  return pieces;
+}
+
+/** Parses the pieces' text with the injected language and paints its scopes back onto the host's nodes. */
+function paintInjection(tree: Tree, paint: Paint, lang: InjectedLanguage, pieces: Piece[]): void {
+  const offsets: number[] = [];
+  let text = "";
+  for (const p of pieces) {
+    offsets.push(text.length);
+    text += tree.text(p.node).slice(p.from, p.to);
+  }
+  const inner = parseTree(lang.language, text);
+  lang.highlight.highlight(inner, (m, scope, from, to) => {
+    const s = inner.start(m) + (from ?? 0);
+    const e = to === undefined ? inner.end(m) : inner.start(m) + to;
+    pieces.forEach((p, k) => {
+      const o = offsets[k] as number;
+      const a = Math.max(s, o);
+      const b = Math.min(e, o + p.to - p.from);
+      if (a < b) paint(p.node, scope, p.from + a - o, p.from + b - o);
+    });
+  });
 }
 
 /** Pattern indexes by the node key their root matches, wildcard roots included, in pattern order. */

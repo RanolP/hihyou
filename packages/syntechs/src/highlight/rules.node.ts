@@ -21,6 +21,16 @@ export interface LanguageRules {
   queries?: string[];
   /** Query files under src/grammars appended after the upstream ones. */
   extend?: string[];
+  /**
+   * The upstream injection query, for a grammar whose tree-sitter.json names none: tree-sitter then reads
+   * queries/injections.scm, which is the default here too.
+   */
+  injections?: string;
+  /**
+   * Per injected language, a regular expression the injection's content must match. tree-sitter injects JSDoc
+   * into every comment; VS Code's grammar reads it only in a `/**` comment, so a `// @ts-ignore` stays a comment.
+   */
+  injectionMatch?: Record<string, string>;
   captures: Record<string, Rule>;
 }
 
@@ -170,17 +180,92 @@ const KOTLIN: Record<string, Rule> = {
   "operator.arrow": "storage.type.function.arrow.kotlin",
 };
 
+/** A `/**` comment, not the empty `/**\/`. */
+const JS_INJECTIONS = { jsdoc: "^\\/\\*\\*(?!\\/)" };
+
+// Injected into a JavaScript or TypeScript `/**` comment; the comment's own scope stays beneath these.
+const JSDOC: Record<string, Rule> = {
+  keyword: "storage.type.class.jsdoc",
+  type: "entity.name.type.instance.jsdoc",
+  variable: "variable.other.jsdoc",
+  "variable.description": "variable.other.description.jsdoc",
+  link: "variable.other.link.underline.jsdoc",
+};
+
+const CHARACTER_CLASS = "punctuation.definition.character-class.regexp";
+const QUANTIFIER = "keyword.operator.quantifier.regexp";
+const ANCHOR = "keyword.control.anchor.regexp";
+
+// Injected into a regex literal's pattern, under the host's string.regexp scope.
+const REGEX: Record<string, Rule> = {
+  "punctuation.bracket": {
+    scope: "punctuation.definition.group.regexp",
+    byText: { "[": CHARACTER_CLASS, "]": CHARACTER_CLASS, "[:": CHARACTER_CLASS, ":]": CHARACTER_CLASS, "{": QUANTIFIER, "}": QUANTIFIER },
+  },
+  "punctuation.delimiter": QUANTIFIER,
+  property: "variable.other.regexp",
+  escape: {
+    scope: "constant.character.escape.backslash.regexp",
+    byKind: {
+      character_class_escape: "constant.other.character-class.regexp",
+      start_assertion: ANCHOR,
+      end_assertion: ANCHOR,
+      boundary_assertion: ANCHOR,
+      non_boundary_assertion: ANCHOR,
+      control_letter_escape: "constant.character.control.regexp",
+    },
+    // tree-sitter's control_escape covers `\t` and `\x41` alike; VS Code reads the letters as classes.
+    byPrefix: [
+      ["\\x", "constant.character.numeric.regexp"],
+      ...["\\t", "\\n", "\\r", "\\f", "\\v"].map((p): [string, string] => [p, "constant.other.character-class.regexp"]),
+    ],
+  },
+  operator: {
+    scope: QUANTIFIER,
+    byText: {
+      "|": "keyword.operator.or.regexp",
+      "^": "keyword.operator.negation.regexp",
+      "-": "constant.other.character-class.range.regexp",
+      "=": "keyword.operator.lookahead.regexp",
+      "!": "keyword.operator.lookahead.negative.regexp",
+    },
+  },
+  number: QUANTIFIER,
+  "character.special": "keyword.other.regexp",
+  // A class's members take the set's scope, which highlights.tm.scm paints over the whole class.
+  "constant.character": "",
+  "character.set": "constant.other.character-class.set.regexp",
+  "character.class": "constant.other.character-class.regexp",
+  "character.range": "constant.other.character-class.range.regexp",
+  backreference: "keyword.other.back-reference.regexp",
+  string: "",
+};
+
 export const LANGUAGES: Record<string, LanguageRules> = {
+  jsdoc: {
+    grammar: "tree-sitter-jsdoc",
+    scope: "text.jsdoc",
+    extend: ["jsdoc/highlights.tm.scm"],
+    captures: JSDOC,
+  },
+  regex: {
+    grammar: "tree-sitter-regex",
+    scope: "source.regex",
+    extend: ["regex/highlights.tm.scm"],
+    captures: REGEX,
+  },
   javascript: {
     grammar: "tree-sitter-javascript",
     scope: "source.js",
     extend: ["javascript/highlights.tm.scm", "javascript/highlights-js.tm.scm", "javascript/highlights-jsx.tm.scm"],
+    injectionMatch: JS_INJECTIONS,
     captures: JS,
   },
   typescript: {
     grammar: "tree-sitter-typescript",
     scope: "source.ts",
     extend: ["javascript/highlights.tm.scm", "typescript/highlights.tm.scm"],
+    injectionMatch: JS_INJECTIONS,
     captures: JS,
   },
   tsx: {
@@ -194,6 +279,8 @@ export const LANGUAGES: Record<string, LanguageRules> = {
       "node_modules/tree-sitter-javascript/queries/highlights-jsx.scm",
     ],
     extend: ["javascript/highlights.tm.scm", "typescript/highlights.tm.scm", "javascript/highlights-jsx.tm.scm"],
+    injections: "node_modules/tree-sitter-javascript/queries/injections.scm",
+    injectionMatch: JS_INJECTIONS,
     captures: JS,
   },
   kotlin: {

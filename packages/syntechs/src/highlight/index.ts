@@ -22,6 +22,11 @@ export interface HighlightModule {
    * rule for the outer scope still colours what no inner rule matches.
    */
   highlight(tree: Tree, paint: Paint): void;
+  /**
+   * Imports the languages this highlighter injects (JSDoc in a comment, a regex literal's pattern), which
+   * `highlight` paints only once this has resolved. A loader awaits it before handing the module out.
+   */
+  load?(): Promise<void>;
 }
 
 export interface ScopeRuns {

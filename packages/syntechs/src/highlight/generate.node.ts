@@ -5,13 +5,16 @@
 // it after the grammar bundles exist, since it checks every node kind a query names against the grammar.
 //
 // A query is rejected rather than half-compiled: an unknown node kind, a capture the ruleset does not map, or a
-// predicate this compiler has no meaning for each fail the generation, naming the file and line.
+// predicate this compiler has no meaning for each fail the generation, naming the file and line. So does an
+// injection query (injections.scm) directive it does not implement; see compileInjections.
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import type { Language } from "../core/language.js";
 import { language as javascript } from "../grammars/javascript/index.js";
+import { language as jsdoc } from "../grammars/jsdoc/index.js";
 import { language as kotlin } from "../grammars/kotlin/index.js";
+import { language as regex } from "../grammars/regex/index.js";
 import { language as tsx } from "../grammars/tsx/index.js";
 import { language as typescript } from "../grammars/typescript/index.js";
 import type { CaptureScope } from "./match.js";
@@ -21,7 +24,7 @@ import { LANGUAGES, type LanguageRules, type Rule } from "./rules.node.js";
 const pkg = resolve(import.meta.dirname, "../..");
 const grammarsDir = join(pkg, "grammars");
 
-const PARSERS: Record<string, Language> = { javascript, typescript, tsx, kotlin };
+const PARSERS: Record<string, Language> = { javascript, typescript, tsx, kotlin, jsdoc, regex };
 
 // ---- The query language: the subset of tree-sitter's S-expressions that highlight queries use.
 
@@ -261,6 +264,128 @@ function queryFiles(name: string, rules: LanguageRules): string[] {
   return files;
 }
 
+/** The grammar's injection query, found as tree-sitter finds it; undefined for a grammar with none. */
+function injectionQuery(rules: LanguageRules): string | undefined {
+  if (rules.injections) return packagePath(rules.grammar, rules.injections);
+  const config = join(grammarsDir, rules.grammar, "tree-sitter.json");
+  let listed: string | string[] | undefined;
+  if (existsSync(config)) {
+    const json = JSON.parse(readFileSync(config, "utf8")) as { grammars: { scope: string; injections?: string | string[] }[] };
+    listed = json.grammars.find((g) => g.scope === rules.scope)?.injections;
+  }
+  if (Array.isArray(listed)) throw new Error(`${config}: more than one injection query for ${rules.scope} is not supported`);
+  const file = packagePath(rules.grammar, listed ?? "queries/injections.scm");
+  if (listed !== undefined && !existsSync(file))
+    throw new Error(`no injection query at ${file} (run \`node packages/syntechs/grammars/build.mjs ${rules.grammar}\`)`);
+  return existsSync(file) ? file : undefined;
+}
+
+/** A grammar's tree-sitter.json `injection-regex`, which an injection naming a language is matched against. */
+function injectionRegex(rules: LanguageRules): string {
+  const config = join(grammarsDir, rules.grammar, "tree-sitter.json");
+  const json = JSON.parse(readFileSync(config, "utf8")) as { grammars: { scope: string; "injection-regex"?: string }[] };
+  const regex = json.grammars.find((g) => g.scope === rules.scope)?.["injection-regex"];
+  if (regex === undefined) throw new Error(`${config} gives ${rules.scope} no injection-regex`);
+  return regex;
+}
+
+interface Emitters {
+  emitNode: (n: Node, at: Source, capture: (c: string, at: Source) => number) => string;
+  emitTest: (p: Pattern, capture: (c: string, at: Source) => number) => string | undefined;
+  errors: string[];
+  notes: string[];
+}
+
+/**
+ * The `injections` field of a highlight.gen.ts. tree-sitter-highlight reads `@injection.content`, the language
+ * from `@injection.language` or `#set! injection.language`, and the `#set!` flags `injection.combined` and
+ * `injection.include-children`; any other directive fails the generation. A pattern without
+ * `@injection.content` (an editor's convention of naming the language by the capture) injects nothing in
+ * tree-sitter-highlight, so it is left out with a note.
+ */
+function compileInjections(name: string, rules: LanguageRules, file: string, emit: Emitters): string[] {
+  const rel = relative(pkg, file);
+  const patterns = parseQuery(readFileSync(file, "utf8"), rel);
+  const index = new Map<string, number>();
+  const capture = (c: string) => {
+    let i = index.get(c);
+    if (i === undefined) index.set(c, (i = index.size));
+    return i;
+  };
+  const used = new Set<string>();
+  const lines: string[] = [];
+  const unusedMatch = new Set(Object.keys(rules.injectionMatch ?? {}));
+  for (const p of patterns) {
+    const where = `${p.at.file}:${p.at.line}`;
+    const captured = new Set<string>();
+    const walk = (n: Node) => {
+      for (const c of n.captures) captured.add(c);
+      for (const a of n.alt ?? []) walk(a);
+      for (const it of n.children ?? []) walk(it.node);
+    };
+    walk(p.root);
+    const root = emit.emitNode(p.root, p.at, capture);
+    const directives = p.predicates.filter((d) => d.name.endsWith("!"));
+    if (!captured.has("injection.content")) {
+      emit.notes.push(`${where}: no @injection.content, so tree-sitter-highlight injects nothing here (left out)`);
+      continue;
+    }
+    let language: string | undefined;
+    const flags: string[] = [];
+    for (const d of directives) {
+      const args = d.args.map((a) => ("string" in a ? a.string : `@${a.capture}`));
+      if (d.name === "set!" && args[0] === "injection.language" && args.length === 2) language = args[1];
+      else if (d.name === "set!" && args.length === 1 && args[0] === "injection.combined") flags.push("combined: true");
+      else if (d.name === "set!" && args.length === 1 && args[0] === "injection.include-children")
+        flags.push("includeChildren: true");
+      else emit.errors.push(`${d.at.file}:${d.at.line}: injection directive #${d.name} ${args.join(" ")} is not supported`);
+    }
+    const test = emit.emitTest({ ...p, predicates: p.predicates.filter((d) => !d.name.endsWith("!")) }, capture);
+    let languageField: string;
+    if (language !== undefined) {
+      const target = LANGUAGES[language];
+      if (!target || !PARSERS[language]) {
+        emit.errors.push(`${where}: injects ${language}, which rules.node.ts and generate.node.ts have no grammar for`);
+        continue;
+      }
+      used.add(language);
+      languageField = JSON.stringify(language);
+    } else if (captured.has("injection.language")) {
+      languageField = `{ capture: ${capture("injection.language")} }`;
+    } else {
+      emit.errors.push(`${where}: an injection with neither @injection.language nor #set! injection.language`);
+      continue;
+    }
+    const parts = [`root: ${root}`, `language: ${languageField}`, `content: ${capture("injection.content")}`, ...flags];
+    const match = language === undefined ? undefined : rules.injectionMatch?.[language];
+    if (match !== undefined) {
+      unusedMatch.delete(language as string);
+      parts.push(`contentMatch: /${match}/`);
+    }
+    if (test) parts.push(`test: ${test}`);
+    lines.push(`      // ${where}`, `      { ${parts.join(", ")} },`);
+  }
+  for (const m of unusedMatch) emit.errors.push(`rules.node.ts: injectionMatch names ${m}, which ${name} never injects`);
+  if (lines.length === 0) return [];
+  if (used.size > 0)
+    emit.notes.push(
+      `A language named by @injection.language resolves only to these, by their injection-regex: ${[...used].join(", ")}`,
+    );
+  const languages = [...used].map((l) => {
+    const target = LANGUAGES[l] as LanguageRules;
+    return [
+      `      ${l}: {`,
+      `        regex: /${injectionRegex(target)}/,`,
+      `        load: async () => ({`,
+      `          language: (await import("../${l}/index.js")).language,`,
+      `          highlight: (await import("../${l}/highlight.gen.js")).highlight,`,
+      "        }),",
+      "      },",
+    ].join("\n");
+  });
+  return ["  injections: {", "    patterns: [", ...lines, "    ],", "    languages: {", ...languages, "    },", "  },"];
+}
+
 // ---- Compiling.
 
 function resolveRule(rule: Rule): CaptureScope {
@@ -377,12 +502,18 @@ function compile(name: string, rules: LanguageRules, language: Language): string
     lines.push(`    // ${p.at.file}:${p.at.line}`);
     lines.push(`    { root: ${root}${test ? `, test: ${test}` : ""} },`);
   }
+  const injectionFile = injectionQuery(rules);
+  const injectionLines = injectionFile
+    ? compileInjections(name, rules, injectionFile, { emitNode, emitTest, errors, notes })
+    : [];
+  if (!injectionFile && rules.injectionMatch)
+    errors.push(`rules.node.ts: ${name} has an injectionMatch but no injection query was found`);
   if (errors.length > 0) throw new Error(`highlight queries for ${name}:\n  ${errors.join("\n  ")}`);
   const captureLines = [...captureIndex].map(
     ([c, i]) => `    ${JSON.stringify(captures[i])}, // ${i}: @${c}`,
   );
   return [
-    `// Generated by src/highlight/generate.node.ts from ${files.map((f) => relative(pkg, f)).join(", ")}; do not edit.`,
+    `// Generated by src/highlight/generate.node.ts from ${[...files, ...(injectionFile ? [injectionFile] : [])].map((f) => relative(pkg, f)).join(", ")}; do not edit.`,
     "// Change a capture's scope in src/highlight/rules.node.ts, or a pattern in the query files.",
     ...notes.map((n) => `// ${n}`),
     "",
@@ -395,6 +526,7 @@ function compile(name: string, rules: LanguageRules, language: Language): string
     "  patterns: [",
     ...lines,
     "  ],",
+    ...injectionLines,
     "});",
     "",
   ].join("\n");

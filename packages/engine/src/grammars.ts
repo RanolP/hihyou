@@ -41,6 +41,8 @@ const parsers: Record<LanguageId, () => Promise<{ language: Language }>> = {
   kotlin: () => import("syntechs/grammars/kotlin"),
 };
 
+// `load` brings in the languages a highlighter injects (JSDoc, regular expressions), each its own lazy chunk,
+// so that the synchronous `highlight` can paint them.
 const highlighters: Partial<Record<LanguageId, () => Promise<{ highlight: HighlightModule }>>> = {
   typescript: () => import("syntechs/grammars/typescript/highlight"),
   tsx: () => import("syntechs/grammars/tsx/highlight"),
@@ -86,7 +88,13 @@ export function syntechsGrammars(
 ): GrammarLoader {
   const loaded = new Map<LanguageId, Promise<Grammar>>();
   const load = async (id: LanguageId): Promise<Grammar> => {
-    const [{ language }, highlighter] = await Promise.all([parsers[id](), highlighters[id]?.()]);
+    const [{ language }, highlighter] = await Promise.all([
+      parsers[id](),
+      highlighters[id]?.().then(async (m) => {
+        await m.highlight.load?.();
+        return m;
+      }),
+    ]);
     const formatOptions = options.format?.[id];
     let formatter: FormatModule | undefined;
     if (formatOptions !== undefined)
