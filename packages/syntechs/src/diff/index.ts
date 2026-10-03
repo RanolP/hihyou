@@ -16,12 +16,15 @@ export {
   match,
 } from "./matcher.js";
 export {
+  atomCounts,
   classifyMove,
   defaultMoveOptions,
-  type MoveClass,
   type MoveOptions,
+  type MoveWitness,
   nameOf,
-  type SameLeaf,
+  unitCore,
+  type WitnessSide,
+  witnessSide,
 } from "./move.js";
 export {
   alphaIds,

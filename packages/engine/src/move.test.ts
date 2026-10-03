@@ -1,7 +1,10 @@
+import { parseTree } from "syntechs/core";
+import { match, Side } from "syntechs/diff";
 import { expect, test } from "vitest";
 import type { CodeFragment } from "./fragments.js";
 import { syntechsGrammars } from "./grammars.js";
 import { createEngine } from "./host.js";
+import { crossFileMoves } from "./move.js";
 
 const moved = `export function checksum(bytes: Uint8Array): number {
   let h = 0x811c9dc5;
@@ -590,4 +593,22 @@ test("a deleted function and a new one of the same shape but other content are n
 `);
 
   expect(moved).toEqual([]);
+});
+
+// Ties were broken by taking the first identical candidate: a helper deleted from one file and pasted into two
+// others was claimed as moved into whichever came first.
+test("code deleted from one file and pasted verbatim into two others is not paired as a move", async () => {
+  const grammar = await syntechsGrammars().forPath("a.ts");
+  if (!grammar) throw new Error("no TypeScript grammar");
+  const side = (text: string) => Side.of(parseTree(grammar.language, text));
+  const files: [string, string][] = [
+    [`export const name = "a";\n\n${moved}`, `export const name = "a";\n`],
+    [`export const name = "b";\n`, `export const name = "b";\n\n${moved}`],
+    [`export const name = "c";\n`, `export const name = "c";\n\n${moved}`],
+  ];
+  const { edits } = crossFileMoves(
+    files.map(([before, after]) => match(side(before), side(after))),
+  );
+
+  expect(edits.filter((e) => e.edit.kind === "move")).toEqual([]);
 });

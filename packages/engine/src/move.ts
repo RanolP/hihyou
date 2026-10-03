@@ -1,4 +1,5 @@
 import {
+  atomCounts,
   type Claimed,
   classifyMove,
   defaultMatchOptions,
@@ -12,6 +13,7 @@ import {
   match,
   type MoveOptions,
   nameOf,
+  type ScopeRules,
 } from "syntechs/diff";
 import { NO_NODE, type Tree } from "syntechs/core";
 import type { RawEdit } from "syntechs/diff";
@@ -32,7 +34,7 @@ export type CrossEdit = {
 };
 
 /**
- * Import lines clear `MoveOptions.minNodes` on punctuation alone, and the same import turns up in many files, so
+ * Import lines clear `MoveOptions.minAtoms` on the names they list, and the same import turns up in many files, so
  * pairing them across files reports noise as moves.
  */
 const importKinds = /^(import_statement|import_from_statement)$/;
@@ -40,14 +42,16 @@ const importKinds = /^(import_statement|import_from_statement)$/;
 /**
  * Pairs code deleted from one file with code inserted into another, so a declaration that moved
  * between files is one move rather than a delete here and an insert there. First identical subtrees,
- * largest first; then declarations of the same kind and name, matched inside for the edits made
- * on the way, unless `classifyMove` calls the pair `replaced`. Paired subtrees are claimed out of their
- * files' mappings, and any same-file match inside them is dropped in favour of the cross-file pairing.
+ * largest first, when exactly one candidate on each side holds that code; then declarations of the same kind
+ * and name, matched inside for the edits made on the way, when `classifyMove` finds a witness for the pair.
+ * Paired subtrees are claimed out of their files' mappings, and any same-file match inside them is dropped in
+ * favour of the cross-file pairing. `scopes` holds each file's scoping rules, by the same index.
  */
 export function crossFileMoves(
   mappings: (Mapping | undefined)[],
   opts: MatchOptions = defaultMatchOptions,
   moveOpts: MoveOptions = defaultMoveOptions,
+  scopes: readonly (ScopeRules | undefined)[] = [],
 ): { claimed: (Claimed | undefined)[]; edits: CrossEdit[] } {
   const intern = new Map<string, number>();
   const iso = mappings.map(
@@ -76,10 +80,12 @@ export function crossFileMoves(
         if (!m) return [];
         const s = m[side];
         const table = side === "a" ? m.src : m.dst;
+        const atoms = atomCounts(s);
         const out: Candidate[] = [];
         for (let i = 1; i < s.nodes.length; i++) {
           const size = s.size[i] as number;
-          if (size < moveOpts.minNodes || table[i] !== -1) continue;
+          if ((atoms[i] as number) < moveOpts.minAtoms || table[i] !== -1)
+            continue;
           const n = s.node(i);
           if (s.tree.named(n) && !inImport(s.tree, n))
             out.push({ file, i, size, n, tree: s.tree });
@@ -139,19 +145,33 @@ export function crossFileMoves(
   });
 
   // Identical subtrees.
-  const byIso = new Map<number, Candidate[]>();
-  for (const y of intoB) {
-    const id = iso[y.file]?.b[y.i];
-    if (id === undefined) continue;
-    const list = byIso.get(id);
-    if (list) list.push(y);
-    else byIso.set(id, [y]);
-  }
+  const byIso = (side: "a" | "b", cs: Candidate[]) => {
+    const groups = new Map<number, Candidate[]>();
+    for (const c of cs) {
+      const id = iso[c.file]?.[side][c.i];
+      if (id === undefined) continue;
+      const list = groups.get(id);
+      if (list) list.push(c);
+      else groups.set(id, [c]);
+    }
+    return groups;
+  };
+  const isoA = byIso("a", fromA);
+  const isoB = byIso("b", intoB);
   const identical = (x: Candidate) => {
     const id = iso[x.file]?.a[x.i];
     if (id === undefined) return false;
-    const y = byIso.get(id)?.find((y) => y.file !== x.file && !isTaken("b", y));
-    if (!y) return false;
+    // The same code deleted twice, or pasted into two places, is a tie no rule here may break: no claim.
+    const ys = isoB.get(id) ?? [];
+    const [y] = ys;
+    if (
+      isoA.get(id)?.length !== 1 ||
+      ys.length !== 1 ||
+      !y ||
+      y.file === x.file ||
+      isTaken("b", y)
+    )
+      return false;
     claim(x, y);
     edits.push(move(x, y));
     return true;
@@ -193,14 +213,17 @@ export function crossFileMoves(
       throw error;
     }
     // A same-named declaration rewritten from scratch stays a delete there and an insert here.
-    const kind = classifyMove(pair, 0, 0, moveOpts);
-    if (kind === "replaced") {
+    const scope = scopes[x.file];
+    const pairOpts =
+      scope && scope === scopes[y.file] ? { ...moveOpts, scope } : moveOpts;
+    const witness = classifyMove(pair, 0, 0, pairOpts);
+    if (!witness) {
       decline(x, y);
       return;
     }
-    const inner: EditScript = editScript(pair, undefined, moveOpts);
+    const inner: EditScript = editScript(pair, undefined, pairOpts);
     claim(x, y);
-    edits.push(move(x, y, kind === "edited"));
+    edits.push(move(x, y, witness.kind === "edited"));
     for (const e of inner.edits)
       edits.push({
         from: x.file,
