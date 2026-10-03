@@ -19,6 +19,7 @@ export { githubDark, githubLight } from "./themes.js";
 export { collapseElided, revealElided } from "./expand.js";
 export { type FileTreeNode, fileTree } from "./file-tree.js";
 export { diffFiles, engineReview, type ReviewSource } from "./review.js";
+export { type Approval, approvalOf } from "./approval.js";
 export {
   type Atom,
   type AtomIndex,
