@@ -9,14 +9,9 @@ import {
   untrack,
 } from "solid-js";
 import { insert } from "solid-js/web";
+import { atomIndex, atomViewed, setViewed, treeOf, viewedOf } from "./atoms.js";
 import {
-  atomIndex,
-  atomViewed,
-  setViewed,
-  treeOf,
-  viewedOf,
-} from "./atoms.js";
-import {
+  addAt,
   bindModal,
   emptyModal,
   type ModalBinding,
@@ -30,6 +25,7 @@ import { Draw, type DrawContext } from "./view/context.js";
 import { FileSection } from "./view/file.jsx";
 import { flash } from "./view/flash.js";
 import { createPainter } from "./view/highlights.js";
+import { KeyInfo, KeyToolbar } from "./view/keys.jsx";
 import { controls, modalRoot } from "./view/modal-root.js";
 import { createPairs, type PairView } from "./view/pair.jsx";
 import { createPlacer } from "./view/placement.js";
@@ -108,7 +104,9 @@ function mount(
   const isViewed = atomViewed(viewed, keyOf);
 
   const [files, setFiles] = createSignal(initial);
-  const [theme, setTheme] = createSignal(opts.theme && compileTheme(opts.theme));
+  const [theme, setTheme] = createSignal(
+    opts.theme && compileTheme(opts.theme),
+  );
   /** Bumped by every change of what is drawn that no other signal carries: a file opened or shown. */
   const [version, bump] = createSignal(0);
   const redraw = () => bump((v) => v + 1);
@@ -233,7 +231,12 @@ function mount(
     select(t) {
       if (!modal) return;
       clicking = true;
-      modal.set({ ...modal.state(), mode: "normal", selections: [t], primary: 0 });
+      modal.set({
+        ...modal.state(),
+        mode: "normal",
+        selections: [t],
+        primary: 0,
+      });
       clicking = false;
     },
     onExpand: opts.onExpand,
@@ -244,6 +247,13 @@ function mount(
   let modal: ModalBinding | undefined;
   /** Set while a click places the selection, which is already where the reviewer is looking. */
   let clicking = false;
+  const [hasSelection, setHasSelection] = createSignal(false);
+  const [keyInfo, setKeyInfo] = createSignal(false);
+  /** A toolbar button runs its key with focus on the root, where the modal editor reads keys. */
+  const press = (key: string) => {
+    root.focus({ preventScroll: true });
+    modal?.press(key);
+  };
   const paintSelection = () => {
     const { selections, primary } = modal?.state() ?? emptyModal;
     const index = outline();
@@ -328,6 +338,9 @@ function mount(
         paint();
         scrollToPrimary();
         return;
+      case "help":
+        setKeyInfo((open) => !open);
+        return;
     }
   };
 
@@ -350,7 +363,8 @@ function mount(
         const scrolls = new Map<string, [number, number]>();
         for (const s of root.querySelectorAll<HTMLElement>(".hh-scroll")) {
           const path = s.dataset["path"];
-          if (path !== undefined) scrolls.set(path, [s.scrollTop, s.scrollLeft]);
+          if (path !== undefined)
+            scrolls.set(path, [s.scrollTop, s.scrollLeft]);
         }
         kept = focused === undefined ? { scrolls } : { scrolls, focused };
         focusables = new Map();
@@ -381,21 +395,31 @@ function mount(
       viewedTick();
       untrack(paint);
     });
-    return <div class="hh-diff">{list()}</div>;
+    return (
+      <div class="hh-diff">
+        <KeyToolbar shown={hasSelection} press={press} />
+        {list()}
+        <KeyInfo open={keyInfo} />
+      </div>
+    );
   };
 
   const onClick = (e: MouseEvent) => {
     const target = e.target instanceof Element ? e.target : null;
     // A button acts through its own handler.
     if (target?.closest("button")) return;
-    // A click that ends a text selection is selecting, not expanding.
+    // A click that ends a text selection is selecting, not expanding. Shift+click adds a review selection, so the
+    // text range the browser extended for it is dropped.
+    const text = doc.getSelection();
+    if (e.shiftKey && text?.rangeCount) text.collapseToEnd();
     const selecting = !(doc.getSelection()?.isCollapsed ?? true);
     if (!target?.closest(controls)) root.focus({ preventScroll: true });
     // Read the point before an action redraws the rows it is in.
-    const at = !selecting && modal ? pointAt(root, placer, e, target) : undefined;
+    const at =
+      !selecting && modal ? pointAt(root, placer, e, target) : undefined;
     if (at && modal) {
       clicking = true;
-      modal.set(selectAt(modal.state(), outline(), at));
+      modal.set((e.shiftKey ? addAt : selectAt)(modal.state(), outline(), at));
       clicking = false;
     }
     // Code text selects; the rest of a cross-file move's block (its gutter) still expands it, which views it.
@@ -415,7 +439,13 @@ function mount(
       view = ctx.pairOfElement.get(node);
       node = node.parentElement;
     }
-    if (!view || !pairs.isExpanded(view.id)) return;
+    if (!view || !pairs.isExpanded(view.id)) {
+      // Next, Escape closes the key info box, as Kakoune's does.
+      if (!untrack(keyInfo)) return;
+      e.preventDefault();
+      setKeyInfo(false);
+      return;
+    }
     e.preventDefault();
     pairs.collapse(view);
     focusables.get(`toggle\n${view.id}`)?.focus({ preventScroll: true });
@@ -424,7 +454,7 @@ function mount(
   root.addEventListener("click", onClick);
   root.addEventListener("keydown", onKey);
   // The modal editor rebinds to each new outline, keeping its selection.
-    createComputed(() => {
+  createComputed(() => {
     const index = outline();
     untrack(() => {
       const state = modal?.state() ?? emptyModal;
@@ -434,12 +464,14 @@ function mount(
         viewed,
         keyOf,
         initial: state,
-        onChange: () => {
+        onChange: (s) => {
+          setHasSelection(s.selections.length > 0);
           paintSelection();
           if (!clicking) scrollToPrimary();
         },
         onEffect,
       });
+      setHasSelection(state.selections.length > 0);
     });
   });
 

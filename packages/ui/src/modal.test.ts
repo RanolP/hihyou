@@ -244,3 +244,77 @@ test("keys are ignored while focus is outside the root or a modifier is held", (
   key("j");
   expect(modal.state().selections).toEqual([nd(0, 1, "before", 2)]);
 });
+
+const [u1, d1, mv] = [
+  nd(0, 1, "before", 2),
+  nd(0, 1, "before", 3),
+  nd(0, 1, "before", 5),
+];
+
+// Adding from the first selection instead of the primary made J re-add the same stop, and K/N then moved from it.
+test("J/K/N add the motion's target from the primary and make it primary; a duplicate only becomes primary", () => {
+  expect(press(emptyModal, "J")).toMatchObject({
+    selections: [u1],
+    primary: 0,
+  });
+  const three = press(at(u1), "JJ");
+  expect(three).toMatchObject({ selections: [u1, d1, mv], primary: 2 });
+  expect(press(three, "K")).toMatchObject({
+    selections: [u1, d1, mv],
+    primary: 1,
+  });
+  expect(press(at(u1), "N")).toMatchObject({
+    selections: [u1, d1],
+    primary: 1,
+  });
+});
+
+// The primary ran past the end of the list, so v and K acted on nothing.
+test(") and ( rotate the primary and wrap around both ends", () => {
+  const s: ModalState = { ...emptyModal, selections: [u1, d1, mv], primary: 2 };
+  expect(press(s, ")").primary).toBe(0);
+  expect(press(s, "))").primary).toBe(1);
+  expect(press({ ...s, primary: 0 }, "(").primary).toBe(2);
+});
+
+// Dropping the primary left an index past the end, or emptied the selections entirely.
+test("- drops the primary, the next selection takes over, and the last one stays", () => {
+  const s: ModalState = { ...emptyModal, selections: [u1, d1, mv], primary: 1 };
+  expect(press(s, "-")).toMatchObject({ selections: [u1, mv], primary: 1 });
+  expect(press({ ...s, primary: 2 }, "-")).toMatchObject({
+    selections: [u1, d1],
+    primary: 0,
+  });
+  expect(press(at(u1), "-").selections).toEqual([u1]);
+});
+
+// Review keys fired inside a comment box, so typing "j" moved the selection instead of writing the letter.
+test("a focused field inside the root puts the editor in insert mode, and Escape blurs it back to normal", () => {
+  const { root, doc, inside, outside, key } = fakeRoot();
+  const field = {
+    tagName: "TEXTAREA",
+    blur: () => (doc.activeElement = outside),
+  } as unknown as Element;
+  root.contains = (o) => o === inside || o === field;
+  const modal = bindModal(root, { index, viewed: sessionViewedStore() });
+  doc.activeElement = field;
+  key("j");
+  expect(modal.state()).toMatchObject({ mode: "insert", selections: [] });
+  key("Escape");
+  expect(modal.state().mode).toBe("normal");
+  expect(doc.activeElement).toBe(outside);
+  doc.activeElement = inside;
+  key("j");
+  expect(modal.state().selections).toEqual([u1]);
+});
+
+// A toolbar button that skipped the binding's effect handling changed the selection but never wrote "viewed".
+test("press runs a key through the binding, writing viewed, whatever holds focus", () => {
+  const { root } = fakeRoot();
+  const store = sessionViewedStore({ device: "d" });
+  const modal = bindModal(root, { index, viewed: store });
+  modal.set(at(d1));
+  expect(modal.press("z")).toBe(false);
+  expect(modal.press("v")).toBe(true);
+  expect(viewedOf(index, d1, atomViewed(store, plainKeyOf))).toBe(true);
+});
