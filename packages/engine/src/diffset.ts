@@ -47,6 +47,12 @@ import type {
   Host,
   SerializedDiffsetId,
 } from "./host.js";
+import {
+  type Claim,
+  type ClaimContext,
+  checkClaim,
+  createClaimContext,
+} from "./claim.js";
 import { type Extract, findExtracts } from "./extract.js";
 import { createInterDiffset, type InterDiffset } from "./interdiff.js";
 import { type CrossEdit, crossFileMoves } from "./move.js";
@@ -218,14 +224,47 @@ export async function diffFiles(
         }
       : undefined,
   );
-  for (const c of cross.edits) {
+  // Every claim is checked against the trees before it is shown; one that fails reads as a delete plus an insert.
+  let claims: ClaimContext | undefined;
+  const holds = (claim: Claim) => {
+    claims ??= createClaimContext(
+      prepared.map((p) =>
+        "mapping" in p
+          ? {
+              before: p.a.tree,
+              after: p.b.tree,
+              ...(p.grammar.declarations && {
+                declarations: p.grammar.declarations,
+              }),
+            }
+          : undefined,
+      ),
+    );
+    return checkClaim(claims, claim) === undefined;
+  };
+  const trees = (file: number) => {
+    const p = prepared[file];
+    return p && "mapping" in p ? { a: p.a.tree, b: p.b.tree } : undefined;
+  };
+  for (const c of demote(cross.edits, trees, holds)) {
     const from = prepared[c.from];
     const to = prepared[c.to];
-    if (!from || !to || !("mapping" in from) || !("mapping" in to)) continue;    record(c, sides[c.from]?.a, sides[c.to]?.b, from.ref, to.ref);
+    if (!from || !to || !("mapping" in from) || !("mapping" in to)) continue;
+    record(c, sides[c.from]?.a, sides[c.to]?.b, from.ref, to.ref);
     for (const s of [sides[c.from], sides[c.to]]) if (s) s.touched = true;
   }
   const scripts = prepared.map((p, i) =>
-    "mapping" in p ? editScript(p.mapping, cross.claimed[i]) : undefined,
+    "mapping" in p
+      ? demote(
+          editScript(p.mapping, cross.claimed[i]).edits.map((edit) => ({
+            edit,
+            from: i,
+            to: i,
+          })),
+          trees,
+          holds,
+        ).map((e) => e.edit)
+      : undefined,
   );
   const extracts = findExtracts(
     prepared.map((p, i) => {
@@ -233,12 +272,24 @@ export async function diffFiles(
       return script && "mapping" in p && p.grammar.language.name !== "json"
         ? {
             mapping: p.mapping,
-            edits: script.edits,
+            edits: script,
             ...(cross.claimed[i] && { claimed: cross.claimed[i].b }),
             b: p.b,
-            ...(p.grammar.declarations && { declarations: p.grammar.declarations }),
+            ...(p.grammar.declarations && {
+              declarations: p.grammar.declarations,
+            }),
           }
         : undefined;
+    }),
+  ).filter((x) =>
+    holds({
+      kind: "extract",
+      from: x.from,
+      to: x.to,
+      site: x.a,
+      removed: x.removed,
+      declaration: x.b,
+      name: x.name,
     }),
   );
   // An extract's new declaration is its after half, no longer an insert of its own.
@@ -292,18 +343,22 @@ export async function diffFiles(
         ...(reason && { collapsed: { reason } }),
       };
     }
-    const script = scripts[i] ?? editScript(p.mapping, cross.claimed[i]);
-    for (const e of withoutNodes(script.edits, p.b.tree, extracted[i]))
-      record({ edit: e, from: i, to: i }, s.a, s.b, p.ref, p.ref, status !== undefined);
+    const edits = scripts[i] ?? [];
+    for (const e of withoutNodes(edits, p.b.tree, extracted[i]))
+      record(
+        { edit: e, from: i, to: i },
+        s.a,
+        s.b,
+        p.ref,
+        p.ref,
+        status !== undefined,
+      );
     const reason = foldReason({
       path,
       text,
       onlyMoves:
-        !s.touched &&
-        script.edits.length > 0 &&
-        script.edits.every((e) => e.kind === "move"),
-      noEdits:
-        !s.touched && script.edits.length === 0 && p.texts[0] !== p.texts[1],
+        !s.touched && edits.length > 0 && edits.every((e) => e.kind === "move"),
+      noEdits: !s.touched && edits.length === 0 && p.texts[0] !== p.texts[1],
     });
     return {
       ...head,
@@ -404,12 +459,22 @@ function record(
   });
   // A whole file or a whole declaration is one atom and the change itself, so nothing in it is emphasized.
   // A whole file or a whole declaration is the change itself: outlined as one unit, nothing in it emphasized.
-  const unit = (s: SideInput | undefined, n: number | undefined, side: "before" | "after"): boolean => {
+  const unit = (
+    s: SideInput | undefined,
+    n: number | undefined,
+    side: "before" | "after",
+  ): boolean => {
     const tree = s?.v.tree;
     if (!s || !tree || n === undefined) return false;
     const whole = side === "after" ? "added" : "deleted";
     const one = (top: number): boolean => {
-      const declaration = wholeDeclaration(s.v, tree, top, s.declarations, s.containers);
+      const declaration = wholeDeclaration(
+        s.v,
+        tree,
+        top,
+        s.declarations,
+        s.containers,
+      );
       if (!wholeFile && !declaration) return false;
       s.changed.push(range(s, top));
       s.wholes.push({ node: top, whole, ...declaration });
@@ -428,13 +493,21 @@ function record(
   };
   const path = atomPath(refA, refB);
   // One atom per leaf of an inserted or deleted subtree, keyed by its own side alone.
-  const leaves = (s: SideInput | undefined, n: number | undefined, side: "before" | "after") => {
+  const leaves = (
+    s: SideInput | undefined,
+    n: number | undefined,
+    side: "before" | "after",
+  ) => {
     const tree = s?.v.tree;
     if (!s || !tree || n === undefined) return;
     for (const leaf of atomLeaves(tree, n))
       s.nodes.push({
         node: leaf,
-        atom: atomKey({ path, ancestors: ancestorLabels(tree, leaf), [side]: nodeHash(tree, leaf) }),
+        atom: atomKey({
+          path,
+          ancestors: ancestorLabels(tree, leaf),
+          [side]: nodeHash(tree, leaf),
+        }),
       });
   };
   switch (e.kind) {
@@ -503,22 +576,125 @@ function recordExtract(
   }
 }
 
+type Placed = Pick<CrossEdit, "edit" | "from" | "to">;
+
+/**
+ * `edits` with every move `holds` rejects turned into a delete of its before node and an insert of its after node,
+ * and the edits inside either half dropped with it: the halves are now whole new and whole gone code. An edit with
+ * one end inside a rejected half keeps its other end, as a delete or an insert.
+ */
+function demote(
+  edits: readonly Placed[],
+  trees: (file: number) => { a: Tree; b: Tree } | undefined,
+  holds: (claim: Claim) => boolean,
+): Placed[] {
+  const failed = edits.filter(
+    (e) =>
+      e.edit.kind === "move" &&
+      e.edit.a !== undefined &&
+      e.edit.b !== undefined &&
+      !holds({
+        kind: "move",
+        from: e.from,
+        to: e.to,
+        x: e.edit.a,
+        y: e.edit.b,
+        edited: e.edit.edited === true,
+      }),
+  );
+  if (failed.length === 0) return [...edits];
+  const covered = (
+    side: "a" | "b",
+    file: number,
+    n: number | undefined,
+    self?: Placed,
+  ) => {
+    const tree = trees(file)?.[side];
+    if (n === undefined || !tree) return false;
+    return failed.some((f) => {
+      const m = f.edit.kind === "move" ? f.edit[side] : undefined;
+      return (
+        f !== self &&
+        (side === "a" ? f.from : f.to) === file &&
+        m !== undefined &&
+        tree.start(m) <= tree.start(n) &&
+        tree.end(n) <= tree.end(m)
+      );
+    });
+  };
+  const out: Placed[] = [];
+  const gone = (e: Placed, from: number) => {
+    if (e.edit.kind === "insert" || e.edit.a === undefined) return;
+    out.push({
+      from,
+      to: from,
+      edit: {
+        kind: "delete",
+        old: e.edit.old,
+        node: e.edit.node ?? "",
+        a: e.edit.a,
+      },
+    });
+  };
+  const added = (e: Placed, to: number) => {
+    if (e.edit.kind === "delete" || e.edit.b === undefined) return;
+    const tree = trees(to)?.b;
+    const node = tree ? tree.kindName(e.edit.b) : "";
+    out.push({
+      from: to,
+      to,
+      edit: { kind: "insert", new: e.edit.new, node, b: e.edit.b },
+    });
+  };
+  for (const e of edits) {
+    const a = e.edit.kind === "insert" ? undefined : e.edit.a;
+    const b = e.edit.kind === "delete" ? undefined : e.edit.b;
+    if (failed.includes(e)) {
+      if (!covered("a", e.from, a, e)) gone(e, e.from);
+      if (!covered("b", e.to, b, e)) added(e, e.to);
+      continue;
+    }
+    const aIn = covered("a", e.from, a);
+    const bIn = covered("b", e.to, b);
+    if (!aIn && !bIn) out.push(e);
+    else if (!aIn && a !== undefined) gone(e, e.from);
+    else if (!bIn && b !== undefined) added(e, e.to);
+  }
+  return out;
+}
+
 /**
  * `edits` without the inserts inside `nodes`, and with `nodes` cut out of the inserts holding them, the rest of
  * each such insert kept piece by piece.
  */
-function withoutNodes(edits: RawEdit[], tree: Tree, nodes: ReadonlySet<number> | undefined): RawEdit[] {
+function withoutNodes(
+  edits: RawEdit[],
+  tree: Tree,
+  nodes: ReadonlySet<number> | undefined,
+): RawEdit[] {
   if (!nodes || nodes.size === 0) return edits;
-  const within = (n: number, m: number) => tree.start(m) <= tree.start(n) && tree.end(n) <= tree.end(m);
+  const within = (n: number, m: number) =>
+    tree.start(m) <= tree.start(n) && tree.end(n) <= tree.end(m);
   const split = (n: number): RawEdit[] => {
-    if (tree.end(n) === tree.start(n) || [...nodes].some((m) => within(n, m))) return [];
+    if (tree.end(n) === tree.start(n) || [...nodes].some((m) => within(n, m)))
+      return [];
     if (![...nodes].some((m) => within(m, n)))
-      return [{ kind: "insert", new: { start: tree.start(n), end: tree.end(n) }, node: tree.kindName(n), b: n }];
+      return [
+        {
+          kind: "insert",
+          new: { start: tree.start(n), end: tree.end(n) },
+          node: tree.kindName(n),
+          b: n,
+        },
+      ];
     const out: RawEdit[] = [];
-    for (let i = 0, count = tree.count(n); i < count; i++) out.push(...split(tree.child(n, i)));
+    for (let i = 0, count = tree.count(n); i < count; i++)
+      out.push(...split(tree.child(n, i)));
     return out;
   };
-  return edits.flatMap((e) => (e.kind === "insert" && e.b !== undefined ? split(e.b) : [e]));
+  return edits.flatMap((e) =>
+    e.kind === "insert" && e.b !== undefined ? split(e.b) : [e],
+  );
 }
 
 const statusOf = (ref: ChangedFileRef): FileDiff["status"] =>

@@ -550,7 +550,10 @@ const movedSides = async (after: string) =>
 
 // RanolP/hihyou#77: with a name tweaked on every line no statement survived whole to seed the bottom-up phase, and
 // the new `audit` left two candidates for the moved function, so it read as a whole delete plus a whole insert.
-test("a function moved past new code with a name tweaked on every line reads as one move, the tweaks marked", async () => {
+// Not shown since checkClaim gates moves: every statement and the parameter changed a name, so no whole unit is
+// carried over and the edited move has no core (docs/design/move-theory.md, "What is not guaranteed");
+// renames (phase 2) win it back, and `test.fails` flips then.
+test.fails("a function moved past new code with a name tweaked on every line reads as one move, the tweaks marked", async () => {
   const moved = await movedSides(`export function total(lines: Item[]): number {
   let sum = 0;
   for (const l of lines) {

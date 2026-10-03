@@ -25,6 +25,8 @@ export interface Extract {
   b: number;
   name: string;
   emphasis: number[];
+  /** The removed code itself: the deletes under `a` the declaration carries on. */
+  removed: number[];
 }
 
 type Declaration = {
@@ -128,6 +130,7 @@ export function findExtracts(
       b: site.d.node,
       name: site.d.name,
       emphasis: generalized(ta, site.removed, tb, site.d.node),
+      removed: site.removed,
     });
   }
   return out;
