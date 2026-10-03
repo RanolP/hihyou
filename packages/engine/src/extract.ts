@@ -1,6 +1,15 @@
 import { diffArrays } from "diff";
 import { NO_NODE, type Tree } from "syntechs/core";
-import { type Mapping, nameOf, type RawEdit } from "syntechs/diff";
+import {
+  atomCounts,
+  defaultMoveOptions,
+  isoIds,
+  type Mapping,
+  nameOf,
+  type RawEdit,
+  type Side,
+  unitCore,
+} from "syntechs/diff";
 import type { Version } from "./file.js";
 import { wholeDeclaration } from "./fragments.js";
 
@@ -38,11 +47,13 @@ type Declaration = {
 
 /**
  * Pairs an extract refactor's two ends, as a move's: removed code at one site, and a new top-level declaration
- * the code at that site now calls, whose body carries most of the removed words. The site is the nearest node
- * the inserted reference sits in that the after side kept, and the removed code the deletes inside its before
- * partner that share at least a third of their words with the declaration; together they must share half, and
- * two words at least. A declaration pairs with one site, the one sharing the most words, and a delete with one
- * declaration; any other new declaration stays an addition.
+ * the code at that site now calls. Shared words propose the pair: the site is the nearest node the inserted
+ * reference sits in that the after side kept, and the removed code the deletes inside its before partner that
+ * share at least a third of their words with the declaration; together they must share half, and two words at
+ * least. A witness decides it (`docs/design/move-theory.md`, "Extract"): the declaration's body with each parameter
+ * replaced by the argument the call passes holds whole units of the removed code, in order, carrying half its
+ * content atoms and one unit of `k` atoms or more. A declaration two sites could claim, or a delete two
+ * declarations could, is claimed by none; any new declaration left over stays an addition.
  */
 export function findExtracts(
   files: readonly (ExtractInput | undefined)[],
@@ -66,13 +77,9 @@ export function findExtracts(
   });
   if (byName.size === 0) return [];
 
-  type Site = {
-    d: Declaration;
-    from: number;
-    removed: number[];
-    shared: number;
-  };
-  const best = new Map<Declaration, Site>();
+  const witnessed = substitutionWitness(files);
+  type Site = { d: Declaration; from: number; removed: number[] };
+  const sites: Site[] = [];
   files.forEach((f, from) => {
     if (!f) return;
     const { mapping } = f;
@@ -107,22 +114,20 @@ export function findExtracts(
           total += ws.length;
         }
         if (shared < 2 || shared * 2 < total) continue;
-        const prev = best.get(d);
-        if (!prev || shared > prev.shared)
-          best.set(d, { d, from, removed, shared });
+        if (witnessed(from, e.b, d, removed)) sites.push({ d, from, removed });
       }
     }
   });
 
-  const used = files.map(() => new Set<number>());
+  const claims = new Map<Declaration | string, number>();
+  const keys = (s: Site) => [s.d, ...s.removed.map((x) => `${s.from}:${x}`)];
+  for (const s of sites)
+    for (const k of keys(s)) claims.set(k, (claims.get(k) ?? 0) + 1);
   const out: Extract[] = [];
-  for (const site of [...best.values()].sort((p, q) => q.shared - p.shared)) {
-    const taken = used[site.from];
+  for (const site of sites) {
     const ta = files[site.from]?.mapping.a.tree;
     const tb = files[site.d.file]?.b.tree;
-    if (!taken || !ta || !tb || site.removed.some((x) => taken.has(x)))
-      continue;
-    for (const x of site.removed) taken.add(x);
+    if (!ta || !tb || keys(site).some((k) => claims.get(k) !== 1)) continue;
     out.push({
       from: site.from,
       to: site.d.file,
@@ -134,6 +139,181 @@ export function findExtracts(
     });
   }
   return out;
+}
+
+/**
+ * Whether the before nodes `removed` of file `from` are carried by declaration `d`, called once inside the inserted
+ * node `holder`: `σ` maps each of `d`'s parameters to the argument that call passes, and a unit core between
+ * `removed` and `d`'s body under `σ` weighs `k` in one pair and half of `removed`'s content atoms in all.
+ */
+function substitutionWitness(files: readonly (ExtractInput | undefined)[]) {
+  const k = defaultMoveOptions.minAtoms;
+  const intern = new Map<string, number>();
+  const isos = new Map<Side, Int32Array>();
+  const atoms = new Map<Side, Uint32Array>();
+  const isoOf = (s: Side) => {
+    let ids = isos.get(s);
+    if (!ids) {
+      ids = isoIds(s, intern);
+      isos.set(s, ids);
+    }
+    return ids;
+  };
+  const atomsOf = (s: Side) => {
+    let out = atoms.get(s);
+    if (!out) {
+      out = atomCounts(s);
+      atoms.set(s, out);
+    }
+    return out;
+  };
+  return (
+    from: number,
+    holder: number,
+    d: { file: number; node: number; name: string },
+    removed: number[],
+  ): boolean => {
+    const site = files[from]?.mapping;
+    const into = files[d.file]?.mapping.b;
+    if (!site || !into) return false;
+    const body = bodyOf(into.tree, d.node);
+    const call = callTo(site.b.tree, holder, d.name);
+    if (body === undefined || call === undefined) return false;
+    const sigma = substitution(into.tree, body, site.b.tree, call);
+    if (!sigma) return false;
+    const before = atomsOf(site.a);
+    const roots = removed.map((n) => site.a.index(n));
+    const size = roots.reduce((s, i) => s + (before[i] as number), 0);
+    const b = into.index(body);
+    if (size < k || (atomsOf(into)[b] as number) < k) return false;
+    const args = isoOf(site.b);
+    const argIds = new Map(
+      [...sigma].map(([p, n]) => [p, args[site.b.index(n)] as number]),
+    );
+    const ids = substitutedIds(intern, into, b, argIds);
+    const aIso = isoOf(site.a);
+    const found = unitCore(
+      { side: site.a, atoms: before },
+      roots,
+      { side: into, atoms: atomsOf(into) },
+      b,
+      (i) => aIso[i] as number,
+      (t) => ids[t - b] as number,
+      k,
+    );
+    return found !== undefined && 2 * found.w >= size;
+  };
+}
+
+/** The one call to `name` by a plain identifier inside `n`; undefined when there is none or more than one. */
+function callTo(tree: Tree, n: number, name: string): number | undefined {
+  let found: number | undefined;
+  const stack = [n];
+  while (stack.length > 0) {
+    const m = stack.pop() as number;
+    const callee = fieldChild(tree, m, "function");
+    if (
+      callee !== undefined &&
+      tree.count(callee) === 0 &&
+      tree.kindName(callee) === "identifier" &&
+      tree.label(callee) === name &&
+      fieldChild(tree, m, "arguments") !== undefined
+    ) {
+      if (found !== undefined) return undefined;
+      found = m;
+    }
+    for (let i = tree.count(m) - 1; i >= 0; i--) stack.push(tree.child(m, i));
+  }
+  return found;
+}
+
+/**
+ * `σ`: each parameter of the function whose body is `body` to the argument node `call` (a node of `site`) passes
+ * it, in order. Undefined unless every parameter is a plain name without a default and the counts agree.
+ */
+function substitution(
+  tree: Tree,
+  body: number,
+  site: Tree,
+  call: number,
+): Map<string, number> | undefined {
+  const fn = tree.parent(body);
+  if (fn === NO_NODE) return undefined;
+  const params =
+    fieldChild(tree, fn, "parameters") ?? fieldChild(tree, fn, "parameter");
+  const argList = fieldChild(site, call, "arguments");
+  if (params === undefined || argList === undefined) return undefined;
+  const names: string[] = [];
+  for (const p of tree.kindName(params) === "identifier"
+    ? [params]
+    : namedChildren(tree, params)) {
+    const name = paramName(tree, p);
+    if (name === undefined) return undefined;
+    names.push(name);
+  }
+  const args = namedChildren(site, argList);
+  if (
+    args.length !== names.length ||
+    args.some((a) => site.kindName(a).includes("spread"))
+  )
+    return undefined;
+  const out = new Map<string, number>();
+  for (const [i, name] of names.entries()) {
+    if (out.has(name)) return undefined;
+    out.set(name, args[i] as number);
+  }
+  return out;
+}
+
+/** A parameter's own name: an identifier, or one in its `pattern` or `name` field with no default value. */
+function paramName(tree: Tree, p: number): string | undefined {
+  if (tree.kindName(p) === "identifier") return tree.label(p);
+  if (fieldChild(tree, p, "value") !== undefined) return undefined;
+  const inner = fieldChild(tree, p, "pattern") ?? fieldChild(tree, p, "name");
+  return inner !== undefined && tree.kindName(inner) === "identifier"
+    ? tree.label(inner)
+    : undefined;
+}
+
+/**
+ * Iso ids of the subtree at index `b` of `side`, offset by `b`, with each occurrence of a parameter standing for
+ * its argument's id in `args`, numbered through `intern` like `isoIds` so they compare with the removed code's.
+ */
+function substitutedIds(
+  intern: Map<string, number>,
+  side: Side,
+  b: number,
+  args: Map<string, number>,
+): Int32Array {
+  const { tree } = side;
+  const size = side.size[b] as number;
+  const ids = new Int32Array(size);
+  for (let i = b + size - 1; i >= b; i--) {
+    const n = side.node(i);
+    const arg =
+      tree.kindName(n) === "identifier" && tree.count(n) === 0
+        ? args.get(tree.label(n))
+        : undefined;
+    if (arg !== undefined) {
+      ids[i - b] = arg;
+      continue;
+    }
+    const kids = side.childrenOf(i).map((c) => ids[c - b]);
+    const key = `${tree.kindName(n)}\0${tree.label(n)}\0${kids.join(",")}`;
+    let id = intern.get(key);
+    if (id === undefined) {
+      id = intern.size;
+      intern.set(key, id);
+    }
+    ids[i - b] = id;
+  }
+  return ids;
+}
+
+function fieldChild(tree: Tree, n: number, field: string): number | undefined {
+  for (let i = 0, count = tree.count(n); i < count; i++)
+    if (tree.fieldName(tree.child(n, i)) === field) return tree.child(n, i);
+  return undefined;
 }
 
 /**

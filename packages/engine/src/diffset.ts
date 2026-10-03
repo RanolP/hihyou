@@ -1,4 +1,5 @@
 import {
+  defaultMoveOptions,
   editScript,
   lineDiff,
   type Mapping,
@@ -215,6 +216,9 @@ export async function diffFiles(
         ? p.mapping
         : undefined,
     ),
+    undefined,
+    undefined,
+    prepared.map((p) => ("mapping" in p ? p.grammar.scope : undefined)),
   );
   const sides = prepared.map((p) =>
     "a" in p
@@ -274,7 +278,10 @@ export async function diffFiles(
   const scripts = prepared.map((p, i) =>
     "mapping" in p
       ? demote(
-          editScript(p.mapping, cross.claimed[i]).edits.map((edit) => ({
+          editScript(p.mapping, cross.claimed[i], {
+            ...defaultMoveOptions,
+            ...(p.grammar.scope && { scope: p.grammar.scope }),
+          }).edits.map((edit) => ({
             edit,
             from: i,
             to: i,

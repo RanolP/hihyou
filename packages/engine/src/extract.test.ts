@@ -1,5 +1,9 @@
 import { readFileSync } from "node:fs";
+import { parseTree } from "syntechs/core";
+import { editScript, match, Side } from "syntechs/diff";
 import { expect, test } from "vitest";
+import { findExtracts } from "./extract.js";
+import { plainVersion } from "./file.js";
 import type { CodeFragment, FileDiff, SideMove } from "./fragments.js";
 import { syntechsGrammars } from "./grammars.js";
 import { createEngine } from "./host.js";
@@ -134,4 +138,58 @@ export function fetchCached(url: string): string {
       : [],
   );
   expect(wholes).toEqual(["function fetchCached"]);
+});
+
+/** `findExtracts` over files given as `[before, after]` texts, all TypeScript. */
+async function extractsOf(files: [string, string][]) {
+  const grammar = await syntechsGrammars().forPath("a.ts");
+  if (!grammar) throw new Error("no TypeScript grammar");
+  return findExtracts(
+    files.map(([before, after]) => {
+      const tb = parseTree(grammar.language, after);
+      const mapping = match(
+        Side.of(parseTree(grammar.language, before)),
+        Side.of(tb),
+      );
+      return {
+        mapping,
+        edits: editScript(mapping).edits,
+        b: { ...plainVersion(after, tb), tree: tb },
+        ...(grammar.declarations && { declarations: grammar.declarations }),
+      };
+    }),
+  ).map((x) => [x.from, x.to, x.name]);
+}
+
+const site = (
+  name: string,
+  call: string,
+) => `export function ${name}(order: Order) {
+  validate(order);
+  ${call};
+}
+`;
+const removed =
+  "for (const line of order.lines) report(order.id, line.total, Date.now())";
+const audit = `export function audit(order: Order) {
+  ${removed};
+}
+`;
+
+// Two sites sharing equally many words went to the first: the theory claims neither, since either could be it.
+test("code removed at two sites that both now call one new function is extracted from neither", async () => {
+  expect(
+    await extractsOf([
+      [site("placeA", removed), site("placeA", "audit(order)")],
+      [site("placeB", removed), site("placeB", "audit(order)")],
+      ["", audit],
+    ]),
+  ).toEqual([]);
+  // One site alone is still claimed, so the witness did not just drop every extract.
+  expect(
+    await extractsOf([
+      [site("placeA", removed), site("placeA", "audit(order)")],
+      ["", audit],
+    ]),
+  ).toEqual([[0, 1, "audit"]]);
 });

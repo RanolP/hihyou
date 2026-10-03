@@ -1,6 +1,6 @@
 # Move theory: claims that are provably true
 
-Design date 2026-10-04. Status: theory agreed as the target; nothing here is implemented. It builds on the move and extract presentation in `docs/design/review-core.md` and does not restate it.
+Design date 2026-10-04. Status: theory agreed as the target; steps 1 to 3 of the change list are implemented. It builds on the move and extract presentation in `docs/design/review-core.md` and does not restate it.
 
 The maintainer's instruction: "ast level이라 더 고가치 정보가 많으니 (cst도 아니고) 선택적으로 수용해서 theory를 만들자. 증명가능하게 false positive가 없도록." (We diff at AST level, not text and not a raw CST, so we hold richer information; adopt the literature selectively and build a theory under which move claims provably have no false positives.)
 
@@ -12,7 +12,7 @@ syntechs parses into a tree-sitter-shaped tree (`Tree` in `packages/syntechs/src
 - **Absent:** scopes and bindings. No grammar ships a locals query (the generated `highlight.gen.ts` files say "no locals query"), so nothing knows which identifier occurrence refers to which declaration.
 - **Cheap to derive:** a per-language table of binder positions, `(kind, field)` pairs such as `variable_declarator.name` or `required_parameter.pattern`, and of scope kinds (function, block, `for`, `catch`), kept beside `Grammar.declarations`. They name binding occurrences and scopes syntactically; they do not resolve references across files.
 
-The theory uses two projections of one tree. **Equality** is over the normalized CST: kind, field, label and shape of every node, punctuation included, after the one normalization below, which is `isoIds` computed over alpha-normalized labels. **Measure** is over the AST projection: it counts content atoms (named leaves and field-tagged operators, defined below), never punctuation, and `k = 4`. A stricter equality can only drop claims, never make one false; a measure that counts punctuation is what makes unrelated code look alike (#76).
+The theory uses two projections of one tree. **Equality** is over the normalized CST: kind, field, label and shape of every node, punctuation included, after the one normalization below, which is `isoIds` computed over alpha-normalized labels; a pure move's equality alone skips that normalization and compares the code as written. **Measure** is over the AST projection: it counts content atoms (named leaves and field-tagged operators, defined below), never punctuation, and `k = 4`. A stricter equality can only drop claims, never make one false; a measure that counts punctuation is what makes unrelated code look alike (#76).
 
 ## Normalization
 
@@ -44,7 +44,7 @@ Only semantics-preserving normalization is allowed, and only one is: scope-certa
 
 A move claim is `(x, y, class, W)` with a witness `W`. Every claim asserts **F1** `moved(x, y)`, **F0** `|C(x)| ≥ k` and `|C(y)| ≥ k`, and **F3** uniqueness: in the whole Diffset, no other after node admits a witness of this class or a stronger one with `x`, and no other before node with `y` (pure is stronger than edited). The class adds one fact:
 
-- **Pure** ("Moved"), `W = ρ`: **F2p** `x ≡ρ y` over the whole subtree, every token included: equal normalized iso ids, `ρ` covering only scope-certain local binders.
+- **Pure** ("Moved"), `W = ∅`: **F2p** `x ≡ y` over the whole subtree as written, every token included: equal iso ids with `ρ` the identity. A pure move is exactly a moved-and-edited one whose diff is empty; code equal only modulo a local rename is moved and edited, with the renamed occurrences counting zero toward `w`.
 - **Moved and edited**, `W = (ρ, K)`: **F2e** `w(K) ≥ θ·|C(x)|`, `w(K) ≥ θ·|C(y)|` and `top(K) ≥ k`, with `θ = 1/2`. At least half of what the old code said is carried over in whole units, unchanged and in order; at least half of what the new code says came from the old; and one carried unit is substantial on its own. `x` and `y` have the same kind.
 - **Extract** ("Extracted into `n`" / "Extracted from"), with `R` the removed nodes at a site and `D` the new declaration named `n`: a node inserted at the site calls `n` (call `c`), and `W = (σ, K)` where `σ` substitutes each parameter of `D` with the argument subtree `c` passes it, and `K` is a core between `R` (its top nodes count as units) and `body(D)[σ]` with `w(K) ≥ θ·|C(R)|` and `top(K) ≥ k`. F3 reads: no other new declaration and no other site admits such a witness.
 
@@ -58,7 +58,7 @@ In plain words, "Moved" says: this exact code is gone from here, stands there, a
 | --- | --- |
 | "Moved" / "Moved to/from `<path>:<line>`", and the two halves sharing one atom | asserted: F0, F1, F3, F2p |
 | "Moved and edited" | asserted: F0, F1, F3, F2e |
-| A local rename shown on a pure move | asserted: the pairs of `ρ`, which the label must list |
+| A local rename shown on an edited move | asserted: the pairs of `ρ`, which the label must list |
 | "Extracted into `n`" / "Extracted from" | asserted: the extract facts |
 | Emphasis inside a moved node, or an extract's "generalized" emphasis | shown, not asserted: it reads "not matched", which may include code that was carried over; it does not say the code changed |
 | The moved box widened over blank and bracket-only lines (`Side.moves`) | shown: those lines hold no content atom |
@@ -72,7 +72,7 @@ In plain words, "Moved" says: this exact code is gone from here, stands there, a
 `checkClaim(claim)` evaluates, from the two trees and the witness alone:
 
 1. F0 and F1 by the definitions: content counts, declaration chains, and the anchor's iso ids and occurrence counts in both files.
-2. For pure: equal canonical ids of `x` and `y` under `ρ`, and `ρ` admissible. For edited and extract: `ρ` bijective and admissible; every core pair a unit pair with equal canonical ids (for an extract, the ids of `body(D)[σ]`, computed with each parameter occurrence standing for its argument's id); disjoint, increasing on both sides, two atoms each; `σ` mapping exactly the parameters of `D` to the arguments of `c`; and the inequalities in integer arithmetic (`2·w ≥ |C|`, `top ≥ k`).
+2. For pure: equal iso ids of `x` and `y` as written. For edited and extract: `ρ` bijective and admissible; every core pair a unit pair with equal canonical ids (for an extract, the ids of `body(D)[σ]`, computed with each parameter occurrence standing for its argument's id); disjoint, increasing on both sides, two atoms each; `σ` mapping exactly the parameters of `D` to the arguments of `c`; and the inequalities in integer arithmetic (`2·w ≥ |C|`, `top ≥ k`).
 3. F3, by exact count for pure and by a bound for edited. Pure: `x`'s canonical id occurs once among all before nodes of the Diffset and `y`'s once among all after nodes; no threshold is involved, so no bound is used. Edited: for every other after node `y'` of `x`'s kind, `|C(x) ∩ C(y')| < θ·|C(x)|` or `|C(x) ∩ C(y')| < θ·|C(y')|` (multiset intersection of content labels), and also no other node has `x`'s or `y`'s canonical id; symmetrically for `x'` against `y`. A candidate the bound cannot exclude is not searched further: the claim is declined.
 
 **Lemma (bound).** For any core `K` between `x` and `y'`, `w(K) ≤ |C(x) ∩ C(y')|`. Each pair `s_i ≡ρ t_i` has the same atoms in the same order, and an atom counts toward `w` only when `ρ` fixes its label, so it has the same label on both sides; the `s_i` are disjoint and so are the `t_i`, so the counted atoms form a sub-multiset of `C(x)` matched label for label into a sub-multiset of `C(y')`.
@@ -100,7 +100,8 @@ A renamed declaration (`load` becoming `fetchItem`) involves two separate claims
 ## Cases
 
 - **Pure move.** A function moved verbatim below its neighbour: equal ids, the neighbour a unique anchor, the id unique in the Diffset: "Moved".
-- **Move with a consistent rename.** `const r = fetch(u); log(r); return r.json();` moved, `r` renamed to `res` throughout: `ρ = {r ↦ res}` is admissible, since every `r` lies in the scope of the `const` inside the moved code: "Moved", with `r → res` in the label.- **Moved and edited.** A function moved with one of five statements changed: the other four and the parameters are core pairs, well over half the atoms both ways.
+- **Move with a consistent rename.** `const r = fetch(u); log(r); return r.json();` moved, `r` renamed to `res` throughout: `ρ = {r ↦ res}` is admissible, since every `r` lies in the scope of the `const` inside the moved code, but the code is not equal as written, so it is not pure: "Moved and edited", with `r → res` in the label. The renamed occurrences count zero, so the core weighs `fetch`, `u`, `log`, `json` and the binder kinds, and passes F2e only when that unrenamed content is half of each side.
+- **Moved and edited.** A function moved with one of five statements changed: the other four and the parameters are core pairs, well over half the atoms both ways.
 - **Operator-only edit.** `if (i < n) { total += items[i].price; log(total); }` moved and becoming `if (i <= n) { ... }`: `<` and `<=` differ, so it is not pure; the two body statements are the core, so it reads "Moved and edited" with `<=` emphasized. Pure can never hide it, because pure is equality over every token.
 - **Same shape, different content.** `if (a) { return f(x); }` moved and becoming `if (b) { return g(y); }`: no unit of one equals a unit of the other, `w = 0`, no claim.
 - **#76, punctuation inflation, and the rewritten same-named function.** `function load(id: string) { const r = fetch(url + id); log(r); return r.json(); }` moved below a sibling and rewritten to `{ const v = cache.get(id); track(v); return v ?? null; }`: 12 content atoms a side; the only equal unit is the parameter `id: string`, `w = 2 < 6`. With `ρ = {r ↦ v}`, `log(r)` against `track(v)` still differs in its callee, and renamed occurrences count zero. No claim, provably: by the lemma no core of any shape reaches 6.
@@ -127,7 +128,7 @@ No paper isolates punctuation filtering with an ablation. The theory needs none:
 
 ## Where today's code is unsound
 
-Probed on 2026-10-04 with a scratch vitest over `editScript(match(...))` on TypeScript, not committed:
+Probed on 2026-10-04 with a scratch vitest over `editScript(match(...))` on TypeScript, not committed. Step 3 of the change list fixes items 1, 2, 3 and 6; items 4 and 5 stand, guarded by `checkClaim`:
 
 1. **`classifyMove` (`packages/syntechs/src/diff/move.ts`)** scores dice over every non-empty leaf, punctuation and fieldless keywords included, and `minNodes` counts every node. `if (a) { return f(x); }` moved below `keep(1, 2, 3);` and becoming `if (b) { return g(y); }` is emitted as an edited move (probed): `if ( ) { return ( ) ; }` carry it past 0.5 while every content atom changed. The rewritten `load` above, moved below one sibling, is emitted as an edited move (probed): the name pass in `recover` proposes it and the punctuation-heavy dice accepts it. Its `pure` means "every leaf paired with a same-label leaf", not subtree equality; a moved `f(g(a1), h(b1))` with swapped arguments read edited, so no counterexample was found, but the theorem needs equality rather than a pairing that happens to coincide with it.
 2. **The `SameLeaf` hook (`move.ts`)** lets a caller declare any leaf pair equal, so any rule plugged in can make a rewritten move read pure. A rename must be a witness `ρ` the checker verifies.
@@ -142,7 +143,7 @@ The matcher's heuristics (`minDice` in `bestFor`, the passes of `recover`, `fits
 
 1. **`checkClaim` at the one place every claim meets.** A standalone module run in `packages/engine/src/diffset.ts` that verifies every move, cross-file move and extract claim (each move `settleMoves` kept, each `crossFileMoves` pair, each `findExtracts` result), with the content measure, Diffset-wide id counts, declaration chains and anchors. A failing claim is demoted to delete plus insert. From here every emitted claim is sound, whatever the classifiers do; the remaining steps win recall back. Its runnable check: a test that builds each fixture's Diffset and asserts every emitted claim passes a `checkClaim` recomputed from the trees, so a classifier that emits an unchecked claim fails it.
 2. **TS/JS binders, scopes and alpha-normalized iso ids.** Binder and scope tables for TypeScript and JavaScript, and iso ids computed over the use-based names of scope-certain local binders (see Normalization).
-3. **Witness-based classification.** `classifyMove` returns a witness instead of a dice class: pure when the normalized iso ids are equal; edited when a unit core (unit pairs with equal normalized iso ids inside `x` and `y`, then their longest chain increasing on both sides) passes F2e. `SameLeaf` is deleted and `k` replaces `minNodes`. `crossFileMoves` declines when more than one candidate shares the id, instead of taking the first. `findExtracts` keeps its word overlap as a proposal, then builds its witness by argument substitution (`σ`) and a core against the substituted body, declining ties.
+3. **Witness-based classification.** `classifyMove` returns a witness instead of a dice class: pure when the iso ids are equal as written; edited when a unit core (unit pairs with equal normalized iso ids inside `x` and `y`, then their longest chain increasing on both sides) passes F2e. `SameLeaf` is deleted and `k` replaces `minNodes`. `crossFileMoves` declines when more than one candidate shares the id, instead of taking the first. `findExtracts` keeps its word overlap as a proposal, then builds its witness by argument substitution (`σ`) and a core against the substituted body, declining ties.
 
 ## What is not guaranteed
 
