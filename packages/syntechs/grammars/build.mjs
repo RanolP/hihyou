@@ -239,8 +239,12 @@ try {
     fail(`no \`tree-sitter = "<version>"\` line in ${miseToml}`);
   // grammar.js is CommonJS in some grammars and an ES module in others. With no `type` in the nearest
   // package.json (syntechs' says "module"), node tells them apart by their syntax, as it does upstream.
+  // pnpm runs every grammar's postinstall at once, and a plain write truncates the file while a sibling's
+  // `tree-sitter generate` is reading it (ERR_INVALID_PACKAGE_CONFIG), so swap it in by rename.
   mkdirSync(cache, { recursive: true });
-  writeFileSync(join(cache, "package.json"), "{}\n");
+  const scope = join(cache, "package.json");
+  writeFileSync(`${scope}.${process.pid}`, "{}\n");
+  renameSync(`${scope}.${process.pid}`, scope);
   for (const name of names) {
     if (save) await savePatch(name);
     await build(name);
