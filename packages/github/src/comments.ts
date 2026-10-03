@@ -134,39 +134,61 @@ export function githubCommentStore(
   let notes: readonly ReviewNote[] = [];
   /** GitHub's pending review, once one is known to exist. */
   let reviewId: string | undefined;
-  let pull: Promise<string> | undefined;
   let files:
     | Promise<Map<string, { path: string; hunks: HunkLines }>>
     | undefined;
   let queue: Promise<unknown> = Promise.resolve();
   const listeners = new Set<() => void>();
-  const changed = () => {
+  /** Open while anyone listens, so a disposed view leaves no channel keeping a Node process alive. */
+  let channel: BroadcastChannel | undefined;
+  /** `heard`: the change was read from GitHub, not written here, so the other stores need no nudge. */
+  const changed = (heard = false) => {
     for (const l of listeners) l();
+    if (!heard) channel?.postMessage("changed");
   };
+  const readFailed = (error: unknown) =>
+    console.error(`hihyou: could not read ${owner}/${repo}#${number}`, error);
   const serial = <T>(task: () => Promise<T>): Promise<T> => {
     const run = queue.then(task, task);
     queue = run.catch(() => undefined);
     return run;
   };
 
-  /** The pull request's node id, and the pending review the viewer may already have on github.com. */
-  const pullId = () =>
-    (pull ??= client
-      .graphql<PullData>(pullQuery, { owner, repo, number })
-      .then((data) => {
-        const pr = data.repository?.pullRequest;
-        if (!pr) throw new Error(`${owner}/${repo}#${number} was not found`);
-        const pending = pr.reviews.nodes[0]?.id;
-        if (pending !== undefined && reviewId === undefined) {
-          reviewId = pending;
-          changed();
-        }
-        return pr.id;
-      })
-      .catch((error: unknown) => {
-        pull = undefined;
-        throw error;
-      }));
+  /**
+   * The pull request's node id, after reading afresh which pending review the viewer has. GitHub is the only place
+   * it lives, and another tab, another window or github.com itself may have started, submitted or discarded it
+   * since this store last looked; every write calls this first, so none lands on a review already submitted. A
+   * note held in a review that is no longer pending is taken as published.
+   */
+  const pullId = async () => {
+    const data = await client.graphql<PullData>(pullQuery, {
+      owner,
+      repo,
+      number,
+    });
+    const pr = data.repository?.pullRequest;
+    if (!pr) throw new Error(`${owner}/${repo}#${number} was not found`);
+    const pending = pr.reviews.nodes[0]?.id;
+    if (pending !== reviewId) {
+      if (reviewId !== undefined)
+        notes = notes.map((n) => (n.pending ? { ...n, pending: false } : n));
+      reviewId = pending;
+      changed(true);
+    }
+    return pr.id;
+  };
+  /**
+   * The other stores on this pull request, in other tabs of this origin or other panels of this process, hear each
+   * change written here and re-read GitHub at once rather than at their next focus.
+   */
+  const listen = () => {
+    if (typeof BroadcastChannel === "undefined") return undefined;
+    const c = new BroadcastChannel(
+      `hihyou:github-review:${owner}/${repo}#${number}`,
+    );
+    c.onmessage = () => void serial(pullId).catch(readFailed);
+    return c;
+  };
   /** Per anchor path (a renamed file's before side is its old path), GitHub's path and hunks. */
   const filesByPath = () =>
     (files ??= fetchCompareFiles(client, owner, repo, base, head)
@@ -274,12 +296,14 @@ export function githubCommentStore(
     }
   };
 
-  void pullId().catch((error: unknown) =>
-    console.error(`hihyou: could not read ${owner}/${repo}#${number}`, error),
-  );
+  void serial(pullId).catch(readFailed);
   return {
     all: () => notes,
     reviewing: () => reviewId !== undefined,
+    refresh: () =>
+      serial(async () => {
+        await pullId();
+      }),
     comment: (anchor, body) =>
       serial(() =>
         single("comment", async (review) => ({
@@ -324,7 +348,13 @@ export function githubCommentStore(
       }),
     subscribe(listener) {
       listeners.add(listener);
-      return () => listeners.delete(listener);
+      channel ??= listen();
+      return () => {
+        listeners.delete(listener);
+        if (listeners.size > 0) return;
+        channel?.close();
+        channel = undefined;
+      };
     },
   };
 }

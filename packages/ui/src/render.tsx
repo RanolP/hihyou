@@ -150,6 +150,18 @@ function mount(
   const unsubscribeComments = comments.subscribe(() =>
     setCommentTick((v) => v + 1),
   );
+  // A store kept outside the view (GitHub's pending review) may have moved in another tab while this one was away.
+  const refreshComments = () => {
+    if (root.ownerDocument.visibilityState === "hidden") return;
+    comments
+      .refresh()
+      .catch((error: unknown) =>
+        console.error("hihyou: could not refresh the comments", error),
+      );
+  };
+  const win = root.ownerDocument.defaultView;
+  win?.addEventListener("focus", refreshComments);
+  root.ownerDocument.addEventListener("visibilitychange", refreshComments);
   /** The comment being written, kept across redraws, which rebuild its row; with `thread`, a reply drawn in it. */
   let draft:
     | {
@@ -874,6 +886,11 @@ function mount(
       unsubscribe();
       unsubscribeScores();
       unsubscribeComments();
+      win?.removeEventListener("focus", refreshComments);
+      root.ownerDocument.removeEventListener(
+        "visibilitychange",
+        refreshComments,
+      );
       root.removeEventListener("click", onClick);
       root.removeEventListener("keydown", onKey);
       modal?.dispose();

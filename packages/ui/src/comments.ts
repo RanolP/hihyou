@@ -151,10 +151,18 @@ export interface CommentStore {
   reviewReply(thread: string, body: string): Promise<void>;
   /** Publishes the pending review's comments as one review. */
   submitReview(event: ReviewEvent): Promise<void>;
+  /**
+   * Re-reads the state kept outside this view, which another tab or window may have changed; the view calls it
+   * whenever its page regains focus.
+   */
+  refresh(): Promise<void>;
   subscribe(listener: () => void): () => void;
 }
 
-/** Comments for as long as the open review's view lives, as the in-session viewed and score stores keep theirs. */
+/**
+ * Comments for as long as the open review's view lives, as the in-session viewed and score stores keep theirs.
+ * Nothing is kept outside the view, so each tab holds its own and `refresh` has nothing to read.
+ */
 export function sessionCommentStore(): CommentStore {
   let notes: readonly ReviewNote[] = [];
   let next = 0;
@@ -183,6 +191,7 @@ export function sessionCommentStore(): CommentStore {
   return {
     all: () => notes,
     reviewing: () => notes.some((n) => n.pending),
+    refresh: () => Promise.resolve(),
     comment: (anchor, body) => add(anchor, body, false),
     review: (anchor, body) => add(anchor, body, true),
     reply: (thread, body) => addReply(thread, body, false),
