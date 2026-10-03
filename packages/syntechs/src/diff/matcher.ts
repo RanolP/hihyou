@@ -1,3 +1,4 @@
+import { nameOf } from "./move.js";
 import { commonPairs } from "./sequence.js";
 import type { Side } from "./side.js";
 
@@ -228,6 +229,30 @@ export function match(
           fits(p, q),
       ))
         linkAndRecover(p, q);
+      // A declaration moved past its siblings with a token changed in most statements keeps no subtree whole to seed
+      // the bottom-up phase, and the pass above pairs in order only. Its name still says which one it is: a kind
+      // and name found once among the unmatched children on each side pair up, and `classifyMove` judges the pair.
+      const unmatchedA = kidsX.filter((c) => src[c] === -1);
+      const unmatchedB = kidsY.filter((c) => dst[c] === -1);
+      if (unmatchedA.length > 0 && unmatchedB.length > 0) {
+        const byName = (side: Side, ns: number[]) => {
+          const found = new Map<string, number>();
+          for (const n of ns) {
+            const h = side.nodes[n] as number;
+            const name = side.tree.named(h) ? nameOf(side.tree, h) : undefined;
+            if (name === undefined) continue;
+            const key = `${side.tree.kindName(h)}\0${name}`;
+            found.set(key, found.has(key) ? -1 : n);
+          }
+          return found;
+        };
+        const namedB = byName(b, unmatchedB);
+        for (const [key, p] of byName(a, unmatchedA)) {
+          const q = namedB.get(key);
+          if (p !== -1 && q !== undefined && q !== -1 && fits(p, q))
+            linkAndRecover(p, q);
+        }
+      }
       // Kinds that occur once on each side pair up even when labels differ; this is how a changed literal becomes an update.
       const once = (ns: number[], kind: (n: number) => string) => {
         const byKind = new Map<string, number>();

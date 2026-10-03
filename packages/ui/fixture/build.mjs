@@ -75,10 +75,39 @@ const changes = [
     before: null,
     after: `file:${extract}/after/kinds.node.ts`,
   },
+  // A function moved below other code with a name tweaked on every line, RanolP/hihyou#77: one edited move.
+  {
+    path: "src/moved/ledger.ts",
+    before: "synthetic:ledger-before",
+    after: "synthetic:ledger-after",
+  },
 ];
 
 const keep = `export function keep(a: number): number {
   return a * 2;
+}
+`;
+const ledgerTotal = (
+  list,
+  acc,
+  item,
+) => `export function total(${list}: Item[]): number {
+  let ${acc} = 0;
+  for (const ${item} of ${list}) {
+    if (${item}.void) continue;
+    ${acc} += ${item}.price * ${item}.qty;
+  }
+  log("total", ${acc});
+  return ${acc};
+}
+`;
+const ledgerRest = `export function render(view: View): void {
+  view.clear();
+  view.draw(rows);
+}
+
+export function scale(x: number): number {
+  return x * factor;
 }
 `;
 /** Synthetic blobs, read by their `synthetic:` id instead of from git. */
@@ -115,6 +144,14 @@ export function extra(b: number): number {
   }
 }
 `,
+  "ledger-before": `${ledgerTotal("items", "s", "i")}
+${ledgerRest}`,
+  "ledger-after": `${ledgerRest}
+export function audit(entries: Entry[]): string[] {
+  return entries.filter((e) => !e.signed).map((e) => e.id);
+}
+
+${ledgerTotal("lines", "sum", "l")}`,
 };
 
 const engineOut = join(out, "engine.mjs");

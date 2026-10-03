@@ -515,3 +515,77 @@ test("a move within one hunk, a ternary branch swap, is not shown as a move", as
   expect(diffs).toHaveLength(1);
   expect(diffs.flatMap((d) => [d.before.moves, d.after.moves])).toEqual([undefined, undefined]);
 });
+
+const ledgerRest = `export function render(view: View): void {
+  view.clear();
+  view.draw(rows);
+}
+
+export function scale(x: number): number {
+  return x * factor;
+}
+`;
+const audit = `export function audit(entries: Entry[]): string[] {
+  return entries.filter((e) => !e.signed).map((e) => e.id);
+}
+`;
+const total = `export function total(items: Item[]): number {
+  let s = 0;
+  for (const i of items) {
+    if (i.void) continue;
+    s += i.price * i.qty;
+  }
+  log("total", s);
+  return s;
+}
+`;
+const movedSides = async (after: string) =>
+  (
+    await diffOne(
+      "ledger.ts",
+      `${total}\n${ledgerRest}`,
+      `${ledgerRest}\n${audit}\n${after}`,
+    )
+  ).flatMap((d) => [d.before, d.after].filter((s) => s.moves));
+
+// RanolP/hihyou#77: with a name tweaked on every line no statement survived whole to seed the bottom-up phase, and
+// the new `audit` left two candidates for the moved function, so it read as a whole delete plus a whole insert.
+test("a function moved past new code with a name tweaked on every line reads as one move, the tweaks marked", async () => {
+  const moved = await movedSides(`export function total(lines: Item[]): number {
+  let sum = 0;
+  for (const l of lines) {
+    if (l.void) continue;
+    sum += l.price * l.qty;
+  }
+  log("total", sum);
+  return sum;
+}
+`);
+  const emphasized = moved
+    .flatMap((s) => s.spans.filter((x) => x.changed).map((x) => x.text))
+    .join("");
+
+  expect(moved.map((s) => sideLines(s).join("\n"))).toEqual([
+    expect.stringContaining("total(items"),
+    expect.stringContaining("total(lines"),
+  ]);
+  expect(emphasized).toContain("sum");
+  expect(emphasized).not.toContain("price");
+});
+
+// Once nothing seeds a moved function, pairing by shape would show a deleted function and an unrelated new one
+// of the same shape as one function that moved.
+test("a deleted function and a new one of the same shape but other content are not paired as a move", async () => {
+  const moved = await movedSides(`export function count(keys: Key[]): number {
+  let n = 1;
+  for (const k of keys) {
+    if (k.hidden) break;
+    n *= k.weight - k.base;
+  }
+  warn("count", n);
+  return n;
+}
+`);
+
+  expect(moved).toEqual([]);
+});
