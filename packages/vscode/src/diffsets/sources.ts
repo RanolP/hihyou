@@ -103,7 +103,7 @@ async function branchCommits(local: LocalRepo): Promise<Commit[]> {
   return commits;
 }
 
-/** The whole pull request (its base...head), then each of its commits against its first parent, newest first. */
+/** Each of a pull request's commits against its first parent, newest first. */
 export async function pullRequestDiffsets({
   host,
   remote,
@@ -123,12 +123,7 @@ export async function pullRequestDiffsets({
       ...row,
       moving: false,
       changes: async () => (await githubEngine(host).diffset(id)).changes,
-      source: githubSource(
-        host,
-        id,
-        title,
-        key === "all" ? pr.number : undefined,
-      ),
+      source: githubSource(host, id, title, pr.number),
     };
   };
   const commits = await host.listPullRequestCommits(
@@ -136,27 +131,16 @@ export async function pullRequestDiffsets({
     remote.repo,
     pr.number,
   );
-  return [
-    diffset("all", pr.base, pr.head, `#${pr.number} ${pr.title}`, {
-      label: "All changes",
-    }),
-    // A root commit has no parent to compare against on GitHub, so it gets no row.
-    ...commits.toReversed().flatMap((c) => {
-      if (!c.parent) return [];
-      const short = c.sha.slice(0, 7);
-      return [
-        diffset(
-          c.sha,
-          c.parent,
-          c.sha,
-          `#${pr.number} ${short} ${subject(c)}`,
-          {
-            label: subject(c),
-            description: short,
-            tooltip: `${c.author} · ${c.date ? new Date(c.date).toLocaleString() : ""}\n\n${c.message}`,
-          },
-        ),
-      ];
-    }),
-  ];
+  // A root commit has no parent to compare against on GitHub, so it gets no row.
+  return commits.toReversed().flatMap((c) => {
+    if (!c.parent) return [];
+    const short = c.sha.slice(0, 7);
+    return [
+      diffset(c.sha, c.parent, c.sha, `#${pr.number} ${short} ${subject(c)}`, {
+        label: subject(c),
+        description: short,
+        tooltip: `${c.author} · ${c.date ? new Date(c.date).toLocaleString() : ""}\n\n${c.message}`,
+      }),
+    ];
+  });
 }
