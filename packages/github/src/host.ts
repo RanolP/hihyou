@@ -1,8 +1,16 @@
 import { syntechsGrammars } from "@hihyou/engine";
-import type { GrammarLoader, Host, HostPreferences } from "@hihyou/engine";
+import type {
+  AnchorData,
+  GrammarLoader,
+  Host,
+  HostPreferences,
+  LineRange,
+} from "@hihyou/engine";
+import type { CommentStore } from "@hihyou/ui";
 import { readGitHubBlob } from "./blob.js";
 import { createGitHubClient } from "./client.js";
 import type { GitHubClientOptions } from "./client.js";
+import { type GitHubReviewTarget, githubCommentStore } from "./comments.js";
 import {
   type DiffsetResolution,
   type GitHubDiffsetId,
@@ -35,6 +43,11 @@ export interface GitHubHost extends Host {
     repo: string,
     number: number,
   ): Promise<GitHubCommit[]>;
+  /** The pull request's review comments, kept on GitHub; `lines` places an anchor in the blob it names. */
+  reviewComments(
+    target: GitHubReviewTarget,
+    lines: (anchor: AnchorData) => Promise<LineRange[]>,
+  ): CommentStore;
 }
 
 /** A browser-safe GitHub `Host` for `@hihyou/engine`: fetch only, no Node APIs. */
@@ -50,6 +63,8 @@ export function githubHost(options: GitHubHostOptions): GitHubHost {
     listPullRequests: (owner, repo) => listPullRequests(client, owner, repo),
     listPullRequestCommits: (owner, repo, number) =>
       listPullRequestCommits(client, owner, repo, number),
+    reviewComments: (target, lines) =>
+      githubCommentStore(client, target, lines),
     ...(options.preferences && { preferences: options.preferences }),
   };
 }

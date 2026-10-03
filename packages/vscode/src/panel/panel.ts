@@ -104,6 +104,32 @@ export async function openReviewPanel(
       } satisfies ToWebview),
     );
 
+  // The webview proxies every call here; the store stays in the host, with the token.
+  const comments = source.comments?.();
+  const postComments = () =>
+    comments &&
+    panel.webview.postMessage({
+      type: "comments",
+      notes: [...comments.all()],
+      reviewing: comments.reviewing(),
+    } satisfies ToWebview);
+  const answer = (id: number, call: () => Promise<void>) =>
+    call().then(
+      () =>
+        panel.webview.postMessage({
+          type: "commented",
+          id,
+        } satisfies ToWebview),
+      (error: unknown) => {
+        reportError("could not save the comment", error);
+        void panel.webview.postMessage({
+          type: "commented",
+          id,
+          error: error instanceof Error ? error.message : String(error),
+        } satisfies ToWebview);
+      },
+    );
+
   let generation = 0;
   const load = async (): Promise<DiffFile[] | undefined> => {
     const mine = ++generation;
@@ -165,7 +191,9 @@ export async function openReviewPanel(
     panel.webview.onDidReceiveMessage((message: FromWebview) => {
       switch (message.type) {
         case "ready":
+          // Comments before the files, so the webview knows to proxy them when it first draws.
           void showTheme().then(() => {
+            void postComments();
             void panel.webview.postMessage(state);
             postShown();
           });
@@ -191,6 +219,16 @@ export async function openReviewPanel(
         case "shown":
           shown = message.path;
           shownChanged();
+          return;
+        case "comment":
+          if (comments)
+            void answer(message.id, () =>
+              comments[message.how](message.anchor, message.body),
+            );
+          return;
+        case "submitReview":
+          if (comments)
+            void answer(message.id, () => comments.submitReview(message.event));
       }
     }),
     panel.onDidChangeViewState(({ webviewPanel }) => {
@@ -203,6 +241,10 @@ export async function openReviewPanel(
       void showTheme();
     }),
   ];
+  if (comments)
+    disposables.push({
+      dispose: comments.subscribe(() => void postComments()),
+    });
   if (source.refreshOnSave) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     disposables.push(

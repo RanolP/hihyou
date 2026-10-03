@@ -1,4 +1,5 @@
 import type { AtomIndex, NodeRef, SideName } from "./atoms.js";
+import type { ReviewEvent } from "./comments.js";
 import type { Score } from "./viewed.js";
 
 /**
@@ -58,3 +59,14 @@ export function approvalOf(
         : "pending";
   return { state, heaviest, read, edits };
 }
+
+/**
+ * The event a submitted review carries on GitHub, read off the Diffset's approval; a review with nothing scored or
+ * viewed is pending, so it comments.
+ */
+export const reviewEvent = (approval: Approval): ReviewEvent =>
+  approval.state === "blocked"
+    ? "REQUEST_CHANGES"
+    : approval.state === "approved"
+      ? "APPROVE"
+      : "COMMENT";

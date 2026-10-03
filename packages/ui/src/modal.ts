@@ -46,6 +46,8 @@ export type ModalEffect =
   | { kind: "expandMove"; at: NodeRef }
   /** Open a comment on the node, narrowed to `chars` when present. */
   | { kind: "comment"; at: NodeRef; chars?: CharRange }
+  /** Publish the pending review, if one is started. */
+  | { kind: "submitReview" }
   | { kind: "expandElided"; file: number; fragment: number }
   /** The selection moved into another file; bring it into view. */
   | { kind: "jump"; to: Target }
@@ -412,6 +414,8 @@ export function modalKey(
       const selections = s.selections.filter((_, i) => i !== s.primary);
       return done({ ...s, selections, primary: s.primary % (len - 1) });
     }
+    case "R":
+      return done(s, [{ kind: "submitReview" }]);
     case "?":
       return done(s, [{ kind: "help" }]);
     case "Escape": {
@@ -624,6 +628,7 @@ export const modalKeymap: readonly {
   { key: "v", label: "toggle viewed", group: "act" },
   { key: "s", label: "score…", group: "act" },
   { key: "c", label: "comment", group: "act" },
+  { key: "R", label: "submit review", group: "act" },
   { key: "2", label: "+2 good to merge", group: "score", prefix: "s" },
   { key: "1", label: "+1 looks good", group: "score", prefix: "s" },
   { key: "q", label: "-1 would rather not", group: "score", prefix: "s" },

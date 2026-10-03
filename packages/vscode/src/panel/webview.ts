@@ -1,7 +1,9 @@
 import type { Theme } from "@hihyou/engine";
 import {
+  type CommentStore,
   type DiffFile,
   type DiffsetView,
+  type ReviewNote,
   renderDiffset,
 } from "@hihyou/ui";
 import type { FromWebview, ToWebview } from "./protocol.js";
@@ -41,6 +43,35 @@ const step = (delta: 1 | -1) => {
   updateNav();
 };
 
+/** The host's comments, when it keeps them (a pull request); absent, the view keeps its own. */
+let hostComments: { notes: ReviewNote[]; reviewing: boolean } | undefined;
+const commentListeners = new Set<() => void>();
+const calls = new Map<
+  number,
+  { resolve: () => void; reject: (error: Error) => void }
+>();
+let lastCall = 0;
+const call = (send: (id: number) => void) =>
+  new Promise<void>((resolve, reject) => {
+    const id = ++lastCall;
+    calls.set(id, { resolve, reject });
+    send(id);
+  });
+const proxyComments: CommentStore = {
+  all: () => hostComments?.notes ?? [],
+  reviewing: () => hostComments?.reviewing ?? false,
+  comment: (anchor, body) =>
+    call((id) => post({ type: "comment", id, how: "comment", anchor, body })),
+  review: (anchor, body) =>
+    call((id) => post({ type: "comment", id, how: "review", anchor, body })),
+  submitReview: (event) =>
+    call((id) => post({ type: "submitReview", id, event })),
+  subscribe: (listener) => {
+    commentListeners.add(listener);
+    return () => commentListeners.delete(listener);
+  },
+};
+
 refresh.addEventListener("click", () => post({ type: "refresh" }));
 previous.addEventListener("click", () => step(-1));
 next.addEventListener("click", () => step(1));
@@ -60,6 +91,17 @@ window.addEventListener("message", (event: MessageEvent<ToWebview>) => {
     case "step":
       step(message.delta);
       return;
+    case "comments":
+      hostComments = { notes: message.notes, reviewing: message.reviewing };
+      for (const l of commentListeners) l();
+      return;
+    case "commented": {
+      const pending = calls.get(message.id);
+      calls.delete(message.id);
+      if (message.error === undefined) pending?.resolve();
+      else pending?.reject(new Error(message.error));
+      return;
+    }
   }
   title.textContent = message.title;
   switch (message.type) {
@@ -94,6 +136,7 @@ window.addEventListener("message", (event: MessageEvent<ToWebview>) => {
             updateNav();
           },
           ...(theme && { theme }),
+          ...(hostComments && { comments: proxyComments }),
         });
       if (wanted !== undefined) view.show(wanted);
       wanted = undefined;
