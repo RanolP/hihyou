@@ -60,10 +60,16 @@ const call = (send: (id: number) => void) =>
 const proxyComments: CommentStore = {
   all: () => hostComments?.notes ?? [],
   reviewing: () => hostComments?.reviewing ?? false,
+  // The host refreshes its store itself when this panel or its window regains focus.
+  refresh: () => Promise.resolve(),
   comment: (anchor, body) =>
     call((id) => post({ type: "comment", id, how: "comment", anchor, body })),
   review: (anchor, body) =>
     call((id) => post({ type: "comment", id, how: "review", anchor, body })),
+  reply: (thread, body) =>
+    call((id) => post({ type: "reply", id, how: "reply", thread, body })),
+  reviewReply: (thread, body) =>
+    call((id) => post({ type: "reply", id, how: "reviewReply", thread, body })),
   submitReview: (event) =>
     call((id) => post({ type: "submitReview", id, event })),
   subscribe: (listener) => {

@@ -104,6 +104,9 @@ const startReview = `mutation($pr: ID!, $commit: GitObjectID!) {
 const addThread = `mutation($input: AddPullRequestReviewThreadInput!) {
   addPullRequestReviewThread(input: $input) { thread { id } }
 }`;
+const addReply = `mutation($input: AddPullRequestReviewThreadReplyInput!) {
+  addPullRequestReviewThreadReply(input: $input) { comment { id } }
+}`;
 const submit = `mutation($review: ID!, $event: PullRequestReviewEvent!) {
   submitPullRequestReview(input: { pullRequestReviewId: $review, event: $event }) { pullRequestReview { id } }
 }`;
@@ -131,39 +134,61 @@ export function githubCommentStore(
   let notes: readonly ReviewNote[] = [];
   /** GitHub's pending review, once one is known to exist. */
   let reviewId: string | undefined;
-  let pull: Promise<string> | undefined;
   let files:
     | Promise<Map<string, { path: string; hunks: HunkLines }>>
     | undefined;
   let queue: Promise<unknown> = Promise.resolve();
   const listeners = new Set<() => void>();
-  const changed = () => {
+  /** Open while anyone listens, so a disposed view leaves no channel keeping a Node process alive. */
+  let channel: BroadcastChannel | undefined;
+  /** `heard`: the change was read from GitHub, not written here, so the other stores need no nudge. */
+  const changed = (heard = false) => {
     for (const l of listeners) l();
+    if (!heard) channel?.postMessage("changed");
   };
+  const readFailed = (error: unknown) =>
+    console.error(`hihyou: could not read ${owner}/${repo}#${number}`, error);
   const serial = <T>(task: () => Promise<T>): Promise<T> => {
     const run = queue.then(task, task);
     queue = run.catch(() => undefined);
     return run;
   };
 
-  /** The pull request's node id, and the pending review the viewer may already have on github.com. */
-  const pullId = () =>
-    (pull ??= client
-      .graphql<PullData>(pullQuery, { owner, repo, number })
-      .then((data) => {
-        const pr = data.repository?.pullRequest;
-        if (!pr) throw new Error(`${owner}/${repo}#${number} was not found`);
-        const pending = pr.reviews.nodes[0]?.id;
-        if (pending !== undefined && reviewId === undefined) {
-          reviewId = pending;
-          changed();
-        }
-        return pr.id;
-      })
-      .catch((error: unknown) => {
-        pull = undefined;
-        throw error;
-      }));
+  /**
+   * The pull request's node id, after reading afresh which pending review the viewer has. GitHub is the only place
+   * it lives, and another tab, another window or github.com itself may have started, submitted or discarded it
+   * since this store last looked; every write calls this first, so none lands on a review already submitted. A
+   * note held in a review that is no longer pending is taken as published.
+   */
+  const pullId = async () => {
+    const data = await client.graphql<PullData>(pullQuery, {
+      owner,
+      repo,
+      number,
+    });
+    const pr = data.repository?.pullRequest;
+    if (!pr) throw new Error(`${owner}/${repo}#${number} was not found`);
+    const pending = pr.reviews.nodes[0]?.id;
+    if (pending !== reviewId) {
+      if (reviewId !== undefined)
+        notes = notes.map((n) => (n.pending ? { ...n, pending: false } : n));
+      reviewId = pending;
+      changed(true);
+    }
+    return pr.id;
+  };
+  /**
+   * The other stores on this pull request, in other tabs of this origin or other panels of this process, hear each
+   * change written here and re-read GitHub at once rather than at their next focus.
+   */
+  const listen = () => {
+    if (typeof BroadcastChannel === "undefined") return undefined;
+    const c = new BroadcastChannel(
+      `hihyou:github-review:${owner}/${repo}#${number}`,
+    );
+    c.onmessage = () => void serial(pullId).catch(readFailed);
+    return c;
+  };
   /** Per anchor path (a renamed file's before side is its old path), GitHub's path and hunks. */
   const filesByPath = () =>
     (files ??= fetchCompareFiles(client, owner, repo, base, head)
@@ -214,45 +239,102 @@ export function githubCommentStore(
   const publish = async (review: string, event: ReviewEvent) => {
     await client.graphql(submit, { review, event });
   };
+  /** The note that began thread `thread`, whose anchor a reply shares. */
+  const rootOf = (thread: string) => {
+    const root = notes.find((n) => n.id === thread && !n.thread);
+    if (!root) throw new Error(`no thread ${thread}`);
+    return root;
+  };
+  /** A reply to `thread` inside `review`: `addPullRequestReviewThreadReply` takes a thread by its id. */
+  const reply = async (review: string, thread: string, body: string) => {
+    const data = await client.graphql<{
+      addPullRequestReviewThreadReply: { comment: { id: string } | null };
+    }>(addReply, {
+      input: {
+        pullRequestReviewId: review,
+        pullRequestReviewThreadId: thread,
+        body,
+      },
+    });
+    const id = data.addPullRequestReviewThreadReply.comment?.id;
+    if (id === undefined)
+      throw new Error(`GitHub made no reply on thread ${thread}`);
+    return id;
+  };
+  /**
+   * "Add single comment" or "Add single reply": `add` writes into a review this call starts, which is then
+   * submitted with COMMENT at once.
+   */
+  const single = async (
+    what: string,
+    add: (review: string) => Promise<ReviewNote>,
+  ) => {
+    await pullId();
+    if (reviewId !== undefined)
+      throw new Error(
+        `a review is started; a ${what} can only join it until it is submitted`,
+      );
+    const review = await start();
+    try {
+      const note = await add(review);
+      await publish(review, "COMMENT");
+      reviewId = undefined;
+      notes = [...notes, note];
+      changed();
+    } catch (error) {
+      // `start()` always begins this call's review, so deleting it here cannot drop one the user began on
+      // github.com; otherwise the empty PENDING review would strand `reviewing()` as true for every later
+      // comment, this store's or a fresh one's.
+      try {
+        await client.graphql(deleteReview, { review });
+      } catch {
+        // the original error names the real failure; a delete failure here would only obscure it
+      }
+      reviewId = undefined;
+      changed();
+      throw error;
+    }
+  };
 
-  void pullId().catch((error: unknown) =>
-    console.error(`hihyou: could not read ${owner}/${repo}#${number}`, error),
-  );
+  void serial(pullId).catch(readFailed);
   return {
     all: () => notes,
     reviewing: () => reviewId !== undefined,
-    comment: (anchor, body) =>
+    refresh: () =>
       serial(async () => {
         await pullId();
-        if (reviewId !== undefined)
-          throw new Error(
-            "a review is started; a comment can only join it until it is submitted",
-          );
-        const review = await start();
-        try {
-          const id = await thread(review, anchor, body);
-          await publish(review, "COMMENT");
-          reviewId = undefined;
-          notes = [...notes, { id, anchor, body, pending: false }];
-          changed();
-        } catch (error) {
-          // `start()` always begins this call's review, so deleting it here cannot drop one the user began on
-          // github.com; otherwise the empty PENDING review would strand `reviewing()` as true for every later
-          // comment, this store's or a fresh one's.
-          try {
-            await client.graphql(deleteReview, { review });
-          } catch {
-            // the original error names the real failure; a delete failure here would only obscure it
-          }
-          reviewId = undefined;
-          changed();
-          throw error;
-        }
       }),
+    comment: (anchor, body) =>
+      serial(() =>
+        single("comment", async (review) => ({
+          id: await thread(review, anchor, body),
+          anchor,
+          body,
+          pending: false,
+        })),
+      ),
     review: (anchor, body) =>
       serial(async () => {
         const id = await thread(await start(), anchor, body);
         notes = [...notes, { id, anchor, body, pending: true }];
+        changed();
+      }),
+    reply: (to, body) =>
+      serial(() => {
+        const { anchor } = rootOf(to);
+        return single("reply", async (review) => ({
+          id: await reply(review, to, body),
+          anchor,
+          body,
+          pending: false,
+          thread: to,
+        }));
+      }),
+    reviewReply: (to, body) =>
+      serial(async () => {
+        const { anchor } = rootOf(to);
+        const id = await reply(await start(), to, body);
+        notes = [...notes, { id, anchor, body, pending: true, thread: to }];
         changed();
       }),
     submitReview: (event) =>
@@ -266,7 +348,13 @@ export function githubCommentStore(
       }),
     subscribe(listener) {
       listeners.add(listener);
-      return () => listeners.delete(listener);
+      channel ??= listen();
+      return () => {
+        listeners.delete(listener);
+        if (listeners.size > 0) return;
+        channel?.close();
+        channel = undefined;
+      };
     },
   };
 }

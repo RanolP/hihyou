@@ -45,4 +45,11 @@ export type FromWebview =
       anchor: AnchorData;
       body: string;
     }
+  | {
+      type: "reply";
+      id: number;
+      how: "reply" | "reviewReply";
+      thread: string;
+      body: string;
+    }
   | { type: "submitReview"; id: number; event: ReviewEvent };

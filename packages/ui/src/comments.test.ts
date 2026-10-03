@@ -119,3 +119,21 @@ test("review comments stay pending until the review is submitted; a single comme
   expect(store.reviewing()).toBe(false);
   expect(store.all().every((n) => !n.pending)).toBe(true);
 });
+
+// A reply is the same choice as a comment: "Add single reply" is final at once, one into the review waits for the submit.
+test("a single reply is final at once and a review reply stays pending, both on the thread's anchor", async () => {
+  const store = sessionCommentStore();
+  const anchor = { side: "after" as const, path: "a.ts", nodes: [[0]] };
+  await store.comment(anchor, "thread");
+  const thread = store.all()[0]?.id ?? "";
+  await store.reply(thread, "single reply");
+  expect(store.reviewing()).toBe(false);
+  await store.reviewReply(thread, "review reply");
+  expect(store.reviewing()).toBe(true);
+  expect(store.all().slice(1)).toMatchObject([
+    { body: "single reply", pending: false, thread, anchor },
+    { body: "review reply", pending: true, thread, anchor },
+  ]);
+  await store.submitReview("COMMENT");
+  expect(store.all().every((n) => !n.pending)).toBe(true);
+});

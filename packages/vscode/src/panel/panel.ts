@@ -226,6 +226,12 @@ export async function openReviewPanel(
               comments[message.how](message.anchor, message.body),
             );
           return;
+        case "reply":
+          if (comments)
+            void answer(message.id, () =>
+              comments[message.how](message.thread, message.body),
+            );
+          return;
         case "submitReview":
           if (comments)
             void answer(message.id, () => comments.submitReview(message.event));
@@ -241,10 +247,26 @@ export async function openReviewPanel(
       void showTheme();
     }),
   ];
-  if (comments)
-    disposables.push({
-      dispose: comments.subscribe(() => void postComments()),
-    });
+  if (comments) {
+    // GitHub keeps the pending review, so another window or github.com may have moved it while this panel was away.
+    const refreshComments = () =>
+      void comments
+        .refresh()
+        .catch((error: unknown) =>
+          outputChannel().appendLine(
+            `[${new Date().toISOString()}] could not refresh the comments: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+          ),
+        );
+    disposables.push(
+      { dispose: comments.subscribe(() => void postComments()) },
+      panel.onDidChangeViewState(({ webviewPanel }) => {
+        if (webviewPanel.active) refreshComments();
+      }),
+      vscode.window.onDidChangeWindowState(({ focused }) => {
+        if (focused && panel.active) refreshComments();
+      }),
+    );
+  }
   if (source.refreshOnSave) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     disposables.push(
