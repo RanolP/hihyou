@@ -118,7 +118,7 @@ export type Pairs = ReturnType<typeof createPairs>;
 
 /**
  * "Moved to/from", or for an extract "Extracted into `name`/from". A cross-file move's label expands the pair in place; a move within the file jumps to the
- * other half when it is found.
+ * other half when it is found. The locals the move renamed follow it as "renamed: old → new, ...".
  */
 export function MoveLabel(props: {
   file: number;
@@ -139,7 +139,13 @@ export function MoveLabel(props: {
       : side === "before"
         ? `Extracted into ${move.extract} (${where})`
         : `Extracted from ${where}`;
-  if (!view) return <span>{text}</span>;
+  const renamed = move.renames?.length
+    ? [
+        " ",
+        <span>{`renamed: ${move.renames.map((r) => `${r.before} → ${r.after}`).join(", ")}`}</span>,
+      ]
+    : [];
+  if (!view) return [<span>{text}</span>, ...renamed];
   let label: JSX.Element;
   if (view.pair.crossFile) {
     const open = ctx.pairs.isExpanded(view.id);
@@ -168,6 +174,7 @@ export function MoveLabel(props: {
     );
   return [
     label,
+    ...renamed,
     " ",
     <ViewedToggle
       on={() => ctx.pairs.isViewed(view)}

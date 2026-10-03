@@ -136,3 +136,20 @@ test("every move the UI fixture shows passes checkClaim", async () => {
   );
   expect(failing).toEqual([]);
 });
+
+// A move box that leaves out the locals its check renamed, or lists one it never verified: the fixture's `total`
+// moved with items -> lines, s -> sum, i -> l must carry exactly that map on both halves.
+test("a moved and edited declaration carries the local renames its check verified", async () => {
+  const files = await diffOf(changes as ChangedFileRef[], readBlob);
+  const ledger = files.find((f) => f.path === "src/moved/ledger.ts");
+  if (!ledger) throw new Error("no ledger diff");
+  const renamed = (side: "before" | "after") =>
+    halves(ledger, side).flatMap((m) => (m.renames ? [m.renames] : []));
+  const rho = [
+    { before: "items", after: "lines" },
+    { before: "s", after: "sum" },
+    { before: "i", after: "l" },
+  ];
+  expect(renamed("before")).toEqual([rho]);
+  expect(renamed("after")).toEqual([rho]);
+});

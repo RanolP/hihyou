@@ -88,6 +88,14 @@ export interface SideMove {
    * names, and the after half is that declaration, emphasized where it generalized the code.
    */
   extract?: string;
+  /** The locals an edited move renamed, each from its before name to its after name, as the move's check verified. */
+  renames?: Rename[];
+}
+
+/** A local name in the before half of a move and the name it binds in the after half. */
+export interface Rename {
+  before: string;
+  after: string;
 }
 
 export interface Span {
@@ -116,6 +124,8 @@ export interface MoveMark {
   twin?: number;
   /** See `SideMove.extract`. */
   extract?: string;
+  /** See `SideMove.renames`. */
+  renames?: readonly Rename[];
 }
 
 /** A node added or deleted as one unit; see `NodeOutline.whole`. */
@@ -827,6 +837,7 @@ function sideMoves(
         Math.min(l1 - 1, lineOf(v, Math.max(v.start(m.node), v.end(m.node) - 1))) + 1,
       counterpart: { path: m.counterpart.path, at: [...m.counterpart.at] },
       ...(m.extract !== undefined && { extract: m.extract }),
+      ...(m.renames && { renames: [...m.renames] }),
     }))
     // The outer of two moves starting on one line comes first, so its counterpart names the joined box.
     .sort((p, q) => p.first - q.first || q.last - p.last);
@@ -856,6 +867,7 @@ function sideMoves(
       last: l1,
       counterpart: { path, at },
       ...(first.extract !== undefined && { extract: first.extract }),
+      ...(first.renames && { renames: first.renames }),
     },
   ];
 }

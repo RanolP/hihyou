@@ -11,6 +11,7 @@ import {
   type ScopeRules,
   Side,
 } from "syntechs/diff";
+import type { Rename } from "./fragments.js";
 
 /**
  * The checker every move and extract claim passes before the engine emits it; see `docs/design/move-theory.md`.
@@ -140,19 +141,24 @@ export function createClaimContext(
   };
 }
 
-/** The first condition `claim` fails, or undefined when every fact it asserts holds of the two trees. */
+/**
+ * The first condition `claim` fails, or undefined when every fact it asserts holds of the two trees. When an edited
+ * move holds, `renames` receives its verified rename map `ρ`: each local it renames, in the order `x` first names it.
+ */
 export function checkClaim(
   ctx: ClaimContext,
   claim: Claim,
+  renames?: Rename[],
 ): Condition | undefined {
   return claim.kind === "move"
-    ? checkMove(ctx, claim)
+    ? checkMove(ctx, claim, renames)
     : checkExtract(ctx, claim);
 }
 
 function checkMove(
   ctx: ClaimContext,
   c: Claim & { kind: "move" },
+  renames?: Rename[],
 ): Condition | undefined {
   const sa = ctx.files[c.from]?.before;
   const sb = ctx.files[c.to]?.after;
@@ -181,13 +187,13 @@ function checkMove(
     (t) => sb.alpha[t] as number,
     (i, t) => (sa.atoms[i] as number) - renamed(sa, i, sb, t),
   );
-  if (
-    found === undefined ||
-    2 * found.w < (sa.atoms[x] as number) ||
-    2 * found.w < (sb.atoms[y] as number) ||
-    !admissible(sa, x, sb, y, found.pairs)
-  )
-    return "F2e";
+  const rho =
+    found &&
+    2 * found.w >= (sa.atoms[x] as number) &&
+    2 * found.w >= (sb.atoms[y] as number)
+      ? admissible(sa, x, sb, y, found.pairs)
+      : undefined;
+  if (rho === undefined) return "F2e";
   // A pure witness elsewhere outranks this one; `y` itself may hold `x`'s id when only renames tell them apart.
   const self = idX === idY ? 1 : 0;
   if (
@@ -202,6 +208,7 @@ function checkMove(
     return "F3";
   if (rival(ctx, "before", kind, bag(ctx, "after", c.to, y), c.from, x))
     return "F3";
+  renames?.push(...rho);
   return undefined;
 }
 
@@ -488,8 +495,9 @@ function renamed(sa: SideData, i: number, sb: SideData, t: number): number {
 }
 
 /**
- * Whether one rename map `ρ` covers every core pair, and is admissible: a bijection on local names, each renamed
- * name occurring in `x` (and its image in `y`) only where a binder inside that subtree binds it.
+ * The one rename map `ρ` covering every core pair, as the names it changes in first-seen order, when it is
+ * admissible: a bijection on local names, each renamed name occurring in `x` (and its image in `y`) only where a
+ * binder inside that subtree binds it. Undefined when no such map exists.
  */
 function admissible(
   sa: SideData,
@@ -497,7 +505,7 @@ function admissible(
   sb: SideData,
   y: number,
   pairs: [number, number][],
-): boolean {
+): Rename[] | undefined {
   const there = new Map<string, string>();
   const back = new Map<string, string>();
   for (const [i, t] of pairs)
@@ -506,7 +514,8 @@ function admissible(
       if (!sa.locals?.of.has(m)) continue;
       const u = sa.tree.label(m);
       const v = sb.tree.label(sb.side.node(t + k));
-      if ((there.get(u) ?? v) !== v || (back.get(v) ?? u) !== u) return false;
+      if ((there.get(u) ?? v) !== v || (back.get(v) ?? u) !== u)
+        return undefined;
       there.set(u, v);
       back.set(v, u);
     }
@@ -535,14 +544,14 @@ function admissible(
     }
     return true;
   };
-  const from = new Set<string>();
-  const to = new Set<string>();
-  for (const [u, v] of there)
-    if (u !== v) {
-      from.add(u);
-      to.add(v);
-    }
-  return from.size === 0 || (bound(sa, x, from) && bound(sb, y, to));
+  const rho = [...there]
+    .filter(([u, v]) => u !== v)
+    .map(([before, after]) => ({ before, after }));
+  const from = new Set(rho.map((r) => r.before));
+  const to = new Set(rho.map((r) => r.after));
+  return rho.length === 0 || (bound(sa, x, from) && bound(sb, y, to))
+    ? rho
+    : undefined;
 }
 
 function checkExtract(
