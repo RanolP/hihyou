@@ -513,7 +513,10 @@ export interface Point {
   column: number;
 }
 
-/** The innermost changed node containing the point, else the hunk, else nothing outside a hunk. */
+/**
+ * The innermost node containing the point, else the hunk, else nothing outside a hunk. An unchanged node counts:
+ * a click on a declaration's own keyword or name, outside its changed children, means the declaration.
+ */
 function targetAt(index: AtomIndex, at: Point): Target | undefined {
   const context = at.fragment === contextFragment;
   if (!context && !hunkOf(index, at.file, at.fragment)) return undefined;
@@ -522,8 +525,6 @@ function targetAt(index: AtomIndex, at: Point): Target | undefined {
   let best: number | undefined;
   let bestDepth = -1;
   tree?.nodes.forEach((n, i) => {
-    // Context has no changed node; any of its nodes is a place to comment.
-    if (!n.changed && !context) return;
     if (compare([n.start.line, n.start.column], p) > 0) return;
     if (compare(p, [n.end.line, n.end.column]) >= 0) return;
     let depth = 0;
