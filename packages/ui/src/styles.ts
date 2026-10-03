@@ -224,6 +224,9 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 .hh-comment-draft textarea { display: block; width: 100%; box-sizing: border-box; min-height: 4em; font: inherit; }
 /* A comment held in a review not yet submitted: dashed, and labelled so it never reads by style alone. */
 .hh-comment-row > td.hh-comment-pending { border-left-style: dashed; }
+/* A reply sits under the comment that began its thread, its own pending state marked the same way. */
+.hh-comment-reply { margin-top: 4px; padding-left: 8px; border-left: 3px solid var(--hh-border); }
+.hh-comment-reply.hh-comment-pending { border-left-style: dashed; }
 .hh-comment-label { float: right; font-size: 0.85em; font-weight: 600; padding: 0 4px; border: 1px solid var(--hh-border); border-radius: 3px; color: var(--hh-muted); }
 .hh-comment-error { margin: 2px 0 0; color: var(--hh-removed-fg); }
 .hh-review-pending { align-self: center; color: var(--hh-muted); }

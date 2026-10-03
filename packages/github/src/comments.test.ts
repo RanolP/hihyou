@@ -87,6 +87,16 @@ function fakeGitHub(pending: string | undefined, threadFails = 0) {
           pullRequestReview: { id: variables["review"] },
         },
       },
+      // A reply whose body is "no reply" answers with no comment, as a failed write would.
+      addPullRequestReviewThreadReply: {
+        addPullRequestReviewThreadReply: {
+          comment:
+            (variables["input"] as { body?: string } | undefined)?.body ===
+            "no reply"
+              ? null
+              : { id: `C${calls.length}` },
+        },
+      },
     };
     return Response.json({ data: data[op] });
   };
@@ -193,4 +203,75 @@ test("a submitted review carries its own event to GitHub, not COMMENT", async ()
       variables: { review: "R0", event },
     });
   }
+});
+
+/** The ops sent, without the pull request reads around them. */
+const opsOf = (calls: { op: string }[]) =>
+  calls.map((c) => c.op).filter((op) => op !== "pull");
+
+// "Add single reply" left in a pending review would show to nobody but its author; a review reply submitted at once
+// would publish before the rest of the review.
+test("a single reply is a review submitted at once, and a review reply joins the pending review on the thread's id", async () => {
+  const { client, target, calls } = fakeGitHub(undefined);
+  const store = githubCommentStore(client, target, lines);
+  await store.comment(anchor, "thread");
+  const thread = store.all()[0]?.id ?? "";
+  calls.length = 0;
+
+  await store.reply(thread, "single");
+  expect(opsOf(calls)).toEqual([
+    "addPullRequestReview",
+    "addPullRequestReviewThreadReply",
+    "submitPullRequestReview",
+  ]);
+  expect(
+    calls.find((c) => c.op === "addPullRequestReviewThreadReply")?.variables,
+  ).toEqual({
+    input: {
+      pullRequestReviewId: "R1",
+      pullRequestReviewThreadId: thread,
+      body: "single",
+    },
+  });
+  expect(calls.at(-1)?.variables).toEqual({ review: "R1", event: "COMMENT" });
+  expect(store.reviewing()).toBe(false);
+  calls.length = 0;
+
+  await store.reviewReply(thread, "pending");
+  expect(opsOf(calls)).toEqual([
+    "addPullRequestReview",
+    "addPullRequestReviewThreadReply",
+  ]);
+  expect(store.reviewing()).toBe(true);
+  expect(store.all().slice(1)).toMatchObject([
+    { body: "single", pending: false, thread, anchor },
+    { body: "pending", pending: true, thread, anchor },
+  ]);
+});
+
+// A failed single reply would leave the review it started PENDING on GitHub, stranding every later single comment
+// or reply with "a review is started", as 748e85d fixed for comments.
+test("a single reply deletes the review it started when GitHub makes no reply, so the next reply can still post", async () => {
+  const { client, target, calls } = fakeGitHub(undefined);
+  const store = githubCommentStore(client, target, lines);
+  await store.comment(anchor, "thread");
+  const thread = store.all()[0]?.id ?? "";
+  calls.length = 0;
+
+  await expect(store.reply(thread, "no reply")).rejects.toThrow(
+    /GitHub made no reply/,
+  );
+  expect(opsOf(calls)).toEqual([
+    "addPullRequestReview",
+    "addPullRequestReviewThreadReply",
+    "deletePullRequestReview",
+  ]);
+  expect(calls.at(-1)?.variables).toEqual({ review: "R1" });
+  expect(store.reviewing()).toBe(false);
+
+  await store.reply(thread, "second try");
+  expect(store.reviewing()).toBe(false);
+  expect(store.all().slice(1)).toMatchObject([
+    { body: "second try", pending: false, thread },
+  ]);
 });

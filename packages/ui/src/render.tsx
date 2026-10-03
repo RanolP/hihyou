@@ -150,9 +150,15 @@ function mount(
   const unsubscribeComments = comments.subscribe(() =>
     setCommentTick((v) => v + 1),
   );
-  /** The comment being written, kept across redraws, which rebuild its row. */
+  /** The comment being written, kept across redraws, which rebuild its row; with `thread`, a reply drawn in it. */
   let draft:
-    | { anchor: AnchorData; text: string; sending?: boolean; error?: string }
+    | {
+        anchor: AnchorData;
+        thread?: string;
+        text: string;
+        sending?: boolean;
+        error?: string;
+      }
     | undefined;
   const outline = createMemo(() => atomIndex(files()));
 
@@ -423,97 +429,133 @@ function mount(
       (lastRow.get(tr) ?? tr).after(row);
       lastRow.set(tr, row);
     };
-    for (const note of comments.all())
-      place(note.anchor, (td) => {
-        if (note.pending) {
-          td.classList.add("hh-comment-pending");
-          const label = doc.createElement("span");
-          label.className = "hh-comment-label";
-          label.textContent = "Pending";
-          td.prepend(label);
-        }
-        const body = doc.createElement("p");
-        body.className = "hh-comment-body";
-        body.textContent = note.body;
-        td.append(body);
-      });
-    if (draft) {
-      const d = draft;
+    /** A note's "Pending" label and dashed edge. */
+    const pendingMark = (el: HTMLElement) => {
+      el.classList.add("hh-comment-pending");
+      const label = doc.createElement("span");
+      label.className = "hh-comment-label";
+      label.textContent = "Pending";
+      el.prepend(label);
+    };
+    const bodyOf = (text: string) => {
+      const body = doc.createElement("p");
+      body.className = "hh-comment-body";
+      body.textContent = text;
+      return body;
+    };
+    /** The draft's text box and its send buttons, appended to `el`. */
+    const editor = (el: HTMLElement, d: NonNullable<typeof draft>) => {
       const reviewing = comments.reviewing();
+      const what = d.thread === undefined ? "comment" : "reply";
+      const area = doc.createElement("textarea");
+      area.value = d.text;
+      area.setAttribute("aria-label", what === "comment" ? "Comment" : "Reply");
+      area.addEventListener("input", () => (d.text = area.value));
+      const cancel = () => {
+        draft = undefined;
+        paintComments();
+        root.focus({ preventScroll: true });
+      };
+      /** Sends the draft as a single comment or reply, or into the review; a failure keeps it, with the host's error. */
+      const send = (how: "single" | "review") => {
+        if (d.text.trim() === "" || d.sending) return;
+        d.sending = true;
+        delete d.error;
+        const sent =
+          d.thread === undefined
+            ? comments[how === "single" ? "comment" : "review"](
+                d.anchor,
+                d.text,
+              )
+            : comments[how === "single" ? "reply" : "reviewReply"](
+                d.thread,
+                d.text,
+              );
+        sent.then(
+          () => {
+            if (draft === d) draft = undefined;
+            paintComments();
+            root.focus({ preventScroll: true });
+          },
+          (error: unknown) => {
+            d.sending = false;
+            d.error = error instanceof Error ? error.message : String(error);
+            console.error(`hihyou: could not save a ${how} ${what}`, error);
+            paintComments();
+          },
+        );
+      };
+      area.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+          e.preventDefault();
+          send(reviewing || e.shiftKey ? "review" : "single");
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          cancel();
+        }
+      });
+      const button = (label: string, key: string, action: () => void) => {
+        const b = doc.createElement("button");
+        b.type = "button";
+        b.className = "hh-tool";
+        b.textContent = `${label} `;
+        const kbd = doc.createElement("kbd");
+        kbd.textContent = key;
+        b.append(kbd);
+        b.title = `${label} (${key})`;
+        b.addEventListener("click", action);
+        return b;
+      };
+      // GitHub's review UI: once a review is started, a comment or a reply can only join it.
+      el.append(
+        area,
+        ...(reviewing
+          ? [button("Add review comment", "Ctrl+Enter", () => send("review"))]
+          : [
+              button(`Add single ${what}`, "Ctrl+Enter", () => send("single")),
+              button("Start a review", "Ctrl+Shift+Enter", () =>
+                send("review"),
+              ),
+            ]),
+        button("Cancel", "Escape", cancel),
+      );
+      if (d.error !== undefined) {
+        const error = doc.createElement("p");
+        error.className = "hh-comment-error";
+        error.setAttribute("role", "alert");
+        error.textContent = d.error;
+        el.append(error);
+      }
+    };
+    const notes = comments.all();
+    // A thread's replies, and a reply being written, are drawn in its row under the note that began it.
+    for (const note of notes) {
+      if (note.thread !== undefined) continue;
+      place(note.anchor, (td) => {
+        if (note.pending) pendingMark(td);
+        td.append(bodyOf(note.body));
+        for (const r of notes) {
+          if (r.thread !== note.id) continue;
+          const reply = doc.createElement("div");
+          reply.className = "hh-comment-reply";
+          reply.append(bodyOf(r.body));
+          if (r.pending) pendingMark(reply);
+          td.append(reply);
+        }
+        if (draft?.thread === note.id) {
+          const box = doc.createElement("div");
+          box.className = "hh-comment-draft";
+          editor(box, draft);
+          td.append(box);
+        }
+      });
+    }
+    if (draft && draft.thread === undefined) {
+      const d = draft;
       place(d.anchor, (td) => {
         td.parentElement?.classList.add("hh-comment-draft");
         td.classList.add("hh-comment-draft");
-        const area = doc.createElement("textarea");
-        area.value = d.text;
-        area.setAttribute("aria-label", "Comment");
-        area.addEventListener("input", () => (d.text = area.value));
-        const cancel = () => {
-          draft = undefined;
-          paintComments();
-          root.focus({ preventScroll: true });
-        };
-        /** Sends the draft as a single comment or into the review; a failure keeps it, with the host's error. */
-        const send = (how: "comment" | "review") => {
-          if (d.text.trim() === "" || d.sending) return;
-          d.sending = true;
-          delete d.error;
-          comments[how](d.anchor, d.text).then(
-            () => {
-              if (draft === d) draft = undefined;
-              paintComments();
-              root.focus({ preventScroll: true });
-            },
-            (error: unknown) => {
-              d.sending = false;
-              d.error = error instanceof Error ? error.message : String(error);
-              console.error(`hihyou: could not save a ${how}`, error);
-              paintComments();
-            },
-          );
-        };
-        area.addEventListener("keydown", (e) => {
-          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-            e.preventDefault();
-            send(reviewing || e.shiftKey ? "review" : "comment");
-          } else if (e.key === "Escape") {
-            e.preventDefault();
-            cancel();
-          }
-        });
-        const button = (label: string, key: string, action: () => void) => {
-          const b = doc.createElement("button");
-          b.type = "button";
-          b.className = "hh-tool";
-          b.textContent = `${label} `;
-          const kbd = doc.createElement("kbd");
-          kbd.textContent = key;
-          b.append(kbd);
-          b.title = `${label} (${key})`;
-          b.addEventListener("click", action);
-          return b;
-        };
-        // GitHub's review UI: once a review is started, a comment can only join it.
-        td.append(
-          area,
-          ...(reviewing
-            ? [button("Add review comment", "Ctrl+Enter", () => send("review"))]
-            : [
-                button("Add single comment", "Ctrl+Enter", () =>
-                  send("comment"),
-                ),
-                button("Start a review", "Ctrl+Shift+Enter", () =>
-                  send("review"),
-                ),
-              ]),
-          button("Cancel", "Escape", cancel),
-        );
-        if (d.error !== undefined) {
-          const error = doc.createElement("p");
-          error.className = "hh-comment-error";
-          error.setAttribute("role", "alert");
-          error.textContent = d.error;
-          td.append(error);
-        }
+        editor(td, d);
       });
     }
     painter.set("hh-comment", all);
@@ -620,6 +662,27 @@ function mount(
         const anchor = anchorOf(outline(), effect.at, effect.chars);
         if (!anchor) return;
         draft = { anchor, text: "" };
+        paintComments();
+        root
+          .querySelector<HTMLTextAreaElement>(".hh-comment-draft textarea")
+          ?.focus();
+        return;
+      }
+      case "reply": {
+        const index = outline();
+        const at = effect.at;
+        const thread = comments.all().findLast((n) => {
+          const ref = n.thread === undefined && refOf(index, n.anchor);
+          return (
+            ref &&
+            ref.file === at.file &&
+            ref.fragment === at.fragment &&
+            ref.side === at.side &&
+            ref.node === at.node
+          );
+        });
+        if (!thread) return;
+        draft = { anchor: thread.anchor, thread: thread.id, text: "" };
         paintComments();
         root
           .querySelector<HTMLTextAreaElement>(".hh-comment-draft textarea")

@@ -20,6 +20,8 @@ export interface ReviewNote {
   body: string;
   /** Held in a review not yet submitted. */
   pending: boolean;
+  /** A reply: the `id` of the note that began its thread, whose anchor it shares. */
+  thread?: string;
 }
 
 /** The node's display text, its lines joined by "\n". */
@@ -143,6 +145,10 @@ export interface CommentStore {
   comment(anchor: AnchorData, body: string): Promise<void>;
   /** "Start a review", or "Add review comment" once one is started: held pending until `submitReview`. */
   review(anchor: AnchorData, body: string): Promise<void>;
+  /** "Add single reply" to the thread `thread` (the `id` of the note that began it): published at once. */
+  reply(thread: string, body: string): Promise<void>;
+  /** A reply to `thread` held in the pending review, starting one when none is: as `review` is to `comment`. */
+  reviewReply(thread: string, body: string): Promise<void>;
   /** Publishes the pending review's comments as one review. */
   submitReview(event: ReviewEvent): Promise<void>;
   subscribe(listener: () => void): () => void;
@@ -157,15 +163,30 @@ export function sessionCommentStore(): CommentStore {
     for (const l of listeners) l();
     return Promise.resolve();
   };
-  const add = (anchor: AnchorData, body: string, pending: boolean) => {
-    notes = [...notes, { id: `c${next++}`, anchor, body, pending }];
+  const add = (
+    anchor: AnchorData,
+    body: string,
+    pending: boolean,
+    thread?: string,
+  ) => {
+    notes = [
+      ...notes,
+      { id: `c${next++}`, anchor, body, pending, ...(thread && { thread }) },
+    ];
     return changed();
+  };
+  const addReply = (thread: string, body: string, pending: boolean) => {
+    const root = notes.find((n) => n.id === thread && !n.thread);
+    if (!root) return Promise.reject(new Error(`no thread ${thread}`));
+    return add(root.anchor, body, pending, thread);
   };
   return {
     all: () => notes,
     reviewing: () => notes.some((n) => n.pending),
     comment: (anchor, body) => add(anchor, body, false),
     review: (anchor, body) => add(anchor, body, true),
+    reply: (thread, body) => addReply(thread, body, false),
+    reviewReply: (thread, body) => addReply(thread, body, true),
     submitReview() {
       notes = notes.map((n) => (n.pending ? { ...n, pending: false } : n));
       return changed();

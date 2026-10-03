@@ -226,6 +226,12 @@ export async function openReviewPanel(
               comments[message.how](message.anchor, message.body),
             );
           return;
+        case "reply":
+          if (comments)
+            void answer(message.id, () =>
+              comments[message.how](message.thread, message.body),
+            );
+          return;
         case "submitReview":
           if (comments)
             void answer(message.id, () => comments.submitReview(message.event));

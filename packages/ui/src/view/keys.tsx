@@ -12,6 +12,7 @@ const toolbar = [
   { key: "s w", label: "-2" },
   { key: "s 0", label: "Clear score" },
   { key: "c", label: "Comment" },
+  { key: "r", label: "Reply" },
   { key: "b", label: "Prev word" },
   { key: "w", label: "Next word" },
   { key: "B", label: "Grow word back" },

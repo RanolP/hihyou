@@ -46,6 +46,8 @@ export type ModalEffect =
   | { kind: "expandMove"; at: NodeRef }
   /** Open a comment on the node, narrowed to `chars` when present. */
   | { kind: "comment"; at: NodeRef; chars?: CharRange }
+  /** Open a reply on the thread drawn at the node, the latest when there are several. */
+  | { kind: "reply"; at: NodeRef }
   /** Publish the pending review, if one is started. */
   | { kind: "submitReview" }
   | { kind: "expandElided"; file: number; fragment: number }
@@ -393,6 +395,11 @@ export function modalKey(
         { kind: "comment", at, ...(s.chars && { chars: s.chars }) },
       ]);
     }
+    case "r": {
+      const p = s.selections[s.primary];
+      if (p?.kind !== "node") return done(s);
+      return done(s, [{ kind: "reply", at: nodeRef(p) }]);
+    }
     case "%": {
       const p = s.selections[s.primary];
       if (!p) return done(s);
@@ -628,6 +635,7 @@ export const modalKeymap: readonly {
   { key: "v", label: "toggle viewed", group: "act" },
   { key: "s", label: "score…", group: "act" },
   { key: "c", label: "comment", group: "act" },
+  { key: "r", label: "reply to thread", group: "act" },
   { key: "R", label: "submit review", group: "act" },
   { key: "2", label: "+2 good to merge", group: "score", prefix: "s" },
   { key: "1", label: "+1 looks good", group: "score", prefix: "s" },
