@@ -36,6 +36,7 @@ import {
   type FileDiff,
   type LinePair,
   nodeHash,
+  type Rename,
   type SideInput,
   wholeDeclaration,
 } from "./fragments.js";
@@ -226,6 +227,10 @@ export async function diffFiles(
   );
   // Every claim is checked against the trees before it is shown; one that fails reads as a delete plus an insert.
   let claims: ClaimContext | undefined;
+  // The rename map each held edited move verified, by its move: `from:x:to:y`.
+  const renamed = new Map<string, Rename[]>();
+  const renamesOf = ({ edit: e, from, to }: Placed) =>
+    e.kind === "move" ? renamed.get(`${from}:${e.a}:${to}:${e.b}`) : undefined;
   const holds = (claim: Claim) => {
     claims ??= createClaimContext(
       prepared.map((p) =>
@@ -241,7 +246,11 @@ export async function diffFiles(
           : undefined,
       ),
     );
-    return checkClaim(claims, claim) === undefined;
+    const renames: Rename[] = [];
+    if (checkClaim(claims, claim, renames) !== undefined) return false;
+    if (claim.kind === "move" && renames.length > 0)
+      renamed.set(`${claim.from}:${claim.x}:${claim.to}:${claim.y}`, renames);
+    return true;
   };
   const trees = (file: number) => {
     const p = prepared[file];
@@ -251,7 +260,15 @@ export async function diffFiles(
     const from = prepared[c.from];
     const to = prepared[c.to];
     if (!from || !to || !("mapping" in from) || !("mapping" in to)) continue;
-    record(c, sides[c.from]?.a, sides[c.to]?.b, from.ref, to.ref);
+    record(
+      c,
+      sides[c.from]?.a,
+      sides[c.to]?.b,
+      from.ref,
+      to.ref,
+      false,
+      renamesOf(c),
+    );
     for (const s of [sides[c.from], sides[c.to]]) if (s) s.touched = true;
   }
   const scripts = prepared.map((p, i) =>
@@ -345,15 +362,18 @@ export async function diffFiles(
       };
     }
     const edits = scripts[i] ?? [];
-    for (const e of withoutNodes(edits, p.b.tree, extracted[i]))
+    for (const e of withoutNodes(edits, p.b.tree, extracted[i])) {
+      const placed = { edit: e, from: i, to: i };
       record(
-        { edit: e, from: i, to: i },
+        placed,
         s.a,
         s.b,
         p.ref,
         p.ref,
         status !== undefined,
+        renamesOf(placed),
       );
+    }
     const reason = foldReason({
       path,
       text,
@@ -453,6 +473,7 @@ function record(
   refA: ChangedFileRef,
   refB: ChangedFileRef,
   wholeFile = false,
+  renames?: readonly Rename[],
 ): void {
   const range = (s: SideInput, n: number) => ({
     start: s.v.start(n),
@@ -526,7 +547,7 @@ function record(
       pairAtom(e, a, b, path);
       return;
     case "move":
-      movePair(e, a, b, refA, refB);
+      movePair(e, a, b, refA, refB, undefined, renames);
   }
 }
 
@@ -537,6 +558,7 @@ function movePair(
   refA: ChangedFileRef,
   refB: ChangedFileRef,
   extract?: string,
+  renames?: readonly Rename[],
 ): void {
   const ta = a?.v.tree;
   const tb = b?.v.tree;
@@ -547,12 +569,14 @@ function movePair(
     counterpart: { path: refB.path, at: [stepsOf(tb, e.b)] },
     ...(inFile && { twin: e.b }),
     ...(extract !== undefined && { extract }),
+    ...(renames && { renames }),
   });
   b.moves.push({
     node: e.b,
     counterpart: { path: refA.oldPath ?? refA.path, at: [stepsOf(ta, e.a)] },
     ...(inFile && { twin: e.a }),
     ...(extract !== undefined && { extract }),
+    ...(renames && { renames }),
   });
   pairAtom(e, a, b, atomPath(refA, refB));
 }
