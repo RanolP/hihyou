@@ -130,8 +130,12 @@ export function githubSource(
     refreshable: false,
     ...(pull !== undefined && {
       comments: () =>
-        host.reviewComments({ ...id, number: pull }, async (anchor) =>
-          (await engine.diffset(id)).anchor(anchor).intoLineRanges(),
+        host.reviewComments(
+          { ...id, number: pull },
+          async (anchor) =>
+            (await engine.diffset(id)).anchor(anchor).intoLineRanges(),
+          async (side, path, lines) =>
+            (await engine.diffset(id)).anchorOnLines(side, path, lines),
         ),
     }),
   };

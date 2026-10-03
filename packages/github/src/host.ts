@@ -43,10 +43,18 @@ export interface GitHubHost extends Host {
     repo: string,
     number: number,
   ): Promise<GitHubCommit[]>;
-  /** The pull request's review comments, kept on GitHub; `lines` places an anchor in the blob it names. */
+  /**
+   * The pull request's review comments, kept on GitHub; `lines` places an anchor in the blob it names, and
+   * `onLines` anchors a thread read back on lines of that blob (`githubCommentStore`).
+   */
   reviewComments(
     target: GitHubReviewTarget,
     lines: (anchor: AnchorData) => Promise<LineRange[]>,
+    onLines: (
+      side: "before" | "after",
+      path: string,
+      lines: LineRange,
+    ) => Promise<AnchorData>,
   ): CommentStore;
 }
 
@@ -63,8 +71,8 @@ export function githubHost(options: GitHubHostOptions): GitHubHost {
     listPullRequests: (owner, repo) => listPullRequests(client, owner, repo),
     listPullRequestCommits: (owner, repo, number) =>
       listPullRequestCommits(client, owner, repo, number),
-    reviewComments: (target, lines) =>
-      githubCommentStore(client, target, lines),
+    reviewComments: (target, lines, onLines) =>
+      githubCommentStore(client, target, lines, onLines),
     ...(options.preferences && { preferences: options.preferences }),
   };
 }

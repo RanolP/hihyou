@@ -46,8 +46,11 @@ export type ModalEffect =
   | { kind: "expandMove"; at: NodeRef }
   /** Open a comment on the node, narrowed to `chars` when present. */
   | { kind: "comment"; at: NodeRef; chars?: CharRange }
-  /** Open a reply on the thread drawn at the node, the latest when there are several. */
-  | { kind: "reply"; at: NodeRef }
+  /**
+   * Open a reply on the thread drawn at the node, the latest when there are several; on a file, the latest of the
+   * threads listed under its header, which no drawn node holds.
+   */
+  | { kind: "reply"; at: NodeRef | { file: number } }
   /** Publish the pending review, if one is started. */
   | { kind: "submitReview" }
   | { kind: "expandElided"; file: number; fragment: number }
@@ -397,6 +400,8 @@ export function modalKey(
     }
     case "r": {
       const p = s.selections[s.primary];
+      if (p?.kind === "file")
+        return done(s, [{ kind: "reply", at: { file: p.file } }]);
       if (p?.kind !== "node") return done(s);
       return done(s, [{ kind: "reply", at: nodeRef(p) }]);
     }

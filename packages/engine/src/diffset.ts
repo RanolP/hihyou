@@ -8,7 +8,13 @@ import {
   Side,
 } from "syntechs/diff";
 import type { Tree } from "syntechs/core";
-import { type Anchor, createAnchor, stepsOf } from "./anchor.js";
+import {
+  type Anchor,
+  anchorOnLines,
+  createAnchor,
+  type LineRange,
+  stepsOf,
+} from "./anchor.js";
 import { cacheKey } from "./cache.js";
 import {
   decodeText,
@@ -54,6 +60,15 @@ export interface Diffset<H extends Host> {
   interdiff(to: Diffset<H>): InterDiffset<H>;
   anchor(data: AnchorData): Anchor;
   /**
+   * The anchor on the nodes covering `lines` of `path`'s `side`, counted in the blob as written: the inverse of
+   * `Anchor.intoLineRanges`, so a line-based review thread finds its nodes. Rejects when the side has no tree.
+   */
+  anchorOnLines(
+    side: "before" | "after",
+    path: string,
+    lines: LineRange,
+  ): Promise<AnchorData>;
+  /**
    * The unchanged lines an `elided` fragment of `path` hid, at its `lines`, `count` of them (absent: to the
    * end of the file), with the same display text and syntax scopes as the fragments `diff()` shows.
    * Undefined when `path` is not in this diffset, its content is unread, or the lines fall outside it.
@@ -85,6 +100,8 @@ export async function openDiffset<H extends Host>(
       ),
     interdiff: (to) => createInterDiffset(ctx, self, to),
     anchor: (data) => createAnchor(ctx, changes, data),
+    anchorOnLines: (side, path, lines) =>
+      anchorOnLines(ctx, changes, side, path, lines),
     expand: async (path, lines, count) => {
       const i = changes.findIndex((c) => c.path === path);
       const ref = changes[i];

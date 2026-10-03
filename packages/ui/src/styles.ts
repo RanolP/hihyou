@@ -218,12 +218,13 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 .hh-toolbar .hh-score { align-self: center; margin-left: auto; font-weight: 600; }
 /* A comment's anchored text is boxed in the accent colour; the comment itself sits under the anchor's last line. */
 .hh-diff ::highlight(hh-comment) { background-color: var(--hh-select); text-decoration: underline dotted 2px var(--hh-accent); }
-.hh-comment-row > td { padding: 4px 8px; background: var(--hh-header-bg); border-left: 3px solid var(--hh-accent); }
+.hh-comment-row > td, .hh-comment-file { padding: 4px 8px; background: var(--hh-header-bg); border-left: 3px solid var(--hh-accent); }
+.hh-comment-author { font-weight: 600; }
 .hh-comment-quote { font-family: var(--hh-mono); color: var(--hh-muted); }
 .hh-comment-body { margin: 2px 0 0; white-space: pre-wrap; }
 .hh-comment-draft textarea { display: block; width: 100%; box-sizing: border-box; min-height: 4em; font: inherit; }
 /* A comment held in a review not yet submitted: dashed, and labelled so it never reads by style alone. */
-.hh-comment-row > td.hh-comment-pending { border-left-style: dashed; }
+.hh-comment-row > td.hh-comment-pending, .hh-comment-file.hh-comment-pending { border-left-style: dashed; }
 /* A reply sits under the comment that began its thread, its own pending state marked the same way. */
 .hh-comment-reply { margin-top: 4px; padding-left: 8px; border-left: 3px solid var(--hh-border); }
 .hh-comment-reply.hh-comment-pending { border-left-style: dashed; }

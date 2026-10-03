@@ -93,9 +93,21 @@ export function placeOf(
   };
 }
 
-const pullQuery = `query($owner: String!, $repo: String!, $number: Int!) {
+/** The pull request, the viewer's pending review, and one page of its review threads with their comments. */
+const pullQuery = `query($owner: String!, $repo: String!, $number: Int!, $after: String) {
+  viewer { login }
   repository(owner: $owner, name: $repo) {
-    pullRequest(number: $number) { id reviews(first: 1, states: [PENDING]) { nodes { id } } }
+    pullRequest(number: $number) {
+      id
+      reviews(first: 1, states: [PENDING]) { nodes { id } }
+      reviewThreads(first: 100, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id path diffSide line startLine isOutdated subjectType
+          comments(first: 100) { nodes { id body state author { login } } }
+        }
+      }
+    }
   }
 }`;
 const startReview = `mutation($pr: ID!, $commit: GitObjectID!) {
@@ -114,21 +126,87 @@ const deleteReview = `mutation($review: ID!) {
   deletePullRequestReview(input: { pullRequestReviewId: $review }) { pullRequestReview { id } }
 }`;
 
+interface ThreadData {
+  id: string;
+  path: string;
+  diffSide: "LEFT" | "RIGHT";
+  line: number | null;
+  startLine: number | null;
+  isOutdated: boolean;
+  subjectType: "LINE" | "FILE";
+  comments: {
+    nodes: {
+      id: string;
+      body: string;
+      state: "PENDING" | "SUBMITTED";
+      author: { login: string } | null;
+    }[];
+  };
+}
+
 interface PullData {
+  viewer: { login: string };
   repository: {
-    pullRequest: { id: string; reviews: { nodes: { id: string }[] } } | null;
+    pullRequest: {
+      id: string;
+      reviews: { nodes: { id: string }[] };
+      reviewThreads: {
+        pageInfo: { hasNextPage: boolean; endCursor: string | null };
+        nodes: ThreadData[];
+      };
+    } | null;
   } | null;
+}
+
+/** `placeOf`'s prefix, which names the anchored lines a moved comment's place does not cover. */
+const placedPrefix = /^Lines? (\d+)(?:-(\d+))? \((before|after)\):\n\n/;
+
+/**
+ * Where a thread read from GitHub points, before it is anchored to nodes: the lines `placeOf`'s prefix names when
+ * hihyou moved the comment, else the thread's own lines; none for a file-level or outdated thread, whose lines the
+ * compared blob no longer holds.
+ */
+export function threadLines(
+  thread: Pick<
+    ThreadData,
+    "diffSide" | "line" | "startLine" | "isOutdated" | "subjectType"
+  >,
+  body: string,
+): { side: "before" | "after"; range?: LineRange; body: string } {
+  const side = thread.diffSide === "LEFT" ? "before" : "after";
+  // An outdated thread's lines, the prefix's included, count in a blob the comparison no longer shows.
+  if (thread.isOutdated) return { side, body };
+  const m = placedPrefix.exec(body);
+  if (m) {
+    const start = Number(m[1]);
+    return {
+      side: m[3] as "before" | "after",
+      range: { start, end: m[2] === undefined ? start : Number(m[2]) },
+      body: body.slice(m[0].length),
+    };
+  }
+  if (thread.subjectType === "FILE" || !thread.line) return { side, body };
+  return {
+    side,
+    range: { start: thread.startLine ?? thread.line, end: thread.line },
+    body,
+  };
 }
 
 /**
  * `lines` places an anchor in the side's blob as written, which is what GitHub's diff counts: the engine's
- * `Diffset.anchor(data).intoLineRanges()`. Requests run one at a time, so two comments sent together never start
- * two reviews.
+ * `Diffset.anchor(data).intoLineRanges()`; `onLines` is its inverse, `Diffset.anchorOnLines`, which anchors a
+ * thread read from GitHub. Requests run one at a time, so two comments sent together never start two reviews.
  */
 export function githubCommentStore(
   client: GitHubClient,
   target: GitHubReviewTarget,
   lines: (anchor: AnchorData) => Promise<LineRange[]>,
+  onLines: (
+    side: "before" | "after",
+    path: string,
+    lines: LineRange,
+  ) => Promise<AnchorData>,
 ): CommentStore {
   const { owner, repo, number, base, head } = target;
   let notes: readonly ReviewNote[] = [];
@@ -154,24 +232,90 @@ export function githubCommentStore(
     return run;
   };
 
+  /** Who this store writes as, read with the threads, so a note written here names its author at once. */
+  let viewer: string | undefined;
   /**
-   * The pull request's node id, after reading afresh which pending review the viewer has. GitHub is the only place
-   * it lives, and another tab, another window or github.com itself may have started, submitted or discarded it
-   * since this store last looked; every write calls this first, so none lands on a review already submitted. A
-   * note held in a review that is no longer pending is taken as published.
+   * A thread's anchor: the one a note already held for it keeps (the node it was written on, `chars` included),
+   * else the nodes on its lines, else the file itself (its root node), where a view lists what no node it draws holds.
+   */
+  const anchorOf = async (
+    thread: ThreadData,
+    side: "before" | "after",
+    range: LineRange | undefined,
+  ): Promise<AnchorData> => {
+    const known = notes.find((n) => n.id === thread.id)?.anchor;
+    if (known) return known;
+    let path = thread.path;
+    if (side === "before")
+      for (const [key, f] of await filesByPath())
+        if (f.path === thread.path && key.startsWith("before\n"))
+          path = key.slice("before\n".length);
+    if (range)
+      try {
+        return await onLines(side, path, range);
+      } catch (error) {
+        console.error(
+          `hihyou: could not find the nodes of a thread on ${path}`,
+          error,
+        );
+      }
+    return { side, path: thread.path, nodes: [[]] };
+  };
+  const mine = () => (viewer === undefined ? {} : { author: viewer });
+  const notesOf = async (thread: ThreadData): Promise<ReviewNote[]> => {
+    const [root, ...replies] = thread.comments.nodes;
+    if (!root) return [];
+    const { side, range, body } = threadLines(thread, root.body);
+    const anchor = await anchorOf(thread, side, range);
+    const note = (
+      c: (typeof thread.comments.nodes)[number],
+      text: string,
+    ): ReviewNote => ({
+      id: c.id,
+      anchor,
+      body: text,
+      pending: c.state === "PENDING",
+      ...(c.author && { author: c.author.login }),
+    });
+    return [
+      { ...note(root, body), id: thread.id },
+      ...replies.map((c) => ({ ...note(c, c.body), thread: thread.id })),
+    ];
+  };
+
+  /**
+   * The pull request's node id, after reading afresh which pending review the viewer has and every review thread
+   * with its comments. GitHub is the only place they live, and another tab, another window, github.com itself or
+   * another reviewer may have changed them since this store last looked; every write calls this first, so none
+   * lands on a review already submitted.
    */
   const pullId = async () => {
-    const data = await client.graphql<PullData>(pullQuery, {
-      owner,
-      repo,
-      number,
-    });
-    const pr = data.repository?.pullRequest;
-    if (!pr) throw new Error(`${owner}/${repo}#${number} was not found`);
+    const threads: ThreadData[] = [];
+    let after: string | null = null;
+    let pr: NonNullable<NonNullable<PullData["repository"]>["pullRequest"]>;
+    for (;;) {
+      const data: PullData = await client.graphql<PullData>(pullQuery, {
+        owner,
+        repo,
+        number,
+        after,
+      });
+      const page = data.repository?.pullRequest;
+      if (!page) throw new Error(`${owner}/${repo}#${number} was not found`);
+      viewer = data.viewer.login;
+      pr = page;
+      threads.push(...page.reviewThreads.nodes);
+      const { hasNextPage, endCursor } = page.reviewThreads.pageInfo;
+      if (!hasNextPage || !endCursor) break;
+      after = endCursor;
+    }
+    const read = (await Promise.all(threads.map(notesOf))).flat();
     const pending = pr.reviews.nodes[0]?.id;
-    if (pending !== reviewId) {
-      if (reviewId !== undefined)
-        notes = notes.map((n) => (n.pending ? { ...n, pending: false } : n));
+    if (
+      pending !== reviewId ||
+      JSON.stringify(read) !== JSON.stringify(notes)
+    ) {
+      notes = read;
       reviewId = pending;
       changed(true);
     }
@@ -311,12 +455,13 @@ export function githubCommentStore(
           anchor,
           body,
           pending: false,
+          ...mine(),
         })),
       ),
     review: (anchor, body) =>
       serial(async () => {
         const id = await thread(await start(), anchor, body);
-        notes = [...notes, { id, anchor, body, pending: true }];
+        notes = [...notes, { id, anchor, body, pending: true, ...mine() }];
         changed();
       }),
     reply: (to, body) =>
@@ -328,13 +473,17 @@ export function githubCommentStore(
           body,
           pending: false,
           thread: to,
+          ...mine(),
         }));
       }),
     reviewReply: (to, body) =>
       serial(async () => {
         const { anchor } = rootOf(to);
         const id = await reply(await start(), to, body);
-        notes = [...notes, { id, anchor, body, pending: true, thread: to }];
+        notes = [
+          ...notes,
+          { id, anchor, body, pending: true, thread: to, ...mine() },
+        ];
         changed();
       }),
     submitReview: (event) =>

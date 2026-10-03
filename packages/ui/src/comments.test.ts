@@ -137,3 +137,16 @@ test("a single reply is final at once and a review reply stays pending, both on 
   await store.submitReview("COMMENT");
   expect(store.all().every((n) => !n.pending)).toBe(true);
 });
+
+// A thread read from GitHub names the node on its lines, which the view may not draw (inside an unchanged
+// statement); exact matching dropped such a thread from the view, so `r` could not answer it either.
+test("an anchor on a node the view does not draw is drawn at its nearest drawn ancestor, and one on no file node is not", () => {
+  const on = (nodes: number[][]) => ({
+    side: "after" as const,
+    path: "a.ts",
+    nodes,
+  });
+  expect(refOf(index, on([[0, 1, 0]]))?.node).toBe(1);
+  expect(refOf(index, on([[0, 0]]))?.node).toBe(0);
+  expect(refOf(index, on([[3]]))).toBeUndefined();
+});
