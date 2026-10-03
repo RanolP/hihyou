@@ -23,4 +23,12 @@ export {
   nameOf,
   type SameLeaf,
 } from "./move.js";
+export {
+  alphaIds,
+  type BinderRule,
+  type Locals,
+  resolveLocals,
+  type ScopeRules,
+  type UncertainRule,
+} from "./scope.js";
 export { Side } from "./side.js";

@@ -88,6 +88,7 @@ test("every move the UI fixture shows passes checkClaim", async () => {
         before: parse(decode(ref.before)),
         after: parse(decode(ref.after)),
         ...(grammar.declarations && { declarations: grammar.declarations }),
+        ...(grammar.scope && { scope: grammar.scope }),
       };
     }),
   );

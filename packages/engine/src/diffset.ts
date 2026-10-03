@@ -236,6 +236,7 @@ export async function diffFiles(
               ...(p.grammar.declarations && {
                 declarations: p.grammar.declarations,
               }),
+              ...(p.grammar.scope && { scope: p.grammar.scope }),
             }
           : undefined,
       ),

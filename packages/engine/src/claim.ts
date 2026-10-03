@@ -1,10 +1,14 @@
 import { NO_NODE, type Tree } from "syntechs/core";
 import {
+  alphaIds,
   contentAtoms,
   isContentAtom,
   isoIds,
   isUnit,
+  type Locals,
   nameOf,
+  resolveLocals,
+  type ScopeRules,
   Side,
 } from "syntechs/diff";
 
@@ -22,6 +26,8 @@ export interface ClaimFile {
   before?: Tree;
   after?: Tree;
   declarations?: ReadonlySet<string>;
+  /** The grammar's scoping rules; without them every name is compared as written. */
+  scope?: ScopeRules;
 }
 
 /**
@@ -57,6 +63,10 @@ interface SideData {
   side: Side;
   tree: Tree;
   iso: Int32Array;
+  /** Canonical ids: iso ids over alpha-normalized local names, what equality in a move claim is over. */
+  alpha: Int32Array;
+  locals?: Locals;
+  references?: ReadonlySet<string>;
   /** `|C|` of each index's subtree. */
   atoms: Uint32Array;
 }
@@ -90,10 +100,16 @@ export function createClaimContext(
   const intern = new Map<string, number>();
   const countBefore = new Map<number, number>();
   const countAfter = new Map<number, number>();
-  const data = (tree: Tree, counts: Map<number, number>): SideData => {
+  const data = (
+    tree: Tree,
+    counts: Map<number, number>,
+    scope?: ScopeRules,
+  ): SideData => {
     const side = Side.of(tree);
     const iso = isoIds(side, intern);
-    for (const id of iso) counts.set(id, (counts.get(id) ?? 0) + 1);
+    const locals = scope && resolveLocals(tree, scope);
+    const alpha = alphaIds(side, locals, intern);
+    for (const id of alpha) counts.set(id, (counts.get(id) ?? 0) + 1);
     const atoms = new Uint32Array(side.nodes.length);
     for (let i = atoms.length - 1; i >= 0; i--) {
       if (isContentAtom(tree, side.node(i))) atoms[i] = 1;
@@ -101,12 +117,19 @@ export function createClaimContext(
         for (const c of side.childrenOf(i))
           atoms[i] = (atoms[i] as number) + (atoms[c] as number);
     }
-    return { side, tree, iso, atoms };
+    return {
+      side,
+      tree,
+      iso,
+      alpha,
+      atoms,
+      ...(locals && scope && { locals, references: new Set(scope.references) }),
+    };
   };
   return {
     files: files.map((f) => ({
-      ...(f?.before && { before: data(f.before, countBefore) }),
-      ...(f?.after && { after: data(f.after, countAfter) }),
+      ...(f?.before && { before: data(f.before, countBefore, f.scope) }),
+      ...(f?.after && { after: data(f.after, countAfter, f.scope) }),
       ...(f?.declarations && { declarations: f.declarations }),
     })),
     intern,
@@ -139,28 +162,39 @@ function checkMove(
   if ((sa.atoms[x] as number) < minAtoms || (sb.atoms[y] as number) < minAtoms)
     return "F0";
   if (!moved(ctx, c.from, c.x, c.to, c.y)) return "F1";
-  const idX = sa.iso[x] as number;
-  const idY = sb.iso[y] as number;
+  const idX = sa.alpha[x] as number;
+  const idY = sb.alpha[y] as number;
   const before = (id: number) => ctx.countBefore.get(id) ?? 0;
   const after = (id: number) => ctx.countAfter.get(id) ?? 0;
   if (!c.edited) {
-    if (idX !== idY) return "F2p";
+    // "Moved" lists no rename, so it asserts `ρ` is the identity: equal as written, unique up to renaming.
+    if (sa.iso[x] !== sb.iso[y]) return "F2p";
     return before(idX) === 1 && after(idY) === 1 ? undefined : "F3";
   }
   if (sa.tree.kindName(c.x) !== sb.tree.kindName(c.y)) return "F2e";
-  const w = core(sa, [x], sb, y, (t) => sb.iso[t] as number);
+  const found = core(
+    sa,
+    [x],
+    sb,
+    y,
+    (i) => sa.alpha[i] as number,
+    (t) => sb.alpha[t] as number,
+    (i, t) => (sa.atoms[i] as number) - renamed(sa, i, sb, t),
+  );
   if (
-    w === undefined ||
-    2 * w < (sa.atoms[x] as number) ||
-    2 * w < (sb.atoms[y] as number)
+    found === undefined ||
+    2 * found.w < (sa.atoms[x] as number) ||
+    2 * found.w < (sb.atoms[y] as number) ||
+    !admissible(sa, x, sb, y, found.pairs)
   )
     return "F2e";
-  // A pure witness elsewhere outranks this one.
+  // A pure witness elsewhere outranks this one; `y` itself may hold `x`'s id when only renames tell them apart.
+  const self = idX === idY ? 1 : 0;
   if (
     before(idX) !== 1 ||
-    after(idX) !== 0 ||
+    after(idX) !== self ||
     after(idY) !== 1 ||
-    before(idY) !== 0
+    before(idY) !== self
   )
     return "F3";
   const kind = sa.tree.kindName(c.x);
@@ -343,8 +377,10 @@ function core(
   roots: readonly number[],
   sb: SideData,
   root: number,
+  idA: (i: number) => number,
   idOf: (t: number) => number,
-): number | undefined {
+  weight: (i: number, t: number) => number = (i) => sa.atoms[i] as number,
+): { w: number; pairs: [number, number][] } | undefined {
   const targets = new Map<number, number[]>();
   for (
     let t = root, end = root + (sb.side.size[root] as number);
@@ -357,7 +393,7 @@ function core(
     if (list) list.push(t);
     else targets.set(id, [t]);
   }
-  type Pair = { s: Span; t: Span; w: number };
+  type Pair = { s: Span; t: Span; w: number; i: number; ti: number };
   const pairs: Pair[] = [];
   const span = (d: SideData, i: number): Span => {
     const n = d.side.node(i);
@@ -367,13 +403,18 @@ function core(
     const stack = [r];
     while (stack.length > 0) {
       const i = stack.pop() as number;
-      const w = sa.atoms[i] as number;
-      if (w < 2) continue;
+      if ((sa.atoms[i] as number) < 2) continue;
       const ts =
-        (i === r || isUnit(sa.tree, sa.side.node(i))) &&
-        targets.get(sa.iso[i] as number);
+        (i === r || isUnit(sa.tree, sa.side.node(i))) && targets.get(idA(i));
       if (ts) {
-        for (const t of ts) pairs.push({ s: span(sa, i), t: span(sb, t), w });
+        for (const t of ts)
+          pairs.push({
+            s: span(sa, i),
+            t: span(sb, t),
+            w: weight(i, t),
+            i,
+            ti: t,
+          });
         if (pairs.length > maxPairs) return undefined;
         continue;
       }
@@ -381,24 +422,127 @@ function core(
     }
   }
   pairs.sort((p, q) => p.s.start - q.s.start || p.t.start - q.t.start);
-  // `any[j]`: the heaviest chain ending at pair j; `big[j]`: the heaviest such chain holding a pair of `k` atoms.
+  // `any[j]`: the heaviest chain ending at pair j; `big[j]`: the heaviest such chain holding a pair of `k` atoms,
+  // each with the pair before it in `anyFrom` / `bigFrom`.
   const any: number[] = [];
   const big: number[] = [];
+  const anyFrom: number[] = [];
+  const bigFrom: { from: number; big: boolean }[] = [];
   let best: number | undefined;
+  let bestAt = -1;
   for (const [j, p] of pairs.entries()) {
     let a = 0;
+    let ai = -1;
     let b = Number.NEGATIVE_INFINITY;
+    let bi = -1;
     for (let i = 0; i < j; i++) {
       const q = pairs[i] as Pair;
       if (q.s.end > p.s.start || q.t.end > p.t.start) continue;
-      a = Math.max(a, any[i] as number);
-      b = Math.max(b, big[i] as number);
+      if ((any[i] as number) > a) [a, ai] = [any[i] as number, i];
+      if ((big[i] as number) > b) [b, bi] = [big[i] as number, i];
     }
     any[j] = a + p.w;
-    big[j] = p.w >= minAtoms ? Math.max(a, b) + p.w : b + p.w;
-    if ((big[j] as number) > (best ?? 0)) best = big[j];
+    anyFrom[j] = ai;
+    if (p.w >= minAtoms && a >= b) {
+      big[j] = a + p.w;
+      bigFrom[j] = { from: ai, big: false };
+    } else {
+      big[j] = b + p.w;
+      bigFrom[j] = { from: bi, big: true };
+    }
+    if ((big[j] as number) > (best ?? 0)) {
+      best = big[j];
+      bestAt = j;
+    }
   }
-  return best;
+  if (best === undefined) return undefined;
+  const chosen: [number, number][] = [];
+  for (let j = bestAt, inBig = true; j >= 0;) {
+    const p = pairs[j] as Pair;
+    chosen.push([p.i, p.ti]);
+    if (inBig) {
+      const f = bigFrom[j] as { from: number; big: boolean };
+      j = f.from;
+      inBig = f.big;
+    } else j = anyFrom[j] as number;
+  }
+  return { w: best, pairs: chosen.reverse() };
+}
+
+/**
+ * The atoms of the pair at index `i` of `sa` and `t` of `sb`, equal in canonical id, that are equal only because a
+ * local was renamed: those count nothing toward an edited move's weight.
+ */
+function renamed(sa: SideData, i: number, sb: SideData, t: number): number {
+  if (!sa.locals || !sb.locals) return 0;
+  let out = 0;
+  for (let k = 0, size = sa.side.size[i] as number; k < size; k++) {
+    const m = sa.side.node(i + k);
+    if (
+      sa.locals.of.has(m) &&
+      sa.tree.label(m) !== sb.tree.label(sb.side.node(t + k))
+    )
+      out++;
+  }
+  return out;
+}
+
+/**
+ * Whether one rename map `ρ` covers every core pair, and is admissible: a bijection on local names, each renamed
+ * name occurring in `x` (and its image in `y`) only where a binder inside that subtree binds it.
+ */
+function admissible(
+  sa: SideData,
+  x: number,
+  sb: SideData,
+  y: number,
+  pairs: [number, number][],
+): boolean {
+  const there = new Map<string, string>();
+  const back = new Map<string, string>();
+  for (const [i, t] of pairs)
+    for (let k = 0, size = sa.side.size[i] as number; k < size; k++) {
+      const m = sa.side.node(i + k);
+      if (!sa.locals?.of.has(m)) continue;
+      const u = sa.tree.label(m);
+      const v = sb.tree.label(sb.side.node(t + k));
+      if ((there.get(u) ?? v) !== v || (back.get(v) ?? u) !== u) return false;
+      there.set(u, v);
+      back.set(v, u);
+    }
+  const bound = (d: SideData, root: number, names: Set<string>) => {
+    const n = d.side.node(root);
+    for (
+      let k = root, end = root + (d.side.size[root] as number);
+      k < end;
+      k++
+    ) {
+      const m = d.side.node(k);
+      if (
+        d.tree.count(m) !== 0 ||
+        !d.references?.has(d.tree.kindName(m)) ||
+        !names.has(d.tree.label(m))
+      )
+        continue;
+      const b = d.locals?.of.get(m);
+      if (b === undefined) return false;
+      const binding = d.locals?.binding[b] as number;
+      if (
+        d.tree.start(binding) < d.tree.start(n) ||
+        d.tree.end(binding) > d.tree.end(n)
+      )
+        return false;
+    }
+    return true;
+  };
+  const from = new Set<string>();
+  const to = new Set<string>();
+  for (const [u, v] of there)
+    if (u !== v) {
+      from.add(u);
+      to.add(v);
+    }
+  return from.size === 0 || (bound(sa, x, from) && bound(sb, y, to));
 }
 
 function checkExtract(
@@ -423,8 +567,15 @@ function checkExtract(
   const sigma = substitution(sb.tree, body, site, call[1]);
   if (!sigma) return "F2x";
   const ids = substitutedIds(ctx, sb, b, site, sigma);
-  const w = core(sa, removed, sb, b, (t) => ids[t - b] as number);
-  if (w === undefined || 2 * w < size) return "F2x";
+  const found = core(
+    sa,
+    removed,
+    sb,
+    b,
+    (i) => sa.iso[i] as number,
+    (t) => ids[t - b] as number,
+  );
+  if (found === undefined || 2 * found.w < size) return "F2x";
   // No other new declaration called from the same file may share half of the removed code's content.
   const own = new Map<string, number>();
   for (const i of removed) count(contentAtoms(sa.tree, sa.side.node(i)), own);

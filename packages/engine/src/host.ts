@@ -1,5 +1,6 @@
 import type { Language, Tree } from "syntechs/core";
 import type { Formatted } from "syntechs/fmt";
+import type { ScopeRules } from "syntechs/diff";
 import type { HighlightModule } from "syntechs/highlight";
 import { type Cache, createCache } from "./cache.js";
 import { type Diffset, openDiffset } from "./diffset.js";
@@ -37,6 +38,8 @@ export interface Grammar {
   declarations?: ReadonlySet<string>;
   /** Node kinds (a class and its kin) whose body's `declarations` are whole like top-level ones. */
   containers?: ReadonlySet<string>;
+  /** Lexical scoping, for alpha-normalizing local names in move claims; names are compared as written when absent. */
+  scope?: ScopeRules;
 }
 
 /** A formatter with the host's options already bound in. */

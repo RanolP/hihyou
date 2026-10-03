@@ -1,4 +1,5 @@
 import type { Language } from "syntechs/core";
+import type { ScopeRules } from "syntechs/diff";
 import { format, type Language as FormatLanguage } from "syntechs/fmt";
 import type { FormatModule, Grammar, GrammarLoader, HighlightModule } from "./host.js";
 
@@ -34,7 +35,10 @@ export function languageForPath(path: string): LanguageId | undefined {
 }
 
 // Loaded on first use: a grammar bundle is hundreds of KiB, and most diffs touch one or two languages.
-const parsers: Record<LanguageId, () => Promise<{ language: Language }>> = {
+const parsers: Record<
+  LanguageId,
+  () => Promise<{ language: Language; scope?: ScopeRules }>
+> = {
   typescript: () => import("syntechs/grammars/typescript"),
   tsx: () => import("syntechs/grammars/tsx"),
   javascript: () => import("syntechs/grammars/javascript"),
@@ -142,7 +146,7 @@ export function syntechsGrammars(
 ): GrammarLoader {
   const loaded = new Map<LanguageId, Promise<Grammar>>();
   const load = async (id: LanguageId): Promise<Grammar> => {
-    const [{ language }, highlighter] = await Promise.all([
+    const [{ language, scope }, highlighter] = await Promise.all([
       parsers[id](),
       highlighters[id]?.().then(async (m) => {
         await m.highlight.load?.();
@@ -160,6 +164,7 @@ export function syntechsGrammars(
       ...(highlighter && { highlight: highlighter.highlight }),
       ...(declarations[id] && { declarations: new Set(declarations[id]) }),
       ...(containers[id] && { containers: new Set(containers[id]) }),
+      ...(scope && { scope }),
     };
   };
   return {
