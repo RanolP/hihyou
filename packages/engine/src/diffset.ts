@@ -211,8 +211,8 @@ export async function diffFiles(
   const sides = prepared.map((p) =>
     "a" in p
       ? {
-          a: sideInput(p.a, "grammar" in p ? p.grammar.declarations : undefined),
-          b: sideInput(p.b, "grammar" in p ? p.grammar.declarations : undefined),
+          a: sideInput(p.a, "grammar" in p ? p.grammar : undefined),
+          b: sideInput(p.b, "grammar" in p ? p.grammar : undefined),
           touched: false,
         }
       : undefined,
@@ -345,8 +345,9 @@ async function prepare(
   return { ref, texts, a, b, grammar, mapping };
 }
 
-const sideInput = (v: Version, declarations?: ReadonlySet<string>): SideInput => ({
-  ...(declarations && { declarations }),
+const sideInput = (v: Version, grammar?: Grammar): SideInput => ({
+  ...(grammar?.declarations && { declarations: grammar.declarations }),
+  ...(grammar?.containers && { containers: grammar.containers }),
   v,
   changed: [],
   emphasis: [],
@@ -380,7 +381,7 @@ function record(
     if (!s || !tree || n === undefined) return false;
     const whole = side === "after" ? "added" : "deleted";
     const one = (top: number): boolean => {
-      const declaration = wholeDeclaration(s.v, tree, top, s.declarations);
+      const declaration = wholeDeclaration(s.v, tree, top, s.declarations, s.containers);
       if (!wholeFile && !declaration) return false;
       s.changed.push(range(s, top));
       s.wholes.push({ node: top, whole, ...declaration });

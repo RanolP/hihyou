@@ -50,12 +50,18 @@ const changes = [
     before: "e6d26b0^:pnpm-lock.yaml",
     after: "e6d26b0:pnpm-lock.yaml",
   },
-  // Whole units: an added file, and a function added whole to a changed file.
+  // Whole units: an added file, a function added whole to a changed file, and a method added to a class
+  // beside a local added inside another method, which stays no unit.
   { path: "src/whole/added.ts", before: null, after: "synthetic:added" },
   {
     path: "src/whole/shop.ts",
     before: "synthetic:shop-before",
     after: "synthetic:shop-after",
+  },
+  {
+    path: "src/whole/cart.ts",
+    before: "synthetic:cart-before",
+    after: "synthetic:cart-after",
   },
 ];
 
@@ -78,6 +84,23 @@ export class Shop {
 export function extra(b: number): number {
   const c = b + 1;
   return c;
+}
+`,
+  "cart-before": `export class Cart {
+  total(prices: number[]): number {
+    return prices.reduce((a, b) => a + b, 0);
+  }
+}
+`,
+  "cart-after": `export class Cart {
+  total(prices: number[]): number {
+    const sum = prices.reduce((a, b) => a + b, 0);
+    return sum;
+  }
+
+  clear(): void {
+    this.total([]);
+  }
 }
 `,
 };

@@ -35,6 +35,8 @@ export interface Grammar {
   highlight?: HighlightModule;
   /** Node kinds an added or deleted node is a whole declaration as; see `NodeOutline.whole`. None when absent. */
   declarations?: ReadonlySet<string>;
+  /** Node kinds (a class and its kin) whose body's `declarations` are whole like top-level ones. */
+  containers?: ReadonlySet<string>;
 }
 
 /** A formatter with the host's options already bound in. */

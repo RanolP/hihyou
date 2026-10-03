@@ -93,6 +93,16 @@ const declarations: Partial<Record<LanguageId, readonly string[]>> = {
   ],
 };
 
+// The node kinds whose body holds members that read as whole units the way top-level declarations do: a class
+// and its kin, never a function, whose body's declarations are statements of code that stayed.
+const typescriptContainers = ["class_declaration", "abstract_class_declaration", "internal_module", "module"];
+const containers: Partial<Record<LanguageId, readonly string[]>> = {
+  typescript: typescriptContainers,
+  tsx: typescriptContainers,
+  javascript: ["class_declaration"],
+  kotlin: ["class_declaration", "object_declaration", "companion_object"],
+};
+
 /** A formatter bound to options the host passed as a plain object, checked by syntechs at format time. */
 const bind =
   <O>(rules: FormatLanguage<O>) =>
@@ -149,6 +159,7 @@ export function syntechsGrammars(
       ...(formatter && { format: formatter }),
       ...(highlighter && { highlight: highlighter.highlight }),
       ...(declarations[id] && { declarations: new Set(declarations[id]) }),
+      ...(containers[id] && { containers: new Set(containers[id]) }),
     };
   };
   return {
