@@ -83,6 +83,11 @@ export interface SideMove {
   first: number;
   last: number;
   counterpart: { path: string; at: AstSteps[] };
+  /**
+   * The move is an extract refactor: the before half is code replaced by a use of the new declaration this
+   * names, and the after half is that declaration, emphasized where it generalized the code.
+   */
+  extract?: string;
 }
 
 export interface Span {
@@ -109,6 +114,8 @@ export interface MoveMark {
   counterpart: { path: string; at: AstSteps[] };
   /** In a move inside one file, the other half's node on the other side. */
   twin?: number;
+  /** See `SideMove.extract`. */
+  extract?: string;
 }
 
 /** A node added or deleted as one unit; see `NodeOutline.whole`. */
@@ -819,8 +826,10 @@ function sideMoves(
       last:
         Math.min(l1 - 1, lineOf(v, Math.max(v.start(m.node), v.end(m.node) - 1))) + 1,
       counterpart: { path: m.counterpart.path, at: [...m.counterpart.at] },
+      ...(m.extract !== undefined && { extract: m.extract }),
     }))
-    .sort((p, q) => p.first - q.first);
+    // The outer of two moves starting on one line comes first, so its counterpart names the joined box.
+    .sort((p, q) => p.first - q.first || q.last - p.last);
   for (const m of found) {
     const prev = out.at(-1);
     if (!prev || m.first > prev.last) {
@@ -841,7 +850,14 @@ function sideMoves(
   }
   const { path } = first.counterpart;
   const at = out.flatMap((m) => (m.counterpart.path === path ? m.counterpart.at : []));
-  return [{ first: l0 + 1, last: l1, counterpart: { path, at } }];
+  return [
+    {
+      first: l0 + 1,
+      last: l1,
+      counterpart: { path, at },
+      ...(first.extract !== undefined && { extract: first.extract }),
+    },
+  ];
 }
 
 /**

@@ -117,7 +117,7 @@ export function createPairs(opts: {
 export type Pairs = ReturnType<typeof createPairs>;
 
 /**
- * "Moved to/from". A cross-file move's label expands the pair in place; a move within the file jumps to the
+ * "Moved to/from", or for an extract "Extracted into `name`/from". A cross-file move's label expands the pair in place; a move within the file jumps to the
  * other half when it is found.
  */
 export function MoveLabel(props: {
@@ -133,7 +133,12 @@ export function MoveLabel(props: {
   const where = other
     ? `${other.ref.file === file ? "line " : `${other.path}:`}${other.first}`
     : move.counterpart.path;
-  const text = `${side === "before" ? "Moved to" : "Moved from"} ${where}`;
+  const text =
+    move.extract === undefined
+      ? `${side === "before" ? "Moved to" : "Moved from"} ${where}`
+      : side === "before"
+        ? `Extracted into ${move.extract} (${where})`
+        : `Extracted from ${where}`;
   if (!view) return <span>{text}</span>;
   let label: JSX.Element;
   if (view.pair.crossFile) {

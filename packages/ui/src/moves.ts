@@ -94,6 +94,8 @@ export interface MovePair {
   crossFile: boolean;
   /** The other half's file as the move names it, found or not. */
   counterpartPath: string;
+  /** See `SideMove.extract`. */
+  extract?: string;
 }
 
 function halfAt(
@@ -129,6 +131,7 @@ export function movePair(
     ...(after && { after }),
     crossFile: !namesOf(file).includes(move.counterpart.path),
     counterpartPath: move.counterpart.path,
+    ...(move.extract !== undefined && { extract: move.extract }),
   };
 }
 

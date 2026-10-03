@@ -1,7 +1,7 @@
 // Diffs a few files between real revisions of this repo with the engine, then bundles the page that renders
 // the result. `pnpm --filter @hihyou/ui fixture`, then open fixture/index.html.
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
@@ -12,6 +12,7 @@ const out = join(here, "dist");
 mkdirSync(out, { recursive: true });
 
 const move = "packages/engine/fixtures/cross-file-move";
+const extract = join(here, "../../engine/fixtures/extract");
 /** Blob ids are `<rev>:<path>`, which `git show` reads as is. */
 const changes = [
   {
@@ -62,6 +63,17 @@ const changes = [
     path: "src/whole/cart.ts",
     before: "synthetic:cart-before",
     after: "synthetic:cart-after",
+  },
+  // An extract refactor, RanolP/hihyou#380: code of generate.node.ts went into the new kinds.node.ts.
+  {
+    path: "packages/syntechs/src/highlight/generate.node.ts",
+    before: `file:${extract}/before/generate.node.ts`,
+    after: `file:${extract}/after/generate.node.ts`,
+  },
+  {
+    path: "packages/syntechs/src/highlight/kinds.node.ts",
+    before: null,
+    after: `file:${extract}/after/kinds.node.ts`,
   },
 ];
 
@@ -127,7 +139,9 @@ const engine = createEngine({
   readBlob: (id) =>
     id.startsWith("synthetic:")
       ? new TextEncoder().encode(synthetic[id.slice("synthetic:".length)])
-      : new Uint8Array(
+      : id.startsWith("file:")
+        ? new Uint8Array(readFileSync(id.slice("file:".length)))
+        : new Uint8Array(
           execFileSync("git", ["show", id], { cwd: here, maxBuffer: 1 << 28 }),
         ),
 });
