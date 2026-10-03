@@ -179,6 +179,22 @@ test("j/k visit each atom in document order, ]/[ only the unviewed ones", () => 
   ]);
 });
 
+// Clicks skipped unchanged nodes, so a click on a declaration's own keyword or name picked the hunk or an inner edit.
+test("a click selects the innermost node at the point, changed or not", () => {
+  const click = (line: number) =>
+    selectAt(emptyModal, index, {
+      file: 0,
+      fragment: 1,
+      side: "before",
+      line,
+      column: 2,
+    }).selections;
+  expect(click(0)).toEqual([nd(0, 1, "before", 0)]);
+  expect(click(1)).toEqual([nd(0, 1, "before", 1)]);
+  expect(click(2)).toEqual([nd(0, 1, "before", 2)]);
+  expect(click(9)).toEqual([{ kind: "hunk", file: 0, fragment: 1 }]);
+});
+
 /** A root and document that hold only what the binding reads, with focus set by hand. */
 function fakeRoot() {
   const inside = {
