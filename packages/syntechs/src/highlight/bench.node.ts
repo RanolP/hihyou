@@ -9,6 +9,11 @@
 // run in this process with their grammars and theme loaded before any timing, so neither pays startup.
 // `--json` writes each language's totals with the commit and tool versions for the website's scorecard, where
 // ratio.shiki = shiki ms / syntechs ms: above 1, syntechs is faster.
+//
+//   node packages/syntechs/dist/highlight/bench.node.js --merge <partial.json...> --json <path>
+//
+// `--merge` measures nothing: it joins the `--json` files of one-language runs (CI times each language on its own
+// runner) into the file a run over every language writes, groups in this file's order.
 
 import { createRequire } from "node:module";
 import { bundledThemes, createHighlighter } from "shiki";
@@ -22,6 +27,7 @@ import { parseTree, type Tree } from "../core/index.js";
 import type { Language as Grammar } from "../core/language.js";
 import {
   jsonPathArg,
+  mergeRuns,
   runInfo,
   writeJson,
 } from "../fmt/conformance/report.node.js";
@@ -157,6 +163,17 @@ async function main(): Promise<void> {
   const wanted = args.filter(
     (a, i) => !a.startsWith("--") && args[i - 1] !== "--json",
   );
+  if (args.includes("--merge")) {
+    if (!json) throw new Error("--merge needs --json <path> to write");
+    writeJson(
+      json,
+      mergeRuns(
+        wanted,
+        GROUPS.map((g) => g.id),
+      ),
+    );
+    return;
+  }
   const unknown = wanted.filter((w) => !GROUPS.some((g) => g.id === w));
   if (unknown.length > 0)
     throw new Error(
