@@ -467,10 +467,10 @@ function declarationLabel(tree: Tree, n: number): string | undefined {
 }
 
 /**
- * Whether an inserted or deleted `n` reads as one unit: a node of one of the grammar's declaration `kinds`,
- * reached through wrappers holding nothing else (`export`), filling its lines but for a trailing `;` or `,`.
- * `label` is what it declares, as `begin` reads it, when it names one. Undefined for anything else, such as
- * an added argument, a JSX element, or a declaration sharing its line with other code.
+ * Whether an inserted or deleted `n` reads as one unit: a top-level node of one of the grammar's declaration
+ * `kinds`, reached through wrappers holding nothing else (`export`), filling its lines but for a trailing `;` or
+ * `,`. `label` is what it declares, as `begin` reads it, when it names one. Undefined for anything else, such as
+ * an added argument, a JSX element, a local variable or method, or a declaration sharing its line with other code.
  */
 export function wholeDeclaration(
   v: Version,
@@ -478,7 +478,8 @@ export function wholeDeclaration(
   n: number,
   kinds: ReadonlySet<string> | undefined,
 ): { label?: string } | undefined {
-  if (!kinds) return undefined;
+  // A local `const` or a method is one more statement in code that stayed, so only a top-level one is the change.
+  if (!kinds || tree.parent(n) !== tree.root) return undefined;
   const before = v.text.slice(v.lineStarts[lineOf(v, v.start(n))], v.start(n));
   const last = lineOf(v, Math.max(v.start(n), v.end(n) - 1));
   const after = v.text.slice(v.end(n), lineEnd(v, last));
