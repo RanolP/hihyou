@@ -127,7 +127,7 @@ interface FileDiff {
 type CodeFragment =
   | { kind: "begin"; label: string; at: AstSteps } // label e.g. "class AA"
   | { kind: "end"; label: string }
-  | { kind: "unchanged"; spans: Span[]; at: AstSteps[]; lines: LinePair }
+  | { kind: "unchanged"; spans: Span[]; at: AstSteps[]; lines: LinePair; nodes?: NodeOutline[] } // nodes: every named node wholly inside, none changed, so context code can be commented on
   | { kind: "diff"; before: Side; after: Side } // one side empty = added / deleted
   | { kind: "elided"; lines: LinePair }; // engine decides what to collapse
 interface Side {
@@ -175,6 +175,7 @@ interface AnchorData {
   side: "before" | "after";
   path: string;
   nodes: AstSteps[]; // non-empty; normalized: document order, descendants of an included ancestor dropped
+  chars?: { start: number; end: number }; // one-node anchors only: offsets into the node's text, whitespace skipped
 }
 /** 1-based lines of the blob's own (unformatted) text, both ends inclusive. */
 interface LineRange {
@@ -264,6 +265,8 @@ type Author<H extends Host> = { id: string } & HostAuthor<H>;
 **`AstSteps`** (named by the maintainer) is a path from the file root, indexing named children only. It is the single source of truth for where a thread sits. Line ranges are derived from it deterministically (`Anchor.intoLineRanges`) and never stored.
 
 **`AnchorData`** is the stored half of an anchor: a side, a path, and a normalized, non-empty set of node paths. `Anchor` is the engine object built from it by `diffset.anchor(data)`. Several disjoint nodes give several line ranges.
+
+**`AnchorData.chars`** narrows a one-node anchor to part of that node, down to one word. It counts the node's characters with whitespace skipped, the same text `NodeOutline.hash` covers, so a reformat that only moves whitespace keeps the range on the same characters; it is never a location on its own, since `nodes` still places the anchor, and `createAnchor` refuses it on an anchor of several nodes. In the UI the reviewer comments on the primary selection with `c`, after narrowing it word by word with `w`/`b` (next or previous word) and `W`/`B` (grow the range by a word), or by selecting text with the mouse inside one node; the comment is written in a text box that keeps every key for itself, and is shown as a row under the anchored code with the narrowed characters highlighted. Context code takes comments too: an `unchanged` fragment, including lines revealed out of an `elided` run, carries `nodes`, an outline of the named nodes wholly inside it, so a context node can be selected and anchored like a changed one. Comments live in a session store for now; replies, pending reviews and publishing are separate work.
 
 **`ReviewThreads.grammars`** records the grammar version used while reviewing. A parser change can shift `AstSteps`; storing the version lets the engine detect that and warn on a mismatch.
 

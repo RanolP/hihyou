@@ -22,7 +22,14 @@ export interface FileDiff {
 export type CodeFragment =
   | { kind: "begin"; label: string; at: AstSteps } // label e.g. "class AA"
   | { kind: "end"; label: string }
-  | { kind: "unchanged"; spans: Span[]; at: AstSteps[]; lines: LinePair }
+  | {
+      kind: "unchanged";
+      spans: Span[];
+      at: AstSteps[];
+      lines: LinePair;
+      /** Every named node wholly inside, none `changed`, so a viewer can select context code and comment on it. */
+      nodes?: NodeOutline[];
+    }
   | { kind: "diff"; before: Side; after: Side } // one side empty = added / deleted
   | { kind: "elided"; lines: LinePair }; // engine decides what to collapse
 
@@ -522,12 +529,53 @@ function unchangedFragment(
 ): CodeFragment & { kind: "unchanged" } {
   const start = v.lineStarts[lines.after - 1] as number;
   const end = lineEnd(v, lines.after + count - 2);
+  const nodes = v.tree
+    ? contextOutline(v, v.tree, lines.after - 1, start, end)
+    : [];
   return {
     kind: "unchanged",
     spans: split(v.text, start, end, [], scopes),
     at: v.tree ? nodesIn(v, v.tree, start, end) : [],
     lines,
+    ...(nodes.length > 0 && { nodes }),
   };
+}
+
+/** Every named node of `v` lying wholly inside `[start, end)`, in document order, parents first. */
+function contextOutline(
+  v: Version,
+  tree: Tree,
+  l0: number,
+  start: number,
+  end: number,
+): NodeOutline[] {
+  const out: NodeOutline[] = [];
+  const at = (offset: number) => {
+    const line = lineOf(v, offset);
+    return { line: line - l0, column: offset - (v.lineStarts[line] as number) };
+  };
+  const walk = (n: number, parent: number) => {
+    const s = v.start(n);
+    const e = v.end(n);
+    if (n !== tree.root && (e <= start || s >= end)) return;
+    let own = parent;
+    if (n !== tree.root && tree.named(n) && e > s && s >= start && e <= end) {
+      own = out.length;
+      out.push({
+        steps: stepsOf(tree, n),
+        parent,
+        kind: tree.kindName(n),
+        start: at(s),
+        end: at(e),
+        changed: false,
+        hash: nodeHash(tree, n),
+      });
+    }
+    for (let i = 0, count = tree.count(n); i < count; i++)
+      walk(tree.child(n, i), own);
+  };
+  walk(tree.root, -1);
+  return out;
 }
 
 /**

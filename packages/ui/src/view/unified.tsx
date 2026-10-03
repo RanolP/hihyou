@@ -84,7 +84,11 @@ export function unifiedRow(
           <Num line={row.after.line} />
           <td class="hh-code">
             <span class="hh-sign" />
-            <SpanNodes spans={row.after.spans} side="after" />
+            <SpanNodes
+              spans={row.after.spans}
+              side="after"
+              place={ctx.placer.contextCursor(index, row.after.line)}
+            />
           </td>
         </tr>
       ) as HTMLTableRowElement;

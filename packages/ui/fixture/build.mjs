@@ -95,7 +95,9 @@ await build({
   outfile: engineOut,
   logLevel: "warning",
 });
-const { createEngine, syntechsGrammars } = await import(pathToFileURL(engineOut).href);
+const { createEngine, syntechsGrammars } = await import(
+  pathToFileURL(engineOut).href
+);
 const engine = createEngine({
   grammars: syntechsGrammars(),
   resolveDiffset: () => ({ id: "fixture", changes }),
@@ -106,9 +108,31 @@ const engine = createEngine({
           execFileSync("git", ["show", id], { cwd: here, maxBuffer: 1 << 28 }),
         ),
 });
-const diffs = await (await engine.diffset("fixture")).diff();
+const diffset = await engine.diffset("fixture");
+const diffs = await diffset.diff();
 const files = diffs.map((diff, i) => ({ ...diff, change: changes[i] }));
 writeFileSync(join(out, "files.json"), JSON.stringify(files));
+
+/** The page has no engine to ask, so every elided run's whole text is read here, keyed as the page asks for it. */
+const startOf = (f) =>
+  f.kind === "unchanged" || f.kind === "elided"
+    ? f.lines
+    : f.kind === "diff"
+      ? { before: f.before.startLine, after: f.after.startLine }
+      : undefined;
+const expansions = {};
+for (const file of files)
+  for (const [i, f] of file.fragments.entries()) {
+    if (f.kind !== "elided") continue;
+    const next = file.fragments
+      .slice(i + 1)
+      .map(startOf)
+      .find(Boolean);
+    const count = next && next.after - f.lines.after;
+    const key = `${file.path}|${f.lines.before}|${f.lines.after}|${count ?? ""}`;
+    expansions[key] = await diffset.expand(file.path, f.lines, count);
+  }
+writeFileSync(join(out, "expansions.json"), JSON.stringify(expansions));
 
 await build({
   entryPoints: [join(here, "main.ts")],

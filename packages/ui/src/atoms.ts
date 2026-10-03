@@ -1,4 +1,5 @@
-import type { FileDiff, NodeOutline } from "@hihyou/engine";
+import type { NodeOutline, Span } from "@hihyou/engine";
+import { type DiffFile, splitLines } from "./rows.js";
 import type {
   KeyOf,
   Score,
@@ -30,7 +31,12 @@ export interface SideTree {
   children: number[][];
   /** Per node, the atoms (indices into `AtomIndex.atoms`) at or beneath it. */
   atoms: number[][];
+  /** The display text of each line the nodes' `start` and `end` count, so a comment can narrow to a word. */
+  lines: string[];
 }
+
+/** The fragment number a file's context nodes carry: its unchanged and revealed lines, which hold no hunk. */
+export const contextFragment = -2;
 
 export interface Hunk {
   file: number;
@@ -46,7 +52,7 @@ export interface Atom {
 }
 
 export interface AtomIndex {
-  files: readonly FileDiff[];
+  files: readonly DiffFile[];
   /** In document order of their first occurrence. */
   atoms: Atom[];
   /** Per file, its hunks in fragment order. */
@@ -58,11 +64,53 @@ export interface AtomIndex {
    * update) stops once, on its first side. A move's halves in two files stop once in each.
    */
   stops: NodeRef[];
+  /**
+   * Per file, the after side's nodes in its unchanged and revealed context, at `contextFragment`: lines count
+   * from the file's first line, so every piece of context shares one tree. They hold no atom.
+   */
+  context: (SideTree | undefined)[];
+}
+
+const textLines = (spans: readonly Span[]) =>
+  splitLines(spans).map((l) => l.map((s) => s.text).join(""));
+
+function contextTree(file: DiffFile): SideTree | undefined {
+  const pieces = [
+    ...file.fragments.flatMap((f) => (f.kind === "unchanged" ? [f] : [])),
+    ...Object.values(file.revealed ?? {}).flatMap((r) => [
+      ...r.top,
+      ...r.bottom,
+    ]),
+  ];
+  const nodes: NodeOutline[] = [];
+  const lines: string[] = [];
+  for (const p of pieces) {
+    const base = nodes.length;
+    const l0 = p.lines.after - 1;
+    textLines(p.spans).forEach((text, i) => {
+      lines[l0 + i] = text;
+    });
+    for (const n of p.nodes ?? [])
+      nodes.push({
+        ...n,
+        parent: n.parent < 0 ? -1 : n.parent + base,
+        start: { line: n.start.line + l0, column: n.start.column },
+        end: { line: n.end.line + l0, column: n.end.column },
+      });
+  }
+  if (nodes.length === 0) return undefined;
+  const roots: number[] = [];
+  const children: number[][] = nodes.map(() => []);
+  nodes.forEach((n, i) => {
+    if (n.parent < 0) roots.push(i);
+    else children[n.parent]?.push(i);
+  });
+  return { nodes, roots, children, atoms: nodes.map(() => []), lines };
 }
 
 const sideNames: readonly SideName[] = ["before", "after"];
 
-export function atomIndex(files: readonly FileDiff[]): AtomIndex {
+export function atomIndex(files: readonly DiffFile[]): AtomIndex {
   const atoms: Atom[] = [];
   const ids = new Map<string, number>();
   const hunks: Hunk[][] = [];
@@ -101,7 +149,13 @@ export function atomIndex(files: readonly FileDiff[]): AtomIndex {
           const p = nodes[i]?.parent ?? -1;
           if (p >= 0) for (const a of beneath[i] ?? []) beneath[p]?.add(a);
         }
-        return { nodes, roots, children, atoms: beneath.map((s) => [...s]) };
+        return {
+          nodes,
+          roots,
+          children,
+          atoms: beneath.map((s) => [...s]),
+          lines: textLines(frag[side].spans),
+        };
       };
       const [before, after] = sideNames.map(tree) as [SideTree, SideTree];
       mine.push({ file: f, fragment: fr, before, after, atoms: [...inHunk] });
@@ -109,7 +163,14 @@ export function atomIndex(files: readonly FileDiff[]): AtomIndex {
     hunks.push(mine);
     fileAtoms.push([...inFile]);
   });
-  return { files, atoms, hunks, fileAtoms, stops };
+  return {
+    files,
+    atoms,
+    hunks,
+    fileAtoms,
+    stops,
+    context: files.map(contextTree),
+  };
 }
 
 export function hunkOf(
@@ -124,6 +185,8 @@ export function treeOf(
   index: AtomIndex,
   ref: Omit<NodeRef, "node">,
 ): SideTree | undefined {
+  if (ref.fragment === contextFragment)
+    return ref.side === "after" ? index.context[ref.file] : undefined;
   return hunkOf(index, ref.file, ref.fragment)?.[ref.side];
 }
 

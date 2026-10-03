@@ -1,4 +1,5 @@
 import type { Span } from "@hihyou/engine";
+import { contextFragment } from "../atoms.js";
 import { cutShared, type LinePos, type Placed, skeletonOf } from "../highlight.js";
 import type { Point } from "../modal.js";
 import type { SideRef } from "../moves.js";
@@ -23,6 +24,8 @@ export interface Placer {
     side: SideName,
     line: number,
   ): ((span: Span) => Point) | undefined;
+  /** Places an unchanged line, by its 1-based after line, into the file's context tree. */
+  contextCursor(file: number, line: number): (span: Span) => Point;
   takeBefore(
     file: number,
     fragment: number,
@@ -133,6 +136,20 @@ export function createPlacer(files: () => readonly DiffFile[]): Placer {
           fragment: r.fragment,
           side,
           line: line - r.start,
+          column,
+        };
+        column += span.text.length;
+        return at;
+      };
+    },
+    contextCursor(file, line) {
+      let column = 0;
+      return (span) => {
+        const at: Point = {
+          file,
+          fragment: contextFragment,
+          side: "after",
+          line: line - 1,
           column,
         };
         column += span.text.length;

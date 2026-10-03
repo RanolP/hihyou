@@ -92,10 +92,15 @@ export function createAnchor(
   if (data.nodes.length === 0)
     throw new RangeError(`an anchor on ${data.path} names no node`);
   const nodes = normalizeSteps(data.nodes);
+  if (data.chars && nodes.length !== 1)
+    throw new RangeError(
+      `an anchor on ${data.path} narrows to characters across ${nodes.length} nodes`,
+    );
   return {
     side: data.side,
     path: data.path,
     nodes,
+    ...(data.chars && { chars: data.chars }),
     async intoLineRanges() {
       const ref = changes.find((c) => sidePath(c, data.side) === data.path);
       const blob = ref?.[data.side];
