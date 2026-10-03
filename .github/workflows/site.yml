@@ -20,17 +20,28 @@ concurrency:
 
 jobs:
   # Each measurement on its own runner, in parallel: the benches' timings are the product, so they never share a
-  # CPU with each other or with conformance.
+  # CPU with each other or with conformance. Both benches run one language per runner, on the same inputs,
+  # passes and tools as a run over every language; the site job merges them back into one file each.
   measure:
     strategy:
       matrix:
         include:
-          - id: conformance
-            script: fmt/conformance.node.js
-          - id: bench
-            script: fmt/bench.node.js
-          - id: highlight
-            script: highlight/bench.node.js
+          - { id: conformance, script: fmt/conformance.node.js }
+          - { id: bench-json, script: fmt/bench.node.js, language: json }
+          - { id: bench-css, script: fmt/bench.node.js, language: css }
+          - { id: bench-js, script: fmt/bench.node.js, language: js }
+          - { id: bench-ts, script: fmt/bench.node.js, language: ts }
+          - { id: bench-python, script: fmt/bench.node.js, language: python }
+          - { id: bench-kotlin, script: fmt/bench.node.js, language: kotlin }
+          - { id: highlight-json, script: highlight/bench.node.js, language: json }
+          - { id: highlight-css, script: highlight/bench.node.js, language: css }
+          - { id: highlight-html, script: highlight/bench.node.js, language: html }
+          - { id: highlight-js, script: highlight/bench.node.js, language: js }
+          - { id: highlight-ts, script: highlight/bench.node.js, language: ts }
+          - { id: highlight-python, script: highlight/bench.node.js, language: python }
+          - { id: highlight-kotlin, script: highlight/bench.node.js, language: kotlin }
+          - { id: highlight-swift, script: highlight/bench.node.js, language: swift }
+          - { id: highlight-yaml, script: highlight/bench.node.js, language: yaml }
     name: ${{ matrix.id }}
     runs-on: ubuntu-latest
     steps:
@@ -43,7 +54,7 @@ jobs:
       - name: Measure
         run: |
           mkdir -p "$RUNNER_TEMP/scorecard"
-          node packages/syntechs/dist/${{ matrix.script }} --json "$RUNNER_TEMP/scorecard/${{ matrix.id }}.json"
+          node packages/syntechs/dist/${{ matrix.script }} ${{ matrix.language }} --json "$RUNNER_TEMP/scorecard/${{ matrix.id }}.json"
           cat "$RUNNER_TEMP/scorecard/${{ matrix.id }}.json"
 
       - name: Conformance summary
@@ -71,7 +82,17 @@ jobs:
         with:
           pattern: scorecard-*
           merge-multiple: true
-          path: ${{ env.SCORECARD_DIR }}
+          path: ${{ runner.temp }}/measured
+
+      # Each bench's one-language files back into the file a run over every language writes, groups in its order.
+      - name: Merge
+        run: |
+          measured="$RUNNER_TEMP/measured"
+          ls -l "$measured"
+          mkdir -p "$SCORECARD_DIR"
+          cp "$measured/conformance.json" "$SCORECARD_DIR/conformance.json"
+          node packages/syntechs/dist/fmt/bench.node.js --merge "$measured"/bench-*.json --json "$SCORECARD_DIR/bench.json"
+          node packages/syntechs/dist/highlight/bench.node.js --merge "$measured"/highlight-*.json --json "$SCORECARD_DIR/highlight.json"
 
       - name: Results
         run: ls -l "$SCORECARD_DIR"
