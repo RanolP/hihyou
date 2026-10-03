@@ -266,7 +266,7 @@ function substitution(
 }
 
 /** A parameter's own name: an identifier, or one in its `pattern` or `name` field with no default value. */
-function paramName(tree: Tree, p: number): string | undefined {
+export function paramName(tree: Tree, p: number): string | undefined {
   if (tree.kindName(p) === "identifier") return tree.label(p);
   if (fieldChild(tree, p, "value") !== undefined) return undefined;
   const inner = fieldChild(tree, p, "pattern") ?? fieldChild(tree, p, "name");
@@ -279,7 +279,7 @@ function paramName(tree: Tree, p: number): string | undefined {
  * Iso ids of the subtree at index `b` of `side`, offset by `b`, with each occurrence of a parameter standing for
  * its argument's id in `args`, numbered through `intern` like `isoIds` so they compare with the removed code's.
  */
-function substitutedIds(
+export function substitutedIds(
   intern: Map<string, number>,
   side: Side,
   b: number,
@@ -310,7 +310,11 @@ function substitutedIds(
   return ids;
 }
 
-function fieldChild(tree: Tree, n: number, field: string): number | undefined {
+export function fieldChild(
+  tree: Tree,
+  n: number,
+  field: string,
+): number | undefined {
   for (let i = 0, count = tree.count(n); i < count; i++)
     if (tree.fieldName(tree.child(n, i)) === field) return tree.child(n, i);
   return undefined;
@@ -399,7 +403,7 @@ function keptAncestor(mapping: Mapping, n: number): number | undefined {
 }
 
 /** The `body` field of `n` or of a node a few levels in (`export` > function, `const` > arrow function). */
-function bodyOf(tree: Tree, n: number): number | undefined {
+export function bodyOf(tree: Tree, n: number): number | undefined {
   let level = [n];
   for (let depth = 0; depth < 4 && level.length > 0; depth++) {
     const next: number[] = [];

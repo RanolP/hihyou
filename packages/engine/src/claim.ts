@@ -1,16 +1,16 @@
 import { NO_NODE, type Tree } from "syntechs/core";
 import {
-  alphaIds,
   contentAtoms,
   isContentAtom,
-  isoIds,
-  isUnit,
   type Locals,
   nameOf,
   resolveLocals,
   type ScopeRules,
   Side,
+  unitCore,
+  witnessSide,
 } from "syntechs/diff";
+import { bodyOf, fieldChild, paramName, substitutedIds } from "./extract.js";
 import type { Rename } from "./fragments.js";
 
 /**
@@ -106,25 +106,13 @@ export function createClaimContext(
     counts: Map<number, number>,
     scope?: ScopeRules,
   ): SideData => {
-    const side = Side.of(tree);
-    const iso = isoIds(side, intern);
     const locals = scope && resolveLocals(tree, scope);
-    const alpha = alphaIds(side, locals, intern);
-    for (const id of alpha) counts.set(id, (counts.get(id) ?? 0) + 1);
-    const atoms = new Uint32Array(side.nodes.length);
-    for (let i = atoms.length - 1; i >= 0; i--) {
-      if (isContentAtom(tree, side.node(i))) atoms[i] = 1;
-      else
-        for (const c of side.childrenOf(i))
-          atoms[i] = (atoms[i] as number) + (atoms[c] as number);
-    }
+    const w = witnessSide(Side.of(tree), intern, locals);
+    for (const id of w.alpha) counts.set(id, (counts.get(id) ?? 0) + 1);
     return {
-      side,
+      ...w,
       tree,
-      iso,
-      alpha,
-      atoms,
-      ...(locals && scope && { locals, references: new Set(scope.references) }),
+      ...(locals && scope && { references: new Set(scope.references) }),
     };
   };
   return {
@@ -178,13 +166,14 @@ function checkMove(
     return before(idX) === 1 && after(idY) === 1 ? undefined : "F3";
   }
   if (sa.tree.kindName(c.x) !== sb.tree.kindName(c.y)) return "F2e";
-  const found = core(
+  const found = unitCore(
     sa,
     [x],
     sb,
     y,
     (i) => sa.alpha[i] as number,
     (t) => sb.alpha[t] as number,
+    minAtoms,
     (i, t) => (sa.atoms[i] as number) - renamed(sa, i, sb, t),
   );
   const rho =
@@ -370,112 +359,6 @@ function anchors(ctx: ClaimContext, file: number): { a: Span; b: Span }[] {
   return out;
 }
 
-/** Past this many candidate pairs the core search is not run and the claim is declined. */
-const maxPairs = 4096;
-
-/**
- * The heaviest core between the subtrees at `roots` of `sa` and the one at `root` of `sb`, whose ids `idOf` gives:
- * whole units (or the roots themselves) of two atoms or more with equal ids, disjoint and in order on both sides,
- * holding a pair of `k` atoms or more. Returns its weight `w`, counted in the atoms of the `sa` side; undefined
- * when no such core exists, or the search is too large to run.
- */
-function core(
-  sa: SideData,
-  roots: readonly number[],
-  sb: SideData,
-  root: number,
-  idA: (i: number) => number,
-  idOf: (t: number) => number,
-  weight: (i: number, t: number) => number = (i) => sa.atoms[i] as number,
-): { w: number; pairs: [number, number][] } | undefined {
-  const targets = new Map<number, number[]>();
-  for (
-    let t = root, end = root + (sb.side.size[root] as number);
-    t < end;
-    t++
-  ) {
-    if (t !== root && !isUnit(sb.tree, sb.side.node(t))) continue;
-    const id = idOf(t);
-    const list = targets.get(id);
-    if (list) list.push(t);
-    else targets.set(id, [t]);
-  }
-  type Pair = { s: Span; t: Span; w: number; i: number; ti: number };
-  const pairs: Pair[] = [];
-  const span = (d: SideData, i: number): Span => {
-    const n = d.side.node(i);
-    return { start: d.tree.start(n), end: d.tree.end(n) };
-  };
-  for (const r of roots) {
-    const stack = [r];
-    while (stack.length > 0) {
-      const i = stack.pop() as number;
-      if ((sa.atoms[i] as number) < 2) continue;
-      const ts =
-        (i === r || isUnit(sa.tree, sa.side.node(i))) && targets.get(idA(i));
-      if (ts) {
-        for (const t of ts)
-          pairs.push({
-            s: span(sa, i),
-            t: span(sb, t),
-            w: weight(i, t),
-            i,
-            ti: t,
-          });
-        if (pairs.length > maxPairs) return undefined;
-        continue;
-      }
-      stack.push(...sa.side.childrenOf(i));
-    }
-  }
-  pairs.sort((p, q) => p.s.start - q.s.start || p.t.start - q.t.start);
-  // `any[j]`: the heaviest chain ending at pair j; `big[j]`: the heaviest such chain holding a pair of `k` atoms,
-  // each with the pair before it in `anyFrom` / `bigFrom`.
-  const any: number[] = [];
-  const big: number[] = [];
-  const anyFrom: number[] = [];
-  const bigFrom: { from: number; big: boolean }[] = [];
-  let best: number | undefined;
-  let bestAt = -1;
-  for (const [j, p] of pairs.entries()) {
-    let a = 0;
-    let ai = -1;
-    let b = Number.NEGATIVE_INFINITY;
-    let bi = -1;
-    for (let i = 0; i < j; i++) {
-      const q = pairs[i] as Pair;
-      if (q.s.end > p.s.start || q.t.end > p.t.start) continue;
-      if ((any[i] as number) > a) [a, ai] = [any[i] as number, i];
-      if ((big[i] as number) > b) [b, bi] = [big[i] as number, i];
-    }
-    any[j] = a + p.w;
-    anyFrom[j] = ai;
-    if (p.w >= minAtoms && a >= b) {
-      big[j] = a + p.w;
-      bigFrom[j] = { from: ai, big: false };
-    } else {
-      big[j] = b + p.w;
-      bigFrom[j] = { from: bi, big: true };
-    }
-    if ((big[j] as number) > (best ?? 0)) {
-      best = big[j];
-      bestAt = j;
-    }
-  }
-  if (best === undefined) return undefined;
-  const chosen: [number, number][] = [];
-  for (let j = bestAt, inBig = true; j >= 0;) {
-    const p = pairs[j] as Pair;
-    chosen.push([p.i, p.ti]);
-    if (inBig) {
-      const f = bigFrom[j] as { from: number; big: boolean };
-      j = f.from;
-      inBig = f.big;
-    } else j = anyFrom[j] as number;
-  }
-  return { w: best, pairs: chosen.reverse() };
-}
-
 /**
  * The atoms of the pair at index `i` of `sa` and `t` of `sb`, equal in canonical id, that are equal only because a
  * local was renamed: those count nothing toward an edited move's weight.
@@ -575,14 +458,16 @@ function checkExtract(
   if (callers.length !== 1 || !call || call[0] !== c.from) return "F3";
   const sigma = substitution(sb.tree, body, site, call[1]);
   if (!sigma) return "F2x";
-  const ids = substitutedIds(ctx, sb, b, site, sigma);
-  const found = core(
+  const args = new Map([...sigma].map(([p, i]) => [p, site.iso[i] as number]));
+  const ids = substitutedIds(ctx.intern, sb.side, b, args);
+  const found = unitCore(
     sa,
     removed,
     sb,
     b,
     (i) => sa.iso[i] as number,
     (t) => ids[t - b] as number,
+    minAtoms,
   );
   if (found === undefined || 2 * found.w < size) return "F2x";
   // No other new declaration called from the same file may share half of the removed code's content.
@@ -694,48 +579,6 @@ function substitution(
   return out;
 }
 
-/** A parameter's own name: an identifier, or one in its `pattern` or `name` field with no default value. */
-function paramName(tree: Tree, p: number): string | undefined {
-  if (tree.kindName(p) === "identifier") return tree.label(p);
-  if (fieldChild(tree, p, "value") !== undefined) return undefined;
-  const inner = fieldChild(tree, p, "pattern") ?? fieldChild(tree, p, "name");
-  return inner !== undefined && tree.kindName(inner) === "identifier"
-    ? tree.label(inner)
-    : undefined;
-}
-
-/**
- * Iso ids of the subtree at index `b` of `sb`, offset by `b`, with each occurrence of a parameter standing for the
- * id of the argument (an index of `site`) `sigma` maps it to, numbered like every other id of the context.
- */
-function substitutedIds(
-  ctx: ClaimContext,
-  sb: SideData,
-  b: number,
-  site: SideData,
-  sigma: Map<string, number>,
-): Int32Array {
-  const size = sb.side.size[b] as number;
-  const ids = new Int32Array(size);
-  for (let i = b + size - 1; i >= b; i--) {
-    const n = sb.side.node(i);
-    const arg = parameter(sb.tree, n, sigma);
-    if (arg !== undefined) {
-      ids[i - b] = site.iso[arg] as number;
-      continue;
-    }
-    const kids = sb.side.childrenOf(i).map((k) => ids[k - b]);
-    const key = `${sb.tree.kindName(n)}\0${sb.tree.label(n)}\0${kids.join(",")}`;
-    let id = ctx.intern.get(key);
-    if (id === undefined) {
-      id = ctx.intern.size;
-      ctx.intern.set(key, id);
-    }
-    ids[i - b] = id;
-  }
-  return ids;
-}
-
 /** The argument index `n` stands for when it is an occurrence of a parameter `sigma` maps. */
 const parameter = (
   tree: Tree,
@@ -765,28 +608,6 @@ function substitutedBag(
       for (let i = tree.count(m) - 1; i >= 0; i--) stack.push(tree.child(m, i));
   }
   return out;
-}
-
-/** The `body` field of `n` or of a node a few levels in (`export` > function, `const` > arrow function). */
-function bodyOf(tree: Tree, n: number): number | undefined {
-  let level = [n];
-  for (let depth = 0; depth < 4 && level.length > 0; depth++) {
-    const next: number[] = [];
-    for (const m of level)
-      for (let k = 0, count = tree.count(m); k < count; k++) {
-        const c = tree.child(m, k);
-        if (tree.fieldName(c) === "body") return c;
-        next.push(c);
-      }
-    level = next;
-  }
-  return undefined;
-}
-
-function fieldChild(tree: Tree, n: number, field: string): number | undefined {
-  for (let i = 0, count = tree.count(n); i < count; i++)
-    if (tree.fieldName(tree.child(n, i)) === field) return tree.child(n, i);
-  return undefined;
 }
 
 function namedChildren(tree: Tree, n: number): number[] {
