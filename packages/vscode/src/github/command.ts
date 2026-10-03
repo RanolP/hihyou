@@ -136,6 +136,7 @@ export function githubSource(
             (await engine.diffset(id)).anchor(anchor).intoLineRanges(),
           async (side, path, lines) =>
             (await engine.diffset(id)).anchorOnLines(side, path, lines),
+          async () => (await engine.diffset(id)).changes,
         ),
     }),
   };

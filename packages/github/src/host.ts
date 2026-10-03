@@ -1,6 +1,7 @@
 import { syntechsGrammars } from "@hihyou/engine";
 import type {
   AnchorData,
+  ChangedFileRef,
   GrammarLoader,
   Host,
   HostPreferences,
@@ -45,7 +46,8 @@ export interface GitHubHost extends Host {
   ): Promise<GitHubCommit[]>;
   /**
    * The pull request's review comments, kept on GitHub; `lines` places an anchor in the blob it names, and
-   * `onLines` anchors a thread read back on lines of that blob (`githubCommentStore`).
+   * `onLines` anchors a thread read back on lines of that blob, and `changes` is the Diffset's files, whose blobs
+   * key what is posted (`githubCommentStore`).
    */
   reviewComments(
     target: GitHubReviewTarget,
@@ -55,6 +57,7 @@ export interface GitHubHost extends Host {
       path: string,
       lines: LineRange,
     ) => Promise<AnchorData>,
+    changes: () => Promise<readonly ChangedFileRef[]>,
   ): CommentStore;
 }
 
@@ -71,8 +74,8 @@ export function githubHost(options: GitHubHostOptions): GitHubHost {
     listPullRequests: (owner, repo) => listPullRequests(client, owner, repo),
     listPullRequestCommits: (owner, repo, number) =>
       listPullRequestCommits(client, owner, repo, number),
-    reviewComments: (target, lines, onLines) =>
-      githubCommentStore(client, target, lines, onLines),
+    reviewComments: (target, lines, onLines, changes) =>
+      githubCommentStore(client, target, lines, onLines, changes),
     ...(options.preferences && { preferences: options.preferences }),
   };
 }

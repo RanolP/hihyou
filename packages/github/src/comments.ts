@@ -4,10 +4,22 @@
  * GraphQL rather than REST, because only GraphQL adds a thread to an existing pending review by its id and takes a
  * file-level thread.
  */
-import type { AnchorData, LineRange } from "@hihyou/engine";
-import type { CommentStore, ReviewEvent, ReviewNote } from "@hihyou/ui";
+import type {
+  AnchorData,
+  BlobId,
+  ChangedFileRef,
+  LineRange,
+} from "@hihyou/engine";
+import type { CommentStore, ReviewEvent, ReviewNote, Score } from "@hihyou/ui";
+import { decodeBlobId } from "./blob.js";
 import type { GitHubClient } from "./client.js";
 import { fetchCompareFiles } from "./diffset.js";
+import {
+  type LoweredKey,
+  lowerComment,
+  readLowered,
+  withVerdict,
+} from "./lowered.js";
 
 /** The pull request a store comments on, and the Diffset's base and head, which its lines are counted in. */
 export interface GitHubReviewTarget {
@@ -196,7 +208,9 @@ export function threadLines(
 /**
  * `lines` places an anchor in the side's blob as written, which is what GitHub's diff counts: the engine's
  * `Diffset.anchor(data).intoLineRanges()`; `onLines` is its inverse, `Diffset.anchorOnLines`, which anchors a
- * thread read from GitHub. Requests run one at a time, so two comments sent together never start two reviews.
+ * thread read from GitHub. `changes` is the Diffset's files, whose blobs a posted comment's hidden key names and
+ * a key read back must still match. Requests run one at a time, so two comments sent together never start two
+ * reviews.
  */
 export function githubCommentStore(
   client: GitHubClient,
@@ -207,6 +221,7 @@ export function githubCommentStore(
     path: string,
     lines: LineRange,
   ) => Promise<AnchorData>,
+  changes: () => Promise<readonly ChangedFileRef[]>,
 ): CommentStore {
   const { owner, repo, number, base, head } = target;
   let notes: readonly ReviewNote[] = [];
@@ -232,19 +247,54 @@ export function githubCommentStore(
     return run;
   };
 
+  const shaOf = (id: BlobId | null) =>
+    id === null ? null : decodeBlobId(id).sha;
+  /** The file `anchor` lies in, as the Diffset holds it; a renamed file's before side goes by its old path. */
+  const fileOf = async (anchor: AnchorData) =>
+    (await changes()).find(
+      (c) =>
+        (anchor.side === "before" ? (c.oldPath ?? c.path) : c.path) ===
+        anchor.path,
+    );
+  /**
+   * The anchor a thread's hidden key names, when its file is the thread's own and both its blobs are still the
+   * ones the key was written on, so its `AstSteps` name the same nodes; an outdated thread reattaches this way.
+   */
+  const keyed = async (thread: ThreadData, key: LoweredKey) => {
+    try {
+      const file = await fileOf(key.anchor);
+      if (
+        file?.path === thread.path &&
+        shaOf(file.before) === key.before &&
+        shaOf(file.after) === key.after
+      )
+        return key.anchor;
+    } catch (error) {
+      console.error(
+        `hihyou: could not check the key of a thread on ${thread.path}`,
+        error,
+      );
+    }
+    return undefined;
+  };
+
   /** Who this store writes as, read with the threads, so a note written here names its author at once. */
   let viewer: string | undefined;
   /**
    * A thread's anchor: the one a note already held for it keeps (the node it was written on, `chars` included),
-   * else the nodes on its lines, else the file itself (its root node), where a view lists what no node it draws holds.
+   * else the one its hidden key restores, else the nodes on its lines, else the file itself (its root node), where
+   * a view lists what no node it draws holds.
    */
   const anchorOf = async (
     thread: ThreadData,
     side: "before" | "after",
     range: LineRange | undefined,
+    key: LoweredKey | undefined,
   ): Promise<AnchorData> => {
     const known = notes.find((n) => n.id === thread.id)?.anchor;
     if (known) return known;
+    const restored = key && (await keyed(thread, key));
+    if (restored) return restored;
     let path = thread.path;
     if (side === "before")
       for (const [key, f] of await filesByPath())
@@ -265,8 +315,11 @@ export function githubCommentStore(
   const notesOf = async (thread: ThreadData): Promise<ReviewNote[]> => {
     const [root, ...replies] = thread.comments.nodes;
     if (!root) return [];
-    const { side, range, body } = threadLines(thread, root.body);
-    const anchor = await anchorOf(thread, side, range);
+    const lowered = readLowered(root.body);
+    const { side, range, body: lined } = threadLines(thread, lowered.body);
+    const anchor = await anchorOf(thread, side, range, lowered.key);
+    // A valid key marks the body as hihyou's, so `placeOf`'s prefix goes even on an outdated thread.
+    const body = lowered.key ? lowered.body.replace(placedPrefix, "") : lined;
     const note = (
       c: (typeof thread.comments.nodes)[number],
       text: string,
@@ -350,19 +403,37 @@ export function githubCommentStore(
         throw error;
       }));
 
-  const thread = async (review: string, anchor: AnchorData, body: string) => {
-    const [ranges, byPath] = await Promise.all([lines(anchor), filesByPath()]);
-    const file = byPath.get(`${anchor.side}\n${anchor.path}`);
+  /** Posts the thread with its body lowered (`lowerComment`), keyed when the Diffset holds the anchor's file. */
+  const thread = async (
+    review: string,
+    anchor: AnchorData,
+    body: string,
+    score: Score | undefined,
+  ) => {
+    const [ranges, byPath, file] = await Promise.all([
+      lines(anchor),
+      filesByPath(),
+      fileOf(anchor),
+    ]);
+    const posted = file
+      ? lowerComment(body, {
+          anchor,
+          before: shaOf(file.before),
+          after: shaOf(file.after),
+          ...(score !== undefined && { score }),
+        })
+      : withVerdict(body, score);
+    const hunked = byPath.get(`${anchor.side}\n${anchor.path}`);
     const { prefix = "", ...place } = placeOf(
-      file?.path ?? anchor.path,
+      hunked?.path ?? anchor.path,
       anchor,
       ranges,
-      file?.hunks,
+      hunked?.hunks,
     );
     const data = await client.graphql<{
       addPullRequestReviewThread: { thread: { id: string } | null };
     }>(addThread, {
-      input: { pullRequestReviewId: review, body: prefix + body, ...place },
+      input: { pullRequestReviewId: review, body: prefix + posted, ...place },
     });
     const id = data.addPullRequestReviewThread.thread?.id;
     if (id === undefined)
@@ -448,20 +519,29 @@ export function githubCommentStore(
       serial(async () => {
         await pullId();
       }),
-    comment: (anchor, body) =>
+    comment: (anchor, body, score) =>
       serial(() =>
         single("comment", async (review) => ({
-          id: await thread(review, anchor, body),
+          id: await thread(review, anchor, body, score),
           anchor,
-          body,
+          body: withVerdict(body, score),
           pending: false,
           ...mine(),
         })),
       ),
-    review: (anchor, body) =>
+    review: (anchor, body, score) =>
       serial(async () => {
-        const id = await thread(await start(), anchor, body);
-        notes = [...notes, { id, anchor, body, pending: true, ...mine() }];
+        const id = await thread(await start(), anchor, body, score);
+        notes = [
+          ...notes,
+          {
+            id,
+            anchor,
+            body: withVerdict(body, score),
+            pending: true,
+            ...mine(),
+          },
+        ];
         changed();
       }),
     reply: (to, body) =>
