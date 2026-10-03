@@ -216,6 +216,11 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 .hh-score-plus { color: var(--hh-added-fg); }
 .hh-score-minus { color: var(--hh-removed-fg); }
 .hh-toolbar .hh-score { align-self: center; margin-left: auto; font-weight: 600; }
+/* The approval stays in view with the toolbar, so scoring far down the diff shows what it did to the Diffset. */
+.hh-bar { position: sticky; top: 0; z-index: 3; background: var(--hh-bg); }
+.hh-approval { display: block; padding: 4px 0; margin: 0 0 4px; font-weight: 600; color: var(--hh-muted); }
+.hh-approval-approved { color: var(--hh-added-fg); }
+.hh-approval-blocked { color: var(--hh-removed-fg); }
 .hh-file-viewed .hh-table { opacity: 0.5; }
 .hh-viewed-toggle { text-decoration: none; color: var(--hh-muted); }
 .hh-viewed-toggle[aria-pressed="true"] { color: var(--hh-added-fg); }

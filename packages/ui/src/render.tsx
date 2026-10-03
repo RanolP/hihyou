@@ -27,6 +27,7 @@ import {
   type ModalState,
   selectAt,
 } from "./modal.js";
+import { approvalOf } from "./approval.js";
 import { type ElidedRef, type ExpandDirection, expandStep } from "./expand.js";
 import { moveAt, type SideRef } from "./moves.js";
 import { type DiffFile, gapOf } from "./rows.js";
@@ -34,6 +35,7 @@ import { Draw, type DrawContext } from "./view/context.js";
 import { FileSection } from "./view/file.jsx";
 import { flash } from "./view/flash.js";
 import { createPainter } from "./view/highlights.js";
+import { ApprovalBadge } from "./view/approval.jsx";
 import { KeyInfo, KeyToolbar, scoreText } from "./view/keys.jsx";
 import { controls, modalRoot } from "./view/modal-root.js";
 import { createPairs, type PairView } from "./view/pair.jsx";
@@ -272,6 +274,12 @@ function mount(
     const p = primary();
     return p ? nodeScore(outline(), scores, keyOf)(p) : null;
   };
+  const approval = createMemo(() => {
+    scoreTick();
+    viewedTick();
+    const index = outline();
+    return approvalOf(index, nodeScore(index, scores, keyOf), isViewed);
+  });
   /** Mirrors the modal state into the signals the toolbar and the info box read. */
   const showModal = (s: ModalState) => {
     setHasSelection(s.selections.length > 0);
@@ -465,7 +473,10 @@ function mount(
     });
     return (
       <div class="hh-diff">
-        <KeyToolbar shown={hasSelection} press={press} score={primaryScore} />
+        <div class="hh-bar">
+          <ApprovalBadge approval={approval} />
+          <KeyToolbar shown={hasSelection} press={press} score={primaryScore} />
+        </div>
         {list()}
         <KeyInfo open={keyInfo} pending={pending} />
       </div>
