@@ -1,0 +1,46 @@
+# The setup every site.yml job shares after checkout: the mise toolchain, dependencies and the TypeScript build,
+# plus, for the jobs that measure, the fetched corpus and parser-bench inputs.
+name: setup
+description: mise tools, pnpm install, build, and optionally the fetched bench inputs
+
+inputs:
+  fetch-inputs:
+    description: Restore or fetch packages/syntechs/corpus and research/parser-bench/inputs
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    # node, pnpm, ruff, java and the ktfmt jar (`http:ktfmt`, which ktfmt.node.ts finds with `mise where`).
+    - uses: jdx/mise-action@v5
+
+    - name: Tool versions
+      shell: bash
+      run: |
+        mise ls --current
+        mise where http:ktfmt@0.64
+        ls "$(mise where http:ktfmt@0.64)"
+        mise which ruff
+
+    - shell: bash
+      run: pnpm install --frozen-lockfile
+
+    - shell: bash
+      run: pnpm run build
+
+    - name: Cache fetched inputs
+      if: inputs.fetch-inputs == 'true'
+      uses: actions/cache@v6
+      with:
+        path: |
+          packages/syntechs/corpus
+          research/parser-bench/inputs
+        key: inputs-${{ hashFiles('packages/syntechs/fetch-corpus.sh', 'research/parser-bench/fetch-inputs.sh') }}
+
+    - name: Fetch inputs
+      if: inputs.fetch-inputs == 'true'
+      shell: bash
+      run: |
+        [ -d research/parser-bench/inputs ] || bash research/parser-bench/fetch-inputs.sh
+        [ -d packages/syntechs/corpus ] || bash packages/syntechs/fetch-corpus.sh
+        ls -l research/parser-bench/inputs packages/syntechs/corpus
