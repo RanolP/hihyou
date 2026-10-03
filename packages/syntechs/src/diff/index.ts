@@ -5,6 +5,7 @@ export {
   type RawEdit,
   type Span,
 } from "./edit-script.js";
+export { contentAtoms, isContentAtom, isUnit } from "./content.js";
 export { lineDiff } from "./line-diff.js";
 export {
   defaultMatchOptions,

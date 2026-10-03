@@ -65,7 +65,10 @@ function afterLines(file: FileDiff | undefined) {
 }
 
 // Without extract pairing, PR #380 read as code deleted from generate.node.ts plus two unrelated functions added in kinds.node.ts.
-test("code extracted into kindIndex and kindError points at each new function, and each function back at it", async () => {
+// Not shown since checkClaim gates extracts: `new Set(language.symbolNames)` holds 3 content atoms, under k = 4,
+// and kindError's body carries no whole unit of the removed check (docs/design/move-theory.md,
+// "What is not guaranteed"). `test.fails` flips back once an extract witness wins them back.
+test.fails("code extracted into kindIndex and kindError points at each new function, and each function back at it", async () => {
   const [generate, kinds] = await pr380();
 
   const out = halves(generate, "before");
@@ -91,7 +94,8 @@ test("code extracted into kindIndex and kindError points at each new function, a
 });
 
 // Without comparing the new body against the code it took over, the whole function reads as new and the reviewer re-reads the kept message.
-test("the extracted kindError emphasizes only what generalized the removed check and message", async () => {
+// Not shown since checkClaim gates extracts: kindError fails the substituted core (see above).
+test.fails("the extracted kindError emphasizes only what generalized the removed check and message", async () => {
   const [, kinds] = await pr380();
   const at = (start: string) =>
     afterLines(kinds).find((l) => l.text.trimStart().startsWith(start))
