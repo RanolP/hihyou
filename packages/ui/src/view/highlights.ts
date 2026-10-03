@@ -1,5 +1,5 @@
 import { type AtomIndex, type NodeRef, type Target, treeOf } from "../atoms.js";
-import { piecesIn } from "../highlight.js";
+import { type LinePos, piecesIn } from "../highlight.js";
 import { lineKey, type Placer } from "./placement.js";
 
 /** The highlights the modal editor paints, lowest priority first. */
@@ -7,6 +7,7 @@ export const highlightNames = [
   "hh-viewed",
   "hh-score-plus",
   "hh-score-minus",
+  "hh-comment",
   "hh-selection",
   "hh-selection-primary",
 ] as const;
@@ -21,13 +22,18 @@ export const rangeOver = (text: Text, from: number, to: number) => {
 
 /** Turns targets into Ranges over the drawn text, and keeps each highlight's share of this view's ranges. */
 export function createPainter(doc: Document, placer: Placer) {
+  /** The drawn text of one side between two of its positions. */
+  const textRanges = (
+    side: Omit<NodeRef, "node">,
+    start: LinePos,
+    end: LinePos,
+  ): Range[] => {
+    const at = (line: number) => placer.placed.get(lineKey({ ...side, line }));
+    return piecesIn(at, start, end).map((p) => rangeOver(p.item, p.from, p.to));
+  };
   const nodeRanges = (outline: AtomIndex, ref: NodeRef): Range[] => {
     const n = treeOf(outline, ref)?.nodes[ref.node];
-    if (!n) return [];
-    const at = (line: number) => placer.placed.get(lineKey({ ...ref, line }));
-    return piecesIn(at, n.start, n.end).map((p) =>
-      rangeOver(p.item, p.from, p.to),
-    );
+    return n ? textRanges(ref, n.start, n.end) : [];
   };
   const targetRanges = (outline: AtomIndex, t: Target): Range[] => {
     if (t.kind === "node") return nodeRanges(outline, t);
@@ -55,6 +61,7 @@ export function createPainter(doc: Document, placer: Placer) {
     painted.set(name, ranges);
   };
   return {
+    textRanges,
     nodeRanges,
     targetRanges,
     set,

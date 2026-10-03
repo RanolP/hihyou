@@ -1,4 +1,4 @@
-import { compileTheme, type Theme } from "@hihyou/engine";
+import { type AnchorData, compileTheme, type Theme } from "@hihyou/engine";
 import {
   createComputed,
   createEffect,
@@ -10,6 +10,7 @@ import {
 } from "solid-js";
 import { insert } from "solid-js/web";
 import {
+  type AtomIndex,
   atomIndex,
   atomViewed,
   type NodeRef,
@@ -25,8 +26,19 @@ import {
   type ModalBinding,
   type ModalEffect,
   type ModalState,
+  narrowAt,
   selectAt,
 } from "./modal.js";
+import {
+  anchorOf,
+  type CharRange,
+  type CommentStore,
+  displayRange,
+  linePos,
+  nodeText,
+  refOf,
+  sessionCommentStore,
+} from "./comments.js";
 import { approvalOf } from "./approval.js";
 import { type ElidedRef, type ExpandDirection, expandStep } from "./expand.js";
 import { moveAt, type SideRef } from "./moves.js";
@@ -78,6 +90,8 @@ export interface RenderOptions {
   viewed?: ViewedStore;
   /** Each node's Code-Review score; an in-session store when absent. */
   scores?: ScoreStore;
+  /** The comments written on nodes; an in-session store when absent. */
+  comments?: CommentStore;
   /** The store's key for each viewed subject and scored node; `plainKeyOf` when absent. */
   keyOf?: KeyOf;
 }
@@ -131,6 +145,13 @@ function mount(
   const scores = opts.scores ?? sessionScoreStore();
   const [scoreTick, setScoreTick] = createSignal(0);
   const unsubscribeScores = scores.subscribe(() => setScoreTick((v) => v + 1));
+  const comments = opts.comments ?? sessionCommentStore();
+  const [commentTick, setCommentTick] = createSignal(0);
+  const unsubscribeComments = comments.subscribe(() =>
+    setCommentTick((v) => v + 1),
+  );
+  /** The comment being written, kept across redraws, which rebuild its row. */
+  let draft: { anchor: AnchorData; text: string } | undefined;
   const outline = createMemo(() => atomIndex(files()));
 
   let shownPath: string | undefined;
@@ -292,8 +313,25 @@ function mount(
     root.focus({ preventScroll: true });
     modal?.press(key);
   };
+  /** A node's drawn text, or only the characters `chars` narrows it to. */
+  const narrowedRanges = (
+    index: AtomIndex,
+    ref: NodeRef,
+    chars?: CharRange,
+  ) => {
+    const tree = treeOf(index, ref);
+    const text = chars && tree && nodeText(tree, ref.node);
+    if (!chars || !tree || text === undefined)
+      return painter.nodeRanges(index, ref);
+    const shown = displayRange(text, chars);
+    return painter.textRanges(
+      ref,
+      linePos(tree, ref.node, shown.start),
+      linePos(tree, ref.node, shown.end),
+    );
+  };
   const paintSelection = () => {
-    const { selections, primary } = modal?.state() ?? emptyModal;
+    const { selections, primary, chars } = modal?.state() ?? emptyModal;
     const index = outline();
     painter.set(
       "hh-selection",
@@ -304,7 +342,11 @@ function mount(
     const p = selections[primary];
     painter.set(
       "hh-selection-primary",
-      p ? painter.targetRanges(index, p) : [],
+      p?.kind === "node"
+        ? narrowedRanges(index, p, chars)
+        : p
+          ? painter.targetRanges(index, p)
+          : [],
     );
   };
   /** Every drawn occurrence of a viewed atom, so a move's counterpart dims in its own file too. */
@@ -319,7 +361,99 @@ function mount(
         ),
     );
     paintScores();
+    paintComments();
     paintSelection();
+  };
+  /** Each comment's anchored text, highlighted, and a row under its last line holding the comment or the draft. */
+  const paintComments = () => {
+    const index = outline();
+    for (const r of root.querySelectorAll(".hh-comment-row")) r.remove();
+    const all: Range[] = [];
+    const lastRow = new Map<Element, Element>();
+    const place = (anchor: AnchorData, cell: (td: HTMLElement) => void) => {
+      const ref = refOf(index, anchor);
+      const tree = ref && treeOf(index, ref);
+      const text = ref && tree && nodeText(tree, ref.node);
+      if (!ref || text === undefined) return;
+      const shown = anchor.chars && displayRange(text, anchor.chars);
+      const ranges = narrowedRanges(index, ref, anchor.chars);
+      all.push(...ranges);
+      const tr = ranges.at(-1)?.endContainer.parentElement?.closest("tr");
+      if (!tr) return;
+      const row = doc.createElement("tr");
+      row.className = "hh-comment-row";
+      const td = doc.createElement("td");
+      td.colSpan = [...tr.children].reduce(
+        (n, c) => n + ((c as HTMLTableCellElement).colSpan || 1),
+        0,
+      );
+      const quote = doc.createElement("div");
+      quote.className = "hh-comment-quote";
+      quote.textContent = shown
+        ? text.slice(shown.start, shown.end)
+        : (text.split("\n")[0] ?? "");
+      td.append(quote);
+      cell(td);
+      row.append(td);
+      (lastRow.get(tr) ?? tr).after(row);
+      lastRow.set(tr, row);
+    };
+    for (const note of comments.all())
+      place(note.anchor, (td) => {
+        const body = doc.createElement("p");
+        body.className = "hh-comment-body";
+        body.textContent = note.body;
+        td.append(body);
+      });
+    if (draft) {
+      const d = draft;
+      place(d.anchor, (td) => {
+        td.parentElement?.classList.add("hh-comment-draft");
+        td.classList.add("hh-comment-draft");
+        const area = doc.createElement("textarea");
+        area.value = d.text;
+        area.setAttribute("aria-label", "Comment");
+        area.addEventListener("input", () => (d.text = area.value));
+        const cancel = () => {
+          draft = undefined;
+          paintComments();
+          root.focus({ preventScroll: true });
+        };
+        const save = () => {
+          if (d.text.trim() === "") return;
+          draft = undefined;
+          comments.add(d.anchor, d.text);
+          root.focus({ preventScroll: true });
+        };
+        area.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            save();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            cancel();
+          }
+        });
+        const button = (label: string, key: string, action: () => void) => {
+          const b = doc.createElement("button");
+          b.type = "button";
+          b.className = "hh-tool";
+          b.textContent = `${label} `;
+          const kbd = doc.createElement("kbd");
+          kbd.textContent = key;
+          b.append(kbd);
+          b.title = `${label} (${key})`;
+          b.addEventListener("click", action);
+          return b;
+        };
+        td.append(
+          area,
+          button("Save", "Ctrl+Enter", save),
+          button("Cancel", "Escape", cancel),
+        );
+      });
+    }
+    painter.set("hh-comment", all);
   };
   /** Each scored node is underlined (solid for plus, wavy for minus) and badged with its signed score. */
   const paintScores = () => {
@@ -416,6 +550,16 @@ function mount(
       case "help":
         setKeyInfo((open) => !open);
         return;
+      case "comment": {
+        const anchor = anchorOf(outline(), effect.at, effect.chars);
+        if (!anchor) return;
+        draft = { anchor, text: "" };
+        paintComments();
+        root
+          .querySelector<HTMLTextAreaElement>(".hh-comment-draft textarea")
+          ?.focus();
+        return;
+      }
     }
   };
 
@@ -469,6 +613,7 @@ function mount(
       list();
       viewedTick();
       scoreTick();
+      commentTick();
       untrack(paint);
     });
     return (
@@ -483,6 +628,10 @@ function mount(
     );
   };
 
+  const placedAt = (node: Node, offset: number) => {
+    const at = node instanceof Text ? placer.placeOf(node) : undefined;
+    return at && { ...at, column: at.column + offset };
+  };
   const onClick = (e: MouseEvent) => {
     const target = e.target instanceof Element ? e.target : null;
     // A button acts through its own handler.
@@ -499,6 +648,16 @@ function mount(
     if (at && modal) {
       clicking = true;
       modal.set((e.shiftKey ? addAt : selectAt)(modal.state(), outline(), at));
+      clicking = false;
+    }
+    // Text selected inside one node narrows the review selection to it, for a comment on those characters.
+    const range =
+      selecting && text?.rangeCount ? text.getRangeAt(0) : undefined;
+    const from = range && placedAt(range.startContainer, range.startOffset);
+    const to = range && placedAt(range.endContainer, range.endOffset);
+    if (from && to && modal) {
+      clicking = true;
+      modal.set(narrowAt(modal.state(), outline(), from, to));
       clicking = false;
     }
     // Code text selects; the rest of a cross-file move's block (its gutter) still expands it, which views it.
@@ -578,6 +737,7 @@ function mount(
     dispose() {
       unsubscribe();
       unsubscribeScores();
+      unsubscribeComments();
       root.removeEventListener("click", onClick);
       root.removeEventListener("keydown", onKey);
       modal?.dispose();

@@ -216,6 +216,12 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 .hh-score-plus { color: var(--hh-added-fg); }
 .hh-score-minus { color: var(--hh-removed-fg); }
 .hh-toolbar .hh-score { align-self: center; margin-left: auto; font-weight: 600; }
+/* A comment's anchored text is boxed in the accent colour; the comment itself sits under the anchor's last line. */
+.hh-diff ::highlight(hh-comment) { background-color: var(--hh-select); text-decoration: underline dotted 2px var(--hh-accent); }
+.hh-comment-row > td { padding: 4px 8px; background: var(--hh-header-bg); border-left: 3px solid var(--hh-accent); }
+.hh-comment-quote { font-family: var(--hh-mono); color: var(--hh-muted); }
+.hh-comment-body { margin: 2px 0 0; white-space: pre-wrap; }
+.hh-comment-draft textarea { display: block; width: 100%; box-sizing: border-box; min-height: 4em; font: inherit; }
 /* The approval stays in view with the toolbar, so scoring far down the diff shows what it did to the Diffset. */
 .hh-bar { position: sticky; top: 0; z-index: 3; background: var(--hh-bg); }
 .hh-approval { display: block; padding: 4px 0; margin: 0 0 4px; font-weight: 600; color: var(--hh-muted); }

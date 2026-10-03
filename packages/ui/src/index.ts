@@ -21,12 +21,19 @@ export { type FileTreeNode, fileTree } from "./file-tree.js";
 export { diffFiles, engineReview, type ReviewSource } from "./review.js";
 export { type Approval, approvalOf } from "./approval.js";
 export {
+  type CharRange,
+  type CommentStore,
+  type ReviewNote,
+  sessionCommentStore,
+} from "./comments.js";
+export {
   type Atom,
   type AtomIndex,
   atomIndex,
   atomsOf,
   atomSubject,
   atomViewed,
+  contextFragment,
   type Hunk,
   hunkOf,
   type NodeOutline,
@@ -54,6 +61,7 @@ export {
   modalKeymap,
   type ModalRoot,
   type ModalState,
+  narrowAt,
   type Point,
   selectAt,
   type Transition,
