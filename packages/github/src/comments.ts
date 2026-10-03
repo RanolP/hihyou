@@ -21,7 +21,10 @@ import {
   withVerdict,
 } from "./lowered.js";
 
-/** The pull request a store comments on, and the Diffset's base and head, which its lines are counted in. */
+/**
+ * The pull request a store comments on, and the Diffset's base and head, which its lines are counted in: one commit
+ * of the pull request (`head`) against its first parent (`base`). Comments go on the pull request at that commit.
+ */
 export interface GitHubReviewTarget {
   owner: string;
   repo: string;
@@ -63,6 +66,32 @@ export function hunkLines(patch: string | undefined): HunkLines {
     add(out.after, m[3] as string, m[4]);
   }
   return out;
+}
+
+/**
+ * A line's position in a file's `patch`, which the deprecated `addPullRequestReviewComment` takes: the row below
+ * the first `@@` header is 1, and every later row, a later header included, counts on.
+ */
+export function positionOf(
+  patch: string | undefined,
+  side: "LEFT" | "RIGHT",
+  line: number,
+): number | undefined {
+  let before = 0;
+  let after = 0;
+  for (const [i, row] of (patch ?? "").split("\n").entries()) {
+    const m = /^@@ -(\d+)(?:,\d+)? \+(\d+)/.exec(row);
+    if (m) {
+      before = Number(m[1]);
+      after = Number(m[2]);
+      continue;
+    }
+    if (row.startsWith("\\")) continue;
+    const old = row.startsWith("+") ? undefined : before++;
+    const now = row.startsWith("-") ? undefined : after++;
+    if ((side === "LEFT" ? old : now) === line) return i;
+  }
+  return undefined;
 }
 
 /**
@@ -110,23 +139,28 @@ const pullQuery = `query($owner: String!, $repo: String!, $number: Int!, $after:
   viewer { login }
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
-      id
-      reviews(first: 1, states: [PENDING]) { nodes { id } }
+      id baseRefOid headRefOid
+      reviews(first: 1, states: [PENDING]) { nodes { id commit { oid } } }
       reviewThreads(first: 100, after: $after) {
         pageInfo { hasNextPage endCursor }
         nodes {
-          id path diffSide line startLine isOutdated subjectType
-          comments(first: 100) { nodes { id body state author { login } } }
+          id path diffSide line startLine originalLine originalStartLine isOutdated subjectType
+          comments(first: 100) { nodes { id body state author { login } originalCommit { oid } } }
         }
       }
     }
   }
 }`;
-const startReview = `mutation($pr: ID!, $commit: GitObjectID!) {
-  addPullRequestReview(input: { pullRequestId: $pr, commitOID: $commit }) { pullRequestReview { id } }
+const startReview = `mutation($pr: ID!, $commit: GitObjectID!, $threads: [DraftPullRequestReviewThread]) {
+  addPullRequestReview(input: { pullRequestId: $pr, commitOID: $commit, threads: $threads }) {
+    pullRequestReview { id comments(first: 1) { nodes { id } } }
+  }
 }`;
 const addThread = `mutation($input: AddPullRequestReviewThreadInput!) {
   addPullRequestReviewThread(input: $input) { thread { id } }
+}`;
+const addComment = `mutation($input: AddPullRequestReviewCommentInput!) {
+  addPullRequestReviewComment(input: $input) { comment { id } }
 }`;
 const addReply = `mutation($input: AddPullRequestReviewThreadReplyInput!) {
   addPullRequestReviewThreadReply(input: $input) { comment { id } }
@@ -144,6 +178,8 @@ interface ThreadData {
   diffSide: "LEFT" | "RIGHT";
   line: number | null;
   startLine: number | null;
+  originalLine: number | null;
+  originalStartLine: number | null;
   isOutdated: boolean;
   subjectType: "LINE" | "FILE";
   comments: {
@@ -152,6 +188,7 @@ interface ThreadData {
       body: string;
       state: "PENDING" | "SUBMITTED";
       author: { login: string } | null;
+      originalCommit: { oid: string } | null;
     }[];
   };
 }
@@ -161,7 +198,9 @@ interface PullData {
   repository: {
     pullRequest: {
       id: string;
-      reviews: { nodes: { id: string }[] };
+      baseRefOid: string;
+      headRefOid: string;
+      reviews: { nodes: { id: string; commit: { oid: string } | null }[] };
       reviewThreads: {
         pageInfo: { hasNextPage: boolean; endCursor: string | null };
         nodes: ThreadData[];
@@ -173,22 +212,37 @@ interface PullData {
 /** `placeOf`'s prefix, which names the anchored lines a moved comment's place does not cover. */
 const placedPrefix = /^Lines? (\d+)(?:-(\d+))? \((before|after)\):\n\n/;
 
+/** How a thread's lines relate to the Diffset shown, one commit of the pull request (`threadLines`). */
+export interface ThreadAt {
+  /** The thread was written at this commit, so its original lines and `placeOf`'s prefix count here. */
+  written: boolean;
+  /** This commit is the pull request's head, so the lines GitHub still places a thread on count here. */
+  current: boolean;
+  /** This commit's parent is the merge base, whose blob GitHub counts a LEFT line in. */
+  leftIsBefore: boolean;
+}
+
 /**
  * Where a thread read from GitHub points, before it is anchored to nodes: the lines `placeOf`'s prefix names when
- * hihyou moved the comment, else the thread's own lines; none for a file-level or outdated thread, whose lines the
- * compared blob no longer holds.
+ * hihyou moved the comment at this commit, else the thread's own lines when they count here (`ThreadAt`); none
+ * for a file-level thread, or one whose lines this Diffset's blobs do not hold.
  */
 export function threadLines(
   thread: Pick<
     ThreadData,
-    "diffSide" | "line" | "startLine" | "isOutdated" | "subjectType"
+    | "diffSide"
+    | "line"
+    | "startLine"
+    | "originalLine"
+    | "originalStartLine"
+    | "isOutdated"
+    | "subjectType"
   >,
   body: string,
+  at: ThreadAt,
 ): { side: "before" | "after"; range?: LineRange; body: string } {
   const side = thread.diffSide === "LEFT" ? "before" : "after";
-  // An outdated thread's lines, the prefix's included, count in a blob the comparison no longer shows.
-  if (thread.isOutdated) return { side, body };
-  const m = placedPrefix.exec(body);
+  const m = at.written ? placedPrefix.exec(body) : null;
   if (m) {
     const start = Number(m[1]);
     return {
@@ -197,12 +251,18 @@ export function threadLines(
       body: body.slice(m[0].length),
     };
   }
-  if (thread.subjectType === "FILE" || !thread.line) return { side, body };
-  return {
-    side,
-    range: { start: thread.startLine ?? thread.line, end: thread.line },
-    body,
-  };
+  const [line, startLine] = at.written
+    ? [thread.originalLine, thread.originalStartLine]
+    : at.current && !thread.isOutdated
+      ? [thread.line, thread.startLine]
+      : [null, null];
+  if (
+    thread.subjectType === "FILE" ||
+    !line ||
+    (side === "before" && !at.leftIsBefore)
+  )
+    return { side, body };
+  return { side, range: { start: startLine ?? line, end: line }, body };
 }
 
 /**
@@ -225,10 +285,19 @@ export function githubCommentStore(
 ): CommentStore {
   const { owner, repo, number, base, head } = target;
   let notes: readonly ReviewNote[] = [];
-  /** GitHub's pending review, once one is known to exist. */
+  /** GitHub's pending review, once one is known to exist, and the commit it comments on. */
   let reviewId: string | undefined;
+  let reviewCommit: string | undefined;
+  /** The pull request's base and head commits, as last read. */
+  let pull: { base: string; head: string } | undefined;
   let files:
-    | Promise<Map<string, { path: string; hunks: HunkLines }>>
+    | Promise<{
+        mergeBase: string;
+        byPath: Map<
+          string,
+          { path: string; patch: string | undefined; hunks: HunkLines }
+        >;
+      }>
     | undefined;
   let queue: Promise<unknown> = Promise.resolve();
   const listeners = new Set<() => void>();
@@ -291,16 +360,20 @@ export function githubCommentStore(
     range: LineRange | undefined,
     key: LoweredKey | undefined,
   ): Promise<AnchorData> => {
-    const known = notes.find((n) => n.id === thread.id)?.anchor;
+    // A thread posted here may be known by its first comment's id, when GitHub answered with no thread id.
+    const known = notes.find(
+      (n) => n.id === thread.id || n.id === thread.comments.nodes[0]?.id,
+    )?.anchor;
     if (known) return known;
     const restored = key && (await keyed(thread, key));
     if (restored) return restored;
     let path = thread.path;
     if (side === "before")
-      for (const [key, f] of await filesByPath())
+      for (const [key, f] of (await filesByPath()).byPath)
         if (f.path === thread.path && key.startsWith("before\n"))
           path = key.slice("before\n".length);
-    if (range)
+    // A thread on a file this commit leaves alone has no nodes here to look up.
+    if (range && (await fileOf({ side, path, nodes: [] })))
       try {
         return await onLines(side, path, range);
       } catch (error) {
@@ -316,7 +389,15 @@ export function githubCommentStore(
     const [root, ...replies] = thread.comments.nodes;
     if (!root) return [];
     const lowered = readLowered(root.body);
-    const { side, range, body: lined } = threadLines(thread, lowered.body);
+    const {
+      side,
+      range,
+      body: lined,
+    } = threadLines(thread, lowered.body, {
+      written: root.originalCommit?.oid === head,
+      current: pull?.head === head,
+      leftIsBefore: (await filesByPath()).mergeBase === base,
+    });
     const anchor = await anchorOf(thread, side, range, lowered.key);
     // A valid key marks the body as hihyou's, so `placeOf`'s prefix goes even on an outdated thread.
     const body = lowered.key ? lowered.body.replace(placedPrefix, "") : lined;
@@ -362,8 +443,11 @@ export function githubCommentStore(
       if (!hasNextPage || !endCursor) break;
       after = endCursor;
     }
+    if (pull?.base !== pr.baseRefOid) files = undefined;
+    pull = { base: pr.baseRefOid, head: pr.headRefOid };
     const read = (await Promise.all(threads.map(notesOf))).flat();
     const pending = pr.reviews.nodes[0]?.id;
+    reviewCommit = pr.reviews.nodes[0]?.commit?.oid;
     if (
       pending !== reviewId ||
       JSON.stringify(read) !== JSON.stringify(notes)
@@ -386,31 +470,47 @@ export function githubCommentStore(
     c.onmessage = () => void serial(pullId).catch(readFailed);
     return c;
   };
-  /** Per anchor path (a renamed file's before side is its old path), GitHub's path and hunks. */
+  /**
+   * The pull request's diff at this commit, which GitHub places a comment on: its merge base, and per anchor path
+   * (a renamed file's before side is its old path) GitHub's path and hunks. Read after `pullId`, which knows the
+   * pull request's base.
+   */
   const filesByPath = () =>
-    (files ??= fetchCompareFiles(client, owner, repo, base, head)
-      .then(({ files }) => {
-        const out = new Map<string, { path: string; hunks: HunkLines }>();
+    (files ??= fetchCompareFiles(client, owner, repo, pull?.base ?? base, head)
+      .then(({ mergeBaseSha, files }) => {
+        const byPath = new Map<
+          string,
+          { path: string; patch: string | undefined; hunks: HunkLines }
+        >();
         for (const f of files) {
-          const entry = { path: f.filename, hunks: hunkLines(f.patch) };
-          out.set(`after\n${f.filename}`, entry);
-          out.set(`before\n${f.previous_filename ?? f.filename}`, entry);
+          const entry = {
+            path: f.filename,
+            patch: f.patch,
+            hunks: hunkLines(f.patch),
+          };
+          byPath.set(`after\n${f.filename}`, entry);
+          byPath.set(`before\n${f.previous_filename ?? f.filename}`, entry);
         }
-        return out;
+        return { mergeBase: mergeBaseSha, byPath };
       })
       .catch((error: unknown) => {
         files = undefined;
         throw error;
       }));
 
-  /** Posts the thread with its body lowered (`lowerComment`), keyed when the Diffset holds the anchor's file. */
+  /**
+   * Posts the thread with its body lowered (`lowerComment`), keyed when the Diffset holds the anchor's file, into
+   * `review`, or into a review it starts at this commit when there is none. Resolves to the thread's id, or to its
+   * first comment's when GitHub answers with no thread.
+   */
   const thread = async (
-    review: string,
+    pr: string,
+    review: string | undefined,
     anchor: AnchorData,
     body: string,
     score: Score | undefined,
   ) => {
-    const [ranges, byPath, file] = await Promise.all([
+    const [ranges, { mergeBase, byPath }, file] = await Promise.all([
       lines(anchor),
       filesByPath(),
       fileOf(anchor),
@@ -424,31 +524,109 @@ export function githubCommentStore(
         })
       : withVerdict(body, score);
     const hunked = byPath.get(`${anchor.side}\n${anchor.path}`);
-    const { prefix = "", ...place } = placeOf(
-      hunked?.path ?? anchor.path,
+    // GitHub counts a LEFT line in the merge base, which only the first commit's before side is, so a later
+    // commit's before side goes on the file.
+    const {
+      prefix = "",
+      subjectType,
+      ...place
+    } = placeOf(
+      hunked?.path ?? file?.path ?? anchor.path,
       anchor,
       ranges,
-      hunked?.hunks,
+      anchor.side === "after" || mergeBase === base ? hunked?.hunks : undefined,
     );
-    const data = await client.graphql<{
-      addPullRequestReviewThread: { thread: { id: string } | null };
-    }>(addThread, {
-      input: { pullRequestReviewId: review, body: prefix + posted, ...place },
-    });
-    const id = data.addPullRequestReviewThread.thread?.id;
-    if (id === undefined)
+    // GitHub places a review's starting threads at its commit (a draft with no line is a file comment), but
+    // `addPullRequestReviewThread` places a later one on the pull request's head.
+    if (review === undefined) {
+      const data = await client.graphql<{
+        addPullRequestReview: {
+          pullRequestReview: {
+            id: string;
+            comments: { nodes: { id: string }[] };
+          };
+        };
+      }>(startReview, {
+        pr,
+        commit: head,
+        threads: [{ body: prefix + posted, ...place }],
+      });
+      const started = data.addPullRequestReview.pullRequestReview;
+      reviewId = started.id;
+      reviewCommit = head;
+      const id = started.comments.nodes[0]?.id;
+      if (id === undefined)
+        throw new Error(
+          `GitHub made no thread for a comment on ${anchor.path}; the line may lie outside the pull request's diff`,
+        );
+      return id;
+    }
+    if (head === pull?.head) {
+      const data = await client.graphql<{
+        addPullRequestReviewThread: { thread: { id: string } | null };
+      }>(addThread, {
+        input: {
+          pullRequestReviewId: review,
+          body: prefix + posted,
+          subjectType,
+          ...place,
+        },
+      });
+      const id = data.addPullRequestReviewThread.thread?.id;
+      if (id === undefined)
+        throw new Error(
+          `GitHub made no thread for a comment on ${anchor.path}; the line may lie outside the pull request's diff`,
+        );
+      return id;
+    }
+    // Off the head, only the deprecated `addPullRequestReviewComment` takes a commit: on one line, by its position.
+    const position =
+      place.side &&
+      place.line !== undefined &&
+      positionOf(hunked?.patch, place.side, place.line);
+    if (!position)
       throw new Error(
-        `GitHub made no thread for a comment on ${anchor.path}; the line may lie outside the pull request's diff`,
+        `a review started on commit ${head.slice(0, 7)} takes a file comment only as its first; submit the review, then comment on ${anchor.path}`,
       );
+    const ranged =
+      place.startLine === undefined || prefix
+        ? prefix
+        : `Lines ${place.startLine}-${place.line} (${anchor.side}):\n\n`;
+    const data = await client.graphql<{
+      addPullRequestReviewComment: { comment: { id: string } | null };
+    }>(addComment, {
+      input: {
+        pullRequestReviewId: review,
+        commitOID: head,
+        path: place.path,
+        position,
+        body: ranged + posted,
+      },
+    });
+    const id = data.addPullRequestReviewComment.comment?.id;
+    if (id === undefined)
+      throw new Error(`GitHub made no comment on ${anchor.path}`);
     return id;
   };
-  const start = async () => {
-    const pr = await pullId();
-    if (reviewId !== undefined) return reviewId;
+  /**
+   * A pending review comments on one commit, and its event is that commit's approval, so this Diffset adds to or
+   * submits only a review on its own commit.
+   */
+  const ownReview = () => {
+    if (reviewId !== undefined && reviewCommit !== head)
+      throw new Error(
+        `a review is started on commit ${reviewCommit?.slice(0, 7) ?? "unknown"}; open that commit to add to it or submit it`,
+      );
+    return reviewId;
+  };
+  const start = async (pr: string) => {
+    const own = ownReview();
+    if (own !== undefined) return own;
     const data = await client.graphql<{
       addPullRequestReview: { pullRequestReview: { id: string } };
     }>(startReview, { pr, commit: head });
     reviewId = data.addPullRequestReview.pullRequestReview.id;
+    reviewCommit = head;
     return reviewId;
   };
   const publish = async (review: string, event: ReviewEvent) => {
@@ -477,39 +655,45 @@ export function githubCommentStore(
     return id;
   };
   /**
-   * "Add single comment" or "Add single reply": `add` writes into a review this call starts, which is then
-   * submitted with COMMENT at once.
+   * "Add single comment" or "Add single reply": `add` writes into a review it starts, which is then submitted with
+   * COMMENT at once.
    */
   const single = async (
     what: string,
-    add: (review: string) => Promise<ReviewNote>,
+    add: (pr: string) => Promise<ReviewNote>,
   ) => {
-    await pullId();
+    const pr = await pullId();
     if (reviewId !== undefined)
       throw new Error(
         `a review is started; a ${what} can only join it until it is submitted`,
       );
-    const review = await start();
     try {
-      const note = await add(review);
-      await publish(review, "COMMENT");
+      const note = await add(pr);
+      if (reviewId !== undefined) await publish(reviewId, "COMMENT");
       reviewId = undefined;
       notes = [...notes, note];
       changed();
     } catch (error) {
-      // `start()` always begins this call's review, so deleting it here cannot drop one the user began on
+      // `add` always begins this call's review, so deleting it here cannot drop one the user began on
       // github.com; otherwise the empty PENDING review would strand `reviewing()` as true for every later
       // comment, this store's or a fresh one's.
-      try {
-        await client.graphql(deleteReview, { review });
-      } catch {
-        // the original error names the real failure; a delete failure here would only obscure it
-      }
+      if (reviewId !== undefined)
+        try {
+          await client.graphql(deleteReview, { review: reviewId });
+        } catch {
+          // the original error names the real failure; a delete failure here would only obscure it
+        }
       reviewId = undefined;
       changed();
       throw error;
     }
   };
+
+  /**
+   * Re-reads the threads once one is posted, as GitHub may have named it by its first comment, which a reply cannot
+   * take; the post itself stands even when the read fails.
+   */
+  const threadIds = () => pullId().catch(readFailed);
 
   void serial(pullId).catch(readFailed);
   return {
@@ -520,18 +704,20 @@ export function githubCommentStore(
         await pullId();
       }),
     comment: (anchor, body, score) =>
-      serial(() =>
-        single("comment", async (review) => ({
-          id: await thread(review, anchor, body, score),
+      serial(async () => {
+        await single("comment", async (pr) => ({
+          id: await thread(pr, undefined, anchor, body, score),
           anchor,
           body: withVerdict(body, score),
           pending: false,
           ...mine(),
-        })),
-      ),
+        }));
+        await threadIds();
+      }),
     review: (anchor, body, score) =>
       serial(async () => {
-        const id = await thread(await start(), anchor, body, score);
+        const pr = await pullId();
+        const id = await thread(pr, ownReview(), anchor, body, score);
         notes = [
           ...notes,
           {
@@ -543,12 +729,13 @@ export function githubCommentStore(
           },
         ];
         changed();
+        await threadIds();
       }),
     reply: (to, body) =>
       serial(() => {
         const { anchor } = rootOf(to);
-        return single("reply", async (review) => ({
-          id: await reply(review, to, body),
+        return single("reply", async (pr) => ({
+          id: await reply(await start(pr), to, body),
           anchor,
           body,
           pending: false,
@@ -559,7 +746,7 @@ export function githubCommentStore(
     reviewReply: (to, body) =>
       serial(async () => {
         const { anchor } = rootOf(to);
-        const id = await reply(await start(), to, body);
+        const id = await reply(await start(await pullId()), to, body);
         notes = [
           ...notes,
           { id, anchor, body, pending: true, thread: to, ...mine() },
@@ -569,8 +756,9 @@ export function githubCommentStore(
     submitReview: (event) =>
       serial(async () => {
         await pullId();
-        if (reviewId === undefined) return;
-        await publish(reviewId, event);
+        const own = ownReview();
+        if (own === undefined) return;
+        await publish(own, event);
         reviewId = undefined;
         notes = notes.map((n) => (n.pending ? { ...n, pending: false } : n));
         changed();

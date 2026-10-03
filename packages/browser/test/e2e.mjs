@@ -66,6 +66,12 @@ try {
     throw new Error(`unexpected status: ${status}`);
   const rows = await page.locator(".hihyou-view .hh-set > .hh-row").count();
   step(`diffsets panel: ${rows} rows`);
+  // A pull request is reviewed commit by commit, so no row diffs it whole.
+  const labels = await page
+    .locator(".hihyou-view .hh-set .hh-label")
+    .allTextContents();
+  if (labels.some((l) => /all changes/i.test(l)))
+    throw new Error(`a diffset row covers the whole pull request: ${labels}`);
 
   const tasks = await page.evaluate(
     (from) => window.__longtasks.filter((t) => t.start >= from),
@@ -78,7 +84,7 @@ try {
   await page.screenshot({ path: screenshot });
   step(`screenshot: ${screenshot}`);
 
-  // A commit diffset goes through commit/<sha>.diff instead of the pull request's .diff.
+  // The panel opens on the newest commit; another commit opens from its row.
   const commit = page.locator(".hihyou-view .hh-set .hh-label").nth(1);
   const subject = await commit.textContent();
   await commit.click();

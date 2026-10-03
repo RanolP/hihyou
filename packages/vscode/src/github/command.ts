@@ -8,6 +8,7 @@ import {
 import { type DiffFile, engineReview, type ReviewSource } from "@hihyou/ui";
 import * as vscode from "vscode";
 import { setCurrentDiffsets } from "../diffsets/current.js";
+import { pullRequestDiffsets } from "../diffsets/sources.js";
 import { outputChannel } from "../errors.js";
 import type { LocalRepos } from "../local/repos.js";
 import { openReviewPanel } from "../panel/panel.js";
@@ -87,7 +88,7 @@ export async function signedInHost(): Promise<GitHubHost> {
   return githubHost({ token: session.accessToken });
 }
 
-/** Resolves a pull request, makes it the diffsets view's current set, and opens its review panel. */
+/** Resolves a pull request, makes it the diffsets view's current set, and opens its newest commit's review panel. */
 export async function openPullRequest(
   extensionUri: vscode.Uri,
   host: GitHubHost,
@@ -95,16 +96,14 @@ export async function openPullRequest(
   number: number,
 ): Promise<{ pr: GitHubPullRequest; files: DiffFile[] | undefined }> {
   const pr = await host.resolvePullRequest(remote.owner, remote.repo, number);
-  setCurrentDiffsets({ kind: "github", opened: { host, remote, pr } });
-  const files = await openReviewPanel(
-    extensionUri,
-    githubSource(
-      host,
-      { ...remote, base: pr.base, head: pr.head },
-      `#${pr.number} ${pr.title}`,
-      pr.number,
-    ),
-  );
+  const opened = { host, remote, pr };
+  setCurrentDiffsets({ kind: "github", opened });
+  const [newest] = await pullRequestDiffsets(opened);
+  if (!newest)
+    throw new Error(`#${pr.number} has no commit with a parent to review`);
+  const files = await openReviewPanel(extensionUri, newest.source, {
+    key: newest.key,
+  });
   return { pr, files };
 }
 
@@ -116,29 +115,27 @@ export function githubEngine(host: GitHubHost): Engine<GitHubHost> {
   return engine;
 }
 
-/** `pull` is the pull request whose whole change `id` is; its comments then go to GitHub. A single commit's do not, as GitHub places them on the pull request's diff. */
+/** `id` is one commit of pull request `pull`, whose comments go to GitHub at that commit. */
 export function githubSource(
   host: GitHubHost,
   id: GitHubDiffsetId,
   title: string,
-  pull?: number,
+  pull: number,
 ): ReviewSource {
   const engine = githubEngine(host);
   return {
     title,
     ...engineReview(engine, () => id),
     refreshable: false,
-    ...(pull !== undefined && {
-      comments: () =>
-        host.reviewComments(
-          { ...id, number: pull },
-          async (anchor) =>
-            (await engine.diffset(id)).anchor(anchor).intoLineRanges(),
-          async (side, path, lines) =>
-            (await engine.diffset(id)).anchorOnLines(side, path, lines),
-          async () => (await engine.diffset(id)).changes,
-        ),
-    }),
+    comments: () =>
+      host.reviewComments(
+        { ...id, number: pull },
+        async (anchor) =>
+          (await engine.diffset(id)).anchor(anchor).intoLineRanges(),
+        async (side, path, lines) =>
+          (await engine.diffset(id)).anchorOnLines(side, path, lines),
+        async () => (await engine.diffset(id)).changes,
+      ),
   };
 }
 
