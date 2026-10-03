@@ -76,6 +76,42 @@ export function KeyToolbar(props: {
   );
 }
 
+/** Shown while a review is started: how many comments it holds, and the button that publishes them. */
+export function SubmitReview(props: {
+  /** The host knows a pending review, which may hold comments written elsewhere (on github.com). */
+  reviewing: () => boolean;
+  pending: () => number;
+  error: () => string | undefined;
+  press: (key: string) => void;
+}): JSX.Element {
+  return (
+    <Show when={props.reviewing()}>
+      <div class="hh-toolbar" role="toolbar" aria-label="Pending review">
+        <button
+          type="button"
+          class="hh-tool"
+          aria-label="Submit review (R)"
+          title="Submit review (R)"
+          on:click={() => props.press("R")}
+        >
+          Submit review <kbd>R</kbd>
+        </button>
+        <output class="hh-review-pending">
+          {props.pending()} pending{" "}
+          {props.pending() === 1 ? "comment" : "comments"}
+        </output>
+        <Show when={props.error()}>
+          {(e) => (
+            <output class="hh-comment-error" role="alert">
+              {e()}
+            </output>
+          )}
+        </Show>
+      </div>
+    </Show>
+  );
+}
+
 /**
  * Kakoune's info box: every bound key, by what it does, or while a prefix key waits, only the keys that can
  * follow it.

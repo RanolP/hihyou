@@ -222,6 +222,12 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 .hh-comment-quote { font-family: var(--hh-mono); color: var(--hh-muted); }
 .hh-comment-body { margin: 2px 0 0; white-space: pre-wrap; }
 .hh-comment-draft textarea { display: block; width: 100%; box-sizing: border-box; min-height: 4em; font: inherit; }
+/* A comment held in a review not yet submitted: dashed, and labelled so it never reads by style alone. */
+.hh-comment-row > td.hh-comment-pending { border-left-style: dashed; }
+.hh-comment-label { float: right; font-size: 0.85em; font-weight: 600; padding: 0 4px; border: 1px solid var(--hh-border); border-radius: 3px; color: var(--hh-muted); }
+.hh-comment-error { margin: 2px 0 0; color: var(--hh-removed-fg); }
+.hh-review-pending { align-self: center; color: var(--hh-muted); }
+.hh-comment-row kbd { font-family: var(--hh-mono); font-size: 0.9em; color: var(--hh-muted); }
 /* The approval stays in view with the toolbar, so scoring far down the diff shows what it did to the Diffset. */
 .hh-bar { position: sticky; top: 0; z-index: 3; background: var(--hh-bg); }
 .hh-approval { display: block; padding: 4px 0; margin: 0 0 4px; font-weight: 600; color: var(--hh-muted); }

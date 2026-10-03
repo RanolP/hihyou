@@ -19,10 +19,11 @@ export { githubDark, githubLight } from "./themes.js";
 export { collapseElided, revealElided } from "./expand.js";
 export { type FileTreeNode, fileTree } from "./file-tree.js";
 export { diffFiles, engineReview, type ReviewSource } from "./review.js";
-export { type Approval, approvalOf } from "./approval.js";
+export { type Approval, approvalOf, reviewEvent } from "./approval.js";
 export {
   type CharRange,
   type CommentStore,
+  type ReviewEvent,
   type ReviewNote,
   sessionCommentStore,
 } from "./comments.js";

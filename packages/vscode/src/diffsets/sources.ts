@@ -123,7 +123,12 @@ export async function pullRequestDiffsets({
       ...row,
       moving: false,
       changes: async () => (await githubEngine(host).diffset(id)).changes,
-      source: githubSource(host, id, title),
+      source: githubSource(
+        host,
+        id,
+        title,
+        key === "all" ? pr.number : undefined,
+      ),
     };
   };
   const commits = await host.listPullRequestCommits(

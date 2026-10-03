@@ -102,6 +102,7 @@ export async function openPullRequest(
       host,
       { ...remote, base: pr.base, head: pr.head },
       `#${pr.number} ${pr.title}`,
+      pr.number,
     ),
   );
   return { pr, files };
@@ -115,15 +116,24 @@ export function githubEngine(host: GitHubHost): Engine<GitHubHost> {
   return engine;
 }
 
+/** `pull` is the pull request whose whole change `id` is; its comments then go to GitHub. A single commit's do not, as GitHub places them on the pull request's diff. */
 export function githubSource(
   host: GitHubHost,
   id: GitHubDiffsetId,
   title: string,
+  pull?: number,
 ): ReviewSource {
+  const engine = githubEngine(host);
   return {
     title,
-    ...engineReview(githubEngine(host), () => id),
+    ...engineReview(engine, () => id),
     refreshable: false,
+    ...(pull !== undefined && {
+      comments: () =>
+        host.reviewComments({ ...id, number: pull }, async (anchor) =>
+          (await engine.diffset(id)).anchor(anchor).intoLineRanges(),
+        ),
+    }),
   };
 }
 

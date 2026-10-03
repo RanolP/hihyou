@@ -18,6 +18,8 @@ export interface ReviewNote {
   id: string;
   anchor: AnchorData;
   body: string;
+  /** Held in a review not yet submitted. */
+  pending: boolean;
 }
 
 /** The node's display text, its lines joined by "\n". */
@@ -125,9 +127,24 @@ export function refOf(
   return undefined;
 }
 
+/** How a submitted review reads on GitHub; `reviewEvent` in `approval.ts` chooses it. */
+export type ReviewEvent = "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
+
+/**
+ * Comments as GitHub's review UI takes them: one published at once ("Add single comment"), or held in a pending
+ * review ("Start a review", then "Add review comment") until the review is submitted. The host supplies it: on
+ * GitHub the pending review is GitHub's own; with no host it stays in the browser (`sessionCommentStore`).
+ */
 export interface CommentStore {
   all(): readonly ReviewNote[];
-  add(anchor: AnchorData, body: string): ReviewNote;
+  /** A review is started and not yet submitted. */
+  reviewing(): boolean;
+  /** "Add single comment": published at once. */
+  comment(anchor: AnchorData, body: string): Promise<void>;
+  /** "Start a review", or "Add review comment" once one is started: held pending until `submitReview`. */
+  review(anchor: AnchorData, body: string): Promise<void>;
+  /** Publishes the pending review's comments as one review. */
+  submitReview(event: ReviewEvent): Promise<void>;
   subscribe(listener: () => void): () => void;
 }
 
@@ -136,13 +153,22 @@ export function sessionCommentStore(): CommentStore {
   let notes: readonly ReviewNote[] = [];
   let next = 0;
   const listeners = new Set<() => void>();
+  const changed = () => {
+    for (const l of listeners) l();
+    return Promise.resolve();
+  };
+  const add = (anchor: AnchorData, body: string, pending: boolean) => {
+    notes = [...notes, { id: `c${next++}`, anchor, body, pending }];
+    return changed();
+  };
   return {
     all: () => notes,
-    add(anchor, body) {
-      const note = { id: `c${next++}`, anchor, body };
-      notes = [...notes, note];
-      for (const l of listeners) l();
-      return note;
+    reviewing: () => notes.some((n) => n.pending),
+    comment: (anchor, body) => add(anchor, body, false),
+    review: (anchor, body) => add(anchor, body, true),
+    submitReview() {
+      notes = notes.map((n) => (n.pending ? { ...n, pending: false } : n));
+      return changed();
     },
     subscribe(listener) {
       listeners.add(listener);

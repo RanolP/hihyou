@@ -1,4 +1,5 @@
 import type { AtomIndex, NodeRef, SideName } from "./atoms.js";
+import type { ReviewEvent } from "./comments.js";
 import type { Score } from "./viewed.js";
 
 /**
@@ -58,3 +59,6 @@ export function approvalOf(
         : "pending";
   return { state, heaviest, read, edits };
 }
+
+/** The event a submitted review carries on GitHub: "COMMENT" until #41 maps it from the review's scores. */
+export const reviewEvent = (): ReviewEvent => "COMMENT";

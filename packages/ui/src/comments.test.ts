@@ -1,6 +1,12 @@
 import { expect, test } from "vitest";
 import { atomIndex, contextFragment, type NodeOutline } from "./atoms.js";
-import { anchorOf, displayRange, refOf } from "./comments.js";
+import { reviewEvent } from "./approval.js";
+import {
+  anchorOf,
+  displayRange,
+  refOf,
+  sessionCommentStore,
+} from "./comments.js";
 import {
   emptyModal,
   type ModalContext,
@@ -94,4 +100,23 @@ test("a narrowed range finds the same word in the node reformatted", () => {
   const reformatted = "baz(\n  qux\n)";
   const r = displayRange(reformatted, { start: 4, end: 7 });
   expect(reformatted.slice(r.start, r.end)).toBe("qux");
+});
+
+// A comment written into a started review must wait for the submit, as on GitHub, while a single comment is final at once.
+test("review comments stay pending until the review is submitted; a single comment is final at once", async () => {
+  const store = sessionCommentStore();
+  const anchor = { side: "after" as const, path: "a.ts", nodes: [[0]] };
+  await store.comment(anchor, "single");
+  expect(store.reviewing()).toBe(false);
+  await store.review(anchor, "first");
+  await store.review(anchor, "second");
+  expect(store.reviewing()).toBe(true);
+  expect(store.all().map((n) => [n.body, n.pending])).toEqual([
+    ["single", false],
+    ["first", true],
+    ["second", true],
+  ]);
+  await store.submitReview(reviewEvent());
+  expect(store.reviewing()).toBe(false);
+  expect(store.all().every((n) => !n.pending)).toBe(true);
 });

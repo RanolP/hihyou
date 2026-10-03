@@ -39,7 +39,7 @@ import {
   refOf,
   sessionCommentStore,
 } from "./comments.js";
-import { approvalOf } from "./approval.js";
+import { approvalOf, reviewEvent } from "./approval.js";
 import { type ElidedRef, type ExpandDirection, expandStep } from "./expand.js";
 import { moveAt, type SideRef } from "./moves.js";
 import { type DiffFile, gapOf } from "./rows.js";
@@ -48,7 +48,7 @@ import { FileSection } from "./view/file.jsx";
 import { flash } from "./view/flash.js";
 import { createPainter } from "./view/highlights.js";
 import { ApprovalBadge } from "./view/approval.jsx";
-import { KeyInfo, KeyToolbar, scoreText } from "./view/keys.jsx";
+import { KeyInfo, KeyToolbar, scoreText, SubmitReview } from "./view/keys.jsx";
 import { controls, modalRoot } from "./view/modal-root.js";
 import { createPairs, type PairView } from "./view/pair.jsx";
 import { createPlacer } from "./view/placement.js";
@@ -151,7 +151,9 @@ function mount(
     setCommentTick((v) => v + 1),
   );
   /** The comment being written, kept across redraws, which rebuild its row. */
-  let draft: { anchor: AnchorData; text: string } | undefined;
+  let draft:
+    | { anchor: AnchorData; text: string; sending?: boolean; error?: string }
+    | undefined;
   const outline = createMemo(() => atomIndex(files()));
 
   let shownPath: string | undefined;
@@ -295,6 +297,29 @@ function mount(
     const p = primary();
     return p ? nodeScore(outline(), scores, keyOf)(p) : null;
   };
+  const pendingComments = () => {
+    commentTick();
+    return comments.all().filter((n) => n.pending).length;
+  };
+  const reviewing = () => {
+    commentTick();
+    return comments.reviewing();
+  };
+  const [submitError, setSubmitError] = createSignal<string>();
+  let submitting = false;
+  const submitReview = () => {
+    if (submitting || !comments.reviewing()) return;
+    submitting = true;
+    setSubmitError(undefined);
+    comments.submitReview(reviewEvent()).then(
+      () => (submitting = false),
+      (error: unknown) => {
+        submitting = false;
+        setSubmitError(error instanceof Error ? error.message : String(error));
+        console.error("hihyou: could not submit the review", error);
+      },
+    );
+  };
   const approval = createMemo(() => {
     scoreTick();
     viewedTick();
@@ -400,6 +425,13 @@ function mount(
     };
     for (const note of comments.all())
       place(note.anchor, (td) => {
+        if (note.pending) {
+          td.classList.add("hh-comment-pending");
+          const label = doc.createElement("span");
+          label.className = "hh-comment-label";
+          label.textContent = "Pending";
+          td.prepend(label);
+        }
         const body = doc.createElement("p");
         body.className = "hh-comment-body";
         body.textContent = note.body;
@@ -407,6 +439,7 @@ function mount(
       });
     if (draft) {
       const d = draft;
+      const reviewing = comments.reviewing();
       place(d.anchor, (td) => {
         td.parentElement?.classList.add("hh-comment-draft");
         td.classList.add("hh-comment-draft");
@@ -419,16 +452,29 @@ function mount(
           paintComments();
           root.focus({ preventScroll: true });
         };
-        const save = () => {
-          if (d.text.trim() === "") return;
-          draft = undefined;
-          comments.add(d.anchor, d.text);
-          root.focus({ preventScroll: true });
+        /** Sends the draft as a single comment or into the review; a failure keeps it, with the host's error. */
+        const send = (how: "comment" | "review") => {
+          if (d.text.trim() === "" || d.sending) return;
+          d.sending = true;
+          delete d.error;
+          comments[how](d.anchor, d.text).then(
+            () => {
+              if (draft === d) draft = undefined;
+              paintComments();
+              root.focus({ preventScroll: true });
+            },
+            (error: unknown) => {
+              d.sending = false;
+              d.error = error instanceof Error ? error.message : String(error);
+              console.error(`hihyou: could not save a ${how}`, error);
+              paintComments();
+            },
+          );
         };
         area.addEventListener("keydown", (e) => {
           if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
             e.preventDefault();
-            save();
+            send(reviewing || e.shiftKey ? "review" : "comment");
           } else if (e.key === "Escape") {
             e.preventDefault();
             cancel();
@@ -446,11 +492,28 @@ function mount(
           b.addEventListener("click", action);
           return b;
         };
+        // GitHub's review UI: once a review is started, a comment can only join it.
         td.append(
           area,
-          button("Save", "Ctrl+Enter", save),
+          ...(reviewing
+            ? [button("Add review comment", "Ctrl+Enter", () => send("review"))]
+            : [
+                button("Add single comment", "Ctrl+Enter", () =>
+                  send("comment"),
+                ),
+                button("Start a review", "Ctrl+Shift+Enter", () =>
+                  send("review"),
+                ),
+              ]),
           button("Cancel", "Escape", cancel),
         );
+        if (d.error !== undefined) {
+          const error = doc.createElement("p");
+          error.className = "hh-comment-error";
+          error.setAttribute("role", "alert");
+          error.textContent = d.error;
+          td.append(error);
+        }
       });
     }
     painter.set("hh-comment", all);
@@ -550,6 +613,9 @@ function mount(
       case "help":
         setKeyInfo((open) => !open);
         return;
+      case "submitReview":
+        submitReview();
+        return;
       case "comment": {
         const anchor = anchorOf(outline(), effect.at, effect.chars);
         if (!anchor) return;
@@ -621,6 +687,12 @@ function mount(
         <div class="hh-bar">
           <ApprovalBadge approval={approval} />
           <KeyToolbar shown={hasSelection} press={press} score={primaryScore} />
+          <SubmitReview
+            reviewing={reviewing}
+            pending={pendingComments}
+            error={submitError}
+            press={press}
+          />
         </div>
         {list()}
         <KeyInfo open={keyInfo} pending={pending} />
