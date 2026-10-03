@@ -37,9 +37,14 @@ test("a node past its hunk is clamped to the hunk, and a node outside every hunk
   });
 });
 
-/** A fake api.github.com: the compare page with `patch`, and GraphQL answered per operation, every request kept. */
-function fakeGitHub(pending: string | undefined) {
+/**
+ * A fake api.github.com: the compare page with `patch`, and GraphQL answered per operation, every request kept.
+ * The first `threadFails` calls to `addPullRequestReviewThread` answer with no thread, as GitHub does for a line
+ * outside the pull request's diff.
+ */
+function fakeGitHub(pending: string | undefined, threadFails = 0) {
   const calls: { op: string; variables: Record<string, unknown> }[] = [];
+  let threadCalls = 0;
   const fetch = async (url: string | URL | Request, init?: RequestInit) => {
     const href = String(url);
     if (href.includes("/compare/"))
@@ -53,6 +58,15 @@ function fakeGitHub(pending: string | undefined) {
     };
     const op = /(\w+)\s*\(input/.exec(query)?.[1] ?? "pull";
     calls.push({ op, variables });
+    if (op === "addPullRequestReviewThread")
+      return Response.json({
+        data: {
+          addPullRequestReviewThread: {
+            thread:
+              ++threadCalls <= threadFails ? null : { id: `T${calls.length}` },
+          },
+        },
+      });
     const data: Record<string, unknown> = {
       pull: {
         repository: {
@@ -65,11 +79,13 @@ function fakeGitHub(pending: string | undefined) {
       addPullRequestReview: {
         addPullRequestReview: { pullRequestReview: { id: "R1" } },
       },
-      addPullRequestReviewThread: {
-        addPullRequestReviewThread: { thread: { id: `T${calls.length}` } },
-      },
       submitPullRequestReview: {
         submitPullRequestReview: { pullRequestReview: { id: "R1" } },
+      },
+      deletePullRequestReview: {
+        deletePullRequestReview: {
+          pullRequestReview: { id: variables["review"] },
+        },
       },
     };
     return Response.json({ data: data[op] });
@@ -131,6 +147,38 @@ test("review comments join the pending review already on GitHub and stay pending
   });
   expect(store.all().map((n) => n.pending)).toEqual([false, false]);
   expect(store.reviewing()).toBe(false);
+});
+
+// A single comment whose thread lands outside the diff left behind an empty PENDING review that stranded every
+// later comment with "a review is started", though the user never started one.
+test("a single comment deletes the review it started when addThread makes no thread, so the next comment can still post", async () => {
+  const { client, target, calls } = fakeGitHub(undefined, 1);
+  const store = githubCommentStore(client, target, lines);
+
+  await expect(store.comment(anchor, "outside the diff")).rejects.toThrow(
+    /GitHub made no thread/,
+  );
+  expect(calls.map((c) => c.op)).toEqual([
+    "pull",
+    "addPullRequestReview",
+    "addPullRequestReviewThread",
+    "deletePullRequestReview",
+  ]);
+  expect(calls.at(-1)?.variables).toEqual({ review: "R1" });
+  expect(store.reviewing()).toBe(false);
+
+  await store.comment(anchor, "inside the diff");
+  expect(calls.map((c) => c.op)).toEqual([
+    "pull",
+    "addPullRequestReview",
+    "addPullRequestReviewThread",
+    "deletePullRequestReview",
+    "addPullRequestReview",
+    "addPullRequestReviewThread",
+    "submitPullRequestReview",
+  ]);
+  expect(store.reviewing()).toBe(false);
+  expect(store.all()).toMatchObject([{ body: "inside the diff" }]);
 });
 
 // A review submitted with a -2 or an all-+2 score reached GitHub as COMMENT, so it neither blocked nor approved.

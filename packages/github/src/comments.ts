@@ -107,6 +107,9 @@ const addThread = `mutation($input: AddPullRequestReviewThreadInput!) {
 const submit = `mutation($review: ID!, $event: PullRequestReviewEvent!) {
   submitPullRequestReview(input: { pullRequestReviewId: $review, event: $event }) { pullRequestReview { id } }
 }`;
+const deleteReview = `mutation($review: ID!) {
+  deletePullRequestReview(input: { pullRequestReviewId: $review }) { pullRequestReview { id } }
+}`;
 
 interface PullData {
   repository: {
@@ -226,11 +229,25 @@ export function githubCommentStore(
             "a review is started; a comment can only join it until it is submitted",
           );
         const review = await start();
-        const id = await thread(review, anchor, body);
-        await publish(review, "COMMENT");
-        reviewId = undefined;
-        notes = [...notes, { id, anchor, body, pending: false }];
-        changed();
+        try {
+          const id = await thread(review, anchor, body);
+          await publish(review, "COMMENT");
+          reviewId = undefined;
+          notes = [...notes, { id, anchor, body, pending: false }];
+          changed();
+        } catch (error) {
+          // `start()` always begins this call's review, so deleting it here cannot drop one the user began on
+          // github.com; otherwise the empty PENDING review would strand `reviewing()` as true for every later
+          // comment, this store's or a fresh one's.
+          try {
+            await client.graphql(deleteReview, { review });
+          } catch {
+            // the original error names the real failure; a delete failure here would only obscure it
+          }
+          reviewId = undefined;
+          changed();
+          throw error;
+        }
       }),
     review: (anchor, body) =>
       serial(async () => {
