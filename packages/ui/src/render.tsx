@@ -410,9 +410,21 @@ function mount(
   /** Each comment's anchored text, highlighted, and a row under its last line holding the comment or the draft. */
   const paintComments = () => {
     const index = outline();
-    for (const r of root.querySelectorAll(".hh-comment-row")) r.remove();
+    for (const r of root.querySelectorAll(".hh-comment-row, .hh-comment-file"))
+      r.remove();
     const all: Range[] = [];
     const lastRow = new Map<Element, Element>();
+    /** A thread no drawn node holds (on the file, or on lines the diff no longer has), listed under its file's header. */
+    const listed = (path: string, cell: (el: HTMLElement) => void) => {
+      const scroll = [...root.querySelectorAll<HTMLElement>(".hh-scroll")].find(
+        (s) => s.dataset["path"] === path,
+      );
+      if (!scroll) return;
+      const el = doc.createElement("div");
+      el.className = "hh-comment-file";
+      cell(el);
+      scroll.before(el);
+    };
     const place = (anchor: AnchorData, cell: (td: HTMLElement) => void) => {
       const ref = refOf(index, anchor);
       const tree = ref && treeOf(index, ref);
@@ -449,10 +461,16 @@ function mount(
       label.textContent = "Pending";
       el.prepend(label);
     };
-    const bodyOf = (text: string) => {
+    const bodyOf = (text: string, author?: string) => {
       const body = doc.createElement("p");
       body.className = "hh-comment-body";
-      body.textContent = text;
+      if (author !== undefined) {
+        const by = doc.createElement("span");
+        by.className = "hh-comment-author";
+        by.textContent = author;
+        body.append(by, " ");
+      }
+      body.append(text);
       return body;
     };
     /** The draft's text box and its send buttons, appended to `el`. */
@@ -543,14 +561,14 @@ function mount(
     // A thread's replies, and a reply being written, are drawn in its row under the note that began it.
     for (const note of notes) {
       if (note.thread !== undefined) continue;
-      place(note.anchor, (td) => {
+      const cell = (td: HTMLElement) => {
         if (note.pending) pendingMark(td);
-        td.append(bodyOf(note.body));
+        td.append(bodyOf(note.body, note.author));
         for (const r of notes) {
           if (r.thread !== note.id) continue;
           const reply = doc.createElement("div");
           reply.className = "hh-comment-reply";
-          reply.append(bodyOf(r.body));
+          reply.append(bodyOf(r.body, r.author));
           if (r.pending) pendingMark(reply);
           td.append(reply);
         }
@@ -560,7 +578,9 @@ function mount(
           editor(box, draft);
           td.append(box);
         }
-      });
+      };
+      if (refOf(index, note.anchor)) place(note.anchor, cell);
+      else listed(note.anchor.path, cell);
     }
     if (draft && draft.thread === undefined) {
       const d = draft;
@@ -684,7 +704,10 @@ function mount(
         const index = outline();
         const at = effect.at;
         const thread = comments.all().findLast((n) => {
-          const ref = n.thread === undefined && refOf(index, n.anchor);
+          if (n.thread !== undefined) return false;
+          const ref = refOf(index, n.anchor);
+          if (!("node" in at))
+            return !ref && index.files[at.file]?.path === n.anchor.path;
           return (
             ref &&
             ref.file === at.file &&

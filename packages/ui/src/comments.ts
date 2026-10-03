@@ -22,6 +22,8 @@ export interface ReviewNote {
   pending: boolean;
   /** A reply: the `id` of the note that began its thread, whose anchor it shares. */
   thread?: string;
+  /** Who wrote it, as the host names people (a GitHub login); absent where the view has only its own notes. */
+  author?: string;
 }
 
 /** The node's display text, its lines joined by "\n". */
@@ -105,14 +107,32 @@ export function anchorOf(
 const sameSteps = (a: readonly number[], b: readonly number[]) =>
   a.length === b.length && a.every((s, i) => s === b[i]);
 
-/** Where an anchor's first node is drawn, if anywhere: a hunk side or the file's context. */
+/**
+ * Where an anchor's first node is drawn, if anywhere: a hunk side or the file's context. A node the view does not
+ * draw (one a thread read from the host names, inside an unchanged statement) falls back to its nearest drawn
+ * ancestor, unless `chars` narrows the anchor to that node's own text.
+ */
 export function refOf(
   index: AtomIndex,
   anchor: AnchorData,
 ): NodeRef | undefined {
-  const file = index.files.findIndex((f) => f.path === anchor.path);
   const steps = anchor.nodes[0];
-  if (file < 0 || !steps) return undefined;
+  if (!steps) return undefined;
+  const shortest = anchor.chars ? steps.length : 0;
+  for (let k = steps.length; k >= shortest; k--) {
+    const ref = drawnAt(index, anchor, steps.slice(0, k));
+    if (ref) return ref;
+  }
+  return undefined;
+}
+
+function drawnAt(
+  index: AtomIndex,
+  anchor: AnchorData,
+  steps: readonly number[],
+): NodeRef | undefined {
+  const file = index.files.findIndex((f) => f.path === anchor.path);
+  if (file < 0) return undefined;
   const trees: [number, SideTree | undefined][] = [
     ...(index.hunks[file] ?? []).map(
       (h) => [h.fragment, h[anchor.side]] as [number, SideTree],
