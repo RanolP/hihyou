@@ -12,8 +12,15 @@ import {
   type Target,
   treeOf,
   writeAtoms,
+  writeScores,
 } from "./atoms.js";
-import { type KeyOf, plainKeyOf, type ViewedStore } from "./viewed.js";
+import {
+  type KeyOf,
+  plainKeyOf,
+  type Score,
+  type ScoreStore,
+  type ViewedStore,
+} from "./viewed.js";
 
 export interface ModalState {
   /** "insert" while an editable field inside the root has focus: review keys type into it, Escape leaves it. */
@@ -21,11 +28,15 @@ export interface ModalState {
   selections: Target[];
   /** Index into `selections`. */
   primary: number;
+  /** A prefix key waiting for the key that completes it; any key resolves it. */
+  pending?: "s";
 }
 
 export type ModalEffect =
   /** Engine atom ids to write. */
   | { kind: "setViewed"; atoms: string[]; viewed: boolean }
+  /** `null` clears the nodes' scores. */
+  | { kind: "setScore"; nodes: NodeRef[]; score: Score | null }
   /** Show the other half of the move this node is part of. */
   | { kind: "expandMove"; at: NodeRef }
   | { kind: "expandElided"; file: number; fragment: number }
@@ -231,6 +242,29 @@ function add(s: ModalState, t: Target | undefined): ModalState {
       };
 }
 
+/** The keys after `s`, on Gerrit's Code-Review scale; `0` clears. */
+const scoreKeys: Record<string, Score | null> = {
+  "2": 2,
+  "1": 1,
+  q: -1,
+  w: -2,
+  "0": null,
+};
+
+/** The state with no prefix pending. */
+const settled = ({ mode, selections, primary }: ModalState): ModalState => ({
+  mode,
+  selections,
+  primary,
+});
+
+const nodeRef = ({ file, fragment, side, node }: NodeRef): NodeRef => ({
+  file,
+  fragment,
+  side,
+  node,
+});
+
 /** Kakoune's Shift extends: each adds its lowercase motion's target, taken from the primary. */
 const extensions: Record<string, string> = {
   J: "j",
@@ -271,6 +305,16 @@ export function modalKey(
     state,
     effects,
   });
+  if (s.pending === "s") {
+    const rest = settled(s);
+    const score = scoreKeys[key];
+    if (score === undefined) return done(rest);
+    const nodes = s.selections.flatMap((t) =>
+      t.kind === "node" ? [nodeRef(t)] : [],
+    );
+    return done(rest, nodes.length ? [{ kind: "setScore", nodes, score }] : []);
+  }
+  if (key === "s") return done({ ...s, pending: "s" });
   const extended = extensions[key];
   if (extended !== undefined) {
     const p = s.selections[s.primary];
@@ -428,7 +472,9 @@ export function addAt(s: ModalState, index: AtomIndex, at: Point): ModalState {
 export const modalKeymap: readonly {
   key: string;
   label: string;
-  group: "move" | "extend" | "act";
+  group: "move" | "extend" | "act" | "score";
+  /** Bound only right after this prefix key. */
+  prefix?: "s";
 }[] = [
   { key: "j", label: "next change", group: "move" },
   { key: "k", label: "previous change", group: "move" },
@@ -452,6 +498,12 @@ export const modalKeymap: readonly {
   { key: "-", label: "drop primary selection", group: "extend" },
   { key: ",", label: "keep only primary", group: "extend" },
   { key: "v", label: "toggle viewed", group: "act" },
+  { key: "s", label: "score…", group: "act" },
+  { key: "2", label: "+2 good to merge", group: "score", prefix: "s" },
+  { key: "1", label: "+1 looks good", group: "score", prefix: "s" },
+  { key: "q", label: "-1 would rather not", group: "score", prefix: "s" },
+  { key: "w", label: "-2 must not merge", group: "score", prefix: "s" },
+  { key: "0", label: "clear score", group: "score", prefix: "s" },
   { key: "Enter", label: "expand move or context", group: "act" },
   { key: "?", label: "toggle this help", group: "act" },
   { key: "Escape", label: "leave review keys", group: "act" },
@@ -471,11 +523,13 @@ export interface ModalRoot {
 export interface ModalBindingOptions {
   index: AtomIndex;
   viewed: ViewedStore;
+  /** Where `setScore` writes; without one, scoring reaches only `onEffect`. */
+  scores?: ScoreStore;
   /** `plainKeyOf` when absent. */
   keyOf?: KeyOf;
   initial?: ModalState;
   onChange?: (state: ModalState) => void;
-  /** Every effect, after the binding applied `setViewed` and `leave` itself. */
+  /** Every effect, after the binding applied `setViewed`, `setScore` and `leave` itself. */
   onEffect?: (effect: ModalEffect) => void;
 }
 
@@ -512,7 +566,7 @@ export function bindModal(
     const blur = () => (active as Partial<HTMLElement> | null)?.blur?.();
     const mode =
       active && root.contains(active) && editable(active) ? "insert" : "normal";
-    if (state.mode !== mode) set({ ...state, mode });
+    if (state.mode !== mode) set({ ...settled(state), mode });
     if (mode === "insert") {
       if (key !== "Escape") return false;
       blur();
@@ -525,6 +579,8 @@ export function bindModal(
     for (const effect of t.effects) {
       if (effect.kind === "setViewed")
         writeAtoms(effect.atoms, effect.viewed, opts.viewed, keyOf);
+      if (effect.kind === "setScore" && opts.scores)
+        writeScores(opts.index, effect.nodes, effect.score, opts.scores, keyOf);
       if (effect.kind === "leave") blur();
       opts.onEffect?.(effect);
     }

@@ -199,6 +199,23 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
   background-color: var(--hh-select-primary);
   text-decoration: underline 2px var(--hh-accent);
 }
+/* A Code-Review score: plus solid, minus wavy, and the badge spells the sign, so colour is never the only cue. */
+.hh-diff ::highlight(hh-score-plus) { text-decoration: underline solid 1px var(--hh-added-fg); }
+.hh-diff ::highlight(hh-score-minus) { text-decoration: underline wavy 1px var(--hh-removed-fg); }
+.hh-score-badge {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  padding: 0 3px;
+  font-family: var(--hh-mono);
+  font-size: 0.85em;
+  background: var(--hh-bg);
+  border: 1px solid currentColor;
+  border-radius: 3px;
+}
+.hh-score-plus { color: var(--hh-added-fg); }
+.hh-score-minus { color: var(--hh-removed-fg); }
+.hh-toolbar .hh-score { align-self: center; margin-left: auto; font-weight: 600; }
 .hh-file-viewed .hh-table { opacity: 0.5; }
 .hh-viewed-toggle { text-decoration: none; color: var(--hh-muted); }
 .hh-viewed-toggle[aria-pressed="true"] { color: var(--hh-added-fg); }

@@ -1,9 +1,15 @@
 import { For, type JSX, Show } from "solid-js";
 import { modalKeymap } from "../modal.js";
+import type { Score } from "../viewed.js";
 
-/** The key actions a mouse reaches too, each showing the key that does the same. */
+/** The key actions a mouse reaches too, each showing the keys that do the same, pressed in turn. */
 const toolbar = [
   { key: "v", label: "Viewed" },
+  { key: "s 2", label: "+2" },
+  { key: "s 1", label: "+1" },
+  { key: "s q", label: "-1" },
+  { key: "s w", label: "-2" },
+  { key: "s 0", label: "Clear score" },
   { key: "Enter", label: "Expand" },
   { key: "g", label: "Counterpart" },
   { key: "o", label: "Parent" },
@@ -21,10 +27,16 @@ const groups = [
   { group: "act", title: "Act" },
 ] as const;
 
-/** Shown while something is selected; a click runs the button's key as if pressed. */
+/** The sign is text, so a score never reads by colour alone. */
+export const scoreText = (score: Score) =>
+  score > 0 ? `+${score}` : `${score}`;
+
+/** Shown while something is selected; a click runs the button's keys as if pressed. */
 export function KeyToolbar(props: {
   shown: () => boolean;
   press: (key: string) => void;
+  /** The primary selection's score, when it has one. */
+  score: () => Score | null;
 }): JSX.Element {
   return (
     <Show when={props.shown()}>
@@ -36,42 +48,88 @@ export function KeyToolbar(props: {
               class="hh-tool"
               aria-label={`${b.label} (${b.key})`}
               title={`${b.label} (${b.key})`}
-              on:click={() => props.press(b.key)}
+              on:click={() => {
+                for (const k of b.key.split(" ")) props.press(k);
+              }}
             >
               {b.label} <kbd>{b.key}</kbd>
             </button>
           )}
         </For>
+        <Show when={props.score()}>
+          {(s) => (
+            <output
+              class={`hh-score hh-score-${s() > 0 ? "plus" : "minus"}`}
+              aria-label={`Code-Review ${scoreText(s())}`}
+            >
+              Code-Review {scoreText(s())}
+            </output>
+          )}
+        </Show>
       </div>
     </Show>
   );
 }
 
-/** Kakoune's info box: every bound key, by what it does. */
-export function KeyInfo(props: { open: () => boolean }): JSX.Element {
+/**
+ * Kakoune's info box: every bound key, by what it does, or while a prefix key waits, only the keys that can
+ * follow it.
+ */
+export function KeyInfo(props: {
+  open: () => boolean;
+  pending: () => "s" | undefined;
+}): JSX.Element {
   return (
-    <Show when={props.open()}>
-      <aside class="hh-keyinfo" aria-label="Keys" aria-live="off">
-        <For each={groups}>
-          {(g) => (
-            <section>
-              <h2 class="hh-keyinfo-title">{g.title}</h2>
-              <dl>
-                <For each={modalKeymap.filter((k) => k.group === g.group)}>
-                  {(k) => (
-                    <>
-                      <dt>
-                        <kbd>{k.key}</kbd>
-                      </dt>
-                      <dd>{k.label}</dd>
-                    </>
+    <Show
+      when={props.pending()}
+      fallback={
+        <Show when={props.open()}>
+          <aside class="hh-keyinfo" aria-label="Keys" aria-live="off">
+            <For each={groups}>
+              {(g) => (
+                <KeyGroup
+                  title={g.title}
+                  keys={modalKeymap.filter(
+                    (k) => k.group === g.group && !k.prefix,
                   )}
-                </For>
-              </dl>
-            </section>
+                />
+              )}
+            </For>
+          </aside>
+        </Show>
+      }
+    >
+      {(p) => (
+        <aside class="hh-keyinfo" aria-label="Score keys" aria-live="polite">
+          <KeyGroup
+            title="Score"
+            keys={modalKeymap.filter((k) => k.prefix === p())}
+          />
+        </aside>
+      )}
+    </Show>
+  );
+}
+
+function KeyGroup(props: {
+  title: string;
+  keys: readonly { key: string; label: string }[];
+}): JSX.Element {
+  return (
+    <section>
+      <h2 class="hh-keyinfo-title">{props.title}</h2>
+      <dl>
+        <For each={props.keys}>
+          {(k) => (
+            <>
+              <dt>
+                <kbd>{k.key}</kbd>
+              </dt>
+              <dd>{k.label}</dd>
+            </>
           )}
         </For>
-      </aside>
-    </Show>
+      </dl>
+    </section>
   );
 }

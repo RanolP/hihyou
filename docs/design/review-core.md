@@ -200,7 +200,7 @@ interface ReviewThread<H extends Host> {
 interface ReviewComment<H extends Host> {
   author: Author<H>;
   draft: boolean; // publishing flips draft -> false
-  verdict?: Verdict; // verdict lives on the anchored comment only
+  verdict?: Verdict; // the per-axis verdict lives on the anchored comment; a node's Code-Review score is kept apart
   // body: still unspecified, but a comment may have no body
 }
 type RequestAxis = "necessity" | "clarity" | "consistency";
@@ -299,6 +299,8 @@ type Author<H extends Host> = { id: string } & HostAuthor<H>;
 **"Viewed" marks move pairs and files** (stage 1 of the plan recorded on 2026-10-01). Both halves of a move share one subject, so expanding the pair in either file marks it viewed in both, and a "Viewed" toggle on each label and each file header sets or clears the mark from the keyboard. Viewed code is dimmed. Ordinary hunks get no mark of their own: the file toggle covers them, and a per-hunk key would have no identity that survives a new iteration. A file's subject includes its blob ids, so a new revision of the file reads as unviewed again, as on GitHub; a move's subject includes its halves' lines and text.
 
 Every key goes through one `KeyOf` function (`plainKeyOf` today; stage 2 swaps in an HMAC so a gist never holds a path). The state is a last-writer-wins element set: each key holds `{ viewed, ts, device }`, a merge keeps the larger `ts` per key with `device` as the tiebreak, and un-viewing writes `viewed: false`. `ts` comes from a hybrid logical clock that moves past every timestamp it merges in, so a device whose wall clock runs behind still writes after an entry it has seen. The `ViewedStore` interface (`get`, `set`, `subscribe`, `merge`, `state`) has one in-session implementation, which keeps the state for as long as the open review's view lives. A `KeyOf` is synchronous, so the stage 2 HMAC needs a synchronous SHA-256 (WebCrypto's `sign` is async) or keys computed ahead of the draw.
+
+**A Code-Review score is given per AST node** (the maintainer: "점수 매기기는 per-node로 하자", let's score per node), not per atom, per file or on a comment. It uses Gerrit's Code-Review scale (`docs/research/gerrit.md`): -2 must not merge, -1 would rather not, +1 looks good but someone else should also look, +2 good to merge, and no score once cleared; Gerrit scores a whole change, hihyou scores one node. Scores are stored like viewed marks: a last-writer-wins set with the same hybrid-clock timestamps and device tiebreak, in a `ScoreStore` of its own, with each key going through the same `KeyOf`. A node's key is its path, side, `AstSteps` and node hash, so it holds no position in the drawn view and survives a redraw, and a node whose code changes reads unscored again. A comment's per-axis `Verdict` is unaffected.
 
 ## Open questions
 

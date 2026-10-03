@@ -5,6 +5,8 @@ import { lineKey, type Placer } from "./placement.js";
 /** The highlights the modal editor paints, lowest priority first. */
 export const highlightNames = [
   "hh-viewed",
+  "hh-score-plus",
+  "hh-score-minus",
   "hh-selection",
   "hh-selection-primary",
 ] as const;
