@@ -132,3 +132,17 @@ test("review comments join the pending review already on GitHub and stay pending
   expect(store.all().map((n) => n.pending)).toEqual([false, false]);
   expect(store.reviewing()).toBe(false);
 });
+
+// A review submitted with a -2 or an all-+2 score reached GitHub as COMMENT, so it neither blocked nor approved.
+test("a submitted review carries its own event to GitHub, not COMMENT", async () => {
+  for (const event of ["APPROVE", "REQUEST_CHANGES"] as const) {
+    const { client, target, calls } = fakeGitHub("R0");
+    const store = githubCommentStore(client, target, lines);
+    await store.review(anchor, "one");
+    await store.submitReview(event);
+    expect(calls.at(-1)).toEqual({
+      op: "submitPullRequestReview",
+      variables: { review: "R0", event },
+    });
+  }
+});

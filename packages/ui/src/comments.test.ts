@@ -1,6 +1,5 @@
 import { expect, test } from "vitest";
 import { atomIndex, contextFragment, type NodeOutline } from "./atoms.js";
-import { reviewEvent } from "./approval.js";
 import {
   anchorOf,
   displayRange,
@@ -116,7 +115,7 @@ test("review comments stay pending until the review is submitted; a single comme
     ["first", true],
     ["second", true],
   ]);
-  await store.submitReview(reviewEvent());
+  await store.submitReview("COMMENT");
   expect(store.reviewing()).toBe(false);
   expect(store.all().every((n) => !n.pending)).toBe(true);
 });

@@ -1,4 +1,5 @@
 import { For, type JSX, Show } from "solid-js";
+import type { ReviewEvent } from "../comments.js";
 import { modalKeymap } from "../modal.js";
 import type { Score } from "../viewed.js";
 
@@ -76,25 +77,35 @@ export function KeyToolbar(props: {
   );
 }
 
+/** The names GitHub's own review dialog gives each event. */
+const eventLabel: Record<ReviewEvent, string> = {
+  COMMENT: "Comment",
+  APPROVE: "Approve",
+  REQUEST_CHANGES: "Request changes",
+};
+
 /** Shown while a review is started: how many comments it holds, and the button that publishes them. */
 export function SubmitReview(props: {
   /** The host knows a pending review, which may hold comments written elsewhere (on github.com). */
   reviewing: () => boolean;
   pending: () => number;
+  /** What `R` sends, shown before it is pressed. */
+  event: () => ReviewEvent;
   error: () => string | undefined;
   press: (key: string) => void;
 }): JSX.Element {
+  const label = () => eventLabel[props.event()];
   return (
     <Show when={props.reviewing()}>
       <div class="hh-toolbar" role="toolbar" aria-label="Pending review">
         <button
           type="button"
           class="hh-tool"
-          aria-label="Submit review (R)"
-          title="Submit review (R)"
+          aria-label={`Submit review (R): ${label()}`}
+          title={`Submit review (R): ${label()}`}
           on:click={() => props.press("R")}
         >
-          Submit review <kbd>R</kbd>
+          Submit review <kbd>R</kbd> · {label()}
         </button>
         <output class="hh-review-pending">
           {props.pending()} pending{" "}

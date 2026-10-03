@@ -1,6 +1,6 @@
 import type { FileDiff, Side } from "@hihyou/engine";
 import { expect, test } from "vitest";
-import { approvalOf } from "./approval.js";
+import { approvalOf, reviewEvent } from "./approval.js";
 import {
   atomIndex,
   atomViewed,
@@ -167,4 +167,19 @@ test("a viewed edit counts as +1 unless an explicit score covers it", () => {
   expect(r.approval().state).toBe("approved");
   r.score([w], -1);
   expect(r.approval()).toMatchObject({ state: "pending", heaviest: -1 });
+});
+
+// A submitted review always read "Comment" on GitHub, so a -2 never requested changes and an all-+2 review never approved.
+test("a submitted review requests changes on a -2, approves on +2 everywhere, and comments otherwise", () => {
+  const r = review();
+  const event = () => reviewEvent(r.approval());
+  expect(event()).toBe("COMMENT");
+  r.score([classAfter], 2);
+  expect(event()).toBe("COMMENT");
+  r.score([w], 2);
+  expect(event()).toBe("APPROVE");
+  r.score([xBefore], -2);
+  expect(event()).toBe("REQUEST_CHANGES");
+  r.score([xBefore], 1);
+  expect(event()).toBe("COMMENT");
 });

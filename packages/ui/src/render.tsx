@@ -311,7 +311,7 @@ function mount(
     if (submitting || !comments.reviewing()) return;
     submitting = true;
     setSubmitError(undefined);
-    comments.submitReview(reviewEvent()).then(
+    comments.submitReview(reviewEvent(approval())).then(
       () => (submitting = false),
       (error: unknown) => {
         submitting = false;
@@ -690,6 +690,7 @@ function mount(
           <SubmitReview
             reviewing={reviewing}
             pending={pendingComments}
+            event={() => reviewEvent(approval())}
             error={submitError}
             press={press}
           />

@@ -60,5 +60,13 @@ export function approvalOf(
   return { state, heaviest, read, edits };
 }
 
-/** The event a submitted review carries on GitHub: "COMMENT" until #41 maps it from the review's scores. */
-export const reviewEvent = (): ReviewEvent => "COMMENT";
+/**
+ * The event a submitted review carries on GitHub, read off the Diffset's approval; a review with nothing scored or
+ * viewed is pending, so it comments.
+ */
+export const reviewEvent = (approval: Approval): ReviewEvent =>
+  approval.state === "blocked"
+    ? "REQUEST_CHANGES"
+    : approval.state === "approved"
+      ? "APPROVE"
+      : "COMMENT";
