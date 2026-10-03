@@ -11,6 +11,7 @@ import {
   type SideTree,
   treeOf,
 } from "./atoms.js";
+import type { Score } from "./viewed.js";
 
 export type CharRange = NonNullable<AnchorData["chars"]>;
 
@@ -161,10 +162,10 @@ export interface CommentStore {
   all(): readonly ReviewNote[];
   /** A review is started and not yet submitted. */
   reviewing(): boolean;
-  /** "Add single comment": published at once. */
-  comment(anchor: AnchorData, body: string): Promise<void>;
+  /** "Add single comment": published at once. `score` is the anchored node's, which a host may post as a verdict. */
+  comment(anchor: AnchorData, body: string, score?: Score): Promise<void>;
   /** "Start a review", or "Add review comment" once one is started: held pending until `submitReview`. */
-  review(anchor: AnchorData, body: string): Promise<void>;
+  review(anchor: AnchorData, body: string, score?: Score): Promise<void>;
   /** "Add single reply" to the thread `thread` (the `id` of the note that began it): published at once. */
   reply(thread: string, body: string): Promise<void>;
   /** A reply to `thread` held in the pending review, starting one when none is: as `review` is to `comment`. */

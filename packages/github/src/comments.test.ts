@@ -213,6 +213,15 @@ const onLines = async (
   path: string,
   range: { start: number; end: number },
 ) => ({ side, path, nodes: [[range.start, range.end]] });
+const beforeSha = "b".repeat(40);
+const afterSha = "a".repeat(40);
+const changes = async () => [
+  {
+    path: "src/a.ts",
+    before: `o/r@${beforeSha}`,
+    after: `o/r@${afterSha}`,
+  },
+];
 /** The writes, without the pending-review reads every write starts with. */
 const writes = <C extends { op: string }>(calls: C[]) =>
   calls.filter((c) => c.op !== "pull");
@@ -220,8 +229,8 @@ const writes = <C extends { op: string }>(calls: C[]) =>
 // "Add single comment" on GitHub is a review submitted at once; left pending, it would show to nobody but its author.
 test("a single comment is posted as a review submitted at once with COMMENT", async () => {
   const { client, target, calls } = fakeGitHub(undefined);
-  const store = githubCommentStore(client, target, lines, onLines);
-  await store.comment(anchor, "hi");
+  const store = githubCommentStore(client, target, lines, onLines, changes);
+  await store.comment(anchor, "hi", -1);
   expect(writes(calls).map((c) => c.op)).toEqual([
     "addPullRequestReview",
     "addPullRequestReviewThread",
@@ -230,7 +239,20 @@ test("a single comment is posted as a review submitted at once with COMMENT", as
   expect(writes(calls)[0]?.variables).toEqual({ pr: "PR", commit: "HEAD" });
   expect(writes(calls)[1]?.variables["input"]).toEqual({
     pullRequestReviewId: "R1",
-    body: "hi",
+    body: [
+      "-1: would rather not",
+      "",
+      "hi",
+      "",
+      "<details>",
+      "<summary>hihyou</summary>",
+      "",
+      "Written in hihyou on node [0] of `src/a.ts` (after side), blobs bbbbbbb → aaaaaaa.",
+      "",
+      "</details>",
+      "",
+      `<!-- hihyou {"anchor":{"side":"after","path":"src/a.ts","nodes":[[0]]},"before":"${beforeSha}","after":"${afterSha}","score":-1} -->`,
+    ].join("\n"),
     path: "src/a.ts",
     subjectType: "LINE",
     side: "RIGHT",
@@ -240,14 +262,16 @@ test("a single comment is posted as a review submitted at once with COMMENT", as
     review: "R1",
     event: "COMMENT",
   });
-  expect(store.all()).toMatchObject([{ body: "hi", pending: false }]);
+  expect(store.all()).toMatchObject([
+    { body: "-1: would rather not\n\nhi", pending: false },
+  ]);
   expect(store.reviewing()).toBe(false);
 });
 
 // GitHub allows one pending review per reviewer, so starting a second beside one begun on github.com would fail.
 test("review comments join the pending review already on GitHub and stay pending until submitted", async () => {
   const { client, target, calls } = fakeGitHub("R0");
-  const store = githubCommentStore(client, target, lines, onLines);
+  const store = githubCommentStore(client, target, lines, onLines, changes);
   await store.review(anchor, "one");
   await store.review(anchor, "two");
   expect(store.reviewing()).toBe(true);
@@ -272,7 +296,7 @@ test("review comments join the pending review already on GitHub and stay pending
 // later comment with "a review is started", though the user never started one.
 test("a single comment deletes the review it started when addThread makes no thread, so the next comment can still post", async () => {
   const { client, target, calls } = fakeGitHub(undefined, 1);
-  const store = githubCommentStore(client, target, lines, onLines);
+  const store = githubCommentStore(client, target, lines, onLines, changes);
 
   await expect(store.comment(anchor, "outside the diff")).rejects.toThrow(
     /GitHub made no thread/,
@@ -302,7 +326,7 @@ test("a single comment deletes the review it started when addThread makes no thr
 test("a submitted review carries its own event to GitHub, not COMMENT", async () => {
   for (const event of ["APPROVE", "REQUEST_CHANGES"] as const) {
     const { client, target, calls } = fakeGitHub("R0");
-    const store = githubCommentStore(client, target, lines, onLines);
+    const store = githubCommentStore(client, target, lines, onLines, changes);
     await store.review(anchor, "one");
     await store.submitReview(event);
     expect(calls.at(-1)).toEqual({
@@ -320,7 +344,7 @@ const opsOf = (calls: { op: string }[]) =>
 // would publish before the rest of the review.
 test("a single reply is a review submitted at once, and a review reply joins the pending review on the thread's id", async () => {
   const { client, target, calls } = fakeGitHub(undefined);
-  const store = githubCommentStore(client, target, lines, onLines);
+  const store = githubCommentStore(client, target, lines, onLines, changes);
   await store.comment(anchor, "thread");
   const thread = store.all()[0]?.id ?? "";
   calls.length = 0;
@@ -360,7 +384,7 @@ test("a single reply is a review submitted at once, and a review reply joins the
 // or reply with "a review is started", as 748e85d fixed for comments.
 test("a single reply deletes the review it started when GitHub makes no reply, so the next reply can still post", async () => {
   const { client, target, calls } = fakeGitHub(undefined);
-  const store = githubCommentStore(client, target, lines, onLines);
+  const store = githubCommentStore(client, target, lines, onLines, changes);
   await store.comment(anchor, "thread");
   const thread = store.all()[0]?.id ?? "";
   calls.length = 0;
@@ -386,8 +410,20 @@ test("a single reply deletes the review it started when GitHub makes no reply, s
 /** Two views of one pull request, as two tabs or a tab and a VS Code panel hold them, each listening as a view does. */
 function twoTabs(pending: string | undefined) {
   const github = fakeGitHub(pending);
-  const a = githubCommentStore(github.client, github.target, lines, onLines);
-  const b = githubCommentStore(github.client, github.target, lines, onLines);
+  const a = githubCommentStore(
+    github.client,
+    github.target,
+    lines,
+    onLines,
+    changes,
+  );
+  const b = githubCommentStore(
+    github.client,
+    github.target,
+    lines,
+    onLines,
+    changes,
+  );
   const stop = [a.subscribe(() => {}), b.subscribe(() => {})];
   return { ...github, a, b, close: () => stop.forEach((s) => s()) };
 }
@@ -478,7 +514,7 @@ test("threads already on the pull request load with replies, authors and pending
     ),
     seeded("TB", {}, ["bob", "Lines 18-30 (after):\n\nwhole function"]),
   ]);
-  const store = githubCommentStore(client, target, lines, onLines);
+  const store = githubCommentStore(client, target, lines, onLines, changes);
   await store.refresh();
   expect(store.reviewing()).toBe(true);
   expect(store.all()).toEqual([
@@ -522,7 +558,7 @@ test("a file-level, outdated, or unanchorable thread is anchored to its file's r
     throw new RangeError("src/a.ts has no syntax tree to anchor in");
   };
   const errors = vi.spyOn(console, "error").mockImplementation(() => {});
-  const store = githubCommentStore(client, target, lines, noTree);
+  const store = githubCommentStore(client, target, lines, noTree, changes);
   await store.refresh();
   expect(errors).toHaveBeenCalledTimes(1);
   errors.mockRestore();
@@ -538,10 +574,44 @@ test("a file-level, outdated, or unanchorable thread is anchored to its file's r
   ]);
 });
 
+// The hidden key is untrusted: a stale or forged one must not move a thread onto a node its blob no longer holds,
+// and without the key an outdated thread hihyou posted lost its node.
+test("a thread's hidden key restores its anchor only while its blobs match, and a malformed key shows plain", async () => {
+  const key = (before: string, extra = "") =>
+    `<!-- hihyou {"anchor":{"side":"after","path":"src/a.ts","nodes":[[1,2]]},"before":"${before}","after":"${afterSha}"${extra}} -->`;
+  const lowered = (before: string, extra?: string) =>
+    `Line 9 (after):\n\nbody\n\n<details>\n<summary>hihyou</summary>\n\nWritten in hihyou.\n\n</details>\n\n${key(before, extra)}`;
+  const { client, target } = fakeGitHub(undefined, 0, [
+    seeded("TK", { isOutdated: true, line: null }, [
+      "gina",
+      lowered(beforeSha),
+    ]),
+    seeded("TS", { line: 4 }, ["hal", lowered("c".repeat(40))]),
+    seeded("TM", { line: 5 }, ["ivy", lowered(beforeSha, ',"score":7')]),
+  ]);
+  const store = githubCommentStore(client, target, lines, onLines, changes);
+  await store.refresh();
+  expect(store.all().map((n) => [n.id, n.anchor, n.body, n.author])).toEqual([
+    [
+      "TK",
+      { side: "after", path: "src/a.ts", nodes: [[1, 2]] },
+      "body",
+      "gina",
+    ],
+    ["TS", { side: "after", path: "src/a.ts", nodes: [[9, 9]] }, "body", "hal"],
+    [
+      "TM",
+      { side: "after", path: "src/a.ts", nodes: [[9, 9]] },
+      lowered(beforeSha, ',"score":7').replace("Line 9 (after):\n\n", ""),
+      "ivy",
+    ],
+  ]);
+});
+
 // Another reviewer's new thread stayed out of an open view until it was reopened, so it could not be answered.
 test("a refresh picks up another reviewer's new thread, which a reply then answers on its own id", async () => {
   const { client, target, calls, threads } = fakeGitHub(undefined);
-  const store = githubCommentStore(client, target, lines, onLines);
+  const store = githubCommentStore(client, target, lines, onLines, changes);
   const heard = vi.fn();
   const stop = store.subscribe(heard);
   await store.refresh();

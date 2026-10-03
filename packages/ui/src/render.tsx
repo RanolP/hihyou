@@ -57,6 +57,7 @@ import { viewState } from "./whole.js";
 import {
   type KeyOf,
   plainKeyOf,
+  type Score,
   type ScoreStore,
   sessionScoreStore,
   sessionViewedStore,
@@ -167,6 +168,8 @@ function mount(
     | {
         anchor: AnchorData;
         thread?: string;
+        /** The anchored node's score when the box opened, posted with the comment as its verdict. */
+        score?: Score;
         text: string;
         sending?: boolean;
         error?: string;
@@ -496,6 +499,7 @@ function mount(
             ? comments[how === "single" ? "comment" : "review"](
                 d.anchor,
                 d.text,
+                d.score,
               )
             : comments[how === "single" ? "reply" : "reviewReply"](
                 d.thread,
@@ -693,7 +697,8 @@ function mount(
       case "comment": {
         const anchor = anchorOf(outline(), effect.at, effect.chars);
         if (!anchor) return;
-        draft = { anchor, text: "" };
+        const score = nodeScore(outline(), scores, keyOf)(effect.at);
+        draft = { anchor, text: "", ...(score !== null && { score }) };
         paintComments();
         root
           .querySelector<HTMLTextAreaElement>(".hh-comment-draft textarea")
