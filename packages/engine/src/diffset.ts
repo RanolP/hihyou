@@ -47,6 +47,7 @@ import type {
   Host,
   SerializedDiffsetId,
 } from "./host.js";
+import { type Extract, findExtracts } from "./extract.js";
 import { createInterDiffset, type InterDiffset } from "./interdiff.js";
 import { type CrossEdit, crossFileMoves } from "./move.js";
 import type { AnchorData } from "./review.js";
@@ -223,6 +224,33 @@ export async function diffFiles(
     if (!from || !to || !("mapping" in from) || !("mapping" in to)) continue;    record(c, sides[c.from]?.a, sides[c.to]?.b, from.ref, to.ref);
     for (const s of [sides[c.from], sides[c.to]]) if (s) s.touched = true;
   }
+  const scripts = prepared.map((p, i) =>
+    "mapping" in p ? editScript(p.mapping, cross.claimed[i]) : undefined,
+  );
+  const extracts = findExtracts(
+    prepared.map((p, i) => {
+      const script = scripts[i];
+      return script && "mapping" in p && p.grammar.language.name !== "json"
+        ? {
+            mapping: p.mapping,
+            edits: script.edits,
+            ...(cross.claimed[i] && { claimed: cross.claimed[i].b }),
+            b: p.b,
+            ...(p.grammar.declarations && { declarations: p.grammar.declarations }),
+          }
+        : undefined;
+    }),
+  );
+  // An extract's new declaration is its after half, no longer an insert of its own.
+  const extracted = prepared.map(() => new Set<number>());
+  for (const x of extracts) {
+    const from = prepared[x.from];
+    const to = prepared[x.to];
+    if (!from || !to || !("mapping" in from) || !("mapping" in to)) continue;
+    extracted[x.to]?.add(x.b);
+    recordExtract(x, sides[x.from]?.a, sides[x.to]?.b, from.ref, to.ref);
+    for (const s of [sides[x.from], sides[x.to]]) if (s) s.touched = true;
+  }
 
   return prepared.map((p, i): FileDiff => {
     const path = p.ref.path;
@@ -264,8 +292,8 @@ export async function diffFiles(
         ...(reason && { collapsed: { reason } }),
       };
     }
-    const script = editScript(p.mapping, cross.claimed[i]);
-    for (const e of script.edits)
+    const script = scripts[i] ?? editScript(p.mapping, cross.claimed[i]);
+    for (const e of withoutNodes(script.edits, p.b.tree, extracted[i]))
       record({ edit: e, from: i, to: i }, s.a, s.b, p.ref, p.ref, status !== undefined);
     const reason = foldReason({
       path,
@@ -429,11 +457,12 @@ function record(
 }
 
 function movePair(
-  e: RawEdit & { kind: "move" },
+  e: { a?: number; b?: number },
   a: SideInput | undefined,
   b: SideInput | undefined,
   refA: ChangedFileRef,
   refB: ChangedFileRef,
+  extract?: string,
 ): void {
   const ta = a?.v.tree;
   const tb = b?.v.tree;
@@ -443,13 +472,53 @@ function movePair(
     node: e.a,
     counterpart: { path: refB.path, at: [stepsOf(tb, e.b)] },
     ...(inFile && { twin: e.b }),
+    ...(extract !== undefined && { extract }),
   });
   b.moves.push({
     node: e.b,
     counterpart: { path: refA.oldPath ?? refA.path, at: [stepsOf(ta, e.a)] },
     ...(inFile && { twin: e.a }),
+    ...(extract !== undefined && { extract }),
   });
   pairAtom(e, a, b, atomPath(refA, refB));
+}
+
+/**
+ * An extract reads as a move from the code it replaced to the new declaration. The removed code keeps its
+ * emphasis as deleted; in the declaration only what generalized that code stands out.
+ */
+function recordExtract(
+  x: Extract,
+  a: SideInput | undefined,
+  b: SideInput | undefined,
+  refA: ChangedFileRef,
+  refB: ChangedFileRef,
+): void {
+  movePair(x, a, b, refA, refB, x.name);
+  if (!b) return;
+  for (const n of x.emphasis) {
+    const r = { start: b.v.start(n), end: b.v.end(n) };
+    b.changed.push(r);
+    b.emphasis.push(r);
+  }
+}
+
+/**
+ * `edits` without the inserts inside `nodes`, and with `nodes` cut out of the inserts holding them, the rest of
+ * each such insert kept piece by piece.
+ */
+function withoutNodes(edits: RawEdit[], tree: Tree, nodes: ReadonlySet<number> | undefined): RawEdit[] {
+  if (!nodes || nodes.size === 0) return edits;
+  const within = (n: number, m: number) => tree.start(m) <= tree.start(n) && tree.end(n) <= tree.end(m);
+  const split = (n: number): RawEdit[] => {
+    if (tree.end(n) === tree.start(n) || [...nodes].some((m) => within(n, m))) return [];
+    if (![...nodes].some((m) => within(m, n)))
+      return [{ kind: "insert", new: { start: tree.start(n), end: tree.end(n) }, node: tree.kindName(n), b: n }];
+    const out: RawEdit[] = [];
+    for (let i = 0, count = tree.count(n); i < count; i++) out.push(...split(tree.child(n, i)));
+    return out;
+  };
+  return edits.flatMap((e) => (e.kind === "insert" && e.b !== undefined ? split(e.b) : [e]));
 }
 
 const statusOf = (ref: ChangedFileRef): FileDiff["status"] =>
@@ -468,7 +537,7 @@ const atomPath = (refA: ChangedFileRef, refB: ChangedFileRef) =>
 
 /** One atom for both halves of an update or a move, under the before side's ancestors. */
 function pairAtom(
-  e: RawEdit,
+  e: RawEdit | { a?: number; b?: number },
   a: SideInput | undefined,
   b: SideInput | undefined,
   path: string,
