@@ -10,3 +10,5 @@ export const language: Language = loadLanguage(
   createScanner,
 );
 export { grammar };
+// TSX scopes names as TypeScript does; JSX tag names are already not references.
+export { scope } from "../typescript/scope.js";
