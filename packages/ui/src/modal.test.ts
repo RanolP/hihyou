@@ -4,6 +4,7 @@ import {
   atomIndex,
   atomViewed,
   type NodeOutline,
+  nodeScore,
   type Target,
   viewedOf,
 } from "./atoms.js";
@@ -16,7 +17,7 @@ import {
   modalKey,
   selectAt,
 } from "./modal.js";
-import { plainKeyOf, sessionViewedStore } from "./viewed.js";
+import { plainKeyOf, sessionScoreStore, sessionViewedStore } from "./viewed.js";
 
 const n = (
   parent: number,
@@ -24,13 +25,13 @@ const n = (
   endLine: number,
   atom?: string,
 ): NodeOutline => ({
-  steps: [],
+  steps: [line, endLine],
   parent,
   kind: "node",
   start: { line, column: 0 },
   end: { line: endLine, column: 0 },
   changed: atom !== undefined,
-  hash: "",
+  hash: atom ?? "",
   ...(atom === undefined ? {} : { atom }),
 });
 const side = (nodes: NodeOutline[]): Side => ({
@@ -317,4 +318,56 @@ test("press runs a key through the binding, writing viewed, whatever holds focus
   expect(modal.press("z")).toBe(false);
   expect(modal.press("v")).toBe(true);
   expect(viewedOf(index, d1, atomViewed(store, plainKeyOf))).toBe(true);
+});
+
+const nr = (node: number) =>
+  ({ file: 0, fragment: 1, side: "before", node }) as const;
+
+// A score on a hunk or file selection would land on no node, or `s 2` would score only the primary.
+test("s 2 scores every node selection and skips hunks", () => {
+  const hunk: Target = { kind: "hunk", file: 0, fragment: 1 };
+  const s = press({ ...emptyModal, selections: [u1, hunk, mv] }, "s");
+  expect(s.pending).toBe("s");
+  const t = modalKey(s, "2", ctxWith());
+  expect(t?.state).toEqual({ ...emptyModal, selections: [u1, hunk, mv] });
+  expect(t?.effects).toEqual([
+    { kind: "setScore", nodes: [nr(2), nr(5)], score: 2 },
+  ]);
+});
+
+// A prefix that stayed pending turned the next motion into a score, or let the stray key move the selection.
+test("a key that is not a score key after s cancels the prefix and does nothing else", () => {
+  expect(modalKey(press(at(u1), "s"), "j", ctxWith())).toEqual({
+    state: at(u1),
+    effects: [],
+  });
+});
+
+// Keyed by file/fragment/node index, a score moved to another node (or vanished) once a redraw reindexed files.
+test("a score is keyed by the node itself, so it survives a rebind onto reindexed files", () => {
+  const { root } = fakeRoot();
+  const scores = sessionScoreStore({ device: "d" });
+  const viewed = sessionViewedStore();
+  const modal = bindModal(root, { index, viewed, scores });
+  modal.set(at(mv));
+  modal.press("s");
+  modal.press("q");
+  modal.dispose();
+  const shifted = atomIndex([{ path: "0.ts", fragments: [] }, ...files]);
+  const scoreOf = nodeScore(shifted, scores, plainKeyOf);
+  expect(scoreOf({ ...nr(5), file: 1 })).toBe(-1);
+  expect(scoreOf({ ...nr(2), file: 1 })).toBe(null);
+});
+
+// The user's rule "점수를 매기지 않고 viewed 처리도 가능하게": viewed must never need, write or clear a score.
+test("v marks a node viewed while its score stays unset", () => {
+  const { root } = fakeRoot();
+  const viewed = sessionViewedStore({ device: "d" });
+  const scores = sessionScoreStore({ device: "d" });
+  const modal = bindModal(root, { index, viewed, scores });
+  modal.set(at(d1));
+  modal.press("v");
+  expect(viewedOf(index, d1, atomViewed(viewed, plainKeyOf))).toBe(true);
+  expect(nodeScore(index, scores, plainKeyOf)(nr(3))).toBe(null);
+  expect(scores.state()).toEqual({});
 });

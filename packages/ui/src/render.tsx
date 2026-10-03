@@ -9,13 +9,22 @@ import {
   untrack,
 } from "solid-js";
 import { insert } from "solid-js/web";
-import { atomIndex, atomViewed, setViewed, treeOf, viewedOf } from "./atoms.js";
+import {
+  atomIndex,
+  atomViewed,
+  type NodeRef,
+  nodeScore,
+  setViewed,
+  treeOf,
+  viewedOf,
+} from "./atoms.js";
 import {
   addAt,
   bindModal,
   emptyModal,
   type ModalBinding,
   type ModalEffect,
+  type ModalState,
   selectAt,
 } from "./modal.js";
 import { type ElidedRef, type ExpandDirection, expandStep } from "./expand.js";
@@ -25,7 +34,7 @@ import { Draw, type DrawContext } from "./view/context.js";
 import { FileSection } from "./view/file.jsx";
 import { flash } from "./view/flash.js";
 import { createPainter } from "./view/highlights.js";
-import { KeyInfo, KeyToolbar } from "./view/keys.jsx";
+import { KeyInfo, KeyToolbar, scoreText } from "./view/keys.jsx";
 import { controls, modalRoot } from "./view/modal-root.js";
 import { createPairs, type PairView } from "./view/pair.jsx";
 import { createPlacer } from "./view/placement.js";
@@ -34,6 +43,8 @@ import { viewState } from "./whole.js";
 import {
   type KeyOf,
   plainKeyOf,
+  type ScoreStore,
+  sessionScoreStore,
   sessionViewedStore,
   type ViewedStore,
 } from "./viewed.js";
@@ -63,7 +74,9 @@ export interface RenderOptions {
   theme?: Theme;
   /** Which move pairs and files are viewed; an in-session store when absent. */
   viewed?: ViewedStore;
-  /** The store's key for each viewed subject; `plainKeyOf` when absent. */
+  /** Each node's Code-Review score; an in-session store when absent. */
+  scores?: ScoreStore;
+  /** The store's key for each viewed subject and scored node; `plainKeyOf` when absent. */
   keyOf?: KeyOf;
 }
 
@@ -113,6 +126,9 @@ function mount(
   /** The viewed store changes in place; this carries its changes to the parts that show them. */
   const [viewedTick, setViewedTick] = createSignal(0);
   const unsubscribe = viewed.subscribe(() => setViewedTick((v) => v + 1));
+  const scores = opts.scores ?? sessionScoreStore();
+  const [scoreTick, setScoreTick] = createSignal(0);
+  const unsubscribeScores = scores.subscribe(() => setScoreTick((v) => v + 1));
   const outline = createMemo(() => atomIndex(files()));
 
   let shownPath: string | undefined;
@@ -249,6 +265,20 @@ function mount(
   let clicking = false;
   const [hasSelection, setHasSelection] = createSignal(false);
   const [keyInfo, setKeyInfo] = createSignal(false);
+  const [pending, setPending] = createSignal<"s">();
+  const [primary, setPrimary] = createSignal<NodeRef>();
+  const primaryScore = () => {
+    scoreTick();
+    const p = primary();
+    return p ? nodeScore(outline(), scores, keyOf)(p) : null;
+  };
+  /** Mirrors the modal state into the signals the toolbar and the info box read. */
+  const showModal = (s: ModalState) => {
+    setHasSelection(s.selections.length > 0);
+    setPending(s.pending);
+    const p = s.selections[s.primary];
+    setPrimary(p?.kind === "node" ? p : undefined);
+  };
   /** A toolbar button runs its key with focus on the root, where the modal editor reads keys. */
   const press = (key: string) => {
     root.focus({ preventScroll: true });
@@ -280,7 +310,44 @@ function mount(
           a.occurrences.flatMap((o) => painter.nodeRanges(index, o)),
         ),
     );
+    paintScores();
     paintSelection();
+  };
+  /** Each scored node is underlined (solid for plus, wavy for minus) and badged with its signed score. */
+  const paintScores = () => {
+    const index = outline();
+    const scoreOf = nodeScore(index, scores, keyOf);
+    const plus: Range[] = [];
+    const minus: Range[] = [];
+    for (const b of root.querySelectorAll(".hh-score-badge")) b.remove();
+    index.hunks.flat().forEach((h) => {
+      for (const side of ["before", "after"] as const)
+        h[side].nodes.forEach((_, node) => {
+          const ref = { file: h.file, fragment: h.fragment, side, node };
+          const score = scoreOf(ref);
+          if (score === null) return;
+          const ranges = painter.nodeRanges(index, ref);
+          (score > 0 ? plus : minus).push(...ranges);
+          const first = ranges[0];
+          const scroll =
+            first?.startContainer.parentElement?.closest<HTMLElement>(
+              ".hh-scroll",
+            );
+          if (!first || !scroll) return;
+          const at = first.getBoundingClientRect();
+          const origin = scroll.getBoundingClientRect();
+          const badge = doc.createElement("span");
+          badge.className = `hh-score-badge hh-score-${score > 0 ? "plus" : "minus"}`;
+          badge.textContent = scoreText(score);
+          Object.assign(badge.style, {
+            top: `${at.top - origin.top + scroll.scrollTop}px`,
+            left: `${at.right - origin.left + scroll.scrollLeft + 4}px`,
+          });
+          scroll.append(badge);
+        });
+    });
+    painter.set("hh-score-plus", plus);
+    painter.set("hh-score-minus", minus);
   };
   const scrollToPrimary = () => {
     const s = modal?.state();
@@ -393,13 +460,14 @@ function mount(
     createEffect(() => {
       list();
       viewedTick();
+      scoreTick();
       untrack(paint);
     });
     return (
       <div class="hh-diff">
-        <KeyToolbar shown={hasSelection} press={press} />
+        <KeyToolbar shown={hasSelection} press={press} score={primaryScore} />
         {list()}
-        <KeyInfo open={keyInfo} />
+        <KeyInfo open={keyInfo} pending={pending} />
       </div>
     );
   };
@@ -462,16 +530,17 @@ function mount(
       modal = bindModal(keys, {
         index,
         viewed,
+        scores,
         keyOf,
         initial: state,
         onChange: (s) => {
-          setHasSelection(s.selections.length > 0);
+          showModal(s);
           paintSelection();
           if (!clicking) scrollToPrimary();
         },
         onEffect,
       });
-      setHasSelection(state.selections.length > 0);
+      showModal(state);
     });
   });
 
@@ -497,6 +566,7 @@ function mount(
     shown: () => (single ? shownPath : undefined),
     dispose() {
       unsubscribe();
+      unsubscribeScores();
       root.removeEventListener("click", onClick);
       root.removeEventListener("keydown", onKey);
       modal?.dispose();

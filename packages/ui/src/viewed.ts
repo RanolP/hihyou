@@ -39,34 +39,101 @@ export function hybridClock(now: () => number = Date.now): HybridClock {
   };
 }
 
-/** Un-viewing is an entry with `viewed: false`, so it can win over an earlier view on another replica. */
-export interface ViewedEntry {
-  viewed: boolean;
+/** When and where an entry was written: the order a last-writer-wins merge keeps. */
+export interface Stamp {
   ts: Hlc;
   /** The replica that wrote it; breaks a tie between equal timestamps. */
   device: string;
 }
 
-export type ViewedState = Readonly<Record<string, ViewedEntry>>;
-
-/** Larger timestamp, then larger device; `viewed` only orders two copies of one malformed write. */
-const newer = (a: ViewedEntry, b: ViewedEntry): ViewedEntry => {
-  const c =
-    compareHlc(a.ts, b.ts) ||
-    (a.device === b.device ? 0 : a.device > b.device ? 1 : -1) ||
-    Number(a.viewed) - Number(b.viewed);
-  return c >= 0 ? a : b;
-};
+/** Larger timestamp, then larger device; `rank` only orders two copies of one malformed write. */
+const newerBy =
+  <E extends Stamp>(rank: (e: E) => number) =>
+  (a: E, b: E): E => {
+    const c =
+      compareHlc(a.ts, b.ts) ||
+      (a.device === b.device ? 0 : a.device > b.device ? 1 : -1) ||
+      rank(a) - rank(b);
+    return c >= 0 ? a : b;
+  };
 
 /** Per key, the newer entry: commutative, associative and idempotent. */
-export function mergeViewed(a: ViewedState, b: ViewedState): ViewedState {
-  const out: Record<string, ViewedEntry> = { ...a };
+function mergeBy<E extends Stamp>(
+  a: Readonly<Record<string, E>>,
+  b: Readonly<Record<string, E>>,
+  rank: (e: E) => number,
+): Readonly<Record<string, E>> {
+  const newer = newerBy(rank);
+  const out: Record<string, E> = { ...a };
   for (const [key, entry] of Object.entries(b)) {
     const mine = out[key];
     out[key] = mine ? newer(mine, entry) : entry;
   }
   return out;
 }
+
+/** The in-session store behind `ViewedStore` and `ScoreStore`; a key with no entry reads as `cleared`. */
+function sessionLww<V, E extends Stamp>(
+  opts: SessionStoreOptions,
+  codec: {
+    cleared: V;
+    read: (e: E) => V;
+    write: (value: V, stamp: Stamp) => E;
+    rank: (e: E) => number;
+  },
+) {
+  const device = opts.device ?? randomId();
+  const clock = hybridClock(opts.now);
+  let state: Readonly<Record<string, E>> = {};
+  const listeners = new Set<() => void>();
+  const notify = () => {
+    for (const l of listeners) l();
+  };
+  const read = (from: Readonly<Record<string, E>>, key: string): V => {
+    const e = from[key];
+    return e ? codec.read(e) : codec.cleared;
+  };
+  const get = (key: string) => read(state, key);
+  return {
+    get,
+    setMany(keys: readonly string[], value: V) {
+      const next: Record<string, E> = { ...state };
+      let changed = false;
+      for (const key of keys) {
+        if (get(key) === value) continue;
+        next[key] = codec.write(value, { ts: clock.tick(), device });
+        changed = true;
+      }
+      if (!changed) return;
+      state = next;
+      notify();
+    },
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    merge(remote: Readonly<Record<string, E>>) {
+      for (const entry of Object.values(remote)) clock.receive(entry.ts);
+      const before = state;
+      state = mergeBy(state, remote, codec.rank);
+      if (Object.keys(state).some((k) => read(state, k) !== read(before, k)))
+        notify();
+    },
+    state: () => state,
+  };
+}
+
+/** Un-viewing is an entry with `viewed: false`, so it can win over an earlier view on another replica. */
+export interface ViewedEntry extends Stamp {
+  viewed: boolean;
+}
+
+export type ViewedState = Readonly<Record<string, ViewedEntry>>;
+
+const viewedRank = (e: ViewedEntry) => Number(e.viewed);
+
+export const mergeViewed = (a: ViewedState, b: ViewedState): ViewedState =>
+  mergeBy(a, b, viewedRank);
 
 /**
  * Where viewed state lives. Stage 1 keeps it for the open review only; a persistent adapter (a gist) reads,
@@ -93,44 +160,47 @@ export interface SessionStoreOptions {
 export function sessionViewedStore(
   opts: SessionStoreOptions = {},
 ): ViewedStore {
-  const device = opts.device ?? randomId();
-  const clock = hybridClock(opts.now);
-  let state: ViewedState = {};
-  const listeners = new Set<() => void>();
-  const notify = () => {
-    for (const l of listeners) l();
-  };
-  const setMany = (keys: readonly string[], viewed: boolean) => {
-    const next: Record<string, ViewedEntry> = { ...state };
-    let changed = false;
-    for (const key of keys) {
-      if ((next[key]?.viewed ?? false) === viewed) continue;
-      next[key] = { viewed, ts: clock.tick(), device };
-      changed = true;
-    }
-    if (!changed) return;
-    state = next;
-    notify();
-  };
-  return {
-    get: (key) => state[key]?.viewed ?? false,
-    set: (key, viewed) => setMany([key], viewed),
-    setMany,
-    subscribe(listener) {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    merge(remote) {
-      for (const entry of Object.values(remote)) clock.receive(entry.ts);
-      const next = mergeViewed(state, remote);
-      const changed = Object.keys(next).some(
-        (k) => next[k]?.viewed !== (state[k]?.viewed ?? false),
-      );
-      state = next;
-      if (changed) notify();
-    },
-    state: () => state,
-  };
+  const lww = sessionLww<boolean, ViewedEntry>(opts, {
+    cleared: false,
+    read: (e) => e.viewed,
+    write: (viewed, stamp) => ({ viewed, ...stamp }),
+    rank: viewedRank,
+  });
+  return { ...lww, set: (key, viewed) => lww.setMany([key], viewed) };
+}
+
+/** Gerrit's Code-Review scale: -2 must not merge, -1 would rather not, +1 looks good to me, +2 good to merge. */
+export type Score = -2 | -1 | 1 | 2;
+
+/** Clearing a score is an entry with `score: null`, so it wins over an earlier score on another replica. */
+export interface ScoreEntry extends Stamp {
+  score: Score | null;
+}
+
+export type ScoreState = Readonly<Record<string, ScoreEntry>>;
+
+const scoreRank = (e: ScoreEntry) => e.score ?? 0;
+
+export const mergeScores = (a: ScoreState, b: ScoreState): ScoreState =>
+  mergeBy(a, b, scoreRank);
+
+/** Code-Review scores per AST node, kept and merged as `ViewedStore` keeps viewed marks. */
+export interface ScoreStore {
+  /** `null` when the key was never scored or its score was cleared. */
+  get(key: string): Score | null;
+  setMany(keys: readonly string[], score: Score | null): void;
+  subscribe(listener: () => void): () => void;
+  merge(remote: ScoreState): void;
+  state(): ScoreState;
+}
+
+export function sessionScoreStore(opts: SessionStoreOptions = {}): ScoreStore {
+  return sessionLww<Score | null, ScoreEntry>(opts, {
+    cleared: null,
+    read: (e) => e.score,
+    write: (score, stamp) => ({ score, ...stamp }),
+    rank: scoreRank,
+  });
 }
 
 const randomId = () =>
@@ -160,7 +230,19 @@ export type ViewedSubject =
    * One edit atom, by the engine's id for it. Both halves of an update or a move carry the same id, so viewing
    * either half, in either file, marks the other.
    */
-  | { kind: "atom"; atom: string };
+  | { kind: "atom"; atom: string }
+  /**
+   * One outline node, for its Code-Review score. `steps` place it as a thread's anchor does, so the key holds no
+   * file, fragment or node index and survives a redraw; `hash` covers its tokens (whitespace skipped), so a node
+   * whose code changes in a later version reads unscored, as a file's new blobs read unviewed.
+   */
+  | {
+      kind: "node";
+      path: string;
+      side: "before" | "after";
+      steps: readonly number[];
+      hash: string;
+    };
 
 /**
  * Turns a subject into the store's key. Every key goes through one of these, so a persistent store can swap in
@@ -182,6 +264,8 @@ const fnv = (text: string) => {
 export const plainKeyOf: KeyOf = (s) => {
   if (s.kind === "file") return `file\0${s.path}\0${s.before}\0${s.after}`;
   if (s.kind === "atom") return `atom\0${s.atom}`;
+  if (s.kind === "node")
+    return `node\0${s.path}\0${s.side}\0${s.steps.join(".")}\0${s.hash}`;
   const half = (h?: ViewedHalf) =>
     h ? `${h.path}:${h.first}-${h.last}:${fnv(h.text)}` : "";
   return `move\0${half(s.before)}\0${half(s.after)}`;

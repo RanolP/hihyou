@@ -1,5 +1,11 @@
 import type { FileDiff, NodeOutline } from "@hihyou/engine";
-import type { KeyOf, ViewedStore } from "./viewed.js";
+import type {
+  KeyOf,
+  Score,
+  ScoreStore,
+  ViewedStore,
+  ViewedSubject,
+} from "./viewed.js";
 
 export type { NodeOutline };
 
@@ -160,6 +166,40 @@ export function setViewed(
     viewed,
     store,
     keyOf,
+  );
+}
+
+/** The subject a node's score is filed under; `undefined` for a ref that names no node. */
+export function nodeSubject(
+  index: AtomIndex,
+  ref: NodeRef,
+): ViewedSubject | undefined {
+  const path = index.files[ref.file]?.path;
+  const n = treeOf(index, ref)?.nodes[ref.node];
+  if (path === undefined || !n) return undefined;
+  return { kind: "node", path, side: ref.side, steps: n.steps, hash: n.hash };
+}
+
+export const nodeScore =
+  (index: AtomIndex, store: ScoreStore, keyOf: KeyOf) =>
+  (ref: NodeRef): Score | null => {
+    const s = nodeSubject(index, ref);
+    return s ? store.get(keyOf(s)) : null;
+  };
+
+export function writeScores(
+  index: AtomIndex,
+  nodes: readonly NodeRef[],
+  score: Score | null,
+  store: ScoreStore,
+  keyOf: KeyOf,
+): void {
+  store.setMany(
+    nodes.flatMap((r) => {
+      const s = nodeSubject(index, r);
+      return s ? [keyOf(s)] : [];
+    }),
+    score,
   );
 }
 
