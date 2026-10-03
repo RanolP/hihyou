@@ -219,6 +219,57 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 @media (prefers-reduced-motion: reduce) {
   .hh-flash-box { background: var(--hh-flash); animation: hh-fade 1.2s ease-out forwards; }
 }
+/* Every key action as a button, its key as the hint; it stays in reach while a selection does. */
+.hh-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 8px;
+  padding: 4px;
+  background: var(--hh-header-bg);
+  border: 1px solid var(--hh-border);
+  border-radius: 4px;
+}
+.hh-tool {
+  font: inherit;
+  font-size: 0.9em;
+  color: var(--hh-fg);
+  background: var(--hh-bg);
+  border: 1px solid var(--hh-border);
+  border-radius: 3px;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+.hh-tool:hover { border-color: var(--hh-accent); }
+.hh-tool:focus-visible { outline: 1px solid var(--hh-accent); outline-offset: 1px; }
+.hh-toolbar kbd, .hh-keyinfo kbd {
+  font-family: var(--hh-mono);
+  font-size: 0.9em;
+  padding: 0 3px;
+  color: var(--hh-muted);
+  border: 1px solid var(--hh-border);
+  border-radius: 3px;
+}
+/* Kakoune's info box: bottom right, over the code, listing the keys that can follow. */
+.hh-keyinfo {
+  position: sticky;
+  bottom: 8px;
+  z-index: 3;
+  width: fit-content;
+  margin: 0 8px 0 auto;
+  padding: 6px 10px;
+  display: flex;
+  gap: 16px;
+  background: var(--hh-header-bg);
+  border: 1px solid var(--hh-border);
+  border-radius: 4px;
+}
+.hh-keyinfo-title { margin: 0 0 4px; font-size: 1em; font-weight: 600; }
+.hh-keyinfo dl { display: grid; grid-template-columns: auto auto; gap: 2px 8px; margin: 0; }
+.hh-keyinfo dd { margin: 0; }
 .hh-sr {
   position: absolute;
   width: 1px;

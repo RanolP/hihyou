@@ -16,7 +16,7 @@ import {
 import { type KeyOf, plainKeyOf, type ViewedStore } from "./viewed.js";
 
 export interface ModalState {
-  /** Insert mode (for comments) has no transitions yet. */
+  /** "insert" while an editable field inside the root has focus: review keys type into it, Escape leaves it. */
   mode: "normal" | "insert";
   selections: Target[];
   /** Index into `selections`. */
@@ -31,7 +31,9 @@ export type ModalEffect =
   | { kind: "expandElided"; file: number; fragment: number }
   /** The selection moved into another file; bring it into view. */
   | { kind: "jump"; to: Target }
-  | { kind: "leave" };
+  | { kind: "leave" }
+  /** `?`: show or hide the key table. */
+  | { kind: "help" };
 
 export interface Transition {
   state: ModalState;
@@ -215,6 +217,30 @@ const keepPrimary = (s: ModalState): ModalState => {
 const only = (s: ModalState, t: Target | undefined): ModalState =>
   t ? { ...s, selections: [t], primary: 0 } : s;
 
+/** The new target joins the selections as primary; one already selected just becomes primary. */
+function add(s: ModalState, t: Target | undefined): ModalState {
+  if (!t) return s;
+  const k = keyOfTarget(t);
+  const at = s.selections.findIndex((x) => keyOfTarget(x) === k);
+  return at >= 0
+    ? { ...s, primary: at }
+    : {
+        ...s,
+        selections: [...s.selections, t],
+        primary: s.selections.length,
+      };
+}
+
+/** Kakoune's Shift extends: each adds its lowercase motion's target, taken from the primary. */
+const extensions: Record<string, string> = {
+  J: "j",
+  K: "k",
+  "}": "]",
+  "{": "[",
+  N: "n",
+  P: "p",
+};
+
 const motions: Record<
   string,
   (ctx: ModalContext, t: Target) => Target | undefined
@@ -245,6 +271,12 @@ export function modalKey(
     state,
     effects,
   });
+  const extended = extensions[key];
+  if (extended !== undefined) {
+    const p = s.selections[s.primary];
+    if (!p) return modalKey(s, extended, ctx);
+    return done(add(s, motions[extended]?.(ctx, p)));
+  }
   const motion = motions[key];
   if (motion) {
     if (s.selections.length === 0) {
@@ -265,6 +297,21 @@ export function modalKey(
     }
     case ",":
       return done(keepPrimary(s));
+    case ")":
+    case "(": {
+      const len = s.selections.length;
+      if (len === 0) return done(s);
+      const by = key === ")" ? 1 : len - 1;
+      return done({ ...s, primary: (s.primary + by) % len });
+    }
+    case "-": {
+      const len = s.selections.length;
+      if (len <= 1) return done(s);
+      const selections = s.selections.filter((_, i) => i !== s.primary);
+      return done({ ...s, selections, primary: s.primary % (len - 1) });
+    }
+    case "?":
+      return done(s, [{ kind: "help" }]);
     case "Escape":
       return done(keepPrimary(s), [{ kind: "leave" }]);
     case "v": {
@@ -342,13 +389,9 @@ export interface Point {
   column: number;
 }
 
-/** A click: the innermost changed node containing the point, else the hunk, else the state unchanged. */
-export function selectAt(
-  s: ModalState,
-  index: AtomIndex,
-  at: Point,
-): ModalState {
-  if (!hunkOf(index, at.file, at.fragment)) return s;
+/** The innermost changed node containing the point, else the hunk, else nothing outside a hunk. */
+function targetAt(index: AtomIndex, at: Point): Target | undefined {
+  if (!hunkOf(index, at.file, at.fragment)) return undefined;
   const tree = treeOf(index, at);
   const p = [at.line, at.column];
   let best: number | undefined;
@@ -361,18 +404,58 @@ export function selectAt(
     for (let q = n.parent; q >= 0; q = tree.nodes[q]?.parent ?? -1) depth++;
     if (depth > bestDepth) [best, bestDepth] = [i, depth];
   });
-  return only(
-    { ...s, mode: "normal" },
-    best === undefined
-      ? { kind: "hunk", file: at.file, fragment: at.fragment }
-      : node({
-          file: at.file,
-          fragment: at.fragment,
-          side: at.side,
-          node: best,
-        }),
-  );
+  return best === undefined
+    ? { kind: "hunk", file: at.file, fragment: at.fragment }
+    : node({ file: at.file, fragment: at.fragment, side: at.side, node: best });
 }
+
+/** A click: the target at the point becomes the only selection; the state is unchanged outside a hunk. */
+export function selectAt(
+  s: ModalState,
+  index: AtomIndex,
+  at: Point,
+): ModalState {
+  const t = targetAt(index, at);
+  return t ? only({ ...s, mode: "normal" }, t) : s;
+}
+
+/** A Shift+click: the target at the point joins the selections as primary. */
+export function addAt(s: ModalState, index: AtomIndex, at: Point): ModalState {
+  const t = targetAt(index, at);
+  return t ? add({ ...s, mode: "normal" }, t) : s;
+}
+
+export const modalKeymap: readonly {
+  key: string;
+  label: string;
+  group: "move" | "extend" | "act";
+}[] = [
+  { key: "j", label: "next change", group: "move" },
+  { key: "k", label: "previous change", group: "move" },
+  { key: "]", label: "next unviewed", group: "move" },
+  { key: "[", label: "previous unviewed", group: "move" },
+  { key: "o", label: "expand to parent", group: "move" },
+  { key: "i", label: "shrink to child", group: "move" },
+  { key: "n", label: "next sibling", group: "move" },
+  { key: "p", label: "previous sibling", group: "move" },
+  { key: "x", label: "select hunk", group: "move" },
+  { key: "g", label: "go to counterpart", group: "move" },
+  { key: "%", label: "select whole file", group: "extend" },
+  { key: "J", label: "add next change", group: "extend" },
+  { key: "K", label: "add previous change", group: "extend" },
+  { key: "}", label: "add next unviewed", group: "extend" },
+  { key: "{", label: "add previous unviewed", group: "extend" },
+  { key: "N", label: "add next sibling", group: "extend" },
+  { key: "P", label: "add previous sibling", group: "extend" },
+  { key: ")", label: "rotate primary forward", group: "extend" },
+  { key: "(", label: "rotate primary backward", group: "extend" },
+  { key: "-", label: "drop primary selection", group: "extend" },
+  { key: ",", label: "keep only primary", group: "extend" },
+  { key: "v", label: "toggle viewed", group: "act" },
+  { key: "Enter", label: "expand move or context", group: "act" },
+  { key: "?", label: "toggle this help", group: "act" },
+  { key: "Escape", label: "leave review keys", group: "act" },
+];
 
 /** The few members of an element the binding uses, so a test can hand in a plain object. */
 export interface ModalRoot {
@@ -400,8 +483,14 @@ export interface ModalBinding {
   state(): ModalState;
   /** Replaces the state, as a click does through `selectAt`. */
   set(state: ModalState): void;
+  /** Runs one key as a keydown inside the root would, whatever has focus; `false` when it is unbound. */
+  press(key: string): boolean;
   dispose(): void;
 }
+
+const editable = (el: Element) =>
+  ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName) ||
+  (el as Partial<HTMLElement>).isContentEditable === true;
 
 /** Handles keys only while focus is inside `root`, and never a key combined with Ctrl, Meta or Alt. */
 export function bindModal(
@@ -418,6 +507,29 @@ export function bindModal(
     state = next;
     opts.onChange?.(state);
   };
+  const press = (key: string) => {
+    const active = root.ownerDocument.activeElement;
+    const blur = () => (active as Partial<HTMLElement> | null)?.blur?.();
+    const mode =
+      active && root.contains(active) && editable(active) ? "insert" : "normal";
+    if (state.mode !== mode) set({ ...state, mode });
+    if (mode === "insert") {
+      if (key !== "Escape") return false;
+      blur();
+      set({ ...state, mode: "normal" });
+      return true;
+    }
+    const t = modalKey(state, key, ctx);
+    if (!t) return false;
+    if (t.state !== state) set(t.state);
+    for (const effect of t.effects) {
+      if (effect.kind === "setViewed")
+        writeAtoms(effect.atoms, effect.viewed, opts.viewed, keyOf);
+      if (effect.kind === "leave") blur();
+      opts.onEffect?.(effect);
+    }
+    return true;
+  };
   const onKey = (e: KeyboardEvent) => {
     if (
       e.ctrlKey ||
@@ -429,21 +541,13 @@ export function bindModal(
       return;
     const active = root.ownerDocument.activeElement;
     if (!active || !root.contains(active)) return;
-    const t = modalKey(state, e.key, ctx);
-    if (!t) return;
-    e.preventDefault();
-    if (t.state !== state) set(t.state);
-    for (const effect of t.effects) {
-      if (effect.kind === "setViewed")
-        writeAtoms(effect.atoms, effect.viewed, opts.viewed, keyOf);
-      if (effect.kind === "leave") (active as Partial<HTMLElement>).blur?.();
-      opts.onEffect?.(effect);
-    }
+    if (press(e.key)) e.preventDefault();
   };
   root.addEventListener("keydown", onKey);
   return {
     state: () => state,
     set,
+    press,
     dispose: () => root.removeEventListener("keydown", onKey),
   };
 }

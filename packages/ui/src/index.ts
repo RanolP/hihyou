@@ -39,6 +39,7 @@ export {
   writeAtoms,
 } from "./atoms.js";
 export {
+  addAt,
   bindModal,
   emptyModal,
   type ModalBinding,
@@ -46,6 +47,7 @@ export {
   type ModalContext,
   type ModalEffect,
   modalKey,
+  modalKeymap,
   type ModalRoot,
   type ModalState,
   type Point,
