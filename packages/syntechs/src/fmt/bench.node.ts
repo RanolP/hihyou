@@ -8,6 +8,11 @@
 // `--json` also writes each language's totals (the numbers its verdict line prints), with the commit and tool
 // versions, for the website's scorecard; stdout stays the same.
 //
+//   node packages/syntechs/dist/fmt/bench.node.js --merge <partial.json...> --json <path>
+//
+// `--merge` measures nothing: it joins the `--json` files of one-language runs (CI times each language on its own
+// runner) into the file a run over every language writes, groups in this file's order.
+//
 // Every tool is timed the same way, folder level: the inputs are written to a temp dir once, then per pass the
 // unformatted copies are restored and ONE whole-process CLI invocation formats the directory in place (2
 // warmups, median of 5). oxfmt and prettier run their own bin/ script under this Node (`--write`, print width
@@ -46,7 +51,12 @@ import type { Language as Grammar } from "../core/language.js";
 import { check } from "./check.js";
 import { ktfmt, ktfmtJar } from "./conformance/ktfmt.node.js";
 import { oxfmt, versionOf } from "./conformance/references.node.js";
-import { jsonPathArg, runInfo, writeJson } from "./conformance/report.node.js";
+import {
+  jsonPathArg,
+  mergeRuns,
+  runInfo,
+  writeJson,
+} from "./conformance/report.node.js";
 import { PRETTIER_FIXTURES, TARGETS } from "./conformance.node.js";
 import { format } from "./format.js";
 import type { Language } from "./rules.js";
@@ -314,6 +324,17 @@ async function main() {
       args[i - 1] !== "--ruff" &&
       args[i - 1] !== "--json",
   );
+  if (args.includes("--merge")) {
+    if (!json) throw new Error("--merge needs --json <path> to write");
+    writeJson(
+      json,
+      mergeRuns(
+        wanted,
+        GROUPS.map((g) => g.id),
+      ),
+    );
+    return;
+  }
   const results: GroupResult[] = [];
   const tools: Record<string, string> = {};
   const rows: string[] = [];
