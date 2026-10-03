@@ -131,6 +131,8 @@ export interface SideInput {
   wholes: WholeMark[];
   /** The grammar's `Grammar.declarations`: the node kinds a whole unit may be. */
   declarations?: ReadonlySet<string>;
+  /** The grammar's `Grammar.containers`: the node kinds whose members are whole like top-level nodes. */
+  containers?: ReadonlySet<string>;
 }
 
 export interface FragmentInput {
@@ -467,19 +469,21 @@ function declarationLabel(tree: Tree, n: number): string | undefined {
 }
 
 /**
- * Whether an inserted or deleted `n` reads as one unit: a top-level node of one of the grammar's declaration
- * `kinds`, reached through wrappers holding nothing else (`export`), filling its lines but for a trailing `;` or
- * `,`. `label` is what it declares, as `begin` reads it, when it names one. Undefined for anything else, such as
- * an added argument, a JSX element, a local variable or method, or a declaration sharing its line with other code.
+ * Whether an inserted or deleted `n` reads as one unit: a node of one of the grammar's declaration `kinds`, at
+ * top level or a member of a class-like `containers` node that itself sits so, reached through wrappers holding
+ * nothing else (`export`), filling its lines but for a trailing `;` or `,`. `label` is what it declares, as
+ * `begin` reads it, when it names one. Undefined for anything else, such as an added argument, a JSX element, a
+ * local variable or function, or a declaration sharing its line with other code.
  */
 export function wholeDeclaration(
   v: Version,
   tree: Tree,
   n: number,
   kinds: ReadonlySet<string> | undefined,
+  containers: ReadonlySet<string> | undefined,
 ): { label?: string } | undefined {
-  // A local `const` or a method is one more statement in code that stayed, so only a top-level one is the change.
-  if (!kinds || tree.parent(n) !== tree.root) return undefined;
+  // A local `const` is one more statement in code that stayed, so only a top-level one or a member is the change.
+  if (!kinds || !topOrMember(tree, n, containers)) return undefined;
   const before = v.text.slice(v.lineStarts[lineOf(v, v.start(n))], v.start(n));
   const last = lineOf(v, Math.max(v.start(n), v.end(n) - 1));
   const after = v.text.slice(v.end(n), lineEnd(v, last));
@@ -495,6 +499,24 @@ export function wholeDeclaration(
     if (only === undefined) return undefined;
     m = only;
   }
+}
+
+/**
+ * Whether `n` sits at top level or in the body of a `containers` node that itself does, each container reached
+ * through wrappers holding nothing else (`export`). Any other ancestor, such as a function body, makes `n` local.
+ */
+function topOrMember(tree: Tree, n: number, containers: ReadonlySet<string> | undefined): boolean {
+  for (let body = tree.parent(n); body !== tree.root; ) {
+    let child = tree.parent(body);
+    if (!containers?.has(tree.kindName(child))) return false;
+    body = tree.parent(child);
+    while (body !== tree.root && !containers.has(tree.kindName(tree.parent(body)))) {
+      if (onlyNamedChild(tree, body) !== child) return false;
+      child = body;
+      body = tree.parent(body);
+    }
+  }
+  return true;
 }
 
 function onlyNamedChild(tree: Tree, n: number): number | undefined {
