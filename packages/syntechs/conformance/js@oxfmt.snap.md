@@ -1,4 +1,4 @@
-js@oxfmt compatibility: 950/964 (98.55%), 2 refused (ok:false), 190 excluded
+js@oxfmt compatibility: 952/964 (98.76%), 0 refused (ok:false), 190 excluded
 
 Fixtures: prettier 3.9.9 tests/format/{js,jsx} (recursive), every spec call listing parser `babel` or `acorn` or `espree` or `meriyah` or `oxc`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left.
 
@@ -27,8 +27,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| js/_errors_/html-like-comments.js | 1/1 | 28.57% | check: input "<!-- comment" at 49 is output as "\"hello world\"" at 48, which means "str:hello world@\|0/4", not "<!-- co |
-| js/comments/html-like/comment.js | 1/1 | 50.00% | check: input "<!--" at 0 is output as "alert" at 0, which means "alert@function\|0/3", not "<!--@\|0/1" |
 
 # Excluded
 
