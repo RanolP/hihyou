@@ -1199,6 +1199,7 @@ export function atRule(node: number, ctx: SCtx): void {
   if (isDirective(node, ctx)) return sassDirective(node, ctx);
   if (placeholderStatement(node, ctx)) return;
   if (unknownAtRule(node, ctx.tree)) return verbatimAtRule(node, ctx);
+  if (documentAtRule(node, ctx.tree)) return verbatimAtRule(node, ctx, !matchList(node, ctx.tree));
   const own = (c: number) => kind(c, ctx) === "at_keyword" || kind(c, ctx) === "block";
   const block = (c: number) => kind(c, ctx) === "block";
   const comma = (c: number) => kind(c, ctx) === ",";
@@ -1241,13 +1242,33 @@ function unknownAtRule(node: number, t: FormatTree): boolean {
   return !["import", "use", "forward", "media", "custom-media"].includes(lower);
 }
 
+/** `@document` or `@-moz-document`, whose prelude oxfmt prints as written. */
+const documentAtRule = (node: number, t: FormatTree) =>
+  t.kindName(node) === "at_rule" && /^@(?:-moz-)?document$/i.test(t.text(t.child(node, 0)));
+
+/**
+ * Whether a `@document` prelude is what oxc-css-parser reads as one: functions (`url(…)`, `domain(…)`, any name)
+ * separated by commas, comments among them. Anything else it reads as `Unknown`, as an unknown at-rule's.
+ */
+function matchList(node: number, t: FormatTree): boolean {
+  let want = "call_expression";
+  for (const c of children(node, t).slice(1)) {
+    const k = t.kindName(c);
+    if (k === "block" || k === ";") break;
+    if (k === "comment") continue;
+    if (k !== want) return false;
+    want = want === "," ? "call_expression" : ",";
+  }
+  return want === ",";
+}
+
 /**
  * oxc's `write_verbatim_at_rule_tail`: the name lowercased, the prelude as written but the gaps at its ends, a space
  * before it unless it is glued to the name and opens with no `(`, then ` {…}` or `;`. A `//` on the prelude's last
  * line, even in a string, puts the `{` on a line of its own, as prettier's printer does for a prelude it could not
  * parse (`@foo url('http://a')⏎{`).
  */
-function verbatimAtRule(node: number, ctx: SCtx): void {
+function verbatimAtRule(node: number, ctx: SCtx, slashesBreak = true): void {
   const t = ctx.tree;
   const [keyword, ...rest] = children(node, t);
   if (keyword === undefined) return;
@@ -1263,7 +1284,7 @@ function verbatimAtRule(node: number, ctx: SCtx): void {
     const k = kind(c, ctx);
     if (k === "block") {
       // The prelude's last comment attaches to the block as leading; it printed with the prelude.
-      if (line.includes("//")) sHardline();
+      if (slashesBreak && line.includes("//")) sHardline();
       else sText(" ");
       ctx.printNode(c);
       printTrailingComments(ctx, c);
