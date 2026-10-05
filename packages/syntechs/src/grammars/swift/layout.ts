@@ -1232,7 +1232,7 @@ export function statementTokens(
     }
     width = 0;
     skip = trailingComment(i);
-    if (skip !== undefined) append(tk.space), append(tk.comment(tree.text(skip))), append(tk.brk({ k: "same" }, 0));
+    if (skip !== undefined) for (const t of [tk.space, tk.comment(tree.text(skip)), tk.brk({ k: "same" }, 0)]) append(t);
     for (const group of [...(after.get(l) ?? [])].reverse())
       for (const t of group) {
         append(t);
