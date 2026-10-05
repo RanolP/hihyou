@@ -606,3 +606,18 @@ on upstream tree-sitter-javascript 0.23.1's grammar.js, not on the patched tree-
              // Insert a semicolon before `--` and `++`, but not before binary `+` or `-`.
          case '+':
              skip(lexer);
+@@ -331,8 +375,14 @@
+         bool ret = scan_automatic_semicolon(lexer, valid_symbols, &scanned_comment);
+         if (!ret && !scanned_comment && valid_symbols[TERNARY_QMARK] && lexer->lookahead == '?') {
+             return scan_ternary_qmark(lexer);
+         }
++        // Annex B's `<!--` after an expression on its line (`a <!-- c`) opens a comment, as oxfmt reads it, not
++        // `a < !--c`.
++        if (!ret && !scanned_comment && lexer->lookahead == '<' && valid_symbols[HTML_COMMENT] &&
++            !valid_symbols[ESCAPE_SEQUENCE] && !valid_symbols[REGEX_PATTERN]) {
++            return scan_closing_comment(lexer);
++        }
+         return ret;
+     }
+     if (valid_symbols[TERNARY_QMARK]) {
+         return scan_ternary_qmark(lexer);

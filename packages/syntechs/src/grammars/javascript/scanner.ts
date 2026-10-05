@@ -273,6 +273,9 @@ export function scan(lexer: Lexer, valid: Uint8Array): boolean {
     );
     if (!ret && !scanned.comment && valid[TERNARY_QMARK] && la(lexer) === 63)
       return scanTernaryQmark(lexer);
+    // As the C scanner: Annex B's `<!--` after an expression on its line opens a comment.
+    if (!ret && !scanned.comment && la(lexer) === 60 && valid[HTML_COMMENT] && !valid[ESCAPE_SEQUENCE] && !valid[REGEX_PATTERN])
+      return scanHtmlComment(lexer);
     return ret;
   }
   if (valid[TERNARY_QMARK]) return scanTernaryQmark(lexer);
