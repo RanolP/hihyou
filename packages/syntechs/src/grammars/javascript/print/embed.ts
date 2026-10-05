@@ -1,6 +1,6 @@
 // Prettier's embed (language-js/embed/): a template string in another language (util.ts's embedLanguage) printed
 // by that language's printer, its substitutions in place of placeholders. Where prettier's embed would fail, or
-// where this one covers less than prettier's (a CSS or HTML parse error, a GraphQL query, an escape in a quasi),
+// where this one covers less than prettier's (a CSS, HTML or GraphQL parse error, an escape in a quasi),
 // `printEmbed` returns false and the template prints as its source.
 
 import { NO_NODE, parseTree, type Tree } from "../../../core/index.js";
@@ -9,6 +9,8 @@ import { brokenNodes } from "../../../fmt/format.js";
 import { printInto } from "../../../fmt/stream-format.js";
 import { withEmbedding, withRewrite } from "../../../fmt/stream.js";
 import { css } from "../../css/fmt.js";
+import { graphql } from "../../graphql/fmt.js";
+import { language as graphqlLanguage } from "../../graphql/index.js";
 import { language as cssLanguage } from "../../css/index.js";
 import { html as htmlFormatter } from "../../html/fmt.js";
 import { language as htmlLanguage } from "../../html/index.js";
@@ -45,7 +47,7 @@ export function printEmbed(
 ): boolean {
   // A quasi's cooked value, which prettier's embed reads, is its source when it holds no escape; the HTML embed
   // cooks its own.
-  if (lang !== "html" && raws.some((q) => q.includes("\\"))) return false;
+  if (lang === "css" && raws.some((q) => q.includes("\\"))) return false;
   const js = ctx.js;
   const ticks = children(js, node).filter((c) => kind(js, c) === "`");
   const tick = (i: number) => {
@@ -67,7 +69,7 @@ export function printEmbed(
       ? html(ctx, node, raws, subs, tick)
       : lang === "css"
         ? cssEmbed(ctx, node, raws, subs, tick)
-        : graphql(raws, subs, tick);
+        : graphqlEmbed(ctx, node, raws, subs, tick);
   if (printed === undefined) return false;
   place(printed);
   return true;
@@ -380,51 +382,80 @@ function inUrl(tree: Tree, n: number): boolean {
   return false;
 }
 
-// embed/graphql.js's printEmbedGraphQL, for the quasis that hold only comments and whitespace: there is no
-// GraphQL printer to lay a query out.
-function graphql(raws: string[], subs: () => Part[], tick: Tick): Part | undefined {
-  type Item = { lines: { text: string; blankBefore: boolean }[] } | number | "";
+// embed/graphql.js's printEmbedGraphQL: each quasi a GraphQL document of its own (a substitution stands only
+// between definitions), one that holds only comments and whitespace printed as printGraphqlComments does.
+function graphqlEmbed(ctx: JsStreamCtx, node: number, raws0: string[], subs: () => Part[], tick: Tick): Part | undefined {
+  // Prettier parses each quasi's cooked value, and escapes what it prints for the template again
+  // (escapeTemplateCharacters' uncookTemplateElementValue): every `\`, backtick and `${`.
+  const raws = raws0.map(cook);
+  if (raws.some((r) => r === undefined)) return undefined;
+  const uncook = (s: string, write: (s: string) => void) => write(s.replaceAll(/([\\`]|\$\{)/g, "\\$1"));
+  type Item = { lines: { text: string; blankBefore: boolean }[] } | { tree: Tree } | number | "";
   const items: Item[] = [];
-  for (const [i, raw] of raws.entries()) {
+  for (const [i, raw] of (raws as string[]).entries()) {
     const isFirst = i === 0;
     const isLast = i === raws.length - 1;
     const lines = raw.split("\n");
     const n = lines.length;
     if (!isLast && /#[^\n\r]*$/.test(lines[n - 1] as string)) return undefined;
-    if (!lines.every((l) => /^\s*(?:#[^\n\r]*)?$/.test(l))) return undefined;
     const startsWithBlankLine = n > 2 && lines[0]?.trim() === "" && lines[1]?.trim() === "";
     const endsWithBlankLine = n > 2 && lines[n - 1]?.trim() === "" && lines[n - 2]?.trim() === "";
-    // printGraphqlComments
-    const trimmed = lines.map((l) => l.trim());
-    const comments: { text: string; blankBefore: boolean }[] = [];
-    trimmed.forEach((l, j) => {
-      if (l === "") return;
-      comments.push({ text: l, blankBefore: trimmed[j - 1] === "" && comments.length > 0 });
-    });
-    if (comments.length > 0) {
+    let item: Item | undefined;
+    if (lines.every((l) => /^\s*(?:#[^\n\r]*)?$/.test(l))) {
+      // printGraphqlComments
+      const trimmed = lines.map((l) => l.trim());
+      const comments: { text: string; blankBefore: boolean }[] = [];
+      trimmed.forEach((l, j) => {
+        if (l === "") return;
+        comments.push({ text: l, blankBefore: trimmed[j - 1] === "" && comments.length > 0 });
+      });
+      if (comments.length > 0) item = { lines: comments };
+    } else {
+      const tree = parseTree(graphqlLanguage, raw);
+      // Prettier's embed fails on a parse error, and the template prints as written.
+      if (tree.errorChars > 0 || brokenNodes(tree) !== undefined) return undefined;
+      item = { tree };
+    }
+    if (item !== undefined) {
       if (!isFirst && startsWithBlankLine) items.push("");
-      items.push({ lines: comments });
+      items.push(item);
       if (!isLast && endsWithBlankLine) items.push("");
     } else if (!isFirst && !isLast && startsWithBlankLine) items.push("");
     if (!isLast) items.push(i);
   }
   const parts = subs();
-  return capture(() => {
+  const { printWidth, tabWidth, useTabs, bracketSpacing } = ctx.js.options;
+  let failed = false;
+  const printed = capture(() => {
     tick(0);
     open(INDENT);
     sHardline();
     items.forEach((item, i) => {
       if (i > 0) sHardline();
       if (typeof item === "number") place(parts[item] as Part);
-      else if (item !== "")
-        item.lines.forEach((l, j) => {
-          if (j > 0) sHardline();
-          if (l.blankBefore) sHardline();
-          sText(l.text);
-        });
+      else if (item === "") return;
+      else if ("tree" in item)
+        withEmbedding({ anchor: node, token: undefined }, () =>
+          withRewrite(uncook, () => {
+            try {
+              printInto(item.tree, graphql, { printWidth, tabWidth, useTabs, bracketSpacing });
+            } catch {
+              failed = true;
+            }
+          }),
+        );
+      else
+        withRewrite(uncook, () =>
+          item.lines.forEach((l, j) => {
+            if (j > 0) sHardline();
+            if (l.blankBefore) sHardline();
+            sText(l.text);
+          }),
+        );
     });
     close();
     sHardline();
     tick(1);
   });
+  return failed ? undefined : printed;
 }
