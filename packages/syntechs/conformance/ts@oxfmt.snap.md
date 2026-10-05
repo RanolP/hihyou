@@ -1,6 +1,6 @@
-ts@oxfmt compatibility: 670/674 (99.41%), 0 refused (ok:false), 62 excluded
+ts@oxfmt compatibility: 669/669 (100.00%), 0 refused (ok:false), 67 excluded
 
-Fixtures: prettier 3.9.9 tests/format/{typescript,jsx} (recursive), every spec call listing parser `typescript` or `babel-ts` or `oxc-ts`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left.
+Fixtures: prettier 3.9.9 tests/format/{typescript,jsx} (recursive), every spec call listing parser `typescript` or `babel-ts` or `oxc-ts`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left or it is written in a language syntechs leaves out (SCSS, Less, Handlebars, postcss-conditionals, Angular).
 
 # Failed
 
@@ -8,10 +8,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
-| typescript/angular-component-examples/15934-computed.component.ts | 0/2 | 76.92% |
-| typescript/angular-component-examples/15934.component.ts | 0/2 | 80.00% |
-| typescript/angular-component-examples/test.component.ts | 0/2 | 82.35% |
-| typescript/decorators-ts/angular.ts | 0/1 | 87.50% |
 
 # Refused
 
@@ -176,3 +172,11 @@ The formatter threw (ok:false), or `check` found that its output says something 
 ## oxfmt 0.70.0 rejects it: Unexpected token. Did you mean `{'>'}` or `&gt (1)
 
 - typescript/_errors_/invalid-jsx-1.tsx
+
+## written in Angular, a language syntechs leaves out (5)
+
+- typescript/angular-component-examples/15934-computed.component.ts
+- typescript/angular-component-examples/15934.component.ts
+- typescript/angular-component-examples/15969-computed.component.ts
+- typescript/angular-component-examples/test.component.ts
+- typescript/decorators-ts/angular.ts
