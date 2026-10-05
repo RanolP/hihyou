@@ -52,12 +52,18 @@ export interface CssOptions extends PrettierOptions {
   singleQuote: boolean;
   /** `off` prints front matter as written; `auto` lays YAML's out (see `frontMatterLines`). */
   embeddedLanguageFormatting: "auto" | "off";
+  /**
+   * An HTML `<style>`'s content, which oxfmt formats with prettier's postcss printer rather than its own: an at-rule
+   * prettier keeps the params of as a string puts `{` on a line of its own after a `//` (`slashesBeforeBlock`).
+   */
+  embeddedInHtml: boolean;
 }
 
 const defaults: CssOptions = {
   ...prettierDefaults,
   singleQuote: false,
   embeddedLanguageFormatting: "auto",
+  embeddedInHtml: false,
 };
 
 type SCtx = StreamCtx<CssOptions>;
@@ -1169,6 +1175,8 @@ function raw(
   spaced: (prev: number, c: number) => boolean,
   tight: (c: number) => boolean = () => false,
   comments = false,
+  // Where a line break stands in for the space.
+  broken: (c: number) => boolean = () => false,
 ) {
   const t = ctx.tree;
   const items = new Set(ctx.items(node));
@@ -1182,7 +1190,8 @@ function raw(
       continue;
     }
     if (named && !items.has(c)) continue;
-    if (prev !== -1 && kind(c, ctx) !== ";" && !tight(c) && (spaced(prev, c) || !t.adjoins(prev, c))) sText(" ");
+    if (prev !== -1 && broken(c)) sHardline();
+    else if (prev !== -1 && kind(c, ctx) !== ";" && !tight(c) && (spaced(prev, c) || !t.adjoins(prev, c))) sText(" ");
     prev = c;
     if (named && own(c)) ctx.print(c);
     else if (named) {
@@ -1198,10 +1207,12 @@ function raw(
 export function atRule(node: number, ctx: SCtx): void {
   if (isDirective(node, ctx)) return sassDirective(node, ctx);
   if (placeholderStatement(node, ctx)) return;
+  const embedded = ctx.options.embeddedInHtml && slashesBeforeBlock(node, ctx.tree);
   if (unknownAtRule(node, ctx.tree)) return verbatimAtRule(node, ctx);
-  if (documentAtRule(node, ctx.tree)) return verbatimAtRule(node, ctx, !matchList(node, ctx.tree));
+  if (documentAtRule(node, ctx.tree)) return verbatimAtRule(node, ctx, embedded || !matchList(node, ctx.tree));
   const own = (c: number) => kind(c, ctx) === "at_keyword" || kind(c, ctx) === "block";
   const block = (c: number) => kind(c, ctx) === "block";
+  if (embedded) return raw(node, ctx, own, (_, c) => block(c), undefined, false, block);
   const comma = (c: number) => kind(c, ctx) === ",";
   // oxfmt prints a `@layer` list one space after each comma and none before one, unless a comment is among it:
   // then the list as written, each gap one space, its comments in place.
@@ -1240,6 +1251,29 @@ function unknownAtRule(node: number, t: FormatTree): boolean {
   const lower = name.toLowerCase();
   if (structuredAtRules.has(lower) || valueParsed.has(name)) return false;
   return !["import", "use", "forward", "media", "custom-media"].includes(lower);
+}
+
+// The at-rules prettier's postcss parser reads the params of (as a value, a media query, a selector or an import),
+// by name as written; every other name keeps them a string.
+const prettierParsed = new Set(
+  "warn error extend nest at-root custom-selector namespace supports if else for each while debug mixin include function return define-mixin add-mixin".split(
+    " ",
+  ),
+);
+
+/**
+ * prettier's printer for an at-rule whose params it keeps a string: a block after params whose last line holds `//`,
+ * even in a string, opens on a line of its own (`@document url('http://a')⏎{`).
+ */
+function slashesBeforeBlock(node: number, t: FormatTree): boolean {
+  const kids = children(node, t);
+  const last = kids[kids.length - 1];
+  if (kids.length < 3 || last === undefined || t.kindName(last) !== "block") return false;
+  const name = t.text(kids[0] as number).slice(1);
+  const lower = name.toLowerCase();
+  if (prettierParsed.has(name) || ["import", "use", "forward", "media", "custom-media"].includes(lower)) return false;
+  const params = t.text(node).slice(0, -t.text(last).length).trimEnd();
+  return params.slice(params.lastIndexOf("\n") + 1).includes("//");
 }
 
 /** `@document` or `@-moz-document`, whose prelude oxfmt prints as written. */

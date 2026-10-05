@@ -218,8 +218,10 @@ export const html: Language<HtmlOptions> = {
                 >,
                 lang === "html"
                   ? ctx.options
-                  : lang === "css" || lang === "json"
-                    ? { printWidth, tabWidth, useTabs }
+                  : lang === "css"
+                    ? { printWidth, tabWidth, useTabs, embeddedInHtml: true }
+                    : lang === "json"
+                      ? { printWidth, tabWidth, useTabs }
                     : // Every option goes on to the script, as prettier's does (`semi`, `singleQuote`), and a JS
                       // template's HTML inside reads `embeddedInHtml` as prettier's __embeddedInHtml.
                       { ...ctx.options, embeddedInHtml: true },
