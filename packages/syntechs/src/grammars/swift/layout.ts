@@ -198,6 +198,16 @@ export function statementTokens(
     if (k === "call_expression") {
       const [callee, suffix] = children(n) as [number, number];
       if (tree.count(n) !== 2 || kind(suffix) !== "call_suffix") unsupported(n);
+      // `!(a ?? b)`: tree-sitter reads a call of the `!`; SwiftSyntax a prefix `!` on a parenthesized expression.
+      if (kind(callee) === "bang") {
+        const args = tree.child(suffix, 0);
+        const list = children(args);
+        const arg = list[1] as number;
+        if (tree.count(suffix) !== 1 || kind(args) !== "value_arguments" || list.length !== 3 || tree.count(arg) !== 1) unsupported(n);
+        const inner = convert(tree.child(arg, 0));
+        const paren = make({ k: "tuple", first: list[0] as number, last: list[2] as number, kids: [inner] });
+        return make({ k: "prefix", first: callee, last: paren.last, kids: [paren], op: callee });
+      }
       // `f(a)`, `f(a) { … }` or `f { … }`: the arguments, then a trailing closure.
       const parts = children(suffix);
       const args = parts.find((c) => kind(c) === "value_arguments");
