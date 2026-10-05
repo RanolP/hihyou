@@ -48,7 +48,20 @@ const PRECEDENCE: Record<string, [number, "left" | "right" | "none"]> = {
 
 /** An expression as SwiftSyntax shapes it, spanning the leaves `first` to `last`. */
 interface Expr {
-  k: "ref" | "literal" | "keyPath" | "member" | "call" | "prefix" | "infix" | "try" | "array" | "ternary" | "optional";
+  k:
+    | "ref"
+    | "literal"
+    | "keyPath"
+    | "member"
+    | "call"
+    | "prefix"
+    | "infix"
+    | "try"
+    | "array"
+    | "ternary"
+    | "optional"
+    | "unwrap"
+    | "closure";
   first: number;
   last: number;
   /** `member`: the base, if any; `call`: the callee; `prefix`/`try`: the operand; `infix`: lhs, rhs; `array`: elements. */
@@ -61,6 +74,10 @@ interface Expr {
   args?: number;
   /** `call`: each argument's value, in order. */
   values?: Expr[];
+  /** `call`: its trailing closure. */
+  trailing?: Expr;
+  /** `closure`: its signature's parameter names and `in`, when it has one. */
+  signature?: { params: number[]; inKeyword: number };
   parent?: Expr;
 }
 
@@ -172,20 +189,73 @@ export function statementTokens(
     }
     if (k === "call_expression") {
       const [callee, suffix] = children(n) as [number, number];
-      if (tree.count(n) !== 2 || kind(suffix) !== "call_suffix" || tree.count(suffix) !== 1) unsupported(n);
-      const args = tree.child(suffix, 0);
-      if (kind(args) !== "value_arguments") unsupported(args);
-      const list = children(args);
+      if (tree.count(n) !== 2 || kind(suffix) !== "call_suffix") unsupported(n);
+      // `f(a)`, `f(a) { … }` or `f { … }`: the arguments, then a trailing closure.
+      const parts = children(suffix);
+      const args = parts.find((c) => kind(c) === "value_arguments");
+      const closure = parts.find((c) => kind(c) === "lambda_literal");
+      if (parts.length !== (args === undefined ? 0 : 1) + (closure === undefined ? 0 : 1)) unsupported(suffix);
+      if (args !== undefined && parts[0] !== args) unsupported(suffix);
       const values: Expr[] = [];
-      for (const c of list) {
-        if (kind(c) !== "value_argument") continue;
-        const parts = children(c);
-        values.push(convert(parts[parts.length - 1] as number));
-      }
-      const rparen = list[list.length - 1] as number;
+      if (args !== undefined)
+        for (const c of children(args)) {
+          if (kind(c) !== "value_argument") continue;
+          const kids = children(c);
+          values.push(convert(kids[kids.length - 1] as number));
+        }
+      const trailing = closure === undefined ? undefined : convert(closure);
+      const last = trailing?.last ?? lastLeaf(tree, args as number);
       return postfix(convert(callee), (base) =>
-        make({ k: "call", first: base.first, last: rparen, kids: [base], args, values }),
+        make({
+          k: "call",
+          first: base.first,
+          last,
+          kids: trailing === undefined ? [base] : [base, trailing],
+          ...(args === undefined ? {} : { args }),
+          values,
+          ...(trailing === undefined ? {} : { trailing }),
+        }),
       );
+    }
+    if (k === "lambda_literal") {
+      // `ClosureExprSyntax` with at most one statement, its signature, if any, bare parameter names.
+      const parts = children(n);
+      const lbrace = parts[0] as number;
+      const rbrace = parts[parts.length - 1] as number;
+      let i = 1;
+      let signature: Expr["signature"];
+      if (kind(parts[i] as number) === "lambda_function_type") {
+        const type = parts[i++] as number;
+        const inKeyword = parts[i++] as number;
+        if (kind(type) !== "lambda_function_type" || tree.count(type) !== 1 || tree.text(inKeyword) !== "in") unsupported(type);
+        const list = tree.child(type, 0);
+        if (kind(list) !== "lambda_function_type_parameters") unsupported(type);
+        const params: number[] = [];
+        for (const c of children(list)) {
+          if (tree.text(c) === ",") {
+            params.push(c);
+            continue;
+          }
+          if (kind(c) !== "lambda_parameter" || tree.count(c) !== 1 || kind(tree.child(c, 0)) !== "simple_identifier") unsupported(c);
+          params.push(tree.child(c, 0));
+        }
+        signature = { params, inKeyword };
+      }
+      const body: Expr[] = [];
+      const statements = parts[i];
+      if (statements !== undefined && statements !== rbrace) {
+        if (kind(statements) !== "statements" || tree.count(statements) !== 1) unsupported(statements);
+        body.push(convert(tree.child(statements, 0)));
+        i++;
+      }
+      if (parts[i] !== rbrace || tree.text(lbrace) !== "{") unsupported(n);
+      return make({ k: "closure", first: lbrace, last: rbrace, kids: body, ...(signature === undefined ? {} : { signature }) });
+    }
+    if (k === "postfix_expression") {
+      // `a!`: `ForceUnwrapExprSyntax`.
+      const [target, op] = children(n) as [number, number];
+      if (tree.count(n) !== 2 || kind(op) !== "bang") unsupported(n);
+      return postfix(convert(target), (base) => make({ k: "unwrap", first: base.first, last: lastLeaf(tree, op), kids: [base] }));
     }
     if (k === "try_expression") {
       const [op, target] = children(n) as [number, number];
@@ -314,8 +384,12 @@ export function statementTokens(
       case "prefix":
         return expression(e.kids[0] as Expr);
       case "optional":
-        // `visit(OptionalChainingExprSyntax)` visits its children; a member chain below is a root of its own.
+      case "unwrap":
+        // `visit(OptionalChainingExprSyntax)` and `visit(ForceUnwrapExprSyntax)` visit their children; a member
+        // chain below is a root of its own.
         return expression(e.kids[0] as Expr);
+      case "closure":
+        return closure(e);
       case "infix":
         return infix(e);
       case "try":
@@ -344,23 +418,33 @@ export function statementTokens(
         addAfter(callee.name as number, tk.close);
       }
     }
-    const list = children(e.args as number);
-    const lparen = list[0] as number;
-    const rparen = list[list.length - 1] as number;
-    if ((e.values as Expr[]).length > 0) {
-      const breakBeforeRight = e.parent?.k === "member" && e.parent.kids[0] === e;
-      addAfter(lparen, tk.brk({ k: "open", block: true }, 0), tk.open());
-      addBefore(rparen, tk.brk({ k: "close", mustBreak: breakBeforeRight }, 0), tk.close);
+    const list = e.args === undefined ? [] : children(e.args);
+    const values = e.values as Expr[];
+    // `isCompactSingleFunctionCallArgument`: a lone array, dictionary or closure argument; only a closure is ported.
+    const compact = values.length === 1 && (values[0] as Expr).k === "closure";
+    for (const c of list)
+      if (kind(c) === "value_argument") {
+        const last = kind(children(c).at(-1) as number);
+        if (last === "array_literal" || last === "dictionary_literal") unsupported(c);
+      }
+    if (e.trailing !== undefined)
+      addBefore(e.trailing.first, tk.elective({ k: "same" }));
+    if (values.length > 0) {
+      const lparen = list[0] as number;
+      const rparen = list[list.length - 1] as number;
+      // A trailing closure keeps the `)` down with its `{`; so does a member after the call
+      // (`mustBreakBeforeClosingDelimiter`), unless the argument is compact.
+      const memberAfter = e.parent?.k === "member" && e.parent.kids[0] === e;
+      const breakBeforeRight = !compact && (e.trailing !== undefined || memberAfter);
+      addAfter(lparen, tk.brk({ k: "open", block: true }, 0), ...(compact ? [] : [tk.open()]));
+      addBefore(rparen, tk.brk({ k: "close", mustBreak: breakBeforeRight }, 0), ...(compact ? [] : [tk.close]));
     }
     let v = 0;
     for (const [i, c] of list.entries()) {
       if (kind(c) !== "value_argument") continue;
       const parts = children(c);
-      const value = (e.values as Expr[])[v++] as Expr;
-      // A lone array, dictionary or closure argument is laid out compactly, which this does not port.
-      const last = kind(parts[parts.length - 1] as number);
-      if (last === "array_literal" || last === "dictionary_literal" || last === "lambda_literal") unsupported(c);
-      addBefore(firstLeaf(tree, c), tk.open());
+      const value = values[v++] as Expr;
+      if (!compact) addBefore(firstLeaf(tree, c), tk.open());
       if (parts.length === 3) {
         const colon = parts[1] as number;
         if (tree.text(colon) !== ":" || kind(parts[0] as number) !== "value_argument_label") unsupported(c);
@@ -371,11 +455,45 @@ export function statementTokens(
       if (tree.text(next) === ",") {
         delimiters.add(next);
         addAfter(next, tk.close, tk.brk({ k: "same" }));
-      } else addAfter(value.last, tk.close);
+      } else if (!compact) addAfter(value.last, tk.close);
     }
     // The children after the call's own tokens, as the visitor walks them.
     expression(callee);
-    for (const value of e.values as Expr[]) expression(value);
+    for (const value of values) expression(value);
+    if (e.trailing !== undefined) expression(e.trailing);
+  }
+
+  /**
+   * `visit(ClosureExprSyntax)` (`arrangeBracesAndContents` without a reset for one with no signature),
+   * `visit(ClosureSignatureSyntax)` over bare parameter names, and `visit(CodeBlockItemListSyntax)` over its one
+   * statement, if any.
+   */
+  function closure(e: Expr): void {
+    // `.break(.close)` is `mustBreak: true`: a `}` on another line than its `{` starts its own line.
+    const body = e.kids[0];
+    const sig = e.signature;
+    if (sig !== undefined) {
+      addAfter(e.first, tk.brk({ k: "open", block: true }));
+      addAfter(sig.inKeyword, tk.brk({ k: "same" }, body === undefined ? 0 : 1));
+      addBefore(e.last, tk.brk({ k: "close", mustBreak: true }));
+      // The signature's group, and the parameters' (not parenthesized, so no open or close breaks).
+      const first = sig.params[0] as number;
+      addBefore(first, tk.open(), tk.open());
+      addAfter(sig.params[sig.params.length - 1] as number, tk.close);
+      for (const c of sig.params) if (tree.text(c) === ",") addAfter(c, tk.brk({ k: "same" }));
+      addBefore(sig.inKeyword, tk.brk({ k: "same" }));
+      addAfter(sig.inKeyword, tk.close);
+    } else if (body !== undefined) {
+      addAfter(e.first, tk.brk({ k: "open", block: true }), tk.open());
+      addBefore(e.last, tk.brk({ k: "close", mustBreak: true }), tk.close);
+    } else {
+      addAfter(e.first, tk.brk({ k: "open", block: true }, 0));
+      addBefore(e.last, tk.brk({ k: "close", mustBreak: true }, 0));
+    }
+    if (body === undefined) return;
+    addBefore(body.first, tk.open());
+    addAfter(body.last, tk.close, tk.brk({ k: "reset" }, 0));
+    expression(body);
   }
 
   /** `visit(InfixOperatorExprSyntax)`, with `stackedIndentationBehavior` stacking `&&` and `||`. */
@@ -500,7 +618,7 @@ export function statementTokens(
   let header = false;
   const k = kind(stmt);
   if (k === "property_declaration") binding(stmt);
-  else if (k === "call_expression" || k === "try_expression") expression(convert(stmt));
+  else if (["call_expression", "try_expression", "navigation_expression", "postfix_expression"].includes(k)) expression(convert(stmt));
   else if (k === "control_transfer_statement") {
     // `visit(ReturnStmtSyntax)`.
     const [keyword, result] = children(stmt) as [number, number];

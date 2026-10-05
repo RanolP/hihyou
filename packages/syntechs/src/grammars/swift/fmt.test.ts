@@ -69,10 +69,10 @@ test("a statement past 100 columns is broken as swift-format breaks it", () => {
   }
 });
 
-// A regression here is an unported construct laid out anyway: a closure argument.
+// A regression here is an unported construct laid out anyway: a lone dictionary argument.
 test("a long line whose layout is not ported is refused", () => {
   for (const input of [
-    "let a = bbbbbbbbbbbbbbbbbbbbbbbb.map { $0.cccccccccccccccccccccccccccccc(dddddddddddddddddddddddddddddddd) }\n",
+    "let a = bbbbbbbbbbbbbbbbbbbbbbbb.map([cccccccccccccccccccccccccc: ddddddddddddddddddddddddddddddd, eeeeeeeeeeeeeee: f])\n",
   ])
     expect(run(input).ok, input).toBe(false);
 });
@@ -223,4 +223,27 @@ test("an extension's access level moves onto each member that has none", () => {
   expect(out.ok && out.text).toBe(
     "extension A {\n  /// Doc.\n  @inlinable public func a() {}\n  public static let b = 1\n  private var c: Int { 1 }\n  public struct S {\n    func z() {}\n  }\n}\n\nextension B {\n  fileprivate func d() {}\n}\n\nextension C {\n  func e() {}\n}\n",
   );
+});
+
+// A regression here is the ClosureExprSyntax layout lost: a trailing or lone closure argument whose body no longer
+// moves onto its own line, or whose `}` stays on the body's line. The cases are the corpus's
+// (Rules/UseSynthesizedInitializer.swift, Rules/OrderedImports.swift, Core/Parsing.swift).
+test("a long closure argument or trailing closure is broken as swift-format breaks it", () => {
+  for (const [input, expected] of [
+    [
+      "struct S {\n  func f() {\n    let initializersCount = node.memberBlock.members.filter { $0.decl.is(InitializerDeclSyntax.self) }.count\n  }\n}\n",
+      "struct S {\n  func f() {\n    let initializersCount = node.memberBlock.members.filter {\n      $0.decl.is(InitializerDeclSyntax.self)\n    }.count\n  }\n}\n",
+    ],
+    [
+      "struct S {\n  func f() {\n    if property.modifiers.contains(where: { $0.name.tokenKind == .keyword(.private) && $0.detail == nil }) {\n      return .private\n    }\n  }\n}\n",
+      "struct S {\n  func f() {\n    if property.modifiers.contains(where: {\n      $0.name.tokenKind == .keyword(.private) && $0.detail == nil\n    }) {\n      return .private\n    }\n  }\n}\n",
+    ],
+    [
+      "func f() {\n  let sourceFile = source.withUTF8 { sourceBytes in\n    operatorTable.foldAll(Parser.parse(source: sourceBytes, experimentalFeatures: experimentalFeaturesSet)) { _ in }\n      .as(SourceFileSyntax.self)!\n  }\n}\n",
+      "func f() {\n  let sourceFile = source.withUTF8 { sourceBytes in\n    operatorTable.foldAll(\n      Parser.parse(source: sourceBytes, experimentalFeatures: experimentalFeaturesSet)\n    ) { _ in }\n    .as(SourceFileSyntax.self)!\n  }\n}\n",
+    ],
+  ]) {
+    const out = run(input as string);
+    expect(out.ok && out.text, input).toBe(expected);
+  }
 });

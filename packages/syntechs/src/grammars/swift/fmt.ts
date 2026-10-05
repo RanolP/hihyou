@@ -263,7 +263,9 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
     for (let n = leaf; ; n = tree.parent(n)) {
       const p = tree.parent(n);
       if (p === NO_NODE) return NO_NODE;
-      if (BODIES.has(tree.kindName(p)) || p === tree.root) return n;
+      // A closure's statement on the line of its `{` is laid out with the statement holding the closure.
+      const inlineClosure = tree.kindName(tree.parent(p)) === "lambda_literal" && tree.lf(firstLeaf(tree, n)) === 0;
+      if ((BODIES.has(tree.kindName(p)) && !inlineClosure) || p === tree.root) return n;
     }
   };
   const accessEdits: { at: number; leaf: number; text: string }[] = [];
@@ -384,6 +386,10 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
     const stmt = statementOf(leaves[i] as number);
     if (stmt !== NO_NODE && !long.has(stmt) && firstLeaf(tree, stmt) !== leaves[i]) spanning.add(stmt);
   }
+  const overlaps = (a: Edit, b: Edit) => a.from < b.to && b.from < a.to;
+  for (const [i, a] of edits.entries())
+    for (const b of edits.slice(i + 1))
+      if (overlaps(a, b)) throw new Error(`a statement past column ${width} inside another one (line breaking): ${text.slice(b.from, b.from + 40).split("\n")[0]}`);
   for (const stmt of spanning) {
     let edit: Edit | undefined;
     try {
@@ -391,7 +397,8 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
     } catch {
       continue;
     }
-    if (edit !== undefined) edits.push(edit);
+    // A statement holding one laid out already (a closure's) is kept as written around it.
+    if (edit !== undefined && !edits.some((e) => overlaps(e, edit))) edits.push(edit);
   }
   function lastLeafOf(n: number): number {
     while (tree.count(n) > 0) n = tree.child(n, tree.count(n) - 1);
@@ -415,7 +422,10 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
       for (let j = 0; j < tree.count(n); j++) {
         const k = tree.child(n, j);
         if (tree.kindName(k) === "identifier") name = tree.text(k);
-        else if (tree.text(k) !== "import") plain = false;
+        // An attribute other than `@testable` or `@_implementationOnly` (`@_spi(X)`) leaves the import a regular one.
+        else if (tree.kindName(k) === "modifiers") {
+          if (/@(testable|_implementationOnly)\b/.test(tree.text(k))) plain = false;
+        } else if (tree.text(k) !== "import") plain = false;
       }
       imports.push({ name, plain, at: top.length });
     }
