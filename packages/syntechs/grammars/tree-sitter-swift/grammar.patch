@@ -2,6 +2,32 @@ scanner.c's `try!` suppressor mask shifts `1UL` by FAKE_TRY_BANG (32), which ove
 (Windows): the scanner then emits the `!` as a BANG, so `try!` parses as `try` plus a prefix `!` there alone. `1ULL`
 keeps the mask on every platform; packages/syntechs/src/grammars/swift/scanner.ts already reads it that way.
 
+--- a/grammar.js
++++ b/grammar.js
+@@ -968,14 +968,17 @@
+       prec.right(
+         PRECS.tuple,
+         seq(
+           "(",
+-          sep1Opt(
+-            seq(
+-              optional(seq(field("name", $.simple_identifier), ":")),
+-              field("value", $._expression)
+-            ),
+-            ","
++          // `()`: the empty tuple, Void's value (`default: ()`).
++          optional(
++            sep1Opt(
++              seq(
++                optional(seq(field("name", $.simple_identifier), ":")),
++                field("value", $._expression)
++              ),
++              ","
++            )
+           ),
+           ")"
+         )
+       ),
 --- a/src/scanner.c
 +++ b/src/scanner.c
 @@ -127,9 +127,9 @@

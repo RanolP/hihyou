@@ -9,6 +9,7 @@ import { sToken } from "../../fmt/stream.js";
 import { NO_NODE } from "../../core/arena.js";
 import { type FormatTree, firstLeaf, nextLeaf, prevLeaf } from "../../fmt/tree.js";
 import type { StreamRules } from "../../fmt/stream-format.js";
+import type { Normalize } from "../../fmt/check.js";
 import { grammar } from "./bundle.js";
 import { language } from "./index.js";
 import { statementTokens } from "./layout.js";
@@ -265,22 +266,10 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
       if (BODIES.has(tree.kindName(p)) || p === tree.root) return n;
     }
   };
+  const accessEdits: { at: number; leaf: number; text: string }[] = [];
   const walk = (n: number) => {
     const kind = tree.kindName(n);
-    if (kind === "class_declaration") {
-      // NoAccessLevelOnExtensionDeclaration moves an extension's access level onto its members.
-      let isExtension = false;
-      let access = false;
-      for (let i = 0; i < tree.count(n); i++) {
-        const c = tree.child(n, i);
-        if (tree.kindName(c) === "extension") isExtension = true;
-        if (tree.kindName(c) === "modifiers")
-          for (let j = 0; j < tree.count(c); j++)
-            if (tree.kindName(tree.child(c, j)) === "visibility_modifier") access = true;
-      }
-      if (isExtension && access)
-        throw new Error(`access level on an extension (NoAccessLevelOnExtensionDeclaration): ${tree.text(n).split("\n")[0]}`);
-    }
+    if (kind === "class_declaration") moveExtensionAccess(n);
     if (tree.count(n) === 0) {
       if (endCol(n) > width && !unbreakable(tree, n)) {
         const stmt = statementOf(n);
@@ -292,6 +281,69 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
     }
     for (let i = 0; i < tree.count(n); i++) walk(tree.child(n, i));
   };
+  /**
+   * NoAccessLevelOnExtensionDeclaration: an extension's `public`, `package` or `fileprivate` moves onto each member
+   * that has no access level of its own (a `private` one as `fileprivate`, its effective level); `internal` goes.
+   * The members are the extension's own declarations of the kinds the rule visits, `#if` blocks' included.
+   */
+  function moveExtensionAccess(n: number): void {
+    const kids = Array.from({ length: tree.count(n) }, (_, i) => tree.child(n, i));
+    if (!kids.some((c) => tree.kindName(c) === "extension")) return;
+    const access = accessModifier(kids.find((c) => tree.kindName(c) === "modifiers"));
+    if (access === undefined) return;
+    const keyword = tree.text(access);
+    if (!["public", "private", "fileprivate", "package", "internal"].includes(keyword)) return;
+    const ai = index.get(firstLeaf(tree, access)) as number;
+    const from = starts.get(leaves[ai] as number) as number;
+    accessEdits.push({ at: from, leaf: ai, text: "" });
+    edits0.push({ from, to: starts.get(leaves[ai + 1] as number) as number, text: "" });
+    if (keyword === "internal") return;
+    const add = keyword === "private" ? "fileprivate" : keyword;
+    const body = kids.find((c) => tree.kindName(c) === "class_body");
+    if (body === undefined) return;
+    for (let i = 0; i < tree.count(body); i++) {
+      const m = tree.child(body, i);
+      if (!memberVisited(m)) continue;
+      const modifiers = Array.from({ length: tree.count(m) }, (_, j) => tree.child(m, j)).find((c) => tree.kindName(c) === "modifiers");
+      if (accessModifier(modifiers) !== undefined) continue;
+      // Before the first modifier (attributes are no modifiers to swift-syntax), else before the declaration's keyword.
+      let before = NO_NODE;
+      if (modifiers !== undefined)
+        for (let j = 0; j < tree.count(modifiers) && before === NO_NODE; j++)
+          if (tree.kindName(tree.child(modifiers, j)) !== "attribute") before = tree.child(modifiers, j);
+      const leaf = before !== NO_NODE ? firstLeaf(tree, before) : modifiers !== undefined ? nextLeaf(tree, lastLeafOf(modifiers)) : firstLeaf(tree, m);
+      const li = index.get(leaf) as number;
+      let end = li;
+      while (end + 1 < leaves.length && !startsLine(end + 1)) end++;
+      if (endCol(leaves[end] as number) + add.length + 1 > width)
+        throw new Error(`a member past column ${width} once the extension's access level moves onto it (NoAccessLevelOnExtensionDeclaration): ${at(li)}`);
+      const offset = starts.get(leaf) as number;
+      accessEdits.push({ at: offset, leaf: li, text: `${add} ` });
+      edits0.push({ from: offset, to: offset, text: `${add} ` });
+    }
+  }
+  /** The access level among `modifiers` (`private(set)` included, `open` not), as swift-format's accessLevelModifier. */
+  function accessModifier(modifiers: number | undefined): number | undefined {
+    if (modifiers === undefined) return undefined;
+    for (let j = 0; j < tree.count(modifiers); j++) {
+      const c = tree.child(modifiers, j);
+      if (tree.kindName(c) !== "visibility_modifier") continue;
+      const word = tree.child(c, 0);
+      if (["public", "private", "fileprivate", "internal", "package"].includes(tree.text(word))) return word;
+    }
+    return undefined;
+  }
+  /** The declarations NoAccessLevelOnExtensionDeclaration gives an access level: not a nested extension or protocol. */
+  function memberVisited(m: number): boolean {
+    const k = tree.kindName(m);
+    if (["function_declaration", "init_declaration", "property_declaration", "typealias_declaration", "subscript_declaration"].includes(k))
+      return true;
+    if (k !== "class_declaration") return false;
+    for (let j = 0; j < tree.count(m); j++)
+      if (["class", "struct", "enum", "actor"].includes(tree.kindName(tree.child(m, j)))) return true;
+    return false;
+  }
+  const edits0: Edit[] = [];
   walk(tree.root);
   const edits: Edit[] = [];
   /** The statement laid out as swift-format lays it out, or undefined when that is what is written. */
@@ -369,6 +421,11 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
     }
     top.push(n);
   }
+  // A statement laid out holds no access level moved by NoAccessLevelOnExtensionDeclaration.
+  for (const a of accessEdits)
+    if (edits.some((e) => e.from <= a.at && a.at < e.to))
+      throw new Error(`a statement laid out where an extension's access level moves (NoAccessLevelOnExtensionDeclaration): ${at(a.leaf)}`);
+  edits.push(...edits0);
   if (imports.length > 1)
     for (const [k, imp] of imports.entries()) {
       const prev = imports[k - 1];
@@ -469,12 +526,78 @@ const stream: StreamRules<SwiftOptions> = {
 };
 
 /** Swift as swift-format 6.3.0 prints it with its default configuration. */
+const ACCESS = new Set(["public", "private", "fileprivate", "internal", "package"]);
+
+/**
+ * NoAccessLevelOnExtensionDeclaration moves an extension's access level onto its members, so in an extension an
+ * access keyword does not compare where it stands: each member's first token carries the member's effective
+ * access instead (its own, else the extension's, a `private` one as `fileprivate`).
+ */
+const normalize: Normalize = (lexemes, _text, tree) => {
+  const kids = (n: number) => Array.from({ length: tree.count(n) }, (_, i) => tree.child(n, i));
+  /** `decl`'s access level modifier (`private(set)` included), as swift-format's accessLevelModifier. */
+  const accessModifier = (decl: number): number | undefined => {
+    const modifiers = kids(decl).find((c) => tree.kindName(c) === "modifiers");
+    return modifiers === undefined
+      ? undefined
+      : kids(modifiers).find((c) => tree.kindName(c) === "visibility_modifier" && ACCESS.has(tree.text(tree.child(c, 0))));
+  };
+  const accessOf = (decl: number) => {
+    const m = accessModifier(decl);
+    return m === undefined ? undefined : tree.text(tree.child(m, 0));
+  };
+  const isExtension = (n: number) =>
+    n !== NO_NODE && tree.kindName(n) === "class_declaration" && kids(n).some((c) => tree.kindName(c) === "extension");
+  // Each extension member's effective access, and the access modifiers that do not compare where they stand.
+  const member = new Map<number, string>();
+  const dropped = new Set<number>();
+  for (let o = 0; o < tree.nodeCount; o++) {
+    const ext = tree.at(o);
+    if (!isExtension(ext)) continue;
+    const own = accessOf(ext);
+    const ownModifier = accessModifier(ext);
+    if (ownModifier !== undefined) dropped.add(ownModifier);
+    const inherited = own === "private" ? "fileprivate" : own === "internal" ? undefined : own;
+    const body = kids(ext).find((c) => tree.kindName(c) === "class_body");
+    if (body === undefined) continue;
+    for (const m of kids(body)) {
+      const k = tree.kindName(m);
+      if (!k.endsWith("_declaration") || isExtension(m) || k === "protocol_declaration") continue;
+      const modifier = accessModifier(m);
+      if (modifier !== undefined) dropped.add(modifier);
+      member.set(m, accessOf(m) ?? inherited ?? "internal");
+    }
+  }
+  const inDropped = (n: number) => {
+    for (let up = n; up !== NO_NODE; up = tree.parent(up)) if (dropped.has(up)) return true;
+    return false;
+  };
+  /** The member whose first code token `n` is (past a dropped access keyword). */
+  const leads = (n: number): number | undefined => {
+    for (let up = tree.parent(n); up !== NO_NODE; up = tree.parent(up)) {
+      const access = member.get(up);
+      if (access === undefined) continue;
+      let first = firstLeaf(tree, up);
+      while (first !== NO_NODE && inDropped(first)) first = nextLeaf(tree, first);
+      return first === n ? up : undefined;
+    }
+    return undefined;
+  };
+  return lexemes.map((l) => {
+    if (inDropped(l.node)) return undefined;
+    const m = leads(l.node);
+    return m === undefined ? l.text : `${l.text}@access:${member.get(m)}`;
+  });
+};
+
 export const swift: Language<SwiftOptions> = {
   ...defineLanguage(grammar, {
     parser: language,
     lineComments: { comment: "//" },
     defaults,
     settings: prettierSettings,
+    normalize,
+    layoutBlind: true,
   }),
   stream,
 };

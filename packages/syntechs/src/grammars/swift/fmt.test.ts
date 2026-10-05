@@ -69,14 +69,24 @@ test("a statement past 100 columns is broken as swift-format breaks it", () => {
   }
 });
 
-// A regression here is an unported construct laid out anyway: a member after a call's arguments (`f(x).y`, where
-// swift-format puts `)` on its own line) or a closure argument.
+// A regression here is an unported construct laid out anyway: a closure argument.
 test("a long line whose layout is not ported is refused", () => {
   for (const input of [
-    "func f() {\n  try aaaaaaaaaaaaaaaaaaa.encode(bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, forKey: .ccccccccccccccccccccccccc).dddd()\n}\n",
     "let a = bbbbbbbbbbbbbbbbbbbbbbbb.map { $0.cccccccccccccccccccccccccccccc(dddddddddddddddddddddddddddddddd) }\n",
   ])
     expect(run(input).ok, input).toBe(false);
+});
+
+// A regression here is mustBreakBeforeClosingDelimiter lost: a member after a call's arguments (`f(x).y`) puts the
+// `)` on its own line once the arguments break, as the corpus's `TokenStreamCreator(…).makeStream(from:)` shows.
+// The expected text follows that rule, as swift-format cannot run here.
+test("a member after a broken call's arguments follows the `)` on its own line", () => {
+  const out = run(
+    "func f() {\n  try aaaaaaaaaaaaaaaaaaa.encode(bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, forKey: .ccccccccccccccccccccccccc).dddd()\n}\n",
+  );
+  expect(out.ok && out.text).toBe(
+    "func f() {\n  try aaaaaaaaaaaaaaaaaaa.encode(\n    bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, forKey: .ccccccccccccccccccccccccc\n  ).dddd()\n}\n",
+  );
 });
 
 // A regression here is the IfExpr/GuardStmt condition breaks or the `||` refold lost: the `||` left on the wrong
@@ -201,4 +211,16 @@ test("a long statement outside #if is laid out, and a directive off its scope's 
     "struct S {\n  func f() {\n    self.multilineTrailingCommaBehavior = try container.decodeIfPresent(\n      MultilineTrailingCommaBehavior.self, forKey: .x)\n  }\n  #if os(macOS)\n    func g() {}\n  #endif\n}\n",
   );
   expect(run("struct S {\n  func f() {\n    x()\n  }\n#if os(macOS)\n  func g() {}\n#endif\n}\n").ok).toBe(false);
+});
+
+// A regression here is NoAccessLevelOnExtensionDeclaration lost: an extension keeping its access level, or a member
+// left without the one it inherits. The expected texts follow the rule's source (Rules/NoAccessLevelOnExtension
+// Declaration.swift in the vendored corpus), as swift-format cannot run here; API/Selection.swift is the corpus case.
+test("an extension's access level moves onto each member that has none", () => {
+  const out = run(
+    "public extension A {\n  /// Doc.\n  @inlinable func a() {}\n  static let b = 1\n  private var c: Int { 1 }\n  struct S {\n    func z() {}\n  }\n}\n\nprivate extension B {\n  func d() {}\n}\n\ninternal extension C {\n  func e() {}\n}\n",
+  );
+  expect(out.ok && out.text).toBe(
+    "extension A {\n  /// Doc.\n  @inlinable public func a() {}\n  public static let b = 1\n  private var c: Int { 1 }\n  public struct S {\n    func z() {}\n  }\n}\n\nextension B {\n  fileprivate func d() {}\n}\n\nextension C {\n  func e() {}\n}\n",
+  );
 });
