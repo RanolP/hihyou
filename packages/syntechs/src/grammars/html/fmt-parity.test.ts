@@ -9,6 +9,12 @@ import { language } from "./index.js";
 // Byte parity with oxfmt 0.70.0 over prettier's defaults, or the options a case names, for an `.html` file.
 
 const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
+  // A `<style>`'s at-rule with a `//` in its params printed `{` after a space; oxfmt formats a `<style>` with prettier's
+  // postcss printer, which opens the block on a line of its own when it keeps the params a string.
+  [
+    "style-at-rule-slashes",
+    "<style>\n@document url('http://a.b/c') { r { stroke: red } }\n@container url('//a') { r {} }\n@media url('//a') { r {} }\n@document url(a) { r {} }\n</style>\n",
+  ],
   // A doctype refused the whole file, and an uppercase `<!DOCTYPE html>` must print as `<!doctype html>`.
   ["doctype-html5", "<!DOCTYPE html>\n<html><body><p>a</p></body></html>\n"],
   // A doctype with a public id keeps its marker as written and joins its value onto one line.
