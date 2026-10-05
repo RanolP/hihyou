@@ -351,6 +351,15 @@ const YAML: Record<string, Rule> = {
   },
 };
 
+// tree-sitter-graphql's highlights.scm captures. VS Code ships no GraphQL grammar to match, so they are the shared
+// generic scopes, a field or variable painted as one and a comment as a line comment.
+const GRAPHQL: Record<string, Rule> = {
+  ...shared("graphql"),
+  variable: "variable.other.graphql",
+  property: "variable.other.property.graphql",
+  comment: { scope: "comment.line.number-sign.graphql", byKind: { description: "string.quoted.double.graphql" } },
+};
+
 // tree-sitter-json's captures, as the scopes VS Code's JSON grammar gives the same tokens.
 const JSON_CAPTURES: Record<string, Rule> = {
   "string.special.key": "support.type.property-name.json",
@@ -565,6 +574,11 @@ export const LANGUAGES: Record<string, LanguageRules> = {
     grammar: "tree-sitter-yaml",
     queries: ["queries/highlights.scm"],
     captures: YAML,
+  },
+  graphql: {
+    grammar: "tree-sitter-graphql",
+    queries: ["queries/graphql/highlights.scm"],
+    captures: GRAPHQL,
   },
   json: {
     grammar: "tree-sitter-json",
