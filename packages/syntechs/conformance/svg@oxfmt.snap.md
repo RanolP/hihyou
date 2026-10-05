@@ -1,4 +1,4 @@
-svg@oxfmt compatibility: 635/636 (99.84%), 1 refused (ok:false), 3 excluded
+svg@oxfmt compatibility: 636/636 (100.00%), 0 refused (ok:false), 3 excluded
 
 Fixtures: svgo 3.3.2 test/**/*.svg (each plugin test's input, before its `@@@`) and logo/, feather 4.29.2 icons/, and src/grammars/html/svg-corpus; expected output from oxfmt 0.70.0 run on each named `.html` (oxfmt takes no `.svg`), excluded when oxfmt rejects it or does not keep its own output.
 
@@ -15,7 +15,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| svgo-3.3.2/test/plugins/prefixIds.12.svg | 1/1 | 61.54% | formatter-error: css parse error |
 
 # Excluded
 

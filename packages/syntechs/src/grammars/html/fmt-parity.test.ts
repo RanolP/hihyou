@@ -9,6 +9,12 @@ import { language } from "./index.js";
 // Byte parity with oxfmt 0.70.0 over prettier's defaults, or the options a case names, for an `.html` file.
 
 const edgeCases: [string, string, Partial<HtmlOptions>?][] = [
+  // A style's `<!-- … -->` was a CSS parse error that refused the file; postcss reads one before a rule into its
+  // selector (`<!-- a -- > #a`), and rejects any other, which keeps the style as written.
+  [
+    "style-html-comments",
+    "<style>\n<!-- uwu -->\n#a {}\n</style>\n<style>\n<!--  a   b  -->\n<!-- c -->\n#a, .b { c: d }\n</style>\n<style>\na {}\n<!-- b -->\n</style>\n<style>\n<!--\n#a {}\n-->\n</style>\n",
+  ],
   // A `<style>`'s at-rule with a `//` in its params printed `{` after a space; oxfmt formats a `<style>` with prettier's
   // postcss printer, which opens the block on a line of its own when it keeps the params a string.
   [

@@ -1,6 +1,6 @@
-html@oxfmt compatibility: 143/147 (97.28%), 4 refused (ok:false), 22 excluded
+html@oxfmt compatibility: 143/144 (99.31%), 1 refused (ok:false), 25 excluded
 
-Fixtures: prettier 3.9.9 tests/format/{html} (recursive), every spec call listing parser `html`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left.
+Fixtures: prettier 3.9.9 tests/format/{html} (recursive), every spec call listing parser `html`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left or it is written in a language syntechs leaves out (SCSS, Less, Handlebars).
 
 # Failed
 
@@ -15,9 +15,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 | Fixture | Runs refused | Match ratio | First reason |
 | :------ | :----------: | :---------: | :----------- |
-| html/css/less.html | 1/1 | 94.12% | formatter-error: style lang less |
-| html/css/scss.html | 1/1 | 84.38% | formatter-error: style lang scss |
-| html/handlebars-venerable/template.html | 2/2 | 43.48% | formatter-error: script type text/x-handlebars-template |
 | html/multiparser/markdown/html-with-markdown-script.html | 1/1 | 33.33% | formatter-error: script type text/markdown |
 
 # Excluded
@@ -49,3 +46,15 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 - html/_errors_/start-tag-comments/block-comment.html
 - html/_errors_/start-tag-comments/line-comment.html
+
+## written in Handlebars, a language syntechs leaves out (1)
+
+- html/handlebars-venerable/template.html
+
+## written in Less, a language syntechs leaves out (1)
+
+- html/css/less.html
+
+## written in SCSS, a language syntechs leaves out (1)
+
+- html/css/scss.html

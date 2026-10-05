@@ -1033,11 +1033,14 @@ function embeddedLanguage(n: Node): EmbeddedLanguage | "raw" | undefined {
   if ((n.name !== "script" && n.name !== "style") || n.value.trim() === "") return undefined;
   const lang = attr(n, "lang")?.value?.toLowerCase();
   if (n.name === "style") {
-    if (lang === undefined || lang === "css" || lang === "postcss")
-      // Content oxfmt's CSS parser rejects prints as written: bare words (svgo's `…` placeholder), or one CDATA
-      // section (an SVG's `<style><![CDATA[...]]></style>`), which the parser reads as an unclosed selector.
-      // Other content it rejects is refused here, since what it accepts is not known.
+    if (lang === undefined || lang === "css" || lang === "postcss") {
+      // Content oxfmt's CSS parser rejects prints as written: bare words (svgo's `…` placeholder), one CDATA
+      // section (an SVG's `<style><![CDATA[...]]></style>`), which the parser reads as an unclosed selector, or a
+      // `<!--` or `-->` no rule follows (`cssCdoComments`). Other content it rejects is refused here, since what it
+      // accepts is not known.
+      if (/<!--|-->/.test(n.value) && cssCdoComments(n.value) === undefined) return "raw";
       return /^[^{}:;@/\\"'(),[\]<>]+$|^<!\[CDATA\[[^]*?\]\]>$/.test(n.value.trim()) ? "raw" : "css";
+    }
     if (lang === "scss" || lang === "less") throw new Unsupported(`style lang ${lang}`);
     return "raw";
   }
@@ -1641,4 +1644,29 @@ class Printer {
       return "";
     return "softline";
   }
+}
+
+/**
+ * A style's `<!-- … -->` comments as postcss reads them: each one before a rule (at the start or after a `}`, more
+ * than one in a row included) joins that rule's selector, which prettier prints with the comment's whitespace
+ * collapsed and its `-->` split (`<!-- a -- > #a`). `rewritten` holds each as a type selector, `marks[i]`, that
+ * `texts[i]` replaces once printed. Undefined where postcss rejects the style (a comment ending it, or a stray
+ * `<!--` or `-->`), which prints as written.
+ */
+export function cssCdoComments(text: string): { rewritten: string; marks: string[]; texts: string[] } | undefined {
+  const marks: string[] = [];
+  const texts: string[] = [];
+  let ok = true;
+  const rewritten = text.replace(/<!--([^]*?)-->/g, (_, inner: string, at: number) => {
+    const before = text.slice(0, at).trimEnd();
+    const after = text.slice(at + inner.length + 7);
+    // A rule's selector, or another such comment, must follow; a `}`, `;` or the end may not.
+    if (!(before === "" || before.endsWith("}") || before.endsWith("-->")) || !/^\s*(?:<!--|[^{};]+\{)/.test(after)) ok = false;
+    const mark = `syntechs-cdo-e000-${marks.length}`;
+    marks.push(mark);
+    texts.push(`<!--${inner.replace(/\s+/g, " ")}-- >`);
+    return `${mark} `;
+  });
+  if (!ok || /<!--|-->/.test(rewritten)) return undefined;
+  return { rewritten, marks, texts };
 }
