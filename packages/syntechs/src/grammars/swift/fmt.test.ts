@@ -278,3 +278,14 @@ test("a long case condition or parenthesized chain is broken as swift-format bre
     expect(out.ok && out.text, input).toBe(expected);
   }
 });
+
+// A regression here is the `else if` header left past the width, or laid out without the `} else ` its line opens
+// with. The case is the corpus's (Rules/DontRepeatTypeInStaticProperties.swift).
+test("a long else-if header is broken as swift-format breaks it", () => {
+  const out = run(
+    "struct S {\n  func f() {\n    if let typeAnnotation = bindings.first?.typeAnnotation {\n      return typeAnnotation.type.description\n    } else if let initializerCalledExpression = bindings.first?.initializer?.value.as(FunctionCallExprSyntax.self)?\n      .calledExpression\n    {\n      return nil\n    }\n  }\n}\n",
+  );
+  expect(out.ok && out.text).toBe(
+    "struct S {\n  func f() {\n    if let typeAnnotation = bindings.first?.typeAnnotation {\n      return typeAnnotation.type.description\n    } else if let initializerCalledExpression = bindings.first?.initializer?.value.as(\n      FunctionCallExprSyntax.self)?\n      .calledExpression\n    {\n      return nil\n    }\n  }\n}\n",
+  );
+});

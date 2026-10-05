@@ -13,7 +13,7 @@ import type { Normalize } from "../../fmt/check.js";
 import { grammar } from "./bundle.js";
 import { language } from "./index.js";
 import { statementTokens } from "./layout.js";
-import { prettyPrint } from "./pretty.js";
+import { prettyPrint, tk } from "./pretty.js";
 
 export type SwiftOptions = PrettierOptions;
 
@@ -282,6 +282,8 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
       if (p === NO_NODE) return NO_NODE;
       const element = elementOf(n, p);
       if (element !== undefined) return element;
+      // An `else if` on the line of the `}` before it lays its header out on its own.
+      if (tree.kindName(n) === "if_statement" && tree.kindName(p) === "if_statement" && tree.lf(firstLeaf(tree, n)) === 0) return n;
       // A closure's statement on the line of its `{` is laid out with the statement holding the closure.
       const inlineClosure = tree.kindName(tree.parent(p)) === "lambda_literal" && tree.lf(firstLeaf(tree, n)) === 0;
       if ((BODIES.has(tree.kindName(p)) && !inlineClosure) || p === tree.root) return n;
@@ -370,11 +372,22 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
   /** The statement laid out as swift-format lays it out, or undefined when that is what is written. */
   const layOut = (stmt: number, past: number[]): Edit | undefined => {
     const first = index.get(firstLeaf(tree, stmt)) as number;
+    // `} else if …`: the header after the `} else ` its line starts with, laid out as the rest of that line.
+    const elseIf =
+      tree.kindName(stmt) === "if_statement" &&
+      tree.kindName(tree.parent(stmt)) === "if_statement" &&
+      !startsLine(first) &&
+      first >= 2 &&
+      startsLine(first - 2) &&
+      tree.text(leaves[first - 2] as number) === "}" &&
+      tree.text(leaves[first - 1] as number) === "else" &&
+      gap(first - 1) === 1 &&
+      gap(first) === 1;
     const element = elements.get(stmt);
     const { tokens, last: end } = statementTokens(tree, stmt, (leaf) => gap(index.get(firstLeaf(tree, leaf)) as number), element);
     const lastLeaf = tree.count(end) === 0 ? end : lastLeafOf(end);
     const last = index.get(lastLeaf) as number;
-    if (!startsLine(first) || (last + 1 < leaves.length && !startsLine(last + 1)))
+    if ((!startsLine(first) && !elseIf) || (last + 1 < leaves.length && !startsLine(last + 1)))
       throw new Error(`a statement past column ${width} sharing its line (line breaking): ${at(first)}`);
     // A line break inside the statement is kept as swift-format keeps it; a blank line or a comment is not ported.
     for (let i = first + 1; i <= last; i++) {
@@ -386,9 +399,12 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
     for (const leaf of past)
       if ((index.get(leaf) as number) > last)
         throw new Error(`code past column ${width} after a statement's header (line breaking): ${at(index.get(leaf) as number)}`);
-    const base = tree.col(leaves[first] as number);
-    const printed = prettyPrint(tokens, base, width, 2);
-    if (printed.split("\n").some((line, i) => line.length + (i === 0 ? base : 0) > width))
+    const base = elseIf ? lineIndent(first) : tree.col(leaves[first] as number);
+    const prefix = elseIf ? "} else " : "";
+    const whole = prettyPrint(elseIf ? [tk.syntax("}"), tk.space, tk.syntax("else"), tk.space, ...tokens] : tokens, base, width, 2);
+    if (!whole.startsWith(prefix)) throw new Error(`an else if header whose \`} else\` breaks (line breaking): ${at(first)}`);
+    const printed = whole.slice(prefix.length);
+    if (whole.split("\n").some((line, i) => line.length + (i === 0 ? base : 0) > width))
       throw new Error(`a line past column ${width} once laid out (line breaking): ${at(first)}`);
     const from = starts.get(leaves[first] as number) as number;
     const to = (starts.get(lastLeaf) as number) + tree.text(lastLeaf).length;
