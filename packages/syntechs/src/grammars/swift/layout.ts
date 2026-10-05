@@ -12,8 +12,8 @@ import type { FormatTree } from "../../fmt/tree.js";
 import { type BreakKind, type Tok, tk } from "./pretty.js";
 
 /** Literals swift-format prints whole: a string's interpolations are its raw text (`ExpressionSegmentSyntax`). */
-const WHOLE = new Set(["line_string_literal"]);
-const LITERALS = new Set(["integer_literal", "real_literal", "boolean_literal", "line_string_literal", "nil"]);
+const WHOLE = new Set(["line_string_literal", "raw_string_literal"]);
+const LITERALS = new Set(["integer_literal", "real_literal", "boolean_literal", "line_string_literal", "raw_string_literal", "nil"]);
 /** The tree-sitter kinds of an operator sequence, which `binary` flattens and refolds. */
 const BINARY = new Set([
   "additive_expression",
