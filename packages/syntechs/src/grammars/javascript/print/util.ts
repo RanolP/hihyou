@@ -433,6 +433,13 @@ export function embedLanguage(tree: FormatTree, template: number): EmbedLanguage
     if (root === "styled" || root === "css") return "css";
   }
   if (isStyledJsx(tree, template) || isAngularStyles(tree, template)) return "css";
+  // prettier's isEmbedGraphQL: any argument of a call to a plain `graphql` (`graphql(schema, `…`)`).
+  if (call !== NO_NODE && tree.kindName(call) === "arguments") {
+    const outer = tree.parent(call);
+    const fn = outer === NO_NODE ? NO_NODE : fieldChild(tree, outer, "function");
+    if (tree.kindName(outer) === "call_expression" && fn !== NO_NODE && tree.kindName(fn) === "identifier" && tree.text(fn) === "graphql")
+      return "graphql";
+  }
   if (tag === "gql" || tag === "graphql" || tag === "graphql.experimental" || hasLanguageComment(tree, template, "GraphQL"))
     return "graphql";
   if (tag === "html" || hasLanguageComment(tree, template, "HTML")) return "html";

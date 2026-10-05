@@ -1,4 +1,4 @@
-js@oxfmt compatibility: 952/964 (98.76%), 0 refused (ok:false), 190 excluded
+js@oxfmt compatibility: 959/964 (99.48%), 0 refused (ok:false), 190 excluded
 
 Fixtures: prettier 3.9.9 tests/format/{js,jsx} (recursive), every spec call listing parser `babel` or `acorn` or `espree` or `meriyah` or `oxc`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left.
 
@@ -8,18 +8,11 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
-| js/multiparser-graphql/comment-tag.js | 0/1 | 76.92% |
-| js/multiparser-graphql/escape.js | 0/1 | 82.93% |
-| js/multiparser-graphql/expressions.js | 0/1 | 40.91% |
-| js/multiparser-graphql/graphql-tag.js | 0/1 | 72.44% |
-| js/multiparser-graphql/graphql.js | 0/1 | 38.10% |
-| js/multiparser-graphql/react-relay.js | 0/1 | 36.84% |
 | js/multiparser-markdown/0-indent.js | 0/1 | 87.80% |
 | js/multiparser-markdown/escape.js | 0/1 | 84.62% |
 | js/multiparser-markdown/issue-5021.js | 0/1 | 92.96% |
 | js/multiparser-markdown/markdown.js | 0/1 | 12.50% |
 | js/multiparser-markdown/single-line.js | 0/1 | 0.00% |
-| js/multiparser-text/text.js | 0/1 | 66.67% |
 
 # Refused
 

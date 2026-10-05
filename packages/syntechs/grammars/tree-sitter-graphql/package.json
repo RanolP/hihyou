@@ -1,0 +1,20 @@
+{
+  "name": "tree-sitter-graphql",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "postinstall": "node ../build.mjs"
+  },
+  "grammar": {
+    "sources": [
+      {
+        "repo": "bkegley/tree-sitter-graphql",
+        "commit": "5e66e961eee421786bdda8495ed1db045e06b5fe",
+        "files": {
+          "grammar.js": "67120043a4d9c4e70c38fee8edb67fc3f48a785cc5e7101f6d56fcf1d55d9acf",
+          "queries/graphql/highlights.scm": "439c35df9b072a9eeb7c2a284c0c27943b8273dbe100ed51c754bfb38e316067"
+        }
+      }
+    ]
+  }
+}
