@@ -145,6 +145,9 @@ const edgeCases: [string, string][] = [
   ["other-at-rules", "@container (min-width:400px){a{b:c}}"],
   // An unknown at-rule's prelude whose last line holds `//`, even in a string, printed `{` after a space; oxfmt puts
   // it on a line of its own.
+  // A stray argument `:` beside a comment took the typed path and kept its gaps; oxfmt prints the arguments as raw
+  // tokens, the comment glued to the token before it or after the last one.
+  ["stray-arg-colon-comment", "a{b:f(/ a /*q*/ :b);c:f(/ a :b /*q*/);d:f(/ a :b /*q*/, c)}"],
   // A `@document` prelude had its gaps and line breaks evened out; oxfmt prints it as written, and puts `{` on a line
   // of its own after a `//` when the prelude is not functions separated by commas.
   ["document-prelude", "@document url(a) ,  domain(b)\n  ,url-prefix('//'){r{}}@-moz-document 'a//b'{r{}}@DOCUMENT x,\n  y{r{}}"],

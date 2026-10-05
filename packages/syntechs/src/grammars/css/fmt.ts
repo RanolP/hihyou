@@ -938,7 +938,6 @@ function strayArgColon(call: number, ctx: SCtx): boolean {
   if (inDirective(call, ctx) || ancestorWhere(t, call, ["pseudo_class_selector"], ["declaration"], () => true))
     return false;
   const kids = children(node, t);
-  if (kids.some((c) => isComment(c, ctx))) return false;
   return kids.some(
     (c) =>
       (t.kindName(c) === "keyword_argument" && t.missing(t.child(c, 0))) ||
@@ -985,7 +984,7 @@ function rawArguments(node: number, ctx: SCtx): void {
  * (`slashJoined`) indexed within the chain, a space after a `:` and around a `*`, else tight only where written so.
  */
 function rawArgChain(nodes: number[], ctx: SCtx): void {
-  const g = rawTokens(nodes, ctx).tokens;
+  const { tokens: g, tail } = rawTokens(nodes, ctx);
   const sol = (x: RawToken | undefined) => x?.kind === "/";
   const word = (x: RawToken | undefined) => x !== undefined && ["ident", ")"].includes(x.kind);
   const tight = (i: number): boolean => {
@@ -1017,6 +1016,11 @@ function rawArgChain(nodes: number[], ctx: SCtx): void {
     }
     ctx.print(token.node);
   });
+  // A comment after the chain's last token follows it, a space before it (`f(/a: b /*q*/)`).
+  for (const c of tail) {
+    sText(" ");
+    ctx.comment(c);
+  }
 }
 
 /**
