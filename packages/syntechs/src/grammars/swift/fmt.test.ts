@@ -202,3 +202,15 @@ test("a long statement outside #if is laid out, and a directive off its scope's 
   );
   expect(run("struct S {\n  func f() {\n    x()\n  }\n#if os(macOS)\n  func g() {}\n#endif\n}\n").ok).toBe(false);
 });
+
+// A regression here is NoAccessLevelOnExtensionDeclaration lost: an extension keeping its access level, or a member
+// left without the one it inherits. The expected texts follow the rule's source (Rules/NoAccessLevelOnExtension
+// Declaration.swift in the vendored corpus), as swift-format cannot run here; API/Selection.swift is the corpus case.
+test("an extension's access level moves onto each member that has none", () => {
+  const out = run(
+    "public extension A {\n  /// Doc.\n  @inlinable func a() {}\n  static let b = 1\n  private var c: Int { 1 }\n  struct S {\n    func z() {}\n  }\n}\n\nprivate extension B {\n  func d() {}\n}\n\ninternal extension C {\n  func e() {}\n}\n",
+  );
+  expect(out.ok && out.text).toBe(
+    "extension A {\n  /// Doc.\n  @inlinable public func a() {}\n  public static let b = 1\n  private var c: Int { 1 }\n  public struct S {\n    func z() {}\n  }\n}\n\nextension B {\n  fileprivate func d() {}\n}\n\nextension C {\n  func e() {}\n}\n",
+  );
+});
