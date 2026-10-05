@@ -5,6 +5,7 @@
 export const GRAMMARS: Record<string, { src: string; comments: string[] }> = {
   json: { src: "tree-sitter-json/src", comments: ["comment"] },
   css: { src: "tree-sitter-css/src", comments: ["comment"] },
+  graphql: { src: "tree-sitter-graphql/src", comments: ["comment"] },
   html: { src: "tree-sitter-html/src", comments: ["comment"] },
   // `html_comment` is Annex B's `<!--` and a line-leading `-->`, each a comment to the end of its line.
   javascript: {
