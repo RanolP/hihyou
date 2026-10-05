@@ -286,7 +286,9 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
       if (tree.kindName(n) === "if_statement" && tree.kindName(p) === "if_statement" && tree.lf(firstLeaf(tree, n)) === 0) return n;
       // A closure's statement on the line of its `{` is laid out with the statement holding the closure.
       const inlineClosure = tree.kindName(tree.parent(p)) === "lambda_literal" && tree.lf(firstLeaf(tree, n)) === 0;
-      if ((BODIES.has(tree.kindName(p)) && !inlineClosure) || p === tree.root) return n;
+      // A body's own braces are its declaration's: the `{` ends its header.
+      const brace = tree.count(n) === 0 && (tree.text(n) === "{" || tree.text(n) === "}");
+      if ((BODIES.has(tree.kindName(p)) && !inlineClosure && !brace) || p === tree.root) return n;
     }
   };
   const accessEdits: { at: number; leaf: number; text: string }[] = [];

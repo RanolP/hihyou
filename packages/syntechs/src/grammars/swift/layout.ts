@@ -769,6 +769,9 @@ export function statementTokens(
   } else if (k === "function_declaration" || k === "init_declaration") {
     lastToken = functionHeader(stmt);
     header = true;
+  } else if (k === "protocol_declaration") {
+    lastToken = protocolHeader(stmt);
+    header = true;
   } else unsupported(stmt);
 
   /** The member type breaks of a dotted name (`visit(MemberTypeSyntax)`); `.Protocol` and `.Type` are metatypes. */
@@ -799,6 +802,37 @@ export function statementTokens(
       case "optional_type":
         if (parts.length !== 2 || tree.text(parts[1] as number) !== "?") unsupported(n);
         return typeTokens(parts[0] as number);
+      case "metatype":
+        // `X.Type`, `X.Protocol`.
+        if (parts.length !== 3 || tree.text(parts[1] as number) !== ".") unsupported(n);
+        return typeTokens(parts[0] as number);
+      case "tuple_type": {
+        // `visit(TupleTypeSyntax)` and `visit(TupleTypeElementSyntax)` over one unlabeled element (`(any P)`).
+        const item = parts[0] as number;
+        const inner = children(item);
+        if (parts.length !== 1 || kind(item) !== "tuple_type_item" || inner.length !== 3) unsupported(n);
+        const [lparen, element, rparen] = inner as [number, number, number];
+        if (tree.text(lparen) !== "(" || tree.text(rparen) !== ")") unsupported(n);
+        addAfter(lparen, tk.brk({ k: "open", block: true }, 0), tk.open());
+        addBefore(rparen, tk.brk({ k: "close", mustBreak: true }, 0), tk.close);
+        addBefore(firstLeaf(tree, element), tk.open());
+        addAfter(lastLeaf(tree, element), tk.close);
+        return typeTokens(element);
+      }
+      case "existential_type":
+      case "opaque_type":
+        // `visit(SomeOrAnyTypeSyntax)`.
+        if (parts.length !== 2) unsupported(n);
+        addAfter(parts[0] as number, tk.space);
+        return typeTokens(parts[1] as number);
+      case "protocol_composition_type":
+        // `visit(CompositionTypeElementSyntax)`.
+        for (const c of parts)
+          if (tree.text(c) === "&") {
+            addBefore(c, tk.brk({ k: "continue" }));
+            addAfter(c, tk.space);
+          } else typeTokens(c);
+        return;
     }
     unsupported(n);
   }
@@ -934,11 +968,29 @@ export function statementTokens(
     }
     let whereClose = false;
     if (kind(parts[i] as number) === "type_constraints") {
-      const clause = children(parts[i++] as number);
+      whereClause(parts[i++] as number);
+      whereClose = true;
+    }
+    const body = parts[i++] as number;
+    if (body === undefined || kind(body) !== "function_body" || i !== parts.length) unsupported(n);
+    const brace = tree.child(body, 0);
+    if (tree.text(brace) !== "{") unsupported(body);
+    addBefore(brace, tk.elective({ k: "reset" }));
+    // The where clause's group and the decl's close after the body; the stream ends at `{`, so they close there.
+    addAfter(brace, ...(whereClose ? [tk.close] : []), tk.close);
+    return brace;
+  }
+
+  /**
+   * A `where` clause before a body's `{`: the `same` break and group before it (`arrangeTypeDeclBlock`,
+   * `arrangeFunctionLikeDecl`), `visit(GenericWhereClauseSyntax)` and each requirement's.
+   */
+  function whereClause(n: number): void {
+    {
+      const clause = children(n);
       const where = clause[0] as number;
       if (tree.text(where) !== "where" || clause.length < 2) unsupported(where);
       addBefore(where, tk.brk({ k: "same" }), tk.open());
-      whereClose = true;
       const requirements = clause.slice(1);
       const lastReq = lastLeaf(tree, requirements[requirements.length - 1] as number);
       addAfter(where, tk.brk({ k: "open", block: true }));
@@ -961,12 +1013,41 @@ export function statementTokens(
         else addAfter(lastLeaf(tree, c), tk.close);
       }
     }
+  }
+
+  /**
+   * `visit(ProtocolDeclSyntax)` with `arrangeTypeDeclBlock` and `visit(InheritanceClauseSyntax)`, up to the body's
+   * `{`, over a protocol with no attributes, modifiers or associated types. Returns that `{`.
+   */
+  function protocolHeader(n: number): number {
+    const parts = children(n);
+    const [keyword, name] = parts as [number, number];
+    if (tree.text(keyword) !== "protocol" || kind(name) !== "type_identifier") unsupported(n);
+    let i = 2;
+    addBefore(keyword, tk.open(), tk.open());
+    addAfter(keyword, tk.brk({ k: "continue" }));
+    let keywordGroupEnd = name;
+    if (tree.text(parts[i] as number) === ":") {
+      keywordGroupEnd = parts[i++] as number;
+      const inherited: number[] = [];
+      while (kind(parts[i] as number) === "inheritance_specifier" || tree.text(parts[i] as number) === ",") inherited.push(parts[i++] as number);
+      if (inherited.length !== 1) unsupported(n);
+      const type = tree.child(inherited[0] as number, 0);
+      addBefore(firstLeaf(tree, type), tk.open(), tk.brk({ k: "open", block: true }));
+      addAfter(lastLeaf(tree, type), tk.brk({ k: "close", mustBreak: true }, 0), tk.close);
+      typeTokens(type);
+    }
+    addAfter(keywordGroupEnd, tk.close);
+    let whereClose = false;
+    if (kind(parts[i] as number) === "type_constraints") {
+      whereClause(parts[i++] as number);
+      whereClose = true;
+    }
     const body = parts[i++] as number;
-    if (body === undefined || kind(body) !== "function_body" || i !== parts.length) unsupported(n);
+    if (body === undefined || kind(body) !== "protocol_body" || i !== parts.length) unsupported(n);
     const brace = tree.child(body, 0);
     if (tree.text(brace) !== "{") unsupported(body);
-    addBefore(brace, tk.elective({ k: "reset" }));
-    // The where clause's group and the decl's close after the body; the stream ends at `{`, so they close there.
+    addBefore(brace, tk.brk({ k: "reset" }));
     addAfter(brace, ...(whereClose ? [tk.close] : []), tk.close);
     return brace;
   }

@@ -289,3 +289,25 @@ test("a long else-if header is broken as swift-format breaks it", () => {
     "struct S {\n  func f() {\n    if let typeAnnotation = bindings.first?.typeAnnotation {\n      return typeAnnotation.type.description\n    } else if let initializerCalledExpression = bindings.first?.initializer?.value.as(\n      FunctionCallExprSyntax.self)?\n      .calledExpression\n    {\n      return nil\n    }\n  }\n}\n",
   );
 });
+
+// A regression here is a protocol's where clause, a metatype parameter or a parenthesized return type laid out
+// otherwise than swift-format. The cases are the corpus's (Core/SyntaxTraits.swift).
+test("a long protocol header or function signature with metatypes is broken as swift-format breaks it", () => {
+  for (const [input, expected] of [
+    [
+      "protocol CommaSeparatedListSyntaxProtocol: SyntaxCollection where Element: WithTrailingCommaSyntax & Equatable {\n  var x: Int { get }\n}\n",
+      "protocol CommaSeparatedListSyntaxProtocol: SyntaxCollection\nwhere Element: WithTrailingCommaSyntax & Equatable {\n  var x: Int { get }\n}\n",
+    ],
+    [
+      "extension Syntax {\n  func asProtocol(_: KeywordModifiedExprSyntaxProtocol.Protocol) -> KeywordModifiedExprSyntaxProtocol? {\n    return nil\n  }\n}\n",
+      "extension Syntax {\n  func asProtocol(_: KeywordModifiedExprSyntaxProtocol.Protocol)\n    -> KeywordModifiedExprSyntaxProtocol?\n  {\n    return nil\n  }\n}\n",
+    ],
+    [
+      "extension Syntax {\n  func asProtocol(_: (any CommaSeparatedListSyntaxProtocol).Protocol) -> (any CommaSeparatedListSyntaxProtocol)? {\n    return nil\n  }\n}\n",
+      "extension Syntax {\n  func asProtocol(_: (any CommaSeparatedListSyntaxProtocol).Protocol) -> (\n    any CommaSeparatedListSyntaxProtocol\n  )? {\n    return nil\n  }\n}\n",
+    ],
+  ]) {
+    const out = run(input as string);
+    expect(out.ok && out.text, input).toBe(expected);
+  }
+});
