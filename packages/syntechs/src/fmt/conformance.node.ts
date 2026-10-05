@@ -204,6 +204,11 @@ export const PRETTIER_FIXTURES: Target[] = [
     parsers: ["css"],
     ignore: CSS_IGNORE,
   }),
+  prettierFixtures("graphql", "graphql", "graphql", () => "graphql", {
+    dirs: ["graphql"],
+    parsers: ["graphql"],
+    ignore: [],
+  }),
   prettierFixtures("html", "html", "html", () => "html", {
     dirs: ["html"],
     parsers: ["html"],
