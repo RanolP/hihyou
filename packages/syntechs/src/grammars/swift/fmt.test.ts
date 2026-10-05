@@ -323,3 +323,15 @@ test("a case pattern's let moves onto each identifier it binds", () => {
     "func f() {\n  switch t {\n  case .break(let kind, _, _):\n    if case .close(let mustBreak) = kind {\n      x()\n    }\n  default: ()\n  }\n  guard case .comment(let c1, false) = n, case (let a, .b(let c)) = x else { return }\n}\n",
   );
 });
+
+// A regression here is a case label's layout or a block comment within a line lost: the items broken elsewhere than
+// after a comma, or the comment counted at its own length (swift-format counts one more). The case is the corpus's
+// (PrettyPrint/Comment.swift).
+test("a long case label with block comments among its items is broken as swift-format breaks it", () => {
+  const out = run(
+    'extension A {\n  var isWhitespace: Bool {\n    switch self {\n    case UInt8(ascii: " "), UInt8(ascii: "\\n"), UInt8(ascii: "\\t"), UInt8(ascii: "\\r"), /*VT*/ 0x0B, /*FF*/ 0x0C:\n      return true\n    default:\n      return false\n    }\n  }\n}\n',
+  );
+  expect(out.ok && out.text).toBe(
+    'extension A {\n  var isWhitespace: Bool {\n    switch self {\n    case UInt8(ascii: " "), UInt8(ascii: "\\n"), UInt8(ascii: "\\t"), UInt8(ascii: "\\r"), /*VT*/\n      0x0B, /*FF*/ 0x0C:\n      return true\n    default:\n      return false\n    }\n  }\n}\n',
+  );
+});

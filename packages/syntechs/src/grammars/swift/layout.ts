@@ -13,7 +13,17 @@ import { type BreakKind, type Tok, tk } from "./pretty.js";
 
 /** Literals swift-format prints whole: a string's interpolations are its raw text (`ExpressionSegmentSyntax`). */
 const WHOLE = new Set(["line_string_literal", "raw_string_literal"]);
-const LITERALS = new Set(["integer_literal", "real_literal", "boolean_literal", "line_string_literal", "raw_string_literal", "nil"]);
+const LITERALS = new Set([
+  "integer_literal",
+  "hex_literal",
+  "oct_literal",
+  "bin_literal",
+  "real_literal",
+  "boolean_literal",
+  "line_string_literal",
+  "raw_string_literal",
+  "nil",
+]);
 /** The tree-sitter kinds of an operator sequence, which `binary` flattens and refolds. */
 const BINARY = new Set([
   "additive_expression",
@@ -131,6 +141,7 @@ export function statementTokens(
   };
   collect(stmt);
   if (element !== undefined) for (const n of [element.colon, element.value, element.comma]) if (n !== undefined) collect(n);
+  const isComment = (n: number) => kind(n) === "comment" || kind(n) === "multiline_comment";
   const leafAfter = (leaf: number) => leaves[leaves.indexOf(leaf) + 1];
 
   // ---- The SwiftSyntax shape.
@@ -782,6 +793,29 @@ export function statementTokens(
   } else if (k === "protocol_declaration") {
     lastToken = protocolHeader(stmt);
     header = true;
+  } else if (k === "switch_entry") {
+    // `visit(SwitchCaseLabelSyntax)`, up to its `:`: a space after `case`, each item a group, a `continue` break
+    // after each item's `,`.
+    const parts = children(stmt);
+    const keyword = parts[0] as number;
+    const colon = parts.find((c) => tree.text(c) === ":" && kind(c) === ":");
+    if (tree.text(keyword) !== "case" || colon === undefined) unsupported(stmt);
+    addBefore(keyword, tk.open());
+    addAfter(keyword, tk.space);
+    for (const [i, c] of parts.entries()) {
+      if (kind(c) !== "switch_pattern") continue;
+      const pattern = tree.child(c, 0);
+      if (tree.count(c) !== 1 || kind(pattern) !== "pattern" || tree.count(pattern) !== 1) unsupported(c);
+      const item = convert(tree.child(pattern, 0));
+      addBefore(item.first, tk.open());
+      const next = parts.slice(i + 1).find((x) => !isComment(x));
+      if (next !== undefined && tree.text(next) === ",") addAfter(next, tk.close, tk.brk({ k: "continue" }));
+      else addAfter(item.last, tk.close);
+      expression(item);
+    }
+    addAfter(colon as number, tk.close);
+    lastToken = colon as number;
+    header = true;
   } else unsupported(stmt);
 
   /** The member type breaks of a dotted name (`visit(MemberTypeSyntax)`); `.Protocol` and `.Type` are metatypes. */
@@ -1141,7 +1175,24 @@ export function statementTokens(
   const opensScope = (t: Tok) =>
     t.t === "open" || (t.t === "break" && (t.kind.k === "open" || t.kind.k === "continue" || t.kind.k === "same" || t.kind.k === "contextual"));
   let width = 0;
+  /**
+   * A block comment within a line, after the leaf before it: `afterTokensForTrailingComment` puts a space, the
+   * comment and a size-0 `same` break right after that leaf, ahead of its after tokens. Any other comment is not
+   * ported.
+   */
+  const trailingComment = (i: number): number | undefined => {
+    const c = leaves[i + 1];
+    if (c === undefined || !isComment(c)) return undefined;
+    const t = tree.text(c);
+    const after = leaves[i + 2];
+    if (!t.startsWith("/*") || t.includes("\n") || gap(c) !== 1 || after === undefined || isComment(after) || gap(after) === undefined)
+      unsupported(c);
+    return c;
+  };
+  let skip: number | undefined;
   for (const [i, l] of leaves.entries()) {
+    if (l === skip) continue;
+    if (i === 0 && isComment(l)) unsupported(l);
     const own = before.get(l) ?? [];
     let want = i > 0 ? gap(l) : 0;
     if (want === undefined) {
@@ -1180,6 +1231,8 @@ export function statementTokens(
       break;
     }
     width = 0;
+    skip = trailingComment(i);
+    if (skip !== undefined) append(tk.space), append(tk.comment(tree.text(skip))), append(tk.brk({ k: "same" }, 0));
     for (const group of [...(after.get(l) ?? [])].reverse())
       for (const t of group) {
         append(t);

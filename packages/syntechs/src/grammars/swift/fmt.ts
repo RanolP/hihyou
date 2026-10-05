@@ -282,6 +282,8 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
       if (p === NO_NODE) return NO_NODE;
       const element = elementOf(n, p);
       if (element !== undefined) return element;
+      // A `case` label lays its header out up to its `:`; its statements are statements of their own.
+      if (tree.kindName(n) === "switch_entry") return n;
       // An `else if` on the line of the `}` before it lays its header out on its own.
       if (tree.kindName(n) === "if_statement" && tree.kindName(p) === "if_statement" && tree.lf(firstLeaf(tree, n)) === 0) return n;
       // A closure's statement on the line of its `{` is laid out with the statement holding the closure.
@@ -451,7 +453,10 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
       throw new Error(`a statement past column ${width} sharing its line (line breaking): ${at(first)}`);
     // A line break inside the statement is kept as swift-format keeps it; a blank line or a comment is not ported.
     for (let i = first + 1; i <= last; i++) {
-      if (isComment(leaves[i] as number))
+      // A block comment within a line is ported (`statementTokens`), any other comment is not.
+      const l = leaves[i] as number;
+      const inline = tree.text(l).startsWith("/*") && !startsLine(i) && i + 1 <= last && !startsLine(i + 1);
+      if (isComment(l) && !inline)
         throw new Error(`a comment inside a statement past column ${width} (line breaking): ${at(i)}`);
       if (tree.lf(leaves[i] as number) > 1)
         throw new Error(`a blank line inside a statement past column ${width} (line breaking): ${at(i)}`);
