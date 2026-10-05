@@ -295,6 +295,7 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
   const walk = (n: number) => {
     const kind = tree.kindName(n);
     if (kind === "class_declaration") moveExtensionAccess(n);
+    if (kind === "value_binding_pattern") distributeCaseLet(n);
     if (tree.count(n) === 0) {
       if (endCol(n) > width && !unbreakable(tree, n)) {
         const stmt = statementOf(n);
@@ -346,6 +347,63 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
       accessEdits.push({ at: offset, leaf: li, text: `${add} ` });
       edits0.push({ from: offset, to: offset, text: `${add} ` });
     }
+  }
+  /**
+   * UseLetInEveryBoundCaseVariable: `case let .x(a, b)` (or `case let (a, b)`) is `case .x(let a, let b)`, the
+   * `let`/`var` before each identifier the pattern binds, nested calls and tuples included; a pattern of another
+   * shape keeps its `let`.
+   */
+  function distributeCaseLet(v: number): void {
+    const before = prevLeaf(tree, firstLeaf(tree, v));
+    if (before === NO_NODE || tree.text(before) !== "case") return;
+    const parent = tree.parent(v);
+    const kids = Array.from({ length: tree.count(parent) }, (_, i) => tree.child(parent, i));
+    let i = kids.indexOf(v) + 1;
+    if (tree.text(kids[i] as number) === ".") {
+      if (tree.kindName(kids[i + 1] as number) !== "simple_identifier") return;
+      i += 2;
+    }
+    if (tree.text(kids[i] as number) !== "(") return;
+    const binds: number[] = [];
+    const collect = (list: number[], from: number): number => {
+      // The patterns between the `(` at `from` and its `)`; returns the index past that `)`.
+      let j = from + 1;
+      for (; j < list.length && tree.text(list[j] as number) !== ")"; j++) {
+        const c = list[j] as number;
+        if (tree.kindName(c) !== "pattern") continue;
+        const inner = Array.from({ length: tree.count(c) }, (_, k) => tree.child(c, k));
+        if (inner.length === 1 && tree.kindName(inner[0] as number) === "simple_identifier") binds.push(inner[0] as number);
+        else {
+          const open = inner.findIndex((x) => tree.text(x) === "(");
+          if (open >= 0 && (open === 0 || (open === 2 && tree.text(inner[0] as number) === "."))) collect(inner, open);
+        }
+      }
+      return j + 1;
+    };
+    collect(kids, i);
+    const spec = tree.text(v);
+    const vi = index.get(firstLeaf(tree, v)) as number;
+    const from = starts.get(leaves[vi] as number) as number;
+    accessEdits.push({ at: from, leaf: vi, text: "" });
+    edits0.push({ from, to: starts.get(leaves[vi + 1] as number) as number, text: "" });
+    // Each line's change in length, by its last leaf: the `let ` leaves the pattern's line, and one joins each binding's.
+    const grown = new Map<number, number>();
+    const lineEnd = (k: number) => {
+      while (k + 1 < leaves.length && !startsLine(k + 1)) k++;
+      return k;
+    };
+    grown.set(lineEnd(vi), -(spec.length + 1));
+    for (const b of binds) {
+      const bi = index.get(b) as number;
+      const end = lineEnd(bi);
+      grown.set(end, (grown.get(end) ?? 0) + spec.length + 1);
+      const offset = starts.get(b) as number;
+      accessEdits.push({ at: offset, leaf: bi, text: `${spec} ` });
+      edits0.push({ from: offset, to: offset, text: `${spec} ` });
+    }
+    for (const [end, extra] of grown)
+      if (extra > 0 && endCol(leaves[end] as number) + extra > width)
+        throw new Error(`a line past column ${width} once a case pattern's binding moves in (UseLetInEveryBoundCaseVariable): ${at(vi)}`);
   }
   /** The access level among `modifiers` (`private(set)` included, `open` not), as swift-format's accessLevelModifier. */
   function accessModifier(modifiers: number | undefined): number | undefined {
@@ -631,7 +689,38 @@ const normalize: Normalize = (lexemes, _text, tree) => {
     }
     return undefined;
   };
+  // UseLetInEveryBoundCaseVariable moves a case pattern's `let`/`var` onto the identifiers it binds: in a case
+  // pattern (from `case` to its `=` or `:`) a `let` or `var` does not compare, an identifier it binds compares as
+  // bound wherever its `let` stands.
+  const caseForm = new Map<number, string | undefined>();
+  let inCase = false;
+  let outer = false;
+  let depth = 0;
+  for (const [i, l] of lexemes.entries()) {
+    const k = tree.kindName(l.node);
+    if (k === "case") {
+      inCase = true;
+      outer = false;
+      depth = 0;
+      continue;
+    }
+    if (!inCase) continue;
+    const parent = tree.parent(l.node);
+    if ((l.text === "let" || l.text === "var") && tree.kindName(parent) === "value_binding_pattern") {
+      if (lexemes[i - 1]?.text === "case") outer = true;
+      caseForm.set(l.node, undefined);
+      continue;
+    }
+    if (l.text === "(") depth++;
+    else if (l.text === ")") depth--;
+    else if (depth === 0 && (l.text === "=" || l.text === ":" || l.text === ",")) inCase = false;
+    else if (k === "simple_identifier") {
+      const lone = tree.kindName(parent) === "pattern" && tree.count(parent) === 1 && outer;
+      if (lone || tree.fieldName(l.node) === "bound_identifier") caseForm.set(l.node, `bind:${l.text}`);
+    }
+  }
   return lexemes.map((l) => {
+    if (caseForm.has(l.node)) return caseForm.get(l.node);
     if (inDropped(l.node)) return undefined;
     const m = leads(l.node);
     return m === undefined ? l.text : `${l.text}@access:${member.get(m)}`;

@@ -311,3 +311,15 @@ test("a long protocol header or function signature with metatypes is broken as s
     expect(out.ok && out.text, input).toBe(expected);
   }
 });
+
+// A regression here is UseLetInEveryBoundCaseVariable lost: a case pattern keeping its leading `let`. The expected
+// texts follow the rule's source (Rules/UseLetInEveryBoundCaseVariable.swift in the vendored corpus);
+// PrettyPrint/TokenStreamCreator.swift is the corpus case.
+test("a case pattern's let moves onto each identifier it binds", () => {
+  const out = run(
+    "func f() {\n  switch t {\n  case let .break(kind, _, _):\n    if case let .close(mustBreak) = kind {\n      x()\n    }\n  default: ()\n  }\n  guard case let .comment(c1, false) = n, case let (a, .b(c)) = x else { return }\n}\n",
+  );
+  expect(out.ok && out.text).toBe(
+    "func f() {\n  switch t {\n  case .break(let kind, _, _):\n    if case .close(let mustBreak) = kind {\n      x()\n    }\n  default: ()\n  }\n  guard case .comment(let c1, false) = n, case (let a, .b(let c)) = x else { return }\n}\n",
+  );
+});
