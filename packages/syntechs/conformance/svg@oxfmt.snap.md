@@ -1,4 +1,4 @@
-svg@oxfmt compatibility: 634/636 (99.69%), 1 refused (ok:false), 3 excluded
+svg@oxfmt compatibility: 635/636 (99.84%), 1 refused (ok:false), 3 excluded
 
 Fixtures: svgo 3.3.2 test/**/*.svg (each plugin test's input, before its `@@@`) and logo/, feather 4.29.2 icons/, and src/grammars/html/svg-corpus; expected output from oxfmt 0.70.0 run on each named `.html` (oxfmt takes no `.svg`), excluded when oxfmt rejects it or does not keep its own output.
 
@@ -8,7 +8,6 @@ Printed, but not as the reference prints it. A run is one option set of the fixt
 
 | Fixture | Runs passed | Match ratio |
 | :------ | :---------: | :---------: |
-| svgo-3.3.2/test/plugins/inlineStyles.13.svg | 0/1 | 97.64% |
 
 # Refused
 
