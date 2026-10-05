@@ -61,7 +61,8 @@ interface Expr {
     | "ternary"
     | "optional"
     | "unwrap"
-    | "closure";
+    | "closure"
+    | "tuple";
   first: number;
   last: number;
   /** `member`: the base, if any; `call`: the callee; `prefix`/`try`: the operand; `infix`: lhs, rhs; `array`: elements. */
@@ -165,7 +166,8 @@ export function statementTokens(
       if ((optional === undefined && tree.count(n) !== 2) || kind(suffix) !== "navigation_suffix" || tree.count(suffix) !== 2)
         unsupported(n);
       const [dot, name] = children(suffix) as [number, number];
-      if (kind(name) !== "simple_identifier") unsupported(suffix);
+      // A name, or a tuple element's index (`a.0`).
+      if (kind(name) !== "simple_identifier" && kind(name) !== "integer_literal") unsupported(suffix);
       // `\.name`: tree-sitter reads the backslash alone as the key path, then a member access on it.
       if (kind(target) === "key_path_expression") {
         if (tree.count(target) !== 1) unsupported(target);
@@ -256,6 +258,13 @@ export function statementTokens(
       }
       if (parts[i] !== rbrace || tree.text(lbrace) !== "{") unsupported(n);
       return make({ k: "closure", first: lbrace, last: rbrace, kids: body, ...(signature === undefined ? {} : { signature }) });
+    }
+    if (k === "tuple_expression") {
+      // `TupleExprSyntax`: one element is a parenthesized expression, more a tuple; labels are not ported.
+      const parts = children(n);
+      const elements = parts.filter((c) => tree.named(c));
+      if (elements.length === 0 || parts.some((c) => tree.fieldName(c) === "name")) unsupported(n);
+      return make({ k: "tuple", first: parts[0] as number, last: parts[parts.length - 1] as number, kids: elements.map(convert) });
     }
     if (k === "postfix_expression") {
       // `a!`: `ForceUnwrapExprSyntax`.
@@ -396,6 +405,8 @@ export function statementTokens(
         return expression(e.kids[0] as Expr);
       case "closure":
         return closure(e);
+      case "tuple":
+        return tuple(e);
       case "infix":
         return infix(e);
       case "try":
@@ -467,6 +478,27 @@ export function statementTokens(
     expression(callee);
     for (const value of values) expression(value);
     if (e.trailing !== undefined) expression(e.trailing);
+  }
+
+  /** `visit(TupleExprSyntax)` with `arrangeAsTupleExprElement`. */
+  function tuple(e: Expr): void {
+    if (e.kids.length === 1) {
+      addAfter(e.first, tk.open());
+      addBefore(e.last, tk.close);
+      delimiters.add(e.last);
+    } else {
+      addAfter(e.first, tk.brk({ k: "open", block: true }, 0), tk.open());
+      addBefore(e.last, tk.brk({ k: "close", mustBreak: true }, 0), tk.close);
+      for (const c of e.kids) {
+        addBefore(c.first, tk.open());
+        const comma = leafAfter(c.last);
+        if (comma !== undefined && tree.text(comma) === ",") {
+          delimiters.add(comma);
+          addAfter(comma, tk.close, tk.brk({ k: "same" }));
+        } else addAfter(c.last, tk.close);
+      }
+    }
+    for (const c of e.kids) expression(c);
   }
 
   /**
@@ -575,6 +607,14 @@ export function statementTokens(
     let count = 0;
     let lastLeafOfAll = NaN;
     for (let i = 0; i <= parts.length; i++) {
+      // A `case` condition's pattern holds commas of its own (tree-sitter flattens it into the statement): it runs
+      // to its `=` and the one value after it.
+      if (i === start && parts[i] !== undefined && tree.text(parts[i] as number) === "case") {
+        const eq = parts.findIndex((c, j) => j > i && tree.text(c) === "=" && kind(c) === "=");
+        if (eq < 0) unsupported(parts[i] as number);
+        i = eq + 1;
+        continue;
+      }
       const comma = parts[i];
       if (comma !== undefined && tree.text(comma) !== ",") continue;
       const seg = parts.slice(start, i);
@@ -583,7 +623,15 @@ export function statementTokens(
       const head = seg[0] as number;
       let value: Expr;
       let binding: { spec: number; eq: number } | undefined;
-      if (kind(head) === "value_binding_pattern") {
+      let matching: { keyword: number; eq: number } | undefined;
+      if (tree.text(head) === "case" && kind(head) === "case") {
+        // `visit(MatchingPatternConditionSyntax)`: its pattern is kept as written (a break in it is not ported, so a
+        // pattern that cannot fit is refused by the width check), then `visit(InitializerClauseSyntax)`.
+        const eq = seg[seg.length - 2] as number;
+        if (seg.length < 4 || tree.text(eq) !== "=") unsupported(head);
+        value = convert(seg[seg.length - 1] as number);
+        matching = { keyword: head, eq };
+      } else if (kind(head) === "value_binding_pattern") {
         const [spec, name, eq, val] = seg as [number, number, number, number];
         if (seg.length !== 4 || kind(name) !== "simple_identifier" || tree.text(eq) !== "=" || tree.count(spec) !== 1)
           unsupported(head);
@@ -606,6 +654,13 @@ export function statementTokens(
         addAfter(binding.spec, tk.brk({ k: "continue" }));
         addBefore(binding.eq, tk.space);
         addAfter(binding.eq, tk.brk({ k: "continue" }));
+      }
+      if (matching !== undefined) {
+        addBefore(matching.keyword, tk.open());
+        addAfter(matching.keyword, tk.brk({ k: "continue" }));
+        addBefore(matching.eq, tk.space);
+        addAfter(matching.eq, tk.brk({ k: "continue" }));
+        addAfter(value.last, tk.close);
       }
       expression(value);
     }

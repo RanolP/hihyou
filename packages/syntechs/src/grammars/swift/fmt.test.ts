@@ -259,3 +259,22 @@ test("a long element of a dictionary broken one per line breaks after its colon"
     'let ruleNameCache: [ObjectIdentifier: String] = [\n  ObjectIdentifier(AllPublicDeclarationsHaveDocumentation.self):\n    "AllPublicDeclarationsHaveDocumentation",\n  ObjectIdentifier(DoNotUseSemicolons.self): "DoNotUseSemicolons",\n]\n',
   );
 });
+
+// A regression here is MatchingPatternConditionSyntax or TupleExprSyntax lost: a `case` condition split at its
+// pattern's commas, or a tuple value not broken as a block. The cases are the corpus's
+// (Rules/UseShorthandTypeNames.swift, Rules/NeverUseImplicitlyUnwrappedOptionals.swift).
+test("a long case condition or parenthesized chain is broken as swift-format breaks it", () => {
+  for (const [input, expected] of [
+    [
+      "func f() {\n  guard let arguments = exactlyTwoChildren(of: genericArgumentList),\n    case (.type(let type0Argument), .type(let type1Argument)) = (arguments.0.argument, arguments.1.argument)\n  else {\n    return\n  }\n}\n",
+      "func f() {\n  guard let arguments = exactlyTwoChildren(of: genericArgumentList),\n    case (.type(let type0Argument), .type(let type1Argument)) = (\n      arguments.0.argument, arguments.1.argument\n    )\n  else {\n    return\n  }\n}\n",
+    ],
+    [
+      "struct S {\n  func f() {\n    for attribute in node.attributes {\n      if (attribute.as(AttributeSyntax.self))?.attributeName.as(IdentifierTypeSyntax.self)?.name.text == \"IBOutlet\" {\n        return\n      }\n    }\n  }\n}\n",
+      "struct S {\n  func f() {\n    for attribute in node.attributes {\n      if (attribute.as(AttributeSyntax.self))?.attributeName.as(IdentifierTypeSyntax.self)?.name\n        .text == \"IBOutlet\"\n      {\n        return\n      }\n    }\n  }\n}\n",
+    ],
+  ]) {
+    const out = run(input as string);
+    expect(out.ok && out.text, input).toBe(expected);
+  }
+});
