@@ -272,9 +272,14 @@ on upstream tree-sitter-javascript 0.23.1's grammar.js, not on the patched tree-
        ),
  
        decorator_call_expression: $ => prec('call', seq(
-@@ -409,18 +489,8 @@
+@@ -406,21 +486,12 @@
+           $.identifier,
+           alias($.decorator_member_expression, $.member_expression),
+         )),
          optional(field('type_arguments', $.type_arguments)),
-         field('arguments', $.arguments),
+-        field('arguments', $.arguments),
++        // A tagged template too, `@foo`bar``, which prettier and oxfmt print parenthesized.
++        field('arguments', choice($.arguments, $.template_string)),
        )),
  
 -      decorator_parenthesized_expression: $ => seq(
@@ -291,7 +296,7 @@ on upstream tree-sitter-javascript 0.23.1's grammar.js, not on the patched tree-
          '{',
          repeat(choice(
            seq(
-@@ -475,10 +545,28 @@
+@@ -475,10 +546,28 @@
          $.enum_declaration,
          $.interface_declaration,
          $.import_alias,
@@ -320,7 +325,7 @@ on upstream tree-sitter-javascript 0.23.1's grammar.js, not on the patched tree-
          $.type_arguments,
          $.expression,
        )),
-@@ -494,20 +582,29 @@
+@@ -494,20 +583,29 @@
          'satisfies',
          $.type,
        )),
@@ -355,7 +360,7 @@ on upstream tree-sitter-javascript 0.23.1's grammar.js, not on the patched tree-
          'require',
          '(',
          field('source', $.string),
-@@ -532,9 +629,8 @@
+@@ -532,9 +630,8 @@
        ambient_declaration: $ => seq(
          'declare',
          choice(
@@ -365,7 +370,7 @@ on upstream tree-sitter-javascript 0.23.1's grammar.js, not on the patched tree-
          ),
        ),
  
-@@ -571,11 +667,14 @@
+@@ -571,11 +668,14 @@
          'module',
          $._module,
        ),
@@ -381,7 +386,7 @@ on upstream tree-sitter-javascript 0.23.1's grammar.js, not on the patched tree-
  
        _module: $ => prec.right(seq(
          field('name', choice($.string, $.identifier, $.nested_identifier)),
-@@ -670,11 +769,9 @@
+@@ -670,11 +770,9 @@
        ),
  
        _parameter_name: $ => seq(
@@ -394,7 +399,7 @@ on upstream tree-sitter-javascript 0.23.1's grammar.js, not on the patched tree-
        ),
  
        omitting_type_annotation: $ => seq('-?:', $.type),
-@@ -751,15 +848,16 @@
+@@ -751,15 +849,16 @@
          $.rest_type,
          $.type,
        ),
@@ -412,7 +417,7 @@ on upstream tree-sitter-javascript 0.23.1's grammar.js, not on the patched tree-
  
        primary_type: $ => choice(
          $.parenthesized_type,
-@@ -817,8 +915,9 @@
+@@ -817,8 +916,9 @@
        generic_type: $ => prec('call', seq(
          field('name', choice(
            $._type_identifier,
@@ -422,7 +427,7 @@ on upstream tree-sitter-javascript 0.23.1's grammar.js, not on the patched tree-
          field('type_arguments', $.type_arguments),
        )),
  
-@@ -1001,10 +1100,12 @@
+@@ -1001,10 +1101,12 @@
        type_parameters: $ => seq(
          '<', commaSep1($.type_parameter), optional(','), '>',
        ),
@@ -436,7 +441,7 @@ on upstream tree-sitter-javascript 0.23.1's grammar.js, not on the patched tree-
          field('constraint', optional($.constraint)),
          field('value', optional($.default_type)),
        ),
-@@ -1027,8 +1128,9 @@
+@@ -1027,8 +1129,9 @@
          field('type', optional($.type_annotation)),
        ),
  
@@ -446,7 +451,7 @@ on upstream tree-sitter-javascript 0.23.1's grammar.js, not on the patched tree-
            seq(
              field('sign', optional(choice('-', '+'))),
              'readonly',
-@@ -1046,14 +1148,15 @@
+@@ -1046,14 +1149,15 @@
            ),
            $.mapped_type_clause,
          ),
@@ -464,7 +469,7 @@ on upstream tree-sitter-javascript 0.23.1's grammar.js, not on the patched tree-
  
        array_type: $ => seq($.primary_type, '[', ']'),
        tuple_type: $ => seq(
-@@ -1072,8 +1175,9 @@
+@@ -1072,8 +1176,9 @@
        )),
  
        _type_identifier: $ => alias($.identifier, $.type_identifier),
@@ -474,7 +479,7 @@ on upstream tree-sitter-javascript 0.23.1's grammar.js, not on the patched tree-
          'declare',
          'namespace',
          'type',
-@@ -1082,18 +1186,20 @@
+@@ -1082,18 +1187,20 @@
          'protected',
          'override',
          'readonly',
