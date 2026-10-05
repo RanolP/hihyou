@@ -13,7 +13,7 @@ import type { Normalize } from "../../fmt/check.js";
 import { grammar } from "./bundle.js";
 import { language } from "./index.js";
 import { statementTokens } from "./layout.js";
-import { prettyPrint } from "./pretty.js";
+import { prettyPrint, tk } from "./pretty.js";
 
 export type SwiftOptions = PrettierOptions;
 
@@ -259,17 +259,45 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
   // A statement past the width is laid out by swift-format's printer when it stands on one line of its own, or
   // when its header (an `if` or `guard` through the body's `{`) does and holds every leaf past the width.
   const long = new Map<number, number[]>();
+  // The elements of a dictionary literal broken one per line, by key: each lays out on its own line.
+  const elements = new Map<number, { colon: number; value: number; comma: number | undefined }>();
+  const elementOf = (n: number, p: number): number | undefined => {
+    if (tree.kindName(p) !== "dictionary_literal") return undefined;
+    const kids = Array.from({ length: tree.count(p) }, (_, i) => tree.child(p, i));
+    let at = kids.indexOf(n);
+    // Back to the element's key: the child after `[` or a `,`.
+    while (at > 1 && tree.text(kids[at - 1] as number) !== ",") at--;
+    const key = kids[at] as number;
+    const colon = kids[at + 1];
+    const value = kids[at + 2];
+    if (at < 1 || colon === undefined || value === undefined || tree.text(colon) !== ":" || tree.lf(firstLeaf(tree, key)) === 0)
+      return undefined;
+    const after = kids[at + 3];
+    elements.set(key, { colon, value, comma: after !== undefined && tree.text(after) === "," ? after : undefined });
+    return key;
+  };
   const statementOf = (leaf: number) => {
     for (let n = leaf; ; n = tree.parent(n)) {
       const p = tree.parent(n);
       if (p === NO_NODE) return NO_NODE;
-      if (BODIES.has(tree.kindName(p)) || p === tree.root) return n;
+      const element = elementOf(n, p);
+      if (element !== undefined) return element;
+      // A `case` label lays its header out up to its `:`; its statements are statements of their own.
+      if (tree.kindName(n) === "switch_entry") return n;
+      // An `else if` on the line of the `}` before it lays its header out on its own.
+      if (tree.kindName(n) === "if_statement" && tree.kindName(p) === "if_statement" && tree.lf(firstLeaf(tree, n)) === 0) return n;
+      // A closure's statement on the line of its `{` is laid out with the statement holding the closure.
+      const inlineClosure = tree.kindName(tree.parent(p)) === "lambda_literal" && tree.lf(firstLeaf(tree, n)) === 0;
+      // A body's own braces are its declaration's: the `{` ends its header.
+      const brace = tree.count(n) === 0 && (tree.text(n) === "{" || tree.text(n) === "}");
+      if ((BODIES.has(tree.kindName(p)) && !inlineClosure && !brace) || p === tree.root) return n;
     }
   };
   const accessEdits: { at: number; leaf: number; text: string }[] = [];
   const walk = (n: number) => {
     const kind = tree.kindName(n);
     if (kind === "class_declaration") moveExtensionAccess(n);
+    if (kind === "value_binding_pattern") distributeCaseLet(n);
     if (tree.count(n) === 0) {
       if (endCol(n) > width && !unbreakable(tree, n)) {
         const stmt = statementOf(n);
@@ -322,6 +350,63 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
       edits0.push({ from: offset, to: offset, text: `${add} ` });
     }
   }
+  /**
+   * UseLetInEveryBoundCaseVariable: `case let .x(a, b)` (or `case let (a, b)`) is `case .x(let a, let b)`, the
+   * `let`/`var` before each identifier the pattern binds, nested calls and tuples included; a pattern of another
+   * shape keeps its `let`.
+   */
+  function distributeCaseLet(v: number): void {
+    const before = prevLeaf(tree, firstLeaf(tree, v));
+    if (before === NO_NODE || tree.text(before) !== "case") return;
+    const parent = tree.parent(v);
+    const kids = Array.from({ length: tree.count(parent) }, (_, i) => tree.child(parent, i));
+    let i = kids.indexOf(v) + 1;
+    if (tree.text(kids[i] as number) === ".") {
+      if (tree.kindName(kids[i + 1] as number) !== "simple_identifier") return;
+      i += 2;
+    }
+    if (tree.text(kids[i] as number) !== "(") return;
+    const binds: number[] = [];
+    const collect = (list: number[], from: number): number => {
+      // The patterns between the `(` at `from` and its `)`; returns the index past that `)`.
+      let j = from + 1;
+      for (; j < list.length && tree.text(list[j] as number) !== ")"; j++) {
+        const c = list[j] as number;
+        if (tree.kindName(c) !== "pattern") continue;
+        const inner = Array.from({ length: tree.count(c) }, (_, k) => tree.child(c, k));
+        if (inner.length === 1 && tree.kindName(inner[0] as number) === "simple_identifier") binds.push(inner[0] as number);
+        else {
+          const open = inner.findIndex((x) => tree.text(x) === "(");
+          if (open >= 0 && (open === 0 || (open === 2 && tree.text(inner[0] as number) === "."))) collect(inner, open);
+        }
+      }
+      return j + 1;
+    };
+    collect(kids, i);
+    const spec = tree.text(v);
+    const vi = index.get(firstLeaf(tree, v)) as number;
+    const from = starts.get(leaves[vi] as number) as number;
+    accessEdits.push({ at: from, leaf: vi, text: "" });
+    edits0.push({ from, to: starts.get(leaves[vi + 1] as number) as number, text: "" });
+    // Each line's change in length, by its last leaf: the `let ` leaves the pattern's line, and one joins each binding's.
+    const grown = new Map<number, number>();
+    const lineEnd = (k: number) => {
+      while (k + 1 < leaves.length && !startsLine(k + 1)) k++;
+      return k;
+    };
+    grown.set(lineEnd(vi), -(spec.length + 1));
+    for (const b of binds) {
+      const bi = index.get(b) as number;
+      const end = lineEnd(bi);
+      grown.set(end, (grown.get(end) ?? 0) + spec.length + 1);
+      const offset = starts.get(b) as number;
+      accessEdits.push({ at: offset, leaf: bi, text: `${spec} ` });
+      edits0.push({ from: offset, to: offset, text: `${spec} ` });
+    }
+    for (const [end, extra] of grown)
+      if (extra > 0 && endCol(leaves[end] as number) + extra > width)
+        throw new Error(`a line past column ${width} once a case pattern's binding moves in (UseLetInEveryBoundCaseVariable): ${at(vi)}`);
+  }
   /** The access level among `modifiers` (`private(set)` included, `open` not), as swift-format's accessLevelModifier. */
   function accessModifier(modifiers: number | undefined): number | undefined {
     if (modifiers === undefined) return undefined;
@@ -349,14 +434,29 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
   /** The statement laid out as swift-format lays it out, or undefined when that is what is written. */
   const layOut = (stmt: number, past: number[]): Edit | undefined => {
     const first = index.get(firstLeaf(tree, stmt)) as number;
-    const { tokens, last: end } = statementTokens(tree, stmt, (leaf) => gap(index.get(firstLeaf(tree, leaf)) as number));
+    // `} else if …`: the header after the `} else ` its line starts with, laid out as the rest of that line.
+    const elseIf =
+      tree.kindName(stmt) === "if_statement" &&
+      tree.kindName(tree.parent(stmt)) === "if_statement" &&
+      !startsLine(first) &&
+      first >= 2 &&
+      startsLine(first - 2) &&
+      tree.text(leaves[first - 2] as number) === "}" &&
+      tree.text(leaves[first - 1] as number) === "else" &&
+      gap(first - 1) === 1 &&
+      gap(first) === 1;
+    const element = elements.get(stmt);
+    const { tokens, last: end } = statementTokens(tree, stmt, (leaf) => gap(index.get(firstLeaf(tree, leaf)) as number), element);
     const lastLeaf = tree.count(end) === 0 ? end : lastLeafOf(end);
     const last = index.get(lastLeaf) as number;
-    if (!startsLine(first) || (last + 1 < leaves.length && !startsLine(last + 1)))
+    if ((!startsLine(first) && !elseIf) || (last + 1 < leaves.length && !startsLine(last + 1)))
       throw new Error(`a statement past column ${width} sharing its line (line breaking): ${at(first)}`);
     // A line break inside the statement is kept as swift-format keeps it; a blank line or a comment is not ported.
     for (let i = first + 1; i <= last; i++) {
-      if (isComment(leaves[i] as number))
+      // A block comment within a line is ported (`statementTokens`), any other comment is not.
+      const l = leaves[i] as number;
+      const inline = tree.text(l).startsWith("/*") && !startsLine(i) && i + 1 <= last && !startsLine(i + 1);
+      if (isComment(l) && !inline)
         throw new Error(`a comment inside a statement past column ${width} (line breaking): ${at(i)}`);
       if (tree.lf(leaves[i] as number) > 1)
         throw new Error(`a blank line inside a statement past column ${width} (line breaking): ${at(i)}`);
@@ -364,9 +464,12 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
     for (const leaf of past)
       if ((index.get(leaf) as number) > last)
         throw new Error(`code past column ${width} after a statement's header (line breaking): ${at(index.get(leaf) as number)}`);
-    const base = tree.col(leaves[first] as number);
-    const printed = prettyPrint(tokens, base, width, 2);
-    if (printed.split("\n").some((line, i) => line.length + (i === 0 ? base : 0) > width))
+    const base = elseIf ? lineIndent(first) : tree.col(leaves[first] as number);
+    const prefix = elseIf ? "} else " : "";
+    const whole = prettyPrint(elseIf ? [tk.syntax("}"), tk.space, tk.syntax("else"), tk.space, ...tokens] : tokens, base, width, 2);
+    if (!whole.startsWith(prefix)) throw new Error(`an else if header whose \`} else\` breaks (line breaking): ${at(first)}`);
+    const printed = whole.slice(prefix.length);
+    if (whole.split("\n").some((line, i) => line.length + (i === 0 ? base : 0) > width))
       throw new Error(`a line past column ${width} once laid out (line breaking): ${at(first)}`);
     const from = starts.get(leaves[first] as number) as number;
     const to = (starts.get(lastLeaf) as number) + tree.text(lastLeaf).length;
@@ -384,6 +487,10 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
     const stmt = statementOf(leaves[i] as number);
     if (stmt !== NO_NODE && !long.has(stmt) && firstLeaf(tree, stmt) !== leaves[i]) spanning.add(stmt);
   }
+  const overlaps = (a: Edit, b: Edit) => a.from < b.to && b.from < a.to;
+  for (const [i, a] of edits.entries())
+    for (const b of edits.slice(i + 1))
+      if (overlaps(a, b)) throw new Error(`a statement past column ${width} inside another one (line breaking): ${text.slice(b.from, b.from + 40).split("\n")[0]}`);
   for (const stmt of spanning) {
     let edit: Edit | undefined;
     try {
@@ -391,7 +498,8 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
     } catch {
       continue;
     }
-    if (edit !== undefined) edits.push(edit);
+    // A statement holding one laid out already (a closure's) is kept as written around it.
+    if (edit !== undefined && !edits.some((e) => overlaps(e, edit))) edits.push(edit);
   }
   function lastLeafOf(n: number): number {
     while (tree.count(n) > 0) n = tree.child(n, tree.count(n) - 1);
@@ -415,7 +523,10 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
       for (let j = 0; j < tree.count(n); j++) {
         const k = tree.child(n, j);
         if (tree.kindName(k) === "identifier") name = tree.text(k);
-        else if (tree.text(k) !== "import") plain = false;
+        // An attribute other than `@testable` or `@_implementationOnly` (`@_spi(X)`) leaves the import a regular one.
+        else if (tree.kindName(k) === "modifiers") {
+          if (/@(testable|_implementationOnly)\b/.test(tree.text(k))) plain = false;
+        } else if (tree.text(k) !== "import") plain = false;
       }
       imports.push({ name, plain, at: top.length });
     }
@@ -583,7 +694,38 @@ const normalize: Normalize = (lexemes, _text, tree) => {
     }
     return undefined;
   };
+  // UseLetInEveryBoundCaseVariable moves a case pattern's `let`/`var` onto the identifiers it binds: in a case
+  // pattern (from `case` to its `=` or `:`) a `let` or `var` does not compare, an identifier it binds compares as
+  // bound wherever its `let` stands.
+  const caseForm = new Map<number, string | undefined>();
+  let inCase = false;
+  let outer = false;
+  let depth = 0;
+  for (const [i, l] of lexemes.entries()) {
+    const k = tree.kindName(l.node);
+    if (k === "case") {
+      inCase = true;
+      outer = false;
+      depth = 0;
+      continue;
+    }
+    if (!inCase) continue;
+    const parent = tree.parent(l.node);
+    if ((l.text === "let" || l.text === "var") && tree.kindName(parent) === "value_binding_pattern") {
+      if (lexemes[i - 1]?.text === "case") outer = true;
+      caseForm.set(l.node, undefined);
+      continue;
+    }
+    if (l.text === "(") depth++;
+    else if (l.text === ")") depth--;
+    else if (depth === 0 && (l.text === "=" || l.text === ":" || l.text === ",")) inCase = false;
+    else if (k === "simple_identifier") {
+      const lone = tree.kindName(parent) === "pattern" && tree.count(parent) === 1 && outer;
+      if (lone || tree.fieldName(l.node) === "bound_identifier") caseForm.set(l.node, `bind:${l.text}`);
+    }
+  }
   return lexemes.map((l) => {
+    if (caseForm.has(l.node)) return caseForm.get(l.node);
     if (inDropped(l.node)) return undefined;
     const m = leads(l.node);
     return m === undefined ? l.text : `${l.text}@access:${member.get(m)}`;
