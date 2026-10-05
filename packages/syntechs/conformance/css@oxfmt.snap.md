@@ -1,6 +1,6 @@
 css@oxfmt compatibility: 141/141 (100.00%), 0 refused (ok:false), 16 excluded
 
-Fixtures: prettier 3.9.9 tests/format/{css} (recursive), every spec call listing parser `css`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left or it is written in a language syntechs leaves out (SCSS, Less, Handlebars).
+Fixtures: prettier 3.9.9 tests/format/{css} (recursive), every spec call listing parser `css`, with the option sets it declares; expected output from oxfmt 0.70.0 run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left or it is written in a language syntechs leaves out (SCSS, Less, Handlebars, postcss-conditionals, Angular).
 
 # Failed
 
@@ -69,6 +69,6 @@ The formatter threw (ok:false), or `check` found that its output says something 
 
 - css/no-semicolon/url.css
 
-## written in SCSS, a language syntechs leaves out (1)
+## written in postcss-conditionals, a language syntechs leaves out (1)
 
 - css/atrule/if-else.css
