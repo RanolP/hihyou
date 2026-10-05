@@ -69,14 +69,24 @@ test("a statement past 100 columns is broken as swift-format breaks it", () => {
   }
 });
 
-// A regression here is an unported construct laid out anyway: a member after a call's arguments (`f(x).y`, where
-// swift-format puts `)` on its own line) or a closure argument.
+// A regression here is an unported construct laid out anyway: a closure argument.
 test("a long line whose layout is not ported is refused", () => {
   for (const input of [
-    "func f() {\n  try aaaaaaaaaaaaaaaaaaa.encode(bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, forKey: .ccccccccccccccccccccccccc).dddd()\n}\n",
     "let a = bbbbbbbbbbbbbbbbbbbbbbbb.map { $0.cccccccccccccccccccccccccccccc(dddddddddddddddddddddddddddddddd) }\n",
   ])
     expect(run(input).ok, input).toBe(false);
+});
+
+// A regression here is mustBreakBeforeClosingDelimiter lost: a member after a call's arguments (`f(x).y`) puts the
+// `)` on its own line once the arguments break, as the corpus's `TokenStreamCreator(…).makeStream(from:)` shows.
+// The expected text follows that rule, as swift-format cannot run here.
+test("a member after a broken call's arguments follows the `)` on its own line", () => {
+  const out = run(
+    "func f() {\n  try aaaaaaaaaaaaaaaaaaa.encode(bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, forKey: .ccccccccccccccccccccccccc).dddd()\n}\n",
+  );
+  expect(out.ok && out.text).toBe(
+    "func f() {\n  try aaaaaaaaaaaaaaaaaaa.encode(\n    bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, forKey: .ccccccccccccccccccccccccc\n  ).dddd()\n}\n",
+  );
 });
 
 // A regression here is the IfExpr/GuardStmt condition breaks or the `||` refold lost: the `||` left on the wrong

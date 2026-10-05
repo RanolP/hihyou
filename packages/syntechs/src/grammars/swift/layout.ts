@@ -123,7 +123,6 @@ export function statementTokens(
     return make({ k: base.k, first: base.first, last: inner.last, kids: [inner], op: base.op as number });
   };
   const innermostTry = (e: Expr): Expr => (e.k === "try" ? innermostTry(e.kids[0] as Expr) : e);
-  const innermost = (e: Expr): Expr => (e.k === "prefix" || e.k === "try" ? innermost(e.kids[0] as Expr) : e);
 
   function convert(n: number): Expr {
     const k = kind(n);
@@ -135,8 +134,13 @@ export function statementTokens(
     }
     if (BINARY.has(k)) return binary(n);
     if (k === "navigation_expression") {
-      const [target, suffix] = children(n) as [number, number];
-      if (tree.count(n) !== 2 || kind(suffix) !== "navigation_suffix" || tree.count(suffix) !== 2) unsupported(n);
+      const kids = children(n);
+      // `a?.b`: tree-sitter puts the `?` between the target and the suffix; SwiftSyntax reads a member access on
+      // an `OptionalChainingExprSyntax` over the target.
+      const optional = kids.length === 3 && tree.text(kids[1] as number) === "?" ? lastLeaf(tree, kids[1] as number) : undefined;
+      const [target, suffix] = (optional === undefined ? kids : [kids[0], kids[2]]) as [number, number];
+      if ((optional === undefined && tree.count(n) !== 2) || kind(suffix) !== "navigation_suffix" || tree.count(suffix) !== 2)
+        unsupported(n);
       const [dot, name] = children(suffix) as [number, number];
       if (kind(name) !== "simple_identifier") unsupported(suffix);
       // `\.name`: tree-sitter reads the backslash alone as the key path, then a member access on it.
@@ -144,10 +148,12 @@ export function statementTokens(
         if (tree.count(target) !== 1) unsupported(target);
         return { k: "keyPath", first: firstLeaf(tree, target), last: name, kids: [] };
       }
-      const base = convert(target);
-      const called = innermost(base);
-      // `f(x).y`: swift-format then closes the call's arguments on their own line; not ported.
-      if (called.k === "call" && called.values?.length && tree.text(called.last) === ")") unsupported(n);
+      const converted = convert(target);
+      const base =
+        optional === undefined
+          ? converted
+          : postfix(converted, (b) => make({ k: "optional", first: b.first, last: optional, kids: [b], op: optional }));
+      // `f(x).y` breaks before the call's `)` (`call`'s mustBreakBeforeClosingDelimiter); `f(x)?.y` does not.
       return postfix(base, (base) =>
         make({ k: "member", first: base.first, last: name, kids: [base], op: dot, name }),
       );
@@ -306,6 +312,9 @@ export function statementTokens(
       case "call":
         return call(e);
       case "prefix":
+        return expression(e.kids[0] as Expr);
+      case "optional":
+        // `visit(OptionalChainingExprSyntax)` visits its children; a member chain below is a root of its own.
         return expression(e.kids[0] as Expr);
       case "infix":
         return infix(e);
