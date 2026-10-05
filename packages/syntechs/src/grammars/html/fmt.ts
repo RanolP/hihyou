@@ -17,7 +17,15 @@ import { language as tsxGrammar, grammar as tsxSpec } from "../tsx/index.js";
 import { language as tsGrammar, grammar as tsSpec } from "../typescript/index.js";
 import { grammar } from "./bundle.js";
 import { language } from "./index.js";
-import { EVENT_HANDLERS, type EmbeddedLanguage, parseHtml, printHtml, Unsupported, type WhitespaceSensitivity } from "./print.js";
+import {
+  cssCdoComments,
+  EVENT_HANDLERS,
+  type EmbeddedLanguage,
+  parseHtml,
+  printHtml,
+  Unsupported,
+  type WhitespaceSensitivity,
+} from "./print.js";
 
 // typescript/fmt.ts's formatters, built at first use: the JS formatter embeds this one (a template's HTML), so
 // importing typescript/fmt.ts here would build them before the JS formatter they build from is defined.
@@ -188,8 +196,12 @@ export const html: Language<HtmlOptions> = {
           const text = ctx.tree.text(node);
           const { printWidth, tabWidth, useTabs, bracketSameLine, singleAttributePerLine, htmlWhitespaceSensitivity } =
             ctx.options;
-          const embed = (lang: EmbeddedLanguage, content: string) => {
+          const embed = (lang: EmbeddedLanguage, source: string) => {
             const [contentGrammar, formatter] = EMBEDDED[lang]();
+            // A style's `<!-- … -->` before a rule stands as a type selector the CSS formatter prints, then is written
+            // as prettier spells it (`cssCdoComments`).
+            const cdo = lang === "css" && /<!--/.test(source) ? cssCdoComments(source) : undefined;
+            const content = cdo?.rewritten ?? source;
             let tree = parseTree(contentGrammar, content);
             if (tree.errorChars > 0 || brokenNodes(tree) !== undefined) throw new Unsupported(`${lang} parse error`);
             // A legacy `<!--` or `-->` line is a comment to babel, printed as written; the JS formatter leaves an
@@ -203,13 +215,20 @@ export const html: Language<HtmlOptions> = {
               if (tree.errorChars > 0 || brokenNodes(tree) !== undefined) throw new Unsupported(`${lang} parse error`);
             }
             const token =
-              legacy.length === 0
-                ? undefined
-                : (s: string) => {
+              legacy.length > 0
+                ? (s: string) => {
                     if (!s.startsWith(LEGACY_MARK)) return false;
                     sText(s.slice(LEGACY_MARK.length));
                     return true;
-                  };
+                  }
+                : cdo !== undefined
+                  ? (s: string) => {
+                      const i = cdo.marks.indexOf(s);
+                      if (i < 0) return false;
+                      sText(cdo.texts[i] as string);
+                      return true;
+                    }
+                  : undefined;
             withEmbedding({ anchor: node, token }, () =>
               printInto(
                 tree,
