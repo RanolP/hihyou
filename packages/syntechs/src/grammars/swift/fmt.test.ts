@@ -247,3 +247,15 @@ test("a long closure argument or trailing closure is broken as swift-format brea
     expect(out.ok && out.text, input).toBe(expected);
   }
 });
+
+// A regression here is DictionaryElementListSyntax's layout lost: a long element of a dictionary broken one element
+// per line kept past the width, or broken anywhere but after its `:`. The case is the corpus's
+// (Core/RuleNameCache+Generated.swift).
+test("a long element of a dictionary broken one per line breaks after its colon", () => {
+  const out = run(
+    'let ruleNameCache: [ObjectIdentifier: String] = [\n  ObjectIdentifier(AllPublicDeclarationsHaveDocumentation.self): "AllPublicDeclarationsHaveDocumentation",\n  ObjectIdentifier(DoNotUseSemicolons.self): "DoNotUseSemicolons",\n]\n',
+  );
+  expect(out.ok && out.text).toBe(
+    'let ruleNameCache: [ObjectIdentifier: String] = [\n  ObjectIdentifier(AllPublicDeclarationsHaveDocumentation.self):\n    "AllPublicDeclarationsHaveDocumentation",\n  ObjectIdentifier(DoNotUseSemicolons.self): "DoNotUseSemicolons",\n]\n',
+  );
+});

@@ -259,10 +259,29 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
   // A statement past the width is laid out by swift-format's printer when it stands on one line of its own, or
   // when its header (an `if` or `guard` through the body's `{`) does and holds every leaf past the width.
   const long = new Map<number, number[]>();
+  // The elements of a dictionary literal broken one per line, by key: each lays out on its own line.
+  const elements = new Map<number, { colon: number; value: number; comma: number | undefined }>();
+  const elementOf = (n: number, p: number): number | undefined => {
+    if (tree.kindName(p) !== "dictionary_literal") return undefined;
+    const kids = Array.from({ length: tree.count(p) }, (_, i) => tree.child(p, i));
+    let at = kids.indexOf(n);
+    // Back to the element's key: the child after `[` or a `,`.
+    while (at > 1 && tree.text(kids[at - 1] as number) !== ",") at--;
+    const key = kids[at] as number;
+    const colon = kids[at + 1];
+    const value = kids[at + 2];
+    if (at < 1 || colon === undefined || value === undefined || tree.text(colon) !== ":" || tree.lf(firstLeaf(tree, key)) === 0)
+      return undefined;
+    const after = kids[at + 3];
+    elements.set(key, { colon, value, comma: after !== undefined && tree.text(after) === "," ? after : undefined });
+    return key;
+  };
   const statementOf = (leaf: number) => {
     for (let n = leaf; ; n = tree.parent(n)) {
       const p = tree.parent(n);
       if (p === NO_NODE) return NO_NODE;
+      const element = elementOf(n, p);
+      if (element !== undefined) return element;
       // A closure's statement on the line of its `{` is laid out with the statement holding the closure.
       const inlineClosure = tree.kindName(tree.parent(p)) === "lambda_literal" && tree.lf(firstLeaf(tree, n)) === 0;
       if ((BODIES.has(tree.kindName(p)) && !inlineClosure) || p === tree.root) return n;
@@ -351,7 +370,8 @@ function refuseUnsupported(tree: FormatTree, width: number): Edit[] {
   /** The statement laid out as swift-format lays it out, or undefined when that is what is written. */
   const layOut = (stmt: number, past: number[]): Edit | undefined => {
     const first = index.get(firstLeaf(tree, stmt)) as number;
-    const { tokens, last: end } = statementTokens(tree, stmt, (leaf) => gap(index.get(firstLeaf(tree, leaf)) as number));
+    const element = elements.get(stmt);
+    const { tokens, last: end } = statementTokens(tree, stmt, (leaf) => gap(index.get(firstLeaf(tree, leaf)) as number), element);
     const lastLeaf = tree.count(end) === 0 ? end : lastLeafOf(end);
     const last = index.get(lastLeaf) as number;
     if (!startsLine(first) || (last + 1 < leaves.length && !startsLine(last + 1)))

@@ -101,6 +101,11 @@ export function statementTokens(
   stmt: number,
   /** The spaces between `leaf` and the leaf before it, or undefined across a line break. */
   gap: (leaf: number) => number | undefined,
+  /**
+   * A dictionary element on a line of its own (`stmt` is its key): its `:`, value and `,`, which tree-sitter keeps
+   * as the key's siblings in the dictionary literal.
+   */
+  element?: { colon: number; value: number; comma: number | undefined },
 ): { tokens: Tok[]; last: number } {
   const before = new Map<number, Tok[]>();
   const after = new Map<number, Tok[][]>();
@@ -124,6 +129,7 @@ export function statementTokens(
     else for (const c of children(n)) collect(c);
   };
   collect(stmt);
+  if (element !== undefined) for (const n of [element.colon, element.value, element.comma]) if (n !== undefined) collect(n);
   const leafAfter = (leaf: number) => leaves[leaves.indexOf(leaf) + 1];
 
   // ---- The SwiftSyntax shape.
@@ -617,7 +623,17 @@ export function statementTokens(
   let lastToken = leaves[leaves.length - 1] as number;
   let header = false;
   const k = kind(stmt);
-  if (k === "property_declaration") binding(stmt);
+  if (element !== undefined) {
+    // `visit(DictionaryElementListSyntax)`: a group around the element, a break after its `:`; the `same` break
+    // after its `,` ends the line it stands on.
+    const key = convert(stmt);
+    const value = convert(element.value);
+    addBefore(key.first, tk.open());
+    addAfter(element.colon, tk.brk({ k: "continue" }));
+    addAfter(value.last, tk.close);
+    expression(key);
+    expression(value);
+  } else if (k === "property_declaration") binding(stmt);
   else if (["call_expression", "try_expression", "navigation_expression", "postfix_expression"].includes(k)) expression(convert(stmt));
   else if (k === "control_transfer_statement") {
     // `visit(ReturnStmtSyntax)`.
