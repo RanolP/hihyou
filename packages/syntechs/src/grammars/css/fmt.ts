@@ -1243,7 +1243,9 @@ function unknownAtRule(node: number, t: FormatTree): boolean {
 
 /**
  * oxc's `write_verbatim_at_rule_tail`: the name lowercased, the prelude as written but the gaps at its ends, a space
- * before it unless it is glued to the name and opens with no `(`, then ` {…}` or `;`.
+ * before it unless it is glued to the name and opens with no `(`, then ` {…}` or `;`. A `//` on the prelude's last
+ * line, even in a string, puts the `{` on a line of its own, as prettier's printer does for a prelude it could not
+ * parse (`@foo url('http://a')⏎{`).
  */
 function verbatimAtRule(node: number, ctx: SCtx): void {
   const t = ctx.tree;
@@ -1251,11 +1253,18 @@ function verbatimAtRule(node: number, ctx: SCtx): void {
   if (keyword === undefined) return;
   sToken(keyword, t.text(keyword).toLowerCase());
   let prev = keyword;
+  // The prelude's last line as printed so far.
+  let line = "";
+  const write = (s: string) => {
+    const nl = s.lastIndexOf("\n");
+    line = nl === -1 ? line + s : s.slice(nl + 1);
+  };
   for (const c of rest) {
     const k = kind(c, ctx);
     if (k === "block") {
       // The prelude's last comment attaches to the block as leading; it printed with the prelude.
-      sText(" ");
+      if (line.includes("//")) sHardline();
+      else sText(" ");
       ctx.printNode(c);
       printTrailingComments(ctx, c);
       continue;
@@ -1264,10 +1273,12 @@ function verbatimAtRule(node: number, ctx: SCtx): void {
       sToken(c, ";");
       continue;
     }
-    if (prev === keyword) sText(t.adjoins(keyword, c) && !t.text(c).startsWith("(") ? "" : " ");
-    else sText(gapBefore(prev, c, t));
+    const gap = prev === keyword ? (t.adjoins(keyword, c) && !t.text(c).startsWith("(") ? "" : " ") : gapBefore(prev, c, t);
+    sText(gap);
+    write(gap);
     if (isComment(c, ctx)) ctx.comment(c);
     else sToken(c, t.text(c));
+    write(t.text(c));
     prev = c;
   }
 }
