@@ -41,3 +41,22 @@ keeps the mask on every platform; packages/syntechs/src/grammars/swift/scanner.t
          0, // RETHROWS_KEYWORD,
          0, // DEFAULT_KEYWORD,
          0, // WHERE_KEYWORD,
+@@ -866,8 +866,18 @@
+ ) {
+     // Figure out our scanner state
+     struct ScannerState *state = (struct ScannerState *)payload;
+ 
++    // Inside a string's text a comment (an extra) is the only external symbol valid, and `/*` there is text: a
++    // comment scanned from it would run to the next `*/` in the file.
++    bool only_comment = valid_symbols[BLOCK_COMMENT];
++    for (int i = 1; i < TOKEN_COUNT && only_comment; i++) {
++        if (valid_symbols[i]) only_comment = false;
++    }
++    if (only_comment) {
++        return false;
++    }
++
+     // Consume any whitespace at the start.
+     enum TokenType ws_result;
+     enum ParseDirective ws_directive = eat_whitespace(lexer, valid_symbols, &ws_result);
+     if (ws_directive == STOP_PARSING_TOKEN_FOUND) {
