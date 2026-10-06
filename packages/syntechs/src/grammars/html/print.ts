@@ -11,7 +11,8 @@ import { brokenNodes } from "../../fmt/format.js";
 import type { PrettierOptions } from "../../fmt/options.js";
 import { sKeptText } from "../../fmt/stream.js";
 import type { StreamCtx } from "../../fmt/stream-format.js";
-import { frontMatterLines, parseFrontMatter } from "../css/front-matter.js";
+import { parseFrontMatter } from "../css/front-matter.js";
+import { frontMatterLines } from "../css/front-matter-fmt.js";
 import { language as astLanguage, type Field, type Kind, fieldId, kindId } from "./ast.js";
 import { language } from "./index.js";
 
