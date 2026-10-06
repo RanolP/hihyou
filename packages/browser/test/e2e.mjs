@@ -56,7 +56,7 @@ try {
   const status = await page
     .locator(".hihyou-view .hh-meta.message")
     .textContent();
-  const hidden = await page.locator("#files_bucket").isHidden();
+  const hidden = await page.locator("#files_bucket diff-layout").isHidden();
   step(
     `hihyou drew the diff in ${(drawn - clicked).toFixed(0)} ms: "${status}"; GitHub's diff hidden: ${hidden}`,
   );
@@ -100,7 +100,7 @@ try {
 
   await toggle.click();
   await page
-    .locator("#files_bucket")
+    .locator("#files_bucket diff-layout")
     .waitFor({ state: "visible", timeout: 5_000 });
   const viewHidden = await page.locator(".hihyou-view").isHidden();
   step(`off: GitHub's diff visible again, hihyou hidden: ${viewHidden}`);

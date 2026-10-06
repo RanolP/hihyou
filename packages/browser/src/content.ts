@@ -3,10 +3,11 @@ import { type PullFilesPage, pullFilesPage } from "./page.js";
 import type { Privileged } from "./privileged.js";
 
 /**
- * Where GitHub draws a PR's diff, most specific first: the classic page's `#files_bucket`, then the root a
- * React page renders into. hihyou hides the first one present and draws in its place.
+ * Where GitHub draws a PR's Files changed tab, most specific first: the classic page's `#files_bucket`, then the
+ * root a React page renders into. Either can hold the PR header and its tab bar too, so hihyou hides only what
+ * follows the tab bar there (see `diffParts`) and draws in its place.
  */
-const diffAreas = [
+const tabRoots = [
   "#files_bucket",
   'react-app [data-target="react-app.reactRoot"]',
 ];
@@ -17,8 +18,8 @@ interface Current {
   page: PullFilesPage;
   bar: HTMLElement;
   view: HTMLElement;
-  area: HTMLElement;
-  areaDisplay: string;
+  /** GitHub's diff, hidden while hihyou is on, with each element's own inline `display` to restore. */
+  areas: { element: HTMLElement; display: string }[];
   mounted?: Mounted;
   /** Bumped on every toggle, so a mount that finishes after the reviewer turned hihyou off again is dropped. */
   generation: number;
@@ -48,8 +49,33 @@ function teardown() {
   current.mounted?.dispose();
   current.bar.remove();
   current.view.remove();
-  current.area.style.display = current.areaDisplay;
+  show(current, true);
   current = undefined;
+}
+
+function show(state: Current, visible: boolean) {
+  for (const { element, display } of state.areas)
+    element.style.display = visible ? display : "none";
+}
+
+/**
+ * The elements of `root` that draw the diff. When `root` also holds the PR's tab bar (found by its Commits tab,
+ * which every PR page links), that is everything after the tab bar: from the link, the outermost ancestor inside
+ * `root` that has a following sibling, and those siblings. Hiding `root` whole would take the tabs with it.
+ */
+function diffParts(root: HTMLElement, page: PullFilesPage): HTMLElement[] {
+  const tab = [...root.querySelectorAll<HTMLAnchorElement>("a[href]")].find(
+    (a) => a.pathname.endsWith(`/pull/${page.pull}/commits`),
+  );
+  if (!tab) return [root];
+  let after: HTMLElement[] = [];
+  for (let e: HTMLElement | null = tab; e && e !== root; e = e.parentElement) {
+    const siblings: HTMLElement[] = [];
+    for (let s = e.nextElementSibling; s; s = s.nextElementSibling)
+      if (s instanceof HTMLElement) siblings.push(s);
+    if (siblings.length > 0) after = siblings;
+  }
+  return after;
 }
 
 async function setOn(state: Current, on: boolean) {
@@ -62,11 +88,11 @@ async function setOn(state: Current, on: boolean) {
     state.mounted?.dispose();
     delete state.mounted;
     state.view.hidden = true;
-    state.area.style.display = state.areaDisplay;
+    show(state, true);
     note.textContent = "";
     return;
   }
-  state.area.style.display = "none";
+  show(state, false);
   state.view.hidden = false;
   if (state.mounted) return;
   try {
@@ -98,14 +124,18 @@ function sync() {
     current &&
     (current.key !== key ||
       !current.bar.isConnected ||
-      !current.area.isConnected)
+      !current.areas.every((a) => a.element.isConnected))
   )
     teardown();
   if (!page || !key || current) return;
-  const area = diffAreas
+  const root = tabRoots
     .map((s) => document.querySelector<HTMLElement>(s))
     .find((e) => e);
-  if (!area) return;
+  if (!root) return;
+  const parts = diffParts(root, page);
+  const first = parts[0];
+  // The tab bar is drawn but nothing after it yet: the next DOM change checks again.
+  if (!first) return;
 
   const bar = document.createElement("div");
   bar.className = "hihyou-bar";
@@ -121,15 +151,17 @@ function sync() {
   const view = document.createElement("div");
   view.className = "hihyou-view";
   view.hidden = true;
-  area.before(bar, view);
+  first.before(bar, view);
 
   const state: Current = {
     key,
     page,
     bar,
     view,
-    area,
-    areaDisplay: area.style.display,
+    areas: parts.map((element) => ({
+      element,
+      display: element.style.display,
+    })),
     generation: 0,
   };
   current = state;

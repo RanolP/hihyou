@@ -144,7 +144,7 @@ try {
   const status = await page
     .locator(".hihyou-view .hh-meta.message")
     .textContent();
-  const hidden = await page.locator("#files_bucket").isHidden();
+  const hidden = await page.locator("#files_bucket diff-layout").isHidden();
   step(
     `hihyou drew the diff in ${(performance.now() - clicked).toFixed(0)} ms: "${status}"; GitHub's diff hidden: ${hidden}`,
   );

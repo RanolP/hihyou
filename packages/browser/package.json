@@ -12,6 +12,7 @@
     "test:browser": "wxt build && node test/e2e.mjs",
     "build:userscript": "vite build -c userscript.config.ts",
     "test:userscript": "vite build -c userscript.config.ts && node test/userscript.mjs",
+    "test:tabs": "wxt build && node test/tabs.mjs",
     "test:modal": "pnpm --filter @hihyou/ui fixture && node test/modal.mjs fixture && wxt build && node test/modal.mjs ext"
   },
   "dependencies": {
