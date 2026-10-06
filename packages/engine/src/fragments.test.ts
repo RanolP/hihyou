@@ -99,7 +99,8 @@ test("an edit beside an unchanged block comment is -2 +3 and no move", async () 
     a: commentedAfter,
   };
   const engine = createEngine({
-    grammars: syntechsGrammars(),
+    // The -2 +3 shape is pinned for the lines as written, so the formatter stays out of it.
+    grammars: syntechsGrammars({ format: { typescript: false } }),
     resolveDiffset: (data: "pr") => ({
       id: data,
       changes: [{ path: "slice.ts", before: "b", after: "a" }],

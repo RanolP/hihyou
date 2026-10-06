@@ -25,7 +25,7 @@ export type LocalDiffsetId =
   | { kind: "range"; base: string; head: string };
 
 export interface LocalHostOptions {
-  /** Defaults to the grammars syntechs ships, with no formatting. */
+  /** Defaults to the grammars syntechs ships, with default formatting for each supported language. */
   grammars?: GrammarLoader;
   preferences?: HostPreferences;
 }

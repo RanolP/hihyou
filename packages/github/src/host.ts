@@ -26,7 +26,7 @@ import {
 } from "./pulls.js";
 
 export interface GitHubHostOptions extends GitHubClientOptions {
-  /** Defaults to `syntechsGrammars()` with no formatting bound in (files shown as written). */
+  /** Defaults to `syntechsGrammars()` with default formatting for each supported language. */
   grammars?: GrammarLoader;
   preferences?: HostPreferences;
 }
