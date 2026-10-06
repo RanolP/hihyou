@@ -44,7 +44,8 @@ import { firstLeaf, type FormatTree, nextLeaf, prevLeaf } from "../../fmt/tree.j
 import { grammar } from "./bundle.js";
 import * as gen from "./fmt.gen.js";
 import { directives } from "./directive.js";
-import { frontMatterLines, frontMatterMeaning, parseFrontMatter } from "./front-matter.js";
+import { parseFrontMatter } from "./front-matter.js";
+import { frontMatterLines, frontMatterMeaning } from "./front-matter-fmt.js";
 import { language } from "./index.js";
 
 /** The prettier options its postcss printer reads (3.9.9); `bracketSpacing` and `objectWrap` go unread. */
