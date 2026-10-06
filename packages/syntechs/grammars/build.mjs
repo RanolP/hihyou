@@ -31,6 +31,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, relative, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { applyPatch, createTwoFilesPatch, parsePatch } from "diff";
 
 const here = import.meta.dirname;
@@ -196,13 +197,27 @@ async function build(name) {
   console.log(`grammars/build.mjs: assembled ${name} (${key})`);
 }
 
+/** The notes header above a patch's first diff section, or the whole text when it holds only notes. */
+export function patchNotes(text) {
+  const headerStart = text.search(/^(=+|--- .*)$/m);
+  return headerStart === -1 ? text : text.slice(0, headerStart);
+}
+
+/** What grammar.patch should hold next, or null to delete it: the notes header must survive even
+ * when there's no diff to go with it (notes-only, nothing edited yet). */
+export function nextPatch(notes, diff) {
+  if (diff) return notes + diff;
+  if (notes) return notes;
+  return null;
+}
+
 /** Rewrites grammar.patch as the diff from upstream to the package's edited sources. */
 async function savePatch(name) {
   const { sources } = config(name);
   const pkg = join(here, name);
   const patchFile = join(pkg, PATCH);
   const old = existsSync(patchFile) ? readFileSync(patchFile, "utf8") : "";
-  const notes = old.slice(0, Math.max(0, old.search(/^(=+|--- .*)$/m)));
+  const notes = patchNotes(old);
   let diff = "";
   for (const source of sources.filter((s) => !s.into)) {
     for (const file of Object.keys(source.files)) {
@@ -219,38 +234,42 @@ async function savePatch(name) {
         ).replace(/^=+\n/, "");
     }
   }
-  if (diff) writeFileSync(patchFile, notes + diff);
+  const next = nextPatch(notes, diff);
+  if (next !== null) writeFileSync(patchFile, next);
   else rmSync(patchFile, { force: true });
   console.log(
     `grammars/build.mjs: wrote ${diff ? patchFile : `no patch for ${name}`}`,
   );
 }
 
-const args = process.argv.slice(2);
-const save = args[0] === "--save-patch";
-let names = save ? args.slice(1) : args;
-if (names.length === 0)
-  names =
-    dirname(process.cwd()) === here
-      ? [basename(process.cwd())]
-      : readdirSync(here).filter((d) => existsSync(join(here, d, "package.json")));
-try {
-  if (!cliVersion)
-    fail(`no \`tree-sitter = "<version>"\` line in ${miseToml}`);
-  // grammar.js is CommonJS in some grammars and an ES module in others. With no `type` in the nearest
-  // package.json (syntechs' says "module"), node tells them apart by their syntax, as it does upstream.
-  // pnpm runs every grammar's postinstall at once, and a plain write truncates the file while a sibling's
-  // `tree-sitter generate` is reading it (ERR_INVALID_PACKAGE_CONFIG), so swap it in by rename.
-  mkdirSync(cache, { recursive: true });
-  const scope = join(cache, "package.json");
-  writeFileSync(`${scope}.${process.pid}`, "{}\n");
-  renameSync(`${scope}.${process.pid}`, scope);
-  for (const name of names) {
-    if (save) await savePatch(name);
-    await build(name);
+// Guarded so a test can import this module's functions (e.g. patchNotes) without running the CLI below.
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  const args = process.argv.slice(2);
+  const save = args[0] === "--save-patch";
+  let names = save ? args.slice(1) : args;
+  if (names.length === 0)
+    names =
+      dirname(process.cwd()) === here
+        ? [basename(process.cwd())]
+        : readdirSync(here).filter((d) => existsSync(join(here, d, "package.json")));
+  try {
+    if (!cliVersion)
+      fail(`no \`tree-sitter = "<version>"\` line in ${miseToml}`);
+    // grammar.js is CommonJS in some grammars and an ES module in others. With no `type` in the nearest
+    // package.json (syntechs' says "module"), node tells them apart by their syntax, as it does upstream.
+    // pnpm runs every grammar's postinstall at once, and a plain write truncates the file while a sibling's
+    // `tree-sitter generate` is reading it (ERR_INVALID_PACKAGE_CONFIG), so swap it in by rename.
+    mkdirSync(cache, { recursive: true });
+    const scope = join(cache, "package.json");
+    writeFileSync(`${scope}.${process.pid}`, "{}\n");
+    renameSync(`${scope}.${process.pid}`, scope);
+    for (const name of names) {
+      if (save) await savePatch(name);
+      await build(name);
+    }
+  } catch (e) {
+    if (!(e instanceof Failure)) throw e;
+    console.error(`grammars/build.mjs: ${e.message}`);
+    process.exit(1);
   }
-} catch (e) {
-  if (!(e instanceof Failure)) throw e;
-  console.error(`grammars/build.mjs: ${e.message}`);
-  process.exit(1);
 }
