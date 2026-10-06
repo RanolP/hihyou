@@ -45,7 +45,18 @@ function eachCond(ir: FormatIR, visit: (c: Cond) => void): void {
       cond(x.pad);
       walk(x.body);
     } else if (x.t === "sepBy") cond(x.trailing);
-    else if (x.t === "lines") {
+    else if (x.t === "each") {
+      if (x.first !== undefined) walk(x.first);
+      if (x.between !== undefined) walk(x.between);
+    } else if (x.t === "fill") {
+      walk(x.sep);
+      walk(x.first);
+      walk(x.last);
+    } else if (x.t === "flow") {
+      cond(x.textLike);
+      cond(x.blank);
+      cond(x.breakAll);
+    } else if (x.t === "lines") {
       cond(x.blank);
       cond(x.follow);
       cond(x.sameLine);
@@ -102,13 +113,29 @@ function spellFns(ir: FormatIR): Set<NormalizerName> {
     else if (x.t === "either") {
       walk(x.then);
       walk(x.else);
+    } else if (x.t === "each") {
+      if (x.first !== undefined) walk(x.first);
+      if (x.between !== undefined) walk(x.between);
+    } else if (x.t === "fill") {
+      walk(x.sep);
+      walk(x.first);
+      walk(x.last);
     }
   };
   Object.values(ir.structure).forEach(walk);
   return fns;
 }
 
-type RuleType = "CustomRule" | "TokenRule" | "FrameRule" | "PredicateRule" | "ParensRule" | "ImportRule";
+type RuleType =
+  | "CustomRule"
+  | "TokenRule"
+  | "FrameRule"
+  | "PredicateRule"
+  | "ParensRule"
+  | "ImportRule"
+  | "TextRule"
+  | "WordsRule"
+  | "GapRule";
 
 /**
  * The custom rules `ir` names, each as the rule type it takes: a node's (`CustomRule`), a token's (`TokenRule`),
@@ -127,7 +154,17 @@ function customNames(ir: FormatIR): [string, RuleType][] {
     else if (x.t === "ref" && x.parens !== undefined) add("parens", "ParensRule");
     else if (x.t === "tok" && x.via !== undefined) add(x.via, "TokenRule");
     else if (x.t === "lines" && x.imports !== undefined) add(x.imports.via, "ImportRule");
-    else if (x.t === "seq") x.parts.forEach(walk);
+    else if (x.t === "hook") add(x.name, "TextRule");
+    else if (x.t === "flow") add(x.gap, "GapRule");
+    else if (x.t === "each") {
+      if (x.first !== undefined) walk(x.first);
+      if (x.between !== undefined) walk(x.between);
+    } else if (x.t === "fill") {
+      add(x.words, "WordsRule");
+      walk(x.sep);
+      walk(x.first);
+      walk(x.last);
+    } else if (x.t === "seq") x.parts.forEach(walk);
     else if (x.t === "opt" || x.t === "tokIf") walk(x.then);
     else if (x.t === "layout") walk(x.body);
     else if (x.t === "either") {
@@ -155,6 +192,9 @@ const bindsToken = (x: Tree): boolean =>
   (x.t === "seq" && x.parts.some(bindsToken)) ||
   (x.t === "layout" && bindsToken(x.body)) ||
   (x.t === "opt" && bindsToken(x.then));
+
+/** Whether `x` prints nothing at all (`[]`), so a branch printing it can be left out. */
+const isEmptyTree = (x: Tree): boolean => x.t === "seq" && x.parts.every(isEmptyTree);
 
 /** Whether some literal of `x` may go unprinted: under an `opt`, or beside a token in its `andThen`. */
 const hasOpt = (x: Tree): boolean =>
@@ -342,7 +382,13 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
       case "text":
       case "custom":
       case "doc":
+      case "lit":
         return "false";
+      case "hook":
+      case "each":
+      case "fill":
+      case "flow":
+        throw new Error(`emit: a bracket idiom around \`${x.t}\` whose emptiness is not generated yet`);
       case "layout":
         return emptyExpr(x.body);
       case "inOrder":
@@ -1005,10 +1051,73 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
           : x.kind === "softline" ? "sLine(SOFT);"
           : x.kind === "hardline" ? "sHardline();"
           : x.kind === "breakParent" ? "sBreakParent();"
+          : x.kind === "literalline" ? 'sLiteral(0, "\\n"); sBreakParent();'
           : "sLineSuffixBoundary();",
         );
         return;
+      case "hook":
+        line(`printText(custom[${str(x.name)}](${["node", "ctx", ...x.args.map(str)].join(", ")}));`);
+        return;
+      case "lit":
+        line(`sText(${str(x.text)});`);
+        return;
+      case "each": {
+        if ((x.first !== undefined && bindsToken(x.first)) || (x.between !== undefined && bindsToken(x.between)))
+          throw new Error("emit: an each whose first or between binds a source token");
+        const v = name("items");
+        const i = name("i");
+        line(`const ${v} = listItems(ctx, node, ${str(x.list.name)}, ${hasFields})${x.list.from ? `.slice(${x.list.from})` : ""};`);
+        block(`for (let ${i} = 0; ${i} < ${v}.length; ${i}++)`, () => {
+          const first = x.first !== undefined && !isEmptyTree(x.first) ? x.first : undefined;
+          const between = x.between !== undefined && !isEmptyTree(x.between) ? x.between : undefined;
+          if (first !== undefined && between !== undefined) {
+            block(`if (${i} === 0)`, () => walk(first), "} else {");
+            depth++;
+            walk(between);
+            depth--;
+            line("}");
+          } else if (first !== undefined) block(`if (${i} === 0)`, () => walk(first));
+          else if (between !== undefined) block(`if (${i} > 0)`, () => walk(between));
+          line(`ctx.print(${v}[${i}] as number);`);
+        });
+        return;
+      }
+      case "fill": {
+        if (bindsToken(x.sep) || bindsToken(x.first) || bindsToken(x.last))
+          throw new Error("emit: a fill whose sep, first or last binds a source token");
+        const w = name("words");
+        const i = name("i");
+        line(`const ${w} = custom[${str(x.words)}](node, ctx);`);
+        line("open(FILL);");
+        block(`for (let ${i} = 0; ${i} < ${w}.length; ${i}++)`, () => {
+          if (!isEmptyTree(x.sep)) block(`if (${i} > 0)`, () => walk(x.sep));
+          line("open(FILL_ITEM);");
+          if (!isEmptyTree(x.first)) block(`if (${i} === 0)`, () => walk(x.first));
+          line(`printText(${w}[${i}] as string);`);
+          if (!isEmptyTree(x.last)) block(`if (${i} === ${w}.length - 1)`, () => walk(x.last));
+          line("close();");
+        });
+        line("close();");
+        return;
+      }
+      case "flow": {
+        const items = `listItems(ctx, node, ${str(x.list.name)}, ${hasFields})${x.list.from ? `.slice(${x.list.from})` : ""}`;
+        line(
+          `printFlow(ctx, ${items}, custom[${str(x.gap)}], (c) => ${cond(x.textLike, false, "c")}, (c) => ${cond(x.blank, false, "c")}, ${when(x.breakAll)});`,
+        );
+        return;
+      }
       case "layout": {
+        if (x.kind === "ifBreak" || x.kind === "ifFlat" || x.kind === "dedentToRoot") {
+          line(
+            x.kind === "ifBreak" ? "open(IF_BROKEN);"
+            : x.kind === "ifFlat" ? "open(IF_FLAT);"
+            : "openAlign(Number.NEGATIVE_INFINITY);",
+          );
+          walk(x.body);
+          line("close();");
+          return;
+        }
         if (x.kind === "group" && x.id !== undefined) {
           const g = name("g");
           groups.set(x.id, g);
@@ -1087,6 +1196,7 @@ export function emit(
   let predicateRules = false;
   let parensRules = false;
   let importRules = false;
+  const hooks = new Set<RuleType>();
   for (const [spec, ir] of Object.entries(specs)) {
     const keys = optionKeys(ir);
     const customs = customNames(ir);
@@ -1103,6 +1213,7 @@ export function emit(
     if (customs.some(([, type]) => type === "PredicateRule")) predicateRules = true;
     if (customs.some(([, type]) => type === "ParensRule")) parensRules = true;
     if (customs.some(([, type]) => type === "ImportRule")) importRules = true;
+    for (const [, type] of customs) if (type === "TextRule" || type === "WordsRule" || type === "GapRule") hooks.add(type);
     parts.push("", `export function ${spec}<O extends ${options}>(${param}): StreamRules<O> {`);
     const kinds = Object.keys(ir.structure);
     for (const kind of kinds) {
@@ -1162,6 +1273,14 @@ export function emit(
     parts.splice(parts.indexOf(`} from ${str(sink)};`) + 1, 0, `import { sLiteral } from ${str(sink)};`);
   if (parts.some((p) => p.includes("openAlign(")))
     parts.splice(parts.indexOf(`} from ${str(sink)};`) + 1, 0, `import { openAlign } from ${str(sink)};`);
+  if (parts.some((p) => p.includes("open(IF_FLAT)")))
+    parts.splice(parts.indexOf(`} from ${str(sink)};`) + 1, 0, `import { IF_FLAT } from ${str(sink)};`);
+  for (const f of ["printText", "printFlow"].filter((f) => parts.some((p) => p.includes(`${f}(`))))
+    parts.splice(
+      parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
+      0,
+      `import { ${f} } from "../../fmt/dsl/runtime.js";`,
+    );
   if (parts.some((p) => p.includes("parentIs(")))
     parts.splice(
       parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
@@ -1222,6 +1341,7 @@ export function emit(
     ...(predicateRules ? ["PredicateRule"] : []),
     ...(parensRules ? ["ParensRule"] : []),
     ...(importRules ? ["ImportRule"] : []),
+    ...(["TextRule", "WordsRule", "GapRule"] as const).filter((r) => hooks.has(r)),
   ];
   if (extra.length > 0)
     parts.splice(

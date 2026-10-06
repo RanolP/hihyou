@@ -5,6 +5,8 @@ import { writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import * as cssFormat from "../../grammars/css/format.js";
 import { grammar as cssGrammar } from "../../grammars/css/index.js";
+import * as htmlFormat from "../../grammars/html/format.js";
+import { grammar as htmlAstGrammar } from "../../grammars/html/ast.js";
 import * as javascriptFormat from "../../grammars/javascript/format.js";
 import { grammar as javascriptGrammar } from "../../grammars/javascript/index.js";
 import * as jsonFormat from "../../grammars/json/format.js";
@@ -26,6 +28,8 @@ const FORMATS: Record<
   { specs: Record<string, FormatIR>; grammar: DslGrammar; sink?: string }
 > = {
   css: { specs: cssFormat, grammar: cssGrammar as DslGrammar },
+  // HTML's rules lay out prettier's HTML AST, which html/print.ts builds from tree-sitter-html's tree.
+  html: { specs: htmlFormat, grammar: htmlAstGrammar },
   // Prettier reads JSON as a JS expression, so JSON5's forms parse (see json/format.ts).
   json: { specs: jsonFormat, grammar: javascriptGrammar as DslGrammar },
   kotlin: { specs: kotlinFormat, grammar: kotlinGrammar as DslGrammar },
