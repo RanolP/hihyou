@@ -117,21 +117,19 @@ const clickChanged = async (selector) => {
   await page.mouse.click(point.x, point.y);
 };
 const show = async (what) => {
-  const primary = await page.evaluate(() =>
-    __hh.ranges("hh-selection-primary"),
-  );
+  const selected = await page.evaluate(() => __hh.ranges("hh-selection"));
   const viewed = await page.evaluate(() => __hh.ranges("hh-viewed"));
   const byFile = {};
   for (const v of viewed) byFile[v.file] = (byFile[v.file] ?? 0) + 1;
   log(
-    `${what}: focused=${await page.evaluate(() => __hh.active())} primary=${JSON.stringify(
-      primary
+    `${what}: focused=${await page.evaluate(() => __hh.active())} selected=${JSON.stringify(
+      selected
         .map((p) => p.text)
         .join("")
         .slice(0, 80),
-    )} (${primary.length} ranges, file ${primary[0]?.file}) viewed ranges per file=${JSON.stringify(byFile)}`,
+    )} (${selected.length} ranges, file ${selected[0]?.file}) viewed ranges per file=${JSON.stringify(byFile)}`,
   );
-  return { primary, viewed, byFile };
+  return { selected, viewed, byFile };
 };
 const shot = async (name) => {
   const path = join(out, `modal-${mode}-${name}.png`);
@@ -150,7 +148,7 @@ await shot("1-click");
 await page.keyboard.press("o");
 const s2 = await show("after o");
 await shot("2-o");
-if (JSON.stringify(s1.primary) === JSON.stringify(s2.primary))
+if (JSON.stringify(s1.selected) === JSON.stringify(s2.selected))
   log("WARN: o did not move the selection");
 await page.keyboard.press("v");
 const s3 = await show("after v");
@@ -173,7 +171,7 @@ for (const sel of ["del.hh-changed", "ins.hh-changed"]) {
   await clickChanged(scope + sel);
   const s = await show(`after click on ${sel}`);
   await shot(`4-${sel.split(".")[0]}`);
-  if (s.primary.length === 0) log(`WARN: click on ${sel} selected no node`);
+  if (s.selected.length === 0) log(`WARN: click on ${sel} selected no node`);
 }
 for (const key of ["o", "o", "o", "x", "i", "i"]) {
   await page.keyboard.press(key);
@@ -226,9 +224,9 @@ const count = (name, where) =>
     let outside = 0;
     for (let k = 0; k < 4 && outside === 0; k++) {
       await page.keyboard.press("o");
-      outside = await count("hh-selection-primary", "outside-change");
+      outside = await count("hh-selection", "outside-change");
       await show(
-        `fix2: after o #${k + 1} (${outside} primary ranges on shared text)`,
+        `fix2: after o #${k + 1} (${outside} selected ranges on shared text)`,
       );
     }
     await shot("5-before-ancestor");
@@ -267,13 +265,13 @@ const count = (name, where) =>
     const rows = await page.evaluate(
       () => __hh.root().querySelectorAll(".hh-pair-row").length,
     );
-    const sel = await count("hh-selection-primary", ".hh-pair-row");
+    const sel = await count("hh-selection", ".hh-pair-row");
     await page.keyboard.press("v");
     const viewedIn = await count("hh-viewed", ".hh-pair-row");
     await page.keyboard.press("v");
     const viewedOff = await count("hh-viewed", ".hh-pair-row");
     log(
-      `expandMove: pair rows ${before} -> ${rows}; primary ranges in pair rows ${sel}; hh-viewed in pair rows after v ${viewedIn}, after v again ${viewedOff}`,
+      `expandMove: pair rows ${before} -> ${rows}; selected ranges in pair rows ${sel}; hh-viewed in pair rows after v ${viewedIn}, after v again ${viewedOff}`,
     );
     await shot("6-expand-move");
     if (rows <= before)
@@ -340,7 +338,7 @@ const count = (name, where) =>
     await shot("7-expand-elided");
     if (mode === "ext" ? after <= lines : expands.length === 0)
       failures.push("expandElided: Enter expanded nothing");
-    if (s.primary.length === 0)
+    if (s.selected.length === 0)
       failures.push("expandElided: the selection did not survive the redraw");
   }
 }
@@ -375,7 +373,7 @@ if (mode === "fixture") {
   await head.click();
   const whole = await show("whole: header clicked");
   if (
-    !whole.primary
+    !whole.selected
       .map((p) => p.text)
       .join("")
       .includes("return c")
@@ -386,7 +384,7 @@ if (mode === "fixture") {
   await page.keyboard.press("v");
   const partial = await state();
   log(
-    `whole: after v on leaf "${leaf.primary.map((p) => p.text).join("")}" header state ${JSON.stringify(partial)}`,
+    `whole: after v on leaf "${leaf.selected.map((p) => p.text).join("")}" header state ${JSON.stringify(partial)}`,
   );
   if (partial !== "Partly viewed")
     failures.push(

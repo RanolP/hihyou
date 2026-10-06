@@ -60,7 +60,7 @@ const press = (s: ModalState, key: string) => modalKey(s, key, ctx);
 // Context lines had no outline, so code outside a hunk, revealed or not, could be neither selected nor commented on.
 test("a node in unchanged context is selected, narrowed word by word, and commented on with that range", () => {
   let s = selectAt(emptyModal, index, point(14));
-  expect(s.selections[0]).toMatchObject({ fragment: contextFragment, node: 1 });
+  expect(s.selection).toMatchObject({ fragment: contextFragment, node: 1 });
   s = press(s, "w")?.state ?? s;
   expect(s.chars).toEqual({ start: 0, end: 3 }); // baz
   s = press(s, "w")?.state ?? s;

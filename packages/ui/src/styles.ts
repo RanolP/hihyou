@@ -23,7 +23,7 @@ export const diffStyles = `
   --hh-button-fg: var(--vscode-textLink-foreground, light-dark(#0969da, #4daafc));
   --hh-flash: var(--vscode-editor-findMatchHighlightBackground, light-dark(rgb(234 92 0 / 0.33), rgb(234 92 0 / 0.33)));
   --hh-select: var(--vscode-editor-selectionHighlightBackground, light-dark(rgb(9 105 218 / 0.15), rgb(47 129 247 / 0.2)));
-  --hh-select-primary: var(--vscode-editor-selectionBackground, light-dark(rgb(9 105 218 / 0.3), rgb(47 129 247 / 0.4)));
+  --hh-selection: var(--vscode-editor-selectionBackground, light-dark(rgb(9 105 218 / 0.3), rgb(47 129 247 / 0.4)));
   --hh-added-fg: var(--vscode-gitDecoration-addedResourceForeground, light-dark(#1a7f37, #81b88b));
   --hh-removed-fg: var(--vscode-gitDecoration-deletedResourceForeground, light-dark(#cf222e, #c74e39));
   --hh-mono: var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
@@ -194,9 +194,8 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 /* The modal review editor: the root takes keys while focused, and paints nodes through the Custom Highlight API. */
 .hh-review:focus { outline: 2px solid var(--vscode-focusBorder, #0969da); outline-offset: -2px; }
 .hh-diff ::highlight(hh-viewed) { color: var(--hh-muted); }
-.hh-diff ::highlight(hh-selection) { background-color: var(--hh-select); }
-.hh-diff ::highlight(hh-selection-primary) {
-  background-color: var(--hh-select-primary);
+.hh-diff ::highlight(hh-selection) {
+  background-color: var(--hh-selection);
   text-decoration: underline 2px var(--hh-accent);
 }
 /* A Code-Review score: plus solid, minus wavy, and the badge spells the sign, so colour is never the only cue. */

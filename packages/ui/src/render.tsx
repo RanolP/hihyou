@@ -20,7 +20,6 @@ import {
   viewedOf,
 } from "./atoms.js";
 import {
-  addAt,
   bindModal,
   emptyModal,
   type ModalBinding,
@@ -296,8 +295,7 @@ function mount(
       modal.set({
         ...modal.state(),
         mode: "normal",
-        selections: [t],
-        primary: 0,
+        selection: t,
       });
       clicking = false;
     },
@@ -312,10 +310,10 @@ function mount(
   const [hasSelection, setHasSelection] = createSignal(false);
   const [keyInfo, setKeyInfo] = createSignal(false);
   const [pending, setPending] = createSignal<"s">();
-  const [primary, setPrimary] = createSignal<NodeRef>();
-  const primaryScore = () => {
+  const [selected, setSelected] = createSignal<NodeRef>();
+  const selectedScore = () => {
     scoreTick();
-    const p = primary();
+    const p = selected();
     return p ? nodeScore(outline(), scores, keyOf)(p) : null;
   };
   const pendingComments = () => {
@@ -349,10 +347,10 @@ function mount(
   });
   /** Mirrors the modal state into the signals the toolbar and the info box read. */
   const showModal = (s: ModalState) => {
-    setHasSelection(s.selections.length > 0);
+    setHasSelection(s.selection !== undefined);
     setPending(s.pending);
-    const p = s.selections[s.primary];
-    setPrimary(p?.kind === "node" ? p : undefined);
+    const p = s.selection;
+    setSelected(p?.kind === "node" ? p : undefined);
   };
   /** A toolbar button runs its key with focus on the root, where the modal editor reads keys. */
   const press = (key: string) => {
@@ -377,17 +375,10 @@ function mount(
     );
   };
   const paintSelection = () => {
-    const { selections, primary, chars } = modal?.state() ?? emptyModal;
+    const { selection: p, chars } = modal?.state() ?? emptyModal;
     const index = outline();
     painter.set(
       "hh-selection",
-      selections
-        .filter((_, i) => i !== primary)
-        .flatMap((t) => painter.targetRanges(index, t)),
-    );
-    const p = selections[primary];
-    painter.set(
-      "hh-selection-primary",
       p?.kind === "node"
         ? narrowedRanges(index, p, chars)
         : p
@@ -632,9 +623,8 @@ function mount(
     painter.set("hh-score-plus", plus);
     painter.set("hh-score-minus", minus);
   };
-  const scrollToPrimary = () => {
-    const s = modal?.state();
-    const p = s?.selections[s.primary];
+  const scrollToSelection = () => {
+    const p = modal?.state().selection;
     const first = p && painter.targetRanges(outline(), p)[0];
     first?.startContainer.parentElement?.scrollIntoView({
       block: "nearest",
@@ -664,8 +654,7 @@ function mount(
         const file = current[effect.file];
         const gap = file && gapOf(file, effect.fragment);
         if (!opts.onExpand || !file || !gap || gap.count === 0) return;
-        const s = modal?.state();
-        const p = s?.selections[s.primary];
+        const p = modal?.state().selection;
         const above =
           p !== undefined && p.kind !== "file" && effect.fragment < p.fragment;
         const direction: ExpandDirection =
@@ -686,7 +675,7 @@ function mount(
       case "jump":
         reveal(effect.to.file);
         paint();
-        scrollToPrimary();
+        scrollToSelection();
         return;
       case "help":
         setKeyInfo((open) => !open);
@@ -789,7 +778,11 @@ function mount(
       <div class="hh-diff">
         <div class="hh-bar">
           <ApprovalBadge approval={approval} />
-          <KeyToolbar shown={hasSelection} press={press} score={primaryScore} />
+          <KeyToolbar
+            shown={hasSelection}
+            press={press}
+            score={selectedScore}
+          />
           <SubmitReview
             reviewing={reviewing}
             pending={pendingComments}
@@ -812,18 +805,16 @@ function mount(
     const target = e.target instanceof Element ? e.target : null;
     // A button acts through its own handler.
     if (target?.closest("button")) return;
-    // A click that ends a text selection is selecting, not expanding. Shift+click adds a review selection, so the
-    // text range the browser extended for it is dropped.
+    // A click that ends a text selection is selecting, not expanding.
     const text = doc.getSelection();
-    if (e.shiftKey && text?.rangeCount) text.collapseToEnd();
-    const selecting = !(doc.getSelection()?.isCollapsed ?? true);
+    const selecting = !(text?.isCollapsed ?? true);
     if (!target?.closest(controls)) root.focus({ preventScroll: true });
     // Read the point before an action redraws the rows it is in.
     const at =
       !selecting && modal ? pointAt(root, placer, e, target) : undefined;
     if (at && modal) {
       clicking = true;
-      modal.set((e.shiftKey ? addAt : selectAt)(modal.state(), outline(), at));
+      modal.set(selectAt(modal.state(), outline(), at));
       clicking = false;
     }
     // Text selected inside one node narrows the review selection to it, for a comment on those characters.
@@ -882,7 +873,7 @@ function mount(
         onChange: (s) => {
           showModal(s);
           paintSelection();
-          if (!clicking) scrollToPrimary();
+          if (!clicking) scrollToSelection();
         },
         onEffect,
       });

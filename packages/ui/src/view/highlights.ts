@@ -9,7 +9,6 @@ export const highlightNames = [
   "hh-score-minus",
   "hh-comment",
   "hh-selection",
-  "hh-selection-primary",
 ] as const;
 export type HighlightName = (typeof highlightNames)[number];
 
