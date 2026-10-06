@@ -65,6 +65,7 @@ function eachCond(ir: FormatIR, visit: (c: Cond) => void): void {
       cond(x.spaceWhen?.when);
       cond(x.hardWhen?.when);
       cond(x.hug);
+      cond(x.nest?.when);
     } else if (x.t === "splitOn") {
       cond(x.wrapItem);
       if (x.item.t === "words") {
@@ -135,7 +136,8 @@ type RuleType =
   | "ImportRule"
   | "TextRule"
   | "WordsRule"
-  | "GapRule";
+  | "GapRule"
+  | "WrittenEditRule";
 
 /**
  * The custom rules `ir` names, each as the rule type it takes: a node's (`CustomRule`), a token's (`TokenRule`),
@@ -156,6 +158,7 @@ function customNames(ir: FormatIR): [string, RuleType][] {
     else if (x.t === "lines" && x.imports !== undefined) add(x.imports.via, "ImportRule");
     else if (x.t === "hook") add(x.name, "TextRule");
     else if (x.t === "flow") add(x.gap, "GapRule");
+    else if (x.t === "inOrder" && x.edit !== undefined) add(x.edit, "WrittenEditRule");
     else if (x.t === "each") {
       if (x.first !== undefined) walk(x.first);
       if (x.between !== undefined) walk(x.between);
@@ -880,6 +883,13 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
         return;
       }
       case "inOrder": {
+        if (x.join === "written") {
+          const n = x.nest;
+          const nest = n === undefined ? "" : `, 0, ${when(n.when)} ? ${JSON.stringify({ kind: n.kind, opens: n.opens, closes: n.closes })} : undefined`;
+          const edit = x.edit === undefined ? "" : `${nest === "" ? ", 0, undefined" : ""}, custom[${JSON.stringify(x.edit)}]`;
+          line(`printWritten(ctx, node${nest}${edit});`);
+          return;
+        }
         const its = name("items");
         line(`const ${its} = new Set(ctx.items(node));`);
         const skip = x.skip?.length ? `if (${oneOf("t.kindName(c)", x.skip)}) continue;` : undefined;
@@ -1213,7 +1223,8 @@ export function emit(
     if (customs.some(([, type]) => type === "PredicateRule")) predicateRules = true;
     if (customs.some(([, type]) => type === "ParensRule")) parensRules = true;
     if (customs.some(([, type]) => type === "ImportRule")) importRules = true;
-    for (const [, type] of customs) if (type === "TextRule" || type === "WordsRule" || type === "GapRule") hooks.add(type);
+    for (const [, type] of customs)
+      if (type === "TextRule" || type === "WordsRule" || type === "GapRule" || type === "WrittenEditRule") hooks.add(type);
     parts.push("", `export function ${spec}<O extends ${options}>(${param}): StreamRules<O> {`);
     const kinds = Object.keys(ir.structure);
     for (const kind of kinds) {
@@ -1263,7 +1274,7 @@ export function emit(
       0,
       'import { hasChild } from "../../fmt/dsl/runtime.js";',
     );
-  for (const f of ["allBefore", "prevItem", "lastItem", "packable", "printHugged"].filter((f) => parts.some((p) => p.includes(`${f}(`))))
+  for (const f of ["allBefore", "prevItem", "lastItem", "packable", "printHugged", "printWritten"].filter((f) => parts.some((p) => p.includes(`${f}(`))))
     parts.splice(
       parts.indexOf('} from "../../fmt/dsl/runtime.js";') + 1,
       0,
@@ -1341,7 +1352,7 @@ export function emit(
     ...(predicateRules ? ["PredicateRule"] : []),
     ...(parensRules ? ["ParensRule"] : []),
     ...(importRules ? ["ImportRule"] : []),
-    ...(["TextRule", "WordsRule", "GapRule"] as const).filter((r) => hooks.has(r)),
+    ...(["TextRule", "WordsRule", "GapRule", "WrittenEditRule"] as const).filter((r) => hooks.has(r)),
   ];
   if (extra.length > 0)
     parts.splice(

@@ -32,9 +32,9 @@ import {
   printTrailingComments,
   type StreamCtx,
 } from "../stream-format.js";
-import type { Tree } from "../../core/arena.js";
+import { NO_NODE, type Tree } from "../../core/arena.js";
 import { newlineBetween } from "../text.js";
-import { type FormatTree, firstLeaf, nextLeaf } from "../tree.js";
+import { type FormatTree, firstLeaf, nextLeaf, prevLeaf } from "../tree.js";
 
 /**
  * An entry of the flattened sequence (`reference.ts`'s `flatten`): the whole document as tokens, spaces, hard
@@ -843,4 +843,108 @@ export function printHugged<O>(ctx: StreamCtx<O>, c: number): void {
   close();
   closeState();
   closeChoice();
+}
+
+/** Of a `written` join, the `Nest` without its condition, which the generated code asks. */
+export interface WrittenNest {
+  readonly kind: string;
+  readonly opens: readonly string[];
+  readonly closes: readonly string[];
+}
+
+/**
+ * Of a `written` join's `edit`: a token printed as nothing, the separation after it too (`drop`), or after
+ * `before`; or a child the node before it printed already, as a custom rule laying out more than its own node
+ * does, so neither it nor the separation before it prints (`covered`).
+ */
+export interface WrittenEdit {
+  readonly drop?: boolean;
+  readonly before?: string;
+  readonly covered?: boolean;
+}
+
+/** A `written` join's `edit` rule: how source node `node` changes, or undefined where it prints as written. */
+export type WrittenEditRule<O = unknown> = (node: number, ctx: StreamCtx<O>) => WrittenEdit | undefined;
+
+/**
+ * The children of `node` from child `from` on, each after the separation the source has before it (an `inOrder`'s
+ * `written` join): a comment as `ctx.comment` prints it, a named child as its rule does, a token as written but
+ * as `edit` changes it, and `nest`'s levels opened and closed between them.
+ */
+export function printWritten<O>(
+  ctx: StreamCtx<O>,
+  node: number,
+  from = 0,
+  nest?: WrittenNest,
+  edit?: WrittenEditRule<O>,
+): void {
+  const t = ctx.tree;
+  const token = (leaf: number) => {
+    const e = edit?.(leaf, ctx);
+    if (e?.drop) return;
+    if (e?.before !== undefined) sText(e.before);
+    sToken(leaf, t.text(leaf));
+  };
+  if (t.count(node) === 0) token(node);
+  // The separation before the node's first token is its parent's to print; the file's first token has none.
+  const own = firstToken(t, node);
+  for (let i = from, count = t.count(node); i < count; i++) {
+    const c = t.child(node, i);
+    if (edit?.(c, ctx)?.covered) continue;
+    const lead = nest !== undefined && t.kindName(c) === nest.kind ? t.text(firstLeaf(t, c)) : undefined;
+    if (lead !== undefined && nest?.closes.includes(lead)) close();
+    const first = firstToken(t, c);
+    if (first !== NO_NODE && first !== own && !(edit !== undefined && edit(tokenBefore(t, first), ctx)?.drop))
+      writtenGap(t, first);
+    if (ctx.isComment(c)) ctx.comment(c);
+    else if (t.named(c)) ctx.print(c);
+    else token(c);
+    if (lead !== undefined && nest?.opens.includes(lead)) open(INDENT);
+  }
+}
+
+/** The leaf with text before `leaf`, or `NO_NODE` at the file's start. */
+function tokenBefore(t: FormatTree, leaf: number): number {
+  let prev = prevLeaf(t, leaf);
+  while (prev !== NO_NODE && t.text(prev) === "") prev = prevLeaf(t, prev);
+  return prev;
+}
+
+/** The first leaf of `node` with text, or `NO_NODE` where it has none. */
+function firstToken(t: FormatTree, node: number): number {
+  let leaf = firstLeaf(t, node);
+  while (leaf !== NO_NODE && t.text(leaf) === "") leaf = nextLeaf(t, leaf);
+  return leaf !== NO_NODE && within(t, node, leaf) ? leaf : NO_NODE;
+}
+
+/**
+ * The source's separation before token `next` from the token before it, tokens with no text skipped: on one line,
+ * its spaces (a tab counting one); across lines, at most two line breaks, those ending the token before counted,
+ * then the column `next` starts at.
+ */
+function writtenGap(t: FormatTree, next: number): void {
+  let prev = prevLeaf(t, next);
+  let lf = t.lf(next);
+  while (prev !== NO_NODE && t.text(prev) === "") {
+    lf += t.lf(prev);
+    prev = prevLeaf(t, prev);
+  }
+  // A node can span text no token covers, at its end (Swift's `\u{...}` past `u`): the separation starts past it.
+  let span = prev;
+  for (let p = t.parent(prev); prev !== NO_NODE && p !== NO_NODE && !within(t, p, next); p = t.parent(p)) span = p;
+  const before = prev === NO_NODE ? "" : t.text(span);
+  if (lf === 0) {
+    const nl = before.lastIndexOf("\n");
+    const end = prev === NO_NODE ? 0 : nl < 0 ? t.col(span) + before.length : before.length - nl - 1;
+    if (t.col(next) > end) sText(" ".repeat(t.col(next) - end));
+    return;
+  }
+  const ended = before.length - before.replace(/\n+$/, "").length;
+  for (let k = Math.min(ended + lf, 2) - ended; k > 0; k--) sHardline();
+  if (t.col(next) > 0) sText(" ".repeat(t.col(next)));
+}
+
+function within(t: FormatTree, node: number, leaf: number): boolean {
+  for (let n = leaf; n !== NO_NODE; n = t.parent(n)) if (n === node) return true;
+  return false;
 }

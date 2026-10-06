@@ -14,6 +14,8 @@ import * as kotlinFormat from "../../grammars/kotlin/format.js";
 import { grammar as kotlinGrammar } from "../../grammars/kotlin/index.js";
 import * as pythonFormat from "../../grammars/python/format.js";
 import { grammar as pythonGrammar } from "../../grammars/python/index.js";
+import * as swiftFormat from "../../grammars/swift/format.js";
+import { grammar as swiftGrammar } from "../../grammars/swift/index.js";
 import { grammar as tsxGrammar } from "../../grammars/tsx/index.js";
 import * as yamlFormat from "../../grammars/yaml/format.js";
 import { grammar as yamlGrammar } from "../../grammars/yaml/index.js";
@@ -38,6 +40,7 @@ const FORMATS: Record<
   // Python's rules are parts of ruff's, which read their output as values (fmt/sink.ts).
   python: { specs: pythonFormat, grammar: pythonGrammar as DslGrammar, sink: "./fmt/sink.js" },
   // YAML's rules are reached by print.ts, which reads their text back to place it (sink.ts).
+  swift: { specs: swiftFormat, grammar: swiftGrammar as DslGrammar },
   yaml: { specs: yamlFormat, grammar: yamlGrammar as DslGrammar, sink: "./sink.js" },
 };
 

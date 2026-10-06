@@ -386,6 +386,41 @@ it("`inOrder`'s spacing rules apply tight, then spaceWhen, then join, and the ge
   }
 });
 
+// A `written` join that printed a gap twice (once for a node, again for its first child), dropped a line break,
+// kept a third blank line or lost a `nest` level would respell the source a formatter only refuses (Swift's).
+it("`inOrder`'s `written` join keeps the source's spaces and line breaks, two at most, and `nest` indents between its tokens", async () => {
+  const ir = defineFormat<typeof jsonGrammar, JsonOptions>()({
+    structure: {
+      document: () => inOrder({ join: "written" }),
+      object: () => inOrder({ join: "written" }),
+      pair: () => inOrder({ join: "written" }),
+      array: () =>
+        inOrder({ join: "written", nest: { kind: "number", opens: ["1"], closes: ["2"], when: when("nested") } }),
+      string: () => verbatim,
+      number: () => verbatim,
+    },
+  });
+  const file = join(import.meta.dirname, "written-join.gen.ts");
+  writeFileSync(file, emit({ written: ir }, jsonGrammar as DslGrammar, "dsl.test.ts"));
+  try {
+    const gen = (await import(pathToFileURL(file).href)) as {
+      written: (custom: { nested: PredicateRule<JsonOptions> }) => StreamRules<JsonOptions>;
+    };
+    // The join places comments itself, as Swift's rules do.
+    const run = (text: string, nested: boolean) => {
+      const stream = { ...gen.written({ nested: () => nested }), printsOwnComments: () => true };
+      const out = formatTree(parseTree(jsonLanguage, text), { ...json, stream }, {});
+      if (!out.ok) throw new Error(out.detail);
+      return out.text;
+    };
+    expect(run('\n\n{ "a" :1,\n\n\n\n  "b":  [ 3 ] /* c */ }', false)).toBe('{ "a" :1,\n\n  "b":  [ 3 ] /* c */ }\n');
+    expect(run("[\n1,\n3,\n2\n]", false)).toBe("[\n1,\n3,\n2\n]\n");
+    expect(run("[\n1,\n3,\n2\n]", true)).toBe("[\n1,\n  3,\n2\n]\n");
+  } finally {
+    rmSync(file);
+  }
+});
+
 // A combinator the generated code evaluated differently from the reference (an `any` read as `all`, a `not`
 // dropped, `has` reading the wrong children) would respell where the spec says not to.
 it("`not`, `all`, `any`, `fieldIs` and `has` hold where the reference says, in the generated code", async () => {

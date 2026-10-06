@@ -135,7 +135,18 @@ export interface Pairs {
 }
 
 /** What goes between two entries of an `inOrder` no spacing rule claims (see `inOrder`). */
-export type Join = "none" | "space" | "gap" | "line";
+export type Join = "none" | "space" | "gap" | "line" | "written";
+
+/**
+ * Of a `written` join: a child of `kind` whose first token is one of `opens` indents the lines after it a level,
+ * and one whose first token is one of `closes` ends that level before its own line, while `when` holds of the node.
+ */
+export interface Nest {
+  readonly kind: string;
+  readonly opens: readonly string[];
+  readonly closes: readonly string[];
+  readonly when: Cond;
+}
 
 export type Tree =
   /** A source token; `via`: printed by that token rule (`tok(text).via(name)`), present or not. */
@@ -202,6 +213,10 @@ export type Tree =
       readonly lineBefore?: readonly string[];
       /** The children between a `{` and its `}` go one per line, indented; `{}` holding none stays `{}`. */
       readonly braces?: boolean;
+      /** Indent levels a `written` join opens and closes between children (see `Nest`). */
+      readonly nest?: Nest;
+      /** Of a `written` join: the custom rule (a `WrittenEditRule`) that drops a token or adds text before one. */
+      readonly edit?: string;
     }
   | { readonly t: "verbatim" }
   /** The node's source text through normalizer `fn` (`normalizers.ts`) where `when` holds, else as written. */
@@ -447,8 +462,8 @@ export type TokenTree<G extends Grammar, O> =
   | Piece<{ splitOn: KindOf<G> | TokenOf<G>; cond: CondIn<G, O> }>
   | Piece<{
       either: CondIn<G, O>;
-      then: TokenTree<G, O> | Text<G, O> | readonly [Piece<"doc">, Text<G, O>];
-      else: TokenTree<G, O> | Text<G, O>;
+      then: TokenTree<G, O> | Text<G, O> | readonly [Piece<"doc">, Text<G, O>] | Whole;
+      else: TokenTree<G, O> | Text<G, O> | Whole;
     }>
   | Piece<{ spell: TokenOf<G> }>
   | Piece<"doc">
@@ -786,6 +801,8 @@ export interface InOrderOf<K, C> {
   readonly hug?: C;
   readonly lineBefore?: readonly K[];
   readonly braces?: boolean;
+  readonly nest?: { readonly kind: K; readonly opens: readonly string[]; readonly closes: readonly string[]; readonly when: C };
+  readonly edit?: string;
 }
 
 /**
@@ -795,7 +812,10 @@ export interface InOrderOf<K, C> {
  * Between two entries goes, the first that applies: nothing where `tight` does, a space where `spaceWhen` does,
  * else `join`: nothing (`none`, the default), a space (`space`, which `inOrder(space)` means too), a space where
  * the source has any gap and nothing where it has none (`gap`), or a line (`line`), a space unless the enclosing
- * group breaks. With `verbatim`, named children print as their source text between their comments, but those of a
+ * group breaks. A `written` join, for a language whose layout is kept as written, puts the source's own separation
+ * between every child, comments included: the spaces between two tokens on a line, or up to two line breaks and
+ * the next line's column (the stream adds the indent `nest` opens); it takes no other option but `nest` and `edit`, a
+ * custom rule that drops a token (and the separation after it) or adds text right before one. With `verbatim`, named children print as their source text between their comments, but those of a
  * kind in `except`: prettier's raw at-rule parameters. Children of a kind in `skip` print nothing, for one the
  * layout prints after it, like a `;` that `tok(";").synth` adds where the source lacks one.
  */
@@ -831,6 +851,8 @@ export function inOrder(o?: Piece<"space"> | InOrderOf<string, unknown>): unknow
     ...(opts.hug === undefined ? {} : { hug: plain(opts.hug) }),
     ...(opts.lineBefore?.length ? { lineBefore: opts.lineBefore } : {}),
     ...(opts.braces ? { braces: true } : {}),
+    ...(opts.nest === undefined ? {} : { nest: { ...opts.nest, when: plain(opts.nest.when) } }),
+    ...(opts.edit === undefined ? {} : { edit: opts.edit }),
   });
 }
 
