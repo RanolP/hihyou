@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist/tsc-node",
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
+    "types": ["node"],
+    // The configs import each other by their .ts names, which Vite's native config loader needs.
+    "rewriteRelativeImportExtensions": true
+  },
+  "include": ["wxt.config.ts", "userscript.config.ts", "browser-safe.ts"]
+}

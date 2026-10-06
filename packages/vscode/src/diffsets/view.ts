@@ -53,7 +53,7 @@ export interface DiffsetTree {
 }
 
 /**
- * The `hihyou.diffsets` view: the diffsets of the current set only (a pull request: all changes and each commit;
+ * The `hihyou.diffsets` view: the diffsets of the current set only (a pull request: each of its commits;
  * a local repository: its working tree, index and branch commits), each expanding into the files it changes.
  * With no current set, a workspace of exactly one repository shows that repository. Returns the provider,
  * which the integration test reads.

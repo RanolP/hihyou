@@ -15,7 +15,7 @@ Measured at `cb27b44` (docs(research): measure GLR fork cost and plan an LR fast
 
 ## A) Cold folder-level run, one process
 
-`phases.node.js cold <lang>` writes the bench's corpus inputs for the language to a temp dir (same file names, same filter: only inputs prettier and oxfmt both accept), then spawns an instrumented copy of `fmt/cli.node.js` that clocks each step with `performance.now()`. "Node bootstrap" is the child's own clock at script entry. "Spawn + teardown" is the parent's wall time minus the child's clock at its last step. The fmt modules import the grammars they format (`typescript/fmt.js` imports `javascript` and `tsx` too), so the child loads those grammars first, which charges their cost to the bundle and decode rows.
+`phases.node.js cold <lang>` writes the bench's corpus inputs for the language to a temp dir (same file names, same filter: only inputs oxfmt accepts), then spawns an instrumented copy of `fmt/cli.node.js` that clocks each step with `performance.now()`. "Node bootstrap" is the child's own clock at script entry. "Spawn + teardown" is the parent's wall time minus the child's clock at its last step. The fmt modules import the grammars they format (`typescript/fmt.js` imports `javascript` and `tsx` too), so the child loads those grammars first, which charges their cost to the bundle and decode rows.
 
 Inputs: JSON is big.json and package-lock.json (3479 KB). CSS is bootstrap.css, normalize.css and animate.css (374 KB). JS is lodash.js and jquery.js (810 KB). TS is scanner.ts, checker.ts, App.tsx and LayerUI.tsx (3504 KB). Python is argparse.py, typing.py, dataclasses.py and base_events.py (370 KB).
 

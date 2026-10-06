@@ -1,8 +1,17 @@
 import { syntechsGrammars } from "@hihyou/engine";
-import type { GrammarLoader, Host, HostPreferences } from "@hihyou/engine";
+import type {
+  AnchorData,
+  ChangedFileRef,
+  GrammarLoader,
+  Host,
+  HostPreferences,
+  LineRange,
+} from "@hihyou/engine";
+import type { CommentStore } from "@hihyou/ui";
 import { readGitHubBlob } from "./blob.js";
 import { createGitHubClient } from "./client.js";
 import type { GitHubClientOptions } from "./client.js";
+import { type GitHubReviewTarget, githubCommentStore } from "./comments.js";
 import {
   type DiffsetResolution,
   type GitHubDiffsetId,
@@ -35,6 +44,21 @@ export interface GitHubHost extends Host {
     repo: string,
     number: number,
   ): Promise<GitHubCommit[]>;
+  /**
+   * The pull request's review comments, kept on GitHub; `lines` places an anchor in the blob it names, and
+   * `onLines` anchors a thread read back on lines of that blob, and `changes` is the Diffset's files, whose blobs
+   * key what is posted (`githubCommentStore`).
+   */
+  reviewComments(
+    target: GitHubReviewTarget,
+    lines: (anchor: AnchorData) => Promise<LineRange[]>,
+    onLines: (
+      side: "before" | "after",
+      path: string,
+      lines: LineRange,
+    ) => Promise<AnchorData>,
+    changes: () => Promise<readonly ChangedFileRef[]>,
+  ): CommentStore;
 }
 
 /** A browser-safe GitHub `Host` for `@hihyou/engine`: fetch only, no Node APIs. */
@@ -50,6 +74,8 @@ export function githubHost(options: GitHubHostOptions): GitHubHost {
     listPullRequests: (owner, repo) => listPullRequests(client, owner, repo),
     listPullRequestCommits: (owner, repo, number) =>
       listPullRequestCommits(client, owner, repo, number),
+    reviewComments: (target, lines, onLines, changes) =>
+      githubCommentStore(client, target, lines, onLines, changes),
     ...(options.preferences && { preferences: options.preferences }),
   };
 }

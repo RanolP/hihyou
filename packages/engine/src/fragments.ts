@@ -22,7 +22,14 @@ export interface FileDiff {
 export type CodeFragment =
   | { kind: "begin"; label: string; at: AstSteps } // label e.g. "class AA"
   | { kind: "end"; label: string }
-  | { kind: "unchanged"; spans: Span[]; at: AstSteps[]; lines: LinePair }
+  | {
+      kind: "unchanged";
+      spans: Span[];
+      at: AstSteps[];
+      lines: LinePair;
+      /** Every named node wholly inside, none `changed`, so a viewer can select context code and comment on it. */
+      nodes?: NodeOutline[];
+    }
   | { kind: "diff"; before: Side; after: Side } // one side empty = added / deleted
   | { kind: "elided"; lines: LinePair }; // engine decides what to collapse
 
@@ -76,6 +83,19 @@ export interface SideMove {
   first: number;
   last: number;
   counterpart: { path: string; at: AstSteps[] };
+  /**
+   * The move is an extract refactor: the before half is code replaced by a use of the new declaration this
+   * names, and the after half is that declaration, emphasized where it generalized the code.
+   */
+  extract?: string;
+  /** The locals an edited move renamed, each from its before name to its after name, as the move's check verified. */
+  renames?: Rename[];
+}
+
+/** A local name in the before half of a move and the name it binds in the after half. */
+export interface Rename {
+  before: string;
+  after: string;
 }
 
 export interface Span {
@@ -102,6 +122,10 @@ export interface MoveMark {
   counterpart: { path: string; at: AstSteps[] };
   /** In a move inside one file, the other half's node on the other side. */
   twin?: number;
+  /** See `SideMove.extract`. */
+  extract?: string;
+  /** See `SideMove.renames`. */
+  renames?: readonly Rename[];
 }
 
 /** A node added or deleted as one unit; see `NodeOutline.whole`. */
@@ -124,6 +148,8 @@ export interface SideInput {
   wholes: WholeMark[];
   /** The grammar's `Grammar.declarations`: the node kinds a whole unit may be. */
   declarations?: ReadonlySet<string>;
+  /** The grammar's `Grammar.containers`: the node kinds whose members are whole like top-level nodes. */
+  containers?: ReadonlySet<string>;
 }
 
 export interface FragmentInput {
@@ -460,18 +486,21 @@ function declarationLabel(tree: Tree, n: number): string | undefined {
 }
 
 /**
- * Whether an inserted or deleted `n` reads as one unit: a node of one of the grammar's declaration `kinds`,
- * reached through wrappers holding nothing else (`export`), filling its lines but for a trailing `;` or `,`.
- * `label` is what it declares, as `begin` reads it, when it names one. Undefined for anything else, such as
- * an added argument, a JSX element, or a declaration sharing its line with other code.
+ * Whether an inserted or deleted `n` reads as one unit: a node of one of the grammar's declaration `kinds`, at
+ * top level or a member of a class-like `containers` node that itself sits so, reached through wrappers holding
+ * nothing else (`export`), filling its lines but for a trailing `;` or `,`. `label` is what it declares, as
+ * `begin` reads it, when it names one. Undefined for anything else, such as an added argument, a JSX element, a
+ * local variable or function, or a declaration sharing its line with other code.
  */
 export function wholeDeclaration(
   v: Version,
   tree: Tree,
   n: number,
   kinds: ReadonlySet<string> | undefined,
+  containers: ReadonlySet<string> | undefined,
 ): { label?: string } | undefined {
-  if (!kinds) return undefined;
+  // A local `const` is one more statement in code that stayed, so only a top-level one or a member is the change.
+  if (!kinds || !topOrMember(tree, n, containers)) return undefined;
   const before = v.text.slice(v.lineStarts[lineOf(v, v.start(n))], v.start(n));
   const last = lineOf(v, Math.max(v.start(n), v.end(n) - 1));
   const after = v.text.slice(v.end(n), lineEnd(v, last));
@@ -487,6 +516,24 @@ export function wholeDeclaration(
     if (only === undefined) return undefined;
     m = only;
   }
+}
+
+/**
+ * Whether `n` sits at top level or in the body of a `containers` node that itself does, each container reached
+ * through wrappers holding nothing else (`export`). Any other ancestor, such as a function body, makes `n` local.
+ */
+function topOrMember(tree: Tree, n: number, containers: ReadonlySet<string> | undefined): boolean {
+  for (let body = tree.parent(n); body !== tree.root; ) {
+    let child = tree.parent(body);
+    if (!containers?.has(tree.kindName(child))) return false;
+    body = tree.parent(child);
+    while (body !== tree.root && !containers.has(tree.kindName(tree.parent(body)))) {
+      if (onlyNamedChild(tree, body) !== child) return false;
+      child = body;
+      body = tree.parent(body);
+    }
+  }
+  return true;
 }
 
 function onlyNamedChild(tree: Tree, n: number): number | undefined {
@@ -522,12 +569,53 @@ function unchangedFragment(
 ): CodeFragment & { kind: "unchanged" } {
   const start = v.lineStarts[lines.after - 1] as number;
   const end = lineEnd(v, lines.after + count - 2);
+  const nodes = v.tree
+    ? contextOutline(v, v.tree, lines.after - 1, start, end)
+    : [];
   return {
     kind: "unchanged",
     spans: split(v.text, start, end, [], scopes),
     at: v.tree ? nodesIn(v, v.tree, start, end) : [],
     lines,
+    ...(nodes.length > 0 && { nodes }),
   };
+}
+
+/** Every named node of `v` lying wholly inside `[start, end)`, in document order, parents first. */
+function contextOutline(
+  v: Version,
+  tree: Tree,
+  l0: number,
+  start: number,
+  end: number,
+): NodeOutline[] {
+  const out: NodeOutline[] = [];
+  const at = (offset: number) => {
+    const line = lineOf(v, offset);
+    return { line: line - l0, column: offset - (v.lineStarts[line] as number) };
+  };
+  const walk = (n: number, parent: number) => {
+    const s = v.start(n);
+    const e = v.end(n);
+    if (n !== tree.root && (e <= start || s >= end)) return;
+    let own = parent;
+    if (n !== tree.root && tree.named(n) && e > s && s >= start && e <= end) {
+      own = out.length;
+      out.push({
+        steps: stepsOf(tree, n),
+        parent,
+        kind: tree.kindName(n),
+        start: at(s),
+        end: at(e),
+        changed: false,
+        hash: nodeHash(tree, n),
+      });
+    }
+    for (let i = 0, count = tree.count(n); i < count; i++)
+      walk(tree.child(n, i), own);
+  };
+  walk(tree.root, -1);
+  return out;
 }
 
 /**
@@ -748,8 +836,11 @@ function sideMoves(
       last:
         Math.min(l1 - 1, lineOf(v, Math.max(v.start(m.node), v.end(m.node) - 1))) + 1,
       counterpart: { path: m.counterpart.path, at: [...m.counterpart.at] },
+      ...(m.extract !== undefined && { extract: m.extract }),
+      ...(m.renames && { renames: [...m.renames] }),
     }))
-    .sort((p, q) => p.first - q.first);
+    // The outer of two moves starting on one line comes first, so its counterpart names the joined box.
+    .sort((p, q) => p.first - q.first || q.last - p.last);
   for (const m of found) {
     const prev = out.at(-1);
     if (!prev || m.first > prev.last) {
@@ -770,7 +861,15 @@ function sideMoves(
   }
   const { path } = first.counterpart;
   const at = out.flatMap((m) => (m.counterpart.path === path ? m.counterpart.at : []));
-  return [{ first: l0 + 1, last: l1, counterpart: { path, at } }];
+  return [
+    {
+      first: l0 + 1,
+      last: l1,
+      counterpart: { path, at },
+      ...(first.extract !== undefined && { extract: first.extract }),
+      ...(first.renames && { renames: first.renames }),
+    },
+  ];
 }
 
 /**

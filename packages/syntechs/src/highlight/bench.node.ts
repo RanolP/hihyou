@@ -1,126 +1,288 @@
-// The syntechs TypeScript highlighter against shiki (oniguruma and its JavaScript regex engine), both ending
-// in a colour per token under github-dark. Ours is timed twice: highlight-only on an already-parsed tree, and
-// parse + highlight. Usage: node packages/syntechs/dist/highlight/bench.node.js [--runs N]
-// Inputs come from the vite clone at .eval/vite: a large file, a medium file and all of packages/vite/src.
+// Highlighting speed against shiki, per language, on the formatter bench's inputs: the large corpus files
+// (fetch-corpus.sh, research/parser-bench) and the conformance fixtures of the language's target. Both sides end
+// in a colour per token under github-dark: ours parses and highlights each input (parseTree + scopeRuns + the
+// compiled theme), shiki runs codeToTokens on its default engine, oniguruma.
+//
+//   node packages/syntechs/dist/highlight/bench.node.js [language...] [--json <path>]
+//
+// Timing matches fmt/bench.node.ts: per language, one pass highlights every input; 2 warmups, median of 5. Both
+// run in this process with their grammars and theme loaded before any timing, so neither pays startup.
+// `--json` writes each language's totals with the commit and tool versions for the website's scorecard, where
+// ratio.shiki = shiki ms / syntechs ms: above 1, syntechs is faster.
+//
+//   node packages/syntechs/dist/highlight/bench.node.js --merge <partial.json...> --json <path>
+//
+// `--merge` measures nothing: it joins the `--json` files of one-language runs (CI times each language on its own
+// runner) into the file a run over every language writes, groups in this file's order.
 
-import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { createJavaScriptRegexEngine } from "@shikijs/engine-javascript";
-import { bundledThemes, createHighlighter, type HighlighterGeneric } from "shiki";
-import { createOnigurumaEngine } from "shiki/engine/oniguruma";
-import { repoRoot } from "../core/corpus.node.js";
+import { createRequire } from "node:module";
+import { bundledThemes, createHighlighter } from "shiki";
+import {
+  benchFiles,
+  type GrammarName,
+  type Input,
+  swiftInputs,
+} from "../core/corpus.node.js";
 import { parseTree, type Tree } from "../core/index.js";
-import { language } from "../grammars/typescript/index.js";
-import { highlight } from "../grammars/typescript/highlight.js";
-import { type CompiledTheme, compileTheme, scopeRuns, type Theme } from "./index.js";
+import type { Language as Grammar } from "../core/language.js";
+import {
+  jsonPathArg,
+  mergeRuns,
+  runInfo,
+  writeJson,
+} from "../fmt/conformance/report.node.js";
+import { PRETTIER_FIXTURES, TARGETS } from "../fmt/conformance.node.js";
+import {
+  type CompiledTheme,
+  compileTheme,
+  type HighlightModule,
+  scopeRuns,
+  type Theme,
+} from "./index.js";
 
-const RUNS = Number(process.argv[process.argv.indexOf("--runs") + 1] || 7);
+const RUNS = 5;
 const WARMUP = 2;
-const COLD_RUNS = 5;
-const VITE = join(repoRoot, ".eval/vite");
-const LARGE = "packages/vite/src/node/plugins/css.ts";
-const MEDIUM = "packages/vite/src/node/plugins/asset.ts";
+const THEME = "github-dark";
+const median = (xs: number[]) =>
+  [...xs].sort((a, b) => a - b)[xs.length >> 1] as number;
 
-const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[xs.length >> 1] as number;
+interface Group {
+  /** The language as the scorecard names it: a conformance row id without its `@reference` suffix. */
+  id: string;
+  /** The conformance target whose fixtures join the corpus. */
+  target: string;
+  corpus: GrammarName[];
+  /** The grammar a fixture is highlighted with; the target's own when absent. */
+  grammar?: (fixture: string) => GrammarName;
+  /** shiki's language id for an input. */
+  shiki: (input: BenchInput) => string;
+}
 
-function time(fn: () => unknown): number {
-  for (let i = 0; i < WARMUP; i++) fn();
+interface BenchInput extends Input {
+  grammar: GrammarName;
+}
+
+const GROUPS: Group[] = [
+  // prettier's JSON fixtures go through the javascript grammar to format; to highlight, they are JSON.
+  {
+    id: "json",
+    target: "json",
+    corpus: ["json"],
+    grammar: () => "json",
+    shiki: () => "json",
+  },
+  { id: "css", target: "css", corpus: ["css"], shiki: () => "css" },
+  { id: "html", target: "html", corpus: ["html"], shiki: () => "html" },
+  {
+    id: "js",
+    target: "js",
+    corpus: ["javascript"],
+    shiki: (i) => (i.name.endsWith(".jsx") ? "jsx" : "javascript"),
+  },
+  {
+    id: "ts",
+    target: "ts",
+    corpus: ["typescript", "tsx"],
+    shiki: (i) => (i.grammar === "tsx" ? "tsx" : "typescript"),
+  },
+  { id: "python", target: "python", corpus: ["python"], shiki: () => "python" },
+  { id: "kotlin", target: "kotlin", corpus: ["kotlin"], shiki: () => "kotlin" },
+  {
+    id: "swift",
+    target: "swift@swift-format",
+    corpus: ["swift"],
+    shiki: () => "swift",
+  },
+  { id: "yaml", target: "yaml", corpus: ["yaml"], shiki: () => "yaml" },
+];
+
+interface GroupResult {
+  id: string;
+  inputs: number;
+  bytes: number;
+  /** Median pass over every input, in-process. */
+  ms: Record<"syntechs" | "shiki", number>;
+  /** shiki's time over syntechs'; above 1, syntechs is faster. */
+  ratio: { shiki: number };
+}
+
+function time(pass: () => unknown): number {
+  for (let i = 0; i < WARMUP; i++) pass();
   const samples: number[] = [];
   for (let i = 0; i < RUNS; i++) {
-    const t0 = performance.now();
-    fn();
-    samples.push(performance.now() - t0);
+    const t = performance.now();
+    pass();
+    samples.push(performance.now() - t);
   }
   return median(samples);
 }
 
-function inputs(): { name: string; texts: string[] }[] {
-  const read = (p: string) => readFileSync(join(VITE, p), "utf8");
-  const set = execFileSync("git", ["-C", VITE, "ls-files", "-z", "--", "packages/vite/src/*.ts"], { encoding: "utf8" })
-    .split("\0")
-    .filter((n) => n !== "")
-    .flatMap((n) => {
-      try {
-        return [read(n)];
-      } catch {
-        return [];
-      }
-    });
-  return [
-    { name: LARGE.split("/").at(-1) as string, texts: [read(LARGE)] },
-    { name: MEDIUM.split("/").at(-1) as string, texts: [read(MEDIUM)] },
-    { name: `packages/vite/src (${set.length} files)`, texts: set },
-  ];
-}
-
-type Engine = "oniguruma" | "js";
-
-async function shiki(engine: Engine): Promise<HighlighterGeneric<never, never>> {
-  return (await createHighlighter({
-    themes: ["github-dark"],
-    langs: ["typescript"],
-    engine: engine === "js" ? createJavaScriptRegexEngine() : createOnigurumaEngine(import("shiki/wasm")),
-  })) as unknown as HighlighterGeneric<never, never>;
-}
-
-const shikiColours = (h: HighlighterGeneric<never, never>, text: string) =>
-  h.codeToTokens(text, { lang: "typescript" as never, theme: "github-dark" as never });
-
 /** Our end product, comparable to shiki's tokens: runs with a resolved colour each. */
-function ourColours(tree: Tree, length: number, theme: CompiledTheme): (string | undefined)[] {
+function ourColours(
+  tree: Tree,
+  highlight: HighlightModule,
+  length: number,
+  theme: CompiledTheme,
+): (string | undefined)[] {
   const { stacks, runs } = scopeRuns(tree, highlight, length);
-  const colours = new Array<string | undefined>(runs.length / 3);
-  for (let r = 0; r < runs.length; r += 3) colours[r / 3] = theme.style(stacks[runs[r + 2] as number] as string).foreground;
+  const colours: (string | undefined)[] = [];
+  for (let r = 0; r < runs.length; r += 3)
+    colours.push(
+      theme.style(stacks[runs[r + 2] as number] as string).foreground,
+    );
   return colours;
 }
 
-async function loadTheme(): Promise<CompiledTheme> {
-  return compileTheme((await bundledThemes["github-dark"]()).default as Theme);
-}
-
-/** One fresh process: import, set up, colour the medium file once. Prints ms. */
-async function coldChild(who: string): Promise<void> {
-  const text = readFileSync(join(VITE, MEDIUM), "utf8");
-  const t0 = performance.now();
-  if (who === "ours") {
-    const theme = await loadTheme();
-    ourColours(parseTree(language, text), text.length, theme);
-  } else shikiColours(await shiki(who as Engine), text);
-  process.stdout.write(String(performance.now() - t0));
-}
-
-function cold(who: string): number {
-  const self = fileURLToPath(import.meta.url);
-  const samples: number[] = [];
-  for (let i = 0; i < COLD_RUNS; i++)
-    samples.push(Number(execFileSync(process.execPath, [self, "--cold", who], { encoding: "utf8" })));
-  return median(samples);
+async function inputsOf(g: Group): Promise<BenchInput[]> {
+  const target = [...PRETTIER_FIXTURES, ...TARGETS].find(
+    (t) => t.id === g.target,
+  );
+  if (!target) throw new Error(`${g.id}: no conformance target ${g.target}`);
+  const corpus = g.corpus.flatMap((grammar) =>
+    benchFiles(grammar).map((f) => ({ ...f, grammar })),
+  );
+  // The swift target's fixtures are the swift-format sources, read straight from disk.
+  const fixtures =
+    g.id === "swift"
+      ? swiftInputs().map(({ name, text }) => ({
+          name,
+          text,
+          grammar: "swift" as const,
+        }))
+      : (await target.suite()).cases.map((c) => ({
+          name: c.fixture,
+          text: c.text,
+          grammar: (g.grammar ?? target.grammar)(c.fixture),
+        }));
+  return [...corpus, ...fixtures];
 }
 
 async function main(): Promise<void> {
-  const coldAt = process.argv.indexOf("--cold");
-  if (coldAt >= 0) return coldChild(process.argv[coldAt + 1] as string);
+  const args = process.argv.slice(2);
+  const json = jsonPathArg(args);
+  const wanted = args.filter(
+    (a, i) => !a.startsWith("--") && args[i - 1] !== "--json",
+  );
+  if (args.includes("--merge")) {
+    if (!json) throw new Error("--merge needs --json <path> to write");
+    writeJson(
+      json,
+      mergeRuns(
+        wanted,
+        GROUPS.map((g) => g.id),
+      ),
+    );
+    return;
+  }
+  const unknown = wanted.filter((w) => !GROUPS.some((g) => g.id === w));
+  if (unknown.length > 0)
+    throw new Error(
+      `unknown language ${unknown.join(", ")}; languages: ${GROUPS.map((g) => g.id).join(", ")}`,
+    );
+  const groups = GROUPS.filter(
+    (g) => wanted.length === 0 || wanted.includes(g.id),
+  );
 
-  const onig = await shiki("oniguruma");
-  const js = await shiki("js");
-  const theme = await loadTheme();
-  console.log(`warm: median of ${RUNS} after ${WARMUP} warm-up runs, ms; every column ends in a colour per token`);
-  console.log("input\tKB\tshiki-oniguruma\tshiki-js\tours highlight-only\tours parse+highlight\tspeedup (parse+highlight vs faster shiki)");
-  for (const { name, texts } of inputs()) {
-    const kb = texts.reduce((a, t) => a + t.length, 0) / 1024;
-    const trees = texts.map((t) => parseTree(language, t));
-    const o = time(() => texts.forEach((t) => shikiColours(onig, t)));
-    const j = time(() => texts.forEach((t) => shikiColours(js, t)));
-    const h = time(() => trees.forEach((tree, i) => ourColours(tree, (texts[i] as string).length, theme)));
-    const ph = time(() => texts.forEach((t) => ourColours(parseTree(language, t), t.length, theme)));
+  const inputs = new Map<string, BenchInput[]>();
+  for (const g of groups) inputs.set(g.id, await inputsOf(g));
+  const shikiLangs = [
+    ...new Set(
+      groups.flatMap((g) => (inputs.get(g.id) as BenchInput[]).map(g.shiki)),
+    ),
+  ];
+  const shiki = await createHighlighter({ themes: [THEME], langs: shikiLangs });
+  const theme = compileTheme((await bundledThemes[THEME]()).default as Theme);
+  const require = createRequire(import.meta.url);
+  const shikiVersion = (require("shiki/package.json") as { version: string })
+    .version;
+
+  const results: GroupResult[] = [];
+  console.log(
+    `median of ${RUNS} passes after ${WARMUP}, in-process; each pass colours every input under ${THEME}`,
+  );
+  console.log(
+    "| Language | Inputs | KB | syntechs ms (parse + highlight) | shiki ms (oniguruma) | shiki / syntechs |",
+  );
+  console.log("| :-- | --: | --: | --: | --: | --: |");
+  for (const g of groups) {
+    const set = inputs.get(g.id) as BenchInput[];
+    if (set.length === 0)
+      throw new Error(
+        `${g.id}: no inputs; corpus ${g.corpus.join(", ")} and target ${g.target}'s fixtures are empty (stale corpus? rerun packages/syntechs/fetch-corpus.sh)`,
+      );
+    const grammars = new Map<
+      GrammarName,
+      { language: Grammar; highlight: HighlightModule }
+    >();
+    for (const grammar of new Set(set.map((i) => i.grammar))) {
+      const { language } = (await import(
+        `../grammars/${grammar}/index.js`
+      )) as { language: Grammar };
+      const { highlight } = (await import(
+        `../grammars/${grammar}/highlight.js`
+      )) as { highlight: HighlightModule };
+      // Injected languages (JSDoc, regex) paint only once loaded, as a real loader awaits it.
+      await highlight.load?.();
+      grammars.set(grammar, { language, highlight });
+    }
+    const shikiOf = set.map((i) => g.shiki(i));
+    const ours = (i: BenchInput) => {
+      const { language, highlight } = grammars.get(i.grammar) as {
+        language: Grammar;
+        highlight: HighlightModule;
+      };
+      return ourColours(
+        parseTree(language, i.text),
+        highlight,
+        i.text.length,
+        theme,
+      );
+    };
+    const theirs = (i: BenchInput, at: number) =>
+      shiki.codeToTokens(i.text, { lang: shikiOf[at] as never, theme: THEME });
+    // One untimed pass each, so a throw names the input instead of surfacing mid-measurement.
+    for (const [at, i] of set.entries()) {
+      try {
+        ours(i);
+      } catch (e) {
+        throw new Error(
+          `${g.id}: syntechs failed on ${i.name} (${i.grammar}): ${(e as Error).stack}`,
+        );
+      }
+      try {
+        theirs(i, at);
+      } catch (e) {
+        throw new Error(
+          `${g.id}: shiki failed on ${i.name} (lang ${shikiOf[at]}): ${(e as Error).stack}`,
+        );
+      }
+    }
+    const syntechs = time(() => set.forEach(ours));
+    const shikiMs = time(() => set.forEach(theirs));
+    const bytes = set.reduce((n, i) => n + Buffer.byteLength(i.text), 0);
+    const ratio = shikiMs / syntechs;
+    if (!Number.isFinite(ratio) || ratio <= 0)
+      throw new Error(
+        `${g.id}: ratio ${ratio} from shiki ${shikiMs} ms / syntechs ${syntechs} ms over ${set.length} inputs`,
+      );
+    results.push({
+      id: g.id,
+      inputs: set.length,
+      bytes,
+      ms: { syntechs, shiki: shikiMs },
+      ratio: { shiki: ratio },
+    });
     console.log(
-      `${name}\t${kb.toFixed(0)}\t${o.toFixed(1)}\t${j.toFixed(1)}\t${h.toFixed(1)}\t${ph.toFixed(1)}\t${(Math.min(o, j) / ph).toFixed(1)}x (highlight-only ${(Math.min(o, j) / h).toFixed(1)}x)`,
+      `| ${g.id} | ${set.length} | ${(bytes / 1024).toFixed(0)} | ${syntechs.toFixed(1)} | ${shikiMs.toFixed(1)} | ${ratio.toFixed(2)} |`,
     );
   }
-  console.log(`\ncold: fresh process, import + set up + colour ${MEDIUM.split("/").at(-1)} once, median of ${COLD_RUNS}, ms`);
-  for (const who of ["oniguruma", "js", "ours"]) console.log(`${who === "ours" ? "ours" : `shiki-${who}`}\t${cold(who).toFixed(1)}`);
+  if (json)
+    writeJson(json, {
+      ...runInfo({ shiki: `shiki ${shikiVersion}` }),
+      runs: RUNS,
+      warmup: WARMUP,
+      groups: results,
+    });
 }
 
 await main();

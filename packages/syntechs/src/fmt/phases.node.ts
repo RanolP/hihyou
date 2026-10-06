@@ -183,19 +183,13 @@ async function inputs(lang: string, filtered = true) {
     benchFiles(grammar).map((f) => ({ ...f, grammar })),
   );
   if (lang === "python" || !filtered) return all;
-  // The bench's filter: only inputs both prettier and oxfmt accept, so every tool formats the same bytes.
-  const prettier = (await import("prettier")) as {
-    format: (t: string, o: object) => Promise<string>;
-  };
+  // The bench's filter: only inputs oxfmt accepts, so every tool formats the same bytes.
   const { oxfmt } = (await import(here("./conformance/references.node.js"))) as {
     oxfmt: { format: (name: string, t: string, o: object) => Promise<unknown> };
   };
   const kept: typeof all = [];
   for (const f of all) {
     try {
-      await prettier.format(f.text, {
-        parser: lang === "js" ? "babel" : lang === "ts" ? "typescript" : lang,
-      });
       await oxfmt.format(`input.${extOf(f.grammar)}`, f.text, { printWidth: 80 });
       kept.push(f);
     } catch {}

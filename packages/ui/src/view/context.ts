@@ -7,14 +7,10 @@ import type { DiffFile } from "../rows.js";
 import type { PairView, Pairs } from "./pair.jsx";
 import type { Placer } from "./placement.js";
 
-/** `unified` interleaves both sides in one column, merging the lines that differ only by changed nodes. */
-export type DiffLayout = "unified" | "split";
-
 /** What every part of one drawn diffset reads and acts through. */
 export interface DrawContext {
   doc: Document;
   files: Accessor<readonly DiffFile[]>;
-  layout: Accessor<DiffLayout>;
   theme: Accessor<CompiledTheme | undefined>;
   placer: Placer;
   pairs: Pairs;

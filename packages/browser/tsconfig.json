@@ -1,0 +1,21 @@
+{
+  // Not extending WXT's generated .wxt/tsconfig.json: the entrypoints import from `wxt/*` explicitly, and a
+  // missing .wxt/ (a fresh clone, a clean) would otherwise break every tool that reads this config.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    // WXT writes the extension into .output/; tsc only checks, and keeps its output out of the way.
+    "outDir": "dist/tsc",
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": []
+  },
+  "include": ["src", "entrypoints"],
+  "exclude": ["src/**/*.test.ts"],
+  "references": [
+    { "path": "../engine" },
+    { "path": "../github" },
+    { "path": "../ui" }
+  ]
+}

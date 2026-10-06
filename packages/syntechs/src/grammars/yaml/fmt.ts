@@ -1,16 +1,23 @@
 import { parseTree } from "../../core/index.js";
 import { SYM_ERROR } from "../../core/language.js";
+import type { CustomRule } from "../../fmt/dsl/runtime.js";
 import { brokenNodes } from "../../fmt/format.js";
 import { type PrettierOptions, prettierDefaults, prettierSettings } from "../../fmt/options.js";
 import { defineLanguage, type Language } from "../../fmt/rules.js";
 import { sKeptText, sLiteral } from "../../fmt/stream.js";
-import type { StreamRule } from "../../fmt/stream-format.js";
+import { printInto, type StreamRule, type StreamRules } from "../../fmt/stream-format.js";
 import type { Normalize } from "../../fmt/check.js";
 import { grammar } from "./bundle.js";
+import * as gen from "./fmt.gen.js";
 import { language } from "./index.js";
-import { fold, isBlank, printYaml, Unsupported } from "./print.js";
+import { customs, fold, isBlank, printYaml, Unsupported } from "./print.js";
 
-const defaults: PrettierOptions = { ...prettierDefaults };
+/** Prettier's options, and `singleQuote`, the quote a quoted scalar prefers. */
+export interface YamlOptions extends PrettierOptions {
+  singleQuote: boolean;
+}
+
+const defaults: YamlOptions = { ...prettierDefaults, singleQuote: false };
 
 // A quoted scalar means its value whichever quote it is in: print.ts swaps quotes only when the content has no
 // escape but `\"`, so undoing `''` and `\"` is all the decoding a respelling needs.
@@ -67,31 +74,33 @@ const base = defineLanguage(grammar, {
   layoutBlind: true,
 });
 
-// The streams printYaml printed without a final line break; the stream rule runs before `finalLine` asks.
-const noFinal = new WeakSet<object>();
+// What printYaml printed of each tree's stream; the stream rule runs before `finalLine` asks.
+const printed = new WeakMap<object, { text: string; final: boolean }>();
 
-/**
- * YAML as prettier 3.9.9's printer lays it out (print.ts), whole from the stream: the printer walks the tree and
- * places comments itself, so the core attaches none. A construct print.ts cannot lay out yet refuses the file.
- */
-export const yaml: Language<PrettierOptions> = {
-  ...base,
-  comments: new Set(),
-  lineComments: new Map(),
-  stream: {
-    rules: new Map<string, StreamRule<PrettierOptions>>([
-      [
-        "stream",
-        (node, ctx) => {
-          const out = printYaml(ctx.tree, node, ctx.options);
-          if (!out.final) noFinal.add(ctx.tree);
-          // A block scalar's whitespace line can end the output, and a line end trims all but kept text.
-          const tail = /[ \t]+$/.exec(out.text)?.[0] ?? "";
-          if (out.text.length > tail.length) sLiteral(node, out.text.slice(0, out.text.length - tail.length));
-          if (tail !== "") sKeptText(tail);
-        },
-      ],
-      // An ERROR root can span less than the file, so its text is no copy of it.
+/** The stream's rule, laying it out by print.ts and its kinds' rules, into `printed`. */
+const layOut: CustomRule<YamlOptions> = (node, ctx) => {
+  printed.set(ctx.tree, printYaml(ctx, node));
+};
+
+/** The stream's rule writing what `layOut` printed. */
+const stream: CustomRule<YamlOptions> = (node, ctx) => {
+  layOut(node, ctx);
+  const { text } = printed.get(ctx.tree)!;
+  // A block scalar's whitespace line can end the output, and a line end trims all but kept text.
+  const tail = /[ \t]+$/.exec(text)?.[0] ?? "";
+  if (text.length > tail.length) sLiteral(node, text.slice(0, text.length - tail.length));
+  if (tail !== "") sKeptText(tail);
+};
+
+/** The language's stream rules with `stream` as the stream's. */
+const streamRules = (stream: CustomRule<YamlOptions>): StreamRules<YamlOptions> => {
+  const rules = gen.yaml<YamlOptions>({ ...customs, stream });
+  return {
+    ...rules,
+    rules: new Map<string, StreamRule<YamlOptions>>([
+      ...rules.rules,
+      // An ERROR root can span less than the file, so its text is no copy of it. ERROR is no grammar kind, so no
+      // spec rule names it.
       [
         "ERROR",
         () => {
@@ -99,18 +108,32 @@ export const yaml: Language<PrettierOptions> = {
         },
       ],
     ]),
-    lists: new Set(),
-    finalLine: (ctx) => !isBlank(ctx.tree) && !noFinal.has(ctx.tree),
-  },
+    finalLine: (ctx) => !isBlank(ctx.tree) && printed.get(ctx.tree)?.final !== false,
+  };
 };
+
+/**
+ * YAML as prettier 3.9.9's printer lays it out (print.ts) by the rules of format.ts: the printer walks the tree and
+ * places comments itself, so the core attaches none. A construct print.ts cannot lay out yet refuses the file.
+ */
+export const yaml: Language<YamlOptions> = {
+  ...base,
+  comments: new Set(),
+  lineComments: new Map(),
+  stream: streamRules(stream),
+};
+
+// `yaml` printing nothing to the stream, for front matter, which reads the text back.
+const unwritten: Language<YamlOptions> = { ...yaml, stream: streamRules(layOut) };
 
 /**
  * YAML text as oxfmt prints it embedded in another file's front matter, without a final line break; undefined
  * when it does not parse, where prettier keeps the whole front matter as written. A construct print.ts cannot lay
  * out throws `Unsupported`, so the embedding file is refused rather than printed wrong.
  */
-export function formatYaml(value: string, options: Partial<PrettierOptions> = {}): string | undefined {
+export function formatYaml(value: string, options: Partial<YamlOptions> = {}): string | undefined {
   const tree = parseTree(language, value);
   if (tree.errorChars > 0 || tree.kind(tree.root) === SYM_ERROR || brokenNodes(tree) !== undefined) return undefined;
-  return printYaml(tree, tree.root, { ...defaults, ...options }).text;
+  printInto(tree, unwritten, options);
+  return printed.get(tree)!.text;
 }

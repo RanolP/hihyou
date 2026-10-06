@@ -1,0 +1,28 @@
+{
+  "name": "@hihyou/browser",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "wxt build",
+    "build:firefox": "wxt build -b firefox --mv3",
+    "dev": "wxt",
+    "zip": "wxt zip",
+    "zip:firefox": "wxt zip -b firefox --mv3",
+    "test:browser": "wxt build && node test/e2e.mjs",
+    "build:userscript": "vite build -c userscript.config.ts",
+    "test:userscript": "vite build -c userscript.config.ts && node test/userscript.mjs",
+    "test:modal": "pnpm --filter @hihyou/ui fixture && node test/modal.mjs fixture && wxt build && node test/modal.mjs ext"
+  },
+  "dependencies": {
+    "@hihyou/engine": "workspace:*",
+    "@hihyou/github": "workspace:*",
+    "@hihyou/ui": "workspace:*"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0",
+    "vite": "8.3.0",
+    "vite-plugin-solid": "2.11.14",
+    "wxt": "0.21.4"
+  }
+}

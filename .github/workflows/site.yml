@@ -1,4 +1,5 @@
-# Measures syntechs (conformance against the reference formatters, speed against them and oxfmt), builds the
+# Measures syntechs (conformance against the reference formatters, speed against them and oxfmt, highlighting
+# speed against shiki), builds the
 # website's scorecard from those results only, and publishes it to GitHub Pages.
 name: site
 
@@ -18,55 +19,83 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  # Each measurement on its own runner, in parallel: the benches' timings are the product, so they never share a
+  # CPU with each other or with conformance. Both benches run one language per runner, on the same inputs,
+  # passes and tools as a run over every language; the site job merges them back into one file each.
+  measure:
+    strategy:
+      matrix:
+        include:
+          - { id: conformance, script: fmt/conformance.node.js }
+          - { id: bench-json, script: fmt/bench.node.js, language: json }
+          - { id: bench-css, script: fmt/bench.node.js, language: css }
+          - { id: bench-js, script: fmt/bench.node.js, language: js }
+          - { id: bench-ts, script: fmt/bench.node.js, language: ts }
+          - { id: bench-python, script: fmt/bench.node.js, language: python }
+          - { id: bench-kotlin, script: fmt/bench.node.js, language: kotlin }
+          - { id: highlight-json, script: highlight/bench.node.js, language: json }
+          - { id: highlight-css, script: highlight/bench.node.js, language: css }
+          - { id: highlight-html, script: highlight/bench.node.js, language: html }
+          - { id: highlight-js, script: highlight/bench.node.js, language: js }
+          - { id: highlight-ts, script: highlight/bench.node.js, language: ts }
+          - { id: highlight-python, script: highlight/bench.node.js, language: python }
+          - { id: highlight-kotlin, script: highlight/bench.node.js, language: kotlin }
+          - { id: highlight-swift, script: highlight/bench.node.js, language: swift }
+          - { id: highlight-yaml, script: highlight/bench.node.js, language: yaml }
+    name: ${{ matrix.id }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
-      # Where the conformance and bench JSON land, and where the website's data loader reads them.
+      - uses: ./.github/actions/setup
+        with:
+          fetch-inputs: "true"
+
+      - name: Measure
+        run: |
+          mkdir -p "$RUNNER_TEMP/scorecard"
+          node packages/syntechs/dist/${{ matrix.script }} ${{ matrix.language }} --json "$RUNNER_TEMP/scorecard/${{ matrix.id }}.json"
+          cat "$RUNNER_TEMP/scorecard/${{ matrix.id }}.json"
+
+      - name: Conformance summary
+        if: matrix.id == 'conformance'
+        run: cat packages/syntechs/conformance/README.md
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: scorecard-${{ matrix.id }}
+          path: ${{ runner.temp }}/scorecard/${{ matrix.id }}.json
+          if-no-files-found: error
+
+  site:
+    needs: measure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Where the website's data loader reads conformance.json, bench.json and highlight.json.
       - run: echo "SCORECARD_DIR=$RUNNER_TEMP/scorecard" >> "$GITHUB_ENV"
 
-      # node, pnpm, ruff, java and the ktfmt jar (`http:ktfmt`, which ktfmt.node.ts finds with `mise where`).
-      - uses: jdx/mise-action@v5
+      - uses: ./.github/actions/setup
 
-      - name: Tool versions
-        run: |
-          mise ls --current
-          mise where http:ktfmt@0.64
-          ls "$(mise where http:ktfmt@0.64)"
-          mise which ruff
-
-      - run: pnpm install --frozen-lockfile
-
-      - run: pnpm run build
-
-      - name: Cache fetched inputs
-        uses: actions/cache@v6
+      - uses: actions/download-artifact@v8
         with:
-          path: |
-            packages/syntechs/corpus
-            research/parser-bench/inputs
-          key: inputs-${{ hashFiles('packages/syntechs/fetch-corpus.sh', 'research/parser-bench/fetch-inputs.sh') }}
+          pattern: scorecard-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/measured
 
-      - name: Fetch inputs
+      # Each bench's one-language files back into the file a run over every language writes, groups in its order.
+      - name: Merge
         run: |
-          [ -d research/parser-bench/inputs ] || bash research/parser-bench/fetch-inputs.sh
-          [ -d packages/syntechs/corpus ] || bash packages/syntechs/fetch-corpus.sh
-          ls -l research/parser-bench/inputs packages/syntechs/corpus
-
-      - name: Conformance
-        run: |
+          measured="$RUNNER_TEMP/measured"
+          ls -l "$measured"
           mkdir -p "$SCORECARD_DIR"
-          node packages/syntechs/dist/fmt/conformance.node.js --json "$SCORECARD_DIR/conformance.json"
-          cat packages/syntechs/conformance/README.md
-
-      - name: Bench
-        run: node packages/syntechs/dist/fmt/bench.node.js --json "$SCORECARD_DIR/bench.json"
+          cp "$measured/conformance.json" "$SCORECARD_DIR/conformance.json"
+          node packages/syntechs/dist/fmt/bench.node.js --merge "$measured"/bench-*.json --json "$SCORECARD_DIR/bench.json"
+          node packages/syntechs/dist/highlight/bench.node.js --merge "$measured"/highlight-*.json --json "$SCORECARD_DIR/highlight.json"
 
       - name: Results
-        run: |
-          ls -l "$SCORECARD_DIR"
-          cat "$SCORECARD_DIR/conformance.json" "$SCORECARD_DIR/bench.json"
+        run: ls -l "$SCORECARD_DIR"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -81,7 +110,7 @@ jobs:
           path: packages/website/docs/.vitepress/dist
 
   deploy:
-    needs: build
+    needs: site
     runs-on: ubuntu-latest
     environment:
       name: github-pages

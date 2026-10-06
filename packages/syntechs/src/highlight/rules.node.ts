@@ -290,6 +290,227 @@ const SWIFT: Record<string, Rule | null> = Object.fromEntries(
   }).map(([capture, scope]) => [capture, scope === null ? null : `${scope}.swift`]),
 );
 
+// tree-sitter-html's highlights.scm captures, as the scopes VS Code's HTML grammar gives the same tokens.
+const TAG_BEGIN = "punctuation.definition.tag.begin.html";
+const TAG_END = "punctuation.definition.tag.end.html";
+
+const HTML: Record<string, Rule> = {
+  tag: "entity.name.tag.html",
+  "tag.error": "invalid.illegal.unrecognized-tag.html",
+  constant: "meta.tag.metadata.doctype.html",
+  attribute: "entity.other.attribute-name.html",
+  string: "string.quoted.html",
+  comment: "comment.block.html",
+  "punctuation.bracket": { scope: TAG_BEGIN, byText: { ">": TAG_END, "/>": TAG_END } },
+};
+
+// tree-sitter-yaml's highlights.scm captures, as the scopes VS Code's YAML grammar gives the same tokens.
+const YAML: Record<string, Rule> = {
+  boolean: "constant.language.boolean.yaml",
+  "constant.builtin": "constant.language.null.yaml",
+  string: {
+    scope: "string.unquoted.plain.out.yaml",
+    byKind: {
+      double_quote_scalar: "string.quoted.double.yaml",
+      single_quote_scalar: "string.quoted.single.yaml",
+      block_scalar: "string.unquoted.block.yaml",
+    },
+  },
+  number: { scope: "constant.numeric.integer.yaml", byKind: { float_scalar: "constant.numeric.float.yaml" } },
+  comment: "comment.line.number-sign.yaml",
+  label: { scope: "entity.name.type.anchor.yaml", byKind: { alias_name: "variable.other.alias.yaml" } },
+  type: "storage.type.tag-handle.yaml",
+  attribute: "keyword.other.directive.yaml",
+  property: "entity.name.tag.yaml",
+  "punctuation.delimiter": {
+    scope: "punctuation.separator.yaml",
+    byText: {
+      ":": "punctuation.separator.key-value.mapping.yaml",
+      "-": "punctuation.definition.block.sequence.item.yaml",
+      ",": "punctuation.separator.sequence.yaml",
+      "?": "punctuation.definition.key-value.begin.yaml",
+      "|": "keyword.control.flow.block-scalar.literal.yaml",
+      ">": "keyword.control.flow.block-scalar.folded.yaml",
+    },
+  },
+  "punctuation.bracket": {
+    scope: "punctuation.definition.sequence.begin.yaml",
+    byText: {
+      "]": "punctuation.definition.sequence.end.yaml",
+      "{": "punctuation.definition.mapping.begin.yaml",
+      "}": "punctuation.definition.mapping.end.yaml",
+    },
+  },
+  "punctuation.special": {
+    scope: "punctuation.definition.alias.yaml",
+    byText: {
+      "&": "punctuation.definition.anchor.yaml",
+      "---": "entity.other.document.begin.yaml",
+      "...": "entity.other.document.end.yaml",
+    },
+  },
+};
+
+// tree-sitter-graphql's highlights.scm captures. VS Code ships no GraphQL grammar to match, so they are the shared
+// generic scopes, a field or variable painted as one and a comment as a line comment.
+const GRAPHQL: Record<string, Rule> = {
+  ...shared("graphql"),
+  variable: "variable.other.graphql",
+  property: "variable.other.property.graphql",
+  comment: { scope: "comment.line.number-sign.graphql", byKind: { description: "string.quoted.double.graphql" } },
+};
+
+// tree-sitter-json's captures, as the scopes VS Code's JSON grammar gives the same tokens.
+const JSON_CAPTURES: Record<string, Rule> = {
+  "string.special.key": "support.type.property-name.json",
+  string: "string.quoted.double.json",
+  number: "constant.numeric.json",
+  "constant.builtin": "constant.language.json",
+  escape: "constant.character.escape.json",
+  comment: { scope: "comment.block.json", byPrefix: [["//", "comment.line.double-slash.json"]] },
+};
+
+// tree-sitter-css's captures, as the scopes VS Code's CSS grammar gives the same tokens.
+const CSS: Record<string, Rule> = {
+  comment: "comment.block.css",
+  tag: {
+    scope: "entity.name.tag.css",
+    byKind: { nesting_selector: "entity.name.tag.nesting.css", universal_selector: "entity.name.tag.wildcard.css" },
+  },
+  operator: {
+    scope: "keyword.operator.css",
+    byText: {
+      ">": "keyword.operator.combinator.css",
+      "~": "keyword.operator.combinator.css",
+      and: "keyword.operator.logical.and.media.css",
+      or: "keyword.operator.logical.or.media.css",
+      not: "keyword.operator.logical.not.media.css",
+      only: "keyword.operator.logical.only.media.css",
+    },
+  },
+  string: {
+    scope: "string.quoted.double.css",
+    byKind: { plain_value: "string.unquoted.attribute-value.css" },
+    byPrefix: [["'", "string.quoted.single.css"]],
+  },
+  variable: "variable.css",
+  property: {
+    scope: "support.type.property-name.css",
+    byKind: {
+      class_name: "entity.other.attribute-name.class.css",
+      id_name: "entity.other.attribute-name.id.css",
+      namespace_name: "entity.other.namespace-prefix.css",
+      feature_name: "support.type.property-name.media.css",
+    },
+  },
+  attribute: {
+    scope: "entity.other.attribute-name.css",
+    byKind: {
+      tag_name: "entity.other.attribute-name.pseudo-element.css",
+      class_name: "entity.other.attribute-name.pseudo-class.css",
+    },
+  },
+  function: "support.function.misc.css",
+  keyword: {
+    scope: "keyword.control.at-rule.css",
+    byKind: {
+      to: "entity.other.keyframe-offset.css",
+      from: "entity.other.keyframe-offset.css",
+      important: "keyword.other.important.css",
+    },
+  },
+  "string.special": "constant.other.color.rgb-value.hex.css",
+  number: "constant.numeric.css",
+  type: "keyword.other.unit.css",
+  "punctuation.delimiter": {
+    scope: "punctuation.separator.css",
+    byText: {
+      "#": "punctuation.definition.entity.css",
+      ".": "punctuation.definition.entity.css",
+      "::": "punctuation.definition.entity.css",
+      ",": "punctuation.separator.list.comma.css",
+      ":": "punctuation.separator.key-value.css",
+      ";": "punctuation.terminator.rule.css",
+    },
+  },
+  "punctuation.bracket": {
+    scope: "punctuation.section.css",
+    byText: {
+      "{": "punctuation.section.property-list.begin.bracket.curly.css",
+      "}": "punctuation.section.property-list.end.bracket.curly.css",
+      "(": "punctuation.section.function.begin.bracket.round.css",
+      ")": "punctuation.section.function.end.bracket.round.css",
+    },
+  },
+};
+
+/** A string's prefix letters (`r`, `b`, `f`, `u` and their pairs), before its opening quote. */
+const PY_STRING_PREFIXES = ["", ...["r", "b", "u", "f", "rb", "br", "fr", "rf"].flatMap((p) => [p, p.toUpperCase()])];
+const PY_ASSIGNMENT = ["=", ":=", "+=", "-=", "*=", "/=", "//=", "%=", "**=", "@=", "&=", "|=", "^=", "<<=", ">>="];
+
+// tree-sitter-python's own highlights.scm, as the scopes VS Code's Python grammar (MagicPython) gives the same
+// tokens. It captures a function's name the same way at a definition, a call and a decorator.
+const PYTHON: Record<string, Rule> = {
+  variable: "",
+  // `^[A-Z]` identifiers: MagicPython colours a capitalised name like any other; an all-caps one is a constant.
+  constructor: "",
+  constant: "constant.other.caps.python",
+  "constant.builtin": "constant.language.python",
+  function: { scope: "entity.name.function.python", byKind: { decorator: "entity.name.function.decorator.python" } },
+  "function.method": "entity.name.function.python",
+  "function.builtin": "support.function.builtin.python",
+  property: "meta.attribute.python",
+  type: "entity.name.type.python",
+  number: {
+    scope: "constant.numeric.dec.python",
+    byKind: { float: "constant.numeric.float.python" },
+    byPrefix: [
+      ...["0x", "0X"].map((p): [string, string] => [p, "constant.numeric.hex.python"]),
+      ...["0o", "0O"].map((p): [string, string] => [p, "constant.numeric.oct.python"]),
+      ...["0b", "0B"].map((p): [string, string] => [p, "constant.numeric.bin.python"]),
+    ],
+  },
+  comment: "comment.line.number-sign.python",
+  string: {
+    scope: "string.quoted.single.python",
+    byPrefix: PY_STRING_PREFIXES.flatMap((p): [string, string][] => [
+      [`${p}"""`, "string.quoted.multi.python"],
+      [`${p}'''`, "string.quoted.multi.python"],
+      [`${p}"`, "string.quoted.double.python"],
+    ]),
+  },
+  escape: "constant.character.escape.python",
+  "punctuation.special": "constant.character.format.placeholder.other.python",
+  embedded: "meta.fstring.python",
+  operator: {
+    scope: "keyword.operator.arithmetic.python",
+    byText: {
+      ...Object.fromEntries(PY_ASSIGNMENT.map((o) => [o, "keyword.operator.assignment.python"])),
+      ...Object.fromEntries(
+        ["==", "!=", "<>", "<", ">", "<=", ">="].map((o) => [o, "keyword.operator.comparison.python"]),
+      ),
+      ...Object.fromEntries(["&", "|", "^", "~", "<<", ">>"].map((o) => [o, "keyword.operator.bitwise.python"])),
+      ...Object.fromEntries(
+        ["and", "or", "not", "in", "is", "is not", "not in"].map((o) => [o, "keyword.operator.logical.python"]),
+      ),
+      "->": "punctuation.separator.annotation.result.python",
+    },
+  },
+  keyword: {
+    scope: "keyword.control.flow.python",
+    byText: {
+      def: "storage.type.function.python",
+      class: "storage.type.class.python",
+      lambda: "storage.type.function.lambda.python",
+      async: "storage.type.function.async.python",
+      import: "keyword.control.import.python",
+      from: "keyword.control.import.python",
+      global: "storage.modifier.declaration.python",
+      nonlocal: "storage.modifier.declaration.python",
+    },
+  },
+};
+
 export const LANGUAGES: Record<string, LanguageRules> = {
   jsdoc: {
     grammar: "tree-sitter-jsdoc",
@@ -342,5 +563,37 @@ export const LANGUAGES: Record<string, LanguageRules> = {
     grammar: "tree-sitter-swift",
     queries: ["queries/highlights.scm"],
     captures: SWIFT,
+  },
+  html: {
+    grammar: "tree-sitter-html",
+    // tree-sitter.json's only highlights file; naming it skips the injections.scm it lists, which embeds CSS and JS.
+    queries: ["queries/highlights.scm"],
+    captures: HTML,
+  },
+  yaml: {
+    grammar: "tree-sitter-yaml",
+    queries: ["queries/highlights.scm"],
+    captures: YAML,
+  },
+  graphql: {
+    grammar: "tree-sitter-graphql",
+    queries: ["queries/graphql/highlights.scm"],
+    captures: GRAPHQL,
+  },
+  json: {
+    grammar: "tree-sitter-json",
+    scope: "source.json",
+    extend: ["json/highlights.tm.scm"],
+    captures: JSON_CAPTURES,
+  },
+  css: {
+    grammar: "tree-sitter-css",
+    scope: "source.css",
+    captures: CSS,
+  },
+  python: {
+    grammar: "tree-sitter-python",
+    scope: "source.python",
+    captures: PYTHON,
   },
 };

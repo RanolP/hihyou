@@ -1,0 +1,46 @@
+@charset "utf-8";
+@import url("theme.css") screen and (min-width: 600px);
+@namespace svg url(http://www.w3.org/2000/svg);
+
+/* Selectors */
+:root {
+  --main-color: #ff0000;
+  --gap: 4px;
+}
+
+svg|rect, *, div > p + span ~ a {
+  color: var(--main-color) !important;
+  margin: calc(1em - 2px * 3 / 2) 0.5rem;
+}
+
+#id.class:hover::before,
+a[href^="https"], a[lang|='en'], a[class~=x], a[href$=".pdf"], a[title*=foo], input[type=text] {
+  content: 'quoted';
+  font-family: "Helvetica Neue", sans-serif;
+}
+
+.parent {
+  & .child { opacity: 0.5; }
+  &:not(.x) { z-index: -1; }
+}
+
+@media only screen and (max-width: 100px), not print or (orientation: landscape) {
+  body { font-size: 12px; }
+}
+
+@supports (display: grid) and (not (display: inline-grid)) {
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  50% { transform: rotate(180deg); }
+  to { transform: rotate(360deg); }
+}
+
+@font-face {
+  font-family: Mono;
+  src: url(mono.woff2) format("woff2");
+}
+
+@layer base, components;
