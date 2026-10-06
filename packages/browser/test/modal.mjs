@@ -67,7 +67,10 @@ const helpers = () => {
 };
 
 if (mode === "ext") {
-  await page.goto("https://github.com/vitejs/vite/pull/21626/files", {
+  // The extension opens the newest commit's diffset, so the page is a merged pull request, whose commits no longer
+  // change: its newest commit edits one file in rows that keep shared text beside a del and an ins, next to
+  // elided runs. An open one (vitejs/vite#21626 was) drifts with every push.
+  await page.goto("https://github.com/vitejs/vite/pull/23590/files", {
     waitUntil: "domcontentloaded",
   });
   await page.locator(".hihyou-bar button").waitFor({ timeout: 30_000 });
@@ -145,11 +148,17 @@ const target =
 await clickChanged(target);
 const s1 = await show("after click");
 await shot("1-click");
-await page.keyboard.press("o");
-const s2 = await show("after o");
+// A parent can span exactly its child's text (an identifier inside its specifier), so one o may paint the same
+// ranges; o has moved only once the painted text widens.
+let s2 = s1;
+for (let k = 1; k <= 3; k++) {
+  await page.keyboard.press("o");
+  s2 = await show(`after o #${k}`);
+  if (JSON.stringify(s1.selected) !== JSON.stringify(s2.selected)) break;
+}
 await shot("2-o");
 if (JSON.stringify(s1.selected) === JSON.stringify(s2.selected))
-  log("WARN: o did not move the selection");
+  log("WARN: three o presses never widened the selection");
 await page.keyboard.press("v");
 const s3 = await show("after v");
 await shot("3-v");
@@ -282,14 +291,9 @@ const count = (name, where) =>
   }
 }
 
-// expandElided: Enter on a hunk beside an elided run asks the host for the lines.
+// expandElided: Enter on a hunk beside an elided run draws the run's lines.
 {
   await page.keyboard.press("Escape");
-  const expands = [];
-  page.on(
-    "console",
-    (m) => m.text().startsWith("expand") && expands.push(m.text()),
-  );
   const sel = await page.evaluate(() => {
     const rows = [...__hh.root().querySelectorAll("tr")];
     for (let i = 0; i < rows.length; i++) {
@@ -320,24 +324,21 @@ const count = (name, where) =>
       () => __hh.root().querySelectorAll("tr.hh-line").length,
     );
     await page.keyboard.press("Enter");
-    if (mode === "ext")
-      await page
-        .waitForFunction(
-          (n) => __hh.root().querySelectorAll("tr.hh-line").length > n,
-          lines,
-          { timeout: 15000 },
-        )
-        .catch(() => {});
-    else await page.waitForTimeout(300);
+    await page
+      .waitForFunction(
+        (n) => __hh.root().querySelectorAll("tr.hh-line").length > n,
+        lines,
+        { timeout: 15000 },
+      )
+      .catch(() => {});
     const after = await page.evaluate(
       () => __hh.root().querySelectorAll("tr.hh-line").length,
     );
     const s = await show(
-      `expandElided: after Enter (lines ${lines} -> ${after}, host calls ${JSON.stringify(expands)})`,
+      `expandElided: after Enter (lines ${lines} -> ${after})`,
     );
     await shot("7-expand-elided");
-    if (mode === "ext" ? after <= lines : expands.length === 0)
-      failures.push("expandElided: Enter expanded nothing");
+    if (after <= lines) failures.push("expandElided: Enter expanded nothing");
     if (s.selected.length === 0)
       failures.push("expandElided: the selection did not survive the redraw");
   }
