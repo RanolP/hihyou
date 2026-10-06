@@ -30,7 +30,6 @@ const toolbar = [
 
 const groups = [
   { group: "move", title: "Move" },
-  { group: "extend", title: "Extend" },
   { group: "act", title: "Act" },
 ] as const;
 
@@ -42,7 +41,7 @@ export const scoreText = (score: Score) =>
 export function KeyToolbar(props: {
   shown: () => boolean;
   press: (key: string) => void;
-  /** The primary selection's score, when it has one. */
+  /** The selected node's score, when it has one. */
   score: () => Score | null;
 }): JSX.Element {
   return (

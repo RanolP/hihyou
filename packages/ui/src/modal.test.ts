@@ -94,7 +94,7 @@ const nd = (
   s: "before" | "after",
   node: number,
 ): Target => ({ kind: "node", file, fragment, side: s, node });
-const at = (t: Target): ModalState => ({ ...emptyModal, selections: [t] });
+const at = (t: Target): ModalState => ({ ...emptyModal, selection: t });
 
 const ctxWith = (viewed: string[] = []): ModalContext => ({
   index,
@@ -105,7 +105,7 @@ const press = (s: ModalState, keys: string, ctx = ctxWith()) => {
   return s;
 };
 const walk = (s: ModalState, key: string, times: number, ctx = ctxWith()) =>
-  Array.from({ length: times }, () => (s = press(s, key, ctx)).selections[0]);
+  Array.from({ length: times }, () => (s = press(s, key, ctx)).selection);
 
 // A parent read as viewed once any one atom under it was, so a half-reviewed method disappeared from "unviewed".
 test("a node, hunk or file is viewed only when every atom beneath it is", () => {
@@ -146,8 +146,8 @@ test("o expands to the parent, i shrinks to the first changed child, n/p skip si
     nd(0, 1, "before", 3),
   ]);
   const m1 = at(nd(0, 1, "before", 1));
-  expect(press(m1, "n").selections).toEqual([nd(0, 1, "before", 5)]);
-  expect(press(m1, "np").selections).toEqual([nd(0, 1, "before", 1)]);
+  expect(press(m1, "n").selection).toEqual(nd(0, 1, "before", 5));
+  expect(press(m1, "np").selection).toEqual(nd(0, 1, "before", 1));
   expect(walk(at({ kind: "hunk", file: 0, fragment: 1 }), "n", 1)).toEqual([
     { kind: "hunk", file: 0, fragment: 4 },
   ]);
@@ -188,11 +188,11 @@ test("a click selects the innermost node at the point, changed or not", () => {
       side: "before",
       line,
       column: 2,
-    }).selections;
-  expect(click(0)).toEqual([nd(0, 1, "before", 0)]);
-  expect(click(1)).toEqual([nd(0, 1, "before", 1)]);
-  expect(click(2)).toEqual([nd(0, 1, "before", 2)]);
-  expect(click(9)).toEqual([{ kind: "hunk", file: 0, fragment: 1 }]);
+    }).selection;
+  expect(click(0)).toEqual(nd(0, 1, "before", 0));
+  expect(click(1)).toEqual(nd(0, 1, "before", 1));
+  expect(click(2)).toEqual(nd(0, 1, "before", 2));
+  expect(click(9)).toEqual({ kind: "hunk", file: 0, fragment: 1 });
 });
 
 /** A root and document that hold only what the binding reads, with focus set by hand. */
@@ -230,7 +230,7 @@ test("v on a move's target half marks its source half in the other file viewed, 
       column: 4,
     }),
   );
-  expect(modal.state().selections).toEqual([nd(1, 0, "after", 0)]);
+  expect(modal.state().selection).toEqual(nd(1, 0, "after", 0));
   key("v");
   const isViewed = atomViewed(store, plainKeyOf);
   expect(viewedOf(index, nd(0, 1, "before", 5), isViewed)).toBe(true);
@@ -249,17 +249,17 @@ test("keys are ignored while focus is outside the root or a modifier is held", (
     onEffect: (e) => effects.push(e.kind),
   });
   key("j");
-  expect(modal.state().selections).toEqual([]);
+  expect(modal.state().selection).toBeUndefined();
   doc.activeElement = inside;
   key("j", { ctrlKey: true });
-  expect(modal.state().selections).toEqual([]);
+  expect(modal.state().selection).toBeUndefined();
   key("j");
-  expect(modal.state().selections).toEqual([nd(0, 1, "before", 2)]);
+  expect(modal.state().selection).toEqual(nd(0, 1, "before", 2));
   key("Escape");
   expect(effects).toEqual(["leave"]);
   expect(doc.activeElement).toBe(outside);
   key("j");
-  expect(modal.state().selections).toEqual([nd(0, 1, "before", 2)]);
+  expect(modal.state().selection).toEqual(nd(0, 1, "before", 2));
 });
 
 const [u1, d1, mv] = [
@@ -267,43 +267,6 @@ const [u1, d1, mv] = [
   nd(0, 1, "before", 3),
   nd(0, 1, "before", 5),
 ];
-
-// Adding from the first selection instead of the primary made J re-add the same stop, and K/N then moved from it.
-test("J/K/N add the motion's target from the primary and make it primary; a duplicate only becomes primary", () => {
-  expect(press(emptyModal, "J")).toMatchObject({
-    selections: [u1],
-    primary: 0,
-  });
-  const three = press(at(u1), "JJ");
-  expect(three).toMatchObject({ selections: [u1, d1, mv], primary: 2 });
-  expect(press(three, "K")).toMatchObject({
-    selections: [u1, d1, mv],
-    primary: 1,
-  });
-  expect(press(at(u1), "N")).toMatchObject({
-    selections: [u1, d1],
-    primary: 1,
-  });
-});
-
-// The primary ran past the end of the list, so v and K acted on nothing.
-test(") and ( rotate the primary and wrap around both ends", () => {
-  const s: ModalState = { ...emptyModal, selections: [u1, d1, mv], primary: 2 };
-  expect(press(s, ")").primary).toBe(0);
-  expect(press(s, "))").primary).toBe(1);
-  expect(press({ ...s, primary: 0 }, "(").primary).toBe(2);
-});
-
-// Dropping the primary left an index past the end, or emptied the selections entirely.
-test("- drops the primary, the next selection takes over, and the last one stays", () => {
-  const s: ModalState = { ...emptyModal, selections: [u1, d1, mv], primary: 1 };
-  expect(press(s, "-")).toMatchObject({ selections: [u1, mv], primary: 1 });
-  expect(press({ ...s, primary: 2 }, "-")).toMatchObject({
-    selections: [u1, d1],
-    primary: 0,
-  });
-  expect(press(at(u1), "-").selections).toEqual([u1]);
-});
 
 // Review keys fired inside a comment box, so typing "j" moved the selection instead of writing the letter.
 test("a focused field inside the root puts the editor in insert mode, and Escape blurs it back to normal", () => {
@@ -316,13 +279,13 @@ test("a focused field inside the root puts the editor in insert mode, and Escape
   const modal = bindModal(root, { index, viewed: sessionViewedStore() });
   doc.activeElement = field;
   key("j");
-  expect(modal.state()).toMatchObject({ mode: "insert", selections: [] });
+  expect(modal.state()).toEqual({ mode: "insert" });
   key("Escape");
   expect(modal.state().mode).toBe("normal");
   expect(doc.activeElement).toBe(outside);
   doc.activeElement = inside;
   key("j");
-  expect(modal.state().selections).toEqual([u1]);
+  expect(modal.state().selection).toEqual(u1);
 });
 
 // A toolbar button that skipped the binding's effect handling changed the selection but never wrote "viewed".
@@ -339,16 +302,15 @@ test("press runs a key through the binding, writing viewed, whatever holds focus
 const nr = (node: number) =>
   ({ file: 0, fragment: 1, side: "before", node }) as const;
 
-// A score on a hunk or file selection would land on no node, or `s 2` would score only the primary.
-test("s 2 scores every node selection and skips hunks", () => {
-  const hunk: Target = { kind: "hunk", file: 0, fragment: 1 };
-  const s = press({ ...emptyModal, selections: [u1, hunk, mv] }, "s");
+// A score on a hunk or file selection would land on no node.
+test("s 2 scores the selected node and does nothing on a hunk", () => {
+  const s = press(at(mv), "s");
   expect(s.pending).toBe("s");
   const t = modalKey(s, "2", ctxWith());
-  expect(t?.state).toEqual({ ...emptyModal, selections: [u1, hunk, mv] });
-  expect(t?.effects).toEqual([
-    { kind: "setScore", nodes: [nr(2), nr(5)], score: 2 },
-  ]);
+  expect(t?.state).toEqual(at(mv));
+  expect(t?.effects).toEqual([{ kind: "setScore", nodes: [nr(5)], score: 2 }]);
+  const hunk = press(at({ kind: "hunk", file: 0, fragment: 1 }), "s");
+  expect(modalKey(hunk, "2", ctxWith())?.effects).toEqual([]);
 });
 
 // A prefix that stayed pending turned the next motion into a score, or let the stray key move the selection.

@@ -1,6 +1,6 @@
 /**
- * A Kakoune-style modal review editor over the AST outline: select first (one or more nodes, hunks or files),
- * then act on the selections. `modalKey` is pure; `bindModal` wires it to keydown on one root element.
+ * A Kakoune-style modal review editor over the AST outline: select first (one node, hunk or file), then act on
+ * the selection. `modalKey` is pure; `bindModal` wires it to keydown on one root element.
  */
 import {
   type AtomIndex,
@@ -28,12 +28,10 @@ import { type CharRange, charsOf, nodeText, wordsOf } from "./comments.js";
 export interface ModalState {
   /** "insert" while an editable field inside the root has focus: review keys type into it, Escape leaves it. */
   mode: "normal" | "insert";
-  selections: Target[];
-  /** Index into `selections`. */
-  primary: number;
+  selection?: Target;
   /** A prefix key waiting for the key that completes it; any key resolves it. */
   pending?: "s";
-  /** Narrows the primary node selection to part of its text, for a comment; dropped when the selection moves. */
+  /** Narrows the node selection to part of its text, for a comment; dropped when the selection moves. */
   chars?: CharRange;
 }
 
@@ -72,8 +70,6 @@ export interface ModalContext {
 
 export const emptyModal: ModalState = {
   mode: "normal",
-  selections: [],
-  primary: 0,
 };
 
 const sideOrder = (s: SideName) => (s === "before" ? 0 : 1);
@@ -213,49 +209,8 @@ function counterpart(index: AtomIndex, t: Target): Target {
   return next ? node(next) : t;
 }
 
-/** Selections mapped one to one, duplicates folded, the primary following its own selection. */
-function mapSelections(
-  s: ModalState,
-  f: (t: Target) => Target | undefined,
-): ModalState {
-  const seen = new Map<string, number>();
-  const selections: Target[] = [];
-  let primary = 0;
-  s.selections.forEach((t, i) => {
-    const next = f(t) ?? t;
-    const k = keyOfTarget(next);
-    let at = seen.get(k);
-    if (at === undefined) {
-      at = selections.length;
-      seen.set(k, at);
-      selections.push(next);
-    }
-    if (i === s.primary) primary = at;
-  });
-  return { ...s, selections, primary };
-}
-
-const keepPrimary = (s: ModalState): ModalState => {
-  const p = s.selections[s.primary];
-  return { ...s, selections: p ? [p] : [], primary: 0 };
-};
-
 const only = (s: ModalState, t: Target | undefined): ModalState =>
-  t ? { ...s, selections: [t], primary: 0 } : s;
-
-/** The new target joins the selections as primary; one already selected just becomes primary. */
-function add(s: ModalState, t: Target | undefined): ModalState {
-  if (!t) return s;
-  const k = keyOfTarget(t);
-  const at = s.selections.findIndex((x) => keyOfTarget(x) === k);
-  return at >= 0
-    ? { ...s, primary: at }
-    : {
-        ...s,
-        selections: [...s.selections, t],
-        primary: s.selections.length,
-      };
-}
+  t ? { ...s, selection: t } : s;
 
 /** The keys after `s`, on Gerrit's Code-Review scale; `0` clears. */
 const scoreKeys: Record<string, Score | null> = {
@@ -267,15 +222,9 @@ const scoreKeys: Record<string, Score | null> = {
 };
 
 /** The state with no prefix pending. */
-const settled = ({
+const settled = ({ mode, selection, chars }: ModalState): ModalState => ({
   mode,
-  selections,
-  primary,
-  chars,
-}: ModalState): ModalState => ({
-  mode,
-  selections,
-  primary,
+  ...(selection && { selection }),
   ...(chars && { chars }),
 });
 
@@ -285,16 +234,6 @@ const nodeRef = ({ file, fragment, side, node }: NodeRef): NodeRef => ({
   side,
   node,
 });
-
-/** Kakoune's Shift extends: each adds its lowercase motion's target, taken from the primary. */
-const extensions: Record<string, string> = {
-  J: "j",
-  K: "k",
-  "}": "]",
-  "{": "[",
-  N: "n",
-  P: "p",
-};
 
 const motions: Record<
   string,
@@ -314,13 +253,13 @@ const motions: Record<
       : { kind: "hunk", file: t.file, fragment: t.fragment },
 };
 
-/** w/b move the narrowing to the next or previous word of the primary node; W/B grow it by one. */
+/** w/b move the narrowing to the next or previous word of the selected node; W/B grow it by one. */
 function narrow(
   ctx: ModalContext,
   s: ModalState,
   key: "w" | "b" | "W" | "B",
 ): ModalState {
-  const p = s.selections[s.primary];
+  const p = s.selection;
   const tree = p?.kind === "node" ? treeOf(ctx.index, p) : undefined;
   const text = p?.kind === "node" && tree ? nodeText(tree, p.node) : undefined;
   if (text === undefined) return s;
@@ -348,10 +287,7 @@ export function modalKey(
   if (s.mode !== "normal") return undefined;
   const { index } = ctx;
   const done = (state: ModalState, effects: ModalEffect[] = []) => {
-    if (
-      state.chars &&
-      (state.selections !== s.selections || state.primary !== s.primary)
-    ) {
+    if (state.chars && state.selection !== s.selection) {
       const { chars: _, ...rest } = state;
       return { state: rest, effects };
     }
@@ -361,28 +297,26 @@ export function modalKey(
     const rest = settled(s);
     const score = scoreKeys[key];
     if (score === undefined) return done(rest);
-    const nodes = s.selections.flatMap((t) =>
-      t.kind === "node" ? [nodeRef(t)] : [],
+    const p = s.selection;
+    return done(
+      rest,
+      p?.kind === "node"
+        ? [{ kind: "setScore", nodes: [nodeRef(p)], score }]
+        : [],
     );
-    return done(rest, nodes.length ? [{ kind: "setScore", nodes, score }] : []);
   }
   if (key === "s") return done({ ...s, pending: "s" });
-  const extended = extensions[key];
-  if (extended !== undefined) {
-    const p = s.selections[s.primary];
-    if (!p) return modalKey(s, extended, ctx);
-    return done(add(s, motions[extended]?.(ctx, p)));
-  }
   const motion = motions[key];
   if (motion) {
-    if (s.selections.length === 0) {
+    const p = s.selection;
+    if (!p) {
       const first =
         key === "k" || key === "["
           ? step(ctx, undefined, -1, key === "[")
           : step(ctx, undefined, 1, key === "]");
       return done(only(s, first));
     }
-    return done(mapSelections(s, (t) => motion(ctx, t)));
+    return done(only(s, motion(ctx, p)));
   }
   switch (key) {
     case "w":
@@ -391,7 +325,7 @@ export function modalKey(
     case "B":
       return done(narrow(ctx, s, key));
     case "c": {
-      const p = s.selections[s.primary];
+      const p = s.selection;
       if (p?.kind !== "node") return done(s);
       const at = nodeRef(p);
       return done(s, [
@@ -399,32 +333,11 @@ export function modalKey(
       ]);
     }
     case "r": {
-      const p = s.selections[s.primary];
+      const p = s.selection;
       if (p?.kind === "file")
         return done(s, [{ kind: "reply", at: { file: p.file } }]);
       if (p?.kind !== "node") return done(s);
       return done(s, [{ kind: "reply", at: nodeRef(p) }]);
-    }
-    case "%": {
-      const p = s.selections[s.primary];
-      if (!p) return done(s);
-      const all = index.stops.filter((r) => r.file === p.file).map(node);
-      return done(all.length ? { ...s, selections: all, primary: 0 } : s);
-    }
-    case ",":
-      return done(keepPrimary(s));
-    case ")":
-    case "(": {
-      const len = s.selections.length;
-      if (len === 0) return done(s);
-      const by = key === ")" ? 1 : len - 1;
-      return done({ ...s, primary: (s.primary + by) % len });
-    }
-    case "-": {
-      const len = s.selections.length;
-      if (len <= 1) return done(s);
-      const selections = s.selections.filter((_, i) => i !== s.primary);
-      return done({ ...s, selections, primary: s.primary % (len - 1) });
     }
     case "R":
       return done(s, [{ kind: "submitReview" }]);
@@ -436,33 +349,27 @@ export function modalKey(
         const { chars: _, ...whole } = s;
         return done(whole);
       }
-      return done(keepPrimary(s), [{ kind: "leave" }]);
+      return done(s, [{ kind: "leave" }]);
     }
     case "v": {
-      const ids = [
-        ...new Set(
-          s.selections.flatMap((t) =>
-            atomsOf(index, t).map((a) => index.atoms[a]?.id ?? ""),
-          ),
-        ),
-      ];
+      const p = s.selection;
+      const ids = p
+        ? [...new Set(atomsOf(index, p).map((a) => index.atoms[a]?.id ?? ""))]
+        : [];
       if (ids.length === 0) return done(s);
       const viewed = !ids.every(ctx.isViewed);
       return done(s, [{ kind: "setViewed", atoms: ids, viewed }]);
     }
     case "Enter":
-      return done(
-        s,
-        s.selections.flatMap((t) => expand(index, t)),
-      );
+      return done(s, s.selection ? expand(index, s.selection) : []);
     case "g": {
-      const effects: ModalEffect[] = [];
-      const state = mapSelections(s, (t) => {
-        const to = counterpart(index, t);
-        if (to.file !== t.file) effects.push({ kind: "jump", to });
-        return to;
-      });
-      return done(state, effects);
+      const p = s.selection;
+      if (!p) return done(s);
+      const to = counterpart(index, p);
+      return done(
+        only(s, to),
+        to.file !== p.file ? [{ kind: "jump", to }] : [],
+      );
     }
   }
   return undefined;
@@ -553,12 +460,6 @@ export function selectAt(
   return t ? only({ ...s, mode: "normal" }, t) : s;
 }
 
-/** A Shift+click: the target at the point joins the selections as primary. */
-export function addAt(s: ModalState, index: AtomIndex, at: Point): ModalState {
-  const t = targetAt(index, at);
-  return t ? add({ ...s, mode: "normal" }, t) : s;
-}
-
 /**
  * A text selection from `from` to `to` (a drag): the node holding both becomes the only selection, narrowed to
  * the dragged characters. The state is unchanged when no node holds both.
@@ -609,7 +510,7 @@ export function narrowAt(
 export const modalKeymap: readonly {
   key: string;
   label: string;
-  group: "move" | "extend" | "act" | "score";
+  group: "move" | "act" | "score";
   /** Bound only right after this prefix key. */
   prefix?: "s";
 }[] = [
@@ -625,19 +526,8 @@ export const modalKeymap: readonly {
   { key: "g", label: "go to counterpart", group: "move" },
   { key: "w", label: "narrow to next word", group: "move" },
   { key: "b", label: "narrow to previous word", group: "move" },
-  { key: "%", label: "select whole file", group: "extend" },
-  { key: "J", label: "add next change", group: "extend" },
-  { key: "K", label: "add previous change", group: "extend" },
-  { key: "}", label: "add next unviewed", group: "extend" },
-  { key: "{", label: "add previous unviewed", group: "extend" },
-  { key: "N", label: "add next sibling", group: "extend" },
-  { key: "P", label: "add previous sibling", group: "extend" },
-  { key: ")", label: "rotate primary forward", group: "extend" },
-  { key: "(", label: "rotate primary backward", group: "extend" },
-  { key: "-", label: "drop primary selection", group: "extend" },
-  { key: ",", label: "keep only primary", group: "extend" },
-  { key: "W", label: "grow narrowing to next word", group: "extend" },
-  { key: "B", label: "grow narrowing to previous word", group: "extend" },
+  { key: "W", label: "grow narrowing to next word", group: "move" },
+  { key: "B", label: "grow narrowing to previous word", group: "move" },
   { key: "v", label: "toggle viewed", group: "act" },
   { key: "s", label: "score…", group: "act" },
   { key: "c", label: "comment", group: "act" },

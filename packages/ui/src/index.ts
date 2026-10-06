@@ -51,7 +51,6 @@ export {
   writeScores,
 } from "./atoms.js";
 export {
-  addAt,
   bindModal,
   emptyModal,
   type ModalBinding,
