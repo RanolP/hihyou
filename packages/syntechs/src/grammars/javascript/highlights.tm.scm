@@ -36,6 +36,8 @@
     (identifier) @constant
     (array_pattern (identifier) @constant)
     (object_pattern (shorthand_property_identifier_pattern) @constant)
+    (object_pattern (pair_pattern value: (identifier) @constant))
+    (array_pattern (object_pattern (shorthand_property_identifier_pattern) @constant))
   ])
 
 ; An imported or exported binding is an alias, whatever its case.
@@ -79,7 +81,6 @@
   key: (property_identifier) @function.method
   value: [(function_expression) (arrow_function) (generator_function)])
 (decorator "@" @punctuation.decorator)
-(decorator (identifier) @function.decorator)
 (decorator (call_expression function: (identifier) @function.decorator))
 (decorator (member_expression property: (property_identifier) @function.decorator))
 
@@ -97,7 +98,8 @@
 (lexical_declaration "let" (variable_declarator name: (identifier) @variable (#eq? @variable "module")))
 
 ; Tokens.
-(import) @keyword
+(import_statement "import" @keyword)
+(call_expression function: (import) @function)
 (namespace_import "*" @constant.import-export-all)
 (export_statement "*" @constant.import-export-all)
 (regex "/" @string.regexp.delimiter)

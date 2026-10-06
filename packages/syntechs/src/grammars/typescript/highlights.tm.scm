@@ -52,6 +52,7 @@
 (function_signature name: (identifier) @function)
 (required_parameter pattern: (identifier) @function type: (type_annotation (function_type)))
 (optional_parameter pattern: (identifier) @function type: (type_annotation (function_type)))
+(required_parameter name: (identifier) @function)
 (variable_declarator name: (identifier) @function type: (type_annotation (function_type)))
 (method_definition name: (property_identifier) @keyword.storage
  (#eq? @keyword.storage "constructor"))
@@ -59,6 +60,7 @@
 ; `a.b!(...)` still calls `b`.
 (call_expression function: (non_null_expression (member_expression property: (property_identifier) @function.method)))
 (call_expression function: (non_null_expression (identifier) @function))
+
 
 (module "module" @keyword)
 (using_declaration (variable_declarator name: (identifier) @constant))
