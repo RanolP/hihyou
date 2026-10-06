@@ -3,10 +3,11 @@ import { type PullFilesPage, pullFilesPage } from "./page.js";
 import type { Privileged } from "./privileged.js";
 
 /**
- * Where GitHub draws a PR's diff, most specific first: the classic page's `#files_bucket`, then the root a
- * React page renders into. hihyou hides the first one present and draws in its place.
+ * Where GitHub draws a PR's Files changed tab, most specific first: the classic page's `#files_bucket`, then the
+ * root a React page renders into. Either can hold the PR header and its tab bar too, so hihyou hides only what
+ * follows the tab bar there (see `diffParts`) and draws in its place.
  */
-const diffAreas = [
+const tabRoots = [
   "#files_bucket",
   'react-app [data-target="react-app.reactRoot"]',
 ];
@@ -17,8 +18,8 @@ interface Current {
   page: PullFilesPage;
   bar: HTMLElement;
   view: HTMLElement;
-  area: HTMLElement;
-  areaDisplay: string;
+  /** GitHub's diff, hidden while hihyou is on, with each element's own inline `display` to restore. */
+  areas: { element: HTMLElement; display: string }[];
   mounted?: Mounted;
   /** Bumped on every toggle, so a mount that finishes after the reviewer turned hihyou off again is dropped. */
   generation: number;
@@ -48,8 +49,39 @@ function teardown() {
   current.mounted?.dispose();
   current.bar.remove();
   current.view.remove();
-  current.area.style.display = current.areaDisplay;
+  show(current, true);
   current = undefined;
+}
+
+function show(state: Current, visible: boolean) {
+  for (const { element, display } of state.areas)
+    element.style.display = visible ? display : "none";
+}
+
+/**
+ * The elements that draw the diff, never the PR header or its tab bar, whichever layout GitHub serves. The tab
+ * bar is found by its Commits tab, which every PR page links. Of the candidate roots, the one holding that tab
+ * wins, and hihyou hides everything after the tab bar there: from the link, the outermost ancestor inside the
+ * root that has following siblings, and those siblings (the classic page's `diff-layout`, the React page's
+ * `PageLayoutContent`). Only a root that does not hold the tab bar is hidden whole.
+ */
+function diffParts(page: PullFilesPage): HTMLElement[] {
+  const roots = tabRoots.flatMap((s) => [
+    ...document.querySelectorAll<HTMLElement>(s),
+  ]);
+  const tab = [...document.querySelectorAll<HTMLAnchorElement>("a[href]")].find(
+    (a) => a.pathname.endsWith(`/pull/${page.pull}/commits`),
+  );
+  const root = roots.find((r) => tab && r.contains(tab));
+  if (!root || !tab) return roots.slice(0, 1);
+  let after: HTMLElement[] = [];
+  for (let e: HTMLElement | null = tab; e && e !== root; e = e.parentElement) {
+    const siblings: HTMLElement[] = [];
+    for (let s = e.nextElementSibling; s; s = s.nextElementSibling)
+      if (s instanceof HTMLElement) siblings.push(s);
+    if (siblings.length > 0) after = siblings;
+  }
+  return after;
 }
 
 async function setOn(state: Current, on: boolean) {
@@ -62,11 +94,11 @@ async function setOn(state: Current, on: boolean) {
     state.mounted?.dispose();
     delete state.mounted;
     state.view.hidden = true;
-    state.area.style.display = state.areaDisplay;
+    show(state, true);
     note.textContent = "";
     return;
   }
-  state.area.style.display = "none";
+  show(state, false);
   state.view.hidden = false;
   if (state.mounted) return;
   try {
@@ -98,14 +130,14 @@ function sync() {
     current &&
     (current.key !== key ||
       !current.bar.isConnected ||
-      !current.area.isConnected)
+      !current.areas.every((a) => a.element.isConnected))
   )
     teardown();
   if (!page || !key || current) return;
-  const area = diffAreas
-    .map((s) => document.querySelector<HTMLElement>(s))
-    .find((e) => e);
-  if (!area) return;
+  const parts = diffParts(page);
+  const first = parts[0];
+  // No root yet, or the tab bar is drawn but nothing after it: the next DOM change checks again.
+  if (!first) return;
 
   const bar = document.createElement("div");
   bar.className = "hihyou-bar";
@@ -121,15 +153,17 @@ function sync() {
   const view = document.createElement("div");
   view.className = "hihyou-view";
   view.hidden = true;
-  area.before(bar, view);
+  first.before(bar, view);
 
   const state: Current = {
     key,
     page,
     bar,
     view,
-    area,
-    areaDisplay: area.style.display,
+    areas: parts.map((element) => ({
+      element,
+      display: element.style.display,
+    })),
     generation: 0,
   };
   current = state;
