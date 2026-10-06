@@ -40,7 +40,7 @@ export interface GitHubWebHostOptions {
    * so the browser extension passes one that goes through its background worker.
    */
   fetch: (url: string, init?: { accept?: string }) => Promise<Response>;
-  /** Defaults to `syntechsGrammars()` with no formatting bound in (files shown as written). */
+  /** Defaults to `syntechsGrammars()` with default formatting for each supported language. */
   grammars?: GrammarLoader;
   preferences?: HostPreferences;
   /** Defaults to https://github.com. */

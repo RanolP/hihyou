@@ -1,7 +1,12 @@
 import type { Language } from "syntechs/core";
 import type { ScopeRules } from "syntechs/diff";
 import { format, type Language as FormatLanguage } from "syntechs/fmt";
-import type { FormatModule, Grammar, GrammarLoader, HighlightModule } from "./host.js";
+import type {
+  FormatModule,
+  Grammar,
+  GrammarLoader,
+  HighlightModule,
+} from "./host.js";
 
 export type LanguageId =
   | "typescript"
@@ -11,6 +16,10 @@ export type LanguageId =
   | "python"
   | "css"
   | "kotlin"
+  | "html"
+  | "swift"
+  | "yaml"
+  | "graphql"
   // Read and formatted as HTML: oxfmt takes no `.svg`, and prints one given the name `.html` as its HTML.
   | "svg";
 
@@ -22,6 +31,10 @@ const extensions: Record<LanguageId, readonly string[]> = {
   python: [".py", ".pyi"],
   css: [".css"],
   kotlin: [".kt", ".kts"],
+  html: [".html", ".htm"],
+  swift: [".swift"],
+  yaml: [".yml", ".yaml"],
+  graphql: [".graphql", ".gql"],
   svg: [".svg"],
 };
 
@@ -46,16 +59,30 @@ const parsers: Record<
   python: () => import("syntechs/grammars/python"),
   css: () => import("syntechs/grammars/css"),
   kotlin: () => import("syntechs/grammars/kotlin"),
+  html: () => import("syntechs/grammars/html"),
+  swift: () => import("syntechs/grammars/swift"),
+  yaml: () => import("syntechs/grammars/yaml"),
+  graphql: () => import("syntechs/grammars/graphql"),
   svg: () => import("syntechs/grammars/html"),
 };
 
 // `load` brings in the languages a highlighter injects (JSDoc, regular expressions), each its own lazy chunk,
 // so that the synchronous `highlight` can paint them.
-const highlighters: Partial<Record<LanguageId, () => Promise<{ highlight: HighlightModule }>>> = {
+const highlighters: Partial<
+  Record<LanguageId, () => Promise<{ highlight: HighlightModule }>>
+> = {
   typescript: () => import("syntechs/grammars/typescript/highlight"),
   tsx: () => import("syntechs/grammars/tsx/highlight"),
   javascript: () => import("syntechs/grammars/javascript/highlight"),
+  json: () => import("syntechs/grammars/json/highlight"),
+  python: () => import("syntechs/grammars/python/highlight"),
+  css: () => import("syntechs/grammars/css/highlight"),
   kotlin: () => import("syntechs/grammars/kotlin/highlight"),
+  html: () => import("syntechs/grammars/html/highlight"),
+  swift: () => import("syntechs/grammars/swift/highlight"),
+  yaml: () => import("syntechs/grammars/yaml/highlight"),
+  graphql: () => import("syntechs/grammars/graphql/highlight"),
+  svg: () => import("syntechs/grammars/html/highlight"),
 };
 
 const typescriptDeclarations = [
@@ -99,7 +126,12 @@ const declarations: Partial<Record<LanguageId, readonly string[]>> = {
 
 // The node kinds whose body holds members that read as whole units the way top-level declarations do: a class
 // and its kin, never a function, whose body's declarations are statements of code that stayed.
-const typescriptContainers = ["class_declaration", "abstract_class_declaration", "internal_module", "module"];
+const typescriptContainers = [
+  "class_declaration",
+  "abstract_class_declaration",
+  "internal_module",
+  "module",
+];
 const containers: Partial<Record<LanguageId, readonly string[]>> = {
   typescript: typescriptContainers,
   tsx: typescriptContainers,
@@ -114,30 +146,35 @@ const bind =
     format: (tree) => format(tree, rules, options as Partial<O>),
   });
 
-const formatters: Record<
-  LanguageId,
-  () => Promise<(options: object) => FormatModule>
+const formatters: Partial<
+  Record<LanguageId, () => Promise<(options: object) => FormatModule>>
 > = {
+  // syntechs' JSON printer runs on the JavaScript grammar's tree, so .json parsed with the JSON grammar is shown as written.
   typescript: async () =>
     bind((await import("syntechs/grammars/typescript/fmt")).typescript),
   tsx: async () => bind((await import("syntechs/grammars/typescript/fmt")).tsx),
   javascript: async () =>
     bind((await import("syntechs/grammars/javascript/fmt")).javascript),
-  json: async () => bind((await import("syntechs/grammars/json/fmt")).json),
   python: async () =>
     bind((await import("syntechs/grammars/python/fmt")).python),
   css: async () => bind((await import("syntechs/grammars/css/fmt")).css),
   kotlin: async () =>
     bind((await import("syntechs/grammars/kotlin/fmt")).kotlin),
+  html: async () => bind((await import("syntechs/grammars/html/fmt")).html),
+  swift: async () => bind((await import("syntechs/grammars/swift/fmt")).swift),
+  yaml: async () => bind((await import("syntechs/grammars/yaml/fmt")).yaml),
+  graphql: async () =>
+    bind((await import("syntechs/grammars/graphql/fmt")).graphql),
   svg: async () => bind((await import("syntechs/grammars/html/fmt")).html),
 };
 
 export interface SyntechsGrammarOptions {
   /**
-   * Languages to format before diffing, each with the options of the tool it follows (prettier's for
-   * JS/TS/JSON/CSS/Kotlin, ruff's for Python). A language left out is shown as written.
+   * Formatter options by language. Languages with a formatter are formatted with its defaults unless set to false;
+   * an object overrides that formatter's options (oxfmt/prettier's for JS/TS/CSS/HTML/YAML/GraphQL, ruff's for
+   * Python, ktfmt's for Kotlin, and swift-format's for Swift).
    */
-  format?: Partial<Record<LanguageId, object>>;
+  format?: Partial<Record<LanguageId, object | false>>;
 }
 
 /** The grammars syntechs ships, found by file extension. */
@@ -154,9 +191,10 @@ export function syntechsGrammars(
       }),
     ]);
     const formatOptions = options.format?.[id];
+    const bindFormatter = formatters[id];
     let formatter: FormatModule | undefined;
-    if (formatOptions !== undefined)
-      formatter = (await formatters[id]())(formatOptions);
+    if (formatOptions !== false && bindFormatter)
+      formatter = (await bindFormatter())(formatOptions ?? {});
     return {
       id: `${id}@${tablesHash(language)}`,
       language,

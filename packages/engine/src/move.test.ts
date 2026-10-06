@@ -415,7 +415,8 @@ test("a literal wrapped in a call shows only the call added", async () => {
 const diffOne = async (path: string, before: string, after: string) => {
   const blobs: Record<string, string> = { b: before, a: after };
   const engine = createEngine({
-    grammars: syntechsGrammars(),
+    // These inputs are hand-written unformatted, and the moves they pin are of the code as written.
+    grammars: syntechsGrammars({ format: { typescript: false } }),
     resolveDiffset: (data: "pr") => ({
       id: data,
       changes: [{ path, before: "b", after: "a" }],
