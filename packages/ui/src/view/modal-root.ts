@@ -4,6 +4,8 @@ import type { ModalRoot } from "../modal.js";
 const controlKeys = new Set(["Enter", " "]);
 export const controls =
   "button, input, textarea, select, a[href], [contenteditable]";
+/** Where the reviewer types text (a comment draft): every key is that text's, the modal editor sees none. */
+const textEntry = "input, textarea, [contenteditable]";
 
 /**
  * The modal editor's view of the root: it sees keys while focus is anywhere inside, except the keys a focused
@@ -20,6 +22,7 @@ export function modalRoot(root: HTMLElement): ModalRoot {
     addEventListener(type, listener) {
       const w = (e: KeyboardEvent) => {
         const t = e.target instanceof Element ? e.target : null;
+        if (t?.closest(textEntry)) return;
         if (controlKeys.has(e.key) && t?.closest(controls)) return;
         listener(e);
       };

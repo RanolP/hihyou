@@ -1,8 +1,11 @@
 import { expect, test } from "vitest";
 import { atomViewed, writeAtoms } from "./atoms.js";
 import {
+  mergeScores,
   mergeViewed,
   plainKeyOf,
+  type ScoreState,
+  sessionScoreStore,
   sessionViewedStore,
   type ViewedState,
 } from "./viewed.js";
@@ -63,4 +66,26 @@ test("writing many atoms notifies once", () => {
   expect(["a", "b", "c"].every(atomViewed(store, plainKeyOf))).toBe(true);
   writeAtoms(["a", "b", "c"], true, store, plainKeyOf);
   expect(calls).toBe(1);
+});
+
+// Scores merged by arrival order instead of HLC would let replicas disagree, and a clear lose to the score it undid.
+test("scores merge last-writer-wins: a later score wins, and a later clear wins over an earlier score", () => {
+  const ahead = sessionScoreStore({ device: "ahead", now: () => 10_000 });
+  const behind = sessionScoreStore({ device: "behind", now: () => 1_000 });
+  ahead.setMany(["n1", "n2"], 2);
+  behind.merge(ahead.state());
+  behind.setMany(["n1"], -1);
+  behind.setMany(["n2"], null);
+  ahead.merge(behind.state());
+  expect(ahead.get("n1")).toBe(-1);
+  expect(ahead.get("n2")).toBe(null);
+  expect(ahead.state()).toEqual(behind.state());
+  const earlier: ScoreState = {
+    n3: { score: 1, ts: { wall: 5, logical: 0 }, device: "x" },
+  };
+  const later: ScoreState = {
+    n3: { score: null, ts: { wall: 6, logical: 0 }, device: "a" },
+  };
+  expect(mergeScores(earlier, later)).toEqual(later);
+  expect(mergeScores(later, earlier)).toEqual(later);
 });

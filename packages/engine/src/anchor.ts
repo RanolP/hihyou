@@ -1,6 +1,7 @@
 import { NO_NODE, type Tree } from "syntechs/core";
 import {
   decodeText,
+  type Version,
   lineOf,
   parseBlob,
   plainVersion,
@@ -84,6 +85,78 @@ export function sidePath(
   return side === "before" ? (ref.oldPath ?? ref.path) : ref.path;
 }
 
+/** The side's blob of `path`, parsed, with its text as written: the lines GitHub's diff counts. */
+async function sideTree(
+  ctx: EngineContext,
+  changes: readonly ChangedFileRef[],
+  side: "before" | "after",
+  path: string,
+): Promise<{ tree: Tree; v: Version }> {
+  const ref = changes.find((c) => sidePath(c, side) === path);
+  const blob = ref?.[side];
+  if (!ref || blob === undefined || blob === null)
+    throw new RangeError(`the diffset has no ${side} side for ${path}`);
+  const grammar = await ctx.host.grammars.forPath(path);
+  const text = decodeText(await readBlob(ctx, blob));
+  if (!grammar || text === undefined)
+    throw new RangeError(`${path} has no syntax tree to anchor in`);
+  const tree = await parseBlob(ctx, blob, grammar, text);
+  return { tree, v: plainVersion(text, tree) };
+}
+
+const linesOf = (tree: Tree, v: Version, n: number): LineRange => ({
+  start: lineOf(v, tree.start(n)) + 1,
+  end: lineOf(v, Math.max(tree.start(n), tree.end(n) - 1)) + 1,
+});
+
+/**
+ * The inverse of `intoLineRanges`: the outermost named nodes lying wholly on `range`'s lines, or, when none does
+ * (a line holding only a closing brace), the innermost named node holding all of them.
+ */
+export function nodesOnLines(
+  tree: Tree,
+  v: Version,
+  range: LineRange,
+): AstSteps[] {
+  const out: AstSteps[] = [];
+  const visit = (n: number, steps: AstSteps) => {
+    const { start, end } = linesOf(tree, v, n);
+    if (end < range.start || start > range.end) return;
+    if (start >= range.start && end <= range.end) {
+      out.push(steps);
+      return;
+    }
+    namedChildren(tree, n).forEach((c, i) => visit(c, [...steps, i]));
+  };
+  visit(tree.root, []);
+  if (out.length > 0) return out;
+  let n = tree.root;
+  const steps: AstSteps = [];
+  for (;;) {
+    const kids = namedChildren(tree, n);
+    const i = kids.findIndex((c) => {
+      const { start, end } = linesOf(tree, v, c);
+      return start <= range.start && end >= range.end;
+    });
+    const next = kids[i];
+    if (next === undefined) return [steps];
+    steps.push(i);
+    n = next;
+  }
+}
+
+/** The anchor on the nodes `nodesOnLines` finds in `path`'s `side`. */
+export async function anchorOnLines(
+  ctx: EngineContext,
+  changes: readonly ChangedFileRef[],
+  side: "before" | "after",
+  path: string,
+  range: LineRange,
+): Promise<AnchorData> {
+  const { tree, v } = await sideTree(ctx, changes, side, path);
+  return { side, path, nodes: nodesOnLines(tree, v, range) };
+}
+
 export function createAnchor(
   ctx: EngineContext,
   changes: readonly ChangedFileRef[],
@@ -92,23 +165,17 @@ export function createAnchor(
   if (data.nodes.length === 0)
     throw new RangeError(`an anchor on ${data.path} names no node`);
   const nodes = normalizeSteps(data.nodes);
+  if (data.chars && nodes.length !== 1)
+    throw new RangeError(
+      `an anchor on ${data.path} narrows to characters across ${nodes.length} nodes`,
+    );
   return {
     side: data.side,
     path: data.path,
     nodes,
+    ...(data.chars && { chars: data.chars }),
     async intoLineRanges() {
-      const ref = changes.find((c) => sidePath(c, data.side) === data.path);
-      const blob = ref?.[data.side];
-      if (!ref || blob === undefined || blob === null)
-        throw new RangeError(
-          `the diffset has no ${data.side} side for ${data.path}`,
-        );
-      const grammar = await ctx.host.grammars.forPath(data.path);
-      const text = decodeText(await readBlob(ctx, blob));
-      if (!grammar || text === undefined)
-        throw new RangeError(`${data.path} has no syntax tree to anchor in`);
-      const tree = await parseBlob(ctx, blob, grammar, text);
-      const v = plainVersion(text, tree);
+      const { tree, v } = await sideTree(ctx, changes, data.side, data.path);
       const ranges: LineRange[] = [];
       for (const steps of nodes) {
         const n = nodeAt(tree, steps);
@@ -116,8 +183,7 @@ export function createAnchor(
           throw new RangeError(
             `${data.path} has no node at [${steps.join(", ")}]`,
           );
-        const start = lineOf(v, tree.start(n)) + 1;
-        const end = lineOf(v, Math.max(tree.start(n), tree.end(n) - 1)) + 1;
+        const { start, end } = linesOf(tree, v, n);
         const last = ranges.at(-1);
         if (last && start <= last.end + 1) last.end = Math.max(last.end, end);
         else ranges.push({ start, end });

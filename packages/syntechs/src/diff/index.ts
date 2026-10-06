@@ -5,6 +5,7 @@ export {
   type RawEdit,
   type Span,
 } from "./edit-script.js";
+export { contentAtoms, isContentAtom, isUnit } from "./content.js";
 export { lineDiff } from "./line-diff.js";
 export {
   defaultMatchOptions,
@@ -15,11 +16,22 @@ export {
   match,
 } from "./matcher.js";
 export {
+  atomCounts,
   classifyMove,
   defaultMoveOptions,
-  type MoveClass,
   type MoveOptions,
+  type MoveWitness,
   nameOf,
-  type SameLeaf,
+  unitCore,
+  type WitnessSide,
+  witnessSide,
 } from "./move.js";
+export {
+  alphaIds,
+  type BinderRule,
+  type Locals,
+  resolveLocals,
+  type ScopeRules,
+  type UncertainRule,
+} from "./scope.js";
 export { Side } from "./side.js";

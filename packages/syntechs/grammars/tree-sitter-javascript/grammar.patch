@@ -505,7 +505,7 @@ src/highlight/generate.node.ts accepts it against this grammar.
          case '`':
          case ',':
          case ':':
-@@ -341,11 +362,34 @@
+@@ -341,14 +362,43 @@
      if (valid_symbols[JSX_TEXT] && scan_jsx_text(lexer)) {
          return true;
      }
@@ -540,7 +540,16 @@ src/highlight/generate.node.ts accepts it against this grammar.
          if (!ret && !scanned_comment && valid_symbols[TERNARY_QMARK] && lexer->lookahead == '?') {
              return scan_ternary_qmark(lexer);
          }
++        // Annex B's `<!--` after an expression on its line (`a <!-- c`) opens a comment, as oxfmt reads it, not
++        // `a < !--c`.
++        if (!ret && !scanned_comment && lexer->lookahead == '<' && valid_symbols[HTML_COMMENT] &&
++            !valid_symbols[ESCAPE_SEQUENCE] && !valid_symbols[REGEX_PATTERN]) {
++            return scan_html_comment(lexer);
++        }
          return ret;
+     }
+ 
+     if (valid_symbols[TERNARY_QMARK]) {
 --- a/queries/highlights-jsx.scm
 +++ b/queries/highlights-jsx.scm
 @@ -3,6 +3,6 @@

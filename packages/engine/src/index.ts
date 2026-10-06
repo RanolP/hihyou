@@ -7,6 +7,7 @@ export type {
   FileDiff,
   LinePair,
   NodeOutline,
+  Rename,
   Side,
   SideMove,
   Span,

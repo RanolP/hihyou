@@ -227,6 +227,9 @@ importers:
       '@hihyou/engine':
         specifier: workspace:*
         version: link:../engine
+      '@hihyou/ui':
+        specifier: workspace:*
+        version: link:../ui
 
   packages/gui:
     dependencies:
@@ -270,6 +273,9 @@ importers:
       tree-sitter-css:
         specifier: workspace:*
         version: link:grammars/tree-sitter-css
+      tree-sitter-graphql:
+        specifier: workspace:*
+        version: link:grammars/tree-sitter-graphql
       tree-sitter-html:
         specifier: workspace:*
         version: link:grammars/tree-sitter-html
@@ -305,6 +311,8 @@ importers:
         version: 0.23.0(typescript@7.0.2)
 
   packages/syntechs/grammars/tree-sitter-css: {}
+
+  packages/syntechs/grammars/tree-sitter-graphql: {}
 
   packages/syntechs/grammars/tree-sitter-html: {}
 

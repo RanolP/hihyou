@@ -15,11 +15,11 @@ import {
 } from "@hihyou/ui";
 import type { App, MountOptions, Mounted } from "./app-api.js";
 
-/** One row of the diffsets panel: the whole pull request, or one of its commits. */
+/** One row of the diffsets panel: one of the pull request's commits. */
 interface Row {
   key: string;
   label: string;
-  description?: string;
+  description: string;
   tooltip?: string;
   id: GitHubWebDiffsetId;
   expanded: boolean;
@@ -143,10 +143,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       view = undefined;
       root.textContent = "";
     }
-    title.textContent =
-      row.key === "all"
-        ? `#${page.pull} All changes`
-        : `${row.description} ${row.label}`;
+    title.textContent = `${row.description} ${row.label}`;
     status.textContent = "Loading…";
     status.classList.remove("error");
     drawTree();
@@ -290,26 +287,22 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       const pull = await host_.resolvePull(page.owner, page.repo, page.pull);
       if (disposed) return;
       const { owner, repo } = page;
-      rows = [
-        {
-          key: "all",
-          label: "All changes",
-          id: { owner, repo, pull: page.pull, head: pull.head },
-          expanded: false,
-        },
-        ...pull.commits.toReversed().map((c): Row => ({
-          key: c.sha,
-          label: c.subject,
-          description: c.sha.slice(0, 7),
-          tooltip: `${c.author} · ${new Date(c.date).toLocaleString()}`,
-          id: { owner, repo, commit: c.sha },
-          expanded: false,
-        })),
-      ];
+      rows = pull.commits.toReversed().map((c): Row => ({
+        key: c.sha,
+        label: c.subject,
+        description: c.sha.slice(0, 7),
+        tooltip: `${c.author} · ${new Date(c.date).toLocaleString()}`,
+        id: { owner, repo, commit: c.sha },
+        expanded: false,
+      }));
+      const [newest] = rows;
+      if (!newest) {
+        setsStatus.textContent = "No commits.";
+        return;
+      }
       setsStatus.remove();
-      const all = rows[0] as Row;
-      void expand(all);
-      await open(all);
+      void expand(newest);
+      await open(newest);
     } catch (error) {
       if (disposed) return;
       setsStatus.textContent = "Could not list the commits.";

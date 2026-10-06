@@ -6,32 +6,59 @@ import {
   type AtomIndex,
   atomSubject,
   atomsOf,
+  contextFragment,
   hunkOf,
   type NodeRef,
   type SideName,
+  type SideTree,
   type Target,
   treeOf,
   writeAtoms,
+  writeScores,
 } from "./atoms.js";
-import { type KeyOf, plainKeyOf, type ViewedStore } from "./viewed.js";
+import {
+  type KeyOf,
+  plainKeyOf,
+  type Score,
+  type ScoreStore,
+  type ViewedStore,
+} from "./viewed.js";
+import { type CharRange, charsOf, nodeText, wordsOf } from "./comments.js";
 
 export interface ModalState {
-  /** Insert mode (for comments) has no transitions yet. */
+  /** "insert" while an editable field inside the root has focus: review keys type into it, Escape leaves it. */
   mode: "normal" | "insert";
   selections: Target[];
   /** Index into `selections`. */
   primary: number;
+  /** A prefix key waiting for the key that completes it; any key resolves it. */
+  pending?: "s";
+  /** Narrows the primary node selection to part of its text, for a comment; dropped when the selection moves. */
+  chars?: CharRange;
 }
 
 export type ModalEffect =
   /** Engine atom ids to write. */
   | { kind: "setViewed"; atoms: string[]; viewed: boolean }
+  /** `null` clears the nodes' scores. */
+  | { kind: "setScore"; nodes: NodeRef[]; score: Score | null }
   /** Show the other half of the move this node is part of. */
   | { kind: "expandMove"; at: NodeRef }
+  /** Open a comment on the node, narrowed to `chars` when present. */
+  | { kind: "comment"; at: NodeRef; chars?: CharRange }
+  /**
+   * Open a reply on the thread drawn at the node, the latest when there are several; on a file, the latest of the
+   * threads listed under its header, which no drawn node holds.
+   */
+  | { kind: "reply"; at: NodeRef | { file: number } }
+  /** Publish the pending review, if one is started. */
+  | { kind: "submitReview" }
   | { kind: "expandElided"; file: number; fragment: number }
   /** The selection moved into another file; bring it into view. */
   | { kind: "jump"; to: Target }
-  | { kind: "leave" };
+  | { kind: "leave" }
+  /** `?`: show or hide the key table. */
+  | { kind: "help" };
 
 export interface Transition {
   state: ModalState;
@@ -115,10 +142,17 @@ function parent(index: AtomIndex, t: Target): Target {
   if (t.kind === "file") return t;
   if (t.kind === "hunk") return { kind: "file", file: t.file };
   const p = treeOf(index, t)?.nodes[t.node]?.parent ?? -1;
-  return p >= 0
-    ? { ...t, node: p }
+  if (p >= 0) return { ...t, node: p };
+  // Context holds no hunk to widen to.
+  return t.fragment === contextFragment
+    ? t
     : { kind: "hunk", file: t.file, fragment: t.fragment };
 }
+
+/** Whether i, n and p may land on the node: one with an atom beneath it, or any node of context, which has none. */
+const reachable = (t: Target, tree: SideTree, i: number) =>
+  t.kind === "node" &&
+  (t.fragment === contextFragment || (tree.atoms[i]?.length ?? 0) > 0);
 
 /** The first child that has an atom beneath it. */
 function child(index: AtomIndex, t: Target): Target {
@@ -136,9 +170,7 @@ function child(index: AtomIndex, t: Target): Target {
     return t;
   }
   const tree = treeOf(index, t);
-  const c = tree?.children[t.node]?.find(
-    (i) => (tree.atoms[i]?.length ?? 0) > 0,
-  );
+  const c = tree?.children[t.node]?.find((i) => reachable(t, tree, i));
   return c === undefined ? t : { ...t, node: c };
 }
 
@@ -165,11 +197,7 @@ function sibling(index: AtomIndex, t: Target, dir: 1 | -1): Target {
   if (!tree) return t;
   const p = tree.nodes[t.node]?.parent ?? -1;
   const list = p >= 0 ? (tree.children[p] ?? []) : tree.roots;
-  const s = pick(
-    list,
-    list.indexOf(t.node),
-    (i) => (tree.atoms[i]?.length ?? 0) > 0,
-  );
+  const s = pick(list, list.indexOf(t.node), (i) => reachable(t, tree, i));
   return s === undefined ? t : { ...t, node: s };
 }
 
@@ -215,6 +243,59 @@ const keepPrimary = (s: ModalState): ModalState => {
 const only = (s: ModalState, t: Target | undefined): ModalState =>
   t ? { ...s, selections: [t], primary: 0 } : s;
 
+/** The new target joins the selections as primary; one already selected just becomes primary. */
+function add(s: ModalState, t: Target | undefined): ModalState {
+  if (!t) return s;
+  const k = keyOfTarget(t);
+  const at = s.selections.findIndex((x) => keyOfTarget(x) === k);
+  return at >= 0
+    ? { ...s, primary: at }
+    : {
+        ...s,
+        selections: [...s.selections, t],
+        primary: s.selections.length,
+      };
+}
+
+/** The keys after `s`, on Gerrit's Code-Review scale; `0` clears. */
+const scoreKeys: Record<string, Score | null> = {
+  "2": 2,
+  "1": 1,
+  q: -1,
+  w: -2,
+  "0": null,
+};
+
+/** The state with no prefix pending. */
+const settled = ({
+  mode,
+  selections,
+  primary,
+  chars,
+}: ModalState): ModalState => ({
+  mode,
+  selections,
+  primary,
+  ...(chars && { chars }),
+});
+
+const nodeRef = ({ file, fragment, side, node }: NodeRef): NodeRef => ({
+  file,
+  fragment,
+  side,
+  node,
+});
+
+/** Kakoune's Shift extends: each adds its lowercase motion's target, taken from the primary. */
+const extensions: Record<string, string> = {
+  J: "j",
+  K: "k",
+  "}": "]",
+  "{": "[",
+  N: "n",
+  P: "p",
+};
+
 const motions: Record<
   string,
   (ctx: ModalContext, t: Target) => Target | undefined
@@ -228,10 +309,35 @@ const motions: Record<
   n: (ctx, t) => sibling(ctx.index, t, 1),
   p: (ctx, t) => sibling(ctx.index, t, -1),
   x: (_, t) =>
-    t.kind === "file"
+    t.kind === "file" || t.fragment === contextFragment
       ? t
       : { kind: "hunk", file: t.file, fragment: t.fragment },
 };
+
+/** w/b move the narrowing to the next or previous word of the primary node; W/B grow it by one. */
+function narrow(
+  ctx: ModalContext,
+  s: ModalState,
+  key: "w" | "b" | "W" | "B",
+): ModalState {
+  const p = s.selections[s.primary];
+  const tree = p?.kind === "node" ? treeOf(ctx.index, p) : undefined;
+  const text = p?.kind === "node" && tree ? nodeText(tree, p.node) : undefined;
+  if (text === undefined) return s;
+  const words = wordsOf(text);
+  const at = s.chars;
+  const next = words.find((w) => !at || w.start >= at.end);
+  const prev = words.findLast((w) => !at || w.end <= at.start);
+  const word = key === "w" || key === "W" ? next : prev;
+  if (!word) return s;
+  const chars =
+    !at || key === "w" || key === "b"
+      ? word
+      : key === "W"
+        ? { start: at.start, end: word.end }
+        : { start: word.start, end: at.end };
+  return { ...s, chars };
+}
 
 /** One normal-mode key; `undefined` when the key is not bound, so the caller lets it through. */
 export function modalKey(
@@ -241,10 +347,32 @@ export function modalKey(
 ): Transition | undefined {
   if (s.mode !== "normal") return undefined;
   const { index } = ctx;
-  const done = (state: ModalState, effects: ModalEffect[] = []) => ({
-    state,
-    effects,
-  });
+  const done = (state: ModalState, effects: ModalEffect[] = []) => {
+    if (
+      state.chars &&
+      (state.selections !== s.selections || state.primary !== s.primary)
+    ) {
+      const { chars: _, ...rest } = state;
+      return { state: rest, effects };
+    }
+    return { state, effects };
+  };
+  if (s.pending === "s") {
+    const rest = settled(s);
+    const score = scoreKeys[key];
+    if (score === undefined) return done(rest);
+    const nodes = s.selections.flatMap((t) =>
+      t.kind === "node" ? [nodeRef(t)] : [],
+    );
+    return done(rest, nodes.length ? [{ kind: "setScore", nodes, score }] : []);
+  }
+  if (key === "s") return done({ ...s, pending: "s" });
+  const extended = extensions[key];
+  if (extended !== undefined) {
+    const p = s.selections[s.primary];
+    if (!p) return modalKey(s, extended, ctx);
+    return done(add(s, motions[extended]?.(ctx, p)));
+  }
   const motion = motions[key];
   if (motion) {
     if (s.selections.length === 0) {
@@ -257,6 +385,26 @@ export function modalKey(
     return done(mapSelections(s, (t) => motion(ctx, t)));
   }
   switch (key) {
+    case "w":
+    case "b":
+    case "W":
+    case "B":
+      return done(narrow(ctx, s, key));
+    case "c": {
+      const p = s.selections[s.primary];
+      if (p?.kind !== "node") return done(s);
+      const at = nodeRef(p);
+      return done(s, [
+        { kind: "comment", at, ...(s.chars && { chars: s.chars }) },
+      ]);
+    }
+    case "r": {
+      const p = s.selections[s.primary];
+      if (p?.kind === "file")
+        return done(s, [{ kind: "reply", at: { file: p.file } }]);
+      if (p?.kind !== "node") return done(s);
+      return done(s, [{ kind: "reply", at: nodeRef(p) }]);
+    }
     case "%": {
       const p = s.selections[s.primary];
       if (!p) return done(s);
@@ -265,8 +413,31 @@ export function modalKey(
     }
     case ",":
       return done(keepPrimary(s));
-    case "Escape":
+    case ")":
+    case "(": {
+      const len = s.selections.length;
+      if (len === 0) return done(s);
+      const by = key === ")" ? 1 : len - 1;
+      return done({ ...s, primary: (s.primary + by) % len });
+    }
+    case "-": {
+      const len = s.selections.length;
+      if (len <= 1) return done(s);
+      const selections = s.selections.filter((_, i) => i !== s.primary);
+      return done({ ...s, selections, primary: s.primary % (len - 1) });
+    }
+    case "R":
+      return done(s, [{ kind: "submitReview" }]);
+    case "?":
+      return done(s, [{ kind: "help" }]);
+    case "Escape": {
+      // Escape first drops a narrowing back to the whole node, then leaves.
+      if (s.chars) {
+        const { chars: _, ...whole } = s;
+        return done(whole);
+      }
       return done(keepPrimary(s), [{ kind: "leave" }]);
+    }
     case "v": {
       const ids = [
         ...new Set(
@@ -342,37 +513,149 @@ export interface Point {
   column: number;
 }
 
-/** A click: the innermost changed node containing the point, else the hunk, else the state unchanged. */
-export function selectAt(
-  s: ModalState,
-  index: AtomIndex,
-  at: Point,
-): ModalState {
-  if (!hunkOf(index, at.file, at.fragment)) return s;
+/**
+ * The innermost node containing the point, else the hunk, else nothing outside a hunk. An unchanged node counts:
+ * a click on a declaration's own keyword or name, outside its changed children, means the declaration.
+ */
+function targetAt(index: AtomIndex, at: Point): Target | undefined {
+  const context = at.fragment === contextFragment;
+  if (!context && !hunkOf(index, at.file, at.fragment)) return undefined;
   const tree = treeOf(index, at);
   const p = [at.line, at.column];
   let best: number | undefined;
   let bestDepth = -1;
   tree?.nodes.forEach((n, i) => {
-    if (!n.changed) return;
     if (compare([n.start.line, n.start.column], p) > 0) return;
     if (compare(p, [n.end.line, n.end.column]) >= 0) return;
     let depth = 0;
     for (let q = n.parent; q >= 0; q = tree.nodes[q]?.parent ?? -1) depth++;
     if (depth > bestDepth) [best, bestDepth] = [i, depth];
   });
-  return only(
-    { ...s, mode: "normal" },
-    best === undefined
-      ? { kind: "hunk", file: at.file, fragment: at.fragment }
-      : node({
-          file: at.file,
-          fragment: at.fragment,
-          side: at.side,
-          node: best,
-        }),
-  );
+  if (best === undefined)
+    return context
+      ? undefined
+      : { kind: "hunk", file: at.file, fragment: at.fragment };
+  return node({
+    file: at.file,
+    fragment: at.fragment,
+    side: at.side,
+    node: best,
+  });
 }
+
+/** A click: the target at the point becomes the only selection; the state is unchanged outside a hunk. */
+export function selectAt(
+  s: ModalState,
+  index: AtomIndex,
+  at: Point,
+): ModalState {
+  const t = targetAt(index, at);
+  return t ? only({ ...s, mode: "normal" }, t) : s;
+}
+
+/** A Shift+click: the target at the point joins the selections as primary. */
+export function addAt(s: ModalState, index: AtomIndex, at: Point): ModalState {
+  const t = targetAt(index, at);
+  return t ? add({ ...s, mode: "normal" }, t) : s;
+}
+
+/**
+ * A text selection from `from` to `to` (a drag): the node holding both becomes the only selection, narrowed to
+ * the dragged characters. The state is unchanged when no node holds both.
+ */
+export function narrowAt(
+  s: ModalState,
+  index: AtomIndex,
+  from: Point,
+  to: Point,
+): ModalState {
+  const t = targetAt(index, from);
+  if (t?.kind !== "node") return s;
+  const tree = treeOf(index, t);
+  if (
+    !tree ||
+    to.file !== t.file ||
+    to.fragment !== t.fragment ||
+    to.side !== t.side
+  )
+    return s;
+  const end = [to.line, to.column];
+  let i = t.node;
+  for (;;) {
+    const n = tree.nodes[i];
+    if (!n) return s;
+    if (compare(end, [n.end.line, n.end.column]) <= 0) break;
+    i = n.parent;
+  }
+  const n = tree.nodes[i];
+  const text = nodeText(tree, i);
+  if (!n || text === undefined) return s;
+  /** A point as a display offset into the node's text. */
+  const offset = (q: Point) => {
+    let o = 0;
+    for (let line = n.start.line; line < q.line; line++)
+      o +=
+        (tree.lines[line]?.length ?? 0) -
+        (line === n.start.line ? n.start.column : 0) +
+        1;
+    return o + q.column - (q.line === n.start.line ? n.start.column : 0);
+  };
+  const chars = charsOf(text, offset(from), offset(to));
+  const { chars: _, ...rest } = settled(s);
+  const state = only({ ...rest, mode: "normal" }, { ...t, node: i });
+  return chars.end > chars.start ? { ...state, chars } : state;
+}
+
+export const modalKeymap: readonly {
+  key: string;
+  label: string;
+  group: "move" | "extend" | "act" | "score";
+  /** Bound only right after this prefix key. */
+  prefix?: "s";
+}[] = [
+  { key: "j", label: "next change", group: "move" },
+  { key: "k", label: "previous change", group: "move" },
+  { key: "]", label: "next unviewed", group: "move" },
+  { key: "[", label: "previous unviewed", group: "move" },
+  { key: "o", label: "expand to parent", group: "move" },
+  { key: "i", label: "shrink to child", group: "move" },
+  { key: "n", label: "next sibling", group: "move" },
+  { key: "p", label: "previous sibling", group: "move" },
+  { key: "x", label: "select hunk", group: "move" },
+  { key: "g", label: "go to counterpart", group: "move" },
+  { key: "w", label: "narrow to next word", group: "move" },
+  { key: "b", label: "narrow to previous word", group: "move" },
+  { key: "%", label: "select whole file", group: "extend" },
+  { key: "J", label: "add next change", group: "extend" },
+  { key: "K", label: "add previous change", group: "extend" },
+  { key: "}", label: "add next unviewed", group: "extend" },
+  { key: "{", label: "add previous unviewed", group: "extend" },
+  { key: "N", label: "add next sibling", group: "extend" },
+  { key: "P", label: "add previous sibling", group: "extend" },
+  { key: ")", label: "rotate primary forward", group: "extend" },
+  { key: "(", label: "rotate primary backward", group: "extend" },
+  { key: "-", label: "drop primary selection", group: "extend" },
+  { key: ",", label: "keep only primary", group: "extend" },
+  { key: "W", label: "grow narrowing to next word", group: "extend" },
+  { key: "B", label: "grow narrowing to previous word", group: "extend" },
+  { key: "v", label: "toggle viewed", group: "act" },
+  { key: "s", label: "score…", group: "act" },
+  { key: "c", label: "comment", group: "act" },
+  { key: "r", label: "reply to thread", group: "act" },
+  { key: "R", label: "submit review", group: "act" },
+  { key: "2", label: "+2 good to merge", group: "score", prefix: "s" },
+  { key: "1", label: "+1 looks good", group: "score", prefix: "s" },
+  { key: "q", label: "-1 would rather not", group: "score", prefix: "s" },
+  { key: "w", label: "-2 must not merge", group: "score", prefix: "s" },
+  { key: "0", label: "clear score", group: "score", prefix: "s" },
+  { key: "Enter", label: "expand move or context", group: "act" },
+  { key: "?", label: "toggle this help", group: "act" },
+  {
+    key: "Escape",
+    label: "drop narrowing, or leave review keys",
+    group: "act",
+  },
+];
 
 /** The few members of an element the binding uses, so a test can hand in a plain object. */
 export interface ModalRoot {
@@ -388,11 +671,13 @@ export interface ModalRoot {
 export interface ModalBindingOptions {
   index: AtomIndex;
   viewed: ViewedStore;
+  /** Where `setScore` writes; without one, scoring reaches only `onEffect`. */
+  scores?: ScoreStore;
   /** `plainKeyOf` when absent. */
   keyOf?: KeyOf;
   initial?: ModalState;
   onChange?: (state: ModalState) => void;
-  /** Every effect, after the binding applied `setViewed` and `leave` itself. */
+  /** Every effect, after the binding applied `setViewed`, `setScore` and `leave` itself. */
   onEffect?: (effect: ModalEffect) => void;
 }
 
@@ -400,8 +685,14 @@ export interface ModalBinding {
   state(): ModalState;
   /** Replaces the state, as a click does through `selectAt`. */
   set(state: ModalState): void;
+  /** Runs one key as a keydown inside the root would, whatever has focus; `false` when it is unbound. */
+  press(key: string): boolean;
   dispose(): void;
 }
+
+const editable = (el: Element) =>
+  ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName) ||
+  (el as Partial<HTMLElement>).isContentEditable === true;
 
 /** Handles keys only while focus is inside `root`, and never a key combined with Ctrl, Meta or Alt. */
 export function bindModal(
@@ -418,6 +709,31 @@ export function bindModal(
     state = next;
     opts.onChange?.(state);
   };
+  const press = (key: string) => {
+    const active = root.ownerDocument.activeElement;
+    const blur = () => (active as Partial<HTMLElement> | null)?.blur?.();
+    const mode =
+      active && root.contains(active) && editable(active) ? "insert" : "normal";
+    if (state.mode !== mode) set({ ...settled(state), mode });
+    if (mode === "insert") {
+      if (key !== "Escape") return false;
+      blur();
+      set({ ...state, mode: "normal" });
+      return true;
+    }
+    const t = modalKey(state, key, ctx);
+    if (!t) return false;
+    if (t.state !== state) set(t.state);
+    for (const effect of t.effects) {
+      if (effect.kind === "setViewed")
+        writeAtoms(effect.atoms, effect.viewed, opts.viewed, keyOf);
+      if (effect.kind === "setScore" && opts.scores)
+        writeScores(opts.index, effect.nodes, effect.score, opts.scores, keyOf);
+      if (effect.kind === "leave") blur();
+      opts.onEffect?.(effect);
+    }
+    return true;
+  };
   const onKey = (e: KeyboardEvent) => {
     if (
       e.ctrlKey ||
@@ -429,21 +745,13 @@ export function bindModal(
       return;
     const active = root.ownerDocument.activeElement;
     if (!active || !root.contains(active)) return;
-    const t = modalKey(state, e.key, ctx);
-    if (!t) return;
-    e.preventDefault();
-    if (t.state !== state) set(t.state);
-    for (const effect of t.effects) {
-      if (effect.kind === "setViewed")
-        writeAtoms(effect.atoms, effect.viewed, opts.viewed, keyOf);
-      if (effect.kind === "leave") (active as Partial<HTMLElement>).blur?.();
-      opts.onEffect?.(effect);
-    }
+    if (press(e.key)) e.preventDefault();
   };
   root.addEventListener("keydown", onKey);
   return {
     state: () => state,
     set,
+    press,
     dispose: () => root.removeEventListener("keydown", onKey),
   };
 }

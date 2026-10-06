@@ -30,11 +30,16 @@ export const jsNormalize: Normalize = (lexemes, text, tree) => {
     }
     // Prettier reflows a template in another language (print/embed.ts), whose whitespace means nothing to it.
     // Its opening tick stands in for it: a template opening with a `${…}` may print a line break before it.
-    if (htmlTemplate(tree, l.node) !== undefined) return undefined;
-    const html = htmlOpening(tree, l.node);
+    if (wholeTemplate(tree, l.node) !== undefined) return undefined;
+    const html = templateOpening(tree, l.node, "html");
     if (html !== undefined) {
       const words = htmlWords(tree, html);
       return words === "" ? undefined : `embed:${words}@${places.at(html)}`;
+    }
+    const graphql = templateOpening(tree, l.node, "graphql");
+    if (graphql !== undefined) {
+      const words = graphqlWords(tree, graphql);
+      return words === "" ? undefined : `embed:${words}@${places.at(graphql)}`;
     }
     if (isEmbedFragment(tree, l.node)) {
       const words = cssEndSemicolons(tree, l.node, l.text).replace(/\s+/g, "");
@@ -71,19 +76,39 @@ function cssEndSemicolons(tree: Tree, fragment: number, text: string): string {
 
 const HTML_PIECES = new Set(["string_fragment", "escape_sequence"]);
 
-/** The embedded-HTML template `n`, one of its fragments or escapes, stands in; undefined for any other node. */
-function htmlTemplate(tree: Tree, n: number): number | undefined {
+/**
+ * The embedded-HTML or GraphQL template `n`, one of its fragments or escapes, stands in; undefined for any other
+ * node. Such a template compares as one lexeme, which its opening tick stands for.
+ */
+function wholeTemplate(tree: Tree, n: number): number | undefined {
   if (!HTML_PIECES.has(tree.kindName(n))) return undefined;
   const p = tree.parent(n);
-  return p !== NO_NODE && tree.kindName(p) === "template_string" && embedLanguage(tree, p) === "html" ? p : undefined;
+  if (p === NO_NODE || tree.kindName(p) !== "template_string") return undefined;
+  const lang = embedLanguage(tree, p);
+  return lang === "html" || lang === "graphql" ? p : undefined;
 }
 
-/** The embedded-HTML template `n` opens; undefined for any other node. */
-function htmlOpening(tree: Tree, n: number): number | undefined {
+/** The template in `lang` that `n` opens; undefined for any other node. */
+function templateOpening(tree: Tree, n: number, lang: "html" | "graphql"): number | undefined {
   const p = tree.parent(n);
-  return p !== NO_NODE && tree.kindName(p) === "template_string" && tree.child(p, 0) === n && embedLanguage(tree, p) === "html"
+  return p !== NO_NODE && tree.kindName(p) === "template_string" && tree.child(p, 0) === n && embedLanguage(tree, p) === lang
     ? p
     : undefined;
+}
+
+/**
+ * An embedded-GraphQL template compares as one: its quasis' cooked text less whitespace and backslashes (the embed
+ * parses a quasi's cooked value and prints it re-escaped), and less the commas outside strings and comments, which
+ * GraphQL reads as whitespace and its printer adds or drops with a list's layout.
+ */
+function graphqlWords(tree: Tree, template: number): string {
+  let text = "";
+  for (let i = 0; i < tree.count(template); i++) {
+    const c = tree.child(template, i);
+    text += HTML_PIECES.has(tree.kindName(c)) ? tree.text(c) : tree.kindName(c) === "template_substitution" ? "\u{E000}" : "";
+  }
+  const words = cook(text).replace(/"""[^]*?"""|"(?:[^"\\\n]|\\.)*"|#[^\n]*|,/g, (m) => (m === "," ? "" : m));
+  return words.replace(/[\s\\\u{E000}]/gu, "");
 }
 
 /**

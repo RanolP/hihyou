@@ -20,6 +20,7 @@ import * as gen from "./fmt.gen.js";
 import { language } from "./index.js";
 import {
   buildHtmlTree,
+  cssCdoComments,
   EVENT_HANDLERS,
   type EmbeddedLanguage,
   htmlRules,
@@ -188,8 +189,12 @@ const base = defineLanguage(grammar, {
 const printDocument: StreamRule<HtmlOptions> = (node, ctx) => {
   const text = ctx.tree.text(node);
   const { printWidth, tabWidth, useTabs, htmlWhitespaceSensitivity } = ctx.options;
-  const embed = (lang: EmbeddedLanguage, content: string) => {
+  const embed = (lang: EmbeddedLanguage, source: string) => {
     const [contentGrammar, formatter] = EMBEDDED[lang]();
+    // A style's `<!-- … -->` before a rule stands as a type selector the CSS formatter prints, then is written
+    // as prettier spells it (`cssCdoComments`).
+    const cdo = lang === "css" && /<!--/.test(source) ? cssCdoComments(source) : undefined;
+    const content = cdo?.rewritten ?? source;
     let tree = parseTree(contentGrammar, content);
     if (tree.errorChars > 0 || brokenNodes(tree) !== undefined) throw new Unsupported(`${lang} parse error`);
     // A legacy `<!--` or `-->` line is a comment to babel, printed as written; the JS formatter leaves an
@@ -203,13 +208,20 @@ const printDocument: StreamRule<HtmlOptions> = (node, ctx) => {
       if (tree.errorChars > 0 || brokenNodes(tree) !== undefined) throw new Unsupported(`${lang} parse error`);
     }
     const token =
-      legacy.length === 0
-        ? undefined
-        : (s: string) => {
+      legacy.length > 0
+        ? (s: string) => {
             if (!s.startsWith(LEGACY_MARK)) return false;
             sText(s.slice(LEGACY_MARK.length));
             return true;
-          };
+          }
+        : cdo !== undefined
+          ? (s: string) => {
+              const i = cdo.marks.indexOf(s);
+              if (i < 0) return false;
+              sText(cdo.texts[i] as string);
+              return true;
+            }
+          : undefined;
     withEmbedding({ anchor: node, token }, () =>
       printInto(
         tree,
@@ -218,8 +230,10 @@ const printDocument: StreamRule<HtmlOptions> = (node, ctx) => {
         >,
         lang === "html"
           ? ctx.options
-          : lang === "css" || lang === "json"
-            ? { printWidth, tabWidth, useTabs }
+          : lang === "css"
+            ? { printWidth, tabWidth, useTabs, embeddedInHtml: true }
+            : lang === "json"
+              ? { printWidth, tabWidth, useTabs }
             : // Every option goes on to the script, as prettier's does (`semi`, `singleQuote`), and a JS
               // template's HTML inside reads `embeddedInHtml` as prettier's __embeddedInHtml.
               { ...ctx.options, embeddedInHtml: true },

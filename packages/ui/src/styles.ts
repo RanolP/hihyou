@@ -199,6 +199,44 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
   background-color: var(--hh-select-primary);
   text-decoration: underline 2px var(--hh-accent);
 }
+/* A Code-Review score: plus solid, minus wavy, and the badge spells the sign, so colour is never the only cue. */
+.hh-diff ::highlight(hh-score-plus) { text-decoration: underline solid 1px var(--hh-added-fg); }
+.hh-diff ::highlight(hh-score-minus) { text-decoration: underline wavy 1px var(--hh-removed-fg); }
+.hh-score-badge {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  padding: 0 3px;
+  font-family: var(--hh-mono);
+  font-size: 0.85em;
+  background: var(--hh-bg);
+  border: 1px solid currentColor;
+  border-radius: 3px;
+}
+.hh-score-plus { color: var(--hh-added-fg); }
+.hh-score-minus { color: var(--hh-removed-fg); }
+.hh-toolbar .hh-score { align-self: center; margin-left: auto; font-weight: 600; }
+/* A comment's anchored text is boxed in the accent colour; the comment itself sits under the anchor's last line. */
+.hh-diff ::highlight(hh-comment) { background-color: var(--hh-select); text-decoration: underline dotted 2px var(--hh-accent); }
+.hh-comment-row > td, .hh-comment-file { padding: 4px 8px; background: var(--hh-header-bg); border-left: 3px solid var(--hh-accent); }
+.hh-comment-author { font-weight: 600; }
+.hh-comment-quote { font-family: var(--hh-mono); color: var(--hh-muted); }
+.hh-comment-body { margin: 2px 0 0; white-space: pre-wrap; }
+.hh-comment-draft textarea { display: block; width: 100%; box-sizing: border-box; min-height: 4em; font: inherit; }
+/* A comment held in a review not yet submitted: dashed, and labelled so it never reads by style alone. */
+.hh-comment-row > td.hh-comment-pending, .hh-comment-file.hh-comment-pending { border-left-style: dashed; }
+/* A reply sits under the comment that began its thread, its own pending state marked the same way. */
+.hh-comment-reply { margin-top: 4px; padding-left: 8px; border-left: 3px solid var(--hh-border); }
+.hh-comment-reply.hh-comment-pending { border-left-style: dashed; }
+.hh-comment-label { float: right; font-size: 0.85em; font-weight: 600; padding: 0 4px; border: 1px solid var(--hh-border); border-radius: 3px; color: var(--hh-muted); }
+.hh-comment-error { margin: 2px 0 0; color: var(--hh-removed-fg); }
+.hh-review-pending { align-self: center; color: var(--hh-muted); }
+.hh-comment-row kbd { font-family: var(--hh-mono); font-size: 0.9em; color: var(--hh-muted); }
+/* The approval stays in view with the toolbar, so scoring far down the diff shows what it did to the Diffset. */
+.hh-bar { position: sticky; top: 0; z-index: 3; background: var(--hh-bg); }
+.hh-approval { display: block; padding: 4px 0; margin: 0 0 4px; font-weight: 600; color: var(--hh-muted); }
+.hh-approval-approved { color: var(--hh-added-fg); }
+.hh-approval-blocked { color: var(--hh-removed-fg); }
 .hh-file-viewed .hh-table { opacity: 0.5; }
 .hh-viewed-toggle { text-decoration: none; color: var(--hh-muted); }
 .hh-viewed-toggle[aria-pressed="true"] { color: var(--hh-added-fg); }
@@ -219,6 +257,57 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 @media (prefers-reduced-motion: reduce) {
   .hh-flash-box { background: var(--hh-flash); animation: hh-fade 1.2s ease-out forwards; }
 }
+/* Every key action as a button, its key as the hint; it stays in reach while a selection does. */
+.hh-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 8px;
+  padding: 4px;
+  background: var(--hh-header-bg);
+  border: 1px solid var(--hh-border);
+  border-radius: 4px;
+}
+.hh-tool {
+  font: inherit;
+  font-size: 0.9em;
+  color: var(--hh-fg);
+  background: var(--hh-bg);
+  border: 1px solid var(--hh-border);
+  border-radius: 3px;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+.hh-tool:hover { border-color: var(--hh-accent); }
+.hh-tool:focus-visible { outline: 1px solid var(--hh-accent); outline-offset: 1px; }
+.hh-toolbar kbd, .hh-keyinfo kbd {
+  font-family: var(--hh-mono);
+  font-size: 0.9em;
+  padding: 0 3px;
+  color: var(--hh-muted);
+  border: 1px solid var(--hh-border);
+  border-radius: 3px;
+}
+/* Kakoune's info box: bottom right, over the code, listing the keys that can follow. */
+.hh-keyinfo {
+  position: sticky;
+  bottom: 8px;
+  z-index: 3;
+  width: fit-content;
+  margin: 0 8px 0 auto;
+  padding: 6px 10px;
+  display: flex;
+  gap: 16px;
+  background: var(--hh-header-bg);
+  border: 1px solid var(--hh-border);
+  border-radius: 4px;
+}
+.hh-keyinfo-title { margin: 0 0 4px; font-size: 1em; font-weight: 600; }
+.hh-keyinfo dl { display: grid; grid-template-columns: auto auto; gap: 2px 8px; margin: 0; }
+.hh-keyinfo dd { margin: 0; }
 .hh-sr {
   position: absolute;
   width: 1px;

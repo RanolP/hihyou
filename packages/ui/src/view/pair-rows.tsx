@@ -45,7 +45,11 @@ export function pairRows(
   const head = (
     <tr class="hh-pair-head">
       <td class="hh-pair-cell" colSpan={3}>
-        <span>{`Moved from ${named(pair.before)} to ${named(pair.after)}`}</span>
+        <span>
+          {pair.extract === undefined
+            ? `Moved from ${named(pair.before)} to ${named(pair.after)}`
+            : `Extracted from ${named(pair.before)} into ${pair.extract} at ${named(pair.after)}`}
+        </span>
         {action}
       </td>
     </tr>

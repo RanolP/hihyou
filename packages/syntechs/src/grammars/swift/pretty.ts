@@ -1,6 +1,7 @@
 // A port of swift-format 6.3.0's PrettyPrinter (Sources/SwiftFormat/PrettyPrint/PrettyPrint.swift): an
 // Oppen-style printer over a stream of text, group and break tokens. It covers the tokens the statements
-// `layout.ts` builds streams for carry (no comments, verbatim text, selections or comma-delimited regions), so a
+// `layout.ts` builds streams for carry (block comments within a line, but no other comments, verbatim text,
+// selections or comma-delimited regions), so a
 // stream it accepts prints as swift-format prints it.
 
 export type BreakKind =
@@ -18,6 +19,8 @@ export type Tok =
   /** `newline`: a line break kept from the source; `ignoresDiscretionary`: `.elective(ignoresDiscretionary: true)`. */
   | { t: "break"; kind: BreakKind; size: number; newline?: boolean; ignoresDiscretionary?: boolean }
   | { t: "space"; size: number }
+  /** A block comment within a line; `length` is swift-format's `Comment.length`, which counts one past its text. */
+  | { t: "comment"; text: string; length: number }
   | { t: "ctxStart" }
   | { t: "ctxEnd" };
 
@@ -29,6 +32,7 @@ export const tk = {
   brk: (kind: BreakKind, size = 1): Tok => ({ t: "break", kind, size }),
   /** A break that a line break in the source before the token after it does not make fire. */
   elective: (kind: BreakKind, size = 1): Tok => ({ t: "break", kind, size, ignoresDiscretionary: true }),
+  comment: (text: string): Tok => ({ t: "comment", text, length: text.length + 1 }),
   ctxStart: { t: "ctxStart" } as Tok,
   ctxEnd: { t: "ctxEnd" } as Tok,
 };
@@ -90,6 +94,10 @@ export function prettyPrint(tokens: readonly Tok[], base: number, lineLength: nu
       case "syntax":
         lengths.push(tok.text.length);
         total += tok.text.length;
+        break;
+      case "comment":
+        lengths.push(tok.length);
+        total += tok.length;
         break;
     }
   }
@@ -170,6 +178,10 @@ export function prettyPrint(tokens: readonly Tok[], base: number, lineLength: nu
         break;
       case "syntax":
         if (tok.text === "") break;
+        lastBreak = false;
+        write(tok.text);
+        break;
+      case "comment":
         lastBreak = false;
         write(tok.text);
         break;

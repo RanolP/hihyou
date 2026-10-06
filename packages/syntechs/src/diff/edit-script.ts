@@ -3,8 +3,8 @@ import { isoIds, type Mapping } from "./matcher.js";
 import {
   classifyMove,
   defaultMoveOptions,
-  type MoveClass,
   type MoveOptions,
+  type MoveWitness,
 } from "./move.js";
 import { longestIncreasing } from "./sequence.js";
 import type { Side } from "./side.js";
@@ -34,7 +34,7 @@ export type RawEdit =
       node?: string;
       a?: number;
       b?: number;
-      /** The moved code also changed inside (`classifyMove` said `edited`); absent for a pure move. */
+      /** The moved code also changed inside (`classifyMove` found an `edited` witness); absent for a pure move. */
       edited?: true;
     };
 
@@ -56,7 +56,7 @@ export interface Claimed {
  * and a move only where the node itself changed place, not for everything carried along with it.
  * Anonymous tokens (punctuation, keywords) are never reported as moved: they only follow the named
  * nodes around them, so swapping `f(a, b)` to `f(b, a)` moves an argument, not the comma.
- * A move `classifyMove` calls `replaced` is reported as a delete plus an insert instead.
+ * A move `classifyMove` finds no witness for is reported as a delete plus an insert instead.
  * Claimed subtrees produce nothing here. An unmatched node holding a claimed or matched one is reported
  * piece by piece around it: deleting a file whose function moved elsewhere does not delete that function
  * too, and children wrapped in a new callback stay unchanged inside the inserted wrapper.
@@ -125,7 +125,7 @@ export function editScript(
         node: ta.kindName(hp),
         a: hp,
         b: hq,
-        ...(kinds.get(p) === "edited" && { edited: true as const }),
+        ...(kinds.get(p)?.kind === "edited" && { edited: true as const }),
       });
     }
   }
@@ -234,14 +234,14 @@ function childToward(side: Side, ancestor: number, i: number): number {
 }
 
 /**
- * A copy of `mapping` in which every move `classifyMove` calls `replaced` is unmatched, subtree and all, so
- * it reads as a delete plus an insert; `kinds` holds the class of each move left, by base index. Unmatching
- * one move changes the score of a move around it, so this repeats until nothing more is dropped.
+ * A copy of `mapping` in which every move `classifyMove` finds no witness for is unmatched, subtree and all, so
+ * it reads as a delete plus an insert; `kinds` holds the witness of each move left, by base index. Unmatching
+ * or settling one move changes which moves stand around it, so this repeats until nothing more is dropped.
  */
 function settleMoves(
   mapping: Mapping,
   opts: MoveOptions,
-): Mapping & { kinds: Map<number, MoveClass> } {
+): Mapping & { kinds: Map<number, MoveWitness> } {
   const { a, b } = mapping;
   const settled = { a, b, src: mapping.src.slice(), dst: mapping.dst.slice() };
   const { src, dst } = settled;
@@ -294,7 +294,7 @@ function settleMoves(
         return c;
     return -1;
   };
-  const kinds = new Map<number, MoveClass>();
+  const kinds = new Map<number, MoveWitness>();
   for (let dropped = true; dropped;) {
     dropped = false;
     kinds.clear();
@@ -315,9 +315,9 @@ function settleMoves(
           dropped = true;
           continue;
         }
-        const kind = classifyMove(settled, p, q, opts);
-        if (kind !== "replaced") {
-          kinds.set(p, kind);
+        const witness = classifyMove(settled, p, q, opts);
+        if (witness) {
+          kinds.set(p, witness);
           continue;
         }
         unmatch(src, dst, p, a.size[p] as number);

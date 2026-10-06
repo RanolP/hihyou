@@ -52,12 +52,18 @@ export interface CssOptions extends PrettierOptions {
   singleQuote: boolean;
   /** `off` prints front matter as written; `auto` lays YAML's out (see `frontMatterLines`). */
   embeddedLanguageFormatting: "auto" | "off";
+  /**
+   * An HTML `<style>`'s content, which oxfmt formats with prettier's postcss printer rather than its own: an at-rule
+   * prettier keeps the params of as a string puts `{` on a line of its own after a `//` (`slashesBeforeBlock`).
+   */
+  embeddedInHtml: boolean;
 }
 
 const defaults: CssOptions = {
   ...prettierDefaults,
   singleQuote: false,
   embeddedLanguageFormatting: "auto",
+  embeddedInHtml: false,
 };
 
 type SCtx = StreamCtx<CssOptions>;
@@ -284,8 +290,6 @@ const normalize: Normalize = (lexemes, text, tree) => {
       return undefined;
     if (sign(i) || tree.kindName(l.node) === "trailing_comma" || droppedComma(tree, l.node)) return undefined;
     if (sign(i - 1)) return meaning(tree, l.node, `${prev}${l.text}`);
-    // A custom property block's item tree-sitter reads as an ERROR spans the `;` ending it, which means nothing.
-    if (tree.kindName(l.node) === "ERROR" && customSetItem(l.node, tree)) return l.text.replace(/[\s;]+$/, "");
     return meaning(tree, l.node, l.text);
   });
   progidForms(lexemes, tree, forms);
@@ -932,7 +936,6 @@ function strayArgColon(call: number, ctx: SCtx): boolean {
   if (inDirective(call, ctx) || ancestorWhere(t, call, ["pseudo_class_selector"], ["declaration"], () => true))
     return false;
   const kids = children(node, t);
-  if (kids.some((c) => isComment(c, ctx))) return false;
   return kids.some(
     (c) =>
       (t.kindName(c) === "keyword_argument" && t.missing(t.child(c, 0))) ||
@@ -979,7 +982,7 @@ function rawArguments(node: number, ctx: SCtx): void {
  * (`slashJoined`) indexed within the chain, a space after a `:` and around a `*`, else tight only where written so.
  */
 function rawArgChain(nodes: number[], ctx: SCtx): void {
-  const g = rawTokens(nodes, ctx).tokens;
+  const { tokens: g, tail } = rawTokens(nodes, ctx);
   const sol = (x: RawToken | undefined) => x?.kind === "/";
   const word = (x: RawToken | undefined) => x !== undefined && ["ident", ")"].includes(x.kind);
   const tight = (i: number): boolean => {
@@ -1011,6 +1014,11 @@ function rawArgChain(nodes: number[], ctx: SCtx): void {
     }
     ctx.print(token.node);
   });
+  // A comment after the chain's last token follows it, a space before it (`f(/a: b /*q*/)`).
+  for (const c of tail) {
+    sText(" ");
+    ctx.comment(c);
+  }
 }
 
 /**
@@ -1169,6 +1177,8 @@ function raw(
   spaced: (prev: number, c: number) => boolean,
   tight: (c: number) => boolean = () => false,
   comments = false,
+  // Where a line break stands in for the space.
+  broken: (c: number) => boolean = () => false,
 ) {
   const t = ctx.tree;
   const items = new Set(ctx.items(node));
@@ -1182,7 +1192,8 @@ function raw(
       continue;
     }
     if (named && !items.has(c)) continue;
-    if (prev !== -1 && kind(c, ctx) !== ";" && !tight(c) && (spaced(prev, c) || !t.adjoins(prev, c))) sText(" ");
+    if (prev !== -1 && broken(c)) sHardline();
+    else if (prev !== -1 && kind(c, ctx) !== ";" && !tight(c) && (spaced(prev, c) || !t.adjoins(prev, c))) sText(" ");
     prev = c;
     if (named && own(c)) ctx.print(c);
     else if (named) {
@@ -1198,9 +1209,12 @@ function raw(
 export function atRule(node: number, ctx: SCtx): void {
   if (isDirective(node, ctx)) return sassDirective(node, ctx);
   if (placeholderStatement(node, ctx)) return;
+  const embedded = ctx.options.embeddedInHtml && slashesBeforeBlock(node, ctx.tree);
   if (unknownAtRule(node, ctx.tree)) return verbatimAtRule(node, ctx);
+  if (documentAtRule(node, ctx.tree)) return verbatimAtRule(node, ctx, embedded || !matchList(node, ctx.tree));
   const own = (c: number) => kind(c, ctx) === "at_keyword" || kind(c, ctx) === "block";
   const block = (c: number) => kind(c, ctx) === "block";
+  if (embedded) return raw(node, ctx, own, (_, c) => block(c), undefined, false, block);
   const comma = (c: number) => kind(c, ctx) === ",";
   // oxfmt prints a `@layer` list one space after each comma and none before one, unless a comment is among it:
   // then the list as written, each gap one space, its comments in place.
@@ -1241,21 +1255,73 @@ function unknownAtRule(node: number, t: FormatTree): boolean {
   return !["import", "use", "forward", "media", "custom-media"].includes(lower);
 }
 
+// The at-rules prettier's postcss parser reads the params of (as a value, a media query, a selector or an import),
+// by name as written; every other name keeps them a string.
+const prettierParsed = new Set(
+  "warn error extend nest at-root custom-selector namespace supports if else for each while debug mixin include function return define-mixin add-mixin".split(
+    " ",
+  ),
+);
+
+/**
+ * prettier's printer for an at-rule whose params it keeps a string: a block after params whose last line holds `//`,
+ * even in a string, opens on a line of its own (`@document url('http://a')⏎{`).
+ */
+function slashesBeforeBlock(node: number, t: FormatTree): boolean {
+  const kids = children(node, t);
+  const last = kids[kids.length - 1];
+  if (kids.length < 3 || last === undefined || t.kindName(last) !== "block") return false;
+  const name = t.text(kids[0] as number).slice(1);
+  const lower = name.toLowerCase();
+  if (prettierParsed.has(name) || ["import", "use", "forward", "media", "custom-media"].includes(lower)) return false;
+  const params = t.text(node).slice(0, -t.text(last).length).trimEnd();
+  return params.slice(params.lastIndexOf("\n") + 1).includes("//");
+}
+
+/** `@document` or `@-moz-document`, whose prelude oxfmt prints as written. */
+const documentAtRule = (node: number, t: FormatTree) =>
+  t.kindName(node) === "at_rule" && /^@(?:-moz-)?document$/i.test(t.text(t.child(node, 0)));
+
+/**
+ * Whether a `@document` prelude is what oxc-css-parser reads as one: functions (`url(…)`, `domain(…)`, any name)
+ * separated by commas, comments among them. Anything else it reads as `Unknown`, as an unknown at-rule's.
+ */
+function matchList(node: number, t: FormatTree): boolean {
+  let want = "call_expression";
+  for (const c of children(node, t).slice(1)) {
+    const k = t.kindName(c);
+    if (k === "block" || k === ";") break;
+    if (k === "comment") continue;
+    if (k !== want) return false;
+    want = want === "," ? "call_expression" : ",";
+  }
+  return want === ",";
+}
+
 /**
  * oxc's `write_verbatim_at_rule_tail`: the name lowercased, the prelude as written but the gaps at its ends, a space
- * before it unless it is glued to the name and opens with no `(`, then ` {…}` or `;`.
+ * before it unless it is glued to the name and opens with no `(`, then ` {…}` or `;`. A `//` on the prelude's last
+ * line, even in a string, puts the `{` on a line of its own, as prettier's printer does for a prelude it could not
+ * parse (`@foo url('http://a')⏎{`).
  */
-function verbatimAtRule(node: number, ctx: SCtx): void {
+function verbatimAtRule(node: number, ctx: SCtx, slashesBreak = true): void {
   const t = ctx.tree;
   const [keyword, ...rest] = children(node, t);
   if (keyword === undefined) return;
   sToken(keyword, t.text(keyword).toLowerCase());
   let prev = keyword;
+  // The prelude's last line as printed so far.
+  let line = "";
+  const write = (s: string) => {
+    const nl = s.lastIndexOf("\n");
+    line = nl === -1 ? line + s : s.slice(nl + 1);
+  };
   for (const c of rest) {
     const k = kind(c, ctx);
     if (k === "block") {
       // The prelude's last comment attaches to the block as leading; it printed with the prelude.
-      sText(" ");
+      if (slashesBreak && line.includes("//")) sHardline();
+      else sText(" ");
       ctx.printNode(c);
       printTrailingComments(ctx, c);
       continue;
@@ -1264,10 +1330,12 @@ function verbatimAtRule(node: number, ctx: SCtx): void {
       sToken(c, ";");
       continue;
     }
-    if (prev === keyword) sText(t.adjoins(keyword, c) && !t.text(c).startsWith("(") ? "" : " ");
-    else sText(gapBefore(prev, c, t));
+    const gap = prev === keyword ? (t.adjoins(keyword, c) && !t.text(c).startsWith("(") ? "" : " ") : gapBefore(prev, c, t);
+    sText(gap);
+    write(gap);
     if (isComment(c, ctx)) ctx.comment(c);
     else sToken(c, t.text(c));
+    write(t.text(c));
     prev = c;
   }
 }
@@ -1459,25 +1527,6 @@ const handleComment: CommentHandler<CssOptions> = ({ tree, comment, enclosing, p
   if (tree.kindName(enclosing) === "rule_set" && following !== undefined && tree.kindName(following) === "block")
     return { node: enclosing, as: "dangling" };
   if (preceding === undefined) return undefined;
-  // A comment after a custom property block's `;` leads the next item on its line (`a: b; /*c*/ c: d`).
-  if (
-    following !== undefined &&
-    inCustomSet(following, tree) &&
-    text.startsWith("/*") &&
-    tree.text(prevLeaf(tree, comment)) === ";" &&
-    tree.lf(firstLeaf(tree, following)) === 0
-  )
-    return { node: following, as: "leading" };
-  // After a custom property block's last item's value (`{a: b /*c*/}`), oxfmt prints it in the value, before the
-  // `;` it adds (`declarationEnd`).
-  if (
-    following === undefined &&
-    inCustomSet(preceding, tree) &&
-    text.startsWith("/*") &&
-    tree.kindName(preceding) === "declaration" &&
-    tree.text(codeLeaf(tree, comment, prevLeaf)) !== ";"
-  )
-    return { node: preceding, as: "dangling" };
   if (statementSequences.has(tree.kindName(enclosing)) && placement !== "ownLine")
     return { node: preceding, as: "trailing" };
   // Comments alone past the `:` of a last declaration with no `;` (`a{c:/*c*/}`) follow the `c:;` oxfmt prints.
@@ -1588,17 +1637,6 @@ function sassFlags(error: number, t: FormatTree): boolean {
 }
 
 /**
- * `--a: {a b; c: d}`: an item of a custom property's block with no `:` (tree-sitter-css's `ERROR`), which oxfmt
- * prints as written, ending it with a `;` as it does a declaration.
- */
-function customSetItem(error: number, t: FormatTree): boolean {
-  let block = t.parent(error);
-  // An ERROR nested in the item's (`{"b": [1, 2]}`) prints with it.
-  while (t.kindName(block) === "ERROR") block = t.parent(block);
-  return t.kindName(block) === "block" && t.kindName(t.parent(block)) === "custom_property_set";
-}
-
-/**
  * `a:b !c{d:e}`, `a:b c%{d:e}`: oxc-css-parser reads a nested rule whose selector tree-sitter cannot, an `ERROR`
  * between the rule's selectors and its block; the selector prints as written (`ruleSet`).
  */
@@ -1633,12 +1671,6 @@ function commentedPreludeError(error: number, t: FormatTree): boolean {
 
 /** The flags `sassFlags` recovers, one space apart. */
 const sassFlagList: StreamRule<CssOptions> = (error, ctx) => {
-  if (customSetItem(error, ctx.tree)) {
-    // Its own `;` (`{"a": 1;}`), which the item holds, ends it once.
-    sToken(error, ctx.tree.text(error).replace(/[\s;]+$/, "").trim());
-    sText(";");
-    return;
-  }
   for (let i = 0; i < ctx.tree.count(error); i++) {
     if (i > 0) sText(" ");
     const flag = ctx.tree.child(error, i);
@@ -1662,8 +1694,6 @@ export function statementComment(c: number, ctx: SCtx): boolean {
   let statement = next;
   for (let p = t.parent(statement); p !== NO_NODE && !statementSequences.has(kind(p, ctx)); p = t.parent(p))
     statement = p;
-  // In a custom property's block, oxfmt keeps a comment on the line of the item it leads (`{/*c*/a: b}`).
-  if (inCustomSet(statement, t) && t.lf(next) === 0) return false;
   return ctx.leadingComments(statement).includes(c);
 }
 
@@ -1691,12 +1721,7 @@ export function declarationColon(colon: number | undefined, node: number, ctx: S
   const value = !customs.emptyValue(node, ctx) && !customs.importantValue(node, ctx);
   for (const c of comments)
     if (t.ord(c) > t.ord(colon))
-      // In a custom property's block, oxfmt puts one space after the `:` and each comment (`a: /*c*/ /*d*/ b`).
-      if (value && inCustomSet(node, t)) {
-        sText(" ");
-        ctx.comment(c);
-        prev = c;
-      } else if (value) put(c, () => ctx.comment(c));
+      if (value) put(c, () => ctx.comment(c));
       else {
         sText(" ");
         ctx.comment(c);
@@ -1714,20 +1739,15 @@ export function declarationEnd(semi: number | undefined, node: number, ctx: SCtx
   const real = semi !== undefined && t.text(semi) !== "";
   // Sass flags (`sassFlags`) end the value as `!important` does.
   // So does a custom property's block (`--a: {a: b} /*c*/;`), which oxfmt prints the comments after.
-  // And a custom property block's last item's value (`{a: b /*c*/}`), the comments after which `handleComment` gives it.
   const important = children(node, t).findLast(
     (c) =>
       ["important", "ERROR"].includes(kind(c, ctx)) ||
-      (kind(node, ctx) === "custom_property_set" && kind(c, ctx) === "block") ||
-      (inCustomSet(node, t) && t.named(c) && !isComment(c, ctx) && kind(c, ctx) !== "property_name"),
+      (kind(node, ctx) === "custom_property_set" && kind(c, ctx) === "block"),
   );
   if (important !== undefined) {
-    // The value prints its own comments; those past it are only the block's that `handleComment` gave it.
-    const own = (c: number) =>
-      !["important", "ERROR"].includes(kind(important, ctx)) && inCustomSet(node, t) && t.parent(c) === node;
     // One space before each comment after `!important`, none before `;`.
     for (const c of ctx.danglingComments(node))
-      if (t.ord(c) > t.ord(important) && !own(c)) {
+      if (t.ord(c) > t.ord(important)) {
         sText(" ");
         ctx.comment(c);
       }
@@ -1863,51 +1883,6 @@ function emptyLastValue(n: number, t: FormatTree): boolean {
 /** A Sass variable or custom property, whose raw value (`oxcRaw`) oxfmt prints verbatim. */
 const customName = (decl: number, t: FormatTree) => /^(\$|--)/.test(t.text(t.child(decl, 0)));
 
-/** A declaration in a custom property's block (`--a: {b: 1, c: 2}`), whose raw value oxfmt keeps as a custom one's. */
-const inCustomSet = (decl: number, t: FormatTree) =>
-  t.kindName(t.parent(decl)) === "block" && t.kindName(t.parent(t.parent(decl))) === "custom_property_set";
-
-/** A custom property block's item led by a comment on its line, which `customSetComments` prints. */
-export const customSetOwnComments = (node: number, ctx: SCtx): boolean =>
-  inCustomSet(node, ctx.tree) &&
-  (ctx.leadingComments(node).some((c) => !statementComment(c, ctx)) ||
-    ctx.trailingComments(node).some((c) => afterLastItem(c, ctx.tree)));
-
-/** A block comment after a custom property block's last `;` (`{a: b; /*c*\/}`), which oxfmt puts on a line of its own. */
-const afterLastItem = (c: number, t: FormatTree): boolean =>
-  t.text(c).startsWith("/*") && t.text(codeLeaf(t, c, prevLeaf)) === ";" && t.text(codeLeaf(t, c, nextLeaf)) === "}";
-
-/** The first leaf past `n` in one direction that is no comment. */
-function codeLeaf(t: FormatTree, n: number, step: (t: FormatTree, n: number) => number): number {
-  let at = step(t, n);
-  while (at !== NO_NODE && t.kindName(at) === "comment") at = step(t, at);
-  return at;
-}
-
-/**
- * oxfmt keeps a comment on the line of the custom property block item it leads, glued as written (`/*c*\/a: b`)
- * or one space apart; one on a line of its own ends that line, as a statement's does.
- */
-export function customSetComments(node: number, ctx: SCtx, print: () => void): void {
-  if (!ctx.ownsComments(node)) return print();
-  const t = ctx.tree;
-  const comments = ctx.leadingComments(node);
-  comments.forEach((c, i) => {
-    ctx.comment(c);
-    const next = comments[i + 1] ?? firstLeaf(t, node);
-    if (t.lf(next) > 0) sHardline();
-    else if (!t.adjoins(c, next)) sText(" ");
-  });
-  print();
-  const last = ctx.trailingComments(node).filter((c) => afterLastItem(c, t));
-  if (last.length === 0) return printTrailingComments(ctx, node);
-  // On one line of their own, glued as written or one space apart.
-  last.forEach((c, i) => {
-    if (i === 0) sHardline();
-    else if (!t.adjoins(last[i - 1] as number, c)) sText(" ");
-    ctx.comment(c);
-  });
-}
 
 /**
  * A custom property's block holding no other `{` (`--a: {a: b; c}`), the items of which oxfmt re-flows as text
@@ -1985,7 +1960,7 @@ export function customBlock(block: number, ctx: SCtx): void {
 }
 
 const rawValue = (decl: number, ctx: SCtx): boolean =>
-  (customName(decl, ctx.tree) || inCustomSet(decl, ctx.tree)) && oxcRaw(decl, ctx.tree);
+  customName(decl, ctx.tree) && oxcRaw(decl, ctx.tree);
 
 /** The source between `prev` and `c`, less any whitespace ending a line. */
 function gapBefore(prev: number, c: number, t: FormatTree): string {
@@ -2813,14 +2788,13 @@ export const css: Language<CssOptions> = {
       ["ERROR", sassFlagList],
       ["plain_value", (node, ctx) => plainWord(node, ctx) || cssStream.rules.get("plain_value")?.(node, ctx)],
     ]),
-    wrap: (node, ctx, print) => frontMatterFirst(node, ctx, () => customSetComments(node, ctx, print)),
-    printsOwnComments: customSetOwnComments,
+    wrap: (node, ctx, print) => frontMatterFirst(node, ctx, print),
     commentEndsLine: statementComment,
     keepsSource: prettierIgnored,
     recovered: (error, t) =>
       t.missing(error)
         ? colonMissingComma(error, t) || emptyLastValue(error, t)
-        : sassFlags(error, t) || customSetItem(error, t) || selectorTail(error, t) || commentedPreludeError(error, t) || verbatimPreludeError(error, t) || valueColonError(error, t) || valueSlashError(error, t) || argColonError(error, t) || strayArgColonError(error, t),
+        : sassFlags(error, t) || selectorTail(error, t) || commentedPreludeError(error, t) || verbatimPreludeError(error, t) || valueColonError(error, t) || valueSlashError(error, t) || argColonError(error, t) || strayArgColonError(error, t),
     finalLine,
   },
 };

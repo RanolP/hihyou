@@ -50,6 +50,7 @@ import {
   when,
 } from "./dsl.js";
 import { emit } from "./emit.js";
+import { spaced, yamlQuote } from "./normalizers.js";
 import { referenceRules } from "./reference.js";
 import type { FrameRule, GapRule, PredicateRule, TextRule, WordsRule } from "./runtime.js";
 
@@ -623,4 +624,21 @@ it("`flow` prints text-like items bare, others grouped, keeps blank lines, and b
       ['{"a": [1, 2]}', {}],
     ]),
   ).toEqual(["[1 2 4]\n", "[1\n2 [3]\n\n4]\n", "[1\n[] 4]\n", "[1\n2]\n"]);
+});
+
+// Catches a YAML scalar requoted into a quote that changes its value, or left in the quote singleQuote does not prefer.
+it("`yamlQuote` keeps a scalar whose escapes the other quote would change, else picks the quote its content needs", () => {
+  const single = { singleQuote: true };
+  expect(yamlQuote(String.raw`"a"`, {})).toBe(String.raw`"a"`);
+  expect(yamlQuote(String.raw`"a"`, single)).toBe(String.raw`'a'`);
+  expect(yamlQuote(String.raw`'a'`, {})).toBe(String.raw`"a"`);
+  expect(yamlQuote(String.raw`"a\nb"`, single)).toBe(String.raw`"a\nb"`);
+  expect(yamlQuote(String.raw`'a\b'`, {})).toBe(String.raw`'a\b'`);
+  expect(yamlQuote(String.raw`"say \"hi\" it's"`, {})).toBe(String.raw`'say "hi" it''s'`);
+  expect(yamlQuote(String.raw`'it''s'`, single)).toBe(String.raw`"it's"`);
+});
+
+// Catches a YAML directive printed with the source's spacing between its words.
+it("`spaced` trims and puts one space between words", () => {
+  expect(spaced("%YAML \t 1.2  ")).toBe("%YAML 1.2");
 });

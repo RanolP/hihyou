@@ -59,6 +59,7 @@ async function warm(grammar: GrammarName): Promise<void> {
 const TINY: Record<GrammarName, string> = {
   json: '{"a":[1,2]}',
   css: "a { color: red; }",
+  graphql: "{ a(b: 1) { c } }",
   html: "<p>a<br>b</p>",
   javascript: "let a = 1;",
   typescript: "let a: number = 1;",

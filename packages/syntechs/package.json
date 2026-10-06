@@ -62,6 +62,7 @@
     "prettier": "3.9.9",
     "shiki": "2.5.0",
     "tree-sitter-css": "workspace:*",
+    "tree-sitter-graphql": "workspace:*",
     "tree-sitter-html": "workspace:*",
     "tree-sitter-javascript": "workspace:*",
     "tree-sitter-jsdoc": "workspace:*",

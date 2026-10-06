@@ -138,6 +138,38 @@ const JS_IGNORE = [
 /** The same list's CSS entries: postcss-conditionals and YAML front matter, which no CSS grammar has. */
 const CSS_IGNORE = ["css/atrule/if-else.css", "css/yaml/dirty.css"];
 
+/**
+ * Fixtures written in a language syntechs leaves out, by the user's call: SCSS, Less, Handlebars, postcss-conditionals
+ * (`@if $a == b`, no CSS standard) and Angular templates. The `@oxfmt` targets count every other fixture, prettier's
+ * ignore lists included, so these are named here, a directory by its trailing `/`, and excluded with the language
+ * they need.
+ */
+const OTHER_LANGUAGE: Record<string, string> = {
+  "css/atrule/if-else.css": "postcss-conditionals",
+  "html/css/scss.html": "SCSS",
+  "html/css/less.html": "Less",
+  "html/handlebars-venerable/template.html": "Handlebars",
+  "typescript/angular-component-examples/": "Angular",
+  "typescript/decorators-ts/angular.ts": "Angular",
+};
+
+const otherLanguage = (fixture: string): string | undefined =>
+  Object.entries(OTHER_LANGUAGE).find(([path]) =>
+    path.endsWith("/") ? fixture.startsWith(path) : fixture === path,
+  )?.[1];
+
+/** `suite` without the fixtures `OTHER_LANGUAGE` names, each excluded with the language it needs. */
+function withoutOtherLanguages(suite: Suite): Suite {
+  const excluded = [...suite.excluded];
+  const cases = suite.cases.filter((c) => {
+    const language = otherLanguage(c.fixture);
+    if (language === undefined) return true;
+    excluded.push({ fixture: c.fixture, reason: `written in ${language}, a language syntechs leaves out` });
+    return false;
+  });
+  return { cases, excluded };
+}
+
 interface Target {
   id: string;
   reference: string;
@@ -178,8 +210,8 @@ const againstOxfmt = (fixtures: Target): Target => ({
   ...fixtures,
   id: `${fixtures.id}@oxfmt`,
   reference: oxfmt.name,
-  source: `${fixtures.source}; expected output from ${oxfmt.name} run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left.`,
-  suite: async () => referenceSuite(await fixtures.suite("reference"), oxfmt),
+  source: `${fixtures.source}; expected output from ${oxfmt.name} run on each with that option set over prettier's defaults, cursor and range placeholders stripped. Every fixture counts, the ones prettier's own harness skips (its ignore list, its expected parse errors, its placeholders) included; a run is excluded only when oxfmt rejects it or does not keep its own output, and a fixture only when none of its runs is left or it is written in a language syntechs leaves out (SCSS, Less, Handlebars, postcss-conditionals, Angular).`,
+  suite: async () => referenceSuite(withoutOtherLanguages(await fixtures.suite("reference")), oxfmt),
 });
 
 /** The prettier-family fixture sets, by the ids the benchmark's groups name. */
@@ -203,6 +235,11 @@ export const PRETTIER_FIXTURES: Target[] = [
     dirs: ["css"],
     parsers: ["css"],
     ignore: CSS_IGNORE,
+  }),
+  prettierFixtures("graphql", "graphql", "graphql", () => "graphql", {
+    dirs: ["graphql"],
+    parsers: ["graphql"],
+    ignore: [],
   }),
   prettierFixtures("html", "html", "html", () => "html", {
     dirs: ["html"],
