@@ -215,6 +215,8 @@ export type Tree =
       readonly braces?: boolean;
       /** Indent levels a `written` join opens and closes between children (see `Nest`). */
       readonly nest?: Nest;
+      /** Of a `written` join: the custom rule (a `WrittenEditRule`) that drops a token or adds text before one. */
+      readonly edit?: string;
     }
   | { readonly t: "verbatim" }
   /** The node's source text through normalizer `fn` (`normalizers.ts`) where `when` holds, else as written. */
@@ -238,12 +240,35 @@ export type Tree =
   /** `body` in a layout frame of kind `kind`; a `group`'s `id` names it, an `indentIfBreak`'s the group it follows. */
   | { readonly t: "layout"; readonly kind: LayoutKind; readonly id?: string; readonly body: Tree }
   /** A line break of kind `kind` (see `line`, `softline`, `hardline`, `lineSuffixBoundary`). */
-  | { readonly t: "doc"; readonly kind: DocKind };
+  | { readonly t: "doc"; readonly kind: DocKind }
+  /** What the hand-written `TextRule` `name` (see `runtime.ts`) makes of the node, given `args` (see `hook`). */
+  | { readonly t: "hook"; readonly name: string; readonly args: readonly string[] }
+  /** Text bound to no source token (see `lit`). */
+  | { readonly t: "lit"; readonly text: string }
+  /** Each child of `list`: `first` before the first, `between` before each other (see `each`). */
+  | { readonly t: "each"; readonly list: Ref; readonly first?: Tree; readonly between?: Tree }
+  /** The words of the `WordsRule` `words`, packed several to a line (see `fill`). */
+  | { readonly t: "fill"; readonly words: string; readonly sep: Tree; readonly first: Tree; readonly last: Tree }
+  /** The children of `list` as a flow of inline and block content (see `flow`). */
+  | {
+      readonly t: "flow";
+      readonly list: Ref;
+      readonly gap: string;
+      readonly textLike: Cond;
+      readonly blank: Cond;
+      readonly breakAll: Cond;
+    };
 
-/** A layout frame: a group, an indent, or an indent only while the group `id` breaks. */
-export type LayoutKind = "group" | "indent" | "indentIfBreak";
-/** A line: a space or break, nothing or a break, always a break, or where pending line-end comments flush. */
-export type DocKind = "line" | "softline" | "hardline" | "lineSuffixBoundary" | "breakParent";
+/**
+ * A layout frame: a group, an indent, or an indent only while the group `id` breaks; content printed only while
+ * the enclosing group breaks (`ifBreak`) or stays flat (`ifFlat`); or content whose line breaks go to column 0.
+ */
+export type LayoutKind = "group" | "indent" | "indentIfBreak" | "ifBreak" | "ifFlat" | "dedentToRoot";
+/**
+ * A line: a space or break, nothing or a break, always a break, or where pending line-end comments flush; or a
+ * break to column 0 that breaks every group around it (`literalline`).
+ */
+export type DocKind = "line" | "softline" | "hardline" | "lineSuffixBoundary" | "breakParent" | "literalline";
 
 /** How a `splitOn` entry prints its items: side by side, a space between, or as `words`. */
 export type SplitItem =
@@ -442,6 +467,11 @@ export type TokenTree<G extends Grammar, O> =
     }>
   | Piece<{ spell: TokenOf<G> }>
   | Piece<"doc">
+  | Piece<"hook">
+  | Piece<"lit">
+  | Piece<{ each: TokenTree<G, O> }>
+  | Piece<{ fill: TokenTree<G, O> }>
+  | Piece<{ flow: CondIn<G, O> }>
   | readonly TokenTree<G, O>[];
 
 /** `tok(text).synth(when)`'s and `tok(text).andThen(f)`'s output. */
@@ -772,6 +802,7 @@ export interface InOrderOf<K, C> {
   readonly lineBefore?: readonly K[];
   readonly braces?: boolean;
   readonly nest?: { readonly kind: K; readonly opens: readonly string[]; readonly closes: readonly string[]; readonly when: C };
+  readonly edit?: string;
 }
 
 /**
@@ -783,7 +814,8 @@ export interface InOrderOf<K, C> {
  * the source has any gap and nothing where it has none (`gap`), or a line (`line`), a space unless the enclosing
  * group breaks. A `written` join, for a language whose layout is kept as written, puts the source's own separation
  * between every child, comments included: the spaces between two tokens on a line, or up to two line breaks and
- * the next line's column (the stream adds the indent `nest` opens); it takes no other option but `nest`. With `verbatim`, named children print as their source text between their comments, but those of a
+ * the next line's column (the stream adds the indent `nest` opens); it takes no other option but `nest` and `edit`, a
+ * custom rule that drops a token (and the separation after it) or adds text right before one. With `verbatim`, named children print as their source text between their comments, but those of a
  * kind in `except`: prettier's raw at-rule parameters. Children of a kind in `skip` print nothing, for one the
  * layout prints after it, like a `;` that `tok(";").synth` adds where the source lacks one.
  */
@@ -820,6 +852,7 @@ export function inOrder(o?: Piece<"space"> | InOrderOf<string, unknown>): unknow
     ...(opts.lineBefore?.length ? { lineBefore: opts.lineBefore } : {}),
     ...(opts.braces ? { braces: true } : {}),
     ...(opts.nest === undefined ? {} : { nest: { ...opts.nest, when: plain(opts.nest.when) } }),
+    ...(opts.edit === undefined ? {} : { edit: opts.edit }),
   });
 }
 
@@ -1018,6 +1051,65 @@ export const hardline: Piece<"doc"> = piece({ t: "doc", kind: "hardline" });
 export const lineSuffixBoundary: Piece<"doc"> = piece({ t: "doc", kind: "lineSuffixBoundary" });
 /** Prettier's breakParent: every group around it breaks. */
 export const breakParent: Piece<"doc"> = piece({ t: "doc", kind: "breakParent" });
+/** Prettier's literalline: a line break to column 0, which breaks every group around it. */
+export const literalline: Piece<"doc"> = piece({ t: "doc", kind: "literalline" });
+
+/** `body` only where the enclosing group breaks (prettier's ifBreak). */
+export const ifBreak = <const T>(body: T): T => layout("ifBreak", body);
+/** `body` only where the enclosing group stays flat (prettier's ifBreak with only a flat branch). */
+export const ifFlat = <const T>(body: T): T => layout("ifFlat", body);
+/** `body` with its line breaks at column 0, past any indentation (prettier's dedentToRoot). */
+export const dedentToRoot = <const T>(body: T): T => layout("dedentToRoot", body);
+
+/**
+ * What the hand-written `TextRule` `name` (see `runtime.ts`) makes of the node, given `args`: text no source token
+ * holds, such as the `>` of a tag that HTML prints at the node beside it. "" prints nothing.
+ */
+export const hook = (name: string, ...args: readonly string[]): Piece<"hook"> => piece({ t: "hook", name, args });
+
+/** Text `text` bound to no source token: punctuation a node prints that its source need not hold. */
+export const lit = (text: string): Piece<"lit"> => piece({ t: "lit", text });
+
+/** Each child of `list` as its own rule prints it, `first` before the first and `between` before each other. */
+export const each = <const F = never[], const B = never[]>(
+  list: List,
+  o: { readonly first?: F; readonly between?: B } = {},
+): Piece<{ each: F | B }> =>
+  piece({
+    t: "each",
+    list: refOf(list),
+    ...(o.first === undefined ? {} : { first: toTree(o.first) }),
+    ...(o.between === undefined ? {} : { between: toTree(o.between) }),
+  });
+
+/**
+ * The words the hand-written `WordsRule` `words` (see `runtime.ts`) makes of the node, packed several to a line
+ * (prettier's fill): `sep` between two, `first` joined to the first word and `last` to the last.
+ */
+export const fill = <const S, const F = never[], const L = never[]>(
+  words: string,
+  o: { readonly sep: S; readonly first?: F; readonly last?: L },
+): Piece<{ fill: S | F | L }> =>
+  piece({ t: "fill", words, sep: toTree(o.sep), first: toTree(o.first ?? []), last: toTree(o.last ?? []) });
+
+/**
+ * The children of `list` as a flow of inline and block content (prettier's HTML printChildren): the hand-written
+ * `GapRule` `gap` (see `runtime.ts`) says what goes between two, a `textLike` item prints bare and any other in a
+ * group of its own, a blank line follows an item where `blank` holds of it, and every gap breaks where `breakAll`
+ * holds of the node.
+ */
+export const flow = <const T, const B, const A = false>(
+  list: List,
+  o: { readonly gap: string; readonly textLike: T; readonly blank: B; readonly breakAll?: A },
+): Piece<{ flow: T | B | A }> =>
+  piece({
+    t: "flow",
+    list: refOf(list),
+    gap: o.gap,
+    textLike: plain(o.textLike),
+    blank: plain(o.blank),
+    breakAll: plain(o.breakAll),
+  });
 
 function plain(c: unknown): Cond {
   if (c === undefined || typeof c === "boolean") return c === true;

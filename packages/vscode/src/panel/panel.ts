@@ -1,7 +1,6 @@
 import {
   collapseElided,
   type DiffFile,
-  type DiffLayout,
   diffStyles,
   type ReviewSource,
   revealElided,
@@ -36,24 +35,13 @@ const fileShown = new vscode.EventEmitter<{ key: string; path: string }>();
 /** A keyed panel now shows the file at `path`, or was focused showing it; the diffsets view selects its row. */
 export const onDidShowFile = fileShown.event;
 
-const layoutKey = "hihyou.layout";
-let layouts: vscode.Memento | undefined;
-
-/** Where the reviewer's split/unified choice is kept: the extension's `globalState`, set once on activation. */
-export function storeLayoutIn(memento: vscode.Memento): void {
-  layouts = memento;
-}
-
-const savedLayout = (): DiffLayout =>
-  layouts?.get<DiffLayout>(layoutKey) === "split" ? "split" : "unified";
-
 /** Next (1) or previous (-1) file in the review panel last focused. */
 export function stepFile(delta: 1 | -1): void {
   active?.step(delta);
 }
 
 /**
- * Opens a split-diff panel on `source` and resolves with the files it first posted (undefined when the first
+ * Opens a diff panel on `source` and resolves with the files it first posted (undefined when the first
  * load failed, already reported), which is what a command returns to its caller.
  */
 export async function openReviewPanel(
@@ -114,6 +102,32 @@ export async function openReviewPanel(
         type: "theme",
         theme: t,
       } satisfies ToWebview),
+    );
+
+  // The webview proxies every call here; the store stays in the host, with the token.
+  const comments = source.comments?.();
+  const postComments = () =>
+    comments &&
+    panel.webview.postMessage({
+      type: "comments",
+      notes: [...comments.all()],
+      reviewing: comments.reviewing(),
+    } satisfies ToWebview);
+  const answer = (id: number, call: () => Promise<void>) =>
+    call().then(
+      () =>
+        panel.webview.postMessage({
+          type: "commented",
+          id,
+        } satisfies ToWebview),
+      (error: unknown) => {
+        reportError("could not save the comment", error);
+        void panel.webview.postMessage({
+          type: "commented",
+          id,
+          error: error instanceof Error ? error.message : String(error),
+        } satisfies ToWebview);
+      },
     );
 
   let generation = 0;
@@ -177,11 +191,9 @@ export async function openReviewPanel(
     panel.webview.onDidReceiveMessage((message: FromWebview) => {
       switch (message.type) {
         case "ready":
-          void panel.webview.postMessage({
-            type: "layout",
-            layout: savedLayout(),
-          } satisfies ToWebview);
+          // Comments before the files, so the webview knows to proxy them when it first draws.
           void showTheme().then(() => {
+            void postComments();
             void panel.webview.postMessage(state);
             postShown();
           });
@@ -208,8 +220,21 @@ export async function openReviewPanel(
           shown = message.path;
           shownChanged();
           return;
-        case "layout":
-          void layouts?.update(layoutKey, message.layout);
+        case "comment":
+          if (comments)
+            void answer(message.id, () =>
+              comments[message.how](message.anchor, message.body),
+            );
+          return;
+        case "reply":
+          if (comments)
+            void answer(message.id, () =>
+              comments[message.how](message.thread, message.body),
+            );
+          return;
+        case "submitReview":
+          if (comments)
+            void answer(message.id, () => comments.submitReview(message.event));
       }
     }),
     panel.onDidChangeViewState(({ webviewPanel }) => {
@@ -222,6 +247,26 @@ export async function openReviewPanel(
       void showTheme();
     }),
   ];
+  if (comments) {
+    // GitHub keeps the pending review, so another window or github.com may have moved it while this panel was away.
+    const refreshComments = () =>
+      void comments
+        .refresh()
+        .catch((error: unknown) =>
+          outputChannel().appendLine(
+            `[${new Date().toISOString()}] could not refresh the comments: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+          ),
+        );
+    disposables.push(
+      { dispose: comments.subscribe(() => void postComments()) },
+      panel.onDidChangeViewState(({ webviewPanel }) => {
+        if (webviewPanel.active) refreshComments();
+      }),
+      vscode.window.onDidChangeWindowState(({ focused }) => {
+        if (focused && panel.active) refreshComments();
+      }),
+    );
+  }
   if (source.refreshOnSave) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     disposables.push(
@@ -281,7 +326,6 @@ function page(webview: vscode.Webview, script: vscode.Uri): string {
 <span id="position" class="status"></span>
 <button id="next" type="button" class="nav" aria-label="Next file" title="Next file (Alt+Down)" disabled>↓</button>
 <span id="status" class="status" role="status"></span>
-<button id="layout" type="button" class="nav" aria-pressed="true" title="Show both sides in one column (off: side by side)">Unified</button>
 <button id="refresh" type="button" hidden>Refresh</button>
 </header>
 <main id="root"></main>
@@ -296,9 +340,6 @@ body { margin: 0; padding: 0 16px 16px; background: var(--vscode-editor-backgrou
 .bar h1 { margin: 0; font-size: 1.1em; font-weight: 600; }
 .status { color: var(--vscode-descriptionForeground); }
 .status.error { color: var(--vscode-errorForeground); white-space: pre-wrap; }
-#layout { margin-left: auto; }
-#layout[aria-pressed="true"] { color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
-#layout + #refresh { margin-left: 0; }
 #refresh { margin-left: auto;padding: 4px 12px; border: none; border-radius: 2px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); cursor: pointer; }
 #refresh:hover { background: var(--vscode-button-hoverBackground); }
 #refresh:disabled { opacity: 0.5; cursor: default; }

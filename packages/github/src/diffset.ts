@@ -32,6 +32,8 @@ interface CompareFile {
     | "copied"
     | "changed"
     | "unchanged";
+  /** The file's unified diff hunks; GitHub leaves it out for a binary or very large file. */
+  patch?: string;
 }
 
 interface CompareResponse {
@@ -43,7 +45,7 @@ interface CompareResponse {
 export const compareFilesPerPage = 100;
 export const maxCompareFiles = 3000;
 
-async function fetchCompareFiles(
+export async function fetchCompareFiles(
   client: GitHubClient,
   owner: string,
   repo: string,

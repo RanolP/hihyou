@@ -3,7 +3,6 @@ import { type GitHubWebDiffsetId, githubWebHost } from "@hihyou/github";
 import {
   collapseElided,
   type DiffFile,
-  type DiffLayout,
   type DiffsetView,
   diffStyles,
   engineReview,
@@ -16,11 +15,11 @@ import {
 } from "@hihyou/ui";
 import type { App, MountOptions, Mounted } from "./app-api.js";
 
-/** One row of the diffsets panel: the whole pull request, or one of its commits. */
+/** One row of the diffsets panel: one of the pull request's commits. */
 interface Row {
   key: string;
   label: string;
-  description?: string;
+  description: string;
   tooltip?: string;
   id: GitHubWebDiffsetId;
   expanded: boolean;
@@ -43,7 +42,6 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       <span class="hh-meta position"></span>
       <button type="button" class="hh-nav next" aria-label="Next file" title="Next file" disabled>↓</button>
       <span class="hh-meta message" role="status"></span>
-      <button type="button" class="hh-nav layout" aria-pressed="true" title="Show both sides in one column (off: side by side)">Unified</button>
     </header>
     <div class="hh-root"></div>
   </section>
@@ -58,7 +56,6 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   const next = $<HTMLButtonElement>(".next");
   const position = $<HTMLElement>(".position");
   const status = $<HTMLElement>(".message");
-  const layoutButton = $<HTMLButtonElement>(".layout");
   const root = $<HTMLElement>(".hh-root");
 
   const host_ = githubWebHost({ fetch });
@@ -112,25 +109,6 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   previous.addEventListener("click", () => step(-1));
   next.addEventListener("click", () => step(1));
 
-  // GitHub's page origin keeps the choice; storage can be blocked, and then the layout is just not remembered.
-  const layoutKey = "hihyou.layout";
-  let layout: DiffLayout = "unified";
-  try {
-    if (localStorage.getItem(layoutKey) === "split") layout = "split";
-  } catch {}
-  const setLayout = (next: DiffLayout) => {
-    layout = next;
-    layoutButton.setAttribute("aria-pressed", String(next === "unified"));
-    view?.setLayout(next);
-  };
-  setLayout(layout);
-  layoutButton.addEventListener("click", () => {
-    setLayout(layout === "unified" ? "split" : "unified");
-    try {
-      localStorage.setItem(layoutKey, layout);
-    } catch {}
-  });
-
   const replaceFile = (
     path: string,
     change: (file: DiffFile) => Promise<DiffFile | undefined> | DiffFile,
@@ -165,10 +143,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       view = undefined;
       root.textContent = "";
     }
-    title.textContent =
-      row.key === "all"
-        ? `#${page.pull} All changes`
-        : `${row.description} ${row.label}`;
+    title.textContent = `${row.description} ${row.label}`;
     status.textContent = "Loading…";
     status.classList.remove("error");
     drawTree();
@@ -192,7 +167,6 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
             replaceFile(p, (file) => collapseElided(file, elided)),
           onShow: () => updateNav(),
           theme,
-          layout,
         });
       if (path !== undefined) view.show(path);
       updateNav();
@@ -313,26 +287,22 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       const pull = await host_.resolvePull(page.owner, page.repo, page.pull);
       if (disposed) return;
       const { owner, repo } = page;
-      rows = [
-        {
-          key: "all",
-          label: "All changes",
-          id: { owner, repo, pull: page.pull, head: pull.head },
-          expanded: false,
-        },
-        ...pull.commits.toReversed().map((c): Row => ({
-          key: c.sha,
-          label: c.subject,
-          description: c.sha.slice(0, 7),
-          tooltip: `${c.author} · ${new Date(c.date).toLocaleString()}`,
-          id: { owner, repo, commit: c.sha },
-          expanded: false,
-        })),
-      ];
+      rows = pull.commits.toReversed().map((c): Row => ({
+        key: c.sha,
+        label: c.subject,
+        description: c.sha.slice(0, 7),
+        tooltip: `${c.author} · ${new Date(c.date).toLocaleString()}`,
+        id: { owner, repo, commit: c.sha },
+        expanded: false,
+      }));
+      const [newest] = rows;
+      if (!newest) {
+        setsStatus.textContent = "No commits.";
+        return;
+      }
       setsStatus.remove();
-      const all = rows[0] as Row;
-      void expand(all);
-      await open(all);
+      void expand(newest);
+      await open(newest);
     } catch (error) {
       if (disposed) return;
       setsStatus.textContent = "Could not list the commits.";
@@ -403,8 +373,6 @@ const appStyles = `
 .hh-meta.error { color: var(--fgColor-danger, #cf222e); white-space: pre-wrap; }
 .hh-nav { padding: 2px 8px; border: 1px solid var(--borderColor-default, #d0d7de); border-radius: 6px; background: var(--bgColor-muted, #f6f8fa); color: inherit; cursor: pointer; }
 .hh-nav:disabled { opacity: 0.5; cursor: default; }
-.hh-nav.layout { margin-left: auto; }
-.hh-nav.layout[aria-pressed="true"] { background: var(--bgColor-accent-muted, rgb(84 174 255 / 0.15)); border-color: var(--borderColor-accent-emphasis, #0969da); }
 .hh-root { flex: 1; min-height: 0; overflow: auto; }
 `;
 

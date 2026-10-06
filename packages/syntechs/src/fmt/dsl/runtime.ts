@@ -8,15 +8,19 @@ import {
   closeSpan,
   closeState,
   GROUP,
+  IF_FLAT,
   INDENT,
   open,
   openChoice,
   openDead,
   openSpan,
   openState,
+  SOFT,
+  sBreakParent,
   sHardline,
   sJump,
   sLine,
+  sLiteral,
   sText,
   sToken,
 } from "../stream.js";
@@ -200,6 +204,127 @@ export type ParensRule<O = unknown> = (node: number, mode: string, ctx: StreamCt
 
 /** A `when(name)` or `pred(name, ...args)` condition: whether it holds for `node`, given `args`. */
 export type PredicateRule<O = unknown> = (node: number, ctx: StreamCtx<O>, ...args: string[]) => boolean;
+
+/** A `hook(name, ...args)`: the text it prints for `node`, given `args` ("" for none). */
+export type TextRule<O = unknown> = (node: number, ctx: StreamCtx<O>, ...args: string[]) => string;
+
+/** A `fill(words, ...)`'s words of `node`. */
+export type WordsRule<O = unknown> = (node: number, ctx: StreamCtx<O>) => readonly string[];
+
+/** What goes between two items of a `flow`: a line, a soft line, a hard line, or nothing. */
+export type Gap = "line" | "softline" | "hardline" | "";
+/** A `flow`'s `gap`: what goes between items `prev` and `next`. */
+export type GapRule<O = unknown> = (prev: number, next: number, ctx: StreamCtx<O>) => Gap;
+
+/** A `hook`'s or a `fill` word's text: "" prints nothing, and each line break in it is literal (prettier's replaceEndOfLine). */
+export function printText(s: string): void {
+  const parts = s.split("\n");
+  for (let i = 0; i < parts.length; i++) {
+    if (i > 0) {
+      sLiteral(0, "\n");
+      sBreakParent();
+    }
+    const p = parts[i] as string;
+    if (p !== "") sText(p);
+  }
+}
+
+function printGap(g: Gap): void {
+  if (g === "line") sLine(0);
+  else if (g === "softline") sLine(SOFT);
+  else if (g === "hardline") sHardline();
+}
+
+/**
+ * A `flow` (prettier's HTML print/children.js): `items` with `gap` between each two, a text-like item bare and any
+ * other in a group of its own whose leading gap stays flat with the item before and whose trailing gap breaks with
+ * it; a blank line after an item where `blank` holds; every gap broken where `breakAll`. It writes to the stream
+ * itself rather than through a spec's sink, so only a spec writing to the stream uses it.
+ */
+export function printFlow<O>(
+  ctx: StreamCtx<O>,
+  items: readonly number[],
+  gap: GapRule<O>,
+  textLike: (c: number) => boolean,
+  blank: (c: number) => boolean,
+  breakAll: boolean,
+): void {
+  if (breakAll) {
+    sBreakParent();
+    for (let i = 0; i < items.length; i++) {
+      const c = items[i] as number;
+      if (i > 0) {
+        const prev = items[i - 1] as number;
+        const between = gap(prev, c, ctx);
+        if (between !== "") {
+          printGap(between);
+          if (blank(prev)) sHardline();
+        }
+      }
+      ctx.print(c);
+    }
+    return;
+  }
+  const groups: number[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const c = items[i] as number;
+    const prev = i > 0 ? (items[i - 1] as number) : -1;
+    const next = i + 1 < items.length ? (items[i + 1] as number) : -1;
+    if (textLike(c)) {
+      if (prev !== -1 && textLike(prev)) {
+        const between = gap(prev, c, ctx);
+        if (between !== "") {
+          if (blank(prev)) {
+            sHardline();
+            sHardline();
+          } else printGap(between);
+        }
+      }
+      groups.push(-1);
+      ctx.print(c);
+      continue;
+    }
+    const prevBetween: Gap = prev === -1 ? "" : gap(prev, c, ctx);
+    const nextBetween: Gap = next === -1 ? "" : gap(c, next, ctx);
+    let leading: (() => void) | undefined;
+    if (prevBetween !== "") {
+      if (blank(prev)) {
+        sHardline();
+        sHardline();
+      } else if (prevBetween === "hardline") sHardline();
+      else if (textLike(prev)) leading = () => printGap(prevBetween);
+      else {
+        const ref = groups[groups.length - 1] as number;
+        leading = () => {
+          open(IF_FLAT, ref);
+          sLine(SOFT);
+          close();
+        };
+      }
+    }
+    let trailing: Gap = "";
+    let after: (() => void) | undefined;
+    if (nextBetween !== "") {
+      if (blank(c)) {
+        if (textLike(next))
+          after = () => {
+            sHardline();
+            sHardline();
+          };
+      } else if (nextBetween === "hardline") {
+        if (textLike(next)) after = () => sHardline();
+      } else trailing = nextBetween;
+    }
+    open(GROUP);
+    leading?.();
+    groups.push(open(GROUP));
+    ctx.print(c);
+    printGap(trailing);
+    close();
+    close();
+    after?.();
+  }
+}
 
 /**
  * A language's imports, which `lines`'s `imports` option names: the key they sort by, the name each binds, and
@@ -728,26 +853,61 @@ export interface WrittenNest {
 }
 
 /**
- * The children of `node` from child `from` on, each after the separation the source has before it (an `inOrder`'s
- * `written` join): a comment as `ctx.comment` prints it, a named child as its rule does, a token as written, and
- * `nest`'s levels opened and closed between them.
+ * Of a `written` join's `edit`: a token printed as nothing, the separation after it too (`drop`), or after
+ * `before`; or a child the node before it printed already, as a custom rule laying out more than its own node
+ * does, so neither it nor the separation before it prints (`covered`).
  */
-export function printWritten<O>(ctx: StreamCtx<O>, node: number, from = 0, nest?: WrittenNest): void {
+export interface WrittenEdit {
+  readonly drop?: boolean;
+  readonly before?: string;
+  readonly covered?: boolean;
+}
+
+/** A `written` join's `edit` rule: how source node `node` changes, or undefined where it prints as written. */
+export type WrittenEditRule<O = unknown> = (node: number, ctx: StreamCtx<O>) => WrittenEdit | undefined;
+
+/**
+ * The children of `node` from child `from` on, each after the separation the source has before it (an `inOrder`'s
+ * `written` join): a comment as `ctx.comment` prints it, a named child as its rule does, a token as written but
+ * as `edit` changes it, and `nest`'s levels opened and closed between them.
+ */
+export function printWritten<O>(
+  ctx: StreamCtx<O>,
+  node: number,
+  from = 0,
+  nest?: WrittenNest,
+  edit?: WrittenEditRule<O>,
+): void {
   const t = ctx.tree;
-  if (t.count(node) === 0) sToken(node, t.text(node));
+  const token = (leaf: number) => {
+    const e = edit?.(leaf, ctx);
+    if (e?.drop) return;
+    if (e?.before !== undefined) sText(e.before);
+    sToken(leaf, t.text(leaf));
+  };
+  if (t.count(node) === 0) token(node);
   // The separation before the node's first token is its parent's to print; the file's first token has none.
   const own = firstToken(t, node);
   for (let i = from, count = t.count(node); i < count; i++) {
     const c = t.child(node, i);
+    if (edit?.(c, ctx)?.covered) continue;
     const lead = nest !== undefined && t.kindName(c) === nest.kind ? t.text(firstLeaf(t, c)) : undefined;
     if (lead !== undefined && nest?.closes.includes(lead)) close();
     const first = firstToken(t, c);
-    if (first !== NO_NODE && first !== own) writtenGap(t, first);
+    if (first !== NO_NODE && first !== own && !(edit !== undefined && edit(tokenBefore(t, first), ctx)?.drop))
+      writtenGap(t, first);
     if (ctx.isComment(c)) ctx.comment(c);
     else if (t.named(c)) ctx.print(c);
-    else sToken(c, t.text(c));
+    else token(c);
     if (lead !== undefined && nest?.opens.includes(lead)) open(INDENT);
   }
+}
+
+/** The leaf with text before `leaf`, or `NO_NODE` at the file's start. */
+function tokenBefore(t: FormatTree, leaf: number): number {
+  let prev = prevLeaf(t, leaf);
+  while (prev !== NO_NODE && t.text(prev) === "") prev = prevLeaf(t, prev);
+  return prev;
 }
 
 /** The first leaf of `node` with text, or `NO_NODE` where it has none. */

@@ -6,7 +6,7 @@ import { brokenNodes } from "../../fmt/format.js";
 import { type PrettierOptions, prettierDefaults, prettierSettings } from "../../fmt/options.js";
 import { defineLanguage, type Language } from "../../fmt/rules.js";
 import { close, IF_BROKEN, open, sText, withEmbedding } from "../../fmt/stream.js";
-import { printInto } from "../../fmt/stream-format.js";
+import { printInto, type StreamRule } from "../../fmt/stream-format.js";
 import { css } from "../css/fmt.js";
 import { frontMatterMeaning, parseFrontMatter } from "../css/front-matter.js";
 import { language as cssGrammar } from "../css/index.js";
@@ -16,8 +16,18 @@ import { json } from "../json/fmt.js";
 import { language as tsxGrammar, grammar as tsxSpec } from "../tsx/index.js";
 import { language as tsGrammar, grammar as tsSpec } from "../typescript/index.js";
 import { grammar } from "./bundle.js";
+import * as gen from "./fmt.gen.js";
 import { language } from "./index.js";
-import { EVENT_HANDLERS, type EmbeddedLanguage, parseHtml, printHtml, Unsupported, type WhitespaceSensitivity } from "./print.js";
+import {
+  buildHtmlTree,
+  cssCdoComments,
+  EVENT_HANDLERS,
+  type EmbeddedLanguage,
+  htmlRules,
+  parseHtml,
+  Unsupported,
+  type WhitespaceSensitivity,
+} from "./print.js";
 
 // typescript/fmt.ts's formatters, built at first use: the JS formatter embeds this one (a template's HTML), so
 // importing typescript/fmt.ts here would build them before the JS formatter they build from is defined.
@@ -173,149 +183,161 @@ const base = defineLanguage(grammar, {
 });
 
 /**
- * HTML as prettier 3.9.9's printer lays it out (print.ts), whole from the document: the printer builds prettier's
- * own AST and prints comments with the nodes around them, so the core attaches none.
+ * The document: prettier's HTML AST of it (print.ts), laid out by format.ts's rules, which reach the embedded
+ * languages' formatters through these.
+ */
+const printDocument: StreamRule<HtmlOptions> = (node, ctx) => {
+  const text = ctx.tree.text(node);
+  const { printWidth, tabWidth, useTabs, htmlWhitespaceSensitivity } = ctx.options;
+  const embed = (lang: EmbeddedLanguage, source: string) => {
+    const [contentGrammar, formatter] = EMBEDDED[lang]();
+    // A style's `<!-- … -->` before a rule stands as a type selector the CSS formatter prints, then is written
+    // as prettier spells it (`cssCdoComments`).
+    const cdo = lang === "css" && /<!--/.test(source) ? cssCdoComments(source) : undefined;
+    const content = cdo?.rewritten ?? source;
+    let tree = parseTree(contentGrammar, content);
+    if (tree.errorChars > 0 || brokenNodes(tree) !== undefined) throw new Unsupported(`${lang} parse error`);
+    // A legacy `<!--` or `-->` line is a comment to babel, printed as written; the JS formatter leaves an
+    // html_comment out, so it goes through as a `//` comment marked to print without its `//`.
+    const legacy = htmlComments(tree);
+    if (legacy.length > 0) {
+      let rewritten = content;
+      for (const [start, end] of legacy.reverse())
+        rewritten = `${rewritten.slice(0, start)}${LEGACY_MARK}${rewritten.slice(start, end).trimEnd()}${rewritten.slice(end)}`;
+      tree = parseTree(contentGrammar, rewritten);
+      if (tree.errorChars > 0 || brokenNodes(tree) !== undefined) throw new Unsupported(`${lang} parse error`);
+    }
+    const token =
+      legacy.length > 0
+        ? (s: string) => {
+            if (!s.startsWith(LEGACY_MARK)) return false;
+            sText(s.slice(LEGACY_MARK.length));
+            return true;
+          }
+        : cdo !== undefined
+          ? (s: string) => {
+              const i = cdo.marks.indexOf(s);
+              if (i < 0) return false;
+              sText(cdo.texts[i] as string);
+              return true;
+            }
+          : undefined;
+    withEmbedding({ anchor: node, token }, () =>
+      printInto(
+        tree,
+        formatter as unknown as Language<
+          PrettierOptions & { embeddedInHtml: boolean; htmlWhitespaceSensitivity: WhitespaceSensitivity }
+        >,
+        lang === "html"
+          ? ctx.options
+          : lang === "css"
+            ? { printWidth, tabWidth, useTabs, embeddedInHtml: true }
+            : lang === "json"
+              ? { printWidth, tabWidth, useTabs }
+            : // Every option goes on to the script, as prettier's does (`semi`, `singleQuote`), and a JS
+              // template's HTML inside reads `embeddedInHtml` as prettier's __embeddedInHtml.
+              { ...ctx.options, embeddedInHtml: true },
+      ),
+    );
+  };
+  const declarations = (value: string) => {
+    const tree = parseTree(cssGrammar, `a{${value}}`);
+    if (tree.errorChars > 0 || brokenNodes(tree) !== undefined) return undefined;
+    const decls = cssBlockDeclarations(tree);
+    if (decls === undefined) return undefined;
+    const source = `a{${value}}`;
+    return decls.map((d, i) => ({
+      text: tree.text(d).replace(/;$/, ""),
+      blank: i > 0 && /\n[\t\f\r ]*\n/.test(source.slice(tree.end(decls[i - 1] as number), tree.start(d))),
+    }));
+  };
+  const declaration = (decl: string, last: boolean) => {
+    const tree = parseTree(cssGrammar, `a{${decl}}`);
+    const d = cssBlockDeclarations(tree)?.[0];
+    if (d === undefined) throw new Unsupported("style declaration");
+    // The css printer ends each declaration with `;`; print/style.js ends the last one with it only broken.
+    const token = (s: string, at: number) => {
+      // The value sits in double quotes.
+      if (s.includes('"')) {
+        sText(s.replaceAll('"', "&quot;"));
+        return true;
+      }
+      if (s !== ";" || at !== d) return false;
+      if (last) open(IF_BROKEN);
+      sText(";");
+      if (last) close();
+      return true;
+    };
+    withEmbedding({ anchor: node, token }, () =>
+      printInto(tree, css as unknown as Language<PrettierOptions>, { printWidth, tabWidth, useTabs }, d),
+    );
+  };
+  // An inline event handler is a babel program in single quotes; its `;` is left off when the program is
+  // one expression statement, `onclick="f()"`.
+  const eventHandler = (code: string) => {
+    const tree = parseTree(jsGrammar, code);
+    if (tree.errorChars > 0 || brokenNodes(tree) !== undefined) return undefined;
+    const statements: number[] = [];
+    for (let i = 0; i < tree.count(tree.root); i++) {
+      const c = tree.child(tree.root, i);
+      if (tree.kindName(c) !== "comment") statements.push(c);
+    }
+    const only = statements.length === 1 ? statements[0] : undefined;
+    const bare = only !== undefined && tree.kindName(only) === "expression_statement" ? only : undefined;
+    // A directive keeps prettier's own quote preference, double, where a string literal takes single.
+    const directives = new Set<number>();
+    for (const s of statements) {
+      const str = tree.kindName(s) === "expression_statement" && tree.count(s) > 0 ? tree.child(s, 0) : undefined;
+      if (str === undefined || tree.kindName(str) !== "string") break;
+      directives.add(str);
+    }
+    const token = (s: string, at: number) => {
+      if (s === ";" && bare !== undefined && (at === bare || tree.parent(at) === bare)) return true;
+      if (directives.has(at)) {
+        sText(directive(tree.text(at), { singleQuote: false }).replaceAll('"', "&quot;"));
+        return true;
+      }
+      // The value sits in double quotes.
+      if (!s.includes('"')) return false;
+      sText(s.replaceAll('"', "&quot;"));
+      return true;
+    };
+    return () =>
+      withEmbedding({ anchor: node, token }, () =>
+        printInto(tree, javascript as unknown as Language<PrettierOptions & { singleQuote: boolean; semi: boolean }>, {
+          printWidth,
+          tabWidth,
+          useTabs,
+          semi: ctx.options.semi,
+          singleQuote: true,
+        }),
+      );
+  };
+  const atFileStart = ctx.tree.lf(node) === 0 && ctx.tree.col(node) === 0;
+  const embeddedOff = ctx.options.embeddedLanguageFormatting === "off";
+  const root = parseHtml(text, true, atFileStart, htmlWhitespaceSensitivity, embeddedOff, ctx.options.embeddedInJs, ctx.options);
+  const tree = buildHtmlTree(root, text, { embed, declarations, declaration, eventHandler, embeddedOff });
+  withEmbedding({ anchor: node, token: undefined }, () => printInto(tree, htmlAst, ctx.options));
+};
+
+/** format.ts's rules, over the tree print.ts builds: prettier's AST prints its comments as nodes of their own. */
+const htmlAst: Language<HtmlOptions> = {
+  ...base,
+  comments: new Set(),
+  lineComments: new Map(),
+  stream: gen.html<HtmlOptions>(htmlRules),
+};
+
+/**
+ * HTML as prettier 3.9.9's printer lays it out: the document parses into prettier's HTML AST (print.ts), which
+ * format.ts's rules lay out, so the core attaches no comment to tree-sitter-html's tree.
  */
 export const html: Language<HtmlOptions> = {
   ...base,
   comments: new Set(),
   lineComments: new Map(),
   stream: {
-    rules: new Map([
-      [
-        "document",
-        (node, ctx) => {
-          const text = ctx.tree.text(node);
-          const { printWidth, tabWidth, useTabs, bracketSameLine, singleAttributePerLine, htmlWhitespaceSensitivity } =
-            ctx.options;
-          const embed = (lang: EmbeddedLanguage, content: string) => {
-            const [contentGrammar, formatter] = EMBEDDED[lang]();
-            let tree = parseTree(contentGrammar, content);
-            if (tree.errorChars > 0 || brokenNodes(tree) !== undefined) throw new Unsupported(`${lang} parse error`);
-            // A legacy `<!--` or `-->` line is a comment to babel, printed as written; the JS formatter leaves an
-            // html_comment out, so it goes through as a `//` comment marked to print without its `//`.
-            const legacy = htmlComments(tree);
-            if (legacy.length > 0) {
-              let rewritten = content;
-              for (const [start, end] of legacy.reverse())
-                rewritten = `${rewritten.slice(0, start)}${LEGACY_MARK}${rewritten.slice(start, end).trimEnd()}${rewritten.slice(end)}`;
-              tree = parseTree(contentGrammar, rewritten);
-              if (tree.errorChars > 0 || brokenNodes(tree) !== undefined) throw new Unsupported(`${lang} parse error`);
-            }
-            const token =
-              legacy.length === 0
-                ? undefined
-                : (s: string) => {
-                    if (!s.startsWith(LEGACY_MARK)) return false;
-                    sText(s.slice(LEGACY_MARK.length));
-                    return true;
-                  };
-            withEmbedding({ anchor: node, token }, () =>
-              printInto(
-                tree,
-                formatter as unknown as Language<
-                  PrettierOptions & { embeddedInHtml: boolean; htmlWhitespaceSensitivity: WhitespaceSensitivity }
-                >,
-                lang === "html"
-                  ? ctx.options
-                  : lang === "css" || lang === "json"
-                    ? { printWidth, tabWidth, useTabs }
-                    : // Every option goes on to the script, as prettier's does (`semi`, `singleQuote`), and a JS
-                      // template's HTML inside reads `embeddedInHtml` as prettier's __embeddedInHtml.
-                      { ...ctx.options, embeddedInHtml: true },
-              ),
-            );
-          };
-          const declarations = (value: string) => {
-            const tree = parseTree(cssGrammar, `a{${value}}`);
-            if (tree.errorChars > 0 || brokenNodes(tree) !== undefined) return undefined;
-            const decls = cssBlockDeclarations(tree);
-            if (decls === undefined) return undefined;
-            const source = `a{${value}}`;
-            return decls.map((d, i) => ({
-              text: tree.text(d).replace(/;$/, ""),
-              blank: i > 0 && /\n[\t\f\r ]*\n/.test(source.slice(tree.end(decls[i - 1] as number), tree.start(d))),
-            }));
-          };
-          const declaration = (decl: string, last: boolean) => {
-            const tree = parseTree(cssGrammar, `a{${decl}}`);
-            const d = cssBlockDeclarations(tree)?.[0];
-            if (d === undefined) throw new Unsupported("style declaration");
-            // The css printer ends each declaration with `;`; print/style.js ends the last one with it only broken.
-            const token = (s: string, at: number) => {
-              // The value sits in double quotes.
-              if (s.includes('"')) {
-                sText(s.replaceAll('"', "&quot;"));
-                return true;
-              }
-              if (s !== ";" || at !== d) return false;
-              if (last) open(IF_BROKEN);
-              sText(";");
-              if (last) close();
-              return true;
-            };
-            withEmbedding({ anchor: node, token }, () =>
-              printInto(tree, css as unknown as Language<PrettierOptions>, { printWidth, tabWidth, useTabs }, d),
-            );
-          };
-          // An inline event handler is a babel program in single quotes; its `;` is left off when the program is
-          // one expression statement, `onclick="f()"`.
-          const eventHandler = (code: string) => {
-            const tree = parseTree(jsGrammar, code);
-            if (tree.errorChars > 0 || brokenNodes(tree) !== undefined) return undefined;
-            const statements: number[] = [];
-            for (let i = 0; i < tree.count(tree.root); i++) {
-              const c = tree.child(tree.root, i);
-              if (tree.kindName(c) !== "comment") statements.push(c);
-            }
-            const only = statements.length === 1 ? statements[0] : undefined;
-            const bare = only !== undefined && tree.kindName(only) === "expression_statement" ? only : undefined;
-            // A directive keeps prettier's own quote preference, double, where a string literal takes single.
-            const directives = new Set<number>();
-            for (const s of statements) {
-              const str = tree.kindName(s) === "expression_statement" && tree.count(s) > 0 ? tree.child(s, 0) : undefined;
-              if (str === undefined || tree.kindName(str) !== "string") break;
-              directives.add(str);
-            }
-            const token = (s: string, at: number) => {
-              if (s === ";" && bare !== undefined && (at === bare || tree.parent(at) === bare)) return true;
-              if (directives.has(at)) {
-                sText(directive(tree.text(at), { singleQuote: false }).replaceAll('"', "&quot;"));
-                return true;
-              }
-              // The value sits in double quotes.
-              if (!s.includes('"')) return false;
-              sText(s.replaceAll('"', "&quot;"));
-              return true;
-            };
-            return () =>
-              withEmbedding({ anchor: node, token }, () =>
-                printInto(tree, javascript as unknown as Language<PrettierOptions & { singleQuote: boolean; semi: boolean }>, {
-                  printWidth,
-                  tabWidth,
-                  useTabs,
-                  semi: ctx.options.semi,
-                  singleQuote: true,
-                }),
-              );
-          };
-          const atFileStart =ctx.tree.lf(node) === 0 && ctx.tree.col(node) === 0;
-          const embeddedOff = ctx.options.embeddedLanguageFormatting === "off";
-          const inJs = ctx.options.embeddedInJs;
-          printHtml(parseHtml(text, true, atFileStart, htmlWhitespaceSensitivity, embeddedOff, inJs, ctx.options), text, {
-            embeddedOff,
-            text: sText,
-            tabWidth,
-            bracketSameLine,
-            singleAttributePerLine,
-            embed,
-            declarations,
-            declaration,
-            eventHandler,
-          });
-        },
-      ],
-    ]),
+    rules: new Map([["document", printDocument]]),
     lists: new Set(),
     // A blank file prints as "".
     finalLine: ({ tree }) => tree.count(tree.root) > 0,

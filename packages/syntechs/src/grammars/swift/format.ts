@@ -9,7 +9,7 @@ import type { SwiftOptions } from "./fmt.js";
 const format = defineFormat<typeof grammar, SwiftOptions>();
 
 /**
- * The children as the source separates them. Where fmt.ts finds the file's `#if` bodies flush with their
+ * The children as the source separates them, but for the tokens fmt.ts finds swift-format's rules change. Where fmt.ts finds the file's `#if` bodies flush with their
  * directives (as Xcode writes them), each body goes a level in, as swift-format indents it.
  */
 const written = inOrder({
@@ -20,10 +20,14 @@ const written = inOrder({
     closes: ["#elseif", "#else", "#endif"],
     when: when("flushConditionals"),
   },
+  // The tokens swift-format's rules drop or add a keyword before (fmt.ts: an extension's access level moved onto
+  // its members, a case pattern's `let` onto each binding).
+  edit: "tokenEdit",
 });
 /** A statement fmt.ts lays out (pretty.ts's printer, through the body's `{`), else as written. */
 const statement = () => either(when("laidOut"), custom("layOut"), written);
-const keep = () => written;
+// Any node may be one fmt.ts lays out: a dictionary element's key, say, as well as a statement.
+const keep = () => statement();
 const token = () => verbatim;
 
 export const swift = format({

@@ -1,5 +1,5 @@
-// The scorecard's numbers, read at build time from the JSON the syntechs conformance and bench scripts write
-// with `--json` (CI runs both, then builds this site). Nothing here is typed in by hand: without both files the
+// The scorecard's numbers, read at build time from the JSON the syntechs conformance, bench and highlight bench
+// scripts write with `--json` (CI runs all three, then builds this site). Nothing here is typed in by hand: without every file the
 // build fails rather than publishing a stale or empty table.
 
 import { existsSync, readFileSync } from "node:fs";
@@ -35,19 +35,34 @@ interface Bench {
   }[];
 }
 
+/** What `highlight/bench.node.js --json` writes: each language's highlighting totals against shiki. */
+interface Highlight {
+  commit: string;
+  date: string;
+  tools: Record<string, string>;
+  groups: {
+    id: string;
+    ratio: { shiki: number };
+  }[];
+}
+
 export interface ScorecardRow {
   language: string;
   reference: string;
-  compatibility: string;
-  vsReference: string;
-  vsOxfmt: string;
-  refused: string;
+  /** The fixtures printed byte-identical to the reference; null where the language has no formatter yet. */
+  score: { passed: number; total: number; refused: number } | null;
+  /**
+   * The measured ratios, for charts. `reference` and `oxfmt` are syntechs' formatting time over that tool's
+   * (below 1 is faster); `shiki` is the other way round, shiki's highlighting time over syntechs' (above 1 is
+   * faster), and absent where syntechs has no highlighter for the language.
+   */
+  ratio: { reference: number | null; oxfmt: number | null; shiki?: number };
 }
 
 export interface Scorecard {
   commit: string;
   date: string;
-  /** The tool versions the speed columns were timed against. */
+  /** The tool versions the speed graphs were timed against. */
   benchTools: string;
   rows: ScorecardRow[];
 }
@@ -55,22 +70,11 @@ export interface Scorecard {
 declare const data: Scorecard;
 export { data };
 
-const percent = (passed: number, total: number) =>
-  total === 0 ? "-" : `${((passed / total) * 100).toFixed(2)}%`;
-
-/** syntechs' time over the other tool's, as "2.1x faster" or "1.4x slower". */
-const speed = (ratio: number | null | undefined) =>
-  ratio == null
-    ? "-"
-    : ratio <= 1
-      ? `${(1 / ratio).toFixed(1)}x faster`
-      : `${ratio.toFixed(1)}x slower`;
-
 function readResult<T>(dir: string, file: string): T {
   const path = join(dir, file);
   if (!existsSync(path))
     throw new Error(
-      `scorecard: ${path} is missing (SCORECARD_DIR=${dir}); write it with syntechs' ${file.replace(".json", "")}.node.js --json`,
+      `scorecard: ${path} is missing (SCORECARD_DIR=${dir}); write it with syntechs' ${file === "highlight.json" ? "highlight/bench" : `fmt/${file.replace(".json", "")}`}.node.js --json`,
     );
   return JSON.parse(readFileSync(path, "utf8")) as T;
 }
@@ -80,33 +84,46 @@ export default defineLoader({
     const env = process.env.SCORECARD_DIR;
     if (!env)
       throw new Error(
-        "scorecard: set SCORECARD_DIR to the directory holding conformance.json and bench.json",
+        "scorecard: set SCORECARD_DIR to the directory holding conformance.json, bench.json and highlight.json",
       );
     const dir = resolve(env);
     const conformance = readResult<Conformance>(dir, "conformance.json");
     const bench = readResult<Bench>(dir, "bench.json");
-    if (conformance.commit !== bench.commit)
-      throw new Error(
-        `scorecard: conformance.json measured ${conformance.commit} but bench.json measured ${bench.commit}`,
-      );
+    const highlight = readResult<Highlight>(dir, "highlight.json");
+    for (const [file, commit] of [
+      ["bench.json", bench.commit],
+      ["highlight.json", highlight.commit],
+    ])
+      if (commit !== conformance.commit)
+        throw new Error(
+          `scorecard: conformance.json measured ${conformance.commit} but ${file} measured ${commit}`,
+        );
     const rows = conformance.rows.map((r): ScorecardRow => {
       // A prettier-family row (`js@oxfmt`) is timed by its language's bench group (`js`).
-      const timed = bench.groups.find((g) => g.id === r.id.replace(/@oxfmt$/, ""));
+      const timed = bench.groups.find(
+        (g) => g.id === r.id.replace(/@oxfmt$/, ""),
+      );
+      // The highlighter is per language whatever the reference: `swift@swift-format` is `swift`.
+      const shiki = highlight.groups.find(
+        (g) => g.id === r.id.replace(/@.*$/, ""),
+      )?.ratio.shiki;
       return {
+        ratio: {
+          reference: timed?.ratio.reference ?? null,
+          oxfmt: timed?.ratio.oxfmt ?? null,
+          ...(shiki === undefined ? {} : { shiki }),
+        },
         language: r.id,
         reference: r.reference,
-        compatibility: r.score
-          ? percent(r.score.passed, r.score.total)
-          : "not implemented",
-        vsReference: speed(timed?.ratio.reference),
-        vsOxfmt: speed(timed?.ratio.oxfmt),
-        refused: r.score ? String(r.score.refused) : "-",
+        score: r.score
+          ? { passed: r.score.passed, total: r.score.total, refused: r.score.refused }
+          : null,
       };
     });
     return {
       commit: conformance.commit,
       date: conformance.date,
-      benchTools: Object.values(bench.tools).join(", "),
+      benchTools: [...Object.values(bench.tools), ...Object.values(highlight.tools)].join(", "),
       rows,
     };
   },

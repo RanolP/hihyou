@@ -21,4 +21,4 @@ The manager checks this site for a newer version and updates the script on its o
 
 - This is a stopgap until the store version, and it is built from the same source.
 - Userscript managers keep a script's code and data unencrypted in the browser profile, as they do for every userscript.
-- hihyou remembers only whether it was on and which layout you chose, in github.com's local storage.
+- hihyou remembers only whether it was on, in github.com's local storage.

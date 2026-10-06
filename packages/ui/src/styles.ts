@@ -19,7 +19,6 @@ export const diffStyles = `
   --hh-removed-line: var(--vscode-diffEditor-removedLineBackground, light-dark(rgb(255 0 0 / 0.2), rgb(255 0 0 / 0.2)));
   /* Not diffEditor.move.border: VS Code defaults that to grey, and a moved block should read as yellow. */
   --hh-moved: var(--vscode-editorWarning-foreground, light-dark(#bf8803, #cca700));
-  --hh-empty: var(--vscode-diffEditor-diagonalFill, light-dark(rgb(34 34 34 / 0.12), rgb(204 204 204 / 0.12)));
   --hh-accent: var(--vscode-focusBorder, light-dark(#0969da, #2f81f7));
   --hh-button-fg: var(--vscode-textLink-foreground, light-dark(#0969da, #4daafc));
   --hh-flash: var(--vscode-editor-findMatchHighlightBackground, light-dark(rgb(234 92 0 / 0.33), rgb(234 92 0 / 0.33)));
@@ -80,15 +79,7 @@ export const diffStyles = `
   font-size: var(--hh-mono-size);
   line-height: 1.5;
 }
-.hh-col-code { width: 50%; }
-.hh-head th {
-  text-align: left;
-  font-family: var(--vscode-font-family, system-ui, sans-serif);
-  font-weight: 400;
-  color: var(--hh-muted);
-  padding: 2px 8px;
-  border-bottom: 1px solid var(--hh-border);
-}
+.hh-col-code { width: 100%; }
 .hh-num {
   min-width: 3ch;
   padding: 0 8px;
@@ -104,13 +95,9 @@ export const diffStyles = `
   vertical-align: top;
   tab-size: 4;
 }
-.hh-line > .hh-code:nth-child(2) { border-right: 1px solid var(--hh-border); }
 /* Only the changed nodes get a background; the gutter marks the line. */
 .hh-num.hh-removed { box-shadow: inset 3px 0 var(--hh-removed-fg); }
 .hh-num.hh-added { box-shadow: inset 3px 0 var(--hh-added-fg); }
-.hh-empty {
-  background: repeating-linear-gradient(-45deg, transparent 0 4px, var(--hh-empty) 4px 5px);
-}
 .hh-changed { text-decoration: none; border-radius: 2px; }
 del.hh-changed { background: linear-gradient(var(--hh-removed-text), var(--hh-removed-text)), var(--hh-removed-line); }
 ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-added-text)), var(--hh-added-line); }
@@ -120,9 +107,9 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 .hh-code.hh-moved { box-shadow: inset -2px 0 var(--hh-moved); }
 .hh-num.hh-moved-last { box-shadow: inset 2px -2px var(--hh-moved); }
 .hh-code.hh-moved-last { box-shadow: inset -2px -2px var(--hh-moved); }
-/* Unified: one code column, both gutters before it; the inner gutter carries only the box's bottom edge. */
-.hh-unified .hh-col-code { width: 100%; }
-.hh-unified .hh-head th { padding: 0; border: 0; line-height: 0; }
+/* One code column, both gutters before it; the column headings are for screen readers alone. */
+.hh-head th { padding: 0; border: 0; line-height: 0; }
+/* The inner gutter carries only a moved box's bottom edge. */
 .hh-num.hh-moved-inner { box-shadow: none; }
 .hh-num.hh-moved-inner.hh-moved-last { box-shadow: inset 0 -2px var(--hh-moved); }
 .hh-sign { display: inline-block; width: 2ch; color: var(--hh-muted); user-select: none; }
@@ -212,6 +199,44 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
   background-color: var(--hh-select-primary);
   text-decoration: underline 2px var(--hh-accent);
 }
+/* A Code-Review score: plus solid, minus wavy, and the badge spells the sign, so colour is never the only cue. */
+.hh-diff ::highlight(hh-score-plus) { text-decoration: underline solid 1px var(--hh-added-fg); }
+.hh-diff ::highlight(hh-score-minus) { text-decoration: underline wavy 1px var(--hh-removed-fg); }
+.hh-score-badge {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  padding: 0 3px;
+  font-family: var(--hh-mono);
+  font-size: 0.85em;
+  background: var(--hh-bg);
+  border: 1px solid currentColor;
+  border-radius: 3px;
+}
+.hh-score-plus { color: var(--hh-added-fg); }
+.hh-score-minus { color: var(--hh-removed-fg); }
+.hh-toolbar .hh-score { align-self: center; margin-left: auto; font-weight: 600; }
+/* A comment's anchored text is boxed in the accent colour; the comment itself sits under the anchor's last line. */
+.hh-diff ::highlight(hh-comment) { background-color: var(--hh-select); text-decoration: underline dotted 2px var(--hh-accent); }
+.hh-comment-row > td, .hh-comment-file { padding: 4px 8px; background: var(--hh-header-bg); border-left: 3px solid var(--hh-accent); }
+.hh-comment-author { font-weight: 600; }
+.hh-comment-quote { font-family: var(--hh-mono); color: var(--hh-muted); }
+.hh-comment-body { margin: 2px 0 0; white-space: pre-wrap; }
+.hh-comment-draft textarea { display: block; width: 100%; box-sizing: border-box; min-height: 4em; font: inherit; }
+/* A comment held in a review not yet submitted: dashed, and labelled so it never reads by style alone. */
+.hh-comment-row > td.hh-comment-pending, .hh-comment-file.hh-comment-pending { border-left-style: dashed; }
+/* A reply sits under the comment that began its thread, its own pending state marked the same way. */
+.hh-comment-reply { margin-top: 4px; padding-left: 8px; border-left: 3px solid var(--hh-border); }
+.hh-comment-reply.hh-comment-pending { border-left-style: dashed; }
+.hh-comment-label { float: right; font-size: 0.85em; font-weight: 600; padding: 0 4px; border: 1px solid var(--hh-border); border-radius: 3px; color: var(--hh-muted); }
+.hh-comment-error { margin: 2px 0 0; color: var(--hh-removed-fg); }
+.hh-review-pending { align-self: center; color: var(--hh-muted); }
+.hh-comment-row kbd { font-family: var(--hh-mono); font-size: 0.9em; color: var(--hh-muted); }
+/* The approval stays in view with the toolbar, so scoring far down the diff shows what it did to the Diffset. */
+.hh-bar { position: sticky; top: 0; z-index: 3; background: var(--hh-bg); }
+.hh-approval { display: block; padding: 4px 0; margin: 0 0 4px; font-weight: 600; color: var(--hh-muted); }
+.hh-approval-approved { color: var(--hh-added-fg); }
+.hh-approval-blocked { color: var(--hh-removed-fg); }
 .hh-file-viewed .hh-table { opacity: 0.5; }
 .hh-viewed-toggle { text-decoration: none; color: var(--hh-muted); }
 .hh-viewed-toggle[aria-pressed="true"] { color: var(--hh-added-fg); }
@@ -232,6 +257,57 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 @media (prefers-reduced-motion: reduce) {
   .hh-flash-box { background: var(--hh-flash); animation: hh-fade 1.2s ease-out forwards; }
 }
+/* Every key action as a button, its key as the hint; it stays in reach while a selection does. */
+.hh-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 8px;
+  padding: 4px;
+  background: var(--hh-header-bg);
+  border: 1px solid var(--hh-border);
+  border-radius: 4px;
+}
+.hh-tool {
+  font: inherit;
+  font-size: 0.9em;
+  color: var(--hh-fg);
+  background: var(--hh-bg);
+  border: 1px solid var(--hh-border);
+  border-radius: 3px;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+.hh-tool:hover { border-color: var(--hh-accent); }
+.hh-tool:focus-visible { outline: 1px solid var(--hh-accent); outline-offset: 1px; }
+.hh-toolbar kbd, .hh-keyinfo kbd {
+  font-family: var(--hh-mono);
+  font-size: 0.9em;
+  padding: 0 3px;
+  color: var(--hh-muted);
+  border: 1px solid var(--hh-border);
+  border-radius: 3px;
+}
+/* Kakoune's info box: bottom right, over the code, listing the keys that can follow. */
+.hh-keyinfo {
+  position: sticky;
+  bottom: 8px;
+  z-index: 3;
+  width: fit-content;
+  margin: 0 8px 0 auto;
+  padding: 6px 10px;
+  display: flex;
+  gap: 16px;
+  background: var(--hh-header-bg);
+  border: 1px solid var(--hh-border);
+  border-radius: 4px;
+}
+.hh-keyinfo-title { margin: 0 0 4px; font-size: 1em; font-weight: 600; }
+.hh-keyinfo dl { display: grid; grid-template-columns: auto auto; gap: 2px 8px; margin: 0; }
+.hh-keyinfo dd { margin: 0; }
 .hh-sr {
   position: absolute;
   width: 1px;

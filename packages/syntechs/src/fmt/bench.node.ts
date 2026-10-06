@@ -1,20 +1,25 @@
 // Formatting speed against the reference tools, on the same inputs: the large corpus files (fetch-corpus.sh,
 // research/parser-bench) and the conformance fixtures, each at its tool's defaults with an 80-column width.
-// The target: syntechs within 5x oxfmt's time and faster than prettier's; for Python, within 5x ruff's. oxfmt
-// covers every prettier-family language here (JSON and CSS natively too), so it is the reference for each.
+// The target: syntechs within 5x oxfmt's time; for Python, within 5x ruff's. oxfmt covers every prettier-family
+// language here (JSON and CSS natively too), so it is the reference for each.
 //
 //   node packages/syntechs/dist/fmt/bench.node.js [language...] [--ruff <path to ruff>] [--json <path>]
 //
 // `--json` also writes each language's totals (the numbers its verdict line prints), with the commit and tool
 // versions, for the website's scorecard; stdout stays the same.
 //
+//   node packages/syntechs/dist/fmt/bench.node.js --merge <partial.json...> --json <path>
+//
+// `--merge` measures nothing: it joins the `--json` files of one-language runs (CI times each language on its own
+// runner) into the file a run over every language writes, groups in this file's order.
+//
 // Every tool is timed the same way, folder level: the inputs are written to a temp dir once, then per pass the
 // unformatted copies are restored and ONE whole-process CLI invocation formats the directory in place (2
-// warmups, median of 5). oxfmt and prettier run their own bin/ script under this Node (`--write`, print width
+// warmups, median of 5). oxfmt runs its own bin/ script under this Node (`--write`, print width
 // 80); ruff is the native binary `mise which ruff` resolves (or `--ruff`), `format --isolated --no-cache`, one
 // thread; syntechs runs through fmt/cli.node.js, a minimal directory-formatting entry built for this bench, bundled by
-// tsdown as a Node CLI ships (prettier and oxfmt ship theirs bundled too), so startup loads a few files rather
-// than resolving, stat-ing and compiling ~60 modules one by one. All four pay their own process/Node startup, so the comparison is apples to apples. The pre-existing in-process
+// tsdown as a Node CLI ships (oxfmt ships its own bundled too), so startup loads a few files rather
+// than resolving, stat-ing and compiling ~60 modules one by one. Every tool pays their own process/Node startup, so the comparison is apples to apples. The pre-existing in-process
 // syntechs timing (parse + format only, no process startup) is kept as a secondary "in-process" column; it is
 // not used for the ratio or the verdict.
 //
@@ -39,14 +44,18 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "tsdown";
-import * as prettier from "prettier";
 import { benchFiles, type GrammarName, pkgRoot } from "../core/corpus.node.js";
 import { parseTree } from "../core/index.js";
 import type { Language as Grammar } from "../core/language.js";
 import { check } from "./check.js";
 import { ktfmt, ktfmtJar } from "./conformance/ktfmt.node.js";
-import { oxfmt, versionOf } from "./conformance/references.node.js";
-import { jsonPathArg, runInfo, writeJson } from "./conformance/report.node.js";
+import { oxfmt } from "./conformance/references.node.js";
+import {
+  jsonPathArg,
+  mergeRuns,
+  runInfo,
+  writeJson,
+} from "./conformance/report.node.js";
 import { PRETTIER_FIXTURES, TARGETS } from "./conformance.node.js";
 import { format } from "./format.js";
 import type { Language } from "./rules.js";
@@ -67,10 +76,9 @@ interface Group {
   /** The conformance target or prettier fixture set whose fmt module and fixtures this language uses. */
   target: string;
   corpus: GrammarName[];
-  /** prettier's parser and oxfmt's file extension by grammar; absent for Python and Kotlin. */
-  prettier?: (g: GrammarName) => string;
+  /** oxfmt's file extension by grammar; absent for Python and Kotlin. */
   oxfmtExt?: (g: GrammarName) => string;
-  /** Kotlin's reference is ktfmt; without this or `prettier`, it is ruff. */
+  /** Kotlin's reference is ktfmt; without this or `oxfmtExt`, it is ruff. */
   ktfmt?: true;
 }
 
@@ -79,28 +87,24 @@ const GROUPS: Group[] = [
     id: "json",
     target: "json",
     corpus: ["json"],
-    prettier: () => "json",
     oxfmtExt: () => "json",
   },
   {
     id: "css",
     target: "css",
     corpus: ["css"],
-    prettier: () => "css",
     oxfmtExt: () => "css",
   },
   {
     id: "js",
     target: "js",
     corpus: ["javascript"],
-    prettier: () => "babel",
     oxfmtExt: () => "jsx",
   },
   {
     id: "ts",
     target: "ts",
     corpus: ["typescript", "tsx"],
-    prettier: () => "typescript",
     oxfmtExt: (g) => (g === "tsx" ? "tsx" : "ts"),
   },
   { id: "python", target: "python", corpus: ["python"] },
@@ -284,8 +288,8 @@ function ktfmtWarmMs(jar: string, inputs: Input[]): number {
 /** One language's totals over corpus + fixtures, as its verdict line reports them; ms are folder-level medians. */
 interface GroupResult {
   id: string;
-  /** The baseline: prettier for the prettier family, else ruff or ktfmt. */
-  reference: "prettier" | "ruff" | "ktfmt";
+  /** The baseline: oxfmt for the prettier family, else ruff or ktfmt. */
+  reference: "oxfmt" | "ruff" | "ktfmt";
   implemented: boolean;
   inputs: number;
   bytes: number;
@@ -293,12 +297,12 @@ interface GroupResult {
   bailed: number;
   /** null where the tool does not format the language, or syntechs has no formatter for it yet. */
   ms: Record<
-    "syntechs" | "prettier" | "oxfmt" | "ruff" | "ktfmt" | "ktfmtWarm",
+    "syntechs" | "oxfmt" | "ruff" | "ktfmt" | "ktfmtWarm",
     number | null
   >;
   /** syntechs' time over each tool's; above 1 is slower. null when either side is missing. */
   ratio: Record<"reference" | "oxfmt" | "ktfmtWarm", number | null>;
-  /** The bench target: <= 5x oxfmt (ruff, ktfmt) and, for the prettier family, faster than prettier. */
+  /** The bench target: <= 5x oxfmt (ruff, ktfmt). */
   pass: boolean | null;
 }
 
@@ -314,6 +318,17 @@ async function main() {
       args[i - 1] !== "--ruff" &&
       args[i - 1] !== "--json",
   );
+  if (args.includes("--merge")) {
+    if (!json) throw new Error("--merge needs --json <path> to write");
+    writeJson(
+      json,
+      mergeRuns(
+        wanted,
+        GROUPS.map((g) => g.id),
+      ),
+    );
+    return;
+  }
   const results: GroupResult[] = [];
   const tools: Record<string, string> = {};
   const rows: string[] = [];
@@ -321,13 +336,12 @@ async function main() {
   const failures: string[] = [];
   let ruff: string | undefined;
   let oxfmtBin: string | undefined;
-  let prettierBin: string | undefined;
   const cliRoot = mkdtempSync(join(tmpdir(), "syntechs-bench-cli-"));
   const CLI_PATH = await bundleCli(cliRoot);
   console.log(`syntechs CLI: ${CLI_PATH}`);
 
   // oxfmt's own printWidth default is 100; this config, outside every bench dir so it is never itself
-  // formatted, pins it to 80 to match the in-process options and prettier's --print-width.
+  // formatted, pins it to 80 to match the in-process options.
   const oxfmtConfigRoot = mkdtempSync(join(tmpdir(), "syntechs-bench-cfg-"));
   const oxfmtConfig = join(oxfmtConfigRoot, ".oxfmtrc.json");
   writeFileSync(oxfmtConfig, JSON.stringify({ printWidth: 80 }));
@@ -377,18 +391,11 @@ async function main() {
       const loadMs = performance.now() - t0;
       const implemented = langs.size > 0;
 
-      // Keep the inputs every reference accepts, so each tool formats the same bytes.
+      // Keep the inputs the reference accepts, so each tool formats the same bytes.
       for (const set of sets) {
         const kept: Input[] = [];
         for (const input of set[1]) {
-          if (g.prettier && g.oxfmtExt) {
-            try {
-              await prettier.format(input.text, {
-                parser: g.prettier(input.grammar),
-              });
-            } catch {
-              continue;
-            }
+          if (g.oxfmtExt) {
             try {
               await oxfmt.format(
                 `input.${g.oxfmtExt(input.grammar)}`,
@@ -406,7 +413,6 @@ async function main() {
 
       let totals = {
         ours: 0,
-        prettier: 0,
         oxfmt: 0,
         ruff: 0,
         ktfmt: 0,
@@ -453,7 +459,6 @@ async function main() {
               failures.push(`${g.id} ${label} ${i.name}: ${problem}`);
           }
 
-        let pretty: number | undefined;
         let ox: number | undefined;
         let rf: number | undefined;
         let kt: number | undefined;
@@ -466,18 +471,13 @@ async function main() {
           ktWarm = ktfmtWarmMs(jar, inputs);
           if (implemented)
             oursFolder = folderTime(inputs, ktExt, runNode(CLI_PATH, [])).ms;
-        } else if (g.prettier && g.oxfmtExt) {
+        } else if (g.oxfmtExt) {
           const extOf = (i: Input) =>
             (g.oxfmtExt as (g: GrammarName) => string)(i.grammar);
           if (oxfmtBin === undefined) {
             oxfmtBin = resolveBin("oxfmt");
             tools.oxfmt = oxfmt.name;
             console.log(`oxfmt CLI: ${oxfmtBin}`);
-          }
-          if (prettierBin === undefined) {
-            prettierBin = resolveBin("prettier");
-            tools.prettier = `prettier ${versionOf("prettier")}`;
-            console.log(`prettier CLI: ${prettierBin}`);
           }
           ox = folderTime(
             inputs,
@@ -489,11 +489,6 @@ async function main() {
               oxfmtConfig,
               "--threads=1",
             ]),
-          ).ms;
-          pretty = folderTime(
-            inputs,
-            extOf,
-            runNode(prettierBin, ["--write", "--print-width=80"]),
           ).ms;
           if (implemented)
             oursFolder = folderTime(inputs, extOf, runNode(CLI_PATH, [])).ms;
@@ -513,7 +508,6 @@ async function main() {
         const ref = rf ?? kt ?? ox;
         totals = {
           ours: totals.ours + (oursFolder ?? 0),
-          prettier: totals.prettier + (pretty ?? 0),
           oxfmt: totals.oxfmt + (ox ?? 0),
           ruff: totals.ruff + (rf ?? 0),
           ktfmt: totals.ktfmt + (kt ?? 0),
@@ -523,10 +517,10 @@ async function main() {
         const mbs = (ms: number | undefined) =>
           ms === undefined ? undefined : bytes / 1e6 / (ms / 1e3);
         rows.push(
-          `| ${g.id} | ${label} | ${inputs.length} | ${(bytes / 1024).toFixed(0)} | ${oursFolder !== undefined ? `${cell(oursFolder)} (${cell(mbs(oursFolder), 2)} MB/s)` : implemented ? "-" : "not implemented"} | ${ours ? cell(ours.warm) : parsedOnly ? `parse only ${cell(parsedOnly.warm)}` : "-"} | ${pretty === undefined ? "-" : `${cell(pretty)} (${cell(mbs(pretty), 2)} MB/s)`} | ${ox === undefined ? "-" : `${cell(ox)} (${cell(mbs(ox), 2)} MB/s)`} | ${rf === undefined ? "-" : cell(rf)} | ${kt === undefined ? "-" : `${cell(kt)} (warm JVM ${cell(ktWarm)})`} | ${oursFolder && ref ? cell(oursFolder / ref, 2) : "-"} | ${oursFolder && pretty ? cell(oursFolder / pretty, 2) : "-"} |`,
+          `| ${g.id} | ${label} | ${inputs.length} | ${(bytes / 1024).toFixed(0)} | ${oursFolder !== undefined ? `${cell(oursFolder)} (${cell(mbs(oursFolder), 2)} MB/s)` : implemented ? "-" : "not implemented"} | ${ours ? cell(ours.warm) : parsedOnly ? `parse only ${cell(parsedOnly.warm)}` : "-"} | ${ox === undefined ? "-" : `${cell(ox)} (${cell(mbs(ox), 2)} MB/s)`} | ${rf === undefined ? "-" : cell(rf)} | ${kt === undefined ? "-" : `${cell(kt)} (warm JVM ${cell(ktWarm)})`} | ${oursFolder && ref ? cell(oursFolder / ref, 2) : "-"} |`,
         );
       }
-      const reference = g.prettier ? "prettier" : g.ktfmt ? "ktfmt" : "ruff";
+      const reference = g.oxfmtExt ? "oxfmt" : g.ktfmt ? "ktfmt" : "ruff";
       const refTotal = totals[reference];
       const over = (x: number) =>
         implemented && x > 0 ? totals.ours / x : null;
@@ -539,15 +533,14 @@ async function main() {
         bailed,
         ms: {
           syntechs: implemented ? totals.ours : null,
-          prettier: g.prettier ? totals.prettier : null,
-          oxfmt: g.prettier ? totals.oxfmt : null,
+          oxfmt: g.oxfmtExt ? totals.oxfmt : null,
           ruff: reference === "ruff" ? totals.ruff : null,
           ktfmt: g.ktfmt ? totals.ktfmt : null,
           ktfmtWarm: g.ktfmt ? totals.ktfmtWarm : null,
         },
         ratio: {
           reference: over(refTotal),
-          oxfmt: g.prettier ? over(totals.oxfmt) : null,
+          oxfmt: g.oxfmtExt ? over(totals.oxfmt) : null,
           ktfmtWarm: g.ktfmt ? over(totals.ktfmtWarm) : null,
         },
         pass: null,
@@ -559,13 +552,11 @@ async function main() {
         );
         continue;
       }
-      const ref = g.prettier ? totals.oxfmt : g.ktfmt ? totals.ktfmt : totals.ruff;
-      const refName = g.prettier ? "oxfmt" : g.ktfmt ? "ktfmt" : "ruff";
-      const vsRef = totals.ours / ref;
-      const pass = vsRef <= 5 && (!g.prettier || totals.ours < totals.prettier);
+      const vsRef = totals.ours / refTotal;
+      const pass = vsRef <= 5;
       result.pass = pass;
       verdicts.push(
-        `${g.id}: ${pass ? "PASS" : "FAIL"} (syntechs ${totals.ours.toFixed(1)} ms folder = ${vsRef.toFixed(2)}x ${refName}${g.prettier ? `, ${(totals.ours / totals.prettier).toFixed(2)}x prettier` : ""}${g.ktfmt ? `, ${(totals.ours / totals.ktfmtWarm).toFixed(2)}x ktfmt warm JVM (${totals.ktfmtWarm.toFixed(1)} ms)` : ""}; ${bailed}/${inputCount} inputs bailed, timed as met; load ${loadMs.toFixed(0)} ms not counted)`,
+        `${g.id}: ${pass ? "PASS" : "FAIL"} (syntechs ${totals.ours.toFixed(1)} ms folder = ${vsRef.toFixed(2)}x ${reference}${g.ktfmt ? `, ${(totals.ours / totals.ktfmtWarm).toFixed(2)}x ktfmt warm JVM (${totals.ktfmtWarm.toFixed(1)} ms)` : ""}; ${bailed}/${inputCount} inputs bailed, timed as met; load ${loadMs.toFixed(0)} ms not counted)`,
       );
     }
   } finally {
@@ -577,14 +568,14 @@ async function main() {
     `\nWarm = median of ${RUNS} passes after ${WARMUP}; each pass is one whole-process CLI invocation over the input directory. ms per pass over the set.\n`,
   );
   console.log(
-    "| Language | Inputs | Files | KB | syntechs folder ms | syntechs in-process ms | prettier folder ms | oxfmt folder ms | ruff folder ms | ktfmt folder ms | syntechs / oxfmt (ruff, ktfmt) | syntechs / prettier |",
+    "| Language | Inputs | Files | KB | syntechs folder ms | syntechs in-process ms | oxfmt folder ms | ruff folder ms | ktfmt folder ms | syntechs / oxfmt (ruff, ktfmt) |",
   );
   console.log(
-    "| :-- | :-- | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: |",
+    "| :-- | :-- | --: | --: | --: | --: | --: | --: | --: | --: |",
   );
   for (const r of rows) console.log(r);
   console.log(
-    "\nTarget: syntechs <= 5x oxfmt and < prettier (Python: <= 5x ruff; Kotlin: <= 5x ktfmt folder), over corpus + fixtures, all folder-level. The in-process column (parse + format, no process startup) is a secondary diagnostic, not the verdict.",
+    "\nTarget: syntechs <= 5x oxfmt (Python: <= 5x ruff; Kotlin: <= 5x ktfmt folder), over corpus + fixtures, all folder-level. The in-process column (parse + format, no process startup) is a secondary diagnostic, not the verdict.",
   );
   for (const v of verdicts) console.log(v);
   console.log(

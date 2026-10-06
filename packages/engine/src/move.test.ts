@@ -1,7 +1,10 @@
+import { parseTree } from "syntechs/core";
+import { match, Side } from "syntechs/diff";
 import { expect, test } from "vitest";
 import type { CodeFragment } from "./fragments.js";
 import { syntechsGrammars } from "./grammars.js";
 import { createEngine } from "./host.js";
+import { crossFileMoves } from "./move.js";
 
 const moved = `export function checksum(bytes: Uint8Array): number {
   let h = 0x811c9dc5;
@@ -514,4 +517,98 @@ test("a move within one hunk, a ternary branch swap, is not shown as a move", as
   );
   expect(diffs).toHaveLength(1);
   expect(diffs.flatMap((d) => [d.before.moves, d.after.moves])).toEqual([undefined, undefined]);
+});
+
+const ledgerRest = `export function render(view: View): void {
+  view.clear();
+  view.draw(rows);
+}
+
+export function scale(x: number): number {
+  return x * factor;
+}
+`;
+const audit = `export function audit(entries: Entry[]): string[] {
+  return entries.filter((e) => !e.signed).map((e) => e.id);
+}
+`;
+const total = `export function total(items: Item[]): number {
+  let s = 0;
+  for (const i of items) {
+    if (i.void) continue;
+    s += i.price * i.qty;
+  }
+  log("total", s);
+  return s;
+}
+`;
+const movedSides = async (after: string) =>
+  (
+    await diffOne(
+      "ledger.ts",
+      `${total}\n${ledgerRest}`,
+      `${ledgerRest}\n${audit}\n${after}`,
+    )
+  ).flatMap((d) => [d.before, d.after].filter((s) => s.moves));
+
+// RanolP/hihyou#77: with a name tweaked on every line no statement survived whole to seed the bottom-up phase, and
+// the new `audit` left two candidates for the moved function, so it read as a whole delete plus a whole insert.
+// Every tweak renames a local (`items`, `s`, `i`), so the function equals its new copy once locals are named by
+// their uses, and checkClaim keeps the move it would otherwise demote for having no core.
+test("a function moved past new code with a name tweaked on every line reads as one move, the tweaks marked", async () => {
+  const moved = await movedSides(`export function total(lines: Item[]): number {
+  let sum = 0;
+  for (const l of lines) {
+    if (l.void) continue;
+    sum += l.price * l.qty;
+  }
+  log("total", sum);
+  return sum;
+}
+`);
+  const emphasized = moved
+    .flatMap((s) => s.spans.filter((x) => x.changed).map((x) => x.text))
+    .join("");
+
+  expect(moved.map((s) => sideLines(s).join("\n"))).toEqual([
+    expect.stringContaining("total(items"),
+    expect.stringContaining("total(lines"),
+  ]);
+  expect(emphasized).toContain("sum");
+  expect(emphasized).not.toContain("price");
+});
+
+// Once nothing seeds a moved function, pairing by shape would show a deleted function and an unrelated new one
+// of the same shape as one function that moved.
+test("a deleted function and a new one of the same shape but other content are not paired as a move", async () => {
+  const moved = await movedSides(`export function count(keys: Key[]): number {
+  let n = 1;
+  for (const k of keys) {
+    if (k.hidden) break;
+    n *= k.weight - k.base;
+  }
+  warn("count", n);
+  return n;
+}
+`);
+
+  expect(moved).toEqual([]);
+});
+
+// Ties were broken by taking the first identical candidate: a helper deleted from one file and pasted into two
+// others was claimed as moved into whichever came first.
+test("code deleted from one file and pasted verbatim into two others is not paired as a move", async () => {
+  const grammar = await syntechsGrammars().forPath("a.ts");
+  if (!grammar) throw new Error("no TypeScript grammar");
+  const side = (text: string) => Side.of(parseTree(grammar.language, text));
+  const files: [string, string][] = [
+    [`export const name = "a";\n\n${moved}`, `export const name = "a";\n`],
+    [`export const name = "b";\n`, `export const name = "b";\n\n${moved}`],
+    [`export const name = "c";\n`, `export const name = "c";\n\n${moved}`],
+  ];
+  const { edits } = crossFileMoves(
+    files.map(([before, after]) => match(side(before), side(after))),
+  );
+
+  expect(edits.filter((e) => e.edit.kind === "move")).toEqual([]);
 });

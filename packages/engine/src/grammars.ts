@@ -1,4 +1,5 @@
 import type { Language } from "syntechs/core";
+import type { ScopeRules } from "syntechs/diff";
 import { format, type Language as FormatLanguage } from "syntechs/fmt";
 import type { FormatModule, Grammar, GrammarLoader, HighlightModule } from "./host.js";
 
@@ -34,7 +35,10 @@ export function languageForPath(path: string): LanguageId | undefined {
 }
 
 // Loaded on first use: a grammar bundle is hundreds of KiB, and most diffs touch one or two languages.
-const parsers: Record<LanguageId, () => Promise<{ language: Language }>> = {
+const parsers: Record<
+  LanguageId,
+  () => Promise<{ language: Language; scope?: ScopeRules }>
+> = {
   typescript: () => import("syntechs/grammars/typescript"),
   tsx: () => import("syntechs/grammars/tsx"),
   javascript: () => import("syntechs/grammars/javascript"),
@@ -93,6 +97,16 @@ const declarations: Partial<Record<LanguageId, readonly string[]>> = {
   ],
 };
 
+// The node kinds whose body holds members that read as whole units the way top-level declarations do: a class
+// and its kin, never a function, whose body's declarations are statements of code that stayed.
+const typescriptContainers = ["class_declaration", "abstract_class_declaration", "internal_module", "module"];
+const containers: Partial<Record<LanguageId, readonly string[]>> = {
+  typescript: typescriptContainers,
+  tsx: typescriptContainers,
+  javascript: ["class_declaration"],
+  kotlin: ["class_declaration", "object_declaration", "companion_object"],
+};
+
 /** A formatter bound to options the host passed as a plain object, checked by syntechs at format time. */
 const bind =
   <O>(rules: FormatLanguage<O>) =>
@@ -132,7 +146,7 @@ export function syntechsGrammars(
 ): GrammarLoader {
   const loaded = new Map<LanguageId, Promise<Grammar>>();
   const load = async (id: LanguageId): Promise<Grammar> => {
-    const [{ language }, highlighter] = await Promise.all([
+    const [{ language, scope }, highlighter] = await Promise.all([
       parsers[id](),
       highlighters[id]?.().then(async (m) => {
         await m.highlight.load?.();
@@ -149,6 +163,8 @@ export function syntechsGrammars(
       ...(formatter && { format: formatter }),
       ...(highlighter && { highlight: highlighter.highlight }),
       ...(declarations[id] && { declarations: new Set(declarations[id]) }),
+      ...(containers[id] && { containers: new Set(containers[id]) }),
+      ...(scope && { scope }),
     };
   };
   return {

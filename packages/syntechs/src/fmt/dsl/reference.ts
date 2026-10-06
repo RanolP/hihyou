@@ -443,13 +443,22 @@ export function flatten<O>(
           walk(evalCond(x.when, ctx, n, custom, kindHasFields) ? x.then : x.else);
           return;
         case "layout":
+          if (x.kind === "ifBreak" || x.kind === "ifFlat" || x.kind === "dedentToRoot")
+            throw new Error(`flatten: \`${x.kind}\` is generated only`);
           out.push(x.id === undefined ? { e: "layout", kind: x.kind } : { e: "layout", kind: x.kind, id: x.id });
           walk(x.body);
           out.push({ e: "end" });
           return;
         case "doc":
+          if (x.kind === "literalline") throw new Error("flatten: `literalline` is generated only");
           out.push(x.kind === "line" || x.kind === "hardline" ? { e: x.kind } : { e: "doc", kind: x.kind });
           return;
+        case "hook":
+        case "lit":
+        case "each":
+        case "fill":
+        case "flow":
+          throw new Error(`flatten: \`${x.t}\` is generated only`);
         case "spell": {
           const c = token(x.text);
           if (c === -1) return;

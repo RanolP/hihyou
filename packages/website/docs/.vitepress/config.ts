@@ -8,18 +8,22 @@ const userscript = join(
   "../../../browser/.output/userscript",
 );
 
+const pages = [
+  { text: "Overview", link: "/" },
+  { text: "The Interface", link: "/the-interface" },
+  { text: "Reviewing Small Diffs Easily", link: "/reviewing-small-diffs-easily" },
+  { text: "Userscript", link: "/userscript" },
+];
+
 export default defineConfig({
-  title: "syntechs",
-  description:
-    "A parser and formatter in pure TypeScript that runs in the browser, scored against prettier, ruff and ktfmt.",
+  title: "hihyou",
+  description: "Review the diff, not the pull request or the commit.",
   // GitHub Pages serves the project site under the repository name.
   base: "/hihyou/",
   cleanUrls: true,
   themeConfig: {
-    nav: [
-      { text: "Scorecard", link: "/scorecard" },
-      { text: "Userscript", link: "/userscript" },
-    ],
+    nav: pages,
+    sidebar: pages,
     socialLinks: [{ icon: "github", link: "https://github.com/RanolP/hihyou" }],
   },
   // Served at the site root, where the script's @updateURL and @downloadURL point.

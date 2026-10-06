@@ -215,3 +215,31 @@ test("a fully-replaced member expression renders as one del and one ins, not int
   expect(runs("before")).toEqual(["basicColor.DARKGRAY400", "a"]);
   expect(runs("after")).toEqual(["themedColor.foreground3", "b"]);
 });
+
+// Unchanged fragments carried no outline, so a viewer could neither select context code nor anchor a comment there.
+test("an unchanged fragment outlines the nodes wholly inside it, by line and column into its text", async () => {
+  const blobs: Record<string, string> = { b: before, a: after };
+  const engine = createEngine({
+    grammars: syntechsGrammars(),
+    resolveDiffset: (data: "pr") => ({
+      id: data,
+      changes: [{ path: "shop.ts", before: "b", after: "a" }],
+    }),
+    readBlob: (id) => new TextEncoder().encode(blobs[id] ?? ""),
+  });
+  const [file] = await (await engine.diffset("pr")).diff();
+  const texts = (file?.fragments ?? []).flatMap((f) => {
+    if (f.kind !== "unchanged") return [];
+    const lines = f.spans
+      .map((s) => s.text)
+      .join("")
+      .split("\n");
+    return (f.nodes ?? []).map((n) => {
+      expect(n.changed).toBe(false);
+      return n.start.line === n.end.line
+        ? lines[n.start.line]?.slice(n.start.column, n.end.column)
+        : undefined;
+    });
+  });
+  expect(texts).toContain("let sum = 0;");
+});

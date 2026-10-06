@@ -5,6 +5,14 @@ export {
   readGitHubBlob,
 } from "./blob.js";
 export {
+  githubCommentStore,
+  type GitHubReviewTarget,
+  type HunkLines,
+  hunkLines,
+  placeOf,
+  type ThreadPlace,
+} from "./comments.js";
+export {
   createGitHubClient,
   type GitHubClient,
   type GitHubClientOptions,

@@ -1,0 +1,147 @@
+What graphql-js 17 (prettier 3.9.9's graphql parser) reads and the 2021 upstream grammar does not, each commented
+where it changes: keywords as names (`word`), several directives on a field, descriptions on operations, fragments
+and variables, legacy fragment variables and fragment arguments, escapes in strings, `extend schema` with
+directives alone, directives on a directive definition and `extend directive`. A comma is whitespace (an extra)
+everywhere, so no rule lists one.
+
+--- a/grammar.js
++++ b/grammar.js
+@@ -2,8 +2,11 @@
+   name: "graphql",
+ 
+   extras: ($) => [/[\s\uFEFF\u0009\u0020\u000A\u000D]/, $.comma, $.comment],
+ 
++  // A keyword where a name stands is a name: a field `type`, an argument `on`.
++  word: ($) => $.name,
++
+   rules: {
+     source_file: ($) => $.document,
+     document: ($) => repeat1($.definition),
+     definition: ($) =>
+@@ -15,9 +18,13 @@
+     executable_definition: ($) =>
+       choice($.operation_definition, $.fragment_definition),
+     type_system_definition: ($) =>
+       choice($.schema_definition, $.type_definition, $.directive_definition),
+-    type_system_extension: ($) => choice($.schema_extension, $.type_extension),
++    type_system_extension: ($) =>
++      choice($.schema_extension, $.type_extension, $.directive_extension),
++    // graphql-js 17: `extend directive @a @b`.
++    directive_extension: ($) =>
++      prec.right(seq("extend", "directive", "@", $.name, $.directives)),
+     schema_definition: ($) =>
+       seq(
+         optional($.description),
+         "schema",
+@@ -25,16 +32,17 @@
+         "{",
+         repeat1($.root_operation_type_definition),
+         "}"
+       ),
++    // graphql-js: directives, operation types or both.
+     schema_extension: ($) =>
+-      seq(
+-        "extend",
+-        "schema",
+-        optional($.directives),
+-        "{",
+-        $.root_operation_type_definition,
+-        "}"
++      prec.right(
++        seq(
++          "extend",
++          "schema",
++          optional($.directives),
++          optional(seq("{", repeat1($.root_operation_type_definition), "}"))
++        )
+       ),
+     type_extension: ($) =>
+       choice(
+         $.scalar_type_extension,
+@@ -167,8 +175,10 @@
+     operation_definition: ($) =>
+       choice(
+         $.selection_set,
+         seq(
++          // graphql-js 17's descriptions on executable definitions.
++          optional($.description),
+           $.operation_type,
+           optional($.name),
+           optional($.variable_definitions),
+           optional($.directives),
+@@ -243,23 +253,23 @@
+       ),
+     variable_definitions: ($) => seq("(", repeat1($.variable_definition), ")"),
+     variable_definition: ($) =>
+       seq(
++        optional($.description),
+         $.variable,
+         ":",
+         $.type,
+         optional($.default_value),
+-        optional($.directives),
+-        optional($.comma)
++        optional($.directives)
+       ),
+     selection_set: ($) => seq("{", repeat1($.selection), "}"),
+     selection: ($) => choice($.field, $.inline_fragment, $.fragment_spread),
+     field: ($) =>
+       seq(
+         optional($.alias),
+         $.name,
+         optional($.arguments),
+-        optional($.directive),
++        optional($.directives),
+         optional($.selection_set)
+       ),
+     alias: ($) => seq($.name, ":"),
+     arguments: ($) => seq("(", repeat1($.argument), ")"),
+@@ -276,12 +286,13 @@
+         $.list_value,
+         $.object_value
+       ),
+     variable: ($) => seq("$", $.name),
++    // One token each, escapes included: a block string ends at the first `"""` not escaped by a backslash.
+     string_value: ($) =>
+       choice(
+-        seq('"""', /([^"]|\n|""?[^"])*/, '"""'),
+-        seq('"', /[^"\\\n]*/, '"')
++        token(seq('"""', repeat(choice(/[^"\\]/, /"[^"]/, /""[^"]/, /\\"""/, /\\/)), '"""')),
++        token(seq('"', repeat(choice(/[^"\\\n]/, /\\./)), '"'))
+       ),
+     int_value: ($) => /-?(0|[1-9][0-9]*)/,
+     float_value: ($) =>
+       token(
+@@ -298,14 +309,19 @@
+     null_value: ($) => "null",
+     enum_value: ($) => $.name,
+     list_value: ($) => seq("[", repeat($.value), "]"),
+     object_value: ($) => seq("{", repeat($.object_field), "}"),
+-    object_field: ($) => seq($.name, ":", $.value, optional($.comma)),
+-    fragment_spread: ($) => seq("...", $.fragment_name, optional($.directives)),
++    object_field: ($) => seq($.name, ":", $.value),
++    // graphql-js's experimental fragment arguments: `...F(a: 1)`.
++    fragment_spread: ($) =>
++      seq("...", $.fragment_name, optional($.arguments), optional($.directives)),
+     fragment_definition: ($) =>
+       seq(
++        optional($.description),
+         "fragment",
+         $.fragment_name,
++        // graphql-js's legacy fragment variables and experimental fragment arguments.
++        optional($.variable_definitions),
+         $.type_condition,
+         optional($.directives),
+         $.selection_set
+       ),
+@@ -328,8 +344,10 @@
+           "directive",
+           "@",
+           $.name,
+           optional($.arguments_definition),
++          // graphql-js 17's directives on a directive definition.
++          optional($.directives),
+           optional("repeatable"),
+           "on",
+           $.directive_locations
+         )

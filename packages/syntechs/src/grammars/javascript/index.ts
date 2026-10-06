@@ -9,3 +9,4 @@ export const language: Language = loadLanguage(
   createScanner,
 );
 export { grammar };
+export { scope } from "./scope.js";

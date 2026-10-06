@@ -5,13 +5,21 @@
 export const GRAMMARS: Record<string, { src: string; comments: string[] }> = {
   json: { src: "tree-sitter-json/src", comments: ["comment"] },
   css: { src: "tree-sitter-css/src", comments: ["comment"] },
+  graphql: { src: "tree-sitter-graphql/src", comments: ["comment"] },
   html: { src: "tree-sitter-html/src", comments: ["comment"] },
-  javascript: { src: "tree-sitter-javascript/src", comments: ["comment"] },
+  // `html_comment` is Annex B's `<!--` and a line-leading `-->`, each a comment to the end of its line.
+  javascript: {
+    src: "tree-sitter-javascript/src",
+    comments: ["comment", "html_comment"],
+  },
   typescript: {
     src: "tree-sitter-typescript/typescript/src",
-    comments: ["comment"],
+    comments: ["comment", "html_comment"],
   },
-  tsx: { src: "tree-sitter-typescript/tsx/src", comments: ["comment"] },
+  tsx: {
+    src: "tree-sitter-typescript/tsx/src",
+    comments: ["comment", "html_comment"],
+  },
   python: { src: "tree-sitter-python/src", comments: ["comment"] },
   kotlin: {
     src: "tree-sitter-kotlin/src",

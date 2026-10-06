@@ -1,7 +1,6 @@
 import { expect, test } from "vitest";
 import {
   movePair,
-  pairSplitRows,
   pairSubject,
   pairUnifiedRows,
   type SideRef,
@@ -77,22 +76,10 @@ test("viewing a cross-file move in the source file marks it viewed in the target
   expect(store.get(plainKeyOf(pairSubject(fromTarget)))).toBe(true);
 });
 
-const text = (spans: { text: string }[]) => spans.map((s) => s.text).join("");
-
 // The expansion reads the other file's half: without it a focused block shows only the lines already on screen.
-test("focusing a cross-file moved block renders the counterpart lines: split side by side, unified as an inner diff", () => {
+test("focusing a cross-file moved block renders the counterpart lines as an inner diff", () => {
   const pair = movePair(files, source);
   if (!pair) throw new Error("pair not found");
-  expect(
-    pairSplitRows(pair).map((r) => [
-      r.before && `${r.before.line} ${text(r.before.spans)}`,
-      r.after && `${r.after.line} ${text(r.after.spans)}`,
-    ]),
-  ).toEqual([
-    ["3 function trim(s) {", "1 function trim(s) {"],
-    ["4   return s.trim();", "2   return s.trimEnd();"],
-    ["5 }", "3 }"],
-  ]);
   const unified = pairUnifiedRows(pair);
   expect(
     unified.map((r) =>

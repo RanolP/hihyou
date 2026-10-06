@@ -4,6 +4,7 @@ import {
   atomIndex,
   atomViewed,
   type NodeOutline,
+  nodeScore,
   type Target,
   viewedOf,
 } from "./atoms.js";
@@ -16,7 +17,7 @@ import {
   modalKey,
   selectAt,
 } from "./modal.js";
-import { plainKeyOf, sessionViewedStore } from "./viewed.js";
+import { plainKeyOf, sessionScoreStore, sessionViewedStore } from "./viewed.js";
 
 const n = (
   parent: number,
@@ -24,13 +25,13 @@ const n = (
   endLine: number,
   atom?: string,
 ): NodeOutline => ({
-  steps: [],
+  steps: [line, endLine],
   parent,
   kind: "node",
   start: { line, column: 0 },
   end: { line: endLine, column: 0 },
   changed: atom !== undefined,
-  hash: "",
+  hash: atom ?? "",
   ...(atom === undefined ? {} : { atom }),
 });
 const side = (nodes: NodeOutline[]): Side => ({
@@ -178,6 +179,22 @@ test("j/k visit each atom in document order, ]/[ only the unviewed ones", () => 
   ]);
 });
 
+// Clicks skipped unchanged nodes, so a click on a declaration's own keyword or name picked the hunk or an inner edit.
+test("a click selects the innermost node at the point, changed or not", () => {
+  const click = (line: number) =>
+    selectAt(emptyModal, index, {
+      file: 0,
+      fragment: 1,
+      side: "before",
+      line,
+      column: 2,
+    }).selections;
+  expect(click(0)).toEqual([nd(0, 1, "before", 0)]);
+  expect(click(1)).toEqual([nd(0, 1, "before", 1)]);
+  expect(click(2)).toEqual([nd(0, 1, "before", 2)]);
+  expect(click(9)).toEqual([{ kind: "hunk", file: 0, fragment: 1 }]);
+});
+
 /** A root and document that hold only what the binding reads, with focus set by hand. */
 function fakeRoot() {
   const inside = {
@@ -243,4 +260,130 @@ test("keys are ignored while focus is outside the root or a modifier is held", (
   expect(doc.activeElement).toBe(outside);
   key("j");
   expect(modal.state().selections).toEqual([nd(0, 1, "before", 2)]);
+});
+
+const [u1, d1, mv] = [
+  nd(0, 1, "before", 2),
+  nd(0, 1, "before", 3),
+  nd(0, 1, "before", 5),
+];
+
+// Adding from the first selection instead of the primary made J re-add the same stop, and K/N then moved from it.
+test("J/K/N add the motion's target from the primary and make it primary; a duplicate only becomes primary", () => {
+  expect(press(emptyModal, "J")).toMatchObject({
+    selections: [u1],
+    primary: 0,
+  });
+  const three = press(at(u1), "JJ");
+  expect(three).toMatchObject({ selections: [u1, d1, mv], primary: 2 });
+  expect(press(three, "K")).toMatchObject({
+    selections: [u1, d1, mv],
+    primary: 1,
+  });
+  expect(press(at(u1), "N")).toMatchObject({
+    selections: [u1, d1],
+    primary: 1,
+  });
+});
+
+// The primary ran past the end of the list, so v and K acted on nothing.
+test(") and ( rotate the primary and wrap around both ends", () => {
+  const s: ModalState = { ...emptyModal, selections: [u1, d1, mv], primary: 2 };
+  expect(press(s, ")").primary).toBe(0);
+  expect(press(s, "))").primary).toBe(1);
+  expect(press({ ...s, primary: 0 }, "(").primary).toBe(2);
+});
+
+// Dropping the primary left an index past the end, or emptied the selections entirely.
+test("- drops the primary, the next selection takes over, and the last one stays", () => {
+  const s: ModalState = { ...emptyModal, selections: [u1, d1, mv], primary: 1 };
+  expect(press(s, "-")).toMatchObject({ selections: [u1, mv], primary: 1 });
+  expect(press({ ...s, primary: 2 }, "-")).toMatchObject({
+    selections: [u1, d1],
+    primary: 0,
+  });
+  expect(press(at(u1), "-").selections).toEqual([u1]);
+});
+
+// Review keys fired inside a comment box, so typing "j" moved the selection instead of writing the letter.
+test("a focused field inside the root puts the editor in insert mode, and Escape blurs it back to normal", () => {
+  const { root, doc, inside, outside, key } = fakeRoot();
+  const field = {
+    tagName: "TEXTAREA",
+    blur: () => (doc.activeElement = outside),
+  } as unknown as Element;
+  root.contains = (o) => o === inside || o === field;
+  const modal = bindModal(root, { index, viewed: sessionViewedStore() });
+  doc.activeElement = field;
+  key("j");
+  expect(modal.state()).toMatchObject({ mode: "insert", selections: [] });
+  key("Escape");
+  expect(modal.state().mode).toBe("normal");
+  expect(doc.activeElement).toBe(outside);
+  doc.activeElement = inside;
+  key("j");
+  expect(modal.state().selections).toEqual([u1]);
+});
+
+// A toolbar button that skipped the binding's effect handling changed the selection but never wrote "viewed".
+test("press runs a key through the binding, writing viewed, whatever holds focus", () => {
+  const { root } = fakeRoot();
+  const store = sessionViewedStore({ device: "d" });
+  const modal = bindModal(root, { index, viewed: store });
+  modal.set(at(d1));
+  expect(modal.press("z")).toBe(false);
+  expect(modal.press("v")).toBe(true);
+  expect(viewedOf(index, d1, atomViewed(store, plainKeyOf))).toBe(true);
+});
+
+const nr = (node: number) =>
+  ({ file: 0, fragment: 1, side: "before", node }) as const;
+
+// A score on a hunk or file selection would land on no node, or `s 2` would score only the primary.
+test("s 2 scores every node selection and skips hunks", () => {
+  const hunk: Target = { kind: "hunk", file: 0, fragment: 1 };
+  const s = press({ ...emptyModal, selections: [u1, hunk, mv] }, "s");
+  expect(s.pending).toBe("s");
+  const t = modalKey(s, "2", ctxWith());
+  expect(t?.state).toEqual({ ...emptyModal, selections: [u1, hunk, mv] });
+  expect(t?.effects).toEqual([
+    { kind: "setScore", nodes: [nr(2), nr(5)], score: 2 },
+  ]);
+});
+
+// A prefix that stayed pending turned the next motion into a score, or let the stray key move the selection.
+test("a key that is not a score key after s cancels the prefix and does nothing else", () => {
+  expect(modalKey(press(at(u1), "s"), "j", ctxWith())).toEqual({
+    state: at(u1),
+    effects: [],
+  });
+});
+
+// Keyed by file/fragment/node index, a score moved to another node (or vanished) once a redraw reindexed files.
+test("a score is keyed by the node itself, so it survives a rebind onto reindexed files", () => {
+  const { root } = fakeRoot();
+  const scores = sessionScoreStore({ device: "d" });
+  const viewed = sessionViewedStore();
+  const modal = bindModal(root, { index, viewed, scores });
+  modal.set(at(mv));
+  modal.press("s");
+  modal.press("q");
+  modal.dispose();
+  const shifted = atomIndex([{ path: "0.ts", fragments: [] }, ...files]);
+  const scoreOf = nodeScore(shifted, scores, plainKeyOf);
+  expect(scoreOf({ ...nr(5), file: 1 })).toBe(-1);
+  expect(scoreOf({ ...nr(2), file: 1 })).toBe(null);
+});
+
+// The user's rule "점수를 매기지 않고 viewed 처리도 가능하게": viewed must never need, write or clear a score.
+test("v marks a node viewed while its score stays unset", () => {
+  const { root } = fakeRoot();
+  const viewed = sessionViewedStore({ device: "d" });
+  const scores = sessionScoreStore({ device: "d" });
+  const modal = bindModal(root, { index, viewed, scores });
+  modal.set(at(d1));
+  modal.press("v");
+  expect(viewedOf(index, d1, atomViewed(viewed, plainKeyOf))).toBe(true);
+  expect(nodeScore(index, scores, plainKeyOf)(nr(3))).toBe(null);
+  expect(scores.state()).toEqual({});
 });

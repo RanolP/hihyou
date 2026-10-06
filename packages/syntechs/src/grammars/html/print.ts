@@ -1,31 +1,18 @@
-// Prettier 3.9.9's HTML printer (language-html: printer-html.js, print-preprocess.js, print/children.js,
-// print/element.js, print/tag.js, utilities/index.js) with `htmlWhitespaceSensitivity: "css"`, over
-// tree-sitter-html, writing onto the stream. It covers plain elements, text, comments, and a script's or style's
-// content through the caller's `embed`; what it does not cover (a template script, the attributes prettier formats
-// as code, a parse error) throws `Unsupported`, so a caller prints the source as it would without an HTML printer.
+// Prettier 3.9.9's HTML AST (language-html: parser-html.js, print-preprocess.js) over tree-sitter-html, as the tree
+// format.ts lays out (ast.ts), and what its rules read of it that the tree's structure does not say
+// (printer-html.js, print/children.js, print/element.js, print/tag.js, utilities/index.js). What it does not
+// cover (a template script, a parse error) throws `Unsupported`, so a caller prints the source as it would
+// without an HTML printer.
 
+import { NAMED, type Tree, TreeBuilder } from "../../core/arena.js";
 import { parseTree } from "../../core/index.js";
+import type { Gap } from "../../fmt/dsl/runtime.js";
 import { brokenNodes } from "../../fmt/format.js";
 import type { PrettierOptions } from "../../fmt/options.js";
-import {
-  close,
-  FILL,
-  FILL_ITEM,
-  GROUP,
-  IF_BROKEN,
-  IF_FLAT,
-  INDENT,
-  open,
-  openAlign,
-  SOFT,
-  sBreakParent,
-  sHardline,
-  sKeptText,
-  sLine,
-  sLiteral,
-  sText,
-} from "../../fmt/stream.js";
+import { sKeptText } from "../../fmt/stream.js";
+import type { StreamCtx } from "../../fmt/stream-format.js";
 import { frontMatterLines, parseFrontMatter } from "../css/front-matter.js";
+import { language as astLanguage, type Field, type Kind, fieldId, kindId } from "./ast.js";
 import { language } from "./index.js";
 
 export class Unsupported extends Error {}
@@ -992,33 +979,6 @@ function openingTagPrefix(n: Node): string {
   return "";
 }
 
-// --- The printer ---
-
-/** A doc line: prettier's `line`, `softline`, `hardline`, or a literal string ("" for none). */
-type Line = "line" | "softline" | "hardline" | "" | " ";
-
-export interface HtmlPrinter {
-  /** Writes `s`, which may hold the caller's placeholders. */
-  text(s: string): void;
-  readonly tabWidth: number;
-  /** Prettier's options of the same names; off when left out. */
-  readonly bracketSameLine?: boolean;
-  readonly singleAttributePerLine?: boolean;
-  /** Prints a script's or style's content `text` as `language`'s formatter does, throwing where it cannot. */
-  readonly embed?: (language: EmbeddedLanguage, text: string) => void;
-  /** embeddedLanguageFormatting "off": a script's or style's content prints as written. */
-  readonly embeddedOff?: boolean;
-  /**
-   * A `style` value's css declarations, each its source with no `;` and whether a blank line precedes it: undefined
-   * when it does not parse as them.
-   */
-  readonly declarations?: (value: string) => { text: string; blank: boolean }[] | undefined;
-  /** Prints one css declaration from `declarations` as the css formatter does, its `;` only broken if `last`. */
-  readonly declaration?: (text: string, last: boolean) => void;
-  /** Prints an `on*` value `code` as the JS formatter does an inline event handler; undefined when it does not parse. */
-  readonly eventHandler?: (code: string) => (() => void) | undefined;
-}
-
 export type EmbeddedLanguage = "babel" | "typescript" | "tsx" | "json" | "css" | "html";
 
 const attr = (n: Node, name: string) => n.attrs.find((a) => a.rawName.toLowerCase() === name);
@@ -1033,11 +993,14 @@ function embeddedLanguage(n: Node): EmbeddedLanguage | "raw" | undefined {
   if ((n.name !== "script" && n.name !== "style") || n.value.trim() === "") return undefined;
   const lang = attr(n, "lang")?.value?.toLowerCase();
   if (n.name === "style") {
-    if (lang === undefined || lang === "css" || lang === "postcss")
-      // Content oxfmt's CSS parser rejects prints as written: bare words (svgo's `…` placeholder), or one CDATA
-      // section (an SVG's `<style><![CDATA[...]]></style>`), which the parser reads as an unclosed selector.
-      // Other content it rejects is refused here, since what it accepts is not known.
+    if (lang === undefined || lang === "css" || lang === "postcss") {
+      // Content oxfmt's CSS parser rejects prints as written: bare words (svgo's `…` placeholder), one CDATA
+      // section (an SVG's `<style><![CDATA[...]]></style>`), which the parser reads as an unclosed selector, or a
+      // `<!--` or `-->` no rule follows (`cssCdoComments`). Other content it rejects is refused here, since what it
+      // accepts is not known.
+      if (/<!--|-->/.test(n.value) && cssCdoComments(n.value) === undefined) return "raw";
       return /^[^{}:;@/\\"'(),[\]<>]+$|^<!\[CDATA\[[^]*?\]\]>$/.test(n.value.trim()) ? "raw" : "css";
+    }
     if (lang === "scss" || lang === "less") throw new Unsupported(`style lang ${lang}`);
     return "raw";
   }
@@ -1087,111 +1050,342 @@ function rawLines(value: string): string[] {
   return indent === Number.POSITIVE_INFINITY ? lines : lines.map((l) => l.slice(indent));
 }
 
-/** Prints `root` (from `parseHtml`) as prettier's `group(printChildren(root))`, without its final hardline. */
-export function printHtml(root: Node, text: string, out: HtmlPrinter): void {
-  new Printer(text, new Lines(text), out).root(root);
-}
-
 /** utilities/index.js's hasPrettierIgnore: the node right after a `<!-- prettier-ignore -->`. */
 const hasPrettierIgnore = (n: Node) => n.prev?.kind === "comment" && n.prev.value.slice(4, -3).trim() === "prettier-ignore";
 
-class Printer {
-  constructor(
-    private readonly source: string,
-    private readonly lines: Lines,
-    private readonly out: HtmlPrinter,
-  ) {}
+// --- The tree format.ts lays out ---
 
-  private startLine = (n: Node) => this.lines.at(n.start);
-  private endLine = (n: Node) => this.lines.at(n.end);
+/** What a rule reads of an ast.ts node that the tree does not hold. */
+interface Info {
+  /** The prettier AST node it stands for: a flow child's or the root's. */
+  readonly n?: Node;
+  /** Its `hook("text", key)`s. */
+  readonly text?: Readonly<Record<string, string>>;
+  /** A text's words. */
+  readonly words?: readonly string[];
+  /** A declaration after a blank line. */
+  readonly blank?: boolean;
+  /** A css declaration that is the last of its `style` value. */
+  readonly last?: boolean;
+  /** An embedded_code's language and content. */
+  readonly lang?: EmbeddedLanguage;
+  readonly value?: string;
+  /** A js_program's print. */
+  readonly print?: () => void;
+}
 
-  root(root: Node): void {
-    // printer-html.js's root: the front matter, then a blank line before the content.
-    root.frontMatter?.forEach((l, i) => {
-      if (i > 0) sHardline();
-      // A non-yaml one keeps a line's trailing whitespace as written.
-      if (l !== "") sKeptText(l);
-    });
-    if (root.frontMatter !== undefined && root.children.length > 0) {
-      sHardline();
-      sHardline();
-    }
-    open(GROUP);
-    this.children(root);
-    close();
-  }
+/** What prints another language's tree inside the HTML, as the caller's formatters do. */
+export interface HtmlEmbeds {
+  /** Prints a script's or style's content `text` as `language`'s formatter does, throwing where it cannot. */
+  embed(language: EmbeddedLanguage, text: string): void;
+  /**
+   * A `style` value's css declarations, each its source with no `;` and whether a blank line precedes it: undefined
+   * when it does not parse as them.
+   */
+  declarations(value: string): { text: string; blank: boolean }[] | undefined;
+  /** Prints one css declaration from `declarations` as the css formatter does, its `;` only broken if `last`. */
+  declaration(text: string, last: boolean): void;
+  /** Prints an `on*` value `code` as the JS formatter does an inline event handler; undefined when it does not parse. */
+  eventHandler(code: string): (() => void) | undefined;
+  /** embeddedLanguageFormatting "off": a script's or style's content prints as written. */
+  embeddedOff: boolean;
+}
 
-  private line(l: Line): void {
-    if (l === "line") sLine(0);
-    else if (l === "softline") sLine(SOFT);
-    else if (l === "hardline") sHardline();
-    else if (l !== "") sText(l);
-  }
+interface Side {
+  readonly lines: Lines;
+  readonly info: Map<number, Info>;
+  readonly out: HtmlEmbeds;
+}
 
-  private text(s: string): void {
-    if (s !== "") this.out.text(s);
-  }
+const sides = new WeakMap<object, Side>();
 
-  /** Prettier's replaceEndOfLine: the lines of `s` joined by literal lines. */
-  private literal(s: string): void {
-    const parts = s.split("\n");
-    parts.forEach((p, i) => {
-      if (i > 0) {
-        sLiteral(0, "\n");
-        sBreakParent();
+/**
+ * The ast.ts tree format.ts lays out, from `root` (`parseHtml`'s) of `source`: one node per flow child, the attributes
+ * as prettier's print/attribute/*.js print them, and what a rule reads of them on the side.
+ */
+export function buildHtmlTree(root: Node, source: string, out: HtmlEmbeds): Tree {
+  const b = new TreeBuilder(astLanguage, "");
+  const info = new Map<number, Info>();
+  /** Appends a `kind` node, over the ones appended since `mark` (a leaf without one). */
+  const add = (kind: Kind, field: Field | undefined, mark: number | undefined, i: Info): void => {
+    if (mark === undefined) b.leaf(kindId(kind), fieldId(field), NAMED, 0, 0);
+    else b.inner(kindId(kind), fieldId(field), NAMED, 0, 0, mark);
+    info.set(b.kid(b.mark() - 1), i);
+  };
+
+  const attribute = (a: Attr): void => {
+    const plain = (value: string) => add("plain_attribute", "attrs", undefined, { text: { value } });
+    if (a.value === null) return plain(a.rawName);
+    if (a.bare) return plain(`${a.rawName}=${a.value}`);
+    const open = `${a.rawName}="`;
+    if (a.style) {
+      if (a.value.trim() === "") return plain(`${a.rawName}=""`);
+      const decls = out.declarations(unescapeQuotes(a.value));
+      if (decls !== undefined) {
+        const m = b.mark();
+        decls.forEach((d, i) => {
+          const dm = b.mark();
+          add("css_declaration", "code", undefined, { text: { value: d.text }, last: i === decls.length - 1 });
+          add("declaration", undefined, dm, { blank: d.blank });
+        });
+        return add("style_attribute", "attrs", m, { text: { open } });
       }
-      this.text(p);
+    }
+    if (a.eventHandler && a.value.trim() !== "") {
+      const print = out.eventHandler(unescapeQuotes(a.value));
+      if (print !== undefined) {
+        const m = b.mark();
+        add("js_program", "code", undefined, { print });
+        return add("event_handler_attribute", "attrs", m, { text: { open } });
+      }
+    }
+    if (a.srcset) {
+      // Broken, each descriptor right-aligned on its integer part past the longest url.
+      const candidates = a.srcset;
+      const urlWidth = Math.max(...candidates.map((c) => c.url.length));
+      const intWidth = (d: string) => (d.includes(".") ? d.indexOf(".") : d.length - 1);
+      const maxInt = Math.max(...candidates.map((c) => intWidth(c.descriptor)));
+      const m = b.mark();
+      for (const c of candidates)
+        add("candidate", undefined, undefined, {
+          text: {
+            url: c.url.replaceAll('"', "&quot;"),
+            pad: " ".repeat(urlWidth - c.url.length + 1 + maxInt - intWidth(c.descriptor)),
+            descriptor: c.descriptor,
+          },
+        });
+      return add("srcset_attribute", "attrs", m, { text: { open } });
+    }
+    if (a.allow) {
+      // Each directive's words one space apart.
+      const m = b.mark();
+      for (const d of unescapeQuotes(a.value).split(";")) {
+        const words = d.trim();
+        if (words !== "")
+          add("directive", undefined, undefined, {
+            text: { value: words.split(/[\t\n\f\r ]+/).join(" ").replaceAll('"', "&quot;") },
+          });
+      }
+      return add("allow_attribute", "attrs", m, { text: { open } });
+    }
+    const value = a.formatted ? a.value : unescapeQuotes(a.value);
+    const quote = !a.formatted && value.split('"').length > value.split("'").length ? "'" : '"';
+    add("quoted_attribute", "attrs", undefined, {
+      text: {
+        open: `${a.rawName}=${quote}`,
+        value: quote === '"' ? value.replaceAll('"', "&quot;") : value.replaceAll("'", "&apos;"),
+        close: quote,
+      },
     });
-  }
+  };
 
-  // utilities/index.js's line-break predicates
-  private hasLeadingLineBreak(n: Node): boolean {
-    const parent = n.parent as Node;
-    return (
-      n.hasLeadingSpaces &&
-      (n.prev
-        ? this.endLine(n.prev) < this.startLine(n)
-        : parent.kind === "root" || this.lines.at(parent.startTagEnd) < this.startLine(n))
-    );
+  // print/element.js's printElement, which prints a script's or style's content in its language, and a pre-like
+  // element holding more than text as written (utilities/index.js's shouldPreserveContent).
+  const element = (n: Node): void => {
+    const embedded =
+      out.embeddedOff && (n.name === "script" || n.name === "style") && n.value.trim() !== ""
+        ? "raw"
+        : embeddedLanguage(n);
+    const m = b.mark();
+    for (const a of n.attrs) attribute(a);
+    if (embedded === "raw") {
+      const r = b.mark();
+      for (const l of rawLines(n.value)) add("raw_line", undefined, undefined, { text: { value: l } });
+      add("raw_text", "content", r, {});
+      return add("embedded_element", undefined, m, { n });
+    }
+    if (embedded !== undefined) {
+      add("embedded_code", "content", undefined, { lang: embedded, value: n.value });
+      return add("embedded_element", undefined, m, { n });
+    }
+    const first = firstChild(n);
+    const last = lastChild(n);
+    if (isPreLike(n) && hasNonTextChild(n)) {
+      let value = "";
+      if (n.endTagStart !== -1 && first !== undefined && last !== undefined) {
+        let start = n.startTagEnd;
+        if (needsToBorrowParentOpeningTagEndMarker(first)) start -= openingTagEndMarker(n).length;
+        let end = n.endTagStart;
+        if (needsToBorrowParentClosingTagStartMarker(last)) end += closingTagStartMarker(n).length;
+        value = source.slice(start, end);
+      }
+      return add("preserved_element", undefined, m, { n, text: { value } });
+    }
+    for (const c of n.children) child(c);
+    add("element", undefined, m, { n });
+  };
+
+  const child = (n: Node): void => {
+    if (hasPrettierIgnore(n)) {
+      // print/children.js's printChild: its source, trimmed at the end, less the markers its neighbours borrow.
+      const start =
+        n.start + (n.prev && needsToBorrowNextOpeningTagStartMarker(n.prev) ? openingTagStartMarker(n).length : 0);
+      const end = n.end - (n.next && needsToBorrowPrevClosingTagEndMarker(n.next) ? closingTagEndMarker(n).length : 0);
+      add("ignored", undefined, undefined, { n, text: { value: source.slice(start, end).trimEnd() } });
+    } else if (n.kind === "element" || n.kind === "ieConditionalComment") element(n);
+    else if (n.kind === "text") {
+      const parent = n.parent as Node;
+      const literal = parent.isWhitespaceSensitive && parent.isIndentationSensitive;
+      add("text", undefined, undefined, { n, words: literal ? n.value.split("\n") : n.value.split(/[\t\n\f\r ]+/) });
+    } else if (n.kind === "ieConditionalStartComment" || n.kind === "ieConditionalEndComment")
+      add("ie_conditional_marker", undefined, undefined, { n });
+    else if (n.kind === "docType") add("doc_type", undefined, undefined, { n, text: { value: ` ${n.value}` } });
+    else add("comment", undefined, undefined, { n, text: { value: n.value } });
+  };
+
+  const m = b.mark();
+  if (root.frontMatter !== undefined) {
+    const f = b.mark();
+    for (const l of root.frontMatter) add("front_line", undefined, undefined, { text: { value: l } });
+    add("front_matter", "frontMatter", f, {});
   }
-  private hasTrailingLineBreak(n: Node): boolean {
-    const parent = n.parent as Node;
-    return (
-      n.hasTrailingSpaces &&
-      (n.next
-        ? this.startLine(n.next) > this.endLine(n)
-        : parent.kind === "root" || (parent.endTagStart !== -1 && this.lines.at(parent.endTagStart) > this.endLine(n)))
-    );
+  for (const c of root.children) child(c);
+  add("root", undefined, m, { n: root });
+  const tree = b.finish(0);
+  sides.set(tree, { lines: new Lines(source), info, out });
+  return tree;
+}
+
+type Ctx = StreamCtx<{ tabWidth: number }>;
+
+const sideOf = (ctx: Ctx): Side => sides.get(ctx.tree) as Side;
+const infoOf = (node: number, ctx: Ctx): Info => sideOf(ctx).info.get(node) ?? {};
+const nodeOf = (node: number, ctx: Ctx): Node => infoOf(node, ctx).n as Node;
+
+// utilities/index.js's line-break predicates
+function hasLeadingLineBreak(n: Node, lines: Lines): boolean {
+  const parent = n.parent as Node;
+  return (
+    n.hasLeadingSpaces &&
+    (n.prev
+      ? lines.at(n.prev.end) < lines.at(n.start)
+      : parent.kind === "root" || lines.at(parent.startTagEnd) < lines.at(n.start))
+  );
+}
+function hasTrailingLineBreak(n: Node, lines: Lines): boolean {
+  const parent = n.parent as Node;
+  return (
+    n.hasTrailingSpaces &&
+    (n.next
+      ? lines.at(n.next.start) > lines.at(n.end)
+      : parent.kind === "root" || (parent.endTagStart !== -1 && lines.at(parent.endTagStart) > lines.at(n.end)))
+  );
+}
+const hasSurroundingLineBreak = (n: Node, lines: Lines) =>
+  hasLeadingLineBreak(n, lines) && hasTrailingLineBreak(n, lines);
+const preferHardlineAsSurrounding = (n: Node) =>
+  n.kind === "comment" || n.kind === "ieConditionalComment" || (n.kind === "element" && n.name === "select");
+const preferHardlineAsTrailing = (n: Node, lines: Lines) =>
+  preferHardlineAsSurrounding(n) || (n.kind === "element" && n.name === "br") || hasSurroundingLineBreak(n, lines);
+const preferHardlineAsLeading = (n: Node, lines: Lines) =>
+  preferHardlineAsSurrounding(n) ||
+  (n.prev !== undefined && preferHardlineAsTrailing(n.prev, lines)) ||
+  hasSurroundingLineBreak(n, lines);
+
+const forceBreakChildren = (n: Node) =>
+  n.kind === "element" &&
+  n.children.length > 0 &&
+  (["html", "head", "ul", "ol", "select"].includes(n.name) ||
+    (n.cssDisplay.startsWith("table") && n.cssDisplay !== "table-cell"));
+
+/** print/children.js's printBetweenLine. */
+function betweenLine(prev: Node, next: Node, lines: Lines): Gap {
+  if (isTextLike(prev) && isTextLike(next)) {
+    if (prev.isTrailingSpaceSensitive) {
+      if (prev.hasTrailingSpaces) return preferHardlineAsLeading(next, lines) ? "hardline" : "line";
+      return "";
+    }
+    return preferHardlineAsLeading(next, lines) ? "hardline" : "softline";
   }
-  private hasSurroundingLineBreak = (n: Node) => this.hasLeadingLineBreak(n) && this.hasTrailingLineBreak(n);
-  private preferHardlineAsSurrounding = (n: Node) =>
-    n.kind === "comment" || n.kind === "ieConditionalComment" || (n.kind === "element" && n.name === "select");
-  private preferHardlineAsTrailing = (n: Node) =>
-    this.preferHardlineAsSurrounding(n) || (n.kind === "element" && n.name === "br") || this.hasSurroundingLineBreak(n);
-  private preferHardlineAsLeading = (n: Node) =>
-    this.preferHardlineAsSurrounding(n) ||
-    (n.prev !== undefined && this.preferHardlineAsTrailing(n.prev)) ||
-    this.hasSurroundingLineBreak(n);
+  if (
+    (needsToBorrowNextOpeningTagStartMarker(prev) &&
+      (hasPrettierIgnore(next) ||
+        firstChild(next) !== undefined ||
+        next.isSelfClosing ||
+        (next.kind === "element" && next.attrs.length > 0))) ||
+    (prev.kind === "element" && prev.isSelfClosing && needsToBorrowPrevClosingTagEndMarker(next))
+  )
+    return "";
+  if (next.kind === "comment" && next.isLeadingSpaceSensitive && !next.hasLeadingSpaces) return "softline";
+  const prevLast = lastChild(prev);
+  const prevLastLast = prevLast && lastChild(prevLast);
+  if (
+    !next.isLeadingSpaceSensitive ||
+    preferHardlineAsLeading(next, lines) ||
+    (needsToBorrowPrevClosingTagEndMarker(next) &&
+      prevLast !== undefined &&
+      needsToBorrowParentClosingTagStartMarker(prevLast) &&
+      prevLastLast !== undefined &&
+      needsToBorrowParentClosingTagStartMarker(prevLastLast))
+  )
+    return "hardline";
+  return next.hasLeadingSpaces ? "line" : "softline";
+}
+
+/** Whether the node after `n`, or its parent where it is the last, prints `n`'s closing tag's `>`. */
+const closeEndLent = (n: Node) =>
+  n.next ? needsToBorrowPrevClosingTagEndMarker(n.next) : needsToBorrowLastChildClosingTagEndMarker(n.parent as Node);
+
+/** Which of a tag's markers a neighbour prints, by `pred("lent", which)`. */
+const LENT: Record<string, (n: Node) => boolean> = {
+  openStart: (n) => n.prev !== undefined && needsToBorrowNextOpeningTagStartMarker(n.prev),
+  openEnd: (n) => {
+    const first = firstChild(n);
+    return first !== undefined && needsToBorrowParentOpeningTagEndMarker(first);
+  },
+  closeStart: (n) => {
+    const last = lastChild(n);
+    return last !== undefined && needsToBorrowParentClosingTagStartMarker(last);
+  },
+  closeEnd: closeEndLent,
+  closeEndToNext: (n) => n.next !== undefined && needsToBorrowPrevClosingTagEndMarker(n.next),
+  selfCloseEnd: (n) => n.isSelfClosing && needsToBorrowLastChildClosingTagEndMarker(n.parent as Node),
+};
+
+const MARKERS: Record<string, (n: Node) => string> = {
+  openStart: openingTagStartMarker,
+  openEnd: openingTagEndMarker,
+  closeStart: closingTagStartMarker,
+  closeEnd: closingTagEndMarker,
+  lastChildCloseEnd: (n) =>
+    needsToBorrowLastChildClosingTagEndMarker(n) ? closingTagEndMarker(lastChild(n) as Node) : "",
+};
+
+/** The whitespace around (`leading`, `trailing`) or inside (`dangling`) a node that prints as a line. */
+const SPACES: Record<string, (n: Node) => boolean> = {
+  leading: (n) => n.hasLeadingSpaces && n.isLeadingSpaceSensitive,
+  trailing: (n) => n.hasTrailingSpaces && n.isTrailingSpaceSensitive,
+  dangling: (n) => n.hasDanglingSpaces && n.isDanglingSpaceSensitive,
+};
+const WHICH: Record<string, (n: Node) => Node | undefined> = { first: firstChild, last: lastChild, self: (n) => n };
+
+const isLiteralParent = (n: Node) => n.isWhitespaceSensitive && n.isIndentationSensitive;
+
+/**
+ * format.ts's `pred`s, `hook`s, words, gap and customs: what decides a layout from prettier's AST, which the
+ * tree's structure does not say.
+ */
+export const htmlRules = {
+  textLike: (node: number, ctx: Ctx) => isTextLike(nodeOf(node, ctx)),
   // An implicitly closed element's source span is its start tag alone in angular-html-parser, so the blank line
   // after it counts from there: `<p>a\n<div>` has none, `<p>\na\n<div>` has one.
-  private forceNextEmptyLine = (n: Node) =>
-    n.next !== undefined &&
-    (n.kind === "element" && !n.isSelfClosing && n.endTagStart === -1
-      ? this.lines.at(n.startTagEnd)
-      : this.endLine(n)) +
-      1 <
-      this.startLine(n.next);
-
-  private forceBreakChildren = (n: Node) =>
-    n.kind === "element" &&
-    n.children.length > 0 &&
-    (["html", "head", "ul", "ol", "select"].includes(n.name) ||
-      (n.cssDisplay.startsWith("table") && n.cssDisplay !== "table-cell"));
-
-  private forceBreakContent(n: Node): boolean {
-    const first = firstChild(n);
+  blankAfter: (node: number, ctx: Ctx) => {
+    const n = nodeOf(node, ctx);
+    const { lines } = sideOf(ctx);
     return (
-      this.forceBreakChildren(n) ||
+      n.next !== undefined &&
+      (n.kind === "element" && !n.isSelfClosing && n.endTagStart === -1 ? lines.at(n.startTagEnd) : lines.at(n.end)) +
+        1 <
+        lines.at(n.next.start)
+    );
+  },
+  forceBreakChildren: (node: number, ctx: Ctx) => forceBreakChildren(nodeOf(node, ctx)),
+  forceBreakContent: (node: number, ctx: Ctx) => {
+    const n = nodeOf(node, ctx);
+    const first = firstChild(n);
+    const { lines } = sideOf(ctx);
+    return (
+      forceBreakChildren(n) ||
       (n.kind === "element" &&
         n.children.length > 0 &&
         // Prettier's name drops a namespace: an `html:style` is a `style` here.
@@ -1199,446 +1393,86 @@ class Printer {
       (first !== undefined &&
         first === lastChild(n) &&
         first.kind !== "text" &&
-        this.hasLeadingLineBreak(first) &&
-        (!first.isTrailingSpaceSensitive || this.hasTrailingLineBreak(first)))
+        hasLeadingLineBreak(first, lines) &&
+        (!first.isTrailingSpaceSensitive || hasTrailingLineBreak(first, lines)))
     );
-  }
-
-  // print/children.js
-  private betweenLine(prev: Node, next: Node): Line {
-    if (isTextLike(prev) && isTextLike(next)) {
-      if (prev.isTrailingSpaceSensitive) {
-        if (prev.hasTrailingSpaces) return this.preferHardlineAsLeading(next) ? "hardline" : "line";
-        return "";
-      }
-      return this.preferHardlineAsLeading(next) ? "hardline" : "softline";
-    }
-    if (
-      (needsToBorrowNextOpeningTagStartMarker(prev) &&
-        (hasPrettierIgnore(next) ||
-          firstChild(next) !== undefined ||
-          next.isSelfClosing ||
-          (next.kind === "element" && next.attrs.length > 0))) ||
-      (prev.kind === "element" && prev.isSelfClosing && needsToBorrowPrevClosingTagEndMarker(next))
-    )
-      return "";
-    if (next.kind === "comment" && next.isLeadingSpaceSensitive && !next.hasLeadingSpaces) return "softline";
-    const prevLast = lastChild(prev);
-    const prevLastLast = prevLast && lastChild(prevLast);
-    if (
-      !next.isLeadingSpaceSensitive ||
-      this.preferHardlineAsLeading(next) ||
-      (needsToBorrowPrevClosingTagEndMarker(next) &&
-        prevLast !== undefined &&
-        needsToBorrowParentClosingTagStartMarker(prevLast) &&
-        prevLastLast !== undefined &&
-        needsToBorrowParentClosingTagStartMarker(prevLastLast))
-    )
-      return "hardline";
-    return next.hasLeadingSpaces ? "line" : "softline";
-  }
-
-  private children(n: Node): void {
-    if (this.forceBreakChildren(n)) {
-      sBreakParent();
-      for (const c of n.children) {
-        const between = c.prev ? this.betweenLine(c.prev, c) : "";
-        if (between !== "") {
-          this.line(between);
-          if (this.forceNextEmptyLine(c.prev as Node)) sHardline();
-        }
-        this.node(c);
-      }
-      return;
-    }
-    const groups: number[] = [];
-    for (const c of n.children) {
-      if (isTextLike(c)) {
-        if (c.prev && isTextLike(c.prev)) {
-          const between = this.betweenLine(c.prev, c);
-          if (between !== "") {
-            if (this.forceNextEmptyLine(c.prev)) {
-              sHardline();
-              sHardline();
-            } else this.line(between);
-          }
-        }
-        groups.push(-1);
-        this.node(c);
-        continue;
-      }
-      const prevBetween = c.prev ? this.betweenLine(c.prev, c) : "";
-      const nextBetween = c.next ? this.betweenLine(c, c.next) : "";
-      let leading: (() => void) | undefined;
-      if (prevBetween !== "") {
-        const prev = c.prev as Node;
-        if (this.forceNextEmptyLine(prev)) {
-          sHardline();
-          sHardline();
-        } else if (prevBetween === "hardline") sHardline();
-        else if (isTextLike(prev)) leading = () => this.line(prevBetween);
-        else {
-          const ref = groups[groups.length - 1] as number;
-          leading = () => {
-            open(IF_FLAT, ref);
-            sLine(SOFT);
-            close();
-          };
-        }
-      }
-      let trailing: Line = "";
-      let after: (() => void) | undefined;
-      if (nextBetween !== "") {
-        const next = c.next as Node;
-        if (this.forceNextEmptyLine(c)) {
-          if (isTextLike(next))
-            after = () => {
-              sHardline();
-              sHardline();
-            };
-        } else if (nextBetween === "hardline") {
-          if (isTextLike(next)) after = () => sHardline();
-        } else trailing = nextBetween;
-      }
-      open(GROUP);
-      leading?.();
-      groups.push(open(GROUP));
-      this.node(c);
-      this.line(trailing);
-      close();
-      close();
-      after?.();
-    }
-  }
-
-  private node(n: Node): void {
-    if (hasPrettierIgnore(n)) this.ignored(n);
-    else if (n.kind === "element" || n.kind === "ieConditionalComment") this.element(n);
-    else if (n.kind === "text") this.textNode(n);
-    else if (n.kind === "ieConditionalStartComment" || n.kind === "ieConditionalEndComment") {
-      if (!(n.prev && needsToBorrowNextOpeningTagStartMarker(n.prev))) {
-        this.text(openingTagPrefix(n));
-        this.text(openingTagStartMarker(n));
-      }
-      const borrowed = n.next
-        ? needsToBorrowPrevClosingTagEndMarker(n.next)
-        : needsToBorrowLastChildClosingTagEndMarker(n.parent as Node);
-      if (!borrowed) {
-        this.text(closingTagEndMarker(n));
-        this.text(closingTagSuffix(n));
-      }
-    }
-    else if (n.kind === "docType") {
-      this.text(openingTagPrefix(n));
-      if (!(n.prev && needsToBorrowNextOpeningTagStartMarker(n.prev))) this.text(openingTagStartMarker(n));
-      this.text(` ${n.value}`);
-      if (!(n.next && needsToBorrowPrevClosingTagEndMarker(n.next))) this.text(">");
-      this.text(closingTagSuffix(n));
-    } else {
-      this.text(openingTagPrefix(n));
-      this.literal(n.value);
-      this.text(closingTagSuffix(n));
-    }
-  }
-
-  // print/children.js's printChild for an ignored node: its source, trimmed at the end, less the markers its
-  // neighbours borrow, between the markers it borrows.
-  private ignored(n: Node): void {
-    const start = n.start + (n.prev && needsToBorrowNextOpeningTagStartMarker(n.prev) ? openingTagStartMarker(n).length : 0);
-    const end = n.end - (n.next && needsToBorrowPrevClosingTagEndMarker(n.next) ? closingTagEndMarker(n).length : 0);
-    this.text(openingTagPrefix(n));
-    this.literal(this.source.slice(start, end).trimEnd());
-    this.text(closingTagSuffix(n));
-  }
-
-  // printer-html.js's text: fill(getTextValueParts), the tag prefix and suffix joined to its ends
-  private textNode(n: Node): void {
-    const parent = n.parent as Node;
-    const literal = parent.isWhitespaceSensitive && parent.isIndentationSensitive;
-    const words = literal ? n.value.split("\n") : n.value.split(/[\t\n\f\r ]+/);
-    const prefix = openingTagPrefix(n);
-    const suffix = closingTagSuffix(n);
-    open(FILL);
-    words.forEach((w, i) => {
-      if (i > 0) {
-        if (literal) {
-          sLiteral(0, "\n");
-          sBreakParent();
-        } else sLine(0);
-      }
-      open(FILL_ITEM);
-      if (i === 0) this.text(prefix);
-      this.text(w);
-      if (i === words.length - 1) this.text(suffix);
-      close();
-    });
-    close();
-  }
-
-  // print/tag.js's opening and closing tags
-  private openingTag(n: Node): void {
-    if (!(n.prev && needsToBorrowNextOpeningTagStartMarker(n.prev))) {
-      this.text(openingTagPrefix(n));
-      this.text(openingTagStartMarker(n));
-    }
-    this.attributes(n);
-    const first = firstChild(n);
-    if (!n.isSelfClosing && !(first && needsToBorrowParentOpeningTagEndMarker(first))) this.text(openingTagEndMarker(n));
-  }
-
-  private attributes(n: Node): void {
-    if (n.attrs.length === 0) {
-      if (n.isSelfClosing) this.text(" ");
-      return;
-    }
-    const perLine = this.out.singleAttributePerLine === true && n.attrs.length > 1;
-    open(INDENT);
-    n.attrs.forEach((a, i) => {
-      if (i > 0 && perLine) sHardline();
-      else sLine(0);
-      this.attribute(a);
-    });
-    close();
-    const first = firstChild(n);
-    if (
-      (first && needsToBorrowParentOpeningTagEndMarker(first)) ||
-      (n.isSelfClosing && needsToBorrowLastChildClosingTagEndMarker(n.parent as Node))
-    ) {
-      if (n.isSelfClosing) this.text(" ");
-    } else if (this.out.bracketSameLine) {
-      if (n.isSelfClosing) this.text(" ");
-    } else sLine(n.isSelfClosing ? 0 : SOFT);
-  }
-
-  private attribute(a: Attr): void {
-    if (a.value === null) {
-      this.text(a.rawName);
-      return;
-    }
-    if (a.bare) {
-      this.text(`${a.rawName}=${a.value}`);
-      return;
-    }
-    if (a.style) {
-      const { declarations, declaration } = this.out;
-      if (declarations === undefined || declaration === undefined) throw new Unsupported("style");
-      if (a.value.trim() === "") {
-        this.text(`${a.rawName}=""`);
-        return;
-      }
-      const decls = declarations(unescapeQuotes(a.value));
-      if (decls !== undefined) {
-        // print/style.js: printExpand of the declarations, a line apart, each ending in the `;` `declaration` prints.
-        this.text(`${a.rawName}="`);
-        open(GROUP);
-        open(INDENT);
-        sLine(SOFT);
-        decls.forEach((d, i) => {
-          if (i > 0) {
-            sLine(0);
-            if (d.blank) sHardline();
-          }
-          declaration(d.text, i === decls.length - 1);
-        });
-        close();
-        sLine(SOFT);
-        close();
-        this.text('"');
-        return;
-      }
-    }
-    if (a.eventHandler && a.value.trim() !== "") {
-      // print/attribute/event-handler.js: printExpand of the value as a babel program, as written where it does not parse.
-      if (this.out.eventHandler === undefined) throw new Unsupported(a.rawName);
-      const print = this.out.eventHandler(unescapeQuotes(a.value));
-      if (print !== undefined) {
-        this.text(`${a.rawName}="`);
-        open(GROUP);
-        open(INDENT);
-        sLine(SOFT);
-        print();
-        close();
-        sLine(SOFT);
-        close();
-        this.text('"');
-        return;
-      }
-    }
-    if (a.srcset) {
-      // print/attribute/srcset.js: printExpand of the candidates `,`-and-line apart; broken, each descriptor
-      // right-aligned on its integer part past the longest url.
-      const candidates = a.srcset;
-      const urlWidth = Math.max(...candidates.map((c) => c.url.length));
-      const intWidth = (d: string) => (d.includes(".") ? d.indexOf(".") : d.length - 1);
-      const maxInt = Math.max(...candidates.map((c) => intWidth(c.descriptor)));
-      this.text(`${a.rawName}="`);
-      open(GROUP);
-      open(INDENT);
-      sLine(SOFT);
-      candidates.forEach((c, i) => {
-        if (i > 0) {
-          this.text(",");
-          sLine(0);
-        }
-        this.text(c.url.replaceAll('"', "&quot;"));
-        if (c.descriptor !== "") {
-          open(IF_BROKEN);
-          this.text(" ".repeat(urlWidth - c.url.length + 1 + maxInt - intWidth(c.descriptor)));
-          close();
-          open(IF_FLAT);
-          this.text(" ");
-          close();
-          this.text(c.descriptor);
-        }
-      });
-      close();
-      sLine(SOFT);
-      close();
-      this.text('"');
-      return;
-    }
-    if (a.allow) {
-      // print/attribute/allow.js: each directive's words one space apart, printExpand'ed a line apart after a `;`.
-      const directives = unescapeQuotes(a.value)
-        .split(";")
-        .map((d) => d.trim())
-        .filter((d) => d !== "")
-        .map((d) => d.split(/[\t\n\f\r ]+/).join(" ").replaceAll('"', "&quot;"));
-      this.text(`${a.rawName}="`);
-      if (directives.length > 0) {
-        open(GROUP);
-        open(INDENT);
-        sLine(SOFT);
-        directives.forEach((d, i) => {
-          this.text(d);
-          if (i < directives.length - 1) {
-            this.text(";");
-            sLine(0);
-          } else {
-            open(IF_BROKEN);
-            this.text(";");
-            close();
-          }
-        });
-        close();
-        sLine(SOFT);
-        close();
-      }
-      this.text('"');
-      return;
-    }
-    const value = a.formatted ? a.value : unescapeQuotes(a.value);
-    const doubles = value.split('"').length;
-    const singles = value.split("'").length;
-    const quote = !a.formatted && doubles > singles ? "'" : '"';
-    this.text(`${a.rawName}=${quote}`);
-    this.literal(quote === '"' ? value.replaceAll('"', "&quot;") : value.replaceAll("'", "&apos;"));
-    this.text(quote);
-  }
-
-  private closingTag(n: Node): void {
-    if (!n.isSelfClosing) {
-      const last = lastChild(n);
-      if (!(last && needsToBorrowParentClosingTagStartMarker(last))) {
-        if (needsToBorrowLastChildClosingTagEndMarker(n)) this.text(closingTagEndMarker(last as Node));
-        this.text(closingTagStartMarker(n));
-      }
-    }
-    const borrowed = n.next
-      ? needsToBorrowPrevClosingTagEndMarker(n.next)
-      : needsToBorrowLastChildClosingTagEndMarker(n.parent as Node);
-    if (!borrowed) {
-      this.text(closingTagEndMarker(n));
-      this.text(closingTagSuffix(n));
-    }
-  }
-
-  // print/element.js
-  private element(n: Node): void {
-    const embedded =
-      this.out.embeddedOff && (n.name === "script" || n.name === "style") && n.value.trim() !== ""
-        ? "raw"
-        : embeddedLanguage(n);
-    if (embedded !== undefined) {
-      const embed = this.out.embed;
-      if (embed === undefined && embedded !== "raw") throw new Unsupported(n.name);
-      open(GROUP);
-      open(GROUP);
-      this.openingTag(n);
-      close();
-      sBreakParent();
-      open(INDENT);
-      sHardline();
-      if (embedded === "raw")
-        rawLines(n.value).forEach((l, i) => {
-          if (i > 0) sHardline();
-          this.text(l);
-        });
-      else embed?.(embedded, n.value);
-      close();
-      sHardline();
-      this.closingTag(n);
-      close();
-      return;
-    }
-    const first = firstChild(n);
+  },
+  lent: (node: number, ctx: Ctx, which = "") => (LENT[which] as (n: Node) => boolean)(nodeOf(node, ctx)),
+  selfClosing: (node: number, ctx: Ctx) => nodeOf(node, ctx).isSelfClosing,
+  spaces: (node: number, ctx: Ctx, kind = "", which = "") => {
+    const n = (WHICH[which] as (n: Node) => Node | undefined)(nodeOf(node, ctx));
+    return n !== undefined && (SPACES[kind] as (n: Node) => boolean)(n);
+  },
+  preText: (node: number, ctx: Ctx) => {
+    const n = nodeOf(node, ctx);
+    return firstChild(n)?.kind === "text" && isLiteralParent(n);
+  },
+  preLastLendsCloseStart: (node: number, ctx: Ctx) => {
+    const n = nodeOf(node, ctx);
     const last = lastChild(n);
-    // utilities/index.js's shouldPreserveContent: a pre-like element holding anything but text keeps its content as
-    // written (getNodeContent), its own tags still printed.
-    if (isPreLike(n) && n.children.some((c) => c.kind !== "text")) {
-      open(GROUP);
-      this.openingTag(n);
-      close();
-      if (n.endTagStart !== -1 && first !== undefined && last !== undefined) {
-        let start = n.startTagEnd;
-        if (needsToBorrowParentOpeningTagEndMarker(first)) start -= openingTagEndMarker(n).length;
-        let end = n.endTagStart;
-        if (needsToBorrowParentClosingTagStartMarker(last)) end += closingTagStartMarker(n).length;
-        this.literal(this.source.slice(start, end));
-      }
-      this.closingTag(n);
-      return;
-    }
-    open(GROUP);
-    open(GROUP);
-    this.openingTag(n);
-    close();
-    if (first === undefined || last === undefined) {
-      if (n.hasDanglingSpaces && n.isDanglingSpaceSensitive) sLine(0);
-    } else {
-      if (this.forceBreakContent(n)) sBreakParent();
-      open(INDENT);
-      if (first.hasLeadingSpaces && first.isLeadingSpaceSensitive) sLine(0);
-      else if (first.kind === "text" && n.isWhitespaceSensitive && n.isIndentationSensitive) {
-        openAlign(Number.NEGATIVE_INFINITY);
-        sLine(SOFT);
-        close();
-      } else sLine(SOFT);
-      this.children(n);
-      close();
-      this.line(this.lineAfterChildren(n, last));
-    }
-    this.closingTag(n);
-    close();
-  }
-
-  private lineAfterChildren(n: Node, last: Node): Line {
-    const borrowed = n.next
-      ? needsToBorrowPrevClosingTagEndMarker(n.next)
-      : needsToBorrowLastChildClosingTagEndMarker(n.parent as Node);
-    if (borrowed) return last.hasTrailingSpaces && last.isTrailingSpaceSensitive ? " " : "";
-    if (isPreLike(n) && needsToBorrowParentClosingTagStartMarker(last)) return "";
-    if (last.hasTrailingSpaces && last.isTrailingSpaceSensitive) return "line";
+    return isPreLike(n) && last !== undefined && needsToBorrowParentClosingTagStartMarker(last);
+  },
+  // A last comment or pre text ending in a line break and the element's own indentation needs no line before
+  // the closing tag.
+  lastEndsAtIndent: (node: number, ctx: Ctx) => {
+    const n = nodeOf(node, ctx);
+    const last = lastChild(n);
+    if (last === undefined || !(last.kind === "comment" || (last.kind === "text" && isLiteralParent(n)))) return false;
     let depth = -1;
     for (let p = n.parent; p !== undefined; p = p.parent) depth++;
-    if (
-      (last.kind === "comment" || (last.kind === "text" && n.isWhitespaceSensitive && n.isIndentationSensitive)) &&
-      // Prettier's comment value is its text inside `<!--` and `-->`.
-      new RegExp(`\\n[\\t ]{${this.out.tabWidth * depth}}$`).test(
-        last.kind === "comment" ? last.value.slice(4, -3) : last.value,
-      )
-    )
-      return "";
-    return "softline";
-  }
+    // Prettier's comment value is its text inside `<!--` and `-->`.
+    return new RegExp(`\\n[\\t ]{${ctx.options.tabWidth * depth}}$`).test(
+      last.kind === "comment" ? last.value.slice(4, -3) : last.value,
+    );
+  },
+  literalText: (node: number, ctx: Ctx) => isLiteralParent(nodeOf(node, ctx).parent as Node),
+  blankBefore: (node: number, ctx: Ctx) => infoOf(node, ctx).blank === true,
+  hasDescriptor: (node: number, ctx: Ctx) => infoOf(node, ctx).text?.descriptor !== "",
+
+  prefix: (node: number, ctx: Ctx) => openingTagPrefix(nodeOf(node, ctx)),
+  suffix: (node: number, ctx: Ctx) => closingTagSuffix(nodeOf(node, ctx)),
+  marker: (node: number, ctx: Ctx, which = "") => (MARKERS[which] as (n: Node) => string)(nodeOf(node, ctx)),
+  text: (node: number, ctx: Ctx, key = "") => infoOf(node, ctx).text?.[key] ?? "",
+  words: (node: number, ctx: Ctx) => infoOf(node, ctx).words ?? [],
+  gap: (prev: number, next: number, ctx: Ctx) => betweenLine(nodeOf(prev, ctx), nodeOf(next, ctx), sideOf(ctx).lines),
+
+  // A non-yaml front matter keeps a line's trailing whitespace as written.
+  frontMatterLine: (node: number, ctx: Ctx) => {
+    const line = infoOf(node, ctx).text?.value ?? "";
+    if (line !== "") sKeptText(line);
+  },
+  embed: (node: number, ctx: Ctx) => {
+    const i = infoOf(node, ctx);
+    sideOf(ctx).out.embed(i.lang as EmbeddedLanguage, i.value ?? "");
+  },
+  cssDeclaration: (node: number, ctx: Ctx) => {
+    const i = infoOf(node, ctx);
+    sideOf(ctx).out.declaration(i.text?.value ?? "", i.last === true);
+  },
+  eventHandler: (node: number, ctx: Ctx) => infoOf(node, ctx).print?.(),
+};
+
+/**
+ * A style's `<!-- … -->` comments as postcss reads them: each one before a rule (at the start or after a `}`, more
+ * than one in a row included) joins that rule's selector, which prettier prints with the comment's whitespace
+ * collapsed and its `-->` split (`<!-- a -- > #a`). `rewritten` holds each as a type selector, `marks[i]`, that
+ * `texts[i]` replaces once printed. Undefined where postcss rejects the style (a comment ending it, or a stray
+ * `<!--` or `-->`), which prints as written.
+ */
+export function cssCdoComments(text: string): { rewritten: string; marks: string[]; texts: string[] } | undefined {
+  const marks: string[] = [];
+  const texts: string[] = [];
+  let ok = true;
+  const rewritten = text.replace(/<!--([^]*?)-->/g, (_, inner: string, at: number) => {
+    const before = text.slice(0, at).trimEnd();
+    const after = text.slice(at + inner.length + 7);
+    // A rule's selector, or another such comment, must follow; a `}`, `;` or the end may not.
+    if (!(before === "" || before.endsWith("}") || before.endsWith("-->")) || !/^\s*(?:<!--|[^{};]+\{)/.test(after)) ok = false;
+    const mark = `syntechs-cdo-e000-${marks.length}`;
+    marks.push(mark);
+    texts.push(`<!--${inner.replace(/\s+/g, " ")}-- >`);
+    return `${mark} `;
+  });
+  if (!ok || /<!--|-->/.test(rewritten)) return undefined;
+  return { rewritten, marks, texts };
 }

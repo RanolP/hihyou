@@ -1,8 +1,9 @@
 import type { Theme } from "@hihyou/engine";
 import {
+  type CommentStore,
   type DiffFile,
-  type DiffLayout,
   type DiffsetView,
+  type ReviewNote,
   renderDiffset,
 } from "@hihyou/ui";
 import type { FromWebview, ToWebview } from "./protocol.js";
@@ -20,11 +21,9 @@ const refresh = document.getElementById("refresh") as HTMLButtonElement;
 const previous = document.getElementById("previous") as HTMLButtonElement;
 const next = document.getElementById("next") as HTMLButtonElement;
 const position = document.getElementById("position") as HTMLElement;
-const layoutButton = document.getElementById("layout") as HTMLButtonElement;
 const root = document.getElementById("root") as HTMLElement;
 let view: DiffsetView | undefined;
 let theme: Theme | undefined;
-let layout: DiffLayout = "unified";
 let files: DiffFile[] = [];
 /** The host's `show` that arrived before the files did. */
 let wanted: string | undefined;
@@ -44,15 +43,41 @@ const step = (delta: 1 | -1) => {
   updateNav();
 };
 
-const setLayout = (next: DiffLayout) => {
-  layout = next;
-  layoutButton.setAttribute("aria-pressed", String(next === "unified"));
-  view?.setLayout(next);
+/** The host's comments, when it keeps them (a pull request); absent, the view keeps its own. */
+let hostComments: { notes: ReviewNote[]; reviewing: boolean } | undefined;
+const commentListeners = new Set<() => void>();
+const calls = new Map<
+  number,
+  { resolve: () => void; reject: (error: Error) => void }
+>();
+let lastCall = 0;
+const call = (send: (id: number) => void) =>
+  new Promise<void>((resolve, reject) => {
+    const id = ++lastCall;
+    calls.set(id, { resolve, reject });
+    send(id);
+  });
+const proxyComments: CommentStore = {
+  all: () => hostComments?.notes ?? [],
+  reviewing: () => hostComments?.reviewing ?? false,
+  // The host refreshes its store itself when this panel or its window regains focus.
+  refresh: () => Promise.resolve(),
+  comment: (anchor, body) =>
+    call((id) => post({ type: "comment", id, how: "comment", anchor, body })),
+  review: (anchor, body) =>
+    call((id) => post({ type: "comment", id, how: "review", anchor, body })),
+  reply: (thread, body) =>
+    call((id) => post({ type: "reply", id, how: "reply", thread, body })),
+  reviewReply: (thread, body) =>
+    call((id) => post({ type: "reply", id, how: "reviewReply", thread, body })),
+  submitReview: (event) =>
+    call((id) => post({ type: "submitReview", id, event })),
+  subscribe: (listener) => {
+    commentListeners.add(listener);
+    return () => commentListeners.delete(listener);
+  },
 };
-layoutButton.addEventListener("click", () => {
-  setLayout(layout === "unified" ? "split" : "unified");
-  post({ type: "layout", layout });
-});
+
 refresh.addEventListener("click", () => post({ type: "refresh" }));
 previous.addEventListener("click", () => step(-1));
 next.addEventListener("click", () => step(1));
@@ -64,9 +89,6 @@ window.addEventListener("message", (event: MessageEvent<ToWebview>) => {
       theme = message.theme;
       view?.setTheme(theme);
       return;
-    case "layout":
-      setLayout(message.layout);
-      return;
     case "show":
       if (view) view.show(message.path);
       else wanted = message.path;
@@ -75,6 +97,17 @@ window.addEventListener("message", (event: MessageEvent<ToWebview>) => {
     case "step":
       step(message.delta);
       return;
+    case "comments":
+      hostComments = { notes: message.notes, reviewing: message.reviewing };
+      for (const l of commentListeners) l();
+      return;
+    case "commented": {
+      const pending = calls.get(message.id);
+      calls.delete(message.id);
+      if (message.error === undefined) pending?.resolve();
+      else pending?.reject(new Error(message.error));
+      return;
+    }
   }
   title.textContent = message.title;
   switch (message.type) {
@@ -109,7 +142,7 @@ window.addEventListener("message", (event: MessageEvent<ToWebview>) => {
             updateNav();
           },
           ...(theme && { theme }),
-          layout,
+          ...(hostComments && { comments: proxyComments }),
         });
       if (wanted !== undefined) view.show(wanted);
       wanted = undefined;
