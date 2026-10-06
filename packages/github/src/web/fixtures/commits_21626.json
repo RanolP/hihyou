@@ -1,0 +1,31 @@
+{
+  "payload": {
+    "pullRequestsCommitsRoute": {
+      "commitGroups": [
+        {
+          "commits": [
+            {
+              "oid": "a6026e42f35f2b25bd4f1bbf0da563d65bda83ab",
+              "shortMessage": "feat: support ful bundle mode in ssr",
+              "authoredDate": "2026-02-12T12:06:25.000+01:00",
+              "authors": [
+                { "login": "sheremet-va", "displayName": "Vladimir Sheremet" }
+              ]
+            },
+            {
+              "oid": "0f3f23b8765df6f7bb90108955fa3b2da61cc558",
+              "shortMessage": "chore: remove ws",
+              "authoredDate": "2026-07-31T18:34:29.000+09:00",
+              "authors": [
+                { "login": "sapphi-red", "displayName": "sapphi-red" }
+              ]
+            }
+          ]
+        }
+      ],
+      "metadata": {
+        "commitHeadShaChannel": "eyJjIjoicmVwbzoyNTc0ODU0MjI6Y29tbWl0OjBmM2YyM2I4NzY1ZGY2ZjdiYjkwMTA4OTU1ZmEzYjJkYTYxY2M1NTgiLCJ0IjoxNzkwODQxODk0fQ==--signature-removed"
+      }
+    }
+  }
+}

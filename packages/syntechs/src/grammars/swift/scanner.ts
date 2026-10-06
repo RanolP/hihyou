@@ -478,6 +478,8 @@ class SwiftScanner implements ExternalScanner {
   }
 
   scan(lexer: Lexer, valid: Uint8Array): boolean {
+    // As the C scanner: inside a string's text a comment is the only external symbol valid, and `/*` there is text.
+    if (valid[BLOCK_COMMENT] && valid.every((v, i) => i === BLOCK_COMMENT || v === 0)) return false;
     const ws: number[] = [];
     const wsDirective = eatWhitespace(lexer, valid, ws);
     if (wsDirective === STOP_PARSING_TOKEN_FOUND) {

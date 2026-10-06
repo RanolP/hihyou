@@ -94,6 +94,8 @@ export interface MovePair {
   crossFile: boolean;
   /** The other half's file as the move names it, found or not. */
   counterpartPath: string;
+  /** See `SideMove.extract`. */
+  extract?: string;
 }
 
 function halfAt(
@@ -129,6 +131,7 @@ export function movePair(
     ...(after && { after }),
     crossFile: !namesOf(file).includes(move.counterpart.path),
     counterpartPath: move.counterpart.path,
+    ...(move.extract !== undefined && { extract: move.extract }),
   };
 }
 
@@ -146,20 +149,8 @@ export function pairSubject(pair: MovePair): ViewedSubject {
   return { kind: "move", ...(before && { before }), ...(after && { after }) };
 }
 
-/** A pair laid out to read in place: split puts the halves side by side, line by line. */
-export function pairSplitRows(
-  pair: MovePair,
-): { before?: Cell; after?: Cell }[] {
-  const b = pair.before?.cells ?? [];
-  const a = pair.after?.cells ?? [];
-  return Array.from({ length: Math.max(b.length, a.length) }, (_, i) => ({
-    ...(b[i] && { before: b[i] }),
-    ...(a[i] && { after: a[i] }),
-  }));
-}
-
 /**
- * Unified reads the inner diff: the halves merged into one run of lines with the edits marked inside, when
+ * A pair laid out to read in place, as the inner diff: the halves merged into one run of lines with the edits marked inside, when
  * they share their unchanged text, else the before half's lines ahead of the after half's.
  */
 export function pairUnifiedRows(pair: MovePair): UnifiedRow[] {

@@ -1,0 +1,38 @@
+%YAML 1.2
+%TAG !e! tag:example.com,2000:app/
+--- # a document with every construct the highlight query names
+plain: value
+"double key": "double \n value"
+'single key': 'it''s'
+int: 42
+hex: 0x1F
+float: 1.5e3
+inf: .inf
+yes: true
+no: false
+nothing: null
+tilde: ~
+tagged: !e!foo bar
+local: !local {a: 1}
+anchored: &base
+  name: base
+  list: [one, "two", 'three', 4, 5.0]
+merged:
+  <<: *base
+  extra: {k: v, "q": 'r', n: ~}
+? complex key
+: complex value
+literal: |
+  line one
+  line two
+folded: >-
+  folded
+  text
+sequence:
+  - a
+  - - nested
+    - [x, y]
+  - {inline: map}
+...
+---
+second: document

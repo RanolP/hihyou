@@ -6,6 +6,12 @@ export interface AnchorData {
   side: "before" | "after";
   path: string;
   nodes: AstSteps[]; // non-empty; normalized: document order, descendants of an included ancestor dropped
+  /**
+   * Narrows a one-node anchor to part of that node: offsets into the node's text with its whitespace skipped
+   * (the text `NodeOutline.hash` covers), `end` exclusive, so the range survives a reformat. Never a location
+   * on its own: `nodes` still places the anchor.
+   */
+  chars?: { start: number; end: number };
 }
 
 export interface ReviewThreads<H extends Host> {

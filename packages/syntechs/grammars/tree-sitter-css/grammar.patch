@@ -1,5 +1,6 @@
 Syntax the upstream grammar lacks, in grammar.js and scanner.c.
 packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
+queries/highlights.scm names `and`, `or`, `not` and `only` as the named nodes grammar.js makes of them.
 
 --- a/grammar.js
 +++ b/grammar.js
@@ -1167,3 +1168,22 @@ packages/syntechs/src/grammars/css/scanner.ts ports scanner.c as this leaves it.
              // We need a `{` to be a pseudo class selector, a `;` indicates a property.
              // This does not apply if we're in a comment, however.
              bool in_comment = false;
+--- a/queries/highlights.scm
++++ b/queries/highlights.scm
+@@ -16,12 +16,12 @@
+ "~=" @operator
+ "$=" @operator
+ "*=" @operator
+ 
+-"and" @operator
+-"or" @operator
+-"not" @operator
+-"only" @operator
++(and) @operator
++(or) @operator
++(not) @operator
++(only) @operator
+ 
+ (attribute_selector (plain_value) @string)
+ 
+ ((property_name) @variable

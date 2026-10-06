@@ -1,7 +1,7 @@
 // Scoring one target's runs, and the snapshot and matrix files that commit the score.
 
 import { execFileSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { diffArrays } from "diff";
 
 /** One fixture under one option set, compared with the reference's expected output. */
@@ -246,4 +246,66 @@ export function jsonPathArg(args: string[]): string | undefined {
 
 export function writeJson(path: string, value: unknown): void {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+/** What a bench's `--json` writes: where it ran, then one entry per language group. */
+interface BenchRun extends RunInfo {
+  runs: number;
+  warmup: number;
+  groups: { id: string }[];
+}
+
+/**
+ * The file one run over every language would write, from the `--json` files of runs over one language each (CI
+ * times each language on its own runner): groups and tools in `order`, the latest date. The partials must
+ * cover `order` exactly once and agree on the commit, Node and pass counts, or the scorecard would mix runs.
+ */
+export function mergeRuns(paths: string[], order: string[]): BenchRun {
+  if (paths.length === 0)
+    throw new Error("--merge needs the --json files to merge");
+  const parts = paths.map((path) => ({
+    path,
+    run: JSON.parse(readFileSync(path, "utf8")) as BenchRun,
+  }));
+  const byId = new Map<string, { path: string; run: BenchRun; at: number }>();
+  for (const { path, run } of parts)
+    for (const [at, g] of run.groups.entries()) {
+      if (!order.includes(g.id))
+        throw new Error(
+          `${path}: unknown group ${g.id}; groups: ${order.join(", ")}`,
+        );
+      const seen = byId.get(g.id);
+      if (seen)
+        throw new Error(`group ${g.id} is in both ${seen.path} and ${path}`);
+      byId.set(g.id, { path, run, at });
+    }
+  const missing = order.filter((id) => !byId.has(id));
+  if (missing.length > 0)
+    throw new Error(
+      `no partial measured ${missing.join(", ")} (merged ${paths.join(", ")})`,
+    );
+  const first = parts[0] as { path: string; run: BenchRun };
+  for (const { path, run } of parts)
+    for (const key of ["commit", "node", "runs", "warmup"] as const)
+      if (run[key] !== first.run[key])
+        throw new Error(
+          `${path} has ${key} ${run[key]} but ${first.path} has ${first.run[key]}`,
+        );
+  const ordered = order.map(
+    (id) => byId.get(id) as { run: BenchRun; at: number },
+  );
+  const tools: Record<string, string> = {};
+  for (const { run } of ordered) Object.assign(tools, run.tools);
+  return {
+    commit: first.run.commit,
+    date: parts
+      .map((p) => p.run.date)
+      .sort()
+      .at(-1) as string,
+    node: first.run.node,
+    tools,
+    runs: first.run.runs,
+    warmup: first.run.warmup,
+    groups: ordered.map(({ run, at }) => run.groups[at] as { id: string }),
+  };
 }

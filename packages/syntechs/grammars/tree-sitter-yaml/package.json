@@ -14,7 +14,8 @@
           "grammar.js": "390488273d970a8c78c7b9ab0cdf3cbf1b12a8833c29fe7041bd181bd851c8d7",
           "src/scanner.c": "9cd962f7c7541247cfc7ebf661abaa5d9b642d27de16575c87093496557aae59",
           "src/schema.core.c": "91e56c3f3ae6fad1803b739ce4eb4568a782a9aec710f733db2f3e38d407a4d5",
-          "tree-sitter.json": "4b608f067cf0953508a8574d455cdc928b446f175f967a13d9fc5f8ab0183191"
+          "tree-sitter.json": "4b608f067cf0953508a8574d455cdc928b446f175f967a13d9fc5f8ab0183191",
+          "queries/highlights.scm": "2fbfbbd5ca0928d0a7e09e59f8f2964b14a328a7ee0ce799270d9013dcce49a0"
         }
       }
     ]

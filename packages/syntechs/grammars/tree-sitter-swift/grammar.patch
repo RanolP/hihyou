@@ -1,0 +1,62 @@
+scanner.c's `try!` suppressor mask shifts `1UL` by FAKE_TRY_BANG (32), which overflows where `unsigned long` is 32 bits
+(Windows): the scanner then emits the `!` as a BANG, so `try!` parses as `try` plus a prefix `!` there alone. `1ULL`
+keeps the mask on every platform; packages/syntechs/src/grammars/swift/scanner.ts already reads it that way.
+
+--- a/grammar.js
++++ b/grammar.js
+@@ -968,14 +968,17 @@
+       prec.right(
+         PRECS.tuple,
+         seq(
+           "(",
+-          sep1Opt(
+-            seq(
+-              optional(seq(field("name", $.simple_identifier), ":")),
+-              field("value", $._expression)
+-            ),
+-            ","
++          // `()`: the empty tuple, Void's value (`default: ()`).
++          optional(
++            sep1Opt(
++              seq(
++                optional(seq(field("name", $.simple_identifier), ":")),
++                field("value", $._expression)
++              ),
++              ","
++            )
+           ),
+           ")"
+         )
+       ),
+--- a/src/scanner.c
++++ b/src/scanner.c
+@@ -127,9 +127,9 @@
+     0, // EQUAL_SIGN,
+     0, // EQ_EQ,
+     0, // PLUS_THEN_WS,
+     0, // MINUS_THEN_WS,
+-    1UL << FAKE_TRY_BANG, // BANG,
++    1ULL << FAKE_TRY_BANG, // BANG,
+         0, // THROWS_KEYWORD,
+         0, // RETHROWS_KEYWORD,
+         0, // DEFAULT_KEYWORD,
+         0, // WHERE_KEYWORD,
+@@ -866,8 +866,18 @@
+ ) {
+     // Figure out our scanner state
+     struct ScannerState *state = (struct ScannerState *)payload;
+ 
++    // Inside a string's text a comment (an extra) is the only external symbol valid, and `/*` there is text: a
++    // comment scanned from it would run to the next `*/` in the file.
++    bool only_comment = valid_symbols[BLOCK_COMMENT];
++    for (int i = 1; i < TOKEN_COUNT && only_comment; i++) {
++        if (valid_symbols[i]) only_comment = false;
++    }
++    if (only_comment) {
++        return false;
++    }
++
+     // Consume any whitespace at the start.
+     enum TokenType ws_result;
+     enum ParseDirective ws_directive = eat_whitespace(lexer, valid_symbols, &ws_result);
+     if (ws_directive == STOP_PARSING_TOKEN_FOUND) {

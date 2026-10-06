@@ -164,3 +164,62 @@ test("a statement added inside an existing function keeps its leaf atoms and its
   expect(changed.length).toBeGreaterThan(1);
   expect(changed.every((n) => n.whole === undefined)).toBe(true);
 });
+
+// One `const` added inside a function (PR #380's `const kindProblem = ...`) read as "added kindProblem" with its
+// emphasis dropped, though only a top-level declaration is a unit of its own.
+test("a local declaration added inside a function is emphasized, a top-level one beside it is whole", async () => {
+  const [file] = await diff([
+    {
+      path: "x.ts",
+      before: fn("f", "return total;"),
+      after: `${fn("f", "const kindProblem = check(total);\n  return kindProblem;")}\nconst limit = 10;\n`,
+    },
+  ]);
+  expect(
+    emphasized(file)
+      .map((s) => s.text)
+      .join(""),
+  ).toContain("kindProblem");
+  expect(
+    nodes(file, "after")
+      .filter((n) => n.whole)
+      .map((n) => [n.kind, n.whole, n.label, n.parent]),
+  ).toEqual([["lexical_declaration", "added", "limit", -1]]);
+});
+
+const shop = (open: string, rest = "") => `export class Shop {
+  open(): boolean {
+    ${open}
+  }
+${rest}}
+`;
+
+// Without class members counted as units, a method added to an exported class reads as a bare green block, not
+// "added close".
+test("a method added to an existing exported class is whole", async () => {
+  const [file] = await diff([
+    {
+      path: "x.ts",
+      before: shop("return true;"),
+      after: shop("return true;", "\n  close(): void {\n    this.open();\n  }\n"),
+    },
+  ]);
+  expect(
+    nodes(file, "after")
+      .filter((n) => n.whole)
+      .map((n) => [n.kind, n.whole, n.label]),
+  ).toEqual([["method_definition", "added", "close"]]);
+});
+
+// Letting class members through must not let a method's locals through: they are statements of code that stayed.
+test("a local const added inside a method of a class is emphasized, not whole", async () => {
+  const [file] = await diff([
+    { path: "x.ts", before: shop("return true;"), after: shop("const ready = true;\n    return ready;") },
+  ]);
+  expect(nodes(file, "after").filter((n) => n.whole)).toEqual([]);
+  expect(
+    emphasized(file)
+      .map((s) => s.text)
+      .join(""),
+  ).toContain("ready");
+});

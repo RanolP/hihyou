@@ -48,6 +48,9 @@ const long = (name: string) => `${name}${"x".repeat(30)}`;
 
 const edgeCases: [string, Target, string][] = [
   ["empty-statement-list", "js", "let a = 1;;\n\n\n\nlet b = 2"],
+  // Annex B's `<!--` after an expression on its line read as `a < !--b`; oxfmt reads a comment there.
+  ["html-comment-after-expression", "js", "x = a<!--b;\nx = a <!-- c\ny();\nz = a < !b;"],
+  ["html-comment-after-expression-ts", "ts", "x = a<!--b;\nx = a <!-- c\ny();\nz = a < !b;"],
   // An array keeps the blank line after an item's comma.
   ["blank-after-comma", "js", "y = [1\n,\n\n2];"],
   // A blank line after an item's comma breaks an array and stays; one between an item and its comma goes, in an

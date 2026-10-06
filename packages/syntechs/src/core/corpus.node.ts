@@ -50,6 +50,7 @@ export function swiftInputs(): (Input & { expected: string })[] {
 export const GRAMMAR_NAMES = [
   "json",
   "css",
+  "graphql",
   "html",
   "javascript",
   "typescript",
@@ -65,6 +66,7 @@ export type GrammarName = (typeof GRAMMAR_NAMES)[number];
 const GRAMMAR_DIRS: Record<GrammarName, [string, string]> = {
   json: ["tree-sitter-json", "tree-sitter-json"],
   css: ["tree-sitter-css", "tree-sitter-css"],
+  graphql: ["tree-sitter-graphql", "tree-sitter-graphql"],
   html: ["tree-sitter-html", "tree-sitter-html"],
   javascript: ["tree-sitter-javascript", "tree-sitter-javascript"],
   typescript: ["tree-sitter-typescript/typescript", "tree-sitter-typescript"],
@@ -78,6 +80,7 @@ const GRAMMAR_DIRS: Record<GrammarName, [string, string]> = {
 const EXTENSIONS: Record<GrammarName, string[]> = {
   json: [".json"],
   css: [".css"],
+  graphql: [".graphql", ".gql"],
   html: [".html"],
   javascript: [".js", ".mjs", ".cjs", ".jsx"],
   typescript: [".ts", ".mts", ".cts"],
@@ -98,6 +101,8 @@ export const FETCHED: Record<GrammarName, string[]> = {
   css: ["bootstrap.css", "normalize.css", "animate.css"].map((f) =>
     join(corpusDir, f),
   ),
+  // No large file is fetched: prettier's graphql fixtures are its conformance set.
+  graphql: [],
   // No large file is fetched: the repo's own .html files and the committed parity cases are its inputs.
   html: [],
   javascript: ["lodash.js", "jquery.js"].map((f) => join(corpusDir, f)),

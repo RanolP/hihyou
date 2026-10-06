@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vitepress dev docs",
-    "build": "vitepress build docs"
+    "build": "pnpm --filter @hihyou/browser build:userscript && vitepress build docs"
   },
   "devDependencies": {
     "vitepress": "1.6.4"

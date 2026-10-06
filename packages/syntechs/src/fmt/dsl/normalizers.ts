@@ -223,6 +223,25 @@ export const numberKey = (raw: string): string => quotedNumber(printNumber(raw))
 /** A numeric object key as written, quoted where prettier's `json-stringify` quotes it. */
 export const rawNumberKey = (raw: string): string => quotedNumber(raw);
 
+/**
+ * A YAML quoted scalar in the quote prettier picks: its own when the content has an escape the other quote would
+ * change, single when the content holds a double quote, double when it holds a single one, else the preferred
+ * (`singleQuote`).
+ */
+export const yamlQuote = (raw: string, o: { readonly singleQuote?: unknown }): string => {
+  const double = raw.charAt(0) === DOUBLE;
+  const content = raw.slice(1, -1);
+  if ((!double && content.includes("\\")) || (double && /\\[^"]/.test(content))) return raw;
+  if (content.includes(DOUBLE))
+    return double ? SINGLE + content.replaceAll('\\"', DOUBLE).replaceAll(SINGLE, "''") + SINGLE : raw;
+  if (content.includes(SINGLE)) return double ? raw : DOUBLE + content.replaceAll("''", SINGLE) + DOUBLE;
+  const q = o.singleQuote === true ? SINGLE : DOUBLE;
+  return q + content + q;
+};
+
+/** Words one space apart, the ends trimmed: a YAML directive's name and parameters. */
+export const spaced = (t: string): string => t.trim().split(/[ \t]+/).join(" ");
+
 /** Every normalizer `text` can name. */
 export const normalizers = {
   printNumber,
@@ -245,6 +264,8 @@ export const normalizers = {
   numberKey,
   rawNumberKey,
   cook,
+  yamlQuote,
+  spaced,
 } satisfies Record<string, (t: string, o: never) => string>;
 
 export type NormalizerName = keyof typeof normalizers;
@@ -255,4 +276,5 @@ export const normalizerOptions: { readonly [N in NormalizerName]?: readonly stri
   quote: ["singleQuote"],
   directive: ["singleQuote"],
   jsxString: ["jsxSingleQuote"],
+  yamlQuote: ["singleQuote"],
 };

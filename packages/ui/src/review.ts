@@ -6,6 +6,7 @@ import type {
   LinePair,
   SerializedDiffsetId,
 } from "@hihyou/engine";
+import type { CommentStore } from "./comments.js";
 import type { DiffFile } from "./rows.js";
 
 /** One change set a panel shows, from whichever backend; the panel knows nothing else about where it came from. */
@@ -23,6 +24,8 @@ export interface ReviewSource {
   refreshable: boolean;
   /** A saved editor changes this source's content (the working tree), so a visible panel refreshes itself. */
   refreshOnSave?: boolean;
+  /** A host that keeps comments (a pull request on GitHub) gives each panel a store; absent, they stay in the view. */
+  comments?: () => CommentStore;
 }
 
 /** `load` and `expand` over one engine; `id` is read on every load, so a moving source can hand out a new one. */
