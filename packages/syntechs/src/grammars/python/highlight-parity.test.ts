@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { expect, test } from "vitest";
 import { type Tree, parseTree } from "../../core/index.js";
 import { type CaptureScope, scopeOf } from "../../highlight/match.js";
+import { treeSitterQuery } from "../../highlight/query.node.js";
 import { LANGUAGES, type Rule } from "../../highlight/rules.node.js";
 import { highlight } from "./highlight.js";
 import { language } from "./index.js";
@@ -55,17 +56,10 @@ function reference(
   range: (n: number) => string,
 ): Scopes {
   const query = join(grammarDir, "queries/highlights.scm");
-  const r = spawnSync("tree-sitter", ["query", "-p", grammarDir, query, file], {
-    encoding: "utf8",
-    maxBuffer: 1 << 30,
-  });
-  if (r.status !== 0)
-    throw new Error(
-      `tree-sitter query failed (status ${r.status}):\n${r.stderr}`,
-    );
+  const stdout = treeSitterQuery(grammarDir, query, [file]);
   const won = new Map<string, { pattern: number; capture: string }>();
   let pattern = -1;
-  for (const line of r.stdout.split("\n")) {
+  for (const line of stdout.split("\n")) {
     const p = /^ {2}pattern: (\d+)$/.exec(line);
     if (p !== null) {
       pattern = Number(p[1]);

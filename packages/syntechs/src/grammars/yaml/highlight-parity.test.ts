@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { expect, test } from "vitest";
 import { parseTree } from "../../core/index.js";
 import { LANGUAGES } from "../../highlight/rules.node.js";
+import { treeSitterQuery } from "../../highlight/query.node.js";
 import { highlight } from "./highlight.js";
 import { language } from "./index.js";
 
@@ -29,16 +30,12 @@ type Captures = Map<string, string>;
 /** tree-sitter's own query engine over highlights.scm, through the CLI mise.toml pins: the latest pattern's capture wins. */
 function reference(): Map<string, Captures> {
   const query = join(grammarDir, "queries/highlights.scm");
-  const r = spawnSync("tree-sitter", ["query", "-p", grammarDir, query, ...files], {
-    encoding: "utf8",
-    maxBuffer: 1 << 30,
-  });
-  if (r.status !== 0) throw new Error(`tree-sitter query failed (status ${r.status}):\n${r.stderr}`);
+  const stdout = treeSitterQuery(grammarDir, query, files);
   const out = new Map<string, Map<string, { pattern: number; capture: string }>>();
   const known = new Set(files);
   let current: Map<string, { pattern: number; capture: string }> | undefined;
   let pattern = -1;
-  for (const line of r.stdout.split("\n")) {
+  for (const line of stdout.split("\n")) {
     if (known.has(line)) {
       current = new Map();
       out.set(line, current);
