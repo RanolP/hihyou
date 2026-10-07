@@ -8,6 +8,8 @@ export interface GitHubDiffsetId {
   repo: string;
   base: string; // sha
   head: string; // sha
+  /** All parents when head is a merge commit; used by the REST host's --cc fallback. */
+  parents?: string[];
 }
 
 export interface DiffsetResolution {
@@ -183,13 +185,21 @@ export async function resolveGitHubDiffset(
   data: GitHubDiffsetId,
 ): Promise<DiffsetResolution> {
   const { owner, repo, base, head } = data;
-  const { mergeBaseSha, files } = await fetchCompareFiles(
-    client,
-    owner,
-    repo,
-    base,
-    head,
+  const [first, others] = await Promise.all([
+    fetchCompareFiles(client, owner, repo, base, head),
+    Promise.all(
+      (data.parents ?? [])
+        .slice(1)
+        .map((parent) => fetchCompareFiles(client, owner, repo, parent, head)),
+    ),
+  ]);
+  const changedByEveryParent = others.map(
+    ({ files }) => new Set(files.map((file) => file.filename)),
   );
+  const files = first.files.filter((file) =>
+    changedByEveryParent.every((paths) => paths.has(file.filename)),
+  );
+  const { mergeBaseSha } = first;
   const lookup = createBeforeLookup(client, owner, repo, mergeBaseSha);
   const changes = await Promise.all(
     files.map((file) => toChangedFileRef(owner, repo, file, lookup)),

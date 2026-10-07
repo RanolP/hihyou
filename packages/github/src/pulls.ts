@@ -53,8 +53,8 @@ export async function listPullRequests(
 
 export interface GitHubCommit {
   sha: string;
-  /** The first parent's sha; absent on a root commit. */
-  parent?: string;
+  /** Every parent in git's merge order, the branch merged into first; empty on a root commit. */
+  parents: string[];
   message: string;
   author: string;
   /** ISO 8601, as GitHub reports the author date. */
@@ -80,7 +80,7 @@ export async function listPullRequestCommits(
   );
   return commits.map((c) => ({
     sha: c.sha,
-    ...(c.parents[0] && { parent: c.parents[0].sha }),
+    parents: c.parents.map((parent) => parent.sha),
     message: c.commit.message,
     author: c.commit.author?.name ?? "",
     date: c.commit.author?.date ?? "",

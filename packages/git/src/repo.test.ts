@@ -385,6 +385,48 @@ describe.each(adapters)("$name adapter", ({ open, gitConfig }) => {
       writeFileSync(join(work, "dir/deep"), "a file where a directory was\n");
       const later = new Date(Date.now() + 5000);
       utimesSync(join(work, "touched.txt"), later, later);
+
+      const merges = join(dir, "merges");
+      mkdirSync(merges);
+      const m = (...args: string[]) => git(merges, args);
+      m("init", "-q", "-b", "base");
+      writeFileSync(join(merges, "common.txt"), "base\n");
+      m("add", "common.txt");
+      m("commit", "-qm", "base");
+      const base = m("rev-parse", "HEAD").trim();
+      m("switch", "-q", "-c", "pulled");
+      writeFileSync(join(merges, "pulled.txt"), "pulled\n");
+      m("add", "pulled.txt");
+      m("commit", "-qm", "pulled");
+      m("switch", "-q", "-c", "own", base);
+      writeFileSync(join(merges, "own.txt"), "own\n");
+      m("add", "own.txt");
+      m("commit", "-qm", "own");
+      m("merge", "--no-ff", "pulled", "-m", "sync");
+      writeFileSync(
+        join(merges, "sync.sha"),
+        `${m("rev-parse", "HEAD").trim()}\n`,
+      );
+      m("switch", "-q", "-c", "resolution-main", base);
+      writeFileSync(join(merges, "conflict.txt"), "main\n");
+      m("add", "conflict.txt");
+      m("commit", "-qm", "resolution main");
+      m("switch", "-q", "-c", "resolution-feature", base);
+      writeFileSync(join(merges, "conflict.txt"), "feature\n");
+      m("add", "conflict.txt");
+      m("commit", "-qm", "resolution feature");
+      m("switch", "-q", "resolution-main");
+      try {
+        m("merge", "--no-ff", "resolution-feature", "-m", "resolution");
+      } catch {
+        writeFileSync(join(merges, "conflict.txt"), "resolved\n");
+        m("add", "conflict.txt");
+        m("commit", "-qm", "resolution");
+      }
+      writeFileSync(
+        join(merges, "resolution.sha"),
+        `${m("rev-parse", "HEAD").trim()}\n`,
+      );
     });
     afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -504,6 +546,27 @@ describe.each(adapters)("$name adapter", ({ open, gitConfig }) => {
           after: git(work, ["rev-parse", "HEAD:big.txt"]).trim(),
         },
       ]);
+      repo.close();
+    });
+
+    // Catches a merge diff that regresses to showing every file brought in from the merged branch.
+    test("localHost keeps only combined-diff files for merge commits", async () => {
+      const mergeRepo = join(dir, "merges");
+      const repo = await open(mergeRepo);
+      const host = localHost(repo);
+      const sync = readFileSync(join(mergeRepo, "sync.sha"), "utf8").trim();
+      const resolution = readFileSync(
+        join(mergeRepo, "resolution.sha"),
+        "utf8",
+      ).trim();
+      expect(
+        (await host.resolveDiffset({ kind: "commit", sha: sync })).changes,
+      ).toEqual([]);
+      expect(
+        (
+          await host.resolveDiffset({ kind: "commit", sha: resolution })
+        ).changes.map((change) => change.path),
+      ).toEqual(["conflict.txt"]);
       repo.close();
     });
   });
