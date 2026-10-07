@@ -23,10 +23,10 @@
     },
     {
       "id": "graphql",
-      "files": 1,
-      "compared": 109,
-      "matched": 67,
-      "parity": 61.46788990825688,
+      "files": 62,
+      "compared": 14743,
+      "matched": 7781,
+      "parity": 52.77758936444414,
       "mismatches": []
     },
     {
@@ -39,10 +39,10 @@
     },
     {
       "id": "javascript",
-      "files": 1801,
-      "compared": 703839,
-      "matched": 694363,
-      "parity": 98.6536693760931,
+      "files": 1832,
+      "compared": 705477,
+      "matched": 696001,
+      "parity": 98.65679533138571,
       "mismatches": []
     },
     {
