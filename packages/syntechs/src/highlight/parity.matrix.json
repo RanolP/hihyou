@@ -1,0 +1,97 @@
+{
+  "theme": "github-dark",
+  "corpus": "bench",
+  "tools": {
+    "shiki": "shiki 2.5.0"
+  },
+  "groups": [
+    {
+      "id": "json",
+      "files": 178,
+      "compared": 290769,
+      "matched": 288958,
+      "parity": 99.37716881785884,
+      "mismatches": []
+    },
+    {
+      "id": "css",
+      "files": 160,
+      "compared": 400396,
+      "matched": 335361,
+      "parity": 83.75733024305937,
+      "mismatches": []
+    },
+    {
+      "id": "graphql",
+      "files": 62,
+      "compared": 14743,
+      "matched": 7781,
+      "parity": 52.77758936444414,
+      "mismatches": []
+    },
+    {
+      "id": "html",
+      "files": 149,
+      "compared": 54154,
+      "matched": 46649,
+      "parity": 86.14137459836762,
+      "mismatches": []
+    },
+    {
+      "id": "javascript",
+      "files": 1832,
+      "compared": 705477,
+      "matched": 696001,
+      "parity": 98.65679533138571,
+      "mismatches": []
+    },
+    {
+      "id": "typescript",
+      "files": 1030,
+      "compared": 2961446,
+      "matched": 2952459,
+      "parity": 99.6965333826786,
+      "mismatches": []
+    },
+    {
+      "id": "tsx",
+      "files": 35,
+      "compared": 255326,
+      "matched": 253463,
+      "parity": 99.27034457908712,
+      "mismatches": []
+    },
+    {
+      "id": "python",
+      "files": 366,
+      "compared": 752265,
+      "matched": 676244,
+      "parity": 89.89438562208797,
+      "mismatches": []
+    },
+    {
+      "id": "kotlin",
+      "files": 7,
+      "compared": 48078,
+      "matched": 46997,
+      "parity": 97.75157036482383,
+      "mismatches": []
+    },
+    {
+      "id": "swift",
+      "files": 93,
+      "compared": 575038,
+      "matched": 443916,
+      "parity": 77.19768084891781,
+      "mismatches": []
+    },
+    {
+      "id": "yaml",
+      "files": 361,
+      "compared": 31074,
+      "matched": 28455,
+      "parity": 91.57173199459355,
+      "mismatches": []
+    }
+  ]
+}

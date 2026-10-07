@@ -1,5 +1,5 @@
-# The setup every site.yml job shares after checkout: the mise toolchain, dependencies and the TypeScript build,
-# plus, for the jobs that measure, the fetched corpus and parser-bench inputs.
+# The setup every site.yml and highlight-gate.yml job shares after checkout: the mise toolchain, dependencies and
+# the TypeScript build, plus, for the jobs that measure, the fetched corpus and parser-bench inputs.
 name: setup
 description: mise tools, pnpm install, build, and optionally the fetched bench inputs
 

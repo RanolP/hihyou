@@ -1,0 +1,4 @@
+# c
+"""doc"""
+type T implements I { f(a: Int = 1): [String!] @deprecated }
+query Q($v: Boolean = true) { alias: f(a: 1.5, s: "x") ...F }

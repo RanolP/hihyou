@@ -52,6 +52,7 @@
 (function_signature name: (identifier) @function)
 (required_parameter pattern: (identifier) @function type: (type_annotation (function_type)))
 (optional_parameter pattern: (identifier) @function type: (type_annotation (function_type)))
+(required_parameter name: (identifier) @function)
 (variable_declarator name: (identifier) @function type: (type_annotation (function_type)))
 (method_definition name: (property_identifier) @keyword.storage
  (#eq? @keyword.storage "constructor"))
