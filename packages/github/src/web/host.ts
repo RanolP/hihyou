@@ -9,6 +9,10 @@ import type {
 import type { DiffsetResolution } from "../diffset.js";
 import { type FilePatch, parseDiff, reverseApply } from "./patch.js";
 
+// The subjects git's fmt-merge-msg writes (branch, tag, commit, remote-tracking, a bare pulled URL) and GitHub's merge button.
+export const GENERATED_MERGE_SUBJECT =
+  /^Merge (?:(?:remote-tracking )?branch(?:es)? '|tags? '|commits? '|pull request #\d+ from |(?:[a-z][\w+.-]*:\/\/|[\w.-]+(?:@[\w.-]+)?:|\/)\S+(?: into \S+)?$)/;
+
 /**
  * What a diffset is named by when the host reads github.com pages with the browser's own session instead of the
  * REST API: a pull request's whole change at one head commit, or one commit selected inside that pull request.
@@ -270,7 +274,7 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
         listed.set(webDiffsetIdOf({ owner, repo, commit: commit.sha }), {
           pull: number,
           // The route carries no parents; a merge renamed away from git's default subject keeps its first-parent diff.
-          merge: commit.subject.startsWith("Merge "),
+          merge: GENERATED_MERGE_SUBJECT.test(commit.subject),
         });
       const head =
         headFromChannel(route.metadata?.commitHeadShaChannel) ??

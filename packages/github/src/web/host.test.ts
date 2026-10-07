@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect, test, vi } from "vitest";
-import { githubWebHost } from "./host.js";
+import { GENERATED_MERGE_SUBJECT, githubWebHost } from "./host.js";
 
 // Recorded once, logged out, from https://github.com/vitejs/vite/pull/21626 at its head 0f3f23b8: the `.diff`
 // trimmed to a modified file, a rename and an added file; the raw head contents of those three; the Commits
@@ -278,4 +278,33 @@ test("resolvePull takes the head from the page's channel and lists commits oldes
     author: "Vladimir Sheremet",
     date: "2026-02-12T12:06:25.000+01:00",
   });
+});
+
+// Regression: a hand-written subject starting with "Merge " triggers a page fetch, or a generated merge subject is missed.
+test.each([
+  ["Merge branch 'main'", true],
+  ["Merge branch 'main' into feature", true],
+  ["Merge branch 'main' of github.com:owner/repo", true],
+  ["Merge branch 'a' of https://github.com/owner/repo into b", true],
+  ["Merge branches 'a' and 'b'", true],
+  ["Merge branches 'a', 'b' and 'c' into f", true],
+  ["Merge remote-tracking branch 'origin/main'", true],
+  ["Merge remote-tracking branches 'origin/b' and 'origin/c' into f", true],
+  ["Merge remote-tracking branch 'origin/b', tag 'v1.2' into f", true],
+  ["Merge tag 'v1.2'", true],
+  ["Merge tags 'v1.2' and 'v2' of https://github.com/owner/repo into f", true],
+  ["Merge commit 'abc123'", true],
+  ["Merge commit 'abc123' into feature", true],
+  ["Merge pull request #123 from owner/branch", true],
+  ["Merge https://github.com/owner/repo", true],
+  ["Merge git@github.com:owner/repo into main", true],
+  ["Merge /srv/git/repo into main", true],
+  ["Merge sort implementation", false],
+  ["Merge helper into utils", false],
+  ["Merged the docs", false],
+  ["merge branch 'x'", false],
+  [`Revert "Merge branch 'main'"`, false],
+  ["Merge fix: something", false],
+])("%j is a generated merge subject: %s", (subject, generated) => {
+  expect(GENERATED_MERGE_SUBJECT.test(subject)).toBe(generated);
 });
