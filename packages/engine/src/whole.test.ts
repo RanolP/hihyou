@@ -223,3 +223,45 @@ test("a local const added inside a method of a class is emphasized, not whole", 
       .join(""),
   ).toContain("ready");
 });
+
+// Pairing by shape before by name sent an object's `sleep` to a look-alike `sleep` in a new function's object, so
+// the `sleep` that stayed in the edited object read as all removed and all added instead of edited in place.
+test("a same-named property whose value changed is edited in place, not taken by a look-alike elsewhere", async () => {
+  const before = `export function primitives(ctx: Context): Primitives {
+  return {
+    run: <T>(name: string, fn: () => T): Promise<T> => ctx.run(name, fn),
+    sleep: (duration: number): Promise<void> => ctx.sleep(duration),
+  };
+}
+`;
+  const after = `export function wrap(runtime: Runtime): Primitives {
+  return {
+    run: <T>(name: string, fn: () => T): Promise<T> => runtime.step(name, fn),
+    sleep: (duration: number): Promise<void> => runtime.sleep("sleep", duration),
+  };
+}
+
+export function steps(ctx: Context): Runtime {
+  return {
+    step: <T>(name: string, fn: () => T): Promise<T> => ctx.run(name, fn),
+    sleep: (_name: string, ms: number): Promise<void> => ctx.sleep(ms),
+  };
+}
+`;
+  const [file] = await diff([{ path: "context.ts", before, after }]);
+  const changed = (which: "before" | "after") =>
+    (file?.fragments ?? []).flatMap((f) =>
+      f.kind === "diff" ? f[which].spans.filter((s) => s.changed).map((s) => s.text) : [],
+    );
+  expect(changed("before")).not.toContain("sleep");
+  expect(changed("before").join("")).toContain("duration");
+});
+
+// Requiring equal names to pair two declarations turned a pure rename into a whole removed and a whole added one.
+test("a declaration renamed with its body unchanged is edited in place, not removed and added whole", async () => {
+  const [file] = await diff([
+    { path: "x.ts", before: `export ${fn("total", "return total;")}`, after: `export ${fn("sum", "return total;")}` },
+  ]);
+  expect([...nodes(file, "before"), ...nodes(file, "after")].filter((n) => n.whole)).toEqual([]);
+  expect(emphasized(file).map((s) => s.text)).toEqual(["total", "sum"]);
+});
