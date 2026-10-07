@@ -1,3 +1,4 @@
+import type { Tree } from "../core/arena.js";
 import { nameOf } from "./move.js";
 import { commonPairs } from "./sequence.js";
 import type { Side } from "./side.js";
@@ -62,6 +63,16 @@ export function match(
     for (let k = 0, size = sizeA[x] as number; k < size; k++) {
       src[x + k] = y + k;
       dst[y + k] = x + k;
+    }
+  };
+  /** Undoes every pairing between the subtrees of `x` and `y`. */
+  const unlinkWithin = (x: number, y: number) => {
+    const end = y + (sizeB[y] as number);
+    for (let k = x; k < x + (sizeA[x] as number); k++) {
+      const p = src[k] as number;
+      if (p < y || p >= end) continue;
+      src[k] = -1;
+      dst[p] = -1;
     }
   };
   let diceWork = 0;
@@ -198,6 +209,11 @@ export function match(
   // Recovery inside a newly matched container pair: pair up its still-unmatched children, then theirs.
   // A worklist instead of recursion, so deep nesting cannot overflow the JS stack; the order is free
   // because recovering one pair only links nodes inside that pair's own subtrees.
+  const nameKey = (side: Side, n: number) => {
+    const h = side.nodes[n] as number;
+    const name = memberName(side.tree, h);
+    return name === undefined ? undefined : `${side.tree.kindName(h)}\0${name}`;
+  };
   const recover = (root: number, rootB: number) => {
     const pending: [number, number][] = [[root, rootB]];
     const linkAndRecover = (p: number, q: number) => {
@@ -216,6 +232,47 @@ export function match(
         ).filter(([p]) => src[p] === -1);
       for (const [p, q] of unmatchedPairs((p, q) => isoA[p] === isoB[q]))
         linkSubtree(p, q);
+      // A member is its name within its scope: a kind and name found once on each side, among the children not
+      // already paired with their namesake inside this pair, is one member edited in place. It pairs before any pass
+      // that goes by shape, so shape decides only among the rest and a rename still pairs; a declaration moved past
+      // its siblings with a token changed in most statements, which keeps no subtree whole to seed the bottom-up
+      // phase, pairs here too. A member the bottom-up phase gave to a look-alike, in another scope (an object's
+      // `sleep` whose signature reappears in a new function's object) or under another name in this one (a function
+      // whose old body moved into a new sibling), comes back; an identical copy there keeps it, as a move.
+      const byName = (
+        side: Side,
+        ns: number[],
+        partner: Int32Array,
+        other: Side,
+        otherParent: number,
+      ) => {
+        const found = new Map<string, number>();
+        for (const n of ns) {
+          const key = nameKey(side, n);
+          if (key === undefined) continue;
+          const m = partner[n] as number;
+          if (
+            m !== -1 &&
+            other.parentOf(m) === otherParent &&
+            nameKey(other, m) === key
+          )
+            continue;
+          found.set(key, found.has(key) ? -1 : n);
+        }
+        return found;
+      };
+      const namedB = byName(b, kidsY, dst, a, x);
+      for (const [key, p] of byName(a, kidsX, src, b, y)) {
+        const q = namedB.get(key);
+        if (p === -1 || q === undefined || q === -1) continue;
+        const elsewhereA = src[p] as number;
+        const elsewhereB = dst[q] as number;
+        if (elsewhereA !== -1 && isoA[p] === isoB[elsewhereA]) continue;
+        if (elsewhereB !== -1 && isoA[elsewhereB] === isoB[q]) continue;
+        if (elsewhereA !== -1) unlinkWithin(p, elsewhereA);
+        if (elsewhereB !== -1) unlinkWithin(elsewhereB, q);
+        linkAndRecover(p, q);
+      }
       // A child whose matched descendants went mostly into another unmatched child across belongs with that
       // one, not with the first look-alike in order: when a new `useEffect(...)` lands above an edited one, the
       // old effect pairs with the edited one, which holds its body, rather than with the new one.
@@ -229,30 +286,6 @@ export function match(
           fits(p, q),
       ))
         linkAndRecover(p, q);
-      // A declaration moved past its siblings with a token changed in most statements keeps no subtree whole to seed
-      // the bottom-up phase, and the pass above pairs in order only. Its name still says which one it is: a kind
-      // and name found once among the unmatched children on each side pair up, and `classifyMove` judges the pair.
-      const unmatchedA = kidsX.filter((c) => src[c] === -1);
-      const unmatchedB = kidsY.filter((c) => dst[c] === -1);
-      if (unmatchedA.length > 0 && unmatchedB.length > 0) {
-        const byName = (side: Side, ns: number[]) => {
-          const found = new Map<string, number>();
-          for (const n of ns) {
-            const h = side.nodes[n] as number;
-            const name = side.tree.named(h) ? nameOf(side.tree, h) : undefined;
-            if (name === undefined) continue;
-            const key = `${side.tree.kindName(h)}\0${name}`;
-            found.set(key, found.has(key) ? -1 : n);
-          }
-          return found;
-        };
-        const namedB = byName(b, unmatchedB);
-        for (const [key, p] of byName(a, unmatchedA)) {
-          const q = namedB.get(key);
-          if (p !== -1 && q !== undefined && q !== -1 && fits(p, q))
-            linkAndRecover(p, q);
-        }
-      }
       // Kinds that occur once on each side pair up even when labels differ; this is how a changed literal becomes an update.
       const once = (ns: number[], kind: (n: number) => string) => {
         const byKind = new Map<string, number>();
@@ -461,6 +494,18 @@ export function match(
     }
 
   return { a, b, src, dst };
+}
+
+/** A declaration's name, or the key of a member written `key: value` (an object property, a mapping entry). */
+function memberName(tree: Tree, n: number): string | undefined {
+  if (!tree.named(n)) return undefined;
+  const name = nameOf(tree, n);
+  if (name !== undefined) return name;
+  for (let i = 0, count = tree.count(n); i < count; i++) {
+    const c = tree.child(n, i);
+    if (tree.fieldName(c) === "key") return tree.text(c);
+  }
+  return undefined;
 }
 
 /**
