@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
-import { expect, test } from "vitest";
-import { githubWebHost } from "./host.js";
+import { expect, test, vi } from "vitest";
+import { GENERATED_MERGE_SUBJECT, githubWebHost } from "./host.js";
 
 // Recorded once, logged out, from https://github.com/vitejs/vite/pull/21626 at its head 0f3f23b8: the `.diff`
 // trimmed to a modified file, a rename and an added file; the raw head contents of those three; the Commits
@@ -38,6 +38,65 @@ function stubFetch(
 }
 
 const pull = { owner: "vitejs", repo: "vite", pull: 21626, head };
+
+// A sync merge in https://github.com/RanolP/hihyou/pull/372: its first-parent `.diff`, cut to one file main brought
+// in and one the merge itself changed, and its commit page, which lists six files: as served logged out
+// (pull_372_commit_cde2c9a.html) and as a signed-in session is redirected to (pull_372_changes_cde2c9a.html).
+const mergeSha = "cde2c9ac539e7e8e5be8e0c4fa8e6e3ab8d3f102";
+const mergeRepo = "https://github.com/RanolP/hihyou";
+const mergePage = fixture("pull_372_commit_cde2c9a.html").toString();
+const signedInMergePage = fixture("pull_372_changes_cde2c9a.html").toString();
+const mergeCommits = JSON.stringify({
+  payload: {
+    pullRequestsCommitsRoute: {
+      commitGroups: [
+        {
+          commits: [
+            {
+              oid: mergeSha,
+              shortMessage:
+                "Merge remote-tracking branch 'origin/main' into claude/fmt-dsl-swift",
+              authoredDate: "2026-10-06T17:00:38.000+09:00",
+            },
+          ],
+        },
+      ],
+    },
+  },
+});
+
+/** `page` is the commit page's body, or `null` for a server error on it. */
+function mergeFetch(page: string | null) {
+  const calls: string[] = [];
+  const fetch = async (url: string, init?: { accept?: string }) => {
+    calls.push(url);
+    if (url === `${mergeRepo}/pull/372/commits`) {
+      expect(init?.accept).toBe("application/json");
+      return new Response(mergeCommits);
+    }
+    if (url === `${mergeRepo}/pull/372/commits/${mergeSha}`)
+      return page === null
+        ? new Response("boom", {
+            status: 500,
+            statusText: "Internal Server Error",
+          })
+        : new Response(page);
+    if (url === `${mergeRepo}/commit/${mergeSha}.diff`)
+      return new Response(
+        "diff --git a/packages/browser/src/app.ts b/packages/browser/src/app.ts\n" +
+          "index 1111111..2222222 100644\n" +
+          "--- a/packages/browser/src/app.ts\n+++ b/packages/browser/src/app.ts\n@@ -1 +1 @@\n-a\n+b\n" +
+          "diff --git a/packages/syntechs/src/grammars/swift/format.ts b/packages/syntechs/src/grammars/swift/format.ts\n" +
+          "index 3333333..4444444 100644\n" +
+          "--- a/packages/syntechs/src/grammars/swift/format.ts\n+++ b/packages/syntechs/src/grammars/swift/format.ts\n@@ -1 +1 @@\n-c\n+d\n",
+      );
+    return new Response("not recorded", {
+      status: 404,
+      statusText: "Not Found",
+    });
+  };
+  return { fetch, calls };
+}
 
 // If renames, additions or blob ids were read off the `.diff` wrongly, the file list would show a rename as a
 // delete plus an add, or two diffsets would share a cache entry for different contents.
@@ -109,6 +168,105 @@ test("both sides of a modified file share one raw fetch", async () => {
   expect(calls.filter((u) => u.includes("/raw/"))).toHaveLength(1);
 });
 
+// If the merge were shown by its `commit/<sha>.diff` alone, the sync merge would list every file main brought in.
+test("a merge commit inside a pull request lists only the files GitHub's commit page shows", async () => {
+  const { fetch, calls } = mergeFetch(mergePage);
+  const host = githubWebHost({ fetch });
+  await host.resolvePull("RanolP", "hihyou", 372);
+  const { changes } = await host.resolveDiffset({
+    owner: "RanolP",
+    repo: "hihyou",
+    commit: mergeSha,
+  });
+  expect(changes.map((change) => change.path)).toEqual([
+    "packages/syntechs/src/grammars/swift/format.ts",
+  ]);
+  expect(calls).toContain(`${mergeRepo}/pull/372/commits/${mergeSha}`);
+});
+
+test("a signed-in GitHub page hides the remerge-diff list and every merge falls back", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const host = githubWebHost({ fetch: mergeFetch(signedInMergePage).fetch });
+  await host.resolvePull("RanolP", "hihyou", 372);
+  const { changes } = await host.resolveDiffset({
+    owner: "RanolP",
+    repo: "hihyou",
+    commit: mergeSha,
+  });
+  expect(changes.map((change) => change.path)).toEqual([
+    "packages/syntechs/src/grammars/swift/format.ts",
+  ]);
+  expect(warn).not.toHaveBeenCalled();
+  warn.mockRestore();
+});
+
+// If a capped file list were trusted, a merge past GitHub's file limit would drop the files the page left out.
+test("a signed-in merge page past GitHub's file limit falls back to the first-parent diff", async () => {
+  const capped = signedInMergePage.replace(
+    '"filesLimitExceeded":false',
+    '"filesLimitExceeded":true',
+  );
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const host = githubWebHost({ fetch: mergeFetch(capped).fetch });
+  await host.resolvePull("RanolP", "hihyou", 372);
+  const { changes } = await host.resolveDiffset({
+    owner: "RanolP",
+    repo: "hihyou",
+    commit: mergeSha,
+  });
+  expect(changes).toHaveLength(2);
+  expect(warn).toHaveBeenCalledWith(
+    expect.stringContaining("exceeds GitHub's file limit"),
+  );
+  warn.mockRestore();
+});
+
+// If a page whose diffs were cut short were trusted, the merge would silently drop the files it did not render.
+test("a merge commit page listing fewer paths than its file count falls back to the first-parent diff", async () => {
+  const partial = mergePage.replace(
+    /<li [^>]*data-tree-entry-type="file" >\s*<span data-filterable-item-text hidden>packages\/syntechs\/src\/grammars\/swift\/format\.ts<\/span>\s*<\/li>|<copilot-diff-entry data-file-path="packages\/syntechs\/src\/grammars\/swift\/format\.ts">[\s\S]*?<\/copilot-diff-entry>/g,
+    "",
+  );
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const host = githubWebHost({ fetch: mergeFetch(partial).fetch });
+  await host.resolvePull("RanolP", "hihyou", 372);
+  const { changes } = await host.resolveDiffset({
+    owner: "RanolP",
+    repo: "hihyou",
+    commit: mergeSha,
+  });
+  expect(changes.map((change) => change.path)).toEqual([
+    "packages/browser/src/app.ts",
+    "packages/syntechs/src/grammars/swift/format.ts",
+  ]);
+  expect(warn).toHaveBeenCalledWith(
+    expect.stringContaining("lists 5 paths but its file filter counts 6"),
+  );
+  warn.mockRestore();
+});
+
+// If the commit page's error were not caught, a 404, 429 or 5xx on it would fail the whole merge commit instead of
+// showing it as before.
+test("a merge commit whose commit page fails to load falls back to the first-parent diff", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const host = githubWebHost({ fetch: mergeFetch(null).fetch });
+  await host.resolvePull("RanolP", "hihyou", 372);
+  const { changes } = await host.resolveDiffset({
+    owner: "RanolP",
+    repo: "hihyou",
+    commit: mergeSha,
+  });
+  expect(changes.map((change) => change.path)).toEqual([
+    "packages/browser/src/app.ts",
+    "packages/syntechs/src/grammars/swift/format.ts",
+  ]);
+  expect(warn).toHaveBeenCalledWith(
+    expect.stringContaining(`${mergeRepo}/pull/372/commits/${mergeSha}`),
+    expect.any(Error),
+  );
+  warn.mockRestore();
+});
+
 // The Commits tab lists by date, so its last row is not always the head; the head names which `.diff` to fetch.
 test("resolvePull takes the head from the page's channel and lists commits oldest first", async () => {
   const host = githubWebHost({ fetch: stubFetch().fetch });
@@ -120,4 +278,35 @@ test("resolvePull takes the head from the page's channel and lists commits oldes
     author: "Vladimir Sheremet",
     date: "2026-02-12T12:06:25.000+01:00",
   });
+});
+
+// Regression: a hand-written subject starting with "Merge " triggers a page fetch, or a generated merge subject is missed.
+test.each([
+  ["Merge branch 'main'", true],
+  ["Merge branch 'main' into feature", true],
+  ["Merge branch 'main' of github.com:owner/repo", true],
+  ["Merge branch 'a' of https://github.com/owner/repo into b", true],
+  ["Merge branches 'a' and 'b'", true],
+  ["Merge branches 'a', 'b' and 'c' into f", true],
+  ["Merge remote-tracking branch 'origin/main'", true],
+  ["Merge remote-tracking branches 'origin/b' and 'origin/c' into f", true],
+  ["Merge remote-tracking branch 'origin/b', tag 'v1.2' into f", true],
+  ["Merge tag 'v1.2'", true],
+  ["Merge tags 'v1.2' and 'v2' of https://github.com/owner/repo into f", true],
+  ["Merge commit 'abc123'", true],
+  ["Merge commit 'abc123' into feature", true],
+  ["Merge pull request #123 from owner/branch", true],
+  ["Merge https://github.com/owner/repo", true],
+  ["Merge git@github.com:owner/repo into main", true],
+  ["Merge /srv/git/repo into main", true],
+  ["Merge feat/lpi2-live-player into feat/lpi2-premiere-player", true],
+  // Indistinguishable from a tool-written merge; a false match costs one page fetch whose parents or full file list keep the commit's files.
+  ["Merge helper into utils", true],
+  ["Merge sort implementation", false],
+  ["Merged the docs", false],
+  ["merge branch 'x'", false],
+  [`Revert "Merge branch 'main'"`, false],
+  ["Merge fix: something", false],
+])("%j is a generated merge subject: %s", (subject, generated) => {
+  expect(GENERATED_MERGE_SUBJECT.test(subject)).toBe(generated);
 });

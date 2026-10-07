@@ -9,9 +9,13 @@ import type {
 import type { DiffsetResolution } from "../diffset.js";
 import { type FilePatch, parseDiff, reverseApply } from "./patch.js";
 
+// The subjects git's fmt-merge-msg writes (branch, tag, commit, remote-tracking, a bare pulled URL), GitHub's merge button, and stacking tools' unquoted `Merge <ref> into <ref>`.
+export const GENERATED_MERGE_SUBJECT =
+  /^Merge (?:(?:remote-tracking )?branch(?:es)? '|tags? '|commits? '|pull request #\d+ from |(?:(?:[a-z][\w+.-]*:\/\/|[\w.-]+(?:@[\w.-]+)?:|\/)\S+|\S+ into \S+)$)/;
+
 /**
  * What a diffset is named by when the host reads github.com pages with the browser's own session instead of the
- * REST API: a pull request's whole change at one head commit, or one commit against its first parent.
+ * REST API: a pull request's whole change at one head commit, or one commit selected inside that pull request.
  */
 export type GitHubWebDiffsetId =
   | { owner: string; repo: string; pull: number; head: string }
@@ -85,6 +89,7 @@ interface CommitsRoute {
  *
  * - a pull request's commits and head: `pull/<n>/commits` asked for JSON, the route GitHub's own page uses;
  * - which files changed, renames, binaries and blob ids: `pull/<n>.diff` or `commit/<sha>.diff`;
+ * - which of a merge commit's files GitHub shows: its `pull/<n>/commits/<sha>` page, see `mergeFilesShown`;
  * - a file's after side: `raw/<commit>/<path>`;
  * - its before side: the after side with the diff's hunks undone. github.com serves no merge base without the
  *   API, and undoing the hunks needs none; every context line is checked, so a mismatch throws.
@@ -94,6 +99,8 @@ interface CommitsRoute {
  */
 export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
   const origin = options.origin ?? "https://github.com";
+  /** Commits `resolvePull` listed, by `webDiffsetIdOf`: their pull request and whether they look like a merge. */
+  const listed = new Map<string, { pull: number; merge: boolean }>();
   /** How to produce each blob id resolveDiffset has handed out. */
   const recipes = new Map<BlobId, () => Promise<Uint8Array>>();
 
@@ -113,6 +120,36 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
   const repoUrl = (owner: string, repo: string) =>
     `${origin}/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
 
+  /**
+   * A merge commit's first-parent patches cut to the files its pull request commit page shows. A commit opened
+   * outside any listed pull request keeps its first-parent diff, as GitHub's own commit page does; so does a merge
+   * whose page fails to load or cannot be trusted.
+   */
+  const shownPatches = async (
+    patches: FilePatch[],
+    data: GitHubWebDiffsetId,
+  ): Promise<FilePatch[]> => {
+    const inPull =
+      "pull" in data ? undefined : listed.get(webDiffsetIdOf(data));
+    if ("pull" in data || !inPull?.merge) return patches;
+    const page = `${repoUrl(data.owner, data.repo)}/pull/${inPull.pull}/commits/${encodeURIComponent(data.commit)}`;
+    let shown: Set<string> | undefined;
+    try {
+      shown = mergeFilesShown(await (await get(page)).text(), page);
+    } catch (error) {
+      console.warn(
+        `${page} failed to load; showing the merge against its first parent:`,
+        error,
+      );
+    }
+    // Either side may name a renamed or deleted file: no recorded page shows which one GitHub lists.
+    return shown
+      ? patches.filter(
+          (patch) => shown.has(patch.newPath) || shown.has(patch.oldPath),
+        )
+      : patches;
+  };
+
   const resolveDiffset = async (
     data: GitHubWebDiffsetId,
   ): Promise<DiffsetResolution> => {
@@ -122,7 +159,10 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
       "pull" in data
         ? `${repoUrl(owner, repo)}/pull/${data.pull}.diff`
         : `${repoUrl(owner, repo)}/commit/${encodeURIComponent(data.commit)}.diff`;
-    const patches = parseDiff(await (await get(url)).text());
+    const patches = await shownPatches(
+      parseDiff(await (await get(url)).text()),
+      data,
+    );
     const changes = patches.map((patch) =>
       toChange(
         patch,
@@ -230,6 +270,12 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
           date: c.authoredDate,
         })),
       );
+      for (const commit of commits)
+        listed.set(webDiffsetIdOf({ owner, repo, commit: commit.sha }), {
+          pull: number,
+          // The route carries no parents; a merge renamed away from git's default subject keeps its first-parent diff.
+          merge: GENERATED_MERGE_SUBJECT.test(commit.subject),
+        });
       const head =
         headFromChannel(route.metadata?.commitHeadShaChannel) ??
         commits.at(-1)?.sha;
@@ -238,6 +284,78 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
     },
     ...(options.preferences && { preferences: options.preferences }),
   };
+}
+
+interface ChangesRoute {
+  payload?: {
+    pullRequestsChangesWithRangeRoute?: {
+      diffSummaries?: { path: string }[];
+      commit?: { parents?: string[] };
+      pageLimits?: { filesLimitExceeded?: boolean };
+    };
+  };
+}
+
+/**
+ * The paths a pull request's commit page lists. For a merge commit GitHub shows its remerge diff (what the merge
+ * changed beyond a clean replay of its parents), which no raw route serves: `commit/<sha>.diff` and every PR-scoped
+ * `.diff` are against the first parent, so they carry every file the merged branch brought in. `undefined` keeps
+ * that first-parent diff: for a commit the page says is no merge, and, with a warning, for a page that cannot be
+ * trusted to list every file.
+ *
+ * A signed-in session is redirected to `pull/<n>/changes/<sha>`, a React page whose embedded JSON carries the
+ * commit's parents, a summary per file and whether GitHub capped the file list. A logged-out one gets server-rendered
+ * markup: each file header names its path in `data-tagsearch-path`, the file tree lists every path even when a diff
+ * body loads later, and the extension filter's per-type counts add up to the total.
+ */
+export function mergeFilesShown(
+  html: string,
+  url: string,
+): Set<string> | undefined {
+  const fallBack = (why: string) => {
+    console.warn(`${url} ${why}; showing the merge against its first parent`);
+    return undefined;
+  };
+  const embedded =
+    /<script type="application\/json" data-target="react-app\.embeddedData">([\s\S]*?)<\/script>/.exec(
+      html,
+    )?.[1];
+  const route =
+    embedded === undefined
+      ? undefined
+      : (JSON.parse(embedded) as ChangesRoute).payload
+          ?.pullRequestsChangesWithRangeRoute;
+  if (route?.diffSummaries) {
+    if ((route.commit?.parents?.length ?? 2) < 2) return undefined;
+    if (route.pageLimits?.filesLimitExceeded)
+      return fallBack("exceeds GitHub's file limit");
+    return new Set(route.diffSummaries.map((summary) => summary.path));
+  }
+  const paths = new Set(
+    [
+      ...html.matchAll(/data-tagsearch-path="([^"]*)"/g),
+      ...html.matchAll(
+        /data-tree-entry-type="file"[^>]*>\s*<span data-filterable-item-text hidden>([^<]*)<\/span>/g,
+      ),
+    ].map((m) => unescapeHtml(m[1] ?? "")),
+  );
+  const hasFilter = html.includes("<file-filter");
+  const total = [
+    ...html.matchAll(/data-all-file-count-markup="\((\d+)\)"/g),
+  ].reduce((sum, m) => sum + Number(m[1]), 0);
+  if (!hasFilter || total !== paths.size)
+    return fallBack(
+      `lists ${paths.size} paths but its file filter counts ${hasFilter ? total : "none"}`,
+    );
+  return paths;
+}
+
+function unescapeHtml(text: string): string {
+  return text.replace(
+    /&(quot|#39|lt|gt|amp);/g,
+    (_, name: string) =>
+      ({ quot: '"', "#39": "'", lt: "<", gt: ">", amp: "&" })[name] ?? "",
+  );
 }
 
 /**

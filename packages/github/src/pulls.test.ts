@@ -52,8 +52,8 @@ test("listPullRequests asks for open PRs on the first page", async () => {
   ]);
 });
 
-// Catches a PR commit whose first parent is dropped, which would leave its per-commit diffset without a base.
-test("listPullRequestCommits reads each commit's first parent, subject and author", async () => {
+// Catches a PR merge commit whose second parent is dropped, which would reintroduce the merged branch's files.
+test("listPullRequestCommits reads every parent, subject and author", async () => {
   const client = createGitHubClient({
     token: "t",
     fetch: async (url) => {
@@ -74,7 +74,7 @@ test("listPullRequestCommits reads each commit's first parent, subject and autho
   expect(await listPullRequestCommits(client, "o", "r", 7)).toEqual([
     {
       sha: "c1",
-      parent: "p1",
+      parents: ["p1", "p2"],
       message: "feat: a\n\nbody",
       author: "Ann",
       date: "2026-01-01T00:00:00Z",

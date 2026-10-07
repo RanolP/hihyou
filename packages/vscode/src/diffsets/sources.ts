@@ -103,7 +103,7 @@ async function branchCommits(local: LocalRepo): Promise<Commit[]> {
   return commits;
 }
 
-/** Each of a pull request's commits against its first parent, newest first. */
+/** Each of a pull request's commits against its first parent, with all parents for merge commits. */
 export async function pullRequestDiffsets({
   host,
   remote,
@@ -116,8 +116,14 @@ export async function pullRequestDiffsets({
     head: string,
     title: string,
     row: Pick<Diffset, "label" | "description" | "tooltip">,
+    parents?: readonly string[],
   ): Diffset => {
-    const id = { ...remote, base, head };
+    const id = {
+      ...remote,
+      base,
+      head,
+      ...(parents && parents.length > 1 && { parents: [...parents] }),
+    };
     return {
       key: `${prKey}:${key}`,
       ...row,
@@ -133,14 +139,21 @@ export async function pullRequestDiffsets({
   );
   // A root commit has no parent to compare against on GitHub, so it gets no row.
   return commits.toReversed().flatMap((c) => {
-    if (!c.parent) return [];
+    if (!c.parents[0]) return [];
     const short = c.sha.slice(0, 7);
     return [
-      diffset(c.sha, c.parent, c.sha, `#${pr.number} ${short} ${subject(c)}`, {
-        label: subject(c),
-        description: short,
-        tooltip: `${c.author} · ${c.date ? new Date(c.date).toLocaleString() : ""}\n\n${c.message}`,
-      }),
+      diffset(
+        c.sha,
+        c.parents[0],
+        c.sha,
+        `#${pr.number} ${short} ${subject(c)}`,
+        {
+          label: subject(c),
+          description: short,
+          tooltip: `${c.author} · ${c.date ? new Date(c.date).toLocaleString() : ""}\n\n${c.message}`,
+        },
+        c.parents,
+      ),
     ];
   });
 }

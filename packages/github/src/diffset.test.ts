@@ -211,3 +211,91 @@ test("a removed file uses its own sha as the before blob, with no after", async 
     },
   ]);
 });
+
+// The REST host has no PR remerge-diff route; intersecting parent comparisons is its --cc fallback, keeping
+// the merged branch's files out of the per-commit diffset.
+test("a merge diff keeps no files when it only synchronizes a parent", async () => {
+  const client = createGitHubClient({
+    token: "t",
+    fetch: async (url) => {
+      const u = String(url);
+      if (u.includes("/compare/p0...merge"))
+        return jsonResponse({
+          merge_base_commit: { sha: "p0" },
+          files: [
+            { sha: "pulled-after", filename: "pulled.txt", status: "added" },
+          ],
+        });
+      if (u.includes("/compare/p1...merge"))
+        return jsonResponse({ merge_base_commit: { sha: "p1" }, files: [] });
+      throw new Error(`unexpected request ${u}`);
+    },
+  });
+
+  await expect(
+    resolveGitHubDiffset(client, {
+      owner: "o",
+      repo: "r",
+      base: "p0",
+      head: "merge",
+      parents: ["p0", "p1"],
+    }),
+  ).resolves.toMatchObject({ changes: [] });
+});
+
+// In the REST host's --cc fallback, a conflict-resolution file appears in both parent comparisons, so it remains
+// while a file changed only by the merged branch is removed from the first-parent comparison.
+test("a merge diff keeps only a file changed against every parent", async () => {
+  const client = createGitHubClient({
+    token: "t",
+    fetch: async (url) => {
+      const u = String(url);
+      if (u.includes("/compare/p0...merge"))
+        return jsonResponse({
+          merge_base_commit: { sha: "p0" },
+          files: [
+            {
+              sha: "resolved-after",
+              filename: "conflict.txt",
+              status: "modified",
+            },
+            { sha: "pulled-after", filename: "pulled.txt", status: "added" },
+          ],
+        });
+      if (u.includes("/compare/p1...merge"))
+        return jsonResponse({
+          merge_base_commit: { sha: "p1" },
+          files: [
+            {
+              sha: "resolved-after",
+              filename: "conflict.txt",
+              status: "modified",
+            },
+          ],
+        });
+      if (u.includes("/git/trees/p0"))
+        return jsonResponse({
+          truncated: false,
+          tree: [
+            { path: "conflict.txt", type: "blob", sha: "resolved-before" },
+          ],
+        });
+      throw new Error(`unexpected request ${u}`);
+    },
+  });
+
+  const resolution = await resolveGitHubDiffset(client, {
+    owner: "o",
+    repo: "r",
+    base: "p0",
+    head: "merge",
+    parents: ["p0", "p1"],
+  });
+  expect(resolution.changes).toEqual([
+    {
+      path: "conflict.txt",
+      before: encodeBlobId("o", "r", "resolved-before"),
+      after: encodeBlobId("o", "r", "resolved-after"),
+    },
+  ]);
+});

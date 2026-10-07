@@ -53,10 +53,14 @@ export function localHost(
           return contentAddressed(repo, "staged", await repo.diffStaged());
         case "commit": {
           const sha = await repo.resolveRev(data.sha);
-          const parent = (await repo.readCommit(sha)).parents[0];
+          const parents = (await repo.readCommit(sha)).parents;
+          const first = await repo.diffTrees(parents[0], sha);
+          // GitHub's PR view uses remerge-diff, but this pure TypeScript git host has no
+          // three-way merge implementation. Use the --cc equivalent as the fallback:
+          // keep files changed against every parent, then render their first-parent sides.
           return {
             id: `commit:${sha}`,
-            changes: (await repo.diffTrees(parent, sha)).map(toRef),
+            changes: (await mergeChanges(repo, parents, sha, first)).map(toRef),
           };
         }
         case "range": {
@@ -73,6 +77,28 @@ export function localHost(
     },
     readBlob: (id) => repo.readBlob(id),
   };
+}
+
+async function mergeChanges(
+  repo: Repo,
+  parents: string[],
+  sha: string,
+  first: ChangedFile[],
+): Promise<ChangedFile[]> {
+  if (parents.length < 2) return first;
+  const paths = await Promise.all(
+    parents
+      .slice(1)
+      .map(
+        async (parent) =>
+          new Set(
+            (await repo.diffTrees(parent, sha)).map((change) => change.path),
+          ),
+      ),
+  );
+  return first.filter((change) =>
+    paths.every((parent) => parent.has(change.path)),
+  );
 }
 
 /** Same changes -> same id, so two reads of an unchanged working tree share the engine's cached diff. */
