@@ -61,6 +61,5 @@
 (call_expression function: (non_null_expression (member_expression property: (property_identifier) @function.method)))
 (call_expression function: (non_null_expression (identifier) @function))
 
-
 (module "module" @keyword)
 (using_declaration (variable_declarator name: (identifier) @constant))

@@ -68,7 +68,7 @@ jobs:
           if-no-files-found: error
 
   site:
-    needs: [measure, gate]
+    needs: measure
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -108,19 +108,6 @@ jobs:
       - uses: actions/upload-pages-artifact@v5
         with:
           path: packages/website/docs/.vitepress/dist
-
-  gate:
-    needs: measure
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: ./.github/actions/setup
-        with:
-          fetch-inputs: "true"
-
-      - name: Highlight parity gate
-        run: node packages/syntechs/dist/highlight/gate.node.js --corpus bench
 
   deploy:
     needs: site

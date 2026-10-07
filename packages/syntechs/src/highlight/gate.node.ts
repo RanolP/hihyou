@@ -1,13 +1,14 @@
 // Ratchet the committed shiki colour parity floor per language.
-// Usage: node packages/syntechs/dist/highlight/gate.node.js [--corpus bench] [--matrix path]
+// Usage: node packages/syntechs/dist/highlight/gate.node.js [--corpus bench] [--matrix path] [--show N]
 
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { measureParity } from "./parity.node.js";
+import { measureParity, type ParityResult } from "./parity.node.js";
 
 interface MatrixGroup {
   id: string;
   compared: number;
+  matched: number;
   parity: number;
 }
 
@@ -34,6 +35,18 @@ function loadMatrix(path: string): Matrix {
   return matrix;
 }
 
+/** Full precision on purpose: a regression of a few characters in millions only shows past the 4th decimal. */
+function report(floor: MatrixGroup, current: ParityResult): string {
+  const lines = [
+    `${floor.id}: measured ${current.parity}% < floor ${floor.parity}% (delta ${current.parity - floor.parity} points)`,
+    `  matched ${current.matched}/${current.compared} chars over ${current.files} files; floor matched ${floor.matched}/${floor.compared}`,
+    `  top mismatches (count, tree context: ours -> shiki's colour, first sample [our scope stack]):`,
+  ];
+  for (const m of current.mismatches)
+    lines.push(`    ${m.count}\t${m.cause}\n\t\t${m.example}`);
+  return lines.join("\n");
+}
+
 async function main(): Promise<void> {
   const matrixPath = resolve(
     arg(
@@ -43,20 +56,22 @@ async function main(): Promise<void> {
   );
   const matrix = loadMatrix(matrixPath);
   const corpus = arg("--corpus", matrix.corpus);
+  const show = Number(arg("--show", "8"));
   const failures: string[] = [];
-  for (const baseline of matrix.groups) {
-    const current = await measureParity(baseline.id, corpus, matrix.theme, 0);
-    if (current.compared === 0)
-      failures.push(`${baseline.id}: no comparable characters`);
-    else if (current.parity + 1e-9 < baseline.parity)
-      failures.push(
-        `${baseline.id}: parity ${current.parity.toFixed(2)}% < ${baseline.parity.toFixed(2)}%`,
-      );
-  }
-  if (failures.length > 0)
-    throw new Error(
-      `highlight gate failed:\n${failures.map((f) => `- ${f}`).join("\n")}`,
+  for (const floor of matrix.groups) {
+    const current = await measureParity(floor.id, corpus, matrix.theme, show);
+    console.log(
+      `${floor.id}\t${current.parity}%\tfloor ${floor.parity}%\tdelta ${current.parity - floor.parity}`,
     );
+    if (current.compared === 0)
+      failures.push(`${floor.id}: no comparable characters`);
+    else if (current.parity + 1e-9 < floor.parity)
+      failures.push(report(floor, current));
+  }
+  if (failures.length > 0) {
+    console.error(`highlight gate failed:\n${failures.join("\n")}`);
+    process.exit(1);
+  }
   console.log(`highlight gate passed: ${matrix.groups.length} parity floors`);
 }
 

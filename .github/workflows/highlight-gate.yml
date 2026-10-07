@@ -1,0 +1,31 @@
+# Fails a pull request whose syntechs highlighting drops below the committed shiki colour parity floor of any
+# language (packages/syntechs/src/highlight/parity.matrix.json). Parity only: speed on shared runners is too noisy
+# to gate on, so the site workflow measures it for the scorecard instead.
+name: highlight-gate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: highlight-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # The fetched corpus and parser-bench inputs are part of the bench corpus.
+      - uses: ./.github/actions/setup
+        with:
+          fetch-inputs: "true"
+
+      # Reads the package sources at benchSourcesCommit (parity.node.ts), fetching that commit into the shallow clone.
+      - name: Highlight parity gate
+        run: node packages/syntechs/dist/highlight/gate.node.js --corpus bench

@@ -48,9 +48,9 @@
     {
       "id": "typescript",
       "files": 1030,
-      "compared": 2962238,
-      "matched": 2953245,
-      "parity": 99.69641196959866,
+      "compared": 2961446,
+      "matched": 2952459,
+      "parity": 99.6965333826786,
       "mismatches": []
     },
     {
