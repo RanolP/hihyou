@@ -299,8 +299,10 @@ test.each([
   ["Merge https://github.com/owner/repo", true],
   ["Merge git@github.com:owner/repo into main", true],
   ["Merge /srv/git/repo into main", true],
+  ["Merge feat/lpi2-live-player into feat/lpi2-premiere-player", true],
+  // Indistinguishable from a tool-written merge; a false match costs one page fetch whose parents or full file list keep the commit's files.
+  ["Merge helper into utils", true],
   ["Merge sort implementation", false],
-  ["Merge helper into utils", false],
   ["Merged the docs", false],
   ["merge branch 'x'", false],
   [`Revert "Merge branch 'main'"`, false],

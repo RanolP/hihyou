@@ -9,9 +9,9 @@ import type {
 import type { DiffsetResolution } from "../diffset.js";
 import { type FilePatch, parseDiff, reverseApply } from "./patch.js";
 
-// The subjects git's fmt-merge-msg writes (branch, tag, commit, remote-tracking, a bare pulled URL) and GitHub's merge button.
+// The subjects git's fmt-merge-msg writes (branch, tag, commit, remote-tracking, a bare pulled URL), GitHub's merge button, and stacking tools' unquoted `Merge <ref> into <ref>`.
 export const GENERATED_MERGE_SUBJECT =
-  /^Merge (?:(?:remote-tracking )?branch(?:es)? '|tags? '|commits? '|pull request #\d+ from |(?:[a-z][\w+.-]*:\/\/|[\w.-]+(?:@[\w.-]+)?:|\/)\S+(?: into \S+)?$)/;
+  /^Merge (?:(?:remote-tracking )?branch(?:es)? '|tags? '|commits? '|pull request #\d+ from |(?:(?:[a-z][\w+.-]*:\/\/|[\w.-]+(?:@[\w.-]+)?:|\/)\S+|\S+ into \S+)$)/;
 
 /**
  * What a diffset is named by when the host reads github.com pages with the browser's own session instead of the
