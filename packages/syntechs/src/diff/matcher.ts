@@ -209,6 +209,11 @@ export function match(
   // Recovery inside a newly matched container pair: pair up its still-unmatched children, then theirs.
   // A worklist instead of recursion, so deep nesting cannot overflow the JS stack; the order is free
   // because recovering one pair only links nodes inside that pair's own subtrees.
+  const nameKey = (side: Side, n: number) => {
+    const h = side.nodes[n] as number;
+    const name = memberName(side.tree, h);
+    return name === undefined ? undefined : `${side.tree.kindName(h)}\0${name}`;
+  };
   const recover = (root: number, rootB: number) => {
     const pending: [number, number][] = [[root, rootB]];
     const linkAndRecover = (p: number, q: number) => {
@@ -228,37 +233,36 @@ export function match(
       for (const [p, q] of unmatchedPairs((p, q) => isoA[p] === isoB[q]))
         linkSubtree(p, q);
       // A member is its name within its scope: a kind and name found once on each side, among the children not
-      // already paired inside this pair, is one member edited in place. It pairs before any pass that goes by shape,
-      // so shape decides only among the rest and a rename still pairs; a declaration moved past its siblings with a
-      // token changed in most statements, which keeps no subtree whole to seed the bottom-up phase, pairs here too.
-      // A member the bottom-up phase gave to a look-alike in another scope (an object's `sleep` whose signature
-      // reappears in a new function's object) comes back; an identical copy there keeps it, as a move.
+      // already paired with their namesake inside this pair, is one member edited in place. It pairs before any pass
+      // that goes by shape, so shape decides only among the rest and a rename still pairs; a declaration moved past
+      // its siblings with a token changed in most statements, which keeps no subtree whole to seed the bottom-up
+      // phase, pairs here too. A member the bottom-up phase gave to a look-alike, in another scope (an object's
+      // `sleep` whose signature reappears in a new function's object) or under another name in this one (a function
+      // whose old body moved into a new sibling), comes back; an identical copy there keeps it, as a move.
       const byName = (
         side: Side,
         ns: number[],
-        inPair: (n: number) => boolean,
+        partner: Int32Array,
+        other: Side,
+        otherParent: number,
       ) => {
         const found = new Map<string, number>();
         for (const n of ns) {
-          if (inPair(n)) continue;
-          const h = side.nodes[n] as number;
-          const name = memberName(side.tree, h);
-          if (name === undefined) continue;
-          const key = `${side.tree.kindName(h)}\0${name}`;
+          const key = nameKey(side, n);
+          if (key === undefined) continue;
+          const m = partner[n] as number;
+          if (
+            m !== -1 &&
+            other.parentOf(m) === otherParent &&
+            nameKey(other, m) === key
+          )
+            continue;
           found.set(key, found.has(key) ? -1 : n);
         }
         return found;
       };
-      const namedB = byName(
-        b,
-        kidsY,
-        (q) => dst[q] !== -1 && a.parentOf(dst[q] as number) === x,
-      );
-      for (const [key, p] of byName(
-        a,
-        kidsX,
-        (p) => src[p] !== -1 && b.parentOf(src[p] as number) === y,
-      )) {
+      const namedB = byName(b, kidsY, dst, a, x);
+      for (const [key, p] of byName(a, kidsX, src, b, y)) {
         const q = namedB.get(key);
         if (p === -1 || q === undefined || q === -1) continue;
         const elsewhereA = src[p] as number;

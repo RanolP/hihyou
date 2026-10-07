@@ -265,3 +265,31 @@ test("a declaration renamed with its body unchanged is edited in place, not remo
   expect([...nodes(file, "before"), ...nodes(file, "after")].filter((n) => n.whole)).toEqual([]);
   expect(emphasized(file).map((s) => s.text)).toEqual(["total", "sum"]);
 });
+
+// The bottom-up phase paired a function with a new look-alike sibling holding its old body, so the function that
+// kept its name read as renamed into the new one and the real one, rewritten in place, read as wholly added.
+test("a function whose body moved into a new sibling stays paired with its same-named rewrite", async () => {
+  const before = `export function primitives(ctx: Context): Primitives {
+  return {
+    run: (name: string) => ctx.run(name),
+    now: () => ctx.date.now(),
+  };
+}
+`;
+  const after = `export function steps(ctx: Context): Steps {
+  return {
+    step: (name: string) => ctx.run(name),
+    now: () => ctx.date.now(),
+  };
+}
+
+export function primitives(ctx: Context): Primitives {
+  return wrap(steps(ctx));
+}
+`;
+  const [file] = await diff([{ path: "context.ts", before, after }]);
+  expect([...nodes(file, "before"), ...nodes(file, "after")].filter((n) => n.whole)).toEqual([]);
+  expect(
+    (file?.fragments ?? []).flatMap((f) => (f.kind === "begin" ? [f.label] : [])),
+  ).toEqual(["function primitives"]);
+});
