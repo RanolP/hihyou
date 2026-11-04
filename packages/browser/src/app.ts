@@ -39,7 +39,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
 <style>${diffStyles}${appStyles}</style>
 <style class="scheme"></style>
 <div class="hh-app">
-  <nav class="hh-sets" aria-label="Diffsets"><div class="hh-sets-status">Loading commits…</div><ul role="tree"></ul></nav>
+  <nav class="hh-sets" aria-label="Diffsets"><input class="hh-filter" type="search" aria-label="Filter changed files" placeholder="Filter changed files" autocorrect="off" autocapitalize="off" spellcheck="false"><div class="hh-sets-status">Loading commits…</div><ul role="tree"></ul></nav>
   <section class="hh-main">
     <header class="hh-bar">
       <h2 class="hh-title"></h2>
@@ -54,6 +54,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   const $ = <T extends Element>(selector: string) =>
     shadow.querySelector(selector) as T;
   const schemeStyle = $<HTMLStyleElement>("style.scheme");
+  const filter = $<HTMLInputElement>(".hh-filter");
   const setsStatus = $<HTMLElement>(".hh-sets-status");
   const tree = $<HTMLUListElement>(".hh-sets ul");
   const title = $<HTMLElement>(".hh-title");
@@ -73,6 +74,19 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   let generation = 0;
   let disposed = false;
   let mounting = true;
+  let fileFilter = "";
+
+  filter.addEventListener("input", () => {
+    fileFilter = filter.value.toLowerCase();
+    drawTree();
+  });
+  filter.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    filter.value = "";
+    fileFilter = "";
+    drawTree();
+  });
 
   const hashPrefix = "#hihyou=";
   const selectionFromHash = () => {
@@ -257,14 +271,21 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
           else if (!row.changes) group.append(el("li", "hh-note", "Loading…"));
           else if (row.changes.length === 0)
             group.append(el("li", "hh-note", "No changes"));
-          else
-            group.append(
-              ...drawNodes(
-                row,
-                fileTree(row.changes),
-                row === selected ? shown : undefined,
-              ),
+          else {
+            const changes = row.changes.filter((file) =>
+              file.path.toLowerCase().includes(fileFilter),
             );
+            if (changes.length === 0)
+              group.append(el("li", "hh-note", "No matching files"));
+            else
+              group.append(
+                ...drawNodes(
+                  row,
+                  fileTree(changes),
+                  row === selected ? shown : undefined,
+                ),
+              );
+          }
           li.append(group);
         }
         return li;
@@ -401,6 +422,7 @@ const appStyles = `
 }
 .hh-app { display: grid; grid-template-columns: minmax(200px, 300px) minmax(0, 1fr); gap: 16px; height: calc(100vh - 80px); min-height: 400px; color: var(--fgColor-default, CanvasText); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
 .hh-sets { overflow: auto; border: 1px solid var(--borderColor-default, #d0d7de); border-radius: 6px; padding: 4px 0; }
+.hh-filter { box-sizing: border-box; width: 100%; border: 1px solid var(--borderColor-default, #d0d7de); border-radius: 6px; padding: 5px 8px; background: var(--bgColor-default, Canvas); color: inherit; font: inherit; }
 .hh-sets ul { list-style: none; margin: 0; padding: 0; }
 .hh-sets ul ul { padding-left: 14px; }
 .hh-sets-status, .hh-note { padding: 4px 12px; color: var(--fgColor-muted, GrayText); }
