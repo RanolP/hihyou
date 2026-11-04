@@ -175,5 +175,30 @@ export function sourceLines(v: Version, original: string): number[] {
       if (out[dl + k] === 0)
         out[dl + k] = Math.min(origStart + k, origEnd);
   }
+  const nextBlank = new Int32Array(o.lineStarts.length + 2);
+  let next = 0;
+  for (let line = o.lineStarts.length; line > 0; line--) {
+    if (o.text.slice(o.lineStarts[line - 1], lineEnd(o, line - 1)).trim() === "")
+      next = line;
+    nextBlank[line] = next;
+  }
+  let previousDisplay = -1;
+  let previousOriginal = 0;
+  for (let display = 0; display < out.length; display++) {
+    const currentOriginal = out[display] as number;
+    if (currentOriginal === 0) continue;
+    if (previousDisplay !== -1) {
+      let blank = nextBlank[previousOriginal + 1] as number;
+      for (let line = previousDisplay + 1; line < display; line++) {
+        if (blank === 0 || blank >= currentOriginal) break;
+        if (v.text.slice(v.lineStarts[line], lineEnd(v, line)).trim() !== "")
+          continue;
+        out[line] = blank;
+        blank = nextBlank[blank + 1] as number;
+      }
+    }
+    previousDisplay = display;
+    previousOriginal = currentOriginal;
+  }
   return out;
 }
