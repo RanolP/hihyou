@@ -557,7 +557,8 @@ function record(
     const oldText = before.v.text.slice(oldRange.start, oldRange.end);
     const newText = after.v.text.slice(newRange.start, newRange.end);
     if (!oldText.includes("\n") && !newText.includes("\n")) return false;
-    for (const edit of lineDiff(oldText, newText, indentIsSyntax(refA.path))) {
+    const lineEdits = lineDiff(oldText, newText, indentIsSyntax(refA.path));
+    for (const [i, edit] of lineEdits.entries()) {
       if ("old" in edit)
         before.changed.push({
           start: oldRange.start + edit.old.start,
@@ -568,18 +569,24 @@ function record(
           start: newRange.start + edit.new.start,
           end: newRange.start + edit.new.end,
         });
-    }
-    for (const edit of tokenDiff(oldText, newText)) {
-      if ("old" in edit)
-        before.emphasis.push({
-          start: oldRange.start + edit.old.start,
-          end: oldRange.start + edit.old.end,
-        });
-      if ("new" in edit)
-        after.emphasis.push({
-          start: newRange.start + edit.new.start,
-          end: newRange.start + edit.new.end,
-        });
+      const next = lineEdits[i + 1];
+      if (!("old" in edit) || !next || !("new" in next)) continue;
+      // Per-hunk emphasis avoids noise across unrelated lines.
+      for (const tokenEdit of tokenDiff(
+        oldText.slice(edit.old.start, edit.old.end),
+        newText.slice(next.new.start, next.new.end),
+      )) {
+        if ("old" in tokenEdit)
+          before.emphasis.push({
+            start: oldRange.start + edit.old.start + tokenEdit.old.start,
+            end: oldRange.start + edit.old.start + tokenEdit.old.end,
+          });
+        if ("new" in tokenEdit)
+          after.emphasis.push({
+            start: newRange.start + next.new.start + tokenEdit.new.start,
+            end: newRange.start + next.new.start + tokenEdit.new.end,
+          });
+      }
     }
     return true;
   };
