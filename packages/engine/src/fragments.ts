@@ -185,7 +185,9 @@ interface Line {
   side: 0 | 1;
   index: number;
   key: string;
+  word: boolean;
   changed: boolean;
+  moved: boolean;
   /** Side 0 only: the side-1 line this one may pair with; -1 for none, -2 when any equal line may. */
   pair: number;
 }
@@ -236,7 +238,7 @@ export function buildFragments(input: FragmentInput): CodeFragment[] {
   const pairs = mapping ? pairLines(a.v, b.v, mapping) : undefined;
   const linesA = lines(a, 0, input.indentMatters, pairs);
   const linesB = lines(b, 1, input.indentMatters, undefined);
-  const rows = alignRows(linesA, linesB);
+  const rows = rescueSameLines(alignRows(linesA, linesB), linesA, linesB);
   // A move whose halves land in one `diff` fragment reads as its edits alone: both halves sit side by side,
   // so a box would only claim the fragment's other changes moved too.
   const rowsA = lineRows(rows, a.v, 0);
@@ -360,9 +362,16 @@ function lines(
 ): Line[] {
   const { v } = s;
   const changed = new Uint8Array(v.lineStarts.length);
-  for (const r of [...s.changed, ...s.moves.map((m) => nodeRange(v, m.node))]) {
-    if (r.end <= r.start) continue;
-    changed.fill(1, lineOf(v, r.start), lineOf(v, r.end - 1) + 1);
+  const moved = new Uint8Array(v.lineStarts.length);
+  const mark = (lines: Uint8Array, r: Range) => {
+    if (r.end <= r.start) return;
+    lines.fill(1, lineOf(v, r.start), lineOf(v, r.end - 1) + 1);
+  };
+  for (const r of s.changed) mark(changed, r);
+  for (const m of s.moves) {
+    const r = nodeRange(v, m.node);
+    mark(changed, r);
+    mark(moved, r);
   }
   return v.lineStarts.map((start, index) => {
     const text = v.text.slice(start, lineEnd(v, index));
@@ -375,7 +384,9 @@ function lines(
             indentMatters ? [indentDepth(text), ...tokens] : tokens,
           )
         : "",
+      word: /\w/u.test(text),
       changed: changed[index] === 1,
+      moved: moved[index] === 1,
       pair: pairs ? (pairs[index] as number) : -2,
     };
   });
@@ -469,6 +480,49 @@ function alignRows(linesA: Line[], linesB: Line[]): Row[] {
   }
   flush();
   return rows;
+}
+
+/**
+ * A line reading exactly the same on both sides inside one hunk reads as context, as a line diff shows it,
+ * even when the matcher paired its tokens elsewhere; moved lines keep their box.
+ */
+function rescueSameLines(rows: Row[], linesA: Line[], linesB: Line[]): Row[] {
+  const rescued: Row[] = [];
+  for (const row of rows) {
+    if (row.same || row.a0 === row.a1 || row.b0 === row.b1) {
+      rescued.push(row);
+      continue;
+    }
+    const equal = (a: Line, b: Line) =>
+      a.key !== "" && a.key === b.key && a.word && b.word && !a.moved && !b.moved;
+    let ia = row.a0;
+    let ib = row.b0;
+    let pending: (Row & { same: false }) | undefined;
+    const flush = () => {
+      if (pending && (pending.a0 < pending.a1 || pending.b0 < pending.b1))
+        rescued.push(pending);
+      pending = undefined;
+    };
+    for (const c of diffArrays(
+      linesA.slice(row.a0, row.a1),
+      linesB.slice(row.b0, row.b1),
+      { comparator: equal },
+    )) {
+      if (!c.added && !c.removed) {
+        flush();
+        for (let k = 0; k < c.count; k++)
+          rescued.push({ same: true, a: ia + k, b: ib + k });
+        ia += c.count;
+        ib += c.count;
+        continue;
+      }
+      pending ??= { same: false, a0: ia, a1: ia, b0: ib, b1: ib };
+      if (c.removed) pending.a1 = ia += c.count;
+      else pending.b1 = ib += c.count;
+    }
+    flush();
+  }
+  return rescued;
 }
 
 /**
