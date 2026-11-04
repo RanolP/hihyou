@@ -149,7 +149,7 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
   max-height: none;
   overflow: visible;
 }
-:host .hh-file { overflow: visible; }
+:host .hh-file { overflow: visible; scroll-margin-top: var(--hh-file-sticky-top); }
 /* With no scroll box to pan, long lines wrap inside the file instead of spilling past it. */
 :host .hh-code { white-space: pre-wrap; overflow-wrap: anywhere; }
 :host .hh-node th {

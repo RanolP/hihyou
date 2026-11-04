@@ -67,6 +67,8 @@ import {
 export { type ElidedRef, type ExpandDirection, expandStep };
 
 export interface RenderOptions {
+  /** Draw one file at a time. Defaults to whether `onShow` is present. */
+  single?: boolean;
   /**
    * The reviewer asked to see more of an elided run. `fileId` is `FileDiff.path`. `diff()` returns no text for
    * an elided run, so the host asks `Diffset.expand` for the lines (`gapOf` says which are still hidden) and
@@ -102,9 +104,11 @@ export interface DiffsetView {
   update(files: readonly DiffFile[]): void;
   /** Redraws with another theme, as `update` keeps state. */
   setTheme(theme: Theme | undefined): void;
-  /** With `onShow`: draws the file at `path` instead, scrolled to its top. */
+  /** Switches between drawing one file and drawing every file. */
+  setSingle(single: boolean): void;
+  /** Draws only the file at `path`, or scrolls to it when every file is drawn. */
   show(path: string): void;
-  /** With `onShow`: the path of the file drawn. */
+  /** The last file passed to `show`, or selected by a cross-file move. */
   shown(): string | undefined;
   /** Whether every reviewable edit in the file at `path` has been viewed. */
   fileViewed(path: string): boolean | undefined;
@@ -130,7 +134,7 @@ function mount(
   disposeRoot: () => void,
 ): DiffsetView {
   const doc = root.ownerDocument;
-  const single = opts.onShow !== undefined;
+  let single = opts.single ?? opts.onShow !== undefined;
   const viewed = opts.viewed ?? sessionViewedStore();
   const keyOf = opts.keyOf ?? plainKeyOf;
   const isViewed = atomViewed(viewed, keyOf);
@@ -257,6 +261,11 @@ function mount(
     for (const s of root.querySelectorAll<HTMLElement>(".hh-scroll"))
       if (s.dataset["path"] === path) s.closest(".hh-file")?.scrollIntoView();
   };
+
+  const fileSection = (path: string) =>
+    [...root.querySelectorAll<HTMLElement>(".hh-file")].find(
+      (section) => section.dataset["path"] === path,
+    );
 
   const ctx: DrawContext = {
     doc,
@@ -913,13 +922,24 @@ function mount(
   return {
     update: (next) => setFiles(next),
     setTheme: (next) => setTheme(next && compileTheme(next)),
+    setSingle(next) {
+      if (next === single) return;
+      single = next;
+      redraw();
+    },
     show(path) {
-      if (!single || path === shownPath) return;
+      if (!files().some((file) => file.path === path)) return;
+      if (!single) {
+        shownPath = path;
+        fileSection(path)?.scrollIntoView({ block: "start" });
+        return;
+      }
+      if (path === shownPath) return;
       shownPath = path;
       redraw();
       root.querySelector(".hh-scroll")?.scrollTo(0, 0);
     },
-    shown: () => (single ? shownPath : undefined),
+    shown: () => shownPath,
     fileViewed: (path) => {
       const current = files();
       const index = current.findIndex((file) => file.path === path);

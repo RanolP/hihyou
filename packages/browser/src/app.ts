@@ -41,6 +41,23 @@ type SidebarFile = ChangedFileRef & Pick<DiffFile, "collapsed">;
 
 const viewedStorageKey = (owner: string, repo: string, pull: number) =>
   `hihyou:viewed:${owner}/${repo}#${pull}`;
+const viewModeStorageKey = "hihyou:view-mode";
+
+const storedAllFiles = () => {
+  try {
+    return localStorage.getItem(viewModeStorageKey) === "all";
+  } catch {
+    return false;
+  }
+};
+
+const storeAllFiles = (allFiles: boolean) => {
+  try {
+    localStorage.setItem(viewModeStorageKey, allFiles ? "all" : "one");
+  } catch {
+    // Storage restrictions leave the mode usable for this mount.
+  }
+};
 
 const parseViewedState = (value: string): ViewedState | undefined => {
   const parsed: unknown = JSON.parse(value);
@@ -115,6 +132,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       <button type="button" class="hh-nav previous" aria-label="Previous file" title="Previous file (k)" disabled>↑</button>
       <span class="hh-meta position"></span>
       <button type="button" class="hh-nav next" aria-label="Next file" title="Next file (j)" disabled>↓</button>
+      <button type="button" class="hh-nav view-mode" aria-pressed="false">All files</button>
       <span class="hh-meta message" role="status"></span>
     </header>
     <div class="hh-root"></div>
@@ -130,6 +148,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   const title = $<HTMLElement>(".hh-title");
   const previous = $<HTMLButtonElement>(".previous");
   const next = $<HTMLButtonElement>(".next");
+  const viewMode = $<HTMLButtonElement>(".view-mode");
   const position = $<HTMLElement>(".position");
   const status = $<HTMLElement>(".message");
   const root = $<HTMLElement>(".hh-root");
@@ -148,6 +167,16 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   let disposed = false;
   let mounting = true;
   let fileFilter = "";
+  let allFiles = storedAllFiles();
+  let currentPath: string | undefined;
+  let trackingFrame: number | undefined;
+
+  const drawViewMode = () => {
+    viewMode.textContent = "All files";
+    viewMode.setAttribute("aria-pressed", String(allFiles));
+    viewMode.title = allFiles ? "Switch to one file" : "Switch to all files";
+  };
+  drawViewMode();
 
   filter.addEventListener("input", () => {
     fileFilter = filter.value.toLowerCase();
@@ -209,7 +238,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
 
   const updateNav = () => {
     const ordered = filesInTreeOrder(files);
-    const i = ordered.findIndex((f) => f.path === view?.shown());
+    const i = ordered.findIndex((f) => f.path === currentPath);
     previous.disabled = i <= 0;
     next.disabled = i < 0 || i >= ordered.length - 1;
     position.textContent = i < 0 ? "" : `${i + 1} / ${ordered.length}`;
@@ -218,14 +247,59 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   };
   const step = (delta: 1 | -1) => {
     const ordered = filesInTreeOrder(files);
-    const index = ordered.findIndex((f) => f.path === view?.shown());
+    const index = ordered.findIndex((f) => f.path === currentPath);
     const target = ordered[index + delta];
     if (!view || !target) return;
+    currentPath = target.path;
     view.show(target.path);
     updateNav();
   };
   previous.addEventListener("click", () => step(-1));
   next.addEventListener("click", () => step(1));
+
+  const trackCurrentFile = () => {
+    trackingFrame = undefined;
+    if (!allFiles) return;
+    const headers = [...root.querySelectorAll<HTMLElement>(".hh-file-header")];
+    const first = headers[0];
+    if (!first) return;
+    const stickyTop = Number.parseFloat(getComputedStyle(first).top) || 0;
+    const atTop = headers.findLast((header) => {
+      const section = header.closest<HTMLElement>(".hh-file");
+      return (
+        header.getBoundingClientRect().top <= stickyTop + 1 &&
+        (section?.getBoundingClientRect().bottom ?? 0) > stickyTop
+      );
+    });
+    const active =
+      atTop ??
+      headers.find((header) => header.getBoundingClientRect().bottom > stickyTop);
+    const path = active?.closest<HTMLElement>(".hh-file")?.dataset["path"];
+    if (path === undefined || path === currentPath) return;
+    currentPath = path;
+    updateNav();
+  };
+  const scheduleCurrentFile = () => {
+    if (trackingFrame !== undefined) return;
+    trackingFrame = requestAnimationFrame(trackCurrentFile);
+  };
+  window.addEventListener("scroll", scheduleCurrentFile, { passive: true });
+  const fileObserver = new MutationObserver(scheduleCurrentFile);
+  fileObserver.observe(root, { childList: true, subtree: true });
+
+  viewMode.addEventListener("click", () => {
+    allFiles = !allFiles;
+    storeAllFiles(allFiles);
+    drawViewMode();
+    view?.setSingle(!allFiles);
+    const path = currentPath;
+    if (path !== undefined)
+      requestAnimationFrame(() => {
+        view?.show(path);
+        if (allFiles) scheduleCurrentFile();
+      });
+    updateNav();
+  });
   const onKeydown = (event: KeyboardEvent) => {
     const target = event.composedPath()[0];
     if (
@@ -281,6 +355,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       files = [];
       view?.dispose();
       view = undefined;
+      currentPath = undefined;
       root.textContent = "";
     }
     title.textContent = `${row.description} ${row.label}`;
@@ -312,10 +387,13 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
           .map((thread) => ({
             ...(thread.before !== undefined && { before: thread.before }),
             ...(thread.after !== undefined && { after: thread.after }),
-            resolved: thread.resolved,
+            ...(thread.resolved !== undefined && {
+              resolved: thread.resolved,
+            }),
             comments: thread.comments,
           })),
       }));
+      files = filesInTreeOrder(files);
       status.textContent =
         files.length === 0
           ? "No changes."
@@ -329,14 +407,21 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
             ),
           onCollapse: (p, elided) =>
             replaceFile(p, (file) => collapseElided(file, elided)),
-          onShow: () => updateNav(),
+          onShow: (shown) => {
+            currentPath = shown;
+            updateNav();
+          },
+          single: !allFiles,
           theme,
           viewed: persistedViewed.store,
         });
       const hasPath =
         path === undefined || files.some((file) => file.path === path);
       const shownPath = path ?? filesInTreeOrder(files)[0]?.path;
-      if (shownPath !== undefined && hasPath) view.show(shownPath);
+      if (shownPath !== undefined && hasPath) {
+        currentPath = shownPath;
+        view.show(shownPath);
+      }
       updateNav();
       return hasPath;
     } catch (error) {
@@ -362,7 +447,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   // The diffsets panel, as VS Code's hihyou.diffsets view draws it: one row per diffset, each opening to its
   // files as a compact-folder tree.
   const drawTree = () => {
-    const shown = view?.shown();
+    const shown = currentPath;
     const viewedFiles = files.filter(
       (file) => view?.fileViewed(file.path) === true,
     ).length;
@@ -487,6 +572,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
         : pathTitle;
       button.addEventListener("click", () => {
         if (row === selected && view) {
+          currentPath = file.path;
           view.show(file.path);
           updateNav();
         } else void open(row, file.path);
@@ -548,6 +634,9 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     dispose() {
       disposed = true;
       themeObserver.disconnect();
+      fileObserver.disconnect();
+      if (trackingFrame !== undefined) cancelAnimationFrame(trackingFrame);
+      window.removeEventListener("scroll", scheduleCurrentFile);
       dark.removeEventListener("change", applyTheme);
       document.removeEventListener("keydown", onKeydown, true);
       unsubscribeViewed();

@@ -144,7 +144,7 @@ export function FileSection(props: {
   // The table first: its rows place their text in draw order, and the header places none.
   const table = <FileTable index={index} file={file} />;
   return (
-    <section class="hh-file">
+    <section class="hh-file" data-path={file.path}>
       <FileHeader index={index} file={file} collapsed={collapsed} />
       {!collapsed() && (
         <div class="hh-scroll" data-path={file.path}>
