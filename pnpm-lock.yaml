@@ -291,6 +291,9 @@ importers:
       tree-sitter-go:
         specifier: workspace:*
         version: link:grammars/tree-sitter-go
+      tree-sitter-rust:
+        specifier: workspace:*
+        version: link:grammars/tree-sitter-rust
       tree-sitter-kotlin:
         specifier: workspace:*
         version: link:grammars/tree-sitter-kotlin
@@ -326,6 +329,8 @@ importers:
   packages/syntechs/grammars/tree-sitter-json: {}
 
   packages/syntechs/grammars/tree-sitter-go: {}
+
+  packages/syntechs/grammars/tree-sitter-rust: {}
 
   packages/syntechs/grammars/tree-sitter-kotlin: {}
 

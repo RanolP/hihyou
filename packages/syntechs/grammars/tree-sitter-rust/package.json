@@ -1,0 +1,21 @@
+{
+  "name": "tree-sitter-rust",
+  "version": "0.24.2",
+  "private": true,
+  "scripts": {
+    "postinstall": "node ../build.mjs"
+  },
+  "grammar": {
+    "sources": [
+      {
+        "repo": "tree-sitter/tree-sitter-rust",
+        "commit": "77a3747266f4d621d0757825e6b11edcbf991ca5",
+        "files": {
+          "grammar.js": "e2b851418e14e3bacec9ef5993e0f8f05196a76641a5e1d488ab86d6973b3dc4",
+          "src/scanner.c": "9609a2f92dbb7c32bc056fd8fb94e5478428f04496696aa08b048a9b66caf283",
+          "queries/highlights.scm": "0f0343107f14a7690157f51090a979eb8f8bfe4eada7c61763ddb4c54b1311d1"
+        }
+      }
+    ]
+  }
+}

@@ -150,6 +150,19 @@ const GO: Record<string, Rule> = {
   },
 };
 
+const RUST: Record<string, Rule> = {
+  ...shared("rust"),
+  "variable.builtin": "variable.language.self.rust",
+  constructor: "entity.name.type.rust",
+  escape: "constant.character.escape.rust",
+  "function.macro": "entity.name.function.macro.rust",
+  "comment.documentation": "comment.block.documentation.rust",
+  comment: {
+    scope: "comment.block.rust",
+    byKind: { line_comment: "comment.line.double-slash.rust" },
+  },
+};
+
 const KOTLIN: Record<string, Rule> = {
   ...shared("kotlin"),
   property: "",
@@ -566,6 +579,11 @@ export const LANGUAGES: Record<string, LanguageRules> = {
     grammar: "tree-sitter-go",
     queries: ["queries/highlights.scm"],
     captures: GO,
+  },
+  rust: {
+    grammar: "tree-sitter-rust",
+    queries: ["queries/highlights.scm"],
+    captures: RUST,
   },
   kotlin: {
     grammar: "tree-sitter-kotlin",

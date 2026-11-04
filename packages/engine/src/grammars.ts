@@ -16,6 +16,7 @@ export type LanguageId =
   | "python"
   | "css"
   | "go"
+  | "rust"
   | "kotlin"
   | "html"
   | "swift"
@@ -32,6 +33,7 @@ const extensions: Record<LanguageId, readonly string[]> = {
   python: [".py", ".pyi"],
   css: [".css"],
   go: [".go"],
+  rust: [".rs"],
   kotlin: [".kt", ".kts"],
   html: [".html", ".htm"],
   swift: [".swift"],
@@ -61,6 +63,7 @@ const parsers: Record<
   python: () => import("syntechs/grammars/python"),
   css: () => import("syntechs/grammars/css"),
   go: () => import("syntechs/grammars/go"),
+  rust: () => import("syntechs/grammars/rust"),
   kotlin: () => import("syntechs/grammars/kotlin"),
   html: () => import("syntechs/grammars/html"),
   swift: () => import("syntechs/grammars/swift"),
@@ -81,6 +84,7 @@ const highlighters: Partial<
   python: () => import("syntechs/grammars/python/highlight"),
   css: () => import("syntechs/grammars/css/highlight"),
   go: () => import("syntechs/grammars/go/highlight"),
+  rust: () => import("syntechs/grammars/rust/highlight"),
   kotlin: () => import("syntechs/grammars/kotlin/highlight"),
   html: () => import("syntechs/grammars/html/highlight"),
   swift: () => import("syntechs/grammars/swift/highlight"),
@@ -118,6 +122,14 @@ const declarations: Partial<Record<LanguageId, readonly string[]>> = {
     "variable_declaration",
   ],
   go: ["function_declaration", "method_declaration", "type_spec"],
+  rust: [
+    "function_item",
+    "impl_item",
+    "trait_item",
+    "struct_item",
+    "enum_item",
+    "mod_item",
+  ],
   kotlin: [
     "function_declaration",
     "class_declaration",

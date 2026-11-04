@@ -68,6 +68,7 @@
     "tree-sitter-jsdoc": "workspace:*",
     "tree-sitter-json": "workspace:*",
     "tree-sitter-go": "workspace:*",
+    "tree-sitter-rust": "workspace:*",
     "tree-sitter-kotlin": "workspace:*",
     "tree-sitter-python": "workspace:*",
     "tree-sitter-regex": "workspace:*",

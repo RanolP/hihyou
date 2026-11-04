@@ -259,6 +259,10 @@ export function compile(source: GrammarSource): string {
   )) {
     const s = Number(m[1]);
     const body = m[2] as string;
+    if (/^\s*\(TSStateId\)\(-1\)\s*,?\s*$/.test(body)) {
+      lexState[s] = 65535;
+      continue;
+    }
     for (const f of body.matchAll(/\.(\w+) = ([^,]+)/g)) {
       const v =
         (f[2] as string).trim() === "(TSStateId)(-1)" ? 65535 : Number(f[2]);
