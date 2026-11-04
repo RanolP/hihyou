@@ -45,7 +45,7 @@ function FileHeader(props: {
     const observer = new ResizeObserver(() => {
       header.parentElement?.style.setProperty(
         "--hh-file-header-height",
-        `${header.offsetHeight}px`,
+        `${header.getBoundingClientRect().height}px`,
       );
     });
     observer.observe(header);
