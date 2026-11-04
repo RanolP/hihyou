@@ -193,12 +193,21 @@ function mount(
       after: file.change?.after ?? null,
     });
 
+  /** A file with an outline is viewed when all its atoms are; one without keeps the `file` subject. */
+  const fileViewed = (i: number, file: DiffFile) => {
+    viewedTick();
+    return (
+      viewedOf(outline(), { kind: "file", file: i }, isViewed) ??
+      viewed.get(fileKey(file))
+    );
+  };
+
   /** Opens and shows the file at `i`, redrawing when either changes what is drawn. */
   const reveal = (i: number) => {
     const file = files()[i];
     if (!file) return;
     let changed = false;
-    if (file.collapsed && !opened.has(file.path)) {
+    if ((file.collapsed || fileViewed(i, file)) && !opened.has(file.path)) {
       opened.add(file.path);
       changed = true;
     }
@@ -236,7 +245,7 @@ function mount(
   const openFile = (path: string) => {
     const file = files().find((f) => f.path === path);
     if (!file) return;
-    if (file.collapsed) opened.add(path);
+    opened.add(path);
     if (single && path !== shownPath) {
       shownPath = path;
       opts.onShow?.(path);
@@ -266,20 +275,17 @@ function mount(
     },
     jump,
     openFile,
-    isOpened: (path) => opened.has(path),
+    fileCollapsed: (i, file) =>
+      (file.collapsed !== undefined || fileViewed(i, file)) &&
+      !opened.has(file.path),
     open(path) {
       opened.add(path);
       redraw();
     },
-    /** A file with an outline is viewed when all its atoms are; one without keeps the `file` subject. */
-    fileViewed(i, file) {
-      viewedTick();
-      return (
-        viewedOf(outline(), { kind: "file", file: i }, isViewed) ??
-        viewed.get(fileKey(file))
-      );
-    },
+    fileViewed,
     setFileViewed(i, file, on) {
+      if (on) opened.delete(file.path);
+      else opened.add(file.path);
       const index = outline();
       if ((index.fileAtoms[i]?.length ?? 0) > 0)
         setViewed(index, { kind: "file", file: i }, on, viewed, keyOf);

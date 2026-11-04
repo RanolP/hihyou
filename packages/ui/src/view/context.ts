@@ -24,7 +24,7 @@ export interface DrawContext {
   remember(index: number, fragment: number, tr: HTMLTableRowElement): void;
   jump(to: SideRef): void;
   openFile(path: string): void;
-  isOpened(path: string): boolean;
+  fileCollapsed(index: number, file: DiffFile): boolean;
   open(path: string): void;
   fileViewed(index: number, file: DiffFile): boolean;
   setFileViewed(index: number, file: DiffFile, on: boolean): void;

@@ -143,7 +143,7 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 .hh-whole-viewed th { opacity: 0.6; }
 .hh-top { font-weight: 400; font-style: italic; color: var(--hh-muted); }
 .hh-move-cell { padding: 2px 8px 0; font-family: var(--vscode-font-family, system-ui, sans-serif); }
-.hh-elided-cell, .hh-collapsed-cell {
+.hh-elided-cell {
   padding: 4px 8px;
   color: var(--hh-muted);
   font-family: var(--vscode-font-family, system-ui, sans-serif);
@@ -236,10 +236,12 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 .hh-approval { display: block; padding: 4px 0; margin: 0 0 4px; font-weight: 600; color: var(--hh-muted); }
 .hh-approval-approved { color: var(--hh-added-fg); }
 .hh-approval-blocked { color: var(--hh-removed-fg); }
-.hh-file-viewed .hh-table { opacity: 0.5; }
 .hh-viewed-toggle { text-decoration: none; color: var(--hh-muted); }
 .hh-viewed-toggle[aria-pressed="true"] { color: var(--hh-added-fg); }
 .hh-file-header .hh-viewed-toggle { margin-left: auto; }
+.hh-file-header.hh-collapsed { cursor: pointer; }
+.hh-collapse-reason { color: var(--hh-muted); }
+.hh-file-header .hh-show-diff { margin-left: 4px; }
 /* A jump's target blinks as one box, twice, then the moved box's own outline is all that stays. */
 .hh-flash-box {
   position: absolute;
