@@ -64,12 +64,18 @@ export interface FoldFacts {
   noEdits?: boolean;
   /** The file is gone: GitHub folds a deletion, whose every line is red, until asked. */
   deleted?: boolean;
+  /** Added plus removed lines. */
+  changedLines?: number;
 }
 
 /** Why the whole file should be shown folded, or undefined when it has something to read. */
 export function foldReason(f: FoldFacts): CollapseReason | undefined {
+  const produced = producedBy(f.path, f.text);
   return (
-    producedBy(f.path, f.text) ??
+    // A lockfile edit of a few lines, such as a version pin, is the proof the pin took, so it reads open.
+    (produced === "lockfile" && (f.changedLines ?? Infinity) <= 10
+      ? undefined
+      : produced) ??
     (f.deleted ? "deleted" : undefined) ??
     (f.fallback === "too-large" ? f.fallback : undefined) ??
     (f.onlyMoves ? "moved" : f.noEdits ? "format-only" : undefined)
