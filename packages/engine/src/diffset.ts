@@ -560,6 +560,8 @@ function record(
     const newText = after.v.text.slice(newRange.start, newRange.end);
     if (!oldText.includes("\n") && !newText.includes("\n")) return false;
     const lineEdits = lineDiff(oldText, newText, indentIsSyntax(refA.path));
+    // A change in blank lines or spacing alone leaves no line edit: the whole leaf stays marked.
+    if (lineEdits.length === 0) return false;
     for (const [i, edit] of lineEdits.entries()) {
       if ("old" in edit)
         before.changed.push({
