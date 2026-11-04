@@ -49,6 +49,7 @@ export function ElidedRow(props: {
   const ctx = useDraw();
   const { path, gap } = props;
   const { count } = gap;
+  const shownCount = gap.sourceCount ?? count;
   // Once asked, the buttons wait for the host's `update`, which redraws the row.
   const [busy, setBusy] = createSignal(false);
   const ref: ElidedRef = { fragment: gap.fragment, lines: gap.origin };
@@ -70,7 +71,10 @@ export function ElidedRow(props: {
     if (count !== 0) {
       if (count !== undefined && count <= expandStep)
         buttons.push(
-          expander("all", `Expand all ${count} ${count === 1 ? "line" : "lines"}`),
+          expander(
+            "all",
+            `Expand all ${shownCount} ${shownCount === 1 ? "line" : "lines"}`,
+          ),
         );
       else if (gap.atEnd) buttons.push(expander("down", `${step} down`));
       else if (gap.atStart) buttons.push(expander("up", `${step} up`));
@@ -100,7 +104,7 @@ export function ElidedRow(props: {
         {buttons}
       </td>
       <td class="hh-elided-cell">
-        {hidden(count)}
+        {hidden(shownCount)}
         {props.scope && ` · ${props.scope}`}
       </td>
     </tr>

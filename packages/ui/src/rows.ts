@@ -57,6 +57,8 @@ export interface Gap {
   lines: LinePair;
   /** Lines still hidden; unknown only for a run to the end of the file. */
   count?: number;
+  /** Hidden lines counted in the original text, which is what the line numbers show. */
+  sourceCount?: number;
   revealed: boolean;
   /** Nothing comes before the run, so it can only grow up from the code below it. */
   atStart: boolean;
@@ -139,6 +141,18 @@ export function gapOf(file: DiffFile, index: number): Gap | undefined {
     : r?.exhausted
       ? 0
       : undefined;
+  const sourceLines = file.sourceLines?.after;
+  const firstSourceLine = sourceLines?.[f.lines.after + top - 1];
+  const nextSourceLine =
+    count === undefined
+      ? undefined
+      : sourceLines?.[f.lines.after + top + count - 1];
+  const sourceCount =
+    count === undefined
+      ? undefined
+      : firstSourceLine !== undefined && nextSourceLine !== undefined
+        ? Math.max(0, nextSourceLine - firstSourceLine)
+        : count;
   const funcnames = (
     f as typeof f & { funcnames?: { line: number; text: string }[] }
   ).funcnames;
@@ -156,6 +170,7 @@ export function gapOf(file: DiffFile, index: number): Gap | undefined {
     origin: f.lines,
     lines: { before: f.lines.before + top, after: f.lines.after + top },
     ...(count !== undefined && { count: Math.max(0, count) }),
+    ...(sourceCount !== undefined && { sourceCount }),
     revealed: r !== undefined && (top > 0 || bottom > 0),
     atStart: f.lines.before === 1 && f.lines.after === 1,
     atEnd: next === undefined,
