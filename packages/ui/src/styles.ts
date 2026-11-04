@@ -178,7 +178,10 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 }
 .hh-whole-added th { box-shadow: inset 3px 0 var(--hh-added-fg); background: var(--hh-added-line); }
 .hh-whole-deleted th { box-shadow: inset 3px 0 var(--hh-removed-fg); background: var(--hh-removed-line); }
+/* A heading first, so it reads like the scope rows rather than a link; the underline returns on hover. */
 .hh-whole-label { position: sticky; left: 8px; font-weight: 600; }
+.hh-button.hh-whole-label { text-decoration: none; }
+.hh-button.hh-whole-label:hover { text-decoration: underline; }
 .hh-whole-added .hh-whole-label { color: var(--hh-added-fg); }
 .hh-whole-deleted .hh-whole-label { color: var(--hh-removed-fg); }
 .hh-whole-state { margin-left: 8px; color: var(--hh-muted); font-size: 0.9em; }
