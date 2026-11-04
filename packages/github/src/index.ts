@@ -42,6 +42,5 @@ export {
   type GitHubWebPull,
   type GitHubWebReviewThread,
   githubWebHost,
-  reviewThreadsFromHtml,
   webDiffsetIdOf,
 } from "./web/host.js";

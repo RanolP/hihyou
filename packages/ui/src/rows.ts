@@ -30,7 +30,8 @@ export interface ReviewThread {
   /** Original source line on each side of the GitHub diff row. */
   before?: number;
   after?: number;
-  resolved: boolean;
+  /** Absent when the host cannot observe resolution state. */
+  resolved?: boolean;
   comments: ReviewComment[];
 }
 

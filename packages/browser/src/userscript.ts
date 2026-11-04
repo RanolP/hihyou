@@ -21,6 +21,7 @@ interface XhrResponse {
   statusText: string;
   response: ArrayBuffer | null;
   finalUrl: string;
+  responseHeaders: string;
 }
 declare const GM_xmlhttpRequest: ((details: XhrDetails) => void) | undefined;
 declare const GM:
@@ -43,7 +44,7 @@ start({
     // enforced here, before anything leaves.
     if (!fetchable.test(url))
       return Promise.reject(
-        new Error(`refusing to fetch ${url}: only https://github.com/ URLs`),
+        new Error(`refusing to fetch ${url}: origin is not allowed`),
       );
     return new Promise<Response>((resolve, reject) =>
       request({
@@ -58,6 +59,11 @@ start({
             new Response(empty ? null : r.response, {
               status: r.status,
               statusText: r.statusText,
+              ...(r.responseHeaders.match(/^link:\s*(.+)$/im)?.[1] && {
+                headers: {
+                  Link: r.responseHeaders.match(/^link:\s*(.+)$/im)?.[1] ?? "",
+                },
+              }),
             }),
           );
         },

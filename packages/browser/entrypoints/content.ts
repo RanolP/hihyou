@@ -28,6 +28,7 @@ const definition: ContentScriptDefinition = defineContentScript({
         return new Response(body, {
           status: reply.status,
           statusText: reply.statusText,
+          ...(reply.link && { headers: { Link: reply.link } }),
         });
       },
       async loadApp() {

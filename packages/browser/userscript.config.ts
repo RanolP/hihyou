@@ -25,8 +25,9 @@ const metadata = [
   "// @match        https://github.com/*",
   "// @grant        GM_xmlhttpRequest",
   "// @grant        GM.xmlHttpRequest",
-  // The fetch starts only on github.com; the others are where pull/<n>.diff and raw/... redirect.
+  // API review comments start on api.github.com; the other off-site hosts receive diff and raw redirects.
   "// @connect      github.com",
+  "// @connect      api.github.com",
   "// @connect      patch-diff.githubusercontent.com",
   "// @connect      raw.githubusercontent.com",
   "// @run-at       document-idle",

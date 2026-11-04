@@ -41,13 +41,25 @@ export interface GitHubWebReviewThread {
   path: string;
   before?: number;
   after?: number;
-  resolved: boolean;
+  /** Unknown when the public review-comments REST API supplied the thread. */
+  resolved?: boolean;
   comments: { author: string; body: string }[];
+}
+
+interface PullReviewComment {
+  id: number;
+  in_reply_to_id?: number;
+  path: string;
+  line: number | null;
+  side: "LEFT" | "RIGHT" | null;
+  original_line: number | null;
+  user: { login: string } | null;
+  body: string;
 }
 
 export interface GitHubWebHostOptions {
   /**
-   * Fetches a github.com URL with the signed-in browser session, following redirects. A content script cannot
+   * Fetches an allowed GitHub URL with the browser session, following redirects. A content script cannot
    * read `pull/<n>.diff` itself (it redirects to patch-diff.githubusercontent.com, which sends no CORS headers),
    * so the browser extension passes one that goes through its background worker.
    */
@@ -264,6 +276,7 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
     };
   };
 
+  const reviewThreads = new Map<string, Promise<GitHubWebReviewThread[]>>();
   return {
     grammars: options.grammars ?? syntechsGrammars(),
     resolveDiffset,
@@ -305,62 +318,70 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
       if (!head) throw new Error(`GET ${url} listed no commits`);
       return { head, commits };
     },
-    async resolveReviewThreads(owner, repo, number) {
-      const url = `${repoUrl(owner, repo)}/pull/${number}/files?diff=unified`;
-      return reviewThreadsFromHtml(await (await get(url)).text());
+    resolveReviewThreads(owner, repo, number) {
+      // Unauthenticated REST allows 60 requests an hour, and every diffset switch asks again.
+      const key = `${owner}/${repo}#${number}`;
+      const cached = reviewThreads.get(key);
+      if (cached) return cached;
+      const loading = fetchReviewThreads(owner, repo, number);
+      reviewThreads.set(key, loading);
+      loading.catch(() => reviewThreads.delete(key));
+      return loading;
     },
     ...(options.preferences && { preferences: options.preferences }),
   };
+
+  async function fetchReviewThreads(
+    owner: string,
+    repo: string,
+    number: number,
+  ): Promise<GitHubWebReviewThread[]> {
+      let url: string | undefined =
+        `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}` +
+        `/pulls/${number}/comments?per_page=100`;
+      const comments: PullReviewComment[] = [];
+      while (url) {
+        const response = await get(url, "application/vnd.github+json");
+        comments.push(...((await response.json()) as PullReviewComment[]));
+        url = nextPage(response.headers.get("link"));
+      }
+      return reviewThreadsFromComments(comments);
+  }
 }
 
-/** Review threads already placed inline by GitHub's server-rendered Files page. */
-export function reviewThreadsFromHtml(html: string): GitHubWebReviewThread[] {
-  const document = new DOMParser().parseFromString(html, "text/html");
+function nextPage(link: string | null): string | undefined {
+  return link
+    ?.split(",")
+    .map((part) => part.match(/^\s*<([^>]+)>;\s*rel="([^"]+)"/))
+    .find((match) => match?.[2] === "next")?.[1];
+}
+
+function reviewThreadsFromComments(
+  comments: PullReviewComment[],
+): GitHubWebReviewThread[] {
   const threads: GitHubWebReviewThread[] = [];
-  const entries = document.querySelectorAll(
-    "copilot-diff-entry[data-file-path], .js-file[data-tagsearch-path]",
-  );
-  for (const entry of entries) {
-    const path =
-      entry.getAttribute("data-file-path") ??
-      entry.getAttribute("data-tagsearch-path");
-    if (!path) continue;
-    for (const row of entry.querySelectorAll("tr.inline-comments")) {
-      const lineRow = row.previousElementSibling;
-      if (!lineRow?.matches("tr")) continue;
-      let before: number | undefined;
-      let after: number | undefined;
-      for (const cell of lineRow.querySelectorAll("td[data-line-number]")) {
-        const line = Number(cell.getAttribute("data-line-number"));
-        if (!Number.isInteger(line)) continue;
-        const right =
-          cell.classList.contains("js-blob-rnum") || /R\d+$/.test(cell.id);
-        if (right) after = line;
-        else before = line;
-      }
-      if (before === undefined && after === undefined) continue;
-      for (const thread of row.querySelectorAll("review-thread-collapsible")) {
-        const comments = [...thread.querySelectorAll(".review-comment")]
-          .map((comment) => ({
-            author: comment.querySelector(".author")?.textContent?.trim() ?? "",
-            body:
-              comment
-                .querySelector(
-                  'clipboard-copy[data-dd-action-name="comment.copy_markdown"]',
-                )
-                ?.getAttribute("value") ?? "",
-          }))
-          .filter((comment) => comment.author || comment.body);
-        if (comments.length === 0) continue;
-        threads.push({
-          path,
-          ...(before !== undefined && { before }),
-          ...(after !== undefined && { after }),
-          resolved: thread.getAttribute("data-resolved") === "true",
-          comments,
-        });
-      }
-    }
+  const byRoot = new Map<number, PullReviewComment[]>();
+  for (const comment of comments) {
+    const root = comment.in_reply_to_id ?? comment.id;
+    const grouped = byRoot.get(root) ?? [];
+    grouped.push(comment);
+    byRoot.set(root, grouped);
+  }
+  const byId = new Map(comments.map((comment) => [comment.id, comment]));
+  for (const [rootId, grouped] of byRoot) {
+    const root = byId.get(rootId) ?? grouped[0];
+    if (!root) continue;
+    // An outdated thread has no `line`; its `original_line` numbers an older file, so, as GitHub's Files tab, skip it.
+    const line = root.line ?? undefined;
+    if (line === undefined || root.side === null) continue;
+    threads.push({
+      path: root.path,
+      ...(root.side === "LEFT" ? { before: line } : { after: line }),
+      comments: grouped.map((comment) => ({
+        author: comment.user?.login ?? "",
+        body: comment.body,
+      })),
+    });
   }
   return threads;
 }

@@ -10,6 +10,7 @@ export default defineConfig({
     permissions: ["scripting"],
     host_permissions: [
       "https://github.com/*",
+      "https://api.github.com/*",
       "https://patch-diff.githubusercontent.com/*",
       "https://raw.githubusercontent.com/*",
     ],

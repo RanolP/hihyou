@@ -5,14 +5,15 @@ import type { App, MountOptions } from "./app-api.js";
  * through its background worker, the userscript through the userscript manager.
  */
 export interface Privileged {
-  /** Fetches a github.com URL with the reviewer's session; anything else must be refused. */
+  /** Fetches an allowed GitHub URL with the reviewer's session; anything else must be refused. */
   fetch: MountOptions["fetch"];
   /** The engine and the renderer, loaded on first use. */
   loadApp(): Promise<App>;
 }
 
 /**
- * The only URLs either host fetches with the reviewer's cookies. `pull/<n>.diff` and `raw/...` redirect from
- * there to patch-diff.githubusercontent.com and raw.githubusercontent.com, which the fetch follows.
+ * The only URLs either host fetches. `pull/<n>.diff` and `raw/...` redirect from github.com to
+ * patch-diff.githubusercontent.com and raw.githubusercontent.com, which the fetch follows; api.github.com serves
+ * public pull request review comments.
  */
-export const fetchable = /^https:\/\/github\.com\//;
+export const fetchable = /^https:\/\/(?:github\.com|api\.github\.com)\//;

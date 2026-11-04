@@ -8,7 +8,7 @@ import { fetchable } from "../src/privileged.js";
 // The content script cannot read `pull/<n>.diff` or `raw/...` itself: both redirect off github.com to hosts
 // that send no CORS headers. The worker can, through the manifest's host permissions, and sends the browser's
 // own github.com cookies with each request, so a private repository works for whoever is signed in. It fetches
-// only github.com URLs (`fetchable`); redirects from there are followed as the browser would.
+// only the GitHub origins in `fetchable`; redirects from github.com are followed as the browser would.
 
 const definition: BackgroundDefinition = defineBackground(() => {
   browser.runtime.onMessage.addListener((raw, sender, reply) => {
@@ -18,7 +18,7 @@ const definition: BackgroundDefinition = defineBackground(() => {
       if (!fetchable.test(message.url)) {
         reply({
           ok: false,
-          error: `refusing to fetch ${message.url}: only https://github.com/ URLs`,
+          error: `refusing to fetch ${message.url}: origin is not allowed`,
         } satisfies FetchReply);
         return false;
       }
@@ -66,11 +66,13 @@ async function proxy(
     credentials: "include",
     ...(accept && { headers: { Accept: accept } }),
   });
+  const link = response.headers.get("link");
   return {
     ok: true,
     status: response.status,
     statusText: response.statusText,
     body: toBase64(new Uint8Array(await response.arrayBuffer())),
+    ...(link && { link }),
   };
 }
 export default definition;

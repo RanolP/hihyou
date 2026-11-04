@@ -6,7 +6,13 @@ export type ToBackground =
 
 /** The body travels as base64: Chrome passes messages as JSON, and a raw file's bytes must arrive unchanged. */
 export type FetchReply =
-  | { ok: true; status: number; statusText: string; body: string }
+  | {
+      ok: true;
+      status: number;
+      statusText: string;
+      body: string;
+      link?: string;
+    }
   | { ok: false; error: string };
 
 export type LoadReply = { ok: true } | { ok: false; error: string };

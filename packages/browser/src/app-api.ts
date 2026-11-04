@@ -2,7 +2,7 @@ import type { PullFilesPage } from "./page.js";
 
 export interface MountOptions {
   page: PullFilesPage;
-  /** Fetches a github.com URL with the browser's session, through the background worker. */
+  /** Fetches an allowed GitHub URL through the background worker. */
   fetch: (url: string, init?: { accept?: string }) => Promise<Response>;
 }
 
