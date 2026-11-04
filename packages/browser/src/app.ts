@@ -872,6 +872,9 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       persistedViewed.dispose();
       view?.dispose();
       shadow.innerHTML = "";
+      // With the view gone the selection hash names nothing on screen; GitHub's own view keeps a clean URL.
+      if (location.hash.startsWith(hashPrefix))
+        history.replaceState(history.state, "", location.pathname + location.search);
     },
   };
 }
