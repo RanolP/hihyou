@@ -253,13 +253,11 @@ function mount(
     const file = files().find((f) => f.path === path);
     if (!file) return;
     opened.add(path);
-    if (single && path !== shownPath) {
-      shownPath = path;
-      opts.onShow?.(path);
-    }
+    if (single && path !== shownPath) shownPath = path;
     redraw();
     for (const s of root.querySelectorAll<HTMLElement>(".hh-scroll"))
       if (s.dataset["path"] === path) s.closest(".hh-file")?.scrollIntoView();
+    opts.onShow?.(path);
   };
 
   const fileSection = (path: string) =>

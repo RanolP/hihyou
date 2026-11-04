@@ -180,6 +180,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   let fileFilter = "";
   let allFiles = storedAllFiles();
   let currentPath: string | undefined;
+  let targetedPath: string | undefined;
   let trackingFrame: number | undefined;
 
   const updatePageStickyTop = () => {
@@ -287,14 +288,38 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     if (selected) replaceSelectionHash(selected, i < 0 ? "" : ordered[i]!.path);
     drawTree();
   };
+  const fileStickyTop = () =>
+    root
+      .querySelector<HTMLElement>(".hh-diff > .hh-bar")
+      ?.getBoundingClientRect().bottom ?? appBar.getBoundingClientRect().bottom;
+  const selectFile = (path: string) => {
+    currentPath = path;
+    targetedPath = allFiles ? path : undefined;
+    if (allFiles) {
+      const section = [...root.querySelectorAll<HTMLElement>(".hh-file")].find(
+        (candidate) => candidate.dataset["path"] === path,
+      );
+      if (section)
+        window.scrollTo({
+          top:
+            window.scrollY +
+            section.getBoundingClientRect().top -
+            fileStickyTop(),
+        });
+    }
+    updateNav();
+  };
+  const showFile = (path: string) => {
+    if (!view || !files.some((file) => file.path === path)) return;
+    view.show(path);
+    selectFile(path);
+  };
   const step = (delta: 1 | -1) => {
     const ordered = filesInTreeOrder(files);
     const index = ordered.findIndex((f) => f.path === currentPath);
     const target = ordered[index + delta];
-    if (!view || !target) return;
-    currentPath = target.path;
-    view.show(target.path);
-    updateNav();
+    if (!target) return;
+    showFile(target.path);
   };
   previous.addEventListener("click", () => step(-1));
   next.addEventListener("click", () => step(1));
@@ -319,9 +344,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       .slice(index + 1)
       .find((file) => view?.fileViewed(file.path) !== true);
     if (!target) return;
-    currentPath = target.path;
-    view.show(target.path);
-    updateNav();
+    showFile(target.path);
   };
   root.addEventListener("click", advanceAfterViewedClick);
 
@@ -329,10 +352,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     if (!allFiles) return;
     const headers = [...root.querySelectorAll<HTMLElement>(".hh-file-header")];
     if (headers.length === 0) return;
-    const stickyTop =
-      root
-        .querySelector<HTMLElement>(".hh-diff > .hh-bar")
-        ?.getBoundingClientRect().bottom ?? appBar.getBoundingClientRect().bottom;
+    const stickyTop = fileStickyTop();
     const atTop = headers.findLast((header) => {
       const section = header.closest<HTMLElement>(".hh-file");
       return (
@@ -340,9 +360,30 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
         (section?.getBoundingClientRect().bottom ?? 0) > stickyTop
       );
     });
-    const active =
+    let active =
       atTop ??
       headers.find((header) => header.getBoundingClientRect().bottom > stickyTop);
+    // A short final file cannot reach the sticky line.
+    if (targetedPath !== undefined) {
+      const scrolling = document.scrollingElement;
+      const atBottom =
+        scrolling !== null &&
+        scrolling.scrollTop + scrolling.clientHeight >=
+          scrolling.scrollHeight - 1;
+      const targeted = headers.find(
+        (header) =>
+          header.closest<HTMLElement>(".hh-file")?.dataset["path"] ===
+          targetedPath,
+      );
+      const section = targeted?.closest<HTMLElement>(".hh-file");
+      const visible =
+        targeted !== undefined &&
+        section != null &&
+        targeted.getBoundingClientRect().top < window.innerHeight &&
+        section.getBoundingClientRect().bottom > stickyTop;
+      if (atBottom && visible) active = targeted;
+      else targetedPath = undefined;
+    }
     const path = active?.closest<HTMLElement>(".hh-file")?.dataset["path"];
     if (path === undefined || path === currentPath) return;
     currentPath = path;
@@ -368,11 +409,11 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     allFiles = !allFiles;
     storeAllFiles(allFiles);
     drawViewMode();
-    if (!allFiles && path !== undefined) view?.show(path);
+    if (!allFiles && path !== undefined) showFile(path);
     view?.setSingle(!allFiles);
     if (allFiles && path !== undefined)
       requestAnimationFrame(() => {
-        view?.show(path);
+        showFile(path);
         scheduleViewportUpdate();
       });
     updateNav();
@@ -433,6 +474,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       view?.dispose();
       view = undefined;
       currentPath = undefined;
+      targetedPath = undefined;
       root.textContent = "";
     }
     title.textContent = `${row.description} ${row.label}`;
@@ -484,10 +526,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
             ),
           onCollapse: (p, elided) =>
             replaceFile(p, (file) => collapseElided(file, elided)),
-          onShow: (shown) => {
-            currentPath = shown;
-            updateNav();
-          },
+          onShow: selectFile,
           single: !allFiles,
           theme,
           viewed: persistedViewed.store,
@@ -499,8 +538,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
           ? path
           : filesInTreeOrder(files)[0]?.path;
       if (shownPath !== undefined) {
-        currentPath = shownPath;
-        view.show(shownPath);
+        showFile(shownPath);
       }
       updateNav();
       return hasPath;
@@ -652,9 +690,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
         : pathTitle;
       button.addEventListener("click", () => {
         if (row === selected && view) {
-          currentPath = file.path;
-          view.show(file.path);
-          updateNav();
+          showFile(file.path);
         } else void open(row, file.path);
       });
       li.append(button);
