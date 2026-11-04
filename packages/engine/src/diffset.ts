@@ -23,6 +23,8 @@ import {
   decodeText,
   formatBlob,
   formattedVersion,
+  lineEnd,
+  lineOf,
   parseBlob,
   plainVersion,
   readBlob,
@@ -42,6 +44,7 @@ import {
   nodeHash,
   type Rename,
   type SideInput,
+  textHash,
   wholeDeclaration,
 } from "./fragments.js";
 import type {
@@ -359,9 +362,11 @@ export async function diffFiles(
       for (const e of lineDiff(p.texts[0], p.texts[1], indentIsSyntax(path))) {
         if ("old" in e) {
           s.a.changed.push(e.old);
+          recordLines(s.a, e.old, path, "before");
         }
         if ("new" in e) {
           s.b.changed.push(e.new);
+          recordLines(s.b, e.new, path, "after");
         }
       }
       const reason = foldReason({
@@ -490,8 +495,28 @@ const sideInput = (v: Version, grammar?: Grammar): SideInput => ({
   emphasis: [],
   moves: [],
   nodes: [],
+  lineAtoms: [],
   wholes: [],
 });
+
+function recordLines(
+  s: SideInput,
+  range: { start: number; end: number },
+  path: string,
+  side: "before" | "after",
+): void {
+  const first = lineOf(s.v, range.start);
+  const last = lineOf(s.v, Math.max(range.start, range.end - 1));
+  for (let line = first; line <= last; line++) {
+    const start = s.v.lineStarts[line] as number;
+    const hash = textHash(s.v.text.slice(start, lineEnd(s.v, line)));
+    s.lineAtoms.push({
+      line,
+      hash,
+      atom: atomKey({ path, ancestors: [], [side]: hash }),
+    });
+  }
+}
 
 /**
  * Marks one edit on the side(s) it touches: an insert, delete or update changes and emphasizes its node, except

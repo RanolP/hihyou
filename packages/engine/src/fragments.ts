@@ -149,6 +149,8 @@ export interface SideInput {
   moves: MoveMark[];
   /** Nodes that are edit atoms, each with its `atomKey`. */
   nodes: { node: number; atom: string }[];
+  /** Changed lines used as edit atoms when this side has no syntax tree. */
+  lineAtoms: { line: number; atom: string; hash: string }[];
   /** Nodes added or deleted as one unit, outlined even when no atom lies below them. */
   wholes: WholeMark[];
   /** The grammar's `Grammar.declarations`: the node kinds a whole unit may be. */
@@ -707,7 +709,12 @@ function sideFragment(
   const start = v.lineStarts[l0] ?? v.text.length;
   const end = l1 > l0 ? lineEnd(v, l1 - 1) : start;
   const moves = end > start ? sideMoves(s, l0, l1, start, end) : [];
-  const nodes = v.tree && end > start ? outline(s, v.tree, l0, start, end) : [];
+  const nodes =
+    end > start
+      ? v.tree
+        ? outline(s, v.tree, l0, start, end)
+        : lineOutline(s, l0, l1)
+      : [];
   return {
     spans: split(v.text, start, end, s.emphasis, scopes),
     at: v.tree && end > start ? nodesIn(v, v.tree, start, end) : [],
@@ -715,6 +722,27 @@ function sideFragment(
     ...(moves.length > 0 && { moves }),
     ...(nodes.length > 0 && { nodes }),
   };
+}
+
+function lineOutline(s: SideInput, l0: number, l1: number): NodeOutline[] {
+  return s.lineAtoms
+    .filter(({ line }) => line >= l0 && line < l1)
+    .map(({ line, atom, hash }) => {
+      const start = s.v.lineStarts[line] as number;
+      let end = lineEnd(s.v, line);
+      if (s.v.text[end - 1] === "\n") end--;
+      if (s.v.text[end - 1] === "\r") end--;
+      return {
+        steps: [line],
+        parent: -1,
+        kind: "line",
+        start: { line: line - l0, column: 0 },
+        end: { line: line - l0, column: end - start },
+        changed: true,
+        hash,
+        atom,
+      };
+    });
 }
 
 /** The atoms of `s` lying wholly inside `[start, end)` and their ancestors up to the outermost inside it. */
@@ -779,6 +807,10 @@ export function atomKey(parts: {
     JSON.stringify([parts.path, parts.ancestors, parts.before ?? null, parts.after ?? null]),
   );
 }
+
+/** A stable content hash for a plain-text line, ignoring whitespace as syntax-tree node hashes do. */
+export const textHash = (text: string): string =>
+  cyrb53(text.match(token)?.join("\u0001") ?? "");
 
 /**
  * The atoms an inserted or deleted subtree reads as: its named nodes with no named node below them, or the
