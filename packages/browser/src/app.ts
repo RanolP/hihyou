@@ -565,7 +565,19 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
           ? path
           : filesInTreeOrder(files)[0]?.path;
       if (shownPath !== undefined) {
-        showFile(shownPath);
+        const section = [
+          ...root.querySelectorAll<HTMLElement>(".hh-file"),
+        ].find((candidate) => candidate.dataset["path"] === shownPath);
+        // With no file asked for, a first file still below the bar leaves the page where the reader has it, as
+        // GitHub's own load does.
+        if (
+          path === undefined &&
+          allFiles &&
+          section &&
+          section.getBoundingClientRect().top >= stuckFileTop()
+        )
+          currentPath = shownPath;
+        else showFile(shownPath);
       }
       updateNav();
       return hasPath;
