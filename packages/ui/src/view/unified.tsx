@@ -100,6 +100,46 @@ function ReviewCommentBody(props: {
   );
 }
 
+const relativeTime = new Intl.RelativeTimeFormat(undefined, {
+  numeric: "auto",
+});
+
+function commentAge(createdAt: string): {
+  text: string;
+  title: string;
+} | undefined {
+  const created = new Date(createdAt);
+  const delta = created.getTime() - Date.now();
+  if (!Number.isFinite(delta)) return undefined;
+  const units = [
+    ["year", 365 * 24 * 60 * 60 * 1000],
+    ["month", 30 * 24 * 60 * 60 * 1000],
+    ["day", 24 * 60 * 60 * 1000],
+    ["hour", 60 * 60 * 1000],
+    ["minute", 60 * 1000],
+    ["second", 1000],
+  ] as const;
+  const [unit, milliseconds] =
+    units.find(([, size]) => Math.abs(delta) >= size) ?? units.at(-1)!;
+  return {
+    text: relativeTime.format(Math.round(delta / milliseconds), unit),
+    title: created.toLocaleString(),
+  };
+}
+
+function CommentAge(props: { createdAt: string }): JSX.Element {
+  const age = commentAge(props.createdAt);
+  return age ? (
+    <time
+      class="hh-comment-age"
+      dateTime={props.createdAt}
+      title={age.title}
+    >
+      {age.text}
+    </time>
+  ) : null;
+}
+
 function reviewRows(threads: readonly ReviewThread[]): JSX.Element[] {
   return threads.map((thread) => (
     <tr class="hh-review-thread">
@@ -107,7 +147,21 @@ function reviewRows(threads: readonly ReviewThread[]): JSX.Element[] {
         {thread.resolved && <span class="hh-comment-label">Resolved</span>}
         {thread.comments.map((comment) => (
           <div class="hh-review-comment">
-            <span class="hh-comment-author">{comment.author}</span>
+            <div class="hh-comment-meta">
+              {comment.avatarUrl !== undefined && (
+                <img
+                  class="hh-comment-avatar"
+                  src={comment.avatarUrl}
+                  alt=""
+                  width="20"
+                  height="20"
+                />
+              )}
+              <span class="hh-comment-author">{comment.author}</span>
+              {comment.createdAt !== undefined && (
+                <CommentAge createdAt={comment.createdAt} />
+              )}
+            </div>
             <ReviewCommentBody
               body={comment.body}
               bodyHtml={comment.bodyHtml}

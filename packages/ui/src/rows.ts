@@ -22,6 +22,9 @@ export type DiffFile = FileDiff & {
 
 export interface ReviewComment {
   author: string;
+  avatarUrl?: string;
+  /** ISO 8601, as the host reports when the comment was created. */
+  createdAt?: string;
   /** Plain text, without Markdown rendering. */
   body: string;
   /** GitHub-rendered HTML, when the host requested that media type. */

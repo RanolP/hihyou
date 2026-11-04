@@ -43,7 +43,13 @@ export interface GitHubWebReviewThread {
   after?: number;
   /** Unknown when the public review-comments REST API supplied the thread. */
   resolved?: boolean;
-  comments: { author: string; body: string; bodyHtml?: string }[];
+  comments: {
+    author: string;
+    avatarUrl?: string;
+    createdAt?: string;
+    body: string;
+    bodyHtml?: string;
+  }[];
 }
 
 interface PullReviewComment {
@@ -53,7 +59,8 @@ interface PullReviewComment {
   line: number | null;
   side: "LEFT" | "RIGHT" | null;
   original_line: number | null;
-  user: { login: string } | null;
+  user: { login: string; avatar_url?: string } | null;
+  created_at?: string;
   body: string;
   body_html?: string;
 }
@@ -78,7 +85,10 @@ function isPullReviewComment(value: unknown): value is PullReviewComment {
     (value.user === null ||
       (typeof value.user === "object" &&
         "login" in value.user &&
-        typeof value.user.login === "string")) &&
+        typeof value.user.login === "string" &&
+        (!("avatar_url" in value.user) ||
+          typeof value.user.avatar_url === "string"))) &&
+    (!("created_at" in value) || typeof value.created_at === "string") &&
     "body" in value &&
     typeof value.body === "string" &&
     (!("body_html" in value) || typeof value.body_html === "string")
@@ -446,6 +456,12 @@ function reviewThreadsFromComments(
       ...(root.side === "LEFT" ? { before: line } : { after: line }),
       comments: grouped.map((comment) => ({
         author: comment.user?.login ?? "",
+        ...(comment.user?.avatar_url !== undefined && {
+          avatarUrl: comment.user.avatar_url,
+        }),
+        ...(comment.created_at !== undefined && {
+          createdAt: comment.created_at,
+        }),
         body: comment.body,
         ...(comment.body_html !== undefined && {
           bodyHtml: comment.body_html,
