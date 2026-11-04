@@ -150,7 +150,11 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
   overflow: visible;
 }
 :host .hh-file { overflow: visible; scroll-margin-top: var(--hh-file-sticky-top); }
-/* With no scroll box to pan, long lines wrap inside the file instead of spilling past it. */
+/* Fix the browser table to its grid track; the shared auto layout stays horizontally scrollable in VS Code. */
+:host .hh-table { width: 100%; min-width: 0; table-layout: fixed; }
+:host .hh-col-num { width: calc(5ch + 16px); }
+:host .hh-col-code { width: auto; }
+/* With no scroll box to pan, every token may wrap inside the fixed code column. */
 :host .hh-code { white-space: pre-wrap; overflow-wrap: anywhere; }
 :host .hh-node th {
   top: calc(

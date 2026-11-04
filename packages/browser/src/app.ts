@@ -179,6 +179,37 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   let currentPath: string | undefined;
   let trackingFrame: number | undefined;
 
+  const updatePageStickyTop = () => {
+    const hostRect = host.getBoundingClientRect();
+    const x = Math.max(
+      0,
+      Math.min(window.innerWidth - 1, hostRect.left + hostRect.width / 2),
+    );
+    let bottom = 0;
+    const visited = new Set<Element>();
+    for (const hit of document.elementsFromPoint(x, 1)) {
+      for (let element: Element | null = hit; element; ) {
+        const rootNode = element.getRootNode();
+        const insideHost =
+          element === host ||
+          host.contains(element) ||
+          (rootNode instanceof ShadowRoot && rootNode.host === host);
+        if (!visited.has(element) && !insideHost) {
+          visited.add(element);
+          const position = getComputedStyle(element).position;
+          if (position === "sticky" || position === "fixed") {
+            const rect = element.getBoundingClientRect();
+            if (rect.top <= 1) bottom = Math.max(bottom, rect.bottom);
+          }
+        }
+        element =
+          element.parentElement ??
+          (rootNode instanceof ShadowRoot ? rootNode.host : null);
+      }
+    }
+    host.style.setProperty("--hh-page-sticky-top", `${Math.max(0, bottom)}px`);
+  };
+
   const drawViewMode = () => {
     viewMode.textContent = "All files";
     viewMode.setAttribute("aria-pressed", String(allFiles));
@@ -266,7 +297,6 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   next.addEventListener("click", () => step(1));
 
   const trackCurrentFile = () => {
-    trackingFrame = undefined;
     if (!allFiles) return;
     const headers = [...root.querySelectorAll<HTMLElement>(".hh-file-header")];
     const first = headers[0];
@@ -287,12 +317,19 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     currentPath = path;
     updateNav();
   };
-  const scheduleCurrentFile = () => {
-    if (trackingFrame !== undefined) return;
-    trackingFrame = requestAnimationFrame(trackCurrentFile);
+  const updateViewport = () => {
+    trackingFrame = undefined;
+    updatePageStickyTop();
+    trackCurrentFile();
   };
-  window.addEventListener("scroll", scheduleCurrentFile, { passive: true });
-  const fileObserver = new MutationObserver(scheduleCurrentFile);
+  const scheduleViewportUpdate = () => {
+    if (trackingFrame !== undefined) return;
+    trackingFrame = requestAnimationFrame(updateViewport);
+  };
+  window.addEventListener("scroll", scheduleViewportUpdate, { passive: true });
+  window.addEventListener("resize", scheduleViewportUpdate);
+  scheduleViewportUpdate();
+  const fileObserver = new MutationObserver(scheduleViewportUpdate);
   fileObserver.observe(root, { childList: true, subtree: true });
 
   viewMode.addEventListener("click", () => {
@@ -304,7 +341,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     if (path !== undefined)
       requestAnimationFrame(() => {
         view?.show(path);
-        if (allFiles) scheduleCurrentFile();
+        if (allFiles) scheduleViewportUpdate();
       });
     updateNav();
   });
@@ -643,10 +680,12 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       disposed = true;
       appBarObserver.disconnect();
       host.style.removeProperty("--hh-app-bar-height");
+      host.style.removeProperty("--hh-page-sticky-top");
       themeObserver.disconnect();
       fileObserver.disconnect();
       if (trackingFrame !== undefined) cancelAnimationFrame(trackingFrame);
-      window.removeEventListener("scroll", scheduleCurrentFile);
+      window.removeEventListener("scroll", scheduleViewportUpdate);
+      window.removeEventListener("resize", scheduleViewportUpdate);
       dark.removeEventListener("change", applyTheme);
       document.removeEventListener("keydown", onKeydown);
       unsubscribeViewed();
