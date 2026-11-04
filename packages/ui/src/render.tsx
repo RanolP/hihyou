@@ -106,6 +106,8 @@ export interface DiffsetView {
   show(path: string): void;
   /** With `onShow`: the path of the file drawn. */
   shown(): string | undefined;
+  /** Whether every reviewable edit in the file at `path` has been viewed. */
+  fileViewed(path: string): boolean | undefined;
   dispose(): void;
 }
 
@@ -918,6 +920,12 @@ function mount(
       root.querySelector(".hh-scroll")?.scrollTo(0, 0);
     },
     shown: () => (single ? shownPath : undefined),
+    fileViewed: (path) => {
+      const current = files();
+      const index = current.findIndex((file) => file.path === path);
+      const file = current[index];
+      return file ? fileViewed(index, file) : undefined;
+    },
     dispose() {
       unsubscribe();
       unsubscribeScores();

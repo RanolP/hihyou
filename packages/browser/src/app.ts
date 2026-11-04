@@ -18,6 +18,9 @@ import {
   githubLight,
   renderDiffset,
   revealElided,
+  sessionViewedStore,
+  type ViewedState,
+  type ViewedStore,
 } from "@hihyou/ui";
 import type { App, MountOptions, Mounted } from "./app-api.js";
 
@@ -36,13 +39,76 @@ interface Row {
 
 type SidebarFile = ChangedFileRef & Pick<DiffFile, "collapsed">;
 
+const viewedStorageKey = (owner: string, repo: string, pull: number) =>
+  `hihyou:viewed:${owner}/${repo}#${pull}`;
+
+const parseViewedState = (value: string): ViewedState | undefined => {
+  const parsed: unknown = JSON.parse(value);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
+  for (const entry of Object.values(parsed)) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return;
+    const candidate = entry as Record<string, unknown>;
+    const ts = candidate["ts"];
+    if (
+      typeof candidate["viewed"] !== "boolean" ||
+      typeof candidate["device"] !== "string" ||
+      !ts ||
+      typeof ts !== "object" ||
+      Array.isArray(ts) ||
+      !Number.isFinite((ts as Record<string, unknown>)["wall"]) ||
+      !Number.isFinite((ts as Record<string, unknown>)["logical"])
+    )
+      return;
+  }
+  return parsed as ViewedState;
+};
+
+function persistentViewedStore(key: string): {
+  store: ViewedStore;
+  dispose(): void;
+} {
+  const store = sessionViewedStore();
+  const read = (value: string | null) => {
+    if (value === null) return;
+    try {
+      const state = parseViewedState(value);
+      if (state) store.merge(state);
+    } catch {
+      // A malformed persisted value leaves the in-memory store usable.
+    }
+  };
+  try {
+    read(localStorage.getItem(key));
+  } catch {
+    // Storage may be unavailable; viewed state still lasts for this mount.
+  }
+  const unsubscribe = store.subscribe(() => {
+    try {
+      localStorage.setItem(key, JSON.stringify(store.state()));
+    } catch {
+      // Quota and privacy restrictions must not break the review UI.
+    }
+  });
+  const mergeFromAnotherTab = (event: StorageEvent) => {
+    if (event.key === key) read(event.newValue);
+  };
+  window.addEventListener("storage", mergeFromAnotherTab);
+  return {
+    store,
+    dispose() {
+      unsubscribe();
+      window.removeEventListener("storage", mergeFromAnotherTab);
+    },
+  };
+}
+
 function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
   shadow.innerHTML = `
 <style>${diffStyles}${appStyles}</style>
 <style class="scheme"></style>
 <div class="hh-app">
-  <nav class="hh-sets" aria-label="Diffsets"><input class="hh-filter" type="search" aria-label="Filter changed files" placeholder="Filter changed files (/)" autocorrect="off" autocapitalize="off" spellcheck="false"><div class="hh-sets-status">Loading commits…</div><ul role="tree"></ul></nav>
+  <nav class="hh-sets" aria-label="Diffsets"><input class="hh-filter" type="search" aria-label="Filter changed files" placeholder="Filter changed files (/)" autocorrect="off" autocapitalize="off" spellcheck="false"><div class="hh-viewed-count" aria-live="polite"></div><div class="hh-sets-status">Loading commits…</div><ul role="tree"></ul></nav>
   <section class="hh-main">
     <header class="hh-bar">
       <h2 class="hh-title"></h2>
@@ -58,6 +124,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     shadow.querySelector(selector) as T;
   const schemeStyle = $<HTMLStyleElement>("style.scheme");
   const filter = $<HTMLInputElement>(".hh-filter");
+  const viewedCount = $<HTMLElement>(".hh-viewed-count");
   const setsStatus = $<HTMLElement>(".hh-sets-status");
   const tree = $<HTMLUListElement>(".hh-sets ul");
   const title = $<HTMLElement>(".hh-title");
@@ -66,6 +133,9 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   const position = $<HTMLElement>(".position");
   const status = $<HTMLElement>(".message");
   const root = $<HTMLElement>(".hh-root");
+  const persistedViewed = persistentViewedStore(
+    viewedStorageKey(page.owner, page.repo, page.pull),
+  );
 
   const host_ = githubWebHost({ fetch });
   const engine = createEngine(host_);
@@ -261,6 +331,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
             replaceFile(p, (file) => collapseElided(file, elided)),
           onShow: () => updateNav(),
           theme,
+          viewed: persistedViewed.store,
         });
       const hasPath =
         path === undefined || files.some((file) => file.path === path);
@@ -292,6 +363,12 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   // files as a compact-folder tree.
   const drawTree = () => {
     const shown = view?.shown();
+    const viewedFiles = files.filter(
+      (file) => view?.fileViewed(file.path) === true,
+    ).length;
+    viewedCount.textContent = view
+      ? `${viewedFiles} / ${files.length} viewed`
+      : "";
     tree.replaceChildren(
       ...rows.map((row) => {
         const li = el("li", "hh-set");
@@ -388,12 +465,20 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       );
       button.append(
         el("span", `hh-letter ${letter}`, letter),
-        el("span", "", node.name),
+        el(
+          "span",
+          row === selected && view?.fileViewed(file.path)
+            ? "hh-file-viewed"
+            : "",
+          node.name,
+        ),
       );
       const reason = file.collapsed
         ? collapseReasons[file.collapsed.reason]
         : undefined;
       if (reason) button.append(el("span", "hh-collapsed-hint", reason));
+      if (row === selected && view?.fileViewed(file.path))
+        button.append(el("span", "hh-viewed-mark", "✓"));
       const pathTitle = file.oldPath
         ? `${file.oldPath} → ${file.path}`
         : file.path;
@@ -409,6 +494,8 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       li.append(button);
       return li;
     });
+
+  const unsubscribeViewed = persistedViewed.store.subscribe(drawTree);
 
   void (async () => {
     try {
@@ -463,6 +550,8 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       themeObserver.disconnect();
       dark.removeEventListener("change", applyTheme);
       document.removeEventListener("keydown", onKeydown, true);
+      unsubscribeViewed();
+      persistedViewed.dispose();
       view?.dispose();
       shadow.innerHTML = "";
     },
@@ -499,6 +588,7 @@ const appStyles = `
 .hh-app { display: grid; grid-template-columns: minmax(200px, 300px) minmax(0, 1fr); align-items: start; gap: 16px; min-height: 400px; color: var(--fgColor-default, CanvasText); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
 .hh-sets { position: sticky; top: var(--hh-page-sticky-top); max-height: calc(100vh - var(--hh-page-sticky-top)); overflow: auto; border: 1px solid var(--borderColor-default, #d0d7de); border-radius: 6px; padding: 4px 0; }
 .hh-filter { box-sizing: border-box; width: calc(100% - 16px); margin: 8px; border: 1px solid var(--borderColor-default, #d0d7de); border-radius: 6px; padding: 5px 8px; background: var(--bgColor-default, Canvas); color: inherit; font: inherit; }
+.hh-viewed-count { padding: 0 12px 4px; color: var(--fgColor-muted, GrayText); font-size: 12px; }
 .hh-sets ul { list-style: none; margin: 0; padding: 0; }
 .hh-sets ul ul { padding-left: 14px; }
 .hh-sets-status, .hh-note { padding: 4px 12px; color: var(--fgColor-muted, GrayText); }
@@ -511,6 +601,8 @@ const appStyles = `
 .hh-desc { color: var(--fgColor-muted, GrayText); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .hh-folder { padding: 2px 4px; color: var(--fgColor-muted, GrayText); }
 .hh-file-row { display: flex; gap: 6px; width: 100%; white-space: nowrap; }
+.hh-file-viewed { color: var(--fgColor-muted, GrayText); }
+.hh-viewed-mark { margin-left: auto; color: var(--fgColor-muted, GrayText); }
 .hh-file-row.selected { background: var(--bgColor-accent-muted, rgb(84 174 255 / 0.15)); }
 .hh-collapsed-hint { color: var(--fgColor-muted, GrayText); font-size: 12px; }
 .hh-sets button:hover { background: var(--bgColor-neutral-muted, rgb(175 184 193 / 0.2)); }
