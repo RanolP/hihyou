@@ -847,7 +847,8 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
           key: c.sha,
           label: c.subject,
           description: c.sha.slice(0, 7),
-          tooltip: `${c.author} · ${new Date(c.date).toLocaleString()}`,
+          // The sidebar cuts a long subject short; the tooltip carries it whole.
+          tooltip: `${c.subject}\n${c.author} · ${new Date(c.date).toLocaleString()}`,
           id: { owner, repo, commit: c.sha },
           expanded: false,
         })),
