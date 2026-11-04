@@ -11,6 +11,18 @@ import { wholeHeaders } from "../whole.js";
 const headings = ["Before line", "After line", "Code"];
 const scopeLabel = (path: readonly string[] | undefined) =>
   path && path.length > 0 ? path.join(" › ") : undefined;
+const scopeAfterGap = (
+  sections: ReturnType<typeof buildSections>,
+  sectionIndex: number,
+) => {
+  for (const section of sections.slice(sectionIndex + 1)) {
+    const first = section.rows.find(
+      (row) => row.kind === "diff" || (row.kind === "elided" && row.count !== 0),
+    );
+    if (first?.kind === "diff") return section.path;
+    if (first?.kind === "elided") return undefined;
+  }
+};
 
 /** One opened file's diff table. */
 export function FileTable(props: { index: number; file: DiffFile }): JSX.Element {
@@ -48,7 +60,7 @@ export function FileTable(props: { index: number; file: DiffFile }): JSX.Element
         row.kind === "elided"
           ? row.count === 0
             ? section.path
-            : sections[sectionIndex + 1]?.path
+            : scopeAfterGap(sections, sectionIndex)
           : undefined;
       unifiedRow(
         ctx,
