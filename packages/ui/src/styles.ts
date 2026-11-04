@@ -269,6 +269,7 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 .hh-comment-html pre { overflow-x: auto; padding: 8px; }
 .hh-comment-html pre code { padding: 0; background: transparent; }
 .hh-comment-html img { max-width: 100%; }
+.hh-comment-html hr { height: 1px; margin: 12px 0; border: 0; background: var(--hh-border); }
 .hh-comment-html details > summary { cursor: pointer; }
 .hh-comment-html blockquote { margin: 8px 0; padding-left: 8px; color: var(--hh-muted); border-left: 3px solid var(--hh-border); }
 .hh-comment-html ul, .hh-comment-html ol { padding-left: 2em; }
@@ -278,8 +279,9 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 .hh-comment-clip.hh-comment-collapsed { max-height: 240px; overflow: hidden; }
 .hh-comment-clip.hh-comment-collapsed::after { content: ""; position: absolute; right: 0; bottom: 0; left: 0; height: 48px; pointer-events: none; background: linear-gradient(transparent, var(--hh-header-bg)); }
 .hh-comment-toggle { margin-top: 4px; }
-.hh-review-thread > td { padding: 6px 8px; background: var(--hh-header-bg); border-left: 3px solid var(--hh-border); }
-.hh-review-comment + .hh-review-comment { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--hh-border); }
+.hh-review-thread > td { padding: 8px 16px; font-family: var(--vscode-font-family, system-ui, sans-serif); line-height: 1.5; white-space: normal; border-block: 1px solid var(--hh-border); }
+.hh-review-comment { padding: 8px 12px; background: var(--hh-header-bg); border: 1px solid var(--hh-border); border-radius: 6px; }
+.hh-review-comment + .hh-review-comment { margin-top: 8px; }
 .hh-comment-draft textarea { display: block; width: 100%; box-sizing: border-box; min-height: 4em; font: inherit; }
 /* A comment held in a review not yet submitted: dashed, and labelled so it never reads by style alone. */
 .hh-comment-row > td.hh-comment-pending, .hh-comment-file.hh-comment-pending { border-left-style: dashed; }
