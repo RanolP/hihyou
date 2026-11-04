@@ -292,6 +292,14 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     root
       .querySelector<HTMLElement>(".hh-diff > .hh-bar")
       ?.getBoundingClientRect().bottom ?? appBar.getBoundingClientRect().bottom;
+  // Where the sticky bar's bottom sits once stuck: measured where it is now, a bar still in flow at the page top
+  // would be scrolled away and the file land that far below it.
+  const stuckFileTop = () => {
+    const bar = root.querySelector<HTMLElement>(".hh-diff > .hh-bar");
+    if (!bar) return appBar.getBoundingClientRect().bottom;
+    const top = Number.parseFloat(getComputedStyle(bar).top);
+    return (Number.isNaN(top) ? 0 : top) + bar.getBoundingClientRect().height;
+  };
   const selectFile = (path: string) => {
     currentPath = path;
     targetedPath = allFiles ? path : undefined;
@@ -304,7 +312,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
           top:
             window.scrollY +
             section.getBoundingClientRect().top -
-            fileStickyTop(),
+            stuckFileTop(),
           // GitHub sets `scroll-behavior: smooth`; the tracker would read the frames in between.
           behavior: "instant",
         });
