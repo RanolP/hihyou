@@ -171,8 +171,9 @@ const formatters: Partial<
 export interface SyntechsGrammarOptions {
   /**
    * Formatter options by language. Languages with a formatter are formatted with its defaults unless set to false;
-   * an object overrides that formatter's options (oxfmt/prettier's for JS/TS/CSS/HTML/YAML/GraphQL, ruff's for
-   * Python, ktfmt's for Kotlin, and swift-format's for Swift).
+   * YAML stays as written unless given an options object. An object overrides that formatter's options
+   * (oxfmt/prettier's for JS/TS/CSS/HTML/YAML/GraphQL, ruff's for Python, ktfmt's for Kotlin, and swift-format's
+   * for Swift).
    */
   format?: Partial<Record<LanguageId, object | false>>;
 }
@@ -193,7 +194,11 @@ export function syntechsGrammars(
     const formatOptions = options.format?.[id];
     const bindFormatter = formatters[id];
     let formatter: FormatModule | undefined;
-    if (formatOptions !== false && bindFormatter)
+    if (
+      formatOptions !== false &&
+      (id !== "yaml" || formatOptions !== undefined) &&
+      bindFormatter
+    )
       formatter = (await bindFormatter())(formatOptions ?? {});
     return {
       id: `${id}@${tablesHash(language)}`,
