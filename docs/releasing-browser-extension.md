@@ -11,7 +11,7 @@ Configure these GitHub Actions secrets:
 - `CHROME_EXTENSION_ID`: the extension ID shown under the extension name in the Chrome Web Store developer dashboard.
 - `CHROME_PUBLISHER_ID`: the publisher ID in the developer dashboard URL after selecting the correct publisher.
 - `CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL`: the JSON service-account key's `client_email` value.
-- `CHROME_SERVICE_ACCOUNT_PRIVATE_KEY`: the JSON service-account key's `private_key` value without its surrounding quotes, preserving the `\n` sequences.
+- `CHROME_SERVICE_ACCOUNT_PRIVATE_KEY`: the JSON service-account key's `private_key` as a multi-line PEM block, with each `\n` turned into a real line break (for example `jq -r .private_key key.json`); the submitter reads the secret as is.
 - `FIREFOX_EXTENSION_ID`: the extension ID from the Firefox Add-ons listing.
 - `FIREFOX_JWT_ISSUER`: the issuer from an AMO API key.
 - `FIREFOX_JWT_SECRET`: the secret from the same AMO API key.
