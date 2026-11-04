@@ -544,6 +544,45 @@ function record(
     s.changed.push(r);
     s.emphasis.push(r);
   };
+  const markMultilineUpdate = (
+    before: SideInput | undefined,
+    after: SideInput | undefined,
+    oldNode: number | undefined,
+    newNode: number | undefined,
+  ): boolean => {
+    if (!before || !after || oldNode === undefined || newNode === undefined)
+      return false;
+    const oldRange = range(before, oldNode);
+    const newRange = range(after, newNode);
+    const oldText = before.v.text.slice(oldRange.start, oldRange.end);
+    const newText = after.v.text.slice(newRange.start, newRange.end);
+    if (!oldText.includes("\n") && !newText.includes("\n")) return false;
+    for (const edit of lineDiff(oldText, newText, indentIsSyntax(refA.path))) {
+      if ("old" in edit)
+        before.changed.push({
+          start: oldRange.start + edit.old.start,
+          end: oldRange.start + edit.old.end,
+        });
+      if ("new" in edit)
+        after.changed.push({
+          start: newRange.start + edit.new.start,
+          end: newRange.start + edit.new.end,
+        });
+    }
+    for (const edit of tokenDiff(oldText, newText)) {
+      if ("old" in edit)
+        before.emphasis.push({
+          start: oldRange.start + edit.old.start,
+          end: oldRange.start + edit.old.end,
+        });
+      if ("new" in edit)
+        after.emphasis.push({
+          start: newRange.start + edit.new.start,
+          end: newRange.start + edit.new.end,
+        });
+    }
+    return true;
+  };
   const path = atomPath(refA, refB);
   // One atom per leaf of an inserted or deleted subtree, keyed by its own side alone.
   const leaves = (
@@ -573,8 +612,10 @@ function record(
       leaves(a, e.a, "before");
       return;
     case "update":
-      mark(a, e.a);
-      mark(b, e.b);
+      if (!markMultilineUpdate(a, b, e.a, e.b)) {
+        mark(a, e.a);
+        mark(b, e.b);
+      }
       pairAtom(e, a, b, path);
       return;
     case "move":

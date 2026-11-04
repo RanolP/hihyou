@@ -493,7 +493,74 @@ export function match(
       if (cb.anchor(y) === upB) link(x, y);
     }
 
+  // A changed multi-line leaf has no identical subtree to seed matching. Pair it when it is the only leaf of
+  // its kind in the same gap between already-matched siblings; the line differ can then keep its unchanged lines.
+  for (let x = 0; x < a.size.length; x++) {
+    const y = src[x] as number;
+    if (y === -1) continue;
+    const kidsA = a.childrenOf(x);
+    const kidsB = b.childrenOf(y);
+    const gaps = (
+      side: Side,
+      kids: number[],
+      partner: Int32Array,
+      forward: boolean,
+    ) => {
+      const out = new Map<string, number[]>();
+      const anchor = (n: number) => {
+        const p = partner[n] as number;
+        return p === -1 ? undefined : forward ? `${n}:${p}` : `${p}:${n}`;
+      };
+      const next = Array.from<string | undefined>({ length: kids.length });
+      let right: string | undefined;
+      for (let i = kids.length - 1; i >= 0; i--) {
+        right = anchor(kids[i] as number) ?? right;
+        next[i] = right;
+      }
+      let left: string | undefined;
+      for (const [i, n] of kids.entries()) {
+        const own = anchor(n);
+        if (own !== undefined) {
+          left = own;
+          continue;
+        }
+        if (sideLeafLineCount(side, n) < 2) continue;
+        const h = side.nodes[n] as number;
+        const key = `${left ?? "^"}\0${next[i] ?? "$"}\0${side.tree.kindName(h)}`;
+        entry(out, key, () => []).push(n);
+      }
+      return out;
+    };
+    const gapsA = gaps(a, kidsA, src, true);
+    const gapsB = gaps(b, kidsB, dst, false);
+    for (const [key, xs] of gapsA) {
+      const ys = gapsB.get(key);
+      const p = xs[0];
+      const q = ys?.[0];
+      if (
+        xs.length === 1 &&
+        ys?.length === 1 &&
+        p !== undefined &&
+        q !== undefined
+      )
+        link(p, q);
+    }
+  }
+
   return { a, b, src, dst };
+}
+
+function sideLeafLineCount(side: Side, n: number): number {
+  if (side.size[n] !== 1) return 0;
+  const text = side.tree.text(side.nodes[n] as number);
+  let count = 1;
+  for (
+    let i = text.indexOf("\n");
+    i !== -1;
+    i = text.indexOf("\n", i + 1)
+  )
+    count++;
+  return count;
 }
 
 /** A declaration's name, or the key of a member written `key: value` (an object property, a mapping entry). */

@@ -386,9 +386,17 @@ function pairLines(a: Version, b: Version, m: Mapping): Int32Array {
     const p = partner >= 0 ? m.b.node(partner) : undefined;
     const pFirst = p === undefined ? -1 : lineOf(b, b.start(p));
     const pLast = p === undefined ? -1 : lineOf(b, b.end(p) - 1);
+    const lineDiffed =
+      p !== undefined &&
+      (last > first || pLast > pFirst) &&
+      tree.label(n) !== m.b.tree.label(p);
     for (let line = first; line <= last; line++) {
       if (seen[line] === 1) continue;
       seen[line] = 1;
+      if (lineDiffed) {
+        pairs[line] = -2;
+        continue;
+      }
       const to = pFirst + (line - first);
       if (p !== undefined && to <= pLast) pairs[line] = to;
     }
