@@ -237,6 +237,16 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
       ...(patch.oldPath !== patch.newPath && { oldPath: patch.oldPath }),
       before,
       after,
+      stats: {
+        added: patch.hunks.reduce(
+          (n, hunk) => n + hunk.lines.filter((line) => line[0] === "+").length,
+          0,
+        ),
+        removed: patch.hunks.reduce(
+          (n, hunk) => n + hunk.lines.filter((line) => line[0] === "-").length,
+          0,
+        ),
+      },
       ...(kind && { kind }),
     };
   };

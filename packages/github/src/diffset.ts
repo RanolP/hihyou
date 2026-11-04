@@ -25,6 +25,8 @@ export function diffsetIdOf(data: GitHubDiffsetId): string {
 interface CompareFile {
   sha: string;
   filename: string;
+  additions: number;
+  deletions: number;
   previous_filename?: string;
   status:
     | "added"
@@ -154,6 +156,7 @@ async function toChangedFileRef(
       path: file.filename,
       before: null,
       after: encodeBlobId(owner, repo, file.sha),
+      stats: { added: file.additions, removed: file.deletions },
     };
   }
   // GitHub reports a removed file's own (base-side) blob SHA in `sha`, since no after-side blob exists.
@@ -162,6 +165,7 @@ async function toChangedFileRef(
       path: file.filename,
       before: encodeBlobId(owner, repo, file.sha),
       after: null,
+      stats: { added: file.additions, removed: file.deletions },
     };
   }
   const oldPath = file.previous_filename;
@@ -177,6 +181,7 @@ async function toChangedFileRef(
     ...(oldPath !== undefined && { oldPath }),
     before: encodeBlobId(owner, repo, beforeSha),
     after: encodeBlobId(owner, repo, file.sha),
+    stats: { added: file.additions, removed: file.deletions },
   };
 }
 

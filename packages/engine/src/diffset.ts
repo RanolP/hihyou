@@ -343,13 +343,17 @@ export async function diffFiles(
         ...(status && { status }),
       };
     const text = p.ref.after === null ? p.texts[0] : p.texts[1];
-    let added = 0;
-    let removed = 0;
-    for (const part of diffLines(p.texts[0], p.texts[1])) {
-      if (part.added) added += part.count ?? 0;
-      if (part.removed) removed += part.count ?? 0;
+    let stats = p.ref.stats;
+    if (!stats) {
+      let added = 0;
+      let removed = 0;
+      for (const part of diffLines(p.texts[0], p.texts[1])) {
+        if (part.added) added += part.count ?? 0;
+        if (part.removed) removed += part.count ?? 0;
+      }
+      stats = { added, removed };
     }
-    const head = { path, stats: { added, removed }, ...(status && { status }) };
+    const head = { path, stats, ...(status && { status }) };
     if (!("mapping" in p)) {
       // Without a tree the changed line is the unit the viewer paints; a whole file is the change, unpainted.
       for (const e of lineDiff(p.texts[0], p.texts[1], indentIsSyntax(path))) {

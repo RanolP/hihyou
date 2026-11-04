@@ -16,6 +16,8 @@ export interface ChangedFileRef {
   oldPath?: string;
   before: BlobId | null; // null = added
   after: BlobId | null; // null = deleted
+  /** Host-native line counts, when its diff algorithm reports them. */
+  stats?: { added: number; removed: number };
   /** Content the engine must not read or parse; set by the host when it knows. */
   kind?: "binary" | "submodule";
 }
