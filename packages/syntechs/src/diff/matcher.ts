@@ -65,15 +65,10 @@ export function match(
       dst[y + k] = x + k;
     }
   };
-  /** Undoes every pairing between the subtrees of `x` and `y`. */
-  const unlinkWithin = (x: number, y: number) => {
-    const end = y + (sizeB[y] as number);
-    for (let k = x; k < x + (sizeA[x] as number); k++) {
-      const p = src[k] as number;
-      if (p < y || p >= end) continue;
-      src[k] = -1;
-      dst[p] = -1;
-    }
+  /** Undoes one pairing, leaving independently matched descendants where they moved. */
+  const unlink = (x: number, y: number) => {
+    if (src[x] === y) src[x] = -1;
+    if (dst[y] === x) dst[y] = -1;
   };
   let diceWork = 0;
   /** Descendants of `x` matched to descendants of `y`. */
@@ -269,8 +264,8 @@ export function match(
         const elsewhereB = dst[q] as number;
         if (elsewhereA !== -1 && isoA[p] === isoB[elsewhereA]) continue;
         if (elsewhereB !== -1 && isoA[elsewhereB] === isoB[q]) continue;
-        if (elsewhereA !== -1) unlinkWithin(p, elsewhereA);
-        if (elsewhereB !== -1) unlinkWithin(elsewhereB, q);
+        if (elsewhereA !== -1) unlink(p, elsewhereA);
+        if (elsewhereB !== -1) unlink(elsewhereB, q);
         linkAndRecover(p, q);
       }
       // A child whose matched descendants went mostly into another unmatched child across belongs with that
