@@ -377,6 +377,7 @@ export async function diffFiles(
         }
       return {
         ...head,
+        ...(p.fallback && { fallback: p.fallback }),
         fragments: buildFragments({
           a: s.a,
           b: s.b,

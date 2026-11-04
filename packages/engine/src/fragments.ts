@@ -12,6 +12,8 @@ export interface FileDiff {
   sourceLines?: { before: number[]; after: number[] };
   /** Line counts over the original, unformatted texts. */
   stats?: { added: number; removed: number };
+  /** Why syntax diffing fell back to a line diff, if it did. */
+  fallback?: "too-large" | "parse-error";
   fragments: CodeFragment[]; // SSoT; no separate Edit[]; begin/end always balanced
   /** The engine judges the whole file should be shown folded, and says why. */
   collapsed?: { reason: CollapseReason };

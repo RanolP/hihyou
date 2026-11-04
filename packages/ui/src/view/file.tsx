@@ -98,6 +98,11 @@ function FileHeader(props: {
           {collapseReasons[file.collapsed.reason]}
         </span>
       )}
+      {file.fallback === "parse-error" && (
+        <span class="hh-collapse-reason">
+          Did not parse cleanly — plain line diff
+        </span>
+      )}
       <ViewedToggle
         on={() => ctx.fileViewed(index, file)}
         set={(on) => ctx.setFileViewed(index, file, on)}

@@ -67,7 +67,7 @@ export interface FoldFacts {
 export function foldReason(f: FoldFacts): CollapseReason | undefined {
   return (
     producedBy(f.path, f.text) ??
-    f.fallback ??
+    (f.fallback === "too-large" ? f.fallback : undefined) ??
     (f.onlyMoves ? "moved" : f.noEdits ? "format-only" : undefined)
   );
 }
