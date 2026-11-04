@@ -65,6 +65,8 @@ export function SpanNodes(props: {
   side: SideName;
   wholeLine?: SideName | undefined;
   allowTrailingTerminator?: boolean | undefined;
+  /** False on a line with no line of the other side beside it, where every word is new anyway. */
+  emphasize?: boolean | undefined;
   place?: Place | undefined;
 }): JSX.Element {
   const ctx = useDraw();
@@ -72,8 +74,9 @@ export function SpanNodes(props: {
   const { spans, side, place, wholeLine, allowTrailingTerminator = false } =
     props;
   const emphasize =
-    wholeLine === undefined ||
-    !whollyChanged(spans, wholeLine, allowTrailingTerminator);
+    props.emphasize !== false &&
+    (wholeLine === undefined ||
+      !whollyChanged(spans, wholeLine, allowTrailingTerminator));
   const out: JSX.Element[] = [];
   let run: { side: SideName; nodes: JSX.Element[] } | undefined;
   const flush = () => {

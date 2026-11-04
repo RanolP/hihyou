@@ -1,5 +1,10 @@
 import type { JSX } from "solid-js";
-import { buildSections, type DiffFile, unifiedRows } from "../rows.js";
+import {
+  buildSections,
+  type DiffFile,
+  type UnifiedRow,
+  unifiedRows,
+} from "../rows.js";
 import type { TableDraw } from "./block.js";
 import { useDraw } from "./context.js";
 import { pairRows } from "./pair-rows.jsx";
@@ -22,6 +27,26 @@ const scopeAfterGap = (
     if (first?.kind === "diff") return section.path;
     if (first?.kind === "elided") return undefined;
   }
+};
+
+/**
+ * Whether each row is a line in a run of one side's lines alone: a run with nothing of the other side to compare
+ * against reads as new or gone whole, as GitHub draws it, so its words get no emphasis.
+ */
+const loneLines = (rows: readonly UnifiedRow[]): boolean[] => {
+  const lone = rows.map(() => false);
+  for (let start = 0; start < rows.length; ) {
+    let end = start;
+    const sides = new Set<string>();
+    for (; end < rows.length; end++) {
+      const row = rows[end]!;
+      if (row.kind !== "line" || row.moved) break;
+      sides.add(row.side);
+    }
+    if (sides.size === 1) for (let i = start; i < end; i++) lone[i] = true;
+    start = Math.max(end, start + 1);
+  }
+  return lone;
 };
 
 /** One opened file's diff table. */
@@ -54,7 +79,9 @@ export function FileTable(props: { index: number; file: DiffFile }): JSX.Element
         </tr>,
       );
     ctx.placer.queueBefore(beforeCells(section.rows));
-    for (const row of unifiedRows(section.rows)) {
+    const unified = unifiedRows(section.rows);
+    const lone = loneLines(unified);
+    for (const [rowIndex, row] of unified.entries()) {
       wholeRows(ctx, headers, row, columns, rows);
       const scopePath =
         row.kind === "elided"
@@ -68,6 +95,7 @@ export function FileTable(props: { index: number; file: DiffFile }): JSX.Element
         row,
         rows,
         scopeLabel(scopePath),
+        lone[rowIndex],
       );
     }
     bodies.push(<tbody>{rows}</tbody>);

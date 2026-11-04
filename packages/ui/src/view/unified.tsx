@@ -191,6 +191,7 @@ export function unifiedRow(
   row: UnifiedRow,
   out: JSX.Element[],
   scope?: string,
+  lone = false,
 ): void {
   const { index } = table;
   if (row.kind === "elided") {
@@ -300,6 +301,7 @@ export function unifiedRow(
               side={side}
               wholeLine={side}
               allowTrailingTerminator
+              emphasize={!lone}
               place={ctx.placer.lineCursor(index, row.fragment, side, cell.line)}
             />
           </td>
