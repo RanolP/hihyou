@@ -217,9 +217,33 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     drawTree();
     const current = review as NonNullable<typeof review>;
     try {
-      const loaded = await current.load();
+      const [loaded, reviewThreads] = await Promise.all([
+        current.load(),
+        "pull" in row.id
+          ? // Threads come from GitHub's page markup; when it changes, the review still draws without them.
+            host_
+              .resolveReviewThreads(row.id.owner, row.id.repo, row.id.pull)
+              .catch((error: unknown) => {
+                console.warn("hihyou: review threads unavailable", error);
+                return [];
+              })
+          : Promise.resolve([]),
+      ]);
       if (at !== generation || disposed) return false;
-      files = loaded;
+      files = loaded.map((file) => ({
+        ...file,
+        reviewThreads: reviewThreads
+          .filter(
+            (thread) =>
+              thread.path === file.path || thread.path === file.change?.oldPath,
+          )
+          .map((thread) => ({
+            ...(thread.before !== undefined && { before: thread.before }),
+            ...(thread.after !== undefined && { after: thread.after }),
+            resolved: thread.resolved,
+            comments: thread.comments,
+          })),
+      }));
       status.textContent =
         files.length === 0
           ? "No changes."

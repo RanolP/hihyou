@@ -2,6 +2,7 @@ import type { JSX } from "solid-js";
 import type { Point } from "../modal.js";
 import {
   type MergedSpan,
+  type ReviewThread,
   shownLine,
   type SideName,
   type UnifiedRow,
@@ -13,6 +14,22 @@ import { MoveLabel } from "./pair.jsx";
 import { SpanNodes } from "./spans.jsx";
 
 const signs: Record<SideName, string> = { before: "-", after: "+" };
+
+function reviewRows(threads: readonly ReviewThread[]): JSX.Element[] {
+  return threads.map((thread) => (
+    <tr class="hh-review-thread">
+      <td colSpan={3}>
+        {thread.resolved && <span class="hh-comment-label">Resolved</span>}
+        {thread.comments.map((comment) => (
+          <div class="hh-review-comment">
+            <span class="hh-comment-author">{comment.author}</span>
+            <p class="hh-comment-body">{comment.body}</p>
+          </div>
+        ))}
+      </td>
+    </tr>
+  ));
+}
 
 const Num = (props: { line: number | undefined; kind?: string }) => (
   <td class={`hh-num${props.kind ?? ""}`}>
@@ -191,6 +208,28 @@ export function unifiedRow(
     }
   }
   out.push(tr);
+  if (file) {
+    const lines =
+      row.kind === "unchanged"
+        ? {
+            before: shown("before", row.before.line),
+            after: shown("after", row.after.line),
+          }
+        : row.kind === "merged"
+          ? {
+              before: shown("before", row.before),
+              after: shown("after", row.after),
+            }
+          : {
+              [row.side]: shown(row.side, row.cell.line),
+            };
+    const threads = (file.reviewThreads ?? []).filter(
+      (thread) =>
+        (thread.before === undefined || thread.before === lines.before) &&
+        (thread.after === undefined || thread.after === lines.after),
+    );
+    out.push(...reviewRows(threads));
+  }
   if (row.kind === "line" && row.fragment >= 0)
     blockCells(ctx, table, row.side, [...tr.children], row.moved, out)();
 }

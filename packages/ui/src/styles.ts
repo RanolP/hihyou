@@ -228,6 +228,8 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 .hh-comment-author { font-weight: 600; }
 .hh-comment-quote { font-family: var(--hh-mono); color: var(--hh-muted); }
 .hh-comment-body { margin: 2px 0 0; white-space: pre-wrap; }
+.hh-review-thread > td { padding: 6px 8px; background: var(--hh-header-bg); border-left: 3px solid var(--hh-border); }
+.hh-review-comment + .hh-review-comment { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--hh-border); }
 .hh-comment-draft textarea { display: block; width: 100%; box-sizing: border-box; min-height: 4em; font: inherit; }
 /* A comment held in a review not yet submitted: dashed, and labelled so it never reads by style alone. */
 .hh-comment-row > td.hh-comment-pending, .hh-comment-file.hh-comment-pending { border-left-style: dashed; }

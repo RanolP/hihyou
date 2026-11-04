@@ -14,9 +14,25 @@ import type {
  */
 export type DiffFile = FileDiff & {
   change?: ChangedFileRef;
+  /** Existing GitHub review threads placed on lines from the original sources. */
+  reviewThreads?: ReviewThread[];
   /** Lines revealed out of the `elided` fragment at each index, so the rest of that run stays a gap. */
   revealed?: Record<number, Revealed>;
 };
+
+export interface ReviewComment {
+  author: string;
+  /** Plain text, without Markdown rendering. */
+  body: string;
+}
+
+export interface ReviewThread {
+  /** Original source line on each side of the GitHub diff row. */
+  before?: number;
+  after?: number;
+  resolved: boolean;
+  comments: ReviewComment[];
+}
 
 export type Unchanged = CodeFragment & { kind: "unchanged" };
 

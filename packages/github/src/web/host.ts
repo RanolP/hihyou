@@ -37,6 +37,14 @@ export interface GitHubWebPull {
   commits: GitHubWebCommit[];
 }
 
+export interface GitHubWebReviewThread {
+  path: string;
+  before?: number;
+  after?: number;
+  resolved: boolean;
+  comments: { author: string; body: string }[];
+}
+
 export interface GitHubWebHostOptions {
   /**
    * Fetches a github.com URL with the signed-in browser session, following redirects. A content script cannot
@@ -53,6 +61,11 @@ export interface GitHubWebHostOptions {
 
 export interface GitHubWebHost extends Host {
   resolveDiffset(data: GitHubWebDiffsetId): Promise<DiffsetResolution>;
+  resolveReviewThreads(
+    owner: string,
+    repo: string,
+    number: number,
+  ): Promise<GitHubWebReviewThread[]>;
   resolvePull(
     owner: string,
     repo: string,
@@ -292,8 +305,64 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
       if (!head) throw new Error(`GET ${url} listed no commits`);
       return { head, commits };
     },
+    async resolveReviewThreads(owner, repo, number) {
+      const url = `${repoUrl(owner, repo)}/pull/${number}/files?diff=unified`;
+      return reviewThreadsFromHtml(await (await get(url)).text());
+    },
     ...(options.preferences && { preferences: options.preferences }),
   };
+}
+
+/** Review threads already placed inline by GitHub's server-rendered Files page. */
+export function reviewThreadsFromHtml(html: string): GitHubWebReviewThread[] {
+  const document = new DOMParser().parseFromString(html, "text/html");
+  const threads: GitHubWebReviewThread[] = [];
+  const entries = document.querySelectorAll(
+    "copilot-diff-entry[data-file-path], .js-file[data-tagsearch-path]",
+  );
+  for (const entry of entries) {
+    const path =
+      entry.getAttribute("data-file-path") ??
+      entry.getAttribute("data-tagsearch-path");
+    if (!path) continue;
+    for (const row of entry.querySelectorAll("tr.inline-comments")) {
+      const lineRow = row.previousElementSibling;
+      if (!lineRow?.matches("tr")) continue;
+      let before: number | undefined;
+      let after: number | undefined;
+      for (const cell of lineRow.querySelectorAll("td[data-line-number]")) {
+        const line = Number(cell.getAttribute("data-line-number"));
+        if (!Number.isInteger(line)) continue;
+        const right =
+          cell.classList.contains("js-blob-rnum") || /R\d+$/.test(cell.id);
+        if (right) after = line;
+        else before = line;
+      }
+      if (before === undefined && after === undefined) continue;
+      for (const thread of row.querySelectorAll("review-thread-collapsible")) {
+        const comments = [...thread.querySelectorAll(".review-comment")]
+          .map((comment) => ({
+            author: comment.querySelector(".author")?.textContent?.trim() ?? "",
+            body:
+              comment
+                .querySelector(
+                  'clipboard-copy[data-dd-action-name="comment.copy_markdown"]',
+                )
+                ?.getAttribute("value") ?? "",
+          }))
+          .filter((comment) => comment.author || comment.body);
+        if (comments.length === 0) continue;
+        threads.push({
+          path,
+          ...(before !== undefined && { before }),
+          ...(after !== undefined && { after }),
+          resolved: thread.getAttribute("data-resolved") === "true",
+          comments,
+        });
+      }
+    }
+  }
+  return threads;
 }
 
 interface ChangesRoute {

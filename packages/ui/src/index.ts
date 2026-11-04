@@ -11,6 +11,8 @@ export {
   type Gap,
   gapOf,
   lineCount,
+  type ReviewComment,
+  type ReviewThread,
   type Revealed,
   type Unchanged,
 } from "./rows.js";
