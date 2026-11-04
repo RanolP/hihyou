@@ -401,6 +401,10 @@ function pairLines(a: Version, b: Version, m: Mapping): Int32Array {
       if (p !== undefined && to <= pLast) pairs[line] = to;
     }
   }
+  // A formatter may synthesize an embedded language's lines without a source token anchor. They still pair by
+  // text like an ordinary line diff; -1 is reserved for a line covered by a genuinely unmatched source token.
+  for (let line = 0; line < pairs.length; line++)
+    if (seen[line] === 0) pairs[line] = -2;
   return pairs;
 }
 
