@@ -368,6 +368,7 @@ export async function diffFiles(
         path,
         text,
         ...(p.fallback && { fallback: p.fallback }),
+        deleted: status === "deleted",
       });
       // A folded file (lockfile, generated) skips the token diff, whose cost grows with the whole text.
       if (!status && !reason)
@@ -402,6 +403,7 @@ export async function diffFiles(
     const reason = foldReason({
       path,
       text,
+      deleted: status === "deleted",
       onlyMoves:
         !s.touched && edits.length > 0 && edits.every((e) => e.kind === "move"),
       noEdits: !s.touched && edits.length === 0 && p.texts[0] !== p.texts[1],

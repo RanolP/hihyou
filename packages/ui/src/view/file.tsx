@@ -15,6 +15,7 @@ export const collapseReasons: Record<CollapseReason, string> = {
   "parse-error": "Did not parse cleanly",
   "format-only": "Only formatting changed",
   moved: "Only moved code",
+  deleted: "This file was deleted",
 };
 
 function FilePath(props: { path: string }): JSX.Element {

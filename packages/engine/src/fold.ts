@@ -6,7 +6,8 @@ export type CollapseReason =
   | "too-large"
   | "parse-error"
   | "format-only"
-  | "moved";
+  | "moved"
+  | "deleted";
 
 const lockfiles = new Set([
   "pnpm-lock.yaml",
@@ -61,12 +62,15 @@ export interface FoldFacts {
   onlyMoves?: boolean;
   /** Syntax diff only: the file has no edit at all, though its text changed. */
   noEdits?: boolean;
+  /** The file is gone: GitHub folds a deletion, whose every line is red, until asked. */
+  deleted?: boolean;
 }
 
 /** Why the whole file should be shown folded, or undefined when it has something to read. */
 export function foldReason(f: FoldFacts): CollapseReason | undefined {
   return (
     producedBy(f.path, f.text) ??
+    (f.deleted ? "deleted" : undefined) ??
     (f.fallback === "too-large" ? f.fallback : undefined) ??
     (f.onlyMoves ? "moved" : f.noEdits ? "format-only" : undefined)
   );
