@@ -286,7 +286,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   const updateNav = () => {
     const ordered = filesInTreeOrder(files);
     const i = ordered.findIndex((f) => f.path === currentPath);
-    previous.disabled = i <= 0;
+    previous.disabled = i <= 0 && !scrolledIntoCurrent();
     next.disabled = i < 0 || i >= ordered.length - 1;
     position.textContent = i < 0 ? "" : `${i + 1} / ${ordered.length}`;
     if (selected) replaceSelectionHash(selected, i < 0 ? "" : ordered[i]!.path);
@@ -308,6 +308,17 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     if (!bar) return appBar.getBoundingClientRect().bottom;
     const top = Number.parseFloat(getComputedStyle(bar).top);
     return (Number.isNaN(top) ? 0 : top) + bar.getBoundingClientRect().height;
+  };
+  /** Whether the current file's header is scrolled up past where a file lands. */
+  const scrolledIntoCurrent = () => {
+    if (!allFiles) return false;
+    const section = [...root.querySelectorAll<HTMLElement>(".hh-file")].find(
+      (candidate) => candidate.dataset["path"] === currentPath,
+    );
+    return (
+      section !== undefined &&
+      section.getBoundingClientRect().top < stuckFileTop() - 1
+    );
   };
   const selectFile = (path: string) => {
     currentPath = path;
@@ -337,7 +348,11 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   const step = (delta: 1 | -1) => {
     const ordered = filesInTreeOrder(files);
     const index = ordered.findIndex((f) => f.path === currentPath);
-    const target = ordered[index + delta];
+    // Read into a file, ↑ goes back to its top first, where a click on it in the tree lands.
+    const target =
+      delta < 0 && scrolledIntoCurrent()
+        ? ordered[index]
+        : ordered[index + delta];
     if (!target) return;
     showFile(target.path);
   };
@@ -429,7 +444,14 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     // Scrolled to the end with no file stepped to, the reader is at the last one, however short.
     if (targetedPath === undefined && atBottom) active = headers.at(-1);
     const path = active?.closest<HTMLElement>(".hh-file")?.dataset["path"];
-    if (path === undefined || path === currentPath) return;
+    if (path === undefined) return;
+    if (path === currentPath) {
+      // ↑ on the first file turns on once its top scrolls away, to go back to it.
+      previous.disabled =
+        filesInTreeOrder(files)[0]?.path === currentPath &&
+        !scrolledIntoCurrent();
+      return;
+    }
     currentPath = path;
     updateNav();
   };
