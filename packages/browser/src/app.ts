@@ -389,13 +389,14 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
         header.getBoundingClientRect().top <= stickyTop + 1 && showing(header),
     );
     let active = atTop ?? headers.find(showing);
+    const scrolling = document.scrollingElement;
+    const atBottom =
+      scrolling !== null &&
+      scrolling.scrollTop > 0 &&
+      scrolling.scrollTop + scrolling.clientHeight >=
+        scrolling.scrollHeight - 1;
     // A short final file cannot reach the sticky line.
     if (targetedPath !== undefined) {
-      const scrolling = document.scrollingElement;
-      const atBottom =
-        scrolling !== null &&
-        scrolling.scrollTop + scrolling.clientHeight >=
-          scrolling.scrollHeight - 1;
       const targeted = headers.find(
         (header) =>
           header.closest<HTMLElement>(".hh-file")?.dataset["path"] ===
@@ -411,6 +412,8 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       if ((atBottom || unmoved) && visible) active = targeted;
       else targetedPath = undefined;
     }
+    // Scrolled to the end with no file stepped to, the reader is at the last one, however short.
+    if (targetedPath === undefined && atBottom) active = headers.at(-1);
     const path = active?.closest<HTMLElement>(".hh-file")?.dataset["path"];
     if (path === undefined || path === currentPath) return;
     currentPath = path;
