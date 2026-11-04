@@ -95,7 +95,11 @@ export const diffStyles = `
   vertical-align: top;
   tab-size: 4;
 }
-/* Only the changed nodes get a background; the gutter marks the line. */
+/* Changed lines carry the side colour; changed nodes layer the stronger text colour over it. */
+.hh-num.hh-removed,
+.hh-num.hh-removed ~ td { background: var(--hh-removed-line); }
+.hh-num.hh-added,
+.hh-num.hh-added ~ td { background: var(--hh-added-line); }
 .hh-num.hh-removed { box-shadow: inset 3px 0 var(--hh-removed-fg); }
 .hh-num.hh-added { box-shadow: inset 3px 0 var(--hh-added-fg); }
 .hh-changed { text-decoration: none; border-radius: 2px; }

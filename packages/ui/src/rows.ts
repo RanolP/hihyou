@@ -434,9 +434,8 @@ export function mergeLines(
 }
 
 /**
- * A section's rows in the unified layout. A fragment merges whole when it can, else each line with the one
- * across from it; lines that do not merge are kept in runs, the before side's lines ahead of the after side's.
- * A moved line never merges, so a move stays one box; a fragment holding one merges only line by line.
+ * A section's rows in the unified layout. Each diff fragment keeps the before side's lines ahead of the after
+ * side's, while moved lines retain their move metadata so the view can keep them in one box.
  */
 export function unifiedRows(rows: readonly Row[]): UnifiedRow[] {
   const out: UnifiedRow[] = [];
@@ -448,7 +447,6 @@ export function unifiedRows(rows: readonly Row[]): UnifiedRow[] {
     added = [];
   };
   let fragment: number | undefined;
-  let wholeMerged = false;
   for (const row of rows) {
     if (row.kind !== "diff") {
       flush();
@@ -459,27 +457,6 @@ export function unifiedRows(rows: readonly Row[]): UnifiedRow[] {
     if (row.fragment !== fragment) {
       flush();
       fragment = row.fragment;
-      const own = rows.filter(
-        (r): r is Row & { kind: "diff" } =>
-          r.kind === "diff" && r.fragment === fragment,
-      );
-      const moving = own.some((r) => r.moved !== undefined);
-      const cells = (side: SideName) => own.flatMap((r) => r[side] ?? []);
-      const whole = moving
-        ? undefined
-        : mergeLines(row.fragment, cells("before"), cells("after"));
-      if (whole) out.push(...whole);
-      wholeMerged = whole !== undefined;
-    }
-    if (wholeMerged) continue;
-    const merged =
-      row.before && row.after && row.moved === undefined
-        ? mergeLines(row.fragment, [row.before], [row.after])
-        : undefined;
-    if (merged) {
-      flush();
-      out.push(...merged);
-      continue;
     }
     for (const side of ["before", "after"] as const) {
       const cell = row[side];
