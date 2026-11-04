@@ -1,4 +1,4 @@
-import type { NodeOutline, Span } from "@hihyou/engine";
+import { atomKey, type NodeOutline, type Span } from "@hihyou/engine";
 import { type DiffFile, splitLines } from "./rows.js";
 import type {
   KeyOf,
@@ -116,6 +116,15 @@ export function atomIndex(files: readonly DiffFile[]): AtomIndex {
   const hunks: Hunk[][] = [];
   const fileAtoms: number[][] = [];
   const stops: NodeRef[] = [];
+  const atom = (id: string) => {
+    let a = ids.get(id);
+    if (a === undefined) {
+      a = atoms.length;
+      ids.set(id, a);
+      atoms.push({ id, occurrences: [] });
+    }
+    return a;
+  };
   files.forEach((file, f) => {
     const mine: Hunk[] = [];
     const inFile = new Set<number>();
@@ -130,12 +139,7 @@ export function atomIndex(files: readonly DiffFile[]): AtomIndex {
           if (n.parent < 0) roots.push(i);
           else children[n.parent]?.push(i);
           if (n.atom === undefined) return [];
-          let a = ids.get(n.atom);
-          if (a === undefined) {
-            a = atoms.length;
-            ids.set(n.atom, a);
-            atoms.push({ id: n.atom, occurrences: [] });
-          }
+          const a = atom(n.atom);
           const ref: NodeRef = { file: f, fragment: fr, side, node: i };
           atoms[a]?.occurrences.push(ref);
           if (!inHunk.has(a)) stops.push(ref);
@@ -158,6 +162,27 @@ export function atomIndex(files: readonly DiffFile[]): AtomIndex {
         };
       };
       const [before, after] = sideNames.map(tree) as [SideTree, SideTree];
+      for (const side of sideNames) {
+        const t = side === "before" ? before : after;
+        t.lines.forEach((text, line) => {
+          const owned = t.nodes.some(
+            (n) =>
+              n.atom !== undefined &&
+              n.start.line <= line &&
+              (n.end.line > line || (n.end.line === line && n.end.column > 0)),
+          );
+          if (owned) return;
+          const a = atom(
+            `row:${atomKey({
+              path: file.path,
+              ancestors: [],
+              [side]: text,
+            })}`,
+          );
+          inHunk.add(a);
+          inFile.add(a);
+        });
+      }
       mine.push({ file: f, fragment: fr, before, after, atoms: [...inHunk] });
     });
     hunks.push(mine);
