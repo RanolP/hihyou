@@ -376,8 +376,8 @@ export async function diffFiles(
         deleted: status === "deleted",
         changedLines: stats.added + stats.removed,
       });
-      // A folded file (lockfile, generated) skips the token diff, whose cost grows with the whole text.
-      if (!status && !reason)
+      // A folded or too-large file skips the token diff, whose cost grows with the whole text.
+      if (!status && !reason && p.fallback !== "too-large")
         for (const e of tokenDiff(p.texts[0], p.texts[1])) {
           if ("old" in e) s.a.emphasis.push(e.old);
           if ("new" in e) s.b.emphasis.push(e.new);
