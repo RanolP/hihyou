@@ -295,6 +295,7 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 /* The approval stays in view with the toolbar, so scoring far down the diff shows what it did to the Diffset. */
 .hh-bar { position: sticky; top: 0; z-index: 3; background: var(--hh-bg); }
 .hh-approval { display: block; padding: 4px 0; margin: 0 0 4px; font-weight: 600; color: var(--hh-muted); }
+.hh-approval span[title] { cursor: help; text-decoration: underline dotted; text-underline-offset: 3px; }
 .hh-approval-approved { color: var(--hh-added-fg); }
 .hh-approval-blocked { color: var(--hh-removed-fg); }
 .hh-viewed-toggle { text-decoration: none; color: var(--hh-muted); }
