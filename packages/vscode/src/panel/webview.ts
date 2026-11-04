@@ -3,7 +3,7 @@ import {
   type CommentStore,
   type DiffFile,
   type DiffsetView,
-  filesInTreeOrder,
+  filesInReviewOrder,
   type ReviewNote,
   renderDiffset,
 } from "@hihyou/ui";
@@ -30,14 +30,14 @@ let files: DiffFile[] = [];
 let wanted: string | undefined;
 
 const updateNav = () => {
-  const ordered = filesInTreeOrder(files);
+  const ordered = filesInReviewOrder(files);
   const i = ordered.findIndex((f) => f.path === view?.shown());
   previous.disabled = i <= 0;
   next.disabled = i < 0 || i >= ordered.length - 1;
   position.textContent = i < 0 ? "" : `${i + 1} / ${ordered.length}`;
 };
 const step = (delta: 1 | -1) => {
-  const ordered = filesInTreeOrder(files);
+  const ordered = filesInReviewOrder(files);
   const index = ordered.findIndex((f) => f.path === view?.shown());
   const target = ordered[index + delta];
   if (!view || !target) return;
@@ -125,7 +125,7 @@ window.addEventListener("message", (event: MessageEvent<ToWebview>) => {
       refresh.disabled = false;
       return;
     case "files":
-      files = message.files;
+      files = filesInReviewOrder(message.files);
       refresh.hidden = !message.refreshable;
       refresh.disabled = false;
       status.className = "status";

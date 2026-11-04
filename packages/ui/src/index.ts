@@ -19,7 +19,13 @@ export {
 export { diffStyles } from "./styles.js";
 export { githubDark, githubLight } from "./themes.js";
 export { collapseElided, revealElided } from "./expand.js";
-export { type FileTreeNode, filesInTreeOrder, fileTree } from "./file-tree.js";
+export {
+  type FileTreeNode,
+  filesInReviewOrder,
+  filesInTreeOrder,
+  fileTree,
+} from "./file-tree.js";
+export { isTestPath } from "./test-files.js";
 export { collapseReasons } from "./view/file.jsx";
 export { diffFiles, engineReview, type ReviewSource } from "./review.js";
 export { type Approval, approvalOf, reviewEvent } from "./approval.js";

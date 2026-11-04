@@ -12,10 +12,11 @@ import {
   diffStyles,
   engineReview,
   type FileTreeNode,
-  filesInTreeOrder,
+  filesInReviewOrder,
   fileTree,
   githubDark,
   githubLight,
+  isTestPath,
   renderDiffset,
   revealElided,
   sessionViewedStore,
@@ -296,7 +297,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   applyTheme();
 
   const updateNav = () => {
-    const ordered = filesInTreeOrder(files);
+    const ordered = filesInReviewOrder(files);
     const i = ordered.findIndex((f) => f.path === currentPath);
     previous.disabled = i <= 0 && !scrolledIntoCurrent();
     next.disabled = i < 0 || i >= ordered.length - 1;
@@ -358,7 +359,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     selectFile(path);
   };
   const step = (delta: 1 | -1) => {
-    const ordered = filesInTreeOrder(files);
+    const ordered = filesInReviewOrder(files);
     const index = ordered.findIndex((f) => f.path === currentPath);
     // Read into a file, ↑ goes back to its top first, where a click on it in the tree lands.
     const target =
@@ -398,7 +399,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       targetedY = window.scrollY;
       return;
     }
-    const ordered = filesInTreeOrder(files);
+    const ordered = filesInReviewOrder(files);
     const index = ordered.findIndex((file) => file.path === path);
     if (index < 0) return;
     const target = ordered
@@ -460,7 +461,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     if (path === currentPath) {
       // ↑ on the first file turns on once its top scrolls away, to go back to it.
       previous.disabled =
-        filesInTreeOrder(files)[0]?.path === currentPath &&
+        filesInReviewOrder(files)[0]?.path === currentPath &&
         !scrolledIntoCurrent();
       return;
     }
@@ -611,7 +612,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
             comments: thread.comments,
           })),
       }));
-      files = filesInTreeOrder(files);
+      files = filesInReviewOrder(files);
       status.textContent =
         files.length === 0
           ? "No changes."
@@ -635,7 +636,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       const shownPath =
         path !== undefined && hasPath
           ? path
-          : filesInTreeOrder(files)[0]?.path;
+          : filesInReviewOrder(files)[0]?.path;
       if (shownPath !== undefined) {
         const section = [
           ...root.querySelectorAll<HTMLElement>(".hh-file"),
@@ -733,7 +734,24 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
             );
             if (changes.length === 0)
               group.append(el("li", "hh-note", "No matching files"));
-            else
+            else if (row === selected) {
+              const testFiles = changes.filter((file) => isTestPath(file.path));
+              const nonTestFiles = changes.filter(
+                (file) => !isTestPath(file.path),
+              );
+              if (testFiles.length > 0 && nonTestFiles.length > 0) {
+                group.append(...drawNodes(row, fileTree(nonTestFiles), shown));
+                const tests = el("li");
+                tests.setAttribute("role", "treeitem");
+                tests.setAttribute("aria-expanded", "true");
+                tests.append(el("div", "hh-folder hh-tests-folder", "Tests"));
+                const testGroup = el("ul");
+                testGroup.setAttribute("role", "group");
+                testGroup.append(...drawNodes(row, fileTree(testFiles), shown));
+                tests.append(testGroup);
+                group.append(tests);
+              } else group.append(...drawNodes(row, fileTree(changes), shown));
+            } else
               group.append(
                 ...drawNodes(
                   row,

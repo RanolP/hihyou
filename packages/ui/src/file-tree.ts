@@ -1,3 +1,5 @@
+import { isTestPath } from "./test-files.js";
+
 export type FileTreeNode<T extends { path: string }> =
   | { kind: "folder"; name: string; path: string; children: FileTreeNode<T>[] }
   | { kind: "file"; name: string; file: T };
@@ -72,4 +74,15 @@ export function filesInTreeOrder<T extends { path: string }>(
   };
   visit(fileTree(files));
   return ordered;
+}
+
+/** The tree-ordered non-test files followed by the tree-ordered test files. */
+export function filesInReviewOrder<T extends { path: string }>(
+  files: readonly T[],
+): T[] {
+  const ordered = filesInTreeOrder(files);
+  return [
+    ...ordered.filter((file) => !isTestPath(file.path)),
+    ...ordered.filter((file) => isTestPath(file.path)),
+  ];
 }

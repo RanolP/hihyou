@@ -41,6 +41,11 @@ export const diffStyles = `
 }
 /* The file the counter and the tree name, for a page short enough that stepping to it scrolls nothing. */
 .hh-file[aria-current="true"] { border-color: var(--hh-accent); }
+.hh-test-group {
+  margin: 0 0 16px;
+  padding: 6px 10px;
+  color: var(--hh-muted);
+}
 .hh-file-header {
   position: sticky;
   top: var(--hh-file-sticky-top, 0);

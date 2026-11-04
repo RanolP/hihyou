@@ -43,6 +43,7 @@ import { approvalOf, reviewEvent } from "./approval.js";
 import { type ElidedRef, type ExpandDirection, expandStep } from "./expand.js";
 import { moveAt, type SideRef } from "./moves.js";
 import { type DiffFile, gapOf } from "./rows.js";
+import { isTestPath } from "./test-files.js";
 import { Draw, type DrawContext } from "./view/context.js";
 import { FileSection } from "./view/file.jsx";
 import { flash } from "./view/flash.js";
@@ -140,6 +141,7 @@ function mount(
   const isViewed = atomViewed(viewed, keyOf);
 
   const [files, setFiles] = createSignal(initial);
+  const [testsShown, setTestsShown] = createSignal(false);
   const [theme, setTheme] = createSignal(
     opts.theme && compileTheme(opts.theme),
   );
@@ -213,6 +215,7 @@ function mount(
   const reveal = (i: number) => {
     const file = files()[i];
     if (!file) return;
+    if (!single && isTestPath(file.path)) setTestsShown(true);
     let changed = false;
     if ((file.collapsed || fileViewed(i, file)) && !opened.has(file.path)) {
       opened.add(file.path);
@@ -252,6 +255,7 @@ function mount(
   const openFile = (path: string) => {
     const file = files().find((f) => f.path === path);
     if (!file) return;
+    if (!single && isTestPath(path)) setTestsShown(true);
     opened.add(path);
     if (single && path !== shownPath) shownPath = path;
     redraw();
@@ -778,6 +782,7 @@ function mount(
     // list at once; viewed state and the selection change in place.
     const list = createMemo(() => {
       const current = files();
+      const showTests = testsShown();
       theme();
       pairs.expanded();
       version();
@@ -798,11 +803,52 @@ function mount(
         pairs.reset();
         if (single && !current.some((f) => f.path === shownPath))
           shownPath = current[0]?.path;
-        return current.flatMap((file, index) =>
-          single && file.path !== shownPath
+        const testCount = current.filter((file) =>
+          isTestPath(file.path),
+        ).length;
+        const grouped = !single && testCount > 0 && testCount < current.length;
+        let drewGroup = false;
+        return current.flatMap((file, index) => {
+          if (single)
+            return file.path === shownPath
+              ? [<FileSection index={index} file={file} />]
+              : [];
+          if (!grouped || !isTestPath(file.path))
+            return [<FileSection index={index} file={file} />];
+          const group = drewGroup
             ? []
-            : [<FileSection index={index} file={file} />],
-        );
+            : [
+                <div class="hh-test-group">
+                  {testCount} test {testCount === 1 ? "file" : "files"}
+                  {showTests ? "" : " hidden"} ·{" "}
+                  <button
+                    type="button"
+                    class="hh-button"
+                    aria-expanded={showTests}
+                    onClick={(event) => {
+                      const groupTop = event.currentTarget
+                        .closest<HTMLElement>(".hh-test-group")
+                        ?.getBoundingClientRect().top;
+                      setTestsShown((shown) => !shown);
+                      if (groupTop !== undefined)
+                        win?.requestAnimationFrame(() => {
+                          const newTop = root
+                            .querySelector<HTMLElement>(".hh-test-group")
+                            ?.getBoundingClientRect().top;
+                          if (newTop !== undefined && newTop !== groupTop)
+                            win.scrollBy(0, newTop - groupTop);
+                        });
+                    }}
+                  >
+                    {showTests ? "Hide test files" : "Show test files"}
+                  </button>
+                </div>,
+              ];
+          drewGroup = true;
+          return showTests
+            ? [...group, <FileSection index={index} file={file} />]
+            : group;
+        });
       });
     });
     createEffect(
@@ -950,6 +996,7 @@ function mount(
     show(path) {
       if (!files().some((file) => file.path === path)) return;
       if (!single) {
+        if (isTestPath(path)) setTestsShown(true);
         shownPath = path;
         fileSection(path)?.scrollIntoView({ block: "start" });
         return;
