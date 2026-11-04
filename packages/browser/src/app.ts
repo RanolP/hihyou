@@ -20,7 +20,7 @@ import {
 } from "@hihyou/ui";
 import type { App, MountOptions, Mounted } from "./app-api.js";
 
-/** One row of the diffsets panel: one of the pull request's commits. */
+/** One row of the diffsets panel: the pull request's whole change or one of its commits. */
 interface Row {
   key: string;
   label: string;
@@ -322,33 +322,38 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       const pull = await host_.resolvePull(page.owner, page.repo, page.pull);
       if (disposed) return;
       const { owner, repo } = page;
-      rows = pull.commits.toReversed().map((c): Row => ({
-        key: c.sha,
-        label: c.subject,
-        description: c.sha.slice(0, 7),
-        tooltip: `${c.author} · ${new Date(c.date).toLocaleString()}`,
-        id: { owner, repo, commit: c.sha },
+      const allChanges: Row = {
+        key: `pull-${page.pull}`,
+        label: "All changes",
+        description: `${pull.commits.length} ${pull.commits.length === 1 ? "commit" : "commits"}`,
+        id: { owner, repo, pull: page.pull, head: pull.head },
         expanded: false,
-      }));
-      const [newest] = rows;
-      if (!newest) {
-        setsStatus.textContent = "No commits.";
-        return;
-      }
+      };
+      rows = [
+        allChanges,
+        ...pull.commits.map((c): Row => ({
+          key: c.sha,
+          label: c.subject,
+          description: c.sha.slice(0, 7),
+          tooltip: `${c.author} · ${new Date(c.date).toLocaleString()}`,
+          id: { owner, repo, commit: c.sha },
+          expanded: false,
+        })),
+      ];
       setsStatus.remove();
       const saved = selectionFromHash();
       const savedRow = saved
         ? rows.find((row) => webDiffsetIdOf(row.id) === saved.id)
         : undefined;
-      const initial = savedRow ?? newest;
+      const initial = savedRow ?? allChanges;
       void expand(initial);
       const restored = await open(
         initial,
         savedRow && saved?.path ? saved.path : undefined,
       );
       if (savedRow && !restored) {
-        void expand(newest);
-        await open(newest);
+        if (initial !== allChanges) void expand(allChanges);
+        await open(allChanges);
       }
     } catch (error) {
       if (disposed) return;
