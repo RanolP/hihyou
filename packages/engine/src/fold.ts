@@ -77,7 +77,10 @@ export function foldReason(f: FoldFacts): CollapseReason | undefined {
       ? undefined
       : produced) ??
     (f.deleted ? "deleted" : undefined) ??
-    (f.fallback === "too-large" ? f.fallback : undefined) ??
+    // A large file's line diff already shows only its changed hunks, so a small diff reads open.
+    (f.fallback === "too-large" && (f.changedLines ?? Infinity) > 400
+      ? f.fallback
+      : undefined) ??
     (f.onlyMoves ? "moved" : f.noEdits ? "format-only" : undefined)
   );
 }
