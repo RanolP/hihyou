@@ -235,7 +235,8 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
         });
       const hasPath =
         path === undefined || files.some((file) => file.path === path);
-      if (path !== undefined && hasPath) view.show(path);
+      const shownPath = path ?? filesInTreeOrder(files)[0]?.path;
+      if (shownPath !== undefined && hasPath) view.show(shownPath);
       updateNav();
       return hasPath;
     } catch (error) {

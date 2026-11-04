@@ -54,7 +54,8 @@ export const diffStyles = `
   font-weight: 600;
   overflow-wrap: anywhere;
 }
-.hh-old-path { font-weight: 400; color: var(--hh-muted); }
+.hh-path-directory { font-weight: 400; color: var(--hh-muted); }
+.hh-old-path { font-weight: 400; }
 .hh-status {
   font-size: 0.85em;
   padding: 0 6px;

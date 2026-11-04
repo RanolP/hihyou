@@ -17,6 +17,16 @@ const collapseReasons: Record<CollapseReason, string> = {
   moved: "Only moved code",
 };
 
+function FilePath(props: { path: string }): JSX.Element {
+  const basenameAt = props.path.lastIndexOf("/") + 1;
+  return (
+    <>
+      <span class="hh-path-directory">{props.path.slice(0, basenameAt)}</span>
+      <span>{props.path.slice(basenameAt)}</span>
+    </>
+  );
+}
+
 function FileHeader(props: {
   index: number;
   file: DiffFile;
@@ -40,10 +50,12 @@ function FileHeader(props: {
       <h2 class="hh-path">
         {oldPath !== undefined &&
           oldPath !== file.path && [
-            <span class="hh-old-path">{oldPath}</span>,
+            <span class="hh-old-path">
+              <FilePath path={oldPath} />
+            </span>,
             " → ",
           ]}
-        <span>{file.path}</span>
+        <FilePath path={file.path} />
       </h2>
       {status && (
         <span class={`hh-status hh-status-${status}`}>
