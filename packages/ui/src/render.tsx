@@ -807,7 +807,7 @@ function mount(
           isTestPath(file.path),
         ).length;
         const grouped = !single && testCount > 0 && testCount < current.length;
-        let drewGroup = false;
+        const firstTest = current.findIndex((file) => isTestPath(file.path));
         return current.flatMap((file, index) => {
           if (single)
             return file.path === shownPath
@@ -815,9 +815,8 @@ function mount(
               : [];
           if (!grouped || !isTestPath(file.path))
             return [<FileSection index={index} file={file} />];
-          const group = drewGroup
-            ? []
-            : [
+          const group = index === firstTest
+            ? [
                 <div class="hh-test-group">
                   {testCount} test {testCount === 1 ? "file" : "files"}
                   {showTests ? "" : " hidden"} ·{" "}
@@ -843,8 +842,8 @@ function mount(
                     {showTests ? "Hide test files" : "Show test files"}
                   </button>
                 </div>,
-              ];
-          drewGroup = true;
+              ]
+            : [];
           return showTests
             ? [...group, <FileSection index={index} file={file} />]
             : group;

@@ -756,7 +756,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
                 ...drawNodes(
                   row,
                   fileTree(changes),
-                  row === selected ? shown : undefined,
+                  undefined,
                 ),
               );
           }
