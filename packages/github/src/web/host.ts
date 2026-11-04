@@ -57,6 +57,32 @@ interface PullReviewComment {
   body: string;
 }
 
+function isPullReviewComment(value: unknown): value is PullReviewComment {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "id" in value &&
+    typeof value.id === "number" &&
+    (!("in_reply_to_id" in value) ||
+      typeof value.in_reply_to_id === "number") &&
+    "path" in value &&
+    typeof value.path === "string" &&
+    "line" in value &&
+    (typeof value.line === "number" || value.line === null) &&
+    "side" in value &&
+    (value.side === "LEFT" || value.side === "RIGHT" || value.side === null) &&
+    "original_line" in value &&
+    (typeof value.original_line === "number" || value.original_line === null) &&
+    "user" in value &&
+    (value.user === null ||
+      (typeof value.user === "object" &&
+        "login" in value.user &&
+        typeof value.user.login === "string")) &&
+    "body" in value &&
+    typeof value.body === "string"
+  );
+}
+
 export interface GitHubWebHostOptions {
   /**
    * Fetches an allowed GitHub URL with the browser session, following redirects. A content script cannot
@@ -342,7 +368,10 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
       const comments: PullReviewComment[] = [];
       while (url) {
         const response = await get(url, "application/vnd.github+json");
-        comments.push(...((await response.json()) as PullReviewComment[]));
+        const json: unknown = await response.json();
+        if (!Array.isArray(json))
+          throw new Error("review comments response was not an array");
+        comments.push(...json.filter(isPullReviewComment));
         url = nextPage(response.headers.get("link"));
       }
       return reviewThreadsFromComments(comments);

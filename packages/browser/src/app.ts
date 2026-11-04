@@ -311,6 +311,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   const onKeydown = (event: KeyboardEvent) => {
     const target = event.composedPath()[0];
     if (
+      event.defaultPrevented ||
       event.ctrlKey ||
       event.metaKey ||
       event.altKey ||
@@ -325,9 +326,8 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     else return;
 
     event.preventDefault();
-    event.stopPropagation();
   };
-  document.addEventListener("keydown", onKeydown, true);
+  document.addEventListener("keydown", onKeydown);
 
   const replaceFile = (
     path: string,
@@ -375,7 +375,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       const [loaded, reviewThreads] = await Promise.all([
         current.load(),
         "pull" in row.id
-          ? // Threads come from GitHub's page markup; when it changes, the review still draws without them.
+          ? // Threads come from the public REST API; a private repository (404) or an exhausted rate limit draws the review without them.
             host_
               .resolveReviewThreads(row.id.owner, row.id.repo, row.id.pull)
               .catch((error: unknown) => {
@@ -625,7 +625,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
         initial,
         savedRow && saved?.path ? saved.path : undefined,
       );
-      if (savedRow && !restored) {
+      if (savedRow && !restored && selected === initial && !disposed) {
         if (initial !== allChanges) void expand(allChanges);
         await open(allChanges);
       }
@@ -648,7 +648,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       if (trackingFrame !== undefined) cancelAnimationFrame(trackingFrame);
       window.removeEventListener("scroll", scheduleCurrentFile);
       dark.removeEventListener("change", applyTheme);
-      document.removeEventListener("keydown", onKeydown, true);
+      document.removeEventListener("keydown", onKeydown);
       unsubscribeViewed();
       persistedViewed.dispose();
       view?.dispose();

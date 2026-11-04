@@ -949,6 +949,9 @@ function mount(
       shownPath = path;
       redraw();
       root.querySelector(".hh-scroll")?.scrollTo(0, 0);
+      const section = fileSection(path);
+      if (section && section.getBoundingClientRect().top < 0)
+        section.scrollIntoView({ block: "start" });
     },
     shown: () => shownPath,
     fileViewed: (path) => {
