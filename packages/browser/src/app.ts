@@ -305,6 +305,8 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
             window.scrollY +
             section.getBoundingClientRect().top -
             fileStickyTop(),
+          // GitHub sets `scroll-behavior: smooth`; the tracker would read the frames in between.
+          behavior: "instant",
         });
     }
     updateNav();
