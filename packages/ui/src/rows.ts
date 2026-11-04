@@ -24,6 +24,8 @@ export interface ReviewComment {
   author: string;
   /** Plain text, without Markdown rendering. */
   body: string;
+  /** GitHub-rendered HTML, when the host requested that media type. */
+  bodyHtml?: string;
 }
 
 export interface ReviewThread {

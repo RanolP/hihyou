@@ -1,4 +1,9 @@
-import type { JSX } from "solid-js";
+import {
+  createSignal,
+  type JSX,
+  onCleanup,
+  onMount,
+} from "solid-js";
 import type { Point } from "../modal.js";
 import {
   type MergedSpan,
@@ -15,6 +20,86 @@ import { SpanNodes } from "./spans.jsx";
 
 const signs: Record<SideName, string> = { before: "-", after: "+" };
 
+const unsafeCommentElements =
+  "script, style, link, meta, base, iframe, object, embed, form";
+
+function sanitizedCommentNodes(html: string, owner: Document): Node[] {
+  const parsed = new DOMParser().parseFromString(html, "text/html");
+  parsed.querySelectorAll(unsafeCommentElements).forEach((element) =>
+    element.remove(),
+  );
+  for (const element of parsed.body.querySelectorAll("*")) {
+    for (const attribute of Array.from(element.attributes)) {
+      const compactValue = Array.from(attribute.value)
+        .filter((character) => character.charCodeAt(0) > 0x20)
+        .join("");
+      if (
+        attribute.name.toLowerCase().startsWith("on") ||
+        /^javascript:/i.test(compactValue)
+      )
+        element.removeAttribute(attribute.name);
+    }
+    if (element instanceof HTMLAnchorElement) {
+      element.target = "_blank";
+      element.rel = "noopener noreferrer";
+    }
+  }
+  return [...parsed.body.childNodes].map((node) => owner.adoptNode(node));
+}
+
+function ReviewCommentBody(props: {
+  body: string;
+  bodyHtml: string | undefined;
+}): JSX.Element {
+  const [long, setLong] = createSignal(false);
+  const [expanded, setExpanded] = createSignal(false);
+  let body!: HTMLDivElement;
+
+  onMount(() => {
+    if (props.bodyHtml !== undefined)
+      body.replaceChildren(
+        ...sanitizedCommentNodes(props.bodyHtml, body.ownerDocument),
+      );
+    else body.textContent = props.body;
+
+    const measure = () => setLong(body.scrollHeight > 240);
+    const observer = new ResizeObserver(measure);
+    observer.observe(body);
+    measure();
+    onCleanup(() => observer.disconnect());
+  });
+
+  return (
+    <>
+      <div
+        class="hh-comment-clip"
+        classList={{
+          "hh-comment-collapsed": long() && !expanded(),
+          "hh-comment-expanded": expanded(),
+        }}
+      >
+        <div
+          ref={(element) => {
+            body = element;
+          }}
+          class="hh-comment-body"
+          classList={{ "hh-comment-html": props.bodyHtml !== undefined }}
+        />
+      </div>
+      {long() && (
+        <button
+          type="button"
+          class="hh-button hh-comment-toggle"
+          aria-expanded={expanded()}
+          on:click={() => setExpanded((value) => !value)}
+        >
+          {expanded() ? "Show less" : "Show more"}
+        </button>
+      )}
+    </>
+  );
+}
+
 function reviewRows(threads: readonly ReviewThread[]): JSX.Element[] {
   return threads.map((thread) => (
     <tr class="hh-review-thread">
@@ -23,7 +108,10 @@ function reviewRows(threads: readonly ReviewThread[]): JSX.Element[] {
         {thread.comments.map((comment) => (
           <div class="hh-review-comment">
             <span class="hh-comment-author">{comment.author}</span>
-            <p class="hh-comment-body">{comment.body}</p>
+            <ReviewCommentBody
+              body={comment.body}
+              bodyHtml={comment.bodyHtml}
+            />
           </div>
         ))}
       </td>

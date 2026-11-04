@@ -261,6 +261,23 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 .hh-comment-author { font-weight: 600; }
 .hh-comment-quote { font-family: var(--hh-mono); color: var(--hh-muted); }
 .hh-comment-body { margin: 2px 0 0; white-space: pre-wrap; }
+.hh-comment-html { white-space: normal; }
+.hh-comment-html p { margin: 0 0 8px; }
+.hh-comment-html p:last-child { margin-bottom: 0; }
+.hh-comment-html pre, .hh-comment-html code { font-family: var(--hh-mono); background: var(--hh-bg); }
+.hh-comment-html code { padding: 1px 3px; border-radius: 3px; }
+.hh-comment-html pre { overflow-x: auto; padding: 8px; }
+.hh-comment-html pre code { padding: 0; background: transparent; }
+.hh-comment-html img { max-width: 100%; }
+.hh-comment-html details > summary { cursor: pointer; }
+.hh-comment-html blockquote { margin: 8px 0; padding-left: 8px; color: var(--hh-muted); border-left: 3px solid var(--hh-border); }
+.hh-comment-html ul, .hh-comment-html ol { padding-left: 2em; }
+.hh-comment-html table { border-collapse: collapse; }
+.hh-comment-html th, .hh-comment-html td { padding: 3px 6px; border: 1px solid var(--hh-border); }
+.hh-comment-clip { position: relative; }
+.hh-comment-clip.hh-comment-collapsed { max-height: 240px; overflow: hidden; }
+.hh-comment-clip.hh-comment-collapsed::after { content: ""; position: absolute; right: 0; bottom: 0; left: 0; height: 48px; pointer-events: none; background: linear-gradient(transparent, var(--hh-header-bg)); }
+.hh-comment-toggle { margin-top: 4px; }
 .hh-review-thread > td { padding: 6px 8px; background: var(--hh-header-bg); border-left: 3px solid var(--hh-border); }
 .hh-review-comment + .hh-review-comment { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--hh-border); }
 .hh-comment-draft textarea { display: block; width: 100%; box-sizing: border-box; min-height: 4em; font: inherit; }

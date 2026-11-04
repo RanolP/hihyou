@@ -43,7 +43,7 @@ export interface GitHubWebReviewThread {
   after?: number;
   /** Unknown when the public review-comments REST API supplied the thread. */
   resolved?: boolean;
-  comments: { author: string; body: string }[];
+  comments: { author: string; body: string; bodyHtml?: string }[];
 }
 
 interface PullReviewComment {
@@ -55,6 +55,7 @@ interface PullReviewComment {
   original_line: number | null;
   user: { login: string } | null;
   body: string;
+  body_html?: string;
 }
 
 function isPullReviewComment(value: unknown): value is PullReviewComment {
@@ -79,7 +80,8 @@ function isPullReviewComment(value: unknown): value is PullReviewComment {
         "login" in value.user &&
         typeof value.user.login === "string")) &&
     "body" in value &&
-    typeof value.body === "string"
+    typeof value.body === "string" &&
+    (!("body_html" in value) || typeof value.body_html === "string")
   );
 }
 
@@ -367,7 +369,7 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
         `/pulls/${number}/comments?per_page=100`;
       const comments: PullReviewComment[] = [];
       while (url) {
-        const response = await get(url, "application/vnd.github+json");
+        const response = await get(url, "application/vnd.github.full+json");
         const json: unknown = await response.json();
         if (!Array.isArray(json))
           throw new Error("review comments response was not an array");
@@ -409,6 +411,9 @@ function reviewThreadsFromComments(
       comments: grouped.map((comment) => ({
         author: comment.user?.login ?? "",
         body: comment.body,
+        ...(comment.body_html !== undefined && {
+          bodyHtml: comment.body_html,
+        }),
       })),
     });
   }
