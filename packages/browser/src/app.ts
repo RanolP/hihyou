@@ -39,13 +39,13 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
 <style>${diffStyles}${appStyles}</style>
 <style class="scheme"></style>
 <div class="hh-app">
-  <nav class="hh-sets" aria-label="Diffsets"><input class="hh-filter" type="search" aria-label="Filter changed files" placeholder="Filter changed files" autocorrect="off" autocapitalize="off" spellcheck="false"><div class="hh-sets-status">Loading commits…</div><ul role="tree"></ul></nav>
+  <nav class="hh-sets" aria-label="Diffsets"><input class="hh-filter" type="search" aria-label="Filter changed files" placeholder="Filter changed files (/)" autocorrect="off" autocapitalize="off" spellcheck="false"><div class="hh-sets-status">Loading commits…</div><ul role="tree"></ul></nav>
   <section class="hh-main">
     <header class="hh-bar">
       <h2 class="hh-title"></h2>
-      <button type="button" class="hh-nav previous" aria-label="Previous file" title="Previous file" disabled>↑</button>
+      <button type="button" class="hh-nav previous" aria-label="Previous file" title="Previous file (k)" disabled>↑</button>
       <span class="hh-meta position"></span>
-      <button type="button" class="hh-nav next" aria-label="Next file" title="Next file" disabled>↓</button>
+      <button type="button" class="hh-nav next" aria-label="Next file" title="Next file (j)" disabled>↓</button>
       <span class="hh-meta message" role="status"></span>
     </header>
     <div class="hh-root"></div>
@@ -153,6 +153,26 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   };
   previous.addEventListener("click", () => step(-1));
   next.addEventListener("click", () => step(1));
+  const onKeydown = (event: KeyboardEvent) => {
+    const target = event.composedPath()[0];
+    if (
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey ||
+      (target instanceof HTMLElement &&
+        (target.matches("input, textarea, select") || target.isContentEditable))
+    )
+      return;
+
+    if (event.key === "j") step(1);
+    else if (event.key === "k") step(-1);
+    else if (event.key === "/") filter.focus();
+    else return;
+
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  document.addEventListener("keydown", onKeydown, true);
 
   const replaceFile = (
     path: string,
@@ -390,6 +410,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       disposed = true;
       themeObserver.disconnect();
       dark.removeEventListener("change", applyTheme);
+      document.removeEventListener("keydown", onKeydown, true);
       view?.dispose();
       shadow.innerHTML = "";
     },
