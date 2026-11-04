@@ -204,6 +204,8 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   const open = async (row: Row, path?: string): Promise<boolean> => {
     const at = ++generation;
     if (selected !== row) {
+      // One open file tree at a time: a file clicked in the old row's tree would switch scope back.
+      if (selected) selected.expanded = false;
       selected = row;
       review = engineReview(engine, () => row.id);
       files = [];
