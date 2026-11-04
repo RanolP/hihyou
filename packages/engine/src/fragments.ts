@@ -487,8 +487,37 @@ function linePaths(
   return paths;
 }
 
-/** "class AA", "def run", "method_definition render"; undefined for a node that declares no name. */
+/** "class AA", "def run", `Deno.test("sync")`; undefined for a node that declares no scope. */
 function declarationLabel(tree: Tree, n: number): string | undefined {
+  const field = (name: string): number | undefined => {
+    for (let i = 0, count = tree.count(n); i < count; i++) {
+      const c = tree.child(n, i);
+      if (tree.named(c) && tree.fieldName(c) === name) return c;
+    }
+    return undefined;
+  };
+  // A test call (`Deno.test("sync", () => …)`, `it("decodes", …)`) is the scope its callback reads in.
+  if (
+    tree.kindName(n) === "call_expression" &&
+    tree.kindName(tree.parent(n)) === "expression_statement"
+  ) {
+    const callee = field("function");
+    const args = field("arguments");
+    if (callee !== undefined && args !== undefined) {
+      const named = Array.from({ length: tree.count(args) }, (_, i) =>
+        tree.child(args, i),
+      ).filter((c) => tree.named(c));
+      const first = named[0];
+      if (
+        first !== undefined &&
+        tree.kindName(first) === "string" &&
+        named.some((c) =>
+          ["arrow_function", "function_expression"].includes(tree.kindName(c)),
+        )
+      )
+        return `${tree.text(callee)}(${tree.text(first)})`;
+    }
+  }
   let name: number | undefined;
   for (let i = 0, count = tree.count(n); i < count; i++) {
     const c = tree.child(n, i);
