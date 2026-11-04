@@ -181,6 +181,8 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   let allFiles = storedAllFiles();
   let currentPath: string | undefined;
   let targetedPath: string | undefined;
+  // Where the page landed for `targetedPath`; the target holds until the reader scrolls away from it.
+  let targetedY = Number.NaN;
   let trackingFrame: number | undefined;
 
   const updatePageStickyTop = () => {
@@ -318,6 +320,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
           // GitHub sets `scroll-behavior: smooth`; the tracker would read the frames in between.
           behavior: "instant",
         });
+      targetedY = window.scrollY;
     }
     updateNav();
   };
@@ -404,7 +407,8 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
         section != null &&
         targeted.getBoundingClientRect().top < window.innerHeight &&
         section.getBoundingClientRect().bottom > stickyTop;
-      if (atBottom && visible) active = targeted;
+      const unmoved = Math.abs(window.scrollY - targetedY) < 2;
+      if ((atBottom || unmoved) && visible) active = targeted;
       else targetedPath = undefined;
     }
     const path = active?.closest<HTMLElement>(".hh-file")?.dataset["path"];
