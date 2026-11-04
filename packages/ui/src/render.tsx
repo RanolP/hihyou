@@ -296,12 +296,23 @@ function mount(
     },
     fileViewed,
     setFileViewed(i, file, on) {
+      const section = on && !single ? fileSection(file.path) : undefined;
+      const header = section?.querySelector<HTMLElement>(".hh-file-header");
+      const headerWasPinned =
+        section !== undefined &&
+        header != null &&
+        section.getBoundingClientRect().top <
+          header.getBoundingClientRect().top;
       if (on) opened.delete(file.path);
       else opened.add(file.path);
       const index = outline();
       if ((index.fileAtoms[i]?.length ?? 0) > 0)
         setViewed(index, { kind: "file", file: i }, on, viewed, keyOf);
       else viewed.set(fileKey(file), on);
+      if (headerWasPinned)
+        win?.requestAnimationFrame(() =>
+          fileSection(file.path)?.scrollIntoView({ block: "start" }),
+        );
     },
     viewState(t) {
       viewedTick();
