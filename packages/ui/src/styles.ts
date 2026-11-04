@@ -136,8 +136,8 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
   text-align: left;
   font-weight: 600;
   background: var(--hh-node-bg);
-  border-top: 1px solid var(--hh-border);
-  border-bottom: 1px solid var(--hh-border);
+  /* Drawn inside the cell: a collapsed border stays with the table, and the code scrolling under shows through it. */
+  box-shadow: inset 0 1px var(--hh-border), inset 0 -1px var(--hh-border);
 }
 /* In the browser extension the page scrolls, so neither file wrapper may become a sticky scroll ancestor. */
 :host .hh-diff {
