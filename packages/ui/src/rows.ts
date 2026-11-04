@@ -510,8 +510,9 @@ export function statusOf(change: ChangedFileRef): FileStatus {
     : "modified";
 }
 
-/** Lines on the before side and on the after side of every `diff` fragment. */
+/** Lines added and removed in the original texts, or in the rendered fragments when unavailable. */
 export function lineCounts(file: FileDiff): { removed: number; added: number } {
+  if (file.stats) return file.stats;
   let removed = 0;
   let added = 0;
   for (const f of file.fragments) {

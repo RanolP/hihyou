@@ -1,3 +1,5 @@
+import { diffLines } from "diff";
+import type { Tree } from "syntechs/core";
 import {
   defaultMoveOptions,
   editScript,
@@ -8,7 +10,6 @@ import {
   type RawEdit,
   Side,
 } from "syntechs/diff";
-import type { Tree } from "syntechs/core";
 import {
   type Anchor,
   anchorOnLines,
@@ -341,7 +342,13 @@ export async function diffFiles(
         ...(status && { status }),
       };
     const text = p.ref.after === null ? p.texts[0] : p.texts[1];
-    const head = { path, ...(status && { status }) };
+    let added = 0;
+    let removed = 0;
+    for (const part of diffLines(p.texts[0], p.texts[1])) {
+      if (part.added) added += part.count ?? 0;
+      if (part.removed) removed += part.count ?? 0;
+    }
+    const head = { path, stats: { added, removed }, ...(status && { status }) };
     if (!("mapping" in p)) {
       // Without a tree the changed line is the unit the viewer paints; a whole file is the change, unpainted.
       for (const e of lineDiff(p.texts[0], p.texts[1], indentIsSyntax(path))) {

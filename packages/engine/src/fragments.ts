@@ -10,6 +10,8 @@ export interface FileDiff {
   path: string;
   grammar?: string; // absent -> line-diff fallback
   sourceLines?: { before: number[]; after: number[] };
+  /** Line counts over the original, unformatted texts. */
+  stats?: { added: number; removed: number };
   fragments: CodeFragment[]; // SSoT; no separate Edit[]; begin/end always balanced
   /** The engine judges the whole file should be shown folded, and says why. */
   collapsed?: { reason: CollapseReason };
