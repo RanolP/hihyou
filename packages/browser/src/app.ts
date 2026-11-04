@@ -145,6 +145,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   const viewedCount = $<HTMLElement>(".hh-viewed-count");
   const setsStatus = $<HTMLElement>(".hh-sets-status");
   const tree = $<HTMLUListElement>(".hh-sets ul");
+  const appBar = $<HTMLElement>(".hh-main > .hh-bar");
   const title = $<HTMLElement>(".hh-title");
   const previous = $<HTMLButtonElement>(".previous");
   const next = $<HTMLButtonElement>(".next");
@@ -155,6 +156,13 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   const persistedViewed = persistentViewedStore(
     viewedStorageKey(page.owner, page.repo, page.pull),
   );
+  const appBarObserver = new ResizeObserver(() => {
+    host.style.setProperty(
+      "--hh-app-bar-height",
+      `${appBar.getBoundingClientRect().height}px`,
+    );
+  });
+  appBarObserver.observe(appBar);
 
   const host_ = githubWebHost({ fetch });
   const engine = createEngine(host_);
@@ -633,6 +641,8 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   return {
     dispose() {
       disposed = true;
+      appBarObserver.disconnect();
+      host.style.removeProperty("--hh-app-bar-height");
       themeObserver.disconnect();
       fileObserver.disconnect();
       if (trackingFrame !== undefined) cancelAnimationFrame(trackingFrame);
@@ -701,7 +711,7 @@ const appStyles = `
 .hh-letter.D { color: var(--fgColor-danger, #cf222e); }
 .hh-letter.M, .hh-letter.R { color: var(--fgColor-attention, #9a6700); }
 .hh-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.hh-main > .hh-bar { position: sticky; top: var(--hh-page-sticky-top); z-index: 4; box-sizing: border-box; min-height: var(--hh-app-bar-height); display: flex; align-items: center; gap: 12px; padding: 0 0 8px; background: var(--bgColor-default, Canvas); }
+.hh-main > .hh-bar { position: sticky; top: var(--hh-page-sticky-top); z-index: 4; box-sizing: border-box; min-height: 37px; display: flex; align-items: center; gap: 12px; padding: 0 0 8px; background: var(--bgColor-default, Canvas); }
 .hh-root .hh-bar { top: calc(var(--hh-page-sticky-top) + var(--hh-app-bar-height)); }
 .hh-title { margin: 0; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hh-meta { color: var(--fgColor-muted, GrayText); }
