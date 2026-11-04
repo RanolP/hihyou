@@ -577,15 +577,25 @@ function record(
         newText.slice(next.new.start, next.new.end),
       )) {
         if ("old" in tokenEdit)
-          before.emphasis.push({
-            start: oldRange.start + edit.old.start + tokenEdit.old.start,
-            end: oldRange.start + edit.old.start + tokenEdit.old.end,
-          });
+          for (const r of markerFree(
+            oldText,
+            edit.old.start + tokenEdit.old.start,
+            edit.old.start + tokenEdit.old.end,
+          ))
+            before.emphasis.push({
+              start: oldRange.start + r.start,
+              end: oldRange.start + r.end,
+            });
         if ("new" in tokenEdit)
-          after.emphasis.push({
-            start: newRange.start + next.new.start + tokenEdit.new.start,
-            end: newRange.start + next.new.start + tokenEdit.new.end,
-          });
+          for (const r of markerFree(
+            newText,
+            next.new.start + tokenEdit.new.start,
+            next.new.start + tokenEdit.new.end,
+          ))
+            after.emphasis.push({
+              start: newRange.start + r.start,
+              end: newRange.start + r.end,
+            });
       }
     }
     return true;
@@ -628,6 +638,28 @@ function record(
     case "move":
       movePair(e, a, b, refA, refB, undefined, renames);
   }
+}
+
+/**
+ * `start..end` of `text` without each line's leading comment marker (`*`, `//`, `#`): a rewrapped comment
+ * moves its words across lines, and the markers it keeps are not the change.
+ */
+function markerFree(
+  text: string,
+  start: number,
+  end: number,
+): { start: number; end: number }[] {
+  const out: { start: number; end: number }[] = [];
+  const marker = /^[ \t]*(?:\*(?!\/)|\/\/+|#)[ \t]*/gm;
+  marker.lastIndex = text.lastIndexOf("\n", start - 1) + 1;
+  let from = start;
+  for (let m = marker.exec(text); m && m.index < end; m = marker.exec(text)) {
+    const markerEnd = m.index + m[0].length;
+    if (m.index > from) out.push({ start: from, end: m.index });
+    from = Math.max(from, markerEnd);
+  }
+  if (from < end) out.push({ start: from, end });
+  return out;
 }
 
 function movePair(
