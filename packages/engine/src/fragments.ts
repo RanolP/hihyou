@@ -541,14 +541,26 @@ function declarationLabel(tree: Tree, n: number): string | undefined {
         return `${tree.text(callee)}(${tree.text(first)})`;
     }
   }
+  // A Rust impl names no item of its own; it reads as what it implements, "impl Delegate for MoveDelegate".
+  if (tree.kindName(n) === "impl_item") {
+    const type = field("type");
+    const trait = field("trait");
+    if (type === undefined) return undefined;
+    return trait === undefined
+      ? `impl ${tree.text(type)}`
+      : `impl ${tree.text(trait)} for ${tree.text(type)}`;
+  }
   let name: number | undefined;
   for (let i = 0, count = tree.count(n); i < count; i++) {
     const c = tree.child(n, i);
     if (tree.named(c) && tree.fieldName(c) === "name") name = c;
   }
   if (name === undefined) return undefined;
-  // "class Shop", "function f"; a method has no keyword and reads as its bare name.
-  const first = tree.child(n, 0);
+  // "class Shop", "function f"; a method has no keyword and reads as its bare name. Modifiers ahead of the
+  // keyword (Rust's `pub`, Kotlin's `private`) are skipped, so `pub fn f` still reads "fn f".
+  let at = 0;
+  while (at < tree.count(n) - 1 && /modifiers?$/.test(tree.kindName(tree.child(n, at)))) at++;
+  const first = tree.child(n, at);
   return !tree.named(first) && /^[a-z]+$/.test(tree.text(first))
     ? `${tree.text(first)} ${tree.text(name)}`
     : tree.text(name);
