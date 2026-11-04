@@ -119,6 +119,9 @@ function persistentViewedStore(key: string): {
   };
 }
 
+/** The selection hash the last unmount cleared, and the page it belonged to. */
+let turnedOffAt: { page: string; hash: string } | undefined;
+
 function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   const previousScrollbarGutter =
     document.documentElement.style.scrollbarGutter;
@@ -238,6 +241,13 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   });
 
   const hashPrefix = "#hihyou=";
+  // Turning the view back on resumes where it was turned off, as long as the page and its hash are untouched.
+  if (
+    !location.hash &&
+    turnedOffAt?.page === location.pathname + location.search
+  )
+    history.replaceState(history.state, "", turnedOffAt.hash);
+  turnedOffAt = undefined;
   const selectionFromHash = () => {
     if (!location.hash.startsWith(hashPrefix)) return;
     const value = location.hash.slice(hashPrefix.length);
@@ -873,8 +883,13 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       view?.dispose();
       shadow.innerHTML = "";
       // With the view gone the selection hash names nothing on screen; GitHub's own view keeps a clean URL.
-      if (location.hash.startsWith(hashPrefix))
+      if (location.hash.startsWith(hashPrefix)) {
+        turnedOffAt = {
+          page: location.pathname + location.search,
+          hash: location.hash,
+        };
         history.replaceState(history.state, "", location.pathname + location.search);
+      }
     },
   };
 }
