@@ -39,6 +39,8 @@ export const diffStyles = `
   margin: 0 0 16px;
   overflow: clip;
 }
+/* The file the counter and the tree name, for a page short enough that stepping to it scrolls nothing. */
+.hh-file[aria-current="true"] { border-color: var(--hh-accent); }
 .hh-file-header {
   position: sticky;
   top: var(--hh-file-sticky-top, 0);
@@ -100,7 +102,7 @@ export const diffStyles = `
   padding: 0 12px 0 4px;
   white-space: pre;
   vertical-align: top;
-  tab-size: 4;
+  tab-size: var(--hh-tab-size, 4);
 }
 /* Changed lines carry the side colour; changed nodes layer the stronger text colour over it. */
 .hh-num.hh-removed,

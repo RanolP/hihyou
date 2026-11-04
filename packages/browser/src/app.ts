@@ -290,6 +290,11 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     next.disabled = i < 0 || i >= ordered.length - 1;
     position.textContent = i < 0 ? "" : `${i + 1} / ${ordered.length}`;
     if (selected) replaceSelectionHash(selected, i < 0 ? "" : ordered[i]!.path);
+    for (const section of root.querySelectorAll<HTMLElement>(".hh-file")) {
+      if (allFiles && section.dataset["path"] === currentPath)
+        section.setAttribute("aria-current", "true");
+      else section.removeAttribute("aria-current");
+    }
     drawTree();
   };
   const fileStickyTop = () =>
@@ -419,8 +424,28 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     currentPath = path;
     updateNav();
   };
+  // GitHub draws a tab as wide as the repository's .editorconfig says, per file; its own diff tables carry the width.
+  const applyTabSizes = () => {
+    const sizes = new Map<string, string>();
+    for (const table of document.querySelectorAll("table[data-tab-size]")) {
+      const path = table
+        .closest("[data-tagsearch-path]")
+        ?.getAttribute("data-tagsearch-path");
+      if (path) sizes.set(path, table.getAttribute("data-tab-size")!);
+    }
+    // A file GitHub has not drawn yet takes the width most of the drawn ones have.
+    const counts = new Map<string, number>();
+    for (const size of sizes.values()) counts.set(size, (counts.get(size) ?? 0) + 1);
+    const common = [...counts].sort((a, b) => b[1] - a[1])[0]?.[0];
+    for (const section of root.querySelectorAll<HTMLElement>(".hh-file")) {
+      const size = sizes.get(section.dataset["path"] ?? "") ?? common;
+      if (size && section.style.getPropertyValue("--hh-tab-size") !== size)
+        section.style.setProperty("--hh-tab-size", size);
+    }
+  };
   const updateViewport = () => {
     trackingFrame = undefined;
+    applyTabSizes();
     updatePageStickyTop();
     trackCurrentFile();
   };
