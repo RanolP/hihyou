@@ -98,7 +98,10 @@ export function FileTable(props: { index: number; file: DiffFile }): JSX.Element
         table,
         row,
         rows,
-        scopeLabel(scopePath),
+        scopeLabel(scopePath) ??
+          (file.grammar === undefined && scopePath && row.kind === "elided"
+            ? row.scope
+            : undefined),
         lone[rowIndex],
       );
     }

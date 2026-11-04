@@ -62,6 +62,8 @@ export interface Gap {
   atStart: boolean;
   /** The run reaches the end of the file, so it can only grow down from the code above it. */
   atEnd: boolean;
+  /** Git's default function context nearest the next shown after-side line. */
+  scope?: string;
 }
 
 export type SideName = "before" | "after";
@@ -137,6 +139,18 @@ export function gapOf(file: DiffFile, index: number): Gap | undefined {
     : r?.exhausted
       ? 0
       : undefined;
+  const funcnames = (
+    f as typeof f & { funcnames?: { line: number; text: string }[] }
+  ).funcnames;
+  const last =
+    count === undefined ? undefined : f.lines.after + top + count - 1;
+  const scope =
+    last === undefined
+      ? undefined
+      : funcnames?.findLast(
+          (candidate) =>
+            candidate.line >= f.lines.after + top && candidate.line <= last,
+        )?.text;
   return {
     fragment: index,
     origin: f.lines,
@@ -145,6 +159,7 @@ export function gapOf(file: DiffFile, index: number): Gap | undefined {
     revealed: r !== undefined && (top > 0 || bottom > 0),
     atStart: f.lines.before === 1 && f.lines.after === 1,
     atEnd: next === undefined,
+    ...(scope && { scope }),
   };
 }
 

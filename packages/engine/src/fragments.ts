@@ -36,7 +36,12 @@ export type CodeFragment =
       nodes?: NodeOutline[];
     }
   | { kind: "diff"; before: Side; after: Side } // one side empty = added / deleted
-  | { kind: "elided"; lines: LinePair }; // engine decides what to collapse
+  | {
+      kind: "elided";
+      lines: LinePair;
+      /** Git's default function-context candidates on the after side, for a gap without a syntax tree. */
+      funcnames?: { line: number; text: string }[];
+    }; // engine decides what to collapse
 
 export interface Side {
   spans: Span[];
@@ -214,6 +219,20 @@ export function buildFragments(input: FragmentInput): CodeFragment[] {
     highlight && v.tree ? scopeRuns(v.tree, highlight, v.text.length, v.start, v.end) : undefined;
   const scopesA = scopes(a.v);
   const scopesB = scopes(b.v);
+  const funcnames = (first: number, last: number) => {
+    if (b.v.tree) return undefined;
+    const found: { line: number; text: string }[] = [];
+    for (let line = first; line <= last; line++) {
+      const start = b.v.lineStarts[line];
+      if (start === undefined) continue;
+      const text = b.v.text
+        .slice(start, lineEnd(b.v, line))
+        .replace(/\r?\n$/, "");
+      if (/^[\p{Alphabetic}_$]/u.test(text))
+        found.push({ line: line + 1, text: text.trim().slice(0, 80) });
+    }
+    return found.length > 0 ? found : undefined;
+  };
   const pairs = mapping ? pairLines(a.v, b.v, mapping) : undefined;
   const linesA = lines(a, 0, input.indentMatters, pairs);
   const linesB = lines(b, 1, input.indentMatters, undefined);
@@ -278,11 +297,13 @@ export function buildFragments(input: FragmentInput): CodeFragment[] {
     const run = rows.slice(i, j) as (Row & { same: true })[];
     if (elide) {
       const path = run.map(pathOf).reduce(common);
+      const names = funcnames(r.b, run.at(-1)?.b ?? r.b);
       items.push({
         path,
         fragment: {
           kind: "elided",
           lines: { before: r.a + 1, after: r.b + 1 },
+          ...(names && { funcnames: names }),
         },
       });
     } else {
