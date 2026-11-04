@@ -658,7 +658,13 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       const li = el("li");
       li.setAttribute("role", "treeitem");
       if (node.kind === "folder") {
-        li.append(el("div", "hh-folder", node.name));
+        // A long folder chain wraps after a slash, not inside a name.
+        const folder = el("div", "hh-folder");
+        node.name.split("/").forEach((part, i) => {
+          if (i > 0) folder.append("/", document.createElement("wbr"));
+          folder.append(part);
+        });
+        li.append(folder);
         const group = el("ul");
         group.setAttribute("role", "group");
         group.append(...drawNodes(row, node.children, shown));
