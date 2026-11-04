@@ -365,16 +365,16 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     const headers = [...root.querySelectorAll<HTMLElement>(".hh-file-header")];
     if (headers.length === 0) return;
     const stickyTop = fileStickyTop();
-    const atTop = headers.findLast((header) => {
-      const section = header.closest<HTMLElement>(".hh-file");
-      return (
-        header.getBoundingClientRect().top <= stickyTop + 1 &&
-        (section?.getBoundingClientRect().bottom ?? 0) > stickyTop
-      );
-    });
-    let active =
-      atTop ??
-      headers.find((header) => header.getBoundingClientRect().bottom > stickyTop);
+    // A file showing less than a line under the bar is scrolled past: the next file's header is what one reads.
+    const showing = (header: HTMLElement) =>
+      (header.closest<HTMLElement>(".hh-file")?.getBoundingClientRect().bottom ??
+        0) >
+      stickyTop + 18;
+    const atTop = headers.findLast(
+      (header) =>
+        header.getBoundingClientRect().top <= stickyTop + 1 && showing(header),
+    );
+    let active = atTop ?? headers.find(showing);
     // A short final file cannot reach the sticky line.
     if (targetedPath !== undefined) {
       const scrolling = document.scrollingElement;
