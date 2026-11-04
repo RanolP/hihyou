@@ -41,7 +41,11 @@ const hidden = (count: number | undefined) =>
       : `${count} hidden ${count === 1 ? "line" : "lines"}`;
 
 /** GitHub's expander: icon buttons in the gutter, a muted count beside them. */
-export function ElidedRow(props: { path: string; gap: Gap }): JSX.Element {
+export function ElidedRow(props: {
+  path: string;
+  gap: Gap;
+  scope?: string;
+}): JSX.Element {
   const ctx = useDraw();
   const { path, gap } = props;
   const { count } = gap;
@@ -95,7 +99,10 @@ export function ElidedRow(props: { path: string; gap: Gap }): JSX.Element {
       <td class="hh-num hh-expander-cell" colSpan={2}>
         {buttons}
       </td>
-      <td class="hh-elided-cell">{hidden(count)}</td>
+      <td class="hh-elided-cell">
+        {hidden(count)}
+        {props.scope && ` · ${props.scope}`}
+      </td>
     </tr>
   );
 }

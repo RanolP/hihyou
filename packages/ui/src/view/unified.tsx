@@ -74,10 +74,17 @@ export function unifiedRow(
   table: TableDraw,
   row: UnifiedRow,
   out: JSX.Element[],
+  scope?: string,
 ): void {
   const { index } = table;
   if (row.kind === "elided") {
-    out.push(<ElidedRow path={ctx.files()[index]?.path ?? ""} gap={row} />);
+    out.push(
+      <ElidedRow
+        path={ctx.files()[index]?.path ?? ""}
+        gap={row}
+        {...(scope ? { scope } : {})}
+      />,
+    );
     return;
   }
   const file = ctx.files()[index];

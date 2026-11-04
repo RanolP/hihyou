@@ -21,6 +21,8 @@ const reasons: Record<CollapseReason, string> = {
 };
 
 const headings = ["Before line", "After line", "Code"];
+const scopeLabel = (path: readonly string[] | undefined) =>
+  path && path.length > 0 ? path.join(" › ") : undefined;
 
 /** One file's table; a collapsed file shows why until it is opened. */
 export function FileTable(props: { index: number; file: DiffFile }): JSX.Element {
@@ -58,14 +60,15 @@ export function FileTable(props: { index: number; file: DiffFile }): JSX.Element
     const headers = wholeHeaders(file, index);
     // A sticky row sticks for the rest of the table, not just its own tbody; `buildSections` decides which
     // sections carry one, replacing a header that would otherwise go stale with a "top level" one.
-    for (const section of buildSections(file)) {
+    const sections = buildSections(file);
+    for (const [sectionIndex, section] of sections.entries()) {
       const rows: JSX.Element[] = [];
       if (section.heading)
         rows.push(
           <tr class="hh-node">
             <th scope="rowgroup" colSpan={columns}>
               {section.path.length > 0 ? (
-                <span class="hh-node-label">{section.path.join(" › ")}</span>
+                <span class="hh-node-label">{scopeLabel(section.path)}</span>
               ) : (
                 <span class="hh-node-label hh-top">top level</span>
               )}
@@ -75,7 +78,19 @@ export function FileTable(props: { index: number; file: DiffFile }): JSX.Element
       ctx.placer.queueBefore(beforeCells(section.rows));
       for (const row of unifiedRows(section.rows)) {
         wholeRows(ctx, headers, row, columns, rows);
-        unifiedRow(ctx, table, row, rows);
+        const scopePath =
+          row.kind === "elided"
+            ? row.count === 0
+              ? section.path
+              : sections[sectionIndex + 1]?.path
+            : undefined;
+        unifiedRow(
+          ctx,
+          table,
+          row,
+          rows,
+          scopeLabel(scopePath),
+        );
       }
       bodies.push(<tbody>{rows}</tbody>);
     }
