@@ -40,15 +40,7 @@ function WholeRow(props: {
   );
 }
 
-/** The header rows that open on this row's lines, pushed into `out` ahead of the row. */
-export function wholeRows(
-  ctx: DrawContext,
-  headers: ReadonlyMap<string, WholeHeader>,
-  row: Row | UnifiedRow,
-  columns: number,
-  out: JSX.Element[],
-): void {
-  if (headers.size === 0) return;
+const rowKeys = (row: Row | UnifiedRow): string[] => {
   const keys: string[] = [];
   if (row.kind === "diff") {
     if (row.before) keys.push(wholeKey(row.fragment, "before", row.before.line));
@@ -59,8 +51,33 @@ export function wholeRows(
     if (row.before !== undefined) keys.push(wholeKey(row.fragment, "before", row.before));
     if (row.after !== undefined) keys.push(wholeKey(row.fragment, "after", row.after));
   }
-  for (const k of keys) {
-    const header = headers.get(k);
-    if (header) out.push(<WholeRow ctx={ctx} header={header} columns={columns} />);
-  }
+  return keys;
+};
+
+export const wholeHeadersAt = (
+  headers: ReadonlyMap<string, WholeHeader>,
+  row: Row | UnifiedRow,
+): WholeHeader[] => rowKeys(row).flatMap((key) => headers.get(key) ?? []);
+
+export const wholeEndsAt = (
+  headers: ReadonlyMap<string, WholeHeader>,
+  row: Row | UnifiedRow,
+): boolean => {
+  const keys = new Set(rowKeys(row));
+  return [...headers.values()].some(({ ref, lastLine }) =>
+    keys.has(wholeKey(ref.fragment, ref.side, lastLine)),
+  );
+};
+
+/** The header rows that open on this row's lines, pushed into `out` ahead of the row. */
+export function wholeRows(
+  ctx: DrawContext,
+  headers: ReadonlyMap<string, WholeHeader>,
+  row: Row | UnifiedRow,
+  columns: number,
+  out: JSX.Element[],
+): void {
+  if (headers.size === 0) return;
+  for (const header of wholeHeadersAt(headers, row))
+    out.push(<WholeRow ctx={ctx} header={header} columns={columns} />);
 }

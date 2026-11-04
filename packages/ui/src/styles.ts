@@ -170,14 +170,28 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 }
 .hh-node-label { position: sticky; left: 8px; }
 .hh-whole th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   padding: 2px 8px;
   text-align: left;
   font-weight: 400;
   font-family: var(--vscode-font-family, system-ui, sans-serif);
   border-top: 1px solid var(--hh-border);
 }
-.hh-whole-added th { box-shadow: inset 3px 0 var(--hh-added-fg); background: var(--hh-added-line); }
-.hh-whole-deleted th { box-shadow: inset 3px 0 var(--hh-removed-fg); background: var(--hh-removed-line); }
+.hh-whole-added th {
+  box-shadow: inset 3px 0 var(--hh-added-fg);
+  background: linear-gradient(var(--hh-added-line), var(--hh-added-line)), var(--hh-bg);
+}
+.hh-whole-deleted th {
+  box-shadow: inset 3px 0 var(--hh-removed-fg);
+  background: linear-gradient(var(--hh-removed-line), var(--hh-removed-line)), var(--hh-bg);
+}
+:host .hh-whole th {
+  top: calc(
+    var(--hh-file-sticky-top) + var(--hh-file-header-height, 0px)
+  );
+}
 /* A heading first, so it reads like the scope rows rather than a link; the underline returns on hover. */
 .hh-whole-label { position: sticky; left: 8px; font-weight: 600; }
 .hh-button.hh-whole-label { text-decoration: none; }
@@ -185,7 +199,7 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 .hh-whole-added .hh-whole-label { color: var(--hh-added-fg); }
 .hh-whole-deleted .hh-whole-label { color: var(--hh-removed-fg); }
 .hh-whole-state { margin-left: 8px; color: var(--hh-muted); font-size: 0.9em; }
-.hh-whole-viewed th { opacity: 0.6; }
+.hh-whole-viewed .hh-whole-label, .hh-whole-viewed .hh-whole-state { opacity: 0.6; }
 .hh-top { font-weight: 400; font-style: italic; color: var(--hh-muted); }
 .hh-move-cell { padding: 2px 8px 0; font-family: var(--vscode-font-family, system-ui, sans-serif); }
 .hh-elided-cell {

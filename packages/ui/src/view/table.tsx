@@ -10,12 +10,23 @@ import { useDraw } from "./context.js";
 import { pairRows } from "./pair-rows.jsx";
 import { beforeCells } from "./placement.js";
 import { unifiedRow } from "./unified.jsx";
-import { wholeRows } from "./whole.jsx";
+import { wholeEndsAt, wholeHeadersAt, wholeRows } from "./whole.jsx";
 import { wholeHeaders } from "../whole.js";
 
 const headings = ["Before line", "After line", "Code"];
 const scopeLabel = (path: readonly string[] | undefined) =>
   path && path.length > 0 ? path.join(" › ") : undefined;
+const scopeRow = (path: readonly string[], columns: number) => (
+  <tr class="hh-node">
+    <th scope="rowgroup" colSpan={columns}>
+      {path.length > 0 ? (
+        <span class="hh-node-label">{scopeLabel(path)}</span>
+      ) : (
+        <span class="hh-node-label hh-top">top level</span>
+      )}
+    </th>
+  </tr>
+);
 const scopeAfterGap = (
   sections: ReturnType<typeof buildSections>,
   sectionIndex: number,
@@ -66,18 +77,7 @@ export function FileTable(props: { index: number; file: DiffFile }): JSX.Element
   const sections = buildSections(file);
   for (const [sectionIndex, section] of sections.entries()) {
     const rows: JSX.Element[] = [];
-    if (section.heading)
-      rows.push(
-        <tr class="hh-node">
-          <th scope="rowgroup" colSpan={columns}>
-            {section.path.length > 0 ? (
-              <span class="hh-node-label">{scopeLabel(section.path)}</span>
-            ) : (
-              <span class="hh-node-label hh-top">top level</span>
-            )}
-          </th>
-        </tr>,
-      );
+    if (section.heading) rows.push(scopeRow(section.path, columns));
     ctx.placer.queueBefore(beforeCells(section.rows));
     const unified = unifiedRows(section.rows);
     const lone = loneLines(unified);
@@ -104,6 +104,15 @@ export function FileTable(props: { index: number; file: DiffFile }): JSX.Element
             : undefined),
         lone[rowIndex],
       );
+      // A unit followed within a few lines by the next one (a blank line, a doc comment) hands the pin over
+      // directly; a scope row between every pair of added declarations is noise.
+      const following = unified.slice(rowIndex + 1, rowIndex + 4);
+      if (
+        following.length > 0 &&
+        wholeEndsAt(headers, row) &&
+        following.every((r) => wholeHeadersAt(headers, r).length === 0)
+      )
+        rows.push(scopeRow(section.path, columns));
     }
     bodies.push(<tbody>{rows}</tbody>);
   }

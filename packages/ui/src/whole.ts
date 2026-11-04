@@ -21,6 +21,8 @@ export interface WholeHeader {
   ref: NodeRef;
   text: string;
   whole: "added" | "deleted";
+  /** The inclusive 1-based display line where the unit ends, on `ref.side`. */
+  lastLine: number;
 }
 
 /** Where a header row goes: the 1-based line its unit starts on, per fragment and side. */
@@ -41,9 +43,19 @@ export function wholeHeaders(file: DiffFile, index: number): Map<string, WholeHe
         const text = wholeText(n);
         if (!text || !n.whole) return;
         if (fileWhole && n.label === undefined) return;
-        const key = wholeKey(fragment, side, frag[side].startLine + n.start.line);
+        const firstLine = frag[side].startLine + n.start.line;
+        const lastLine = Math.max(
+          firstLine,
+          frag[side].startLine + n.end.line - (n.end.column === 0 ? 1 : 0),
+        );
+        const key = wholeKey(fragment, side, firstLine);
         if (out.has(key)) return;
-        out.set(key, { ref: { file: index, fragment, side, node }, text, whole: n.whole });
+        out.set(key, {
+          ref: { file: index, fragment, side, node },
+          text,
+          whole: n.whole,
+          lastLine,
+        });
       });
     }
   });
