@@ -4,7 +4,7 @@ export type FileTreeNode<T extends { path: string }> =
 
 /**
  * `files` as a folder tree the way VS Code's compact folders draw one: a folder whose only child is a folder
- * shares its row (`src/panel`). Folders sort before files, each by name.
+ * shares its row (`src/panel`). Siblings sort by their full paths, as GitHub sorts changed files.
  */
 export function fileTree<T extends { path: string }>(
   files: readonly T[],
@@ -26,10 +26,9 @@ export function fileTree<T extends { path: string }>(
     dir.files.push(file);
   }
 
-  const byName = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  const byPath = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
   const build = (dir: Dir, prefix: string): FileTreeNode<T>[] => [
     ...[...dir.dirs]
-      .sort(([a], [b]) => byName(a, b))
       .map(([name, sub]): FileTreeNode<T> => {
         let path = prefix + name;
         for (
@@ -49,9 +48,14 @@ export function fileTree<T extends { path: string }>(
         kind: "file",
         name: file.path.slice(file.path.lastIndexOf("/") + 1),
         file,
-      }))
-      .sort((a, b) => byName(a.name, b.name)),
-  ];
+      })),
+  ].sort((a, b) =>
+    byPath(
+      // A folder sorts as its children do (`src/x` after `src.ts`, since "." < "/").
+      a.kind === "folder" ? `${a.path}/` : a.file.path,
+      b.kind === "folder" ? `${b.path}/` : b.file.path,
+    ),
+  );
   return build(root, "");
 }
 

@@ -10,8 +10,9 @@ const shape = (nodes: FileTreeNode<F>[]): unknown[] =>
   );
 
 // Catches a compacted folder whose path loses a segment (a click then targets the wrong file), a single-child
-// chain left uncompacted, or a folder with files of its own wrongly merged into its only subfolder.
-test("compacts single-folder chains and keeps folders before files", () => {
+// chain left uncompacted, a folder with files of its own wrongly merged into its only subfolder, or siblings
+// grouped by kind instead of sorted by full path.
+test("compacts single-folder chains and sorts siblings by full path", () => {
   const tree = fileTree<F>([
     { path: "packages/vscode/src/panel/panel.ts" },
     { path: "packages/vscode/src/activate.ts" },
@@ -20,22 +21,22 @@ test("compacts single-folder chains and keeps folders before files", () => {
     { path: "docs/design/a.md" },
   ]);
   expect(shape(tree)).toEqual([
+    "README.md",
     { "docs/design (docs/design)": ["docs/design/a.md"] },
     {
       "packages/vscode (packages/vscode)": [
+        "packages/vscode/package.json",
         {
           "src (packages/vscode/src)": [
+            "packages/vscode/src/activate.ts",
             {
               "panel (packages/vscode/src/panel)": [
                 "packages/vscode/src/panel/panel.ts",
               ],
             },
-            "packages/vscode/src/activate.ts",
           ],
         },
-        "packages/vscode/package.json",
       ],
     },
-    "README.md",
   ]);
 });
