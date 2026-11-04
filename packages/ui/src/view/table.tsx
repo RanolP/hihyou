@@ -87,7 +87,11 @@ export function FileTable(props: { index: number; file: DiffFile }): JSX.Element
         row.kind === "elided"
           ? row.count === 0
             ? section.path
-            : scopeAfterGap(sections, sectionIndex)
+            : // The next section's own header row, right under the gap, already names it.
+              rowIndex === unified.length - 1 &&
+                sections[sectionIndex + 1]?.heading
+              ? undefined
+              : scopeAfterGap(sections, sectionIndex)
           : undefined;
       unifiedRow(
         ctx,
