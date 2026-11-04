@@ -796,6 +796,20 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       // The D letter already says a deleted file is gone.
       if (reason && file.collapsed?.reason !== "deleted")
         button.append(el("span", "hh-collapsed-hint", reason));
+      // The size of each file before opening it, so a reviewer can pick an order.
+      if (file.stats) {
+        const stats = el("span", "hh-file-stats");
+        stats.append(
+          el("span", "hh-stat-added", `+${file.stats.added}`),
+          " ",
+          el("span", "hh-stat-removed", `−${file.stats.removed}`),
+        );
+        stats.setAttribute(
+          "aria-label",
+          `${file.stats.added} lines added, ${file.stats.removed} lines removed`,
+        );
+        button.append(stats);
+      }
       if (row === selected && view?.fileViewed(file.path))
         button.append(el("span", "hh-viewed-mark", "✓"));
       const pathTitle = file.oldPath
@@ -943,6 +957,10 @@ const appStyles = `
 .hh-collapsed-hint { flex: 1 1 0; }
 .hh-file-viewed { color: var(--fgColor-muted, GrayText); }
 .hh-viewed-mark { margin-left: auto; color: var(--fgColor-muted, GrayText); }
+.hh-file-stats { margin-left: auto; flex: none; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.hh-file-stats + .hh-viewed-mark { margin-left: 0; }
+.hh-stat-added { color: var(--fgColor-success, #1a7f37); }
+.hh-stat-removed { color: var(--fgColor-danger, #d1242f); }
 .hh-file-row.selected { background: var(--bgColor-accent-muted, rgb(84 174 255 / 0.15)); }
 .hh-collapsed-hint { color: var(--fgColor-muted, GrayText); font-size: 12px; }
 .hh-sets button:hover { background: var(--bgColor-neutral-muted, rgb(175 184 193 / 0.2)); }
