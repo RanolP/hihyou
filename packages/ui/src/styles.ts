@@ -155,7 +155,12 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 :host .hh-col-num { width: calc(5ch + 16px); }
 :host .hh-col-code { width: auto; }
 /* With no scroll box to pan, every token may wrap inside the fixed code column. */
-:host .hh-code { white-space: pre-wrap; overflow-wrap: anywhere; }
+:host .hh-code {
+  padding-left: calc(4px + 2ch);
+  text-indent: -2ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 :host .hh-node th {
   top: calc(
     var(--hh-file-sticky-top) + var(--hh-file-header-height, 0px)
