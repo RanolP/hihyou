@@ -120,7 +120,7 @@ function commentAge(createdAt: string): {
     ["second", 1000],
   ] as const;
   const [unit, milliseconds] =
-    units.find(([, size]) => Math.abs(delta) >= size) ?? units.at(-1)!;
+    units.find(([, size]) => Math.abs(delta) >= size) ?? units[5];
   return {
     text: relativeTime.format(Math.round(delta / milliseconds), unit),
     title: created.toLocaleString(),

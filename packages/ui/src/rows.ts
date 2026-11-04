@@ -184,12 +184,10 @@ export function gapOf(file: DiffFile, index: number): Gap | undefined {
   const sourceCount =
     count === undefined
       ? undefined
-      : firstSourceLine !== undefined && nextSourceLine !== undefined
+      : firstSourceLine && nextSourceLine
         ? Math.max(0, nextSourceLine - firstSourceLine)
         : count;
-  const funcnames = (
-    f as typeof f & { funcnames?: { line: number; text: string }[] }
-  ).funcnames;
+  const funcnames = f.funcnames;
   const last =
     count === undefined ? undefined : f.lines.after + top + count - 1;
   const scope =
