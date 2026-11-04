@@ -16,9 +16,10 @@ export function ViewedToggle(props: {
       class="hh-button hh-viewed-toggle"
       aria-pressed={props.on()}
       aria-label={`Viewed ${props.what}`}
+      title="Mark this file as viewed"
       on:click={() => props.set(!props.on())}
     >
-      {props.on() ? "✓ Viewed" : "Viewed"}
+      <span aria-hidden="true">{props.on() ? "☑" : "☐"}</span> Viewed
     </button>
   );
 }
