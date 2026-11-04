@@ -211,13 +211,18 @@ export function sourceLines(v: Version, original: string): number[] {
     const currentOriginal = out[display] as number;
     if (currentOriginal === 0) continue;
     if (previousDisplay !== -1) {
-      let blank = nextBlank[previousOriginal + 1] as number;
-      for (let line = previousDisplay + 1; line < display; line++) {
-        if (blank === 0 || blank >= currentOriginal) break;
-        if (v.text.slice(v.lineStarts[line], lineEnd(v, line)).trim() !== "")
-          continue;
-        out[line] = blank;
-        blank = nextBlank[blank + 1] as number;
+      if (currentOriginal - previousOriginal === display - previousDisplay) {
+        for (let line = previousDisplay + 1; line < display; line++)
+          out[line] = previousOriginal + line - previousDisplay;
+      } else {
+        let blank = nextBlank[previousOriginal + 1] as number;
+        for (let line = previousDisplay + 1; line < display; line++) {
+          if (blank === 0 || blank >= currentOriginal) break;
+          if (v.text.slice(v.lineStarts[line], lineEnd(v, line)).trim() !== "")
+            continue;
+          out[line] = blank;
+          blank = nextBlank[blank + 1] as number;
+        }
       }
     }
     previousDisplay = display;
