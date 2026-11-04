@@ -156,7 +156,7 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 :host .hh-col-code { width: auto; }
 /* With no scroll box to pan, every token may wrap inside the fixed code column. */
 :host .hh-code {
-  padding-left: calc(4px + 2ch);
+  padding-left: calc(10px + 2ch);
   text-indent: -2ch;
   white-space: pre-wrap;
   overflow-wrap: anywhere;

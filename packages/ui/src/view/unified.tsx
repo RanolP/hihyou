@@ -211,6 +211,7 @@ export function unifiedRow(
               spans={cell.spans}
               side={side}
               wholeLine={side}
+              allowTrailingTerminator
               place={ctx.placer.lineCursor(index, row.fragment, side, cell.line)}
             />
           </td>
