@@ -394,7 +394,10 @@ export async function diffFiles(
       };
     }
     const edits = scripts[i] ?? [];
-    for (const e of withoutNodes(edits, p.b.tree, extracted[i])) {
+    for (const e of pairCommentEdits(
+      withoutNodes(edits, p.b.tree, extracted[i]),
+      p.mapping,
+    )) {
       const placed = { edit: e, from: i, to: i };
       record(
         placed,
@@ -573,6 +576,48 @@ function record(
     s.changed.push(r);
     s.emphasis.push(r);
   };
+  const markCommentUpdate = (
+    before: SideInput | undefined,
+    after: SideInput | undefined,
+    oldNode: number | undefined,
+    newNode: number | undefined,
+  ): boolean => {
+    const oldTree = before?.v.tree;
+    const newTree = after?.v.tree;
+    if (
+      !before ||
+      !after ||
+      !oldTree ||
+      !newTree ||
+      oldNode === undefined ||
+      newNode === undefined ||
+      oldTree.count(oldNode) !== 0 ||
+      newTree.count(newNode) !== 0 ||
+      !oldTree.kindName(oldNode).includes("comment") ||
+      !newTree.kindName(newNode).includes("comment")
+    )
+      return false;
+    const oldRange = range(before, oldNode);
+    const newRange = range(after, newNode);
+    const oldText = before.v.text.slice(oldRange.start, oldRange.end);
+    const newText = after.v.text.slice(newRange.start, newRange.end);
+    if (oldText.includes("\n") || newText.includes("\n")) return false;
+    before.changed.push(oldRange);
+    after.changed.push(newRange);
+    for (const edit of tokenDiff(oldText, newText)) {
+      if ("old" in edit)
+        before.emphasis.push({
+          start: oldRange.start + edit.old.start,
+          end: oldRange.start + edit.old.end,
+        });
+      if ("new" in edit)
+        after.emphasis.push({
+          start: newRange.start + edit.new.start,
+          end: newRange.start + edit.new.end,
+        });
+    }
+    return true;
+  };
   const markMultilineUpdate = (
     before: SideInput | undefined,
     after: SideInput | undefined,
@@ -660,7 +705,10 @@ function record(
       leaves(a, e.a, "before");
       return;
     case "update":
-      if (!markMultilineUpdate(a, b, e.a, e.b)) {
+      if (
+        !markCommentUpdate(a, b, e.a, e.b) &&
+        !markMultilineUpdate(a, b, e.a, e.b)
+      ) {
         mark(a, e.a);
         mark(b, e.b);
       }
@@ -862,6 +910,54 @@ function withoutNodes(
   return edits.flatMap((e) =>
     e.kind === "insert" && e.b !== undefined ? split(e.b) : [e],
   );
+}
+
+function pairCommentEdits(edits: RawEdit[], mapping: Mapping): RawEdit[] {
+  const { a, b, src } = mapping;
+  const ta = a.tree;
+  const tb = b.tree;
+  const childIndex = (tree: Tree, parent: number, child: number) => {
+    for (let i = 0, count = tree.count(parent); i < count; i++)
+      if (tree.child(parent, i) === child) return i;
+    return -1;
+  };
+  const comment = (tree: Tree, n: number | undefined) =>
+    n !== undefined &&
+    tree.count(n) === 0 &&
+    tree.kindName(n).includes("comment") &&
+    !tree.text(n).includes("\n");
+  const inserts = edits.filter(
+    (e): e is RawEdit & { kind: "insert"; b: number } =>
+      e.kind === "insert" && comment(tb, e.b),
+  );
+  const paired = new Set<RawEdit>();
+  return edits.flatMap((e): RawEdit[] => {
+    if (paired.has(e)) return [];
+    if (e.kind !== "delete" || !comment(ta, e.a) || e.a === undefined)
+      return [e];
+    const oldParent = ta.parent(e.a);
+    const oldIndex = childIndex(ta, oldParent, e.a);
+    const insert = inserts.find((candidate) => {
+      if (paired.has(candidate)) return false;
+      const newParent = tb.parent(candidate.b);
+      return (
+        src[a.index(oldParent)] === b.index(newParent) &&
+        oldIndex === childIndex(tb, newParent, candidate.b)
+      );
+    });
+    if (!insert) return [e];
+    paired.add(insert);
+    return [
+      {
+        kind: "update",
+        old: e.old,
+        new: insert.new,
+        ...(e.node !== undefined && { node: e.node }),
+        a: e.a,
+        b: insert.b,
+      },
+    ];
+  });
 }
 
 const statusOf = (ref: ChangedFileRef): FileDiff["status"] =>
