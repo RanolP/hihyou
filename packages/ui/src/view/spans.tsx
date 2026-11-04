@@ -6,12 +6,22 @@ import { type DrawContext, useDraw } from "./context.js";
 
 export type Place = (span: MergedSpan) => Point | readonly Point[] | undefined;
 
-const whollyChanged = (spans: readonly MergedSpan[], side: SideName) =>
-  spans.every(
-    (span) =>
+const whollyChanged = (
+  spans: readonly MergedSpan[],
+  side: SideName,
+  allowTrailingTerminator: boolean,
+) => {
+  const last = spans.findLastIndex((span) => span.text.trim() !== "");
+  return spans.every(
+    (span, index) =>
       span.text.trim() === "" ||
-      (span.changed && (span.side ?? side) === side),
+      (span.changed && (span.side ?? side) === side) ||
+      (allowTrailingTerminator &&
+        index === last &&
+        /^[;,]$/.test(span.text.trim()) &&
+        !span.changed),
   );
+};
 
 /**
  * Syntax colour inside, diff emphasis (a background) around it, so both show. The text is one Text node the
@@ -54,12 +64,16 @@ export function SpanNodes(props: {
   spans: readonly MergedSpan[];
   side: SideName;
   wholeLine?: SideName | undefined;
+  allowTrailingTerminator?: boolean | undefined;
   place?: Place | undefined;
 }): JSX.Element {
   const ctx = useDraw();
   // Read once: a prop given as a call is a getter, and a fresh line cursor per span would place every span at 0.
-  const { spans, side, place, wholeLine } = props;
-  const emphasize = wholeLine === undefined || !whollyChanged(spans, wholeLine);
+  const { spans, side, place, wholeLine, allowTrailingTerminator = false } =
+    props;
+  const emphasize =
+    wholeLine === undefined ||
+    !whollyChanged(spans, wholeLine, allowTrailingTerminator);
   const out: JSX.Element[] = [];
   let run: { side: SideName; nodes: JSX.Element[] } | undefined;
   const flush = () => {

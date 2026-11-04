@@ -76,6 +76,10 @@ function mergedCode(
             ? "after"
             : undefined
       }
+      allowTrailingTerminator={
+        // A grammar may keep a member's `;` or `,` outside its node, so an added member ends on an unchanged one.
+        row.after === undefined || row.before === undefined
+      }
       place={(span) => {
         if (wholeAt) {
           if (span.changed)
