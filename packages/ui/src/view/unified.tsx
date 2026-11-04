@@ -69,6 +69,13 @@ function mergedCode(
     <SpanNodes
       spans={spans}
       side="after"
+      wholeLine={
+        row.after === undefined
+          ? "before"
+          : row.before === undefined
+            ? "after"
+            : undefined
+      }
       place={(span) => {
         if (wholeAt) {
           if (span.changed)
@@ -199,6 +206,7 @@ export function unifiedRow(
             <SpanNodes
               spans={cell.spans}
               side={side}
+              wholeLine={side}
               place={ctx.placer.lineCursor(index, row.fragment, side, cell.line)}
             />
           </td>

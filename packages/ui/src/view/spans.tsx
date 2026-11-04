@@ -6,6 +6,13 @@ import { type DrawContext, useDraw } from "./context.js";
 
 export type Place = (span: MergedSpan) => Point | readonly Point[] | undefined;
 
+const whollyChanged = (spans: readonly MergedSpan[], side: SideName) =>
+  spans.every(
+    (span) =>
+      span.text.trim() === "" ||
+      (span.changed && (span.side ?? side) === side),
+  );
+
 /**
  * Syntax colour inside, diff emphasis (a background) around it, so both show. The text is one Text node the
  * placer records, so the highlight painter and a click find it.
@@ -46,11 +53,13 @@ const spanNode = (
 export function SpanNodes(props: {
   spans: readonly MergedSpan[];
   side: SideName;
+  wholeLine?: SideName | undefined;
   place?: Place | undefined;
 }): JSX.Element {
   const ctx = useDraw();
   // Read once: a prop given as a call is a getter, and a fresh line cursor per span would place every span at 0.
-  const { spans, side, place } = props;
+  const { spans, side, place, wholeLine } = props;
+  const emphasize = wholeLine === undefined || !whollyChanged(spans, wholeLine);
   const out: JSX.Element[] = [];
   let run: { side: SideName; nodes: JSX.Element[] } | undefined;
   const flush = () => {
@@ -67,7 +76,7 @@ export function SpanNodes(props: {
   };
   for (const span of spans) {
     const node = spanNode(ctx, span, place?.(span));
-    if (!span.changed) {
+    if (!span.changed || !emphasize) {
       flush();
       out.push(node);
       continue;
