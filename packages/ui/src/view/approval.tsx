@@ -29,7 +29,7 @@ export function ApprovalBadge(props: {
 }): JSX.Element {
   const score = () => {
     const heaviest = props.approval().heaviest;
-    return heaviest === null ? "unscored" : scoreText(heaviest);
+    return `Score ${heaviest === null ? "none" : scoreText(heaviest)}`;
   };
   return (
     <output
@@ -43,7 +43,7 @@ export function ApprovalBadge(props: {
       <span title={scoreTitle}>{score()}</span>{" "}
       ·{" "}
       <span title={readTitle}>
-        {props.approval().read}/{props.approval().edits} edits read
+        {props.approval().read}/{props.approval().edits} syntax edits read
       </span>
     </output>
   );
