@@ -48,7 +48,8 @@ export function approvalOf(
   index.atoms.forEach((atom, a) => {
     if (covered.has(a) || !isViewed(atom.id)) return;
     read++;
-    if (heaviest === null || heaviest > 1) heaviest = 1;
+    if (!atom.id.startsWith("row:") && (heaviest === null || heaviest > 1))
+      heaviest = 1;
   });
   const edits = index.atoms.length;
   const state =

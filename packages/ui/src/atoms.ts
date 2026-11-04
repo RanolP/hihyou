@@ -164,6 +164,7 @@ export function atomIndex(files: readonly DiffFile[]): AtomIndex {
       const [before, after] = sideNames.map(tree) as [SideTree, SideTree];
       for (const side of sideNames) {
         const t = side === "before" ? before : after;
+        const lines = splitLines(frag[side].spans);
         t.lines.forEach((text, line) => {
           const owned = t.nodes.some(
             (n) =>
@@ -171,7 +172,11 @@ export function atomIndex(files: readonly DiffFile[]): AtomIndex {
               n.start.line <= line &&
               (n.end.line > line || (n.end.line === line && n.end.column > 0)),
           );
-          if (owned) return;
+          if (
+            owned ||
+            !lines[line]?.some((span) => span.changed && span.text.trim() !== "")
+          )
+            return;
           const a = atom(
             `row:${atomKey({
               path: file.path,
