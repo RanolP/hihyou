@@ -225,7 +225,43 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
         url,
       ),
     );
-    return { id: webDiffsetIdOf(data), changes };
+    return { id: webDiffsetIdOf(data), changes: mergeTypeChanges(changes) };
+  };
+
+  // Git writes a type change (a symlink become a file) as a deletion and an addition of one path; GitHub
+  // lists it as one file, so the pair becomes one change whose sides keep their own recipes.
+  const mergeTypeChanges = (changes: ChangedFileRef[]): ChangedFileRef[] => {
+    const added = new Map(
+      changes
+        .filter((change) => change.before === null)
+        .map((change) => [change.path, change]),
+    );
+    const merged = new Set<ChangedFileRef>();
+    const out: ChangedFileRef[] = [];
+    for (const change of changes) {
+      if (merged.has(change)) continue;
+      const pair =
+        change.after === null && change.oldPath === undefined
+          ? added.get(change.path)
+          : undefined;
+      if (!pair) {
+        out.push(change);
+        continue;
+      }
+      merged.add(pair);
+      const kind = change.kind ?? pair.kind;
+      out.push({
+        path: change.path,
+        before: change.before,
+        after: pair.after,
+        stats: {
+          added: (change.stats?.added ?? 0) + (pair.stats?.added ?? 0),
+          removed: (change.stats?.removed ?? 0) + (pair.stats?.removed ?? 0),
+        },
+        ...(kind && { kind }),
+      });
+    }
+    return out;
   };
 
   const rawUrl = (repoBase: string, commit: string, path: string) =>
