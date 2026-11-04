@@ -14,7 +14,7 @@ Run these commands from the extracted archive root:
 mise trust
 mise install
 pnpm install --frozen-lockfile
-pnpm run build -- packages/browser
+pnpm exec tsc -b packages/browser
 pnpm --filter @hihyou/browser zip:firefox
 ```
 
