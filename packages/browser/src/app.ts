@@ -299,6 +299,32 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   previous.addEventListener("click", () => step(-1));
   next.addEventListener("click", () => step(1));
 
+  const advanceAfterViewedClick = (event: MouseEvent) => {
+    if (allFiles || !view) return;
+    const button = event
+      .composedPath()
+      .find(
+        (element): element is HTMLElement =>
+          element instanceof HTMLElement &&
+          element.matches(".hh-file-header .hh-viewed-toggle"),
+      );
+    const path = button
+      ?.closest<HTMLElement>(".hh-file")
+      ?.dataset["path"];
+    if (path === undefined || !view.fileViewed(path)) return;
+    const ordered = filesInTreeOrder(files);
+    const index = ordered.findIndex((file) => file.path === path);
+    if (index < 0) return;
+    const target = ordered
+      .slice(index + 1)
+      .find((file) => view?.fileViewed(file.path) !== true);
+    if (!target) return;
+    currentPath = target.path;
+    view.show(target.path);
+    updateNav();
+  };
+  root.addEventListener("click", advanceAfterViewedClick);
+
   const trackCurrentFile = () => {
     if (!allFiles) return;
     const headers = [...root.querySelectorAll<HTMLElement>(".hh-file-header")];
@@ -699,6 +725,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       window.removeEventListener("resize", scheduleViewportUpdate);
       dark.removeEventListener("change", applyTheme);
       document.removeEventListener("keydown", onKeydown);
+      root.removeEventListener("click", advanceAfterViewedClick);
       unsubscribeViewed();
       persistedViewed.dispose();
       view?.dispose();
@@ -735,7 +762,7 @@ const appStyles = `
   --vscode-textLink-foreground: var(--fgColor-accent);
 }
 .hh-app { display: grid; grid-template-columns: minmax(200px, 300px) minmax(0, 1fr); align-items: start; gap: 16px; min-height: 400px; color: var(--fgColor-default, CanvasText); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
-.hh-sets { position: sticky; top: var(--hh-page-sticky-top); max-height: calc(100vh - var(--hh-page-sticky-top)); overflow: auto; border: 1px solid var(--borderColor-default, #d0d7de); border-radius: 6px; padding: 4px 0; }
+.hh-sets { position: sticky; top: var(--hh-page-sticky-top); align-self: start; box-sizing: border-box; max-height: calc(100dvh - var(--hh-page-sticky-top)); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; border: 1px solid var(--borderColor-default, #d0d7de); border-radius: 6px; padding: 4px 0; }
 .hh-filter { box-sizing: border-box; width: calc(100% - 16px); margin: 8px; border: 1px solid var(--borderColor-default, #d0d7de); border-radius: 6px; padding: 5px 8px; background: var(--bgColor-default, Canvas); color: inherit; font: inherit; }
 .hh-viewed-count { padding: 0 12px 4px; color: var(--fgColor-muted, GrayText); font-size: 12px; }
 .hh-sets ul { list-style: none; margin: 0; padding: 0; }
