@@ -1,5 +1,9 @@
 import { type ChangedFileRef, createEngine, type Theme } from "@hihyou/engine";
-import { type GitHubWebDiffsetId, githubWebHost } from "@hihyou/github";
+import {
+  type GitHubWebDiffsetId,
+  githubWebHost,
+  webDiffsetIdOf,
+} from "@hihyou/github";
 import {
   collapseElided,
   type DiffFile,
@@ -68,6 +72,29 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   let view: DiffsetView | undefined;
   let generation = 0;
   let disposed = false;
+  let mounting = true;
+
+  const hashPrefix = "#hihyou=";
+  const selectionFromHash = () => {
+    if (!location.hash.startsWith(hashPrefix)) return;
+    const value = location.hash.slice(hashPrefix.length);
+    const separator = value.indexOf(":");
+    if (separator < 0) return;
+    try {
+      return {
+        id: decodeURIComponent(value.slice(0, separator)),
+        path: decodeURIComponent(value.slice(separator + 1)),
+      };
+    } catch {
+      return;
+    }
+  };
+  const replaceSelectionHash = (row: Row, path: string) => {
+    if (mounting && location.hash && !location.hash.startsWith(hashPrefix))
+      return;
+    const hash = `${hashPrefix}${encodeURIComponent(webDiffsetIdOf(row.id))}:${encodeURIComponent(path)}`;
+    history.replaceState(history.state, "", hash);
+  };
 
   // Theme: GitHub's own `data-color-mode`, with `auto` following the system as GitHub does.
   const dark = matchMedia("(prefers-color-scheme: dark)");
@@ -99,6 +126,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     previous.disabled = i <= 0;
     next.disabled = i < 0 || i >= ordered.length - 1;
     position.textContent = i < 0 ? "" : `${i + 1} / ${ordered.length}`;
+    if (selected) replaceSelectionHash(selected, i < 0 ? "" : ordered[i]!.path);
     drawTree();
   };
   const step = (delta: 1 | -1) => {
@@ -136,7 +164,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   };
 
   /** Draws `row`'s diff, then `path` if given. */
-  const open = async (row: Row, path?: string) => {
+  const open = async (row: Row, path?: string): Promise<boolean> => {
     const at = ++generation;
     if (selected !== row) {
       selected = row;
@@ -153,7 +181,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     const current = review as NonNullable<typeof review>;
     try {
       const loaded = await current.load();
-      if (at !== generation || disposed) return;
+      if (at !== generation || disposed) return false;
       files = loaded;
       status.textContent =
         files.length === 0
@@ -171,11 +199,15 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
           onShow: () => updateNav(),
           theme,
         });
-      if (path !== undefined) view.show(path);
+      const hasPath =
+        path === undefined || files.some((file) => file.path === path);
+      if (path !== undefined && hasPath) view.show(path);
       updateNav();
+      return hasPath;
     } catch (error) {
       if (at === generation && !disposed)
         fail(`could not load ${row.label}`, error);
+      return false;
     }
   };
 
@@ -304,12 +336,26 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
         return;
       }
       setsStatus.remove();
-      void expand(newest);
-      await open(newest);
+      const saved = selectionFromHash();
+      const savedRow = saved
+        ? rows.find((row) => webDiffsetIdOf(row.id) === saved.id)
+        : undefined;
+      const initial = savedRow ?? newest;
+      void expand(initial);
+      const restored = await open(
+        initial,
+        savedRow && saved?.path ? saved.path : undefined,
+      );
+      if (savedRow && !restored) {
+        void expand(newest);
+        await open(newest);
+      }
     } catch (error) {
       if (disposed) return;
       setsStatus.textContent = "Could not list the commits.";
       fail(`could not load pull request #${page.pull}`, error);
+    } finally {
+      mounting = false;
     }
   })();
 
