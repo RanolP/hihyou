@@ -3,6 +3,7 @@ import type {
   CodeFragment,
   FileDiff,
   LinePair,
+  Side,
   SideMove,
   Span,
 } from "@hihyou/engine";
@@ -127,6 +128,36 @@ export function splitLines(spans: readonly Span[]): Span[][] {
 }
 
 export const lineCount = (f: Unchanged) => splitLines(f.spans).length;
+
+interface MovedRun {
+  first: number;
+  last: number;
+  move: SideMove;
+}
+
+/** A move's visible runs, excluding lines made entirely from an insert or delete inside it. */
+function movedRuns(side: Side, lines: readonly Span[][]): MovedRun[] {
+  const out: MovedRun[] = [];
+  const whollyChanged = (spans: readonly Span[]) => {
+    const content = spans.filter((span) => span.text.trim() !== "");
+    return content.length > 0 && content.every((span) => span.changed);
+  };
+  for (const move of side.moves ?? []) {
+    let first: number | undefined;
+    const close = (last: number) => {
+      if (first === undefined) return;
+      out.push({ first, last, move });
+      first = undefined;
+    };
+    for (let line = move.first; line <= move.last; line++) {
+      const spans = lines[line - side.startLine];
+      if (spans && !whollyChanged(spans)) first ??= line;
+      else close(line - 1);
+    }
+    close(move.last);
+  }
+  return out;
+}
 
 /** The part of the `elided` fragment at `index` that `file.revealed` has not shown yet. */
 export function gapOf(file: DiffFile, index: number): Gap | undefined {
@@ -262,6 +293,10 @@ export function buildSections(file: DiffFile): Section[] {
       case "diff": {
         const before = splitLines(f.before.spans);
         const after = splitLines(f.after.spans);
+        const moves = {
+          before: movedRuns(f.before, before),
+          after: movedRuns(f.after, after),
+        };
         for (let i = 0; i < Math.max(before.length, after.length); i++) {
           const b = before[i];
           const a = after[i];
@@ -270,10 +305,12 @@ export function buildSections(file: DiffFile): Section[] {
           for (const side of ["before", "after"] as const) {
             if (!(side === "before" ? b : a)) continue;
             const line = f[side].startLine + i;
-            const m = f[side].moves?.find((m) => m.first <= line && line <= m.last);
-            if (!m) continue;
-            if (m.first === line) move[side] = m;
-            moved[side] = { last: line === m.last };
+            const run = moves[side].find(
+              (candidate) => candidate.first <= line && line <= candidate.last,
+            );
+            if (!run) continue;
+            if (run.first === line) move[side] = run.move;
+            moved[side] = { last: line === run.last };
           }
           rows().push({
             kind: "diff",
