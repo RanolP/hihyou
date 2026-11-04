@@ -344,12 +344,14 @@ export function modalKey(
     case "?":
       return done(s, [{ kind: "help" }]);
     case "Escape": {
-      // Escape first drops a narrowing back to the whole node, then leaves.
+      // Escape first drops a narrowing back to the whole node, then leaves, letting go of the node too, so the
+      // review toolbar a click on code opened closes with it.
       if (s.chars) {
         const { chars: _, ...whole } = s;
         return done(whole);
       }
-      return done(s, [{ kind: "leave" }]);
+      const { selection: _, ...none } = s;
+      return done(none, [{ kind: "leave" }]);
     }
     case "v": {
       const p = s.selection;
