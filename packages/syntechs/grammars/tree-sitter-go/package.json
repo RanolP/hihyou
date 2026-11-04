@@ -1,0 +1,20 @@
+{
+  "name": "tree-sitter-go",
+  "version": "0.25.0",
+  "private": true,
+  "scripts": {
+    "postinstall": "node ../build.mjs"
+  },
+  "grammar": {
+    "sources": [
+      {
+        "repo": "tree-sitter/tree-sitter-go",
+        "commit": "1547678a9da59885853f5f5cc8a99cc203fa2e2c",
+        "files": {
+          "grammar.js": "53e114833c6769d8a86b9e2dfab8bb68b0aaf185e7008a5c572bfa21b77aff1b",
+          "queries/highlights.scm": "81182c986547eba7fa6316e82dfd621fb13b8fc89efac85432aee51a48ed0896"
+        }
+      }
+    ]
+  }
+}

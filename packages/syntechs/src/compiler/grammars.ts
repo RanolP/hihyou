@@ -21,6 +21,7 @@ export const GRAMMARS: Record<string, { src: string; comments: string[] }> = {
     comments: ["comment", "html_comment"],
   },
   python: { src: "tree-sitter-python/src", comments: ["comment"] },
+  go: { src: "tree-sitter-go/src", comments: ["comment"] },
   kotlin: {
     src: "tree-sitter-kotlin/src",
     comments: ["line_comment", "multiline_comment"],

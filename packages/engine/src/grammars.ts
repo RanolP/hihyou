@@ -15,6 +15,7 @@ export type LanguageId =
   | "json"
   | "python"
   | "css"
+  | "go"
   | "kotlin"
   | "html"
   | "swift"
@@ -30,6 +31,7 @@ const extensions: Record<LanguageId, readonly string[]> = {
   json: [".json"],
   python: [".py", ".pyi"],
   css: [".css"],
+  go: [".go"],
   kotlin: [".kt", ".kts"],
   html: [".html", ".htm"],
   swift: [".swift"],
@@ -58,6 +60,7 @@ const parsers: Record<
   json: () => import("syntechs/grammars/json"),
   python: () => import("syntechs/grammars/python"),
   css: () => import("syntechs/grammars/css"),
+  go: () => import("syntechs/grammars/go"),
   kotlin: () => import("syntechs/grammars/kotlin"),
   html: () => import("syntechs/grammars/html"),
   swift: () => import("syntechs/grammars/swift"),
@@ -77,6 +80,7 @@ const highlighters: Partial<
   json: () => import("syntechs/grammars/json/highlight"),
   python: () => import("syntechs/grammars/python/highlight"),
   css: () => import("syntechs/grammars/css/highlight"),
+  go: () => import("syntechs/grammars/go/highlight"),
   kotlin: () => import("syntechs/grammars/kotlin/highlight"),
   html: () => import("syntechs/grammars/html/highlight"),
   swift: () => import("syntechs/grammars/swift/highlight"),
@@ -113,6 +117,7 @@ const declarations: Partial<Record<LanguageId, readonly string[]>> = {
     "lexical_declaration",
     "variable_declaration",
   ],
+  go: ["function_declaration", "method_declaration", "type_spec"],
   kotlin: [
     "function_declaration",
     "class_declaration",

@@ -141,6 +141,15 @@ const KOTLIN_MODIFIERS = [
   "in", "out",
 ];
 
+const GO: Record<string, Rule> = {
+  ...shared("go"),
+  escape: "constant.character.escape.go",
+  comment: {
+    scope: "comment.block.go",
+    byPrefix: [["//", "comment.line.double-slash.go"]],
+  },
+};
+
 const KOTLIN: Record<string, Rule> = {
   ...shared("kotlin"),
   property: "",
@@ -552,6 +561,11 @@ export const LANGUAGES: Record<string, LanguageRules> = {
     injections: "node_modules/tree-sitter-javascript/queries/injections.scm",
     injectionMatch: JS_INJECTIONS,
     captures: JS,
+  },
+  go: {
+    grammar: "tree-sitter-go",
+    queries: ["queries/highlights.scm"],
+    captures: GO,
   },
   kotlin: {
     grammar: "tree-sitter-kotlin",
