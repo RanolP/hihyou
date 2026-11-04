@@ -289,8 +289,19 @@ function mount(
       (file.collapsed !== undefined || fileViewed(i, file)) &&
       !opened.has(file.path),
     open(path) {
+      const headerTop = fileSection(path)
+        ?.querySelector<HTMLElement>(".hh-file-header")
+        ?.getBoundingClientRect().top;
       opened.add(path);
       redraw();
+      if (headerTop !== undefined)
+        win?.requestAnimationFrame(() => {
+          const newTop = fileSection(path)
+            ?.querySelector<HTMLElement>(".hh-file-header")
+            ?.getBoundingClientRect().top;
+          if (newTop !== undefined && newTop !== headerTop)
+            win.scrollBy(0, newTop - headerTop);
+        });
     },
     fileViewed,
     setFileViewed(i, file, on) {
