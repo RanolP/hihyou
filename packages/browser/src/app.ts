@@ -45,9 +45,9 @@ const viewModeStorageKey = "hihyou:view-mode";
 
 const storedAllFiles = () => {
   try {
-    return localStorage.getItem(viewModeStorageKey) === "all";
+    return localStorage.getItem(viewModeStorageKey) !== "one";
   } catch {
-    return false;
+    return true;
   }
 };
 
@@ -120,6 +120,9 @@ function persistentViewedStore(key: string): {
 }
 
 function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
+  const previousScrollbarGutter =
+    document.documentElement.style.scrollbarGutter;
+  document.documentElement.style.scrollbarGutter = "stable";
   const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
   shadow.innerHTML = `
 <style>${diffStyles}${appStyles}</style>
@@ -299,9 +302,11 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   const trackCurrentFile = () => {
     if (!allFiles) return;
     const headers = [...root.querySelectorAll<HTMLElement>(".hh-file-header")];
-    const first = headers[0];
-    if (!first) return;
-    const stickyTop = Number.parseFloat(getComputedStyle(first).top) || 0;
+    if (headers.length === 0) return;
+    const stickyTop =
+      root
+        .querySelector<HTMLElement>(".hh-diff > .hh-bar")
+        ?.getBoundingClientRect().bottom ?? appBar.getBoundingClientRect().bottom;
     const atTop = headers.findLast((header) => {
       const section = header.closest<HTMLElement>(".hh-file");
       return (
@@ -333,15 +338,16 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   fileObserver.observe(root, { childList: true, subtree: true });
 
   viewMode.addEventListener("click", () => {
+    const path = currentPath;
     allFiles = !allFiles;
     storeAllFiles(allFiles);
     drawViewMode();
+    if (!allFiles && path !== undefined) view?.show(path);
     view?.setSingle(!allFiles);
-    const path = currentPath;
-    if (path !== undefined)
+    if (allFiles && path !== undefined)
       requestAnimationFrame(() => {
         view?.show(path);
-        if (allFiles) scheduleViewportUpdate();
+        scheduleViewportUpdate();
       });
     updateNav();
   });
@@ -462,8 +468,11 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
         });
       const hasPath =
         path === undefined || files.some((file) => file.path === path);
-      const shownPath = path ?? filesInTreeOrder(files)[0]?.path;
-      if (shownPath !== undefined && hasPath) {
+      const shownPath =
+        path !== undefined && hasPath
+          ? path
+          : filesInTreeOrder(files)[0]?.path;
+      if (shownPath !== undefined) {
         currentPath = shownPath;
         view.show(shownPath);
       }
@@ -512,7 +521,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
         if (row.tooltip) label.title = row.tooltip;
         label.addEventListener("click", () => {
           if (!row.expanded) void expand(row);
-          void open(row);
+          void open(row, currentPath);
         });
         head.append(twisty, label);
         if (row.description)
@@ -678,6 +687,8 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   return {
     dispose() {
       disposed = true;
+      document.documentElement.style.scrollbarGutter =
+        previousScrollbarGutter;
       appBarObserver.disconnect();
       host.style.removeProperty("--hh-app-bar-height");
       host.style.removeProperty("--hh-page-sticky-top");
@@ -750,9 +761,10 @@ const appStyles = `
 .hh-letter.D { color: var(--fgColor-danger, #cf222e); }
 .hh-letter.M, .hh-letter.R { color: var(--fgColor-attention, #9a6700); }
 .hh-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.hh-main > .hh-bar { position: sticky; top: var(--hh-page-sticky-top); z-index: 4; box-sizing: border-box; min-height: 37px; display: flex; align-items: center; gap: 12px; padding: 0 0 8px; background: var(--bgColor-default, Canvas); }
+.hh-main > .hh-bar { position: sticky; top: var(--hh-page-sticky-top); z-index: 4; box-sizing: border-box; min-height: 37px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 0 0 8px; background: var(--bgColor-default, Canvas); }
+.hh-main > .hh-bar > :not(.hh-title) { flex-shrink: 0; white-space: nowrap; }
 .hh-root .hh-bar { top: calc(var(--hh-page-sticky-top) + var(--hh-app-bar-height)); }
-.hh-title { margin: 0; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hh-title { flex: 1 1 auto; min-width: 0; margin: 0; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hh-meta { color: var(--fgColor-muted, GrayText); }
 .hh-meta.error { color: var(--fgColor-danger, #cf222e); white-space: pre-wrap; }
 .hh-nav { padding: 2px 8px; border: 1px solid var(--borderColor-default, #d0d7de); border-radius: 6px; background: var(--bgColor-muted, #f6f8fa); color: inherit; cursor: pointer; }
