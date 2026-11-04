@@ -610,6 +610,8 @@ function declarationLabel(tree: Tree, n: number): string | undefined {
     if (tree.named(c) && tree.fieldName(c) === "name") name = c;
   }
   if (name === undefined) return undefined;
+  // A destructuring pattern names bindings, not the declaration scope.
+  if (tree.kindName(name).endsWith("pattern")) return undefined;
   // "class Shop", "function f"; a method has no keyword and reads as its bare name. Modifiers ahead of the
   // keyword (Rust's `pub`, Kotlin's `private`) are skipped, so `pub fn f` still reads "fn f".
   let at = 0;
