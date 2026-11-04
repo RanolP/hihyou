@@ -409,6 +409,13 @@ export async function diffFiles(
         renamesOf(placed),
       );
     }
+    const fragments = buildFragments({
+      a: s.a,
+      b: s.b,
+      mapping: p.mapping,
+      indentMatters: indentIsSyntax(path),
+      ...(p.grammar.highlight && { highlight: p.grammar.highlight }),
+    });
     const reason = foldReason({
       path,
       text,
@@ -416,7 +423,10 @@ export async function diffFiles(
       changedLines: stats.added + stats.removed,
       onlyMoves:
         !s.touched && edits.length > 0 && edits.every((e) => e.kind === "move"),
-      noEdits: !s.touched && edits.length === 0 && p.texts[0] !== p.texts[1],
+      noEdits:
+        !s.touched &&
+        !fragments.some((f) => f.kind === "diff") &&
+        p.texts[0] !== p.texts[1],
     });
     return {
       ...head,
@@ -427,13 +437,7 @@ export async function diffFiles(
           after: sourceLines(p.b, p.texts[1]),
         },
       }),
-      fragments: buildFragments({
-        a: s.a,
-        b: s.b,
-        mapping: p.mapping,
-        indentMatters: indentIsSyntax(path),
-        ...(p.grammar.highlight && { highlight: p.grammar.highlight }),
-      }),
+      fragments,
       ...(reason && { collapsed: { reason } }),
     };
   });

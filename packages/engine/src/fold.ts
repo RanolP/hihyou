@@ -60,7 +60,7 @@ export interface FoldFacts {
   fallback?: "too-large" | "parse-error";
   /** Syntax diff only: every edit in the file is a move inside it. */
   onlyMoves?: boolean;
-  /** Syntax diff only: the file has no edit at all, though its text changed. */
+  /** Syntax diff only: the file has no changed row to show, though its text changed. */
   noEdits?: boolean;
   /** The file is gone: GitHub folds a deletion, whose every line is red, until asked. */
   deleted?: boolean;
