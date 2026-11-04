@@ -31,6 +31,8 @@ interface Row {
   description: string;
   tooltip?: string;
   id: GitHubWebDiffsetId;
+  /** Pull request whose current review threads apply to this diffset. */
+  reviewPull?: number;
   expanded: boolean;
   /** The row's files, once it was expanded or opened. */
   changes?: readonly ChangedFileRef[];
@@ -581,10 +583,10 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     try {
       const [loaded, reviewThreads] = await Promise.all([
         current.load(),
-        "pull" in row.id
+        row.reviewPull !== undefined
           ? // Threads come from the public REST API; a private repository (404) or an exhausted rate limit draws the review without them.
             host_
-              .resolveReviewThreads(row.id.owner, row.id.repo, row.id.pull)
+              .resolveReviewThreads(row.id.owner, row.id.repo, row.reviewPull)
               .catch((error: unknown) => {
                 console.warn("hihyou: review threads unavailable", error);
                 return [];
@@ -839,6 +841,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
         label: "All changes",
         description: `${pull.commits.length} ${pull.commits.length === 1 ? "commit" : "commits"}`,
         id: { owner, repo, pull: page.pull, head: pull.head },
+        reviewPull: page.pull,
         expanded: false,
       };
       rows = [
@@ -850,6 +853,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
           // The sidebar cuts a long subject short; the tooltip carries it whole.
           tooltip: `${c.subject}\n${c.author} · ${new Date(c.date).toLocaleString()}`,
           id: { owner, repo, commit: c.sha },
+          ...(c.sha === pull.head && { reviewPull: page.pull }),
           expanded: false,
         })),
       ];
