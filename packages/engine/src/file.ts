@@ -160,7 +160,7 @@ export function formattedVersion(
 
 /** Each display line's 1-based line in the original source, or zero for formatter-only lines. */
 export function sourceLines(v: Version, original: string): number[] {
-  const out = v.lineStarts.map(() => 0);
+  let out: number[] = v.lineStarts.map(() => 0);
   const tree = v.tree;
   if (!tree) return out;
   const o = plainVersion(original);
@@ -174,6 +174,29 @@ export function sourceLines(v: Version, original: string): number[] {
     for (let k = 0; k <= displayEnd - dl; k++)
       if (out[dl + k] === 0)
         out[dl + k] = Math.min(origStart + k, origEnd);
+  }
+  // A formatter without token anchors can still locate lines when it changed whitespace alone.
+  if (out.every((line) => line === 0)) {
+    const mapped: number[] = out.map(() => 0);
+    let source = 0;
+    let display = 0;
+    while (true) {
+      while (source < original.length && /\s/.test(original.charAt(source)))
+        source++;
+      while (display < v.text.length && /\s/.test(v.text.charAt(display)))
+        display++;
+      if (source === original.length || display === v.text.length) break;
+      if (original.charAt(source) !== v.text.charAt(display)) break;
+      const line = lineOf(v, display);
+      if (mapped[line] === 0) mapped[line] = lineOf(o, source) + 1;
+      source++;
+      display++;
+    }
+    while (source < original.length && /\s/.test(original.charAt(source)))
+      source++;
+    while (display < v.text.length && /\s/.test(v.text.charAt(display)))
+      display++;
+    if (source === original.length && display === v.text.length) out = mapped;
   }
   const nextBlank = new Int32Array(o.lineStarts.length + 2);
   let next = 0;
