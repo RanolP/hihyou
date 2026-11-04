@@ -1,6 +1,11 @@
 import type { JSX } from "solid-js";
 import type { Point } from "../modal.js";
-import type { MergedSpan, SideName, UnifiedRow } from "../rows.js";
+import {
+  type MergedSpan,
+  shownLine,
+  type SideName,
+  type UnifiedRow,
+} from "../rows.js";
 import { blockCells, type TableDraw } from "./block.js";
 import type { DrawContext } from "./context.js";
 import { ElidedRow } from "./elided.jsx";
@@ -75,13 +80,16 @@ export function unifiedRow(
     out.push(<ElidedRow path={ctx.files()[index]?.path ?? ""} gap={row} />);
     return;
   }
+  const file = ctx.files()[index];
+  const shown = (side: SideName, line: number | undefined) =>
+    line === undefined || !file ? line : shownLine(file, side, line);
   let tr: HTMLTableRowElement;
   switch (row.kind) {
     case "unchanged":
       tr = (
         <tr class="hh-line">
-          <Num line={row.before.line} />
-          <Num line={row.after.line} />
+          <Num line={shown("before", row.before.line)} />
+          <Num line={shown("after", row.after.line)} />
           <td class="hh-code">
             <span class="hh-sign" />
             <SpanNodes
@@ -100,8 +108,14 @@ export function unifiedRow(
       const code = mergedCode(ctx, index, row);
       tr = (
         <tr class="hh-line">
-          <Num line={row.before} kind={has("before") ? " hh-removed" : ""} />
-          <Num line={row.after} kind={has("after") ? " hh-added" : ""} />
+          <Num
+            line={shown("before", row.before)}
+            kind={has("before") ? " hh-removed" : ""}
+          />
+          <Num
+            line={shown("after", row.after)}
+            kind={has("after") ? " hh-added" : ""}
+          />
           <td class="hh-code">
             <span class="hh-sign">
               {row.after === undefined ? signs.before : ""}
@@ -150,9 +164,9 @@ export function unifiedRow(
           data-before={line("before")}
           data-after={line("after")}
         >
-          <Num line={line("before")} kind={edge} />
+          <Num line={shown("before", line("before"))} kind={edge} />
           <Num
-            line={line("after")}
+            line={shown("after", line("after"))}
             kind={moved ? ` hh-moved-inner${last}` : ""}
           />
           <td class={`hh-code${moved ? ` hh-moved${last}` : ""}`}>

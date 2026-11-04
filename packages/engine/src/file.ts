@@ -157,3 +157,23 @@ export function formattedVersion(
     end: (n) => ends[tree.ord(n)] as number,
   };
 }
+
+/** Each display line's 1-based line in the original source, or zero for formatter-only lines. */
+export function sourceLines(v: Version, original: string): number[] {
+  const out = v.lineStarts.map(() => 0);
+  const tree = v.tree;
+  if (!tree) return out;
+  const o = plainVersion(original);
+  for (let ord = 0; ord < tree.nodeCount; ord++) {
+    const n = tree.at(ord);
+    if (tree.count(n) !== 0 || v.end(n) === v.start(n)) continue;
+    const dl = lineOf(v, v.start(n));
+    const displayEnd = lineOf(v, v.end(n) - 1);
+    const origStart = lineOf(o, tree.start(n)) + 1;
+    const origEnd = lineOf(o, tree.end(n) - 1) + 1;
+    for (let k = 0; k <= displayEnd - dl; k++)
+      if (out[dl + k] === 0)
+        out[dl + k] = Math.min(origStart + k, origEnd);
+  }
+  return out;
+}

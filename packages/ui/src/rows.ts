@@ -521,3 +521,14 @@ export function lineCounts(file: FileDiff): { removed: number; added: number } {
   }
   return { removed, added };
 }
+
+export function shownLine(
+  file: FileDiff,
+  side: "before" | "after",
+  line: number,
+): number | undefined {
+  const table = file.sourceLines?.[side];
+  if (!table) return line;
+  const shown = table[line - 1] || undefined;
+  return shown !== undefined && table[line - 2] === shown ? undefined : shown;
+}

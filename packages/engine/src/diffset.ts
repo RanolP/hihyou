@@ -24,6 +24,7 @@ import {
   parseBlob,
   plainVersion,
   readBlob,
+  sourceLines,
   type Version,
 } from "./file.js";
 import { foldReason } from "./fold.js";
@@ -391,6 +392,12 @@ export async function diffFiles(
     return {
       ...head,
       grammar: p.grammar.id,
+      ...((p.a.text !== p.texts[0] || p.b.text !== p.texts[1]) && {
+        sourceLines: {
+          before: sourceLines(p.a, p.texts[0]),
+          after: sourceLines(p.b, p.texts[1]),
+        },
+      }),
       fragments: buildFragments({
         a: s.a,
         b: s.b,
