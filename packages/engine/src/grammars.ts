@@ -157,9 +157,12 @@ function inferJavascriptOptions(tree: Tree) {
   const source = tree.text(tree.root);
   let semicolonLines = 0;
   let semicolonlessLines = 0;
-  let longestLine = 0;
-  for (const line of source.split(/\r\n?|\n/)) {
-    longestLine = Math.max(longestLine, line.length);
+  let tabIndented = 0;
+  let spaceIndented = 0;
+  // An indent of two spaces anywhere means a two-space step; files indented only in fours step by four.
+  let twoSpaceStep = false;
+  const lines = source.split(/\r\n?|\n/);
+  for (const line of lines) {
     const code = line.replace(/\s+\/\/.*$/, "").trim();
     if (
       code === "" ||
@@ -168,6 +171,11 @@ function inferJavascriptOptions(tree: Tree) {
       code.startsWith("*")
     )
       continue;
+    if (line.startsWith("\t")) tabIndented++;
+    else if (line.startsWith(" ")) {
+      spaceIndented++;
+      if ((line.length - line.trimStart().length) % 4 === 2) twoSpaceStep = true;
+    }
     if (code.endsWith(";")) semicolonLines++;
     // Count only endings that commonly finish an expression or declaration; block braces and continuation
     // punctuation would otherwise make semicolon-using files look semicolonless.
@@ -176,10 +184,25 @@ function inferJavascriptOptions(tree: Tree) {
   }
   const singleQuotes = source.match(/'(?:\\.|[^'\\\r\n])*'/g)?.length ?? 0;
   const doubleQuotes = source.match(/"(?:\\.|[^"\\\r\n])*"/g)?.length ?? 0;
+  const useTabs = tabIndented > spaceIndented;
+  const tabWidth = useTabs || !twoSpaceStep ? 4 : 2;
+  // The printer counts a tab as tabWidth columns.
+  const widths = lines.map(
+    (line) => line.length + (line.match(/^\t*/)?.[0].length ?? 0) * (tabWidth - 1),
+  );
+  // The repo's width is the narrowest common one that nearly every line fits: the longest line is usually a string
+  // or comment the printer can't break, and widening to it would join calls the author's printer had split.
+  const printWidth =
+    [80, 100, 120, 140, 160].find(
+      (width) =>
+        widths.filter((w) => w > width).length <= lines.length / 100,
+    ) ?? 200;
   return {
     semi: semicolonlessLines <= semicolonLines,
     singleQuote: singleQuotes > doubleQuotes,
-    printWidth: Math.min(200, Math.max(80, longestLine)),
+    printWidth,
+    useTabs,
+    tabWidth,
   };
 }
 
