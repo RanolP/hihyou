@@ -371,10 +371,16 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     if (headers.length === 0) return;
     const stickyTop = fileStickyTop();
     // A file showing less than a line under the bar is scrolled past: the next file's header is what one reads.
-    const showing = (header: HTMLElement) =>
-      (header.closest<HTMLElement>(".hh-file")?.getBoundingClientRect().bottom ??
-        0) >
-      stickyTop + 18;
+    const showing = (header: HTMLElement) => {
+      const bottom =
+        header.closest<HTMLElement>(".hh-file")?.getBoundingClientRect().bottom ??
+        0;
+      // An open file's header slides down to the file's end once its lines are gone.
+      const below = header.classList.contains("hh-collapsed")
+        ? stickyTop
+        : header.getBoundingClientRect().bottom;
+      return bottom > Math.max(stickyTop, below) + 18;
+    };
     const atTop = headers.findLast(
       (header) =>
         header.getBoundingClientRect().top <= stickyTop + 1 && showing(header),
