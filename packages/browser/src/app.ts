@@ -337,7 +337,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   next.addEventListener("click", () => step(1));
 
   const advanceAfterViewedClick = (event: MouseEvent) => {
-    if (allFiles || !view) return;
+    if (!view) return;
     const button = event
       .composedPath()
       .find(
@@ -349,6 +349,11 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       ?.closest<HTMLElement>(".hh-file")
       ?.dataset["path"];
     if (path === undefined || !view.fileViewed(path)) return;
+    // The folded file stays where the reader looked; near the page end its header cannot reach the top.
+    if (allFiles) {
+      targetedPath = path;
+      return;
+    }
     const ordered = filesInTreeOrder(files);
     const index = ordered.findIndex((file) => file.path === path);
     if (index < 0) return;
