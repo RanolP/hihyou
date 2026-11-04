@@ -4,6 +4,7 @@ import {
   defaultMoveOptions,
   editScript,
   lineDiff,
+  tokenDiff,
   type Mapping,
   MatchBudgetExceeded,
   match,
@@ -354,11 +355,9 @@ export async function diffFiles(
       for (const e of lineDiff(p.texts[0], p.texts[1], indentIsSyntax(path))) {
         if ("old" in e) {
           s.a.changed.push(e.old);
-          if (!status) s.a.emphasis.push(e.old);
         }
         if ("new" in e) {
           s.b.changed.push(e.new);
-          if (!status) s.b.emphasis.push(e.new);
         }
       }
       const reason = foldReason({
@@ -366,6 +365,12 @@ export async function diffFiles(
         text,
         ...(p.fallback && { fallback: p.fallback }),
       });
+      // A folded file (lockfile, generated) skips the token diff, whose cost grows with the whole text.
+      if (!status && !reason)
+        for (const e of tokenDiff(p.texts[0], p.texts[1])) {
+          if ("old" in e) s.a.emphasis.push(e.old);
+          if ("new" in e) s.b.emphasis.push(e.new);
+        }
       return {
         ...head,
         fragments: buildFragments({

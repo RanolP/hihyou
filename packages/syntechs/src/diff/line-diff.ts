@@ -6,6 +6,10 @@ interface Line extends Span {
   key: string;
 }
 
+interface Token extends Span {
+  key: string;
+}
+
 // Whitespace separates tokens and is never one itself, so `a  b` equals `a b` while `isnot` differs from `is not`.
 // A token is a word run, a quoted string kept whole (its inner whitespace is content), or any other single character.
 // A quote right after a word character is an apostrophe (`don't`), not the start of a string.
@@ -61,6 +65,31 @@ export function lineDiff(
     const span = { start: first.start, end: last.end };
     edits.push(
       c.added ? { kind: "insert", new: span } : { kind: "delete", old: span },
+    );
+  }
+  return edits;
+}
+
+/** Token-sized emphasis for text the AST path cannot take. */
+export function tokenDiff(oldText: string, newText: string): RawEdit[] {
+  const tokens = (text: string): Token[] =>
+    [...text.matchAll(token)].map((match) => ({
+      start: match.index,
+      end: match.index + match[0].length,
+      key: match[0],
+    }));
+  const edits: RawEdit[] = [];
+  for (const change of diffArrays(tokens(oldText), tokens(newText), {
+    comparator: (a, b) => a.key === b.key,
+  })) {
+    const [first] = change.value;
+    const last = change.value.at(-1);
+    if (!first || !last || !(change.added || change.removed)) continue;
+    const span = { start: first.start, end: last.end };
+    edits.push(
+      change.added
+        ? { kind: "insert", new: span }
+        : { kind: "delete", old: span },
     );
   }
   return edits;
