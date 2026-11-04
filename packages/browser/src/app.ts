@@ -360,6 +360,15 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     // The folded file stays where the reader looked; near the page end its header cannot reach the top.
     if (allFiles) {
       targetedPath = path;
+      // Folded while scrolled into it, the file shrinks to its header above the screen; bring that header back.
+      const section = button?.closest<HTMLElement>(".hh-file");
+      const top = section?.getBoundingClientRect().top;
+      if (top !== undefined && top < stuckFileTop())
+        window.scrollTo({
+          top: window.scrollY + top - stuckFileTop(),
+          behavior: "instant",
+        });
+      targetedY = window.scrollY;
       return;
     }
     const ordered = filesInTreeOrder(files);
