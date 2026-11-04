@@ -433,6 +433,9 @@ function el<K extends keyof HTMLElementTagNameMap>(
 const appStyles = `
 :host {
   display: block;
+  --hh-page-sticky-top: 60px;
+  --hh-app-bar-height: 37px;
+  --hihyou-file-max-height: none;
   --vscode-editor-background: var(--bgColor-default);
   --vscode-editor-foreground: var(--fgColor-default);
   --vscode-editorLineNumber-foreground: var(--fgColor-muted);
@@ -441,8 +444,8 @@ const appStyles = `
   --vscode-focusBorder: var(--borderColor-accent-emphasis);
   --vscode-textLink-foreground: var(--fgColor-accent);
 }
-.hh-app { display: grid; grid-template-columns: minmax(200px, 300px) minmax(0, 1fr); gap: 16px; height: calc(100vh - 80px); min-height: 400px; color: var(--fgColor-default, CanvasText); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
-.hh-sets { overflow: auto; border: 1px solid var(--borderColor-default, #d0d7de); border-radius: 6px; padding: 4px 0; }
+.hh-app { display: grid; grid-template-columns: minmax(200px, 300px) minmax(0, 1fr); align-items: start; gap: 16px; min-height: 400px; color: var(--fgColor-default, CanvasText); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+.hh-sets { position: sticky; top: var(--hh-page-sticky-top); max-height: calc(100vh - var(--hh-page-sticky-top)); overflow: auto; border: 1px solid var(--borderColor-default, #d0d7de); border-radius: 6px; padding: 4px 0; }
 .hh-filter { box-sizing: border-box; width: 100%; border: 1px solid var(--borderColor-default, #d0d7de); border-radius: 6px; padding: 5px 8px; background: var(--bgColor-default, Canvas); color: inherit; font: inherit; }
 .hh-sets ul { list-style: none; margin: 0; padding: 0; }
 .hh-sets ul ul { padding-left: 14px; }
@@ -464,13 +467,14 @@ const appStyles = `
 .hh-letter.D { color: var(--fgColor-danger, #cf222e); }
 .hh-letter.M, .hh-letter.R { color: var(--fgColor-attention, #9a6700); }
 .hh-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.hh-bar { display: flex; align-items: center; gap: 12px; padding: 0 0 8px; }
+.hh-main > .hh-bar { position: sticky; top: var(--hh-page-sticky-top); z-index: 4; box-sizing: border-box; min-height: var(--hh-app-bar-height); display: flex; align-items: center; gap: 12px; padding: 0 0 8px; background: var(--bgColor-default, Canvas); }
+.hh-root .hh-bar { top: calc(var(--hh-page-sticky-top) + var(--hh-app-bar-height)); }
 .hh-title { margin: 0; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hh-meta { color: var(--fgColor-muted, GrayText); }
 .hh-meta.error { color: var(--fgColor-danger, #cf222e); white-space: pre-wrap; }
 .hh-nav { padding: 2px 8px; border: 1px solid var(--borderColor-default, #d0d7de); border-radius: 6px; background: var(--bgColor-muted, #f6f8fa); color: inherit; cursor: pointer; }
 .hh-nav:disabled { opacity: 0.5; cursor: default; }
-.hh-root { flex: 1; min-height: 0; overflow: auto; }
+.hh-root { flex: 1; min-height: 0; overflow: visible; }
 `;
 
 export const app: App = { mount };
