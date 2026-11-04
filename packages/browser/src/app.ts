@@ -203,7 +203,9 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
           const position = getComputedStyle(element).position;
           if (position === "sticky" || position === "fixed") {
             const rect = element.getBoundingClientRect();
-            if (rect.top <= 1) bottom = Math.max(bottom, rect.bottom);
+            // GitHub's 2px page-load progress bar is fixed at the top too, but covers nothing.
+            if (rect.top <= 1 && rect.height >= 8)
+              bottom = Math.max(bottom, rect.bottom);
           }
         }
         element =
