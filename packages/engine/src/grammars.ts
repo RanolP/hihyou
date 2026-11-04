@@ -1,4 +1,4 @@
-import type { Language } from "syntechs/core";
+import type { Language, Tree } from "syntechs/core";
 import type { ScopeRules } from "syntechs/diff";
 import { format, type Language as FormatLanguage } from "syntechs/fmt";
 import type {
@@ -141,20 +141,67 @@ const containers: Partial<Record<LanguageId, readonly string[]>> = {
 
 /** A formatter bound to options the host passed as a plain object, checked by syntechs at format time. */
 const bind =
-  <O>(rules: FormatLanguage<O>) =>
+  <O>(
+    rules: FormatLanguage<O>,
+    infer?: (tree: Tree) => Partial<O>,
+  ) =>
   (options: object): FormatModule => ({
-    format: (tree) => format(tree, rules, options as Partial<O>),
+    format: (tree) =>
+      format(tree, rules, {
+        ...infer?.(tree),
+        ...(options as Partial<O>),
+      }),
   });
+
+function inferJavascriptOptions(tree: Tree) {
+  const source = tree.text(tree.root);
+  let semicolonLines = 0;
+  let semicolonlessLines = 0;
+  let longestLine = 0;
+  for (const line of source.split(/\r\n?|\n/)) {
+    longestLine = Math.max(longestLine, line.length);
+    const code = line.replace(/\s+\/\/.*$/, "").trim();
+    if (
+      code === "" ||
+      code.startsWith("//") ||
+      code.startsWith("/*") ||
+      code.startsWith("*")
+    )
+      continue;
+    if (code.endsWith(";")) semicolonLines++;
+    // Count only endings that commonly finish an expression or declaration; block braces and continuation
+    // punctuation would otherwise make semicolon-using files look semicolonless.
+    else if (/[^\s{};,.:=+*/%&|!?<>-](?:\+\+|--)?$/.test(code))
+      semicolonlessLines++;
+  }
+  const singleQuotes = source.match(/'(?:\\.|[^'\\\r\n])*'/g)?.length ?? 0;
+  const doubleQuotes = source.match(/"(?:\\.|[^"\\\r\n])*"/g)?.length ?? 0;
+  return {
+    semi: semicolonlessLines <= semicolonLines,
+    singleQuote: singleQuotes > doubleQuotes,
+    printWidth: Math.min(200, Math.max(80, longestLine)),
+  };
+}
 
 const formatters: Partial<
   Record<LanguageId, () => Promise<(options: object) => FormatModule>>
 > = {
   // syntechs' JSON printer runs on the JavaScript grammar's tree, so .json parsed with the JSON grammar is shown as written.
   typescript: async () =>
-    bind((await import("syntechs/grammars/typescript/fmt")).typescript),
-  tsx: async () => bind((await import("syntechs/grammars/typescript/fmt")).tsx),
+    bind(
+      (await import("syntechs/grammars/typescript/fmt")).typescript,
+      inferJavascriptOptions,
+    ),
+  tsx: async () =>
+    bind(
+      (await import("syntechs/grammars/typescript/fmt")).tsx,
+      inferJavascriptOptions,
+    ),
   javascript: async () =>
-    bind((await import("syntechs/grammars/javascript/fmt")).javascript),
+    bind(
+      (await import("syntechs/grammars/javascript/fmt")).javascript,
+      inferJavascriptOptions,
+    ),
   python: async () =>
     bind((await import("syntechs/grammars/python/fmt")).python),
   css: async () => bind((await import("syntechs/grammars/css/fmt")).css),
