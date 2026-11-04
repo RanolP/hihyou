@@ -5,6 +5,7 @@ import {
   webDiffsetIdOf,
 } from "@hihyou/github";
 import {
+  collapseReasons,
   collapseElided,
   type DiffFile,
   type DiffsetView,
@@ -32,6 +33,8 @@ interface Row {
   changes?: readonly ChangedFileRef[];
   error?: string;
 }
+
+type SidebarFile = ChangedFileRef & Pick<DiffFile, "collapsed">;
 
 function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
@@ -293,7 +296,22 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
           else if (row.changes.length === 0)
             group.append(el("li", "hh-note", "No changes"));
           else {
-            const changes = row.changes.filter((file) =>
+            const source: readonly SidebarFile[] =
+              row === selected && files.length > 0
+                ? files.flatMap((file) =>
+                    file.change
+                      ? [
+                          {
+                            ...file.change,
+                            ...(file.collapsed && {
+                              collapsed: file.collapsed,
+                            }),
+                          },
+                        ]
+                      : [],
+                  )
+                : row.changes;
+            const changes = source.filter((file) =>
               file.path.toLowerCase().includes(fileFilter),
             );
             if (changes.length === 0)
@@ -315,7 +333,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   };
   const drawNodes = (
     row: Row,
-    nodes: FileTreeNode<ChangedFileRef>[],
+    nodes: FileTreeNode<SidebarFile>[],
     shown: string | undefined,
   ): HTMLElement[] =>
     nodes.map((node) => {
@@ -346,9 +364,16 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
         el("span", `hh-letter ${letter}`, letter),
         el("span", "", node.name),
       );
-      button.title = file.oldPath
+      const reason = file.collapsed
+        ? collapseReasons[file.collapsed.reason]
+        : undefined;
+      if (reason) button.append(el("span", "hh-collapsed-hint", reason));
+      const pathTitle = file.oldPath
         ? `${file.oldPath} → ${file.path}`
         : file.path;
+      button.title = reason
+        ? `${pathTitle} — ${reason} — diff hidden until opened`
+        : pathTitle;
       button.addEventListener("click", () => {
         if (row === selected && view) {
           view.show(file.path);
@@ -461,6 +486,7 @@ const appStyles = `
 .hh-folder { padding: 2px 4px; color: var(--fgColor-muted, GrayText); }
 .hh-file-row { display: flex; gap: 6px; width: 100%; white-space: nowrap; }
 .hh-file-row.selected { background: var(--bgColor-accent-muted, rgb(84 174 255 / 0.15)); }
+.hh-collapsed-hint { color: var(--fgColor-muted, GrayText); font-size: 12px; }
 .hh-sets button:hover { background: var(--bgColor-neutral-muted, rgb(175 184 193 / 0.2)); }
 .hh-sets button:focus-visible, .hh-nav:focus-visible { outline: 2px solid var(--borderColor-accent-emphasis, #0969da); outline-offset: -2px; }
 .hh-letter { width: 1ch; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }

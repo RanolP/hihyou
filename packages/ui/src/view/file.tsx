@@ -1,12 +1,12 @@
 import type { CollapseReason } from "@hihyou/engine";
-import type { JSX } from "solid-js";
+import { createSignal, type JSX, onCleanup } from "solid-js";
 import { type DiffFile, lineCounts, statusOf } from "../rows.js";
 import { useDraw } from "./context.js";
 import { FileTable } from "./table.jsx";
 import { ViewedToggle } from "./viewed-toggle.jsx";
 import { wholeFileStatus } from "../whole.js";
 
-const collapseReasons: Record<CollapseReason, string> = {
+export const collapseReasons: Record<CollapseReason, string> = {
   generated: "Generated file",
   lockfile: "Lockfile",
   binary: "Binary file",
@@ -38,6 +38,19 @@ function FileHeader(props: {
   const whole = wholeFileStatus(file);
   const status = whole ?? (file.change && statusOf(file.change));
   const counts = file.fragments.length > 0 ? lineCounts(file) : undefined;
+  const [copied, setCopied] = createSignal(false);
+  let copyReset: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(copyReset));
+  const copyPath = () => {
+    void navigator.clipboard.writeText(file.path).then(
+      () => {
+        setCopied(true);
+        clearTimeout(copyReset);
+        copyReset = setTimeout(() => setCopied(false), 1500);
+      },
+      () => undefined,
+    );
+  };
   return (
     <header
       class="hh-file-header"
@@ -57,6 +70,15 @@ function FileHeader(props: {
           ]}
         <FilePath path={file.path} />
       </h2>
+      <button
+        type="button"
+        class="hh-button hh-copy-path"
+        aria-label="Copy file path"
+        title="Copy file path"
+        on:click={copyPath}
+      >
+        {copied() ? "Copied" : "Copy"}
+      </button>
       {status && (
         <span class={`hh-status hh-status-${status}`}>
           {whole ? `${whole} file` : status}
