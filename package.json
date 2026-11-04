@@ -1,6 +1,7 @@
 {
   "name": "hihyou",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "build": "tsc -b",

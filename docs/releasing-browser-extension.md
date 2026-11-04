@@ -1,0 +1,3 @@
+# Release the browser extension
+
+Upload the extension to the Chrome Web Store and Firefox Add-ons manually once, then configure `CHROME_EXTENSION_ID` from the Chrome Web Store item, `CHROME_CLIENT_ID` and `CHROME_CLIENT_SECRET` from its Web Store API OAuth client, `CHROME_REFRESH_TOKEN` from that OAuth flow, `FIREFOX_EXTENSION_ID` from the Firefox Add-ons listing, and `FIREFOX_JWT_ISSUER` and `FIREFOX_JWT_SECRET` from an AMO API key; for each later release, bump `packages/browser/package.json` to `X.Y.Z` and push the tag `browser-vX.Y.Z` so the release workflow builds the Chrome and Firefox archives, attaches them to the GitHub release, and submits both store updates.

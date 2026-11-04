@@ -1,0 +1,58 @@
+name: release-extension
+
+on:
+  push:
+    tags: [browser-v*]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Authenticate with both stores without uploading or submitting
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup
+
+      - name: Package Chrome and Firefox extensions
+        run: |
+          pnpm --filter @hihyou/browser zip
+          pnpm --filter @hihyou/browser zip:firefox
+
+      - name: Create GitHub release and upload archives
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" packages/browser/.output/*.zip --generate-notes --verify-tag
+
+      - name: Submit to Chrome Web Store and Firefox Add-ons
+        env:
+          CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          CHROME_CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
+          CHROME_CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
+          CHROME_REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
+          FIREFOX_EXTENSION_ID: ${{ secrets.FIREFOX_EXTENSION_ID }}
+          FIREFOX_JWT_ISSUER: ${{ secrets.FIREFOX_JWT_ISSUER }}
+          FIREFOX_JWT_SECRET: ${{ secrets.FIREFOX_JWT_SECRET }}
+        run: |
+          dry_run=()
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.dry_run }}" == "true" ]]; then
+            dry_run=(--dry-run)
+          fi
+          chrome_zip=$(find packages/browser/.output -maxdepth 1 -name '*-chrome.zip' -print -quit)
+          firefox_zip=$(find packages/browser/.output -maxdepth 1 -name '*-firefox.zip' -print -quit)
+          firefox_sources_zip=$(find packages/browser/.output -maxdepth 1 -name '*-sources.zip' -print -quit)
+          pnpm --filter @hihyou/browser exec wxt submit \
+            --chrome-api-version v1.1 \
+            --chrome-zip "$chrome_zip" \
+            --firefox-zip "$firefox_zip" \
+            --firefox-sources-zip "$firefox_sources_zip" \
+            "${dry_run[@]}"
