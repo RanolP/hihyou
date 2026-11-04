@@ -326,9 +326,9 @@ function printOneComment(c: number, ctx: HasTree & { isLineComment(c: number): b
         if (index === 0) {
           sToken(c, `/${l.trimEnd()}`);
           sHardline();
-        } else if (index === lines.length - 1) sText(` ${l}/`);
+        } else if (index === lines.length - 1) sToken(c, ` ${l}/`);
         else {
-          sText(` ${l.trimEnd()}`);
+          sToken(c, ` ${l.trimEnd()}`);
           sHardline();
         }
       });

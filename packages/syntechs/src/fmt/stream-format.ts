@@ -222,6 +222,9 @@ export function formatStream<O>(
         if (anchors) return anchors;
         const moved = rewrite ? shiftForEndOfLine(text, eol) : undefined;
         anchors = [];
+        // A printer may split one source token around layout, as JavaScript does for an indented block comment;
+        // back-to-back pieces of one token become one anchor.
+        let last: { nd: number; anchor: Anchor } | undefined;
         for (let t = 0; t < printed.at.length; t++) {
           const nd = printed.nodes[t] as number;
           const start = printed.at[t] as number;
@@ -231,7 +234,12 @@ export function formatStream<O>(
             to: moved ? [moved(start), moved(end)] : [start, end],
           };
           if (printed.synthetic[t]) anchor.synthetic = true;
-          anchors.push(anchor);
+          if (!anchor.synthetic && last?.nd === nd)
+            last.anchor.to = [last.anchor.to[0], anchor.to[1]];
+          else {
+            anchors.push(anchor);
+            last = anchor.synthetic ? undefined : { nd, anchor };
+          }
         }
         return anchors;
       },
