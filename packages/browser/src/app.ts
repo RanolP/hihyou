@@ -7,6 +7,7 @@ import {
   diffStyles,
   engineReview,
   type FileTreeNode,
+  filesInTreeOrder,
   fileTree,
   githubDark,
   githubLight,
@@ -92,16 +93,18 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   dark.addEventListener("change", applyTheme);
   applyTheme();
 
-  const index = () => files.findIndex((f) => f.path === view?.shown());
   const updateNav = () => {
-    const i = index();
+    const ordered = filesInTreeOrder(files);
+    const i = ordered.findIndex((f) => f.path === view?.shown());
     previous.disabled = i <= 0;
-    next.disabled = i < 0 || i >= files.length - 1;
-    position.textContent = i < 0 ? "" : `${i + 1} / ${files.length}`;
+    next.disabled = i < 0 || i >= ordered.length - 1;
+    position.textContent = i < 0 ? "" : `${i + 1} / ${ordered.length}`;
     drawTree();
   };
   const step = (delta: 1 | -1) => {
-    const target = files[index() + delta];
+    const ordered = filesInTreeOrder(files);
+    const index = ordered.findIndex((f) => f.path === view?.shown());
+    const target = ordered[index + delta];
     if (!view || !target) return;
     view.show(target.path);
     updateNav();

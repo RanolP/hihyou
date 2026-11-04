@@ -54,3 +54,18 @@ export function fileTree<T extends { path: string }>(
   ];
   return build(root, "");
 }
+
+/** The files in the depth-first order that `fileTree` draws them. */
+export function filesInTreeOrder<T extends { path: string }>(
+  files: readonly T[],
+): T[] {
+  const ordered: T[] = [];
+  const visit = (nodes: FileTreeNode<T>[]) => {
+    for (const node of nodes) {
+      if (node.kind === "file") ordered.push(node.file);
+      else visit(node.children);
+    }
+  };
+  visit(fileTree(files));
+  return ordered;
+}
