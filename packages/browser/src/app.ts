@@ -681,15 +681,17 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
         el(
           "span",
           row === selected && view?.fileViewed(file.path)
-            ? "hh-file-viewed"
-            : "",
+            ? "hh-file-name hh-file-viewed"
+            : "hh-file-name",
           node.name,
         ),
       );
       const reason = file.collapsed
         ? collapseReasons[file.collapsed.reason]
         : undefined;
-      if (reason) button.append(el("span", "hh-collapsed-hint", reason));
+      // The D letter already says a deleted file is gone.
+      if (reason && file.collapsed?.reason !== "deleted")
+        button.append(el("span", "hh-collapsed-hint", reason));
       if (row === selected && view?.fileViewed(file.path))
         button.append(el("span", "hh-viewed-mark", "✓"));
       const pathTitle = file.oldPath
@@ -822,7 +824,11 @@ const appStyles = `
 .hh-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hh-desc { color: var(--fgColor-muted, GrayText); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .hh-folder { padding: 2px 4px; color: var(--fgColor-muted, GrayText); }
-.hh-file-row { display: flex; gap: 6px; width: 100%; white-space: nowrap; }
+.hh-file-row { display: flex; align-items: baseline; gap: 6px; width: 100%; min-width: 0; white-space: nowrap; }
+/* A long name ends in an ellipsis in place of widening the list; its hint gives way first. */
+.hh-file-name, .hh-collapsed-hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.hh-file-name { flex: 0 1 auto; }
+.hh-collapsed-hint { flex: 1 1 0; }
 .hh-file-viewed { color: var(--fgColor-muted, GrayText); }
 .hh-viewed-mark { margin-left: auto; color: var(--fgColor-muted, GrayText); }
 .hh-file-row.selected { background: var(--bgColor-accent-muted, rgb(84 174 255 / 0.15)); }
