@@ -37,15 +37,19 @@ export const diffStyles = `
   border: 1px solid var(--hh-border);
   border-radius: 4px;
   margin: 0 0 16px;
-  overflow: hidden;
+  overflow: clip;
 }
 .hh-file-header {
+  position: sticky;
+  top: var(--hh-file-sticky-top, 0);
+  z-index: 2;
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 4px 12px;
   padding: 6px 10px;
   background: var(--hh-header-bg);
+  border-radius: 3px 3px 0 0;
   border-bottom: 1px solid var(--hh-border);
 }
 .hh-path {
@@ -132,6 +136,26 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
   background: var(--hh-node-bg);
   border-top: 1px solid var(--hh-border);
   border-bottom: 1px solid var(--hh-border);
+}
+/* In the browser extension the page scrolls, so neither file wrapper may become a sticky scroll ancestor. */
+:host .hh-diff {
+  --hh-file-sticky-top: calc(
+    var(--hh-page-sticky-top, 0px) +
+    var(--hh-app-bar-height, 0px) +
+    var(--hh-review-bar-height, 0px)
+  );
+}
+:host .hh-scroll {
+  max-height: none;
+  overflow: visible;
+}
+:host .hh-file { overflow: visible; }
+/* With no scroll box to pan, long lines wrap inside the file instead of spilling past it. */
+:host .hh-code { white-space: pre-wrap; overflow-wrap: anywhere; }
+:host .hh-node th {
+  top: calc(
+    var(--hh-file-sticky-top) + var(--hh-file-header-height, 0px)
+  );
 }
 .hh-node-label { position: sticky; left: 8px; }
 .hh-whole th {

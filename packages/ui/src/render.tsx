@@ -6,6 +6,7 @@ import {
   createRoot,
   createSignal,
   on,
+  onCleanup,
   untrack,
 } from "solid-js";
 import { insert } from "solid-js/web";
@@ -732,6 +733,16 @@ function mount(
     scrolls: new Map(),
   };
   const DiffList = () => {
+    const measureReviewBar = (bar: HTMLElement) => {
+      const observer = new ResizeObserver(() => {
+        bar.parentElement?.style.setProperty(
+          "--hh-review-bar-height",
+          `${bar.offsetHeight}px`,
+        );
+      });
+      observer.observe(bar);
+      onCleanup(() => observer.disconnect());
+    };
     // Placement is a side effect of drawing the rows in order, so every change of structure redraws the whole
     // list at once; viewed state and the selection change in place.
     const list = createMemo(() => {
@@ -782,7 +793,7 @@ function mount(
     });
     return (
       <div class="hh-diff">
-        <div class="hh-bar">
+        <div ref={measureReviewBar} class="hh-bar">
           <ApprovalBadge approval={approval} />
           <KeyToolbar
             shown={hasSelection}

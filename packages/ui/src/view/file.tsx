@@ -41,6 +41,16 @@ function FileHeader(props: {
   const [copied, setCopied] = createSignal(false);
   let copyReset: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => clearTimeout(copyReset));
+  const measureHeight = (header: HTMLElement) => {
+    const observer = new ResizeObserver(() => {
+      header.parentElement?.style.setProperty(
+        "--hh-file-header-height",
+        `${header.offsetHeight}px`,
+      );
+    });
+    observer.observe(header);
+    onCleanup(() => observer.disconnect());
+  };
   const copyPath = () => {
     void navigator.clipboard.writeText(file.path).then(
       () => {
@@ -53,6 +63,7 @@ function FileHeader(props: {
   };
   return (
     <header
+      ref={measureHeight}
       class="hh-file-header"
       classList={{ "hh-collapsed": props.collapsed() }}
       on:click={(event) => {
