@@ -474,7 +474,8 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       const path = table
         .closest("[data-tagsearch-path]")
         ?.getAttribute("data-tagsearch-path");
-      if (path) sizes.set(path, table.getAttribute("data-tab-size")!);
+      const size = table.getAttribute("data-tab-size");
+      if (path && size) sizes.set(path, size);
     }
     // A file GitHub has not drawn yet takes the width most of the drawn ones have.
     const counts = new Map<string, number>();
@@ -853,7 +854,8 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
           // The sidebar cuts a long subject short; the tooltip carries it whole.
           tooltip: `${c.subject}\n${c.author} · ${new Date(c.date).toLocaleString()}`,
           id: { owner, repo, commit: c.sha },
-          ...(c.sha === pull.head && { reviewPull: page.pull }),
+          ...(pull.commits.length === 1 &&
+            c.sha === pull.head && { reviewPull: page.pull }),
           expanded: false,
         })),
       ];
