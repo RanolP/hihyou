@@ -193,6 +193,9 @@ importers:
       '@hihyou/ui':
         specifier: workspace:*
         version: link:../ui
+      syntechs:
+        specifier: workspace:*
+        version: link:../syntechs
     devDependencies:
       playwright:
         specifier: 1.63.0

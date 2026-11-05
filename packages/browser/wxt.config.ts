@@ -1,7 +1,44 @@
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import solid from "vite-plugin-solid";
+import type { Plugin } from "vite";
 import { defineConfig } from "wxt";
 import { browserSafe, conditions } from "./browser-safe.ts";
+
+const engineGrammarsPath = fileURLToPath(
+  new URL("../engine/src/grammars.ts", import.meta.url),
+);
+
+/** Keeps the extension's app IIFE small by resolving the engine's existing lazy loaders through injected globals. */
+function injectedGrammarModules(): Plugin {
+  return {
+    name: "hihyou:injected-grammar-modules",
+    enforce: "pre",
+    transform(code, id) {
+      if (
+        path.normalize(id.split("?", 1)[0] ?? "") !==
+        path.normalize(engineGrammarsPath)
+      )
+        return null;
+      let imports = 0;
+      const transformed = code.replace(
+        /import\((["'])(syntechs\/grammars\/[^"']+)\1\)/g,
+        (_match, _quote: string, specifier: string) => {
+          imports++;
+          return `hihyouGrammarModule(${JSON.stringify(specifier)})`;
+        },
+      );
+      if (imports !== 39)
+        throw new Error(
+          `expected 39 lazy syntechs grammar imports in ${id}, found ${imports}`,
+        );
+      return {
+        code: `const hihyouGrammarModule = (id) => {\n  const module = globalThis.hihyouGrammarModules?.[id];\n  if (!module) return Promise.reject(new Error(\`grammar module \${id} was not injected\`));\n  return Promise.resolve(module);\n};\n${transformed}`,
+        map: null,
+      };
+    },
+  };
+}
 
 export default defineConfig({
   manifest: ({ browser }) => ({
@@ -66,6 +103,6 @@ export default defineConfig({
     environments: {
       inline: { resolve: { noExternal: [/^@hihyou\//], conditions } },
     },
-    plugins: [browserSafe(), solid()],
+    plugins: [injectedGrammarModules(), browserSafe(), solid()],
   }),
 });

@@ -19,7 +19,8 @@
   "dependencies": {
     "@hihyou/engine": "workspace:*",
     "@hihyou/github": "workspace:*",
-    "@hihyou/ui": "workspace:*"
+    "@hihyou/ui": "workspace:*",
+    "syntechs": "workspace:*"
   },
   "devDependencies": {
     "playwright": "1.63.0",

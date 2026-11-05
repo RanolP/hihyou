@@ -1,6 +1,7 @@
 import type { BackgroundDefinition } from "wxt";
 import { browser } from "wxt/browser";
 import { defineBackground } from "wxt/utils/define-background";
+import { grammarChunkFiles } from "../src/grammar-registry.js";
 import type { FetchReply, LoadReply, ToBackground } from "../src/protocol.js";
 import { toBase64 } from "../src/protocol.js";
 import { fetchable } from "../src/privileged.js";
@@ -42,14 +43,14 @@ const definition: BackgroundDefinition = defineBackground(() => {
       browser.scripting
         .executeScript({
           target: { tabId, frameIds: [sender.frameId ?? 0] },
-          files: ["/app.js"],
+          files: [...grammarChunkFiles, "/app.js"],
         })
         .then(
           () => reply({ ok: true } satisfies LoadReply),
           (error: unknown) =>
             reply({
               ok: false,
-              error: `injecting app.js: ${String(error)}`,
+              error: `injecting grammar chunks and app.js: ${String(error)}`,
             } satisfies LoadReply),
         );
       return true;
