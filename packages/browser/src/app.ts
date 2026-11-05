@@ -293,7 +293,9 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     const testFiles = files.filter((file) => isTestPath(file.path));
     const grouped =
       allFiles && testFiles.length > 0 && testFiles.length < files.length;
-    const changed = `${files.length} ${files.length === 1 ? "file" : "files"} changed`;
+    // With tests grouped, the two counts add up to the PR's total rather than one containing the other.
+    const others = grouped ? files.length - testFiles.length : files.length;
+    const changed = `${others} ${others === 1 ? "file" : "files"} changed`;
     if (!grouped || testsShown) {
       status.textContent = `${changed}${grouped ? ` · ${testFiles.length} ${testFiles.length === 1 ? "test" : "tests"} shown` : ""}`;
       return;
