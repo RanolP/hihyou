@@ -44,6 +44,7 @@ import {
   nodeHash,
   type Rename,
   type SideInput,
+  type Span,
   textHash,
   wholeDeclaration,
 } from "./fragments.js";
@@ -190,6 +191,39 @@ async function displayVersions(
 
 export const fileDiffBytes = (files: FileDiff[]) =>
   JSON.stringify(files).length * 2;
+
+/** Original coloured text only where one formatted display line swallowed later source lines. */
+function joinedSourceSpans(
+  v: Version,
+  original: string,
+  lines: readonly number[],
+  highlight: HighlightModule | undefined,
+): Record<number, Span[]> {
+  const out: Record<number, Span[]> = {};
+  if (!v.tree) return out;
+  const source = plainVersion(original, v.tree);
+  for (let display = 0; display < lines.length; display++) {
+    const first = lines[display] ?? 0;
+    if (first === 0) continue;
+    let next = source.lineStarts.length + 1;
+    for (let i = display + 1; i < lines.length; i++) {
+      const candidate = lines[i] ?? 0;
+      if (candidate !== 0) {
+        next = candidate;
+        break;
+      }
+    }
+    if (next <= first + 1) continue;
+    const fragment = elidedLines(
+      source,
+      highlight,
+      { before: first, after: first },
+      next - first,
+    );
+    if (fragment) out[display + 1] = fragment.spans;
+  }
+  return out;
+}
 
 /** Past either matching size a file gets a line diff; a bounded parse still colours and scopes it. */
 const maxChars = 500_000;
@@ -440,17 +474,34 @@ export async function diffFiles(
         !fragments.some((f) => f.kind === "diff") &&
         p.texts[0] !== p.texts[1],
     });
+    const mapped =
+      !inflated && (p.a.text !== p.texts[0] || p.b.text !== p.texts[1])
+        ? {
+            before: sourceLines(p.a, p.texts[0]),
+            after: sourceLines(p.b, p.texts[1]),
+          }
+        : undefined;
     return {
       ...head,
       grammar: p.grammar.id,
       ...(inflated && { fallback: "inflated" as const }),
-      ...(!inflated &&
-        (p.a.text !== p.texts[0] || p.b.text !== p.texts[1]) && {
-          sourceLines: {
-            before: sourceLines(p.a, p.texts[0]),
-            after: sourceLines(p.b, p.texts[1]),
-          },
-        }),
+      ...(mapped && {
+        sourceLines: mapped,
+        sourceSpans: {
+          before: joinedSourceSpans(
+            p.a,
+            p.texts[0],
+            mapped.before,
+            p.grammar.highlight,
+          ),
+          after: joinedSourceSpans(
+            p.b,
+            p.texts[1],
+            mapped.after,
+            p.grammar.highlight,
+          ),
+        },
+      }),
       fragments,
       ...(reason && { collapsed: { reason } }),
     };

@@ -15,6 +15,11 @@ import type {
  */
 export type DiffFile = FileDiff & {
   change?: ChangedFileRef;
+  /** Engine payload for formatted display lines that joined several original lines. */
+  sourceSpans?: {
+    before: Record<number, Span[]>;
+    after: Record<number, Span[]>;
+  };
   /** Existing GitHub review threads placed on lines from the original sources. */
   reviewThreads?: ReviewThread[];
   /** Lines revealed out of the `elided` fragment at each index, so the rest of that run stays a gap. */
@@ -77,6 +82,8 @@ export type SideName = "before" | "after";
 export interface Cell {
   /** 1-based. */
   line: number;
+  /** Original source line when this cell expands one formatted display line. */
+  sourceLine?: number;
   /** This line's spans, its newline dropped. */
   spans: Span[];
 }
@@ -290,35 +297,59 @@ export function buildSections(file: DiffFile): Section[] {
         unchangedRows(f);
         return;
       case "diff": {
-        const before = splitLines(f.before.spans);
-        const after = splitLines(f.after.spans);
+        const cells = (side: SideName): Cell[][] => {
+          const value = f[side];
+          return splitLines(value.spans).map((spans, i) => {
+            const line = value.startLine + i;
+            const source = file.sourceSpans?.[side][line];
+            const sourceLine = file.sourceLines?.[side][line - 1];
+            return source && sourceLine
+              ? splitLines(source).map((sourceSpans, j) => ({
+                  line,
+                  sourceLine: sourceLine + j,
+                  spans: sourceSpans,
+                }))
+              : [{ line, spans }];
+          });
+        };
+        const before = cells("before");
+        const after = cells("after");
         const moves = {
-          before: movedRuns(f.before, before),
-          after: movedRuns(f.after, after),
+          before: movedRuns(f.before, splitLines(f.before.spans)),
+          after: movedRuns(f.after, splitLines(f.after.spans)),
         };
         for (let i = 0; i < Math.max(before.length, after.length); i++) {
-          const b = before[i];
-          const a = after[i];
-          const move: Partial<Record<SideName, SideMove>> = {};
-          const moved: Partial<Record<SideName, { last: boolean }>> = {};
-          for (const side of ["before", "after"] as const) {
-            if (!(side === "before" ? b : a)) continue;
-            const line = f[side].startLine + i;
-            const run = moves[side].find(
-              (candidate) => candidate.first <= line && line <= candidate.last,
-            );
-            if (!run) continue;
-            if (run.first === line) move[side] = run.move;
-            moved[side] = { last: line === run.last };
+          const beforeLines = before[i] ?? [];
+          const afterLines = after[i] ?? [];
+          for (let j = 0; j < Math.max(beforeLines.length, afterLines.length); j++) {
+            const b = beforeLines[j];
+            const a = afterLines[j];
+            const move: Partial<Record<SideName, SideMove>> = {};
+            const moved: Partial<Record<SideName, { last: boolean }>> = {};
+            for (const side of ["before", "after"] as const) {
+              const sideLines = side === "before" ? beforeLines : afterLines;
+              const cell = sideLines[j];
+              if (!cell) continue;
+              const line = cell.line;
+              const run = moves[side].find(
+                (candidate) =>
+                  candidate.first <= line && line <= candidate.last,
+              );
+              if (!run) continue;
+              if (run.first === line && j === 0) move[side] = run.move;
+              moved[side] = {
+                last: line === run.last && j === sideLines.length - 1,
+              };
+            }
+            rows().push({
+              kind: "diff",
+              fragment: index,
+              ...(b && { before: b }),
+              ...(a && { after: a }),
+              ...((move.before || move.after) && { move }),
+              ...((moved.before || moved.after) && { moved }),
+            });
           }
-          rows().push({
-            kind: "diff",
-            fragment: index,
-            ...(b && { before: { line: f.before.startLine + i, spans: b } }),
-            ...(a && { after: { line: f.after.startLine + i, spans: a } }),
-            ...((move.before || move.after) && { move }),
-            ...((moved.before || moved.after) && { moved }),
-          });
         }
         return;
       }
@@ -361,8 +392,7 @@ export function buildSections(file: DiffFile): Section[] {
       stuck !== undefined && stuck.length === 0 && path.length > 0;
     if (!changes[i] && !topLevelStale) return;
     const stale =
-      topLevelStale ||
-      (stuck?.some((label, j) => path[j] !== label) ?? false);
+      topLevelStale || (stuck?.some((label, j) => path[j] !== label) ?? false);
     const deepest = (unseen.get(section) ?? []).lastIndexOf(true);
     if (stale || (stuck?.length ?? 0) <= deepest) {
       section.heading = true;
@@ -426,6 +456,8 @@ export function mergeLines(
   before: readonly Cell[],
   after: readonly Cell[],
 ): MergedRow[] | undefined {
+  if ([...before, ...after].some((cell) => cell.sourceLine !== undefined))
+    return undefined;
   const shared = skeleton(after);
   if (shared === "" || shared !== skeleton(before)) return undefined;
 
@@ -596,7 +628,9 @@ export function shownLine(
   file: FileDiff,
   side: "before" | "after",
   line: number,
+  sourceLine?: number,
 ): number | undefined {
+  if (sourceLine !== undefined) return sourceLine;
   const table = file.sourceLines?.[side];
   if (!table) return line;
   const shown = table[line - 1] || undefined;

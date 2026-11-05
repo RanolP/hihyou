@@ -10,6 +10,11 @@ export interface FileDiff {
   path: string;
   grammar?: string; // present when a syntax tree was available for scopes and highlighting
   sourceLines?: { before: number[]; after: number[] };
+  /** Original, syntax-coloured lines for a formatted display line that joined several source lines. */
+  sourceSpans?: {
+    before: Record<number, Span[]>;
+    after: Record<number, Span[]>;
+  };
   /** Line counts over the original, unformatted texts. */
   stats?: { added: number; removed: number };
   /** Why syntax diffing fell back to a line diff, if it did. */
@@ -633,16 +638,19 @@ function declarationLabel(tree: Tree, n: number): string | undefined {
 
 function declarationSourceLine(tree: Tree, n: number, name: number): string | undefined {
   const text = tree.text(n);
-  const lines = text.split(/\r?\n/);
-  let line = lines[0]?.trim();
+  const first = text.split(/\r?\n/, 1)[0]?.trim();
+  let at = tree.start(n);
   if (
-    line &&
+    first &&
     tree.start(name) > tree.start(n) &&
-    /^(?:@|#!?\[|\[|\/\/[/!]|\/\*[*!])/.test(line)
+    /^(?:@|#!?\[|\[|\/\/[/!]|\/\*[*!])/.test(first)
   ) {
-    const beforeName = text.slice(0, tree.start(name) - tree.start(n));
-    line = lines[beforeName.split("\n").length - 1]?.trim();
+    at = tree.start(name);
   }
+  const source = tree.text(tree.root);
+  const start = source.lastIndexOf("\n", at - 1) + 1;
+  const end = source.indexOf("\n", at);
+  const line = source.slice(start, end === -1 ? source.length : end).trimStart();
   const label = line?.replace(/\s*\{\s*$/, "").trimEnd();
   if (!label) return undefined;
   return label.length <= 100 ? label : `${label.slice(0, 99).trimEnd()}…`;

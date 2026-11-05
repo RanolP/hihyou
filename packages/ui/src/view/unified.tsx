@@ -259,8 +259,14 @@ export function unifiedRow(
     return;
   }
   const file = ctx.files()[index];
-  const shown = (side: SideName, line: number | undefined) =>
-    line === undefined || !file ? line : shownLine(file, side, line);
+  const shown = (
+    side: SideName,
+    line: number | undefined,
+    sourceLine?: number,
+  ) =>
+    line === undefined || !file
+      ? line
+      : shownLine(file, side, line, sourceLine);
   let tr: HTMLTableRowElement;
   switch (row.kind) {
     case "unchanged":
@@ -342,9 +348,12 @@ export function unifiedRow(
           data-before={line("before")}
           data-after={line("after")}
         >
-          <Num line={shown("before", line("before"))} kind={edge} />
           <Num
-            line={shown("after", line("after"))}
+            line={shown("before", line("before"), cell.sourceLine)}
+            kind={edge}
+          />
+          <Num
+            line={shown("after", line("after"), cell.sourceLine)}
             kind={moved ? ` hh-moved-inner${last}` : ""}
           />
           <td class={`hh-code${moved ? ` hh-moved${last}` : ""}`}>
@@ -356,7 +365,11 @@ export function unifiedRow(
               wholeLine={side}
               allowTrailingTerminator
               emphasize={!lone}
-              place={ctx.placer.lineCursor(index, row.fragment, side, cell.line)}
+              place={
+                cell.sourceLine === undefined
+                  ? ctx.placer.lineCursor(index, row.fragment, side, cell.line)
+                  : undefined
+              }
             />
           </td>
         </tr>
@@ -378,7 +391,7 @@ export function unifiedRow(
               after: shown("after", row.after),
             }
           : {
-              [row.side]: shown(row.side, row.cell.line),
+              [row.side]: shown(row.side, row.cell.line, row.cell.sourceLine),
             };
     const threads = (file.reviewThreads ?? []).filter(
       (thread) =>
