@@ -111,6 +111,7 @@ export interface GitHubWebHostOptions {
 
 export interface GitHubWebHost extends Host {
   resolveDiffset(data: GitHubWebDiffsetId): Promise<DiffsetResolution>;
+  resolvePullBody(owner: string, repo: string, number: number): Promise<string>;
   resolveReviewThreads(
     owner: string,
     repo: string,
@@ -391,6 +392,20 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
         commits.at(-1)?.sha;
       if (!head) throw new Error(`GET ${url} listed no commits`);
       return { head, commits };
+    },
+    async resolvePullBody(owner, repo, number) {
+      const url =
+        `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}` +
+        `/pulls/${number}`;
+      const json: unknown = await (await get(url)).json();
+      if (
+        !json ||
+        typeof json !== "object" ||
+        !("body" in json) ||
+        (typeof json.body !== "string" && json.body !== null)
+      )
+        throw new Error(`GET ${url} returned no pull request body`);
+      return json.body ?? "";
     },
     resolveReviewThreads(owner, repo, number) {
       // Unauthenticated REST allows 60 requests an hour, and every diffset switch asks again.

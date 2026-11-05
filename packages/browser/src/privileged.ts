@@ -20,6 +20,6 @@ export const enabledStorageKey = "enabled";
 /**
  * The only URLs either host fetches. `pull/<n>.diff` and `raw/...` redirect from github.com to
  * patch-diff.githubusercontent.com and raw.githubusercontent.com, which the fetch follows; api.github.com serves
- * public pull request review comments.
+ * public pull request data and review comments.
  */
 export const fetchable = /^https:\/\/(?:github\.com|api\.github\.com)\//;

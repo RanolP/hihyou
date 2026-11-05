@@ -145,6 +145,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       <button type="button" class="hh-nav view-mode" aria-pressed="false">All files</button>
       <span class="hh-meta message" role="status"></span>
     </header>
+    <section class="hh-diff hh-description" aria-labelledby="hh-description-title" hidden></section>
     <div class="hh-root"></div>
   </section>
 </div>`;
@@ -163,6 +164,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   const viewMode = $<HTMLButtonElement>(".view-mode");
   const position = $<HTMLElement>(".position");
   const status = $<HTMLElement>(".message");
+  const description = $<HTMLElement>(".hh-description");
   const root = $<HTMLElement>(".hh-root");
   const persistedViewed = persistentViewedStore(
     viewedStorageKey(page.owner, page.repo, page.pull),
@@ -188,10 +190,57 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   let fileFilter = "";
   let allFiles = storedAllFiles();
   let currentPath: string | undefined;
+  let pullBody: string | undefined;
+  let descriptionExpanded = false;
   let targetedPath: string | undefined;
   // Where the page landed for `targetedPath`; the target holds until the reader scrolls away from it.
   let targetedY = Number.NaN;
   let trackingFrame: number | undefined;
+
+  const measureDescription = () => {
+    const text = description.querySelector<HTMLElement>(".hh-description-body");
+    const toggle = description.querySelector<HTMLButtonElement>(
+      ".hh-description-toggle",
+    );
+    if (text && toggle)
+      toggle.hidden =
+        !descriptionExpanded && text.scrollHeight <= text.clientHeight + 1;
+  };
+  const drawDescription = () => {
+    description.replaceChildren();
+    const body = "pull" in (selected?.id ?? {}) ? pullBody : undefined;
+    if (!body) {
+      description.hidden = true;
+      return;
+    }
+    description.hidden = false;
+    const heading = el("h3", "hh-description-title", "Description");
+    heading.id = "hh-description-title";
+    const text = el("div", "hh-description-body", body);
+    text.id = "hh-description-body";
+    text.classList.toggle("hh-description-collapsed", !descriptionExpanded);
+    const toggle = el(
+      "button",
+      "hh-button hh-description-toggle",
+      descriptionExpanded ? "Hide description" : "Show full description",
+    );
+    toggle.type = "button";
+    toggle.setAttribute("aria-controls", text.id);
+    toggle.setAttribute("aria-expanded", String(descriptionExpanded));
+    toggle.addEventListener("click", () => {
+      descriptionExpanded = !descriptionExpanded;
+      text.classList.toggle("hh-description-collapsed", !descriptionExpanded);
+      toggle.textContent = descriptionExpanded
+        ? "Hide description"
+        : "Show full description";
+      toggle.setAttribute("aria-expanded", String(descriptionExpanded));
+      measureDescription();
+    });
+    description.append(heading, text, toggle);
+    measureDescription();
+  };
+  const descriptionObserver = new ResizeObserver(measureDescription);
+  descriptionObserver.observe(description);
 
   const updatePageStickyTop = () => {
     const hostRect = host.getBoundingClientRect();
@@ -579,6 +628,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       targetedPath = undefined;
       root.textContent = "";
     }
+    drawDescription();
     title.textContent = `${row.description} ${row.label}`;
     status.textContent = "Loading…";
     status.classList.remove("error");
@@ -855,6 +905,16 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   const unsubscribeViewed = persistedViewed.store.subscribe(drawTree);
 
   void (async () => {
+    const pullBodyRequest = host_
+      .resolvePullBody(page.owner, page.repo, page.pull)
+      .then((body) => body.replace(/<!--[\s\S]*?-->/g, "").trim())
+      .catch((error: unknown) => {
+        console.warn(
+          `hihyou: pull request #${page.pull} description unavailable`,
+          error,
+        );
+        return "";
+      });
     try {
       const pull = await host_.resolvePull(page.owner, page.repo, page.pull);
       if (disposed) return;
@@ -887,6 +947,11 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
         ? rows.find((row) => webDiffsetIdOf(row.id) === saved.id)
         : undefined;
       const initial = savedRow ?? allChanges;
+      void pullBodyRequest.then((body) => {
+        if (disposed) return;
+        pullBody = body || undefined;
+        drawDescription();
+      });
       void expand(initial);
       const restored = await open(
         initial,
@@ -911,6 +976,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       document.documentElement.style.scrollbarGutter =
         previousScrollbarGutter;
       appBarObserver.disconnect();
+      descriptionObserver.disconnect();
       host.style.removeProperty("--hh-app-bar-height");
       host.style.removeProperty("--hh-page-sticky-top");
       themeObserver.disconnect();

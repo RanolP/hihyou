@@ -39,6 +39,33 @@ export const diffStyles = `
   margin: 0 0 16px;
   overflow: clip;
 }
+.hh-description {
+  margin: 0 0 16px;
+  overflow: clip;
+  background: var(--hh-bg);
+  border: 1px solid var(--hh-border);
+  border-radius: 4px;
+}
+.hh-description-title {
+  margin: 0;
+  padding: 6px 10px;
+  color: var(--hh-muted);
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--hh-header-bg);
+  border-bottom: 1px solid var(--hh-border);
+}
+.hh-description-body {
+  margin: 8px 10px 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.hh-description-collapsed {
+  max-height: 9em;
+  overflow: hidden;
+}
+.hh-description-toggle { margin: 6px 10px 8px; }
 /* The file the counter and the tree name, for a page short enough that stepping to it scrolls nothing. */
 .hh-file[aria-current="true"] { border-color: var(--hh-accent); }
 .hh-test-group {
