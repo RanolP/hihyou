@@ -581,6 +581,17 @@ function linePaths(
   return paths;
 }
 
+// Name children in grammars without fields, notably Kotlin's declarations.
+const positionalDeclarationNames: Partial<Record<string, readonly string[]>> = {
+  class_declaration: ["type_identifier"],
+  companion_object: ["type_identifier"],
+  function_declaration: ["simple_identifier"],
+  object_declaration: ["type_identifier"],
+  property_declaration: ["variable_declaration", "multi_variable_declaration"],
+  secondary_constructor: ["function_value_parameters"],
+  type_alias: ["type_identifier"],
+};
+
 /** A declaration's first source line; undefined for a node that declares no scope. */
 function declarationLabel(tree: Tree, n: number): string | undefined {
   const field = (name: string): number | undefined => {
@@ -663,6 +674,18 @@ function declarationLabel(tree: Tree, n: number): string | undefined {
   for (let i = 0, count = tree.count(n); i < count; i++) {
     const c = tree.child(n, i);
     if (tree.named(c) && tree.fieldName(c) === "name") name = c;
+  }
+  if (name === undefined) {
+    const kinds = positionalDeclarationNames[tree.kindName(n)];
+    if (kinds)
+      for (let i = 0, count = tree.count(n); i < count; i++) {
+        const c = tree.child(n, i);
+        if (tree.named(c) && kinds.includes(tree.kindName(c))) {
+          name = c;
+          break;
+        }
+      }
+    if (name === undefined && tree.kindName(n) === "companion_object") name = n;
   }
   if (name === undefined) return undefined;
   // A destructuring pattern names bindings, not the declaration scope.
