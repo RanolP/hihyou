@@ -1,6 +1,7 @@
 import type { JSX } from "solid-js";
 import {
   buildSections,
+  onlyBlankChanges,
   type DiffFile,
   type UnifiedRow,
   unifiedRows,
@@ -106,11 +107,13 @@ export function FileTable(props: { index: number; file: DiffFile }): JSX.Element
       );
       // A unit followed within a few lines by the next one (a blank line, a doc comment) hands the pin over
       // directly; a scope row between every pair of added declarations is noise.
-      const following = unified.slice(rowIndex + 1, rowIndex + 4);
+      const remaining = unified.slice(rowIndex + 1);
+      const following = remaining.slice(0, 3);
       if (
         following.length > 0 &&
         wholeEndsAt(headers, row) &&
-        following.every((r) => wholeHeadersAt(headers, r).length === 0)
+        following.every((r) => wholeHeadersAt(headers, r).length === 0) &&
+        !onlyBlankChanges(remaining)
       )
         rows.push(scopeRow(section.path, columns));
     }
