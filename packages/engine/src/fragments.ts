@@ -679,6 +679,15 @@ function declarationLabel(tree: Tree, n: number): string | undefined {
     )
       return declarationSourceLine(tree, n, key);
   }
+  // A Rust item-level macro (tokio's `cfg_time! { … }`) wraps items the parser keeps as raw tokens, so it is the
+  // one scope its lines can name, "cfg_time!", as GitHub's hunk header does.
+  if (
+    tree.kindName(n) === "macro_invocation" &&
+    ["source_file", "declaration_list"].includes(tree.kindName(tree.parent(n)))
+  ) {
+    const name = field("macro");
+    return name === undefined ? undefined : `${tree.text(name)}!`;
+  }
   // A Rust impl names no item of its own; it reads as what it implements, "impl Delegate for MoveDelegate".
   if (tree.kindName(n) === "impl_item") {
     const type = field("type");
