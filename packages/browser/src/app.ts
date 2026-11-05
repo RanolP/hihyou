@@ -886,8 +886,11 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
         ? collapseReasons[file.collapsed.reason]
         : undefined;
       // The D letter already says a deleted file is gone.
-      if (reason && file.collapsed?.reason !== "deleted")
-        button.append(el("span", "hh-collapsed-hint", reason));
+      if (reason && file.collapsed?.reason !== "deleted") {
+        const hint = el("span", "hh-collapsed-hint");
+        hint.append(el("span", "", reason));
+        button.append(hint);
+      }
       // The size of each file before opening it, so a reviewer can pick an order.
       if (file.stats) {
         const stats = el("span", "hh-file-stats");
@@ -1064,9 +1067,12 @@ const appStyles = `
 .hh-folder { padding: 2px 4px; color: var(--fgColor-muted, GrayText); }
 .hh-file-row { display: flex; align-items: baseline; gap: 6px; width: 100%; min-width: 0; white-space: nowrap; }
 /* A long name ends in an ellipsis in place of widening the list; its hint gives way first. */
-.hh-file-name, .hh-collapsed-hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.hh-file-name, .hh-collapsed-hint > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .hh-file-name { flex: 0 1 auto; }
-.hh-collapsed-hint { flex: 1 1 0; }
+.hh-collapsed-hint { flex: 1 1 0; min-width: 0; container-type: inline-size; }
+.hh-collapsed-hint > span { display: block; }
+/* A hint squeezed to a letter or two reads as noise; the row title still carries it. */
+@container (max-width: 7em) { .hh-collapsed-hint > span { visibility: hidden; } }
 .hh-file-viewed { color: var(--fgColor-muted, GrayText); }
 .hh-viewed-mark { margin-left: auto; color: var(--fgColor-muted, GrayText); }
 .hh-file-stats { margin-left: auto; flex: none; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
