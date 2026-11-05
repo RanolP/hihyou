@@ -272,6 +272,30 @@ function mount(
       (section) => section.dataset["path"] === path,
     );
 
+  /**
+   * Runs `change`, which folds or unfolds the file at `path`, then scrolls so what the reader was looking at stays
+   * put: the file's header when it is on screen, else the files below when this one lies above the viewport (the
+   * page turns off the browser's own scroll anchoring).
+   */
+  const keepInPlace = (path: string, change: () => void) => {
+    const header = () =>
+      fileSection(path)?.querySelector<HTMLElement>(".hh-file-header");
+    const h = header()?.getBoundingClientRect();
+    const s = fileSection(path)?.getBoundingClientRect();
+    const onScreen =
+      win != null && h !== undefined && h.bottom > 0 && h.top < win.innerHeight;
+    const above = !onScreen && s !== undefined && s.top < 0;
+    const before = onScreen ? h.top : above ? s.bottom : undefined;
+    change();
+    if (before === undefined || win == null) return;
+    win.requestAnimationFrame(() => {
+      const after = onScreen
+        ? header()?.getBoundingClientRect().top
+        : fileSection(path)?.getBoundingClientRect().bottom;
+      if (after !== undefined && after !== before) win.scrollBy(0, after - before);
+    });
+  };
+
   const ctx: DrawContext = {
     doc,
     files,
@@ -296,46 +320,21 @@ function mount(
       (file.collapsed !== undefined || fileViewed(i, file)) &&
       !opened.has(file.path),
     open(path) {
-      const headerTop = fileSection(path)
-        ?.querySelector<HTMLElement>(".hh-file-header")
-        ?.getBoundingClientRect().top;
-      opened.add(path);
-      redraw();
-      if (headerTop !== undefined)
-        win?.requestAnimationFrame(() => {
-          const newTop = fileSection(path)
-            ?.querySelector<HTMLElement>(".hh-file-header")
-            ?.getBoundingClientRect().top;
-          if (newTop !== undefined && newTop !== headerTop)
-            win.scrollBy(0, newTop - headerTop);
-        });
+      keepInPlace(path, () => {
+        opened.add(path);
+        redraw();
+      });
     },
     fileViewed,
     setFileViewed(i, file, on) {
-      const section = fileSection(file.path);
-      const header = section?.querySelector<HTMLElement>(".hh-file-header");
-      const headerRect = header?.getBoundingClientRect();
-      const headerTop =
-        win != null &&
-        headerRect !== undefined &&
-        headerRect.bottom > 0 &&
-        headerRect.top < win.innerHeight
-          ? headerRect.top
-          : undefined;
-      if (on) opened.delete(file.path);
-      else opened.add(file.path);
-      const index = outline();
-      if ((index.fileAtoms[i]?.length ?? 0) > 0)
-        setViewed(index, { kind: "file", file: i }, on, viewed, keyOf);
-      else viewed.set(fileKey(file), on);
-      if (headerTop !== undefined && win != null)
-        win.requestAnimationFrame(() => {
-          const newTop = fileSection(file.path)
-            ?.querySelector<HTMLElement>(".hh-file-header")
-            ?.getBoundingClientRect().top;
-          if (newTop !== undefined && newTop !== headerTop)
-            win.scrollBy(0, newTop - headerTop);
-        });
+      keepInPlace(file.path, () => {
+        if (on) opened.delete(file.path);
+        else opened.add(file.path);
+        const index = outline();
+        if ((index.fileAtoms[i]?.length ?? 0) > 0)
+          setViewed(index, { kind: "file", file: i }, on, viewed, keyOf);
+        else viewed.set(fileKey(file), on);
+      });
     },
     viewState(t) {
       viewedTick();
