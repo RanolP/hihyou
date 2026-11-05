@@ -8,6 +8,7 @@ import {
   type LoadReply,
   type ToBackground,
 } from "../src/protocol.js";
+import { enabledStorageKey } from "../src/privileged.js";
 
 const definition: ContentScriptDefinition = defineContentScript({
   matches: ["https://github.com/*"],
@@ -42,6 +43,21 @@ const definition: ContentScriptDefinition = defineContentScript({
         if (!app)
           throw new Error("app.js was injected but registered no hihyouApp");
         return app;
+      },
+      async isEnabled() {
+        const stored = await browser.storage.local.get(enabledStorageKey);
+        return stored[enabledStorageKey] !== false;
+      },
+      onEnabledChanged(listener) {
+        const changed = (
+          changes: Record<string, { newValue?: unknown }>,
+          areaName: string,
+        ) => {
+          if (areaName !== "local" || !(enabledStorageKey in changes)) return;
+          listener(changes[enabledStorageKey]?.newValue !== false);
+        };
+        browser.storage.onChanged.addListener(changed);
+        return () => browser.storage.onChanged.removeListener(changed);
       },
     });
   },

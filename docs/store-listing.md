@@ -22,7 +22,8 @@ hihyou provides a syntax-aware review view for pull requests on GitHub.
 
 | Permission | Justification |
 | --- | --- |
-| `scripting` | Injects hihyou's own bundled app script into a GitHub pull request tab after the reader enables hihyou. |
+| `scripting` | Injects hihyou's own bundled app script into a GitHub pull request tab. |
+| `storage` | Remembers whether hihyou is enabled. |
 | `https://github.com/*` | Runs the review interface on GitHub and reads pull request pages and diffs with the signed-in reader's GitHub session. |
 | `https://api.github.com/*` | Reads GitHub pull request metadata and review data. |
 | `https://patch-diff.githubusercontent.com/*` | Follows GitHub's redirect when reading a pull request diff. |

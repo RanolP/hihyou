@@ -46,7 +46,17 @@ export default defineConfig({
     description:
       "Review GitHub pull requests with hihyou's syntax-aware diff, in place of the Files changed tab.",
     homepage_url: "https://github.com/RanolP/hihyou",
-    permissions: ["scripting"],
+    permissions: ["scripting", "storage"],
+    action: {
+      default_title: "hihyou",
+      default_icon: {
+        16: "icon-16.png",
+        32: "icon-32.png",
+        48: "icon-48.png",
+        96: "icon-96.png",
+        128: "icon-128.png",
+      },
+    },
     host_permissions: [
       "https://github.com/*",
       "https://api.github.com/*",

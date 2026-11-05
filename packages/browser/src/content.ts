@@ -11,7 +11,7 @@ const tabRoots = [
   "#files_bucket",
   'react-app [data-target="react-app.reactRoot"]',
 ];
-const storageKey = "hihyou:on";
+const optOutStorageKey = (key: string) => `hihyou:github-view:${key}`;
 
 interface Current {
   key: string;
@@ -21,26 +21,29 @@ interface Current {
   /** GitHub's diff, hidden while hihyou is on, with each element's own inline `display` to restore. */
   areas: { element: HTMLElement; display: string }[];
   mounted?: Mounted;
+  on: boolean;
   /** Bumped on every toggle, so a mount that finishes after the reviewer turned hihyou off again is dropped. */
   generation: number;
 }
 let current: Current | undefined;
 let privileged: Privileged;
 let loaded: Promise<App> | undefined;
+let globallyEnabled = true;
 
-function remembered(): boolean {
+function optedOut(key: string): boolean {
   try {
-    return localStorage.getItem(storageKey) === "1";
+    return sessionStorage.getItem(optOutStorageKey(key)) === "1";
   } catch {
     return false;
   }
 }
 
-function remember(on: boolean) {
+function rememberOptOut(key: string, optOut: boolean) {
   try {
-    localStorage.setItem(storageKey, on ? "1" : "0");
+    if (optOut) sessionStorage.setItem(optOutStorageKey(key), "1");
+    else sessionStorage.removeItem(optOutStorageKey(key));
   } catch {
-    // A page with storage blocked just forgets the choice.
+    // A page with storage blocked just forgets the temporary choice.
   }
 }
 
@@ -88,8 +91,12 @@ async function setOn(state: Current, on: boolean) {
   const generation = ++state.generation;
   const button = state.bar.querySelector("button") as HTMLButtonElement;
   const note = state.bar.querySelector(".hihyou-note") as HTMLElement;
-  button.setAttribute("aria-pressed", String(on));
-  remember(on);
+  state.on = on;
+  button.textContent = on ? "GitHub view" : "hihyou";
+  button.title = on
+    ? "Use GitHub's view for this pull request in this tab"
+    : "Return to hihyou for this pull request";
+  rememberOptOut(state.key, !on);
   if (!on) {
     state.mounted?.dispose();
     delete state.mounted;
@@ -124,6 +131,10 @@ async function setOn(state: Current, on: boolean) {
 }
 
 function sync() {
+  if (!globallyEnabled) {
+    teardown();
+    return;
+  }
   const page = pullFilesPage(location.href);
   const key = page && `${page.owner}/${page.repo}#${page.pull}`;
   if (
@@ -145,8 +156,6 @@ function sync() {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "btn btn-sm";
-  button.textContent = "hihyou";
-  button.title = "Review this pull request's changes with hihyou";
   const note = document.createElement("span");
   note.className = "hihyou-note color-fg-muted";
   bar.append(button, note);
@@ -164,22 +173,25 @@ function sync() {
       element,
       display: element.style.display,
     })),
+    on: false,
     generation: 0,
   };
   current = state;
-  button.addEventListener(
-    "click",
-    () => void setOn(state, button.getAttribute("aria-pressed") !== "true"),
-  );
-  button.setAttribute("aria-pressed", "false");
-  if (remembered()) void setOn(state, true);
+  button.addEventListener("click", () => void setOn(state, !state.on));
+  void setOn(state, !optedOut(key));
 }
 
 // GitHub navigates without reloading (Turbo, and React's own router), and draws the diff area after load, so
 // every DOM change re-checks; `sync` returns at once when nothing moved.
-// Small on purpose: it runs on every github.com page, and loads the app only once a reviewer turns hihyou on.
+// Small on purpose: it runs on every github.com page, and loads the app only on a pull request Files changed page.
 export function start(host: Privileged) {
   privileged = host;
+  globallyEnabled = host.isEnabled === undefined;
+  try {
+    localStorage.removeItem("hihyou:on");
+  } catch {
+    // A page with storage blocked may retain the obsolete preference.
+  }
   let queued = false;
   const schedule = () => {
     if (queued) return;
@@ -195,5 +207,24 @@ export function start(host: Privileged) {
   });
   addEventListener("turbo:load", schedule);
   addEventListener("popstate", schedule);
-  sync();
+  let enabledGeneration = 0;
+  const setEnabled = (enabled: boolean) => {
+    enabledGeneration++;
+    globallyEnabled = enabled;
+    if (!enabled) teardown();
+    schedule();
+  };
+  host.onEnabledChanged?.(setEnabled);
+  if (host.isEnabled) {
+    const generation = enabledGeneration;
+    void host.isEnabled().then(
+      (enabled) => {
+        if (generation === enabledGeneration) setEnabled(enabled);
+      },
+      (error: unknown) => {
+        console.error("hihyou: could not read the enabled setting", error);
+        if (generation === enabledGeneration) setEnabled(true);
+      },
+    );
+  } else sync();
 }

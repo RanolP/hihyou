@@ -10,8 +10,12 @@ These requests send the browser's own `github.com` cookies so private repositori
 
 hihyou sends nothing anywhere else.
 
-hihyou stores the reader's viewed-file state, view mode, and on/off choice in `github.com`'s `localStorage` in that browser only.
+hihyou stores the reader's viewed-file state and view mode in `github.com`'s `localStorage` in that browser only.
+
+hihyou stores whether the extension is enabled in the browser's extension storage. A temporary switch to GitHub's view is stored for that pull request in that tab's `sessionStorage`.
 
 The `scripting` permission is used only to inject hihyou's own bundled app script into the GitHub tab.
+
+The `storage` permission is used only to remember whether hihyou is enabled.
 
 For privacy questions, open an issue at https://github.com/RanolP/hihyou/issues.
