@@ -125,19 +125,29 @@ function commentAge(createdAt: string): {
   const created = new Date(createdAt);
   const delta = created.getTime() - Date.now();
   if (!Number.isFinite(delta)) return undefined;
+  const title = created.toLocaleString();
+  // Like GitHub: past a month the date itself, "on Jul 15", with the year only when it is not this one.
+  if (Math.abs(delta) >= 30 * 24 * 60 * 60 * 1000) {
+    const date = created.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      ...(created.getFullYear() !== new Date().getFullYear() && {
+        year: "numeric",
+      }),
+    });
+    return { text: `on ${date}`, title };
+  }
   const units = [
-    ["year", 365 * 24 * 60 * 60 * 1000],
-    ["month", 30 * 24 * 60 * 60 * 1000],
     ["day", 24 * 60 * 60 * 1000],
     ["hour", 60 * 60 * 1000],
     ["minute", 60 * 1000],
     ["second", 1000],
   ] as const;
   const [unit, milliseconds] =
-    units.find(([, size]) => Math.abs(delta) >= size) ?? units[5];
+    units.find(([, size]) => Math.abs(delta) >= size) ?? units[3];
   return {
     text: relativeTime.format(Math.round(delta / milliseconds), unit),
-    title: created.toLocaleString(),
+    title,
   };
 }
 
