@@ -24,6 +24,7 @@ import {
   type ViewedStore,
 } from "@hihyou/ui";
 import type { App, MountOptions, Mounted } from "./app-api.js";
+import { renderDescription } from "./description.js";
 
 /** One row of the diffsets panel: the pull request's whole change or one of its commits. */
 interface Row {
@@ -216,7 +217,8 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     description.hidden = false;
     const heading = el("h3", "hh-description-title", "Description");
     heading.id = "hh-description-title";
-    const text = el("div", "hh-description-body", body);
+    const text = el("div", "hh-description-body");
+    text.append(renderDescription(body, document));
     text.id = "hh-description-body";
     text.classList.toggle("hh-description-collapsed", !descriptionExpanded);
     const toggle = el(

@@ -58,9 +58,45 @@ export const diffStyles = `
 .hh-description-body {
   margin: 8px 10px 0;
   font-size: 13px;
+  line-height: 1.5;
   overflow-wrap: anywhere;
-  white-space: pre-wrap;
 }
+.hh-description-body > :first-child { margin-top: 0; }
+.hh-description-body > :last-child { margin-bottom: 0; }
+.hh-description-body p { margin: 8px 0; }
+.hh-description-body h4, .hh-description-body h5, .hh-description-body h6 {
+  margin: 12px 0 6px;
+  font-size: 1.1em;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.hh-description-body h5 { font-size: 1.05em; }
+.hh-description-body h6 { font-size: 1em; }
+.hh-description-body ul, .hh-description-body ol { margin: 8px 0; padding-left: 2em; }
+.hh-description-body li + li { margin-top: 2px; }
+.hh-description-task { list-style: none; }
+.hh-description-task > input { margin: 0 0.5em 0 -1.5em; vertical-align: -0.1em; }
+.hh-description-body pre {
+  margin: 8px 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border-radius: 4px;
+  background: var(--hh-header-bg);
+}
+.hh-description-body code { font-family: var(--hh-mono); }
+.hh-description-body :not(pre) > code {
+  padding: 0.15em 0.35em;
+  border-radius: 3px;
+  background: var(--hh-header-bg);
+}
+.hh-description-body blockquote {
+  margin: 8px 0;
+  padding-left: 10px;
+  color: var(--hh-muted);
+  border-left: 3px solid var(--hh-border);
+}
+.hh-description-body hr { height: 1px; margin: 12px 0; border: 0; background: var(--hh-border); }
+.hh-description-body a { color: var(--hh-button-fg); }
 .hh-description-collapsed {
   max-height: 9em;
   overflow: hidden;
