@@ -233,10 +233,11 @@ const hides = (row: Row) => row.kind === "elided" && row.count !== 0;
  * A header only says what the reader cannot already see, since one on every hunk is noise. A declaration is out
  * of sight once a hidden gap separates its first line from the code being read: a gap hides every declaration
  * open across it, and a `begin` right after a gap had its first line inside it. A section opens with a header
- * when a change inside its declarations comes before the next hidden gap (context and hidden lines alone get
- * none), and either a declaration on its path is out of sight and the header above does not already name it,
- * or the header above names a declaration this section is not in. A header stays stuck for the rest of the
- * table, so one shown goes stale only until the next one replaces it.
+ * when a top-level header above would otherwise stay stuck over declaration context. Otherwise, it opens with
+ * one only when a change inside its declarations comes before the next hidden gap (context and hidden lines alone
+ * get none), and either a declaration on its path is out of sight and the header above does not already name it,
+ * or the header above names a declaration this section is not in. A header stays stuck for the rest of the table,
+ * so one shown goes stale only until the next one replaces it.
  */
 export function buildSections(file: DiffFile): Section[] {
   const sections: Section[] = [];
@@ -340,7 +341,7 @@ export function buildSections(file: DiffFile): Section[] {
   close();
 
   // The header stuck at the top while reading a section: the last one shown above it.
-  let stuck: string[] = [];
+  let stuck: string[] | undefined;
   // Per section: a change inside its declarations comes before the next hidden gap.
   const changes: boolean[] = [];
   for (let i = sections.length - 1; i >= 0; i--) {
@@ -356,10 +357,14 @@ export function buildSections(file: DiffFile): Section[] {
   }
   sections.forEach((section, i) => {
     const { path } = section;
-    if (!changes[i]) return;
-    const stale = stuck.some((label, j) => path[j] !== label);
+    const topLevelStale =
+      stuck !== undefined && stuck.length === 0 && path.length > 0;
+    if (!changes[i] && !topLevelStale) return;
+    const stale =
+      topLevelStale ||
+      (stuck?.some((label, j) => path[j] !== label) ?? false);
     const deepest = (unseen.get(section) ?? []).lastIndexOf(true);
-    if (stale || stuck.length <= deepest) {
+    if (stale || (stuck?.length ?? 0) <= deepest) {
       section.heading = true;
       stuck = path;
     }
