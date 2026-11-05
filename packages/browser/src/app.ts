@@ -431,6 +431,10 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     const total =
       allFiles && !testsShown && sources > 0 ? sources : ordered.length;
     position.textContent = i < 0 ? "" : `${i + 1} / ${total}`;
+    // With one file there is nothing to step to or between, so the controls would only fill the bar.
+    const lone = ordered.length <= 1;
+    for (const control of [previous, position, next, viewMode])
+      control.hidden = lone;
     if (selected) replaceSelectionHash(selected, i < 0 ? "" : ordered[i]!.path);
     for (const section of root.querySelectorAll<HTMLElement>(".hh-file")) {
       if (allFiles && section.dataset["path"] === currentPath)
