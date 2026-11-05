@@ -25,7 +25,7 @@ export interface FileDiff {
 }
 
 export type CodeFragment =
-  | { kind: "begin"; label: string; at: AstSteps } // label e.g. "class AA"
+  | { kind: "begin"; label: string; at: AstSteps } // declaration's first source line, e.g. "class AA"
   | { kind: "end"; label: string }
   | {
       kind: "unchanged";
@@ -83,7 +83,7 @@ export interface NodeOutline {
    * atoms stay those below it, so it is viewed when they all are.
    */
   whole?: "added" | "deleted";
-  /** With `whole`, on a declaration: what it declares, as a `begin` label reads ("function f", "class Shop"). */
+  /** With `whole`, on a declaration: what it declares, as a `begin` label reads. */
   label?: string;
 }
 
@@ -564,7 +564,7 @@ function linePaths(
   return paths;
 }
 
-/** "class AA", "def run", `Deno.test("sync")`; undefined for a node that declares no scope. */
+/** A declaration's first source line; undefined for a node that declares no scope. */
 function declarationLabel(tree: Tree, n: number): string | undefined {
   const field = (name: string): number | undefined => {
     for (let i = 0, count = tree.count(n); i < count; i++) {
@@ -592,7 +592,10 @@ function declarationLabel(tree: Tree, n: number): string | undefined {
           ["arrow_function", "function_expression"].includes(tree.kindName(c)),
         )
       )
-        return `${tree.text(callee)}(${tree.text(first)})`;
+        return (
+          declarationSourceLine(tree, n, first) ??
+          `${tree.text(callee)}(${tree.text(first)})`
+        );
     }
   }
   // A Rust impl names no item of its own; it reads as what it implements, "impl Delegate for MoveDelegate".
@@ -600,9 +603,12 @@ function declarationLabel(tree: Tree, n: number): string | undefined {
     const type = field("type");
     const trait = field("trait");
     if (type === undefined) return undefined;
-    return trait === undefined
-      ? `impl ${tree.text(type)}`
-      : `impl ${tree.text(trait)} for ${tree.text(type)}`;
+    return (
+      declarationSourceLine(tree, n, type) ??
+      (trait === undefined
+        ? `impl ${tree.text(type)}`
+        : `impl ${tree.text(trait)} for ${tree.text(type)}`)
+    );
   }
   let name: number | undefined;
   for (let i = 0, count = tree.count(n); i < count; i++) {
@@ -617,9 +623,29 @@ function declarationLabel(tree: Tree, n: number): string | undefined {
   let at = 0;
   while (at < tree.count(n) - 1 && /modifiers?$/.test(tree.kindName(tree.child(n, at)))) at++;
   const first = tree.child(n, at);
-  return !tree.named(first) && /^[a-z]+$/.test(tree.text(first))
-    ? `${tree.text(first)} ${tree.text(name)}`
-    : tree.text(name);
+  return (
+    declarationSourceLine(tree, n, name) ??
+    (!tree.named(first) && /^[a-z]+$/.test(tree.text(first))
+      ? `${tree.text(first)} ${tree.text(name)}`
+      : tree.text(name))
+  );
+}
+
+function declarationSourceLine(tree: Tree, n: number, name: number): string | undefined {
+  const text = tree.text(n);
+  const lines = text.split(/\r?\n/);
+  let line = lines[0]?.trim();
+  if (
+    line &&
+    tree.start(name) > tree.start(n) &&
+    /^(?:@|#!?\[|\[|\/\/[/!]|\/\*[*!])/.test(line)
+  ) {
+    const beforeName = text.slice(0, tree.start(name) - tree.start(n));
+    line = lines[beforeName.split("\n").length - 1]?.trim();
+  }
+  const label = line?.replace(/\s*\{\s*$/, "").trimEnd();
+  if (!label) return undefined;
+  return label.length <= 100 ? label : `${label.slice(0, 99).trimEnd()}…`;
 }
 
 /**
