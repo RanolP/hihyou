@@ -649,8 +649,17 @@ function declarationSourceLine(tree: Tree, n: number, name: number): string | un
   }
   const source = tree.text(tree.root);
   const start = source.lastIndexOf("\n", at - 1) + 1;
-  const end = source.indexOf("\n", at);
-  const line = source.slice(start, end === -1 ? source.length : end).trimStart();
+  let end = source.indexOf("\n", at);
+  if (end === -1) end = source.length;
+  // A comment trailing the header (Ruby's `class Scope # :nodoc:`) is no part of what it declares.
+  const stack = [n];
+  while (stack.length > 0) {
+    const m = stack.pop()!;
+    if (tree.start(m) >= end || tree.end(m) <= at) continue;
+    if (tree.start(m) > at && tree.kindName(m).includes("comment")) end = tree.start(m);
+    else for (let i = 0, count = tree.count(m); i < count; i++) stack.push(tree.child(m, i));
+  }
+  const line = source.slice(start, end).trimStart();
   const label = line?.replace(/\s*\{\s*$/, "").trimEnd();
   if (!label) return undefined;
   return label.length <= 100 ? label : `${label.slice(0, 99).trimEnd()}…`;
