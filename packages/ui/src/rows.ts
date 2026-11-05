@@ -229,6 +229,78 @@ function startOf(f: CodeFragment): LinePair | undefined {
   }
 }
 
+interface CellPair {
+  before?: Cell;
+  after?: Cell;
+  beforeIndex?: number;
+  afterIndex?: number;
+  same: boolean;
+}
+
+/** Re-aligns original source lines that one formatted display line joined, preserving its inserted lines. */
+function alignExpandedCells(before: Cell[], after: Cell[]): CellPair[] {
+  if (![...before, ...after].some((cell) => cell.sourceLine !== undefined))
+    return Array.from(
+      { length: Math.max(before.length, after.length) },
+      (_, i) => ({
+        ...(before[i] && { before: before[i] }),
+        ...(after[i] && { after: after[i] }),
+        ...(before[i] && { beforeIndex: i }),
+        ...(after[i] && { afterIndex: i }),
+        same: false,
+      }),
+    );
+  const text = (cell: Cell) => cell.spans.map((span) => span.text).join("");
+  const out: CellPair[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < before.length || j < after.length) {
+    const b = before[i];
+    const a = after[j];
+    if (b && a && text(b) === text(a)) {
+      out.push({
+        before: b,
+        after: a,
+        beforeIndex: i++,
+        afterIndex: j++,
+        same: true,
+      });
+      continue;
+    }
+    if (!b) {
+      if (a) out.push({ after: a, afterIndex: j++, same: false });
+      continue;
+    }
+    if (!a) {
+      out.push({ before: b, beforeIndex: i++, same: false });
+      continue;
+    }
+    const nextAfter = after.findIndex(
+      (cell, at) => at > j && text(cell) === text(b),
+    );
+    const nextBefore = before.findIndex(
+      (cell, at) => at > i && text(cell) === text(a),
+    );
+    if (
+      nextAfter !== -1 &&
+      (nextBefore === -1 || nextAfter - j <= nextBefore - i)
+    ) {
+      out.push({ after: a, afterIndex: j++, same: false });
+    } else if (nextBefore !== -1) {
+      out.push({ before: b, beforeIndex: i++, same: false });
+    } else {
+      out.push({
+        before: b,
+        after: a,
+        beforeIndex: i++,
+        afterIndex: j++,
+        same: false,
+      });
+    }
+  }
+  return out;
+}
+
 /** A gap row that still hides lines; one fully revealed leaves the code on both sides of it continuous. */
 const hides = (row: Row) => row.kind === "elided" && row.count !== 0;
 
@@ -296,9 +368,9 @@ export function buildSections(file: DiffFile): Section[] {
         unchangedRows(f);
         return;
       case "diff": {
-        const cells = (side: SideName): Cell[][] => {
+        const cells = (side: SideName): Cell[] => {
           const value = f[side];
-          return splitLines(value.spans).map((spans, i) => {
+          return splitLines(value.spans).flatMap((spans, i) => {
             const line = value.startLine + i;
             const source = file.sourceSpans?.[side][line];
             const sourceLine = file.sourceLines?.[side][line - 1];
@@ -317,38 +389,45 @@ export function buildSections(file: DiffFile): Section[] {
           before: movedRuns(f.before, splitLines(f.before.spans)),
           after: movedRuns(f.after, splitLines(f.after.spans)),
         };
-        for (let i = 0; i < Math.max(before.length, after.length); i++) {
-          const beforeLines = before[i] ?? [];
-          const afterLines = after[i] ?? [];
-          for (let j = 0; j < Math.max(beforeLines.length, afterLines.length); j++) {
-            const b = beforeLines[j];
-            const a = afterLines[j];
-            const move: Partial<Record<SideName, SideMove>> = {};
-            const moved: Partial<Record<SideName, { last: boolean }>> = {};
-            for (const side of ["before", "after"] as const) {
-              const sideLines = side === "before" ? beforeLines : afterLines;
-              const cell = sideLines[j];
-              if (!cell) continue;
-              const line = cell.line;
-              const run = moves[side].find(
-                (candidate) =>
-                  candidate.first <= line && line <= candidate.last,
-              );
-              if (!run) continue;
-              if (run.first === line && j === 0) move[side] = run.move;
-              moved[side] = {
-                last: line === run.last && j === sideLines.length - 1,
-              };
-            }
-            rows().push({
-              kind: "diff",
-              fragment: index,
-              ...(b && { before: b }),
-              ...(a && { after: a }),
-              ...((move.before || move.after) && { move }),
-              ...((moved.before || moved.after) && { moved }),
-            });
+        for (const pair of alignExpandedCells(before, after)) {
+          const { before: b, after: a } = pair;
+          if (pair.same && b && a) {
+            rows().push({ kind: "unchanged", before: b, after: a });
+            continue;
           }
+          const move: Partial<Record<SideName, SideMove>> = {};
+          const moved: Partial<Record<SideName, { last: boolean }>> = {};
+          for (const side of ["before", "after"] as const) {
+            const sideLines = side === "before" ? before : after;
+            const at = side === "before" ? pair.beforeIndex : pair.afterIndex;
+            const cell = at === undefined ? undefined : sideLines[at];
+            if (!cell) continue;
+            const line = cell.line;
+            const run = moves[side].find(
+              (candidate) => candidate.first <= line && line <= candidate.last,
+            );
+            if (!run) continue;
+            if (
+              run.first === line &&
+              sideLines.findIndex((candidate) => candidate.line === line) === at
+            )
+              move[side] = run.move;
+            moved[side] = {
+              last:
+                line === run.last &&
+                sideLines.findLastIndex(
+                  (candidate) => candidate.line === line,
+                ) === at,
+            };
+          }
+          rows().push({
+            kind: "diff",
+            fragment: index,
+            ...(b && { before: b }),
+            ...(a && { after: a }),
+            ...((move.before || move.after) && { move }),
+            ...((moved.before || moved.after) && { moved }),
+          });
         }
         return;
       }

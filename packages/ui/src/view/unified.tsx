@@ -286,8 +286,10 @@ export function unifiedRow(
     case "unchanged":
       tr = (
         <tr class="hh-line">
-          <Num line={shown("before", row.before.line)} />
-          <Num line={shown("after", row.after.line)} />
+          <Num
+            line={shown("before", row.before.line, row.before.sourceLine)}
+          />
+          <Num line={shown("after", row.after.line, row.after.sourceLine)} />
           <td class="hh-code" style={codeStyle(row.after.spans)}>
             <span class="hh-sign" />
             <SpanNodes
@@ -399,8 +401,12 @@ export function unifiedRow(
     const lines =
       row.kind === "unchanged"
         ? {
-            before: shown("before", row.before.line),
-            after: shown("after", row.after.line),
+            before: shown(
+              "before",
+              row.before.line,
+              row.before.sourceLine,
+            ),
+            after: shown("after", row.after.line, row.after.sourceLine),
           }
         : row.kind === "merged"
           ? {
