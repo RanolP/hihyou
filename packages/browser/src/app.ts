@@ -680,7 +680,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       position.textContent = "";
     }
     drawDescription();
-    title.textContent = `${row.description} ${row.label}`;
+    title.replaceChildren(`${row.description} `, ...codeSpans(row.label));
     status.textContent = "Loading…";
     status.classList.remove("error");
     drawTree();
@@ -797,7 +797,8 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
         const twisty = el("button", "hh-twisty", row.expanded ? "▾" : "▸");
         twisty.setAttribute("aria-label", row.expanded ? "Collapse" : "Expand");
         twisty.addEventListener("click", () => void expand(row));
-        const label = el("button", "hh-label", row.label);
+        const label = el("button", "hh-label");
+        label.append(...codeSpans(row.label));
         if (row.tooltip) label.title = row.tooltip;
         label.addEventListener("click", () => {
           if (!row.expanded) void expand(row);
@@ -1057,6 +1058,18 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   };
 }
 
+/** Commit and PR titles as GitHub shows them: a `backticked` span reads as code. */
+function codeSpans(text: string): Node[] {
+  return text
+    .split(/(`[^`]+`)/)
+    .filter((part) => part !== "")
+    .map((part) =>
+      part.length > 2 && part.startsWith("`") && part.endsWith("`")
+        ? el("code", "", part.slice(1, -1))
+        : document.createTextNode(part),
+    );
+}
+
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   className = "",
@@ -1132,6 +1145,7 @@ const appStyles = `
 .hh-main > .hh-bar > :not(.hh-title) { flex-shrink: 0; white-space: nowrap; }
 .hh-root .hh-bar { top: calc(var(--hh-page-sticky-top) + var(--hh-app-bar-height)); }
 .hh-title { flex: 1 1 auto; min-width: 0; margin: 0; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hh-title code, .hh-label code { padding: 0.1em 0.3em; border-radius: 6px; background: var(--bgColor-neutral-muted, rgba(175, 184, 193, 0.2)); font: 0.85em ui-monospace, SFMono-Regular, Menlo, monospace; }
 .hh-meta { color: var(--fgColor-muted, GrayText); }
 .hh-meta.error { color: var(--fgColor-danger, #cf222e); white-space: pre-wrap; }
 .hh-nav { padding: 2px 8px; border: 1px solid var(--borderColor-default, #d0d7de); border-radius: 6px; background: var(--bgColor-muted, #f6f8fa); color: inherit; cursor: pointer; }
