@@ -421,7 +421,7 @@ export async function diffFiles(
           s.b,
           p.texts,
           path,
-          !status && !reason && p.fallback !== "too-large",
+          !status,
           p.grammar?.highlight,
         ),
         ...(reason && { collapsed: { reason } }),
@@ -590,7 +590,8 @@ function lineFragments(
   highlight?: HighlightModule,
 ): CodeFragment[] {
   // Without a tree the changed line is the unit the viewer paints; a whole file is the change, unpainted.
-  for (const e of lineDiff(texts[0], texts[1], indentIsSyntax(path))) {
+  const edits = lineDiff(texts[0], texts[1], indentIsSyntax(path));
+  for (const e of edits) {
     if ("old" in e) {
       a.changed.push(e.old);
       recordLines(a, e.old, path, "before");
@@ -600,12 +601,43 @@ function lineFragments(
       recordLines(b, e.new, path, "after");
     }
   }
-  // A folded or too-large file skips the token diff, whose cost grows with the whole text.
-  if (emphasize)
-    for (const e of tokenDiff(texts[0], texts[1])) {
-      if ("old" in e) a.emphasis.push(e.old);
-      if ("new" in e) b.emphasis.push(e.new);
+  // Token emphasis follows replacement regions, capped to skip regenerated blocks.
+  if (emphasize) {
+    const nonBlankLines = (text: string) =>
+      text.split("\n").filter((line) => /\S/.test(line)).length;
+    let prevOldEnd = 0;
+    let prevNewEnd = 0;
+    for (let i = 0; i < edits.length; i++) {
+      const edit = edits[i];
+      const next = edits[i + 1];
+      if (
+        edit?.kind === "delete" &&
+        next?.kind === "insert" &&
+        nonBlankLines(texts[0].slice(prevOldEnd, edit.old.start)) ===
+          nonBlankLines(texts[1].slice(prevNewEnd, next.new.start)) &&
+        edit.old.end - edit.old.start + next.new.end - next.new.start <=
+          20_000
+      ) {
+        for (const e of tokenDiff(
+          texts[0].slice(edit.old.start, edit.old.end),
+          texts[1].slice(next.new.start, next.new.end),
+        )) {
+          if ("old" in e)
+            a.emphasis.push({
+              start: edit.old.start + e.old.start,
+              end: edit.old.start + e.old.end,
+            });
+          if ("new" in e)
+            b.emphasis.push({
+              start: next.new.start + e.new.start,
+              end: next.new.start + e.new.end,
+            });
+        }
+      }
+      if (edit && "old" in edit) prevOldEnd = edit.old.end;
+      if (edit && "new" in edit) prevNewEnd = edit.new.end;
     }
+  }
   return buildFragments({
     a,
     b,
