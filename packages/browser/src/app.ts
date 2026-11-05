@@ -295,7 +295,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       allFiles && testFiles.length > 0 && testFiles.length < files.length;
     const changed = `${files.length} ${files.length === 1 ? "file" : "files"} changed`;
     if (!grouped || testsShown) {
-      status.textContent = `${changed}${grouped ? ` · ${testFiles.length} ${testFiles.length === 1 ? "test" : "tests"}` : ""}`;
+      status.textContent = `${changed}${grouped ? ` · ${testFiles.length} ${testFiles.length === 1 ? "test" : "tests"} shown` : ""}`;
       return;
     }
     const showTests = el(
