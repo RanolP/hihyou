@@ -144,11 +144,11 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   <section class="hh-main">
     <header class="hh-bar">
       <h2 class="hh-title"></h2>
+      <span class="hh-meta message" role="status"></span>
       <button type="button" class="hh-nav previous" aria-label="Previous file" title="Previous file (k)" disabled>↑</button>
       <span class="hh-meta position"></span>
       <button type="button" class="hh-nav next" aria-label="Next file" title="Next file (j)" disabled>↓</button>
       <button type="button" class="hh-nav view-mode" aria-pressed="false">All files</button>
-      <span class="hh-meta message" role="status"></span>
     </header>
     <section class="hh-diff hh-description" aria-labelledby="hh-description-title" hidden></section>
     <div class="hh-root"></div>
@@ -677,6 +677,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       testsShown = false;
       targetedPath = undefined;
       root.textContent = "";
+      position.textContent = "";
     }
     drawDescription();
     title.textContent = `${row.description} ${row.label}`;
