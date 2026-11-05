@@ -88,6 +88,8 @@ export interface RenderOptions {
    * renderer itself switches file (following a move into another file).
    */
   onShow?(fileId: string): void;
+  /** Called when grouped test files are shown or hidden. */
+  onTestsShown?(shown: boolean): void;
   /** Colours `Span.scope`: a VS Code theme, `include`s already followed. Without one, code is drawn uncoloured. */
   theme?: Theme;
   /** Which move pairs and files are viewed; an in-session store when absent. */
@@ -142,6 +144,7 @@ function mount(
 
   const [files, setFiles] = createSignal(initial);
   const [testsShown, setTestsShown] = createSignal(false);
+  createEffect(() => opts.onTestsShown?.(testsShown()));
   const [theme, setTheme] = createSignal(
     opts.theme && compileTheme(opts.theme),
   );
@@ -309,23 +312,30 @@ function mount(
     },
     fileViewed,
     setFileViewed(i, file, on) {
-      const section = on && !single ? fileSection(file.path) : undefined;
+      const section = fileSection(file.path);
       const header = section?.querySelector<HTMLElement>(".hh-file-header");
-      const headerWasPinned =
-        section !== undefined &&
-        header != null &&
-        section.getBoundingClientRect().top <
-          header.getBoundingClientRect().top;
+      const headerRect = header?.getBoundingClientRect();
+      const headerTop =
+        win != null &&
+        headerRect !== undefined &&
+        headerRect.bottom > 0 &&
+        headerRect.top < win.innerHeight
+          ? headerRect.top
+          : undefined;
       if (on) opened.delete(file.path);
       else opened.add(file.path);
       const index = outline();
       if ((index.fileAtoms[i]?.length ?? 0) > 0)
         setViewed(index, { kind: "file", file: i }, on, viewed, keyOf);
       else viewed.set(fileKey(file), on);
-      if (headerWasPinned)
-        win?.requestAnimationFrame(() =>
-          fileSection(file.path)?.scrollIntoView({ block: "start" }),
-        );
+      if (headerTop !== undefined && win != null)
+        win.requestAnimationFrame(() => {
+          const newTop = fileSection(file.path)
+            ?.querySelector<HTMLElement>(".hh-file-header")
+            ?.getBoundingClientRect().top;
+          if (newTop !== undefined && newTop !== headerTop)
+            win.scrollBy(0, newTop - headerTop);
+        });
     },
     viewState(t) {
       viewedTick();

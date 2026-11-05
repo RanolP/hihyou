@@ -193,6 +193,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   let currentPath: string | undefined;
   let pullBody: string | undefined;
   let descriptionExpanded = false;
+  let testsShown = false;
   let targetedPath: string | undefined;
   // Where the page landed for `targetedPath`; the target holds until the reader scrolls away from it.
   let targetedY = Number.NaN;
@@ -283,6 +284,29 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     viewMode.title = allFiles ? "Switch to one file" : "Switch to all files";
   };
   drawViewMode();
+
+  const drawStatus = () => {
+    if (files.length === 0) {
+      status.textContent = "No changes.";
+      return;
+    }
+    const testFiles = files.filter((file) => isTestPath(file.path));
+    const grouped =
+      allFiles && testFiles.length > 0 && testFiles.length < files.length;
+    const changed = `${files.length} ${files.length === 1 ? "file" : "files"} changed`;
+    if (!grouped || testsShown) {
+      status.textContent = `${changed}${grouped ? ` · ${testFiles.length} ${testFiles.length === 1 ? "test" : "tests"}` : ""}`;
+      return;
+    }
+    const showTests = el(
+      "button",
+      "hh-button",
+      `${testFiles.length} ${testFiles.length === 1 ? "test" : "tests"} hidden`,
+    );
+    showTests.type = "button";
+    showTests.addEventListener("click", () => showFile(testFiles[0]!.path));
+    status.replaceChildren(`${changed} · `, showTests);
+  };
 
   filter.addEventListener("input", () => {
     fileFilter = filter.value.toLowerCase();
@@ -437,21 +461,17 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     const path = button
       ?.closest<HTMLElement>(".hh-file")
       ?.dataset["path"];
-    if (path === undefined || !view.fileViewed(path)) return;
-    // The folded file stays where the reader looked; near the page end its header cannot reach the top.
+    if (path === undefined) return;
     if (allFiles) {
       targetedPath = path;
-      // Folded while scrolled into it, the file shrinks to its header above the screen; bring that header back.
-      const section = button?.closest<HTMLElement>(".hh-file");
-      const top = section?.getBoundingClientRect().top;
-      if (top !== undefined && top < stuckFileTop())
-        window.scrollTo({
-          top: window.scrollY + top - stuckFileTop(),
-          behavior: "instant",
-        });
       targetedY = window.scrollY;
+      window.requestAnimationFrame(() => {
+        targetedY = window.scrollY;
+        scheduleViewportUpdate();
+      });
       return;
     }
+    if (!view.fileViewed(path)) return;
     const ordered = filesInReviewOrder(files);
     const index = ordered.findIndex((file) => file.path === path);
     if (index < 0) return;
@@ -490,21 +510,15 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       scrolling.scrollTop > 0 &&
       scrolling.scrollTop + scrolling.clientHeight >=
         scrolling.scrollHeight - 1;
-    // A short final file cannot reach the sticky line.
+    // A selected short file cannot reach the sticky line.
     if (targetedPath !== undefined) {
       const targeted = headers.find(
         (header) =>
           header.closest<HTMLElement>(".hh-file")?.dataset["path"] ===
           targetedPath,
       );
-      const section = targeted?.closest<HTMLElement>(".hh-file");
-      const visible =
-        targeted !== undefined &&
-        section != null &&
-        targeted.getBoundingClientRect().top < window.innerHeight &&
-        section.getBoundingClientRect().bottom > stickyTop;
       const unmoved = Math.abs(window.scrollY - targetedY) < 2;
-      if ((atBottom || unmoved) && visible) active = targeted;
+      if (unmoved && targeted !== undefined) active = targeted;
       else targetedPath = undefined;
     }
     // Scrolled to the end with no file stepped to, the reader is at the last one, however short.
@@ -562,6 +576,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     allFiles = !allFiles;
     storeAllFiles(allFiles);
     drawViewMode();
+    drawStatus();
     if (!allFiles && path !== undefined) showFile(path);
     view?.setSingle(!allFiles);
     if (allFiles && path !== undefined)
@@ -627,6 +642,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       view?.dispose();
       view = undefined;
       currentPath = undefined;
+      testsShown = false;
       targetedPath = undefined;
       root.textContent = "";
     }
@@ -667,12 +683,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
           })),
       }));
       files = filesInReviewOrder(files);
-      const testCount = files.filter((file) => isTestPath(file.path)).length;
-      const grouped = allFiles && testCount > 0 && testCount < files.length;
-      status.textContent =
-        files.length === 0
-          ? "No changes."
-          : `${files.length} ${files.length === 1 ? "file" : "files"} changed${grouped ? ` · ${testCount} ${testCount === 1 ? "test" : "tests"}` : ""}`;
+      drawStatus();
       if (view) view.update(files);
       else
         view = renderDiffset(root, files, {
@@ -683,6 +694,10 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
           onCollapse: (p, elided) =>
             replaceFile(p, (file) => collapseElided(file, elided)),
           onShow: selectFile,
+          onTestsShown: (shown) => {
+            testsShown = shown;
+            drawStatus();
+          },
           single: !allFiles,
           theme,
           viewed: persistedViewed.store,
