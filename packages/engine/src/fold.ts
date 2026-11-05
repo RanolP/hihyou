@@ -28,6 +28,7 @@ const lockfiles = new Set([
   "mix.lock",
   "pubspec.lock",
   "Podfile.lock",
+  "Package.resolved",
   "packages.lock.json",
   "gradle.lockfile",
 ]);
