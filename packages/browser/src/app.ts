@@ -1075,6 +1075,7 @@ const appStyles = `
 .hh-meta.error { color: var(--fgColor-danger, #cf222e); white-space: pre-wrap; }
 .hh-nav { padding: 2px 8px; border: 1px solid var(--borderColor-default, #d0d7de); border-radius: 6px; background: var(--bgColor-muted, #f6f8fa); color: inherit; cursor: pointer; }
 .hh-nav:disabled { opacity: 0.5; cursor: default; }
+.hh-bar .position { min-width: 6ch; text-align: center; font-variant-numeric: tabular-nums; }
 .hh-root { flex: 1; min-height: 0; overflow: visible; }
 `;
 
