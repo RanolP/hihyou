@@ -163,6 +163,24 @@ const RUST: Record<string, Rule> = {
   },
 };
 
+const RUBY: Record<string, Rule> = {
+  ...shared("ruby"),
+  constructor: "entity.name.type.class.ruby",
+  escape: "constant.character.escape.ruby",
+  embedded: "meta.embedded.line.ruby",
+  "function.method.builtin": "support.function.kernel.ruby",
+  "string.special.symbol": "constant.other.symbol.ruby",
+  "string.special.regex": "string.regexp.classic.ruby",
+  "variable.builtin": "variable.language.ruby",
+  property: {
+    scope: "variable.other.readwrite.instance.ruby",
+    byKind: { class_variable: "variable.other.readwrite.class.ruby" },
+  },
+  comment: {
+    scope: "comment.line.number-sign.ruby",
+  },
+};
+
 const KOTLIN: Record<string, Rule> = {
   ...shared("kotlin"),
   property: "",
@@ -584,6 +602,11 @@ export const LANGUAGES: Record<string, LanguageRules> = {
     grammar: "tree-sitter-rust",
     queries: ["queries/highlights.scm"],
     captures: RUST,
+  },
+  ruby: {
+    grammar: "tree-sitter-ruby",
+    queries: ["queries/highlights.scm"],
+    captures: RUBY,
   },
   kotlin: {
     grammar: "tree-sitter-kotlin",

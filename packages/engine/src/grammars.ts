@@ -21,6 +21,7 @@ export type LanguageId =
   | "css"
   | "go"
   | "rust"
+  | "ruby"
   | "kotlin"
   | "html"
   | "swift"
@@ -38,6 +39,7 @@ const extensions: Record<LanguageId, readonly string[]> = {
   css: [".css"],
   go: [".go"],
   rust: [".rs"],
+  ruby: [".rb", ".rake", ".gemspec", ".ru"],
   kotlin: [".kt", ".kts"],
   html: [".html", ".htm"],
   swift: [".swift"],
@@ -47,6 +49,8 @@ const extensions: Record<LanguageId, readonly string[]> = {
 };
 
 export function languageForPath(path: string): LanguageId | undefined {
+  const filename = path.slice(path.lastIndexOf("/") + 1);
+  if (filename === "Gemfile" || filename === "Rakefile") return "ruby";
   const dot = path.lastIndexOf(".");
   if (dot <= path.lastIndexOf("/")) return undefined;
   const ext = path.slice(dot).toLowerCase();
@@ -68,6 +72,7 @@ const parsers: Record<
   css: () => import("syntechs/grammars/css"),
   go: () => import("syntechs/grammars/go"),
   rust: () => import("syntechs/grammars/rust"),
+  ruby: () => import("syntechs/grammars/ruby"),
   kotlin: () => import("syntechs/grammars/kotlin"),
   html: () => import("syntechs/grammars/html"),
   swift: () => import("syntechs/grammars/swift"),
@@ -89,6 +94,7 @@ const highlighters: Partial<
   css: () => import("syntechs/grammars/css/highlight"),
   go: () => import("syntechs/grammars/go/highlight"),
   rust: () => import("syntechs/grammars/rust/highlight"),
+  ruby: () => import("syntechs/grammars/ruby/highlight"),
   kotlin: () => import("syntechs/grammars/kotlin/highlight"),
   html: () => import("syntechs/grammars/html/highlight"),
   swift: () => import("syntechs/grammars/swift/highlight"),
@@ -134,6 +140,7 @@ const declarations: Partial<Record<LanguageId, readonly string[]>> = {
     "enum_item",
     "mod_item",
   ],
+  ruby: ["method", "singleton_method", "class", "singleton_class", "module"],
   kotlin: [
     "function_declaration",
     "class_declaration",

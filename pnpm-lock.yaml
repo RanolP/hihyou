@@ -276,6 +276,9 @@ importers:
       tree-sitter-css:
         specifier: workspace:*
         version: link:grammars/tree-sitter-css
+      tree-sitter-go:
+        specifier: workspace:*
+        version: link:grammars/tree-sitter-go
       tree-sitter-graphql:
         specifier: workspace:*
         version: link:grammars/tree-sitter-graphql
@@ -291,12 +294,6 @@ importers:
       tree-sitter-json:
         specifier: workspace:*
         version: link:grammars/tree-sitter-json
-      tree-sitter-go:
-        specifier: workspace:*
-        version: link:grammars/tree-sitter-go
-      tree-sitter-rust:
-        specifier: workspace:*
-        version: link:grammars/tree-sitter-rust
       tree-sitter-kotlin:
         specifier: workspace:*
         version: link:grammars/tree-sitter-kotlin
@@ -306,6 +303,12 @@ importers:
       tree-sitter-regex:
         specifier: workspace:*
         version: link:grammars/tree-sitter-regex
+      tree-sitter-ruby:
+        specifier: workspace:*
+        version: link:grammars/tree-sitter-ruby
+      tree-sitter-rust:
+        specifier: workspace:*
+        version: link:grammars/tree-sitter-rust
       tree-sitter-swift:
         specifier: workspace:*
         version: link:grammars/tree-sitter-swift
@@ -321,6 +324,8 @@ importers:
 
   packages/syntechs/grammars/tree-sitter-css: {}
 
+  packages/syntechs/grammars/tree-sitter-go: {}
+
   packages/syntechs/grammars/tree-sitter-graphql: {}
 
   packages/syntechs/grammars/tree-sitter-html: {}
@@ -331,15 +336,15 @@ importers:
 
   packages/syntechs/grammars/tree-sitter-json: {}
 
-  packages/syntechs/grammars/tree-sitter-go: {}
-
-  packages/syntechs/grammars/tree-sitter-rust: {}
-
   packages/syntechs/grammars/tree-sitter-kotlin: {}
 
   packages/syntechs/grammars/tree-sitter-python: {}
 
   packages/syntechs/grammars/tree-sitter-regex: {}
+
+  packages/syntechs/grammars/tree-sitter-ruby: {}
+
+  packages/syntechs/grammars/tree-sitter-rust: {}
 
   packages/syntechs/grammars/tree-sitter-swift: {}
 

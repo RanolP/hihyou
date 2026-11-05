@@ -1,0 +1,21 @@
+{
+  "name": "tree-sitter-ruby",
+  "version": "0.23.1",
+  "private": true,
+  "scripts": {
+    "postinstall": "node ../build.mjs"
+  },
+  "grammar": {
+    "sources": [
+      {
+        "repo": "tree-sitter/tree-sitter-ruby",
+        "commit": "71bd32fb7607035768799732addba884a37a6210",
+        "files": {
+          "grammar.js": "3b5a0afa4ad836b2579c6d836450a373c6736bb0da3d7e030a9d4e66b94fbc7a",
+          "src/scanner.c": "e7a6196d6e78bf4c6728502e924c867dee5d851c6253e43fcdb8ba169009bc58",
+          "queries/highlights.scm": "0858de9feece6dcd3408a541f995a34918d587ac2c552096026b0e47e2b332e6"
+        }
+      }
+    ]
+  }
+}
