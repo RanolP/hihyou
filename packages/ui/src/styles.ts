@@ -215,12 +215,16 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
   z-index: 1;
   background: var(--hh-header-bg);
 }
-/* In the browser extension the page scrolls, so neither file wrapper may become a sticky scroll ancestor. */
+/* In the browser extension the page scrolls, so neither file wrapper may become a sticky scroll ancestor.
+   The sticky tops round down: on a half pixel the row would blend with the code scrolling under it, and tucking
+   half a pixel under the layer above hides nothing. */
 :host .hh-diff {
-  --hh-file-sticky-top: calc(
+  --hh-file-sticky-top: round(
+    down,
     var(--hh-page-sticky-top, 0px) +
     var(--hh-app-bar-height, 0px) +
-    var(--hh-review-bar-height, 0px)
+    var(--hh-review-bar-height, 0px),
+    1px
   );
 }
 :host .hh-scroll {
@@ -240,14 +244,10 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
   overflow-wrap: anywhere;
 }
 :host .hh-node th {
-  top: calc(
-    var(--hh-file-sticky-top) + var(--hh-file-header-height, 0px)
-  );
+  top: round(down, var(--hh-file-sticky-top) + var(--hh-file-header-height, 0px), 1px);
 }
 :host .hh-elided-handover td {
-  top: calc(
-    var(--hh-file-sticky-top) + var(--hh-file-header-height, 0px)
-  );
+  top: round(down, var(--hh-file-sticky-top) + var(--hh-file-header-height, 0px), 1px);
 }
 .hh-node-label { position: sticky; left: 8px; }
 .hh-whole th {
@@ -269,9 +269,7 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
   background: linear-gradient(var(--hh-removed-line), var(--hh-removed-line)), var(--hh-bg);
 }
 :host .hh-whole th {
-  top: calc(
-    var(--hh-file-sticky-top) + var(--hh-file-header-height, 0px)
-  );
+  top: round(down, var(--hh-file-sticky-top) + var(--hh-file-header-height, 0px), 1px);
 }
 /* A heading first, so it reads like the scope rows rather than a link; the underline returns on hover. */
 .hh-whole-label { position: sticky; left: 8px; font-weight: 600; }
