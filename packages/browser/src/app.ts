@@ -1032,11 +1032,18 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
           : rows.find((row) => webDiffsetIdOf(row.id) === saved.id)
         : undefined;
       const initial = savedRow ?? allChanges;
-      void pullBodyRequest.then((body) => {
+      const described = pullBodyRequest.then((body) => {
         if (disposed) return;
         pullBody = body || undefined;
         drawDescription();
       });
+      // The description sits above the files, so drawing it after them would push the diff down under the
+      // reader; wait for it briefly first.
+      await Promise.race([
+        described,
+        new Promise((resolve) => setTimeout(resolve, 1500)),
+      ]);
+      if (disposed) return;
       void expand(initial);
       const restored = await open(
         initial,
