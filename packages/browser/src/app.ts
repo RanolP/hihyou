@@ -193,6 +193,8 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   let disposed = false;
   let mounting = true;
   let fileFilter = "";
+  /** Folders the reviewer folded in the sidebar, by row key and folder path. */
+  const foldedFolders = new Set<string>();
   let allFiles = storedAllFiles();
   let currentPath: string | undefined;
   let pullBody: string | undefined;
@@ -865,7 +867,10 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
                 tests.append(el("div", "hh-folder hh-tests-folder", "Tests"));
                 const testGroup = el("ul");
                 testGroup.setAttribute("role", "group");
-                testGroup.append(...drawNodes(row, fileTree(testFiles), shown));
+                // Its own key space: a folder holding both sources and tests folds in each tree apart.
+                testGroup.append(
+                  ...drawNodes(row, fileTree(testFiles), shown, "tests:"),
+                );
                 tests.append(testGroup);
                 group.append(tests);
               } else group.append(...drawNodes(row, fileTree(changes), shown));
@@ -888,22 +893,36 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     row: Row,
     nodes: FileTreeNode<SidebarFile>[],
     shown: string | undefined,
+    prefix = "",
   ): HTMLElement[] =>
     nodes.map((node) => {
       const li = el("li");
       li.setAttribute("role", "treeitem");
       if (node.kind === "folder") {
+        const path = `${prefix}${node.name}/`;
+        const key = `${row.key}:${path}`;
+        const open = !foldedFolders.has(key);
+        li.setAttribute("aria-expanded", String(open));
         // A long folder chain wraps after a slash, not inside a name.
-        const folder = el("div", "hh-folder");
+        const folder = el("button", "hh-folder");
+        folder.type = "button";
+        folder.append(el("span", "hh-folder-twisty", open ? "▾" : "▸"));
         node.name.split("/").forEach((part, i) => {
           if (i > 0) folder.append("/", document.createElement("wbr"));
           folder.append(part);
         });
+        folder.addEventListener("click", () => {
+          if (open) foldedFolders.add(key);
+          else foldedFolders.delete(key);
+          drawTree();
+        });
         li.append(folder);
-        const group = el("ul");
-        group.setAttribute("role", "group");
-        group.append(...drawNodes(row, node.children, shown));
-        li.append(group);
+        if (open) {
+          const group = el("ul");
+          group.setAttribute("role", "group");
+          group.append(...drawNodes(row, node.children, shown, path));
+          li.append(group);
+        }
         return li;
       }
       const { file } = node;
@@ -1129,6 +1148,8 @@ const appStyles = `
 .hh-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hh-desc { color: var(--fgColor-muted, GrayText); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .hh-folder { padding: 2px 4px; color: var(--fgColor-muted, GrayText); }
+.hh-sets button.hh-folder { display: block; width: 100%; color: var(--fgColor-muted, GrayText); }
+.hh-folder-twisty { display: inline-block; width: 1.2em; }
 .hh-file-row { display: flex; align-items: baseline; gap: 6px; width: 100%; min-width: 0; white-space: nowrap; }
 /* A long name ends in an ellipsis in place of widening the list; its hint gives way first. */
 .hh-file-name, .hh-collapsed-hint > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
