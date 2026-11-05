@@ -410,7 +410,12 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     const i = ordered.findIndex((f) => f.path === currentPath);
     previous.disabled = i <= 0 && !scrolledIntoCurrent();
     next.disabled = i < 0 || i >= ordered.length - 1;
-    position.textContent = i < 0 ? "" : `${i + 1} / ${ordered.length}`;
+    // Hidden tests come last in review order and are not on the page, so the count stops at the files shown; ↓ from
+    // the last one still goes on and reveals them.
+    const sources = ordered.filter((f) => !isTestPath(f.path)).length;
+    const total =
+      allFiles && !testsShown && sources > 0 ? sources : ordered.length;
+    position.textContent = i < 0 ? "" : `${i + 1} / ${total}`;
     if (selected) replaceSelectionHash(selected, i < 0 ? "" : ordered[i]!.path);
     for (const section of root.querySelectorAll<HTMLElement>(".hh-file")) {
       if (allFiles && section.dataset["path"] === currentPath)
@@ -737,6 +742,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
           onTestsShown: (shown) => {
             testsShown = shown;
             drawStatus();
+            updateNav();
           },
           single: !allFiles,
           theme,

@@ -29,9 +29,18 @@ const appendLink = (
   parent.append(link);
 };
 
+const wordChar = (c: string | undefined) => c !== undefined && /[\p{L}\p{N}]/u.test(c);
+
 const closingDelimiter = (text: string, start: number, delimiter: string) => {
-  const end = text.indexOf(delimiter, start + delimiter.length);
-  return end > start + delimiter.length ? end : -1;
+  // As in GitHub's Markdown, an underscore inside a word (`blocking_read_owned`) neither opens nor closes emphasis.
+  const intraword = delimiter.startsWith("_");
+  if (intraword && wordChar(text[start - 1])) return -1;
+  for (let end = text.indexOf(delimiter, start + delimiter.length); end !== -1; ) {
+    if (!intraword || !wordChar(text[end + delimiter.length]))
+      return end > start + delimiter.length ? end : -1;
+    end = text.indexOf(delimiter, end + 1);
+  }
+  return -1;
 };
 
 const appendInline = (
