@@ -92,6 +92,9 @@ export default defineConfig({
       "**/conformance/**",
       "**/*.tsbuildinfo",
       "packages/syntechs/grammars/.cache/**",
+      // syntechs' postinstall generates these from the grammar packages, and AMO takes no machine-generated source.
+      "packages/syntechs/src/grammars/*/bundle.js",
+      "packages/syntechs/src/grammars/*/*.gen.ts",
       "packages/website/docs/**",
     ],
   },
