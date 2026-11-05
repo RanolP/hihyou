@@ -499,7 +499,7 @@ function rescueSameLines(rows: Row[], linesA: Line[], linesB: Line[]): Row[] {
       continue;
     }
     const equal = (a: Line, b: Line) =>
-      a.key !== "" && a.key === b.key && a.word && b.word && !a.moved && !b.moved;
+      a.key === b.key && (a.key === "" || (a.word && b.word)) && !a.moved && !b.moved;
     let ia = row.a0;
     let ib = row.b0;
     let pending: (Row & { same: false }) | undefined;
