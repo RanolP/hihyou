@@ -155,6 +155,13 @@ function checkMove(
   const y = sb.side.index(c.y);
   if ((sa.atoms[x] as number) < minAtoms || (sb.atoms[y] as number) < minAtoms)
     return "F0";
+  // Within a file a move reads as lines that went elsewhere; an argument that only happens to equal one from
+  // another line (a version bumped to the next one's old value) is an edit of both lines.
+  if (
+    c.from === c.to &&
+    !(opensLine(sa.tree, c.x) && opensLine(sb.tree, c.y))
+  )
+    return "F0";
   if (!moved(ctx, c.from, c.x, c.to, c.y)) return "F1";
   const idX = sa.alpha[x] as number;
   const idY = sb.alpha[y] as number;
@@ -306,6 +313,10 @@ function moved(
       (ta.start(x) >= a.end && tb.end(y) <= b.start),
   );
 }
+
+/** `n` is the first thing on its line. */
+const opensLine = (tree: Tree, n: number) =>
+  tree.lf(n) > 0 || tree.start(n) === tree.start(tree.root);
 
 /** The kinds and names of the declarations around `n`, outermost first. */
 function chain(
