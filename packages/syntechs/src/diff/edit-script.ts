@@ -295,6 +295,10 @@ function settleMoves(
     return -1;
   };
   const kinds = new Map<number, MoveWitness>();
+  // Base indices already re-paired once. A re-paired node reported as moved again is dropped instead: among
+  // many look-alikes under one parent (the line comments of a long macro table), re-pairing each to the first
+  // free copy only rotates the copies, and every pass would find the same moves again forever.
+  const repaired = new Set<number>();
   for (let dropped = true; dropped;) {
     dropped = false;
     kinds.clear();
@@ -302,16 +306,18 @@ function settleMoves(
       for (const [p, q] of movesAt(a, b, src, dst, x)) {
         // An earlier move in this pass may have unmatched it already.
         if (src[p] !== q) continue;
-        const keep = settle(p, q);
+        const keep = repaired.has(p) ? -1 : settle(p, q);
         if (keep !== q) {
           unmatch(src, dst, p, a.size[p] as number);
           unmatch(dst, src, q, b.size[q] as number);
           // Isomorphic subtrees lay out alike in preorder, so offsets pair node for node.
-          if (keep !== -1)
+          if (keep !== -1) {
+            repaired.add(p);
             for (let k = 0; k < (a.size[p] as number); k++) {
               src[p + k] = keep + k;
               dst[keep + k] = p + k;
             }
+          }
           dropped = true;
           continue;
         }
