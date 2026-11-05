@@ -1,6 +1,10 @@
 import type { Language, Tree } from "syntechs/core";
 import type { ScopeRules } from "syntechs/diff";
-import { format, type Language as FormatLanguage } from "syntechs/fmt";
+import {
+  format,
+  type Formatted,
+  type Language as FormatLanguage,
+} from "syntechs/fmt";
 import type {
   FormatModule,
   Grammar,
@@ -159,15 +163,19 @@ const containers: Partial<Record<LanguageId, readonly string[]>> = {
 /** A formatter bound to options the host passed as a plain object, checked by syntechs at format time. */
 const bind =
   <O>(
-    rules: FormatLanguage<O>,
+    rules: FormatLanguage<O> & {
+      format?: (tree: Tree, options: Partial<O>) => Formatted;
+    },
     infer?: (tree: Tree) => Partial<O>,
   ) =>
   (options: object): FormatModule => ({
-    format: (tree) =>
-      format(tree, rules, {
+    format: (tree) => {
+      const resolved = {
         ...infer?.(tree),
         ...(options as Partial<O>),
-      }),
+      };
+      return rules.format?.(tree, resolved) ?? format(tree, rules, resolved);
+    },
   });
 
 function inferJavascriptOptions(tree: Tree) {
