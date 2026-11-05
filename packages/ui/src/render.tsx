@@ -277,6 +277,27 @@ function mount(
    * put: the file's header when it is on screen, else the files below when this one lies above the viewport (the
    * page turns off the browser's own scroll anchoring).
    */
+  // Room below the last file, grown when a scroll would otherwise stop at the page end (a folded file near the end, a
+  // last file brought to the top) and dropped once it is out of sight below the viewport.
+  let tail = 0;
+  const setTail = (px: number) => {
+    tail = Math.max(0, px);
+    root.style.paddingBottom = tail > 0 ? `${tail}px` : "";
+  };
+  const scrollWithRoom = (dy: number) => {
+    if (win == null) return;
+    const page = root.ownerDocument.documentElement;
+    const short = win.scrollY + dy - (page.scrollHeight - win.innerHeight);
+    if (short > 0) setTail(tail + Math.ceil(short));
+    // A host page may set `scroll-behavior: smooth` (GitHub does), which would animate a correction.
+    win.scrollBy({ top: dy, behavior: "instant" });
+  };
+  const dropTail = () => {
+    if (tail > 0 && win != null && root.getBoundingClientRect().bottom - tail >= win.innerHeight)
+      setTail(0);
+  };
+  win?.addEventListener("scroll", dropTail, { passive: true });
+
   const keepInPlace = (path: string, change: () => void) => {
     const header = () =>
       fileSection(path)?.querySelector<HTMLElement>(".hh-file-header");
@@ -286,13 +307,20 @@ function mount(
       win != null && h !== undefined && h.bottom > 0 && h.top < win.innerHeight;
     const above = !onScreen && s !== undefined && s.top < 0;
     const before = onScreen ? h.top : above ? s.bottom : undefined;
+    // Folding near the page end shortens the page under the reader, and the browser pulls the scroll back with it.
+    const y = win?.scrollY ?? 0;
     change();
     if (before === undefined || win == null) return;
     win.requestAnimationFrame(() => {
-      const after = onScreen
+      const clamped = y - win.scrollY;
+      if (clamped > 0) {
+        setTail(tail + clamped);
+        win.scrollTo({ top: y, behavior: "instant" });
+      }
+      const now = onScreen
         ? header()?.getBoundingClientRect().top
         : fileSection(path)?.getBoundingClientRect().bottom;
-      if (after !== undefined && after !== before) win.scrollBy(0, after - before);
+      if (now !== undefined && now !== before) scrollWithRoom(now - before);
     });
   };
 
@@ -1006,7 +1034,13 @@ function mount(
       if (!single) {
         if (isTestPath(path)) setTestsShown(true);
         shownPath = path;
-        fileSection(path)?.scrollIntoView({ block: "start" });
+        const section = fileSection(path);
+        if (!section) return;
+        section.scrollIntoView({ block: "start" });
+        // The last files cannot reach the top on their own; room below lets them land where every other file does.
+        const margin = Number.parseFloat(getComputedStyle(section).scrollMarginTop) || 0;
+        const gap = section.getBoundingClientRect().top - margin;
+        if (gap > 1) scrollWithRoom(gap);
         return;
       }
       if (path === shownPath) return;
@@ -1029,6 +1063,8 @@ function mount(
       unsubscribeScores();
       unsubscribeComments();
       win?.removeEventListener("focus", refreshComments);
+      win?.removeEventListener("scroll", dropTail);
+      setTail(0);
       root.ownerDocument.removeEventListener(
         "visibilitychange",
         refreshComments,
