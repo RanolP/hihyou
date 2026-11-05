@@ -19,6 +19,20 @@ import { MoveLabel } from "./pair.jsx";
 import { SpanNodes } from "./spans.jsx";
 
 const signs: Record<SideName, string> = { before: "-", after: "+" };
+const tabSize = 4;
+const maxWrappedIndent = 40;
+
+const codeStyle = (spans: readonly MergedSpan[]) => {
+  let column = 0;
+  for (const span of spans) {
+    for (const character of span.text) {
+      if (character === " ") column++;
+      else if (character === "\t") column += tabSize - (column % tabSize);
+      else return `--hh-indent: ${Math.min(column, maxWrappedIndent)}`;
+    }
+  }
+  return `--hh-indent: ${Math.min(column, maxWrappedIndent)}`;
+};
 
 const unsafeCommentElements =
   "script, style, link, meta, base, iframe, object, embed, form";
@@ -274,7 +288,7 @@ export function unifiedRow(
         <tr class="hh-line">
           <Num line={shown("before", row.before.line)} />
           <Num line={shown("after", row.after.line)} />
-          <td class="hh-code">
+          <td class="hh-code" style={codeStyle(row.after.spans)}>
             <span class="hh-sign" />
             <SpanNodes
               spans={row.after.spans}
@@ -300,7 +314,7 @@ export function unifiedRow(
             line={shown("after", row.after)}
             kind={has("after") ? " hh-added" : ""}
           />
-          <td class="hh-code">
+          <td class="hh-code" style={codeStyle(row.spans)}>
             <span class="hh-sign">
               {row.after === undefined ? signs.before : ""}
             </span>
@@ -356,7 +370,10 @@ export function unifiedRow(
             line={shown("after", line("after"), cell.sourceLine)}
             kind={moved ? ` hh-moved-inner${last}` : ""}
           />
-          <td class={`hh-code${moved ? ` hh-moved${last}` : ""}`}>
+          <td
+            class={`hh-code${moved ? ` hh-moved${last}` : ""}`}
+            style={codeStyle(cell.spans)}
+          >
             <span class="hh-sign">{signs[side]}</span>
             {moved && <span class="hh-sr">moved </span>}
             <SpanNodes

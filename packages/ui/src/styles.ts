@@ -193,7 +193,8 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 /* The inner gutter carries only a moved box's bottom edge. */
 .hh-num.hh-moved-inner { box-shadow: none; }
 .hh-num.hh-moved-inner.hh-moved-last { box-shadow: inset 0 -2px var(--hh-moved); }
-.hh-sign { display: inline-block; width: 2ch; color: var(--hh-muted); user-select: none; }
+/* An inline block inherits the cell's hanging text-indent, which would pull the sign into the gutter. */
+.hh-sign { display: inline-block; width: 2ch; text-indent: 0; color: var(--hh-muted); user-select: none; }
 .hh-removed ~ .hh-code > .hh-sign { color: var(--hh-removed-fg); }
 .hh-added ~ .hh-code > .hh-sign { color: var(--hh-added-fg); }
 .hh-node th {
@@ -226,8 +227,8 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 :host .hh-col-code { width: auto; }
 /* With no scroll box to pan, every token may wrap inside the fixed code column. */
 :host .hh-code {
-  padding-left: calc(10px + 2ch);
-  text-indent: -2ch;
+  padding-left: calc(10px + 2ch + var(--hh-indent, 0) * 1ch);
+  text-indent: calc((-2 - var(--hh-indent, 0)) * 1ch);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
