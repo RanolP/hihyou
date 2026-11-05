@@ -704,7 +704,24 @@ function declarationSourceLine(tree: Tree, n: number, name: number): string | un
   const line = source.slice(start, end).trimStart();
   const label = line?.replace(/\s*\{\s*$/, "").trimEnd();
   if (!label) return undefined;
-  return label.length <= 100 ? label : `${label.slice(0, 99).trimEnd()}…`;
+  // Complete a multiline header's open brackets so its first-line label reads as deliberately elided.
+  const open: string[] = [];
+  const close: Record<string, string> = { "(": ")", "[": "]", "{": "}" };
+  let quote: string | undefined;
+  for (let i = 0; i < label.length; i++) {
+    const c = label[i] as string;
+    if (quote !== undefined) {
+      if (c === "\\") i++;
+      else if (c === quote) quote = undefined;
+    } else if (c === '"' || c === "'" || c === "`") quote = c;
+    else if (close[c] !== undefined) open.push(c);
+    else if (open.length > 0 && close[open.at(-1) as string] === c) open.pop();
+  }
+  const suffix = !/\{\s*$/.test(line) && open.length > 0
+    ? `…${open.reverse().map((c) => close[c]).join("")}`
+    : "";
+  if (label.length + suffix.length <= 100) return label + suffix;
+  return `${label.slice(0, 100 - Math.max(1, suffix.length)).trimEnd()}${suffix || "…"}`;
 }
 
 /**
