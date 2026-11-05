@@ -130,8 +130,9 @@ export function MoveLabel(props: {
   const { file, side, move } = props;
   const view = ctx.pairs.of(file, props.fragment, side, move);
   const other = view && (side === "before" ? view.pair.after : view.pair.before);
+  // Both number columns sit beside the label, so a bare "line 67" may read as the wrong side.
   const where = other
-    ? `${other.ref.file === file ? "line " : `${other.path}:`}${other.first}`
+    ? `${other.ref.file === file ? (side === "before" ? "new line " : "old line ") : `${other.path}:`}${other.first}`
     : move.counterpart.path;
   const text =
     move.extract === undefined
