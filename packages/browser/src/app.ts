@@ -495,6 +495,12 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       ?.dataset["path"];
     if (path === undefined) return;
     if (allFiles) {
+      // Folding the file one reads keeps it current where it cannot reach the sticky line; ticking another file
+      // further down while reading this one leaves the reader where they are.
+      if (path !== currentPath) {
+        window.requestAnimationFrame(scheduleViewportUpdate);
+        return;
+      }
       targetedPath = path;
       targetedY = window.scrollY;
       window.requestAnimationFrame(() => {
