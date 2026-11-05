@@ -33,7 +33,7 @@ const lockfiles = new Set([
 ]);
 
 const generatedName =
-  /\.min\.(?:js|css)$|\.(?:js|css)\.map$|\.generated\.\w+$|\.g\.dart$|\.pb\.go$|_pb2\.pyi?$|\.snap$/;
+  /\.min\.(?:js|css)$|\.(?:js|css)\.map$|\.generated\.\w+$|\.g\.dart$|\.pb\.go$|_pb2\.pyi?$/;
 /** The markers generators write into their output's header: `@generated`, Go's `Code generated ... DO NOT EDIT.` */
 const generatedMarker = /@generated\b|\bDO NOT EDIT\b|\bauto-?generated\b/i;
 
@@ -44,8 +44,7 @@ export function producedBy(
 ): "lockfile" | "generated" | undefined {
   const name = path.slice(path.lastIndexOf("/") + 1);
   if (lockfiles.has(name)) return "lockfile";
-  if (/(?:^|\/)__snapshots__\//.test(path) || generatedName.test(name))
-    return "generated";
+  if (generatedName.test(name)) return "generated";
   if (text !== undefined && generatedMarker.test(text.slice(0, 1024)))
     return "generated";
   return undefined;
