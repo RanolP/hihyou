@@ -122,7 +122,12 @@ export async function openDiffset<H extends Host>(
       const ref = changes[i];
       const file = (await self.diff())[i];
       if (!ref || !file || ref.kind) return undefined;
-      const after = await afterVersion(ctx, ref, file.grammar !== undefined);
+      const after = await afterVersion(
+        ctx,
+        ref,
+        file.grammar !== undefined,
+        file.fallback === "inflated",
+      );
       return after && elidedLines(after.v, after.highlight, lines, count);
     },
   };
@@ -137,6 +142,7 @@ async function afterVersion(
   ctx: EngineContext,
   ref: ChangedFileRef,
   structured: boolean,
+  sourceText: boolean,
 ): Promise<{ v: Version; highlight?: HighlightModule } | undefined> {
   const textB = decodeText(await readBlob(ctx, ref.after));
   if (textB === undefined) return undefined;
@@ -157,7 +163,10 @@ async function afterVersion(
     [treeA, textA],
     [treeB, textB],
   );
-  return { v: b, ...(grammar.highlight && { highlight: grammar.highlight }) };
+  return {
+    v: sourceText ? plainVersion(textB, treeB) : b,
+    ...(grammar.highlight && { highlight: grammar.highlight }),
+  };
 }
 
 /** Both sides formatted, or neither: a diff of formatted against unformatted text is all noise. */
@@ -358,17 +367,6 @@ export async function diffFiles(
     }
     const head = { path, stats, ...(status && { status }) };
     if (!("mapping" in p)) {
-      // Without a tree the changed line is the unit the viewer paints; a whole file is the change, unpainted.
-      for (const e of lineDiff(p.texts[0], p.texts[1], indentIsSyntax(path))) {
-        if ("old" in e) {
-          s.a.changed.push(e.old);
-          recordLines(s.a, e.old, path, "before");
-        }
-        if ("new" in e) {
-          s.b.changed.push(e.new);
-          recordLines(s.b, e.new, path, "after");
-        }
-      }
       const reason = foldReason({
         path,
         text,
@@ -376,20 +374,16 @@ export async function diffFiles(
         deleted: status === "deleted",
         changedLines: stats.added + stats.removed,
       });
-      // A folded or too-large file skips the token diff, whose cost grows with the whole text.
-      if (!status && !reason && p.fallback !== "too-large")
-        for (const e of tokenDiff(p.texts[0], p.texts[1])) {
-          if ("old" in e) s.a.emphasis.push(e.old);
-          if ("new" in e) s.b.emphasis.push(e.new);
-        }
       return {
         ...head,
         ...(p.fallback && { fallback: p.fallback }),
-        fragments: buildFragments({
-          a: s.a,
-          b: s.b,
-          indentMatters: indentIsSyntax(path),
-        }),
+        fragments: lineFragments(
+          s.a,
+          s.b,
+          p.texts,
+          path,
+          !status && !reason && p.fallback !== "too-large",
+        ),
         ...(reason && { collapsed: { reason } }),
       };
     }
@@ -409,13 +403,27 @@ export async function diffFiles(
         renamesOf(placed),
       );
     }
-    const fragments = buildFragments({
-      a: s.a,
-      b: s.b,
-      mapping: p.mapping,
-      indentMatters: indentIsSyntax(path),
-      ...(p.grammar.highlight && { highlight: p.grammar.highlight }),
-    });
+    const changedLines = markedLineCount(s.a) + markedLineCount(s.b);
+    const sourceChangedLines = stats.added + stats.removed;
+    const inflated =
+      sourceChangedLines > 0 &&
+      changedLines > Math.max(100, sourceChangedLines * 10);
+    const fragments = inflated
+      ? lineFragments(
+          sideInput(plainVersion(p.texts[0], p.a.tree), p.grammar),
+          sideInput(plainVersion(p.texts[1], p.b.tree), p.grammar),
+          p.texts,
+          path,
+          true,
+          p.grammar.highlight,
+        )
+      : buildFragments({
+          a: s.a,
+          b: s.b,
+          mapping: p.mapping,
+          indentMatters: indentIsSyntax(path),
+          ...(p.grammar.highlight && { highlight: p.grammar.highlight }),
+        });
     const reason = foldReason({
       path,
       text,
@@ -431,12 +439,14 @@ export async function diffFiles(
     return {
       ...head,
       grammar: p.grammar.id,
-      ...((p.a.text !== p.texts[0] || p.b.text !== p.texts[1]) && {
-        sourceLines: {
-          before: sourceLines(p.a, p.texts[0]),
-          after: sourceLines(p.b, p.texts[1]),
-        },
-      }),
+      ...(inflated && { fallback: "inflated" as const }),
+      ...(!inflated &&
+        (p.a.text !== p.texts[0] || p.b.text !== p.texts[1]) && {
+          sourceLines: {
+            before: sourceLines(p.a, p.texts[0]),
+            after: sourceLines(p.b, p.texts[1]),
+          },
+        }),
       fragments,
       ...(reason && { collapsed: { reason } }),
     };
@@ -507,6 +517,51 @@ const sideInput = (v: Version, grammar?: Grammar): SideInput => ({
   lineAtoms: [],
   wholes: [],
 });
+
+function lineFragments(
+  a: SideInput,
+  b: SideInput,
+  texts: [string, string],
+  path: string,
+  emphasize: boolean,
+  highlight?: HighlightModule,
+): CodeFragment[] {
+  // Without a tree the changed line is the unit the viewer paints; a whole file is the change, unpainted.
+  for (const e of lineDiff(texts[0], texts[1], indentIsSyntax(path))) {
+    if ("old" in e) {
+      a.changed.push(e.old);
+      recordLines(a, e.old, path, "before");
+    }
+    if ("new" in e) {
+      b.changed.push(e.new);
+      recordLines(b, e.new, path, "after");
+    }
+  }
+  // A folded or too-large file skips the token diff, whose cost grows with the whole text.
+  if (emphasize)
+    for (const e of tokenDiff(texts[0], texts[1])) {
+      if ("old" in e) a.emphasis.push(e.old);
+      if ("new" in e) b.emphasis.push(e.new);
+    }
+  return buildFragments({
+    a,
+    b,
+    indentMatters: indentIsSyntax(path),
+    ...(highlight && { highlight }),
+  });
+}
+
+function markedLineCount(s: SideInput): number {
+  const marked = new Uint8Array(s.v.lineStarts.length);
+  const mark = ({ start, end }: { start: number; end: number }) => {
+    if (end <= start) return;
+    marked.fill(1, lineOf(s.v, start), lineOf(s.v, end - 1) + 1);
+  };
+  for (const range of s.changed) mark(range);
+  for (const move of s.moves)
+    mark({ start: s.v.start(move.node), end: s.v.end(move.node) });
+  return marked.reduce((count, value) => count + value, 0);
+}
 
 function recordLines(
   s: SideInput,
