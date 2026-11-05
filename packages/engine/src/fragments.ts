@@ -229,14 +229,24 @@ export function buildFragments(input: FragmentInput): CodeFragment[] {
   const funcnames = (first: number, last: number) => {
     if (b.v.tree) return undefined;
     const found: { line: number; text: string }[] = [];
-    for (let line = first; line <= last; line++) {
+    const candidate = (line: number) => {
       const start = b.v.lineStarts[line];
-      if (start === undefined) continue;
+      if (start === undefined) return undefined;
       const text = b.v.text
         .slice(start, lineEnd(b.v, line))
         .replace(/\r?\n$/, "");
-      if (/^[\p{Alphabetic}_$]/u.test(text))
-        found.push({ line: line + 1, text: text.trim().slice(0, 80) });
+      return /^[\p{Alphabetic}_$]/u.test(text)
+        ? { line: line + 1, text: text.trim().slice(0, 80) }
+        : undefined;
+    };
+    for (let line = first; line <= last; line++) {
+      const match = candidate(line);
+      if (match) found.push(match);
+    }
+    // Like git's @@ funcname, a gap with no candidate inherits the nearest unindented line above it.
+    for (let line = first - 1; found.length === 0 && line >= 0; line--) {
+      const match = candidate(line);
+      if (match) found.push(match);
     }
     return found.length > 0 ? found : undefined;
   };

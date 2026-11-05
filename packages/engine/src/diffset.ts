@@ -230,7 +230,7 @@ function joinedSourceSpans(
 /** Past either matching size a file gets a line diff; a bounded parse still colours and scopes it. */
 const maxChars = 500_000;
 const maxNodes = 50_000;
-const maxParseChars = 1_000_000;
+const maxParseChars = 2_000_000;
 /** Share of a side's text inside ERROR nodes past which the tree is too broken to diff structurally. */
 const maxErrorRatio = 0.1;
 

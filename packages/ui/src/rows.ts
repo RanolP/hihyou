@@ -201,8 +201,7 @@ export function gapOf(file: DiffFile, index: number): Gap | undefined {
     last === undefined
       ? undefined
       : funcnames?.findLast(
-          (candidate) =>
-            candidate.line >= f.lines.after + top && candidate.line <= last,
+          (candidate) => candidate.line <= last,
         )?.text;
   return {
     fragment: index,
