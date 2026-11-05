@@ -621,6 +621,20 @@ function declarationLabel(tree: Tree, n: number): string | undefined {
     )
       return declarationSourceLine(tree, n, method)?.replace(/\s+do(?:\s*\|[^|]*\|)?$/, "");
   }
+  // A YAML key whose block value nests a mapping or sequence names that nested scope.
+  if (tree.kindName(n) === "block_mapping_pair") {
+    const key = field("key");
+    const value = field("value");
+    const nested = value === undefined ? undefined : onlyNamedChild(tree, value);
+    if (
+      key !== undefined &&
+      value !== undefined &&
+      tree.kindName(value) === "block_node" &&
+      nested !== undefined &&
+      ["block_mapping", "block_sequence"].includes(tree.kindName(nested))
+    )
+      return declarationSourceLine(tree, n, key);
+  }
   // A Rust impl names no item of its own; it reads as what it implements, "impl Delegate for MoveDelegate".
   if (tree.kindName(n) === "impl_item") {
     const type = field("type");
