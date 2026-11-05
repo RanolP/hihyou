@@ -697,6 +697,9 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       selected = row;
       review = engineReview(engine, () => row.id);
       files = [];
+      // The old files keep their height until the new ones draw, so the page does not collapse to the footer
+      // and spring back while the diffset loads.
+      root.style.minHeight = `${root.offsetHeight}px`;
       view?.dispose();
       view = undefined;
       currentPath = undefined;
@@ -763,6 +766,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
           theme,
           viewed: persistedViewed.store,
         });
+      root.style.minHeight = "";
       const hasPath =
         path === undefined || files.some((file) => file.path === path);
       const shownPath =
@@ -787,8 +791,10 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       updateNav();
       return hasPath;
     } catch (error) {
-      if (at === generation && !disposed)
+      if (at === generation && !disposed) {
+        root.style.minHeight = "";
         fail(`could not load ${row.label}`, error);
+      }
       return false;
     }
   };
