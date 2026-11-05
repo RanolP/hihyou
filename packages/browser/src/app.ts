@@ -300,18 +300,44 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     // With tests grouped, the two counts add up to the PR's total rather than one containing the other.
     const others = grouped ? files.length - testFiles.length : files.length;
     const changed = `${others} ${others === 1 ? "file" : "files"} changed`;
-    if (!grouped || testsShown) {
-      status.textContent = `${changed}${grouped ? ` · ${testFiles.length} ${testFiles.length === 1 ? "test" : "tests"} shown` : ""}`;
+    if (!grouped) {
+      status.textContent = changed;
       return;
     }
-    const showTests = el(
-      "button",
-      "hh-button",
-      `${testFiles.length} ${testFiles.length === 1 ? "test" : "tests"} hidden`,
-    );
+    // Each part's line counts, so tests hidden away still say how much of the pull request they are.
+    const lines = (part: typeof files) => {
+      const span = el("span", "hh-part-stats");
+      const added = part.reduce((n, f) => n + (f.stats?.added ?? 0), 0);
+      const removed = part.reduce((n, f) => n + (f.stats?.removed ?? 0), 0);
+      span.append(
+        el("span", "hh-stat-added", `+${added}`),
+        " ",
+        el("span", "hh-stat-removed", `−${removed}`),
+      );
+      return span;
+    };
+    const tests = `${testFiles.length} ${testFiles.length === 1 ? "test" : "tests"}`;
+    const source = files.filter((file) => !isTestPath(file.path));
+    if (testsShown) {
+      status.replaceChildren(
+        `${changed} `,
+        lines(source),
+        ` · ${tests} shown `,
+        lines(testFiles),
+      );
+      return;
+    }
+    const showTests = el("button", "hh-button", `${tests} hidden`);
     showTests.type = "button";
     showTests.addEventListener("click", () => showFile(testFiles[0]!.path));
-    status.replaceChildren(`${changed} · `, showTests);
+    status.replaceChildren(
+      `${changed} `,
+      lines(source),
+      " · ",
+      showTests,
+      " ",
+      lines(testFiles),
+    );
   };
 
   filter.addEventListener("input", () => {
@@ -1089,6 +1115,7 @@ const appStyles = `
 .hh-viewed-mark { margin-left: auto; color: var(--fgColor-muted, GrayText); }
 .hh-file-stats { margin-left: auto; flex: none; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .hh-file-stats + .hh-viewed-mark { margin-left: 0; }
+.hh-part-stats { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .hh-stat-added { color: var(--fgColor-success, #1a7f37); }
 .hh-stat-removed { color: var(--fgColor-danger, #d1242f); }
 .hh-file-row.selected { background: var(--bgColor-accent-muted, rgb(84 174 255 / 0.15)); }
