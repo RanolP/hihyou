@@ -723,9 +723,8 @@ export function shownLine(
   line: number,
   sourceLine?: number,
 ): number | undefined {
-  if (sourceLine !== undefined) return sourceLine;
   const table = file.sourceLines?.[side];
-  if (!table) return line;
-  const shown = table[line - 1] || undefined;
+  if (!table) return sourceLine ?? line;
+  const shown = (sourceLine ?? table[line - 1]) || undefined;
   return shown !== undefined && table[line - 2] === shown ? undefined : shown;
 }
