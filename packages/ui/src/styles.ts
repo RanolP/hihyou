@@ -312,6 +312,10 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
   background: none;
   cursor: pointer;
 }
+/* A handover gap stays pinned under the next scope row, so it is no taller than that row: a taller one would
+   peek out beneath it. Its two buttons sit side by side. */
+.hh-elided-handover .hh-elided-cell { padding-block: 2px; }
+.hh-elided-handover .hh-expander:not(:only-child) { display: inline-block; width: 50%; vertical-align: top; }
 .hh-expander svg { width: 16px; height: 16px; vertical-align: middle; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .hh-expander:hover { color: var(--hh-fg); background: var(--hh-accent); }
 .hh-expander:disabled { opacity: 0.5; cursor: progress; background: none; }
