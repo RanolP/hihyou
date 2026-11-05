@@ -1051,6 +1051,11 @@ const appStyles = `
   --vscode-sideBarSectionHeader-background: var(--bgColor-muted);
   --vscode-focusBorder: var(--borderColor-accent-emphasis);
   --vscode-textLink-foreground: var(--fgColor-accent);
+  /* VS Code's olive word highlight leaves a grey comment barely readable on an added line; GitHub's green does not. */
+  --vscode-diffEditor-insertedLineBackground: var(--diffBlob-additionLine-bgColor);
+  --vscode-diffEditor-insertedTextBackground: var(--diffBlob-additionWord-bgColor);
+  --vscode-diffEditor-removedLineBackground: var(--diffBlob-deletionLine-bgColor);
+  --vscode-diffEditor-removedTextBackground: var(--diffBlob-deletionWord-bgColor);
 }
 .hh-app { display: grid; grid-template-columns: minmax(200px, 300px) minmax(0, 1fr); align-items: start; gap: 16px; min-height: 400px; color: var(--fgColor-default, CanvasText); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
 .hh-sets { position: sticky; top: var(--hh-page-sticky-top); align-self: start; box-sizing: border-box; max-height: calc(100dvh - var(--hh-page-sticky-top)); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; border: 1px solid var(--borderColor-default, #d0d7de); border-radius: 6px; padding: 4px 0; }
