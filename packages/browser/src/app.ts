@@ -994,24 +994,23 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
         reviewPull: page.pull,
         expanded: false,
       };
-      rows = [
-        allChanges,
-        ...pull.commits.map((c): Row => ({
-          key: c.sha,
-          label: c.subject,
-          description: c.sha.slice(0, 7),
-          // The sidebar cuts a long subject short; the tooltip carries it whole.
-          tooltip: `${c.subject}\n${c.author} · ${new Date(c.date).toLocaleString()}`,
-          id: { owner, repo, commit: c.sha },
-          ...(pull.commits.length === 1 &&
-            c.sha === pull.head && { reviewPull: page.pull }),
-          expanded: false,
-        })),
-      ];
+      const commitRows = pull.commits.map((c): Row => ({
+        key: c.sha,
+        label: c.subject,
+        description: c.sha.slice(0, 7),
+        // The sidebar cuts a long subject short; the tooltip carries it whole.
+        tooltip: `${c.subject}\n${c.author} · ${new Date(c.date).toLocaleString()}`,
+        id: { owner, repo, commit: c.sha },
+        expanded: false,
+      }));
+      // A lone commit holds the same change as the pull request, so its row would only repeat All changes.
+      rows = commitRows.length === 1 ? [allChanges] : [allChanges, ...commitRows];
       setsStatus.remove();
       const saved = selectionFromHash();
       const savedRow = saved
-        ? rows.find((row) => webDiffsetIdOf(row.id) === saved.id)
+        ? commitRows.length === 1 && webDiffsetIdOf(commitRows[0]!.id) === saved.id
+          ? allChanges
+          : rows.find((row) => webDiffsetIdOf(row.id) === saved.id)
         : undefined;
       const initial = savedRow ?? allChanges;
       void pullBodyRequest.then((body) => {
