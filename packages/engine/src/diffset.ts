@@ -1,4 +1,4 @@
-import { diffLines } from "diff";
+import { diffLines, diffWordsWithSpace } from "diff";
 import type { Tree } from "syntechs/core";
 import {
   defaultMoveOptions,
@@ -831,6 +831,59 @@ function record(
     }
     return true;
   };
+  // A one-line leaf that kept most of its text (a long string literal gaining a sentence) emphasizes only the
+  // words that differ, as a line diff's word highlight does; one that mostly changed stays emphasized whole.
+  const markWordUpdate = (
+    before: SideInput | undefined,
+    after: SideInput | undefined,
+    oldNode: number | undefined,
+    newNode: number | undefined,
+  ): boolean => {
+    if (
+      !before?.v.tree ||
+      !after?.v.tree ||
+      oldNode === undefined ||
+      newNode === undefined ||
+      before.v.tree.count(oldNode) !== 0 ||
+      after.v.tree.count(newNode) !== 0
+    )
+      return false;
+    const oldRange = range(before, oldNode);
+    const newRange = range(after, newNode);
+    const oldText = before.v.text.slice(oldRange.start, oldRange.end);
+    const newText = after.v.text.slice(newRange.start, newRange.end);
+    if (oldText.includes("\n") || newText.includes("\n")) return false;
+    const solid = (text: string) => text.replace(/\s+/g, "").length;
+    const oldMarks: { start: number; end: number }[] = [];
+    const newMarks: { start: number; end: number }[] = [];
+    let kept = 0;
+    let oldAt = 0;
+    let newAt = 0;
+    for (const part of diffWordsWithSpace(oldText, newText)) {
+      const length = part.value.length;
+      const trimmed = part.value.trim();
+      const lead = part.value.length - part.value.trimStart().length;
+      if (!part.added && !part.removed) kept += solid(part.value);
+      else if (trimmed !== "") {
+        const [marks, base, at] = part.added
+          ? [newMarks, newRange.start, newAt]
+          : [oldMarks, oldRange.start, oldAt];
+        marks.push({
+          start: base + at + lead,
+          end: base + at + lead + trimmed.length,
+        });
+      }
+      if (!part.added) oldAt += length;
+      if (!part.removed) newAt += length;
+    }
+    if (oldMarks.length + newMarks.length === 0) return false;
+    if (kept * 2 < Math.max(solid(oldText), solid(newText))) return false;
+    before.changed.push(oldRange);
+    after.changed.push(newRange);
+    before.emphasis.push(...oldMarks);
+    after.emphasis.push(...newMarks);
+    return true;
+  };
   const path = atomPath(refA, refB);
   // One atom per leaf of an inserted or deleted subtree, keyed by its own side alone.
   const leaves = (
@@ -862,7 +915,8 @@ function record(
     case "update":
       if (
         !markCommentUpdate(a, b, e.a, e.b) &&
-        !markMultilineUpdate(a, b, e.a, e.b)
+        !markMultilineUpdate(a, b, e.a, e.b) &&
+        !markWordUpdate(a, b, e.a, e.b)
       ) {
         mark(a, e.a);
         mark(b, e.b);

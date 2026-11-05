@@ -128,14 +128,27 @@ export function formattedVersion(
   const starts = new Float64Array(tree.nodeCount);
   const ends = new Float64Array(tree.nodeCount);
   let reached = 0;
+  // The formatter's last token copied verbatim: a string literal is one token there but several leaves here
+  // (quotes and content), and each leaf takes its own place in that copy rather than the first taking it all.
+  let verbatim: FormatAnchor | undefined;
   // Postorder visits every leaf in source order, and every child before its parent.
   for (let ord = 0; ord < tree.nodeCount; ord++) {
     const n = tree.at(ord);
     const count = tree.count(n);
     if (count === 0) {
-      const a = tree.end(n) > tree.start(n) ? at.get(tree.start(n)) : undefined;
-      starts[ord] = a ? a.to[0] : reached;
-      ends[ord] = a ? a.to[1] : reached;
+      const from = tree.start(n);
+      const to = tree.end(n);
+      const own = to > from ? at.get(from) : undefined;
+      if (own)
+        verbatim =
+          own.from[1] - own.from[0] === own.to[1] - own.to[0] ? own : undefined;
+      if (verbatim && from >= verbatim.from[0] && to <= verbatim.from[1]) {
+        starts[ord] = verbatim.to[0] + from - verbatim.from[0];
+        ends[ord] = verbatim.to[0] + to - verbatim.from[0];
+      } else {
+        starts[ord] = own ? own.to[0] : reached;
+        ends[ord] = own ? own.to[1] : reached;
+      }
       reached = Math.max(reached, ends[ord] as number);
       continue;
     }
