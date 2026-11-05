@@ -45,6 +45,7 @@ export function ElidedRow(props: {
   path: string;
   gap: Gap;
   scope?: string;
+  handover?: boolean;
 }): JSX.Element {
   const ctx = useDraw();
   const { path, gap } = props;
@@ -99,7 +100,9 @@ export function ElidedRow(props: {
   }
   // The gutter covers both line numbers.
   return (
-    <tr class="hh-elided">
+    <tr
+      class={`hh-elided${props.handover ? " hh-elided-handover" : ""}`}
+    >
       <td class="hh-num hh-expander-cell" colSpan={2}>
         {buttons}
       </td>

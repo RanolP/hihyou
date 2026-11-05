@@ -208,6 +208,13 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
   /* Drawn inside the cell: a collapsed border stays with the table, and the code scrolling under shows through it. */
   box-shadow: inset 0 1px var(--hh-border), inset 0 -1px var(--hh-border);
 }
+/* A boundary gap covers the outgoing scope label until the next one arrives. */
+.hh-elided-handover td {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--hh-header-bg);
+}
 /* In the browser extension the page scrolls, so neither file wrapper may become a sticky scroll ancestor. */
 :host .hh-diff {
   --hh-file-sticky-top: calc(
@@ -233,6 +240,11 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
   overflow-wrap: anywhere;
 }
 :host .hh-node th {
+  top: calc(
+    var(--hh-file-sticky-top) + var(--hh-file-header-height, 0px)
+  );
+}
+:host .hh-elided-handover td {
   top: calc(
     var(--hh-file-sticky-top) + var(--hh-file-header-height, 0px)
   );

@@ -260,6 +260,7 @@ export function unifiedRow(
   out: JSX.Element[],
   scope?: string,
   lone = false,
+  handover = false,
 ): void {
   const { index } = table;
   if (row.kind === "elided") {
@@ -268,6 +269,7 @@ export function unifiedRow(
         path={ctx.files()[index]?.path ?? ""}
         gap={row}
         {...(scope ? { scope } : {})}
+        handover={handover}
       />,
     );
     return;

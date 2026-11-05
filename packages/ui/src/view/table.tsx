@@ -84,6 +84,10 @@ export function FileTable(props: { index: number; file: DiffFile }): JSX.Element
     const lone = loneLines(unified);
     for (const [rowIndex, row] of unified.entries()) {
       wholeRows(ctx, headers, row, columns, rows);
+      const handover =
+        row.kind === "elided" &&
+        rowIndex === unified.length - 1 &&
+        Boolean(sections[sectionIndex + 1]?.heading);
       const scopePath =
         row.kind === "elided"
           ? row.count === 0
@@ -104,6 +108,7 @@ export function FileTable(props: { index: number; file: DiffFile }): JSX.Element
             ? row.scope
             : undefined),
         lone[rowIndex],
+        handover,
       );
       // A unit followed within a few lines by the next one (a blank line, a doc comment) hands the pin over
       // directly; a scope row between every pair of added declarations is noise.
