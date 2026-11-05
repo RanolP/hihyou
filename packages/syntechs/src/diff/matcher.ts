@@ -110,6 +110,8 @@ export function match(
   qa.push(0);
   qb.push(0);
   const ambiguous: [number, number][] = [];
+  let neighboursA: [Int32Array, Int32Array] | undefined;
+  let neighboursB: [Int32Array, Int32Array] | undefined;
   for (;;) {
     const ha = qa.peekMax();
     const hb = qb.peekMax();
@@ -141,10 +143,36 @@ export function match(
       )
         linkSubtree(x, y);
       else if (xs.length * ys.length > maxAmbiguousPairs) {
-        // Too many identical copies to rank pairwise (e.g. thousands of `i++`); pair them in document order.
-        for (const [k, x] of xs.entries()) {
-          const y = ys[k];
-          if (y !== undefined) linkSubtree(x, y);
+        // Too many identical copies to rank pairwise (e.g. thousands of `i++`). Plain document order would pair
+        // every copy after an inserted one with its predecessor (tokio's blank `///` doc lines), so pair along a
+        // common subsequence of copies whose neighbours also agree, then the rest in order between those anchors.
+        neighboursA ??= neighbours(a);
+        neighboursB ??= neighbours(b);
+        const [prevA, nextA] = neighboursA;
+        const [prevB, nextB] = neighboursB;
+        const iso = (ids: Int32Array | number[], n: number) => (n === -1 ? -1 : (ids[n] as number));
+        const anchors = commonPairs(
+          [...xs.keys()],
+          [...ys.keys()],
+          (i, j) => {
+            const x = xs[i] as number;
+            const y = ys[j] as number;
+            return (
+              iso(isoA, prevA[x] as number) === iso(isoB, prevB[y] as number) &&
+              iso(isoA, nextA[x] as number) === iso(isoB, nextB[y] as number)
+            );
+          },
+        );
+        let i = 0;
+        let j = 0;
+        for (const [iEnd, jEnd] of [...anchors, [xs.length, ys.length]]) {
+          for (; i < (iEnd as number) && j < (jEnd as number); i++, j++)
+            linkSubtree(xs[i] as number, ys[j] as number);
+          const x = xs[iEnd as number];
+          const y = ys[jEnd as number];
+          if (x !== undefined && y !== undefined) linkSubtree(x, y);
+          i = (iEnd as number) + 1;
+          j = (jEnd as number) + 1;
         }
       } else if (xs.length > 0 && ys.length > 0)
         for (const x of xs) for (const y of ys) ambiguous.push([x, y]);
@@ -649,6 +677,20 @@ export function isoIds(side: Side, intern: Map<string, number>): Int32Array {
     ids[i] = id;
   }
   return ids;
+}
+
+/** Each index's previous and next sibling, -1 at either end of its parent. */
+function neighbours(side: Side): [Int32Array, Int32Array] {
+  const prev = new Int32Array(side.size.length).fill(-1);
+  const next = new Int32Array(side.size.length).fill(-1);
+  for (let p = 0; p < side.size.length; p++) {
+    const kids = side.childrenOf(p);
+    for (let k = 1; k < kids.length; k++) {
+      prev[kids[k] as number] = kids[k - 1] as number;
+      next[kids[k - 1] as number] = kids[k] as number;
+    }
+  }
+  return [prev, next];
 }
 
 /** Side indices bucketed by height. */
