@@ -176,6 +176,8 @@ export interface FragmentInput {
   b: SideInput;
   /** Syntax diff only: pairs an unchanged line with the line its first token was matched to. */
   mapping?: Mapping;
+  /** Each after-side display line's source line, when formatting changed the line layout. */
+  sourceLines?: readonly number[];
   indentMatters: boolean;
   /** The grammar's highlighter; spans carry no `scope` without one. */
   highlight?: HighlightModule;
@@ -300,6 +302,25 @@ export function buildFragments(input: FragmentInput): CodeFragment[] {
     for (let k = Math.max(0, i - context); k <= i + context; k++)
       if (k < rows.length) visible[k] = true;
   });
+  if (input.sourceLines) {
+    for (let i = 0; i < rows.length;) {
+      const first = rows[i] as Row;
+      if (!first.same) {
+        i++;
+        continue;
+      }
+      const sourceLine = input.sourceLines[first.b];
+      let j = i + 1;
+      if (sourceLine !== undefined && sourceLine !== 0)
+        while (j < rows.length) {
+          const next = rows[j] as Row;
+          if (!next.same || input.sourceLines[next.b] !== sourceLine) break;
+          j++;
+        }
+      if (visible.slice(i, j).some(Boolean)) visible.fill(true, i, j);
+      i = j;
+    }
+  }
 
   const items: { path: Box[]; fragment: CodeFragment }[] = [];
   for (let i = 0; i < rows.length;) {

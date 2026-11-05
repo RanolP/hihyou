@@ -448,6 +448,13 @@ export async function diffFiles(
     const inflated =
       sourceChangedLines > 0 &&
       changedLines > Math.max(100, sourceChangedLines * 10);
+    const mapped =
+      !inflated && (p.a.text !== p.texts[0] || p.b.text !== p.texts[1])
+        ? {
+            before: sourceLines(p.a, p.texts[0]),
+            after: sourceLines(p.b, p.texts[1]),
+          }
+        : undefined;
     const fragments = inflated
       ? lineFragments(
           sideInput(plainVersion(p.texts[0], p.a.tree), p.grammar),
@@ -461,6 +468,7 @@ export async function diffFiles(
           a: s.a,
           b: s.b,
           mapping: p.mapping,
+          ...(mapped && { sourceLines: mapped.after }),
           indentMatters: indentIsSyntax(path),
           ...(p.grammar.highlight && { highlight: p.grammar.highlight }),
         });
@@ -476,13 +484,6 @@ export async function diffFiles(
         !fragments.some((f) => f.kind === "diff") &&
         p.texts[0] !== p.texts[1],
     });
-    const mapped =
-      !inflated && (p.a.text !== p.texts[0] || p.b.text !== p.texts[1])
-        ? {
-            before: sourceLines(p.a, p.texts[0]),
-            after: sourceLines(p.b, p.texts[1]),
-          }
-        : undefined;
     return {
       ...head,
       grammar: p.grammar.id,
