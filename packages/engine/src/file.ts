@@ -171,9 +171,9 @@ export function sourceLines(v: Version, original: string): number[] {
     const displayEnd = lineOf(v, v.end(n) - 1);
     const origStart = lineOf(o, tree.start(n)) + 1;
     const origEnd = lineOf(o, tree.end(n) - 1) + 1;
-    for (let k = 0; k <= displayEnd - dl; k++)
+    for (let k = 0; k <= Math.min(displayEnd - dl, origEnd - origStart); k++)
       if (out[dl + k] === 0)
-        out[dl + k] = Math.min(origStart + k, origEnd);
+        out[dl + k] = origStart + k;
   }
   // A formatter without token anchors can still locate lines when it changed whitespace alone.
   if (out.every((line) => line === 0)) {
