@@ -210,9 +210,22 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     const toggle = description.querySelector<HTMLButtonElement>(
       ".hh-description-toggle",
     );
-    if (text && toggle)
-      toggle.hidden =
-        !descriptionExpanded && text.scrollHeight <= text.clientHeight + 1;
+    if (!text || !toggle) return;
+    // The collapsed box ends after the last block that fits whole, so no line is cut mid-glyph and no heading
+    // is left standing without its section.
+    text.style.maxHeight = "";
+    if (!descriptionExpanded && text.scrollHeight > text.clientHeight + 1) {
+      const top = text.getBoundingClientRect().top;
+      let end = 0;
+      for (const block of text.children) {
+        const bottom = block.getBoundingClientRect().bottom - top;
+        if (bottom > text.clientHeight) break;
+        if (!/^H[1-6]$/.test(block.tagName)) end = bottom;
+      }
+      if (end > 0) text.style.maxHeight = `${Math.ceil(end)}px`;
+    }
+    toggle.hidden =
+      !descriptionExpanded && text.scrollHeight <= text.clientHeight + 1;
   };
   const drawDescription = () => {
     description.replaceChildren();
