@@ -615,10 +615,12 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
           })),
       }));
       files = filesInReviewOrder(files);
+      const testCount = files.filter((file) => isTestPath(file.path)).length;
+      const grouped = allFiles && testCount > 0 && testCount < files.length;
       status.textContent =
         files.length === 0
           ? "No changes."
-          : `${files.length} ${files.length === 1 ? "file" : "files"} changed`;
+          : `${files.length} ${files.length === 1 ? "file" : "files"} changed${grouped ? ` · ${testCount} ${testCount === 1 ? "test" : "tests"}` : ""}`;
       if (view) view.update(files);
       else
         view = renderDiffset(root, files, {
