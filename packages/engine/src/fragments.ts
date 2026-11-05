@@ -603,6 +603,24 @@ function declarationLabel(tree: Tree, n: number): string | undefined {
         );
     }
   }
+  // An RSpec or Minitest block (`describe Foo do`, `context "when empty" do`, `it "pads" do`) is the scope its
+  // block reads in, as the line opening it reads without its `do`.
+  if (tree.kindName(n) === "call" && field("block") !== undefined) {
+    const method = field("method");
+    const args = field("arguments");
+    const first =
+      args === undefined
+        ? undefined
+        : Array.from({ length: tree.count(args) }, (_, i) => tree.child(args, i)).find((c) =>
+            tree.named(c),
+          );
+    if (
+      method !== undefined &&
+      first !== undefined &&
+      ["string", "constant", "scope_resolution"].includes(tree.kindName(first))
+    )
+      return declarationSourceLine(tree, n, method)?.replace(/\s+do(?:\s*\|[^|]*\|)?$/, "");
+  }
   // A Rust impl names no item of its own; it reads as what it implements, "impl Delegate for MoveDelegate".
   if (tree.kindName(n) === "impl_item") {
     const type = field("type");
