@@ -170,7 +170,7 @@ async function afterVersion(
   };
 }
 
-/** Both sides formatted, or neither: a diff of formatted against unformatted text is all noise. */
+/** Both non-empty sides formatted, or neither: a diff of formatted against unformatted text is all noise. */
 async function displayVersions(
   ctx: EngineContext,
   ref: ChangedFileRef,
@@ -183,7 +183,9 @@ async function displayVersions(
     formatBlob(ctx, ref.after, grammar, treeB),
   ]);
   const version = (tree: Tree, text: string, f: typeof fa) =>
-    (fa && fb && f
+    (text.length === 0
+      ? plainVersion(text, tree)
+      : fa && fb && f
       ? formattedVersion(tree, f.text, f.anchors)
       : plainVersion(text, tree)) as Version & { tree: Tree };
   return [version(treeA, textA, fa), version(treeB, textB, fb)];
