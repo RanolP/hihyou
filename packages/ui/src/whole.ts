@@ -43,7 +43,7 @@ export function wholeHeaders(file: DiffFile, index: number): Map<string, WholeHe
         const text = wholeText(n);
         if (!text || !n.whole) return;
         if (fileWhole && n.label === undefined) return;
-        const firstLine = frag[side].startLine + n.start.line;
+        const firstLine = frag[side].startLine + (n.wholeStart ?? n.start).line;
         const lastLine = Math.max(
           firstLine,
           frag[side].startLine + n.end.line - (n.end.column === 0 ? 1 : 0),

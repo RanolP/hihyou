@@ -90,6 +90,8 @@ export interface NodeOutline {
   whole?: "added" | "deleted";
   /** With `whole`, on a declaration: what it declares, as a `begin` label reads. */
   label?: string;
+  /** With `whole`, where its header starts when attached leading comments or attributes precede the node. */
+  wholeStart?: { line: number; column: number };
 }
 
 /** One half of a move: the lines its moved node spans on this side, clipped to the side. */
@@ -963,12 +965,32 @@ function outline(
     const line = lineOf(v, offset);
     return { line: line - l0, column: offset - (v.lineStarts[line] as number) };
   };
+  const wholeStart = (n: number) => {
+    let start = v.start(n);
+    const parent = tree.parent(n);
+    let index = 0;
+    while (index < tree.count(parent) && tree.child(parent, index) !== n) index++;
+    for (let i = index - 1; i >= 0; i--) {
+      const sibling = tree.child(parent, i);
+      if (!tree.named(sibling)) continue;
+      const kind = tree.kindName(sibling);
+      if (!kind.includes("comment") && !/(^|_)(attribute|annotation|decorator)(_|$)/.test(kind))
+        break;
+      const between = v.text.slice(v.end(sibling), start);
+      if (!/^\s*$/.test(between) || /\r?\n[\t ]*\r?\n/.test(between)) break;
+      if (!s.changed.some(({ start, end }) => start <= v.start(sibling) && v.end(sibling) <= end))
+        break;
+      start = v.start(sibling);
+    }
+    return start;
+  };
   return order.map((n) => {
     let parent = -1;
     for (let p = tree.parent(n); p !== NO_NODE && parent === -1; p = tree.parent(p))
       parent = index.get(p) ?? -1;
     const atom = atoms.get(n);
     const mark = wholes.get(n);
+    const start = mark ? wholeStart(n) : v.start(n);
     return {
       steps: stepsOf(tree, n),
       parent,
@@ -980,6 +1002,7 @@ function outline(
       ...(atom !== undefined && { atom }),
       ...(mark?.whole && { whole: mark.whole }),
       ...(mark?.label !== undefined && { label: mark.label }),
+      ...(start < v.start(n) && { wholeStart: at(start) }),
     };
   });
 }
