@@ -130,6 +130,10 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   const previousScrollbarGutter =
     document.documentElement.style.scrollbarGutter;
   document.documentElement.style.scrollbarGutter = "stable";
+  // The view keeps its own place when it redraws; Chrome's scroll anchoring, reacting to GitHub's page loading
+  // around it, moved a file restored from the URL 29px under the sticky bar.
+  const previousOverflowAnchor = document.documentElement.style.overflowAnchor;
+  document.documentElement.style.overflowAnchor = "none";
   const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
   // The markup is a constant, so AMO's linter can see nothing is interpolated into innerHTML; the styles go in as text.
   shadow.innerHTML = `
@@ -997,6 +1001,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       disposed = true;
       document.documentElement.style.scrollbarGutter =
         previousScrollbarGutter;
+      document.documentElement.style.overflowAnchor = previousOverflowAnchor;
       appBarObserver.disconnect();
       descriptionObserver.disconnect();
       host.style.removeProperty("--hh-app-bar-height");
