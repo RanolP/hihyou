@@ -48,8 +48,9 @@ export function wholeHeaders(file: DiffFile, index: number): Map<string, WholeHe
           firstLine,
           frag[side].startLine + n.end.line - (n.end.column === 0 ? 1 : 0),
         );
-        // A one-line declaration's header would only repeat the line under it ("added let React;").
-        if (lastLine === firstLine) return;
+        // A one-line declaration's header would only repeat the line under it ("added let React;"), even when a
+        // leading comment it takes along makes the unit itself two lines.
+        if (lastLine === frag[side].startLine + n.start.line) return;
         const key = wholeKey(fragment, side, firstLine);
         if (out.has(key)) return;
         out.set(key, {
