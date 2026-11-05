@@ -782,7 +782,7 @@ function mount(
       const observer = new ResizeObserver(() => {
         bar.parentElement?.style.setProperty(
           "--hh-review-bar-height",
-          `${bar.offsetHeight}px`,
+          `${bar.getBoundingClientRect().height}px`,
         );
       });
       observer.observe(bar);
