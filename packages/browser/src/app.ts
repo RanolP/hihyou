@@ -687,6 +687,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     }
     drawDescription();
     title.replaceChildren(`${row.description} `, ...codeSpans(row.label));
+    title.title = `${row.description} ${row.label}`;
     status.textContent = "Loading…";
     status.classList.remove("error");
     drawTree();
@@ -1150,7 +1151,7 @@ const appStyles = `
 .hh-main > .hh-bar { position: sticky; top: var(--hh-page-sticky-top); z-index: 4; box-sizing: border-box; min-height: 37px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 0 0 8px; background: var(--bgColor-default, Canvas); }
 .hh-main > .hh-bar > :not(.hh-title) { flex-shrink: 0; white-space: nowrap; }
 .hh-root .hh-bar { top: calc(var(--hh-page-sticky-top) + var(--hh-app-bar-height)); }
-.hh-title { flex: 1 1 auto; min-width: 0; margin: 0; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hh-title { flex: 1 1 24ch; min-width: 0; margin: 0; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hh-title code, .hh-label code { padding: 0.1em 0.3em; border-radius: 6px; background: var(--bgColor-neutral-muted, rgba(175, 184, 193, 0.2)); font: 0.85em ui-monospace, SFMono-Regular, Menlo, monospace; }
 .hh-meta { color: var(--fgColor-muted, GrayText); }
 .hh-meta.error { color: var(--fgColor-danger, #cf222e); white-space: pre-wrap; }
