@@ -537,9 +537,21 @@ function rescueSameLines(rows: Row[], linesA: Line[], linesB: Line[]): Row[] {
     let ib = row.b0;
     let pending: (Row & { same: false }) | undefined;
     const flush = () => {
-      if (pending && (pending.a0 < pending.a1 || pending.b0 < pending.b1))
-        rescued.push(pending);
+      if (!pending) return;
+      const { a0, a1, b0, b1 } = pending;
       pending = undefined;
+      if (a0 === a1 && b0 === b1) return;
+      // Punctuation-only lines do not anchor (a `}` read as context would split a change at an arbitrary
+      // look-alike), but a gap left between anchors that reads the same line for line is only re-indented,
+      // as when an `async move { … }` wrapper goes and its `})` lines shift left.
+      const verbatim =
+        a1 - a0 === b1 - b0 &&
+        linesA.slice(a0, a1).every((a, k) => {
+          const b = linesB[b0 + k] as Line;
+          return a.key === b.key && !a.moved && !b.moved;
+        });
+      if (!verbatim) rescued.push({ same: false, a0, a1, b0, b1 });
+      else for (let k = 0; k < a1 - a0; k++) rescued.push({ same: true, a: a0 + k, b: b0 + k });
     };
     for (const c of diffArrays(
       linesA.slice(row.a0, row.a1),
