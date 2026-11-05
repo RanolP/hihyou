@@ -126,7 +126,7 @@ export async function openDiffset<H extends Host>(
         ctx,
         ref,
         file.grammar !== undefined,
-        file.fallback === "inflated",
+        file.fallback === "inflated" || file.fallback === "too-large",
       );
       return after && elidedLines(after.v, after.highlight, lines, count);
     },
@@ -135,8 +135,8 @@ export async function openDiffset<H extends Host>(
 }
 
 /**
- * The after side's `Version` as `diffFiles` built it: `structured` says the file got a syntax diff
- * (`FileDiff.grammar` set), so it was parsed and maybe formatted; otherwise it is the plain blob text.
+ * The after side's `Version` as `diffFiles` built it: `structured` says the file was parsed
+ * (`FileDiff.grammar` set), so it may have been formatted; otherwise it is the plain blob text.
  */
 async function afterVersion(
   ctx: EngineContext,
@@ -191,9 +191,10 @@ async function displayVersions(
 export const fileDiffBytes = (files: FileDiff[]) =>
   JSON.stringify(files).length * 2;
 
-/** Past either size a file gets a line diff before it is parsed or matched. */
+/** Past either matching size a file gets a line diff; a bounded parse still colours and scopes it. */
 const maxChars = 500_000;
 const maxNodes = 50_000;
+const maxParseChars = 1_000_000;
 /** Share of a side's text inside ERROR nodes past which the tree is too broken to diff structurally. */
 const maxErrorRatio = 0.1;
 
@@ -204,6 +205,7 @@ type Prepared =
       texts: [string, string];
       a: Version;
       b: Version;
+      grammar?: Grammar;
       fallback?: "too-large" | "parse-error";
     }
   | {
@@ -376,6 +378,7 @@ export async function diffFiles(
       });
       return {
         ...head,
+        ...(p.grammar && { grammar: p.grammar.id }),
         ...(p.fallback && { fallback: p.fallback }),
         fragments: lineFragments(
           s.a,
@@ -383,6 +386,7 @@ export async function diffFiles(
           p.texts,
           path,
           !status && !reason && p.fallback !== "too-large",
+          p.grammar?.highlight,
         ),
         ...(reason && { collapsed: { reason } }),
       };
@@ -467,23 +471,29 @@ async function prepare(
   if (textA === undefined || textB === undefined)
     return { ref, unread: "binary" };
   const texts: [string, string] = [textA, textB];
-  const line = (fallback?: "too-large" | "parse-error"): Prepared => ({
+  const line = (
+    fallback?: "too-large" | "parse-error",
+    parsed?: { grammar: Grammar; trees: [Tree, Tree] },
+  ): Prepared => ({
     ref,
     texts,
-    a: plainVersion(textA),
-    b: plainVersion(textB),
+    a: plainVersion(textA, parsed?.trees[0]),
+    b: plainVersion(textB, parsed?.trees[1]),
+    ...(parsed && { grammar: parsed.grammar }),
     ...(fallback && { fallback }),
   });
 
   const grammar = await ctx.host.grammars.forPath(ref.path);
   if (!grammar) return line();
-  if (Math.max(textA.length, textB.length) > maxChars) return line("too-large");
+  const chars = Math.max(textA.length, textB.length);
+  if (chars > maxParseChars) return line("too-large");
   const [treeA, treeB] = await Promise.all([
     parseBlob(ctx, ref.before, grammar, textA),
     parseBlob(ctx, ref.after, grammar, textB),
   ]);
-  if (Math.max(treeA.nodeCount, treeB.nodeCount) > maxNodes)
-    return line("too-large");
+  const parsed = { grammar, trees: [treeA, treeB] as [Tree, Tree] };
+  if (chars > maxChars || Math.max(treeA.nodeCount, treeB.nodeCount) > maxNodes)
+    return line("too-large", parsed);
   if (
     treeA.errorChars > maxErrorRatio * textA.length ||
     treeB.errorChars > maxErrorRatio * textB.length
@@ -493,7 +503,7 @@ async function prepare(
   try {
     mapping = match(Side.of(treeA), Side.of(treeB));
   } catch (error) {
-    if (error instanceof MatchBudgetExceeded) return line("too-large");
+    if (error instanceof MatchBudgetExceeded) return line("too-large", parsed);
     throw error;
   }
   const [a, b] = await displayVersions(

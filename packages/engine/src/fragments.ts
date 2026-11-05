@@ -8,7 +8,7 @@ import type { CollapseReason } from "./fold.js";
 
 export interface FileDiff {
   path: string;
-  grammar?: string; // absent -> line-diff fallback
+  grammar?: string; // present when a syntax tree was available for scopes and highlighting
   sourceLines?: { before: number[]; after: number[] };
   /** Line counts over the original, unformatted texts. */
   stats?: { added: number; removed: number };
