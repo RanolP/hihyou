@@ -130,8 +130,9 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     document.documentElement.style.scrollbarGutter;
   document.documentElement.style.scrollbarGutter = "stable";
   const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
+  // The markup is a constant, so AMO's linter can see nothing is interpolated into innerHTML; the styles go in as text.
   shadow.innerHTML = `
-<style>${diffStyles}${appStyles}</style>
+<style class="styles"></style>
 <style class="scheme"></style>
 <div class="hh-app">
   <nav class="hh-sets" aria-label="Diffsets"><input class="hh-filter" type="search" aria-label="Filter changed files" placeholder="Filter changed files (/)" autocorrect="off" autocapitalize="off" spellcheck="false"><div class="hh-viewed-count" aria-live="polite"></div><div class="hh-sets-status">Loading commits…</div><ul role="tree"></ul></nav>
@@ -149,6 +150,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
 </div>`;
   const $ = <T extends Element>(selector: string) =>
     shadow.querySelector(selector) as T;
+  $<HTMLStyleElement>("style.styles").textContent = diffStyles + appStyles;
   const schemeStyle = $<HTMLStyleElement>("style.scheme");
   const filter = $<HTMLInputElement>(".hh-filter");
   const viewedCount = $<HTMLElement>(".hh-viewed-count");
