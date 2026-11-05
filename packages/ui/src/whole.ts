@@ -30,8 +30,8 @@ export const wholeKey = (fragment: number, side: SideName, line: number) =>
   `${fragment}:${side}:${line}`;
 
 /**
- * The header rows of one file, by `wholeKey`. In an added or deleted file every top node is whole, so only the
- * declarations (those with a label) spanning more than one line get a header; the file badge already says the rest.
+ * The header rows of one file, by `wholeKey`, for units spanning more than one line. In an added or deleted file
+ * every top node is whole, so only declarations (those with a label) get one; the file badge already says the rest.
  */
 export function wholeHeaders(file: DiffFile, index: number): Map<string, WholeHeader> {
   const out = new Map<string, WholeHeader>();
@@ -49,7 +49,7 @@ export function wholeHeaders(file: DiffFile, index: number): Map<string, WholeHe
           frag[side].startLine + n.end.line - (n.end.column === 0 ? 1 : 0),
         );
         // A one-line declaration's header would only repeat the line under it ("added let React;").
-        if (fileWhole && lastLine === firstLine) return;
+        if (lastLine === firstLine) return;
         const key = wholeKey(fragment, side, firstLine);
         if (out.has(key)) return;
         out.set(key, {
