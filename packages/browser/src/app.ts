@@ -305,6 +305,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   drawViewMode();
 
   const drawStatus = () => {
+    status.classList.remove("error");
     if (files.length === 0) {
       status.textContent = "No changes.";
       return;
@@ -344,7 +345,17 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     }
     const showTests = el("button", "hh-button", `${tests} hidden`);
     showTests.type = "button";
-    showTests.addEventListener("click", () => showFile(testFiles[0]!.path));
+    showTests.addEventListener("click", () => {
+      const path = testFiles[0]!.path;
+      showFile(path);
+      // The button is replaced once tests show; hand focus to the first test file instead of the page top.
+      requestAnimationFrame(() =>
+        [...root.querySelectorAll<HTMLElement>(".hh-file")]
+          .find((section) => section.dataset["path"] === path)
+          ?.querySelector<HTMLElement>(".hh-file-header a, .hh-file-header button")
+          ?.focus({ preventScroll: true }),
+      );
+    });
     status.replaceChildren(
       `${changed} `,
       lines(source),
@@ -638,7 +649,8 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     allFiles = !allFiles;
     storeAllFiles(allFiles);
     drawViewMode();
-    drawStatus();
+    // Before a diffset loads, or after it failed, the status holds "Loading…" or the error.
+    if (view) drawStatus();
     if (!allFiles && path !== undefined) showFile(path);
     view?.setSingle(!allFiles);
     if (allFiles && path !== undefined)
@@ -929,7 +941,11 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
         // A long folder chain wraps after a slash, not inside a name.
         const folder = el("button", "hh-folder");
         folder.type = "button";
-        folder.append(el("span", "hh-folder-twisty", open ? "▾" : "▸"));
+        folder.dataset["key"] = key;
+        folder.setAttribute("aria-expanded", String(open));
+        const twisty = el("span", "hh-folder-twisty", open ? "▾" : "▸");
+        twisty.setAttribute("aria-hidden", "true");
+        folder.append(twisty);
         node.name.split("/").forEach((part, i) => {
           if (i > 0) folder.append("/", document.createElement("wbr"));
           folder.append(part);
@@ -938,6 +954,10 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
           if (open) foldedFolders.add(key);
           else foldedFolders.delete(key);
           drawTree();
+          // drawTree rebuilds every node; keep keyboard focus on the folder just toggled.
+          tree
+            .querySelector<HTMLElement>(`button[data-key="${CSS.escape(key)}"]`)
+            ?.focus();
         });
         li.append(folder);
         if (open) {
