@@ -269,7 +269,15 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 .hh-md-em { font-style: italic; }
 .hh-md-del { text-decoration: line-through; }
 .hh-md-mark { opacity: 0.45; font-weight: 400; font-style: normal; }
-.hh-md-bar { display: inline-block; text-indent: 0; border-left: 3px solid var(--hh-border); padding-left: 0.5ch; }
+/* A quote draws its bar beside its text, past the dimmed marks; a GitHub alert colours its bar and label as GitHub does. */
+.hh-md-quote { color: var(--hh-muted); }
+.hh-md-quoted > .hh-md-body { border-left: 3px solid var(--hh-quote, color-mix(in srgb, var(--hh-muted) 70%, transparent)); padding-left: 1ch; }
+.hh-md-alert-note { --hh-quote: #4493f8; }
+.hh-md-alert-tip { --hh-quote: #3fb950; }
+.hh-md-alert-important { --hh-quote: #ab7df8; }
+.hh-md-alert-warning { --hh-quote: #d29922; }
+.hh-md-alert-caution { --hh-quote: #f85149; }
+.hh-md-alert > .hh-md-body, .hh-md-alert > .hh-md-body * { color: var(--hh-quote) !important; font-weight: 600; text-decoration: none; }
 .hh-md-bullet { font-weight: 600; }
 /* A bullet marker keeps its character, drawn over by a bullet; the lead is mono so each nesting level shows. */
 .hh-md-dot { position: relative; color: transparent !important; }

@@ -27,7 +27,7 @@ export const whollyChanged = (
 /** Markdown scopes to the classes that draw them as they render; the table's `hh-md` styles them. */
 const MARKDOWN: readonly (readonly [RegExp, string])[] = [
   [/\bheading\.([1-6])\.markdown/, "hh-md-h$1"],
-  [/\bpunctuation\.definition\.quote\.begin\.markdown/, "hh-md-mark hh-md-bar"],
+  [/\bpunctuation\.definition\.quote\.begin\.markdown/, "hh-md-mark"],
   [/\bpunctuation\.definition\.list\.begin\.markdown/, "hh-md-bullet"],
   [/\bpunctuation\.definition\.(?:heading|markdown|table)\b/, "hh-md-mark"],
   [/\bmarkup\.inline\.raw/, "hh-md-code"],
@@ -35,6 +35,7 @@ const MARKDOWN: readonly (readonly [RegExp, string])[] = [
   [/\bmarkup\.underline\.link/, "hh-md-url"],
   [/\b(?:string\.other\.link|constant\.other\.reference\.link)/, "hh-md-link"],
   [/\bmarkup\.table/, "hh-md-table"],
+  [/\bmarkup\.quote\.markdown/, "hh-md-quote"],
   [/\bmeta\.separator\.markdown/, "hh-md-rule"],
   [/\bmarkup\.bold/, "hh-md-strong"],
   [/\bmarkup\.italic/, "hh-md-em"],
@@ -130,11 +131,11 @@ export function SpanNodes(props: {
   // A pipe table row draws as a grid of cells; each pipe closes the cell before it, so a mark never spans one.
   const row = isTableRow(spans);
   const cells: JSX.Element[][] = [];
-  // A list item hangs its wrapped lines under its text, past the indentation and marker.
-  const prefix = row ? 0 : listPrefix(spans);
+  // A quote or list item hangs its wrapped lines under its text, past the indentation, quote marks and marker.
+  const lead = row ? { count: 0, quote: false } : leadOf(spans);
   let head: JSX.Element[] | undefined;
   for (const [index, span] of spans.entries()) {
-    if (index === prefix && prefix > 0) {
+    if (index === lead.count && lead.count > 0) {
       flush();
       head = out.splice(0);
     }
@@ -157,17 +158,27 @@ export function SpanNodes(props: {
     run.nodes.push(node);
   }
   flush();
-  if (head)
+  // An empty quote line (`>`) is all lead.
+  if (lead.count > 0 && head === undefined) head = out.splice(0);
+  if (head) {
+    const alert = lead.quote ? alertOf(spans) : undefined;
     return (
-      <span class="hh-md-item">
+      <span
+        class={[
+          "hh-md-item",
+          lead.quote ? "hh-md-quoted" : "",
+          alert !== undefined ? `hh-md-alert hh-md-alert-${alert}` : "",
+        ].join(" ")}
+      >
         <span class="hh-md-lead">{head}</span>
-        <span>{out}</span>
+        <span class="hh-md-body">{out}</span>
       </span>
     );
+  }
   if (!row) return out;
   cells.push(out);
   // Whatever precedes the first pipe or follows the last (indentation, a stray space) stays outside the grid.
-  const lead = cells.shift() ?? [];
+  const before = cells.shift() ?? [];
   const tail = cells.pop() ?? [];
   const count = (cells.length - 1) / 2;
   const weights = columnWeights(ctx.files()).get(count);
@@ -177,7 +188,7 @@ export function SpanNodes(props: {
     )
     .join(" ");
   return [
-    ...lead,
+    ...before,
     <span class="hh-md-row" style={{ "grid-template-columns": columns }}>
       {cells.map((nodes, i) => (
         <span class={i % 2 === 0 ? "hh-md-pipe" : "hh-md-cell"}>{nodes}</span>
@@ -193,23 +204,32 @@ const isTableRow = (spans: readonly MergedSpan[]): boolean =>
   spans.some(isPipe) &&
   !/^[\s|:-]+$/.test(spans.map((s) => s.text).join(""));
 
-/** How many spans lead a list item's line up to its text: indentation, quote marks, the marker and its space. */
-const listPrefix = (spans: readonly MergedSpan[]): number => {
-  const marker = spans.findIndex((s) =>
-    s.scope?.includes("punctuation.definition.list.begin.markdown"),
-  );
-  if (marker < 0) return 0;
-  const lead = spans.slice(0, marker);
+const blank = (span: MergedSpan | undefined) =>
+  span !== undefined && span.text !== "" && span.text.trim() === "";
+
+/**
+ * How many spans lead a quote or list item's line up to its text (indentation, quote marks, the list marker and its
+ * space), and whether quote marks are among them. A line with neither has no lead.
+ */
+const leadOf = (
+  spans: readonly MergedSpan[],
+): { count: number; quote: boolean } => {
+  let count = 0;
+  let quote = false;
+  for (const span of spans) {
+    if (span.scope?.includes("punctuation.definition.quote")) quote = true;
+    else if (!blank(span)) break;
+    count++;
+  }
   if (
-    lead.some(
-      (s) =>
-        s.text.trim() !== "" &&
-        !s.scope?.includes("punctuation.definition.quote"),
-    )
+    spans[count]?.scope?.includes("punctuation.definition.list.begin.markdown")
   )
-    return 0;
-  const next = spans[marker + 1];
-  return next !== undefined && next.text !== "" && next.text.trim() === ""
-    ? marker + 2
-    : marker + 1;
+    return { count: count + (blank(spans[count + 1]) ? 2 : 1), quote };
+  return { count: quote ? count : 0, quote };
 };
+
+/** A GitHub alert's first line, `> [!NOTE]`, names its kind; the class colours it as GitHub does. */
+const alertOf = (spans: readonly MergedSpan[]): string | undefined =>
+  /^[\s>]*\[!(note|tip|important|warning|caution)\]\s*$/i
+    .exec(spans.map((s) => s.text).join(""))?.[1]
+    ?.toLowerCase();
