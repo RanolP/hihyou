@@ -338,7 +338,15 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 .hh-viewed { opacity: 0.5; }
 /* The modal review editor: the root takes keys while focused, and paints nodes through the Custom Highlight API. */
 .hh-review:focus { outline: 2px solid var(--vscode-focusBorder, #0969da); outline-offset: -2px; }
-.hh-diff ::highlight(hh-viewed) { color: var(--hh-muted); }
+/*
+ * A read node cuts its own range out of the line's added/removed colour and word emphasis, so on a coloured
+ * block it reads as faded context at a glance; the line-number grey alone vanished once whole lines took the
+ * side colour. Per node, not per line: the rest of the line may still be unread.
+ */
+.hh-diff ::highlight(hh-viewed) {
+  color: color-mix(in srgb, var(--hh-fg) 40%, var(--hh-bg));
+  background-color: var(--hh-bg);
+}
 .hh-diff ::highlight(hh-selection) {
   background-color: var(--hh-selection);
   text-decoration: underline 2px var(--hh-accent);
