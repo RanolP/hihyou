@@ -264,14 +264,14 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 .hh-md-h1, .hh-md-h2, .hh-md-h3, .hh-md-h4, .hh-md-h5, .hh-md-h6 { font-weight: 600; line-height: 1.25; }
 .hh-md-h1 { font-size: 1.75em; }
 .hh-md-h2 { font-size: 1.45em; }
-.hh-md-h3 { font-size: 1.2em; }
-.hh-md-h4 { font-size: 1.05em; }
+.hh-md-h3 { font-size: 1.25em; }
+.hh-md-h4 { font-size: 1.12em; }
 .hh-md-h6 { color: var(--hh-muted); }
 .hh-md tr:has(.hh-md-h1, .hh-md-h2) > .hh-code { padding-top: 6px; padding-bottom: 2px; }
 .hh-md-strong { font-weight: 600; }
 .hh-md-em { font-style: italic; }
 .hh-md-del { text-decoration: line-through; }
-.hh-md-mark { opacity: 0.45; font-weight: 400; font-style: normal; }
+.hh-md-mark { opacity: 0.35; font-weight: 400; font-style: normal; }
 /* A quote draws its bar beside its text, past the dimmed marks; a GitHub alert colours its bar and label as GitHub does. */
 .hh-md-quote { color: var(--hh-muted); }
 .hh-md-quoted > .hh-md-body { border-left: 3px solid var(--hh-quote, color-mix(in srgb, var(--hh-muted) 70%, transparent)); padding-left: 1ch; }
@@ -289,7 +289,8 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 .hh-md-lead { font-family: var(--hh-mono); white-space: pre; }
 .hh-md-code, .hh-md-fence, .hh-md-table { font-family: var(--hh-mono); font-size: 0.92em; }
 .hh-md-code { background: color-mix(in srgb, var(--hh-muted) 18%, transparent); border-radius: 3px; padding: 0 2px; }
-.hh-md-code.hh-md-mark { opacity: 0.6; }
+.hh-md-code.hh-md-mark { opacity: 0.35; }
+.hh-md-comment { color: var(--hh-muted); font-style: italic; }
 /* Link text in the link colour, as rendered Markdown shows it over any theme colour; image alt text italic on a dashed line; a URL recedes. */
 .hh-md-link { color: var(--hh-button-fg) !important; text-decoration: underline; text-underline-offset: 2px; }
 .hh-md-image { color: var(--hh-button-fg) !important; font-style: italic; text-decoration: underline dashed; text-decoration-style: dashed !important; text-underline-offset: 3px; }

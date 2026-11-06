@@ -26,3 +26,7 @@
 (info_string) @fence.language
 
 (strikethrough) @text.strike
+
+; An HTML block that opens a comment (`<!-- ... -->`, such as Node's YAML metadata) is a comment.
+((html_block) @comment
+ (#match? @comment "^<!--"))

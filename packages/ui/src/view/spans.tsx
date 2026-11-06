@@ -41,6 +41,7 @@ const MARKDOWN: readonly (readonly [RegExp, string])[] = [
   [/\bmarkup\.bold/, "hh-md-strong"],
   [/\bmarkup\.italic/, "hh-md-em"],
   [/\bmarkup\.strikethrough/, "hh-md-del"],
+  [/\bcomment\.block\.html\.markdown/, "hh-md-comment"],
 ];
 
 const markdownClass = (scope: string | undefined): string | undefined => {

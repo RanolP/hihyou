@@ -627,6 +627,7 @@ const MARKDOWN: Record<string, Rule> = {
   "table.delimiter": "punctuation.definition.table.markdown",
   "fence.language": "fenced_code.block.language.markdown",
   "text.strike": "markup.strikethrough.markdown",
+  comment: "comment.block.html.markdown",
   "text.literal": {
     scope: "markup.inline.raw.string.markdown",
     byKind: {
