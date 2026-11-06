@@ -309,14 +309,17 @@ export function modalKey(
   const motion = motions[key];
   if (motion) {
     const p = s.selection;
-    if (!p) {
-      const first =
-        key === "k" || key === "["
-          ? step(ctx, undefined, -1, key === "[")
-          : step(ctx, undefined, 1, key === "]");
-      return done(only(s, first));
-    }
-    return done(only(s, motion(ctx, p)));
+    const to = p
+      ? motion(ctx, p)
+      : key === "k" || key === "["
+        ? step(ctx, undefined, -1, key === "[")
+        : step(ctx, undefined, 1, key === "]");
+    // A step into another file must bring it on screen (a hidden test, a folded file, the next file of a
+    // one-file view); otherwise `v` would mark nodes the reader never saw.
+    return done(
+      only(s, to),
+      to && to.file !== p?.file ? [{ kind: "jump", to }] : [],
+    );
   }
   switch (key) {
     case "w":
