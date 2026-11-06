@@ -402,6 +402,18 @@ export type UnifiedRow =
 type MergedRow = Extract<UnifiedRow, { kind: "merged" }>;
 
 const blank = (text: string) => text.trim() === "";
+/** Whether at least half of the lines' text, whitespace aside, is unchanged. */
+const mostlyKept = (lines: readonly Cell[]): boolean => {
+  let kept = 0;
+  let all = 0;
+  for (const span of lines.flatMap((c) => c.spans)) {
+    const length = span.text.replace(/\s+/g, "").length;
+    all += length;
+    if (!span.changed) kept += length;
+  }
+  return kept * 2 >= all;
+};
+
 const skeleton = (lines: readonly Cell[]) =>
   lines
     .flatMap((c) => c.spans)
@@ -527,8 +539,12 @@ export function mergeLines(
  * A section's rows in the unified layout. A fragment merges whole when it can, else each line with the one
  * across from it; lines that do not merge are kept in runs, the before side's lines ahead of the after side's.
  * A moved line never merges, so a move stays one box; a fragment holding one merges only line by line.
+ * In `prose` (Markdown), sides that are both mostly rewritten stay apart as - and + lines too: woven word by word
+ * they read as neither sentence.
  */
-export function unifiedRows(rows: readonly Row[]): UnifiedRow[] {
+export function unifiedRows(rows: readonly Row[], prose = false): UnifiedRow[] {
+  const alike = (before: readonly Cell[], after: readonly Cell[]) =>
+    !prose || mostlyKept(before) || mostlyKept(after);
   const out: UnifiedRow[] = [];
   let removed: UnifiedRow[] = [];
   let added: UnifiedRow[] = [];
@@ -555,7 +571,8 @@ export function unifiedRows(rows: readonly Row[]): UnifiedRow[] {
       );
       const moving = own.some((r) => r.moved !== undefined);
       const cells = (side: SideName) => own.flatMap((r) => r[side] ?? []);
-      const whole = moving
+      const whole =
+        moving || !alike(cells("before"), cells("after"))
         ? undefined
         : mergeLines(row.fragment, cells("before"), cells("after"));
       if (whole) out.push(...whole);
@@ -563,7 +580,10 @@ export function unifiedRows(rows: readonly Row[]): UnifiedRow[] {
     }
     if (wholeMerged) continue;
     const merged =
-      row.before && row.after && row.moved === undefined
+      row.before &&
+      row.after &&
+      row.moved === undefined &&
+      alike([row.before], [row.after])
         ? mergeLines(row.fragment, [row.before], [row.after])
         : undefined;
     if (merged) {

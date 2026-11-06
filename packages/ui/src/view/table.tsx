@@ -79,7 +79,10 @@ export function FileTable(props: { index: number; file: DiffFile }): JSX.Element
       afterCode = false;
     }
     ctx.placer.queueBefore(beforeCells(section.rows));
-    const unified = unifiedRows(section.rows);
+    const unified = unifiedRows(
+      section.rows,
+      file.grammar?.startsWith("markdown@") ?? false,
+    );
     const lone = loneLines(unified);
     for (const [rowIndex, row] of unified.entries()) {
       if (afterCode && startsWhole(starts, row)) rows.push(wholeRule(columns));
