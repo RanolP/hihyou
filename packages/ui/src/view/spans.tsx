@@ -201,7 +201,8 @@ export function SpanNodes(props: {
       </span>
     );
   }
-  if (!row) return out;
+  if (!row)
+    return isDelimiterRow(spans) ? <span class="hh-md-delim">{out}</span> : out;
   cells.push(out);
   // Whatever precedes the first pipe or follows the last (indentation, a stray space) stays outside the grid.
   const before = cells.shift() ?? [];
@@ -229,6 +230,11 @@ const isTableRow = (spans: readonly MergedSpan[]): boolean =>
   spans.some(isTableSpan) &&
   spans.some(isPipe) &&
   !/^[\s|:-]+$/.test(spans.map((s) => s.text).join(""));
+
+/** The delimiter row (`|---|:--:|`) under a table's header. */
+const isDelimiterRow = (spans: readonly MergedSpan[]): boolean =>
+  spans.some(isTableSpan) &&
+  /^\s*\|?[\s:]*-[\s|:-]*$/.test(spans.map((s) => s.text).join(""));
 
 /** Whether an unchanged `neighbour` before (or after) a changed `edge` span joins it into one word on screen. */
 const glued = (

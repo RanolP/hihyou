@@ -314,8 +314,16 @@ table.hh-md tr:has(.hh-md-rule) > td.hh-code {
 .hh-md-row { display: inline-grid; width: calc(100% - 2ch); vertical-align: top; text-indent: 0; }
 .hh-md-cell { padding: 0 1ch; white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
 .hh-md-pipe { opacity: 0.35; }
-/* The header is the row right above the delimiter row (|---|), which has table markup but no grid. */
-table.hh-md tr:has(.hh-md-row):has(+ tr:not(:has(.hh-md-row)) .hh-md-table) .hh-md-cell { font-weight: 600; }
+/* The header is the row right above the delimiter row (|---|), bold on a tint as GitHub draws a table's head; the
+   delimiter row reads as the rule under it, its dashes faint. (:has() cannot nest, so the delimiter row has a class.) */
+table.hh-md tr:has(.hh-md-row):has(+ tr .hh-md-delim) .hh-md-cell { font-weight: 600; }
+table.hh-md tr:has(.hh-md-row):has(+ tr .hh-md-delim) > td.hh-code {
+  background-image: linear-gradient(color-mix(in srgb, var(--hh-muted) 16%, transparent), color-mix(in srgb, var(--hh-muted) 16%, transparent));
+}
+table.hh-md tr:has(.hh-md-delim) > td.hh-code {
+  background-image: linear-gradient(transparent calc(50% - 1px), var(--hh-muted) calc(50% - 1px), var(--hh-muted) calc(50% + 1px), transparent calc(50% + 1px));
+}
+.hh-md-delim { opacity: 0.6; }
 .hh-node-label { position: sticky; left: 8px; }
 .hh-whole td { height: 0; padding: 0; border-top: 1px solid var(--hh-border); }
 .hh-top { font-weight: 400; font-style: italic; color: var(--hh-muted); }
