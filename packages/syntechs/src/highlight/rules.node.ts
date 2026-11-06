@@ -639,7 +639,10 @@ const MARKDOWN: Record<string, Rule> = {
   "text.uri": "markup.underline.link.markdown",
   "text.reference": {
     scope: "string.other.link.title.markdown",
-    byKind: { link_label: "constant.other.reference.link.markdown" },
+    byKind: {
+      link_label: "constant.other.reference.link.markdown",
+      image_description: "string.other.link.description.markdown",
+    },
   },
   "string.escape": "constant.character.escape.markdown",
   "text.emphasis": "markup.italic.markdown",

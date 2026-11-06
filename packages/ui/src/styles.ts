@@ -287,8 +287,10 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 .hh-md-code, .hh-md-fence, .hh-md-table { font-family: var(--hh-mono); font-size: 0.92em; }
 .hh-md-code { background: color-mix(in srgb, var(--hh-muted) 18%, transparent); border-radius: 3px; padding: 0 2px; }
 .hh-md-code.hh-md-mark { opacity: 0.6; }
-.hh-md-link { text-decoration: underline; text-underline-offset: 2px; }
-.hh-md-url { opacity: 0.55; font-size: 0.9em; }
+/* Link text in the link colour, as rendered Markdown shows it over any theme colour; image alt text italic on a dashed line; a URL recedes. */
+.hh-md-link { color: var(--hh-button-fg) !important; text-decoration: underline; text-underline-offset: 2px; }
+.hh-md-image { color: var(--hh-button-fg) !important; font-style: italic; text-decoration: underline dashed; text-decoration-style: dashed !important; text-underline-offset: 3px; }
+.hh-md-url { opacity: 0.4; font-size: 0.85em; }
 /* A fence's rows share one tint drawn as an image (and outrank the line colour's shorthand), so an added or removed row's colour still shows under it. */
 table.hh-md tr:has(.hh-md-fence) > td.hh-code {
   background-image: linear-gradient(color-mix(in srgb, var(--hh-muted) 12%, transparent), color-mix(in srgb, var(--hh-muted) 12%, transparent));
