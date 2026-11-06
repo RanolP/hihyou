@@ -598,6 +598,41 @@ const PYTHON: Record<string, Rule> = {
   },
 };
 
+// The scopes of VS Code's markdown TextMate grammar (markdown-basics), on the joined block and inline tree.
+const MARKDOWN: Record<string, Rule> = {
+  "text.title": "markup.heading.markdown",
+  "punctuation.special": {
+    scope: "punctuation.definition.heading.markdown",
+    byKind: {
+      list_marker_plus: "punctuation.definition.list.begin.markdown",
+      list_marker_minus: "punctuation.definition.list.begin.markdown",
+      list_marker_star: "punctuation.definition.list.begin.markdown",
+      list_marker_dot: "punctuation.definition.list.begin.markdown",
+      list_marker_parenthesis: "punctuation.definition.list.begin.markdown",
+      thematic_break: "meta.separator.markdown",
+      block_quote_marker: "punctuation.definition.quote.begin.markdown",
+      block_continuation: "punctuation.definition.quote.begin.markdown",
+    },
+  },
+  "text.literal": {
+    scope: "markup.inline.raw.string.markdown",
+    byKind: {
+      fenced_code_block: "markup.fenced_code.block.markdown",
+      indented_code_block: "markup.raw.block.markdown",
+      link_title: "string.other.link.description.title.markdown",
+    },
+  },
+  "punctuation.delimiter": "punctuation.definition.markdown",
+  "text.uri": "markup.underline.link.markdown",
+  "text.reference": {
+    scope: "string.other.link.title.markdown",
+    byKind: { link_label: "constant.other.reference.link.markdown" },
+  },
+  "string.escape": "constant.character.escape.markdown",
+  "text.emphasis": "markup.italic.markdown",
+  "text.strong": "markup.bold.markdown",
+};
+
 export const LANGUAGES: Record<string, LanguageRules> = {
   jsdoc: {
     grammar: "tree-sitter-jsdoc",
@@ -664,6 +699,16 @@ export const LANGUAGES: Record<string, LanguageRules> = {
     grammar: "tree-sitter-dockerfile",
     queries: ["queries/highlights.scm"],
     captures: DOCKERFILE,
+  },
+  markdown: {
+    grammar: "tree-sitter-markdown",
+    // The block grammar's queries, then the inline grammar's: grammars/markdown parses both into one tree.
+    // Neither injection query is read: the joined tree already holds the inline nodes.
+    queries: [
+      "tree-sitter-markdown/queries/highlights.scm",
+      "tree-sitter-markdown-inline/queries/highlights.scm",
+    ],
+    captures: MARKDOWN,
   },
   kotlin: {
     grammar: "tree-sitter-kotlin",

@@ -38,6 +38,12 @@ export const GRAMMARS: Record<string, { src: string; comments: string[] }> = {
     comments: ["comment", "multiline_comment"],
   },
   yaml: { src: "tree-sitter-yaml/src", comments: ["comment"] },
+  // The block structure; grammars/markdown/index.ts parses each paragraph's inline text with the second.
+  markdown: { src: "tree-sitter-markdown/tree-sitter-markdown/src", comments: [] },
+  "markdown-inline": {
+    src: "tree-sitter-markdown/tree-sitter-markdown-inline/src",
+    comments: [],
+  },
   // Injected into JavaScript and TypeScript comments and regex literals by their injections.scm.
   jsdoc: { src: "tree-sitter-jsdoc/src", comments: [] },
   regex: { src: "tree-sitter-regex/src", comments: [] },

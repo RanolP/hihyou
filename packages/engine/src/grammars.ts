@@ -29,6 +29,7 @@ export type LanguageId =
   | "swift"
   | "yaml"
   | "graphql"
+  | "markdown"
   // Read and formatted as HTML: oxfmt takes no `.svg`, and prints one given the name `.html` as its HTML.
   | "svg";
 
@@ -49,6 +50,7 @@ const extensions: Record<LanguageId, readonly string[]> = {
   swift: [".swift"],
   yaml: [".yml", ".yaml"],
   graphql: [".graphql", ".gql"],
+  markdown: [".md", ".markdown"],
   svg: [".svg"],
 };
 
@@ -62,6 +64,7 @@ const filenames: Record<string, LanguageId> = {
   ".profile": "bash",
   Dockerfile: "dockerfile",
   Containerfile: "dockerfile",
+  README: "markdown",
 };
 
 export function languageForPath(path: string): LanguageId | undefined {
@@ -98,6 +101,7 @@ const parsers: Record<
   swift: () => import("syntechs/grammars/swift"),
   yaml: () => import("syntechs/grammars/yaml"),
   graphql: () => import("syntechs/grammars/graphql"),
+  markdown: () => import("syntechs/grammars/markdown"),
   svg: () => import("syntechs/grammars/html"),
 };
 
@@ -122,6 +126,7 @@ const highlighters: Partial<
   swift: () => import("syntechs/grammars/swift/highlight"),
   yaml: () => import("syntechs/grammars/yaml/highlight"),
   graphql: () => import("syntechs/grammars/graphql/highlight"),
+  markdown: () => import("syntechs/grammars/markdown/highlight"),
   svg: () => import("syntechs/grammars/html/highlight"),
 };
 

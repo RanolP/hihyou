@@ -1,0 +1,31 @@
+{
+  "name": "tree-sitter-markdown",
+  "version": "0.5.4",
+  "private": true,
+  "scripts": {
+    "postinstall": "node ../build.mjs"
+  },
+  "grammar": {
+    "sources": [
+      {
+        "repo": "tree-sitter-grammars/tree-sitter-markdown",
+        "commit": "41ff24a6c775492c543b09228aeb98d1cd2b3a0f",
+        "files": {
+          "tree-sitter.json": "fd33b7f893012b4771060fd82fa6651a681384ad52aef9f95de02b5f6b9b21c5",
+          "common/common.js": "d5b0fbb4a12a0965480a06a509ae25a27fc9e47df351a10b73d4bdfaec8776b7",
+          "common/html_entities.json": "108b7cf9b6b81f27f4b7afab787c83cd633b4d276823c5ec494496426d1457eb",
+          "tree-sitter-markdown/grammar.js": "f3ecf47636a4a251f2b06f3007aa5282cf6434262064407af2eca7dad5eb955f",
+          "tree-sitter-markdown/src/scanner.c": "b4db01bb55acba0c1ccacf78450d1f58cde4a1bcbf4de0ea0afe64c39fc6b311",
+          "tree-sitter-markdown/queries/highlights.scm": "2eb06e766ccd672d49599d14f398f07f4f5f7f2208262993d3cd9207c1078e2f",
+          "tree-sitter-markdown-inline/grammar.js": "7c26695331c0b8eae26b0ec305a6e91a3fe82f389b5ffac50196b2b9f2add44e",
+          "tree-sitter-markdown-inline/src/scanner.c": "d356c4bbd9c3b3f4785476124c8b2322030eb876dd525b761e0fc51253001060",
+          "tree-sitter-markdown-inline/queries/highlights.scm": "9a88072f0ce54972c32fe7952ccb2d29254b6a7228bda1c7babc18df15cba797"
+        }
+      }
+    ],
+    "generate": [
+      "tree-sitter-markdown",
+      "tree-sitter-markdown-inline"
+    ]
+  }
+}

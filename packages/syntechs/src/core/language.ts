@@ -1,5 +1,6 @@
 // Port of tree-sitter v0.27.0 lib/src/language.{h,c}: parse-table lookups over the tables a generated grammar
 // module (src/grammars/*/, written by compiler/compile.node.ts) decodes at load time.
+import type { Tree } from "./arena.js";
 import type { ExternalScanner, Lexer } from "./lexer.js";
 
 export const SYM_END = 0;
@@ -93,6 +94,11 @@ export interface Language {
    * tree-sitter grammar has one; the tools that format the language (prettier's CSS) read it apart.
    */
   frontMatter?: (text: string) => number;
+  /**
+   * Builds the tree in place of the one table-driven parse: markdown parses its blocks, then each block's
+   * inline text with a second grammar, and joins both into one tree whose kinds are this language's names.
+   */
+  parse?: (text: string) => Tree;
 }
 
 /** How long `lang`'s front matter is at the start of `text`, past a byte order mark; 0 for none. */

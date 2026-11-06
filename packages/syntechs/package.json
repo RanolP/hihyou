@@ -71,6 +71,7 @@
     "tree-sitter-rust": "workspace:*",
     "tree-sitter-ruby": "workspace:*",
     "tree-sitter-bash": "workspace:*",
+    "tree-sitter-markdown": "workspace:*",
     "tree-sitter-dockerfile": "workspace:*",
     "tree-sitter-kotlin": "workspace:*",
     "tree-sitter-python": "workspace:*",
