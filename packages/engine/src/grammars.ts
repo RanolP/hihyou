@@ -1,4 +1,4 @@
-import type { Language, Tree } from "syntechs/core";
+import { type Language, parseTree, type Tree } from "syntechs/core";
 import type { ScopeRules } from "syntechs/diff";
 import {
   format,
@@ -126,9 +126,134 @@ const highlighters: Partial<
   swift: () => import("syntechs/grammars/swift/highlight"),
   yaml: () => import("syntechs/grammars/yaml/highlight"),
   graphql: () => import("syntechs/grammars/graphql/highlight"),
-  markdown: () => import("syntechs/grammars/markdown/highlight"),
+  markdown: async () => ({
+    highlight: withFences(
+      (await import("syntechs/grammars/markdown/highlight")).highlight,
+    ),
+  }),
   svg: () => import("syntechs/grammars/html/highlight"),
 };
+
+/** Info-string names that are neither a language id nor one of its file extensions. */
+const fenceAliases: Record<string, LanguageId> = {
+  shell: "bash",
+  shellscript: "bash",
+  zsh: "bash",
+  jsonc: "json",
+  json5: "json",
+  docker: "dockerfile",
+};
+
+/** The language a fence's info string names: `rust`, `rs`, `shell`; Markdown itself is left plain. */
+function fenceLanguage(name: string): LanguageId | undefined {
+  const lower = name.toLowerCase();
+  const id = Object.hasOwn(parsers, lower)
+    ? (lower as LanguageId)
+    : (fenceAliases[lower] ?? languageForPath(`fence.${lower}`));
+  return id === "markdown" ? undefined : id;
+}
+
+type Fenced = { language: Language; highlight: HighlightModule };
+
+/**
+ * Markdown's highlighter, with each fenced code block's content also coloured as the language its info string
+ * names. Which languages a file fences is known only once it is parsed, and `highlight` is synchronous, so
+ * `load` brings in every language a fence can name.
+ */
+function withFences(markdown: HighlightModule): HighlightModule {
+  const fenced = new Map<LanguageId, Fenced>();
+  return {
+    async load() {
+      await markdown.load?.();
+      const ids = (Object.keys(parsers) as LanguageId[]).filter(
+        (id) => id !== "markdown" && id !== "svg",
+      );
+      await Promise.all(
+        ids.map(async (id) => {
+          const highlighter = highlighters[id];
+          if (!highlighter) return;
+          const [{ language }, { highlight }] = await Promise.all([
+            parsers[id](),
+            highlighter(),
+          ]);
+          await highlight.load?.();
+          fenced.set(id, { language, highlight });
+        }),
+      );
+    },
+    highlight(tree, paint) {
+      markdown.highlight(tree, paint);
+      const visit = (n: number): void => {
+        const kind = tree.kindName(n);
+        if (kind === "inline") return;
+        if (kind === "fenced_code_block") {
+          paintFence(tree, n, paint, fenced);
+          return;
+        }
+        for (let i = 0, count = tree.count(n); i < count; i++)
+          visit(tree.child(n, i));
+      };
+      visit(tree.root);
+    },
+  };
+}
+
+/**
+ * Parses a fence's content, less the quote or list prefixes (`block_continuation`) inside it, as its info
+ * string's language and paints those scopes back onto the content node.
+ */
+function paintFence(
+  tree: Tree,
+  fence: number,
+  paint: Parameters<HighlightModule["highlight"]>[1],
+  fenced: Map<LanguageId, Fenced>,
+): void {
+  let content: number | undefined;
+  let name: string | undefined;
+  for (let i = 0, count = tree.count(fence); i < count; i++) {
+    const c = tree.child(fence, i);
+    const kind = tree.kindName(c);
+    if (kind === "code_fence_content") content = c;
+    else if (kind === "info_string")
+      for (let j = 0, k = tree.count(c); j < k; j++) {
+        const l = tree.child(c, j);
+        if (tree.kindName(l) === "language") name = tree.text(l);
+      }
+  }
+  const id = name === undefined ? undefined : fenceLanguage(name);
+  const lang = id === undefined ? undefined : fenced.get(id);
+  if (content === undefined || !lang) return;
+  const start = tree.start(content);
+  const length = tree.end(content) - start;
+  const whole = tree.text(content);
+  // `[from, to)` stretches of the content node, and where each begins in the text parsed.
+  const pieces: { from: number; to: number; at: number }[] = [];
+  let text = "";
+  let at = 0;
+  const take = (to: number) => {
+    if (to > at) {
+      pieces.push({ from: at, to, at: text.length });
+      text += whole.slice(at, to);
+    }
+  };
+  for (let i = 0, count = tree.count(content); i < count; i++) {
+    const c = tree.child(content, i);
+    if (tree.kindName(c) !== "block_continuation") continue;
+    take(tree.start(c) - start);
+    at = Math.max(at, tree.end(c) - start);
+  }
+  take(length);
+  const inner = parseTree(lang.language, text);
+  lang.highlight.highlight(inner, (m, scope, from, to) => {
+    const s = inner.start(m) + (from ?? 0);
+    const e = to === undefined ? inner.end(m) : inner.start(m) + to;
+    for (const p of pieces) {
+      const a = Math.max(s, p.at);
+      const b = Math.min(e, p.at + p.to - p.from);
+      if (a < b) paint(content, scope, p.from + a - p.at, p.from + b - p.at);
+    }
+  });
+}
 
 const typescriptDeclarations = [
   "function_declaration",
