@@ -59,6 +59,7 @@ interface PullReviewComment {
   line: number | null;
   side: "LEFT" | "RIGHT" | null;
   original_line: number | null;
+  original_commit_id: string;
   user: { login: string; avatar_url?: string } | null;
   created_at?: string;
   body: string;
@@ -81,6 +82,8 @@ function isPullReviewComment(value: unknown): value is PullReviewComment {
     (value.side === "LEFT" || value.side === "RIGHT" || value.side === null) &&
     "original_line" in value &&
     (typeof value.original_line === "number" || value.original_line === null) &&
+    "original_commit_id" in value &&
+    typeof value.original_commit_id === "string" &&
     "user" in value &&
     (value.user === null ||
       (typeof value.user === "object" &&
@@ -113,21 +116,31 @@ export interface GitHubWebHostOptions {
 export interface GitHubWebHost extends Host {
   resolveDiffset(data: GitHubWebDiffsetId): Promise<DiffsetResolution>;
   resolvePullBody(owner: string, repo: string, number: number): Promise<string>;
+  /** The pull request's review threads with a line in the commit `at` names, numbered as in that commit. */
   resolveReviewThreads(
     owner: string,
     repo: string,
     number: number,
+    at: ThreadsAt,
   ): Promise<GitHubWebReviewThread[]>;
   resolvePull(
     owner: string,
     repo: string,
     number: number,
   ): Promise<GitHubWebPull>;
-  /**
-   * Starts fetching the pull request's `.diff` before its head is known, for the next `resolveDiffset` of that pull
-   * request to take. The URL names no head; a head that moved in between fails the blob id check on the raw files.
-   */
-  prefetchPullDiff(owner: string, repo: string, number: number): void;
+}
+
+/**
+ * The pull request commit whose threads are read, placed as `threadLines` in `../comments.ts` places them: a thread
+ * written at this commit keeps its original line, one read at the head keeps its current line unless outdated, and
+ * any other has no line here. A before-side line counts in the merge base, so it holds only where `leftIsBefore`.
+ */
+export interface ThreadsAt {
+  commit: string;
+  /** The commit is the pull request's head. */
+  head: boolean;
+  /** The commit's parent is the pull request's merge base. */
+  leftIsBefore: boolean;
 }
 
 /** Deterministic: same fields, same string, so the engine's cache and `Diffset.id` agree across calls. */
@@ -173,8 +186,6 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
   const listed = new Map<string, { pull: number; merge: boolean }>();
   /** How to produce each blob id resolveDiffset has handed out. */
   const recipes = new Map<BlobId, () => Promise<Uint8Array>>();
-  /** `pull/<n>.diff` texts `prefetchPullDiff` started, by `owner/repo#n`; the next `resolveDiffset` takes each once. */
-  const prefetched = new Map<string, Promise<string>>();
   const pullDiffUrl = (owner: string, repo: string, number: number) =>
     `${repoUrl(owner, repo)}/pull/${number}.diff`;
   /**
@@ -264,21 +275,15 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
       "pull" in data
         ? pullDiffUrl(owner, repo, data.pull)
         : `${repoUrl(owner, repo)}/commit/${encodeURIComponent(data.commit)}.diff`;
-    const key = "pull" in data ? `${owner}/${repo}#${data.pull}` : "";
-    const early = prefetched.get(key);
-    prefetched.delete(key);
-    const fetchText = async () =>
-      (
-        await ("pull" in data
-          ? getDirect(
-              `${owner}/${repo}`,
-              directPullDiffUrl(owner, repo, data.pull),
-              url,
-            )
-          : get(url))
-      ).text();
-    // A failed prefetch is fetched again, so its error is the one a fetch made now would raise.
-    const text = await (early?.catch(fetchText) ?? fetchText());
+    const text = await (
+      await ("pull" in data
+        ? getDirect(
+            `${owner}/${repo}`,
+            directPullDiffUrl(owner, repo, data.pull),
+            url,
+          )
+        : get(url))
+    ).text();
     const patches = await shownPatches(parseDiff(text), data);
     const changes = patches.map((patch) =>
       toChange(
@@ -407,7 +412,7 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
     };
   };
 
-  const reviewThreads = new Map<string, Promise<GitHubWebReviewThread[]>>();
+  const reviewComments = new Map<string, Promise<PullReviewComment[]>>();
   return {
     grammars: options.grammars ?? syntechsGrammars(),
     resolveDiffset,
@@ -449,16 +454,6 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
       if (!head) throw new Error(`GET ${url} listed no commits`);
       return { head, commits };
     },
-    prefetchPullDiff(owner, repo, number) {
-      const text = getDirect(
-        `${owner}/${repo}`,
-        directPullDiffUrl(owner, repo, number),
-        pullDiffUrl(owner, repo, number),
-      ).then((r) => r.text());
-      // Unhandled until resolveDiffset takes it, and that refetches on failure.
-      text.catch(() => {});
-      prefetched.set(`${owner}/${repo}#${number}`, text);
-    },
     async resolvePullBody(owner, repo, number) {
       const url =
         `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}` +
@@ -473,24 +468,25 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
         throw new Error(`GET ${url} returned no pull request body`);
       return json.body ?? "";
     },
-    resolveReviewThreads(owner, repo, number) {
+    async resolveReviewThreads(owner, repo, number, at) {
       // Unauthenticated REST allows 60 requests an hour, and every diffset switch asks again.
       const key = `${owner}/${repo}#${number}`;
-      const cached = reviewThreads.get(key);
-      if (cached) return cached;
-      const loading = fetchReviewThreads(owner, repo, number);
-      reviewThreads.set(key, loading);
-      loading.catch(() => reviewThreads.delete(key));
-      return loading;
+      let loading = reviewComments.get(key);
+      if (!loading) {
+        loading = fetchReviewComments(owner, repo, number);
+        reviewComments.set(key, loading);
+        loading.catch(() => reviewComments.delete(key));
+      }
+      return reviewThreadsFromComments(await loading, at);
     },
     ...(options.preferences && { preferences: options.preferences }),
   };
 
-  async function fetchReviewThreads(
+  async function fetchReviewComments(
     owner: string,
     repo: string,
     number: number,
-  ): Promise<GitHubWebReviewThread[]> {
+  ): Promise<PullReviewComment[]> {
       let url: string | undefined =
         `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}` +
         `/pulls/${number}/comments?per_page=100`;
@@ -503,7 +499,7 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
         comments.push(...json.filter(isPullReviewComment));
         url = nextPage(response.headers.get("link"));
       }
-      return reviewThreadsFromComments(comments);
+      return comments;
   }
 }
 
@@ -516,6 +512,7 @@ function nextPage(link: string | null): string | undefined {
 
 function reviewThreadsFromComments(
   comments: PullReviewComment[],
+  at: ThreadsAt,
 ): GitHubWebReviewThread[] {
   const threads: GitHubWebReviewThread[] = [];
   const byRoot = new Map<number, PullReviewComment[]>();
@@ -529,9 +526,19 @@ function reviewThreadsFromComments(
   for (const [rootId, grouped] of byRoot) {
     const root = byId.get(rootId) ?? grouped[0];
     if (!root) continue;
-    // An outdated thread has no `line`; its `original_line` numbers an older file, so, as GitHub's Files tab, skip it.
-    const line = root.line ?? undefined;
-    if (line === undefined || root.side === null) continue;
+    // An outdated thread has no `line`; its `original_line` numbers the file at the commit it was written at.
+    const line =
+      (root.original_commit_id === at.commit
+        ? root.original_line
+        : at.head
+          ? root.line
+          : null) ?? undefined;
+    if (
+      line === undefined ||
+      root.side === null ||
+      (root.side === "LEFT" && !at.leftIsBefore)
+    )
+      continue;
     threads.push({
       path: root.path,
       ...(root.side === "LEFT" ? { before: line } : { after: line }),

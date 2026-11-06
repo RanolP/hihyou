@@ -35,6 +35,7 @@ export {
 } from "./pulls.js";
 export { type GitHubRemote, parseGitHubRemote } from "./remote.js";
 export {
+  GENERATED_MERGE_SUBJECT,
   type GitHubWebCommit,
   type GitHubWebDiffsetId,
   type GitHubWebHost,
@@ -42,5 +43,6 @@ export {
   type GitHubWebPull,
   type GitHubWebReviewThread,
   githubWebHost,
+  type ThreadsAt,
   webDiffsetIdOf,
 } from "./web/host.js";

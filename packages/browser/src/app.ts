@@ -1,7 +1,9 @@
 import { type ChangedFileRef, createEngine, type Theme } from "@hihyou/engine";
 import {
+  GENERATED_MERGE_SUBJECT,
   type GitHubWebDiffsetId,
   githubWebHost,
+  type ThreadsAt,
   webDiffsetIdOf,
 } from "@hihyou/github";
 import {
@@ -26,15 +28,15 @@ import {
 import type { App, MountOptions, Mounted } from "./app-api.js";
 import { renderDescription } from "./description.js";
 
-/** One row of the diffsets panel: the pull request's whole change or one of its commits. */
+/** One row of the diffsets panel: one of the pull request's commits. */
 interface Row {
   key: string;
   label: string;
   description: string;
   tooltip?: string;
   id: GitHubWebDiffsetId;
-  /** Pull request whose current review threads apply to this diffset. */
-  reviewPull?: number;
+  /** Which of the pull request's review threads have a line in this commit. */
+  threadsAt: ThreadsAt;
   expanded: boolean;
   /** The row's files, once it was expanded or opened. */
   changes?: readonly ChangedFileRef[];
@@ -231,7 +233,8 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   };
   const drawDescription = () => {
     description.replaceChildren();
-    const body = "pull" in (selected?.id ?? {}) ? pullBody : undefined;
+    // The pull request's intent, above whichever commit is open.
+    const body = pullBody;
     if (!body) {
       description.hidden = true;
       return;
@@ -740,15 +743,18 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     try {
       const [loaded, reviewThreads] = await Promise.all([
         current.load(),
-        row.reviewPull !== undefined
-          ? // Threads come from the public REST API; a private repository (404) or an exhausted rate limit draws the review without them.
-            host_
-              .resolveReviewThreads(row.id.owner, row.id.repo, row.reviewPull)
-              .catch((error: unknown) => {
-                console.warn("hihyou: review threads unavailable", error);
-                return [];
-              })
-          : Promise.resolve([]),
+        // Threads come from the public REST API; a private repository (404) or an exhausted rate limit draws the review without them.
+        host_
+          .resolveReviewThreads(
+            row.id.owner,
+            row.id.repo,
+            page.pull,
+            row.threadsAt,
+          )
+          .catch((error: unknown) => {
+            console.warn("hihyou: review threads unavailable", error);
+            return [];
+          }),
       ]);
       if (at !== generation || disposed) return false;
       files = loaded.map((file) => ({
@@ -1049,8 +1055,6 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   const unsubscribeViewed = persistedViewed.store.subscribe(drawTree);
 
   void (async () => {
-    // All changes opens first, and its diff needs no head: fetch it while the commits route names the head.
-    host_.prefetchPullDiff(page.owner, page.repo, page.pull);
     const pullBodyRequest = host_
       .resolvePullBody(page.owner, page.repo, page.pull)
       .then((body) => body.replace(/<!--[\s\S]*?-->/g, "").trim())
@@ -1065,33 +1069,40 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       const pull = await host_.resolvePull(page.owner, page.repo, page.pull);
       if (disposed) return;
       const { owner, repo } = page;
-      const allChanges: Row = {
-        key: `pull-${page.pull}`,
-        label: "All changes",
-        description: `${pull.commits.length} ${pull.commits.length === 1 ? "commit" : "commits"}`,
-        id: { owner, repo, pull: page.pull, head: pull.head },
-        reviewPull: page.pull,
-        expanded: false,
-      };
-      const commitRows = pull.commits.map((c): Row => ({
-        key: c.sha,
-        label: c.subject,
-        description: c.sha.slice(0, 7),
-        // The sidebar cuts a long subject short; the tooltip carries it whole.
-        tooltip: `${c.subject}\n${c.author} · ${new Date(c.date).toLocaleString()}`,
-        id: { owner, repo, commit: c.sha },
-        expanded: false,
-      }));
-      // A lone commit holds the same change as the pull request, so its row would only repeat All changes.
-      rows = commitRows.length === 1 ? [allChanges] : [allChanges, ...commitRows];
+      // A merge from the base moves the merge base past the first commit's parent.
+      const merged = pull.commits.some((c) =>
+        GENERATED_MERGE_SUBJECT.test(c.subject),
+      );
+      // A pull request is reviewed one commit at a time, newest first; no row diffs it whole.
+      rows = pull.commits
+        .map(
+          (c, i): Row => ({
+            key: c.sha,
+            label: c.subject,
+            description: c.sha.slice(0, 7),
+            // The sidebar cuts a long subject short; the tooltip carries it whole.
+            tooltip: `${c.subject}\n${c.author} · ${new Date(c.date).toLocaleString()}`,
+            id: { owner, repo, commit: c.sha },
+            threadsAt: {
+              commit: c.sha,
+              head: c.sha === pull.head,
+              leftIsBefore: i === 0 && !merged,
+            },
+            expanded: false,
+          }),
+        )
+        .toReversed();
+      const [newest] = rows;
+      if (!newest) {
+        setsStatus.textContent = "No commits.";
+        return;
+      }
       setsStatus.remove();
       const saved = selectionFromHash();
       const savedRow = saved
-        ? commitRows.length === 1 && webDiffsetIdOf(commitRows[0]!.id) === saved.id
-          ? allChanges
-          : rows.find((row) => webDiffsetIdOf(row.id) === saved.id)
+        ? rows.find((row) => webDiffsetIdOf(row.id) === saved.id)
         : undefined;
-      const initial = savedRow ?? allChanges;
+      const initial = savedRow ?? newest;
       const described = pullBodyRequest.then((body) => {
         if (disposed) return;
         pullBody = body || undefined;
@@ -1110,8 +1121,8 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
         savedRow && saved?.path ? saved.path : undefined,
       );
       if (savedRow && !restored && selected === initial && !disposed) {
-        if (initial !== allChanges) void expand(allChanges);
-        await open(allChanges);
+        if (initial !== newest) void expand(newest);
+        await open(newest);
       }
     } catch (error) {
       if (disposed) return;
