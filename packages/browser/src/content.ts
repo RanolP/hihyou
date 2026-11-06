@@ -11,6 +11,19 @@ const tabRoots = [
   "#files_bucket",
   'react-app [data-target="react-app.reactRoot"]',
 ];
+/**
+ * Holds the view one width from "Loading" to the last file. On the React layout the view lands in PageLayout's
+ * wrapping flex row, where it sized to its content: it shared the toggle's line while narrow, then wrapped and
+ * grew as the description and files came in. GitHub's `container-xl` also capped it at 1280px there, where the
+ * classic layout spans the page. The scrollbar gutter stays reserved so the page growing past the window does
+ * not narrow it either. GitHub's own elements change only while the view is shown, so GitHub's view gets its own
+ * layout back.
+ */
+const pageStyles = `
+.hihyou-view { flex: 0 0 100%; min-width: 0; }
+.container-xl:has(.hihyou-view:not([hidden])) { max-width: none; }
+html:has(.hihyou-view:not([hidden])) { scrollbar-gutter: stable; }
+`;
 const optOutStorageKey = (key: string) => `hihyou:github-view:${key}`;
 
 interface Current {
@@ -158,7 +171,10 @@ function sync() {
   button.className = "btn btn-sm";
   const note = document.createElement("span");
   note.className = "hihyou-note color-fg-muted";
-  bar.append(button, note);
+  // Rides in the bar so it leaves with it.
+  const style = document.createElement("style");
+  style.textContent = pageStyles;
+  bar.append(button, note, style);
   const view = document.createElement("div");
   view.className = "hihyou-view";
   view.hidden = true;
