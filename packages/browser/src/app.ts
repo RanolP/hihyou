@@ -635,10 +635,9 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     applyTabSizes();
     updatePageStickyTop();
     // Before the sidebar sticks it still ends at the window's bottom, so the key panel at its foot is on screen.
-    host.style.setProperty(
-      "--hh-sets-top",
-      `${Math.max(0, sets.getBoundingClientRect().top)}px`,
-    );
+    const setsTop = `${Math.max(0, sets.getBoundingClientRect().top)}px`;
+    if (sets.style.getPropertyValue("--hh-sets-top") !== setsTop)
+      sets.style.setProperty("--hh-sets-top", setsTop);
     trackCurrentFile();
   };
   const scheduleViewportUpdate = () => {
@@ -1133,7 +1132,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       descriptionObserver.disconnect();
       host.style.removeProperty("--hh-app-bar-height");
       host.style.removeProperty("--hh-page-sticky-top");
-      host.style.removeProperty("--hh-sets-top");
+      sets.style.removeProperty("--hh-sets-top");
       themeObserver.disconnect();
       fileObserver.disconnect();
       if (trackingFrame !== undefined) cancelAnimationFrame(trackingFrame);
