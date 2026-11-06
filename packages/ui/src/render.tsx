@@ -16,6 +16,7 @@ import {
   atomViewed,
   type NodeRef,
   nodeScore,
+  readParts,
   setViewed,
   treeOf,
   viewedOf,
@@ -520,17 +521,28 @@ function mount(
           : [],
     );
   };
-  /** Every drawn occurrence of a viewed atom, so a move's counterpart dims in its own file too. */
+  /**
+   * Every drawn occurrence of a viewed atom, so a move's counterpart dims in its own file too, and every node and
+   * changed line `readParts` finds read, so `v` on a node greys all of it, not only the atoms inside.
+   */
   const paint = () => {
     const index = outline();
-    painter.set(
-      "hh-viewed",
-      index.atoms
+    const read = readParts(index, isViewed);
+    painter.set("hh-viewed", [
+      ...index.atoms
         .filter((a) => isViewed(a.id))
         .flatMap((a) =>
           a.occurrences.flatMap((o) => painter.nodeRanges(index, o)),
         ),
-    );
+      ...read.nodes.flatMap((r) => painter.nodeRanges(index, r)),
+      ...read.rows.flatMap((r) =>
+        painter.textRanges(
+          r,
+          { line: r.line, column: 0 },
+          { line: r.line, column: Number.POSITIVE_INFINITY },
+        ),
+      ),
+    ]);
     paintScores();
     paintComments();
     paintSelection();

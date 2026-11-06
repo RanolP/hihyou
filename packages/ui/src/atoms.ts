@@ -38,12 +38,20 @@ export interface SideTree {
 /** The fragment number a file's context nodes carry: its unchanged and revealed lines, which hold no hunk. */
 export const contextFragment = -2;
 
+/** A changed line no atom node covers, and the row atom that stands for it. */
+export interface RowAtom {
+  side: SideName;
+  line: number;
+  atom: number;
+}
+
 export interface Hunk {
   file: number;
   fragment: number;
   before: SideTree;
   after: SideTree;
   atoms: number[];
+  rows: RowAtom[];
 }
 
 export interface Atom {
@@ -162,15 +170,16 @@ export function atomIndex(files: readonly DiffFile[]): AtomIndex {
         };
       };
       const [before, after] = sideNames.map(tree) as [SideTree, SideTree];
+      const rows: RowAtom[] = [];
       for (const side of sideNames) {
         const t = side === "before" ? before : after;
         const lines = splitLines(frag[side].spans);
+        const covers = (n: NodeOutline, line: number) =>
+          n.start.line <= line &&
+          (n.end.line > line || (n.end.line === line && n.end.column > 0));
         t.lines.forEach((text, line) => {
           const owned = t.nodes.some(
-            (n) =>
-              n.atom !== undefined &&
-              n.start.line <= line &&
-              (n.end.line > line || (n.end.line === line && n.end.column > 0)),
+            (n) => n.atom !== undefined && covers(n, line),
           );
           if (
             owned ||
@@ -186,9 +195,22 @@ export function atomIndex(files: readonly DiffFile[]): AtomIndex {
           );
           inHunk.add(a);
           inFile.add(a);
+          rows.push({ side, line, atom: a });
+          // A node over the row holds it too: marking the node marks the row, and the node reads viewed only with it.
+          t.nodes.forEach((n, i) => {
+            const held = t.atoms[i];
+            if (held && covers(n, line) && !held.includes(a)) held.push(a);
+          });
         });
       }
-      mine.push({ file: f, fragment: fr, before, after, atoms: [...inHunk] });
+      mine.push({
+        file: f,
+        fragment: fr,
+        before,
+        after,
+        atoms: [...inHunk],
+        rows,
+      });
     });
     hunks.push(mine);
     fileAtoms.push([...inFile]);
@@ -244,6 +266,37 @@ export function viewedOf(
   const atoms = atomsOf(index, t);
   if (atoms.length === 0) return undefined;
   return atoms.every((a) => isViewed(index.atoms[a]?.id ?? ""));
+}
+
+/** A line on one side of a hunk. */
+export type LineRef = Omit<NodeRef, "node"> & { line: number };
+
+/**
+ * What draws as read: each outermost node whose atoms are all viewed, over its whole range, and each viewed row
+ * atom's line. A node's range also holds matched code with no atom of its own (the names an import kept), which
+ * would otherwise keep the line's diff colour after `v` marks the node.
+ */
+export function readParts(
+  index: AtomIndex,
+  isViewed: (atom: string) => boolean,
+): { nodes: NodeRef[]; rows: LineRef[] } {
+  const nodes: NodeRef[] = [];
+  const rows: LineRef[] = [];
+  const read = (a: number) => isViewed(index.atoms[a]?.id ?? "");
+  for (const hunk of index.hunks.flat())
+    for (const side of sideNames) {
+      const t = hunk[side];
+      const at = { file: hunk.file, fragment: hunk.fragment, side };
+      const visit = (node: number) => {
+        const atoms = t.atoms[node] ?? [];
+        if (atoms.length > 0 && atoms.every(read)) nodes.push({ ...at, node });
+        else for (const c of t.children[node] ?? []) visit(c);
+      };
+      t.roots.forEach(visit);
+      for (const r of hunk.rows)
+        if (r.side === side && read(r.atom)) rows.push({ ...at, line: r.line });
+    }
+  return { nodes, rows };
 }
 
 /** Writes every atom beneath the target; a move's atom is shared, so its other file reads it too. */
