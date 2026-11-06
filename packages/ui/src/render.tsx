@@ -115,8 +115,6 @@ export interface RenderOptions {
   hostKeys?: readonly HostKey[];
 }
 
-export type { HostKey };
-
 export interface DiffsetView {
   /** Redraws with new files, keeping which collapsed files are open and each file's scroll position. */
   update(files: readonly DiffFile[]): void;

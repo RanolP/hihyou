@@ -281,14 +281,14 @@ export type LineRef = Omit<NodeRef, "node"> & { line: number };
  * reflowed `import {`, a declaration's closing `}`) is read when a read node covers it, and otherwise says
  * nothing, so it never keeps another line's row coloured.
  */
-export function readParts(
+export const readParts = (
   index: AtomIndex,
   isViewed: (atom: string) => boolean,
 ): {
   nodes: NodeRef[];
   rows: LineRef[];
   lines: (LineRef & { read: boolean })[];
-} {
+} => {
   const nodes: NodeRef[] = [];
   const rows: LineRef[] = [];
   const lines: (LineRef & { read: boolean })[] = [];
@@ -338,7 +338,7 @@ export function readParts(
         if (!atomsRead.has(line)) lines.push({ ...at, line, read: true });
     }
   return { nodes, rows, lines };
-}
+};
 
 /** Writes every atom beneath the target; a move's atom is shared, so its other file reads it too. */
 export function setViewed(

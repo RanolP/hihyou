@@ -3,10 +3,10 @@ export {
   type ElidedRef,
   type ExpandDirection,
   expandStep,
-  type HostKey,
   type RenderOptions,
   renderDiffset,
 } from "./render.js";
+export type { HostKey } from "./view/keys.js";
 export {
   type DiffFile,
   type Gap,

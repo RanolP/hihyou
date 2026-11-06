@@ -11,25 +11,7 @@ export interface HostKey {
   run(): void;
 }
 
-const sections: readonly { section: KeySection; title: string }[] = [
-  { section: "find", title: "Find changes" },
-  { section: "select", title: "Select code" },
-  { section: "words", title: "Narrow to words" },
-  { section: "review", title: "Review" },
-  { section: "score", title: "Score (s, then…)" },
-];
-
-const keyText = (key: string) => (key === "Escape" ? "Esc" : key);
-
-/** The sign is text, so a score never reads by colour alone. */
-export const scoreText = (score: Score) =>
-  score > 0 ? `+${score}` : `${score}`;
-
-/**
- * Every key, grouped by what the reviewer is trying to do, always on screen. A click runs the button's keys as if
- * pressed; a key with nothing to act on stays listed but greyed, so the panel never shifts as the selection does.
- */
-export function KeyPanel(props: {
+interface KeyPanelProps {
   /** `undefined` docks the panel where the host mounted it; `"inline"` lays it along the bottom of the diff. */
   placement?: "inline";
   collapsed: () => boolean;
@@ -41,7 +23,23 @@ export function KeyPanel(props: {
   score: () => Score | null;
   press: (key: string) => void;
   hostKeys: readonly HostKey[];
-}): JSX.Element {
+}
+
+interface SubmitReviewProps {
+  /** The host knows a pending review, which may hold comments written elsewhere (on github.com). */
+  reviewing: () => boolean;
+  pending: () => number;
+  /** What `R` sends, shown before it is pressed. */
+  event: () => ReviewEvent;
+  error: () => string | undefined;
+  press: (key: string) => void;
+}
+
+/**
+ * Every key, grouped by what the reviewer is trying to do, always on screen. A click runs the button's keys as if
+ * pressed; a key with nothing to act on stays listed but greyed, so the panel never shifts as the selection does.
+ */
+export const KeyPanel = (props: KeyPanelProps): JSX.Element => {
   const enabled = (k: KeyBinding) =>
     k.needs === "selection"
       ? props.hasSelection()
@@ -157,25 +155,10 @@ export function KeyPanel(props: {
       </Show>
     </section>
   );
-}
-
-/** The names GitHub's own review dialog gives each event. */
-const eventLabel: Record<ReviewEvent, string> = {
-  COMMENT: "Comment",
-  APPROVE: "Approve",
-  REQUEST_CHANGES: "Request changes",
 };
 
 /** Shown while a review is started: how many comments it holds, and the button that publishes them. */
-export function SubmitReview(props: {
-  /** The host knows a pending review, which may hold comments written elsewhere (on github.com). */
-  reviewing: () => boolean;
-  pending: () => number;
-  /** What `R` sends, shown before it is pressed. */
-  event: () => ReviewEvent;
-  error: () => string | undefined;
-  press: (key: string) => void;
-}): JSX.Element {
+export const SubmitReview = (props: SubmitReviewProps): JSX.Element => {
   const label = () => eventLabel[props.event()];
   return (
     <Show when={props.reviewing()}>
@@ -203,4 +186,25 @@ export function SubmitReview(props: {
       </div>
     </Show>
   );
-}
+};
+
+const sections: readonly { section: KeySection; title: string }[] = [
+  { section: "find", title: "Find changes" },
+  { section: "select", title: "Select code" },
+  { section: "words", title: "Narrow to words" },
+  { section: "review", title: "Review" },
+  { section: "score", title: "Score (s, then…)" },
+];
+
+const keyText = (key: string) => (key === "Escape" ? "Esc" : key);
+
+/** The sign is text, so a score never reads by colour alone. */
+export const scoreText = (score: Score) =>
+  score > 0 ? `+${score}` : `${score}`;
+
+/** The names GitHub's own review dialog gives each event. */
+const eventLabel: Record<ReviewEvent, string> = {
+  COMMENT: "Comment",
+  APPROVE: "Approve",
+  REQUEST_CHANGES: "Request changes",
+};
