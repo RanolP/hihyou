@@ -46,7 +46,6 @@ import {
   type Rename,
   scopesOf,
   type SideInput,
-  type Span,
   textHash,
   wholeDeclaration,
 } from "./fragments.js";
@@ -217,42 +216,6 @@ async function displayVersions(
 
 export const fileDiffBytes = (files: FileDiff[]) =>
   JSON.stringify(files).length * 2;
-
-/** Original coloured text only where one formatted display line swallowed later source lines. */
-function joinedSourceSpans(
-  v: Version,
-  original: string,
-  lines: readonly number[],
-  highlight: HighlightModule | undefined,
-): Record<number, Span[]> {
-  const out: Record<number, Span[]> = {};
-  if (!v.tree) return out;
-  const source = plainVersion(original, v.tree);
-  let scopes: ScopeRuns | undefined;
-  for (let display = 0; display < lines.length; display++) {
-    const first = lines[display] ?? 0;
-    if (first === 0) continue;
-    let next = source.lineStarts.length + 1;
-    for (let i = display + 1; i < lines.length; i++) {
-      const candidate = lines[i] ?? 0;
-      if (candidate !== 0) {
-        next = candidate;
-        break;
-      }
-    }
-    if (next <= first + 1) continue;
-    scopes ??= scopesOf(source, highlight);
-    const fragment = elidedLines(
-      source,
-      highlight,
-      { before: first, after: first },
-      next - first,
-      scopes,
-    );
-    if (fragment) out[display + 1] = fragment.spans;
-  }
-  return out;
-}
 
 /** Past either matching size a file gets a line diff; a bounded parse still colours and scopes it. */
 const maxChars = 500_000;
@@ -515,23 +478,7 @@ export async function diffFiles(
       ...head,
       grammar: p.grammar.id,
       ...(inflated && { fallback: "inflated" as const }),
-      ...(mapped && {
-        sourceLines: mapped,
-        sourceSpans: {
-          before: joinedSourceSpans(
-            p.a,
-            p.texts[0],
-            mapped.before,
-            p.grammar.highlight,
-          ),
-          after: joinedSourceSpans(
-            p.b,
-            p.texts[1],
-            mapped.after,
-            p.grammar.highlight,
-          ),
-        },
-      }),
+      ...(mapped && { sourceLines: mapped }),
       fragments,
       ...(reason && { collapsed: { reason } }),
     };

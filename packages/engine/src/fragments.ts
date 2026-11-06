@@ -10,11 +10,6 @@ export interface FileDiff {
   path: string;
   grammar?: string; // present when a syntax tree was available for scopes and highlighting
   sourceLines?: { before: number[]; after: number[] };
-  /** Original, syntax-coloured lines for a formatted display line that joined several source lines. */
-  sourceSpans?: {
-    before: Record<number, Span[]>;
-    after: Record<number, Span[]>;
-  };
   /** Line counts over the original, unformatted texts. */
   stats?: { added: number; removed: number };
   /** Why syntax diffing fell back to a line diff, if it did. */

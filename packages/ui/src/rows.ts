@@ -15,11 +15,6 @@ import type {
  */
 export type DiffFile = FileDiff & {
   change?: ChangedFileRef;
-  /** Engine payload for formatted display lines that joined several original lines. */
-  sourceSpans?: {
-    before: Record<number, Span[]>;
-    after: Record<number, Span[]>;
-  };
   /** Existing GitHub review threads placed on lines from the original sources. */
   reviewThreads?: ReviewThread[];
   /** Lines revealed out of the `elided` fragment at each index, so the rest of that run stays a gap. */
@@ -82,8 +77,6 @@ export type SideName = "before" | "after";
 export interface Cell {
   /** 1-based. */
   line: number;
-  /** Original source line when this cell expands one formatted display line. */
-  sourceLine?: number;
   /** This line's spans, its newline dropped. */
   spans: Span[];
 }
@@ -229,78 +222,6 @@ function startOf(f: CodeFragment): LinePair | undefined {
   }
 }
 
-interface CellPair {
-  before?: Cell;
-  after?: Cell;
-  beforeIndex?: number;
-  afterIndex?: number;
-  same: boolean;
-}
-
-/** Re-aligns original source lines that one formatted display line joined, preserving its inserted lines. */
-function alignExpandedCells(before: Cell[], after: Cell[]): CellPair[] {
-  if (![...before, ...after].some((cell) => cell.sourceLine !== undefined))
-    return Array.from(
-      { length: Math.max(before.length, after.length) },
-      (_, i) => ({
-        ...(before[i] && { before: before[i] }),
-        ...(after[i] && { after: after[i] }),
-        ...(before[i] && { beforeIndex: i }),
-        ...(after[i] && { afterIndex: i }),
-        same: false,
-      }),
-    );
-  const text = (cell: Cell) => cell.spans.map((span) => span.text).join("");
-  const out: CellPair[] = [];
-  let i = 0;
-  let j = 0;
-  while (i < before.length || j < after.length) {
-    const b = before[i];
-    const a = after[j];
-    if (b && a && text(b) === text(a)) {
-      out.push({
-        before: b,
-        after: a,
-        beforeIndex: i++,
-        afterIndex: j++,
-        same: true,
-      });
-      continue;
-    }
-    if (!b) {
-      if (a) out.push({ after: a, afterIndex: j++, same: false });
-      continue;
-    }
-    if (!a) {
-      out.push({ before: b, beforeIndex: i++, same: false });
-      continue;
-    }
-    const nextAfter = after.findIndex(
-      (cell, at) => at > j && text(cell) === text(b),
-    );
-    const nextBefore = before.findIndex(
-      (cell, at) => at > i && text(cell) === text(a),
-    );
-    if (
-      nextAfter !== -1 &&
-      (nextBefore === -1 || nextAfter - j <= nextBefore - i)
-    ) {
-      out.push({ after: a, afterIndex: j++, same: false });
-    } else if (nextBefore !== -1) {
-      out.push({ before: b, beforeIndex: i++, same: false });
-    } else {
-      out.push({
-        before: b,
-        after: a,
-        beforeIndex: i++,
-        afterIndex: j++,
-        same: false,
-      });
-    }
-  }
-  return out;
-}
-
 /** A gap row that still hides lines; one fully revealed leaves the code on both sides of it continuous. */
 const hides = (row: Row) => row.kind === "elided" && row.count !== 0;
 
@@ -368,63 +289,32 @@ export function buildSections(file: DiffFile): Section[] {
         unchangedRows(f);
         return;
       case "diff": {
-        const cells = (side: SideName): Cell[] => {
-          const value = f[side];
-          return splitLines(value.spans).flatMap((spans, i) => {
-            const line = value.startLine + i;
-            const source = file.sourceSpans?.[side][line];
-            const sourceLine = file.sourceLines?.[side][line - 1];
-            return source && sourceLine
-              ? splitLines(source).map((sourceSpans, j) => ({
-                  line,
-                  sourceLine: sourceLine + j,
-                  spans: sourceSpans,
-                }))
-              : [{ line, spans }];
-          });
-        };
-        const before = cells("before");
-        const after = cells("after");
+        const before = splitLines(f.before.spans);
+        const after = splitLines(f.after.spans);
         const moves = {
-          before: movedRuns(f.before, splitLines(f.before.spans)),
-          after: movedRuns(f.after, splitLines(f.after.spans)),
+          before: movedRuns(f.before, before),
+          after: movedRuns(f.after, after),
         };
-        for (const pair of alignExpandedCells(before, after)) {
-          const { before: b, after: a } = pair;
-          if (pair.same && b && a) {
-            rows().push({ kind: "unchanged", before: b, after: a });
-            continue;
-          }
+        for (let i = 0; i < Math.max(before.length, after.length); i++) {
+          const b = before[i];
+          const a = after[i];
           const move: Partial<Record<SideName, SideMove>> = {};
           const moved: Partial<Record<SideName, { last: boolean }>> = {};
           for (const side of ["before", "after"] as const) {
-            const sideLines = side === "before" ? before : after;
-            const at = side === "before" ? pair.beforeIndex : pair.afterIndex;
-            const cell = at === undefined ? undefined : sideLines[at];
-            if (!cell) continue;
-            const line = cell.line;
+            if (!(side === "before" ? b : a)) continue;
+            const line = f[side].startLine + i;
             const run = moves[side].find(
               (candidate) => candidate.first <= line && line <= candidate.last,
             );
             if (!run) continue;
-            if (
-              run.first === line &&
-              sideLines.findIndex((candidate) => candidate.line === line) === at
-            )
-              move[side] = run.move;
-            moved[side] = {
-              last:
-                line === run.last &&
-                sideLines.findLastIndex(
-                  (candidate) => candidate.line === line,
-                ) === at,
-            };
+            if (run.first === line) move[side] = run.move;
+            moved[side] = { last: line === run.last };
           }
           rows().push({
             kind: "diff",
             fragment: index,
-            ...(b && { before: b }),
-            ...(a && { after: a }),
+            ...(b && { before: { line: f.before.startLine + i, spans: b } }),
+            ...(a && { after: { line: f.after.startLine + i, spans: a } }),
             ...((move.before || move.after) && { move }),
             ...((moved.before || moved.after) && { moved }),
           });
@@ -549,8 +439,6 @@ export function mergeLines(
   before: readonly Cell[],
   after: readonly Cell[],
 ): MergedRow[] | undefined {
-  if ([...before, ...after].some((cell) => cell.sourceLine !== undefined))
-    return undefined;
   const shared = skeleton(after);
   if (shared === "" || shared !== skeleton(before)) return undefined;
 
@@ -744,10 +632,9 @@ export function shownLine(
   file: FileDiff,
   side: "before" | "after",
   line: number,
-  sourceLine?: number,
 ): number | undefined {
   const table = file.sourceLines?.[side];
-  if (!table) return sourceLine ?? line;
-  const shown = (sourceLine ?? table[line - 1]) || undefined;
+  if (!table) return line;
+  const shown = table[line - 1] || undefined;
   return shown !== undefined && table[line - 2] === shown ? undefined : shown;
 }
