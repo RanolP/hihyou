@@ -116,15 +116,18 @@ export function SpanNodes(props: {
     (wholeLine === undefined ||
       !whollyChanged(spans, wholeLine, allowTrailingTerminator));
   const out: JSX.Element[] = [];
-  let run: { side: SideName; nodes: JSX.Element[] } | undefined;
+  // `abut`: the run directly follows a run of the other side, with no unchanged text between, so the two words would
+  // read as one ("featuresFeature") without a gap.
+  let run: { side: SideName; nodes: JSX.Element[]; abut: boolean } | undefined;
   const flush = () => {
     if (!run) return;
     const nodes = run.nodes;
+    const name = run.abut ? "hh-changed hh-abut" : "hh-changed";
     out.push(
       run.side === "before" ? (
-        <del class="hh-changed">{nodes}</del>
+        <del class={name}>{nodes}</del>
       ) : (
-        <ins class="hh-changed">{nodes}</ins>
+        <ins class={name}>{nodes}</ins>
       ),
     );
     run = undefined;
@@ -153,8 +156,9 @@ export function SpanNodes(props: {
     }
     const own = span.side ?? side;
     if (run?.side !== own) {
+      const abut = run !== undefined;
       flush();
-      run = { side: own, nodes: [] };
+      run = { side: own, nodes: [], abut };
     }
     run.nodes.push(node);
   }
