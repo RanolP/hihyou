@@ -915,7 +915,7 @@ function mount(
           const group = index === firstTest
             ? [
                 <div class="hh-test-group">
-                  {testCount} test {testCount === 1 ? "file" : "files"}
+                  {testCount} test & fixture {testCount === 1 ? "file" : "files"}
                   {showTests ? "" : " hidden"} ·{" "}
                   <button
                     type="button"
@@ -936,7 +936,7 @@ function mount(
                         });
                     }}
                   >
-                    {showTests ? "Hide test files" : "Show test files"}
+                    {showTests ? "Hide tests & fixtures" : "Show tests & fixtures"}
                   </button>
                 </div>,
               ]

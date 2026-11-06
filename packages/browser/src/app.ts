@@ -337,7 +337,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       );
       return span;
     };
-    const tests = `${testFiles.length} ${testFiles.length === 1 ? "test" : "tests"}`;
+    const tests = `${testFiles.length} ${testFiles.length === 1 ? "test & fixture" : "tests & fixtures"}`;
     const source = files.filter((file) => !isTestPath(file.path));
     if (testsShown) {
       status.replaceChildren(
@@ -920,7 +920,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
                 const tests = el("li");
                 tests.setAttribute("role", "treeitem");
                 tests.setAttribute("aria-expanded", "true");
-                tests.append(el("div", "hh-folder hh-tests-folder", "Tests"));
+                tests.append(el("div", "hh-folder hh-tests-folder", "Tests & fixtures"));
                 const testGroup = el("ul");
                 testGroup.setAttribute("role", "group");
                 // Its own key space: a folder holding both sources and tests folds in each tree apart.
