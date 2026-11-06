@@ -221,10 +221,8 @@ export function buildFragments(input: FragmentInput): CodeFragment[] {
     ...input.b,
     emphasis: paintRanges(input.b.v.text, wholeNodes(input.b.v, input.b.emphasis)),
   };
-  const scopes = (v: Version) =>
-    highlight && v.tree ? scopeRuns(v.tree, highlight, v.text.length, v.start, v.end) : undefined;
-  const scopesA = scopes(a.v);
-  const scopesB = scopes(b.v);
+  const scopesA = scopesOf(a.v, highlight);
+  const scopesB = scopesOf(b.v, highlight);
   const funcnames = (first: number, last: number) => {
     if (b.v.tree) return undefined;
     const found: { line: number; text: string }[] = [];
