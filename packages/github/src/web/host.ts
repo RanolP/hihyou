@@ -202,7 +202,8 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
     if (!direct || viaOrigin.has(repo)) return get(url);
     try {
       return await get(directUrl);
-    } catch {
+    } catch (error) {
+      console.warn(`hihyou: ${directUrl} failed, using ${url} for ${repo}`, error);
       viaOrigin.add(repo);
       return get(url);
     }
