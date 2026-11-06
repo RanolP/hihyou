@@ -3,6 +3,7 @@ import type { JSX } from "solid-js";
 import type { Point } from "../modal.js";
 import type { MergedSpan, SideName } from "../rows.js";
 import { type DrawContext, useDraw } from "./context.js";
+import { columnWeights, isPipe, isTableSpan } from "./md-table.js";
 
 export type Place = (span: MergedSpan) => Point | readonly Point[] | undefined;
 
@@ -121,8 +122,16 @@ export function SpanNodes(props: {
     );
     run = undefined;
   };
+  // A pipe table row draws as a grid of cells; each pipe closes the cell before it, so a mark never spans one.
+  const row = isTableRow(spans);
+  const cells: JSX.Element[][] = [];
   for (const span of spans) {
     const node = spanNode(ctx, span, place?.(span));
+    if (row && isPipe(span)) {
+      flush();
+      cells.push(out.splice(0), [node]);
+      continue;
+    }
     if (!span.changed || !emphasize) {
       flush();
       out.push(node);
@@ -136,5 +145,31 @@ export function SpanNodes(props: {
     run.nodes.push(node);
   }
   flush();
-  return out;
+  if (!row) return out;
+  cells.push(out);
+  // Whatever precedes the first pipe or follows the last (indentation, a stray space) stays outside the grid.
+  const lead = cells.shift() ?? [];
+  const tail = cells.pop() ?? [];
+  const count = (cells.length - 1) / 2;
+  const weights = columnWeights(ctx.files()).get(count);
+  const columns = cells
+    .map((_, i) =>
+      i % 2 === 0 ? "auto" : `minmax(0, ${weights?.[(i - 1) / 2] ?? 1}fr)`,
+    )
+    .join(" ");
+  return [
+    ...lead,
+    <span class="hh-md-row" style={{ "grid-template-columns": columns }}>
+      {cells.map((nodes, i) => (
+        <span class={i % 2 === 0 ? "hh-md-pipe" : "hh-md-cell"}>{nodes}</span>
+      ))}
+    </span>,
+    ...tail,
+  ];
 }
+
+/** A header or body row of a pipe table: table content split by lone pipes. The delimiter row (`|---|`) is not one. */
+const isTableRow = (spans: readonly MergedSpan[]): boolean =>
+  spans.some(isTableSpan) &&
+  spans.some(isPipe) &&
+  !/^[\s|:-]+$/.test(spans.map((s) => s.text).join(""));

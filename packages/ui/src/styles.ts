@@ -284,6 +284,11 @@ table.hh-md tr:has(.hh-md-rule) > td.hh-code {
   background-image: linear-gradient(transparent calc(50% - 1px), var(--hh-border) calc(50% - 1px), var(--hh-border) calc(50% + 1px), transparent calc(50% + 1px));
 }
 .hh-md-rule { opacity: 0.45; }
+.hh-md-row { display: inline-grid; width: calc(100% - 2ch); vertical-align: top; text-indent: 0; }
+.hh-md-cell { padding: 0 1ch; white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+.hh-md-pipe { opacity: 0.35; }
+/* The header is the row right above the delimiter row (|---|), which has table markup but no grid. */
+table.hh-md tr:has(.hh-md-row):has(+ tr:not(:has(.hh-md-row)) .hh-md-table) .hh-md-cell { font-weight: 600; }
 .hh-node-label { position: sticky; left: 8px; }
 .hh-whole td { height: 0; padding: 0; border-top: 1px solid var(--hh-border); }
 .hh-top { font-weight: 400; font-style: italic; color: var(--hh-muted); }
