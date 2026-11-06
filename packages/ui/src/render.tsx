@@ -189,7 +189,8 @@ function mount(
   const outline = createMemo(() => atomIndex(files()));
 
   let shownPath: string | undefined;
-  const opened = new Set<string>();
+  /** A file the reader folded (true) or unfolded (false) by hand, over what its reason or Viewed implies. */
+  const folded = new Map<string, boolean>();
   let fragmentRows = new Map<string, HTMLTableRowElement[]>();
   let focusables = new Map<string, HTMLElement>();
   const focusIds = new WeakMap<Element, string>();
@@ -214,14 +215,19 @@ function mount(
     );
   };
 
+  /** Collapsed and viewed are separate: Viewed or a collapse reason only folds a file the reader has not set. */
+  const fileCollapsed = (i: number, file: DiffFile) =>
+    folded.get(file.path) ??
+    (file.collapsed !== undefined || fileViewed(i, file));
+
   /** Opens and shows the file at `i`, redrawing when either changes what is drawn. */
   const reveal = (i: number) => {
     const file = files()[i];
     if (!file) return;
     if (!single && isTestPath(file.path)) setTestsShown(true);
     let changed = false;
-    if ((file.collapsed || fileViewed(i, file)) && !opened.has(file.path)) {
-      opened.add(file.path);
+    if (fileCollapsed(i, file)) {
+      folded.set(file.path, false);
       changed = true;
     }
     if (single && file.path !== shownPath) {
@@ -259,7 +265,7 @@ function mount(
     const file = files().find((f) => f.path === path);
     if (!file) return;
     if (!single && isTestPath(path)) setTestsShown(true);
-    opened.add(path);
+    folded.set(path, false);
     if (single && path !== shownPath) shownPath = path;
     redraw();
     for (const s of root.querySelectorAll<HTMLElement>(".hh-scroll"))
@@ -344,20 +350,19 @@ function mount(
     },
     jump,
     openFile,
-    fileCollapsed: (i, file) =>
-      (file.collapsed !== undefined || fileViewed(i, file)) &&
-      !opened.has(file.path),
-    open(path) {
+    fileCollapsed,
+    setFileCollapsed(path, on) {
       keepInPlace(path, () => {
-        opened.add(path);
+        folded.set(path, on);
         redraw();
       });
     },
     fileViewed,
     setFileViewed(i, file, on) {
       keepInPlace(file.path, () => {
-        if (on) opened.delete(file.path);
-        else opened.add(file.path);
+        // Ticking Viewed folds the file and unticking unfolds it; the chevron can still open or close it after.
+        if (on) folded.delete(file.path);
+        else folded.set(file.path, false);
         const index = outline();
         if ((index.fileAtoms[i]?.length ?? 0) > 0)
           setViewed(index, { kind: "file", file: i }, on, viewed, keyOf);

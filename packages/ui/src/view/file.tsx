@@ -69,9 +69,20 @@ function FileHeader(props: {
       classList={{ "hh-collapsed": props.collapsed() }}
       on:click={(event) => {
         if (props.collapsed() && !(event.target as Element).closest("button"))
-          ctx.open(file.path);
+          ctx.setFileCollapsed(file.path, false);
       }}
     >
+      <button
+        ref={(b) => ctx.focusable(b, `fold\n${file.path}`)}
+        type="button"
+        class="hh-button hh-fold"
+        aria-expanded={!props.collapsed()}
+        aria-label={props.collapsed() ? "Expand file" : "Collapse file"}
+        title={props.collapsed() ? "Expand file" : "Collapse file"}
+        on:click={() => ctx.setFileCollapsed(file.path, !props.collapsed())}
+      >
+        <span aria-hidden="true">{props.collapsed() ? "▸" : "▾"}</span>
+      </button>
       <h2 class="hh-path">
         {oldPath !== undefined &&
           oldPath !== file.path && [
@@ -121,15 +132,6 @@ function FileHeader(props: {
         id={`file\n${file.path}`}
         what={file.path}
       />
-      {props.collapsed() && file.fragments.length > 0 && (
-        <button
-          type="button"
-          class="hh-button hh-show-diff"
-          on:click={() => ctx.open(file.path)}
-        >
-          Show diff
-        </button>
-      )}
     </header>
   );
 }

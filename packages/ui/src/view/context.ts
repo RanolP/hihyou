@@ -25,7 +25,8 @@ export interface DrawContext {
   jump(to: SideRef): void;
   openFile(path: string): void;
   fileCollapsed(index: number, file: DiffFile): boolean;
-  open(path: string): void;
+  /** Folds or unfolds a file by hand; its Viewed state stays as it was. */
+  setFileCollapsed(path: string, on: boolean): void;
   fileViewed(index: number, file: DiffFile): boolean;
   setFileViewed(index: number, file: DiffFile, on: boolean): void;
   /** Reactive: whether the atoms beneath a target are all, some or none viewed. */

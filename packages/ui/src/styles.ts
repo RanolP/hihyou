@@ -414,7 +414,9 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 .hh-file-header .hh-viewed-toggle { margin-left: auto; }
 .hh-file-header.hh-collapsed { cursor: pointer; }
 .hh-collapse-reason { color: var(--hh-muted); }
-.hh-file-header .hh-show-diff { margin-left: 4px; }
+/* The header's gap already spaces the chevron off the path, so it only needs a fixed width that does not jump. */
+.hh-file-header .hh-fold { width: 1em; margin-right: -6px; font-size: 1.3em; line-height: 1; color: var(--hh-muted); text-decoration: none; }
+.hh-file-header .hh-fold:hover { color: var(--hh-fg); }
 /* A jump's target blinks as one box, twice, then the moved box's own outline is all that stays. */
 .hh-flash-box {
   position: absolute;
