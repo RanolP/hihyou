@@ -209,10 +209,17 @@ export function SpanNodes(props: {
   const tail = cells.pop() ?? [];
   const count = (cells.length - 1) / 2;
   const weights = columnWeights(ctx.files()).get(count);
+  // A column keeps its longest word whole (in the 0.92em code font, plus the cell's padding), up to a third of the
+  // row, so a narrow column does not break `windowNotFocused` or wrap one token per line.
   const columns = cells
-    .map((_, i) =>
-      i % 2 === 0 ? "auto" : `minmax(0, ${weights?.[(i - 1) / 2] ?? 1}fr)`,
-    )
+    .map((_, i) => {
+      if (i % 2 === 0) return "auto";
+      const column = weights?.[(i - 1) / 2];
+      const word = column
+        ? `min(${(column.word * 0.92 + 2).toFixed(1)}ch, 33%)`
+        : "0";
+      return `minmax(${word}, ${column?.weight ?? 1}fr)`;
+    })
     .join(" ");
   return [
     ...before,
