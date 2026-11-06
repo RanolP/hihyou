@@ -172,11 +172,14 @@ export const diffStyles = `
   vertical-align: top;
   tab-size: var(--hh-tab-size, 4);
 }
-/* Changed lines carry the side colour; changed nodes layer the stronger text colour over it. */
+/*
+ * Changed lines carry the side colour; changed nodes layer the stronger text colour over it. A merged line holds
+ * both sides, so only its gutter takes the colour and its changed nodes alone show which side they came from.
+ */
 .hh-num.hh-removed,
-.hh-num.hh-removed ~ td { background: var(--hh-removed-line); }
+tr:not(.hh-merged) > .hh-num.hh-removed ~ td { background: var(--hh-removed-line); }
 .hh-num.hh-added,
-.hh-num.hh-added ~ td { background: var(--hh-added-line); }
+tr:not(.hh-merged) > .hh-num.hh-added ~ td { background: var(--hh-added-line); }
 .hh-num.hh-removed { box-shadow: inset 3px 0 var(--hh-removed-fg); }
 .hh-num.hh-added { box-shadow: inset 3px 0 var(--hh-added-fg); }
 .hh-changed { text-decoration: none; border-radius: 2px; }

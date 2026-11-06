@@ -16,7 +16,7 @@ import { blockCells, type TableDraw } from "./block.js";
 import type { DrawContext } from "./context.js";
 import { ElidedRow } from "./elided.jsx";
 import { MoveLabel } from "./pair.jsx";
-import { SpanNodes } from "./spans.jsx";
+import { SpanNodes, whollyChanged } from "./spans.jsx";
 
 const signs: Record<SideName, string> = { before: "-", after: "+" };
 const tabSize = 4;
@@ -318,8 +318,17 @@ export function unifiedRow(
       const has = (s: SideName) =>
         row.spans.some((span) => span.changed && span.side === s);
       const code = mergedCode(ctx, index, row);
+      // A row of one side's changed text alone reads as a removed or added line, so it keeps the line colour.
+      const single =
+        row.after === undefined
+          ? "before"
+          : row.before === undefined
+            ? "after"
+            : undefined;
+      const wholeLine =
+        single !== undefined && whollyChanged(row.spans, single, true);
       tr = (
-        <tr class="hh-line">
+        <tr class={wholeLine ? "hh-line" : "hh-line hh-merged"}>
           <Num
             line={shown("before", row.before)}
             kind={has("before") ? " hh-removed" : ""}

@@ -6,7 +6,7 @@ import { type DrawContext, useDraw } from "./context.js";
 
 export type Place = (span: MergedSpan) => Point | readonly Point[] | undefined;
 
-const whollyChanged = (
+export const whollyChanged = (
   spans: readonly MergedSpan[],
   side: SideName,
   allowTrailingTerminator: boolean,
