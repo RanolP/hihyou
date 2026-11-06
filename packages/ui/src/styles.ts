@@ -268,6 +268,11 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 .hh-md-h3 { font-size: 1.25em; }
 .hh-md-h4 { font-size: 1.12em; }
 .hh-md-h6 { color: var(--hh-muted); }
+/* A code span in a heading scales with the heading, a step under it as code sits in prose. */
+.hh-md-h1.hh-md-code { font-size: calc(1.75em * 0.92); }
+.hh-md-h2.hh-md-code { font-size: calc(1.45em * 0.92); }
+.hh-md-h3.hh-md-code { font-size: calc(1.25em * 0.92); }
+.hh-md-h4.hh-md-code { font-size: calc(1.12em * 0.92); }
 .hh-md tr:has(.hh-md-h1, .hh-md-h2) > .hh-code { padding-top: 6px; padding-bottom: 2px; }
 .hh-md-strong { font-weight: 600; }
 .hh-md-em { font-style: italic; }
