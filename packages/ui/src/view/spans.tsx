@@ -65,7 +65,12 @@ const spanNode = (
   ctx.placer.place(text, at);
   const style =
     span.scope !== undefined ? ctx.theme()?.style(span.scope) : undefined;
-  const md = markdownClass(span.scope);
+  const scoped = markdownClass(span.scope);
+  // A bullet marker (`-`, `*`, `+`, not `1.`) keeps its character, drawn over by a bullet glyph.
+  const md =
+    scoped?.includes("hh-md-bullet") && /^\s*[-*+]\s*$/.test(span.text)
+      ? `${scoped} hh-md-dot`
+      : scoped;
   if (!style?.foreground && !style?.fontStyle && md === undefined) return text;
   const font = style?.fontStyle ?? "";
   const lines = ["underline", "strikethrough"].filter((l) => font.includes(l));
@@ -125,7 +130,14 @@ export function SpanNodes(props: {
   // A pipe table row draws as a grid of cells; each pipe closes the cell before it, so a mark never spans one.
   const row = isTableRow(spans);
   const cells: JSX.Element[][] = [];
-  for (const span of spans) {
+  // A list item hangs its wrapped lines under its text, past the indentation and marker.
+  const prefix = row ? 0 : listPrefix(spans);
+  let head: JSX.Element[] | undefined;
+  for (const [index, span] of spans.entries()) {
+    if (index === prefix && prefix > 0) {
+      flush();
+      head = out.splice(0);
+    }
     const node = spanNode(ctx, span, place?.(span));
     if (row && isPipe(span)) {
       flush();
@@ -145,6 +157,13 @@ export function SpanNodes(props: {
     run.nodes.push(node);
   }
   flush();
+  if (head)
+    return (
+      <span class="hh-md-item">
+        <span class="hh-md-lead">{head}</span>
+        <span>{out}</span>
+      </span>
+    );
   if (!row) return out;
   cells.push(out);
   // Whatever precedes the first pipe or follows the last (indentation, a stray space) stays outside the grid.
@@ -173,3 +192,24 @@ const isTableRow = (spans: readonly MergedSpan[]): boolean =>
   spans.some(isTableSpan) &&
   spans.some(isPipe) &&
   !/^[\s|:-]+$/.test(spans.map((s) => s.text).join(""));
+
+/** How many spans lead a list item's line up to its text: indentation, quote marks, the marker and its space. */
+const listPrefix = (spans: readonly MergedSpan[]): number => {
+  const marker = spans.findIndex((s) =>
+    s.scope?.includes("punctuation.definition.list.begin.markdown"),
+  );
+  if (marker < 0) return 0;
+  const lead = spans.slice(0, marker);
+  if (
+    lead.some(
+      (s) =>
+        s.text.trim() !== "" &&
+        !s.scope?.includes("punctuation.definition.quote"),
+    )
+  )
+    return 0;
+  const next = spans[marker + 1];
+  return next !== undefined && next.text !== "" && next.text.trim() === ""
+    ? marker + 2
+    : marker + 1;
+};

@@ -271,6 +271,11 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 .hh-md-mark { opacity: 0.45; font-weight: 400; font-style: normal; }
 .hh-md-bar { display: inline-block; text-indent: 0; border-left: 3px solid var(--hh-border); padding-left: 0.5ch; }
 .hh-md-bullet { font-weight: 600; }
+/* A bullet marker keeps its character, drawn over by a bullet; the lead is mono so each nesting level shows. */
+.hh-md-dot { position: relative; color: transparent !important; }
+.hh-md-dot::before { content: "\\2022"; position: absolute; left: 0; color: var(--hh-muted); font-weight: 700; }
+.hh-md-item { display: inline-grid; grid-template-columns: auto minmax(0, 1fr); width: calc(100% - 2ch); vertical-align: top; text-indent: 0; }
+.hh-md-lead { font-family: var(--hh-mono); white-space: pre; }
 .hh-md-code, .hh-md-fence, .hh-md-table { font-family: var(--hh-mono); font-size: 0.92em; }
 .hh-md-code { background: color-mix(in srgb, var(--hh-muted) 18%, transparent); border-radius: 3px; padding: 0 2px; }
 .hh-md-code.hh-md-mark { opacity: 0.6; }
