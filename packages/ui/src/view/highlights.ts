@@ -30,6 +30,20 @@ export function createPainter(doc: Document, placer: Placer) {
     const at = (line: number) => placer.placed.get(lineKey({ ...side, line }));
     return piecesIn(at, start, end).map((p) => rangeOver(p.item, p.from, p.to));
   };
+  /**
+   * The table rows a side's line is drawn in: one, or several when a reflowed line breaks across rows. Text both
+   * sides share is placed on each, so an added row also holds the removed lines its kept names came from; a row
+   * given to one side (`data-side`) is left out for the other.
+   */
+  const lineRows = (side: Omit<NodeRef, "node">, line: number): Element[] => [
+    ...new Set(
+      (placer.placed.get(lineKey({ ...side, line })) ?? []).flatMap((p) => {
+        const tr = p.item.parentElement?.closest("tr");
+        const own = tr?.getAttribute("data-side");
+        return tr && (own === null || own === side.side) ? [tr] : [];
+      }),
+    ),
+  ];
   const nodeRanges = (outline: AtomIndex, ref: NodeRef): Range[] => {
     const n = treeOf(outline, ref)?.nodes[ref.node];
     return n ? textRanges(ref, n.start, n.end) : [];
@@ -61,6 +75,7 @@ export function createPainter(doc: Document, placer: Placer) {
   };
   return {
     textRanges,
+    lineRows,
     nodeRanges,
     targetRanges,
     set,

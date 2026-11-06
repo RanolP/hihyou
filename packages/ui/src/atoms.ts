@@ -275,28 +275,69 @@ export type LineRef = Omit<NodeRef, "node"> & { line: number };
  * What draws as read: each outermost node whose atoms are all viewed, over its whole range, and each viewed row
  * atom's line. A node's range also holds matched code with no atom of its own (the names an import kept), which
  * would otherwise keep the line's diff colour after `v` marks the node.
+ *
+ * `lines` judges changed lines whole, so a row can drop the line colour once nothing on it is left to read: a
+ * line holding atoms (a node's own or its row atom) is read when all of them are. A line holding none (a
+ * reflowed `import {`, a declaration's closing `}`) is read when a read node covers it, and otherwise says
+ * nothing, so it never keeps another line's row coloured.
  */
 export function readParts(
   index: AtomIndex,
   isViewed: (atom: string) => boolean,
-): { nodes: NodeRef[]; rows: LineRef[] } {
+): {
+  nodes: NodeRef[];
+  rows: LineRef[];
+  lines: (LineRef & { read: boolean })[];
+} {
   const nodes: NodeRef[] = [];
   const rows: LineRef[] = [];
+  const lines: (LineRef & { read: boolean })[] = [];
   const read = (a: number) => isViewed(index.atoms[a]?.id ?? "");
+  /** The lines a node draws on; one ending at column 0 stops on the line before. */
+  const spanned = (n: NodeOutline) => {
+    const last = n.end.column > 0 ? n.end.line : n.end.line - 1;
+    const out: number[] = [];
+    for (let l = n.start.line; l <= last; l++) out.push(l);
+    return out;
+  };
   for (const hunk of index.hunks.flat())
     for (const side of sideNames) {
       const t = hunk[side];
       const at = { file: hunk.file, fragment: hunk.fragment, side };
+      const readNodes: number[] = [];
       const visit = (node: number) => {
         const atoms = t.atoms[node] ?? [];
-        if (atoms.length > 0 && atoms.every(read)) nodes.push({ ...at, node });
-        else for (const c of t.children[node] ?? []) visit(c);
+        if (atoms.length > 0 && atoms.every(read)) {
+          nodes.push({ ...at, node });
+          readNodes.push(node);
+        } else for (const c of t.children[node] ?? []) visit(c);
       };
       t.roots.forEach(visit);
-      for (const r of hunk.rows)
-        if (r.side === side && read(r.atom)) rows.push({ ...at, line: r.line });
+      // Per line holding an atom, whether every atom on it is read so far.
+      const atomsRead = new Map<number, boolean>();
+      for (const n of t.nodes)
+        if (n.atom !== undefined) {
+          const r = isViewed(n.atom);
+          for (const l of spanned(n))
+            atomsRead.set(l, (atomsRead.get(l) ?? true) && r);
+        }
+      for (const r of hunk.rows) {
+        if (r.side !== side) continue;
+        const v = read(r.atom);
+        if (v) rows.push({ ...at, line: r.line });
+        atomsRead.set(r.line, (atomsRead.get(r.line) ?? true) && v);
+      }
+      const coveredRead = new Set(
+        readNodes.flatMap((node) => {
+          const n = t.nodes[node];
+          return n ? spanned(n) : [];
+        }),
+      );
+      for (const [line, v] of atomsRead) lines.push({ ...at, line, read: v });
+      for (const line of coveredRead)
+        if (!atomsRead.has(line)) lines.push({ ...at, line, read: true });
     }
-  return { nodes, rows };
+  return { nodes, rows, lines };
 }
 
 /** Writes every atom beneath the target; a move's atom is shared, so its other file reads it too. */

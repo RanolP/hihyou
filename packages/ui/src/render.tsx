@@ -543,6 +543,14 @@ function mount(
         ),
       ),
     ]);
+    // A row drops its line colour once a line drawn in it is read and none is unread.
+    const rowRead = new Map<Element, boolean>();
+    for (const l of read.lines)
+      for (const tr of painter.lineRows(l, l.line))
+        rowRead.set(tr, (rowRead.get(tr) ?? true) && l.read);
+    for (const tr of root.querySelectorAll("tr.hh-read"))
+      if (!rowRead.get(tr)) tr.classList.remove("hh-read");
+    for (const [tr, r] of rowRead) tr.classList.toggle("hh-read", r);
     paintScores();
     paintComments();
     paintSelection();

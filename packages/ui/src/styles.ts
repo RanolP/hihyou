@@ -347,6 +347,16 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
   color: color-mix(in srgb, var(--hh-fg) 40%, var(--hh-bg));
   background-color: var(--hh-bg);
 }
+/*
+ * A row whose changed lines are all read drops the side colour past the text too, with the gutter's bar and the
+ * sign's tint, so a block read through looks like dimmed context. A row with anything unread keeps all of it.
+ */
+tr.hh-read > .hh-num.hh-removed,
+tr.hh-read > .hh-num.hh-added { background: none; box-shadow: none; }
+tr.hh-read > .hh-num.hh-removed ~ td,
+tr.hh-read > .hh-num.hh-added ~ td,
+tr.hh-read .hh-changed { background: none; }
+tr.hh-read > .hh-code > .hh-sign { color: var(--hh-muted); }
 .hh-diff ::highlight(hh-selection) {
   background-color: var(--hh-selection);
   text-decoration: underline 2px var(--hh-accent);
