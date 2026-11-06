@@ -403,7 +403,7 @@ type MergedRow = Extract<UnifiedRow, { kind: "merged" }>;
 
 const blank = (text: string) => text.trim() === "";
 /** Whether at least half of the lines' text, whitespace aside, is unchanged. */
-const mostlyKept = (lines: readonly Cell[]): boolean => {
+const mostlyKept = (lines: readonly Pick<Cell, "spans">[]): boolean => {
   let kept = 0;
   let all = 0;
   for (const span of lines.flatMap((c) => c.spans)) {
@@ -413,6 +413,11 @@ const mostlyKept = (lines: readonly Cell[]): boolean => {
   }
   return kept * 2 >= all;
 };
+/** A line of a Markdown code block, fenced or indented. */
+const codeLine = (row: MergedRow): boolean =>
+  row.spans.some((s) =>
+    /\bmarkup\.(?:fenced_code|raw\.block)/.test(s.scope ?? ""),
+  );
 
 const skeleton = (lines: readonly Cell[]) =>
   lines
@@ -545,6 +550,13 @@ export function mergeLines(
 export function unifiedRows(rows: readonly Row[], prose = false): UnifiedRow[] {
   const alike = (before: readonly Cell[], after: readonly Cell[]) =>
     !prose || mostlyKept(before) || mostlyKept(after);
+  // A code block's lines are records (a command's output, statements), not reflowable prose: one woven with
+  // another line's removed words reads as neither, so each code line of a merge must itself be mostly kept.
+  const readable = (merged: MergedRow[] | undefined) =>
+    merged !== undefined &&
+    (!prose || merged.every((r) => !codeLine(r) || mostlyKept([r])))
+      ? merged
+      : undefined;
   const out: UnifiedRow[] = [];
   let removed: UnifiedRow[] = [];
   let added: UnifiedRow[] = [];
@@ -574,7 +586,7 @@ export function unifiedRows(rows: readonly Row[], prose = false): UnifiedRow[] {
       const whole =
         moving || !alike(cells("before"), cells("after"))
         ? undefined
-        : mergeLines(row.fragment, cells("before"), cells("after"));
+        : readable(mergeLines(row.fragment, cells("before"), cells("after")));
       if (whole) out.push(...whole);
       wholeMerged = whole !== undefined;
     }
@@ -584,7 +596,7 @@ export function unifiedRows(rows: readonly Row[], prose = false): UnifiedRow[] {
       row.after &&
       row.moved === undefined &&
       alike([row.before], [row.after])
-        ? mergeLines(row.fragment, [row.before], [row.after])
+        ? readable(mergeLines(row.fragment, [row.before], [row.after]))
         : undefined;
     if (merged) {
       flush();
