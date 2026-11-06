@@ -1,5 +1,6 @@
 import { diffLines, diffWordsWithSpace } from "diff";
 import type { Tree } from "syntechs/core";
+import type { ScopeRuns } from "syntechs/highlight";
 import {
   defaultMoveOptions,
   editScript,
@@ -43,6 +44,7 @@ import {
   type LinePair,
   nodeHash,
   type Rename,
+  scopesOf,
   type SideInput,
   type Span,
   textHash,
@@ -105,6 +107,14 @@ export async function openDiffset<H extends Host>(
     () => ctx.host.resolveDiffset(data as never),
     (r) => JSON.stringify(r).length * 2,
   );
+  // Each file's after side, coloured once: a viewer expands one gap after another of the same file.
+  const expandable = new Map<
+    string,
+    Promise<
+      | { v: Version; highlight?: HighlightModule; scopes?: ScopeRuns }
+      | undefined
+    >
+  >();
   const self: Diffset<H> = {
     id,
     changes,
@@ -119,17 +129,31 @@ export async function openDiffset<H extends Host>(
     anchorOnLines: (side, path, lines) =>
       anchorOnLines(ctx, changes, side, path, lines),
     expand: async (path, lines, count) => {
-      const i = changes.findIndex((c) => c.path === path);
-      const ref = changes[i];
-      const file = (await self.diff())[i];
-      if (!ref || !file || ref.kind) return undefined;
-      const after = await afterVersion(
-        ctx,
-        ref,
-        file.grammar !== undefined,
-        file.fallback === "inflated" || file.fallback === "too-large",
+      let side = expandable.get(path);
+      if (!side) {
+        side = (async () => {
+          const i = changes.findIndex((c) => c.path === path);
+          const ref = changes[i];
+          const file = (await self.diff())[i];
+          if (!ref || !file || ref.kind) return undefined;
+          const after = await afterVersion(
+            ctx,
+            ref,
+            file.grammar !== undefined,
+            file.fallback === "inflated" || file.fallback === "too-large",
+          );
+          if (!after) return undefined;
+          const scopes = scopesOf(after.v, after.highlight);
+          return { ...after, ...(scopes && { scopes }) };
+        })();
+        expandable.set(path, side);
+        side.catch(() => expandable.delete(path));
+      }
+      const after = await side;
+      return (
+        after &&
+        elidedLines(after.v, after.highlight, lines, count, after.scopes)
       );
-      return after && elidedLines(after.v, after.highlight, lines, count);
     },
   };
   return self;
@@ -204,6 +228,7 @@ function joinedSourceSpans(
   const out: Record<number, Span[]> = {};
   if (!v.tree) return out;
   const source = plainVersion(original, v.tree);
+  let scopes: ScopeRuns | undefined;
   for (let display = 0; display < lines.length; display++) {
     const first = lines[display] ?? 0;
     if (first === 0) continue;
@@ -216,11 +241,13 @@ function joinedSourceSpans(
       }
     }
     if (next <= first + 1) continue;
+    scopes ??= scopesOf(source, highlight);
     const fragment = elidedLines(
       source,
       highlight,
       { before: first, after: first },
       next - first,
+      scopes,
     );
     if (fragment) out[display + 1] = fragment.spans;
   }

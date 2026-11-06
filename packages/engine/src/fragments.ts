@@ -927,21 +927,28 @@ function contextOutline(
 /**
  * The unchanged lines an `elided` fragment at `lines` hid, read off the after side's display text `v` and
  * coloured as `buildFragments` colours the lines it shows. `count` absent runs to the end of the file.
- * Undefined when the lines fall outside the text.
+ * Undefined when the lines fall outside the text. `scopes`, from `scopesOf(v, highlight)`, spares a caller
+ * reading many stretches of one text a highlight pass per stretch.
  */
 export function elidedLines(
   v: Version,
   highlight: HighlightModule | undefined,
   lines: LinePair,
   count?: number,
+  scopes?: ScopeRuns,
 ): (CodeFragment & { kind: "unchanged" }) | undefined {
   const total = v.lineStarts.length;
   const n = count ?? total - (lines.after - 1);
   if (lines.after < 1 || n < 1 || lines.after - 1 + n > total) return undefined;
-  const scopes =
-    highlight && v.tree ? scopeRuns(v.tree, highlight, v.text.length, v.start, v.end) : undefined;
-  return unchangedFragment(v, scopes, lines, n);
+  return unchangedFragment(v, scopes ?? scopesOf(v, highlight), lines, n);
 }
+
+/** The syntax scopes of all of `v`: one highlight pass over its whole tree. */
+export const scopesOf = (
+  v: Version,
+  highlight: HighlightModule | undefined,
+): ScopeRuns | undefined =>
+  highlight && v.tree ? scopeRuns(v.tree, highlight, v.text.length, v.start, v.end) : undefined;
 
 function diffFragment(
   a: SideInput,
