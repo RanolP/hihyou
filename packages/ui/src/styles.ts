@@ -492,9 +492,8 @@ tr.hh-read > .hh-code > .hh-sign { color: var(--hh-muted); }
   line-height: 1.4;
   background: var(--hh-header-bg);
 }
-.hh-keys-head, .hh-keys-hint { padding-inline: 4px; }
-.hh-keys-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.hh-keys-title { margin: 0; font-size: 12px; font-weight: 600; }
+.hh-keys-hint { padding-inline: 4px; }
+.hh-keys-head { margin: 0; font-size: 12px; font-weight: 600; }
 /* Scoped under .hh-keys so a host's own sidebar button styles do not reach the panel's. */
 .hh-keys .hh-keys-toggle, .hh-keys .hh-key {
   font: inherit;
@@ -504,7 +503,8 @@ tr.hh-read > .hh-code > .hh-sign { color: var(--hh-muted); }
   border-radius: 4px;
   cursor: pointer;
 }
-.hh-keys .hh-keys-toggle { padding: 0 4px; color: var(--hh-muted); }
+/* The whole header is the button, so a click anywhere on "Keyboard shortcuts ?" folds or opens the panel. */
+.hh-keys .hh-keys-toggle { display: flex; align-items: center; justify-content: space-between; gap: 8px; box-sizing: border-box; width: 100%; padding: 0 4px; }
 .hh-keys-hint { margin: 2px 0 0; color: var(--hh-muted); }
 .hh-keys-hint .hh-score { font-weight: 600; }
 .hh-keys-group { margin-top: 2px; padding: 1px 3px 2px; border: 1px solid transparent; border-radius: 4px; }

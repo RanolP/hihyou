@@ -87,19 +87,17 @@ export const KeyPanel = (props: KeyPanelProps): JSX.Element => {
       }}
       aria-label="Keyboard shortcuts"
     >
-      <div class="hh-keys-head">
-        <h2 class="hh-keys-title">Keyboard shortcuts</h2>
+      <h2 class="hh-keys-head">
         <button
           type="button"
           class="hh-keys-toggle"
           aria-expanded={!props.collapsed()}
-          aria-label={`${props.collapsed() ? "Show" : "Hide"} shortcuts (?)`}
           title={`${props.collapsed() ? "Show" : "Hide"} shortcuts (?)`}
           on:click={() => props.toggle()}
         >
-          {props.collapsed() ? "Show" : "Hide"} <kbd>?</kbd>
+          Keyboard shortcuts <kbd>?</kbd>
         </button>
-      </div>
+      </h2>
       <Show when={!props.collapsed()}>
         <p class="hh-keys-hint" aria-live="polite">
           <Show

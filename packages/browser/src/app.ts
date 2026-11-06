@@ -1213,11 +1213,14 @@ const appStyles = `
   --vscode-diffEditor-removedTextBackground: var(--diffBlob-deletionWord-bgColor);
 }
 .hh-app { display: grid; grid-template-columns: minmax(200px, 300px) minmax(0, 1fr); align-items: start; gap: 16px; min-height: 400px; color: var(--fgColor-default, CanvasText); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
-.hh-sets { position: sticky; top: var(--hh-page-sticky-top); align-self: start; box-sizing: border-box; max-height: calc(100dvh - var(--hh-sets-top, var(--hh-page-sticky-top))); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; border: 1px solid var(--borderColor-default, #d0d7de); border-radius: 6px; padding: 4px 0; }
+/* The tree and the key panel split the sidebar's height, each scrolling in its own box, so the panel never lies over a row. */
+.hh-sets { position: sticky; top: var(--hh-page-sticky-top); align-self: start; display: flex; flex-direction: column; box-sizing: border-box; max-height: calc(100dvh - var(--hh-sets-top, var(--hh-page-sticky-top))); overflow: hidden; border: 1px solid var(--borderColor-default, #d0d7de); border-radius: 6px; padding: 4px 0; }
+.hh-sets > * { flex: none; }
+.hh-sets > ul { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .hh-filter { box-sizing: border-box; width: calc(100% - 16px); margin: 8px; border: 1px solid var(--borderColor-default, #d0d7de); border-radius: 6px; padding: 5px 8px; background: var(--bgColor-default, Canvas); color: inherit; font: inherit; }
 .hh-viewed-count { padding: 0 12px 4px; color: var(--fgColor-muted, GrayText); font-size: 12px; }
-/* The key panel stays at the foot of the sidebar's view while the file tree scrolls under it. */
-.hh-keys-dock { position: sticky; bottom: -4px; z-index: 1; margin: 4px 0 -4px; border-top: 1px solid var(--borderColor-default, #d0d7de); }
+/* The key panel sits at the foot of the sidebar, folded to its header line until opened, and never takes over half the window. */
+.hh-keys-dock { max-height: 50dvh; overflow-y: auto; overscroll-behavior: contain; margin: 4px 0 -4px; border-top: 1px solid var(--borderColor-default, #d0d7de); }
 .hh-keys-dock:empty { display: none; }
 .hh-sets ul { list-style: none; margin: 0; padding: 0; }
 .hh-sets ul ul { padding-left: 14px; }

@@ -132,18 +132,20 @@ export interface DiffsetView {
 }
 
 const keysCollapsedKey = "hihyou.keys.collapsed";
-/** Storage can be blocked (a sandboxed webview, site data off); the panel then opens shown each time. */
+/**
+ * The panel opens folded to its one-line header until the reviewer opens it. Storage can be blocked (a sandboxed
+ * webview, site data off); the panel then opens folded each time.
+ */
 function storedKeysCollapsed(): boolean {
   try {
-    return globalThis.localStorage?.getItem(keysCollapsedKey) === "1";
+    return globalThis.localStorage?.getItem(keysCollapsedKey) !== "0";
   } catch {
-    return false;
+    return true;
   }
 }
 function storeKeysCollapsed(collapsed: boolean) {
   try {
-    if (collapsed) globalThis.localStorage?.setItem(keysCollapsedKey, "1");
-    else globalThis.localStorage?.removeItem(keysCollapsedKey);
+    globalThis.localStorage?.setItem(keysCollapsedKey, collapsed ? "1" : "0");
   } catch {
     // Not remembered; the choice holds for this page.
   }
