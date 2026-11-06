@@ -99,7 +99,8 @@ export interface GitHubWebHostOptions {
   /**
    * Fetches an allowed GitHub URL with the browser session, following redirects. A content script cannot
    * read `pull/<n>.diff` itself (it redirects to patch-diff.githubusercontent.com, which sends no CORS headers),
-   * so the browser extension passes one that goes through its background worker.
+   * so the browser extension passes one that goes through its background worker. With the default origin it is
+   * also handed patch-diff.githubusercontent.com and raw.githubusercontent.com URLs directly.
    */
   fetch: (url: string, init?: { accept?: string }) => Promise<Response>;
   /** Defaults to `syntechsGrammars()` with default formatting for each supported language. */
@@ -176,6 +177,36 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
   const prefetched = new Map<string, Promise<string>>();
   const pullDiffUrl = (owner: string, repo: string, number: number) =>
     `${repoUrl(owner, repo)}/pull/${number}.diff`;
+  /**
+   * github.com answers `pull/<n>.diff` and `raw/...` with a redirect to these hosts, a hop of about 200 ms; asking
+   * them first skips it. A private pull request's patch-diff URL redirects back to github.com, which the fetch
+   * follows with the session; a private raw file is a 404 there, so its repo goes through github.com from then on.
+   */
+  const direct = origin === "https://github.com";
+  const viaOrigin = new Set<string>();
+  const directPullDiffUrl = (owner: string, repo: string, number: number) =>
+    `https://patch-diff.githubusercontent.com/raw/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pull/${number}.diff`;
+  const directRawUrl = (
+    owner: string,
+    repo: string,
+    commit: string,
+    path: string,
+  ) =>
+    `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${encodeURIComponent(commit)}/${path.split("/").map(encodeURIComponent).join("/")}`;
+  /** `directUrl` first, unless `repo` failed there before; any failure retries `url`, whose error reads as before. */
+  const getDirect = async (
+    repo: string,
+    directUrl: string,
+    url: string,
+  ): Promise<Response> => {
+    if (!direct || viaOrigin.has(repo)) return get(url);
+    try {
+      return await get(directUrl);
+    } catch {
+      viaOrigin.add(repo);
+      return get(url);
+    }
+  };
 
   const get = async (url: string, accept?: string): Promise<Response> => {
     const response = await options.fetch(
@@ -235,7 +266,16 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
     const key = "pull" in data ? `${owner}/${repo}#${data.pull}` : "";
     const early = prefetched.get(key);
     prefetched.delete(key);
-    const fetchText = async () => (await get(url)).text();
+    const fetchText = async () =>
+      (
+        await ("pull" in data
+          ? getDirect(
+              `${owner}/${repo}`,
+              directPullDiffUrl(owner, repo, data.pull),
+              url,
+            )
+          : get(url))
+      ).text();
     // A failed prefetch is fetched again, so its error is the one a fetch made now would raise.
     const text = await (early?.catch(fetchText) ?? fetchText());
     const patches = await shownPatches(parseDiff(text), data);
@@ -244,7 +284,12 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
         patch,
         `${owner}/${repo}@`,
         commit,
-        rawUrl(repoUrl(owner, repo), commit, patch.newPath),
+        () =>
+          getDirect(
+            `${owner}/${repo}`,
+            directRawUrl(owner, repo, commit, patch.newPath),
+            rawUrl(repoUrl(owner, repo), commit, patch.newPath),
+          ),
         url,
       ),
     );
@@ -294,7 +339,7 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
     patch: FilePatch,
     prefix: string,
     commit: string,
-    raw: string,
+    raw: () => Promise<Response>,
     diffUrl: string,
   ): ChangedFileRef => {
     const named = (blob: string | undefined) =>
@@ -315,9 +360,7 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
         const bytes = (pending ??=
           after === null
             ? Promise.resolve(new Uint8Array())
-            : get(raw).then(
-                async (r) => new Uint8Array(await r.arrayBuffer()),
-              ));
+            : raw().then(async (r) => new Uint8Array(await r.arrayBuffer())));
         if (--readers <= 0) pending = undefined;
         return bytes;
       };
@@ -406,7 +449,11 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
       return { head, commits };
     },
     prefetchPullDiff(owner, repo, number) {
-      const text = get(pullDiffUrl(owner, repo, number)).then((r) => r.text());
+      const text = getDirect(
+        `${owner}/${repo}`,
+        directPullDiffUrl(owner, repo, number),
+        pullDiffUrl(owner, repo, number),
+      ).then((r) => r.text());
       // Unhandled until resolveDiffset takes it, and that refetches on failure.
       text.catch(() => {});
       prefetched.set(`${owner}/${repo}#${number}`, text);
