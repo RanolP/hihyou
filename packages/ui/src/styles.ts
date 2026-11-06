@@ -294,8 +294,12 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 .hh-md-item { display: inline-grid; grid-template-columns: auto minmax(0, 1fr); width: calc(100% - 2ch); vertical-align: top; text-indent: 0; }
 .hh-md-lead { font-family: var(--hh-mono); white-space: pre; }
 .hh-md-code, .hh-md-fence, .hh-md-table { font-family: var(--hh-mono); font-size: 0.92em; }
-.hh-md-code { background: color-mix(in srgb, var(--hh-muted) 18%, transparent); border-radius: 3px; padding: 0 2px; }
-.hh-md-code.hh-md-mark { opacity: 0.35; }
+/* A code span is three spans (backtick, code, backtick) on one ground: only its outer ends round and pad, and the
+   backticks fade their glyph alone, so the ground stays even and the backticks sit against the code. */
+.hh-md-code { background: color-mix(in srgb, var(--hh-muted) 18%, transparent); }
+.hh-md-code.hh-md-mark { -webkit-text-fill-color: color-mix(in srgb, currentColor 35%, transparent); }
+.hh-md-mark.hh-md-code:has(+ .hh-md-code:not(.hh-md-mark)) { border-radius: 3px 0 0 3px; padding-left: 2px; }
+.hh-md-code:not(.hh-md-mark) + .hh-md-mark.hh-md-code { border-radius: 0 3px 3px 0; padding-right: 2px; }
 .hh-md-comment { color: var(--hh-muted); font-style: italic; }
 /* Link text in the link colour, as rendered Markdown shows it over any theme colour; image alt text italic on a dashed line; a URL recedes. */
 .hh-md-link { color: var(--hh-button-fg) !important; text-decoration: underline; text-underline-offset: 2px; }
