@@ -1,0 +1,21 @@
+{
+  "name": "tree-sitter-dockerfile",
+  "version": "0.2.0",
+  "private": true,
+  "scripts": {
+    "postinstall": "node ../build.mjs"
+  },
+  "grammar": {
+    "sources": [
+      {
+        "repo": "camdencheek/tree-sitter-dockerfile",
+        "commit": "868e44ce378deb68aac902a9db68ff82d2299dd0",
+        "files": {
+          "grammar.js": "9b1d516b80fd3261757eddaa2d8e99e628643937232af93a1ea576911aa1e960",
+          "src/scanner.c": "1080c2eb2ac41f102974e009cb62f644d9d638dd2468d0a700674d07d346fde7",
+          "queries/highlights.scm": "665444fb7c8099602c78f9563525dedc23bb227fb0a6323820eb10be2592b318"
+        }
+      }
+    ]
+  }
+}

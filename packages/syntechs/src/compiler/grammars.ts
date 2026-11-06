@@ -28,6 +28,7 @@ export const GRAMMARS: Record<string, { src: string; comments: string[] }> = {
   },
   ruby: { src: "tree-sitter-ruby/src", comments: ["comment"] },
   bash: { src: "tree-sitter-bash/src", comments: ["comment"] },
+  dockerfile: { src: "tree-sitter-dockerfile/src", comments: ["comment"] },
   kotlin: {
     src: "tree-sitter-kotlin/src",
     comments: ["line_comment", "multiline_comment"],

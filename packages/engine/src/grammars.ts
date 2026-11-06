@@ -23,6 +23,7 @@ export type LanguageId =
   | "rust"
   | "ruby"
   | "bash"
+  | "dockerfile"
   | "kotlin"
   | "html"
   | "swift"
@@ -42,6 +43,7 @@ const extensions: Record<LanguageId, readonly string[]> = {
   rust: [".rs"],
   ruby: [".rb", ".rake", ".gemspec", ".ru"],
   bash: [".sh", ".bash"],
+  dockerfile: [".dockerfile"],
   kotlin: [".kt", ".kts"],
   html: [".html", ".htm"],
   swift: [".swift"],
@@ -58,11 +60,15 @@ const filenames: Record<string, LanguageId> = {
   ".bash_login": "bash",
   ".bash_logout": "bash",
   ".profile": "bash",
+  Dockerfile: "dockerfile",
+  Containerfile: "dockerfile",
 };
 
 export function languageForPath(path: string): LanguageId | undefined {
   const filename = path.slice(path.lastIndexOf("/") + 1);
   if (Object.hasOwn(filenames, filename)) return filenames[filename];
+  // A variant per target or stage: Dockerfile.dev, Dockerfile.alpine.
+  if (filename.startsWith("Dockerfile.")) return "dockerfile";
   const dot = path.lastIndexOf(".");
   if (dot <= path.lastIndexOf("/")) return undefined;
   const ext = path.slice(dot).toLowerCase();
@@ -86,6 +92,7 @@ const parsers: Record<
   rust: () => import("syntechs/grammars/rust"),
   ruby: () => import("syntechs/grammars/ruby"),
   bash: () => import("syntechs/grammars/bash"),
+  dockerfile: () => import("syntechs/grammars/dockerfile"),
   kotlin: () => import("syntechs/grammars/kotlin"),
   html: () => import("syntechs/grammars/html"),
   swift: () => import("syntechs/grammars/swift"),
@@ -109,6 +116,7 @@ const highlighters: Partial<
   rust: () => import("syntechs/grammars/rust/highlight"),
   ruby: () => import("syntechs/grammars/ruby/highlight"),
   bash: () => import("syntechs/grammars/bash/highlight"),
+  dockerfile: () => import("syntechs/grammars/dockerfile/highlight"),
   kotlin: () => import("syntechs/grammars/kotlin/highlight"),
   html: () => import("syntechs/grammars/html/highlight"),
   swift: () => import("syntechs/grammars/swift/highlight"),

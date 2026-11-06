@@ -199,6 +199,35 @@ const BASH: Record<string, Rule> = {
   comment: "comment.line.number-sign.shell",
 };
 
+// VS Code's Dockerfile grammar scopes an instruction keyword `keyword.other.special-method`.
+const DOCKERFILE: Record<string, Rule | null> = {
+  ...shared("dockerfile"),
+  keyword: {
+    scope: "keyword.other.special-method.dockerfile",
+    byKind: {
+      heredoc_marker: "keyword.operator.heredoc.dockerfile",
+      heredoc_end: "keyword.operator.heredoc.dockerfile",
+    },
+  },
+  string: {
+    scope: "string.quoted.double.dockerfile",
+    byKind: {
+      single_quoted_string: "string.quoted.single.dockerfile",
+      heredoc_line: "string.unquoted.heredoc.dockerfile",
+    },
+  },
+  // An image's `:tag` and `@digest` separators, or an expansion's `$`, `{` and `}`.
+  "punctuation.special": {
+    scope: "punctuation.definition.variable.dockerfile",
+    byText: { ":": "punctuation.separator.dockerfile", "@": "punctuation.separator.dockerfile" },
+  },
+  // An upper-case variable in an expansion.
+  constant: "variable.other.dockerfile",
+  comment: "comment.line.number-sign.dockerfile",
+  // tree-sitter-dockerfile's `@none` marks an expansion as not highlighted.
+  none: null,
+};
+
 const KOTLIN: Record<string, Rule> = {
   ...shared("kotlin"),
   property: "",
@@ -630,6 +659,11 @@ export const LANGUAGES: Record<string, LanguageRules> = {
     grammar: "tree-sitter-bash",
     queries: ["queries/highlights.scm"],
     captures: BASH,
+  },
+  dockerfile: {
+    grammar: "tree-sitter-dockerfile",
+    queries: ["queries/highlights.scm"],
+    captures: DOCKERFILE,
   },
   kotlin: {
     grammar: "tree-sitter-kotlin",

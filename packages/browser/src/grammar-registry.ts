@@ -13,6 +13,7 @@ export const grammarChunkFiles = [
   "/grammars-swift.js",
   "/grammars-ruby.js",
   "/grammars-bash.js",
+  "/grammars-dockerfile.js",
 ] as const;
 
 type GrammarModule = Record<string, unknown>;
