@@ -32,6 +32,7 @@ const MARKDOWN: readonly (readonly [RegExp, string])[] = [
   [/\bpunctuation\.definition\.(?:heading|markdown|table)\b/, "hh-md-mark"],
   [/\bmarkup\.inline\.raw/, "hh-md-code"],
   [/\b(?:markup\.fenced_code|markup\.raw\.block)/, "hh-md-fence"],
+  [/\bfenced_code\.block\.language/, "hh-md-lang"],
   [/\bmarkup\.underline\.link/, "hh-md-url"],
   [/\bstring\.other\.link\.description\.markdown/, "hh-md-image"],
   [/\b(?:string\.other\.link\.title|constant\.other\.reference\.link)/, "hh-md-link"],

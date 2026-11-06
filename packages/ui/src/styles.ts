@@ -303,8 +303,10 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 .hh-md-url { opacity: 0.4; font-size: 0.85em; }
 /* A fence's rows share one tint drawn as an image (and outrank the line colour's shorthand), so an added or removed row's colour still shows under it. */
 table.hh-md tr:has(.hh-md-fence) > td.hh-code {
-  background-image: linear-gradient(color-mix(in srgb, var(--hh-muted) 12%, transparent), color-mix(in srgb, var(--hh-muted) 12%, transparent));
+  background-image: linear-gradient(color-mix(in srgb, var(--hh-muted) 18%, transparent), color-mix(in srgb, var(--hh-muted) 18%, transparent));
 }
+/* The info string labels the block, as GitHub's and Typora's language tag does, rather than reading as its first line. */
+.hh-md-lang { color: var(--hh-muted) !important; font-size: 0.8em; letter-spacing: 0.03em; margin-left: 0.5ch; }
 table.hh-md tr:has(.hh-md-rule) > td.hh-code {
   background-image: linear-gradient(transparent calc(50% - 1px), var(--hh-border) calc(50% - 1px), var(--hh-border) calc(50% + 1px), transparent calc(50% + 1px));
 }
