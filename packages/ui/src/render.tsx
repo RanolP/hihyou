@@ -60,7 +60,6 @@ import { controls, modalRoot } from "./view/modal-root.js";
 import { createPairs, type PairView } from "./view/pair.jsx";
 import { createPlacer } from "./view/placement.js";
 import { pointAt } from "./view/pointer.js";
-import { viewState } from "./whole.js";
 import {
   type KeyOf,
   plainKeyOf,
@@ -401,20 +400,6 @@ function mount(
           setViewed(index, { kind: "file", file: i }, on, viewed, keyOf);
         else viewed.set(fileKey(file), on);
       });
-    },
-    viewState(t) {
-      viewedTick();
-      return viewState(outline(), t, isViewed);
-    },
-    select(t) {
-      if (!modal) return;
-      clicking = true;
-      modal.set({
-        ...modal.state(),
-        mode: "normal",
-        selection: t,
-      });
-      clicking = false;
     },
     onExpand: opts.onExpand,
     onCollapse: opts.onCollapse,

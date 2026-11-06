@@ -344,69 +344,25 @@ const count = (name, where) =>
   }
 }
 
-// Whole units (fixture only): an added file says so in its badge and heads its declarations; a function added
-// whole to a changed file gets a header that selects it, and viewing still goes leaf by leaf inside it.
+// Whole units (fixture only): an added file says so in its badge, and a declaration added or removed whole sits
+// under a bare rule rather than a header repeating its first line.
 if (mode === "fixture") {
   await page.keyboard.press("Escape");
   const file = (path) => `.hh-file:has(.hh-scroll[data-path="${path}"])`;
   const texts = (sel) => page.locator(sel).allInnerTexts();
   const badge = await texts(`${file("src/whole/added.ts")} .hh-status`);
-  const addedHeads = await texts(
-    `${file("src/whole/added.ts")} .hh-whole-label`,
-  );
-  const shop = `${file("src/whole/shop.ts")} .hh-whole`;
-  const shopHeads = await texts(`${shop} .hh-whole-label`);
-  log(
-    `whole: badge ${JSON.stringify(badge)} added.ts heads ${JSON.stringify(addedHeads)} shop.ts heads ${JSON.stringify(shopHeads)}`,
-  );
+  const rules = await texts(".hh-whole");
+  log(`whole: badge ${JSON.stringify(badge)} rules ${JSON.stringify(rules)}`);
   if (badge.join() !== "added file")
     failures.push(`whole: badge reads ${JSON.stringify(badge)}`);
-  if (addedHeads.join() !== "added function extra,added class Shop")
-    failures.push(`whole: added.ts heads ${JSON.stringify(addedHeads)}`);
-  if (shopHeads.join() !== "added function extra")
-    failures.push(`whole: shop.ts heads ${JSON.stringify(shopHeads)}`);
+  if (rules.some((t) => t.trim() !== ""))
+    failures.push(`whole: a rule carries text ${JSON.stringify(rules)}`);
   await page
     .locator(file("src/whole/added.ts"))
     .screenshot({ path: join(out, "whole-badge.png") });
-  const state = () => page.locator(`${shop} .hh-whole-state`).innerText();
-  const head = page.locator(`${shop} .hh-whole-label`);
-  // The header selects the whole node; j then lands on the first leaf inside it, and v marks that leaf alone.
-  await head.click();
-  const whole = await show("whole: header clicked");
-  if (
-    !whole.selected
-      .map((p) => p.text)
-      .join("")
-      .includes("return c")
-  )
-    failures.push("whole: header did not select the whole function");
-  await page.keyboard.press("j");
-  const leaf = await show("whole: j to a leaf");
-  await page.keyboard.press("v");
-  const partial = await state();
-  log(
-    `whole: after v on leaf "${leaf.selected.map((p) => p.text).join("")}" header state ${JSON.stringify(partial)}`,
-  );
-  if (partial !== "Partly viewed")
-    failures.push(
-      `whole: v on one leaf left the header ${JSON.stringify(partial)}`,
-    );
-  await head.click();
-  await page.keyboard.press("v");
-  const full = await state();
-  log(
-    `whole: after v on the header node, header state ${JSON.stringify(full)}`,
-  );
-  if (full !== "✓ Viewed")
-    failures.push(
-      `whole: v on the header node left it ${JSON.stringify(full)}`,
-    );
   await page
     .locator(file("src/whole/shop.ts"))
     .screenshot({ path: join(out, "whole-declaration.png") });
-  await page.keyboard.press("v");
-  if ((await state()) !== "")
-    failures.push("whole: v again did not unmark the function");
 }
 
 // Highlight colour actually painted: computed ::highlight colour on a viewed node's element.

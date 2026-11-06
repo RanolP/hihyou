@@ -1,18 +1,12 @@
 import type { JSX } from "solid-js";
-import {
-  buildSections,
-  onlyBlankChanges,
-  type DiffFile,
-  type UnifiedRow,
-  unifiedRows,
-} from "../rows.js";
+import { buildSections, type DiffFile, type UnifiedRow, unifiedRows } from "../rows.js";
 import type { TableDraw } from "./block.js";
 import { useDraw } from "./context.js";
 import { pairRows } from "./pair-rows.jsx";
 import { beforeCells } from "./placement.js";
 import { unifiedRow } from "./unified.jsx";
-import { wholeEndsAt, wholeHeadersAt, wholeRows } from "./whole.jsx";
-import { wholeHeaders } from "../whole.js";
+import { startsWhole, wholeRule } from "./whole.jsx";
+import { wholeStarts } from "../whole.js";
 
 const headings = ["Before line", "After line", "Code"];
 const scopeLabel = (path: readonly string[] | undefined) =>
@@ -72,18 +66,24 @@ export function FileTable(props: { index: number; file: DiffFile }): JSX.Element
     openPair: {},
     pairRows: (view, out) => pairRows(ctx, table, view, out),
   };
-  const headers = wholeHeaders(file, index);
+  const starts = wholeStarts(file);
+  // Whether the row last drawn is code: a unit right under a gap or a scope row has its edge already.
+  let afterCode = false;
   // A sticky row sticks for the rest of the table, not just its own tbody; `buildSections` decides which
   // sections carry one, replacing a header that would otherwise go stale with a "top level" one.
   const sections = buildSections(file);
   for (const [sectionIndex, section] of sections.entries()) {
     const rows: JSX.Element[] = [];
-    if (section.heading) rows.push(scopeRow(section.path, columns));
+    if (section.heading) {
+      rows.push(scopeRow(section.path, columns));
+      afterCode = false;
+    }
     ctx.placer.queueBefore(beforeCells(section.rows));
     const unified = unifiedRows(section.rows);
     const lone = loneLines(unified);
     for (const [rowIndex, row] of unified.entries()) {
-      wholeRows(ctx, headers, row, columns, rows);
+      if (afterCode && startsWhole(starts, row)) rows.push(wholeRule(columns));
+      afterCode = row.kind !== "elided";
       const handover =
         row.kind === "elided" &&
         rowIndex === unified.length - 1 &&
@@ -110,17 +110,6 @@ export function FileTable(props: { index: number; file: DiffFile }): JSX.Element
         lone[rowIndex],
         handover,
       );
-      // A unit followed within a few lines by the next one (a blank line, a doc comment) hands the pin over
-      // directly; a scope row between every pair of added declarations is noise.
-      const remaining = unified.slice(rowIndex + 1);
-      const following = remaining.slice(0, 3);
-      if (
-        following.length > 0 &&
-        wholeEndsAt(headers, row) &&
-        following.every((r) => wholeHeadersAt(headers, r).length === 0) &&
-        !onlyBlankChanges(remaining)
-      )
-        rows.push(scopeRow(section.path, columns));
     }
     bodies.push(<tbody>{rows}</tbody>);
   }

@@ -1,44 +1,6 @@
 import type { JSX } from "solid-js";
 import type { Row, UnifiedRow } from "../rows.js";
-import { type WholeHeader, wholeKey } from "../whole.js";
-import type { DrawContext } from "./context.js";
-
-const stateText = { viewed: "✓ Viewed", partial: "Partly viewed", unviewed: "" };
-
-/**
- * "added function extra" above a whole unit's first line. Its button selects the whole node, so `v` marks every
- * atom in it, while j/k and `i` still reach each atom inside on its own.
- */
-function WholeRow(props: {
-  ctx: DrawContext;
-  header: WholeHeader;
-  columns: number;
-}): JSX.Element {
-  const { ctx, header, columns } = props;
-  const t = { kind: "node", ...header.ref } as const;
-  const state = () => ctx.viewState(t);
-  return (
-    <tr
-      class={`hh-whole hh-whole-${header.whole}`}
-      classList={{
-        "hh-whole-viewed": state() === "viewed",
-        "hh-whole-partial": state() === "partial",
-      }}
-    >
-      <th scope="row" colSpan={columns}>
-        <button
-          type="button"
-          class="hh-button hh-whole-label"
-          aria-label={`Select ${header.text}`}
-          on:click={() => ctx.select(t)}
-        >
-          {header.text}
-        </button>
-        <span class="hh-whole-state">{stateText[state() ?? "unviewed"]}</span>
-      </th>
-    </tr>
-  );
-}
+import { wholeKey } from "../whole.js";
 
 const rowKeys = (row: Row | UnifiedRow): string[] => {
   const keys: string[] = [];
@@ -54,30 +16,16 @@ const rowKeys = (row: Row | UnifiedRow): string[] => {
   return keys;
 };
 
-export const wholeHeadersAt = (
-  headers: ReadonlyMap<string, WholeHeader>,
-  row: Row | UnifiedRow,
-): WholeHeader[] => rowKeys(row).flatMap((key) => headers.get(key) ?? []);
+/** Whether a whole unit (from `wholeStarts`) opens on this row's lines. */
+export const startsWhole = (starts: ReadonlySet<string>, row: Row | UnifiedRow): boolean =>
+  starts.size > 0 && rowKeys(row).some((key) => starts.has(key));
 
-export const wholeEndsAt = (
-  headers: ReadonlyMap<string, WholeHeader>,
-  row: Row | UnifiedRow,
-): boolean => {
-  const keys = new Set(rowKeys(row));
-  return [...headers.values()].some(({ ref, lastLine }) =>
-    keys.has(wholeKey(ref.fragment, ref.side, lastLine)),
-  );
-};
-
-/** The header rows that open on this row's lines, pushed into `out` ahead of the row. */
-export function wholeRows(
-  ctx: DrawContext,
-  headers: ReadonlyMap<string, WholeHeader>,
-  row: Row | UnifiedRow,
-  columns: number,
-  out: JSX.Element[],
-): void {
-  if (headers.size === 0) return;
-  for (const header of wholeHeadersAt(headers, row))
-    out.push(<WholeRow ctx={ctx} header={header} columns={columns} />);
-}
+/**
+ * The rule above a whole unit's first line. It carries no text: the code under it already says what was added or
+ * removed, and a click on that code selects it, with `o` widening to the whole unit.
+ */
+export const wholeRule = (columns: number): JSX.Element => (
+  <tr class="hh-whole" aria-hidden="true">
+    <td colSpan={columns} />
+  </tr>
+);

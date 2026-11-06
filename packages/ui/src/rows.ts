@@ -399,21 +399,6 @@ export type UnifiedRow =
       moved?: { last: boolean };
     };
 
-/** Whether a run has changed rows, but every one of them is empty or whitespace-only. */
-export const onlyBlankChanges = (rows: readonly UnifiedRow[]): boolean => {
-  const changed = rows.filter(
-    (row): row is Extract<UnifiedRow, { kind: "line" | "merged" }> =>
-      row.kind === "line" || row.kind === "merged",
-  );
-  return (
-    changed.length > 0 &&
-    changed.every((row) => {
-      const spans = row.kind === "line" ? row.cell.spans : row.spans;
-      return spans.every((span) => span.text.trim() === "");
-    })
-  );
-};
-
 type MergedRow = Extract<UnifiedRow, { kind: "merged" }>;
 
 const blank = (text: string) => text.trim() === "";

@@ -1,6 +1,5 @@
 import type { CompiledTheme } from "@hihyou/engine";
 import { type Accessor, createContext, useContext } from "solid-js";
-import type { Target } from "../atoms.js";
 import type { ElidedRef, ExpandDirection } from "../expand.js";
 import type { SideRef } from "../moves.js";
 import type { DiffFile } from "../rows.js";
@@ -29,10 +28,6 @@ export interface DrawContext {
   setFileCollapsed(path: string, on: boolean): void;
   fileViewed(index: number, file: DiffFile): boolean;
   setFileViewed(index: number, file: DiffFile, on: boolean): void;
-  /** Reactive: whether the atoms beneath a target are all, some or none viewed. */
-  viewState(t: Target): "viewed" | "partial" | "unviewed" | undefined;
-  /** Makes the target the modal editor's only selection, as a click on code does. */
-  select(t: Target): void;
   onExpand:
     | ((fileId: string, elided: ElidedRef, direction: ExpandDirection) => void)
     | undefined;

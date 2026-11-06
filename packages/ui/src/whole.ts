@@ -1,9 +1,8 @@
 /**
- * Whole units: an added or deleted file, or a declaration inserted or deleted whole, reads as one change ("added
- * function extra") rather than as emphasized pieces, while viewing still works atom by atom inside it.
+ * Whole units: an added or deleted file, or a declaration inserted or deleted whole, reads as one change rather
+ * than as emphasized pieces, while viewing still works atom by atom inside it.
  */
-import type { NodeOutline } from "@hihyou/engine";
-import { type AtomIndex, atomsOf, type NodeRef, type SideName, type Target } from "./atoms.js";
+import type { SideName } from "./atoms.js";
 import { type DiffFile, statusOf } from "./rows.js";
 
 /** The file as a whole unit: the engine's `status`, else what the host's change says. */
@@ -13,66 +12,31 @@ export function wholeFileStatus(file: DiffFile): "added" | "deleted" | undefined
   return s === "added" || s === "deleted" ? s : undefined;
 }
 
-/** "added function extra"; a unit with no label is a kind-less "added block". */
-export const wholeText = (n: NodeOutline): string | undefined =>
-  n.whole && `${n.whole} ${n.label ?? "block"}`;
-
-export interface WholeHeader {
-  ref: NodeRef;
-  text: string;
-  whole: "added" | "deleted";
-  /** The inclusive 1-based display line where the unit ends, on `ref.side`. */
-  lastLine: number;
-}
-
-/** Where a header row goes: the 1-based line its unit starts on, per fragment and side. */
+/** Where a unit starts: the 1-based line its first row shows, per fragment and side. */
 export const wholeKey = (fragment: number, side: SideName, line: number) =>
   `${fragment}:${side}:${line}`;
 
 /**
- * The header rows of one file, by `wholeKey`, for units spanning more than one line. In an added or deleted file
- * every top node is whole, so only declarations (those with a label) get one; the file badge already says the rest.
+ * The lines, by `wholeKey`, that open a whole unit spanning more than one line; a rule above each sets it apart
+ * from the code before it. In an added or deleted file every top node is whole, so only declarations (those with a
+ * label) get one.
  */
-export function wholeHeaders(file: DiffFile, index: number): Map<string, WholeHeader> {
-  const out = new Map<string, WholeHeader>();
+export function wholeStarts(file: DiffFile): Set<string> {
+  const out = new Set<string>();
   const fileWhole = wholeFileStatus(file) !== undefined;
   file.fragments.forEach((frag, fragment) => {
     if (frag.kind !== "diff") return;
     for (const side of ["before", "after"] as const) {
-      (frag[side].nodes ?? []).forEach((n, node) => {
-        const text = wholeText(n);
-        if (!text || !n.whole) return;
-        if (fileWhole && n.label === undefined) return;
-        const firstLine = frag[side].startLine + (n.wholeStart ?? n.start).line;
-        const lastLine = Math.max(
-          firstLine,
-          frag[side].startLine + n.end.line - (n.end.column === 0 ? 1 : 0),
-        );
-        // A one-line declaration's header would only repeat the line under it ("added let React;"), even when a
-        // leading comment it takes along makes the unit itself two lines.
-        if (lastLine === frag[side].startLine + n.start.line) return;
-        const key = wholeKey(fragment, side, firstLine);
-        if (out.has(key)) return;
-        out.set(key, {
-          ref: { file: index, fragment, side, node },
-          text,
-          whole: n.whole,
-          lastLine,
-        });
-      });
+      for (const n of frag[side].nodes ?? []) {
+        if (!n.whole) continue;
+        if (fileWhole && n.label === undefined) continue;
+        const lastLine = frag[side].startLine + n.end.line - (n.end.column === 0 ? 1 : 0);
+        // A one-line declaration needs no rule of its own, even when a leading comment it takes along makes the
+        // unit two lines; a run of imports would otherwise get one between every line.
+        if (lastLine <= frag[side].startLine + n.start.line) continue;
+        out.add(wholeKey(fragment, side, frag[side].startLine + (n.wholeStart ?? n.start).line));
+      }
     }
   });
   return out;
-}
-
-/** "viewed" when every atom beneath is, "partial" when some are; `undefined` when it has no atom. */
-export function viewState(
-  index: AtomIndex,
-  t: Target,
-  isViewed: (atom: string) => boolean,
-): "viewed" | "partial" | "unviewed" | undefined {
-  const atoms = atomsOf(index, t);
-  if (atoms.length === 0) return undefined;
-  const n = atoms.filter((a) => isViewed(index.atoms[a]?.id ?? "")).length;
-  return n === atoms.length ? "viewed" : n > 0 ? "partial" : "unviewed";
 }
