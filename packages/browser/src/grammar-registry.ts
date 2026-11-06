@@ -12,6 +12,7 @@ export const grammarChunkFiles = [
   "/grammars-kotlin.js",
   "/grammars-swift.js",
   "/grammars-ruby.js",
+  "/grammars-bash.js",
 ] as const;
 
 type GrammarModule = Record<string, unknown>;

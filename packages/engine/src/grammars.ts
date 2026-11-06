@@ -22,6 +22,7 @@ export type LanguageId =
   | "go"
   | "rust"
   | "ruby"
+  | "bash"
   | "kotlin"
   | "html"
   | "swift"
@@ -40,6 +41,7 @@ const extensions: Record<LanguageId, readonly string[]> = {
   go: [".go"],
   rust: [".rs"],
   ruby: [".rb", ".rake", ".gemspec", ".ru"],
+  bash: [".sh", ".bash"],
   kotlin: [".kt", ".kts"],
   html: [".html", ".htm"],
   swift: [".swift"],
@@ -48,9 +50,19 @@ const extensions: Record<LanguageId, readonly string[]> = {
   svg: [".svg"],
 };
 
+const filenames: Record<string, LanguageId> = {
+  Gemfile: "ruby",
+  Rakefile: "ruby",
+  ".bashrc": "bash",
+  ".bash_profile": "bash",
+  ".bash_login": "bash",
+  ".bash_logout": "bash",
+  ".profile": "bash",
+};
+
 export function languageForPath(path: string): LanguageId | undefined {
   const filename = path.slice(path.lastIndexOf("/") + 1);
-  if (filename === "Gemfile" || filename === "Rakefile") return "ruby";
+  if (Object.hasOwn(filenames, filename)) return filenames[filename];
   const dot = path.lastIndexOf(".");
   if (dot <= path.lastIndexOf("/")) return undefined;
   const ext = path.slice(dot).toLowerCase();
@@ -73,6 +85,7 @@ const parsers: Record<
   go: () => import("syntechs/grammars/go"),
   rust: () => import("syntechs/grammars/rust"),
   ruby: () => import("syntechs/grammars/ruby"),
+  bash: () => import("syntechs/grammars/bash"),
   kotlin: () => import("syntechs/grammars/kotlin"),
   html: () => import("syntechs/grammars/html"),
   swift: () => import("syntechs/grammars/swift"),
@@ -95,6 +108,7 @@ const highlighters: Partial<
   go: () => import("syntechs/grammars/go/highlight"),
   rust: () => import("syntechs/grammars/rust/highlight"),
   ruby: () => import("syntechs/grammars/ruby/highlight"),
+  bash: () => import("syntechs/grammars/bash/highlight"),
   kotlin: () => import("syntechs/grammars/kotlin/highlight"),
   html: () => import("syntechs/grammars/html/highlight"),
   swift: () => import("syntechs/grammars/swift/highlight"),
@@ -141,6 +155,7 @@ const declarations: Partial<Record<LanguageId, readonly string[]>> = {
     "mod_item",
   ],
   ruby: ["method", "singleton_method", "class", "singleton_class", "module"],
+  bash: ["function_definition"],
   kotlin: [
     "function_declaration",
     "class_declaration",

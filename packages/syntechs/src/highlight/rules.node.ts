@@ -181,6 +181,24 @@ const RUBY: Record<string, Rule> = {
   },
 };
 
+// VS Code's shellscript grammar suffixes its scopes `.shell`.
+const BASH: Record<string, Rule> = {
+  ...shared("shell"),
+  // A command's name, or a function definition's.
+  function: {
+    scope: "entity.name.function.call.shell",
+    byKind: { word: "entity.name.function.shell" },
+  },
+  property: "variable.other.normal.shell",
+  // A command argument starting with `-`.
+  constant: "constant.other.option.shell",
+  embedded: {
+    scope: "meta.embedded.subshell.shell",
+    byKind: { expansion: "variable.other.bracket.shell" },
+  },
+  comment: "comment.line.number-sign.shell",
+};
+
 const KOTLIN: Record<string, Rule> = {
   ...shared("kotlin"),
   property: "",
@@ -607,6 +625,11 @@ export const LANGUAGES: Record<string, LanguageRules> = {
     grammar: "tree-sitter-ruby",
     queries: ["queries/highlights.scm"],
     captures: RUBY,
+  },
+  bash: {
+    grammar: "tree-sitter-bash",
+    queries: ["queries/highlights.scm"],
+    captures: BASH,
   },
   kotlin: {
     grammar: "tree-sitter-kotlin",

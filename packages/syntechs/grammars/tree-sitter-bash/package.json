@@ -1,0 +1,21 @@
+{
+  "name": "tree-sitter-bash",
+  "version": "0.25.1",
+  "private": true,
+  "scripts": {
+    "postinstall": "node ../build.mjs"
+  },
+  "grammar": {
+    "sources": [
+      {
+        "repo": "tree-sitter/tree-sitter-bash",
+        "commit": "a06c2e4415e9bc0346c6b86d401879ffb44058f7",
+        "files": {
+          "grammar.js": "3c125330d995968a7e3a4fc71617aa73472449f5a6c254f39da2d8860a47bf65",
+          "src/scanner.c": "7cc25d70626f8939b35ecd504bf724e2001b817412aa29bceb4c4955a91558a9",
+          "queries/highlights.scm": "b74220d954f485b7626d2b2b61f37b522e12eb1830803e388e57dd797dc99f11"
+        }
+      }
+    ]
+  }
+}

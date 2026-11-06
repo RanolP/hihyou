@@ -28,9 +28,9 @@ function injectedGrammarModules(): Plugin {
           return `hihyouGrammarModule(${JSON.stringify(specifier)})`;
         },
       );
-      if (imports !== 41)
+      if (imports !== 43)
         throw new Error(
-          `expected 41 lazy syntechs grammar imports in ${id}, found ${imports}`,
+          `expected 43 lazy syntechs grammar imports in ${id}, found ${imports}`,
         );
       return {
         code: `const hihyouGrammarModule = (id) => {\n  const module = globalThis.hihyouGrammarModules?.[id];\n  if (!module) return Promise.reject(new Error(\`grammar module \${id} was not injected\`));\n  return Promise.resolve(module);\n};\n${transformed}`,
