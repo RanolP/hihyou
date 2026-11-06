@@ -122,6 +122,11 @@ export interface GitHubWebHost extends Host {
     repo: string,
     number: number,
   ): Promise<GitHubWebPull>;
+  /**
+   * Starts fetching the pull request's `.diff` before its head is known, for the next `resolveDiffset` of that pull
+   * request to take. The URL names no head; a head that moved in between fails the blob id check on the raw files.
+   */
+  prefetchPullDiff(owner: string, repo: string, number: number): void;
 }
 
 /** Deterministic: same fields, same string, so the engine's cache and `Diffset.id` agree across calls. */
@@ -167,6 +172,10 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
   const listed = new Map<string, { pull: number; merge: boolean }>();
   /** How to produce each blob id resolveDiffset has handed out. */
   const recipes = new Map<BlobId, () => Promise<Uint8Array>>();
+  /** `pull/<n>.diff` texts `prefetchPullDiff` started, by `owner/repo#n`; the next `resolveDiffset` takes each once. */
+  const prefetched = new Map<string, Promise<string>>();
+  const pullDiffUrl = (owner: string, repo: string, number: number) =>
+    `${repoUrl(owner, repo)}/pull/${number}.diff`;
 
   const get = async (url: string, accept?: string): Promise<Response> => {
     const response = await options.fetch(
@@ -221,12 +230,15 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
     const commit = "pull" in data ? data.head : data.commit;
     const url =
       "pull" in data
-        ? `${repoUrl(owner, repo)}/pull/${data.pull}.diff`
+        ? pullDiffUrl(owner, repo, data.pull)
         : `${repoUrl(owner, repo)}/commit/${encodeURIComponent(data.commit)}.diff`;
-    const patches = await shownPatches(
-      parseDiff(await (await get(url)).text()),
-      data,
-    );
+    const key = "pull" in data ? `${owner}/${repo}#${data.pull}` : "";
+    const early = prefetched.get(key);
+    prefetched.delete(key);
+    const fetchText = async () => (await get(url)).text();
+    // A failed prefetch is fetched again, so its error is the one a fetch made now would raise.
+    const text = await (early?.catch(fetchText) ?? fetchText());
+    const patches = await shownPatches(parseDiff(text), data);
     const changes = patches.map((patch) =>
       toChange(
         patch,
@@ -392,6 +404,12 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
         commits.at(-1)?.sha;
       if (!head) throw new Error(`GET ${url} listed no commits`);
       return { head, commits };
+    },
+    prefetchPullDiff(owner, repo, number) {
+      const text = get(pullDiffUrl(owner, repo, number)).then((r) => r.text());
+      // Unhandled until resolveDiffset takes it, and that refetches on failure.
+      text.catch(() => {});
+      prefetched.set(`${owner}/${repo}#${number}`, text);
     },
     async resolvePullBody(owner, repo, number) {
       const url =

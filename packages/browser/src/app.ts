@@ -1034,6 +1034,8 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   const unsubscribeViewed = persistedViewed.store.subscribe(drawTree);
 
   void (async () => {
+    // All changes opens first, and its diff needs no head: fetch it while the commits route names the head.
+    host_.prefetchPullDiff(page.owner, page.repo, page.pull);
     const pullBodyRequest = host_
       .resolvePullBody(page.owner, page.repo, page.pull)
       .then((body) => body.replace(/<!--[\s\S]*?-->/g, "").trim())
