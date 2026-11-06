@@ -188,6 +188,7 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 /* In prose, removed words strike through and a removed run touching an added one keeps a gap, so the two never read as one word. */
 .hh-md del.hh-changed { text-decoration: line-through; text-decoration-color: color-mix(in srgb, currentColor 55%, transparent); }
 .hh-md .hh-abut { margin-left: 0.3ch; }
+.hh-md .hh-abut-end { margin-right: 0.3ch; }
 /* A moved side is one box: its label cell is the top edge, gutter the left, code the right, last line the bottom. */
 .hh-move-cell.hh-moved { box-shadow: inset 2px 2px var(--hh-moved), inset -2px 0 var(--hh-moved); }
 .hh-num.hh-moved { box-shadow: inset 2px 0 var(--hh-moved); }

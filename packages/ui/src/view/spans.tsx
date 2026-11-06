@@ -119,11 +119,29 @@ export function SpanNodes(props: {
   const out: JSX.Element[] = [];
   // `abut`: the run directly follows a run of the other side, with no unchanged text between, so the two words would
   // read as one ("featuresFeature") without a gap.
-  let run: { side: SideName; nodes: JSX.Element[]; abut: boolean } | undefined;
+  // `from`/`to`: the run's first and last span. A run whose edge word touches an unchanged word (a removed word sits
+  // where only the other side had the space: "non-stablefeature") gets a gap on that edge too.
+  let run:
+    | {
+        side: SideName;
+        nodes: JSX.Element[];
+        abut: boolean;
+        from: number;
+        to: number;
+      }
+    | undefined;
   const flush = () => {
     if (!run) return;
     const nodes = run.nodes;
-    const name = run.abut ? "hh-changed hh-abut" : "hh-changed";
+    const name = [
+      "hh-changed",
+      run.abut || glued(spans[run.from - 1], spans[run.from], true)
+        ? "hh-abut"
+        : "",
+      glued(spans[run.to + 1], spans[run.to], false) ? "hh-abut-end" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
     out.push(
       run.side === "before" ? (
         <del class={name}>{nodes}</del>
@@ -159,9 +177,10 @@ export function SpanNodes(props: {
     if (run?.side !== own) {
       const abut = run !== undefined;
       flush();
-      run = { side: own, nodes: [], abut };
+      run = { side: own, nodes: [], abut, from: index, to: index };
     }
     run.nodes.push(node);
+    run.to = index;
   }
   flush();
   // An empty quote line (`>`) is all lead.
@@ -209,6 +228,20 @@ const isTableRow = (spans: readonly MergedSpan[]): boolean =>
   spans.some(isTableSpan) &&
   spans.some(isPipe) &&
   !/^[\s|:-]+$/.test(spans.map((s) => s.text).join(""));
+
+/** Whether an unchanged `neighbour` before (or after) a changed `edge` span joins it into one word on screen. */
+const glued = (
+  neighbour: MergedSpan | undefined,
+  edge: MergedSpan | undefined,
+  before: boolean,
+): boolean => {
+  if (neighbour === undefined || edge === undefined || neighbour.changed)
+    return false;
+  const word = /[\p{L}\p{N}]/u;
+  return before
+    ? word.test(neighbour.text.at(-1) ?? "") && word.test(edge.text[0] ?? "")
+    : word.test(neighbour.text[0] ?? "") && word.test(edge.text.at(-1) ?? "");
+};
 
 const blank = (span: MergedSpan | undefined) =>
   span !== undefined && span.text !== "" && span.text.trim() === "";
