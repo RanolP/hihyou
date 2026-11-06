@@ -112,6 +112,11 @@ export interface RenderOptions {
   keysMount?: HTMLElement;
   /** Keys the host binds itself, listed in the key panel with the renderer's own. */
   hostKeys?: readonly HostKey[];
+  /**
+   * Where the file at a repository path, as of the diff's after side, loads from. A Markdown image naming a
+   * repository file then shows under its source line; without this it shows as source alone.
+   */
+  media?: (path: string) => string | undefined;
 }
 
 export interface DiffsetView {
@@ -366,6 +371,7 @@ function mount(
     doc,
     files,
     theme,
+    media: opts.media,
     placer,
     pairs,
     actions: new WeakMap(),

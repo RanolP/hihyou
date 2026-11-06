@@ -235,6 +235,7 @@ function mergedCode(
     <SpanNodes
       spans={spans}
       side="after"
+      images={row.after === undefined ? undefined : ctx.files()[index]?.path}
       wholeLine={
         row.after === undefined
           ? "before"
@@ -300,6 +301,7 @@ export function unifiedRow(
               spans={row.after.spans}
               side="after"
               place={ctx.placer.contextCursor(index, row.after.line)}
+              images={file?.path}
             />
           </td>
         </tr>
@@ -395,6 +397,7 @@ export function unifiedRow(
               allowTrailingTerminator
               emphasize={!lone}
               place={ctx.placer.lineCursor(index, row.fragment, side, cell.line)}
+              images={side === "after" ? file?.path : undefined}
             />
           </td>
         </tr>

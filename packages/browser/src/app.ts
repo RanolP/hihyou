@@ -793,6 +793,13 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
           single: !allFiles,
           theme,
           viewed: persistedViewed.store,
+          // github.com serves a commit's file at /raw/, on the page's own origin and session, so a private
+          // repository's image loads too.
+          media: (path) => {
+            const { owner, repo } = row.id;
+            const at = "commit" in row.id ? row.id.commit : row.id.head;
+            return `https://github.com/${owner}/${repo}/raw/${at}/${path.split("/").map(encodeURIComponent).join("/")}`;
+          },
           keysMount: keysDock,
           hostKeys: [
             {

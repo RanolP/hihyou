@@ -108,6 +108,8 @@ export function SpanNodes(props: {
   /** False on a line with no line of the other side beside it, where every word is new anyway. */
   emphasize?: boolean | undefined;
   place?: Place | undefined;
+  /** The file's path, on a line `RenderOptions.media` can load the files of: a Markdown image on it then shows. */
+  images?: string | undefined;
 }): JSX.Element {
   const ctx = useDraw();
   // Read once: a prop given as a call is a getter, and a fresh line cursor per span would place every span at 0.
@@ -186,6 +188,8 @@ export function SpanNodes(props: {
   flush();
   // An empty quote line (`>`) is all lead.
   if (lead.count > 0 && head === undefined) head = out.splice(0);
+  const image = row ? undefined : imageOf(ctx, spans, props.images);
+  if (image) out.push(image);
   if (head) {
     const alert = lead.quote ? alertOf(spans) : undefined;
     return (
@@ -279,6 +283,55 @@ const leadOf = (
   )
     return { count: count + (blank(spans[count + 1]) ? 2 : 1), quote };
   return { count: quote ? count : 0, quote };
+};
+
+/**
+ * A line's Markdown image, `![alt](src)`, drawn under its source from the repository file it names. An outside URL
+ * draws nothing: the page would ask a third party for it, and GitHub's own page shows it through a proxy instead.
+ */
+const imageOf = (
+  ctx: DrawContext,
+  spans: readonly MergedSpan[],
+  file: string | undefined,
+): JSX.Element | undefined => {
+  if (file === undefined || ctx.media === undefined) return undefined;
+  const alt = spans.findIndex((s) =>
+    s.scope?.includes("string.other.link.description.markdown"),
+  );
+  if (alt < 0) return undefined;
+  const src = spans
+    .slice(alt)
+    .find((s) => s.scope?.includes("markup.underline.link"))
+    ?.text.trim();
+  const path = src === undefined ? undefined : repositoryPath(file, src);
+  const url = path === undefined ? undefined : ctx.media(path);
+  if (url === undefined) return undefined;
+  const img = (
+    <img class="hh-md-img" src={url} alt="" loading="lazy" />
+  ) as HTMLImageElement;
+  // A path the commit does not have (a typo, a file added later) leaves no broken-image box.
+  img.addEventListener("error", () => {
+    img.hidden = true;
+  });
+  return img;
+};
+
+/** The repository path a link `src` in `file` names, or nothing for an outside URL or a path out of the repository. */
+const repositoryPath = (file: string, src: string): string | undefined => {
+  if (/^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(src)) return undefined;
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(src.replace(/[?#].*$/, ""));
+  } catch {
+    return undefined;
+  }
+  const parts = decoded.startsWith("/") ? [] : file.split("/").slice(0, -1);
+  for (const part of decoded.split("/")) {
+    if (part === "..") {
+      if (parts.pop() === undefined) return undefined;
+    } else if (part !== "." && part !== "") parts.push(part);
+  }
+  return parts.length > 0 ? parts.join("/") : undefined;
 };
 
 /** A GitHub alert's first line, `> [!NOTE]`, names its kind; the class colours it as GitHub does. */

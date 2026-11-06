@@ -11,6 +11,8 @@ export interface DrawContext {
   doc: Document;
   files: Accessor<readonly DiffFile[]>;
   theme: Accessor<CompiledTheme | undefined>;
+  /** `RenderOptions.media`. */
+  media: ((path: string) => string | undefined) | undefined;
   placer: Placer;
   pairs: Pairs;
   /** What a click on a non-button element does: a cross-file move's block expands it, unless the click selects. */

@@ -329,6 +329,8 @@ ${alertBodies}
 .hh-md-link { color: var(--hh-button-fg) !important; text-decoration: underline; text-underline-offset: 2px; }
 .hh-md-image { color: var(--hh-button-fg) !important; font-style: italic; text-decoration: underline dashed; text-decoration-style: dashed !important; text-underline-offset: 3px; }
 .hh-md-url { opacity: 0.4; font-size: 0.85em; }
+/* The image itself under its source line, small enough that a screenshot does not push the diff off screen. */
+.hh-md-img { display: block; max-width: min(100%, 560px); max-height: 320px; margin: 6px 0 4px; border: 1px solid var(--hh-border); border-radius: 6px; }
 /* A fence's rows share one tint drawn as an image (and outrank the line colour's shorthand), so an added or removed row's colour still shows under it. */
 table.hh-md tr:has(.hh-md-fence) > td.hh-code {
   background-image: linear-gradient(color-mix(in srgb, var(--hh-muted) 18%, transparent), color-mix(in srgb, var(--hh-muted) 18%, transparent));
