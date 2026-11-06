@@ -23,9 +23,37 @@ export const whollyChanged = (
   );
 };
 
+/** Markdown scopes to the classes that draw them as they render; the table's `hh-md` styles them. */
+const MARKDOWN: readonly (readonly [RegExp, string])[] = [
+  [/\bheading\.([1-6])\.markdown/, "hh-md-h$1"],
+  [/\bpunctuation\.definition\.quote\.begin\.markdown/, "hh-md-mark hh-md-bar"],
+  [/\bpunctuation\.definition\.list\.begin\.markdown/, "hh-md-bullet"],
+  [/\bpunctuation\.definition\.(?:heading|markdown|table)\b/, "hh-md-mark"],
+  [/\bmarkup\.inline\.raw/, "hh-md-code"],
+  [/\b(?:markup\.fenced_code|markup\.raw\.block)/, "hh-md-fence"],
+  [/\bmarkup\.underline\.link/, "hh-md-url"],
+  [/\b(?:string\.other\.link|constant\.other\.reference\.link)/, "hh-md-link"],
+  [/\bmarkup\.table/, "hh-md-table"],
+  [/\bmeta\.separator\.markdown/, "hh-md-rule"],
+  [/\bmarkup\.bold/, "hh-md-strong"],
+  [/\bmarkup\.italic/, "hh-md-em"],
+  [/\bmarkup\.strikethrough/, "hh-md-del"],
+];
+
+const markdownClass = (scope: string | undefined): string | undefined => {
+  if (scope === undefined || !scope.includes(".markdown")) return undefined;
+  const classes = new Set<string>();
+  for (const [pattern, name] of MARKDOWN) {
+    const match = pattern.exec(scope);
+    if (match) classes.add(match[1] ? name.replace("$1", match[1]) : name);
+  }
+  return classes.size > 0 ? [...classes].join(" ") : undefined;
+};
+
 /**
  * Syntax colour inside, diff emphasis (a background) around it, so both show. The text is one Text node the
- * placer records, so the highlight painter and a click find it.
+ * placer records, so the highlight painter and a click find it. A Markdown span also gets classes that draw it as
+ * it renders (heading size, code tint, dimmed markup), whether or not the theme colours it.
  */
 const spanNode = (
   ctx: DrawContext,
@@ -36,13 +64,15 @@ const spanNode = (
   ctx.placer.place(text, at);
   const style =
     span.scope !== undefined ? ctx.theme()?.style(span.scope) : undefined;
-  if (!style?.foreground && !style?.fontStyle) return text;
-  const font = style.fontStyle ?? "";
+  const md = markdownClass(span.scope);
+  if (!style?.foreground && !style?.fontStyle && md === undefined) return text;
+  const font = style?.fontStyle ?? "";
   const lines = ["underline", "strikethrough"].filter((l) => font.includes(l));
   return (
     <span
+      class={md}
       style={{
-        color: style.foreground,
+        color: style?.foreground,
         "font-style": font.includes("italic") ? "italic" : undefined,
         "font-weight": font.includes("bold") ? "bold" : undefined,
         "text-decoration":

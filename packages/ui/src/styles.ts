@@ -252,6 +252,38 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 :host .hh-elided-handover td {
   top: round(down, var(--hh-file-sticky-top) + var(--hh-file-header-height, 0px), 1px);
 }
+/*
+ * Markdown reads as it renders, every source line still a row: prose in the UI font, headings sized, code in the
+ * editor font on a tint, and the markup that makes each of them kept in place but dimmed.
+ */
+.hh-md .hh-code { font-family: var(--vscode-font-family, system-ui, -apple-system, "Segoe UI", sans-serif); }
+.hh-md .hh-sign { font-family: var(--hh-mono); }
+.hh-md-h1, .hh-md-h2, .hh-md-h3, .hh-md-h4, .hh-md-h5, .hh-md-h6 { font-weight: 600; line-height: 1.25; }
+.hh-md-h1 { font-size: 1.75em; }
+.hh-md-h2 { font-size: 1.45em; }
+.hh-md-h3 { font-size: 1.2em; }
+.hh-md-h4 { font-size: 1.05em; }
+.hh-md-h6 { color: var(--hh-muted); }
+.hh-md tr:has(.hh-md-h1, .hh-md-h2) > .hh-code { padding-top: 6px; padding-bottom: 2px; }
+.hh-md-strong { font-weight: 600; }
+.hh-md-em { font-style: italic; }
+.hh-md-del { text-decoration: line-through; }
+.hh-md-mark { opacity: 0.45; font-weight: 400; font-style: normal; }
+.hh-md-bar { display: inline-block; text-indent: 0; border-left: 3px solid var(--hh-border); padding-left: 0.5ch; }
+.hh-md-bullet { font-weight: 600; }
+.hh-md-code, .hh-md-fence, .hh-md-table { font-family: var(--hh-mono); font-size: 0.92em; }
+.hh-md-code { background: color-mix(in srgb, var(--hh-muted) 18%, transparent); border-radius: 3px; padding: 0 2px; }
+.hh-md-code.hh-md-mark { opacity: 0.6; }
+.hh-md-link { text-decoration: underline; text-underline-offset: 2px; }
+.hh-md-url { opacity: 0.55; font-size: 0.9em; }
+/* A fence's rows share one tint drawn as an image (and outrank the line colour's shorthand), so an added or removed row's colour still shows under it. */
+table.hh-md tr:has(.hh-md-fence) > td.hh-code {
+  background-image: linear-gradient(color-mix(in srgb, var(--hh-muted) 12%, transparent), color-mix(in srgb, var(--hh-muted) 12%, transparent));
+}
+table.hh-md tr:has(.hh-md-rule) > td.hh-code {
+  background-image: linear-gradient(transparent calc(50% - 1px), var(--hh-border) calc(50% - 1px), var(--hh-border) calc(50% + 1px), transparent calc(50% + 1px));
+}
+.hh-md-rule { opacity: 0.45; }
 .hh-node-label { position: sticky; left: 8px; }
 .hh-whole td { height: 0; padding: 0; border-top: 1px solid var(--hh-border); }
 .hh-top { font-weight: 400; font-style: italic; color: var(--hh-muted); }

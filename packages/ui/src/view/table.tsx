@@ -114,7 +114,12 @@ export function FileTable(props: { index: number; file: DiffFile }): JSX.Element
     bodies.push(<tbody>{rows}</tbody>);
   }
   return (
-    <table class="hh-table">
+    <table
+      class={
+        // A grammar id carries its tables' hash: `markdown@…`.
+        file.grammar?.startsWith("markdown@") ? "hh-table hh-md" : "hh-table"
+      }
+    >
       <caption class="hh-sr">{`Diff of ${file.path}`}</caption>
       <colgroup>
         <col class="hh-col-num" />

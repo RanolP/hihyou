@@ -611,9 +611,22 @@ const MARKDOWN: Record<string, Rule> = {
       list_marker_parenthesis: "punctuation.definition.list.begin.markdown",
       thematic_break: "meta.separator.markdown",
       block_quote_marker: "punctuation.definition.quote.begin.markdown",
-      block_continuation: "punctuation.definition.quote.begin.markdown",
+      // A list item's indentation; highlights.tm.scm paints a continuation that holds `>`.
+      block_continuation: "",
     },
   },
+  "heading.1": "heading.1.markdown",
+  "heading.2": "heading.2.markdown",
+  "heading.3": "heading.3.markdown",
+  "heading.4": "heading.4.markdown",
+  "heading.5": "heading.5.markdown",
+  "heading.6": "heading.6.markdown",
+  quote: "markup.quote.markdown",
+  "quote.marker": "punctuation.definition.quote.begin.markdown",
+  table: "markup.table.markdown",
+  "table.delimiter": "punctuation.definition.table.markdown",
+  "fence.language": "fenced_code.block.language.markdown",
+  "text.strike": "markup.strikethrough.markdown",
   "text.literal": {
     scope: "markup.inline.raw.string.markdown",
     byKind: {
@@ -708,6 +721,7 @@ export const LANGUAGES: Record<string, LanguageRules> = {
       "tree-sitter-markdown/queries/highlights.scm",
       "tree-sitter-markdown-inline/queries/highlights.scm",
     ],
+    extend: ["markdown/highlights.tm.scm"],
     captures: MARKDOWN,
   },
   kotlin: {
