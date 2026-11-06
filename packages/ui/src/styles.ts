@@ -4,7 +4,7 @@
  * `--hihyou-file-max-height` scrolls inside its own box, which is also what keeps declaration headers sticky.
  */
 export const diffStyles = `
-.hh-diff {
+.hh-diff, .hh-keys {
   color-scheme: light dark;
   --hh-bg: var(--vscode-editor-background, light-dark(#ffffff, #1e1e1e));
   --hh-fg: var(--vscode-editor-foreground, light-dark(#1f2328, #d4d4d4));
@@ -359,7 +359,6 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 }
 .hh-score-plus { color: var(--hh-added-fg); }
 .hh-score-minus { color: var(--hh-removed-fg); }
-.hh-toolbar .hh-score { align-self: center; margin-left: auto; font-weight: 600; }
 /* A comment's anchored text is boxed in the accent colour; the comment itself sits under the anchor's last line. */
 .hh-diff ::highlight(hh-comment) { background-color: var(--hh-select); text-decoration: underline dotted 2px var(--hh-accent); }
 .hh-comment-row > td, .hh-comment-file { padding: 4px 8px; background: var(--hh-header-bg); border-left: 3px solid var(--hh-accent); }
@@ -433,7 +432,7 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 @media (prefers-reduced-motion: reduce) {
   .hh-flash-box { background: var(--hh-flash); animation: hh-fade 1.2s ease-out forwards; }
 }
-/* Every key action as a button, its key as the hint; it stays in reach while a selection does. */
+/* The pending review's bar: its submit button, with the key as the hint, stays in reach while the review lasts. */
 .hh-toolbar {
   position: sticky;
   top: 0;
@@ -459,7 +458,7 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 }
 .hh-tool:hover { border-color: var(--hh-accent); }
 .hh-tool:focus-visible { outline: 1px solid var(--hh-accent); outline-offset: 1px; }
-.hh-toolbar kbd, .hh-keyinfo kbd {
+.hh-toolbar kbd, .hh-keys kbd {
   font-family: var(--hh-mono);
   font-size: 0.9em;
   padding: 0 3px;
@@ -467,23 +466,43 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
   border: 1px solid var(--hh-border);
   border-radius: 3px;
 }
-/* Kakoune's info box: bottom right, over the code, listing the keys that can follow. */
-.hh-keyinfo {
-  position: sticky;
-  bottom: 8px;
-  z-index: 3;
-  width: fit-content;
-  margin: 0 8px 0 auto;
-  padding: 6px 10px;
-  display: flex;
-  gap: 16px;
+/* The key panel: every key under a heading for what the reviewer is doing, always on screen. */
+.hh-keys {
+  box-sizing: border-box;
+  padding: 6px 4px 8px;
+  font-size: 12px;
+  line-height: 1.4;
   background: var(--hh-header-bg);
-  border: 1px solid var(--hh-border);
-  border-radius: 4px;
 }
-.hh-keyinfo-title { margin: 0 0 4px; font-size: 1em; font-weight: 600; }
-.hh-keyinfo dl { display: grid; grid-template-columns: auto auto; gap: 2px 8px; margin: 0; }
-.hh-keyinfo dd { margin: 0; }
+.hh-keys-head, .hh-keys-hint { padding-inline: 4px; }
+.hh-keys-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.hh-keys-title { margin: 0; font-size: 12px; font-weight: 600; }
+/* Scoped under .hh-keys so a host's own sidebar button styles do not reach the panel's. */
+.hh-keys .hh-keys-toggle, .hh-keys .hh-key {
+  font: inherit;
+  color: var(--hh-fg);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.hh-keys .hh-keys-toggle { padding: 0 4px; color: var(--hh-muted); }
+.hh-keys-hint { margin: 2px 0 0; color: var(--hh-muted); }
+.hh-keys-hint .hh-score { font-weight: 600; }
+.hh-keys-group { margin-top: 2px; padding: 1px 3px 2px; border: 1px solid transparent; border-radius: 4px; }
+/* While s waits for its score key, the keys that can follow it stand out. */
+.hh-keys-active { border-color: var(--hh-accent); background: var(--hh-select); }
+.hh-keys-group-title { margin: 0 0 1px 4px; font-size: 11px; font-weight: 600; color: var(--hh-muted); }
+.hh-keys-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5em, 1fr)); gap: 0 2px; }
+.hh-keys .hh-key { display: flex; align-items: baseline; gap: 4px; min-width: 0; padding: 1px 2px; text-align: left; }
+.hh-key kbd { flex: none; min-width: 1em; padding: 0 2px; text-align: center; color: var(--hh-fg); }
+.hh-keys .hh-key:hover:not(:disabled), .hh-keys .hh-keys-toggle:hover { border-color: var(--hh-border); background: var(--hh-bg); }
+.hh-keys .hh-key:focus-visible, .hh-keys .hh-keys-toggle:focus-visible { outline: 1px solid var(--hh-accent); outline-offset: -1px; }
+.hh-keys .hh-key:disabled { cursor: default; opacity: 0.45; background: none; }
+/* Without a host dock (VS Code), the panel runs along the bottom of the diff, its groups side by side. */
+.hh-keys-inline { position: sticky; bottom: 0; z-index: 3; display: flex; flex-wrap: wrap; column-gap: 12px; border: 1px solid var(--hh-border); border-radius: 4px; }
+.hh-keys-inline > .hh-keys-head, .hh-keys-inline > .hh-keys-hint { flex: 1 0 100%; }
+.hh-keys-inline > .hh-keys-group { flex: 1 1 18em; }
 .hh-sr {
   position: absolute;
   width: 1px;

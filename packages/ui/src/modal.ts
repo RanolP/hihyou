@@ -509,44 +509,108 @@ export function narrowAt(
   return chars.end > chars.start ? { ...state, chars } : state;
 }
 
-export const modalKeymap: readonly {
+/** What the reviewer is trying to do with a key; the key panel shows one heading per section, in this order. */
+export type KeySection = "find" | "select" | "words" | "review" | "score";
+
+export interface KeyBinding {
   key: string;
+  /** Plain words for a first-time reviewer; the key panel's button text. */
   label: string;
-  group: "move" | "act" | "score";
+  /** The tooltip, where the short label alone leaves the key's effect unclear. */
+  detail?: string;
+  /** Omitted for a key the panel offers elsewhere (`s` heads the score section, `?` hides the panel). */
+  section?: KeySection;
+  /** What the key acts on; without it the key does nothing, so the panel greys its button. */
+  needs?: "selection" | "review";
   /** Bound only right after this prefix key. */
   prefix?: "s";
-}[] = [
-  { key: "j", label: "next change", group: "move" },
-  { key: "k", label: "previous change", group: "move" },
-  { key: "]", label: "next unviewed", group: "move" },
-  { key: "[", label: "previous unviewed", group: "move" },
-  { key: "o", label: "expand to parent", group: "move" },
-  { key: "i", label: "shrink to child", group: "move" },
-  { key: "n", label: "next sibling", group: "move" },
-  { key: "p", label: "previous sibling", group: "move" },
-  { key: "x", label: "select hunk", group: "move" },
-  { key: "g", label: "go to counterpart", group: "move" },
-  { key: "w", label: "narrow to next word", group: "move" },
-  { key: "b", label: "narrow to previous word", group: "move" },
-  { key: "W", label: "grow narrowing to next word", group: "move" },
-  { key: "B", label: "grow narrowing to previous word", group: "move" },
-  { key: "v", label: "toggle viewed", group: "act" },
-  { key: "s", label: "score…", group: "act" },
-  { key: "c", label: "comment", group: "act" },
-  { key: "r", label: "reply to thread", group: "act" },
-  { key: "R", label: "submit review", group: "act" },
-  { key: "2", label: "+2 good to merge", group: "score", prefix: "s" },
-  { key: "1", label: "+1 looks good", group: "score", prefix: "s" },
-  { key: "q", label: "-1 would rather not", group: "score", prefix: "s" },
-  { key: "w", label: "-2 must not merge", group: "score", prefix: "s" },
-  { key: "0", label: "clear score", group: "score", prefix: "s" },
-  { key: "Enter", label: "expand move or context", group: "act" },
-  { key: "?", label: "toggle this help", group: "act" },
+}
+
+export const modalKeymap: readonly KeyBinding[] = [
+  { key: "j", label: "Next change", section: "find" },
+  { key: "k", label: "Previous change", section: "find" },
+  { key: "]", label: "Next unviewed", section: "find" },
+  { key: "[", label: "Previous unviewed", section: "find" },
+  { key: "o", label: "Widen to parent", section: "select", needs: "selection" },
+  { key: "i", label: "Narrow to child", section: "select", needs: "selection" },
+  { key: "n", label: "Next sibling", section: "select", needs: "selection" },
+  {
+    key: "p",
+    label: "Previous sibling",
+    section: "select",
+    needs: "selection",
+  },
+  { key: "x", label: "Whole hunk", section: "select", needs: "selection" },
+  {
+    key: "g",
+    label: "Other side",
+    detail: "Jump to the other half of an update or a move",
+    section: "select",
+    needs: "selection",
+  },
+  {
+    key: "Enter",
+    label: "Show more",
+    detail: "Open a move's other half, or the hidden lines beside a hunk",
+    section: "select",
+    needs: "selection",
+  },
   {
     key: "Escape",
-    label: "drop narrowing, or leave review keys",
-    group: "act",
+    label: "Clear selection",
+    section: "select",
+    needs: "selection",
   },
+  { key: "w", label: "Next word", section: "words", needs: "selection" },
+  { key: "b", label: "Previous word", section: "words", needs: "selection" },
+  { key: "W", label: "Add next word", section: "words", needs: "selection" },
+  {
+    key: "B",
+    label: "Add previous word",
+    section: "words",
+    needs: "selection",
+  },
+  { key: "v", label: "Mark viewed", section: "review", needs: "selection" },
+  { key: "c", label: "Comment", section: "review", needs: "selection" },
+  { key: "r", label: "Reply to thread", section: "review", needs: "selection" },
+  { key: "R", label: "Submit review", section: "review", needs: "review" },
+  { key: "s", label: "Score…", needs: "selection" },
+  {
+    key: "2",
+    label: "+2 Good to merge",
+    section: "score",
+    needs: "selection",
+    prefix: "s",
+  },
+  {
+    key: "1",
+    label: "+1 Looks good",
+    section: "score",
+    needs: "selection",
+    prefix: "s",
+  },
+  {
+    key: "q",
+    label: "-1 Rather not",
+    section: "score",
+    needs: "selection",
+    prefix: "s",
+  },
+  {
+    key: "w",
+    label: "-2 Must not merge",
+    section: "score",
+    needs: "selection",
+    prefix: "s",
+  },
+  {
+    key: "0",
+    label: "Clear score",
+    section: "score",
+    needs: "selection",
+    prefix: "s",
+  },
+  { key: "?", label: "Hide or show the key panel" },
 ];
 
 /** The few members of an element the binding uses, so a test can hand in a plain object. */

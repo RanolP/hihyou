@@ -3,6 +3,7 @@ export {
   type ElidedRef,
   type ExpandDirection,
   expandStep,
+  type HostKey,
   type RenderOptions,
   renderDiffset,
 } from "./render.js";
@@ -62,6 +63,8 @@ export {
 export {
   bindModal,
   emptyModal,
+  type KeyBinding,
+  type KeySection,
   type ModalBinding,
   type ModalBindingOptions,
   type ModalContext,

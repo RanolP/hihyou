@@ -9,7 +9,7 @@ import {
   onCleanup,
   untrack,
 } from "solid-js";
-import { insert } from "solid-js/web";
+import { insert, Portal } from "solid-js/web";
 import {
   type AtomIndex,
   atomIndex,
@@ -49,7 +49,12 @@ import { FileSection } from "./view/file.jsx";
 import { flash } from "./view/flash.js";
 import { createPainter } from "./view/highlights.js";
 import { ApprovalBadge } from "./view/approval.jsx";
-import { KeyInfo, KeyToolbar, scoreText, SubmitReview } from "./view/keys.jsx";
+import {
+  type HostKey,
+  KeyPanel,
+  scoreText,
+  SubmitReview,
+} from "./view/keys.jsx";
 import { controls, modalRoot } from "./view/modal-root.js";
 import { createPairs, type PairView } from "./view/pair.jsx";
 import { createPlacer } from "./view/placement.js";
@@ -100,7 +105,16 @@ export interface RenderOptions {
   comments?: CommentStore;
   /** The store's key for each viewed subject and scored node; `plainKeyOf` when absent. */
   keyOf?: KeyOf;
+  /**
+   * Where the always-shown key panel goes (the browser's sidebar, under the file tree). Without one it runs along
+   * the bottom of the diff.
+   */
+  keysMount?: HTMLElement;
+  /** Keys the host binds itself, listed in the key panel with the renderer's own. */
+  hostKeys?: readonly HostKey[];
 }
+
+export type { HostKey };
 
 export interface DiffsetView {
   /** Redraws with new files, keeping which collapsed files are open and each file's scroll position. */
@@ -116,6 +130,24 @@ export interface DiffsetView {
   /** Whether every reviewable edit in the file at `path` has been viewed. */
   fileViewed(path: string): boolean | undefined;
   dispose(): void;
+}
+
+const keysCollapsedKey = "hihyou.keys.collapsed";
+/** Storage can be blocked (a sandboxed webview, site data off); the panel then opens shown each time. */
+function storedKeysCollapsed(): boolean {
+  try {
+    return globalThis.localStorage?.getItem(keysCollapsedKey) === "1";
+  } catch {
+    return false;
+  }
+}
+function storeKeysCollapsed(collapsed: boolean) {
+  try {
+    if (collapsed) globalThis.localStorage?.setItem(keysCollapsedKey, "1");
+    else globalThis.localStorage?.removeItem(keysCollapsedKey);
+  } catch {
+    // Not remembered; the choice holds for this page.
+  }
 }
 
 /**
@@ -392,7 +424,12 @@ function mount(
   /** Set while a click places the selection, which is already where the reviewer is looking. */
   let clicking = false;
   const [hasSelection, setHasSelection] = createSignal(false);
-  const [keyInfo, setKeyInfo] = createSignal(false);
+  const [keysCollapsed, setKeysCollapsed] = createSignal(storedKeysCollapsed());
+  const toggleKeys = () => {
+    const collapsed = !keysCollapsed();
+    setKeysCollapsed(collapsed);
+    storeKeysCollapsed(collapsed);
+  };
   const [pending, setPending] = createSignal<"s">();
   const [selected, setSelected] = createSignal<NodeRef>();
   const selectedScore = () => {
@@ -441,6 +478,19 @@ function mount(
     root.focus({ preventScroll: true });
     modal?.press(key);
   };
+  const keyPanel = (placement?: "inline") => (
+    <KeyPanel
+      {...(placement && { placement })}
+      collapsed={keysCollapsed}
+      toggle={toggleKeys}
+      hasSelection={hasSelection}
+      reviewing={reviewing}
+      pending={pending}
+      score={selectedScore}
+      press={press}
+      hostKeys={opts.hostKeys ?? []}
+    />
+  );
   /** A node's drawn text, or only the characters `chars` narrows it to. */
   const narrowedRanges = (
     index: AtomIndex,
@@ -762,7 +812,7 @@ function mount(
         scrollToSelection();
         return;
       case "help":
-        setKeyInfo((open) => !open);
+        toggleKeys();
         return;
       case "submitReview":
         submitReview();
@@ -913,11 +963,6 @@ function mount(
       <div class="hh-diff">
         <div ref={measureReviewBar} class="hh-bar">
           <ApprovalBadge approval={approval} />
-          <KeyToolbar
-            shown={hasSelection}
-            press={press}
-            score={selectedScore}
-          />
           <SubmitReview
             reviewing={reviewing}
             pending={pendingComments}
@@ -927,7 +972,11 @@ function mount(
           />
         </div>
         {list()}
-        <KeyInfo open={keyInfo} pending={pending} />
+        {opts.keysMount ? (
+          <Portal mount={opts.keysMount}>{keyPanel()}</Portal>
+        ) : (
+          keyPanel("inline")
+        )}
       </div>
     );
   };
@@ -979,13 +1028,7 @@ function mount(
       view = ctx.pairOfElement.get(node);
       node = node.parentElement;
     }
-    if (!view || !pairs.isExpanded(view.id)) {
-      // Next, Escape closes the key info box, as Kakoune's does.
-      if (!untrack(keyInfo)) return;
-      e.preventDefault();
-      setKeyInfo(false);
-      return;
-    }
+    if (!view || !pairs.isExpanded(view.id)) return;
     e.preventDefault();
     pairs.collapse(view);
     focusables.get(`toggle\n${view.id}`)?.focus({ preventScroll: true });

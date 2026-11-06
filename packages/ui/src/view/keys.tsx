@@ -1,79 +1,161 @@
 import { For, type JSX, Show } from "solid-js";
 import type { ReviewEvent } from "../comments.js";
-import { modalKeymap } from "../modal.js";
+import { type KeyBinding, type KeySection, modalKeymap } from "../modal.js";
 import type { Score } from "../viewed.js";
 
-/** The key actions a mouse reaches too, each showing the keys that do the same, pressed in turn. */
-const toolbar = [
-  { key: "v", label: "Viewed" },
-  { key: "s 2", label: "+2" },
-  { key: "s 1", label: "+1" },
-  { key: "s q", label: "-1" },
-  { key: "s w", label: "-2" },
-  { key: "s 0", label: "Clear score" },
-  { key: "c", label: "Comment" },
-  { key: "r", label: "Reply" },
-  { key: "b", label: "Prev word" },
-  { key: "w", label: "Next word" },
-  { key: "B", label: "Grow word back" },
-  { key: "W", label: "Grow word on" },
-  { key: "Enter", label: "Expand" },
-  { key: "g", label: "Counterpart" },
-  { key: "o", label: "Parent" },
-  { key: "i", label: "Child" },
-  { key: "p", label: "Prev sibling" },
-  { key: "n", label: "Next sibling" },
-  { key: "[", label: "Prev unviewed" },
-  { key: "]", label: "Next unviewed" },
-  { key: "?", label: "Keys" },
-] as const;
+/** A key the host binds itself (the browser's `/` to filter files), shown in the key panel beside the modal's. */
+export interface HostKey {
+  key: string;
+  label: string;
+  section: KeySection;
+  run(): void;
+}
 
-const groups = [
-  { group: "move", title: "Move" },
-  { group: "act", title: "Act" },
-] as const;
+const sections: readonly { section: KeySection; title: string }[] = [
+  { section: "find", title: "Find changes" },
+  { section: "select", title: "Select code" },
+  { section: "words", title: "Narrow to words" },
+  { section: "review", title: "Review" },
+  { section: "score", title: "Score (s, then…)" },
+];
+
+const keyText = (key: string) => (key === "Escape" ? "Esc" : key);
 
 /** The sign is text, so a score never reads by colour alone. */
 export const scoreText = (score: Score) =>
   score > 0 ? `+${score}` : `${score}`;
 
-/** Shown while something is selected; a click runs the button's keys as if pressed. */
-export function KeyToolbar(props: {
-  shown: () => boolean;
-  press: (key: string) => void;
+/**
+ * Every key, grouped by what the reviewer is trying to do, always on screen. A click runs the button's keys as if
+ * pressed; a key with nothing to act on stays listed but greyed, so the panel never shifts as the selection does.
+ */
+export function KeyPanel(props: {
+  /** `undefined` docks the panel where the host mounted it; `"inline"` lays it along the bottom of the diff. */
+  placement?: "inline";
+  collapsed: () => boolean;
+  toggle: () => void;
+  hasSelection: () => boolean;
+  reviewing: () => boolean;
+  pending: () => "s" | undefined;
   /** The selected node's score, when it has one. */
   score: () => Score | null;
+  press: (key: string) => void;
+  hostKeys: readonly HostKey[];
 }): JSX.Element {
+  const enabled = (k: KeyBinding) =>
+    k.needs === "selection"
+      ? props.hasSelection()
+      : k.needs === "review"
+        ? props.reviewing()
+        : true;
+  const entries = (section: KeySection) => [
+    ...modalKeymap
+      .filter((k) => k.section === section)
+      .map((k) => ({
+        key: k.prefix ? `${k.prefix} ${k.key}` : k.key,
+        shown: k.key,
+        label: k.label,
+        detail: k.detail,
+        enabled: () => enabled(k),
+        run: () => {
+          if (k.prefix && props.pending() !== k.prefix) props.press(k.prefix);
+          props.press(k.key);
+        },
+      })),
+    ...props.hostKeys
+      .filter((k) => k.section === section)
+      .map((k) => ({
+        key: k.key,
+        shown: k.key,
+        label: k.label,
+        detail: undefined,
+        enabled: () => true,
+        run: () => k.run(),
+      })),
+  ];
+  const hint = () => {
+    if (props.pending() === "s")
+      return "Score it: press 2, 1, q, w or 0.";
+    if (!props.hasSelection())
+      return "Click any code, or press j, to select a change.";
+    return undefined;
+  };
   return (
-    <Show when={props.shown()}>
-      <div class="hh-toolbar" role="toolbar" aria-label="Review actions">
-        <For each={toolbar}>
-          {(b) => (
-            <button
-              type="button"
-              class="hh-tool"
-              aria-label={`${b.label} (${b.key})`}
-              title={`${b.label} (${b.key})`}
-              on:click={() => {
-                for (const k of b.key.split(" ")) props.press(k);
+    <section
+      class="hh-keys"
+      classList={{
+        "hh-keys-inline": props.placement === "inline",
+        "hh-keys-collapsed": props.collapsed(),
+      }}
+      aria-label="Keyboard shortcuts"
+    >
+      <div class="hh-keys-head">
+        <h2 class="hh-keys-title">Keyboard shortcuts</h2>
+        <button
+          type="button"
+          class="hh-keys-toggle"
+          aria-expanded={!props.collapsed()}
+          aria-label={`${props.collapsed() ? "Show" : "Hide"} shortcuts (?)`}
+          title={`${props.collapsed() ? "Show" : "Hide"} shortcuts (?)`}
+          on:click={() => props.toggle()}
+        >
+          {props.collapsed() ? "Show" : "Hide"} <kbd>?</kbd>
+        </button>
+      </div>
+      <Show when={!props.collapsed()}>
+        <p class="hh-keys-hint" aria-live="polite">
+          <Show
+            when={hint()}
+            fallback={
+              <Show
+                when={props.score()}
+                fallback="Code selected; Esc clears it."
+              >
+                {(s) => (
+                  <output
+                    class={`hh-score hh-score-${s() > 0 ? "plus" : "minus"}`}
+                    aria-label={`Code-Review ${scoreText(s())}`}
+                  >
+                    Code-Review {scoreText(s())}
+                  </output>
+                )}
+              </Show>
+            }
+          >
+            {(h) => h()}
+          </Show>
+        </p>
+        <For each={sections}>
+          {(g) => (
+            <section
+              class="hh-keys-group"
+              classList={{
+                "hh-keys-active": g.section === "score" && !!props.pending(),
               }}
             >
-              {b.label} <kbd>{b.key}</kbd>
-            </button>
+              <h3 class="hh-keys-group-title">{g.title}</h3>
+              <div class="hh-keys-list">
+                <For each={entries(g.section)}>
+                  {(e) => (
+                    <button
+                      type="button"
+                      class="hh-key"
+                      disabled={!e.enabled()}
+                      aria-label={`${e.label} (${e.key})`}
+                      title={`${e.detail ?? e.label} (${e.key})`}
+                      on:click={() => e.run()}
+                    >
+                      <kbd>{keyText(e.shown)}</kbd>
+                      <span>{e.label}</span>
+                    </button>
+                  )}
+                </For>
+              </div>
+            </section>
           )}
         </For>
-        <Show when={props.score()}>
-          {(s) => (
-            <output
-              class={`hh-score hh-score-${s() > 0 ? "plus" : "minus"}`}
-              aria-label={`Code-Review ${scoreText(s())}`}
-            >
-              Code-Review {scoreText(s())}
-            </output>
-          )}
-        </Show>
-      </div>
-    </Show>
+      </Show>
+    </section>
   );
 }
 
@@ -120,68 +202,5 @@ export function SubmitReview(props: {
         </Show>
       </div>
     </Show>
-  );
-}
-
-/**
- * Kakoune's info box: every bound key, by what it does, or while a prefix key waits, only the keys that can
- * follow it.
- */
-export function KeyInfo(props: {
-  open: () => boolean;
-  pending: () => "s" | undefined;
-}): JSX.Element {
-  return (
-    <Show
-      when={props.pending()}
-      fallback={
-        <Show when={props.open()}>
-          <aside class="hh-keyinfo" aria-label="Keys" aria-live="off">
-            <For each={groups}>
-              {(g) => (
-                <KeyGroup
-                  title={g.title}
-                  keys={modalKeymap.filter(
-                    (k) => k.group === g.group && !k.prefix,
-                  )}
-                />
-              )}
-            </For>
-          </aside>
-        </Show>
-      }
-    >
-      {(p) => (
-        <aside class="hh-keyinfo" aria-label="Score keys" aria-live="polite">
-          <KeyGroup
-            title="Score"
-            keys={modalKeymap.filter((k) => k.prefix === p())}
-          />
-        </aside>
-      )}
-    </Show>
-  );
-}
-
-function KeyGroup(props: {
-  title: string;
-  keys: readonly { key: string; label: string }[];
-}): JSX.Element {
-  return (
-    <section>
-      <h2 class="hh-keyinfo-title">{props.title}</h2>
-      <dl>
-        <For each={props.keys}>
-          {(k) => (
-            <>
-              <dt>
-                <kbd>{k.key}</kbd>
-              </dt>
-              <dd>{k.label}</dd>
-            </>
-          )}
-        </For>
-      </dl>
-    </section>
   );
 }

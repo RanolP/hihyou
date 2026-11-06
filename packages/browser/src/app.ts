@@ -140,7 +140,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
 <style class="styles"></style>
 <style class="scheme"></style>
 <div class="hh-app">
-  <nav class="hh-sets" aria-label="Diffsets"><input class="hh-filter" type="search" aria-label="Filter changed files" placeholder="Filter changed files (/)" autocorrect="off" autocapitalize="off" spellcheck="false"><div class="hh-viewed-count" aria-live="polite"></div><div class="hh-sets-status">Loading commits…</div><ul role="tree"></ul></nav>
+  <nav class="hh-sets" aria-label="Diffsets"><input class="hh-filter" type="search" aria-label="Filter changed files" placeholder="Filter changed files (/)" autocorrect="off" autocapitalize="off" spellcheck="false"><div class="hh-viewed-count" aria-live="polite"></div><div class="hh-sets-status">Loading commits…</div><ul role="tree"></ul><div class="hh-keys-dock"></div></nav>
   <section class="hh-main">
     <header class="hh-bar">
       <h2 class="hh-title"></h2>
@@ -162,6 +162,8 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   const viewedCount = $<HTMLElement>(".hh-viewed-count");
   const setsStatus = $<HTMLElement>(".hh-sets-status");
   const tree = $<HTMLUListElement>(".hh-sets ul");
+  const sets = $<HTMLElement>(".hh-sets");
+  const keysDock = $<HTMLElement>(".hh-keys-dock");
   const appBar = $<HTMLElement>(".hh-main > .hh-bar");
   const title = $<HTMLElement>(".hh-title");
   const previous = $<HTMLButtonElement>(".previous");
@@ -421,7 +423,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   const applyTheme = () => {
     const s = scheme();
     theme = s === "dark" ? githubDark : githubLight;
-    schemeStyle.textContent = `.hh-app, .hh-diff { color-scheme: ${s}; }`;
+    schemeStyle.textContent = `.hh-app, .hh-diff, .hh-keys { color-scheme: ${s}; }`;
     view?.setTheme(theme);
   };
   const themeObserver = new MutationObserver(applyTheme);
@@ -632,6 +634,11 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     trackingFrame = undefined;
     applyTabSizes();
     updatePageStickyTop();
+    // Before the sidebar sticks it still ends at the window's bottom, so the key panel at its foot is on screen.
+    host.style.setProperty(
+      "--hh-sets-top",
+      `${Math.max(0, sets.getBoundingClientRect().top)}px`,
+    );
     trackCurrentFile();
   };
   const scheduleViewportUpdate = () => {
@@ -781,6 +788,15 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
           single: !allFiles,
           theme,
           viewed: persistedViewed.store,
+          keysMount: keysDock,
+          hostKeys: [
+            {
+              key: "/",
+              label: "Filter files",
+              section: "find",
+              run: () => filter.focus(),
+            },
+          ],
         });
       root.style.minHeight = "";
       const hasPath =
@@ -1117,6 +1133,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       descriptionObserver.disconnect();
       host.style.removeProperty("--hh-app-bar-height");
       host.style.removeProperty("--hh-page-sticky-top");
+      host.style.removeProperty("--hh-sets-top");
       themeObserver.disconnect();
       fileObserver.disconnect();
       if (trackingFrame !== undefined) cancelAnimationFrame(trackingFrame);
@@ -1186,9 +1203,12 @@ const appStyles = `
   --vscode-diffEditor-removedTextBackground: var(--diffBlob-deletionWord-bgColor);
 }
 .hh-app { display: grid; grid-template-columns: minmax(200px, 300px) minmax(0, 1fr); align-items: start; gap: 16px; min-height: 400px; color: var(--fgColor-default, CanvasText); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
-.hh-sets { position: sticky; top: var(--hh-page-sticky-top); align-self: start; box-sizing: border-box; max-height: calc(100dvh - var(--hh-page-sticky-top)); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; border: 1px solid var(--borderColor-default, #d0d7de); border-radius: 6px; padding: 4px 0; }
+.hh-sets { position: sticky; top: var(--hh-page-sticky-top); align-self: start; box-sizing: border-box; max-height: calc(100dvh - var(--hh-sets-top, var(--hh-page-sticky-top))); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; border: 1px solid var(--borderColor-default, #d0d7de); border-radius: 6px; padding: 4px 0; }
 .hh-filter { box-sizing: border-box; width: calc(100% - 16px); margin: 8px; border: 1px solid var(--borderColor-default, #d0d7de); border-radius: 6px; padding: 5px 8px; background: var(--bgColor-default, Canvas); color: inherit; font: inherit; }
 .hh-viewed-count { padding: 0 12px 4px; color: var(--fgColor-muted, GrayText); font-size: 12px; }
+/* The key panel stays at the foot of the sidebar's view while the file tree scrolls under it. */
+.hh-keys-dock { position: sticky; bottom: -4px; z-index: 1; margin: 4px 0 -4px; border-top: 1px solid var(--borderColor-default, #d0d7de); }
+.hh-keys-dock:empty { display: none; }
 .hh-sets ul { list-style: none; margin: 0; padding: 0; }
 .hh-sets ul ul { padding-left: 14px; }
 .hh-sets-status, .hh-note { padding: 4px 12px; color: var(--fgColor-muted, GrayText); }
