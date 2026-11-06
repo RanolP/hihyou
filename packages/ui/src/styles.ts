@@ -3,6 +3,25 @@
  * fallbacks follow the page's colour scheme through `light-dark()`. A file taller than
  * `--hihyou-file-max-height` scrolls inside its own box, which is also what keeps declaration headers sticky.
  */
+
+/** The longest GitHub alert body, in lines below its `> [!NOTE]` line, whose bar takes the alert's colour. */
+const ALERT_BODY = 8;
+
+/**
+ * A line draws knowing only itself, so an alert's body lines learn the alert from the rows above them: each quoted
+ * row in an unbroken run of quoted rows after an alert row takes its colour. A row that starts a new alert keeps its own.
+ */
+const alertBodies = ["note", "tip", "important", "warning", "caution"]
+  .map(
+    (kind) =>
+      Array.from(
+        { length: ALERT_BODY },
+        (_, n) =>
+          `tr:has(.hh-md-alert-${kind})${" + tr:has(.hh-md-quoted)".repeat(n)} + tr .hh-md-quoted:not(.hh-md-alert)`,
+      ).join(",\n") + ` { --hh-quote: var(--hh-alert-${kind}); }`,
+  )
+  .join("\n");
+
 export const diffStyles = `
 .hh-diff, .hh-keys {
   color-scheme: light dark;
@@ -281,11 +300,16 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 /* A quote draws its bar beside its text, past the dimmed marks; a GitHub alert colours its bar and label as GitHub does. */
 .hh-md-quote { color: var(--hh-muted); }
 .hh-md-quoted > .hh-md-body { border-left: 3px solid var(--hh-quote, color-mix(in srgb, var(--hh-muted) 70%, transparent)); padding-left: 1ch; }
-.hh-md-alert-note { --hh-quote: #4493f8; }
-.hh-md-alert-tip { --hh-quote: #3fb950; }
-.hh-md-alert-important { --hh-quote: #ab7df8; }
-.hh-md-alert-warning { --hh-quote: #d29922; }
-.hh-md-alert-caution { --hh-quote: #f85149; }
+.hh-diff {
+  --hh-alert-note: #4493f8; --hh-alert-tip: #3fb950; --hh-alert-important: #ab7df8;
+  --hh-alert-warning: #d29922; --hh-alert-caution: #f85149;
+}
+.hh-md-alert-note { --hh-quote: var(--hh-alert-note); }
+.hh-md-alert-tip { --hh-quote: var(--hh-alert-tip); }
+.hh-md-alert-important { --hh-quote: var(--hh-alert-important); }
+.hh-md-alert-warning { --hh-quote: var(--hh-alert-warning); }
+.hh-md-alert-caution { --hh-quote: var(--hh-alert-caution); }
+${alertBodies}
 .hh-md-alert > .hh-md-body, .hh-md-alert > .hh-md-body * { color: var(--hh-quote) !important; font-weight: 600; text-decoration: none; }
 .hh-md-bullet { font-weight: 600; }
 /* A bullet marker keeps its character, drawn over by a bullet; the lead is mono so each nesting level shows. */
