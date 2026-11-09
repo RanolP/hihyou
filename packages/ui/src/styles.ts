@@ -223,6 +223,7 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 .hh-sign { display: inline-block; width: 2ch; text-indent: 0; color: var(--hh-muted); user-select: none; }
 .hh-removed ~ .hh-code > .hh-sign { color: var(--hh-removed-fg); }
 .hh-added ~ .hh-code > .hh-sign { color: var(--hh-added-fg); }
+tr.hh-merged > .hh-code > .hh-sign { color: var(--hh-muted); }
 .hh-node th {
   position: sticky;
   top: 0;
