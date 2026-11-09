@@ -29,7 +29,7 @@ const MARKDOWN: readonly (readonly [RegExp, string])[] = [
   [/\bheading\.([1-6])\.markdown/, "hh-md-h$1"],
   [/\bpunctuation\.definition\.quote\.begin\.markdown/, "hh-md-mark"],
   [/\bpunctuation\.definition\.list\.begin\.markdown/, "hh-md-bullet"],
-  [/\bpunctuation\.definition\.(?:heading|markdown|table)\b/, "hh-md-mark"],
+  [/\bpunctuation\.definition\.(?:heading|markdown|table|escape)\b/, "hh-md-mark"],
   [/\bmarkup\.inline\.raw/, "hh-md-code"],
   [/\b(?:markup\.fenced_code|markup\.raw\.block)/, "hh-md-fence"],
   [/\bfenced_code\.block\.language/, "hh-md-lang"],
@@ -116,7 +116,9 @@ export function SpanNodes(props: {
   const ctx = useDraw();
   // Read once: a prop given as a call is a getter, and a fresh line cursor per span would place every span at 0.
   const { side, place, wholeLine, allowTrailingTerminator = false } = props;
-  const spans = props.markdown ? splitIndent(props.spans) : props.spans;
+  const spans = props.markdown
+    ? splitIndent(props.spans).flatMap(splitEscape)
+    : props.spans;
   const emphasize =
     props.emphasize !== false &&
     (wholeLine === undefined ||
@@ -274,6 +276,31 @@ const splitIndent = (spans: readonly MergedSpan[]): readonly MergedSpan[] => {
     { ...first, text: indent },
     { ...first, text: first.text.slice(indent.length) },
     ...rest,
+  ];
+};
+
+/** A backslash escape (`\[`) renders as its character alone: the backslash is markup, the character text. */
+const splitEscape = (span: MergedSpan): MergedSpan[] => {
+  const scope = span.scope;
+  if (
+    scope?.includes("constant.character.escape.markdown") !== true ||
+    !/^\\./u.test(span.text)
+  )
+    return [span];
+  return [
+    {
+      ...span,
+      text: "\\",
+      scope: scope.replace(
+        "constant.character.escape.markdown",
+        "punctuation.definition.escape.markdown",
+      ),
+    },
+    {
+      ...span,
+      text: span.text.slice(1),
+      scope: scope.replace("constant.character.escape.markdown", "text.markdown"),
+    },
   ];
 };
 
