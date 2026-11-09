@@ -27,6 +27,9 @@
 
 (strikethrough) @text.strike
 
+; An HTML block (`<Listing ...>`, `</details>`) renders as its effect, not as text: it is markup.
+(html_block) @punctuation.delimiter
+
 ; An HTML block that opens a comment (`<!-- ... -->`, such as Node's YAML metadata) is a comment.
 ((html_block) @comment
  (#match? @comment "^<!--"))
