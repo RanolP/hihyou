@@ -204,15 +204,63 @@ export function match(
     const candidates = entry(forX, py, () => new Map());
     entry(candidates, x, () => new Set()).add(y);
   }
+  // Parents that tie, often with nothing of either matched yet, go by how near their ancestors share matched
+  // nodes: of three `instance: z.string().min(1)` that each gained `.optional()`, each copy pairs with the one in
+  // its own object, not the next in document order. An ancestor is compared with the nearest one of its kind
+  // across, climbing either side, as the copy may sit deeper on one of them.
+  const sharedAt = new Map<number, boolean>();
+  const shares = (x: number, y: number) => {
+    const key = x * sizeB.length + y;
+    let shared = sharedAt.get(key);
+    if (shared === undefined) {
+      shared = common(x, y) > 0;
+      sharedAt.set(key, shared);
+    }
+    return shared;
+  };
+  const climb = (
+    side: Side,
+    other: Side,
+    x: number,
+    y: number,
+    test: (x: number, y: number) => boolean,
+  ): number => {
+    let steps = 0;
+    for (
+      let ax = side.parentOf(x), by = other.parentOf(y);
+      ax !== -1 && by !== -1;
+      ax = side.parentOf(ax), steps++
+    ) {
+      const kind = side.tree.kindName(side.nodes[ax] as number);
+      let up = by;
+      while (
+        up !== -1 &&
+        other.tree.kindName(other.nodes[up] as number) !== kind
+      )
+        up = other.parentOf(up);
+      if (up === -1) continue;
+      by = other.parentOf(up);
+      if (test(ax, up)) return steps;
+    }
+    return sizeA.length;
+  };
+  const kinship = (x: number, y: number) =>
+    Math.min(
+      climb(a, b, x, y, shares),
+      climb(b, a, y, x, (q, p) => shares(p, q)),
+    );
   const parentPairs = [...byParents].flatMap(([px, forX]) =>
     [...forX].map(([py, candidates]) => ({
       px,
       py,
       candidates,
       d: dice(px, py),
+      k: kinship(px, py),
     })),
   );
-  for (const { px, py, candidates } of parentPairs.sort((p, q) => q.d - p.d)) {
+  for (const { px, py, candidates } of parentPairs.sort(
+    (p, q) => q.d - p.d || p.k - q.k,
+  )) {
     const pairs = commonPairs(a.childrenOf(px), b.childrenOf(py), (p, q) =>
       src[p] !== -1 || dst[q] !== -1
         ? src[p] === q
@@ -230,9 +278,10 @@ export function match(
       x,
       y,
       d: dice(a.parentOf(x), b.parentOf(y)),
+      k: kinship(a.parentOf(x), b.parentOf(y)),
       gap: Math.abs(siblingIndex(a, x) - siblingIndex(b, y)),
     }))
-    .sort((p, q) => q.d - p.d || p.gap - q.gap)
+    .sort((p, q) => q.d - p.d || p.k - q.k || p.gap - q.gap)
     .forEach(({ x, y }) => {
       if (src[x] === -1 && dst[y] === -1) linkSubtree(x, y);
     });
