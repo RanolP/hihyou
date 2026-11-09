@@ -420,6 +420,36 @@ export function match(
         }
         return found;
       };
+      // A token beside the child goes with its copy beside the node it became, when only position paired it with
+      // the token beside the wrapper: `this.#ctx.storage.list<T>(…)` becoming `this.#s()` keeps the `.` after
+      // `this`, not the one before `list`. One whose sibling past it is paired too (`a.b` becoming `a.c.b`) stays.
+      const besides = (
+        unwrap: boolean,
+        wrapper: number,
+        deep: number,
+        plain: number,
+      ) => {
+        const [ds, ps] = unwrap ? [a, b] : [b, a];
+        const [dp, pp] = unwrap ? [src, dst] : [dst, src];
+        const [di, pi] = unwrap ? [isoA, isoB] : [isoB, isoA];
+        for (const step of [-1, 1]) {
+          const t = sibling(ps, plain, step);
+          const s = sibling(ds, wrapper, step);
+          const n = sibling(ds, deep, step);
+          if (t === -1 || s === -1 || n === -1 || ps.size[t] !== 1) continue;
+          if (pp[t] !== s || dp[n] !== -1 || di[n] !== pi[t]) continue;
+          const past = sibling(ps, t, step);
+          if (
+            past !== -1 &&
+            pp[past] !== -1 &&
+            pp[past] === sibling(ds, s, step)
+          )
+            continue;
+          dp[s] = -1;
+          pp[t] = n;
+          dp[n] = t;
+        }
+      };
       for (const [p, q] of unmatchedPairs(
         (p, q) =>
           ta.fieldName(a.nodes[p] as number) ===
@@ -427,8 +457,13 @@ export function match(
       )) {
         const wrapped = inside(b, isoB, dst, q, isoA[p] as number);
         const unwrapped = inside(a, isoA, src, p, isoB[q] as number);
-        if (wrapped !== -1 && unwrapped === -1) linkSubtree(p, wrapped);
-        else if (unwrapped !== -1 && wrapped === -1) linkSubtree(unwrapped, q);
+        if (wrapped !== -1 && unwrapped === -1) {
+          linkSubtree(p, wrapped);
+          besides(false, q, wrapped, p);
+        } else if (unwrapped !== -1 && wrapped === -1) {
+          linkSubtree(unwrapped, q);
+          besides(true, p, unwrapped, q);
+        }
       }
     }
   };
@@ -632,6 +667,14 @@ export function match(
   }
 
   return { a, b, src, dst };
+}
+
+/** The sibling `step` places after `n` (before it when negative); -1 past either end or at the root. */
+function sibling(side: Side, n: number, step: number): number {
+  const p = side.parentOf(n);
+  if (p === -1) return -1;
+  const kids = side.childrenOf(p);
+  return kids[kids.indexOf(n) + step] ?? -1;
 }
 
 function sideLeafLineCount(side: Side, n: number): number {
