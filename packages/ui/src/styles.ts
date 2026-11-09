@@ -349,9 +349,10 @@ ${alertBodies}
 .hh-md-mark.hh-md-code:has(+ .hh-md-code:not(.hh-md-mark)) { border-radius: 3px 0 0 3px; padding-left: 2px; }
 .hh-md-code:not(.hh-md-mark) + .hh-md-mark.hh-md-code { border-radius: 0 3px 3px 0; padding-right: 2px; }
 .hh-md-comment { color: var(--hh-muted); font-style: italic; }
-/* Link text in the link colour, as rendered Markdown shows it over any theme colour; image alt text italic on a dashed line; a URL recedes. */
+/* Link text in the link colour, as rendered Markdown shows it over any theme colour; a URL recedes. An image's alt
+   text is no link and does not show when rendered: it reads as the caption of the image drawn under it. */
 .hh-md-link { color: var(--hh-button-fg) !important; text-decoration: underline; text-underline-offset: 2px; }
-.hh-md-image { color: var(--hh-button-fg) !important; font-style: italic; text-decoration: underline dashed; text-decoration-style: dashed !important; text-underline-offset: 3px; }
+.hh-md-image { color: var(--hh-muted) !important; font-style: italic; text-decoration: none !important; }
 .hh-md-url { opacity: 0.4; font-size: 0.85em; }
 /* The image itself under its source line, small enough that a screenshot does not push the diff off screen. */
 .hh-md-img { display: block; max-width: min(100%, 560px); max-height: 320px; margin: 6px 0 4px; border: 1px solid var(--hh-border); border-radius: 6px; }
