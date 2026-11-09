@@ -352,7 +352,9 @@ table.hh-md tr:has(.hh-md-rule) > td.hh-code {
 .hh-md-rule { opacity: 0.45; }
 .hh-md-row { display: inline-grid; width: calc(100% - 2ch); vertical-align: top; text-indent: 0; }
 .hh-md-cell { padding: 0 1ch; white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
-.hh-md-pipe { opacity: 0.35; }
+.hh-md-pipe { opacity: 0.5; }
+/* A hairline under each table row, as GitHub's cell borders part rows, so a row whose cells wrap stays one row. */
+table.hh-md tr:has(.hh-md-row) > td.hh-code { box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--hh-muted) 25%, transparent); }
 /* The header is the row right above the delimiter row (|---|), bold on a tint as GitHub draws a table's head; the
    delimiter row reads as the rule under it, its dashes faint. (:has() cannot nest, so the delimiter row has a class.) */
 table.hh-md tr:has(.hh-md-row):has(+ tr .hh-md-delim) .hh-md-cell { font-weight: 600; }
