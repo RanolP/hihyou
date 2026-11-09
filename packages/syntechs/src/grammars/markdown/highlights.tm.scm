@@ -30,3 +30,8 @@
 ; An HTML block that opens a comment (`<!-- ... -->`, such as Node's YAML metadata) is a comment.
 ((html_block) @comment
  (#match? @comment "^<!--"))
+
+; A reference link (`[text][label]`, `[text][]`) shows only its text when rendered: its brackets and label are markup.
+(full_reference_link ["[" "]"] @punctuation.delimiter)
+(full_reference_link (link_label) @punctuation.delimiter)
+(collapsed_reference_link ["[" "]"] @punctuation.delimiter)
