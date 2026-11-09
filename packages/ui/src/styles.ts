@@ -286,7 +286,9 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 .hh-md-h2 { font-size: 1.45em; }
 .hh-md-h3 { font-size: 1.25em; }
 .hh-md-h4 { font-size: 1.12em; }
-.hh-md-h6 { color: var(--hh-muted); }
+/* A heading reads in the text colour, as it renders, not in the grammar's heading colour. */
+:where(.hh-md-h1, .hh-md-h2, .hh-md-h3, .hh-md-h4, .hh-md-h5):not(.hh-md-code) { color: var(--hh-fg) !important; }
+:where(.hh-md-h6):not(.hh-md-code) { color: var(--hh-muted) !important; }
 /* A code span in a heading scales with the heading, a step under it as code sits in prose. */
 .hh-md-h1.hh-md-code { font-size: calc(1.75em * 0.92); }
 .hh-md-h2.hh-md-code { font-size: calc(1.45em * 0.92); }
