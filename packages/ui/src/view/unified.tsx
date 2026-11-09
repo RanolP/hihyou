@@ -338,12 +338,16 @@ export function unifiedRow(
           />
           <td class="hh-code" style={codeStyle(row.spans)}>
             <span class="hh-sign">
-              {row.after === undefined
+              {single === "before"
                 ? signs.before
-                : // A line changed in place reads as both a removal and an addition.
-                  has("before") || has("after")
-                  ? "±"
-                  : ""}
+                : single === "after"
+                  ? has("after")
+                    ? signs.after
+                    : ""
+                  : // A line changed in place reads as both a removal and an addition.
+                    has("before") || has("after")
+                    ? "±"
+                    : ""}
             </span>
             {(has("before") || has("after")) && (
               <span class="hh-sr">changed </span>
