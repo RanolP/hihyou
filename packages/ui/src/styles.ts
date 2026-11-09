@@ -313,6 +313,8 @@ tr.hh-merged > .hh-code > .hh-sign { color: var(--hh-muted); }
 .hh-md-h3.hh-md-code { font-size: calc(1.3em * 0.92); }
 .hh-md-h4.hh-md-code { font-size: calc(1.12em * 0.92); }
 .hh-md tr:has(.hh-md-h1, .hh-md-h2) > .hh-code { padding-top: 6px; padding-bottom: 2px; }
+/* A heading's line numbers sit on its baseline, not at the top of its taller line. */
+.hh-md tr:has(.hh-md-h1, .hh-md-h2, .hh-md-h3, .hh-md-h4) > td { vertical-align: baseline; }
 .hh-md-strong { font-weight: 600; }
 .hh-md-em { font-style: italic; }
 .hh-md-del { text-decoration: line-through; }
