@@ -22,6 +22,9 @@ const signs: Record<SideName, string> = { before: "-", after: "+" };
 const tabSize = 4;
 const maxWrappedIndent = 40;
 
+const isMarkdown = (file: { grammar?: string | undefined } | undefined) =>
+  file?.grammar?.startsWith("markdown@") ?? false;
+
 const codeStyle = (spans: readonly MergedSpan[]) => {
   let column = 0;
   for (const span of spans) {
@@ -236,6 +239,7 @@ function mergedCode(
       spans={spans}
       side="after"
       images={row.after === undefined ? undefined : ctx.files()[index]?.path}
+      markdown={isMarkdown(ctx.files()[index])}
       wholeLine={
         row.after === undefined
           ? "before"
@@ -302,6 +306,7 @@ export function unifiedRow(
               side="after"
               place={ctx.placer.contextCursor(index, row.after.line)}
               images={file?.path}
+              markdown={isMarkdown(file)}
             />
           </td>
         </tr>
@@ -398,6 +403,7 @@ export function unifiedRow(
               emphasize={!lone}
               place={ctx.placer.lineCursor(index, row.fragment, side, cell.line)}
               images={side === "after" ? file?.path : undefined}
+              markdown={isMarkdown(file)}
             />
           </td>
         </tr>

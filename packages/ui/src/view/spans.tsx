@@ -110,11 +110,13 @@ export function SpanNodes(props: {
   place?: Place | undefined;
   /** The file's path, on a line `RenderOptions.media` can load the files of: a Markdown image on it then shows. */
   images?: string | undefined;
+  /** A Markdown file's line: its indentation is lead too, so a continuation line lines up with its item's text. */
+  markdown?: boolean | undefined;
 }): JSX.Element {
   const ctx = useDraw();
   // Read once: a prop given as a call is a getter, and a fresh line cursor per span would place every span at 0.
-  const { spans, side, place, wholeLine, allowTrailingTerminator = false } =
-    props;
+  const { side, place, wholeLine, allowTrailingTerminator = false } = props;
+  const spans = props.markdown ? splitIndent(props.spans) : props.spans;
   const emphasize =
     props.emphasize !== false &&
     (wholeLine === undefined ||
@@ -158,7 +160,9 @@ export function SpanNodes(props: {
   const row = isTableRow(spans);
   const cells: JSX.Element[][] = [];
   // A quote or list item hangs its wrapped lines under its text, past the indentation, quote marks and marker.
-  const lead = row ? { count: 0, quote: false } : leadOf(spans);
+  const lead = row
+    ? { count: 0, quote: false }
+    : leadOf(spans, props.markdown ?? false);
   let head: JSX.Element[] | undefined;
   for (const [index, span] of spans.entries()) {
     if (index === lead.count && lead.count > 0) {
@@ -261,15 +265,30 @@ const glued = (
     : word.test(neighbour.text[0] ?? "") && word.test(edge.text.at(-1) ?? "");
 };
 
+/** A line whose first span carries its indentation splits it off, so `leadOf` can take the indentation alone. */
+const splitIndent = (spans: readonly MergedSpan[]): readonly MergedSpan[] => {
+  const [first, ...rest] = spans;
+  const indent = first && /^[ \t]+(?=\S)/.exec(first.text)?.[0];
+  if (!first || !indent) return spans;
+  return [
+    { ...first, text: indent },
+    { ...first, text: first.text.slice(indent.length) },
+    ...rest,
+  ];
+};
+
 const blank = (span: MergedSpan | undefined) =>
   span !== undefined && span.text !== "" && span.text.trim() === "";
 
 /**
  * How many spans lead a quote or list item's line up to its text (indentation, quote marks, the list marker and its
- * space), and whether quote marks are among them. A line with neither has no lead.
+ * space), and whether quote marks are among them. A line with neither has no lead, unless it is Markdown: there its
+ * indentation leads it, drawn in the code font as a list marker's is, so a continuation line's text starts under its
+ * item's text rather than at the narrower width of the prose font's spaces.
  */
 const leadOf = (
   spans: readonly MergedSpan[],
+  markdown: boolean,
 ): { count: number; quote: boolean } => {
   let count = 0;
   let quote = false;
@@ -282,6 +301,7 @@ const leadOf = (
     spans[count]?.scope?.includes("punctuation.definition.list.begin.markdown")
   )
     return { count: count + (blank(spans[count + 1]) ? 2 : 1), quote };
+  if (markdown && count < spans.length) return { count, quote };
   return { count: quote ? count : 0, quote };
 };
 
