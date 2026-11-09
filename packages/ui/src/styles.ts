@@ -301,8 +301,9 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 .hh-md-quote { color: var(--hh-muted); }
 .hh-md-quoted > .hh-md-body { border-left: 3px solid var(--hh-quote, color-mix(in srgb, var(--hh-muted) 70%, transparent)); padding-left: 1ch; }
 .hh-diff {
-  --hh-alert-note: #4493f8; --hh-alert-tip: #3fb950; --hh-alert-important: #ab7df8;
-  --hh-alert-warning: #d29922; --hh-alert-caution: #f85149;
+  --hh-alert-note: light-dark(#0969da, #4493f8); --hh-alert-tip: light-dark(#1a7f37, #3fb950);
+  --hh-alert-important: light-dark(#8250df, #ab7df8); --hh-alert-warning: light-dark(#9a6700, #d29922);
+  --hh-alert-caution: light-dark(#d1242f, #f85149);
 }
 .hh-md-alert-note { --hh-quote: var(--hh-alert-note); }
 .hh-md-alert-tip { --hh-quote: var(--hh-alert-tip); }
