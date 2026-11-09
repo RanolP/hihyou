@@ -283,17 +283,17 @@ tr.hh-merged > .hh-code > .hh-sign { color: var(--hh-muted); }
 .hh-md .hh-code { font-family: var(--vscode-font-family, system-ui, -apple-system, "Segoe UI", sans-serif); }
 .hh-md .hh-sign { font-family: var(--hh-mono); }
 .hh-md-h1, .hh-md-h2, .hh-md-h3, .hh-md-h4, .hh-md-h5, .hh-md-h6 { font-weight: 600; line-height: 1.25; }
-.hh-md-h1 { font-size: 1.75em; }
-.hh-md-h2 { font-size: 1.45em; }
-.hh-md-h3 { font-size: 1.25em; }
+.hh-md-h1 { font-size: 2em; }
+.hh-md-h2 { font-size: 1.55em; }
+.hh-md-h3 { font-size: 1.3em; }
 .hh-md-h4 { font-size: 1.12em; }
 /* A heading reads in the text colour, as it renders, not in the grammar's heading colour. */
 :where(.hh-md-h1, .hh-md-h2, .hh-md-h3, .hh-md-h4, .hh-md-h5):not(.hh-md-code) { color: var(--hh-fg) !important; }
 :where(.hh-md-h6):not(.hh-md-code) { color: var(--hh-muted) !important; }
 /* A code span in a heading scales with the heading, a step under it as code sits in prose. */
-.hh-md-h1.hh-md-code { font-size: calc(1.75em * 0.92); }
-.hh-md-h2.hh-md-code { font-size: calc(1.45em * 0.92); }
-.hh-md-h3.hh-md-code { font-size: calc(1.25em * 0.92); }
+.hh-md-h1.hh-md-code { font-size: calc(2em * 0.92); }
+.hh-md-h2.hh-md-code { font-size: calc(1.55em * 0.92); }
+.hh-md-h3.hh-md-code { font-size: calc(1.3em * 0.92); }
 .hh-md-h4.hh-md-code { font-size: calc(1.12em * 0.92); }
 .hh-md tr:has(.hh-md-h1, .hh-md-h2) > .hh-code { padding-top: 6px; padding-bottom: 2px; }
 .hh-md-strong { font-weight: 600; }
