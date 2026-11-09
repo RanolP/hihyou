@@ -342,7 +342,7 @@ table.hh-md tr:has(.hh-md-fence) > td.hh-code {
   background-image: linear-gradient(color-mix(in srgb, var(--hh-muted) 18%, transparent), color-mix(in srgb, var(--hh-muted) 18%, transparent));
 }
 /* The info string labels the block, as GitHub's and Typora's language tag does, rather than reading as its first line. */
-.hh-md-lang { color: var(--hh-muted) !important; font-size: 0.8em; letter-spacing: 0.03em; margin-left: 0.5ch; }
+.hh-md-lang { color: var(--hh-muted) !important; font-size: 0.8em; letter-spacing: 0.03em; }
 table.hh-md tr:has(.hh-md-rule) > td.hh-code {
   background-image: linear-gradient(transparent calc(50% - 1px), var(--hh-border) calc(50% - 1px), var(--hh-border) calc(50% + 1px), transparent calc(50% + 1px));
 }
