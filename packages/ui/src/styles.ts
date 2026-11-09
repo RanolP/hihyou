@@ -320,7 +320,8 @@ ${alertBodies}
 .hh-md-dot::before { content: "\\2022"; position: absolute; left: 0; color: var(--hh-muted); font-weight: 700; }
 .hh-md-item { display: inline-grid; grid-template-columns: auto minmax(0, 1fr); width: calc(100% - 2ch); vertical-align: top; text-indent: 0; }
 .hh-md-lead { font-family: var(--hh-mono); white-space: pre; }
-.hh-md-code, .hh-md-fence, .hh-md-table { font-family: var(--hh-mono); font-size: 0.92em; }
+/* A table's cells read in the prose font, as GitHub renders them; its grid, not the font, lines the columns up. */
+.hh-md-code, .hh-md-fence { font-family: var(--hh-mono); font-size: 0.92em; }
 /* A code span is three spans (backtick, code, backtick) on one ground: only its outer ends round and pad, and the
    backticks fade their glyph alone, so the ground stays even and the backticks sit against the code. */
 .hh-md-code { background: color-mix(in srgb, var(--hh-muted) 18%, transparent); }
