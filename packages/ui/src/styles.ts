@@ -325,7 +325,9 @@ ${alertBodies}
 /* A code span is three spans (backtick, code, backtick) on one ground: only its outer ends round and pad, and the
    backticks fade their glyph alone, so the ground stays even and the backticks sit against the code. */
 .hh-md-code { background: color-mix(in srgb, var(--hh-muted) 18%, transparent); }
-.hh-md-code.hh-md-mark { -webkit-text-fill-color: color-mix(in srgb, currentColor 35%, transparent); }
+/* A backtick is a thin glyph in a full code cell; drawn at its own width it opens a gap ("Buffer s") where the rendered
+   text has none, so it gives back half its cell. */
+.hh-md-code.hh-md-mark { -webkit-text-fill-color: color-mix(in srgb, currentColor 35%, transparent); letter-spacing: -0.45ch; }
 .hh-md-mark.hh-md-code:has(+ .hh-md-code:not(.hh-md-mark)) { border-radius: 3px 0 0 3px; padding-left: 2px; }
 .hh-md-code:not(.hh-md-mark) + .hh-md-mark.hh-md-code { border-radius: 0 3px 3px 0; padding-right: 2px; }
 .hh-md-comment { color: var(--hh-muted); font-style: italic; }
