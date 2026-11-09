@@ -393,6 +393,48 @@ export class Tree {
     return this.data[n + ORD] as number;
   }
 
+  /**
+   * @internal Regroups `n(p(op, e), …)` as `p(op, n(e, …))`, where `p` is `n`'s first child and `e` its
+   * last: `p`, `n` and `e` each take the field of the node whose place they take. `n` must not be the root.
+   */
+  sinkPrefix(n: number): void {
+    const data = this.data;
+    const ords = this.ords;
+    const p = data[n + CHILDREN] as number;
+    const last = p + CHILDREN + (data[p + COUNT] as number) - 1;
+    const e = data[last] as number;
+    const g = data[n + PARENT] as number;
+    const field = 0xff << FIELD_SHIFT;
+    const lf = LF_MAX << LF_SHIFT;
+    const nHead = data[n] as number;
+    const pHead = data[p] as number;
+    const eHead = data[e] as number;
+    data[e] = (eHead & ~field) | (pHead & field);
+    data[n] = (nHead & ~(field | lf)) | (eHead & (field | lf));
+    data[p] = (pHead & ~field) | (nHead & field);
+    data[n + CHILDREN] = e;
+    data[e + PARENT] = n;
+    data[last] = n;
+    data[n + PARENT] = p;
+    data[p + PARENT] = g;
+    for (let i = g + CHILDREN; ; i++)
+      if (data[i] === n) {
+        data[i] = p;
+        break;
+      }
+    data[n + START] = data[e + START] as number;
+    data[p + END] = data[n + END] as number;
+    // Postorder had `p` before `n`'s other children; it now follows `n`.
+    const to = data[n + ORD] as number;
+    for (let o = data[p + ORD] as number; o < to; o++) {
+      const h = ords[o + 1] as number;
+      ords[o] = h;
+      data[h + ORD] = o;
+    }
+    ords[to] = p;
+    data[p + ORD] = to;
+  }
+
   /** The node with ordinal `ord`. */
   at(ord: number): number {
     if (ord < 0 || ord >= this.nodeCount)
