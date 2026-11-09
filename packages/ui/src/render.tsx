@@ -48,6 +48,7 @@ import { isTestPath } from "./test-files.js";
 import { Draw, type DrawContext } from "./view/context.js";
 import { FileSection } from "./view/file.jsx";
 import { flash } from "./view/flash.js";
+import { createLazyFiles } from "./view/lazy.js";
 import { createPainter } from "./view/highlights.js";
 import { ApprovalBadge } from "./view/approval.jsx";
 import {
@@ -233,6 +234,7 @@ function mount(
   const focusIds = new WeakMap<Element, string>();
   const placer = createPlacer(files);
   const painter = createPainter(doc, placer);
+  const lazy = createLazyFiles(doc.defaultView, () => paint());
   const pairs = createPairs({ files, viewed, keyOf, isViewed, viewedTick });
 
   const fileKey = (file: DiffFile) =>
@@ -273,6 +275,7 @@ function mount(
       opts.onShow?.(file.path);
     }
     if (changed) redraw();
+    lazy.draw(file.path);
   };
 
   const jump = (to: SideRef) => {
@@ -305,6 +308,7 @@ function mount(
     folded.set(path, false);
     if (single && path !== shownPath) shownPath = path;
     redraw();
+    lazy.draw(path);
     for (const s of root.querySelectorAll<HTMLElement>(".hh-scroll"))
       if (s.dataset["path"] === path) s.closest(".hh-file")?.scrollIntoView();
     opts.onShow?.(path);
@@ -364,6 +368,9 @@ function mount(
         ? header()?.getBoundingClientRect().top
         : fileSection(path)?.getBoundingClientRect().bottom;
       if (now !== undefined && now !== before) scrollWithRoom(now - before);
+      // Kept in place here already; the lazy files' own correction would move it a second time.
+      const section = fileSection(path);
+      if (section) lazy.settle(section);
     });
   };
 
@@ -374,6 +381,7 @@ function mount(
     media: opts.media,
     placer,
     pairs,
+    lazy,
     actions: new WeakMap(),
     pairOfElement: new WeakMap<Element, PairView>(),
     focusable(e, id) {
@@ -872,10 +880,11 @@ function mount(
   };
   const DiffList = () => {
     const measureReviewBar = (bar: HTMLElement) => {
-      const observer = new ResizeObserver(() => {
+      const observer = new ResizeObserver(([entry]) => {
+        if (!entry) return;
         bar.parentElement?.style.setProperty(
           "--hh-review-bar-height",
-          `${bar.getBoundingClientRect().height}px`,
+          `${entry.borderBoxSize[0]?.blockSize ?? entry.contentRect.height}px`,
         );
       });
       observer.observe(bar);
@@ -1061,6 +1070,8 @@ function mount(
         initial: state,
         onChange: (s) => {
           showModal(s);
+          const at = s.selection && files()[s.selection.file];
+          if (at) lazy.draw(at.path);
           paintSelection();
           if (!clicking) scrollToSelection();
         },
@@ -1090,6 +1101,7 @@ function mount(
     },
     show(path) {
       if (!files().some((file) => file.path === path)) return;
+      lazy.draw(path);
       if (!single) {
         if (isTestPath(path)) setTestsShown(true);
         shownPath = path;
@@ -1131,6 +1143,7 @@ function mount(
       root.removeEventListener("click", onClick);
       root.removeEventListener("keydown", onKey);
       modal?.dispose();
+      lazy.dispose();
       disposeRoot();
       painter.clear();
       root.classList.remove("hh-review");

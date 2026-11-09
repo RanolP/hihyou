@@ -1,7 +1,14 @@
 import type { CollapseReason } from "@hihyou/engine";
-import { createSignal, type JSX, onCleanup } from "solid-js";
+import {
+  createSignal,
+  getOwner,
+  type JSX,
+  onCleanup,
+  runWithOwner,
+} from "solid-js";
 import { type DiffFile, lineCounts, statusOf } from "../rows.js";
 import { useDraw } from "./context.js";
+import { estimatedRows } from "./lazy.js";
 import { FileTable } from "./table.jsx";
 import { ViewedToggle } from "./viewed-toggle.jsx";
 import { wholeFileStatus } from "../whole.js";
@@ -43,10 +50,11 @@ function FileHeader(props: {
   let copyReset: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => clearTimeout(copyReset));
   const measureHeight = (header: HTMLElement) => {
-    const observer = new ResizeObserver(() => {
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry) return;
       header.parentElement?.style.setProperty(
         "--hh-file-header-height",
-        `${header.getBoundingClientRect().height}px`,
+        `${entry.borderBoxSize[0]?.blockSize ?? entry.contentRect.height}px`,
       );
     });
     observer.observe(header);
@@ -136,7 +144,11 @@ function FileHeader(props: {
   );
 }
 
-/** One file: its header, then its table in a scroller whose position survives a redraw. */
+/**
+ * One file: its header, then its table in a scroller whose position survives a redraw. The table draws once the
+ * file is reached (`DrawContext.lazy`) and open, and stays drawn while the file folds; until then a placeholder
+ * as tall as its rows stands in.
+ */
 export function FileSection(props: {
   index: number;
   file: DiffFile;
@@ -144,16 +156,48 @@ export function FileSection(props: {
   const ctx = useDraw();
   const { index, file } = props;
   const collapsed = () => ctx.fileCollapsed(index, file);
-  // The table first: its rows place their text in draw order, and the header places none.
-  const table = <FileTable index={index} file={file} />;
+  const [reached, setReached] = createSignal(ctx.lazy.drawn(file.path));
+  const rows = { "--hh-rows": String(estimatedRows(file)) };
+  // Off screen a drawn body is skipped: a redraw's new body stands at the height the old one showed, not the estimate.
+  const shown = ctx.lazy.bodyHeight(file.path);
+  // Owned by the section, not by the branch that shows it, so folding the file keeps the table alive.
+  const owner = getOwner();
+  let table: JSX.Element | undefined;
+  const drawTable = () => {
+    if (table === undefined) {
+      table = runWithOwner(owner, () => (
+        <FileTable index={index} file={file} />
+      ));
+      ctx.lazy.drew();
+    }
+    return table;
+  };
   return (
-    <section class="hh-file" data-path={file.path}>
+    <section
+      ref={(section) =>
+        onCleanup(ctx.lazy.watch(file.path, section, () => setReached(true)))
+      }
+      class="hh-file"
+      data-path={file.path}
+    >
       <FileHeader index={index} file={file} collapsed={collapsed} />
-      {!collapsed() && (
-        <div class="hh-scroll" data-path={file.path}>
-          {table}
-        </div>
-      )}
+      {!collapsed() &&
+        (reached() ? (
+          <div
+            class="hh-scroll"
+            data-path={file.path}
+            style={{
+              ...rows,
+              ...(shown !== undefined && {
+                "contain-intrinsic-size": `auto ${shown}px`,
+              }),
+            }}
+          >
+            {drawTable()}
+          </div>
+        ) : (
+          <div class="hh-placeholder" style={rows} />
+        ))}
     </section>
   );
 }

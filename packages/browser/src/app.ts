@@ -178,13 +178,20 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   const persistedViewed = persistentViewedStore(
     viewedStorageKey(page.owner, page.repo, page.pull),
   );
-  const appBarObserver = new ResizeObserver(() => {
+  const appBarObserver = new ResizeObserver(([entry]) => {
+    if (!entry) return;
     host.style.setProperty(
       "--hh-app-bar-height",
-      `${appBar.getBoundingClientRect().height}px`,
+      `${entry.borderBoxSize[0]?.blockSize ?? entry.contentRect.height}px`,
     );
   });
   appBarObserver.observe(appBar);
+  // The diff's height as last laid out, so opening another diffset holds it without forcing a layout to read it.
+  let rootHeight = 0;
+  const rootObserver = new ResizeObserver(([entry]) => {
+    if (entry) rootHeight = entry.borderBoxSize[0]?.blockSize ?? entry.contentRect.height;
+  });
+  rootObserver.observe(root);
 
   const host_ = githubWebHost({ fetch });
   const engine = createEngine(host_);
@@ -633,10 +640,13 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
         section.style.setProperty("--hh-tab-size", size);
     }
   };
+  // GitHub's sticky bars move only as the page scrolls or resizes; the diff drawing more rows leaves them be.
+  let pageMoved = true;
   const updateViewport = () => {
     trackingFrame = undefined;
     applyTabSizes();
-    updatePageStickyTop();
+    if (pageMoved) updatePageStickyTop();
+    pageMoved = false;
     // Before the sidebar sticks it still ends at the window's bottom, so the key panel at its foot is on screen.
     const setsTop = `${Math.max(0, sets.getBoundingClientRect().top)}px`;
     if (sets.style.getPropertyValue("--hh-sets-top") !== setsTop)
@@ -647,8 +657,12 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     if (trackingFrame !== undefined) return;
     trackingFrame = requestAnimationFrame(updateViewport);
   };
-  window.addEventListener("scroll", scheduleViewportUpdate, { passive: true });
-  window.addEventListener("resize", scheduleViewportUpdate);
+  const onPageMove = () => {
+    pageMoved = true;
+    scheduleViewportUpdate();
+  };
+  window.addEventListener("scroll", onPageMove, { passive: true });
+  window.addEventListener("resize", onPageMove);
   scheduleViewportUpdate();
   const fileObserver = new MutationObserver(scheduleViewportUpdate);
   fileObserver.observe(root, { childList: true, subtree: true });
@@ -724,7 +738,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       files = [];
       // The old files keep their height until the new ones draw, so the page does not collapse to the footer
       // and spring back while the diffset loads.
-      root.style.minHeight = `${root.offsetHeight}px`;
+      root.style.minHeight = `${rootHeight}px`;
       view?.dispose();
       view = undefined;
       currentPath = undefined;
@@ -1147,6 +1161,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
         previousScrollbarGutter;
       document.documentElement.style.overflowAnchor = previousOverflowAnchor;
       appBarObserver.disconnect();
+      rootObserver.disconnect();
       descriptionObserver.disconnect();
       host.style.removeProperty("--hh-app-bar-height");
       host.style.removeProperty("--hh-page-sticky-top");
@@ -1154,8 +1169,8 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       themeObserver.disconnect();
       fileObserver.disconnect();
       if (trackingFrame !== undefined) cancelAnimationFrame(trackingFrame);
-      window.removeEventListener("scroll", scheduleViewportUpdate);
-      window.removeEventListener("resize", scheduleViewportUpdate);
+      window.removeEventListener("scroll", onPageMove);
+      window.removeEventListener("resize", onPageMove);
       dark.removeEventListener("change", applyTheme);
       document.removeEventListener("keydown", onKeydown);
       root.removeEventListener("click", advanceAfterViewedClick);

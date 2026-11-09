@@ -3,6 +3,7 @@ import { type Accessor, createContext, useContext } from "solid-js";
 import type { ElidedRef, ExpandDirection } from "../expand.js";
 import type { SideRef } from "../moves.js";
 import type { DiffFile } from "../rows.js";
+import type { LazyFiles } from "./lazy.js";
 import type { PairView, Pairs } from "./pair.jsx";
 import type { Placer } from "./placement.js";
 
@@ -15,6 +16,8 @@ export interface DrawContext {
   media: ((path: string) => string | undefined) | undefined;
   placer: Placer;
   pairs: Pairs;
+  /** Which files have drawn their rows, and draws the rest as they near the viewport or the page idles. */
+  lazy: LazyFiles;
   /** What a click on a non-button element does: a cross-file move's block expands it, unless the click selects. */
   actions: WeakMap<Element, () => void>;
   /** Which pair a label or expansion row belongs to, for Escape. */

@@ -168,6 +168,18 @@ export const diffStyles = `
   overflow: auto;
   max-height: var(--hihyou-file-max-height, 80vh);
 }
+/*
+ * A file's body stands at its row count's height until it draws, and once drawn skips style and layout while off
+ * screen; find-in-page still searches it. The height it last showed at is kept once it has been on screen.
+ */
+.hh-placeholder {
+  height: calc(var(--hh-rows) * var(--hh-mono-size) * 1.5);
+  max-height: var(--hihyou-file-max-height, 80vh);
+}
+.hh-scroll {
+  content-visibility: auto;
+  contain-intrinsic-size: auto calc(var(--hh-rows) * var(--hh-mono-size) * 1.5);
+}
 .hh-table {
   border-collapse: collapse;
   min-width: 100%;
@@ -254,7 +266,8 @@ tr.hh-merged > .hh-code > .hh-sign { color: var(--hh-muted); }
     1px
   );
 }
-:host .hh-scroll {
+:host .hh-scroll,
+:host .hh-placeholder {
   max-height: none;
   overflow: visible;
 }
