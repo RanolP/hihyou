@@ -39,5 +39,8 @@
 (full_reference_link (link_label) @punctuation.delimiter)
 (collapsed_reference_link ["[" "]"] @punctuation.delimiter)
 
+; A link reference definition (`[label]: url`) does not show when rendered: all of it is markup.
+(link_reference_definition (link_label) @punctuation.delimiter)
+
 ; An inline HTML tag (`<br/>`, `<kbd>`) renders as its effect, not as text: it is markup.
 (html_tag) @punctuation.delimiter
