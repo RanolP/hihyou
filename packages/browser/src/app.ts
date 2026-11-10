@@ -828,9 +828,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       root.style.minHeight = "";
       const hasPath =
         path === undefined || files.some((file) => file.path === path);
-      // GitHub's Viewed covers a file's whole change in the pull request; a commit diffs that whole change only
-      // when it is the head and its parent the merge base, the one commit of a pull request with no merge.
-      drawnIsWholePull = row.threadsAt.head && row.threadsAt.leftIsBefore;
+      drawnRow = row;
       adoptGitHubViewed();
       const shownPath =
         path !== undefined && hasPath
@@ -1079,63 +1077,82 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     });
 
   // GitHub's own Viewed checkbox, kept in step with hihyou's for the files the pull request lists; a reader
-  // GitHub keeps no such state for (signed out) stays local-only, and so does a diffset narrower than the pull
-  // request.
+  // GitHub keeps no such state for (signed out) stays local-only. GitHub's Viewed means every commit's change to
+  // the file was seen: it marks the file in whichever commit is drawn, and hihyou marks it on GitHub only once
+  // every commit touching the file was drawn with it viewed.
   let github: GitHubViewed | undefined;
-  let drawnIsWholePull = false;
+  /** The commit whose files the view draws. */
+  let drawnRow: Row | undefined;
   /** What GitHub holds as viewed, as far as this page has read and written it. */
   const githubViewed = new Set<string>();
-  /** What each listed file of the drawn view last read as, so only a change the reader makes is sent. */
-  let seenViewed = new Map<string, boolean>();
+  /**
+   * Per commit row key, whether each listed file read fully viewed when that commit was last drawn. A commit not
+   * drawn on this page is unknown: its atoms, and so its viewed state, exist only once its files are reviewed.
+   */
+  const viewedIn = new Map<string, Map<string, boolean>>();
   let githubWrites = Promise.resolve();
   const listedFiles = () =>
-    github && drawnIsWholePull
-      ? files.filter((file) => github?.paths.has(file.path))
-      : [];
-  /** Marks the drawn view's files GitHub holds as viewed; the view's own state before it is not a change to send. */
+    github ? files.filter((file) => github?.paths.has(file.path)) : [];
+  /** Marks the drawn commit's files GitHub holds as viewed; its state before that is not a change to send. */
   const adoptGitHubViewed = () => {
-    if (!view) return;
+    if (!view || !drawnRow || !github) return;
     const drawn = view;
-    seenViewed = new Map(
-      listedFiles().flatMap((file) => {
-        const on = drawn.fileViewed(file.path);
-        return on === undefined ? [] : [[file.path, on] as const];
-      }),
+    viewedIn.set(
+      drawnRow.key,
+      new Map(
+        listedFiles().flatMap((file) => {
+          const on = drawn.fileViewed(file.path);
+          return on === undefined ? [] : [[file.path, on] as const];
+        }),
+      ),
     );
     for (const file of listedFiles())
       if (githubViewed.has(file.path) && drawn.fileViewed(file.path) !== true)
         drawn.setFileViewed(file.path, true);
   };
-  const sendGitHubViewed = () => {
-    if (!github || !view) return;
+  /**
+   * `false` once a drawn commit shows `path` not fully viewed; `true` when every commit touching it was drawn
+   * with it fully viewed; `undefined` while a touching commit was never drawn. A commit's touched files come from
+   * the same diffset the sidebar lists when the row opens.
+   */
+  const viewedInEveryCommit = async (path: string) => {
+    if ([...viewedIn.values()].some((seen) => seen.get(path) === false))
+      return false;
+    for (const row of rows) {
+      if (viewedIn.get(row.key)?.get(path) === true) continue;
+      row.changes ??= (await engine.diffset(row.id)).changes;
+      if (row.changes.some((change) => change.path === path)) return undefined;
+    }
+    return true;
+  };
+  const reconcileGitHubViewed = (path: string) => {
     const target = github;
-    for (const file of listedFiles()) {
-      const { path } = file;
+    if (!target) return;
+    githubWrites = githubWrites
+      .then(async () => {
+        const on = await viewedInEveryCommit(path);
+        if (on === undefined || githubViewed.has(path) === on) return;
+        await target.set(path, on);
+        if (on) githubViewed.add(path);
+        else githubViewed.delete(path);
+      })
+      .catch((error: unknown) => {
+        // GitHub keeps its old state; the next change the reader makes tries again.
+        console.warn(
+          `hihyou: could not sync ${path} viewed with GitHub for ${page.owner}/${page.repo}#${page.pull}`,
+          error,
+        );
+      });
+  };
+  const sendGitHubViewed = () => {
+    const seen = drawnRow && viewedIn.get(drawnRow.key);
+    if (!view || !seen) return;
+    for (const { path } of listedFiles()) {
       const on = view.fileViewed(path);
       if (on === undefined) continue;
-      const before = seenViewed.get(path);
-      seenViewed.set(path, on);
-      if (
-        before === undefined ||
-        before === on ||
-        githubViewed.has(path) === on
-      )
-        continue;
-      if (on) githubViewed.add(path);
-      else githubViewed.delete(path);
-      githubWrites = githubWrites
-        .then(() => target.set(path, on))
-        .catch((error: unknown) => {
-          console.warn(
-            `hihyou: could not ${on ? "mark" : "unmark"} ${path} viewed on GitHub for ${page.owner}/${page.repo}#${page.pull}`,
-            error,
-          );
-          // GitHub kept its old state; the next change the reader makes sends again.
-          if (githubViewed.has(path) === on) {
-            if (on) githubViewed.delete(path);
-            else githubViewed.add(path);
-          }
-        });
+      const before = seen.get(path);
+      seen.set(path, on);
+      if (before !== undefined && before !== on) reconcileGitHubViewed(path);
     }
   };
   void loadGitHubViewed(page.owner, page.repo, page.pull).then((loaded) => {
