@@ -1564,6 +1564,8 @@ export const htmlRules = {
     return needsToBorrowLastChildClosingTagEndMarker(n) ? marker(side, lastChild(n) as Node, "closeEnd") : "";
   },
   text: (node: number, ctx: Ctx, key = "") => infoOf(node, ctx).text?.[key] ?? "",
+  // A `<pre>` line break, kept in its text's anchor so the text maps whole rather than by its last line.
+  literalBreak: (node: number, ctx: Ctx) => spell(sideOf(ctx), "\n", nodeOf(node, ctx).start, "pin"),
   words: (node: number, ctx: Ctx) => infoOf(node, ctx).words ?? [],
   gap: (prev: number, next: number, ctx: Ctx) => betweenLine(nodeOf(prev, ctx), nodeOf(next, ctx), sideOf(ctx).lines),
 

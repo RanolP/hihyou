@@ -205,8 +205,9 @@ async function displayVersions(
     formatBlob(ctx, ref.before, grammar, treeA),
     formatBlob(ctx, ref.after, grammar, treeB),
   ]);
-  // A side's nodes are placed in the formatted text by its anchors; HTML's printer (and so SVG's) anchors no token,
-  // which would put every node at offset 0 and paint no scope.
+  // A side's nodes are placed in the formatted text by its anchors; a formatter that anchors no source token would
+  // put every node at offset 0 and paint no scope. A whitespace-only side has no leaves to anchor, so it counts as
+  // placed.
   const mapped = (f: typeof fa, text: string) =>
     text.trim().length === 0 || f?.anchors.some((a) => !a.synthetic);
   const version = (tree: Tree, text: string, f: typeof fa) =>

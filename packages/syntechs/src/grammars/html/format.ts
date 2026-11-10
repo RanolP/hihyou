@@ -23,7 +23,6 @@ import {
   indent,
   line,
   lit,
-  literalline,
   option,
   pred,
   softline,
@@ -140,7 +139,7 @@ export const html = format({
     // printer-html.js's text: its words filled, the markers it prints joined to its ends.
     text: () =>
       fill("words", {
-        sep: either(pred("literalText"), literalline, line),
+        sep: either(pred("literalText"), [hook("literalBreak"), breakParent], line),
         first: hook("prefix"),
         last: hook("suffix"),
       }),
