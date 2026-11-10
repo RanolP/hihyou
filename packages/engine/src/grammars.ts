@@ -126,7 +126,11 @@ const highlighters: Partial<
   dockerfile: () => import("syntechs/grammars/dockerfile/highlight"),
   sql: () => import("syntechs/grammars/sql/highlight"),
   kotlin: () => import("syntechs/grammars/kotlin/highlight"),
-  html: () => import("syntechs/grammars/html/highlight"),
+  html: async () => ({
+    highlight: withEmbedded(
+      (await import("syntechs/grammars/html/highlight")).highlight,
+    ),
+  }),
   swift: () => import("syntechs/grammars/swift/highlight"),
   yaml: () => import("syntechs/grammars/yaml/highlight"),
   graphql: () => import("syntechs/grammars/graphql/highlight"),
@@ -135,7 +139,11 @@ const highlighters: Partial<
       (await import("syntechs/grammars/markdown/highlight")).highlight,
     ),
   }),
-  svg: () => import("syntechs/grammars/html/highlight"),
+  svg: async () => ({
+    highlight: withEmbedded(
+      (await import("syntechs/grammars/html/highlight")).highlight,
+    ),
+  }),
 };
 
 /** Info-string names that are neither a language id nor one of its file extensions. */
@@ -192,6 +200,85 @@ function withFences(markdown: HighlightModule): HighlightModule {
         if (kind === "inline") return;
         if (kind === "fenced_code_block") {
           paintFence(tree, n, paint, fenced);
+          return;
+        }
+        for (let i = 0, count = tree.count(n); i < count; i++)
+          visit(tree.child(n, i));
+      };
+      visit(tree.root);
+    },
+  };
+}
+
+/** The language a `<script>`'s `type` holds: JavaScript when unset, JSON for an import map or a JSON type. */
+function scriptLanguage(type: string | undefined): LanguageId | undefined {
+  const t = type?.trim().toLowerCase() ?? "";
+  if (["", "module", "text/javascript", "application/javascript"].includes(t))
+    return "javascript";
+  if (t === "importmap" || t === "speculationrules" || t.endsWith("json"))
+    return "json";
+  return undefined;
+}
+
+/** A start tag's `type` attribute value, or undefined when it has none. */
+function typeAttribute(tree: Tree, element: number): string | undefined {
+  const tag = tree.child(element, 0);
+  for (let i = 0, count = tree.count(tag); i < count; i++) {
+    const attribute = tree.child(tag, i);
+    if (tree.kindName(attribute) !== "attribute") continue;
+    const name = tree.child(attribute, 0);
+    if (tree.text(name).toLowerCase() !== "type") continue;
+    const value = tree.count(attribute) > 2 ? tree.child(attribute, 2) : undefined;
+    if (value === undefined) return "";
+    return tree.kindName(value) === "quoted_attribute_value"
+      ? tree.text(value).slice(1, -1)
+      : tree.text(value);
+  }
+  return undefined;
+}
+
+/**
+ * HTML's highlighter, with each `<script>`'s and `<style>`'s content, which tree-sitter-html leaves one
+ * `raw_text`, also coloured as the JavaScript, JSON or CSS it holds.
+ */
+function withEmbedded(html: HighlightModule): HighlightModule {
+  const embedded = new Map<LanguageId, Fenced>();
+  return {
+    async load() {
+      await html.load?.();
+      await Promise.all(
+        (["javascript", "json", "css"] as const).map(async (id) => {
+          const highlighter = highlighters[id];
+          if (!highlighter) return;
+          const [{ language }, { highlight }] = await Promise.all([
+            parsers[id](),
+            highlighter(),
+          ]);
+          await highlight.load?.();
+          embedded.set(id, { language, highlight });
+        }),
+      );
+    },
+    highlight(tree, paint) {
+      html.highlight(tree, paint);
+      const visit = (n: number): void => {
+        const kind = tree.kindName(n);
+        if (kind === "script_element" || kind === "style_element") {
+          const id =
+            kind === "style_element"
+              ? "css"
+              : scriptLanguage(typeAttribute(tree, n));
+          const lang = id === undefined ? undefined : embedded.get(id);
+          for (let i = 0, count = tree.count(n); i < count; i++) {
+            const raw = tree.child(n, i);
+            if (!lang || tree.kindName(raw) !== "raw_text") continue;
+            const inner = parseTree(lang.language, tree.text(raw));
+            lang.highlight.highlight(inner, (m, scope, from, to) => {
+              const s = inner.start(m) + (from ?? 0);
+              const e = to === undefined ? inner.end(m) : inner.start(m) + to;
+              paint(raw, scope, s, e);
+            });
+          }
           return;
         }
         for (let i = 0, count = tree.count(n); i < count; i++)
