@@ -35,6 +35,8 @@ const lockfiles = new Set([
 
 const generatedName =
   /\.min\.(?:js|css)$|\.(?:js|css)\.map$|\.generated\.\w+$|\.g\.dart$|\.pb\.go$|_pb2\.pyi?$/;
+/** drizzle-kit's migration metadata: `<out>/meta/_journal.json` and `<out>/meta/NNNN_snapshot.json`. */
+const drizzleMeta = /(?:^|\/)meta\/(?:_journal|\d{4}_snapshot)\.json$/;
 /** The markers generators write into their output's header: `@generated`, Go's `Code generated ... DO NOT EDIT.` */
 const generatedMarker = /@generated\b|\bDO NOT EDIT\b|\bauto-?generated\b/i;
 
@@ -45,7 +47,7 @@ export function producedBy(
 ): "lockfile" | "generated" | undefined {
   const name = path.slice(path.lastIndexOf("/") + 1);
   if (lockfiles.has(name)) return "lockfile";
-  if (generatedName.test(name)) return "generated";
+  if (generatedName.test(name) || drizzleMeta.test(path)) return "generated";
   if (text !== undefined && generatedMarker.test(text.slice(0, 1024)))
     return "generated";
   return undefined;
