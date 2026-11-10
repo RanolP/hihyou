@@ -304,13 +304,14 @@ export function match(
     return name === undefined ? undefined : `${side.tree.kindName(h)}\0${name}`;
   };
   const recover = (root: number, rootB: number) => {
-    const pending: [number, number][] = [[root, rootB]];
+    // `adopted`: a wrapper's inner node set against the other side's node (see `blocksIn` below), never paired.
+    const pending: [number, number, adopted?: boolean][] = [[root, rootB]];
     const linkAndRecover = (p: number, q: number) => {
       link(p, q);
       pending.push([p, q]);
     };
     for (let next = pending.pop(); next; next = pending.pop()) {
-      const [x, y] = next;
+      const [x, y, adoptedPair = false] = next;
       const kidsX = a.childrenOf(x);
       const kidsY = b.childrenOf(y);
       // Already-matched children stay in the sequences as anchors equal only to their partner,
@@ -356,6 +357,9 @@ export function match(
         if (p === -1 || q === undefined || q === -1) continue;
         const elsewhereA = src[p] as number;
         const elsewhereB = dst[q] as number;
+        // An adopted pair only fills holes: the other side's node already has its own pair, whose recovery
+        // decided its children, so a namesake in the dropped wrapper takes nothing from it.
+        if (adoptedPair && (elsewhereA !== -1 || elsewhereB !== -1)) continue;
         if (elsewhereA !== -1 && isoA[p] === isoB[elsewhereA]) continue;
         if (elsewhereB !== -1 && isoA[elsewhereB] === isoB[q]) continue;
         if (elsewhereA !== -1)
@@ -470,12 +474,56 @@ export function match(
         const unwrapped = inside(a, isoA, src, p, isoB[q] as number);
         if (wrapped !== -1 && unwrapped === -1) {
           linkSubtree(p, wrapped);
-          besides(false, q, wrapped, p);
+          if (!adoptedPair) besides(false, q, wrapped, p);
         } else if (unwrapped !== -1 && wrapped === -1) {
           linkSubtree(unwrapped, q);
-          besides(true, p, unwrapped, q);
+          if (!adoptedPair) besides(true, p, unwrapped, q);
         }
       }
+      // A wrapper dropped around children that stay (a function body's `try { … }` removed, its statements now
+      // the body's own): the unmatched wrapper's inner node of this pair's kind, up to two levels down, is
+      // recovered against the other side too, without pairing it, so its `const res = await …` pairs with the
+      // edited copy here and does not read as deleted beside an inserted twin. Likewise for a wrapper added.
+      const blocksIn = (
+        side: Side,
+        partner: Int32Array,
+        kids: number[],
+        kindOf: (n: number) => string,
+        kind: string,
+      ) => {
+        const found: number[] = [];
+        const walk = (n: number, depth: number) => {
+          if (partner[n] !== -1) return;
+          if (kindOf(n) === kind) found.push(n);
+          else if (depth < 2)
+            for (const c of side.childrenOf(n)) walk(c, depth + 1);
+        };
+        for (const k of kids) walk(k, 0);
+        return found;
+      };
+      // Only a wrapper most of whose paired children already sit directly in the other side's node: one whose
+      // children went into some new nested function was moved there, not dropped.
+      const adopted = (
+        side: Side,
+        partner: Int32Array,
+        n: number,
+        other: Side,
+        otherParent: number,
+      ) => {
+        let paired = 0;
+        let here = 0;
+        for (const c of side.childrenOf(n)) {
+          const m = partner[c] as number;
+          if (m === -1) continue;
+          paired++;
+          if (other.parentOf(m) === otherParent) here++;
+        }
+        return here * 2 > paired;
+      };
+      for (const d of blocksIn(a, src, kidsX, kindA, kindA(x)))
+        if (adopted(a, src, d, b, y)) pending.push([d, y, true]);
+      for (const e of blocksIn(b, dst, kidsY, kindB, kindB(y)))
+        if (adopted(b, dst, e, a, x)) pending.push([x, e, true]);
     }
   };
 
