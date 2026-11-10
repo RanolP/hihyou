@@ -324,8 +324,21 @@ const tokenWidth = (s: string) => {
 export interface Embedding {
   readonly anchor: number;
   token: ((s: string, node: number) => boolean) | undefined;
+  /**
+   * The inner tree is built from the outermost tree's own text, as HTML's prettier AST is from tree-sitter-html's:
+   * an embed directly inside may name a node of the outermost tree as its `source`.
+   */
+  readonly over?: true;
+  /**
+   * `anchor` holds the text this tree prints, as a script's content does: its tokens anchor to it as source
+   * tokens, not synthetic ones. Honoured only directly inside an `over` embedding.
+   */
+  readonly source?: true;
 }
 let embedding: Embedding | undefined;
+
+/** Whether a tree prints inside another's (`withEmbedding`), so its nodes are not the output's tree's. */
+export const embedded = (): boolean => embedding !== undefined;
 
 /**
  * Prints `fn` under `e`, restoring the embedding around it (embeds nest: an embed inside one anchors to the
@@ -333,7 +346,13 @@ let embedding: Embedding | undefined;
  */
 export function withEmbedding(e: Embedding, fn: () => void): void {
   const outer = embedding;
-  embedding = outer === undefined ? e : { anchor: outer.anchor, token: e.token };
+  embedding =
+    outer === undefined
+      ? e
+      : e.source && outer.over
+        ? { anchor: e.anchor, token: e.token, source: true }
+        : // An embed inside a source one prints part of that one's text.
+          { anchor: outer.anchor, token: e.token, ...(outer.source && { source: true as const }) };
   try {
     fn();
   } finally {
@@ -466,9 +485,17 @@ export function sToken(node: number, s: string, synthetic = false, imaginary = f
       }
     }
     node = embedding.anchor;
-    synthetic = true;
+    synthetic = embedding.source !== true;
   }
   tokenOut(node, s, synthetic, imaginary);
+}
+
+/**
+ * A token of the outermost tree's `node`, printed from inside an `over` embedding whose tree holds no such node:
+ * HTML's text, printed from prettier's AST, anchored to the tree-sitter-html leaf it was written as.
+ */
+export function sSourceToken(node: number, s: string): void {
+  tokenOut(node, s, false, false);
 }
 
 function tokenOut(node: number, s: string, synthetic: boolean, imaginary: boolean): void {
@@ -484,13 +511,14 @@ function tokenOut(node: number, s: string, synthetic: boolean, imaginary: boolea
  * A token whose line breaks are literal (prettier's `literalline`): a measure ends at its first line break and
  * the column restarts after the last. Counted as a hard line, so a group holding it scans rather than measure O(1).
  */
-export function sLiteral(node: number, s: string): void {
+export function sLiteral(node: number, s: string, source = false): void {
+  const token = source ? sSourceToken : sToken;
   if (!s.includes("\n")) {
-    sToken(node, s);
+    token(node, s);
     return;
   }
   open(LITERAL_TOKEN);
-  sToken(node, s);
+  token(node, s);
   hard++;
   close();
 }

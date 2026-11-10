@@ -941,7 +941,7 @@ export const scopesOf = (
   v: Version,
   highlight: HighlightModule | undefined,
 ): ScopeRuns | undefined =>
-  highlight && v.tree ? scopeRuns(v.tree, highlight, v.text.length, v.start, v.end) : undefined;
+  highlight && v.tree ? scopeRuns(v.tree, highlight, v.text.length, v.start, v.end, v.text) : undefined;
 
 function diffFragment(
   a: SideInput,

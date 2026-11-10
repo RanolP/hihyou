@@ -19,9 +19,10 @@ export interface HighlightModule {
   /**
    * Calls `paint` for every node that carries a TextMate scope, an enclosing node before the nodes inside
    * it. An inner scope stacks onto the scopes enclosing it, as TextMate's scope stack does, so a theme
-   * rule for the outer scope still colours what no inner rule matches.
+   * rule for the outer scope still colours what no inner rule matches. `text` is the text a node shows where
+   * that is not the tree's own (formatted output), for a highlighter that parses a node's text as another language.
    */
-  highlight(tree: Tree, paint: Paint): void;
+  highlight(tree: Tree, paint: Paint, text?: (node: number) => string): void;
   /**
    * Imports the languages this highlighter injects (JSDoc in a comment, a regex literal's pattern), which
    * `highlight` paints only once this has resolved. A loader awaits it before handing the module out.
@@ -38,7 +39,8 @@ export interface ScopeRuns {
 
 /**
  * The highlighter's scopes as runs over a text of `length` characters. `start` and `end` place a node in that
- * text; they default to the tree's own offsets, and a caller showing formatted output passes its mapping.
+ * text; they default to the tree's own offsets, and a caller showing formatted output passes its mapping and
+ * `text`, the text it shows.
  */
 export function scopeRuns(
   tree: Tree,
@@ -46,6 +48,7 @@ export function scopeRuns(
   length: number,
   start: (n: number) => number = (n) => tree.start(n),
   end: (n: number) => number = (n) => tree.end(n),
+  text?: string,
 ): ScopeRuns {
   const at = new Int32Array(length);
   const stacks = [""];
@@ -72,7 +75,7 @@ export function scopeRuns(
       byScope.set(scope, id);
     }
     at.fill(id, s, e);
-  });
+  }, text === undefined ? undefined : (n) => text.slice(start(n), end(n)));
   const runs: number[] = [];
   for (let i = 0; i < length; ) {
     const id = at[i] as number;

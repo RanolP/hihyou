@@ -21,6 +21,7 @@ import {
   sJump,
   sLine,
   sLiteral,
+  sSourceToken,
   sText,
   sToken,
 } from "../stream.js";
@@ -205,11 +206,17 @@ export type ParensRule<O = unknown> = (node: number, mode: string, ctx: StreamCt
 /** A `when(name)` or `pred(name, ...args)` condition: whether it holds for `node`, given `args`. */
 export type PredicateRule<O = unknown> = (node: number, ctx: StreamCtx<O>, ...args: string[]) => boolean;
 
+/**
+ * What a `hook` or a `fill` word prints: text, or the source pieces it was written as, each a token of the output
+ * tree's `node` (stream.ts's `sSourceToken`), or text where `node` is -1.
+ */
+export type Spelling = string | readonly (readonly [text: string, node: number])[];
+
 /** A `hook(name, ...args)`: the text it prints for `node`, given `args` ("" for none). */
-export type TextRule<O = unknown> = (node: number, ctx: StreamCtx<O>, ...args: string[]) => string;
+export type TextRule<O = unknown> = (node: number, ctx: StreamCtx<O>, ...args: string[]) => Spelling;
 
 /** A `fill(words, ...)`'s words of `node`. */
-export type WordsRule<O = unknown> = (node: number, ctx: StreamCtx<O>) => readonly string[];
+export type WordsRule<O = unknown> = (node: number, ctx: StreamCtx<O>) => readonly Spelling[];
 
 /** What goes between two items of a `flow`: a line, a soft line, a hard line, or nothing. */
 export type Gap = "line" | "softline" | "hardline" | "";
@@ -217,15 +224,26 @@ export type Gap = "line" | "softline" | "hardline" | "";
 export type GapRule<O = unknown> = (prev: number, next: number, ctx: StreamCtx<O>) => Gap;
 
 /** A `hook`'s or a `fill` word's text: "" prints nothing, and each line break in it is literal (prettier's replaceEndOfLine). */
-export function printText(s: string): void {
+export function printText(s: Spelling): void {
+  if (typeof s !== "string") {
+    for (const [text, node] of s) printPart(text, node);
+    return;
+  }
+  printPart(s, -1);
+}
+
+function printPart(s: string, node: number): void {
   const parts = s.split("\n");
   for (let i = 0; i < parts.length; i++) {
     if (i > 0) {
-      sLiteral(0, "\n");
+      if (node < 0) sLiteral(0, "\n");
+      else sLiteral(node, "\n", true);
       sBreakParent();
     }
     const p = parts[i] as string;
-    if (p !== "") sText(p);
+    if (p === "") continue;
+    if (node < 0) sText(p);
+    else sSourceToken(node, p);
   }
 }
 

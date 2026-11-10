@@ -6,7 +6,7 @@
 
 import { NAMED, type Tree, TreeBuilder } from "../../core/arena.js";
 import { parseTree } from "../../core/index.js";
-import type { Gap } from "../../fmt/dsl/runtime.js";
+import type { Gap, Spelling } from "../../fmt/dsl/runtime.js";
 import { brokenNodes } from "../../fmt/format.js";
 import type { PrettierOptions } from "../../fmt/options.js";
 import { sKeptText } from "../../fmt/stream.js";
@@ -45,6 +45,8 @@ interface Node {
   /** An element's start tag end and end tag start (-1: none, as for a void or implicitly closed element). */
   startTagEnd: number;
   endTagStart: number;
+  /** A script's or style's content start. */
+  rawAt?: number;
   isVoid: boolean;
   isSelfClosing: boolean;
   cssDisplay: string;
@@ -62,8 +64,18 @@ interface Node {
   frontMatter?: string[];
 }
 
+/** Where an attribute's name, `=`, opening quote, value and closing quote were written (-1: not written). */
+interface AttrAt {
+  name: number;
+  eq: number;
+  open: number;
+  value: number;
+  close: number;
+}
+
 interface Attr {
   rawName: string;
+  at: AttrAt;
   /** The value between its quotes, null when it has none. */
   value: string | null;
   /** A value prettier formats as code or a list: always double-quoted, a `"` in it escaped. */
@@ -343,16 +355,16 @@ export function parseHtml(
   fill(tree, text, root, tree.root, front?.end ?? 0, text.length);
   walk(root, (n) => {
     // embeddedLanguageFormatting "off" prints every attribute value as written, as no print/attribute/*.js runs.
-    if (embeddedOff) n.attrs = n.attrs.map((a) => ({ rawName: a.rawName, value: a.written ?? a.value }));
+    if (embeddedOff) n.attrs = n.attrs.map((a) => ({ rawName: a.rawName, at: a.at, value: a.written ?? a.value }));
     else if (embeddedLanguage(n) !== undefined && !embeds) throw new Unsupported(n.name);
     // A JS template's HTML (prettier's options.parentParser): embed/attributes.js prints a lit-html `${…}` written
     // unquoted as written, and print/attribute/{class-names,style,event-handler}.js leave the value as written.
     if (inJs && !embeddedOff)
       n.attrs = n.attrs.map((a) =>
         a.unquoted && a.value !== null && /^PRETTIER_HTML_PLACEHOLDER_\d+_\d+_IN_JS$/.test(a.value)
-          ? { rawName: a.rawName, value: a.value, bare: true }
+          ? { rawName: a.rawName, at: a.at, value: a.value, bare: true }
           : a.formatted || a.style || a.eventHandler
-            ? { rawName: a.rawName, value: a.written ?? a.value }
+            ? { rawName: a.rawName, at: a.at, value: a.written ?? a.value }
             : a,
       );
   });
@@ -495,19 +507,34 @@ function element(tree: TsTree, text: string, ts: number): Node {
   if (endTag !== undefined) n.endTagStart = tree.start(endTag);
   if (endTag !== undefined && tree.text(endTag).endsWith("\f>")) n.htmClose = true;
   const raw = parts.find((p) => tree.kindName(p) === "raw_text");
-  if (raw !== undefined) n.value = tree.text(raw);
+  if (raw !== undefined) {
+    n.value = tree.text(raw);
+    n.rawAt = tree.start(raw);
+  }
   else if (n.isVoid) n.end = n.startTagEnd;
   else if (!selfClosing) fill(tree, text, n, ts, n.startTagEnd, endTag === undefined ? n.end : n.endTagStart);
   return n;
 }
 
 function attribute(tree: TsTree, ts: number, element: string): Attr {
-  const a = attributeOf(tree, ts, element);
+  const at: AttrAt = { name: -1, eq: -1, open: -1, value: -1, close: -1 };
+  for (const c of kids(tree, ts)) {
+    const k = tree.kindName(c);
+    if (k === "attribute_name") at.name = tree.start(c);
+    else if (k === "=") at.eq = tree.start(c);
+    else if (k === "attribute_value") at.value = tree.start(c);
+    else if (k === "quoted_attribute_value") {
+      at.open = tree.start(c);
+      at.value = at.open + 1;
+      at.close = tree.end(c) - 1;
+    }
+  }
+  const a: Attr = { ...attributeOf(tree, ts, element), at };
   if (kids(tree, ts).some((c) => tree.kindName(c) === "attribute_value")) a.unquoted = true;
   return a;
 }
 
-function attributeOf(tree: TsTree, ts: number, element: string): Attr {
+function attributeOf(tree: TsTree, ts: number, element: string): Omit<Attr, "at"> {
   let rawName = "";
   let value: string | null = null;
   for (const c of kids(tree, ts)) {
@@ -969,14 +996,14 @@ function openingTagEndMarker(n: Node): string {
   return ">";
 }
 
-function closingTagSuffix(n: Node): string {
-  if (needsToBorrowParentClosingTagStartMarker(n)) return closingTagStartMarker(n.parent as Node);
-  if (needsToBorrowNextOpeningTagStartMarker(n)) return openingTagStartMarker(n.next as Node);
+function closingTagSuffix(side: Side, n: Node): Spelling {
+  if (needsToBorrowParentClosingTagStartMarker(n)) return marker(side, n.parent as Node, "closeStart");
+  if (needsToBorrowNextOpeningTagStartMarker(n)) return marker(side, n.next as Node, "openStart");
   return "";
 }
-function openingTagPrefix(n: Node): string {
-  if (needsToBorrowParentOpeningTagEndMarker(n)) return openingTagEndMarker(n.parent as Node);
-  if (needsToBorrowPrevClosingTagEndMarker(n)) return closingTagEndMarker(n.prev as Node);
+function openingTagPrefix(side: Side, n: Node): Spelling {
+  if (needsToBorrowParentOpeningTagEndMarker(n)) return marker(side, n.parent as Node, "openEnd");
+  if (needsToBorrowPrevClosingTagEndMarker(n)) return marker(side, n.prev as Node, "closeEnd");
   return "";
 }
 
@@ -1061,41 +1088,133 @@ interface Info {
   /** The prettier AST node it stands for: a flow child's or the root's. */
   readonly n?: Node;
   /** Its `hook("text", key)`s. */
-  readonly text?: Readonly<Record<string, string>>;
+  readonly text?: Readonly<Record<string, Spelling>>;
   /** A text's words. */
-  readonly words?: readonly string[];
+  readonly words?: readonly Spelling[];
   /** A declaration after a blank line. */
   readonly blank?: boolean;
   /** A css declaration that is the last of its `style` value. */
   readonly last?: boolean;
-  /** An embedded_code's language and content. */
+  /** An embedded_code's language and content, a css declaration's source or a front matter line; where it was written. */
   readonly lang?: EmbeddedLanguage;
   readonly value?: string;
+  readonly at?: number;
   /** A js_program's print. */
   readonly print?: () => void;
 }
 
 /** What prints another language's tree inside the HTML, as the caller's formatters do. */
 export interface HtmlEmbeds {
-  /** Prints a script's or style's content `text` as `language`'s formatter does, throwing where it cannot. */
-  embed(language: EmbeddedLanguage, text: string): void;
+  /**
+   * Prints a script's or style's content `text`, written at `at`, as `language`'s formatter does, throwing where it
+   * cannot.
+   */
+  embed(language: EmbeddedLanguage, text: string, at: number): void;
   /**
    * A `style` value's css declarations, each its source with no `;` and whether a blank line precedes it: undefined
    * when it does not parse as them.
    */
   declarations(value: string): { text: string; blank: boolean }[] | undefined;
-  /** Prints one css declaration from `declarations` as the css formatter does, its `;` only broken if `last`. */
-  declaration(text: string, last: boolean): void;
-  /** Prints an `on*` value `code` as the JS formatter does an inline event handler; undefined when it does not parse. */
-  eventHandler(code: string): (() => void) | undefined;
+  /**
+   * Prints one css declaration from `declarations` of the value written at `at` as the css formatter does, its `;`
+   * only broken if `last`.
+   */
+  declaration(text: string, last: boolean, at: number): void;
+  /**
+   * Prints an `on*` value `code`, written at `at`, as the JS formatter does an inline event handler; undefined when
+   * it does not parse.
+   */
+  eventHandler(code: string, at: number): (() => void) | undefined;
   /** embeddedLanguageFormatting "off": a script's or style's content prints as written. */
   embeddedOff: boolean;
+  /**
+   * The output tree's leaf over offset `at` of the source, as `[node, start, end]`, or the gap holding `at` as
+   * `[-1, start, end]`: what the printed text anchors to. Undefined where the HTML prints inside another tree.
+   */
+  leafAt?: (at: number) => readonly [node: number, start: number, end: number];
 }
 
 interface Side {
   readonly lines: Lines;
   readonly info: Map<number, Info>;
   readonly out: HtmlEmbeds;
+  readonly source: string;
+}
+
+/**
+ * How `text` anchors to the leaves it was written as at `at`: `exact` splits it at their boundaries where the source
+ * there reads it (in any case) and leaves it plain elsewhere; `loose` anchors all of it to the leaf over `at` where
+ * the source reads otherwise (a requoted value); `pin` does so without looking.
+ */
+function spell(side: Pick<Side, "out" | "source">, text: string, at: number, mode: "exact" | "loose" | "pin" = "exact"): Spelling {
+  const leafAt = side.out.leafAt;
+  if (leafAt === undefined || at < 0 || text === "") return text;
+  if (mode === "pin" || side.source.slice(at, at + text.length).toLowerCase() !== text.toLowerCase()) {
+    const leaf = mode === "exact" ? -1 : leafAt(at)[0];
+    return leaf < 0 ? text : [[text, leaf]];
+  }
+  const pieces: [string, number][] = [];
+  for (let i = 0; i < text.length; ) {
+    const [leaf, , end] = leafAt(at + i);
+    const j = end > at + i ? Math.min(text.length, end - at) : text.length;
+    const last = pieces[pieces.length - 1];
+    if (last?.[1] === leaf) last[0] += text.slice(i, j);
+    else pieces.push([text.slice(i, j), leaf]);
+    i = j;
+  }
+  return pieces.length === 1 && pieces[0]?.[1] === -1 ? text : pieces;
+}
+
+/** Spellings one after another. */
+const cat = (...parts: Spelling[]): Spelling =>
+  parts.flatMap((p): (readonly [string, number])[] => (typeof p === "string" ? (p === "" ? [] : [[p, -1]]) : [...p]));
+
+/** Where a tag's marker was written, and whether it anchors there `loose`ly (-1: printed with no source). */
+function markerAt(n: Node, which: string, source: string): [number, "exact" | "loose"] {
+  if (which === "openStart") return [n.kind === "element" && n.condition !== undefined ? -1 : n.start, "exact"];
+  if (which === "openEnd")
+    return n.kind === "ieConditionalComment"
+      ? [n.startTagEnd - 2, "exact"]
+      : [n.condition !== undefined ? -1 : n.startTagEnd - 1, "exact"];
+  if (which === "closeStart") return [n.endTagStart, "exact"];
+  if (n.kind === "ieConditionalComment" || n.kind === "ieConditionalEndComment") return [n.end - 10, "exact"];
+  if (n.kind === "ieConditionalStartComment") return [n.end - 7, "exact"];
+  if (n.kind !== "element") return [n.end - 1, "exact"];
+  // A void element written without `/>` prints one, which its `>` stands for.
+  if (n.isSelfClosing)
+    return n.condition !== undefined
+      ? [-1, "exact"]
+      : source.slice(n.startTagEnd - 2, n.startTagEnd) === "/>"
+        ? [n.startTagEnd - 2, "exact"]
+        : [n.startTagEnd - 1, "loose"];
+  return [n.endTagStart === -1 ? -1 : n.end - 1, "exact"];
+}
+
+/** `MARKERS[which]` of `n`, anchored where it was written. */
+function marker(side: Side, n: Node, which: string): Spelling {
+  const text = (MARKERS[which] as (n: Node) => string)(n);
+  const [at, mode] = markerAt(n, which, side.source);
+  return spell(side, text, at, mode);
+}
+
+/** A text's words, each anchored where it was written. */
+function textWords(side: Side, n: Node, words: string[], literal: boolean): Spelling[] {
+  if (side.out.leafAt === undefined) return words;
+  const { source } = side;
+  // A literal text's value is its source's end, less a line break a pre drops at its start.
+  let at = literal ? n.end - n.value.length : n.start;
+  return words.map((w) => {
+    if (literal) {
+      const s = spell(side, w, at);
+      at += w.length + 1;
+      return s;
+    }
+    while (at < n.end && HTML_SPACE.test(source.charAt(at))) at++;
+    const found = source.slice(at, at + w.length).toLowerCase() === w.toLowerCase() ? at : source.indexOf(w, at);
+    if (found < 0 || found + w.length > n.end) return w;
+    at = found + w.length;
+    return spell(side, w, found);
+  });
 }
 
 const sides = new WeakMap<object, Side>();
@@ -1107,6 +1226,8 @@ const sides = new WeakMap<object, Side>();
 export function buildHtmlTree(root: Node, source: string, out: HtmlEmbeds): Tree {
   const b = new TreeBuilder(astLanguage, "");
   const info = new Map<number, Info>();
+  const side: Side = { lines: new Lines(source), info, out, source };
+  const sp = (text: string, at: number, mode?: "exact" | "loose" | "pin") => spell(side, text, at, mode);
   /** Appends a `kind` node, over the ones appended since `mark` (a leaf without one). */
   const add = (kind: Kind, field: Field | undefined, mark: number | undefined, i: Info): void => {
     if (mark === undefined) b.leaf(kindId(kind), fieldId(field), NAMED, 0, 0);
@@ -1115,29 +1236,31 @@ export function buildHtmlTree(root: Node, source: string, out: HtmlEmbeds): Tree
   };
 
   const attribute = (a: Attr): void => {
-    const plain = (value: string) => add("plain_attribute", "attrs", undefined, { text: { value } });
-    if (a.value === null) return plain(a.rawName);
-    if (a.bare) return plain(`${a.rawName}=${a.value}`);
-    const open = `${a.rawName}="`;
+    const plain = (value: Spelling) => add("plain_attribute", "attrs", undefined, { text: { value } });
+    const name = sp(a.rawName, a.at.name);
+    if (a.value === null) return plain(name);
+    if (a.bare) return plain(cat(name, sp("=", a.at.eq), sp(a.value, a.at.value)));
+    const open = cat(name, sp("=", a.at.eq), sp('"', a.at.open, "loose"));
+    const close = sp('"', a.at.close, "loose");
     if (a.style) {
-      if (a.value.trim() === "") return plain(`${a.rawName}=""`);
+      if (a.value.trim() === "") return plain(cat(open, close));
       const decls = out.declarations(unescapeQuotes(a.value));
       if (decls !== undefined) {
         const m = b.mark();
         decls.forEach((d, i) => {
           const dm = b.mark();
-          add("css_declaration", "code", undefined, { text: { value: d.text }, last: i === decls.length - 1 });
+          add("css_declaration", "code", undefined, { value: d.text, at: a.at.value, last: i === decls.length - 1 });
           add("declaration", undefined, dm, { blank: d.blank });
         });
-        return add("style_attribute", "attrs", m, { text: { open } });
+        return add("style_attribute", "attrs", m, { text: { open, close } });
       }
     }
     if (a.eventHandler && a.value.trim() !== "") {
-      const print = out.eventHandler(unescapeQuotes(a.value));
+      const print = out.eventHandler(unescapeQuotes(a.value), a.at.value);
       if (print !== undefined) {
         const m = b.mark();
         add("js_program", "code", undefined, { print });
-        return add("event_handler_attribute", "attrs", m, { text: { open } });
+        return add("event_handler_attribute", "attrs", m, { text: { open, close } });
       }
     }
     if (a.srcset) {
@@ -1150,12 +1273,12 @@ export function buildHtmlTree(root: Node, source: string, out: HtmlEmbeds): Tree
       for (const c of candidates)
         add("candidate", undefined, undefined, {
           text: {
-            url: c.url.replaceAll('"', "&quot;"),
+            url: sp(c.url.replaceAll('"', "&quot;"), a.at.value, "pin"),
             pad: " ".repeat(urlWidth - c.url.length + 1 + maxInt - intWidth(c.descriptor)),
-            descriptor: c.descriptor,
+            descriptor: sp(c.descriptor, a.at.value, "pin"),
           },
         });
-      return add("srcset_attribute", "attrs", m, { text: { open } });
+      return add("srcset_attribute", "attrs", m, { text: { open, close } });
     }
     if (a.allow) {
       // Each directive's words one space apart.
@@ -1164,18 +1287,18 @@ export function buildHtmlTree(root: Node, source: string, out: HtmlEmbeds): Tree
         const words = d.trim();
         if (words !== "")
           add("directive", undefined, undefined, {
-            text: { value: words.split(/[\t\n\f\r ]+/).join(" ").replaceAll('"', "&quot;") },
+            text: { value: sp(words.split(/[\t\n\f\r ]+/).join(" ").replaceAll('"', "&quot;"), a.at.value, "pin") },
           });
       }
-      return add("allow_attribute", "attrs", m, { text: { open } });
+      return add("allow_attribute", "attrs", m, { text: { open, close } });
     }
     const value = a.formatted ? a.value : unescapeQuotes(a.value);
     const quote = !a.formatted && value.split('"').length > value.split("'").length ? "'" : '"';
     add("quoted_attribute", "attrs", undefined, {
       text: {
-        open: `${a.rawName}=${quote}`,
-        value: quote === '"' ? value.replaceAll('"', "&quot;") : value.replaceAll("'", "&apos;"),
-        close: quote,
+        open: cat(name, sp("=", a.at.eq), sp(quote, a.at.open, "loose")),
+        value: sp(quote === '"' ? value.replaceAll('"', "&quot;") : value.replaceAll("'", "&apos;"), a.at.value, "loose"),
+        close: sp(quote, a.at.close, "loose"),
       },
     });
   };
@@ -1191,24 +1314,25 @@ export function buildHtmlTree(root: Node, source: string, out: HtmlEmbeds): Tree
     for (const a of n.attrs) attribute(a);
     if (embedded === "raw") {
       const r = b.mark();
-      for (const l of rawLines(n.value)) add("raw_line", undefined, undefined, { text: { value: l } });
+      for (const l of rawLines(n.value))
+        add("raw_line", undefined, undefined, { text: { value: sp(l, n.rawAt ?? -1, "pin") } });
       add("raw_text", "content", r, {});
       return add("embedded_element", undefined, m, { n });
     }
     if (embedded !== undefined) {
-      add("embedded_code", "content", undefined, { lang: embedded, value: n.value });
+      add("embedded_code", "content", undefined, { lang: embedded, value: n.value, at: n.rawAt ?? -1 });
       return add("embedded_element", undefined, m, { n });
     }
     const first = firstChild(n);
     const last = lastChild(n);
     if (isPreLike(n) && hasNonTextChild(n)) {
-      let value = "";
+      let value: Spelling = "";
       if (n.endTagStart !== -1 && first !== undefined && last !== undefined) {
         let start = n.startTagEnd;
         if (needsToBorrowParentOpeningTagEndMarker(first)) start -= openingTagEndMarker(n).length;
         let end = n.endTagStart;
         if (needsToBorrowParentClosingTagStartMarker(last)) end += closingTagStartMarker(n).length;
-        value = source.slice(start, end);
+        value = sp(source.slice(start, end), start);
       }
       return add("preserved_element", undefined, m, { n, text: { value } });
     }
@@ -1222,28 +1346,29 @@ export function buildHtmlTree(root: Node, source: string, out: HtmlEmbeds): Tree
       const start =
         n.start + (n.prev && needsToBorrowNextOpeningTagStartMarker(n.prev) ? openingTagStartMarker(n).length : 0);
       const end = n.end - (n.next && needsToBorrowPrevClosingTagEndMarker(n.next) ? closingTagEndMarker(n).length : 0);
-      add("ignored", undefined, undefined, { n, text: { value: source.slice(start, end).trimEnd() } });
+      add("ignored", undefined, undefined, { n, text: { value: sp(source.slice(start, end).trimEnd(), start) } });
     } else if (n.kind === "element" || n.kind === "ieConditionalComment") element(n);
     else if (n.kind === "text") {
       const parent = n.parent as Node;
       const literal = parent.isWhitespaceSensitive && parent.isIndentationSensitive;
-      add("text", undefined, undefined, { n, words: literal ? n.value.split("\n") : n.value.split(/[\t\n\f\r ]+/) });
+      const words = literal ? n.value.split("\n") : n.value.split(/[\t\n\f\r ]+/);
+      add("text", undefined, undefined, { n, words: textWords(side, n, words, literal) });
     } else if (n.kind === "ieConditionalStartComment" || n.kind === "ieConditionalEndComment")
       add("ie_conditional_marker", undefined, undefined, { n });
     else if (n.kind === "docType") add("doc_type", undefined, undefined, { n, text: { value: ` ${n.value}` } });
-    else add("comment", undefined, undefined, { n, text: { value: n.value } });
+    else add("comment", undefined, undefined, { n, text: { value: sp(n.value, n.start) } });
   };
 
   const m = b.mark();
   if (root.frontMatter !== undefined) {
     const f = b.mark();
-    for (const l of root.frontMatter) add("front_line", undefined, undefined, { text: { value: l } });
+    for (const l of root.frontMatter) add("front_line", undefined, undefined, { value: l });
     add("front_matter", "frontMatter", f, {});
   }
   for (const c of root.children) child(c);
   add("root", undefined, m, { n: root });
   const tree = b.finish(0);
-  sides.set(tree, { lines: new Lines(source), info, out });
+  sides.set(tree, side);
   return tree;
 }
 
@@ -1430,25 +1555,30 @@ export const htmlRules = {
   blankBefore: (node: number, ctx: Ctx) => infoOf(node, ctx).blank === true,
   hasDescriptor: (node: number, ctx: Ctx) => infoOf(node, ctx).text?.descriptor !== "",
 
-  prefix: (node: number, ctx: Ctx) => openingTagPrefix(nodeOf(node, ctx)),
-  suffix: (node: number, ctx: Ctx) => closingTagSuffix(nodeOf(node, ctx)),
-  marker: (node: number, ctx: Ctx, which = "") => (MARKERS[which] as (n: Node) => string)(nodeOf(node, ctx)),
+  prefix: (node: number, ctx: Ctx) => openingTagPrefix(sideOf(ctx), nodeOf(node, ctx)),
+  suffix: (node: number, ctx: Ctx) => closingTagSuffix(sideOf(ctx), nodeOf(node, ctx)),
+  marker: (node: number, ctx: Ctx, which = "") => {
+    const n = nodeOf(node, ctx);
+    const side = sideOf(ctx);
+    if (which !== "lastChildCloseEnd") return marker(side, n, which);
+    return needsToBorrowLastChildClosingTagEndMarker(n) ? marker(side, lastChild(n) as Node, "closeEnd") : "";
+  },
   text: (node: number, ctx: Ctx, key = "") => infoOf(node, ctx).text?.[key] ?? "",
   words: (node: number, ctx: Ctx) => infoOf(node, ctx).words ?? [],
   gap: (prev: number, next: number, ctx: Ctx) => betweenLine(nodeOf(prev, ctx), nodeOf(next, ctx), sideOf(ctx).lines),
 
   // A non-yaml front matter keeps a line's trailing whitespace as written.
   frontMatterLine: (node: number, ctx: Ctx) => {
-    const line = infoOf(node, ctx).text?.value ?? "";
+    const line = infoOf(node, ctx).value ?? "";
     if (line !== "") sKeptText(line);
   },
   embed: (node: number, ctx: Ctx) => {
     const i = infoOf(node, ctx);
-    sideOf(ctx).out.embed(i.lang as EmbeddedLanguage, i.value ?? "");
+    sideOf(ctx).out.embed(i.lang as EmbeddedLanguage, i.value ?? "", i.at ?? -1);
   },
   cssDeclaration: (node: number, ctx: Ctx) => {
     const i = infoOf(node, ctx);
-    sideOf(ctx).out.declaration(i.text?.value ?? "", i.last === true);
+    sideOf(ctx).out.declaration(i.value ?? "", i.last === true, i.at ?? -1);
   },
   eventHandler: (node: number, ctx: Ctx) => infoOf(node, ctx).print?.(),
 };

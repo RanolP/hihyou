@@ -259,7 +259,7 @@ function withEmbedded(html: HighlightModule): HighlightModule {
         }),
       );
     },
-    highlight(tree, paint) {
+    highlight(tree, paint, text) {
       html.highlight(tree, paint);
       const visit = (n: number): void => {
         const kind = tree.kindName(n);
@@ -272,7 +272,8 @@ function withEmbedded(html: HighlightModule): HighlightModule {
           for (let i = 0, count = tree.count(n); i < count; i++) {
             const raw = tree.child(n, i);
             if (!lang || tree.kindName(raw) !== "raw_text") continue;
-            const inner = parseTree(lang.language, tree.text(raw));
+            // Formatted output shows the content as its formatter printed it, which is what parses here.
+            const inner = parseTree(lang.language, text ? text(raw) : tree.text(raw));
             lang.highlight.highlight(inner, (m, scope, from, to) => {
               const s = inner.start(m) + (from ?? 0);
               const e = to === undefined ? inner.end(m) : inner.start(m) + to;

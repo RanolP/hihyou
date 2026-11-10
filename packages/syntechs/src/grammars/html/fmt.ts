@@ -5,8 +5,9 @@ import { directive } from "../../fmt/dsl/normalizers.js";
 import { brokenNodes } from "../../fmt/format.js";
 import { type PrettierOptions, prettierDefaults, prettierSettings } from "../../fmt/options.js";
 import { defineLanguage, type Language } from "../../fmt/rules.js";
-import { close, IF_BROKEN, open, sText, withEmbedding } from "../../fmt/stream.js";
+import { close, type Embedding, embedded, IF_BROKEN, open, sText, withEmbedding } from "../../fmt/stream.js";
 import { printInto, type StreamRule } from "../../fmt/stream-format.js";
+import type { FormatTree } from "../../fmt/tree.js";
 import { css } from "../css/fmt.js";
 import { parseFrontMatter } from "../css/front-matter.js";
 import { frontMatterMeaning } from "../css/front-matter-fmt.js";
@@ -190,7 +191,14 @@ const base = defineLanguage(grammar, {
 const printDocument: StreamRule<HtmlOptions> = (node, ctx) => {
   const text = ctx.tree.text(node);
   const { printWidth, tabWidth, useTabs, htmlWhitespaceSensitivity } = ctx.options;
-  const embed = (lang: EmbeddedLanguage, source: string) => {
+  // The HTML's own tree is the output's, whose leaves the printed text anchors to, unless it prints inside another.
+  const leafAt = embedded() ? undefined : leafIndex(ctx.tree, node);
+  /** The embedding another language's tree prints under: as the leaf it was written in at `at`, where one holds it. */
+  const embedding = (at: number, token: Embedding["token"]): Embedding => {
+    const leaf = leafAt === undefined || at < 0 ? -1 : leafAt(at)[0];
+    return leaf < 0 ? { anchor: node, token } : { anchor: leaf, token, source: true };
+  };
+  const embed = (lang: EmbeddedLanguage, source: string, at: number) => {
     const [contentGrammar, formatter] = EMBEDDED[lang]();
     // A style's `<!-- … -->` before a rule stands as a type selector the CSS formatter prints, then is written
     // as prettier spells it (`cssCdoComments`).
@@ -223,7 +231,7 @@ const printDocument: StreamRule<HtmlOptions> = (node, ctx) => {
               return true;
             }
           : undefined;
-    withEmbedding({ anchor: node, token }, () =>
+    withEmbedding(embedding(at, token), () =>
       printInto(
         tree,
         formatter as unknown as Language<
@@ -252,7 +260,7 @@ const printDocument: StreamRule<HtmlOptions> = (node, ctx) => {
       blank: i > 0 && /\n[\t\f\r ]*\n/.test(source.slice(tree.end(decls[i - 1] as number), tree.start(d))),
     }));
   };
-  const declaration = (decl: string, last: boolean) => {
+  const declaration = (decl: string, last: boolean, at: number) => {
     const tree = parseTree(cssGrammar, `a{${decl}}`);
     const d = cssBlockDeclarations(tree)?.[0];
     if (d === undefined) throw new Unsupported("style declaration");
@@ -269,13 +277,13 @@ const printDocument: StreamRule<HtmlOptions> = (node, ctx) => {
       if (last) close();
       return true;
     };
-    withEmbedding({ anchor: node, token }, () =>
+    withEmbedding(embedding(at, token), () =>
       printInto(tree, css as unknown as Language<PrettierOptions>, { printWidth, tabWidth, useTabs }, d),
     );
   };
   // An inline event handler is a babel program in single quotes; its `;` is left off when the program is
   // one expression statement, `onclick="f()"`.
-  const eventHandler = (code: string) => {
+  const eventHandler = (code: string, at: number) => {
     const tree = parseTree(jsGrammar, code);
     if (tree.errorChars > 0 || brokenNodes(tree) !== undefined) return undefined;
     const statements: number[] = [];
@@ -304,7 +312,7 @@ const printDocument: StreamRule<HtmlOptions> = (node, ctx) => {
       return true;
     };
     return () =>
-      withEmbedding({ anchor: node, token }, () =>
+      withEmbedding(embedding(at, token), () =>
         printInto(tree, javascript as unknown as Language<PrettierOptions & { singleQuote: boolean; semi: boolean }>, {
           printWidth,
           tabWidth,
@@ -317,9 +325,63 @@ const printDocument: StreamRule<HtmlOptions> = (node, ctx) => {
   const atFileStart = ctx.tree.lf(node) === 0 && ctx.tree.col(node) === 0;
   const embeddedOff = ctx.options.embeddedLanguageFormatting === "off";
   const root = parseHtml(text, true, atFileStart, htmlWhitespaceSensitivity, embeddedOff, ctx.options.embeddedInJs, ctx.options);
-  const tree = buildHtmlTree(root, text, { embed, declarations, declaration, eventHandler, embeddedOff });
-  withEmbedding({ anchor: node, token: undefined }, () => printInto(tree, htmlAst, ctx.options));
+  const tree = buildHtmlTree(root, text, {
+    embed,
+    declarations,
+    declaration,
+    eventHandler,
+    embeddedOff,
+    ...(leafAt && { leafAt }),
+  });
+  withEmbedding({ anchor: node, token: undefined, ...(leafAt && { over: true as const }) }, () =>
+    printInto(tree, htmlAst, ctx.options),
+  );
 };
+
+/**
+ * `node`'s leaves in `tree`, by offset from its start: the leaf over an offset as `[leaf, start, end]`, or the gap
+ * holding it as `[-1, start, end]`.
+ */
+function leafIndex(
+  tree: FormatTree,
+  node: number,
+): (at: number) => readonly [node: number, start: number, end: number] {
+  // The formatter's tree holds no offsets: each leaf is found in order in the node's text, which between two
+  // leaves holds only what no leaf does (whitespace, a doctype's `html`).
+  const text = tree.text(node);
+  const limit = text.length;
+  const leaves: number[] = [];
+  const starts: number[] = [];
+  const ends: number[] = [];
+  let reached = 0;
+  const stack = [node];
+  while (stack.length > 0) {
+    const n = stack.pop() as number;
+    const count = tree.count(n);
+    for (let i = count - 1; i >= 0; i--) stack.push(tree.child(n, i));
+    if (count > 0) continue;
+    const t = tree.text(n);
+    const s = t === "" ? -1 : text.indexOf(t, reached);
+    if (s < 0) continue;
+    leaves.push(n);
+    starts.push(s);
+    ends.push(s + t.length);
+    reached = s + t.length;
+  }
+  return (at) => {
+    // The last leaf starting at or before `at`.
+    let lo = 0;
+    let hi = starts.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if ((starts[mid] as number) <= at) lo = mid + 1;
+      else hi = mid;
+    }
+    const i = lo - 1;
+    if (i >= 0 && at < (ends[i] as number)) return [leaves[i] as number, starts[i] as number, ends[i] as number];
+    return [-1, i >= 0 ? (ends[i] as number) : 0, i + 1 < starts.length ? (starts[i + 1] as number) : limit];
+  };
+}
 
 /** format.ts's rules, over the tree print.ts builds: prettier's AST prints its comments as nodes of their own. */
 const htmlAst: Language<HtmlOptions> = {

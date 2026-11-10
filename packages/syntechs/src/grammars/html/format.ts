@@ -78,7 +78,7 @@ const closingTag = [
 ];
 
 /** A `"`-quoted value printed expanded (print/attribute/utils.js's printExpand). */
-const expand = <T>(body: T) => [hook("text", "open"), group([indent([softline, body]), softline]), lit('"')];
+const expand = <T>(body: T) => [hook("text", "open"), group([indent([softline, body]), softline]), hook("text", "close")];
 
 export const html = format({
   structure: {
@@ -151,7 +151,7 @@ export const html = format({
       hook("prefix"),
       either(pred("lent", "openStart"), [], hook("marker", "openStart")),
       hook("text", "value"),
-      either(pred("lent", "closeEndToNext"), [], lit(">")),
+      either(pred("lent", "closeEndToNext"), [], hook("marker", "closeEnd")),
       hook("suffix"),
     ],
     // A `<!--[if ...]><!-->` or `<!--<![endif]-->`.
@@ -187,7 +187,7 @@ export const html = format({
         group([indent([softline, each($.children, { between: [lit(";"), line] }), ifBreak(lit(";"))]), softline]),
         [],
       ),
-      lit('"'),
+      hook("text", "close"),
     ],
     directive: () => hook("text", "value"),
   },

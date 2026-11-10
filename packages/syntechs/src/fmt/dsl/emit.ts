@@ -1103,7 +1103,7 @@ function emitRule(tree: Tree, rule: Wrap, hasFields: boolean): string[] {
           if (!isEmptyTree(x.sep)) block(`if (${i} > 0)`, () => walk(x.sep));
           line("open(FILL_ITEM);");
           if (!isEmptyTree(x.first)) block(`if (${i} === 0)`, () => walk(x.first));
-          line(`printText(${w}[${i}] as string);`);
+          line(`printText(${w}[${i}] ?? "");`);
           if (!isEmptyTree(x.last)) block(`if (${i} === ${w}.length - 1)`, () => walk(x.last));
           line("close();");
         });
