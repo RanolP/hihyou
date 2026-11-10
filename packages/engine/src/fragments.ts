@@ -1334,9 +1334,11 @@ function wholeNodes(v: Version, emphasis: Range[]): Range[] {
     const r = merged[lo];
     return r !== undefined && r.start <= start && end <= r.end;
   };
-  // Per node: -1 keeps a word or literal unchanged, else how many changed words it holds between its joiners.
+  // Per node: -1 keeps a word or literal unchanged, else how many changed words it holds between its joiners,
+  // and in `words`, where the first of them starts and the last ends.
   const out = [...merged];
   const state = new Map<number, number>();
+  const words = new Map<number, Range>();
   const stack: { n: number; open: boolean }[] = [{ n: tree.root, open: false }];
   while (stack.length > 0) {
     const top = stack.pop() as (typeof stack)[number];
@@ -1346,7 +1348,9 @@ function wholeNodes(v: Version, emphasis: Range[]): Range[] {
     const count = tree.count(n);
     if (count === 0) {
       const t = v.text.slice(start, end).trim();
-      state.set(n, t === "" || joiner.test(t) ? 0 : emphasized(start, end) ? 1 : -1);
+      const s = t === "" || joiner.test(t) ? 0 : emphasized(start, end) ? 1 : -1;
+      state.set(n, s);
+      if (s === 1) words.set(n, { start, end });
       continue;
     }
     if (!top.open) {
@@ -1356,15 +1360,44 @@ function wholeNodes(v: Version, emphasis: Range[]): Range[] {
       continue;
     }
     let s = 0;
+    let run: Range | undefined;
     for (let i = 0; i < count; i++) {
-      const c = state.get(tree.child(n, i)) ?? -1;
-      state.delete(tree.child(n, i));
+      const child = tree.child(n, i);
+      const c = state.get(child) ?? -1;
+      const w = words.get(child);
+      state.delete(child);
+      words.delete(child);
       s = c === -1 || s === -1 ? -1 : s + c;
+      if (w) run = { start: run?.start ?? w.start, end: w.end };
     }
     state.set(n, s);
+    if (run) words.set(n, run);
     // One changed word already reads as one del and one ins; only two or more interleave around a kept joiner.
-    if (s >= 2 && n !== tree.root && !v.text.slice(start, end).includes("\n") && !emphasized(start, end))
-      out.push({ start, end });
+    // The run spans the first changed word to the last, reaching further only to close a bracket it
+    // opened (`foo(a)`): brackets wrapping the whole run (the `()` an inserted parameter lands in) are kept on the
+    // other side too, and painting them on this side alone would keep the two sides' kept text from lining up.
+    if (s >= 2 && run && n !== tree.root && !v.text.slice(start, end).includes("\n")) {
+      const inner = v.text.slice(run.start, run.end);
+      const opens = inner.replace(/[^([{]/g, "").length;
+      const closes = inner.replace(/[^)\]}]/g, "").length;
+      // Out to the bracket that balances the run, not the node's edge: an ancestor holding the same run would
+      // else paint its own closer too (`f(g(a, b))` keeps `f(`, so its `)` stays kept).
+      const balance = (from: number, step: 1 | -1, depth: number) => {
+        let i = from;
+        for (; depth > 0 && i >= start && i < end; i += step) {
+          const ch = v.text[i] as string;
+          if ("([{".includes(ch)) depth += step;
+          else if (")]}".includes(ch)) depth -= step;
+        }
+        if (depth > 0) return step === 1 ? end : start;
+        return step === 1 ? i : i + 1;
+      };
+      const grown = {
+        start: closes > opens ? balance(run.start - 1, -1, closes - opens) : run.start,
+        end: opens > closes ? balance(run.end, 1, opens - closes) : run.end,
+      };
+      if (!emphasized(grown.start, grown.end)) out.push(grown);
+    }
   }
   return mergeRanges(out);
 }
