@@ -27,6 +27,7 @@ import {
 } from "@hihyou/ui";
 import type { App, MountOptions, Mounted } from "./app-api.js";
 import { renderDescription } from "./description.js";
+import { type GitHubViewed, loadGitHubViewed } from "./github-viewed.js";
 
 /** One row of the diffsets panel: one of the pull request's commits. */
 interface Row {
@@ -827,6 +828,7 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       root.style.minHeight = "";
       const hasPath =
         path === undefined || files.some((file) => file.path === path);
+      adoptGitHubViewed();
       const shownPath =
         path !== undefined && hasPath
           ? path
@@ -1073,7 +1075,73 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       return li;
     });
 
-  const unsubscribeViewed = persistedViewed.store.subscribe(drawTree);
+  // GitHub's own Viewed checkbox, kept in step with hihyou's for the files the pull request lists; a reader
+  // GitHub keeps no such state for (signed out) stays local-only.
+  let github: GitHubViewed | undefined;
+  /** What GitHub holds as viewed, as far as this page has read and written it. */
+  const githubViewed = new Set<string>();
+  /** What each listed file of the drawn view last read as, so only a change the reader makes is sent. */
+  let seenViewed = new Map<string, boolean>();
+  let githubWrites = Promise.resolve();
+  const listedFiles = () =>
+    github ? files.filter((file) => github?.paths.has(file.path)) : [];
+  /** Marks the drawn view's files GitHub holds as viewed; the view's own state before it is not a change to send. */
+  const adoptGitHubViewed = () => {
+    if (!view) return;
+    const drawn = view;
+    seenViewed = new Map(
+      listedFiles().flatMap((file) => {
+        const on = drawn.fileViewed(file.path);
+        return on === undefined ? [] : [[file.path, on] as const];
+      }),
+    );
+    for (const file of listedFiles())
+      if (githubViewed.has(file.path) && drawn.fileViewed(file.path) !== true)
+        drawn.setFileViewed(file.path, true);
+  };
+  const sendGitHubViewed = () => {
+    if (!github || !view) return;
+    const target = github;
+    for (const file of listedFiles()) {
+      const { path } = file;
+      const on = view.fileViewed(path);
+      if (on === undefined) continue;
+      const before = seenViewed.get(path);
+      seenViewed.set(path, on);
+      if (
+        before === undefined ||
+        before === on ||
+        githubViewed.has(path) === on
+      )
+        continue;
+      if (on) githubViewed.add(path);
+      else githubViewed.delete(path);
+      githubWrites = githubWrites
+        .then(() => target.set(path, on))
+        .catch((error: unknown) => {
+          console.warn(
+            `hihyou: could not ${on ? "mark" : "unmark"} ${path} viewed on GitHub for ${page.owner}/${page.repo}#${page.pull}`,
+            error,
+          );
+          // GitHub kept its old state; the next change the reader makes sends again.
+          if (githubViewed.has(path) === on) {
+            if (on) githubViewed.delete(path);
+            else githubViewed.add(path);
+          }
+        });
+    }
+  };
+  void loadGitHubViewed(page.owner, page.repo, page.pull).then((loaded) => {
+    if (!loaded || disposed) return;
+    github = loaded;
+    for (const path of loaded.viewed) githubViewed.add(path);
+    adoptGitHubViewed();
+  });
+
+  const unsubscribeViewed = persistedViewed.store.subscribe(() => {
+    drawTree();
+    sendGitHubViewed();
+  });
 
   void (async () => {
     const pullBodyRequest = host_

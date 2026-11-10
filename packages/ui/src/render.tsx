@@ -133,6 +133,8 @@ export interface DiffsetView {
   shown(): string | undefined;
   /** Whether every reviewable edit in the file at `path` has been viewed. */
   fileViewed(path: string): boolean | undefined;
+  /** Marks every reviewable edit in the file at `path` viewed or not, leaving how the reader folded it alone. */
+  setFileViewed(path: string, viewed: boolean): void;
   dispose(): void;
 }
 
@@ -1128,6 +1130,16 @@ function mount(
       const index = current.findIndex((file) => file.path === path);
       const file = current[index];
       return file ? fileViewed(index, file) : undefined;
+    },
+    setFileViewed: (path, on) => {
+      const current = files();
+      const i = current.findIndex((file) => file.path === path);
+      const file = current[i];
+      if (!file) return;
+      const index = outline();
+      if ((index.fileAtoms[i]?.length ?? 0) > 0)
+        setViewed(index, { kind: "file", file: i }, on, viewed, keyOf);
+      else viewed.set(fileKey(file), on);
     },
     dispose() {
       unsubscribe();
