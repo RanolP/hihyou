@@ -207,7 +207,9 @@ export function match(
   // Parents that tie, often with nothing of either matched yet, go by how near their ancestors share matched
   // nodes: of three `instance: z.string().min(1)` that each gained `.optional()`, each copy pairs with the one in
   // its own object, not the next in document order. An ancestor is compared with the nearest one of its kind
-  // across, climbing either side, as the copy may sit deeper on one of them.
+  // across, climbing either side, as the copy may sit deeper on one of them. The levels skipped on the far side
+  // count too: else a `()` whose function's own export shares nodes would take the `()` of an arrow nested
+  // deep inside that function's copy, over the arrow beside it.
   const sharedAt = new Map<number, boolean>();
   const shares = (x: number, y: number) => {
     const key = x * sizeB.length + y;
@@ -226,6 +228,7 @@ export function match(
     test: (x: number, y: number) => boolean,
   ): number => {
     let steps = 0;
+    let skipped = 0;
     for (
       let ax = side.parentOf(x), by = other.parentOf(y);
       ax !== -1 && by !== -1;
@@ -233,14 +236,18 @@ export function match(
     ) {
       const kind = side.tree.kindName(side.nodes[ax] as number);
       let up = by;
+      let skip = 0;
       while (
         up !== -1 &&
         other.tree.kindName(other.nodes[up] as number) !== kind
-      )
+      ) {
         up = other.parentOf(up);
+        skip++;
+      }
       if (up === -1) continue;
+      skipped += skip;
       by = other.parentOf(up);
-      if (test(ax, up)) return steps;
+      if (test(ax, up)) return steps + skipped;
     }
     return sizeA.length;
   };
