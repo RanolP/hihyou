@@ -1083,8 +1083,14 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   let github: GitHubViewed | undefined;
   /** The commit whose files the view draws. */
   let drawnRow: Row | undefined;
-  /** What GitHub holds as viewed, as far as this page has read and written it. */
+  /** What GitHub holds as viewed, as far as this page has read and written it; only to skip a write it holds. */
   const githubViewed = new Set<string>();
+  /**
+   * The paths GitHub held as viewed at load that the reader has not since seen go not viewed here, by their own
+   * hand or another tab's. A commit drawn for the first time marks these viewed; a path leaves for good once it
+   * goes not viewed, whatever GitHub answers, so a stale or failed write never re-ticks what the reader cleared.
+   */
+  const adoptable = new Set<string>();
   /**
    * Per commit row key, whether each listed file read fully viewed when that commit was last drawn. A commit not
    * drawn on this page is unknown: its atoms, and so its viewed state, exist only once its files are reviewed.
@@ -1093,21 +1099,29 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   let githubWrites = Promise.resolve();
   const listedFiles = () =>
     github ? files.filter((file) => github?.paths.has(file.path)) : [];
-  /** Marks the drawn commit's files GitHub holds as viewed; its state before that is not a change to send. */
+  /**
+   * Records the drawn commit's viewed files and, on its first draw, marks the adoptable ones viewed; its state
+   * before that is not a change to send.
+   */
   const adoptGitHubViewed = () => {
     if (!view || !drawnRow || !github) return;
     const drawn = view;
-    viewedIn.set(
-      drawnRow.key,
-      new Map(
-        listedFiles().flatMap((file) => {
-          const on = drawn.fileViewed(file.path);
-          return on === undefined ? [] : [[file.path, on] as const];
-        }),
-      ),
+    const before = viewedIn.get(drawnRow.key);
+    const seen = new Map(
+      listedFiles().flatMap((file) => {
+        const on = drawn.fileViewed(file.path);
+        return on === undefined ? [] : [[file.path, on] as const];
+      }),
     );
+    viewedIn.set(drawnRow.key, seen);
+    if (before) {
+      // Cleared while another commit was drawn, as by another tab.
+      for (const [path, on] of seen)
+        if (!on && before.get(path) === true) adoptable.delete(path);
+      return;
+    }
     for (const file of listedFiles())
-      if (githubViewed.has(file.path) && drawn.fileViewed(file.path) !== true)
+      if (adoptable.has(file.path) && drawn.fileViewed(file.path) !== true)
         drawn.setFileViewed(file.path, true);
   };
   /**
@@ -1152,13 +1166,18 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       if (on === undefined) continue;
       const before = seen.get(path);
       seen.set(path, on);
-      if (before !== undefined && before !== on) reconcileGitHubViewed(path);
+      if (before === undefined || before === on) continue;
+      if (!on) adoptable.delete(path);
+      reconcileGitHubViewed(path);
     }
   };
   void loadGitHubViewed(page.owner, page.repo, page.pull).then((loaded) => {
     if (!loaded || disposed) return;
     github = loaded;
-    for (const path of loaded.viewed) githubViewed.add(path);
+    for (const path of loaded.viewed) {
+      githubViewed.add(path);
+      adoptable.add(path);
+    }
     adoptGitHubViewed();
   });
 
