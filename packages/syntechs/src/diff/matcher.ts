@@ -360,8 +360,12 @@ export function match(
       // A child whose matched descendants went mostly into another unmatched child across belongs with that
       // one, not with the first look-alike in order: when a new `useEffect(...)` lands above an edited one, the
       // old effect pairs with the edited one, which holds its body, rather than with the new one.
-      const fitsA = homes(src, sizeA, kidsY, dst, sizeB);
-      const fitsB = homes(dst, sizeB, kidsX, src, sizeA);
+      // A look-alike holding none of the child's code is a guess by shape, and a sibling across of another kind
+      // holding a sliver of it (one shared `(body)`) is a coincidence, not a better home; only one holding most of
+      // the child's code (over `minDice` of it) outranks the guess: a deleted `if` whose `Array.isArray(body)` holds
+      // the `(body)` of a new `return …safeParse(body)` leaves the old `return` its pair.
+      const fitsA = homes(src, sizeA, kidsY, dst, sizeB, opts.minDice, (p, o) => kindA(p) === kindB(o));
+      const fitsB = homes(dst, sizeB, kidsX, src, sizeA, opts.minDice, (q, o) => kindB(q) === kindA(o));
       const fits = (p: number, q: number) => fitsA(p, q) && fitsB(q, p);
       for (const [p, q] of unmatchedPairs(
         (p, q) =>
@@ -703,7 +707,8 @@ function memberName(tree: Tree, n: number): string | undefined {
 }
 
 /**
- * `fits(p, q)`: no other still-unmatched node of `others` holds more of `p`'s matched descendants than `q` does.
+ * `fits(p, q)`: no other still-unmatched node of `others` holds more of `p`'s matched descendants than `q` does;
+ * when `q` holds none, only one of `p`'s kind (`kin`) or holding most of `p`'s code (over `minDice` of it) counts.
  * `others` is a sibling list in preorder, so a descendant's partner finds the sibling holding it by bisection.
  */
 function homes(
@@ -712,13 +717,14 @@ function homes(
   others: number[],
   back: Int32Array,
   otherSize: Uint32Array,
+  minDice: number,
+  kin: (p: number, other: number) => boolean,
 ): (p: number, q: number) => boolean {
-  const tally = new Map<number, { held: Map<number, number>; most: number }>();
+  const tally = new Map<number, Map<number, number>>();
   const tallyOf = (p: number) => {
-    let t = tally.get(p);
+    const t = tally.get(p);
     if (t) return t;
     const held = new Map<number, number>();
-    let most = 0;
     for (let i = p + 1; i < p + (size[p] as number); i++) {
       const target = partner[i] as number;
       if (target === -1 || others.length === 0) continue;
@@ -736,17 +742,19 @@ function homes(
         back[o] !== -1
       )
         continue;
-      const n = (held.get(o) ?? 0) + 1;
-      held.set(o, n);
-      most = Math.max(most, n);
+      held.set(o, (held.get(o) ?? 0) + 1);
     }
-    t = { held, most };
-    tally.set(p, t);
-    return t;
+    tally.set(p, held);
+    return held;
   };
   return (p, q) => {
-    const { held, most } = tallyOf(p);
-    return (held.get(q) ?? 0) >= most;
+    const held = tallyOf(p);
+    const own = held.get(q) ?? 0;
+    for (const [o, n] of held) {
+      if (o === q || n <= own) continue;
+      if (own > 0 || kin(p, o) || n / ((size[p] as number) - 1) > minDice) return false;
+    }
+    return true;
   };
 }
 
