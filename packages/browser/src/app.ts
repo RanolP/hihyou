@@ -828,6 +828,9 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       root.style.minHeight = "";
       const hasPath =
         path === undefined || files.some((file) => file.path === path);
+      // GitHub's Viewed covers a file's whole change in the pull request; a commit diffs that whole change only
+      // when it is the head and its parent the merge base, the one commit of a pull request with no merge.
+      drawnIsWholePull = row.threadsAt.head && row.threadsAt.leftIsBefore;
       adoptGitHubViewed();
       const shownPath =
         path !== undefined && hasPath
@@ -1076,15 +1079,19 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     });
 
   // GitHub's own Viewed checkbox, kept in step with hihyou's for the files the pull request lists; a reader
-  // GitHub keeps no such state for (signed out) stays local-only.
+  // GitHub keeps no such state for (signed out) stays local-only, and so does a diffset narrower than the pull
+  // request.
   let github: GitHubViewed | undefined;
+  let drawnIsWholePull = false;
   /** What GitHub holds as viewed, as far as this page has read and written it. */
   const githubViewed = new Set<string>();
   /** What each listed file of the drawn view last read as, so only a change the reader makes is sent. */
   let seenViewed = new Map<string, boolean>();
   let githubWrites = Promise.resolve();
   const listedFiles = () =>
-    github ? files.filter((file) => github?.paths.has(file.path)) : [];
+    github && drawnIsWholePull
+      ? files.filter((file) => github?.paths.has(file.path))
+      : [];
   /** Marks the drawn view's files GitHub holds as viewed; the view's own state before it is not a change to send. */
   const adoptGitHubViewed = () => {
     if (!view) return;
