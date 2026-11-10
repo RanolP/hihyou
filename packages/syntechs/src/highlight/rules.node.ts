@@ -228,6 +228,77 @@ const DOCKERFILE: Record<string, Rule | null> = {
   none: null,
 };
 
+// VS Code's SQL grammar scopes most keywords `keyword.other.sql` and sorts a few into their own groups. Each
+// tree-sitter-sql keyword is its own node kind, so the groups go by kind across every keyword capture.
+const SQL_KEYWORD_GROUPS: Record<string, string[]> = {
+  "keyword.other.DML.sql": [
+    "select", "insert", "into", "update", "delete", "from", "set", "where", "group", "order", "by", "or", "and",
+    "like", "union", "distinct", "having", "limit", "join", "cross", "inner", "left", "right", "full", "outer",
+    "natural", "ignore",
+  ],
+  "keyword.other.DML.II.sql": ["values"],
+  "keyword.other.create.sql": ["create", "drop", "alter", "replace"],
+  "keyword.other.DDL.create.II.sql": ["null", "on", "off"],
+  "keyword.other.LUW.sql": ["begin", "commit", "rollback"],
+  "keyword.other.authorization.sql": ["grant", "revoke"],
+  "keyword.other.data-integrity.sql": ["in"],
+  "keyword.other.alias.sql": ["as"],
+  "keyword.other.order.sql": ["asc", "desc"],
+  "storage.modifier.sql": [
+    "primary", "foreign", "key", "references", "check", "constraint", "collate", "default", "cascade",
+  ],
+};
+const SQL_KEYWORD: Rule = {
+  scope: "keyword.other.sql",
+  byKind: Object.fromEntries(
+    Object.entries(SQL_KEYWORD_GROUPS).flatMap(([scope, words]) =>
+      words.map((word): [string, string] => [`keyword_${word}`, scope]),
+    ),
+  ),
+};
+
+const SQL: Record<string, Rule | null> = {
+  ...shared("sql"),
+  keyword: SQL_KEYWORD,
+  conditional: SQL_KEYWORD,
+  attribute: SQL_KEYWORD,
+  storageclass: SQL_KEYWORD,
+  "type.qualifier": SQL_KEYWORD,
+  "keyword.operator": SQL_KEYWORD,
+  // A built-in type, and `NULL`, which the upstream query lists with them.
+  "type.builtin": { scope: "storage.type.sql", byKind: { keyword_null: "keyword.other.DDL.create.II.sql" } },
+  // VS Code's grammar leaves `TRUE` and `FALSE` unscoped.
+  boolean: "",
+  // A table, view or other object a statement names. VS Code's grammar scopes the table of a `schema.table`.
+  type: "constant.other.table-name.sql",
+  // VS Code's grammar scopes a built-in function `support.function.<category>.sql`.
+  "function.call": "support.function.sql",
+  string: "string.quoted.single.sql",
+  number: "constant.numeric.sql",
+  float: "constant.numeric.sql",
+  comment: { scope: "comment.line.double-dash.sql", byKind: { marginalia: "comment.block" } },
+  spell: null,
+  // A column, and a table or column alias: VS Code's grammar leaves an unqualified name unscoped.
+  field: "",
+  operator: {
+    scope: "keyword.operator.sql",
+    byText: {
+      "*": "keyword.operator.star.sql",
+      "=": "keyword.operator.comparison.sql",
+      "!=": "keyword.operator.comparison.sql",
+      "<>": "keyword.operator.comparison.sql",
+      "<": "keyword.operator.comparison.sql",
+      "<=": "keyword.operator.comparison.sql",
+      ">": "keyword.operator.comparison.sql",
+      ">=": "keyword.operator.comparison.sql",
+      "+": "keyword.operator.math.sql",
+      "-": "keyword.operator.math.sql",
+      "/": "keyword.operator.math.sql",
+      "||": "keyword.operator.concatenator.sql",
+    },
+  },
+};
+
 const KOTLIN: Record<string, Rule> = {
   ...shared("kotlin"),
   property: "",
@@ -716,6 +787,11 @@ export const LANGUAGES: Record<string, LanguageRules> = {
     grammar: "tree-sitter-dockerfile",
     queries: ["queries/highlights.scm"],
     captures: DOCKERFILE,
+  },
+  sql: {
+    grammar: "tree-sitter-sql",
+    queries: ["queries/highlights.scm"],
+    captures: SQL,
   },
   markdown: {
     grammar: "tree-sitter-markdown",

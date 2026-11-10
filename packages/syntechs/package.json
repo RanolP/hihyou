@@ -73,6 +73,7 @@
     "tree-sitter-bash": "workspace:*",
     "tree-sitter-markdown": "workspace:*",
     "tree-sitter-dockerfile": "workspace:*",
+    "tree-sitter-sql": "workspace:*",
     "tree-sitter-kotlin": "workspace:*",
     "tree-sitter-python": "workspace:*",
     "tree-sitter-regex": "workspace:*",

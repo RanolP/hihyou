@@ -1,0 +1,46 @@
+{
+  "name": "tree-sitter-sql",
+  "version": "0.3.12",
+  "private": true,
+  "scripts": {
+    "postinstall": "node ../build.mjs"
+  },
+  "grammar": {
+    "sources": [
+      {
+        "repo": "DerekStride/tree-sitter-sql",
+        "commit": "3f14365ef2a2e240bc41a2bfd67de8364abe2f64",
+        "files": {
+          "grammar.js": "287dde24b95a12d94459c240b1ca21cfeb9d5220dd9f68dccdeb086c2f1969d7",
+          "grammar/column-lists.js": "a0cefbd8443f851c3b822863eb0c6557ac64f64054223495fda5b26cbfb49da1",
+          "grammar/expressions.js": "8860f44759c275f6ba364b8056f111da3c8a4131268f377a37ffaf68853833cf",
+          "grammar/helpers.js": "c79da9ebbbff14dea3798007cb7882e8e1e98ccb53ef4f63a242f9a9e1b59f37",
+          "grammar/keywords.js": "4365a6fb5b9b25668b7be8856f5d275d1616ad0e456b0a3e9db9b9c58bf2f3ec",
+          "grammar/statements/alter.js": "de04aa35a3633c3369fd350d97ff3f7babf1afba3cc3c28505a5d2274424215f",
+          "grammar/statements/comment.js": "1845cb85eeb3389c37b9f8420c94fe5a7131d8351c0819d112a423d37d71f90a",
+          "grammar/statements/copy.js": "959d64f77a5a3afe1942bcaaa657577167c07645dee327f0a34ec8da1f8c8f44",
+          "grammar/statements/create-function.js": "fc230746f730bbfb6ef428878c5c593b07bb41b0246498bc5f978293b300c816",
+          "grammar/statements/create-procedure.js": "58c36c8296b77eb2473039bf9ed1200d2dae1e69c34fdbb772feb2b81a00c1b8",
+          "grammar/statements/create.js": "919271cb9285c037e906ce958e780d23bd83fe7596c09462b82f49c7dd194e64",
+          "grammar/statements/delete.js": "26a417685d07175475faffb6c44710ae212ae08d32460ba62ee40ea0969fa9ca",
+          "grammar/statements/drop.js": "81df1d300824189fca1499695d718a1ab80b2641b81042229bc574bc44d9f125",
+          "grammar/statements/index.js": "b788b76e32790cca7801a49ce60e93b1d3ce17c12884f0548c78c2c0ede4dcc6",
+          "grammar/statements/insert.js": "8e7bd1a38c14dbacbbffa9484e17d569278e02dff7efec68042130f6a5facf23",
+          "grammar/statements/merge.js": "973c778622ba1699dd606765e365abcbc74e6317445fdd2ee73e5b700055f789",
+          "grammar/statements/optimize.js": "0c64e4fc2a28200ecba9c6de73168b781b92e02703e8e86d10ad70d3033dabff",
+          "grammar/statements/privileges.js": "8d328092847e12217ac6b986447dad68dc9c58a12bd4b36c9a42811baf3c757d",
+          "grammar/statements/refresh.js": "4070645b93d7feabfd6628e8e65a68a23d3ed8b37f43af8b5b45010581a8965a",
+          "grammar/statements/rename.js": "c682cc7724766d79606e55b609b71f73c16cf2137ddde2578a81ab0733f9afc6",
+          "grammar/statements/select.js": "143ab0ea368c9e90d330decfddd522e093076a972181e63616ede6adc127e595",
+          "grammar/statements/set.js": "7b5a110d8997526e0e0084c56d9bbe6e4a4535c842d9fd3796b8bbe68b22f504",
+          "grammar/statements/truncate.js": "33186d04555be5e4c7eb3438b1a8e0895e580902a3aa5285c00fbf0619d6e21c",
+          "grammar/statements/update.js": "f772c54b2c2f48357af425c3d1ed4471b6bb253c66a532a002c469d891717a02",
+          "grammar/transactions.js": "2652e2d398093437451577afc624152451e4f3a693bdb2290f28cb1caf14978d",
+          "grammar/types.js": "7275b08d960542ca14d34ca56fd793554d5ed37d894f08cd790120b6f54d5162",
+          "src/scanner.c": "9730b26a8b3c39d6ecaef4c7c7565d76ea30e4365791d6d764fb2c3c70f20d90",
+          "queries/highlights.scm": "5476a24099995c8a35116825a7b69dca5e3189ef54c940cec717efa21301360b"
+        }
+      }
+    ]
+  }
+}

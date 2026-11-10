@@ -318,6 +318,9 @@ importers:
       tree-sitter-rust:
         specifier: workspace:*
         version: link:grammars/tree-sitter-rust
+      tree-sitter-sql:
+        specifier: workspace:*
+        version: link:grammars/tree-sitter-sql
       tree-sitter-swift:
         specifier: workspace:*
         version: link:grammars/tree-sitter-swift
@@ -360,6 +363,8 @@ importers:
   packages/syntechs/grammars/tree-sitter-ruby: {}
 
   packages/syntechs/grammars/tree-sitter-rust: {}
+
+  packages/syntechs/grammars/tree-sitter-sql: {}
 
   packages/syntechs/grammars/tree-sitter-swift: {}
 

@@ -24,6 +24,7 @@ export type LanguageId =
   | "ruby"
   | "bash"
   | "dockerfile"
+  | "sql"
   | "kotlin"
   | "html"
   | "swift"
@@ -45,6 +46,7 @@ const extensions: Record<LanguageId, readonly string[]> = {
   ruby: [".rb", ".rake", ".gemspec", ".ru"],
   bash: [".sh", ".bash"],
   dockerfile: [".dockerfile"],
+  sql: [".sql"],
   kotlin: [".kt", ".kts"],
   html: [".html", ".htm"],
   swift: [".swift"],
@@ -96,6 +98,7 @@ const parsers: Record<
   ruby: () => import("syntechs/grammars/ruby"),
   bash: () => import("syntechs/grammars/bash"),
   dockerfile: () => import("syntechs/grammars/dockerfile"),
+  sql: () => import("syntechs/grammars/sql"),
   kotlin: () => import("syntechs/grammars/kotlin"),
   html: () => import("syntechs/grammars/html"),
   swift: () => import("syntechs/grammars/swift"),
@@ -121,6 +124,7 @@ const highlighters: Partial<
   ruby: () => import("syntechs/grammars/ruby/highlight"),
   bash: () => import("syntechs/grammars/bash/highlight"),
   dockerfile: () => import("syntechs/grammars/dockerfile/highlight"),
+  sql: () => import("syntechs/grammars/sql/highlight"),
   kotlin: () => import("syntechs/grammars/kotlin/highlight"),
   html: () => import("syntechs/grammars/html/highlight"),
   swift: () => import("syntechs/grammars/swift/highlight"),
