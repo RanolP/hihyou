@@ -208,7 +208,7 @@ async function displayVersions(
   // A side's nodes are placed in the formatted text by its anchors; HTML's printer (and so SVG's) anchors no token,
   // which would put every node at offset 0 and paint no scope.
   const mapped = (f: typeof fa, text: string) =>
-    text.length === 0 || f?.anchors.some((a) => !a.synthetic);
+    text.trim().length === 0 || f?.anchors.some((a) => !a.synthetic);
   const version = (tree: Tree, text: string, f: typeof fa) =>
     (text.length === 0
       ? plainVersion(text, tree)
