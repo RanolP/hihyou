@@ -861,6 +861,12 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
           draw(withThreads([one], reviewThreads));
           place(one.path);
           placed = one.path;
+          // The rest loads in long main-thread stretches, so the first file is painted before they start; a
+          // hidden tab, which paints nothing, goes on after a moment.
+          await new Promise<void>((resolve) => {
+            requestAnimationFrame(() => setTimeout(resolve));
+            setTimeout(resolve, 100);
+          });
         }
       }
       const [loaded, reviewThreads] = await Promise.all([
