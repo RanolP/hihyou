@@ -1,3 +1,4 @@
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import solid from "vite-plugin-solid";
@@ -8,6 +9,21 @@ import { browserSafe, conditions } from "./browser-safe.ts";
 const engineGrammarsPath = fileURLToPath(
   new URL("../engine/src/grammars.ts", import.meta.url),
 );
+
+/** Maps each grammar module to the `/grammars-*.js` chunk whose entrypoint registers it. */
+function grammarChunkOf(): Record<string, string> {
+  const entrypoints = fileURLToPath(new URL("./entrypoints", import.meta.url));
+  const chunks: Record<string, string> = {};
+  for (const file of readdirSync(entrypoints)) {
+    if (!/^grammars-.*\.ts$/.test(file)) continue;
+    const source = readFileSync(path.join(entrypoints, file), "utf8");
+    for (const [, specifier] of source.matchAll(
+      /["'](syntechs\/grammars\/[^"']+)["']\s*:/g,
+    ))
+      chunks[specifier!] = `/${file.replace(/\.ts$/, ".js")}`;
+  }
+  return chunks;
+}
 
 /** Keeps the extension's app IIFE small by resolving the engine's existing lazy loaders through injected globals. */
 function injectedGrammarModules(): Plugin {
@@ -32,8 +48,16 @@ function injectedGrammarModules(): Plugin {
         throw new Error(
           `expected 49 lazy syntechs grammar imports in ${id}, found ${imports}`,
         );
+      const chunks = grammarChunkOf();
+      for (const [, specifier] of code.matchAll(
+        /import\(["'](syntechs\/grammars\/[^"']+)["']\)/g,
+      ))
+        if (!chunks[specifier!])
+          throw new Error(`no grammars-*.ts entrypoint registers ${specifier}`);
+      // A grammar's chunk is injected the first time a file needs it, so opening a pull request waits for the
+      // chunks its first file uses rather than for all of them.
       return {
-        code: `const hihyouGrammarModule = (id) => {\n  const module = globalThis.hihyouGrammarModules?.[id];\n  if (!module) return Promise.reject(new Error(\`grammar module \${id} was not injected\`));\n  return Promise.resolve(module);\n};\n${transformed}`,
+        code: `const hihyouGrammarChunks = ${JSON.stringify(chunks)};\nconst hihyouGrammarModule = async (id) => {\n  if (!globalThis.hihyouGrammarModules?.[id]) await globalThis.hihyouLoadGrammarChunk?.(hihyouGrammarChunks[id]);\n  const module = globalThis.hihyouGrammarModules?.[id];\n  if (!module) throw new Error(\`grammar module \${id} was not injected\`);\n  return module;\n};\n${transformed}`,
         map: null,
       };
     },

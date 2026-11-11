@@ -1,8 +1,26 @@
+/**
+ * Classic scripts that fill `globalThis.hihyouGrammarModules` for app.js, in dependency-sized groups that stay
+ * below AMO's per-file limit. Each is injected on its own, all of them right behind app.js.
+ */
+export const grammarChunkFiles = [
+  "/grammars-web.js",
+  "/grammars-other.js",
+  "/grammars-kotlin.js",
+  "/grammars-swift.js",
+  "/grammars-ruby.js",
+  "/grammars-bash.js",
+  "/grammars-dockerfile.js",
+  "/grammars-sql.js",
+  "/grammars-markdown.js",
+] as const;
+
 /** What the content script asks the background worker for. */
 export type ToBackground =
   | { type: "fetch"; url: string; accept?: string }
   /** Inject app.js (the engine and the renderer, ~5 MB) into the asking frame, once it is first needed. */
-  | { type: "load-app" };
+  | { type: "load-app" }
+  /** Inject one of `grammarChunkFiles` into the asking frame. */
+  | { type: "load-grammars"; file: string };
 
 /** The body travels as base64: Chrome passes messages as JSON, and a raw file's bytes must arrive unchanged. */
 export type FetchReply =

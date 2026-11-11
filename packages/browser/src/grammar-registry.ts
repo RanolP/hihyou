@@ -5,19 +5,6 @@ import {
   type Language as FormatLanguage,
 } from "syntechs/fmt";
 
-/** Classic scripts injected before app.js, in dependency-sized groups that stay below AMO's per-file limit. */
-export const grammarChunkFiles = [
-  "/grammars-web.js",
-  "/grammars-other.js",
-  "/grammars-kotlin.js",
-  "/grammars-swift.js",
-  "/grammars-ruby.js",
-  "/grammars-bash.js",
-  "/grammars-dockerfile.js",
-  "/grammars-sql.js",
-  "/grammars-markdown.js",
-] as const;
-
 type GrammarModule = Record<string, unknown>;
 
 type ExecutableFormatLanguage = FormatLanguage<unknown> & {
@@ -26,6 +13,8 @@ type ExecutableFormatLanguage = FormatLanguage<unknown> & {
 
 declare global {
   var hihyouGrammarModules: Record<string, GrammarModule> | undefined;
+  /** Injects a grammar chunk on app.js's behalf; set by the content script before app.js loads. */
+  var hihyouLoadGrammarChunk: ((file: string) => Promise<void>) | undefined;
 }
 
 /** Adds statically imported grammar modules to the isolated world's registry for app.js. */

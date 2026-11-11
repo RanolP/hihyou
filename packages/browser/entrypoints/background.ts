@@ -1,9 +1,8 @@
 import type { BackgroundDefinition } from "wxt";
 import { browser } from "wxt/browser";
 import { defineBackground } from "wxt/utils/define-background";
-import { grammarChunkFiles } from "../src/grammar-registry.js";
 import type { FetchReply, LoadReply, ToBackground } from "../src/protocol.js";
-import { toBase64 } from "../src/protocol.js";
+import { grammarChunkFiles, toBase64 } from "../src/protocol.js";
 import { fetchable } from "../src/privileged.js";
 
 // The content script cannot read `pull/<n>.diff` or `raw/...` itself: both redirect off github.com to hosts
@@ -31,26 +30,34 @@ const definition: BackgroundDefinition = defineBackground(() => {
       );
       return true;
     }
-    if (message.type === "load-app") {
+    if (message.type === "load-app" || message.type === "load-grammars") {
       const tabId = sender.tab?.id;
       if (tabId === undefined) {
         reply({
           ok: false,
-          error: "load-app came from no tab",
+          error: `${message.type} came from no tab`,
+        } satisfies LoadReply);
+        return false;
+      }
+      const file = message.type === "load-app" ? "/app.js" : message.file;
+      if (file !== "/app.js" && !grammarChunkFiles.some((f) => f === file)) {
+        reply({
+          ok: false,
+          error: `refusing to inject ${file}: not a grammar chunk`,
         } satisfies LoadReply);
         return false;
       }
       browser.scripting
         .executeScript({
           target: { tabId, frameIds: [sender.frameId ?? 0] },
-          files: [...grammarChunkFiles, "/app.js"],
+          files: [file],
         })
         .then(
           () => reply({ ok: true } satisfies LoadReply),
           (error: unknown) =>
             reply({
               ok: false,
-              error: `injecting grammar chunks and app.js: ${String(error)}`,
+              error: `injecting ${file}: ${String(error)}`,
             } satisfies LoadReply),
         );
       return true;

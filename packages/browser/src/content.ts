@@ -41,6 +41,7 @@ interface Current {
 let current: Current | undefined;
 let privileged: Privileged;
 let loaded: Promise<App> | undefined;
+let eagerlyLoaded: string | undefined;
 let globallyEnabled = true;
 
 function optedOut(key: string): boolean {
@@ -100,6 +101,15 @@ function diffParts(page: PullFilesPage): HTMLElement[] {
   return after;
 }
 
+function loadApp(): Promise<App> {
+  // A failed load is forgotten, so the next toggle tries again.
+  loaded ??= privileged.loadApp().catch((error: unknown) => {
+    loaded = undefined;
+    throw error;
+  });
+  return loaded;
+}
+
 async function setOn(state: Current, on: boolean) {
   const generation = ++state.generation;
   const button = state.bar.querySelector("button") as HTMLButtonElement;
@@ -122,15 +132,8 @@ async function setOn(state: Current, on: boolean) {
   state.view.hidden = false;
   if (state.mounted) return;
   try {
-    if (!loaded) {
-      note.textContent = "Loading hihyou…";
-      // A failed load is forgotten, so the next toggle tries again.
-      loaded = privileged.loadApp().catch((error: unknown) => {
-        loaded = undefined;
-        throw error;
-      });
-    }
-    const app = await loaded;
+    note.textContent = "Loading hihyou…";
+    const app = await loadApp();
     if (generation !== state.generation || current !== state) return;
     note.textContent = "";
     state.mounted = app.mount(state.view, {
@@ -158,6 +161,12 @@ function sync() {
   )
     teardown();
   if (!page || !key || current) return;
+  // The app and its grammars load while GitHub is still drawing the diff area, not after it; once per pull
+  // request, so a failed load is retried by the toggle rather than by every DOM change. setOn reports a failure.
+  if (eagerlyLoaded !== key && !optedOut(key)) {
+    eagerlyLoaded = key;
+    loadApp().catch(() => {});
+  }
   const parts = diffParts(page);
   const first = parts[0];
   // No root yet, or the tab bar is drawn but nothing after it: the next DOM change checks again.
@@ -217,7 +226,8 @@ export function start(host: Privileged) {
       sync();
     });
   };
-  new MutationObserver(schedule).observe(document.documentElement, {
+  // The document, not its root element: the extension starts before the parser has made one.
+  new MutationObserver(schedule).observe(document, {
     childList: true,
     subtree: true,
   });

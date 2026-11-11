@@ -5,14 +5,41 @@ import { start } from "../src/content.js";
 import {
   type FetchReply,
   fromBase64,
+  grammarChunkFiles,
   type LoadReply,
   type ToBackground,
 } from "../src/protocol.js";
 import { enabledStorageKey } from "../src/privileged.js";
 
+const grammarChunks = new Map<string, Promise<void>>();
+
+/**
+ * One injection per chunk, shared by every grammar in it. The chunks are asked for all at once, not one after
+ * another, since each round trip to the worker waits on the page's main thread. A failed injection is
+ * forgotten, so the next file tries again.
+ */
+function loadGrammarChunks(files: readonly string[]): Promise<void> {
+  for (const file of files) {
+    if (grammarChunks.has(file)) continue;
+    const loading = (
+      browser.runtime.sendMessage({
+        type: "load-grammars",
+        file,
+      } satisfies ToBackground) as Promise<LoadReply>
+    ).then((reply) => {
+      if (!reply.ok) throw new Error(reply.error);
+    });
+    loading.catch(() => grammarChunks.delete(file));
+    grammarChunks.set(file, loading);
+  }
+  return Promise.all(files.map((file) => grammarChunks.get(file))).then(
+    () => {},
+  );
+}
+
 const definition: ContentScriptDefinition = defineContentScript({
   matches: ["https://github.com/*"],
-  runAt: "document_idle",
+  runAt: "document_start",
   main() {
     start({
       async fetch(url, init) {
@@ -33,10 +60,18 @@ const definition: ContentScriptDefinition = defineContentScript({
         });
       },
       async loadApp() {
+        globalThis.hihyouLoadGrammarChunk ??= (file) =>
+          loadGrammarChunks([file]);
         if (!globalThis.hihyouApp) {
-          const reply: LoadReply = await browser.runtime.sendMessage({
+          const loading = browser.runtime.sendMessage({
             type: "load-app",
-          } satisfies ToBackground);
+          } satisfies ToBackground) as Promise<LoadReply>;
+          // Every chunk goes in right behind app.js, while GitHub is still loading the page, so it is usually in
+          // place by the time the first file asks for it.
+          loadGrammarChunks(grammarChunkFiles).catch((error: unknown) =>
+            console.warn("hihyou: could not preload the grammars", error),
+          );
+          const reply = await loading;
           if (!reply.ok) throw new Error(reply.error);
         }
         const app = globalThis.hihyouApp;
