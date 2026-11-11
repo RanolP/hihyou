@@ -820,19 +820,64 @@ function homes(
 export function isoIds(side: Side, intern: Map<string, number>): Int32Array {
   const { tree, nodes } = side;
   const ids = new Int32Array(nodes.length);
-  for (let i = nodes.length - 1; i >= 0; i--) {
+  const idOf = (i: number, kids: number[]) => {
     const n = nodes[i] as number;
-    const kids = side.childrenOf(i).map((c) => ids[c]);
     const key = `${tree.kindName(n)}\0${tree.label(n)}\0${kids.join(",")}`;
     let id = intern.get(key);
     if (id === undefined) {
       id = intern.size;
       intern.set(key, id);
     }
-    ids[i] = id;
+    return id;
+  };
+  let byRoot = isoClasses.get(tree);
+  const known = byRoot?.get(side.root);
+  if (known) {
+    // Each class is keyed once, in first-seen order, so `intern` gains the same keys in the same order as a
+    // pass over every index would give it.
+    const { cls, reps } = known;
+    const classIds = new Int32Array(reps.length);
+    reps.forEach((i, c) => {
+      classIds[c] = idOf(
+        i,
+        side.childrenOf(i).map((k) => classIds[cls[k] as number] as number),
+      );
+    });
+    for (let i = 0; i < ids.length; i++)
+      ids[i] = classIds[cls[i] as number] as number;
+    return ids;
   }
+  const cls = new Int32Array(nodes.length);
+  const reps: number[] = [];
+  const classOf = new Map<number, number>();
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    const id = idOf(
+      i,
+      side.childrenOf(i).map((c) => ids[c] as number),
+    );
+    ids[i] = id;
+    let c = classOf.get(id);
+    if (c === undefined) {
+      c = reps.length;
+      classOf.set(id, c);
+      reps.push(i);
+    }
+    cls[i] = c;
+  }
+  if (!byRoot) isoClasses.set(tree, (byRoot = new Map()));
+  byRoot.set(side.root, { cls, reps });
   return ids;
 }
+
+/**
+ * The iso classes of each side numbered so far, by tree and root (a side is fixed by both): each index's class,
+ * and the first index of each class in reverse preorder. The matcher, the move witnesses and the cross-file pass
+ * each number the same sides through their own `intern`; the classes spare all but the first a key per index.
+ */
+const isoClasses = new WeakMap<
+  Tree,
+  Map<number, { cls: Int32Array; reps: number[] }>
+>();
 
 /** Each index's previous and next sibling, -1 at either end of its parent. */
 function neighbours(side: Side): [Int32Array, Int32Array] {
