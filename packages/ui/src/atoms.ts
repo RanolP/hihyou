@@ -177,12 +177,25 @@ export function atomIndex(files: readonly DiffFile[]): AtomIndex {
         const covers = (n: NodeOutline, line: number) =>
           n.start.line <= line &&
           (n.end.line > line || (n.end.line === line && n.end.column > 0));
-        t.lines.forEach((text, line) => {
-          const owned = t.nodes.some(
-            (n) => n.atom !== undefined && covers(n, line),
+        // How many atom nodes cover each line, by a running sum over each node's first and past-last line: asking
+        // every node for every line was quadratic in a large hunk.
+        const owners = new Int32Array(t.lines.length + 1);
+        for (const n of t.nodes) {
+          if (n.atom === undefined) continue;
+          const from = Math.max(0, n.start.line);
+          const to = Math.min(
+            t.lines.length - 1,
+            n.end.column > 0 ? n.end.line : n.end.line - 1,
           );
+          if (from > to) continue;
+          owners[from] = (owners[from] as number) + 1;
+          owners[to + 1] = (owners[to + 1] as number) - 1;
+        }
+        for (let l = 1; l < owners.length; l++)
+          owners[l] = (owners[l] as number) + (owners[l - 1] as number);
+        t.lines.forEach((text, line) => {
           if (
-            owned ||
+            (owners[line] as number) > 0 ||
             !lines[line]?.some((span) => span.changed && span.text.trim() !== "")
           )
             return;
