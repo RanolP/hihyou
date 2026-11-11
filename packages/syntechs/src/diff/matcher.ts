@@ -685,6 +685,13 @@ export function match(
       forward: boolean,
     ) => {
       const out = new Map<string, number[]>();
+      // Most matched nodes have no such leaf left; skip keying their anchors.
+      if (
+        !kids.some(
+          (n) => partner[n] === -1 && sideLeafLineCount(side, n) >= 2,
+        )
+      )
+        return out;
       const anchor = (n: number) => {
         const p = partner[n] as number;
         return p === -1 ? undefined : forward ? `${n}:${p}` : `${p}:${n}`;
