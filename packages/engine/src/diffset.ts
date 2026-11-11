@@ -74,6 +74,12 @@ export interface Diffset<H extends Host> {
   id: string;
   changes: ChangedFileRef[];
   diff(): Promise<FileDiff[]>;
+  /**
+   * `path` diffed on its own, to draw before `diff()` is done: what other files take part in (a move or an
+   * extract across files, a move that holds only against the whole change set) is missing until then.
+   * Undefined when `path` is not in this diffset.
+   */
+  preview(path: string): Promise<FileDiff | undefined>;
   interdiff(to: Diffset<H>): InterDiffset<H>;
   anchor(data: AnchorData): Anchor;
   /**
@@ -123,6 +129,10 @@ export async function openDiffset<H extends Host>(
         () => diffFiles(ctx, changes),
         fileDiffBytes,
       ),
+    preview: async (path) => {
+      const ref = changes.find((c) => c.path === path);
+      return ref && (await diffFiles(ctx, [ref]))[0];
+    },
     interdiff: (to) => createInterDiffset(ctx, self, to),
     anchor: (data) => createAnchor(ctx, changes, data),
     anchorOnLines: (side, path, lines) =>

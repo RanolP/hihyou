@@ -756,88 +756,82 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
     drawTree();
     const current = review as NonNullable<typeof review>;
     try {
-      const [loaded, reviewThreads] = await Promise.all([
-        current.load(),
-        // Threads come from the public REST API; a private repository (404) or an exhausted rate limit draws the review without them.
-        host_
-          .resolveReviewThreads(
-            row.id.owner,
-            row.id.repo,
-            page.pull,
-            row.threadsAt,
-          )
-          .catch((error: unknown) => {
-            console.warn("hihyou: review threads unavailable", error);
-            return [];
-          }),
-      ]);
-      if (at !== generation || disposed) return false;
-      files = loaded.map((file) => ({
-        ...file,
-        reviewThreads: reviewThreads
-          .filter(
-            (thread) =>
-              thread.path === file.path || thread.path === file.change?.oldPath,
-          )
-          .map((thread) => ({
-            ...(thread.before !== undefined && { before: thread.before }),
-            ...(thread.after !== undefined && { after: thread.after }),
-            ...(thread.resolved !== undefined && {
-              resolved: thread.resolved,
-            }),
-            comments: thread.comments,
-          })),
-      }));
-      files = filesInReviewOrder(files);
-      drawStatus();
-      if (view) view.update(files);
-      else
-        view = renderDiffset(root, files, {
-          onExpand: (p, elided, direction) =>
-            replaceFile(p, (file) =>
-              revealElided(file, elided, direction, current.expand),
-            ),
-          onCollapse: (p, elided) =>
-            replaceFile(p, (file) => collapseElided(file, elided)),
-          onShow: selectFile,
-          onTestsShown: (shown) => {
-            testsShown = shown;
-            drawStatus();
-            updateNav();
-          },
-          single: !allFiles,
-          theme,
-          viewed: persistedViewed.store,
-          // github.com serves a commit's file at /raw/, on the page's own origin and session, so a private
-          // repository's image loads too.
-          media: (path) => {
-            const { owner, repo } = row.id;
-            const at = "commit" in row.id ? row.id.commit : row.id.head;
-            return `https://github.com/${owner}/${repo}/raw/${at}/${path.split("/").map(encodeURIComponent).join("/")}`;
-          },
-          keysMount: keysDock,
-          hostKeys: [
-            {
-              key: "/",
-              label: "Filter files",
-              section: "find",
-              run: () => filter.focus(),
-            },
-          ],
+      // Threads come from the public REST API; a private repository (404) or an exhausted rate limit draws the review without them.
+      const threads = host_
+        .resolveReviewThreads(
+          row.id.owner,
+          row.id.repo,
+          page.pull,
+          row.threadsAt,
+        )
+        .catch((error: unknown) => {
+          console.warn("hihyou: review threads unavailable", error);
+          return [];
         });
-      root.style.minHeight = "";
-      const hasPath =
-        path === undefined || files.some((file) => file.path === path);
-      drawnRow = row;
-      adoptGitHubViewed();
-      const shownPath =
-        path !== undefined && hasPath
-          ? path
-          : filesInReviewOrder(files)[0]?.path;
-      if (shownPath !== undefined) {
-        const section = [
-          ...root.querySelectorAll<HTMLElement>(".hh-file"),
-        ].find((candidate) => candidate.dataset["path"] === shownPath);
+      const withThreads = (
+        loaded: DiffFile[],
+        reviewThreads: Awaited<typeof threads>,
+      ): DiffFile[] =>
+        loaded.map((file) => ({
+          ...file,
+          reviewThreads: reviewThreads
+            .filter(
+              (thread) =>
+                thread.path === file.path ||
+                thread.path === file.change?.oldPath,
+            )
+            .map((thread) => ({
+              ...(thread.before !== undefined && { before: thread.before }),
+              ...(thread.after !== undefined && { after: thread.after }),
+              ...(thread.resolved !== undefined && {
+                resolved: thread.resolved,
+              }),
+              comments: thread.comments,
+            })),
+        }));
+      const draw = (shown: DiffFile[]) => {
+        if (view) view.update(shown);
+        else
+          view = renderDiffset(root, shown, {
+            onExpand: (p, elided, direction) =>
+              replaceFile(p, (file) =>
+                revealElided(file, elided, direction, current.expand),
+              ),
+            onCollapse: (p, elided) =>
+              replaceFile(p, (file) => collapseElided(file, elided)),
+            onShow: selectFile,
+            onTestsShown: (shown) => {
+              testsShown = shown;
+              drawStatus();
+              updateNav();
+            },
+            single: !allFiles,
+            theme,
+            viewed: persistedViewed.store,
+            // github.com serves a commit's file at /raw/, on the page's own origin and session, so a private
+            // repository's image loads too.
+            media: (path) => {
+              const { owner, repo } = row.id;
+              const at = "commit" in row.id ? row.id.commit : row.id.head;
+              return `https://github.com/${owner}/${repo}/raw/${at}/${path.split("/").map(encodeURIComponent).join("/")}`;
+            },
+            keysMount: keysDock,
+            hostKeys: [
+              {
+                key: "/",
+                label: "Filter files",
+                section: "find",
+                run: () => filter.focus(),
+              },
+            ],
+          });
+      };
+      const sectionOf = (shownPath: string) =>
+        [...root.querySelectorAll<HTMLElement>(".hh-file")].find(
+          (candidate) => candidate.dataset["path"] === shownPath,
+        );
+      const place = (shownPath: string) => {
+        const section = sectionOf(shownPath);
         // With no file asked for, a first file still below the bar leaves the page where the reader has it, as
         // GitHub's own load does.
         if (
@@ -848,7 +842,58 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
         )
           currentPath = shownPath;
         else showFile(shownPath);
+      };
+      // The whole change set diffs at once, for moves across files, and holds a large pull request for seconds:
+      // the topmost file draws first on its own, and the rest of the set draws in under it, so nothing above the
+      // reader moves. What other files add to it (a move from another file) appears with them.
+      let placed: string | undefined;
+      if (!view && path === undefined) {
+        const first = filesInReviewOrder(
+          (await current.paths()).map((p) => ({ path: p })),
+        )[0]?.path;
+        const [one, reviewThreads] = await Promise.all([
+          first === undefined ? undefined : current.preview(first),
+          threads,
+        ]);
+        if (at !== generation || disposed) return false;
+        if (one) {
+          draw(withThreads([one], reviewThreads));
+          place(one.path);
+          placed = one.path;
+        }
       }
+      const [loaded, reviewThreads] = await Promise.all([
+        current.load(),
+        threads,
+      ]);
+      if (at !== generation || disposed) return false;
+      files = filesInReviewOrder(withThreads(loaded, reviewThreads));
+      drawStatus();
+      draw(files);
+      root.style.minHeight = "";
+      const hasPath =
+        path === undefined || files.some((file) => file.path === path);
+      drawnRow = row;
+      adoptGitHubViewed();
+      const shownPath =
+        path !== undefined && hasPath
+          ? path
+          : filesInReviewOrder(files)[0]?.path;
+      // A first file drawn ahead in the all-files view was placed then, and a reader still on it keeps their line;
+      // one who scrolled past it, to the footer, is carried with the footer as the rest draws in, and is placed.
+      const kept =
+        placed !== undefined && sectionOf(placed)?.getBoundingClientRect();
+      if (
+        shownPath !== undefined &&
+        !(
+          shownPath === placed &&
+          allFiles &&
+          kept &&
+          kept.bottom > stuckFileTop() &&
+          kept.top < window.innerHeight
+        )
+      )
+        place(shownPath);
       updateNav();
       return hasPath;
     } catch (error) {

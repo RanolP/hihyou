@@ -32,9 +32,28 @@ export interface ReviewSource {
 export function engineReview<H extends Host>(
   engine: Engine<H>,
   id: () => SerializedDiffsetId<H>,
-): Pick<ReviewSource, "load" | "expand"> {
+): Pick<ReviewSource, "load" | "expand"> & {
+  /** The paths `load` will diff, in the change set's order. */
+  paths(): Promise<string[]>;
+  /**
+   * One file of the change set `load` reads, diffed alone so it draws before `load` is done; what other files
+   * take part in arrives with `load`. Undefined when `path` is not in it.
+   */
+  preview(path: string): Promise<DiffFile | undefined>;
+} {
   let latest: Promise<Diffset<H>> | undefined;
   return {
+    paths: async () => {
+      latest = engine.diffset(id());
+      return (await latest).changes.map((c) => c.path);
+    },
+    preview: async (path) => {
+      latest ??= engine.diffset(id());
+      const diffset = await latest;
+      const d = await diffset.preview(path);
+      const change = diffset.changes.find((c) => c.path === path);
+      return d && (change ? { ...d, change } : d);
+    },
     load: async () => {
       const diffset = engine.diffset(id());
       latest = diffset;
