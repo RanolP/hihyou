@@ -802,7 +802,8 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
             onShow: selectFile,
             onTestsShown: (shown) => {
               testsShown = shown;
-              drawStatus();
+              // While only the first file is drawn, the status still says the rest is loading.
+              if (files.length > 0) drawStatus();
               updateNav();
             },
             single: !allFiles,
