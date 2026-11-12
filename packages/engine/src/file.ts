@@ -45,18 +45,23 @@ export function decodeText(bytes: Uint8Array): string | undefined {
 const treeBytes = (tree: Tree, text: string) =>
   tree.nodeCount * 26 + text.length * 2;
 
-export function parseBlob(
+export async function parseBlob(
   ctx: EngineContext,
   id: BlobId | null,
   grammar: Grammar,
   text: string,
 ): Promise<Tree> {
-  if (id === null) return Promise.resolve(parseTree(grammar.language, text));
-  return ctx.cache.through(
-    cacheKey.tree(id, grammar.id),
-    () => parseTree(grammar.language, text),
-    (tree) => treeBytes(tree, text),
-  );
+  const tree =
+    id === null
+      ? parseTree(grammar.language, text)
+      : await ctx.cache.through(
+          cacheKey.tree(id, grammar.id),
+          () => parseTree(grammar.language, text),
+          (tree) => treeBytes(tree, text),
+        );
+  // Every tree the engine highlights comes from here, so what it needs is in place before that.
+  await grammar.prepare?.(tree);
+  return tree;
 }
 
 /** The formatter's output for the tree, or undefined when the grammar has none or it failed. */

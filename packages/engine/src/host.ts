@@ -36,6 +36,11 @@ export interface Grammar {
   language: Language;
   format?: FormatModule;
   highlight?: HighlightModule;
+  /**
+   * Loads what `highlight` needs for this one tree, beyond what loading the grammar brought: the languages a
+   * Markdown file's fences name. Every tree is passed here before it is highlighted.
+   */
+  prepare?(tree: Tree): Promise<void>;
   /** Node kinds an added or deleted node is a whole declaration as; see `NodeOutline.whole`. None when absent. */
   declarations?: ReadonlySet<string>;
   /** Node kinds (a class and its kin) whose body's `declarations` are whole like top-level ones. */

@@ -111,7 +111,13 @@ const parsers: Record<
 // `load` brings in the languages a highlighter injects (JSDoc, regular expressions), each its own lazy chunk,
 // so that the synchronous `highlight` can paint them.
 const highlighters: Partial<
-  Record<LanguageId, () => Promise<{ highlight: HighlightModule }>>
+  Record<
+    LanguageId,
+    () => Promise<{
+      highlight: HighlightModule;
+      prepare?: (tree: Tree) => Promise<void>;
+    }>
+  >
 > = {
   typescript: () => import("syntechs/grammars/typescript/highlight"),
   tsx: () => import("syntechs/grammars/tsx/highlight"),
@@ -134,11 +140,8 @@ const highlighters: Partial<
   swift: () => import("syntechs/grammars/swift/highlight"),
   yaml: () => import("syntechs/grammars/yaml/highlight"),
   graphql: () => import("syntechs/grammars/graphql/highlight"),
-  markdown: async () => ({
-    highlight: withFences(
-      (await import("syntechs/grammars/markdown/highlight")).highlight,
-    ),
-  }),
+  markdown: async () =>
+    withFences((await import("syntechs/grammars/markdown/highlight")).highlight),
   svg: async () => ({
     highlight: withEmbedded(
       (await import("syntechs/grammars/html/highlight")).highlight,
@@ -169,54 +172,110 @@ type Fenced = { language: Language; highlight: HighlightModule };
 
 /**
  * Markdown's highlighter, with each fenced code block's content also coloured as the language its info string
- * names. Which languages a file fences is known only once it is parsed, and `highlight` is synchronous, so
- * `load` brings in every language a fence can name.
+ * names, and YAML front matter as YAML. Which languages a file fences is known only once it is parsed, and
+ * `highlight` is synchronous, so `prepare` brings in the languages a tree needs before it is highlighted;
+ * loading them all up front cost every grammar's chunk for a file that fences one language or none.
  */
-function withFences(markdown: HighlightModule): HighlightModule {
+function withFences(markdown: HighlightModule): {
+  highlight: HighlightModule;
+  prepare(tree: Tree): Promise<void>;
+} {
   const fenced = new Map<LanguageId, Fenced>();
-  return {
+  const loading = new Map<LanguageId, Promise<void>>();
+  const loadFence = (id: LanguageId): Promise<void> => {
+    let done = loading.get(id);
+    if (!done) {
+      const highlighter = highlighters[id];
+      done = highlighter
+        ? Promise.all([parsers[id](), highlighter()]).then(
+            async ([{ language }, { highlight }]) => {
+              await highlight.load?.();
+              fenced.set(id, { language, highlight });
+            },
+          )
+        : Promise.resolve();
+      // A failed load is forgotten, so the next tree tries again.
+      done.catch(() => loading.delete(id));
+      loading.set(id, done);
+    }
+    return done;
+  };
+  const highlight: HighlightModule = {
     async load() {
       await markdown.load?.();
-      const ids = (Object.keys(parsers) as LanguageId[]).filter(
-        (id) => id !== "markdown" && id !== "svg",
-      );
-      await Promise.all(
-        ids.map(async (id) => {
-          const highlighter = highlighters[id];
-          if (!highlighter) return;
-          const [{ language }, { highlight }] = await Promise.all([
-            parsers[id](),
-            highlighter(),
-          ]);
-          await highlight.load?.();
-          fenced.set(id, { language, highlight });
-        }),
-      );
     },
     highlight(tree, paint) {
       markdown.highlight(tree, paint);
-      const visit = (n: number): void => {
+      for (const n of embeds(tree)) {
         const kind = tree.kindName(n);
-        if (kind === "inline") return;
-        if (kind === "fenced_code_block") {
-          paintFence(tree, n, paint, fenced);
-          return;
-        }
-        if (kind === "minus_metadata" || kind === "plus_metadata") {
+        if (kind === "fenced_code_block") paintFence(tree, n, paint, fenced);
+        else
           paintFrontMatter(
             tree,
             n,
             paint,
             kind === "minus_metadata" ? fenced.get("yaml") : undefined,
           );
-          return;
-        }
-        for (let i = 0, count = tree.count(n); i < count; i++)
-          visit(tree.child(n, i));
-      };
-      visit(tree.root);
+      }
     },
   };
+  return {
+    highlight,
+    async prepare(tree) {
+      const ids = new Set<LanguageId>();
+      for (const n of embeds(tree)) {
+        const kind = tree.kindName(n);
+        if (kind === "minus_metadata") ids.add("yaml");
+        if (kind !== "fenced_code_block") continue;
+        const { name } = fenceParts(tree, n);
+        const id = name === undefined ? undefined : fenceLanguage(name);
+        // An `svg` fence stays plain, as it always has.
+        if (id !== undefined && id !== "svg") ids.add(id);
+      }
+      await Promise.all([...ids].map(loadFence));
+    },
+  };
+}
+
+/** A Markdown tree's fenced code blocks and front matter, in document order and outside inline content. */
+function embeds(tree: Tree): number[] {
+  const out: number[] = [];
+  const visit = (n: number): void => {
+    const kind = tree.kindName(n);
+    if (kind === "inline") return;
+    if (
+      kind === "fenced_code_block" ||
+      kind === "minus_metadata" ||
+      kind === "plus_metadata"
+    ) {
+      out.push(n);
+      return;
+    }
+    for (let i = 0, count = tree.count(n); i < count; i++)
+      visit(tree.child(n, i));
+  };
+  visit(tree.root);
+  return out;
+}
+
+/** A fenced code block's content node and the language its info string names, as written. */
+function fenceParts(
+  tree: Tree,
+  fence: number,
+): { content: number | undefined; name: string | undefined } {
+  let content: number | undefined;
+  let name: string | undefined;
+  for (let i = 0, count = tree.count(fence); i < count; i++) {
+    const c = tree.child(fence, i);
+    const kind = tree.kindName(c);
+    if (kind === "code_fence_content") content = c;
+    else if (kind === "info_string")
+      for (let j = 0, k = tree.count(c); j < k; j++) {
+        const l = tree.child(c, j);
+        if (tree.kindName(l) === "language") name = tree.text(l);
+      }
+  }
+  return { content, name };
 }
 
 /** The language a `<script>`'s `type` holds: JavaScript when unset, JSON for an import map or a JSON type. */
@@ -309,18 +368,7 @@ function paintFence(
   paint: Parameters<HighlightModule["highlight"]>[1],
   fenced: Map<LanguageId, Fenced>,
 ): void {
-  let content: number | undefined;
-  let name: string | undefined;
-  for (let i = 0, count = tree.count(fence); i < count; i++) {
-    const c = tree.child(fence, i);
-    const kind = tree.kindName(c);
-    if (kind === "code_fence_content") content = c;
-    else if (kind === "info_string")
-      for (let j = 0, k = tree.count(c); j < k; j++) {
-        const l = tree.child(c, j);
-        if (tree.kindName(l) === "language") name = tree.text(l);
-      }
-  }
+  const { content, name } = fenceParts(tree, fence);
   const id = name === undefined ? undefined : fenceLanguage(name);
   const lang = id === undefined ? undefined : fenced.get(id);
   if (content === undefined || !lang) return;
@@ -592,6 +640,7 @@ export function syntechsGrammars(
       language,
       ...(formatter && { format: formatter }),
       ...(highlighter && { highlight: highlighter.highlight }),
+      ...(highlighter?.prepare && { prepare: highlighter.prepare }),
       ...(declarations[id] && { declarations: new Set(declarations[id]) }),
       ...(containers[id] && { containers: new Set(containers[id]) }),
       ...(scope && { scope }),
