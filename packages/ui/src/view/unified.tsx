@@ -223,12 +223,14 @@ function mergedCode(
     row.after === undefined && row.before !== undefined
       ? placer.lineCursor(index, fragment, "before", row.before)
       : undefined;
-  // Shared text is cut where its before copy breaks off, and each piece placed on both sides.
+  // Shared text is cut where its before copy breaks off, and each piece placed on both sides; a `kept` span's
+  // before copy is placed on the before side alone, its after copy on the after side alone.
   const shared = new Map<MergedSpan, Point | undefined>();
   const spans = wholeAt
     ? row.spans
     : row.spans.flatMap((span) => {
-        if (span.changed) return [span];
+        if (span.changed && !(span.kept && span.side === "before"))
+          return [span];
         return placer.shareBefore(index, fragment, span).map((cut) => {
           shared.set(cut.span, cut.before);
           return cut.span;
@@ -258,7 +260,9 @@ function mergedCode(
           return wholeAt(span);
         }
         if (span.side === "before")
-          return placer.takeBefore(index, fragment, span.text);
+          return span.kept
+            ? shared.get(span)
+            : placer.takeBefore(index, fragment, span.text);
         const after = afterAt?.(span);
         const before = shared.get(span);
         return [after, before].filter((p) => p !== undefined);

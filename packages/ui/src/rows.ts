@@ -370,8 +370,11 @@ export function buildSections(file: DiffFile): Section[] {
   return sections;
 }
 
-/** A span of a merged unified line; a changed span says which side it came from. */
-export type MergedSpan = Span & { side?: SideName };
+/**
+ * A span of a merged unified line; a changed span says which side it came from. A `kept` one is unchanged text
+ * drawn inside a side's changed run, once per side (`coalesce`).
+ */
+export type MergedSpan = Span & { side?: SideName; kept?: true };
 
 /**
  * A row of the unified layout. A `diff` fragment (or else a pair of its lines) whose two sides read the same
@@ -403,13 +406,17 @@ type MergedRow = Extract<UnifiedRow, { kind: "merged" }>;
 
 const blank = (text: string) => text.trim() === "";
 /** Whether at least half of the lines' text, whitespace aside, is unchanged. */
-const mostlyKept = (lines: readonly Pick<Cell, "spans">[]): boolean => {
+const mostlyKept = (
+  lines: readonly { spans: readonly MergedSpan[] }[],
+): boolean => {
   let kept = 0;
   let all = 0;
   for (const span of lines.flatMap((c) => c.spans)) {
+    // A `kept` copy counts once, as the unchanged text it is.
+    if (span.kept && span.side === "before") continue;
     const length = span.text.replace(/\s+/g, "").length;
     all += length;
-    if (!span.changed) kept += length;
+    if (!span.changed || span.kept) kept += length;
   }
   return kept * 2 >= all;
 };
@@ -537,7 +544,67 @@ export function mergeLines(
   }
   deleted(false);
   wholeRows(Infinity);
+  for (const r of rows) r.spans = coalesce(r.spans);
   return rows;
+}
+
+/** Unchanged text that reads as part of the changes around it: at most two characters, none a letter, digit or `_`. */
+const separator = (text: string) =>
+  text.length > 0 &&
+  text.length <= 2 &&
+  // A table's `|` closes a cell; a run drawn across it would leave a cell with no pipe.
+  !/[\p{L}\p{N}_|]/u.test(text);
+
+/**
+ * Two changed runs a separator apart, an added run before it and a removed run after it, weave the sides together:
+ * `1.111` -> `15.250` drawn run by run is `[-1][+15].[-111][+250]`, read as `115.111250`. Such runs coalesce into
+ * one change, every removed span (with the separator) ahead of every added span (with the separator again), each
+ * copy of the separator `kept`. A wider gap, or runs that do not weave, stay as they are.
+ */
+function coalesce(spans: MergedSpan[]): MergedSpan[] {
+  const out: MergedSpan[] = [];
+  // The changed run being read, as drawn; the sides' spans apart once a separator joins another run to it.
+  let run: MergedSpan[] = [];
+  let removed: MergedSpan[] = [];
+  let added: MergedSpan[] = [];
+  let joined = false;
+  const flush = () => {
+    out.push(...(joined ? [...removed, ...added] : run));
+    run = [];
+    removed = [];
+    added = [];
+    joined = false;
+  };
+  for (let i = 0; i < spans.length; ) {
+    const span = spans[i] as MergedSpan;
+    if (span.side !== undefined) {
+      run.push(span);
+      (span.side === "before" ? removed : added).push(span);
+      i++;
+      continue;
+    }
+    let end = i;
+    while (end < spans.length && spans[end]?.side === undefined) end++;
+    const gap = spans.slice(i, end);
+    const next = spans[end];
+    if (
+      added.length > 0 &&
+      next?.side === "before" &&
+      separator(gap.map((s) => s.text).join(""))
+    ) {
+      joined = true;
+      for (const s of gap) {
+        removed.push({ ...s, changed: true, side: "before", kept: true });
+        added.push({ ...s, changed: true, side: "after", kept: true });
+      }
+    } else {
+      flush();
+      out.push(...gap);
+    }
+    i = end;
+  }
+  flush();
+  return out;
 }
 
 /**
