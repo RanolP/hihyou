@@ -44,9 +44,9 @@ function injectedGrammarModules(): Plugin {
           return `hihyouGrammarModule(${JSON.stringify(specifier)})`;
         },
       );
-      if (imports !== 49)
+      if (imports !== 51)
         throw new Error(
-          `expected 49 lazy syntechs grammar imports in ${id}, found ${imports}`,
+          `expected 51 lazy syntechs grammar imports in ${id}, found ${imports}`,
         );
       const chunks = grammarChunkOf();
       for (const [, specifier] of code.matchAll(

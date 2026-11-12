@@ -756,16 +756,20 @@ function sideLeafLineCount(side: Side, n: number): number {
   return count;
 }
 
-/** A declaration's name, or the key of a member written `key: value` (an object property, a mapping entry). */
+/**
+ * A declaration's name, or the key of a member written `key: value` (an object property, a mapping entry). A
+ * member keyed by several parts (an HCL block's type and labels, `resource "aws_instance" "web"`) is all of them.
+ */
 function memberName(tree: Tree, n: number): string | undefined {
   if (!tree.named(n)) return undefined;
   const name = nameOf(tree, n);
   if (name !== undefined) return name;
+  const keys: string[] = [];
   for (let i = 0, count = tree.count(n); i < count; i++) {
     const c = tree.child(n, i);
-    if (tree.fieldName(c) === "key") return tree.text(c);
+    if (tree.fieldName(c) === "key") keys.push(tree.text(c));
   }
-  return undefined;
+  return keys.length > 0 ? keys.join(" ") : undefined;
 }
 
 /**

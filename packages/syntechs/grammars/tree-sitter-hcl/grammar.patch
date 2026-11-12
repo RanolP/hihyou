@@ -1,0 +1,37 @@
+An attribute's name and a block's type and labels are `key` fields, as an object element's key already is, so the
+diff matcher pairs `ami = ...` by its name and `resource "aws_instance" "web" { ... }` by its type and labels: a
+member's key is its name within its scope (packages/syntechs/src/diff/matcher.ts, memberName).
+
+A file's top-level attributes and blocks are the root's own children, not one `body` node's, the way every other
+grammar's top-level declarations are: an added top-level block then reads as one whole added declaration
+(packages/engine/src/fragments.ts, topOrMember). A block's `body` stays. src/grammars/hcl/highlights.tm.scm tells
+a top-level block's type from a nested one's by `config_file` instead of the `body` upstream's queries go by.
+
+--- a/make_grammar.js
++++ b/make_grammar.js
+@@ -36,18 +36,20 @@
+     extras: ($) => [$.comment, $._whitespace],
+ 
+     rules: {
+       // also allow objects to handle .tfvars in json format
+-      config_file: ($) => optional(choice($.body, $.object)),
++      config_file: ($) => optional(choice($._members, $.object)),
+ 
+-      body: ($) => choice(repeat1(choice($.attribute, $.block))),
++      body: ($) => $._members,
+ 
+-      attribute: ($) => seq($.identifier, "=", $.expression),
++      _members: ($) => repeat1(choice($.attribute, $.block)),
+ 
++      attribute: ($) => seq(field("key", $.identifier), "=", $.expression),
++
+       block: ($) =>
+         seq(
+-          $.identifier,
+-          repeat(choice($.string_lit, $.identifier)),
++          field("key", $.identifier),
++          repeat(field("key", choice($.string_lit, $.identifier))),
+           $.block_start,
+           optional($.body),
+           $.block_end,
+         ),

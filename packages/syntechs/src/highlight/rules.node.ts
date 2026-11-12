@@ -228,6 +228,92 @@ const DOCKERFILE: Record<string, Rule | null> = {
   none: null,
 };
 
+// The scopes of HashiCorp's Terraform TextMate grammar (hashicorp/syntax, terraform.tmGrammar.json), which VS
+// Code's Terraform extension ships. nvim-treesitter's queries name the captures.
+const HCL: Record<string, Rule | null> = {
+  ...shared("hcl"),
+  // A top-level block's type (`resource`, `variable`); for/in/if/else in a template or a `for` expression.
+  keyword: { scope: "keyword.control.hcl", byKind: { identifier: "entity.name.type.terraform" } },
+  "keyword.repeat": "keyword.control.hcl",
+  "keyword.conditional": "keyword.control.hcl",
+  // A nested block's type (`ingress`, `lifecycle`).
+  type: "entity.name.type.hcl",
+  // `string`, `list` in a type constraint; `path` and `terraform` before `.root` and `.workspace`.
+  "type.builtin": {
+    scope: "storage.type.hcl",
+    byText: { path: "variable.other.readwrite.terraform", terraform: "variable.other.readwrite.terraform" },
+  },
+  variable: "variable.other.readwrite.hcl",
+  // `var`, `local`, `data`, `module` before an attribute access; `root`, `cwd`, `workspace` after one.
+  "variable.builtin": {
+    scope: "variable.other.readwrite.terraform",
+    byText: {
+      root: "variable.other.member.hcl",
+      cwd: "variable.other.member.hcl",
+      workspace: "variable.other.member.hcl",
+    },
+  },
+  "variable.member": "variable.other.member.hcl",
+  // An attribute's name, or an object key written as a bare word: highlights.tm.scm.
+  "variable.declaration": "variable.other.readwrite.hcl",
+  // A block's labels: highlights.tm.scm.
+  label: "variable.other.enummember.hcl",
+  function: "support.function.builtin.terraform",
+  string: "string.quoted.double.hcl",
+  "string.heredoc": "string.unquoted.heredoc.hcl",
+  number: "constant.numeric.integer.hcl",
+  boolean: "constant.language.hcl",
+  // `null`.
+  constant: "constant.language.hcl",
+  comment: {
+    scope: "comment.line.number-sign.hcl",
+    byPrefix: [
+      ["//", "comment.line.double-slash.hcl"],
+      ["/*", "comment.block.hcl"],
+    ],
+  },
+  operator: {
+    scope: "keyword.operator.hcl",
+    byText: {
+      "!": "keyword.operator.logical.hcl",
+      "&&": "keyword.operator.logical.hcl",
+      "||": "keyword.operator.logical.hcl",
+      "+": "keyword.operator.arithmetic.hcl",
+      "-": "keyword.operator.arithmetic.hcl",
+      "*": "keyword.operator.arithmetic.hcl",
+      "/": "keyword.operator.arithmetic.hcl",
+      "%": "keyword.operator.arithmetic.hcl",
+    },
+  },
+  "punctuation.delimiter": {
+    scope: "",
+    byKind: {
+      heredoc_start: "keyword.operator.heredoc.hcl",
+      heredoc_identifier: "keyword.control.heredoc.hcl",
+    },
+    byText: {
+      ".": "keyword.operator.accessor.hcl",
+      ",": "punctuation.separator.hcl",
+      ".*": "keyword.operator.splat.hcl",
+      "[*]": "keyword.operator.splat.hcl",
+    },
+  },
+  // `${` `%{` and their `}`, a `~` strip marker, `...`, `?`, `=>`.
+  "punctuation.special": {
+    scope: "keyword.operator.hcl",
+    byKind: {
+      template_interpolation_start: "keyword.other.interpolation.begin.hcl",
+      template_directive_start: "keyword.other.interpolation.begin.hcl",
+      template_interpolation_end: "keyword.other.interpolation.end.hcl",
+      template_directive_end: "keyword.other.interpolation.end.hcl",
+      strip_marker: "keyword.operator.template.left.trim.hcl",
+    },
+    byText: { "=>": "storage.type.function.hcl" },
+  },
+  spell: null,
+  none: null,
+};
+
 // VS Code's SQL grammar scopes most keywords `keyword.other.sql` and sorts a few into their own groups. Each
 // tree-sitter-sql keyword is its own node kind, so the groups go by kind across every keyword capture.
 const SQL_KEYWORD_GROUPS: Record<string, string[]> = {
@@ -787,6 +873,13 @@ export const LANGUAGES: Record<string, LanguageRules> = {
     grammar: "tree-sitter-dockerfile",
     queries: ["queries/highlights.scm"],
     captures: DOCKERFILE,
+  },
+  hcl: {
+    grammar: "tree-sitter-hcl",
+    // tree-sitter-hcl ships no queries; nvim-treesitter's Terraform query extends its HCL one.
+    queries: ["runtime/queries/hcl/highlights.scm", "runtime/queries/terraform/highlights.scm"],
+    extend: ["hcl/highlights.tm.scm"],
+    captures: HCL,
   },
   sql: {
     grammar: "tree-sitter-sql",

@@ -24,6 +24,7 @@ export type LanguageId =
   | "ruby"
   | "bash"
   | "dockerfile"
+  | "hcl"
   | "sql"
   | "kotlin"
   | "html"
@@ -46,6 +47,8 @@ const extensions: Record<LanguageId, readonly string[]> = {
   ruby: [".rb", ".rake", ".gemspec", ".ru"],
   bash: [".sh", ".bash"],
   dockerfile: [".dockerfile"],
+  // Terraform (.tf, .tfvars) and other HCL; a .tf.json file stays JSON.
+  hcl: [".tf", ".tfvars", ".hcl"],
   sql: [".sql"],
   kotlin: [".kt", ".kts"],
   html: [".html", ".htm"],
@@ -98,6 +101,7 @@ const parsers: Record<
   ruby: () => import("syntechs/grammars/ruby"),
   bash: () => import("syntechs/grammars/bash"),
   dockerfile: () => import("syntechs/grammars/dockerfile"),
+  hcl: () => import("syntechs/grammars/hcl"),
   sql: () => import("syntechs/grammars/sql"),
   kotlin: () => import("syntechs/grammars/kotlin"),
   html: () => import("syntechs/grammars/html"),
@@ -130,6 +134,7 @@ const highlighters: Partial<
   ruby: () => import("syntechs/grammars/ruby/highlight"),
   bash: () => import("syntechs/grammars/bash/highlight"),
   dockerfile: () => import("syntechs/grammars/dockerfile/highlight"),
+  hcl: () => import("syntechs/grammars/hcl/highlight"),
   sql: () => import("syntechs/grammars/sql/highlight"),
   kotlin: () => import("syntechs/grammars/kotlin/highlight"),
   html: async () => ({
@@ -157,6 +162,7 @@ const fenceAliases: Record<string, LanguageId> = {
   jsonc: "json",
   json5: "json",
   docker: "dockerfile",
+  terraform: "hcl",
 };
 
 /** The language a fence's info string names: `rust`, `rs`, `shell`; Markdown itself is left plain. */
@@ -474,6 +480,7 @@ const declarations: Partial<Record<LanguageId, readonly string[]>> = {
   ],
   ruby: ["method", "singleton_method", "class", "singleton_class", "module"],
   bash: ["function_definition"],
+  hcl: ["block"],
   kotlin: [
     "function_declaration",
     "class_declaration",
@@ -498,6 +505,8 @@ const containers: Partial<Record<LanguageId, readonly string[]>> = {
   tsx: typescriptContainers,
   javascript: ["class_declaration"],
   kotlin: ["class_declaration", "object_declaration", "companion_object"],
+  // A nested block (`ingress`, `lifecycle`) is a whole unit of its resource the way the resource is of the file.
+  hcl: ["block"],
 };
 
 /** A formatter bound to options the host passed as a plain object, checked by syntechs at format time. */

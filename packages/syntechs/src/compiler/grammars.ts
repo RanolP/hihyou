@@ -29,6 +29,7 @@ export const GRAMMARS: Record<string, { src: string; comments: string[] }> = {
   ruby: { src: "tree-sitter-ruby/src", comments: ["comment"] },
   bash: { src: "tree-sitter-bash/src", comments: ["comment"] },
   dockerfile: { src: "tree-sitter-dockerfile/src", comments: ["comment"] },
+  hcl: { src: "tree-sitter-hcl/src", comments: ["comment"] },
   // `marginalia` is a `/* */` block comment.
   sql: { src: "tree-sitter-sql/src", comments: ["comment", "marginalia"] },
   kotlin: {

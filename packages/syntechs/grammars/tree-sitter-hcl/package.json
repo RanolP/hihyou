@@ -1,0 +1,29 @@
+{
+  "name": "tree-sitter-hcl",
+  "version": "1.2.0",
+  "private": true,
+  "scripts": {
+    "postinstall": "node ../build.mjs"
+  },
+  "grammar": {
+    "sources": [
+      {
+        "repo": "tree-sitter-grammars/tree-sitter-hcl",
+        "commit": "fad991865fee927dd1de5e172fb3f08ac674d914",
+        "files": {
+          "grammar.js": "8f00aebed3d27da8f3e8b243d77b793151e49efb75f03c3c45e5e0e59eef8d6b",
+          "make_grammar.js": "63efb6a4bb5606a3bcbef854b44d77726c8945fc38a0519f8a9adcfa88c4187c",
+          "src/scanner.c": "846b6e63d4b352c6cf9de1255ca100100e52b1a3f8a7b9805c501bbc83d41966"
+        }
+      },
+      {
+        "repo": "nvim-treesitter/nvim-treesitter",
+        "commit": "19bdfc04f40ed2ccb3340591d125f759b0406875",
+        "files": {
+          "runtime/queries/hcl/highlights.scm": "553290666870af8165121a20914d5d3b549f5e3ba250773f06a0f331dcf9fcff",
+          "runtime/queries/terraform/highlights.scm": "7b0f3481051832d02d40c933a95cdb0c8281dfe2a9d37af781df3bf38ec9c882"
+        }
+      }
+    ]
+  }
+}

@@ -705,6 +705,11 @@ function declarationLabel(tree: Tree, n: number): string | undefined {
         : `impl ${tree.text(trait)} for ${tree.text(type)}`)
     );
   }
+  // An HCL block reads as its type and labels, `resource "aws_instance" "web"`, the `key` fields its line opens with.
+  if (tree.kindName(n) === "block") {
+    const key = field("key");
+    if (key !== undefined) return declarationSourceLine(tree, n, key) ?? tree.text(key);
+  }
   let name: number | undefined;
   for (let i = 0, count = tree.count(n); i < count; i++) {
     const c = tree.child(n, i);

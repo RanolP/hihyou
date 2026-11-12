@@ -22,6 +22,7 @@ import { language as rust } from "../grammars/rust/index.js";
 import { language as ruby } from "../grammars/ruby/index.js";
 import { language as bash } from "../grammars/bash/index.js";
 import { language as dockerfile } from "../grammars/dockerfile/index.js";
+import { language as hcl } from "../grammars/hcl/index.js";
 import { language as sql } from "../grammars/sql/index.js";
 import { language as kotlin } from "../grammars/kotlin/index.js";
 import { language as markdown } from "../grammars/markdown/index.js";
@@ -40,7 +41,7 @@ import { LANGUAGES, type LanguageRules, type Rule } from "./rules.node.js";
 const pkg = resolve(import.meta.dirname, "../..");
 const grammarsDir = join(pkg, "grammars");
 
-const PARSERS: Record<string, Language> = { javascript, typescript, tsx, go, rust, ruby, bash, dockerfile, sql, kotlin, swift, jsdoc, regex, html, yaml, json, css, python, graphql, markdown };
+const PARSERS: Record<string, Language> = { javascript, typescript, tsx, go, rust, ruby, bash, dockerfile, hcl, sql, kotlin, swift, jsdoc, regex, html, yaml, json, css, python, graphql, markdown };
 
 // ---- The query language: the subset of tree-sitter's S-expressions that highlight queries use.
 

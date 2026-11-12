@@ -288,6 +288,9 @@ importers:
       tree-sitter-graphql:
         specifier: workspace:*
         version: link:grammars/tree-sitter-graphql
+      tree-sitter-hcl:
+        specifier: workspace:*
+        version: link:grammars/tree-sitter-hcl
       tree-sitter-html:
         specifier: workspace:*
         version: link:grammars/tree-sitter-html
@@ -343,6 +346,8 @@ importers:
   packages/syntechs/grammars/tree-sitter-go: {}
 
   packages/syntechs/grammars/tree-sitter-graphql: {}
+
+  packages/syntechs/grammars/tree-sitter-hcl: {}
 
   packages/syntechs/grammars/tree-sitter-html: {}
 
