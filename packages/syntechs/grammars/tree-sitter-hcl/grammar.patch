@@ -7,6 +7,9 @@ grammar's top-level declarations are: an added top-level block then reads as one
 (packages/engine/src/fragments.ts, topOrMember). A block's `body` stays. src/grammars/hcl/highlights.tm.scm tells
 a top-level block's type from a nested one's by `config_file` instead of the `body` upstream's queries go by.
 
+A number's exponent no longer needs a fraction before it: HCL's NumericLit is `decimal+ ("." decimal+)? (expmark
+decimal+)?` (hashicorp/hcl hclsyntax/spec.md), and upstream read `1e10` as the number `1` and the name `e10`.
+
 --- a/make_grammar.js
 +++ b/make_grammar.js
 @@ -36,18 +36,20 @@
@@ -35,3 +38,14 @@ a top-level block's type from a nested one's by `config_file` instead of the `bo
            optional($.body),
            $.block_end,
          ),
+@@ -86,9 +88,9 @@
+       literal_value: ($) =>
+         choice($.numeric_lit, $.bool_lit, $.null_lit, $.string_lit),
+ 
+       numeric_lit: ($) =>
+-        choice(/[0-9]+(\.[0-9]+([eE][-+]?[0-9]+)?)?/, /0x[0-9a-zA-Z]+/),
++        choice(/[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?/, /0x[0-9a-zA-Z]+/),
+ 
+       bool_lit: ($) => choice("true", "false"),
+ 
+       null_lit: ($) => "null",

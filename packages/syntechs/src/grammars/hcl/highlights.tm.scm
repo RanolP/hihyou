@@ -19,3 +19,7 @@
 
 ; A heredoc's body.
 (heredoc_template (template_literal) @string.heredoc)
+
+; A number with a fraction or an exponent, which HashiCorp's grammar scopes as a float.
+((numeric_lit) @number.float
+  (#match? @number.float "^[0-9]+([.]|[eE])"))

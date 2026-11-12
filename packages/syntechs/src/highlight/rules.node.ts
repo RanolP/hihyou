@@ -262,6 +262,8 @@ const HCL: Record<string, Rule | null> = {
   string: "string.quoted.double.hcl",
   "string.heredoc": "string.unquoted.heredoc.hcl",
   number: "constant.numeric.integer.hcl",
+  // A number with a fraction or an exponent: highlights.tm.scm.
+  "number.float": "constant.numeric.float.hcl",
   boolean: "constant.language.hcl",
   // `null`.
   constant: "constant.language.hcl",
