@@ -5,6 +5,7 @@ import { lineKey, type Placer } from "./placement.js";
 /** The highlights the modal editor paints, lowest priority first. */
 export const highlightNames = [
   "hh-viewed",
+  "hh-viewed-after",
   "hh-score-plus",
   "hh-score-minus",
   "hh-comment",
@@ -44,6 +45,13 @@ export function createPainter(doc: Document, placer: Placer) {
       }),
     ),
   ];
+  /** Each drawn text node placed on an after line: added text, context, and the text a changed line keeps. */
+  const afterTexts = (): Set<Text> => {
+    const out = new Set<Text>();
+    for (const [key, list] of placer.placed)
+      if (key.split(":")[2] === "after") for (const p of list) out.add(p.item);
+    return out;
+  };
   const nodeRanges = (outline: AtomIndex, ref: NodeRef): Range[] => {
     const n = treeOf(outline, ref)?.nodes[ref.node];
     return n ? textRanges(ref, n.start, n.end) : [];
@@ -76,6 +84,7 @@ export function createPainter(doc: Document, placer: Placer) {
   return {
     textRanges,
     lineRows,
+    afterTexts,
     nodeRanges,
     targetRanges,
     set,

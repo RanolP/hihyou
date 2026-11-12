@@ -432,22 +432,23 @@ table.hh-md tr:has(.hh-md-delim) > td.hh-code {
 }
 .hh-pair-row > td { background-color: var(--hh-header-bg); }
 .hh-pair-row > td:first-child { border-left: 4px solid var(--hh-moved); }
-/* Viewed code steps back; its label keeps full contrast so the check stays readable. */
+/* A viewed move's removed copy steps back; its label keeps full contrast so the check stays readable. */
 .hh-viewed { opacity: 0.5; }
 /* The modal review editor: the root takes keys while focused, and paints nodes through the Custom Highlight API. */
 .hh-review:focus { outline: 2px solid var(--vscode-focusBorder, #0969da); outline-offset: -2px; }
 /*
- * A read node cuts its own range out of the line's added/removed colour and word emphasis, so on a coloured
- * block it reads as faded context at a glance; the line-number grey alone vanished once whole lines took the
- * side colour. Per node, not per line: the rest of the line may still be unread.
+ * A read node cuts its own range out of the line's added/removed colour and word emphasis. Removed text greys
+ * out as faded context; added and kept text reads as plain highlighted code. Per node, not per line: the rest
+ * of the line may still be unread.
  */
 .hh-diff ::highlight(hh-viewed) {
   color: color-mix(in srgb, var(--hh-fg) 40%, var(--hh-bg));
   background-color: var(--hh-bg);
 }
+.hh-diff ::highlight(hh-viewed-after) { background-color: var(--hh-bg); }
 /*
  * A row whose changed lines are all read drops the side colour past the text too, with the gutter's bar and the
- * sign's tint, so a block read through looks like dimmed context. A row with anything unread keeps all of it.
+ * sign's tint, so a block read through looks like context. A row with anything unread keeps all of it.
  */
 tr.hh-read > .hh-num.hh-removed,
 tr.hh-read > .hh-num.hh-added { background: none; box-shadow: none; }

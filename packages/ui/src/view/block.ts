@@ -12,9 +12,9 @@ export interface TableDraw {
 }
 
 /**
- * Marks the cells of `side` that lie inside a move: dimmed while viewed, and a cross-file move's block expands
- * on a click like its label, except on its code text, where a click selects a node. The expansion goes under the
- * block's last line, so the returned step runs once the row itself is out.
+ * Marks the cells of `side` that lie inside a move: the before side's dimmed while viewed, and a cross-file move's
+ * block expands on a click like its label, except on its code text, where a click selects a node. The expansion
+ * goes under the block's last line, so the returned step runs once the row itself is out.
  */
 export function blockCells(
   ctx: DrawContext,
@@ -28,7 +28,10 @@ export function blockCells(
   if (!moved || !view) return () => {};
   for (const c of cells) {
     createRenderEffect(() =>
-      c.classList.toggle("hh-viewed", ctx.pairs.isViewed(view)),
+      c.classList.toggle(
+        "hh-viewed",
+        side === "before" && ctx.pairs.isViewed(view),
+      ),
     );
     if (view.pair.crossFile) {
       c.classList.add("hh-pair-toggle");

@@ -529,7 +529,7 @@ function mount(
   const paint = () => {
     const index = outline();
     const read = readParts(index, isViewed);
-    painter.set("hh-viewed", [
+    const ranges = [
       ...index.atoms
         .filter((a) => isViewed(a.id))
         .flatMap((a) =>
@@ -543,7 +543,15 @@ function mount(
           { line: r.line, column: Number.POSITIVE_INFINITY },
         ),
       ),
-    ]);
+    ];
+    // Read removed text greys out; read text the after side also draws keeps its syntax colours.
+    const after = painter.afterTexts();
+    const kept = (r: Range) => after.has(r.startContainer as Text);
+    painter.set(
+      "hh-viewed",
+      ranges.filter((r) => !kept(r)),
+    );
+    painter.set("hh-viewed-after", ranges.filter(kept));
     // A row drops its line colour once a line drawn in it is read and none is unread.
     const rowRead = new Map<Element, boolean>();
     for (const l of read.lines)

@@ -121,7 +121,10 @@ const clickChanged = async (selector) => {
 };
 const show = async (what) => {
   const selected = await page.evaluate(() => __hh.ranges("hh-selection"));
-  const viewed = await page.evaluate(() => __hh.ranges("hh-viewed"));
+  const viewed = await page.evaluate(() => [
+    ...__hh.ranges("hh-viewed"),
+    ...__hh.ranges("hh-viewed-after"),
+  ]);
   const byFile = {};
   for (const v of viewed) byFile[v.file] = (byFile[v.file] ?? 0) + 1;
   log(
@@ -276,9 +279,12 @@ const count = (name, where) =>
     );
     const sel = await count("hh-selection", ".hh-pair-row");
     await page.keyboard.press("v");
-    const viewedIn = await count("hh-viewed", ".hh-pair-row");
+    const viewedRows = async () =>
+      (await count("hh-viewed", ".hh-pair-row")) +
+      (await count("hh-viewed-after", ".hh-pair-row"));
+    const viewedIn = await viewedRows();
     await page.keyboard.press("v");
-    const viewedOff = await count("hh-viewed", ".hh-pair-row");
+    const viewedOff = await viewedRows();
     log(
       `expandMove: pair rows ${before} -> ${rows}; selected ranges in pair rows ${sel}; hh-viewed in pair rows after v ${viewedIn}, after v again ${viewedOff}`,
     );
