@@ -52,8 +52,26 @@
   (#eq? @_ctor "tuple")
   (#any-of? @type.builtin "bool" "string" "number" "any" "list" "map" "set" "object" "tuple"))
 
-; A heredoc's body.
-(heredoc_template (template_literal) @string.heredoc)
+; A string and a heredoc paint whole, and an interpolation or a directive inside one stacks its expression's
+; scopes onto the string's, as HashiCorp's grammar nests them; the text between takes the enclosing scope, so a
+; heredoc's `for` body is the heredoc's, not a quoted string's. A block's label stays a label.
+(string_lit) @string
+(quoted_template) @string
+(heredoc_template) @string.heredoc
+(template_literal) @string.part
+[
+  (template_interpolation)
+  (template_for_start)
+  (template_for_end)
+  (template_if_intro)
+  (template_else_intro)
+  (template_if_end)
+] @embedded
+; A `~` before the closing `}` trims the whitespace after the interpolation or directive.
+(_ (strip_marker) @punctuation.special.trim
+  . [(template_interpolation_end) (template_directive_end)])
+(block (string_lit) @string.part)
+(block (string_lit (template_literal) @label))
 
 ; A number with a fraction or an exponent, which HashiCorp's grammar scopes as a float.
 ((numeric_lit) @number.float

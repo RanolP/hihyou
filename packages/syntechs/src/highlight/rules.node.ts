@@ -252,8 +252,20 @@ const HCL: Record<string, Rule | null> = {
   // A block's labels: highlights.tm.scm.
   label: "variable.other.enummember.hcl",
   function: "support.function.builtin.terraform",
-  string: "string.quoted.double.hcl",
+  string: {
+    scope: "string.quoted.double.hcl",
+    byKind: {
+      quoted_template_start: "punctuation.definition.string.begin.hcl",
+      quoted_template_end: "punctuation.definition.string.end.hcl",
+    },
+  },
   "string.heredoc": "string.unquoted.heredoc.hcl",
+  // The text of a string or heredoc, which takes the scope painted on the whole: highlights.tm.scm.
+  "string.part": "",
+  // An interpolation `${...}` or a directive `%{ if ... }`, with its delimiters: highlights.tm.scm.
+  embedded: "meta.interpolation.hcl",
+  // A `~` before the closing `}`; one after the opening `${` is `punctuation.special`'s strip_marker.
+  "punctuation.special.trim": "keyword.operator.template.right.trim.hcl",
   number: "constant.numeric.integer.hcl",
   // A number with a fraction or an exponent: highlights.tm.scm.
   "number.float": "constant.numeric.float.hcl",
