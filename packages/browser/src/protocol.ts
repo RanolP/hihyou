@@ -1,6 +1,6 @@
 /**
  * Classic scripts that fill `globalThis.hihyouGrammarModules` for app.js, in dependency-sized groups that stay
- * below AMO's per-file limit. Each is injected on its own, all of them right behind app.js.
+ * below AMO's per-file limit. Each is injected on its own, the first time a file needs one of its grammars.
  */
 export const grammarChunkFiles = [
   "/grammars-web.js",

@@ -5,7 +5,6 @@ import { start } from "../src/content.js";
 import {
   type FetchReply,
   fromBase64,
-  grammarChunkFiles,
   type LoadReply,
   type ToBackground,
 } from "../src/protocol.js";
@@ -62,16 +61,12 @@ const definition: ContentScriptDefinition = defineContentScript({
       async loadApp() {
         globalThis.hihyouLoadGrammarChunk ??= (file) =>
           loadGrammarChunks([file]);
+        // A grammar chunk goes in only once a file asks for it: evaluating all of them took the main thread
+        // longer than the rest of drawing the first file.
         if (!globalThis.hihyouApp) {
-          const loading = browser.runtime.sendMessage({
+          const reply = (await browser.runtime.sendMessage({
             type: "load-app",
-          } satisfies ToBackground) as Promise<LoadReply>;
-          // Every chunk goes in right behind app.js, while GitHub is still loading the page, so it is usually in
-          // place by the time the first file asks for it.
-          loadGrammarChunks(grammarChunkFiles).catch((error: unknown) =>
-            console.warn("hihyou: could not preload the grammars", error),
-          );
-          const reply = await loading;
+          } satisfies ToBackground)) as LoadReply;
           if (!reply.ok) throw new Error(reply.error);
         }
         const app = globalThis.hihyouApp;
