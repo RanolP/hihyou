@@ -93,7 +93,14 @@ function sessionLww<V, E extends Stamp>(
     const e = from[key];
     return e ? codec.read(e) : codec.cleared;
   };
-  const get = (key: string) => read(state, key);
+  // `state` by key, for `get`: a page asks for every node's key on each draw, each one a freshly built string, which
+  // an object property lookup interns first; an empty store answers without hashing it at all.
+  let entries = new Map<string, E>();
+  const get = (key: string): V => {
+    if (entries.size === 0) return codec.cleared;
+    const e = entries.get(key);
+    return e ? codec.read(e) : codec.cleared;
+  };
   return {
     get,
     setMany(keys: readonly string[], value: V) {
@@ -106,6 +113,7 @@ function sessionLww<V, E extends Stamp>(
       }
       if (!changed) return;
       state = next;
+      entries = new Map(Object.entries(state));
       notify();
     },
     subscribe(listener: () => void) {
@@ -116,6 +124,7 @@ function sessionLww<V, E extends Stamp>(
       for (const entry of Object.values(remote)) clock.receive(entry.ts);
       const before = state;
       state = mergeBy(state, remote, codec.rank);
+      entries = new Map(Object.entries(state));
       if (Object.keys(state).some((k) => read(state, k) !== read(before, k)))
         notify();
     },
