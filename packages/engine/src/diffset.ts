@@ -58,10 +58,13 @@ import type {
   SerializedDiffsetId,
 } from "./host.js";
 import {
+  addClaimFile,
   type Claim,
   type ClaimContext,
+  type ClaimFile,
   checkClaim,
   createClaimContext,
+  emptyClaimContext,
 } from "./claim.js";
 import { type Extract, findExtracts } from "./extract.js";
 import { createInterDiffset, type InterDiffset } from "./interdiff.js";
@@ -258,6 +261,28 @@ type Prepared =
       mapping: Mapping;
     };
 
+/** The globals a time slice needs; both hosts have `performance` and `setTimeout`, only Chromium `scheduler`. */
+const host = globalThis as unknown as {
+  performance: { now(): number };
+  setTimeout(callback: () => void): unknown;
+  scheduler?: { yield?(): Promise<void> };
+};
+
+/**
+ * A pause that lets the host run its own tasks once the current slice of work has run `ms`, and resolves at
+ * once before that: a browser keeps answering input while a large change set diffs file by file.
+ */
+function slicer(ms = 40): () => Promise<void> {
+  let start = host.performance.now();
+  return async () => {
+    if (host.performance.now() - start < ms) return;
+    await (host.scheduler?.yield
+      ? host.scheduler.yield()
+      : new Promise<void>((resolve) => host.setTimeout(resolve)));
+    start = host.performance.now();
+  };
+}
+
 /**
  * Every file of one change set at once, so a declaration moved between files is found whichever file
  * a viewer opens first.
@@ -266,7 +291,10 @@ export async function diffFiles(
   ctx: EngineContext,
   changes: readonly ChangedFileRef[],
 ): Promise<FileDiff[]> {
-  const prepared = await Promise.all(changes.map((ref) => prepare(ctx, ref)));
+  const pause = slicer();
+  const prepared = await Promise.all(
+    changes.map((ref) => prepare(ctx, ref, pause)),
+  );
   // JSON is data, not code: a key or a block of config repeated in another file did not move there.
   const cross = crossFileMoves(
     prepared.map((p) =>
@@ -293,21 +321,20 @@ export async function diffFiles(
   const renamed = new Map<string, Rename[]>();
   const renamesOf = ({ edit: e, from, to }: Placed) =>
     e.kind === "move" ? renamed.get(`${from}:${e.a}:${to}:${e.b}`) : undefined;
+  const claimFiles = prepared.map((p): ClaimFile | undefined =>
+    "mapping" in p
+      ? {
+          before: p.a.tree,
+          after: p.b.tree,
+          ...(p.grammar.declarations && {
+            declarations: p.grammar.declarations,
+          }),
+          ...(p.grammar.scope && { scope: p.grammar.scope }),
+        }
+      : undefined,
+  );
   const holds = (claim: Claim) => {
-    claims ??= createClaimContext(
-      prepared.map((p) =>
-        "mapping" in p
-          ? {
-              before: p.a.tree,
-              after: p.b.tree,
-              ...(p.grammar.declarations && {
-                declarations: p.grammar.declarations,
-              }),
-              ...(p.grammar.scope && { scope: p.grammar.scope }),
-            }
-          : undefined,
-      ),
-    );
+    claims ??= createClaimContext(claimFiles);
     const renames: Rename[] = [];
     if (checkClaim(claims, claim, renames) !== undefined) return false;
     if (claim.kind === "move" && renames.length > 0)
@@ -318,6 +345,31 @@ export async function diffFiles(
     const p = prepared[file];
     return p && "mapping" in p ? { a: p.a.tree, b: p.b.tree } : undefined;
   };
+  const rawScripts: (RawEdit[] | undefined)[] = [];
+  for (const [i, p] of prepared.entries()) {
+    rawScripts.push(
+      "mapping" in p
+        ? editScript(p.mapping, cross.claimed[i], {
+            ...defaultMoveOptions,
+            ...(p.grammar.scope && { scope: p.grammar.scope }),
+          }).edits
+        : undefined,
+    );
+    await pause();
+  }
+  // A move is checked against every file's trees, which take long to read in a large change set: read them a
+  // file at a time, in order, ahead of the first check.
+  if (
+    cross.edits.length > 0 ||
+    rawScripts.some((edits) => edits?.some((e) => e.kind === "move"))
+  ) {
+    const built = emptyClaimContext();
+    for (const f of claimFiles) {
+      addClaimFile(built, f);
+      await pause();
+    }
+    claims = built;
+  }
   for (const c of demote(cross.edits, trees, holds)) {
     const from = prepared[c.from];
     const to = prepared[c.to];
@@ -333,22 +385,18 @@ export async function diffFiles(
     );
     for (const s of [sides[c.from], sides[c.to]]) if (s) s.touched = true;
   }
-  const scripts = prepared.map((p, i) =>
-    "mapping" in p
-      ? demote(
-          editScript(p.mapping, cross.claimed[i], {
-            ...defaultMoveOptions,
-            ...(p.grammar.scope && { scope: p.grammar.scope }),
-          }).edits.map((edit) => ({
-            edit,
-            from: i,
-            to: i,
-          })),
+  const scripts: (RawEdit[] | undefined)[] = [];
+  for (const [i, edits] of rawScripts.entries()) {
+    scripts.push(
+      edits &&
+        demote(
+          edits.map((edit) => ({ edit, from: i, to: i })),
           trees,
           holds,
-        ).map((e) => e.edit)
-      : undefined,
-  );
+        ).map((e) => e.edit),
+    );
+    await pause();
+  }
   const extracts = findExtracts(
     prepared.map((p, i) => {
       const script = scripts[i];
@@ -386,7 +434,7 @@ export async function diffFiles(
     for (const s of [sides[x.from], sides[x.to]]) if (s) s.touched = true;
   }
 
-  return prepared.map((p, i): FileDiff => {
+  const diffOf = (p: Prepared, i: number): FileDiff => {
     const path = p.ref.path;
     const s = sides[i];
     const status = statusOf(p.ref);
@@ -497,12 +545,19 @@ export async function diffFiles(
       fragments,
       ...(reason && { collapsed: { reason } }),
     };
-  });
+  };
+  const diffs: FileDiff[] = [];
+  for (const [i, p] of prepared.entries()) {
+    diffs.push(diffOf(p, i));
+    await pause();
+  }
+  return diffs;
 }
 
 async function prepare(
   ctx: EngineContext,
   ref: ChangedFileRef,
+  pause: () => Promise<void>,
 ): Promise<Prepared> {
   if (ref.kind) return { ref, unread: ref.kind };
   const [bytesA, bytesB] = await Promise.all([
@@ -528,12 +583,14 @@ async function prepare(
 
   const grammar = await ctx.host.grammars.forPath(ref.path);
   if (!grammar) return line();
+  await pause();
   const chars = Math.max(textA.length, textB.length);
   if (chars > maxParseChars) return line("too-large");
   const [treeA, treeB] = await Promise.all([
     parseBlob(ctx, ref.before, grammar, textA),
     parseBlob(ctx, ref.after, grammar, textB),
   ]);
+  await pause();
   const parsed = { grammar, trees: [treeA, treeB] as [Tree, Tree] };
   if (chars > maxChars || Math.max(treeA.nodeCount, treeB.nodeCount) > maxNodes)
     return line("too-large", parsed);

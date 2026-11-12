@@ -98,16 +98,32 @@ export interface ClaimContext {
 export function createClaimContext(
   files: readonly (ClaimFile | undefined)[],
 ): ClaimContext {
-  const intern = new Map<string, number>();
-  const countBefore = new Map<number, number>();
-  const countAfter = new Map<number, number>();
+  const ctx = emptyClaimContext();
+  for (const f of files) addClaimFile(ctx, f);
+  return ctx;
+}
+
+/** A context the Diffset's files join one at a time with `addClaimFile`, so a large one is built between other work. */
+export function emptyClaimContext(): ClaimContext {
+  return {
+    files: [],
+    intern: new Map(),
+    countBefore: new Map(),
+    countAfter: new Map(),
+    anchors: new Map(),
+    bags: new Map(),
+  };
+}
+
+/** Adds the Diffset's next file; files must join in their Diffset order, as claims name them by index. */
+export function addClaimFile(ctx: ClaimContext, f: ClaimFile | undefined) {
   const data = (
     tree: Tree,
     counts: Map<number, number>,
     scope?: ScopeRules,
   ): SideData => {
     const locals = scope && resolveLocals(tree, scope);
-    const w = witnessSide(Side.of(tree), intern, locals);
+    const w = witnessSide(Side.of(tree), ctx.intern, locals);
     for (const id of w.alpha) counts.set(id, (counts.get(id) ?? 0) + 1);
     return {
       ...w,
@@ -115,18 +131,11 @@ export function createClaimContext(
       ...(locals && scope && { references: new Set(scope.references) }),
     };
   };
-  return {
-    files: files.map((f) => ({
-      ...(f?.before && { before: data(f.before, countBefore, f.scope) }),
-      ...(f?.after && { after: data(f.after, countAfter, f.scope) }),
-      ...(f?.declarations && { declarations: f.declarations }),
-    })),
-    intern,
-    countBefore,
-    countAfter,
-    anchors: new Map(),
-    bags: new Map(),
-  };
+  ctx.files.push({
+    ...(f?.before && { before: data(f.before, ctx.countBefore, f.scope) }),
+    ...(f?.after && { after: data(f.after, ctx.countAfter, f.scope) }),
+    ...(f?.declarations && { declarations: f.declarations }),
+  });
 }
 
 /**
