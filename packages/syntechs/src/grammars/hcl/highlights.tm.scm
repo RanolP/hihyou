@@ -17,6 +17,15 @@
 (block (string_lit (quoted_template_end) @label))
 (block (_) (identifier) @label)
 
+; A reference: its root is a plain name (`v.name` in a `for`, `aws_instance.web.id`) unless Terraform or
+; Terragrunt defines it, and every name after a `.` is a member. Upstream calls any root a built-in and colours
+; `path.module`'s `module` as one. An operand of an operator is no `expression` of its own, so any parent goes.
+(_ (variable_expr (identifier) @variable) . (get_attr))
+((_ (variable_expr (identifier) @variable.builtin) . (get_attr))
+  (#any-of? @variable.builtin
+    "var" "local" "each" "path" "module" "data" "count" "self" "terraform" "dependency" "include"))
+(get_attr (identifier) @variable.member)
+
 ; A heredoc's body.
 (heredoc_template (template_literal) @string.heredoc)
 

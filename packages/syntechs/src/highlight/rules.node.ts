@@ -238,21 +238,14 @@ const HCL: Record<string, Rule | null> = {
   "keyword.conditional": "keyword.control.hcl",
   // A nested block's type (`ingress`, `lifecycle`).
   type: "entity.name.type.hcl",
-  // `string`, `list` in a type constraint; `path` and `terraform` before `.root` and `.workspace`.
-  "type.builtin": {
-    scope: "storage.type.hcl",
-    byText: { path: "variable.other.readwrite.terraform", terraform: "variable.other.readwrite.terraform" },
-  },
+  // `string`, `list(...)` in a type position: highlights.tm.scm.
+  "type.builtin": "storage.type.hcl",
   variable: "variable.other.readwrite.hcl",
-  // `var`, `local`, `data`, `module` before an attribute access; `root`, `cwd`, `workspace` after one.
-  "variable.builtin": {
-    scope: "variable.other.readwrite.terraform",
-    byText: {
-      root: "variable.other.member.hcl",
-      cwd: "variable.other.member.hcl",
-      workspace: "variable.other.member.hcl",
-    },
-  },
+  // A reference's root Terraform defines (`var`, `local`, `each`, `path`): highlights.tm.scm. HashiCorp's grammar
+  // scopes it `variable.other.readwrite.terraform`, which a theme colours as any other name; `variable.language`
+  // colours it as a built-in, as `this` and `self` are elsewhere.
+  "variable.builtin": "variable.language.terraform",
+  // Every name after a `.`: `value` and `z` in `each.value.z`.
   "variable.member": "variable.other.member.hcl",
   // An attribute's name, or an object key written as a bare word: highlights.tm.scm.
   "variable.declaration": "variable.other.readwrite.hcl",
