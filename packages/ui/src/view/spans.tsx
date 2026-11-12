@@ -43,10 +43,17 @@ const MARKDOWN: readonly (readonly [RegExp, string])[] = [
   [/\bmarkup\.italic/, "hh-md-em"],
   [/\bmarkup\.strikethrough/, "hh-md-del"],
   [/\bcomment\.block\.html\.markdown/, "hh-md-comment"],
+  // Front matter reads as a code block of metadata, its `---` lines as markup.
+  [/\bmeta\.embedded\.block\.frontmatter\b/, "hh-md-fence"],
+  [
+    /\bpunctuation\.definition\.(?:begin|end)\.frontmatter\b/,
+    "hh-md-mark hh-md-fence",
+  ],
 ];
 
 const markdownClass = (scope: string | undefined): string | undefined => {
-  if (scope === undefined || !scope.includes(".markdown")) return undefined;
+  if (scope === undefined || !/\.(?:markdown|frontmatter)\b/.test(scope))
+    return undefined;
   const classes = new Set<string>();
   for (const [pattern, name] of MARKDOWN) {
     const match = pattern.exec(scope);

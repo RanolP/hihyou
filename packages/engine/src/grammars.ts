@@ -202,6 +202,15 @@ function withFences(markdown: HighlightModule): HighlightModule {
           paintFence(tree, n, paint, fenced);
           return;
         }
+        if (kind === "minus_metadata" || kind === "plus_metadata") {
+          paintFrontMatter(
+            tree,
+            n,
+            paint,
+            kind === "minus_metadata" ? fenced.get("yaml") : undefined,
+          );
+          return;
+        }
         for (let i = 0, count = tree.count(n); i < count; i++)
           visit(tree.child(n, i));
       };
@@ -344,6 +353,37 @@ function paintFence(
       const b = Math.min(e, p.at + p.to - p.from);
       if (a < b) paint(content, scope, p.from + a - p.at, p.from + b - p.at);
     }
+  });
+}
+
+/**
+ * The front matter opening a Markdown file (`---` YAML, `+++` TOML), which the grammar keeps one node from its
+ * opening line through its closing one, in the scopes VS Code's markdown grammar gives it: its two delimiter
+ * lines, and between them the content, coloured as YAML when `yaml` is given. syntechs has no TOML grammar.
+ */
+function paintFrontMatter(
+  tree: Tree,
+  node: number,
+  paint: Parameters<HighlightModule["highlight"]>[1],
+  yaml: Fenced | undefined,
+): void {
+  const whole = tree.text(node);
+  const open = whole.search(/\r?\n|\r/);
+  // The node ends after the closing line's line ending.
+  const body = whole.replace(/(?:\r?\n|\r)$/, "");
+  const close = Math.max(body.lastIndexOf("\n"), body.lastIndexOf("\r")) + 1;
+  if (open === -1 || close <= open) return;
+  paint(node, "punctuation.definition.begin.frontmatter", 0, open);
+  paint(node, "punctuation.definition.end.frontmatter", close, body.length);
+  const from = open + (whole.startsWith("\r\n", open) ? 2 : 1);
+  if (from >= close) return;
+  paint(node, "meta.embedded.block.frontmatter", from, close);
+  if (!yaml) return;
+  const inner = parseTree(yaml.language, whole.slice(from, close));
+  yaml.highlight.highlight(inner, (m, scope, f, t) => {
+    const s = inner.start(m) + (f ?? 0);
+    const e = t === undefined ? inner.end(m) : inner.start(m) + t;
+    if (s < e) paint(node, scope, from + s, from + e);
   });
 }
 
