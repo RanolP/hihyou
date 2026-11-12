@@ -134,7 +134,7 @@ export async function openDiffset<H extends Host>(
     diff: () =>
       ctx.cache.through(
         cacheKey.diff(id),
-        () => diffFiles(ctx, changes),
+        () => diffFiles(ctx, changes, true),
         fileDiffBytes,
       ),
     preview: async (path) => {
@@ -238,7 +238,10 @@ async function displayVersions(
 }
 
 export const fileDiffBytes = (files: FileDiff[]) =>
-  JSON.stringify(files).length * 2;
+  (jsonLength.get(files) ?? JSON.stringify(files).length) * 2;
+
+/** `JSON.stringify(files).length` of a list `diffFiles` returned, summed a file at a time as it was built. */
+const jsonLength = new WeakMap<FileDiff[], number>();
 
 /** Past either matching size a file gets a line diff; a bounded parse still colours and scopes it. */
 const maxChars = 500_000;
@@ -295,6 +298,8 @@ function slicer(ms = 40): () => Promise<void> {
 export async function diffFiles(
   ctx: EngineContext,
   changes: readonly ChangedFileRef[],
+  /** Sum `fileDiffBytes` for the result between files, for a caller about to cache it. */
+  measure = false,
 ): Promise<FileDiff[]> {
   const pause = slicer();
   const prepared = await Promise.all(
@@ -560,11 +565,15 @@ export async function diffFiles(
     };
   };
   const diffs: FileDiff[] = [];
+  // The brackets, and a comma between files.
+  let json = 2;
   for (const [i, p] of prepared.entries()) {
-    diffs.push(diffOf(p, i));
+    const diff = diffOf(p, i);
+    if (measure) json += JSON.stringify(diff).length + (i > 0 ? 1 : 0);
+    diffs.push(diff);
     await pause();
   }
-  return diffs;
+  if (measure) jsonLength.set(diffs, json);  return diffs;
 }
 
 async function prepare(
