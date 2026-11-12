@@ -10,6 +10,11 @@ a top-level block's type from a nested one's by `config_file` instead of the `bo
 A number's exponent no longer needs a fraction before it: HCL's NumericLit is `decimal+ ("." decimal+)? (expmark
 decimal+)?` (hashicorp/hcl hclsyntax/spec.md), and upstream read `1e10` as the number `1` and the name `e10`.
 
+The scanner (packages/syntechs/src/grammars/hcl/scanner.ts, a port of upstream's src/scanner.c) departs from
+upstream in two places: it keeps a heredoc's state whatever its identifier's length or the nesting depth, where
+upstream drops it past 127 and turns the rest of the file into errors, and it keeps the identifier's code points
+whole, where upstream truncates each to a `char` and a non-ASCII identifier never finds its closing line.
+
 --- a/make_grammar.js
 +++ b/make_grammar.js
 @@ -36,18 +36,20 @@

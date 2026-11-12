@@ -19,7 +19,6 @@ const QUOTED_TEMPLATE = 2;
 const HEREDOC_TEMPLATE = 3;
 
 const SERIALIZATION_BUFFER_SIZE = 1024;
-const CHAR_MAX = 127;
 
 const NUL = 0;
 const LF = 10;
@@ -38,35 +37,34 @@ const la = (lexer: Lexer): number => lexer.lookahead;
 const iswxdigit = (c: number): boolean =>
   (c >= 48 && c <= 57) || (c >= 65 && c <= 70) || (c >= 97 && c <= 102);
 
-// The C scanner keeps a heredoc identifier as `char`s: a stored byte is a code point truncated to `char`, and
-// comparing it with the lookahead sign-extends it, so a non-ASCII identifier never matches its end, as in C.
-const toChar = (c: number): number => c & 0xff;
-const fromChar = (c: number): number => (c << 24) >> 24;
-
 interface Context {
   type: number;
-  /** Valid when `type` is HEREDOC_TEMPLATE: the identifier's bytes. */
+  /** Valid when `type` is HEREDOC_TEMPLATE: the identifier's code points. */
   heredocIdentifier: number[];
 }
 
 class HclScanner implements ExternalScanner {
   stack: Context[] = [];
 
+  // Upstream gives up on a stack deeper than 127 or a heredoc identifier longer than 127 bytes, which drops the
+  // state mid-heredoc and turns the rest of the file into errors; only the buffer bounds the state here. An
+  // identifier keeps whole code points, four bytes each, so a non-ASCII one still finds its closing line.
   serialize(buffer: Uint8Array): number {
-    if (this.stack.length > CHAR_MAX) return 0;
     const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
     let size = 0;
     view.setUint32(size, this.stack.length, true);
     size += 4;
     for (const context of this.stack) {
       const id = context.heredocIdentifier;
-      if (size + 4 + 4 + id.length >= SERIALIZATION_BUFFER_SIZE) return 0;
-      if (id.length > CHAR_MAX) return 0;
+      if (size + 4 + 4 + 4 * id.length > SERIALIZATION_BUFFER_SIZE) return 0;
       view.setUint32(size, context.type, true);
       size += 4;
       view.setUint32(size, id.length, true);
       size += 4;
-      for (const c of id) buffer[size++] = c;
+      for (const c of id) {
+        view.setUint32(size, c, true);
+        size += 4;
+      }
     }
     return size;
   }
@@ -83,8 +81,11 @@ class HclScanner implements ExternalScanner {
       size += 4;
       const len = view.getUint32(size, true);
       size += 4;
-      const heredocIdentifier = Array.from(buffer.subarray(size, size + len));
-      size += len;
+      const heredocIdentifier: number[] = [];
+      for (let k = 0; k < len; k++) {
+        heredocIdentifier.push(view.getUint32(size, true));
+        size += 4;
+      }
       this.stack.push({ type, heredocIdentifier });
     }
   }
@@ -174,7 +175,7 @@ class HclScanner implements ExternalScanner {
     if (valid[HEREDOC_IDENTIFIER] && !this.inContext(HEREDOC_TEMPLATE)) {
       const identifier: number[] = [];
       while (iswalnum(la(lexer)) || la(lexer) === UNDERSCORE || la(lexer) === DASH) {
-        identifier.push(toChar(la(lexer)));
+        identifier.push(la(lexer));
         lexer.advance(false);
       }
       push(HEREDOC_TEMPLATE, identifier);
@@ -183,7 +184,7 @@ class HclScanner implements ExternalScanner {
     if (valid[HEREDOC_IDENTIFIER] && this.inContext(HEREDOC_TEMPLATE) && newlineBefore) {
       const expected = (this.stack.at(-1) as Context).heredocIdentifier;
       for (const c of expected) {
-        if (la(lexer) === fromChar(c)) lexer.advance(false);
+        if (la(lexer) === c) lexer.advance(false);
         else return accept(TEMPLATE_LITERAL_CHUNK);
       }
       // check if the identifier is on a line of its own
