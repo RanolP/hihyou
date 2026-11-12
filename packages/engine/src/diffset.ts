@@ -68,7 +68,12 @@ import {
 } from "./claim.js";
 import { type Extract, findExtracts } from "./extract.js";
 import { createInterDiffset, type InterDiffset } from "./interdiff.js";
-import { type CrossEdit, crossFileMoves } from "./move.js";
+import {
+  type CrossEdit,
+  type CrossIso,
+  crossFileMoves,
+  crossIso,
+} from "./move.js";
 import type { AnchorData } from "./review.js";
 
 /** Engine object; captures the engine. Not serialized. */
@@ -296,15 +301,23 @@ export async function diffFiles(
     changes.map((ref) => prepare(ctx, ref, pause)),
   );
   // JSON is data, not code: a key or a block of config repeated in another file did not move there.
+  const moveMappings = prepared.map((p) =>
+    "mapping" in p && p.grammar.language.name !== "json"
+      ? p.mapping
+      : undefined,
+  );
+  const isoIntern = new Map<string, number>();
+  const iso: CrossIso[] = [];
+  for (const m of moveMappings) {
+    iso.push(crossIso(m, isoIntern));
+    await pause();
+  }
   const cross = crossFileMoves(
-    prepared.map((p) =>
-      "mapping" in p && p.grammar.language.name !== "json"
-        ? p.mapping
-        : undefined,
-    ),
+    moveMappings,
     undefined,
     undefined,
     prepared.map((p) => ("mapping" in p ? p.grammar.scope : undefined)),
+    iso,
   );
   const sides = prepared.map((p) =>
     "a" in p

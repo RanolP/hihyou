@@ -39,24 +39,34 @@ export type CrossEdit = {
  */
 const importKinds = /^(import_statement|import_from_statement)$/;
 
+export type CrossIso = { a: Int32Array; b: Int32Array } | undefined;
+
+/** File `m`'s iso ids for `crossFileMoves`, numbered through one `intern` that every file of the set shares, in order. */
+export const crossIso = (
+  m: Mapping | undefined,
+  intern: Map<string, number>,
+): CrossIso => m && { a: isoIds(m.a, intern), b: isoIds(m.b, intern) };
+
 /**
  * Pairs code deleted from one file with code inserted into another, so a declaration that moved
  * between files is one move rather than a delete here and an insert there. First identical subtrees,
  * largest first, when exactly one candidate on each side holds that code; then declarations of the same kind
  * and name, matched inside for the edits made on the way, when `classifyMove` finds a witness for the pair.
  * Paired subtrees are claimed out of their files' mappings, and any same-file match inside them is dropped in
- * favour of the cross-file pairing. `scopes` holds each file's scoping rules, by the same index.
+ * favour of the cross-file pairing. `scopes` holds each file's scoping rules, by the same index. `iso` holds each
+ * file's `crossIso`, for a caller that spaces that work out; absent, it is computed here.
  */
 export function crossFileMoves(
   mappings: (Mapping | undefined)[],
   opts: MatchOptions = defaultMatchOptions,
   moveOpts: MoveOptions = defaultMoveOptions,
   scopes: readonly (ScopeRules | undefined)[] = [],
+  iso?: readonly CrossIso[],
 ): { claimed: (Claimed | undefined)[]; edits: CrossEdit[] } {
-  const intern = new Map<string, number>();
-  const iso = mappings.map(
-    (m) => m && { a: isoIds(m.a, intern), b: isoIds(m.b, intern) },
-  );
+  if (!iso) {
+    const intern = new Map<string, number>();
+    iso = mappings.map((m) => crossIso(m, intern));
+  }
   const claimed = mappings.map(
     (m) =>
       m && {
