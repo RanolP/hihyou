@@ -101,12 +101,14 @@ export function queryHighlighter(query: CompiledQuery): HighlightModule {
 
   const module: HighlightModule = {
     highlight(tree, paint) {
-      const won = new Map<number, number>();
-      const winner = new Map<number, number>();
+      // By postorder ordinal: the pattern that last captured each node, and with what capture.
+      const won = new Int32Array(tree.nodeCount).fill(-1);
+      const winner = new Int32Array(tree.nodeCount).fill(-1);
       const assign = (cap: number, n: number, prio: number) => {
-        if ((won.get(n) ?? -1) > prio) return;
-        won.set(n, prio);
-        winner.set(n, cap);
+        const ord = tree.ord(n);
+        if ((won[ord] as number) > prio) return;
+        won[ord] = prio;
+        winner[ord] = cap;
       };
       forEachMatch(tree, query.patterns, candidates, (prio, caps) => {
         for (let i = 0; i < caps.length; i += 2) {
@@ -124,8 +126,8 @@ export function queryHighlighter(query: CompiledQuery): HighlightModule {
       });
 
       const visit = (n: number): void => {
-        const cap = winner.get(n);
-        if (cap !== undefined) {
+        const cap = winner[tree.ord(n)] as number;
+        if (cap >= 0) {
           const scope = scopeOf(query.captures[cap] as CaptureScope, tree, n);
           if (scope !== "") paint(n, scope);
         }
@@ -289,14 +291,18 @@ function forEachMatch(
     onMatch(i, caps);
   };
 
+  /** Whether `n` can match `p` itself, its children aside; an alternation leaves that to its branches. */
+  const fits = (p: QueryNode, n: number): boolean =>
+    p.alt !== undefined ||
+    (p.kind !== undefined
+      ? tree.named(n) !== !!p.anon && tree.kindName(n) === p.kind
+      : !p.namedOnly || tree.named(n));
   const node = (p: QueryNode, n: number, k: () => void): void => {
     if (p.alt) {
       for (const a of p.alt) node(a, n, () => withCaptures(p, n, k));
       return;
     }
-    if (p.kind !== undefined) {
-      if (tree.named(n) === !!p.anon || tree.kindName(n) !== p.kind) return;
-    } else if (p.namedOnly && !tree.named(n)) return;
+    if (!fits(p, n)) return;
     withCaptures(p, n, p.children ? () => seq(p, n, 0, 0, false, k) : k);
   };
   const withCaptures = (p: QueryNode, n: number, k: () => void) => {
@@ -321,7 +327,8 @@ function forEachMatch(
     const anchored = item.anchored && !again;
     for (let j = ci; j < count; j++) {
       const c = tree.child(parent, j);
-      if (item.node.field === undefined || tree.fieldName(c) === item.node.field)
+      // Checked before the continuation is made, as most children do not fit.
+      if (fits(item.node, c) && (item.node.field === undefined || tree.fieldName(c) === item.node.field))
         node(item.node, c, () => {
           if (repeats) seq(p, parent, ii, j + 1, true, k);
           else seq(p, parent, ii + 1, j + 1, false, k);
@@ -330,10 +337,18 @@ function forEachMatch(
     }
   };
 
+  // By symbol id and namedness, sparing a key string per node.
+  const bySymbol = new Map<number, number[]>();
+  const candidatesOf = (n: number) => {
+    const id = tree.kind(n) * 2 + (tree.named(n) ? 1 : 0);
+    let list = bySymbol.get(id);
+    if (!list) bySymbol.set(id, (list = candidates(key(tree.named(n), tree.kindName(n)))));
+    return list;
+  };
   const stack = [tree.root];
   while (stack.length > 0) {
     const n = stack.pop() as number;
-    for (const i of candidates(key(tree.named(n), tree.kindName(n))))
+    for (const i of candidatesOf(n))
       node((patterns[i] as QueryPattern).root, n, () => commit(i));
     for (let i = tree.count(n) - 1; i >= 0; i--) stack.push(tree.child(n, i));
   }
