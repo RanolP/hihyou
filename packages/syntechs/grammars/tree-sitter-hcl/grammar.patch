@@ -15,9 +15,26 @@ upstream in two places: it keeps a heredoc's state whatever its identifier's len
 upstream drops it past 127 and turns the rest of the file into errors, and it keeps the identifier's code points
 whole, where upstream truncates each to a `char` and a non-ASCII identifier never finds its closing line.
 
+An escape is an `escape_sequence` node of its own, a sibling of the `template_literal`s around it, so the highlight
+can mark it `constant.character.escape`: in a quoted string `\n`, `\r`, `\t`, `\"`, `\\`, `\uXXXX` and
+`\UXXXXXXXX`, and in a quoted string or a heredoc `$${` and `%%{`, which spell a literal `${` and `%{` (hashicorp/hcl
+hclsyntax/spec.md). A heredoc reads a backslash as itself. scanner.ts emits the new token; src/scanner.c stays
+upstream's, as for the heredoc departures above, and still folds an escape into the literal. A
+`template_literal` keeps holding no named child, so a changed string run still diffs as one leaf and gets a word
+diff (packages/syntechs/src/diff/content.ts, isContentAtom). A `string_lit` takes no escape, since a second
+literal-or-escape rule there conflicts with `quoted_template`; a string with an escape is a `quoted_template`
+instead, which a block label may now also be (`"a\tb"`), and the label queries match it too.
+
 --- a/make_grammar.js
 +++ b/make_grammar.js
-@@ -36,18 +36,20 @@
+@@ -30,24 +30,29 @@
+       $.template_interpolation_end,
+       $.template_directive_start,
+       $.template_directive_end,
+       $.heredoc_identifier,
++      $.escape_sequence,
+     ],
+ 
      extras: ($) => [$.comment, $._whitespace],
  
      rules: {
@@ -38,12 +55,14 @@ whole, where upstream truncates each to a `char` and a non-ASCII identifier neve
 -          $.identifier,
 -          repeat(choice($.string_lit, $.identifier)),
 +          field("key", $.identifier),
-+          repeat(field("key", choice($.string_lit, $.identifier))),
++          repeat(
++            field("key", choice($.string_lit, $.quoted_template, $.identifier)),
++          ),
            $.block_start,
            optional($.body),
            $.block_end,
          ),
-@@ -86,9 +88,9 @@
+@@ -86,9 +91,9 @@
        literal_value: ($) =>
          choice($.numeric_lit, $.bool_lit, $.null_lit, $.string_lit),
  
@@ -54,3 +73,13 @@ whole, where upstream truncates each to a `char` and a non-ASCII identifier neve
        bool_lit: ($) => choice("true", "false"),
  
        null_lit: ($) => "null",
+@@ -267,8 +272,9 @@
+           choice(
+             $.template_interpolation,
+             $.template_directive,
+             $.template_literal,
++            $.escape_sequence,
+           ),
+         ),
+ 
+       template_literal: ($) => prec.right(repeat1($._template_literal_chunk)),

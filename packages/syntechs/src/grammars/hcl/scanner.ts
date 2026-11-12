@@ -1,5 +1,6 @@
 // Port of tree-sitter-hcl 1.2.0 src/scanner.c: quoted and heredoc templates, and the `${` and `%{` sequences
-// that open an interpolation or a directive inside them.
+// that open an interpolation or a directive inside them. Unlike upstream, an escape (`\n`, `\u00e9`, `$${`, `%%{`)
+// is an `escape_sequence` token of its own instead of a literal chunk (grammar.patch).
 
 import type { ExternalScanner, Lexer } from "../../core/lexer.js";
 import { iswalnum, iswspace } from "../../core/wctype.js";
@@ -12,6 +13,7 @@ const TEMPLATE_INTERPOLATION_END = 4;
 const TEMPLATE_DIRECTIVE_START = 5;
 const TEMPLATE_DIRECTIVE_END = 6;
 const HEREDOC_IDENTIFIER = 7;
+const ESCAPE_SEQUENCE = 8;
 
 const TEMPLATE_INTERPOLATION = 0;
 const TEMPLATE_DIRECTIVE = 1;
@@ -112,6 +114,8 @@ class HclScanner implements ExternalScanner {
     };
     const push = (type: number, heredocIdentifier: number[] = []) =>
       this.stack.push({ type, heredocIdentifier });
+    // Where the parser takes no escape token, an escape stays part of the literal, as upstream reads it.
+    const escape = valid[ESCAPE_SEQUENCE] ? ESCAPE_SEQUENCE : TEMPLATE_LITERAL_CHUNK;
 
     // manage quoted context
     if (valid[QUOTED_TEMPLATE_START] && !this.inContext(QUOTED_TEMPLATE) && la(lexer) === DOUBLE_QUOTE) {
@@ -138,7 +142,7 @@ class HclScanner implements ExternalScanner {
       // `$${` escapes an interpolation.
       if (la(lexer) === DOLLAR) {
         lexer.advance(false);
-        if (la(lexer) === LEFT_BRACE) return acceptAndAdvance(TEMPLATE_LITERAL_CHUNK);
+        if (la(lexer) === LEFT_BRACE) return acceptAndAdvance(escape);
       }
       return accept(TEMPLATE_LITERAL_CHUNK);
     }
@@ -162,7 +166,7 @@ class HclScanner implements ExternalScanner {
       // `%%{` escapes a directive.
       if (la(lexer) === PERCENT) {
         lexer.advance(false);
-        if (la(lexer) === LEFT_BRACE) return acceptAndAdvance(TEMPLATE_LITERAL_CHUNK);
+        if (la(lexer) === LEFT_BRACE) return acceptAndAdvance(escape);
       }
       return accept(TEMPLATE_LITERAL_CHUNK);
     }
@@ -208,7 +212,7 @@ class HclScanner implements ExternalScanner {
         case 114: // r
         case 116: // t
         case BACKSLASH:
-          return acceptAndAdvance(TEMPLATE_LITERAL_CHUNK);
+          return acceptAndAdvance(escape);
         case 117: // u
         case 85: {
           // U
@@ -217,7 +221,7 @@ class HclScanner implements ExternalScanner {
             lexer.advance(false);
             if (!iswxdigit(la(lexer))) return false;
           }
-          return acceptAndAdvance(TEMPLATE_LITERAL_CHUNK);
+          return acceptAndAdvance(escape);
         }
         default:
           return false;

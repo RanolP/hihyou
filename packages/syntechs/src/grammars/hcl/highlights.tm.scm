@@ -16,10 +16,14 @@
 (attribute (identifier) @variable.declaration)
 (object_elem key: (expression (variable_expr (identifier) @variable.declaration)))
 
-; A block's labels, quoted or bare: `resource "aws_instance" "web"`. The type comes first.
+; A block's labels, quoted or bare: `resource "aws_instance" "web"`. The type comes first. A label holding an
+; escape (`"a\tb"`) is a `quoted_template`, since a `string_lit` holds none (grammar.patch).
 (block (string_lit (quoted_template_start) @label))
 (block (string_lit (template_literal) @label))
 (block (string_lit (quoted_template_end) @label))
+(block (quoted_template (quoted_template_start) @label))
+(block (quoted_template (template_literal) @label))
+(block (quoted_template (quoted_template_end) @label))
 (block (_) (identifier) @label)
 
 ; A reference: its root is a plain name (`v.name` in a `for`, `aws_instance.web.id`) unless Terraform or
@@ -72,6 +76,12 @@
   . [(template_interpolation_end) (template_directive_end)])
 (block (string_lit) @string.part)
 (block (string_lit (template_literal) @label))
+(block (quoted_template) @string.part)
+(block (quoted_template (template_literal) @label))
+
+; An escape: `\n`, `\"`, `\u00e9` in a quoted string, and `$${` or `%%{`, which spell a literal `${` or `%{`, in a
+; string or a heredoc. A heredoc reads a backslash as itself (grammar.patch).
+(escape_sequence) @string.escape
 
 ; A number with a fraction or an exponent, which HashiCorp's grammar scopes as a float.
 ((numeric_lit) @number.float
