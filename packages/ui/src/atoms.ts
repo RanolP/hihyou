@@ -118,6 +118,152 @@ function contextTree(file: DiffFile): SideTree | undefined {
 
 const sideNames: readonly SideName[] = ["before", "after"];
 
+/**
+ * One file's share of an `AtomIndex`, its atoms numbered by first occurrence in the file: `atomIndex` numbers a
+ * set's atoms by first occurrence in file order, so it maps these in order onto its own.
+ */
+interface FileAtoms {
+  path: string;
+  /** Engine id per local atom. */
+  ids: string[];
+  hunks: Omit<Hunk, "file">[];
+  /** Every atom node in document order, and whether j/k stops on it. */
+  occurrences: { atom: number; ref: Omit<NodeRef, "file">; stop: boolean }[];
+  atoms: number[];
+}
+
+/** By the engine's fragment list, which a file keeps through threads and revealed lines. */
+const fileAtomsCache = new WeakMap<DiffFile["fragments"], FileAtoms>();
+
+function fileAtomsOf(file: DiffFile): FileAtoms {
+  const cached = fileAtomsCache.get(file.fragments);
+  if (cached?.path === file.path) return cached;
+  const ids: string[] = [];
+  const local = new Map<string, number>();
+  const occurrences: FileAtoms["occurrences"] = [];
+  const atom = (id: string) => {
+    let a = local.get(id);
+    if (a === undefined) {
+      a = ids.length;
+      local.set(id, a);
+      ids.push(id);
+    }
+    return a;
+  };
+  const mine: FileAtoms["hunks"] = [];
+  const inFile = new Set<number>();
+  file.fragments.forEach((frag, fr) => {
+    if (frag.kind !== "diff") return;
+    const inHunk = new Set<number>();
+    const tree = (side: SideName): SideTree => {
+      const nodes = frag[side].nodes ?? [];
+      const roots: number[] = [];
+      const children: number[][] = nodes.map(() => []);
+      const own = nodes.map((n, i) => {
+        if (n.parent < 0) roots.push(i);
+        else children[n.parent]?.push(i);
+        if (n.atom === undefined) return [];
+        const a = atom(n.atom);
+        occurrences.push({
+          atom: a,
+          ref: { fragment: fr, side, node: i },
+          stop: !inHunk.has(a),
+        });
+        inHunk.add(a);
+        inFile.add(a);
+        return [a];
+      });
+      // Children come after their parent, so a reverse sweep sees every child's atoms before the parent's.
+      const beneath = own.map((a) => new Set(a));
+      for (let i = nodes.length - 1; i >= 0; i--) {
+        const p = nodes[i]?.parent ?? -1;
+        if (p >= 0) for (const a of beneath[i] ?? []) beneath[p]?.add(a);
+      }
+      return {
+        nodes,
+        roots,
+        children,
+        atoms: beneath.map((s) => [...s]),
+        lines: textLines(frag[side].spans),
+      };
+    };
+    const [before, after] = sideNames.map(tree) as [SideTree, SideTree];
+    const rows: RowAtom[] = [];
+    for (const side of sideNames) {
+      const t = side === "before" ? before : after;
+      const lines = splitLines(frag[side].spans);
+      const covers = (n: NodeOutline, line: number) =>
+        n.start.line <= line &&
+        (n.end.line > line || (n.end.line === line && n.end.column > 0));
+      // How many atom nodes cover each line, by a running sum over each node's first and past-last line: asking
+      // every node for every line was quadratic in a large hunk.
+      const owners = new Int32Array(t.lines.length + 1);
+      for (const n of t.nodes) {
+        if (n.atom === undefined) continue;
+        const from = Math.max(0, n.start.line);
+        const to = Math.min(
+          t.lines.length - 1,
+          n.end.column > 0 ? n.end.line : n.end.line - 1,
+        );
+        if (from > to) continue;
+        owners[from] = (owners[from] as number) + 1;
+        owners[to + 1] = (owners[to + 1] as number) - 1;
+      }
+      for (let l = 1; l < owners.length; l++)
+        owners[l] = (owners[l] as number) + (owners[l - 1] as number);
+      t.lines.forEach((text, line) => {
+        if (
+          (owners[line] as number) > 0 ||
+          !lines[line]?.some((span) => span.changed && span.text.trim() !== "")
+        )
+          return;
+        const a = atom(
+          `row:${atomKey({
+            path: file.path,
+            ancestors: [],
+            [side]: text,
+          })}`,
+        );
+        inHunk.add(a);
+        inFile.add(a);
+        rows.push({ side, line, atom: a });
+        // A node over the row holds it too: marking the node marks the row, and the node reads viewed only with it.
+        t.nodes.forEach((n, i) => {
+          const held = t.atoms[i];
+          if (held && covers(n, line) && !held.includes(a)) held.push(a);
+        });
+      });
+    }
+    mine.push({
+      fragment: fr,
+      before,
+      after,
+      atoms: [...inHunk],
+      rows,
+    });
+  });
+  const parts = {
+    path: file.path,
+    ids,
+    hunks: mine,
+    occurrences,
+    atoms: [...inFile],
+  };
+  fileAtomsCache.set(file.fragments, parts);
+  return parts;
+}
+
+/** Builds each file's share of `atomIndex` ahead, pausing between files, so indexing a large set is left with only the files' numbering. */
+export async function prepareAtomIndex(
+  files: readonly DiffFile[],
+  pause: () => Promise<void>,
+): Promise<void> {
+  for (const file of files) {
+    fileAtomsOf(file);
+    await pause();
+  }
+}
+
 export function atomIndex(files: readonly DiffFile[]): AtomIndex {
   const atoms: Atom[] = [];
   const ids = new Map<string, number>();
@@ -134,99 +280,30 @@ export function atomIndex(files: readonly DiffFile[]): AtomIndex {
     return a;
   };
   files.forEach((file, f) => {
-    const mine: Hunk[] = [];
-    const inFile = new Set<number>();
-    file.fragments.forEach((frag, fr) => {
-      if (frag.kind !== "diff") return;
-      const inHunk = new Set<number>();
-      const tree = (side: SideName): SideTree => {
-        const nodes = frag[side].nodes ?? [];
-        const roots: number[] = [];
-        const children: number[][] = nodes.map(() => []);
-        const own = nodes.map((n, i) => {
-          if (n.parent < 0) roots.push(i);
-          else children[n.parent]?.push(i);
-          if (n.atom === undefined) return [];
-          const a = atom(n.atom);
-          const ref: NodeRef = { file: f, fragment: fr, side, node: i };
-          atoms[a]?.occurrences.push(ref);
-          if (!inHunk.has(a)) stops.push(ref);
-          inHunk.add(a);
-          inFile.add(a);
-          return [a];
-        });
-        // Children come after their parent, so a reverse sweep sees every child's atoms before the parent's.
-        const beneath = own.map((a) => new Set(a));
-        for (let i = nodes.length - 1; i >= 0; i--) {
-          const p = nodes[i]?.parent ?? -1;
-          if (p >= 0) for (const a of beneath[i] ?? []) beneath[p]?.add(a);
-        }
-        return {
-          nodes,
-          roots,
-          children,
-          atoms: beneath.map((s) => [...s]),
-          lines: textLines(frag[side].spans),
-        };
-      };
-      const [before, after] = sideNames.map(tree) as [SideTree, SideTree];
-      const rows: RowAtom[] = [];
-      for (const side of sideNames) {
-        const t = side === "before" ? before : after;
-        const lines = splitLines(frag[side].spans);
-        const covers = (n: NodeOutline, line: number) =>
-          n.start.line <= line &&
-          (n.end.line > line || (n.end.line === line && n.end.column > 0));
-        // How many atom nodes cover each line, by a running sum over each node's first and past-last line: asking
-        // every node for every line was quadratic in a large hunk.
-        const owners = new Int32Array(t.lines.length + 1);
-        for (const n of t.nodes) {
-          if (n.atom === undefined) continue;
-          const from = Math.max(0, n.start.line);
-          const to = Math.min(
-            t.lines.length - 1,
-            n.end.column > 0 ? n.end.line : n.end.line - 1,
-          );
-          if (from > to) continue;
-          owners[from] = (owners[from] as number) + 1;
-          owners[to + 1] = (owners[to + 1] as number) - 1;
-        }
-        for (let l = 1; l < owners.length; l++)
-          owners[l] = (owners[l] as number) + (owners[l - 1] as number);
-        t.lines.forEach((text, line) => {
-          if (
-            (owners[line] as number) > 0 ||
-            !lines[line]?.some((span) => span.changed && span.text.trim() !== "")
-          )
-            return;
-          const a = atom(
-            `row:${atomKey({
-              path: file.path,
-              ancestors: [],
-              [side]: text,
-            })}`,
-          );
-          inHunk.add(a);
-          inFile.add(a);
-          rows.push({ side, line, atom: a });
-          // A node over the row holds it too: marking the node marks the row, and the node reads viewed only with it.
-          t.nodes.forEach((n, i) => {
-            const held = t.atoms[i];
-            if (held && covers(n, line) && !held.includes(a)) held.push(a);
-          });
-        });
-      }
-      mine.push({
-        file: f,
-        fragment: fr,
-        before,
-        after,
-        atoms: [...inHunk],
-        rows,
-      });
+    const parts = fileAtomsOf(file);
+    // A file's atoms are numbered in the order the file first holds them, which is the order the set meets them.
+    const global = parts.ids.map(atom);
+    const at = (a: number) => global[a] as number;
+    const tree = (t: SideTree): SideTree => ({
+      ...t,
+      atoms: t.atoms.map((held) => held.map(at)),
     });
-    hunks.push(mine);
-    fileAtoms.push([...inFile]);
+    for (const { atom: a, ref: local, stop } of parts.occurrences) {
+      const ref: NodeRef = { file: f, ...local };
+      atoms[at(a)]?.occurrences.push(ref);
+      if (stop) stops.push(ref);
+    }
+    hunks.push(
+      parts.hunks.map((h) => ({
+        file: f,
+        fragment: h.fragment,
+        before: tree(h.before),
+        after: tree(h.after),
+        atoms: h.atoms.map(at),
+        rows: h.rows.map((r) => ({ ...r, atom: at(r.atom) })),
+      })),
+    );
+    fileAtoms.push(parts.atoms.map(at));
   });
   return {
     files,

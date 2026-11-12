@@ -280,7 +280,7 @@ const host = globalThis as unknown as {
  * A pause that lets the host run its own tasks once the current slice of work has run `ms`, and resolves at
  * once before that: a browser keeps answering input while a large change set diffs file by file.
  */
-function slicer(ms = 40): () => Promise<void> {
+export function slicer(ms = 40): () => Promise<void> {
   let start = host.performance.now();
   return async () => {
     if (host.performance.now() - start < ms) return;

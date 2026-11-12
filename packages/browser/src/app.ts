@@ -1,4 +1,9 @@
-import { type ChangedFileRef, createEngine, type Theme } from "@hihyou/engine";
+import {
+  type ChangedFileRef,
+  createEngine,
+  slicer,
+  type Theme,
+} from "@hihyou/engine";
 import {
   GENERATED_MERGE_SUBJECT,
   type GitHubWebDiffsetId,
@@ -19,6 +24,7 @@ import {
   githubDark,
   githubLight,
   isTestPath,
+  prepareAtomIndex,
   renderDiffset,
   revealElided,
   sessionViewedStore,
@@ -873,6 +879,9 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
         current.load(),
         threads,
       ]);
+      if (at !== generation || disposed) return false;
+      // The draw indexes every file's atoms at once; built a file at a time first, it only numbers them.
+      await prepareAtomIndex(loaded, slicer());
       if (at !== generation || disposed) return false;
       files = filesInReviewOrder(withThreads(loaded, reviewThreads));
       drawStatus();

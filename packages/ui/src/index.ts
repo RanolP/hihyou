@@ -51,6 +51,7 @@ export {
   type NodeRef,
   nodeScore,
   nodeSubject,
+  prepareAtomIndex,
   setViewed,
   type SideName,
   type SideTree,

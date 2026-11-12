@@ -1,6 +1,6 @@
 export type { Anchor, AstSteps, LineRange } from "./anchor.js";
 export { defaultCacheBytes } from "./cache.js";
-export type { Diffset } from "./diffset.js";
+export { type Diffset, slicer } from "./diffset.js";
 export type { CollapseReason } from "./fold.js";
 export type {
   CodeFragment,
