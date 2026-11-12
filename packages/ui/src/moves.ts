@@ -1,4 +1,4 @@
-import type { AstSteps, SideMove } from "@hihyou/engine";
+import type { AstSteps, Side, SideMove } from "@hihyou/engine";
 import {
   type Cell,
   type DiffFile,
@@ -39,9 +39,29 @@ export function moveAt(
 }
 
 /**
+ * A node at or inside one of `at` starts on `move`'s lines of side `s`, by the side's outline: the move holds
+ * that node itself, not only the side around it.
+ */
+function holdsNode(s: Side, move: SideMove, at: AstSteps[]): boolean {
+  return (s.nodes ?? []).some((n) => {
+    const line = s.startLine + n.start.line;
+    return (
+      move.first <= line &&
+      line <= move.last &&
+      at.some(
+        (c) =>
+          c.length <= n.steps.length && c.every((x, i) => x === n.steps[i]),
+      )
+    );
+  });
+}
+
+/**
  * The other half of the move at `from`: a move on the opposite side, in the counterpart's file, that points
  * back at `from`'s file. One whose own node is a counterpart of `from` and that names `from`'s node as its
- * counterpart beats one that holds the node alone, which beats one that only points back.
+ * counterpart beats one that holds the node alone, which beats one that only points back. A side can hold
+ * several moves, all of a whole added or deleted file's say, so each test is made first on the move's own lines
+ * and then on its side as a whole.
  */
 export function findCounterpart(
   files: readonly DiffFile[],
@@ -63,7 +83,12 @@ export function findCounterpart(
       for (const [k, m] of (s.moves ?? []).entries()) {
         if (!back.includes(m.counterpart.path)) continue;
         const holds = meets(s.at, move.counterpart.at);
-        const score = (holds ? 1 : 0) + (holds && meetsBack(m) ? 1 : 0);
+        const own = holdsNode(s, m, move.counterpart.at);
+        const score =
+          (holds ? 1 : 0) +
+          (holds && meetsBack(m) ? 1 : 0) +
+          (own ? 2 : 0) +
+          (own && ownBack(m) ? 2 : 0);
         if (!best || score > best.score)
           best = { ref: { file, fragment: i, side, move: k }, score };
       }
@@ -74,6 +99,15 @@ export function findCounterpart(
   function meetsBack(m: SideMove): boolean {
     const f = source?.fragments[from.fragment];
     return f?.kind === "diff" && meets(f[from.side].at, m.counterpart.at);
+  }
+
+  function ownBack(m: SideMove): boolean {
+    const f = source?.fragments[from.fragment];
+    return (
+      f?.kind === "diff" &&
+      !!move &&
+      holdsNode(f[from.side], move, m.counterpart.at)
+    );
   }
 }
 
