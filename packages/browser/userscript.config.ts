@@ -13,16 +13,15 @@ const { version } = JSON.parse(
 ) as { version: string };
 const git = (...args: string[]) =>
   execFileSync("git", args, { encoding: "utf8" }).trim();
-// The website deploys a preview build on every push to main, so its version grows with each commit: a userscript
-// manager offers a higher @version as an update and ignores an equal one. The commit count is a fourth number,
-// which Tampermonkey and Violentmonkey both compare numerically and both rank above the 0.1.0 the site served
-// before; the commit follows a "+", after the number that decides. A "-pre.N" suffix would rank below 0.1.0 in
-// both. A shallow clone counts only its own depth, so it stops the build rather than ship a smaller number.
+// The website deploys a preview build on every push to main: the next patch as a pre-release, numbered by commit
+// count, with the commit after a "+". A userscript manager offers a higher @version as an update, and the bumped
+// patch keeps it above the released version. A shallow clone counts only its own depth, so it stops the build.
 if (git("rev-parse", "--is-shallow-repository") !== "false")
   throw new Error(
     "the userscript's @version counts commits; build it from a full clone (fetch-depth: 0)",
   );
-const previewVersion = `${version}.${git("rev-list", "--count", "HEAD")}+${git("rev-parse", "--short=8", "HEAD")}`;
+const [major, minor, patch] = version.split(".").map(Number);
+const previewVersion = `${major}.${minor}.${patch + 1}-pre.${git("rev-list", "--count", "HEAD")}+${git("rev-parse", "--short=8", "HEAD")}`;
 // GitHub Pages serves the website (packages/website) here.
 const site = "https://ranolp.github.io/hihyou/";
 
