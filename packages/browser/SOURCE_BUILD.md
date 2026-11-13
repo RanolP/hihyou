@@ -33,4 +33,4 @@ It runs three steps:
 2. `pnpm exec tsc -b packages/browser` builds the workspace packages the extension imports.
 3. `pnpm --filter @hihyou/browser zip:firefox` bundles and minifies the extension with WXT (Vite).
 
-The extension is written to `packages/browser/.output/firefox-mv3/` and zipped as `packages/browser/.output/hihyoubrowser-0.1.0-firefox.zip`.
+The extension is written to `packages/browser/.output/firefox-mv3/` and zipped as `packages/browser/.output/hihyoubrowser-0.2.0-firefox.zip`.
