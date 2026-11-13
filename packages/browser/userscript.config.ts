@@ -20,8 +20,9 @@ if (git("rev-parse", "--is-shallow-repository") !== "false")
   throw new Error(
     "the userscript's @version counts commits; build it from a full clone (fetch-depth: 0)",
   );
-const [major, minor, patch] = version.split(".").map(Number);
-const previewVersion = `${major}.${minor}.${patch + 1}-pre.${git("rev-list", "--count", "HEAD")}+${git("rev-parse", "--short=8", "HEAD")}`;
+const [, major, minor, patch] = /^(\d+)\.(\d+)\.(\d+)$/.exec(version) ?? [];
+if (patch === undefined) throw new Error(`package.json version ${version} is not major.minor.patch`);
+const previewVersion = `${major}.${minor}.${Number(patch) + 1}-pre.${git("rev-list", "--count", "HEAD")}+${git("rev-parse", "--short=8", "HEAD")}`;
 // GitHub Pages serves the website (packages/website) here.
 const site = "https://ranolp.github.io/hihyou/";
 
