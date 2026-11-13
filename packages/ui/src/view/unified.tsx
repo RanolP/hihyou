@@ -343,7 +343,9 @@ export function unifiedRow(
           <td class="hh-code" style={codeStyle(row.spans)}>
             <span class="hh-sign">
               {single === "before"
-                ? signs.before
+                ? has("before")
+                  ? signs.before
+                  : ""
                 : single === "after"
                   ? has("after")
                     ? signs.after

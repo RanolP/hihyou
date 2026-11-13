@@ -675,6 +675,16 @@ export function unifiedRows(rows: readonly Row[], prose = false): UnifiedRow[] {
       if (!cell) continue;
       const move = row.move?.[side];
       const moved = row.moved?.[side];
+      // A blank line gained or lost is whitespace, never a change: it reads as plain code on its side.
+      if (!move && !moved && cell.spans.every((s) => blank(s.text))) {
+        (side === "before" ? removed : added).push({
+          kind: "merged",
+          fragment: row.fragment,
+          [side]: cell.line,
+          spans: cell.spans.map((s) => ({ ...s, changed: false })),
+        });
+        continue;
+      }
       (side === "before" ? removed : added).push({
         kind: "line",
         fragment: row.fragment,

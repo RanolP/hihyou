@@ -540,7 +540,6 @@ export async function diffFiles(
           b: s.b,
           mapping: p.mapping,
           ...(mapped && { sourceLines: mapped.after }),
-          indentMatters: indentIsSyntax(path),
           ...(p.grammar.highlight && { highlight: p.grammar.highlight }),
         });
     const reason = foldReason({
@@ -659,7 +658,7 @@ function lineFragments(
   highlight?: HighlightModule,
 ): CodeFragment[] {
   // Without a tree the changed line is the unit the viewer paints; a whole file is the change, unpainted.
-  const edits = lineDiff(texts[0], texts[1], indentIsSyntax(path));
+  const edits = lineDiff(texts[0], texts[1]);
   for (const e of edits) {
     if ("old" in e) {
       a.changed.push(e.old);
@@ -710,7 +709,6 @@ function lineFragments(
   return buildFragments({
     a,
     b,
-    indentMatters: indentIsSyntax(path),
     ...(highlight && { highlight }),
   });
 }
@@ -854,7 +852,7 @@ function record(
     const oldText = before.v.text.slice(oldRange.start, oldRange.end);
     const newText = after.v.text.slice(newRange.start, newRange.end);
     if (!oldText.includes("\n") && !newText.includes("\n")) return false;
-    const lineEdits = lineDiff(oldText, newText, indentIsSyntax(refA.path));
+    const lineEdits = lineDiff(oldText, newText);
     // A change in blank lines or spacing alone leaves no line edit: the whole leaf stays marked.
     if (lineEdits.length === 0) return false;
     for (const [i, edit] of lineEdits.entries()) {
@@ -971,16 +969,26 @@ function record(
         }),
       });
   };
+  // Whitespace is never a change, even inside a string or where the grammar keeps it as a node: such an edit
+  // records nothing, so it is neither drawn nor counted for review.
+  const solid = (s: SideInput | undefined, n: number | undefined) =>
+    s && n !== undefined
+      ? s.v.text.slice(s.v.start(n), s.v.end(n)).replace(/\s+/g, "")
+      : undefined;
   switch (e.kind) {
     case "insert":
+      if (solid(b, e.b) === "") return;
       if (!unit(b, e.b, "after")) mark(b, e.b);
       leaves(b, e.b, "after");
       return;
     case "delete":
+      if (solid(a, e.a) === "") return;
       if (!unit(a, e.a, "before")) mark(a, e.a);
       leaves(a, e.a, "before");
       return;
     case "update":
+      if (solid(a, e.a) !== undefined && solid(a, e.a) === solid(b, e.b))
+        return;
       if (
         !markCommentUpdate(a, b, e.a, e.b) &&
         !markMultilineUpdate(a, b, e.a, e.b) &&
@@ -1270,10 +1278,4 @@ function pairAtom(
   });
   a.nodes.push({ node: e.a, atom });
   b.nodes.push({ node: e.b, atom });
-}
-
-/** Formats whose indentation is syntax, so re-indenting a line changes it: Python, YAML and Makefiles. */
-function indentIsSyntax(path: string): boolean {
-  const name = path.slice(path.lastIndexOf("/") + 1);
-  return /\.(?:pyi?|ya?ml|mk)$|^(?:gnu)?makefile$/i.test(name);
 }

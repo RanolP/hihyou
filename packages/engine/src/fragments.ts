@@ -1,6 +1,6 @@
 import { diffArrays } from "diff";
 import { NO_NODE, type Tree } from "syntechs/core";
-import type { Mapping } from "syntechs/diff";
+import { lineKey, type Mapping } from "syntechs/diff";
 import { type HighlightModule, type ScopeRuns, scopeRuns } from "syntechs/highlight";
 import { type AstSteps, stepsOf } from "./anchor.js";
 import { lineEnd, lineOf, type Version } from "./file.js";
@@ -173,7 +173,6 @@ export interface FragmentInput {
   mapping?: Mapping;
   /** Each after-side display line's source line, when formatting changed the line layout. */
   sourceLines?: readonly number[];
-  indentMatters: boolean;
   /** The grammar's highlighter; spans carry no `scope` without one. */
   highlight?: HighlightModule;
 }
@@ -248,8 +247,8 @@ export function buildFragments(input: FragmentInput): CodeFragment[] {
     return found.length > 0 ? found : undefined;
   };
   const pairs = mapping ? pairLines(a.v, b.v, mapping) : undefined;
-  const linesA = lines(a, 0, input.indentMatters, pairs);
-  const linesB = lines(b, 1, input.indentMatters, undefined);
+  const linesA = lines(a, 0, pairs);
+  const linesB = lines(b, 1, undefined);
   const rows = rescueSameLines(alignRows(linesA, linesB), linesA, linesB);
   // A move whose halves land in one `diff` fragment reads as its edits alone: both halves sit side by side,
   // so a box would only claim the fragment's other changes moved too.
@@ -289,9 +288,14 @@ export function buildFragments(input: FragmentInput): CodeFragment[] {
     return [];
   };
 
-  const visible = rows.map((r) => !r.same);
+  // Blank lines gained or lost with nothing else are whitespace, never a change: they open no context of their own.
+  const blank = (ls: readonly Line[], from: number, to: number) =>
+    ls.slice(from, to).every((l) => l.key === "" && !l.changed && !l.moved);
+  const quiet = (r: Row) =>
+    !r.same && blank(linesA, r.a0, r.a1) && blank(linesB, r.b0, r.b1);
+  const visible = rows.map((r) => !r.same && !quiet(r));
   rows.forEach((r, i) => {
-    if (r.same) return;
+    if (r.same || quiet(r)) return;
     for (let k = Math.max(0, i - context); k <= i + context; k++)
       if (k < rows.length) visible[k] = true;
   });
@@ -388,7 +392,6 @@ export function buildFragments(input: FragmentInput): CodeFragment[] {
 function lines(
   s: SideInput,
   side: 0 | 1,
-  indentMatters: boolean,
   pairs: Int32Array | undefined,
 ): Line[] {
   const { v } = s;
@@ -410,27 +413,13 @@ function lines(
     return {
       side,
       index,
-      key: tokens
-        ? JSON.stringify(
-            indentMatters ? [indentDepth(text), ...tokens] : tokens,
-          )
-        : "",
+      key: tokens ? lineKey(tokens) : "",
       word: /\w/u.test(text),
       changed: changed[index] === 1,
       moved: moved[index] === 1,
       pair: pairs ? (pairs[index] as number) : -2,
     };
   });
-}
-
-function indentDepth(line: string): number {
-  let depth = 0;
-  for (const ch of line) {
-    if (ch === " ") depth += 1;
-    else if (ch === "\t") depth += 4;
-    else break;
-  }
-  return depth;
 }
 
 /**

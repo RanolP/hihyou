@@ -35,7 +35,7 @@ hihyou should eventually support jj and similar version-control systems, but the
 
 ### Whitespace: the engine is syntax-aware, the viewer reformats
 
-The engine neither deletes whitespace nor tracks it for its own sake: "not delete. not be aware of whitespace itself, be aware of syntax." Whitespace is never content and is never stripped. It matters exactly as far as syntax makes it matter, such as separating tokens or Python's indentation. A whitespace-only change that leaves the syntax unchanged is zero edits.
+The engine neither deletes whitespace nor tracks it for its own sake: "not delete. not be aware of whitespace itself, be aware of syntax." Whitespace is never content and is never stripped. It separates tokens, and that is all it does in a diff: "공백은 실제로 추가/삭제 되었어도 굳이 보여주지 말고 언제나 승인시켜" (even when whitespace was really added or removed, don't show it, and always approve it). A change in whitespace alone, blank lines, indentation, trailing spaces or spacing inside a string, is zero edits: it draws as plain code and nothing in it waits to be read. This holds where indentation is syntax too, so re-indenting a Python block, nesting a YAML key deeper or turning a Makefile recipe's tab into spaces is hidden as well.
 
 Viewers (CLI, GUI, extension) show code re-formatted properly rather than the author's original layout: "doing proper formatting is my answer". The engine still diffs syntax; formatting is a display concern. The goal is that a review tool never hides a real change, while layout noise, such as an agent's inconsistent formatting, never reaches the reviewer.
 
