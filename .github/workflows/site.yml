@@ -71,7 +71,10 @@ jobs:
     needs: measure
     runs-on: ubuntu-latest
     steps:
+      # Full history: the userscript's @version counts the commits on main.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       # Where the website's data loader reads conformance.json, bench.json and highlight.json.
       - run: echo "SCORECARD_DIR=$RUNNER_TEMP/scorecard" >> "$GITHUB_ENV"

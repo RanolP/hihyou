@@ -1,6 +1,7 @@
 // Builds hihyou.user.js, the extension as a userscript for Tampermonkey and Violentmonkey, and hihyou.meta.js, its
 // metadata block alone, which a manager polls for updates instead of the whole script. The website serves both.
 //   vite build -c userscript.config.ts
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { build, defineConfig, type Plugin } from "vite";
@@ -10,6 +11,18 @@ import { browserSafe, conditions } from "./browser-safe.ts";
 const { version } = JSON.parse(
   readFileSync(new URL("package.json", import.meta.url), "utf8"),
 ) as { version: string };
+const git = (...args: string[]) =>
+  execFileSync("git", args, { encoding: "utf8" }).trim();
+// The website deploys a preview build on every push to main, so its version grows with each commit: a userscript
+// manager offers a higher @version as an update and ignores an equal one. The commit count is a fourth number,
+// which Tampermonkey and Violentmonkey both compare numerically and both rank above the 0.1.0 the site served
+// before; the commit follows a "+", after the number that decides. A "-pre.N" suffix would rank below 0.1.0 in
+// both. A shallow clone counts only its own depth, so it stops the build rather than ship a smaller number.
+if (git("rev-parse", "--is-shallow-repository") !== "false")
+  throw new Error(
+    "the userscript's @version counts commits; build it from a full clone (fetch-depth: 0)",
+  );
+const previewVersion = `${version}.${git("rev-list", "--count", "HEAD")}+${git("rev-parse", "--short=8", "HEAD")}`;
 // GitHub Pages serves the website (packages/website) here.
 const site = "https://ranolp.github.io/hihyou/";
 
@@ -17,8 +30,9 @@ const metadata = [
   "// ==UserScript==",
   "// @name         hihyou",
   "// @namespace    https://github.com/RanolP/hihyou",
-  `// @version      ${version}`,
+  `// @version      ${previewVersion}`,
   "// @description  Review GitHub pull requests with hihyou's syntax-aware diff, in place of the Files changed tab.",
+  "// @author       RanolP",
   "// @homepageURL  https://github.com/RanolP/hihyou",
   // Every github.com page: GitHub navigates without reloading, so the script must already be running when a
   // reviewer reaches a pull request's Files changed tab.
