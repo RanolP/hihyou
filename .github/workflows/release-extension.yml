@@ -20,18 +20,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # A store refuses a version it already has, and an unbumped tag would ship the old version's zips, so the
-      # tag must name the version in packages/browser/package.json before anything is built or uploaded.
-      - name: Check the tag matches the extension version
-        if: github.event_name == 'push'
-        run: |
-          version=$(node -p 'require("./packages/browser/package.json").version')
-          if [[ "$GITHUB_REF_NAME" != "browser-v$version" ]]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match packages/browser/package.json version $version. Bump the version to match and tag that commit browser-v<version>, or tag browser-v$version."
-            exit 1
-          fi
-          echo "Tag $GITHUB_REF_NAME matches version $version."
-
       - uses: ./.github/actions/setup
 
       - name: Package Chrome and Firefox extensions

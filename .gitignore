@@ -23,5 +23,3 @@ packages/vscode/.vscode-test-web/
 # WXT's build output (the directory to load unpacked) and the types it generates on every build.
 packages/browser/.output/
 packages/browser/.wxt/
-# wxt.config.ts writes the commit here only while it zips the Firefox sources.
-packages/browser/COMMIT
