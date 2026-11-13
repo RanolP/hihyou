@@ -226,6 +226,10 @@ ins.hh-changed { background: linear-gradient(var(--hh-added-text), var(--hh-adde
 .hh-code.hh-moved { box-shadow: inset -2px 0 var(--hh-moved); }
 .hh-num.hh-moved-last { box-shadow: inset 2px -2px var(--hh-moved); }
 .hh-code.hh-moved-last { box-shadow: inset -2px -2px var(--hh-moved); }
+/* A move's removed side is removed code: it takes the removed colour inside its moved box. */
+tr[data-side="before"] > .hh-num.hh-moved,
+tr[data-side="before"] > .hh-num.hh-moved ~ td { background: var(--hh-removed-line); }
+tr[data-side="before"] > .hh-num.hh-moved ~ .hh-code > .hh-sign { color: var(--hh-removed-fg); }
 /* One code column, both gutters before it; the column headings are for screen readers alone. */
 .hh-head th { padding: 0; border: 0; line-height: 0; }
 /* The inner gutter carries only a moved box's bottom edge. */
@@ -454,6 +458,8 @@ tr.hh-read > .hh-num.hh-removed,
 tr.hh-read > .hh-num.hh-added { background: none; box-shadow: none; }
 tr.hh-read > .hh-num.hh-removed ~ td,
 tr.hh-read > .hh-num.hh-added ~ td,
+tr.hh-read > .hh-num.hh-moved,
+tr.hh-read > .hh-num.hh-moved ~ td,
 tr.hh-read .hh-changed { background: none; }
 tr.hh-read > .hh-code > .hh-sign { color: var(--hh-muted); }
 /*
