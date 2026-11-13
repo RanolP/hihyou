@@ -49,6 +49,7 @@ import { Draw, type DrawContext } from "./view/context.js";
 import { FileSection } from "./view/file.jsx";
 import { flash } from "./view/flash.js";
 import { createLazyFiles } from "./view/lazy.js";
+import { createFolds } from "./view/fold.js";
 import { createPainter } from "./view/highlights.js";
 import { ApprovalBadge } from "./view/approval.jsx";
 import {
@@ -236,6 +237,7 @@ function mount(
   const focusIds = new WeakMap<Element, string>();
   const placer = createPlacer(files);
   const painter = createPainter(doc, placer);
+  const folds = createFolds(doc);
   const lazy = createLazyFiles(doc.defaultView, () => paint());
   const pairs = createPairs({ files, viewed, keyOf, isViewed, viewedTick });
 
@@ -513,14 +515,20 @@ function mount(
   const paintSelection = () => {
     const { selection: p, chars } = modal?.state() ?? emptyModal;
     const index = outline();
-    painter.set(
-      "hh-selection",
+    const ranges =
       p?.kind === "node"
         ? narrowedRanges(index, p, chars)
         : p
           ? painter.targetRanges(index, p)
-          : [],
-    );
+          : [];
+    // A node selected in a folded run of read removed lines shows the run; a hunk or a file leaves it folded.
+    if (p?.kind === "node")
+      folds.reveal(
+        ranges.flatMap(
+          (r) => r.startContainer.parentElement?.closest("tr") ?? [],
+        ),
+      );
+    painter.set("hh-selection", ranges);
   };
   /**
    * Every drawn occurrence of a viewed atom, so a move's counterpart dims in its own file too, and every node and
@@ -562,6 +570,7 @@ function mount(
     for (const [tr, r] of rowRead) tr.classList.toggle("hh-read", r);
     paintScores();
     paintComments();
+    folds.paint(root);
     paintSelection();
   };
   /** Each comment's anchored text, highlighted, and a row under its last line holding the comment or the draft. */

@@ -456,6 +456,23 @@ tr.hh-read > .hh-num.hh-removed ~ td,
 tr.hh-read > .hh-num.hh-added ~ td,
 tr.hh-read .hh-changed { background: none; }
 tr.hh-read > .hh-code > .hh-sign { color: var(--hh-muted); }
+/*
+ * A run of read removed lines folds to a thin rule in the removed colour; the rule is a button that shows the
+ * run again. The button stands taller than the line it draws, so it is not a hairline to aim at.
+ */
+tr.hh-folded { display: none; }
+.hh-fold-rule > td { padding: 0; }
+.hh-fold-line {
+  display: block;
+  width: 100%;
+  height: 7px;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+  background: linear-gradient(var(--hh-removed-fg), var(--hh-removed-fg)) center / 100% 2px no-repeat;
+}
+.hh-fold-line:hover { background-size: 100% 4px; }
+.hh-fold-line:focus-visible { outline: 2px solid var(--hh-accent); outline-offset: -2px; }
 .hh-diff ::highlight(hh-selection) {
   background-color: var(--hh-selection);
   text-decoration: underline 2px var(--hh-accent);
