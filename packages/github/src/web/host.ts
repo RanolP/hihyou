@@ -26,7 +26,10 @@ export interface GitHubWebCommit {
   /** The first line of the message. */
   subject: string;
   author: string;
-  /** ISO 8601, as github.com reports the author date. */
+  /**
+   * ISO 8601, as github.com reports the committer date. The Commits tab orders and groups by it; a rebase keeps
+   * the author date, so the author dates of a rebased pull request can run backwards down the list.
+   */
   date: string;
 }
 
@@ -157,7 +160,7 @@ interface CommitsRoute {
         commits: {
           oid: string;
           shortMessage: string;
-          authoredDate: string;
+          committedDate: string;
           authors?: { login?: string; displayName?: string }[];
         }[];
       }[];
@@ -439,7 +442,7 @@ export function githubWebHost(options: GitHubWebHostOptions): GitHubWebHost {
           sha: c.oid,
           subject: c.shortMessage,
           author: c.authors?.[0]?.displayName || c.authors?.[0]?.login || "",
-          date: c.authoredDate,
+          date: c.committedDate,
         })),
       );
       for (const commit of commits)

@@ -40,6 +40,8 @@ interface Row {
   key: string;
   label: string;
   description: string;
+  /** ISO 8601 committer date. */
+  date?: string;
   tooltip?: string;
   id: GitHubWebDiffsetId;
   /** Which of the pull request's review threads have a line in this commit. */
@@ -961,6 +963,13 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
           void open(row, currentPath);
         });
         head.append(twisty, label);
+        if (row.date) {
+          const at = new Date(row.date);
+          const time = el("time", "hh-date", shortDate(at, new Date()));
+          time.dateTime = row.date;
+          time.title = at.toLocaleString();
+          head.append(time);
+        }
         if (row.description)
           head.append(el("span", "hh-desc", row.description));
         li.append(head);
@@ -1266,26 +1275,26 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
       const merged = pull.commits.some((c) =>
         GENERATED_MERGE_SUBJECT.test(c.subject),
       );
-      // A pull request is reviewed one commit at a time, newest first; no row diffs it whole.
-      rows = pull.commits
-        .map(
-          (c, i): Row => ({
-            key: c.sha,
-            label: c.subject,
-            description: c.sha.slice(0, 7),
-            // The sidebar cuts a long subject short; the tooltip carries it whole.
-            tooltip: `${c.subject}\n${c.author} · ${new Date(c.date).toLocaleString()}`,
-            id: { owner, repo, commit: c.sha },
-            threadsAt: {
-              commit: c.sha,
-              head: c.sha === pull.head,
-              leftIsBefore: i === 0 && !merged,
-            },
-            expanded: false,
-          }),
-        )
-        .toReversed();
-      const [newest] = rows;
+      // A pull request is reviewed one commit at a time, oldest first as its Commits tab lists them; no row
+      // diffs it whole.
+      rows = pull.commits.map(
+        (c, i): Row => ({
+          key: c.sha,
+          label: c.subject,
+          description: c.sha.slice(0, 7),
+          date: c.date,
+          // The sidebar cuts a long subject short; the tooltip carries it whole.
+          tooltip: `${c.subject}\n${c.author} · ${new Date(c.date).toLocaleString()}`,
+          id: { owner, repo, commit: c.sha },
+          threadsAt: {
+            commit: c.sha,
+            head: c.sha === pull.head,
+            leftIsBefore: i === 0 && !merged,
+          },
+          expanded: false,
+        }),
+      );
+      const newest = rows.at(-1);
       if (!newest) {
         setsStatus.textContent = "No commits.";
         return;
@@ -1362,6 +1371,25 @@ function mount(host: HTMLElement, { page, fetch }: MountOptions): Mounted {
   };
 }
 
+const monthDay = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+});
+
+/**
+ * A commit row's date in the viewer's time zone: "5m ago" or "3h ago" within the last day, "Nov 12" earlier this
+ * year, "2025-11-12" before it.
+ */
+function shortDate(at: Date, now: Date): string {
+  const minutes = Math.floor((now.getTime() - at.getTime()) / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 24 * 60) return `${Math.floor(minutes / 60)}h ago`;
+  if (at.getFullYear() === now.getFullYear()) return monthDay.format(at);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
+}
+
 /** Commit and PR titles as GitHub shows them: a `backticked` span reads as code. */
 function codeSpans(text: string): Node[] {
   return text
@@ -1426,6 +1454,9 @@ const appStyles = `
 .hh-twisty { width: 20px; color: var(--fgColor-muted, GrayText) !important; }
 .hh-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hh-desc { color: var(--fgColor-muted, GrayText); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+/* Only the subject gives way at the sidebar's width; the date and short sha stay whole. */
+.hh-row > .hh-date, .hh-row > .hh-desc { flex: none; white-space: nowrap; }
+.hh-date { color: var(--fgColor-muted, GrayText); font-size: 12px; }
 .hh-folder { padding: 2px 4px; color: var(--fgColor-muted, GrayText); }
 .hh-sets button.hh-folder { display: block; width: 100%; color: var(--fgColor-muted, GrayText); }
 .hh-folder-twisty { display: inline-block; width: 1.2em; }
