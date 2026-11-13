@@ -70,6 +70,12 @@ p {
   color: #59636e;
 }
 
+.version {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
 @media (prefers-color-scheme: dark) {
   body {
     color: #f0f6fc;

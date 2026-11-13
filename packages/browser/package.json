@@ -3,6 +3,10 @@
   "version": "0.2.0",
   "private": true,
   "license": "MIT",
+  "author": {
+    "name": "RanolP",
+    "url": "https://github.com/RanolP"
+  },
   "type": "module",
   "scripts": {
     "build": "wxt build",

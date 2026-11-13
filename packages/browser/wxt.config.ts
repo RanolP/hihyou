@@ -1,10 +1,54 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import {
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import solid from "vite-plugin-solid";
 import type { Plugin } from "vite";
 import { defineConfig } from "wxt";
 import { browserSafe, conditions } from "./browser-safe.ts";
+
+const browserRoot = fileURLToPath(new URL(".", import.meta.url));
+const pkg = JSON.parse(
+  readFileSync(path.join(browserRoot, "package.json"), "utf8"),
+) as { version: string; author: { name: string; url: string } };
+
+// The Firefox sources zip carries the commit in this file, since an AMO reviewer rebuilds it with no .git.
+const commitFile = path.join(browserRoot, "COMMIT");
+
+/** The short commit the build is made from: git's HEAD in this repository, else the sources zip's COMMIT file. */
+function buildCommit(): { sha: string; fromGit: boolean } | undefined {
+  const git = (...args: string[]) =>
+    execFileSync("git", args, {
+      cwd: browserRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  try {
+    // An archive extracted inside some other checkout must not take that checkout's HEAD.
+    if (
+      realpathSync(git("rev-parse", "--show-toplevel")) ===
+      realpathSync(path.join(browserRoot, "../.."))
+    )
+      return { sha: git("rev-parse", "--short=8", "HEAD"), fromGit: true };
+  } catch {}
+  try {
+    const sha = readFileSync(commitFile, "utf8").trim();
+    if (sha) return { sha, fromGit: false };
+  } catch {}
+  return undefined;
+}
+
+const commit = buildCommit();
+// The stores take only dotted integers in `version`, so the commit rides in Chrome's display-only `version_name`;
+// WXT drops `version_name` for Firefox, which does not support it.
+const versionName = `${pkg.version}-pre${commit ? `+${commit.sha}` : ""}`;
+const versionLabel = `v${pkg.version}${commit ? ` (${commit.sha})` : ""}`;
 
 const engineGrammarsPath = fileURLToPath(
   new URL("../engine/src/grammars.ts", import.meta.url),
@@ -70,6 +114,12 @@ export default defineConfig({
     description:
       "Review GitHub pull requests with hihyou's syntax-aware diff, in place of the Files changed tab.",
     homepage_url: "https://github.com/RanolP/hihyou",
+    version_name: versionName,
+    // Chrome and its Web Store ignore `author` (the store shows the publisher account), so only Firefox gets the
+    // author, which AMO and about:addons show from `developer`.
+    ...(browser === "firefox"
+      ? { author: pkg.author.name, developer: pkg.author }
+      : {}),
     permissions: ["scripting", "storage"],
     action: {
       default_title: "hihyou",
@@ -132,7 +182,17 @@ export default defineConfig({
       "packages/website/docs/**",
     ],
   },
+  hooks: {
+    // Only a build from git writes the file, and removes it again; a rebuild from the sources zip keeps its own.
+    "zip:sources:start": () => {
+      if (commit?.fromGit) writeFileSync(commitFile, `${commit.sha}\n`);
+    },
+    "zip:sources:done": () => {
+      if (commit?.fromGit) rmSync(commitFile, { force: true });
+    },
+  },
   vite: () => ({
+    define: { __HIHYOU_VERSION__: JSON.stringify(versionLabel) },
     resolve: { conditions },
     // WXT imports each entrypoint in Node to read its definition, with every dependency external. A workspace
     // package would then load its tsc output, which has no .js for a .tsx module (jsx is preserved), so the

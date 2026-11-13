@@ -33,4 +33,6 @@ It runs three steps:
 2. `pnpm exec tsc -b packages/browser` builds the workspace packages the extension imports.
 3. `pnpm --filter @hihyou/browser zip:firefox` bundles and minifies the extension with WXT (Vite).
 
+The popup shows the version and the commit it was built from, such as `v0.2.0 (1a2b3c4d)`. A build from a git checkout takes the commit from git; this archive has no `.git`, so the build reads it from `packages/browser/COMMIT`, which the archive includes, and the rebuilt popup shows the same commit as the submitted one.
+
 The extension is written to `packages/browser/.output/firefox-mv3/` and zipped as `packages/browser/.output/hihyoubrowser-0.2.0-firefox.zip`.

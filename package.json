@@ -2,6 +2,10 @@
   "name": "hihyou",
   "private": true,
   "license": "MIT",
+  "author": {
+    "name": "RanolP",
+    "url": "https://github.com/RanolP"
+  },
   "type": "module",
   "scripts": {
     "build": "tsc -b",
