@@ -11,6 +11,7 @@ export const grammarChunkFiles = [
   "/grammars-bash.js",
   "/grammars-dockerfile.js",
   "/grammars-hcl.js",
+  "/grammars-toml.js",
   "/grammars-sql.js",
   "/grammars-markdown.js",
 ] as const;

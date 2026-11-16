@@ -321,6 +321,70 @@ const HCL: Record<string, Rule | null> = {
   none: null,
 };
 
+// The scopes of Even Better TOML's TextMate grammar (tamasfe/taplo, editors/vscode/toml.tmLanguage.json), which
+// VS Code's TOML extension ships. nvim-treesitter's query names the captures.
+const TOML: Record<string, Rule | null> = {
+  ...shared("toml"),
+  // A key, bare or quoted: highlights.tm.scm recaptures a quoted one, which upstream colours a string.
+  property: "support.type.property-name.toml",
+  // A table header's key, `[dependencies]`, and an array of tables' key, `[[bin]]`: highlights.tm.scm.
+  "property.table": "support.type.property-name.table.toml",
+  "property.array": "support.type.property-name.array.toml",
+  string: {
+    scope: "string.quoted.single.basic.line.toml",
+    byPrefix: [
+      ['"""', "string.quoted.triple.basic.block.toml"],
+      ["'''", "string.quoted.triple.literal.block.toml"],
+      ["'", "string.quoted.single.literal.line.toml"],
+    ],
+  },
+  number: {
+    scope: "constant.numeric.integer.toml",
+    byPrefix: [
+      ["0x", "constant.numeric.hex.toml"],
+      ["0o", "constant.numeric.oct.toml"],
+      ["0b", "constant.numeric.bin.toml"],
+    ],
+  },
+  "number.float": {
+    scope: "constant.numeric.float.toml",
+    byText: Object.fromEntries(
+      ["", "+", "-"].flatMap((sign) => [
+        [`${sign}inf`, "constant.numeric.inf.toml"],
+        [`${sign}nan`, "constant.numeric.nan.toml"],
+      ]),
+    ),
+  },
+  comment: "comment.line.number-sign.toml",
+  "string.special": {
+    scope: "constant.other.time.datetime.offset.toml",
+    byKind: {
+      local_date_time: "constant.other.time.datetime.local.toml",
+      local_date: "constant.other.time.date.toml",
+      local_time: "constant.other.time.time.toml",
+    },
+  },
+  operator: "punctuation.eq.toml",
+  // `,` between an array's values; highlights.tm.scm recaptures one between an inline table's pairs.
+  "punctuation.delimiter": {
+    scope: "punctuation.separator.array.toml",
+    byText: { ".": "punctuation.separator.dot.toml" },
+  },
+  "punctuation.delimiter.inline": "punctuation.separator.table.inline.toml",
+  // An array's `[` `]`; highlights.tm.scm recaptures a table header's.
+  "punctuation.bracket": {
+    scope: "punctuation.definition.array.toml",
+    byText: {
+      "[[": "punctuation.definition.array.table.toml",
+      "]]": "punctuation.definition.array.table.toml",
+      "{": "punctuation.definition.table.inline.toml",
+      "}": "punctuation.definition.table.inline.toml",
+    },
+  },
+  "punctuation.bracket.table": "punctuation.definition.table.toml",
+  spell: null,
+};
+
 // VS Code's SQL grammar scopes most keywords `keyword.other.sql` and sorts a few into their own groups. Each
 // tree-sitter-sql keyword is its own node kind, so the groups go by kind across every keyword capture.
 const SQL_KEYWORD_GROUPS: Record<string, string[]> = {
@@ -887,6 +951,13 @@ export const LANGUAGES: Record<string, LanguageRules> = {
     queries: ["runtime/queries/hcl/highlights.scm", "runtime/queries/terraform/highlights.scm"],
     extend: ["hcl/highlights.tm.scm"],
     captures: HCL,
+  },
+  toml: {
+    grammar: "tree-sitter-toml",
+    // tree-sitter-toml's own query colours every bare key a type and a pair whole as a property.
+    queries: ["runtime/queries/toml/highlights.scm"],
+    extend: ["toml/highlights.tm.scm"],
+    captures: TOML,
   },
   sql: {
     grammar: "tree-sitter-sql",

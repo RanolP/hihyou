@@ -327,6 +327,9 @@ importers:
       tree-sitter-swift:
         specifier: workspace:*
         version: link:grammars/tree-sitter-swift
+      tree-sitter-toml:
+        specifier: workspace:*
+        version: link:grammars/tree-sitter-toml
       tree-sitter-typescript:
         specifier: workspace:*
         version: link:grammars/tree-sitter-typescript
@@ -372,6 +375,8 @@ importers:
   packages/syntechs/grammars/tree-sitter-sql: {}
 
   packages/syntechs/grammars/tree-sitter-swift: {}
+
+  packages/syntechs/grammars/tree-sitter-toml: {}
 
   packages/syntechs/grammars/tree-sitter-typescript: {}
 

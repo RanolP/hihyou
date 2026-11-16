@@ -25,6 +25,7 @@ export type LanguageId =
   | "bash"
   | "dockerfile"
   | "hcl"
+  | "toml"
   | "sql"
   | "kotlin"
   | "html"
@@ -49,6 +50,7 @@ const extensions: Record<LanguageId, readonly string[]> = {
   dockerfile: [".dockerfile"],
   // Terraform (.tf, .tfvars) and other HCL; a .tf.json file stays JSON.
   hcl: [".tf", ".tfvars", ".hcl"],
+  toml: [".toml"],
   sql: [".sql"],
   kotlin: [".kt", ".kts"],
   html: [".html", ".htm"],
@@ -102,6 +104,7 @@ const parsers: Record<
   bash: () => import("syntechs/grammars/bash"),
   dockerfile: () => import("syntechs/grammars/dockerfile"),
   hcl: () => import("syntechs/grammars/hcl"),
+  toml: () => import("syntechs/grammars/toml"),
   sql: () => import("syntechs/grammars/sql"),
   kotlin: () => import("syntechs/grammars/kotlin"),
   html: () => import("syntechs/grammars/html"),
@@ -135,6 +138,7 @@ const highlighters: Partial<
   bash: () => import("syntechs/grammars/bash/highlight"),
   dockerfile: () => import("syntechs/grammars/dockerfile/highlight"),
   hcl: () => import("syntechs/grammars/hcl/highlight"),
+  toml: () => import("syntechs/grammars/toml/highlight"),
   sql: () => import("syntechs/grammars/sql/highlight"),
   kotlin: () => import("syntechs/grammars/kotlin/highlight"),
   html: async () => ({
@@ -481,6 +485,8 @@ const declarations: Partial<Record<LanguageId, readonly string[]>> = {
   ruby: ["method", "singleton_method", "class", "singleton_class", "module"],
   bash: ["function_definition"],
   hcl: ["block"],
+  // A table, `[dependencies]`, and an array of tables' element, `[[bin]]`, each holding its pairs.
+  toml: ["table", "table_array_element"],
   kotlin: [
     "function_declaration",
     "class_declaration",

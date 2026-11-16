@@ -1,0 +1,145 @@
+A table's header key (`[dependencies]`, `[[bin]]`, `[profile.release]`) and a pair's key are `key` fields, as an
+object element's key is in other grammars, so the diff matcher pairs `[dependencies]` with its counterpart and
+`version = ...` by its key: a member's key is its name within its scope (packages/syntechs/src/diff/matcher.ts,
+memberName).
+
+A table holds the pairs under its header and ends at its last one; the blank lines and comments after it, before
+the next header, are the document's, as whitespace after an HCL block's `}` is. Upstream's table runs to the next
+header, so a table's hunk ran past its last pair over the blank lines, and a comment above a header belonged to
+the table before it.
+
+A dotted key `a.b.c` is one `dotted_key` holding its parts and dots as siblings rather than upstream's
+left-nested `dotted_key`s, so src/grammars/toml/highlights.tm.scm can reach every part of a table header's key.
+
+A string's text is `string_content` nodes, as JSON's is, and a multiline string's closing `"""` or `'''` is a
+token like its opening one: upstream leaves both hidden, so an edit inside `"0.1.0"` fell between the quotes,
+in no leaf, and the diff could not mark what changed.
+
+--- a/grammar.js
++++ b/grammar.js
+@@ -28,13 +28,17 @@
+   ],
+ 
+   extras: $ => [$.comment, /[ \t]/],
+ 
++  // A newline after a table's line starts either a run before its next pair or the blank lines after it: the
++  // token after the run decides.
++  conflicts: $ => [[$.table], [$.table_array_element]],
++
+   rules: {
+     document: $ =>
+       seq(
+         repeat(choice($.pair, newline)),
+-        repeat(choice($.table, $.table_array_element)),
++        repeat(seq(choice($.table, $.table_array_element), repeat(newline))),
+       ),
+ 
+     comment: $ =>
+       token(prec(-1, seq(
+@@ -44,28 +48,28 @@
+ 
+     table: $ =>
+       seq(
+         '[',
+-        choice($.dotted_key, $._key),
++        field('key', choice($.dotted_key, $._key)),
+         ']',
+         $._line_ending_or_eof,
+-        repeat(choice($.pair, newline)),
++        repeat(seq(repeat(newline), $.pair)),
+       ),
+ 
+     table_array_element: $ =>
+       seq(
+         '[[',
+-        choice($.dotted_key, $._key),
++        field('key', choice($.dotted_key, $._key)),
+         ']]',
+         $._line_ending_or_eof,
+-        repeat(choice($.pair, newline)),
++        repeat(seq(repeat(newline), $.pair)),
+       ),
+ 
+     pair: $ => seq($._inline_pair, $._line_ending_or_eof),
+-    _inline_pair: $ => seq(choice($.dotted_key, $._key), '=', $._inline_value),
++    _inline_pair: $ => seq(field('key', choice($.dotted_key, $._key)), '=', $._inline_value),
+ 
+     _key: $ => choice($.bare_key, $.quoted_key),
+-    dotted_key: $ => seq(choice($.dotted_key, $._key), '.', $._key),
++    dotted_key: $ => seq($._key, repeat1(seq('.', $._key))),
+     bare_key: $ => /[A-Za-z0-9_-]+/,
+     quoted_key: $ => choice($._basic_string, $._literal_string),
+ 
+     _inline_value: $ =>
+@@ -93,11 +97,11 @@
+       seq(
+         '"',
+         repeat(
+           choice(
+-            token.immediate(
++            alias(token.immediate(
+               repeat1(/[^\x00-\x08\x0a-\x1f\x22\x5c\x7f]/),
+-            ),
++            ), $.string_content),
+             $.escape_sequence,
+           ),
+         ),
+         token.immediate('"'),
+@@ -106,45 +110,45 @@
+       seq(
+         '"""',
+         repeat(
+           choice(
+-            token.immediate(
++            alias(token.immediate(
+               repeat1(/[^\x00-\x08\x0a-\x1f\x22\x5c\x7f]/),
+-            ),
+-            $._multiline_basic_string_content,
+-            token.immediate(newline),
++            ), $.string_content),
++            alias($._multiline_basic_string_content, $.string_content),
++            alias(token.immediate(newline), $.string_content),
+             $.escape_sequence,
+             alias($._escape_line_ending, $.escape_sequence),
+           ),
+         ),
+-        $._multiline_basic_string_end,
++        alias($._multiline_basic_string_end, '"""'),
+       ),
+     escape_sequence: $ =>
+       token.immediate(/\\([btnfr"\\]|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8})/),
+     _escape_line_ending: $ => token.immediate(seq(/\\/, newline)),
+     _literal_string: $ =>
+       seq(
+         '\'',
+         optional(
+-          token.immediate(
++          alias(token.immediate(
+             repeat1(/[^\x00-\x08\x0a-\x1f\x27\x7f]/),
+-          ),
++          ), $.string_content),
+         ),
+         token.immediate('\''),
+       ),
+     _multiline_literal_string: $ =>
+       seq(
+         '\'\'\'',
+         repeat(
+           choice(
+-            token.immediate(
++            alias(token.immediate(
+               repeat1(/[^\x00-\x08\x0a-\x1f\x27\x7f]/),
+-            ),
+-            $._multiline_literal_string_content,
+-            token.immediate(newline),
++            ), $.string_content),
++            alias($._multiline_literal_string_content, $.string_content),
++            alias(token.immediate(newline), $.string_content),
+           ),
+         ),
+-        $._multiline_literal_string_end,
++        alias($._multiline_literal_string_end, "'''"),
+       ),
+ 
+     integer: $ =>
+       choice(
