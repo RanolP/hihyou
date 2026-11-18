@@ -72,6 +72,12 @@ const filenames: Record<string, LanguageId> = {
   Dockerfile: "dockerfile",
   Containerfile: "dockerfile",
   README: "markdown",
+  // Lockfiles and manifests written in TOML under a name without the extension.
+  "Cargo.lock": "toml",
+  "uv.lock": "toml",
+  "poetry.lock": "toml",
+  "pdm.lock": "toml",
+  Pipfile: "toml",
 };
 
 export function languageForPath(path: string): LanguageId | undefined {
