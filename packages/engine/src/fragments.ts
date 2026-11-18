@@ -702,8 +702,8 @@ function declarationLabel(tree: Tree, n: number): string | undefined {
     }
   }
   // An HCL block reads as its type and labels, `resource "aws_instance" "web"`, the `key` fields its line opens with;
-  // a TOML table as its header, `[dependencies]` or `[[bin]]`.
-  if (["block", "table", "table_array_element"].includes(tree.kindName(n))) {
+  // a TOML table or an INI section as its header, `[dependencies]`, `[[bin]]` or `[core]`.
+  if (["block", "table", "table_array_element", "section"].includes(tree.kindName(n))) {
     const key = field("key");
     if (key !== undefined) return declarationSourceLine(tree, n, key) ?? tree.text(key);
   }

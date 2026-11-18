@@ -385,6 +385,29 @@ const TOML: Record<string, Rule | null> = {
   spell: null,
 };
 
+// The scopes of VS Code's INI grammar (extensions/ini/syntaxes/ini.tmLanguage.json), which VS Code reads .ini,
+// .properties, .cfg, .gitconfig and .editorconfig files with. It leaves an unquoted value unscoped.
+const INI: Record<string, Rule | null> = {
+  ...shared("ini"),
+  // A section header whole, `[core]`: highlights.tm.scm. Its name, upstream's `type`, stays inside it.
+  module: "entity.name.section.group-title.ini",
+  type: "",
+  "punctuation.bracket": "punctuation.definition.entity.ini",
+  property: "keyword.other.definition.ini",
+  operator: "punctuation.separator.key-value.ini",
+  string: {
+    scope: "string.quoted.double.ini",
+    byPrefix: [["'", "string.quoted.single.ini"]],
+  },
+  comment: {
+    scope: "comment.line.number-sign.ini",
+    byPrefix: [[";", "comment.line.semicolon.ini"]],
+  },
+  // A dotenv `export`, scoped as VS Code's dotenv grammar does.
+  keyword: "keyword.key.export.dotenv",
+  spell: null,
+};
+
 const DIFF: Record<string, Rule | null> = {
   ...shared("diff"),
   spell: null,
@@ -977,6 +1000,12 @@ export const LANGUAGES: Record<string, LanguageRules> = {
     queries: ["runtime/queries/toml/highlights.scm"],
     extend: ["toml/highlights.tm.scm"],
     captures: TOML,
+  },
+  ini: {
+    grammar: "tree-sitter-ini",
+    queries: ["queries/highlights.scm"],
+    extend: ["ini/highlights.tm.scm"],
+    captures: INI,
   },
   diff: {
     grammar: "tree-sitter-diff",

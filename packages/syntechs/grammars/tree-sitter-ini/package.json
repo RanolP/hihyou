@@ -1,0 +1,20 @@
+{
+  "name": "tree-sitter-ini",
+  "version": "1.4.0",
+  "private": true,
+  "scripts": {
+    "postinstall": "node ../build.mjs"
+  },
+  "grammar": {
+    "sources": [
+      {
+        "repo": "justinmk/tree-sitter-ini",
+        "commit": "f0285fe577ad298ad79f8633e643ad60646e3027",
+        "files": {
+          "grammar.js": "f586248a02d07e9ef7908cb0739861de95a5a04f67f05b3b2dcc391ca27ae4c6",
+          "queries/highlights.scm": "93a66eabc76cd3c1e3532e3348e234f2f2fc5d38e679ad5f4a61e7cd5635a81f"
+        }
+      }
+    ]
+  }
+}

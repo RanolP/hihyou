@@ -26,6 +26,7 @@ export type LanguageId =
   | "dockerfile"
   | "hcl"
   | "toml"
+  | "ini"
   | "diff"
   | "sql"
   | "kotlin"
@@ -53,6 +54,9 @@ const extensions: Record<LanguageId, readonly string[]> = {
   // Terraform (.tf, .tfvars) and other HCL; a .tf.json file stays JSON.
   hcl: [".tf", ".tfvars", ".hcl"],
   toml: [".toml"],
+  // INI and its relatives: Python's setup.cfg, Java's and Gradle's .properties, a dotenv file such as app.env.
+  // A .conf stays text: nginx's and Apache's are not INI.
+  ini: [".ini", ".cfg", ".properties", ".env"],
   diff: [".patch", ".diff"],
   sql: [".sql"],
   kotlin: [".kt", ".kts"],
@@ -99,6 +103,11 @@ const filenames: Record<string, LanguageId> = {
   "poetry.lock": "toml",
   "pdm.lock": "toml",
   Pipfile: "toml",
+  // Configuration written as INI under a dotfile name.
+  ".npmrc": "ini",
+  ".editorconfig": "ini",
+  ".gitconfig": "ini",
+  ".gitmodules": "ini",
 };
 
 export function languageForPath(path: string): LanguageId | undefined {
@@ -106,6 +115,8 @@ export function languageForPath(path: string): LanguageId | undefined {
   if (Object.hasOwn(filenames, filename)) return filenames[filename];
   // A variant per target or stage: Dockerfile.dev, Dockerfile.alpine.
   if (filename.startsWith("Dockerfile.")) return "dockerfile";
+  // A dotenv file per environment: .env.example, .env.local, .env.production.
+  if (filename.startsWith(".env.")) return "ini";
   // A YAML file templated with Liquid, as dbt and Embulk configs are; its tags read as plain YAML text.
   if (/\.ya?ml\.liquid$/i.test(filename)) return "yaml";
   const dot = path.lastIndexOf(".");
@@ -134,6 +145,7 @@ const parsers: Record<
   dockerfile: () => import("syntechs/grammars/dockerfile"),
   hcl: () => import("syntechs/grammars/hcl"),
   toml: () => import("syntechs/grammars/toml"),
+  ini: () => import("syntechs/grammars/ini"),
   diff: () => import("syntechs/grammars/diff"),
   sql: () => import("syntechs/grammars/sql"),
   kotlin: () => import("syntechs/grammars/kotlin"),
@@ -169,6 +181,7 @@ const highlighters: Partial<
   dockerfile: () => import("syntechs/grammars/dockerfile/highlight"),
   hcl: () => import("syntechs/grammars/hcl/highlight"),
   toml: () => import("syntechs/grammars/toml/highlight"),
+  ini: () => import("syntechs/grammars/ini/highlight"),
   diff: async () =>
     withDiff((await import("syntechs/grammars/diff/highlight")).highlight),
   sql: () => import("syntechs/grammars/sql/highlight"),
@@ -666,6 +679,8 @@ const declarations: Partial<Record<LanguageId, readonly string[]>> = {
   hcl: ["block"],
   // A table, `[dependencies]`, and an array of tables' element, `[[bin]]`, each holding its pairs.
   toml: ["table", "table_array_element"],
+  // A section, `[core]`, holding its settings.
+  ini: ["section"],
   diff: ["block"],
   kotlin: [
     "function_declaration",

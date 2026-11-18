@@ -1,0 +1,128 @@
+One grammar reads INI and the formats VS Code reads with its INI grammar (.properties, .cfg, .gitconfig,
+.gitmodules, .editorconfig), plus .npmrc and dotenv files. Upstream reads `[section]` headers and `key=value`
+lines only: a setting needs a newline after it, so a file's unterminated last line was an error, and every value
+was one `.+` token.
+
+A section header's name (`[core]`) and a setting's key are `key` fields, as an object element's key is in other
+grammars, so the diff matcher pairs `[core]` with its counterpart and `API_URL=...` by its key: a member's key is
+its name within its scope (packages/syntechs/src/diff/matcher.ts, memberName). A section holds the settings under
+its header and ends at its last one, so the blank lines and comments before the next header stay outside it.
+
+A line ending is a token rather than an extra, which ends a setting with an empty value, `EMPTY=`, at its line
+and lets the last line go unterminated. A setting also takes:
+- `:` as its separator, a .properties `key: value`, but a key keeps a `:` no whitespace follows, as .npmrc's
+  `//registry.npmjs.org/:_authToken`;
+- no separator at all, a bare git `key`;
+- `export` before it, in a dotenv file;
+- a quoted `string` as a whole value, a dotenv `KEY="value"`;
+- a trailing `\` continuing the value onto the next line, in .properties;
+- the indented lines under a value left empty, as setup.cfg's `install_requires =` lists its requirements.
+A comment starts with `#`, `;` or `!` (.properties).
+
+--- a/grammar.js
++++ b/grammar.js
+@@ -3,47 +3,81 @@
+ 
+ module.exports = grammar({
+   name: 'ini',
+ 
++  // A line ending is no extra: a setting with an empty value, `KEY=`, ends at its line's, where a value would
++  // otherwise run on into the next line.
+   extras: $ => [
+     $.comment,
+-    $._blank,
+-    /[\t ]/
++    /[\t\f ]/
+   ],
+ 
++  // A line ending after a section's setting starts either a run before its next setting or the blank lines after
++  // it: the token after the run decides.
++  conflicts: $ => [[$.section]],
++
+   rules: {
++    // A line ending separates two settings, so a value's text, `first,` before a `\` continuing it, is not
++    // read as the shorter of it and a key `first,\` after it.
+     document: $ => seq(
+-      repeat($._blank),  // Eat blank lines at top of file.
+-      optional(repeat(seq($.setting))),
+-      repeat($.section),
+-    ),
+-
+-    // Section has:
+-    // - a title
+-    // - zero or more settings (name=value pairs)
+-    // - comments (optional)
+-    section: $ => prec.left(seq(
+-      $.section_name,
+-      repeat(seq(
++      repeat($._newline),
++      optional(seq(
+         $.setting,
++        repeat(seq(repeat1($._newline), $.setting)),
++        repeat($._newline),
+       )),
+-    )),
++      repeat(seq($.section, repeat($._newline))),
++    ),
+ 
++    // A section holds the settings under its header and ends at its last one.
++    section: $ => seq(
++      field('key', $.section_name),
++      repeat(seq(repeat1($._newline), $.setting)),
++    ),
++
++    // `[core]`, `[remote "origin"]`, an .editorconfig glob `[*.{js,ts}]` or `[*.[ch]]`.
+     section_name: $ => seq(
+       '[',
+-      alias(/[^\[\]]+/, $.text),
++      alias(/([^\[\]\r\n]|\[[^\[\]\r\n]*\])+/, $.text),
+       ']',
+-      /\r?\n/,
+     ),
+ 
++    // `key = value`, a .properties `key: value`, a dotenv `export KEY="value"`, or a bare git `key`. A `:` is part
++    // of a key unless whitespace, `=` or another `:` follows it, as in .npmrc's `//registry.npmjs.org/:_authToken`.
+     setting: $ => seq(
+-      alias(/[^;#=\s\[]+( *[^;#=\s\[])*/, $.setting_name),
+-      '=',
+-      optional(alias(/.+/, $.setting_value)),
+-      /\r?\n/,
++      optional($.export),
++      field('key', alias(/[^\s=:#;!\[]([^\s=:]|:[^\s=:])*/, $.setting_name)),
++      optional(seq(
++        choice('=', ':'),
++        optional(field('value', $.setting_value)),
++      )),
+     ),
+ 
+-    comment: $ => seq(/[;#]/, alias(/[^\r\n]*/, $.text), /\r?\n/),
++    // Longer than the key `export` only when whitespace follows, so `export=1` is a key.
++    export: _ => token(prec(1, /export[\t ]+/)),
+ 
+-    _blank: () => field('blank', /\r?\n/),
++    // A quoted string alone, or the rest of the line, which a trailing `\` continues onto the next. A value left
++    // empty on its line runs on through the indented lines under it, as setup.cfg's `install_requires =` does;
++    // only then, since .gitconfig indents every key in a section.
++    setting_value: $ => choice(
++      $.string,
++      repeat1(choice($._text, $.line_continuation)),
++      repeat1(seq($._indented_line_ending, $._text)),
++    ),
++
++    _text: $ => alias(token(prec(1, /([^\s\\]|\\[^\r\n])([^\r\n\\]|\\[^\r\n])*/)), $.text),
++
++    _indented_line_ending: _ => token(prec(1, /\r?\n[\t ]+/)),
++
++    // Only a whole value: `"a" b` is text.
++    string: _ => token(prec(2, choice(
++      /"([^"\\\r\n]|\\[^\r\n])*"/,
++      /'[^'\r\n]*'/,
++    ))),
++
++    line_continuation: _ => token(seq('\\', /\r?\n/)),
++
++    comment: _ => token(/[#;!][^\r\n]*/),
++
++    _newline: _ => /\r?\n/,
+   }
+ });
