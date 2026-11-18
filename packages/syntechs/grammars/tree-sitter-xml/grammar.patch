@@ -1,0 +1,174 @@
+An element's start tag is hidden, so its tag name and the attribute that names it among its siblings (`name`,
+`id` or `key`, in any namespace: `android:name`, `android:id`) are `key` fields of the element itself, as an
+object element's key is in other grammars. The diff matcher pairs `<string name="app_name">` with its
+counterpart by `string name="app_name"`, `<activity android:name=".Main">` by its android:name, a storyboard's
+`<view key="view" id="...">` by its key and id, and a lone `<application>` by its tag: a member's key is its
+name within its scope (packages/syntechs/src/diff/matcher.ts, memberName). Upstream's STag, ETag and
+EmptyElemTag nodes are gone; nvim-treesitter's tag patterns read the names from the element instead.
+
+Character data is its text without the spaces around it, and those spaces are an _S in the content, as
+whitespace between tags is in tree-sitter-html: upstream's CharData took every run between tags, so each
+indented line held a whitespace node that an inserted element or a reindent changed. scanner.c's change is
+ported in src/grammars/xml/scanner.ts.
+
+An attribute value's text is `string_content` nodes, as JSON's is: upstream reads it a character at a time,
+in hidden tokens, so an edit inside `"@string/app_name"` fell in no leaf and the diff could not mark what
+changed.
+
+--- a/common/common.mjs
++++ b/common/common.mjs
+@@ -23,9 +23,9 @@
+     q,
+     field(
+       'content',
+       repeat(choice(
+-        new RegExp(`[^<&${q}]`),
++        alias(new RegExp(`[^<&${q}]+`), $.string_content),
+         $._Reference
+       ))
+     ),
+     q
+--- a/xml/grammar.js
++++ b/xml/grammar.js
+@@ -119,31 +119,42 @@
+       $._DeclSep
+     ),
+ 
+     element: $ => choice(
+-      $.EmptyElemTag,
+-      seq($.STag, O($.content), $.ETag)
++      $._EmptyElemTag,
++      seq($._STag, O($.content), $._ETag)
+     ),
+ 
+-    EmptyElemTag: $ => seq(
++    _EmptyElemTag: $ => seq(
+       '<',
+-      alias($._start_tag_name, $.Name),
+-      c.rseq($._S, $.Attribute),
++      field('key', alias($._start_tag_name, $.Name)),
++      c.rseq($._S, $._Attribute),
+       O($._S),
+       '/>'
+     ),
+ 
++    _Attribute: $ => choice(
++      $.Attribute,
++      field('key', alias($._KeyAttribute, $.Attribute))
++    ),
++
+     Attribute: $ => seq($.Name, $._Eq, $.AttValue),
+ 
+-    STag: $ => seq(
++    _KeyAttribute: $ => seq(alias($._key_name, $.Name), $._Eq, $.AttValue),
++
++    // An attribute that names its element among its siblings: `name`, `id` or `key`, in any namespace
++    // (`android:name`, `android:id`). It outranks a Name of the same length.
++    _key_name: _ => token(prec(1, /([a-zA-Z_][a-zA-Z0-9_.·-]*:)?(name|id|key)/)),
++
++    _STag: $ => seq(
+       '<',
+-      alias($._start_tag_name, $.Name),
+-      c.rseq($._S, $.Attribute),
++      field('key', alias($._start_tag_name, $.Name)),
++      c.rseq($._S, $._Attribute),
+       O($._S),
+       '>'
+     ),
+ 
+-    ETag: $ => seq('</', alias($._end_tag_name, $.Name), O($._S), '>'),
++    _ETag: $ => seq('</', alias($._end_tag_name, $.Name), O($._S), '>'),
+ 
+     _ErroneousETag: $ => seq(
+       '</',
+       alias($._erroneous_end_name, $.ERROR),
+@@ -157,9 +168,10 @@
+         $.element,
+         $._Reference,
+         $.CDSect,
+         $.PI,
+-        $.Comment
++        $.Comment,
++        $._S
+       )
+     ),
+ 
+     CDSect: $ => prec.left(
+--- a/xml/src/scanner.c
++++ b/xml/src/scanner.c
+@@ -79,20 +79,33 @@
+ static inline bool in_char_data(TSLexer *lexer) {
+     return !lexer->eof(lexer) && lexer->lookahead != '<' && lexer->lookahead != '&';
+ }
+ 
+-/// Scan for a CharData node
++/// Check if the character is one the grammar's _S matches
++static inline bool is_space(int32_t chr) {
++    return chr == ' ' || chr == '\t' || chr == '\r' || chr == '\n';
++}
++
++/// Advance past a character of a CharData node, which ends after its last non-space one
++static inline void advance_char_data(TSLexer *lexer) {
++    bool space = is_space(lexer->lookahead);
++    advance(lexer);
++    if (!space) lexer->mark_end(lexer);
++}
++
++/// Scan for a CharData node: text, without the spaces around it, which are an _S in the content
+ static bool scan_char_data(TSLexer *lexer) {
+     bool advanced_once = false;
+ 
++    if (is_space(lexer->lookahead)) return false;
++
+     while (in_char_data(lexer)) {
+         if (lexer->lookahead == ']') {
+-            lexer->mark_end(lexer);
+-            advance(lexer);
++            advance_char_data(lexer);
+             if (lexer->lookahead == ']') {
+-                advance(lexer);
++                advance_char_data(lexer);
+                 if (lexer->lookahead == '>') {
+-                    advance(lexer);
++                    advance_char_data(lexer);
+                     if (advanced_once) {
+                         lexer->result_symbol = CHAR_DATA;
+                         return false;
+                     }
+@@ -100,14 +113,13 @@
+             }
+         }
+         advanced_once = true;
+         if (in_char_data(lexer)) {
+-            advance(lexer);
++            advance_char_data(lexer);
+         }
+     }
+ 
+     if (advanced_once) {
+-        lexer->mark_end(lexer);
+         lexer->result_symbol = CHAR_DATA;
+         return true;
+     }
+     return false;
+--- a/runtime/queries/xml/highlights.scm
++++ b/runtime/queries/xml/highlights.scm
+@@ -139,17 +139,11 @@
+ (doctypedecl
+   (Name) @type.definition)
+ 
+ ; Tags
+-(STag
++(element
+   (Name) @tag)
+ 
+-(ETag
+-  (Name) @tag)
+-
+-(EmptyElemTag
+-  (Name) @tag)
+-
+ ; Attributes
+ (Attribute
+   (Name) @tag.attribute)
+ 

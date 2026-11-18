@@ -408,6 +408,64 @@ const INI: Record<string, Rule | null> = {
   spell: null,
 };
 
+// The scopes of VS Code's XML grammar (extensions/xml/syntaxes/xml.tmLanguage.json). nvim-treesitter's query names
+// the captures. A namespaced name (`android:name`) is one node, so it takes the local name's scope whole.
+const XML_STRING_END = "punctuation.definition.string.end.xml";
+const XML: Record<string, Rule | null> = {
+  tag: "entity.name.tag.localname.xml",
+  // An element's attribute; the XML declaration's own are plain attribute names.
+  "tag.attribute": {
+    scope: "entity.other.attribute-name.localname.xml",
+    byKind: {
+      version: "entity.other.attribute-name.xml",
+      encoding: "entity.other.attribute-name.xml",
+      standalone: "entity.other.attribute-name.xml",
+    },
+  },
+  "tag.delimiter": { scope: "punctuation.definition.tag.xml", byText: { "]]>": XML_STRING_END } },
+  // `<?xml`, `<?xml-stylesheet` and a processing instruction's target are tag names; the rest of a PI is meta.
+  "keyword.directive": {
+    scope: "meta.tag.preprocessor.xml",
+    byText: { xml: "entity.name.tag.xml", "xml-model": "entity.name.tag.xml", "xml-stylesheet": "entity.name.tag.xml" },
+  },
+  "keyword.directive.target": "entity.name.tag.xml",
+  "keyword.directive.define": {
+    scope: "keyword.other.xml",
+    byText: { DOCTYPE: "keyword.other.doctype.xml", ENTITY: "keyword.other.entity.xml" },
+  },
+  "type.definition": "variable.language.documentroot.xml",
+  keyword: "keyword.other.entitytype.xml",
+  string: { scope: "string.quoted.double.xml", byPrefix: [["'", "string.quoted.single.xml"]] },
+  // The XML declaration's version, encoding and standalone values, a public ID and a system URI.
+  "string.special": "string.quoted.double.xml",
+  "string.special.url": "string.quoted.double.xml",
+  number: "string.quoted.double.xml",
+  boolean: "string.quoted.double.xml",
+  "punctuation.delimiter": "punctuation.definition.string.begin.xml",
+  "punctuation.delimiter.end": XML_STRING_END,
+  // `&amp;`, `&#10;`; an entity declaration's name.
+  constant: { scope: "constant.character.entity.xml", byKind: { Name: "variable.language.entity.xml" } },
+  "constant.builtin": "constant.character.entity.xml",
+  character: "constant.character.entity.xml",
+  "function.macro": { scope: "constant.character.parameter-entity.xml", byKind: { Name: "variable.language.entity.xml" } },
+  "punctuation.entity": "punctuation.definition.constant.xml",
+  operator: { scope: "", byText: { "%": "punctuation.definition.entity.xml" } },
+  module: { scope: "punctuation.definition.string.begin.xml", byText: { "]]>": XML_STRING_END } },
+  "markup.raw": "string.unquoted.cdata.xml",
+  // A CDATA section's text, which its section's scope already covers.
+  "markup.raw.text": "",
+  comment: "comment.block.xml",
+  // The DTD's content models, attribute types and defaults, which VS Code's grammar leaves unscoped.
+  "type.builtin": "",
+  "keyword.modifier": "",
+  "character.special": "",
+  attribute: "",
+  label: "",
+  "punctuation.bracket": "",
+  none: null,
+  spell: null,
+};
+
 const DIFF: Record<string, Rule | null> = {
   ...shared("diff"),
   spell: null,
@@ -1012,6 +1070,13 @@ export const LANGUAGES: Record<string, LanguageRules> = {
     queries: ["queries/highlights.scm"],
     extend: ["diff/highlights.tm.scm"],
     captures: DIFF,
+  },
+  xml: {
+    grammar: "tree-sitter-xml",
+    // The grammar ships no query of its own.
+    queries: ["runtime/queries/xml/highlights.scm"],
+    extend: ["xml/highlights.tm.scm"],
+    captures: XML,
   },
   sql: {
     grammar: "tree-sitter-sql",

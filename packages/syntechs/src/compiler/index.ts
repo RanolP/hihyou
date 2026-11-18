@@ -388,8 +388,9 @@ export function compile(source: GrammarSource): string {
 
   // ---- lexers ----
   const sets: string[] = [];
+  // A set ends at the `};` that starts a line: a range may hold a `;` (`{'\'', ';'}` in XML's public IDs).
   for (const m of c.matchAll(
-    /static (?:const )?TSCharacterRange (\w+)\[\] = \{([^;]*)\};/g,
+    /static (?:const )?TSCharacterRange (\w+)\[\] = \{([\s\S]*?)\n\};/g,
   )) {
     const pairs: number[] = [];
     for (const p of (m[2] as string).matchAll(/\{([^,}]+), ([^}]+)\}/g))

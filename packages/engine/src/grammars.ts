@@ -28,6 +28,7 @@ export type LanguageId =
   | "toml"
   | "ini"
   | "diff"
+  | "xml"
   | "sql"
   | "kotlin"
   | "html"
@@ -58,6 +59,18 @@ const extensions: Record<LanguageId, readonly string[]> = {
   // A .conf stays text: nginx's and Apache's are not INI.
   ini: [".ini", ".cfg", ".properties", ".env"],
   diff: [".patch", ".diff"],
+  // Android resources and manifests, property lists, and Xcode's Interface Builder, scheme, entitlement,
+  // privacy-manifest and workspace files.
+  xml: [
+    ".xml",
+    ".plist",
+    ".storyboard",
+    ".xib",
+    ".xcscheme",
+    ".entitlements",
+    ".xcprivacy",
+    ".xcworkspacedata",
+  ],
   sql: [".sql"],
   kotlin: [".kt", ".kts"],
   html: [".html", ".htm"],
@@ -147,6 +160,7 @@ const parsers: Record<
   toml: () => import("syntechs/grammars/toml"),
   ini: () => import("syntechs/grammars/ini"),
   diff: () => import("syntechs/grammars/diff"),
+  xml: () => import("syntechs/grammars/xml"),
   sql: () => import("syntechs/grammars/sql"),
   kotlin: () => import("syntechs/grammars/kotlin"),
   html: () => import("syntechs/grammars/html"),
@@ -184,6 +198,7 @@ const highlighters: Partial<
   ini: () => import("syntechs/grammars/ini/highlight"),
   diff: async () =>
     withDiff((await import("syntechs/grammars/diff/highlight")).highlight),
+  xml: () => import("syntechs/grammars/xml/highlight"),
   sql: () => import("syntechs/grammars/sql/highlight"),
   kotlin: () => import("syntechs/grammars/kotlin/highlight"),
   html: async () => ({
@@ -682,6 +697,8 @@ const declarations: Partial<Record<LanguageId, readonly string[]>> = {
   // A section, `[core]`, holding its settings.
   ini: ["section"],
   diff: ["block"],
+  // An element, `<activity android:name=".Main">` or `<string name="app_name">`, with all it holds.
+  xml: ["element"],
   kotlin: [
     "function_declaration",
     "class_declaration",
@@ -708,6 +725,8 @@ const containers: Partial<Record<LanguageId, readonly string[]>> = {
   kotlin: ["class_declaration", "object_declaration", "companion_object"],
   // A nested block (`ingress`, `lifecycle`) is a whole unit of its resource the way the resource is of the file.
   hcl: ["block"],
+  // A nested element (`<activity>` in `<application>`) is a whole unit of its parent the way the root is of the file.
+  xml: ["element"],
 };
 
 /** A formatter bound to options the host passed as a plain object, checked by syntechs at format time. */

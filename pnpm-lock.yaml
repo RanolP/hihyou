@@ -339,6 +339,9 @@ importers:
       tree-sitter-typescript:
         specifier: workspace:*
         version: link:grammars/tree-sitter-typescript
+      tree-sitter-xml:
+        specifier: workspace:*
+        version: link:grammars/tree-sitter-xml
       tree-sitter-yaml:
         specifier: workspace:*
         version: link:grammars/tree-sitter-yaml
@@ -389,6 +392,8 @@ importers:
   packages/syntechs/grammars/tree-sitter-toml: {}
 
   packages/syntechs/grammars/tree-sitter-typescript: {}
+
+  packages/syntechs/grammars/tree-sitter-xml: {}
 
   packages/syntechs/grammars/tree-sitter-yaml: {}
 

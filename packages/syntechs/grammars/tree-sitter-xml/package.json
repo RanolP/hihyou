@@ -1,0 +1,33 @@
+{
+  "name": "tree-sitter-xml",
+  "version": "0.7.0",
+  "private": true,
+  "scripts": {
+    "postinstall": "node ../build.mjs"
+  },
+  "grammar": {
+    "sources": [
+      {
+        "repo": "tree-sitter-grammars/tree-sitter-xml",
+        "commit": "5000ae8f22d11fbe93939b05c1e37cf21117162d",
+        "files": {
+          "tree-sitter.json": "17097cf18ce6401007af850ea0cdcb75ffcbae43fc02c2c3b2dfb18dee27ab48",
+          "common/common.mjs": "208d0786c7a105b19d1ff4949725f733808348902ad25aaeffa21a2400913b56",
+          "common/scanner.h": "ce5082af60b1808035a43c3df129df9b811c9c69949fdb664a351f7aae340409",
+          "xml/grammar.js": "521d4071b40625b319f8c1ee20e76a81e01c3c89a4fb27ab20965df6dae53a29",
+          "xml/src/scanner.c": "c49be7a88f5bc0feee512ce704dc05b1fd53c20f2110a46fb987bd93509ef806"
+        }
+      },
+      {
+        "repo": "nvim-treesitter/nvim-treesitter",
+        "commit": "19bdfc04f40ed2ccb3340591d125f759b0406875",
+        "files": {
+          "runtime/queries/xml/highlights.scm": "e3fb22e8840e0991b698cd87756ee28dcbb322c9657f0043070a94b9cc93cfc9"
+        }
+      }
+    ],
+    "generate": [
+      "xml"
+    ]
+  }
+}

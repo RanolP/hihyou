@@ -33,6 +33,8 @@ export const GRAMMARS: Record<string, { src: string; comments: string[] }> = {
   toml: { src: "tree-sitter-toml/src", comments: ["comment"] },
   ini: { src: "tree-sitter-ini/src", comments: ["comment"] },
   diff: { src: "tree-sitter-diff/src", comments: [] },
+  // A `<!-- -->` Comment is no extra: it stands only where the grammar places it, in an element's content.
+  xml: { src: "tree-sitter-xml/xml/src", comments: [] },
   // `marginalia` is a `/* */` block comment.
   sql: { src: "tree-sitter-sql/src", comments: ["comment", "marginalia"] },
   kotlin: {

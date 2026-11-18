@@ -77,6 +77,7 @@
     "tree-sitter-toml": "workspace:*",
     "tree-sitter-ini": "workspace:*",
     "tree-sitter-diff": "workspace:*",
+    "tree-sitter-xml": "workspace:*",
     "tree-sitter-sql": "workspace:*",
     "tree-sitter-kotlin": "workspace:*",
     "tree-sitter-python": "workspace:*",

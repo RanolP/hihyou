@@ -707,6 +707,19 @@ function declarationLabel(tree: Tree, n: number): string | undefined {
     const key = field("key");
     if (key !== undefined) return declarationSourceLine(tree, n, key) ?? tree.text(key);
   }
+  // An XML element reads as its start tag's line. One split over lines opens with its bare name, `<activity`:
+  // the attribute that names it, `android:name=".Main"`, joins it.
+  if (tree.kindName(n) === "element") {
+    const line = declarationSourceLine(tree, n, n);
+    let attribute: number | undefined;
+    for (let i = 0, count = tree.count(n); i < count && attribute === undefined; i++) {
+      const c = tree.child(n, i);
+      if (tree.fieldName(c) === "key" && tree.kindName(c) === "Attribute") attribute = c;
+    }
+    if (line !== undefined && attribute !== undefined && !line.includes(tree.text(attribute)))
+      return `${line} ${tree.text(attribute)}`;
+    return line;
+  }
   let name: number | undefined;
   for (let i = 0, count = tree.count(n); i < count; i++) {
     const c = tree.child(n, i);

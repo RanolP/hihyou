@@ -26,6 +26,7 @@ import { language as hcl } from "../grammars/hcl/index.js";
 import { language as toml } from "../grammars/toml/index.js";
 import { language as ini } from "../grammars/ini/index.js";
 import { language as diff } from "../grammars/diff/index.js";
+import { language as xml } from "../grammars/xml/index.js";
 import { language as sql } from "../grammars/sql/index.js";
 import { language as kotlin } from "../grammars/kotlin/index.js";
 import { language as markdown } from "../grammars/markdown/index.js";
@@ -44,7 +45,7 @@ import { LANGUAGES, type LanguageRules, type Rule } from "./rules.node.js";
 const pkg = resolve(import.meta.dirname, "../..");
 const grammarsDir = join(pkg, "grammars");
 
-const PARSERS: Record<string, Language> = { javascript, typescript, tsx, go, rust, ruby, bash, dockerfile, hcl, toml, ini, diff, sql, kotlin, swift, jsdoc, regex, html, yaml, json, css, python, graphql, markdown };
+const PARSERS: Record<string, Language> = { javascript, typescript, tsx, go, rust, ruby, bash, dockerfile, hcl, toml, ini, diff, xml, sql, kotlin, swift, jsdoc, regex, html, yaml, json, css, python, graphql, markdown };
 
 // ---- The query language: the subset of tree-sitter's S-expressions that highlight queries use.
 
