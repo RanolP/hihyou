@@ -5,6 +5,7 @@ import { type HighlightModule, type ScopeRuns, scopeRuns } from "syntechs/highli
 import { type AstSteps, stepsOf } from "./anchor.js";
 import { lineEnd, lineOf, type Version } from "./file.js";
 import type { CollapseReason } from "./fold.js";
+import type { PbxprojSummary } from "./pbxproj.js";
 
 export interface FileDiff {
   path: string;
@@ -14,6 +15,8 @@ export interface FileDiff {
   stats?: { added: number; removed: number };
   /** Why syntax diffing fell back to a line diff, if it did. */
   fallback?: "too-large" | "parse-error" | "inflated";
+  /** Object-graph summary for an Xcode project file that parsed as an OpenStep plist. */
+  pbxproj?: PbxprojSummary;
   fragments: CodeFragment[]; // SSoT; no separate Edit[]; begin/end always balanced
   /** The engine judges the whole file should be shown folded, and says why. */
   collapsed?: { reason: CollapseReason };

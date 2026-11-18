@@ -12,6 +12,7 @@ import { estimatedRows } from "./lazy.js";
 import { FileTable } from "./table.jsx";
 import { ViewedToggle } from "./viewed-toggle.jsx";
 import { wholeFileStatus } from "../whole.js";
+import { PbxprojPanel } from "./pbxproj.jsx";
 
 export const collapseReasons: Record<CollapseReason, string> = {
   generated: "Generated file",
@@ -165,9 +166,14 @@ export function FileSection(props: {
   let table: JSX.Element | undefined;
   const drawTable = () => {
     if (table === undefined) {
-      table = runWithOwner(owner, () => (
-        <FileTable index={index} file={file} />
-      ));
+      table = runWithOwner(owner, () => {
+        const source = () => <FileTable index={index} file={file} />;
+        return file.pbxproj ? (
+          <PbxprojPanel summary={file.pbxproj} source={source} />
+        ) : (
+          source()
+        );
+      });
       ctx.lazy.drew();
     }
     return table;

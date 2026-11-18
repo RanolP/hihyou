@@ -14,6 +14,18 @@ export type {
 } from "./fragments.js";
 export { atomKey } from "./fragments.js";
 export {
+  diffPbxproj,
+  parsePbxproj,
+  type Pbxproj,
+  type PbxprojDictionary,
+  type PbxprojFileChange,
+  type PbxprojPackageChange,
+  type PbxprojSettingChange,
+  type PbxprojSummary,
+  type PbxprojTargetChange,
+  type PbxprojValue,
+} from "./pbxproj.js";
+export {
   type LanguageId,
   languageForPath,
   type SyntechsGrammarOptions,

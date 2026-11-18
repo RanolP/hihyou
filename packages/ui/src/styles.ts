@@ -180,6 +180,37 @@ export const diffStyles = `
   content-visibility: auto;
   contain-intrinsic-size: auto calc(var(--hh-rows) * var(--hh-mono-size) * 1.5);
 }
+.hh-pbxproj-tabs {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--hh-border);
+  background: var(--hh-header-bg);
+}
+.hh-pbxproj-tab-active { color: var(--hh-fg); font-weight: 600; text-decoration: none; }
+.hh-pbxproj-summary { padding: 4px 14px 14px; }
+.hh-pbxproj-summary section { margin-block-start: 12px; }
+.hh-pbxproj-summary h3 { margin: 0 0 6px; font-size: 1em; }
+.hh-pbxproj-summary h4 { margin: 10px 0 4px; font-size: 0.95em; }
+.hh-pbxproj-summary ul { margin: 0; padding-inline-start: 22px; }
+.hh-pbxproj-summary li { margin-block: 3px; }
+.hh-pbxproj-summary code { font-family: var(--hh-mono); font-size: var(--hh-mono-size); overflow-wrap: anywhere; }
+.hh-pbxproj-sign { display: inline-block; width: 1ch; font-family: var(--hh-mono); font-weight: 600; }
+.hh-pbxproj-added { color: var(--hh-added-fg); }
+.hh-pbxproj-removed { color: var(--hh-removed-fg); }
+.hh-pbxproj-empty { margin: 0; color: var(--hh-muted); }
+.hh-pbxproj-settings { max-inline-size: 100%; overflow: auto; }
+.hh-pbxproj-settings:focus-visible { outline: 1px solid var(--hh-accent); outline-offset: 1px; }
+.hh-pbxproj-table { width: 100%; border-collapse: collapse; font-size: 0.92em; }
+.hh-pbxproj-table th, .hh-pbxproj-table td { padding: 5px 8px; text-align: left; border: 1px solid var(--hh-border); }
+.hh-pbxproj-table thead th { background: var(--hh-header-bg); }
+.hh-pbxproj-new { margin-block-start: 10px; }
+.hh-pbxproj-new summary { cursor: pointer; font-weight: 600; }
+.hh-pbxproj-new dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 10px 0 0; }
+.hh-pbxproj-new dl div { padding: 8px; background: var(--hh-header-bg); border: 1px solid var(--hh-border); border-radius: 4px; }
+.hh-pbxproj-new dt { color: var(--hh-muted); }
+.hh-pbxproj-new dd { margin: 2px 0 0; font-family: var(--hh-mono); font-size: 1.2em; }
 .hh-table {
   border-collapse: collapse;
   min-width: 100%;

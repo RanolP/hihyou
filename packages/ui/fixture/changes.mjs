@@ -75,6 +75,11 @@ export const changes = [
     before: "synthetic:ledger-before",
     after: "synthetic:ledger-after",
   },
+  {
+    path: "ios/App.xcodeproj/project.pbxproj",
+    before: "synthetic:pbxproj-before",
+    after: "synthetic:pbxproj-after",
+  },
 ];
 
 const keep = `export function keep(a: number): number {
@@ -104,8 +109,88 @@ export function scale(x: number): number {
   return x * factor;
 }
 `;
+// An Xcode project that gains a Swift file and a Swift package, bumps MARKETING_VERSION, reshapes OTHER_CFLAGS
+// without changing it, and drops a CocoaPods phase: the pbxproj summary's sections, synthetic like its engine test.
+const pbxId = {
+  project: "000000000000000000000001",
+  mainGroup: "000000000000000000000002",
+  target: "000000000000000000000003",
+  sources: "000000000000000000000004",
+  pods: "000000000000000000000005",
+  configurations: "000000000000000000000006",
+  debug: "000000000000000000000007",
+  release: "000000000000000000000008",
+  buildFile: "000000000000000000000009",
+  file: "00000000000000000000000A",
+  package: "00000000000000000000000B",
+  product: "00000000000000000000000C",
+  group: "00000000000000000000000D",
+};
+
+const pbxproj = (after) => `// !$*UTF8*$!
+{
+  archiveVersion = 1;
+  objectVersion = 60;
+  objects = {
+    ${pbxId.project} = {
+      isa = PBXProject;
+      buildConfigurationList = ${pbxId.configurations};
+      mainGroup = ${pbxId.mainGroup};
+      targets = (${pbxId.target});
+      packageReferences = (${after ? pbxId.package : ""});
+    };
+    ${pbxId.mainGroup} = { isa = PBXGroup; children = (${pbxId.group}); sourceTree = "<group>"; };
+    ${pbxId.group} = { isa = PBXGroup; children = (${after ? pbxId.file : ""}); path = Braze; sourceTree = "<group>"; };
+    ${pbxId.target} = {
+      isa = PBXNativeTarget;
+      name = App;
+      buildConfigurationList = ${pbxId.configurations};
+      buildPhases = (${pbxId.sources}, ${after ? "" : pbxId.pods});
+      packageProductDependencies = (${after ? pbxId.product : ""});
+    };
+    ${pbxId.sources} = { isa = PBXSourcesBuildPhase; files = (${after ? pbxId.buildFile : ""}); };
+    ${after ? "" : `${pbxId.pods} = { isa = PBXShellScriptBuildPhase; name = "[CP] Check Pods Manifest.lock"; files = (); shellScript = "echo pods"; };`}
+    ${pbxId.configurations} = {
+      isa = XCConfigurationList;
+      buildConfigurations = (${pbxId.debug}, ${pbxId.release});
+    };
+    ${pbxId.debug} = {
+      isa = XCBuildConfiguration;
+      name = Debug;
+      buildSettings = {
+        MARKETING_VERSION = ${after ? "1.1" : "1.0"};
+        OTHER_CFLAGS = ${after ? "(a, b)" : '"a b"'};
+      };
+    };
+    ${pbxId.release} = {
+      isa = XCBuildConfiguration;
+      name = Release;
+      buildSettings = {
+        MARKETING_VERSION = ${after ? "1.1" : "1.0"};
+        OTHER_CFLAGS = ${after ? "(a, b)" : '"a b"'};
+      };
+    };
+    ${
+      after
+        ? `${pbxId.buildFile} = { isa = PBXBuildFile; fileRef = ${pbxId.file}; };
+    ${pbxId.file} = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Foo.swift; sourceTree = "<group>"; };
+    ${pbxId.package} = {
+      isa = XCRemoteSwiftPackageReference;
+      repositoryURL = "https://github.com/braze-inc/braze-swift-sdk";
+      requirement = { kind = upToNextMajorVersion; minimumVersion = 12.0.0; };
+    };
+    ${pbxId.product} = { isa = XCSwiftPackageProductDependency; package = ${pbxId.package}; productName = BrazeKit; };`
+        : ""
+    }
+  };
+  rootObject = ${pbxId.project};
+}
+`;
+
 /** Synthetic blobs, read by their `synthetic:` id instead of from git. */
 const synthetic = {
+  "pbxproj-before": pbxproj(false),
+  "pbxproj-after": pbxproj(true),
   added: `export function extra(a: number): number {
   return a + 1;
 }

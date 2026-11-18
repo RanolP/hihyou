@@ -74,6 +74,7 @@ import {
   crossFileMoves,
   crossIso,
 } from "./move.js";
+import { diffPbxproj } from "./pbxproj.js";
 import type { AnchorData } from "./review.js";
 
 /** Engine object; captures the engine. Not serialized. */
@@ -464,6 +465,9 @@ export async function diffFiles(
         ...(status && { status }),
       };
     const text = p.ref.after === null ? p.texts[0] : p.texts[1];
+    const pbxproj = path.endsWith("project.pbxproj")
+      ? diffPbxproj(p.texts[0], p.texts[1])
+      : undefined;
     let stats = p.ref.stats;
     if (!stats) {
       let added = 0;
@@ -474,7 +478,12 @@ export async function diffFiles(
       }
       stats = { added, removed };
     }
-    const head = { path, stats, ...(status && { status }) };
+    const head = {
+      path,
+      stats,
+      ...(status && { status }),
+      ...(pbxproj && { pbxproj }),
+    };
     if (!("mapping" in p)) {
       const reason = foldReason({
         path,
