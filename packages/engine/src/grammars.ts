@@ -45,7 +45,7 @@ const extensions: Record<LanguageId, readonly string[]> = {
   css: [".css"],
   go: [".go"],
   rust: [".rs"],
-  ruby: [".rb", ".rake", ".gemspec", ".ru"],
+  ruby: [".rb", ".rake", ".gemspec", ".ru", ".podspec"],
   bash: [".sh", ".bash"],
   dockerfile: [".dockerfile"],
   // Terraform (.tf, .tfvars) and other HCL; a .tf.json file stays JSON.
@@ -64,6 +64,18 @@ const extensions: Record<LanguageId, readonly string[]> = {
 const filenames: Record<string, LanguageId> = {
   Gemfile: "ruby",
   Rakefile: "ruby",
+  // CocoaPods and fastlane configure a project in Ruby under names without the extension.
+  Podfile: "ruby",
+  Fastfile: "ruby",
+  Appfile: "ruby",
+  Pluginfile: "ruby",
+  Matchfile: "ruby",
+  Gymfile: "ruby",
+  Scanfile: "ruby",
+  Snapfile: "ruby",
+  Deliverfile: "ruby",
+  Precheckfile: "ruby",
+  Dangerfile: "ruby",
   ".bashrc": "bash",
   ".bash_profile": "bash",
   ".bash_login": "bash",
