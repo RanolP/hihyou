@@ -46,7 +46,8 @@ const extensions: Record<LanguageId, readonly string[]> = {
   go: [".go"],
   rust: [".rs"],
   ruby: [".rb", ".rake", ".gemspec", ".ru", ".podspec"],
-  bash: [".sh", ".bash"],
+  // .command is a macOS double-clickable shell script.
+  bash: [".sh", ".bash", ".command"],
   dockerfile: [".dockerfile"],
   // Terraform (.tf, .tfvars) and other HCL; a .tf.json file stays JSON.
   hcl: [".tf", ".tfvars", ".hcl"],
@@ -56,8 +57,9 @@ const extensions: Record<LanguageId, readonly string[]> = {
   html: [".html", ".htm"],
   swift: [".swift"],
   yaml: [".yml", ".yaml"],
-  graphql: [".graphql", ".gql"],
-  markdown: [".md", ".markdown"],
+  // A server schema is often .graphqls; MDX is Markdown with JSX, which shows as text.
+  graphql: [".graphql", ".gql", ".graphqls"],
+  markdown: [".md", ".markdown", ".mdx"],
   svg: [".svg"],
 };
 
@@ -81,6 +83,11 @@ const filenames: Record<string, LanguageId> = {
   ".bash_login": "bash",
   ".bash_logout": "bash",
   ".profile": "bash",
+  gradlew: "bash",
+  // Git hooks, as husky and lefthook keep them.
+  "pre-commit": "bash",
+  "pre-push": "bash",
+  "commit-msg": "bash",
   Dockerfile: "dockerfile",
   Containerfile: "dockerfile",
   README: "markdown",
@@ -97,6 +104,8 @@ export function languageForPath(path: string): LanguageId | undefined {
   if (Object.hasOwn(filenames, filename)) return filenames[filename];
   // A variant per target or stage: Dockerfile.dev, Dockerfile.alpine.
   if (filename.startsWith("Dockerfile.")) return "dockerfile";
+  // A YAML file templated with Liquid, as dbt and Embulk configs are; its tags read as plain YAML text.
+  if (/\.ya?ml\.liquid$/i.test(filename)) return "yaml";
   const dot = path.lastIndexOf(".");
   if (dot <= path.lastIndexOf("/")) return undefined;
   const ext = path.slice(dot).toLowerCase();
