@@ -694,6 +694,13 @@ function declarationLabel(tree: Tree, n: number): string | undefined {
         : `impl ${tree.text(trait)} for ${tree.text(type)}`)
     );
   }
+  // A diff file block reads as its `diff --git` header.
+  if (tree.kindName(n) === "block") {
+    for (let i = 0, count = tree.count(n); i < count; i++) {
+      const child = tree.child(n, i);
+      if (tree.kindName(child) === "command") return tree.text(child);
+    }
+  }
   // An HCL block reads as its type and labels, `resource "aws_instance" "web"`, the `key` fields its line opens with;
   // a TOML table as its header, `[dependencies]` or `[[bin]]`.
   if (["block", "table", "table_array_element"].includes(tree.kindName(n))) {

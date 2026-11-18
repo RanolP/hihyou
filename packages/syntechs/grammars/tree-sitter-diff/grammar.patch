@@ -1,0 +1,16 @@
+The upstream highlight query gives diff marker punctuation priority 95. syntechs resolves overlapping captures by
+query order and does not compile global `#set!` predicates; the local whole-line patterns follow this query and
+must win, so ordinary query order is the intended priority here.
+
+--- a/queries/highlights.scm
++++ b/queries/highlights.scm
+@@ -41,8 +41,7 @@
+   "----"
+   "<"
+   "!"
+-] @punctuation.special
+-  (#set! priority 95))
++] @punctuation.special)
+ 
+ [
+   (binary_change)

@@ -1,0 +1,20 @@
+{
+  "name": "tree-sitter-diff",
+  "version": "0.2.0",
+  "private": true,
+  "scripts": {
+    "postinstall": "node ../build.mjs"
+  },
+  "grammar": {
+    "sources": [
+      {
+        "repo": "the-mikedavis/tree-sitter-diff",
+        "commit": "ada384ac7bfc1307f32de474620120add29998fb",
+        "files": {
+          "grammar.js": "f039a09051a3faa899fde3221b70fe229d4f6b224fad75cd00c01a02a7aec17f",
+          "queries/highlights.scm": "6e7ac233333886d61fa0cd4186c36b7ab34fa95a86aea618ed87b60f9eaa4e4b"
+        }
+      }
+    ]
+  }
+}

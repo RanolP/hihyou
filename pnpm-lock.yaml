@@ -279,6 +279,9 @@ importers:
       tree-sitter-css:
         specifier: workspace:*
         version: link:grammars/tree-sitter-css
+      tree-sitter-diff:
+        specifier: workspace:*
+        version: link:grammars/tree-sitter-diff
       tree-sitter-dockerfile:
         specifier: workspace:*
         version: link:grammars/tree-sitter-dockerfile
@@ -343,6 +346,8 @@ importers:
   packages/syntechs/grammars/tree-sitter-bash: {}
 
   packages/syntechs/grammars/tree-sitter-css: {}
+
+  packages/syntechs/grammars/tree-sitter-diff: {}
 
   packages/syntechs/grammars/tree-sitter-dockerfile: {}
 

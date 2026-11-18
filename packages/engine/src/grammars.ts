@@ -26,6 +26,7 @@ export type LanguageId =
   | "dockerfile"
   | "hcl"
   | "toml"
+  | "diff"
   | "sql"
   | "kotlin"
   | "html"
@@ -52,6 +53,7 @@ const extensions: Record<LanguageId, readonly string[]> = {
   // Terraform (.tf, .tfvars) and other HCL; a .tf.json file stays JSON.
   hcl: [".tf", ".tfvars", ".hcl"],
   toml: [".toml"],
+  diff: [".patch", ".diff"],
   sql: [".sql"],
   kotlin: [".kt", ".kts"],
   html: [".html", ".htm"],
@@ -132,6 +134,7 @@ const parsers: Record<
   dockerfile: () => import("syntechs/grammars/dockerfile"),
   hcl: () => import("syntechs/grammars/hcl"),
   toml: () => import("syntechs/grammars/toml"),
+  diff: () => import("syntechs/grammars/diff"),
   sql: () => import("syntechs/grammars/sql"),
   kotlin: () => import("syntechs/grammars/kotlin"),
   html: () => import("syntechs/grammars/html"),
@@ -166,6 +169,8 @@ const highlighters: Partial<
   dockerfile: () => import("syntechs/grammars/dockerfile/highlight"),
   hcl: () => import("syntechs/grammars/hcl/highlight"),
   toml: () => import("syntechs/grammars/toml/highlight"),
+  diff: async () =>
+    withDiff((await import("syntechs/grammars/diff/highlight")).highlight),
   sql: () => import("syntechs/grammars/sql/highlight"),
   kotlin: () => import("syntechs/grammars/kotlin/highlight"),
   html: async () => ({
@@ -441,6 +446,153 @@ function paintFence(
   });
 }
 
+type DiffPiece = { node: number; from: number; to: number; at: number };
+type DiffSide = { tree: Tree; pieces: DiffPiece[]; language: Fenced };
+
+function diffBlockPath(tree: Tree, block: readonly number[]): string | undefined {
+  let oldPath: string | undefined;
+  let newPath: string | undefined;
+  let commandPath: string | undefined;
+  const visit = (line: number): void => {
+    const kind = tree.kindName(line);
+    if (kind === "command") {
+      commandPath = /^diff\s+\S+\s+\S+\s+(\S+)/.exec(tree.text(line))?.[1];
+      return;
+    }
+    if (kind === "old_file" || kind === "new_file") {
+      for (let j = 0, children = tree.count(line); j < children; j++) {
+        const child = tree.child(line, j);
+        if (tree.kindName(child) !== "filename") continue;
+        const path = tree.text(child).split("\t", 1)[0];
+        if (kind === "old_file") oldPath = path;
+        else newPath = path;
+      }
+      return;
+    }
+    for (let i = 0, count = tree.count(line); i < count; i++)
+      visit(tree.child(line, i));
+  };
+  for (const line of block) visit(line);
+  const path = newPath && newPath !== "/dev/null"
+    ? newPath
+    : oldPath && oldPath !== "/dev/null"
+      ? oldPath
+      : commandPath;
+  return path?.replace(/^[ab]\//, "");
+}
+
+function diffSide(
+  tree: Tree,
+  block: readonly number[],
+  kinds: ReadonlySet<string>,
+): { text: string; pieces: DiffPiece[] } {
+  const pieces: DiffPiece[] = [];
+  let text = "";
+  const visit = (node: number): void => {
+    if (kinds.has(tree.kindName(node))) {
+      const line = tree.text(node);
+      if (line.length > 0) {
+        pieces.push({ node, from: 1, to: line.length, at: text.length });
+        text += `${line.slice(1)}\n`;
+      }
+      return;
+    }
+    for (let i = 0, count = tree.count(node); i < count; i++) visit(tree.child(node, i));
+  };
+  for (const node of block) visit(node);
+  return { text, pieces };
+}
+
+function paintDiffSide(side: DiffSide, paint: Parameters<HighlightModule["highlight"]>[1]): void {
+  side.language.highlight.highlight(side.tree, (node, scope, from, to) => {
+    const start = side.tree.start(node) + (from ?? 0);
+    const end = to === undefined ? side.tree.end(node) : side.tree.start(node) + to;
+    for (const piece of side.pieces) {
+      const a = Math.max(start, piece.at);
+      const b = Math.min(end, piece.at + piece.to - piece.from);
+      if (a < b) paint(piece.node, scope, piece.from + a - piece.at, piece.from + b - piece.at);
+    }
+  });
+}
+
+/** Diff highlighting with each file block's old and new hunk sides parsed as the language its path names. */
+function withDiff(diff: HighlightModule): {
+  highlight: HighlightModule;
+  prepare(tree: Tree): Promise<void>;
+} {
+  type Loaded = Fenced & { prepare?: (tree: Tree) => Promise<void> };
+  const loaded = new Map<LanguageId, Loaded>();
+  const loading = new Map<LanguageId, Promise<void>>();
+  const prepared = new WeakMap<Tree, DiffSide[]>();
+  const loadLanguage = (id: LanguageId): Promise<void> => {
+    let done = loading.get(id);
+    if (!done) {
+      const highlighter = highlighters[id];
+      done = highlighter
+        ? Promise.all([parsers[id](), highlighter()]).then(async ([{ language }, module]) => {
+            await module.highlight.load?.();
+            loaded.set(id, { language, ...module });
+          })
+        : Promise.resolve();
+      done.catch(() => loading.delete(id));
+      loading.set(id, done);
+    }
+    return done;
+  };
+  const blocks = (tree: Tree): number[][] => {
+    const result: number[][] = [];
+    let headerBlock: number[] | undefined;
+    for (let i = 0, count = tree.count(tree.root); i < count; i++) {
+      const node = tree.child(tree.root, i);
+      const kind = tree.kindName(node);
+      if (kind === "block") {
+        if (headerBlock) result.push(headerBlock);
+        headerBlock = undefined;
+        result.push([node]);
+      } else if (kind === "old_file") {
+        if (headerBlock) result.push(headerBlock);
+        headerBlock = [node];
+      } else {
+        headerBlock?.push(node);
+      }
+    }
+    if (headerBlock) result.push(headerBlock);
+    return result;
+  };
+  return {
+    highlight: {
+      async load() {
+        await diff.load?.();
+      },
+      highlight(tree, paint) {
+        diff.highlight(tree, paint);
+        for (const side of prepared.get(tree) ?? []) paintDiffSide(side, paint);
+      },
+    },
+    async prepare(tree) {
+      const sections = blocks(tree).flatMap((block) => {
+        const path = diffBlockPath(tree, block);
+        const id = path === undefined ? undefined : languageForPath(path);
+        return id === undefined || id === "diff" ? [] : [{ block, id }];
+      });
+      await Promise.all([...new Set(sections.map(({ id }) => id))].map(loadLanguage));
+      const sides: DiffSide[] = [];
+      for (const { block, id } of sections) {
+        const language = loaded.get(id);
+        if (!language) continue;
+        for (const kinds of [new Set(["addition", "context"]), new Set(["deletion", "context"])]) {
+          const side = diffSide(tree, block, kinds);
+          if (side.pieces.length === 0) continue;
+          const inner = parseTree(language.language, side.text);
+          await language.prepare?.(inner);
+          sides.push({ tree: inner, pieces: side.pieces, language });
+        }
+      }
+      prepared.set(tree, sides);
+    },
+  };
+}
+
 /**
  * The front matter opening a Markdown file (`---` YAML, `+++` TOML), which the grammar keeps one node from its
  * opening line through its closing one, in the scopes VS Code's markdown grammar gives it: its two delimiter
@@ -514,6 +666,7 @@ const declarations: Partial<Record<LanguageId, readonly string[]>> = {
   hcl: ["block"],
   // A table, `[dependencies]`, and an array of tables' element, `[[bin]]`, each holding its pairs.
   toml: ["table", "table_array_element"],
+  diff: ["block"],
   kotlin: [
     "function_declaration",
     "class_declaration",

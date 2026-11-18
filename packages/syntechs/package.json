@@ -75,6 +75,7 @@
     "tree-sitter-dockerfile": "workspace:*",
     "tree-sitter-hcl": "workspace:*",
     "tree-sitter-toml": "workspace:*",
+    "tree-sitter-diff": "workspace:*",
     "tree-sitter-sql": "workspace:*",
     "tree-sitter-kotlin": "workspace:*",
     "tree-sitter-python": "workspace:*",

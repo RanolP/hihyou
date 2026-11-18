@@ -385,6 +385,25 @@ const TOML: Record<string, Rule | null> = {
   spell: null,
 };
 
+const DIFF: Record<string, Rule | null> = {
+  ...shared("diff"),
+  spell: null,
+  "diff.plus": "markup.inserted.diff",
+  "diff.minus": "markup.deleted.diff",
+  "diff.delta": "markup.changed.diff",
+  "string.special.path": "string.unquoted.path.diff",
+  "string.special": "string.other.diff",
+  "punctuation.special": "punctuation.definition.diff",
+  "line.inserted": "markup.inserted.diff",
+  "line.deleted": "markup.deleted.diff",
+  "line.changed": "markup.changed.diff",
+  "range.unified": "meta.diff.range.unified",
+  "header.from-file": "meta.diff.header.from-file",
+  "header.to-file": "meta.diff.header.to-file",
+  "header.git": "meta.diff.header.git",
+  "header.index": "meta.diff.index",
+};
+
 // VS Code's SQL grammar scopes most keywords `keyword.other.sql` and sorts a few into their own groups. Each
 // tree-sitter-sql keyword is its own node kind, so the groups go by kind across every keyword capture.
 const SQL_KEYWORD_GROUPS: Record<string, string[]> = {
@@ -958,6 +977,12 @@ export const LANGUAGES: Record<string, LanguageRules> = {
     queries: ["runtime/queries/toml/highlights.scm"],
     extend: ["toml/highlights.tm.scm"],
     captures: TOML,
+  },
+  diff: {
+    grammar: "tree-sitter-diff",
+    queries: ["queries/highlights.scm"],
+    extend: ["diff/highlights.tm.scm"],
+    captures: DIFF,
   },
   sql: {
     grammar: "tree-sitter-sql",
