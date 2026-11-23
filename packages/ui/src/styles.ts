@@ -188,7 +188,8 @@ export const diffStyles = `
   border-bottom: 1px solid var(--hh-border);
   background: var(--hh-header-bg);
 }
-.hh-pbxproj-tab-active { color: var(--hh-fg); font-weight: 600; text-decoration: none; }
+/* After .hh-button in specificity, which is declared later and would otherwise keep both tabs link-blue. */
+.hh-button.hh-pbxproj-tab-active { color: var(--hh-fg); font-weight: 600; text-decoration: none; }
 .hh-pbxproj-summary { padding: 4px 14px 14px; }
 .hh-pbxproj-summary section { margin-block-start: 12px; }
 .hh-pbxproj-summary h3 { margin: 0 0 6px; font-size: 1em; }
